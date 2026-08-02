@@ -1700,16 +1700,27 @@ jobs:
               - .github/workflows/CI.yml
               - Cargo.toml
               - Cargo.lock
+              - pnpm-lock.yaml
               - rust-toolchain
               - apps/devhud/package.json
+              - apps/devhud/scripts/check-contracts.mjs
               - apps/devhud/scripts/check-realqa-windows.mjs
               - apps/devhud/scripts/test-realqa-native.mjs
               - apps/devhud/src-tauri/Cargo.toml
               - apps/devhud/src-tauri/Info.plist
+              - apps/devhud/src-tauri/auth-bridge/Cargo.toml
               - apps/devhud/src-tauri/build.rs
+              - apps/devhud/src-tauri/capabilities/desktop-main.json
+              - apps/devhud/src-tauri/capabilities/mobile-main.json
               - apps/devhud/src-tauri/capabilities/realqa-*.json
+              - apps/devhud/src-tauri/capabilities/settings.json
+              - apps/devhud/src-tauri/diagnostics-bridge/Cargo.toml
+              - apps/devhud/src-tauri/src/lib.rs
               - apps/devhud/src-tauri/src/realqa_*.rs
               - apps/devhud/src-tauri/src/realqa_capture/**
+              - apps/devhud/src-tauri/src/updater.rs
+              - apps/devhud/src-tauri/tauri.conf.json
+              - apps/devhud/src-tauri/widget-bridge/Cargo.toml
             extension:
               - .github/workflows/CI.yml
               - Cargo.toml
@@ -1908,6 +1919,20 @@ jobs:
     runs-on: ubuntu-latest
     needs: realqa-changes
     if: ${{ github.event_name == 'workflow_dispatch' || needs.realqa-changes.outputs.server == 'true' }}
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: realqa
+          POSTGRES_PASSWORD: realqa_test
+          POSTGRES_DB: realqa
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U realqa -d realqa"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -1924,6 +1949,8 @@ jobs:
           version: 10.26.2
 
       - name: Run provider and storage integration fixtures
+        env:
+          REALQA_TEST_DATABASE_URL: postgres://realqa:realqa_test@127.0.0.1:5432/realqa?sslmode=disable
         run: pnpm ci:realqa:go:integrations
 
       - name: Validate minimal GitHub App and artifact-only R2 definitions

@@ -82,6 +82,9 @@
     },
     "ci:realqa:fixture-artifacts": {
       "cache": false,
+      "env": [
+        "DEVHUD_REALQA_FIXTURE_TARGET"
+      ],
       "outputs": [
         "build/realqa-fixtures/**"
       ]
