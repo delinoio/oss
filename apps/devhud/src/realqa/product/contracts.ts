@@ -41,6 +41,7 @@ export enum RealQaFailureCode {
   PresetLimitExceeded = "preset-limit-exceeded",
   DeviceShortcutLimitExceeded = "device-shortcut-limit-exceeded",
   UploadConcurrencyLimited = "upload-concurrency-limited",
+  UploadRejected = "upload-rejected",
   StorageBillingGrace = "storage-billing-grace",
   ProtectedContent = "protected-content",
   WindowUnavailable = "window-unavailable",
@@ -146,6 +147,7 @@ export interface RealQaReviewImage {
 
 export interface RealQaDraft {
   readonly draftId: string;
+  readonly submissionIdempotencyKey: string;
   readonly revision: number;
   readonly presetId: string;
   readonly title: string;
@@ -183,6 +185,7 @@ export interface RealQaSubmissionSummary {
   readonly graceExpiresAt: string | null;
   readonly authorizationId: string | null;
   readonly authorizationRevision: number;
+  readonly rebindAvailable: boolean;
   readonly images: readonly RealQaReviewImage[];
   /** Available only while the encrypted local draft can reconstruct the exact request. */
   readonly replay: RealQaSubmissionReplay | null;
@@ -252,6 +255,7 @@ export type RealQaProductAction =
   | {
       readonly kind: "submit";
       readonly draft: RealQaDraft;
+      readonly idempotencyKey: string;
       readonly publicImageConfirmation: true;
     }
   | {
@@ -339,6 +343,8 @@ export const realQaFailureGuidance: Readonly<Record<RealQaFailureCode, string>> 
     "This device already has 20 active RealQA shortcuts. Remove a shortcut before adding another.",
   [RealQaFailureCode.UploadConcurrencyLimited]:
     "Three uploads are already active. Wait for one to finish and retry.",
+  [RealQaFailureCode.UploadRejected]:
+    "The screenshot was malformed, unsupported, or failed secure image verification. Remove it from the draft and capture a new image.",
   [RealQaFailureCode.StorageBillingGrace]:
     "Storage billing is in its 30-day grace period. New submissions are blocked until recovery.",
   [RealQaFailureCode.ProtectedContent]: "The operating system protected this capture source.",

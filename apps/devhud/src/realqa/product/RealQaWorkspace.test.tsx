@@ -34,6 +34,7 @@ function snapshot(
 ): RealQaProductSnapshot {
   const draft = {
     draftId,
+    submissionIdempotencyKey: draftId,
     revision: 2,
     presetId,
     title: "Captured regression",
@@ -132,6 +133,7 @@ function snapshot(
       graceExpiresAt: null,
       authorizationId: "01900000-0000-7000-8000-000000000005",
       authorizationRevision: 7,
+      rebindAvailable: false,
       replay: {
         idempotencyKey: draftId,
         expectedSubmissionRevision: 8,
@@ -152,6 +154,19 @@ function snapshot(
       teamId: "01900000-0000-7000-8000-000000000009",
       label: "Acme / Release",
     }],
+  };
+}
+
+function storageRecoverySnapshot(): RealQaProductSnapshot {
+  const value = snapshot();
+  return {
+    ...value,
+    submissions: value.submissions.map((submission) => ({
+      ...submission,
+      state: "storage-billing-grace",
+      graceExpiresAt: "2026-09-01T00:00:00Z",
+      rebindAvailable: true,
+    })),
   };
 }
 
@@ -270,6 +285,7 @@ class FixtureGateway implements RealQaProductGateway {
           graceExpiresAt: null,
           authorizationId: "01900000-0000-7000-8000-000000000007",
           authorizationRevision: 1,
+          rebindAvailable: false,
           replay: null,
           images: action.draft.images.map((image) => ({ ...image, uploadState: "public", uploadProgress: 100 })),
         }, ...this.value.submissions],
@@ -342,6 +358,7 @@ describe("RealQA desktop production workspace", () => {
 
       await waitFor(() => expect(gateway.actions.at(-1)).toMatchObject({
         kind: "submit",
+        idempotencyKey: draftId,
         publicImageConfirmation: true,
       }));
       expect(await screen.findByText(/local raw draft was deleted/u)).toBeVisible();
@@ -1066,7 +1083,7 @@ describe("RealQA desktop production workspace", () => {
     expect(retriedDeletion.idempotencyKey).toBe(firstDeletion.idempotencyKey);
   });
 
-  it("supports revision-safe reconciliation, image deletion, and exact-scope rebind", async () => {
+  it("supports revision-safe reconciliation and deletion without offering healthy rebind", async () => {
     const user = userEvent.setup();
     const gateway = new FixtureGateway(snapshot());
     await renderWorkspace(gateway);
@@ -1097,9 +1114,15 @@ describe("RealQA desktop production workspace", () => {
       expectedSubmissionRevision: 8,
       idempotencyKey: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-7/u),
     });
-    expect(screen.getByLabelText("Replacement payer")).toHaveValue(
-      "01900000-0000-7000-8000-000000000008/01900000-0000-7000-8000-000000000009",
-    );
+    expect(screen.queryByRole("button", { name: "Rebind payer" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Revoke grant" })).not.toBeInTheDocument();
+  });
+
+  it("offers exact-scope rebind only during storage billing recovery", async () => {
+    const user = userEvent.setup();
+    const gateway = new FixtureGateway(storageRecoverySnapshot());
+    await renderWorkspace(gateway);
+
     await user.click(screen.getByRole("button", { name: "Rebind payer" }));
     expect(gateway.actions.at(-1)).toMatchObject({
       kind: "rebind-authorization",
@@ -1110,7 +1133,6 @@ describe("RealQA desktop production workspace", () => {
       },
       idempotencyKey: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-7/u),
     });
-    expect(screen.queryByRole("button", { name: "Revoke grant" })).not.toBeInTheDocument();
   });
 
   it("reuses image and submission-asset deletion identities after ambiguous failures", async () => {
@@ -1151,7 +1173,7 @@ describe("RealQA desktop production workspace", () => {
 
   it("reuses the exact-scope rebind identity after an ambiguous failure", async () => {
     const user = userEvent.setup();
-    const gateway = new FixtureGateway(snapshot());
+    const gateway = new FixtureGateway(storageRecoverySnapshot());
     gateway.nextFailure = new RealQaProductError(RealQaFailureCode.ServiceUnavailable);
     await renderWorkspace(gateway);
 
@@ -1174,7 +1196,7 @@ describe("RealQA desktop production workspace", () => {
 
   it("starts a new rebind identity when the expected authorization changes", async () => {
     const user = userEvent.setup();
-    const gateway = new FixtureGateway(snapshot());
+    const gateway = new FixtureGateway(storageRecoverySnapshot());
     gateway.nextFailure = new RealQaProductError(RealQaFailureCode.ServiceUnavailable);
     await renderWorkspace(gateway);
 

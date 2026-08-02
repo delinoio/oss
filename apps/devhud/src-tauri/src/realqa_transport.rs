@@ -20,6 +20,7 @@ const REALQA_GITHUB_APP_SLUG_VARIABLE: &str = "DEVHUD_REALQA_GITHUB_APP_SLUG";
 const REALQA_GITHUB_CALLBACK: &str = "https://realqa.deli.dev/github/oauth/callback";
 const FORWARDED_USER_TOKEN_HEADER: &str = "X-Delibase-Forwarded-User-Token";
 const MAX_PROTO_REQUEST_BYTES: usize = 1024 * 1024;
+const MAX_PROTO_REQUEST_BASE64_BYTES: usize = MAX_PROTO_REQUEST_BYTES.div_ceil(3) * 4;
 const MAX_PROTO_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
 const MAX_ERROR_DETAIL_BYTES: usize = 4 * 1024;
 const MAX_IMAGE_BYTES: usize = 25 * 1024 * 1024;
@@ -310,7 +311,7 @@ fn map_error_reason(reason: u64) -> Option<RealQaTransportFailure> {
         16 => Some(RealQaTransportFailure::ImageTooLarge),
         17 => Some(RealQaTransportFailure::SessionTooLarge),
         18 => Some(RealQaTransportFailure::DecodedImageTooLarge),
-        22..=24 => Some(RealQaTransportFailure::UploadRejected),
+        19..=24 => Some(RealQaTransportFailure::UploadRejected),
         25 => Some(RealQaTransportFailure::SubmissionAmbiguous),
         26 => Some(RealQaTransportFailure::RateLimited),
         27 => Some(RealQaTransportFailure::UploadConcurrencyLimited),
@@ -449,16 +450,24 @@ fn read_bounded_response(response: impl Read) -> Result<Vec<u8>, RealQaTransport
     Ok(bytes)
 }
 
-pub(crate) fn connect(
-    request: RealQaConnectRequest,
-    auth: &NativeAuthState,
-) -> Result<RealQaConnectResponse, RealQaTransportFailure> {
+fn decode_bounded_request(body_base64: &str) -> Result<Vec<u8>, RealQaTransportFailure> {
+    if body_base64.len() > MAX_PROTO_REQUEST_BASE64_BYTES {
+        return Err(RealQaTransportFailure::RequestTooLarge);
+    }
     let body = STANDARD
-        .decode(request.body_base64)
+        .decode(body_base64)
         .map_err(|_| RealQaTransportFailure::InvalidRequest)?;
     if body.len() > MAX_PROTO_REQUEST_BYTES {
         return Err(RealQaTransportFailure::RequestTooLarge);
     }
+    Ok(body)
+}
+
+pub(crate) fn connect(
+    request: RealQaConnectRequest,
+    auth: &NativeAuthState,
+) -> Result<RealQaConnectResponse, RealQaTransportFailure> {
+    let body = decode_bounded_request(&request.body_base64)?;
     let endpoint = format!("{REALQA_ORIGIN}{}", request.procedure.path());
     auth.with_realqa_bearers(|feature, delibase, _subject| {
         client()?
@@ -625,6 +634,10 @@ mod tests {
             (16, RealQaTransportFailure::ImageTooLarge),
             (17, RealQaTransportFailure::SessionTooLarge),
             (18, RealQaTransportFailure::DecodedImageTooLarge),
+            (19, RealQaTransportFailure::UploadRejected),
+            (20, RealQaTransportFailure::UploadRejected),
+            (21, RealQaTransportFailure::UploadRejected),
+            (22, RealQaTransportFailure::UploadRejected),
             (25, RealQaTransportFailure::SubmissionAmbiguous),
             (27, RealQaTransportFailure::UploadConcurrencyLimited),
             (33, RealQaTransportFailure::StorageBillingGrace),
@@ -635,6 +648,14 @@ mod tests {
                 expected,
             );
         }
+    }
+
+    #[test]
+    fn oversized_encoded_connect_requests_are_rejected_before_decode() {
+        assert_eq!(
+            decode_bounded_request(&"A".repeat(MAX_PROTO_REQUEST_BASE64_BYTES + 1)),
+            Err(RealQaTransportFailure::RequestTooLarge),
+        );
     }
 
     #[test]
