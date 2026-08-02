@@ -2562,12 +2562,12 @@ fn request_quit(app: &AppHandle<ActiveRuntime>) {
 async fn deck_connect(
     app: AppHandle<ActiveRuntime>,
     request: deck_transport::DeckConnectRequest,
-) -> Result<deck_transport::DeckConnectResponse, deck_transport::DeckTransportFailure> {
+) -> Result<deck_transport::DeckConnectResponse, deck_transport::DeckConnectFailure> {
     tauri::async_runtime::spawn_blocking(move || {
         deck_transport::connect(request, &app.state::<auth_native::NativeAuthState>())
     })
     .await
-    .map_err(|_| deck_transport::DeckTransportFailure::ServiceUnavailable)?
+    .map_err(|_| deck_transport::DeckTransportFailure::ServiceUnavailable.into())?
 }
 
 #[cfg(all(

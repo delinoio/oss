@@ -71,6 +71,7 @@ export enum DeckFailureCode {
   ProviderUnavailable = "provider-unavailable",
   BillingUnavailable = "billing-unavailable",
   BranchProtectionBlocked = "branch-protection-blocked",
+  MergeConfirmationRequired = "merge-confirmation-required",
   UnsupportedAction = "unsupported-action",
 }
 
@@ -101,6 +102,7 @@ export const deckFailureGuidance: Readonly<Record<DeckFailureCode, string>> = {
   [DeckFailureCode.ProviderUnavailable]: "GitHub did not complete the request. Try again later.",
   [DeckFailureCode.BillingUnavailable]: "Refresh billing is unavailable, so GitHub was not contacted.",
   [DeckFailureCode.BranchProtectionBlocked]: "Repository rules currently block this action.",
+  [DeckFailureCode.MergeConfirmationRequired]: "Confirm the merge before trying again.",
   [DeckFailureCode.UnsupportedAction]: "That action is not allowed for this pull request.",
 };
 
@@ -212,6 +214,10 @@ export interface DeckMutationCandidate {
   readonly value: string;
 }
 
+export interface DeckMutationCandidatePage extends DeckCursorPage<DeckMutationCandidate> {
+  readonly pullRequestRevision: DeckRevision;
+}
+
 export interface DeckMutationInput {
   readonly kind: DeckMutationKind;
   readonly users?: readonly string[];
@@ -240,7 +246,7 @@ export interface DeckGateway {
     kind: DeckMutationKind,
     query: string,
     cursor: string,
-  ): Promise<DeckCursorPage<DeckMutationCandidate>>;
+  ): Promise<DeckMutationCandidatePage>;
   mutatePullRequest(
     viewId: string,
     pullRequest: DeckPullRequest,
@@ -254,7 +260,10 @@ export interface DeckGateway {
   openPullRequest(pullRequest: DeckPullRequest): Promise<void>;
   recordViewOpened(viewId: string): void;
   synchronizeShortcuts(views: readonly DeckView[]): Promise<void>;
-  startEligibleRefreshes(views: readonly DeckView[]): () => void;
+  startEligibleRefreshes(
+    views: readonly DeckView[],
+    onRefreshed: (viewId: string) => void,
+  ): () => void;
 }
 
 export const unavailableDeckGateway: DeckGateway = {

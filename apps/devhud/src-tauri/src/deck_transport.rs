@@ -7,7 +7,10 @@
 
 use std::time::Duration;
 
-use base64::{Engine as _, engine::general_purpose::STANDARD};
+use base64::{
+    Engine as _,
+    engine::general_purpose::{STANDARD, STANDARD_NO_PAD},
+};
 use reqwest::{StatusCode, blocking::Client, redirect::Policy};
 use serde::{Deserialize, Serialize};
 #[cfg(any(target_os = "android", target_os = "ios"))]
@@ -20,6 +23,9 @@ const DECK_ORIGIN: &str = "https://deck.deli.dev";
 const FORWARDED_USER_TOKEN_HEADER: &str = "X-Devhud-Deck-Forwarded-Delibase-Token";
 const MAX_PROTO_REQUEST_BYTES: usize = 1024 * 1024;
 const MAX_PROTO_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
+const MAX_CONNECT_ERROR_BYTES: usize = 64 * 1024;
+const MAX_ERROR_DETAIL_BYTES: usize = 4 * 1024;
+const DECK_ERROR_DETAIL_TYPE: &str = "devhud.deck.v1.ErrorDetail";
 
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -100,6 +106,36 @@ pub(crate) enum DeckTransportFailure {
     BrowserUnavailable,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct DeckConnectFailure {
+    code: DeckTransportFailure,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    detail_body_base64: Option<String>,
+}
+
+impl From<DeckTransportFailure> for DeckConnectFailure {
+    fn from(code: DeckTransportFailure) -> Self {
+        Self {
+            code,
+            detail_body_base64: None,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct ConnectErrorBody {
+    #[serde(default)]
+    details: Vec<ConnectErrorDetail>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ConnectErrorDetail {
+    #[serde(rename = "type")]
+    type_name: String,
+    value: String,
+}
+
 fn map_auth_failure(error: AuthError) -> DeckTransportFailure {
     match error {
         AuthError::ReauthenticationRequired
@@ -135,15 +171,34 @@ fn map_status(status: StatusCode) -> DeckTransportFailure {
     }
 }
 
+fn connect_failure(status: StatusCode, body: &[u8]) -> DeckConnectFailure {
+    let detail_body_base64 = (body.len() <= MAX_CONNECT_ERROR_BYTES)
+        .then(|| serde_json::from_slice::<ConnectErrorBody>(body).ok())
+        .flatten()
+        .and_then(|error| {
+            error.details.into_iter().find_map(|detail| {
+                if detail.type_name != DECK_ERROR_DETAIL_TYPE {
+                    return None;
+                }
+                let bytes = STANDARD_NO_PAD.decode(detail.value).ok()?;
+                (bytes.len() <= MAX_ERROR_DETAIL_BYTES).then(|| STANDARD.encode(bytes))
+            })
+        });
+    DeckConnectFailure {
+        code: map_status(status),
+        detail_body_base64,
+    }
+}
+
 pub(crate) fn connect(
     request: DeckConnectRequest,
     auth: &NativeAuthState,
-) -> Result<DeckConnectResponse, DeckTransportFailure> {
+) -> Result<DeckConnectResponse, DeckConnectFailure> {
     let body = STANDARD
         .decode(request.body_base64)
-        .map_err(|_| DeckTransportFailure::InvalidRequest)?;
+        .map_err(|_| DeckConnectFailure::from(DeckTransportFailure::InvalidRequest))?;
     if body.len() > MAX_PROTO_REQUEST_BYTES {
-        return Err(DeckTransportFailure::RequestTooLarge);
+        return Err(DeckTransportFailure::RequestTooLarge.into());
     }
     let endpoint = format!("{DECK_ORIGIN}{}", request.procedure.path());
     auth.with_deck_bearers(|feature, delibase, _subject| {
@@ -159,16 +214,19 @@ pub(crate) fn connect(
             .send()
             .map_err(|_| DeckTransportFailure::ServiceUnavailable)
     })
-    .map_err(map_auth_failure)?
+    .map_err(map_auth_failure)
+    .map_err(DeckConnectFailure::from)?
+    .map_err(DeckConnectFailure::from)
     .and_then(|response| {
-        if !response.status().is_success() {
-            return Err(map_status(response.status()));
-        }
+        let status = response.status();
         let bytes = response
             .bytes()
-            .map_err(|_| DeckTransportFailure::ServiceUnavailable)?;
+            .map_err(|_| DeckConnectFailure::from(DeckTransportFailure::ServiceUnavailable))?;
+        if !status.is_success() {
+            return Err(connect_failure(status, &bytes));
+        }
         if bytes.len() > MAX_PROTO_RESPONSE_BYTES {
-            return Err(DeckTransportFailure::ResponseTooLarge);
+            return Err(DeckTransportFailure::ResponseTooLarge.into());
         }
         Ok(DeckConnectResponse {
             body_base64: STANDARD.encode(bytes),
@@ -300,6 +358,36 @@ mod tests {
             assert_eq!(
                 pull_request_url(owner, repository, number).unwrap_err(),
                 DeckTransportFailure::InvalidPullRequest
+            );
+        }
+    }
+
+    #[test]
+    fn connect_failure_preserves_only_the_typed_bounded_deck_detail() {
+        let detail = STANDARD_NO_PAD.encode([0x08, 0x15, 0x2a, 0x02, 0x08, 0x1e]);
+        let body = format!(
+            r#"{{"code":"resource_exhausted","details":[{{"type":"{DECK_ERROR_DETAIL_TYPE}","value":"{detail}"}}]}}"#,
+        );
+
+        let failure = connect_failure(StatusCode::TOO_MANY_REQUESTS, body.as_bytes());
+
+        assert_eq!(failure.code, DeckTransportFailure::RateLimited);
+        assert_eq!(
+            failure.detail_body_base64,
+            Some(STANDARD.encode([0x08, 0x15, 0x2a, 0x02, 0x08, 0x1e]))
+        );
+    }
+
+    #[test]
+    fn connect_failure_drops_unknown_and_malformed_details() {
+        for body in [
+            br#"{"details":[{"type":"other.ErrorDetail","value":"CBU"}]}"#.as_slice(),
+            br#"{"details":[{"type":"devhud.deck.v1.ErrorDetail","value":"!"}]}"#.as_slice(),
+            br#"not-json"#.as_slice(),
+        ] {
+            assert_eq!(
+                connect_failure(StatusCode::FORBIDDEN, body).detail_body_base64,
+                None
             );
         }
     }

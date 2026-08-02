@@ -90,7 +90,7 @@ function gateway(overrides: Partial<DeckGateway> = {}): DeckGateway {
     deleteView: vi.fn(async () => undefined),
     getView: vi.fn(async () => view),
     listPullRequests: vi.fn(async () => ({ items: [pullRequest], nextCursor: "", freshness: DeckFreshness.Fresh, truncated: true, resultLimit: 500 })),
-    listMutationCandidates: vi.fn(async () => ({ items: [{ kind: "user" as const, value: "hubot" }], nextCursor: "" })),
+    listMutationCandidates: vi.fn(async () => ({ items: [{ kind: "user" as const, value: "hubot" }], nextCursor: "", pullRequestRevision: pullRequest.revision })),
     mutatePullRequest: vi.fn(async () => ({ pullRequest, refreshRequired: false })),
     refreshAfterMutation: vi.fn(async () => undefined),
     refreshView: vi.fn(async (_viewId, confirm) => {
@@ -223,8 +223,8 @@ describe("Deck composable production workspace", () => {
 
   it("loads later mutation candidate pages", async () => {
     const listMutationCandidates = vi.fn()
-      .mockResolvedValueOnce({ items: [{ kind: "user", value: "hubot" }], nextCursor: "next" })
-      .mockResolvedValueOnce({ items: [{ kind: "user", value: "octocat" }], nextCursor: "" });
+      .mockResolvedValueOnce({ items: [{ kind: "user", value: "hubot" }], nextCursor: "next", pullRequestRevision: pullRequest.revision })
+      .mockResolvedValueOnce({ items: [{ kind: "user", value: "octocat" }], nextCursor: "", pullRequestRevision: pullRequest.revision });
     const backend = gateway({ listMutationCandidates });
     const user = userEvent.setup();
     renderDeck(backend);
@@ -240,6 +240,99 @@ describe("Deck composable production workspace", () => {
       "",
       "next",
     );
+  });
+
+  it("uses the synchronized candidate revision and clears replaced selections", async () => {
+    const synchronizedRevision = { value: 9n, etag: "pr-9" };
+    const listMutationCandidates = vi.fn()
+      .mockResolvedValueOnce({
+        items: [{ kind: "user", value: "hubot" }],
+        nextCursor: "",
+        pullRequestRevision: synchronizedRevision,
+      })
+      .mockResolvedValueOnce({
+        items: [{ kind: "user", value: "octocat" }],
+        nextCursor: "",
+        pullRequestRevision: synchronizedRevision,
+      });
+    const backend = gateway({ listMutationCandidates });
+    const user = userEvent.setup();
+    renderDeck(backend);
+    await user.click(await screen.findByRole("button", { name: /Needs review/u }));
+    await user.click(await screen.findByRole("button", { name: "assign users" }));
+    await user.click(screen.getByRole("button", { name: "Search" }));
+    await user.click(await screen.findByRole("checkbox", { name: /hubot user/u }));
+    await user.click(screen.getByRole("button", { name: "Search" }));
+
+    expect(await screen.findByRole("checkbox", { name: /octocat user/u })).not.toBeChecked();
+    expect(screen.getByRole("button", { name: "Apply" })).toBeDisabled();
+    await user.click(screen.getByRole("checkbox", { name: /octocat user/u }));
+    await user.click(screen.getByRole("button", { name: "Apply" }));
+
+    await waitFor(() => expect(backend.mutatePullRequest).toHaveBeenCalledWith(
+      view.viewId,
+      expect.objectContaining({ revision: synchronizedRevision }),
+      expect.objectContaining({ users: ["octocat"] }),
+    ));
+  });
+
+  it("surfaces mutation candidate search failures through Deck operation state", async () => {
+    const backend = gateway({
+      listMutationCandidates: vi.fn(async () => {
+        throw new DeckProductError(DeckFailureCode.ProviderRateLimited, 30);
+      }),
+    });
+    const user = userEvent.setup();
+    renderDeck(backend);
+    await user.click(await screen.findByRole("button", { name: /Needs review/u }));
+    await user.click(await screen.findByRole("button", { name: "assign users" }));
+    await user.click(screen.getByRole("button", { name: "Search" }));
+
+    expect(await screen.findByRole("heading", { name: "Pull requests unavailable" })).toBeVisible();
+    expect(screen.getByRole("alert")).toHaveTextContent("Retry in 30 seconds");
+  });
+
+  it("invalidates pull requests after an automatic refresh completes", async () => {
+    let onRefreshed: ((viewId: string) => void) | undefined;
+    const backend = gateway({
+      startEligibleRefreshes: vi.fn((_views, callback) => {
+        onRefreshed = callback;
+        return () => undefined;
+      }),
+    });
+    const user = userEvent.setup();
+    renderDeck(backend);
+    await user.click(await screen.findByRole("button", { name: /Needs review/u }));
+    await screen.findByRole("heading", { name: "Add Deck" });
+    expect(backend.listPullRequests).toHaveBeenCalledTimes(1);
+
+    onRefreshed?.(view.viewId);
+
+    await waitFor(() => expect(backend.listPullRequests).toHaveBeenCalledTimes(2));
+  });
+
+  it("replaces the selected view with its refetched server row", async () => {
+    const disconnectedView = {
+      ...view,
+      connection: "reauthentication-required" as const,
+      name: "Needs review (reauthentication required)",
+      revision: { value: 2n, etag: "view-2" },
+    };
+    const backend = gateway({
+      listViews: vi.fn()
+        .mockResolvedValueOnce({ items: [view], nextCursor: "" })
+        .mockResolvedValue({ items: [disconnectedView], nextCursor: "" }),
+      listPullRequests: vi.fn()
+        .mockRejectedValueOnce(new DeckProductError(DeckFailureCode.ServiceUnavailable))
+        .mockResolvedValue({ items: [pullRequest], nextCursor: "", freshness: DeckFreshness.Fresh, truncated: false, resultLimit: 500 }),
+    });
+    const user = userEvent.setup();
+    renderDeck(backend);
+    await user.click(await screen.findByRole("button", { name: /Needs review/u }));
+    await user.click(await screen.findByRole("button", { name: "Try again" }));
+
+    expect(await screen.findByRole("heading", { name: "GitHub connection required" })).toBeVisible();
+    expect(screen.getByRole("button", { name: /reauthentication required/u })).toHaveAttribute("aria-current", "page");
   });
 
   it("surfaces owner-loading failures before the empty selection state", async () => {

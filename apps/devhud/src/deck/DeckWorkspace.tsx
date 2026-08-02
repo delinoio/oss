@@ -16,6 +16,7 @@ import {
   type DeckMutationCandidate,
   type DeckMutationInput,
   type DeckPullRequest,
+  type DeckRevision,
   type DeckView,
   type DeckViewInput,
 } from "./contracts";
@@ -351,30 +352,43 @@ function CandidatePicker({
 }: {
   readonly fixedCandidates: readonly DeckMutationCandidate[];
   readonly kind: DeckMutationKind;
-  readonly onApply: (input: DeckMutationInput) => Promise<boolean>;
+  readonly onApply: (
+    input: DeckMutationInput,
+    revision: DeckRevision | null,
+  ) => Promise<boolean>;
   readonly pullRequest: DeckPullRequest;
   readonly remoteSearch: boolean;
 }) {
-  const { meta, state } = useDeck();
+  const { actions, state } = useDeck();
   const [query, setQuery] = useState("");
   const [candidates, setCandidates] = useState<readonly DeckMutationCandidate[]>([]);
   const [selected, setSelected] = useState<readonly DeckMutationCandidate[]>([]);
   const [loading, setLoading] = useState(false);
   const [nextCursor, setNextCursor] = useState("");
+  const [candidateRevision, setCandidateRevision] = useState<DeckRevision | null>(null);
   const visibleCandidates = remoteSearch ? candidates : fixedCandidates;
+  const candidateKey = (candidate: DeckMutationCandidate) => `${candidate.kind}:${candidate.value}`;
+  useEffect(() => {
+    setCandidates([]);
+    setSelected([]);
+    setNextCursor("");
+    setCandidateRevision(null);
+  }, [kind, pullRequest]);
   const search = async (cursor = "") => {
     if (state.selectedView === null) return;
     setLoading(true);
     try {
-      const page = await meta.gateway.listMutationCandidates(
-        state.selectedView.viewId,
+      const page = await actions.searchMutationCandidates(
         pullRequest,
         kind,
         query,
         cursor,
       );
+      if (page === null) return;
       setCandidates((current) => cursor.length === 0 ? page.items : [...current, ...page.items]);
+      if (cursor.length === 0) setSelected([]);
       setNextCursor(page.nextCursor);
+      setCandidateRevision(page.pullRequestRevision);
     } finally {
       setLoading(false);
     }
@@ -384,7 +398,7 @@ function CandidatePicker({
     users: selected.filter((candidate) => candidate.kind === "user").map((candidate) => candidate.value),
     teams: selected.filter((candidate) => candidate.kind === "team").map((candidate) => candidate.value),
     labels: selected.filter((candidate) => candidate.kind === "label").map((candidate) => candidate.value),
-  });
+  }, candidateRevision);
   return (
     <div className="candidate-picker">
       {remoteSearch ? (
@@ -401,10 +415,10 @@ function CandidatePicker({
       {visibleCandidates.map((candidate) => (
         <label className="check-field" key={`${candidate.kind}:${candidate.value}`}>
           <input
-            checked={selected.includes(candidate)}
+            checked={selected.some((item) => candidateKey(item) === candidateKey(candidate))}
             onChange={(event) => setSelected(event.target.checked
-              ? [...selected, candidate]
-              : selected.filter((item) => item !== candidate))}
+              ? [...selected.filter((item) => candidateKey(item) !== candidateKey(candidate)), candidate]
+              : selected.filter((item) => candidateKey(item) !== candidateKey(candidate)))}
             type="checkbox"
           />
           {candidate.value} <small>{candidate.kind}</small>
@@ -480,8 +494,11 @@ function PullRequestActions({ pullRequest }: { readonly pullRequest: DeckPullReq
         <CandidatePicker
           fixedCandidates={removalCandidates(picker)}
           kind={picker}
-          onApply={async (input) => {
-            const applied = await actions.mutate(pullRequest, input);
+          onApply={async (input, revision) => {
+            const applied = await actions.mutate(
+              revision === null ? pullRequest : { ...pullRequest, revision },
+              input,
+            );
             if (applied) setPicker(null);
             return applied;
           }}

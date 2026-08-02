@@ -1,4 +1,4 @@
-import { create } from "@bufbuild/protobuf";
+import { create, fromBinary } from "@bufbuild/protobuf";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import {
   AddLabelsMutationSchema,
@@ -12,6 +12,8 @@ import {
   DeleteViewRequestSchema,
   DeleteViewResponseSchema,
   EnableAutoMergeMutationSchema,
+  ErrorDetailSchema,
+  ErrorReason,
   FreshnessState,
   GetDeviceRequestSchema,
   GetDeviceResponseSchema,
@@ -90,6 +92,7 @@ import {
   type DeckBillingSelection,
   type DeckGateway,
   type DeckMutationCandidate,
+  type DeckMutationCandidatePage,
   type DeckMutationInput,
   type DeckOwner,
   type DeckPullRequest,
@@ -400,7 +403,97 @@ function mutation(input: DeckMutationInput) {
   return create(PullRequestMutationSchema, { mutation: value });
 }
 
-function mapFailure(error: unknown): never {
+const detailFailureCodes: Readonly<Partial<Record<ErrorReason, DeckFailureCode>>> = {
+  [ErrorReason.AUTHENTICATION_REQUIRED]: DeckFailureCode.AuthenticationRequired,
+  [ErrorReason.INVALID_CREDENTIALS]: DeckFailureCode.AuthenticationRequired,
+  [ErrorReason.SUBJECT_MISMATCH]: DeckFailureCode.AuthenticationRequired,
+  [ErrorReason.PERMISSION_DENIED]: DeckFailureCode.PermissionDenied,
+  [ErrorReason.GITHUB_PERMISSION_DENIED]: DeckFailureCode.GitHubPermissionDenied,
+  [ErrorReason.STALE_REVISION]: DeckFailureCode.StaleRevision,
+  [ErrorReason.IDEMPOTENCY_CONFLICT]: DeckFailureCode.StaleRevision,
+  [ErrorReason.RATE_LIMITED]: DeckFailureCode.RateLimited,
+  [ErrorReason.PROVIDER_CONCURRENCY_LIMITED]: DeckFailureCode.RateLimited,
+  [ErrorReason.BILLING_CATALOG_UNAVAILABLE]: DeckFailureCode.BillingUnavailable,
+  [ErrorReason.BILLING_PREFLIGHT_REQUIRED]: DeckFailureCode.BillingUnavailable,
+  [ErrorReason.BILLING_PREFLIGHT_EXPIRED]: DeckFailureCode.BillingUnavailable,
+  [ErrorReason.BILLING_PREFLIGHT_MISMATCH]: DeckFailureCode.BillingUnavailable,
+  [ErrorReason.BILLING_RESERVATION_FAILED]: DeckFailureCode.BillingUnavailable,
+  [ErrorReason.PROVIDER_FAILED]: DeckFailureCode.ProviderUnavailable,
+  [ErrorReason.PROVIDER_RATE_LIMITED]: DeckFailureCode.ProviderRateLimited,
+  [ErrorReason.PROVIDER_TIMEOUT]: DeckFailureCode.ProviderUnavailable,
+  [ErrorReason.OFFLINE]: DeckFailureCode.Offline,
+  [ErrorReason.DISCONNECTED]: DeckFailureCode.Disconnected,
+  [ErrorReason.UNSUPPORTED_GITHUB_HOST]: DeckFailureCode.ProviderUnavailable,
+  [ErrorReason.UNSUPPORTED_ACTION]: DeckFailureCode.UnsupportedAction,
+  [ErrorReason.MERGE_CONFIRMATION_REQUIRED]: DeckFailureCode.MergeConfirmationRequired,
+  [ErrorReason.BRANCH_PROTECTION_BLOCKED]: DeckFailureCode.BranchProtectionBlocked,
+  [ErrorReason.DEPENDENCY_UNAVAILABLE]: DeckFailureCode.ServiceUnavailable,
+};
+
+const transportFailureCodes: Readonly<Record<string, DeckFailureCode>> = {
+  "authentication-required": DeckFailureCode.AuthenticationRequired,
+  "reauthentication-required": DeckFailureCode.AuthenticationRequired,
+  "permission-denied": DeckFailureCode.PermissionDenied,
+  "rate-limited": DeckFailureCode.RateLimited,
+  conflict: DeckFailureCode.StaleRevision,
+  "billing-unavailable": DeckFailureCode.BillingUnavailable,
+  "provider-unavailable": DeckFailureCode.ProviderUnavailable,
+  "service-unavailable": DeckFailureCode.ServiceUnavailable,
+};
+
+interface NativeConnectFailure {
+  readonly code: string;
+  readonly detailBodyBase64?: string;
+}
+
+function parseNativeConnectFailure(error: unknown): NativeConnectFailure | null {
+  if (typeof error === "object" && error !== null) {
+    const candidate = error as { code?: unknown; detailBodyBase64?: unknown };
+    if (typeof candidate.code === "string") {
+      return {
+        code: candidate.code,
+        detailBodyBase64: typeof candidate.detailBodyBase64 === "string"
+          ? candidate.detailBodyBase64
+          : undefined,
+      };
+    }
+  }
+  const serialized = typeof error === "string"
+    ? error
+    : error instanceof Error ? error.message : "";
+  try {
+    return parseNativeConnectFailure(JSON.parse(serialized));
+  } catch {
+    return null;
+  }
+}
+
+export function mapFailure(error: unknown): never {
+  const native = parseNativeConnectFailure(error);
+  if (native?.detailBodyBase64 !== undefined) {
+    try {
+      const detail = fromBinary(
+        ErrorDetailSchema,
+        Uint8Array.from(atob(native.detailBodyBase64), (character) => character.charCodeAt(0)),
+        { readUnknownFields: false, recursionLimit: 16 },
+      );
+      const code = detailFailureCodes[detail.reason];
+      if (code !== undefined) {
+        const retryAfter = detail.retryAfter;
+        const retryAfterSeconds = retryAfter === undefined || retryAfter.seconds < 0n
+          ? undefined
+          : Number(retryAfter.seconds + (retryAfter.nanos > 0 ? 1n : 0n));
+        throw new DeckProductError(
+          code,
+          Number.isSafeInteger(retryAfterSeconds) ? retryAfterSeconds : undefined,
+        );
+      }
+    } catch (detailError) {
+      if (detailError instanceof DeckProductError) throw detailError;
+    }
+  }
+  const exactCode = native === null ? undefined : transportFailureCodes[native.code];
+  if (exactCode !== undefined) throw new DeckProductError(exactCode);
   const value = (typeof error === "string"
     ? error
     : error instanceof Error
@@ -420,6 +513,7 @@ function mapFailure(error: unknown): never {
 
 export class NativeDeckGateway implements DeckGateway {
   readonly #manualAttempts = new Map<string, DeckRefreshAttempt>();
+  readonly #manualRefreshes = new Map<string, Promise<void>>();
   readonly #mutationAttempts = new Map<string, DeckRefreshAttempt>();
   readonly #automaticAttempts = new MemoryRefreshAttemptStore();
   readonly #lastOpenedAt = new Map<string, Date>();
@@ -495,9 +589,9 @@ export class NativeDeckGateway implements DeckGateway {
     const freshness = response.freshness === FreshnessState.FRESH ? DeckFreshness.Fresh : response.freshness === FreshnessState.STALE ? DeckFreshness.Stale : response.freshness === FreshnessState.DISCONNECTED ? DeckFreshness.Disconnected : response.freshness === FreshnessState.NEVER_REFRESHED ? DeckFreshness.NeverRefreshed : DeckFreshness.Offline;
     return { items: response.pullRequests.map(mapPullRequest), nextCursor: response.page?.nextCursor ?? "", freshness, refreshedAt: timestamp(response.refreshedAt), truncated: response.truncated, resultLimit: response.resultLimit };
   }
-  async listMutationCandidates(viewId: string, pullRequest: DeckPullRequest, kind: DeckMutationKind, query: string, cursor: string): Promise<DeckCursorPage<DeckMutationCandidate>> {
+  async listMutationCandidates(viewId: string, pullRequest: DeckPullRequest, kind: DeckMutationKind, query: string, cursor: string): Promise<DeckMutationCandidatePage> {
     const response = await this.#call(() => invokeDeckProcedure(DeckProcedure.ListPullRequestMutationCandidates, ListPullRequestMutationCandidatesRequestSchema, ListPullRequestMutationCandidatesResponseSchema, create(ListPullRequestMutationCandidatesRequestSchema, { viewId: uuid(viewId), pullRequest: reference(pullRequest), mutationKind: mutationToProto[kind], query, page: create(PageRequestSchema, { cursor, pageSize: 25 }) })));
-    return { items: response.candidates.flatMap<DeckMutationCandidate>((candidate) => candidate.candidate.case === "user" ? [{ kind: "user", value: candidate.candidate.value.login }] : candidate.candidate.case === "team" ? [{ kind: "team", value: `${candidate.candidate.value.organization}/${candidate.candidate.value.slug}` }] : candidate.candidate.case === "label" ? [{ kind: "label", value: candidate.candidate.value }] : []), nextCursor: response.page?.nextCursor ?? "" };
+    return { items: response.candidates.flatMap<DeckMutationCandidate>((candidate) => candidate.candidate.case === "user" ? [{ kind: "user", value: candidate.candidate.value.login }] : candidate.candidate.case === "team" ? [{ kind: "team", value: `${candidate.candidate.value.organization}/${candidate.candidate.value.slug}` }] : candidate.candidate.case === "label" ? [{ kind: "label", value: candidate.candidate.value }] : []), nextCursor: response.page?.nextCursor ?? "", pullRequestRevision: revision(response.pullRequestRevision) };
   }
   async mutatePullRequest(viewId: string, pullRequest: DeckPullRequest, input: DeckMutationInput) {
     const { MutatePullRequestRequestSchema, MutatePullRequestResponseSchema } = await import("@delinoio/devhud-deck-connect");
@@ -546,7 +640,16 @@ export class NativeDeckGateway implements DeckGateway {
       throw error;
     }
   }
-  async refreshView(viewId: string, confirm: (warning: ReturnType<typeof manualRefreshWarning>) => Promise<boolean>): Promise<void> {
+  refreshView(viewId: string, confirm: (warning: ReturnType<typeof manualRefreshWarning>) => Promise<boolean>): Promise<void> {
+    const existing = this.#manualRefreshes.get(viewId);
+    if (existing !== undefined) return existing;
+    const refresh = this.#runManualRefresh(viewId, confirm).finally(() => {
+      if (this.#manualRefreshes.get(viewId) === refresh) this.#manualRefreshes.delete(viewId);
+    });
+    this.#manualRefreshes.set(viewId, refresh);
+    return refresh;
+  }
+  async #runManualRefresh(viewId: string, confirm: (warning: ReturnType<typeof manualRefreshWarning>) => Promise<boolean>): Promise<void> {
     let attempt = this.#manualAttempts.get(viewId);
     if (attempt === undefined) {
       const requestId = createUuidV7();
@@ -597,7 +700,7 @@ export class NativeDeckGateway implements DeckGateway {
     });
   }
 
-  startEligibleRefreshes(views: readonly DeckView[]): () => void {
+  startEligibleRefreshes(views: readonly DeckView[], onRefreshed: (viewId: string) => void): () => void {
     if (views.length === 0) return () => undefined;
     const controller = new DeckRefreshController({
       clientKind: this.#clientKind,
@@ -637,6 +740,7 @@ export class NativeDeckGateway implements DeckGateway {
               clientKind: request.clientKind,
             }),
           ));
+          onRefreshed(request.viewId);
           signal.throwIfAborted();
         },
       },

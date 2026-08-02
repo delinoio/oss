@@ -23,7 +23,9 @@ import {
   DeckProductError,
   type DeckConflict,
   type DeckGateway,
+  type DeckMutationCandidatePage,
   type DeckMutationInput,
+  type DeckMutationKind,
   type DeckOwner,
   type DeckPullRequest,
   type DeckView,
@@ -74,6 +76,12 @@ interface DeckActions {
   loadMorePullRequests(): Promise<void>;
   refresh(): Promise<boolean>;
   resolveManualRefresh(confirmed: boolean): void;
+  searchMutationCandidates(
+    pullRequest: DeckPullRequest,
+    kind: DeckMutationKind,
+    query: string,
+    cursor: string,
+  ): Promise<DeckMutationCandidatePage | null>;
   mutate(pullRequest: DeckPullRequest, input: DeckMutationInput): Promise<boolean>;
   openOnGitHub(pullRequest: DeckPullRequest): Promise<boolean>;
   retry(): Promise<void>;
@@ -155,16 +163,18 @@ export function DeckProvider({
       : [],
     [online, viewsQuery.data?.pages, viewsQuery.error],
   );
+  const selectedViewId = selectedView?.viewId ?? null;
 
   useEffect(() => {
-    if (selectedView !== null && !views.some((view) => view.viewId === selectedView.viewId)) {
-      setSelectedView(null);
-    }
+    if (selectedView === null) return;
+    const current = views.find((view) => view.viewId === selectedView.viewId);
+    if (current === undefined) setSelectedView(null);
+    else if (current !== selectedView) setSelectedView(current);
   }, [selectedView, views]);
 
   useEffect(() => {
-    if (selectedView !== null) gateway.recordViewOpened(selectedView.viewId);
-  }, [gateway, selectedView]);
+    if (selectedViewId !== null) gateway.recordViewOpened(selectedViewId);
+  }, [gateway, selectedViewId]);
 
   useEffect(() => {
     void gateway.synchronizeShortcuts(views).catch(() => undefined);
@@ -173,7 +183,14 @@ export function DeckProvider({
     () => () => { void gateway.synchronizeShortcuts([]).catch(() => undefined); },
     [gateway],
   );
-  useEffect(() => gateway.startEligibleRefreshes(views), [gateway, views]);
+  useEffect(
+    () => gateway.startEligibleRefreshes(views, (viewId) => {
+      void queryClient.invalidateQueries({
+        queryKey: [...viewServiceKey, "ListPullRequests", viewId],
+      });
+    }),
+    [gateway, queryClient, views],
+  );
 
   const pullRequestsQuery = useInfiniteQuery({
     queryKey: [...viewServiceKey, "ListPullRequests", selectedView?.viewId ?? ""],
@@ -283,6 +300,25 @@ export function DeckProvider({
     }),
     [gateway, invalidatePullRequests, run, selectedView],
   );
+  const searchMutationCandidates = useCallback(async (
+    pullRequest: DeckPullRequest,
+    kind: DeckMutationKind,
+    query: string,
+    cursor: string,
+  ) => {
+    let page: DeckMutationCandidatePage | null = null;
+    await run(async () => {
+      if (selectedView === null) return;
+      page = await gateway.listMutationCandidates(
+        selectedView.viewId,
+        pullRequest,
+        kind,
+        query,
+        cursor,
+      );
+    });
+    return page;
+  }, [gateway, run, selectedView]);
   const mutate = useCallback(
     (pullRequest: DeckPullRequest, input: DeckMutationInput) => run(async () => {
       if (selectedView === null) return;
@@ -393,6 +429,7 @@ export function DeckProvider({
       setManualRefreshResolver(null);
       setManualRefreshWarning(null);
     },
+    searchMutationCandidates,
     mutate,
     openOnGitHub,
     retry,
@@ -408,6 +445,7 @@ export function DeckProvider({
     reloadConflict,
     retry,
     saveView,
+    searchMutationCandidates,
     viewsQuery,
   ]);
 
