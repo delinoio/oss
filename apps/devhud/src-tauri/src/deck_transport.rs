@@ -11,23 +11,32 @@ use base64::{
     Engine as _,
     engine::general_purpose::{STANDARD, STANDARD_NO_PAD},
 };
+use prost::Message;
 use reqwest::{StatusCode, blocking::Client, redirect::Policy};
 use serde::{Deserialize, Serialize};
 #[cfg(any(target_os = "android", target_os = "ios"))]
 use tauri_plugin_devhud_auth::DevHudAuthBridgeExt;
 use url::Url;
+use uuid::Uuid;
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 use crate::{auth::AuthError, auth_native::NativeAuthState};
 
 const DECK_ORIGIN: &str = "https://deck.deli.dev";
 const FORWARDED_USER_TOKEN_HEADER: &str = "X-Devhud-Deck-Forwarded-Delibase-Token";
+const DEVICE_REVOCATION_GRANT_HEADER: &str = "x-devhud-deck-device-revocation-grant";
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+const DEVICE_VAULT_SERVICE: &str = "dev.deli.devhud.deck-device";
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+const DEVICE_VAULT_ACCOUNT: &str = "active-registration";
+const MAX_DEVICE_REVOCATION_GRANT_BYTES: usize = 256;
 const MAX_PROTO_REQUEST_BYTES: usize = 1024 * 1024;
 const MAX_PROTO_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
 const MAX_CONNECT_ERROR_BYTES: usize = 64 * 1024;
 const MAX_ERROR_DETAIL_BYTES: usize = 4 * 1024;
 const DECK_ERROR_DETAIL_TYPE: &str = "devhud.deck.v1.ErrorDetail";
 
-#[derive(Debug, Clone, Copy, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum DeckProcedure {
     ListOwners,
@@ -136,6 +145,210 @@ struct ConnectErrorDetail {
     value: String,
 }
 
+#[derive(Clone, PartialEq, Message)]
+struct RegisterDeviceResponseMetadata {
+    #[prost(message, optional, tag = "1")]
+    registration: Option<DeviceRegistrationMetadata>,
+}
+
+#[derive(Clone, PartialEq, Message)]
+struct DeviceRegistrationMetadata {
+    #[prost(message, optional, tag = "1")]
+    registration_id: Option<UuidV7Metadata>,
+    #[prost(message, optional, tag = "3")]
+    lease_expires_at: Option<TimestampMetadata>,
+}
+
+#[derive(Clone, PartialEq, Message)]
+struct UuidV7Metadata {
+    #[prost(string, tag = "1")]
+    value: String,
+}
+
+#[derive(Clone, Copy, PartialEq, Message)]
+struct TimestampMetadata {
+    #[prost(int64, tag = "1")]
+    seconds: i64,
+    #[prost(int32, tag = "2")]
+    nanos: i32,
+}
+
+#[derive(Deserialize, Serialize, Zeroize, ZeroizeOnDrop)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RetainedDeckDeviceRegistration {
+    registration_id: String,
+    lease_expires_at_unix_seconds: i64,
+    revocation_grant: String,
+    cleanup_pending: bool,
+}
+
+fn retained_device_registration(
+    body: &[u8],
+    revocation_grant: &str,
+) -> Result<RetainedDeckDeviceRegistration, DeckTransportFailure> {
+    if revocation_grant.is_empty()
+        || revocation_grant.len() > MAX_DEVICE_REVOCATION_GRANT_BYTES
+        || !revocation_grant
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+    {
+        return Err(DeckTransportFailure::ServiceUnavailable);
+    }
+    let response = RegisterDeviceResponseMetadata::decode(body)
+        .map_err(|_| DeckTransportFailure::ServiceUnavailable)?;
+    let registration = response
+        .registration
+        .ok_or(DeckTransportFailure::ServiceUnavailable)?;
+    let registration_id = registration
+        .registration_id
+        .map(|id| id.value)
+        .filter(|id| Uuid::parse_str(id).is_ok_and(|parsed| parsed.get_version_num() == 7))
+        .ok_or(DeckTransportFailure::ServiceUnavailable)?;
+    let lease_expires_at_unix_seconds = registration
+        .lease_expires_at
+        .filter(|lease| lease.seconds > 0 && (0..1_000_000_000).contains(&lease.nanos))
+        .map(|lease| lease.seconds)
+        .ok_or(DeckTransportFailure::ServiceUnavailable)?;
+    Ok(RetainedDeckDeviceRegistration {
+        registration_id,
+        lease_expires_at_unix_seconds,
+        revocation_grant: revocation_grant.to_owned(),
+        cleanup_pending: false,
+    })
+}
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+fn replace_retained_device_registration(
+    retained: &RetainedDeckDeviceRegistration,
+) -> Result<(), DeckTransportFailure> {
+    let encoded = Zeroizing::new(
+        serde_json::to_string(&retained).map_err(|_| DeckTransportFailure::ServiceUnavailable)?,
+    );
+    keyring::Entry::new(DEVICE_VAULT_SERVICE, DEVICE_VAULT_ACCOUNT)
+        .map_err(|_| DeckTransportFailure::ServiceUnavailable)?
+        .set_password(&encoded)
+        .map_err(|_| DeckTransportFailure::ServiceUnavailable)
+}
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+fn load_retained_device_registration()
+-> Result<Option<RetainedDeckDeviceRegistration>, DeckTransportFailure> {
+    let entry = keyring::Entry::new(DEVICE_VAULT_SERVICE, DEVICE_VAULT_ACCOUNT)
+        .map_err(|_| DeckTransportFailure::ServiceUnavailable)?;
+    let encoded = match entry.get_password() {
+        Ok(encoded) => Zeroizing::new(encoded),
+        Err(keyring::Error::NoEntry) => return Ok(None),
+        Err(_) => return Err(DeckTransportFailure::ServiceUnavailable),
+    };
+    serde_json::from_str(&encoded)
+        .map(Some)
+        .map_err(|_| DeckTransportFailure::ServiceUnavailable)
+}
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+fn clear_retained_device_registration() -> Result<(), DeckTransportFailure> {
+    let entry = keyring::Entry::new(DEVICE_VAULT_SERVICE, DEVICE_VAULT_ACCOUNT)
+        .map_err(|_| DeckTransportFailure::ServiceUnavailable)?;
+    match entry.delete_credential() {
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Err(_) => Err(DeckTransportFailure::ServiceUnavailable),
+    }
+}
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+fn retain_device_registration(
+    body: &[u8],
+    revocation_grant: &str,
+) -> Result<(), DeckTransportFailure> {
+    replace_retained_device_registration(&retained_device_registration(body, revocation_grant)?)
+}
+
+#[cfg(any(target_os = "android", target_os = "ios"))]
+fn retain_device_registration(
+    _body: &[u8],
+    _revocation_grant: &str,
+) -> Result<(), DeckTransportFailure> {
+    Err(DeckTransportFailure::ServiceUnavailable)
+}
+
+#[derive(Clone, PartialEq, Message)]
+struct UnregisterDeviceRequestMetadata {
+    #[prost(message, optional, tag = "1")]
+    registration_id: Option<UuidV7Metadata>,
+}
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+fn unregister_retained_device(
+    retained: &RetainedDeckDeviceRegistration,
+) -> Result<(), DeckTransportFailure> {
+    let body = UnregisterDeviceRequestMetadata {
+        registration_id: Some(UuidV7Metadata {
+            value: retained.registration_id.clone(),
+        }),
+    }
+    .encode_to_vec();
+    let response = client()?
+        .post(format!(
+            "{DECK_ORIGIN}{}",
+            DeckProcedure::UnregisterDevice.path()
+        ))
+        .header(DEVICE_REVOCATION_GRANT_HEADER, &retained.revocation_grant)
+        .header("Content-Type", "application/proto")
+        .header("Accept", "application/proto")
+        .header("Connect-Protocol-Version", "1")
+        .header("Cache-Control", "no-store")
+        .body(body)
+        .send()
+        .map_err(|_| DeckTransportFailure::ServiceUnavailable)?;
+    if response.status().is_success() {
+        Ok(())
+    } else {
+        Err(map_status(response.status()))
+    }
+}
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+fn cleanup_pending_device_registration() -> Result<(), DeckTransportFailure> {
+    let Some(retained) = load_retained_device_registration()? else {
+        return Ok(());
+    };
+    if !retained.cleanup_pending {
+        return Ok(());
+    }
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|_| DeckTransportFailure::ServiceUnavailable)?
+        .as_secs();
+    if u64::try_from(retained.lease_expires_at_unix_seconds).is_ok_and(|expiry| expiry <= now) {
+        return clear_retained_device_registration();
+    }
+    unregister_retained_device(&retained)?;
+    clear_retained_device_registration()
+}
+
+#[cfg(any(target_os = "android", target_os = "ios"))]
+fn cleanup_pending_device_registration() -> Result<(), DeckTransportFailure> {
+    Ok(())
+}
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+pub(crate) fn prepare_device_auth_clear() -> Result<(), DeckTransportFailure> {
+    let Some(mut retained) = load_retained_device_registration()? else {
+        return Ok(());
+    };
+    if unregister_retained_device(&retained).is_ok() {
+        return clear_retained_device_registration();
+    }
+    tracing::warn!("Deck device cleanup remains pending after authentication clears");
+    retained.cleanup_pending = true;
+    replace_retained_device_registration(&retained)
+}
+
+#[cfg(any(target_os = "android", target_os = "ios"))]
+pub(crate) fn prepare_device_auth_clear() -> Result<(), DeckTransportFailure> {
+    Ok(())
+}
+
 fn map_auth_failure(error: AuthError) -> DeckTransportFailure {
     match error {
         AuthError::TransportUnavailable => DeckTransportFailure::ServiceUnavailable,
@@ -201,7 +414,11 @@ pub(crate) fn connect(
     if body.len() > MAX_PROTO_REQUEST_BYTES {
         return Err(DeckTransportFailure::RequestTooLarge.into());
     }
+    if request.procedure == DeckProcedure::RegisterDevice {
+        cleanup_pending_device_registration().map_err(DeckConnectFailure::from)?;
+    }
     let endpoint = format!("{DECK_ORIGIN}{}", request.procedure.path());
+    let procedure = request.procedure;
     auth.with_deck_bearers(|feature, delibase, _subject| {
         client()?
             .post(endpoint)
@@ -220,6 +437,18 @@ pub(crate) fn connect(
     .map_err(DeckConnectFailure::from)
     .and_then(|response| {
         let status = response.status();
+        let revocation_grant = (procedure == DeckProcedure::RegisterDevice && status.is_success())
+            .then(|| {
+                response
+                    .headers()
+                    .get(DEVICE_REVOCATION_GRANT_HEADER)
+                    .ok_or(DeckTransportFailure::ServiceUnavailable)?
+                    .to_str()
+                    .map(|grant| Zeroizing::new(grant.to_owned()))
+                    .map_err(|_| DeckTransportFailure::ServiceUnavailable)
+            })
+            .transpose()
+            .map_err(DeckConnectFailure::from)?;
         let bytes = response
             .bytes()
             .map_err(|_| DeckConnectFailure::from(DeckTransportFailure::ServiceUnavailable))?;
@@ -228,6 +457,10 @@ pub(crate) fn connect(
         }
         if bytes.len() > MAX_PROTO_RESPONSE_BYTES {
             return Err(DeckTransportFailure::ResponseTooLarge.into());
+        }
+        if let Some(revocation_grant) = revocation_grant {
+            retain_device_registration(&bytes, &revocation_grant)
+                .map_err(DeckConnectFailure::from)?;
         }
         Ok(DeckConnectResponse {
             body_base64: STANDARD.encode(bytes),
@@ -399,5 +632,55 @@ mod tests {
                 None
             );
         }
+    }
+
+    #[test]
+    fn register_device_metadata_is_bounded_before_vaulting() {
+        let body = RegisterDeviceResponseMetadata {
+            registration: Some(DeviceRegistrationMetadata {
+                registration_id: Some(UuidV7Metadata {
+                    value: "018f0000-0000-7000-8000-000000000001".into(),
+                }),
+                lease_expires_at: Some(TimestampMetadata {
+                    seconds: 1_800_000_000,
+                    nanos: 0,
+                }),
+            }),
+        }
+        .encode_to_vec();
+
+        let retained =
+            retained_device_registration(&body, "abcdEFGHijklMNOPqrstUVWXyz0123456789_-abcd")
+                .unwrap();
+
+        assert_eq!(
+            retained.registration_id,
+            "018f0000-0000-7000-8000-000000000001"
+        );
+        assert_eq!(retained.lease_expires_at_unix_seconds, 1_800_000_000);
+    }
+
+    #[test]
+    fn register_device_metadata_rejects_missing_or_unbounded_values() {
+        assert!(matches!(
+            retained_device_registration(&[], "grant"),
+            Err(DeckTransportFailure::ServiceUnavailable)
+        ));
+        let body = RegisterDeviceResponseMetadata {
+            registration: Some(DeviceRegistrationMetadata {
+                registration_id: Some(UuidV7Metadata {
+                    value: "018f0000-0000-7000-8000-000000000001".into(),
+                }),
+                lease_expires_at: Some(TimestampMetadata {
+                    seconds: 1_800_000_000,
+                    nanos: 0,
+                }),
+            }),
+        }
+        .encode_to_vec();
+        assert!(matches!(
+            retained_device_registration(&body, &"a".repeat(MAX_DEVICE_REVOCATION_GRANT_BYTES + 1)),
+            Err(DeckTransportFailure::ServiceUnavailable)
+        ));
     }
 }

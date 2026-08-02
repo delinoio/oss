@@ -580,6 +580,8 @@ describe("Deck composable production workspace", () => {
     renderDeck(backend);
     await user.click(await screen.findByRole("button", { name: /Needs review/u }));
     await user.click(screen.getByRole("button", { name: "Edit view" }));
+    expect(screen.queryByRole("checkbox", { name: "Notify me when this view changes" }))
+      .not.toBeInTheDocument();
     const name = screen.getByLabelText("View name");
     await user.clear(name);
     await user.type(name, "My reapplied edit");

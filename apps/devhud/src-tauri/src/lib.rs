@@ -2993,9 +2993,13 @@ fn reset_dev_hud(
     let log_directory = local_log::managed_log_directory(APPLICATION_ID)
         .map_err(|_| reset_preflight_failure(PersistenceCommandError::ResetFailed))?;
     preflight_local_logs_for_reset(&log_directory).map_err(reset_preflight_failure)?;
+    let deck_device_reset_failed = deck_transport::prepare_device_auth_clear().is_err();
     let (auth_reset_failed, realqa_draft_reset_failed) = composer_core.reset_all_with(|| {
         browser_inbox.clear();
-        (auth_state.reset().is_err(), realqa_drafts.reset().is_err())
+        (
+            deck_device_reset_failed || auth_state.reset().is_err(),
+            realqa_drafts.reset().is_err(),
+        )
     });
     let native_host_reset_failed = native_host_state.reset().is_err();
     if auth_reset_failed || realqa_draft_reset_failed || native_host_reset_failed {
@@ -3535,6 +3539,8 @@ fn logout_authentication(
     let _lifecycle = drafts
         .lifecycle_guard()
         .map_err(|_| auth::AuthError::SecureVaultUnavailable)?;
+    deck_transport::prepare_device_auth_clear()
+        .map_err(|_| auth::AuthError::SecureVaultWriteFailed)?;
     composer_core.reset_all_with(|| {
         browser_inbox.clear();
         state.logout()

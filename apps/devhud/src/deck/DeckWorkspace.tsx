@@ -7,7 +7,6 @@ import {
   DeckGrouping,
   DeckMergeMethod,
   DeckMutationKind,
-  DeckNotificationTransition,
   DeckOwnerKind,
   DeckProductError,
   DeckSort,
@@ -33,16 +32,6 @@ function defaultViewInput(billing: DeckBillingSelection | undefined): DeckViewIn
     notificationPreference: { enabled: false, transitions: [] },
   };
 }
-
-const notificationTransitions = [
-  [DeckNotificationTransition.Assigned, "Assigned"],
-  [DeckNotificationTransition.ReviewRequested, "Review requested"],
-  [DeckNotificationTransition.ChecksFailed, "Checks failed"],
-  [DeckNotificationTransition.BecameMergeable, "Became mergeable"],
-  [DeckNotificationTransition.Conflicted, "Merge conflict"],
-  [DeckNotificationTransition.Merged, "Merged"],
-  [DeckNotificationTransition.Closed, "Closed"],
-] as const;
 
 function failureMessage(error: unknown): string {
   if (error instanceof DeckProductError) {
@@ -160,43 +149,6 @@ function ViewForm({
           </select>
         </label>
       </div>
-      <label className="check-field">
-        <input
-          checked={input.notificationPreference.enabled}
-          onChange={(event) => setInput({
-            ...input,
-            notificationPreference: {
-              ...input.notificationPreference,
-              enabled: event.target.checked,
-            },
-          })}
-          type="checkbox"
-        />
-        Notify me when this view changes
-      </label>
-      {input.notificationPreference.enabled ? (
-        <fieldset className="deck-transition-options">
-          <legend>Notification transitions</legend>
-          {notificationTransitions.map(([transition, label]) => (
-            <label className="check-field" key={transition}>
-              <input
-                checked={input.notificationPreference.transitions.includes(transition)}
-                onChange={(event) => setInput({
-                  ...input,
-                  notificationPreference: {
-                    enabled: true,
-                    transitions: event.target.checked
-                      ? [...input.notificationPreference.transitions, transition]
-                      : input.notificationPreference.transitions.filter((value) => value !== transition),
-                  },
-                })}
-                type="checkbox"
-              />
-              {label}
-            </label>
-          ))}
-        </fieldset>
-      ) : null}
       <div className="button-row">
         <button
           className="primary-button"

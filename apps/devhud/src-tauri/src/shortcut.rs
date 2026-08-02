@@ -380,7 +380,6 @@ impl<B: ShortcutBackend> UnifiedShortcutRegistry<B> {
         Ok(())
     }
 
-    #[cfg(feature = "desktop-cef")]
     fn remove_owner(&mut self, owner: &ShortcutOwner) -> Result<(), ShortcutFailure> {
         self.cleanup_pending()?;
         if let Some((_, binding)) = self.active.get(owner) {
@@ -417,6 +416,76 @@ impl<B: ShortcutBackend> UnifiedShortcutRegistry<B> {
         Ok(())
     }
 
+    fn synchronize_deck(
+        &mut self,
+        account_id: String,
+        definitions: Vec<DeckShortcutDefinition>,
+    ) -> Vec<DeckShortcutRegistration> {
+        debug_assert!(
+            definitions
+                .iter()
+                .all(|definition| definition.account_id == account_id)
+        );
+        let retained = definitions
+            .iter()
+            .map(|definition| ShortcutOwner::Deck {
+                account: account_id.clone(),
+                view: definition.view_id.clone(),
+            })
+            .collect::<BTreeSet<_>>();
+        let mut registrations = definitions
+            .iter()
+            .map(|definition| {
+                let owner = ShortcutOwner::Deck {
+                    account: account_id.clone(),
+                    view: definition.view_id.clone(),
+                };
+                DeckShortcutRegistration {
+                    view_id: definition.view_id.clone(),
+                    outcome: self.apply(owner, definition.shortcut.clone(), true),
+                }
+            })
+            .collect::<Vec<_>>();
+
+        let stale = self
+            .active
+            .keys()
+            .chain(self.inactive.iter())
+            .filter(|owner| {
+                matches!(owner, ShortcutOwner::Deck { account, .. } if account == &account_id)
+                    && !retained.contains(*owner)
+            })
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        for owner in stale {
+            if let Err(reason) = self.remove_owner(&owner) {
+                tracing::warn!(?reason, "failed to remove a stale Deck shortcut");
+                break;
+            }
+        }
+
+        // A new definition can initially conflict with a stale owner or exceed
+        // the limit until stale owners have been removed. Retry only those
+        // outcomes; registration failures retain the owner's working binding.
+        for (definition, registration) in definitions.iter().zip(&mut registrations) {
+            if matches!(
+                registration.outcome,
+                FeatureShortcutOutcome::InactiveConflict
+                    | FeatureShortcutOutcome::InactiveLimitExceeded
+            ) {
+                registration.outcome = self.apply(
+                    ShortcutOwner::Deck {
+                        account: account_id.clone(),
+                        view: definition.view_id.clone(),
+                    },
+                    definition.shortcut.clone(),
+                    true,
+                );
+            }
+        }
+        registrations
+    }
+
     fn within_limit(&self, owner: &ShortcutOwner) -> bool {
         match owner {
             ShortcutOwner::DevHud => true,
@@ -436,7 +505,6 @@ impl<B: ShortcutBackend> UnifiedShortcutRegistry<B> {
     }
 }
 
-#[cfg(feature = "desktop-cef")]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct DeckShortcutDefinition {
@@ -445,7 +513,6 @@ pub(crate) struct DeckShortcutDefinition {
     shortcut: StructuredShortcut,
 }
 
-#[cfg(feature = "desktop-cef")]
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct DeckShortcutRegistration {
@@ -761,28 +828,7 @@ impl ShortcutState {
                 })
                 .collect();
         };
-        if registry.logout_account(&account_id).is_err() {
-            return definitions
-                .into_iter()
-                .map(|definition| DeckShortcutRegistration {
-                    view_id: definition.view_id,
-                    outcome: FeatureShortcutOutcome::Unchanged(ShortcutFailure::RegistrationFailed),
-                })
-                .collect();
-        }
-        definitions
-            .into_iter()
-            .map(|definition| {
-                let owner = ShortcutOwner::Deck {
-                    account: account_id.clone(),
-                    view: definition.view_id.clone(),
-                };
-                DeckShortcutRegistration {
-                    view_id: definition.view_id,
-                    outcome: registry.apply(owner, definition.shortcut, true),
-                }
-            })
-            .collect()
+        registry.synchronize_deck(account_id, definitions)
     }
 
     pub(crate) fn deck_view_for_id(&self, id: u32) -> Option<&str> {
@@ -1113,6 +1159,78 @@ mod tests {
         assert!(
             matches!(registry.active.keys().next(), Some(ShortcutOwner::Deck { account, .. }) if account == "account-b")
         );
+    }
+
+    #[test]
+    fn deck_synchronization_preserves_working_bindings_on_reapply_failure() {
+        let mut registry = UnifiedShortcutRegistry::new(FakeBackend::default());
+        let owner = ShortcutOwner::Deck {
+            account: "account".into(),
+            view: "view".into(),
+        };
+        assert_eq!(
+            registry.apply(owner.clone(), shortcut(ShortcutKey::K), true),
+            FeatureShortcutOutcome::Active
+        );
+        registry
+            .backend
+            .register_results
+            .push_back(Err(BackendError::Failed));
+
+        let registrations = registry.synchronize_deck(
+            "account".into(),
+            vec![DeckShortcutDefinition {
+                account_id: "account".into(),
+                view_id: "view".into(),
+                shortcut: shortcut(ShortcutKey::P),
+            }],
+        );
+
+        assert!(matches!(
+            registrations.as_slice(),
+            [DeckShortcutRegistration {
+                outcome: FeatureShortcutOutcome::Unchanged(ShortcutFailure::RegistrationFailed),
+                ..
+            }]
+        ));
+        assert_eq!(registry.active[&owner].0, shortcut(ShortcutKey::K));
+        assert_eq!(registry.backend.registered, vec![ShortcutKey::K as u32]);
+    }
+
+    #[test]
+    fn deck_synchronization_removes_only_stale_owners_before_retrying_conflicts() {
+        let mut registry = UnifiedShortcutRegistry::new(FakeBackend::default());
+        let stale = ShortcutOwner::Deck {
+            account: "account".into(),
+            view: "stale".into(),
+        };
+        let current = ShortcutOwner::Deck {
+            account: "account".into(),
+            view: "current".into(),
+        };
+        assert_eq!(
+            registry.apply(stale.clone(), shortcut(ShortcutKey::K), true),
+            FeatureShortcutOutcome::Active
+        );
+
+        let registrations = registry.synchronize_deck(
+            "account".into(),
+            vec![DeckShortcutDefinition {
+                account_id: "account".into(),
+                view_id: "current".into(),
+                shortcut: shortcut(ShortcutKey::K),
+            }],
+        );
+
+        assert!(matches!(
+            registrations.as_slice(),
+            [DeckShortcutRegistration {
+                outcome: FeatureShortcutOutcome::Active,
+                ..
+            }]
+        ));
+        assert!(!registry.active.contains_key(&stale));
+        assert_eq!(registry.active[&current].0, shortcut(ShortcutKey::K));
     }
 
     #[test]
