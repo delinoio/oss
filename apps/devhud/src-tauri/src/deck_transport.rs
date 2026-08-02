@@ -138,6 +138,7 @@ struct ConnectErrorDetail {
 
 fn map_auth_failure(error: AuthError) -> DeckTransportFailure {
     match error {
+        AuthError::TransportUnavailable => DeckTransportFailure::ServiceUnavailable,
         AuthError::ReauthenticationRequired
         | AuthError::TokenExpired
         | AuthError::TokenInvalid
@@ -307,6 +308,14 @@ pub(crate) fn open_pull_request(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn retryable_auth_transport_failures_remain_retryable() {
+        assert_eq!(
+            map_auth_failure(AuthError::TransportUnavailable),
+            DeckTransportFailure::ServiceUnavailable
+        );
+    }
 
     #[test]
     fn procedure_table_is_exact_and_complete() {

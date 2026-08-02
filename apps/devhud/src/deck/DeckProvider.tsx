@@ -205,10 +205,10 @@ export function DeckProvider({
   }, [gateway, selectedViewId]);
 
   useEffect(() => {
-    void gateway.synchronizeShortcuts(views).catch(() => undefined);
+    void gateway.synchronizeShortcuts().catch(() => undefined);
   }, [gateway, views]);
   useEffect(
-    () => () => { void gateway.synchronizeShortcuts([]).catch(() => undefined); },
+    () => () => { void gateway.clearShortcuts().catch(() => undefined); },
     [gateway],
   );
   useEffect(

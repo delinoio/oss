@@ -446,6 +446,11 @@ interface NativeConnectFailure {
   readonly detailBodyBase64?: string;
 }
 
+interface DeckShortcutRegistration {
+  readonly viewId: string;
+  readonly outcome: unknown;
+}
+
 function parseNativeConnectFailure(error: unknown): NativeConnectFailure | null {
   if (typeof error === "object" && error !== null) {
     const candidate = error as { code?: unknown; detailBodyBase64?: unknown };
@@ -668,13 +673,9 @@ export class NativeDeckGateway implements DeckGateway {
   }
   openPullRequest(pullRequest: DeckPullRequest): Promise<void> { return openDeckPullRequest(pullRequest.repositoryOwner, pullRequest.repositoryName, pullRequest.number); }
   recordViewOpened(viewId: string): void { this.#lastOpenedAt.set(viewId, new Date()); }
-  async synchronizeShortcuts(views: readonly DeckView[]): Promise<void> {
+  async synchronizeShortcuts(): Promise<void> {
     if (!isTauri() || this.#clientKind !== RefreshClientKind.DESKTOP) return;
-    if (views.length === 0) {
-      this.#shortcutViewIds.clear();
-      await invoke("synchronize_deck_shortcuts", { accountId: this.#accountId, definitions: [] });
-      return;
-    }
+    if (this.#accountId.length === 0) return;
     if (this.#deviceId.length === 0) this.#deviceId = await invoke<string>("deck_device_id");
     const response = await this.#call(() => invokeDeckProcedure(
       DeckProcedure.GetDevice,
@@ -692,12 +693,23 @@ export class NativeDeckGateway implements DeckGateway {
         shortcut: mapped,
       }];
     });
-    this.#shortcutViewIds.clear();
-    definitions.forEach((definition) => this.#shortcutViewIds.add(definition.viewId));
-    await invoke("synchronize_deck_shortcuts", {
+    const registrations = await invoke<readonly DeckShortcutRegistration[]>("synchronize_deck_shortcuts", {
       accountId: this.#accountId,
       definitions,
     });
+    this.#shortcutViewIds.clear();
+    registrations.forEach((registration) => {
+      if (registration.outcome === "active") this.#shortcutViewIds.add(registration.viewId);
+    });
+  }
+
+  async clearShortcuts(): Promise<void> {
+    if (!isTauri() || this.#clientKind !== RefreshClientKind.DESKTOP) return;
+    await invoke("synchronize_deck_shortcuts", {
+      accountId: this.#accountId,
+      definitions: [],
+    });
+    this.#shortcutViewIds.clear();
   }
 
   startEligibleRefreshes(views: readonly DeckView[], onRefreshed: (viewId: string) => void): () => void {

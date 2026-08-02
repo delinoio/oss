@@ -119,6 +119,7 @@ function gateway(overrides: Partial<DeckGateway> = {}): DeckGateway {
     openPullRequest: vi.fn(async () => undefined),
     recordViewOpened: vi.fn(),
     synchronizeShortcuts: vi.fn(async () => undefined),
+    clearShortcuts: vi.fn(async () => undefined),
     startEligibleRefreshes: vi.fn(() => () => undefined),
     ...overrides,
   };
@@ -141,6 +142,25 @@ function renderDeck(value: DeckGateway) {
 }
 
 describe("Deck composable production workspace", () => {
+  it("synchronizes account shortcuts for an empty view page and clears them only on teardown", async () => {
+    const synchronizeShortcuts = vi.fn(async () => undefined);
+    const clearShortcuts = vi.fn(async () => undefined);
+    const backend = gateway({
+      listViews: vi.fn(async () => ({ items: [], nextCursor: "" })),
+      synchronizeShortcuts,
+      clearShortcuts,
+    });
+
+    const rendered = renderDeck(backend);
+
+    await waitFor(() => expect(backend.listViews).toHaveBeenCalledOnce());
+    await waitFor(() => expect(synchronizeShortcuts).toHaveBeenCalled());
+    expect(clearShortcuts).not.toHaveBeenCalled();
+
+    rendered.unmount();
+    expect(clearShortcuts).toHaveBeenCalledOnce();
+  });
+
   it("navigates explicit personal and organization ownership scopes", async () => {
     const backend = gateway({ listOwners: vi.fn(async () => [owner, organization]) });
     const user = userEvent.setup();

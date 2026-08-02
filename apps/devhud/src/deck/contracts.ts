@@ -259,7 +259,8 @@ export interface DeckGateway {
   ): Promise<void>;
   openPullRequest(pullRequest: DeckPullRequest): Promise<void>;
   recordViewOpened(viewId: string): void;
-  synchronizeShortcuts(views: readonly DeckView[]): Promise<void>;
+  synchronizeShortcuts(): Promise<void>;
+  clearShortcuts(): Promise<void>;
   startEligibleRefreshes(
     views: readonly DeckView[],
     onRefreshed: (viewId: string) => void,
@@ -305,6 +306,9 @@ export const unavailableDeckGateway: DeckGateway = {
   },
   recordViewOpened: () => undefined,
   synchronizeShortcuts: async () => {
+    throw new DeckProductError(DeckFailureCode.ServiceUnavailable);
+  },
+  clearShortcuts: async () => {
     throw new DeckProductError(DeckFailureCode.ServiceUnavailable);
   },
   startEligibleRefreshes: () => () => undefined,

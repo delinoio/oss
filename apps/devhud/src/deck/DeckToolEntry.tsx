@@ -68,8 +68,19 @@ function DeckToolEntry({
     return (
       <section aria-label="Deck authenticated tool" className="deck-tool-surface">
         <div className="deck-account-actions">
+          <button
+            className="text-button"
+            onClick={() => {
+              setAuthRequested(true);
+              void signIn(AuthFeature.Deck);
+            }}
+            type="button"
+          >
+            Authorize Deck
+          </button>
           <button className="text-button" onClick={() => void logout()} type="button">Log out</button>
         </div>
+        {failure && authRequested ? <p className="error" role="alert">{failure.guidance}</p> : null}
         <DeckAuthenticatedSurface gateway={effectiveGateway} />
       </section>
     );

@@ -18,6 +18,7 @@ vi.mock("./runtime/startup", () => ({
 }));
 
 import { App } from "./App";
+import { unavailableDeckGateway } from "./deck/contracts";
 import {
   defaultSettings,
   encodeSettings,
@@ -89,6 +90,30 @@ describe("DevHud application surfaces", () => {
     expect(await screen.findByRole("heading", { name: "Deck" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Sign in to Deck" })).toBeVisible();
     expect(screen.queryByText(/permission-filtered pull requests…/u)).not.toBeInTheDocument();
+  });
+
+  it("offers incremental Deck authorization to an already signed-in account", async () => {
+    const start = vi.fn(async () => ({
+      status: "signed-in" as const,
+      subject: "account-a",
+    }));
+    renderApp({
+      deckGateway: { ...unavailableDeckGateway },
+      sessionBridge: {
+        restore: vi.fn(async () => ({
+          status: "signed-in" as const,
+          subject: "account-a",
+        })),
+        start,
+        logout: vi.fn(async () => ({ status: "signed-out" as const })),
+      },
+    });
+
+    await userEvent.setup().click(
+      await screen.findByRole("button", { name: "Authorize Deck" }),
+    );
+
+    expect(start).toHaveBeenCalledWith("deck");
   });
 
   it("closes settings with Escape and restores focus", async () => {
