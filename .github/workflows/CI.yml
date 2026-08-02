@@ -1720,6 +1720,7 @@ jobs:
               - apps/devhud/realqa-extension/**
               - apps/devhud/scripts/build-realqa-extension.mjs
               - apps/devhud/scripts/build-realqa-fixtures.mjs
+              - apps/devhud/scripts/process.mjs
               - apps/devhud/src-tauri/src/realqa_native_host.rs
             delidev:
               - .github/workflows/CI.yml
@@ -1744,6 +1745,7 @@ jobs:
               - apps/devhud/realqa-extension/**
               - apps/devhud/scripts/build-realqa-extension.mjs
               - apps/devhud/scripts/build-realqa-fixtures.mjs
+              - apps/devhud/scripts/process.mjs
               - apps/devhud/src-tauri/**
               - protos/delibase/gen/go/**
               - protos/devhud-realqa/gen/go/**

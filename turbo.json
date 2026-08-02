@@ -63,7 +63,10 @@
     },
     "test": {},
     "ci:realqa:proto": {
-      "cache": false
+      "cache": false,
+      "env": [
+        "DEVHUD_REALQA_PROTO_BASELINE"
+      ]
     },
     "ci:realqa:frontend": {
       "cache": false
