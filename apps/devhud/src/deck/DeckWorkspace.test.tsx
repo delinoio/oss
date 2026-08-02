@@ -274,6 +274,37 @@ describe("Deck composable production workspace", () => {
     expect(backend.refreshView).toHaveBeenCalledTimes(1);
   });
 
+  it("cancels a pending billed refresh before a shortcut selects another view", async () => {
+    tauri.enabled = true;
+    const shortcutView = {
+      ...view,
+      viewId: "018f0000-0000-7000-8000-000000000012",
+      name: "Shortcut view",
+    };
+    let accepted: boolean | undefined;
+    const backend = gateway({
+      getView: vi.fn(async () => shortcutView),
+      listViews: vi.fn(async () => ({ items: [view, shortcutView], nextCursor: "" })),
+      refreshView: vi.fn(async (_viewId, confirm) => {
+        accepted = await confirm(manualRefreshWarning(50n));
+      }),
+    });
+    const user = userEvent.setup();
+    renderDeck(backend);
+
+    await user.click(await screen.findByRole("button", { name: /Needs review/u }));
+    await user.click(screen.getByRole("button", { name: "Refresh" }));
+    await screen.findByRole("dialog", { name: "Confirm billed refresh" });
+    await waitFor(() => expect(tauri.listeners.has("devhud://deck-shortcut")).toBe(true));
+
+    tauri.listeners.get("devhud://deck-shortcut")?.({ payload: shortcutView.viewId });
+
+    await waitFor(() => expect(accepted).toBe(false));
+    expect(screen.queryByRole("dialog", { name: "Confirm billed refresh" }))
+      .not.toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Shortcut view" })).toBeVisible();
+  });
+
   it("disables merge confirmation while the provider mutation is pending", async () => {
     let completeMutation: ((result: {
       pullRequest: DeckPullRequest;

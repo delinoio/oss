@@ -328,6 +328,11 @@ export function DeckProvider({
     }),
     [gateway, invalidatePullRequests, run, selectedView],
   );
+  const resolveManualRefresh = useCallback((confirmed: boolean) => {
+    manualRefreshResolver?.(confirmed);
+    setManualRefreshResolver(null);
+    setManualRefreshWarning(null);
+  }, [manualRefreshResolver]);
   const searchMutationCandidates = useCallback(async (
     pullRequest: DeckPullRequest,
     kind: DeckMutationKind,
@@ -403,11 +408,12 @@ export function DeckProvider({
       if (owner === undefined) {
         throw new DeckProductError(DeckFailureCode.PermissionDenied);
       }
+      resolveManualRefresh(false);
       setSelectedOwner(owner);
       setSelectedView({ ...view, owner });
       setConflict(null);
     }),
-    [gateway, owners, queryClient, run],
+    [gateway, owners, queryClient, resolveManualRefresh, run],
   );
   useEffect(() => {
     if (!isTauri()) return;
@@ -476,12 +482,14 @@ export function DeckProvider({
 
   const actions = useMemo<DeckActions>(() => ({
     selectOwner: (owner) => {
+      resolveManualRefresh(false);
       setOperationError(null);
       setSelectedOwner(owner);
       setSelectedView(null);
       setConflict(null);
     },
     selectView: (view) => {
+      resolveManualRefresh(false);
       setOperationError(null);
       setSelectedView(view);
       setConflict(null);
@@ -495,11 +503,7 @@ export function DeckProvider({
     loadMoreViews: async () => { await viewsQuery.fetchNextPage(); },
     loadMorePullRequests: async () => { await pullRequestsQuery.fetchNextPage(); },
     refresh,
-    resolveManualRefresh: (confirmed) => {
-      manualRefreshResolver?.(confirmed);
-      setManualRefreshResolver(null);
-      setManualRefreshWarning(null);
-    },
+    resolveManualRefresh,
     searchMutationCandidates,
     mutate,
     openOnGitHub,
@@ -512,7 +516,7 @@ export function DeckProvider({
     pullRequestsQuery,
     reapplyConflict,
     refresh,
-    manualRefreshResolver,
+    resolveManualRefresh,
     reloadConflict,
     retry,
     saveView,

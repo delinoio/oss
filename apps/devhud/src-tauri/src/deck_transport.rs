@@ -5,6 +5,8 @@
 
 #![cfg_attr(test, allow(dead_code))]
 
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+use std::sync::{Mutex, MutexGuard};
 use std::time::Duration;
 
 use base64::{
@@ -35,6 +37,8 @@ const MAX_PROTO_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
 const MAX_CONNECT_ERROR_BYTES: usize = 64 * 1024;
 const MAX_ERROR_DETAIL_BYTES: usize = 4 * 1024;
 const DECK_ERROR_DETAIL_TYPE: &str = "devhud.deck.v1.ErrorDetail";
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+static DEVICE_REGISTRATION_LIFECYCLE: Mutex<()> = Mutex::new(());
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -332,21 +336,40 @@ fn cleanup_pending_device_registration() -> Result<(), DeckTransportFailure> {
 }
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
-pub(crate) fn prepare_device_auth_clear() -> Result<(), DeckTransportFailure> {
-    let Some(mut retained) = load_retained_device_registration()? else {
-        return Ok(());
-    };
-    if unregister_retained_device(&retained).is_ok() {
-        return clear_retained_device_registration();
+pub(crate) struct DeviceAuthClearGuard {
+    _registration: MutexGuard<'static, ()>,
+}
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+fn lock_device_registration_lifecycle() -> Result<MutexGuard<'static, ()>, DeckTransportFailure> {
+    DEVICE_REGISTRATION_LIFECYCLE
+        .lock()
+        .map_err(|_| DeckTransportFailure::ServiceUnavailable)
+}
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+pub(crate) fn prepare_device_auth_clear() -> Result<DeviceAuthClearGuard, DeckTransportFailure> {
+    let registration = lock_device_registration_lifecycle()?;
+    if let Some(mut retained) = load_retained_device_registration()? {
+        if unregister_retained_device(&retained).is_ok() {
+            clear_retained_device_registration()?;
+        } else {
+            tracing::warn!("Deck device cleanup remains pending after authentication clears");
+            retained.cleanup_pending = true;
+            replace_retained_device_registration(&retained)?;
+        }
     }
-    tracing::warn!("Deck device cleanup remains pending after authentication clears");
-    retained.cleanup_pending = true;
-    replace_retained_device_registration(&retained)
+    Ok(DeviceAuthClearGuard {
+        _registration: registration,
+    })
 }
 
 #[cfg(any(target_os = "android", target_os = "ios"))]
-pub(crate) fn prepare_device_auth_clear() -> Result<(), DeckTransportFailure> {
-    Ok(())
+pub(crate) struct DeviceAuthClearGuard;
+
+#[cfg(any(target_os = "android", target_os = "ios"))]
+pub(crate) fn prepare_device_auth_clear() -> Result<DeviceAuthClearGuard, DeckTransportFailure> {
+    Ok(DeviceAuthClearGuard)
 }
 
 fn map_auth_failure(error: AuthError) -> DeckTransportFailure {
@@ -394,7 +417,10 @@ fn connect_failure(status: StatusCode, body: &[u8]) -> DeckConnectFailure {
                 if detail.type_name != DECK_ERROR_DETAIL_TYPE {
                     return None;
                 }
-                let bytes = STANDARD_NO_PAD.decode(detail.value).ok()?;
+                let bytes = STANDARD
+                    .decode(&detail.value)
+                    .or_else(|_| STANDARD_NO_PAD.decode(&detail.value))
+                    .ok()?;
                 (bytes.len() <= MAX_ERROR_DETAIL_BYTES).then(|| STANDARD.encode(bytes))
             })
         });
@@ -414,6 +440,11 @@ pub(crate) fn connect(
     if body.len() > MAX_PROTO_REQUEST_BYTES {
         return Err(DeckTransportFailure::RequestTooLarge.into());
     }
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    let _device_registration = (request.procedure == DeckProcedure::RegisterDevice)
+        .then(lock_device_registration_lifecycle)
+        .transpose()
+        .map_err(DeckConnectFailure::from)?;
     if request.procedure == DeckProcedure::RegisterDevice {
         cleanup_pending_device_registration().map_err(DeckConnectFailure::from)?;
     }
@@ -606,18 +637,17 @@ mod tests {
 
     #[test]
     fn connect_failure_preserves_only_the_typed_bounded_deck_detail() {
-        let detail = STANDARD_NO_PAD.encode([0x08, 0x15, 0x2a, 0x02, 0x08, 0x1e]);
-        let body = format!(
-            r#"{{"code":"resource_exhausted","details":[{{"type":"{DECK_ERROR_DETAIL_TYPE}","value":"{detail}"}}]}}"#,
-        );
+        let bytes = [0x08, 0x15];
+        for detail in [STANDARD.encode(bytes), STANDARD_NO_PAD.encode(bytes)] {
+            let body = format!(
+                r#"{{"code":"resource_exhausted","details":[{{"type":"{DECK_ERROR_DETAIL_TYPE}","value":"{detail}"}}]}}"#,
+            );
 
-        let failure = connect_failure(StatusCode::TOO_MANY_REQUESTS, body.as_bytes());
+            let failure = connect_failure(StatusCode::TOO_MANY_REQUESTS, body.as_bytes());
 
-        assert_eq!(failure.code, DeckTransportFailure::RateLimited);
-        assert_eq!(
-            failure.detail_body_base64,
-            Some(STANDARD.encode([0x08, 0x15, 0x2a, 0x02, 0x08, 0x1e]))
-        );
+            assert_eq!(failure.code, DeckTransportFailure::RateLimited);
+            assert_eq!(failure.detail_body_base64, Some(STANDARD.encode(bytes)));
+        }
     }
 
     #[test]
