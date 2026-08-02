@@ -71,7 +71,11 @@ impl AuthFeature {
     const fn delibase_scopes(self) -> &'static [&'static str] {
         match self {
             Self::Deck => &["delibase:deck:forward"],
-            Self::RealQa => &["delibase:realqa:forward"],
+            Self::RealQa => &[
+                "delibase:realqa:forward",
+                "delibase:usage:execute",
+                "delibase:billing:write",
+            ],
         }
     }
 }
@@ -2165,7 +2169,11 @@ mod tests {
             .collect();
         assert_eq!(
             realqa_query.get("scope"),
-            Some(&"delibase:realqa:forward offline_access openid profile realqa:access".to_owned())
+            Some(
+                &"delibase:billing:write delibase:realqa:forward delibase:usage:execute \
+                  offline_access openid profile realqa:access"
+                    .to_owned()
+            )
         );
         assert_eq!(
             realqa_request
@@ -3346,7 +3354,11 @@ mod tests {
                 (REALQA_AUDIENCE.to_owned(), vec!["realqa:access".to_owned()]),
                 (
                     DELIBASE_AUDIENCE.to_owned(),
-                    vec!["delibase:realqa:forward".to_owned()]
+                    vec![
+                        "delibase:realqa:forward".to_owned(),
+                        "delibase:usage:execute".to_owned(),
+                        "delibase:billing:write".to_owned(),
+                    ]
                 ),
             ]
         );

@@ -77,6 +77,11 @@ use std::borrow::Cow;
     test
 ))]
 use std::collections::VecDeque;
+#[cfg(all(
+    any(feature = "desktop-cef", feature = "mobile-system-webview", test),
+    target_os = "linux"
+))]
+use std::io::Read;
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 use std::sync::Mutex;
 #[cfg(feature = "desktop-cef")]
@@ -212,6 +217,23 @@ const CEF_PRIVATE_STORAGE_SWITCHES: [&str; 6] = [
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 const PERMISSIONS_POLICY: &str =
     "camera=(), display-capture=(), geolocation=(), microphone=(), usb=()";
+#[cfg(all(
+    any(feature = "desktop-cef", feature = "mobile-system-webview", test),
+    any(target_os = "linux", test)
+))]
+#[cfg_attr(test, allow(dead_code))]
+const MAX_OS_RELEASE_BYTES: u64 = 16 * 1024;
+
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
+#[allow(dead_code)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum ToolOperatingSystem {
+    Macos,
+    Ubuntu,
+    Windows,
+}
+
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -219,6 +241,7 @@ struct RuntimeInfo {
     application_id: &'static str,
     bundled_origin: String,
     operating_system: &'static str,
+    tool_operating_system: Option<ToolOperatingSystem>,
     runtime: &'static str,
     sandbox_enabled: bool,
     surface: RuntimeSurface,
@@ -1662,6 +1685,71 @@ const fn operating_system() -> &'static str {
     }
 }
 
+#[cfg(all(
+    any(feature = "desktop-cef", feature = "mobile-system-webview", test),
+    any(target_os = "linux", test)
+))]
+fn os_release_field<'a>(os_release: &'a str, key: &str) -> Option<&'a str> {
+    let mut found = None;
+    for line in os_release.lines() {
+        let Some((candidate, raw_value)) = line.split_once('=') else {
+            continue;
+        };
+        if candidate != key || found.is_some() {
+            if candidate == key {
+                return None;
+            }
+            continue;
+        }
+        let value = if raw_value.starts_with('"') || raw_value.ends_with('"') {
+            raw_value.strip_prefix('"')?.strip_suffix('"')?
+        } else {
+            raw_value
+        };
+        found = Some(value);
+    }
+    found
+}
+
+#[cfg(all(
+    any(feature = "desktop-cef", feature = "mobile-system-webview", test),
+    any(target_os = "linux", test)
+))]
+fn linux_tool_operating_system(os_release: &str) -> Option<ToolOperatingSystem> {
+    (os_release_field(os_release, "ID") == Some("ubuntu")
+        && os_release_field(os_release, "VERSION_ID") == Some("24.04"))
+    .then_some(ToolOperatingSystem::Ubuntu)
+}
+
+#[cfg(all(
+    any(feature = "desktop-cef", feature = "mobile-system-webview", test),
+    target_os = "linux"
+))]
+#[cfg_attr(test, allow(dead_code))]
+fn current_linux_tool_operating_system() -> Option<ToolOperatingSystem> {
+    let file = File::open("/etc/os-release").ok()?;
+    let mut bytes = Vec::new();
+    file.take(MAX_OS_RELEASE_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .ok()?;
+    if bytes.len() as u64 > MAX_OS_RELEASE_BYTES {
+        return None;
+    }
+    linux_tool_operating_system(std::str::from_utf8(&bytes).ok()?)
+}
+
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
+fn tool_operating_system() -> Option<ToolOperatingSystem> {
+    #[cfg(target_os = "macos")]
+    return Some(ToolOperatingSystem::Macos);
+    #[cfg(target_os = "windows")]
+    return Some(ToolOperatingSystem::Windows);
+    #[cfg(target_os = "linux")]
+    return current_linux_tool_operating_system();
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+    return None;
+}
+
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 const fn update_policy() -> &'static str {
     if cfg!(any(target_os = "android", target_os = "ios")) {
@@ -1758,6 +1846,7 @@ fn get_runtime_info(
         application_id: APPLICATION_ID,
         bundled_origin: bundled_origin(&url),
         operating_system: operating_system(),
+        tool_operating_system: tool_operating_system(),
         runtime: runtime_name(),
         sandbox_enabled: cfg!(not(any(target_os = "android", target_os = "ios"))),
         surface,
@@ -4402,6 +4491,7 @@ mod tests {
             application_id: APPLICATION_ID,
             bundled_origin: "http://tauri.localhost".to_string(),
             operating_system: "linux",
+            tool_operating_system: Some(ToolOperatingSystem::Ubuntu),
             runtime: "cef",
             sandbox_enabled: true,
             surface: RuntimeSurface::Hud,
@@ -4437,8 +4527,28 @@ mod tests {
             "mobile"
         );
         assert_eq!(value["operatingSystem"], "linux");
+        assert_eq!(value["toolOperatingSystem"], "ubuntu");
         assert_eq!(value["updatePolicy"], "Desktop updater unavailable");
         assert_eq!(update_policy(), "Desktop updater unavailable");
+    }
+
+    #[test]
+    fn realqa_linux_target_requires_exact_ubuntu_release() {
+        assert_eq!(
+            linux_tool_operating_system(
+                "NAME=Ubuntu\nID=ubuntu\nVERSION_ID=\"24.04\"\nID_LIKE=debian\n",
+            ),
+            Some(ToolOperatingSystem::Ubuntu)
+        );
+        for unsupported in [
+            "ID=fedora\nVERSION_ID=40\n",
+            "ID=debian\nVERSION_ID=12\nID_LIKE=ubuntu\n",
+            "ID=ubuntu\nVERSION_ID=22.04\n",
+            "ID=ubuntu\nID=ubuntu\nVERSION_ID=24.04\n",
+            "ID=ubuntu\nVERSION_ID=24.04\nVERSION_ID=24.04\n",
+        ] {
+            assert_eq!(linux_tool_operating_system(unsupported), None);
+        }
     }
 
     #[test]

@@ -27,6 +27,7 @@ import {
   filterTools,
   productionTools,
   ToolCapability,
+  type ToolOperatingSystemValue,
   ToolPlatform,
 } from "./tools/registry";
 import { BrowserCaptureComposer } from "./realqa/BrowserCaptureComposer";
@@ -362,11 +363,14 @@ const DESKTOP_TOOL_CAPABILITIES: ReadonlySet<ToolCapability> = new Set([
 
 function ProductionToolSurface({
   onOpenSettings,
+  operatingSystem,
 }: {
   readonly onOpenSettings: () => void;
+  readonly operatingSystem: ToolOperatingSystemValue | null;
 }) {
   const availableTools = filterTools(productionTools, {
     platform: ToolPlatform.Desktop,
+    operatingSystem,
     grantedCapabilities: DESKTOP_TOOL_CAPABILITIES,
   });
   if (availableTools.length === 0) {
@@ -474,9 +478,13 @@ function DesktopHud({
         ) : null}
         {runtime.status === "failed" ? (
           <RuntimeFailure message={runtime.message} onRetry={retryRuntime} />
-        ) : (
-          <ProductionToolSurface onOpenSettings={showSettings} />
-        )}
+        ) : null}
+        {runtime.status === "ready" ? (
+          <ProductionToolSurface
+            onOpenSettings={showSettings}
+            operatingSystem={runtime.runtimeInfo.toolOperatingSystem}
+          />
+        ) : null}
       </section>
     </main>
   );

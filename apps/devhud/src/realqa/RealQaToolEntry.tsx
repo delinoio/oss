@@ -60,6 +60,18 @@ export function RealQaToolEntry({
           >
             {status === "opening" ? "Opening RealQA…" : "Open RealQA"}
           </button>
+          {session.status === "prior-session-offline" ? (
+            <button
+              className="secondary-button"
+              onClick={() => {
+                setAuthRequested(true);
+                void signIn(AuthFeature.RealQa);
+              }}
+              type="button"
+            >
+              Reauthenticate RealQA
+            </button>
+          ) : null}
           <button
             className="secondary-button"
             onClick={() => {

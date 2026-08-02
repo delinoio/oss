@@ -52,6 +52,8 @@ describe("RealQA authenticated entry", () => {
     expect(await screen.findByText(/limited to capture, editing, and encrypted drafts/u)).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Open RealQA" }));
     expect(open).toHaveBeenCalledOnce();
+    await user.click(screen.getByRole("button", { name: "Reauthenticate RealQA" }));
+    expect(session.start).toHaveBeenCalledWith(AuthFeature.RealQa);
     await user.click(screen.getByRole("button", { name: "Log out" }));
     expect(session.logout).toHaveBeenCalledOnce();
   });

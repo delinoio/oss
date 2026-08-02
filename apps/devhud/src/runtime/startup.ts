@@ -4,11 +4,13 @@ import type {
   AutostartOutcome,
   ShortcutFailure,
 } from "./desktop";
+import type { ToolOperatingSystemValue } from "../tools/registry";
 
 export interface RuntimeInfo {
   applicationId: "dev.deli.devhud";
   bundledOrigin: string;
   operatingSystem: "android" | "ios" | "linux" | "macos" | "windows";
+  toolOperatingSystem: ToolOperatingSystemValue | null;
   runtime: "cef" | "system-webview";
   sandboxEnabled: boolean;
   surface?: "hud" | "settings" | "realqa-composer" | "mobile";

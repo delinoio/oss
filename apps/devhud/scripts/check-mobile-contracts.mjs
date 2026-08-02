@@ -349,9 +349,12 @@ requireCondition(
     productionRegistry.includes(
       "supportedPlatforms: new Set([ToolPlatform.Desktop])",
     ) &&
+    /supportedOperatingSystems:\s*new Set\(\[\s*ToolOperatingSystem\.Macos,\s*ToolOperatingSystem\.Ubuntu,\s*ToolOperatingSystem\.Windows,\s*\]\)/u.test(
+      productionRegistry,
+    ) &&
     !productionRegistry.includes("ToolPlatform.Ios") &&
     !productionRegistry.includes("ToolPlatform.Android"),
-  "production RealQA registration must remain desktop-only",
+  "production RealQA registration must remain limited to macOS, Ubuntu, and Windows desktop targets",
 );
 
 const nativeFiles = [
