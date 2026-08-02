@@ -279,6 +279,45 @@ describe("native Deck gateway", () => {
     expect(refreshRequests[1]).toEqual(refreshRequests[0]);
   });
 
+  it("starts a new preflight after a pre-attempt preflight rejection", async () => {
+    const preflightTokens = ["expired-token", "fresh-token"];
+    const refreshRequests: unknown[] = [];
+    const expired = create(ErrorDetailSchema, {
+      reason: ErrorReason.BILLING_PREFLIGHT_EXPIRED,
+    });
+    vi.mocked(invokeDeckProcedure).mockImplementation(async (procedure, _input, _output, request) => {
+      if (procedure === DeckProcedure.GetRefreshPreflight) {
+        return {
+          providerRefreshPrice: { value: 50n },
+          preflightToken: preflightTokens.shift(),
+        } as never;
+      }
+      if (procedure === DeckProcedure.RefreshView) {
+        refreshRequests.push(request);
+        if (refreshRequests.length === 1) {
+          throw {
+            code: "billing-unavailable",
+            detailBodyBase64: base64(toBinary(ErrorDetailSchema, expired)),
+          };
+        }
+        return {} as never;
+      }
+      throw new Error(`Unexpected procedure: ${procedure}`);
+    });
+    const gateway = new NativeDeckGateway();
+    const confirm = vi.fn(async () => true);
+
+    await expect(gateway.refreshView("view", confirm)).rejects.toMatchObject({
+      code: DeckFailureCode.BillingPreflightRejected,
+    });
+    await gateway.refreshView("view", confirm);
+
+    expect(confirm).toHaveBeenCalledTimes(2);
+    expect(refreshRequests).toHaveLength(2);
+    expect(refreshRequests[1]).not.toEqual(refreshRequests[0]);
+    expect(refreshRequests[1]).toMatchObject({ billingPreflightToken: "fresh-token" });
+  });
+
   it("bypasses the view-open cache for post-mutation recovery refreshes", async () => {
     const requests: unknown[] = [];
     vi.mocked(invokeDeckProcedure).mockImplementation(async (procedure, _input, _output, request) => {

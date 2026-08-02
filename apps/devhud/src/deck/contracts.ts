@@ -69,6 +69,7 @@ export enum DeckFailureCode {
   RateLimited = "rate-limited",
   ProviderRateLimited = "provider-rate-limited",
   ProviderUnavailable = "provider-unavailable",
+  BillingPreflightRejected = "billing-preflight-rejected",
   BillingUnavailable = "billing-unavailable",
   BrowserUnavailable = "browser-unavailable",
   BranchProtectionBlocked = "branch-protection-blocked",
@@ -101,6 +102,8 @@ export const deckFailureGuidance: Readonly<Record<DeckFailureCode, string>> = {
   [DeckFailureCode.RateLimited]: "Deck is rate limited. Wait before trying again.",
   [DeckFailureCode.ProviderRateLimited]: "GitHub is rate limited. Try again after the displayed retry time.",
   [DeckFailureCode.ProviderUnavailable]: "GitHub did not complete the request. Try again later.",
+  [DeckFailureCode.BillingPreflightRejected]:
+    "The refresh confirmation expired or no longer matches this request. Start a new refresh.",
   [DeckFailureCode.BillingUnavailable]: "Refresh billing is unavailable, so GitHub was not contacted.",
   [DeckFailureCode.BrowserUnavailable]: "DevHud could not open GitHub in the system browser. Try again.",
   [DeckFailureCode.BranchProtectionBlocked]: "Repository rules currently block this action.",

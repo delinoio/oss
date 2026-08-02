@@ -3710,6 +3710,24 @@ fn start_authentication(
     feature = "desktop-cef",
     not(any(target_os = "android", target_os = "ios"))
 ))]
+fn logout_after_cleanup_preparation<T, G, E>(
+    cleanup: Result<G, E>,
+    logout: impl FnOnce() -> Result<T, auth::AuthError>,
+) -> Result<T, auth::AuthError> {
+    let cleanup_failed = cleanup.is_err();
+    let result = logout();
+    drop(cleanup);
+    match result {
+        Err(error) => Err(error),
+        Ok(_) if cleanup_failed => Err(auth::AuthError::SecureVaultWriteFailed),
+        Ok(snapshot) => Ok(snapshot),
+    }
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
 #[tauri::command]
 fn logout_authentication(
     drafts: State<'_, realqa_drafts::RealQaDraftState>,
@@ -3720,11 +3738,11 @@ fn logout_authentication(
     let _lifecycle = drafts
         .lifecycle_guard()
         .map_err(|_| auth::AuthError::SecureVaultUnavailable)?;
-    let _deck_device_auth_clear = deck_transport::prepare_device_auth_clear()
-        .map_err(|_| auth::AuthError::SecureVaultWriteFailed)?;
-    composer_core.reset_all_with(|| {
-        browser_inbox.clear();
-        state.logout()
+    logout_after_cleanup_preparation(deck_transport::prepare_device_auth_clear(), || {
+        composer_core.reset_all_with(|| {
+            browser_inbox.clear();
+            state.logout()
+        })
     })
 }
 
@@ -4454,6 +4472,23 @@ mod android_entry {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(all(
+        feature = "desktop-cef",
+        not(any(target_os = "android", target_os = "ios"))
+    ))]
+    #[test]
+    fn logout_still_clears_authentication_after_cleanup_preparation_fails() {
+        let mut logout_called = false;
+
+        let result = logout_after_cleanup_preparation(Result::<(), ()>::Err(()), || {
+            logout_called = true;
+            Ok(auth::SessionSnapshot::SignedOut)
+        });
+
+        assert!(logout_called);
+        assert_eq!(result, Err(auth::AuthError::SecureVaultWriteFailed));
+    }
 
     fn restricted_browser_capture() -> realqa_native_host::NativeHostRequest {
         serde_json::from_value(serde_json::json!({

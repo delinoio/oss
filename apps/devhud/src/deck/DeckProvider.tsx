@@ -345,6 +345,9 @@ export function DeckProvider({
     setManualRefreshResolver(null);
     setManualRefreshWarning(null);
   }, [manualRefreshResolver]);
+  useEffect(() => {
+    if (!online) resolveManualRefresh(false);
+  }, [online, resolveManualRefresh]);
   const searchMutationCandidates = useCallback(async (
     pullRequest: DeckPullRequest,
     kind: DeckMutationKind,

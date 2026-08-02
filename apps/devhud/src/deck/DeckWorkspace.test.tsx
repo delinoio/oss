@@ -334,6 +334,29 @@ describe("Deck composable production workspace", () => {
     expect(await screen.findByRole("heading", { name: "Shortcut view" })).toBeVisible();
   });
 
+  it("cancels a pending billed refresh when Deck goes offline", async () => {
+    let accepted: boolean | undefined;
+    const backend = gateway({
+      refreshView: vi.fn(async (_viewId, confirm) => {
+        accepted = await confirm(manualRefreshWarning(50n));
+      }),
+    });
+    const user = userEvent.setup();
+    renderDeck(backend);
+
+    await user.click(await screen.findByRole("button", { name: /Needs review/u }));
+    await user.click(screen.getByRole("button", { name: "Refresh" }));
+    await screen.findByRole("dialog", { name: "Confirm billed refresh" });
+
+    Object.defineProperty(navigator, "onLine", { configurable: true, value: false });
+    window.dispatchEvent(new Event("offline"));
+
+    await waitFor(() => expect(accepted).toBe(false));
+    expect(screen.queryByRole("dialog", { name: "Confirm billed refresh" }))
+      .not.toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Deck is offline" })).toBeVisible();
+  });
+
   it("disables merge confirmation while the provider mutation is pending", async () => {
     let completeMutation: ((result: {
       pullRequest: DeckPullRequest;
