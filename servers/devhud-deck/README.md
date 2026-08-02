@@ -6,13 +6,17 @@ and device persistence, current viewer-scoped PR snapshots, typed audits,
 health endpoints, owner/lifecycle deletion, signed GitHub.com App/OAuth
 callbacks, installation lifecycle handling, permission-filtered provider
 search and candidate discovery, expiring user-token rotation, authorization
-revocation handling, and the closed user-attributed mutation set.
-Billed provider refresh and notification delivery continue to fail closed
-until their separately documented dependencies are implemented.
+revocation handling, the closed user-attributed mutation set, and
+client-initiated provider refresh. Refresh uses five-minute cache/coalescing,
+live forwarded-user delibase reserve/commit/release at 50 USD micros,
+current encrypted snapshots, widget freshness, and 30-day notification
+transition history/resolution. Push delivery remains unimplemented.
 
-The process has no scheduler or provider-polling worker. Nothing in this
+The process has no scheduler, provider-polling worker, billing worker, or
+post-client provider continuation. Nonterminal accounting advances only on an
+active exact client retry with a fresh forwarded-user bearer. Nothing in this
 directory deploys an API, configures DNS, publishes a client/SDK or image,
-registers a GitHub App, or supplies remote UI.
+registers a GitHub App, activates a catalog meter, or supplies remote UI.
 
 Generate sqlc code and run checks from the repository root:
 

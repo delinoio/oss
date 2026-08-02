@@ -15,7 +15,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-const maxQueryBytes = 8192
+const maxQueryBytes = 4096
 
 // Parse canonicalizes raw whitespace, requires the pull-request discriminator,
 // and derives the recognized builder projection.
@@ -44,8 +44,12 @@ func Parse(raw string) (*deckv1.ViewQuery, error) {
 		tokens = append([]string{"is:pr"}, tokens...)
 		builder.UnrecognizedRawClauses = append([]string{"is:pr"}, builder.UnrecognizedRawClauses...)
 	}
+	canonicalRaw := strings.Join(tokens, " ")
+	if len(canonicalRaw) > maxQueryBytes {
+		return nil, errors.New("query: canonical query length is invalid")
+	}
 	return &deckv1.ViewQuery{
-		RawQuery: strings.Join(tokens, " "),
+		RawQuery: canonicalRaw,
 		Builder:  builder,
 	}, nil
 }

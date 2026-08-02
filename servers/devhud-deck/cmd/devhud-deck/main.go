@@ -13,7 +13,9 @@ import (
 
 	"github.com/delinoio/oss/servers/devhud-deck/internal/api"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/config"
+	"github.com/delinoio/oss/servers/devhud-deck/internal/contracts"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/database"
+	deckdelibase "github.com/delinoio/oss/servers/devhud-deck/internal/delibase"
 	deckgithub "github.com/delinoio/oss/servers/devhud-deck/internal/github"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/logging"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/security"
@@ -36,6 +38,7 @@ const (
 	failureGitHubOAuth        failureReason = "github_oauth"
 	failureGitHubState        failureReason = "github_callback_state"
 	failureGitHubBroker       failureReason = "github_broker"
+	failureDelibaseUsage      failureReason = "delibase_usage"
 	failureIdentityKeys       failureReason = "identity_keys"
 	failureDeckAuthentication failureReason = "deck_authentication"
 	failureBaseAuthentication failureReason = "delibase_authentication"
@@ -132,6 +135,23 @@ func run(ctx context.Context, lookup config.LookupEnv, logger *slog.Logger) erro
 	if err != nil {
 		return classifyFailure(failureGitHubBroker, err)
 	}
+	usageClient, err := deckdelibase.New(deckdelibase.Config{
+		Origin:       configuration.DelibaseAPIOrigin,
+		Audience:     configuration.DelibaseLogtoAudience,
+		Issuer:       configuration.LogtoIssuer,
+		ServiceID:    configuration.DelibaseServiceID,
+		ClientID:     configuration.DelibaseM2MClientID,
+		ClientSecret: configuration.DelibaseM2MClientSecret,
+	}, nil)
+	if err != nil {
+		return classifyFailure(failureDelibaseUsage, err)
+	}
+	usageCtx, cancel := context.WithTimeout(ctx, startupTimeout)
+	err = usageClient.ValidateStartup(usageCtx)
+	cancel()
+	if err != nil {
+		return classifyFailure(failureDelibaseUsage, err)
+	}
 	keys, err := auth.NewJWKS(auth.JWKSConfig{URL: configuration.LogtoJWKSURL})
 	if err != nil {
 		return classifyFailure(failureIdentityKeys, err)
@@ -155,6 +175,8 @@ func run(ctx context.Context, lookup config.LookupEnv, logger *slog.Logger) erro
 		Logger: logger, GitHubBroker: githubBroker, GitHubClient: githubClient,
 		Repositories: service.NewGitHubRepositoryAuthorizer(
 			store, githubClient, githubBroker),
+		LiveUsage:      usageClient,
+		RefreshMetrics: contracts.LogRefreshMetrics{Logger: logger},
 	}
 	handler, err := api.New(api.Dependencies{
 		DeckAuthentication:     deckValidator,

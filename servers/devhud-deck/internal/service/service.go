@@ -24,16 +24,18 @@ type defaultIDGenerator struct{}
 func (defaultIDGenerator) New() (uuid.UUID, error) { return uuidv7.New() }
 
 type Dependencies struct {
-	Store         *database.Store
-	Clock         contracts.Clock
-	IDs           IDGenerator
-	Hasher        *security.Hasher
-	Repositories  contracts.RepositoryAuthorizer
-	Audits        audit.Recorder
-	Pseudonymizer *safelog.Pseudonymizer
-	Logger        *slog.Logger
-	GitHubBroker  *deckgithub.Broker
-	GitHubClient  *deckgithub.Client
+	Store          *database.Store
+	Clock          contracts.Clock
+	IDs            IDGenerator
+	Hasher         *security.Hasher
+	Repositories   contracts.RepositoryAuthorizer
+	Audits         audit.Recorder
+	Pseudonymizer  *safelog.Pseudonymizer
+	Logger         *slog.Logger
+	GitHubBroker   *deckgithub.Broker
+	GitHubClient   *deckgithub.Client
+	LiveUsage      contracts.LiveRefreshUsage
+	RefreshMetrics contracts.RefreshMetrics
 }
 
 func (dependencies Dependencies) withDefaults() Dependencies {
@@ -51,6 +53,9 @@ func (dependencies Dependencies) withDefaults() Dependencies {
 	}
 	if dependencies.Audits == nil {
 		dependencies.Audits = dependencies.Store
+	}
+	if dependencies.RefreshMetrics == nil {
+		dependencies.RefreshMetrics = contracts.NoopRefreshMetrics{}
 	}
 	return dependencies
 }

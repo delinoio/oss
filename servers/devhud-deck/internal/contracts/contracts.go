@@ -3,6 +3,8 @@ package contracts
 
 import (
 	"context"
+	"errors"
+	"log/slog"
 	"time"
 
 	deckv1 "github.com/delinoio/oss/protos/devhud-deck/gen/go/devhud-deck/v1"
@@ -16,6 +18,83 @@ type Clock interface {
 type SystemClock struct{}
 
 func (SystemClock) Now() time.Time { return time.Now().UTC() }
+
+const ProviderRefreshPriceUSDMicros int64 = 50
+
+// ErrRefreshReservationRejected marks a definitive downstream rejection.
+// Unmarked reservation failures remain retryable because the response may
+// have been lost after delibase accepted the idempotent reservation.
+var ErrRefreshReservationRejected = errors.New(
+	"contracts: refresh reservation was rejected")
+
+type RefreshMeter struct {
+	MeterID        uuid.UUID
+	PriceVersionID uuid.UUID
+	ServiceID      uuid.UUID
+	USDMicros      int64
+}
+
+type UsageReservation struct {
+	ID        uuid.UUID
+	ExpiresAt time.Time
+}
+
+// LiveRefreshUsage is the only Deck billing boundary. Every method requires
+// the current request's validated forwarded-user bearer; Deck has no
+// background-authorization purpose and never persists this bearer.
+type LiveRefreshUsage interface {
+	RefreshMeter(context.Context) (RefreshMeter, error)
+	ReserveRefresh(
+		context.Context,
+		string,
+		*deckv1.BillingSelection,
+		uuid.UUID,
+		RefreshMeter,
+	) (UsageReservation, error)
+	CommitRefresh(context.Context, string, uuid.UUID, uuid.UUID) error
+	ReleaseRefresh(context.Context, string, uuid.UUID, uuid.UUID) error
+}
+
+type RefreshMetricOutcome uint8
+
+const (
+	RefreshMetricUnknown RefreshMetricOutcome = iota
+	RefreshMetricCacheHit
+	RefreshMetricProviderSuccess
+	RefreshMetricProviderFailure
+	RefreshMetricBillingFailure
+)
+
+// RefreshMetrics accepts only a typed outcome and latency. Repositories,
+// queries, titles, identities, URLs, and request credentials cannot be labels.
+type RefreshMetrics interface {
+	ObserveRefresh(RefreshMetricOutcome, time.Duration)
+}
+
+type NoopRefreshMetrics struct{}
+
+func (NoopRefreshMetrics) ObserveRefresh(RefreshMetricOutcome, time.Duration) {}
+
+// LogRefreshMetrics emits only the closed outcome and elapsed milliseconds.
+// It intentionally accepts no identity-bearing labels and defines no SLO.
+type LogRefreshMetrics struct {
+	Logger *slog.Logger
+}
+
+func (metrics LogRefreshMetrics) ObserveRefresh(
+	outcome RefreshMetricOutcome,
+	elapsed time.Duration,
+) {
+	if metrics.Logger == nil {
+		return
+	}
+	metrics.Logger.Info(
+		"Deck refresh completed",
+		"event", "deck_refresh_latency",
+		"outcome", uint64(outcome),
+		"latency_ms", elapsed.Milliseconds(),
+	)
+}
 
 type OrganizationRole uint8
 

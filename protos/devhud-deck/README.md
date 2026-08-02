@@ -16,7 +16,7 @@ descriptors from its root and exposes
 `@delinoio/devhud-deck-connect/devhud-deck/v1/*_pb` subpaths. It is private
 workspace infrastructure, not a published package or public plugin/API SDK.
 Only authenticated Deck code in `apps/devhud`, the
-`DeckIntegrationService`-only DeliDev settings client, the planned Deck server,
+`DeckIntegrationService`-only DeliDev settings client, the Deck server,
 and delibase's typed lifecycle delivery may consume it.
 
 ## Contract invariants
@@ -52,8 +52,11 @@ and delibase's typed lifecycle delivery may consume it.
   device configuration. Authenticated `GetDevice` reloads current registration
   and server-authored state by stable device ID after restart or stale conflict.
 - Every new refresh attempt requires a non-dispatching server-issued billing
-  preflight token bound to its UUID v7 identity and origin. Only manual UI
-  displays the returned price warning.
+  preflight token bound to its UUID v7 identity, origin, and compatible active
+  desktop/mobile/OS-background/widget client kind. Only manual UI displays the
+  returned price warning. Typed outcomes distinguish free cache/coalescing and
+  ineligible automatic work from committed/released/rejected billing and
+  provider failure states.
 - Widget actions are client behavior and cannot carry a mutation. Push payloads
   contain only opaque event identifiers. Device writes carry widget
   configuration only; widget snapshots and synchronized state are server-owned.

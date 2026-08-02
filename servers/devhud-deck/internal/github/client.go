@@ -23,6 +23,7 @@ const (
 	defaultCandidateLimit = 50
 	maxCandidateLimit     = 100
 	maxCandidatePages     = 100
+	maxSearchResults      = 1000
 )
 
 type Client struct {
@@ -44,6 +45,11 @@ func NewClient(httpClient *http.Client) *Client {
 	) error {
 		return http.ErrUseLastResponse
 	}
+	baseTransport := safeHTTPClient.Transport
+	if baseTransport == nil {
+		baseTransport = http.DefaultTransport
+	}
+	safeHTTPClient.Transport = dispatchTransport{base: baseTransport}
 	return &Client{
 		http: &safeHTTPClient, now: func() time.Time { return time.Now().UTC() },
 		mutations:   newUserRateLimiter(30, time.Minute),
@@ -99,6 +105,13 @@ func (client *Client) doWithConflictError(
 	}
 	response, err := client.http.Do(request)
 	if err != nil {
+		var dispatchErr *dispatchError
+		if errors.As(err, &dispatchErr) {
+			return nil, dispatchErr.err
+		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			return nil, ErrTimeout
+		}
 		return nil, ErrProvider
 	}
 	defer response.Body.Close()
@@ -257,10 +270,20 @@ type searchResponse struct {
 		Number        uint64 `json:"number"`
 		Title         string `json:"title"`
 		UpdatedAt     string `json:"updated_at"`
+		State         string `json:"state"`
+		Draft         bool   `json:"draft"`
 		User          struct {
 			Login string `json:"login"`
 		} `json:"user"`
-		PullRequest json.RawMessage `json:"pull_request"`
+		Assignees []struct {
+			Login string `json:"login"`
+		} `json:"assignees"`
+		Labels []struct {
+			Name string `json:"name"`
+		} `json:"labels"`
+		PullRequest *struct {
+			MergedAt *string `json:"merged_at"`
+		} `json:"pull_request"`
 	} `json:"items"`
 }
 
@@ -291,10 +314,25 @@ func (client *Client) SearchPullRequests(
 	if err != nil {
 		return SearchPage{}, ErrUnsupportedAction
 	}
+	if offset >= maxSearchResults {
+		return SearchPage{Truncated: true}, nil
+	}
+	if remaining := maxSearchResults - offset; limit > remaining {
+		limit = remaining
+	}
 	values := url.Values{}
 	values.Set("q", query+" is:pr")
 	values.Set("per_page", strconv.Itoa(limit))
 	values.Set("page", strconv.Itoa(offset/limit+1))
+	switch page.Sort {
+	case SearchSortDefault, SearchSortUpdated:
+		values.Set("sort", "updated")
+	case SearchSortCreated:
+		values.Set("sort", "created")
+	default:
+		return SearchPage{}, ErrUnsupportedAction
+	}
+	values.Set("order", "desc")
 	var response searchResponse
 	if _, err := client.do(ctx, credential, http.MethodGet,
 		"/search/issues?"+values.Encode(), nil, &response); err != nil {
@@ -313,7 +351,7 @@ func (client *Client) SearchPullRequests(
 	for _, item := range response.Items {
 		// Search issues can theoretically return non-PR items if GitHub changes
 		// query handling. They are never part of Deck's result shape.
-		if len(item.PullRequest) == 0 || string(item.PullRequest) == "null" {
+		if item.PullRequest == nil {
 			continue
 		}
 		repository, err := repositoryFromAPIURL(item.RepositoryURL)
@@ -329,17 +367,36 @@ func (client *Client) SearchPullRequests(
 		if err != nil {
 			return SearchPage{}, ErrProvider
 		}
-		result.PullRequests = append(result.PullRequests, SearchPullRequest{
+		pullRequest := SearchPullRequest{
 			Repository: repository,
 			Number:     item.Number,
 			Title:      item.Title,
 			Author:     User{Login: item.User.Login},
 			UpdatedAt:  updatedAt,
-		})
+			IsDraft:    item.Draft,
+			IsOpen:     strings.EqualFold(item.State, "open"),
+			IsMerged:   item.PullRequest.MergedAt != nil,
+		}
+		for _, assignee := range item.Assignees {
+			if safePathSegment(assignee.Login) {
+				pullRequest.Assignees = append(
+					pullRequest.Assignees, User{Login: assignee.Login})
+			}
+		}
+		for _, label := range item.Labels {
+			if validOperand(label.Name) {
+				pullRequest.Labels = append(pullRequest.Labels, label.Name)
+			}
+		}
+		result.PullRequests = append(result.PullRequests, pullRequest)
 	}
 	result.VisibleCount = len(result.PullRequests)
-	if len(response.Items) == limit {
-		result.NextCursor = encodeProviderCursor(offset + limit)
+	nextOffset := offset + limit
+	hasMore := len(response.Items) == limit && nextOffset < response.TotalCount
+	if hasMore && nextOffset < maxSearchResults {
+		result.NextCursor = encodeProviderCursor(nextOffset)
+	} else if hasMore {
+		result.Truncated = true
 	}
 	return result, nil
 }
@@ -618,6 +675,31 @@ func (client *Client) ActionMetadata(
 	}
 	defer release()
 	return client.actionMetadata(ctx, credential, appPermissions, reference)
+}
+
+// PullRequestSnapshotMetadata loads every server-authored list and action
+// field while holding one bounded provider slot for the complete snapshot.
+func (client *Client) PullRequestSnapshotMetadata(
+	ctx context.Context,
+	installationID uint64,
+	credential Credential,
+	appPermissions Permissions,
+	reference PullRequestRef,
+) (ActionMetadata, error) {
+	if err := reference.Validate(); err != nil {
+		return ActionMetadata{}, err
+	}
+	release, err := client.concurrency.acquire(installationID)
+	if err != nil {
+		return ActionMetadata{}, err
+	}
+	defer release()
+	metadata, err := client.actionMetadata(
+		ctx, credential, appPermissions, reference)
+	if err != nil {
+		return ActionMetadata{}, err
+	}
+	return client.completeMutationMetadata(ctx, credential, metadata)
 }
 
 func (client *Client) actionMetadata(

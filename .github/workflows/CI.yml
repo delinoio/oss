@@ -284,6 +284,7 @@ jobs:
               - .github/workflows/CI.yml
               - go.mod
               - go.sum
+              - protos/delibase/gen/go/**
               - protos/devhud-deck/gen/go/**
               - servers/devhud-deck/**
               - servers/internal/**
@@ -1056,6 +1057,7 @@ jobs:
               - AGENTS.md
               - apps/AGENTS.md
               - apps/devhud/**
+              - protos/devhud-deck/**
               - docs/project-devhud.md
               - docs/apps-devhud-foundation.md
       - name: Determine whether to run
@@ -1089,6 +1091,9 @@ jobs:
       - name: Install dependencies
         if: ${{ steps.gate.outputs.run == 'true' }}
         run: pnpm install --frozen-lockfile
+      - name: Build generated Deck client
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: pnpm --filter @delinoio/devhud-deck-connect build
       - name: Validate DevHud frontend and portable mobile contracts
         if: ${{ steps.gate.outputs.run == 'true' }}
         run: |

@@ -4,7 +4,34 @@
 
 - Project/component: `devhud` / `app`
 - Canonical client/native implementation path: `apps/devhud`
-- Status: active base application plus a shared native authentication/session foundation, an inactive RealQA capture-core and encrypted-local-draft foundation, an implemented unpublished RealQA Chrome MV3/desktop Native Messaging capture bridge, implemented private `devhud.deck.v1` and `devhud.realqa.v1` generated-client contracts, and planned Deck/RealQA product integrations. Neither private generated package is consumed by `apps/devhud` yet. The current `apps/devhud` implementation contains the bundled-asset package, internal empty production tool registry, production desktop shell, sign-ready desktop bundle configuration, stable mobile empty-state UI, maintained native iOS and Android hosts, private mobile secure-vault/widget-state plugins, independently built WidgetKit/AppWidgetProvider source targets, native Logto Authorization Code with PKCE, random-port one-shot desktop loopback handling at the stable registered `/auth/callback` path, verified mobile callback declarations, per-feature OS-vault refresh grants/device binding, online retained-session rehydration, memory-only bearer pairing, dependency-injected frontend/native session state, a platform-neutral dependency-injected RealQA capture/composer core with fixture backends plus concrete macOS 14+, Windows 11 x64/ARM64, and reviewed Ubuntu X11/XWayland/native-Wayland capture adapters, a desktop-only account-bound AES-256-GCM RealQA draft record family whose device keys remain in the OS secure vault, and the unpublished exact-origin Chrome extension/native host. It has no activated production Deck/RealQA tool, authenticated Deck/RealQA UI, feature networking, visible/distributed widget, production Chrome identity, production Logto identity, scoped updater network implementation, published release, publisher automation, public support implementation, or rollout. Issues #755/#757 authorize those bounded feature implementations without claiming activation or publication.
+- Status: active base application plus a shared native authentication/session
+  foundation, an inactive RealQA capture-core and encrypted-local-draft
+  foundation, an implemented unpublished RealQA Chrome MV3/desktop Native
+  Messaging capture bridge, implemented private `devhud.deck.v1` and
+  `devhud.realqa.v1` generated-client contracts, an initial dependency-injected
+  Deck refresh controller consuming the private Deck enums, and planned
+  Deck/RealQA product integrations. The current `apps/devhud` implementation
+  contains the bundled-asset package, internal empty production tool registry,
+  production desktop shell, sign-ready desktop bundle configuration, stable
+  mobile empty-state UI, maintained native iOS and Android hosts, private
+  mobile secure-vault/widget-state plugins, independently built
+  WidgetKit/AppWidgetProvider source targets, native Logto Authorization Code
+  with PKCE, random-port one-shot desktop loopback handling at the stable
+  registered `/auth/callback` path, verified mobile callback declarations,
+  per-feature OS-vault refresh grants/device binding, online retained-session
+  rehydration, memory-only bearer pairing, dependency-injected frontend/native
+  session state, the inactive Deck refresh timing/origin/eligibility layer, a
+  platform-neutral dependency-injected RealQA capture/composer core with
+  fixture backends plus concrete macOS 14+, Windows 11 x64/ARM64, and reviewed
+  Ubuntu X11/XWayland/native-Wayland capture adapters, a desktop-only
+  account-bound AES-256-GCM RealQA draft record family whose device keys remain
+  in the OS secure vault, and the unpublished exact-origin Chrome
+  extension/native host. It has no activated production Deck/RealQA tool,
+  authenticated Deck/RealQA UI, feature networking, visible/distributed
+  widget, production Chrome identity, production Logto identity, scoped updater
+  network implementation, published release, publisher automation, public
+  support implementation, or rollout. Issues #755/#757 authorize those bounded
+  feature implementations without claiming activation or publication.
 - The implemented dependency-injected RealQA online-submission coordinator consumes encrypted draft envelopes, enforces the exact 60,000-byte preflight and a fresh public-screenshot warning/confirmation for every attempt, reuses one persistent UUID v7 across create/reconciliation, sequences private uploads, and retains the encrypted draft for cancellation, overflow, and failed or ambiguous outcomes. Its native encrypted-vault and closed Connect/signed-PUT gateway bindings remain product integrations and do not activate RealQA.
 - The current implementation includes tray-resident desktop window lifecycle, transactional global shortcuts, explicit autostart, pointer-monitor HUD placement, preview DevTools, a typed local update action, cross-window theme reconciliation, surfaced startup integration failures, provider-owned persisted System/Light/Dark state, internal registry filtering, target-isolated desktop CEF and mobile system-webview runtimes, five exact window/platform capability manifests, bundled-resource response hardening, deny-by-default CEF networking, scoped native commands, Swift/Kotlin shared-data adapters, non-distributed native widget fixtures, generated native host sources, and deterministic local and host validation commands.
 
@@ -88,7 +115,30 @@ Authenticated Deck and RealQA windows receive no generic opener, but they may in
   `@delinoio/devhud-deck-connect`; future runtime calls use
   `devhud.deck.v1` at the exact inactive origin `https://deck.deli.dev` through
   the private native Connect transport.
-- Before any automatic, widget, manual, view-open, or shortcut refresh, the client generates the prospective logical refresh's UUID v7 identity and calls `DeckViewService.GetRefreshPreflight` with that origin. Every new `RefreshView` attempt carries the returned opaque short-lived token bound to the authenticated subject, view, billing scope, refresh identity, origin, and authoritative `(app key: devhud, meter key: deck_github_pull_request_refresh)` precision-zero `provider_refresh` mapping; the client preserves the identity and token across ambiguous retries until the original outcome and billing disposition are recovered. A manual confirmation additionally displays only the returned server-derived 50-USD-micro price, never a hard-coded or cached price; cancellation performs no reservation, provider request, or charge. Missing, disabled, divergent, expired, substituted, origin-mismatched, or stale preflight state makes creation of a new refresh attempt unavailable before reservation/provider dispatch; an exact identity-and-digest retry of an already-created attempt remains recoverable after token expiry or catalog change. The delibase single-reservation finalization grant is server-only: the client never receives or stores it and does not need to remain connected for the server's billing-only recovery worker to finish an already-started refresh attempt.
+- The implemented dependency-injected Deck refresh controller owns all timing:
+  it targets five-minute polling only while its desktop, mobile, or
+  OS-background client is active and currently permitted; `stop` cancels
+  in-flight preflight work and removes every later timer. It requests only
+  views attached to a widget, notification, or shortcut or opened in the prior
+  30 days. A widget uses a bounded one-shot controller and cancellation signal.
+  A failed candidate is reported without skipping later candidates unless the
+  owning client was cancelled. No timer, request, retry, or continuation
+  survives its owning client.
+- Before any automatic, widget, manual, view-open, or shortcut refresh, the
+  client generates the prospective logical refresh's UUID v7 identity and
+  calls `DeckViewService.GetRefreshPreflight` with both the origin and active
+  client kind. A catalog mapping with a reservation TTL shorter than 86,400
+  seconds is unavailable for Deck. Every new `RefreshView` attempt carries the
+  returned opaque short-lived token bound to that identity/origin/client
+  combination. The client preserves the identity and token across an ambiguous
+  transport retry. Per-view attempt storage uses an atomic claim so concurrent
+  invocations dispatch the one retained identity/token and cancellation cleanup
+  cannot delete another claimant's attempt. A manual confirmation displays the
+  returned server-derived price in the explicit
+  cache-bypass/billed-GitHub-request warning; cancellation performs no refresh
+  call. Deck clients receive no background authorization or
+  billing-finalization grant, and an unfinished attempt can advance only
+  through a later active exact client retry with a fresh forwarded-user bearer.
 - Deck maintains one unified shortcut-conflict registry with the generic DevHud shortcut and future RealQA shortcuts. Up to 20 synchronized per-view definitions/account/device use the same closed modifier/key values as the base structured shortcut contract. Device writes send configuration only; the effective conflict state and synchronized revision are server-authored after local registration, and conflicts become inactive without silently replacing another binding.
 - Notifications are view-specific opt-in and DND-aware. The client may change the view preference through `UpdateView`. Default text is exactly `Deck view updated`; detailed repository/PR titles require per-device opt-in, and push payloads contain opaque event IDs only. An online authenticated client may call `DeckDeviceService.ResolveNotificationEvent` for its matching active registration; it displays detail only after the server revalidates current view/repository access and otherwise falls back to the generic text without refreshing provider data.
 - List rows carry the synchronized PR revision that the client must pass to `MutatePullRequest`; stale conflicts reload, compare, and reapply rather than guessing or omitting the revision. If a successful mutation response sets `refresh_required`, the client refreshes the PR and does not retry the already-accepted mutation; the response intentionally omits stale pull-request detail.
@@ -199,7 +249,21 @@ These identifiers must not be renamed or reused for DeliDev or another project. 
 
 The package provides local `dev`, `build`, `typecheck`, `lint`, `test`, `test:a11y`, `check:security`, `test:security`, `check:diagnostics`, `test:diagnostics`, deterministic rebuild, contract/pin, lockfile, Rust, debug desktop, sign-ready preview bundle, and host-appropriate repeated desktop lifecycle smoke commands. The smoke command requires three fully ready launches with observed CEF helpers and no orphaned helper processes. On GPU-less GitHub-hosted Windows runners only, it permits up to two delayed retries for the exact access-violation status before the app requests shutdown or for a missed helper observation after an otherwise ready, controlled shutdown; after the app emits its exact smoke-only shutdown marker, an access-violation status is accepted only when readiness and complete helper cleanup were already observed. Every other startup or lifecycle failure remains terminal, and non-hosted Windows runs still require a zero exit. `check:security` inspects malicious navigation/resource decisions, popup/download guards, normal-view and DevTools IPC/filesystem denials, exact capability manifests, the CEF sandbox and bundled origins, deny-by-default networking, mobile manifests/entitlements, recursive redaction coverage, and every generated frontend bundle reference; `test:security` first generates the production bundle. `check:diagnostics` statically validates the allowlist, rotation constants/tests, exact runtime versions, native picker scope, capability exclusions, fatal/redaction coverage, and absence of uncontracted remote transport; `test:diagnostics` adds the focused frontend and Rust suites. Mobile hosts add `mobile:generate:android`, `mobile:generate:ios`, `build:android`, `build:android:ci`, `build:ios`, `build:ios:ci`, `check:mobile`, `test:mobile`, and `test:android:native`. Native widget commands are `build:widget:android`, `build:widget:ios`, `test:widget:android`, `test:widget:ios`, and `check:widget-artifacts`. The artifact command checks canonical projects plus discovered release merged manifests and accepts explicit Android manifest/APK and iOS `.app` paths; it requires at least one built release artifact and fails if the exact verified mobile callback is absent or broadened, any receiver is registered, or an extension/provisioning identity is embedded. Deterministic frontend output is declared in `apps/devhud/turbo.json`. `test:a11y` exercises component keyboard/focus and screen-reader semantics plus automated WCAG checks with `axe-core`; the full desktop OS/architecture/display matrix, signature validation, and release-validation tasks must be added with their corresponding implementations and must not be represented by passing placeholders.
 
-Feature implementation must add non-placeholder package commands `test:deck`, `test:deck:widgets`, `test:realqa`, `test:realqa:native`, `test:realqa:extension`, and `check:realqa:package`. The baseline invocation remains `pnpm --filter devhud <command>`. The implemented `test:realqa` currently covers the native capture bridge and editor model/component/raw-source-exclusion/keyboard/pointer/accessibility behavior plus the synchronized preset, URL sanitation, ordered-rule, local-device-state, and removable-field draft contracts. The implemented `check:realqa:windows` command inspects the exact Windows capability/dependency boundary. `test:realqa:native` exercises the Windows and Linux capture backends, macOS adapter fixtures, the shared capture/composer/editor core, encrypted local drafts, and the Chrome native host on every host; statically inspects the macOS adapter's closed capability/redaction/no-helper-process boundary; compiles that adapter for both `x86_64-apple-darwin` and `aarch64-apple-darwin` on macOS; and covers shared image safety, geometry, operation rendering, metadata removal, deterministic flattening, limits, encrypted draft confidentiality, account/offline isolation, corruption and future versions, optimistic concurrent writes, atomic-write failure, explicit deletion and reset, plus Chrome native-host auto-launch/readiness, framing, size limits, pairing rejection, reset, and redaction. `test:realqa:extension` covers MV3 permissions, optional grant/denial, active-tab visible-viewport capture, popup-close draft restoration, stale-retry clearing, single-flight handoff, DOM sanitization/removal, message limits, restricted-URL omission, Incognito/full-page exclusions, and fixture-ID behavior; `check:realqa:package` fails without an externally injected and externally allowlisted production extension ID. Their scope must grow with later RealQA implementation. `test:deck` covers signed-out isolation, auth, views, refresh/billing states including catalog mismatch before dispatch, shortcuts, privacy, offline/deletion UI, the closed native Connect procedure/origin transport, and exact GitHub authorization/pull-request system-browser acceptance and rejection; `test:deck:widgets` compiles and tests Deck WidgetKit/Android widget families and release-artifact boundaries without promising OS refresh timing or publishing them. The complete future `test:realqa` also covers replay-safe preset creation, templates/forms, body limits, submission states, and storage-authorization rebind replay/conflict UI; complete `test:realqa:native` also covers all supported concrete capture platforms, the closed native Connect transport, signed-PUT validation/rejection, and exact GitHub authorization system-browser acceptance and rejection. Commands for unimplemented slices remain absent and must not be represented by passing stubs.
+Feature implementation uses non-placeholder package commands
+`test:deck`, `test:deck:widgets`, `test:realqa`, `test:realqa:native`,
+`test:realqa:extension`, and `check:realqa:package` as the corresponding slices
+exist. The baseline invocation remains `pnpm --filter devhud <command>`.
+The implemented `test:deck` covers the five-minute client-owned polling loop,
+30-day/attachment eligibility, origin/client tracing, stop cancellation, and
+manual server-price warning/cache bypass. `test:deck:widgets` covers the
+one-shot active widget request and cancellation-before-dispatch behavior; the
+existing platform-specific widget commands continue to compile/test their
+build-only native foundations. These Deck commands make no claim for the
+still-unimplemented UI, native Connect transport, push delivery, or widget
+distribution. The existing RealQA commands retain their documented
+capture/editor/draft/extension coverage and must grow with later product
+slices. Commands for unimplemented slices must not be represented by passing
+stubs.
 
 The native test command optionally runs the permission-aware foreground desktop smoke when `DEVHUD_REALQA_MACOS_SMOKE=1`. The macOS application bundle declares its screen-capture purpose string. Chrome extension packaging on macOS fails closed unless the signed installer injects the absolute native-host path; it never substitutes the Linux fixture path. Hosted CI leaves the foreground-only smoke opt-in disabled because its test process has no guaranteed interactive TCC session; CI runs the fixtures and both architecture checks instead. These commands make no passing claim for the still-unimplemented native Connect transport, signed PUT, uploader, or provider submission portions.
 

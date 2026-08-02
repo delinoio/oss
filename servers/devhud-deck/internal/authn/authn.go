@@ -21,7 +21,7 @@ const (
 	LifecycleScope               = "deck:lifecycle:delete"
 )
 
-var forwardedScopes = []string{
+var forwardedDirectoryScopes = []string{
 	"delibase:account:read",
 	"delibase:organizations:read",
 	"delibase:teams:read",
@@ -41,12 +41,22 @@ type Dependencies struct {
 }
 
 type viewerContextKey struct{}
+type forwardedTokenContextKey struct{}
 type cleanupGrantContextKey struct{}
 type lifecycleContextKey struct{}
 
 func ViewerFromContext(ctx context.Context) (contracts.Viewer, bool) {
 	viewer, ok := ctx.Value(viewerContextKey{}).(contracts.Viewer)
 	return viewer, ok
+}
+
+// ForwardedDelibaseTokenFromContext returns the already validated live-user
+// bearer only while the originating request is active. The interceptor removes
+// the credential from request headers, and no refresh code may persist it or
+// copy it into a detached context.
+func ForwardedDelibaseTokenFromContext(ctx context.Context) (string, bool) {
+	token, ok := ctx.Value(forwardedTokenContextKey{}).(string)
+	return token, ok && token != ""
 }
 
 func CleanupGrantFromContext(ctx context.Context) (string, bool) {
@@ -106,14 +116,15 @@ func (interceptor *Interceptor) WrapUnary(next connect.UnaryFunc) connect.UnaryF
 				return next(context.WithValue(ctx, cleanupGrantContextKey{}, grant), request)
 			}
 		}
-		viewer, deckClaims, err := interceptor.authenticateHuman(
-			ctx, request.Header(), deckScopes(procedure))
+		viewer, deckClaims, forwardedToken, err := interceptor.authenticateHumanWithToken(
+			ctx, request.Header(), deckScopes(procedure), procedure)
 		stripCredentials(request.Header())
 		if err != nil {
 			return nil, err
 		}
 		ctx = auth.WithPrincipal(ctx, auth.Principal{User: deckClaims})
 		ctx = context.WithValue(ctx, viewerContextKey{}, viewer)
+		ctx = context.WithValue(ctx, forwardedTokenContextKey{}, forwardedToken)
 		return next(ctx, request)
 	}
 }
@@ -136,38 +147,57 @@ func (interceptor *Interceptor) authenticateHuman(
 	headers http.Header,
 	scopes []string,
 ) (contracts.Viewer, *auth.UserClaims, error) {
+	viewer, claims, _, err := interceptor.authenticateHumanWithToken(
+		ctx, headers, scopes, "")
+	return viewer, claims, err
+}
+
+func (interceptor *Interceptor) authenticateHumanWithToken(
+	ctx context.Context,
+	headers http.Header,
+	scopes []string,
+	procedure string,
+) (contracts.Viewer, *auth.UserClaims, string, error) {
 	if len(scopes) == 0 {
-		return contracts.Viewer{}, nil, rpcerr.New(connect.CodePermissionDenied,
+		return contracts.Viewer{}, nil, "", rpcerr.New(connect.CodePermissionDenied,
 			deckv1.ErrorReason_ERROR_REASON_PERMISSION_DENIED)
 	}
 	deckToken, err := bearerToken(headers)
 	if err != nil {
-		return contracts.Viewer{}, nil, authenticationError(err)
+		return contracts.Viewer{}, nil, "", authenticationError(err)
 	}
 	forwardedToken, err := credentialHeader(headers, ForwardedDelibaseTokenHeader)
 	if err != nil {
-		return contracts.Viewer{}, nil, authenticationError(err)
+		return contracts.Viewer{}, nil, "", authenticationError(err)
 	}
 	deckClaims, err := interceptor.dependencies.DeckValidator.ValidateUser(
 		ctx, deckToken, scopes...)
 	if err != nil {
-		return contracts.Viewer{}, nil, authenticationError(err)
+		return contracts.Viewer{}, nil, "", authenticationError(err)
 	}
 	forwardedClaims, err := interceptor.dependencies.DelibaseValidator.ValidateUser(
-		ctx, forwardedToken, forwardedScopes...)
+		ctx, forwardedToken, forwardedScopes(procedure)...)
 	if err != nil {
-		return contracts.Viewer{}, nil, authenticationError(err)
+		return contracts.Viewer{}, nil, "", authenticationError(err)
 	}
 	if deckClaims.Subject == "" || deckClaims.Subject != forwardedClaims.Subject {
-		return contracts.Viewer{}, nil, rpcerr.New(connect.CodeUnauthenticated,
+		return contracts.Viewer{}, nil, "", rpcerr.New(connect.CodeUnauthenticated,
 			deckv1.ErrorReason_ERROR_REASON_SUBJECT_MISMATCH)
 	}
 	viewer, err := interceptor.dependencies.Directory.ResolveViewer(ctx, deckClaims.Subject)
 	if err != nil || viewer.Subject != deckClaims.Subject || viewer.AccountID.Version() != 7 {
-		return contracts.Viewer{}, nil, rpcerr.New(connect.CodePermissionDenied,
+		return contracts.Viewer{}, nil, "", rpcerr.New(connect.CodePermissionDenied,
 			deckv1.ErrorReason_ERROR_REASON_PERMISSION_DENIED)
 	}
-	return viewer, deckClaims, nil
+	return viewer, deckClaims, forwardedToken, nil
+}
+
+func forwardedScopes(procedure string) []string {
+	scopes := append([]string(nil), forwardedDirectoryScopes...)
+	if procedure == deckv1connect.DeckViewServiceRefreshViewProcedure {
+		scopes = append(scopes, "delibase:usage:execute")
+	}
+	return scopes
 }
 
 func (interceptor *Interceptor) authenticateLifecycle(

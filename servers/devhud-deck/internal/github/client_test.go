@@ -327,6 +327,110 @@ func TestGraphQLErrorMapsHTTP200RateLimitHeaders(t *testing.T) {
 	}
 }
 
+func TestDispatchObserverRunsImmediatelyBeforeRoundTrip(t *testing.T) {
+	t.Parallel()
+	blocked := errors.New("billing reservation rejected")
+	roundTrips := 0
+	client := NewClient(&http.Client{Transport: roundTripFunc(
+		func(*http.Request) (*http.Response, error) {
+			roundTrips++
+			return jsonResponse(http.StatusOK, `{}`), nil
+		})})
+	ctx := WithDispatchObserver(context.Background(), func() error {
+		return blocked
+	})
+	_, err := client.CanReadRepository(
+		ctx, Credential{AccessToken: "token"},
+		Repository{Owner: "acme", Name: "widget"})
+	if !errors.Is(err, blocked) || roundTrips != 0 {
+		t.Fatalf("blocked dispatch = %v, round trips = %d", err, roundTrips)
+	}
+
+	observerCalls := 0
+	client = NewClient(&http.Client{Transport: roundTripFunc(
+		func(*http.Request) (*http.Response, error) {
+			roundTrips++
+			if observerCalls != 1 {
+				t.Fatalf("round trip started before observer: %d", observerCalls)
+			}
+			return nil, context.DeadlineExceeded
+		})})
+	ctx = WithDispatchObserver(context.Background(), func() error {
+		observerCalls++
+		return nil
+	})
+	_, err = client.CanReadRepository(
+		ctx, Credential{AccessToken: "token"},
+		Repository{Owner: "acme", Name: "widget"})
+	if !errors.Is(err, ErrTimeout) || observerCalls != 1 || roundTrips != 1 {
+		t.Fatalf(
+			"timeout dispatch = %v, observer = %d, round trips = %d",
+			err, observerCalls, roundTrips)
+	}
+
+	observerCalls = 0
+	roundTrips = 0
+	client = NewClient(&http.Client{Transport: roundTripFunc(
+		func(*http.Request) (*http.Response, error) {
+			roundTrips++
+			return jsonResponse(http.StatusOK, `{}`), nil
+		})})
+	ctx, cancel := context.WithCancel(WithDispatchObserver(
+		context.Background(), func() error {
+			observerCalls++
+			return nil
+		}))
+	cancel()
+	_, err = client.CanReadRepository(
+		ctx, Credential{AccessToken: "token"},
+		Repository{Owner: "acme", Name: "widget"})
+	if !errors.Is(err, ErrProvider) || observerCalls != 0 || roundTrips != 0 {
+		t.Fatalf(
+			"pre-transport cancellation = %v, observer = %d, round trips = %d",
+			err, observerCalls, roundTrips)
+	}
+}
+
+func TestInstallationProviderConcurrencyLimitIsFour(t *testing.T) {
+	t.Parallel()
+	limiter := newInstallationLimiter(4)
+	releases := make([]func(), 0, 4)
+	for index := 0; index < 4; index++ {
+		release, err := limiter.acquire(42)
+		if err != nil {
+			t.Fatalf("permit %d = %v", index+1, err)
+		}
+		releases = append(releases, release)
+	}
+	if _, err := limiter.acquire(42); !errors.Is(
+		err, ErrConcurrencyLimited) {
+		t.Fatalf("fifth permit = %v", err)
+	}
+	if _, err := limiter.acquire(43); err != nil {
+		t.Fatalf("another installation was limited: %v", err)
+	}
+	for _, release := range releases {
+		release()
+	}
+}
+
+func TestMutationLimitIsThirtyPerMinutePerUser(t *testing.T) {
+	t.Parallel()
+	limiter := newUserRateLimiter(30, time.Minute)
+	now := time.Date(2026, time.July, 30, 0, 0, 0, 0, time.UTC)
+	for index := 0; index < 30; index++ {
+		if !limiter.allow("viewer", now) {
+			t.Fatalf("mutation %d was rejected", index+1)
+		}
+	}
+	if limiter.allow("viewer", now) {
+		t.Fatal("thirty-first mutation was accepted")
+	}
+	if !limiter.allow("other-viewer", now) {
+		t.Fatal("one user consumed another user's mutation limit")
+	}
+}
+
 func TestGraphQLErrorMapsSecondaryRateLimitWithoutHeaders(t *testing.T) {
 	t.Parallel()
 	client := NewClient(&http.Client{Transport: roundTripFunc(
@@ -1168,10 +1272,17 @@ func TestMutationKeepsProviderSlotThroughResultReload(t *testing.T) {
 	reference := PullRequestRef{
 		Repository: Repository{Owner: "acme", Name: "widget"}, Number: 7,
 	}
-	initial, err := client.ActionMetadata(
+	initial, err := client.PullRequestSnapshotMetadata(
 		context.Background(), 42, credential, permissions, reference)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if initial.ReviewDecision != ReviewDecisionApproved ||
+		initial.ChecksState != ChecksStateFailure ||
+		initial.PendingChecks != 1 ||
+		initial.SuccessfulChecks != 3 ||
+		initial.FailedChecks != 3 {
+		t.Fatalf("complete snapshot metadata = %#v", initial)
 	}
 	result, err := client.Mutate(
 		context.Background(), "viewer", 42, credential, permissions,
@@ -1187,6 +1298,206 @@ func TestMutationKeepsProviderSlotThroughResultReload(t *testing.T) {
 		result.Metadata.SuccessfulChecks != 3 ||
 		result.Metadata.FailedChecks != 3 {
 		t.Fatalf("mutation result = %#v initial=%d", result, initial.Revision)
+	}
+}
+
+func TestSnapshotMetadataPaginatesLargeCheckRollups(t *testing.T) {
+	t.Parallel()
+	graphQLCalls := 0
+	successfulChecks := strings.TrimSuffix(strings.Repeat(
+		`{"status":"COMPLETED","conclusion":"SUCCESS"},`, 100), ",")
+	client := NewClient(&http.Client{Transport: roundTripFunc(
+		func(request *http.Request) (*http.Response, error) {
+			switch {
+			case request.URL.Path == "/repos/acme/widget" &&
+				request.Method == http.MethodGet:
+				return jsonResponse(http.StatusOK,
+					`{"permissions":{"pull":true}}`), nil
+			case request.URL.Path == "/repos/acme/widget/pulls/7" &&
+				request.Method == http.MethodGet:
+				return jsonResponse(http.StatusOK,
+					`{"node_id":"PR_1","state":"open","mergeable":true,`+
+						`"updated_at":"2026-01-01T00:00:00Z",`+
+						`"head":{"sha":"abc"}}`), nil
+			case request.URL.Path == GraphQLPath &&
+				request.Method == http.MethodPost:
+				graphQLCalls++
+				body, err := io.ReadAll(request.Body)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if graphQLCalls == 1 {
+					return jsonResponse(http.StatusOK, fmt.Sprintf(`{
+						"data":{"node":{
+							"reviewDecision":"APPROVED",
+							"statusCheckRollup":{
+								"state":"FAILURE",
+								"contexts":{
+									"totalCount":101,
+									"nodes":[%s],
+									"pageInfo":{
+										"hasNextPage":true,
+										"endCursor":"checks-100"
+									}
+								}
+							}
+						}}
+					}`, successfulChecks)), nil
+				}
+				if !strings.Contains(string(body), `"cursor":"checks-100"`) {
+					t.Fatalf("continuation cursor missing from %s", body)
+				}
+				return jsonResponse(http.StatusOK, `{
+					"data":{"node":{
+						"reviewDecision":"CHANGES_REQUESTED",
+						"statusCheckRollup":{
+							"state":"PENDING",
+							"contexts":{
+								"totalCount":102,
+								"nodes":[{
+									"status":"COMPLETED",
+									"conclusion":"FAILURE"
+								}],
+								"pageInfo":{"hasNextPage":false}
+							}
+						}
+					}}
+				}`), nil
+			default:
+				t.Fatalf("unexpected metadata request %s %s",
+					request.Method, request.URL.Path)
+				return nil, nil
+			}
+		})})
+	metadata, err := client.PullRequestSnapshotMetadata(
+		context.Background(), 42,
+		Credential{AccessToken: "ghu_viewer"},
+		Permissions{
+			Metadata: PermissionRead, PullRequests: PermissionRead,
+		},
+		PullRequestRef{
+			Repository: Repository{Owner: "acme", Name: "widget"},
+			Number:     7,
+		})
+	if err != nil ||
+		metadata.ReviewDecision != ReviewDecisionApproved ||
+		metadata.ChecksState != ChecksStateFailure ||
+		metadata.SuccessfulChecks != 100 ||
+		metadata.FailedChecks != 1 ||
+		metadata.PendingChecks != 0 ||
+		graphQLCalls != 2 {
+		t.Fatalf("paginated metadata = %#v calls=%d err=%v",
+			metadata, graphQLCalls, err)
+	}
+}
+
+func TestSearchAppliesSortAndStopsAtGitHubWindow(t *testing.T) {
+	t.Parallel()
+	searchRequests := 0
+	items := make([]map[string]any, 0, 100)
+	for number := 1; number <= 100; number++ {
+		items = append(items, map[string]any{
+			"repository_url": "https://api.github.com/repos/acme/visible",
+			"number":         number,
+			"title":          fmt.Sprintf("pull request %d", number),
+			"updated_at":     "2026-01-01T00:00:00Z",
+			"user":           map[string]any{"login": "octo"},
+			"pull_request":   map[string]any{},
+		})
+	}
+	payload, err := json.Marshal(map[string]any{
+		"total_count":        1001,
+		"incomplete_results": false,
+		"items":              items,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := NewClient(&http.Client{Transport: roundTripFunc(
+		func(request *http.Request) (*http.Response, error) {
+			switch request.URL.Path {
+			case "/search/issues":
+				searchRequests++
+				query := request.URL.Query()
+				if query.Get("sort") != "created" ||
+					query.Get("order") != "desc" ||
+					query.Get("page") != "10" ||
+					query.Get("per_page") != "100" {
+					t.Fatalf("search query = %q", query.Encode())
+				}
+				return jsonResponse(http.StatusOK, string(payload)), nil
+			case "/user/installations/42/repositories":
+				return jsonResponse(http.StatusOK, `{
+					"repositories":[{
+						"name":"visible",
+						"owner":{"login":"acme"},
+						"permissions":{"pull":true}
+					}]
+				}`), nil
+			default:
+				t.Fatalf("unexpected search request %s", request.URL.String())
+				return nil, nil
+			}
+		})})
+	page, err := client.SearchPullRequests(
+		context.Background(), 42, Credential{AccessToken: "ghu_viewer"},
+		"is:open", Page{
+			Cursor: encodeProviderCursor(900),
+			Limit:  100,
+			Sort:   SearchSortCreated,
+		})
+	if err != nil || len(page.PullRequests) != 100 ||
+		page.NextCursor != "" || !page.Truncated || searchRequests != 1 {
+		t.Fatalf("window page = %#v requests=%d err=%v",
+			page, searchRequests, err)
+	}
+}
+
+func TestSearchStopsAtFullFinalPage(t *testing.T) {
+	t.Parallel()
+	items := make([]map[string]any, 0, 100)
+	for number := 1; number <= 100; number++ {
+		items = append(items, map[string]any{
+			"repository_url": "https://api.github.com/repos/acme/visible",
+			"number":         number,
+			"title":          fmt.Sprintf("pull request %d", number),
+			"updated_at":     "2026-01-01T00:00:00Z",
+			"user":           map[string]any{"login": "octo"},
+			"pull_request":   map[string]any{},
+		})
+	}
+	payload, err := json.Marshal(map[string]any{
+		"total_count":        100,
+		"incomplete_results": false,
+		"items":              items,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := NewClient(&http.Client{Transport: roundTripFunc(
+		func(request *http.Request) (*http.Response, error) {
+			switch request.URL.Path {
+			case "/search/issues":
+				return jsonResponse(http.StatusOK, string(payload)), nil
+			case "/user/installations/42/repositories":
+				return jsonResponse(http.StatusOK, `{
+					"repositories":[{
+						"name":"visible",
+						"owner":{"login":"acme"},
+						"permissions":{"pull":true}
+					}]
+				}`), nil
+			default:
+				t.Fatalf("unexpected search request %s", request.URL.String())
+				return nil, nil
+			}
+		})})
+	page, err := client.SearchPullRequests(
+		context.Background(), 42, Credential{AccessToken: "ghu_viewer"},
+		"is:open", Page{Limit: 100})
+	if err != nil || len(page.PullRequests) != 100 ||
+		page.NextCursor != "" || page.Truncated {
+		t.Fatalf("full final page = %#v err=%v", page, err)
 	}
 }
 

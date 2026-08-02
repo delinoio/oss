@@ -90,9 +90,10 @@ func authorizeBilling(
 	billing *deckv1.BillingSelection,
 ) error {
 	if billing == nil ||
-		(billing.GetOrganizationId().GetValue() == "" &&
-			billing.GetTeamId().GetValue() == "") {
-		return nil
+		billing.GetOrganizationId().GetValue() == "" ||
+		billing.GetTeamId().GetValue() == "" {
+		return rpcerr.New(connect.CodeInvalidArgument,
+			deckv1.ErrorReason_ERROR_REASON_INVALID_ARGUMENT)
 	}
 	organizationID, err := parseUUID(billing.GetOrganizationId())
 	if err != nil {

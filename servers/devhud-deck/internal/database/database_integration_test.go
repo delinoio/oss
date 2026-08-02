@@ -232,6 +232,94 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	if err != nil || !truncated {
 		t.Fatalf("replace snapshots = truncated=%v err=%v", truncated, err)
 	}
+	notificationRegistrationID := mustV7(t)
+	notificationGrant, err := security.NewGrant()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := store.RegisterDevice(ctx, RegisterDeviceParams{
+		RegistrationID: notificationRegistrationID,
+		DeviceID:       mustV7(t),
+		AccountID:      accountID,
+		IdempotencyKey: mustV7(t),
+		RequestDigest:  security.Digest([]byte("notification fixture")),
+		OwnerHash: hasher.Sum(
+			"owner", "OWNER_SCOPE_PERSONAL:"+accountID.String()),
+		Write: DeviceWrite{
+			Platform:    deckv1.DevicePlatform_DEVICE_PLATFORM_MACOS,
+			DisplayName: "Notification fixture",
+		},
+		Grant:          notificationGrant,
+		LeaseExpiresAt: now.Add(deviceLeaseForTest),
+		Now:            now,
+	}); err != nil {
+		t.Fatalf("register notification fixture: %v", err)
+	}
+	notificationOpaque, err := security.NewGrant()
+	if err != nil {
+		t.Fatal(err)
+	}
+	notificationVerifier := security.GrantVerifier(notificationOpaque)
+	notificationEventID := mustV7(t)
+	notificationCiphertext, err := store.sealProto(
+		"notification-detail", notificationDetail(snapshots[0]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	notificationRepositoryHash :=
+		store.SnapshotRepositoryHash(snapshots[0].GetRepository())
+	if _, err := store.pool.Exec(ctx, `
+		INSERT INTO deck_notification_events (
+			event_id, view_id, registration_id, opaque_event_id, transition,
+			created_at, expires_at, viewer_hash, repository_hash,
+			pull_request_number, detail_ciphertext
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+	`, notificationEventID, firstViewID, notificationRegistrationID,
+		notificationVerifier[:],
+		int16(deckv1.NotificationTransition_NOTIFICATION_TRANSITION_ASSIGNED),
+		now, now.Add(notificationRetention), viewerHash[:],
+		notificationRepositoryHash[:],
+		int64(snapshots[0].GetNumber()), []byte("invalid ciphertext")); err != nil {
+		t.Fatal(err)
+	}
+	notificationRecord, err := store.GetNotificationEventMetadata(
+		ctx, notificationOpaque, now)
+	if err != nil || notificationRecord.EventID != notificationEventID ||
+		notificationRecord.ViewerHash != viewerHash ||
+		notificationRecord.RepositoryHash != notificationRepositoryHash {
+		t.Fatalf("notification metadata = %#v err=%v",
+			notificationRecord, err)
+	}
+	if _, err := store.GetNotificationEventDetail(
+		ctx, notificationRecord, now); err == nil {
+		t.Fatal("invalid notification detail was opened")
+	}
+	if _, err := store.pool.Exec(ctx, `
+		UPDATE deck_notification_events
+		SET detail_ciphertext = $1
+		WHERE event_id = $2
+	`, notificationCiphertext, notificationEventID); err != nil {
+		t.Fatal(err)
+	}
+	notificationDetailRecord, err := store.GetNotificationEventDetail(
+		ctx, notificationRecord, now)
+	if err != nil ||
+		notificationDetailRecord.GetResult().GetTitle() != snapshots[0].GetTitle() {
+		t.Fatalf("notification detail = %#v err=%v",
+			notificationDetailRecord, err)
+	}
+	mismatchedNotificationRecord := notificationRecord
+	mismatchedNotificationRecord.RepositoryHash =
+		security.Digest([]byte("different repository"))
+	if _, err := store.GetNotificationEventDetail(
+		ctx, mismatchedNotificationRecord, now); err == nil {
+		t.Fatal("notification detail ignored its authorized repository hash")
+	}
+	if unregistered, err := store.UnregisterDevice(
+		ctx, notificationRegistrationID, uuid.Nil, notificationGrant, now,
+	); err != nil || !unregistered {
+		t.Fatalf("unregister notification fixture = %v, %v", unregistered, err)
+	}
 	readableSnapshots := map[[32]byte]struct{}{
 		store.SnapshotRepositoryHash(snapshots[0].Repository): {},
 	}
@@ -239,6 +327,14 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 		ctx, firstViewID, viewerHash, readableSnapshots)
 	if err != nil || len(current) != 500 || !stateTruncated {
 		t.Fatalf("snapshots = %d truncated=%v err=%v", len(current), stateTruncated, err)
+	}
+	summaryTruncated, summaryRefreshedAt, summaryCount, err :=
+		store.GetSnapshotSummary(ctx, firstViewID, viewerHash)
+	if err != nil || !summaryTruncated || summaryCount != 500 ||
+		!summaryRefreshedAt.Equal(now) {
+		t.Fatalf(
+			"snapshot summary = count=%d truncated=%v refreshed_at=%v err=%v",
+			summaryCount, summaryTruncated, summaryRefreshedAt, err)
 	}
 	hasSnapshot, err := store.HasSnapshot(ctx, firstViewID, viewerHash,
 		&deckv1.PullRequestReference{
@@ -1500,6 +1596,68 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 		now.Add(12*time.Minute)); err != nil {
 		t.Fatalf("create retained viewer snapshot: %v", err)
 	}
+	notificationRegistrationIDs := []uuid.UUID{mustV7(t), mustV7(t)}
+	for index, notificationAccountID := range []uuid.UUID{
+		accountID, secondAccountID,
+	} {
+		notificationGrant, grantErr := security.NewGrant()
+		if grantErr != nil {
+			t.Fatal(grantErr)
+		}
+		if _, _, _, registerErr := store.RegisterDevice(
+			ctx, RegisterDeviceParams{
+				RegistrationID: notificationRegistrationIDs[index],
+				DeviceID:       mustV7(t),
+				AccountID:      notificationAccountID,
+				IdempotencyKey: mustV7(t),
+				RequestDigest: security.Digest([]byte(
+					fmt.Sprintf("retained-notification-%d", index))),
+				OwnerHash: hasher.Sum(
+					"owner",
+					"OWNER_SCOPE_PERSONAL:"+notificationAccountID.String()),
+				Write: DeviceWrite{
+					Platform:    deckv1.DevicePlatform_DEVICE_PLATFORM_MACOS,
+					DisplayName: "Notification fixture",
+					Push: &deckv1.PushRegistration{
+						Provider: deckv1.PushProvider_PUSH_PROVIDER_APPLE,
+						OpaquePushToken: fmt.Sprintf(
+							"retained-notification-token-%d", index),
+					},
+				},
+				Grant:          notificationGrant,
+				LeaseExpiresAt: now.Add(deviceLeaseForTest),
+				Now:            now,
+			},
+		); registerErr != nil {
+			t.Fatal(registerErr)
+		}
+	}
+	notification := NotificationEventWrite{
+		Transition: deckv1.NotificationTransition_NOTIFICATION_TRANSITION_ASSIGNED,
+		Snapshot:   snapshots[0],
+	}
+	notification.RegistrationID = notificationRegistrationIDs[0]
+	if err := store.CreateNotificationEvents(
+		ctx, retainedViewID, viewerHash, []NotificationEventWrite{notification},
+		now.Add(12*time.Minute)); err != nil {
+		t.Fatalf("create deleted viewer notification: %v", err)
+	}
+	notification.RegistrationID = notificationRegistrationIDs[1]
+	if err := store.CreateNotificationEvents(
+		ctx, retainedViewID, secondViewerHash,
+		[]NotificationEventWrite{notification},
+		now.Add(12*time.Minute)); err != nil {
+		t.Fatalf("create retained viewer notification: %v", err)
+	}
+	if err := store.TouchViewOpened(
+		ctx, retainedViewID, viewerHash, now.Add(12*time.Minute)); err != nil {
+		t.Fatalf("create deleted viewer activity: %v", err)
+	}
+	if err := store.TouchViewOpened(
+		ctx, retainedViewID, secondViewerHash,
+		now.Add(12*time.Minute)); err != nil {
+		t.Fatalf("create retained viewer activity: %v", err)
+	}
 	memberPending := callback
 	memberPending.Owner = deckgithub.OwnerBinding{
 		Scope: 2, ID: mustV7(t).String(),
@@ -1561,31 +1719,51 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 		t.Fatalf("account deletion retained %d callbacks", accountCallbackCount)
 	}
 	var deletedViewerSnapshotCount, deletedViewerStateCount int
+	var deletedViewerNotificationCount, deletedViewerActivityCount int
 	var retainedViewerSnapshotCount, retainedViewerStateCount int
+	var retainedViewerNotificationCount, retainedViewerActivityCount int
 	if err := store.pool.QueryRow(ctx, `
 		SELECT
 			(SELECT count(*) FROM deck_pull_request_snapshots
 			 WHERE view_id = $1 AND viewer_hash = $2)::integer,
 			(SELECT count(*) FROM deck_pull_request_snapshot_states
 			 WHERE view_id = $1 AND viewer_hash = $2)::integer,
+			(SELECT count(*) FROM deck_notification_events
+			 WHERE view_id = $1 AND viewer_hash = $2)::integer,
+			(SELECT count(*) FROM deck_view_viewer_activity
+			 WHERE view_id = $1 AND viewer_hash = $2)::integer,
 			(SELECT count(*) FROM deck_pull_request_snapshots
 			 WHERE view_id = $1 AND viewer_hash = $3)::integer,
 			(SELECT count(*) FROM deck_pull_request_snapshot_states
+			 WHERE view_id = $1 AND viewer_hash = $3)::integer,
+			(SELECT count(*) FROM deck_notification_events
+			 WHERE view_id = $1 AND viewer_hash = $3)::integer,
+			(SELECT count(*) FROM deck_view_viewer_activity
 			 WHERE view_id = $1 AND viewer_hash = $3)::integer`,
 		pgUUID(retainedViewID), viewerHash[:], secondViewerHash[:],
 	).Scan(
 		&deletedViewerSnapshotCount, &deletedViewerStateCount,
+		&deletedViewerNotificationCount, &deletedViewerActivityCount,
 		&retainedViewerSnapshotCount, &retainedViewerStateCount,
+		&retainedViewerNotificationCount, &retainedViewerActivityCount,
 	); err != nil {
 		t.Fatal(err)
 	}
-	if deletedViewerSnapshotCount != 0 || deletedViewerStateCount != 0 {
-		t.Fatalf("account deletion retained viewer cache: snapshots=%d state=%d",
-			deletedViewerSnapshotCount, deletedViewerStateCount)
+	if deletedViewerSnapshotCount != 0 || deletedViewerStateCount != 0 ||
+		deletedViewerNotificationCount != 0 ||
+		deletedViewerActivityCount != 0 {
+		t.Fatalf("account deletion retained viewer data: snapshots=%d state=%d "+
+			"notifications=%d activity=%d", deletedViewerSnapshotCount,
+			deletedViewerStateCount, deletedViewerNotificationCount,
+			deletedViewerActivityCount)
 	}
-	if retainedViewerSnapshotCount != 1 || retainedViewerStateCount != 1 {
-		t.Fatalf("account deletion removed another viewer cache: snapshots=%d state=%d",
-			retainedViewerSnapshotCount, retainedViewerStateCount)
+	if retainedViewerSnapshotCount != 1 || retainedViewerStateCount != 1 ||
+		retainedViewerNotificationCount != 1 ||
+		retainedViewerActivityCount != 1 {
+		t.Fatalf("account deletion removed another viewer data: snapshots=%d "+
+			"state=%d notifications=%d activity=%d", retainedViewerSnapshotCount,
+			retainedViewerStateCount, retainedViewerNotificationCount,
+			retainedViewerActivityCount)
 	}
 	if _, err := store.GetView(ctx, retainedViewID); err != nil {
 		t.Fatalf("account deletion removed organization view: %v", err)

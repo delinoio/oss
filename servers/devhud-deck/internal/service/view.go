@@ -369,6 +369,11 @@ func (service *View) ListPullRequests(
 	}
 	viewerHash := service.dependencies.Hasher.Sum(
 		"snapshot-viewer", viewer.AccountID.String())
+	now := service.dependencies.Clock.Now().UTC()
+	if err := service.dependencies.Store.TouchViewOpened(
+		ctx, viewID, viewerHash, now); err != nil {
+		return nil, mapDatabaseError(err)
+	}
 	requiredRepositoryHashes, err := service.dependencies.Store.
 		ListSnapshotRepositoryHashes(ctx, viewID, viewerHash)
 	if err != nil {
@@ -425,7 +430,7 @@ func (service *View) ListPullRequests(
 	var refreshed *timestamppb.Timestamp
 	if !refreshedAt.IsZero() {
 		refreshed = timestamppb.New(refreshedAt)
-		freshness = deckv1.FreshnessState_FRESHNESS_STATE_FRESH
+		freshness = refreshFreshness(now, refreshedAt)
 	}
 	return connect.NewResponse(&deckv1.ListPullRequestsResponse{
 		PullRequests: authorized[offset:end],
@@ -584,22 +589,6 @@ func deletionOwnerLabel(organization bool) string {
 	return "OWNER_SCOPE_PERSONAL"
 }
 
-func (service *View) GetRefreshPreflight(
-	context.Context,
-	*connect.Request[deckv1.GetRefreshPreflightRequest],
-) (*connect.Response[deckv1.GetRefreshPreflightResponse], error) {
-	return nil, rpcerr.New(connect.CodeUnavailable,
-		deckv1.ErrorReason_ERROR_REASON_BILLING_CATALOG_UNAVAILABLE)
-}
-
-func (service *View) RefreshView(
-	context.Context,
-	*connect.Request[deckv1.RefreshViewRequest],
-) (*connect.Response[deckv1.RefreshViewResponse], error) {
-	return nil, rpcerr.New(connect.CodeUnavailable,
-		deckv1.ErrorReason_ERROR_REASON_BILLING_CATALOG_UNAVAILABLE)
-}
-
 func (service *View) mapStaleWithETag(err error) error {
 	var stale *database.StaleError
 	if !errors.As(err, &stale) || stale.Revision == 0 {
@@ -706,6 +695,74 @@ func (service *View) getAuthorizedView(
 		return nil, mapAuthorizedViewError(err)
 	}
 	return view, nil
+}
+
+func (service *View) getRefreshViewMetadata(
+	ctx context.Context,
+	viewer contracts.Viewer,
+	id uuid.UUID,
+) (*deckv1.View, error) {
+	view, err := service.dependencies.Store.GetViewMetadataAuthorized(
+		ctx, id, refreshViewMetadataAuthorizer(viewer))
+	if err != nil {
+		return nil, mapAuthorizedViewError(err)
+	}
+	return view, nil
+}
+
+func refreshViewMetadataAuthorizer(
+	viewer contracts.Viewer,
+) database.ViewAuthorizer {
+	return func(authorization database.ViewAuthorization) error {
+		if _, err := authorizeOwner(viewer, authorization.Owner, false); err != nil {
+			return err
+		}
+		if authorization.ConnectionState ==
+			deckv1.ConnectionState_CONNECTION_STATE_DISCONNECTED {
+			if _, err := authorizeOwner(viewer, authorization.Owner, true); err != nil {
+				return database.ErrViewNotVisible
+			}
+		}
+		return nil
+	}
+}
+
+func (service *View) getRefreshProviderAuthorizedView(
+	ctx context.Context,
+	viewer contracts.Viewer,
+	id uuid.UUID,
+) (*deckv1.View, error) {
+	return service.dependencies.Store.GetViewAuthorized(
+		ctx, id, service.refreshProviderAuthorizer(ctx, viewer))
+}
+
+func (service *View) refreshProviderAuthorizer(
+	ctx context.Context,
+	viewer contracts.Viewer,
+) database.ViewAuthorizer {
+	return func(authorization database.ViewAuthorization) error {
+		if _, err := authorizeOwner(viewer, authorization.Owner, false); err != nil {
+			return err
+		}
+		if authorization.ConnectionState ==
+			deckv1.ConnectionState_CONNECTION_STATE_DISCONNECTED {
+			return deckgithub.ErrReauthenticationRequired
+		}
+		if !authorization.HasRepositoryIndex {
+			return errors.New("deck refresh: missing repository authorization index")
+		}
+		readable, err := service.dependencies.Repositories.ReadableRepositoryHashes(
+			ctx, viewer, authorization.Owner,
+			contracts.RepositoryHashKindView, authorization.RepositoryHashes)
+		if err != nil {
+			return err
+		}
+		if !repositoryHashesAuthorized(
+			authorization.RepositoryHashes, readable, nil) {
+			return deckgithub.ErrPermissionDenied
+		}
+		return nil
+	}
 }
 
 func (service *View) getAuthorizedViewForMutation(

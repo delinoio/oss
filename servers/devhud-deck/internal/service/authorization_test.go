@@ -201,6 +201,36 @@ func TestDisconnectedViewDefinitionDoesNotRequireProviderCredentials(
 	}
 }
 
+func TestRefreshMetadataAuthorizesFromRetainedOwnerState(t *testing.T) {
+	t.Parallel()
+	accountID := uuid.MustParse("01900000-0000-7000-8000-000000000001")
+	owner := &deckv1.Owner{
+		Scope: deckv1.OwnerScope_OWNER_SCOPE_PERSONAL,
+		OwnerId: &deckv1.Owner_AccountId{AccountId: &deckv1.UuidV7{
+			Value: accountID.String(),
+		}},
+	}
+	authorize := refreshViewMetadataAuthorizer(
+		contracts.Viewer{AccountID: accountID})
+	if err := authorize(database.ViewAuthorization{
+		Owner:           owner,
+		ConnectionState: deckv1.ConnectionState_CONNECTION_STATE_CONNECTED,
+	}); err != nil {
+		t.Fatalf("connected preflight required provider state: %v", err)
+	}
+
+	otherAccountID := uuid.MustParse(
+		"01900000-0000-7000-8000-000000000002")
+	if err := refreshViewMetadataAuthorizer(
+		contracts.Viewer{AccountID: otherAccountID},
+	)(database.ViewAuthorization{
+		Owner:           owner,
+		ConnectionState: deckv1.ConnectionState_CONNECTION_STATE_CONNECTED,
+	}); err == nil {
+		t.Fatal("preflight accepted another personal owner")
+	}
+}
+
 func TestDisconnectedOrganizationViewDefinitionIsManagerOnly(t *testing.T) {
 	t.Parallel()
 	organizationID := uuid.MustParse("01900000-0000-7000-8000-000000000003")
@@ -343,10 +373,15 @@ func TestOrganizationBillingMustMatchOwner(t *testing.T) {
 	t.Parallel()
 	ownerID := uuid.MustParse("01900000-0000-7000-8000-000000000003")
 	otherID := uuid.MustParse("01900000-0000-7000-8000-000000000004")
+	teamID := uuid.MustParse("01900000-0000-7000-8000-000000000005")
 	viewer := contracts.Viewer{
 		Memberships: map[uuid.UUID]contracts.OrganizationRole{
 			ownerID: contracts.OrganizationRoleAdmin,
 			otherID: contracts.OrganizationRoleMember,
+		},
+		TeamMemberships: map[uuid.UUID]map[uuid.UUID]struct{}{
+			ownerID: {teamID: {}},
+			otherID: {teamID: {}},
 		},
 	}
 	owner := &deckv1.Owner{
@@ -357,6 +392,7 @@ func TestOrganizationBillingMustMatchOwner(t *testing.T) {
 	}
 	billing := &deckv1.BillingSelection{
 		OrganizationId: &deckv1.UuidV7{Value: otherID.String()},
+		TeamId:         &deckv1.UuidV7{Value: teamID.String()},
 	}
 	if err := authorizeBilling(viewer, owner, billing); err == nil {
 		t.Fatal("organization view accepted another organization's billing scope")
@@ -364,6 +400,38 @@ func TestOrganizationBillingMustMatchOwner(t *testing.T) {
 	billing.OrganizationId.Value = ownerID.String()
 	if err := authorizeBilling(viewer, owner, billing); err != nil {
 		t.Fatalf("owning organization billing rejected: %v", err)
+	}
+}
+
+func TestBillingRequiresAnExplicitOrganizationAndTeam(t *testing.T) {
+	t.Parallel()
+	organizationID := uuid.MustParse("01900000-0000-7000-8000-000000000006")
+	teamID := uuid.MustParse("01900000-0000-7000-8000-000000000007")
+	viewer := contracts.Viewer{
+		Memberships: map[uuid.UUID]contracts.OrganizationRole{
+			organizationID: contracts.OrganizationRoleMember,
+		},
+		TeamMemberships: map[uuid.UUID]map[uuid.UUID]struct{}{
+			organizationID: {teamID: {}},
+		},
+	}
+	for _, billing := range []*deckv1.BillingSelection{
+		nil,
+		{},
+		{OrganizationId: &deckv1.UuidV7{Value: organizationID.String()}},
+		{TeamId: &deckv1.UuidV7{Value: teamID.String()}},
+	} {
+		if err := authorizeBilling(viewer, nil, billing); connect.CodeOf(err) !=
+			connect.CodeInvalidArgument {
+			t.Fatalf("incomplete billing selection accepted: %#v, %v",
+				billing, err)
+		}
+	}
+	if err := authorizeBilling(viewer, nil, &deckv1.BillingSelection{
+		OrganizationId: &deckv1.UuidV7{Value: organizationID.String()},
+		TeamId:         &deckv1.UuidV7{Value: teamID.String()},
+	}); err != nil {
+		t.Fatalf("complete authorized billing selection rejected: %v", err)
 	}
 }
 

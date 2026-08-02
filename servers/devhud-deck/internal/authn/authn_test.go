@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"connectrpc.com/connect"
+	"github.com/delinoio/oss/protos/devhud-deck/gen/go/devhud-deck/v1/deckv1connect"
 	"github.com/delinoio/oss/servers/devhud-deck/internal/contracts"
 	"github.com/delinoio/oss/servers/internal/auth"
 	"github.com/google/uuid"
@@ -65,7 +66,7 @@ func TestAuthenticateHumanMatchesSubjectsAndBothScopeSets(t *testing.T) {
 		},
 		DelibaseValidator: fakeValidator{
 			user: forwardedClaims, expectedToken: "delibase-token",
-			expectedScopes: forwardedScopes,
+			expectedScopes: forwardedScopes(""),
 		},
 		Directory: fakeDirectory{viewer: contracts.Viewer{
 			AccountID: accountID, Subject: "user-1", GitHubLogin: "octocat",
@@ -98,7 +99,7 @@ func TestAuthenticateHumanRejectsSubjectMismatch(t *testing.T) {
 		},
 		DelibaseValidator: fakeValidator{
 			user:          &auth.UserClaims{TokenClaims: auth.TokenClaims{Subject: "user-2"}},
-			expectedToken: "delibase-token", expectedScopes: forwardedScopes,
+			expectedToken: "delibase-token", expectedScopes: forwardedScopes(""),
 		},
 		Directory: fakeDirectory{viewer: contracts.Viewer{
 			AccountID: accountID, Subject: "user-1",
@@ -114,6 +115,24 @@ func TestAuthenticateHumanRejectsSubjectMismatch(t *testing.T) {
 	if _, _, err := interceptor.authenticateHuman(
 		context.Background(), headers, []string{"deck:views:read"}); err == nil {
 		t.Fatal("expected subject mismatch")
+	}
+}
+
+func TestForwardedScopesRequireUsageOnlyForRefreshView(t *testing.T) {
+	t.Parallel()
+	if got := forwardedScopes(
+		deckv1connect.DeckIntegrationServiceGetGitHubConnectionProcedure,
+	); !slices.Equal(got, forwardedDirectoryScopes) {
+		t.Fatalf("integration forwarded scopes = %v", got)
+	}
+	wantRefresh := append(
+		append([]string(nil), forwardedDirectoryScopes...),
+		"delibase:usage:execute",
+	)
+	if got := forwardedScopes(
+		deckv1connect.DeckViewServiceRefreshViewProcedure,
+	); !slices.Equal(got, wantRefresh) {
+		t.Fatalf("refresh forwarded scopes = %v", got)
 	}
 }
 

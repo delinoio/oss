@@ -137,3 +137,55 @@ func TestRefreshRotatesExpiringUserCredential(t *testing.T) {
 		t.Fatalf("refreshed credential = %#v", refreshed)
 	}
 }
+
+func TestOAuthDispatchObserverRunsAtTransportBoundary(t *testing.T) {
+	t.Parallel()
+	blocked := errors.New("dispatch accounting failed")
+	roundTrips := 0
+	oauth, err := NewOAuth(OAuthConfig{
+		ClientID: "fixture-client", ClientSecret: "fixture-secret",
+		AppSlug:     "deck-fixture",
+		CallbackURL: "https://deck.deli.dev/github/oauth/callback",
+	}, &http.Client{Transport: roundTripFunc(
+		func(*http.Request) (*http.Response, error) {
+			roundTrips++
+			return jsonResponse(http.StatusOK, `{
+				"access_token":"ghu_new",
+				"token_type":"bearer"
+			}`), nil
+		})})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Unix(1_800_000_000, 0).UTC()
+	oauth.now = func() time.Time { return now }
+	credential := Credential{
+		RefreshToken:          "ghr_valid",
+		RefreshTokenExpiresAt: now.Add(time.Hour),
+	}
+	observerCalls := 0
+	ctx := WithDispatchObserver(context.Background(), func() error {
+		observerCalls++
+		return blocked
+	})
+	if _, err := oauth.Refresh(ctx, credential); !errors.Is(err, blocked) ||
+		observerCalls != 1 || roundTrips != 0 {
+		t.Fatalf(
+			"blocked refresh = %v, observer = %d, round trips = %d",
+			err, observerCalls, roundTrips)
+	}
+
+	observerCalls = 0
+	ctx, cancel := context.WithCancel(WithDispatchObserver(
+		context.Background(), func() error {
+			observerCalls++
+			return nil
+		}))
+	cancel()
+	if _, err := oauth.Refresh(ctx, credential); !errors.Is(err, ErrProvider) ||
+		observerCalls != 0 || roundTrips != 0 {
+		t.Fatalf(
+			"cancelled refresh = %v, observer = %d, round trips = %d",
+			err, observerCalls, roundTrips)
+	}
+}

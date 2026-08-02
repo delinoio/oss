@@ -37,6 +37,25 @@ func (q *Queries) CountPersonalViews(ctx context.Context, ownerAccountID pgtype.
 	return column_1, err
 }
 
+const countViewSnapshots = `-- name: CountViewSnapshots :one
+SELECT count(*)::integer
+FROM deck_pull_request_snapshots
+WHERE view_id = $1
+  AND viewer_hash = $2
+`
+
+type CountViewSnapshotsParams struct {
+	ViewID     pgtype.UUID
+	ViewerHash []byte
+}
+
+func (q *Queries) CountViewSnapshots(ctx context.Context, arg CountViewSnapshotsParams) (int32, error) {
+	row := q.db.QueryRow(ctx, countViewSnapshots, arg.ViewID, arg.ViewerHash)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const deleteAllViewSnapshotStates = `-- name: DeleteAllViewSnapshotStates :exec
 DELETE FROM deck_pull_request_snapshot_states
 WHERE view_id = $1
@@ -54,6 +73,16 @@ WHERE view_id = $1
 
 func (q *Queries) DeleteAllViewSnapshots(ctx context.Context, viewID pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, deleteAllViewSnapshots, viewID)
+	return err
+}
+
+const deleteNotificationEventsByViewer = `-- name: DeleteNotificationEventsByViewer :exec
+DELETE FROM deck_notification_events
+WHERE viewer_hash = $1
+`
+
+func (q *Queries) DeleteNotificationEventsByViewer(ctx context.Context, viewerHash []byte) error {
+	_, err := q.db.Exec(ctx, deleteNotificationEventsByViewer, viewerHash)
 	return err
 }
 
@@ -151,6 +180,16 @@ WHERE viewer_hash = $1
 
 func (q *Queries) DeleteViewSnapshotsByViewer(ctx context.Context, viewerHash []byte) error {
 	_, err := q.db.Exec(ctx, deleteViewSnapshotsByViewer, viewerHash)
+	return err
+}
+
+const deleteViewViewerActivityByViewer = `-- name: DeleteViewViewerActivityByViewer :exec
+DELETE FROM deck_view_viewer_activity
+WHERE viewer_hash = $1
+`
+
+func (q *Queries) DeleteViewViewerActivityByViewer(ctx context.Context, viewerHash []byte) error {
+	_, err := q.db.Exec(ctx, deleteViewViewerActivityByViewer, viewerHash)
 	return err
 }
 

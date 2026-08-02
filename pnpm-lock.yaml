@@ -163,6 +163,9 @@ importers:
 
   apps/devhud:
     dependencies:
+      '@delinoio/devhud-deck-connect':
+        specifier: workspace:*
+        version: link:../../protos/devhud-deck
       '@tauri-apps/api':
         specifier: 2.11.1
         version: 2.11.1

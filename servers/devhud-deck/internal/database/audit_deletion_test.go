@@ -58,3 +58,53 @@ func TestRecalculateShortcutStatesAfterDeletion(t *testing.T) {
 		}
 	}
 }
+
+func TestOnlyActiveShortcutsAttachViews(t *testing.T) {
+	t.Parallel()
+	viewID := uuid.MustParse("01900000-0000-7000-8000-000000000001")
+	otherViewID := uuid.MustParse("01900000-0000-7000-8000-000000000002")
+	for _, test := range []struct {
+		name     string
+		shortcut *deckv1.ViewShortcut
+		want     bool
+	}{
+		{
+			name: "active",
+			shortcut: &deckv1.ViewShortcut{
+				ViewId: uuidProto(viewID),
+				State:  deckv1.ShortcutState_SHORTCUT_STATE_ACTIVE,
+			},
+			want: true,
+		},
+		{
+			name: "conflicted",
+			shortcut: &deckv1.ViewShortcut{
+				ViewId: uuidProto(viewID),
+				State:  deckv1.ShortcutState_SHORTCUT_STATE_CONFLICTED,
+			},
+		},
+		{
+			name: "inactive",
+			shortcut: &deckv1.ViewShortcut{
+				ViewId: uuidProto(viewID),
+				State:  deckv1.ShortcutState_SHORTCUT_STATE_INACTIVE,
+			},
+		},
+		{
+			name: "other view",
+			shortcut: &deckv1.ViewShortcut{
+				ViewId: uuidProto(otherViewID),
+				State:  deckv1.ShortcutState_SHORTCUT_STATE_ACTIVE,
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			if got := activeShortcutTargetsView(
+				test.shortcut, viewID); got != test.want {
+				t.Fatalf("active shortcut attachment = %t, want %t",
+					got, test.want)
+			}
+		})
+	}
+}

@@ -16,8 +16,13 @@ and idempotency payloads.
 The bounded server foundation additionally requires the forwarded user token's
 `delibase:account:read`, `delibase:organizations:read`, and
 `delibase:teams:read` scopes before resolving current account, organization,
-and billing-team membership. These authentication scopes do not replace the
-server-authoritative membership and role checks.
+and billing-team membership. Only `DeckViewService.RefreshView` additionally
+requires `delibase:usage:execute` because only that procedure performs live
+Deck refresh reserve/commit/release; `DeckIntegrationService` and other Deck
+procedures do not require the usage-mutation scope. The validated forwarded
+token remains only in the active server request context for those live calls
+and is never detached or persisted. These authentication scopes do not replace
+the server-authoritative membership and role checks.
 
 `RegisterDevice` returns its opaque, single-registration cleanup grant only in
 this sensitive response metadata:
@@ -37,8 +42,7 @@ forwarded-user metadata. Deck pins both that token's `sub` and `client_id` to
 the configured lifecycle client in addition to validating issuer, audience,
 expiry, and scope. Owner-request deletion uses the normal two human tokens.
 
-The server-only delibase reservation-finalization grant is not Deck API
-metadata. No generated Deck client may receive or submit it.
+Deck defines no reservation-finalization grant or background-usage metadata.
 
 ## User scopes
 

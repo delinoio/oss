@@ -15,6 +15,7 @@ type Querier interface {
 	CanUseOrganizationForGitHubCallback(ctx context.Context, arg CanUseOrganizationForGitHubCallbackParams) (bool, error)
 	CountOrganizationViews(ctx context.Context, ownerOrganizationID pgtype.UUID) (int32, error)
 	CountPersonalViews(ctx context.Context, ownerAccountID pgtype.UUID) (int32, error)
+	CountViewSnapshots(ctx context.Context, arg CountViewSnapshotsParams) (int32, error)
 	DeactivateOrganizationMembershipsForAccount(ctx context.Context, accountID pgtype.UUID) error
 	DeactivateTeamMembershipsForAccount(ctx context.Context, accountID pgtype.UUID) error
 	DeleteAccountDevices(ctx context.Context, accountID pgtype.UUID) error
@@ -36,6 +37,7 @@ type Querier interface {
 	DeleteGitHubRemovedRepositoriesByConnection(ctx context.Context, connectionID pgtype.UUID) error
 	DeleteGitHubRemovedRepository(ctx context.Context, arg DeleteGitHubRemovedRepositoryParams) error
 	DeleteGitHubUserCredentialsByGitHubUser(ctx context.Context, githubUserID int64) error
+	DeleteNotificationEventsByViewer(ctx context.Context, viewerHash []byte) error
 	DeleteOrganizationConnection(ctx context.Context, organizationID pgtype.UUID) error
 	DeleteOrganizationFeatureData(ctx context.Context, organizationID pgtype.UUID) error
 	DeleteOrganizationMemberships(ctx context.Context, organizationID pgtype.UUID) error
@@ -51,6 +53,7 @@ type Querier interface {
 	DeleteViewSnapshotStatesByViewer(ctx context.Context, viewerHash []byte) error
 	DeleteViewSnapshots(ctx context.Context, arg DeleteViewSnapshotsParams) error
 	DeleteViewSnapshotsByViewer(ctx context.Context, viewerHash []byte) error
+	DeleteViewViewerActivityByViewer(ctx context.Context, viewerHash []byte) error
 	DisconnectGitHubConnection(ctx context.Context, arg DisconnectGitHubConnectionParams) (DeckConnection, error)
 	EnsureGitHubAuthorizationState(ctx context.Context, providerIdentityHash []byte) error
 	EnsureGitHubInstallationState(ctx context.Context, providerIdentityHash []byte) error
