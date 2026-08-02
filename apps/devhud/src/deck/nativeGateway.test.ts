@@ -4,6 +4,7 @@ import {
   ErrorDetailSchema,
   ErrorReason,
   DevicePlatform,
+  RefreshOrigin,
   ShortcutKey,
   ShortcutModifier,
   ShortcutState,
@@ -158,11 +159,13 @@ describe("native Deck gateway", () => {
     await gateway.listOwners();
 
     await gateway.synchronizeShortcuts();
+    await gateway.synchronizeShortcuts();
 
-    const renewal = vi.mocked(invokeDeckProcedure).mock.calls.filter(
+    const renewals = vi.mocked(invokeDeckProcedure).mock.calls.filter(
       ([procedure]) => procedure === DeckProcedure.RegisterDevice,
-    )[1]?.[3];
-    expect(renewal).toMatchObject({ expectedRevision: device.revision });
+    );
+    expect(renewals[1]?.[3]).toMatchObject({ expectedRevision: device.revision });
+    expect(renewals[2]?.[3]).toMatchObject({ expectedRevision: device.revision });
   });
 
   it("shares one preflight, confirmation, and dispatch across concurrent manual refreshes", async () => {
@@ -218,6 +221,25 @@ describe("native Deck gateway", () => {
     expect(confirm).toHaveBeenCalledOnce();
     expect(refreshRequests).toHaveLength(2);
     expect(refreshRequests[1]).toEqual(refreshRequests[0]);
+  });
+
+  it("bypasses the view-open cache for post-mutation recovery refreshes", async () => {
+    const requests: unknown[] = [];
+    vi.mocked(invokeDeckProcedure).mockImplementation(async (procedure, _input, _output, request) => {
+      requests.push(request);
+      if (procedure === DeckProcedure.GetRefreshPreflight) {
+        return { providerRefreshPrice: { value: 50n }, preflightToken: "token" } as never;
+      }
+      if (procedure === DeckProcedure.RefreshView) return {} as never;
+      throw new Error(`Unexpected procedure: ${procedure}`);
+    });
+    const gateway = new NativeDeckGateway();
+
+    await gateway.refreshAfterMutation("view");
+
+    expect(requests).toHaveLength(2);
+    expect(requests[0]).toMatchObject({ origin: RefreshOrigin.MANUAL });
+    expect(requests[1]).toMatchObject({ origin: RefreshOrigin.MANUAL });
   });
 
   it("maps typed Connect details and retry-after into the stable product error", () => {

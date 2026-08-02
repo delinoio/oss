@@ -117,7 +117,7 @@ export function DeckProvider({
   const [selectedView, setSelectedView] = useState<DeckView | null>(null);
   const [conflict, setConflict] = useState<DeckConflict<DeckViewInput> | null>(null);
   const [online, setOnline] = useState(() => navigator.onLine);
-  const [busy, setBusy] = useState(false);
+  const [inFlightOperations, setInFlightOperations] = useState(0);
   const [operationError, setOperationError] = useState<unknown>(null);
   const [manualRefreshWarning, setManualRefreshWarning] = useState<ManualRefreshWarning | null>(null);
   const [manualRefreshResolver, setManualRefreshResolver] = useState<((confirmed: boolean) => void) | null>(null);
@@ -262,7 +262,7 @@ export function DeckProvider({
   }, [queryClient, selectedView]);
 
   const run = useCallback(async (operation: () => Promise<void>) => {
-    setBusy(true);
+    setInFlightOperations((current) => current + 1);
     setOperationError(null);
     try {
       await operation();
@@ -271,7 +271,7 @@ export function DeckProvider({
       setOperationError(error);
       return false;
     } finally {
-      setBusy(false);
+      setInFlightOperations((current) => Math.max(0, current - 1));
     }
   }, []);
 
@@ -448,11 +448,11 @@ export function DeckProvider({
     freshness: queriedLastPullRequestPage?.freshness ?? null,
     error:
       operationError ?? ownersQuery.error ?? viewsQuery.error ?? pullRequestsQuery.error,
-    busy,
+    busy: inFlightOperations > 0,
     manualRefreshWarning,
   }), [
-    busy,
     conflict,
+    inFlightOperations,
     lastPullRequestPage,
     queriedLastPullRequestPage,
     online,
@@ -476,11 +476,13 @@ export function DeckProvider({
 
   const actions = useMemo<DeckActions>(() => ({
     selectOwner: (owner) => {
+      setOperationError(null);
       setSelectedOwner(owner);
       setSelectedView(null);
       setConflict(null);
     },
     selectView: (view) => {
+      setOperationError(null);
       setSelectedView(view);
       setConflict(null);
     },

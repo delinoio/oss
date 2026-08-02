@@ -629,6 +629,9 @@ export class NativeDeckGateway implements DeckGateway {
     let attempt = this.#mutationAttempts.get(viewId);
     if (attempt === undefined) {
       const requestId = createUuidV7();
+      // Mutation recovery must bypass the view-open cache because the server
+      // can still hold the snapshot from before the accepted provider write.
+      const origin = RefreshOrigin.MANUAL;
       const response = await this.#call(() => invokeDeckProcedure(
         DeckProcedure.GetRefreshPreflight,
         GetRefreshPreflightRequestSchema,
@@ -636,12 +639,12 @@ export class NativeDeckGateway implements DeckGateway {
         create(GetRefreshPreflightRequestSchema, {
           viewId: uuid(viewId),
           refreshRequestId: idempotencyKey(requestId),
-          origin: RefreshOrigin.VIEW_OPEN,
+          origin,
           clientKind: this.#clientKind,
         }),
       ));
       attempt = {
-        request: { viewId, requestId, origin: RefreshOrigin.VIEW_OPEN, clientKind: this.#clientKind },
+        request: { viewId, requestId, origin, clientKind: this.#clientKind },
         preflightToken: response.preflightToken,
       };
       this.#mutationAttempts.set(viewId, attempt);
@@ -760,20 +763,18 @@ export class NativeDeckGateway implements DeckGateway {
     if (!isTauri() || this.#clientKind !== RefreshClientKind.DESKTOP) return;
     if (this.#accountId.length === 0) return;
     if (this.#deviceId.length === 0) this.#deviceId = await invoke<string>("deck_device_id");
+    let current = this.#deviceRegistered ? await this.#getDevice() : undefined;
     let registration: DeviceRegistration;
-    if (this.#deviceRegistered) {
-      registration = await this.#getDevice();
-    } else {
-      try {
-        registration = await this.#registerDevice();
-      } catch (error) {
-        if (!(error instanceof DeckProductError) || error.code !== DeckFailureCode.StaleRevision) {
-          throw error;
-        }
-        registration = await this.#registerDevice(await this.#getDevice());
+    try {
+      registration = await this.#registerDevice(current);
+    } catch (error) {
+      if (!(error instanceof DeckProductError) || error.code !== DeckFailureCode.StaleRevision) {
+        throw error;
       }
-      this.#deviceRegistered = true;
+      current = await this.#getDevice();
+      registration = await this.#registerDevice(current);
     }
+    this.#deviceRegistered = true;
     const definitions = (registration.device?.shortcuts ?? []).flatMap((shortcut) => {
       if (shortcut.state !== ShortcutState.ACTIVE) return [];
       const mapped = shortcutFromProto(shortcut.binding);

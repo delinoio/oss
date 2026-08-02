@@ -304,6 +304,40 @@ describe("Deck composable production workspace", () => {
     ).not.toBeInTheDocument());
   });
 
+  it("stays busy until overlapping shortcut and mutation operations both finish", async () => {
+    tauri.enabled = true;
+    let completeMutation: ((result: {
+      pullRequest: DeckPullRequest;
+      refreshRequired: false;
+    }) => void) | undefined;
+    const mutatePullRequest = vi.fn(() => new Promise<{
+      pullRequest: DeckPullRequest;
+      refreshRequired: false;
+    }>((resolve) => {
+      completeMutation = resolve;
+    }));
+    const backend = gateway({ mutatePullRequest });
+    const user = userEvent.setup();
+    renderDeck(backend);
+
+    await user.click(await screen.findByRole("button", { name: /Needs review/u }));
+    await user.click(await screen.findByRole("button", { name: "merge" }));
+    const confirm = screen.getByRole("button", { name: "Confirm merge" });
+    await user.click(confirm);
+    await waitFor(() => expect(confirm).toBeDisabled());
+    await waitFor(() => expect(tauri.listeners.has("devhud://deck-shortcut")).toBe(true));
+
+    tauri.listeners.get("devhud://deck-shortcut")?.({ payload: view.viewId });
+
+    await waitFor(() => expect(backend.getView).toHaveBeenCalledWith(view.viewId));
+    expect(confirm).toBeDisabled();
+
+    completeMutation?.({ pullRequest, refreshRequired: false });
+    await waitFor(() => expect(
+      screen.queryByRole("dialog", { name: "Confirm pull request merge" }),
+    ).not.toBeInTheDocument());
+  });
+
   it("disables picker apply while a provider mutation is pending", async () => {
     let completeMutation: ((result: {
       pullRequest: DeckPullRequest;
@@ -486,6 +520,32 @@ describe("Deck composable production workspace", () => {
 
     expect(await screen.findByRole("heading", { name: "Pull requests unavailable" })).toBeVisible();
     expect(screen.getByRole("alert")).toHaveTextContent("Retry in 30 seconds");
+  });
+
+  it("clears an operation failure when a different view is selected", async () => {
+    const otherView = {
+      ...view,
+      viewId: "018f0000-0000-7000-8000-000000000011",
+      name: "Assigned to me",
+    };
+    const backend = gateway({
+      listViews: vi.fn(async () => ({ items: [view, otherView], nextCursor: "" })),
+      listMutationCandidates: vi.fn(async () => {
+        throw new DeckProductError(DeckFailureCode.ProviderRateLimited, 30);
+      }),
+    });
+    const user = userEvent.setup();
+    renderDeck(backend);
+    await user.click(await screen.findByRole("button", { name: /Needs review/u }));
+    await user.click(await screen.findByRole("button", { name: "assign users" }));
+    await user.click(screen.getByRole("button", { name: "Search" }));
+    await screen.findByRole("heading", { name: "Pull requests unavailable" });
+
+    await user.click(screen.getByRole("button", { name: /Assigned to me/u }));
+
+    expect(await screen.findByRole("heading", { name: "Assigned to me" })).toBeVisible();
+    expect(screen.queryByRole("heading", { name: "Pull requests unavailable" }))
+      .not.toBeInTheDocument();
   });
 
   it("invalidates pull requests after an automatic refresh completes", async () => {
