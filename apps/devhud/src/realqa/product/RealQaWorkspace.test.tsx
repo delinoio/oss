@@ -15,6 +15,7 @@ import {
   RealQaAccessMode,
   RealQaDesktopFamily,
   RealQaFailureCode,
+  RealQaOwnerScopeKind,
   RealQaProductError,
   RealQaSelectorMode,
   type RealQaProductAction,
@@ -154,6 +155,18 @@ function snapshot(
       teamId: "01900000-0000-7000-8000-000000000009",
       label: "Acme / Release",
     }],
+    featureDeletionScopes: [
+      {
+        kind: RealQaOwnerScopeKind.Personal,
+        personalAccountId: "01900000-0000-7000-8000-000000000012",
+        label: "Personal account",
+      },
+      {
+        kind: RealQaOwnerScopeKind.Organization,
+        organizationId: "01900000-0000-7000-8000-000000000008",
+        label: "Acme",
+      },
+    ],
   };
 }
 
@@ -396,6 +409,57 @@ describe("RealQA desktop production workspace", () => {
     await user.click(screen.getByLabelText("Reproduced"));
 
     expect(review).toBeEnabled();
+  });
+
+  it("filters retained issue-form values against the current definition", async () => {
+    const user = userEvent.setup();
+    const value = snapshot();
+    const draft = value.drafts[0];
+    const definition = value.definitions[0];
+    if (draft === undefined) throw new Error("Fixture draft is missing.");
+    if (definition === undefined) throw new Error("Fixture definition is missing.");
+    const gateway = new FixtureGateway({
+      ...value,
+      definitions: [{
+        ...definition,
+        fields: definition.fields.map((field) =>
+          field.kind === "dropdown" && field.fieldId === "severity"
+            ? { ...field, defaultValue: "" }
+            : field
+        ),
+      }],
+      drafts: [{
+        ...draft,
+        issueAnswers: {
+          summary: ["Required answers"],
+          severity: ["Removed severity"],
+          browsers: ["Safari", "Chrome"],
+          checks: ["removed-check", "reproduced"],
+          retiredField: ["retired value"],
+        },
+      }],
+    });
+    await renderWorkspace(gateway);
+
+    const review = screen.getByRole("button", { name: "Review and submit" });
+    expect(review).toBeDisabled();
+    expect(screen.getByLabelText("Browsers")).toHaveValue(["Chrome"]);
+    await user.selectOptions(screen.getByLabelText("Severity"), "High");
+    expect(review).toBeEnabled();
+    await user.click(review);
+    await user.click(within(screen.getByRole("dialog", { name: "Confirm public screenshots" })).getByRole("button", { name: "Confirm and submit" }));
+
+    await waitFor(() => expect(gateway.actions.at(-1)).toMatchObject({
+      kind: "submit",
+      draft: {
+        issueAnswers: {
+          summary: ["Required answers"],
+          severity: ["High"],
+          browsers: ["Chrome"],
+          checks: ["reproduced"],
+        },
+      },
+    }));
   });
 
   it("blocks blank and overlong UTF-8 issue titles before submission", async () => {
@@ -1033,10 +1097,15 @@ describe("RealQA desktop production workspace", () => {
     await user.keyboard("{Escape}");
     expect(draftDialog).not.toBeInTheDocument();
 
+    await user.selectOptions(screen.getByLabelText("Owner scope"), "organization/01900000-0000-7000-8000-000000000008");
     await user.click(screen.getByRole("button", { name: "Delete server feature data" }));
     await user.click(within(screen.getByRole("dialog", { name: "Delete server RealQA data" })).getByRole("button", { name: "Confirm server deletion" }));
     expect(gateway.actions.at(-1)).toMatchObject({
       kind: "delete-feature-data",
+      owner: {
+        kind: RealQaOwnerScopeKind.Organization,
+        organizationId: "01900000-0000-7000-8000-000000000008",
+      },
       idempotencyKey: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-7/u),
     });
     expect(await screen.findByText("No presets are available.")).toBeVisible();

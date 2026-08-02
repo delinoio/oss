@@ -200,6 +200,25 @@ export interface RealQaBillingScopeChoice extends RealQaBillingScope {
   readonly label: string;
 }
 
+export enum RealQaOwnerScopeKind {
+  Personal = "personal",
+  Organization = "organization",
+}
+
+export type RealQaOwnerScope =
+  | {
+      readonly kind: RealQaOwnerScopeKind.Personal;
+      readonly personalAccountId: string;
+    }
+  | {
+      readonly kind: RealQaOwnerScopeKind.Organization;
+      readonly organizationId: string;
+    };
+
+export type RealQaOwnerScopeChoice = RealQaOwnerScope & {
+  readonly label: string;
+};
+
 export interface RealQaProductSnapshot {
   readonly platform: RealQaDesktopFamily;
   readonly access: RealQaAccessMode;
@@ -210,6 +229,7 @@ export interface RealQaProductSnapshot {
   readonly drafts: readonly RealQaDraft[];
   readonly submissions: readonly RealQaSubmissionSummary[];
   readonly replacementBillingScopes: readonly RealQaBillingScopeChoice[];
+  readonly featureDeletionScopes: readonly RealQaOwnerScopeChoice[];
 }
 
 export type RealQaProductAction =
@@ -293,6 +313,7 @@ export type RealQaProductAction =
     }
   | {
       readonly kind: "delete-feature-data";
+      readonly owner: RealQaOwnerScope;
       readonly idempotencyKey: string;
     };
 

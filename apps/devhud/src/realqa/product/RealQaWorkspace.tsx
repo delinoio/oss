@@ -25,6 +25,7 @@ import {
 import {
   RealQaAccessMode,
   RealQaFailureCode,
+  RealQaOwnerScopeKind,
   RealQaProductError,
   RealQaSelectorMode,
   realQaFailureGuidance,
@@ -278,13 +279,31 @@ function issueAnswersWithDefaults(
   definition: RealQaProductSnapshot["definitions"][number] | undefined,
 ): RealQaDraft["issueAnswers"] {
   if (definition === undefined) return draft.issueAnswers;
-  const answers = { ...draft.issueAnswers };
+  const answers: Record<string, readonly string[]> = {};
   for (const field of definition.fields) {
-    if (
-      field.kind !== "checkboxes" &&
-      answers[field.fieldId] === undefined &&
-      field.defaultValue !== ""
-    ) {
+    const stored = draft.issueAnswers[field.fieldId];
+    if (field.kind === "dropdown") {
+      const current = [...new Set(stored ?? [])].filter((value) =>
+        field.options.includes(value)
+      );
+      const values = field.multiple ? current : current.slice(0, 1);
+      if (values.length > 0) {
+        answers[field.fieldId] = values;
+      } else if (
+        field.defaultValue !== "" && field.options.includes(field.defaultValue)
+      ) {
+        answers[field.fieldId] = [field.defaultValue];
+      }
+    } else if (field.kind === "checkboxes") {
+      if (stored !== undefined) {
+        const options = new Set(field.options.map((option) => option.value));
+        answers[field.fieldId] = [...new Set(stored)].filter((value) =>
+          options.has(value)
+        );
+      }
+    } else if (stored !== undefined) {
+      answers[field.fieldId] = stored;
+    } else if (field.defaultValue !== "") {
       answers[field.fieldId] = [field.defaultValue];
     }
   }
@@ -386,6 +405,14 @@ function billingScopeKey(
   scope: RealQaProductSnapshot["replacementBillingScopes"][number] | RealQaPreset["billing"],
 ): string {
   return `${scope.organizationId}/${scope.teamId}`;
+}
+
+function ownerScopeKey(
+  scope: RealQaProductSnapshot["featureDeletionScopes"][number],
+): string {
+  return scope.kind === RealQaOwnerScopeKind.Personal
+    ? `${scope.kind}/${scope.personalAccountId}`
+    : `${scope.kind}/${scope.organizationId}`;
 }
 
 function firstPresetDraft(snapshot: RealQaProductSnapshot): RealQaPreset | null {
@@ -914,18 +941,38 @@ function SubmissionLifecycle() {
 function FeatureDeletion() {
   const { busy, execute, snapshot } = useWorkspace();
   const [confirming, setConfirming] = useState(false);
-  const deletionAttempt = useRef<string | null>(null);
+  const [selectedScopeKey, setSelectedScopeKey] = useState(
+    snapshot.featureDeletionScopes[0]
+      ? ownerScopeKey(snapshot.featureDeletionScopes[0])
+      : "",
+  );
+  const deletionAttempts = useRef(new Map<string, string>());
+  const selectedScope = snapshot.featureDeletionScopes.find(
+    (scope) => ownerScopeKey(scope) === selectedScopeKey,
+  ) ?? snapshot.featureDeletionScopes[0];
+  const effectiveScopeKey = selectedScope ? ownerScopeKey(selectedScope) : "";
   const online = snapshot.access === RealQaAccessMode.Online && snapshot.online;
   const deleteFeatureData = async () => {
-    const idempotencyKey = deletionAttempt.current ?? createUuidV7();
-    deletionAttempt.current = idempotencyKey;
+    if (selectedScope === undefined) return;
+    const idempotencyKey = deletionAttempts.current.get(effectiveScopeKey)
+      ?? createUuidV7();
+    deletionAttempts.current.set(effectiveScopeKey, idempotencyKey);
+    const owner = selectedScope.kind === RealQaOwnerScopeKind.Personal
+      ? {
+          kind: selectedScope.kind,
+          personalAccountId: selectedScope.personalAccountId,
+        }
+      : {
+          kind: selectedScope.kind,
+          organizationId: selectedScope.organizationId,
+        };
     const updated = await execute(
-      { kind: "delete-feature-data", idempotencyKey },
+      { kind: "delete-feature-data", owner, idempotencyKey },
       "Server RealQA feature-data deletion was accepted.",
     );
-    if (updated !== null) deletionAttempt.current = null;
+    if (updated !== null) deletionAttempts.current.delete(effectiveScopeKey);
   };
-  return <section aria-labelledby="feature-deletion-title" className="realqa-card danger-zone"><h2 id="feature-deletion-title">Delete server RealQA data</h2><p>This is distinct from logout, Reset DevHud, GitHub disconnect, and local draft deletion. It deletes authorized server presets, submissions, and assets.</p><button className="danger-button" disabled={busy || !online} onClick={() => setConfirming(true)} type="button">Delete server feature data</button>{confirming ? <Dialog title="Delete server RealQA data" onClose={() => setConfirming(false)}><h2>Delete server RealQA data?</h2><p>Local drafts are not deleted by this server request. Account or organization authorization is checked online.</p><button className="danger-button" onClick={() => { setConfirming(false); void deleteFeatureData(); }} type="button">Confirm server deletion</button><button className="secondary-button" onClick={() => setConfirming(false)} type="button">Cancel</button></Dialog> : null}</section>;
+  return <section aria-labelledby="feature-deletion-title" className="realqa-card danger-zone"><h2 id="feature-deletion-title">Delete server RealQA data</h2><p>This is distinct from logout, Reset DevHud, GitHub disconnect, and local draft deletion. It deletes authorized server presets, submissions, and assets.</p><label className="field">Owner scope<select disabled={busy || !online || selectedScope === undefined} onChange={(event) => setSelectedScopeKey(event.target.value)} value={effectiveScopeKey}>{snapshot.featureDeletionScopes.map((scope) => <option key={ownerScopeKey(scope)} value={ownerScopeKey(scope)}>{scope.label}</option>)}</select></label>{selectedScope === undefined ? <p className="muted">No personal or organization scope is available for deletion.</p> : null}<button className="danger-button" disabled={busy || !online || selectedScope === undefined} onClick={() => setConfirming(true)} type="button">Delete server feature data</button>{confirming && selectedScope ? <Dialog title="Delete server RealQA data" onClose={() => setConfirming(false)}><h2>Delete {selectedScope.label} RealQA data?</h2><p>Local drafts are not deleted by this server request. Account or organization authorization is checked online.</p><button className="danger-button" onClick={() => { setConfirming(false); void deleteFeatureData(); }} type="button">Confirm server deletion</button><button className="secondary-button" onClick={() => setConfirming(false)} type="button">Cancel</button></Dialog> : null}</section>;
 }
 
 function RealQaWorkspaceFrame({ children }: { readonly children: ReactNode }) {

@@ -24,6 +24,7 @@ const MAX_PROTO_REQUEST_BASE64_BYTES: usize = MAX_PROTO_REQUEST_BYTES.div_ceil(3
 const MAX_PROTO_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
 const MAX_ERROR_DETAIL_BYTES: usize = 4 * 1024;
 const MAX_IMAGE_BYTES: usize = 25 * 1024 * 1024;
+const MAX_IMAGE_BASE64_BYTES: usize = MAX_IMAGE_BYTES.div_ceil(3) * 4;
 const REALQA_ERROR_DETAIL_TYPE: &str = "devhud.realqa.v1.ErrorDetail";
 
 #[derive(Debug, Clone, Copy, Deserialize)]
@@ -516,6 +517,9 @@ fn validate_signed_put(
     {
         return Err(RealQaTransportFailure::UploadRejected);
     }
+    if request.body_base64.len() > MAX_IMAGE_BASE64_BYTES {
+        return Err(RealQaTransportFailure::RequestTooLarge);
+    }
     let body = STANDARD
         .decode(&request.body_base64)
         .map_err(|_| RealQaTransportFailure::UploadRejected)?;
@@ -727,6 +731,20 @@ mod tests {
         assert_eq!(
             validate_signed_put(&mismatch).unwrap_err(),
             RealQaTransportFailure::UploadRejected,
+        );
+    }
+
+    #[test]
+    fn oversized_encoded_signed_put_bodies_are_rejected_before_decode() {
+        let mut request = put_request(
+            "https://assets.realqa.deli.dev/uploads/opaque",
+            b"fixture-png",
+        );
+        request.body_base64 = "A".repeat(MAX_IMAGE_BASE64_BYTES + 1);
+
+        assert_eq!(
+            validate_signed_put(&request).unwrap_err(),
+            RealQaTransportFailure::RequestTooLarge,
         );
     }
 
