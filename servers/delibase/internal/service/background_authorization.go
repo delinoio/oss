@@ -1132,6 +1132,23 @@ func backgroundAuthorizationAccessLost() error {
 	)
 }
 
+func backgroundAuthorizationOwnerDeleted() error {
+	failure := connect.NewError(
+		connect.CodePermissionDenied,
+		errors.New("request failed"),
+	)
+	detail, err := connect.NewErrorDetail(&delibasev1.ErrorDetail{
+		Reason: delibasev1.ErrorReason_ERROR_REASON_BACKGROUND_USAGE_AUTHORIZATION_ACCESS_LOST,
+		Metadata: map[string]string{
+			"authorization_status": "owner_deleted",
+		},
+	})
+	if err == nil {
+		failure.AddDetail(detail)
+	}
+	return failure
+}
+
 func backgroundPeriodLimitExceeded() error {
 	return serviceError(
 		connect.CodeResourceExhausted,

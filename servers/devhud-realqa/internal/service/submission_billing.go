@@ -17,6 +17,8 @@ import (
 
 const (
 	bytesPerMiB                int64 = 1_048_576
+	secondsPerUTCDay           int64 = 86_400
+	byteSecondsPerMiBDay             = bytesPerMiB * secondsPerUTCDay
 	transferPriceUSDMicros     int64 = 500
 	storagePriceUSDMicros      int64 = 2
 	minimumTransferReservation       = 24 * time.Hour
@@ -109,6 +111,73 @@ type StorageAuthorization struct {
 	Revision            int64
 }
 
+type StorageAuthorizationLookupRequest struct {
+	AuthorizationID uuid.UUID
+	ForwardedBearer string
+}
+
+type StorageAuthorizationRevokeRequest struct {
+	AuthorizationID  uuid.UUID
+	ExpectedRevision int64
+	IdempotencyKey   uuid.UUID
+	ForwardedBearer  string
+}
+
+type AuthorizedStorageUsageRequest struct {
+	AuthorizationID   uuid.UUID
+	FeatureResourceID uuid.UUID
+	PeriodStart       time.Time
+	Units             int64
+	ClientReference   string
+	IdempotencyKey    uuid.UUID
+}
+
+type AuthorizedStorageFinalizationRequest struct {
+	AuthorizationID   uuid.UUID
+	FeatureResourceID uuid.UUID
+	PeriodStart       time.Time
+	ReservationID     uuid.UUID
+	Units             int64
+	IdempotencyKey    uuid.UUID
+}
+
+type StorageResourceDeletedRequest struct {
+	AuthorizationID   uuid.UUID
+	FeatureResourceID uuid.UUID
+	ExpectedRevision  int64
+	IdempotencyKey    uuid.UUID
+}
+
+type AuthorizedStorageReservation struct {
+	TransferReservation
+	AuthorizationID   uuid.UUID
+	FeatureResourceID uuid.UUID
+	PeriodStart       time.Time
+}
+
+type StorageBillingFailureKind string
+
+const (
+	StorageBillingFailureAuthorization StorageBillingFailureKind = "authorization"
+	StorageBillingFailureAccess        StorageBillingFailureKind = "access"
+	StorageBillingFailurePayment       StorageBillingFailureKind = "payment"
+	StorageBillingFailureOverage       StorageBillingFailureKind = "overage"
+	StorageBillingFailureUnavailable   StorageBillingFailureKind = "unavailable"
+	StorageBillingFailurePeriod        StorageBillingFailureKind = "period"
+	StorageBillingFailureExpired       StorageBillingFailureKind = "expired"
+	StorageBillingFailureOwnerDeleted  StorageBillingFailureKind = "owner_deleted"
+	StorageBillingFailureSecurity      StorageBillingFailureKind = "security"
+	StorageBillingFailureGitHub        StorageBillingFailureKind = "github"
+)
+
+type StorageBillingFailure struct {
+	Kind StorageBillingFailureKind
+}
+
+func (failure *StorageBillingFailure) Error() string {
+	return "realqa storage billing: authorized usage failed"
+}
+
 // SubmissionBilling is the narrow delibase boundary. Implementations attach a
 // short-lived RealQA M2M bearer and use ForwardedBearer only for this live
 // authenticated call. No bearer may be retained by either side.
@@ -120,6 +189,30 @@ type SubmissionBilling interface {
 	CreateStorageAuthorization(
 		context.Context,
 		StorageAuthorizationRequest,
+	) (StorageAuthorization, error)
+	GetStorageAuthorization(
+		context.Context,
+		StorageAuthorizationLookupRequest,
+	) (StorageAuthorization, error)
+	RevokeStorageAuthorization(
+		context.Context,
+		StorageAuthorizationRevokeRequest,
+	) (StorageAuthorization, error)
+	ReserveAuthorizedStorage(
+		context.Context,
+		AuthorizedStorageUsageRequest,
+	) (AuthorizedStorageReservation, error)
+	CommitAuthorizedStorage(
+		context.Context,
+		AuthorizedStorageFinalizationRequest,
+	) (AuthorizedStorageReservation, error)
+	ReleaseAuthorizedStorage(
+		context.Context,
+		AuthorizedStorageFinalizationRequest,
+	) (AuthorizedStorageReservation, error)
+	MarkStorageResourceDeleted(
+		context.Context,
+		StorageResourceDeletedRequest,
 	) (StorageAuthorization, error)
 }
 
@@ -174,6 +267,31 @@ func ceilMiB(encodedBytes int64) (int64, error) {
 		return 0, errors.New("realqa billing: encoded byte rounding overflow")
 	}
 	return (encodedBytes + bytesPerMiB - 1) / bytesPerMiB, nil
+}
+
+func ceilMiBDays(byteSeconds int64) (int64, error) {
+	if byteSeconds < 0 {
+		return 0, errors.New(
+			"realqa billing: retained byte-seconds cannot be negative")
+	}
+	if byteSeconds == 0 {
+		return 0, nil
+	}
+	units := byteSeconds / byteSecondsPerMiBDay
+	if byteSeconds%byteSecondsPerMiBDay != 0 {
+		if units == math.MaxInt64 {
+			return 0, errors.New(
+				"realqa billing: retained byte-second rounding overflow")
+		}
+		units++
+	}
+	return units, nil
+}
+
+func utcDayStart(value time.Time) time.Time {
+	utc := value.UTC()
+	return time.Date(
+		utc.Year(), utc.Month(), utc.Day(), 0, 0, 0, 0, time.UTC)
 }
 
 func derivedUUIDv7(root uuid.UUID, purpose string) (uuid.UUID, error) {

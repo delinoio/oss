@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -134,6 +135,27 @@ func TestBackgroundPersistenceErrorsRetainStableReasons(t *testing.T) {
 		connect.CodePermissionDenied,
 		delibasev1.ErrorReason_ERROR_REASON_SERVICE_METER_NOT_ALLOWED,
 	)
+}
+
+func TestOwnerDeletedAuthorizationErrorRemainsDistinguishable(t *testing.T) {
+	t.Parallel()
+	var failure *connect.Error
+	if !errors.As(backgroundAuthorizationOwnerDeleted(), &failure) {
+		t.Fatal("owner-deleted failure is not a Connect error")
+	}
+	for _, detail := range failure.Details() {
+		value, err := detail.Value()
+		if err != nil {
+			continue
+		}
+		typed, ok := value.(*delibasev1.ErrorDetail)
+		if ok &&
+			typed.Reason == delibasev1.ErrorReason_ERROR_REASON_BACKGROUND_USAGE_AUTHORIZATION_ACCESS_LOST &&
+			typed.Metadata["authorization_status"] == "owner_deleted" {
+			return
+		}
+	}
+	t.Fatal("owner-deleted failure lost its typed status metadata")
 }
 
 func TestUsageMessagesPreserveLiveUsageAndExposeAuthorizedBinding(t *testing.T) {

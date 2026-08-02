@@ -115,6 +115,19 @@ func (service *Submission) CreateSubmission(
 	if err != nil {
 		return nil, err
 	}
+	blocked, err := service.dependencies.Store.Queries().
+		HasStorageSubmissionBlock(
+			ctx, dbgen.HasStorageSubmissionBlockParams{
+				OwnerKind:           scope.kind,
+				OwnerID:             toPGUUID(scope.id),
+				PayerOrganizationID: toPGUUID(payerOrganization),
+			})
+	if err != nil {
+		return nil, err
+	}
+	if blocked {
+		return nil, storageBillingGraceError()
+	}
 	if err = validateImages(request.Msg.Images); err != nil {
 		return nil, err
 	}
@@ -251,6 +264,18 @@ func (service *Submission) CreateSubmission(
 					ctx, queries, payerScope); lockErr != nil {
 					return lockErr
 				}
+			}
+			blocked, lockErr := queries.HasStorageSubmissionBlock(
+				ctx, dbgen.HasStorageSubmissionBlockParams{
+					OwnerKind:           scope.kind,
+					OwnerID:             toPGUUID(scope.id),
+					PayerOrganizationID: toPGUUID(payerOrganization),
+				})
+			if lockErr != nil {
+				return lockErr
+			}
+			if blocked {
+				return storageBillingGraceError()
 			}
 			allowed, accessErr := queries.HasPayerTeamAccess(
 				ctx, dbgen.HasPayerTeamAccessParams{
@@ -479,7 +504,8 @@ func (service *Submission) submissionReplay(
 		if parseErr != nil {
 			return nil, true, parseErr
 		}
-		submission, err = service.loadSubmission(ctx, id)
+		submission, err = service.loadSubmissionWithRecoveryCaller(
+			ctx, id, toPGUUID(actor.accountID))
 		if err != nil {
 			return nil, true, err
 		}

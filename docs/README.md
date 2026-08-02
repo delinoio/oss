@@ -105,7 +105,7 @@ Each project must have one project index document and one or more domain contrac
   Go/TypeScript Connect artifacts, typed refresh client/freshness/outcome/billing
   state, device/candidate reads, mutations, and non-dispatching all-origin
   refresh preflight)
-- `docs/servers-devhud-realqa-foundation.md` (implemented inactive preset/tracker/auth/deletion, internal GitHub.com provider with stable-ID repository rename synchronization, R2-backed image-transfer/public-delivery, and replay-safe online submission/live-transfer/initial-storage-authorization foundation at `servers/devhud-realqa`; future recurring storage/rebind/terminal-cleanup slices and inactive `https://realqa.deli.dev` / `https://assets.realqa.deli.dev` origins)
+- `docs/servers-devhud-realqa-foundation.md` (implemented inactive preset/tracker/auth/deletion, internal GitHub.com provider with stable-ID repository rename synchronization, R2-backed image-transfer/public-delivery, replay-safe online submission/live-transfer/initial-storage authorization, and recurring storage/rebind/grace/terminal cleanup at `servers/devhud-realqa`; inactive `https://realqa.deli.dev` / `https://assets.realqa.deli.dev` origins)
 - `docs/protos-devhud-realqa-api-contract.md` (implemented `protos/devhud-realqa/v1`; `devhud.realqa.v1`, isolated descriptor and private generated package)
 
 DevHud's implemented signed-out base shell remains bundled, usable without an

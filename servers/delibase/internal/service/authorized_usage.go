@@ -45,10 +45,11 @@ func (service *Usage) ReserveAuthorizedUsage(
 	if request == nil || request.Msg == nil || request.Msg.MaximumUnits == nil {
 		return nil, invalidArgument()
 	}
+	requestTime := service.dependencies.Clock.Now()
 	binding, err := parseAuthorizedUsageBinding(
 		request.Msg.Context,
-		service.dependencies.Clock.Now(),
-		true,
+		requestTime,
+		false,
 	)
 	if err != nil {
 		return nil, err
@@ -112,6 +113,12 @@ func (service *Usage) ReserveAuthorizedUsage(
 					completedAt,
 				)
 				return nil
+			}
+			if transactionErr = validateAuthorizedReservePeriod(
+				binding.periodStart,
+				requestTime,
+			); transactionErr != nil {
+				return transactionErr
 			}
 			authorization, transactionErr := lockCurrentBackgroundAuthorization(
 				ctx,
@@ -1199,10 +1206,8 @@ func parseAuthorizedUsageBinding(
 		return authorizedUsageBinding{}, invalidArgument()
 	}
 	if reserve {
-		today := currentUTCPeriodStart(now)
-		if !periodStart.Equal(today) &&
-			!periodStart.Equal(today.AddDate(0, 0, -1)) {
-			return authorizedUsageBinding{}, invalidArgument()
+		if err = validateAuthorizedReservePeriod(periodStart, now); err != nil {
+			return authorizedUsageBinding{}, err
 		}
 	}
 	return authorizedUsageBinding{
@@ -1212,6 +1217,15 @@ func parseAuthorizedUsageBinding(
 		period:            period,
 		periodStart:       periodStart,
 	}, nil
+}
+
+func validateAuthorizedReservePeriod(periodStart time.Time, now time.Time) error {
+	today := currentUTCPeriodStart(now)
+	if !periodStart.Equal(today) &&
+		!periodStart.Equal(today.AddDate(0, 0, -1)) {
+		return invalidArgument()
+	}
+	return nil
 }
 
 func authorizedUsageDigest(
@@ -1350,8 +1364,10 @@ func validateBackgroundAuthorizationBinding(
 	switch authorization.Status {
 	case "active":
 		return nil
-	case "access_lost", "owner_deleted":
+	case "access_lost":
 		return backgroundAuthorizationAccessLost()
+	case "owner_deleted":
+		return backgroundAuthorizationOwnerDeleted()
 	default:
 		return backgroundAuthorizationStatusInvalid()
 	}

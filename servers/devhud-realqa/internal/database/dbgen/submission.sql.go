@@ -2013,12 +2013,23 @@ func (q *Queries) MarkSubmissionAssetsDeleted(ctx context.Context, arg MarkSubmi
 
 const markSubmissionSubmitted = `-- name: MarkSubmissionSubmitted :one
 UPDATE realqa_submissions
-SET state = 'submitted',
+SET state = CASE
+        WHEN EXISTS (
+            SELECT 1
+            FROM realqa_storage_recoveries AS recovery
+            WHERE recovery.submission_id = realqa_submissions.id
+              AND recovery.recovered_at IS NULL
+              AND recovery.expired_at IS NULL
+        ) THEN 'storage_billing_grace'
+        ELSE 'submitted'
+    END,
     submitted_at = COALESCE(submitted_at, transaction_timestamp()),
     updated_at = transaction_timestamp(),
     revision = revision + 1
-WHERE id = $1
-  AND state IN ('ready', 'submitting', 'reconciling')
+WHERE realqa_submissions.id = $1
+  AND realqa_submissions.state IN (
+      'ready', 'submitting', 'reconciling', 'storage_billing_grace'
+  )
 RETURNING id, owner_kind, owner_id, created_by_account_id, preset_id, destination_id, state, provider_issue_id, provider_issue_url, idempotency_digest, revision, created_at, updated_at, submitted_at, payer_organization_id, payer_team_id, preset_revision, declared_encoded_bytes, verified_encoded_bytes, upload_deadline, upload_expires_at, client_idempotency_key, transfer_meter_id, transfer_service_identity_id, transfer_reservation_id, transfer_reserve_idempotency_key, transfer_commit_idempotency_key, transfer_release_idempotency_key, transfer_reserved_units, transfer_committed_units, transfer_state, transfer_reservation_created_at, transfer_reservation_expires_at
 `
 
