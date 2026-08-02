@@ -1700,8 +1700,10 @@ jobs:
               - .github/workflows/CI.yml
               - Cargo.toml
               - Cargo.lock
+              - package.json
               - pnpm-lock.yaml
               - rust-toolchain
+              - turbo.json
               - apps/devhud/package.json
               - apps/devhud/scripts/check-contracts.mjs
               - apps/devhud/scripts/check-realqa-windows.mjs
@@ -1742,13 +1744,17 @@ jobs:
               - protos/devhud-realqa/**
             packaging:
               - .github/workflows/CI.yml
+              - .nvmrc
               - Cargo.toml
               - Cargo.lock
               - go.mod
               - go.sum
               - package.json
               - pnpm-lock.yaml
+              - pnpm-workspace.yaml
+              - turbo.json
               - apps/devhud/package.json
+              - apps/devhud/turbo.json
               - apps/devhud/rsbuild.config.ts
               - apps/devhud/tsconfig.json
               - apps/devhud/src/**
@@ -1759,6 +1765,7 @@ jobs:
               - apps/devhud/scripts/process.mjs
               - apps/devhud/src-tauri/**
               - protos/delibase/gen/go/**
+              - protos/devhud-deck/gen/go/**
               - protos/devhud-realqa/gen/go/**
               - protos/devhud-realqa/gen/ts/**
               - servers/internal/**
