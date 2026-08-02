@@ -21,7 +21,9 @@ const REALQA_GITHUB_CALLBACK: &str = "https://realqa.deli.dev/github/oauth/callb
 const FORWARDED_USER_TOKEN_HEADER: &str = "X-Delibase-Forwarded-User-Token";
 const MAX_PROTO_REQUEST_BYTES: usize = 1024 * 1024;
 const MAX_PROTO_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
+const MAX_ERROR_DETAIL_BYTES: usize = 4 * 1024;
 const MAX_IMAGE_BYTES: usize = 25 * 1024 * 1024;
+const REALQA_ERROR_DETAIL_TYPE: &str = "devhud.realqa.v1.ErrorDetail";
 
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -172,6 +174,15 @@ pub(crate) enum RealQaTransportFailure {
     RateLimited,
     Conflict,
     BillingRequired,
+    StaleRevision,
+    ImageTooLarge,
+    SessionTooLarge,
+    DecodedImageTooLarge,
+    FinalBodyTooLarge,
+    UploadConcurrencyLimited,
+    StorageBillingGrace,
+    SubmissionAmbiguous,
+    PublicImageConfirmationRequired,
     ServiceUnavailable,
     R2Unavailable,
     GithubUnavailable,
@@ -213,6 +224,108 @@ fn map_connect_status(status: StatusCode) -> RealQaTransportFailure {
         status if status.is_server_error() => RealQaTransportFailure::ServiceUnavailable,
         _ => RealQaTransportFailure::InvalidRequest,
     }
+}
+
+#[derive(Deserialize)]
+struct ConnectErrorEnvelope {
+    #[serde(default)]
+    details: Vec<ConnectErrorDetail>,
+}
+
+#[derive(Deserialize)]
+struct ConnectErrorDetail {
+    #[serde(rename = "type")]
+    detail_type: String,
+    value: String,
+}
+
+fn decode_varint(bytes: &[u8], offset: &mut usize) -> Option<u64> {
+    let mut value = 0_u64;
+    for shift in (0..70).step_by(7) {
+        let byte = *bytes.get(*offset)?;
+        *offset += 1;
+        if shift == 63 && byte > 1 {
+            return None;
+        }
+        value |= u64::from(byte & 0x7f) << shift;
+        if byte & 0x80 == 0 {
+            return Some(value);
+        }
+    }
+    None
+}
+
+// The native crate deliberately does not link a generated RealQA Rust client.
+// Decode only ErrorDetail.reason (field 1) here; remove this bounded decoder if
+// the closed native transport gains a generated Rust message boundary.
+fn decode_error_reason(bytes: &[u8]) -> Option<u64> {
+    let mut offset = 0;
+    while offset < bytes.len() {
+        let tag = decode_varint(bytes, &mut offset)?;
+        let field = tag >> 3;
+        let wire = tag & 0x07;
+        if field == 1 && wire == 0 {
+            return decode_varint(bytes, &mut offset);
+        }
+        match wire {
+            0 => {
+                decode_varint(bytes, &mut offset)?;
+            }
+            1 => offset = offset.checked_add(8)?,
+            2 => {
+                let length = usize::try_from(decode_varint(bytes, &mut offset)?).ok()?;
+                offset = offset.checked_add(length)?;
+            }
+            5 => offset = offset.checked_add(4)?,
+            _ => return None,
+        }
+        if offset > bytes.len() {
+            return None;
+        }
+    }
+    None
+}
+
+// Keep these closed numeric values synchronized with ErrorReason in
+// protos/devhud-realqa/v1/common.proto.
+fn map_error_reason(reason: u64) -> Option<RealQaTransportFailure> {
+    match reason {
+        1 => Some(RealQaTransportFailure::AuthenticationRequired),
+        2 => Some(RealQaTransportFailure::ReauthenticationRequired),
+        5 | 6 => Some(RealQaTransportFailure::StaleRevision),
+        7 | 35 | 37 => Some(RealQaTransportFailure::Conflict),
+        10 | 12..=14 => Some(RealQaTransportFailure::GithubUnavailable),
+        15 => Some(RealQaTransportFailure::FinalBodyTooLarge),
+        16 => Some(RealQaTransportFailure::ImageTooLarge),
+        17 => Some(RealQaTransportFailure::SessionTooLarge),
+        18 => Some(RealQaTransportFailure::DecodedImageTooLarge),
+        22..=24 => Some(RealQaTransportFailure::UploadRejected),
+        25 => Some(RealQaTransportFailure::SubmissionAmbiguous),
+        26 => Some(RealQaTransportFailure::RateLimited),
+        27 => Some(RealQaTransportFailure::UploadConcurrencyLimited),
+        28..=32 => Some(RealQaTransportFailure::BillingRequired),
+        33 => Some(RealQaTransportFailure::StorageBillingGrace),
+        36 => Some(RealQaTransportFailure::PublicImageConfirmationRequired),
+        _ => None,
+    }
+}
+
+fn map_connect_error(status: StatusCode, body: &[u8]) -> RealQaTransportFailure {
+    let typed = serde_json::from_slice::<ConnectErrorEnvelope>(body)
+        .ok()
+        .and_then(|error| {
+            error.details.into_iter().find_map(|detail| {
+                if detail.detail_type != REALQA_ERROR_DETAIL_TYPE {
+                    return None;
+                }
+                let bytes = STANDARD.decode(detail.value).ok()?;
+                if bytes.len() > MAX_ERROR_DETAIL_BYTES {
+                    return None;
+                }
+                map_error_reason(decode_error_reason(&bytes)?)
+            })
+        });
+    typed.unwrap_or_else(|| map_connect_status(status))
 }
 
 fn validate_github_authorization_target(
@@ -339,14 +452,15 @@ pub(crate) fn connect(
     })
     .map_err(map_auth_failure)?
     .and_then(|response| {
-        if !response.status().is_success() {
-            return Err(map_connect_status(response.status()));
-        }
+        let status = response.status();
         let bytes = response
             .bytes()
             .map_err(|_| RealQaTransportFailure::ServiceUnavailable)?;
         if bytes.len() > MAX_PROTO_RESPONSE_BYTES {
             return Err(RealQaTransportFailure::ResponseTooLarge);
+        }
+        if !status.is_success() {
+            return Err(map_connect_error(status, &bytes));
         }
         Ok(RealQaConnectResponse {
             body_base64: STANDARD.encode(bytes),
@@ -466,6 +580,52 @@ mod tests {
                 .collect::<std::collections::BTreeSet<_>>()
                 .len()
         );
+    }
+
+    #[test]
+    fn connect_errors_prefer_closed_realqa_error_details() {
+        let error_body = |reason: u8| {
+            serde_json::to_vec(&serde_json::json!({
+                "code": "invalid_argument",
+                "message": "invalid request",
+                "details": [{
+                    "type": REALQA_ERROR_DETAIL_TYPE,
+                    "value": STANDARD.encode([0x08, reason]),
+                }],
+            }))
+            .unwrap()
+        };
+        for (reason, expected) in [
+            (5, RealQaTransportFailure::StaleRevision),
+            (15, RealQaTransportFailure::FinalBodyTooLarge),
+            (16, RealQaTransportFailure::ImageTooLarge),
+            (17, RealQaTransportFailure::SessionTooLarge),
+            (18, RealQaTransportFailure::DecodedImageTooLarge),
+            (25, RealQaTransportFailure::SubmissionAmbiguous),
+            (27, RealQaTransportFailure::UploadConcurrencyLimited),
+            (33, RealQaTransportFailure::StorageBillingGrace),
+            (36, RealQaTransportFailure::PublicImageConfirmationRequired),
+        ] {
+            assert_eq!(
+                map_connect_error(StatusCode::BAD_REQUEST, &error_body(reason)),
+                expected,
+            );
+        }
+    }
+
+    #[test]
+    fn connect_errors_fall_back_to_status_for_untrusted_details() {
+        for body in [
+            br#"{"details": [{"type": "other.ErrorDetail", "value": "CA8="}]}"#.as_slice(),
+            br#"{"details": [{"type": "devhud.realqa.v1.ErrorDetail", "value": "not-base64"}]}"#
+                .as_slice(),
+            br#"not-json"#.as_slice(),
+        ] {
+            assert_eq!(
+                map_connect_error(StatusCode::TOO_MANY_REQUESTS, body),
+                RealQaTransportFailure::RateLimited,
+            );
+        }
     }
 
     #[test]

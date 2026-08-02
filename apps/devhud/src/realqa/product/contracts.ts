@@ -1,4 +1,5 @@
 import type { CaptureMode, PointerInclusion } from "../capture";
+import type { StructuredShortcut } from "../../persistence/contracts";
 
 export enum RealQaDesktopFamily {
   Macos = "macos",
@@ -40,6 +41,7 @@ export enum RealQaFailureCode {
   DisplayChanged = "display-changed",
   PortalCancelled = "portal-cancelled",
   SubmissionAmbiguous = "submission-ambiguous",
+  PublicImageConfirmationRequired = "public-image-confirmation-required",
   ServiceUnavailable = "service-unavailable",
 }
 
@@ -106,7 +108,7 @@ export interface RealQaPreset {
   readonly projects: readonly string[];
   readonly billing: RealQaBillingScope;
   readonly backgroundGrant: "active" | "rebind-required" | "revoked";
-  readonly shortcut: string;
+  readonly shortcut: StructuredShortcut | null;
 }
 
 export interface RealQaEditableField {
@@ -323,6 +325,8 @@ export const realQaFailureGuidance: Readonly<Record<RealQaFailureCode, string>> 
   [RealQaFailureCode.PortalCancelled]: "The Wayland capture prompt was cancelled.",
   [RealQaFailureCode.SubmissionAmbiguous]:
     "The GitHub result is uncertain. Retry reconciliation with the same submission; no new issue will be created first.",
+  [RealQaFailureCode.PublicImageConfirmationRequired]:
+    "Review the public-screenshot warning and confirm this submission attempt again.",
   [RealQaFailureCode.ServiceUnavailable]:
     "RealQA is temporarily unavailable. No screenshot or issue content was included in this error.",
 };

@@ -79,7 +79,7 @@ export function shortcutFromKeyboardInput(input: {
   return { kind: "candidate", shortcut: { modifiers, key } };
 }
 
-function shortcutLabel(shortcut: StructuredShortcut | null): string {
+export function shortcutLabel(shortcut: StructuredShortcut | null): string {
   if (shortcut === null) return "Not configured";
   const labels: Record<ShortcutModifier, string> = {
     [ShortcutModifier.Control]: "Ctrl",

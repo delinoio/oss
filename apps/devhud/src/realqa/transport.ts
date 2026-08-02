@@ -43,6 +43,15 @@ export type RealQaTransportFailure =
   | "service-unavailable"
   | "r2-unavailable"
   | "github-unavailable"
+  | "stale-revision"
+  | "image-too-large"
+  | "session-too-large"
+  | "decoded-image-too-large"
+  | "final-body-too-large"
+  | "upload-concurrency-limited"
+  | "storage-billing-grace"
+  | "submission-ambiguous"
+  | "public-image-confirmation-required"
   | "upload-rejected";
 
 interface NativeConnectResponse {

@@ -1,9 +1,10 @@
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import axe from "axe-core";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { CaptureMode, PointerInclusion } from "../capture";
+import { ShortcutKey, ShortcutModifier } from "../../persistence/contracts";
 import { RealQaWorkspace, serializeFinalIssueBody } from "./RealQaWorkspace";
 import {
   RealQaAccessMode,
@@ -95,7 +96,10 @@ function snapshot(
         teamId: "01900000-0000-7000-8000-000000000009",
       },
       backgroundGrant: "active",
-      shortcut: "Control+Shift+7",
+      shortcut: {
+        modifiers: [ShortcutModifier.Control, ShortcutModifier.Shift],
+        key: ShortcutKey.Digit7,
+      },
     }],
     drafts: [draft],
     submissions: [{
@@ -377,13 +381,11 @@ describe("RealQA desktop production workspace", () => {
     expect(review).toBeDisabled();
     expect(title).toHaveAttribute("aria-invalid", "true");
 
-    await user.clear(title);
-    await user.type(title, "é".repeat(129));
+    fireEvent.change(title, { target: { value: "é".repeat(129) } });
     expect(review).toBeDisabled();
     expect(screen.getByText(/between 1 and 256 UTF-8 bytes/u)).toBeVisible();
 
-    await user.clear(title);
-    await user.type(title, "é".repeat(128));
+    fireEvent.change(title, { target: { value: "é".repeat(128) } });
     expect(review).toBeEnabled();
   });
 
@@ -394,21 +396,52 @@ describe("RealQA desktop production workspace", () => {
     const gateway = new FixtureGateway({
       ...value,
       presets: [
-        { ...template, presetId: "preset-without-shortcut", name: "Unbound preset", shortcut: "" },
+        { ...template, presetId: "preset-without-shortcut", name: "Unbound preset", shortcut: null },
         ...Array.from({ length: 20 }, (_, index) => ({
           ...template,
           presetId: `shortcut-${index}`,
           name: `Shortcut ${index + 1}`,
-          shortcut: `Control+Shift+${index + 1}`,
+          shortcut: {
+            modifiers: [ShortcutModifier.Control, ShortcutModifier.Shift],
+            key: Object.values(ShortcutKey)[index] ?? ShortcutKey.K,
+          },
         })),
       ],
     });
     await renderWorkspace(gateway);
 
     expect(screen.getByText("20/20 shortcuts")).toBeVisible();
-    expect(screen.getByLabelText("Global shortcut")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Record shortcut" })).toBeDisabled();
     expect(screen.getByLabelText("Name")).toHaveValue("Unbound preset");
     expect(screen.getByText(/Conflicts remain inactive\./u)).toBeVisible();
+  });
+
+  it("captures preset shortcuts as closed modifier and key values", async () => {
+    const user = userEvent.setup();
+    const value = snapshot();
+    const preset = value.presets[0];
+    if (preset === undefined) throw new Error("Fixture preset is missing.");
+    const gateway = new FixtureGateway({
+      ...value,
+      presets: [{ ...preset, shortcut: null }],
+    });
+    await renderWorkspace(gateway);
+
+    const record = screen.getByRole("button", { name: "Record shortcut" });
+    await user.click(record);
+    await user.keyboard("{Control>}{Shift>}k{/Shift}{/Control}");
+    expect(screen.getByText("Ctrl + Shift + K")).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "Save preset" }));
+    expect(gateway.actions.at(-1)).toMatchObject({
+      kind: "save-preset",
+      preset: {
+        shortcut: {
+          modifiers: [ShortcutModifier.Control, ShortcutModifier.Shift],
+          key: ShortcutKey.K,
+        },
+      },
+    });
   });
 
   it("reviews editable URLs and submits only the sanitized value", async () => {
@@ -684,6 +717,35 @@ describe("RealQA desktop production workspace", () => {
     expect(gateway.actions.at(-1)).toEqual({ kind: "connect-destination" });
   });
 
+  it("offers GitHub reconnection before creating a first preset", async () => {
+    const user = userEvent.setup();
+    const value = snapshot();
+    const destination = value.destinations[0];
+    if (destination === undefined) throw new Error("Fixture destination is missing.");
+    const gateway = new FixtureGateway({
+      ...value,
+      presets: [],
+      destinations: [{ ...destination, connected: false }],
+      drafts: [],
+    });
+    await renderWorkspace(gateway);
+
+    expect(screen.queryByRole("button", { name: "Create first preset" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Reconnect GitHub" }));
+    expect(gateway.actions.at(-1)).toEqual({
+      kind: "reconnect-destination",
+      destinationId: destination.destinationId,
+    });
+  });
+
+  it("blocks submission when a retained draft's preset is gone", async () => {
+    const gateway = new FixtureGateway({ ...snapshot(), presets: [] });
+    await renderWorkspace(gateway);
+
+    expect(screen.getByText(/draft's preset is no longer available/u)).toBeVisible();
+    expect(screen.getByRole("button", { name: "Review and submit" })).toBeDisabled();
+  });
+
   it("preserves distinct disconnect, draft deletion, and server feature deletion confirmations", async () => {
     const user = userEvent.setup();
     const gateway = new FixtureGateway(snapshot());
@@ -708,6 +770,8 @@ describe("RealQA desktop production workspace", () => {
       kind: "delete-feature-data",
       idempotencyKey: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-7/u),
     });
+    expect(await screen.findByText("No presets are available.")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Save preset" })).not.toBeInTheDocument();
   });
 
   it("reuses disconnect and feature-deletion identities after ambiguous failures", async () => {
@@ -755,6 +819,12 @@ describe("RealQA desktop production workspace", () => {
     const gateway = new FixtureGateway(snapshot());
     await renderWorkspace(gateway);
     await user.click(screen.getByRole("button", { name: "Retry reconciliation" }));
+    expect(gateway.actions).toHaveLength(0);
+    const retryDialog = screen.getByRole("dialog", {
+      name: "Confirm public screenshots for retry",
+    });
+    expect(retryDialog).toHaveTextContent("Anyone with the GitHub issue URL");
+    await user.click(within(retryDialog).getByRole("button", { name: "Confirm and retry" }));
     expect(gateway.actions.at(-1)).toMatchObject({
       kind: "retry-submission",
       expectedSubmissionRevision: 8,
