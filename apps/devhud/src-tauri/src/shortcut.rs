@@ -392,6 +392,7 @@ impl<B: ShortcutBackend> UnifiedShortcutRegistry<B> {
         Ok(())
     }
 
+    #[cfg(test)]
     fn logout_account(&mut self, account: &str) -> Result<(), ShortcutFailure> {
         self.cleanup_pending()?;
         let owners: Vec<_> = self
