@@ -15,6 +15,9 @@ use crate::{auth::AuthError, auth_native::NativeAuthState};
 
 const REALQA_ORIGIN: &str = "https://realqa.deli.dev";
 const REALQA_ASSET_HOST: &str = "assets.realqa.deli.dev";
+const REALQA_GITHUB_CLIENT_ID_VARIABLE: &str = "DEVHUD_REALQA_GITHUB_APP_CLIENT_ID";
+const REALQA_GITHUB_APP_SLUG_VARIABLE: &str = "DEVHUD_REALQA_GITHUB_APP_SLUG";
+const REALQA_GITHUB_CALLBACK: &str = "https://realqa.deli.dev/github/oauth/callback";
 const FORWARDED_USER_TOKEN_HEADER: &str = "X-Delibase-Forwarded-User-Token";
 const MAX_PROTO_REQUEST_BYTES: usize = 1024 * 1024;
 const MAX_PROTO_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
@@ -114,6 +117,48 @@ pub(crate) struct RealQaSignedPutRequest {
     body_base64: String,
 }
 
+#[derive(Debug)]
+pub(crate) struct RealQaGithubBrowserState {
+    configuration: Option<RealQaGithubBrowserConfiguration>,
+}
+
+#[derive(Debug)]
+struct RealQaGithubBrowserConfiguration {
+    client_id: String,
+    app_slug: String,
+}
+
+impl RealQaGithubBrowserState {
+    pub(crate) fn initialize() -> Self {
+        let configuration = std::env::var(REALQA_GITHUB_CLIENT_ID_VARIABLE)
+            .ok()
+            .zip(std::env::var(REALQA_GITHUB_APP_SLUG_VARIABLE).ok())
+            .and_then(|(client_id, app_slug)| {
+                RealQaGithubBrowserConfiguration::new(client_id, app_slug)
+            });
+        Self { configuration }
+    }
+}
+
+impl RealQaGithubBrowserConfiguration {
+    fn new(client_id: String, app_slug: String) -> Option<Self> {
+        let client_id_valid = !client_id.is_empty()
+            && client_id.len() <= 100
+            && client_id.bytes().all(|byte| byte.is_ascii_alphanumeric());
+        let app_slug_valid = !app_slug.is_empty()
+            && app_slug.len() <= 100
+            && !app_slug.starts_with('-')
+            && !app_slug.ends_with('-')
+            && app_slug
+                .bytes()
+                .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-');
+        (client_id_valid && app_slug_valid).then_some(Self {
+            client_id,
+            app_slug,
+        })
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum RealQaTransportFailure {
@@ -129,6 +174,9 @@ pub(crate) enum RealQaTransportFailure {
     R2Unavailable,
     GithubUnavailable,
     UploadRejected,
+    ConfigurationUnavailable,
+    InvalidAuthorizationTarget,
+    BrowserUnavailable,
 }
 
 fn map_auth_failure(error: AuthError) -> RealQaTransportFailure {
@@ -163,6 +211,104 @@ fn map_connect_status(status: StatusCode) -> RealQaTransportFailure {
         status if status.is_server_error() => RealQaTransportFailure::ServiceUnavailable,
         _ => RealQaTransportFailure::InvalidRequest,
     }
+}
+
+fn validate_github_authorization_target(
+    target: &str,
+    configuration: &RealQaGithubBrowserConfiguration,
+) -> Result<Url, RealQaTransportFailure> {
+    if target.len() > 2_048 || !target.starts_with("https://github.com/") {
+        return Err(RealQaTransportFailure::InvalidAuthorizationTarget);
+    }
+    let raw_path = target
+        .split(['?', '#'])
+        .next()
+        .unwrap_or_default()
+        .strip_prefix("https://github.com")
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    if raw_path.contains("%2f")
+        || raw_path.contains("%5c")
+        || raw_path.contains("%2e")
+        || raw_path
+            .split('/')
+            .any(|segment| matches!(segment, "." | ".."))
+    {
+        return Err(RealQaTransportFailure::InvalidAuthorizationTarget);
+    }
+    let url = Url::parse(target).map_err(|_| RealQaTransportFailure::InvalidAuthorizationTarget)?;
+    if url.scheme() != "https"
+        || url.host_str() != Some("github.com")
+        || url.port().is_some()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.fragment().is_some()
+    {
+        return Err(RealQaTransportFailure::InvalidAuthorizationTarget);
+    }
+    let query = url.query_pairs().collect::<Vec<_>>();
+    let values = |name: &str| {
+        query
+            .iter()
+            .filter_map(|(key, value)| (key == name).then_some(value.as_ref()))
+            .collect::<Vec<_>>()
+    };
+    let states = values("state");
+    if states.len() != 1
+        || !(32..=256).contains(&states[0].len())
+        || !states[0]
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'~' | b'-'))
+    {
+        return Err(RealQaTransportFailure::InvalidAuthorizationTarget);
+    }
+    let valid = if url.path() == "/login/oauth/authorize" {
+        let client_ids = values("client_id");
+        let callbacks = values("redirect_uri");
+        query.len() == 3
+            && client_ids.as_slice() == [configuration.client_id.as_str()]
+            && callbacks.as_slice() == [REALQA_GITHUB_CALLBACK]
+    } else {
+        query.len() == 1
+            && url.path() == format!("/apps/{}/installations/new", configuration.app_slug)
+    };
+    valid
+        .then_some(url)
+        .ok_or(RealQaTransportFailure::InvalidAuthorizationTarget)
+}
+
+pub(crate) fn open_github_authorization(
+    target: &str,
+    state: &RealQaGithubBrowserState,
+    auth: &NativeAuthState,
+) -> Result<(), RealQaTransportFailure> {
+    auth.with_realqa_bearers(|_feature, _delibase, _subject| ())
+        .map_err(map_auth_failure)?;
+    let configuration = state
+        .configuration
+        .as_ref()
+        .ok_or(RealQaTransportFailure::ConfigurationUnavailable)?;
+    let target = validate_github_authorization_target(target, configuration)?;
+    #[cfg(target_os = "macos")]
+    let status = std::process::Command::new("/usr/bin/open")
+        .arg(target.as_str())
+        .status();
+    #[cfg(target_os = "linux")]
+    let status = std::process::Command::new("xdg-open")
+        .arg(target.as_str())
+        .status();
+    #[cfg(target_os = "windows")]
+    let status = std::process::Command::new("explorer.exe")
+        .arg(target.as_str())
+        .status();
+    status
+        .map_err(|_| RealQaTransportFailure::BrowserUnavailable)
+        .and_then(|status| {
+            status
+                .success()
+                .then_some(())
+                .ok_or(RealQaTransportFailure::BrowserUnavailable)
+        })
 }
 
 pub(crate) fn connect(
@@ -348,5 +494,43 @@ mod tests {
             validate_signed_put(&mismatch).unwrap_err(),
             RealQaTransportFailure::UploadRejected,
         );
+    }
+
+    #[test]
+    fn github_browser_handoff_accepts_only_the_configured_exact_shapes() {
+        let configuration = RealQaGithubBrowserConfiguration::new(
+            "fixtureclient123".to_owned(),
+            "fixture-realqa".to_owned(),
+        )
+        .unwrap();
+        let state = "abcdefghijklmnopqrstuvwxyz123456";
+        let callback = "https%3A%2F%2Frealqa.deli.dev%2Fgithub%2Foauth%2Fcallback";
+        for valid in [
+            format!(
+                "https://github.com/login/oauth/authorize?client_id=fixtureclient123&redirect_uri={}&state={state}",
+                callback,
+            ),
+            format!(
+                "https://github.com/apps/fixture-realqa/installations/new?state={state}"
+            ),
+        ] {
+            assert!(validate_github_authorization_target(&valid, &configuration).is_ok());
+        }
+        for invalid in [
+            format!("http://github.com/apps/fixture-realqa/installations/new?state={state}"),
+            format!("https://user@github.com/apps/fixture-realqa/installations/new?state={state}"),
+            format!("https://github.com/apps/other/installations/new?state={state}"),
+            format!("https://github.com/apps/fixture-realqa/%2e%2e/installations/new?state={state}"),
+            format!("https://github.com/apps/fixture-realqa/installations%2fnew?state={state}"),
+            format!("https://github.com/apps/fixture-realqa/installations/new?state={state}#fragment"),
+            "https://github.com/apps/fixture-realqa/installations/new?state=contains%20spaces-and-is-long-enough-123456".to_owned(),
+            format!("https://github.com/login/oauth/authorize?client_id=other&redirect_uri={callback}&state={state}"),
+            format!("https://github.com/login/oauth/authorize?client_id=fixtureclient123&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback&state={state}"),
+        ] {
+            assert_eq!(
+                validate_github_authorization_target(&invalid, &configuration).unwrap_err(),
+                RealQaTransportFailure::InvalidAuthorizationTarget,
+            );
+        }
     }
 }

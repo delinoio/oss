@@ -86,6 +86,7 @@ function snapshot(
       projects: ["Release"],
       images: [{
         imageId,
+        revision: 1,
         name: "Capture 1",
         encodedBytes: 8192,
         selected: true,
@@ -95,6 +96,7 @@ function snapshot(
     }],
     submissions: [{
       submissionId: "01900000-0000-7000-8000-000000000004",
+      revision: 8,
       state: "reconciling",
       issueUrl: null,
       graceExpiresAt: null,
@@ -102,12 +104,18 @@ function snapshot(
       authorizationRevision: 7,
       images: [{
         imageId: "01900000-0000-7000-8000-000000000006",
+        revision: 9,
         name: "Submitted capture",
         encodedBytes: 8192,
         selected: true,
         uploadState: "public",
         uploadProgress: 100,
       }],
+    }],
+    replacementBillingScopes: [{
+      organizationId: "01900000-0000-7000-8000-000000000008",
+      teamId: "01900000-0000-7000-8000-000000000009",
+      label: "Acme / Release",
     }],
   };
 }
@@ -181,6 +189,7 @@ class FixtureGateway implements RealQaProductGateway {
                 ...draft,
                 images: [...draft.images, {
                   imageId: `capture-${draft.images.length + 1}`,
+                  revision: 1,
                   name: `Capture ${draft.images.length + 1}`,
                   encodedBytes: 4096,
                   selected: true,
@@ -215,6 +224,7 @@ class FixtureGateway implements RealQaProductGateway {
         drafts: this.value.drafts.filter((draft) => draft.draftId !== action.draft.draftId),
         submissions: [{
           submissionId: action.draft.draftId,
+          revision: 1,
           state: "submitted",
           issueUrl: "https://github.com/delinoio/oss/issues/757",
           graceExpiresAt: null,
@@ -241,6 +251,14 @@ class FixtureGateway implements RealQaProductGateway {
           destination.destinationId === action.destinationId
             ? { ...destination, connected: false, revision: destination.revision + 1 }
             : destination,
+        ),
+      };
+    }
+    if (action.kind === "delete-preset") {
+      this.value = {
+        ...this.value,
+        presets: this.value.presets.filter(
+          (preset) => preset.presetId !== action.presetId,
         ),
       };
     }
@@ -394,6 +412,66 @@ describe("RealQA desktop production workspace", () => {
       kind: "delete-preset",
       expectedRevision: 6,
     });
+    expect(await screen.findByText("No presets are available.")).toBeVisible();
+  });
+
+  it("selects the next retained preset after deleting the active preset", async () => {
+    const user = userEvent.setup();
+    const value = snapshot();
+    const active = value.presets[0];
+    if (active === undefined) throw new Error("Fixture preset is missing.");
+    const gateway = new FixtureGateway({
+      ...value,
+      presets: [active, { ...active, presetId: "preset-2", name: "Retained preset" }],
+    });
+    await renderWorkspace(gateway);
+
+    await user.click(screen.getByRole("button", { name: "Delete preset" }));
+    await user.click(within(screen.getByRole("dialog", { name: "Delete RealQA preset" })).getByRole("button", { name: "Delete preset" }));
+
+    await waitFor(() => expect(screen.getByLabelText("Preset", { selector: "select" })).toHaveValue("preset-2"));
+    expect(screen.getByLabelText("Name")).toHaveValue("Retained preset");
+  });
+
+  it("resets capture overrides to each selected draft's preset defaults", async () => {
+    const user = userEvent.setup();
+    const value = snapshot();
+    const preset = value.presets[0];
+    const draft = value.drafts[0];
+    if (preset === undefined || draft === undefined) {
+      throw new Error("Fixture preset and draft are missing.");
+    }
+    const gateway = new FixtureGateway({
+      ...value,
+      presets: [
+        {
+          ...preset,
+          captureMode: CaptureMode.MultiMonitor,
+          pointer: PointerInclusion.Include,
+          selectorMode: RealQaSelectorMode.Dom,
+        },
+        {
+          ...preset,
+          presetId: "preset-2",
+          captureMode: CaptureMode.Window,
+          pointer: PointerInclusion.Exclude,
+          selectorMode: RealQaSelectorMode.Normal,
+        },
+      ],
+      drafts: [draft, { ...draft, draftId: "draft-2", presetId: "preset-2" }],
+    });
+    await renderWorkspace(gateway);
+
+    expect(screen.getByLabelText("Mode", { selector: "select" })).toHaveValue(CaptureMode.MultiMonitor);
+    expect(screen.getByLabelText("Include pointer")).toBeChecked();
+    expect(screen.getByLabelText("Select a DOM target in Chrome")).toBeChecked();
+
+    await user.selectOptions(screen.getByLabelText("Draft"), "draft-2");
+    await waitFor(() => {
+      expect(screen.getByLabelText("Mode", { selector: "select" })).toHaveValue(CaptureMode.Window);
+      expect(screen.getByLabelText("Include pointer")).not.toBeChecked();
+      expect(screen.getByLabelText("Select a DOM target in Chrome")).not.toBeChecked();
+    });
   });
 
   it("selects the next retained draft after submission removes the current draft", async () => {
@@ -460,6 +538,9 @@ describe("RealQA desktop production workspace", () => {
 
     await user.click(screen.getByRole("button", { name: "Create first preset" }));
     await waitFor(() => expect(gateway.actions.at(-1)).toMatchObject({ kind: "create-preset" }));
+    expect(gateway.actions.at(-1)).toMatchObject({
+      idempotencyKey: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u),
+    });
     expect(await screen.findByRole("button", { name: "Create draft" })).toBeEnabled();
     await user.click(screen.getByRole("button", { name: "Create draft" }));
     await waitFor(() => expect(gateway.actions.at(-1)).toMatchObject({
@@ -467,6 +548,26 @@ describe("RealQA desktop production workspace", () => {
       presetId,
     }));
     expect(await screen.findByLabelText("Issue title")).toHaveValue("");
+  });
+
+  it("reuses the CreatePreset identity after an ambiguous failure", async () => {
+    const user = userEvent.setup();
+    const value = snapshot();
+    const gateway = new FixtureGateway({ ...value, presets: [], drafts: [] });
+    gateway.nextFailure = new RealQaProductError(RealQaFailureCode.ServiceUnavailable);
+    await renderWorkspace(gateway);
+
+    await user.click(screen.getByRole("button", { name: "Create first preset" }));
+    await screen.findByRole("alert");
+    await user.click(screen.getByRole("button", { name: "Create first preset" }));
+    await waitFor(() => expect(gateway.actions).toHaveLength(2));
+
+    expect(gateway.actions[0]).toMatchObject({ kind: "create-preset" });
+    expect(gateway.actions[1]).toMatchObject({ kind: "create-preset" });
+    expect(gateway.actions[1]).toHaveProperty(
+      "idempotencyKey",
+      (gateway.actions[0] as Extract<RealQaProductAction, { kind: "create-preset" }>).idempotencyKey,
+    );
   });
 
   it("offers GitHub connection when a first preset has no destination", async () => {
@@ -505,19 +606,60 @@ describe("RealQA desktop production workspace", () => {
     expect(gateway.actions.at(-1)).toEqual({ kind: "delete-feature-data" });
   });
 
-  it("supports reconciliation, image deletion, rebind, and revoke actions", async () => {
+  it("supports revision-safe reconciliation, image deletion, and exact-scope rebind", async () => {
     const user = userEvent.setup();
     const gateway = new FixtureGateway(snapshot());
     await renderWorkspace(gateway);
     await user.click(screen.getByRole("button", { name: "Retry reconciliation" }));
     expect(gateway.actions.at(-1)).toMatchObject({ kind: "retry-submission" });
     await user.click(screen.getByRole("button", { name: "Delete Submitted capture" }));
-    expect(gateway.actions.at(-1)).toMatchObject({ kind: "delete-image" });
-    await user.type(screen.getByLabelText("Replacement payer"), "Acme / Release");
+    expect(gateway.actions.at(-1)).toMatchObject({
+      kind: "delete-image",
+      expectedSubmissionRevision: 8,
+      expectedImageRevision: 9,
+    });
+    await user.click(screen.getByRole("button", { name: "Delete all images" }));
+    expect(gateway.actions.at(-1)).toMatchObject({
+      kind: "delete-submission-assets",
+      expectedSubmissionRevision: 8,
+    });
+    expect(screen.getByLabelText("Replacement payer")).toHaveValue(
+      "01900000-0000-7000-8000-000000000008/01900000-0000-7000-8000-000000000009",
+    );
     await user.click(screen.getByRole("button", { name: "Rebind payer" }));
-    expect(gateway.actions.at(-1)).toMatchObject({ kind: "rebind-authorization", expectedRevision: 7, payer: "Acme / Release" });
-    await user.click(screen.getByRole("button", { name: "Revoke grant" }));
-    expect(gateway.actions.at(-1)).toMatchObject({ kind: "revoke-authorization" });
+    expect(gateway.actions.at(-1)).toMatchObject({
+      kind: "rebind-authorization",
+      expectedRevision: 7,
+      replacementBilling: {
+        organizationId: "01900000-0000-7000-8000-000000000008",
+        teamId: "01900000-0000-7000-8000-000000000009",
+      },
+      idempotencyKey: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-7/u),
+    });
+    expect(screen.queryByRole("button", { name: "Revoke grant" })).not.toBeInTheDocument();
+  });
+
+  it("reuses the exact-scope rebind identity after an ambiguous failure", async () => {
+    const user = userEvent.setup();
+    const gateway = new FixtureGateway(snapshot());
+    gateway.nextFailure = new RealQaProductError(RealQaFailureCode.ServiceUnavailable);
+    await renderWorkspace(gateway);
+
+    await user.click(screen.getByRole("button", { name: "Rebind payer" }));
+    await screen.findByRole("alert");
+    await user.click(screen.getByRole("button", { name: "Rebind payer" }));
+    await waitFor(() => expect(gateway.actions).toHaveLength(2));
+
+    const first = gateway.actions[0] as Extract<
+      RealQaProductAction,
+      { kind: "rebind-authorization" }
+    >;
+    const retry = gateway.actions[1] as Extract<
+      RealQaProductAction,
+      { kind: "rebind-authorization" }
+    >;
+    expect(retry.idempotencyKey).toBe(first.idempotencyKey);
+    expect(retry.replacementBilling).toEqual(first.replacementBilling);
   });
 
   it("has no automated WCAG violations", async () => {

@@ -117,6 +117,7 @@ export interface RealQaEditableField {
 
 export interface RealQaReviewImage {
   readonly imageId: string;
+  readonly revision: number;
   readonly name: string;
   readonly encodedBytes: number;
   readonly selected: boolean;
@@ -149,6 +150,7 @@ export interface RealQaDraft {
 
 export interface RealQaSubmissionSummary {
   readonly submissionId: string;
+  readonly revision: number;
   readonly state:
     | "uploading"
     | "reconciling"
@@ -164,6 +166,12 @@ export interface RealQaSubmissionSummary {
   readonly images: readonly RealQaReviewImage[];
 }
 
+export interface RealQaBillingScopeChoice {
+  readonly organizationId: string;
+  readonly teamId: string;
+  readonly label: string;
+}
+
 export interface RealQaProductSnapshot {
   readonly platform: RealQaDesktopFamily;
   readonly access: RealQaAccessMode;
@@ -173,11 +181,16 @@ export interface RealQaProductSnapshot {
   readonly definitions: readonly RealQaIssueDefinition[];
   readonly drafts: readonly RealQaDraft[];
   readonly submissions: readonly RealQaSubmissionSummary[];
+  readonly replacementBillingScopes: readonly RealQaBillingScopeChoice[];
 }
 
 export type RealQaProductAction =
   | { readonly kind: "connect-destination" }
-  | { readonly kind: "create-preset"; readonly preset: RealQaPreset }
+  | {
+      readonly kind: "create-preset";
+      readonly preset: RealQaPreset;
+      readonly idempotencyKey: string;
+    }
   | { readonly kind: "save-preset"; readonly preset: RealQaPreset }
   | {
       readonly kind: "delete-preset";
@@ -220,16 +233,25 @@ export type RealQaProductAction =
       readonly kind: "delete-image";
       readonly submissionId: string;
       readonly imageId: string;
+      readonly expectedSubmissionRevision: number;
+      readonly expectedImageRevision: number;
     }
-  | { readonly kind: "delete-submission-assets"; readonly submissionId: string }
+  | {
+      readonly kind: "delete-submission-assets";
+      readonly submissionId: string;
+      readonly expectedSubmissionRevision: number;
+    }
   | {
       readonly kind: "rebind-authorization";
       readonly submissionId: string;
       readonly expectedAuthorizationId: string;
       readonly expectedRevision: number;
-      readonly payer: string;
+      readonly replacementBilling: {
+        readonly organizationId: string;
+        readonly teamId: string;
+      };
+      readonly idempotencyKey: string;
     }
-  | { readonly kind: "revoke-authorization"; readonly submissionId: string }
   | { readonly kind: "delete-feature-data" };
 
 export interface RealQaProductGateway {

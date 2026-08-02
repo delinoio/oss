@@ -307,6 +307,7 @@ const expectedRealqaComposerPermissions = [
   "allow-realqa-assert-local-draft-submission-allowed",
   "allow-realqa-connect",
   "allow-realqa-signed-put",
+  "allow-realqa-open-github-authorization",
   "allow-get-auth-session",
   "allow-start-authentication",
   "allow-logout-authentication",

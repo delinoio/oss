@@ -2267,6 +2267,23 @@ fn realqa_signed_put(
     feature = "desktop-cef",
     not(any(target_os = "android", target_os = "ios"))
 ))]
+#[tauri::command]
+fn realqa_open_github_authorization(
+    webview: Webview<ActiveRuntime>,
+    target: String,
+    browser: State<'_, realqa_transport::RealQaGithubBrowserState>,
+    auth_state: State<'_, auth_native::NativeAuthState>,
+) -> Result<(), realqa_transport::RealQaTransportFailure> {
+    if webview.label() != REALQA_COMPOSER_WINDOW_LABEL {
+        return Err(realqa_transport::RealQaTransportFailure::AuthenticationRequired);
+    }
+    realqa_transport::open_github_authorization(&target, &browser, &auth_state)
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
 fn accept_realqa_browser_capture(
     app: &AppHandle<ActiveRuntime>,
     capture: realqa_native_host::NativeHostRequest,
@@ -3770,7 +3787,8 @@ fn configure_builder(
             realqa_delete_local_draft,
             realqa_assert_local_draft_submission_allowed,
             realqa_connect,
-            realqa_signed_put
+            realqa_signed_put,
+            realqa_open_github_authorization
         ])
         .setup(move |app| {
             let app_local_data = app.path().app_local_data_dir().ok();
@@ -3806,6 +3824,7 @@ fn configure_builder(
             app.manage(persistence);
             app.manage(realqa_drafts);
             app.manage(auth_native::NativeAuthState::initialize());
+            app.manage(realqa_transport::RealQaGithubBrowserState::initialize());
             app.manage(QuittingState(AtomicBool::new(false)));
             app.manage(updater::UpdateActionBoundary);
             app.manage(realqa_capture::CaptureCore::new(std::sync::Arc::new(

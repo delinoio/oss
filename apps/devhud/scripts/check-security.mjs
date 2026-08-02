@@ -249,6 +249,7 @@ const expectedCapabilities = {
       "allow-realqa-assert-local-draft-submission-allowed",
       "allow-realqa-connect",
       "allow-realqa-signed-put",
+      "allow-realqa-open-github-authorization",
       "allow-get-auth-session",
       "allow-start-authentication",
       "allow-logout-authentication",
@@ -354,6 +355,7 @@ requireCondition(
         command.startsWith("realqa_assert_local_draft_") ||
         command === "realqa_connect" ||
         command === "realqa_signed_put" ||
+        command === "realqa_open_github_authorization" ||
         command === "get_auth_session" ||
         command === "start_authentication" ||
         command === "logout_authentication") &&

@@ -40,6 +40,7 @@ const COMMANDS: &[&str] = &[
     "realqa_assert_local_draft_submission_allowed",
     "realqa_connect",
     "realqa_signed_put",
+    "realqa_open_github_authorization",
 ];
 
 fn main() {

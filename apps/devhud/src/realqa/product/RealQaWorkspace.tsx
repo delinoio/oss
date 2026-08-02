@@ -26,6 +26,7 @@ import {
   type RealQaProductGateway,
   type RealQaProductSnapshot,
 } from "./contracts";
+import { createUuidV7 } from "./uuid";
 
 interface WorkspaceContextValue {
   readonly snapshot: RealQaProductSnapshot;
@@ -326,18 +327,22 @@ function PresetManager() {
   const [editing, setEditing] = useState<RealQaPreset | null>(selected);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
+  const createAttempt = useRef<string | null>(null);
   const online = snapshot.access === RealQaAccessMode.Online && snapshot.online;
   const shortcutCount = snapshot.presets.filter((preset) => preset.shortcut !== "").length;
 
   const createFirstPreset = async () => {
     const draft = firstPresetDraft(snapshot);
     if (draft === null) return;
+    const idempotencyKey = createAttempt.current ?? createUuidV7();
+    createAttempt.current = idempotencyKey;
     const updated = await execute(
-      { kind: "create-preset", preset: draft },
+      { kind: "create-preset", preset: draft, idempotencyKey },
       "Preset created.",
     );
     const created = updated?.presets[0];
     if (created !== undefined) {
+      createAttempt.current = null;
       setSelectedId(created.presetId);
       setEditing(created);
     }
@@ -353,6 +358,22 @@ function PresetManager() {
       (preset) => preset.presetId === editing.presetId,
     );
     if (saved !== undefined) setEditing(saved);
+  };
+
+  const deletePreset = async () => {
+    if (editing === null) return;
+    const updated = await execute(
+      {
+        kind: "delete-preset",
+        presetId: editing.presetId,
+        expectedRevision: editing.revision,
+      },
+      "Preset deleted.",
+    );
+    if (updated === null) return;
+    const next = updated.presets[0] ?? null;
+    setSelectedId(next?.presetId ?? "");
+    setEditing(next);
   };
 
   if (editing === null) {
@@ -432,7 +453,7 @@ function PresetManager() {
         <button className="secondary-button" disabled={busy || !online} onClick={() => setConfirmDelete(true)} type="button">Delete preset</button>
         {destination?.connected ? <button className="secondary-button" disabled={busy || !online} onClick={() => setConfirmDisconnect(true)} type="button">Disconnect GitHub</button> : <button className="secondary-button" disabled={busy || !online || destination === undefined} onClick={() => destination === undefined ? undefined : void execute({ kind: "reconnect-destination", destinationId: destination.destinationId }, "GitHub authorization opened.")} type="button">Reconnect GitHub</button>}
       </div>
-      {confirmDelete ? <Dialog title="Delete RealQA preset" onClose={() => setConfirmDelete(false)}><h2>Delete {editing.name}?</h2><p>This deletes the synchronized preset. Existing encrypted drafts remain.</p><button className="danger-button" onClick={() => { setConfirmDelete(false); void execute({ kind: "delete-preset", presetId: editing.presetId, expectedRevision: editing.revision }, "Preset deleted."); }} type="button">Delete preset</button><button className="secondary-button" onClick={() => setConfirmDelete(false)} type="button">Cancel</button></Dialog> : null}
+      {confirmDelete ? <Dialog title="Delete RealQA preset" onClose={() => setConfirmDelete(false)}><h2>Delete {editing.name}?</h2><p>This deletes the synchronized preset. Existing encrypted drafts remain.</p><button className="danger-button" onClick={() => { setConfirmDelete(false); void deletePreset(); }} type="button">Delete preset</button><button className="secondary-button" onClick={() => setConfirmDelete(false)} type="button">Cancel</button></Dialog> : null}
       {confirmDisconnect && destination ? <Dialog title="Disconnect RealQA from GitHub" onClose={() => setConfirmDisconnect(false)}><h2>Disconnect GitHub?</h2><p>Provider tokens are revoked. Presets and mappings remain in a disconnected state.</p><button className="danger-button" onClick={() => { setConfirmDisconnect(false); void execute({ kind: "disconnect-destination", destinationId: destination.destinationId, expectedRevision: destination.revision }, "GitHub disconnected; presets were retained."); }} type="button">Disconnect</button><button className="secondary-button" onClick={() => setConfirmDisconnect(false)} type="button">Cancel</button></Dialog> : null}
     </section>
   );
@@ -464,11 +485,21 @@ function IssueField({ field, draft, update }: { readonly field: RealQaIssueField
   return null;
 }
 
-function CaptureAndReview() {
+function CaptureAndReviewContent() {
   const { busy, execute, replaceDraft, selectedDraft: draft, selectDraft, selectedDraftId, snapshot } = useWorkspace();
-  const [mode, setMode] = useState(CaptureMode.Region);
-  const [pointer, setPointer] = useState(PointerInclusion.Exclude);
-  const [selector, setSelector] = useState(RealQaSelectorMode.Normal);
+  const selectedPreset = snapshot.presets.find(
+    (preset) => preset.presetId === draft?.presetId,
+  );
+  const presetCaptureMode = selectedPreset?.captureMode;
+  const presetPointer = selectedPreset?.pointer;
+  const presetSelectorMode = selectedPreset?.selectorMode;
+  const [mode, setMode] = useState(presetCaptureMode ?? CaptureMode.Region);
+  const [pointer, setPointer] = useState(
+    presetPointer ?? PointerInclusion.Exclude,
+  );
+  const [selector, setSelector] = useState(
+    presetSelectorMode ?? RealQaSelectorMode.Normal,
+  );
   const [selection, setSelection] = useState({ x: 0, y: 0, width: 640, height: 480 });
   const [confirmDraftDelete, setConfirmDraftDelete] = useState(false);
   const [confirmPublic, setConfirmPublic] = useState(false);
@@ -528,13 +559,60 @@ function CaptureAndReview() {
   );
 }
 
+function CaptureAndReview() {
+  const { selectedDraftId } = useWorkspace();
+  return <CaptureAndReviewContent key={selectedDraftId ?? "no-draft"} />;
+}
+
+function billingScopeKey(
+  scope: RealQaProductSnapshot["replacementBillingScopes"][number],
+): string {
+  return `${scope.organizationId}/${scope.teamId}`;
+}
+
 function SubmissionLifecycle() {
   const { busy, execute, snapshot } = useWorkspace();
-  const [replacementPayer, setReplacementPayer] = useState("");
+  const [replacementScopeKey, setReplacementScopeKey] = useState(
+    snapshot.replacementBillingScopes[0]
+      ? billingScopeKey(snapshot.replacementBillingScopes[0])
+      : "",
+  );
+  const rebindAttempts = useRef(new Map<string, {
+    readonly scopeKey: string;
+    readonly idempotencyKey: string;
+  }>());
+  const effectiveScope = snapshot.replacementBillingScopes.find(
+    (scope) => billingScopeKey(scope) === replacementScopeKey,
+  ) ?? snapshot.replacementBillingScopes[0];
+  const effectiveScopeKey = effectiveScope ? billingScopeKey(effectiveScope) : "";
   const online = snapshot.access === RealQaAccessMode.Online && snapshot.online;
+
+  const rebind = async (
+    submission: RealQaProductSnapshot["submissions"][number],
+  ) => {
+    if (submission.authorizationId === null || effectiveScope === undefined) return;
+    const pending = rebindAttempts.current.get(submission.submissionId);
+    const attempt = pending?.scopeKey === effectiveScopeKey
+      ? pending
+      : { scopeKey: effectiveScopeKey, idempotencyKey: createUuidV7() };
+    rebindAttempts.current.set(submission.submissionId, attempt);
+    const updated = await execute({
+      kind: "rebind-authorization",
+      submissionId: submission.submissionId,
+      expectedAuthorizationId: submission.authorizationId,
+      expectedRevision: submission.authorizationRevision,
+      replacementBilling: {
+        organizationId: effectiveScope.organizationId,
+        teamId: effectiveScope.teamId,
+      },
+      idempotencyKey: attempt.idempotencyKey,
+    }, "Storage authorization rebound without grace-period back-billing.");
+    if (updated !== null) rebindAttempts.current.delete(submission.submissionId);
+  };
+
   return (
     <section aria-labelledby="submission-lifecycle-title" className="realqa-card"><p className="eyebrow">Retained references only</p><h2 id="submission-lifecycle-title">Submissions and storage</h2>
-      {snapshot.submissions.length === 0 ? <p>No submitted issues are retained.</p> : <><label className="field">Replacement payer<input disabled={!online} value={replacementPayer} onChange={(event) => setReplacementPayer(event.target.value)} /></label><ul className="realqa-submission-list">{snapshot.submissions.map((submission) => <li key={submission.submissionId}><h3>{submission.issueUrl ?? "Pending GitHub reconciliation"}</h3><p>State: {submission.state}</p>{submission.graceExpiresAt ? <p className="error">Public images are in billing grace until {submission.graceExpiresAt}. New submissions are blocked.</p> : null}<div className="button-row">{submission.state === "failed" || submission.state === "reconciling" ? <button className="primary-button" disabled={busy || !online} onClick={() => void execute({ kind: "retry-submission", submissionId: submission.submissionId }, "Submission reconciled with its original identity.")} type="button">Retry reconciliation</button> : null}{submission.images.filter((image) => image.uploadState !== "removed").map((image) => <button className="secondary-button" disabled={busy || !online} key={image.imageId} onClick={() => void execute({ kind: "delete-image", submissionId: submission.submissionId, imageId: image.imageId }, "Image deleted; its public URL now returns the generic removed placeholder.")} type="button">Delete {image.name}</button>)}<button className="secondary-button" disabled={busy || !online} onClick={() => void execute({ kind: "delete-submission-assets", submissionId: submission.submissionId }, "All submission images were deleted.")} type="button">Delete all images</button>{submission.authorizationId ? <><button className="secondary-button" disabled={busy || !online || replacementPayer.trim() === ""} onClick={() => void execute({ kind: "rebind-authorization", submissionId: submission.submissionId, expectedAuthorizationId: submission.authorizationId ?? "", expectedRevision: submission.authorizationRevision, payer: replacementPayer.trim() }, "Storage authorization rebound without grace-period back-billing.")} type="button">Rebind payer</button><button className="secondary-button" disabled={busy || !online} onClick={() => void execute({ kind: "revoke-authorization", submissionId: submission.submissionId }, "Storage authorization revoked; retained images entered grace.")} type="button">Revoke grant</button></> : null}</div></li>)}</ul></>}
+      {snapshot.submissions.length === 0 ? <p>No submitted issues are retained.</p> : <><label className="field">Replacement payer<select disabled={!online || effectiveScope === undefined} value={effectiveScopeKey} onChange={(event) => setReplacementScopeKey(event.target.value)}>{snapshot.replacementBillingScopes.map((scope) => <option key={billingScopeKey(scope)} value={billingScopeKey(scope)}>{scope.label}</option>)}</select></label><ul className="realqa-submission-list">{snapshot.submissions.map((submission) => <li key={submission.submissionId}><h3>{submission.issueUrl ?? "Pending GitHub reconciliation"}</h3><p>State: {submission.state}</p>{submission.graceExpiresAt ? <p className="error">Public images are in billing grace until {submission.graceExpiresAt}. New submissions are blocked.</p> : null}<div className="button-row">{submission.state === "failed" || submission.state === "reconciling" ? <button className="primary-button" disabled={busy || !online} onClick={() => void execute({ kind: "retry-submission", submissionId: submission.submissionId }, "Submission reconciled with its original identity.")} type="button">Retry reconciliation</button> : null}{submission.images.filter((image) => image.uploadState !== "removed").map((image) => <button className="secondary-button" disabled={busy || !online} key={image.imageId} onClick={() => void execute({ kind: "delete-image", submissionId: submission.submissionId, imageId: image.imageId, expectedSubmissionRevision: submission.revision, expectedImageRevision: image.revision }, "Image deleted; its public URL now returns the generic removed placeholder.")} type="button">Delete {image.name}</button>)}<button className="secondary-button" disabled={busy || !online} onClick={() => void execute({ kind: "delete-submission-assets", submissionId: submission.submissionId, expectedSubmissionRevision: submission.revision }, "All submission images were deleted.")} type="button">Delete all images</button>{submission.authorizationId ? <button className="secondary-button" disabled={busy || !online || effectiveScope === undefined} onClick={() => void rebind(submission)} type="button">Rebind payer</button> : null}</div></li>)}</ul></>}
     </section>
   );
 }

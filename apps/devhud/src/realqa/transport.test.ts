@@ -10,6 +10,7 @@ import {
   RealQaProcedure,
   bytesToBase64,
   invokeRealQaProcedure,
+  openRealQaGitHubAuthorization,
   putRealQaImage,
 } from "./transport";
 
@@ -66,5 +67,18 @@ describe("closed RealQA native transport", () => {
         bodyBase64: "AQID",
       },
     });
+  });
+
+  it("uses the typed native GitHub authorization handoff", async () => {
+    invokeMock.mockResolvedValueOnce(undefined);
+    const target =
+      "https://github.com/apps/fixture-realqa/installations/new?state=abcdefghijklmnopqrstuvwxyz123456";
+
+    await openRealQaGitHubAuthorization(target);
+
+    expect(invokeMock).toHaveBeenCalledWith(
+      "realqa_open_github_authorization",
+      { target },
+    );
   });
 });

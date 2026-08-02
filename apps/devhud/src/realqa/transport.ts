@@ -106,4 +106,8 @@ export function putRealQaImage(request: RealQaSignedPut): Promise<void> {
   });
 }
 
+export function openRealQaGitHubAuthorization(target: string): Promise<void> {
+  return invoke<void>("realqa_open_github_authorization", { target });
+}
+
 export { base64ToBytes, bytesToBase64 };
