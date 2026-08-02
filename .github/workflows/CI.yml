@@ -840,6 +840,7 @@ jobs:
               - apps/devhud/src-tauri/src/diagnostics.rs
               - apps/devhud/src-tauri/src/lib.rs
               - apps/devhud/src-tauri/src/local_log.rs
+              - apps/devhud/src-tauri/src/realqa_*.rs
               - apps/devhud/src-tauri/src/realqa_capture/**
 
       - name: Determine whether to run
@@ -1046,8 +1047,12 @@ jobs:
               - apps/AGENTS.md
               - apps/devhud/**
               - protos/devhud-deck/**
+              - protos/devhud-realqa/**
               - docs/project-devhud.md
               - docs/apps-devhud-foundation.md
+              - docs/protos-devhud-realqa-api-contract.md
+              - README.md
+              - docs/README.md
       - name: Determine whether to run
         id: gate
         shell: bash
@@ -1561,6 +1566,9 @@ jobs:
               - protos/buf.yaml
               - protos/delibase/**
               - protos/devhud-deck/**
+              - protos/devhud-realqa/**
+              - docs/apps-delidev-app-foundation.md
+              - docs/protos-devhud-realqa-api-contract.md
               - scripts/generate-proto-component.sh
               - scripts/lib/go-proto-tools.sh
 
@@ -1629,6 +1637,742 @@ jobs:
         if: ${{ steps.gate.outputs.run == 'true' }}
         run: pnpm --filter delidev-app test:browser
 
+  realqa-changes:
+    name: RealQA change scopes
+    runs-on: ubuntu-latest
+    outputs:
+      proto: ${{ steps.filter.outputs.proto }}
+      server: ${{ steps.filter.outputs.server }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      native: ${{ steps.filter.outputs.native }}
+      extension: ${{ steps.filter.outputs.extension }}
+      delidev: ${{ steps.filter.outputs.delidev }}
+      packaging: ${{ steps.filter.outputs.packaging }}
+      safety: ${{ steps.filter.outputs.safety }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Resolve RealQA scopes
+        id: filter
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            proto:
+              - .github/workflows/CI.yml
+              - package.json
+              - pnpm-lock.yaml
+              - pnpm-workspace.yaml
+              - turbo.json
+              - go.mod
+              - go.sum
+              - protos/buf.yaml
+              - protos/devhud-realqa/**
+              - scripts/check-proto-component.sh
+              - scripts/generate-proto-component.sh
+              - scripts/lib/go-proto-tools.sh
+            server:
+              - .github/workflows/CI.yml
+              - package.json
+              - go.mod
+              - go.sum
+              - protos/delibase/gen/go/**
+              - protos/devhud-realqa/gen/go/**
+              - servers/internal/**
+              - servers/devhud-realqa/**
+            frontend:
+              - .github/workflows/CI.yml
+              - package.json
+              - pnpm-lock.yaml
+              - pnpm-workspace.yaml
+              - turbo.json
+              - apps/devhud/package.json
+              - apps/devhud/turbo.json
+              - apps/devhud/rsbuild.config.ts
+              - apps/devhud/tsconfig.json
+              - apps/devhud/src/**
+              - apps/devhud/public/**
+              - protos/devhud-realqa/gen/ts/**
+            native:
+              - .github/workflows/CI.yml
+              - Cargo.toml
+              - Cargo.lock
+              - rust-toolchain
+              - apps/devhud/package.json
+              - apps/devhud/scripts/check-realqa-windows.mjs
+              - apps/devhud/scripts/test-realqa-native.mjs
+              - apps/devhud/src-tauri/Cargo.toml
+              - apps/devhud/src-tauri/Info.plist
+              - apps/devhud/src-tauri/build.rs
+              - apps/devhud/src-tauri/capabilities/realqa-*.json
+              - apps/devhud/src-tauri/src/realqa_*.rs
+              - apps/devhud/src-tauri/src/realqa_capture/**
+            extension:
+              - .github/workflows/CI.yml
+              - Cargo.toml
+              - Cargo.lock
+              - package.json
+              - pnpm-lock.yaml
+              - apps/devhud/package.json
+              - apps/devhud/realqa-extension/**
+              - apps/devhud/scripts/build-realqa-extension.mjs
+              - apps/devhud/scripts/build-realqa-fixtures.mjs
+              - apps/devhud/src-tauri/src/realqa_native_host.rs
+            delidev:
+              - .github/workflows/CI.yml
+              - package.json
+              - pnpm-lock.yaml
+              - turbo.json
+              - apps/delidev-app/**
+              - protos/devhud-realqa/**
+            packaging:
+              - .github/workflows/CI.yml
+              - Cargo.toml
+              - Cargo.lock
+              - go.mod
+              - go.sum
+              - package.json
+              - pnpm-lock.yaml
+              - apps/devhud/package.json
+              - apps/devhud/realqa-extension/**
+              - apps/devhud/scripts/build-realqa-extension.mjs
+              - apps/devhud/scripts/build-realqa-fixtures.mjs
+              - apps/devhud/src-tauri/**
+              - protos/delibase/gen/go/**
+              - protos/devhud-realqa/gen/go/**
+              - servers/internal/**
+              - servers/devhud-realqa/**
+            safety:
+              - .github/workflows/CI.yml
+              - AGENTS.md
+              - apps/AGENTS.md
+              - servers/AGENTS.md
+              - protos/AGENTS.md
+              - package.json
+              - turbo.json
+              - scripts/check-realqa-ci-safety.mjs
+              - apps/devhud/**
+              - servers/devhud-realqa/**
+              - docs/project-devhud.md
+              - docs/apps-devhud-foundation.md
+              - docs/apps-delidev-app-foundation.md
+              - docs/servers-devhud-realqa-foundation.md
+              - docs/protos-devhud-realqa-api-contract.md
+              - README.md
+              - docs/README.md
+
+      - name: Explain full manual validation
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        run: echo "Manual dispatch runs every RealQA validation scope"
+
+  realqa-proto:
+    name: RealQA devhud.realqa.v1 contract
+    runs-on: ubuntu-latest
+    needs: realqa-changes
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.realqa-changes.outputs.proto == 'true' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Resolve immutable RealQA compatibility baseline
+        shell: bash
+        env:
+          BASELINE_COMMIT: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
+        run: |
+          set -euo pipefail
+          descriptor=protos/devhud-realqa/devhud.realqa.v1.binpb
+          if [ -n "$BASELINE_COMMIT" ] && ! [[ "$BASELINE_COMMIT" =~ ^0+$ ]]; then
+            git cat-file -e "${BASELINE_COMMIT}^{commit}"
+            if git cat-file -e "${BASELINE_COMMIT}:${descriptor}"; then
+              baseline="${RUNNER_TEMP}/devhud.realqa.v1.binpb"
+              git show "${BASELINE_COMMIT}:${descriptor}" > "$baseline"
+              echo "DEVHUD_REALQA_PROTO_BASELINE=${baseline}" >> "$GITHUB_ENV"
+            fi
+          fi
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.26.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check compatibility, two-pass generation, Go, and TypeScript
+        run: pnpm ci:realqa:proto
+
+  realqa-go-quality:
+    name: RealQA Go formatting, vet, and unit
+    runs-on: ubuntu-latest
+    needs: realqa-changes
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.realqa-changes.outputs.server == 'true' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.26.2
+
+      - name: Check RealQA formatting
+        shell: bash
+        run: |
+          set -euo pipefail
+          unformatted="$(gofmt -l servers/devhud-realqa protos/devhud-realqa)"
+          if [ -n "$unformatted" ]; then
+            printf '%s\n' "$unformatted"
+            exit 1
+          fi
+
+      - name: Vet RealQA server
+        run: go vet ./servers/devhud-realqa/...
+
+      - name: Run RealQA unit suite
+        run: pnpm ci:realqa:go:unit
+
+  realqa-postgres:
+    name: RealQA PostgreSQL, migrations, and sqlc
+    runs-on: ubuntu-latest
+    needs: realqa-changes
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.realqa-changes.outputs.server == 'true' }}
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: realqa
+          POSTGRES_PASSWORD: realqa_test
+          POSTGRES_DB: realqa
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U realqa -d realqa"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Install sqlc
+        run: go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.30.0
+
+      - name: Check generated sqlc output
+        run: servers/devhud-realqa/scripts/check-sqlc.sh
+
+      - name: Run PostgreSQL migration and service integration fixtures
+        env:
+          REALQA_TEST_DATABASE_URL: postgres://realqa:realqa_test@127.0.0.1:5432/realqa?sslmode=disable
+        run: go test -p 1 -count=1 ./servers/devhud-realqa/db/migrations ./servers/devhud-realqa/internal/service
+
+  realqa-integrations:
+    name: RealQA GitHub, R2, and delibase fixtures
+    runs-on: ubuntu-latest
+    needs: realqa-changes
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.realqa-changes.outputs.server == 'true' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.26.2
+
+      - name: Run provider and storage integration fixtures
+        run: pnpm ci:realqa:go:integrations
+
+      - name: Validate minimal GitHub App and artifact-only R2 definitions
+        run: |
+          go test -count=1 -run 'TestManifestHasOnlyConfiguredMinimumPermissions' ./servers/devhud-realqa/internal/github
+          go test -count=1 ./servers/devhud-realqa/artifacts
+
+  realqa-billing-races:
+    name: RealQA exact transfer and storage billing races
+    runs-on: ubuntu-latest
+    needs: realqa-changes
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.realqa-changes.outputs.server == 'true' }}
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: realqa
+          POSTGRES_PASSWORD: realqa_test
+          POSTGRES_DB: realqa
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U realqa -d realqa"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.26.2
+
+      - name: Run race detector over exact PostgreSQL billing fixture
+        env:
+          REALQA_TEST_DATABASE_URL: postgres://realqa:realqa_test@127.0.0.1:5432/realqa?sslmode=disable
+        run: pnpm ci:realqa:go:billing-race
+
+      - name: Recheck exact rounding and authorization race contracts
+        run: go test -race -count=1 ./servers/devhud-realqa/internal/service -run 'Test(CeilMiB|UTCStorage|Storage|ValidateFinalTransfer|BillingMeter)'
+
+  realqa-frontend:
+    name: RealQA frontend typecheck, lint, unit, accessibility, and build
+    runs-on: ubuntu-latest
+    needs: realqa-changes
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.realqa-changes.outputs.frontend == 'true' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.26.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate complete RealQA frontend
+        run: pnpm ci:realqa:frontend
+
+  realqa-rust:
+    name: RealQA Rust image, editor, draft, and security
+    runs-on: ubuntu-latest
+    needs: realqa-changes
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.realqa-changes.outputs.native == 'true' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: nightly-2026-01-01
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.26.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run bounded image, editor, encrypted draft, native-host, and transport tests
+        run: pnpm ci:realqa:rust
+
+      - name: Validate generated bundle and capability security
+        run: |
+          pnpm --filter devhud build
+          pnpm --filter devhud check:security
+          pnpm --filter devhud check:contracts
+
+  realqa-linux-capture:
+    name: RealQA Ubuntu X11, XWayland, and Wayland portal
+    runs-on: ubuntu-24.04
+    needs: realqa-changes
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.realqa-changes.outputs.native == 'true' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Rust toolchain and Linux targets
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: nightly-2026-01-01
+          targets: x86_64-unknown-linux-gnu,aarch64-unknown-linux-gnu
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install ARM64 cross compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes gcc-aarch64-linux-gnu
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.26.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run X11, XWayland, and interactive-portal fixture smoke coverage
+        run: pnpm ci:realqa:linux
+
+      - name: Build x64 and ARM64 native capture libraries
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+        run: |
+          cargo check -p devhud --lib --locked --features linux-capture-backend --target x86_64-unknown-linux-gnu
+          cargo check -p devhud --lib --locked --features linux-capture-backend --target aarch64-unknown-linux-gnu
+
+  realqa-extension-native-messaging:
+    name: RealQA Chrome MV3 and Native Messaging
+    runs-on: ubuntu-latest
+    needs: realqa-changes
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.realqa-changes.outputs.extension == 'true' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: nightly-2026-01-01
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.26.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Test MV3 capture, optional origins, protocol limits, and native host
+        run: pnpm ci:realqa:extension
+
+  realqa-delidev-settings:
+    name: RealQA DeliDev settings boundary
+    runs-on: ubuntu-latest
+    needs: realqa-changes
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.realqa-changes.outputs.delidev == 'true' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.26.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate account and organization RealQA settings only
+        run: pnpm ci:realqa:delidev-settings
+
+  realqa-server-images:
+    name: RealQA non-root image fixture (${{ matrix.platform }})
+    runs-on: ubuntu-latest
+    needs: realqa-changes
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.realqa-changes.outputs.packaging == 'true' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            arch: amd64
+          - platform: linux/arm64
+            arch: arm64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Build local architecture fixture
+        shell: bash
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          docker buildx build \
+            --platform "$PLATFORM" \
+            --output type=docker \
+            --build-arg VERSION=ci-fixture \
+            --build-arg "REVISION=${GITHUB_SHA}" \
+            --build-arg SOURCE=https://github.com/delinoio/oss \
+            --file servers/devhud-realqa/Dockerfile \
+            --tag "devhud-realqa:ci-${ARCH}" \
+            .
+
+      - name: Validate non-root image contents and metadata
+        env:
+          REALQA_TEST_IMAGE: devhud-realqa:ci-${{ matrix.arch }}
+          REALQA_TEST_BUILD_IMAGE: "false"
+          REALQA_TEST_EXPECTED_VERSION: ci-fixture
+          REALQA_TEST_EXPECTED_REVISION: ${{ github.sha }}
+        run: servers/devhud-realqa/scripts/test-image.sh
+
+      - name: Generate platform SPDX SBOM
+        uses: anchore/sbom-action@v0.24.0
+        with:
+          image: devhud-realqa:ci-${{ matrix.arch }}
+          format: spdx-json
+          output-file: realqa-${{ matrix.arch }}.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v4.1.1
+
+      - name: Validate local SBOM, signature, and provenance statement
+        shell: bash
+        env:
+          ARCH: ${{ matrix.arch }}
+          COSIGN_PASSWORD: realqa-ci-fixture-only
+        run: |
+          set -euo pipefail
+          sbom="realqa-${ARCH}.spdx.json"
+          jq -e '.spdxVersion | startswith("SPDX-")' "$sbom" >/dev/null
+          image_id="$(docker image inspect --format '{{.Id}}' "devhud-realqa:ci-${ARCH}")"
+          image_digest="${image_id#sha256:}"
+          jq -n \
+            --arg digest "$image_digest" \
+            --arg arch "$ARCH" \
+            '{
+              _type: "https://in-toto.io/Statement/v1",
+              subject: [{name: "devhud-realqa-ci-fixture", digest: {sha256: $digest}}],
+              predicateType: "https://slsa.dev/provenance/v1",
+              predicate: {buildDefinition: {buildType: "https://deli.dev/realqa/ci-fixture/v1", externalParameters: {platform: ("linux/" + $arch)}}, runDetails: {builder: {id: "github-actions-ci-fixture"}}}
+            }' > "realqa-${ARCH}.provenance.json"
+          prefix="${RUNNER_TEMP}/realqa-${ARCH}-fixture"
+          cosign generate-key-pair --output-key-prefix "$prefix"
+          cosign sign-blob --yes --key "${prefix}.key" --bundle "realqa-${ARCH}.sbom.sigstore.json" "$sbom"
+          cosign verify-blob --key "${prefix}.pub" --bundle "realqa-${ARCH}.sbom.sigstore.json" "$sbom"
+          cosign sign-blob --yes --key "${prefix}.key" --bundle "realqa-${ARCH}.provenance.sigstore.json" "realqa-${ARCH}.provenance.json"
+          cosign verify-blob --key "${prefix}.pub" --bundle "realqa-${ARCH}.provenance.sigstore.json" "realqa-${ARCH}.provenance.json"
+          cp "${prefix}.pub" "realqa-${ARCH}.fixture.pub"
+          go test -count=1 -run TestSupplyChainDefinitionIsFixtureOnlyAndFailClosed ./servers/devhud-realqa/artifacts
+
+      - name: Upload image validation fixtures
+        uses: actions/upload-artifact@v7
+        with:
+          name: realqa-image-${{ matrix.arch }}-fixtures
+          path: |
+            realqa-${{ matrix.arch }}.spdx.json
+            realqa-${{ matrix.arch }}.sbom.sigstore.json
+            realqa-${{ matrix.arch }}.provenance.json
+            realqa-${{ matrix.arch }}.provenance.sigstore.json
+            realqa-${{ matrix.arch }}.fixture.pub
+          if-no-files-found: error
+          overwrite: true
+
+  realqa-fixture-artifacts:
+    name: RealQA signed-host-ready fixture artifacts
+    runs-on: ubuntu-latest
+    needs: realqa-changes
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.realqa-changes.outputs.packaging == 'true' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: nightly-2026-01-01
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.26.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build desktop Native Messaging host and MV3 fixture artifacts
+        env:
+          DEVHUD_REALQA_FIXTURE_TARGET: linux-amd64
+        run: pnpm ci:realqa:fixture-artifacts
+
+      - name: Prove release identity injection fails closed
+        shell: bash
+        run: |
+          set -euo pipefail
+          if pnpm --filter devhud check:realqa:package > release-check.txt 2>&1; then
+            echo "release package check unexpectedly accepted fixture-only inputs" >&2
+            exit 1
+          fi
+          grep -q "release packaging requires DEVHUD_CHROME_EXTENSION_ID" release-check.txt
+
+      - name: Generate fixture artifact SPDX SBOM
+        uses: anchore/sbom-action@v0.24.0
+        with:
+          path: apps/devhud/build/realqa-fixtures
+          format: spdx-json
+          output-file: apps/devhud/build/realqa-fixtures.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v4.1.1
+
+      - name: Sign and verify fixture artifact definitions locally
+        shell: bash
+        env:
+          COSIGN_PASSWORD: realqa-ci-fixture-only
+        run: |
+          set -euo pipefail
+          manifest=apps/devhud/build/realqa-fixtures/artifact-manifest.json
+          sbom=apps/devhud/build/realqa-fixtures.spdx.json
+          jq -e '.fixtureOnly and (.publishable | not) and .signedHostReady and (.productionIdentityInjected | not)' "$manifest" >/dev/null
+          jq -e '.spdxVersion | startswith("SPDX-")' "$sbom" >/dev/null
+          prefix="${RUNNER_TEMP}/realqa-desktop-extension-fixture"
+          cosign generate-key-pair --output-key-prefix "$prefix"
+          cosign sign-blob --yes --key "${prefix}.key" --bundle apps/devhud/build/realqa-fixtures.sigstore.json "$manifest"
+          cosign verify-blob --key "${prefix}.pub" --bundle apps/devhud/build/realqa-fixtures.sigstore.json "$manifest"
+          cosign sign-blob --yes --key "${prefix}.key" --bundle apps/devhud/build/realqa-fixtures.sbom.sigstore.json "$sbom"
+          cosign verify-blob --key "${prefix}.pub" --bundle apps/devhud/build/realqa-fixtures.sbom.sigstore.json "$sbom"
+          cp "${prefix}.pub" apps/devhud/build/realqa-fixtures.fixture.pub
+
+      - name: Upload fixture-only desktop and extension artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: realqa-linux-amd64-desktop-extension-fixtures
+          path: |
+            apps/devhud/build/realqa-fixtures/**
+            apps/devhud/build/realqa-fixtures.spdx.json
+            apps/devhud/build/realqa-fixtures.sigstore.json
+            apps/devhud/build/realqa-fixtures.sbom.sigstore.json
+            apps/devhud/build/realqa-fixtures.fixture.pub
+          if-no-files-found: error
+          overwrite: true
+
+  realqa-safety:
+    name: RealQA inactive-production safety boundary
+    runs-on: ubuntu-latest
+    needs: realqa-changes
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.realqa-changes.outputs.safety == 'true' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.26.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Validate read-only fixture and inactive-production policy
+        run: |
+          pnpm ci:realqa:safety
+          pnpm --filter devhud check:mobile
+          go test -count=1 ./servers/devhud-realqa/artifacts ./servers/devhud-realqa/internal/config
+          go test -count=1 -run 'TestManifestHasOnlyConfiguredMinimumPermissions' ./servers/devhud-realqa/internal/github
+
   ci-result:
     name: CI Result
     runs-on: ubuntu-latest
@@ -1637,6 +2381,7 @@ jobs:
       - go-quality
       - go-test
       - delibase-server
+      - devhud-deck-server
       - devhud-realqa-server
       - proto-contracts
       - rust-fmt
@@ -1653,6 +2398,20 @@ jobs:
       - node-nodeup-docs-test
       - node-public-docs-test
       - node-delidev-app
+      - realqa-changes
+      - realqa-proto
+      - realqa-go-quality
+      - realqa-postgres
+      - realqa-integrations
+      - realqa-billing-races
+      - realqa-frontend
+      - realqa-rust
+      - realqa-linux-capture
+      - realqa-extension-native-messaging
+      - realqa-delidev-settings
+      - realqa-server-images
+      - realqa-fixture-artifacts
+      - realqa-safety
     steps:
       - run: exit 1
         if: ${{ always() && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) }}

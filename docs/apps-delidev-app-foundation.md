@@ -66,6 +66,12 @@
   accessibility, and browser smoke validation. The app typecheck, test, and
   build commands build each consumed generated Connect client first so they
   work from a clean checkout.
+- The change-scoped RealQA settings boundary uses
+  `pnpm ci:realqa:delidev-settings`, which delegates through Turborepo to
+  `ci:realqa:settings` in this package. It typechecks and lints the whole app,
+  then focuses component/security tests on account and organization GitHub
+  destination management. The existing full `node-delidev-app` aggregate,
+  PWA artifact, accessibility, and browser checks remain required.
 - CI must validate the production static artifact, SPA fallback, manifest/service worker, sensitive-cache exclusions, responsive accessibility, and Connect client generation compatibility. The deterministic build must leave the checked-in `apps/delidev-app/dist` artifact unchanged.
 - Deck mobile implementation additionally validates the dedicated callback artifact, exact callback-only Apple/Android association rules, no redirects for either well-known file, injected release identities, and exclusion of callback requests from SPA/service-worker caching.
 - `pnpm --filter delidev-app test:pwa` validates the installable manifest, generated SPA fallback, versioned shell, canonical metadata, and allow/deny cache rules. `pnpm --filter delidev-app test:browser` covers Chromium, Edge, Firefox, WebKit, and representative mobile Chromium/WebKit viewports.

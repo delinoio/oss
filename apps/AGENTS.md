@@ -130,4 +130,5 @@
 - If `apps/nodeup-docs` changes, run `pnpm --filter nodeup-docs test` before finishing.
 - If `apps/public-docs` changes, run `pnpm --filter public-docs test` before finishing.
 - If `apps/devhud` changes, run its documented typecheck, lint, unit/accessibility, security/diagnostics, desktop/mobile, and relevant Deck/RealQA/widget/extension/native-host/package tasks that exist for the implementation stage; frontend changes also require the repository frontend test baseline.
+- Complete RealQA CI uses the uncached `ci:realqa:frontend`, `ci:realqa:rust`, `ci:realqa:linux`, `ci:realqa:extension`, and `ci:realqa:fixture-artifacts` DevHud tasks plus DeliDev's `ci:realqa:settings`. Fixture artifacts may contain only the fixture Chrome identity and signed-host-ready local outputs; release packaging must fail closed without an externally approved non-fixture ID, and no app CI task may activate mobile RealQA or publish/register an extension, application, or store artifact.
 - Update relevant docs in `docs/` for every behavior, structure, or interface change.

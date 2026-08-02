@@ -45,6 +45,23 @@
     "check:widget-artifacts": {
       "cache": false
     },
+    "ci:realqa:frontend": {
+      "cache": false,
+      "outputs": ["dist/**"]
+    },
+    "ci:realqa:rust": {
+      "cache": false
+    },
+    "ci:realqa:linux": {
+      "cache": false
+    },
+    "ci:realqa:extension": {
+      "cache": false
+    },
+    "ci:realqa:fixture-artifacts": {
+      "cache": false,
+      "outputs": ["build/realqa-fixtures/**"]
+    },
     "test:mobile": {
       "cache": false
     },
