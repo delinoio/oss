@@ -55,7 +55,6 @@
 - `docs/project-derun.md`: Derun CLI project index.
 - `docs/project-ttl.md`: TTL compiler project index.
 - `docs/project-mpapp.md`: Expo mobile app project index.
-- `docs/project-thenv.md`: Thenv multi-component project index.
 - `docs/project-public-docs.md`: Public docs app project index.
 - `docs/project-serde-feather.md`: Serde Feather multi-crate project index.
 - `docs/project-rustia.md`: Rustia multi-crate project index.
@@ -89,7 +88,6 @@ enum ProjectId {
   Derun = "derun",
   Ttl = "ttl",
   Mpapp = "mpapp",
-  Thenv = "thenv",
   SerdeFeather = "serde-feather",
   Rustia = "rustia",
   PublicDocs = "public-docs",
@@ -108,7 +106,6 @@ enum ProjectId {
 - `derun` -> `cmds/derun`
 - `ttl` -> `cmds/ttlc`
 - `mpapp` -> `apps/mpapp`
-- `thenv` -> `cmds/thenv`, `servers/thenv`
 - `serde-feather` -> `crates/serde-feather`, `crates/serde-feather-macros`
 - `rustia` -> `crates/rustia`, `crates/rustia-llm`, `crates/rustia-macros`
 - `public-docs` -> `apps/public-docs`
@@ -154,8 +151,8 @@ enum ProjectId {
 - RealQA recurring storage billing uses issue #756's implemented synchronized bounded background-usage contract. After upload verification establishes a positive retained-byte maximum, it must persist a per-submission initial authorization attempt with exact inputs and a stable downstream key before `CreateBackgroundUsageAuthorization`; a response loss is replayed by a fresh authenticated `SubmitIssue` request before provider work or cleanup may conclude, and unresolved attempt/tombstone state is retained rather than treated as no grant. Recurring work uses `ReserveAuthorizedUsage`/`CommitAuthorizedUsage`/`ReleaseAuthorizedUsage`; zero maxima/daily units skip those mutations, and no forwarded token is stored or replaced by a live forwarded-token usage RPC. Durably checkpoint every completed UTC day, process the oldest unresolved checkpoint while it remains the immediately preceding reservable day, and finish an accepted reservation later through its stored period. Failure to establish a reservation before the next rollover starts non-billable, never-back-billed grace at the missed period's start and blocks submissions rather than silently skipping the period. A non-deletion transition that closes/replaces an `ACTIVE` grant while retaining images persists one serialized cutoff, settles billable accrual through it, and starts replacement accrual at the same cutoff; already closed grants are not back-billed. Deletion persists its cutoff, tombstones public identifiers, stops accrual, and removes image objects independently of delibase availability, retaining only the minimum mapping/billing retry tombstone until pre-cutoff settlement and exact closure finish. At the unrecovered 30-day grace deadline this deletion cannot wait for billing teardown, and later retries never restore public readability. Its live transfer meter requires at least an 86,400-second reservation TTL; uploads stop within 23 hours, and `SubmitIssue` must start by that deadline with a fresh forwarded bearer so its durable finalization attempt owns bounded verification and commit/release during the final hour. A deadline/cleanup worker never performs live usage without that bearer; an unfinalized reservation expires and its staging is deleted without promotion. Short-TTL mappings are rejected before upload. Its recurring worker uses the outbound RealQA delibase identity described above with OAuth client-credentials tokens from the validated Logto issuer, memory-only token caching, and fail-closed startup before submissions/work claims when configuration or authorized-usage token acquisition fails; this identity is separate from the inbound lifecycle client pin. Rebind may replace an exact old `ACTIVE`, `REVOKED`, or `ACCESS_LOST` authorization but rejects deleted-owner/resource and substituted grants. Owner-request and abandoned-submission cleanup retain each creation attempt, mapping, and retry tombstone until the exact grant is recovered when necessary and an exact-bound, expected-revision idempotent `MarkBackgroundUsageResourceDeleted` call reports a matching closed status; delibase-lifecycle cleanup also accepts already-terminal `OWNER_DELETED` because delibase closes owner grants before dispatch.
 - Ambiguous recurring-storage reserves must replay their stable key after rollover before a definitive period rejection starts grace; an accepted hold that reaches terminal authorization/access failure or expiry during commit must be released/finalized. An `OWNER_DELETED` reserve failure remains retryable without skipping until the lifecycle delivery persists its accepted cutoff. Owner deletion must retain unresolved initial-authorization and rebind recipes while terminalizing affected rebind attempts so a distinct payer retry can proceed; a replacement closed during failed rebind recovery likewise terminalizes that attempt.
 - RealQA `SubmitIssue` requires its memory-only forwarded delibase bearer to carry both `delibase:usage:execute` for live transfer finalization and `delibase:billing:write` for initial storage-authorization creation.
-- Deck is the sole closed internal production tool registration on desktop, iOS, and Android. Widget registration and user-visible widget state remain empty, and RealQA remains unregistered until later implementation/distribution changes. Issues #755/#757 do not deploy services, configure DNS/R2, register GitHub Apps, publish images/widgets/extensions/stores, inject production identities, enable catalog entries, or roll out operations.
-- Run root `pnpm generate:proto`/`pnpm check:proto`, per-package TypeScript typechecks, and generated Go test/vet for both proto roots now. DevHud implements focused `test:deck` coverage for its authenticated composable product surface, raw/builder query fidelity, mutation/confirmation/offline behavior, and client-owned refresh controller; `test:deck:widgets` covers the one-shot widget refresh boundary. Its Chrome capture bridge implements `test:realqa:native`, `test:realqa:extension`, and `check:realqa:package`; expand those commands as remaining product slices land and run Go format/vet/test plus sqlc/PostgreSQL/provider/image checks for both servers. Missing planned commands must not be represented by passing placeholders.
+- The production registry contains the closed internal Deck tool on desktop, iOS, and Android and the closed internal RealQA tool on macOS, Windows, and Ubuntu desktop. iOS and Android must filter RealQA before rendering or dispatch, and widget registration/user-visible widget state remain empty. These client registrations do not deploy services, configure DNS/R2, register GitHub Apps, publish images/widgets/extensions/stores, inject production identities, enable catalog entries, or roll out operations.
+- Run root `pnpm generate:proto`/`pnpm check:proto`, per-package TypeScript typechecks, and generated Go test/vet for both proto roots now. DevHud implements focused `test:deck` coverage for its authenticated composable product surface, raw/builder query fidelity, mutation/confirmation/offline behavior, and client-owned refresh controller; `test:deck:widgets` covers the one-shot widget refresh boundary. It also implements `test:realqa`, `test:realqa:native`, `test:realqa:extension`, and `check:realqa:package` for the RealQA product and Chrome capture bridge; expand those commands as remaining server slices land and run Go format/vet/test plus sqlc/PostgreSQL/provider/image checks for both servers. Missing planned commands must not be represented by passing placeholders.
 
 ### Repository Default Technology Choices
 
@@ -245,20 +242,6 @@ enum ProjectId {
 - `nodeup shim setup` PATH activation remains non-mutating by default; output must provide shell- and OS-aware activation and verification guidance when the shim directory is not active.
 - `nodeup self uninstall` removes Nodeup-owned data, cache, and config roots only; binary, managed shims, and shell profile/PATH cleanup remain manual and must be separated from removed data in human and JSON output with shell- and OS-aware follow-up guidance.
 
-### Thenv Component Contract
-
-`thenv` is a two-component project with fixed mapping:
-
-```ts
-enum ThenvComponent {
-  Cli = "cli",
-  Server = "server",
-}
-```
-
-- `Cli` -> `cmds/thenv`
-- `Server` -> `servers/thenv`
-
 ### Serde Feather Component Contract
 
 `serde-feather` is a two-component project with fixed mapping:
@@ -317,7 +300,7 @@ enum RustiaComponent {
 
 - Apply this contract to all open/new GitHub issues.
 - Use issue titles in the format `<domain>: <description>`.
-- `<domain>` must use stable lowercase identifiers from project/domain contracts (for example: `ttl`, `nodeup`, `serde-feather`, `thenv`).
+- `<domain>` must use stable lowercase identifiers from project/domain contracts (for example: `ttl`, `nodeup`, `serde-feather`).
 - `<description>` should be concise, specific, and start with a lowercase verb phrase when possible.
 - Do not use bracket-style project prefixes like `[serde-feather]`.
 - Use the following Markdown section order for issue bodies:
@@ -335,7 +318,7 @@ enum RustiaComponent {
 - Apply this contract to newly created pull requests.
 - Pull request titles must use Conventional Commit-style format with a required scope: `<type>(<scope>): <description>`.
 - `<type>` must be an appropriate Conventional Commit type such as `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `ci`, `build`, `perf`, or `revert`.
-- `<scope>` must use a stable lowercase project, component, domain, or tooling identifier from repository contracts when one applies (for example: `ttl`, `nodeup`, `serde-feather`, `thenv`, `docs`, `ci`).
+- `<scope>` must use a stable lowercase project, component, domain, or tooling identifier from repository contracts when one applies (for example: `ttl`, `nodeup`, `serde-feather`, `docs`, `ci`).
 - `<description>` should be concise, specific, and start with a lowercase verb phrase when possible.
 - Do not create unscoped pull request titles or use bracket-style project prefixes like `[serde-feather]`.
 

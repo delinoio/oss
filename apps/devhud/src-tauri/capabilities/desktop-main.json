@@ -15,6 +15,7 @@
     "allow-deck-device-id",
     "allow-deck-open-pull-request",
     "allow-synchronize-deck-shortcuts",
+    "allow-show-realqa",
     "allow-get-auth-session",
     "allow-start-authentication",
     "allow-logout-authentication"

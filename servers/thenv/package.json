@@ -1,8 +1,0 @@
-{
-    "name": "@servers/thenv",
-    "private": true,
-    "scripts": {
-        "prepare:app": "../../scripts/setup/env-vars.sh oss-thenv-server",
-        "dev": "air"
-    }
-}

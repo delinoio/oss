@@ -10,7 +10,6 @@ This page provides a high-level public catalog of projects in the Delino OSS mon
 - [`derun`](derun): Terminal-fidelity run execution and MCP bridge tool.
 - [`with-watch`](with-watch): Command rerun watcher for inferred or explicit filesystem inputs.
 - `mpapp`: Expo React Native mobile app.
-- `thenv`: Secure `.env` sharing system across CLI and server components.
 - `public-docs`: Rspress public documentation app.
 
 ## Canonical Internal Contracts

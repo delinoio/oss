@@ -28,10 +28,13 @@ import { publishPersistenceReset } from "./runtime/theme";
 import {
   filterTools,
   productionTools,
-  type ToolCapability,
+  ToolCapability,
+  type ToolOperatingSystemValue,
   ToolPlatform,
 } from "./tools/registry";
 import { BrowserCaptureComposer } from "./realqa/BrowserCaptureComposer";
+import { RealQaWorkspace } from "./realqa/product/RealQaWorkspace";
+import type { RealQaProductGateway } from "./realqa/product/contracts";
 import { Dialog } from "./ui/Dialog";
 import { SettingsPanel } from "./ui/SettingsPanel";
 import {
@@ -356,16 +359,21 @@ function RuntimeFailure({
   );
 }
 
-const NO_TOOL_CAPABILITIES: ReadonlySet<ToolCapability> = new Set();
+const DESKTOP_TOOL_CAPABILITIES: ReadonlySet<ToolCapability> = new Set([
+  ToolCapability.WindowControl,
+]);
 
 function ProductionToolSurface({
   onOpenSettings,
+  operatingSystem,
 }: {
   readonly onOpenSettings: () => void;
+  readonly operatingSystem: ToolOperatingSystemValue | null;
 }) {
   const availableTools = filterTools(productionTools, {
     platform: ToolPlatform.Desktop,
-    grantedCapabilities: NO_TOOL_CAPABILITIES,
+    operatingSystem,
+    grantedCapabilities: DESKTOP_TOOL_CAPABILITIES,
   });
   if (availableTools.length === 0) {
     return <EmptyTools onOpenSettings={onOpenSettings} />;
@@ -472,9 +480,13 @@ function DesktopHud({
         ) : null}
         {runtime.status === "failed" ? (
           <RuntimeFailure message={runtime.message} onRetry={retryRuntime} />
-        ) : (
-          <ProductionToolSurface onOpenSettings={showSettings} />
-        )}
+        ) : null}
+        {runtime.status === "ready" ? (
+          <ProductionToolSurface
+            onOpenSettings={showSettings}
+            operatingSystem={runtime.runtimeInfo.toolOperatingSystem}
+          />
+        ) : null}
       </section>
     </main>
   );
@@ -835,11 +847,13 @@ function MobileShell({
 function ApplicationSurface({
   desktopBridge,
   initialPlatform,
+  realQaGateway,
   runtimeBridge,
   synchronizePlatform,
 }: {
   readonly desktopBridge?: DesktopBridge | null;
   readonly initialPlatform: ApplicationPlatform;
+  readonly realQaGateway?: RealQaProductGateway;
   readonly runtimeBridge: RuntimeBridge;
   readonly synchronizePlatform: boolean;
 }) {
@@ -958,7 +972,9 @@ function ApplicationSurface({
     runtime.status === "ready" &&
     runtime.runtimeInfo.surface === "realqa-composer"
   ) {
-    return <BrowserCaptureComposer />;
+    return realQaGateway === undefined
+      ? <BrowserCaptureComposer />
+      : <RealQaWorkspace gateway={realQaGateway} />;
   }
 
   return (
@@ -998,6 +1014,7 @@ export function App({
   deckGateway,
   desktopBridge,
   platform,
+  realQaGateway,
   runtimeBridge = tauriRuntimeBridge,
   sessionBridge,
   storage,
@@ -1005,6 +1022,7 @@ export function App({
   readonly deckGateway?: DeckGateway;
   readonly desktopBridge?: DesktopBridge | null;
   readonly platform?: ApplicationPlatform;
+  readonly realQaGateway?: RealQaProductGateway;
   readonly runtimeBridge?: RuntimeBridge;
   readonly sessionBridge?: NativeSessionBridge;
   readonly storage?: LocalStorageAdapter;
@@ -1019,6 +1037,7 @@ export function App({
           <ApplicationSurface
             desktopBridge={desktopBridge}
             initialPlatform={initialPlatform}
+            realQaGateway={realQaGateway}
             runtimeBridge={runtimeBridge}
             synchronizePlatform={synchronizePlatform}
           />

@@ -359,8 +359,15 @@ requireCondition(
   productionRegistry.includes('toolId: "deck"') &&
     productionRegistry.includes("ToolPlatform.Ios") &&
     productionRegistry.includes("ToolPlatform.Android") &&
-    (productionRegistry.match(/defineTool\(\{/gu)?.length ?? 0) === 1,
-  "production tool registration must contain only Deck on iOS and Android",
+    productionRegistry.includes('toolId: "realqa"') &&
+    productionRegistry.includes(
+      "supportedPlatforms: new Set([ToolPlatform.Desktop])",
+    ) &&
+    /supportedOperatingSystems:\s*new Set\(\[\s*ToolOperatingSystem\.Macos,\s*ToolOperatingSystem\.Ubuntu,\s*ToolOperatingSystem\.Windows,\s*\]\)/u.test(
+      productionRegistry,
+    ) &&
+    (productionRegistry.match(/defineTool\(\{/gu)?.length ?? 0) === 2,
+  "production registration must contain cross-platform Deck and desktop-only RealQA",
 );
 
 const nativeFiles = [

@@ -9,6 +9,11 @@ mod macos;
 #[cfg(any(target_os = "windows", test))]
 mod windows;
 
+#[cfg(target_os = "windows")]
+pub(crate) fn windows_operating_system_supported() -> bool {
+    windows::operating_system_supported()
+}
+
 use std::sync::Arc;
 
 #[cfg(feature = "desktop-cef")]

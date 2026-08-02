@@ -745,6 +745,20 @@ impl NativeAuthState {
             .realqa_draft_access()
     }
 
+    pub(crate) fn with_realqa_bearers<R>(
+        &self,
+        operation: impl FnOnce(&str, &str, &str) -> R,
+    ) -> Result<R, AuthError> {
+        let pair = self
+            .manager
+            .lock()
+            .map_err(|_| AuthError::SecureVaultUnavailable)?
+            .as_mut()
+            .ok_or(AuthError::ConfigurationUnavailable)?
+            .bearer_pair(AuthFeature::RealQa, unix_time_now())?;
+        Ok(pair.with_exposed(operation))
+    }
+
     pub(crate) fn cancel_pending(&self) {
         if let Ok(mut guard) = self.manager.lock()
             && let Some(manager) = guard.as_mut()

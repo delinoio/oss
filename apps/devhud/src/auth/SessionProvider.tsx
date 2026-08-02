@@ -10,6 +10,7 @@ import {
 
 import {
   publishSessionInvalidation,
+  publishSessionReauthentication,
   subscribeToPersistenceReset,
 } from "../runtime/theme";
 import {
@@ -133,6 +134,14 @@ export function SessionProvider({
       try {
         const snapshot = await bridge.start(feature);
         setSession(snapshot);
+        if (
+          feature === AuthFeature.RealQa &&
+          snapshot.status === "signed-in" &&
+          snapshot.features.includes(AuthFeature.RealQa) &&
+          !snapshot.offlineFeatures.includes(AuthFeature.RealQa)
+        ) {
+          publishSessionReauthentication();
+        }
         return true;
       } catch (error: unknown) {
         setFailure(safeAuthFailure(error));

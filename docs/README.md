@@ -58,11 +58,6 @@ Each project must have one project index document and one or more domain contrac
 - `docs/project-public-docs.md`
 - `docs/apps-public-docs-foundation.md`
 
-### thenv
-- `docs/project-thenv.md`
-- `docs/servers-thenv-server-foundation.md`
-- `docs/cmds-thenv-cli-foundation.md`
-
 ### serde-feather
 - `docs/project-serde-feather.md`
 - `docs/crates-serde-feather-core-foundation.md`
@@ -126,7 +121,7 @@ authenticated exceptions: Deck on
 desktop/mobile/tray/shortcuts/notifications/native widgets, and desktop-only
 RealQA plus its signed exact-origin Chrome MV3 native host. Authentication is
 limited to Logto/DeliDev; bundled webviews remain offline while authenticated
-Deck RPCs and future RealQA RPC/signed-upload PUTs cross closed native transports.
+Deck and RealQA RPCs plus RealQA signed-upload PUTs cross closed native transports.
 Provider work stays behind separate least-privilege GitHub Apps; RealQA's
 private schema preserves issue types, Issue Form text prefills, textarea render
 languages, and dropdown multiplicity; full RealQA feature management stays in
