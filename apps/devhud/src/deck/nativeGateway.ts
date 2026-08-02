@@ -11,6 +11,7 @@ import {
   CreateViewResponseSchema,
   DeleteViewRequestSchema,
   DeleteViewResponseSchema,
+  DevicePlatform,
   EnableAutoMergeMutationSchema,
   ErrorDetailSchema,
   ErrorReason,
@@ -48,6 +49,8 @@ import {
   RefreshOrigin,
   RefreshViewRequestSchema,
   RefreshViewResponseSchema,
+  RegisterDeviceRequestSchema,
+  RegisterDeviceResponseSchema,
   RemoveLabelsMutationSchema,
   RemoveReviewersMutationSchema,
   ReopenPullRequestMutationSchema,
@@ -67,6 +70,8 @@ import {
   ViewQuerySchema,
   ViewSort,
   type PullRequestResult,
+  type DeviceRegistration,
+  type RegisterDeviceRequest,
   type Revision,
   type View,
 } from "@delinoio/devhud-deck-connect";
@@ -451,6 +456,20 @@ interface DeckShortcutRegistration {
   readonly outcome: unknown;
 }
 
+function desktopDevicePlatform(userAgent: string): DevicePlatform {
+  if (/Windows/u.test(userAgent)) return DevicePlatform.WINDOWS;
+  if (/(Macintosh|Mac OS X)/u.test(userAgent)) return DevicePlatform.MACOS;
+  if (/Linux/u.test(userAgent)) return DevicePlatform.LINUX;
+  throw new DeckProductError(DeckFailureCode.UnsupportedAction);
+}
+
+function isAmbiguousRefreshError(error: unknown): boolean {
+  return error instanceof DeckProductError && (
+    error.code === DeckFailureCode.ServiceUnavailable ||
+    error.code === DeckFailureCode.BillingUnavailable
+  );
+}
+
 function parseNativeConnectFailure(error: unknown): NativeConnectFailure | null {
   if (typeof error === "object" && error !== null) {
     const candidate = error as { code?: unknown; detailBodyBase64?: unknown };
@@ -523,6 +542,8 @@ export class NativeDeckGateway implements DeckGateway {
   readonly #automaticAttempts = new MemoryRefreshAttemptStore();
   readonly #lastOpenedAt = new Map<string, Date>();
   readonly #shortcutViewIds = new Set<string>();
+  #deviceRegistrationAttempt: RegisterDeviceRequest | undefined;
+  #deviceRegistered = false;
   #accountId = "";
   #deviceId = "";
 
@@ -530,6 +551,7 @@ export class NativeDeckGateway implements DeckGateway {
 
   constructor(
     clientKind: RefreshClientKind.DESKTOP | RefreshClientKind.MOBILE = RefreshClientKind.DESKTOP,
+    private readonly desktopPlatform = () => desktopDevicePlatform(navigator.userAgent),
   ) {
     this.#clientKind = clientKind;
   }
@@ -639,7 +661,7 @@ export class NativeDeckGateway implements DeckGateway {
       ));
       this.#mutationAttempts.delete(viewId);
     } catch (error) {
-      if (!(error instanceof DeckProductError) || error.code !== DeckFailureCode.ServiceUnavailable) {
+      if (!isAmbiguousRefreshError(error)) {
         this.#mutationAttempts.delete(viewId);
       }
       throw error;
@@ -667,23 +689,92 @@ export class NativeDeckGateway implements DeckGateway {
       await this.#call(() => invokeDeckProcedure(DeckProcedure.RefreshView, RefreshViewRequestSchema, RefreshViewResponseSchema, create(RefreshViewRequestSchema, { viewId: uuid(viewId), refreshRequestId: idempotencyKey(attempt!.request.requestId), origin: RefreshOrigin.MANUAL, billingPreflightToken: attempt!.preflightToken, clientKind: this.#clientKind })));
       this.#manualAttempts.delete(viewId);
     } catch (error) {
-      if (!(error instanceof DeckProductError) || error.code !== DeckFailureCode.ServiceUnavailable) this.#manualAttempts.delete(viewId);
+      if (!isAmbiguousRefreshError(error)) this.#manualAttempts.delete(viewId);
       throw error;
     }
   }
   openPullRequest(pullRequest: DeckPullRequest): Promise<void> { return openDeckPullRequest(pullRequest.repositoryOwner, pullRequest.repositoryName, pullRequest.number); }
   recordViewOpened(viewId: string): void { this.#lastOpenedAt.set(viewId, new Date()); }
-  async synchronizeShortcuts(): Promise<void> {
-    if (!isTauri() || this.#clientKind !== RefreshClientKind.DESKTOP) return;
-    if (this.#accountId.length === 0) return;
-    if (this.#deviceId.length === 0) this.#deviceId = await invoke<string>("deck_device_id");
+  synchronizeShortcuts(): Promise<void> { return this.#runShortcutSynchronization(); }
+
+  async #registerDevice(current?: DeviceRegistration): Promise<DeviceRegistration> {
+    let attempt = this.#deviceRegistrationAttempt;
+    if (attempt === undefined) {
+      const device = current?.device;
+      attempt = create(RegisterDeviceRequestSchema, {
+        idempotencyKey: idempotencyKey(createUuidV7()),
+        deviceId: uuid(this.#deviceId),
+        platform: device?.platform ?? this.desktopPlatform(),
+        displayName: device?.displayName ?? "DevHud desktop",
+        detailedNotificationTextEnabled: device?.detailedNotificationTextEnabled ?? false,
+        shortcuts: (device?.shortcuts ?? []).map((shortcut) => ({
+          shortcutId: shortcut.shortcutId,
+          viewId: shortcut.viewId,
+          binding: shortcut.binding,
+        })),
+        widgets: (device?.widgets ?? []).map((widget) => ({
+          widgetId: widget.widgetId,
+          viewId: widget.viewId,
+          family: widget.family,
+          privacy: widget.privacy,
+        })),
+        expectedRevision: device?.revision,
+      });
+      this.#deviceRegistrationAttempt = attempt;
+    }
+    try {
+      const response = await this.#call(() => invokeDeckProcedure(
+        DeckProcedure.RegisterDevice,
+        RegisterDeviceRequestSchema,
+        RegisterDeviceResponseSchema,
+        attempt!,
+      ));
+      const registration = response.registration;
+      if (registration === undefined) {
+        throw new DeckProductError(DeckFailureCode.ServiceUnavailable);
+      }
+      this.#deviceRegistrationAttempt = undefined;
+      return registration;
+    } catch (error) {
+      if (!(error instanceof DeckProductError) || error.code !== DeckFailureCode.ServiceUnavailable) {
+        this.#deviceRegistrationAttempt = undefined;
+      }
+      throw error;
+    }
+  }
+
+  async #getDevice(): Promise<DeviceRegistration> {
     const response = await this.#call(() => invokeDeckProcedure(
       DeckProcedure.GetDevice,
       GetDeviceRequestSchema,
       GetDeviceResponseSchema,
       create(GetDeviceRequestSchema, { deviceId: uuid(this.#deviceId) }),
     ));
-    const definitions = (response.registration?.device?.shortcuts ?? []).flatMap((shortcut) => {
+    if (response.registration === undefined) {
+      throw new DeckProductError(DeckFailureCode.ServiceUnavailable);
+    }
+    return response.registration;
+  }
+
+  async #runShortcutSynchronization(): Promise<void> {
+    if (!isTauri() || this.#clientKind !== RefreshClientKind.DESKTOP) return;
+    if (this.#accountId.length === 0) return;
+    if (this.#deviceId.length === 0) this.#deviceId = await invoke<string>("deck_device_id");
+    let registration: DeviceRegistration;
+    if (this.#deviceRegistered) {
+      registration = await this.#getDevice();
+    } else {
+      try {
+        registration = await this.#registerDevice();
+      } catch (error) {
+        if (!(error instanceof DeckProductError) || error.code !== DeckFailureCode.StaleRevision) {
+          throw error;
+        }
+        registration = await this.#registerDevice(await this.#getDevice());
+      }
+      this.#deviceRegistered = true;
+    }
+    const definitions = (registration.device?.shortcuts ?? []).flatMap((shortcut) => {
       if (shortcut.state !== ShortcutState.ACTIVE) return [];
       const mapped = shortcutFromProto(shortcut.binding);
       const viewId = shortcut.viewId?.value ?? "";
@@ -713,12 +804,10 @@ export class NativeDeckGateway implements DeckGateway {
   }
 
   startEligibleRefreshes(views: readonly DeckView[], onRefreshed: (viewId: string) => void): () => void {
-    if (views.length === 0) return () => undefined;
     const controller = new DeckRefreshController({
       clientKind: this.#clientKind,
       transport: {
-        isAmbiguousRefreshError: (error) =>
-          error instanceof DeckProductError && error.code === DeckFailureCode.ServiceUnavailable,
+        isAmbiguousRefreshError,
         getPreflight: async (request, signal) => {
           signal.throwIfAborted();
           const response = await this.#call(() => invokeDeckProcedure(
@@ -757,13 +846,38 @@ export class NativeDeckGateway implements DeckGateway {
         },
       },
       createRequestId: createUuidV7,
-      listCandidates: async () => views.map((view) => ({
-        viewId: view.viewId,
-        lastOpenedAt: this.#lastOpenedAt.get(view.viewId),
-        notificationAttached: view.notificationPreference.enabled,
-        shortcutAttached: this.#shortcutViewIds.has(view.viewId),
-        widgetAttached: view.widgetAttached,
-      })),
+      listCandidates: async () => {
+        const candidates = new Map(views.map((view) => [view.viewId, {
+          viewId: view.viewId,
+          lastOpenedAt: this.#lastOpenedAt.get(view.viewId),
+          notificationAttached: view.notificationPreference.enabled,
+          shortcutAttached: this.#shortcutViewIds.has(view.viewId),
+          widgetAttached: view.widgetAttached,
+        }]));
+        for (const viewId of this.#shortcutViewIds) {
+          if (!candidates.has(viewId)) {
+            candidates.set(viewId, {
+              viewId,
+              lastOpenedAt: this.#lastOpenedAt.get(viewId),
+              notificationAttached: false,
+              shortcutAttached: true,
+              widgetAttached: false,
+            });
+          }
+        }
+        for (const [viewId, lastOpenedAt] of this.#lastOpenedAt) {
+          if (!candidates.has(viewId)) {
+            candidates.set(viewId, {
+              viewId,
+              lastOpenedAt,
+              notificationAttached: false,
+              shortcutAttached: false,
+              widgetAttached: false,
+            });
+          }
+        }
+        return [...candidates.values()];
+      },
       canPoll: () => navigator.onLine,
       automaticAttempts: this.#automaticAttempts,
       manualAttempts: new MemoryRefreshAttemptStore(),

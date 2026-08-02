@@ -170,6 +170,26 @@ describe("Deck composable production workspace", () => {
     await waitFor(() => expect(backend.listViews).toHaveBeenCalledWith(organization, ""));
   });
 
+  it("leaves edit mode when the selected owner clears the selected view", async () => {
+    const backend = gateway({
+      listOwners: vi.fn(async () => [owner, organization]),
+      listViews: vi.fn(async (selected) => ({
+        items: selected.ownerId === owner.ownerId ? [view] : [],
+        nextCursor: "",
+      })),
+    });
+    const user = userEvent.setup();
+    renderDeck(backend);
+    await user.click(await screen.findByRole("button", { name: /Needs review/u }));
+    await user.click(screen.getByRole("button", { name: "Edit view" }));
+    expect(screen.getByRole("heading", { name: "Edit Needs review" })).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: /Deli/u }));
+
+    expect(await screen.findByRole("button", { name: "New view" })).toBeVisible();
+    expect(screen.queryByRole("heading", { name: "Edit Needs review" })).not.toBeInTheDocument();
+  });
+
   it("replaces a selected owner removed by an authoritative refetch", async () => {
     const listOwners = vi.fn()
       .mockResolvedValueOnce([owner, organization])

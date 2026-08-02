@@ -60,7 +60,7 @@ No additional v1 service or RPC is implied. GitHub callback/webhook handlers and
 - `ListGitHubInstallations` rows carry the provider installation ID plus the
   stable GitHub account ID, login, and closed user/organization kind needed to
   identify the installation in DevHud and DeliDev settings.
-- Device registration/update requests carry request-only shortcut configurations using closed modifier/key enums. Effective shortcut conflict state and synchronized shortcut revisions are server-authored response state; clients cannot submit either field or unchecked binding strings.
+- Device registration/update requests may omit `push` while platform delivery is inactive and otherwise require a supported provider plus a non-empty opaque token. They carry request-only shortcut configurations using closed modifier/key enums. Effective shortcut conflict state and synchronized shortcut revisions are server-authored response state; clients cannot submit either field or unchecked binding strings.
 - Device registration/update requests carry widget identity, selected view, family, and privacy configuration only. Widget snapshots, freshness/offline state, and synchronized widget revisions are server-authored response state.
 - `GetDevice` reloads the authenticated caller's current registration, bounded
   lease, server-authored shortcut/widget state, and device revision by stable

@@ -652,7 +652,9 @@ export function DeckWorkspace() {
       {state.loadingOwners ? <p role="status">Loading Deck ownership scopes…</p> : null}
       <DeckNavigation />
       <div className="deck-layout">
-        <DeckViewManager />
+        <DeckViewManager
+          key={`${state.selectedOwner?.kind ?? "none"}:${state.selectedOwner?.ownerId ?? "none"}:${state.selectedView?.viewId ?? "none"}`}
+        />
         <DeckPullRequests />
       </div>
       <DeckConflictDialog />
