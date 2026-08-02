@@ -55,6 +55,11 @@ WHERE registration_id = sqlc.arg(registration_id)
   AND revision = sqlc.arg(expected_revision)
 RETURNING *;
 
+-- name: ExtendRegisterDeviceCleanupGrants :exec
+UPDATE deck_device_registration_idempotency
+SET lease_expires_at = GREATEST(lease_expires_at, sqlc.arg(lease_expires_at))
+WHERE registration_id = sqlc.arg(registration_id);
+
 -- name: UpdateDevice :one
 UPDATE deck_device_registrations
 SET display_name_ciphertext = sqlc.arg(display_name_ciphertext),

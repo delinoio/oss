@@ -544,6 +544,7 @@ export class NativeDeckGateway implements DeckGateway {
   readonly #shortcutViewIds = new Set<string>();
   #deviceRegistrationAttempt: RegisterDeviceRequest | undefined;
   #deviceRegistered = false;
+  #shortcutSynchronizationGeneration = 0;
   #accountId = "";
   #deviceId = "";
 
@@ -762,8 +763,14 @@ export class NativeDeckGateway implements DeckGateway {
   async #runShortcutSynchronization(): Promise<void> {
     if (!isTauri() || this.#clientKind !== RefreshClientKind.DESKTOP) return;
     if (this.#accountId.length === 0) return;
-    if (this.#deviceId.length === 0) this.#deviceId = await invoke<string>("deck_device_id");
+    const generation = this.#shortcutSynchronizationGeneration;
+    const accountId = this.#accountId;
+    if (this.#deviceId.length === 0) {
+      this.#deviceId = await invoke<string>("deck_device_id");
+      if (generation !== this.#shortcutSynchronizationGeneration) return;
+    }
     let current = this.#deviceRegistered ? await this.#getDevice() : undefined;
+    if (generation !== this.#shortcutSynchronizationGeneration) return;
     let registration: DeviceRegistration;
     try {
       registration = await this.#registerDevice(current);
@@ -774,21 +781,26 @@ export class NativeDeckGateway implements DeckGateway {
       current = await this.#getDevice();
       registration = await this.#registerDevice(current);
     }
+    if (generation !== this.#shortcutSynchronizationGeneration) return;
     this.#deviceRegistered = true;
     const definitions = (registration.device?.shortcuts ?? []).flatMap((shortcut) => {
       if (shortcut.state !== ShortcutState.ACTIVE) return [];
       const mapped = shortcutFromProto(shortcut.binding);
       const viewId = shortcut.viewId?.value ?? "";
       return mapped === undefined || viewId.length === 0 ? [] : [{
-        accountId: this.#accountId,
+        accountId,
         viewId,
         shortcut: mapped,
       }];
     });
     const registrations = await invoke<readonly DeckShortcutRegistration[]>("synchronize_deck_shortcuts", {
-      accountId: this.#accountId,
+      accountId,
       definitions,
     });
+    if (generation !== this.#shortcutSynchronizationGeneration) {
+      await invoke("synchronize_deck_shortcuts", { accountId, definitions: [] });
+      return;
+    }
     this.#shortcutViewIds.clear();
     registrations.forEach((registration) => {
       if (registration.outcome === "active") this.#shortcutViewIds.add(registration.viewId);
@@ -797,11 +809,12 @@ export class NativeDeckGateway implements DeckGateway {
 
   async clearShortcuts(): Promise<void> {
     if (!isTauri() || this.#clientKind !== RefreshClientKind.DESKTOP) return;
+    this.#shortcutSynchronizationGeneration += 1;
+    this.#shortcutViewIds.clear();
     await invoke("synchronize_deck_shortcuts", {
       accountId: this.#accountId,
       definitions: [],
     });
-    this.#shortcutViewIds.clear();
   }
 
   startEligibleRefreshes(views: readonly DeckView[], onRefreshed: (viewId: string) => void): () => void {

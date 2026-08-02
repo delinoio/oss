@@ -168,6 +168,62 @@ describe("native Deck gateway", () => {
     expect(renewals[2]?.[3]).toMatchObject({ expectedRevision: device.revision });
   });
 
+  it("does not restore shortcuts when teardown clears an in-flight synchronization", async () => {
+    const accountId = "018f0000-0000-7000-8000-000000000001";
+    const deviceId = "018f0000-0000-7000-8000-000000000002";
+    const viewId = "018f0000-0000-7000-8000-000000000003";
+    let finishRegistration: ((registration: unknown) => void) | undefined;
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command === "deck_device_id") return deviceId as never;
+      if (command === "synchronize_deck_shortcuts") return [] as never;
+      throw new Error(`Unexpected command: ${command}`);
+    });
+    vi.mocked(invokeDeckProcedure).mockImplementation(async (procedure) => {
+      if (procedure === DeckProcedure.ListOwners) {
+        return {
+          owners: [{
+            owner: { ownerId: { case: "accountId", value: { value: accountId } } },
+            canManage: true,
+            billingSelections: [],
+          }],
+        } as never;
+      }
+      if (procedure === DeckProcedure.RegisterDevice) {
+        return await new Promise<unknown>((resolve) => { finishRegistration = resolve; }) as never;
+      }
+      throw new Error(`Unexpected procedure: ${procedure}`);
+    });
+    const gateway = new NativeDeckGateway(undefined, () => DevicePlatform.LINUX);
+    await gateway.listOwners();
+
+    const synchronization = gateway.synchronizeShortcuts();
+    await vi.waitFor(() => expect(finishRegistration).toBeTypeOf("function"));
+    await gateway.clearShortcuts();
+    finishRegistration?.({
+      registration: {
+        device: {
+          shortcuts: [{
+            state: ShortcutState.ACTIVE,
+            viewId: { value: viewId },
+            binding: {
+              modifiers: [ShortcutModifier.CONTROL],
+              key: ShortcutKey.K,
+            },
+          }],
+        },
+      },
+    });
+    await synchronization;
+
+    const shortcutCalls = vi.mocked(invoke).mock.calls.filter(
+      ([command]) => command === "synchronize_deck_shortcuts",
+    );
+    expect(shortcutCalls).toEqual([[
+      "synchronize_deck_shortcuts",
+      { accountId, definitions: [] },
+    ]]);
+  });
+
   it("shares one preflight, confirmation, and dispatch across concurrent manual refreshes", async () => {
     let resolveConfirmation: ((confirmed: boolean) => void) | undefined;
     const confirm = vi.fn(() => new Promise<boolean>((resolve) => {
