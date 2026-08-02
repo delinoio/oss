@@ -35,6 +35,11 @@ overrides:
   ws@>=7.0.0 <7.5.11: 7.5.11
   ws@>=8.0.0 <8.21.0: 8.21.0
 
+patchedDependencies:
+  '@bufbuild/protobuf@2.13.0':
+    hash: 32e5280897080761b12a11a066bec2ed5e278bdca47f3244bf87a9fc7d84511b
+    path: patches/@bufbuild__protobuf@2.13.0.patch
+
 importers:
 
   .:
@@ -56,16 +61,16 @@ importers:
     dependencies:
       '@bufbuild/protobuf':
         specifier: 2.13.0
-        version: 2.13.0
+        version: 2.13.0(patch_hash=32e5280897080761b12a11a066bec2ed5e278bdca47f3244bf87a9fc7d84511b)
       '@connectrpc/connect':
         specifier: 2.1.2
-        version: 2.1.2(@bufbuild/protobuf@2.13.0)
+        version: 2.1.2(@bufbuild/protobuf@2.13.0(patch_hash=32e5280897080761b12a11a066bec2ed5e278bdca47f3244bf87a9fc7d84511b))
       '@connectrpc/connect-query':
         specifier: 2.2.0
-        version: 2.2.0(@bufbuild/protobuf@2.13.0)(@connectrpc/connect@2.1.2(@bufbuild/protobuf@2.13.0))(@tanstack/query-core@5.101.4)(@tanstack/react-query@5.101.4(react@19.2.3))(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
+        version: 2.2.0(@bufbuild/protobuf@2.13.0(patch_hash=32e5280897080761b12a11a066bec2ed5e278bdca47f3244bf87a9fc7d84511b))(@connectrpc/connect@2.1.2(@bufbuild/protobuf@2.13.0(patch_hash=32e5280897080761b12a11a066bec2ed5e278bdca47f3244bf87a9fc7d84511b)))(@tanstack/query-core@5.101.4)(@tanstack/react-query@5.101.4(react@19.2.3))(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
       '@connectrpc/connect-web':
         specifier: 2.1.2
-        version: 2.1.2(@bufbuild/protobuf@2.13.0)(@connectrpc/connect@2.1.2(@bufbuild/protobuf@2.13.0))
+        version: 2.1.2(@bufbuild/protobuf@2.13.0(patch_hash=32e5280897080761b12a11a066bec2ed5e278bdca47f3244bf87a9fc7d84511b))(@connectrpc/connect@2.1.2(@bufbuild/protobuf@2.13.0(patch_hash=32e5280897080761b12a11a066bec2ed5e278bdca47f3244bf87a9fc7d84511b)))
       '@delinoio/delibase-connect':
         specifier: workspace:*
         version: link:../../protos/delibase
@@ -165,10 +170,10 @@ importers:
     dependencies:
       '@bufbuild/protobuf':
         specifier: 2.13.0
-        version: 2.13.0
+        version: 2.13.0(patch_hash=32e5280897080761b12a11a066bec2ed5e278bdca47f3244bf87a9fc7d84511b)
       '@connectrpc/connect-query':
         specifier: 2.2.0
-        version: 2.2.0(@bufbuild/protobuf@2.13.0)(@connectrpc/connect@2.1.2(@bufbuild/protobuf@2.13.0))(@tanstack/query-core@5.101.4)(@tanstack/react-query@5.101.4(react@19.2.3))(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
+        version: 2.2.0(@bufbuild/protobuf@2.13.0(patch_hash=32e5280897080761b12a11a066bec2ed5e278bdca47f3244bf87a9fc7d84511b))(@connectrpc/connect@2.1.2(@bufbuild/protobuf@2.13.0(patch_hash=32e5280897080761b12a11a066bec2ed5e278bdca47f3244bf87a9fc7d84511b)))(@tanstack/query-core@5.101.4)(@tanstack/react-query@5.101.4(react@19.2.3))(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
       '@delinoio/devhud-deck-connect':
         specifier: workspace:*
         version: link:../../protos/devhud-deck
@@ -314,14 +319,14 @@ importers:
     dependencies:
       '@bufbuild/protobuf':
         specifier: 2.13.0
-        version: 2.13.0
+        version: 2.13.0(patch_hash=32e5280897080761b12a11a066bec2ed5e278bdca47f3244bf87a9fc7d84511b)
       '@connectrpc/connect':
         specifier: 2.1.2
-        version: 2.1.2(@bufbuild/protobuf@2.13.0)
+        version: 2.1.2(@bufbuild/protobuf@2.13.0(patch_hash=32e5280897080761b12a11a066bec2ed5e278bdca47f3244bf87a9fc7d84511b))
     devDependencies:
       '@bufbuild/protoc-gen-es':
         specifier: 2.13.0
-        version: 2.13.0(@bufbuild/protobuf@2.13.0)
+        version: 2.13.0(@bufbuild/protobuf@2.13.0(patch_hash=32e5280897080761b12a11a066bec2ed5e278bdca47f3244bf87a9fc7d84511b))
       typescript:
         specifier: 5.9.3
         version: 5.9.3
@@ -330,14 +335,14 @@ importers:
     dependencies:
       '@bufbuild/protobuf':
         specifier: 2.13.0
-        version: 2.13.0
+        version: 2.13.0(patch_hash=32e5280897080761b12a11a066bec2ed5e278bdca47f3244bf87a9fc7d84511b)
       '@connectrpc/connect':
         specifier: 2.1.2
-        version: 2.1.2(@bufbuild/protobuf@2.13.0)
+        version: 2.1.2(@bufbuild/protobuf@2.13.0(patch_hash=32e5280897080761b12a11a066bec2ed5e278bdca47f3244bf87a9fc7d84511b))
     devDependencies:
       '@bufbuild/protoc-gen-es':
         specifier: 2.13.0
-        version: 2.13.0(@bufbuild/protobuf@2.13.0)
+        version: 2.13.0(@bufbuild/protobuf@2.13.0(patch_hash=32e5280897080761b12a11a066bec2ed5e278bdca47f3244bf87a9fc7d84511b))
       typescript:
         specifier: 5.9.3
         version: 5.9.3
@@ -346,14 +351,14 @@ importers:
     dependencies:
       '@bufbuild/protobuf':
         specifier: 2.13.0
-        version: 2.13.0
+        version: 2.13.0(patch_hash=32e5280897080761b12a11a066bec2ed5e278bdca47f3244bf87a9fc7d84511b)
       '@connectrpc/connect':
         specifier: 2.1.2
-        version: 2.1.2(@bufbuild/protobuf@2.13.0)
+        version: 2.1.2(@bufbuild/protobuf@2.13.0(patch_hash=32e5280897080761b12a11a066bec2ed5e278bdca47f3244bf87a9fc7d84511b))
     devDependencies:
       '@bufbuild/protoc-gen-es':
         specifier: 2.13.0
-        version: 2.13.0(@bufbuild/protobuf@2.13.0)
+        version: 2.13.0(@bufbuild/protobuf@2.13.0(patch_hash=32e5280897080761b12a11a066bec2ed5e278bdca47f3244bf87a9fc7d84511b))
       typescript:
         specifier: 5.9.3
         version: 5.9.3
@@ -7161,49 +7166,49 @@ snapshots:
 
   '@bcoe/v8-coverage@1.0.2': {}
 
-  '@bufbuild/protobuf@2.13.0': {}
+  '@bufbuild/protobuf@2.13.0(patch_hash=32e5280897080761b12a11a066bec2ed5e278bdca47f3244bf87a9fc7d84511b)': {}
 
-  '@bufbuild/protoc-gen-es@2.13.0(@bufbuild/protobuf@2.13.0)':
+  '@bufbuild/protoc-gen-es@2.13.0(@bufbuild/protobuf@2.13.0(patch_hash=32e5280897080761b12a11a066bec2ed5e278bdca47f3244bf87a9fc7d84511b))':
     dependencies:
       '@bufbuild/protoplugin': 2.13.0
     optionalDependencies:
-      '@bufbuild/protobuf': 2.13.0
+      '@bufbuild/protobuf': 2.13.0(patch_hash=32e5280897080761b12a11a066bec2ed5e278bdca47f3244bf87a9fc7d84511b)
     transitivePeerDependencies:
       - supports-color
 
   '@bufbuild/protoplugin@2.13.0':
     dependencies:
-      '@bufbuild/protobuf': 2.13.0
+      '@bufbuild/protobuf': 2.13.0(patch_hash=32e5280897080761b12a11a066bec2ed5e278bdca47f3244bf87a9fc7d84511b)
       '@typescript/vfs': 1.6.4(typescript@5.4.5)
       typescript: 5.4.5
     transitivePeerDependencies:
       - supports-color
 
-  '@connectrpc/connect-query-core@2.2.0(@bufbuild/protobuf@2.13.0)(@connectrpc/connect@2.1.2(@bufbuild/protobuf@2.13.0))(@tanstack/query-core@5.101.4)':
+  '@connectrpc/connect-query-core@2.2.0(@bufbuild/protobuf@2.13.0(patch_hash=32e5280897080761b12a11a066bec2ed5e278bdca47f3244bf87a9fc7d84511b))(@connectrpc/connect@2.1.2(@bufbuild/protobuf@2.13.0(patch_hash=32e5280897080761b12a11a066bec2ed5e278bdca47f3244bf87a9fc7d84511b)))(@tanstack/query-core@5.101.4)':
     dependencies:
-      '@bufbuild/protobuf': 2.13.0
-      '@connectrpc/connect': 2.1.2(@bufbuild/protobuf@2.13.0)
+      '@bufbuild/protobuf': 2.13.0(patch_hash=32e5280897080761b12a11a066bec2ed5e278bdca47f3244bf87a9fc7d84511b)
+      '@connectrpc/connect': 2.1.2(@bufbuild/protobuf@2.13.0(patch_hash=32e5280897080761b12a11a066bec2ed5e278bdca47f3244bf87a9fc7d84511b))
       '@tanstack/query-core': 5.101.4
 
-  '@connectrpc/connect-query@2.2.0(@bufbuild/protobuf@2.13.0)(@connectrpc/connect@2.1.2(@bufbuild/protobuf@2.13.0))(@tanstack/query-core@5.101.4)(@tanstack/react-query@5.101.4(react@19.2.3))(react-dom@19.2.3(react@19.2.3))(react@19.2.3)':
+  '@connectrpc/connect-query@2.2.0(@bufbuild/protobuf@2.13.0(patch_hash=32e5280897080761b12a11a066bec2ed5e278bdca47f3244bf87a9fc7d84511b))(@connectrpc/connect@2.1.2(@bufbuild/protobuf@2.13.0(patch_hash=32e5280897080761b12a11a066bec2ed5e278bdca47f3244bf87a9fc7d84511b)))(@tanstack/query-core@5.101.4)(@tanstack/react-query@5.101.4(react@19.2.3))(react-dom@19.2.3(react@19.2.3))(react@19.2.3)':
     dependencies:
-      '@bufbuild/protobuf': 2.13.0
-      '@connectrpc/connect': 2.1.2(@bufbuild/protobuf@2.13.0)
-      '@connectrpc/connect-query-core': 2.2.0(@bufbuild/protobuf@2.13.0)(@connectrpc/connect@2.1.2(@bufbuild/protobuf@2.13.0))(@tanstack/query-core@5.101.4)
+      '@bufbuild/protobuf': 2.13.0(patch_hash=32e5280897080761b12a11a066bec2ed5e278bdca47f3244bf87a9fc7d84511b)
+      '@connectrpc/connect': 2.1.2(@bufbuild/protobuf@2.13.0(patch_hash=32e5280897080761b12a11a066bec2ed5e278bdca47f3244bf87a9fc7d84511b))
+      '@connectrpc/connect-query-core': 2.2.0(@bufbuild/protobuf@2.13.0(patch_hash=32e5280897080761b12a11a066bec2ed5e278bdca47f3244bf87a9fc7d84511b))(@connectrpc/connect@2.1.2(@bufbuild/protobuf@2.13.0(patch_hash=32e5280897080761b12a11a066bec2ed5e278bdca47f3244bf87a9fc7d84511b)))(@tanstack/query-core@5.101.4)
       '@tanstack/react-query': 5.101.4(react@19.2.3)
       react: 19.2.3
       react-dom: 19.2.3(react@19.2.3)
     transitivePeerDependencies:
       - '@tanstack/query-core'
 
-  '@connectrpc/connect-web@2.1.2(@bufbuild/protobuf@2.13.0)(@connectrpc/connect@2.1.2(@bufbuild/protobuf@2.13.0))':
+  '@connectrpc/connect-web@2.1.2(@bufbuild/protobuf@2.13.0(patch_hash=32e5280897080761b12a11a066bec2ed5e278bdca47f3244bf87a9fc7d84511b))(@connectrpc/connect@2.1.2(@bufbuild/protobuf@2.13.0(patch_hash=32e5280897080761b12a11a066bec2ed5e278bdca47f3244bf87a9fc7d84511b)))':
     dependencies:
-      '@bufbuild/protobuf': 2.13.0
-      '@connectrpc/connect': 2.1.2(@bufbuild/protobuf@2.13.0)
+      '@bufbuild/protobuf': 2.13.0(patch_hash=32e5280897080761b12a11a066bec2ed5e278bdca47f3244bf87a9fc7d84511b)
+      '@connectrpc/connect': 2.1.2(@bufbuild/protobuf@2.13.0(patch_hash=32e5280897080761b12a11a066bec2ed5e278bdca47f3244bf87a9fc7d84511b))
 
-  '@connectrpc/connect@2.1.2(@bufbuild/protobuf@2.13.0)':
+  '@connectrpc/connect@2.1.2(@bufbuild/protobuf@2.13.0(patch_hash=32e5280897080761b12a11a066bec2ed5e278bdca47f3244bf87a9fc7d84511b))':
     dependencies:
-      '@bufbuild/protobuf': 2.13.0
+      '@bufbuild/protobuf': 2.13.0(patch_hash=32e5280897080761b12a11a066bec2ed5e278bdca47f3244bf87a9fc7d84511b)
 
   '@cspotcode/source-map-support@0.8.1':
     dependencies:

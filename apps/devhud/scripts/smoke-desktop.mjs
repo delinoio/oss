@@ -309,27 +309,21 @@ for (let iteration = 1; iteration <= 3; iteration += 1) {
     } catch (error) {
       const missedHostedWindowsHelperObservation =
         error instanceof DesktopSmokeHelperObservationError;
-      const stalledHostedWindowsCefStartup =
-        error instanceof DesktopSmokeRuntimeError &&
-        error.exitCode === null &&
-        !error.observedReady;
       const retryableWindowsLifecycleFailure =
         process.platform === "win32" &&
         process.env.GITHUB_ACTIONS === "true" &&
         (missedHostedWindowsHelperObservation ||
-          stalledHostedWindowsCefStartup ||
           (error instanceof DesktopSmokeRuntimeError &&
             error.exitCode === windowsAccessViolationExitCode)) &&
         attempt < windowsLifecycleAttemptLimit;
       if (!retryableWindowsLifecycleFailure) {
         throw error;
       }
-      // GPU-less GitHub-hosted Windows runners can sporadically stall before
-      // renderer readiness or access-violate, and their Get-CimInstance polling
-      // can miss short-lived CEF helpers during resource contention. Retry only
-      // these exact lifecycle failures; remove the startup retry when CI uses a
-      // GPU-backed runner and the observation retry when the smoke uses
-      // persistent process events instead of polling.
+      // GPU-less GitHub-hosted Windows runners can sporadically access-violate,
+      // and their Get-CimInstance polling can miss short-lived CEF helpers
+      // during resource contention. Retry only these exact lifecycle failures;
+      // remove the observation retry when the smoke uses persistent process
+      // events instead of polling.
       console.warn(
         JSON.stringify({
           check: "devhud-desktop-smoke",
@@ -338,8 +332,6 @@ for (let iteration = 1; iteration <= 3; iteration += 1) {
           attempt,
           reason: missedHostedWindowsHelperObservation
             ? "windows-cef-helper-observation-missed"
-            : stalledHostedWindowsCefStartup
-              ? "windows-cef-startup-stalled"
             : "windows-cef-lifecycle-access-violation",
         }),
       );
