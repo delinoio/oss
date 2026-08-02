@@ -318,25 +318,14 @@ async function renderWorkspace(gateway: FixtureGateway) {
 
 describe("RealQA desktop production workspace", () => {
   it.each(Object.values(RealQaDesktopFamily))(
-    "completes the fixture capture-to-issue flow on %s",
+    "completes the retained-capture-to-issue flow on %s",
     async (platform) => {
       const user = userEvent.setup();
       const gateway = new FixtureGateway(snapshot(platform));
       await renderWorkspace(gateway);
 
       expect(screen.getByLabelText("Operating system")).toHaveValue(platform);
-      await user.selectOptions(screen.getByLabelText("Mode", { selector: "select" }), CaptureMode.MultiMonitor);
-      await user.click(screen.getByLabelText("Include pointer"));
-      await user.clear(screen.getByLabelText("Width"));
-      await user.type(screen.getByLabelText("Width"), "800");
-      await user.click(screen.getByRole("button", { name: "Capture screenshot" }));
-      expect(await screen.findByText(/Capture added/u)).toBeVisible();
-      expect(gateway.actions.at(-1)).toMatchObject({
-        kind: "capture",
-        captureMode: CaptureMode.MultiMonitor,
-        pointer: PointerInclusion.Include,
-        selection: { width: 800 },
-      });
+      expect(screen.queryByRole("button", { name: "Capture screenshot" })).toBeNull();
       const editButton = screen.getAllByRole("button", { name: "Edit nondestructively" })[0];
       if (editButton === undefined) throw new Error("Fixture image edit action is missing.");
       await user.click(editButton);
@@ -368,7 +357,7 @@ describe("RealQA desktop production workspace", () => {
     expect(screen.getByRole("heading", { name: "Offline draft mode" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Save preset" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Review and submit" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Capture screenshot" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Capture screenshot" })).toBeNull();
     await user.clear(screen.getByLabelText("Issue title"));
     await user.type(screen.getByLabelText("Issue title"), "Offline edit");
     await user.click(screen.getByRole("button", { name: "Save draft" }));
@@ -418,7 +407,7 @@ describe("RealQA desktop production workspace", () => {
     expect(review).toBeEnabled();
   });
 
-  it("enforces the 20-shortcut device limit without discarding preset data", async () => {
+  it("does not expose shortcut editing before native registration is connected", async () => {
     const value = snapshot();
     const template = value.presets[0];
     if (template === undefined) throw new Error("Fixture preset is missing.");
@@ -439,35 +428,24 @@ describe("RealQA desktop production workspace", () => {
     });
     await renderWorkspace(gateway);
 
-    expect(screen.getByText("20/20 shortcuts")).toBeVisible();
-    expect(screen.getByRole("button", { name: "Record shortcut" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Record shortcut" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Clear shortcut" })).toBeNull();
     expect(screen.getByLabelText("Name")).toHaveValue("Unbound preset");
-    expect(screen.getByText(/Conflicts remain inactive\./u)).toBeVisible();
   });
 
-  it("captures preset shortcuts as closed modifier and key values", async () => {
+  it("preserves existing shortcut data while shortcut editing is hidden", async () => {
     const user = userEvent.setup();
-    const value = snapshot();
-    const preset = value.presets[0];
-    if (preset === undefined) throw new Error("Fixture preset is missing.");
-    const gateway = new FixtureGateway({
-      ...value,
-      presets: [{ ...preset, shortcut: null }],
-    });
+    const gateway = new FixtureGateway(snapshot());
     await renderWorkspace(gateway);
 
-    const record = screen.getByRole("button", { name: "Record shortcut" });
-    await user.click(record);
-    await user.keyboard("{Control>}{Shift>}k{/Shift}{/Control}");
-    expect(screen.getByText("Ctrl + Shift + K")).toBeVisible();
-
+    expect(screen.queryByRole("button", { name: "Record shortcut" })).toBeNull();
     await user.click(screen.getByRole("button", { name: "Save preset" }));
     expect(gateway.actions.at(-1)).toMatchObject({
       kind: "save-preset",
       preset: {
         shortcut: {
           modifiers: [ShortcutModifier.Control, ShortcutModifier.Shift],
-          key: ShortcutKey.K,
+          key: ShortcutKey.Digit7,
         },
       },
     });
@@ -591,6 +569,31 @@ describe("RealQA desktop production workspace", () => {
     expect(document.body).not.toHaveTextContent("provider response");
   });
 
+  it("refreshes a stale destination after a typed GitHub disconnect failure", async () => {
+    const user = userEvent.setup();
+    const gateway = new FixtureGateway(snapshot());
+    await renderWorkspace(gateway);
+    gateway.value = {
+      ...gateway.value,
+      destinations: gateway.value.destinations.map((destination) => ({
+        ...destination,
+        connected: false,
+        revision: destination.revision + 1,
+      })),
+    };
+    gateway.nextFailure = new RealQaProductError(
+      RealQaFailureCode.GitHubDisconnected,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Save preset" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "GitHub connection was disconnected",
+    );
+    expect(gateway.loadCalls).toBe(2);
+    expect(screen.getAllByRole("button", { name: "Reconnect GitHub" })).not.toHaveLength(0);
+  });
+
   it("uses the refreshed preset revision for later saves and deletion", async () => {
     const user = userEvent.setup();
     const gateway = new FixtureGateway(snapshot());
@@ -676,7 +679,7 @@ describe("RealQA desktop production workspace", () => {
     expect(screen.getByLabelText("Name")).toHaveValue("Retained preset");
   });
 
-  it("resets capture overrides to each selected draft's preset defaults", async () => {
+  it("keeps native capture controls hidden across draft selections", async () => {
     const user = userEvent.setup();
     const value = snapshot();
     const preset = value.presets[0];
@@ -705,15 +708,12 @@ describe("RealQA desktop production workspace", () => {
     });
     await renderWorkspace(gateway);
 
-    expect(screen.getByLabelText("Mode", { selector: "select" })).toHaveValue(CaptureMode.MultiMonitor);
-    expect(screen.getByLabelText("Include pointer")).toBeChecked();
-    expect(screen.getByLabelText("Select a DOM target in Chrome")).toBeChecked();
+    expect(screen.queryByRole("button", { name: "Capture screenshot" })).toBeNull();
 
     await user.selectOptions(screen.getByLabelText("Draft"), "draft-2");
     await waitFor(() => {
-      expect(screen.getByLabelText("Mode", { selector: "select" })).toHaveValue(CaptureMode.Window);
-      expect(screen.getByLabelText("Include pointer")).not.toBeChecked();
-      expect(screen.getByLabelText("Select a DOM target in Chrome")).not.toBeChecked();
+      expect(screen.getByLabelText("Draft")).toHaveValue("draft-2");
+      expect(screen.queryByRole("button", { name: "Capture screenshot" })).toBeNull();
     });
   });
 

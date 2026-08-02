@@ -6,7 +6,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type KeyboardEvent,
   type ReactNode,
 } from "react";
 
@@ -23,7 +22,6 @@ import {
   subscribeToSessionInvalidation,
   subscribeToSessionReauthentication,
 } from "../../runtime/theme";
-import { shortcutFromKeyboardInput, shortcutLabel } from "../../ui/SettingsPanel";
 import {
   RealQaAccessMode,
   RealQaFailureCode,
@@ -172,7 +170,24 @@ function RealQaWorkspaceProvider({
         return updated;
       } catch (error: unknown) {
         if (revision !== lifecycleRevision.current) return null;
-        setFailure(safeFailure(error));
+        const failure = safeFailure(error);
+        if (failure === RealQaFailureCode.GitHubDisconnected) {
+          try {
+            const refreshed = await gateway.load();
+            if (revision !== lifecycleRevision.current) return null;
+            setSnapshot(refreshed);
+            setSelectedDraftId((current) =>
+              current !== null && refreshed.drafts.some((draft) => draft.draftId === current)
+                ? current
+                : refreshed.drafts[0]?.draftId ?? null,
+            );
+          } catch {
+            // The typed failure guidance still directs the user to reload when
+            // this best-effort refresh cannot expose the reconnect action.
+          }
+          if (revision !== lifecycleRevision.current) return null;
+        }
+        setFailure(failure);
         setStatus("The RealQA action did not finish.");
         return null;
       } finally {
@@ -419,19 +434,12 @@ function PresetManagerContent({
   const [editing, setEditing] = useState<RealQaPreset | null>(selected);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
-  const [capturingShortcut, setCapturingShortcut] = useState(false);
-  const [shortcutStatus, setShortcutStatus] = useState<{
-    readonly error: boolean;
-    readonly message: string;
-  } | null>(null);
-  const shortcutCaptureRef = useRef<HTMLButtonElement>(null);
   const createAttempt = useRef<string | null>(null);
   const disconnectAttempts = useRef(new Map<string, {
     readonly expectedRevision: number;
     readonly idempotencyKey: string;
   }>());
   const online = snapshot.access === RealQaAccessMode.Online && snapshot.online;
-  const shortcutCount = snapshot.presets.filter((preset) => preset.shortcut !== null).length;
   const canCreatePreset = online && firstPresetDraft(snapshot) !== null;
 
   const createPreset = async () => {
@@ -495,43 +503,6 @@ function PresetManagerContent({
       idempotencyKey: attempt.idempotencyKey,
     }, "GitHub disconnected; presets were retained.");
     if (updated !== null) disconnectAttempts.current.delete(target.destinationId);
-  };
-
-  const beginShortcutCapture = () => {
-    setCapturingShortcut(true);
-    setShortcutStatus({
-      error: false,
-      message: "Press a shortcut with at least one modifier, or press Escape to cancel.",
-    });
-    queueMicrotask(() => shortcutCaptureRef.current?.focus());
-  };
-
-  const captureShortcut = (event: KeyboardEvent<HTMLButtonElement>) => {
-    if (!capturingShortcut) return;
-    event.preventDefault();
-    event.stopPropagation();
-    const captured = shortcutFromKeyboardInput(event);
-    if (captured.kind === "ignored") return;
-    if (captured.kind === "cancelled") {
-      setCapturingShortcut(false);
-      setShortcutStatus({
-        error: false,
-        message: "Shortcut capture cancelled. The previous shortcut is unchanged.",
-      });
-      return;
-    }
-    if (captured.kind === "invalid") {
-      setShortcutStatus({
-        error: true,
-        message: "Use a supported letter, number, function key, Space, or Enter with a modifier.",
-      });
-      return;
-    }
-    setEditing((current) =>
-      current === null ? current : { ...current, shortcut: captured.shortcut },
-    );
-    setCapturingShortcut(false);
-    setShortcutStatus({ error: false, message: "Preset shortcut updated." });
   };
 
   if (editing === null) {
@@ -619,7 +590,6 @@ function PresetManagerContent({
           <p className="eyebrow">Synchronized</p>
           <h2 id="presets-title">Presets and destinations</h2>
         </div>
-        <span>{shortcutCount}/20 shortcuts</span>
       </div>
       <label className="field" htmlFor="realqa-preset">
         Preset
@@ -639,39 +609,6 @@ function PresetManagerContent({
         <label className="field">Milestone number<input disabled={!online} min={1} type="number" value={editing.milestoneNumber ?? ""} onChange={(event) => update("milestoneNumber", event.target.value === "" ? null : Number(event.target.value))} /></label>
         <label className="field">Project node IDs<input disabled={!online} value={csv(editing.projectNodeIds)} onChange={(event) => update("projectNodeIds", parseCsv(event.target.value))} /></label>
         <label className="field">Payer / team<select disabled={!online} value={editingBillingScopeKey} onChange={(event) => { const scope = snapshot.replacementBillingScopes.find((candidate) => billingScopeKey(candidate) === event.target.value); if (scope !== undefined) update("billing", { organizationId: scope.organizationId, teamId: scope.teamId }); }}>{!editingBillingScopeAvailable ? <option disabled value={editingBillingScopeKey}>Unavailable billing scope</option> : null}{snapshot.replacementBillingScopes.map((scope) => <option key={billingScopeKey(scope)} value={billingScopeKey(scope)}>{scope.label}</option>)}</select></label>
-        <div className="field">
-          <span>Global shortcut</span>
-          <kbd>{shortcutLabel(editing.shortcut)}</kbd>
-          <div className="button-row">
-            <button
-              aria-describedby="shortcut-limit"
-              aria-pressed={capturingShortcut}
-              className="secondary-button"
-              disabled={!online || (editing.shortcut === null && shortcutCount >= 20)}
-              onClick={beginShortcutCapture}
-              onKeyDown={captureShortcut}
-              ref={shortcutCaptureRef}
-              type="button"
-            >
-              {capturingShortcut ? "Press shortcut…" : "Record shortcut"}
-            </button>
-            {editing.shortcut !== null ? (
-              <button
-                className="text-button"
-                disabled={!online}
-                onClick={() => update("shortcut", null)}
-                type="button"
-              >
-                Clear shortcut
-              </button>
-            ) : null}
-          </div>
-          {shortcutStatus === null ? null : (
-            <span role={shortcutStatus.error ? "alert" : "status"}>
-              {shortcutStatus.message}
-            </span>
-          )}
-        </div>
       </div>
       <fieldset className="realqa-fields">
         <legend>Process/title URL rules</legend>
@@ -693,7 +630,6 @@ function PresetManagerContent({
       </fieldset>
       {!definitionAvailable ? <p className="error">Choose a template that belongs to the selected destination.</p> : null}
       {!editingBillingScopeAvailable ? <p className="error">Choose an available payer / team before saving this preset.</p> : null}
-      <p className="muted" id="shortcut-limit">At most 20 active RealQA shortcuts are registered per device. Conflicts remain inactive.</p>
       <p className={editing.backgroundGrant === "active" ? "muted" : "error"}>Background storage grant: {editing.backgroundGrant}</p>
       <div className="button-row">
         <button className="secondary-button" disabled={busy || !canCreatePreset} onClick={() => void createPreset()} type="button">New preset</button>
@@ -756,17 +692,6 @@ function CaptureAndReviewContent() {
   const selectedPreset = snapshot.presets.find(
     (preset) => preset.presetId === draft?.presetId,
   );
-  const presetCaptureMode = selectedPreset?.captureMode;
-  const presetPointer = selectedPreset?.pointer;
-  const presetSelectorMode = selectedPreset?.selectorMode;
-  const [mode, setMode] = useState(presetCaptureMode ?? CaptureMode.Region);
-  const [pointer, setPointer] = useState(
-    presetPointer ?? PointerInclusion.Exclude,
-  );
-  const [selector, setSelector] = useState(
-    presetSelectorMode ?? RealQaSelectorMode.Normal,
-  );
-  const [selection, setSelection] = useState({ x: 0, y: 0, width: 640, height: 480 });
   const [confirmDraftDelete, setConfirmDraftDelete] = useState(false);
   const [confirmPublic, setConfirmPublic] = useState(false);
   const [newDraftPresetId, setNewDraftPresetId] = useState(snapshot.presets[0]?.presetId ?? "");
@@ -826,10 +751,6 @@ function CaptureAndReviewContent() {
   return (
     <section aria-labelledby="capture-review-title" className="realqa-card">
       <div className="realqa-section-heading"><div><p className="eyebrow">Local and nondestructive</p><h2 id="capture-review-title">Capture and review</h2></div><label>Draft<select onChange={(event) => selectDraft(event.target.value)} value={selectedDraftId ?? ""}>{snapshot.drafts.map((item) => <option key={item.draftId} value={item.draftId}>{item.title || "Untitled draft"}</option>)}</select></label></div>
-      <fieldset className="realqa-fields"><legend>Capture-time overrides</legend><div className="realqa-form-grid"><label className="field">Mode<select value={mode} onChange={(event) => setMode(event.target.value as CaptureMode)}>{Object.values(CaptureMode).map((item) => <option key={item}>{item}</option>)}</select></label><label className="check-field"><input checked={pointer === PointerInclusion.Include} onChange={(event) => setPointer(event.target.checked ? PointerInclusion.Include : PointerInclusion.Exclude)} type="checkbox" />Include pointer</label><label className="check-field"><input checked={selector === RealQaSelectorMode.Dom} onChange={(event) => setSelector(event.target.checked ? RealQaSelectorMode.Dom : RealQaSelectorMode.Normal)} type="checkbox" />Select a DOM target in Chrome</label></div>
-        <fieldset className="selection-adjuster"><legend>Move or resize selection</legend><label>X<input type="number" value={selection.x} onChange={(event) => setSelection({ ...selection, x: Number(event.target.value) })} /></label><label>Y<input type="number" value={selection.y} onChange={(event) => setSelection({ ...selection, y: Number(event.target.value) })} /></label><label>Width<input min={1} type="number" value={selection.width} onChange={(event) => setSelection({ ...selection, width: Number(event.target.value) })} /></label><label>Height<input min={1} type="number" value={selection.height} onChange={(event) => setSelection({ ...selection, height: Number(event.target.value) })} /></label></fieldset>
-        <button className="primary-button" disabled={busy} onClick={() => void execute({ kind: "capture", draftId: draft.draftId, captureMode: mode, pointer, selectorMode: selector, selection }, "Capture added. Open an image to edit without changing its raw original.")} type="button">Capture screenshot</button>
-      </fieldset>
       <fieldset className="realqa-fields"><legend>Images ({draft.images.length})</legend><p className="muted">There is no image-count limit. Each image is limited to 25 MiB, the session to 250 MiB, and decoded input to 100 megapixels.</p><ul className="realqa-image-list">{draft.images.map((image) => <li key={image.imageId}><label className="check-field"><input checked={image.selected} onChange={(event) => update({ images: draft.images.map((candidate) => candidate.imageId === image.imageId ? { ...candidate, selected: event.target.checked } : candidate) })} type="checkbox" />{image.name} · {(image.encodedBytes / 1024).toFixed(1)} KiB · {image.uploadState}</label><button className="secondary-button" disabled={busy} onClick={() => void execute({ kind: "edit-image", draftId: draft.draftId, imageId: image.imageId }, "Nondestructive editor opened; the encrypted raw original is unchanged.")} type="button">Edit nondestructively</button>{image.uploadState === "uploading" ? <progress aria-label={`${image.name} upload progress`} max={100} value={image.uploadProgress} /> : null}</li>)}</ul></fieldset>
       <div className="realqa-form-grid"><label className="field">Issue title<input aria-describedby={titleValid ? undefined : "realqa-title-guidance"} aria-invalid={!titleValid} ref={titleRef} value={draft.title} onChange={(event) => update({ title: event.target.value })} /></label><label className="field">Issue body<textarea value={draft.body} onChange={(event) => update({ body: event.target.value })} /></label><label className="field">Sanitized URL<input aria-invalid={!reviewedUrlValid} value={draft.url} onBlur={() => { if (reviewedUrl.ok) update({ url: reviewedUrl.url.value, urlWarning: reviewedUrl.url.warning !== null }); }} onChange={(event) => update({ url: event.target.value })} /></label></div>
       {!titleValid ? <p className="error" id="realqa-title-guidance">Enter a single-line issue title between 1 and {MAX_ISSUE_TITLE_UTF8_BYTES} UTF-8 bytes.</p> : null}

@@ -32,11 +32,14 @@ export enum RealQaFailureCode {
   BillingRequired = "billing-required",
   R2Unavailable = "r2-unavailable",
   GitHubUnavailable = "github-unavailable",
+  GitHubDisconnected = "github-disconnected",
   ImageTooLarge = "image-too-large",
   SessionTooLarge = "session-too-large",
   DecodedImageTooLarge = "decoded-image-too-large",
   FinalBodyTooLarge = "final-body-too-large",
   RateLimited = "rate-limited",
+  PresetLimitExceeded = "preset-limit-exceeded",
+  DeviceShortcutLimitExceeded = "device-shortcut-limit-exceeded",
   UploadConcurrencyLimited = "upload-concurrency-limited",
   StorageBillingGrace = "storage-billing-grace",
   ProtectedContent = "protected-content",
@@ -322,12 +325,18 @@ export const realQaFailureGuidance: Readonly<Record<RealQaFailureCode, string>> 
     "Screenshot storage is temporarily unavailable. The encrypted draft remains on this device.",
   [RealQaFailureCode.GitHubUnavailable]:
     "GitHub could not complete this request. RealQA will reconcile before another issue is created.",
+  [RealQaFailureCode.GitHubDisconnected]:
+    "This GitHub connection was disconnected. Reload the workspace, then reconnect it before retrying.",
   [RealQaFailureCode.ImageTooLarge]: "An image exceeds the 25 MiB encoded limit.",
   [RealQaFailureCode.SessionTooLarge]: "The selected images exceed the 250 MiB session limit.",
   [RealQaFailureCode.DecodedImageTooLarge]: "An image exceeds the 100 megapixel decoded limit.",
   [RealQaFailureCode.FinalBodyTooLarge]:
     "The serialized GitHub issue exceeds 60,000 UTF-8 bytes. Remove content or images, or save part as another draft.",
   [RealQaFailureCode.RateLimited]: "The 30 submissions per hour limit is active. Retry later.",
+  [RealQaFailureCode.PresetLimitExceeded]:
+    "This account already has 100 presets. Delete an unused preset before creating another.",
+  [RealQaFailureCode.DeviceShortcutLimitExceeded]:
+    "This device already has 20 active RealQA shortcuts. Remove a shortcut before adding another.",
   [RealQaFailureCode.UploadConcurrencyLimited]:
     "Three uploads are already active. Wait for one to finish and retry.",
   [RealQaFailureCode.StorageBillingGrace]:
