@@ -232,6 +232,29 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	if err != nil || !truncated {
 		t.Fatalf("replace snapshots = truncated=%v err=%v", truncated, err)
 	}
+	notificationRegistrationID := mustV7(t)
+	notificationGrant, err := security.NewGrant()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := store.RegisterDevice(ctx, RegisterDeviceParams{
+		RegistrationID: notificationRegistrationID,
+		DeviceID:       mustV7(t),
+		AccountID:      accountID,
+		IdempotencyKey: mustV7(t),
+		RequestDigest:  security.Digest([]byte("notification fixture")),
+		OwnerHash: hasher.Sum(
+			"owner", "OWNER_SCOPE_PERSONAL:"+accountID.String()),
+		Write: DeviceWrite{
+			Platform:    deckv1.DevicePlatform_DEVICE_PLATFORM_MACOS,
+			DisplayName: "Notification fixture",
+		},
+		Grant:          notificationGrant,
+		LeaseExpiresAt: now.Add(deviceLeaseForTest),
+		Now:            now,
+	}); err != nil {
+		t.Fatalf("register notification fixture: %v", err)
+	}
 	notificationOpaque, err := security.NewGrant()
 	if err != nil {
 		t.Fatal(err)
@@ -247,11 +270,12 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 		store.SnapshotRepositoryHash(snapshots[0].GetRepository())
 	if _, err := store.pool.Exec(ctx, `
 		INSERT INTO deck_notification_events (
-			event_id, view_id, opaque_event_id, transition,
+			event_id, view_id, registration_id, opaque_event_id, transition,
 			created_at, expires_at, viewer_hash, repository_hash,
 			pull_request_number, detail_ciphertext
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-	`, notificationEventID, firstViewID, notificationVerifier[:],
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+	`, notificationEventID, firstViewID, notificationRegistrationID,
+		notificationVerifier[:],
 		int16(deckv1.NotificationTransition_NOTIFICATION_TRANSITION_ASSIGNED),
 		now, now.Add(notificationRetention), viewerHash[:],
 		notificationRepositoryHash[:],
@@ -290,6 +314,11 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	if _, err := store.GetNotificationEventDetail(
 		ctx, mismatchedNotificationRecord, now); err == nil {
 		t.Fatal("notification detail ignored its authorized repository hash")
+	}
+	if unregistered, err := store.UnregisterDevice(
+		ctx, notificationRegistrationID, uuid.Nil, notificationGrant, now,
+	); err != nil || !unregistered {
+		t.Fatalf("unregister notification fixture = %v, %v", unregistered, err)
 	}
 	readableSnapshots := map[[32]byte]struct{}{
 		store.SnapshotRepositoryHash(snapshots[0].Repository): {},
