@@ -1700,10 +1700,12 @@ jobs:
               - protos/devhud-realqa/gen/ts/**
             native:
               - .github/workflows/CI.yml
+              - .nvmrc
               - Cargo.toml
               - Cargo.lock
               - package.json
               - pnpm-lock.yaml
+              - pnpm-workspace.yaml
               - rust-toolchain
               - turbo.json
               - apps/devhud/package.json

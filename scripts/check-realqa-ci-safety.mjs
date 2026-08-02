@@ -17,8 +17,21 @@ const requireCondition = (condition, message) => {
   if (!condition) failures.push(message);
 };
 
+const workflowLines = workflow.split(/\r?\n/u);
+const permissionsStart = workflowLines.indexOf("permissions:");
+let permissionsEnd = permissionsStart + 1;
+while (
+  permissionsEnd < workflowLines.length &&
+  (workflowLines[permissionsEnd].trim() === "" || /^[ \t]/u.test(workflowLines[permissionsEnd]))
+) {
+  permissionsEnd += 1;
+}
+const topLevelPermissions = workflowLines
+  .slice(permissionsStart, permissionsEnd)
+  .filter((line) => line.trim() !== "")
+  .join("\n");
 requireCondition(
-  /^permissions:\n  contents: read$/mu.test(workflow),
+  topLevelPermissions === "permissions:\n  contents: read",
   "RealQA CI must retain read-only repository permissions",
 );
 const permissionDeclarations = workflow.match(/^[ \t]*permissions\s*:/gmu) ?? [];
@@ -33,7 +46,7 @@ for (const [pattern, message] of [
   [/\bactions\/attest\b/u, "must not publish GitHub attestations"],
   [/\b(?:wrangler|cloudflare\/wrangler-action)\b/iu, "must not invoke Cloudflare provisioning"],
   [/\bsecrets\./u, "must not read repository or environment secrets"],
-  [/\bDEVHUD_CHROME_EXTENSION_ID\s*:/u, "must not inject a production extension identity"],
+  [/\bDEVHUD_CHROME_EXTENSION_ID\s*[:=]/u, "must not inject a production extension identity"],
   [/\bpush:\s*true\b/u, "must not push an image"],
 ]) {
   requireCondition(!pattern.test(workflow), `RealQA CI ${message}`);
