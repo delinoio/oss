@@ -1680,6 +1680,7 @@ jobs:
               - go.mod
               - go.sum
               - protos/delibase/gen/go/**
+              - protos/devhud-deck/gen/go/**
               - protos/devhud-realqa/gen/go/**
               - servers/internal/**
               - servers/devhud-realqa/**
@@ -1705,6 +1706,7 @@ jobs:
               - rust-toolchain
               - turbo.json
               - apps/devhud/package.json
+              - apps/devhud/turbo.json
               - apps/devhud/scripts/check-contracts.mjs
               - apps/devhud/scripts/check-realqa-windows.mjs
               - apps/devhud/scripts/test-realqa-native.mjs
