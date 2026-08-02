@@ -35,6 +35,8 @@ mod realqa_capture;
 mod realqa_drafts;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 mod realqa_native_host;
+#[cfg(any(feature = "desktop-cef", test))]
+mod realqa_transport;
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 mod shortcut;
 #[cfg(any(
@@ -2204,6 +2206,67 @@ fn show_realqa_composer_internal(
     feature = "desktop-cef",
     not(any(target_os = "android", target_os = "ios"))
 ))]
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum RealQaEntryFailure {
+    AuthenticationRequired,
+    WindowUnavailable,
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+#[tauri::command]
+fn show_realqa(
+    app: AppHandle<ActiveRuntime>,
+    auth_state: State<'_, auth_native::NativeAuthState>,
+) -> Result<(), RealQaEntryFailure> {
+    if !auth_state
+        .has_prior_feature_binding(auth::AuthFeature::RealQa)
+        .unwrap_or(false)
+    {
+        return Err(RealQaEntryFailure::AuthenticationRequired);
+    }
+    show_realqa_composer_internal(&app).map_err(|_| RealQaEntryFailure::WindowUnavailable)
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+#[tauri::command]
+fn realqa_connect(
+    webview: Webview<ActiveRuntime>,
+    request: realqa_transport::RealQaConnectRequest,
+    auth_state: State<'_, auth_native::NativeAuthState>,
+) -> Result<realqa_transport::RealQaConnectResponse, realqa_transport::RealQaTransportFailure> {
+    if webview.label() != REALQA_COMPOSER_WINDOW_LABEL {
+        return Err(realqa_transport::RealQaTransportFailure::AuthenticationRequired);
+    }
+    realqa_transport::connect(request, &auth_state)
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+#[tauri::command]
+fn realqa_signed_put(
+    webview: Webview<ActiveRuntime>,
+    request: realqa_transport::RealQaSignedPutRequest,
+    auth_state: State<'_, auth_native::NativeAuthState>,
+) -> Result<(), realqa_transport::RealQaTransportFailure> {
+    if webview.label() != REALQA_COMPOSER_WINDOW_LABEL {
+        return Err(realqa_transport::RealQaTransportFailure::AuthenticationRequired);
+    }
+    realqa_transport::signed_put(request, &auth_state)
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
 fn accept_realqa_browser_capture(
     app: &AppHandle<ActiveRuntime>,
     capture: realqa_native_host::NativeHostRequest,
@@ -3678,6 +3741,7 @@ fn configure_builder(
             reset_dev_hud,
             hide_hud,
             show_settings,
+            show_realqa,
             hide_settings,
             replace_global_shortcut,
             set_launch_at_login,
@@ -3704,7 +3768,9 @@ fn configure_builder(
             realqa_save_local_draft,
             realqa_load_local_draft,
             realqa_delete_local_draft,
-            realqa_assert_local_draft_submission_allowed
+            realqa_assert_local_draft_submission_allowed,
+            realqa_connect,
+            realqa_signed_put
         ])
         .setup(move |app| {
             let app_local_data = app.path().app_local_data_dir().ok();

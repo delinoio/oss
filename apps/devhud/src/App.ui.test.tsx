@@ -82,11 +82,12 @@ function renderApp(
 }
 
 describe("DevHud application surfaces", () => {
-  it("focuses the desktop search field and presents the exact empty state", async () => {
+  it("focuses the desktop search field and presents authenticated RealQA entry", async () => {
     renderApp();
     const search = screen.getByRole("searchbox", { name: "Search tools" });
     expect(search).toHaveFocus();
-    expect(screen.getByText("No tools are available in this foundation preview.")).toBeVisible();
+    expect(screen.getByRole("heading", { name: "RealQA" })).toBeVisible();
+    expect(screen.queryByText("No tools are available in this foundation preview.")).not.toBeInTheDocument();
   });
 
   it("closes settings with Escape and restores focus", async () => {

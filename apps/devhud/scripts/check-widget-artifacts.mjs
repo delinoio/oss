@@ -189,10 +189,11 @@ requireCondition(
 );
 requireCondition(
   JSON.parse(packageSource).version === "0.1.0" &&
-    /export const productionTools:\s*readonly ToolDefinition\[\]\s*=\s*\[\];/u.test(
-      productionRegistry,
+    productionRegistry.includes('toolId: "realqa"') &&
+    productionRegistry.includes(
+      "supportedPlatforms: new Set([ToolPlatform.Desktop])",
     ),
-  "DevHud 0.1.0 must keep production tools empty",
+  "DevHud 0.1.0 must keep RealQA registered only for desktop",
 );
 
 const prohibitedRemoteEndpoint =

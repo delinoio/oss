@@ -1,0 +1,387 @@
+import {
+  createContext,
+  use,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+
+import { CaptureMode, PointerInclusion } from "../capture";
+import { MAX_FINAL_BODY_UTF8_BYTES, PUBLIC_SCREENSHOT_WARNING } from "../onlineSubmission";
+import { sanitizeCapturedUrl } from "../drafts/url";
+import { Dialog } from "../../ui/Dialog";
+import {
+  RealQaAccessMode,
+  RealQaFailureCode,
+  RealQaProductError,
+  RealQaSelectorMode,
+  realQaFailureGuidance,
+  type RealQaDraft,
+  type RealQaIssueField,
+  type RealQaPreset,
+  type RealQaProductAction,
+  type RealQaProductGateway,
+  type RealQaProductSnapshot,
+} from "./contracts";
+
+interface WorkspaceContextValue {
+  readonly snapshot: RealQaProductSnapshot;
+  readonly selectedDraft: RealQaDraft | null;
+  readonly selectedDraftId: string | null;
+  readonly busy: boolean;
+  readonly progress: number;
+  readonly failure: RealQaFailureCode | null;
+  readonly status: string;
+  readonly selectDraft: (draftId: string) => void;
+  readonly replaceDraft: (draft: RealQaDraft) => void;
+  readonly execute: (action: RealQaProductAction, success: string) => Promise<boolean>;
+  readonly clearFailure: () => void;
+}
+
+const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
+
+function useWorkspace(): WorkspaceContextValue {
+  const value = use(WorkspaceContext);
+  if (value === null) throw new Error("RealQA components require RealQaWorkspace.Provider.");
+  return value;
+}
+
+function safeFailure(error: unknown): RealQaFailureCode {
+  return error instanceof RealQaProductError
+    ? error.code
+    : RealQaFailureCode.ServiceUnavailable;
+}
+
+function RealQaWorkspaceProvider({
+  children,
+  gateway,
+}: {
+  readonly children: ReactNode;
+  readonly gateway: RealQaProductGateway;
+}) {
+  const [snapshot, setSnapshot] = useState<RealQaProductSnapshot | null>(null);
+  const [selectedDraftId, setSelectedDraftId] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [failure, setFailure] = useState<RealQaFailureCode | null>(null);
+  const [status, setStatus] = useState("Loading RealQA…");
+
+  useEffect(() => {
+    let active = true;
+    void gateway.load().then(
+      (loaded) => {
+        if (!active) return;
+        setSnapshot(loaded);
+        setSelectedDraftId(loaded.drafts[0]?.draftId ?? null);
+        setStatus("RealQA is ready.");
+      },
+      (error: unknown) => {
+        if (!active) return;
+        setFailure(safeFailure(error));
+        setStatus("RealQA could not load.");
+      },
+    );
+    return () => {
+      active = false;
+    };
+  }, [gateway]);
+
+  const replaceDraft = useCallback((draft: RealQaDraft) => {
+    setSnapshot((current) =>
+      current === null
+        ? current
+        : {
+            ...current,
+            drafts: current.drafts.map((candidate) =>
+              candidate.draftId === draft.draftId ? draft : candidate,
+            ),
+          },
+    );
+  }, []);
+
+  const execute = useCallback(
+    async (action: RealQaProductAction, success: string) => {
+      setBusy(true);
+      setProgress(0);
+      setFailure(null);
+      try {
+        const updated = await gateway.execute(action, (next) =>
+          setProgress(Math.max(0, Math.min(100, next))),
+        );
+        setSnapshot(updated);
+        if (action.kind === "delete-draft") {
+          setSelectedDraftId(updated.drafts[0]?.draftId ?? null);
+        }
+        setStatus(success);
+        return true;
+      } catch (error: unknown) {
+        setFailure(safeFailure(error));
+        setStatus("The RealQA action did not finish.");
+        return false;
+      } finally {
+        setBusy(false);
+      }
+    },
+    [gateway],
+  );
+
+  const value = useMemo<WorkspaceContextValue | null>(() => {
+    if (snapshot === null) return null;
+    return {
+      snapshot,
+      selectedDraft:
+        snapshot.drafts.find((draft) => draft.draftId === selectedDraftId) ?? null,
+      selectedDraftId,
+      busy,
+      progress,
+      failure,
+      status,
+      selectDraft: setSelectedDraftId,
+      replaceDraft,
+      execute,
+      clearFailure: () => setFailure(null),
+    };
+  }, [busy, execute, failure, progress, replaceDraft, selectedDraftId, snapshot, status]);
+
+  if (value === null) {
+    return (
+      <section aria-labelledby="realqa-loading-title" className="state-card">
+        <h1 id="realqa-loading-title">Opening RealQA</h1>
+        <p role={failure === null ? "status" : "alert"}>
+          {failure === null ? status : realQaFailureGuidance[failure]}
+        </p>
+      </section>
+    );
+  }
+  return <WorkspaceContext value={value}>{children}</WorkspaceContext>;
+}
+
+function AccessBanner() {
+  const { snapshot } = useWorkspace();
+  if (snapshot.access === RealQaAccessMode.Online) return null;
+  return (
+    <section aria-labelledby="realqa-offline-title" className="realqa-banner" role="status">
+      <h2 id="realqa-offline-title">Offline draft mode</h2>
+      <p>
+        Only drafts for the previously bound account can be captured and edited.
+        Connect and reauthenticate before upload, submission, or synchronized management.
+      </p>
+    </section>
+  );
+}
+
+function WorkspaceStatus() {
+  const { clearFailure, failure, progress, status } = useWorkspace();
+  return (
+    <div aria-live="polite" className="realqa-status-stack">
+      <p aria-atomic="true" role="status">{status}</p>
+      {progress > 0 && progress < 100 ? (
+        <label>
+          Upload progress
+          <progress max={100} value={progress}>{progress}%</progress>
+        </label>
+      ) : null}
+      {failure === null ? null : (
+        <div className="realqa-error" role="alert">
+          <p>{realQaFailureGuidance[failure]}</p>
+          <button className="text-button" onClick={clearFailure} type="button">
+            Dismiss
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function csv(value: readonly string[]): string {
+  return value.join(", ");
+}
+
+function parseCsv(value: string): readonly string[] {
+  return [...new Set(value.split(",").map((entry) => entry.trim()).filter(Boolean))];
+}
+
+function PresetManager() {
+  const { busy, execute, snapshot } = useWorkspace();
+  const [selectedId, setSelectedId] = useState(snapshot.presets[0]?.presetId ?? "");
+  const selected = snapshot.presets.find((preset) => preset.presetId === selectedId) ?? null;
+  const [editing, setEditing] = useState<RealQaPreset | null>(selected);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmDisconnect, setConfirmDisconnect] = useState(false);
+  const online = snapshot.access === RealQaAccessMode.Online && snapshot.online;
+  const shortcutCount = snapshot.presets.filter((preset) => preset.shortcut !== "").length;
+
+  if (editing === null) {
+    return (
+      <section aria-labelledby="presets-title" className="realqa-card">
+        <h2 id="presets-title">Presets and destinations</h2>
+        <p>No presets are available. Connect online to create the first preset.</p>
+      </section>
+    );
+  }
+  const destination = snapshot.destinations.find(
+    (candidate) => candidate.destinationId === editing.destinationId,
+  );
+  const definitionOptions = snapshot.definitions;
+  const update = <K extends keyof RealQaPreset>(key: K, value: RealQaPreset[K]) =>
+    setEditing((current) => current === null ? current : { ...current, [key]: value });
+
+  return (
+    <section aria-labelledby="presets-title" className="realqa-card">
+      <div className="realqa-section-heading">
+        <div>
+          <p className="eyebrow">Synchronized</p>
+          <h2 id="presets-title">Presets and destinations</h2>
+        </div>
+        <span>{shortcutCount}/20 shortcuts</span>
+      </div>
+      <label className="field" htmlFor="realqa-preset">
+        Preset
+        <select id="realqa-preset" onChange={(event) => { const nextId = event.target.value; setSelectedId(nextId); setEditing(snapshot.presets.find((preset) => preset.presetId === nextId) ?? null); }} value={selectedId}>
+          {snapshot.presets.map((preset) => <option key={preset.presetId} value={preset.presetId}>{preset.name}</option>)}
+        </select>
+      </label>
+      <div className="realqa-form-grid">
+        <label className="field">Name<input disabled={!online} value={editing.name} onChange={(event) => update("name", event.target.value)} /></label>
+        <label className="field">Capture mode<select disabled={!online} value={editing.captureMode} onChange={(event) => update("captureMode", event.target.value as CaptureMode)}>{Object.values(CaptureMode).map((mode) => <option key={mode} value={mode}>{mode}</option>)}</select></label>
+        <label className="check-field"><input checked={editing.pointer === PointerInclusion.Include} disabled={!online} onChange={(event) => update("pointer", event.target.checked ? PointerInclusion.Include : PointerInclusion.Exclude)} type="checkbox" />Include pointer by default</label>
+        <label className="check-field"><input checked={editing.selectorMode === RealQaSelectorMode.Dom} disabled={!online} onChange={(event) => update("selectorMode", event.target.checked ? RealQaSelectorMode.Dom : RealQaSelectorMode.Normal)} type="checkbox" />Use DOM selection by default</label>
+        <label className="field">Destination<select disabled={!online} value={editing.destinationId} onChange={(event) => update("destinationId", event.target.value)}>{snapshot.destinations.map((item) => <option key={item.destinationId} value={item.destinationId}>{item.repository}{item.connected ? "" : " (disconnected)"}</option>)}</select></label>
+        <label className="field">Template or form<select disabled={!online} value={editing.definitionId} onChange={(event) => update("definitionId", event.target.value)}>{definitionOptions.map((definition) => <option key={definition.definitionId} value={definition.definitionId}>{definition.name} · {definition.issueType}</option>)}</select></label>
+        <label className="field">Labels<input disabled={!online} value={csv(editing.labels)} onChange={(event) => update("labels", parseCsv(event.target.value))} /></label>
+        <label className="field">Assignees<input disabled={!online} value={csv(editing.assignees)} onChange={(event) => update("assignees", parseCsv(event.target.value))} /></label>
+        <label className="field">Milestone<input disabled={!online} value={editing.milestone} onChange={(event) => update("milestone", event.target.value)} /></label>
+        <label className="field">Projects<input disabled={!online} value={csv(editing.projects)} onChange={(event) => update("projects", parseCsv(event.target.value))} /></label>
+        <label className="field">Payer / team<input disabled={!online} value={editing.payer} onChange={(event) => update("payer", event.target.value)} /></label>
+        <label className="field">Global shortcut<input aria-describedby="shortcut-limit" disabled={!online || (editing.shortcut === "" && shortcutCount >= 20)} value={editing.shortcut} onChange={(event) => update("shortcut", event.target.value)} /></label>
+      </div>
+      <p className="muted" id="shortcut-limit">At most 20 active RealQA shortcuts are registered per device. Conflicts remain inactive.</p>
+      <p className={editing.backgroundGrant === "active" ? "muted" : "error"}>Background storage grant: {editing.backgroundGrant}</p>
+      <div className="button-row">
+        <button className="primary-button" disabled={busy || !online} onClick={() => void execute({ kind: "save-preset", preset: editing }, "Preset saved.")} type="button">Save preset</button>
+        <button className="secondary-button" disabled={busy || !online} onClick={() => setConfirmDelete(true)} type="button">Delete preset</button>
+        {destination?.connected ? <button className="secondary-button" disabled={busy || !online} onClick={() => setConfirmDisconnect(true)} type="button">Disconnect GitHub</button> : <button className="secondary-button" disabled={busy || !online || destination === undefined} onClick={() => destination === undefined ? undefined : void execute({ kind: "reconnect-destination", destinationId: destination.destinationId }, "GitHub authorization opened.")} type="button">Reconnect GitHub</button>}
+      </div>
+      {confirmDelete ? <Dialog title="Delete RealQA preset" onClose={() => setConfirmDelete(false)}><h2>Delete {editing.name}?</h2><p>This deletes the synchronized preset. Existing encrypted drafts remain.</p><button className="danger-button" onClick={() => { setConfirmDelete(false); void execute({ kind: "delete-preset", presetId: editing.presetId, expectedRevision: editing.revision }, "Preset deleted."); }} type="button">Delete preset</button><button className="secondary-button" onClick={() => setConfirmDelete(false)} type="button">Cancel</button></Dialog> : null}
+      {confirmDisconnect && destination ? <Dialog title="Disconnect RealQA from GitHub" onClose={() => setConfirmDisconnect(false)}><h2>Disconnect GitHub?</h2><p>Provider tokens are revoked. Presets and mappings remain in a disconnected state.</p><button className="danger-button" onClick={() => { setConfirmDisconnect(false); void execute({ kind: "disconnect-destination", destinationId: destination.destinationId, expectedRevision: destination.revision }, "GitHub disconnected; presets were retained."); }} type="button">Disconnect</button><button className="secondary-button" onClick={() => setConfirmDisconnect(false)} type="button">Cancel</button></Dialog> : null}
+    </section>
+  );
+}
+
+function RemovableFields({
+  fields,
+  legend,
+  onChange,
+}: {
+  readonly fields: RealQaDraft["environment"];
+  readonly legend: string;
+  readonly onChange: (fields: RealQaDraft["environment"]) => void;
+}) {
+  return (
+    <fieldset className="realqa-fields"><legend>{legend}</legend>
+      {fields.map((field) => <div className="realqa-removable-field" key={field.id}><label>{field.label}<input value={field.value} onChange={(event) => onChange(fields.map((candidate) => candidate.id === field.id ? { ...candidate, value: event.target.value } : candidate))} /></label><button aria-label={`Remove ${field.label}`} className="text-button" onClick={() => onChange(fields.filter((candidate) => candidate.id !== field.id))} type="button">Remove</button></div>)}
+    </fieldset>
+  );
+}
+
+function IssueField({ field, draft, update }: { readonly field: RealQaIssueField; readonly draft: RealQaDraft; readonly update: (draft: RealQaDraft) => void }) {
+  const values = draft.issueAnswers[field.fieldId] ?? [];
+  const setValues = (next: readonly string[]) => update({ ...draft, issueAnswers: { ...draft.issueAnswers, [field.fieldId]: next } });
+  if (field.kind === "input") return <label className="field">{field.label}<input required={field.required} value={values[0] ?? field.defaultValue} onChange={(event) => setValues([event.target.value])} /></label>;
+  if (field.kind === "textarea") return <label className="field">{field.label}{field.renderLanguage ? <span className="muted">Rendered as {field.renderLanguage}</span> : null}<textarea required={field.required} value={values[0] ?? field.defaultValue} onChange={(event) => setValues([event.target.value])} /></label>;
+  if (field.kind === "dropdown") return <label className="field">{field.label}<select multiple={field.multiple} required={field.required} value={field.multiple ? [...values] : values[0] ?? field.defaultValue} onChange={(event) => setValues([...event.currentTarget.selectedOptions].map((option) => option.value))}>{field.options.map((option) => <option key={option}>{option}</option>)}</select></label>;
+  if (field.kind === "checkboxes") return <fieldset className="realqa-fields"><legend>{field.label}</legend>{field.options.map((option) => <label className="check-field" key={option}><input checked={values.includes(option)} onChange={(event) => setValues(event.target.checked ? [...values, option] : values.filter((value) => value !== option))} required={field.required && values.length === 0} type="checkbox" />{option}</label>)}</fieldset>;
+  return null;
+}
+
+function CaptureAndReview() {
+  const { busy, execute, replaceDraft, selectedDraft: draft, selectDraft, selectedDraftId, snapshot } = useWorkspace();
+  const [mode, setMode] = useState(CaptureMode.Region);
+  const [pointer, setPointer] = useState(PointerInclusion.Exclude);
+  const [selector, setSelector] = useState(RealQaSelectorMode.Normal);
+  const [selection, setSelection] = useState({ x: 0, y: 0, width: 640, height: 480 });
+  const [confirmDraftDelete, setConfirmDraftDelete] = useState(false);
+  const [confirmPublic, setConfirmPublic] = useState(false);
+  const online = snapshot.access === RealQaAccessMode.Online && snapshot.online;
+  const titleRef = useRef<HTMLInputElement>(null);
+  useEffect(() => titleRef.current?.focus(), [selectedDraftId]);
+  if (draft === null) return <section className="realqa-card"><h2>Capture and review</h2><p>No local drafts are available.</p></section>;
+  const update = (changes: Partial<RealQaDraft>) => replaceDraft({ ...draft, ...changes });
+  const definition = snapshot.definitions.find((item) => item.definitionId === snapshot.presets.find((preset) => preset.presetId === draft.presetId)?.definitionId);
+  const bodyBytes = new TextEncoder().encode(draft.body).byteLength;
+  const selectedImages = draft.images.filter((image) => image.selected);
+  const reviewedUrl = sanitizeCapturedUrl(draft.url);
+  const submit = () => {
+    if (!reviewedUrl.ok) return;
+    setConfirmPublic(false);
+    void execute({
+      kind: "submit",
+      draft: {
+        ...draft,
+        url: reviewedUrl.url.value,
+        urlWarning: reviewedUrl.url.warning !== null,
+      },
+      publicImageConfirmation: true,
+    }, "Issue submitted and the local raw draft was deleted.");
+  };
+  return (
+    <section aria-labelledby="capture-review-title" className="realqa-card">
+      <div className="realqa-section-heading"><div><p className="eyebrow">Local and nondestructive</p><h2 id="capture-review-title">Capture and review</h2></div><label>Draft<select onChange={(event) => selectDraft(event.target.value)} value={selectedDraftId ?? ""}>{snapshot.drafts.map((item) => <option key={item.draftId} value={item.draftId}>{item.title || "Untitled draft"}</option>)}</select></label></div>
+      <fieldset className="realqa-fields"><legend>Capture-time overrides</legend><div className="realqa-form-grid"><label className="field">Mode<select value={mode} onChange={(event) => setMode(event.target.value as CaptureMode)}>{Object.values(CaptureMode).map((item) => <option key={item}>{item}</option>)}</select></label><label className="check-field"><input checked={pointer === PointerInclusion.Include} onChange={(event) => setPointer(event.target.checked ? PointerInclusion.Include : PointerInclusion.Exclude)} type="checkbox" />Include pointer</label><label className="check-field"><input checked={selector === RealQaSelectorMode.Dom} onChange={(event) => setSelector(event.target.checked ? RealQaSelectorMode.Dom : RealQaSelectorMode.Normal)} type="checkbox" />Select a DOM target in Chrome</label></div>
+        <fieldset className="selection-adjuster"><legend>Move or resize selection</legend><label>X<input type="number" value={selection.x} onChange={(event) => setSelection({ ...selection, x: Number(event.target.value) })} /></label><label>Y<input type="number" value={selection.y} onChange={(event) => setSelection({ ...selection, y: Number(event.target.value) })} /></label><label>Width<input min={1} type="number" value={selection.width} onChange={(event) => setSelection({ ...selection, width: Number(event.target.value) })} /></label><label>Height<input min={1} type="number" value={selection.height} onChange={(event) => setSelection({ ...selection, height: Number(event.target.value) })} /></label></fieldset>
+        <button className="primary-button" disabled={busy} onClick={() => void execute({ kind: "capture", draftId: draft.draftId, captureMode: mode, pointer, selectorMode: selector, selection }, "Capture added. Open an image to edit without changing its raw original.")} type="button">Capture screenshot</button>
+      </fieldset>
+      <fieldset className="realqa-fields"><legend>Images ({draft.images.length})</legend><p className="muted">There is no image-count limit. Each image is limited to 25 MiB, the session to 250 MiB, and decoded input to 100 megapixels.</p><ul className="realqa-image-list">{draft.images.map((image) => <li key={image.imageId}><label className="check-field"><input checked={image.selected} onChange={(event) => update({ images: draft.images.map((candidate) => candidate.imageId === image.imageId ? { ...candidate, selected: event.target.checked } : candidate) })} type="checkbox" />{image.name} · {(image.encodedBytes / 1024).toFixed(1)} KiB · {image.uploadState}</label><button className="secondary-button" disabled={busy} onClick={() => void execute({ kind: "edit-image", draftId: draft.draftId, imageId: image.imageId }, "Nondestructive editor opened; the encrypted raw original is unchanged.")} type="button">Edit nondestructively</button>{image.uploadState === "uploading" ? <progress aria-label={`${image.name} upload progress`} max={100} value={image.uploadProgress} /> : null}</li>)}</ul></fieldset>
+      <div className="realqa-form-grid"><label className="field">Issue title<input ref={titleRef} value={draft.title} onChange={(event) => update({ title: event.target.value })} /></label><label className="field">Issue body<textarea value={draft.body} onChange={(event) => update({ body: event.target.value })} /></label><label className="field">Sanitized URL<input aria-invalid={!reviewedUrl.ok} value={draft.url} onBlur={() => { if (reviewedUrl.ok) update({ url: reviewedUrl.url.value, urlWarning: reviewedUrl.url.warning !== null }); }} onChange={(event) => update({ url: event.target.value })} /></label></div>
+      {!reviewedUrl.ok ? <p className="error" role="alert">Use an HTTP or HTTPS URL without credentials or invalid escapes.</p> : null}
+      {draft.urlWarning ? <p role="note">This URL points to localhost or a private network. Review it before submission.</p> : null}
+      <RemovableFields fields={draft.environment} legend="Environment metadata" onChange={(environment) => update({ environment })} />
+      <RemovableFields fields={draft.dom} legend="DOM metadata" onChange={(dom) => update({ dom })} />
+      {definition ? <fieldset className="realqa-fields"><legend>{definition.name} fields</legend>{definition.fields.map((field) => <IssueField draft={draft} field={field} key={field.fieldId} update={replaceDraft} />)}</fieldset> : null}
+      <div className="realqa-form-grid"><label className="field">Labels<input value={csv(draft.labels)} onChange={(event) => update({ labels: parseCsv(event.target.value) })} /></label><label className="field">Assignees<input value={csv(draft.assignees)} onChange={(event) => update({ assignees: parseCsv(event.target.value) })} /></label><label className="field">Milestone<input value={draft.milestone} onChange={(event) => update({ milestone: event.target.value })} /></label><label className="field">Projects<input value={csv(draft.projects)} onChange={(event) => update({ projects: parseCsv(event.target.value) })} /></label></div>
+      <p className={bodyBytes > MAX_FINAL_BODY_UTF8_BYTES ? "error" : "muted"}>{bodyBytes.toLocaleString()} / {MAX_FINAL_BODY_UTF8_BYTES.toLocaleString()} body bytes</p>
+      <div className="button-row"><button className="secondary-button" disabled={busy} onClick={() => void execute({ kind: "save-draft", draft }, "Encrypted local draft saved.")} type="button">Save draft</button><button className="danger-button" disabled={busy} onClick={() => setConfirmDraftDelete(true)} type="button">Delete draft</button><button className="primary-button" disabled={busy || !online || selectedImages.length === 0 || bodyBytes > MAX_FINAL_BODY_UTF8_BYTES || !reviewedUrl.ok} onClick={() => setConfirmPublic(true)} type="button">Review and submit</button></div>
+      {!online ? <p className="muted">Online reauthentication is required before upload or submission.</p> : null}
+      {confirmDraftDelete ? <Dialog title="Delete local RealQA draft" onClose={() => setConfirmDraftDelete(false)}><h2>Delete this draft?</h2><p>This immediately deletes the encrypted local draft and its raw originals. It does not delete server feature data.</p><button className="danger-button" onClick={() => { setConfirmDraftDelete(false); void execute({ kind: "delete-draft", draftId: draft.draftId, expectedRevision: draft.revision }, "Local draft deleted."); }} type="button">Delete local draft</button><button className="secondary-button" onClick={() => setConfirmDraftDelete(false)} type="button">Cancel</button></Dialog> : null}
+      {confirmPublic ? <Dialog descriptionId="public-image-warning" title="Confirm public screenshots" onClose={() => setConfirmPublic(false)}><h2>Submit a new GitHub issue?</h2><p id="public-image-warning">{PUBLIC_SCREENSHOT_WARNING} This confirmation is required for every submission.</p><button aria-describedby="public-image-warning" className="primary-button" onClick={submit} type="button">Confirm and submit</button><button className="secondary-button" onClick={() => setConfirmPublic(false)} type="button">Cancel</button></Dialog> : null}
+    </section>
+  );
+}
+
+function SubmissionLifecycle() {
+  const { busy, execute, snapshot } = useWorkspace();
+  const [replacementPayer, setReplacementPayer] = useState("");
+  const online = snapshot.access === RealQaAccessMode.Online && snapshot.online;
+  return (
+    <section aria-labelledby="submission-lifecycle-title" className="realqa-card"><p className="eyebrow">Retained references only</p><h2 id="submission-lifecycle-title">Submissions and storage</h2>
+      {snapshot.submissions.length === 0 ? <p>No submitted issues are retained.</p> : <><label className="field">Replacement payer<input disabled={!online} value={replacementPayer} onChange={(event) => setReplacementPayer(event.target.value)} /></label><ul className="realqa-submission-list">{snapshot.submissions.map((submission) => <li key={submission.submissionId}><h3>{submission.issueUrl ?? "Pending GitHub reconciliation"}</h3><p>State: {submission.state}</p>{submission.graceExpiresAt ? <p className="error">Public images are in billing grace until {submission.graceExpiresAt}. New submissions are blocked.</p> : null}<div className="button-row">{submission.state === "failed" || submission.state === "reconciling" ? <button className="primary-button" disabled={busy || !online} onClick={() => void execute({ kind: "retry-submission", submissionId: submission.submissionId }, "Submission reconciled with its original identity.")} type="button">Retry reconciliation</button> : null}{submission.images.filter((image) => image.uploadState !== "removed").map((image) => <button className="secondary-button" disabled={busy || !online} key={image.imageId} onClick={() => void execute({ kind: "delete-image", submissionId: submission.submissionId, imageId: image.imageId }, "Image deleted; its public URL now returns the generic removed placeholder.")} type="button">Delete {image.name}</button>)}<button className="secondary-button" disabled={busy || !online} onClick={() => void execute({ kind: "delete-submission-assets", submissionId: submission.submissionId }, "All submission images were deleted.")} type="button">Delete all images</button>{submission.authorizationId ? <><button className="secondary-button" disabled={busy || !online || replacementPayer.trim() === ""} onClick={() => void execute({ kind: "rebind-authorization", submissionId: submission.submissionId, expectedAuthorizationId: submission.authorizationId ?? "", expectedRevision: submission.authorizationRevision, payer: replacementPayer.trim() }, "Storage authorization rebound without grace-period back-billing.")} type="button">Rebind payer</button><button className="secondary-button" disabled={busy || !online} onClick={() => void execute({ kind: "revoke-authorization", submissionId: submission.submissionId }, "Storage authorization revoked; retained images entered grace.")} type="button">Revoke grant</button></> : null}</div></li>)}</ul></>}
+    </section>
+  );
+}
+
+function FeatureDeletion() {
+  const { busy, execute, snapshot } = useWorkspace();
+  const [confirming, setConfirming] = useState(false);
+  const online = snapshot.access === RealQaAccessMode.Online && snapshot.online;
+  return <section aria-labelledby="feature-deletion-title" className="realqa-card danger-zone"><h2 id="feature-deletion-title">Delete server RealQA data</h2><p>This is distinct from logout, Reset DevHud, GitHub disconnect, and local draft deletion. It deletes authorized server presets, submissions, and assets.</p><button className="danger-button" disabled={busy || !online} onClick={() => setConfirming(true)} type="button">Delete server feature data</button>{confirming ? <Dialog title="Delete server RealQA data" onClose={() => setConfirming(false)}><h2>Delete server RealQA data?</h2><p>Local drafts are not deleted by this server request. Account or organization authorization is checked online.</p><button className="danger-button" onClick={() => { setConfirming(false); void execute({ kind: "delete-feature-data" }, "Server RealQA feature-data deletion was accepted."); }} type="button">Confirm server deletion</button><button className="secondary-button" onClick={() => setConfirming(false)} type="button">Cancel</button></Dialog> : null}</section>;
+}
+
+function RealQaWorkspaceFrame({ children }: { readonly children: ReactNode }) {
+  return <main className="realqa-workspace"><header className="app-header"><div aria-label="RealQA" className="wordmark"><span aria-hidden="true">RQ</span><strong>RealQA</strong></div><p className="muted">Desktop internal production tool</p></header>{children}</main>;
+}
+
+function RealQaWorkspaceRoot({ gateway }: { readonly gateway: RealQaProductGateway }) {
+  return <RealQaWorkspaceProvider gateway={gateway}><RealQaWorkspaceFrame><AccessBanner /><WorkspaceStatus /><PresetManager /><CaptureAndReview /><SubmissionLifecycle /><FeatureDeletion /></RealQaWorkspaceFrame></RealQaWorkspaceProvider>;
+}
+
+export const RealQaWorkspace = Object.assign(RealQaWorkspaceRoot, {
+  Provider: RealQaWorkspaceProvider,
+  Frame: RealQaWorkspaceFrame,
+  Presets: PresetManager,
+  CaptureReview: CaptureAndReview,
+  Submissions: SubmissionLifecycle,
+  FeatureDeletion,
+});

@@ -3,28 +3,31 @@
 ## Purpose
 
 Define DevHud as a developer-tool shell with a usable signed-out, bundled-asset
-base experience and two explicitly bounded future authenticated features: Deck
-and RealQA. The private `devhud.deck.v1` and `devhud.realqa.v1` source contracts
-and generated Connect packages are implemented, as is the inactive RealQA
+base experience, the registered closed internal desktop RealQA tool, and the
+bounded future Deck feature. The private `devhud.deck.v1` and
+`devhud.realqa.v1` source contracts and generated Connect packages are
+implemented, as is the RealQA
 preset/tracker/auth/deletion plus R2-backed image-transfer/public-delivery
 server foundation, its internal GitHub.com-only provider adapter, manifest,
 callbacks, lifecycle webhooks, schema parsing, body composition, and reconciled
 new-issue dispatch boundary, RealQA's replay-safe online submission,
 live-transfer billing, initial storage-authorization orchestration, and Deck's
 bounded authentication/persistence plus GitHub.com connection, lifecycle,
-candidate, and PR-mutation provider slice. The app also implements the inactive
+candidate, and PR-mutation provider slice. The app also implements the active
 account-bound encrypted RealQA local-draft/native-adapter foundation and
 dependency-injected online-submission coordinator. Deck now implements
 client-owned refresh polling/controller behavior, live forwarded-user billing,
 current snapshots, widget freshness, and 30-day notification transition
 history/resolution; push delivery and the remaining Deck UI/native transport
 remain planned. RealQA recurring storage/rebind/grace/terminal cleanup is
-implemented server-side, while its remaining product integrations remain
-planned. This contract authorizes implementation for issues #755 and #757; it
-does not claim that either feature or origin is deployed, registered, published,
-catalog-enabled, or active.
+implemented server-side and its product client is registered internally on
+desktop. This contract authorizes implementation for issues #755 and #757; it
+does not claim that either origin is deployed, published, catalog-enabled, or
+externally rolled out.
 
-The implemented foundation remains under `apps/devhud`: React/TypeScript/Rsbuild, the exact pinned Tauri desktop CEF runtime, standard mobile system webviews, tray/shortcut/autostart behavior, a closed internal tool registry, typed local persistence, bounded diagnostics, device-local reset, non-distributed native-widget fixtures, an inactive dependency-injected RealQA capture/composer core with exact window capabilities, fixture backends, and concrete reviewed macOS 14+, Windows 11 x64/ARM64, and Ubuntu adapters, the separate `devhud.realqa-draft.v1` desktop record family and record-specific native adapter, plus the unpublished exact-origin Chrome MV3/desktop Native Messaging capture bridge with post-capture and post-selection tab identity checks and 60-second one-shot DOM origin access. Windows snapshots bind the physical monitor device interface as well as the active GDI source, and window sources use DWM visible extended-frame geometry to match the captured WGC item. The composer preserves handed-off DOM target metadata, provides a narrow user-confirmed pointer-free primary-display fallback for restricted browser pages, and includes a composable keyboard/pointer/screen-reader React editor plus a closed native deterministic flatten operation for crop, arrow, rectangle, freehand, text, numbered marker, blur, and pixelate edits with undo/redo history, revision-bound off-thread approval, native-generated source previews bounded to 2,048 pixels per edge, matching reset/removal/logout invalidation for in-flight acceptance and retained sources, deserialization-time operation and nested-value limits, and aggregate freehand-point and effect-inclusive raster-work limits. Drafts preserve native-held raw originals and nondestructive operations in AES-256-GCM envelopes bound by associated data to an opaque authenticated-account binding and UUID-v7 draft ID; per-account random keys remain only in the OS secure vault and are distinct from logout-cleared refresh grants. Direct source enumeration remains closed when its capture permission is not granted; native Wayland exposes only opaque portal-picker entries before approval. The core rejects backend frames that do not match resolved capture geometry or a validated portal-approved layout. macOS uses ScreenCaptureKit/Core Graphics, Windows uses Windows Graphics Capture, and Ubuntu uses bounded X11/XWayland drawable capture plus native Wayland only through `xdg-desktop-portal`. The production tool registry remains empty, so native capture, editor, local drafts, and the Chrome bridge do not activate RealQA. Deck may later add authenticated GitHub.com pull-request workflows on desktop, iOS, Android, tray, shortcuts, notifications, and native widgets. RealQA may later add the remaining authenticated capture/editor product and new-GitHub.com-issue submission. Neither feature is part of the signed-out base shell, and no Chrome Web Store publication is authorized.
+The implemented foundation remains under `apps/devhud`: React/TypeScript/Rsbuild, the exact pinned Tauri desktop CEF runtime, standard mobile system webviews, tray/shortcut/autostart behavior, a closed internal tool registry, typed local persistence, bounded diagnostics, device-local reset, and non-distributed native-widget fixtures. RealQA is now the registry's sole closed internal production tool and is filtered to macOS, Windows, and Ubuntu; iOS and Android retain no RealQA entry, command, or network authority. Its signed-out desktop card gates entry through native Logto, prior-bound offline sessions may only capture/edit account-bound encrypted drafts, and upload/submission requires online reauthentication. The authenticated compound workspace covers synchronized presets/destinations/templates, 20 device shortcuts, capture/pointer/DOM overrides, movable/resizable selection, nondestructive multi-image review, removable and editable sanitized metadata, Issue Form/extension fields, payer/grant status, upload progress and per-attempt public-image confirmation, retry/reconciliation, asset/draft/feature deletion, disconnect, rebind, and revoke behavior. It consumes the generated private RealQA package through an exact native protobuf procedure table and separate validated signed-PUT boundary whose failures remain typed and content-free.
+
+The existing concrete capture and data boundaries remain unchanged: macOS uses ScreenCaptureKit/Core Graphics, Windows uses Windows Graphics Capture, and Ubuntu uses bounded X11/XWayland capture plus native Wayland only through `xdg-desktop-portal`; the editor retains native-held originals and deterministic crop/arrow/rectangle/freehand/text/marker/blur/pixelate operations; and `devhud.realqa-draft.v1` uses account-bound AES-256-GCM records with OS-vault keys. The unpublished exact-origin Chrome MV3/native-host bridge retains its 60-second one-shot DOM permission boundary. Deck remains unregistered, RealQA is not part of the signed-out local shell's authority, and no Chrome Web Store publication, DNS/service deployment, catalog activation, or rollout is authorized.
 
 The Chrome bridge keeps its active capture in extension session memory across action-popup closure and MV3 worker suspension, caps visible-viewport images at 7 MiB so the base64 draft fits Chrome's 10 MiB session-storage quota, and clears the handoff on browser restart, extension reload, update, or disable.
 
@@ -36,7 +39,8 @@ declarations, per-feature OS secure-vault refresh grants/device binding, online
 retained-session rehydration, and memory-only paired feature/delibase bearer
 validation. Deck's dependency-injected refresh controller is implemented but
 is not registered as a production tool or connected to a live native
-transport; the remaining Deck and RealQA product clients remain future work.
+transport. RealQA consumes the same authentication boundary through its
+registered desktop product client.
 
 ## Stable Project Identifier
 

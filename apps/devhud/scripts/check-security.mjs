@@ -171,6 +171,7 @@ const expectedCapabilities = {
       "allow-read-widget-configuration",
       "allow-hide-hud",
       "allow-show-settings",
+      "allow-show-realqa",
       "allow-get-auth-session",
       "allow-start-authentication",
       "allow-logout-authentication",
@@ -246,6 +247,11 @@ const expectedCapabilities = {
       "allow-realqa-load-local-draft",
       "allow-realqa-delete-local-draft",
       "allow-realqa-assert-local-draft-submission-allowed",
+      "allow-realqa-connect",
+      "allow-realqa-signed-put",
+      "allow-get-auth-session",
+      "allow-start-authentication",
+      "allow-logout-authentication",
     ],
   },
 };
@@ -345,7 +351,12 @@ requireCondition(
         command.startsWith("realqa_save_local_draft") ||
         command.startsWith("realqa_load_local_draft") ||
         command.startsWith("realqa_delete_local_draft") ||
-        command.startsWith("realqa_assert_local_draft_")) &&
+        command.startsWith("realqa_assert_local_draft_") ||
+        command === "realqa_connect" ||
+        command === "realqa_signed_put" ||
+        command === "get_auth_session" ||
+        command === "start_authentication" ||
+        command === "logout_authentication") &&
       ![
         "realqa_capture_permission_status",
         "realqa_request_capture_permission",
@@ -643,9 +654,11 @@ for (const path of bundleFiles.filter((file) =>
       bundlePath.startsWith("static/js/lib-react.") &&
       (endpoint.startsWith("https://react.dev/errors/") ||
         endpoint.startsWith("http://www.w3.org/"));
+    const inertProtobufParserLiteral = endpoint === "http://${e}/";
     requireCondition(
       endpoint === "http://ipc.localhost" ||
         endpoint.startsWith("http://tauri.localhost") ||
+        inertProtobufParserLiteral ||
         inertReactLiteral,
       `generated bundle contains remote endpoint ${endpoint} in ${bundlePath}`,
     );

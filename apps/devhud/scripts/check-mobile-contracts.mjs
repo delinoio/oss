@@ -345,10 +345,13 @@ requireCondition(
   "mobile runtime diagnostics must report updates as unsupported",
 );
 requireCondition(
-  /export const productionTools:\s*readonly ToolDefinition\[\]\s*=\s*\[\];/u.test(
-    productionRegistry,
-  ),
-  "production tool registration must remain empty",
+  productionRegistry.includes('toolId: "realqa"') &&
+    productionRegistry.includes(
+      "supportedPlatforms: new Set([ToolPlatform.Desktop])",
+    ) &&
+    !productionRegistry.includes("ToolPlatform.Ios") &&
+    !productionRegistry.includes("ToolPlatform.Android"),
+  "production RealQA registration must remain desktop-only",
 );
 
 const nativeFiles = [

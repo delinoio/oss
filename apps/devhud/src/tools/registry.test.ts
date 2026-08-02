@@ -36,8 +36,22 @@ const realQaFixture = defineTool({
 });
 
 describe("internal tool registry", () => {
-  it("keeps production registration empty", () => {
-    expect(productionTools).toEqual([]);
+  it("registers RealQA only for a desktop window-control surface", () => {
+    expect(productionTools.map((tool) => tool.toolId)).toEqual(["realqa"]);
+    expect(
+      filterTools(productionTools, {
+        platform: ToolPlatform.Desktop,
+        grantedCapabilities: new Set([ToolCapability.WindowControl]),
+      }).map((tool) => tool.toolId),
+    ).toEqual(["realqa"]);
+    for (const platform of [ToolPlatform.Ios, ToolPlatform.Android]) {
+      expect(
+        filterTools(productionTools, {
+          platform,
+          grantedCapabilities: new Set([ToolCapability.WindowControl]),
+        }),
+      ).toEqual([]);
+    }
   });
 
   it("filters fixture definitions by platform and granted capabilities", () => {

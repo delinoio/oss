@@ -1,5 +1,7 @@
 import type { ComponentType } from "react";
 
+import { RealQaToolEntry } from "../realqa/RealQaToolEntry";
+
 export enum ToolPlatform {
   Desktop = "desktop",
   Ios = "ios",
@@ -66,5 +68,14 @@ export function filterTools(
   );
 }
 
-/** Production registration remains deliberately empty in the foundation preview. */
-export const productionTools: readonly ToolDefinition[] = [];
+export const productionTools: readonly ToolDefinition[] = [
+  defineTool({
+    toolId: "realqa",
+    name: "RealQA",
+    description: "Capture and submit reviewed screenshots as GitHub issues.",
+    searchKeywords: ["qa", "screenshot", "capture", "github", "issue"],
+    supportedPlatforms: new Set([ToolPlatform.Desktop]),
+    requiredCapabilities: new Set([ToolCapability.WindowControl]),
+    EntryPoint: RealQaToolEntry,
+  }),
+];
