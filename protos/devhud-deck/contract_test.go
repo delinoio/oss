@@ -21,6 +21,7 @@ func TestCanonicalServicesAndMethods(t *testing.T) {
 			file:    deckv1.File_devhud_deck_v1_view_proto,
 			service: "DeckViewService",
 			methods: []string{
+				"ListOwners",
 				"ListViews",
 				"GetView",
 				"CreateView",
