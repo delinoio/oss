@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "prepare:app": "echo \"public-docs prepared\"",
-    "dev": "rspress dev --port 46249",
+    "dev": "node ../../scripts/run-dev-server.mjs public-docs PUBLIC_DOCS_DEV_PORT 46249 rspress dev",
     "build": "rspress build",
     "preview": "rspress preview",
     "test": "rspress build && node scripts/validate-clean-urls.mjs"

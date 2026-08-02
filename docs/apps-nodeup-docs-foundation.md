@@ -22,7 +22,7 @@
 - Stable public direct-installer file entrypoints are `/install.sh` and `/install.ps1`.
 - The development server uses fixed port `46250`.
 - Local production preview uses fixed port `46251`.
-- Fixed-port dev and preview commands must preflight port availability and print actionable recovery steps when a listener already owns the requested port. Temporary local overrides are supported through `NODEUP_DOCS_DEV_PORT` and `NODEUP_DOCS_PREVIEW_PORT`; those overrides do not change the canonical defaults or CI validation behavior.
+- Fixed-port dev and preview commands must preflight port availability and print actionable recovery steps when a listener already owns the requested port. Temporary local overrides are supported through `NODEUP_DOCS_DEV_PORT` and `NODEUP_DOCS_PREVIEW_PORT`; root `pnpm dev` may set the development override to a logged free port when the default is occupied. Those overrides do not change the canonical defaults or CI validation behavior.
 - The production output directory is `doc_build`.
 - The default theme must expose a visible GitHub repository link to `https://github.com/delinoio/oss`, including the top-level GitHub social link and the document-page footer repository link.
 - The docs theme must preserve keyboard accessibility for generated navigation controls: mobile documentation navigation closes on `Escape`, returns focus to its opener, keeps closed sidebar links out of the tab order, uses a labeled button for mobile search, avoids redundant ambiguous hamburger labels, keeps search overlays clear of the sticky header, removes decorative heading anchors from sequential keyboard navigation, and keeps Markdown tables horizontally readable on mobile viewports.

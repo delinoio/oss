@@ -8,6 +8,7 @@
 - Follow Toss Design Guidelines for frontend UX/UI decisions across web and mobile apps.
 - For new static sites under `apps/`, default to Rsbuild/Rspress-style toolchains and Cloudflare Pages deployment unless a project contract documents a different platform.
 - Prefer Rspack-family build tools for app build pipelines when they fit the runtime and deployment target.
+- Keep package-owned development-server tasks on their documented default ports while accepting the corresponding app-specific port environment variable. Root `pnpm dev` owns automatic conflict remapping and must pass only those explicit variables through Turbo.
 - App file upload/download flows should default to Cloudflare R2 plus signed URLs unless the app contract documents a different storage or access pattern.
 - If a form has a single critical input, that input must receive focus when the form is shown.
 - Dialog UIs must support closing with the `Esc` key.

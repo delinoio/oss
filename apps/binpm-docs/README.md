@@ -15,7 +15,10 @@ pnpm --filter binpm-docs build
 pnpm --filter binpm-docs preview
 ```
 
-`pnpm --filter binpm-docs dev` runs Rspress on fixed port `46260`.
+`pnpm --filter binpm-docs dev` runs Rspress on fixed port `46260`. Use
+`BINPM_DOCS_DEV_PORT=<free-port>` for a temporary package-local override. Root
+`pnpm dev` selects and logs a free override automatically when the default is
+already occupied.
 `pnpm --filter binpm-docs preview` serves the production build on fixed port `46261`.
 
 Production deployment is static Cloudflare Pages output from `doc_build`. Rspress clean URLs are enabled, so stable public route IDs such as `/installation` must be generated and internal links must not point at `.html` suffixes.

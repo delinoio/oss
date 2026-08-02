@@ -17,6 +17,7 @@ This index records the repository implementation for issue [#722](https://github
 - [apps-delidev-app-foundation](apps-delidev-app-foundation.md)
 
 ## Cross-Domain Invariants
+- The package-owned DeliDev development server defaults to `4173`, accepts the temporary `DELIDEV_APP_DEV_PORT` override, and permits root `pnpm dev` to select a logged free port when that default is occupied.
 - Canonical origin: `https://deli.dev`; this origin is a documented future canonical origin, not an activation claim.
 - Stable route IDs are `/`, `/apps`, `/apps/:appSlug`, `/auth/callback`, `/onboarding`, `/invite/:token`, `/o/:orgSlug/apps`, `/o/:orgSlug/members`, `/o/:orgSlug/teams`, `/o/:orgSlug/billing`, `/o/:orgSlug/usage`, `/o/:orgSlug/settings`, and `/account`.
 - DeliDev now emits the dedicated non-SPA `/auth/devhud/callback` handoff used after Deck completes and consumes GitHub callback state. It removes unexpected query/fragment data, consumes only a safe non-sensitive `/account` or organization-settings return path, bypasses the SPA/service-worker cache, and replaces itself in browser history. Deck mobile still requires the planned exact-path Apple `apple-app-site-association` and Android `assetlinks.json` artifacts for `dev.deli.devhud`; fixture identities are test-only and release identities are injected externally.

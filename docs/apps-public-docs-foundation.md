@@ -8,6 +8,7 @@
 - Runtime: Rspress static documentation app
 - Primary language: Markdown/TypeScript content and configuration with web build tooling
 - Production deployment target: Cloudflare Pages static output
+- The development server defaults to fixed port `46249`; `PUBLIC_DOCS_DEV_PORT` is the temporary local override consumed by the package-owned `dev` task. Root `pnpm dev` may set it to a logged free port when the default is occupied without changing the canonical default.
 
 ## Users and Operators
 - External users reading public product documentation

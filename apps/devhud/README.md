@@ -44,6 +44,11 @@ pnpm test:widget:android
 pnpm test:widget:ios
 ```
 
+The frontend development server defaults to port `3000`. Use
+`DEVHUD_DEV_PORT=<free-port> pnpm dev` for a temporary package-local override.
+Root `pnpm dev` selects and logs a free override automatically when the default
+is already occupied.
+
 Android generation and builds require JDK 17, the Android SDK, NDK, and the Rust Android targets. iOS generation and builds require macOS, Xcode with the iOS 17 SDK, XcodeGen, and the corresponding Rust iOS targets. Production commands build the device architectures above; `:ci` commands build unsigned debug hosts only for the x64 simulator/emulator contract. `build:widget:*` compiles only the non-distributed native foundation. `test:widget:*` also exercises typed fixture round trips and refresh/error handling, compiles the private native plugin into an x64 release application, and passes that built artifact to the fail-closed release guard. `check:widget-artifacts` requires a built release manifest, APK, or `.app` and fails if the exact verified mobile callback is missing or broadened, the iOS application embeds an extension, or the Android manifest contains any receiver.
 
 Set the public `DEVHUD_LOGTO_ENDPOINT` and `DEVHUD_LOGTO_APP_ID` values when compiling a configured mobile host; Rust embeds them in the iOS/Android application. Desktop reads the same values from its launch environment. Neither value is a client secret.

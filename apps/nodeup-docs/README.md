@@ -26,6 +26,8 @@ NODEUP_DOCS_PREVIEW_PORT=46253 pnpm --filter nodeup-docs preview
 ```
 
 The documented defaults remain `46250` for development and `46251` for preview.
+Root `pnpm dev` selects and logs a free `NODEUP_DOCS_DEV_PORT` automatically
+when the development default is already occupied.
 
 ## Files
 

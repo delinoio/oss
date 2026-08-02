@@ -22,7 +22,7 @@
 - Stable documentation route IDs are `/`, `/installation`, `/getting-started`, `/commands`, `/local-tooling`, `/cache-and-verification`, `/releases`, `/troubleshooting`, and `/reference`.
 - Rspress clean URLs are enabled. Stable public route IDs must remain extensionless, each route ID must have a generated build output artifact, and generated internal links must not use `.html` suffixes for those route IDs.
 - Public direct-installer entrypoints are `https://binpm.delino.io/install.sh` and `https://binpm.delino.io/install.ps1`. Build output must copy these files from `scripts/install/binpm.sh` and `scripts/install/binpm.ps1` so the short docs-site URLs remain backed by the canonical maintained installer scripts.
-- The development server uses fixed port `46260`.
+- The development server defaults to fixed port `46260`; `BINPM_DOCS_DEV_PORT` is the temporary local override consumed by the package-owned `dev` task. Root `pnpm dev` may set it to a logged free port when the default is occupied without changing the canonical default.
 - Local production preview uses fixed port `46261`.
 - The production output directory is `doc_build`.
 - The default theme must expose a visible GitHub repository link to `https://github.com/delinoio/oss`, including an explicit desktop header social link and the document-page footer repository link.

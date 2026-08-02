@@ -12,4 +12,4 @@ if [ "${1-}" = "--" ]; then
   shift
 fi
 
-exec go -C "$repo_root" run ./cmds/derun run -- turbo dev "$@"
+exec node "$repo_root/scripts/dev.mjs" "$@"

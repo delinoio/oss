@@ -6,7 +6,14 @@
         "build:api"
       ],
       "cache": false,
-      "persistent": true
+      "persistent": true,
+      "passThroughEnv": [
+        "BINPM_DOCS_DEV_PORT",
+        "DELIDEV_APP_DEV_PORT",
+        "DEVHUD_DEV_PORT",
+        "NODEUP_DOCS_DEV_PORT",
+        "PUBLIC_DOCS_DEV_PORT"
+      ]
     },
     "build:api":{
       "dependsOn": [

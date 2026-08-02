@@ -13,7 +13,10 @@ pnpm --filter public-docs build
 pnpm --filter public-docs preview
 ```
 
-`pnpm --filter public-docs dev` runs Rspress on fixed port `46249`.
+`pnpm --filter public-docs dev` runs Rspress on fixed port `46249`. Use
+`PUBLIC_DOCS_DEV_PORT=<free-port>` for a temporary package-local override. Root
+`pnpm dev` selects and logs a free override automatically when the default is
+already occupied.
 Production output is written to `doc_build` for Cloudflare Pages. Rspress clean
 URLs are enabled, so stable public routes such as `/getting-started` do not use
 `.html` suffixes.

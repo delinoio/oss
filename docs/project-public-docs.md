@@ -20,6 +20,7 @@ Provide the Rspress-based public documentation site for user-facing product and 
 - The legacy `/nodeup` route remains supported as a lightweight compatibility handoff page to `https://nodeup.delino.io`.
 - Nodeup and binpm public guides must not be duplicated as in-site Rspress routes; their standalone documentation apps own those docs, except for the lightweight legacy `/nodeup` handoff.
 - `public-docs` uses Rspress clean URLs and publishes its `doc_build` static output to Cloudflare Pages.
+- Its package-owned development server defaults to `46249`, accepts the temporary `PUBLIC_DOCS_DEV_PORT` override, and permits root `pnpm dev` to select a logged free port when that default is occupied.
 
 ## Change Policy
 - Update this index and `docs/apps-public-docs-foundation.md` in the same change for navigation, runtime, or publishing workflow updates.

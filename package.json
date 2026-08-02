@@ -3,7 +3,7 @@
   "packageManager": "pnpm@10.26.2",
   "private": true,
   "scripts": {
-    "prepare": "lefthook install; ./scripts/prepare-apps.sh",
+    "prepare": "./scripts/install-git-hooks.sh && ./scripts/prepare-apps.sh",
     "predev": "./scripts/generate-proto.sh",
     "dev": "./scripts/dev.sh",
     "build": "turbo build",

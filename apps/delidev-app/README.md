@@ -14,6 +14,11 @@ pnpm --filter @delinoio/devhud-deck-connect build
 pnpm --filter delidev-app dev
 ```
 
+The development server defaults to port `4173`. Use
+`DELIDEV_APP_DEV_PORT=<free-port>` for a temporary package-local override. Root
+`pnpm dev` selects and logs a free override automatically when the default is
+already occupied.
+
 Only browser-safe values belong in `.env`. Never add Logto client secrets,
 access tokens, Polar secrets, or invitation tokens.
 

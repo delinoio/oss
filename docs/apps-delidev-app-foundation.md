@@ -9,6 +9,7 @@
 - Runtime: browser PWA
 - Primary language: TypeScript with React
 - Build: Rsbuild; output: `apps/delidev-app/dist`
+- The development server defaults to port `4173`; `DELIDEV_APP_DEV_PORT` is the temporary local override consumed by the package-owned `dev` task. Root `pnpm dev` may set it to a logged free port when the default is occupied without changing the canonical default.
 - Use React Query and `@connectrpc/connect-query` for server state and Connect RPC integration.
 - English-only, responsive desktop/mobile UI for current Chrome, Edge, Firefox, and Safari.
 - Follow Toss Design Guidelines and WCAG 2.2 AA. The wordmark is text `DeliDev`; the PWA uses a simple `D` lettermark. A complete brand system is out of scope.

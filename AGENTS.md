@@ -11,6 +11,8 @@
 - Prefer enum types over strings whenever possible.
 - If you modified Rust code, run `cargo test` from the root directory before finishing your task.
 - If you modified frontend code, run `pnpm test` from the frontend directory before finishing your task.
+- Root `pnpm dev` must preserve each app's documented default development port when available and select a logged free loopback port for only the conflicting apps. Package-local `dev` tasks must accept their documented app-specific port environment variable, and explicit overrides must fail rather than silently move when occupied.
+- Root `pnpm install` must install Lefthook successfully in linked worktrees when `core.hooksPath` is exactly Git's shared common-directory hooks path; it must not force-install into an unrelated custom hooks path.
 - Commit your work as frequent as possible using git. Do NOT use `--no-verify` flag.
 - Run `git commit` only after `git add`; once files are staged, commit without unnecessary delay so staged changes are preserved in history.
 - Committing may require workspace binaries (for example, git hooks). If required binaries are missing, run `pnpm install` at the repository root and retry the commit.

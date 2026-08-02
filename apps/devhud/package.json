@@ -24,7 +24,7 @@
     "check:rust": "node scripts/run-cargo-checks.mjs",
     "check:security": "node scripts/check-security.mjs",
     "check:widget-artifacts": "node scripts/check-widget-artifacts.mjs",
-    "dev": "rsbuild dev",
+    "dev": "node ../../scripts/run-dev-server.mjs devhud DEVHUD_DEV_PORT 3000 rsbuild dev",
     "lint": "eslint . --max-warnings 0",
     "mobile:generate:android": "node scripts/mobile.mjs generate android",
     "mobile:generate:ios": "node scripts/mobile.mjs generate ios",

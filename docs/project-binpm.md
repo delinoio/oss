@@ -18,6 +18,7 @@ Provide a Rust-based, Node-free binary package manager for installing and runnin
 - `binpm` is implemented as a Rust CLI under `crates/binpm`.
 - `apps/binpm-docs` is the Rspress static documentation app for `binpm`.
 - `apps/binpm-docs` must use the repository-default Rspress/Rsbuild-family static documentation toolchain and Cloudflare Pages deployment contract unless this project index and `docs/apps-binpm-docs-foundation.md` document a replacement.
+- Its package-owned development server defaults to `46260`, accepts the temporary `BINPM_DOCS_DEV_PORT` override, and permits root `pnpm dev` to select a logged free port when that default is occupied.
 - The canonical production URL for `apps/binpm-docs` is `https://binpm.delino.io`.
 - binpm documentation routes exposed by `apps/binpm-docs` are `/`, `/installation`, `/getting-started`, `/commands`, `/local-tooling`, `/cache-and-verification`, `/releases`, `/troubleshooting`, and `/reference`.
 - `apps/binpm-docs` must expose a visible GitHub repository link to `https://github.com/delinoio/oss` in the top-level social links and in the document-page footer.

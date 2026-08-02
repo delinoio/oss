@@ -20,6 +20,9 @@ This document defines default technology choices and repository workflow default
 - Newly created pull requests must use Conventional Commit-style titles with a required scope: `<type>(<scope>): <description>`.
 - Pull request title scopes should use stable lowercase project, component, domain, or tooling identifiers from repository contracts when one applies.
 - Pull request titles must not omit the scope and must not use bracket-style project prefixes.
+- `pnpm install` installs Lefthook through `scripts/install-git-hooks.sh`. When a linked worktree inherits a `core.hooksPath` that exactly names Git's common-directory `hooks` path, the script may use Lefthook's `--force` mode for that exact default path; unrelated custom hook directories remain untouched and follow Lefthook's normal validation.
+- Root `pnpm dev` keeps development servers as package-owned persistent Turbo tasks and runs Turbo through Derun. It probes both IPv4 and IPv6 loopback listeners, preserves every documented default port that is available, and assigns only conflicting apps a free temporary port while preserving fixed preview ports.
+- The package-local development port variables are `PUBLIC_DOCS_DEV_PORT`, `NODEUP_DOCS_DEV_PORT`, `BINPM_DOCS_DEV_PORT`, `DELIDEV_APP_DEV_PORT`, and `DEVHUD_DEV_PORT`. Explicit values are validated and fail if occupied or duplicated; automatic selections are emitted as structured `port_remap` diagnostics and passed through only to the `dev` task.
 
 ## References
 - `docs/README.md`
