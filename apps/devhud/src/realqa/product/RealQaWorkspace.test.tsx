@@ -4,6 +4,7 @@ import axe from "axe-core";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { CaptureMode, PointerInclusion } from "../capture";
+import { MAX_FINAL_BODY_UTF8_BYTES } from "../onlineSubmission";
 import { ShortcutKey, ShortcutModifier } from "../../persistence/contracts";
 import {
   publishPersistenceReset,
@@ -414,6 +415,45 @@ describe("RealQA desktop production workspace", () => {
     expect(review).toBeEnabled();
   });
 
+  it("preserves comma-bearing labels while editing preset and draft label lists", async () => {
+    const user = userEvent.setup();
+    const value = snapshot();
+    const preset = value.presets[0];
+    const draft = value.drafts[0];
+    if (preset === undefined || draft === undefined) {
+      throw new Error("Fixture preset or draft is missing.");
+    }
+    const gateway = new FixtureGateway({
+      ...value,
+      presets: [{ ...preset, labels: ["area,ui"] }],
+      drafts: [{ ...draft, labels: ["area,ui"] }],
+    });
+    await renderWorkspace(gateway);
+
+    const labelInputs = screen.getAllByLabelText("Labels");
+    const presetLabels = labelInputs[0];
+    const draftLabels = labelInputs[1];
+    if (presetLabels === undefined || draftLabels === undefined) {
+      throw new Error("Fixture label inputs are missing.");
+    }
+    expect(presetLabels).toHaveValue('"area,ui"');
+    expect(draftLabels).toHaveValue('"area,ui"');
+
+    await user.type(presetLabels, ", regression");
+    await user.click(screen.getByRole("button", { name: "Save preset" }));
+    expect(gateway.actions.at(-1)).toMatchObject({
+      kind: "save-preset",
+      preset: { labels: ["area,ui", "regression"] },
+    });
+
+    await user.type(draftLabels, ", screenshot");
+    await user.click(screen.getByRole("button", { name: "Save draft" }));
+    expect(gateway.actions.at(-1)).toMatchObject({
+      kind: "save-draft",
+      draft: { labels: ["area,ui", "screenshot"] },
+    });
+  });
+
   it("filters retained issue-form values against the current definition", async () => {
     const user = userEvent.setup();
     const value = snapshot();
@@ -489,6 +529,58 @@ describe("RealQA desktop production workspace", () => {
 
     fireEvent.change(title, { target: { value: "é".repeat(128) } });
     expect(review).toBeEnabled();
+
+    fireEvent.change(title, { target: { value: `${" ".repeat(300)}Bug${" ".repeat(300)}` } });
+    expect(review).toBeEnabled();
+    await user.click(review);
+    await user.click(within(screen.getByRole("dialog", { name: "Confirm public screenshots" })).getByRole("button", { name: "Confirm and submit" }));
+    await waitFor(() => expect(gateway.actions.at(-1)).toMatchObject({
+      kind: "submit",
+      draft: { title: "Bug" },
+    }));
+  });
+
+  it("measures the sanitized URL that submission sends", async () => {
+    const user = userEvent.setup();
+    const value = snapshot();
+    const definition = value.definitions[0];
+    const draft = value.drafts[0];
+    if (definition === undefined || draft === undefined) {
+      throw new Error("Fixture issue definition or draft is missing.");
+    }
+    const definitionWithoutFields = { ...definition, fields: [] };
+    const canonicalUrl = "https://example.com/report";
+    const oneByteBodyDraft = {
+      ...draft,
+      body: "x",
+      url: canonicalUrl,
+      issueAnswers: {},
+    };
+    const oneByteBodySize = new TextEncoder().encode(
+      serializeFinalIssueBody(oneByteBodyDraft, definitionWithoutFields),
+    ).byteLength;
+    const body = "x".repeat(MAX_FINAL_BODY_UTF8_BYTES - oneByteBodySize + 1);
+    const gateway = new FixtureGateway({
+      ...value,
+      definitions: [definitionWithoutFields],
+      drafts: [{
+        ...draft,
+        body,
+        url: `${canonicalUrl}?secret=${"x".repeat(1_000)}#details`,
+        issueAnswers: {},
+      }],
+    });
+    await renderWorkspace(gateway);
+
+    expect(screen.getByText("60,000 / 60,000 body bytes")).toBeVisible();
+    const review = screen.getByRole("button", { name: "Review and submit" });
+    expect(review).toBeEnabled();
+    await user.click(review);
+    await user.click(within(screen.getByRole("dialog", { name: "Confirm public screenshots" })).getByRole("button", { name: "Confirm and submit" }));
+    await waitFor(() => expect(gateway.actions.at(-1)).toMatchObject({
+      kind: "submit",
+      draft: { url: canonicalUrl },
+    }));
   });
 
   it("does not expose shortcut editing before native registration is connected", async () => {

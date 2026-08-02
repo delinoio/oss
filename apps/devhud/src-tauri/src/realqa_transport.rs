@@ -201,6 +201,7 @@ pub(crate) enum RealQaTransportFailure {
 
 fn map_auth_failure(error: AuthError) -> RealQaTransportFailure {
     match error {
+        AuthError::TransportUnavailable => RealQaTransportFailure::ServiceUnavailable,
         AuthError::ReauthenticationRequired
         | AuthError::TokenExpired
         | AuthError::TokenInvalid
@@ -571,6 +572,22 @@ mod tests {
             sha256: format!("{:x}", Sha256::digest(body)),
             body_base64: STANDARD.encode(body),
         }
+    }
+
+    #[test]
+    fn auth_transport_outages_remain_retryable() {
+        assert_eq!(
+            map_auth_failure(AuthError::TransportUnavailable),
+            RealQaTransportFailure::ServiceUnavailable,
+        );
+        assert_eq!(
+            map_auth_failure(AuthError::TokenInvalid),
+            RealQaTransportFailure::ReauthenticationRequired,
+        );
+        assert_eq!(
+            map_auth_failure(AuthError::SecureVaultUnavailable),
+            RealQaTransportFailure::AuthenticationRequired,
+        );
     }
 
     #[test]

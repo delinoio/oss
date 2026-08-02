@@ -268,11 +268,63 @@ function WorkspaceStatus() {
 }
 
 function csv(value: readonly string[]): string {
-  return value.join(", ");
+  return value.map((entry) =>
+    /[",\r\n]/u.test(entry) || entry.trim() !== entry
+      ? `"${entry.replaceAll('"', '""')}"`
+      : entry
+  ).join(", ");
 }
 
 function parseCsv(value: string): readonly string[] {
-  return [...new Set(value.split(",").map((entry) => entry.trim()).filter(Boolean))];
+  const entries: string[] = [];
+  let entry = "";
+  let quoted = false;
+  for (let index = 0; index < value.length; index += 1) {
+    const character = value[index];
+    if (character === '"') {
+      if (quoted && value[index + 1] === '"') {
+        entry += '"';
+        index += 1;
+      } else {
+        quoted = !quoted;
+      }
+    } else if (character === "," && !quoted) {
+      entries.push(entry);
+      entry = "";
+    } else {
+      entry += character;
+    }
+  }
+  entries.push(entry);
+  return [...new Set(entries.map((candidate) => candidate.trim()).filter(Boolean))];
+}
+
+function CsvListField({
+  disabled = false,
+  label,
+  onChange,
+  value,
+}: {
+  readonly disabled?: boolean;
+  readonly label: string;
+  readonly onChange: (value: readonly string[]) => void;
+  readonly value: readonly string[];
+}) {
+  const [input, setInput] = useState(() => csv(value));
+  return (
+    <label className="field">
+      {label}
+      <input
+        disabled={disabled}
+        value={input}
+        onBlur={() => setInput(csv(parseCsv(input)))}
+        onChange={(event) => {
+          setInput(event.target.value);
+          onChange(parseCsv(event.target.value));
+        }}
+      />
+    </label>
+  );
 }
 
 function milestoneNumberValid(value: number | null): boolean {
@@ -653,7 +705,7 @@ function PresetManagerContent({
         <label className="check-field"><input checked={editing.selectorMode === RealQaSelectorMode.Dom} disabled={!online} onChange={(event) => update("selectorMode", event.target.checked ? RealQaSelectorMode.Dom : RealQaSelectorMode.Normal)} type="checkbox" />Use DOM selection by default</label>
         <label className="field">Destination<select disabled={!online} value={editing.destinationId} onChange={(event) => { const destinationId = event.target.value; const definitionId = snapshot.definitions.find((definition) => definition.destinationId === destinationId)?.definitionId ?? ""; setEditing((current) => current === null ? current : { ...current, destinationId, definitionId }); }}>{snapshot.destinations.map((item) => <option key={item.destinationId} value={item.destinationId}>{item.repository}{item.connected ? "" : " (disconnected)"}</option>)}</select></label>
         <label className="field">Template or form<select disabled={!online || destinationDefinitionOptions.length === 0} value={editing.definitionId} onChange={(event) => update("definitionId", event.target.value)}>{!definitionAvailable ? <option value="">No template available</option> : null}{destinationDefinitionOptions.map((definition) => <option key={definition.definitionId} value={definition.definitionId}>{definition.name} · {definition.issueType}</option>)}</select></label>
-        <label className="field">Labels<input disabled={!online} value={csv(editing.labels)} onChange={(event) => update("labels", parseCsv(event.target.value))} /></label>
+        <CsvListField disabled={!online} key={`preset-labels-${editing.presetId}`} label="Labels" value={editing.labels} onChange={(labels) => update("labels", labels)} />
         <label className="field">Assignees<input disabled={!online} value={csv(editing.assignees)} onChange={(event) => update("assignees", parseCsv(event.target.value))} /></label>
         <label className="field">Milestone number<input disabled={!online} min={1} step={1} type="number" value={editing.milestoneNumber ?? ""} onChange={(event) => update("milestoneNumber", event.target.value === "" ? null : Number(event.target.value))} /></label>
         <label className="field">Project node IDs<input disabled={!online} value={csv(editing.projectNodeIds)} onChange={(event) => update("projectNodeIds", parseCsv(event.target.value))} /></label>
@@ -763,10 +815,17 @@ function CaptureAndReviewContent() {
     ...draft,
     issueAnswers: issueAnswersWithDefaults(draft, definition),
   };
-  const bodyBytes = new TextEncoder().encode(
-    serializeFinalIssueBody(draftWithDefaults, definition),
-  ).byteLength;
   const normalizedTitle = draft.title.trim();
+  const reviewedUrl = sanitizeCapturedUrl(draft.url);
+  const submissionDraft = {
+    ...draftWithDefaults,
+    title: normalizedTitle,
+    url: reviewedUrl.ok ? reviewedUrl.url.value : "",
+    urlWarning: reviewedUrl.ok && reviewedUrl.url.warning !== null,
+  };
+  const bodyBytes = new TextEncoder().encode(
+    serializeFinalIssueBody(submissionDraft, definition),
+  ).byteLength;
   const titleBytes = new TextEncoder().encode(normalizedTitle).byteLength;
   const titleValid = normalizedTitle !== ""
     && titleBytes <= MAX_ISSUE_TITLE_UTF8_BYTES
@@ -782,7 +841,6 @@ function CaptureAndReviewContent() {
   const selectedImageUploadWindowsOpen = selectedImages.every((image) =>
     imageUploadWindowOpen(image)
   );
-  const reviewedUrl = sanitizeCapturedUrl(draft.url);
   const reviewedUrlValid = draft.url === "" || reviewedUrl.ok;
   const requiredAnswersComplete = requiredIssueAnswersComplete(draftWithDefaults, definition);
   const selectedDestination = snapshot.destinations.find(
@@ -814,11 +872,7 @@ function CaptureAndReviewContent() {
     setConfirmPublic(false);
     void execute({
       kind: "submit",
-      draft: {
-        ...draftWithDefaults,
-        url: reviewedUrl.ok ? reviewedUrl.url.value : "",
-        urlWarning: reviewedUrl.ok && reviewedUrl.url.warning !== null,
-      },
+      draft: submissionDraft,
       idempotencyKey: draft.submissionIdempotencyKey,
       publicImageConfirmation: true,
     }, "Issue submitted and the local raw draft was deleted.");
@@ -840,7 +894,7 @@ function CaptureAndReviewContent() {
       {!requiredAnswersComplete ? <p className="error">Complete every required issue-form field before submission.</p> : null}
       {!selectedImagesWithinSessionLimit ? <p className="error">Selected images exceed the 250 MiB session limit. Remove or deselect images before submission.</p> : null}
       {!selectedImageUploadWindowsOpen ? <p className="error">The staged upload deadline expired. Start a fresh upload before submission.</p> : null}
-      <div className="realqa-form-grid"><label className="field">Labels<input value={csv(draft.labels)} onChange={(event) => update({ labels: parseCsv(event.target.value) })} /></label><label className="field">Assignees<input value={csv(draft.assignees)} onChange={(event) => update({ assignees: parseCsv(event.target.value) })} /></label><label className="field">Milestone number<input min={1} step={1} type="number" value={draft.milestoneNumber ?? ""} onChange={(event) => update({ milestoneNumber: event.target.value === "" ? null : Number(event.target.value) })} /></label><label className="field">Project node IDs<input value={csv(draft.projectNodeIds)} onChange={(event) => update({ projectNodeIds: parseCsv(event.target.value) })} /></label></div>
+      <div className="realqa-form-grid"><CsvListField label="Labels" value={draft.labels} onChange={(labels) => update({ labels })} /><label className="field">Assignees<input value={csv(draft.assignees)} onChange={(event) => update({ assignees: parseCsv(event.target.value) })} /></label><label className="field">Milestone number<input min={1} step={1} type="number" value={draft.milestoneNumber ?? ""} onChange={(event) => update({ milestoneNumber: event.target.value === "" ? null : Number(event.target.value) })} /></label><label className="field">Project node IDs<input value={csv(draft.projectNodeIds)} onChange={(event) => update({ projectNodeIds: parseCsv(event.target.value) })} /></label></div>
       {!draftMilestoneValid ? <p className="error">Milestone number must be a positive whole number.</p> : null}
       <p className={bodyBytes > MAX_FINAL_BODY_UTF8_BYTES ? "error" : "muted"}>{bodyBytes.toLocaleString()} / {MAX_FINAL_BODY_UTF8_BYTES.toLocaleString()} body bytes</p>
       <div className="button-row"><button className="secondary-button" disabled={busy || !draftMilestoneValid} onClick={() => void execute({ kind: "save-draft", draft: draftWithDefaults }, "Encrypted local draft saved.")} type="button">Save draft</button><button className="danger-button" disabled={busy} onClick={() => setConfirmDraftDelete(true)} type="button">Delete draft</button><button className="primary-button" disabled={busy || !online || !submissionReady} onClick={() => setConfirmPublic(true)} type="button">Review and submit</button></div>
