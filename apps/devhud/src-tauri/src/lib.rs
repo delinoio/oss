@@ -1751,6 +1751,11 @@ fn tool_operating_system() -> Option<ToolOperatingSystem> {
 }
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
+const fn realqa_operating_system_supported(operating_system: Option<ToolOperatingSystem>) -> bool {
+    operating_system.is_some()
+}
+
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 const fn update_policy() -> &'static str {
     if cfg!(any(target_os = "android", target_os = "ios")) {
         "Unsupported"
@@ -2276,6 +2281,9 @@ fn build_realqa_composer_window(
 fn show_realqa_composer_internal(
     app: &AppHandle<ActiveRuntime>,
 ) -> Result<(), realqa_native_host::NativeHostFailure> {
+    if !realqa_operating_system_supported(tool_operating_system()) {
+        return Err(realqa_native_host::NativeHostFailure::ComposerUnavailable);
+    }
     let window = match app.get_webview_window(REALQA_COMPOSER_WINDOW_LABEL) {
         Some(window) => window,
         None => build_realqa_composer_window(app)
@@ -4548,6 +4556,18 @@ mod tests {
             "ID=ubuntu\nVERSION_ID=24.04\nVERSION_ID=24.04\n",
         ] {
             assert_eq!(linux_tool_operating_system(unsupported), None);
+        }
+    }
+
+    #[test]
+    fn realqa_entry_requires_a_supported_tool_operating_system() {
+        assert!(!realqa_operating_system_supported(None));
+        for operating_system in [
+            ToolOperatingSystem::Macos,
+            ToolOperatingSystem::Ubuntu,
+            ToolOperatingSystem::Windows,
+        ] {
+            assert!(realqa_operating_system_supported(Some(operating_system)));
         }
     }
 

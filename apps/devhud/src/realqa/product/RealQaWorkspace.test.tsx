@@ -170,11 +170,14 @@ class FixtureGateway implements RealQaProductGateway {
       return this.value;
     }
     if (action.kind === "create-preset") {
+      const createdPresetId = this.value.presets.length === 0
+        ? presetId
+        : "01900000-0000-7000-8000-000000000010";
       this.value = {
         ...this.value,
         presets: [{
           ...action.preset,
-          presetId,
+          presetId: createdPresetId,
           revision: 1,
         }, ...this.value.presets],
       };
@@ -716,6 +719,22 @@ describe("RealQA desktop production workspace", () => {
     );
   });
 
+  it("creates another preset from the non-empty preset manager", async () => {
+    const user = userEvent.setup();
+    const gateway = new FixtureGateway(snapshot());
+    await renderWorkspace(gateway);
+
+    await user.click(screen.getByRole("button", { name: "New preset" }));
+
+    await waitFor(() => expect(gateway.actions.at(-1)).toMatchObject({
+      kind: "create-preset",
+      preset: { name: "New RealQA preset" },
+    }));
+    expect(screen.getByLabelText("Preset")).toHaveValue(
+      "01900000-0000-7000-8000-000000000010",
+    );
+  });
+
   it("offers GitHub connection when a first preset has no destination", async () => {
     const user = userEvent.setup();
     const value = snapshot();
@@ -970,6 +989,43 @@ describe("RealQA desktop production workspace", () => {
     >;
     expect(retry.idempotencyKey).toBe(first.idempotencyKey);
     expect(retry.replacementBilling).toEqual(first.replacementBilling);
+  });
+
+  it("starts a new rebind identity when the expected authorization changes", async () => {
+    const user = userEvent.setup();
+    const gateway = new FixtureGateway(snapshot());
+    gateway.nextFailure = new RealQaProductError(RealQaFailureCode.ServiceUnavailable);
+    await renderWorkspace(gateway);
+
+    await user.click(screen.getByRole("button", { name: "Rebind payer" }));
+    await screen.findByRole("alert");
+    const first = gateway.actions[0] as Extract<
+      RealQaProductAction,
+      { kind: "rebind-authorization" }
+    >;
+
+    gateway.value = {
+      ...gateway.value,
+      submissions: gateway.value.submissions.map((submission) => ({
+        ...submission,
+        authorizationId: "01900000-0000-7000-8000-000000000011",
+        authorizationRevision: 8,
+      })),
+    };
+    await user.click(screen.getByRole("button", { name: "Delete Submitted capture" }));
+    await waitFor(() => expect(gateway.actions).toHaveLength(2));
+    await user.click(screen.getByRole("button", { name: "Rebind payer" }));
+    await waitFor(() => expect(gateway.actions).toHaveLength(3));
+
+    const retry = gateway.actions[2] as Extract<
+      RealQaProductAction,
+      { kind: "rebind-authorization" }
+    >;
+    expect(retry.idempotencyKey).not.toBe(first.idempotencyKey);
+    expect(retry.expectedAuthorizationId).toBe(
+      "01900000-0000-7000-8000-000000000011",
+    );
+    expect(retry.expectedRevision).toBe(8);
   });
 
   it("has no automated WCAG violations", async () => {

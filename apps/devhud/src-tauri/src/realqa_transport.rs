@@ -3,7 +3,7 @@
 //! The frontend selects a generated protobuf procedure, never a URL, method,
 //! header, bearer, redirect policy, or arbitrary request target.
 
-use std::time::Duration;
+use std::{io::Read, time::Duration};
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use reqwest::{StatusCode, blocking::Client, redirect::Policy};
@@ -430,6 +430,18 @@ pub(crate) fn open_github_authorization(
         })
 }
 
+fn read_bounded_response(response: impl Read) -> Result<Vec<u8>, RealQaTransportFailure> {
+    let mut bytes = Vec::new();
+    response
+        .take((MAX_PROTO_RESPONSE_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)
+        .map_err(|_| RealQaTransportFailure::ServiceUnavailable)?;
+    if bytes.len() > MAX_PROTO_RESPONSE_BYTES {
+        return Err(RealQaTransportFailure::ResponseTooLarge);
+    }
+    Ok(bytes)
+}
+
 pub(crate) fn connect(
     request: RealQaConnectRequest,
     auth: &NativeAuthState,
@@ -457,12 +469,7 @@ pub(crate) fn connect(
     .map_err(map_auth_failure)?
     .and_then(|response| {
         let status = response.status();
-        let bytes = response
-            .bytes()
-            .map_err(|_| RealQaTransportFailure::ServiceUnavailable)?;
-        if bytes.len() > MAX_PROTO_RESPONSE_BYTES {
-            return Err(RealQaTransportFailure::ResponseTooLarge);
-        }
+        let bytes = read_bounded_response(response)?;
         if !status.is_success() {
             return Err(map_connect_error(status, &bytes));
         }
@@ -632,6 +639,33 @@ mod tests {
                 RealQaTransportFailure::RateLimited,
             );
         }
+    }
+
+    #[test]
+    fn bounded_response_collection_stops_after_the_advertised_limit() {
+        struct CountingReader {
+            remaining: usize,
+            read: usize,
+        }
+
+        impl Read for CountingReader {
+            fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+                let count = buffer.len().min(self.remaining);
+                buffer[..count].fill(b'x');
+                self.remaining -= count;
+                self.read += count;
+                Ok(count)
+            }
+        }
+
+        let mut reader = CountingReader {
+            remaining: MAX_PROTO_RESPONSE_BYTES * 2,
+            read: 0,
+        };
+        let error = read_bounded_response(&mut reader).unwrap_err();
+
+        assert_eq!(error, RealQaTransportFailure::ResponseTooLarge);
+        assert_eq!(reader.read, MAX_PROTO_RESPONSE_BYTES + 1);
     }
 
     #[test]

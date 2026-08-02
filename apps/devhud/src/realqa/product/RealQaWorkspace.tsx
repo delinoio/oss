@@ -407,8 +407,9 @@ function PresetManagerContent() {
   }>());
   const online = snapshot.access === RealQaAccessMode.Online && snapshot.online;
   const shortcutCount = snapshot.presets.filter((preset) => preset.shortcut !== null).length;
+  const canCreatePreset = online && firstPresetDraft(snapshot) !== null;
 
-  const createFirstPreset = async () => {
+  const createPreset = async () => {
     const draft = firstPresetDraft(snapshot);
     if (draft === null) return;
     const idempotencyKey = createAttempt.current ?? createUuidV7();
@@ -506,7 +507,6 @@ function PresetManagerContent() {
   };
 
   if (editing === null) {
-    const canCreate = online && firstPresetDraft(snapshot) !== null;
     const connectedDestination = snapshot.destinations.find(
       (destination) => destination.connected,
     );
@@ -538,8 +538,8 @@ function PresetManagerContent() {
           ) : (
             <button
               className="primary-button"
-              disabled={busy || !canCreate}
-              onClick={() => void createFirstPreset()}
+              disabled={busy || !canCreatePreset}
+              onClick={() => void createPreset()}
               type="button"
             >
               Create first preset
@@ -625,6 +625,7 @@ function PresetManagerContent() {
       <p className="muted" id="shortcut-limit">At most 20 active RealQA shortcuts are registered per device. Conflicts remain inactive.</p>
       <p className={editing.backgroundGrant === "active" ? "muted" : "error"}>Background storage grant: {editing.backgroundGrant}</p>
       <div className="button-row">
+        <button className="secondary-button" disabled={busy || !canCreatePreset} onClick={() => void createPreset()} type="button">New preset</button>
         <button className="primary-button" disabled={busy || !online} onClick={() => void savePreset()} type="button">Save preset</button>
         <button className="secondary-button" disabled={busy || !online} onClick={() => setConfirmDelete(true)} type="button">Delete preset</button>
         {destination?.connected ? <button className="secondary-button" disabled={busy || !online} onClick={() => setConfirmDisconnect(true)} type="button">Disconnect GitHub</button> : <button className="secondary-button" disabled={busy || !online || destination === undefined} onClick={() => destination === undefined ? undefined : void execute({ kind: "reconnect-destination", destinationId: destination.destinationId }, "GitHub authorization opened.")} type="button">Reconnect GitHub</button>}
@@ -778,6 +779,8 @@ function SubmissionLifecycle() {
   } | null>(null);
   const rebindAttempts = useRef(new Map<string, {
     readonly scopeKey: string;
+    readonly expectedAuthorizationId: string;
+    readonly expectedRevision: number;
     readonly idempotencyKey: string;
   }>());
   const deletionAttempts = useRef(new Map<string, {
@@ -797,14 +800,21 @@ function SubmissionLifecycle() {
     if (submission.authorizationId === null || effectiveScope === undefined) return;
     const pending = rebindAttempts.current.get(submission.submissionId);
     const attempt = pending?.scopeKey === effectiveScopeKey
+      && pending.expectedAuthorizationId === submission.authorizationId
+      && pending.expectedRevision === submission.authorizationRevision
       ? pending
-      : { scopeKey: effectiveScopeKey, idempotencyKey: createUuidV7() };
+      : {
+          scopeKey: effectiveScopeKey,
+          expectedAuthorizationId: submission.authorizationId,
+          expectedRevision: submission.authorizationRevision,
+          idempotencyKey: createUuidV7(),
+        };
     rebindAttempts.current.set(submission.submissionId, attempt);
     const updated = await execute({
       kind: "rebind-authorization",
       submissionId: submission.submissionId,
-      expectedAuthorizationId: submission.authorizationId,
-      expectedRevision: submission.authorizationRevision,
+      expectedAuthorizationId: attempt.expectedAuthorizationId,
+      expectedRevision: attempt.expectedRevision,
       replacementBilling: {
         organizationId: effectiveScope.organizationId,
         teamId: effectiveScope.teamId,
