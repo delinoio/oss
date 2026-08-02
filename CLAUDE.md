@@ -56,7 +56,6 @@ When working in a specific directory, apply the rules from that directory and al
 - `docs/project-derun.md`: Derun CLI project index.
 - `docs/project-ttl.md`: TTL compiler project index.
 - `docs/project-mpapp.md`: Expo mobile app project index.
-- `docs/project-thenv.md`: Thenv multi-component project index.
 - `docs/project-public-docs.md`: Public docs app project index.
 - `docs/project-serde-feather.md`: Serde Feather multi-crate project index.
 - `docs/cmds-ttl-language-contract.md`: TTL language syntax/type/invalidation/code-generation contract.
@@ -71,7 +70,6 @@ enum ProjectId {
   Derun = "derun",
   Ttl = "ttl",
   Mpapp = "mpapp",
-  Thenv = "thenv",
   SerdeFeather = "serde-feather",
   PublicDocs = "public-docs",
 }
@@ -84,7 +82,6 @@ enum ProjectId {
 - `derun` -> `cmds/derun`
 - `ttl` -> `cmds/ttlc`
 - `mpapp` -> `apps/mpapp`
-- `thenv` -> `cmds/thenv`, `servers/thenv`
 - `serde-feather` -> `crates/serde-feather`, `crates/serde-feather-macros`
 - `public-docs` -> `apps/public-docs`
 
@@ -93,20 +90,6 @@ enum ProjectId {
 - `cmds/ttlc` command identifiers are `build`, `check`, `explain`, and `run`.
 - `ttlc run` requires `--task` and accepts optional `--args <json>` with default `{}`.
 - `ttlc run` response payload includes `result`, `run_trace`, and root-task `cache_analysis`.
-
-### Thenv Component Contract
-
-`thenv` is a two-component project with fixed mapping:
-
-```ts
-enum ThenvComponent {
-  Cli = "cli",
-  Server = "server",
-}
-```
-
-- `Cli` -> `cmds/thenv`
-- `Server` -> `servers/thenv`
 
 ### Serde Feather Component Contract
 
@@ -150,7 +133,7 @@ enum SerdeFeatherComponent {
 
 - Apply this contract to all open/new GitHub issues.
 - Use issue titles in the format `<domain>: <description>`.
-- `<domain>` must use stable lowercase identifiers from project/domain contracts (for example: `ttl`, `nodeup`, `serde-feather`, `thenv`).
+- `<domain>` must use stable lowercase identifiers from project/domain contracts (for example: `ttl`, `nodeup`, `serde-feather`).
 - `<description>` should be concise, specific, and start with a lowercase verb phrase when possible.
 - Do not use bracket-style project prefixes like `[serde-feather]`.
 - Use the following Markdown section order for issue bodies:
@@ -168,7 +151,7 @@ enum SerdeFeatherComponent {
 - Apply this contract to newly created pull requests.
 - Pull request titles must use Conventional Commit-style format with a required scope: `<type>(<scope>): <description>`.
 - `<type>` must be an appropriate Conventional Commit type such as `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `ci`, `build`, `perf`, or `revert`.
-- `<scope>` must use a stable lowercase project, component, domain, or tooling identifier from repository contracts when one applies (for example: `ttl`, `nodeup`, `serde-feather`, `thenv`, `docs`, `ci`).
+- `<scope>` must use a stable lowercase project, component, domain, or tooling identifier from repository contracts when one applies (for example: `ttl`, `nodeup`, `serde-feather`, `docs`, `ci`).
 - `<description>` should be concise, specific, and start with a lowercase verb phrase when possible.
 - Do not create unscoped pull request titles or use bracket-style project prefixes like `[serde-feather]`.
 
@@ -298,12 +281,10 @@ Release automation baseline:
 ### Scope in This Domain
 
 - `cmds/derun`: Go tool for AI coding-agent workflow orchestration.
-- `cmds/thenv`: Secure `.env` sharing CLI.
 - `cmds/ttlc`: TTL compiler CLI for `.ttl` parsing/type-checking, Go code generation, `run` task execution, and cache-aware task execution contracts.
 
 ### Command Component Contract
 
-- `cmds/thenv` is the `Cli` component for `thenv`.
 - `cmds/ttlc` command runtime is defined in `docs/cmds-ttl-foundation.md`.
 - TTL language semantics are defined in `docs/cmds-ttl-language-contract.md`.
 
@@ -312,7 +293,7 @@ Release automation baseline:
 - Keep command boundaries explicit and documented.
 - Keep configuration schemas documented and synchronized with implementation.
 - Add enough structured logging for step-level debugging and failure diagnosis.
-- Do not log secret values for sensitive workflows (including thenv operations).
+- Do not log secret values for sensitive workflows.
 
 ### Integration Rules
 
@@ -323,7 +304,6 @@ Release automation baseline:
 
 - Run relevant Go tests (`go test`) when code in this domain changes.
 - Update `docs/project-derun.md` and `docs/cmds-derun-foundation.md` whenever derun command contracts change.
-- Update `docs/project-thenv.md` and `docs/cmds-thenv-cli-foundation.md` whenever thenv CLI operations or trust boundaries change.
 - Update `docs/project-ttl.md` and `docs/cmds-ttl-foundation.md` whenever TTL compiler command shape, cache backend, or runtime boundaries change.
 - Update `docs/project-ttl.md` and `docs/cmds-ttl-language-contract.md` whenever TTL syntax/type/invalidation/code-generation contracts change.
 
@@ -400,10 +380,6 @@ Release automation baseline:
 - Write all source and comments in English.
 - Prefer enums or typed constants over free-form strings for API contracts.
 
-### Scope in This Domain
-
-- `servers/thenv`: Backend for secure environment sharing.
-
 ### Server Language and Data Rules
 
 - Servers in this domain must be implemented in Go.
@@ -437,11 +413,6 @@ Scaffold-only service projects may start with a smaller structure (`main.go` + `
 ### Integration Rules
 
 - Changes to server interfaces must be synchronized with related CLI and app contracts.
-- Update `docs/project-thenv.md` and `docs/servers-thenv-server-foundation.md` for every thenv interface or trust model update.
-
-### Multi-Component Contract Sync
-
-- `servers/thenv` changes must keep CLI contracts synchronized.
 
 ### Testing and Validation
 
