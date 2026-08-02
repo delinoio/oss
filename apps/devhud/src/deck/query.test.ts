@@ -46,4 +46,43 @@ describe("Deck raw and visual GitHub query editing", () => {
     expect(serializeDeckQuery(parsed)).toBe('label:"release blocker"');
     expect(parseDeckQuery(serializeDeckQuery(parsed))).toEqual(parsed);
   });
+
+  it("projects canonical owner and state qualifiers into builder fields", () => {
+    const raw = "user:octocat org:delinoio is:open is:draft";
+    const parsed = parseDeckQuery(raw);
+
+    expect(parsed.clauses.map((clause) => [
+      clause.field,
+      clause.value,
+      clause.ownerQualifier,
+    ])).toEqual([
+      ["owner", "octocat", "user"],
+      ["owner", "delinoio", "org"],
+      ["state", "open", undefined],
+      ["draft", "draft", undefined],
+    ]);
+    expect(serializeDeckQuery(parsed)).toBe(raw);
+  });
+
+  it("serializes builder field changes with canonical GitHub qualifiers", () => {
+    const parsed = parseDeckQuery("repo:delinoio/oss");
+    const repository = parsed.clauses[0]!;
+    const state = updateDeckQueryClause(parsed, repository.id, {
+      ...repository,
+      field: "state",
+    });
+    expect(serializeDeckQuery(state)).toBe("is:open");
+
+    const draft = updateDeckQueryClause(state, repository.id, {
+      ...state.clauses[0]!,
+      field: "draft",
+    });
+    expect(serializeDeckQuery(draft)).toBe("is:draft");
+
+    const owner = updateDeckQueryClause(draft, repository.id, {
+      ...draft.clauses[0]!,
+      field: "owner",
+    });
+    expect(serializeDeckQuery(owner)).toBe("org:organization");
+  });
 });

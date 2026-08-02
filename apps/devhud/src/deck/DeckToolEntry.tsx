@@ -3,7 +3,6 @@ import { RefreshClientKind } from "@delinoio/devhud-deck-connect";
 import { createContext, use, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { AuthFeature, useSession } from "../auth/SessionProvider";
-import { detectApplicationPlatform } from "../runtime/platform";
 import { DeckProvider } from "./DeckProvider";
 import { DeckWorkspace } from "./DeckWorkspace";
 import {
@@ -50,20 +49,20 @@ function DeckAuthenticatedSurface({ gateway }: { readonly gateway: DeckGateway }
   );
 }
 
-export function DeckToolEntry() {
+function DeckToolEntry({
+  clientKind,
+}: {
+  readonly clientKind: RefreshClientKind.DESKTOP | RefreshClientKind.MOBILE;
+}) {
   const gateway = use(DeckGatewayContext);
   const { failure, logout, ready, session, signIn } = useSession();
   const [authRequested, setAuthRequested] = useState(false);
   const authenticated = session.status === "signed-in";
   const effectiveGateway = useMemo(
     () => authenticated && gateway === unavailableDeckGateway
-      ? new NativeDeckGateway(
-          detectApplicationPlatform(navigator.userAgent) === "mobile"
-            ? RefreshClientKind.MOBILE
-            : RefreshClientKind.DESKTOP,
-        )
+      ? new NativeDeckGateway(clientKind)
       : gateway,
-    [authenticated, gateway],
+    [authenticated, clientKind, gateway],
   );
   if (authenticated) {
     return (
@@ -104,4 +103,12 @@ export function DeckToolEntry() {
       {failure && authRequested ? <p className="error" role="alert">{failure.guidance}</p> : null}
     </article>
   );
+}
+
+export function DesktopDeckToolEntry() {
+  return <DeckToolEntry clientKind={RefreshClientKind.DESKTOP} />;
+}
+
+export function MobileDeckToolEntry() {
+  return <DeckToolEntry clientKind={RefreshClientKind.MOBILE} />;
 }

@@ -161,6 +161,36 @@ describe("Deck composable production workspace", () => {
     expect(backend.refreshView).toHaveBeenCalledTimes(1);
   });
 
+  it("disables merge confirmation while the provider mutation is pending", async () => {
+    let completeMutation: ((result: {
+      pullRequest: DeckPullRequest;
+      refreshRequired: false;
+    }) => void) | undefined;
+    const mutatePullRequest = vi.fn(() => new Promise<{
+      pullRequest: DeckPullRequest;
+      refreshRequired: false;
+    }>((resolve) => {
+      completeMutation = resolve;
+    }));
+    const backend = gateway({ mutatePullRequest });
+    const user = userEvent.setup();
+    renderDeck(backend);
+
+    await user.click(await screen.findByRole("button", { name: /Needs review/u }));
+    await user.click(await screen.findByRole("button", { name: "merge" }));
+    const confirm = screen.getByRole("button", { name: "Confirm merge" });
+    await user.click(confirm);
+
+    await waitFor(() => expect(confirm).toBeDisabled());
+    await user.click(confirm);
+    expect(mutatePullRequest).toHaveBeenCalledOnce();
+
+    completeMutation?.({ pullRequest, refreshRequired: false });
+    await waitFor(() => expect(
+      screen.queryByRole("dialog", { name: "Confirm pull request merge" }),
+    ).not.toBeInTheDocument());
+  });
+
   it("renders only server-advertised actions", async () => {
     const restrictedPullRequest = {
       ...pullRequest,

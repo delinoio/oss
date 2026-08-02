@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AuthFeature, SessionProvider, useSession } from "./auth/SessionProvider";
 import type { NativeSessionBridge } from "./auth/contracts";
-import { DeckGatewayProvider, DeckToolEntry } from "./deck/DeckToolEntry";
+import { DeckGatewayProvider, MobileDeckToolEntry } from "./deck/DeckToolEntry";
 import type { DeckGateway } from "./deck/contracts";
 import type {
   LocalStorageAdapter,
@@ -591,7 +591,7 @@ function MobileWidgets() {
 function MobileDeck() {
   return (
     <section aria-label="Deck" className="mobile-screen mobile-deck-screen">
-      <DeckToolEntry />
+      <MobileDeckToolEntry />
     </section>
   );
 }

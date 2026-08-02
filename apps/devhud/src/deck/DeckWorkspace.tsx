@@ -27,7 +27,7 @@ function defaultViewInput(billing: DeckBillingSelection | undefined): DeckViewIn
   return {
     billing: billing ?? { organizationId: "", teamId: "" },
     name: "",
-    rawQuery: "is:pr state:open",
+    rawQuery: "is:pr is:open",
     sort: DeckSort.RecentlyUpdated,
     grouping: DeckGrouping.None,
     notificationPreference: { enabled: false, transitions: [] },
@@ -521,6 +521,7 @@ function PullRequestActions({ pullRequest }: { readonly pullRequest: DeckPullReq
           <div className="button-row">
             <button
               className="danger-button"
+              disabled={state.busy}
               onClick={() => void actions.mutate(pullRequest, {
                 kind: DeckMutationKind.Merge,
                 mergeMethod,

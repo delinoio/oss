@@ -22,6 +22,7 @@ export interface DeckQueryClause {
   readonly field: DeckQueryField;
   readonly value: string;
   readonly negated: boolean;
+  readonly ownerQualifier?: "org" | "user";
 }
 
 export interface ParsedDeckQuery {
@@ -34,7 +35,22 @@ export type DeckQueryTokenPosition =
   | { readonly kind: "recognized"; readonly id: string }
   | { readonly kind: "unknown"; readonly index: number };
 
-const recognizedFields = new Set<string>(DECK_QUERY_FIELDS);
+const canonicalFields = new Set([
+  "org",
+  "user",
+  "repo",
+  "author",
+  "assignee",
+  "review-requested",
+  "team-review-requested",
+  "label",
+  "is",
+  "base",
+  "head",
+  "review",
+  "status",
+  "updated",
+]);
 const tokenPattern = /(?:[^\s"]+|"(?:\\.|[^"])*")+/gu;
 
 function unquote(value: string): string {
@@ -64,9 +80,21 @@ export function parseDeckQuery(rawQuery: string): ParsedDeckQuery {
       unknownClauses.push(source);
       return;
     }
-    const field = token.slice(0, separator);
+    const qualifier = token.slice(0, separator);
     const value = unquote(token.slice(separator + 1));
-    if (!recognizedFields.has(field) || value.length === 0) {
+    if (!canonicalFields.has(qualifier) || value.length === 0) {
+      order.push({ kind: "unknown", index: unknownClauses.length });
+      unknownClauses.push(source);
+      return;
+    }
+    const field = qualifier === "org" || qualifier === "user"
+      ? "owner"
+      : qualifier === "is" && (value === "open" || value === "closed")
+        ? "state"
+        : qualifier === "is" && value === "draft"
+          ? "draft"
+          : qualifier;
+    if (!recognizedFields.has(field)) {
       order.push({ kind: "unknown", index: unknownClauses.length });
       unknownClauses.push(source);
       return;
@@ -77,10 +105,25 @@ export function parseDeckQuery(rawQuery: string): ParsedDeckQuery {
       field: field as DeckQueryField,
       value,
       negated,
+      ...(qualifier === "org" || qualifier === "user"
+        ? { ownerQualifier: qualifier }
+        : {}),
     });
     order.push({ kind: "recognized", id });
   });
   return { clauses, unknownClauses, order };
+}
+
+const recognizedFields = new Set<string>(DECK_QUERY_FIELDS);
+
+function serializeClause(clause: DeckQueryClause): string {
+  const qualifier = clause.field === "owner"
+    ? clause.ownerQualifier ?? "org"
+    : clause.field === "state" || clause.field === "draft"
+      ? "is"
+      : clause.field;
+  const value = clause.field === "draft" ? "draft" : clause.value;
+  return `${clause.negated ? "-" : ""}${qualifier}:${quote(value)}`;
 }
 
 /**
@@ -99,11 +142,11 @@ export function serializeDeckQuery(query: ParsedDeckQuery): string {
     const clause = clausesById.get(position.id);
     return clause === undefined
       ? []
-      : [`${clause.negated ? "-" : ""}${clause.field}:${quote(clause.value)}`];
+      : [serializeClause(clause)];
   });
   for (const clause of query.clauses) {
     if (!orderedIds.has(clause.id)) {
-      tokens.push(`${clause.negated ? "-" : ""}${clause.field}:${quote(clause.value)}`);
+      tokens.push(serializeClause(clause));
     }
   }
   return tokens.join(" ");
@@ -117,7 +160,19 @@ export function updateDeckQueryClause(
   return {
     ...query,
     clauses: query.clauses.map((clause) =>
-      clause.id === id ? { ...clause, ...update } : clause,
+      clause.id === id
+        ? {
+            ...clause,
+            ...update,
+            ...(clause.field !== update.field && update.field === "owner"
+              ? { ownerQualifier: "org" as const, value: "organization" }
+              : clause.field !== update.field && update.field === "state"
+                ? { value: "open" }
+                : clause.field !== update.field && update.field === "draft"
+                  ? { value: "draft" }
+                  : {}),
+          }
+        : clause,
     ),
   };
 }

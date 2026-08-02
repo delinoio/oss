@@ -1,6 +1,6 @@
 import type { ComponentType } from "react";
 
-import { DeckToolEntry } from "../deck/DeckToolEntry";
+import { DesktopDeckToolEntry } from "../deck/DeckToolEntry";
 
 export enum ToolPlatform {
   Desktop = "desktop",
@@ -80,6 +80,6 @@ export const productionTools: readonly ToolDefinition[] = [
       ToolPlatform.Android,
     ]),
     requiredCapabilities: new Set(),
-    EntryPoint: DeckToolEntry,
+    EntryPoint: DesktopDeckToolEntry,
   }),
 ];

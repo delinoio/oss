@@ -1628,6 +1628,9 @@ jobs:
 
       - name: Build and validate PWA artifact
         if: ${{ steps.gate.outputs.run == 'true' }}
+        env:
+          DELIDEV_DEVHUD_APPLE_TEAM_ID: TESTONLY01
+          DELIDEV_DEVHUD_ANDROID_CERTIFICATE_SHA256: "00112233445566778899AABBCCDDEEFF00112233445566778899AABBCCDDEEFF"
         run: |
           pnpm --filter delidev-app build
           pnpm --filter delidev-app test:pwa
