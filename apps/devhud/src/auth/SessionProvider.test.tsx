@@ -83,6 +83,7 @@ describe("dependency-injected DevHud session provider", () => {
         status: "signed-in" as const,
         subject: "account-a",
         features: [AuthFeature.Deck],
+        offlineFeatures: [],
       })),
       start: vi.fn(async () => {
         throw "account-switch-requires-logout";
@@ -107,7 +108,7 @@ describe("dependency-injected DevHud session provider", () => {
       .fn<NativeSessionBridge["restore"]>()
       .mockResolvedValueOnce({ status: "signed-out" })
       .mockResolvedValueOnce({ status: "authenticating" })
-      .mockResolvedValueOnce({ status: "signed-in", subject: "account-a", features: [AuthFeature.Deck] });
+      .mockResolvedValueOnce({ status: "signed-in", subject: "account-a", features: [AuthFeature.Deck], offlineFeatures: [] });
     const native = bridge({ restore });
     const user = userEvent.setup();
     render(
@@ -127,9 +128,9 @@ describe("dependency-injected DevHud session provider", () => {
   it("restores the active account after incremental authorization is rejected", async () => {
     const restore = vi
       .fn<NativeSessionBridge["restore"]>()
-      .mockResolvedValueOnce({ status: "signed-in", subject: "account-a", features: [AuthFeature.Deck] })
+      .mockResolvedValueOnce({ status: "signed-in", subject: "account-a", features: [AuthFeature.Deck], offlineFeatures: [] })
       .mockRejectedValueOnce("authorization-rejected")
-      .mockResolvedValueOnce({ status: "signed-in", subject: "account-a", features: [AuthFeature.Deck] });
+      .mockResolvedValueOnce({ status: "signed-in", subject: "account-a", features: [AuthFeature.Deck], offlineFeatures: [] });
     const native = bridge({ restore });
     const user = userEvent.setup();
     render(
@@ -157,6 +158,7 @@ describe("dependency-injected DevHud session provider", () => {
         status: "signed-in" as const,
         subject: "account-a",
         features: [AuthFeature.Deck],
+        offlineFeatures: [],
       })),
       logout: vi.fn(
         () =>
@@ -205,6 +207,7 @@ describe("dependency-injected DevHud session provider", () => {
         status: "signed-in" as const,
         subject: "account-a",
         features: [AuthFeature.Deck],
+        offlineFeatures: [],
       })),
     });
     render(

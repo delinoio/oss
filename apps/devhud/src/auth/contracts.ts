@@ -10,6 +10,7 @@ export type NativeSessionSnapshot =
       readonly status: "signed-in";
       readonly subject: string;
       readonly features: readonly AuthFeature[];
+      readonly offlineFeatures: readonly AuthFeature[];
     }
   | {
       readonly status: "prior-session-offline";
@@ -126,7 +127,10 @@ export function isNativeSessionSnapshot(
     typeof value.subject === "string" &&
     value.subject.length > 0 &&
     value.subject.length <= 512 &&
-    hasValidFeatures(value)
+    hasValidFeatures(value) &&
+    "offlineFeatures" in value &&
+    hasValidFeatureList(value.offlineFeatures) &&
+    value.offlineFeatures.every((feature) => value.features.includes(feature))
   );
 }
 
@@ -134,10 +138,14 @@ function hasValidFeatures(
   value: object,
 ): value is { readonly features: readonly AuthFeature[] } {
   return "features" in value
-    && Array.isArray(value.features)
-    && value.features.length <= Object.values(AuthFeature).length
-    && value.features.every(
+    && hasValidFeatureList(value.features);
+}
+
+function hasValidFeatureList(value: unknown): value is readonly AuthFeature[] {
+  return Array.isArray(value)
+    && value.length <= Object.values(AuthFeature).length
+    && value.every(
       (feature) => feature === AuthFeature.Deck || feature === AuthFeature.RealQa,
     )
-    && new Set(value.features).size === value.features.length;
+    && new Set(value).size === value.length;
 }

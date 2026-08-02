@@ -37,6 +37,11 @@ import {
   type RealQaProductSnapshot,
 } from "./contracts";
 import { createUuidV7 } from "./uuid";
+import {
+  MAX_REALQA_PROCESS_URL_RULES,
+  validateRealQaProcessUrlRules,
+  type RealQaProcessUrlRule,
+} from "../drafts/presets";
 
 interface WorkspaceContextValue {
   readonly snapshot: RealQaProductSnapshot;
@@ -361,8 +366,14 @@ function billingScopeKey(
 }
 
 function firstPresetDraft(snapshot: RealQaProductSnapshot): RealQaPreset | null {
-  const destination = snapshot.destinations.find((candidate) => candidate.connected);
-  const definition = snapshot.definitions[0];
+  const destination = snapshot.destinations.find(
+    (candidate) => candidate.connected && snapshot.definitions.some(
+      (definition) => definition.destinationId === candidate.destinationId,
+    ),
+  );
+  const definition = snapshot.definitions.find(
+    (candidate) => candidate.destinationId === destination?.destinationId,
+  );
   const billing = snapshot.replacementBillingScopes[0];
   if (destination === undefined || definition === undefined || billing === undefined) return null;
   return {
@@ -376,8 +387,9 @@ function firstPresetDraft(snapshot: RealQaProductSnapshot): RealQaPreset | null 
     definitionId: definition.definitionId,
     labels: [],
     assignees: [],
-    milestone: "",
-    projects: [],
+    milestoneNumber: null,
+    projectNodeIds: [],
+    processUrlRules: [],
     billing: {
       organizationId: billing.organizationId,
       teamId: billing.teamId,
@@ -554,12 +566,35 @@ function PresetManagerContent() {
     (candidate) => candidate.destinationId === editing.destinationId,
   );
   const definitionOptions = snapshot.definitions;
+  const destinationDefinitionOptions = definitionOptions.filter(
+    (definition) => definition.destinationId === editing.destinationId,
+  );
+  const definitionAvailable = destinationDefinitionOptions.some(
+    (definition) => definition.definitionId === editing.definitionId,
+  );
+  const processUrlRulesValid = validateRealQaProcessUrlRules(editing.processUrlRules);
   const editingBillingScopeKey = billingScopeKey(editing.billing);
   const editingBillingScopeAvailable = snapshot.replacementBillingScopes.some(
     (scope) => billingScopeKey(scope) === editingBillingScopeKey,
   );
   const update = <K extends keyof RealQaPreset>(key: K, value: RealQaPreset[K]) =>
     setEditing((current) => current === null ? current : { ...current, [key]: value });
+  const updateProcessUrlRule = (
+    index: number,
+    changes: Partial<RealQaProcessUrlRule>,
+  ) => update(
+    "processUrlRules",
+    editing.processUrlRules.map((rule, candidateIndex) =>
+      candidateIndex === index ? { ...rule, ...changes } : rule,
+    ),
+  );
+  const moveProcessUrlRule = (index: number, offset: -1 | 1) => {
+    const target = index + offset;
+    if (target < 0 || target >= editing.processUrlRules.length) return;
+    const rules = [...editing.processUrlRules];
+    [rules[index], rules[target]] = [rules[target]!, rules[index]!];
+    update("processUrlRules", rules);
+  };
 
   return (
     <section aria-labelledby="presets-title" className="realqa-card">
@@ -581,12 +616,12 @@ function PresetManagerContent() {
         <label className="field">Capture mode<select disabled={!online} value={editing.captureMode} onChange={(event) => update("captureMode", event.target.value as CaptureMode)}>{Object.values(CaptureMode).map((mode) => <option key={mode} value={mode}>{mode}</option>)}</select></label>
         <label className="check-field"><input checked={editing.pointer === PointerInclusion.Include} disabled={!online} onChange={(event) => update("pointer", event.target.checked ? PointerInclusion.Include : PointerInclusion.Exclude)} type="checkbox" />Include pointer by default</label>
         <label className="check-field"><input checked={editing.selectorMode === RealQaSelectorMode.Dom} disabled={!online} onChange={(event) => update("selectorMode", event.target.checked ? RealQaSelectorMode.Dom : RealQaSelectorMode.Normal)} type="checkbox" />Use DOM selection by default</label>
-        <label className="field">Destination<select disabled={!online} value={editing.destinationId} onChange={(event) => update("destinationId", event.target.value)}>{snapshot.destinations.map((item) => <option key={item.destinationId} value={item.destinationId}>{item.repository}{item.connected ? "" : " (disconnected)"}</option>)}</select></label>
-        <label className="field">Template or form<select disabled={!online} value={editing.definitionId} onChange={(event) => update("definitionId", event.target.value)}>{definitionOptions.map((definition) => <option key={definition.definitionId} value={definition.definitionId}>{definition.name} · {definition.issueType}</option>)}</select></label>
+        <label className="field">Destination<select disabled={!online} value={editing.destinationId} onChange={(event) => { const destinationId = event.target.value; const definitionId = snapshot.definitions.find((definition) => definition.destinationId === destinationId)?.definitionId ?? ""; setEditing((current) => current === null ? current : { ...current, destinationId, definitionId }); }}>{snapshot.destinations.map((item) => <option key={item.destinationId} value={item.destinationId}>{item.repository}{item.connected ? "" : " (disconnected)"}</option>)}</select></label>
+        <label className="field">Template or form<select disabled={!online || destinationDefinitionOptions.length === 0} value={editing.definitionId} onChange={(event) => update("definitionId", event.target.value)}>{!definitionAvailable ? <option value="">No template available</option> : null}{destinationDefinitionOptions.map((definition) => <option key={definition.definitionId} value={definition.definitionId}>{definition.name} · {definition.issueType}</option>)}</select></label>
         <label className="field">Labels<input disabled={!online} value={csv(editing.labels)} onChange={(event) => update("labels", parseCsv(event.target.value))} /></label>
         <label className="field">Assignees<input disabled={!online} value={csv(editing.assignees)} onChange={(event) => update("assignees", parseCsv(event.target.value))} /></label>
-        <label className="field">Milestone<input disabled={!online} value={editing.milestone} onChange={(event) => update("milestone", event.target.value)} /></label>
-        <label className="field">Projects<input disabled={!online} value={csv(editing.projects)} onChange={(event) => update("projects", parseCsv(event.target.value))} /></label>
+        <label className="field">Milestone number<input disabled={!online} min={1} type="number" value={editing.milestoneNumber ?? ""} onChange={(event) => update("milestoneNumber", event.target.value === "" ? null : Number(event.target.value))} /></label>
+        <label className="field">Project node IDs<input disabled={!online} value={csv(editing.projectNodeIds)} onChange={(event) => update("projectNodeIds", parseCsv(event.target.value))} /></label>
         <label className="field">Payer / team<select disabled={!online} value={editingBillingScopeKey} onChange={(event) => { const scope = snapshot.replacementBillingScopes.find((candidate) => billingScopeKey(candidate) === event.target.value); if (scope !== undefined) update("billing", { organizationId: scope.organizationId, teamId: scope.teamId }); }}>{!editingBillingScopeAvailable ? <option disabled value={editingBillingScopeKey}>Unavailable billing scope</option> : null}{snapshot.replacementBillingScopes.map((scope) => <option key={billingScopeKey(scope)} value={billingScopeKey(scope)}>{scope.label}</option>)}</select></label>
         <div className="field">
           <span>Global shortcut</span>
@@ -622,11 +657,30 @@ function PresetManagerContent() {
           )}
         </div>
       </div>
+      <fieldset className="realqa-fields">
+        <legend>Process/title URL rules</legend>
+        {editing.processUrlRules.map((rule, index) => (
+          <div className="realqa-form-grid" key={rule.ruleId}>
+            <label className="field">Exact process name<input disabled={!online} value={rule.exactProcessName} onChange={(event) => updateProcessUrlRule(index, { exactProcessName: event.target.value })} /></label>
+            <label className="field">Safe window title pattern<input disabled={!online} value={rule.safeWindowTitlePattern} onChange={(event) => updateProcessUrlRule(index, { safeWindowTitlePattern: event.target.value })} /></label>
+            <label className="field">URL template<input disabled={!online} value={rule.urlTemplate} onChange={(event) => updateProcessUrlRule(index, { urlTemplate: event.target.value })} /></label>
+            <label className="check-field"><input checked={rule.enabled} disabled={!online} onChange={(event) => updateProcessUrlRule(index, { enabled: event.target.checked })} type="checkbox" />Enabled</label>
+            <div className="button-row">
+              <button aria-label={`Move URL rule ${index + 1} up`} className="text-button" disabled={!online || index === 0} onClick={() => moveProcessUrlRule(index, -1)} type="button">Move up</button>
+              <button aria-label={`Move URL rule ${index + 1} down`} className="text-button" disabled={!online || index === editing.processUrlRules.length - 1} onClick={() => moveProcessUrlRule(index, 1)} type="button">Move down</button>
+              <button aria-label={`Remove URL rule ${index + 1}`} className="text-button" disabled={!online} onClick={() => update("processUrlRules", editing.processUrlRules.filter((_, candidateIndex) => candidateIndex !== index))} type="button">Remove rule</button>
+            </div>
+          </div>
+        ))}
+        <button className="secondary-button" disabled={!online || editing.processUrlRules.length >= MAX_REALQA_PROCESS_URL_RULES} onClick={() => update("processUrlRules", [...editing.processUrlRules, { ruleId: createUuidV7(), exactProcessName: "", safeWindowTitlePattern: "", urlTemplate: "", enabled: true }])} type="button">Add URL rule</button>
+        {!processUrlRulesValid ? <p className="error">Every URL rule requires a bounded exact process name and valid HTTP or HTTPS template and title pattern.</p> : null}
+      </fieldset>
+      {!definitionAvailable ? <p className="error">Choose a template that belongs to the selected destination.</p> : null}
       <p className="muted" id="shortcut-limit">At most 20 active RealQA shortcuts are registered per device. Conflicts remain inactive.</p>
       <p className={editing.backgroundGrant === "active" ? "muted" : "error"}>Background storage grant: {editing.backgroundGrant}</p>
       <div className="button-row">
         <button className="secondary-button" disabled={busy || !canCreatePreset} onClick={() => void createPreset()} type="button">New preset</button>
-        <button className="primary-button" disabled={busy || !online} onClick={() => void savePreset()} type="button">Save preset</button>
+        <button className="primary-button" disabled={busy || !online || !definitionAvailable || !processUrlRulesValid} onClick={() => void savePreset()} type="button">Save preset</button>
         <button className="secondary-button" disabled={busy || !online} onClick={() => setConfirmDelete(true)} type="button">Delete preset</button>
         {destination?.connected ? <button className="secondary-button" disabled={busy || !online} onClick={() => setConfirmDisconnect(true)} type="button">Disconnect GitHub</button> : <button className="secondary-button" disabled={busy || !online || destination === undefined} onClick={() => destination === undefined ? undefined : void execute({ kind: "reconnect-destination", destinationId: destination.destinationId }, "GitHub authorization opened.")} type="button">Reconnect GitHub</button>}
       </div>
@@ -697,7 +751,11 @@ function CaptureAndReviewContent() {
   useEffect(() => titleRef.current?.focus(), [selectedDraftId]);
   if (draft === null) return <section className="realqa-card"><h2>Capture and review</h2><p>No local drafts are available.</p>{snapshot.presets.length === 0 ? <p className="muted">Create a preset before starting a draft.</p> : <><label className="field">Preset<select value={effectiveNewDraftPresetId} onChange={(event) => setNewDraftPresetId(event.target.value)}>{snapshot.presets.map((preset) => <option key={preset.presetId} value={preset.presetId}>{preset.name}</option>)}</select></label><button className="primary-button" disabled={busy || effectiveNewDraftPresetId === ""} onClick={() => void execute({ kind: "create-draft", presetId: effectiveNewDraftPresetId }, "Draft created.")} type="button">Create draft</button></>}</section>;
   const update = (changes: Partial<RealQaDraft>) => replaceDraft({ ...draft, ...changes });
-  const definition = snapshot.definitions.find((item) => item.definitionId === snapshot.presets.find((preset) => preset.presetId === draft.presetId)?.definitionId);
+  const definition = snapshot.definitions.find((item) => {
+    const preset = snapshot.presets.find((candidate) => candidate.presetId === draft.presetId);
+    return item.definitionId === preset?.definitionId
+      && item.destinationId === preset.destinationId;
+  });
   const draftWithDefaults = {
     ...draft,
     issueAnswers: issueAnswersWithDefaults(draft, definition),
@@ -751,7 +809,7 @@ function CaptureAndReviewContent() {
       {!submissionPresetAvailable ? <p className="error">This draft's preset is no longer available. Recreate the preset before starting a replacement draft.</p> : null}
       {submissionPresetAvailable && !submissionDestinationConnected ? <div className="realqa-error"><p>This preset's GitHub destination is disconnected. Reconnect before submitting.</p>{selectedDestination ? <button className="secondary-button" disabled={busy || !online} onClick={() => void execute({ kind: "reconnect-destination", destinationId: selectedDestination.destinationId }, "GitHub authorization opened.")} type="button">Reconnect GitHub</button> : null}</div> : null}
       {!requiredAnswersComplete ? <p className="error">Complete every required issue-form field before submission.</p> : null}
-      <div className="realqa-form-grid"><label className="field">Labels<input value={csv(draft.labels)} onChange={(event) => update({ labels: parseCsv(event.target.value) })} /></label><label className="field">Assignees<input value={csv(draft.assignees)} onChange={(event) => update({ assignees: parseCsv(event.target.value) })} /></label><label className="field">Milestone<input value={draft.milestone} onChange={(event) => update({ milestone: event.target.value })} /></label><label className="field">Projects<input value={csv(draft.projects)} onChange={(event) => update({ projects: parseCsv(event.target.value) })} /></label></div>
+      <div className="realqa-form-grid"><label className="field">Labels<input value={csv(draft.labels)} onChange={(event) => update({ labels: parseCsv(event.target.value) })} /></label><label className="field">Assignees<input value={csv(draft.assignees)} onChange={(event) => update({ assignees: parseCsv(event.target.value) })} /></label><label className="field">Milestone number<input min={1} type="number" value={draft.milestoneNumber ?? ""} onChange={(event) => update({ milestoneNumber: event.target.value === "" ? null : Number(event.target.value) })} /></label><label className="field">Project node IDs<input value={csv(draft.projectNodeIds)} onChange={(event) => update({ projectNodeIds: parseCsv(event.target.value) })} /></label></div>
       <p className={bodyBytes > MAX_FINAL_BODY_UTF8_BYTES ? "error" : "muted"}>{bodyBytes.toLocaleString()} / {MAX_FINAL_BODY_UTF8_BYTES.toLocaleString()} body bytes</p>
       <div className="button-row"><button className="secondary-button" disabled={busy} onClick={() => void execute({ kind: "save-draft", draft: draftWithDefaults }, "Encrypted local draft saved.")} type="button">Save draft</button><button className="danger-button" disabled={busy} onClick={() => setConfirmDraftDelete(true)} type="button">Delete draft</button><button className="primary-button" disabled={busy || !online || !submissionPresetAvailable || !submissionDestinationConnected || selectedImages.length === 0 || bodyBytes > MAX_FINAL_BODY_UTF8_BYTES || !reviewedUrl.ok || !requiredAnswersComplete || !titleValid} onClick={() => setConfirmPublic(true)} type="button">Review and submit</button></div>
       {!online ? <p className="muted">Online reauthentication is required before upload or submission.</p> : null}

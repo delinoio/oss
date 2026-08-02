@@ -1743,7 +1743,8 @@ fn tool_operating_system() -> Option<ToolOperatingSystem> {
     #[cfg(target_os = "macos")]
     return Some(ToolOperatingSystem::Macos);
     #[cfg(target_os = "windows")]
-    return Some(ToolOperatingSystem::Windows);
+    return realqa_capture::windows_operating_system_supported()
+        .then_some(ToolOperatingSystem::Windows);
     #[cfg(target_os = "linux")]
     return current_linux_tool_operating_system();
     #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]

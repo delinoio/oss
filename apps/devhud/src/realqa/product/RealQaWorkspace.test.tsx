@@ -47,8 +47,8 @@ function snapshot(
     issueAnswers: {},
     labels: ["bug"],
     assignees: ["octocat"],
-    milestone: "v1",
-    projects: ["Release"],
+    milestoneNumber: 4,
+    projectNodeIds: ["PVT_kwDORelease"],
     images: [{
       imageId,
       revision: 1,
@@ -70,6 +70,7 @@ function snapshot(
       revision: 3,
     }],
     definitions: [{
+      destinationId: "destination-1",
       definitionId: "bug-form",
       name: "Bug report",
       kind: "issue-form",
@@ -102,8 +103,15 @@ function snapshot(
       definitionId: "bug-form",
       labels: ["bug"],
       assignees: ["octocat"],
-      milestone: "v1",
-      projects: ["Release"],
+      milestoneNumber: 4,
+      projectNodeIds: ["PVT_kwDORelease"],
+      processUrlRules: [{
+        ruleId: "01900000-0000-7000-8000-000000000011",
+        exactProcessName: "DevHud",
+        safeWindowTitlePattern: "Issue ([0-9]+)",
+        urlTemplate: "https://github.com/delinoio/oss/issues/$1",
+        enabled: true,
+      }],
       billing: {
         organizationId: "01900000-0000-7000-8000-000000000008",
         teamId: "01900000-0000-7000-8000-000000000009",
@@ -460,6 +468,65 @@ describe("RealQA desktop production workspace", () => {
         },
       },
     });
+  });
+
+  it("preserves typed GitHub metadata and ordered URL rules through edits", async () => {
+    const user = userEvent.setup();
+    const gateway = new FixtureGateway(snapshot());
+    await renderWorkspace(gateway);
+
+    const processName = screen.getByLabelText("Exact process name");
+    await user.clear(processName);
+    await user.type(processName, "DevHud Preview");
+    await user.click(screen.getByRole("button", { name: "Save preset" }));
+
+    expect(gateway.actions.at(-1)).toMatchObject({
+      kind: "save-preset",
+      preset: {
+        milestoneNumber: 4,
+        projectNodeIds: ["PVT_kwDORelease"],
+        processUrlRules: [{
+          ruleId: "01900000-0000-7000-8000-000000000011",
+          exactProcessName: "DevHud Preview",
+          urlTemplate: "https://github.com/delinoio/oss/issues/$1",
+        }],
+      },
+    });
+  });
+
+  it("offers only definitions belonging to the selected destination", async () => {
+    const user = userEvent.setup();
+    const value = snapshot();
+    const definition = value.definitions[0];
+    if (definition === undefined) throw new Error("Fixture issue definition is missing.");
+    const gateway = new FixtureGateway({
+      ...value,
+      destinations: [
+        ...value.destinations,
+        {
+          destinationId: "destination-2",
+          repository: "delinoio/another-repository",
+          connected: true,
+          revision: 1,
+        },
+      ],
+      definitions: [
+        definition,
+        {
+          ...definition,
+          destinationId: "destination-2",
+          definitionId: "feature-form",
+          name: "Feature request",
+        },
+      ],
+    });
+    await renderWorkspace(gateway);
+
+    await user.selectOptions(screen.getByLabelText("Destination"), "destination-2");
+    const definitionSelect = screen.getByLabelText("Template or form");
+    expect(definitionSelect).toHaveValue("feature-form");
+    expect(within(definitionSelect).queryByRole("option", { name: /Bug report/u })).toBeNull();
+    expect(within(definitionSelect).getByRole("option", { name: /Feature request/u })).toBeVisible();
   });
 
   it("reviews editable URLs and submits only the sanitized value", async () => {

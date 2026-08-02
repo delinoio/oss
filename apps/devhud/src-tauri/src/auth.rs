@@ -64,7 +64,15 @@ impl AuthFeature {
     const fn scopes(self) -> &'static [&'static str] {
         match self {
             Self::Deck => &["deck:access"],
-            Self::RealQa => &["realqa:access"],
+            Self::RealQa => &[
+                "realqa:access",
+                "realqa:presets:read",
+                "realqa:presets:write",
+                "realqa:tracker:read",
+                "realqa:tracker:write",
+                "realqa:submissions:read",
+                "realqa:submissions:write",
+            ],
         }
     }
 
@@ -73,6 +81,8 @@ impl AuthFeature {
             Self::Deck => &["delibase:deck:forward"],
             Self::RealQa => &[
                 "delibase:realqa:forward",
+                "delibase:account:read",
+                "delibase:billing:read",
                 "delibase:usage:execute",
                 "delibase:billing:write",
             ],
@@ -379,6 +389,8 @@ pub(crate) enum SessionSnapshot {
     SignedIn {
         subject: String,
         features: BTreeSet<AuthFeature>,
+        #[serde(rename = "offlineFeatures")]
+        offline_features: BTreeSet<AuthFeature>,
     },
     PriorSessionOffline {
         features: BTreeSet<AuthFeature>,
@@ -462,6 +474,7 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
                     .union(offline_features)
                     .copied()
                     .collect(),
+                offline_features: offline_features.clone(),
             },
             SessionState::PriorSessionOffline {
                 offline_features, ..
@@ -2170,8 +2183,10 @@ mod tests {
         assert_eq!(
             realqa_query.get("scope"),
             Some(
-                &"delibase:billing:write delibase:realqa:forward delibase:usage:execute \
-                  offline_access openid profile realqa:access"
+                &"delibase:account:read delibase:billing:read delibase:billing:write \
+                  delibase:realqa:forward delibase:usage:execute offline_access openid profile \
+                  realqa:access realqa:presets:read realqa:presets:write realqa:submissions:read \
+                  realqa:submissions:write realqa:tracker:read realqa:tracker:write"
                     .to_owned()
             )
         );
@@ -2290,6 +2305,7 @@ mod tests {
             SessionSnapshot::SignedIn {
                 subject: "account-a".to_owned(),
                 features: [AuthFeature::Deck].into_iter().collect(),
+                offline_features: BTreeSet::new(),
             }
         );
         assert!(manager.memory_tokens_present());
@@ -2359,6 +2375,7 @@ mod tests {
                 features: [AuthFeature::Deck, AuthFeature::RealQa]
                     .into_iter()
                     .collect(),
+                offline_features: BTreeSet::new(),
             }
         );
         assert_eq!(
@@ -2456,6 +2473,7 @@ mod tests {
             SessionSnapshot::SignedIn {
                 subject: "account-a".to_owned(),
                 features: [AuthFeature::Deck].into_iter().collect(),
+                offline_features: BTreeSet::new(),
             }
         );
 
@@ -2475,6 +2493,7 @@ mod tests {
             SessionSnapshot::SignedIn {
                 subject: "account-a".to_owned(),
                 features: [AuthFeature::Deck].into_iter().collect(),
+                offline_features: BTreeSet::new(),
             }
         );
         assert!(manager.memory_tokens_present());
@@ -2559,6 +2578,7 @@ mod tests {
             SessionSnapshot::SignedIn {
                 subject: "account-a".to_owned(),
                 features: [AuthFeature::Deck].into_iter().collect(),
+                offline_features: BTreeSet::new(),
             }
         );
         assert_eq!(
@@ -3242,6 +3262,7 @@ mod tests {
                 SessionSnapshot::SignedIn {
                     subject: "account-a".to_owned(),
                     features: [AuthFeature::RealQa].into_iter().collect(),
+                    offline_features: BTreeSet::new(),
                 }
             );
             let migrated = &online.vault.retained.as_ref().unwrap().1;
@@ -3290,6 +3311,7 @@ mod tests {
             SessionSnapshot::SignedIn {
                 subject: "account-a".to_owned(),
                 features: [AuthFeature::Deck].into_iter().collect(),
+                offline_features: BTreeSet::new(),
             }
         );
         assert!(prior.memory_tokens_present());
@@ -3351,11 +3373,24 @@ mod tests {
                     DELIBASE_AUDIENCE.to_owned(),
                     vec!["delibase:deck:forward".to_owned()]
                 ),
-                (REALQA_AUDIENCE.to_owned(), vec!["realqa:access".to_owned()]),
+                (
+                    REALQA_AUDIENCE.to_owned(),
+                    vec![
+                        "realqa:access".to_owned(),
+                        "realqa:presets:read".to_owned(),
+                        "realqa:presets:write".to_owned(),
+                        "realqa:tracker:read".to_owned(),
+                        "realqa:tracker:write".to_owned(),
+                        "realqa:submissions:read".to_owned(),
+                        "realqa:submissions:write".to_owned(),
+                    ]
+                ),
                 (
                     DELIBASE_AUDIENCE.to_owned(),
                     vec![
                         "delibase:realqa:forward".to_owned(),
+                        "delibase:account:read".to_owned(),
+                        "delibase:billing:read".to_owned(),
                         "delibase:usage:execute".to_owned(),
                         "delibase:billing:write".to_owned(),
                     ]
@@ -3404,6 +3439,7 @@ mod tests {
                 features: [AuthFeature::Deck, AuthFeature::RealQa]
                     .into_iter()
                     .collect(),
+                offline_features: [AuthFeature::Deck].into_iter().collect(),
             }
         );
         assert_eq!(
@@ -3441,6 +3477,7 @@ mod tests {
                 features: [AuthFeature::Deck, AuthFeature::RealQa]
                     .into_iter()
                     .collect(),
+                offline_features: [AuthFeature::RealQa].into_iter().collect(),
             }
         );
         let access = prior.realqa_draft_access().unwrap();
@@ -3489,6 +3526,7 @@ mod tests {
             SessionSnapshot::SignedIn {
                 subject: "account-a".to_owned(),
                 features: [AuthFeature::RealQa].into_iter().collect(),
+                offline_features: BTreeSet::new(),
             }
         );
         assert_eq!(

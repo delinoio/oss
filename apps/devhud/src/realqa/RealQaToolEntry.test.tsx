@@ -17,6 +17,7 @@ function bridge(
       status: "signed-in" as const,
       subject: "account-1",
       features: [AuthFeature.RealQa],
+      offlineFeatures: [],
     })),
     logout: vi.fn(async () => ({ status: "signed-out" as const })),
   };
@@ -84,6 +85,7 @@ describe("RealQA authenticated entry", () => {
       status: "signed-in",
       subject: "account-1",
       features: [AuthFeature.Deck],
+      offlineFeatures: [],
     });
     render(
       <SessionProvider bridge={session}>
@@ -95,5 +97,26 @@ describe("RealQA authenticated entry", () => {
 
     expect(session.start).toHaveBeenCalledWith(AuthFeature.RealQa);
     expect(open).not.toHaveBeenCalled();
+  });
+
+  it("offers RealQA reauthentication when another feature is online", async () => {
+    const user = userEvent.setup();
+    const open = vi.fn(async () => undefined);
+    const session = bridge({
+      status: "signed-in",
+      subject: "account-1",
+      features: [AuthFeature.Deck, AuthFeature.RealQa],
+      offlineFeatures: [AuthFeature.RealQa],
+    });
+    render(
+      <SessionProvider bridge={session}>
+        <RealQaToolEntry open={open} />
+      </SessionProvider>,
+    );
+
+    expect(await screen.findByRole("button", { name: "Open RealQA" })).toBeVisible();
+    expect(screen.getByText(/limited to capture, editing, and encrypted drafts/u)).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Reauthenticate RealQA" }));
+    expect(session.start).toHaveBeenCalledWith(AuthFeature.RealQa);
   });
 });

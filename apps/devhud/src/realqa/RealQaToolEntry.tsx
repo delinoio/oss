@@ -16,6 +16,8 @@ export function RealQaToolEntry({
   const authenticated = (session.status === "prior-session-offline"
     && session.features.includes(AuthFeature.RealQa))
     || (session.status === "signed-in" && session.features.includes(AuthFeature.RealQa));
+  const realQaOffline = session.status === "signed-in"
+    && session.offlineFeatures.includes(AuthFeature.RealQa);
 
   const enter = async () => {
     setStatus("opening");
@@ -60,7 +62,7 @@ export function RealQaToolEntry({
           >
             {status === "opening" ? "Opening RealQA…" : "Open RealQA"}
           </button>
-          {session.status === "prior-session-offline" ? (
+          {session.status === "prior-session-offline" || realQaOffline ? (
             <button
               className="secondary-button"
               onClick={() => {
@@ -84,7 +86,7 @@ export function RealQaToolEntry({
           </button>
         </div>
       ) : null}
-      {session.status === "prior-session-offline" ? (
+      {session.status === "prior-session-offline" || realQaOffline ? (
         <p className="muted" role="status">
           Offline access is limited to capture, editing, and encrypted drafts for
           the previously bound account.

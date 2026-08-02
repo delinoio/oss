@@ -1,5 +1,6 @@
 import type { CaptureMode, PointerInclusion } from "../capture";
 import type { StructuredShortcut } from "../../persistence/contracts";
+import type { RealQaProcessUrlRule } from "../drafts/presets";
 
 export enum RealQaDesktopFamily {
   Macos = "macos",
@@ -92,6 +93,7 @@ export type RealQaIssueField =
     };
 
 export interface RealQaIssueDefinition {
+  readonly destinationId: string;
   readonly definitionId: string;
   readonly name: string;
   readonly kind: "markdown-template" | "issue-form";
@@ -110,8 +112,9 @@ export interface RealQaPreset {
   readonly definitionId: string;
   readonly labels: readonly string[];
   readonly assignees: readonly string[];
-  readonly milestone: string;
-  readonly projects: readonly string[];
+  readonly milestoneNumber: number | null;
+  readonly projectNodeIds: readonly string[];
+  readonly processUrlRules: readonly RealQaProcessUrlRule[];
   readonly billing: RealQaBillingScope;
   readonly backgroundGrant: "active" | "rebind-required" | "revoked";
   readonly shortcut: StructuredShortcut | null;
@@ -151,8 +154,8 @@ export interface RealQaDraft {
   readonly issueAnswers: Readonly<Record<string, readonly string[]>>;
   readonly labels: readonly string[];
   readonly assignees: readonly string[];
-  readonly milestone: string;
-  readonly projects: readonly string[];
+  readonly milestoneNumber: number | null;
+  readonly projectNodeIds: readonly string[];
   readonly images: readonly RealQaReviewImage[];
 }
 
