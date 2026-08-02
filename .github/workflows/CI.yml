@@ -1737,12 +1737,17 @@ jobs:
               - package.json
               - pnpm-lock.yaml
               - apps/devhud/package.json
+              - apps/devhud/rsbuild.config.ts
+              - apps/devhud/tsconfig.json
+              - apps/devhud/src/**
+              - apps/devhud/public/**
               - apps/devhud/realqa-extension/**
               - apps/devhud/scripts/build-realqa-extension.mjs
               - apps/devhud/scripts/build-realqa-fixtures.mjs
               - apps/devhud/src-tauri/**
               - protos/delibase/gen/go/**
               - protos/devhud-realqa/gen/go/**
+              - protos/devhud-realqa/gen/ts/**
               - servers/internal/**
               - servers/devhud-realqa/**
             safety:
@@ -1755,6 +1760,7 @@ jobs:
               - turbo.json
               - scripts/check-realqa-ci-safety.mjs
               - apps/devhud/**
+              - servers/delibase/catalog.json
               - servers/devhud-realqa/**
               - docs/project-devhud.md
               - docs/apps-devhud-foundation.md
@@ -2230,11 +2236,13 @@ jobs:
               predicate: {buildDefinition: {buildType: "https://deli.dev/realqa/ci-fixture/v1", externalParameters: {platform: ("linux/" + $arch)}}, runDetails: {builder: {id: "github-actions-ci-fixture"}}}
             }' > "realqa-${ARCH}.provenance.json"
           prefix="${RUNNER_TEMP}/realqa-${ARCH}-fixture"
+          signing_config="${RUNNER_TEMP}/realqa-${ARCH}-fixture-signing-config.json"
           cosign generate-key-pair --output-key-prefix "$prefix"
-          cosign sign-blob --yes --key "${prefix}.key" --bundle "realqa-${ARCH}.sbom.sigstore.json" "$sbom"
-          cosign verify-blob --key "${prefix}.pub" --bundle "realqa-${ARCH}.sbom.sigstore.json" "$sbom"
-          cosign sign-blob --yes --key "${prefix}.key" --bundle "realqa-${ARCH}.provenance.sigstore.json" "realqa-${ARCH}.provenance.json"
-          cosign verify-blob --key "${prefix}.pub" --bundle "realqa-${ARCH}.provenance.sigstore.json" "realqa-${ARCH}.provenance.json"
+          cosign signing-config create --out "$signing_config"
+          cosign sign-blob --yes --signing-config "$signing_config" --key "${prefix}.key" --bundle "realqa-${ARCH}.sbom.sigstore.json" "$sbom"
+          cosign verify-blob --insecure-ignore-tlog=true --key "${prefix}.pub" --bundle "realqa-${ARCH}.sbom.sigstore.json" "$sbom"
+          cosign sign-blob --yes --signing-config "$signing_config" --key "${prefix}.key" --bundle "realqa-${ARCH}.provenance.sigstore.json" "realqa-${ARCH}.provenance.json"
+          cosign verify-blob --insecure-ignore-tlog=true --key "${prefix}.pub" --bundle "realqa-${ARCH}.provenance.sigstore.json" "realqa-${ARCH}.provenance.json"
           cp "${prefix}.pub" "realqa-${ARCH}.fixture.pub"
           go test -count=1 -run TestSupplyChainDefinitionIsFixtureOnlyAndFailClosed ./servers/devhud-realqa/artifacts
 
@@ -2321,11 +2329,13 @@ jobs:
           jq -e '.fixtureOnly and (.publishable | not) and .signedHostReady and (.productionIdentityInjected | not)' "$manifest" >/dev/null
           jq -e '.spdxVersion | startswith("SPDX-")' "$sbom" >/dev/null
           prefix="${RUNNER_TEMP}/realqa-desktop-extension-fixture"
+          signing_config="${RUNNER_TEMP}/realqa-desktop-extension-fixture-signing-config.json"
           cosign generate-key-pair --output-key-prefix "$prefix"
-          cosign sign-blob --yes --key "${prefix}.key" --bundle apps/devhud/build/realqa-fixtures.sigstore.json "$manifest"
-          cosign verify-blob --key "${prefix}.pub" --bundle apps/devhud/build/realqa-fixtures.sigstore.json "$manifest"
-          cosign sign-blob --yes --key "${prefix}.key" --bundle apps/devhud/build/realqa-fixtures.sbom.sigstore.json "$sbom"
-          cosign verify-blob --key "${prefix}.pub" --bundle apps/devhud/build/realqa-fixtures.sbom.sigstore.json "$sbom"
+          cosign signing-config create --out "$signing_config"
+          cosign sign-blob --yes --signing-config "$signing_config" --key "${prefix}.key" --bundle apps/devhud/build/realqa-fixtures.sigstore.json "$manifest"
+          cosign verify-blob --insecure-ignore-tlog=true --key "${prefix}.pub" --bundle apps/devhud/build/realqa-fixtures.sigstore.json "$manifest"
+          cosign sign-blob --yes --signing-config "$signing_config" --key "${prefix}.key" --bundle apps/devhud/build/realqa-fixtures.sbom.sigstore.json "$sbom"
+          cosign verify-blob --insecure-ignore-tlog=true --key "${prefix}.pub" --bundle apps/devhud/build/realqa-fixtures.sbom.sigstore.json "$sbom"
           cp "${prefix}.pub" apps/devhud/build/realqa-fixtures.fixture.pub
 
       - name: Upload fixture-only desktop and extension artifacts
