@@ -25,6 +25,18 @@ const fn is_supported_windows_version(major: u32, build: u32) -> bool {
     major > 10 || (major == 10 && build >= WINDOWS_11_MINIMUM_BUILD)
 }
 
+#[cfg(target_os = "windows")]
+pub(super) fn operating_system_supported() -> bool {
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    {
+        return system::is_supported();
+    }
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+    {
+        false
+    }
+}
+
 const fn permission_from_support(
     supported: bool,
 ) -> Result<CapturePermission, WindowsAdapterFailure> {

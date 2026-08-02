@@ -134,6 +134,12 @@ await run(
   { cwd: repositoryRoot },
 );
 
+await run(
+  cargo,
+  ["test", "-p", "devhud", "--locked", "realqa_transport"],
+  { cwd: repositoryRoot },
+);
+
 if (process.platform === "darwin") {
   const targets = ["x86_64-apple-darwin", "aarch64-apple-darwin"];
   await run(rustup, ["target", "add", ...targets], { cwd: repositoryRoot });

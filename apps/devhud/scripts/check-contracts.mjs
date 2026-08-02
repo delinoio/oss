@@ -259,6 +259,7 @@ const expectedDesktopMainPermissions = [
   "allow-read-widget-configuration",
   "allow-hide-hud",
   "allow-show-settings",
+  "allow-show-realqa",
   "allow-get-auth-session",
   "allow-start-authentication",
   "allow-logout-authentication",
@@ -304,6 +305,12 @@ const expectedRealqaComposerPermissions = [
   "allow-realqa-load-local-draft",
   "allow-realqa-delete-local-draft",
   "allow-realqa-assert-local-draft-submission-allowed",
+  "allow-realqa-connect",
+  "allow-realqa-signed-put",
+  "allow-realqa-open-github-authorization",
+  "allow-get-auth-session",
+  "allow-start-authentication",
+  "allow-logout-authentication",
 ];
 requireCondition(
   JSON.stringify(mobileMainCapabilityJson.windows) === JSON.stringify(["main"]) &&

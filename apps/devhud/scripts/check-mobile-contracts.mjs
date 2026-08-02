@@ -345,10 +345,16 @@ requireCondition(
   "mobile runtime diagnostics must report updates as unsupported",
 );
 requireCondition(
-  /export const productionTools:\s*readonly ToolDefinition\[\]\s*=\s*\[\];/u.test(
-    productionRegistry,
-  ),
-  "production tool registration must remain empty",
+  productionRegistry.includes('toolId: "realqa"') &&
+    productionRegistry.includes(
+      "supportedPlatforms: new Set([ToolPlatform.Desktop])",
+    ) &&
+    /supportedOperatingSystems:\s*new Set\(\[\s*ToolOperatingSystem\.Macos,\s*ToolOperatingSystem\.Ubuntu,\s*ToolOperatingSystem\.Windows,\s*\]\)/u.test(
+      productionRegistry,
+    ) &&
+    !productionRegistry.includes("ToolPlatform.Ios") &&
+    !productionRegistry.includes("ToolPlatform.Android"),
+  "production RealQA registration must remain limited to macOS, Ubuntu, and Windows desktop targets",
 );
 
 const nativeFiles = [

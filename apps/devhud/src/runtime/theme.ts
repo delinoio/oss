@@ -12,6 +12,7 @@ const SESSION_CHANNEL = "devhud.session";
 
 enum SessionSignal {
   Invalidated = "invalidated",
+  Reauthenticated = "reauthenticated",
 }
 
 function isThemePreference(value: unknown): value is ThemePreference {
@@ -89,6 +90,13 @@ export function publishSessionInvalidation(): void {
   channel.close();
 }
 
+export function publishSessionReauthentication(): void {
+  if (typeof BroadcastChannel === "undefined") return;
+  const channel = new BroadcastChannel(SESSION_CHANNEL);
+  channel.postMessage(SessionSignal.Reauthenticated);
+  channel.close();
+}
+
 export function subscribeToSessionInvalidation(
   listener: () => void,
 ): () => void {
@@ -96,6 +104,17 @@ export function subscribeToSessionInvalidation(
   const channel = new BroadcastChannel(SESSION_CHANNEL);
   channel.addEventListener("message", (event: MessageEvent<unknown>) => {
     if (event.data === SessionSignal.Invalidated) listener();
+  });
+  return () => channel.close();
+}
+
+export function subscribeToSessionReauthentication(
+  listener: () => void,
+): () => void {
+  if (typeof BroadcastChannel === "undefined") return () => undefined;
+  const channel = new BroadcastChannel(SESSION_CHANNEL);
+  channel.addEventListener("message", (event: MessageEvent<unknown>) => {
+    if (event.data === SessionSignal.Reauthenticated) listener();
   });
   return () => channel.close();
 }
