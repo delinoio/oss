@@ -1453,6 +1453,54 @@ func TestSearchAppliesSortAndStopsAtGitHubWindow(t *testing.T) {
 	}
 }
 
+func TestSearchStopsAtFullFinalPage(t *testing.T) {
+	t.Parallel()
+	items := make([]map[string]any, 0, 100)
+	for number := 1; number <= 100; number++ {
+		items = append(items, map[string]any{
+			"repository_url": "https://api.github.com/repos/acme/visible",
+			"number":         number,
+			"title":          fmt.Sprintf("pull request %d", number),
+			"updated_at":     "2026-01-01T00:00:00Z",
+			"user":           map[string]any{"login": "octo"},
+			"pull_request":   map[string]any{},
+		})
+	}
+	payload, err := json.Marshal(map[string]any{
+		"total_count":        100,
+		"incomplete_results": false,
+		"items":              items,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := NewClient(&http.Client{Transport: roundTripFunc(
+		func(request *http.Request) (*http.Response, error) {
+			switch request.URL.Path {
+			case "/search/issues":
+				return jsonResponse(http.StatusOK, string(payload)), nil
+			case "/user/installations/42/repositories":
+				return jsonResponse(http.StatusOK, `{
+					"repositories":[{
+						"name":"visible",
+						"owner":{"login":"acme"},
+						"permissions":{"pull":true}
+					}]
+				}`), nil
+			default:
+				t.Fatalf("unexpected search request %s", request.URL.String())
+				return nil, nil
+			}
+		})})
+	page, err := client.SearchPullRequests(
+		context.Background(), 42, Credential{AccessToken: "ghu_viewer"},
+		"is:open", Page{Limit: 100})
+	if err != nil || len(page.PullRequests) != 100 ||
+		page.NextCursor != "" || page.Truncated {
+		t.Fatalf("full final page = %#v err=%v", page, err)
+	}
+}
+
 func TestMutationRequiresRefreshWhenResultReloadFails(t *testing.T) {
 	t.Parallel()
 	mutated := false

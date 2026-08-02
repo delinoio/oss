@@ -391,9 +391,11 @@ func (client *Client) SearchPullRequests(
 		result.PullRequests = append(result.PullRequests, pullRequest)
 	}
 	result.VisibleCount = len(result.PullRequests)
-	if len(response.Items) == limit && offset+limit < maxSearchResults {
-		result.NextCursor = encodeProviderCursor(offset + limit)
-	} else if len(response.Items) == limit {
+	nextOffset := offset + limit
+	hasMore := len(response.Items) == limit && nextOffset < response.TotalCount
+	if hasMore && nextOffset < maxSearchResults {
+		result.NextCursor = encodeProviderCursor(nextOffset)
+	} else if hasMore {
 		result.Truncated = true
 	}
 	return result, nil
