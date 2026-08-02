@@ -176,6 +176,8 @@ export interface RealQaProductSnapshot {
 }
 
 export type RealQaProductAction =
+  | { readonly kind: "connect-destination" }
+  | { readonly kind: "create-preset"; readonly preset: RealQaPreset }
   | { readonly kind: "save-preset"; readonly preset: RealQaPreset }
   | {
       readonly kind: "delete-preset";
@@ -188,6 +190,7 @@ export type RealQaProductAction =
       readonly expectedRevision: number;
     }
   | { readonly kind: "reconnect-destination"; readonly destinationId: string }
+  | { readonly kind: "create-draft"; readonly presetId: string }
   | { readonly kind: "save-draft"; readonly draft: RealQaDraft }
   | {
       readonly kind: "edit-image";

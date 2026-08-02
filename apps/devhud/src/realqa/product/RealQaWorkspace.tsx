@@ -37,7 +37,10 @@ interface WorkspaceContextValue {
   readonly status: string;
   readonly selectDraft: (draftId: string) => void;
   readonly replaceDraft: (draft: RealQaDraft) => void;
-  readonly execute: (action: RealQaProductAction, success: string) => Promise<boolean>;
+  readonly execute: (
+    action: RealQaProductAction,
+    success: string,
+  ) => Promise<RealQaProductSnapshot | null>;
   readonly clearFailure: () => void;
 }
 
@@ -112,15 +115,17 @@ function RealQaWorkspaceProvider({
           setProgress(Math.max(0, Math.min(100, next))),
         );
         setSnapshot(updated);
-        if (action.kind === "delete-draft") {
-          setSelectedDraftId(updated.drafts[0]?.draftId ?? null);
-        }
+        setSelectedDraftId((current) =>
+          current !== null && updated.drafts.some((draft) => draft.draftId === current)
+            ? current
+            : updated.drafts[0]?.draftId ?? null,
+        );
         setStatus(success);
-        return true;
+        return updated;
       } catch (error: unknown) {
         setFailure(safeFailure(error));
         setStatus("The RealQA action did not finish.");
-        return false;
+        return null;
       } finally {
         setBusy(false);
       }
@@ -204,6 +209,112 @@ function parseCsv(value: string): readonly string[] {
   return [...new Set(value.split(",").map((entry) => entry.trim()).filter(Boolean))];
 }
 
+function issueAnswersWithDefaults(
+  draft: RealQaDraft,
+  definition: RealQaProductSnapshot["definitions"][number] | undefined,
+): RealQaDraft["issueAnswers"] {
+  if (definition === undefined) return draft.issueAnswers;
+  const answers = { ...draft.issueAnswers };
+  for (const field of definition.fields) {
+    if (
+      field.kind !== "checkboxes" &&
+      answers[field.fieldId] === undefined &&
+      field.defaultValue !== ""
+    ) {
+      answers[field.fieldId] = [field.defaultValue];
+    }
+  }
+  return answers;
+}
+
+function codeFence(value: string): string {
+  const runs = value.match(/`+/gu) ?? [];
+  const longest = runs.reduce((length, run) => Math.max(length, run.length), 2);
+  return "`".repeat(longest + 1);
+}
+
+function codeSpan(value: string): string {
+  const fence = codeFence(value);
+  return value.startsWith("`") || value.endsWith("`")
+    ? `${fence} ${value} ${fence}`
+    : `${fence}${value}${fence}`;
+}
+
+function issueFormBody(
+  draft: RealQaDraft,
+  definition: RealQaProductSnapshot["definitions"][number] | undefined,
+): string {
+  if (definition === undefined) return "";
+  const answers = issueAnswersWithDefaults(draft, definition);
+  return definition.fields.map((field) => {
+    const values = answers[field.fieldId]?.filter((value) => value.trim() !== "") ?? [];
+    let content = "_No response_";
+    if (values.length > 0) {
+      if (field.kind === "checkboxes") {
+        content = values.map((value) => `- [x] ${value}`).join("\n");
+      } else if (field.kind === "textarea") {
+        content = values.join("\n");
+        if (field.renderLanguage) {
+          const fence = codeFence(content);
+          content = `${fence}${field.renderLanguage}\n${content}${content.endsWith("\n") ? "" : "\n"}${fence}`;
+        }
+      } else {
+        content = values.join(", ");
+      }
+    }
+    return `### ${field.label}\n\n${content}`;
+  }).join("\n\n");
+}
+
+export function serializeFinalIssueBody(
+  draft: RealQaDraft,
+  definition: RealQaProductSnapshot["definitions"][number] | undefined,
+): string {
+  const sections = [draft.body, issueFormBody(draft, definition)].filter(
+    (section) => section.trim() !== "",
+  );
+  const capture = ["## RealQA capture"];
+  for (const field of [...draft.environment, ...draft.dom]) {
+    const key = field.label.trim();
+    const value = field.value.trim();
+    if (key !== "" && value !== "") {
+      capture.push(`- **${key}:** ${codeSpan(value)}`);
+    }
+  }
+  if (draft.url !== "") capture.push(`- **URL:** <${draft.url}>`);
+  if (capture.length === 1) capture.push("_No capture metadata included._");
+  sections.push(capture.join("\n"));
+  const images = draft.images.filter((image) => image.selected).map((image) =>
+    `![${image.name.replaceAll("[", "\\[").replaceAll("]", "\\]")}](https://assets.realqa.deli.dev/images/${image.imageId})`,
+  );
+  if (images.length > 0) sections.push(images.join("\n\n"));
+  sections.push("<!-- realqa:submission:00000000-0000-7000-8000-000000000000 -->");
+  return `${sections.join("\n\n")}\n`;
+}
+
+function firstPresetDraft(snapshot: RealQaProductSnapshot): RealQaPreset | null {
+  const destination = snapshot.destinations[0];
+  const definition = snapshot.definitions[0];
+  if (destination === undefined || definition === undefined) return null;
+  return {
+    presetId: "",
+    revision: 0,
+    name: "New RealQA preset",
+    captureMode: CaptureMode.Region,
+    pointer: PointerInclusion.Exclude,
+    selectorMode: RealQaSelectorMode.Normal,
+    destinationId: destination.destinationId,
+    definitionId: definition.definitionId,
+    labels: [],
+    assignees: [],
+    milestone: "",
+    projects: [],
+    payer: "",
+    backgroundGrant: "rebind-required",
+    shortcut: "",
+  };
+}
+
 function PresetManager() {
   const { busy, execute, snapshot } = useWorkspace();
   const [selectedId, setSelectedId] = useState(snapshot.presets[0]?.presetId ?? "");
@@ -214,11 +325,63 @@ function PresetManager() {
   const online = snapshot.access === RealQaAccessMode.Online && snapshot.online;
   const shortcutCount = snapshot.presets.filter((preset) => preset.shortcut !== "").length;
 
+  const createFirstPreset = async () => {
+    const draft = firstPresetDraft(snapshot);
+    if (draft === null) return;
+    const updated = await execute(
+      { kind: "create-preset", preset: draft },
+      "Preset created.",
+    );
+    const created = updated?.presets[0];
+    if (created !== undefined) {
+      setSelectedId(created.presetId);
+      setEditing(created);
+    }
+  };
+
+  const savePreset = async () => {
+    if (editing === null) return;
+    const updated = await execute(
+      { kind: "save-preset", preset: editing },
+      "Preset saved.",
+    );
+    const saved = updated?.presets.find(
+      (preset) => preset.presetId === editing.presetId,
+    );
+    if (saved !== undefined) setEditing(saved);
+  };
+
   if (editing === null) {
+    const canCreate = online && firstPresetDraft(snapshot) !== null;
     return (
       <section aria-labelledby="presets-title" className="realqa-card">
         <h2 id="presets-title">Presets and destinations</h2>
-        <p>No presets are available. Connect online to create the first preset.</p>
+        <p>No presets are available.</p>
+        <div className="button-row">
+          {snapshot.destinations.length === 0 ? (
+            <button
+              className="primary-button"
+              disabled={busy || !online}
+              onClick={() => void execute(
+                { kind: "connect-destination" },
+                "GitHub authorization opened.",
+              )}
+              type="button"
+            >
+              Connect GitHub
+            </button>
+          ) : (
+            <button
+              className="primary-button"
+              disabled={busy || !canCreate}
+              onClick={() => void createFirstPreset()}
+              type="button"
+            >
+              Create first preset
+            </button>
+          )}
+        </div>
+        {!online ? <p className="muted">Connect online to create a synchronized preset.</p> : null}
       </section>
     );
   }
@@ -261,7 +424,7 @@ function PresetManager() {
       <p className="muted" id="shortcut-limit">At most 20 active RealQA shortcuts are registered per device. Conflicts remain inactive.</p>
       <p className={editing.backgroundGrant === "active" ? "muted" : "error"}>Background storage grant: {editing.backgroundGrant}</p>
       <div className="button-row">
-        <button className="primary-button" disabled={busy || !online} onClick={() => void execute({ kind: "save-preset", preset: editing }, "Preset saved.")} type="button">Save preset</button>
+        <button className="primary-button" disabled={busy || !online} onClick={() => void savePreset()} type="button">Save preset</button>
         <button className="secondary-button" disabled={busy || !online} onClick={() => setConfirmDelete(true)} type="button">Delete preset</button>
         {destination?.connected ? <button className="secondary-button" disabled={busy || !online} onClick={() => setConfirmDisconnect(true)} type="button">Disconnect GitHub</button> : <button className="secondary-button" disabled={busy || !online || destination === undefined} onClick={() => destination === undefined ? undefined : void execute({ kind: "reconnect-destination", destinationId: destination.destinationId }, "GitHub authorization opened.")} type="button">Reconnect GitHub</button>}
       </div>
@@ -305,13 +468,23 @@ function CaptureAndReview() {
   const [selection, setSelection] = useState({ x: 0, y: 0, width: 640, height: 480 });
   const [confirmDraftDelete, setConfirmDraftDelete] = useState(false);
   const [confirmPublic, setConfirmPublic] = useState(false);
+  const [newDraftPresetId, setNewDraftPresetId] = useState(snapshot.presets[0]?.presetId ?? "");
+  const effectiveNewDraftPresetId = snapshot.presets.some(
+    (preset) => preset.presetId === newDraftPresetId,
+  ) ? newDraftPresetId : snapshot.presets[0]?.presetId ?? "";
   const online = snapshot.access === RealQaAccessMode.Online && snapshot.online;
   const titleRef = useRef<HTMLInputElement>(null);
   useEffect(() => titleRef.current?.focus(), [selectedDraftId]);
-  if (draft === null) return <section className="realqa-card"><h2>Capture and review</h2><p>No local drafts are available.</p></section>;
+  if (draft === null) return <section className="realqa-card"><h2>Capture and review</h2><p>No local drafts are available.</p>{snapshot.presets.length === 0 ? <p className="muted">Create a preset before starting a draft.</p> : <><label className="field">Preset<select value={effectiveNewDraftPresetId} onChange={(event) => setNewDraftPresetId(event.target.value)}>{snapshot.presets.map((preset) => <option key={preset.presetId} value={preset.presetId}>{preset.name}</option>)}</select></label><button className="primary-button" disabled={busy || effectiveNewDraftPresetId === ""} onClick={() => void execute({ kind: "create-draft", presetId: effectiveNewDraftPresetId }, "Draft created.")} type="button">Create draft</button></>}</section>;
   const update = (changes: Partial<RealQaDraft>) => replaceDraft({ ...draft, ...changes });
   const definition = snapshot.definitions.find((item) => item.definitionId === snapshot.presets.find((preset) => preset.presetId === draft.presetId)?.definitionId);
-  const bodyBytes = new TextEncoder().encode(draft.body).byteLength;
+  const draftWithDefaults = {
+    ...draft,
+    issueAnswers: issueAnswersWithDefaults(draft, definition),
+  };
+  const bodyBytes = new TextEncoder().encode(
+    serializeFinalIssueBody(draftWithDefaults, definition),
+  ).byteLength;
   const selectedImages = draft.images.filter((image) => image.selected);
   const reviewedUrl = sanitizeCapturedUrl(draft.url);
   const submit = () => {
@@ -320,7 +493,7 @@ function CaptureAndReview() {
     void execute({
       kind: "submit",
       draft: {
-        ...draft,
+        ...draftWithDefaults,
         url: reviewedUrl.url.value,
         urlWarning: reviewedUrl.url.warning !== null,
       },
@@ -343,7 +516,7 @@ function CaptureAndReview() {
       {definition ? <fieldset className="realqa-fields"><legend>{definition.name} fields</legend>{definition.fields.map((field) => <IssueField draft={draft} field={field} key={field.fieldId} update={replaceDraft} />)}</fieldset> : null}
       <div className="realqa-form-grid"><label className="field">Labels<input value={csv(draft.labels)} onChange={(event) => update({ labels: parseCsv(event.target.value) })} /></label><label className="field">Assignees<input value={csv(draft.assignees)} onChange={(event) => update({ assignees: parseCsv(event.target.value) })} /></label><label className="field">Milestone<input value={draft.milestone} onChange={(event) => update({ milestone: event.target.value })} /></label><label className="field">Projects<input value={csv(draft.projects)} onChange={(event) => update({ projects: parseCsv(event.target.value) })} /></label></div>
       <p className={bodyBytes > MAX_FINAL_BODY_UTF8_BYTES ? "error" : "muted"}>{bodyBytes.toLocaleString()} / {MAX_FINAL_BODY_UTF8_BYTES.toLocaleString()} body bytes</p>
-      <div className="button-row"><button className="secondary-button" disabled={busy} onClick={() => void execute({ kind: "save-draft", draft }, "Encrypted local draft saved.")} type="button">Save draft</button><button className="danger-button" disabled={busy} onClick={() => setConfirmDraftDelete(true)} type="button">Delete draft</button><button className="primary-button" disabled={busy || !online || selectedImages.length === 0 || bodyBytes > MAX_FINAL_BODY_UTF8_BYTES || !reviewedUrl.ok} onClick={() => setConfirmPublic(true)} type="button">Review and submit</button></div>
+      <div className="button-row"><button className="secondary-button" disabled={busy} onClick={() => void execute({ kind: "save-draft", draft: draftWithDefaults }, "Encrypted local draft saved.")} type="button">Save draft</button><button className="danger-button" disabled={busy} onClick={() => setConfirmDraftDelete(true)} type="button">Delete draft</button><button className="primary-button" disabled={busy || !online || selectedImages.length === 0 || bodyBytes > MAX_FINAL_BODY_UTF8_BYTES || !reviewedUrl.ok} onClick={() => setConfirmPublic(true)} type="button">Review and submit</button></div>
       {!online ? <p className="muted">Online reauthentication is required before upload or submission.</p> : null}
       {confirmDraftDelete ? <Dialog title="Delete local RealQA draft" onClose={() => setConfirmDraftDelete(false)}><h2>Delete this draft?</h2><p>This immediately deletes the encrypted local draft and its raw originals. It does not delete server feature data.</p><button className="danger-button" onClick={() => { setConfirmDraftDelete(false); void execute({ kind: "delete-draft", draftId: draft.draftId, expectedRevision: draft.revision }, "Local draft deleted."); }} type="button">Delete local draft</button><button className="secondary-button" onClick={() => setConfirmDraftDelete(false)} type="button">Cancel</button></Dialog> : null}
       {confirmPublic ? <Dialog descriptionId="public-image-warning" title="Confirm public screenshots" onClose={() => setConfirmPublic(false)}><h2>Submit a new GitHub issue?</h2><p id="public-image-warning">{PUBLIC_SCREENSHOT_WARNING} This confirmation is required for every submission.</p><button aria-describedby="public-image-warning" className="primary-button" onClick={submit} type="button">Confirm and submit</button><button className="secondary-button" onClick={() => setConfirmPublic(false)} type="button">Cancel</button></Dialog> : null}

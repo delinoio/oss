@@ -4,7 +4,7 @@ import axe from "axe-core";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { CaptureMode, PointerInclusion } from "../capture";
-import { RealQaWorkspace } from "./RealQaWorkspace";
+import { RealQaWorkspace, serializeFinalIssueBody } from "./RealQaWorkspace";
 import {
   RealQaAccessMode,
   RealQaDesktopFamily,
@@ -131,6 +131,46 @@ class FixtureGateway implements RealQaProductGateway {
       const failure = this.nextFailure;
       this.nextFailure = null;
       throw failure;
+    }
+    if (action.kind === "connect-destination") {
+      return this.value;
+    }
+    if (action.kind === "create-preset") {
+      this.value = {
+        ...this.value,
+        presets: [{
+          ...action.preset,
+          presetId,
+          revision: 1,
+        }, ...this.value.presets],
+      };
+    }
+    if (action.kind === "save-preset") {
+      this.value = {
+        ...this.value,
+        presets: this.value.presets.map((preset) =>
+          preset.presetId === action.preset.presetId
+            ? { ...action.preset, revision: preset.revision + 1 }
+            : preset,
+        ),
+      };
+    }
+    if (action.kind === "create-draft") {
+      const template = snapshot().drafts[0];
+      if (template === undefined) throw new Error("Fixture draft is missing.");
+      this.value = {
+        ...this.value,
+        drafts: [{
+          ...template,
+          draftId,
+          presetId: action.presetId,
+          revision: 1,
+          title: "",
+          body: "",
+          issueAnswers: {},
+          images: [],
+        }, ...this.value.drafts],
+      };
     }
     if (action.kind === "capture") {
       this.value = {
@@ -331,6 +371,118 @@ describe("RealQA desktop production workspace", () => {
     await user.click(screen.getByRole("button", { name: "Save preset" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Reload it, compare your changes");
     expect(document.body).not.toHaveTextContent("provider response");
+  });
+
+  it("uses the refreshed preset revision for later saves and deletion", async () => {
+    const user = userEvent.setup();
+    const gateway = new FixtureGateway(snapshot());
+    await renderWorkspace(gateway);
+
+    await user.click(screen.getByRole("button", { name: "Save preset" }));
+    await waitFor(() => expect(gateway.actions).toHaveLength(1));
+    await user.click(screen.getByRole("button", { name: "Save preset" }));
+    await waitFor(() => expect(gateway.actions).toHaveLength(2));
+    expect(gateway.actions[1]).toMatchObject({
+      kind: "save-preset",
+      preset: { revision: 5 },
+    });
+
+    await user.click(screen.getByRole("button", { name: "Delete preset" }));
+    await user.click(within(screen.getByRole("dialog", { name: "Delete RealQA preset" })).getByRole("button", { name: "Delete preset" }));
+    await waitFor(() => expect(gateway.actions).toHaveLength(3));
+    expect(gateway.actions[2]).toMatchObject({
+      kind: "delete-preset",
+      expectedRevision: 6,
+    });
+  });
+
+  it("selects the next retained draft after submission removes the current draft", async () => {
+    const user = userEvent.setup();
+    const value = snapshot();
+    const first = value.drafts[0];
+    if (first === undefined) throw new Error("Fixture draft is missing.");
+    const gateway = new FixtureGateway({
+      ...value,
+      drafts: [first, { ...first, draftId: "draft-2", title: "Retained draft" }],
+    });
+    await renderWorkspace(gateway);
+
+    await user.click(screen.getByRole("button", { name: "Review and submit" }));
+    await user.click(within(screen.getByRole("dialog", { name: "Confirm public screenshots" })).getByRole("button", { name: "Confirm and submit" }));
+
+    await waitFor(() => expect(screen.getByLabelText("Draft")).toHaveValue("draft-2"));
+    expect(screen.getByLabelText("Issue title")).toHaveValue("Retained draft");
+  });
+
+  it("measures form answers and editable metadata in the serialized final body", async () => {
+    const value = snapshot();
+    const draft = value.drafts[0];
+    const definition = value.definitions[0];
+    if (draft === undefined || definition === undefined) {
+      throw new Error("Fixture content is missing.");
+    }
+    const oversized = {
+      ...draft,
+      environment: [{ id: "logs", label: "Logs", value: "x".repeat(60_000) }],
+    };
+    expect(new TextEncoder().encode(serializeFinalIssueBody(oversized, definition)).byteLength).toBeGreaterThan(60_000);
+    const gateway = new FixtureGateway({ ...value, drafts: [oversized] });
+    await renderWorkspace(gateway);
+
+    expect(screen.getByRole("button", { name: "Review and submit" })).toBeDisabled();
+    expect(screen.getByText(/60,000 body bytes/u)).toHaveClass("error");
+  });
+
+  it("materializes visible issue-form defaults in saved and submitted drafts", async () => {
+    const user = userEvent.setup();
+    const gateway = new FixtureGateway(snapshot());
+    await renderWorkspace(gateway);
+
+    expect(screen.getByLabelText("Severity")).toHaveValue("High");
+    await user.click(screen.getByRole("button", { name: "Save draft" }));
+    await waitFor(() => expect(gateway.actions.at(-1)).toMatchObject({
+      kind: "save-draft",
+      draft: { issueAnswers: { severity: ["High"] } },
+    }));
+    await user.click(screen.getByRole("button", { name: "Review and submit" }));
+    await user.click(within(screen.getByRole("dialog", { name: "Confirm public screenshots" })).getByRole("button", { name: "Confirm and submit" }));
+    await waitFor(() => expect(gateway.actions.at(-1)).toMatchObject({
+      kind: "submit",
+      draft: { issueAnswers: { severity: ["High"] } },
+    }));
+  });
+
+  it("offers first-preset creation and first-draft creation", async () => {
+    const user = userEvent.setup();
+    const value = snapshot();
+    const gateway = new FixtureGateway({ ...value, presets: [], drafts: [] });
+    await renderWorkspace(gateway);
+
+    await user.click(screen.getByRole("button", { name: "Create first preset" }));
+    await waitFor(() => expect(gateway.actions.at(-1)).toMatchObject({ kind: "create-preset" }));
+    expect(await screen.findByRole("button", { name: "Create draft" })).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "Create draft" }));
+    await waitFor(() => expect(gateway.actions.at(-1)).toMatchObject({
+      kind: "create-draft",
+      presetId,
+    }));
+    expect(await screen.findByLabelText("Issue title")).toHaveValue("");
+  });
+
+  it("offers GitHub connection when a first preset has no destination", async () => {
+    const user = userEvent.setup();
+    const value = snapshot();
+    const gateway = new FixtureGateway({
+      ...value,
+      presets: [],
+      destinations: [],
+      definitions: [],
+      drafts: [],
+    });
+    await renderWorkspace(gateway);
+
+    await user.click(screen.getByRole("button", { name: "Connect GitHub" }));
+    expect(gateway.actions.at(-1)).toEqual({ kind: "connect-destination" });
   });
 
   it("preserves distinct disconnect, draft deletion, and server feature deletion confirmations", async () => {

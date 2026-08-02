@@ -252,7 +252,7 @@ pub(crate) fn signed_put(
     let response = client()?
         .put(url)
         .header("Content-Type", request.content_type)
-        .header("x-amz-checksum-sha256", request.sha256)
+        .header("X-Realqa-Content-Sha256", request.sha256)
         .body(body)
         .send()
         .map_err(|_| RealQaTransportFailure::R2Unavailable)?;
