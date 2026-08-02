@@ -502,8 +502,8 @@ function firstPresetDraft(snapshot: RealQaProductSnapshot): RealQaPreset | null 
     selectorMode: RealQaSelectorMode.Normal,
     destinationId: destination.destinationId,
     definitionId: definition.definitionId,
-    labels: [],
-    assignees: [],
+    labels: [...definition.defaultLabels],
+    assignees: [...definition.defaultAssignees],
     milestoneNumber: null,
     projectNodeIds: [],
     processUrlRules: [],
@@ -785,7 +785,7 @@ function IssueField({ field, draft, update }: { readonly field: RealQaIssueField
   const setValues = (next: readonly string[]) => update({ ...draft, issueAnswers: { ...draft.issueAnswers, [field.fieldId]: next } });
   if (field.kind === "input") return <label className="field">{field.label}<input required={field.required} value={values[0] ?? field.defaultValue} onChange={(event) => setValues([event.target.value])} /></label>;
   if (field.kind === "textarea") return <label className="field">{field.label}{field.renderLanguage ? <span className="muted">Rendered as {field.renderLanguage}</span> : null}<textarea required={field.required} value={values[0] ?? field.defaultValue} onChange={(event) => setValues([event.target.value])} /></label>;
-  if (field.kind === "dropdown") return <label className="field">{field.label}<select multiple={field.multiple} required={field.required} value={field.multiple ? [...values] : values[0] ?? field.defaultValue} onChange={(event) => setValues([...event.currentTarget.selectedOptions].map((option) => option.value))}>{field.options.map((option) => <option key={option}>{option}</option>)}</select></label>;
+  if (field.kind === "dropdown") return <label className="field">{field.label}<select multiple={field.multiple} required={field.required} value={field.multiple ? [...values] : values[0] ?? field.defaultValue} onChange={(event) => setValues([...event.currentTarget.selectedOptions].map((option) => option.value))}>{field.multiple ? null : <option disabled={field.required} value="">Select an option</option>}{field.options.map((option) => <option key={option}>{option}</option>)}</select></label>;
   if (field.kind === "checkboxes") return <fieldset className="realqa-fields"><legend>{field.label}</legend>{field.options.map((option) => <label className="check-field" key={option.value}><input checked={values.includes(option.value)} onChange={(event) => setValues(event.target.checked ? [...values, option.value] : values.filter((value) => value !== option.value))} required={option.required || (field.required && values.length === 0)} type="checkbox" />{option.label}</label>)}</fieldset>;
   return null;
 }
@@ -877,10 +877,26 @@ function CaptureAndReviewContent() {
       publicImageConfirmation: true,
     }, "Issue submitted and the local raw draft was deleted.");
   };
+  const editImage = async (imageId: string) => {
+    const updated = await execute(
+      { kind: "edit-image", draftId: draft.draftId, imageId },
+      "Nondestructive editor opened; the encrypted raw original is unchanged.",
+    );
+    const synchronizedDraft = updated?.drafts.find(
+      (candidate) => candidate.draftId === draft.draftId,
+    );
+    if (synchronizedDraft === undefined) return;
+    replaceDraft({
+      ...synchronizedDraft,
+      ...draftWithDefaults,
+      revision: synchronizedDraft.revision,
+      images: synchronizedDraft.images,
+    });
+  };
   return (
     <section aria-labelledby="capture-review-title" className="realqa-card">
       <div className="realqa-section-heading"><div><p className="eyebrow">Local and nondestructive</p><h2 id="capture-review-title">Capture and review</h2></div><label>Draft<select onChange={(event) => selectDraft(event.target.value)} value={selectedDraftId ?? ""}>{snapshot.drafts.map((item) => <option key={item.draftId} value={item.draftId}>{item.title || "Untitled draft"}</option>)}</select></label></div>
-      <fieldset className="realqa-fields"><legend>Images ({draft.images.length})</legend><p className="muted">There is no image-count limit. Each image is limited to 25 MiB, the session to 250 MiB, and decoded input to 100 megapixels.</p><ul className="realqa-image-list">{draft.images.map((image) => <li key={image.imageId}><label className="check-field"><input checked={image.selected} onChange={(event) => update({ images: draft.images.map((candidate) => candidate.imageId === image.imageId ? { ...candidate, selected: event.target.checked } : candidate) })} type="checkbox" />{image.name} · {(image.encodedBytes / 1024).toFixed(1)} KiB · {image.uploadState}{image.uploadDeadline === null ? null : <> · upload by <time dateTime={image.uploadDeadline}>{image.uploadDeadline}</time></>}</label><button className="secondary-button" disabled={busy} onClick={() => void execute({ kind: "edit-image", draftId: draft.draftId, imageId: image.imageId }, "Nondestructive editor opened; the encrypted raw original is unchanged.")} type="button">Edit nondestructively</button>{image.uploadState === "uploading" ? <progress aria-label={`${image.name} upload progress`} max={100} value={image.uploadProgress} /> : null}</li>)}</ul></fieldset>
+      <fieldset className="realqa-fields"><legend>Images ({draft.images.length})</legend><p className="muted">There is no image-count limit. Each image is limited to 25 MiB, the session to 250 MiB, and decoded input to 100 megapixels.</p><ul className="realqa-image-list">{draft.images.map((image) => <li key={image.imageId}><label className="check-field"><input checked={image.selected} onChange={(event) => update({ images: draft.images.map((candidate) => candidate.imageId === image.imageId ? { ...candidate, selected: event.target.checked } : candidate) })} type="checkbox" />{image.name} · {(image.encodedBytes / 1024).toFixed(1)} KiB · {image.uploadState}{image.uploadDeadline === null ? null : <> · upload by <time dateTime={image.uploadDeadline}>{image.uploadDeadline}</time></>}</label><button className="secondary-button" disabled={busy} onClick={() => void editImage(image.imageId)} type="button">Edit nondestructively</button>{image.uploadState === "uploading" ? <progress aria-label={`${image.name} upload progress`} max={100} value={image.uploadProgress} /> : null}</li>)}</ul></fieldset>
       <div className="realqa-form-grid"><label className="field">Issue title<input aria-describedby={titleValid ? undefined : "realqa-title-guidance"} aria-invalid={!titleValid} ref={titleRef} value={draft.title} onChange={(event) => update({ title: event.target.value })} /></label><label className="field">Issue body<textarea value={draft.body} onChange={(event) => update({ body: event.target.value })} /></label><label className="field">Sanitized URL<input aria-invalid={!reviewedUrlValid} value={draft.url} onBlur={() => { if (reviewedUrl.ok) update({ url: reviewedUrl.url.value, urlWarning: reviewedUrl.url.warning !== null }); }} onChange={(event) => update({ url: event.target.value })} /></label></div>
       {!titleValid ? <p className="error" id="realqa-title-guidance">Enter a single-line issue title between 1 and {MAX_ISSUE_TITLE_UTF8_BYTES} UTF-8 bytes.</p> : null}
       {!reviewedUrlValid ? <p className="error" role="alert">Use an HTTP or HTTPS URL without credentials or invalid escapes.</p> : null}
@@ -1049,10 +1065,16 @@ function SubmissionLifecycle() {
       {snapshot.submissions.length === 0 ? <p>No submitted issues are retained.</p> : <><label className="field">Replacement payer<select disabled={!online || effectiveScope === undefined} value={effectiveScopeKey} onChange={(event) => setReplacementScopeKey(event.target.value)}>{snapshot.replacementBillingScopes.map((scope) => <option key={billingScopeKey(scope)} value={billingScopeKey(scope)}>{scope.label}</option>)}</select></label><ul className="realqa-submission-list">{snapshot.submissions.map((submission) => {
         const retryable = submission.state === "failed" || submission.state === "reconciling";
         const replay = submission.replay;
+        const retainedImages = submission.images.filter(
+          (image) => image.uploadState !== "removed",
+        );
+        const canDeleteSubmissionAssets = retainedImages.length > 0
+          && submission.state !== "assets-deleted"
+          && submission.state !== "deleted";
         const uploadWindowOpen = submission.images.every((image) =>
           imageUploadWindowOpen(image)
         );
-        return <li key={submission.submissionId}><h3>{submission.issueUrl ?? "Pending GitHub reconciliation"}</h3><p>State: {submission.state}</p>{submission.graceExpiresAt ? <p className="error">Public images are in billing grace until {submission.graceExpiresAt}. New submissions are blocked.</p> : null}{retryable && replay === null ? <p className="muted">Restore the retained encrypted draft before retrying reconciliation.</p> : null}{retryable && replay !== null && !uploadWindowOpen ? <p className="error">The upload window expired. Start a fresh submission from the retained draft.</p> : null}<div className="button-row">{retryable && replay !== null ? <button className="primary-button" disabled={busy || !online || !uploadWindowOpen} onClick={() => setRetryConfirmation({ submissionId: submission.submissionId, replay })} type="button">Retry reconciliation</button> : null}{submission.images.filter((image) => image.uploadState !== "removed").map((image) => <button className="secondary-button" disabled={busy || !online} key={image.imageId} onClick={() => void deleteImage(submission, image)} type="button">Delete {image.name}</button>)}<button className="secondary-button" disabled={busy || !online} onClick={() => void deleteSubmissionAssets(submission)} type="button">Delete all images</button>{submission.state === "storage-billing-grace" && submission.rebindAvailable && submission.authorizationId ? <button className="secondary-button" disabled={busy || !online || effectiveScope === undefined} onClick={() => void rebind(submission)} type="button">Rebind payer</button> : null}</div></li>;
+        return <li key={submission.submissionId}><h3>{submission.issueUrl ?? "Pending GitHub reconciliation"}</h3><p>State: {submission.state}</p>{submission.graceExpiresAt ? <p className="error">Public images are in billing grace until {submission.graceExpiresAt}. New submissions are blocked.</p> : null}{retryable && replay === null ? <p className="muted">Restore the retained encrypted draft before retrying reconciliation.</p> : null}{retryable && replay !== null && !uploadWindowOpen ? <p className="error">The upload window expired. Start a fresh submission from the retained draft.</p> : null}<div className="button-row">{retryable && replay !== null ? <button className="primary-button" disabled={busy || !online || !uploadWindowOpen} onClick={() => setRetryConfirmation({ submissionId: submission.submissionId, replay })} type="button">Retry reconciliation</button> : null}{retainedImages.map((image) => <button className="secondary-button" disabled={busy || !online} key={image.imageId} onClick={() => void deleteImage(submission, image)} type="button">Delete {image.name}</button>)}{canDeleteSubmissionAssets ? <button className="secondary-button" disabled={busy || !online} onClick={() => void deleteSubmissionAssets(submission)} type="button">Delete all images</button> : null}{submission.state === "storage-billing-grace" && submission.rebindAvailable && submission.authorizationId ? <button className="secondary-button" disabled={busy || !online || effectiveScope === undefined} onClick={() => void rebind(submission)} type="button">Rebind payer</button> : null}</div></li>;
       })}</ul></>}
       {retryConfirmation ? <Dialog descriptionId="retry-public-image-warning" title="Confirm public screenshots for retry" onClose={() => setRetryConfirmation(null)}><h2>Retry this submission?</h2><p id="retry-public-image-warning">{PUBLIC_SCREENSHOT_WARNING} This confirmation is required for every submission attempt.</p><button aria-describedby="retry-public-image-warning" className="primary-button" disabled={!retryUploadWindowOpen} onClick={retrySubmission} type="button">Confirm and retry</button><button className="secondary-button" onClick={() => setRetryConfirmation(null)} type="button">Cancel</button></Dialog> : null}
     </section>

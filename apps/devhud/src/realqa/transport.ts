@@ -47,6 +47,7 @@ export type RealQaTransportFailure =
   | "service-unavailable"
   | "r2-unavailable"
   | "github-unavailable"
+  | "provider-validation-failed"
   | "github-disconnected"
   | "stale-revision"
   | "image-too-large"

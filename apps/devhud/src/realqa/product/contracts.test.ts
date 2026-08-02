@@ -13,4 +13,13 @@ describe("RealQA typed failure guidance", () => {
       expect(guidance).not.toMatch(/request body|response body|screenshot bytes|issue body/iu);
     }
   });
+
+  it("keeps provider validation guidance distinct from GitHub availability", () => {
+    expect(realQaFailureGuidance[RealQaFailureCode.ProviderValidationFailed]).toMatch(
+      /review the labels, assignees, milestone, and form answers/iu,
+    );
+    expect(realQaFailureGuidance[RealQaFailureCode.ProviderValidationFailed]).not.toBe(
+      realQaFailureGuidance[RealQaFailureCode.GitHubUnavailable],
+    );
+  });
 });

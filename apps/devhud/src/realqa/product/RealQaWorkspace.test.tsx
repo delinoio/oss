@@ -80,6 +80,8 @@ function snapshot(
       name: "Bug report",
       kind: "issue-form",
       issueType: "Bug",
+      defaultLabels: ["triage"],
+      defaultAssignees: ["maintainer"],
       fields: [
         { fieldId: "summary", kind: "input", label: "Summary", required: true, defaultValue: "" },
         { fieldId: "logs", kind: "textarea", label: "Logs", required: false, defaultValue: "", renderLanguage: "shell" },
@@ -384,6 +386,25 @@ describe("RealQA desktop production workspace", () => {
     10_000,
   );
 
+  it("preserves unsaved draft fields when the nondestructive editor opens", async () => {
+    const user = userEvent.setup();
+    const gateway = new FixtureGateway(snapshot());
+    await renderWorkspace(gateway);
+
+    const title = screen.getByLabelText("Issue title");
+    const body = screen.getByLabelText("Issue body");
+    await user.clear(title);
+    await user.type(title, "Unsaved title");
+    await user.clear(body);
+    await user.type(body, "Unsaved body");
+    await user.click(screen.getByRole("button", { name: "Edit nondestructively" }));
+
+    await waitFor(() => {
+      expect(title).toHaveValue("Unsaved title");
+      expect(body).toHaveValue("Unsaved body");
+    });
+  });
+
   it("keeps prior-bound offline drafts editable but disables synchronized and remote actions", async () => {
     const user = userEvent.setup();
     const gateway = new FixtureGateway(snapshot(RealQaDesktopFamily.Macos, RealQaAccessMode.PriorBoundOffline));
@@ -503,6 +524,40 @@ describe("RealQA desktop production workspace", () => {
         },
       },
     }));
+  });
+
+  it("renders an explicit empty option for unanswered single-select fields", async () => {
+    const user = userEvent.setup();
+    const value = snapshot();
+    const definition = value.definitions[0];
+    const draft = value.drafts[0];
+    if (definition === undefined || draft === undefined) {
+      throw new Error("Fixture issue definition or draft is missing.");
+    }
+    const gateway = new FixtureGateway({
+      ...value,
+      definitions: [{
+        ...definition,
+        fields: definition.fields.map((field) =>
+          field.kind === "dropdown" && field.fieldId === "severity"
+            ? { ...field, options: ["High"], defaultValue: "" }
+            : field
+        ),
+      }],
+      drafts: [{
+        ...draft,
+        issueAnswers: { summary: ["Required answer"], checks: ["reproduced"] },
+      }],
+    });
+    await renderWorkspace(gateway);
+
+    const severity = screen.getByLabelText("Severity");
+    expect(severity).toHaveValue("");
+    expect(within(severity).getByRole("option", { name: "Select an option" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Review and submit" })).toBeDisabled();
+
+    await user.selectOptions(severity, "High");
+    expect(screen.getByRole("button", { name: "Review and submit" })).toBeEnabled();
   });
 
   it("blocks blank and overlong UTF-8 issue titles before submission", async () => {
@@ -1026,6 +1081,8 @@ describe("RealQA desktop production workspace", () => {
     expect(gateway.actions.at(-1)).toMatchObject({
       idempotencyKey: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u),
       preset: {
+        labels: ["triage"],
+        assignees: ["maintainer"],
         billing: {
           organizationId: "01900000-0000-7000-8000-000000000008",
           teamId: "01900000-0000-7000-8000-000000000009",
@@ -1361,6 +1418,30 @@ describe("RealQA desktop production workspace", () => {
     expect(screen.queryByRole("button", { name: "Rebind payer" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Revoke grant" })).not.toBeInTheDocument();
   });
+
+  it.each(["assets-deleted", "deleted"] as const)(
+    "hides asset deletion for terminal %s submissions",
+    async (state) => {
+      const value = snapshot();
+      const submission = value.submissions[0];
+      if (submission === undefined) throw new Error("Fixture submission is missing.");
+      const gateway = new FixtureGateway({
+        ...value,
+        submissions: [{
+          ...submission,
+          state,
+          images: submission.images.map((image) => ({
+            ...image,
+            uploadState: "removed" as const,
+          })),
+        }],
+      });
+      await renderWorkspace(gateway);
+
+      expect(screen.queryByRole("button", { name: "Delete all images" })).toBeNull();
+      expect(screen.queryByRole("button", { name: /Delete Submitted capture/u })).toBeNull();
+    },
+  );
 
   it("offers exact-scope rebind only during storage billing recovery", async () => {
     const user = userEvent.setup();

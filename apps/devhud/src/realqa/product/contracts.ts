@@ -32,6 +32,7 @@ export enum RealQaFailureCode {
   BillingRequired = "billing-required",
   R2Unavailable = "r2-unavailable",
   GitHubUnavailable = "github-unavailable",
+  ProviderValidationFailed = "provider-validation-failed",
   GitHubDisconnected = "github-disconnected",
   ImageTooLarge = "image-too-large",
   SessionTooLarge = "session-too-large",
@@ -102,6 +103,8 @@ export interface RealQaIssueDefinition {
   readonly name: string;
   readonly kind: "markdown-template" | "issue-form";
   readonly issueType: string;
+  readonly defaultLabels: readonly string[];
+  readonly defaultAssignees: readonly string[];
   readonly fields: readonly RealQaIssueField[];
 }
 
@@ -352,6 +355,8 @@ export const realQaFailureGuidance: Readonly<Record<RealQaFailureCode, string>> 
     "Screenshot storage is temporarily unavailable. The encrypted draft remains on this device.",
   [RealQaFailureCode.GitHubUnavailable]:
     "GitHub could not complete this request. RealQA will reconcile before another issue is created.",
+  [RealQaFailureCode.ProviderValidationFailed]:
+    "GitHub rejected the selected template or issue fields. Review the labels, assignees, milestone, and form answers before retrying.",
   [RealQaFailureCode.GitHubDisconnected]:
     "This GitHub connection was disconnected. Reload the workspace, then reconnect it before retrying.",
   [RealQaFailureCode.ImageTooLarge]: "An image exceeds the 25 MiB encoded limit.",
