@@ -2567,7 +2567,11 @@ async fn deck_connect(
         deck_transport::connect(request, &app.state::<auth_native::NativeAuthState>())
     })
     .await
-    .map_err(|_| deck_transport::DeckTransportFailure::ServiceUnavailable.into())?
+    .map_err(|_| {
+        deck_transport::DeckConnectFailure::from(
+            deck_transport::DeckTransportFailure::ServiceUnavailable,
+        )
+    })?
 }
 
 #[cfg(all(
