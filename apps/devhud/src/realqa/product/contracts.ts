@@ -82,7 +82,11 @@ export type RealQaIssueField =
       readonly kind: "checkboxes";
       readonly label: string;
       readonly required: boolean;
-      readonly options: readonly string[];
+      readonly options: readonly {
+        readonly value: string;
+        readonly label: string;
+        readonly required: boolean;
+      }[];
     };
 
 export interface RealQaIssueDefinition {

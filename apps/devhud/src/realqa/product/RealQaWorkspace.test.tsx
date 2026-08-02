@@ -1,10 +1,14 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import axe from "axe-core";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { CaptureMode, PointerInclusion } from "../capture";
 import { ShortcutKey, ShortcutModifier } from "../../persistence/contracts";
+import {
+  publishPersistenceReset,
+  publishSessionInvalidation,
+} from "../../runtime/theme";
 import { RealQaWorkspace, serializeFinalIssueBody } from "./RealQaWorkspace";
 import {
   RealQaAccessMode,
@@ -75,7 +79,16 @@ function snapshot(
         { fieldId: "logs", kind: "textarea", label: "Logs", required: false, defaultValue: "", renderLanguage: "shell" },
         { fieldId: "severity", kind: "dropdown", label: "Severity", required: true, multiple: false, options: ["Low", "High"], defaultValue: "High" },
         { fieldId: "browsers", kind: "dropdown", label: "Browsers", required: false, multiple: true, options: ["Chrome", "Firefox"], defaultValue: "" },
-        { fieldId: "checks", kind: "checkboxes", label: "Checks", required: true, options: ["Reproduced", "Sanitized"] },
+        {
+          fieldId: "checks",
+          kind: "checkboxes",
+          label: "Checks",
+          required: false,
+          options: [
+            { value: "reproduced", label: "Reproduced", required: true },
+            { value: "sanitized", label: "Sanitized", required: false },
+          ],
+        },
       ],
     }],
     presets: [{
@@ -357,6 +370,8 @@ describe("RealQA desktop production workspace", () => {
     expect(review).toBeDisabled();
     expect(screen.getByText(/Complete every required issue-form field/u)).toBeVisible();
     await user.type(screen.getByLabelText("Summary"), "Required answers");
+    expect(review).toBeDisabled();
+    await user.click(screen.getByLabelText("Sanitized"));
     expect(review).toBeDisabled();
     await user.click(screen.getByLabelText("Reproduced"));
 
@@ -744,6 +759,43 @@ describe("RealQA desktop production workspace", () => {
 
     expect(screen.getByText(/draft's preset is no longer available/u)).toBeVisible();
     expect(screen.getByRole("button", { name: "Review and submit" })).toBeDisabled();
+  });
+
+  it("blocks submission and offers reconnection for a retained disconnected destination", async () => {
+    const user = userEvent.setup();
+    const value = snapshot();
+    const destination = value.destinations[0];
+    if (destination === undefined) throw new Error("Fixture destination is missing.");
+    const gateway = new FixtureGateway({
+      ...value,
+      destinations: [{ ...destination, connected: false }],
+    });
+    await renderWorkspace(gateway);
+
+    expect(screen.getByText(/destination is disconnected/u)).toBeVisible();
+    expect(screen.getByRole("button", { name: "Review and submit" })).toBeDisabled();
+    const reconnect = screen.getAllByRole("button", { name: "Reconnect GitHub" }).at(-1);
+    if (reconnect === undefined) throw new Error("Reconnect action is missing.");
+    await user.click(reconnect);
+    expect(gateway.actions.at(-1)).toEqual({
+      kind: "reconnect-destination",
+      destinationId: destination.destinationId,
+    });
+  });
+
+  it.each([
+    ["session invalidation", () => publishSessionInvalidation()],
+    ["persistence reset", () => publishPersistenceReset({ status: "complete" })],
+  ])("locks rendered draft data after %s", async (_label, invalidate) => {
+    const gateway = new FixtureGateway(snapshot());
+    await renderWorkspace(gateway);
+
+    expect(screen.getAllByDisplayValue("Captured regression")).not.toHaveLength(0);
+    act(invalidate);
+
+    expect(await screen.findByRole("heading", { name: "Opening RealQA" })).toBeVisible();
+    expect(screen.getByText(/Sign in with the previously bound DeliDev account/u)).toBeVisible();
+    expect(screen.queryAllByDisplayValue("Captured regression")).toHaveLength(0);
   });
 
   it("preserves distinct disconnect, draft deletion, and server feature deletion confirmations", async () => {
