@@ -11,6 +11,7 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY protos/delibase/gen/go ./protos/delibase/gen/go
+COPY protos/devhud-deck/gen/go ./protos/devhud-deck/gen/go
 COPY protos/devhud-realqa/gen/go ./protos/devhud-realqa/gen/go
 COPY servers/internal ./servers/internal
 COPY servers/devhud-realqa ./servers/devhud-realqa

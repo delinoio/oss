@@ -6,6 +6,10 @@
 !protos/delibase/gen/
 !protos/delibase/gen/go/
 !protos/delibase/gen/go/**
+!protos/devhud-deck/
+!protos/devhud-deck/gen/
+!protos/devhud-deck/gen/go/
+!protos/devhud-deck/gen/go/**
 !protos/devhud-realqa/
 !protos/devhud-realqa/gen/
 !protos/devhud-realqa/gen/go/
