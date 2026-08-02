@@ -2,6 +2,7 @@ export const PUBLIC_SCREENSHOT_WARNING =
   "Anyone with the GitHub issue URL or an image URL can view these screenshots." as const;
 
 export const MAX_FINAL_BODY_UTF8_BYTES = 60_000 as const;
+export const MAX_ISSUE_TITLE_UTF8_BYTES = 256 as const;
 
 const UUID_V7 =
   /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;

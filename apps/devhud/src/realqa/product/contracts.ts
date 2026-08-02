@@ -104,7 +104,7 @@ export interface RealQaPreset {
   readonly assignees: readonly string[];
   readonly milestone: string;
   readonly projects: readonly string[];
-  readonly payer: string;
+  readonly billing: RealQaBillingScope;
   readonly backgroundGrant: "active" | "rebind-required" | "revoked";
   readonly shortcut: string;
 }
@@ -174,9 +174,12 @@ export interface RealQaSubmissionSummary {
   readonly replay: RealQaSubmissionReplay | null;
 }
 
-export interface RealQaBillingScopeChoice {
+export interface RealQaBillingScope {
   readonly organizationId: string;
   readonly teamId: string;
+}
+
+export interface RealQaBillingScopeChoice extends RealQaBillingScope {
   readonly label: string;
 }
 
@@ -251,11 +254,13 @@ export type RealQaProductAction =
       readonly imageId: string;
       readonly expectedSubmissionRevision: number;
       readonly expectedImageRevision: number;
+      readonly idempotencyKey: string;
     }
   | {
       readonly kind: "delete-submission-assets";
       readonly submissionId: string;
       readonly expectedSubmissionRevision: number;
+      readonly idempotencyKey: string;
     }
   | {
       readonly kind: "rebind-authorization";

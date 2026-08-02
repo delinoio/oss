@@ -41,7 +41,7 @@
     "test:deck": "pnpm --filter @delinoio/devhud-deck-connect build && vitest run src/deck",
     "test:deck:widgets": "pnpm --filter @delinoio/devhud-deck-connect build && vitest run src/deck/widgetRefresh.test.ts",
     "test:mobile": "pnpm run build && vitest run src/App.ui.test.tsx src/runtime/platform.test.ts && pnpm run check:mobile",
-    "test:realqa": "vitest run src/realqa",
+    "test:realqa": "pnpm --filter @delinoio/devhud-realqa-connect build && vitest run src/realqa",
     "test:realqa:extension": "pnpm run build:realqa:extension && vitest run realqa-extension/src/*.test.js",
     "test:realqa:native": "pnpm run check:realqa:windows && node scripts/test-realqa-native.mjs && cargo test -p devhud realqa_native_host",
     "check:realqa:package": "node scripts/build-realqa-extension.mjs --release --check",

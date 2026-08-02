@@ -376,7 +376,9 @@ pub(crate) enum SessionSnapshot {
         subject: String,
         features: BTreeSet<AuthFeature>,
     },
-    PriorSessionOffline,
+    PriorSessionOffline {
+        features: BTreeSet<AuthFeature>,
+    },
     CleanupRequired,
 }
 
@@ -392,6 +394,7 @@ enum SessionState {
     },
     PriorSessionOffline {
         account_binding: Option<String>,
+        offline_features: BTreeSet<AuthFeature>,
     },
     CleanupRequired,
 }
@@ -456,7 +459,11 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
                     .copied()
                     .collect(),
             },
-            SessionState::PriorSessionOffline { .. } => SessionSnapshot::PriorSessionOffline,
+            SessionState::PriorSessionOffline {
+                offline_features, ..
+            } => SessionSnapshot::PriorSessionOffline {
+                features: offline_features.clone(),
+            },
             SessionState::CleanupRequired => SessionSnapshot::CleanupRequired,
         }
     }
@@ -488,6 +495,7 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
                     retained.device_session_key.expose(),
                 )
                 .ok(),
+                offline_features: retained_offline_features(&retained)?,
             };
             return Ok(self.snapshot());
         }
@@ -595,6 +603,7 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
             reauthenticated_features.insert(feature);
             restored_session.get_or_insert((subject, tokens.access_token, tokens.id_token));
         }
+        offline_features = validated_offline_features(&retained, &offline_features)?;
         if let Some((subject, access_token, id_token)) = restored_session {
             self.state = SessionState::SignedIn {
                 subject,
@@ -611,6 +620,7 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
                     retained.device_session_key.expose(),
                 )
                 .ok(),
+                offline_features: offline_features.clone(),
             };
             return Ok(self.snapshot());
         }
@@ -626,6 +636,7 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
                     retained.device_session_key.expose(),
                 )
                 .ok(),
+                offline_features,
             };
             return Ok(self.snapshot());
         }
@@ -898,11 +909,9 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
                 offline_features,
                 ..
             } => (reauthenticated_features.clone(), offline_features.clone()),
-            SessionState::PriorSessionOffline { .. }
-                if retained.refresh_tokens.contains_key(&AuthFeature::RealQa) =>
-            {
-                (BTreeSet::new(), [AuthFeature::RealQa].into_iter().collect())
-            }
+            SessionState::PriorSessionOffline {
+                offline_features, ..
+            } => (BTreeSet::new(), offline_features.clone()),
             _ => (BTreeSet::new(), BTreeSet::new()),
         };
         reauthenticated_features.insert(feature);
@@ -1075,6 +1084,7 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
             }
             SessionState::PriorSessionOffline {
                 account_binding: Some(account_binding),
+                ..
             } if constant_time_equal(account_binding.as_bytes(), retained_binding.as_bytes()) => {
                 Ok(RealQaDraftAccessContext {
                     account_binding: retained_binding,
@@ -1470,6 +1480,24 @@ pub(crate) fn validate_retained_feature_binding(
         );
     }
     Ok(true)
+}
+
+fn retained_offline_features(session: &VaultSession) -> Result<BTreeSet<AuthFeature>, AuthError> {
+    let candidates = session.refresh_tokens.keys().copied().collect();
+    validated_offline_features(session, &candidates)
+}
+
+fn validated_offline_features(
+    session: &VaultSession,
+    candidates: &BTreeSet<AuthFeature>,
+) -> Result<BTreeSet<AuthFeature>, AuthError> {
+    let mut features = BTreeSet::new();
+    for feature in candidates.iter().copied() {
+        if validate_retained_feature_binding(session, feature)? {
+            features.insert(feature);
+        }
+    }
+    Ok(features)
 }
 
 fn device_session_matches_identity(
@@ -2054,6 +2082,7 @@ mod tests {
         let mut session_manager = manager(FakeTransport::default(), vault);
         session_manager.state = SessionState::PriorSessionOffline {
             account_binding: device_session_account_binding(key.expose()).ok(),
+            offline_features: [AuthFeature::RealQa].into_iter().collect(),
         };
 
         assert!(
@@ -3089,7 +3118,9 @@ mod tests {
         let mut prior = manager(FakeTransport::default(), vault);
         assert_eq!(
             prior.restore(Connectivity::Offline).unwrap(),
-            SessionSnapshot::PriorSessionOffline
+            SessionSnapshot::PriorSessionOffline {
+                features: [AuthFeature::Deck].into_iter().collect(),
+            }
         );
         assert!(matches!(
             prior.bearer_pair(AuthFeature::RealQa, NOW),
@@ -3178,7 +3209,9 @@ mod tests {
             );
             assert_eq!(
                 offline.restore_at(Connectivity::Offline, NOW).unwrap(),
-                SessionSnapshot::PriorSessionOffline
+                SessionSnapshot::PriorSessionOffline {
+                    features: BTreeSet::new(),
+                }
             );
             assert_eq!(
                 offline.realqa_draft_access(),
@@ -3502,7 +3535,9 @@ mod tests {
 
         assert_eq!(
             prior.restore_at(Connectivity::Online, NOW).unwrap(),
-            SessionSnapshot::PriorSessionOffline
+            SessionSnapshot::PriorSessionOffline {
+                features: [AuthFeature::Deck].into_iter().collect(),
+            }
         );
         assert!(!prior.memory_tokens_present());
     }
@@ -3525,7 +3560,9 @@ mod tests {
 
         assert_eq!(
             prior.restore_at(Connectivity::Online, NOW).unwrap(),
-            SessionSnapshot::PriorSessionOffline
+            SessionSnapshot::PriorSessionOffline {
+                features: [AuthFeature::Deck].into_iter().collect(),
+            }
         );
         assert!(!prior.memory_tokens_present());
         assert_eq!(
@@ -3565,7 +3602,9 @@ mod tests {
 
         assert_eq!(
             prior.restore_at(Connectivity::Online, NOW).unwrap(),
-            SessionSnapshot::PriorSessionOffline
+            SessionSnapshot::PriorSessionOffline {
+                features: [AuthFeature::RealQa].into_iter().collect(),
+            }
         );
         let access = prior.realqa_draft_access().unwrap();
         assert!(!access.online_reauthenticated);
@@ -3611,7 +3650,9 @@ mod tests {
 
         assert_eq!(
             prior.restore_at(Connectivity::Offline, NOW).unwrap(),
-            SessionSnapshot::PriorSessionOffline
+            SessionSnapshot::PriorSessionOffline {
+                features: [AuthFeature::Deck].into_iter().collect(),
+            }
         );
         assert_eq!(
             prior.realqa_draft_access(),
@@ -3634,7 +3675,9 @@ mod tests {
 
         assert_eq!(
             prior.restore_at(Connectivity::Offline, NOW).unwrap(),
-            SessionSnapshot::PriorSessionOffline
+            SessionSnapshot::PriorSessionOffline {
+                features: [AuthFeature::RealQa].into_iter().collect(),
+            }
         );
         assert!(!prior.realqa_draft_access().unwrap().online_reauthenticated);
         assert_eq!(

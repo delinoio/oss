@@ -40,7 +40,10 @@ describe("RealQA authenticated entry", () => {
   it("permits prior-bound offline entry while explaining remote restrictions", async () => {
     const user = userEvent.setup();
     const open = vi.fn(async () => undefined);
-    const session = bridge({ status: "prior-session-offline" });
+    const session = bridge({
+      status: "prior-session-offline",
+      features: [AuthFeature.RealQa],
+    });
     render(
       <SessionProvider bridge={session}>
         <RealQaToolEntry open={open} />
@@ -51,6 +54,25 @@ describe("RealQA authenticated entry", () => {
     expect(open).toHaveBeenCalledOnce();
     await user.click(screen.getByRole("button", { name: "Log out" }));
     expect(session.logout).toHaveBeenCalledOnce();
+  });
+
+  it("requires RealQA authorization for a Deck-only prior offline session", async () => {
+    const user = userEvent.setup();
+    const open = vi.fn(async () => undefined);
+    const session = bridge({
+      status: "prior-session-offline",
+      features: [AuthFeature.Deck],
+    });
+    render(
+      <SessionProvider bridge={session}>
+        <RealQaToolEntry open={open} />
+      </SessionProvider>,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "Sign in to RealQA" }));
+
+    expect(session.start).toHaveBeenCalledWith(AuthFeature.RealQa);
+    expect(open).not.toHaveBeenCalled();
   });
 
   it("requests incremental RealQA authorization for a Deck-only account", async () => {

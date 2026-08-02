@@ -90,7 +90,10 @@ function snapshot(
       assignees: ["octocat"],
       milestone: "v1",
       projects: ["Release"],
-      payer: "Acme / QA",
+      billing: {
+        organizationId: "01900000-0000-7000-8000-000000000008",
+        teamId: "01900000-0000-7000-8000-000000000009",
+      },
       backgroundGrant: "active",
       shortcut: "Control+Shift+7",
     }],
@@ -356,6 +359,34 @@ describe("RealQA desktop production workspace", () => {
     expect(review).toBeEnabled();
   });
 
+  it("blocks blank and overlong UTF-8 issue titles before submission", async () => {
+    const user = userEvent.setup();
+    const value = snapshot();
+    const definition = value.definitions[0];
+    if (definition === undefined) throw new Error("Fixture issue definition is missing.");
+    const gateway = new FixtureGateway({
+      ...value,
+      definitions: [{ ...definition, fields: [] }],
+    });
+    await renderWorkspace(gateway);
+    const title = screen.getByLabelText("Issue title");
+    const review = screen.getByRole("button", { name: "Review and submit" });
+
+    await user.clear(title);
+    await user.type(title, "   ");
+    expect(review).toBeDisabled();
+    expect(title).toHaveAttribute("aria-invalid", "true");
+
+    await user.clear(title);
+    await user.type(title, "é".repeat(129));
+    expect(review).toBeDisabled();
+    expect(screen.getByText(/between 1 and 256 UTF-8 bytes/u)).toBeVisible();
+
+    await user.clear(title);
+    await user.type(title, "é".repeat(128));
+    expect(review).toBeEnabled();
+  });
+
   it("enforces the 20-shortcut device limit without discarding preset data", async () => {
     const value = snapshot();
     const template = value.presets[0];
@@ -437,6 +468,39 @@ describe("RealQA desktop production workspace", () => {
       expectedRevision: 6,
     });
     expect(await screen.findByText("No presets are available.")).toBeVisible();
+  });
+
+  it("saves payer changes as an exact billing scope", async () => {
+    const user = userEvent.setup();
+    const value = snapshot();
+    const gateway = new FixtureGateway({
+      ...value,
+      replacementBillingScopes: [
+        ...value.replacementBillingScopes,
+        {
+          organizationId: "01900000-0000-7000-8000-000000000010",
+          teamId: "01900000-0000-7000-8000-000000000011",
+          label: "Acme / QA",
+        },
+      ],
+    });
+    await renderWorkspace(gateway);
+
+    await user.selectOptions(
+      screen.getByLabelText("Payer / team"),
+      "01900000-0000-7000-8000-000000000010/01900000-0000-7000-8000-000000000011",
+    );
+    await user.click(screen.getByRole("button", { name: "Save preset" }));
+
+    expect(gateway.actions.at(-1)).toMatchObject({
+      kind: "save-preset",
+      preset: {
+        billing: {
+          organizationId: "01900000-0000-7000-8000-000000000010",
+          teamId: "01900000-0000-7000-8000-000000000011",
+        },
+      },
+    });
   });
 
   it("selects the next retained preset after deleting the active preset", async () => {
@@ -568,6 +632,12 @@ describe("RealQA desktop production workspace", () => {
     await waitFor(() => expect(gateway.actions.at(-1)).toMatchObject({ kind: "create-preset" }));
     expect(gateway.actions.at(-1)).toMatchObject({
       idempotencyKey: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u),
+      preset: {
+        billing: {
+          organizationId: "01900000-0000-7000-8000-000000000008",
+          teamId: "01900000-0000-7000-8000-000000000009",
+        },
+      },
     });
     expect(await screen.findByRole("button", { name: "Create draft" })).toBeEnabled();
     await user.click(screen.getByRole("button", { name: "Create draft" }));
@@ -697,11 +767,13 @@ describe("RealQA desktop production workspace", () => {
       kind: "delete-image",
       expectedSubmissionRevision: 8,
       expectedImageRevision: 9,
+      idempotencyKey: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-7/u),
     });
     await user.click(screen.getByRole("button", { name: "Delete all images" }));
     expect(gateway.actions.at(-1)).toMatchObject({
       kind: "delete-submission-assets",
       expectedSubmissionRevision: 8,
+      idempotencyKey: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-7/u),
     });
     expect(screen.getByLabelText("Replacement payer")).toHaveValue(
       "01900000-0000-7000-8000-000000000008/01900000-0000-7000-8000-000000000009",
@@ -717,6 +789,42 @@ describe("RealQA desktop production workspace", () => {
       idempotencyKey: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-7/u),
     });
     expect(screen.queryByRole("button", { name: "Revoke grant" })).not.toBeInTheDocument();
+  });
+
+  it("reuses image and submission-asset deletion identities after ambiguous failures", async () => {
+    const user = userEvent.setup();
+    const gateway = new FixtureGateway(snapshot());
+    gateway.nextFailure = new RealQaProductError(RealQaFailureCode.ServiceUnavailable);
+    await renderWorkspace(gateway);
+
+    await user.click(screen.getByRole("button", { name: "Delete Submitted capture" }));
+    await screen.findByRole("alert");
+    await user.click(screen.getByRole("button", { name: "Delete Submitted capture" }));
+    await waitFor(() => expect(gateway.actions).toHaveLength(2));
+    const firstImage = gateway.actions[0] as Extract<
+      RealQaProductAction,
+      { kind: "delete-image" }
+    >;
+    const retriedImage = gateway.actions[1] as Extract<
+      RealQaProductAction,
+      { kind: "delete-image" }
+    >;
+    expect(retriedImage.idempotencyKey).toBe(firstImage.idempotencyKey);
+
+    gateway.nextFailure = new RealQaProductError(RealQaFailureCode.ServiceUnavailable);
+    await user.click(screen.getByRole("button", { name: "Delete all images" }));
+    await screen.findByRole("alert");
+    await user.click(screen.getByRole("button", { name: "Delete all images" }));
+    await waitFor(() => expect(gateway.actions).toHaveLength(4));
+    const firstAll = gateway.actions[2] as Extract<
+      RealQaProductAction,
+      { kind: "delete-submission-assets" }
+    >;
+    const retriedAll = gateway.actions[3] as Extract<
+      RealQaProductAction,
+      { kind: "delete-submission-assets" }
+    >;
+    expect(retriedAll.idempotencyKey).toBe(firstAll.idempotencyKey);
   });
 
   it("reuses the exact-scope rebind identity after an ambiguous failure", async () => {

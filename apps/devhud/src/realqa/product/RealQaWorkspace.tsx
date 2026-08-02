@@ -10,7 +10,11 @@ import {
 } from "react";
 
 import { CaptureMode, PointerInclusion } from "../capture";
-import { MAX_FINAL_BODY_UTF8_BYTES, PUBLIC_SCREENSHOT_WARNING } from "../onlineSubmission";
+import {
+  MAX_FINAL_BODY_UTF8_BYTES,
+  MAX_ISSUE_TITLE_UTF8_BYTES,
+  PUBLIC_SCREENSHOT_WARNING,
+} from "../onlineSubmission";
 import { sanitizeCapturedUrl } from "../drafts/url";
 import { Dialog } from "../../ui/Dialog";
 import {
@@ -310,10 +314,17 @@ export function serializeFinalIssueBody(
   return `${sections.join("\n\n")}\n`;
 }
 
+function billingScopeKey(
+  scope: RealQaProductSnapshot["replacementBillingScopes"][number] | RealQaPreset["billing"],
+): string {
+  return `${scope.organizationId}/${scope.teamId}`;
+}
+
 function firstPresetDraft(snapshot: RealQaProductSnapshot): RealQaPreset | null {
   const destination = snapshot.destinations[0];
   const definition = snapshot.definitions[0];
-  if (destination === undefined || definition === undefined) return null;
+  const billing = snapshot.replacementBillingScopes[0];
+  if (destination === undefined || definition === undefined || billing === undefined) return null;
   return {
     presetId: "",
     revision: 0,
@@ -327,7 +338,10 @@ function firstPresetDraft(snapshot: RealQaProductSnapshot): RealQaPreset | null 
     assignees: [],
     milestone: "",
     projects: [],
-    payer: "",
+    billing: {
+      organizationId: billing.organizationId,
+      teamId: billing.teamId,
+    },
     backgroundGrant: "rebind-required",
     shortcut: "",
   };
@@ -446,6 +460,10 @@ function PresetManager() {
     (candidate) => candidate.destinationId === editing.destinationId,
   );
   const definitionOptions = snapshot.definitions;
+  const editingBillingScopeKey = billingScopeKey(editing.billing);
+  const editingBillingScopeAvailable = snapshot.replacementBillingScopes.some(
+    (scope) => billingScopeKey(scope) === editingBillingScopeKey,
+  );
   const update = <K extends keyof RealQaPreset>(key: K, value: RealQaPreset[K]) =>
     setEditing((current) => current === null ? current : { ...current, [key]: value });
 
@@ -475,7 +493,7 @@ function PresetManager() {
         <label className="field">Assignees<input disabled={!online} value={csv(editing.assignees)} onChange={(event) => update("assignees", parseCsv(event.target.value))} /></label>
         <label className="field">Milestone<input disabled={!online} value={editing.milestone} onChange={(event) => update("milestone", event.target.value)} /></label>
         <label className="field">Projects<input disabled={!online} value={csv(editing.projects)} onChange={(event) => update("projects", parseCsv(event.target.value))} /></label>
-        <label className="field">Payer / team<input disabled={!online} value={editing.payer} onChange={(event) => update("payer", event.target.value)} /></label>
+        <label className="field">Payer / team<select disabled={!online} value={editingBillingScopeKey} onChange={(event) => { const scope = snapshot.replacementBillingScopes.find((candidate) => billingScopeKey(candidate) === event.target.value); if (scope !== undefined) update("billing", { organizationId: scope.organizationId, teamId: scope.teamId }); }}>{!editingBillingScopeAvailable ? <option disabled value={editingBillingScopeKey}>Unavailable billing scope</option> : null}{snapshot.replacementBillingScopes.map((scope) => <option key={billingScopeKey(scope)} value={billingScopeKey(scope)}>{scope.label}</option>)}</select></label>
         <label className="field">Global shortcut<input aria-describedby="shortcut-limit" disabled={!online || (editing.shortcut === "" && shortcutCount >= 20)} value={editing.shortcut} onChange={(event) => update("shortcut", event.target.value)} /></label>
       </div>
       <p className="muted" id="shortcut-limit">At most 20 active RealQA shortcuts are registered per device. Conflicts remain inactive.</p>
@@ -552,11 +570,18 @@ function CaptureAndReviewContent() {
   const bodyBytes = new TextEncoder().encode(
     serializeFinalIssueBody(draftWithDefaults, definition),
   ).byteLength;
+  const normalizedTitle = draft.title.trim();
+  const titleBytes = new TextEncoder().encode(normalizedTitle).byteLength;
+  const titleValid = normalizedTitle !== ""
+    && titleBytes <= MAX_ISSUE_TITLE_UTF8_BYTES
+    && !draft.title.includes("\0")
+    && !draft.title.includes("\r")
+    && !draft.title.includes("\n");
   const selectedImages = draft.images.filter((image) => image.selected);
   const reviewedUrl = sanitizeCapturedUrl(draft.url);
   const requiredAnswersComplete = requiredIssueAnswersComplete(draftWithDefaults, definition);
   const submit = () => {
-    if (!reviewedUrl.ok || !requiredAnswersComplete) return;
+    if (!reviewedUrl.ok || !requiredAnswersComplete || !titleValid) return;
     setConfirmPublic(false);
     void execute({
       kind: "submit",
@@ -576,7 +601,8 @@ function CaptureAndReviewContent() {
         <button className="primary-button" disabled={busy} onClick={() => void execute({ kind: "capture", draftId: draft.draftId, captureMode: mode, pointer, selectorMode: selector, selection }, "Capture added. Open an image to edit without changing its raw original.")} type="button">Capture screenshot</button>
       </fieldset>
       <fieldset className="realqa-fields"><legend>Images ({draft.images.length})</legend><p className="muted">There is no image-count limit. Each image is limited to 25 MiB, the session to 250 MiB, and decoded input to 100 megapixels.</p><ul className="realqa-image-list">{draft.images.map((image) => <li key={image.imageId}><label className="check-field"><input checked={image.selected} onChange={(event) => update({ images: draft.images.map((candidate) => candidate.imageId === image.imageId ? { ...candidate, selected: event.target.checked } : candidate) })} type="checkbox" />{image.name} · {(image.encodedBytes / 1024).toFixed(1)} KiB · {image.uploadState}</label><button className="secondary-button" disabled={busy} onClick={() => void execute({ kind: "edit-image", draftId: draft.draftId, imageId: image.imageId }, "Nondestructive editor opened; the encrypted raw original is unchanged.")} type="button">Edit nondestructively</button>{image.uploadState === "uploading" ? <progress aria-label={`${image.name} upload progress`} max={100} value={image.uploadProgress} /> : null}</li>)}</ul></fieldset>
-      <div className="realqa-form-grid"><label className="field">Issue title<input ref={titleRef} value={draft.title} onChange={(event) => update({ title: event.target.value })} /></label><label className="field">Issue body<textarea value={draft.body} onChange={(event) => update({ body: event.target.value })} /></label><label className="field">Sanitized URL<input aria-invalid={!reviewedUrl.ok} value={draft.url} onBlur={() => { if (reviewedUrl.ok) update({ url: reviewedUrl.url.value, urlWarning: reviewedUrl.url.warning !== null }); }} onChange={(event) => update({ url: event.target.value })} /></label></div>
+      <div className="realqa-form-grid"><label className="field">Issue title<input aria-describedby={titleValid ? undefined : "realqa-title-guidance"} aria-invalid={!titleValid} ref={titleRef} value={draft.title} onChange={(event) => update({ title: event.target.value })} /></label><label className="field">Issue body<textarea value={draft.body} onChange={(event) => update({ body: event.target.value })} /></label><label className="field">Sanitized URL<input aria-invalid={!reviewedUrl.ok} value={draft.url} onBlur={() => { if (reviewedUrl.ok) update({ url: reviewedUrl.url.value, urlWarning: reviewedUrl.url.warning !== null }); }} onChange={(event) => update({ url: event.target.value })} /></label></div>
+      {!titleValid ? <p className="error" id="realqa-title-guidance">Enter a single-line issue title between 1 and {MAX_ISSUE_TITLE_UTF8_BYTES} UTF-8 bytes.</p> : null}
       {!reviewedUrl.ok ? <p className="error" role="alert">Use an HTTP or HTTPS URL without credentials or invalid escapes.</p> : null}
       {draft.urlWarning ? <p role="note">This URL points to localhost or a private network. Review it before submission.</p> : null}
       <RemovableFields fields={draft.environment} legend="Environment metadata" onChange={(environment) => update({ environment })} />
@@ -585,7 +611,7 @@ function CaptureAndReviewContent() {
       {!requiredAnswersComplete ? <p className="error">Complete every required issue-form field before submission.</p> : null}
       <div className="realqa-form-grid"><label className="field">Labels<input value={csv(draft.labels)} onChange={(event) => update({ labels: parseCsv(event.target.value) })} /></label><label className="field">Assignees<input value={csv(draft.assignees)} onChange={(event) => update({ assignees: parseCsv(event.target.value) })} /></label><label className="field">Milestone<input value={draft.milestone} onChange={(event) => update({ milestone: event.target.value })} /></label><label className="field">Projects<input value={csv(draft.projects)} onChange={(event) => update({ projects: parseCsv(event.target.value) })} /></label></div>
       <p className={bodyBytes > MAX_FINAL_BODY_UTF8_BYTES ? "error" : "muted"}>{bodyBytes.toLocaleString()} / {MAX_FINAL_BODY_UTF8_BYTES.toLocaleString()} body bytes</p>
-      <div className="button-row"><button className="secondary-button" disabled={busy} onClick={() => void execute({ kind: "save-draft", draft: draftWithDefaults }, "Encrypted local draft saved.")} type="button">Save draft</button><button className="danger-button" disabled={busy} onClick={() => setConfirmDraftDelete(true)} type="button">Delete draft</button><button className="primary-button" disabled={busy || !online || selectedImages.length === 0 || bodyBytes > MAX_FINAL_BODY_UTF8_BYTES || !reviewedUrl.ok || !requiredAnswersComplete} onClick={() => setConfirmPublic(true)} type="button">Review and submit</button></div>
+      <div className="button-row"><button className="secondary-button" disabled={busy} onClick={() => void execute({ kind: "save-draft", draft: draftWithDefaults }, "Encrypted local draft saved.")} type="button">Save draft</button><button className="danger-button" disabled={busy} onClick={() => setConfirmDraftDelete(true)} type="button">Delete draft</button><button className="primary-button" disabled={busy || !online || selectedImages.length === 0 || bodyBytes > MAX_FINAL_BODY_UTF8_BYTES || !reviewedUrl.ok || !requiredAnswersComplete || !titleValid} onClick={() => setConfirmPublic(true)} type="button">Review and submit</button></div>
       {!online ? <p className="muted">Online reauthentication is required before upload or submission.</p> : null}
       {confirmDraftDelete ? <Dialog title="Delete local RealQA draft" onClose={() => setConfirmDraftDelete(false)}><h2>Delete this draft?</h2><p>This immediately deletes the encrypted local draft and its raw originals. It does not delete server feature data.</p><button className="danger-button" onClick={() => { setConfirmDraftDelete(false); void execute({ kind: "delete-draft", draftId: draft.draftId, expectedRevision: draft.revision }, "Local draft deleted."); }} type="button">Delete local draft</button><button className="secondary-button" onClick={() => setConfirmDraftDelete(false)} type="button">Cancel</button></Dialog> : null}
       {confirmPublic ? <Dialog descriptionId="public-image-warning" title="Confirm public screenshots" onClose={() => setConfirmPublic(false)}><h2>Submit a new GitHub issue?</h2><p id="public-image-warning">{PUBLIC_SCREENSHOT_WARNING} This confirmation is required for every submission.</p><button aria-describedby="public-image-warning" className="primary-button" onClick={submit} type="button">Confirm and submit</button><button className="secondary-button" onClick={() => setConfirmPublic(false)} type="button">Cancel</button></Dialog> : null}
@@ -598,12 +624,6 @@ function CaptureAndReview() {
   return <CaptureAndReviewContent key={selectedDraftId ?? "no-draft"} />;
 }
 
-function billingScopeKey(
-  scope: RealQaProductSnapshot["replacementBillingScopes"][number],
-): string {
-  return `${scope.organizationId}/${scope.teamId}`;
-}
-
 function SubmissionLifecycle() {
   const { busy, execute, snapshot } = useWorkspace();
   const [replacementScopeKey, setReplacementScopeKey] = useState(
@@ -613,6 +633,11 @@ function SubmissionLifecycle() {
   );
   const rebindAttempts = useRef(new Map<string, {
     readonly scopeKey: string;
+    readonly idempotencyKey: string;
+  }>());
+  const deletionAttempts = useRef(new Map<string, {
+    readonly expectedSubmissionRevision: number;
+    readonly expectedImageRevision: number | null;
     readonly idempotencyKey: string;
   }>());
   const effectiveScope = snapshot.replacementBillingScopes.find(
@@ -644,6 +669,54 @@ function SubmissionLifecycle() {
     if (updated !== null) rebindAttempts.current.delete(submission.submissionId);
   };
 
+  const deleteImage = async (
+    submission: RealQaProductSnapshot["submissions"][number],
+    image: RealQaProductSnapshot["submissions"][number]["images"][number],
+  ) => {
+    const attemptKey = `image/${submission.submissionId}/${image.imageId}`;
+    const pending = deletionAttempts.current.get(attemptKey);
+    const attempt = pending?.expectedSubmissionRevision === submission.revision
+      && pending.expectedImageRevision === image.revision
+      ? pending
+      : {
+          expectedSubmissionRevision: submission.revision,
+          expectedImageRevision: image.revision,
+          idempotencyKey: createUuidV7(),
+        };
+    deletionAttempts.current.set(attemptKey, attempt);
+    const updated = await execute({
+      kind: "delete-image",
+      submissionId: submission.submissionId,
+      imageId: image.imageId,
+      expectedSubmissionRevision: attempt.expectedSubmissionRevision,
+      expectedImageRevision: image.revision,
+      idempotencyKey: attempt.idempotencyKey,
+    }, "Image deleted; its public URL now returns the generic removed placeholder.");
+    if (updated !== null) deletionAttempts.current.delete(attemptKey);
+  };
+
+  const deleteSubmissionAssets = async (
+    submission: RealQaProductSnapshot["submissions"][number],
+  ) => {
+    const attemptKey = `submission/${submission.submissionId}`;
+    const pending = deletionAttempts.current.get(attemptKey);
+    const attempt = pending?.expectedSubmissionRevision === submission.revision
+      ? pending
+      : {
+          expectedSubmissionRevision: submission.revision,
+          expectedImageRevision: null,
+          idempotencyKey: createUuidV7(),
+        };
+    deletionAttempts.current.set(attemptKey, attempt);
+    const updated = await execute({
+      kind: "delete-submission-assets",
+      submissionId: submission.submissionId,
+      expectedSubmissionRevision: attempt.expectedSubmissionRevision,
+      idempotencyKey: attempt.idempotencyKey,
+    }, "All submission images were deleted.");
+    if (updated !== null) deletionAttempts.current.delete(attemptKey);
+  };
+
   return (
     <section aria-labelledby="submission-lifecycle-title" className="realqa-card"><p className="eyebrow">Retained references only</p><h2 id="submission-lifecycle-title">Submissions and storage</h2>
       {snapshot.submissions.length === 0 ? <p>No submitted issues are retained.</p> : <><label className="field">Replacement payer<select disabled={!online || effectiveScope === undefined} value={effectiveScopeKey} onChange={(event) => setReplacementScopeKey(event.target.value)}>{snapshot.replacementBillingScopes.map((scope) => <option key={billingScopeKey(scope)} value={billingScopeKey(scope)}>{scope.label}</option>)}</select></label><ul className="realqa-submission-list">{snapshot.submissions.map((submission) => {
@@ -656,7 +729,7 @@ function SubmissionLifecycle() {
           idempotencyKey: replay.idempotencyKey,
           originalDraft: replay.originalDraft,
           publicImageConfirmation: true,
-        }, "Submission reconciled with its original identity.")} type="button">Retry reconciliation</button> : null}{submission.images.filter((image) => image.uploadState !== "removed").map((image) => <button className="secondary-button" disabled={busy || !online} key={image.imageId} onClick={() => void execute({ kind: "delete-image", submissionId: submission.submissionId, imageId: image.imageId, expectedSubmissionRevision: submission.revision, expectedImageRevision: image.revision }, "Image deleted; its public URL now returns the generic removed placeholder.")} type="button">Delete {image.name}</button>)}<button className="secondary-button" disabled={busy || !online} onClick={() => void execute({ kind: "delete-submission-assets", submissionId: submission.submissionId, expectedSubmissionRevision: submission.revision }, "All submission images were deleted.")} type="button">Delete all images</button>{submission.authorizationId ? <button className="secondary-button" disabled={busy || !online || effectiveScope === undefined} onClick={() => void rebind(submission)} type="button">Rebind payer</button> : null}</div></li>;
+        }, "Submission reconciled with its original identity.")} type="button">Retry reconciliation</button> : null}{submission.images.filter((image) => image.uploadState !== "removed").map((image) => <button className="secondary-button" disabled={busy || !online} key={image.imageId} onClick={() => void deleteImage(submission, image)} type="button">Delete {image.name}</button>)}<button className="secondary-button" disabled={busy || !online} onClick={() => void deleteSubmissionAssets(submission)} type="button">Delete all images</button>{submission.authorizationId ? <button className="secondary-button" disabled={busy || !online || effectiveScope === undefined} onClick={() => void rebind(submission)} type="button">Rebind payer</button> : null}</div></li>;
       })}</ul></>}
     </section>
   );
