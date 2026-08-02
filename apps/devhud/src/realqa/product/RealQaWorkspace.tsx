@@ -21,6 +21,7 @@ import { Dialog } from "../../ui/Dialog";
 import {
   subscribeToPersistenceReset,
   subscribeToSessionInvalidation,
+  subscribeToSessionReauthentication,
 } from "../../runtime/theme";
 import { shortcutFromKeyboardInput, shortcutLabel } from "../../ui/SettingsPanel";
 import {
@@ -87,6 +88,7 @@ function RealQaWorkspaceProvider({
   const [progress, setProgress] = useState(0);
   const [failure, setFailure] = useState<RealQaFailureCode | null>(null);
   const [status, setStatus] = useState("Loading RealQA…");
+  const [loadRevision, setLoadRevision] = useState(0);
   const lifecycleRevision = useRef(0);
 
   useEffect(() => {
@@ -108,7 +110,7 @@ function RealQaWorkspaceProvider({
     return () => {
       active = false;
     };
-  }, [gateway]);
+  }, [gateway, loadRevision]);
 
   useEffect(() => {
     const invalidate = () => {
@@ -122,9 +124,15 @@ function RealQaWorkspaceProvider({
     };
     const unsubscribeReset = subscribeToPersistenceReset(invalidate);
     const unsubscribeSession = subscribeToSessionInvalidation(invalidate);
+    const unsubscribeReauthentication = subscribeToSessionReauthentication(() => {
+      setFailure(null);
+      setStatus("Loading RealQA…");
+      setLoadRevision((revision) => revision + 1);
+    });
     return () => {
       unsubscribeReset();
       unsubscribeSession();
+      unsubscribeReauthentication();
     };
   }, []);
 
@@ -399,9 +407,14 @@ function firstPresetDraft(snapshot: RealQaProductSnapshot): RealQaPreset | null 
   };
 }
 
-function PresetManagerContent() {
+function PresetManagerContent({
+  selectedId,
+  setSelectedId,
+}: {
+  readonly selectedId: string;
+  readonly setSelectedId: (presetId: string) => void;
+}) {
   const { busy, execute, snapshot } = useWorkspace();
-  const [selectedId, setSelectedId] = useState(snapshot.presets[0]?.presetId ?? "");
   const selected = snapshot.presets.find((preset) => preset.presetId === selectedId) ?? null;
   const [editing, setEditing] = useState<RealQaPreset | null>(selected);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -424,13 +437,16 @@ function PresetManagerContent() {
   const createPreset = async () => {
     const draft = firstPresetDraft(snapshot);
     if (draft === null) return;
+    const existingPresetIds = new Set(snapshot.presets.map((preset) => preset.presetId));
     const idempotencyKey = createAttempt.current ?? createUuidV7();
     createAttempt.current = idempotencyKey;
     const updated = await execute(
       { kind: "create-preset", preset: draft, idempotencyKey },
       "Preset created.",
     );
-    const created = updated?.presets[0];
+    const created = updated?.presets.find(
+      (preset) => !existingPresetIds.has(preset.presetId),
+    );
     if (created !== undefined) {
       createAttempt.current = null;
       setSelectedId(created.presetId);
@@ -676,11 +692,12 @@ function PresetManagerContent() {
         {!processUrlRulesValid ? <p className="error">Every URL rule requires a bounded exact process name and valid HTTP or HTTPS template and title pattern.</p> : null}
       </fieldset>
       {!definitionAvailable ? <p className="error">Choose a template that belongs to the selected destination.</p> : null}
+      {!editingBillingScopeAvailable ? <p className="error">Choose an available payer / team before saving this preset.</p> : null}
       <p className="muted" id="shortcut-limit">At most 20 active RealQA shortcuts are registered per device. Conflicts remain inactive.</p>
       <p className={editing.backgroundGrant === "active" ? "muted" : "error"}>Background storage grant: {editing.backgroundGrant}</p>
       <div className="button-row">
         <button className="secondary-button" disabled={busy || !canCreatePreset} onClick={() => void createPreset()} type="button">New preset</button>
-        <button className="primary-button" disabled={busy || !online || !definitionAvailable || !processUrlRulesValid} onClick={() => void savePreset()} type="button">Save preset</button>
+        <button className="primary-button" disabled={busy || !online || !definitionAvailable || !processUrlRulesValid || !editingBillingScopeAvailable} onClick={() => void savePreset()} type="button">Save preset</button>
         <button className="secondary-button" disabled={busy || !online} onClick={() => setConfirmDelete(true)} type="button">Delete preset</button>
         {destination?.connected ? <button className="secondary-button" disabled={busy || !online} onClick={() => setConfirmDisconnect(true)} type="button">Disconnect GitHub</button> : <button className="secondary-button" disabled={busy || !online || destination === undefined} onClick={() => destination === undefined ? undefined : void execute({ kind: "reconnect-destination", destinationId: destination.destinationId }, "GitHub authorization opened.")} type="button">Reconnect GitHub</button>}
       </div>
@@ -692,10 +709,20 @@ function PresetManagerContent() {
 
 function PresetManager() {
   const { snapshot } = useWorkspace();
+  const [selectedId, setSelectedId] = useState(snapshot.presets[0]?.presetId ?? "");
+  const effectiveSelectedId = snapshot.presets.some(
+    (preset) => preset.presetId === selectedId,
+  ) ? selectedId : snapshot.presets[0]?.presetId ?? "";
   const synchronizedPresetRevision = snapshot.presets
     .map((preset) => `${preset.presetId}:${preset.revision}`)
     .join("|");
-  return <PresetManagerContent key={synchronizedPresetRevision} />;
+  return (
+    <PresetManagerContent
+      key={synchronizedPresetRevision}
+      selectedId={effectiveSelectedId}
+      setSelectedId={setSelectedId}
+    />
+  );
 }
 
 function RemovableFields({
@@ -772,21 +799,23 @@ function CaptureAndReviewContent() {
     && !draft.title.includes("\n");
   const selectedImages = draft.images.filter((image) => image.selected);
   const reviewedUrl = sanitizeCapturedUrl(draft.url);
+  const reviewedUrlValid = draft.url === "" || reviewedUrl.ok;
   const requiredAnswersComplete = requiredIssueAnswersComplete(draftWithDefaults, definition);
   const selectedDestination = snapshot.destinations.find(
     (destination) => destination.destinationId === selectedPreset?.destinationId,
   );
   const submissionPresetAvailable = selectedPreset !== undefined && definition !== undefined;
   const submissionDestinationConnected = selectedDestination?.connected === true;
+  const submissionBackgroundGrantActive = selectedPreset?.backgroundGrant === "active";
   const submit = () => {
-    if (!submissionPresetAvailable || !submissionDestinationConnected || !reviewedUrl.ok || !requiredAnswersComplete || !titleValid) return;
+    if (!submissionPresetAvailable || !submissionDestinationConnected || !submissionBackgroundGrantActive || !reviewedUrlValid || !requiredAnswersComplete || !titleValid) return;
     setConfirmPublic(false);
     void execute({
       kind: "submit",
       draft: {
         ...draftWithDefaults,
-        url: reviewedUrl.url.value,
-        urlWarning: reviewedUrl.url.warning !== null,
+        url: reviewedUrl.ok ? reviewedUrl.url.value : "",
+        urlWarning: reviewedUrl.ok && reviewedUrl.url.warning !== null,
       },
       publicImageConfirmation: true,
     }, "Issue submitted and the local raw draft was deleted.");
@@ -799,19 +828,20 @@ function CaptureAndReviewContent() {
         <button className="primary-button" disabled={busy} onClick={() => void execute({ kind: "capture", draftId: draft.draftId, captureMode: mode, pointer, selectorMode: selector, selection }, "Capture added. Open an image to edit without changing its raw original.")} type="button">Capture screenshot</button>
       </fieldset>
       <fieldset className="realqa-fields"><legend>Images ({draft.images.length})</legend><p className="muted">There is no image-count limit. Each image is limited to 25 MiB, the session to 250 MiB, and decoded input to 100 megapixels.</p><ul className="realqa-image-list">{draft.images.map((image) => <li key={image.imageId}><label className="check-field"><input checked={image.selected} onChange={(event) => update({ images: draft.images.map((candidate) => candidate.imageId === image.imageId ? { ...candidate, selected: event.target.checked } : candidate) })} type="checkbox" />{image.name} · {(image.encodedBytes / 1024).toFixed(1)} KiB · {image.uploadState}</label><button className="secondary-button" disabled={busy} onClick={() => void execute({ kind: "edit-image", draftId: draft.draftId, imageId: image.imageId }, "Nondestructive editor opened; the encrypted raw original is unchanged.")} type="button">Edit nondestructively</button>{image.uploadState === "uploading" ? <progress aria-label={`${image.name} upload progress`} max={100} value={image.uploadProgress} /> : null}</li>)}</ul></fieldset>
-      <div className="realqa-form-grid"><label className="field">Issue title<input aria-describedby={titleValid ? undefined : "realqa-title-guidance"} aria-invalid={!titleValid} ref={titleRef} value={draft.title} onChange={(event) => update({ title: event.target.value })} /></label><label className="field">Issue body<textarea value={draft.body} onChange={(event) => update({ body: event.target.value })} /></label><label className="field">Sanitized URL<input aria-invalid={!reviewedUrl.ok} value={draft.url} onBlur={() => { if (reviewedUrl.ok) update({ url: reviewedUrl.url.value, urlWarning: reviewedUrl.url.warning !== null }); }} onChange={(event) => update({ url: event.target.value })} /></label></div>
+      <div className="realqa-form-grid"><label className="field">Issue title<input aria-describedby={titleValid ? undefined : "realqa-title-guidance"} aria-invalid={!titleValid} ref={titleRef} value={draft.title} onChange={(event) => update({ title: event.target.value })} /></label><label className="field">Issue body<textarea value={draft.body} onChange={(event) => update({ body: event.target.value })} /></label><label className="field">Sanitized URL<input aria-invalid={!reviewedUrlValid} value={draft.url} onBlur={() => { if (reviewedUrl.ok) update({ url: reviewedUrl.url.value, urlWarning: reviewedUrl.url.warning !== null }); }} onChange={(event) => update({ url: event.target.value })} /></label></div>
       {!titleValid ? <p className="error" id="realqa-title-guidance">Enter a single-line issue title between 1 and {MAX_ISSUE_TITLE_UTF8_BYTES} UTF-8 bytes.</p> : null}
-      {!reviewedUrl.ok ? <p className="error" role="alert">Use an HTTP or HTTPS URL without credentials or invalid escapes.</p> : null}
+      {!reviewedUrlValid ? <p className="error" role="alert">Use an HTTP or HTTPS URL without credentials or invalid escapes.</p> : null}
       {draft.urlWarning ? <p role="note">This URL points to localhost or a private network. Review it before submission.</p> : null}
       <RemovableFields fields={draft.environment} legend="Environment metadata" onChange={(environment) => update({ environment })} />
       <RemovableFields fields={draft.dom} legend="DOM metadata" onChange={(dom) => update({ dom })} />
       {definition ? <fieldset className="realqa-fields"><legend>{definition.name} fields</legend>{definition.fields.map((field) => <IssueField draft={draft} field={field} key={field.fieldId} update={replaceDraft} />)}</fieldset> : null}
       {!submissionPresetAvailable ? <p className="error">This draft's preset is no longer available. Recreate the preset before starting a replacement draft.</p> : null}
       {submissionPresetAvailable && !submissionDestinationConnected ? <div className="realqa-error"><p>This preset's GitHub destination is disconnected. Reconnect before submitting.</p>{selectedDestination ? <button className="secondary-button" disabled={busy || !online} onClick={() => void execute({ kind: "reconnect-destination", destinationId: selectedDestination.destinationId }, "GitHub authorization opened.")} type="button">Reconnect GitHub</button> : null}</div> : null}
+      {submissionPresetAvailable && !submissionBackgroundGrantActive ? <p className="error">This preset's background storage grant is inactive. Rebind its RealQA storage authorization in DeliDev before submitting.</p> : null}
       {!requiredAnswersComplete ? <p className="error">Complete every required issue-form field before submission.</p> : null}
       <div className="realqa-form-grid"><label className="field">Labels<input value={csv(draft.labels)} onChange={(event) => update({ labels: parseCsv(event.target.value) })} /></label><label className="field">Assignees<input value={csv(draft.assignees)} onChange={(event) => update({ assignees: parseCsv(event.target.value) })} /></label><label className="field">Milestone number<input min={1} type="number" value={draft.milestoneNumber ?? ""} onChange={(event) => update({ milestoneNumber: event.target.value === "" ? null : Number(event.target.value) })} /></label><label className="field">Project node IDs<input value={csv(draft.projectNodeIds)} onChange={(event) => update({ projectNodeIds: parseCsv(event.target.value) })} /></label></div>
       <p className={bodyBytes > MAX_FINAL_BODY_UTF8_BYTES ? "error" : "muted"}>{bodyBytes.toLocaleString()} / {MAX_FINAL_BODY_UTF8_BYTES.toLocaleString()} body bytes</p>
-      <div className="button-row"><button className="secondary-button" disabled={busy} onClick={() => void execute({ kind: "save-draft", draft: draftWithDefaults }, "Encrypted local draft saved.")} type="button">Save draft</button><button className="danger-button" disabled={busy} onClick={() => setConfirmDraftDelete(true)} type="button">Delete draft</button><button className="primary-button" disabled={busy || !online || !submissionPresetAvailable || !submissionDestinationConnected || selectedImages.length === 0 || bodyBytes > MAX_FINAL_BODY_UTF8_BYTES || !reviewedUrl.ok || !requiredAnswersComplete || !titleValid} onClick={() => setConfirmPublic(true)} type="button">Review and submit</button></div>
+      <div className="button-row"><button className="secondary-button" disabled={busy} onClick={() => void execute({ kind: "save-draft", draft: draftWithDefaults }, "Encrypted local draft saved.")} type="button">Save draft</button><button className="danger-button" disabled={busy} onClick={() => setConfirmDraftDelete(true)} type="button">Delete draft</button><button className="primary-button" disabled={busy || !online || !submissionPresetAvailable || !submissionDestinationConnected || !submissionBackgroundGrantActive || selectedImages.length === 0 || bodyBytes > MAX_FINAL_BODY_UTF8_BYTES || !reviewedUrlValid || !requiredAnswersComplete || !titleValid} onClick={() => setConfirmPublic(true)} type="button">Review and submit</button></div>
       {!online ? <p className="muted">Online reauthentication is required before upload or submission.</p> : null}
       {confirmDraftDelete ? <Dialog title="Delete local RealQA draft" onClose={() => setConfirmDraftDelete(false)}><h2>Delete this draft?</h2><p>This immediately deletes the encrypted local draft and its raw originals. It does not delete server feature data.</p><button className="danger-button" onClick={() => { setConfirmDraftDelete(false); void execute({ kind: "delete-draft", draftId: draft.draftId, expectedRevision: draft.revision }, "Local draft deleted."); }} type="button">Delete local draft</button><button className="secondary-button" onClick={() => setConfirmDraftDelete(false)} type="button">Cancel</button></Dialog> : null}
       {confirmPublic ? <Dialog descriptionId="public-image-warning" title="Confirm public screenshots" onClose={() => setConfirmPublic(false)}><h2>Submit a new GitHub issue?</h2><p id="public-image-warning">{PUBLIC_SCREENSHOT_WARNING} This confirmation is required for every submission.</p><button aria-describedby="public-image-warning" className="primary-button" onClick={submit} type="button">Confirm and submit</button><button className="secondary-button" onClick={() => setConfirmPublic(false)} type="button">Cancel</button></Dialog> : null}

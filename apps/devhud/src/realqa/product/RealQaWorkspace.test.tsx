@@ -8,6 +8,7 @@ import { ShortcutKey, ShortcutModifier } from "../../persistence/contracts";
 import {
   publishPersistenceReset,
   publishSessionInvalidation,
+  publishSessionReauthentication,
 } from "../../runtime/theme";
 import { RealQaWorkspace, serializeFinalIssueBody } from "./RealQaWorkspace";
 import {
@@ -156,11 +157,13 @@ function snapshot(
 
 class FixtureGateway implements RealQaProductGateway {
   readonly actions: RealQaProductAction[] = [];
+  loadCalls = 0;
   nextFailure: RealQaProductError | null = null;
 
   constructor(public value: RealQaProductSnapshot) {}
 
   async load() {
+    this.loadCalls += 1;
     return this.value;
   }
 
@@ -183,11 +186,11 @@ class FixtureGateway implements RealQaProductGateway {
         : "01900000-0000-7000-8000-000000000010";
       this.value = {
         ...this.value,
-        presets: [{
+        presets: [...this.value.presets, {
           ...action.preset,
           presetId: createdPresetId,
           revision: 1,
-        }, ...this.value.presets],
+        }],
       };
     }
     if (action.kind === "save-preset") {
@@ -554,6 +557,30 @@ describe("RealQA desktop production workspace", () => {
     }));
   });
 
+  it("submits OS captures without a page URL", async () => {
+    const user = userEvent.setup();
+    const value = snapshot();
+    const draft = value.drafts[0];
+    if (draft === undefined) throw new Error("Fixture draft is missing.");
+    const gateway = new FixtureGateway({
+      ...value,
+      drafts: [{ ...draft, url: "", urlWarning: false }],
+    });
+    await renderWorkspace(gateway);
+
+    const url = screen.getByLabelText("Sanitized URL");
+    expect(url).toHaveAttribute("aria-invalid", "false");
+    await user.type(screen.getByLabelText("Summary"), "Window capture");
+    await user.click(screen.getByLabelText("Reproduced"));
+    await user.click(screen.getByRole("button", { name: "Review and submit" }));
+    await user.click(within(screen.getByRole("dialog", { name: "Confirm public screenshots" })).getByRole("button", { name: "Confirm and submit" }));
+
+    await waitFor(() => expect(gateway.actions.at(-1)).toMatchObject({
+      kind: "submit",
+      draft: { url: "", urlWarning: false },
+    }));
+  });
+
   it("surfaces closed typed failures without rendering provider content", async () => {
     const user = userEvent.setup();
     const gateway = new FixtureGateway(snapshot());
@@ -619,6 +646,16 @@ describe("RealQA desktop production workspace", () => {
         },
       },
     });
+  });
+
+  it("blocks preset saves until an unavailable billing scope is replaced", async () => {
+    const value = snapshot();
+    const gateway = new FixtureGateway({ ...value, replacementBillingScopes: [] });
+    await renderWorkspace(gateway);
+
+    expect(screen.getByRole("button", { name: "Save preset" })).toBeDisabled();
+    expect(screen.getByText(/Choose an available payer \/ team/u)).toBeVisible();
+    expect(gateway.actions).toHaveLength(0);
   });
 
   it("selects the next retained preset after deleting the active preset", async () => {
@@ -869,6 +906,20 @@ describe("RealQA desktop production workspace", () => {
     });
   });
 
+  it("blocks submission until the preset background storage grant is active", async () => {
+    const value = snapshot();
+    const preset = value.presets[0];
+    if (preset === undefined) throw new Error("Fixture preset is missing.");
+    const gateway = new FixtureGateway({
+      ...value,
+      presets: [{ ...preset, backgroundGrant: "rebind-required" }],
+    });
+    await renderWorkspace(gateway);
+
+    expect(screen.getByRole("button", { name: "Review and submit" })).toBeDisabled();
+    expect(screen.getByText(/Rebind its RealQA storage authorization in DeliDev/u)).toBeVisible();
+  });
+
   it.each([
     ["session invalidation", () => publishSessionInvalidation()],
     ["persistence reset", () => publishPersistenceReset({ status: "complete" })],
@@ -882,6 +933,27 @@ describe("RealQA desktop production workspace", () => {
     expect(await screen.findByRole("heading", { name: "Opening RealQA" })).toBeVisible();
     expect(screen.getByText(/Sign in with the previously bound DeliDev account/u)).toBeVisible();
     expect(screen.queryAllByDisplayValue("Captured regression")).toHaveLength(0);
+  });
+
+  it("reloads a locked workspace after successful RealQA reauthentication", async () => {
+    const gateway = new FixtureGateway(snapshot());
+    await renderWorkspace(gateway);
+    act(() => publishSessionInvalidation());
+    await screen.findByRole("heading", { name: "Opening RealQA" });
+
+    const refreshed = snapshot();
+    const draft = refreshed.drafts[0];
+    if (draft === undefined) throw new Error("Fixture draft is missing.");
+    gateway.value = {
+      ...refreshed,
+      drafts: [{ ...draft, title: "Reauthenticated draft" }],
+    };
+    act(() => publishSessionReauthentication());
+
+    expect(await screen.findByLabelText("Issue title")).toHaveValue(
+      "Reauthenticated draft",
+    );
+    expect(gateway.loadCalls).toBe(2);
   });
 
   it("preserves distinct disconnect, draft deletion, and server feature deletion confirmations", async () => {

@@ -11,7 +11,10 @@ import type {
   NativeSessionBridge,
   NativeSessionSnapshot,
 } from "./contracts";
-import { publishPersistenceReset } from "../runtime/theme";
+import {
+  publishPersistenceReset,
+  subscribeToSessionReauthentication,
+} from "../runtime/theme";
 
 afterEach(() => {
   cleanup();
@@ -38,6 +41,9 @@ function SessionHarness() {
       {auth.failure === null ? null : <p role="alert">{auth.failure.guidance}</p>}
       <button onClick={() => void auth.signIn(AuthFeature.Deck)} type="button">
         Sign in
+      </button>
+      <button onClick={() => void auth.signIn(AuthFeature.RealQa)} type="button">
+        Sign in RealQA
       </button>
       <button onClick={() => void auth.logout()} type="button">
         Log out
@@ -101,6 +107,31 @@ describe("dependency-injected DevHud session provider", () => {
       "Log out of the active DeliDev account",
     );
     expect(screen.getByRole("alert")).not.toHaveTextContent("account-a");
+  });
+
+  it("notifies an open RealQA workspace after successful online reauthentication", async () => {
+    const listener = vi.fn();
+    const unsubscribe = subscribeToSessionReauthentication(listener);
+    const native = bridge({
+      start: vi.fn(async () => ({
+        status: "signed-in" as const,
+        subject: "account-a",
+        features: [AuthFeature.RealQa],
+        offlineFeatures: [],
+      })),
+    });
+    const user = userEvent.setup();
+    render(
+      <SessionProvider bridge={native}>
+        <SessionHarness />
+      </SessionProvider>,
+    );
+    await waitFor(() => expect(screen.getByTestId("ready")).toHaveTextContent("true"));
+
+    await user.click(screen.getByRole("button", { name: "Sign in RealQA" }));
+
+    await waitFor(() => expect(listener).toHaveBeenCalledTimes(1));
+    unsubscribe();
   });
 
   it("observes a native-only mobile callback while authentication is active", async () => {
