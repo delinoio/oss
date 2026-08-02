@@ -1729,7 +1729,9 @@ jobs:
               - Cargo.lock
               - package.json
               - pnpm-lock.yaml
+              - turbo.json
               - apps/devhud/package.json
+              - apps/devhud/turbo.json
               - apps/devhud/realqa-extension/**
               - apps/devhud/scripts/build-realqa-extension.mjs
               - apps/devhud/scripts/build-realqa-fixtures.mjs

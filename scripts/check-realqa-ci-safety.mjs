@@ -21,6 +21,11 @@ requireCondition(
   /^permissions:\n  contents: read$/mu.test(workflow),
   "RealQA CI must retain read-only repository permissions",
 );
+const permissionDeclarations = workflow.match(/^[ \t]*permissions\s*:/gmu) ?? [];
+requireCondition(
+  permissionDeclarations.length === 1 && permissionDeclarations[0] === "permissions:",
+  "RealQA CI must not override read-only permissions at the job or step level",
+);
 for (const [pattern, message] of [
   [/docker\/login-action/u, "must not authenticate to a container registry"],
   [/docker\/build-push-action/u, "must not use an image publishing action"],
