@@ -10,8 +10,6 @@ PROTO_COMPONENTS=(
 	"devhud-realqa:planned"
 )
 
-"${SCRIPT_DIR}/generate-go-proto.sh"
-
 for component_contract in "${PROTO_COMPONENTS[@]}"; do
 	IFS=: read -r component lifecycle <<<"${component_contract}"
 	component_root="${REPO_ROOT}/protos/${component}"

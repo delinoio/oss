@@ -58,11 +58,6 @@ Each project must have one project index document and one or more domain contrac
 - `docs/project-public-docs.md`
 - `docs/apps-public-docs-foundation.md`
 
-### thenv
-- `docs/project-thenv.md`
-- `docs/servers-thenv-server-foundation.md`
-- `docs/cmds-thenv-cli-foundation.md`
-
 ### serde-feather
 - `docs/project-serde-feather.md`
 - `docs/crates-serde-feather-core-foundation.md`

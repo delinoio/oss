@@ -55,7 +55,6 @@
 - `docs/project-derun.md`: Derun CLI project index.
 - `docs/project-ttl.md`: TTL compiler project index.
 - `docs/project-mpapp.md`: Expo mobile app project index.
-- `docs/project-thenv.md`: Thenv multi-component project index.
 - `docs/project-public-docs.md`: Public docs app project index.
 - `docs/project-serde-feather.md`: Serde Feather multi-crate project index.
 - `docs/project-rustia.md`: Rustia multi-crate project index.
@@ -89,7 +88,6 @@ enum ProjectId {
   Derun = "derun",
   Ttl = "ttl",
   Mpapp = "mpapp",
-  Thenv = "thenv",
   SerdeFeather = "serde-feather",
   Rustia = "rustia",
   PublicDocs = "public-docs",
@@ -108,7 +106,6 @@ enum ProjectId {
 - `derun` -> `cmds/derun`
 - `ttl` -> `cmds/ttlc`
 - `mpapp` -> `apps/mpapp`
-- `thenv` -> `cmds/thenv`, `servers/thenv`
 - `serde-feather` -> `crates/serde-feather`, `crates/serde-feather-macros`
 - `rustia` -> `crates/rustia`, `crates/rustia-llm`, `crates/rustia-macros`
 - `public-docs` -> `apps/public-docs`
@@ -245,20 +242,6 @@ enum ProjectId {
 - `nodeup shim setup` PATH activation remains non-mutating by default; output must provide shell- and OS-aware activation and verification guidance when the shim directory is not active.
 - `nodeup self uninstall` removes Nodeup-owned data, cache, and config roots only; binary, managed shims, and shell profile/PATH cleanup remain manual and must be separated from removed data in human and JSON output with shell- and OS-aware follow-up guidance.
 
-### Thenv Component Contract
-
-`thenv` is a two-component project with fixed mapping:
-
-```ts
-enum ThenvComponent {
-  Cli = "cli",
-  Server = "server",
-}
-```
-
-- `Cli` -> `cmds/thenv`
-- `Server` -> `servers/thenv`
-
 ### Serde Feather Component Contract
 
 `serde-feather` is a two-component project with fixed mapping:
@@ -317,7 +300,7 @@ enum RustiaComponent {
 
 - Apply this contract to all open/new GitHub issues.
 - Use issue titles in the format `<domain>: <description>`.
-- `<domain>` must use stable lowercase identifiers from project/domain contracts (for example: `ttl`, `nodeup`, `serde-feather`, `thenv`).
+- `<domain>` must use stable lowercase identifiers from project/domain contracts (for example: `ttl`, `nodeup`, `serde-feather`).
 - `<description>` should be concise, specific, and start with a lowercase verb phrase when possible.
 - Do not use bracket-style project prefixes like `[serde-feather]`.
 - Use the following Markdown section order for issue bodies:
@@ -335,7 +318,7 @@ enum RustiaComponent {
 - Apply this contract to newly created pull requests.
 - Pull request titles must use Conventional Commit-style format with a required scope: `<type>(<scope>): <description>`.
 - `<type>` must be an appropriate Conventional Commit type such as `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `ci`, `build`, `perf`, or `revert`.
-- `<scope>` must use a stable lowercase project, component, domain, or tooling identifier from repository contracts when one applies (for example: `ttl`, `nodeup`, `serde-feather`, `thenv`, `docs`, `ci`).
+- `<scope>` must use a stable lowercase project, component, domain, or tooling identifier from repository contracts when one applies (for example: `ttl`, `nodeup`, `serde-feather`, `docs`, `ci`).
 - `<description>` should be concise, specific, and start with a lowercase verb phrase when possible.
 - Do not create unscoped pull request titles or use bracket-style project prefixes like `[serde-feather]`.
 

@@ -7,7 +7,6 @@
 
 ### Scope in This Domain
 
-- `servers/thenv`: Backend for secure environment sharing.
 - `servers/delibase`: Go/PostgreSQL/sqlc organization, billing, and usage service owned by project `delibase`.
 - `servers/devhud-deck`: bounded authentication/persistence foundation for the
   client-initiated GitHub.com pull-request service owned by project `devhud`;
@@ -50,7 +49,6 @@ Scaffold-only service projects may start with a smaller structure (`main.go` + `
 ### Integration Rules
 
 - Changes to server interfaces must be synchronized with related CLI and app contracts.
-- Update `docs/project-thenv.md` and `docs/servers-thenv-server-foundation.md` for every thenv interface or trust model update.
 
 ### Delibase Rules
 
@@ -77,10 +75,6 @@ Scaffold-only service projects may start with a smaller structure (`main.go` + `
 - New usage client references are canonical, credential-safe, and unique per service. Migration preserves benign legacy syntax and duplicate correlation values as immutable grandfathered snapshots, while credential-shaped values fail closed.
 - Required checks once code exists include `gofmt`, `go vet ./...`, `go test ./servers/delibase/...`, sqlc/migration checks, Protobuf generation/compatibility, PostgreSQL concurrency tests, and Docker validation.
 - Issue #722 artifact scope excludes public activation/deployment, production SLO/RPM controls, dashboards/alerts, kill switches, feature flags, operator RPCs, and manual replay tooling. GHCR release scope is pushed core `delibase@vX.Y.Z` tags whose derived OCI version is at most 128 characters only: validate the exact pushed architecture digests, generate an SPDX JSON inventory for each platform, assemble a run-scoped candidate index, complete its signature and GitHub provenance/per-platform SBOM attestations, and only then publish the public multi-architecture `vX.Y.Z` tag. Release artifacts must be rerun-safe, and an existing version may be reused only when it resolves to the same validated digest; it must never be retargeted. A serialized newest-core-SemVer gate alone may advance `latest`, so an older concurrent release cannot move it backward. Run-scoped candidate references are not releases; manual, branch, `edge`, and SHA publication paths are forbidden.
-
-### Multi-Component Contract Sync
-
-- `servers/thenv` changes must keep CLI contracts synchronized.
 
 ### DevHud Feature Server Rules
 
