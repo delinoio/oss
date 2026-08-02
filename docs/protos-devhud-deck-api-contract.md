@@ -24,7 +24,7 @@
 
 ## Services and RPCs
 
-- `DeckViewService`: `ListViews`, `GetView`, `CreateView`, `UpdateView`, `DeleteView`, `ListPullRequests`, `ListPullRequestMutationCandidates`, `GetRefreshPreflight`, `RefreshView`, `MutatePullRequest`, `DeleteFeatureData`.
+- `DeckViewService`: `ListOwners`, `ListViews`, `GetView`, `CreateView`, `UpdateView`, `DeleteView`, `ListPullRequests`, `ListPullRequestMutationCandidates`, `GetRefreshPreflight`, `RefreshView`, `MutatePullRequest`, `DeleteFeatureData`.
 - `DeckIntegrationService`: `GetGitHubConnection`, `StartGitHubConnection`, `ListGitHubInstallations`, `DisconnectGitHubConnection`.
 - `DeckDeviceService`: `GetDevice`, `RegisterDevice`, `UpdateDevice`, `UnregisterDevice`, `UpdateViewNotificationPreference`, `ResolveNotificationEvent`.
 
@@ -37,6 +37,10 @@ No additional v1 service or RPC is implied. GitHub callback/webhook handlers and
   billing disposition, notification transition, freshness state, and stable
   error reason are closed enums.
 - The only v1 view kind is `GITHUB_PULL_REQUESTS`.
+- `ListOwners` derives the authenticated caller's personal and organization
+  owner scopes, management authority, and currently authorized billing
+  organization/team selections on the server. Clients never invent owner IDs,
+  roles, or billing choices.
 - Views carry owner scope, an explicit server-authorized billing organization/team, name, a canonical raw query limited to 4,096 UTF-8 bytes, typed builder clauses, sort/grouping, notification preference, revision/ETag, and timestamps. Missing or partial billing selections are rejected by `CreateView` and `UpdateView`; `UpdateView` may change the notification preference but never owner or kind.
 - `CreateView` carries a stable client-generated UUID v7 idempotency key scoped to the authenticated subject and operation. An exact replay returns the originally created view and revision; reuse with changed creation input returns the typed idempotency-conflict reason.
 - Lists use opaque cursor pagination. Limits are 50 personal views, 250 organization views, and 500 PR results per view with explicit truncation.

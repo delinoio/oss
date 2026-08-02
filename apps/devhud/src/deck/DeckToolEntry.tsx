@@ -58,13 +58,12 @@ export function DeckToolEntry() {
   const effectiveGateway = useMemo(
     () => authenticated && gateway === unavailableDeckGateway
       ? new NativeDeckGateway(
-          session.subject,
           detectApplicationPlatform(navigator.userAgent) === "mobile"
             ? RefreshClientKind.MOBILE
             : RefreshClientKind.DESKTOP,
         )
       : gateway,
-    [authenticated, gateway, session],
+    [authenticated, gateway],
   );
   if (authenticated) {
     return (

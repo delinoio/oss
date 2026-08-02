@@ -475,6 +475,15 @@ pub(crate) struct NativeAuthState {
 }
 
 impl NativeAuthState {
+    pub(crate) fn deck_device_id(&self) -> Result<String, AuthError> {
+        self.manager
+            .lock()
+            .map_err(|_| AuthError::SecureVaultUnavailable)?
+            .as_mut()
+            .ok_or(AuthError::ConfigurationUnavailable)?
+            .deck_device_id()
+    }
+
     pub(crate) fn with_deck_bearers<R>(
         &self,
         operation: impl FnOnce(&str, &str, &str) -> R,

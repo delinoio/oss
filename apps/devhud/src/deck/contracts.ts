@@ -114,6 +114,12 @@ export interface DeckOwner {
   readonly kind: DeckOwnerKind;
   readonly label: string;
   readonly canManage: boolean;
+  readonly billingSelections: readonly DeckBillingSelection[];
+}
+
+export interface DeckBillingSelection {
+  readonly organizationId: string;
+  readonly teamId: string;
 }
 
 export interface DeckNotificationPreference {
@@ -134,6 +140,7 @@ export enum DeckNotificationTransition {
 export interface DeckView {
   readonly viewId: string;
   readonly owner: DeckOwner;
+  readonly billing: DeckBillingSelection;
   readonly name: string;
   readonly rawQuery: string;
   readonly sort: DeckSort;
@@ -154,6 +161,7 @@ export interface DeckViewShortcut {
 }
 
 export interface DeckViewInput {
+  readonly billing: DeckBillingSelection;
   readonly name: string;
   readonly rawQuery: string;
   readonly sort: DeckSort;
@@ -238,11 +246,13 @@ export interface DeckGateway {
     pullRequest: DeckPullRequest,
     mutation: DeckMutationInput,
   ): Promise<{ readonly pullRequest?: DeckPullRequest; readonly refreshRequired: boolean }>;
+  refreshAfterMutation(viewId: string): Promise<void>;
   refreshView(
     viewId: string,
     confirm: (warning: ManualRefreshWarning) => Promise<boolean>,
   ): Promise<void>;
   openPullRequest(pullRequest: DeckPullRequest): Promise<void>;
+  recordViewOpened(viewId: string): void;
   synchronizeShortcuts(views: readonly DeckView[]): Promise<void>;
   startEligibleRefreshes(views: readonly DeckView[]): () => void;
 }
@@ -275,12 +285,16 @@ export const unavailableDeckGateway: DeckGateway = {
   mutatePullRequest: async () => {
     throw new DeckProductError(DeckFailureCode.ServiceUnavailable);
   },
+  refreshAfterMutation: async () => {
+    throw new DeckProductError(DeckFailureCode.ServiceUnavailable);
+  },
   refreshView: async () => {
     throw new DeckProductError(DeckFailureCode.ServiceUnavailable);
   },
   openPullRequest: async () => {
     throw new DeckProductError(DeckFailureCode.ServiceUnavailable);
   },
+  recordViewOpened: () => undefined,
   synchronizeShortcuts: async () => {
     throw new DeckProductError(DeckFailureCode.ServiceUnavailable);
   },

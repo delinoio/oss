@@ -33,6 +33,9 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
+	// DeckViewServiceListOwnersProcedure is the fully-qualified name of the DeckViewService's
+	// ListOwners RPC.
+	DeckViewServiceListOwnersProcedure = "/devhud.deck.v1.DeckViewService/ListOwners"
 	// DeckViewServiceListViewsProcedure is the fully-qualified name of the DeckViewService's ListViews
 	// RPC.
 	DeckViewServiceListViewsProcedure = "/devhud.deck.v1.DeckViewService/ListViews"
@@ -69,6 +72,7 @@ const (
 
 // DeckViewServiceClient is a client for the devhud.deck.v1.DeckViewService service.
 type DeckViewServiceClient interface {
+	ListOwners(context.Context, *connect.Request[v1.ListOwnersRequest]) (*connect.Response[v1.ListOwnersResponse], error)
 	ListViews(context.Context, *connect.Request[v1.ListViewsRequest]) (*connect.Response[v1.ListViewsResponse], error)
 	GetView(context.Context, *connect.Request[v1.GetViewRequest]) (*connect.Response[v1.GetViewResponse], error)
 	CreateView(context.Context, *connect.Request[v1.CreateViewRequest]) (*connect.Response[v1.CreateViewResponse], error)
@@ -93,6 +97,12 @@ func NewDeckViewServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 	baseURL = strings.TrimRight(baseURL, "/")
 	deckViewServiceMethods := v1.File_devhud_deck_v1_view_proto.Services().ByName("DeckViewService").Methods()
 	return &deckViewServiceClient{
+		listOwners: connect.NewClient[v1.ListOwnersRequest, v1.ListOwnersResponse](
+			httpClient,
+			baseURL+DeckViewServiceListOwnersProcedure,
+			connect.WithSchema(deckViewServiceMethods.ByName("ListOwners")),
+			connect.WithClientOptions(opts...),
+		),
 		listViews: connect.NewClient[v1.ListViewsRequest, v1.ListViewsResponse](
 			httpClient,
 			baseURL+DeckViewServiceListViewsProcedure,
@@ -164,6 +174,7 @@ func NewDeckViewServiceClient(httpClient connect.HTTPClient, baseURL string, opt
 
 // deckViewServiceClient implements DeckViewServiceClient.
 type deckViewServiceClient struct {
+	listOwners                        *connect.Client[v1.ListOwnersRequest, v1.ListOwnersResponse]
 	listViews                         *connect.Client[v1.ListViewsRequest, v1.ListViewsResponse]
 	getView                           *connect.Client[v1.GetViewRequest, v1.GetViewResponse]
 	createView                        *connect.Client[v1.CreateViewRequest, v1.CreateViewResponse]
@@ -175,6 +186,11 @@ type deckViewServiceClient struct {
 	refreshView                       *connect.Client[v1.RefreshViewRequest, v1.RefreshViewResponse]
 	mutatePullRequest                 *connect.Client[v1.MutatePullRequestRequest, v1.MutatePullRequestResponse]
 	deleteFeatureData                 *connect.Client[v1.DeleteFeatureDataRequest, v1.DeleteFeatureDataResponse]
+}
+
+// ListOwners calls devhud.deck.v1.DeckViewService.ListOwners.
+func (c *deckViewServiceClient) ListOwners(ctx context.Context, req *connect.Request[v1.ListOwnersRequest]) (*connect.Response[v1.ListOwnersResponse], error) {
+	return c.listOwners.CallUnary(ctx, req)
 }
 
 // ListViews calls devhud.deck.v1.DeckViewService.ListViews.
@@ -235,6 +251,7 @@ func (c *deckViewServiceClient) DeleteFeatureData(ctx context.Context, req *conn
 
 // DeckViewServiceHandler is an implementation of the devhud.deck.v1.DeckViewService service.
 type DeckViewServiceHandler interface {
+	ListOwners(context.Context, *connect.Request[v1.ListOwnersRequest]) (*connect.Response[v1.ListOwnersResponse], error)
 	ListViews(context.Context, *connect.Request[v1.ListViewsRequest]) (*connect.Response[v1.ListViewsResponse], error)
 	GetView(context.Context, *connect.Request[v1.GetViewRequest]) (*connect.Response[v1.GetViewResponse], error)
 	CreateView(context.Context, *connect.Request[v1.CreateViewRequest]) (*connect.Response[v1.CreateViewResponse], error)
@@ -255,6 +272,12 @@ type DeckViewServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewDeckViewServiceHandler(svc DeckViewServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	deckViewServiceMethods := v1.File_devhud_deck_v1_view_proto.Services().ByName("DeckViewService").Methods()
+	deckViewServiceListOwnersHandler := connect.NewUnaryHandler(
+		DeckViewServiceListOwnersProcedure,
+		svc.ListOwners,
+		connect.WithSchema(deckViewServiceMethods.ByName("ListOwners")),
+		connect.WithHandlerOptions(opts...),
+	)
 	deckViewServiceListViewsHandler := connect.NewUnaryHandler(
 		DeckViewServiceListViewsProcedure,
 		svc.ListViews,
@@ -323,6 +346,8 @@ func NewDeckViewServiceHandler(svc DeckViewServiceHandler, opts ...connect.Handl
 	)
 	return "/devhud.deck.v1.DeckViewService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case DeckViewServiceListOwnersProcedure:
+			deckViewServiceListOwnersHandler.ServeHTTP(w, r)
 		case DeckViewServiceListViewsProcedure:
 			deckViewServiceListViewsHandler.ServeHTTP(w, r)
 		case DeckViewServiceGetViewProcedure:
@@ -353,6 +378,10 @@ func NewDeckViewServiceHandler(svc DeckViewServiceHandler, opts ...connect.Handl
 
 // UnimplementedDeckViewServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedDeckViewServiceHandler struct{}
+
+func (UnimplementedDeckViewServiceHandler) ListOwners(context.Context, *connect.Request[v1.ListOwnersRequest]) (*connect.Response[v1.ListOwnersResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("devhud.deck.v1.DeckViewService.ListOwners is not implemented"))
+}
 
 func (UnimplementedDeckViewServiceHandler) ListViews(context.Context, *connect.Request[v1.ListViewsRequest]) (*connect.Response[v1.ListViewsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("devhud.deck.v1.DeckViewService.ListViews is not implemented"))

@@ -7,6 +7,7 @@ import {
 import { invoke } from "@tauri-apps/api/core";
 
 export enum DeckProcedure {
+  ListOwners = "list-owners",
   ListViews = "list-views",
   GetView = "get-view",
   CreateView = "create-view",

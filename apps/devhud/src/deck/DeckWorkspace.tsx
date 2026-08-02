@@ -12,6 +12,7 @@ import {
   DeckProductError,
   DeckSort,
   deckFailureGuidance,
+  type DeckBillingSelection,
   type DeckMutationCandidate,
   type DeckMutationInput,
   type DeckPullRequest,
@@ -21,13 +22,16 @@ import {
 import { useDeck } from "./DeckProvider";
 import { DeckQueryEditor } from "./QueryEditor";
 
-const defaultViewInput: DeckViewInput = {
-  name: "",
-  rawQuery: "is:pr state:open",
-  sort: DeckSort.RecentlyUpdated,
-  grouping: DeckGrouping.None,
-  notificationPreference: { enabled: false, transitions: [] },
-};
+function defaultViewInput(billing: DeckBillingSelection | undefined): DeckViewInput {
+  return {
+    billing: billing ?? { organizationId: "", teamId: "" },
+    name: "",
+    rawQuery: "is:pr state:open",
+    sort: DeckSort.RecentlyUpdated,
+    grouping: DeckGrouping.None,
+    notificationPreference: { enabled: false, transitions: [] },
+  };
+}
 
 const notificationTransitions = [
   [DeckNotificationTransition.Assigned, "Assigned"],
@@ -70,11 +74,13 @@ export function DeckNavigation() {
 
 function ViewForm({
   initial,
+  billingSelections,
   onCancel,
   onSave,
   title,
 }: {
   readonly initial: DeckViewInput;
+  readonly billingSelections: readonly DeckBillingSelection[];
   readonly onCancel: () => void;
   readonly onSave: (input: DeckViewInput) => Promise<boolean>;
   readonly title: string;
@@ -82,6 +88,9 @@ function ViewForm({
   const { state } = useDeck();
   const [input, setInput] = useState(initial);
   const headingRef = useRef<HTMLHeadingElement>(null);
+  const hasAuthorizedBilling = billingSelections.some((billing) =>
+    billing.organizationId === input.billing.organizationId && billing.teamId === input.billing.teamId
+  );
   useEffect(() => headingRef.current?.focus(), []);
   return (
     <section aria-labelledby="deck-view-form-title" className="deck-editor-card">
@@ -101,6 +110,25 @@ function ViewForm({
         onChange={(rawQuery) => setInput({ ...input, rawQuery })}
         value={input.rawQuery}
       />
+      <label className="field" htmlFor="deck-view-billing">
+        Billing team
+        <select
+          id="deck-view-billing"
+          onChange={(event) => {
+            const billing = billingSelections[Number(event.target.value)];
+            if (billing !== undefined) setInput({ ...input, billing });
+          }}
+          value={Math.max(0, billingSelections.findIndex((billing) =>
+            billing.organizationId === input.billing.organizationId && billing.teamId === input.billing.teamId
+          ))}
+        >
+          {billingSelections.map((billing, index) => (
+            <option key={`${billing.organizationId}:${billing.teamId}`} value={index}>
+              {billing.organizationId} / {billing.teamId}
+            </option>
+          ))}
+        </select>
+      </label>
       <div className="deck-form-grid">
         <label className="field" htmlFor="deck-view-sort">
           Sort by
@@ -171,7 +199,7 @@ function ViewForm({
       <div className="button-row">
         <button
           className="primary-button"
-          disabled={state.busy || input.name.trim().length === 0}
+          disabled={state.busy || input.name.trim().length === 0 || !hasAuthorizedBilling}
           onClick={() => void onSave({ ...input, name: input.name.trim() })}
           type="button"
         >
@@ -192,6 +220,7 @@ export function DeckViewManager() {
   if (state.selectedOwner === null) return null;
   const canManage = state.selectedOwner.canManage;
   const inputForView = (view: DeckView): DeckViewInput => ({
+    billing: view.billing,
     name: view.name,
     rawQuery: view.rawQuery,
     sort: view.sort,
@@ -206,14 +235,20 @@ export function DeckViewManager() {
           <h2 id="deck-views-title">{state.selectedOwner.label}</h2>
         </div>
         {canManage && editing === null ? (
-          <button className="primary-button" onClick={() => setEditing("create")} type="button">
+          <button
+            className="primary-button"
+            disabled={state.selectedOwner.billingSelections.length === 0}
+            onClick={() => setEditing("create")}
+            type="button"
+          >
             New view
           </button>
         ) : null}
       </div>
       {editing === "create" ? (
         <ViewForm
-          initial={defaultViewInput}
+          billingSelections={state.selectedOwner.billingSelections}
+          initial={defaultViewInput(state.selectedOwner.billingSelections[0])}
           onCancel={() => setEditing(null)}
           onSave={async (input) => {
             const saved = await actions.createView(state.selectedOwner!, input);
@@ -225,6 +260,7 @@ export function DeckViewManager() {
       ) : null}
       {editing === "update" && state.selectedView !== null ? (
         <ViewForm
+          billingSelections={state.selectedOwner.billingSelections}
           initial={inputForView(state.selectedView)}
           onCancel={() => setEditing(null)}
           onSave={async (input) => {
@@ -234,6 +270,9 @@ export function DeckViewManager() {
           }}
           title={`Edit ${state.selectedView.name}`}
         />
+      ) : null}
+      {canManage && state.selectedOwner.billingSelections.length === 0 ? (
+        <p className="status-banner warning" role="status">A server-authorized billing team is required to create or edit a view.</p>
       ) : null}
       {editing === null ? (
         <div className="deck-view-list">
@@ -304,20 +343,26 @@ function groupKey(pullRequest: DeckPullRequest, grouping: DeckGrouping): string 
 }
 
 function CandidatePicker({
+  fixedCandidates,
   kind,
   onApply,
   pullRequest,
+  remoteSearch,
 }: {
+  readonly fixedCandidates: readonly DeckMutationCandidate[];
   readonly kind: DeckMutationKind;
   readonly onApply: (input: DeckMutationInput) => Promise<boolean>;
   readonly pullRequest: DeckPullRequest;
+  readonly remoteSearch: boolean;
 }) {
   const { meta, state } = useDeck();
   const [query, setQuery] = useState("");
   const [candidates, setCandidates] = useState<readonly DeckMutationCandidate[]>([]);
   const [selected, setSelected] = useState<readonly DeckMutationCandidate[]>([]);
   const [loading, setLoading] = useState(false);
-  const search = async () => {
+  const [nextCursor, setNextCursor] = useState("");
+  const visibleCandidates = remoteSearch ? candidates : fixedCandidates;
+  const search = async (cursor = "") => {
     if (state.selectedView === null) return;
     setLoading(true);
     try {
@@ -326,9 +371,10 @@ function CandidatePicker({
         pullRequest,
         kind,
         query,
-        "",
+        cursor,
       );
-      setCandidates(page.items);
+      setCandidates((current) => cursor.length === 0 ? page.items : [...current, ...page.items]);
+      setNextCursor(page.nextCursor);
     } finally {
       setLoading(false);
     }
@@ -341,16 +387,18 @@ function CandidatePicker({
   });
   return (
     <div className="candidate-picker">
-      <label className="field">
-        Search allowed candidates
-        <span className="button-row">
-          <input onChange={(event) => setQuery(event.target.value)} value={query} />
-          <button className="secondary-button" disabled={loading} onClick={() => void search()} type="button">
-            {loading ? "Searching…" : "Search"}
-          </button>
-        </span>
-      </label>
-      {candidates.map((candidate) => (
+      {remoteSearch ? (
+        <label className="field">
+          Search allowed candidates
+          <span className="button-row">
+            <input onChange={(event) => setQuery(event.target.value)} value={query} />
+            <button className="secondary-button" disabled={loading} onClick={() => void search()} type="button">
+              {loading ? "Searching…" : "Search"}
+            </button>
+          </span>
+        </label>
+      ) : <p>Choose the current operands to remove.</p>}
+      {visibleCandidates.map((candidate) => (
         <label className="check-field" key={`${candidate.kind}:${candidate.value}`}>
           <input
             checked={selected.includes(candidate)}
@@ -362,6 +410,11 @@ function CandidatePicker({
           {candidate.value} <small>{candidate.kind}</small>
         </label>
       ))}
+      {remoteSearch && nextCursor.length > 0 ? (
+        <button className="secondary-button" disabled={loading} onClick={() => void search(nextCursor)} type="button">
+          {loading ? "Loading…" : "Load more candidates"}
+        </button>
+      ) : null}
       <button className="primary-button" disabled={selected.length === 0} onClick={() => void apply()} type="button">
         Apply
       </button>
@@ -379,19 +432,25 @@ function PullRequestActions({ pullRequest }: { readonly pullRequest: DeckPullReq
     DeckMutationKind.RequestReviewers,
     DeckMutationKind.AddLabels,
   ]);
-  const removalInput = (kind: DeckMutationKind): DeckMutationInput => ({
-    kind,
-    users: kind === DeckMutationKind.UnassignUsers ? pullRequest.assignees :
-      kind === DeckMutationKind.RemoveReviewers
-        ? pullRequest.reviewers.filter((reviewer) => reviewer.kind === "user").map((reviewer) => reviewer.label)
-        : undefined,
-    teams: kind === DeckMutationKind.RemoveReviewers
-      ? pullRequest.reviewers.filter((reviewer) => reviewer.kind === "team").map((reviewer) => reviewer.label)
-      : undefined,
-    labels: kind === DeckMutationKind.RemoveLabels ? pullRequest.labels : undefined,
-  });
+  const removalKinds = new Set([
+    DeckMutationKind.UnassignUsers,
+    DeckMutationKind.RemoveReviewers,
+    DeckMutationKind.RemoveLabels,
+  ]);
+  const removalCandidates = (kind: DeckMutationKind): DeckMutationCandidate[] => {
+    if (kind === DeckMutationKind.UnassignUsers) {
+      return pullRequest.assignees.map((value) => ({ kind: "user", value }));
+    }
+    if (kind === DeckMutationKind.RemoveReviewers) {
+      return pullRequest.reviewers.map((reviewer) => ({ kind: reviewer.kind, value: reviewer.label }));
+    }
+    if (kind === DeckMutationKind.RemoveLabels) {
+      return pullRequest.labels.map((value) => ({ kind: "label", value }));
+    }
+    return [];
+  };
   const act = (kind: DeckMutationKind) => {
-    if (addKinds.has(kind)) {
+    if (addKinds.has(kind) || removalKinds.has(kind)) {
       setPicker(kind);
       return;
     }
@@ -402,7 +461,7 @@ function PullRequestActions({ pullRequest }: { readonly pullRequest: DeckPullReq
     const input: DeckMutationInput =
       kind === DeckMutationKind.EnableAutoMerge
         ? { kind, mergeMethod }
-        : removalInput(kind);
+        : { kind };
     void actions.mutate(pullRequest, input);
   };
   return (
@@ -419,6 +478,7 @@ function PullRequestActions({ pullRequest }: { readonly pullRequest: DeckPullReq
       </div>
       {picker ? (
         <CandidatePicker
+          fixedCandidates={removalCandidates(picker)}
           kind={picker}
           onApply={async (input) => {
             const applied = await actions.mutate(pullRequest, input);
@@ -426,6 +486,7 @@ function PullRequestActions({ pullRequest }: { readonly pullRequest: DeckPullReq
             return applied;
           }}
           pullRequest={pullRequest}
+          remoteSearch={addKinds.has(picker)}
         />
       ) : null}
       {mergeOpen ? (
@@ -470,11 +531,14 @@ export function DeckPullRequests() {
     }
     return groups;
   }, [state.pullRequests, state.selectedView?.grouping]);
-  if (state.selectedView === null) {
-    return <section className="deck-empty-state"><h2>Select a view</h2><p>Choose a personal or organization view to load its permission-filtered pull requests.</p></section>;
-  }
   if (!state.online) {
     return <section aria-labelledby="deck-offline-title" className="state-card error-card"><h2 id="deck-offline-title">Deck is offline</h2><p role="alert">Regular pull request results are hidden while the service is unavailable. Widget snapshots remain separate.</p></section>;
+  }
+  if (state.error !== null) {
+    return <section className="state-card error-card"><h2>Pull requests unavailable</h2><p role="alert">{failureMessage(state.error)}</p><button className="secondary-button" onClick={() => void actions.retry()} type="button">Try again</button></section>;
+  }
+  if (state.selectedView === null) {
+    return <section className="deck-empty-state"><h2>Select a view</h2><p>Choose a personal or organization view to load its permission-filtered pull requests.</p></section>;
   }
   if (state.freshness === DeckFreshness.Offline) {
     return <section className="state-card error-card"><h2>Deck service unavailable</h2><p role="alert">Regular pull request results are hidden until Deck is available again.</p><button className="secondary-button" onClick={() => void actions.retry()} type="button">Try again</button></section>;
@@ -484,9 +548,6 @@ export function DeckPullRequests() {
   }
   if (state.selectedView.connection !== "connected") {
     return <section className="state-card error-card"><h2>GitHub connection required</h2><p role="alert">Reconnect GitHub before loading pull requests.</p></section>;
-  }
-  if (state.error !== null) {
-    return <section className="state-card error-card"><h2>Pull requests unavailable</h2><p role="alert">{failureMessage(state.error)}</p><button className="secondary-button" onClick={() => void actions.retry()} type="button">Try again</button></section>;
   }
   return (
     <section aria-labelledby="deck-results-title" className="deck-results">
@@ -567,7 +628,7 @@ export function DeckWorkspace() {
   return (
     <div className="deck-workspace">
       <header className="deck-workspace-header">
-        <div><p className="eyebrow">Closed internal tool</p><h1>Deck</h1><p>Monitor and act on GitHub pull requests.</p></div>
+        <div><p className="eyebrow">Closed internal tool</p><h1 id="deck-workspace-title" tabIndex={-1}>Deck</h1><p>Monitor and act on GitHub pull requests.</p></div>
         <span className="status-chip" role="status">{state.online ? "Online" : "Offline"}</span>
       </header>
       {state.loadingOwners ? <p role="status">Loading Deck ownership scopes…</p> : null}

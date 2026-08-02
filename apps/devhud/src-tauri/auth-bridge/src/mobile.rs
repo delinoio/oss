@@ -57,6 +57,13 @@ impl<R: Runtime> DevHudAuthBridge<R> {
         response.completed.then_some(()).ok_or(Error::Rejected)
     }
 
+    pub fn open_pull_request(&self, url: String) -> Result<()> {
+        let response: OperationResponse = self
+            .0
+            .run_mobile_plugin("openPullRequest", OpenAuthorizationRequest { url })?;
+        response.completed.then_some(()).ok_or(Error::Rejected)
+    }
+
     pub fn take_callback(&self) -> Result<Option<String>> {
         let response: CallbackResponse = self
             .0

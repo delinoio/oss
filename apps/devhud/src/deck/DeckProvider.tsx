@@ -163,6 +163,10 @@ export function DeckProvider({
   }, [selectedView, views]);
 
   useEffect(() => {
+    if (selectedView !== null) gateway.recordViewOpened(selectedView.viewId);
+  }, [gateway, selectedView]);
+
+  useEffect(() => {
     void gateway.synchronizeShortcuts(views).catch(() => undefined);
   }, [gateway, views]);
   useEffect(
@@ -284,9 +288,15 @@ export function DeckProvider({
       if (selectedView === null) return;
       const result = await gateway.mutatePullRequest(selectedView.viewId, pullRequest, input);
       // A provider-accepted mutation is never repeated when its reload failed.
-      // Both paths invalidate the permission-filtered list; refresh_required
-      // deliberately carries no potentially stale detail.
-      if (result.refreshRequired || result.pullRequest !== undefined) {
+      // refresh_required deliberately carries no potentially stale detail, so
+      // dispatch a new view refresh and never retry the provider mutation.
+      if (result.refreshRequired) {
+        try {
+          await gateway.refreshAfterMutation(selectedView.viewId);
+        } finally {
+          await invalidatePullRequests();
+        }
+      } else if (result.pullRequest !== undefined) {
         await invalidatePullRequests();
       }
     }),
@@ -299,6 +309,9 @@ export function DeckProvider({
   useEffect(() => {
     if (!isTauri()) return;
     const cleanups = [
+      listen("devhud://deck-open", () => {
+        document.getElementById("deck-workspace-title")?.focus();
+      }),
       listen("devhud://deck-refresh", () => void refresh()),
       listen<string>("devhud://deck-shortcut", (event) => {
         const view = views.find((candidate) => candidate.viewId === event.payload);

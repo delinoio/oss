@@ -233,6 +233,15 @@ requireCondition(
   "mobile auth must discard a stale callback before starting a new authorization transaction",
 );
 requireCondition(
+  androidAuthPlugin.includes("fun openPullRequest") &&
+    androidAuthPlugin.includes('target.host == "github.com"') &&
+    androidAuthPlugin.includes('segments[2] == "pull"') &&
+    iosAuthPlugin.includes("func openPullRequest") &&
+    iosAuthPlugin.includes('target.host == "github.com"') &&
+    iosAuthPlugin.includes('segments[2] == "pull"'),
+  "mobile Deck PR handoff must use a distinct exact-shape GitHub system-browser command",
+);
+requireCondition(
   authNativeSource.includes('option_env!("DEVHUD_LOGTO_ENDPOINT")') &&
     authNativeSource.includes('option_env!("DEVHUD_LOGTO_APP_ID")'),
   "mobile auth must embed its public Logto issuer and app ID at Rust build time",

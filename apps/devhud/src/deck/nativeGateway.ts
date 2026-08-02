@@ -3,6 +3,7 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 import {
   AddLabelsMutationSchema,
   AssignUsersMutationSchema,
+  BillingSelectionSchema,
   CancelAutoMergeMutationSchema,
   ChecksState,
   ClosePullRequestMutationSchema,
@@ -12,6 +13,8 @@ import {
   DeleteViewResponseSchema,
   EnableAutoMergeMutationSchema,
   FreshnessState,
+  GetDeviceRequestSchema,
+  GetDeviceResponseSchema,
   GetRefreshPreflightRequestSchema,
   GetRefreshPreflightResponseSchema,
   GetViewRequestSchema,
@@ -21,6 +24,8 @@ import {
   IdempotencyKeySchema,
   ListPullRequestMutationCandidatesRequestSchema,
   ListPullRequestMutationCandidatesResponseSchema,
+  ListOwnersRequestSchema,
+  ListOwnersResponseSchema,
   ListPullRequestsRequestSchema,
   ListPullRequestsResponseSchema,
   ListViewsRequestSchema,
@@ -48,6 +53,9 @@ import {
   RequestReviewersMutationSchema,
   ReviewDecision,
   RevisionSchema,
+  ShortcutKey as ProtoShortcutKey,
+  ShortcutModifier as ProtoShortcutModifier,
+  ShortcutState,
   UnassignUsersMutationSchema,
   UpdateViewRequestSchema,
   UpdateViewResponseSchema,
@@ -62,6 +70,12 @@ import {
 } from "@delinoio/devhud-deck-connect";
 
 import {
+  ShortcutKey,
+  ShortcutModifier,
+  type StructuredShortcut,
+} from "../persistence/contracts";
+
+import {
   DeckFailureCode,
   DeckFreshness,
   DeckGrouping,
@@ -73,6 +87,7 @@ import {
   DeckPullRequestLifecycle,
   DeckSort,
   type DeckCursorPage,
+  type DeckBillingSelection,
   type DeckGateway,
   type DeckMutationCandidate,
   type DeckMutationInput,
@@ -176,6 +191,20 @@ function ownerMessage(owner: DeckOwner) {
       : { case: "organizationId", value: uuid(owner.ownerId) },
   });
 }
+function billingMessage(billing: DeckBillingSelection) {
+  return create(BillingSelectionSchema, {
+    organizationId: uuid(billing.organizationId),
+    teamId: uuid(billing.teamId),
+  });
+}
+function billingFromProto(
+  billing: { organizationId?: { value: string }; teamId?: { value: string } } | undefined,
+): DeckBillingSelection {
+  return {
+    organizationId: billing?.organizationId?.value ?? "",
+    teamId: billing?.teamId?.value ?? "",
+  };
+}
 function ownerFromView(view: View): DeckOwner {
   const organization = view.owner?.ownerId.case === "organizationId";
   const ownerId = view.owner?.ownerId.value?.value ?? "";
@@ -184,6 +213,7 @@ function ownerFromView(view: View): DeckOwner {
     kind: organization ? DeckOwnerKind.Organization : DeckOwnerKind.Personal,
     label: organization ? "Organization" : "Personal",
     canManage: true,
+    billingSelections: view.billing === undefined ? [] : [billingFromProto(view.billing)],
   };
 }
 function timestamp(value: { seconds: bigint; nanos: number } | undefined): string | undefined {
@@ -194,6 +224,7 @@ function mapView(view: View): DeckView {
   return {
     viewId: view.viewId?.value ?? "",
     owner: ownerFromView(view),
+    billing: billingFromProto(view.billing),
     name: view.name,
     rawQuery: view.query?.rawQuery ?? "",
     sort: sortFromProto[view.sort] ?? DeckSort.RecentlyUpdated,
@@ -206,7 +237,6 @@ function mapView(view: View): DeckView {
     },
     connection: view.connectionState === 3 ? "connected" : view.connectionState === 4 ? "reauthentication-required" : "disconnected",
     revision: revision(view.revision),
-    lastOpenedAt: timestamp(view.updatedAt),
     widgetAttached: false,
   };
 }
@@ -246,6 +276,7 @@ function mapPullRequest(value: PullRequestResult): DeckPullRequest {
 }
 function viewInput(input: DeckViewInput) {
   return {
+    billing: billingMessage(input.billing),
     name: input.name,
     query: create(ViewQuerySchema, { rawQuery: input.rawQuery }),
     sort: sortToProto[input.sort],
@@ -255,6 +286,78 @@ function viewInput(input: DeckViewInput) {
       transitions: input.notificationPreference.transitions.map((transition) => notificationToProto[transition]),
     },
   };
+}
+
+const shortcutModifiers: Readonly<Partial<Record<ProtoShortcutModifier, ShortcutModifier>>> = {
+  [ProtoShortcutModifier.CONTROL]: ShortcutModifier.Control,
+  [ProtoShortcutModifier.ALT]: ShortcutModifier.Alt,
+  [ProtoShortcutModifier.SHIFT]: ShortcutModifier.Shift,
+  [ProtoShortcutModifier.META]: ShortcutModifier.Meta,
+};
+const shortcutKeys: Readonly<Partial<Record<ProtoShortcutKey, ShortcutKey>>> = {
+  [ProtoShortcutKey.A]: ShortcutKey.A,
+  [ProtoShortcutKey.B]: ShortcutKey.B,
+  [ProtoShortcutKey.C]: ShortcutKey.C,
+  [ProtoShortcutKey.D]: ShortcutKey.D,
+  [ProtoShortcutKey.E]: ShortcutKey.E,
+  [ProtoShortcutKey.F]: ShortcutKey.F,
+  [ProtoShortcutKey.G]: ShortcutKey.G,
+  [ProtoShortcutKey.H]: ShortcutKey.H,
+  [ProtoShortcutKey.I]: ShortcutKey.I,
+  [ProtoShortcutKey.J]: ShortcutKey.J,
+  [ProtoShortcutKey.K]: ShortcutKey.K,
+  [ProtoShortcutKey.L]: ShortcutKey.L,
+  [ProtoShortcutKey.M]: ShortcutKey.M,
+  [ProtoShortcutKey.N]: ShortcutKey.N,
+  [ProtoShortcutKey.O]: ShortcutKey.O,
+  [ProtoShortcutKey.P]: ShortcutKey.P,
+  [ProtoShortcutKey.Q]: ShortcutKey.Q,
+  [ProtoShortcutKey.R]: ShortcutKey.R,
+  [ProtoShortcutKey.S]: ShortcutKey.S,
+  [ProtoShortcutKey.T]: ShortcutKey.T,
+  [ProtoShortcutKey.U]: ShortcutKey.U,
+  [ProtoShortcutKey.V]: ShortcutKey.V,
+  [ProtoShortcutKey.W]: ShortcutKey.W,
+  [ProtoShortcutKey.X]: ShortcutKey.X,
+  [ProtoShortcutKey.Y]: ShortcutKey.Y,
+  [ProtoShortcutKey.Z]: ShortcutKey.Z,
+  [ProtoShortcutKey.DIGIT_0]: ShortcutKey.Digit0,
+  [ProtoShortcutKey.DIGIT_1]: ShortcutKey.Digit1,
+  [ProtoShortcutKey.DIGIT_2]: ShortcutKey.Digit2,
+  [ProtoShortcutKey.DIGIT_3]: ShortcutKey.Digit3,
+  [ProtoShortcutKey.DIGIT_4]: ShortcutKey.Digit4,
+  [ProtoShortcutKey.DIGIT_5]: ShortcutKey.Digit5,
+  [ProtoShortcutKey.DIGIT_6]: ShortcutKey.Digit6,
+  [ProtoShortcutKey.DIGIT_7]: ShortcutKey.Digit7,
+  [ProtoShortcutKey.DIGIT_8]: ShortcutKey.Digit8,
+  [ProtoShortcutKey.DIGIT_9]: ShortcutKey.Digit9,
+  [ProtoShortcutKey.F1]: ShortcutKey.F1,
+  [ProtoShortcutKey.F2]: ShortcutKey.F2,
+  [ProtoShortcutKey.F3]: ShortcutKey.F3,
+  [ProtoShortcutKey.F4]: ShortcutKey.F4,
+  [ProtoShortcutKey.F5]: ShortcutKey.F5,
+  [ProtoShortcutKey.F6]: ShortcutKey.F6,
+  [ProtoShortcutKey.F7]: ShortcutKey.F7,
+  [ProtoShortcutKey.F8]: ShortcutKey.F8,
+  [ProtoShortcutKey.F9]: ShortcutKey.F9,
+  [ProtoShortcutKey.F10]: ShortcutKey.F10,
+  [ProtoShortcutKey.F11]: ShortcutKey.F11,
+  [ProtoShortcutKey.F12]: ShortcutKey.F12,
+  [ProtoShortcutKey.SPACE]: ShortcutKey.Space,
+  [ProtoShortcutKey.ENTER]: ShortcutKey.Enter,
+};
+function shortcutFromProto(
+  binding: { modifiers: readonly ProtoShortcutModifier[]; key: ProtoShortcutKey } | undefined,
+): StructuredShortcut | undefined {
+  if (binding === undefined) return undefined;
+  const modifiers = binding.modifiers.flatMap((modifier) => {
+    const mapped = shortcutModifiers[modifier];
+    return mapped === undefined ? [] : [mapped];
+  });
+  const key = shortcutKeys[binding.key];
+  return key === undefined || modifiers.length !== binding.modifiers.length
+    ? undefined
+    : { modifiers, key };
 }
 function reference(pullRequest: DeckPullRequest) {
   return create(PullRequestReferenceSchema, {
@@ -316,16 +419,19 @@ function mapFailure(error: unknown): never {
 }
 
 export class NativeDeckGateway implements DeckGateway {
-  readonly #personalOwner: DeckOwner;
   readonly #manualAttempts = new Map<string, DeckRefreshAttempt>();
+  readonly #mutationAttempts = new Map<string, DeckRefreshAttempt>();
+  readonly #automaticAttempts = new MemoryRefreshAttemptStore();
+  readonly #lastOpenedAt = new Map<string, Date>();
+  readonly #shortcutViewIds = new Set<string>();
+  #accountId = "";
+  #deviceId = "";
 
   readonly #clientKind: RefreshClientKind.DESKTOP | RefreshClientKind.MOBILE;
 
   constructor(
-    accountId: string,
     clientKind: RefreshClientKind.DESKTOP | RefreshClientKind.MOBILE = RefreshClientKind.DESKTOP,
   ) {
-    this.#personalOwner = { ownerId: accountId, kind: DeckOwnerKind.Personal, label: "Personal", canManage: true };
     this.#clientKind = clientKind;
   }
 
@@ -333,7 +439,28 @@ export class NativeDeckGateway implements DeckGateway {
     try { return await operation(); } catch (error) { mapFailure(error); }
   }
 
-  async listOwners(): Promise<readonly DeckOwner[]> { return [this.#personalOwner]; }
+  async listOwners(): Promise<readonly DeckOwner[]> {
+    const response = await this.#call(() => invokeDeckProcedure(
+      DeckProcedure.ListOwners,
+      ListOwnersRequestSchema,
+      ListOwnersResponseSchema,
+      create(ListOwnersRequestSchema),
+    ));
+    const owners = response.owners.flatMap<DeckOwner>((access) => {
+      const organization = access.owner?.ownerId.case === "organizationId";
+      const ownerId = access.owner?.ownerId.value?.value ?? "";
+      if (ownerId.length === 0) return [];
+      return [{
+        ownerId,
+        kind: organization ? DeckOwnerKind.Organization : DeckOwnerKind.Personal,
+        label: organization ? `Organization ${ownerId}` : "Personal",
+        canManage: access.canManage,
+        billingSelections: access.billingSelections.map(billingFromProto),
+      }];
+    });
+    this.#accountId = owners.find((owner) => owner.kind === DeckOwnerKind.Personal)?.ownerId ?? "";
+    return owners;
+  }
   async listViews(owner: DeckOwner, cursor: string): Promise<DeckCursorPage<DeckView>> {
     const response = await this.#call(() => invokeDeckProcedure(
       DeckProcedure.ListViews,
@@ -377,6 +504,48 @@ export class NativeDeckGateway implements DeckGateway {
     const response = await this.#call(() => invokeDeckProcedure(DeckProcedure.MutatePullRequest, MutatePullRequestRequestSchema, MutatePullRequestResponseSchema, create(MutatePullRequestRequestSchema, { viewId: uuid(viewId), pullRequest: reference(pullRequest), expectedRevision: create(RevisionSchema, pullRequest.revision), mutation: mutation(input) })));
     return { pullRequest: response.pullRequest?.result ? mapPullRequest(response.pullRequest.result) : undefined, refreshRequired: response.refreshRequired };
   }
+  async refreshAfterMutation(viewId: string): Promise<void> {
+    let attempt = this.#mutationAttempts.get(viewId);
+    if (attempt === undefined) {
+      const requestId = createUuidV7();
+      const response = await this.#call(() => invokeDeckProcedure(
+        DeckProcedure.GetRefreshPreflight,
+        GetRefreshPreflightRequestSchema,
+        GetRefreshPreflightResponseSchema,
+        create(GetRefreshPreflightRequestSchema, {
+          viewId: uuid(viewId),
+          refreshRequestId: idempotencyKey(requestId),
+          origin: RefreshOrigin.VIEW_OPEN,
+          clientKind: this.#clientKind,
+        }),
+      ));
+      attempt = {
+        request: { viewId, requestId, origin: RefreshOrigin.VIEW_OPEN, clientKind: this.#clientKind },
+        preflightToken: response.preflightToken,
+      };
+      this.#mutationAttempts.set(viewId, attempt);
+    }
+    try {
+      await this.#call(() => invokeDeckProcedure(
+        DeckProcedure.RefreshView,
+        RefreshViewRequestSchema,
+        RefreshViewResponseSchema,
+        create(RefreshViewRequestSchema, {
+          viewId: uuid(viewId),
+          refreshRequestId: idempotencyKey(attempt!.request.requestId),
+          origin: attempt!.request.origin,
+          billingPreflightToken: attempt!.preflightToken,
+          clientKind: attempt!.request.clientKind,
+        }),
+      ));
+      this.#mutationAttempts.delete(viewId);
+    } catch (error) {
+      if (!(error instanceof DeckProductError) || error.code !== DeckFailureCode.ServiceUnavailable) {
+        this.#mutationAttempts.delete(viewId);
+      }
+      throw error;
+    }
+  }
   async refreshView(viewId: string, confirm: (warning: ReturnType<typeof manualRefreshWarning>) => Promise<boolean>): Promise<void> {
     let attempt = this.#manualAttempts.get(viewId);
     if (attempt === undefined) {
@@ -395,27 +564,48 @@ export class NativeDeckGateway implements DeckGateway {
     }
   }
   openPullRequest(pullRequest: DeckPullRequest): Promise<void> { return openDeckPullRequest(pullRequest.repositoryOwner, pullRequest.repositoryName, pullRequest.number); }
+  recordViewOpened(viewId: string): void { this.#lastOpenedAt.set(viewId, new Date()); }
   async synchronizeShortcuts(views: readonly DeckView[]): Promise<void> {
-    if (!isTauri()) return;
+    if (!isTauri() || this.#clientKind !== RefreshClientKind.DESKTOP) return;
+    if (views.length === 0) {
+      this.#shortcutViewIds.clear();
+      await invoke("synchronize_deck_shortcuts", { accountId: this.#accountId, definitions: [] });
+      return;
+    }
+    if (this.#deviceId.length === 0) this.#deviceId = await invoke<string>("deck_device_id");
+    const response = await this.#call(() => invokeDeckProcedure(
+      DeckProcedure.GetDevice,
+      GetDeviceRequestSchema,
+      GetDeviceResponseSchema,
+      create(GetDeviceRequestSchema, { deviceId: uuid(this.#deviceId) }),
+    ));
+    const definitions = (response.registration?.device?.shortcuts ?? []).flatMap((shortcut) => {
+      if (shortcut.state !== ShortcutState.ACTIVE) return [];
+      const mapped = shortcutFromProto(shortcut.binding);
+      const viewId = shortcut.viewId?.value ?? "";
+      return mapped === undefined || viewId.length === 0 ? [] : [{
+        accountId: this.#accountId,
+        viewId,
+        shortcut: mapped,
+      }];
+    });
+    this.#shortcutViewIds.clear();
+    definitions.forEach((definition) => this.#shortcutViewIds.add(definition.viewId));
     await invoke("synchronize_deck_shortcuts", {
-      accountId: this.#personalOwner.ownerId,
-      definitions: views.flatMap((view) => view.shortcut === undefined ? [] : [{
-        accountId: this.#personalOwner.ownerId,
-        viewId: view.viewId,
-        shortcut: view.shortcut.shortcut,
-      }]),
+      accountId: this.#accountId,
+      definitions,
     });
   }
 
   startEligibleRefreshes(views: readonly DeckView[]): () => void {
     if (views.length === 0) return () => undefined;
-    const attempts = new MemoryRefreshAttemptStore();
     const controller = new DeckRefreshController({
       clientKind: this.#clientKind,
       transport: {
         isAmbiguousRefreshError: (error) =>
           error instanceof DeckProductError && error.code === DeckFailureCode.ServiceUnavailable,
-        getPreflight: async (request) => {
+        getPreflight: async (request, signal) => {
+          signal.throwIfAborted();
           const response = await this.#call(() => invokeDeckProcedure(
             DeckProcedure.GetRefreshPreflight,
             GetRefreshPreflightRequestSchema,
@@ -427,12 +617,14 @@ export class NativeDeckGateway implements DeckGateway {
               clientKind: request.clientKind,
             }),
           ));
+          signal.throwIfAborted();
           return {
             priceUsdMicros: response.providerRefreshPrice?.value ?? 0n,
             token: response.preflightToken,
           };
         },
-        refresh: async (request) => {
+        refresh: async (request, signal) => {
+          signal.throwIfAborted();
           await this.#call(() => invokeDeckProcedure(
             DeckProcedure.RefreshView,
             RefreshViewRequestSchema,
@@ -445,18 +637,19 @@ export class NativeDeckGateway implements DeckGateway {
               clientKind: request.clientKind,
             }),
           ));
+          signal.throwIfAborted();
         },
       },
       createRequestId: createUuidV7,
       listCandidates: async () => views.map((view) => ({
         viewId: view.viewId,
-        lastOpenedAt: view.lastOpenedAt === undefined ? undefined : new Date(view.lastOpenedAt),
+        lastOpenedAt: this.#lastOpenedAt.get(view.viewId),
         notificationAttached: view.notificationPreference.enabled,
-        shortcutAttached: view.shortcut !== undefined,
+        shortcutAttached: this.#shortcutViewIds.has(view.viewId),
         widgetAttached: view.widgetAttached,
       })),
       canPoll: () => navigator.onLine,
-      automaticAttempts: attempts,
+      automaticAttempts: this.#automaticAttempts,
       manualAttempts: new MemoryRefreshAttemptStore(),
     });
     controller.start();

@@ -158,6 +158,10 @@
   refresh outcome, billing disposition, notification transition, and
   freshness state are closed enums.
 - The closed v1 view registry contains only `GITHUB_PULL_REQUESTS`. It is internal and source-controlled, not a public plugin SDK or remote-UI registry.
+- `ListOwners` returns only the authenticated viewer's personal scope and
+  accessible organization scopes, with server-derived management authority and
+  authorized billing organization/team selections. It never trusts client- or
+  token-constructed owner IDs, roles, or billing choices.
 - A view contains owner scope and optional organization ID, required billing organization/team, name, canonical raw GitHub search query, typed visual-builder representation, sort/grouping, notification preference, revision, and timestamps. `UpdateView` may change the notification preference but never owner or kind.
 - `CreateView` requires a stable client-generated UUID v7 idempotency key scoped to the authenticated subject and operation. An exact replay returns the original view and revision without consuming another view-limit slot; reuse with changed creation input fails with the typed idempotency-conflict reason.
 - The raw query is authoritative and its canonical UTF-8 representation is limited to 4,096 bytes so every persisted definition remains within the GitHub search adapter boundary. The builder supports owner/repository, author, assignee, individual/team reviewer, label, open/closed/draft, base/head, review decision, checks, and updated range. Editing recognized fields rewrites their clauses while preserving unknown raw clauses. Relative clauses such as `@me` are evaluated for the current viewer, including organization views.

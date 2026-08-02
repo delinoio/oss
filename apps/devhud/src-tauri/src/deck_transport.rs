@@ -10,18 +10,21 @@ use std::time::Duration;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use reqwest::{StatusCode, blocking::Client, redirect::Policy};
 use serde::{Deserialize, Serialize};
+#[cfg(any(target_os = "android", target_os = "ios"))]
+use tauri_plugin_devhud_auth::DevHudAuthBridgeExt;
 use url::Url;
 
 use crate::{auth::AuthError, auth_native::NativeAuthState};
 
 const DECK_ORIGIN: &str = "https://deck.deli.dev";
-const FORWARDED_USER_TOKEN_HEADER: &str = "X-Delibase-Forwarded-User-Token";
+const FORWARDED_USER_TOKEN_HEADER: &str = "X-Devhud-Deck-Forwarded-Delibase-Token";
 const MAX_PROTO_REQUEST_BYTES: usize = 1024 * 1024;
 const MAX_PROTO_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum DeckProcedure {
+    ListOwners,
     ListViews,
     GetView,
     CreateView,
@@ -42,6 +45,7 @@ pub(crate) enum DeckProcedure {
 impl DeckProcedure {
     fn path(self) -> &'static str {
         match self {
+            Self::ListOwners => "/devhud.deck.v1.DeckViewService/ListOwners",
             Self::ListViews => "/devhud.deck.v1.DeckViewService/ListViews",
             Self::GetView => "/devhud.deck.v1.DeckViewService/GetView",
             Self::CreateView => "/devhud.deck.v1.DeckViewService/CreateView",
@@ -237,7 +241,8 @@ pub(crate) fn open_pull_request(
     auth.with_deck_bearers(|_feature, _delibase, _subject| ())
         .map_err(map_auth_failure)?;
     let target = pull_request_url(owner, repository, number)?;
-    crate::auth_native::open_mobile_authorization(app, &target)
+    app.devhud_auth_bridge()
+        .open_pull_request(target.as_str().to_owned())
         .map_err(|_| DeckTransportFailure::BrowserUnavailable)
 }
 
@@ -248,6 +253,7 @@ mod tests {
     #[test]
     fn procedure_table_is_exact_and_complete() {
         let paths = [
+            DeckProcedure::ListOwners,
             DeckProcedure::ListViews,
             DeckProcedure::GetView,
             DeckProcedure::CreateView,
@@ -271,7 +277,7 @@ mod tests {
                 .all(|path| path.starts_with("/devhud.deck.v1."))
         );
         assert_eq!(
-            15,
+            16,
             paths
                 .iter()
                 .collect::<std::collections::BTreeSet<_>>()

@@ -2575,6 +2575,17 @@ async fn deck_connect(
     not(any(target_os = "android", target_os = "ios"))
 ))]
 #[tauri::command]
+fn deck_device_id(
+    auth: State<'_, auth_native::NativeAuthState>,
+) -> Result<String, auth::AuthError> {
+    auth.deck_device_id()
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+#[tauri::command]
 fn deck_open_pull_request(
     owner: String,
     repository: String,
@@ -3761,6 +3772,7 @@ fn configure_builder(
         .invoke_handler(tauri::generate_handler![
             get_runtime_info,
             deck_connect,
+            deck_device_id,
             deck_open_pull_request,
             synchronize_deck_shortcuts,
             read_settings,

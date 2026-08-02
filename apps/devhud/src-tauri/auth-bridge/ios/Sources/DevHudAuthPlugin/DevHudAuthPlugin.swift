@@ -57,6 +57,40 @@ final class DevHudAuthPlugin: Plugin {
         }
     }
 
+    @objc func openPullRequest(_ invoke: Invoke) {
+        guarded(invoke) {
+            let value = try invoke.parseArgs(AuthorizationArgs.self).url
+            guard let target = URL(string: value),
+                  target.scheme == "https",
+                  target.host == "github.com",
+                  target.port == nil,
+                  target.user == nil,
+                  target.password == nil,
+                  target.query == nil,
+                  target.fragment == nil else { throw VaultError.invalid }
+            let segments = target.pathComponents.filter { $0 != "/" }
+            let allowed = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-")
+            let validSegment = { (segment: String) in
+                !segment.isEmpty && segment.utf8.count <= 100 && segment != "." && segment != ".." &&
+                    segment.unicodeScalars.allSatisfy { allowed.contains($0) }
+            }
+            guard segments.count == 4,
+                  validSegment(segments[0]),
+                  validSegment(segments[1]),
+                  segments[2] == "pull",
+                  UInt64(segments[3]).map({ $0 > 0 }) == true else { throw VaultError.invalid }
+            DispatchQueue.main.async {
+                UIApplication.shared.open(target, options: [:]) { opened in
+                    if opened {
+                        invoke.resolve(OperationResponse(completed: true))
+                    } else {
+                        invoke.reject("The system browser is unavailable.", code: "browser-unavailable")
+                    }
+                }
+            }
+        }
+    }
+
     @objc func takeCallback(_ invoke: Invoke) {
         // The verified universal-link delivery is consumed by the Tauri host
         // lifecycle. No custom scheme or arbitrary URL is accepted here.

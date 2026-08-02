@@ -172,6 +172,7 @@ const expectedCapabilities = {
       "allow-hide-hud",
       "allow-show-settings",
       "allow-deck-connect",
+      "allow-deck-device-id",
       "allow-deck-open-pull-request",
       "allow-synchronize-deck-shortcuts",
       "allow-get-auth-session",

@@ -30,21 +30,28 @@ afterEach(() => {
   window.dispatchEvent(new Event("online"));
 });
 
+const billing = {
+  organizationId: "018f0000-0000-7000-8000-000000000009",
+  teamId: "018f0000-0000-7000-8000-000000000010",
+};
 const owner: DeckOwner = {
   ownerId: "018f0000-0000-7000-8000-000000000001",
   kind: DeckOwnerKind.Personal,
   label: "Personal",
   canManage: true,
+  billingSelections: [billing],
 };
 const organization: DeckOwner = {
   ownerId: "018f0000-0000-7000-8000-000000000009",
   kind: DeckOwnerKind.Organization,
   label: "Deli",
   canManage: true,
+  billingSelections: [billing],
 };
 const view: DeckView = {
   viewId: "018f0000-0000-7000-8000-000000000002",
   owner,
+  billing,
   name: "Needs review",
   rawQuery: "review-requested:@me custom:future",
   sort: DeckSort.RecentlyUpdated,
@@ -85,10 +92,12 @@ function gateway(overrides: Partial<DeckGateway> = {}): DeckGateway {
     listPullRequests: vi.fn(async () => ({ items: [pullRequest], nextCursor: "", freshness: DeckFreshness.Fresh, truncated: true, resultLimit: 500 })),
     listMutationCandidates: vi.fn(async () => ({ items: [{ kind: "user" as const, value: "hubot" }], nextCursor: "" })),
     mutatePullRequest: vi.fn(async () => ({ pullRequest, refreshRequired: false })),
+    refreshAfterMutation: vi.fn(async () => undefined),
     refreshView: vi.fn(async (_viewId, confirm) => {
       if (!await confirm(manualRefreshWarning(50n))) return;
     }),
     openPullRequest: vi.fn(async () => undefined),
+    recordViewOpened: vi.fn(),
     synchronizeShortcuts: vi.fn(async () => undefined),
     startEligibleRefreshes: vi.fn(() => () => undefined),
     ...overrides,
@@ -175,6 +184,72 @@ describe("Deck composable production workspace", () => {
     expect(screen.getByRole("button", { name: "close" })).toBeVisible();
     expect(screen.queryByRole("button", { name: "merge" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "assign users" })).not.toBeInTheDocument();
+  });
+
+  it("refreshes the view after an accepted mutation reload failure", async () => {
+    const backend = gateway({
+      mutatePullRequest: vi.fn(async () => ({ refreshRequired: true })),
+    });
+    const user = userEvent.setup();
+    renderDeck(backend);
+    await user.click(await screen.findByRole("button", { name: /Needs review/u }));
+    await user.click(await screen.findByRole("button", { name: "close" }));
+    await waitFor(() => expect(backend.refreshAfterMutation).toHaveBeenCalledWith(view.viewId));
+    expect(backend.mutatePullRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets the user remove only selected current labels", async () => {
+    const backend = gateway({
+      listPullRequests: vi.fn(async () => ({
+        items: [{ ...pullRequest, labels: ["internal", "ready"] }],
+        nextCursor: "",
+        freshness: DeckFreshness.Fresh,
+        truncated: false,
+        resultLimit: 500,
+      })),
+    });
+    const user = userEvent.setup();
+    renderDeck(backend);
+    await user.click(await screen.findByRole("button", { name: /Needs review/u }));
+    await user.click(await screen.findByRole("button", { name: "remove labels" }));
+    await user.click(screen.getByRole("checkbox", { name: /internal/u }));
+    await user.click(screen.getByRole("button", { name: "Apply" }));
+    await waitFor(() => expect(backend.mutatePullRequest).toHaveBeenCalledWith(
+      view.viewId,
+      expect.anything(),
+      expect.objectContaining({ kind: DeckMutationKind.RemoveLabels, labels: ["internal"] }),
+    ));
+  });
+
+  it("loads later mutation candidate pages", async () => {
+    const listMutationCandidates = vi.fn()
+      .mockResolvedValueOnce({ items: [{ kind: "user", value: "hubot" }], nextCursor: "next" })
+      .mockResolvedValueOnce({ items: [{ kind: "user", value: "octocat" }], nextCursor: "" });
+    const backend = gateway({ listMutationCandidates });
+    const user = userEvent.setup();
+    renderDeck(backend);
+    await user.click(await screen.findByRole("button", { name: /Needs review/u }));
+    await user.click(await screen.findByRole("button", { name: "assign users" }));
+    await user.click(screen.getByRole("button", { name: "Search" }));
+    await user.click(await screen.findByRole("button", { name: "Load more candidates" }));
+    expect(await screen.findByRole("checkbox", { name: /octocat user/ })).toBeVisible();
+    expect(listMutationCandidates).toHaveBeenLastCalledWith(
+      view.viewId,
+      expect.anything(),
+      DeckMutationKind.AssignUsers,
+      "",
+      "next",
+    );
+  });
+
+  it("surfaces owner-loading failures before the empty selection state", async () => {
+    renderDeck(gateway({
+      listOwners: vi.fn(async () => {
+        throw new DeckProductError(DeckFailureCode.ServiceUnavailable);
+      }),
+    }));
+    expect(await screen.findByRole("heading", { name: "Pull requests unavailable" })).toBeVisible();
+    expect(screen.queryByRole("heading", { name: "Select a view" })).not.toBeInTheDocument();
   });
 
   it("compares and reapplies edits after a revision conflict", async () => {
