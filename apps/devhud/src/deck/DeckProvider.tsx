@@ -4,6 +4,7 @@ import {
   useInfiniteQuery,
   useQuery,
   useQueryClient,
+  type InfiniteData,
 } from "@tanstack/react-query";
 import {
   createContext,
@@ -28,6 +29,7 @@ import {
   type DeckMutationKind,
   type DeckOwner,
   type DeckPullRequest,
+  type DeckPullRequestPage,
   type DeckView,
   type DeckViewInput,
 } from "./contracts";
@@ -144,8 +146,20 @@ export function DeckProvider({
   );
 
   useEffect(() => {
-    if (selectedOwner === null && owners.length > 0) setSelectedOwner(owners[0]!);
-  }, [owners, selectedOwner]);
+    if (!online || !ownersQuery.isSuccess) return;
+    const current = selectedOwner === null
+      ? undefined
+      : owners.find((owner) =>
+        owner.ownerId === selectedOwner.ownerId && owner.kind === selectedOwner.kind
+      );
+    if (current !== undefined) {
+      if (current !== selectedOwner) setSelectedOwner(current);
+      return;
+    }
+    setSelectedOwner(owners[0] ?? null);
+    setSelectedView(null);
+    setConflict(null);
+  }, [online, owners, ownersQuery.isSuccess, selectedOwner]);
 
   const viewsQuery = useInfiniteQuery({
     queryKey: [...viewServiceKey, "ListViews", selectedOwner?.ownerId ?? ""],
@@ -166,11 +180,25 @@ export function DeckProvider({
   const selectedViewId = selectedView?.viewId ?? null;
 
   useEffect(() => {
-    if (selectedView === null) return;
-    const current = views.find((view) => view.viewId === selectedView.viewId);
-    if (current === undefined) setSelectedView(null);
-    else if (current !== selectedView) setSelectedView(current);
-  }, [selectedView, views]);
+    if (selectedViewId === null) return;
+    const current = views.find((view) => view.viewId === selectedViewId);
+    if (current !== undefined) {
+      setSelectedView(current);
+      return;
+    }
+    if (viewsQuery.isPending) return;
+    let cancelled = false;
+    void gateway.getView(selectedViewId).then((view) => {
+      if (cancelled) return;
+      const owner = owners.find((candidate) =>
+        candidate.ownerId === view.owner.ownerId && candidate.kind === view.owner.kind
+      );
+      setSelectedView(owner === undefined ? null : { ...view, owner });
+    }).catch(() => {
+      if (!cancelled) setSelectedView(null);
+    });
+    return () => { cancelled = true; };
+  }, [gateway, owners, selectedViewId, views, viewsQuery.isPending]);
 
   useEffect(() => {
     if (selectedViewId !== null) gateway.recordViewOpened(selectedViewId);
@@ -332,15 +360,54 @@ export function DeckProvider({
         } finally {
           await invalidatePullRequests();
         }
-      } else if (result.pullRequest !== undefined) {
-        await invalidatePullRequests();
+      } else {
+        const updated = result.pullRequest;
+        if (updated === undefined) return;
+        queryClient.setQueryData<InfiniteData<DeckPullRequestPage, string>>(
+          [...viewServiceKey, "ListPullRequests", selectedView.viewId],
+          (current) => current === undefined ? current : {
+            ...current,
+            pages: current.pages.map((page) => ({
+              ...page,
+              items: page.items.map((candidate) =>
+                candidate.repositoryOwner === updated.repositoryOwner &&
+                candidate.repositoryName === updated.repositoryName &&
+                candidate.number === updated.number
+                  ? updated
+                  : candidate
+              ),
+            })),
+          },
+        );
       }
     }),
-    [gateway, invalidatePullRequests, run, selectedView],
+    [gateway, invalidatePullRequests, queryClient, run, selectedView],
   );
   const openOnGitHub = useCallback(
     (pullRequest: DeckPullRequest) => run(() => gateway.openPullRequest(pullRequest)),
     [gateway, run],
+  );
+  const openShortcut = useCallback(
+    (viewId: string) => run(async () => {
+      const view = await gateway.getView(viewId);
+      let owner = owners.find((candidate) =>
+        candidate.ownerId === view.owner.ownerId && candidate.kind === view.owner.kind
+      );
+      if (owner === undefined) {
+        const refreshedOwners = await gateway.listOwners();
+        queryClient.setQueryData([...viewServiceKey, "ListOwners"], refreshedOwners);
+        owner = refreshedOwners.find((candidate) =>
+          candidate.ownerId === view.owner.ownerId && candidate.kind === view.owner.kind
+        );
+      }
+      if (owner === undefined) {
+        throw new DeckProductError(DeckFailureCode.PermissionDenied);
+      }
+      setSelectedOwner(owner);
+      setSelectedView({ ...view, owner });
+      setConflict(null);
+    }),
+    [gateway, owners, queryClient, run],
   );
   useEffect(() => {
     if (!isTauri()) return;
@@ -349,17 +416,19 @@ export function DeckProvider({
         document.getElementById("deck-workspace-title")?.focus();
       }),
       listen("devhud://deck-refresh", () => void refresh()),
-      listen<string>("devhud://deck-shortcut", (event) => {
-        const view = views.find((candidate) => candidate.viewId === event.payload);
-        if (view !== undefined) setSelectedView(view);
-      }),
+      listen<string>("devhud://deck-shortcut", (event) => void openShortcut(event.payload)),
     ];
     return () => { void Promise.all(cleanups).then((unlisten) => unlisten.forEach((remove) => remove())); };
-  }, [refresh, views]);
+  }, [openShortcut, refresh]);
   const retry = useCallback(async () => {
     setOperationError(null);
-    await Promise.all([ownersQuery.refetch(), viewsQuery.refetch(), pullRequestsQuery.refetch()]);
-  }, [ownersQuery, pullRequestsQuery, viewsQuery]);
+    const requests: Promise<unknown>[] = [ownersQuery.refetch()];
+    if (selectedOwner !== null) requests.push(viewsQuery.refetch());
+    if (selectedView !== null && selectedView.connection === "connected") {
+      requests.push(pullRequestsQuery.refetch());
+    }
+    await Promise.all(requests);
+  }, [ownersQuery, pullRequestsQuery, selectedOwner, selectedView, viewsQuery]);
 
   const state = useMemo<DeckState>(() => ({
     owners,

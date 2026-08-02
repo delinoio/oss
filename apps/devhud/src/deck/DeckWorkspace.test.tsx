@@ -23,9 +23,29 @@ import {
 } from "./contracts";
 import { manualRefreshWarning } from "./refreshController";
 
+const tauri = vi.hoisted(() => ({
+  enabled: false,
+  listeners: new Map<string, (event: { readonly payload: unknown }) => void>(),
+}));
+
+vi.mock("@tauri-apps/api/core", () => ({ isTauri: () => tauri.enabled }));
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn(async (
+    event: string,
+    listener: (event: { readonly payload: unknown }) => void,
+  ) => {
+    tauri.listeners.set(event, listener);
+    return () => {
+      if (tauri.listeners.get(event) === listener) tauri.listeners.delete(event);
+    };
+  }),
+}));
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  tauri.enabled = false;
+  tauri.listeners.clear();
   Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
   window.dispatchEvent(new Event("online"));
 });
@@ -108,13 +128,16 @@ function renderDeck(value: DeckGateway) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0, networkMode: "always" } },
   });
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <DeckProvider gateway={value}>
-        <DeckWorkspace />
-      </DeckProvider>
-    </QueryClientProvider>,
-  );
+  return {
+    ...render(
+      <QueryClientProvider client={queryClient}>
+        <DeckProvider gateway={value}>
+          <DeckWorkspace />
+        </DeckProvider>
+      </QueryClientProvider>,
+    ),
+    queryClient,
+  };
 }
 
 describe("Deck composable production workspace", () => {
@@ -125,6 +148,56 @@ describe("Deck composable production workspace", () => {
     expect(await screen.findByRole("button", { name: /Personal/u })).toHaveAttribute("aria-current", "page");
     await user.click(screen.getByRole("button", { name: /Deli/u }));
     await waitFor(() => expect(backend.listViews).toHaveBeenCalledWith(organization, ""));
+  });
+
+  it("replaces a selected owner removed by an authoritative refetch", async () => {
+    const listOwners = vi.fn()
+      .mockResolvedValueOnce([owner, organization])
+      .mockResolvedValue([organization]);
+    const backend = gateway({ listOwners });
+    const { queryClient } = renderDeck(backend);
+    expect(await screen.findByRole("button", { name: /Personal/u })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+
+    await queryClient.invalidateQueries();
+
+    await waitFor(() => expect(
+      screen.getByRole("button", { name: /Deli/u }),
+    ).toHaveAttribute("aria-current", "page"));
+    await waitFor(() => expect(backend.listViews).toHaveBeenCalledWith(organization, ""));
+  });
+
+  it("resolves synchronized shortcuts outside the loaded owner rows", async () => {
+    tauri.enabled = true;
+    const shortcutView = {
+      ...view,
+      viewId: "018f0000-0000-7000-8000-000000000012",
+      owner: organization,
+      name: "Organization shortcut",
+    };
+    const backend = gateway({
+      getView: vi.fn(async () => shortcutView),
+      listOwners: vi.fn(async () => [owner, organization]),
+      listViews: vi.fn(async (selected) => selected.ownerId === owner.ownerId
+        ? { items: [view], nextCursor: "" }
+        : { items: [], nextCursor: "next" }),
+    });
+    renderDeck(backend);
+    await waitFor(() => expect(tauri.listeners.has("devhud://deck-shortcut")).toBe(true));
+
+    tauri.listeners.get("devhud://deck-shortcut")?.({ payload: shortcutView.viewId });
+
+    await waitFor(() => expect(backend.getView).toHaveBeenCalledWith(shortcutView.viewId));
+    expect(await screen.findByRole("button", { name: /Deli/u })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    await waitFor(() => expect(backend.listPullRequests).toHaveBeenCalledWith(
+      shortcutView.viewId,
+      "",
+    ));
   });
 
   it("loads permission-filtered rows, exposes truncation, and hands comments to GitHub", async () => {
@@ -189,6 +262,59 @@ describe("Deck composable production workspace", () => {
     await waitFor(() => expect(
       screen.queryByRole("dialog", { name: "Confirm pull request merge" }),
     ).not.toBeInTheDocument());
+  });
+
+  it("disables picker apply while a provider mutation is pending", async () => {
+    let completeMutation: ((result: {
+      pullRequest: DeckPullRequest;
+      refreshRequired: false;
+    }) => void) | undefined;
+    const mutatePullRequest = vi.fn(() => new Promise<{
+      pullRequest: DeckPullRequest;
+      refreshRequired: false;
+    }>((resolve) => {
+      completeMutation = resolve;
+    }));
+    const backend = gateway({ mutatePullRequest });
+    const user = userEvent.setup();
+    renderDeck(backend);
+
+    await user.click(await screen.findByRole("button", { name: /Needs review/u }));
+    await user.click(await screen.findByRole("button", { name: "remove labels" }));
+    await user.click(screen.getByRole("checkbox", { name: /internal/u }));
+    const apply = screen.getByRole("button", { name: "Apply" });
+    await user.click(apply);
+
+    await waitFor(() => expect(apply).toBeDisabled());
+    await user.click(apply);
+    expect(mutatePullRequest).toHaveBeenCalledOnce();
+
+    completeMutation?.({ pullRequest, refreshRequired: false });
+    await waitFor(() => expect(
+      screen.queryByRole("button", { name: "Apply" }),
+    ).not.toBeInTheDocument());
+  });
+
+  it("applies synchronized mutation detail to the visible pull request", async () => {
+    const updatedPullRequest = {
+      ...pullRequest,
+      title: "Updated after mutation",
+      revision: { value: 4n, etag: "pr-4" },
+    };
+    const backend = gateway({
+      mutatePullRequest: vi.fn(async () => ({
+        pullRequest: updatedPullRequest,
+        refreshRequired: false,
+      })),
+    });
+    const user = userEvent.setup();
+    renderDeck(backend);
+
+    await user.click(await screen.findByRole("button", { name: /Needs review/u }));
+    await user.click(await screen.findByRole("button", { name: "close" }));
+
+    expect(await screen.findByRole("heading", { name: "Updated after mutation" })).toBeVisible();
+    expect(backend.listPullRequests).toHaveBeenCalledOnce();
   });
 
   it("renders only server-advertised actions", async () => {
@@ -373,6 +499,23 @@ describe("Deck composable production workspace", () => {
     }));
     expect(await screen.findByRole("heading", { name: "Pull requests unavailable" })).toBeVisible();
     expect(screen.queryByRole("heading", { name: "Select a view" })).not.toBeInTheDocument();
+  });
+
+  it("retries only queries whose selection prerequisites are available", async () => {
+    const listOwners = vi.fn()
+      .mockRejectedValueOnce(new DeckProductError(DeckFailureCode.ServiceUnavailable))
+      .mockResolvedValue([owner]);
+    const listViews = vi.fn(async () => ({ items: [view], nextCursor: "" }));
+    const backend = gateway({ listOwners, listViews });
+    const user = userEvent.setup();
+    renderDeck(backend);
+    await screen.findByRole("heading", { name: "Pull requests unavailable" });
+    expect(listViews).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+
+    await waitFor(() => expect(listViews).toHaveBeenCalledOnce());
+    expect(listViews).toHaveBeenCalledWith(owner, "");
   });
 
   it("compares and reapplies edits after a revision conflict", async () => {

@@ -429,7 +429,7 @@ function CandidatePicker({
           {loading ? "Loading…" : "Load more candidates"}
         </button>
       ) : null}
-      <button className="primary-button" disabled={selected.length === 0} onClick={() => void apply()} type="button">
+      <button className="primary-button" disabled={selected.length === 0 || state.busy} onClick={() => void apply()} type="button">
         Apply
       </button>
     </div>
