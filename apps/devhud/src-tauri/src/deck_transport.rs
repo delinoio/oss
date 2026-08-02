@@ -319,13 +319,8 @@ fn cleanup_pending_device_registration() -> Result<(), DeckTransportFailure> {
     if !retained.cleanup_pending {
         return Ok(());
     }
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_err(|_| DeckTransportFailure::ServiceUnavailable)?
-        .as_secs();
-    if u64::try_from(retained.lease_expires_at_unix_seconds).is_ok_and(|expiry| expiry <= now) {
-        return clear_retained_device_registration();
-    }
+    // A lost renewal response can leave this lease older than the server's
+    // renewed lease, so the retained grant must be tried before it is cleared.
     unregister_retained_device(&retained)?;
     clear_retained_device_registration()
 }
