@@ -13,6 +13,7 @@ import { CaptureMode, PointerInclusion } from "../capture";
 import {
   MAX_FINAL_BODY_UTF8_BYTES,
   MAX_ISSUE_TITLE_UTF8_BYTES,
+  MAX_SESSION_ENCODED_BYTES,
   PUBLIC_SCREENSHOT_WARNING,
 } from "../onlineSubmission";
 import { sanitizeCapturedUrl } from "../drafts/url";
@@ -274,6 +275,20 @@ function parseCsv(value: string): readonly string[] {
   return [...new Set(value.split(",").map((entry) => entry.trim()).filter(Boolean))];
 }
 
+function milestoneNumberValid(value: number | null): boolean {
+  return value === null || (Number.isSafeInteger(value) && value > 0);
+}
+
+function imageUploadWindowOpen(
+  image: RealQaDraft["images"][number],
+  now = Date.now(),
+): boolean {
+  if (image.uploadState !== "uploading" && image.uploadState !== "verified") return true;
+  if (image.uploadDeadline === null) return false;
+  const deadline = Date.parse(image.uploadDeadline);
+  return Number.isFinite(deadline) && now < deadline;
+}
+
 function issueAnswersWithDefaults(
   draft: RealQaDraft,
   definition: RealQaProductSnapshot["definitions"][number] | undefined,
@@ -491,6 +506,12 @@ function PresetManagerContent({
 
   const savePreset = async () => {
     if (editing === null) return;
+    const selectedDestination = snapshot.destinations.find(
+      (destination) => destination.destinationId === editing.destinationId,
+    );
+    if (!milestoneNumberValid(editing.milestoneNumber) || !selectedDestination?.connected) {
+      return;
+    }
     const updated = await execute(
       { kind: "save-preset", preset: editing },
       "Preset saved.",
@@ -591,6 +612,7 @@ function PresetManagerContent({
   const editingBillingScopeAvailable = snapshot.replacementBillingScopes.some(
     (scope) => billingScopeKey(scope) === editingBillingScopeKey,
   );
+  const editingMilestoneValid = milestoneNumberValid(editing.milestoneNumber);
   const update = <K extends keyof RealQaPreset>(key: K, value: RealQaPreset[K]) =>
     setEditing((current) => current === null ? current : { ...current, [key]: value });
   const updateProcessUrlRule = (
@@ -633,7 +655,7 @@ function PresetManagerContent({
         <label className="field">Template or form<select disabled={!online || destinationDefinitionOptions.length === 0} value={editing.definitionId} onChange={(event) => update("definitionId", event.target.value)}>{!definitionAvailable ? <option value="">No template available</option> : null}{destinationDefinitionOptions.map((definition) => <option key={definition.definitionId} value={definition.definitionId}>{definition.name} · {definition.issueType}</option>)}</select></label>
         <label className="field">Labels<input disabled={!online} value={csv(editing.labels)} onChange={(event) => update("labels", parseCsv(event.target.value))} /></label>
         <label className="field">Assignees<input disabled={!online} value={csv(editing.assignees)} onChange={(event) => update("assignees", parseCsv(event.target.value))} /></label>
-        <label className="field">Milestone number<input disabled={!online} min={1} type="number" value={editing.milestoneNumber ?? ""} onChange={(event) => update("milestoneNumber", event.target.value === "" ? null : Number(event.target.value))} /></label>
+        <label className="field">Milestone number<input disabled={!online} min={1} step={1} type="number" value={editing.milestoneNumber ?? ""} onChange={(event) => update("milestoneNumber", event.target.value === "" ? null : Number(event.target.value))} /></label>
         <label className="field">Project node IDs<input disabled={!online} value={csv(editing.projectNodeIds)} onChange={(event) => update("projectNodeIds", parseCsv(event.target.value))} /></label>
         <label className="field">Payer / team<select disabled={!online} value={editingBillingScopeKey} onChange={(event) => { const scope = snapshot.replacementBillingScopes.find((candidate) => billingScopeKey(candidate) === event.target.value); if (scope !== undefined) update("billing", { organizationId: scope.organizationId, teamId: scope.teamId }); }}>{!editingBillingScopeAvailable ? <option disabled value={editingBillingScopeKey}>Unavailable billing scope</option> : null}{snapshot.replacementBillingScopes.map((scope) => <option key={billingScopeKey(scope)} value={billingScopeKey(scope)}>{scope.label}</option>)}</select></label>
       </div>
@@ -656,11 +678,13 @@ function PresetManagerContent({
         {!processUrlRulesValid ? <p className="error">Every URL rule requires a bounded exact process name and valid HTTP or HTTPS template and title pattern.</p> : null}
       </fieldset>
       {!definitionAvailable ? <p className="error">Choose a template that belongs to the selected destination.</p> : null}
+      {destination !== undefined && !destination.connected ? <p className="error">Reconnect the selected GitHub destination before saving this preset.</p> : null}
       {!editingBillingScopeAvailable ? <p className="error">Choose an available payer / team before saving this preset.</p> : null}
+      {!editingMilestoneValid ? <p className="error">Milestone number must be a positive whole number.</p> : null}
       <p className={editing.backgroundGrant === "active" ? "muted" : "error"}>Background storage grant: {editing.backgroundGrant}</p>
       <div className="button-row">
         <button className="secondary-button" disabled={busy || !canCreatePreset} onClick={() => void createPreset()} type="button">New preset</button>
-        <button className="primary-button" disabled={busy || !online || !definitionAvailable || !processUrlRulesValid || !editingBillingScopeAvailable} onClick={() => void savePreset()} type="button">Save preset</button>
+        <button className="primary-button" disabled={busy || !online || destination?.connected !== true || !definitionAvailable || !processUrlRulesValid || !editingBillingScopeAvailable || !editingMilestoneValid} onClick={() => void savePreset()} type="button">Save preset</button>
         <button className="secondary-button" disabled={busy || !online} onClick={() => setConfirmDelete(true)} type="button">Delete preset</button>
         {destination?.connected ? <button className="secondary-button" disabled={busy || !online} onClick={() => setConfirmDisconnect(true)} type="button">Disconnect GitHub</button> : <button className="secondary-button" disabled={busy || !online || destination === undefined} onClick={() => destination === undefined ? undefined : void execute({ kind: "reconnect-destination", destinationId: destination.destinationId }, "GitHub authorization opened.")} type="button">Reconnect GitHub</button>}
       </div>
@@ -750,6 +774,14 @@ function CaptureAndReviewContent() {
     && !draft.title.includes("\r")
     && !draft.title.includes("\n");
   const selectedImages = draft.images.filter((image) => image.selected);
+  const selectedImageBytes = selectedImages.reduce(
+    (total, image) => total + image.encodedBytes,
+    0,
+  );
+  const selectedImagesWithinSessionLimit = selectedImageBytes <= MAX_SESSION_ENCODED_BYTES;
+  const selectedImageUploadWindowsOpen = selectedImages.every((image) =>
+    imageUploadWindowOpen(image)
+  );
   const reviewedUrl = sanitizeCapturedUrl(draft.url);
   const reviewedUrlValid = draft.url === "" || reviewedUrl.ok;
   const requiredAnswersComplete = requiredIssueAnswersComplete(draftWithDefaults, definition);
@@ -762,8 +794,23 @@ function CaptureAndReviewContent() {
   const storageSubmissionBlocked = snapshot.submissions.some(
     (submission) => submission.state === "storage-billing-grace",
   );
+  const draftMilestoneValid = milestoneNumberValid(draft.milestoneNumber);
+  const submissionReady = !storageSubmissionBlocked
+    && submissionPresetAvailable
+    && submissionDestinationConnected
+    && submissionBackgroundGrantActive
+    && selectedImages.length > 0
+    && selectedImagesWithinSessionLimit
+    && selectedImageUploadWindowsOpen
+    && bodyBytes <= MAX_FINAL_BODY_UTF8_BYTES
+    && reviewedUrlValid
+    && requiredAnswersComplete
+    && titleValid
+    && draftMilestoneValid;
   const submit = () => {
-    if (storageSubmissionBlocked || !submissionPresetAvailable || !submissionDestinationConnected || !submissionBackgroundGrantActive || !reviewedUrlValid || !requiredAnswersComplete || !titleValid) return;
+    if (!submissionReady || !selectedImages.every((image) => imageUploadWindowOpen(image))) {
+      return;
+    }
     setConfirmPublic(false);
     void execute({
       kind: "submit",
@@ -779,7 +826,7 @@ function CaptureAndReviewContent() {
   return (
     <section aria-labelledby="capture-review-title" className="realqa-card">
       <div className="realqa-section-heading"><div><p className="eyebrow">Local and nondestructive</p><h2 id="capture-review-title">Capture and review</h2></div><label>Draft<select onChange={(event) => selectDraft(event.target.value)} value={selectedDraftId ?? ""}>{snapshot.drafts.map((item) => <option key={item.draftId} value={item.draftId}>{item.title || "Untitled draft"}</option>)}</select></label></div>
-      <fieldset className="realqa-fields"><legend>Images ({draft.images.length})</legend><p className="muted">There is no image-count limit. Each image is limited to 25 MiB, the session to 250 MiB, and decoded input to 100 megapixels.</p><ul className="realqa-image-list">{draft.images.map((image) => <li key={image.imageId}><label className="check-field"><input checked={image.selected} onChange={(event) => update({ images: draft.images.map((candidate) => candidate.imageId === image.imageId ? { ...candidate, selected: event.target.checked } : candidate) })} type="checkbox" />{image.name} · {(image.encodedBytes / 1024).toFixed(1)} KiB · {image.uploadState}</label><button className="secondary-button" disabled={busy} onClick={() => void execute({ kind: "edit-image", draftId: draft.draftId, imageId: image.imageId }, "Nondestructive editor opened; the encrypted raw original is unchanged.")} type="button">Edit nondestructively</button>{image.uploadState === "uploading" ? <progress aria-label={`${image.name} upload progress`} max={100} value={image.uploadProgress} /> : null}</li>)}</ul></fieldset>
+      <fieldset className="realqa-fields"><legend>Images ({draft.images.length})</legend><p className="muted">There is no image-count limit. Each image is limited to 25 MiB, the session to 250 MiB, and decoded input to 100 megapixels.</p><ul className="realqa-image-list">{draft.images.map((image) => <li key={image.imageId}><label className="check-field"><input checked={image.selected} onChange={(event) => update({ images: draft.images.map((candidate) => candidate.imageId === image.imageId ? { ...candidate, selected: event.target.checked } : candidate) })} type="checkbox" />{image.name} · {(image.encodedBytes / 1024).toFixed(1)} KiB · {image.uploadState}{image.uploadDeadline === null ? null : <> · upload by <time dateTime={image.uploadDeadline}>{image.uploadDeadline}</time></>}</label><button className="secondary-button" disabled={busy} onClick={() => void execute({ kind: "edit-image", draftId: draft.draftId, imageId: image.imageId }, "Nondestructive editor opened; the encrypted raw original is unchanged.")} type="button">Edit nondestructively</button>{image.uploadState === "uploading" ? <progress aria-label={`${image.name} upload progress`} max={100} value={image.uploadProgress} /> : null}</li>)}</ul></fieldset>
       <div className="realqa-form-grid"><label className="field">Issue title<input aria-describedby={titleValid ? undefined : "realqa-title-guidance"} aria-invalid={!titleValid} ref={titleRef} value={draft.title} onChange={(event) => update({ title: event.target.value })} /></label><label className="field">Issue body<textarea value={draft.body} onChange={(event) => update({ body: event.target.value })} /></label><label className="field">Sanitized URL<input aria-invalid={!reviewedUrlValid} value={draft.url} onBlur={() => { if (reviewedUrl.ok) update({ url: reviewedUrl.url.value, urlWarning: reviewedUrl.url.warning !== null }); }} onChange={(event) => update({ url: event.target.value })} /></label></div>
       {!titleValid ? <p className="error" id="realqa-title-guidance">Enter a single-line issue title between 1 and {MAX_ISSUE_TITLE_UTF8_BYTES} UTF-8 bytes.</p> : null}
       {!reviewedUrlValid ? <p className="error" role="alert">Use an HTTP or HTTPS URL without credentials or invalid escapes.</p> : null}
@@ -791,12 +838,15 @@ function CaptureAndReviewContent() {
       {submissionPresetAvailable && !submissionDestinationConnected ? <div className="realqa-error"><p>This preset's GitHub destination is disconnected. Reconnect before submitting.</p>{selectedDestination ? <button className="secondary-button" disabled={busy || !online} onClick={() => void execute({ kind: "reconnect-destination", destinationId: selectedDestination.destinationId }, "GitHub authorization opened.")} type="button">Reconnect GitHub</button> : null}</div> : null}
       {submissionPresetAvailable && !submissionBackgroundGrantActive ? <p className="error">This preset's background storage grant is inactive. Rebind its RealQA storage authorization in DeliDev before submitting.</p> : null}
       {!requiredAnswersComplete ? <p className="error">Complete every required issue-form field before submission.</p> : null}
-      <div className="realqa-form-grid"><label className="field">Labels<input value={csv(draft.labels)} onChange={(event) => update({ labels: parseCsv(event.target.value) })} /></label><label className="field">Assignees<input value={csv(draft.assignees)} onChange={(event) => update({ assignees: parseCsv(event.target.value) })} /></label><label className="field">Milestone number<input min={1} type="number" value={draft.milestoneNumber ?? ""} onChange={(event) => update({ milestoneNumber: event.target.value === "" ? null : Number(event.target.value) })} /></label><label className="field">Project node IDs<input value={csv(draft.projectNodeIds)} onChange={(event) => update({ projectNodeIds: parseCsv(event.target.value) })} /></label></div>
+      {!selectedImagesWithinSessionLimit ? <p className="error">Selected images exceed the 250 MiB session limit. Remove or deselect images before submission.</p> : null}
+      {!selectedImageUploadWindowsOpen ? <p className="error">The staged upload deadline expired. Start a fresh upload before submission.</p> : null}
+      <div className="realqa-form-grid"><label className="field">Labels<input value={csv(draft.labels)} onChange={(event) => update({ labels: parseCsv(event.target.value) })} /></label><label className="field">Assignees<input value={csv(draft.assignees)} onChange={(event) => update({ assignees: parseCsv(event.target.value) })} /></label><label className="field">Milestone number<input min={1} step={1} type="number" value={draft.milestoneNumber ?? ""} onChange={(event) => update({ milestoneNumber: event.target.value === "" ? null : Number(event.target.value) })} /></label><label className="field">Project node IDs<input value={csv(draft.projectNodeIds)} onChange={(event) => update({ projectNodeIds: parseCsv(event.target.value) })} /></label></div>
+      {!draftMilestoneValid ? <p className="error">Milestone number must be a positive whole number.</p> : null}
       <p className={bodyBytes > MAX_FINAL_BODY_UTF8_BYTES ? "error" : "muted"}>{bodyBytes.toLocaleString()} / {MAX_FINAL_BODY_UTF8_BYTES.toLocaleString()} body bytes</p>
-      <div className="button-row"><button className="secondary-button" disabled={busy} onClick={() => void execute({ kind: "save-draft", draft: draftWithDefaults }, "Encrypted local draft saved.")} type="button">Save draft</button><button className="danger-button" disabled={busy} onClick={() => setConfirmDraftDelete(true)} type="button">Delete draft</button><button className="primary-button" disabled={busy || !online || storageSubmissionBlocked || !submissionPresetAvailable || !submissionDestinationConnected || !submissionBackgroundGrantActive || selectedImages.length === 0 || bodyBytes > MAX_FINAL_BODY_UTF8_BYTES || !reviewedUrlValid || !requiredAnswersComplete || !titleValid} onClick={() => setConfirmPublic(true)} type="button">Review and submit</button></div>
+      <div className="button-row"><button className="secondary-button" disabled={busy || !draftMilestoneValid} onClick={() => void execute({ kind: "save-draft", draft: draftWithDefaults }, "Encrypted local draft saved.")} type="button">Save draft</button><button className="danger-button" disabled={busy} onClick={() => setConfirmDraftDelete(true)} type="button">Delete draft</button><button className="primary-button" disabled={busy || !online || !submissionReady} onClick={() => setConfirmPublic(true)} type="button">Review and submit</button></div>
       {!online ? <p className="muted">Online reauthentication is required before upload or submission.</p> : null}
       {confirmDraftDelete ? <Dialog title="Delete local RealQA draft" onClose={() => setConfirmDraftDelete(false)}><h2>Delete this draft?</h2><p>This immediately deletes the encrypted local draft and its raw originals. It does not delete server feature data.</p><button className="danger-button" onClick={() => { setConfirmDraftDelete(false); void execute({ kind: "delete-draft", draftId: draft.draftId, expectedRevision: draft.revision }, "Local draft deleted."); }} type="button">Delete local draft</button><button className="secondary-button" onClick={() => setConfirmDraftDelete(false)} type="button">Cancel</button></Dialog> : null}
-      {confirmPublic ? <Dialog descriptionId="public-image-warning" title="Confirm public screenshots" onClose={() => setConfirmPublic(false)}><h2>Submit a new GitHub issue?</h2><p id="public-image-warning">{PUBLIC_SCREENSHOT_WARNING} This confirmation is required for every submission.</p><button aria-describedby="public-image-warning" className="primary-button" onClick={submit} type="button">Confirm and submit</button><button className="secondary-button" onClick={() => setConfirmPublic(false)} type="button">Cancel</button></Dialog> : null}
+      {confirmPublic ? <Dialog descriptionId="public-image-warning" title="Confirm public screenshots" onClose={() => setConfirmPublic(false)}><h2>Submit a new GitHub issue?</h2><p id="public-image-warning">{PUBLIC_SCREENSHOT_WARNING} This confirmation is required for every submission.</p><button aria-describedby="public-image-warning" className="primary-button" disabled={busy || !submissionReady} onClick={submit} type="button">Confirm and submit</button><button className="secondary-button" onClick={() => setConfirmPublic(false)} type="button">Cancel</button></Dialog> : null}
     </section>
   );
 }
@@ -833,6 +883,10 @@ function SubmissionLifecycle() {
   ) ?? snapshot.replacementBillingScopes[0];
   const effectiveScopeKey = effectiveScope ? billingScopeKey(effectiveScope) : "";
   const online = snapshot.access === RealQaAccessMode.Online && snapshot.online;
+  const retryUploadWindowOpen = retryConfirmation !== null
+    && snapshot.submissions.find(
+      (submission) => submission.submissionId === retryConfirmation.submissionId,
+    )?.images.every((image) => imageUploadWindowOpen(image)) === true;
 
   const rebind = async (
     submission: RealQaProductSnapshot["submissions"][number],
@@ -913,7 +967,17 @@ function SubmissionLifecycle() {
   };
 
   const retrySubmission = () => {
-    if (retryConfirmation === null) return;
+    const currentSubmission = retryConfirmation === null
+      ? undefined
+      : snapshot.submissions.find(
+        (submission) => submission.submissionId === retryConfirmation.submissionId,
+      );
+    if (
+      retryConfirmation === null
+      || currentSubmission?.images.every((image) => imageUploadWindowOpen(image)) !== true
+    ) {
+      return;
+    }
     const { replay, submissionId } = retryConfirmation;
     setRetryConfirmation(null);
     void execute({
@@ -931,9 +995,12 @@ function SubmissionLifecycle() {
       {snapshot.submissions.length === 0 ? <p>No submitted issues are retained.</p> : <><label className="field">Replacement payer<select disabled={!online || effectiveScope === undefined} value={effectiveScopeKey} onChange={(event) => setReplacementScopeKey(event.target.value)}>{snapshot.replacementBillingScopes.map((scope) => <option key={billingScopeKey(scope)} value={billingScopeKey(scope)}>{scope.label}</option>)}</select></label><ul className="realqa-submission-list">{snapshot.submissions.map((submission) => {
         const retryable = submission.state === "failed" || submission.state === "reconciling";
         const replay = submission.replay;
-        return <li key={submission.submissionId}><h3>{submission.issueUrl ?? "Pending GitHub reconciliation"}</h3><p>State: {submission.state}</p>{submission.graceExpiresAt ? <p className="error">Public images are in billing grace until {submission.graceExpiresAt}. New submissions are blocked.</p> : null}{retryable && replay === null ? <p className="muted">Restore the retained encrypted draft before retrying reconciliation.</p> : null}<div className="button-row">{retryable && replay !== null ? <button className="primary-button" disabled={busy || !online} onClick={() => setRetryConfirmation({ submissionId: submission.submissionId, replay })} type="button">Retry reconciliation</button> : null}{submission.images.filter((image) => image.uploadState !== "removed").map((image) => <button className="secondary-button" disabled={busy || !online} key={image.imageId} onClick={() => void deleteImage(submission, image)} type="button">Delete {image.name}</button>)}<button className="secondary-button" disabled={busy || !online} onClick={() => void deleteSubmissionAssets(submission)} type="button">Delete all images</button>{submission.state === "storage-billing-grace" && submission.rebindAvailable && submission.authorizationId ? <button className="secondary-button" disabled={busy || !online || effectiveScope === undefined} onClick={() => void rebind(submission)} type="button">Rebind payer</button> : null}</div></li>;
+        const uploadWindowOpen = submission.images.every((image) =>
+          imageUploadWindowOpen(image)
+        );
+        return <li key={submission.submissionId}><h3>{submission.issueUrl ?? "Pending GitHub reconciliation"}</h3><p>State: {submission.state}</p>{submission.graceExpiresAt ? <p className="error">Public images are in billing grace until {submission.graceExpiresAt}. New submissions are blocked.</p> : null}{retryable && replay === null ? <p className="muted">Restore the retained encrypted draft before retrying reconciliation.</p> : null}{retryable && replay !== null && !uploadWindowOpen ? <p className="error">The upload window expired. Start a fresh submission from the retained draft.</p> : null}<div className="button-row">{retryable && replay !== null ? <button className="primary-button" disabled={busy || !online || !uploadWindowOpen} onClick={() => setRetryConfirmation({ submissionId: submission.submissionId, replay })} type="button">Retry reconciliation</button> : null}{submission.images.filter((image) => image.uploadState !== "removed").map((image) => <button className="secondary-button" disabled={busy || !online} key={image.imageId} onClick={() => void deleteImage(submission, image)} type="button">Delete {image.name}</button>)}<button className="secondary-button" disabled={busy || !online} onClick={() => void deleteSubmissionAssets(submission)} type="button">Delete all images</button>{submission.state === "storage-billing-grace" && submission.rebindAvailable && submission.authorizationId ? <button className="secondary-button" disabled={busy || !online || effectiveScope === undefined} onClick={() => void rebind(submission)} type="button">Rebind payer</button> : null}</div></li>;
       })}</ul></>}
-      {retryConfirmation ? <Dialog descriptionId="retry-public-image-warning" title="Confirm public screenshots for retry" onClose={() => setRetryConfirmation(null)}><h2>Retry this submission?</h2><p id="retry-public-image-warning">{PUBLIC_SCREENSHOT_WARNING} This confirmation is required for every submission attempt.</p><button aria-describedby="retry-public-image-warning" className="primary-button" onClick={retrySubmission} type="button">Confirm and retry</button><button className="secondary-button" onClick={() => setRetryConfirmation(null)} type="button">Cancel</button></Dialog> : null}
+      {retryConfirmation ? <Dialog descriptionId="retry-public-image-warning" title="Confirm public screenshots for retry" onClose={() => setRetryConfirmation(null)}><h2>Retry this submission?</h2><p id="retry-public-image-warning">{PUBLIC_SCREENSHOT_WARNING} This confirmation is required for every submission attempt.</p><button aria-describedby="retry-public-image-warning" className="primary-button" disabled={!retryUploadWindowOpen} onClick={retrySubmission} type="button">Confirm and retry</button><button className="secondary-button" onClick={() => setRetryConfirmation(null)} type="button">Cancel</button></Dialog> : null}
     </section>
   );
 }

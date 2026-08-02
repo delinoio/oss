@@ -60,6 +60,7 @@ function snapshot(
       selected: true,
       uploadState: "local" as const,
       uploadProgress: 0,
+      uploadDeadline: null,
     }],
   };
   return {
@@ -148,6 +149,7 @@ function snapshot(
         selected: true,
         uploadState: "public",
         uploadProgress: 100,
+        uploadDeadline: null,
       }],
     }],
     replacementBillingScopes: [{
@@ -263,6 +265,7 @@ class FixtureGateway implements RealQaProductGateway {
                   selected: true,
                   uploadState: "local" as const,
                   uploadProgress: 0,
+                  uploadDeadline: null,
                 }],
               }
             : draft,
@@ -742,6 +745,26 @@ describe("RealQA desktop production workspace", () => {
     expect(gateway.actions).toHaveLength(0);
   });
 
+  it("blocks invalid milestone numbers in preset and draft actions", async () => {
+    const gateway = new FixtureGateway(snapshot());
+    await renderWorkspace(gateway);
+    const milestones = screen.getAllByLabelText("Milestone number");
+    const presetMilestone = milestones[0];
+    const draftMilestone = milestones[1];
+    if (presetMilestone === undefined || draftMilestone === undefined) {
+      throw new Error("Fixture milestone inputs are missing.");
+    }
+
+    fireEvent.change(presetMilestone, { target: { value: "1.5" } });
+    expect(screen.getByRole("button", { name: "Save preset" })).toBeDisabled();
+    fireEvent.change(presetMilestone, { target: { value: "4" } });
+
+    fireEvent.change(draftMilestone, { target: { value: "0" } });
+    expect(screen.getByRole("button", { name: "Save draft" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Review and submit" })).toBeDisabled();
+    expect(screen.getAllByText(/positive whole number/u)).not.toHaveLength(0);
+  });
+
   it("selects the next retained preset after deleting the active preset", async () => {
     const user = userEvent.setup();
     const value = snapshot();
@@ -1019,6 +1042,8 @@ describe("RealQA desktop production workspace", () => {
     await renderWorkspace(gateway);
 
     expect(screen.getByText(/destination is disconnected/u)).toBeVisible();
+    expect(screen.getByRole("button", { name: "Save preset" })).toBeDisabled();
+    expect(screen.getByText(/Reconnect the selected GitHub destination before saving/u)).toBeVisible();
     expect(screen.getByRole("button", { name: "Review and submit" })).toBeDisabled();
     const reconnect = screen.getAllByRole("button", { name: "Reconnect GitHub" }).at(-1);
     if (reconnect === undefined) throw new Error("Reconnect action is missing.");
@@ -1041,6 +1066,64 @@ describe("RealQA desktop production workspace", () => {
 
     expect(screen.getByRole("button", { name: "Review and submit" })).toBeDisabled();
     expect(screen.getByText(/Rebind its RealQA storage authorization in DeliDev/u)).toBeVisible();
+  });
+
+  it("blocks selected images that exceed the session byte limit", async () => {
+    const value = snapshot();
+    const draft = value.drafts[0];
+    if (draft === undefined) throw new Error("Fixture draft is missing.");
+    const image = draft.images[0];
+    if (image === undefined) throw new Error("Fixture image is missing.");
+    const gateway = new FixtureGateway({
+      ...value,
+      drafts: [{
+        ...draft,
+        images: Array.from({ length: 11 }, (_, index) => ({
+          ...image,
+          imageId: `image-${index}`,
+          encodedBytes: 25 * 1024 * 1024,
+        })),
+      }],
+    });
+    await renderWorkspace(gateway);
+
+    expect(screen.getByText(/exceed the 250 MiB session limit/u)).toBeVisible();
+    expect(screen.getByRole("button", { name: "Review and submit" })).toBeDisabled();
+  });
+
+  it("blocks submission and retry after a staged upload deadline expires", async () => {
+    const value = snapshot();
+    const draft = value.drafts[0];
+    const submission = value.submissions[0];
+    if (draft === undefined || submission === undefined) {
+      throw new Error("Fixture draft or submission is missing.");
+    }
+    const expired = "2020-01-01T00:00:00Z";
+    const gateway = new FixtureGateway({
+      ...value,
+      drafts: [{
+        ...draft,
+        images: draft.images.map((image) => ({
+          ...image,
+          uploadState: "verified" as const,
+          uploadDeadline: expired,
+        })),
+      }],
+      submissions: [{
+        ...submission,
+        images: submission.images.map((image) => ({
+          ...image,
+          uploadState: "verified" as const,
+          uploadDeadline: expired,
+        })),
+      }],
+    });
+    await renderWorkspace(gateway);
+
+    expect(screen.getByText(/staged upload deadline expired/u)).toBeVisible();
+    expect(screen.getByRole("button", { name: "Review and submit" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Retry reconciliation" })).toBeDisabled();
+    expect(screen.getByText(/upload window expired/u)).toBeVisible();
   });
 
   it.each([

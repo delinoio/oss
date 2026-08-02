@@ -143,6 +143,8 @@ export interface RealQaReviewImage {
     | "public"
     | "removed";
   readonly uploadProgress: number;
+  /** Server-issued cutoff for staged uploads; absent while the image is local. */
+  readonly uploadDeadline: string | null;
 }
 
 export interface RealQaDraft {
