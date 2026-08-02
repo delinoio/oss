@@ -1728,10 +1728,12 @@ jobs:
               - apps/devhud/src-tauri/widget-bridge/Cargo.toml
             extension:
               - .github/workflows/CI.yml
+              - .nvmrc
               - Cargo.toml
               - Cargo.lock
               - package.json
               - pnpm-lock.yaml
+              - pnpm-workspace.yaml
               - turbo.json
               - apps/devhud/package.json
               - apps/devhud/turbo.json

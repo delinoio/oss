@@ -375,7 +375,7 @@ Coverage expectations:
 - `ci-result`: provides a single aggregate status that fails when any executed domain job fails or is cancelled.
 
 Change-scoped execution rules:
-- CI jobs perform self-gating (there is no standalone `detect-changes` job).
+- CI jobs perform self-gating except for the complete RealQA validation matrix, whose documented `realqa-changes` job provides shared path scopes to its coordinated jobs; there is no repository-wide `detect-changes` job.
 - Go and Rust jobs use in-job path-based change detection via `dorny/paths-filter`.
 - Existing Node workspace test/lint jobs use in-job Turbo affected detection via `pnpm dlx turbo@2.9.14 query affected --packages <workspace>`.
 - `node-delidev-app` uses in-job `dorny/paths-filter` gating across its app, delibase client, workspace, app-domain policy, and CI workflow inputs.
