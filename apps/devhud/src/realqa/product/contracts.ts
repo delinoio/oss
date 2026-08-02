@@ -21,6 +21,8 @@ export enum RealQaSelectorMode {
 export enum RealQaFailureCode {
   AuthenticationRequired = "authentication-required",
   ReauthenticationRequired = "reauthentication-required",
+  PermissionDenied = "permission-denied",
+  OwnerScopeNotFound = "owner-scope-not-found",
   CapturePermissionRequired = "capture-permission-required",
   CapturePermissionDenied = "capture-permission-denied",
   ChromePermissionRequired = "chrome-permission-required",
@@ -297,6 +299,10 @@ export const realQaFailureGuidance: Readonly<Record<RealQaFailureCode, string>> 
     "Sign in with the previously bound DeliDev account to enter RealQA.",
   [RealQaFailureCode.ReauthenticationRequired]:
     "Connect to the internet and sign in again before uploading or submitting.",
+  [RealQaFailureCode.PermissionDenied]:
+    "You do not have permission to perform this RealQA action. Ask an owner or choose a scope you can access.",
+  [RealQaFailureCode.OwnerScopeNotFound]:
+    "The selected personal or organization scope is unavailable. Refresh and choose another scope.",
   [RealQaFailureCode.CapturePermissionRequired]:
     "Allow screen capture in the operating system prompt to continue.",
   [RealQaFailureCode.CapturePermissionDenied]:

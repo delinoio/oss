@@ -34,6 +34,8 @@ export enum RealQaProcedure {
 export type RealQaTransportFailure =
   | "authentication-required"
   | "reauthentication-required"
+  | "permission-denied"
+  | "owner-scope-not-found"
   | "invalid-request"
   | "request-too-large"
   | "response-too-large"

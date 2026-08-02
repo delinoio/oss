@@ -168,6 +168,8 @@ impl RealQaGithubBrowserConfiguration {
 pub(crate) enum RealQaTransportFailure {
     AuthenticationRequired,
     ReauthenticationRequired,
+    PermissionDenied,
+    OwnerScopeNotFound,
     InvalidRequest,
     RequestTooLarge,
     ResponseTooLarge,
@@ -292,6 +294,8 @@ fn map_error_reason(reason: u64) -> Option<RealQaTransportFailure> {
     match reason {
         1 => Some(RealQaTransportFailure::AuthenticationRequired),
         2 => Some(RealQaTransportFailure::ReauthenticationRequired),
+        3 => Some(RealQaTransportFailure::PermissionDenied),
+        4 => Some(RealQaTransportFailure::OwnerScopeNotFound),
         5 | 6 => Some(RealQaTransportFailure::StaleRevision),
         7 | 35 | 37 => Some(RealQaTransportFailure::Conflict),
         10 | 12..=14 => Some(RealQaTransportFailure::GithubUnavailable),
@@ -596,6 +600,8 @@ mod tests {
             .unwrap()
         };
         for (reason, expected) in [
+            (3, RealQaTransportFailure::PermissionDenied),
+            (4, RealQaTransportFailure::OwnerScopeNotFound),
             (5, RealQaTransportFailure::StaleRevision),
             (15, RealQaTransportFailure::FinalBodyTooLarge),
             (16, RealQaTransportFailure::ImageTooLarge),
