@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 
 const repositoryRoot = resolve(import.meta.dirname, "..");
 const read = (path) => readFile(resolve(repositoryRoot, path), "utf8");
-const [workflow, githubManifestSource, r2FixtureSource, registry, extensionBuilder, catalog] =
+const [workflow, githubManifestSource, r2FixtureSource, registry, extensionBuilder, catalogSource] =
   await Promise.all([
     read(".github/workflows/CI.yml"),
     read("servers/devhud-realqa/github-app-manifest.json"),
@@ -31,7 +31,7 @@ const topLevelPermissions = workflowLines
   .filter((line) => line.trim() !== "")
   .join("\n");
 requireCondition(
-  topLevelPermissions === "permissions:\n  contents: read",
+  topLevelPermissions === "permissions:\n  contents: read\n  pull-requests: read",
   "RealQA CI must retain read-only repository permissions",
 );
 const permissionDeclarations = workflow.match(/^[ \t]*permissions\s*:/gmu) ?? [];
@@ -127,9 +127,23 @@ requireCondition(
     extensionBuilder.includes("release packaging requires the production ID"),
   "release extension packaging must retain external approval and fixture-ID rejection",
 );
+const catalog = JSON.parse(catalogSource);
+const realqaApps = catalog.apps.filter(({ slug }) => slug === "realqa");
+const realqaAppIds = new Set(realqaApps.map(({ id }) => id));
+const realqaMeters = catalog.meters.filter(({ app_id }) => realqaAppIds.has(app_id));
+const realqaMeterIds = new Set(realqaMeters.map(({ id }) => id));
+const realqaServices = catalog.services.filter(({ allowed_meter_ids: allowedMeterIds }) =>
+  allowedMeterIds.some((meterId) => realqaMeterIds.has(meterId)),
+);
 requireCondition(
-  !catalog.includes("realqa_image_transfer") &&
-    !catalog.includes("realqa_image_storage"),
+  realqaApps.length > 0 &&
+    realqaApps.every(({ enabled }) => enabled === false) &&
+    realqaMeters.length > 0 &&
+    realqaMeters.every(({ enabled }) => enabled === false) &&
+    realqaServices.length > 0 &&
+    realqaServices.every(({ enabled }) => enabled === false) &&
+    !catalogSource.includes("realqa_image_transfer") &&
+    !catalogSource.includes("realqa_image_storage"),
   "production RealQA catalog records must remain absent and inactive",
 );
 

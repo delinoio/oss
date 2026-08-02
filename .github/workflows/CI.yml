@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -1747,8 +1748,10 @@ jobs:
               - apps/devhud/src-tauri/src/realqa_native_host.rs
             delidev:
               - .github/workflows/CI.yml
+              - .nvmrc
               - package.json
               - pnpm-lock.yaml
+              - pnpm-workspace.yaml
               - turbo.json
               - apps/delidev-app/**
               - protos/devhud-realqa/**
