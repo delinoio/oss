@@ -770,3 +770,318 @@ button:disabled {
     scroll-behavior: auto !important;
   }
 }
+
+/* Deck is an explicit closed product surface, not remotely supplied UI. */
+.desktop-shell:has(.deck-workspace) {
+  width: min(100%, 90rem);
+}
+
+.tool-card,
+.deck-editor-card,
+.deck-empty-state,
+.deck-pr-card {
+  padding: 1rem;
+  border: 1px solid #c8cdd5;
+  border-radius: 0.9rem;
+  background: #fff;
+}
+
+.tool-card {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.deck-tool-surface,
+.deck-workspace {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.deck-account-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.deck-workspace-header,
+.deck-section-heading,
+.deck-pr-heading {
+  display: flex;
+  gap: 1rem;
+  align-items: start;
+  justify-content: space-between;
+}
+
+.deck-workspace-header h1,
+.deck-section-heading h2,
+.deck-pr-heading h4 {
+  margin: 0.2rem 0;
+}
+
+.deck-owner-navigation {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  padding: 0.15rem 0.15rem 0.5rem;
+}
+
+.deck-owner-navigation button,
+.deck-view-select,
+.segmented-control button {
+  min-height: 2.75rem;
+  border: 1px solid #9aa2ae;
+  border-radius: 0.65rem;
+  background: transparent;
+  color: inherit;
+}
+
+.deck-owner-navigation button {
+  display: grid;
+  min-width: 8rem;
+  padding: 0.55rem 0.75rem;
+  text-align: left;
+}
+
+.deck-owner-navigation button[aria-current="page"],
+.deck-view-select[aria-current="page"],
+.segmented-control button[aria-pressed="true"] {
+  border-color: #2869dc;
+  background: #e8f0ff;
+  color: #143e80;
+  font-weight: 750;
+}
+
+.deck-layout {
+  display: grid;
+  gap: 1rem;
+}
+
+.deck-views-panel,
+.deck-results {
+  min-width: 0;
+}
+
+.deck-view-list,
+.deck-builder,
+.deck-pr-group,
+.deck-pr-actions,
+.candidate-picker {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.deck-view-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.deck-view-select {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  padding: 0.65rem;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+
+.deck-view-actions {
+  margin-top: 1rem;
+}
+
+.deck-query-editor {
+  display: grid;
+  gap: 0.85rem;
+  margin: 1rem 0;
+  padding: 0;
+  border: 0;
+}
+
+.deck-query-editor legend {
+  font-weight: 750;
+}
+
+.segmented-control {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.segmented-control button {
+  padding: 0.55rem 0.75rem;
+}
+
+.deck-query-editor textarea,
+.deck-builder-row input,
+.candidate-picker input {
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.7rem;
+  border: 1px solid #767f8c;
+  border-radius: 0.6rem;
+  background: #fff;
+  color: #191a1d;
+  font: inherit;
+}
+
+.deck-query-editor textarea:focus-visible,
+.candidate-picker input:focus-visible,
+.deck-builder-row input:focus-visible {
+  outline: 3px solid #2b70e8;
+  outline-offset: 2px;
+}
+
+.deck-builder-row {
+  display: grid;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.deck-negated {
+  display: flex;
+  gap: 0.45rem;
+  align-items: center;
+  min-height: 2.75rem;
+}
+
+.deck-unknown-clauses,
+.status-banner {
+  padding: 0.75rem;
+  border-left: 0.25rem solid #8a6100;
+  background: #fff4ce;
+  color: #4f3a00;
+  overflow-wrap: anywhere;
+}
+
+.deck-form-grid,
+.deck-pr-detail,
+.deck-conflict-compare {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.status-chip {
+  display: inline-flex;
+  width: fit-content;
+  padding: 0.25rem 0.55rem;
+  border-radius: 999px;
+  background: #e5f6ea;
+  color: #14532d;
+  font-size: 0.82rem;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.status-chip.warning {
+  background: #fff4ce;
+  color: #5f4500;
+}
+
+.deck-pr-card {
+  display: grid;
+  gap: 0.85rem;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 22rem;
+}
+
+.deck-pr-detail {
+  margin: 0;
+}
+
+.deck-pr-detail div {
+  min-width: 0;
+}
+
+.deck-pr-detail dt {
+  color: #5c626d;
+  font-size: 0.8rem;
+  font-weight: 750;
+}
+
+.deck-pr-detail dd {
+  margin: 0.2rem 0 0;
+  overflow-wrap: anywhere;
+}
+
+.deck-conflict-compare section {
+  min-width: 0;
+  padding: 0.75rem;
+  border: 1px solid #c8cdd5;
+  border-radius: 0.65rem;
+}
+
+.deck-conflict-compare code {
+  display: block;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+:root[data-theme="dark"] .tool-card,
+:root[data-theme="dark"] .deck-editor-card,
+:root[data-theme="dark"] .deck-empty-state,
+:root[data-theme="dark"] .deck-pr-card,
+:root[data-theme="dark"] .deck-query-editor textarea,
+:root[data-theme="dark"] .deck-builder-row input,
+:root[data-theme="dark"] .candidate-picker input {
+  border-color: #69717c;
+  background: #25282d;
+  color: #f5f6f8;
+}
+
+:root[data-theme="dark"] .deck-owner-navigation button[aria-current="page"],
+:root[data-theme="dark"] .deck-view-select[aria-current="page"],
+:root[data-theme="dark"] .segmented-control button[aria-pressed="true"] {
+  background: #243d6b;
+  color: #e5edff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="system"] .tool-card,
+  :root[data-theme="system"] .deck-editor-card,
+  :root[data-theme="system"] .deck-empty-state,
+  :root[data-theme="system"] .deck-pr-card,
+  :root[data-theme="system"] .deck-query-editor textarea,
+  :root[data-theme="system"] .deck-builder-row input,
+  :root[data-theme="system"] .candidate-picker input {
+    border-color: #69717c;
+    background: #25282d;
+    color: #f5f6f8;
+  }
+
+  :root[data-theme="system"] .deck-owner-navigation button[aria-current="page"],
+  :root[data-theme="system"] .deck-view-select[aria-current="page"],
+  :root[data-theme="system"] .segmented-control button[aria-pressed="true"] {
+    background: #243d6b;
+    color: #e5edff;
+  }
+}
+
+@media (min-width: 42rem) {
+  .deck-builder-row {
+    grid-template-columns: minmax(8rem, 0.8fr) minmax(10rem, 1.5fr) auto auto;
+  }
+
+  .deck-form-grid,
+  .deck-conflict-compare {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .deck-pr-detail {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 70rem) {
+  .deck-layout {
+    grid-template-columns: minmax(18rem, 0.75fr) minmax(32rem, 1.75fr);
+    align-items: start;
+  }
+}
+
+@media (forced-colors: active) {
+  .status-chip,
+  .status-banner,
+  .deck-unknown-clauses {
+    border: 1px solid CanvasText;
+  }
+}

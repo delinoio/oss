@@ -163,9 +163,18 @@ importers:
 
   apps/devhud:
     dependencies:
+      '@bufbuild/protobuf':
+        specifier: 2.13.0
+        version: 2.13.0
+      '@connectrpc/connect-query':
+        specifier: 2.2.0
+        version: 2.2.0(@bufbuild/protobuf@2.13.0)(@connectrpc/connect@2.1.2(@bufbuild/protobuf@2.13.0))(@tanstack/query-core@5.101.4)(@tanstack/react-query@5.101.4(react@19.2.3))(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
       '@delinoio/devhud-deck-connect':
         specifier: workspace:*
         version: link:../../protos/devhud-deck
+      '@tanstack/react-query':
+        specifier: 5.101.4
+        version: 5.101.4(react@19.2.3)
       '@tauri-apps/api':
         specifier: 2.11.1
         version: 2.11.1

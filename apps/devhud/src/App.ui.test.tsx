@@ -82,11 +82,13 @@ function renderApp(
 }
 
 describe("DevHud application surfaces", () => {
-  it("focuses the desktop search field and presents the exact empty state", async () => {
+  it("focuses desktop search and keeps Deck data behind authentication", async () => {
     renderApp();
     const search = screen.getByRole("searchbox", { name: "Search tools" });
     expect(search).toHaveFocus();
-    expect(screen.getByText("No tools are available in this foundation preview.")).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Deck" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Sign in to Deck" })).toBeVisible();
+    expect(screen.queryByText(/permission-filtered pull requests…/u)).not.toBeInTheDocument();
   });
 
   it("closes settings with Escape and restores focus", async () => {

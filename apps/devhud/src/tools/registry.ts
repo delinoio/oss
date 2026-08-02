@@ -1,5 +1,7 @@
 import type { ComponentType } from "react";
 
+import { DeckToolEntry } from "../deck/DeckToolEntry";
+
 export enum ToolPlatform {
   Desktop = "desktop",
   Ios = "ios",
@@ -66,5 +68,18 @@ export function filterTools(
   );
 }
 
-/** Production registration remains deliberately empty in the foundation preview. */
-export const productionTools: readonly ToolDefinition[] = [];
+export const productionTools: readonly ToolDefinition[] = [
+  defineTool({
+    toolId: "deck",
+    name: "Deck",
+    description: "Monitor and act on permission-filtered GitHub pull requests.",
+    searchKeywords: ["github", "pull request", "review", "checks", "merge"],
+    supportedPlatforms: new Set([
+      ToolPlatform.Desktop,
+      ToolPlatform.Ios,
+      ToolPlatform.Android,
+    ]),
+    requiredCapabilities: new Set(),
+    EntryPoint: DeckToolEntry,
+  }),
+];

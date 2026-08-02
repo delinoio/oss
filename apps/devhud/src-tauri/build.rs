@@ -1,5 +1,8 @@
 const COMMANDS: &[&str] = &[
     "get_runtime_info",
+    "deck_connect",
+    "deck_open_pull_request",
+    "synchronize_deck_shortcuts",
     "read_settings",
     "write_settings",
     "read_shortcut_effective_state",

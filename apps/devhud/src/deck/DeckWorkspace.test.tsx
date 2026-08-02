@@ -1,0 +1,248 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import axe from "axe-core";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+import { DeckProvider } from "./DeckProvider";
+import { DeckWorkspace } from "./DeckWorkspace";
+import {
+  DeckFailureCode,
+  DeckFreshness,
+  DeckGrouping,
+  DeckMergeMethod,
+  DeckMutationKind,
+  DeckOwnerKind,
+  DeckProductError,
+  DeckPullRequestLifecycle,
+  DeckSort,
+  type DeckGateway,
+  type DeckOwner,
+  type DeckPullRequest,
+  type DeckView,
+} from "./contracts";
+import { manualRefreshWarning } from "./refreshController";
+
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+  Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
+  window.dispatchEvent(new Event("online"));
+});
+
+const owner: DeckOwner = {
+  ownerId: "018f0000-0000-7000-8000-000000000001",
+  kind: DeckOwnerKind.Personal,
+  label: "Personal",
+  canManage: true,
+};
+const organization: DeckOwner = {
+  ownerId: "018f0000-0000-7000-8000-000000000009",
+  kind: DeckOwnerKind.Organization,
+  label: "Deli",
+  canManage: true,
+};
+const view: DeckView = {
+  viewId: "018f0000-0000-7000-8000-000000000002",
+  owner,
+  name: "Needs review",
+  rawQuery: "review-requested:@me custom:future",
+  sort: DeckSort.RecentlyUpdated,
+  grouping: DeckGrouping.Repository,
+  notificationPreference: { enabled: false, transitions: [] },
+  connection: "connected",
+  revision: { value: 1n, etag: "view-1" },
+  widgetAttached: false,
+};
+const pullRequest: DeckPullRequest = {
+  repositoryOwner: "delinoio",
+  repositoryName: "oss",
+  number: 755,
+  title: "Add Deck",
+  author: "octocat",
+  reviewDecision: "required",
+  checks: "success",
+  mergeability: "mergeable",
+  isDraft: false,
+  lifecycle: DeckPullRequestLifecycle.Open,
+  updatedAt: "2026-08-02T00:00:00.000Z",
+  revision: { value: 3n, etag: "pr-3" },
+  reviewers: [{ kind: "team", label: "delinoio/reviewers" }],
+  assignees: ["octocat"],
+  labels: ["internal"],
+  supportedMutations: Object.values(DeckMutationKind),
+  mergeMethods: Object.values(DeckMergeMethod),
+};
+
+function gateway(overrides: Partial<DeckGateway> = {}): DeckGateway {
+  return {
+    listOwners: vi.fn(async () => [owner]),
+    listViews: vi.fn(async () => ({ items: [view], nextCursor: "" })),
+    createView: vi.fn(async (_owner, input) => ({ ...view, ...input })),
+    updateView: vi.fn(async (current, input) => ({ ...current, ...input, revision: { value: 2n, etag: "view-2" } })),
+    deleteView: vi.fn(async () => undefined),
+    getView: vi.fn(async () => view),
+    listPullRequests: vi.fn(async () => ({ items: [pullRequest], nextCursor: "", freshness: DeckFreshness.Fresh, truncated: true, resultLimit: 500 })),
+    listMutationCandidates: vi.fn(async () => ({ items: [{ kind: "user" as const, value: "hubot" }], nextCursor: "" })),
+    mutatePullRequest: vi.fn(async () => ({ pullRequest, refreshRequired: false })),
+    refreshView: vi.fn(async (_viewId, confirm) => {
+      if (!await confirm(manualRefreshWarning(50n))) return;
+    }),
+    openPullRequest: vi.fn(async () => undefined),
+    synchronizeShortcuts: vi.fn(async () => undefined),
+    startEligibleRefreshes: vi.fn(() => () => undefined),
+    ...overrides,
+  };
+}
+
+function renderDeck(value: DeckGateway) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: 0, networkMode: "always" } },
+  });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <DeckProvider gateway={value}>
+        <DeckWorkspace />
+      </DeckProvider>
+    </QueryClientProvider>,
+  );
+}
+
+describe("Deck composable production workspace", () => {
+  it("navigates explicit personal and organization ownership scopes", async () => {
+    const backend = gateway({ listOwners: vi.fn(async () => [owner, organization]) });
+    const user = userEvent.setup();
+    renderDeck(backend);
+    expect(await screen.findByRole("button", { name: /Personal/u })).toHaveAttribute("aria-current", "page");
+    await user.click(screen.getByRole("button", { name: /Deli/u }));
+    await waitFor(() => expect(backend.listViews).toHaveBeenCalledWith(organization, ""));
+  });
+
+  it("loads permission-filtered rows, exposes truncation, and hands comments to GitHub", async () => {
+    const backend = gateway();
+    const user = userEvent.setup();
+    renderDeck(backend);
+    await user.click(await screen.findByRole("button", { name: /Needs review/u }));
+    expect(await screen.findByRole("heading", { name: "Add Deck" })).toBeVisible();
+    expect(screen.getByText(/truncated at 500/u)).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Comment or review on GitHub" }));
+    expect(backend.openPullRequest).toHaveBeenCalledWith(pullRequest);
+  });
+
+  it("requires explicit merge and billed-refresh confirmations", async () => {
+    const backend = gateway();
+    const user = userEvent.setup();
+    renderDeck(backend);
+    await user.click(await screen.findByRole("button", { name: /Needs review/u }));
+    await screen.findByRole("heading", { name: "Add Deck" });
+
+    await user.click(screen.getByRole("button", { name: "merge" }));
+    expect(screen.getByRole("dialog", { name: "Confirm pull request merge" })).toBeVisible();
+    expect(backend.mutatePullRequest).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Confirm merge" }));
+    await waitFor(() => expect(backend.mutatePullRequest).toHaveBeenCalledWith(
+      view.viewId,
+      pullRequest,
+      expect.objectContaining({ kind: DeckMutationKind.Merge, mergeConfirmed: true }),
+    ));
+
+    await user.click(screen.getByRole("button", { name: "Refresh" }));
+    expect(await screen.findByRole("dialog", { name: "Confirm billed refresh" })).toHaveTextContent("$0.000050 USD");
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(backend.refreshView).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders only server-advertised actions", async () => {
+    const restrictedPullRequest = {
+      ...pullRequest,
+      supportedMutations: [DeckMutationKind.MarkDraft, DeckMutationKind.Close],
+    };
+    const backend = gateway({
+      listPullRequests: vi.fn(async () => ({
+        items: [restrictedPullRequest],
+        nextCursor: "",
+        freshness: DeckFreshness.Fresh,
+        truncated: false,
+        resultLimit: 500,
+      })),
+    });
+    const user = userEvent.setup();
+    renderDeck(backend);
+    await user.click(await screen.findByRole("button", { name: /Needs review/u }));
+    await screen.findByRole("heading", { name: "Add Deck" });
+
+    expect(screen.getByRole("button", { name: "mark draft" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "close" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "merge" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "assign users" })).not.toBeInTheDocument();
+  });
+
+  it("compares and reapplies edits after a revision conflict", async () => {
+    const current = {
+      ...view,
+      name: "Changed remotely",
+      rawQuery: "author:hubot",
+      revision: { value: 2n, etag: "view-2" },
+    };
+    const updateView = vi.fn()
+      .mockRejectedValueOnce(new DeckProductError(DeckFailureCode.StaleRevision))
+      .mockImplementationOnce(async (base: DeckView, input: Parameters<DeckGateway["updateView"]>[1]) => ({
+        ...base,
+        ...input,
+        revision: { value: 3n, etag: "view-3" },
+      }));
+    const backend = gateway({
+      getView: vi.fn(async () => current),
+      updateView,
+    });
+    const user = userEvent.setup();
+    renderDeck(backend);
+    await user.click(await screen.findByRole("button", { name: /Needs review/u }));
+    await user.click(screen.getByRole("button", { name: "Edit view" }));
+    const name = screen.getByLabelText("View name");
+    await user.clear(name);
+    await user.type(name, "My reapplied edit");
+    await user.click(screen.getByRole("button", { name: "Save view" }));
+
+    const conflict = await screen.findByRole("dialog", { name: "View changed elsewhere" });
+    expect(conflict).toHaveTextContent("My reapplied edit");
+    expect(conflict).toHaveTextContent("Changed remotely");
+    await user.click(screen.getByRole("button", { name: "Reapply my changes" }));
+    await waitFor(() => expect(updateView).toHaveBeenLastCalledWith(
+      current,
+      expect.objectContaining({ name: "My reapplied edit" }),
+    ));
+  });
+
+  it("never renders the regular PR list offline and has no automated accessibility violations", async () => {
+    const backend = gateway();
+    const user = userEvent.setup();
+    const { container } = renderDeck(backend);
+    await user.click(await screen.findByRole("button", { name: /Needs review/u }));
+    await screen.findByRole("heading", { name: "Add Deck" });
+    Object.defineProperty(navigator, "onLine", { configurable: true, value: false });
+    window.dispatchEvent(new Event("offline"));
+    expect(await screen.findByRole("heading", { name: "Deck is offline" })).toBeVisible();
+    expect(screen.queryByRole("heading", { name: "Add Deck" })).not.toBeInTheDocument();
+    const results = await axe.run(container, { rules: { "color-contrast": { enabled: false } } });
+    expect(results.violations).toEqual([]);
+  });
+
+  it("suppresses cached rows when the service reports offline freshness", async () => {
+    Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
+    const backend = gateway({
+      listPullRequests: vi.fn(async () => ({
+        items: [pullRequest],
+        nextCursor: "",
+        freshness: DeckFreshness.Offline,
+        truncated: false,
+        resultLimit: 500,
+      })),
+    });
+    const user = userEvent.setup();
+    renderDeck(backend);
+    await user.click(await screen.findByRole("button", { name: /Needs review/u }));
+    expect(await screen.findByRole("heading", { name: "Deck service unavailable" })).toBeVisible();
+    expect(screen.queryByRole("heading", { name: "Add Deck" })).not.toBeInTheDocument();
+  });
+});

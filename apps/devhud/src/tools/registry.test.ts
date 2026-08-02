@@ -36,8 +36,12 @@ const realQaFixture = defineTool({
 });
 
 describe("internal tool registry", () => {
-  it("keeps production registration empty", () => {
-    expect(productionTools).toEqual([]);
+  it("registers Deck as the only closed cross-platform production tool", () => {
+    expect(productionTools).toHaveLength(1);
+    expect(productionTools[0]).toMatchObject({ toolId: "deck", name: "Deck" });
+    expect(productionTools[0]?.supportedPlatforms).toEqual(
+      new Set([ToolPlatform.Desktop, ToolPlatform.Ios, ToolPlatform.Android]),
+    );
   });
 
   it("filters fixture definitions by platform and granted capabilities", () => {

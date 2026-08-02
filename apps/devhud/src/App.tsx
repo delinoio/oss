@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { SessionProvider } from "./auth/SessionProvider";
+import { AuthFeature, SessionProvider, useSession } from "./auth/SessionProvider";
 import type { NativeSessionBridge } from "./auth/contracts";
+import { DeckGatewayProvider, DeckToolEntry } from "./deck/DeckToolEntry";
+import type { DeckGateway } from "./deck/contracts";
 import type {
   LocalStorageAdapter,
   PersistenceResetOutcome,
@@ -480,6 +482,7 @@ function DesktopHud({
 
 const mobileScreenLabels: Record<MobileScreen, string> = {
   [MobileScreen.Home]: "Home",
+  [MobileScreen.Deck]: "Deck",
   [MobileScreen.Widgets]: "Widgets",
   [MobileScreen.Settings]: "Settings",
   [MobileScreen.Diagnostics]: "Diagnostics",
@@ -513,6 +516,7 @@ function MobileHome({
   retryRuntime(): void;
   runtime: RuntimeState;
 }) {
+  const { failure, ready, session, signIn } = useSession();
   return (
     <section aria-label="Home" className="mobile-screen">
       <MobileScreenHeading eyebrow="Home" title="Developer tools, kept local." />
@@ -525,7 +529,26 @@ function MobileHome({
       {runtime.status === "failed" ? (
         <RuntimeFailure message={runtime.message} onRetry={retryRuntime} />
       ) : null}
-      {runtime.status === "ready" ? <EmptyTools compact /> : null}
+      {runtime.status === "ready" ? (
+        <>
+          <EmptyTools compact />
+          {ready && session.status !== "signed-in" ? (
+            <section aria-labelledby="mobile-account-title" className="state-card">
+              <h2 id="mobile-account-title">Internal tools</h2>
+              <p>Sign in with DeliDev to show authenticated tools on this device.</p>
+              <button
+                className="primary-button"
+                disabled={session.status === "authenticating" || session.status === "cleanup-required"}
+                onClick={() => void signIn(AuthFeature.Deck)}
+                type="button"
+              >
+                {session.status === "authenticating" ? "Signing in…" : "Sign in"}
+              </button>
+              {failure ? <p className="error" role="alert">{failure.guidance}</p> : null}
+            </section>
+          ) : null}
+        </>
+      ) : null}
     </section>
   );
 }
@@ -561,6 +584,14 @@ function MobileWidgets() {
           </p>
         </section>
       ) : null}
+    </section>
+  );
+}
+
+function MobileDeck() {
+  return (
+    <section aria-label="Deck" className="mobile-screen mobile-deck-screen">
+      <DeckToolEntry />
     </section>
   );
 }
@@ -732,6 +763,8 @@ function MobileContent({
   switch (mobileScreen) {
     case MobileScreen.Home:
       return <MobileHome retryRuntime={retryRuntime} runtime={runtime} />;
+    case MobileScreen.Deck:
+      return <MobileDeck />;
     case MobileScreen.Widgets:
       return <MobileWidgets />;
     case MobileScreen.Settings:
@@ -759,6 +792,15 @@ function MobileShell({
   runtime: RuntimeState;
 }) {
   const { mobileScreen, setMobileScreen } = useApplication();
+  const { session } = useSession();
+  const mobileScreens = Object.values(MobileScreen).filter(
+    (screen) => screen !== MobileScreen.Deck || session.status === "signed-in",
+  );
+  useEffect(() => {
+    if (mobileScreen === MobileScreen.Deck && session.status !== "signed-in") {
+      setMobileScreen(MobileScreen.Home);
+    }
+  }, [mobileScreen, session.status, setMobileScreen]);
   return (
     <main className="mobile-shell">
       <header className="app-header mobile-header">
@@ -766,7 +808,7 @@ function MobileShell({
       </header>
       <div className="mobile-layout">
         <nav aria-label="Primary" className="mobile-nav">
-          {Object.values(MobileScreen).map((screen) => (
+          {mobileScreens.map((screen) => (
             <button
               aria-current={mobileScreen === screen ? "page" : undefined}
               key={screen}
@@ -953,12 +995,14 @@ function ApplicationSurface({
 }
 
 export function App({
+  deckGateway,
   desktopBridge,
   platform,
   runtimeBridge = tauriRuntimeBridge,
   sessionBridge,
   storage,
 }: {
+  readonly deckGateway?: DeckGateway;
   readonly desktopBridge?: DesktopBridge | null;
   readonly platform?: ApplicationPlatform;
   readonly runtimeBridge?: RuntimeBridge;
@@ -970,14 +1014,16 @@ export function App({
     platform ?? detectApplicationPlatform(navigator.userAgent);
   return (
     <SessionProvider bridge={sessionBridge}>
-      <ApplicationProvider storage={storage}>
-        <ApplicationSurface
-          desktopBridge={desktopBridge}
-          initialPlatform={initialPlatform}
-          runtimeBridge={runtimeBridge}
-          synchronizePlatform={synchronizePlatform}
-        />
-      </ApplicationProvider>
+      <DeckGatewayProvider gateway={deckGateway}>
+        <ApplicationProvider storage={storage}>
+          <ApplicationSurface
+            desktopBridge={desktopBridge}
+            initialPlatform={initialPlatform}
+            runtimeBridge={runtimeBridge}
+            synchronizePlatform={synchronizePlatform}
+          />
+        </ApplicationProvider>
+      </DeckGatewayProvider>
     </SessionProvider>
   );
 }

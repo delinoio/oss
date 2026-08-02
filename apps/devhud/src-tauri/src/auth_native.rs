@@ -475,6 +475,20 @@ pub(crate) struct NativeAuthState {
 }
 
 impl NativeAuthState {
+    pub(crate) fn with_deck_bearers<R>(
+        &self,
+        operation: impl FnOnce(&str, &str, &str) -> R,
+    ) -> Result<R, AuthError> {
+        let pair = self
+            .manager
+            .lock()
+            .map_err(|_| AuthError::SecureVaultUnavailable)?
+            .as_mut()
+            .ok_or(AuthError::ConfigurationUnavailable)?
+            .bearer_pair(AuthFeature::Deck, unix_time_now())?;
+        Ok(pair.with_exposed(operation))
+    }
+
     pub(crate) fn initialize(
         #[cfg(any(target_os = "android", target_os = "ios"))] app: &AppHandle<crate::ActiveRuntime>,
     ) -> Self {

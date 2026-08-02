@@ -249,6 +249,8 @@ const expectedMobileMainPermissions = [
   "allow-write-widget-configuration",
   "allow-export-diagnostics",
   "allow-reset-dev-hud",
+  "allow-deck-connect",
+  "allow-deck-open-pull-request",
   "allow-get-auth-session",
   "allow-start-authentication",
   "allow-logout-authentication",
@@ -259,6 +261,9 @@ const expectedDesktopMainPermissions = [
   "allow-read-widget-configuration",
   "allow-hide-hud",
   "allow-show-settings",
+  "allow-deck-connect",
+  "allow-deck-open-pull-request",
+  "allow-synchronize-deck-shortcuts",
   "allow-get-auth-session",
   "allow-start-authentication",
   "allow-logout-authentication",
@@ -311,14 +316,14 @@ requireCondition(
       JSON.stringify(["iOS", "android"]) &&
     JSON.stringify(mobileMainCapabilityJson.permissions) ===
       JSON.stringify(expectedMobileMainPermissions),
-  "the mobile capability must expose only its scoped persistence, diagnostics, and reset commands",
+  "the mobile capability must expose only scoped shell and authenticated Deck commands",
 );
 requireCondition(
   JSON.stringify(desktopMainCapabilityJson.windows) ===
       JSON.stringify(["main"]) &&
     JSON.stringify(desktopMainCapabilityJson.permissions) ===
       JSON.stringify(expectedDesktopMainPermissions),
-  "the desktop HUD capability must expose only desktop lifecycle commands",
+  "the desktop HUD capability must expose only lifecycle and authenticated Deck commands",
 );
 requireCondition(
   JSON.stringify(settingsCapabilityJson.windows) ===
@@ -358,6 +363,8 @@ requireCondition(
 );
 for (const action of [
   "Open DevHud",
+  "Open Deck",
+  "Refresh Deck View",
   "Settings",
   "Check for Updates",
   "Open DevTools",

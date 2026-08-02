@@ -42,7 +42,7 @@ tracing = "0.1"
 url = "2"
 uuid = { version = "1", features = ["serde", "v7"] }
 zeroize = { version = "1", features = ["derive"] }
-tauri = { git = "https://github.com/tauri-apps/tauri", rev = "f49ebda2fdba5755456b0f049e32593ca0ea331a", default-features = false, optional = true }
+tauri = { git = "https://github.com/tauri-apps/tauri", rev = "f49ebda2fdba5755456b0f049e32593ca0ea331a", default-features = false, optional = true , features = [] }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 auto-launch = "=0.6.0"

@@ -1,4 +1,3 @@
-#[cfg(test)]
 use std::collections::{BTreeMap, BTreeSet};
 
 #[cfg(feature = "desktop-cef")]
@@ -8,9 +7,7 @@ use global_hotkey::{
 };
 use serde::{Deserialize, Serialize};
 
-#[cfg(test)]
 pub(crate) const MAX_DECK_SHORTCUT_DEFINITIONS: usize = 20;
-#[cfg(test)]
 pub(crate) const MAX_REALQA_SHORTCUT_DEFINITIONS: usize = 20;
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
@@ -151,16 +148,20 @@ enum BackendError {
 /// Account and definition strings are opaque identifiers: no diagnostic or
 /// serialized outcome includes them.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-#[cfg(test)]
 enum ShortcutOwner {
     DevHud,
-    Deck { account: String, view: String },
-    RealQa { preset: String },
+    Deck {
+        account: String,
+        view: String,
+    },
+    #[cfg_attr(not(test), allow(dead_code))]
+    RealQa {
+        preset: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
-#[cfg(test)]
 enum FeatureShortcutOutcome {
     Active,
     InactiveConflict,
@@ -178,12 +179,14 @@ trait ShortcutBackend {
     fn id(binding: Self::Binding) -> u32;
 }
 
+#[cfg(test)]
 struct ShortcutCoordinator<B: ShortcutBackend> {
     backend: B,
     active: Option<(StructuredShortcut, B::Binding)>,
     pending_cleanup: Vec<B::Binding>,
 }
 
+#[cfg(test)]
 impl<B: ShortcutBackend> ShortcutCoordinator<B> {
     fn new(backend: B) -> Self {
         Self {
@@ -274,7 +277,6 @@ impl<B: ShortcutBackend> ShortcutCoordinator<B> {
 /// One device-local registry for generic DevHud and future feature bindings.
 /// It intentionally stores effective registrations only; synchronizable Deck
 /// definitions and device-scoped RealQA presets remain feature-owned data.
-#[cfg(test)]
 struct UnifiedShortcutRegistry<B: ShortcutBackend> {
     backend: B,
     active: BTreeMap<ShortcutOwner, (StructuredShortcut, B::Binding)>,
@@ -282,7 +284,6 @@ struct UnifiedShortcutRegistry<B: ShortcutBackend> {
     pending_cleanup: Vec<B::Binding>,
 }
 
-#[cfg(test)]
 impl<B: ShortcutBackend> UnifiedShortcutRegistry<B> {
     fn new(backend: B) -> Self {
         Self {
@@ -325,6 +326,11 @@ impl<B: ShortcutBackend> UnifiedShortcutRegistry<B> {
             .iter()
             .any(|(existing_owner, (_, binding))| existing_owner != &owner && *binding == candidate)
         {
+            // The generic binding is transactional user configuration. A Deck
+            // conflict must not remove the user's still-working shortcut.
+            if owner == ShortcutOwner::DevHud {
+                return FeatureShortcutOutcome::InactiveConflict;
+            }
             if let Some((_, binding)) = self.active.get(&owner)
                 && let Err(error) = self.backend.unregister(*binding)
             {
@@ -374,6 +380,19 @@ impl<B: ShortcutBackend> UnifiedShortcutRegistry<B> {
         Ok(())
     }
 
+    #[cfg(feature = "desktop-cef")]
+    fn remove_owner(&mut self, owner: &ShortcutOwner) -> Result<(), ShortcutFailure> {
+        self.cleanup_pending()?;
+        if let Some((_, binding)) = self.active.get(owner) {
+            self.backend
+                .unregister(*binding)
+                .map_err(map_backend_error)?;
+            self.active.remove(owner);
+        }
+        self.inactive.remove(owner);
+        Ok(())
+    }
+
     fn logout_account(&mut self, account: &str) -> Result<(), ShortcutFailure> {
         self.cleanup_pending()?;
         let owners: Vec<_> = self
@@ -415,6 +434,23 @@ impl<B: ShortcutBackend> UnifiedShortcutRegistry<B> {
         }
         Ok(())
     }
+}
+
+#[cfg(feature = "desktop-cef")]
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct DeckShortcutDefinition {
+    account_id: String,
+    view_id: String,
+    shortcut: StructuredShortcut,
+}
+
+#[cfg(feature = "desktop-cef")]
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct DeckShortcutRegistration {
+    view_id: String,
+    outcome: FeatureShortcutOutcome,
 }
 
 const fn map_backend_error(error: BackendError) -> ShortcutFailure {
@@ -547,7 +583,7 @@ const fn native_key(key: ShortcutKey) -> Code {
 
 #[cfg(feature = "desktop-cef")]
 pub(crate) struct ShortcutState {
-    coordinator: Option<ShortcutCoordinator<NativeShortcutBackend>>,
+    registry: Option<UnifiedShortcutRegistry<NativeShortcutBackend>>,
     unavailable: Option<ShortcutFailure>,
     restoration_failure: Option<ShortcutFailure>,
 }
@@ -559,7 +595,7 @@ impl ShortcutState {
         #[cfg(target_os = "linux")]
         if std::env::var_os("DISPLAY").is_none_or(|display| display.is_empty()) {
             return Self {
-                coordinator: None,
+                registry: None,
                 unavailable: Some(ShortcutFailure::UnsupportedDisplay),
                 restoration_failure: has_restored_shortcut
                     .then_some(ShortcutFailure::UnsupportedDisplay),
@@ -571,22 +607,27 @@ impl ShortcutState {
                 let backend = NativeShortcutBackend {
                     manager: SendableGlobalHotKeyManager(manager),
                 };
-                let mut coordinator = ShortcutCoordinator::new(backend);
+                let mut registry = UnifiedShortcutRegistry::new(backend);
                 let mut restoration_failure = None;
                 if let Some(shortcut) = restored
                     && shortcut.validate().is_ok()
                 {
-                    let binding = NativeShortcutBackend::binding(&shortcut);
-                    match coordinator.backend.manager.0.register(binding) {
-                        Ok(()) => coordinator.active = Some((shortcut, binding)),
-                        Err(error) => {
-                            restoration_failure =
-                                Some(map_backend_error(classify_native_error(error)));
+                    match registry.apply(ShortcutOwner::DevHud, shortcut, true) {
+                        FeatureShortcutOutcome::Active => {}
+                        FeatureShortcutOutcome::Unchanged(reason) => {
+                            restoration_failure = Some(reason);
+                        }
+                        FeatureShortcutOutcome::InactiveConflict => {
+                            restoration_failure = Some(ShortcutFailure::Conflict);
+                        }
+                        FeatureShortcutOutcome::InactiveUnavailable
+                        | FeatureShortcutOutcome::InactiveLimitExceeded => {
+                            restoration_failure = Some(ShortcutFailure::RegistrationFailed);
                         }
                     }
                 }
                 Self {
-                    coordinator: Some(coordinator),
+                    registry: Some(registry),
                     unavailable: None,
                     restoration_failure,
                 }
@@ -597,7 +638,7 @@ impl ShortcutState {
                     _ => ShortcutFailure::RegistrationFailed,
                 };
                 Self {
-                    coordinator: None,
+                    registry: None,
                     unavailable: Some(failure),
                     restoration_failure: has_restored_shortcut.then_some(failure),
                 }
@@ -621,8 +662,27 @@ impl ShortcutState {
                 };
             }
         };
-        let outcome = match &mut self.coordinator {
-            Some(coordinator) => coordinator.replace(shortcut),
+        let outcome = match &mut self.registry {
+            Some(registry) => match registry.apply(ShortcutOwner::DevHud, shortcut.clone(), true) {
+                FeatureShortcutOutcome::Active => ShortcutReplacementOutcome::Replaced { shortcut },
+                FeatureShortcutOutcome::InactiveConflict => ShortcutReplacementOutcome::Unchanged {
+                    reason: ShortcutFailure::Conflict,
+                    shortcut: None,
+                },
+                FeatureShortcutOutcome::InactiveUnavailable
+                | FeatureShortcutOutcome::InactiveLimitExceeded => {
+                    ShortcutReplacementOutcome::Unchanged {
+                        reason: ShortcutFailure::RegistrationFailed,
+                        shortcut: None,
+                    }
+                }
+                FeatureShortcutOutcome::Unchanged(reason) => {
+                    ShortcutReplacementOutcome::Unchanged {
+                        reason,
+                        shortcut: None,
+                    }
+                }
+            },
             None => ShortcutReplacementOutcome::Unchanged {
                 reason: self
                     .unavailable
@@ -637,15 +697,18 @@ impl ShortcutState {
     }
 
     pub(crate) fn active_id(&self) -> Option<u32> {
-        self.coordinator
-            .as_ref()
-            .and_then(ShortcutCoordinator::active_id)
+        self.registry
+            .as_ref()?
+            .active
+            .get(&ShortcutOwner::DevHud)
+            .map(|(_, binding)| NativeShortcutBackend::id(*binding))
     }
 
     pub(crate) fn active_shortcut(&self) -> Option<StructuredShortcut> {
-        self.coordinator
-            .as_ref()
-            .and_then(|coordinator| coordinator.active.as_ref())
+        self.registry
+            .as_ref()?
+            .active
+            .get(&ShortcutOwner::DevHud)
             .map(|(shortcut, _)| shortcut.clone())
     }
 
@@ -654,8 +717,8 @@ impl ShortcutState {
     }
 
     pub(crate) fn clear(&mut self) -> Result<(), ShortcutFailure> {
-        if let Some(coordinator) = &mut self.coordinator {
-            coordinator.clear()?;
+        if let Some(registry) = &mut self.registry {
+            registry.clear_all()?;
         }
         self.restoration_failure = None;
         Ok(())
@@ -673,8 +736,69 @@ impl ShortcutState {
                 ShortcutReplacementOutcome::Unchanged { reason, .. } => Err(reason),
                 ShortcutReplacementOutcome::Cancelled => Err(ShortcutFailure::RegistrationFailed),
             },
-            None => self.clear(),
+            None => match &mut self.registry {
+                Some(registry) => registry.remove_owner(&ShortcutOwner::DevHud),
+                None => Ok(()),
+            },
         }
+    }
+
+    pub(crate) fn synchronize_deck(
+        &mut self,
+        account_id: String,
+        definitions: Vec<DeckShortcutDefinition>,
+    ) -> Vec<DeckShortcutRegistration> {
+        let mut definitions = definitions;
+        definitions.retain(|definition| definition.account_id == account_id);
+        definitions.sort_by(|left, right| left.view_id.cmp(&right.view_id));
+        definitions.dedup_by(|left, right| left.view_id == right.view_id);
+        let Some(registry) = &mut self.registry else {
+            return definitions
+                .into_iter()
+                .map(|definition| DeckShortcutRegistration {
+                    view_id: definition.view_id,
+                    outcome: FeatureShortcutOutcome::InactiveUnavailable,
+                })
+                .collect();
+        };
+        if registry.logout_account(&account_id).is_err() {
+            return definitions
+                .into_iter()
+                .map(|definition| DeckShortcutRegistration {
+                    view_id: definition.view_id,
+                    outcome: FeatureShortcutOutcome::Unchanged(ShortcutFailure::RegistrationFailed),
+                })
+                .collect();
+        }
+        definitions
+            .into_iter()
+            .map(|definition| {
+                let owner = ShortcutOwner::Deck {
+                    account: account_id.clone(),
+                    view: definition.view_id.clone(),
+                };
+                DeckShortcutRegistration {
+                    view_id: definition.view_id,
+                    outcome: registry.apply(owner, definition.shortcut, true),
+                }
+            })
+            .collect()
+    }
+
+    pub(crate) fn deck_view_for_id(&self, id: u32) -> Option<&str> {
+        self.registry
+            .as_ref()?
+            .active
+            .iter()
+            .find_map(|(owner, (_, binding))| {
+                if NativeShortcutBackend::id(*binding) != id {
+                    return None;
+                }
+                match owner {
+                    ShortcutOwner::Deck { view, .. } => Some(view.as_str()),
+                    _ => None,
+                }
+            })
     }
 }
 
@@ -1054,5 +1178,30 @@ mod tests {
         );
         assert!(!registry.active.contains_key(&deck));
         assert!(registry.inactive.contains(&deck));
+    }
+
+    #[test]
+    fn deck_conflict_never_removes_the_existing_generic_binding() {
+        let mut registry = UnifiedShortcutRegistry::new(FakeBackend::default());
+        let deck = ShortcutOwner::Deck {
+            account: "account".into(),
+            view: "view".into(),
+        };
+        assert_eq!(
+            registry.apply(deck, shortcut(ShortcutKey::K), true),
+            FeatureShortcutOutcome::Active
+        );
+        assert_eq!(
+            registry.apply(ShortcutOwner::DevHud, shortcut(ShortcutKey::P), true),
+            FeatureShortcutOutcome::Active
+        );
+        assert_eq!(
+            registry.apply(ShortcutOwner::DevHud, shortcut(ShortcutKey::K), true),
+            FeatureShortcutOutcome::InactiveConflict
+        );
+        assert_eq!(
+            registry.active[&ShortcutOwner::DevHud].0,
+            shortcut(ShortcutKey::P)
+        );
     }
 }

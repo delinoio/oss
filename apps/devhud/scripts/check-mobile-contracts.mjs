@@ -332,11 +332,13 @@ requireCondition(
       "allow-write-widget-configuration",
       "allow-export-diagnostics",
       "allow-reset-dev-hud",
+      "allow-deck-connect",
+      "allow-deck-open-pull-request",
       "allow-get-auth-session",
       "allow-start-authentication",
       "allow-logout-authentication",
     ]),
-  "mobile IPC must remain limited to diagnostics, the three versioned records, confirmed reset, and closed authentication session commands",
+  "mobile IPC must remain limited to scoped shell, authentication, and exact Deck commands",
 );
 requireCondition(
   runtimeSource.includes('"Unsupported"') &&
@@ -345,10 +347,11 @@ requireCondition(
   "mobile runtime diagnostics must report updates as unsupported",
 );
 requireCondition(
-  /export const productionTools:\s*readonly ToolDefinition\[\]\s*=\s*\[\];/u.test(
-    productionRegistry,
-  ),
-  "production tool registration must remain empty",
+  productionRegistry.includes('toolId: "deck"') &&
+    productionRegistry.includes("ToolPlatform.Ios") &&
+    productionRegistry.includes("ToolPlatform.Android") &&
+    (productionRegistry.match(/defineTool\(\{/gu)?.length ?? 0) === 1,
+  "production tool registration must contain only Deck on iOS and Android",
 );
 
 const nativeFiles = [

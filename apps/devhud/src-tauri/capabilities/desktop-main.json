@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "desktop-main",
-  "description": "Allows only DevHud's desktop HUD window to identify its bundled runtime, read the two application records needed to render, and use HUD lifecycle commands.",
+  "description": "Allows only DevHud's desktop HUD to use its bundled shell lifecycle plus authenticated Deck Connect, exact PR handoff, and unified shortcut synchronization.",
   "local": true,
   "platforms": ["linux", "macOS", "windows"],
   "windows": ["main"],
@@ -11,6 +11,9 @@
     "allow-read-widget-configuration",
     "allow-hide-hud",
     "allow-show-settings",
+    "allow-deck-connect",
+    "allow-deck-open-pull-request",
+    "allow-synchronize-deck-shortcuts",
     "allow-get-auth-session",
     "allow-start-authentication",
     "allow-logout-authentication"

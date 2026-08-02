@@ -9,25 +9,27 @@
   foundation, an implemented unpublished RealQA Chrome MV3/desktop Native
   Messaging capture bridge, implemented private `devhud.deck.v1` and
   `devhud.realqa.v1` generated-client contracts, an initial dependency-injected
-  Deck refresh controller consuming the private Deck enums, and planned
-  Deck/RealQA product integrations. The current `apps/devhud` implementation
-  contains the bundled-asset package, internal empty production tool registry,
+  Deck refresh controller consuming the private Deck enums, the closed internal
+  Deck product integration, and planned RealQA product integration. The current
+  `apps/devhud` implementation contains the bundled-asset package, Deck-only
+  production tool registry,
   production desktop shell, sign-ready desktop bundle configuration, stable
-  mobile empty-state UI, maintained native iOS and Android hosts, private
+  responsive mobile UI, maintained native iOS and Android hosts, private
   mobile secure-vault/widget-state plugins, independently built
   WidgetKit/AppWidgetProvider source targets, native Logto Authorization Code
   with PKCE, random-port one-shot desktop loopback handling at the stable
   registered `/auth/callback` path, verified mobile callback declarations,
   per-feature OS-vault refresh grants/device binding, online retained-session
   rehydration, memory-only bearer pairing, dependency-injected frontend/native
-  session state, the inactive Deck refresh timing/origin/eligibility layer, a
+  session state, the active Deck UI/native Connect timing/origin/eligibility layer, a
   platform-neutral dependency-injected RealQA capture/composer core with
   fixture backends plus concrete macOS 14+, Windows 11 x64/ARM64, and reviewed
   Ubuntu X11/XWayland/native-Wayland capture adapters, a desktop-only
   account-bound AES-256-GCM RealQA draft record family whose device keys remain
   in the OS secure vault, and the unpublished exact-origin Chrome
-  extension/native host. It has no activated production Deck/RealQA tool,
-  authenticated Deck/RealQA UI, feature networking, visible/distributed
+  extension/native host. Deck is registered as a closed internal client tool,
+  but neither feature service/catalog is activated or deployed. It has no
+  authenticated RealQA UI, visible/distributed
   widget, production Chrome identity, production Logto identity, scoped updater
   network implementation, published release, publisher automation, public
   support implementation, or rollout. Issues #755/#757 authorize those bounded
@@ -88,7 +90,7 @@ The registry is an internal, closed contract, not a plugin interface. `ToolDefin
 - a required-capability enum set; and
 - an internal UI entrypoint.
 
-Tools may support a subset of platforms. Each shell exposes only tools supported by the current platform and granted capabilities. Capability values are closed and enum-backed; a new capability is introduced only with the tool that needs it. Production registration is currently empty; tests may use fixture definitions. Deck and RealQA may later be added as explicit internal registrations governed by this document and their server/proto contracts. No external plugin authors, third-party tools/trackers, user-authored scripts, runtime code downloads, remotely supplied UI, arbitrary remote assets, or plugin SDK are authorized.
+Tools may support a subset of platforms. Each shell exposes only tools supported by the current platform and granted capabilities. Capability values are closed and enum-backed; a new capability is introduced only with the tool that needs it. Deck is the sole production registration on desktop, iOS, and Android; tests may use fixture definitions. RealQA remains unregistered. No external plugin authors, third-party tools/trackers, user-authored scripts, runtime code downloads, remotely supplied UI, arbitrary remote assets, or plugin SDK are authorized.
 
 The native boundary exposes only scoped Tauri commands required for settings, application lifecycle, diagnostics, updates where supported, the versioned widget-state record, and separately contracted Deck/RealQA windows and native operations. Diagnostics export is one record-free command with no destination argument: its native host owns the save picker and returns only `exported` or `cancelled`, while failures return a stable classification without a path or underlying exception. DevHud exposes no CLI or public/local API. The only future loopback listener is the one-shot random-port desktop Logto callback at the stable registered `/auth/callback` path; the only future mobile link is the verified Deck callback `https://deli.dev/auth/devhud/callback`; the only extension bridge is the exact-origin signed RealQA Chrome Native Messaging host. Business operations remain the versioned feature Connect contracts, carried by a private Rust transport adapter available only to authenticated feature windows. The sole signed-out exception is native lifecycle cleanup calling exactly `DeckDeviceService.UnregisterDevice` with the OS-vault single-registration revocation grant and no webview-supplied input. The adapter accepts a closed generated service/procedure identifier and bounded protobuf payload, maps it to a compile-time exact feature origin, injects either memory-only user authorization or that procedure-specific cleanup grant as native metadata, rejects redirects, and returns a bounded Connect response. It accepts no caller URL, HTTP method, header map, or generic request. RealQA image upload is a separate native operation that accepts only the short-lived capability returned by `CreateImageUpload`, requires exact `https://assets.realqa.deli.dev` origin and PUT method, binds the declared content type/checksum/size, rejects redirects, and cannot issue GET or another request. RealQA capture is a separate desktop-only typed native procedure set available only to its authenticated feature window: it enumerates bounded display/window choices, starts or cancels a user-initiated closed region/window/display/multi-monitor mode with an explicit pointer flag, uses the platform picker or `xdg-desktop-portal` where required, and returns only the selected pixels plus bounded geometry/source metadata to the editor/draft boundary. It exposes no continuous stream, arbitrary screen read, caller process handle, raw OS API, or cross-window capture authority. Native errors remain stable enum-backed classifications.
 
@@ -109,12 +111,18 @@ Authenticated Deck and RealQA windows receive no generic opener, but they may in
 
 ### Deck client contract
 
-- Deck product surfaces remain planned for desktop, iOS, Android, desktop tray,
-  global shortcuts, opt-in notifications, WidgetKit on iPhone/macOS, and
-  Android widgets. Their implemented private client contract is
-  `@delinoio/devhud-deck-connect`; future runtime calls use
-  `devhud.deck.v1` at the exact inactive origin `https://deck.deli.dev` through
-  the private native Connect transport.
+- Deck is implemented as an authenticated, responsive, WCAG 2.2 AA internal
+  tool on desktop, iOS, and Android with provider-owned composable state,
+  personal/organization navigation and view management, lossless raw/visual
+  query editing, server-authored sort/group/cursor/truncation/freshness state,
+  permission-filtered PR actions, explicit merge/manual-refresh confirmation,
+  revision compare/reapply, and typed GitHub PR handoff. Desktop also exposes
+  Deck tray entries plus the generic and synchronized per-view shortcuts through
+  the unified registry. Its private client contract is
+  `@delinoio/devhud-deck-connect`; runtime calls use `devhud.deck.v1` at the
+  exact inactive service origin `https://deck.deli.dev` through the private
+  native Connect transport. Push delivery and distributed native widgets remain
+  inactive.
 - The implemented dependency-injected Deck refresh controller owns all timing:
   it targets five-minute polling only while its desktop, mobile, or
   OS-background client is active and currently permitted; `stop` cancels
@@ -175,7 +183,7 @@ Authenticated Deck and RealQA windows receive no generic opener, but they may in
 - Theme changes persist before they are broadcast from the settings webview and are adopted by the retained HUD webview without restarting the application.
 - Display the always-on-top HUD centered on the monitor containing the mouse pointer and focus the search input immediately.
 - Repeating the global shortcut toggles the HUD. `Esc` or focus loss hides it immediately.
-- The empty production registry displays the exact message `No tools are available in this foundation preview.` and a Settings action.
+- While signed out, Home, Settings, Diagnostics, reset, theme, and sign-in remain usable; Deck may display only its authentication prompt and must not instantiate its provider, query cache, native transport, view names, or PR data.
 - CEF DevTools are enabled in development and in the signed `0.1.0` technical preview. DevTools must not widen navigation, download, IPC, or filesystem capabilities.
 
 ### Mobile screens and native host boundary
@@ -230,8 +238,8 @@ These identifiers must not be renamed or reused for DeliDev or another project. 
 - Keep Tauri capabilities window-specific and least-privileged. `desktop-main` grants the HUD only bundled runtime identification, read-only render state, hide, and settings-window creation. `settings` grants its base-record mutation, local diagnostics/reset, shortcut/autostart, first-run, hide, and typed updater commands. `mobile-main` grants only the exact three-record, local diagnostics, and reset commands on iOS/Android. The exact authenticated `realqa-composer` window additionally receives bundled runtime identification so it can select its composer surface, then only its scoped browser handoff, fallback, image, and draft status/list/load/save/delete/submission-preflight commands; no base, settings, capture, mobile, or DevTools-only window receives draft access. Future authenticated Deck/RealQA windows receive only their closed native Connect procedure set and applicable typed GitHub system-browser actions; RealQA alone receives the signed upload operation and its desktop-platform typed capture procedures. All capabilities are local-origin-only, use explicit generated application-command permissions, and contain no broad filesystem, store, dialog, generic screen, generic opener, shell, process, or HTTP plugin default. DevTools in the technical preview inherits the containing desktop window's capability but cannot invoke RealQA capture or drafts outside the authenticated RealQA window.
 - Every webview applies the same bundled-origin navigation guard, popup and download denial, remote-resource response denial, no-store policy, strict CSP, permissions policy, referrer suppression, MIME sniffing denial, and same-origin opener/resource policy. Desktop CEF additionally maps every host to `~NOTFOUND` except `tauri.localhost` and disables background networking, component updates, and domain reliability. These controls leave only the internal bundled-asset and IPC origins available; DevTools receives no network exception.
 - Do not implement any account, tenant, billing, cloud, backend, or DeliDev behavior outside the explicit Deck/RealQA contracts. Client/extension analytics, crash telemetry, remote logs, advertising, and user tracking remain prohibited; redacted server operational observability is owned by the server contracts.
-- Networking is deny-by-default. Future native allowlists are limited to: the separately scoped unauthenticated signed GitHub Releases updater; Logto/DeliDev authentication; authenticated Deck Connect calls plus the exact single-purpose `UnregisterDevice` cleanup call to `https://deck.deli.dev`; authenticated RealQA Connect calls to `https://realqa.deli.dev`; the RealQA short-lived signed PUT at `https://assets.realqa.deli.dev`; the verified mobile auth callback; exact-origin Chrome Native Messaging; and typed system-browser navigation to the validated GitHub.com authorization or pull-request shapes above. The updater is desktop-only: use the unauthenticated GitHub Releases API, filter source-backed `delinoio/oss` releases to tags beginning with `devhud@v`, reject drafts, unrelated releases, invalid SemVer, unsupported targets, and releases without a valid signed DevHud updater manifest before selecting any asset, and download manifests/assets only from GitHub Releases. Mobile reports updates as unsupported and has no updater endpoint or updater network permission. Public image GET remains an ordinary issue-reader server surface, not a DevHud webview permission. Bundled webviews never fetch these remote origins, feature servers do not allow `http://tauri.localhost` CORS, and no CORS exception weakens the navigation/resource guard above. Except for the scoped OS-browser handoff, provider GitHub.com calls, delibase usage, and R2 administration remain server-side. No wildcard host, arbitrary remote navigation/resource, remote UI, remote configuration, or client-side GitHub token is allowed. The current updater and both features perform no network access because they are not implemented.
-- The preceding future-network statement is now implemented only for native authentication: configured builds may reach the configured HTTPS Logto issuer's exact `/oidc/auth`, `/oidc/token`, `/oidc/token/revocation`, and `/oidc/jwks` paths, and mobile artifacts carry the required native Internet permission plus only the verified DeliDev callback. Webviews retain no HTTP or opener authority, and the updater/Deck/RealQA transports remain networkless.
+- Networking is deny-by-default. Native allowlists are limited to: the separately scoped unauthenticated signed GitHub Releases updater; Logto/DeliDev authentication; authenticated Deck Connect calls plus the exact single-purpose `UnregisterDevice` cleanup call to `https://deck.deli.dev`; authenticated RealQA Connect calls to `https://realqa.deli.dev`; the RealQA short-lived signed PUT at `https://assets.realqa.deli.dev`; the verified mobile auth callback; exact-origin Chrome Native Messaging; and typed system-browser navigation to the validated GitHub.com authorization or pull-request shapes above. Deck's implemented transport accepts only its generated closed procedure set, bounded protobuf bytes, a native-injected memory-only bearer pair, no redirects, and no frontend URL/method/header input. The updater is desktop-only: use the unauthenticated GitHub Releases API, filter source-backed `delinoio/oss` releases to tags beginning with `devhud@v`, reject drafts, unrelated releases, invalid SemVer, unsupported targets, and releases without a valid signed DevHud updater manifest before selecting any asset, and download manifests/assets only from GitHub Releases. Mobile reports updates as unsupported and has no updater endpoint or updater network permission. Public image GET remains an ordinary issue-reader server surface, not a DevHud webview permission. Bundled webviews never fetch these remote origins, feature servers do not allow `http://tauri.localhost` CORS, and no CORS exception weakens the navigation/resource guard above. Except for the scoped OS-browser handoff, provider GitHub.com calls, delibase usage, and R2 administration remain server-side. No wildcard host, arbitrary remote navigation/resource, remote UI, remote configuration, or client-side GitHub token is allowed.
+- Configured builds may reach the configured HTTPS Logto issuer's exact `/oidc/auth`, `/oidc/token`, `/oidc/token/revocation`, and `/oidc/jwks` paths; authenticated builds may also reach Deck only through the preceding native adapter. Mobile artifacts carry the required native Internet permission plus only the verified DeliDev callback. Webviews retain no HTTP or opener authority, and the updater/RealQA transports remain networkless.
 - Check for updates at startup and every 24 hours. Offline, unavailable, and rate-limited checks are non-fatal. Require user confirmation before install/restart; invalid updater signatures leave the installed version unchanged.
 - The app has no CLI, public API, public plugin SDK, arbitrary deep-link surface, client/extension telemetry, generic localhost service, webhook server, remote UI route, or extension platform. The one-shot Logto callback, exact verified mobile callback, feature Connect clients, and signed exact-origin RealQA Chrome host are the only bounded exceptions.
 
@@ -258,14 +266,15 @@ The implemented `test:deck` covers the five-minute client-owned polling loop,
 manual server-price warning/cache bypass. `test:deck:widgets` covers the
 one-shot active widget request and cancellation-before-dispatch behavior; the
 existing platform-specific widget commands continue to compile/test their
-build-only native foundations. These Deck commands make no claim for the
-still-unimplemented UI, native Connect transport, push delivery, or widget
-distribution. The existing RealQA commands retain their documented
+build-only native foundations. These Deck commands cover the implemented
+composable UI, native Connect transport, offline list suppression, query
+fidelity, actions, and confirmations; they make no claim for push delivery or
+widget distribution. The existing RealQA commands retain their documented
 capture/editor/draft/extension coverage and must grow with later product
 slices. Commands for unimplemented slices must not be represented by passing
 stubs.
 
-The native test command optionally runs the permission-aware foreground desktop smoke when `DEVHUD_REALQA_MACOS_SMOKE=1`. The macOS application bundle declares its screen-capture purpose string. Chrome extension packaging on macOS fails closed unless the signed installer injects the absolute native-host path; it never substitutes the Linux fixture path. Hosted CI leaves the foreground-only smoke opt-in disabled because its test process has no guaranteed interactive TCC session; CI runs the fixtures and both architecture checks instead. These commands make no passing claim for the still-unimplemented native Connect transport, signed PUT, uploader, or provider submission portions.
+The native test command optionally runs the permission-aware foreground desktop smoke when `DEVHUD_REALQA_MACOS_SMOKE=1`. The macOS application bundle declares its screen-capture purpose string. Chrome extension packaging on macOS fails closed unless the signed installer injects the absolute native-host path; it never substitutes the Linux fixture path. Hosted CI leaves the foreground-only smoke opt-in disabled because its test process has no guaranteed interactive TCC session; CI runs the fixtures and both architecture checks instead. These commands make no passing claim for RealQA's still-unimplemented native Connect transport, signed PUT, uploader, or provider submission portions.
 
 Required validation coverage is:
 
@@ -328,7 +337,7 @@ DevHud participates in the existing change-scoped Rust formatting, Clippy, and t
 
 ## Out of Scope
 
-- Any developer tool other than the explicitly contracted Deck and RealQA registrations; current production registration remains empty.
+- Any production tool other than the explicitly registered Deck tool; RealQA and every other tool remain unregistered.
 - Any currently published/embedded widget or extension. Deck widget distribution and the RealQA Chrome artifact require their implementation, privacy/security tests, external production identities, signing, and a separate publication change; fixtures must remain invisible to users.
 - Live Activities, Control Center controls, watchOS, Wear OS, RealQA widgets/mobile UI, and non-Deck desktop widgets. Native Wayland is excluded from the base shell, except RealQA screen capture through `xdg-desktop-portal`.
 - External plugins, remote mini-apps, user-authored scripts, runtime code downloads, arbitrary remote UI/assets, and public tool/tracker/plugin SDKs.
