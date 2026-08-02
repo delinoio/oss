@@ -298,7 +298,8 @@ fn map_error_reason(reason: u64) -> Option<RealQaTransportFailure> {
         4 => Some(RealQaTransportFailure::OwnerScopeNotFound),
         5 | 6 => Some(RealQaTransportFailure::StaleRevision),
         7 | 35 | 37 => Some(RealQaTransportFailure::Conflict),
-        10 | 12..=14 => Some(RealQaTransportFailure::GithubUnavailable),
+        10 | 13..=14 => Some(RealQaTransportFailure::GithubUnavailable),
+        12 => Some(RealQaTransportFailure::PermissionDenied),
         15 => Some(RealQaTransportFailure::FinalBodyTooLarge),
         16 => Some(RealQaTransportFailure::ImageTooLarge),
         17 => Some(RealQaTransportFailure::SessionTooLarge),
@@ -608,6 +609,7 @@ mod tests {
         };
         for (reason, expected) in [
             (3, RealQaTransportFailure::PermissionDenied),
+            (12, RealQaTransportFailure::PermissionDenied),
             (4, RealQaTransportFailure::OwnerScopeNotFound),
             (5, RealQaTransportFailure::StaleRevision),
             (15, RealQaTransportFailure::FinalBodyTooLarge),

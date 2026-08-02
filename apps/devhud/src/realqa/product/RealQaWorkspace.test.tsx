@@ -758,23 +758,65 @@ describe("RealQA desktop production workspace", () => {
 
   it("materializes visible issue-form defaults in saved and submitted drafts", async () => {
     const user = userEvent.setup();
-    const gateway = new FixtureGateway(snapshot());
+    const value = snapshot();
+    const definition = value.definitions[0];
+    if (definition === undefined) throw new Error("Fixture issue definition is missing.");
+    const gateway = new FixtureGateway({
+      ...value,
+      definitions: [{
+        ...definition,
+        fields: definition.fields.map((field) =>
+          field.kind === "dropdown" && field.multiple
+            ? { ...field, defaultValue: "Chrome" }
+            : field,
+        ),
+      }],
+    });
     await renderWorkspace(gateway);
 
     expect(screen.getByLabelText("Severity")).toHaveValue("High");
+    expect(screen.getByLabelText("Browsers")).toHaveValue(["Chrome"]);
     await user.type(screen.getByLabelText("Summary"), "Default fields");
     await user.click(screen.getByLabelText("Reproduced"));
     await user.click(screen.getByRole("button", { name: "Save draft" }));
     await waitFor(() => expect(gateway.actions.at(-1)).toMatchObject({
       kind: "save-draft",
-      draft: { issueAnswers: { severity: ["High"] } },
+      draft: { issueAnswers: { severity: ["High"], browsers: ["Chrome"] } },
     }));
     await user.click(screen.getByRole("button", { name: "Review and submit" }));
     await user.click(within(screen.getByRole("dialog", { name: "Confirm public screenshots" })).getByRole("button", { name: "Confirm and submit" }));
     await waitFor(() => expect(gateway.actions.at(-1)).toMatchObject({
       kind: "submit",
-      draft: { issueAnswers: { severity: ["High"] } },
+      draft: { issueAnswers: { severity: ["High"], browsers: ["Chrome"] } },
     }));
+  });
+
+  it("blocks review and final submission while retained storage is in grace", async () => {
+    const user = userEvent.setup();
+    const gateway = new FixtureGateway(snapshot());
+    const view = await renderWorkspace(gateway);
+    await user.type(screen.getByLabelText("Summary"), "Storage grace");
+    await user.click(screen.getByLabelText("Reproduced"));
+    await user.click(screen.getByRole("button", { name: "Review and submit" }));
+
+    const blocked = snapshot();
+    const retained = blocked.submissions[0];
+    if (retained === undefined) throw new Error("Fixture submission is missing.");
+    const blockedGateway = new FixtureGateway({
+      ...blocked,
+      submissions: [{
+        ...retained,
+        state: "storage-billing-grace",
+        graceExpiresAt: "2026-09-01T00:00:00Z",
+      }],
+    });
+    view.rerender(<RealQaWorkspace gateway={blockedGateway} />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Review and submit" })).toBeDisabled();
+    });
+    await user.click(within(screen.getByRole("dialog", { name: "Confirm public screenshots" })).getByRole("button", { name: "Confirm and submit" }));
+    expect(blockedGateway.actions).toHaveLength(0);
   });
 
   it("offers first-preset creation and first-draft creation", async () => {
