@@ -189,10 +189,12 @@ requireCondition(
 );
 requireCondition(
   JSON.parse(packageSource).version === "0.1.0" &&
-    /export const productionTools:\s*readonly ToolDefinition\[\]\s*=\s*\[\];/u.test(
-      productionRegistry,
-    ),
-  "DevHud 0.1.0 must keep production tools empty",
+    productionRegistry.includes('toolId: "deck"') &&
+    productionRegistry.includes("ToolPlatform.Desktop") &&
+    productionRegistry.includes("ToolPlatform.Ios") &&
+    productionRegistry.includes("ToolPlatform.Android") &&
+    (productionRegistry.match(/defineTool\(\{/gu)?.length ?? 0) === 1,
+  "DevHud 0.1.0 must keep Deck as its only cross-platform production tool",
 );
 
 const prohibitedRemoteEndpoint =
