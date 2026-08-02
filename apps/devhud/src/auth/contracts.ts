@@ -6,7 +6,11 @@ export enum AuthFeature {
 export type NativeSessionSnapshot =
   | { readonly status: "signed-out" }
   | { readonly status: "authenticating" }
-  | { readonly status: "signed-in"; readonly subject: string }
+  | {
+      readonly status: "signed-in";
+      readonly subject: string;
+      readonly features: readonly AuthFeature[];
+    }
   | { readonly status: "prior-session-offline" }
   | { readonly status: "cleanup-required" };
 
@@ -116,6 +120,13 @@ export function isNativeSessionSnapshot(
     "subject" in value &&
     typeof value.subject === "string" &&
     value.subject.length > 0 &&
-    value.subject.length <= 512
+    value.subject.length <= 512 &&
+    "features" in value &&
+    Array.isArray(value.features) &&
+    value.features.length <= Object.values(AuthFeature).length &&
+    value.features.every(
+      (feature) => feature === AuthFeature.Deck || feature === AuthFeature.RealQa,
+    ) &&
+    new Set(value.features).size === value.features.length
   );
 }

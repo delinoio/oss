@@ -2,7 +2,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { SessionProvider } from "../auth/SessionProvider";
+import { AuthFeature, SessionProvider } from "../auth/SessionProvider";
 import type { NativeSessionBridge } from "../auth/contracts";
 import { RealQaToolEntry } from "./RealQaToolEntry";
 
@@ -13,7 +13,11 @@ function bridge(
 ): NativeSessionBridge {
   return {
     restore: vi.fn(async () => restored),
-    start: vi.fn(async () => ({ status: "signed-in" as const, subject: "account-1" })),
+    start: vi.fn(async () => ({
+      status: "signed-in" as const,
+      subject: "account-1",
+      features: [AuthFeature.RealQa],
+    })),
     logout: vi.fn(async () => ({ status: "signed-out" as const })),
   };
 }
@@ -47,5 +51,25 @@ describe("RealQA authenticated entry", () => {
     expect(open).toHaveBeenCalledOnce();
     await user.click(screen.getByRole("button", { name: "Log out" }));
     expect(session.logout).toHaveBeenCalledOnce();
+  });
+
+  it("requests incremental RealQA authorization for a Deck-only account", async () => {
+    const user = userEvent.setup();
+    const open = vi.fn(async () => undefined);
+    const session = bridge({
+      status: "signed-in",
+      subject: "account-1",
+      features: [AuthFeature.Deck],
+    });
+    render(
+      <SessionProvider bridge={session}>
+        <RealQaToolEntry open={open} />
+      </SessionProvider>,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "Sign in to RealQA" }));
+
+    expect(session.start).toHaveBeenCalledWith(AuthFeature.RealQa);
+    expect(open).not.toHaveBeenCalled();
   });
 });

@@ -13,8 +13,8 @@ export function RealQaToolEntry({
   const { failure, logout, ready, session, signIn } = useSession();
   const [status, setStatus] = useState<EntryStatus>("idle");
   const [authRequested, setAuthRequested] = useState(false);
-  const authenticated =
-    session.status === "signed-in" || session.status === "prior-session-offline";
+  const authenticated = session.status === "prior-session-offline"
+    || (session.status === "signed-in" && session.features.includes(AuthFeature.RealQa));
 
   const enter = async () => {
     setStatus("opening");

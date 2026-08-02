@@ -372,7 +372,10 @@ impl AuthConfiguration {
 pub(crate) enum SessionSnapshot {
     SignedOut,
     Authenticating,
-    SignedIn { subject: String },
+    SignedIn {
+        subject: String,
+        features: BTreeSet<AuthFeature>,
+    },
     PriorSessionOffline,
     CleanupRequired,
 }
@@ -441,8 +444,17 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
         match &self.state {
             SessionState::SignedOut => SessionSnapshot::SignedOut,
             SessionState::Authenticating => SessionSnapshot::Authenticating,
-            SessionState::SignedIn { subject, .. } => SessionSnapshot::SignedIn {
+            SessionState::SignedIn {
+                subject,
+                reauthenticated_features,
+                offline_features,
+                ..
+            } => SessionSnapshot::SignedIn {
                 subject: subject.clone(),
+                features: reauthenticated_features
+                    .union(offline_features)
+                    .copied()
+                    .collect(),
             },
             SessionState::PriorSessionOffline { .. } => SessionSnapshot::PriorSessionOffline,
             SessionState::CleanupRequired => SessionSnapshot::CleanupRequired,
@@ -2239,7 +2251,8 @@ mod tests {
         assert_eq!(
             manager.complete_callback(&callback, NOW).unwrap(),
             SessionSnapshot::SignedIn {
-                subject: "account-a".to_owned()
+                subject: "account-a".to_owned(),
+                features: [AuthFeature::Deck].into_iter().collect(),
             }
         );
         assert!(manager.memory_tokens_present());
@@ -2305,7 +2318,10 @@ mod tests {
                 .complete_callback(&callback_for(&realqa_request, "realqa-code", None), NOW)
                 .unwrap(),
             SessionSnapshot::SignedIn {
-                subject: "account-a".to_owned()
+                subject: "account-a".to_owned(),
+                features: [AuthFeature::Deck, AuthFeature::RealQa]
+                    .into_iter()
+                    .collect(),
             }
         );
         assert_eq!(
@@ -2401,7 +2417,8 @@ mod tests {
         assert_eq!(
             manager.snapshot(),
             SessionSnapshot::SignedIn {
-                subject: "account-a".to_owned()
+                subject: "account-a".to_owned(),
+                features: [AuthFeature::Deck].into_iter().collect(),
             }
         );
 
@@ -2419,7 +2436,8 @@ mod tests {
         assert_eq!(
             manager.snapshot(),
             SessionSnapshot::SignedIn {
-                subject: "account-a".to_owned()
+                subject: "account-a".to_owned(),
+                features: [AuthFeature::Deck].into_iter().collect(),
             }
         );
         assert!(manager.memory_tokens_present());
@@ -2502,7 +2520,8 @@ mod tests {
                 .complete_callback(&callback_for(&request, "code", None), NOW)
                 .unwrap(),
             SessionSnapshot::SignedIn {
-                subject: "account-a".to_owned()
+                subject: "account-a".to_owned(),
+                features: [AuthFeature::Deck].into_iter().collect(),
             }
         );
         assert_eq!(
@@ -3180,7 +3199,8 @@ mod tests {
             assert_eq!(
                 online.restore_at(Connectivity::Online, NOW).unwrap(),
                 SessionSnapshot::SignedIn {
-                    subject: "account-a".to_owned()
+                    subject: "account-a".to_owned(),
+                    features: [AuthFeature::RealQa].into_iter().collect(),
                 }
             );
             let migrated = &online.vault.retained.as_ref().unwrap().1;
@@ -3227,7 +3247,8 @@ mod tests {
         assert_eq!(
             prior.restore_at(Connectivity::Online, NOW).unwrap(),
             SessionSnapshot::SignedIn {
-                subject: "account-a".to_owned()
+                subject: "account-a".to_owned(),
+                features: [AuthFeature::Deck].into_iter().collect(),
             }
         );
         assert!(prior.memory_tokens_present());
@@ -3334,7 +3355,10 @@ mod tests {
         assert_eq!(
             prior.restore_at(Connectivity::Online, NOW).unwrap(),
             SessionSnapshot::SignedIn {
-                subject: "account-a".to_owned()
+                subject: "account-a".to_owned(),
+                features: [AuthFeature::Deck, AuthFeature::RealQa]
+                    .into_iter()
+                    .collect(),
             }
         );
         assert_eq!(
@@ -3368,7 +3392,10 @@ mod tests {
         assert_eq!(
             prior.restore_at(Connectivity::Online, NOW).unwrap(),
             SessionSnapshot::SignedIn {
-                subject: "account-a".to_owned()
+                subject: "account-a".to_owned(),
+                features: [AuthFeature::Deck, AuthFeature::RealQa]
+                    .into_iter()
+                    .collect(),
             }
         );
         let access = prior.realqa_draft_access().unwrap();
@@ -3415,7 +3442,8 @@ mod tests {
         assert_eq!(
             prior.restore_at(Connectivity::Online, NOW).unwrap(),
             SessionSnapshot::SignedIn {
-                subject: "account-a".to_owned()
+                subject: "account-a".to_owned(),
+                features: [AuthFeature::RealQa].into_iter().collect(),
             }
         );
         assert_eq!(

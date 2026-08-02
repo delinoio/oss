@@ -148,6 +148,12 @@ export interface RealQaDraft {
   readonly images: readonly RealQaReviewImage[];
 }
 
+export interface RealQaSubmissionReplay {
+  readonly idempotencyKey: string;
+  readonly expectedSubmissionRevision: number;
+  readonly originalDraft: RealQaDraft;
+}
+
 export interface RealQaSubmissionSummary {
   readonly submissionId: string;
   readonly revision: number;
@@ -164,6 +170,8 @@ export interface RealQaSubmissionSummary {
   readonly authorizationId: string | null;
   readonly authorizationRevision: number;
   readonly images: readonly RealQaReviewImage[];
+  /** Available only while the encrypted local draft can reconstruct the exact request. */
+  readonly replay: RealQaSubmissionReplay | null;
 }
 
 export interface RealQaBillingScopeChoice {
@@ -201,6 +209,7 @@ export type RealQaProductAction =
       readonly kind: "disconnect-destination";
       readonly destinationId: string;
       readonly expectedRevision: number;
+      readonly idempotencyKey: string;
     }
   | { readonly kind: "reconnect-destination"; readonly destinationId: string }
   | { readonly kind: "create-draft"; readonly presetId: string }
@@ -228,7 +237,14 @@ export type RealQaProductAction =
       readonly draft: RealQaDraft;
       readonly publicImageConfirmation: true;
     }
-  | { readonly kind: "retry-submission"; readonly submissionId: string }
+  | {
+      readonly kind: "retry-submission";
+      readonly submissionId: string;
+      readonly expectedSubmissionRevision: number;
+      readonly idempotencyKey: string;
+      readonly originalDraft: RealQaDraft;
+      readonly publicImageConfirmation: true;
+    }
   | {
       readonly kind: "delete-image";
       readonly submissionId: string;
@@ -252,7 +268,10 @@ export type RealQaProductAction =
       };
       readonly idempotencyKey: string;
     }
-  | { readonly kind: "delete-feature-data" };
+  | {
+      readonly kind: "delete-feature-data";
+      readonly idempotencyKey: string;
+    };
 
 export interface RealQaProductGateway {
   load(): Promise<RealQaProductSnapshot>;

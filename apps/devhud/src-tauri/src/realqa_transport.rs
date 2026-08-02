@@ -144,7 +144,9 @@ impl RealQaGithubBrowserConfiguration {
     fn new(client_id: String, app_slug: String) -> Option<Self> {
         let client_id_valid = !client_id.is_empty()
             && client_id.len() <= 100
-            && client_id.bytes().all(|byte| byte.is_ascii_alphanumeric());
+            && client_id
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'.');
         let app_slug_valid = !app_slug.is_empty()
             && app_slug.len() <= 100
             && !app_slug.starts_with('-')
@@ -255,7 +257,7 @@ fn validate_github_authorization_target(
     };
     let states = values("state");
     if states.len() != 1
-        || !(32..=256).contains(&states[0].len())
+        || !(32..=2_048).contains(&states[0].len())
         || !states[0]
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'~' | b'-'))
@@ -499,15 +501,15 @@ mod tests {
     #[test]
     fn github_browser_handoff_accepts_only_the_configured_exact_shapes() {
         let configuration = RealQaGithubBrowserConfiguration::new(
-            "fixtureclient123".to_owned(),
+            "Iv1.fixtureclient123".to_owned(),
             "fixture-realqa".to_owned(),
         )
         .unwrap();
-        let state = "abcdefghijklmnopqrstuvwxyz123456";
+        let state = "a".repeat(512);
         let callback = "https%3A%2F%2Frealqa.deli.dev%2Fgithub%2Foauth%2Fcallback";
         for valid in [
             format!(
-                "https://github.com/login/oauth/authorize?client_id=fixtureclient123&redirect_uri={}&state={state}",
+                "https://github.com/login/oauth/authorize?client_id=Iv1.fixtureclient123&redirect_uri={}&state={state}",
                 callback,
             ),
             format!(
@@ -525,7 +527,7 @@ mod tests {
             format!("https://github.com/apps/fixture-realqa/installations/new?state={state}#fragment"),
             "https://github.com/apps/fixture-realqa/installations/new?state=contains%20spaces-and-is-long-enough-123456".to_owned(),
             format!("https://github.com/login/oauth/authorize?client_id=other&redirect_uri={callback}&state={state}"),
-            format!("https://github.com/login/oauth/authorize?client_id=fixtureclient123&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback&state={state}"),
+            format!("https://github.com/login/oauth/authorize?client_id=Iv1.fixtureclient123&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback&state={state}"),
         ] {
             assert_eq!(
                 validate_github_authorization_target(&invalid, &configuration).unwrap_err(),

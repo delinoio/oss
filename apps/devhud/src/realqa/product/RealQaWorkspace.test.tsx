@@ -26,6 +26,34 @@ function snapshot(
   platform = RealQaDesktopFamily.Ubuntu,
   access = RealQaAccessMode.Online,
 ): RealQaProductSnapshot {
+  const draft = {
+    draftId,
+    revision: 2,
+    presetId,
+    title: "Captured regression",
+    body: "Steps to reproduce",
+    url: "https://example.com/report",
+    urlWarning: false,
+    environment: [
+      { id: "os", label: "Operating system", value: platform },
+      { id: "arch", label: "Architecture", value: "x86_64" },
+    ],
+    dom: [{ id: "selector", label: "CSS selector", value: "main > button" }],
+    issueAnswers: {},
+    labels: ["bug"],
+    assignees: ["octocat"],
+    milestone: "v1",
+    projects: ["Release"],
+    images: [{
+      imageId,
+      revision: 1,
+      name: "Capture 1",
+      encodedBytes: 8192,
+      selected: true,
+      uploadState: "local" as const,
+      uploadProgress: 0,
+    }],
+  };
   return {
     platform,
     access,
@@ -66,34 +94,7 @@ function snapshot(
       backgroundGrant: "active",
       shortcut: "Control+Shift+7",
     }],
-    drafts: [{
-      draftId,
-      revision: 2,
-      presetId,
-      title: "Captured regression",
-      body: "Steps to reproduce",
-      url: "https://example.com/report",
-      urlWarning: false,
-      environment: [
-        { id: "os", label: "Operating system", value: platform },
-        { id: "arch", label: "Architecture", value: "x86_64" },
-      ],
-      dom: [{ id: "selector", label: "CSS selector", value: "main > button" }],
-      issueAnswers: {},
-      labels: ["bug"],
-      assignees: ["octocat"],
-      milestone: "v1",
-      projects: ["Release"],
-      images: [{
-        imageId,
-        revision: 1,
-        name: "Capture 1",
-        encodedBytes: 8192,
-        selected: true,
-        uploadState: "local",
-        uploadProgress: 0,
-      }],
-    }],
+    drafts: [draft],
     submissions: [{
       submissionId: "01900000-0000-7000-8000-000000000004",
       revision: 8,
@@ -102,6 +103,11 @@ function snapshot(
       graceExpiresAt: null,
       authorizationId: "01900000-0000-7000-8000-000000000005",
       authorizationRevision: 7,
+      replay: {
+        idempotencyKey: draftId,
+        expectedSubmissionRevision: 8,
+        originalDraft: draft,
+      },
       images: [{
         imageId: "01900000-0000-7000-8000-000000000006",
         revision: 9,
@@ -230,6 +236,7 @@ class FixtureGateway implements RealQaProductGateway {
           graceExpiresAt: null,
           authorizationId: "01900000-0000-7000-8000-000000000007",
           authorizationRevision: 1,
+          replay: null,
           images: action.draft.images.map((image) => ({ ...image, uploadState: "public", uploadProgress: 100 })),
         }, ...this.value.submissions],
       };
@@ -334,6 +341,21 @@ describe("RealQA desktop production workspace", () => {
     expect(gateway.actions.at(-1)).toMatchObject({ kind: "save-draft" });
   });
 
+  it("requires every required issue-form answer before opening submission review", async () => {
+    const user = userEvent.setup();
+    const gateway = new FixtureGateway(snapshot());
+    await renderWorkspace(gateway);
+    const review = screen.getByRole("button", { name: "Review and submit" });
+
+    expect(review).toBeDisabled();
+    expect(screen.getByText(/Complete every required issue-form field/u)).toBeVisible();
+    await user.type(screen.getByLabelText("Summary"), "Required answers");
+    expect(review).toBeDisabled();
+    await user.click(screen.getByLabelText("Reproduced"));
+
+    expect(review).toBeEnabled();
+  });
+
   it("enforces the 20-shortcut device limit without discarding preset data", async () => {
     const value = snapshot();
     const template = value.presets[0];
@@ -363,6 +385,8 @@ describe("RealQA desktop production workspace", () => {
     const gateway = new FixtureGateway(snapshot());
     await renderWorkspace(gateway);
     const url = screen.getByLabelText("Sanitized URL");
+    await user.type(screen.getByLabelText("Summary"), "Sanitized URL");
+    await user.click(screen.getByLabelText("Reproduced"));
 
     await user.clear(url);
     await user.type(url, "file:///tmp/private");
@@ -485,6 +509,8 @@ describe("RealQA desktop production workspace", () => {
     });
     await renderWorkspace(gateway);
 
+    await user.type(screen.getByLabelText("Summary"), "First draft");
+    await user.click(screen.getByLabelText("Reproduced"));
     await user.click(screen.getByRole("button", { name: "Review and submit" }));
     await user.click(within(screen.getByRole("dialog", { name: "Confirm public screenshots" })).getByRole("button", { name: "Confirm and submit" }));
 
@@ -517,6 +543,8 @@ describe("RealQA desktop production workspace", () => {
     await renderWorkspace(gateway);
 
     expect(screen.getByLabelText("Severity")).toHaveValue("High");
+    await user.type(screen.getByLabelText("Summary"), "Default fields");
+    await user.click(screen.getByLabelText("Reproduced"));
     await user.click(screen.getByRole("button", { name: "Save draft" }));
     await waitFor(() => expect(gateway.actions.at(-1)).toMatchObject({
       kind: "save-draft",
@@ -593,7 +621,10 @@ describe("RealQA desktop production workspace", () => {
 
     await user.click(screen.getByRole("button", { name: "Disconnect GitHub" }));
     await user.click(within(screen.getByRole("dialog", { name: "Disconnect RealQA from GitHub" })).getByRole("button", { name: "Disconnect" }));
-    expect(gateway.actions.at(-1)).toMatchObject({ kind: "disconnect-destination" });
+    expect(gateway.actions.at(-1)).toMatchObject({
+      kind: "disconnect-destination",
+      idempotencyKey: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-7/u),
+    });
     expect(screen.getByText(/presets were retained/u)).toBeVisible();
 
     await user.click(screen.getByRole("button", { name: "Delete draft" }));
@@ -603,7 +634,50 @@ describe("RealQA desktop production workspace", () => {
 
     await user.click(screen.getByRole("button", { name: "Delete server feature data" }));
     await user.click(within(screen.getByRole("dialog", { name: "Delete server RealQA data" })).getByRole("button", { name: "Confirm server deletion" }));
-    expect(gateway.actions.at(-1)).toEqual({ kind: "delete-feature-data" });
+    expect(gateway.actions.at(-1)).toMatchObject({
+      kind: "delete-feature-data",
+      idempotencyKey: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-7/u),
+    });
+  });
+
+  it("reuses disconnect and feature-deletion identities after ambiguous failures", async () => {
+    const user = userEvent.setup();
+    const gateway = new FixtureGateway(snapshot());
+    await renderWorkspace(gateway);
+
+    gateway.nextFailure = new RealQaProductError(RealQaFailureCode.ServiceUnavailable);
+    await user.click(screen.getByRole("button", { name: "Disconnect GitHub" }));
+    await user.click(within(screen.getByRole("dialog", { name: "Disconnect RealQA from GitHub" })).getByRole("button", { name: "Disconnect" }));
+    await screen.findByRole("alert");
+    await user.click(screen.getByRole("button", { name: "Disconnect GitHub" }));
+    await user.click(within(screen.getByRole("dialog", { name: "Disconnect RealQA from GitHub" })).getByRole("button", { name: "Disconnect" }));
+    await waitFor(() => expect(gateway.actions).toHaveLength(2));
+    const firstDisconnect = gateway.actions[0] as Extract<
+      RealQaProductAction,
+      { kind: "disconnect-destination" }
+    >;
+    const retriedDisconnect = gateway.actions[1] as Extract<
+      RealQaProductAction,
+      { kind: "disconnect-destination" }
+    >;
+    expect(retriedDisconnect.idempotencyKey).toBe(firstDisconnect.idempotencyKey);
+
+    gateway.nextFailure = new RealQaProductError(RealQaFailureCode.ServiceUnavailable);
+    await user.click(screen.getByRole("button", { name: "Delete server feature data" }));
+    await user.click(within(screen.getByRole("dialog", { name: "Delete server RealQA data" })).getByRole("button", { name: "Confirm server deletion" }));
+    await screen.findByRole("alert");
+    await user.click(screen.getByRole("button", { name: "Delete server feature data" }));
+    await user.click(within(screen.getByRole("dialog", { name: "Delete server RealQA data" })).getByRole("button", { name: "Confirm server deletion" }));
+    await waitFor(() => expect(gateway.actions).toHaveLength(4));
+    const firstDeletion = gateway.actions[2] as Extract<
+      RealQaProductAction,
+      { kind: "delete-feature-data" }
+    >;
+    const retriedDeletion = gateway.actions[3] as Extract<
+      RealQaProductAction,
+      { kind: "delete-feature-data" }
+    >;
+    expect(retriedDeletion.idempotencyKey).toBe(firstDeletion.idempotencyKey);
   });
 
   it("supports revision-safe reconciliation, image deletion, and exact-scope rebind", async () => {
@@ -611,7 +685,13 @@ describe("RealQA desktop production workspace", () => {
     const gateway = new FixtureGateway(snapshot());
     await renderWorkspace(gateway);
     await user.click(screen.getByRole("button", { name: "Retry reconciliation" }));
-    expect(gateway.actions.at(-1)).toMatchObject({ kind: "retry-submission" });
+    expect(gateway.actions.at(-1)).toMatchObject({
+      kind: "retry-submission",
+      expectedSubmissionRevision: 8,
+      idempotencyKey: draftId,
+      originalDraft: { draftId },
+      publicImageConfirmation: true,
+    });
     await user.click(screen.getByRole("button", { name: "Delete Submitted capture" }));
     expect(gateway.actions.at(-1)).toMatchObject({
       kind: "delete-image",

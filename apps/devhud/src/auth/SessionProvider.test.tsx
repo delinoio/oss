@@ -82,6 +82,7 @@ describe("dependency-injected DevHud session provider", () => {
       restore: vi.fn(async () => ({
         status: "signed-in" as const,
         subject: "account-a",
+        features: [AuthFeature.Deck],
       })),
       start: vi.fn(async () => {
         throw "account-switch-requires-logout";
@@ -106,7 +107,7 @@ describe("dependency-injected DevHud session provider", () => {
       .fn<NativeSessionBridge["restore"]>()
       .mockResolvedValueOnce({ status: "signed-out" })
       .mockResolvedValueOnce({ status: "authenticating" })
-      .mockResolvedValueOnce({ status: "signed-in", subject: "account-a" });
+      .mockResolvedValueOnce({ status: "signed-in", subject: "account-a", features: [AuthFeature.Deck] });
     const native = bridge({ restore });
     const user = userEvent.setup();
     render(
@@ -126,9 +127,9 @@ describe("dependency-injected DevHud session provider", () => {
   it("restores the active account after incremental authorization is rejected", async () => {
     const restore = vi
       .fn<NativeSessionBridge["restore"]>()
-      .mockResolvedValueOnce({ status: "signed-in", subject: "account-a" })
+      .mockResolvedValueOnce({ status: "signed-in", subject: "account-a", features: [AuthFeature.Deck] })
       .mockRejectedValueOnce("authorization-rejected")
-      .mockResolvedValueOnce({ status: "signed-in", subject: "account-a" });
+      .mockResolvedValueOnce({ status: "signed-in", subject: "account-a", features: [AuthFeature.Deck] });
     const native = bridge({ restore });
     const user = userEvent.setup();
     render(
@@ -155,6 +156,7 @@ describe("dependency-injected DevHud session provider", () => {
       restore: vi.fn(async () => ({
         status: "signed-in" as const,
         subject: "account-a",
+        features: [AuthFeature.Deck],
       })),
       logout: vi.fn(
         () =>
@@ -202,6 +204,7 @@ describe("dependency-injected DevHud session provider", () => {
       restore: vi.fn(async () => ({
         status: "signed-in" as const,
         subject: "account-a",
+        features: [AuthFeature.Deck],
       })),
     });
     render(
