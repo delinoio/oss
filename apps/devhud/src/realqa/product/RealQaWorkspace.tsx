@@ -266,6 +266,10 @@ function issueFormBody(
   }).join("\n\n");
 }
 
+// The public URL is server-issued only after upload. Reserve a conservative
+// fixed prefix here without embedding a remotely fetchable origin in the webview bundle.
+const measuredPublicImagePathPrefix = "/".padEnd(64, "x");
+
 export function serializeFinalIssueBody(
   draft: RealQaDraft,
   definition: RealQaProductSnapshot["definitions"][number] | undefined,
@@ -285,7 +289,7 @@ export function serializeFinalIssueBody(
   if (capture.length === 1) capture.push("_No capture metadata included._");
   sections.push(capture.join("\n"));
   const images = draft.images.filter((image) => image.selected).map((image) =>
-    `![${image.name.replaceAll("[", "\\[").replaceAll("]", "\\]")}](https://assets.realqa.deli.dev/images/${image.imageId})`,
+    `![${image.name.replaceAll("[", "\\[").replaceAll("]", "\\]")}](${measuredPublicImagePathPrefix}/${image.imageId})`,
   );
   if (images.length > 0) sections.push(images.join("\n\n"));
   sections.push("<!-- realqa:submission:00000000-0000-7000-8000-000000000000 -->");
