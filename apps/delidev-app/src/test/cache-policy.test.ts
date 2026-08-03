@@ -114,6 +114,15 @@ describe("service worker cache policy", () => {
       classifyCacheRequest(
         {
           method: "GET",
+          url: "https://deli.dev/devhud/deck/open?action=open-pr&owner=sensitive",
+        },
+        shellPaths,
+      ),
+    ).toBe(CacheTarget.None);
+    expect(
+      classifyCacheRequest(
+        {
+          method: "GET",
           url: "https://deli.dev/static/js/app.abc123.js",
         },
         shellPaths,

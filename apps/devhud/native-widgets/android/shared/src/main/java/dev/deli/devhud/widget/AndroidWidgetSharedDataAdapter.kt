@@ -153,7 +153,20 @@ class AndroidWidgetSharedDataAdapter internal constructor(
         val envelope = try { dataStore.data.first()[configurationKey] }
         catch (error: CorruptionException) { throw WidgetConfigurationException(WidgetConfigurationErrorCode.CORRUPT, error) }
         catch (error: IOException) { throw WidgetConfigurationException(WidgetConfigurationErrorCode.STORAGE_UNAVAILABLE, error) }
-        envelope?.let(encryptor::decrypt)?.also(WidgetConfigurationCodec::decode)
+        envelope?.let { stored ->
+            WidgetConfigurationCodec.decodeLegacy(stored)?.let { legacy ->
+                val plaintext = WidgetConfigurationCodec.encode(legacy)
+                val migratedEnvelope = encryptor.encrypt(
+                    plaintext,
+                    legacy.configuration.accountId,
+                )
+                try { dataStore.edit { it[configurationKey] = migratedEnvelope } }
+                catch (error: IOException) {
+                    throw WidgetConfigurationException(WidgetConfigurationErrorCode.WRITE_FAILED, error)
+                }
+                plaintext
+            } ?: encryptor.decrypt(stored)
+        }?.also(WidgetConfigurationCodec::decode)
     }
 
     suspend fun writeRawRecord(raw: String) {

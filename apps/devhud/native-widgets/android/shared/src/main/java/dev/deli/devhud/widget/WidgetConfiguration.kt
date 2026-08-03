@@ -101,6 +101,9 @@ object WidgetConfigurationCodec {
         }
         if (version != DevHudWidgetContract.SCHEMA_VERSION) incompatible()
         val configuration = root.opt("configuration") as? JSONObject ?: incompatible()
+        if (configuration.keys().asSequence().toSet() == setOf("slots")) {
+            return decodeLegacyConfiguration(configuration)
+        }
         exactKeys(configuration, setOf("accountId", "widgets"))
         val accountId = configuration.opt("accountId") as? String ?: incompatible()
         val array = configuration.opt("widgets") as? JSONArray ?: incompatible()
@@ -120,6 +123,15 @@ object WidgetConfigurationCodec {
             widgets += DeckWidgetInstance(widgetId, viewId, family, privacy, snapshot)
         }
         return WidgetConfigurationRecord(version, WidgetConfiguration(accountId, widgets))
+    }
+
+    fun decodeLegacy(raw: String): WidgetConfigurationRecord? {
+        val root = try { JSONObject(raw) } catch (_: JSONException) { return null }
+        if (root.keys().asSequence().toSet() != setOf("version", "configuration") ||
+            integer(root.opt("version")) != DevHudWidgetContract.SCHEMA_VERSION) return null
+        val configuration = root.opt("configuration") as? JSONObject ?: return null
+        if (configuration.keys().asSequence().toSet() != setOf("slots")) return null
+        return decodeLegacyConfiguration(configuration)
     }
 
     fun encode(record: WidgetConfigurationRecord): String {
@@ -174,6 +186,21 @@ object WidgetConfigurationCodec {
         val generatedAt = value.opt("generatedAt") as? String ?: incompatible()
         try { Instant.parse(generatedAt) } catch (_: Exception) { incompatible() }
         return WidgetSnapshot(count, pullRequests, freshness, offline, generatedAt)
+    }
+
+    private fun decodeLegacyConfiguration(value: JSONObject): WidgetConfigurationRecord {
+        val array = value.opt("slots") as? JSONArray ?: incompatible()
+        val validSlots = setOf("primary", "secondary", "tertiary")
+        val toolId = Regex("^[a-z]+(?:-[a-z0-9]+)*$")
+        val seenSlots = mutableSetOf<String>()
+        for (index in 0 until array.length()) {
+            val reference = array.opt(index) as? JSONObject ?: incompatible()
+            exactKeys(reference, setOf("slot", "toolId"))
+            val slot = reference.opt("slot") as? String ?: incompatible()
+            val stableToolId = reference.opt("toolId") as? String ?: incompatible()
+            if (slot !in validSlots || !seenSlots.add(slot) || !toolId.matches(stableToolId)) incompatible()
+        }
+        return WidgetConfigurationRecord.EMPTY
     }
 
     private fun integer(value: Any?): Int? =

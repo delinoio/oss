@@ -336,6 +336,30 @@ function isWidgetConfiguration(value: unknown): value is WidgetConfiguration {
   });
 }
 
+function isLegacyWidgetConfiguration(value: unknown): boolean {
+  if (!isRecord(value) || !hasExactKeys(value, ["slots"]) || !Array.isArray(value.slots)) {
+    return false;
+  }
+  const legacySlots = new Set(["primary", "secondary", "tertiary"]);
+  const legacyToolId = /^[a-z]+(?:-[a-z0-9]+)*$/u;
+  const seenSlots = new Set<string>();
+  return value.slots.every((reference) => {
+    if (
+      !isRecord(reference) ||
+      !hasExactKeys(reference, ["slot", "toolId"]) ||
+      typeof reference.slot !== "string" ||
+      !legacySlots.has(reference.slot) ||
+      seenSlots.has(reference.slot) ||
+      typeof reference.toolId !== "string" ||
+      !legacyToolId.test(reference.toolId)
+    ) {
+      return false;
+    }
+    seenSlots.add(reference.slot);
+    return true;
+  });
+}
+
 export type DecodeFailureKind = "corrupt" | "incompatible" | "future-version";
 
 export interface DecodeFailure {
@@ -392,10 +416,13 @@ export function decodeSettings(raw: string): DecodeResult<DevHudSettings> {
 export function decodeWidgetConfiguration(raw: string): DecodeResult<WidgetConfiguration> {
   const parsed = parseRecord(raw);
   if (!parsed.ok) return parsed;
-  if (
-    !hasExactKeys(parsed.value, ["version", "configuration"]) ||
-    !isWidgetConfiguration(parsed.value.configuration)
-  ) {
+  if (!hasExactKeys(parsed.value, ["version", "configuration"])) {
+    return { ok: false, failure: decodeFailureFromKind("incompatible") };
+  }
+  if (isLegacyWidgetConfiguration(parsed.value.configuration)) {
+    return { ok: true, value: defaultWidgetConfiguration };
+  }
+  if (!isWidgetConfiguration(parsed.value.configuration)) {
     return { ok: false, failure: decodeFailureFromKind("incompatible") };
   }
   return { ok: true, value: parsed.value.configuration };

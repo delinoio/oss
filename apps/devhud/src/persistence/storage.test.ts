@@ -69,6 +69,26 @@ describe("DevHud local persistence", () => {
     await expect(persistence.load()).resolves.toMatchObject({ widgetConfiguration: configuration });
   });
 
+  it("migrates the prior v1 widget-slot record to an empty Deck configuration", async () => {
+    const storage = new MemoryStorageAdapter();
+    storage.values.set(WIDGET_CONFIGURATION_STORAGE_KEY, JSON.stringify({
+      version: 1,
+      configuration: {
+        slots: [{ slot: "primary", toolId: "fixture-diagnostics" }],
+      },
+    }));
+    const persistence = new DevHudPersistence(storage);
+
+    await expect(persistence.load()).resolves.toEqual({
+      settings: defaultSettings,
+      widgetConfiguration: defaultWidgetConfiguration,
+      issues: [],
+    });
+    await expect(
+      persistence.saveWidgetConfiguration(defaultWidgetConfiguration),
+    ).resolves.toBeUndefined();
+  });
+
   it("rejects unchecked shortcuts and details in counts-only snapshots before writing", () => {
     expect(() =>
       encodeSettings({

@@ -68,6 +68,20 @@ class WidgetConfigurationTest {
         }
     }
 
+    @Test fun legacySlotRecordMigratesToEncryptedEmptyDeckConfiguration() = runTest {
+        val cipher = RecordingCipher()
+        withAdapter(cipher) { adapter, dataStore ->
+            val legacy = """{"version":1,"configuration":{"slots":[{"slot":"primary","toolId":"fixture-diagnostics"}]}}"""
+            val key = stringPreferencesKey(DevHudWidgetContract.STORAGE_KEY)
+            dataStore.edit { it[key] = legacy }
+
+            val migrated = requireNotNull(adapter.readRawRecord())
+
+            assertEquals(WidgetConfigurationRecord.EMPTY, WidgetConfigurationCodec.decode(migrated))
+            assertEquals("ciphertext-only", dataStore.data.first()[key])
+        }
+    }
+
     @Test fun countsOnlyRejectsRepositoryAndTitles() {
         val raw = fixture().replace("\"privacy\":\"repository-and-titles\"", "\"privacy\":\"counts-only\"")
         assertEquals(

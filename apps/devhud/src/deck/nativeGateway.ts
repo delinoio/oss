@@ -829,8 +829,7 @@ export class NativeDeckGateway implements DeckGateway {
     viewId: string,
     preference: DeckNotificationPreference,
   ): Promise<void> {
-    if (this.#clientKind !== RefreshClientKind.MOBILE) return;
-    if (preference.enabled) {
+    if (this.#clientKind === RefreshClientKind.MOBILE && preference.enabled) {
       throw new DeckProductError(DeckFailureCode.ServiceUnavailable);
     }
     if (this.#deviceRegistration === undefined) await this.#runShortcutSynchronization();
@@ -899,9 +898,6 @@ export class NativeDeckGateway implements DeckGateway {
     if (this.#deviceRegistration === undefined) {
       await this.#runShortcutSynchronization();
     }
-    if ((this.#deviceRegistration?.device?.widgets.length ?? 0) >= maxWidgetConfigurations) {
-      throw new DeckProductError(DeckFailureCode.WidgetLimitReached);
-    }
     const pending = this.#pendingWidgetConfiguration;
     if (pending !== undefined) {
       const pendingWidgetId = pending.widgetId?.value ?? "";
@@ -919,6 +915,9 @@ export class NativeDeckGateway implements DeckGateway {
       } else {
         this.#pendingWidgetConfiguration = undefined;
       }
+    }
+    if ((this.#deviceRegistration?.device?.widgets.length ?? 0) >= maxWidgetConfigurations) {
+      throw new DeckProductError(DeckFailureCode.WidgetLimitReached);
     }
     const widget = create(WidgetConfigurationSchema, {
       widgetId: uuid(createUuidV7()),

@@ -291,6 +291,53 @@ describe("native Deck gateway", () => {
     )).toBe(false);
   });
 
+  it("writes explicit per-view notification preferences for the registered desktop device", async () => {
+    const accountId = "018f0000-0000-7000-8000-000000000001";
+    const deviceId = "018f0000-0000-7000-8000-000000000002";
+    const viewId = "018f0000-0000-7000-8000-000000000003";
+    const registrationId = "018f0000-0000-7000-8000-000000000004";
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command === "deck_device_id") return deviceId as never;
+      if (command === "synchronize_deck_shortcuts") return [] as never;
+      throw new Error(`Unexpected command: ${command}`);
+    });
+    vi.mocked(invokeDeckProcedure).mockImplementation(async (procedure) => {
+      if (procedure === DeckProcedure.ListOwners) {
+        return { owners: [{
+          owner: { ownerId: { case: "accountId", value: { value: accountId } } },
+          canManage: true,
+          billingSelections: [],
+        }] } as never;
+      }
+      if (procedure === DeckProcedure.RegisterDevice) {
+        return { registration: {
+          registrationId: { value: registrationId },
+          device: { widgets: [], shortcuts: [] },
+        } } as never;
+      }
+      if (procedure === DeckProcedure.UpdateViewNotificationPreference) return {} as never;
+      throw new Error(`Unexpected procedure: ${procedure}`);
+    });
+    const gateway = new NativeDeckGateway(
+      RefreshClientKind.DESKTOP,
+      () => DevicePlatform.LINUX,
+    );
+    await gateway.listOwners();
+
+    await gateway.updateNativeNotificationPreference(viewId, {
+      enabled: true,
+      transitions: [DeckNotificationTransition.Assigned],
+    });
+
+    expect(vi.mocked(invokeDeckProcedure).mock.calls.find(
+      ([procedure]) => procedure === DeckProcedure.UpdateViewNotificationPreference,
+    )?.[3]).toMatchObject({
+      registrationId: { value: registrationId },
+      viewId: { value: viewId },
+      preference: { enabled: true, transitions: [1] },
+    });
+  });
+
   it("requires native notification authorization before enabling a mobile preference", async () => {
     Object.defineProperty(navigator, "userAgent", { configurable: true, value: "Android" });
     vi.mocked(invoke).mockResolvedValueOnce(false as never).mockResolvedValueOnce(true as never);
@@ -408,7 +455,7 @@ describe("native Deck gateway", () => {
     expect(widgetWrites).toBeGreaterThanOrEqual(3);
   });
 
-  it("recovers the same registered widget after a native record write failure", async () => {
+  it("recovers the twentieth registered widget after a native record write failure", async () => {
     const accountId = "018f0000-0000-7000-8000-000000000001";
     const deviceId = "018f0000-0000-7000-8000-000000000002";
     const viewId = "018f0000-0000-7000-8000-000000000003";
@@ -452,6 +499,12 @@ describe("native Deck gateway", () => {
     const gateway = new NativeDeckGateway(RefreshClientKind.MOBILE);
     await gateway.listOwners();
     await gateway.synchronizeShortcuts();
+    widgets = Array.from({ length: 19 }, (_, index) => ({
+      widgetId: { value: `018f0000-0000-7000-8000-${String(index).padStart(12, "0")}` },
+      viewId: { value: `018f0000-0000-7000-9000-${String(index).padStart(12, "0")}` },
+      family: 4,
+      privacy: 1,
+    }));
     failWidgetWrite = true;
 
     await expect(gateway.createWidgetConfiguration(
@@ -465,7 +518,7 @@ describe("native Deck gateway", () => {
       DeckWidgetPrivacy.CountsOnly,
     );
 
-    expect(widgets).toHaveLength(1);
+    expect(widgets).toHaveLength(20);
   });
 
   it("reloads and rewrites native widget snapshots after widget and manual refreshes", async () => {

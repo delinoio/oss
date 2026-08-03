@@ -104,9 +104,24 @@ public enum WidgetConfigurationCodec {
         guard version == DevHudWidgetContract.schemaVersion,
               let configuration = root["configuration"] as? [String: Any]
         else { throw WidgetConfigurationError.incompatible }
+        if Set(configuration.keys) == ["slots"] {
+            try validateLegacy(configuration)
+            return .empty
+        }
         try validate(configuration)
         do { return try JSONDecoder().decode(WidgetConfigurationRecord.self, from: data) }
         catch { throw WidgetConfigurationError.incompatible }
+    }
+
+    public static func decodeLegacy(_ data: Data) throws -> WidgetConfigurationRecord? {
+        guard let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              Set(root.keys) == ["version", "configuration"],
+              integer(root["version"]) == DevHudWidgetContract.schemaVersion,
+              let configuration = root["configuration"] as? [String: Any],
+              Set(configuration.keys) == ["slots"]
+        else { return nil }
+        try validateLegacy(configuration)
+        return .empty
     }
 
     public static func encode(_ record: WidgetConfigurationRecord) throws -> Data {
@@ -137,6 +152,26 @@ public enum WidgetConfigurationCodec {
                   let snapshot = widget["snapshot"] as? [String: Any]
             else { throw WidgetConfigurationError.incompatible }
             try validate(snapshot, privacy: privacy)
+        }
+    }
+
+    private static func validateLegacy(_ configuration: [String: Any]) throws {
+        guard let slots = configuration["slots"] as? [[String: Any]] else {
+            throw WidgetConfigurationError.incompatible
+        }
+        let validSlots: Set<String> = ["primary", "secondary", "tertiary"]
+        var seenSlots = Set<String>()
+        for reference in slots {
+            try exactKeys(reference, ["slot", "toolId"])
+            guard let slot = reference["slot"] as? String,
+                  validSlots.contains(slot),
+                  seenSlots.insert(slot).inserted,
+                  let toolId = reference["toolId"] as? String,
+                  toolId.range(
+                    of: "^[a-z]+(?:-[a-z0-9]+)*$",
+                    options: .regularExpression
+                  ) != nil
+            else { throw WidgetConfigurationError.incompatible }
         }
     }
 

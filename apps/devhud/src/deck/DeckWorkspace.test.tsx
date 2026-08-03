@@ -424,13 +424,56 @@ describe("Deck composable production workspace", () => {
     const backend = gateway();
     renderDeck(backend);
     await waitFor(() => expect(tauri.listeners.has("devhud://deck-widget-action")).toBe(true));
-
     tauri.pendingWidgetActions.push({ action: "refresh", viewId: view.viewId });
     tauri.listeners.get("devhud://deck-widget-action")?.({ payload: null });
 
     await waitFor(() => expect(backend.requestWidgetRefresh).toHaveBeenCalledWith(view.viewId));
     await waitFor(() => expect(backend.getView).toHaveBeenCalledWith(view.viewId));
     expect(backend.mutatePullRequest).not.toHaveBeenCalled();
+  });
+
+  it("opens a widget pull request only after authorizing it against the current view", async () => {
+    tauri.enabled = true;
+    const backend = gateway();
+    renderDeck(backend);
+    await waitFor(() => expect(tauri.listeners.has("devhud://deck-widget-action")).toBe(true));
+    vi.mocked(backend.getView).mockClear();
+    vi.mocked(backend.listPullRequests).mockClear();
+    vi.mocked(backend.openPullRequest).mockClear();
+
+    tauri.pendingWidgetActions.push({
+      action: "open-pr",
+      viewId: view.viewId,
+      owner: pullRequest.repositoryOwner,
+      repository: pullRequest.repositoryName,
+      number: pullRequest.number,
+    });
+    tauri.listeners.get("devhud://deck-widget-action")?.({ payload: null });
+
+    await waitFor(() => expect(backend.getView).toHaveBeenCalledWith(view.viewId));
+    await waitFor(() => expect(backend.listPullRequests).toHaveBeenCalledWith(view.viewId, ""));
+    expect(backend.openPullRequest).toHaveBeenCalledWith(pullRequest);
+  });
+
+  it("rejects widget pull-request coordinates that are not in the current view", async () => {
+    tauri.enabled = true;
+    const backend = gateway();
+    renderDeck(backend);
+    await waitFor(() => expect(tauri.listeners.has("devhud://deck-widget-action")).toBe(true));
+    vi.mocked(backend.listPullRequests).mockClear();
+    vi.mocked(backend.openPullRequest).mockClear();
+
+    tauri.pendingWidgetActions.push({
+      action: "open-pr",
+      viewId: view.viewId,
+      owner: "attacker",
+      repository: "crafted",
+      number: 1,
+    });
+    tauri.listeners.get("devhud://deck-widget-action")?.({ payload: null });
+
+    await waitFor(() => expect(backend.listPullRequests).toHaveBeenCalledWith(view.viewId, ""));
+    expect(backend.openPullRequest).not.toHaveBeenCalled();
   });
 
   it("drains a widget action queued before the frontend listener mounts", async () => {

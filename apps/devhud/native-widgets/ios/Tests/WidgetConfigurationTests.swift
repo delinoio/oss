@@ -31,6 +31,30 @@ final class WidgetConfigurationTests: XCTestCase {
         XCTAssertTrue(widget.snapshot.offline)
     }
 
+    func testLegacySlotRecordMigratesToEncryptedEmptyDeckConfiguration() throws {
+        let legacy = #"{"version":1,"configuration":{"slots":[{"slot":"primary","toolId":"fixture-diagnostics"}]}}"#
+        defaults.set(legacy, forKey: DevHudWidgetContract.storageKey)
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("devhud-widget-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let adapter = WidgetSharedDataAdapter(
+            defaults: defaults,
+            encryptor: ProtectedWidgetRecordEncryptor(container: directory)
+        )
+
+        let migrated = try XCTUnwrap(adapter.readRawRecord())
+
+        XCTAssertEqual(
+            try WidgetConfigurationCodec.decode(Data(migrated.utf8)),
+            .empty
+        )
+        XCTAssertNotEqual(
+            defaults.string(forKey: DevHudWidgetContract.storageKey),
+            legacy
+        )
+    }
+
     func testCountsOnlyRejectsRepositoryAndTitleDetails() throws {
         let raw = try fixture().replacingOccurrences(
             of: #""privacy":"repository-and-titles""#,

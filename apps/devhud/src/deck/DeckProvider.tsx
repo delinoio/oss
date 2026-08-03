@@ -502,7 +502,17 @@ export function DeckProvider({
         return;
       }
       if (action.action === "open-pr") {
-        await openDeckPullRequest(action.owner, action.repository, action.number);
+        await gateway.getView(action.viewId);
+        const page = await gateway.listPullRequests(action.viewId, "");
+        const pullRequest = page.items.find((candidate) =>
+          candidate.repositoryOwner === action.owner &&
+          candidate.repositoryName === action.repository &&
+          candidate.number === action.number
+        );
+        if (pullRequest === undefined) {
+          throw new DeckProductError(DeckFailureCode.PermissionDenied);
+        }
+        await gateway.openPullRequest(pullRequest);
         return;
       }
       const destination = await gateway.resolveNotificationEvent(action.eventId);

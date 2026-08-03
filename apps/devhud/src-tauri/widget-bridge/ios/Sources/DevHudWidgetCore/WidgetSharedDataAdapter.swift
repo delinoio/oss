@@ -136,6 +136,18 @@ public final class WidgetSharedDataAdapter: @unchecked Sendable {
         try synchronized {
             guard let value = defaults.object(forKey: DevHudWidgetContract.storageKey) else { return nil }
             guard let envelope = value as? String else { throw WidgetConfigurationError.corrupt }
+            if let legacy = try WidgetConfigurationCodec.decodeLegacy(Data(envelope.utf8)) {
+                let plaintext = try WidgetConfigurationCodec.encode(legacy)
+                let migratedEnvelope = try encryptor.encrypt(
+                    plaintext,
+                    accountId: legacy.configuration.accountId
+                )
+                defaults.set(migratedEnvelope, forKey: DevHudWidgetContract.storageKey)
+                guard defaults.string(forKey: DevHudWidgetContract.storageKey) == migratedEnvelope else {
+                    throw WidgetConfigurationError.writeFailed
+                }
+                return String(decoding: plaintext, as: UTF8.self)
+            }
             let plaintext = try encryptor.decrypt(envelope)
             _ = try WidgetConfigurationCodec.decode(plaintext)
             return String(decoding: plaintext, as: UTF8.self)
