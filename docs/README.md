@@ -112,15 +112,16 @@ descriptors, generated Go/TypeScript artifacts, and private
 `@delinoio/devhud-deck-connect` and `@delinoio/devhud-realqa-connect` workspace
 exports are implemented, including Deck's structured request-only shortcut
 configurations and server-authored shortcut/widget state; Deck's inactive
-server provider/client-owned refresh slices and dependency-injected client
-controller are implemented, while live native transport registration and push
-delivery remain planned. RealQA's inactive preset/tracker/auth/deletion
+server provider/client-owned refresh slices, dependency-injected desktop/mobile
+client, closed native transport, tray, and unified shortcut registration are
+implemented, while push delivery and native-widget distribution remain planned.
+RealQA's inactive preset/tracker/auth/deletion
 foundation is implemented. Issues #755/#757 authorize two bounded
 authenticated exceptions: Deck on
 desktop/mobile/tray/shortcuts/notifications/native widgets, and desktop-only
 RealQA plus its signed exact-origin Chrome MV3 native host. Authentication is
-limited to Logto/DeliDev; bundled webviews remain offline while exact future
-feature RPCs and RealQA signed upload PUTs cross closed native transports.
+limited to Logto/DeliDev; bundled webviews remain offline while authenticated
+Deck and RealQA RPCs plus RealQA signed-upload PUTs cross closed native transports.
 Provider work stays behind separate least-privilege GitHub Apps; RealQA's
 private schema preserves issue types, Issue Form text prefills, textarea render
 languages, and dropdown multiplicity; full RealQA feature management stays in

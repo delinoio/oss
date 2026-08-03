@@ -67,6 +67,22 @@ class DevHudAuthPlugin(private val activity: Activity) : Plugin(activity) {
     }
 
     @Command
+    fun openPullRequest(invoke: Invoke) = guarded(invoke) {
+        val value = invoke.parseArgs(AuthorizationArgs::class.java).url
+        val target = Uri.parse(value)
+        val segments = target.pathSegments
+        val repositorySegment = Regex("[A-Za-z0-9._-]{1,100}")
+        check(target.scheme == "https" && target.host == "github.com" && target.port == -1)
+        check(target.userInfo == null && target.query == null && target.fragment == null)
+        check(segments.size == 4 && segments[2] == "pull")
+        check(repositorySegment.matches(segments[0]) && repositorySegment.matches(segments[1]))
+        check(segments[0] != "." && segments[0] != ".." && segments[1] != "." && segments[1] != "..")
+        check(segments[3].all(Char::isDigit) && segments[3].toULongOrNull()?.let { it > 0uL } == true)
+        activity.startActivity(Intent(Intent.ACTION_VIEW, target))
+        completed()
+    }
+
+    @Command
     fun takeCallback(invoke: Invoke) = guarded(invoke) {
         val callback = pendingCallback
         pendingCallback = null

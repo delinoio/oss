@@ -15,6 +15,8 @@ const requiredFiles = [
   "sw.js",
   "auth/devhud/callback/index.html",
   "deck-callback.js",
+  ".well-known/apple-app-site-association",
+  ".well-known/assetlinks.json",
   "icons/delidev-192.png",
   "icons/delidev-512.png",
   "icons/delidev-maskable-512.png",
@@ -31,6 +33,8 @@ const [
   callbackScript,
   manifestText,
   serviceWorker,
+  appleAssociationText,
+  androidAssociationText,
 ] = await Promise.all([
     readFile(join(dist, "index.html"), "utf8"),
     readFile(join(dist, "404.html"), "utf8"),
@@ -40,8 +44,12 @@ const [
     readFile(join(dist, "deck-callback.js"), "utf8"),
     readFile(join(dist, "manifest.webmanifest"), "utf8"),
     readFile(join(dist, "sw.js"), "utf8"),
+    readFile(join(dist, ".well-known/apple-app-site-association"), "utf8"),
+    readFile(join(dist, ".well-known/assetlinks.json"), "utf8"),
   ]);
 const manifest = JSON.parse(manifestText);
+const appleAssociation = JSON.parse(appleAssociationText);
+const androidAssociation = JSON.parse(androidAssociationText);
 
 if (!index.includes('href="https://deli.dev/"')) {
   throw new Error("Production artifact is missing canonical deli.dev metadata.");
@@ -67,6 +75,53 @@ if (
   callbackScript.includes("console.")
 ) {
   throw new Error("Deck callback handoff is missing or unsafe.");
+}
+const appleDetails = appleAssociation?.applinks?.details;
+const appleRule = Array.isArray(appleDetails) && appleDetails.length === 1
+  ? appleDetails[0]
+  : null;
+const appleAppIds = appleRule?.appIDs;
+const appleComponents = appleRule?.components;
+if (
+  Object.keys(appleAssociation).join(",") !== "applinks" ||
+  !Array.isArray(appleAppIds) ||
+  appleAppIds.length !== 1 ||
+  !/^[A-Z0-9]{10}\.dev\.deli\.devhud$/u.test(appleAppIds[0] ?? "") ||
+  !Array.isArray(appleComponents) ||
+  appleComponents.length !== 1 ||
+  JSON.stringify(appleComponents[0]) !== JSON.stringify({ "/": "/auth/devhud/callback" })
+) {
+  throw new Error("Apple association must authorize only the exact DevHud callback path.");
+}
+const androidRule = Array.isArray(androidAssociation) && androidAssociation.length === 1
+  ? androidAssociation[0]
+  : null;
+const androidFingerprints = androidRule?.target?.sha256_cert_fingerprints;
+if (
+  JSON.stringify(androidRule?.relation) !== JSON.stringify(["delegate_permission/common.handle_all_urls"]) ||
+  androidRule?.target?.namespace !== "android_app" ||
+  androidRule?.target?.package_name !== "dev.deli.devhud" ||
+  !Array.isArray(androidFingerprints) ||
+  androidFingerprints.length === 0 ||
+  androidFingerprints.some((value) => !/^(?:[A-F0-9]{2}:){31}[A-F0-9]{2}$/u.test(value))
+) {
+  throw new Error("Android association must authorize only the externally signed DevHud app.");
+}
+if (
+  !headers.includes(
+    "/.well-known/apple-app-site-association\n" +
+      "  Content-Type: application/json\n" +
+      "  Cache-Control: public, max-age=3600",
+  ) ||
+  !headers.includes(
+    "/.well-known/assetlinks.json\n" +
+      "  Content-Type: application/json\n" +
+      "  Cache-Control: public, max-age=3600",
+  ) ||
+  redirects.includes("/.well-known/apple-app-site-association") ||
+  redirects.includes("/.well-known/assetlinks.json")
+) {
+  throw new Error("Verified-link files must be served directly as JSON without redirects.");
 }
 if (
   manifest.display !== "standalone" ||
@@ -138,10 +193,11 @@ if (
   shellFiles.some(
     (path) =>
       path.includes("auth/devhud/callback") ||
-      path.includes("deck-callback"),
+      path.includes("deck-callback") ||
+      path.includes(".well-known"),
   )
 ) {
-  throw new Error("Deck callback artifacts must not enter the shell cache.");
+  throw new Error("Deck callback and verified-link artifacts must not enter the shell cache.");
 }
 
 console.log(`Validated ${requiredFiles.length} DeliDev production artifacts.`);

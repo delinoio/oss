@@ -43,3 +43,23 @@ func TestDeviceWriteRejectsDuplicateShortcutIDs(t *testing.T) {
 		t.Fatalf("duplicate shortcut code = %v, err = %v", code, err)
 	}
 }
+
+func TestDeviceWriteAllowsRegistrationWithoutInactivePushDelivery(t *testing.T) {
+	t.Parallel()
+	write, err := (&Device{}).deviceWrite(
+		context.Background(),
+		contracts.Viewer{},
+		deckv1.DevicePlatform_DEVICE_PLATFORM_LINUX,
+		"DevHud desktop",
+		nil,
+		false,
+		nil,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("pushless device write = %v", err)
+	}
+	if write.Push != nil {
+		t.Fatalf("pushless device write persisted push = %#v", write.Push)
+	}
+}

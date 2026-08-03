@@ -385,12 +385,13 @@ func (service *Device) deviceWrite(
 	configurations []*deckv1.ViewShortcutConfiguration,
 	widgetConfigurations []*deckv1.WidgetConfiguration,
 ) (database.DeviceWrite, error) {
+	invalidPush := push != nil && (push.Provider < deckv1.PushProvider_PUSH_PROVIDER_APPLE ||
+		push.Provider > deckv1.PushProvider_PUSH_PROVIDER_FIREBASE ||
+		strings.TrimSpace(push.OpaquePushToken) == "")
 	if platform < deckv1.DevicePlatform_DEVICE_PLATFORM_MACOS ||
 		platform > deckv1.DevicePlatform_DEVICE_PLATFORM_ANDROID ||
 		strings.TrimSpace(displayName) == "" || len(displayName) > 200 ||
-		push == nil || push.Provider < deckv1.PushProvider_PUSH_PROVIDER_APPLE ||
-		push.Provider > deckv1.PushProvider_PUSH_PROVIDER_FIREBASE ||
-		strings.TrimSpace(push.OpaquePushToken) == "" ||
+		invalidPush ||
 		len(configurations) > 20 {
 		return database.DeviceWrite{}, rpcerr.New(connect.CodeInvalidArgument,
 			deckv1.ErrorReason_ERROR_REASON_INVALID_ARGUMENT)
@@ -486,9 +487,13 @@ func (service *Device) deviceWrite(
 			},
 		})
 	}
+	var storedPush *deckv1.PushRegistration
+	if push != nil {
+		storedPush = proto.Clone(push).(*deckv1.PushRegistration)
+	}
 	return database.DeviceWrite{
 		Platform: platform, DisplayName: strings.TrimSpace(displayName),
-		Push:                            proto.Clone(push).(*deckv1.PushRegistration),
+		Push:                            storedPush,
 		DetailedNotificationTextEnabled: detailed,
 		Shortcuts:                       shortcuts, Widgets: widgets,
 	}, nil

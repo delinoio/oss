@@ -1,5 +1,6 @@
 import type { ComponentType } from "react";
 
+import { DesktopDeckToolEntry } from "../deck/DeckToolEntry";
 import { RealQaToolEntry } from "../realqa/RealQaToolEntry";
 
 export enum ToolPlatform {
@@ -95,6 +96,24 @@ export function filterTools(
 }
 
 export const productionTools: readonly ToolDefinition[] = [
+  defineTool({
+    toolId: "deck",
+    name: "Deck",
+    description: "Monitor and act on permission-filtered GitHub pull requests.",
+    searchKeywords: ["github", "pull request", "review", "checks", "merge"],
+    supportedPlatforms: new Set([
+      ToolPlatform.Desktop,
+      ToolPlatform.Ios,
+      ToolPlatform.Android,
+    ]),
+    supportedOperatingSystems: new Set([
+      ToolOperatingSystem.Macos,
+      ToolOperatingSystem.Ubuntu,
+      ToolOperatingSystem.Windows,
+    ]),
+    requiredCapabilities: new Set(),
+    EntryPoint: DesktopDeckToolEntry,
+  }),
   defineTool({
     toolId: "realqa",
     name: "RealQA",

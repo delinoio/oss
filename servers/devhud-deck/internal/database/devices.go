@@ -127,6 +127,16 @@ func (store *Store) RegisterDevice(
 				RegistrationID:                  current.RegistrationID,
 				ExpectedRevision:                int64(params.Expected),
 			})
+			if err == nil {
+				// A renewal response can be lost after the server rotates the grant.
+				// Keep every still-retained grant for this registration usable until
+				// the renewed lease ends so offline logout can still revoke it.
+				err = queries.ExtendRegisterDeviceCleanupGrants(ctx,
+					dbgen.ExtendRegisterDeviceCleanupGrantsParams{
+						RegistrationID: current.RegistrationID,
+						LeaseExpiresAt: pgTime(params.LeaseExpiresAt),
+					})
+			}
 		case errors.Is(currentErr, pgx.ErrNoRows):
 			if params.HasExpected {
 				return &StaleError{ResourceID: params.DeviceID}

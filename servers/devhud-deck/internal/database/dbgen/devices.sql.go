@@ -104,6 +104,22 @@ func (q *Queries) DeleteExpiredDeviceIdempotency(ctx context.Context, now pgtype
 	return err
 }
 
+const extendRegisterDeviceCleanupGrants = `-- name: ExtendRegisterDeviceCleanupGrants :exec
+UPDATE deck_device_registration_idempotency
+SET lease_expires_at = GREATEST(lease_expires_at, $1)
+WHERE registration_id = $2
+`
+
+type ExtendRegisterDeviceCleanupGrantsParams struct {
+	LeaseExpiresAt pgtype.Timestamptz
+	RegistrationID pgtype.UUID
+}
+
+func (q *Queries) ExtendRegisterDeviceCleanupGrants(ctx context.Context, arg ExtendRegisterDeviceCleanupGrantsParams) error {
+	_, err := q.db.Exec(ctx, extendRegisterDeviceCleanupGrants, arg.LeaseExpiresAt, arg.RegistrationID)
+	return err
+}
+
 const getDeviceByAccountAndID = `-- name: GetDeviceByAccountAndID :one
 SELECT registration_id, device_id, account_id, platform, display_name_ciphertext, push_ciphertext, detailed_notification_text_enabled, shortcuts_ciphertext, widgets_ciphertext, grant_verifier, revision, lease_expires_at, created_at, updated_at FROM deck_device_registrations
 WHERE account_id = $1 AND device_id = $2

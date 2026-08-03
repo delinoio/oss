@@ -29,5 +29,13 @@
   Cache-Control: no-cache, no-store, must-revalidate
   Referrer-Policy: no-referrer
 
+/.well-known/apple-app-site-association
+  Content-Type: application/json
+  Cache-Control: public, max-age=3600
+
+/.well-known/assetlinks.json
+  Content-Type: application/json
+  Cache-Control: public, max-age=3600
+
 /static/*
   Cache-Control: public, max-age=31536000, immutable

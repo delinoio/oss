@@ -58,6 +58,7 @@ type Querier interface {
 	EnsureGitHubAuthorizationState(ctx context.Context, providerIdentityHash []byte) error
 	EnsureGitHubInstallationState(ctx context.Context, providerIdentityHash []byte) error
 	EnsureOwnerLock(ctx context.Context, ownerHash []byte) error
+	ExtendRegisterDeviceCleanupGrants(ctx context.Context, arg ExtendRegisterDeviceCleanupGrantsParams) error
 	GetCreateViewIdempotency(ctx context.Context, arg GetCreateViewIdempotencyParams) (DeckViewCreateIdempotency, error)
 	GetDeckAccountBySubject(ctx context.Context, logtoSubject string) (DeckAccount, error)
 	GetDeletionJobByReplayKey(ctx context.Context, replayKey pgtype.UUID) (DeckDeletionJob, error)

@@ -6,6 +6,8 @@ mod auth;
 mod auth_native;
 #[cfg(any(feature = "desktop-cef", test))]
 mod autostart;
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
+mod deck_transport;
 #[cfg(any(
     feature = "desktop-cef",
     feature = "linux-capture-backend",
@@ -108,7 +110,7 @@ use std::{fs::File, io::Write};
 use http::{HeaderName, HeaderValue, Request, Response, StatusCode};
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
 use tauri::{
-    AppHandle, Manager, State, Webview, WebviewUrl,
+    AppHandle, Emitter, Manager, State, Webview, WebviewUrl,
     webview::{NewWindowResponse, WebviewWindowBuilder},
 };
 #[cfg(all(
@@ -178,8 +180,10 @@ const REALQA_COMPOSER_WINDOW_LABEL: &str = "realqa-composer";
     ),
     test
 ))]
-const TRAY_ACTIONS: [(&str, &str); 5] = [
+const TRAY_ACTIONS: [(&str, &str); 7] = [
     ("open-devhud", "Open DevHud"),
+    ("open-deck", "Open Deck"),
+    ("refresh-deck", "Refresh Deck View"),
     ("settings", "Settings"),
     ("check-for-updates", "Check for Updates"),
     ("open-devtools", "Open DevTools"),
@@ -2731,6 +2735,79 @@ fn request_quit(app: &AppHandle<ActiveRuntime>) {
     app.exit(0);
 }
 
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
+#[tauri::command]
+async fn deck_connect(
+    app: AppHandle<ActiveRuntime>,
+    request: deck_transport::DeckConnectRequest,
+) -> Result<deck_transport::DeckConnectResponse, deck_transport::DeckConnectFailure> {
+    tauri::async_runtime::spawn_blocking(move || {
+        deck_transport::connect(request, &app.state::<auth_native::NativeAuthState>())
+    })
+    .await
+    .map_err(|_| {
+        deck_transport::DeckConnectFailure::from(
+            deck_transport::DeckTransportFailure::ServiceUnavailable,
+        )
+    })?
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+#[tauri::command]
+fn deck_device_id(
+    auth: State<'_, auth_native::NativeAuthState>,
+) -> Result<String, auth::AuthError> {
+    auth.deck_device_id()
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+#[tauri::command]
+fn deck_open_pull_request(
+    owner: String,
+    repository: String,
+    number: u64,
+    auth: State<'_, auth_native::NativeAuthState>,
+) -> Result<(), deck_transport::DeckTransportFailure> {
+    deck_transport::open_pull_request(&owner, &repository, number, &auth)
+}
+
+#[cfg(all(
+    feature = "mobile-system-webview",
+    any(target_os = "android", target_os = "ios")
+))]
+#[tauri::command]
+fn deck_open_pull_request(
+    app: AppHandle<ActiveRuntime>,
+    owner: String,
+    repository: String,
+    number: u64,
+    auth: State<'_, auth_native::NativeAuthState>,
+) -> Result<(), deck_transport::DeckTransportFailure> {
+    deck_transport::open_pull_request(&app, &owner, &repository, number, &auth)
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+#[tauri::command]
+fn synchronize_deck_shortcuts(
+    account_id: String,
+    definitions: Vec<shortcut::DeckShortcutDefinition>,
+    state: State<'_, Mutex<shortcut::ShortcutState>>,
+) -> Result<Vec<shortcut::DeckShortcutRegistration>, shortcut::ShortcutFailure> {
+    state
+        .lock()
+        .map_err(|_| shortcut::ShortcutFailure::RegistrationFailed)
+        .map(|mut state| state.synchronize_deck(account_id, definitions))
+}
+
 #[cfg(all(
     feature = "desktop-cef",
     not(any(target_os = "android", target_os = "ios"))
@@ -2753,6 +2830,18 @@ fn create_tray(app: &AppHandle<ActiveRuntime>) -> tauri::Result<()> {
             "open-devhud" => {
                 if let HudActionOutcome::Unchanged { reason } = show_hud_internal(app, false) {
                     log_window_action_failure("tray-open-devhud", reason);
+                }
+            }
+            "open-deck" | "refresh-deck" => {
+                if let HudActionOutcome::Unchanged { reason } = show_hud_internal(app, false) {
+                    log_window_action_failure("tray-open-deck", reason);
+                } else if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+                    let event_name = if event.id.as_ref() == "refresh-deck" {
+                        "devhud://deck-refresh"
+                    } else {
+                        "devhud://deck-open"
+                    };
+                    let _ = window.emit(event_name, ());
                 }
             }
             "settings" => {
@@ -2825,6 +2914,24 @@ fn install_shortcut_handler(app: &AppHandle<ActiveRuntime>) {
             {
                 log_window_action_failure("shortcut-dispatch", HudActionFailure::WindowUnavailable);
             }
+            return;
+        }
+        let deck_view = app
+            .state::<Mutex<shortcut::ShortcutState>>()
+            .lock()
+            .ok()
+            .and_then(|state| state.deck_view_for_id(event.id).map(str::to_owned));
+        if let Some(view_id) = deck_view {
+            let dispatch = app.clone();
+            let _ = app.run_on_main_thread(move || {
+                if !matches!(
+                    show_hud_internal(&dispatch, false),
+                    HudActionOutcome::Unchanged { .. }
+                ) && let Some(window) = dispatch.get_webview_window(MAIN_WINDOW_LABEL)
+                {
+                    let _ = window.emit("devhud://deck-shortcut", view_id);
+                }
+            });
         }
     }));
 }
@@ -3064,10 +3171,17 @@ fn reset_dev_hud(
     let log_directory = local_log::managed_log_directory(APPLICATION_ID)
         .map_err(|_| reset_preflight_failure(PersistenceCommandError::ResetFailed))?;
     preflight_local_logs_for_reset(&log_directory).map_err(reset_preflight_failure)?;
+    let deck_device_auth_clear = deck_transport::prepare_device_auth_clear();
+    let deck_device_reset_failed = deck_device_auth_clear.is_err();
     let (auth_reset_failed, realqa_draft_reset_failed) = composer_core.reset_all_with(|| {
         browser_inbox.clear();
-        (auth_state.reset().is_err(), realqa_drafts.reset().is_err())
+        let auth_reset_failed = auth_state.reset().is_err();
+        (
+            deck_device_reset_failed || auth_reset_failed,
+            realqa_drafts.reset().is_err(),
+        )
     });
+    drop(deck_device_auth_clear);
     let native_host_reset_failed = native_host_state.reset().is_err();
     if auth_reset_failed || realqa_draft_reset_failed || native_host_reset_failed {
         return Ok(PersistenceResetOutcome::PartiallyRetained);
@@ -3596,6 +3710,24 @@ fn start_authentication(
     feature = "desktop-cef",
     not(any(target_os = "android", target_os = "ios"))
 ))]
+fn logout_after_cleanup_preparation<T, G, E>(
+    cleanup: Result<G, E>,
+    logout: impl FnOnce() -> Result<T, auth::AuthError>,
+) -> Result<T, auth::AuthError> {
+    let cleanup_failed = cleanup.is_err();
+    let result = logout();
+    drop(cleanup);
+    match result {
+        Err(error) => Err(error),
+        Ok(_) if cleanup_failed => Err(auth::AuthError::SecureVaultWriteFailed),
+        Ok(snapshot) => Ok(snapshot),
+    }
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
 #[tauri::command]
 fn logout_authentication(
     drafts: State<'_, realqa_drafts::RealQaDraftState>,
@@ -3606,9 +3738,11 @@ fn logout_authentication(
     let _lifecycle = drafts
         .lifecycle_guard()
         .map_err(|_| auth::AuthError::SecureVaultUnavailable)?;
-    composer_core.reset_all_with(|| {
-        browser_inbox.clear();
-        state.logout()
+    logout_after_cleanup_preparation(deck_transport::prepare_device_auth_clear(), || {
+        composer_core.reset_all_with(|| {
+            browser_inbox.clear();
+            state.logout()
+        })
     })
 }
 
@@ -3846,6 +3980,10 @@ fn configure_builder(
     builder
         .invoke_handler(tauri::generate_handler![
             get_runtime_info,
+            deck_connect,
+            deck_device_id,
+            deck_open_pull_request,
+            synchronize_deck_shortcuts,
             read_settings,
             write_settings,
             read_shortcut_effective_state,
@@ -4036,6 +4174,8 @@ fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<A
     builder
         .invoke_handler(tauri::generate_handler![
             get_runtime_info,
+            deck_connect,
+            deck_open_pull_request,
             read_settings,
             write_settings,
             read_shortcut_effective_state,
@@ -4332,6 +4472,23 @@ mod android_entry {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(all(
+        feature = "desktop-cef",
+        not(any(target_os = "android", target_os = "ios"))
+    ))]
+    #[test]
+    fn logout_still_clears_authentication_after_cleanup_preparation_fails() {
+        let mut logout_called = false;
+
+        let result = logout_after_cleanup_preparation(Result::<(), ()>::Err(()), || {
+            logout_called = true;
+            Ok(auth::SessionSnapshot::SignedOut)
+        });
+
+        assert!(logout_called);
+        assert_eq!(result, Err(auth::AuthError::SecureVaultWriteFailed));
+    }
 
     fn restricted_browser_capture() -> realqa_native_host::NativeHostRequest {
         serde_json::from_value(serde_json::json!({
@@ -5156,11 +5313,13 @@ mod tests {
     }
 
     #[test]
-    fn tray_has_exactly_the_five_product_actions_in_order() {
+    fn tray_includes_deck_and_the_existing_product_actions_in_order() {
         assert_eq!(
             TRAY_ACTIONS.map(|(_, title)| title),
             [
                 "Open DevHud",
+                "Open Deck",
+                "Refresh Deck View",
                 "Settings",
                 "Check for Updates",
                 "Open DevTools",

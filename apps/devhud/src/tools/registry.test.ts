@@ -39,8 +39,15 @@ const realQaFixture = defineTool({
 });
 
 describe("internal tool registry", () => {
-  it("registers RealQA only for supported desktop operating systems", () => {
-    expect(productionTools.map((tool) => tool.toolId)).toEqual(["realqa"]);
+  it("registers Deck cross-platform and RealQA on supported desktops", () => {
+    expect(productionTools.map((tool) => tool.toolId)).toEqual([
+      "deck",
+      "realqa",
+    ]);
+    expect(productionTools[0]).toMatchObject({ toolId: "deck", name: "Deck" });
+    expect(productionTools[0]?.supportedPlatforms).toEqual(
+      new Set([ToolPlatform.Desktop, ToolPlatform.Ios, ToolPlatform.Android]),
+    );
     for (const operatingSystem of Object.values(ToolOperatingSystem)) {
       expect(
         filterTools(productionTools, {
@@ -48,7 +55,7 @@ describe("internal tool registry", () => {
           operatingSystem,
           grantedCapabilities: new Set([ToolCapability.WindowControl]),
         }).map((tool) => tool.toolId),
-      ).toEqual(["realqa"]);
+      ).toEqual(["deck", "realqa"]);
     }
     expect(
       filterTools(productionTools, {
@@ -62,9 +69,9 @@ describe("internal tool registry", () => {
         filterTools(productionTools, {
           platform,
           operatingSystem: null,
-          grantedCapabilities: new Set([ToolCapability.WindowControl]),
-        }),
-      ).toEqual([]);
+        grantedCapabilities: new Set([ToolCapability.WindowControl]),
+        }).map((tool) => tool.toolId),
+      ).toEqual(["deck"]);
     }
   });
 

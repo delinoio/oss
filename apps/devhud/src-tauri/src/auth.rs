@@ -36,6 +36,7 @@ const SUBJECT_BOUND_REALQA_DRAFT_ACCOUNT_BINDING_CONTEXT: &[u8] =
     b"devhud-realqa-draft-account-v1\0";
 const DEVICE_SESSION_AUTHENTICATION_CONTEXT: &[u8] = b"devhud-device-session-v3\0";
 const REALQA_DRAFT_ACCOUNT_BINDING_CONTEXT: &[u8] = b"devhud-realqa-draft-account-v2\0";
+const DECK_DEVICE_ID_CONTEXT: &[u8] = b"devhud-deck-device-id-v1\0";
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -63,7 +64,7 @@ impl AuthFeature {
 
     const fn scopes(self) -> &'static [&'static str] {
         match self {
-            Self::Deck => &["deck:access"],
+            Self::Deck => &["deck:devices:write", "deck:views:read", "deck:views:write"],
             Self::RealQa => &[
                 "realqa:access",
                 "realqa:presets:read",
@@ -78,7 +79,12 @@ impl AuthFeature {
 
     const fn delibase_scopes(self) -> &'static [&'static str] {
         match self {
-            Self::Deck => &["delibase:deck:forward"],
+            Self::Deck => &[
+                "delibase:account:read",
+                "delibase:organizations:read",
+                "delibase:teams:read",
+                "delibase:usage:execute",
+            ],
             Self::RealQa => &[
                 "delibase:realqa:forward",
                 "delibase:account:read",
@@ -1061,6 +1067,41 @@ impl<T: TokenTransport, V: SecureVault> SessionManager<T, V> {
             delibase: delibase_tokens.access_token,
             subject,
         })
+    }
+
+    pub(crate) fn deck_device_id(&mut self) -> Result<String, AuthError> {
+        let subject = match &self.state {
+            SessionState::SignedIn { subject, .. } => subject,
+            SessionState::PriorSessionOffline { .. } | SessionState::SignedOut => {
+                return Err(AuthError::ReauthenticationRequired);
+            }
+            SessionState::Authenticating => return Err(AuthError::SignInAlreadyActive),
+            SessionState::CleanupRequired => return Err(AuthError::SecureVaultDeleteFailed),
+        };
+        let retained = self
+            .vault
+            .load()?
+            .ok_or(AuthError::ReauthenticationRequired)?;
+        if !device_session_matches_identity(
+            retained.device_session_key.expose(),
+            &self.configuration,
+            subject,
+        )? {
+            return Err(AuthError::AccountSwitchRequiresLogout);
+        }
+        let (_, encoded_key, _, _) = parse_device_session(retained.device_session_key.expose())?;
+        let key = URL_SAFE_NO_PAD
+            .decode(encoded_key)
+            .map_err(|_| AuthError::TokenInvalid)?;
+        let mut digest = Sha256::new();
+        digest.update(DECK_DEVICE_ID_CONTEXT);
+        digest.update(key);
+        let digest = digest.finalize();
+        let mut bytes = [0_u8; 16];
+        bytes.copy_from_slice(&digest[..16]);
+        bytes[6] = (bytes[6] & 0x0f) | 0x70;
+        bytes[8] = (bytes[8] & 0x3f) | 0x80;
+        Ok(uuid::Uuid::from_bytes(bytes).to_string())
     }
 
     pub(crate) fn realqa_draft_access(&mut self) -> Result<RealQaDraftAccessContext, AuthError> {
@@ -2157,7 +2198,12 @@ mod tests {
         assert_eq!(query.get("code_challenge_method"), Some(&"S256".to_owned()));
         assert_eq!(
             query.get("scope"),
-            Some(&"deck:access delibase:deck:forward offline_access openid profile".to_owned())
+            Some(
+                &"deck:devices:write deck:views:read deck:views:write delibase:account:read \
+                  delibase:organizations:read delibase:teams:read delibase:usage:execute \
+                  offline_access openid profile"
+                    .to_owned()
+            )
         );
         assert_eq!(
             request
@@ -2309,6 +2355,12 @@ mod tests {
             }
         );
         assert!(manager.memory_tokens_present());
+        let device_id = manager.deck_device_id().unwrap();
+        assert_eq!(manager.deck_device_id().unwrap(), device_id);
+        assert_eq!(
+            uuid::Uuid::parse_str(&device_id).unwrap().get_version_num(),
+            7
+        );
         let writes = writes.lock().unwrap();
         assert_eq!(writes.len(), 1);
         assert_eq!(
@@ -2638,10 +2690,21 @@ mod tests {
         assert_eq!(
             manager.transport.refresh_requests,
             [
-                (DECK_AUDIENCE.to_owned(), vec!["deck:access".to_owned()]),
+                (
+                    DECK_AUDIENCE.to_owned(),
+                    AuthFeature::Deck
+                        .scopes()
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect()
+                ),
                 (
                     DELIBASE_AUDIENCE.to_owned(),
-                    vec!["delibase:deck:forward".to_owned()]
+                    AuthFeature::Deck
+                        .delibase_scopes()
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect()
                 ),
             ]
         );
@@ -3318,10 +3381,21 @@ mod tests {
         assert_eq!(
             prior.transport.refresh_requests,
             [
-                (DECK_AUDIENCE.to_owned(), vec!["deck:access".to_owned()]),
+                (
+                    DECK_AUDIENCE.to_owned(),
+                    AuthFeature::Deck
+                        .scopes()
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect()
+                ),
                 (
                     DELIBASE_AUDIENCE.to_owned(),
-                    vec!["delibase:deck:forward".to_owned()]
+                    AuthFeature::Deck
+                        .delibase_scopes()
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect()
                 ),
             ]
         );
@@ -3368,32 +3442,37 @@ mod tests {
         assert_eq!(
             prior.transport.refresh_requests,
             [
-                (DECK_AUDIENCE.to_owned(), vec!["deck:access".to_owned()]),
+                (
+                    DECK_AUDIENCE.to_owned(),
+                    AuthFeature::Deck
+                        .scopes()
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect()
+                ),
                 (
                     DELIBASE_AUDIENCE.to_owned(),
-                    vec!["delibase:deck:forward".to_owned()]
+                    AuthFeature::Deck
+                        .delibase_scopes()
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect()
                 ),
                 (
                     REALQA_AUDIENCE.to_owned(),
-                    vec![
-                        "realqa:access".to_owned(),
-                        "realqa:presets:read".to_owned(),
-                        "realqa:presets:write".to_owned(),
-                        "realqa:tracker:read".to_owned(),
-                        "realqa:tracker:write".to_owned(),
-                        "realqa:submissions:read".to_owned(),
-                        "realqa:submissions:write".to_owned(),
-                    ]
+                    AuthFeature::RealQa
+                        .scopes()
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect()
                 ),
                 (
                     DELIBASE_AUDIENCE.to_owned(),
-                    vec![
-                        "delibase:realqa:forward".to_owned(),
-                        "delibase:account:read".to_owned(),
-                        "delibase:billing:read".to_owned(),
-                        "delibase:usage:execute".to_owned(),
-                        "delibase:billing:write".to_owned(),
-                    ]
+                    AuthFeature::RealQa
+                        .delibase_scopes()
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect()
                 ),
             ]
         );
