@@ -356,6 +356,16 @@ describe("native Deck gateway", () => {
     expect(invoke).toHaveBeenNthCalledWith(1, "deck_notification_authorization_enabled");
   });
 
+  it("rejects desktop notification opt-in before mutating a view", async () => {
+    const gateway = new NativeDeckGateway(RefreshClientKind.DESKTOP);
+
+    await expect(gateway.ensureNativeNotificationPermission({
+      enabled: true,
+      transitions: [DeckNotificationTransition.Assigned],
+    })).rejects.toMatchObject({ code: DeckFailureCode.ServiceUnavailable });
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
   it("registers a configured mobile widget and polls its view outside loaded pages", async () => {
     const accountId = "018f0000-0000-7000-8000-000000000001";
     const deviceId = "018f0000-0000-7000-8000-000000000002";
@@ -762,6 +772,13 @@ describe("native Deck gateway", () => {
     expect(procedures.lastIndexOf(DeckProcedure.GetDevice)).toBeGreaterThan(
       procedures.indexOf(DeckProcedure.RefreshView),
     );
+
+    await expect(gateway.requestWidgetRefresh(
+      "018f0000-0000-7000-8000-000000000006",
+    )).rejects.toMatchObject({ code: DeckFailureCode.PermissionDenied });
+    expect(vi.mocked(invokeDeckProcedure).mock.calls.filter(
+      ([procedure]) => procedure === DeckProcedure.GetRefreshPreflight,
+    )).toHaveLength(1);
 
     await gateway.refreshView(viewId, async () => true);
 

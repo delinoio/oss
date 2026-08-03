@@ -770,6 +770,9 @@ export class NativeDeckGateway implements DeckGateway {
     }
   }
   async requestWidgetRefresh(viewId: string): Promise<void> {
+    if (!this.#widgetViewIds.has(viewId)) {
+      throw new DeckProductError(DeckFailureCode.PermissionDenied);
+    }
     const controller = new DeckWidgetRefreshController(
       {
         isAmbiguousRefreshError,
@@ -817,7 +820,10 @@ export class NativeDeckGateway implements DeckGateway {
   async ensureNativeNotificationPermission(
     preference: DeckNotificationPreference,
   ): Promise<void> {
-    if (this.#clientKind !== RefreshClientKind.MOBILE || !preference.enabled) return;
+    if (!preference.enabled) return;
+    if (this.#clientKind !== RefreshClientKind.MOBILE) {
+      throw new DeckProductError(DeckFailureCode.ServiceUnavailable);
+    }
     const enabled = await invoke<boolean>("deck_notification_authorization_enabled");
     if (!enabled) {
       throw new DeckProductError(DeckFailureCode.NotificationPermissionRequired);

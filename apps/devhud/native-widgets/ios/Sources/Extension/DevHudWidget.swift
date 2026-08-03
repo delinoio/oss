@@ -57,18 +57,29 @@ private struct DevHudWidgetProvider: AppIntentTimelineProvider {
     }
 
     func snapshot(for configuration: ConfigureDeckWidgetIntent, in context: Context) async -> DevHudWidgetEntry {
-        entry(configuration)
+        entry(configuration, family: context.family)
     }
 
     func timeline(for configuration: ConfigureDeckWidgetIntent, in context: Context) async -> Timeline<DevHudWidgetEntry> {
         // WidgetKit decides execution time. The client requests reloads after
         // its normal coalesced/billed refresh path completes.
-        Timeline(entries: [entry(configuration)], policy: .never)
+        Timeline(entries: [entry(configuration, family: context.family)], policy: .never)
     }
 
-    private func entry(_ configuration: ConfigureDeckWidgetIntent) -> DevHudWidgetEntry {
+    private func entry(
+        _ configuration: ConfigureDeckWidgetIntent,
+        family: WidgetFamily
+    ) -> DevHudWidgetEntry {
         let widgets = (try? WidgetSharedDataAdapter.live().readRecord().configuration.widgets) ?? []
-        let selected = widgets.first { $0.widgetId == configuration.widget?.id }
+        let configuredFamily: DeckWidgetFamily? = switch family {
+        case .systemSmall: .appleSmall
+        case .systemMedium: .appleMedium
+        case .systemLarge: .appleLarge
+        default: nil
+        }
+        let selected = widgets.first {
+            $0.widgetId == configuration.widget?.id && $0.family == configuredFamily
+        }
         return DevHudWidgetEntry(date: .now, widget: selected)
     }
 }
