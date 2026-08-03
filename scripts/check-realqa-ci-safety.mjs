@@ -39,21 +39,41 @@ requireCondition(
   permissionDeclarations.length === 1 && permissionDeclarations[0] === "permissions:",
   "RealQA CI must not override read-only permissions at the job or step level",
 );
+requireCondition(
+  !/^    environment\s*:/mu.test(workflow),
+  "RealQA CI must not reference a GitHub deployment environment",
+);
+
+const shellWorkflow = workflow.replace(/\\\r?\n[ \t]*/gu, " ");
+const shellValue = String.raw`(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s]+)`;
+const dockerGlobalOption = String.raw`(?:(?:--(?:config|context|host|log-level|tlscacert|tlscert|tlskey)|-H)(?:=|\s+)${shellValue}|(?:--(?:debug|tls|tlsverify)|-D)(?:=(?:true|false))?)`;
+const buildxGlobalOption = String.raw`(?:--builder(?:=|\s+)${shellValue}|--debug(?:=(?:true|false))?)`;
+const dockerCommand = String.raw`\bdocker\s+(?:${dockerGlobalOption}\s+)*`;
+const buildxBuildCommand = String.raw`${dockerCommand}buildx\s+(?:${buildxGlobalOption}\s+)*build\b`;
 for (const [pattern, message] of [
   [/docker\/login-action/u, "must not authenticate to a container registry"],
-  [/\bdocker\s+login\b/u, "must not authenticate to a container registry from the shell"],
-  [/docker\/build-push-action/u, "must not use an image publishing action"],
-  [/\bdocker\s+push\b/u, "must not push an image from the shell"],
   [
-    /\bdocker\s+buildx\s+build\b[\s\S]*?--push\b/u,
+    new RegExp(`${dockerCommand}login\\b`, "u"),
+    "must not authenticate to a container registry from the shell",
+  ],
+  [/docker\/build-push-action/u, "must not use an image publishing action"],
+  [new RegExp(`${dockerCommand}push\\b`, "u"), "must not push an image from the shell"],
+  [
+    new RegExp(`${buildxBuildCommand}[^\\r\\n]*?--push\\b`, "u"),
     "must not push a buildx image from the shell",
   ],
   [
-    /\bdocker\s+buildx\s+build\b[\s\S]*?--output(?:=|\s+)["']?type=registry\b/u,
+    new RegExp(
+      `${buildxBuildCommand}[^\\r\\n]*?--output(?:=|\\s+)["']?type=registry\\b`,
+      "u",
+    ),
     "must not export a buildx image to a registry",
   ],
   [
-    /\bdocker\s+buildx\s+build\b[\s\S]*?--output(?:=|\s+)["']?type=image,[^\s"']*\bpush=true\b/u,
+    new RegExp(
+      `${buildxBuildCommand}[^\\r\\n]*?--output(?:=|\\s+)["']?type=image,[^\\s"']*\\bpush=true\\b`,
+      "u",
+    ),
     "must not push a buildx image through the image exporter",
   ],
   [/\bghcr\.io\b/u, "must not name a GHCR publication target"],
@@ -63,8 +83,14 @@ for (const [pattern, message] of [
   [/\bDEVHUD_CHROME_EXTENSION_ID\s*[:=]/u, "must not inject a production extension identity"],
   [/\bpush:\s*true\b/u, "must not push an image"],
 ]) {
-  requireCondition(!pattern.test(workflow), `RealQA CI ${message}`);
+  requireCondition(!pattern.test(shellWorkflow), `RealQA CI ${message}`);
 }
+
+const signBlobCommands = shellWorkflow.match(/\bcosign\s+sign-blob\b[^\r\n]*/gu) ?? [];
+requireCondition(
+  signBlobCommands.every((command) => /\s--tlog-upload=false(?:\s|$)/u.test(command)),
+  "RealQA CI fixture signatures must disable public transparency-log uploads",
+);
 
 const requiredAggregateJobs = [
   "go-quality",
