@@ -6,6 +6,8 @@ mod auth;
 mod auth_native;
 #[cfg(any(feature = "desktop-cef", test))]
 mod autostart;
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
+mod deck_transport;
 #[cfg(any(
     feature = "desktop-cef",
     feature = "linux-capture-backend",
@@ -35,6 +37,8 @@ mod realqa_capture;
 mod realqa_drafts;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 mod realqa_native_host;
+#[cfg(any(feature = "desktop-cef", test))]
+mod realqa_transport;
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 mod shortcut;
 #[cfg(any(
@@ -75,6 +79,11 @@ use std::borrow::Cow;
     test
 ))]
 use std::collections::VecDeque;
+#[cfg(all(
+    any(feature = "desktop-cef", feature = "mobile-system-webview", test),
+    target_os = "linux"
+))]
+use std::io::Read;
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 use std::sync::Mutex;
 #[cfg(feature = "desktop-cef")]
@@ -101,7 +110,7 @@ use std::{fs::File, io::Write};
 use http::{HeaderName, HeaderValue, Request, Response, StatusCode};
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
 use tauri::{
-    AppHandle, Manager, State, Webview, WebviewUrl,
+    AppHandle, Emitter, Manager, State, Webview, WebviewUrl,
     webview::{NewWindowResponse, WebviewWindowBuilder},
 };
 #[cfg(all(
@@ -171,8 +180,10 @@ const REALQA_COMPOSER_WINDOW_LABEL: &str = "realqa-composer";
     ),
     test
 ))]
-const TRAY_ACTIONS: [(&str, &str); 5] = [
+const TRAY_ACTIONS: [(&str, &str); 7] = [
     ("open-devhud", "Open DevHud"),
+    ("open-deck", "Open Deck"),
+    ("refresh-deck", "Refresh Deck View"),
     ("settings", "Settings"),
     ("check-for-updates", "Check for Updates"),
     ("open-devtools", "Open DevTools"),
@@ -210,6 +221,23 @@ const CEF_PRIVATE_STORAGE_SWITCHES: [&str; 6] = [
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 const PERMISSIONS_POLICY: &str =
     "camera=(), display-capture=(), geolocation=(), microphone=(), usb=()";
+#[cfg(all(
+    any(feature = "desktop-cef", feature = "mobile-system-webview", test),
+    any(target_os = "linux", test)
+))]
+#[cfg_attr(test, allow(dead_code))]
+const MAX_OS_RELEASE_BYTES: u64 = 16 * 1024;
+
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
+#[allow(dead_code)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum ToolOperatingSystem {
+    Macos,
+    Ubuntu,
+    Windows,
+}
+
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -217,6 +245,7 @@ struct RuntimeInfo {
     application_id: &'static str,
     bundled_origin: String,
     operating_system: &'static str,
+    tool_operating_system: Option<ToolOperatingSystem>,
     runtime: &'static str,
     sandbox_enabled: bool,
     surface: RuntimeSurface,
@@ -1660,6 +1689,77 @@ const fn operating_system() -> &'static str {
     }
 }
 
+#[cfg(all(
+    any(feature = "desktop-cef", feature = "mobile-system-webview", test),
+    any(target_os = "linux", test)
+))]
+fn os_release_field<'a>(os_release: &'a str, key: &str) -> Option<&'a str> {
+    let mut found = None;
+    for line in os_release.lines() {
+        let Some((candidate, raw_value)) = line.split_once('=') else {
+            continue;
+        };
+        if candidate != key || found.is_some() {
+            if candidate == key {
+                return None;
+            }
+            continue;
+        }
+        let value = if raw_value.starts_with('"') || raw_value.ends_with('"') {
+            raw_value.strip_prefix('"')?.strip_suffix('"')?
+        } else {
+            raw_value
+        };
+        found = Some(value);
+    }
+    found
+}
+
+#[cfg(all(
+    any(feature = "desktop-cef", feature = "mobile-system-webview", test),
+    any(target_os = "linux", test)
+))]
+fn linux_tool_operating_system(os_release: &str) -> Option<ToolOperatingSystem> {
+    (os_release_field(os_release, "ID") == Some("ubuntu")
+        && os_release_field(os_release, "VERSION_ID") == Some("24.04"))
+    .then_some(ToolOperatingSystem::Ubuntu)
+}
+
+#[cfg(all(
+    any(feature = "desktop-cef", feature = "mobile-system-webview", test),
+    target_os = "linux"
+))]
+#[cfg_attr(test, allow(dead_code))]
+fn current_linux_tool_operating_system() -> Option<ToolOperatingSystem> {
+    let file = File::open("/etc/os-release").ok()?;
+    let mut bytes = Vec::new();
+    file.take(MAX_OS_RELEASE_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .ok()?;
+    if bytes.len() as u64 > MAX_OS_RELEASE_BYTES {
+        return None;
+    }
+    linux_tool_operating_system(std::str::from_utf8(&bytes).ok()?)
+}
+
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
+fn tool_operating_system() -> Option<ToolOperatingSystem> {
+    #[cfg(target_os = "macos")]
+    return Some(ToolOperatingSystem::Macos);
+    #[cfg(target_os = "windows")]
+    return realqa_capture::windows_operating_system_supported()
+        .then_some(ToolOperatingSystem::Windows);
+    #[cfg(target_os = "linux")]
+    return current_linux_tool_operating_system();
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+    return None;
+}
+
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
+const fn realqa_operating_system_supported(operating_system: Option<ToolOperatingSystem>) -> bool {
+    operating_system.is_some()
+}
+
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 const fn update_policy() -> &'static str {
     if cfg!(any(target_os = "android", target_os = "ios")) {
@@ -1756,6 +1856,7 @@ fn get_runtime_info(
         application_id: APPLICATION_ID,
         bundled_origin: bundled_origin(&url),
         operating_system: operating_system(),
+        tool_operating_system: tool_operating_system(),
         runtime: runtime_name(),
         sandbox_enabled: cfg!(not(any(target_os = "android", target_os = "ios"))),
         surface,
@@ -2185,6 +2286,9 @@ fn build_realqa_composer_window(
 fn show_realqa_composer_internal(
     app: &AppHandle<ActiveRuntime>,
 ) -> Result<(), realqa_native_host::NativeHostFailure> {
+    if !realqa_operating_system_supported(tool_operating_system()) {
+        return Err(realqa_native_host::NativeHostFailure::ComposerUnavailable);
+    }
     let window = match app.get_webview_window(REALQA_COMPOSER_WINDOW_LABEL) {
         Some(window) => window,
         None => build_realqa_composer_window(app)
@@ -2198,6 +2302,84 @@ fn show_realqa_composer_internal(
     window
         .eval("window.dispatchEvent(new Event('devhud:realqa-browser-capture-available'))")
         .map_err(|_| realqa_native_host::NativeHostFailure::ComposerUnavailable)
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum RealQaEntryFailure {
+    AuthenticationRequired,
+    WindowUnavailable,
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+#[tauri::command]
+fn show_realqa(
+    app: AppHandle<ActiveRuntime>,
+    auth_state: State<'_, auth_native::NativeAuthState>,
+) -> Result<(), RealQaEntryFailure> {
+    if !auth_state
+        .has_prior_feature_binding(auth::AuthFeature::RealQa)
+        .unwrap_or(false)
+    {
+        return Err(RealQaEntryFailure::AuthenticationRequired);
+    }
+    show_realqa_composer_internal(&app).map_err(|_| RealQaEntryFailure::WindowUnavailable)
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+#[tauri::command]
+fn realqa_connect(
+    webview: Webview<ActiveRuntime>,
+    request: realqa_transport::RealQaConnectRequest,
+    auth_state: State<'_, auth_native::NativeAuthState>,
+) -> Result<realqa_transport::RealQaConnectResponse, realqa_transport::RealQaTransportFailure> {
+    if webview.label() != REALQA_COMPOSER_WINDOW_LABEL {
+        return Err(realqa_transport::RealQaTransportFailure::AuthenticationRequired);
+    }
+    realqa_transport::connect(request, &auth_state)
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+#[tauri::command]
+fn realqa_signed_put(
+    webview: Webview<ActiveRuntime>,
+    request: realqa_transport::RealQaSignedPutRequest,
+    auth_state: State<'_, auth_native::NativeAuthState>,
+) -> Result<(), realqa_transport::RealQaTransportFailure> {
+    if webview.label() != REALQA_COMPOSER_WINDOW_LABEL {
+        return Err(realqa_transport::RealQaTransportFailure::AuthenticationRequired);
+    }
+    realqa_transport::signed_put(request, &auth_state)
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+#[tauri::command]
+fn realqa_open_github_authorization(
+    webview: Webview<ActiveRuntime>,
+    target: String,
+    browser: State<'_, realqa_transport::RealQaGithubBrowserState>,
+    auth_state: State<'_, auth_native::NativeAuthState>,
+) -> Result<(), realqa_transport::RealQaTransportFailure> {
+    if webview.label() != REALQA_COMPOSER_WINDOW_LABEL {
+        return Err(realqa_transport::RealQaTransportFailure::AuthenticationRequired);
+    }
+    realqa_transport::open_github_authorization(&target, &browser, &auth_state)
 }
 
 #[cfg(all(
@@ -2553,6 +2735,79 @@ fn request_quit(app: &AppHandle<ActiveRuntime>) {
     app.exit(0);
 }
 
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
+#[tauri::command]
+async fn deck_connect(
+    app: AppHandle<ActiveRuntime>,
+    request: deck_transport::DeckConnectRequest,
+) -> Result<deck_transport::DeckConnectResponse, deck_transport::DeckConnectFailure> {
+    tauri::async_runtime::spawn_blocking(move || {
+        deck_transport::connect(request, &app.state::<auth_native::NativeAuthState>())
+    })
+    .await
+    .map_err(|_| {
+        deck_transport::DeckConnectFailure::from(
+            deck_transport::DeckTransportFailure::ServiceUnavailable,
+        )
+    })?
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+#[tauri::command]
+fn deck_device_id(
+    auth: State<'_, auth_native::NativeAuthState>,
+) -> Result<String, auth::AuthError> {
+    auth.deck_device_id()
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+#[tauri::command]
+fn deck_open_pull_request(
+    owner: String,
+    repository: String,
+    number: u64,
+    auth: State<'_, auth_native::NativeAuthState>,
+) -> Result<(), deck_transport::DeckTransportFailure> {
+    deck_transport::open_pull_request(&owner, &repository, number, &auth)
+}
+
+#[cfg(all(
+    feature = "mobile-system-webview",
+    any(target_os = "android", target_os = "ios")
+))]
+#[tauri::command]
+fn deck_open_pull_request(
+    app: AppHandle<ActiveRuntime>,
+    owner: String,
+    repository: String,
+    number: u64,
+    auth: State<'_, auth_native::NativeAuthState>,
+) -> Result<(), deck_transport::DeckTransportFailure> {
+    deck_transport::open_pull_request(&app, &owner, &repository, number, &auth)
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
+#[tauri::command]
+fn synchronize_deck_shortcuts(
+    account_id: String,
+    definitions: Vec<shortcut::DeckShortcutDefinition>,
+    state: State<'_, Mutex<shortcut::ShortcutState>>,
+) -> Result<Vec<shortcut::DeckShortcutRegistration>, shortcut::ShortcutFailure> {
+    state
+        .lock()
+        .map_err(|_| shortcut::ShortcutFailure::RegistrationFailed)
+        .map(|mut state| state.synchronize_deck(account_id, definitions))
+}
+
 #[cfg(all(
     feature = "desktop-cef",
     not(any(target_os = "android", target_os = "ios"))
@@ -2575,6 +2830,18 @@ fn create_tray(app: &AppHandle<ActiveRuntime>) -> tauri::Result<()> {
             "open-devhud" => {
                 if let HudActionOutcome::Unchanged { reason } = show_hud_internal(app, false) {
                     log_window_action_failure("tray-open-devhud", reason);
+                }
+            }
+            "open-deck" | "refresh-deck" => {
+                if let HudActionOutcome::Unchanged { reason } = show_hud_internal(app, false) {
+                    log_window_action_failure("tray-open-deck", reason);
+                } else if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+                    let event_name = if event.id.as_ref() == "refresh-deck" {
+                        "devhud://deck-refresh"
+                    } else {
+                        "devhud://deck-open"
+                    };
+                    let _ = window.emit(event_name, ());
                 }
             }
             "settings" => {
@@ -2647,6 +2914,24 @@ fn install_shortcut_handler(app: &AppHandle<ActiveRuntime>) {
             {
                 log_window_action_failure("shortcut-dispatch", HudActionFailure::WindowUnavailable);
             }
+            return;
+        }
+        let deck_view = app
+            .state::<Mutex<shortcut::ShortcutState>>()
+            .lock()
+            .ok()
+            .and_then(|state| state.deck_view_for_id(event.id).map(str::to_owned));
+        if let Some(view_id) = deck_view {
+            let dispatch = app.clone();
+            let _ = app.run_on_main_thread(move || {
+                if !matches!(
+                    show_hud_internal(&dispatch, false),
+                    HudActionOutcome::Unchanged { .. }
+                ) && let Some(window) = dispatch.get_webview_window(MAIN_WINDOW_LABEL)
+                {
+                    let _ = window.emit("devhud://deck-shortcut", view_id);
+                }
+            });
         }
     }));
 }
@@ -2886,10 +3171,17 @@ fn reset_dev_hud(
     let log_directory = local_log::managed_log_directory(APPLICATION_ID)
         .map_err(|_| reset_preflight_failure(PersistenceCommandError::ResetFailed))?;
     preflight_local_logs_for_reset(&log_directory).map_err(reset_preflight_failure)?;
+    let deck_device_auth_clear = deck_transport::prepare_device_auth_clear();
+    let deck_device_reset_failed = deck_device_auth_clear.is_err();
     let (auth_reset_failed, realqa_draft_reset_failed) = composer_core.reset_all_with(|| {
         browser_inbox.clear();
-        (auth_state.reset().is_err(), realqa_drafts.reset().is_err())
+        let auth_reset_failed = auth_state.reset().is_err();
+        (
+            deck_device_reset_failed || auth_reset_failed,
+            realqa_drafts.reset().is_err(),
+        )
     });
+    drop(deck_device_auth_clear);
     let native_host_reset_failed = native_host_state.reset().is_err();
     if auth_reset_failed || realqa_draft_reset_failed || native_host_reset_failed {
         return Ok(PersistenceResetOutcome::PartiallyRetained);
@@ -3418,6 +3710,24 @@ fn start_authentication(
     feature = "desktop-cef",
     not(any(target_os = "android", target_os = "ios"))
 ))]
+fn logout_after_cleanup_preparation<T, G, E>(
+    cleanup: Result<G, E>,
+    logout: impl FnOnce() -> Result<T, auth::AuthError>,
+) -> Result<T, auth::AuthError> {
+    let cleanup_failed = cleanup.is_err();
+    let result = logout();
+    drop(cleanup);
+    match result {
+        Err(error) => Err(error),
+        Ok(_) if cleanup_failed => Err(auth::AuthError::SecureVaultWriteFailed),
+        Ok(snapshot) => Ok(snapshot),
+    }
+}
+
+#[cfg(all(
+    feature = "desktop-cef",
+    not(any(target_os = "android", target_os = "ios"))
+))]
 #[tauri::command]
 fn logout_authentication(
     drafts: State<'_, realqa_drafts::RealQaDraftState>,
@@ -3428,9 +3738,11 @@ fn logout_authentication(
     let _lifecycle = drafts
         .lifecycle_guard()
         .map_err(|_| auth::AuthError::SecureVaultUnavailable)?;
-    composer_core.reset_all_with(|| {
-        browser_inbox.clear();
-        state.logout()
+    logout_after_cleanup_preparation(deck_transport::prepare_device_auth_clear(), || {
+        composer_core.reset_all_with(|| {
+            browser_inbox.clear();
+            state.logout()
+        })
     })
 }
 
@@ -3668,6 +3980,10 @@ fn configure_builder(
     builder
         .invoke_handler(tauri::generate_handler![
             get_runtime_info,
+            deck_connect,
+            deck_device_id,
+            deck_open_pull_request,
+            synchronize_deck_shortcuts,
             read_settings,
             write_settings,
             read_shortcut_effective_state,
@@ -3678,6 +3994,7 @@ fn configure_builder(
             reset_dev_hud,
             hide_hud,
             show_settings,
+            show_realqa,
             hide_settings,
             replace_global_shortcut,
             set_launch_at_login,
@@ -3704,7 +4021,10 @@ fn configure_builder(
             realqa_save_local_draft,
             realqa_load_local_draft,
             realqa_delete_local_draft,
-            realqa_assert_local_draft_submission_allowed
+            realqa_assert_local_draft_submission_allowed,
+            realqa_connect,
+            realqa_signed_put,
+            realqa_open_github_authorization
         ])
         .setup(move |app| {
             let app_local_data = app.path().app_local_data_dir().ok();
@@ -3740,6 +4060,7 @@ fn configure_builder(
             app.manage(persistence);
             app.manage(realqa_drafts);
             app.manage(auth_native::NativeAuthState::initialize());
+            app.manage(realqa_transport::RealQaGithubBrowserState::initialize());
             app.manage(QuittingState(AtomicBool::new(false)));
             app.manage(updater::UpdateActionBoundary);
             app.manage(realqa_capture::CaptureCore::new(std::sync::Arc::new(
@@ -3853,6 +4174,8 @@ fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<A
     builder
         .invoke_handler(tauri::generate_handler![
             get_runtime_info,
+            deck_connect,
+            deck_open_pull_request,
             read_settings,
             write_settings,
             read_shortcut_effective_state,
@@ -4150,6 +4473,23 @@ mod android_entry {
 mod tests {
     use super::*;
 
+    #[cfg(all(
+        feature = "desktop-cef",
+        not(any(target_os = "android", target_os = "ios"))
+    ))]
+    #[test]
+    fn logout_still_clears_authentication_after_cleanup_preparation_fails() {
+        let mut logout_called = false;
+
+        let result = logout_after_cleanup_preparation(Result::<(), ()>::Err(()), || {
+            logout_called = true;
+            Ok(auth::SessionSnapshot::SignedOut)
+        });
+
+        assert!(logout_called);
+        assert_eq!(result, Err(auth::AuthError::SecureVaultWriteFailed));
+    }
+
     fn restricted_browser_capture() -> realqa_native_host::NativeHostRequest {
         serde_json::from_value(serde_json::json!({
             "kind": "submit-capture",
@@ -4317,6 +4657,7 @@ mod tests {
             application_id: APPLICATION_ID,
             bundled_origin: "http://tauri.localhost".to_string(),
             operating_system: "linux",
+            tool_operating_system: Some(ToolOperatingSystem::Ubuntu),
             runtime: "cef",
             sandbox_enabled: true,
             surface: RuntimeSurface::Hud,
@@ -4352,8 +4693,40 @@ mod tests {
             "mobile"
         );
         assert_eq!(value["operatingSystem"], "linux");
+        assert_eq!(value["toolOperatingSystem"], "ubuntu");
         assert_eq!(value["updatePolicy"], "Desktop updater unavailable");
         assert_eq!(update_policy(), "Desktop updater unavailable");
+    }
+
+    #[test]
+    fn realqa_linux_target_requires_exact_ubuntu_release() {
+        assert_eq!(
+            linux_tool_operating_system(
+                "NAME=Ubuntu\nID=ubuntu\nVERSION_ID=\"24.04\"\nID_LIKE=debian\n",
+            ),
+            Some(ToolOperatingSystem::Ubuntu)
+        );
+        for unsupported in [
+            "ID=fedora\nVERSION_ID=40\n",
+            "ID=debian\nVERSION_ID=12\nID_LIKE=ubuntu\n",
+            "ID=ubuntu\nVERSION_ID=22.04\n",
+            "ID=ubuntu\nID=ubuntu\nVERSION_ID=24.04\n",
+            "ID=ubuntu\nVERSION_ID=24.04\nVERSION_ID=24.04\n",
+        ] {
+            assert_eq!(linux_tool_operating_system(unsupported), None);
+        }
+    }
+
+    #[test]
+    fn realqa_entry_requires_a_supported_tool_operating_system() {
+        assert!(!realqa_operating_system_supported(None));
+        for operating_system in [
+            ToolOperatingSystem::Macos,
+            ToolOperatingSystem::Ubuntu,
+            ToolOperatingSystem::Windows,
+        ] {
+            assert!(realqa_operating_system_supported(Some(operating_system)));
+        }
     }
 
     #[test]
@@ -4940,11 +5313,13 @@ mod tests {
     }
 
     #[test]
-    fn tray_has_exactly_the_five_product_actions_in_order() {
+    fn tray_includes_deck_and_the_existing_product_actions_in_order() {
         assert_eq!(
             TRAY_ACTIONS.map(|(_, title)| title),
             [
                 "Open DevHud",
+                "Open Deck",
+                "Refresh Deck View",
                 "Settings",
                 "Check for Updates",
                 "Open DevTools",

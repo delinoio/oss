@@ -8,6 +8,7 @@ import "google/protobuf/timestamp.proto";
 option go_package = "github.com/delinoio/oss/protos/devhud-deck/gen/go/devhud-deck/v1;deckv1";
 
 service DeckViewService {
+  rpc ListOwners(ListOwnersRequest) returns (ListOwnersResponse);
   rpc ListViews(ListViewsRequest) returns (ListViewsResponse);
   rpc GetView(GetViewRequest) returns (GetViewResponse);
   rpc CreateView(CreateViewRequest) returns (CreateViewResponse);
@@ -19,6 +20,21 @@ service DeckViewService {
   rpc RefreshView(RefreshViewRequest) returns (RefreshViewResponse);
   rpc MutatePullRequest(MutatePullRequestRequest) returns (MutatePullRequestResponse);
   rpc DeleteFeatureData(DeleteFeatureDataRequest) returns (DeleteFeatureDataResponse);
+}
+
+// OwnerAccess exposes only the current server-resolved ownership and billing
+// scopes that this viewer may use. Organization and team identifiers remain
+// opaque to the client.
+message OwnerAccess {
+  Owner owner = 1;
+  bool can_manage = 2;
+  repeated BillingSelection billing_selections = 3;
+}
+
+message ListOwnersRequest {}
+
+message ListOwnersResponse {
+  repeated OwnerAccess owners = 1;
 }
 
 enum QueryIdentityKind {

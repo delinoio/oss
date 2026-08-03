@@ -237,7 +237,8 @@ func lifecycleRequest(procedure string, message any) bool {
 
 func deckScopes(procedure string) []string {
 	switch procedure {
-	case deckv1connect.DeckViewServiceListViewsProcedure,
+	case deckv1connect.DeckViewServiceListOwnersProcedure,
+		deckv1connect.DeckViewServiceListViewsProcedure,
 		deckv1connect.DeckViewServiceGetViewProcedure,
 		deckv1connect.DeckViewServiceListPullRequestsProcedure,
 		deckv1connect.DeckViewServiceListPullRequestMutationCandidatesProcedure,

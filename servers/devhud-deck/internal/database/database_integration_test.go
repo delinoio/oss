@@ -642,14 +642,28 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 	}
 	renewalWrite := write
 	renewalWrite.DisplayName = "Renewed laptop"
+	renewedLeaseExpiry := now.Add(2 * deviceLeaseForTest)
 	if _, _, replayed, err := store.RegisterDevice(ctx, RegisterDeviceParams{
 		RegistrationID: mustV7(t), DeviceID: deviceID, AccountID: accountID,
 		IdempotencyKey: mustV7(t), RequestDigest: security.Digest([]byte("renewal")),
 		OwnerHash: registerParams.OwnerHash, Write: renewalWrite,
 		Expected: 1, HasExpected: true, Grant: renewalGrant,
-		LeaseExpiresAt: now.Add(deviceLeaseForTest), Now: now.Add(time.Minute),
+		LeaseExpiresAt: renewedLeaseExpiry, Now: now.Add(time.Minute),
 	}); err != nil || replayed {
 		t.Fatalf("renew device replayed=%v err=%v", replayed, err)
+	}
+	var retainedGrantExpiry time.Time
+	if err := store.pool.QueryRow(ctx, `
+		SELECT lease_expires_at
+		FROM deck_device_registration_idempotency
+		WHERE account_id = $1 AND idempotency_key = $2`,
+		pgUUID(accountID), pgUUID(registerParams.IdempotencyKey),
+	).Scan(&retainedGrantExpiry); err != nil {
+		t.Fatal(err)
+	}
+	if !retainedGrantExpiry.Equal(renewedLeaseExpiry) {
+		t.Fatalf("retained cleanup grant expiry = %v, want %v",
+			retainedGrantExpiry, renewedLeaseExpiry)
 	}
 	replayedRegistration, replayGrant, replayed, err := store.RegisterDevice(
 		ctx, registerParams)

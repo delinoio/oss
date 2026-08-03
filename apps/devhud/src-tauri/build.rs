@@ -1,5 +1,9 @@
 const COMMANDS: &[&str] = &[
     "get_runtime_info",
+    "deck_connect",
+    "deck_device_id",
+    "deck_open_pull_request",
+    "synchronize_deck_shortcuts",
     "read_settings",
     "write_settings",
     "read_shortcut_effective_state",
@@ -10,6 +14,7 @@ const COMMANDS: &[&str] = &[
     "reset_dev_hud",
     "hide_hud",
     "show_settings",
+    "show_realqa",
     "hide_settings",
     "replace_global_shortcut",
     "set_launch_at_login",
@@ -37,6 +42,9 @@ const COMMANDS: &[&str] = &[
     "realqa_load_local_draft",
     "realqa_delete_local_draft",
     "realqa_assert_local_draft_submission_allowed",
+    "realqa_connect",
+    "realqa_signed_put",
+    "realqa_open_github_authorization",
 ];
 
 fn main() {

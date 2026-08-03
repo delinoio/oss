@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { SessionProvider } from "./auth/SessionProvider";
+import { AuthFeature, SessionProvider, useSession } from "./auth/SessionProvider";
 import type { NativeSessionBridge } from "./auth/contracts";
+import { DeckGatewayProvider, MobileDeckToolEntry } from "./deck/DeckToolEntry";
+import type { DeckGateway } from "./deck/contracts";
 import type {
   LocalStorageAdapter,
   PersistenceResetOutcome,
@@ -26,10 +28,13 @@ import { publishPersistenceReset } from "./runtime/theme";
 import {
   filterTools,
   productionTools,
-  type ToolCapability,
+  ToolCapability,
+  type ToolOperatingSystemValue,
   ToolPlatform,
 } from "./tools/registry";
 import { BrowserCaptureComposer } from "./realqa/BrowserCaptureComposer";
+import { RealQaWorkspace } from "./realqa/product/RealQaWorkspace";
+import type { RealQaProductGateway } from "./realqa/product/contracts";
 import { Dialog } from "./ui/Dialog";
 import { SettingsPanel } from "./ui/SettingsPanel";
 import {
@@ -354,16 +359,21 @@ function RuntimeFailure({
   );
 }
 
-const NO_TOOL_CAPABILITIES: ReadonlySet<ToolCapability> = new Set();
+const DESKTOP_TOOL_CAPABILITIES: ReadonlySet<ToolCapability> = new Set([
+  ToolCapability.WindowControl,
+]);
 
 function ProductionToolSurface({
   onOpenSettings,
+  operatingSystem,
 }: {
   readonly onOpenSettings: () => void;
+  readonly operatingSystem: ToolOperatingSystemValue | null;
 }) {
   const availableTools = filterTools(productionTools, {
     platform: ToolPlatform.Desktop,
-    grantedCapabilities: NO_TOOL_CAPABILITIES,
+    operatingSystem,
+    grantedCapabilities: DESKTOP_TOOL_CAPABILITIES,
   });
   if (availableTools.length === 0) {
     return <EmptyTools onOpenSettings={onOpenSettings} />;
@@ -470,9 +480,13 @@ function DesktopHud({
         ) : null}
         {runtime.status === "failed" ? (
           <RuntimeFailure message={runtime.message} onRetry={retryRuntime} />
-        ) : (
-          <ProductionToolSurface onOpenSettings={showSettings} />
-        )}
+        ) : null}
+        {runtime.status === "ready" ? (
+          <ProductionToolSurface
+            onOpenSettings={showSettings}
+            operatingSystem={runtime.runtimeInfo.toolOperatingSystem}
+          />
+        ) : null}
       </section>
     </main>
   );
@@ -480,6 +494,7 @@ function DesktopHud({
 
 const mobileScreenLabels: Record<MobileScreen, string> = {
   [MobileScreen.Home]: "Home",
+  [MobileScreen.Deck]: "Deck",
   [MobileScreen.Widgets]: "Widgets",
   [MobileScreen.Settings]: "Settings",
   [MobileScreen.Diagnostics]: "Diagnostics",
@@ -513,6 +528,7 @@ function MobileHome({
   retryRuntime(): void;
   runtime: RuntimeState;
 }) {
+  const { failure, ready, session, signIn } = useSession();
   return (
     <section aria-label="Home" className="mobile-screen">
       <MobileScreenHeading eyebrow="Home" title="Developer tools, kept local." />
@@ -525,7 +541,26 @@ function MobileHome({
       {runtime.status === "failed" ? (
         <RuntimeFailure message={runtime.message} onRetry={retryRuntime} />
       ) : null}
-      {runtime.status === "ready" ? <EmptyTools compact /> : null}
+      {runtime.status === "ready" ? (
+        <>
+          <EmptyTools compact />
+          {ready && session.status !== "signed-in" ? (
+            <section aria-labelledby="mobile-account-title" className="state-card">
+              <h2 id="mobile-account-title">Internal tools</h2>
+              <p>Sign in with DeliDev to show authenticated tools on this device.</p>
+              <button
+                className="primary-button"
+                disabled={session.status === "authenticating" || session.status === "cleanup-required"}
+                onClick={() => void signIn(AuthFeature.Deck)}
+                type="button"
+              >
+                {session.status === "authenticating" ? "Signing in…" : "Sign in"}
+              </button>
+              {failure ? <p className="error" role="alert">{failure.guidance}</p> : null}
+            </section>
+          ) : null}
+        </>
+      ) : null}
     </section>
   );
 }
@@ -561,6 +596,14 @@ function MobileWidgets() {
           </p>
         </section>
       ) : null}
+    </section>
+  );
+}
+
+function MobileDeck() {
+  return (
+    <section aria-label="Deck" className="mobile-screen mobile-deck-screen">
+      <MobileDeckToolEntry />
     </section>
   );
 }
@@ -732,6 +775,8 @@ function MobileContent({
   switch (mobileScreen) {
     case MobileScreen.Home:
       return <MobileHome retryRuntime={retryRuntime} runtime={runtime} />;
+    case MobileScreen.Deck:
+      return <MobileDeck />;
     case MobileScreen.Widgets:
       return <MobileWidgets />;
     case MobileScreen.Settings:
@@ -759,6 +804,15 @@ function MobileShell({
   runtime: RuntimeState;
 }) {
   const { mobileScreen, setMobileScreen } = useApplication();
+  const { session } = useSession();
+  const mobileScreens = Object.values(MobileScreen).filter(
+    (screen) => screen !== MobileScreen.Deck || session.status === "signed-in",
+  );
+  useEffect(() => {
+    if (mobileScreen === MobileScreen.Deck && session.status !== "signed-in") {
+      setMobileScreen(MobileScreen.Home);
+    }
+  }, [mobileScreen, session.status, setMobileScreen]);
   return (
     <main className="mobile-shell">
       <header className="app-header mobile-header">
@@ -766,7 +820,7 @@ function MobileShell({
       </header>
       <div className="mobile-layout">
         <nav aria-label="Primary" className="mobile-nav">
-          {Object.values(MobileScreen).map((screen) => (
+          {mobileScreens.map((screen) => (
             <button
               aria-current={mobileScreen === screen ? "page" : undefined}
               key={screen}
@@ -793,11 +847,13 @@ function MobileShell({
 function ApplicationSurface({
   desktopBridge,
   initialPlatform,
+  realQaGateway,
   runtimeBridge,
   synchronizePlatform,
 }: {
   readonly desktopBridge?: DesktopBridge | null;
   readonly initialPlatform: ApplicationPlatform;
+  readonly realQaGateway?: RealQaProductGateway;
   readonly runtimeBridge: RuntimeBridge;
   readonly synchronizePlatform: boolean;
 }) {
@@ -916,7 +972,9 @@ function ApplicationSurface({
     runtime.status === "ready" &&
     runtime.runtimeInfo.surface === "realqa-composer"
   ) {
-    return <BrowserCaptureComposer />;
+    return realQaGateway === undefined
+      ? <BrowserCaptureComposer />
+      : <RealQaWorkspace gateway={realQaGateway} />;
   }
 
   return (
@@ -953,14 +1011,18 @@ function ApplicationSurface({
 }
 
 export function App({
+  deckGateway,
   desktopBridge,
   platform,
+  realQaGateway,
   runtimeBridge = tauriRuntimeBridge,
   sessionBridge,
   storage,
 }: {
+  readonly deckGateway?: DeckGateway;
   readonly desktopBridge?: DesktopBridge | null;
   readonly platform?: ApplicationPlatform;
+  readonly realQaGateway?: RealQaProductGateway;
   readonly runtimeBridge?: RuntimeBridge;
   readonly sessionBridge?: NativeSessionBridge;
   readonly storage?: LocalStorageAdapter;
@@ -970,14 +1032,17 @@ export function App({
     platform ?? detectApplicationPlatform(navigator.userAgent);
   return (
     <SessionProvider bridge={sessionBridge}>
-      <ApplicationProvider storage={storage}>
-        <ApplicationSurface
-          desktopBridge={desktopBridge}
-          initialPlatform={initialPlatform}
-          runtimeBridge={runtimeBridge}
-          synchronizePlatform={synchronizePlatform}
-        />
-      </ApplicationProvider>
+      <DeckGatewayProvider gateway={deckGateway}>
+        <ApplicationProvider storage={storage}>
+          <ApplicationSurface
+            desktopBridge={desktopBridge}
+            initialPlatform={initialPlatform}
+            realQaGateway={realQaGateway}
+            runtimeBridge={runtimeBridge}
+            synchronizePlatform={synchronizePlatform}
+          />
+        </ApplicationProvider>
+      </DeckGatewayProvider>
     </SessionProvider>
   );
 }

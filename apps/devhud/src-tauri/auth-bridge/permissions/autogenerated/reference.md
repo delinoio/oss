@@ -62,6 +62,32 @@ Denies the openAuthorization command without any pre-configured scope.
 <tr>
 <td>
 
+`devhud-auth:allow-openPullRequest`
+
+</td>
+<td>
+
+Enables the openPullRequest command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`devhud-auth:deny-openPullRequest`
+
+</td>
+<td>
+
+Denies the openPullRequest command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `devhud-auth:allow-readSession`
 
 </td>

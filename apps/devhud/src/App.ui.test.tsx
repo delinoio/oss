@@ -10,6 +10,7 @@ vi.mock("./runtime/startup", () => ({
     applicationId: "dev.deli.devhud",
     bundledOrigin: "http://tauri.localhost",
     operatingSystem: "linux",
+    toolOperatingSystem: "ubuntu",
     runtime: "cef",
     sandboxEnabled: true,
     updatePolicy: "Desktop updater unavailable",
@@ -18,6 +19,8 @@ vi.mock("./runtime/startup", () => ({
 }));
 
 import { App } from "./App";
+import { AuthFeature } from "./auth/contracts";
+import { unavailableDeckGateway } from "./deck/contracts";
 import {
   defaultSettings,
   encodeSettings,
@@ -82,11 +85,68 @@ function renderApp(
 }
 
 describe("DevHud application surfaces", () => {
-  it("focuses the desktop search field and presents the exact empty state", async () => {
+  it("focuses desktop search and keeps Deck data behind authentication", async () => {
     renderApp();
     const search = screen.getByRole("searchbox", { name: "Search tools" });
     expect(search).toHaveFocus();
-    expect(screen.getByText("No tools are available in this foundation preview.")).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Deck" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Sign in to Deck" })).toBeVisible();
+    expect(screen.queryByText(/permission-filtered pull requests…/u)).not.toBeInTheDocument();
+  });
+
+  it("offers incremental Deck authorization to an already signed-in account", async () => {
+    const start = vi.fn(async () => ({
+      status: "signed-in" as const,
+      subject: "account-a",
+      features: [AuthFeature.RealQa, AuthFeature.Deck],
+      offlineFeatures: [],
+    }));
+    renderApp({
+      deckGateway: { ...unavailableDeckGateway },
+      sessionBridge: {
+        restore: vi.fn(async () => ({
+          status: "signed-in" as const,
+          subject: "account-a",
+          features: [AuthFeature.RealQa],
+          offlineFeatures: [],
+        })),
+        start,
+        logout: vi.fn(async () => ({ status: "signed-out" as const })),
+      },
+    });
+
+    await userEvent.setup().click(
+      await screen.findByRole("button", { name: "Authorize Deck" }),
+    );
+
+    expect(start).toHaveBeenCalledWith("deck");
+  });
+
+  it("focuses the desktop search field and presents authenticated RealQA entry", async () => {
+    renderApp();
+    const search = screen.getByRole("searchbox", { name: "Search tools" });
+    expect(search).toHaveFocus();
+    expect(await screen.findByRole("heading", { name: "RealQA" })).toBeVisible();
+    expect(screen.queryByText("No tools are available in this foundation preview.")).not.toBeInTheDocument();
+  });
+
+  it("does not advertise RealQA on an unsupported Linux distribution", async () => {
+    vi.mocked(loadRuntimeInfo).mockResolvedValueOnce({
+      applicationId: "dev.deli.devhud",
+      bundledOrigin: "http://tauri.localhost",
+      operatingSystem: "linux",
+      toolOperatingSystem: null,
+      runtime: "cef",
+      sandboxEnabled: true,
+      updatePolicy: "Desktop updater unavailable",
+    });
+
+    renderApp();
+
+    expect(
+      await screen.findByText("No tools are available in this foundation preview."),
+    ).toBeVisible();
+    expect(screen.queryByRole("heading", { name: "RealQA" })).not.toBeInTheDocument();
   });
 
   it("closes settings with Escape and restores focus", async () => {
@@ -118,6 +178,7 @@ describe("DevHud application surfaces", () => {
       applicationId: "dev.deli.devhud",
       bundledOrigin: "http://tauri.localhost",
       operatingSystem: "linux",
+      toolOperatingSystem: "ubuntu",
       runtime: "cef",
       sandboxEnabled: true,
       updatePolicy: "Desktop updater unavailable",
@@ -223,6 +284,7 @@ describe("DevHud application surfaces", () => {
       applicationId: "dev.deli.devhud",
       bundledOrigin: "http://tauri.localhost",
       operatingSystem: "linux",
+      toolOperatingSystem: "ubuntu",
       runtime: "cef",
       sandboxEnabled: true,
       updatePolicy: "Desktop updater unavailable",
@@ -240,6 +302,7 @@ describe("DevHud application surfaces", () => {
       applicationId: "dev.deli.devhud",
       bundledOrigin: "http://tauri.localhost",
       operatingSystem: "linux",
+      toolOperatingSystem: "ubuntu",
       runtime: "cef",
       sandboxEnabled: true,
       updatePolicy: "Desktop updater unavailable",
@@ -378,6 +441,7 @@ describe("DevHud application surfaces", () => {
       applicationId: "dev.deli.devhud",
       bundledOrigin: "http://tauri.localhost",
       operatingSystem: "linux",
+      toolOperatingSystem: "ubuntu",
       runtime: "cef",
       sandboxEnabled: true,
       updatePolicy: "Desktop updater unavailable",
@@ -418,6 +482,7 @@ describe("DevHud application surfaces", () => {
       applicationId: "dev.deli.devhud",
       bundledOrigin: "http://tauri.localhost",
       operatingSystem: "linux",
+      toolOperatingSystem: "ubuntu",
       runtime: "cef",
       sandboxEnabled: true,
       updatePolicy: "Desktop updater unavailable",
@@ -458,6 +523,7 @@ describe("DevHud application surfaces", () => {
       applicationId: "dev.deli.devhud",
       bundledOrigin: "http://tauri.localhost",
       operatingSystem: "linux",
+      toolOperatingSystem: "ubuntu",
       runtime: "cef",
       sandboxEnabled: true,
       updatePolicy: "Desktop updater unavailable",
@@ -501,6 +567,7 @@ describe("DevHud application surfaces", () => {
       applicationId: "dev.deli.devhud",
       bundledOrigin: "http://tauri.localhost",
       operatingSystem: "linux",
+      toolOperatingSystem: "ubuntu",
       runtime: "cef",
       sandboxEnabled: true,
       updatePolicy: "Desktop updater unavailable",
@@ -537,6 +604,7 @@ describe("DevHud application surfaces", () => {
       applicationId: "dev.deli.devhud",
       bundledOrigin: "http://tauri.localhost",
       operatingSystem: "linux",
+      toolOperatingSystem: "ubuntu",
       runtime: "cef",
       sandboxEnabled: true,
       updatePolicy: "Desktop updater unavailable",
@@ -561,6 +629,7 @@ describe("DevHud application surfaces", () => {
       applicationId: "dev.deli.devhud",
       bundledOrigin: "http://tauri.localhost",
       operatingSystem: "linux",
+      toolOperatingSystem: "ubuntu",
       runtime: "cef",
       sandboxEnabled: true,
       updatePolicy: "Desktop updater unavailable",
@@ -587,6 +656,7 @@ describe("DevHud application surfaces", () => {
       applicationId: "dev.deli.devhud",
       bundledOrigin: "http://tauri.localhost",
       operatingSystem: "linux",
+      toolOperatingSystem: "ubuntu",
       runtime: "cef",
       sandboxEnabled: true,
       updatePolicy: "Desktop updater unavailable",
@@ -613,6 +683,7 @@ describe("DevHud application surfaces", () => {
       applicationId: "dev.deli.devhud",
       bundledOrigin: "http://tauri.localhost",
       operatingSystem: "linux",
+      toolOperatingSystem: "ubuntu",
       runtime: "cef",
       sandboxEnabled: true,
       updatePolicy: "Desktop updater unavailable",
@@ -681,6 +752,7 @@ describe("DevHud application surfaces", () => {
       applicationId: "dev.deli.devhud",
       bundledOrigin: "http://tauri.localhost",
       operatingSystem: "linux",
+      toolOperatingSystem: "ubuntu",
       runtime: "cef",
       sandboxEnabled: true,
       updatePolicy: "Desktop updater unavailable",
@@ -732,6 +804,7 @@ describe("DevHud application surfaces", () => {
       applicationId: "dev.deli.devhud",
       bundledOrigin: "http://tauri.localhost",
       operatingSystem: "linux",
+      toolOperatingSystem: "ubuntu",
       runtime: "cef",
       sandboxEnabled: true,
       updatePolicy: "Desktop updater unavailable",
@@ -788,6 +861,7 @@ describe("DevHud application surfaces", () => {
       applicationId: "dev.deli.devhud",
       bundledOrigin: "http://tauri.localhost",
       operatingSystem: "linux",
+      toolOperatingSystem: "ubuntu",
       runtime: "cef",
       sandboxEnabled: true,
       updatePolicy: "Desktop updater unavailable",
@@ -812,6 +886,7 @@ describe("DevHud application surfaces", () => {
       applicationId: "dev.deli.devhud",
       bundledOrigin: "http://tauri.localhost",
       operatingSystem: "linux",
+      toolOperatingSystem: "ubuntu",
       runtime: "cef",
       sandboxEnabled: true,
       updatePolicy: "Desktop updater unavailable",
@@ -990,6 +1065,7 @@ describe("DevHud application surfaces", () => {
       applicationId: "dev.deli.devhud",
       bundledOrigin: "http://tauri.localhost",
       operatingSystem: "linux",
+      toolOperatingSystem: "ubuntu",
       runtime: "cef",
       sandboxEnabled: true,
       updatePolicy: "Desktop updater unavailable",
@@ -1026,6 +1102,7 @@ describe("DevHud application surfaces", () => {
       applicationId: "dev.deli.devhud",
       bundledOrigin: "http://tauri.localhost",
       operatingSystem: "android",
+      toolOperatingSystem: null,
       runtime: "system-webview",
       sandboxEnabled: false,
       updatePolicy: "Unsupported",

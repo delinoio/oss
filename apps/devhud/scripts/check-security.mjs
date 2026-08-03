@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { readdir, readFile } from "node:fs/promises";
 import { extname, join, relative, resolve } from "node:path";
 
@@ -88,6 +89,27 @@ const capabilities = {
   "realqa-composer": JSON.parse(realqaComposerCapabilitySource),
 };
 
+let frozenPrototypeConnectCompatible = true;
+try {
+  execFileSync(
+    process.execPath,
+    [
+      "--input-type=module",
+      "--eval",
+      `Object.freeze(Object.prototype);
+const { DeckViewService } = await import("@delinoio/devhud-deck-connect");
+if (DeckViewService.typeName !== "devhud.deck.v1.DeckViewService") process.exit(1);`,
+    ],
+    { cwd: appRoot, stdio: "pipe" },
+  );
+} catch {
+  frozenPrototypeConnectCompatible = false;
+}
+requireCondition(
+  frozenPrototypeConnectCompatible,
+  "Connect descriptors must initialize after Tauri freezes Object.prototype",
+);
+
 requireCondition(
   extensionManifest.manifest_version === 3 &&
     extensionManifest.minimum_chrome_version === "150" &&
@@ -171,6 +193,11 @@ const expectedCapabilities = {
       "allow-read-widget-configuration",
       "allow-hide-hud",
       "allow-show-settings",
+      "allow-deck-connect",
+      "allow-deck-device-id",
+      "allow-deck-open-pull-request",
+      "allow-synchronize-deck-shortcuts",
+      "allow-show-realqa",
       "allow-get-auth-session",
       "allow-start-authentication",
       "allow-logout-authentication",
@@ -211,6 +238,8 @@ const expectedCapabilities = {
       "allow-write-widget-configuration",
       "allow-export-diagnostics",
       "allow-reset-dev-hud",
+      "allow-deck-connect",
+      "allow-deck-open-pull-request",
       "allow-get-auth-session",
       "allow-start-authentication",
       "allow-logout-authentication",
@@ -246,6 +275,12 @@ const expectedCapabilities = {
       "allow-realqa-load-local-draft",
       "allow-realqa-delete-local-draft",
       "allow-realqa-assert-local-draft-submission-allowed",
+      "allow-realqa-connect",
+      "allow-realqa-signed-put",
+      "allow-realqa-open-github-authorization",
+      "allow-get-auth-session",
+      "allow-start-authentication",
+      "allow-logout-authentication",
     ],
   },
 };
@@ -345,7 +380,13 @@ requireCondition(
         command.startsWith("realqa_save_local_draft") ||
         command.startsWith("realqa_load_local_draft") ||
         command.startsWith("realqa_delete_local_draft") ||
-        command.startsWith("realqa_assert_local_draft_")) &&
+        command.startsWith("realqa_assert_local_draft_") ||
+        command === "realqa_connect" ||
+        command === "realqa_signed_put" ||
+        command === "realqa_open_github_authorization" ||
+        command === "get_auth_session" ||
+        command === "start_authentication" ||
+        command === "logout_authentication") &&
       ![
         "realqa_capture_permission_status",
         "realqa_request_capture_permission",
@@ -643,9 +684,11 @@ for (const path of bundleFiles.filter((file) =>
       bundlePath.startsWith("static/js/lib-react.") &&
       (endpoint.startsWith("https://react.dev/errors/") ||
         endpoint.startsWith("http://www.w3.org/"));
+    const inertProtobufParserLiteral = endpoint === "http://${e}/";
     requireCondition(
       endpoint === "http://ipc.localhost" ||
         endpoint.startsWith("http://tauri.localhost") ||
+        inertProtobufParserLiteral ||
         inertReactLiteral,
       `generated bundle contains remote endpoint ${endpoint} in ${bundlePath}`,
     );

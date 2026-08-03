@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "rsbuild build && node scripts/postbuild.mjs",
+    "build": "rsbuild build && node --env-file-if-exists=.env scripts/postbuild.mjs",
     "dev": "node ../../scripts/run-dev-server.mjs delidev-app DELIDEV_APP_DEV_PORT 4173 rsbuild dev",
     "icons": "node scripts/generate-icons.mjs",
     "lint": "eslint . --max-warnings 0",

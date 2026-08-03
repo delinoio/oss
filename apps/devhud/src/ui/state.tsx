@@ -25,6 +25,7 @@ export { ThemePreference } from "../persistence/contracts";
 
 export enum MobileScreen {
   Home = "home",
+  Deck = "deck",
   Widgets = "widgets",
   Settings = "settings",
   Diagnostics = "diagnostics",

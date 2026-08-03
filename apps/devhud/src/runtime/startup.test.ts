@@ -11,6 +11,7 @@ const runtimeInfo: RuntimeInfo = {
   applicationId: "dev.deli.devhud",
   bundledOrigin: "http://tauri.localhost",
   operatingSystem: "linux",
+  toolOperatingSystem: "ubuntu",
   runtime: "cef",
   sandboxEnabled: true,
   updatePolicy: "Desktop updater unavailable",
