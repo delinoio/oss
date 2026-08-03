@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "rsbuild build && node --env-file-if-exists=.env scripts/postbuild.mjs",
+    "ci:realqa:settings": "pnpm run typecheck && pnpm run lint && vitest run src/test/realqa-github.test.tsx src/test/realqa-security.test.ts src/test/account-page.test.tsx src/test/organization-settings.test.tsx",
     "dev": "node ../../scripts/run-rsbuild-dev.mjs delidev-app 46301",
     "icons": "node scripts/generate-icons.mjs",
     "lint": "eslint . --max-warnings 0",

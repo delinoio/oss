@@ -155,23 +155,35 @@ Canonical implemented-foundation checks are:
 - fixture GitHub App, R2, callback/webhook, permission, reconciliation, WAF/rate, billing, retention, and deletion tests;
 - non-root `linux/amd64` and `linux/arm64` image validation with SBOM and signature/attestation verification.
 
-The current CI slice runs format/vet/tests, sqlc reproducibility, ordered
-migration checks, PostgreSQL concurrent/idempotent migration application,
+The change-scoped CI slices use `pnpm ci:realqa:go:unit`,
+`pnpm ci:realqa:go:integrations`, and
+`pnpm ci:realqa:go:billing-race`. They run format/vet/unit tests, sqlc
+reproducibility, ordered migration checks, PostgreSQL concurrent/idempotent migration application,
 fixture-only GitHub manifest/permission/host/listing/schema/body/create/
 reconciliation/callback/webhook/credential/redaction checks, image
 verification/promotion/deletion checks, and unit coverage for aggregate billing,
 catalog drift, exact transfer/storage binding, forwarded-credential separation,
 public confirmation, replay identities, UTC storage rounding/checkpoint
 identities, authorized-usage substitution, typed recovery classification,
-rebind scopes, and pseudonymized recurring-ledger boundaries. PostgreSQL
-recurring concurrency/recovery fixtures, autonomous provider recovery, and
-image-build checks in the remaining list stay mandatory in environments that
-provide their external fixtures; the inactive server tests do not activate a
-catalog entry.
+rebind scopes, and pseudonymized recurring-ledger boundaries. The exact
+PostgreSQL service fixture also runs with Go's race detector for concurrent
+transfer/storage finalization, rebind, deletion, and settlement paths.
+
+`servers/devhud-realqa/Dockerfile` reproducibly builds the inactive static
+server for `linux/amd64` and `linux/arm64` on a pinned build image and pinned
+distroless non-root runtime. `scripts/test-image.sh` checks UID/GID 65532,
+entrypoint, sole exposed port, OCI labels, absent baked RealQA/GitHub/R2
+configuration, and absence of build sources. CI loads each architecture only
+into the local runner, generates an SPDX JSON SBOM, constructs an in-toto
+SLSA-provenance fixture over the local image digest, and signs/verifies the
+SBOM and statement with an ephemeral fixture key. The checked
+`artifacts/supply-chain.fixture.json` definition requires both platforms and
+verification while explicitly forbidding image/attestation publication,
+deployment, and DNS/R2 provisioning.
 
 Coverage must include all size/body boundaries, verification failures and bombs, replay-safe preset creation, templates/forms, marker reconciliation without duplicates, crash-safe post-provider attempt recovery without a client retry, idempotent promotion or 24-hour removed-placeholder cleanup, private staging/promotion/23-hour upload deadline/authenticated one-hour finalization/24-hour cleanup, disconnect before finalization with no background live-usage call and natural reservation expiry, short transfer-TTL rejection and no late commit, lost initial storage-authorization response replay through the durable create attempt before cleanup, abandoned-submission authorization closure without orphan grants, authorized paginated submission/asset discovery after local draft deletion, explicit deletion/placeholder and same-submission image-reference-only best-effort issue update, declared-upload-versus-sanitized byte accounting with commit-at-most-reservation, transfer/storage rounding and zero-unit mutation skipping, completed-day durable checkpoint/oldest-first retry/reservation-before-age-out recovery, explicit grace transition for an unreservable missed period without silent skip or back-billing, serialized current-day deletion/rebind cutoffs without missed or double accrual, live/background outbound delibase client-credentials acquisition/startup failure and service-binding rejection, serialized payer rebind replay/concurrency/stale-mapping/substitution plus `ACTIVE`/`REVOKED`/`ACCESS_LOST` source grants, deletion closure for `RESOURCE_DELETED`/`REVOKED`/`ACCESS_LOST`/`OWNER_DELETED`, 30-day grace/no back-billing and public tombstone/object deletion during a delibase outage with later billing teardown, rate limits, provider-credential envelope encryption/rotation and ciphertext-only backups, redaction, exact lifecycle-client pinning and peer-M2M rejection, owner and delibase-lifecycle deletion authorization including scoped connection/installation/credential removal, deletion-job replay/absent data, browser-origin rejection, and GitHub.com-only rejection.
 
-These checks use fixture production substitutes and a fixture extension ID. They must not publish images, deploy services, configure DNS/R2, register a GitHub App, publish a Chrome extension, inject a production extension ID, ship stores, activate catalog entries, or begin operations.
+These checks use fixture production substitutes and a fixture extension ID. The workflow retains read-only repository permissions and does not authenticate to a registry, request OIDC/attestation authority, read secrets, deploy services, configure DNS/R2, register a GitHub App, publish a Chrome extension or image, inject a production extension ID, ship stores, activate catalog entries, or begin operations.
 
 ## Dependencies and Integrations
 

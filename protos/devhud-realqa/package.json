@@ -26,6 +26,7 @@
     "build": "tsc -p tsconfig.json",
     "build:api": "pnpm run generate:proto",
     "check:proto": "../../scripts/check-proto-component.sh devhud-realqa devhud.realqa.v1.binpb",
+    "ci:realqa:proto": "pnpm run check:proto && go test ./... && go vet ./... && pnpm run typecheck",
     "generate": "../../scripts/generate-proto-component.sh devhud-realqa devhud.realqa.v1.binpb",
     "generate:proto": "pnpm run generate && pnpm run build",
     "lint": "tsc --noEmit -p tsconfig.json",

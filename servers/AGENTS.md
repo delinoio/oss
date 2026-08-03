@@ -107,6 +107,7 @@ Scaffold-only service projects may start with a smaller structure (`main.go` + `
 - RealQA `SubmitIssue` requires its memory-only forwarded delibase bearer to carry both `delibase:usage:execute` for live transfer finalization and `delibase:billing:write` for initial storage-authorization creation.
 - Production-facing Deck/RealQA catalog records remain disabled. Tests may build non-root multi-architecture fixture images with SBOM/signature/attestation validation and fixture GitHub Apps/R2/extension IDs, but must not publish GHCR images, deploy APIs, configure DNS/R2, inject production secrets, register either GitHub App, publish an extension/widget/store artifact, activate catalog entries, or roll out operations.
 - Once code exists, run `go vet ./servers/devhud-deck/...`, `go test ./servers/devhud-deck/...`, `go vet ./servers/devhud-realqa/...`, and `go test ./servers/devhud-realqa/...`, plus format, sqlc, migration, PostgreSQL concurrency, provider-fixture, billing/deletion, and image validation from the corresponding server contracts.
+- RealQA server CI separates format/vet/unit, sqlc/PostgreSQL, GitHub/R2/delibase fixtures, exact transfer/storage race detection, and local non-root image validation. Its `linux/amd64` and `linux/arm64` images, SPDX SBOMs, in-toto provenance statements, and Sigstore bundles are run-scoped fixtures signed only with ephemeral CI keys; never add registry login/push, production attestation, deployment, DNS/R2 provisioning, secret input, or catalog activation to this workflow.
 
 ### Testing and Validation
 
