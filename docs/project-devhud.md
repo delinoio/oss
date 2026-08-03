@@ -73,6 +73,7 @@ The DeliDev RealQA tracker exception uses the exact RealQA browser origin/audien
 
 ## Cross-Domain Invariants
 
+- Package-local and root frontend development for `apps/devhud` bind to loopback on fixed port `46300`, reject explicit host and port CLI overrides, and fail on conflicts without automatic remapping.
 - The signed-out base shell remains usable without an account or network service. Authentication gates Deck and RealQA entry points and must not turn base settings, diagnostics, reset, tray access, or the empty foundation shell into signed-in-only behavior.
 - The internal tool/view/tracker registries remain closed, source-controlled, and enum-backed. Deck initially permits only `GITHUB_PULL_REQUESTS`; RealQA initially permits only GitHub.com. No public plugin SDK, third-party provider adapter, user-authored runtime code, remotely supplied UI, arbitrary remote frontend asset, or server-defined component tree is authorized.
 - Tauri, `tauri-build`, `tauri-runtime-cef`, `tauri-runtime-wry`, `@tauri-apps/cli-cef`, and the standard aliased mobile CLI retain the exact versions in the app contract. In particular, the upstream revision remains `f49ebda2fdba5755456b0f049e32593ca0ea331a`, `@tauri-apps/cli-cef` remains `3.0.0-alpha.6`, and `@tauri-apps/cli-mobile` remains exactly `2.11.4`; no Tauri, WRY, or `cef-rs` fork, local patch, or moving branch is allowed.

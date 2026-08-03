@@ -18,6 +18,11 @@ export default defineConfig({
   description: "Public documentation for Delino OSS projects.",
   root: "docs",
   outDir: "doc_build",
+  builderConfig: {
+    server: {
+      strictPort: process.env.DELINO_RSPRESS_STRICT_PORT === "1",
+    },
+  },
   route: {
     cleanUrls: true,
   },
