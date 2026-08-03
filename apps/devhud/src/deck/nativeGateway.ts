@@ -599,6 +599,7 @@ export class NativeDeckGateway implements DeckGateway {
   #deviceRegistered = false;
   #deviceRegistration: DeviceRegistration | undefined;
   #shortcutSynchronizationGeneration = 0;
+  #mobileWidgetWriteQueue = Promise.resolve();
   #accountId = "";
   #deviceId = "";
 
@@ -1118,12 +1119,18 @@ export class NativeDeckGateway implements DeckGateway {
         },
       }];
     });
-    await invoke("write_widget_configuration", {
-      record: JSON.stringify({
-        version: 1,
-        configuration: { accountId: this.#accountId, widgets },
-      }),
-    });
+    await this.#enqueueMobileWidgetWrite(JSON.stringify({
+      version: 1,
+      configuration: { accountId: this.#accountId, widgets },
+    }));
+  }
+
+  #enqueueMobileWidgetWrite(record: string): Promise<void> {
+    const write = this.#mobileWidgetWriteQueue.then(() =>
+      invoke<void>("write_widget_configuration", { record })
+    );
+    this.#mobileWidgetWriteQueue = write.catch(() => undefined);
+    return write;
   }
 
   async clearShortcuts(): Promise<void> {
@@ -1135,12 +1142,10 @@ export class NativeDeckGateway implements DeckGateway {
     this.#widgetViewIds.clear();
     if (!isTauri()) return;
     if (this.#clientKind === RefreshClientKind.MOBILE) {
-      await invoke("write_widget_configuration", {
-        record: JSON.stringify({
-          version: 1,
-          configuration: { accountId: this.#accountId, widgets: [] },
-        }),
-      });
+      await this.#enqueueMobileWidgetWrite(JSON.stringify({
+        version: 1,
+        configuration: { accountId: this.#accountId, widgets: [] },
+      }));
       return;
     }
     this.#shortcutViewIds.clear();

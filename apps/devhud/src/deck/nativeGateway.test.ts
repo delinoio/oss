@@ -620,6 +620,73 @@ describe("native Deck gateway", () => {
     });
   });
 
+  it("finishes an in-flight mobile widget write before clearing its native record", async () => {
+    const accountId = "018f0000-0000-7000-8000-000000000001";
+    const deviceId = "018f0000-0000-7000-8000-000000000002";
+    const viewId = "018f0000-0000-7000-8000-000000000003";
+    const widgetId = "018f0000-0000-7000-8000-000000000004";
+    const completedRecords: string[] = [];
+    let finishWidgetWrite: (() => void) | undefined;
+    Object.defineProperty(navigator, "userAgent", { configurable: true, value: "Android" });
+    vi.mocked(invoke).mockImplementation(async (command, args) => {
+      if (command === "deck_device_id") return deviceId as never;
+      if (command === "write_widget_configuration") {
+        const record = (args as { record: string }).record;
+        if (finishWidgetWrite === undefined) {
+          await new Promise<void>((resolve) => { finishWidgetWrite = resolve; });
+        }
+        completedRecords.push(record);
+        return 0 as never;
+      }
+      throw new Error(`Unexpected command: ${command}`);
+    });
+    vi.mocked(invokeDeckProcedure).mockImplementation(async (procedure) => {
+      if (procedure === DeckProcedure.ListOwners) {
+        return { owners: [{
+          owner: { ownerId: { case: "accountId", value: { value: accountId } } },
+          canManage: true,
+          billingSelections: [],
+        }] } as never;
+      }
+      if (procedure === DeckProcedure.RegisterDevice) {
+        return { registration: { device: {
+          shortcuts: [],
+          widgets: [{
+            widgetId: { value: widgetId },
+            viewId: { value: viewId },
+            family: 4,
+            privacy: 1,
+            snapshot: {
+              matchingCount: 0,
+              pullRequests: [],
+              freshness: 1,
+              offline: false,
+              generatedAt: { seconds: 0n, nanos: 0 },
+            },
+          }],
+        } } } as never;
+      }
+      throw new Error(`Unexpected procedure: ${procedure}`);
+    });
+    const gateway = new NativeDeckGateway(RefreshClientKind.MOBILE);
+    await gateway.listOwners();
+
+    const synchronization = gateway.synchronizeShortcuts();
+    await vi.waitFor(() => expect(finishWidgetWrite).toBeTypeOf("function"));
+    const cleanup = gateway.clearShortcuts();
+    expect(completedRecords).toEqual([]);
+    finishWidgetWrite?.();
+    await synchronization;
+    await cleanup;
+
+    expect(completedRecords).toHaveLength(2);
+    expect(JSON.parse(completedRecords[0]!).configuration.widgets).toHaveLength(1);
+    expect(JSON.parse(completedRecords[1]!)).toEqual({
+      version: 1,
+      configuration: { accountId, widgets: [] },
+    });
+  });
+
   it("reloads and rewrites native widget snapshots after widget and manual refreshes", async () => {
     const accountId = "018f0000-0000-7000-8000-000000000001";
     const deviceId = "018f0000-0000-7000-8000-000000000002";

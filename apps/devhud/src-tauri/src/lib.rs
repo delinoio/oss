@@ -3971,7 +3971,17 @@ fn logout_authentication(
 ) -> Result<auth::SessionSnapshot, auth::AuthError> {
     let deck_device_auth_clear = deck_transport::prepare_device_auth_clear(&app);
     let deck_device_cleanup_failed = deck_device_auth_clear.is_err();
-    let widget_cleanup_failed = app.devhud_widget_bridge().reset_configuration().is_err();
+    let widget_cleanup_failed = match app.devhud_widget_bridge().reset_configuration() {
+        Ok(_) => false,
+        Err(error) if error.code() == Some(WidgetBridgeErrorCode::RefreshFailed) => {
+            widget_bridge_failure("logout-refresh", &error);
+            false
+        }
+        Err(error) => {
+            widget_bridge_failure("logout", &error);
+            true
+        }
+    };
     let result = state.logout();
     drop(deck_device_auth_clear);
     match result {
