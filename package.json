@@ -61,6 +61,7 @@
     }
   },
   "devDependencies": {
+    "js-yaml": "4.3.0",
     "lefthook": "^2.1.4",
     "turbo": "^2.9.14"
   }

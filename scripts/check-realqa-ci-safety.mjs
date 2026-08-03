@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { load } from "js-yaml";
 
 const repositoryRoot = resolve(import.meta.dirname, "..");
 const read = (path) => readFile(resolve(repositoryRoot, path), "utf8");
@@ -44,13 +45,23 @@ requireCondition(
   "RealQA CI must not reference a GitHub deployment environment",
 );
 
-const shellWorkflow = workflow.replace(/\\\r?\n[ \t]*/gu, " ");
+const workflowShellSource = (source) => {
+  const document = load(source);
+  const runCommands = Object.values(document?.jobs ?? {}).flatMap((job) =>
+    Array.isArray(job?.steps)
+      ? job.steps.flatMap((step) => (typeof step?.run === "string" ? [step.run] : []))
+      : [],
+  );
+  return [source, ...runCommands].join("\n").replace(/\\\r?\n[ \t]*/gu, " ");
+};
+
+const shellWorkflow = workflowShellSource(workflow);
 const shellValue = String.raw`(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s]+)`;
-const dockerGlobalOption = String.raw`(?:(?:--(?:config|context|host|log-level|tlscacert|tlscert|tlskey)|-H)(?:=|\s+)${shellValue}|(?:--(?:debug|tls|tlsverify)|-D)(?:=(?:true|false))?)`;
-const buildxGlobalOption = String.raw`(?:--builder(?:=|\s+)${shellValue}|--debug(?:=(?:true|false))?)`;
+const dockerGlobalOption = String.raw`(?:(?:--(?:config|context|host|log-level|tlscacert|tlscert|tlskey)|-[cHl])(?:=|\s+)${shellValue}|(?:--(?:debug|tls|tlsverify)|-D)(?:=(?:true|false))?)`;
+const buildxGlobalOption = String.raw`(?:--builder(?:=|\s+)${shellValue}|(?:--debug|-D)(?:=(?:true|false))?)`;
 const dockerCommand = String.raw`\bdocker\s+(?:${dockerGlobalOption}\s+)*`;
 const buildxBuildCommand = String.raw`${dockerCommand}buildx\s+(?:${buildxGlobalOption}\s+)*build\b`;
-for (const [pattern, message] of [
+const forbiddenWorkflowPatterns = [
   [/docker\/login-action/u, "must not authenticate to a container registry"],
   [
     new RegExp(`${dockerCommand}login\\b`, "u"),
@@ -82,8 +93,35 @@ for (const [pattern, message] of [
   [/\bsecrets(?:\.|\s*\[)/u, "must not read repository or environment secrets"],
   [/\bDEVHUD_CHROME_EXTENSION_ID\s*[:=]/u, "must not inject a production extension identity"],
   [/\bpush:\s*true\b/u, "must not push an image"],
-]) {
+];
+for (const [pattern, message] of forbiddenWorkflowPatterns) {
   requireCondition(!pattern.test(shellWorkflow), `RealQA CI ${message}`);
+}
+
+for (const [source, expectedMessage] of [
+  [
+    "jobs:\n  fixture:\n    steps:\n      - run: docker -c default login registry.example.com",
+    "must not authenticate to a container registry from the shell",
+  ],
+  [
+    "jobs:\n  fixture:\n    steps:\n      - run: docker -l debug push registry.example.com/image",
+    "must not push an image from the shell",
+  ],
+  [
+    "jobs:\n  fixture:\n    steps:\n      - run: docker buildx -D build --push .",
+    "must not push a buildx image from the shell",
+  ],
+  [
+    "jobs:\n  fixture:\n    steps:\n      - run: >\n          docker buildx build\n          --push .",
+    "must not push a buildx image from the shell",
+  ],
+]) {
+  const fixtureSource = workflowShellSource(source);
+  const matchedMessage = forbiddenWorkflowPatterns.find(([pattern]) => pattern.test(fixtureSource))?.[1];
+  requireCondition(
+    matchedMessage === expectedMessage,
+    `RealQA CI safety guard must reject fixture command: ${source}`,
+  );
 }
 
 const requiredAggregateJobs = [
