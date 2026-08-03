@@ -521,6 +521,105 @@ describe("native Deck gateway", () => {
     expect(widgets).toHaveLength(20);
   });
 
+  it("replays the same pending widget after an ambiguous registration failure", async () => {
+    const accountId = "018f0000-0000-7000-8000-000000000001";
+    const deviceId = "018f0000-0000-7000-8000-000000000002";
+    const viewId = "018f0000-0000-7000-8000-000000000003";
+    Object.defineProperty(navigator, "userAgent", { configurable: true, value: "Android" });
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command === "deck_device_id") return deviceId as never;
+      if (command === "write_widget_configuration") return 0 as never;
+      throw new Error(`Unexpected command: ${command}`);
+    });
+    const requests: Array<{ widgets: Array<{ widgetId?: { value: string } }> }> = [];
+    vi.mocked(invokeDeckProcedure).mockImplementation(async (procedure, _input, _output, request) => {
+      if (procedure === DeckProcedure.ListOwners) {
+        return { owners: [{
+          owner: { ownerId: { case: "accountId", value: { value: accountId } } },
+          canManage: true,
+          billingSelections: [],
+        }] } as never;
+      }
+      if (procedure === DeckProcedure.RegisterDevice) {
+        const registrationRequest = request as unknown as {
+          widgets: Array<{ widgetId?: { value: string } }>;
+        };
+        requests.push(registrationRequest);
+        if (requests.length === 2) throw { code: "service-unavailable" };
+        return { registration: {
+          device: {
+            widgets: registrationRequest.widgets,
+            shortcuts: [],
+            revision: { value: BigInt(requests.length), etag: `device-${requests.length}` },
+          },
+        } } as never;
+      }
+      if (procedure === DeckProcedure.GetDevice) {
+        return { registration: {
+          device: {
+            widgets: [],
+            shortcuts: [],
+            revision: { value: 1n, etag: "device-1" },
+          },
+        } } as never;
+      }
+      throw new Error(`Unexpected procedure: ${procedure}`);
+    });
+    const gateway = new NativeDeckGateway(RefreshClientKind.MOBILE);
+    await gateway.listOwners();
+
+    await expect(gateway.createWidgetConfiguration(
+      viewId,
+      DeckWidgetFamily.AndroidCompact,
+      DeckWidgetPrivacy.CountsOnly,
+    )).rejects.toMatchObject({ code: DeckFailureCode.ServiceUnavailable });
+    await gateway.createWidgetConfiguration(
+      viewId,
+      DeckWidgetFamily.AndroidCompact,
+      DeckWidgetPrivacy.CountsOnly,
+    );
+
+    expect(requests).toHaveLength(3);
+    expect(requests[1]?.widgets).toHaveLength(1);
+    expect(requests[2]?.widgets).toHaveLength(1);
+    expect(requests[2]?.widgets[0]?.widgetId?.value).toBe(
+      requests[1]?.widgets[0]?.widgetId?.value,
+    );
+  });
+
+  it("clears the native mobile widget record with in-memory registration state", async () => {
+    const accountId = "018f0000-0000-7000-8000-000000000001";
+    const records: string[] = [];
+    Object.defineProperty(navigator, "userAgent", { configurable: true, value: "Android" });
+    vi.mocked(invoke).mockImplementation(async (command, args) => {
+      if (command === "write_widget_configuration") {
+        records.push((args as { record: string }).record);
+        return 0 as never;
+      }
+      throw new Error(`Unexpected command: ${command}`);
+    });
+    vi.mocked(invokeDeckProcedure).mockImplementation(async (procedure) => {
+      if (procedure === DeckProcedure.ListOwners) {
+        return { owners: [{
+          owner: { ownerId: { case: "accountId", value: { value: accountId } } },
+          canManage: true,
+          billingSelections: [],
+        }] } as never;
+      }
+      throw new Error(`Unexpected procedure: ${procedure}`);
+    });
+    const gateway = new NativeDeckGateway(RefreshClientKind.MOBILE);
+    await gateway.listOwners();
+
+    await gateway.clearShortcuts();
+
+    expect(records).toHaveLength(1);
+    expect(JSON.parse(records[0]!)).toEqual({
+      version: 1,
+      configuration: { accountId, widgets: [] },
+    });
+  });
+
   it("reloads and rewrites native widget snapshots after widget and manual refreshes", async () => {
     const accountId = "018f0000-0000-7000-8000-000000000001";
     const deviceId = "018f0000-0000-7000-8000-000000000002";

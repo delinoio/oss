@@ -17,7 +17,7 @@ struct DeckWidgetEntity: AppEntity, Identifiable {
         viewId = widget.viewId
         privacy = widget.privacy
         displayRepresentation = DisplayRepresentation(
-            title: "Deck view",
+            title: "Deck view \(widget.viewId.suffix(8))",
             subtitle: widget.privacy == .countsOnly ? "Counts only" : "Repository and PR titles"
         )
     }

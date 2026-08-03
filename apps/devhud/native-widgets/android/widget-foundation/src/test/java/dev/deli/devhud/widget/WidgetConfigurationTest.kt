@@ -56,6 +56,14 @@ class WidgetConfigurationTest {
         assertEquals("devhud-widget-state.preferences_pb", DevHudWidgetContract.DATASTORE_FILE)
     }
 
+    @Test fun widgetRenderingRequiresAnExplicitCompatibleSelection() {
+        val widget = WidgetConfigurationCodec.decode(fixture()).configuration.widgets.single()
+        assertNull(selectAndroidWidget(listOf(widget), null, widget.family))
+        assertNull(selectAndroidWidget(listOf(widget), "stale-widget-id", widget.family))
+        assertNull(selectAndroidWidget(listOf(widget), widget.widgetId, DeckWidgetFamily.ANDROID_COMPACT))
+        assertEquals(widget, selectAndroidWidget(listOf(widget), widget.widgetId, widget.family))
+    }
+
     @Test fun fixtureRoundTripsAndPreservesMinimalSnapshot() = runTest {
         withAdapter { adapter, _ ->
             val raw = fixture()

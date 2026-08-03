@@ -901,9 +901,23 @@ export class NativeDeckGateway implements DeckGateway {
     const pending = this.#pendingWidgetConfiguration;
     if (pending !== undefined) {
       const pendingWidgetId = pending.widgetId?.value ?? "";
-      const pendingRegistered = this.#deviceRegistration?.device?.widgets.some(
+      let pendingRegistered = this.#deviceRegistration?.device?.widgets.some(
         (candidate) => candidate.widgetId?.value === pendingWidgetId,
       ) ?? false;
+      if (!pendingRegistered) {
+        try {
+          await this.#runShortcutSynchronization(pending);
+        } catch (error) {
+          const pendingAttemptRetained = this.#deviceRegistrationAttempt?.widgets.some(
+            (candidate) => candidate.widgetId?.value === pendingWidgetId,
+          ) ?? false;
+          if (!pendingAttemptRetained) this.#pendingWidgetConfiguration = undefined;
+          throw error;
+        }
+        pendingRegistered = this.#deviceRegistration?.device?.widgets.some(
+          (candidate) => candidate.widgetId?.value === pendingWidgetId,
+        ) ?? false;
+      }
       if (pendingRegistered && this.#deviceRegistration !== undefined) {
         await this.#writeMobileWidgetSnapshot(this.#deviceRegistration);
         this.#pendingWidgetConfiguration = undefined;
@@ -940,7 +954,10 @@ export class NativeDeckGateway implements DeckGateway {
       const registered = this.#deviceRegistration?.device?.widgets.some(
         (candidate) => candidate.widgetId?.value === widget.widgetId?.value,
       ) ?? false;
-      if (!registered) this.#pendingWidgetConfiguration = undefined;
+      const pendingAttemptRetained = this.#deviceRegistrationAttempt?.widgets.some(
+        (candidate) => candidate.widgetId?.value === widget.widgetId?.value,
+      ) ?? false;
+      if (!registered && !pendingAttemptRetained) this.#pendingWidgetConfiguration = undefined;
       throw error;
     }
   }
@@ -1116,7 +1133,16 @@ export class NativeDeckGateway implements DeckGateway {
     this.#deviceRegistrationAttempt = undefined;
     this.#pendingWidgetConfiguration = undefined;
     this.#widgetViewIds.clear();
-    if (!isTauri() || this.#clientKind !== RefreshClientKind.DESKTOP) return;
+    if (!isTauri()) return;
+    if (this.#clientKind === RefreshClientKind.MOBILE) {
+      await invoke("write_widget_configuration", {
+        record: JSON.stringify({
+          version: 1,
+          configuration: { accountId: this.#accountId, widgets: [] },
+        }),
+      });
+      return;
+    }
     this.#shortcutViewIds.clear();
     await invoke("synchronize_deck_shortcuts", {
       accountId: this.#accountId,

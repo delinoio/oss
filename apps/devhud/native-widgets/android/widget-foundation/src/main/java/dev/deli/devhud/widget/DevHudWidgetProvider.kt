@@ -60,11 +60,7 @@ class DevHudWidgetProvider : AppWidgetProvider() {
     ): RemoteViews {
         val family = androidWidgetFamily(options)
         val storedId = DeckWidgetSelections.get(context, appWidgetId)
-        val selected = widgets.firstOrNull { it.widgetId == storedId && it.family == family }
-            ?: widgets.filter { it.family == family }.singleOrNull()
-        if (selected != null && storedId == null) {
-            DeckWidgetSelections.set(context, appWidgetId, selected.widgetId)
-        }
+        val selected = selectAndroidWidget(widgets, storedId, family)
         return RemoteViews(context.packageName, R.layout.devhud_widget).apply {
             if (selected == null) {
                 setTextViewText(R.id.devhud_widget_status, context.getString(R.string.devhud_widget_empty))
@@ -144,6 +140,15 @@ class DevHudWidgetProvider : AppWidgetProvider() {
         snapshot.freshness == DeckWidgetFreshness.DISCONNECTED -> context.getString(R.string.devhud_widget_disconnected)
         else -> context.getString(R.string.devhud_widget_not_refreshed)
     }
+}
+
+internal fun selectAndroidWidget(
+    widgets: List<DeckWidgetInstance>,
+    storedId: String?,
+    family: DeckWidgetFamily,
+): DeckWidgetInstance? {
+    if (storedId == null) return null
+    return widgets.firstOrNull { it.widgetId == storedId && it.family == family }
 }
 
 internal object DeckWidgetSelections {
