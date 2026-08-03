@@ -351,6 +351,24 @@ describe("Deck composable production workspace", () => {
     expect(screen.queryByRole("dialog", { name: "Configure Deck widget" })).not.toBeInTheDocument();
   });
 
+  it("lets an authorized read-only view user configure a widget", async () => {
+    const readOnlyOwner = { ...organization, canManage: false };
+    const readOnlyView = { ...view, owner: readOnlyOwner };
+    const backend = gateway({
+      supportedWidgetFamilies: [DeckWidgetFamily.AndroidCompact],
+      listOwners: vi.fn(async () => [readOnlyOwner]),
+      listViews: vi.fn(async () => ({ items: [readOnlyView], nextCursor: "" })),
+    });
+    const user = userEvent.setup();
+    renderDeck(backend);
+
+    await user.click(await screen.findByRole("button", { name: /Needs review/u }));
+
+    expect(screen.getByRole("button", { name: "Configure widget" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Edit view" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete view" })).not.toBeInTheDocument();
+  });
+
   it("replaces a selected owner removed by an authoritative refetch", async () => {
     const listOwners = vi.fn()
       .mockResolvedValueOnce([owner, organization])

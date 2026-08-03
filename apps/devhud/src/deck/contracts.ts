@@ -77,6 +77,7 @@ export enum DeckFailureCode {
   BillingUnavailable = "billing-unavailable",
   BrowserUnavailable = "browser-unavailable",
   NotificationPermissionRequired = "notification-permission-required",
+  WidgetLimitReached = "widget-limit-reached",
   BranchProtectionBlocked = "branch-protection-blocked",
   MergeConfirmationRequired = "merge-confirmation-required",
   UnsupportedAction = "unsupported-action",
@@ -113,6 +114,8 @@ export const deckFailureGuidance: Readonly<Record<DeckFailureCode, string>> = {
   [DeckFailureCode.BrowserUnavailable]: "DevHud could not open GitHub in the system browser. Try again.",
   [DeckFailureCode.NotificationPermissionRequired]:
     "Enable notifications for DevHud in system settings before enabling this view preference.",
+  [DeckFailureCode.WidgetLimitReached]:
+    "This device already has the maximum of 20 Deck widget configurations.",
   [DeckFailureCode.BranchProtectionBlocked]: "Repository rules currently block this action.",
   [DeckFailureCode.MergeConfirmationRequired]: "Confirm the merge before trying again.",
   [DeckFailureCode.UnsupportedAction]: "That action is not allowed for this pull request.",

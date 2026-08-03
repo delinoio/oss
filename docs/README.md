@@ -111,7 +111,7 @@ exclusions. The private `devhud.deck.v1` and `devhud.realqa.v1` sources, isolate
 descriptors, generated Go/TypeScript artifacts, and private
 `@delinoio/devhud-deck-connect` and `@delinoio/devhud-realqa-connect` workspace
 exports are implemented, including Deck's structured request-only shortcut
-configurations and server-authored shortcut/widget state; Deck's inactive
+configurations, bounded per-instance native selection, and server-authored shortcut/widget state; Deck's inactive
 server provider/client-owned refresh slices, dependency-injected desktop/mobile
 client, closed native transport, tray, unified shortcut registration,
 distributed WidgetKit/AppWidgetProvider surfaces, exact action links, and native

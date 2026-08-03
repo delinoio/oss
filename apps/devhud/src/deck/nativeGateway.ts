@@ -192,6 +192,7 @@ const notificationFromProto: Readonly<Record<number, DeckNotificationTransition>
 };
 const notificationToProto: Readonly<Record<DeckNotificationTransition, NotificationTransition>> =
   Object.fromEntries(Object.entries(notificationFromProto).map(([key, value]) => [value, Number(key)])) as Readonly<Record<DeckNotificationTransition, NotificationTransition>>;
+const maxWidgetConfigurations = 20;
 
 function uuid(value: string) {
   return create(UuidV7Schema, { value });
@@ -802,6 +803,11 @@ export class NativeDeckGateway implements DeckGateway {
       this.#automaticAttempts,
     );
     await controller.refresh(viewId, new AbortController().signal);
+    if (this.#clientKind === RefreshClientKind.MOBILE) {
+      // RefreshView updates the server-authored widget snapshots. Reload that
+      // state before asking the native widget host to redraw its local record.
+      await this.#runShortcutSynchronization();
+    }
   }
   async ensureNativeNotificationPermission(
     preference: DeckNotificationPreference,
@@ -837,6 +843,12 @@ export class NativeDeckGateway implements DeckGateway {
     ));
   }
   async resolveNotificationEvent(eventId: string) {
+    if (this.#deviceRegistration === undefined) {
+      // A cold notification action can arrive while startup registration is
+      // still in flight. Join the replay-safe synchronization before consuming
+      // the native queue entry so the event keeps its matching registration.
+      await this.#runShortcutSynchronization();
+    }
     const registrationId = this.#deviceRegistration?.registrationId?.value ?? "";
     if (registrationId.length === 0) return {};
     const response = await this.#call(() => invokeDeckProcedure(
@@ -873,6 +885,12 @@ export class NativeDeckGateway implements DeckGateway {
   ): Promise<void> {
     if (!this.supportedWidgetFamilies.includes(family)) {
       throw new DeckProductError(DeckFailureCode.UnsupportedAction);
+    }
+    if (this.#deviceRegistration === undefined) {
+      await this.#runShortcutSynchronization();
+    }
+    if ((this.#deviceRegistration?.device?.widgets.length ?? 0) >= maxWidgetConfigurations) {
+      throw new DeckProductError(DeckFailureCode.WidgetLimitReached);
     }
     const widget = create(WidgetConfigurationSchema, {
       widgetId: uuid(createUuidV7()),

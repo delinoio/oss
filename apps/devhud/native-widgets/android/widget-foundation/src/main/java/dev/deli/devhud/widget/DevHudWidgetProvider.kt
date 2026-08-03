@@ -6,6 +6,7 @@ import android.appwidget.AppWidgetProvider
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Bundle
 import android.view.View
 import android.widget.RemoteViews
 import kotlinx.coroutines.CoroutineScope
@@ -25,10 +26,7 @@ class DevHudWidgetProvider : AppWidgetProvider() {
     }
 
     override fun onDeleted(context: Context, appWidgetIds: IntArray) {
-        val preferences = selections(context)
-        preferences.edit().apply {
-            appWidgetIds.forEach { remove(it.toString()) }
-        }.apply()
+        appWidgetIds.forEach { DeckWidgetSelections.remove(context, it) }
     }
 
     private fun views(
@@ -37,14 +35,12 @@ class DevHudWidgetProvider : AppWidgetProvider() {
         appWidgetId: Int,
         widgets: List<DeckWidgetInstance>,
     ): RemoteViews {
-        val family = family(manager.getAppWidgetOptions(appWidgetId))
-        val compatible = widgets.filter { it.family == family }
-        val storedId = selections(context).getString(appWidgetId.toString(), null)
-        val selected = compatible.firstOrNull { it.widgetId == storedId }
-            ?: compatible.firstOrNull { it.privacy == DeckWidgetPrivacy.COUNTS_ONLY }
-            ?: compatible.firstOrNull()
+        val family = androidWidgetFamily(manager.getAppWidgetOptions(appWidgetId))
+        val storedId = DeckWidgetSelections.get(context, appWidgetId)
+        val selected = widgets.firstOrNull { it.widgetId == storedId && it.family == family }
+            ?: widgets.filter { it.family == family }.singleOrNull()
         if (selected != null && storedId == null) {
-            selections(context).edit().putString(appWidgetId.toString(), selected.widgetId).apply()
+            DeckWidgetSelections.set(context, appWidgetId, selected.widgetId)
         }
         return RemoteViews(context.packageName, R.layout.devhud_widget).apply {
             if (selected == null) {
@@ -118,16 +114,6 @@ class DevHudWidgetProvider : AppWidgetProvider() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
 
-    private fun family(options: android.os.Bundle): DeckWidgetFamily {
-        val width = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH)
-        val height = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT)
-        return when {
-            height >= 220 -> DeckWidgetFamily.ANDROID_LIST
-            width >= 220 -> DeckWidgetFamily.ANDROID_WIDE
-            else -> DeckWidgetFamily.ANDROID_COMPACT
-        }
-    }
-
     private fun status(context: Context, snapshot: WidgetSnapshot): String = when {
         snapshot.offline -> context.getString(R.string.devhud_widget_offline)
         snapshot.freshness == DeckWidgetFreshness.FRESH -> context.getString(R.string.devhud_widget_updated)
@@ -135,9 +121,32 @@ class DevHudWidgetProvider : AppWidgetProvider() {
         snapshot.freshness == DeckWidgetFreshness.DISCONNECTED -> context.getString(R.string.devhud_widget_disconnected)
         else -> context.getString(R.string.devhud_widget_not_refreshed)
     }
+}
 
-    private fun selections(context: Context) = context.getSharedPreferences(
+internal object DeckWidgetSelections {
+    private fun preferences(context: Context) = context.getSharedPreferences(
         "devhud-widget-instance-selection.v1",
         Context.MODE_PRIVATE,
     )
+
+    fun get(context: Context, appWidgetId: Int): String? =
+        preferences(context).getString(appWidgetId.toString(), null)
+
+    fun set(context: Context, appWidgetId: Int, widgetId: String) {
+        preferences(context).edit().putString(appWidgetId.toString(), widgetId).apply()
+    }
+
+    fun remove(context: Context, appWidgetId: Int) {
+        preferences(context).edit().remove(appWidgetId.toString()).apply()
+    }
+}
+
+internal fun androidWidgetFamily(options: Bundle): DeckWidgetFamily {
+    val width = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH)
+    val height = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT)
+    return when {
+        height >= 220 -> DeckWidgetFamily.ANDROID_LIST
+        width >= 220 -> DeckWidgetFamily.ANDROID_WIDE
+        else -> DeckWidgetFamily.ANDROID_COMPACT
+    }
 }

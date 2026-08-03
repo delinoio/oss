@@ -12,5 +12,13 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/devhud_widget_info" />
         </receiver>
+        <activity
+            android:name="dev.deli.devhud.widget.DevHudWidgetConfigurationActivity"
+            android:exported="true"
+            android:label="@string/devhud_widget_configure_title">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
     </application>
 </manifest>

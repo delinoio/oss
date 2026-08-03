@@ -10,4 +10,10 @@
     <string name="devhud_widget_refresh">Request refresh</string>
     <string name="devhud_widget_refresh_description">Open DevHud and request a best effort Deck refresh</string>
     <string name="devhud_widget_content_description">Deck widget</string>
+    <string name="devhud_widget_configure_title">Select a Deck view</string>
+    <string name="devhud_widget_configure_description">Choose the server-backed Deck configuration for this widget.</string>
+    <string name="devhud_widget_loading">Loading Deck configurations…</string>
+    <string name="devhud_widget_no_configurations">No matching configuration is available. Open DevHud and create one for this widget size first.</string>
+    <string name="devhud_widget_configuration_option">Deck view %1$d · %2$s · %3$d pull requests</string>
+    <string name="devhud_widget_save">Use this view</string>
 </resources>

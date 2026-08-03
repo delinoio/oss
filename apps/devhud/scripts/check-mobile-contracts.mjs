@@ -201,6 +201,14 @@ requireCondition(
   "the distributed Android manifest must register exactly the non-exported Deck widget receiver",
 );
 requireCondition(
+  androidManifest.includes(
+    'android:name="dev.deli.devhud.widget.DevHudWidgetConfigurationActivity"',
+  ) &&
+    androidManifest.includes("android.appwidget.action.APPWIDGET_CONFIGURE") &&
+    androidManifest.includes('android:exported="true"'),
+  "the distributed Android host must expose the exact system-launched Deck widget configuration activity",
+);
+requireCondition(
   androidManifest.includes('android:allowBackup="false"') &&
     androidManifest.includes(
       'android:dataExtractionRules="@xml/data_extraction_rules"',

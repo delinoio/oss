@@ -62,13 +62,6 @@ func (service *Device) RegisterDevice(
 	if err != nil {
 		return nil, err
 	}
-	write, err := service.deviceWrite(
-		ctx, viewer, request.Msg.Platform, request.Msg.DisplayName,
-		request.Msg.Push, request.Msg.DetailedNotificationTextEnabled,
-		request.Msg.Shortcuts, request.Msg.Widgets)
-	if err != nil {
-		return nil, err
-	}
 	hasExpected := request.Msg.ExpectedRevision != nil
 	expected := uint64(0)
 	if hasExpected {
@@ -77,6 +70,25 @@ func (service *Device) RegisterDevice(
 		if err != nil {
 			return nil, err
 		}
+	}
+	now := service.dependencies.Clock.Now().UTC()
+	var current *deckv1.DeviceRegistration
+	if hasExpected {
+		current, err = service.dependencies.Store.GetDevice(
+			ctx, viewer.AccountID, deviceID, now)
+		if err != nil {
+			return nil, mapDatabaseError(err)
+		}
+	}
+	write, err := service.deviceWrite(
+		ctx, viewer, request.Msg.Platform, request.Msg.DisplayName,
+		request.Msg.Push, request.Msg.DetailedNotificationTextEnabled,
+		request.Msg.Shortcuts, request.Msg.Widgets)
+	if err != nil {
+		return nil, err
+	}
+	if current != nil {
+		preserveWidgetSnapshots(write.Widgets, current.GetDevice().GetWidgets())
 	}
 	requestForDigest := proto.Clone(request.Msg).(*deckv1.RegisterDeviceRequest)
 	requestForDigest.IdempotencyKey = nil
@@ -96,7 +108,6 @@ func (service *Device) RegisterDevice(
 		return nil, rpcerr.New(connect.CodeInternal,
 			deckv1.ErrorReason_ERROR_REASON_UNSPECIFIED)
 	}
-	now := service.dependencies.Clock.Now().UTC()
 	ownerHash := service.dependencies.Hasher.Sum(
 		"owner", "OWNER_SCOPE_PERSONAL:"+viewer.AccountID.String())
 	registration, grant, replayed, err := service.dependencies.Store.RegisterDevice(
@@ -167,6 +178,7 @@ func (service *Device) UpdateDevice(
 	if err != nil {
 		return nil, err
 	}
+	preserveWidgetSnapshots(write.Widgets, current.GetDevice().GetWidgets())
 	registration, err := service.dependencies.Store.UpdateDevice(
 		ctx, registrationID, viewer.AccountID, expected, write,
 		service.dependencies.Clock.Now().UTC())
@@ -405,7 +417,8 @@ func (service *Device) deviceWrite(
 		platform > deckv1.DevicePlatform_DEVICE_PLATFORM_ANDROID ||
 		strings.TrimSpace(displayName) == "" || len(displayName) > 200 ||
 		invalidPush ||
-		len(configurations) > 20 {
+		len(configurations) > 20 ||
+		len(widgetConfigurations) > 20 {
 		return database.DeviceWrite{}, rpcerr.New(connect.CodeInvalidArgument,
 			deckv1.ErrorReason_ERROR_REASON_INVALID_ARGUMENT)
 	}
@@ -510,6 +523,25 @@ func (service *Device) deviceWrite(
 		DetailedNotificationTextEnabled: detailed,
 		Shortcuts:                       shortcuts, Widgets: widgets,
 	}, nil
+}
+
+func preserveWidgetSnapshots(
+	widgets []*deckv1.WidgetState,
+	current []*deckv1.WidgetState,
+) {
+	byID := make(map[string]*deckv1.WidgetState, len(current))
+	for _, widget := range current {
+		byID[widget.GetWidgetId().GetValue()] = widget
+	}
+	for _, widget := range widgets {
+		previous := byID[widget.GetWidgetId().GetValue()]
+		if previous == nil || previous.GetViewId().GetValue() != widget.GetViewId().GetValue() ||
+			previous.GetFamily() != widget.GetFamily() ||
+			previous.GetPrivacy() != widget.GetPrivacy() || previous.GetSnapshot() == nil {
+			continue
+		}
+		widget.Snapshot = proto.Clone(previous.GetSnapshot()).(*deckv1.WidgetSnapshot)
+	}
 }
 
 func (service *Device) authorizeRegistrationViews(

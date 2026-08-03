@@ -333,9 +333,13 @@ export function DeckViewManager() {
           ) : null}
         </div>
       ) : null}
-      {editing === null && state.selectedView !== null && canManage ? (
+      {editing === null && state.selectedView !== null && (
+        canManage || meta.gateway.supportedWidgetFamilies.length > 0
+      ) ? (
         <div className="button-row deck-view-actions">
-          <button className="secondary-button" onClick={() => setEditing("update")} type="button">Edit view</button>
+          {canManage ? (
+            <button className="secondary-button" onClick={() => setEditing("update")} type="button">Edit view</button>
+          ) : null}
           {meta.gateway.supportedWidgetFamilies.length > 0 ? (
             <button
               className="secondary-button"
@@ -345,7 +349,9 @@ export function DeckViewManager() {
               Configure widget
             </button>
           ) : null}
-          <button className="danger-button" onClick={() => setConfirmDelete(state.selectedView)} type="button">Delete view</button>
+          {canManage ? (
+            <button className="danger-button" onClick={() => setConfirmDelete(state.selectedView)} type="button">Delete view</button>
+          ) : null}
         </div>
       ) : null}
       {configuringWidget && state.selectedView !== null ? (

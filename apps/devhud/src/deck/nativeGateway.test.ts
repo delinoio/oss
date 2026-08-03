@@ -318,6 +318,19 @@ describe("native Deck gateway", () => {
       if (command === "write_widget_configuration") return 0 as never;
       throw new Error(`Unexpected command: ${command}`);
     });
+    let registeredWidgets: Array<Record<string, unknown>> = [];
+    let deviceRevision = 0n;
+    const currentRegistration = () => ({
+      registrationId: { value: "018f0000-0000-7000-8000-000000000004" },
+      device: {
+        deviceId: { value: deviceId },
+        platform: DevicePlatform.ANDROID,
+        displayName: "DevHud mobile",
+        shortcuts: [],
+        widgets: registeredWidgets,
+        revision: { value: deviceRevision, etag: `device-${deviceRevision}` },
+      },
+    });
     vi.mocked(invokeDeckProcedure).mockImplementation(async (procedure, _input, _output, request) => {
       if (procedure === DeckProcedure.ListOwners) {
         return {
@@ -329,25 +342,23 @@ describe("native Deck gateway", () => {
         } as never;
       }
       if (procedure === DeckProcedure.RegisterDevice) {
-        const widget = (request as unknown as { widgets: Array<Record<string, unknown>> }).widgets[0];
-        return {
-          registration: {
-            registrationId: { value: "018f0000-0000-7000-8000-000000000004" },
-            device: {
-              shortcuts: [],
-              widgets: [{
-                ...widget,
-                snapshot: {
-                  matchingCount: 0,
-                  pullRequests: [],
-                  freshness: 1,
-                  offline: false,
-                  generatedAt: { seconds: 0n, nanos: 0 },
-                },
-              }],
-            },
+        deviceRevision += 1n;
+        registeredWidgets = (request as unknown as {
+          widgets: Array<Record<string, unknown>>;
+        }).widgets.map((widget) => ({
+          ...widget,
+          snapshot: {
+            matchingCount: 0,
+            pullRequests: [],
+            freshness: 1,
+            offline: false,
+            generatedAt: { seconds: 0n, nanos: 0 },
           },
-        } as never;
+        }));
+        return { registration: currentRegistration() } as never;
+      }
+      if (procedure === DeckProcedure.GetDevice) {
+        return { registration: currentRegistration() } as never;
       }
       if (procedure === DeckProcedure.GetRefreshPreflight) {
         return { providerRefreshPrice: { value: 50n }, preflightToken: "token" } as never;
@@ -365,7 +376,8 @@ describe("native Deck gateway", () => {
     );
 
     const registration = vi.mocked(invokeDeckProcedure).mock.calls.find(
-      ([procedure]) => procedure === DeckProcedure.RegisterDevice,
+      ([procedure, , , request]) => procedure === DeckProcedure.RegisterDevice &&
+        (request as { widgets?: unknown[] }).widgets?.length === 1,
     )?.[3] as unknown as {
       widgets: Array<{ widgetId?: { value: string }; viewId?: { value: string } }>;
     };
@@ -388,6 +400,161 @@ describe("native Deck gateway", () => {
         resolve();
       });
     });
+  });
+
+  it("reloads and rewrites native widget snapshots after a widget refresh", async () => {
+    const accountId = "018f0000-0000-7000-8000-000000000001";
+    const deviceId = "018f0000-0000-7000-8000-000000000002";
+    const viewId = "018f0000-0000-7000-8000-000000000003";
+    const widgetId = "018f0000-0000-7000-8000-000000000004";
+    const registrationId = "018f0000-0000-7000-8000-000000000005";
+    const records: string[] = [];
+    Object.defineProperty(navigator, "userAgent", { configurable: true, value: "Android" });
+    vi.mocked(invoke).mockImplementation(async (command, args) => {
+      if (command === "deck_device_id") return deviceId as never;
+      if (command === "write_widget_configuration") {
+        records.push((args as { record: string }).record);
+        return 1 as never;
+      }
+      throw new Error(`Unexpected command: ${command}`);
+    });
+    const registration = (matchingCount: number, revision: bigint) => ({
+      registrationId: { value: registrationId },
+      device: {
+        deviceId: { value: deviceId },
+        platform: DevicePlatform.ANDROID,
+        displayName: "DevHud mobile",
+        widgets: [{
+          widgetId: { value: widgetId },
+          viewId: { value: viewId },
+          family: 4,
+          privacy: 1,
+          snapshot: {
+            matchingCount,
+            pullRequests: [],
+            freshness: 1,
+            offline: false,
+            generatedAt: { seconds: 0n, nanos: 0 },
+          },
+        }],
+        shortcuts: [],
+        revision: { value: revision, etag: `device-${revision}` },
+      },
+    });
+    let registrations = 0;
+    vi.mocked(invokeDeckProcedure).mockImplementation(async (procedure) => {
+      if (procedure === DeckProcedure.ListOwners) {
+        return { owners: [{
+          owner: { ownerId: { case: "accountId", value: { value: accountId } } },
+          canManage: true,
+          billingSelections: [],
+        }] } as never;
+      }
+      if (procedure === DeckProcedure.RegisterDevice) {
+        registrations += 1;
+        return { registration: registration(registrations === 1 ? 1 : 7, BigInt(registrations)) } as never;
+      }
+      if (procedure === DeckProcedure.GetRefreshPreflight) {
+        return { providerRefreshPrice: { value: 50n }, preflightToken: "token" } as never;
+      }
+      if (procedure === DeckProcedure.RefreshView) return {} as never;
+      if (procedure === DeckProcedure.GetDevice) return { registration: registration(7, 2n) } as never;
+      throw new Error(`Unexpected procedure: ${procedure}`);
+    });
+    const gateway = new NativeDeckGateway(RefreshClientKind.MOBILE);
+    await gateway.listOwners();
+    await gateway.synchronizeShortcuts();
+
+    await gateway.requestWidgetRefresh(viewId);
+
+    expect(records).toHaveLength(2);
+    expect(JSON.parse(records.at(-1)!).configuration.widgets[0].snapshot.matchingCount).toBe(7);
+    const procedures = vi.mocked(invokeDeckProcedure).mock.calls.map(([procedure]) => procedure);
+    expect(procedures.lastIndexOf(DeckProcedure.GetDevice)).toBeGreaterThan(
+      procedures.indexOf(DeckProcedure.RefreshView),
+    );
+  });
+
+  it("waits for cold-start registration before resolving a notification event", async () => {
+    const accountId = "018f0000-0000-7000-8000-000000000001";
+    const deviceId = "018f0000-0000-7000-8000-000000000002";
+    const registrationId = "018f0000-0000-7000-8000-000000000003";
+    Object.defineProperty(navigator, "userAgent", { configurable: true, value: "Android" });
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command === "deck_device_id") return deviceId as never;
+      if (command === "write_widget_configuration") return 0 as never;
+      throw new Error(`Unexpected command: ${command}`);
+    });
+    vi.mocked(invokeDeckProcedure).mockImplementation(async (procedure) => {
+      if (procedure === DeckProcedure.ListOwners) {
+        return { owners: [{
+          owner: { ownerId: { case: "accountId", value: { value: accountId } } },
+          canManage: true,
+          billingSelections: [],
+        }] } as never;
+      }
+      if (procedure === DeckProcedure.RegisterDevice) {
+        return { registration: {
+          registrationId: { value: registrationId },
+          device: { widgets: [], shortcuts: [] },
+        } } as never;
+      }
+      if (procedure === DeckProcedure.ResolveNotificationEvent) return {} as never;
+      throw new Error(`Unexpected procedure: ${procedure}`);
+    });
+    const gateway = new NativeDeckGateway(RefreshClientKind.MOBILE);
+    await gateway.listOwners();
+
+    await gateway.resolveNotificationEvent("opaque-notification-event");
+
+    const procedures = vi.mocked(invokeDeckProcedure).mock.calls.map(([procedure]) => procedure);
+    expect(procedures.indexOf(DeckProcedure.RegisterDevice)).toBeLessThan(
+      procedures.indexOf(DeckProcedure.ResolveNotificationEvent),
+    );
+    expect(vi.mocked(invokeDeckProcedure).mock.calls.find(
+      ([procedure]) => procedure === DeckProcedure.ResolveNotificationEvent,
+    )?.[3]).toMatchObject({ registrationId: { value: registrationId } });
+  });
+
+  it("rejects a twenty-first widget before registering it", async () => {
+    const accountId = "018f0000-0000-7000-8000-000000000001";
+    const deviceId = "018f0000-0000-7000-8000-000000000002";
+    Object.defineProperty(navigator, "userAgent", { configurable: true, value: "Android" });
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command === "deck_device_id") return deviceId as never;
+      if (command === "write_widget_configuration") return 0 as never;
+      throw new Error(`Unexpected command: ${command}`);
+    });
+    const widgets = Array.from({ length: 20 }, (_, index) => ({
+      widgetId: { value: `018f0000-0000-7000-8000-${String(index).padStart(12, "0")}` },
+      viewId: { value: `018f0000-0000-7000-9000-${String(index).padStart(12, "0")}` },
+      family: 4,
+      privacy: 1,
+    }));
+    vi.mocked(invokeDeckProcedure).mockImplementation(async (procedure) => {
+      if (procedure === DeckProcedure.ListOwners) {
+        return { owners: [{
+          owner: { ownerId: { case: "accountId", value: { value: accountId } } },
+          canManage: true,
+          billingSelections: [],
+        }] } as never;
+      }
+      if (procedure === DeckProcedure.RegisterDevice) {
+        return { registration: { device: { widgets, shortcuts: [] } } } as never;
+      }
+      throw new Error(`Unexpected procedure: ${procedure}`);
+    });
+    const gateway = new NativeDeckGateway(RefreshClientKind.MOBILE);
+    await gateway.listOwners();
+
+    await expect(gateway.createWidgetConfiguration(
+      widgets[0]!.viewId.value,
+      DeckWidgetFamily.AndroidCompact,
+      DeckWidgetPrivacy.CountsOnly,
+    )).rejects.toMatchObject({ code: DeckFailureCode.WidgetLimitReached });
+    expect(vi.mocked(invokeDeckProcedure).mock.calls.filter(
+      ([procedure]) => procedure === DeckProcedure.RegisterDevice,
+    )).toHaveLength(1);
   });
 
   it("shares one preflight, confirmation, and dispatch across concurrent manual refreshes", async () => {

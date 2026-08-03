@@ -38,7 +38,9 @@ const [
   androidPluginManifest,
   androidPluginSource,
   androidNotificationSource,
+  androidConfigurationActivitySource,
   androidProviderSource,
+  androidProviderInfo,
   fixtureSource,
   iosAppEntitlements,
   iosAppProject,
@@ -67,8 +69,12 @@ const [
     "native-widgets/android/widget-foundation/src/main/java/dev/deli/devhud/widget/DeckNotificationPublisher.kt",
   ),
   read(
+    "native-widgets/android/widget-foundation/src/main/java/dev/deli/devhud/widget/DevHudWidgetConfigurationActivity.kt",
+  ),
+  read(
     "native-widgets/android/widget-foundation/src/main/java/dev/deli/devhud/widget/DevHudWidgetProvider.kt",
   ),
+  read("native-widgets/android/widget-foundation/src/main/res/xml/devhud_widget_info.xml"),
   read("native-widgets/fixtures/widget-configuration.v1.json"),
   read("src-tauri/gen/apple/devhud_iOS/devhud_iOS.entitlements"),
   read("src-tauri/gen/apple/project.yml"),
@@ -153,6 +159,24 @@ requireCondition(
     !androidProviderSource.includes("fixture-diagnostics") &&
     !iosExtensionSource.includes("fixture-diagnostics"),
   "native targets must render all contracted families and expose only open/refresh Deck widget actions",
+);
+requireCondition(
+  androidProviderInfo.includes(
+    'android:configure="dev.deli.devhud.widget.DevHudWidgetConfigurationActivity"',
+  ) &&
+    androidProviderInfo.includes('android:widgetFeatures="reconfigurable"') &&
+    !androidProviderInfo.includes("configuration_optional") &&
+    androidPluginManifest.includes("DevHudWidgetConfigurationActivity") &&
+    androidPluginManifest.includes("android.appwidget.action.APPWIDGET_CONFIGURE") &&
+    androidPluginManifest.includes('android:exported="true"') &&
+    androidAppManifest.includes("DevHudWidgetConfigurationActivity") &&
+    androidConfigurationActivitySource.includes("DeckWidgetSelections.set") &&
+    androidConfigurationActivitySource.includes("setResult(RESULT_OK") &&
+    androidProviderSource.includes(
+      "widgets.firstOrNull { it.widgetId == storedId && it.family == family }",
+    ) &&
+    !androidProviderSource.includes("compatible.firstOrNull"),
+  "Android widgets must require a narrow reconfigurable per-instance Deck selector without silently choosing the first compatible view",
 );
 requireCondition(
   androidNotificationSource.includes("setBypassDnd(false)") &&
