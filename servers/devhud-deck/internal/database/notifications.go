@@ -17,7 +17,10 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-const notificationRetention = 30 * 24 * time.Hour
+const (
+	notificationRetention          = 30 * 24 * time.Hour
+	widgetSnapshotPullRequestLimit = 10
+)
 
 type NotificationEventWrite struct {
 	RegistrationID uuid.UUID
@@ -379,16 +382,7 @@ func (store *Store) updateWidgetSnapshots(
 			if widget.GetViewId().GetValue() != viewID.String() {
 				continue
 			}
-			items := make([]*deckv1.WidgetPullRequestItem, 0, len(snapshots))
-			if widget.GetPrivacy() ==
-				deckv1.WidgetPrivacy_WIDGET_PRIVACY_REPOSITORY_AND_TITLES {
-				for _, snapshot := range snapshots {
-					items = append(items, &deckv1.WidgetPullRequestItem{
-						Repository: proto.Clone(snapshot.GetRepository()).(*deckv1.RepositoryReference),
-						Number:     snapshot.GetNumber(), Title: snapshot.GetTitle(),
-					})
-				}
-			}
+			items := widgetSnapshotPullRequestItems(widget.GetPrivacy(), snapshots)
 			snapshot := &deckv1.WidgetSnapshot{
 				MatchingCount: uint32(len(snapshots)),
 				PullRequests:  items,
@@ -427,6 +421,24 @@ func (store *Store) updateWidgetSnapshots(
 		}
 	}
 	return nil
+}
+
+func widgetSnapshotPullRequestItems(
+	privacy deckv1.WidgetPrivacy,
+	snapshots []*deckv1.PullRequestResult,
+) []*deckv1.WidgetPullRequestItem {
+	if privacy != deckv1.WidgetPrivacy_WIDGET_PRIVACY_REPOSITORY_AND_TITLES {
+		return nil
+	}
+	limit := min(len(snapshots), widgetSnapshotPullRequestLimit)
+	items := make([]*deckv1.WidgetPullRequestItem, 0, limit)
+	for _, snapshot := range snapshots[:limit] {
+		items = append(items, &deckv1.WidgetPullRequestItem{
+			Repository: proto.Clone(snapshot.GetRepository()).(*deckv1.RepositoryReference),
+			Number:     snapshot.GetNumber(), Title: snapshot.GetTitle(),
+		})
+	}
+	return items
 }
 
 func DetailedNotificationText(detail *deckv1.PullRequestDetail) string {

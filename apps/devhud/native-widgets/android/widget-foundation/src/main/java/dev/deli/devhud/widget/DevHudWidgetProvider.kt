@@ -16,11 +16,34 @@ import kotlinx.coroutines.launch
 
 class DevHudWidgetProvider : AppWidgetProvider() {
     override fun onUpdate(context: Context, manager: AppWidgetManager, appWidgetIds: IntArray) {
+        updateWidgets(context, manager, appWidgetIds)
+    }
+
+    override fun onAppWidgetOptionsChanged(
+        context: Context,
+        manager: AppWidgetManager,
+        appWidgetId: Int,
+        newOptions: Bundle,
+    ) {
+        updateWidgets(context, manager, intArrayOf(appWidgetId), newOptions)
+    }
+
+    private fun updateWidgets(
+        context: Context,
+        manager: AppWidgetManager,
+        appWidgetIds: IntArray,
+        options: Bundle? = null,
+    ) {
         val result = goAsync()
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
                 val widgets = AndroidWidgetSharedDataAdapter.live(context).readRecord().configuration.widgets
-                appWidgetIds.forEach { id -> manager.updateAppWidget(id, views(context, manager, id, widgets)) }
+                appWidgetIds.forEach { id ->
+                    manager.updateAppWidget(
+                        id,
+                        views(context, id, widgets, options ?: manager.getAppWidgetOptions(id)),
+                    )
+                }
             } finally { result.finish() }
         }
     }
@@ -31,11 +54,11 @@ class DevHudWidgetProvider : AppWidgetProvider() {
 
     private fun views(
         context: Context,
-        manager: AppWidgetManager,
         appWidgetId: Int,
         widgets: List<DeckWidgetInstance>,
+        options: Bundle,
     ): RemoteViews {
-        val family = androidWidgetFamily(manager.getAppWidgetOptions(appWidgetId))
+        val family = androidWidgetFamily(options)
         val storedId = DeckWidgetSelections.get(context, appWidgetId)
         val selected = widgets.firstOrNull { it.widgetId == storedId && it.family == family }
             ?: widgets.filter { it.family == family }.singleOrNull()
