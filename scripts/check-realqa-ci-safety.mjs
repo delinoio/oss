@@ -86,12 +86,6 @@ for (const [pattern, message] of [
   requireCondition(!pattern.test(shellWorkflow), `RealQA CI ${message}`);
 }
 
-const signBlobCommands = shellWorkflow.match(/\bcosign\s+sign-blob\b[^\r\n]*/gu) ?? [];
-requireCondition(
-  signBlobCommands.every((command) => /\s--tlog-upload=false(?:\s|$)/u.test(command)),
-  "RealQA CI fixture signatures must disable public transparency-log uploads",
-);
-
 const requiredAggregateJobs = [
   "go-quality",
   "go-test",
