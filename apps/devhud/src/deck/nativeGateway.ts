@@ -595,6 +595,7 @@ export class NativeDeckGateway implements DeckGateway {
   readonly #shortcutViewIds = new Set<string>();
   readonly #widgetViewIds = new Set<string>();
   #deviceRegistrationAttempt: RegisterDeviceRequest | undefined;
+  #pendingWidgetConfiguration: RegisterDeviceRequest["widgets"][number] | undefined;
   #deviceRegistered = false;
   #deviceRegistration: DeviceRegistration | undefined;
   #shortcutSynchronizationGeneration = 0;
@@ -817,12 +818,18 @@ export class NativeDeckGateway implements DeckGateway {
     if (!enabled) {
       throw new DeckProductError(DeckFailureCode.NotificationPermissionRequired);
     }
+    // The maintained mobile hosts do not yet expose an APNs/FCM registration.
+    // Fail before a view mutation can accept an undeliverable preference.
+    throw new DeckProductError(DeckFailureCode.ServiceUnavailable);
   }
   async updateNativeNotificationPreference(
     viewId: string,
     preference: DeckNotificationPreference,
   ): Promise<void> {
     if (this.#clientKind !== RefreshClientKind.MOBILE) return;
+    if (preference.enabled) {
+      throw new DeckProductError(DeckFailureCode.ServiceUnavailable);
+    }
     if (this.#deviceRegistration === undefined) await this.#runShortcutSynchronization();
     const registrationId = this.#deviceRegistration?.registrationId?.value ?? "";
     if (registrationId.length === 0) {
@@ -892,19 +899,47 @@ export class NativeDeckGateway implements DeckGateway {
     if ((this.#deviceRegistration?.device?.widgets.length ?? 0) >= maxWidgetConfigurations) {
       throw new DeckProductError(DeckFailureCode.WidgetLimitReached);
     }
+    const pending = this.#pendingWidgetConfiguration;
+    if (pending !== undefined) {
+      const pendingWidgetId = pending.widgetId?.value ?? "";
+      const pendingRegistered = this.#deviceRegistration?.device?.widgets.some(
+        (candidate) => candidate.widgetId?.value === pendingWidgetId,
+      ) ?? false;
+      if (pendingRegistered && this.#deviceRegistration !== undefined) {
+        await this.#writeMobileWidgetSnapshot(this.#deviceRegistration);
+        this.#pendingWidgetConfiguration = undefined;
+        if (
+          pending.viewId?.value === viewId &&
+          pending.family === widgetFamilyToProto[family] &&
+          pending.privacy === widgetPrivacyToProto[privacy]
+        ) return;
+      } else {
+        this.#pendingWidgetConfiguration = undefined;
+      }
+    }
     const widget = create(WidgetConfigurationSchema, {
       widgetId: uuid(createUuidV7()),
       viewId: uuid(viewId),
       family: widgetFamilyToProto[family],
       privacy: widgetPrivacyToProto[privacy],
     });
-    await this.#runShortcutSynchronization(widget);
-    if (!this.#deviceRegistration?.device?.widgets.some(
-      (candidate) => candidate.widgetId?.value === widget.widgetId?.value,
-    )) {
-      // A startup registration may already have been in flight before this
-      // configuration was created. Reapply it to the installed registration.
+    this.#pendingWidgetConfiguration = widget;
+    try {
       await this.#runShortcutSynchronization(widget);
+      if (!this.#deviceRegistration?.device?.widgets.some(
+        (candidate) => candidate.widgetId?.value === widget.widgetId?.value,
+      )) {
+        // A startup registration may already have been in flight before this
+        // configuration was created. Reapply it to the installed registration.
+        await this.#runShortcutSynchronization(widget);
+      }
+      this.#pendingWidgetConfiguration = undefined;
+    } catch (error) {
+      const registered = this.#deviceRegistration?.device?.widgets.some(
+        (candidate) => candidate.widgetId?.value === widget.widgetId?.value,
+      ) ?? false;
+      if (!registered) this.#pendingWidgetConfiguration = undefined;
+      throw error;
     }
   }
   synchronizeShortcuts(): Promise<void> { return this.#runShortcutSynchronization(); }
@@ -1077,6 +1112,7 @@ export class NativeDeckGateway implements DeckGateway {
     this.#deviceRegistered = false;
     this.#deviceRegistration = undefined;
     this.#deviceRegistrationAttempt = undefined;
+    this.#pendingWidgetConfiguration = undefined;
     this.#widgetViewIds.clear();
     if (!isTauri() || this.#clientKind !== RefreshClientKind.DESKTOP) return;
     this.#shortcutViewIds.clear();
@@ -1124,6 +1160,12 @@ export class NativeDeckGateway implements DeckGateway {
               clientKind: request.clientKind,
             }),
           ));
+          if (
+            this.#clientKind === RefreshClientKind.MOBILE &&
+            this.#widgetViewIds.has(request.viewId)
+          ) {
+            await this.#runShortcutSynchronization();
+          }
           onRefreshed(request.viewId);
           signal.throwIfAborted();
         },

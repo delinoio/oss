@@ -5,9 +5,10 @@
 
 #![cfg_attr(test, allow(dead_code))]
 
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
-use std::sync::{Mutex, MutexGuard};
-use std::time::Duration;
+use std::{
+    sync::{Mutex, MutexGuard},
+    time::Duration,
+};
 
 use base64::{
     Engine as _,
@@ -16,6 +17,8 @@ use base64::{
 use prost::Message;
 use reqwest::{StatusCode, blocking::Client, redirect::Policy};
 use serde::{Deserialize, Serialize};
+#[cfg(any(target_os = "android", target_os = "ios"))]
+use tauri::AppHandle;
 #[cfg(any(target_os = "android", target_os = "ios"))]
 use tauri_plugin_devhud_auth::DevHudAuthBridgeExt;
 use url::Url;
@@ -37,7 +40,6 @@ const MAX_PROTO_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
 const MAX_CONNECT_ERROR_BYTES: usize = 64 * 1024;
 const MAX_ERROR_DETAIL_BYTES: usize = 4 * 1024;
 const DECK_ERROR_DETAIL_TYPE: &str = "devhud.deck.v1.ErrorDetail";
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
 static DEVICE_REGISTRATION_LIFECYCLE: Mutex<()> = Mutex::new(());
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -272,11 +274,54 @@ fn retain_device_registration(
 }
 
 #[cfg(any(target_os = "android", target_os = "ios"))]
-fn retain_device_registration(
-    _body: &[u8],
-    _revocation_grant: &str,
+fn replace_retained_device_registration(
+    app: &AppHandle<crate::ActiveRuntime>,
+    retained: &RetainedDeckDeviceRegistration,
 ) -> Result<(), DeckTransportFailure> {
-    Err(DeckTransportFailure::ServiceUnavailable)
+    let encoded = Zeroizing::new(
+        serde_json::to_string(retained).map_err(|_| DeckTransportFailure::ServiceUnavailable)?,
+    );
+    app.devhud_auth_bridge()
+        .write_device_registration(encoded.to_string())
+        .map_err(|_| DeckTransportFailure::ServiceUnavailable)
+}
+
+#[cfg(any(target_os = "android", target_os = "ios"))]
+fn load_retained_device_registration(
+    app: &AppHandle<crate::ActiveRuntime>,
+) -> Result<Option<RetainedDeckDeviceRegistration>, DeckTransportFailure> {
+    let Some(encoded) = app
+        .devhud_auth_bridge()
+        .read_device_registration()
+        .map_err(|_| DeckTransportFailure::ServiceUnavailable)?
+    else {
+        return Ok(None);
+    };
+    let encoded = Zeroizing::new(encoded);
+    serde_json::from_str(&encoded)
+        .map(Some)
+        .map_err(|_| DeckTransportFailure::ServiceUnavailable)
+}
+
+#[cfg(any(target_os = "android", target_os = "ios"))]
+fn clear_retained_device_registration(
+    app: &AppHandle<crate::ActiveRuntime>,
+) -> Result<(), DeckTransportFailure> {
+    app.devhud_auth_bridge()
+        .clear_device_registration()
+        .map_err(|_| DeckTransportFailure::ServiceUnavailable)
+}
+
+#[cfg(any(target_os = "android", target_os = "ios"))]
+fn retain_device_registration(
+    app: &AppHandle<crate::ActiveRuntime>,
+    body: &[u8],
+    revocation_grant: &str,
+) -> Result<(), DeckTransportFailure> {
+    replace_retained_device_registration(
+        app,
+        &retained_device_registration(body, revocation_grant)?,
+    )
 }
 
 #[derive(Clone, PartialEq, Message)]
@@ -285,7 +330,6 @@ struct UnregisterDeviceRequestMetadata {
     registration_id: Option<UuidV7Metadata>,
 }
 
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
 fn unregister_retained_device(
     retained: &RetainedDeckDeviceRegistration,
 ) -> Result<(), DeckTransportFailure> {
@@ -330,16 +374,23 @@ fn cleanup_pending_device_registration() -> Result<(), DeckTransportFailure> {
 }
 
 #[cfg(any(target_os = "android", target_os = "ios"))]
-fn cleanup_pending_device_registration() -> Result<(), DeckTransportFailure> {
-    Ok(())
+fn cleanup_pending_device_registration(
+    app: &AppHandle<crate::ActiveRuntime>,
+) -> Result<(), DeckTransportFailure> {
+    let Some(retained) = load_retained_device_registration(app)? else {
+        return Ok(());
+    };
+    if !retained.cleanup_pending {
+        return Ok(());
+    }
+    unregister_retained_device(&retained)?;
+    clear_retained_device_registration(app)
 }
 
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub(crate) struct DeviceAuthClearGuard {
     _registration: MutexGuard<'static, ()>,
 }
 
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
 fn lock_device_registration_lifecycle() -> Result<MutexGuard<'static, ()>, DeckTransportFailure> {
     DEVICE_REGISTRATION_LIFECYCLE
         .lock()
@@ -364,11 +415,22 @@ pub(crate) fn prepare_device_auth_clear() -> Result<DeviceAuthClearGuard, DeckTr
 }
 
 #[cfg(any(target_os = "android", target_os = "ios"))]
-pub(crate) struct DeviceAuthClearGuard;
-
-#[cfg(any(target_os = "android", target_os = "ios"))]
-pub(crate) fn prepare_device_auth_clear() -> Result<DeviceAuthClearGuard, DeckTransportFailure> {
-    Ok(DeviceAuthClearGuard)
+pub(crate) fn prepare_device_auth_clear(
+    app: &AppHandle<crate::ActiveRuntime>,
+) -> Result<DeviceAuthClearGuard, DeckTransportFailure> {
+    let registration = lock_device_registration_lifecycle()?;
+    if let Some(mut retained) = load_retained_device_registration(app)? {
+        if unregister_retained_device(&retained).is_ok() {
+            clear_retained_device_registration(app)?;
+        } else {
+            tracing::warn!("Deck device cleanup remains pending after authentication clears");
+            retained.cleanup_pending = true;
+            replace_retained_device_registration(app, &retained)?;
+        }
+    }
+    Ok(DeviceAuthClearGuard {
+        _registration: registration,
+    })
 }
 
 fn map_auth_failure(error: AuthError) -> DeckTransportFailure {
@@ -432,6 +494,7 @@ fn connect_failure(status: StatusCode, body: &[u8]) -> DeckConnectFailure {
 pub(crate) fn connect(
     request: DeckConnectRequest,
     auth: &NativeAuthState,
+    #[cfg(any(target_os = "android", target_os = "ios"))] app: &AppHandle<crate::ActiveRuntime>,
 ) -> Result<DeckConnectResponse, DeckConnectFailure> {
     let body = STANDARD
         .decode(request.body_base64)
@@ -439,13 +502,16 @@ pub(crate) fn connect(
     if body.len() > MAX_PROTO_REQUEST_BYTES {
         return Err(DeckTransportFailure::RequestTooLarge.into());
     }
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
     let _device_registration = (request.procedure == DeckProcedure::RegisterDevice)
         .then(lock_device_registration_lifecycle)
         .transpose()
         .map_err(DeckConnectFailure::from)?;
     if request.procedure == DeckProcedure::RegisterDevice {
-        cleanup_pending_device_registration().map_err(DeckConnectFailure::from)?;
+        cleanup_pending_device_registration(
+            #[cfg(any(target_os = "android", target_os = "ios"))]
+            app,
+        )
+        .map_err(DeckConnectFailure::from)?;
     }
     let endpoint = format!("{DECK_ORIGIN}{}", request.procedure.path());
     let procedure = request.procedure;
@@ -489,8 +555,13 @@ pub(crate) fn connect(
             return Err(DeckTransportFailure::ResponseTooLarge.into());
         }
         if let Some(revocation_grant) = revocation_grant {
-            retain_device_registration(&bytes, &revocation_grant)
-                .map_err(DeckConnectFailure::from)?;
+            retain_device_registration(
+                #[cfg(any(target_os = "android", target_os = "ios"))]
+                app,
+                &bytes,
+                &revocation_grant,
+            )
+            .map_err(DeckConnectFailure::from)?;
         }
         Ok(DeckConnectResponse {
             body_base64: STANDARD.encode(bytes),

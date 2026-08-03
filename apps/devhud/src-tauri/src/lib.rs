@@ -2945,7 +2945,12 @@ async fn deck_connect(
     request: deck_transport::DeckConnectRequest,
 ) -> Result<deck_transport::DeckConnectResponse, deck_transport::DeckConnectFailure> {
     tauri::async_runtime::spawn_blocking(move || {
-        deck_transport::connect(request, &app.state::<auth_native::NativeAuthState>())
+        deck_transport::connect(
+            request,
+            &app.state::<auth_native::NativeAuthState>(),
+            #[cfg(any(target_os = "android", target_os = "ios"))]
+            &app,
+        )
     })
     .await
     .map_err(|_| {
@@ -3598,7 +3603,11 @@ fn reset_dev_hud(
         .app_log_dir()
         .map_err(|_| reset_preflight_failure(PersistenceCommandError::ResetFailed))?;
     preflight_local_logs_for_reset(&log_directory).map_err(reset_preflight_failure)?;
-    let mut reset_outcome = if auth_state.reset().is_err() {
+    let deck_device_auth_clear = deck_transport::prepare_device_auth_clear(&app);
+    let deck_device_cleanup_failed = deck_device_auth_clear.is_err();
+    let auth_reset_failed = auth_state.reset().is_err();
+    drop(deck_device_auth_clear);
+    let mut reset_outcome = if deck_device_cleanup_failed || auth_reset_failed {
         PersistenceResetOutcome::PartiallyRetained
     } else {
         PersistenceResetOutcome::Complete
@@ -3960,11 +3969,16 @@ fn logout_authentication(
     app: AppHandle<ActiveRuntime>,
     state: State<'_, auth_native::NativeAuthState>,
 ) -> Result<auth::SessionSnapshot, auth::AuthError> {
+    let deck_device_auth_clear = deck_transport::prepare_device_auth_clear(&app);
+    let deck_device_cleanup_failed = deck_device_auth_clear.is_err();
     let widget_cleanup_failed = app.devhud_widget_bridge().reset_configuration().is_err();
     let result = state.logout();
+    drop(deck_device_auth_clear);
     match result {
         Err(error) => Err(error),
-        Ok(_) if widget_cleanup_failed => Err(auth::AuthError::SecureVaultWriteFailed),
+        Ok(_) if deck_device_cleanup_failed || widget_cleanup_failed => {
+            Err(auth::AuthError::SecureVaultWriteFailed)
+        }
         Ok(snapshot) => Ok(snapshot),
     }
 }

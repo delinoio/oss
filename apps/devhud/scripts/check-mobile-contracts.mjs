@@ -57,6 +57,8 @@ const [
   iosProject,
   productionRegistry,
   authNativeSource,
+  authBridgeMobileSource,
+  deckTransportSource,
   runtimeSource,
 ] = await Promise.all([
   read("src-tauri/tauri.android.conf.json"),
@@ -85,6 +87,8 @@ const [
   read("src-tauri/gen/apple/project.yml"),
   read("src/tools/registry.ts"),
   read("src-tauri/src/auth_native.rs"),
+  read("src-tauri/auth-bridge/src/mobile.rs"),
+  read("src-tauri/src/deck_transport.rs"),
   read("src-tauri/src/lib.rs"),
 ]);
 
@@ -233,6 +237,23 @@ requireCondition(
     androidMainActivity.includes("override fun onNewIntent(intent: Intent)") &&
     androidMainActivity.includes("super.onNewIntent(intent)"),
   "Android auth must use a Keystore-backed vault, preserve queued callbacks, and consume only the exact app link once",
+);
+requireCondition(
+  androidAuthPlugin.includes('"deck-device-registration"') &&
+    androidAuthPlugin.includes("fun readDeviceRegistration") &&
+    androidAuthPlugin.includes("fun writeDeviceRegistration") &&
+    androidAuthPlugin.includes("fun clearDeviceRegistration") &&
+    iosAuthPlugin.includes('"dev.deli.devhud.deck-device"') &&
+    iosAuthPlugin.includes('"active-registration"') &&
+    iosAuthPlugin.includes("func readDeviceRegistration") &&
+    iosAuthPlugin.includes("func writeDeviceRegistration") &&
+    iosAuthPlugin.includes("func clearDeviceRegistration") &&
+    authBridgeMobileSource.includes("read_device_registration") &&
+    authBridgeMobileSource.includes("write_device_registration") &&
+    authBridgeMobileSource.includes("clear_device_registration") &&
+    deckTransportSource.includes("retain_device_registration(") &&
+    deckTransportSource.includes("prepare_device_auth_clear("),
+  "mobile Deck registration metadata must use the dedicated secure-vault record and cleanup path",
 );
 requireCondition(
   /fn begin_mobile[\s\S]*?manager\s*\.begin[\s\S]*?take_callback\(\)[\s\S]*?cancel_pending\(\)/u.test(
