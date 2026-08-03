@@ -42,6 +42,15 @@ requireCondition(
 for (const [pattern, message] of [
   [/docker\/login-action/u, "must not authenticate to a container registry"],
   [/docker\/build-push-action/u, "must not use an image publishing action"],
+  [/\bdocker\s+push\b/u, "must not push an image from the shell"],
+  [
+    /\bdocker\s+buildx\s+build\b[\s\S]*?--push\b/u,
+    "must not push a buildx image from the shell",
+  ],
+  [
+    /\bdocker\s+buildx\s+build\b[\s\S]*?--output(?:=|\s+)["']?type=registry\b/u,
+    "must not export a buildx image to a registry",
+  ],
   [/\bghcr\.io\b/u, "must not name a GHCR publication target"],
   [/\bactions\/attest\b/u, "must not publish GitHub attestations"],
   [/\b(?:wrangler|cloudflare\/wrangler-action)\b/iu, "must not invoke Cloudflare provisioning"],

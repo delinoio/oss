@@ -41,6 +41,7 @@ if (extensionId === undefined) {
 if (configuredHost === undefined) {
   await run(cargo, ["build", "-p", "devhud", "--bin", "devhud-native-host", "--locked"], {
     cwd: repositoryRoot,
+    env: { ...process.env, DEVHUD_CHROME_EXTENSION_ID: extensionId },
   });
 }
 if (!(await stat(nativeHost)).isFile()) {

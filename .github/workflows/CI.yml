@@ -1694,6 +1694,7 @@ jobs:
               - servers/devhud-realqa/**
             frontend:
               - .github/workflows/CI.yml
+              - .nvmrc
               - package.json
               - pnpm-lock.yaml
               - pnpm-workspace.yaml
@@ -1798,12 +1799,16 @@ jobs:
               - servers/devhud-realqa/**
             safety:
               - .github/workflows/CI.yml
+              - .nvmrc
               - AGENTS.md
               - apps/AGENTS.md
               - servers/AGENTS.md
               - protos/AGENTS.md
               - package.json
+              - pnpm-workspace.yaml
               - turbo.json
+              - go.mod
+              - go.sum
               - scripts/check-realqa-ci-safety.mjs
               - apps/devhud/**
               - servers/delibase/catalog.json
