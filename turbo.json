@@ -62,6 +62,36 @@
       ]
     },
     "test": {},
+    "ci:realqa:proto": {
+      "cache": false,
+      "env": [
+        "DEVHUD_REALQA_PROTO_BASELINE"
+      ]
+    },
+    "ci:realqa:frontend": {
+      "cache": false
+    },
+    "ci:realqa:rust": {
+      "cache": false
+    },
+    "ci:realqa:linux": {
+      "cache": false
+    },
+    "ci:realqa:extension": {
+      "cache": false
+    },
+    "ci:realqa:fixture-artifacts": {
+      "cache": false,
+      "env": [
+        "DEVHUD_REALQA_FIXTURE_TARGET"
+      ],
+      "outputs": [
+        "build/realqa-fixtures/**"
+      ]
+    },
+    "ci:realqa:settings": {
+      "cache": false
+    },
     "lint": {
       "dependsOn": [
         "^lint"

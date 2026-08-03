@@ -133,3 +133,10 @@ arbitrary remote UI, client/extension telemetry, DNS/deployment, production app
 registration, catalog activation, widget/extension/store publication, or
 rollout is claimed. Production-facing Deck and RealQA catalog records remain
 disabled.
+
+RealQA's complete change-scoped CI contract is indexed by the DevHud project,
+app, server, and API documents above. It retains all existing aggregate checks,
+builds only local non-root multi-architecture server images and run-scoped
+desktop/Chrome fixtures, verifies SPDX and ephemeral Sigstore/provenance
+definitions, and grants no mobile, production identity, registration,
+publication, provisioning, deployment, or catalog authority.

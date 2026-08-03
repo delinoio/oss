@@ -141,13 +141,17 @@ The DeliDev RealQA tracker exception uses the exact RealQA browser origin/audien
 
 ## Validation Contract
 
-Documentation-only changes run link/path/status consistency checks and `git diff --check`. Implemented proto validation runs now; the remaining app/server checks activate with their implementations. The synchronized validation set is:
+Documentation-only changes run link/path/status consistency checks and `git diff --check`. The complete implemented RealQA validation is change-scoped through the `realqa-changes` job and every RealQA job remains a dependency of `CI Result`, alongside every pre-existing aggregate dependency. The synchronized validation set is:
 
 - app: `pnpm --filter devhud typecheck`, `pnpm --filter devhud lint`, `pnpm --filter devhud test`, `pnpm --filter devhud test:a11y`, `pnpm --filter devhud build`, `pnpm --filter devhud test:security`, `pnpm --filter devhud test:diagnostics`, `pnpm --filter devhud test:deck`, `pnpm --filter devhud test:deck:widgets`, `pnpm --filter devhud test:realqa`, `pnpm --filter devhud test:realqa:native`, `pnpm --filter devhud test:realqa:extension`, and `pnpm --filter devhud check:realqa:package`;
 - shared APIs: fixed-order root `pnpm generate:proto`/`pnpm check:proto` aggregates, component-local generation/check commands for each implemented feature root, Go test/vet for both proto roots, and TypeScript typechecks for both generated Connect packages; each feature owns and may clean only its generated trees and uses only its own immutable descriptor baseline;
 - servers: Go format/vet/test, sqlc reproducibility, PostgreSQL migration/integration/concurrency tests, provider fixtures, and non-root multi-architecture image/SBOM/signature/attestation checks for both feature services.
 
-Validation artifacts are fixtures only. Passing them must not publish an image, register either GitHub App, inject a production Chrome extension ID, deploy an origin, create DNS/R2 infrastructure, embed/register a release widget, publish an extension, enable a catalog record, or release an app.
+Canonical root entrypoints are `pnpm ci:realqa:proto`, `pnpm ci:realqa:go:unit`, `pnpm ci:realqa:go:integrations`, `pnpm ci:realqa:go:billing-race`, `pnpm ci:realqa:frontend`, `pnpm ci:realqa:rust`, `pnpm ci:realqa:linux`, `pnpm ci:realqa:extension`, `pnpm ci:realqa:fixture-artifacts`, `pnpm ci:realqa:delidev-settings`, and `pnpm ci:realqa:safety`. Turborepo delegates package-owned slices to the RealQA proto package, DevHud, or DeliDev without caching validation side effects.
+
+CI separates immutable `devhud.realqa.v1` compatibility/two-pass generation; Go format/vet/unit; sqlc/PostgreSQL; GitHub/R2/delibase fixtures; transfer/storage race detection; frontend; Rust image/editor/draft/security; Ubuntu X11/XWayland/native-Wayland portal fixtures plus x64/ARM64 builds; Chrome MV3/Native Messaging; DeliDev settings; `linux/amd64` and `linux/arm64` server images; fixture desktop/extension artifacts; and the inactive-production safety boundary. Existing macOS and Windows capture jobs continue to compile x64/ARM64 and run their native fixture/smoke coverage.
+
+Validation artifacts are fixtures only. Image jobs load local Docker images, generate per-platform SPDX JSON, and sign local SBOM/provenance statements with ephemeral fixture keys. Desktop/extension outputs are uploaded only as run-scoped CI artifacts. Passing checks grants no registry, deployment, production-attestation, DNS/R2, GitHub App registration, Chrome Web Store, catalog, mobile RealQA, or store authority; release extension packaging must fail unless a non-fixture production ID and approval allowlist are injected outside CI.
 
 ## Change Triggers
 
