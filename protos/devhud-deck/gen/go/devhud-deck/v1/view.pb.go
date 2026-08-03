@@ -620,6 +620,149 @@ func (PullRequestLifecycleState) EnumDescriptor() ([]byte, []int) {
 	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{10}
 }
 
+// OwnerAccess exposes only the current server-resolved ownership and billing
+// scopes that this viewer may use. Organization and team identifiers remain
+// opaque to the client.
+type OwnerAccess struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	Owner             *Owner                 `protobuf:"bytes,1,opt,name=owner,proto3" json:"owner,omitempty"`
+	CanManage         bool                   `protobuf:"varint,2,opt,name=can_manage,json=canManage,proto3" json:"can_manage,omitempty"`
+	BillingSelections []*BillingSelection    `protobuf:"bytes,3,rep,name=billing_selections,json=billingSelections,proto3" json:"billing_selections,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *OwnerAccess) Reset() {
+	*x = OwnerAccess{}
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *OwnerAccess) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*OwnerAccess) ProtoMessage() {}
+
+func (x *OwnerAccess) ProtoReflect() protoreflect.Message {
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use OwnerAccess.ProtoReflect.Descriptor instead.
+func (*OwnerAccess) Descriptor() ([]byte, []int) {
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *OwnerAccess) GetOwner() *Owner {
+	if x != nil {
+		return x.Owner
+	}
+	return nil
+}
+
+func (x *OwnerAccess) GetCanManage() bool {
+	if x != nil {
+		return x.CanManage
+	}
+	return false
+}
+
+func (x *OwnerAccess) GetBillingSelections() []*BillingSelection {
+	if x != nil {
+		return x.BillingSelections
+	}
+	return nil
+}
+
+type ListOwnersRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListOwnersRequest) Reset() {
+	*x = ListOwnersRequest{}
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListOwnersRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListOwnersRequest) ProtoMessage() {}
+
+func (x *ListOwnersRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListOwnersRequest.ProtoReflect.Descriptor instead.
+func (*ListOwnersRequest) Descriptor() ([]byte, []int) {
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{1}
+}
+
+type ListOwnersResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Owners        []*OwnerAccess         `protobuf:"bytes,1,rep,name=owners,proto3" json:"owners,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListOwnersResponse) Reset() {
+	*x = ListOwnersResponse{}
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListOwnersResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListOwnersResponse) ProtoMessage() {}
+
+func (x *ListOwnersResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListOwnersResponse.ProtoReflect.Descriptor instead.
+func (*ListOwnersResponse) Descriptor() ([]byte, []int) {
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *ListOwnersResponse) GetOwners() []*OwnerAccess {
+	if x != nil {
+		return x.Owners
+	}
+	return nil
+}
+
 // QueryIdentity represents @me, an individual login, or an organization team.
 type QueryIdentity struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -633,7 +776,7 @@ type QueryIdentity struct {
 
 func (x *QueryIdentity) Reset() {
 	*x = QueryIdentity{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[0]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -645,7 +788,7 @@ func (x *QueryIdentity) String() string {
 func (*QueryIdentity) ProtoMessage() {}
 
 func (x *QueryIdentity) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[0]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -658,7 +801,7 @@ func (x *QueryIdentity) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QueryIdentity.ProtoReflect.Descriptor instead.
 func (*QueryIdentity) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{0}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *QueryIdentity) GetKind() QueryIdentityKind {
@@ -698,7 +841,7 @@ type OwnerQualifier struct {
 
 func (x *OwnerQualifier) Reset() {
 	*x = OwnerQualifier{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[1]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -710,7 +853,7 @@ func (x *OwnerQualifier) String() string {
 func (*OwnerQualifier) ProtoMessage() {}
 
 func (x *OwnerQualifier) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[1]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -723,7 +866,7 @@ func (x *OwnerQualifier) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OwnerQualifier.ProtoReflect.Descriptor instead.
 func (*OwnerQualifier) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{1}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *OwnerQualifier) GetOwner() string {
@@ -743,7 +886,7 @@ type RepositoryQualifier struct {
 
 func (x *RepositoryQualifier) Reset() {
 	*x = RepositoryQualifier{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[2]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -755,7 +898,7 @@ func (x *RepositoryQualifier) String() string {
 func (*RepositoryQualifier) ProtoMessage() {}
 
 func (x *RepositoryQualifier) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[2]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -768,7 +911,7 @@ func (x *RepositoryQualifier) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RepositoryQualifier.ProtoReflect.Descriptor instead.
 func (*RepositoryQualifier) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{2}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *RepositoryQualifier) GetOwner() string {
@@ -794,7 +937,7 @@ type AuthorQualifier struct {
 
 func (x *AuthorQualifier) Reset() {
 	*x = AuthorQualifier{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[3]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -806,7 +949,7 @@ func (x *AuthorQualifier) String() string {
 func (*AuthorQualifier) ProtoMessage() {}
 
 func (x *AuthorQualifier) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[3]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -819,7 +962,7 @@ func (x *AuthorQualifier) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AuthorQualifier.ProtoReflect.Descriptor instead.
 func (*AuthorQualifier) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{3}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *AuthorQualifier) GetAuthor() *QueryIdentity {
@@ -838,7 +981,7 @@ type AssigneeQualifier struct {
 
 func (x *AssigneeQualifier) Reset() {
 	*x = AssigneeQualifier{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[4]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -850,7 +993,7 @@ func (x *AssigneeQualifier) String() string {
 func (*AssigneeQualifier) ProtoMessage() {}
 
 func (x *AssigneeQualifier) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[4]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -863,7 +1006,7 @@ func (x *AssigneeQualifier) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AssigneeQualifier.ProtoReflect.Descriptor instead.
 func (*AssigneeQualifier) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{4}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *AssigneeQualifier) GetAssignee() *QueryIdentity {
@@ -882,7 +1025,7 @@ type ReviewerQualifier struct {
 
 func (x *ReviewerQualifier) Reset() {
 	*x = ReviewerQualifier{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[5]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -894,7 +1037,7 @@ func (x *ReviewerQualifier) String() string {
 func (*ReviewerQualifier) ProtoMessage() {}
 
 func (x *ReviewerQualifier) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[5]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -907,7 +1050,7 @@ func (x *ReviewerQualifier) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReviewerQualifier.ProtoReflect.Descriptor instead.
 func (*ReviewerQualifier) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{5}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ReviewerQualifier) GetReviewer() *QueryIdentity {
@@ -926,7 +1069,7 @@ type LabelQualifier struct {
 
 func (x *LabelQualifier) Reset() {
 	*x = LabelQualifier{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[6]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -938,7 +1081,7 @@ func (x *LabelQualifier) String() string {
 func (*LabelQualifier) ProtoMessage() {}
 
 func (x *LabelQualifier) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[6]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -951,7 +1094,7 @@ func (x *LabelQualifier) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LabelQualifier.ProtoReflect.Descriptor instead.
 func (*LabelQualifier) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{6}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *LabelQualifier) GetLabel() string {
@@ -970,7 +1113,7 @@ type StateQualifier struct {
 
 func (x *StateQualifier) Reset() {
 	*x = StateQualifier{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[7]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -982,7 +1125,7 @@ func (x *StateQualifier) String() string {
 func (*StateQualifier) ProtoMessage() {}
 
 func (x *StateQualifier) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[7]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -995,7 +1138,7 @@ func (x *StateQualifier) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StateQualifier.ProtoReflect.Descriptor instead.
 func (*StateQualifier) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{7}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *StateQualifier) GetState() PullRequestState {
@@ -1014,7 +1157,7 @@ type BaseBranchQualifier struct {
 
 func (x *BaseBranchQualifier) Reset() {
 	*x = BaseBranchQualifier{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[8]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1026,7 +1169,7 @@ func (x *BaseBranchQualifier) String() string {
 func (*BaseBranchQualifier) ProtoMessage() {}
 
 func (x *BaseBranchQualifier) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[8]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1039,7 +1182,7 @@ func (x *BaseBranchQualifier) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BaseBranchQualifier.ProtoReflect.Descriptor instead.
 func (*BaseBranchQualifier) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{8}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *BaseBranchQualifier) GetBranch() string {
@@ -1058,7 +1201,7 @@ type HeadBranchQualifier struct {
 
 func (x *HeadBranchQualifier) Reset() {
 	*x = HeadBranchQualifier{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[9]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1070,7 +1213,7 @@ func (x *HeadBranchQualifier) String() string {
 func (*HeadBranchQualifier) ProtoMessage() {}
 
 func (x *HeadBranchQualifier) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[9]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1083,7 +1226,7 @@ func (x *HeadBranchQualifier) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HeadBranchQualifier.ProtoReflect.Descriptor instead.
 func (*HeadBranchQualifier) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{9}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *HeadBranchQualifier) GetBranch() string {
@@ -1102,7 +1245,7 @@ type ReviewDecisionQualifier struct {
 
 func (x *ReviewDecisionQualifier) Reset() {
 	*x = ReviewDecisionQualifier{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[10]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1114,7 +1257,7 @@ func (x *ReviewDecisionQualifier) String() string {
 func (*ReviewDecisionQualifier) ProtoMessage() {}
 
 func (x *ReviewDecisionQualifier) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[10]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1127,7 +1270,7 @@ func (x *ReviewDecisionQualifier) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReviewDecisionQualifier.ProtoReflect.Descriptor instead.
 func (*ReviewDecisionQualifier) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{10}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ReviewDecisionQualifier) GetDecision() ReviewDecision {
@@ -1146,7 +1289,7 @@ type ChecksQualifier struct {
 
 func (x *ChecksQualifier) Reset() {
 	*x = ChecksQualifier{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[11]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1158,7 +1301,7 @@ func (x *ChecksQualifier) String() string {
 func (*ChecksQualifier) ProtoMessage() {}
 
 func (x *ChecksQualifier) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[11]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1171,7 +1314,7 @@ func (x *ChecksQualifier) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChecksQualifier.ProtoReflect.Descriptor instead.
 func (*ChecksQualifier) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{11}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ChecksQualifier) GetState() ChecksState {
@@ -1191,7 +1334,7 @@ type UpdatedRangeQualifier struct {
 
 func (x *UpdatedRangeQualifier) Reset() {
 	*x = UpdatedRangeQualifier{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[12]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1203,7 +1346,7 @@ func (x *UpdatedRangeQualifier) String() string {
 func (*UpdatedRangeQualifier) ProtoMessage() {}
 
 func (x *UpdatedRangeQualifier) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[12]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1216,7 +1359,7 @@ func (x *UpdatedRangeQualifier) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdatedRangeQualifier.ProtoReflect.Descriptor instead.
 func (*UpdatedRangeQualifier) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{12}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *UpdatedRangeQualifier) GetUpdatedAfter() *timestamppb.Timestamp {
@@ -1258,7 +1401,7 @@ type QueryClause struct {
 
 func (x *QueryClause) Reset() {
 	*x = QueryClause{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[13]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1270,7 +1413,7 @@ func (x *QueryClause) String() string {
 func (*QueryClause) ProtoMessage() {}
 
 func (x *QueryClause) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[13]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1283,7 +1426,7 @@ func (x *QueryClause) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QueryClause.ProtoReflect.Descriptor instead.
 func (*QueryClause) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{13}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *QueryClause) GetNegated() bool {
@@ -1496,7 +1639,7 @@ type QueryBuilder struct {
 
 func (x *QueryBuilder) Reset() {
 	*x = QueryBuilder{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[14]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1508,7 +1651,7 @@ func (x *QueryBuilder) String() string {
 func (*QueryBuilder) ProtoMessage() {}
 
 func (x *QueryBuilder) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[14]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1521,7 +1664,7 @@ func (x *QueryBuilder) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QueryBuilder.ProtoReflect.Descriptor instead.
 func (*QueryBuilder) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{14}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *QueryBuilder) GetClauses() []*QueryClause {
@@ -1549,7 +1692,7 @@ type ViewQuery struct {
 
 func (x *ViewQuery) Reset() {
 	*x = ViewQuery{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[15]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1561,7 +1704,7 @@ func (x *ViewQuery) String() string {
 func (*ViewQuery) ProtoMessage() {}
 
 func (x *ViewQuery) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[15]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1574,7 +1717,7 @@ func (x *ViewQuery) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ViewQuery.ProtoReflect.Descriptor instead.
 func (*ViewQuery) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{15}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *ViewQuery) GetRawQuery() string {
@@ -1601,7 +1744,7 @@ type ViewNotificationPreference struct {
 
 func (x *ViewNotificationPreference) Reset() {
 	*x = ViewNotificationPreference{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[16]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1613,7 +1756,7 @@ func (x *ViewNotificationPreference) String() string {
 func (*ViewNotificationPreference) ProtoMessage() {}
 
 func (x *ViewNotificationPreference) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[16]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1626,7 +1769,7 @@ func (x *ViewNotificationPreference) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ViewNotificationPreference.ProtoReflect.Descriptor instead.
 func (*ViewNotificationPreference) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{16}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *ViewNotificationPreference) GetEnabled() bool {
@@ -1664,7 +1807,7 @@ type View struct {
 
 func (x *View) Reset() {
 	*x = View{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[17]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1676,7 +1819,7 @@ func (x *View) String() string {
 func (*View) ProtoMessage() {}
 
 func (x *View) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[17]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1689,7 +1832,7 @@ func (x *View) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use View.ProtoReflect.Descriptor instead.
 func (*View) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{17}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *View) GetViewId() *UuidV7 {
@@ -1799,7 +1942,7 @@ type CreateViewInput struct {
 
 func (x *CreateViewInput) Reset() {
 	*x = CreateViewInput{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[18]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1811,7 +1954,7 @@ func (x *CreateViewInput) String() string {
 func (*CreateViewInput) ProtoMessage() {}
 
 func (x *CreateViewInput) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[18]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1824,7 +1967,7 @@ func (x *CreateViewInput) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateViewInput.ProtoReflect.Descriptor instead.
 func (*CreateViewInput) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{18}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *CreateViewInput) GetOwner() *Owner {
@@ -1899,7 +2042,7 @@ type UpdateViewInput struct {
 
 func (x *UpdateViewInput) Reset() {
 	*x = UpdateViewInput{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[19]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1911,7 +2054,7 @@ func (x *UpdateViewInput) String() string {
 func (*UpdateViewInput) ProtoMessage() {}
 
 func (x *UpdateViewInput) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[19]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1924,7 +2067,7 @@ func (x *UpdateViewInput) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateViewInput.ProtoReflect.Descriptor instead.
 func (*UpdateViewInput) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{19}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *UpdateViewInput) GetBilling() *BillingSelection {
@@ -1979,7 +2122,7 @@ type ListViewsRequest struct {
 
 func (x *ListViewsRequest) Reset() {
 	*x = ListViewsRequest{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[20]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1991,7 +2134,7 @@ func (x *ListViewsRequest) String() string {
 func (*ListViewsRequest) ProtoMessage() {}
 
 func (x *ListViewsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[20]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2004,7 +2147,7 @@ func (x *ListViewsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListViewsRequest.ProtoReflect.Descriptor instead.
 func (*ListViewsRequest) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{20}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *ListViewsRequest) GetOwner() *Owner {
@@ -2032,7 +2175,7 @@ type ListViewsResponse struct {
 
 func (x *ListViewsResponse) Reset() {
 	*x = ListViewsResponse{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[21]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2044,7 +2187,7 @@ func (x *ListViewsResponse) String() string {
 func (*ListViewsResponse) ProtoMessage() {}
 
 func (x *ListViewsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[21]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2057,7 +2200,7 @@ func (x *ListViewsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListViewsResponse.ProtoReflect.Descriptor instead.
 func (*ListViewsResponse) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{21}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *ListViewsResponse) GetViews() []*View {
@@ -2090,7 +2233,7 @@ type GetViewRequest struct {
 
 func (x *GetViewRequest) Reset() {
 	*x = GetViewRequest{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[22]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2102,7 +2245,7 @@ func (x *GetViewRequest) String() string {
 func (*GetViewRequest) ProtoMessage() {}
 
 func (x *GetViewRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[22]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2115,7 +2258,7 @@ func (x *GetViewRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetViewRequest.ProtoReflect.Descriptor instead.
 func (*GetViewRequest) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{22}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *GetViewRequest) GetViewId() *UuidV7 {
@@ -2134,7 +2277,7 @@ type GetViewResponse struct {
 
 func (x *GetViewResponse) Reset() {
 	*x = GetViewResponse{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[23]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2146,7 +2289,7 @@ func (x *GetViewResponse) String() string {
 func (*GetViewResponse) ProtoMessage() {}
 
 func (x *GetViewResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[23]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2159,7 +2302,7 @@ func (x *GetViewResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetViewResponse.ProtoReflect.Descriptor instead.
 func (*GetViewResponse) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{23}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *GetViewResponse) GetView() *View {
@@ -2179,7 +2322,7 @@ type CreateViewRequest struct {
 
 func (x *CreateViewRequest) Reset() {
 	*x = CreateViewRequest{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[24]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2191,7 +2334,7 @@ func (x *CreateViewRequest) String() string {
 func (*CreateViewRequest) ProtoMessage() {}
 
 func (x *CreateViewRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[24]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2204,7 +2347,7 @@ func (x *CreateViewRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateViewRequest.ProtoReflect.Descriptor instead.
 func (*CreateViewRequest) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{24}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *CreateViewRequest) GetIdempotencyKey() *IdempotencyKey {
@@ -2231,7 +2374,7 @@ type CreateViewResponse struct {
 
 func (x *CreateViewResponse) Reset() {
 	*x = CreateViewResponse{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[25]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2243,7 +2386,7 @@ func (x *CreateViewResponse) String() string {
 func (*CreateViewResponse) ProtoMessage() {}
 
 func (x *CreateViewResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[25]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2256,7 +2399,7 @@ func (x *CreateViewResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateViewResponse.ProtoReflect.Descriptor instead.
 func (*CreateViewResponse) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{25}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *CreateViewResponse) GetView() *View {
@@ -2284,7 +2427,7 @@ type UpdateViewRequest struct {
 
 func (x *UpdateViewRequest) Reset() {
 	*x = UpdateViewRequest{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[26]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2296,7 +2439,7 @@ func (x *UpdateViewRequest) String() string {
 func (*UpdateViewRequest) ProtoMessage() {}
 
 func (x *UpdateViewRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[26]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2309,7 +2452,7 @@ func (x *UpdateViewRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateViewRequest.ProtoReflect.Descriptor instead.
 func (*UpdateViewRequest) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{26}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *UpdateViewRequest) GetViewId() *UuidV7 {
@@ -2342,7 +2485,7 @@ type UpdateViewResponse struct {
 
 func (x *UpdateViewResponse) Reset() {
 	*x = UpdateViewResponse{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[27]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2354,7 +2497,7 @@ func (x *UpdateViewResponse) String() string {
 func (*UpdateViewResponse) ProtoMessage() {}
 
 func (x *UpdateViewResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[27]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2367,7 +2510,7 @@ func (x *UpdateViewResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateViewResponse.ProtoReflect.Descriptor instead.
 func (*UpdateViewResponse) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{27}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *UpdateViewResponse) GetView() *View {
@@ -2387,7 +2530,7 @@ type DeleteViewRequest struct {
 
 func (x *DeleteViewRequest) Reset() {
 	*x = DeleteViewRequest{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[28]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2399,7 +2542,7 @@ func (x *DeleteViewRequest) String() string {
 func (*DeleteViewRequest) ProtoMessage() {}
 
 func (x *DeleteViewRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[28]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2412,7 +2555,7 @@ func (x *DeleteViewRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteViewRequest.ProtoReflect.Descriptor instead.
 func (*DeleteViewRequest) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{28}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *DeleteViewRequest) GetViewId() *UuidV7 {
@@ -2439,7 +2582,7 @@ type DeleteViewResponse struct {
 
 func (x *DeleteViewResponse) Reset() {
 	*x = DeleteViewResponse{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[29]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2451,7 +2594,7 @@ func (x *DeleteViewResponse) String() string {
 func (*DeleteViewResponse) ProtoMessage() {}
 
 func (x *DeleteViewResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[29]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2464,7 +2607,7 @@ func (x *DeleteViewResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteViewResponse.ProtoReflect.Descriptor instead.
 func (*DeleteViewResponse) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{29}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *DeleteViewResponse) GetViewId() *UuidV7 {
@@ -2491,7 +2634,7 @@ type RepositoryReference struct {
 
 func (x *RepositoryReference) Reset() {
 	*x = RepositoryReference{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[30]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2503,7 +2646,7 @@ func (x *RepositoryReference) String() string {
 func (*RepositoryReference) ProtoMessage() {}
 
 func (x *RepositoryReference) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[30]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2516,7 +2659,7 @@ func (x *RepositoryReference) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RepositoryReference.ProtoReflect.Descriptor instead.
 func (*RepositoryReference) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{30}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *RepositoryReference) GetOwner() string {
@@ -2542,7 +2685,7 @@ type PullRequestAuthor struct {
 
 func (x *PullRequestAuthor) Reset() {
 	*x = PullRequestAuthor{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[31]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2554,7 +2697,7 @@ func (x *PullRequestAuthor) String() string {
 func (*PullRequestAuthor) ProtoMessage() {}
 
 func (x *PullRequestAuthor) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[31]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2567,7 +2710,7 @@ func (x *PullRequestAuthor) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PullRequestAuthor.ProtoReflect.Descriptor instead.
 func (*PullRequestAuthor) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{31}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *PullRequestAuthor) GetLogin() string {
@@ -2589,7 +2732,7 @@ type CheckSummary struct {
 
 func (x *CheckSummary) Reset() {
 	*x = CheckSummary{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[32]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2601,7 +2744,7 @@ func (x *CheckSummary) String() string {
 func (*CheckSummary) ProtoMessage() {}
 
 func (x *CheckSummary) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[32]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2614,7 +2757,7 @@ func (x *CheckSummary) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CheckSummary.ProtoReflect.Descriptor instead.
 func (*CheckSummary) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{32}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *CheckSummary) GetState() ChecksState {
@@ -2672,7 +2815,7 @@ type PullRequestResult struct {
 
 func (x *PullRequestResult) Reset() {
 	*x = PullRequestResult{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[33]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2684,7 +2827,7 @@ func (x *PullRequestResult) String() string {
 func (*PullRequestResult) ProtoMessage() {}
 
 func (x *PullRequestResult) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[33]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2697,7 +2840,7 @@ func (x *PullRequestResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PullRequestResult.ProtoReflect.Descriptor instead.
 func (*PullRequestResult) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{33}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *PullRequestResult) GetRepository() *RepositoryReference {
@@ -2825,7 +2968,7 @@ type PullRequestDetail struct {
 
 func (x *PullRequestDetail) Reset() {
 	*x = PullRequestDetail{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[34]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2837,7 +2980,7 @@ func (x *PullRequestDetail) String() string {
 func (*PullRequestDetail) ProtoMessage() {}
 
 func (x *PullRequestDetail) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[34]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2850,7 +2993,7 @@ func (x *PullRequestDetail) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PullRequestDetail.ProtoReflect.Descriptor instead.
 func (*PullRequestDetail) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{34}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *PullRequestDetail) GetResult() *PullRequestResult {
@@ -2891,7 +3034,7 @@ type ListPullRequestsRequest struct {
 
 func (x *ListPullRequestsRequest) Reset() {
 	*x = ListPullRequestsRequest{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[35]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2903,7 +3046,7 @@ func (x *ListPullRequestsRequest) String() string {
 func (*ListPullRequestsRequest) ProtoMessage() {}
 
 func (x *ListPullRequestsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[35]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2916,7 +3059,7 @@ func (x *ListPullRequestsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListPullRequestsRequest.ProtoReflect.Descriptor instead.
 func (*ListPullRequestsRequest) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{35}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *ListPullRequestsRequest) GetViewId() *UuidV7 {
@@ -2948,7 +3091,7 @@ type ListPullRequestsResponse struct {
 
 func (x *ListPullRequestsResponse) Reset() {
 	*x = ListPullRequestsResponse{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[36]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2960,7 +3103,7 @@ func (x *ListPullRequestsResponse) String() string {
 func (*ListPullRequestsResponse) ProtoMessage() {}
 
 func (x *ListPullRequestsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[36]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2973,7 +3116,7 @@ func (x *ListPullRequestsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListPullRequestsResponse.ProtoReflect.Descriptor instead.
 func (*ListPullRequestsResponse) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{36}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *ListPullRequestsResponse) GetPullRequests() []*PullRequestResult {
@@ -3038,7 +3181,7 @@ type ListPullRequestMutationCandidatesRequest struct {
 
 func (x *ListPullRequestMutationCandidatesRequest) Reset() {
 	*x = ListPullRequestMutationCandidatesRequest{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[37]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3050,7 +3193,7 @@ func (x *ListPullRequestMutationCandidatesRequest) String() string {
 func (*ListPullRequestMutationCandidatesRequest) ProtoMessage() {}
 
 func (x *ListPullRequestMutationCandidatesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[37]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3063,7 +3206,7 @@ func (x *ListPullRequestMutationCandidatesRequest) ProtoReflect() protoreflect.M
 
 // Deprecated: Use ListPullRequestMutationCandidatesRequest.ProtoReflect.Descriptor instead.
 func (*ListPullRequestMutationCandidatesRequest) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{37}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *ListPullRequestMutationCandidatesRequest) GetViewId() *UuidV7 {
@@ -3115,7 +3258,7 @@ type PullRequestMutationCandidate struct {
 
 func (x *PullRequestMutationCandidate) Reset() {
 	*x = PullRequestMutationCandidate{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[38]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3127,7 +3270,7 @@ func (x *PullRequestMutationCandidate) String() string {
 func (*PullRequestMutationCandidate) ProtoMessage() {}
 
 func (x *PullRequestMutationCandidate) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[38]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3140,7 +3283,7 @@ func (x *PullRequestMutationCandidate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PullRequestMutationCandidate.ProtoReflect.Descriptor instead.
 func (*PullRequestMutationCandidate) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{38}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *PullRequestMutationCandidate) GetCandidate() isPullRequestMutationCandidate_Candidate {
@@ -3210,7 +3353,7 @@ type ListPullRequestMutationCandidatesResponse struct {
 
 func (x *ListPullRequestMutationCandidatesResponse) Reset() {
 	*x = ListPullRequestMutationCandidatesResponse{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[39]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3222,7 +3365,7 @@ func (x *ListPullRequestMutationCandidatesResponse) String() string {
 func (*ListPullRequestMutationCandidatesResponse) ProtoMessage() {}
 
 func (x *ListPullRequestMutationCandidatesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[39]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3235,7 +3378,7 @@ func (x *ListPullRequestMutationCandidatesResponse) ProtoReflect() protoreflect.
 
 // Deprecated: Use ListPullRequestMutationCandidatesResponse.ProtoReflect.Descriptor instead.
 func (*ListPullRequestMutationCandidatesResponse) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{39}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *ListPullRequestMutationCandidatesResponse) GetCandidates() []*PullRequestMutationCandidate {
@@ -3271,7 +3414,7 @@ type GetRefreshPreflightRequest struct {
 
 func (x *GetRefreshPreflightRequest) Reset() {
 	*x = GetRefreshPreflightRequest{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[40]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3283,7 +3426,7 @@ func (x *GetRefreshPreflightRequest) String() string {
 func (*GetRefreshPreflightRequest) ProtoMessage() {}
 
 func (x *GetRefreshPreflightRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[40]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3296,7 +3439,7 @@ func (x *GetRefreshPreflightRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetRefreshPreflightRequest.ProtoReflect.Descriptor instead.
 func (*GetRefreshPreflightRequest) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{40}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *GetRefreshPreflightRequest) GetViewId() *UuidV7 {
@@ -3338,7 +3481,7 @@ type GetRefreshPreflightResponse struct {
 
 func (x *GetRefreshPreflightResponse) Reset() {
 	*x = GetRefreshPreflightResponse{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[41]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3350,7 +3493,7 @@ func (x *GetRefreshPreflightResponse) String() string {
 func (*GetRefreshPreflightResponse) ProtoMessage() {}
 
 func (x *GetRefreshPreflightResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[41]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3363,7 +3506,7 @@ func (x *GetRefreshPreflightResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetRefreshPreflightResponse.ProtoReflect.Descriptor instead.
 func (*GetRefreshPreflightResponse) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{41}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *GetRefreshPreflightResponse) GetProviderRefreshPrice() *UsdMicros {
@@ -3400,7 +3543,7 @@ type RefreshViewRequest struct {
 
 func (x *RefreshViewRequest) Reset() {
 	*x = RefreshViewRequest{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[42]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3412,7 +3555,7 @@ func (x *RefreshViewRequest) String() string {
 func (*RefreshViewRequest) ProtoMessage() {}
 
 func (x *RefreshViewRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[42]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3425,7 +3568,7 @@ func (x *RefreshViewRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RefreshViewRequest.ProtoReflect.Descriptor instead.
 func (*RefreshViewRequest) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{42}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *RefreshViewRequest) GetViewId() *UuidV7 {
@@ -3480,7 +3623,7 @@ type RefreshViewResponse struct {
 
 func (x *RefreshViewResponse) Reset() {
 	*x = RefreshViewResponse{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[43]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3492,7 +3635,7 @@ func (x *RefreshViewResponse) String() string {
 func (*RefreshViewResponse) ProtoMessage() {}
 
 func (x *RefreshViewResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[43]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3505,7 +3648,7 @@ func (x *RefreshViewResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RefreshViewResponse.ProtoReflect.Descriptor instead.
 func (*RefreshViewResponse) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{43}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *RefreshViewResponse) GetViewId() *UuidV7 {
@@ -3580,7 +3723,7 @@ type GitHubUser struct {
 
 func (x *GitHubUser) Reset() {
 	*x = GitHubUser{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[44]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3592,7 +3735,7 @@ func (x *GitHubUser) String() string {
 func (*GitHubUser) ProtoMessage() {}
 
 func (x *GitHubUser) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[44]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3605,7 +3748,7 @@ func (x *GitHubUser) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GitHubUser.ProtoReflect.Descriptor instead.
 func (*GitHubUser) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{44}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *GitHubUser) GetLogin() string {
@@ -3625,7 +3768,7 @@ type GitHubTeam struct {
 
 func (x *GitHubTeam) Reset() {
 	*x = GitHubTeam{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[45]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3637,7 +3780,7 @@ func (x *GitHubTeam) String() string {
 func (*GitHubTeam) ProtoMessage() {}
 
 func (x *GitHubTeam) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[45]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3650,7 +3793,7 @@ func (x *GitHubTeam) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GitHubTeam.ProtoReflect.Descriptor instead.
 func (*GitHubTeam) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{45}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *GitHubTeam) GetOrganization() string {
@@ -3676,7 +3819,7 @@ type AssignUsersMutation struct {
 
 func (x *AssignUsersMutation) Reset() {
 	*x = AssignUsersMutation{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[46]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3688,7 +3831,7 @@ func (x *AssignUsersMutation) String() string {
 func (*AssignUsersMutation) ProtoMessage() {}
 
 func (x *AssignUsersMutation) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[46]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3701,7 +3844,7 @@ func (x *AssignUsersMutation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AssignUsersMutation.ProtoReflect.Descriptor instead.
 func (*AssignUsersMutation) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{46}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *AssignUsersMutation) GetUsers() []*GitHubUser {
@@ -3720,7 +3863,7 @@ type UnassignUsersMutation struct {
 
 func (x *UnassignUsersMutation) Reset() {
 	*x = UnassignUsersMutation{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[47]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3732,7 +3875,7 @@ func (x *UnassignUsersMutation) String() string {
 func (*UnassignUsersMutation) ProtoMessage() {}
 
 func (x *UnassignUsersMutation) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[47]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3745,7 +3888,7 @@ func (x *UnassignUsersMutation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UnassignUsersMutation.ProtoReflect.Descriptor instead.
 func (*UnassignUsersMutation) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{47}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *UnassignUsersMutation) GetUsers() []*GitHubUser {
@@ -3765,7 +3908,7 @@ type RequestReviewersMutation struct {
 
 func (x *RequestReviewersMutation) Reset() {
 	*x = RequestReviewersMutation{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[48]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3777,7 +3920,7 @@ func (x *RequestReviewersMutation) String() string {
 func (*RequestReviewersMutation) ProtoMessage() {}
 
 func (x *RequestReviewersMutation) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[48]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3790,7 +3933,7 @@ func (x *RequestReviewersMutation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RequestReviewersMutation.ProtoReflect.Descriptor instead.
 func (*RequestReviewersMutation) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{48}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *RequestReviewersMutation) GetUsers() []*GitHubUser {
@@ -3817,7 +3960,7 @@ type RemoveReviewersMutation struct {
 
 func (x *RemoveReviewersMutation) Reset() {
 	*x = RemoveReviewersMutation{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[49]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3829,7 +3972,7 @@ func (x *RemoveReviewersMutation) String() string {
 func (*RemoveReviewersMutation) ProtoMessage() {}
 
 func (x *RemoveReviewersMutation) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[49]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3842,7 +3985,7 @@ func (x *RemoveReviewersMutation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoveReviewersMutation.ProtoReflect.Descriptor instead.
 func (*RemoveReviewersMutation) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{49}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *RemoveReviewersMutation) GetUsers() []*GitHubUser {
@@ -3868,7 +4011,7 @@ type AddLabelsMutation struct {
 
 func (x *AddLabelsMutation) Reset() {
 	*x = AddLabelsMutation{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[50]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3880,7 +4023,7 @@ func (x *AddLabelsMutation) String() string {
 func (*AddLabelsMutation) ProtoMessage() {}
 
 func (x *AddLabelsMutation) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[50]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3893,7 +4036,7 @@ func (x *AddLabelsMutation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AddLabelsMutation.ProtoReflect.Descriptor instead.
 func (*AddLabelsMutation) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{50}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{53}
 }
 
 func (x *AddLabelsMutation) GetLabels() []string {
@@ -3912,7 +4055,7 @@ type RemoveLabelsMutation struct {
 
 func (x *RemoveLabelsMutation) Reset() {
 	*x = RemoveLabelsMutation{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[51]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3924,7 +4067,7 @@ func (x *RemoveLabelsMutation) String() string {
 func (*RemoveLabelsMutation) ProtoMessage() {}
 
 func (x *RemoveLabelsMutation) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[51]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3937,7 +4080,7 @@ func (x *RemoveLabelsMutation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoveLabelsMutation.ProtoReflect.Descriptor instead.
 func (*RemoveLabelsMutation) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{51}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *RemoveLabelsMutation) GetLabels() []string {
@@ -3955,7 +4098,7 @@ type MarkDraftMutation struct {
 
 func (x *MarkDraftMutation) Reset() {
 	*x = MarkDraftMutation{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[52]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3967,7 +4110,7 @@ func (x *MarkDraftMutation) String() string {
 func (*MarkDraftMutation) ProtoMessage() {}
 
 func (x *MarkDraftMutation) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[52]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3980,7 +4123,7 @@ func (x *MarkDraftMutation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MarkDraftMutation.ProtoReflect.Descriptor instead.
 func (*MarkDraftMutation) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{52}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{55}
 }
 
 type MarkReadyMutation struct {
@@ -3991,7 +4134,7 @@ type MarkReadyMutation struct {
 
 func (x *MarkReadyMutation) Reset() {
 	*x = MarkReadyMutation{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[53]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[56]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4003,7 +4146,7 @@ func (x *MarkReadyMutation) String() string {
 func (*MarkReadyMutation) ProtoMessage() {}
 
 func (x *MarkReadyMutation) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[53]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[56]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4016,7 +4159,7 @@ func (x *MarkReadyMutation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MarkReadyMutation.ProtoReflect.Descriptor instead.
 func (*MarkReadyMutation) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{53}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{56}
 }
 
 type ClosePullRequestMutation struct {
@@ -4027,7 +4170,7 @@ type ClosePullRequestMutation struct {
 
 func (x *ClosePullRequestMutation) Reset() {
 	*x = ClosePullRequestMutation{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[54]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[57]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4039,7 +4182,7 @@ func (x *ClosePullRequestMutation) String() string {
 func (*ClosePullRequestMutation) ProtoMessage() {}
 
 func (x *ClosePullRequestMutation) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[54]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[57]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4052,7 +4195,7 @@ func (x *ClosePullRequestMutation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClosePullRequestMutation.ProtoReflect.Descriptor instead.
 func (*ClosePullRequestMutation) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{54}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{57}
 }
 
 type ReopenPullRequestMutation struct {
@@ -4063,7 +4206,7 @@ type ReopenPullRequestMutation struct {
 
 func (x *ReopenPullRequestMutation) Reset() {
 	*x = ReopenPullRequestMutation{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[55]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[58]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4075,7 +4218,7 @@ func (x *ReopenPullRequestMutation) String() string {
 func (*ReopenPullRequestMutation) ProtoMessage() {}
 
 func (x *ReopenPullRequestMutation) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[55]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[58]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4088,7 +4231,7 @@ func (x *ReopenPullRequestMutation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReopenPullRequestMutation.ProtoReflect.Descriptor instead.
 func (*ReopenPullRequestMutation) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{55}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{58}
 }
 
 type MergePullRequestMutation struct {
@@ -4101,7 +4244,7 @@ type MergePullRequestMutation struct {
 
 func (x *MergePullRequestMutation) Reset() {
 	*x = MergePullRequestMutation{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[56]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[59]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4113,7 +4256,7 @@ func (x *MergePullRequestMutation) String() string {
 func (*MergePullRequestMutation) ProtoMessage() {}
 
 func (x *MergePullRequestMutation) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[56]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[59]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4126,7 +4269,7 @@ func (x *MergePullRequestMutation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MergePullRequestMutation.ProtoReflect.Descriptor instead.
 func (*MergePullRequestMutation) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{56}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{59}
 }
 
 func (x *MergePullRequestMutation) GetMethod() MergeMethod {
@@ -4152,7 +4295,7 @@ type EnableAutoMergeMutation struct {
 
 func (x *EnableAutoMergeMutation) Reset() {
 	*x = EnableAutoMergeMutation{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[57]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[60]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4164,7 +4307,7 @@ func (x *EnableAutoMergeMutation) String() string {
 func (*EnableAutoMergeMutation) ProtoMessage() {}
 
 func (x *EnableAutoMergeMutation) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[57]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[60]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4177,7 +4320,7 @@ func (x *EnableAutoMergeMutation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EnableAutoMergeMutation.ProtoReflect.Descriptor instead.
 func (*EnableAutoMergeMutation) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{57}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{60}
 }
 
 func (x *EnableAutoMergeMutation) GetMethod() MergeMethod {
@@ -4195,7 +4338,7 @@ type CancelAutoMergeMutation struct {
 
 func (x *CancelAutoMergeMutation) Reset() {
 	*x = CancelAutoMergeMutation{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[58]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[61]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4207,7 +4350,7 @@ func (x *CancelAutoMergeMutation) String() string {
 func (*CancelAutoMergeMutation) ProtoMessage() {}
 
 func (x *CancelAutoMergeMutation) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[58]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[61]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4220,7 +4363,7 @@ func (x *CancelAutoMergeMutation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelAutoMergeMutation.ProtoReflect.Descriptor instead.
 func (*CancelAutoMergeMutation) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{58}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{61}
 }
 
 type PullRequestMutation struct {
@@ -4247,7 +4390,7 @@ type PullRequestMutation struct {
 
 func (x *PullRequestMutation) Reset() {
 	*x = PullRequestMutation{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[59]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[62]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4259,7 +4402,7 @@ func (x *PullRequestMutation) String() string {
 func (*PullRequestMutation) ProtoMessage() {}
 
 func (x *PullRequestMutation) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[59]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[62]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4272,7 +4415,7 @@ func (x *PullRequestMutation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PullRequestMutation.ProtoReflect.Descriptor instead.
 func (*PullRequestMutation) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{59}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{62}
 }
 
 func (x *PullRequestMutation) GetMutation() isPullRequestMutation_Mutation {
@@ -4491,7 +4634,7 @@ type PullRequestReference struct {
 
 func (x *PullRequestReference) Reset() {
 	*x = PullRequestReference{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[60]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[63]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4503,7 +4646,7 @@ func (x *PullRequestReference) String() string {
 func (*PullRequestReference) ProtoMessage() {}
 
 func (x *PullRequestReference) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[60]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[63]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4516,7 +4659,7 @@ func (x *PullRequestReference) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PullRequestReference.ProtoReflect.Descriptor instead.
 func (*PullRequestReference) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{60}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{63}
 }
 
 func (x *PullRequestReference) GetRepository() *RepositoryReference {
@@ -4545,7 +4688,7 @@ type MutatePullRequestRequest struct {
 
 func (x *MutatePullRequestRequest) Reset() {
 	*x = MutatePullRequestRequest{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[61]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[64]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4557,7 +4700,7 @@ func (x *MutatePullRequestRequest) String() string {
 func (*MutatePullRequestRequest) ProtoMessage() {}
 
 func (x *MutatePullRequestRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[61]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[64]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4570,7 +4713,7 @@ func (x *MutatePullRequestRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MutatePullRequestRequest.ProtoReflect.Descriptor instead.
 func (*MutatePullRequestRequest) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{61}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{64}
 }
 
 func (x *MutatePullRequestRequest) GetViewId() *UuidV7 {
@@ -4614,7 +4757,7 @@ type MutatePullRequestResponse struct {
 
 func (x *MutatePullRequestResponse) Reset() {
 	*x = MutatePullRequestResponse{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[62]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[65]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4626,7 +4769,7 @@ func (x *MutatePullRequestResponse) String() string {
 func (*MutatePullRequestResponse) ProtoMessage() {}
 
 func (x *MutatePullRequestResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[62]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[65]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4639,7 +4782,7 @@ func (x *MutatePullRequestResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MutatePullRequestResponse.ProtoReflect.Descriptor instead.
 func (*MutatePullRequestResponse) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{62}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{65}
 }
 
 func (x *MutatePullRequestResponse) GetPullRequest() *PullRequestDetail {
@@ -4673,7 +4816,7 @@ type OwnerFeatureDeletion struct {
 
 func (x *OwnerFeatureDeletion) Reset() {
 	*x = OwnerFeatureDeletion{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[63]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[66]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4685,7 +4828,7 @@ func (x *OwnerFeatureDeletion) String() string {
 func (*OwnerFeatureDeletion) ProtoMessage() {}
 
 func (x *OwnerFeatureDeletion) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[63]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[66]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4698,7 +4841,7 @@ func (x *OwnerFeatureDeletion) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OwnerFeatureDeletion.ProtoReflect.Descriptor instead.
 func (*OwnerFeatureDeletion) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{63}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{66}
 }
 
 func (x *OwnerFeatureDeletion) GetOwner() *Owner {
@@ -4729,7 +4872,7 @@ type DelibaseLifecycleDeletion struct {
 
 func (x *DelibaseLifecycleDeletion) Reset() {
 	*x = DelibaseLifecycleDeletion{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[64]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[67]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4741,7 +4884,7 @@ func (x *DelibaseLifecycleDeletion) String() string {
 func (*DelibaseLifecycleDeletion) ProtoMessage() {}
 
 func (x *DelibaseLifecycleDeletion) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[64]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[67]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4754,7 +4897,7 @@ func (x *DelibaseLifecycleDeletion) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DelibaseLifecycleDeletion.ProtoReflect.Descriptor instead.
 func (*DelibaseLifecycleDeletion) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{64}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{67}
 }
 
 func (x *DelibaseLifecycleDeletion) GetTarget() isDelibaseLifecycleDeletion_Target {
@@ -4818,7 +4961,7 @@ type DeleteFeatureDataRequest struct {
 
 func (x *DeleteFeatureDataRequest) Reset() {
 	*x = DeleteFeatureDataRequest{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[65]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[68]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4830,7 +4973,7 @@ func (x *DeleteFeatureDataRequest) String() string {
 func (*DeleteFeatureDataRequest) ProtoMessage() {}
 
 func (x *DeleteFeatureDataRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[65]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[68]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4843,7 +4986,7 @@ func (x *DeleteFeatureDataRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteFeatureDataRequest.ProtoReflect.Descriptor instead.
 func (*DeleteFeatureDataRequest) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{65}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{68}
 }
 
 func (x *DeleteFeatureDataRequest) GetTrigger() isDeleteFeatureDataRequest_Trigger {
@@ -4899,7 +5042,7 @@ type DeleteFeatureDataResponse struct {
 
 func (x *DeleteFeatureDataResponse) Reset() {
 	*x = DeleteFeatureDataResponse{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[66]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[69]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4911,7 +5054,7 @@ func (x *DeleteFeatureDataResponse) String() string {
 func (*DeleteFeatureDataResponse) ProtoMessage() {}
 
 func (x *DeleteFeatureDataResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[66]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[69]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4924,7 +5067,7 @@ func (x *DeleteFeatureDataResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteFeatureDataResponse.ProtoReflect.Descriptor instead.
 func (*DeleteFeatureDataResponse) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{66}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{69}
 }
 
 func (x *DeleteFeatureDataResponse) GetDeletionJobId() *UuidV7 {
@@ -4968,7 +5111,7 @@ type PullRequestReviewer struct {
 
 func (x *PullRequestReviewer) Reset() {
 	*x = PullRequestReviewer{}
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[67]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[70]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4980,7 +5123,7 @@ func (x *PullRequestReviewer) String() string {
 func (*PullRequestReviewer) ProtoMessage() {}
 
 func (x *PullRequestReviewer) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_deck_v1_view_proto_msgTypes[67]
+	mi := &file_devhud_deck_v1_view_proto_msgTypes[70]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4993,7 +5136,7 @@ func (x *PullRequestReviewer) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PullRequestReviewer.ProtoReflect.Descriptor instead.
 func (*PullRequestReviewer) Descriptor() ([]byte, []int) {
-	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{67}
+	return file_devhud_deck_v1_view_proto_rawDescGZIP(), []int{70}
 }
 
 func (x *PullRequestReviewer) GetReviewer() isPullRequestReviewer_Reviewer {
@@ -5041,7 +5184,15 @@ var File_devhud_deck_v1_view_proto protoreflect.FileDescriptor
 
 const file_devhud_deck_v1_view_proto_rawDesc = "" +
 	"\n" +
-	"\x19devhud-deck/v1/view.proto\x12\x0edevhud.deck.v1\x1a\x1bdevhud-deck/v1/common.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x9d\x01\n" +
+	"\x19devhud-deck/v1/view.proto\x12\x0edevhud.deck.v1\x1a\x1bdevhud-deck/v1/common.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xaa\x01\n" +
+	"\vOwnerAccess\x12+\n" +
+	"\x05owner\x18\x01 \x01(\v2\x15.devhud.deck.v1.OwnerR\x05owner\x12\x1d\n" +
+	"\n" +
+	"can_manage\x18\x02 \x01(\bR\tcanManage\x12O\n" +
+	"\x12billing_selections\x18\x03 \x03(\v2 .devhud.deck.v1.BillingSelectionR\x11billingSelections\"\x13\n" +
+	"\x11ListOwnersRequest\"I\n" +
+	"\x12ListOwnersResponse\x123\n" +
+	"\x06owners\x18\x01 \x03(\v2\x1b.devhud.deck.v1.OwnerAccessR\x06owners\"\x9d\x01\n" +
 	"\rQueryIdentity\x125\n" +
 	"\x04kind\x18\x01 \x01(\x0e2!.devhud.deck.v1.QueryIdentityKindR\x04kind\x12\x14\n" +
 	"\x05login\x18\x02 \x01(\tR\x05login\x12\"\n" +
@@ -5409,8 +5560,10 @@ const file_devhud_deck_v1_view_proto_rawDesc = "" +
 	"(PULL_REQUEST_LIFECYCLE_STATE_UNSPECIFIED\x10\x00\x12%\n" +
 	"!PULL_REQUEST_LIFECYCLE_STATE_OPEN\x10\x01\x12'\n" +
 	"#PULL_REQUEST_LIFECYCLE_STATE_CLOSED\x10\x02\x12'\n" +
-	"#PULL_REQUEST_LIFECYCLE_STATE_MERGED\x10\x032\xcc\b\n" +
-	"\x0fDeckViewService\x12P\n" +
+	"#PULL_REQUEST_LIFECYCLE_STATE_MERGED\x10\x032\xa1\t\n" +
+	"\x0fDeckViewService\x12S\n" +
+	"\n" +
+	"ListOwners\x12!.devhud.deck.v1.ListOwnersRequest\x1a\".devhud.deck.v1.ListOwnersResponse\x12P\n" +
 	"\tListViews\x12 .devhud.deck.v1.ListViewsRequest\x1a!.devhud.deck.v1.ListViewsResponse\x12J\n" +
 	"\aGetView\x12\x1e.devhud.deck.v1.GetViewRequest\x1a\x1f.devhud.deck.v1.GetViewResponse\x12S\n" +
 	"\n" +
@@ -5439,7 +5592,7 @@ func file_devhud_deck_v1_view_proto_rawDescGZIP() []byte {
 }
 
 var file_devhud_deck_v1_view_proto_enumTypes = make([]protoimpl.EnumInfo, 11)
-var file_devhud_deck_v1_view_proto_msgTypes = make([]protoimpl.MessageInfo, 68)
+var file_devhud_deck_v1_view_proto_msgTypes = make([]protoimpl.MessageInfo, 71)
 var file_devhud_deck_v1_view_proto_goTypes = []any{
 	(QueryIdentityKind)(0),                            // 0: devhud.deck.v1.QueryIdentityKind
 	(PullRequestState)(0),                             // 1: devhud.deck.v1.PullRequestState
@@ -5452,278 +5605,286 @@ var file_devhud_deck_v1_view_proto_goTypes = []any{
 	(BillingDisposition)(0),                           // 8: devhud.deck.v1.BillingDisposition
 	(FeatureDeletionState)(0),                         // 9: devhud.deck.v1.FeatureDeletionState
 	(PullRequestLifecycleState)(0),                    // 10: devhud.deck.v1.PullRequestLifecycleState
-	(*QueryIdentity)(nil),                             // 11: devhud.deck.v1.QueryIdentity
-	(*OwnerQualifier)(nil),                            // 12: devhud.deck.v1.OwnerQualifier
-	(*RepositoryQualifier)(nil),                       // 13: devhud.deck.v1.RepositoryQualifier
-	(*AuthorQualifier)(nil),                           // 14: devhud.deck.v1.AuthorQualifier
-	(*AssigneeQualifier)(nil),                         // 15: devhud.deck.v1.AssigneeQualifier
-	(*ReviewerQualifier)(nil),                         // 16: devhud.deck.v1.ReviewerQualifier
-	(*LabelQualifier)(nil),                            // 17: devhud.deck.v1.LabelQualifier
-	(*StateQualifier)(nil),                            // 18: devhud.deck.v1.StateQualifier
-	(*BaseBranchQualifier)(nil),                       // 19: devhud.deck.v1.BaseBranchQualifier
-	(*HeadBranchQualifier)(nil),                       // 20: devhud.deck.v1.HeadBranchQualifier
-	(*ReviewDecisionQualifier)(nil),                   // 21: devhud.deck.v1.ReviewDecisionQualifier
-	(*ChecksQualifier)(nil),                           // 22: devhud.deck.v1.ChecksQualifier
-	(*UpdatedRangeQualifier)(nil),                     // 23: devhud.deck.v1.UpdatedRangeQualifier
-	(*QueryClause)(nil),                               // 24: devhud.deck.v1.QueryClause
-	(*QueryBuilder)(nil),                              // 25: devhud.deck.v1.QueryBuilder
-	(*ViewQuery)(nil),                                 // 26: devhud.deck.v1.ViewQuery
-	(*ViewNotificationPreference)(nil),                // 27: devhud.deck.v1.ViewNotificationPreference
-	(*View)(nil),                                      // 28: devhud.deck.v1.View
-	(*CreateViewInput)(nil),                           // 29: devhud.deck.v1.CreateViewInput
-	(*UpdateViewInput)(nil),                           // 30: devhud.deck.v1.UpdateViewInput
-	(*ListViewsRequest)(nil),                          // 31: devhud.deck.v1.ListViewsRequest
-	(*ListViewsResponse)(nil),                         // 32: devhud.deck.v1.ListViewsResponse
-	(*GetViewRequest)(nil),                            // 33: devhud.deck.v1.GetViewRequest
-	(*GetViewResponse)(nil),                           // 34: devhud.deck.v1.GetViewResponse
-	(*CreateViewRequest)(nil),                         // 35: devhud.deck.v1.CreateViewRequest
-	(*CreateViewResponse)(nil),                        // 36: devhud.deck.v1.CreateViewResponse
-	(*UpdateViewRequest)(nil),                         // 37: devhud.deck.v1.UpdateViewRequest
-	(*UpdateViewResponse)(nil),                        // 38: devhud.deck.v1.UpdateViewResponse
-	(*DeleteViewRequest)(nil),                         // 39: devhud.deck.v1.DeleteViewRequest
-	(*DeleteViewResponse)(nil),                        // 40: devhud.deck.v1.DeleteViewResponse
-	(*RepositoryReference)(nil),                       // 41: devhud.deck.v1.RepositoryReference
-	(*PullRequestAuthor)(nil),                         // 42: devhud.deck.v1.PullRequestAuthor
-	(*CheckSummary)(nil),                              // 43: devhud.deck.v1.CheckSummary
-	(*PullRequestResult)(nil),                         // 44: devhud.deck.v1.PullRequestResult
-	(*PullRequestDetail)(nil),                         // 45: devhud.deck.v1.PullRequestDetail
-	(*ListPullRequestsRequest)(nil),                   // 46: devhud.deck.v1.ListPullRequestsRequest
-	(*ListPullRequestsResponse)(nil),                  // 47: devhud.deck.v1.ListPullRequestsResponse
-	(*ListPullRequestMutationCandidatesRequest)(nil),  // 48: devhud.deck.v1.ListPullRequestMutationCandidatesRequest
-	(*PullRequestMutationCandidate)(nil),              // 49: devhud.deck.v1.PullRequestMutationCandidate
-	(*ListPullRequestMutationCandidatesResponse)(nil), // 50: devhud.deck.v1.ListPullRequestMutationCandidatesResponse
-	(*GetRefreshPreflightRequest)(nil),                // 51: devhud.deck.v1.GetRefreshPreflightRequest
-	(*GetRefreshPreflightResponse)(nil),               // 52: devhud.deck.v1.GetRefreshPreflightResponse
-	(*RefreshViewRequest)(nil),                        // 53: devhud.deck.v1.RefreshViewRequest
-	(*RefreshViewResponse)(nil),                       // 54: devhud.deck.v1.RefreshViewResponse
-	(*GitHubUser)(nil),                                // 55: devhud.deck.v1.GitHubUser
-	(*GitHubTeam)(nil),                                // 56: devhud.deck.v1.GitHubTeam
-	(*AssignUsersMutation)(nil),                       // 57: devhud.deck.v1.AssignUsersMutation
-	(*UnassignUsersMutation)(nil),                     // 58: devhud.deck.v1.UnassignUsersMutation
-	(*RequestReviewersMutation)(nil),                  // 59: devhud.deck.v1.RequestReviewersMutation
-	(*RemoveReviewersMutation)(nil),                   // 60: devhud.deck.v1.RemoveReviewersMutation
-	(*AddLabelsMutation)(nil),                         // 61: devhud.deck.v1.AddLabelsMutation
-	(*RemoveLabelsMutation)(nil),                      // 62: devhud.deck.v1.RemoveLabelsMutation
-	(*MarkDraftMutation)(nil),                         // 63: devhud.deck.v1.MarkDraftMutation
-	(*MarkReadyMutation)(nil),                         // 64: devhud.deck.v1.MarkReadyMutation
-	(*ClosePullRequestMutation)(nil),                  // 65: devhud.deck.v1.ClosePullRequestMutation
-	(*ReopenPullRequestMutation)(nil),                 // 66: devhud.deck.v1.ReopenPullRequestMutation
-	(*MergePullRequestMutation)(nil),                  // 67: devhud.deck.v1.MergePullRequestMutation
-	(*EnableAutoMergeMutation)(nil),                   // 68: devhud.deck.v1.EnableAutoMergeMutation
-	(*CancelAutoMergeMutation)(nil),                   // 69: devhud.deck.v1.CancelAutoMergeMutation
-	(*PullRequestMutation)(nil),                       // 70: devhud.deck.v1.PullRequestMutation
-	(*PullRequestReference)(nil),                      // 71: devhud.deck.v1.PullRequestReference
-	(*MutatePullRequestRequest)(nil),                  // 72: devhud.deck.v1.MutatePullRequestRequest
-	(*MutatePullRequestResponse)(nil),                 // 73: devhud.deck.v1.MutatePullRequestResponse
-	(*OwnerFeatureDeletion)(nil),                      // 74: devhud.deck.v1.OwnerFeatureDeletion
-	(*DelibaseLifecycleDeletion)(nil),                 // 75: devhud.deck.v1.DelibaseLifecycleDeletion
-	(*DeleteFeatureDataRequest)(nil),                  // 76: devhud.deck.v1.DeleteFeatureDataRequest
-	(*DeleteFeatureDataResponse)(nil),                 // 77: devhud.deck.v1.DeleteFeatureDataResponse
-	(*PullRequestReviewer)(nil),                       // 78: devhud.deck.v1.PullRequestReviewer
-	(*timestamppb.Timestamp)(nil),                     // 79: google.protobuf.Timestamp
-	(NotificationTransition)(0),                       // 80: devhud.deck.v1.NotificationTransition
-	(*UuidV7)(nil),                                    // 81: devhud.deck.v1.UuidV7
+	(*OwnerAccess)(nil),                               // 11: devhud.deck.v1.OwnerAccess
+	(*ListOwnersRequest)(nil),                         // 12: devhud.deck.v1.ListOwnersRequest
+	(*ListOwnersResponse)(nil),                        // 13: devhud.deck.v1.ListOwnersResponse
+	(*QueryIdentity)(nil),                             // 14: devhud.deck.v1.QueryIdentity
+	(*OwnerQualifier)(nil),                            // 15: devhud.deck.v1.OwnerQualifier
+	(*RepositoryQualifier)(nil),                       // 16: devhud.deck.v1.RepositoryQualifier
+	(*AuthorQualifier)(nil),                           // 17: devhud.deck.v1.AuthorQualifier
+	(*AssigneeQualifier)(nil),                         // 18: devhud.deck.v1.AssigneeQualifier
+	(*ReviewerQualifier)(nil),                         // 19: devhud.deck.v1.ReviewerQualifier
+	(*LabelQualifier)(nil),                            // 20: devhud.deck.v1.LabelQualifier
+	(*StateQualifier)(nil),                            // 21: devhud.deck.v1.StateQualifier
+	(*BaseBranchQualifier)(nil),                       // 22: devhud.deck.v1.BaseBranchQualifier
+	(*HeadBranchQualifier)(nil),                       // 23: devhud.deck.v1.HeadBranchQualifier
+	(*ReviewDecisionQualifier)(nil),                   // 24: devhud.deck.v1.ReviewDecisionQualifier
+	(*ChecksQualifier)(nil),                           // 25: devhud.deck.v1.ChecksQualifier
+	(*UpdatedRangeQualifier)(nil),                     // 26: devhud.deck.v1.UpdatedRangeQualifier
+	(*QueryClause)(nil),                               // 27: devhud.deck.v1.QueryClause
+	(*QueryBuilder)(nil),                              // 28: devhud.deck.v1.QueryBuilder
+	(*ViewQuery)(nil),                                 // 29: devhud.deck.v1.ViewQuery
+	(*ViewNotificationPreference)(nil),                // 30: devhud.deck.v1.ViewNotificationPreference
+	(*View)(nil),                                      // 31: devhud.deck.v1.View
+	(*CreateViewInput)(nil),                           // 32: devhud.deck.v1.CreateViewInput
+	(*UpdateViewInput)(nil),                           // 33: devhud.deck.v1.UpdateViewInput
+	(*ListViewsRequest)(nil),                          // 34: devhud.deck.v1.ListViewsRequest
+	(*ListViewsResponse)(nil),                         // 35: devhud.deck.v1.ListViewsResponse
+	(*GetViewRequest)(nil),                            // 36: devhud.deck.v1.GetViewRequest
+	(*GetViewResponse)(nil),                           // 37: devhud.deck.v1.GetViewResponse
+	(*CreateViewRequest)(nil),                         // 38: devhud.deck.v1.CreateViewRequest
+	(*CreateViewResponse)(nil),                        // 39: devhud.deck.v1.CreateViewResponse
+	(*UpdateViewRequest)(nil),                         // 40: devhud.deck.v1.UpdateViewRequest
+	(*UpdateViewResponse)(nil),                        // 41: devhud.deck.v1.UpdateViewResponse
+	(*DeleteViewRequest)(nil),                         // 42: devhud.deck.v1.DeleteViewRequest
+	(*DeleteViewResponse)(nil),                        // 43: devhud.deck.v1.DeleteViewResponse
+	(*RepositoryReference)(nil),                       // 44: devhud.deck.v1.RepositoryReference
+	(*PullRequestAuthor)(nil),                         // 45: devhud.deck.v1.PullRequestAuthor
+	(*CheckSummary)(nil),                              // 46: devhud.deck.v1.CheckSummary
+	(*PullRequestResult)(nil),                         // 47: devhud.deck.v1.PullRequestResult
+	(*PullRequestDetail)(nil),                         // 48: devhud.deck.v1.PullRequestDetail
+	(*ListPullRequestsRequest)(nil),                   // 49: devhud.deck.v1.ListPullRequestsRequest
+	(*ListPullRequestsResponse)(nil),                  // 50: devhud.deck.v1.ListPullRequestsResponse
+	(*ListPullRequestMutationCandidatesRequest)(nil),  // 51: devhud.deck.v1.ListPullRequestMutationCandidatesRequest
+	(*PullRequestMutationCandidate)(nil),              // 52: devhud.deck.v1.PullRequestMutationCandidate
+	(*ListPullRequestMutationCandidatesResponse)(nil), // 53: devhud.deck.v1.ListPullRequestMutationCandidatesResponse
+	(*GetRefreshPreflightRequest)(nil),                // 54: devhud.deck.v1.GetRefreshPreflightRequest
+	(*GetRefreshPreflightResponse)(nil),               // 55: devhud.deck.v1.GetRefreshPreflightResponse
+	(*RefreshViewRequest)(nil),                        // 56: devhud.deck.v1.RefreshViewRequest
+	(*RefreshViewResponse)(nil),                       // 57: devhud.deck.v1.RefreshViewResponse
+	(*GitHubUser)(nil),                                // 58: devhud.deck.v1.GitHubUser
+	(*GitHubTeam)(nil),                                // 59: devhud.deck.v1.GitHubTeam
+	(*AssignUsersMutation)(nil),                       // 60: devhud.deck.v1.AssignUsersMutation
+	(*UnassignUsersMutation)(nil),                     // 61: devhud.deck.v1.UnassignUsersMutation
+	(*RequestReviewersMutation)(nil),                  // 62: devhud.deck.v1.RequestReviewersMutation
+	(*RemoveReviewersMutation)(nil),                   // 63: devhud.deck.v1.RemoveReviewersMutation
+	(*AddLabelsMutation)(nil),                         // 64: devhud.deck.v1.AddLabelsMutation
+	(*RemoveLabelsMutation)(nil),                      // 65: devhud.deck.v1.RemoveLabelsMutation
+	(*MarkDraftMutation)(nil),                         // 66: devhud.deck.v1.MarkDraftMutation
+	(*MarkReadyMutation)(nil),                         // 67: devhud.deck.v1.MarkReadyMutation
+	(*ClosePullRequestMutation)(nil),                  // 68: devhud.deck.v1.ClosePullRequestMutation
+	(*ReopenPullRequestMutation)(nil),                 // 69: devhud.deck.v1.ReopenPullRequestMutation
+	(*MergePullRequestMutation)(nil),                  // 70: devhud.deck.v1.MergePullRequestMutation
+	(*EnableAutoMergeMutation)(nil),                   // 71: devhud.deck.v1.EnableAutoMergeMutation
+	(*CancelAutoMergeMutation)(nil),                   // 72: devhud.deck.v1.CancelAutoMergeMutation
+	(*PullRequestMutation)(nil),                       // 73: devhud.deck.v1.PullRequestMutation
+	(*PullRequestReference)(nil),                      // 74: devhud.deck.v1.PullRequestReference
+	(*MutatePullRequestRequest)(nil),                  // 75: devhud.deck.v1.MutatePullRequestRequest
+	(*MutatePullRequestResponse)(nil),                 // 76: devhud.deck.v1.MutatePullRequestResponse
+	(*OwnerFeatureDeletion)(nil),                      // 77: devhud.deck.v1.OwnerFeatureDeletion
+	(*DelibaseLifecycleDeletion)(nil),                 // 78: devhud.deck.v1.DelibaseLifecycleDeletion
+	(*DeleteFeatureDataRequest)(nil),                  // 79: devhud.deck.v1.DeleteFeatureDataRequest
+	(*DeleteFeatureDataResponse)(nil),                 // 80: devhud.deck.v1.DeleteFeatureDataResponse
+	(*PullRequestReviewer)(nil),                       // 81: devhud.deck.v1.PullRequestReviewer
 	(*Owner)(nil),                                     // 82: devhud.deck.v1.Owner
 	(*BillingSelection)(nil),                          // 83: devhud.deck.v1.BillingSelection
-	(ViewKind)(0),                                     // 84: devhud.deck.v1.ViewKind
-	(ViewSort)(0),                                     // 85: devhud.deck.v1.ViewSort
-	(ViewGrouping)(0),                                 // 86: devhud.deck.v1.ViewGrouping
-	(ConnectionState)(0),                              // 87: devhud.deck.v1.ConnectionState
-	(*Revision)(nil),                                  // 88: devhud.deck.v1.Revision
-	(*PageRequest)(nil),                               // 89: devhud.deck.v1.PageRequest
-	(*PageResponse)(nil),                              // 90: devhud.deck.v1.PageResponse
-	(*IdempotencyKey)(nil),                            // 91: devhud.deck.v1.IdempotencyKey
-	(*IdempotencyResult)(nil),                         // 92: devhud.deck.v1.IdempotencyResult
-	(PullRequestMutationKind)(0),                      // 93: devhud.deck.v1.PullRequestMutationKind
-	(FreshnessState)(0),                               // 94: devhud.deck.v1.FreshnessState
-	(*UsdMicros)(nil),                                 // 95: devhud.deck.v1.UsdMicros
-	(RefreshOutcome)(0),                               // 96: devhud.deck.v1.RefreshOutcome
+	(*timestamppb.Timestamp)(nil),                     // 84: google.protobuf.Timestamp
+	(NotificationTransition)(0),                       // 85: devhud.deck.v1.NotificationTransition
+	(*UuidV7)(nil),                                    // 86: devhud.deck.v1.UuidV7
+	(ViewKind)(0),                                     // 87: devhud.deck.v1.ViewKind
+	(ViewSort)(0),                                     // 88: devhud.deck.v1.ViewSort
+	(ViewGrouping)(0),                                 // 89: devhud.deck.v1.ViewGrouping
+	(ConnectionState)(0),                              // 90: devhud.deck.v1.ConnectionState
+	(*Revision)(nil),                                  // 91: devhud.deck.v1.Revision
+	(*PageRequest)(nil),                               // 92: devhud.deck.v1.PageRequest
+	(*PageResponse)(nil),                              // 93: devhud.deck.v1.PageResponse
+	(*IdempotencyKey)(nil),                            // 94: devhud.deck.v1.IdempotencyKey
+	(*IdempotencyResult)(nil),                         // 95: devhud.deck.v1.IdempotencyResult
+	(PullRequestMutationKind)(0),                      // 96: devhud.deck.v1.PullRequestMutationKind
+	(FreshnessState)(0),                               // 97: devhud.deck.v1.FreshnessState
+	(*UsdMicros)(nil),                                 // 98: devhud.deck.v1.UsdMicros
+	(RefreshOutcome)(0),                               // 99: devhud.deck.v1.RefreshOutcome
 }
 var file_devhud_deck_v1_view_proto_depIdxs = []int32{
-	0,   // 0: devhud.deck.v1.QueryIdentity.kind:type_name -> devhud.deck.v1.QueryIdentityKind
-	11,  // 1: devhud.deck.v1.AuthorQualifier.author:type_name -> devhud.deck.v1.QueryIdentity
-	11,  // 2: devhud.deck.v1.AssigneeQualifier.assignee:type_name -> devhud.deck.v1.QueryIdentity
-	11,  // 3: devhud.deck.v1.ReviewerQualifier.reviewer:type_name -> devhud.deck.v1.QueryIdentity
-	1,   // 4: devhud.deck.v1.StateQualifier.state:type_name -> devhud.deck.v1.PullRequestState
-	2,   // 5: devhud.deck.v1.ReviewDecisionQualifier.decision:type_name -> devhud.deck.v1.ReviewDecision
-	3,   // 6: devhud.deck.v1.ChecksQualifier.state:type_name -> devhud.deck.v1.ChecksState
-	79,  // 7: devhud.deck.v1.UpdatedRangeQualifier.updated_after:type_name -> google.protobuf.Timestamp
-	79,  // 8: devhud.deck.v1.UpdatedRangeQualifier.updated_before:type_name -> google.protobuf.Timestamp
-	12,  // 9: devhud.deck.v1.QueryClause.owner:type_name -> devhud.deck.v1.OwnerQualifier
-	13,  // 10: devhud.deck.v1.QueryClause.repository:type_name -> devhud.deck.v1.RepositoryQualifier
-	14,  // 11: devhud.deck.v1.QueryClause.author:type_name -> devhud.deck.v1.AuthorQualifier
-	15,  // 12: devhud.deck.v1.QueryClause.assignee:type_name -> devhud.deck.v1.AssigneeQualifier
-	16,  // 13: devhud.deck.v1.QueryClause.reviewer:type_name -> devhud.deck.v1.ReviewerQualifier
-	17,  // 14: devhud.deck.v1.QueryClause.label:type_name -> devhud.deck.v1.LabelQualifier
-	18,  // 15: devhud.deck.v1.QueryClause.state:type_name -> devhud.deck.v1.StateQualifier
-	19,  // 16: devhud.deck.v1.QueryClause.base_branch:type_name -> devhud.deck.v1.BaseBranchQualifier
-	20,  // 17: devhud.deck.v1.QueryClause.head_branch:type_name -> devhud.deck.v1.HeadBranchQualifier
-	21,  // 18: devhud.deck.v1.QueryClause.review_decision:type_name -> devhud.deck.v1.ReviewDecisionQualifier
-	22,  // 19: devhud.deck.v1.QueryClause.checks:type_name -> devhud.deck.v1.ChecksQualifier
-	23,  // 20: devhud.deck.v1.QueryClause.updated_range:type_name -> devhud.deck.v1.UpdatedRangeQualifier
-	24,  // 21: devhud.deck.v1.QueryBuilder.clauses:type_name -> devhud.deck.v1.QueryClause
-	25,  // 22: devhud.deck.v1.ViewQuery.builder:type_name -> devhud.deck.v1.QueryBuilder
-	80,  // 23: devhud.deck.v1.ViewNotificationPreference.transitions:type_name -> devhud.deck.v1.NotificationTransition
-	81,  // 24: devhud.deck.v1.View.view_id:type_name -> devhud.deck.v1.UuidV7
-	82,  // 25: devhud.deck.v1.View.owner:type_name -> devhud.deck.v1.Owner
-	83,  // 26: devhud.deck.v1.View.billing:type_name -> devhud.deck.v1.BillingSelection
-	84,  // 27: devhud.deck.v1.View.kind:type_name -> devhud.deck.v1.ViewKind
-	26,  // 28: devhud.deck.v1.View.query:type_name -> devhud.deck.v1.ViewQuery
-	85,  // 29: devhud.deck.v1.View.sort:type_name -> devhud.deck.v1.ViewSort
-	86,  // 30: devhud.deck.v1.View.grouping:type_name -> devhud.deck.v1.ViewGrouping
-	27,  // 31: devhud.deck.v1.View.notification_preference:type_name -> devhud.deck.v1.ViewNotificationPreference
-	87,  // 32: devhud.deck.v1.View.connection_state:type_name -> devhud.deck.v1.ConnectionState
-	88,  // 33: devhud.deck.v1.View.revision:type_name -> devhud.deck.v1.Revision
-	79,  // 34: devhud.deck.v1.View.created_at:type_name -> google.protobuf.Timestamp
-	79,  // 35: devhud.deck.v1.View.updated_at:type_name -> google.protobuf.Timestamp
-	82,  // 36: devhud.deck.v1.CreateViewInput.owner:type_name -> devhud.deck.v1.Owner
-	83,  // 37: devhud.deck.v1.CreateViewInput.billing:type_name -> devhud.deck.v1.BillingSelection
-	84,  // 38: devhud.deck.v1.CreateViewInput.kind:type_name -> devhud.deck.v1.ViewKind
-	26,  // 39: devhud.deck.v1.CreateViewInput.query:type_name -> devhud.deck.v1.ViewQuery
-	85,  // 40: devhud.deck.v1.CreateViewInput.sort:type_name -> devhud.deck.v1.ViewSort
-	86,  // 41: devhud.deck.v1.CreateViewInput.grouping:type_name -> devhud.deck.v1.ViewGrouping
-	27,  // 42: devhud.deck.v1.CreateViewInput.notification_preference:type_name -> devhud.deck.v1.ViewNotificationPreference
-	83,  // 43: devhud.deck.v1.UpdateViewInput.billing:type_name -> devhud.deck.v1.BillingSelection
-	26,  // 44: devhud.deck.v1.UpdateViewInput.query:type_name -> devhud.deck.v1.ViewQuery
-	85,  // 45: devhud.deck.v1.UpdateViewInput.sort:type_name -> devhud.deck.v1.ViewSort
-	86,  // 46: devhud.deck.v1.UpdateViewInput.grouping:type_name -> devhud.deck.v1.ViewGrouping
-	27,  // 47: devhud.deck.v1.UpdateViewInput.notification_preference:type_name -> devhud.deck.v1.ViewNotificationPreference
-	82,  // 48: devhud.deck.v1.ListViewsRequest.owner:type_name -> devhud.deck.v1.Owner
-	89,  // 49: devhud.deck.v1.ListViewsRequest.page:type_name -> devhud.deck.v1.PageRequest
-	28,  // 50: devhud.deck.v1.ListViewsResponse.views:type_name -> devhud.deck.v1.View
-	90,  // 51: devhud.deck.v1.ListViewsResponse.page:type_name -> devhud.deck.v1.PageResponse
-	81,  // 52: devhud.deck.v1.GetViewRequest.view_id:type_name -> devhud.deck.v1.UuidV7
-	28,  // 53: devhud.deck.v1.GetViewResponse.view:type_name -> devhud.deck.v1.View
-	91,  // 54: devhud.deck.v1.CreateViewRequest.idempotency_key:type_name -> devhud.deck.v1.IdempotencyKey
-	29,  // 55: devhud.deck.v1.CreateViewRequest.view:type_name -> devhud.deck.v1.CreateViewInput
-	28,  // 56: devhud.deck.v1.CreateViewResponse.view:type_name -> devhud.deck.v1.View
-	92,  // 57: devhud.deck.v1.CreateViewResponse.idempotency:type_name -> devhud.deck.v1.IdempotencyResult
-	81,  // 58: devhud.deck.v1.UpdateViewRequest.view_id:type_name -> devhud.deck.v1.UuidV7
-	88,  // 59: devhud.deck.v1.UpdateViewRequest.expected_revision:type_name -> devhud.deck.v1.Revision
-	30,  // 60: devhud.deck.v1.UpdateViewRequest.view:type_name -> devhud.deck.v1.UpdateViewInput
-	28,  // 61: devhud.deck.v1.UpdateViewResponse.view:type_name -> devhud.deck.v1.View
-	81,  // 62: devhud.deck.v1.DeleteViewRequest.view_id:type_name -> devhud.deck.v1.UuidV7
-	88,  // 63: devhud.deck.v1.DeleteViewRequest.expected_revision:type_name -> devhud.deck.v1.Revision
-	81,  // 64: devhud.deck.v1.DeleteViewResponse.view_id:type_name -> devhud.deck.v1.UuidV7
-	88,  // 65: devhud.deck.v1.DeleteViewResponse.deleted_revision:type_name -> devhud.deck.v1.Revision
-	3,   // 66: devhud.deck.v1.CheckSummary.state:type_name -> devhud.deck.v1.ChecksState
-	41,  // 67: devhud.deck.v1.PullRequestResult.repository:type_name -> devhud.deck.v1.RepositoryReference
-	42,  // 68: devhud.deck.v1.PullRequestResult.author:type_name -> devhud.deck.v1.PullRequestAuthor
-	2,   // 69: devhud.deck.v1.PullRequestResult.review_decision:type_name -> devhud.deck.v1.ReviewDecision
-	43,  // 70: devhud.deck.v1.PullRequestResult.checks:type_name -> devhud.deck.v1.CheckSummary
-	4,   // 71: devhud.deck.v1.PullRequestResult.mergeability:type_name -> devhud.deck.v1.Mergeability
-	79,  // 72: devhud.deck.v1.PullRequestResult.updated_at:type_name -> google.protobuf.Timestamp
-	88,  // 73: devhud.deck.v1.PullRequestResult.revision:type_name -> devhud.deck.v1.Revision
-	78,  // 74: devhud.deck.v1.PullRequestResult.reviewers:type_name -> devhud.deck.v1.PullRequestReviewer
-	10,  // 75: devhud.deck.v1.PullRequestResult.lifecycle_state:type_name -> devhud.deck.v1.PullRequestLifecycleState
-	93,  // 76: devhud.deck.v1.PullRequestResult.supported_mutations:type_name -> devhud.deck.v1.PullRequestMutationKind
-	5,   // 77: devhud.deck.v1.PullRequestResult.available_merge_methods:type_name -> devhud.deck.v1.MergeMethod
-	55,  // 78: devhud.deck.v1.PullRequestResult.assignees:type_name -> devhud.deck.v1.GitHubUser
-	44,  // 79: devhud.deck.v1.PullRequestDetail.result:type_name -> devhud.deck.v1.PullRequestResult
-	93,  // 80: devhud.deck.v1.PullRequestDetail.supported_mutations:type_name -> devhud.deck.v1.PullRequestMutationKind
-	5,   // 81: devhud.deck.v1.PullRequestDetail.available_merge_methods:type_name -> devhud.deck.v1.MergeMethod
-	88,  // 82: devhud.deck.v1.PullRequestDetail.revision:type_name -> devhud.deck.v1.Revision
-	81,  // 83: devhud.deck.v1.ListPullRequestsRequest.view_id:type_name -> devhud.deck.v1.UuidV7
-	89,  // 84: devhud.deck.v1.ListPullRequestsRequest.page:type_name -> devhud.deck.v1.PageRequest
-	44,  // 85: devhud.deck.v1.ListPullRequestsResponse.pull_requests:type_name -> devhud.deck.v1.PullRequestResult
-	90,  // 86: devhud.deck.v1.ListPullRequestsResponse.page:type_name -> devhud.deck.v1.PageResponse
-	94,  // 87: devhud.deck.v1.ListPullRequestsResponse.freshness:type_name -> devhud.deck.v1.FreshnessState
-	79,  // 88: devhud.deck.v1.ListPullRequestsResponse.refreshed_at:type_name -> google.protobuf.Timestamp
-	88,  // 89: devhud.deck.v1.ListPullRequestsResponse.view_revision:type_name -> devhud.deck.v1.Revision
-	81,  // 90: devhud.deck.v1.ListPullRequestMutationCandidatesRequest.view_id:type_name -> devhud.deck.v1.UuidV7
-	71,  // 91: devhud.deck.v1.ListPullRequestMutationCandidatesRequest.pull_request:type_name -> devhud.deck.v1.PullRequestReference
-	93,  // 92: devhud.deck.v1.ListPullRequestMutationCandidatesRequest.mutation_kind:type_name -> devhud.deck.v1.PullRequestMutationKind
-	89,  // 93: devhud.deck.v1.ListPullRequestMutationCandidatesRequest.page:type_name -> devhud.deck.v1.PageRequest
-	55,  // 94: devhud.deck.v1.PullRequestMutationCandidate.user:type_name -> devhud.deck.v1.GitHubUser
-	56,  // 95: devhud.deck.v1.PullRequestMutationCandidate.team:type_name -> devhud.deck.v1.GitHubTeam
-	49,  // 96: devhud.deck.v1.ListPullRequestMutationCandidatesResponse.candidates:type_name -> devhud.deck.v1.PullRequestMutationCandidate
-	90,  // 97: devhud.deck.v1.ListPullRequestMutationCandidatesResponse.page:type_name -> devhud.deck.v1.PageResponse
-	88,  // 98: devhud.deck.v1.ListPullRequestMutationCandidatesResponse.pull_request_revision:type_name -> devhud.deck.v1.Revision
-	81,  // 99: devhud.deck.v1.GetRefreshPreflightRequest.view_id:type_name -> devhud.deck.v1.UuidV7
-	91,  // 100: devhud.deck.v1.GetRefreshPreflightRequest.refresh_request_id:type_name -> devhud.deck.v1.IdempotencyKey
-	6,   // 101: devhud.deck.v1.GetRefreshPreflightRequest.origin:type_name -> devhud.deck.v1.RefreshOrigin
-	7,   // 102: devhud.deck.v1.GetRefreshPreflightRequest.client_kind:type_name -> devhud.deck.v1.RefreshClientKind
-	95,  // 103: devhud.deck.v1.GetRefreshPreflightResponse.provider_refresh_price:type_name -> devhud.deck.v1.UsdMicros
-	79,  // 104: devhud.deck.v1.GetRefreshPreflightResponse.expires_at:type_name -> google.protobuf.Timestamp
-	81,  // 105: devhud.deck.v1.RefreshViewRequest.view_id:type_name -> devhud.deck.v1.UuidV7
-	91,  // 106: devhud.deck.v1.RefreshViewRequest.refresh_request_id:type_name -> devhud.deck.v1.IdempotencyKey
-	6,   // 107: devhud.deck.v1.RefreshViewRequest.origin:type_name -> devhud.deck.v1.RefreshOrigin
-	7,   // 108: devhud.deck.v1.RefreshViewRequest.client_kind:type_name -> devhud.deck.v1.RefreshClientKind
-	81,  // 109: devhud.deck.v1.RefreshViewResponse.view_id:type_name -> devhud.deck.v1.UuidV7
-	96,  // 110: devhud.deck.v1.RefreshViewResponse.outcome:type_name -> devhud.deck.v1.RefreshOutcome
-	8,   // 111: devhud.deck.v1.RefreshViewResponse.billing_disposition:type_name -> devhud.deck.v1.BillingDisposition
-	94,  // 112: devhud.deck.v1.RefreshViewResponse.freshness:type_name -> devhud.deck.v1.FreshnessState
-	79,  // 113: devhud.deck.v1.RefreshViewResponse.refreshed_at:type_name -> google.protobuf.Timestamp
-	88,  // 114: devhud.deck.v1.RefreshViewResponse.view_revision:type_name -> devhud.deck.v1.Revision
-	92,  // 115: devhud.deck.v1.RefreshViewResponse.idempotency:type_name -> devhud.deck.v1.IdempotencyResult
-	55,  // 116: devhud.deck.v1.AssignUsersMutation.users:type_name -> devhud.deck.v1.GitHubUser
-	55,  // 117: devhud.deck.v1.UnassignUsersMutation.users:type_name -> devhud.deck.v1.GitHubUser
-	55,  // 118: devhud.deck.v1.RequestReviewersMutation.users:type_name -> devhud.deck.v1.GitHubUser
-	56,  // 119: devhud.deck.v1.RequestReviewersMutation.teams:type_name -> devhud.deck.v1.GitHubTeam
-	55,  // 120: devhud.deck.v1.RemoveReviewersMutation.users:type_name -> devhud.deck.v1.GitHubUser
-	56,  // 121: devhud.deck.v1.RemoveReviewersMutation.teams:type_name -> devhud.deck.v1.GitHubTeam
-	5,   // 122: devhud.deck.v1.MergePullRequestMutation.method:type_name -> devhud.deck.v1.MergeMethod
-	5,   // 123: devhud.deck.v1.EnableAutoMergeMutation.method:type_name -> devhud.deck.v1.MergeMethod
-	57,  // 124: devhud.deck.v1.PullRequestMutation.assign_users:type_name -> devhud.deck.v1.AssignUsersMutation
-	58,  // 125: devhud.deck.v1.PullRequestMutation.unassign_users:type_name -> devhud.deck.v1.UnassignUsersMutation
-	59,  // 126: devhud.deck.v1.PullRequestMutation.request_reviewers:type_name -> devhud.deck.v1.RequestReviewersMutation
-	60,  // 127: devhud.deck.v1.PullRequestMutation.remove_reviewers:type_name -> devhud.deck.v1.RemoveReviewersMutation
-	61,  // 128: devhud.deck.v1.PullRequestMutation.add_labels:type_name -> devhud.deck.v1.AddLabelsMutation
-	62,  // 129: devhud.deck.v1.PullRequestMutation.remove_labels:type_name -> devhud.deck.v1.RemoveLabelsMutation
-	63,  // 130: devhud.deck.v1.PullRequestMutation.mark_draft:type_name -> devhud.deck.v1.MarkDraftMutation
-	64,  // 131: devhud.deck.v1.PullRequestMutation.mark_ready:type_name -> devhud.deck.v1.MarkReadyMutation
-	65,  // 132: devhud.deck.v1.PullRequestMutation.close:type_name -> devhud.deck.v1.ClosePullRequestMutation
-	66,  // 133: devhud.deck.v1.PullRequestMutation.reopen:type_name -> devhud.deck.v1.ReopenPullRequestMutation
-	67,  // 134: devhud.deck.v1.PullRequestMutation.merge:type_name -> devhud.deck.v1.MergePullRequestMutation
-	68,  // 135: devhud.deck.v1.PullRequestMutation.enable_auto_merge:type_name -> devhud.deck.v1.EnableAutoMergeMutation
-	69,  // 136: devhud.deck.v1.PullRequestMutation.cancel_auto_merge:type_name -> devhud.deck.v1.CancelAutoMergeMutation
-	41,  // 137: devhud.deck.v1.PullRequestReference.repository:type_name -> devhud.deck.v1.RepositoryReference
-	81,  // 138: devhud.deck.v1.MutatePullRequestRequest.view_id:type_name -> devhud.deck.v1.UuidV7
-	71,  // 139: devhud.deck.v1.MutatePullRequestRequest.pull_request:type_name -> devhud.deck.v1.PullRequestReference
-	88,  // 140: devhud.deck.v1.MutatePullRequestRequest.expected_revision:type_name -> devhud.deck.v1.Revision
-	70,  // 141: devhud.deck.v1.MutatePullRequestRequest.mutation:type_name -> devhud.deck.v1.PullRequestMutation
-	45,  // 142: devhud.deck.v1.MutatePullRequestResponse.pull_request:type_name -> devhud.deck.v1.PullRequestDetail
-	93,  // 143: devhud.deck.v1.MutatePullRequestResponse.mutation_kind:type_name -> devhud.deck.v1.PullRequestMutationKind
-	82,  // 144: devhud.deck.v1.OwnerFeatureDeletion.owner:type_name -> devhud.deck.v1.Owner
-	91,  // 145: devhud.deck.v1.OwnerFeatureDeletion.idempotency_key:type_name -> devhud.deck.v1.IdempotencyKey
-	81,  // 146: devhud.deck.v1.DelibaseLifecycleDeletion.account_id:type_name -> devhud.deck.v1.UuidV7
-	81,  // 147: devhud.deck.v1.DelibaseLifecycleDeletion.organization_id:type_name -> devhud.deck.v1.UuidV7
-	81,  // 148: devhud.deck.v1.DelibaseLifecycleDeletion.deletion_job_id:type_name -> devhud.deck.v1.UuidV7
-	74,  // 149: devhud.deck.v1.DeleteFeatureDataRequest.owner_request:type_name -> devhud.deck.v1.OwnerFeatureDeletion
-	75,  // 150: devhud.deck.v1.DeleteFeatureDataRequest.delibase_lifecycle:type_name -> devhud.deck.v1.DelibaseLifecycleDeletion
-	81,  // 151: devhud.deck.v1.DeleteFeatureDataResponse.deletion_job_id:type_name -> devhud.deck.v1.UuidV7
-	9,   // 152: devhud.deck.v1.DeleteFeatureDataResponse.state:type_name -> devhud.deck.v1.FeatureDeletionState
-	79,  // 153: devhud.deck.v1.DeleteFeatureDataResponse.accepted_at:type_name -> google.protobuf.Timestamp
-	92,  // 154: devhud.deck.v1.DeleteFeatureDataResponse.idempotency:type_name -> devhud.deck.v1.IdempotencyResult
-	55,  // 155: devhud.deck.v1.PullRequestReviewer.user:type_name -> devhud.deck.v1.GitHubUser
-	56,  // 156: devhud.deck.v1.PullRequestReviewer.team:type_name -> devhud.deck.v1.GitHubTeam
-	31,  // 157: devhud.deck.v1.DeckViewService.ListViews:input_type -> devhud.deck.v1.ListViewsRequest
-	33,  // 158: devhud.deck.v1.DeckViewService.GetView:input_type -> devhud.deck.v1.GetViewRequest
-	35,  // 159: devhud.deck.v1.DeckViewService.CreateView:input_type -> devhud.deck.v1.CreateViewRequest
-	37,  // 160: devhud.deck.v1.DeckViewService.UpdateView:input_type -> devhud.deck.v1.UpdateViewRequest
-	39,  // 161: devhud.deck.v1.DeckViewService.DeleteView:input_type -> devhud.deck.v1.DeleteViewRequest
-	46,  // 162: devhud.deck.v1.DeckViewService.ListPullRequests:input_type -> devhud.deck.v1.ListPullRequestsRequest
-	48,  // 163: devhud.deck.v1.DeckViewService.ListPullRequestMutationCandidates:input_type -> devhud.deck.v1.ListPullRequestMutationCandidatesRequest
-	51,  // 164: devhud.deck.v1.DeckViewService.GetRefreshPreflight:input_type -> devhud.deck.v1.GetRefreshPreflightRequest
-	53,  // 165: devhud.deck.v1.DeckViewService.RefreshView:input_type -> devhud.deck.v1.RefreshViewRequest
-	72,  // 166: devhud.deck.v1.DeckViewService.MutatePullRequest:input_type -> devhud.deck.v1.MutatePullRequestRequest
-	76,  // 167: devhud.deck.v1.DeckViewService.DeleteFeatureData:input_type -> devhud.deck.v1.DeleteFeatureDataRequest
-	32,  // 168: devhud.deck.v1.DeckViewService.ListViews:output_type -> devhud.deck.v1.ListViewsResponse
-	34,  // 169: devhud.deck.v1.DeckViewService.GetView:output_type -> devhud.deck.v1.GetViewResponse
-	36,  // 170: devhud.deck.v1.DeckViewService.CreateView:output_type -> devhud.deck.v1.CreateViewResponse
-	38,  // 171: devhud.deck.v1.DeckViewService.UpdateView:output_type -> devhud.deck.v1.UpdateViewResponse
-	40,  // 172: devhud.deck.v1.DeckViewService.DeleteView:output_type -> devhud.deck.v1.DeleteViewResponse
-	47,  // 173: devhud.deck.v1.DeckViewService.ListPullRequests:output_type -> devhud.deck.v1.ListPullRequestsResponse
-	50,  // 174: devhud.deck.v1.DeckViewService.ListPullRequestMutationCandidates:output_type -> devhud.deck.v1.ListPullRequestMutationCandidatesResponse
-	52,  // 175: devhud.deck.v1.DeckViewService.GetRefreshPreflight:output_type -> devhud.deck.v1.GetRefreshPreflightResponse
-	54,  // 176: devhud.deck.v1.DeckViewService.RefreshView:output_type -> devhud.deck.v1.RefreshViewResponse
-	73,  // 177: devhud.deck.v1.DeckViewService.MutatePullRequest:output_type -> devhud.deck.v1.MutatePullRequestResponse
-	77,  // 178: devhud.deck.v1.DeckViewService.DeleteFeatureData:output_type -> devhud.deck.v1.DeleteFeatureDataResponse
-	168, // [168:179] is the sub-list for method output_type
-	157, // [157:168] is the sub-list for method input_type
-	157, // [157:157] is the sub-list for extension type_name
-	157, // [157:157] is the sub-list for extension extendee
-	0,   // [0:157] is the sub-list for field type_name
+	82,  // 0: devhud.deck.v1.OwnerAccess.owner:type_name -> devhud.deck.v1.Owner
+	83,  // 1: devhud.deck.v1.OwnerAccess.billing_selections:type_name -> devhud.deck.v1.BillingSelection
+	11,  // 2: devhud.deck.v1.ListOwnersResponse.owners:type_name -> devhud.deck.v1.OwnerAccess
+	0,   // 3: devhud.deck.v1.QueryIdentity.kind:type_name -> devhud.deck.v1.QueryIdentityKind
+	14,  // 4: devhud.deck.v1.AuthorQualifier.author:type_name -> devhud.deck.v1.QueryIdentity
+	14,  // 5: devhud.deck.v1.AssigneeQualifier.assignee:type_name -> devhud.deck.v1.QueryIdentity
+	14,  // 6: devhud.deck.v1.ReviewerQualifier.reviewer:type_name -> devhud.deck.v1.QueryIdentity
+	1,   // 7: devhud.deck.v1.StateQualifier.state:type_name -> devhud.deck.v1.PullRequestState
+	2,   // 8: devhud.deck.v1.ReviewDecisionQualifier.decision:type_name -> devhud.deck.v1.ReviewDecision
+	3,   // 9: devhud.deck.v1.ChecksQualifier.state:type_name -> devhud.deck.v1.ChecksState
+	84,  // 10: devhud.deck.v1.UpdatedRangeQualifier.updated_after:type_name -> google.protobuf.Timestamp
+	84,  // 11: devhud.deck.v1.UpdatedRangeQualifier.updated_before:type_name -> google.protobuf.Timestamp
+	15,  // 12: devhud.deck.v1.QueryClause.owner:type_name -> devhud.deck.v1.OwnerQualifier
+	16,  // 13: devhud.deck.v1.QueryClause.repository:type_name -> devhud.deck.v1.RepositoryQualifier
+	17,  // 14: devhud.deck.v1.QueryClause.author:type_name -> devhud.deck.v1.AuthorQualifier
+	18,  // 15: devhud.deck.v1.QueryClause.assignee:type_name -> devhud.deck.v1.AssigneeQualifier
+	19,  // 16: devhud.deck.v1.QueryClause.reviewer:type_name -> devhud.deck.v1.ReviewerQualifier
+	20,  // 17: devhud.deck.v1.QueryClause.label:type_name -> devhud.deck.v1.LabelQualifier
+	21,  // 18: devhud.deck.v1.QueryClause.state:type_name -> devhud.deck.v1.StateQualifier
+	22,  // 19: devhud.deck.v1.QueryClause.base_branch:type_name -> devhud.deck.v1.BaseBranchQualifier
+	23,  // 20: devhud.deck.v1.QueryClause.head_branch:type_name -> devhud.deck.v1.HeadBranchQualifier
+	24,  // 21: devhud.deck.v1.QueryClause.review_decision:type_name -> devhud.deck.v1.ReviewDecisionQualifier
+	25,  // 22: devhud.deck.v1.QueryClause.checks:type_name -> devhud.deck.v1.ChecksQualifier
+	26,  // 23: devhud.deck.v1.QueryClause.updated_range:type_name -> devhud.deck.v1.UpdatedRangeQualifier
+	27,  // 24: devhud.deck.v1.QueryBuilder.clauses:type_name -> devhud.deck.v1.QueryClause
+	28,  // 25: devhud.deck.v1.ViewQuery.builder:type_name -> devhud.deck.v1.QueryBuilder
+	85,  // 26: devhud.deck.v1.ViewNotificationPreference.transitions:type_name -> devhud.deck.v1.NotificationTransition
+	86,  // 27: devhud.deck.v1.View.view_id:type_name -> devhud.deck.v1.UuidV7
+	82,  // 28: devhud.deck.v1.View.owner:type_name -> devhud.deck.v1.Owner
+	83,  // 29: devhud.deck.v1.View.billing:type_name -> devhud.deck.v1.BillingSelection
+	87,  // 30: devhud.deck.v1.View.kind:type_name -> devhud.deck.v1.ViewKind
+	29,  // 31: devhud.deck.v1.View.query:type_name -> devhud.deck.v1.ViewQuery
+	88,  // 32: devhud.deck.v1.View.sort:type_name -> devhud.deck.v1.ViewSort
+	89,  // 33: devhud.deck.v1.View.grouping:type_name -> devhud.deck.v1.ViewGrouping
+	30,  // 34: devhud.deck.v1.View.notification_preference:type_name -> devhud.deck.v1.ViewNotificationPreference
+	90,  // 35: devhud.deck.v1.View.connection_state:type_name -> devhud.deck.v1.ConnectionState
+	91,  // 36: devhud.deck.v1.View.revision:type_name -> devhud.deck.v1.Revision
+	84,  // 37: devhud.deck.v1.View.created_at:type_name -> google.protobuf.Timestamp
+	84,  // 38: devhud.deck.v1.View.updated_at:type_name -> google.protobuf.Timestamp
+	82,  // 39: devhud.deck.v1.CreateViewInput.owner:type_name -> devhud.deck.v1.Owner
+	83,  // 40: devhud.deck.v1.CreateViewInput.billing:type_name -> devhud.deck.v1.BillingSelection
+	87,  // 41: devhud.deck.v1.CreateViewInput.kind:type_name -> devhud.deck.v1.ViewKind
+	29,  // 42: devhud.deck.v1.CreateViewInput.query:type_name -> devhud.deck.v1.ViewQuery
+	88,  // 43: devhud.deck.v1.CreateViewInput.sort:type_name -> devhud.deck.v1.ViewSort
+	89,  // 44: devhud.deck.v1.CreateViewInput.grouping:type_name -> devhud.deck.v1.ViewGrouping
+	30,  // 45: devhud.deck.v1.CreateViewInput.notification_preference:type_name -> devhud.deck.v1.ViewNotificationPreference
+	83,  // 46: devhud.deck.v1.UpdateViewInput.billing:type_name -> devhud.deck.v1.BillingSelection
+	29,  // 47: devhud.deck.v1.UpdateViewInput.query:type_name -> devhud.deck.v1.ViewQuery
+	88,  // 48: devhud.deck.v1.UpdateViewInput.sort:type_name -> devhud.deck.v1.ViewSort
+	89,  // 49: devhud.deck.v1.UpdateViewInput.grouping:type_name -> devhud.deck.v1.ViewGrouping
+	30,  // 50: devhud.deck.v1.UpdateViewInput.notification_preference:type_name -> devhud.deck.v1.ViewNotificationPreference
+	82,  // 51: devhud.deck.v1.ListViewsRequest.owner:type_name -> devhud.deck.v1.Owner
+	92,  // 52: devhud.deck.v1.ListViewsRequest.page:type_name -> devhud.deck.v1.PageRequest
+	31,  // 53: devhud.deck.v1.ListViewsResponse.views:type_name -> devhud.deck.v1.View
+	93,  // 54: devhud.deck.v1.ListViewsResponse.page:type_name -> devhud.deck.v1.PageResponse
+	86,  // 55: devhud.deck.v1.GetViewRequest.view_id:type_name -> devhud.deck.v1.UuidV7
+	31,  // 56: devhud.deck.v1.GetViewResponse.view:type_name -> devhud.deck.v1.View
+	94,  // 57: devhud.deck.v1.CreateViewRequest.idempotency_key:type_name -> devhud.deck.v1.IdempotencyKey
+	32,  // 58: devhud.deck.v1.CreateViewRequest.view:type_name -> devhud.deck.v1.CreateViewInput
+	31,  // 59: devhud.deck.v1.CreateViewResponse.view:type_name -> devhud.deck.v1.View
+	95,  // 60: devhud.deck.v1.CreateViewResponse.idempotency:type_name -> devhud.deck.v1.IdempotencyResult
+	86,  // 61: devhud.deck.v1.UpdateViewRequest.view_id:type_name -> devhud.deck.v1.UuidV7
+	91,  // 62: devhud.deck.v1.UpdateViewRequest.expected_revision:type_name -> devhud.deck.v1.Revision
+	33,  // 63: devhud.deck.v1.UpdateViewRequest.view:type_name -> devhud.deck.v1.UpdateViewInput
+	31,  // 64: devhud.deck.v1.UpdateViewResponse.view:type_name -> devhud.deck.v1.View
+	86,  // 65: devhud.deck.v1.DeleteViewRequest.view_id:type_name -> devhud.deck.v1.UuidV7
+	91,  // 66: devhud.deck.v1.DeleteViewRequest.expected_revision:type_name -> devhud.deck.v1.Revision
+	86,  // 67: devhud.deck.v1.DeleteViewResponse.view_id:type_name -> devhud.deck.v1.UuidV7
+	91,  // 68: devhud.deck.v1.DeleteViewResponse.deleted_revision:type_name -> devhud.deck.v1.Revision
+	3,   // 69: devhud.deck.v1.CheckSummary.state:type_name -> devhud.deck.v1.ChecksState
+	44,  // 70: devhud.deck.v1.PullRequestResult.repository:type_name -> devhud.deck.v1.RepositoryReference
+	45,  // 71: devhud.deck.v1.PullRequestResult.author:type_name -> devhud.deck.v1.PullRequestAuthor
+	2,   // 72: devhud.deck.v1.PullRequestResult.review_decision:type_name -> devhud.deck.v1.ReviewDecision
+	46,  // 73: devhud.deck.v1.PullRequestResult.checks:type_name -> devhud.deck.v1.CheckSummary
+	4,   // 74: devhud.deck.v1.PullRequestResult.mergeability:type_name -> devhud.deck.v1.Mergeability
+	84,  // 75: devhud.deck.v1.PullRequestResult.updated_at:type_name -> google.protobuf.Timestamp
+	91,  // 76: devhud.deck.v1.PullRequestResult.revision:type_name -> devhud.deck.v1.Revision
+	81,  // 77: devhud.deck.v1.PullRequestResult.reviewers:type_name -> devhud.deck.v1.PullRequestReviewer
+	10,  // 78: devhud.deck.v1.PullRequestResult.lifecycle_state:type_name -> devhud.deck.v1.PullRequestLifecycleState
+	96,  // 79: devhud.deck.v1.PullRequestResult.supported_mutations:type_name -> devhud.deck.v1.PullRequestMutationKind
+	5,   // 80: devhud.deck.v1.PullRequestResult.available_merge_methods:type_name -> devhud.deck.v1.MergeMethod
+	58,  // 81: devhud.deck.v1.PullRequestResult.assignees:type_name -> devhud.deck.v1.GitHubUser
+	47,  // 82: devhud.deck.v1.PullRequestDetail.result:type_name -> devhud.deck.v1.PullRequestResult
+	96,  // 83: devhud.deck.v1.PullRequestDetail.supported_mutations:type_name -> devhud.deck.v1.PullRequestMutationKind
+	5,   // 84: devhud.deck.v1.PullRequestDetail.available_merge_methods:type_name -> devhud.deck.v1.MergeMethod
+	91,  // 85: devhud.deck.v1.PullRequestDetail.revision:type_name -> devhud.deck.v1.Revision
+	86,  // 86: devhud.deck.v1.ListPullRequestsRequest.view_id:type_name -> devhud.deck.v1.UuidV7
+	92,  // 87: devhud.deck.v1.ListPullRequestsRequest.page:type_name -> devhud.deck.v1.PageRequest
+	47,  // 88: devhud.deck.v1.ListPullRequestsResponse.pull_requests:type_name -> devhud.deck.v1.PullRequestResult
+	93,  // 89: devhud.deck.v1.ListPullRequestsResponse.page:type_name -> devhud.deck.v1.PageResponse
+	97,  // 90: devhud.deck.v1.ListPullRequestsResponse.freshness:type_name -> devhud.deck.v1.FreshnessState
+	84,  // 91: devhud.deck.v1.ListPullRequestsResponse.refreshed_at:type_name -> google.protobuf.Timestamp
+	91,  // 92: devhud.deck.v1.ListPullRequestsResponse.view_revision:type_name -> devhud.deck.v1.Revision
+	86,  // 93: devhud.deck.v1.ListPullRequestMutationCandidatesRequest.view_id:type_name -> devhud.deck.v1.UuidV7
+	74,  // 94: devhud.deck.v1.ListPullRequestMutationCandidatesRequest.pull_request:type_name -> devhud.deck.v1.PullRequestReference
+	96,  // 95: devhud.deck.v1.ListPullRequestMutationCandidatesRequest.mutation_kind:type_name -> devhud.deck.v1.PullRequestMutationKind
+	92,  // 96: devhud.deck.v1.ListPullRequestMutationCandidatesRequest.page:type_name -> devhud.deck.v1.PageRequest
+	58,  // 97: devhud.deck.v1.PullRequestMutationCandidate.user:type_name -> devhud.deck.v1.GitHubUser
+	59,  // 98: devhud.deck.v1.PullRequestMutationCandidate.team:type_name -> devhud.deck.v1.GitHubTeam
+	52,  // 99: devhud.deck.v1.ListPullRequestMutationCandidatesResponse.candidates:type_name -> devhud.deck.v1.PullRequestMutationCandidate
+	93,  // 100: devhud.deck.v1.ListPullRequestMutationCandidatesResponse.page:type_name -> devhud.deck.v1.PageResponse
+	91,  // 101: devhud.deck.v1.ListPullRequestMutationCandidatesResponse.pull_request_revision:type_name -> devhud.deck.v1.Revision
+	86,  // 102: devhud.deck.v1.GetRefreshPreflightRequest.view_id:type_name -> devhud.deck.v1.UuidV7
+	94,  // 103: devhud.deck.v1.GetRefreshPreflightRequest.refresh_request_id:type_name -> devhud.deck.v1.IdempotencyKey
+	6,   // 104: devhud.deck.v1.GetRefreshPreflightRequest.origin:type_name -> devhud.deck.v1.RefreshOrigin
+	7,   // 105: devhud.deck.v1.GetRefreshPreflightRequest.client_kind:type_name -> devhud.deck.v1.RefreshClientKind
+	98,  // 106: devhud.deck.v1.GetRefreshPreflightResponse.provider_refresh_price:type_name -> devhud.deck.v1.UsdMicros
+	84,  // 107: devhud.deck.v1.GetRefreshPreflightResponse.expires_at:type_name -> google.protobuf.Timestamp
+	86,  // 108: devhud.deck.v1.RefreshViewRequest.view_id:type_name -> devhud.deck.v1.UuidV7
+	94,  // 109: devhud.deck.v1.RefreshViewRequest.refresh_request_id:type_name -> devhud.deck.v1.IdempotencyKey
+	6,   // 110: devhud.deck.v1.RefreshViewRequest.origin:type_name -> devhud.deck.v1.RefreshOrigin
+	7,   // 111: devhud.deck.v1.RefreshViewRequest.client_kind:type_name -> devhud.deck.v1.RefreshClientKind
+	86,  // 112: devhud.deck.v1.RefreshViewResponse.view_id:type_name -> devhud.deck.v1.UuidV7
+	99,  // 113: devhud.deck.v1.RefreshViewResponse.outcome:type_name -> devhud.deck.v1.RefreshOutcome
+	8,   // 114: devhud.deck.v1.RefreshViewResponse.billing_disposition:type_name -> devhud.deck.v1.BillingDisposition
+	97,  // 115: devhud.deck.v1.RefreshViewResponse.freshness:type_name -> devhud.deck.v1.FreshnessState
+	84,  // 116: devhud.deck.v1.RefreshViewResponse.refreshed_at:type_name -> google.protobuf.Timestamp
+	91,  // 117: devhud.deck.v1.RefreshViewResponse.view_revision:type_name -> devhud.deck.v1.Revision
+	95,  // 118: devhud.deck.v1.RefreshViewResponse.idempotency:type_name -> devhud.deck.v1.IdempotencyResult
+	58,  // 119: devhud.deck.v1.AssignUsersMutation.users:type_name -> devhud.deck.v1.GitHubUser
+	58,  // 120: devhud.deck.v1.UnassignUsersMutation.users:type_name -> devhud.deck.v1.GitHubUser
+	58,  // 121: devhud.deck.v1.RequestReviewersMutation.users:type_name -> devhud.deck.v1.GitHubUser
+	59,  // 122: devhud.deck.v1.RequestReviewersMutation.teams:type_name -> devhud.deck.v1.GitHubTeam
+	58,  // 123: devhud.deck.v1.RemoveReviewersMutation.users:type_name -> devhud.deck.v1.GitHubUser
+	59,  // 124: devhud.deck.v1.RemoveReviewersMutation.teams:type_name -> devhud.deck.v1.GitHubTeam
+	5,   // 125: devhud.deck.v1.MergePullRequestMutation.method:type_name -> devhud.deck.v1.MergeMethod
+	5,   // 126: devhud.deck.v1.EnableAutoMergeMutation.method:type_name -> devhud.deck.v1.MergeMethod
+	60,  // 127: devhud.deck.v1.PullRequestMutation.assign_users:type_name -> devhud.deck.v1.AssignUsersMutation
+	61,  // 128: devhud.deck.v1.PullRequestMutation.unassign_users:type_name -> devhud.deck.v1.UnassignUsersMutation
+	62,  // 129: devhud.deck.v1.PullRequestMutation.request_reviewers:type_name -> devhud.deck.v1.RequestReviewersMutation
+	63,  // 130: devhud.deck.v1.PullRequestMutation.remove_reviewers:type_name -> devhud.deck.v1.RemoveReviewersMutation
+	64,  // 131: devhud.deck.v1.PullRequestMutation.add_labels:type_name -> devhud.deck.v1.AddLabelsMutation
+	65,  // 132: devhud.deck.v1.PullRequestMutation.remove_labels:type_name -> devhud.deck.v1.RemoveLabelsMutation
+	66,  // 133: devhud.deck.v1.PullRequestMutation.mark_draft:type_name -> devhud.deck.v1.MarkDraftMutation
+	67,  // 134: devhud.deck.v1.PullRequestMutation.mark_ready:type_name -> devhud.deck.v1.MarkReadyMutation
+	68,  // 135: devhud.deck.v1.PullRequestMutation.close:type_name -> devhud.deck.v1.ClosePullRequestMutation
+	69,  // 136: devhud.deck.v1.PullRequestMutation.reopen:type_name -> devhud.deck.v1.ReopenPullRequestMutation
+	70,  // 137: devhud.deck.v1.PullRequestMutation.merge:type_name -> devhud.deck.v1.MergePullRequestMutation
+	71,  // 138: devhud.deck.v1.PullRequestMutation.enable_auto_merge:type_name -> devhud.deck.v1.EnableAutoMergeMutation
+	72,  // 139: devhud.deck.v1.PullRequestMutation.cancel_auto_merge:type_name -> devhud.deck.v1.CancelAutoMergeMutation
+	44,  // 140: devhud.deck.v1.PullRequestReference.repository:type_name -> devhud.deck.v1.RepositoryReference
+	86,  // 141: devhud.deck.v1.MutatePullRequestRequest.view_id:type_name -> devhud.deck.v1.UuidV7
+	74,  // 142: devhud.deck.v1.MutatePullRequestRequest.pull_request:type_name -> devhud.deck.v1.PullRequestReference
+	91,  // 143: devhud.deck.v1.MutatePullRequestRequest.expected_revision:type_name -> devhud.deck.v1.Revision
+	73,  // 144: devhud.deck.v1.MutatePullRequestRequest.mutation:type_name -> devhud.deck.v1.PullRequestMutation
+	48,  // 145: devhud.deck.v1.MutatePullRequestResponse.pull_request:type_name -> devhud.deck.v1.PullRequestDetail
+	96,  // 146: devhud.deck.v1.MutatePullRequestResponse.mutation_kind:type_name -> devhud.deck.v1.PullRequestMutationKind
+	82,  // 147: devhud.deck.v1.OwnerFeatureDeletion.owner:type_name -> devhud.deck.v1.Owner
+	94,  // 148: devhud.deck.v1.OwnerFeatureDeletion.idempotency_key:type_name -> devhud.deck.v1.IdempotencyKey
+	86,  // 149: devhud.deck.v1.DelibaseLifecycleDeletion.account_id:type_name -> devhud.deck.v1.UuidV7
+	86,  // 150: devhud.deck.v1.DelibaseLifecycleDeletion.organization_id:type_name -> devhud.deck.v1.UuidV7
+	86,  // 151: devhud.deck.v1.DelibaseLifecycleDeletion.deletion_job_id:type_name -> devhud.deck.v1.UuidV7
+	77,  // 152: devhud.deck.v1.DeleteFeatureDataRequest.owner_request:type_name -> devhud.deck.v1.OwnerFeatureDeletion
+	78,  // 153: devhud.deck.v1.DeleteFeatureDataRequest.delibase_lifecycle:type_name -> devhud.deck.v1.DelibaseLifecycleDeletion
+	86,  // 154: devhud.deck.v1.DeleteFeatureDataResponse.deletion_job_id:type_name -> devhud.deck.v1.UuidV7
+	9,   // 155: devhud.deck.v1.DeleteFeatureDataResponse.state:type_name -> devhud.deck.v1.FeatureDeletionState
+	84,  // 156: devhud.deck.v1.DeleteFeatureDataResponse.accepted_at:type_name -> google.protobuf.Timestamp
+	95,  // 157: devhud.deck.v1.DeleteFeatureDataResponse.idempotency:type_name -> devhud.deck.v1.IdempotencyResult
+	58,  // 158: devhud.deck.v1.PullRequestReviewer.user:type_name -> devhud.deck.v1.GitHubUser
+	59,  // 159: devhud.deck.v1.PullRequestReviewer.team:type_name -> devhud.deck.v1.GitHubTeam
+	12,  // 160: devhud.deck.v1.DeckViewService.ListOwners:input_type -> devhud.deck.v1.ListOwnersRequest
+	34,  // 161: devhud.deck.v1.DeckViewService.ListViews:input_type -> devhud.deck.v1.ListViewsRequest
+	36,  // 162: devhud.deck.v1.DeckViewService.GetView:input_type -> devhud.deck.v1.GetViewRequest
+	38,  // 163: devhud.deck.v1.DeckViewService.CreateView:input_type -> devhud.deck.v1.CreateViewRequest
+	40,  // 164: devhud.deck.v1.DeckViewService.UpdateView:input_type -> devhud.deck.v1.UpdateViewRequest
+	42,  // 165: devhud.deck.v1.DeckViewService.DeleteView:input_type -> devhud.deck.v1.DeleteViewRequest
+	49,  // 166: devhud.deck.v1.DeckViewService.ListPullRequests:input_type -> devhud.deck.v1.ListPullRequestsRequest
+	51,  // 167: devhud.deck.v1.DeckViewService.ListPullRequestMutationCandidates:input_type -> devhud.deck.v1.ListPullRequestMutationCandidatesRequest
+	54,  // 168: devhud.deck.v1.DeckViewService.GetRefreshPreflight:input_type -> devhud.deck.v1.GetRefreshPreflightRequest
+	56,  // 169: devhud.deck.v1.DeckViewService.RefreshView:input_type -> devhud.deck.v1.RefreshViewRequest
+	75,  // 170: devhud.deck.v1.DeckViewService.MutatePullRequest:input_type -> devhud.deck.v1.MutatePullRequestRequest
+	79,  // 171: devhud.deck.v1.DeckViewService.DeleteFeatureData:input_type -> devhud.deck.v1.DeleteFeatureDataRequest
+	13,  // 172: devhud.deck.v1.DeckViewService.ListOwners:output_type -> devhud.deck.v1.ListOwnersResponse
+	35,  // 173: devhud.deck.v1.DeckViewService.ListViews:output_type -> devhud.deck.v1.ListViewsResponse
+	37,  // 174: devhud.deck.v1.DeckViewService.GetView:output_type -> devhud.deck.v1.GetViewResponse
+	39,  // 175: devhud.deck.v1.DeckViewService.CreateView:output_type -> devhud.deck.v1.CreateViewResponse
+	41,  // 176: devhud.deck.v1.DeckViewService.UpdateView:output_type -> devhud.deck.v1.UpdateViewResponse
+	43,  // 177: devhud.deck.v1.DeckViewService.DeleteView:output_type -> devhud.deck.v1.DeleteViewResponse
+	50,  // 178: devhud.deck.v1.DeckViewService.ListPullRequests:output_type -> devhud.deck.v1.ListPullRequestsResponse
+	53,  // 179: devhud.deck.v1.DeckViewService.ListPullRequestMutationCandidates:output_type -> devhud.deck.v1.ListPullRequestMutationCandidatesResponse
+	55,  // 180: devhud.deck.v1.DeckViewService.GetRefreshPreflight:output_type -> devhud.deck.v1.GetRefreshPreflightResponse
+	57,  // 181: devhud.deck.v1.DeckViewService.RefreshView:output_type -> devhud.deck.v1.RefreshViewResponse
+	76,  // 182: devhud.deck.v1.DeckViewService.MutatePullRequest:output_type -> devhud.deck.v1.MutatePullRequestResponse
+	80,  // 183: devhud.deck.v1.DeckViewService.DeleteFeatureData:output_type -> devhud.deck.v1.DeleteFeatureDataResponse
+	172, // [172:184] is the sub-list for method output_type
+	160, // [160:172] is the sub-list for method input_type
+	160, // [160:160] is the sub-list for extension type_name
+	160, // [160:160] is the sub-list for extension extendee
+	0,   // [0:160] is the sub-list for field type_name
 }
 
 func init() { file_devhud_deck_v1_view_proto_init() }
@@ -5732,7 +5893,7 @@ func file_devhud_deck_v1_view_proto_init() {
 		return
 	}
 	file_devhud_deck_v1_common_proto_init()
-	file_devhud_deck_v1_view_proto_msgTypes[13].OneofWrappers = []any{
+	file_devhud_deck_v1_view_proto_msgTypes[16].OneofWrappers = []any{
 		(*QueryClause_Owner)(nil),
 		(*QueryClause_Repository)(nil),
 		(*QueryClause_Author)(nil),
@@ -5746,12 +5907,12 @@ func file_devhud_deck_v1_view_proto_init() {
 		(*QueryClause_Checks)(nil),
 		(*QueryClause_UpdatedRange)(nil),
 	}
-	file_devhud_deck_v1_view_proto_msgTypes[38].OneofWrappers = []any{
+	file_devhud_deck_v1_view_proto_msgTypes[41].OneofWrappers = []any{
 		(*PullRequestMutationCandidate_User)(nil),
 		(*PullRequestMutationCandidate_Team)(nil),
 		(*PullRequestMutationCandidate_Label)(nil),
 	}
-	file_devhud_deck_v1_view_proto_msgTypes[59].OneofWrappers = []any{
+	file_devhud_deck_v1_view_proto_msgTypes[62].OneofWrappers = []any{
 		(*PullRequestMutation_AssignUsers)(nil),
 		(*PullRequestMutation_UnassignUsers)(nil),
 		(*PullRequestMutation_RequestReviewers)(nil),
@@ -5766,15 +5927,15 @@ func file_devhud_deck_v1_view_proto_init() {
 		(*PullRequestMutation_EnableAutoMerge)(nil),
 		(*PullRequestMutation_CancelAutoMerge)(nil),
 	}
-	file_devhud_deck_v1_view_proto_msgTypes[64].OneofWrappers = []any{
+	file_devhud_deck_v1_view_proto_msgTypes[67].OneofWrappers = []any{
 		(*DelibaseLifecycleDeletion_AccountId)(nil),
 		(*DelibaseLifecycleDeletion_OrganizationId)(nil),
 	}
-	file_devhud_deck_v1_view_proto_msgTypes[65].OneofWrappers = []any{
+	file_devhud_deck_v1_view_proto_msgTypes[68].OneofWrappers = []any{
 		(*DeleteFeatureDataRequest_OwnerRequest)(nil),
 		(*DeleteFeatureDataRequest_DelibaseLifecycle)(nil),
 	}
-	file_devhud_deck_v1_view_proto_msgTypes[67].OneofWrappers = []any{
+	file_devhud_deck_v1_view_proto_msgTypes[70].OneofWrappers = []any{
 		(*PullRequestReviewer_User)(nil),
 		(*PullRequestReviewer_Team)(nil),
 	}
@@ -5784,7 +5945,7 @@ func file_devhud_deck_v1_view_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_devhud_deck_v1_view_proto_rawDesc), len(file_devhud_deck_v1_view_proto_rawDesc)),
 			NumEnums:      11,
-			NumMessages:   68,
+			NumMessages:   71,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

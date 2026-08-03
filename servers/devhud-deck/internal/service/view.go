@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"sort"
 	"strings"
 
 	"connectrpc.com/connect"
@@ -21,6 +22,66 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
+
+func (service *View) ListOwners(
+	ctx context.Context,
+	_ *connect.Request[deckv1.ListOwnersRequest],
+) (*connect.Response[deckv1.ListOwnersResponse], error) {
+	viewer, err := viewerFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	billingSelections := func(organizationID uuid.UUID) []*deckv1.BillingSelection {
+		teams := viewer.TeamMemberships[organizationID]
+		teamIDs := make([]uuid.UUID, 0, len(teams))
+		for teamID := range teams {
+			teamIDs = append(teamIDs, teamID)
+		}
+		sort.Slice(teamIDs, func(left, right int) bool {
+			return teamIDs[left].String() < teamIDs[right].String()
+		})
+		selections := make([]*deckv1.BillingSelection, 0, len(teamIDs))
+		for _, teamID := range teamIDs {
+			selections = append(selections, &deckv1.BillingSelection{
+				OrganizationId: &deckv1.UuidV7{Value: organizationID.String()},
+				TeamId:         &deckv1.UuidV7{Value: teamID.String()},
+			})
+		}
+		return selections
+	}
+	organizationIDs := make([]uuid.UUID, 0, len(viewer.Memberships))
+	for organizationID := range viewer.Memberships {
+		organizationIDs = append(organizationIDs, organizationID)
+	}
+	sort.Slice(organizationIDs, func(left, right int) bool {
+		return organizationIDs[left].String() < organizationIDs[right].String()
+	})
+	personalBilling := make([]*deckv1.BillingSelection, 0)
+	for _, organizationID := range organizationIDs {
+		personalBilling = append(personalBilling, billingSelections(organizationID)...)
+	}
+	owners := []*deckv1.OwnerAccess{{
+		Owner: &deckv1.Owner{
+			Scope:   deckv1.OwnerScope_OWNER_SCOPE_PERSONAL,
+			OwnerId: &deckv1.Owner_AccountId{AccountId: &deckv1.UuidV7{Value: viewer.AccountID.String()}},
+		},
+		CanManage:         true,
+		BillingSelections: personalBilling,
+	}}
+	for _, organizationID := range organizationIDs {
+		owners = append(owners, &deckv1.OwnerAccess{
+			Owner: &deckv1.Owner{
+				Scope: deckv1.OwnerScope_OWNER_SCOPE_ORGANIZATION,
+				OwnerId: &deckv1.Owner_OrganizationId{
+					OrganizationId: &deckv1.UuidV7{Value: organizationID.String()},
+				},
+			},
+			CanManage:         viewer.CanManage(organizationID),
+			BillingSelections: billingSelections(organizationID),
+		})
+	}
+	return connect.NewResponse(&deckv1.ListOwnersResponse{Owners: owners}), nil
+}
 
 func (service *View) ListViews(
 	ctx context.Context,

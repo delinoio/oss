@@ -19,6 +19,8 @@ vi.mock("./runtime/startup", () => ({
 }));
 
 import { App } from "./App";
+import { AuthFeature } from "./auth/contracts";
+import { unavailableDeckGateway } from "./deck/contracts";
 import {
   defaultSettings,
   encodeSettings,
@@ -83,6 +85,43 @@ function renderApp(
 }
 
 describe("DevHud application surfaces", () => {
+  it("focuses desktop search and keeps Deck data behind authentication", async () => {
+    renderApp();
+    const search = screen.getByRole("searchbox", { name: "Search tools" });
+    expect(search).toHaveFocus();
+    expect(await screen.findByRole("heading", { name: "Deck" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Sign in to Deck" })).toBeVisible();
+    expect(screen.queryByText(/permission-filtered pull requests…/u)).not.toBeInTheDocument();
+  });
+
+  it("offers incremental Deck authorization to an already signed-in account", async () => {
+    const start = vi.fn(async () => ({
+      status: "signed-in" as const,
+      subject: "account-a",
+      features: [AuthFeature.RealQa, AuthFeature.Deck],
+      offlineFeatures: [],
+    }));
+    renderApp({
+      deckGateway: { ...unavailableDeckGateway },
+      sessionBridge: {
+        restore: vi.fn(async () => ({
+          status: "signed-in" as const,
+          subject: "account-a",
+          features: [AuthFeature.RealQa],
+          offlineFeatures: [],
+        })),
+        start,
+        logout: vi.fn(async () => ({ status: "signed-out" as const })),
+      },
+    });
+
+    await userEvent.setup().click(
+      await screen.findByRole("button", { name: "Authorize Deck" }),
+    );
+
+    expect(start).toHaveBeenCalledWith("deck");
+  });
+
   it("focuses the desktop search field and presents authenticated RealQA entry", async () => {
     renderApp();
     const search = screen.getByRole("searchbox", { name: "Search tools" });

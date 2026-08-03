@@ -233,6 +233,15 @@ requireCondition(
   "mobile auth must discard a stale callback before starting a new authorization transaction",
 );
 requireCondition(
+  androidAuthPlugin.includes("fun openPullRequest") &&
+    androidAuthPlugin.includes('target.host == "github.com"') &&
+    androidAuthPlugin.includes('segments[2] == "pull"') &&
+    iosAuthPlugin.includes("func openPullRequest") &&
+    iosAuthPlugin.includes('target.host == "github.com"') &&
+    iosAuthPlugin.includes('segments[2] == "pull"'),
+  "mobile Deck PR handoff must use a distinct exact-shape GitHub system-browser command",
+);
+requireCondition(
   authNativeSource.includes('option_env!("DEVHUD_LOGTO_ENDPOINT")') &&
     authNativeSource.includes('option_env!("DEVHUD_LOGTO_APP_ID")'),
   "mobile auth must embed its public Logto issuer and app ID at Rust build time",
@@ -332,11 +341,13 @@ requireCondition(
       "allow-write-widget-configuration",
       "allow-export-diagnostics",
       "allow-reset-dev-hud",
+      "allow-deck-connect",
+      "allow-deck-open-pull-request",
       "allow-get-auth-session",
       "allow-start-authentication",
       "allow-logout-authentication",
     ]),
-  "mobile IPC must remain limited to diagnostics, the three versioned records, confirmed reset, and closed authentication session commands",
+  "mobile IPC must remain limited to scoped shell, authentication, and exact Deck commands",
 );
 requireCondition(
   runtimeSource.includes('"Unsupported"') &&
@@ -345,16 +356,18 @@ requireCondition(
   "mobile runtime diagnostics must report updates as unsupported",
 );
 requireCondition(
-  productionRegistry.includes('toolId: "realqa"') &&
+  productionRegistry.includes('toolId: "deck"') &&
+    productionRegistry.includes("ToolPlatform.Ios") &&
+    productionRegistry.includes("ToolPlatform.Android") &&
+    productionRegistry.includes('toolId: "realqa"') &&
     productionRegistry.includes(
       "supportedPlatforms: new Set([ToolPlatform.Desktop])",
     ) &&
     /supportedOperatingSystems:\s*new Set\(\[\s*ToolOperatingSystem\.Macos,\s*ToolOperatingSystem\.Ubuntu,\s*ToolOperatingSystem\.Windows,\s*\]\)/u.test(
       productionRegistry,
     ) &&
-    !productionRegistry.includes("ToolPlatform.Ios") &&
-    !productionRegistry.includes("ToolPlatform.Android"),
-  "production RealQA registration must remain limited to macOS, Ubuntu, and Windows desktop targets",
+    (productionRegistry.match(/defineTool\(\{/gu)?.length ?? 0) === 2,
+  "production registration must contain cross-platform Deck and desktop-only RealQA",
 );
 
 const nativeFiles = [

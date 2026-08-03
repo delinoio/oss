@@ -189,14 +189,19 @@ requireCondition(
 );
 requireCondition(
   JSON.parse(packageSource).version === "0.1.0" &&
+    productionRegistry.includes('toolId: "deck"') &&
+    productionRegistry.includes("ToolPlatform.Desktop") &&
+    productionRegistry.includes("ToolPlatform.Ios") &&
+    productionRegistry.includes("ToolPlatform.Android") &&
     productionRegistry.includes('toolId: "realqa"') &&
     productionRegistry.includes(
       "supportedPlatforms: new Set([ToolPlatform.Desktop])",
     ) &&
     /supportedOperatingSystems:\s*new Set\(\[\s*ToolOperatingSystem\.Macos,\s*ToolOperatingSystem\.Ubuntu,\s*ToolOperatingSystem\.Windows,\s*\]\)/u.test(
       productionRegistry,
-    ),
-  "DevHud 0.1.0 must keep RealQA registered only for supported desktop targets",
+    ) &&
+    (productionRegistry.match(/defineTool\(\{/gu)?.length ?? 0) === 2,
+  "DevHud 0.1.0 must register cross-platform Deck and desktop-only RealQA",
 );
 
 const prohibitedRemoteEndpoint =

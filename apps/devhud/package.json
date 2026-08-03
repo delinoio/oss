@@ -51,9 +51,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@delinoio/devhud-deck-connect": "workspace:*",
     "@bufbuild/protobuf": "2.13.0",
+    "@connectrpc/connect-query": "2.2.0",
+    "@delinoio/devhud-deck-connect": "workspace:*",
     "@delinoio/devhud-realqa-connect": "workspace:*",
+    "@tanstack/react-query": "5.101.4",
     "@tauri-apps/api": "2.11.1",
     "react": "19.2.3",
     "react-dom": "19.2.3"

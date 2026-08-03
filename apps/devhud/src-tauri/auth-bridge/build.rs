@@ -4,6 +4,7 @@ fn main() {
         "writeSession",
         "clearSession",
         "openAuthorization",
+        "openPullRequest",
         "takeCallback",
     ])
     .android_path("android")

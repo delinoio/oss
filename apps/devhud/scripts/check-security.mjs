@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { readdir, readFile } from "node:fs/promises";
 import { extname, join, relative, resolve } from "node:path";
 
@@ -88,6 +89,27 @@ const capabilities = {
   "realqa-composer": JSON.parse(realqaComposerCapabilitySource),
 };
 
+let frozenPrototypeConnectCompatible = true;
+try {
+  execFileSync(
+    process.execPath,
+    [
+      "--input-type=module",
+      "--eval",
+      `Object.freeze(Object.prototype);
+const { DeckViewService } = await import("@delinoio/devhud-deck-connect");
+if (DeckViewService.typeName !== "devhud.deck.v1.DeckViewService") process.exit(1);`,
+    ],
+    { cwd: appRoot, stdio: "pipe" },
+  );
+} catch {
+  frozenPrototypeConnectCompatible = false;
+}
+requireCondition(
+  frozenPrototypeConnectCompatible,
+  "Connect descriptors must initialize after Tauri freezes Object.prototype",
+);
+
 requireCondition(
   extensionManifest.manifest_version === 3 &&
     extensionManifest.minimum_chrome_version === "150" &&
@@ -171,6 +193,10 @@ const expectedCapabilities = {
       "allow-read-widget-configuration",
       "allow-hide-hud",
       "allow-show-settings",
+      "allow-deck-connect",
+      "allow-deck-device-id",
+      "allow-deck-open-pull-request",
+      "allow-synchronize-deck-shortcuts",
       "allow-show-realqa",
       "allow-get-auth-session",
       "allow-start-authentication",
@@ -212,6 +238,8 @@ const expectedCapabilities = {
       "allow-write-widget-configuration",
       "allow-export-diagnostics",
       "allow-reset-dev-hud",
+      "allow-deck-connect",
+      "allow-deck-open-pull-request",
       "allow-get-auth-session",
       "allow-start-authentication",
       "allow-logout-authentication",
