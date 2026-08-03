@@ -5,6 +5,11 @@ export default defineConfig({
   description: "Documentation for the Nodeup Node.js version manager.",
   root: "docs",
   outDir: "doc_build",
+  builderConfig: {
+    server: {
+      strictPort: process.env.DELINO_RSPRESS_STRICT_PORT === "1",
+    },
+  },
   route: {
     cleanUrls: true,
   },
