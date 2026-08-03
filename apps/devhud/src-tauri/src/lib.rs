@@ -76,6 +76,7 @@ use std::borrow::Cow;
         feature = "desktop-cef",
         not(any(target_os = "android", target_os = "ios"))
     ),
+    feature = "mobile-system-webview",
     test
 ))]
 use std::collections::VecDeque;
@@ -215,6 +216,33 @@ enum DeckWidgetActionEvent {
     ResolveEvent {
         event_id: String,
     },
+}
+
+#[cfg(any(feature = "mobile-system-webview", test))]
+const MAX_PENDING_DECK_WIDGET_ACTIONS: usize = 16;
+
+#[cfg(any(feature = "mobile-system-webview", test))]
+#[derive(Default)]
+struct DeckWidgetActionQueue(Mutex<VecDeque<DeckWidgetActionEvent>>);
+
+#[cfg(any(feature = "mobile-system-webview", test))]
+impl DeckWidgetActionQueue {
+    fn push(&self, action: DeckWidgetActionEvent) {
+        if let Ok(mut actions) = self.0.lock() {
+            if actions.len() == MAX_PENDING_DECK_WIDGET_ACTIONS {
+                actions.pop_front();
+            }
+            actions.push_back(action);
+        }
+    }
+
+    fn has_pending(&self) -> bool {
+        self.0.lock().is_ok_and(|actions| !actions.is_empty())
+    }
+
+    fn take(&self) -> Option<DeckWidgetActionEvent> {
+        self.0.lock().ok()?.pop_front()
+    }
 }
 
 #[cfg(any(feature = "mobile-system-webview", test))]
@@ -2086,6 +2114,39 @@ fn write_widget_configuration(
     state: State<'_, PersistenceState>,
 ) -> Result<(), PersistenceCommandError> {
     state.write(WIDGET_CONFIGURATION_STORAGE_KEY, &record)
+}
+
+#[cfg(all(
+    feature = "mobile-system-webview",
+    any(target_os = "android", target_os = "ios")
+))]
+#[tauri::command]
+fn deck_notification_authorization_enabled(
+    app: AppHandle<ActiveRuntime>,
+) -> Result<bool, PersistenceCommandError> {
+    app.devhud_widget_bridge()
+        .notification_authorization_enabled()
+        .map_err(|error| widget_bridge_failure("notification-authorization", &error))
+}
+
+#[cfg(all(
+    feature = "mobile-system-webview",
+    any(target_os = "android", target_os = "ios")
+))]
+#[tauri::command]
+fn has_pending_deck_widget_action(queue: State<'_, DeckWidgetActionQueue>) -> bool {
+    queue.has_pending()
+}
+
+#[cfg(all(
+    feature = "mobile-system-webview",
+    any(target_os = "android", target_os = "ios")
+))]
+#[tauri::command]
+fn take_pending_deck_widget_action(
+    queue: State<'_, DeckWidgetActionQueue>,
+) -> Option<DeckWidgetActionEvent> {
+    queue.take()
 }
 
 #[cfg(all(
@@ -4334,6 +4395,9 @@ fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<A
             write_shortcut_effective_state,
             read_widget_configuration,
             write_widget_configuration,
+            deck_notification_authorization_enabled,
+            has_pending_deck_widget_action,
+            take_pending_deck_widget_action,
             export_diagnostics,
             reset_dev_hud,
             get_auth_session,
@@ -4370,6 +4434,7 @@ fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<A
             };
             app.manage(persistence);
             app.manage(auth_native::NativeAuthState::initialize(app.handle()));
+            app.manage(DeckWidgetActionQueue::default());
             app.manage(Mutex::new(StartupDiagnostics::default()));
             WebviewWindowBuilder::new(app, MAIN_WINDOW_LABEL, WebviewUrl::App("index.html".into()))
                 .title("DevHud")
@@ -4514,7 +4579,8 @@ fn run_app() -> Result<(), RuntimeInitializationFailure> {
         if let tauri::RunEvent::Opened { urls } = event {
             for callback in urls {
                 if let Some(action) = deck_widget_action(&callback) {
-                    let _ = app.emit("devhud://deck-widget-action", action);
+                    app.state::<DeckWidgetActionQueue>().push(action);
+                    let _ = app.emit("devhud://deck-widget-action", ());
                     continue;
                 }
                 #[cfg(target_os = "ios")]
@@ -4661,6 +4727,29 @@ mod tests {
                 "{rejected}"
             );
         }
+    }
+
+    #[test]
+    fn deck_widget_actions_wait_for_the_frontend_in_a_bounded_fifo() {
+        let queue = DeckWidgetActionQueue::default();
+        for index in 0..=MAX_PENDING_DECK_WIDGET_ACTIONS {
+            queue.push(DeckWidgetActionEvent::ResolveEvent {
+                event_id: format!("opaque_event_{index:016}"),
+            });
+        }
+
+        assert!(queue.has_pending());
+        assert_eq!(
+            queue.take(),
+            Some(DeckWidgetActionEvent::ResolveEvent {
+                event_id: "opaque_event_0000000000000001".into(),
+            })
+        );
+        for _ in 1..MAX_PENDING_DECK_WIDGET_ACTIONS {
+            assert!(queue.take().is_some());
+        }
+        assert!(!queue.has_pending());
+        assert_eq!(queue.take(), None);
     }
 
     #[cfg(all(

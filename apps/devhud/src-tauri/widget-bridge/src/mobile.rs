@@ -5,8 +5,8 @@ use tauri::{
 };
 
 use crate::{
-    EmptyRequest, PrepareResetResponse, ReadConfigurationResponse, Result, WidgetRefreshResponse,
-    WriteConfigurationRequest,
+    EmptyRequest, NotificationAuthorizationResponse, PrepareResetResponse,
+    ReadConfigurationResponse, Result, WidgetRefreshResponse, WriteConfigurationRequest,
 };
 
 #[cfg(target_os = "android")]
@@ -41,6 +41,13 @@ impl<R: Runtime> DevHudWidgetBridge<R> {
             .0
             .run_mobile_plugin("writeConfiguration", WriteConfigurationRequest { record })?;
         Ok(response.refreshed_widget_count)
+    }
+
+    pub fn notification_authorization_enabled(&self) -> Result<bool> {
+        let response: NotificationAuthorizationResponse = self
+            .0
+            .run_mobile_plugin("notificationAuthorizationStatus", EmptyRequest::default())?;
+        Ok(response.authorized)
     }
 
     pub fn prepare_reset(&self) -> Result<()> {

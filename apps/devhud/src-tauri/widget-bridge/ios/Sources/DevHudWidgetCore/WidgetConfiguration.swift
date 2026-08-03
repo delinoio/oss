@@ -153,7 +153,7 @@ public enum WidgetConfigurationCodec {
               DeckWidgetFreshness(rawValue: freshness) != nil,
               snapshot["offline"] is Bool,
               let generatedAt = snapshot["generatedAt"] as? String,
-              ISO8601DateFormatter().date(from: generatedAt) != nil
+              iso8601Date(generatedAt) != nil
         else { throw WidgetConfigurationError.incompatible }
         for pullRequest in pullRequests {
             try exactKeys(pullRequest, ["repositoryOwner", "repositoryName", "number", "title"])
@@ -171,6 +171,12 @@ public enum WidgetConfigurationCodec {
               number.doubleValue.rounded() == number.doubleValue
         else { return nil }
         return number.intValue
+    }
+
+    private static func iso8601Date(_ value: String) -> Date? {
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return fractional.date(from: value) ?? ISO8601DateFormatter().date(from: value)
     }
 
     private static func exactKeys(_ object: [String: Any], _ expected: Set<String>) throws {

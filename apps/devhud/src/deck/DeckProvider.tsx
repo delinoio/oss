@@ -15,7 +15,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { isTauri } from "@tauri-apps/api/core";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
 import {
@@ -36,6 +36,7 @@ import {
 import type { ManualRefreshWarning } from "./refreshController";
 import { createUuidV7 } from "./uuid";
 import { openDeckPullRequest } from "./transport";
+import type { DeckWidgetFamily, DeckWidgetPrivacy } from "../persistence/contracts";
 
 // Gateway injection keeps component tests native-free, while Connect Query's
 // generated-service key keeps every server-state cache operation namespaced to
@@ -78,6 +79,11 @@ interface DeckActions {
   loadMoreViews(): Promise<void>;
   loadMorePullRequests(): Promise<void>;
   refresh(): Promise<boolean>;
+  createWidgetConfiguration(
+    viewId: string,
+    family: DeckWidgetFamily,
+    privacy: DeckWidgetPrivacy,
+  ): Promise<boolean>;
   resolveManualRefresh(confirmed: boolean): void;
   searchMutationCandidates(
     pullRequest: DeckPullRequest,
@@ -300,20 +306,35 @@ export function DeckProvider({
     }
   }, []);
 
+  const syncNativeNotificationPreference = useCallback(
+    async (viewId: string, input: DeckViewInput) => {
+      try {
+        await gateway.updateNativeNotificationPreference(
+          viewId,
+          input.notificationPreference,
+        );
+      } catch (error) {
+        // The view mutation is already committed. Report this device-local
+        // failure without making the create/edit form retry the server write.
+        setOperationError(error);
+      }
+    },
+    [gateway],
+  );
+
   const createView = useCallback(
     (owner: DeckOwner, input: DeckViewInput) => run(async () => {
+      await gateway.ensureNativeNotificationPermission(input.notificationPreference);
       const created = await gateway.createView(owner, input, createUuidV7());
       setSelectedView(created);
       await invalidateViews();
-      await gateway.updateNativeNotificationPreference(
-        created.viewId,
-        input.notificationPreference,
-      );
+      await syncNativeNotificationPreference(created.viewId, input);
     }),
-    [gateway, invalidateViews, run],
+    [gateway, invalidateViews, run, syncNativeNotificationPreference],
   );
   const saveView = useCallback(
     (view: DeckView, input: DeckViewInput) => run(async () => {
+      await gateway.ensureNativeNotificationPermission(input.notificationPreference);
       let updated: DeckView;
       try {
         updated = await gateway.updateView(view, input);
@@ -327,12 +348,9 @@ export function DeckProvider({
       setConflict(null);
       setSelectedView(updated);
       await invalidateViews();
-      await gateway.updateNativeNotificationPreference(
-        updated.viewId,
-        input.notificationPreference,
-      );
+      await syncNativeNotificationPreference(updated.viewId, input);
     }),
-    [gateway, invalidateViews, run],
+    [gateway, invalidateViews, run, syncNativeNotificationPreference],
   );
   const deleteView = useCallback(
     (view: DeckView) => run(async () => {
@@ -361,6 +379,11 @@ export function DeckProvider({
       await invalidatePullRequests();
     }),
     [gateway, invalidatePullRequests, run, selectedView],
+  );
+  const createWidgetConfiguration = useCallback(
+    (viewId: string, family: DeckWidgetFamily, privacy: DeckWidgetPrivacy) =>
+      run(() => gateway.createWidgetConfiguration(viewId, family, privacy)),
+    [gateway, run],
   );
   const resolveManualRefresh = useCallback((confirmed: boolean) => {
     manualRefreshResolver?.(confirmed);
@@ -452,47 +475,76 @@ export function DeckProvider({
     }),
     [gateway, owners, queryClient, resolveManualRefresh, run],
   );
+  const handleWidgetAction = useCallback(
+    (action: DeckWidgetActionEvent) => run(async () => {
+      if (action.action === "open-view") {
+        await openShortcut(action.viewId);
+        return;
+      }
+      if (action.action === "refresh") {
+        await gateway.requestWidgetRefresh(action.viewId);
+        await openShortcut(action.viewId);
+        await queryClient.invalidateQueries({
+          queryKey: [...viewServiceKey, "ListPullRequests", action.viewId],
+        });
+        return;
+      }
+      if (action.action === "open-pr") {
+        await openDeckPullRequest(action.owner, action.repository, action.number);
+        return;
+      }
+      const destination = await gateway.resolveNotificationEvent(action.eventId);
+      if (destination.viewId !== undefined) await openShortcut(destination.viewId);
+      if (destination.pullRequest !== undefined) {
+        await openDeckPullRequest(
+          destination.pullRequest.repositoryOwner,
+          destination.pullRequest.repositoryName,
+          destination.pullRequest.number,
+        );
+      }
+    }),
+    [gateway, openShortcut, queryClient, run],
+  );
   useEffect(() => {
     if (!isTauri()) return;
+    let active = true;
+    let drainRequested = false;
+    let draining = false;
+    const requestWidgetActionDrain = () => {
+      drainRequested = true;
+      if (draining) return;
+      draining = true;
+      void (async () => {
+        while (active && drainRequested) {
+          drainRequested = false;
+          while (active) {
+            const action = await invoke<DeckWidgetActionEvent | null>(
+              "take_pending_deck_widget_action",
+            );
+            if (action === null) break;
+            await handleWidgetAction(action);
+          }
+        }
+      })().finally(() => {
+        draining = false;
+        if (active && drainRequested) requestWidgetActionDrain();
+      });
+    };
+    const widgetListener = listen("devhud://deck-widget-action", requestWidgetActionDrain);
+    void widgetListener.then(requestWidgetActionDrain);
     const cleanups = [
       listen("devhud://deck-open", () => {
         document.getElementById("deck-workspace-title")?.focus();
       }),
       listen("devhud://deck-refresh", () => void refresh()),
       listen<string>("devhud://deck-shortcut", (event) => void openShortcut(event.payload)),
-      listen<DeckWidgetActionEvent>("devhud://deck-widget-action", (event) => {
-        void run(async () => {
-          const action = event.payload;
-          if (action.action === "open-view") {
-            await openShortcut(action.viewId);
-            return;
-          }
-          if (action.action === "refresh") {
-            await gateway.requestWidgetRefresh(action.viewId);
-            await openShortcut(action.viewId);
-            await queryClient.invalidateQueries({
-              queryKey: [...viewServiceKey, "ListPullRequests", action.viewId],
-            });
-            return;
-          }
-          if (action.action === "open-pr") {
-            await openDeckPullRequest(action.owner, action.repository, action.number);
-            return;
-          }
-          const destination = await gateway.resolveNotificationEvent(action.eventId);
-          if (destination.viewId !== undefined) await openShortcut(destination.viewId);
-          if (destination.pullRequest !== undefined) {
-            await openDeckPullRequest(
-              destination.pullRequest.repositoryOwner,
-              destination.pullRequest.repositoryName,
-              destination.pullRequest.number,
-            );
-          }
-        });
-      }),
+      widgetListener,
     ];
-    return () => { void Promise.all(cleanups).then((unlisten) => unlisten.forEach((remove) => remove())); };
-  }, [gateway, openShortcut, queryClient, refresh, run]);
+    return () => {
+      active = false;
+      void Promise.all(cleanups).then((unlisten) => unlisten.forEach((remove) => remove()));
+    };
+  }, [handleWidgetAction, openShortcut, refresh]);
   const retry = useCallback(async () => {
     setOperationError(null);
     const requests: Promise<unknown>[] = [ownersQuery.refetch()];
@@ -570,6 +622,7 @@ export function DeckProvider({
     loadMoreViews: async () => { await viewsQuery.fetchNextPage(); },
     loadMorePullRequests: async () => { await pullRequestsQuery.fetchNextPage(); },
     refresh,
+    createWidgetConfiguration,
     resolveManualRefresh,
     searchMutationCandidates,
     mutate,
@@ -577,6 +630,7 @@ export function DeckProvider({
     retry,
   }), [
     createView,
+    createWidgetConfiguration,
     deleteView,
     mutate,
     openOnGitHub,

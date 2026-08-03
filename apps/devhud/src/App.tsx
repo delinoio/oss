@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { invoke, isTauri } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
 import { AuthFeature, SessionProvider, useSession } from "./auth/SessionProvider";
 import type { NativeSessionBridge } from "./auth/contracts";
@@ -830,6 +832,23 @@ function MobileShell({
       setMobileScreen(MobileScreen.Home);
     }
   }, [mobileScreen, session.status, setMobileScreen]);
+  useEffect(() => {
+    if (!isTauri()) return;
+    let active = true;
+    const openDeckForPendingAction = async () => {
+      if (session.status !== "signed-in") return;
+      const pending = await invoke<boolean>("has_pending_deck_widget_action");
+      if (active && pending) setMobileScreen(MobileScreen.Deck);
+    };
+    const listener = listen("devhud://deck-widget-action", () => {
+      void openDeckForPendingAction();
+    });
+    void listener.then(openDeckForPendingAction);
+    return () => {
+      active = false;
+      void listener.then((unlisten) => unlisten());
+    };
+  }, [session.status, setMobileScreen]);
   return (
     <main className="mobile-shell">
       <header className="app-header mobile-header">

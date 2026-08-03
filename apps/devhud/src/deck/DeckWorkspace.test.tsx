@@ -23,13 +23,23 @@ import {
   type DeckView,
 } from "./contracts";
 import { manualRefreshWarning } from "./refreshController";
+import { DeckWidgetFamily, DeckWidgetPrivacy } from "../persistence/contracts";
 
 const tauri = vi.hoisted(() => ({
   enabled: false,
   listeners: new Map<string, (event: { readonly payload: unknown }) => void>(),
+  pendingWidgetActions: [] as unknown[],
 }));
 
-vi.mock("@tauri-apps/api/core", () => ({ isTauri: () => tauri.enabled }));
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: vi.fn(async (command: string) => {
+    if (command === "take_pending_deck_widget_action") {
+      return tauri.pendingWidgetActions.shift() ?? null;
+    }
+    throw new Error(`Unexpected command: ${command}`);
+  }),
+  isTauri: () => tauri.enabled,
+}));
 vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(async (
     event: string,
@@ -47,6 +57,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   tauri.enabled = false;
   tauri.listeners.clear();
+  tauri.pendingWidgetActions.length = 0;
   Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
   window.dispatchEvent(new Event("online"));
 });
@@ -104,6 +115,7 @@ const pullRequest: DeckPullRequest = {
 
 function gateway(overrides: Partial<DeckGateway> = {}): DeckGateway {
   return {
+    supportedWidgetFamilies: [],
     listOwners: vi.fn(async () => [owner]),
     listViews: vi.fn(async () => ({ items: [view], nextCursor: "" })),
     createView: vi.fn(async (_owner, input) => ({ ...view, ...input })),
@@ -118,10 +130,12 @@ function gateway(overrides: Partial<DeckGateway> = {}): DeckGateway {
       if (!await confirm(manualRefreshWarning(50n))) return;
     }),
     requestWidgetRefresh: vi.fn(async () => undefined),
+    ensureNativeNotificationPermission: vi.fn(async () => undefined),
     updateNativeNotificationPreference: vi.fn(async () => undefined),
     resolveNotificationEvent: vi.fn(async () => ({})),
     openPullRequest: vi.fn(async () => undefined),
     recordViewOpened: vi.fn(),
+    createWidgetConfiguration: vi.fn(async () => undefined),
     synchronizeShortcuts: vi.fn(async () => undefined),
     clearShortcuts: vi.fn(async () => undefined),
     startEligibleRefreshes: vi.fn(() => () => undefined),
@@ -268,6 +282,73 @@ describe("Deck composable production workspace", () => {
         transitions: Object.values(DeckNotificationTransition),
       },
     );
+    expect(backend.ensureNativeNotificationPermission).toHaveBeenCalledWith({
+      enabled: true,
+      transitions: Object.values(DeckNotificationTransition),
+    });
+  });
+
+  it("checks OS notification authorization before updating a view", async () => {
+    const backend = gateway({
+      ensureNativeNotificationPermission: vi.fn(async () => {
+        throw new DeckProductError(DeckFailureCode.NotificationPermissionRequired);
+      }),
+    });
+    const user = userEvent.setup();
+    renderDeck(backend);
+    await user.click(await screen.findByRole("button", { name: /Needs review/u }));
+    await user.click(screen.getByRole("button", { name: "Edit view" }));
+    await user.click(screen.getByRole("checkbox", { name: "Enable notifications for this view" }));
+    await user.click(screen.getByRole("checkbox", { name: "Assigned to me" }));
+    await user.click(screen.getByRole("button", { name: "Save view" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Enable notifications for DevHud in system settings",
+    );
+    expect(backend.updateView).not.toHaveBeenCalled();
+  });
+
+  it("finishes a successful create when the follow-up device preference sync fails", async () => {
+    const createView = vi.fn(async (_owner: DeckOwner, input: Parameters<DeckGateway["createView"]>[1]) => ({
+      ...view,
+      ...input,
+      name: input.name,
+    }));
+    const backend = gateway({
+      createView,
+      updateNativeNotificationPreference: vi.fn(async () => {
+        throw new DeckProductError(DeckFailureCode.ServiceUnavailable);
+      }),
+    });
+    const user = userEvent.setup();
+    renderDeck(backend);
+    await user.click(await screen.findByRole("button", { name: "New view" }));
+    await user.type(screen.getByLabelText("View name"), "Created once");
+    await user.click(screen.getByRole("button", { name: "Save view" }));
+
+    await waitFor(() => expect(createView).toHaveBeenCalledOnce());
+    expect(screen.queryByRole("heading", { name: "Create view" })).not.toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toHaveTextContent("temporarily unavailable");
+  });
+
+  it("creates a counts-only mobile widget configuration before system selection", async () => {
+    const createWidgetConfiguration = vi.fn(async () => undefined);
+    const backend = gateway({
+      supportedWidgetFamilies: [DeckWidgetFamily.AndroidCompact],
+      createWidgetConfiguration,
+    });
+    const user = userEvent.setup();
+    renderDeck(backend);
+    await user.click(await screen.findByRole("button", { name: /Needs review/u }));
+    await user.click(screen.getByRole("button", { name: "Configure widget" }));
+    await user.click(screen.getByRole("button", { name: "Create widget configuration" }));
+
+    await waitFor(() => expect(createWidgetConfiguration).toHaveBeenCalledWith(
+      view.viewId,
+      DeckWidgetFamily.AndroidCompact,
+      DeckWidgetPrivacy.CountsOnly,
+    ));
+    expect(screen.queryByRole("dialog", { name: "Configure Deck widget" })).not.toBeInTheDocument();
   });
 
   it("replaces a selected owner removed by an authoritative refetch", async () => {
@@ -326,13 +407,23 @@ describe("Deck composable production workspace", () => {
     renderDeck(backend);
     await waitFor(() => expect(tauri.listeners.has("devhud://deck-widget-action")).toBe(true));
 
-    tauri.listeners.get("devhud://deck-widget-action")?.({
-      payload: { action: "refresh", viewId: view.viewId },
-    });
+    tauri.pendingWidgetActions.push({ action: "refresh", viewId: view.viewId });
+    tauri.listeners.get("devhud://deck-widget-action")?.({ payload: null });
 
     await waitFor(() => expect(backend.requestWidgetRefresh).toHaveBeenCalledWith(view.viewId));
     await waitFor(() => expect(backend.getView).toHaveBeenCalledWith(view.viewId));
     expect(backend.mutatePullRequest).not.toHaveBeenCalled();
+  });
+
+  it("drains a widget action queued before the frontend listener mounts", async () => {
+    tauri.enabled = true;
+    tauri.pendingWidgetActions.push({ action: "open-view", viewId: view.viewId });
+    const backend = gateway();
+
+    renderDeck(backend);
+
+    await waitFor(() => expect(backend.getView).toHaveBeenCalledWith(view.viewId));
+    expect(tauri.pendingWidgetActions).toHaveLength(0);
   });
 
   it("loads permission-filtered rows, exposes truncation, and hands comments to GitHub", async () => {

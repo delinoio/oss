@@ -4,6 +4,7 @@ import android.app.Activity
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
 import android.content.Intent
+import androidx.core.app.NotificationManagerCompat
 import app.tauri.annotation.Command
 import app.tauri.annotation.InvokeArg
 import app.tauri.annotation.TauriPlugin
@@ -53,6 +54,18 @@ class DevHudWidgetPlugin(
                 put(
                     "refreshedWidgetCount",
                     service.writeRawRecord(arguments.record),
+                )
+            }
+        }
+    }
+
+    @Command
+    fun notificationAuthorizationStatus(invoke: Invoke) {
+        execute(invoke) {
+            JSObject().apply {
+                put(
+                    "authorized",
+                    NotificationManagerCompat.from(activity).areNotificationsEnabled(),
                 )
             }
         }

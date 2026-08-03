@@ -106,7 +106,10 @@ private struct DevHudWidgetView: View {
             .accessibilityLabel("\(widget.snapshot.matchingCount) matching pull requests. \(status(widget.snapshot)).")
 
             if family != .systemSmall && widget.privacy == .repositoryAndTitles {
-                ForEach(Array(widget.snapshot.pullRequests.prefix(family == .systemLarge ? 5 : 2)), id: \.number) { pullRequest in
+                ForEach(
+                    Array(widget.snapshot.pullRequests.prefix(family == .systemLarge ? 5 : 2).enumerated()),
+                    id: \.offset
+                ) { _, pullRequest in
                     Link(destination: DeckWidgetAction.openPullRequest(
                         viewId: widget.viewId,
                         owner: pullRequest.repositoryOwner,

@@ -20,6 +20,7 @@ import {
 } from "./contracts";
 import { mapFailure, NativeDeckGateway } from "./nativeGateway";
 import { DeckProcedure, invokeDeckProcedure } from "./transport";
+import { DeckWidgetFamily, DeckWidgetPrivacy } from "../persistence/contracts";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
@@ -289,6 +290,104 @@ describe("native Deck gateway", () => {
     expect(vi.mocked(invokeDeckProcedure).mock.calls.some(
       ([procedure]) => procedure === DeckProcedure.MutatePullRequest,
     )).toBe(false);
+  });
+
+  it("requires native notification authorization before enabling a mobile preference", async () => {
+    Object.defineProperty(navigator, "userAgent", { configurable: true, value: "Android" });
+    vi.mocked(invoke).mockResolvedValueOnce(false as never).mockResolvedValueOnce(true as never);
+    const gateway = new NativeDeckGateway(RefreshClientKind.MOBILE);
+    const preference = {
+      enabled: true,
+      transitions: [DeckNotificationTransition.Assigned],
+    };
+
+    await expect(gateway.ensureNativeNotificationPermission(preference)).rejects.toMatchObject({
+      code: DeckFailureCode.NotificationPermissionRequired,
+    });
+    await expect(gateway.ensureNativeNotificationPermission(preference)).resolves.toBeUndefined();
+    expect(invoke).toHaveBeenNthCalledWith(1, "deck_notification_authorization_enabled");
+  });
+
+  it("registers a configured mobile widget and polls its view outside loaded pages", async () => {
+    const accountId = "018f0000-0000-7000-8000-000000000001";
+    const deviceId = "018f0000-0000-7000-8000-000000000002";
+    const viewId = "018f0000-0000-7000-8000-000000000003";
+    Object.defineProperty(navigator, "userAgent", { configurable: true, value: "Android" });
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command === "deck_device_id") return deviceId as never;
+      if (command === "write_widget_configuration") return 0 as never;
+      throw new Error(`Unexpected command: ${command}`);
+    });
+    vi.mocked(invokeDeckProcedure).mockImplementation(async (procedure, _input, _output, request) => {
+      if (procedure === DeckProcedure.ListOwners) {
+        return {
+          owners: [{
+            owner: { ownerId: { case: "accountId", value: { value: accountId } } },
+            canManage: true,
+            billingSelections: [],
+          }],
+        } as never;
+      }
+      if (procedure === DeckProcedure.RegisterDevice) {
+        const widget = (request as unknown as { widgets: Array<Record<string, unknown>> }).widgets[0];
+        return {
+          registration: {
+            registrationId: { value: "018f0000-0000-7000-8000-000000000004" },
+            device: {
+              shortcuts: [],
+              widgets: [{
+                ...widget,
+                snapshot: {
+                  matchingCount: 0,
+                  pullRequests: [],
+                  freshness: 1,
+                  offline: false,
+                  generatedAt: { seconds: 0n, nanos: 0 },
+                },
+              }],
+            },
+          },
+        } as never;
+      }
+      if (procedure === DeckProcedure.GetRefreshPreflight) {
+        return { providerRefreshPrice: { value: 50n }, preflightToken: "token" } as never;
+      }
+      if (procedure === DeckProcedure.RefreshView) return {} as never;
+      throw new Error(`Unexpected procedure: ${procedure}`);
+    });
+    const gateway = new NativeDeckGateway(RefreshClientKind.MOBILE);
+    await gateway.listOwners();
+
+    await gateway.createWidgetConfiguration(
+      viewId,
+      DeckWidgetFamily.AndroidCompact,
+      DeckWidgetPrivacy.CountsOnly,
+    );
+
+    const registration = vi.mocked(invokeDeckProcedure).mock.calls.find(
+      ([procedure]) => procedure === DeckProcedure.RegisterDevice,
+    )?.[3] as unknown as {
+      widgets: Array<{ widgetId?: { value: string }; viewId?: { value: string } }>;
+    };
+    expect(registration.widgets).toHaveLength(1);
+    expect(registration.widgets[0]?.widgetId?.value).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u,
+    );
+    expect(registration.widgets[0]?.viewId?.value).toBe(viewId);
+
+    await new Promise<void>((resolve, reject) => {
+      let stop: () => void = () => undefined;
+      const timeout = setTimeout(() => {
+        stop();
+        reject(new Error("Timed out waiting for widget-attached refresh"));
+      }, 1_000);
+      stop = gateway.startEligibleRefreshes([], (refreshedViewId) => {
+        if (refreshedViewId !== viewId) return;
+        stop();
+        clearTimeout(timeout);
+        resolve();
+      });
+    });
   });
 
   it("shares one preflight, confirmation, and dispatch across concurrent manual refreshes", async () => {

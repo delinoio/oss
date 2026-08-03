@@ -74,6 +74,7 @@ import {
   ViewQuerySchema,
   ViewSort,
   WidgetFamily,
+  WidgetConfigurationSchema,
   WidgetPrivacy,
   type PullRequestResult,
   type DeviceRegistration,
@@ -83,6 +84,8 @@ import {
 } from "@delinoio/devhud-deck-connect";
 
 import {
+  DeckWidgetFamily,
+  DeckWidgetPrivacy,
   ShortcutKey,
   ShortcutModifier,
   type StructuredShortcut,
@@ -488,6 +491,20 @@ const widgetFamilyWire: Readonly<Partial<Record<WidgetFamily, string>>> = {
   [WidgetFamily.ANDROID_LIST]: "android-list",
 };
 
+const widgetFamilyToProto: Readonly<Record<DeckWidgetFamily, WidgetFamily>> = {
+  [DeckWidgetFamily.AppleSmall]: WidgetFamily.APPLE_SMALL,
+  [DeckWidgetFamily.AppleMedium]: WidgetFamily.APPLE_MEDIUM,
+  [DeckWidgetFamily.AppleLarge]: WidgetFamily.APPLE_LARGE,
+  [DeckWidgetFamily.AndroidCompact]: WidgetFamily.ANDROID_COMPACT,
+  [DeckWidgetFamily.AndroidWide]: WidgetFamily.ANDROID_WIDE,
+  [DeckWidgetFamily.AndroidList]: WidgetFamily.ANDROID_LIST,
+};
+
+const widgetPrivacyToProto: Readonly<Record<DeckWidgetPrivacy, WidgetPrivacy>> = {
+  [DeckWidgetPrivacy.CountsOnly]: WidgetPrivacy.COUNTS_ONLY,
+  [DeckWidgetPrivacy.RepositoryAndTitles]: WidgetPrivacy.REPOSITORY_AND_TITLES,
+};
+
 function widgetFreshnessWire(value: FreshnessState): string {
   if (value === FreshnessState.FRESH) return "fresh";
   if (value === FreshnessState.STALE) return "stale";
@@ -575,6 +592,7 @@ export class NativeDeckGateway implements DeckGateway {
   readonly #automaticAttempts = new MemoryRefreshAttemptStore();
   readonly #lastOpenedAt = new Map<string, Date>();
   readonly #shortcutViewIds = new Set<string>();
+  readonly #widgetViewIds = new Set<string>();
   #deviceRegistrationAttempt: RegisterDeviceRequest | undefined;
   #deviceRegistered = false;
   #deviceRegistration: DeviceRegistration | undefined;
@@ -583,12 +601,26 @@ export class NativeDeckGateway implements DeckGateway {
   #deviceId = "";
 
   readonly #clientKind: RefreshClientKind.DESKTOP | RefreshClientKind.MOBILE;
+  readonly supportedWidgetFamilies: readonly DeckWidgetFamily[];
 
   constructor(
     clientKind: RefreshClientKind.DESKTOP | RefreshClientKind.MOBILE = RefreshClientKind.DESKTOP,
     private readonly desktopPlatform = () => desktopDevicePlatform(navigator.userAgent),
   ) {
     this.#clientKind = clientKind;
+    this.supportedWidgetFamilies = clientKind !== RefreshClientKind.MOBILE
+      ? []
+      : /Android/u.test(navigator.userAgent)
+        ? [
+            DeckWidgetFamily.AndroidCompact,
+            DeckWidgetFamily.AndroidWide,
+            DeckWidgetFamily.AndroidList,
+          ]
+        : [
+            DeckWidgetFamily.AppleSmall,
+            DeckWidgetFamily.AppleMedium,
+            DeckWidgetFamily.AppleLarge,
+          ];
   }
 
   async #call<T>(operation: () => Promise<T>): Promise<T> {
@@ -771,6 +803,15 @@ export class NativeDeckGateway implements DeckGateway {
     );
     await controller.refresh(viewId, new AbortController().signal);
   }
+  async ensureNativeNotificationPermission(
+    preference: DeckNotificationPreference,
+  ): Promise<void> {
+    if (this.#clientKind !== RefreshClientKind.MOBILE || !preference.enabled) return;
+    const enabled = await invoke<boolean>("deck_notification_authorization_enabled");
+    if (!enabled) {
+      throw new DeckProductError(DeckFailureCode.NotificationPermissionRequired);
+    }
+  }
   async updateNativeNotificationPreference(
     viewId: string,
     preference: DeckNotificationPreference,
@@ -825,9 +866,35 @@ export class NativeDeckGateway implements DeckGateway {
     ));
   }
   recordViewOpened(viewId: string): void { this.#lastOpenedAt.set(viewId, new Date()); }
+  async createWidgetConfiguration(
+    viewId: string,
+    family: DeckWidgetFamily,
+    privacy: DeckWidgetPrivacy,
+  ): Promise<void> {
+    if (!this.supportedWidgetFamilies.includes(family)) {
+      throw new DeckProductError(DeckFailureCode.UnsupportedAction);
+    }
+    const widget = create(WidgetConfigurationSchema, {
+      widgetId: uuid(createUuidV7()),
+      viewId: uuid(viewId),
+      family: widgetFamilyToProto[family],
+      privacy: widgetPrivacyToProto[privacy],
+    });
+    await this.#runShortcutSynchronization(widget);
+    if (!this.#deviceRegistration?.device?.widgets.some(
+      (candidate) => candidate.widgetId?.value === widget.widgetId?.value,
+    )) {
+      // A startup registration may already have been in flight before this
+      // configuration was created. Reapply it to the installed registration.
+      await this.#runShortcutSynchronization(widget);
+    }
+  }
   synchronizeShortcuts(): Promise<void> { return this.#runShortcutSynchronization(); }
 
-  async #registerDevice(current?: DeviceRegistration): Promise<DeviceRegistration> {
+  async #registerDevice(
+    current?: DeviceRegistration,
+    widget?: RegisterDeviceRequest["widgets"][number],
+  ): Promise<DeviceRegistration> {
     let attempt = this.#deviceRegistrationAttempt;
     if (attempt === undefined) {
       const device = current?.device;
@@ -844,12 +911,15 @@ export class NativeDeckGateway implements DeckGateway {
           viewId: shortcut.viewId,
           binding: shortcut.binding,
         })),
-        widgets: (device?.widgets ?? []).map((widget) => ({
-          widgetId: widget.widgetId,
-          viewId: widget.viewId,
-          family: widget.family,
-          privacy: widget.privacy,
-        })),
+        widgets: [
+          ...(device?.widgets ?? []).map((currentWidget) => ({
+            widgetId: currentWidget.widgetId,
+            viewId: currentWidget.viewId,
+            family: currentWidget.family,
+            privacy: currentWidget.privacy,
+          })),
+          ...(widget === undefined ? [] : [widget]),
+        ],
         expectedRevision: device?.revision,
       });
       this.#deviceRegistrationAttempt = attempt;
@@ -888,7 +958,9 @@ export class NativeDeckGateway implements DeckGateway {
     return response.registration;
   }
 
-  async #runShortcutSynchronization(): Promise<void> {
+  async #runShortcutSynchronization(
+    widget?: RegisterDeviceRequest["widgets"][number],
+  ): Promise<void> {
     if (!isTauri()) return;
     if (this.#accountId.length === 0) return;
     const generation = this.#shortcutSynchronizationGeneration;
@@ -901,17 +973,22 @@ export class NativeDeckGateway implements DeckGateway {
     if (generation !== this.#shortcutSynchronizationGeneration) return;
     let registration: DeviceRegistration;
     try {
-      registration = await this.#registerDevice(current);
+      registration = await this.#registerDevice(current, widget);
     } catch (error) {
       if (!(error instanceof DeckProductError) || error.code !== DeckFailureCode.StaleRevision) {
         throw error;
       }
       current = await this.#getDevice();
-      registration = await this.#registerDevice(current);
+      registration = await this.#registerDevice(current, widget);
     }
     if (generation !== this.#shortcutSynchronizationGeneration) return;
     this.#deviceRegistered = true;
     this.#deviceRegistration = registration;
+    this.#widgetViewIds.clear();
+    for (const registeredWidget of registration.device?.widgets ?? []) {
+      const viewId = registeredWidget.viewId?.value ?? "";
+      if (viewId.length > 0) this.#widgetViewIds.add(viewId);
+    }
     if (this.#clientKind === RefreshClientKind.MOBILE) {
       await this.#writeMobileWidgetSnapshot(registration);
       return;
@@ -982,6 +1059,7 @@ export class NativeDeckGateway implements DeckGateway {
     this.#deviceRegistered = false;
     this.#deviceRegistration = undefined;
     this.#deviceRegistrationAttempt = undefined;
+    this.#widgetViewIds.clear();
     if (!isTauri() || this.#clientKind !== RefreshClientKind.DESKTOP) return;
     this.#shortcutViewIds.clear();
     await invoke("synchronize_deck_shortcuts", {
@@ -1039,7 +1117,7 @@ export class NativeDeckGateway implements DeckGateway {
           lastOpenedAt: this.#lastOpenedAt.get(view.viewId),
           notificationAttached: view.notificationPreference.enabled,
           shortcutAttached: this.#shortcutViewIds.has(view.viewId),
-          widgetAttached: view.widgetAttached,
+          widgetAttached: this.#widgetViewIds.has(view.viewId),
         }]));
         for (const viewId of this.#shortcutViewIds) {
           if (!candidates.has(viewId)) {
@@ -1049,6 +1127,20 @@ export class NativeDeckGateway implements DeckGateway {
               notificationAttached: false,
               shortcutAttached: true,
               widgetAttached: false,
+            });
+          }
+        }
+        for (const viewId of this.#widgetViewIds) {
+          const candidate = candidates.get(viewId);
+          if (candidate !== undefined) {
+            candidates.set(viewId, { ...candidate, widgetAttached: true });
+          } else {
+            candidates.set(viewId, {
+              viewId,
+              lastOpenedAt: this.#lastOpenedAt.get(viewId),
+              notificationAttached: false,
+              shortcutAttached: false,
+              widgetAttached: true,
             });
           }
         }
