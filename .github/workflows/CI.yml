@@ -1670,6 +1670,7 @@ jobs:
           filters: |
             proto:
               - .github/workflows/CI.yml
+              - .nvmrc
               - package.json
               - pnpm-lock.yaml
               - pnpm-workspace.yaml
@@ -1743,6 +1744,7 @@ jobs:
               - package.json
               - pnpm-lock.yaml
               - pnpm-workspace.yaml
+              - rust-toolchain
               - turbo.json
               - apps/devhud/package.json
               - apps/devhud/turbo.json
@@ -1771,6 +1773,7 @@ jobs:
               - package.json
               - pnpm-lock.yaml
               - pnpm-workspace.yaml
+              - rust-toolchain
               - turbo.json
               - apps/devhud/package.json
               - apps/devhud/turbo.json
@@ -1785,6 +1788,10 @@ jobs:
               - apps/devhud/src-tauri/**
               - protos/delibase/gen/go/**
               - protos/devhud-deck/gen/go/**
+              - protos/devhud-deck/gen/ts/**
+              - protos/devhud-deck/index.ts
+              - protos/devhud-deck/package.json
+              - protos/devhud-deck/tsconfig.json
               - protos/devhud-realqa/gen/go/**
               - protos/devhud-realqa/gen/ts/**
               - servers/internal/**
