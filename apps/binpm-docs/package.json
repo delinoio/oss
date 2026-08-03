@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "prepare:app": "echo 'binpm-docs: no prepare step'",
-    "dev": "rspress dev --port 46260",
+    "dev": "node ../../scripts/run-rspress-port.mjs binpm-docs dev 46304 -",
     "build": "rspress build && node scripts/copy-installers.mjs",
     "preview": "rspress preview --port 46261",
     "test": "rspress build && node scripts/copy-installers.mjs && node scripts/validate-clean-urls.mjs"

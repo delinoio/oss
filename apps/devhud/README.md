@@ -19,6 +19,7 @@ The mobile shell provides stable Home, Deck, Widgets, Settings, and Diagnostics 
 Run these from `apps/devhud`:
 
 ```sh
+pnpm dev
 pnpm mobile:generate:android
 pnpm mobile:generate:ios
 pnpm build:android
@@ -43,6 +44,8 @@ pnpm test:auth
 pnpm test:widget:android
 pnpm test:widget:ios
 ```
+
+`pnpm dev` binds the frontend to loopback on fixed port `46300`, rejects explicit host and port CLI overrides, and exits if that port is already occupied instead of selecting another port.
 
 Android generation and builds require JDK 17, the Android SDK, NDK, and the Rust Android targets. iOS generation and builds require macOS, Xcode with the iOS 17 SDK, XcodeGen, and the corresponding Rust iOS targets. Production commands build the device architectures above; `:ci` commands build unsigned debug hosts only for the x64 simulator/emulator contract. `build:widget:*` compiles the independently testable native widget target. `test:widget:*` exercises family/privacy/freshness, actions without mutation, encryption/reset, DND/opaque notification policy, and refresh handling, then compiles the private native plugin into an x64 release application and passes that artifact to the fail-closed release guard. `check:widget-artifacts` requires a built release manifest, APK, or `.app` and fails unless the exact verified mobile link surface is preserved, Android has exactly the non-exported widget receiver, and an inspected iOS app embeds the extension with narrow app/extension identities.
 
