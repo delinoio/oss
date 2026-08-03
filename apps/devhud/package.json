@@ -67,7 +67,7 @@
   },
   "devDependencies": {
     "@eslint/js": "9.39.2",
-    "@rsbuild/core": "2.1.7",
+    "@rsbuild/core": "2.1.9",
     "@rsbuild/plugin-react": "2.1.0",
     "@tauri-apps/cli-cef": "3.0.0-alpha.6",
     "@tauri-apps/cli-mobile": "npm:@tauri-apps/cli@2.11.4",
