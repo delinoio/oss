@@ -1707,6 +1707,10 @@ jobs:
               - apps/devhud/src/**
               - apps/devhud/public/**
               - protos/devhud-realqa/gen/ts/**
+              - protos/devhud-realqa/index.ts
+              - protos/devhud-realqa/package.json
+              - protos/devhud-realqa/preset.ts
+              - protos/devhud-realqa/tsconfig.json
             native:
               - .github/workflows/CI.yml
               - .nvmrc
@@ -1754,6 +1758,10 @@ jobs:
               - apps/devhud/scripts/build-realqa-extension.mjs
               - apps/devhud/scripts/build-realqa-fixtures.mjs
               - apps/devhud/scripts/process.mjs
+              - apps/devhud/src-tauri/Cargo.toml
+              - apps/devhud/src-tauri/build.rs
+              - apps/devhud/src-tauri/src/lib.rs
+              - apps/devhud/src-tauri/src/native_host_main.rs
               - apps/devhud/src-tauri/src/realqa_native_host.rs
             delidev:
               - .github/workflows/CI.yml
@@ -2446,6 +2454,9 @@ jobs:
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
       - name: Validate read-only fixture and inactive-production policy
         run: |

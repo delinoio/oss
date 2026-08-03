@@ -75,14 +75,14 @@ const forbiddenWorkflowPatterns = [
   ],
   [
     new RegExp(
-      `${buildxBuildCommand}[^\\r\\n]*?--output(?:=|\\s+)["']?type=registry\\b`,
+      `${buildxBuildCommand}[^\\r\\n]*?(?:--output|-o)(?:=|\\s+)["']?type=registry\\b`,
       "u",
     ),
     "must not export a buildx image to a registry",
   ],
   [
     new RegExp(
-      `${buildxBuildCommand}[^\\r\\n]*?--output(?:=|\\s+)["']?type=image,[^\\s"']*\\bpush=true\\b`,
+      `${buildxBuildCommand}[^\\r\\n]*?(?:--output|-o)(?:=|\\s+)["']?type=image,[^\\s"']*\\bpush=true\\b`,
       "u",
     ),
     "must not push a buildx image through the image exporter",
@@ -114,6 +114,14 @@ for (const [source, expectedMessage] of [
   [
     "jobs:\n  fixture:\n    steps:\n      - run: >\n          docker buildx build\n          --push .",
     "must not push a buildx image from the shell",
+  ],
+  [
+    "jobs:\n  fixture:\n    steps:\n      - run: docker buildx build -o type=registry .",
+    "must not export a buildx image to a registry",
+  ],
+  [
+    "jobs:\n  fixture:\n    steps:\n      - run: docker buildx build -o=type=image,push=true .",
+    "must not push a buildx image through the image exporter",
   ],
 ]) {
   const fixtureSource = workflowShellSource(source);
