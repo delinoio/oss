@@ -11,7 +11,7 @@ if [ -z "$configured_hooks_path" ]; then
 fi
 
 case "$configured_hooks_path" in
-	/*) absolute_hooks_path="$configured_hooks_path" ;;
+	/*|[A-Za-z]:/*) absolute_hooks_path="$configured_hooks_path" ;;
 	*) absolute_hooks_path="$repo_root/$configured_hooks_path" ;;
 esac
 
