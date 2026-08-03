@@ -115,10 +115,14 @@ requireCondition(
     r2Fixture.deploys_resources === false,
   "the R2/WAF definition must remain an artifact-only fixture",
 );
+const realqaTool =
+  registry.match(
+    /defineTool\(\{\s*toolId: "realqa",[\s\S]*?EntryPoint: RealQaToolEntry,\s*\}\),/u,
+  )?.[0] ?? "";
 requireCondition(
-  registry.includes("supportedPlatforms: new Set([ToolPlatform.Desktop])") &&
-    !registry.includes("ToolPlatform.Ios") &&
-    !registry.includes("ToolPlatform.Android"),
+  realqaTool.includes("supportedPlatforms: new Set([ToolPlatform.Desktop])") &&
+    !realqaTool.includes("ToolPlatform.Ios") &&
+    !realqaTool.includes("ToolPlatform.Android"),
   "RealQA must remain absent from mobile platforms",
 );
 requireCondition(
