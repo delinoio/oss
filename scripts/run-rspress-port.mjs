@@ -1,10 +1,13 @@
 #!/usr/bin/env node
 
-import { spawn } from "node:child_process";
 import net from "node:net";
 
-const [appName, command, defaultPort, overrideEnvName, ...rspressArgs] =
+import { exitLikeChild, spawnDevServer } from "./spawn-dev-server.mjs";
+
+const [appName, command, defaultPort, overrideEnvName, ...rawRspressArgs] =
   process.argv.slice(2);
+const rspressArgs =
+  rawRspressArgs[0] === "--" ? rawRspressArgs.slice(1) : rawRspressArgs;
 const hasOverride = overrideEnvName && overrideEnvName !== "-";
 const portText = hasOverride
   ? process.env[overrideEnvName] || defaultPort
@@ -113,26 +116,18 @@ if (!isAvailable) {
   process.exit(1);
 }
 
-const child = spawn("rspress", args, {
-  // Rspress exposes no strict-port CLI flag, so the app configs read this
-  // process-local marker and delegate conflict enforcement to Rsbuild.
-  env: { ...process.env, DELINO_RSPRESS_STRICT_PORT: "1" },
-  stdio: "inherit",
-  shell: process.platform === "win32",
-});
-
-child.on("exit", (code, signal) => {
-  if (signal) {
-    process.kill(process.pid, signal);
-    return;
-  }
-
-  process.exit(code ?? 0);
-});
-
-child.on("error", (error) => {
+try {
+  const result = await spawnDevServer("rspress", args, {
+    // Rspress exposes no strict-port CLI flag, so the app configs read this
+    // process-local marker and delegate conflict enforcement to Rsbuild.
+    env: { ...process.env, DELINO_RSPRESS_STRICT_PORT: "1" },
+    stdio: "inherit",
+    shell: process.platform === "win32",
+  });
+  exitLikeChild(result);
+} catch (error) {
   console.error(
     `${appName}: failed to start Rspress ${command}: ${error.message}`,
   );
   process.exit(1);
-});
+}

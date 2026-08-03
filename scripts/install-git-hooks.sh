@@ -9,7 +9,7 @@ fi
 
 repo_root="$(git rev-parse --show-toplevel)"
 git_common_dir="$(git rev-parse --path-format=absolute --git-common-dir)"
-configured_hooks_path="$(git config --get core.hooksPath || true)"
+configured_hooks_path="$(git config --path --get core.hooksPath || true)"
 shared_hooks_path="$git_common_dir/hooks"
 
 if [ -z "$configured_hooks_path" ]; then

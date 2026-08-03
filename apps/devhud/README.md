@@ -45,7 +45,7 @@ pnpm test:widget:android
 pnpm test:widget:ios
 ```
 
-`pnpm dev` starts the frontend on fixed port `46300` and exits if that port is already occupied instead of selecting another port.
+`pnpm dev` binds the frontend to loopback on fixed port `46300`, rejects explicit host and port CLI overrides, and exits if that port is already occupied instead of selecting another port.
 
 Android generation and builds require JDK 17, the Android SDK, NDK, and the Rust Android targets. iOS generation and builds require macOS, Xcode with the iOS 17 SDK, XcodeGen, and the corresponding Rust iOS targets. Production commands build the device architectures above; `:ci` commands build unsigned debug hosts only for the x64 simulator/emulator contract. `build:widget:*` compiles only the non-distributed native foundation. `test:widget:*` also exercises typed fixture round trips and refresh/error handling, compiles the private native plugin into an x64 release application, and passes that built artifact to the fail-closed release guard. `check:widget-artifacts` requires a built release manifest, APK, or `.app` and fails if the exact verified mobile callback is missing or broadened, the iOS application embeds an extension, or the Android manifest contains any receiver.
 
