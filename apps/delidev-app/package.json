@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "rsbuild build && node --env-file-if-exists=.env scripts/postbuild.mjs",
-    "dev": "rsbuild dev --port 46301 --strict-port",
+    "dev": "rsbuild dev --host 127.0.0.1 --port 46301 --strict-port",
     "icons": "node scripts/generate-icons.mjs",
     "lint": "eslint . --max-warnings 0",
     "prebuild": "pnpm --filter @delinoio/delibase-connect build && pnpm --filter @delinoio/devhud-deck-connect build && pnpm --filter @delinoio/devhud-realqa-connect build",

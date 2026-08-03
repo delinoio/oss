@@ -73,18 +73,37 @@ function checkPortAvailable(portToCheck, hostToCheck) {
 }
 
 function printPortConflict(portInUse) {
+  const packageCommand = `pnpm --filter ${appName} ${command}`;
+
   console.error(`${appName}: port ${portInUse} is already in use.`);
   console.error("");
   console.error("Recovery:");
-  console.error(
-    `  1. Find the listener: lsof -nP -iTCP:${portInUse} -sTCP:LISTEN`,
-  );
+
+  if (process.platform === "win32") {
+    console.error(
+      `  1. Find the listener (PowerShell): Get-NetTCPConnection -LocalPort ${portInUse} -State Listen`,
+    );
+  } else {
+    console.error(
+      `  1. Find the listener: lsof -nP -iTCP:${portInUse} -sTCP:LISTEN`,
+    );
+  }
+
   console.error("  2. Stop that process, then rerun this command.");
 
   if (hasOverride) {
-    console.error(
-      `  3. For an explicit temporary override, run: ${overrideEnvName}=<free-port> pnpm --filter ${appName} ${command}`,
-    );
+    if (process.platform === "win32") {
+      console.error(
+        `  3. Explicit temporary override (PowerShell): $env:${overrideEnvName}='<free-port>'; ${packageCommand}`,
+      );
+      console.error(
+        `     Explicit temporary override (cmd.exe): set "${overrideEnvName}=<free-port>" && ${packageCommand}`,
+      );
+    } else {
+      console.error(
+        `  3. For an explicit temporary override, run: ${overrideEnvName}=<free-port> ${packageCommand}`,
+      );
+    }
   }
 
   console.error("");
