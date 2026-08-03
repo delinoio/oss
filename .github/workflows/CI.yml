@@ -1817,6 +1817,7 @@ jobs:
               - servers/AGENTS.md
               - protos/AGENTS.md
               - package.json
+              - pnpm-lock.yaml
               - pnpm-workspace.yaml
               - turbo.json
               - go.mod

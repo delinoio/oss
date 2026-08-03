@@ -18,27 +18,33 @@ const requireCondition = (condition, message) => {
   if (!condition) failures.push(message);
 };
 
-const workflowLines = workflow.split(/\r?\n/u);
-const permissionsStart = workflowLines.indexOf("permissions:");
-let permissionsEnd = permissionsStart + 1;
-while (
-  permissionsEnd < workflowLines.length &&
-  (workflowLines[permissionsEnd].trim() === "" || /^[ \t]/u.test(workflowLines[permissionsEnd]))
-) {
-  permissionsEnd += 1;
-}
-const topLevelPermissions = workflowLines
-  .slice(permissionsStart, permissionsEnd)
-  .filter((line) => line.trim() !== "")
-  .join("\n");
+const workflowDocument = load(workflow);
+const topLevelPermissions = workflowDocument?.permissions;
 requireCondition(
-  topLevelPermissions === "permissions:\n  contents: read\n  pull-requests: read",
+  topLevelPermissions !== null &&
+    typeof topLevelPermissions === "object" &&
+    !Array.isArray(topLevelPermissions) &&
+    Object.keys(topLevelPermissions).length === 2 &&
+    topLevelPermissions.contents === "read" &&
+    topLevelPermissions["pull-requests"] === "read",
   "RealQA CI must retain read-only repository permissions",
 );
-const permissionDeclarations = workflow.match(/^[ \t]*permissions\s*:/gmu) ?? [];
+const hasNestedPermissions = (document) =>
+  Object.values(document?.jobs ?? {}).some(
+    (job) =>
+      Object.hasOwn(job ?? {}, "permissions") ||
+      (Array.isArray(job?.steps) &&
+        job.steps.some((step) => Object.hasOwn(step ?? {}, "permissions"))),
+  );
 requireCondition(
-  permissionDeclarations.length === 1 && permissionDeclarations[0] === "permissions:",
+  !hasNestedPermissions(workflowDocument),
   "RealQA CI must not override read-only permissions at the job or step level",
+);
+requireCondition(
+  hasNestedPermissions(
+    load('jobs:\n  fixture:\n    "permissions":\n      id-token: write\n    steps: []'),
+  ),
+  "RealQA CI safety guard must reject quoted job permissions overrides",
 );
 requireCondition(
   !/^    environment\s*:/mu.test(workflow),
@@ -60,7 +66,7 @@ const shellValue = String.raw`(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s]+)`;
 const dockerGlobalOption = String.raw`(?:(?:--(?:config|context|host|log-level|tlscacert|tlscert|tlskey)|-[cHl])(?:=|\s+)${shellValue}|(?:--(?:debug|tls|tlsverify)|-D)(?:=(?:true|false))?)`;
 const buildxGlobalOption = String.raw`(?:--builder(?:=|\s+)${shellValue}|(?:--debug|-D)(?:=(?:true|false))?)`;
 const dockerCommand = String.raw`\bdocker\s+(?:${dockerGlobalOption}\s+)*`;
-const buildxBuildCommand = String.raw`${dockerCommand}buildx\s+(?:${buildxGlobalOption}\s+)*build\b`;
+const dockerBuildCommand = String.raw`${dockerCommand}(?:build|builder\s+build|image\s+build|buildx\s+(?:${buildxGlobalOption}\s+)*(?:build|b))\b`;
 const forbiddenWorkflowPatterns = [
   [/docker\/login-action/u, "must not authenticate to a container registry"],
   [
@@ -70,19 +76,19 @@ const forbiddenWorkflowPatterns = [
   [/docker\/build-push-action/u, "must not use an image publishing action"],
   [new RegExp(`${dockerCommand}push\\b`, "u"), "must not push an image from the shell"],
   [
-    new RegExp(`${buildxBuildCommand}[^\\r\\n]*?--push\\b`, "u"),
+    new RegExp(`${dockerBuildCommand}[^\\r\\n]*?--push\\b`, "u"),
     "must not push a buildx image from the shell",
   ],
   [
     new RegExp(
-      `${buildxBuildCommand}[^\\r\\n]*?(?:--output|-o)(?:=|\\s+)["']?type=registry\\b`,
+      `${dockerBuildCommand}[^\\r\\n]*?(?:--output|-o)(?:=|\\s+)["']?type=registry\\b`,
       "u",
     ),
     "must not export a buildx image to a registry",
   ],
   [
     new RegExp(
-      `${buildxBuildCommand}[^\\r\\n]*?(?:--output|-o)(?:=|\\s+)["']?type=image,[^\\s"']*\\bpush=true\\b`,
+      `${dockerBuildCommand}[^\\r\\n]*?(?:--output|-o)(?:=|\\s+)["']?type=image,[^\\s"']*\\bpush=true\\b`,
       "u",
     ),
     "must not push a buildx image through the image exporter",
@@ -122,6 +128,22 @@ for (const [source, expectedMessage] of [
   [
     "jobs:\n  fixture:\n    steps:\n      - run: docker buildx build -o=type=image,push=true .",
     "must not push a buildx image through the image exporter",
+  ],
+  [
+    "jobs:\n  fixture:\n    steps:\n      - run: docker build --push .",
+    "must not push a buildx image from the shell",
+  ],
+  [
+    "jobs:\n  fixture:\n    steps:\n      - run: docker builder build -o type=registry .",
+    "must not export a buildx image to a registry",
+  ],
+  [
+    "jobs:\n  fixture:\n    steps:\n      - run: docker image build -o=type=image,push=true .",
+    "must not push a buildx image through the image exporter",
+  ],
+  [
+    "jobs:\n  fixture:\n    steps:\n      - run: docker buildx b --push .",
+    "must not push a buildx image from the shell",
   ],
 ]) {
   const fixtureSource = workflowShellSource(source);
