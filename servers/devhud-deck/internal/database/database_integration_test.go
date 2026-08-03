@@ -636,6 +636,29 @@ func TestPostgreSQLViewDeviceSnapshotAndDeletionBoundaries(t *testing.T) {
 		t.Fatalf("register device = %#v grant=%q replayed=%v err=%v",
 			originalRegistration, returnedGrant, replayed, err)
 	}
+	preference := &deckv1.ViewNotificationPreference{Enabled: true}
+	if _, err := store.UpdateNotificationPreference(
+		ctx, registrationID, firstViewID, 1, preference, now,
+	); err == nil {
+		t.Fatal("explicit notification revision created a missing preference")
+	} else {
+		var stale *StaleError
+		if !errors.As(err, &stale) || stale.Revision != 0 {
+			t.Fatalf("missing notification preference error = %T %v", err, err)
+		}
+	}
+	createdPreference, err := store.UpdateNotificationPreference(
+		ctx, registrationID, firstViewID, 0, preference, now)
+	if err != nil || createdPreference.GetRevision().GetValue() != 1 {
+		t.Fatalf("create notification preference = %#v err=%v",
+			createdPreference, err)
+	}
+	if _, err := store.pool.Exec(ctx, `
+		DELETE FROM deck_view_notification_preferences
+		WHERE registration_id = $1 AND view_id = $2`,
+		pgUUID(registrationID), pgUUID(firstViewID)); err != nil {
+		t.Fatal(err)
+	}
 	renewalGrant, err := security.NewGrant()
 	if err != nil {
 		t.Fatal(err)

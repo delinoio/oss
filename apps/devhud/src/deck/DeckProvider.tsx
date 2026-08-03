@@ -246,7 +246,10 @@ export function DeckProvider({
       })
       .catch((error: unknown) => {
         if (!shouldClearShortcuts(error)) return;
-        return gateway.clearShortcuts().catch(() => undefined);
+        return Promise.allSettled([
+          gateway.clearShortcuts(),
+          gateway.clearWidgetSnapshots(),
+        ]).then(() => undefined);
       });
     return () => { active = false; };
   }, [gateway, online, ownersQuery.dataUpdatedAt, ownersQuery.isSuccess, views]);

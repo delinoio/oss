@@ -1140,19 +1140,20 @@ export class NativeDeckGateway implements DeckGateway {
     this.#deviceRegistrationAttempt = undefined;
     this.#pendingWidgetConfiguration = undefined;
     this.#widgetViewIds.clear();
-    if (!isTauri()) return;
-    if (this.#clientKind === RefreshClientKind.MOBILE) {
-      await this.#enqueueMobileWidgetWrite(JSON.stringify({
-        version: 1,
-        configuration: { accountId: this.#accountId, widgets: [] },
-      }));
-      return;
-    }
+    if (!isTauri() || this.#clientKind === RefreshClientKind.MOBILE) return;
     this.#shortcutViewIds.clear();
     await invoke("synchronize_deck_shortcuts", {
       accountId: this.#accountId,
       definitions: [],
     });
+  }
+
+  async clearWidgetSnapshots(): Promise<void> {
+    if (!isTauri() || this.#clientKind !== RefreshClientKind.MOBILE) return;
+    await this.#enqueueMobileWidgetWrite(JSON.stringify({
+      version: 1,
+      configuration: { accountId: this.#accountId, widgets: [] },
+    }));
   }
 
   startEligibleRefreshes(views: readonly DeckView[], onRefreshed: (viewId: string) => void): () => void {

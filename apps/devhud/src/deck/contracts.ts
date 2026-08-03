@@ -298,6 +298,7 @@ export interface DeckGateway {
   ): Promise<void>;
   synchronizeShortcuts(): Promise<void>;
   clearShortcuts(): Promise<void>;
+  clearWidgetSnapshots(): Promise<void>;
   startEligibleRefreshes(
     views: readonly DeckView[],
     onRefreshed: (viewId: string) => void,
@@ -362,6 +363,9 @@ export const unavailableDeckGateway: DeckGateway = {
     throw new DeckProductError(DeckFailureCode.ServiceUnavailable);
   },
   clearShortcuts: async () => {
+    throw new DeckProductError(DeckFailureCode.ServiceUnavailable);
+  },
+  clearWidgetSnapshots: async () => {
     throw new DeckProductError(DeckFailureCode.ServiceUnavailable);
   },
   startEligibleRefreshes: () => () => undefined,

@@ -138,6 +138,7 @@ function gateway(overrides: Partial<DeckGateway> = {}): DeckGateway {
     createWidgetConfiguration: vi.fn(async () => undefined),
     synchronizeShortcuts: vi.fn(async () => undefined),
     clearShortcuts: vi.fn(async () => undefined),
+    clearWidgetSnapshots: vi.fn(async () => undefined),
     startEligibleRefreshes: vi.fn(() => () => undefined),
     ...overrides,
   };
@@ -163,10 +164,12 @@ describe("Deck composable production workspace", () => {
   it("synchronizes account shortcuts for an empty view page and clears them only on teardown", async () => {
     const synchronizeShortcuts = vi.fn(async () => undefined);
     const clearShortcuts = vi.fn(async () => undefined);
+    const clearWidgetSnapshots = vi.fn(async () => undefined);
     const backend = gateway({
       listViews: vi.fn(async () => ({ items: [], nextCursor: "" })),
       synchronizeShortcuts,
       clearShortcuts,
+      clearWidgetSnapshots,
     });
 
     const rendered = renderDeck(backend);
@@ -177,20 +180,24 @@ describe("Deck composable production workspace", () => {
 
     rendered.unmount();
     expect(clearShortcuts).toHaveBeenCalledOnce();
+    expect(clearWidgetSnapshots).not.toHaveBeenCalled();
   });
 
   it("clears retained shortcuts when synchronization loses view permission", async () => {
     const clearShortcuts = vi.fn(async () => undefined);
+    const clearWidgetSnapshots = vi.fn(async () => undefined);
     const backend = gateway({
       synchronizeShortcuts: vi.fn(async () => {
         throw new DeckProductError(DeckFailureCode.PermissionDenied);
       }),
       clearShortcuts,
+      clearWidgetSnapshots,
     });
 
     renderDeck(backend);
 
     await waitFor(() => expect(clearShortcuts).toHaveBeenCalled());
+    expect(clearWidgetSnapshots).toHaveBeenCalledOnce();
   });
 
   it("retains shortcuts through retryable synchronization failures", async () => {

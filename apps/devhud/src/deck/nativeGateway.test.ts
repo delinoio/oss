@@ -587,7 +587,7 @@ describe("native Deck gateway", () => {
     );
   });
 
-  it("clears the native mobile widget record with in-memory registration state", async () => {
+  it("preserves the native mobile widget record until snapshots are explicitly cleared", async () => {
     const accountId = "018f0000-0000-7000-8000-000000000001";
     const records: string[] = [];
     Object.defineProperty(navigator, "userAgent", { configurable: true, value: "Android" });
@@ -612,6 +612,10 @@ describe("native Deck gateway", () => {
     await gateway.listOwners();
 
     await gateway.clearShortcuts();
+
+    expect(records).toEqual([]);
+
+    await gateway.clearWidgetSnapshots();
 
     expect(records).toHaveLength(1);
     expect(JSON.parse(records[0]!)).toEqual({
@@ -673,7 +677,7 @@ describe("native Deck gateway", () => {
 
     const synchronization = gateway.synchronizeShortcuts();
     await vi.waitFor(() => expect(finishWidgetWrite).toBeTypeOf("function"));
-    const cleanup = gateway.clearShortcuts();
+    const cleanup = gateway.clearWidgetSnapshots();
     expect(completedRecords).toEqual([]);
     finishWidgetWrite?.();
     await synchronization;

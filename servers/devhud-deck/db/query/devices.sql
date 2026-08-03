@@ -137,10 +137,10 @@ WHERE registration_id = sqlc.arg(registration_id)
 -- name: UpsertViewNotificationPreference :one
 INSERT INTO deck_view_notification_preferences (
     registration_id, view_id, preference_ciphertext, revision, updated_at
-) VALUES (
+) SELECT
     sqlc.arg(registration_id), sqlc.arg(view_id),
     sqlc.arg(preference_ciphertext), 1, sqlc.arg(updated_at)
-)
+WHERE sqlc.arg(expected_revision)::bigint = 0
 ON CONFLICT (registration_id, view_id) DO UPDATE
 SET preference_ciphertext = EXCLUDED.preference_ciphertext,
     revision = deck_view_notification_preferences.revision + 1,
