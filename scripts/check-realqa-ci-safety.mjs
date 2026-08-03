@@ -41,6 +41,7 @@ requireCondition(
 );
 for (const [pattern, message] of [
   [/docker\/login-action/u, "must not authenticate to a container registry"],
+  [/\bdocker\s+login\b/u, "must not authenticate to a container registry from the shell"],
   [/docker\/build-push-action/u, "must not use an image publishing action"],
   [/\bdocker\s+push\b/u, "must not push an image from the shell"],
   [
@@ -51,10 +52,14 @@ for (const [pattern, message] of [
     /\bdocker\s+buildx\s+build\b[\s\S]*?--output(?:=|\s+)["']?type=registry\b/u,
     "must not export a buildx image to a registry",
   ],
+  [
+    /\bdocker\s+buildx\s+build\b[\s\S]*?--output(?:=|\s+)["']?type=image,[^\s"']*\bpush=true\b/u,
+    "must not push a buildx image through the image exporter",
+  ],
   [/\bghcr\.io\b/u, "must not name a GHCR publication target"],
   [/\bactions\/attest\b/u, "must not publish GitHub attestations"],
   [/\b(?:wrangler|cloudflare\/wrangler-action)\b/iu, "must not invoke Cloudflare provisioning"],
-  [/\bsecrets\./u, "must not read repository or environment secrets"],
+  [/\bsecrets(?:\.|\s*\[)/u, "must not read repository or environment secrets"],
   [/\bDEVHUD_CHROME_EXTENSION_ID\s*[:=]/u, "must not inject a production extension identity"],
   [/\bpush:\s*true\b/u, "must not push an image"],
 ]) {

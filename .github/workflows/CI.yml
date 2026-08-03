@@ -1795,6 +1795,10 @@ jobs:
               - protos/devhud-deck/tsconfig.json
               - protos/devhud-realqa/gen/go/**
               - protos/devhud-realqa/gen/ts/**
+              - protos/devhud-realqa/index.ts
+              - protos/devhud-realqa/package.json
+              - protos/devhud-realqa/preset.ts
+              - protos/devhud-realqa/tsconfig.json
               - servers/internal/**
               - servers/devhud-realqa/**
             safety:
