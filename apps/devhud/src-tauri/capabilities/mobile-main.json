@@ -15,6 +15,7 @@
     "allow-export-diagnostics",
     "allow-reset-dev-hud",
     "allow-deck-connect",
+    "allow-deck-device-id",
     "allow-deck-open-pull-request",
     "allow-get-auth-session",
     "allow-start-authentication",

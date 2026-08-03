@@ -587,12 +587,29 @@ function MobileWidgets() {
       ) : null}
       {persistenceReady &&
       widgetIssue === undefined &&
-      widgetConfiguration.slots.length === 0 ? (
+      widgetConfiguration.widgets.length === 0 ? (
         <section aria-labelledby="widgets-empty-title" className="state-card">
-          <h2 id="widgets-empty-title">No widgets available</h2>
+          <h2 id="widgets-empty-title">No Deck widgets configured</h2>
           <p>
-            Visible widgets are not included. DevHud has not registered a system widget on
-            this device.
+            Add DevHud from the system widget gallery, then select one Deck view. New
+            widgets show counts only until you explicitly allow repository and PR titles.
+          </p>
+        </section>
+      ) : null}
+      {persistenceReady && widgetIssue === undefined && widgetConfiguration.widgets.length > 0 ? (
+        <section aria-labelledby="widgets-configured-title" className="state-card">
+          <h2 id="widgets-configured-title">Configured Deck widgets</h2>
+          <ul>
+            {widgetConfiguration.widgets.map((widget) => (
+              <li key={widget.widgetId}>
+                {widget.family}: {widget.snapshot.matchingCount} matching pull requests
+                {widget.snapshot.offline ? " · Offline snapshot" : ""}
+              </li>
+            ))}
+          </ul>
+          <p className="muted">
+            System refresh timing is best effort. Refresh requests use Deck’s normal
+            coalescing and billing path and do not promise five-minute execution.
           </p>
         </section>
       ) : null}

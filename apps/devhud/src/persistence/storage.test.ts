@@ -3,13 +3,14 @@ import { describe, expect, it, vi } from "vitest";
 import {
   defaultSettings,
   defaultWidgetConfiguration,
+  DeckWidgetFamily,
+  DeckWidgetFreshness,
+  DeckWidgetPrivacy,
   encodeSettings,
   encodeWidgetConfiguration,
-  parseStableToolId,
   ShortcutKey,
   ShortcutModifier,
   ThemePreference,
-  WidgetSlot,
   SETTINGS_STORAGE_KEY,
   SHORTCUT_EFFECTIVE_STATE_STORAGE_KEY,
   WIDGET_CONFIGURATION_STORAGE_KEY,
@@ -60,31 +61,29 @@ describe("DevHud local persistence", () => {
     }
   });
 
-  it("round-trips widget slot references with stable tool IDs", async () => {
-    const toolId = parseStableToolId("fixture-diagnostics");
-    if (toolId === null) throw new Error("fixture tool ID is invalid");
+  it("round-trips an account-bound minimal Deck widget snapshot", async () => {
     const persistence = new DevHudPersistence(new MemoryStorageAdapter());
-    const configuration = { slots: [{ slot: WidgetSlot.Primary, toolId }] };
+    const configuration = widgetConfiguration();
 
     await persistence.saveWidgetConfiguration(configuration);
     await expect(persistence.load()).resolves.toMatchObject({ widgetConfiguration: configuration });
   });
 
-  it("rejects unchecked shortcuts and duplicate widget slots before writing", () => {
+  it("rejects unchecked shortcuts and details in counts-only snapshots before writing", () => {
     expect(() =>
       encodeSettings({
         ...defaultSettings,
         shortcut: { modifiers: [ShortcutModifier.Control, ShortcutModifier.Control], key: ShortcutKey.K },
       }),
     ).toThrow("local persistence contract");
-    const toolId = parseStableToolId("fixture-diagnostics");
-    if (toolId === null) throw new Error("fixture tool ID is invalid");
+    const configuration = widgetConfiguration();
     expect(() =>
       encodeWidgetConfiguration({
-        slots: [
-          { slot: WidgetSlot.Primary, toolId },
-          { slot: WidgetSlot.Primary, toolId },
-        ],
+        ...configuration,
+        widgets: configuration.widgets.map((widget) => ({
+          ...widget,
+          privacy: DeckWidgetPrivacy.CountsOnly,
+        })),
       }),
     ).toThrow("local persistence contract");
   });
@@ -415,3 +414,27 @@ describe("DevHud local persistence", () => {
     },
   );
 });
+
+function widgetConfiguration() {
+  return {
+    accountId: "018f0000-0000-7000-8000-000000000001",
+    widgets: [{
+      widgetId: "018f0000-0000-7000-8000-000000000002",
+      viewId: "018f0000-0000-7000-8000-000000000003",
+      family: DeckWidgetFamily.AppleMedium,
+      privacy: DeckWidgetPrivacy.RepositoryAndTitles,
+      snapshot: {
+        matchingCount: 2,
+        pullRequests: [{
+          repositoryOwner: "acme",
+          repositoryName: "widgets",
+          number: 42,
+          title: "Keep snapshot minimal",
+        }],
+        freshness: DeckWidgetFreshness.Stale,
+        offline: true,
+        generatedAt: "2026-08-03T12:00:00Z",
+      },
+    }],
+  } as const;
+}

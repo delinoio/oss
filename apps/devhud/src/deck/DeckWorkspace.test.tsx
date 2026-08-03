@@ -12,6 +12,7 @@ import {
   DeckGrouping,
   DeckMergeMethod,
   DeckMutationKind,
+  DeckNotificationTransition,
   DeckOwnerKind,
   DeckProductError,
   DeckPullRequestLifecycle,
@@ -116,6 +117,9 @@ function gateway(overrides: Partial<DeckGateway> = {}): DeckGateway {
     refreshView: vi.fn(async (_viewId, confirm) => {
       if (!await confirm(manualRefreshWarning(50n))) return;
     }),
+    requestWidgetRefresh: vi.fn(async () => undefined),
+    updateNativeNotificationPreference: vi.fn(async () => undefined),
+    resolveNotificationEvent: vi.fn(async () => ({})),
     openPullRequest: vi.fn(async () => undefined),
     recordViewOpened: vi.fn(),
     synchronizeShortcuts: vi.fn(async () => undefined),
@@ -219,6 +223,53 @@ describe("Deck composable production workspace", () => {
     expect(screen.queryByRole("heading", { name: "Edit Needs review" })).not.toBeInTheDocument();
   });
 
+  it("requires explicit per-view native notification transitions", async () => {
+    const updateView = vi.fn(async (current: DeckView, input: Parameters<DeckGateway["updateView"]>[1]) => ({
+      ...current,
+      ...input,
+      revision: { value: 2n, etag: "view-2" },
+    }));
+    const backend = gateway({ updateView });
+    const user = userEvent.setup();
+    renderDeck(backend);
+    await user.click(await screen.findByRole("button", { name: /Needs review/u }));
+    await user.click(screen.getByRole("button", { name: "Edit view" }));
+
+    await user.click(screen.getByRole("checkbox", { name: "Enable notifications for this view" }));
+    const labels = [
+      "Assigned to me",
+      "Review requested from me",
+      "Checks failed",
+      "Became mergeable",
+      "Merge conflict detected",
+      "Merged",
+      "Closed",
+    ];
+    labels.forEach((label) => expect(screen.getByRole("checkbox", { name: label })).toBeVisible());
+    expect(screen.getByRole("button", { name: "Save view" })).toBeDisabled();
+    expect(screen.getByText(/Do Not Disturb/u)).toHaveTextContent("Deck view updated");
+
+    for (const label of labels) await user.click(screen.getByRole("checkbox", { name: label }));
+    await user.click(screen.getByRole("button", { name: "Save view" }));
+
+    await waitFor(() => expect(updateView).toHaveBeenCalledWith(
+      view,
+      expect.objectContaining({
+        notificationPreference: {
+          enabled: true,
+          transitions: Object.values(DeckNotificationTransition),
+        },
+      }),
+    ));
+    expect(backend.updateNativeNotificationPreference).toHaveBeenCalledWith(
+      view.viewId,
+      {
+        enabled: true,
+        transitions: Object.values(DeckNotificationTransition),
+      },
+    );
+  });
+
   it("replaces a selected owner removed by an authoritative refetch", async () => {
     const listOwners = vi.fn()
       .mockResolvedValueOnce([owner, organization])
@@ -267,6 +318,21 @@ describe("Deck composable production workspace", () => {
       shortcutView.viewId,
       "",
     ));
+  });
+
+  it("routes widget refresh through the client refresh path without mutating a pull request", async () => {
+    tauri.enabled = true;
+    const backend = gateway();
+    renderDeck(backend);
+    await waitFor(() => expect(tauri.listeners.has("devhud://deck-widget-action")).toBe(true));
+
+    tauri.listeners.get("devhud://deck-widget-action")?.({
+      payload: { action: "refresh", viewId: view.viewId },
+    });
+
+    await waitFor(() => expect(backend.requestWidgetRefresh).toHaveBeenCalledWith(view.viewId));
+    await waitFor(() => expect(backend.getView).toHaveBeenCalledWith(view.viewId));
+    expect(backend.mutatePullRequest).not.toHaveBeenCalled();
   });
 
   it("loads permission-filtered rows, exposes truncation, and hands comments to GitHub", async () => {
@@ -723,8 +789,8 @@ describe("Deck composable production workspace", () => {
     renderDeck(backend);
     await user.click(await screen.findByRole("button", { name: /Needs review/u }));
     await user.click(screen.getByRole("button", { name: "Edit view" }));
-    expect(screen.queryByRole("checkbox", { name: "Notify me when this view changes" }))
-      .not.toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Enable notifications for this view" }))
+      .toBeInTheDocument();
     const name = screen.getByLabelText("View name");
     await user.clear(name);
     await user.type(name, "My reapplied edit");

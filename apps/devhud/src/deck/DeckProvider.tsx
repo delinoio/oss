@@ -35,6 +35,7 @@ import {
 } from "./contracts";
 import type { ManualRefreshWarning } from "./refreshController";
 import { createUuidV7 } from "./uuid";
+import { openDeckPullRequest } from "./transport";
 
 // Gateway injection keeps component tests native-free, while Connect Query's
 // generated-service key keeps every server-state cache operation namespaced to
@@ -92,6 +93,18 @@ interface DeckActions {
 interface DeckMeta {
   readonly gateway: DeckGateway;
 }
+
+type DeckWidgetActionEvent =
+  | { readonly action: "open-view"; readonly viewId: string }
+  | { readonly action: "refresh"; readonly viewId: string }
+  | {
+      readonly action: "open-pr";
+      readonly viewId: string;
+      readonly owner: string;
+      readonly repository: string;
+      readonly number: number;
+    }
+  | { readonly action: "resolve-event"; readonly eventId: string };
 
 export interface DeckContextValue {
   readonly state: DeckState;
@@ -290,18 +303,20 @@ export function DeckProvider({
   const createView = useCallback(
     (owner: DeckOwner, input: DeckViewInput) => run(async () => {
       const created = await gateway.createView(owner, input, createUuidV7());
-      await invalidateViews();
       setSelectedView(created);
+      await invalidateViews();
+      await gateway.updateNativeNotificationPreference(
+        created.viewId,
+        input.notificationPreference,
+      );
     }),
     [gateway, invalidateViews, run],
   );
   const saveView = useCallback(
     (view: DeckView, input: DeckViewInput) => run(async () => {
+      let updated: DeckView;
       try {
-        const updated = await gateway.updateView(view, input);
-        setConflict(null);
-        setSelectedView(updated);
-        await invalidateViews();
+        updated = await gateway.updateView(view, input);
       } catch (error) {
         if (isStaleRevision(error)) {
           const current = await gateway.getView(view.viewId);
@@ -309,6 +324,13 @@ export function DeckProvider({
         }
         throw error;
       }
+      setConflict(null);
+      setSelectedView(updated);
+      await invalidateViews();
+      await gateway.updateNativeNotificationPreference(
+        updated.viewId,
+        input.notificationPreference,
+      );
     }),
     [gateway, invalidateViews, run],
   );
@@ -438,9 +460,39 @@ export function DeckProvider({
       }),
       listen("devhud://deck-refresh", () => void refresh()),
       listen<string>("devhud://deck-shortcut", (event) => void openShortcut(event.payload)),
+      listen<DeckWidgetActionEvent>("devhud://deck-widget-action", (event) => {
+        void run(async () => {
+          const action = event.payload;
+          if (action.action === "open-view") {
+            await openShortcut(action.viewId);
+            return;
+          }
+          if (action.action === "refresh") {
+            await gateway.requestWidgetRefresh(action.viewId);
+            await openShortcut(action.viewId);
+            await queryClient.invalidateQueries({
+              queryKey: [...viewServiceKey, "ListPullRequests", action.viewId],
+            });
+            return;
+          }
+          if (action.action === "open-pr") {
+            await openDeckPullRequest(action.owner, action.repository, action.number);
+            return;
+          }
+          const destination = await gateway.resolveNotificationEvent(action.eventId);
+          if (destination.viewId !== undefined) await openShortcut(destination.viewId);
+          if (destination.pullRequest !== undefined) {
+            await openDeckPullRequest(
+              destination.pullRequest.repositoryOwner,
+              destination.pullRequest.repositoryName,
+              destination.pullRequest.number,
+            );
+          }
+        });
+      }),
     ];
     return () => { void Promise.all(cleanups).then((unlisten) => unlisten.forEach((remove) => remove())); };
-  }, [openShortcut, refresh]);
+  }, [gateway, openShortcut, queryClient, refresh, run]);
   const retry = useCallback(async () => {
     setOperationError(null);
     const requests: Promise<unknown>[] = [ownersQuery.refetch()];

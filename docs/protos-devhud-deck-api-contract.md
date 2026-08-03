@@ -27,6 +27,7 @@
 - `DeckViewService`: `ListOwners`, `ListViews`, `GetView`, `CreateView`, `UpdateView`, `DeleteView`, `ListPullRequests`, `ListPullRequestMutationCandidates`, `GetRefreshPreflight`, `RefreshView`, `MutatePullRequest`, `DeleteFeatureData`.
 - `DeckIntegrationService`: `GetGitHubConnection`, `StartGitHubConnection`, `ListGitHubInstallations`, `DisconnectGitHubConnection`.
 - `DeckDeviceService`: `GetDevice`, `RegisterDevice`, `UpdateDevice`, `UnregisterDevice`, `UpdateViewNotificationPreference`, `ResolveNotificationEvent`.
+- `UpdateViewNotificationPreference` stores the explicit view preference for one registered device. A client restart may omit `expected_revision` to create or resynchronize that device-local record; an explicit revision remains strict compare-and-swap.
 
 No additional v1 service or RPC is implied. GitHub callback/webhook handlers and push delivery are HTTP/server boundaries, not public Connect services.
 

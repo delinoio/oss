@@ -138,13 +138,7 @@ use tauri_plugin_devhud_diagnostics::{
 use tauri_plugin_devhud_widget::{
     DevHudWidgetBridgeExt, Error as WidgetBridgeError, WidgetBridgeErrorCode,
 };
-#[cfg(any(
-    all(
-        feature = "desktop-cef",
-        not(any(target_os = "android", target_os = "ios"))
-    ),
-    test
-))]
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 use uuid::Uuid;
 
 #[cfg(all(
@@ -195,6 +189,96 @@ const SETTINGS_STORAGE_KEY: &str = "devhud.settings.v1";
 const SHORTCUT_EFFECTIVE_STATE_STORAGE_KEY: &str = "devhud.shortcut-effective-state.v2";
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
 const WIDGET_CONFIGURATION_STORAGE_KEY: &str = "devhud.widget-configuration.v1";
+#[cfg(any(feature = "mobile-system-webview", test))]
+const DECK_WIDGET_APP_LINK_PATH: &str = "/devhud/deck/open";
+
+#[cfg(any(feature = "mobile-system-webview", test))]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(
+    tag = "action",
+    rename_all = "kebab-case",
+    rename_all_fields = "camelCase"
+)]
+enum DeckWidgetActionEvent {
+    OpenView {
+        view_id: String,
+    },
+    OpenPr {
+        view_id: String,
+        owner: String,
+        repository: String,
+        number: u64,
+    },
+    Refresh {
+        view_id: String,
+    },
+    ResolveEvent {
+        event_id: String,
+    },
+}
+
+#[cfg(any(feature = "mobile-system-webview", test))]
+fn deck_widget_action(url: &Url) -> Option<DeckWidgetActionEvent> {
+    if url.scheme() != "https"
+        || url.host_str() != Some("deli.dev")
+        || url.port().is_some()
+        || url.path() != DECK_WIDGET_APP_LINK_PATH
+        || url.fragment().is_some()
+    {
+        return None;
+    }
+    let mut values = std::collections::BTreeMap::new();
+    for (key, value) in url.query_pairs() {
+        values
+            .insert(key.into_owned(), value.into_owned())
+            .is_none()
+            .then_some(())?;
+    }
+    let action = values.remove("action")?;
+    let uuid_v7 = |value: String| {
+        let parsed = Uuid::parse_str(&value).ok()?;
+        (parsed.get_version_num() == 7).then_some(value)
+    };
+    let result = match action.as_str() {
+        "open-view" => DeckWidgetActionEvent::OpenView {
+            view_id: uuid_v7(values.remove("view")?)?,
+        },
+        "refresh" => DeckWidgetActionEvent::Refresh {
+            view_id: uuid_v7(values.remove("view")?)?,
+        },
+        "open-pr" => {
+            let view_id = uuid_v7(values.remove("view")?)?;
+            let owner = values.remove("owner")?;
+            let repository = values.remove("repository")?;
+            let number = values.remove("number")?.parse::<u64>().ok()?;
+            let valid_segment = |value: &str| {
+                !value.is_empty()
+                    && value.len() <= 100
+                    && value.bytes().all(|byte| {
+                        byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.')
+                    })
+            };
+            (number > 0 && valid_segment(&owner) && valid_segment(&repository)).then_some(())?;
+            DeckWidgetActionEvent::OpenPr {
+                view_id,
+                owner,
+                repository,
+                number,
+            }
+        }
+        "resolve-event" => {
+            let event_id = values.remove("event")?;
+            (16..=128).contains(&event_id.len()).then_some(())?;
+            event_id
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+                .then_some(())?;
+            DeckWidgetActionEvent::ResolveEvent { event_id }
+        }
+        _ => return None,
+    };
+    values.is_empty().then_some(result)
+}
 #[cfg(any(
     all(
         feature = "desktop-cef",
@@ -1424,32 +1508,90 @@ fn native_settings(record: Option<&str>) -> Option<NativeSettings> {
 fn validate_widget_configuration_record(
     object: &serde_json::Map<String, serde_json::Value>,
 ) -> Option<()> {
+    let utc_timestamp = |value: &str| {
+        let bytes = value.as_bytes();
+        (20..=32).contains(&bytes.len())
+            && bytes.get(4) == Some(&b'-')
+            && bytes.get(7) == Some(&b'-')
+            && bytes.get(10) == Some(&b'T')
+            && bytes.get(13) == Some(&b':')
+            && bytes.get(16) == Some(&b':')
+            && bytes.last() == Some(&b'Z')
+            && bytes.iter().enumerate().all(|(index, byte)| {
+                byte.is_ascii_digit()
+                    || matches!(index, 4 | 7 | 10 | 13 | 16)
+                    || (*byte == b'.' && index == 19)
+                    || (*byte == b'Z' && index + 1 == bytes.len())
+            })
+    };
     has_exact_keys(object, &["version", "configuration"]).then_some(())?;
     let configuration = object.get("configuration")?.as_object()?;
-    has_exact_keys(configuration, &["slots"]).then_some(())?;
-    let slots = configuration.get("slots")?.as_array()?;
-    let mut unique_slots = std::collections::HashSet::new();
-    for reference in slots {
-        let reference = reference.as_object()?;
-        has_exact_keys(reference, &["slot", "toolId"]).then_some(())?;
-        let slot = reference.get("slot")?.as_str()?;
-        matches!(slot, "primary" | "secondary" | "tertiary").then_some(())?;
-        unique_slots.insert(slot).then_some(())?;
-        is_stable_tool_id(reference.get("toolId")?.as_str()?).then_some(())?;
+    has_exact_keys(configuration, &["accountId", "widgets"]).then_some(())?;
+    let account_id = configuration.get("accountId")?.as_str()?;
+    let widgets = configuration.get("widgets")?.as_array()?;
+    (widgets.len() <= 20).then_some(())?;
+    (widgets.is_empty() || Uuid::parse_str(account_id).is_ok()).then_some(())?;
+    let mut widget_ids = std::collections::HashSet::new();
+    for widget in widgets {
+        let widget = widget.as_object()?;
+        has_exact_keys(
+            widget,
+            &["widgetId", "viewId", "family", "privacy", "snapshot"],
+        )
+        .then_some(())?;
+        let widget_id = widget.get("widgetId")?.as_str()?;
+        (Uuid::parse_str(widget_id).is_ok() && widget_ids.insert(widget_id)).then_some(())?;
+        Uuid::parse_str(widget.get("viewId")?.as_str()?).ok()?;
+        matches!(
+            widget.get("family")?.as_str()?,
+            "apple-small"
+                | "apple-medium"
+                | "apple-large"
+                | "android-compact"
+                | "android-wide"
+                | "android-list"
+        )
+        .then_some(())?;
+        let privacy = widget.get("privacy")?.as_str()?;
+        matches!(privacy, "counts-only" | "repository-and-titles").then_some(())?;
+        let snapshot = widget.get("snapshot")?.as_object()?;
+        has_exact_keys(
+            snapshot,
+            &[
+                "matchingCount",
+                "pullRequests",
+                "freshness",
+                "offline",
+                "generatedAt",
+            ],
+        )
+        .then_some(())?;
+        snapshot.get("matchingCount")?.as_u64()?;
+        snapshot.get("offline")?.as_bool()?;
+        utc_timestamp(snapshot.get("generatedAt")?.as_str()?).then_some(())?;
+        matches!(
+            snapshot.get("freshness")?.as_str()?,
+            "fresh" | "stale" | "offline" | "disconnected" | "never-refreshed"
+        )
+        .then_some(())?;
+        let pull_requests = snapshot.get("pullRequests")?.as_array()?;
+        (pull_requests.len() <= 10 && (privacy != "counts-only" || pull_requests.is_empty()))
+            .then_some(())?;
+        for pull_request in pull_requests {
+            let pull_request = pull_request.as_object()?;
+            has_exact_keys(
+                pull_request,
+                &["repositoryOwner", "repositoryName", "number", "title"],
+            )
+            .then_some(())?;
+            (!pull_request.get("repositoryOwner")?.as_str()?.is_empty()
+                && !pull_request.get("repositoryName")?.as_str()?.is_empty()
+                && pull_request.get("number")?.as_u64()? > 0
+                && !pull_request.get("title")?.as_str()?.is_empty())
+            .then_some(())?;
+        }
     }
     Some(())
-}
-
-#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview", test))]
-fn is_stable_tool_id(value: &str) -> bool {
-    let mut segments = value.split('-');
-    matches!(segments.next(), Some(first) if !first.is_empty() && first.bytes().all(|byte| byte.is_ascii_lowercase()))
-        && segments.all(|segment| {
-            !segment.is_empty()
-                && segment
-                    .bytes()
-                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit())
-        })
 }
 
 #[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
@@ -2752,10 +2894,7 @@ async fn deck_connect(
     })?
 }
 
-#[cfg(all(
-    feature = "desktop-cef",
-    not(any(target_os = "android", target_os = "ios"))
-))]
+#[cfg(any(feature = "desktop-cef", feature = "mobile-system-webview"))]
 #[tauri::command]
 fn deck_device_id(
     auth: State<'_, auth_native::NativeAuthState>,
@@ -3398,24 +3537,29 @@ fn reset_dev_hud(
         .app_log_dir()
         .map_err(|_| reset_preflight_failure(PersistenceCommandError::ResetFailed))?;
     preflight_local_logs_for_reset(&log_directory).map_err(reset_preflight_failure)?;
-    if auth_state.reset().is_err() {
-        return Ok(PersistenceResetOutcome::PartiallyRetained);
-    }
+    let mut reset_outcome = if auth_state.reset().is_err() {
+        PersistenceResetOutcome::PartiallyRetained
+    } else {
+        PersistenceResetOutcome::Complete
+    };
     if clear_browsing_data_for_reset(webview).is_err()
         || clear_local_logs_for_reset(&log_directory).is_err()
     {
-        return Ok(PersistenceResetOutcome::PartiallyRetained);
+        reset_outcome = PersistenceResetOutcome::PartiallyRetained;
     }
-    let reset_outcome = match state.reset() {
-        Ok(()) => PersistenceResetOutcome::Complete,
-        Err(PersistenceResetFailure::BeforeRecordsRemoved(_)) => {
-            return Ok(PersistenceResetOutcome::PartiallyRetained);
+    match state.reset() {
+        Ok(()) => {}
+        Err(PersistenceResetFailure::BeforeRecordsRemoved(_))
+        | Err(PersistenceResetFailure::PartiallyRetained) => {
+            reset_outcome = PersistenceResetOutcome::PartiallyRetained;
         }
-        Err(PersistenceResetFailure::PartiallyRetained) => {
-            PersistenceResetOutcome::PartiallyRetained
+        Err(PersistenceResetFailure::CleanupFailed)
+            if reset_outcome == PersistenceResetOutcome::Complete =>
+        {
+            reset_outcome = PersistenceResetOutcome::CleanupFailed;
         }
-        Err(PersistenceResetFailure::CleanupFailed) => PersistenceResetOutcome::CleanupFailed,
-    };
+        Err(PersistenceResetFailure::CleanupFailed) => {}
+    }
     match app.devhud_widget_bridge().reset_configuration() {
         Ok(_) => {}
         Err(error) if error.code() == Some(WidgetBridgeErrorCode::RefreshFailed) => {
@@ -3423,7 +3567,7 @@ fn reset_dev_hud(
         }
         Err(error) => {
             widget_bridge_failure("reset", &error);
-            return Ok(PersistenceResetOutcome::PartiallyRetained);
+            reset_outcome = PersistenceResetOutcome::PartiallyRetained;
         }
     }
     if reset_outcome == PersistenceResetOutcome::Complete {
@@ -3752,9 +3896,16 @@ fn logout_authentication(
 ))]
 #[tauri::command]
 fn logout_authentication(
+    app: AppHandle<ActiveRuntime>,
     state: State<'_, auth_native::NativeAuthState>,
 ) -> Result<auth::SessionSnapshot, auth::AuthError> {
-    state.logout()
+    let widget_cleanup_failed = app.devhud_widget_bridge().reset_configuration().is_err();
+    let result = state.logout();
+    match result {
+        Err(error) => Err(error),
+        Ok(_) if widget_cleanup_failed => Err(auth::AuthError::SecureVaultWriteFailed),
+        Ok(snapshot) => Ok(snapshot),
+    }
 }
 
 #[cfg(all(
@@ -4175,6 +4326,7 @@ fn configure_builder(builder: tauri::Builder<ActiveRuntime>) -> tauri::Builder<A
         .invoke_handler(tauri::generate_handler![
             get_runtime_info,
             deck_connect,
+            deck_device_id,
             deck_open_pull_request,
             read_settings,
             write_settings,
@@ -4359,9 +4511,13 @@ fn run_app() -> Result<(), RuntimeInitializationFailure> {
         .build(tauri::generate_context!())
         .map_err(|_| RuntimeInitializationFailure::SystemWebviewInitialization)?;
     app.run(|app, event| {
-        #[cfg(target_os = "ios")]
         if let tauri::RunEvent::Opened { urls } = event {
             for callback in urls {
+                if let Some(action) = deck_widget_action(&callback) {
+                    let _ = app.emit("devhud://deck-widget-action", action);
+                    continue;
+                }
+                #[cfg(target_os = "ios")]
                 if auth::is_mobile_callback_boundary(&callback) {
                     // The callback remains native-only and one-shot. The
                     // foreground provider observes completion through the
@@ -4472,6 +4628,40 @@ mod android_entry {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn deck_widget_links_accept_only_open_refresh_and_opaque_event_actions() {
+        let view = "018f0000-0000-7000-8000-000000000003";
+        assert_eq!(
+            deck_widget_action(
+                &format!("https://deli.dev/devhud/deck/open?action=refresh&view={view}")
+                    .parse()
+                    .unwrap()
+            ),
+            Some(DeckWidgetActionEvent::Refresh {
+                view_id: view.into()
+            })
+        );
+        assert!(matches!(
+            deck_widget_action(
+                &"https://deli.dev/devhud/deck/open?action=resolve-event&event=opaque_event_123456"
+                    .parse()
+                    .unwrap()
+            ),
+            Some(DeckWidgetActionEvent::ResolveEvent { .. })
+        ));
+        for rejected in [
+            format!("https://deli.dev/devhud/deck/open?action=merge&view={view}"),
+            format!("https://deli.dev/devhud/deck/open?action=refresh&view={view}&title=private"),
+            format!("https://example.com/devhud/deck/open?action=open-view&view={view}"),
+            "https://deli.dev/devhud/deck/open?action=resolve-event&event=short".into(),
+        ] {
+            assert!(
+                deck_widget_action(&rejected.parse().unwrap()).is_none(),
+                "{rejected}"
+            );
+        }
+    }
 
     #[cfg(all(
         feature = "desktop-cef",
@@ -4755,11 +4945,22 @@ mod tests {
             r#"{"version":1,"settings":{"theme":"dark","launchAtLogin":false,"shortcut":{"modifiers":["control","control"],"key":"k"}}}"#
         )
         .is_none());
-        assert!(validate_current_record(
-            WIDGET_CONFIGURATION_STORAGE_KEY,
-            r#"{"version":1,"configuration":{"slots":[{"slot":"primary","toolId":"fixture-diagnostics"}]}}"#
-        )
-        .is_some());
+        assert!(
+            validate_current_record(
+                WIDGET_CONFIGURATION_STORAGE_KEY,
+                r#"{"version":1,"configuration":{"accountId":"","widgets":[]}}"#
+            )
+            .is_some()
+        );
+        let widget_record = r#"{"version":1,"configuration":{"accountId":"018f0000-0000-7000-8000-000000000001","widgets":[{"widgetId":"018f0000-0000-7000-8000-000000000002","viewId":"018f0000-0000-7000-8000-000000000003","family":"android-compact","privacy":"counts-only","snapshot":{"matchingCount":1,"pullRequests":[],"freshness":"fresh","offline":false,"generatedAt":"2026-08-03T12:00:00Z"}}]}}"#;
+        assert!(validate_current_record(WIDGET_CONFIGURATION_STORAGE_KEY, widget_record).is_some());
+        assert!(
+            validate_current_record(
+                WIDGET_CONFIGURATION_STORAGE_KEY,
+                &widget_record.replace("2026-08-03T12:00:00Z", "not-a-timestamp")
+            )
+            .is_none()
+        );
         assert!(validate_current_record(
             SETTINGS_STORAGE_KEY,
             r#"{"version":1,"settings":{"theme":"system","launchAtLogin":false,"shortcut":null,"extra":true}}"#
@@ -4768,7 +4969,7 @@ mod tests {
         assert!(
             validate_current_record(
                 WIDGET_CONFIGURATION_STORAGE_KEY,
-                r#"{"version":1,"configuration":{"slots":[]},"extra":true}"#
+                r#"{"version":1,"configuration":{"accountId":"","widgets":[]},"extra":true}"#
             )
             .is_none()
         );

@@ -7,6 +7,7 @@ const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const distRoot = join(appRoot, "dist");
 const devHudApplicationId = "dev.deli.devhud";
 const devHudCallbackPath = "/auth/devhud/callback";
+const devHudDeckOpenPath = "/devhud/deck/open";
 
 function appleTeamId() {
   const value = process.env.DELIDEV_DEVHUD_APPLE_TEAM_ID?.trim() ?? "";
@@ -43,7 +44,13 @@ async function writeDevHudAssociationFiles() {
         applinks: {
           details: [{
             appIDs: [`${teamId}.${devHudApplicationId}`],
-            components: [{ "/": devHudCallbackPath }],
+            components: [
+              { "/": devHudCallbackPath },
+              ...["open-view", "open-pr", "refresh", "resolve-event"].map((action) => ({
+                "/": devHudDeckOpenPath,
+                "?": { action },
+              })),
+            ],
           }],
         },
       }, null, 2)}\n`,

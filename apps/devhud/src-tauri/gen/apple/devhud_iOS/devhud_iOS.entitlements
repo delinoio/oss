@@ -10,5 +10,7 @@
 	<array>
 		<string>applinks:deli.dev</string>
 	</array>
+	<key>aps-environment</key>
+	<string>$(DEVHUD_APS_ENVIRONMENT)</string>
 </dict>
 </plist>

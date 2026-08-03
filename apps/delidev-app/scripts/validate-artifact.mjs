@@ -88,10 +88,16 @@ if (
   appleAppIds.length !== 1 ||
   !/^[A-Z0-9]{10}\.dev\.deli\.devhud$/u.test(appleAppIds[0] ?? "") ||
   !Array.isArray(appleComponents) ||
-  appleComponents.length !== 1 ||
-  JSON.stringify(appleComponents[0]) !== JSON.stringify({ "/": "/auth/devhud/callback" })
+  appleComponents.length !== 5 ||
+  JSON.stringify(appleComponents) !== JSON.stringify([
+    { "/": "/auth/devhud/callback" },
+    { "/": "/devhud/deck/open", "?": { action: "open-view" } },
+    { "/": "/devhud/deck/open", "?": { action: "open-pr" } },
+    { "/": "/devhud/deck/open", "?": { action: "refresh" } },
+    { "/": "/devhud/deck/open", "?": { action: "resolve-event" } },
+  ])
 ) {
-  throw new Error("Apple association must authorize only the exact DevHud callback path.");
+  throw new Error("Apple association must authorize only the exact DevHud callback and Deck action paths.");
 }
 const androidRule = Array.isArray(androidAssociation) && androidAssociation.length === 1
   ? androidAssociation[0]

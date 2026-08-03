@@ -1,5 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="devhud_widget_empty">No widget configured</string>
-    <string name="devhud_widget_configured">No widget available in DevHud 0.1.0</string>
+    <string name="devhud_widget_name">Deck</string>
+    <string name="devhud_widget_empty">Select one Deck view in DevHud</string>
+    <string name="devhud_widget_updated">Updated</string>
+    <string name="devhud_widget_stale">Stale</string>
+    <string name="devhud_widget_offline">Offline</string>
+    <string name="devhud_widget_disconnected">Disconnected</string>
+    <string name="devhud_widget_not_refreshed">Not refreshed</string>
+    <string name="devhud_widget_refresh">Request refresh</string>
+    <string name="devhud_widget_refresh_description">Open DevHud and request a best effort Deck refresh</string>
+    <string name="devhud_widget_content_description">Deck widget</string>
 </resources>

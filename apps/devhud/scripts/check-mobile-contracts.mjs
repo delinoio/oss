@@ -182,23 +182,23 @@ requireCondition(
 );
 requireCondition(
   (androidManifest.match(/android\.permission\.INTERNET/gu) ?? []).length === 1 &&
-    (androidManifest.match(/android\.intent\.category\.BROWSABLE/gu) ?? []).length === 1 &&
-    (androidManifest.match(/android:autoVerify="true"/gu) ?? []).length === 1 &&
+    (androidManifest.match(/android\.intent\.category\.BROWSABLE/gu) ?? []).length === 2 &&
+    (androidManifest.match(/android:autoVerify="true"/gu) ?? []).length === 2 &&
     androidManifest.includes('android:scheme="https"') &&
     androidManifest.includes('android:host="deli.dev"') &&
     androidManifest.includes('android:path="/auth/devhud/callback"') &&
+    androidManifest.includes('android:path="/devhud/deck/open"') &&
     !androidManifest.includes("android:pathPrefix") &&
     !androidManifest.includes("android:pathPattern"),
-  "Android must grant native auth networking and register only the exact verified DeliDev callback",
+  "Android must grant native networking and register only the exact verified callback and Deck action paths",
 );
 requireCondition(
-  androidManifest.includes(
-    'xmlns:tools="http://schemas.android.com/tools"',
-  ) &&
-    androidManifest.includes('<receiver tools:node="removeAll" />') &&
+  androidManifest.includes('android:name="dev.deli.devhud.widget.DevHudWidgetProvider"') &&
     (androidManifest.match(/<receiver\b/gu) ?? []).length === 1 &&
-    !androidManifest.includes("AppWidgetProvider"),
-  "the distributed Android manifest must remove dependency receivers and not register an AppWidgetProvider",
+    androidManifest.includes("android.appwidget.action.APPWIDGET_UPDATE") &&
+    androidManifest.includes("android.appwidget.provider") &&
+    androidManifest.includes('android:exported="false"'),
+  "the distributed Android manifest must register exactly the non-exported Deck widget receiver",
 );
 requireCondition(
   androidManifest.includes('android:allowBackup="false"') &&
@@ -292,12 +292,13 @@ for (const architecture of ["arm64", "x86_64"]) {
   );
 }
 requireCondition(
-  !iosProject.includes("WidgetKit") &&
-    !iosProject.includes(".appex") &&
-    !iosProject.includes("dev.deli.devhud.widget") &&
+  iosProject.includes("DevHudWidgetExtension:") &&
+    iosProject.includes("type: app-extension") &&
+    iosProject.includes("dev.deli.devhud.widget") &&
+    /target: DevHudWidgetExtension[\s\S]*?embed: true/u.test(iosProject) &&
     iosProject.includes("com.apple.developer.associated-domains") &&
     iosProject.includes("applinks:deli.dev"),
-  "the distributed iOS project must embed no widget and declare only the DeliDev associated domain",
+  "the distributed iOS project must embed the exact WidgetKit extension and declare only the DeliDev associated domain",
 );
 requireCondition(
   !iosInfo.includes("CFBundleURLTypes") &&
@@ -325,8 +326,8 @@ requireCondition(
 );
 requireCondition(
   (iosProject.split("\ntargets:\n")[1]?.match(/^ {2}[A-Za-z0-9_]+:\s*$/gmu) ?? [])
-    .length === 1,
-  "the iOS project must contain exactly one application target",
+    .length === 3,
+  "the iOS project must contain the app, widget core, and widget extension targets",
 );
 
 requireCondition(
@@ -342,6 +343,7 @@ requireCondition(
       "allow-export-diagnostics",
       "allow-reset-dev-hud",
       "allow-deck-connect",
+      "allow-deck-device-id",
       "allow-deck-open-pull-request",
       "allow-get-auth-session",
       "allow-start-authentication",
@@ -398,11 +400,11 @@ for (const path of nativeFiles.filter((file) =>
     `native project contains an unintended network endpoint: ${path}`,
   );
   requireCondition(
-    !/(CFBundleURLSchemes|AppWidgetProvider|WidgetKit)/u.test(source) &&
+    !/CFBundleURLSchemes/u.test(source) &&
       (!/(com\.apple\.developer\.associated-domains|android\.intent\.action\.VIEW)/u.test(source) ||
         ((source.match(/applinks:/gu) ?? []).length <= 1 &&
-          (source.match(/android\.intent\.action\.VIEW/gu) ?? []).length <= 1)),
-    `native project contains a prohibited deep-link or widget registration: ${path}`,
+          (source.match(/android\.intent\.action\.VIEW/gu) ?? []).length <= 2)),
+    `native project contains a prohibited deep-link registration: ${path}`,
   );
 }
 
@@ -421,14 +423,18 @@ for (const path of mergedManifestFiles.filter((file) =>
 )) {
   const source = await readFile(path, "utf8");
   requireCondition(
-    !/(AppWidgetProvider|APPWIDGET_UPDATE|android\.appwidget)/u.test(source) &&
+    (source.match(/<receiver\b/gu) ?? []).length === 1 &&
+      /DevHudWidgetProvider/u.test(source) &&
+      /APPWIDGET_UPDATE/u.test(source) &&
+      /android\.appwidget/u.test(source) &&
       (source.match(/android\.permission\.INTERNET/gu) ?? []).length <= 1 &&
-      (source.match(/android\.intent\.category\.BROWSABLE/gu) ?? []).length <= 1 &&
-      (source.match(/android:autoVerify/gu) ?? []).length <= 1 &&
+      (source.match(/android\.intent\.category\.BROWSABLE/gu) ?? []).length <= 2 &&
+      (source.match(/android:autoVerify/gu) ?? []).length <= 2 &&
       (!source.includes("android:autoVerify") ||
         (source.includes('android:scheme="https"') &&
           source.includes('android:host="deli.dev"') &&
-          source.includes('android:path="/auth/devhud/callback"'))),
+          source.includes('android:path="/auth/devhud/callback"') &&
+          source.includes('android:path="/devhud/deck/open"'))),
     `merged Android artifact contains network, deep-link, or app-widget authority: ${path}`,
   );
 }

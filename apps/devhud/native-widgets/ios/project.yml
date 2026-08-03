@@ -1,4 +1,4 @@
-name: DevHudWidgetBuildOnly
+name: DevHudWidget
 options:
   bundleIdPrefix: dev.deli.devhud.widget
   deploymentTarget:
@@ -20,7 +20,7 @@ targets:
       - path: ../../src-tauri/widget-bridge/ios/Sources/DevHudWidgetCore
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: dev.deli.devhud.widget.core.build-only
+        PRODUCT_BUNDLE_IDENTIFIER: dev.deli.devhud.widget.core
   DevHudWidgetExtension:
     type: app-extension
     platform: iOS
@@ -31,7 +31,7 @@ targets:
     info:
       path: Support/DevHudWidgetExtension-Info.plist
       properties:
-        CFBundleDisplayName: DevHud Widget Foundation
+        CFBundleDisplayName: Deck
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
     entitlements:
@@ -54,9 +54,9 @@ targets:
       - target: DevHudWidgetCore
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: dev.deli.devhud.widget.tests.build-only
+        PRODUCT_BUNDLE_IDENTIFIER: dev.deli.devhud.widget.tests
 schemes:
-  DevHudWidgetBuildOnly:
+  DevHudWidget:
     build:
       targets:
         DevHudWidgetExtension: all

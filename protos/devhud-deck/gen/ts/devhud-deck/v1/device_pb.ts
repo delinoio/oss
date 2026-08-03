@@ -563,6 +563,9 @@ export type UpdateViewNotificationPreferenceRequest = Message<"devhud.deck.v1.Up
   viewId?: UuidV7 | undefined;
 
   /**
+   * Omit after a client restart to create or resynchronize this device-local
+   * preference. Supplying a revision preserves strict compare-and-swap.
+   *
    * @generated from field: devhud.deck.v1.Revision expected_revision = 3;
    */
   expectedRevision?: Revision | undefined;

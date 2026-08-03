@@ -49,6 +49,8 @@ import {
   RefreshOrigin,
   RefreshViewRequestSchema,
   RefreshViewResponseSchema,
+  ResolveNotificationEventRequestSchema,
+  ResolveNotificationEventResponseSchema,
   RegisterDeviceRequestSchema,
   RegisterDeviceResponseSchema,
   RemoveLabelsMutationSchema,
@@ -62,6 +64,8 @@ import {
   ShortcutModifier as ProtoShortcutModifier,
   ShortcutState,
   UnassignUsersMutationSchema,
+  UpdateViewNotificationPreferenceRequestSchema,
+  UpdateViewNotificationPreferenceResponseSchema,
   UpdateViewRequestSchema,
   UpdateViewResponseSchema,
   UuidV7Schema,
@@ -69,6 +73,8 @@ import {
   ViewKind,
   ViewQuerySchema,
   ViewSort,
+  WidgetFamily,
+  WidgetPrivacy,
   type PullRequestResult,
   type DeviceRegistration,
   type RegisterDeviceRequest,
@@ -99,6 +105,7 @@ import {
   type DeckMutationCandidate,
   type DeckMutationCandidatePage,
   type DeckMutationInput,
+  type DeckNotificationPreference,
   type DeckOwner,
   type DeckPullRequest,
   type DeckPullRequestPage,
@@ -108,6 +115,7 @@ import {
 } from "./contracts";
 import {
   DeckRefreshController,
+  DeckWidgetRefreshController,
   manualRefreshWarning,
   type DeckRefreshAttempt,
   type DeckRefreshAttemptStore,
@@ -465,6 +473,29 @@ function desktopDevicePlatform(userAgent: string): DevicePlatform {
   throw new DeckProductError(DeckFailureCode.UnsupportedAction);
 }
 
+function mobileDevicePlatform(userAgent: string): DevicePlatform {
+  if (/(iPhone|iPad|iPod)/u.test(userAgent)) return DevicePlatform.IOS;
+  if (/Android/u.test(userAgent)) return DevicePlatform.ANDROID;
+  throw new DeckProductError(DeckFailureCode.UnsupportedAction);
+}
+
+const widgetFamilyWire: Readonly<Partial<Record<WidgetFamily, string>>> = {
+  [WidgetFamily.APPLE_SMALL]: "apple-small",
+  [WidgetFamily.APPLE_MEDIUM]: "apple-medium",
+  [WidgetFamily.APPLE_LARGE]: "apple-large",
+  [WidgetFamily.ANDROID_COMPACT]: "android-compact",
+  [WidgetFamily.ANDROID_WIDE]: "android-wide",
+  [WidgetFamily.ANDROID_LIST]: "android-list",
+};
+
+function widgetFreshnessWire(value: FreshnessState): string {
+  if (value === FreshnessState.FRESH) return "fresh";
+  if (value === FreshnessState.STALE) return "stale";
+  if (value === FreshnessState.DISCONNECTED) return "disconnected";
+  if (value === FreshnessState.NEVER_REFRESHED) return "never-refreshed";
+  return "offline";
+}
+
 function isAmbiguousRefreshError(error: unknown): boolean {
   return error instanceof DeckProductError && (
     error.code === DeckFailureCode.ServiceUnavailable ||
@@ -546,6 +577,7 @@ export class NativeDeckGateway implements DeckGateway {
   readonly #shortcutViewIds = new Set<string>();
   #deviceRegistrationAttempt: RegisterDeviceRequest | undefined;
   #deviceRegistered = false;
+  #deviceRegistration: DeviceRegistration | undefined;
   #shortcutSynchronizationGeneration = 0;
   #accountId = "";
   #deviceId = "";
@@ -699,6 +731,92 @@ export class NativeDeckGateway implements DeckGateway {
       throw error;
     }
   }
+  async requestWidgetRefresh(viewId: string): Promise<void> {
+    const controller = new DeckWidgetRefreshController(
+      {
+        isAmbiguousRefreshError,
+        getPreflight: async (request, signal) => {
+          signal.throwIfAborted();
+          const response = await this.#call(() => invokeDeckProcedure(
+            DeckProcedure.GetRefreshPreflight,
+            GetRefreshPreflightRequestSchema,
+            GetRefreshPreflightResponseSchema,
+            create(GetRefreshPreflightRequestSchema, {
+              viewId: uuid(request.viewId),
+              refreshRequestId: idempotencyKey(request.requestId),
+              origin: request.origin,
+              clientKind: request.clientKind,
+            }),
+          ));
+          return { priceUsdMicros: response.providerRefreshPrice?.value ?? 0n, token: response.preflightToken };
+        },
+        refresh: async (request, signal) => {
+          signal.throwIfAborted();
+          await this.#call(() => invokeDeckProcedure(
+            DeckProcedure.RefreshView,
+            RefreshViewRequestSchema,
+            RefreshViewResponseSchema,
+            create(RefreshViewRequestSchema, {
+              viewId: uuid(request.viewId),
+              refreshRequestId: idempotencyKey(request.requestId),
+              origin: request.origin,
+              billingPreflightToken: request.preflightToken,
+              clientKind: request.clientKind,
+            }),
+          ));
+        },
+      },
+      createUuidV7,
+      this.#automaticAttempts,
+    );
+    await controller.refresh(viewId, new AbortController().signal);
+  }
+  async updateNativeNotificationPreference(
+    viewId: string,
+    preference: DeckNotificationPreference,
+  ): Promise<void> {
+    if (this.#clientKind !== RefreshClientKind.MOBILE) return;
+    if (this.#deviceRegistration === undefined) await this.#runShortcutSynchronization();
+    const registrationId = this.#deviceRegistration?.registrationId?.value ?? "";
+    if (registrationId.length === 0) {
+      throw new DeckProductError(DeckFailureCode.ServiceUnavailable);
+    }
+    await this.#call(() => invokeDeckProcedure(
+      DeckProcedure.UpdateViewNotificationPreference,
+      UpdateViewNotificationPreferenceRequestSchema,
+      UpdateViewNotificationPreferenceResponseSchema,
+      create(UpdateViewNotificationPreferenceRequestSchema, {
+        registrationId: uuid(registrationId),
+        viewId: uuid(viewId),
+        preference: {
+          enabled: preference.enabled,
+          transitions: preference.transitions.map((transition) => notificationToProto[transition]),
+        },
+      }),
+    ));
+  }
+  async resolveNotificationEvent(eventId: string) {
+    const registrationId = this.#deviceRegistration?.registrationId?.value ?? "";
+    if (registrationId.length === 0) return {};
+    const response = await this.#call(() => invokeDeckProcedure(
+      DeckProcedure.ResolveNotificationEvent,
+      ResolveNotificationEventRequestSchema,
+      ResolveNotificationEventResponseSchema,
+      create(ResolveNotificationEventRequestSchema, {
+        registrationId: uuid(registrationId),
+        opaqueEventId: eventId,
+      }),
+    ));
+    const pullRequest = response.pullRequest?.result;
+    return {
+      viewId: response.viewId?.value || undefined,
+      pullRequest: pullRequest?.repository === undefined ? undefined : {
+        repositoryOwner: pullRequest.repository.owner,
+        repositoryName: pullRequest.repository.name,
+        number: Number(pullRequest.number),
+      },
+    };
+  }
   openPullRequest(pullRequest: DeckPullRequest): Promise<void> {
     return this.#call(() => openDeckPullRequest(
       pullRequest.repositoryOwner,
@@ -716,8 +834,10 @@ export class NativeDeckGateway implements DeckGateway {
       attempt = create(RegisterDeviceRequestSchema, {
         idempotencyKey: idempotencyKey(createUuidV7()),
         deviceId: uuid(this.#deviceId),
-        platform: device?.platform ?? this.desktopPlatform(),
-        displayName: device?.displayName ?? "DevHud desktop",
+        platform: device?.platform ?? (this.#clientKind === RefreshClientKind.MOBILE
+          ? mobileDevicePlatform(navigator.userAgent)
+          : this.desktopPlatform()),
+        displayName: device?.displayName ?? (this.#clientKind === RefreshClientKind.MOBILE ? "DevHud mobile" : "DevHud desktop"),
         detailedNotificationTextEnabled: device?.detailedNotificationTextEnabled ?? false,
         shortcuts: (device?.shortcuts ?? []).map((shortcut) => ({
           shortcutId: shortcut.shortcutId,
@@ -769,7 +889,7 @@ export class NativeDeckGateway implements DeckGateway {
   }
 
   async #runShortcutSynchronization(): Promise<void> {
-    if (!isTauri() || this.#clientKind !== RefreshClientKind.DESKTOP) return;
+    if (!isTauri()) return;
     if (this.#accountId.length === 0) return;
     const generation = this.#shortcutSynchronizationGeneration;
     const accountId = this.#accountId;
@@ -791,6 +911,11 @@ export class NativeDeckGateway implements DeckGateway {
     }
     if (generation !== this.#shortcutSynchronizationGeneration) return;
     this.#deviceRegistered = true;
+    this.#deviceRegistration = registration;
+    if (this.#clientKind === RefreshClientKind.MOBILE) {
+      await this.#writeMobileWidgetSnapshot(registration);
+      return;
+    }
     const definitions = (registration.device?.shortcuts ?? []).flatMap((shortcut) => {
       if (shortcut.state !== ShortcutState.ACTIVE) return [];
       const mapped = shortcutFromProto(shortcut.binding);
@@ -815,9 +940,49 @@ export class NativeDeckGateway implements DeckGateway {
     });
   }
 
+  async #writeMobileWidgetSnapshot(registration: DeviceRegistration): Promise<void> {
+    const widgets = (registration.device?.widgets ?? []).flatMap((widget) => {
+      const family = widgetFamilyWire[widget.family];
+      const widgetId = widget.widgetId?.value ?? "";
+      const viewId = widget.viewId?.value ?? "";
+      const snapshot = widget.snapshot;
+      if (family === undefined || widgetId.length === 0 || viewId.length === 0 || snapshot === undefined) return [];
+      const privacy = widget.privacy === WidgetPrivacy.REPOSITORY_AND_TITLES
+        ? "repository-and-titles" as const
+        : "counts-only" as const;
+      return [{
+        widgetId,
+        viewId,
+        family,
+        privacy,
+        snapshot: {
+          matchingCount: snapshot.matchingCount,
+          pullRequests: privacy === "counts-only" ? [] : snapshot.pullRequests.slice(0, 10).map((pullRequest) => ({
+            repositoryOwner: pullRequest.repository?.owner ?? "",
+            repositoryName: pullRequest.repository?.name ?? "",
+            number: Number(pullRequest.number),
+            title: pullRequest.title,
+          })),
+          freshness: widgetFreshnessWire(snapshot.freshness),
+          offline: snapshot.offline,
+          generatedAt: timestamp(snapshot.generatedAt) ?? new Date(0).toISOString(),
+        },
+      }];
+    });
+    await invoke("write_widget_configuration", {
+      record: JSON.stringify({
+        version: 1,
+        configuration: { accountId: this.#accountId, widgets },
+      }),
+    });
+  }
+
   async clearShortcuts(): Promise<void> {
-    if (!isTauri() || this.#clientKind !== RefreshClientKind.DESKTOP) return;
     this.#shortcutSynchronizationGeneration += 1;
+    this.#deviceRegistered = false;
+    this.#deviceRegistration = undefined;
+    this.#deviceRegistrationAttempt = undefined;
+    if (!isTauri() || this.#clientKind !== RefreshClientKind.DESKTOP) return;
     this.#shortcutViewIds.clear();
     await invoke("synchronize_deck_shortcuts", {
       accountId: this.#accountId,

@@ -943,7 +943,7 @@ describe("DevHud application surfaces", () => {
     ).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Widgets" }));
     expect(screen.getByRole("heading", { name: "Widgets" })).toHaveFocus();
-    expect(screen.getByRole("heading", { name: "No widgets available" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "No Deck widgets configured" })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Diagnostics" }));
     expect(screen.getByRole("heading", { name: "Local diagnostics" })).toHaveFocus();
     expect(screen.getByRole("heading", { name: "Runtime details" })).toBeVisible();

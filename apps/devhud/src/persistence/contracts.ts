@@ -110,20 +110,50 @@ export interface ShortcutEffectiveState {
   readonly inactive: readonly ShortcutOwner[];
 }
 
-declare const stableToolId: unique symbol;
-
-/** A persisted tool reference is accepted only after the stable-ID validation below. */
-export type StableToolId = string & { readonly [stableToolId]: "StableToolId" };
-
-export enum WidgetSlot {
-  Primary = "primary",
-  Secondary = "secondary",
-  Tertiary = "tertiary",
+export enum DeckWidgetFamily {
+  AppleSmall = "apple-small",
+  AppleMedium = "apple-medium",
+  AppleLarge = "apple-large",
+  AndroidCompact = "android-compact",
+  AndroidWide = "android-wide",
+  AndroidList = "android-list",
 }
 
-export interface WidgetSlotReference {
-  readonly slot: WidgetSlot;
-  readonly toolId: StableToolId;
+export enum DeckWidgetPrivacy {
+  CountsOnly = "counts-only",
+  RepositoryAndTitles = "repository-and-titles",
+}
+
+export enum DeckWidgetFreshness {
+  Fresh = "fresh",
+  Stale = "stale",
+  Offline = "offline",
+  Disconnected = "disconnected",
+  NeverRefreshed = "never-refreshed",
+}
+
+export interface DeckWidgetPullRequest {
+  readonly repositoryOwner: string;
+  readonly repositoryName: string;
+  readonly number: number;
+  readonly title: string;
+}
+
+/** The only Deck PR data allowed to persist offline. */
+export interface DeckWidgetSnapshot {
+  readonly matchingCount: number;
+  readonly pullRequests: readonly DeckWidgetPullRequest[];
+  readonly freshness: DeckWidgetFreshness;
+  readonly offline: boolean;
+  readonly generatedAt: string;
+}
+
+export interface DeckWidgetInstance {
+  readonly widgetId: string;
+  readonly viewId: string;
+  readonly family: DeckWidgetFamily;
+  readonly privacy: DeckWidgetPrivacy;
+  readonly snapshot: DeckWidgetSnapshot;
 }
 
 export interface DevHudSettings {
@@ -133,7 +163,9 @@ export interface DevHudSettings {
 }
 
 export interface WidgetConfiguration {
-  readonly slots: readonly WidgetSlotReference[];
+  /** Opaque account binding; native storage additionally binds encryption to it. */
+  readonly accountId: string;
+  readonly widgets: readonly DeckWidgetInstance[];
 }
 
 export interface SettingsRecord {
@@ -158,14 +190,17 @@ export const defaultSettings: DevHudSettings = Object.freeze({
 });
 
 export const defaultWidgetConfiguration: WidgetConfiguration = Object.freeze({
-  slots: Object.freeze([]),
+  accountId: "",
+  widgets: Object.freeze([]),
 });
 
-const TOOL_ID = /^[a-z]+(?:-[a-z0-9]+)*$/u;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const modifiers = new Set<string>(Object.values(ShortcutModifier));
 const shortcutKeys = new Set<string>(Object.values(ShortcutKey));
 const themes = new Set<string>(Object.values(ThemePreference));
-const widgetSlots = new Set<string>(Object.values(WidgetSlot));
+const widgetFamilies = new Set<string>(Object.values(DeckWidgetFamily));
+const widgetPrivacyValues = new Set<string>(Object.values(DeckWidgetPrivacy));
+const widgetFreshnessValues = new Set<string>(Object.values(DeckWidgetFreshness));
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -222,12 +257,6 @@ function isShortcutEffectiveState(value: unknown): value is ShortcutEffectiveSta
     && value.inactive.every(isShortcutOwner);
 }
 
-export function parseStableToolId(value: unknown): StableToolId | null {
-  return typeof value === "string" && TOOL_ID.test(value)
-    ? (value as StableToolId)
-    : null;
-}
-
 function isSettings(value: unknown): value is DevHudSettings {
   return (
     isRecord(value) &&
@@ -240,25 +269,70 @@ function isSettings(value: unknown): value is DevHudSettings {
 }
 
 function isWidgetConfiguration(value: unknown): value is WidgetConfiguration {
-  if (!isRecord(value) || !hasExactKeys(value, ["slots"]) || !Array.isArray(value.slots)) {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, ["accountId", "widgets"]) ||
+    typeof value.accountId !== "string" ||
+    !Array.isArray(value.widgets) ||
+    value.widgets.length > 20
+  ) {
     return false;
   }
+  if (value.widgets.length > 0 && !UUID.test(value.accountId)) return false;
 
-  const seenSlots = new Set<string>();
-  return value.slots.every((reference) => {
+  const seenWidgetIds = new Set<string>();
+  return value.widgets.every((widget) => {
     if (
-      !isRecord(reference) ||
-      !hasExactKeys(reference, ["slot", "toolId"]) ||
-      typeof reference.slot !== "string"
+      !isRecord(widget) ||
+      !hasExactKeys(widget, ["widgetId", "viewId", "family", "privacy", "snapshot"]) ||
+      typeof widget.widgetId !== "string" ||
+      typeof widget.viewId !== "string" ||
+      typeof widget.family !== "string" ||
+      typeof widget.privacy !== "string" ||
+      !UUID.test(widget.widgetId) ||
+      !UUID.test(widget.viewId) ||
+      !widgetFamilies.has(widget.family) ||
+      !widgetPrivacyValues.has(widget.privacy) ||
+      seenWidgetIds.has(widget.widgetId) ||
+      !isRecord(widget.snapshot) ||
+      !hasExactKeys(widget.snapshot, [
+        "matchingCount",
+        "pullRequests",
+        "freshness",
+        "offline",
+        "generatedAt",
+      ]) ||
+      typeof widget.snapshot.matchingCount !== "number" ||
+      !Number.isSafeInteger(widget.snapshot.matchingCount) ||
+      widget.snapshot.matchingCount < 0 ||
+      !Array.isArray(widget.snapshot.pullRequests) ||
+      widget.snapshot.pullRequests.length > 10 ||
+      typeof widget.snapshot.freshness !== "string" ||
+      !widgetFreshnessValues.has(widget.snapshot.freshness) ||
+      typeof widget.snapshot.offline !== "boolean" ||
+      typeof widget.snapshot.generatedAt !== "string" ||
+      Number.isNaN(Date.parse(widget.snapshot.generatedAt))
     ) {
       return false;
     }
-    const toolId = parseStableToolId(reference.toolId);
-    if (toolId === null || !widgetSlots.has(reference.slot) || seenSlots.has(reference.slot)) {
-      return false;
-    }
-    seenSlots.add(reference.slot);
-    return true;
+    seenWidgetIds.add(widget.widgetId);
+    if (
+      widget.privacy === DeckWidgetPrivacy.CountsOnly &&
+      widget.snapshot.pullRequests.length !== 0
+    ) return false;
+    return widget.snapshot.pullRequests.every((pullRequest) =>
+      isRecord(pullRequest) &&
+      hasExactKeys(pullRequest, ["repositoryOwner", "repositoryName", "number", "title"]) &&
+      typeof pullRequest.repositoryOwner === "string" &&
+      pullRequest.repositoryOwner.length > 0 &&
+      typeof pullRequest.repositoryName === "string" &&
+      pullRequest.repositoryName.length > 0 &&
+      typeof pullRequest.number === "number" &&
+      Number.isSafeInteger(pullRequest.number) &&
+      pullRequest.number > 0 &&
+      typeof pullRequest.title === "string" &&
+      pullRequest.title.length > 0
+    );
   });
 }
 

@@ -24,7 +24,8 @@ Deck value is absent or invalid, only the Deck controls are disabled.
 
 Artifact builds also require `DELIDEV_DEVHUD_APPLE_TEAM_ID` and
 `DELIDEV_DEVHUD_ANDROID_CERTIFICATE_SHA256`. They are public verified-link
-identities used to generate the exact-path DevHud association files. CI uses
+identities used to generate association files for only the exact DevHud auth
+callback and closed Deck widget-action route. CI uses
 explicit test-only identities; release builds must inject the actual Apple Team
 ID and Android release-certificate SHA-256 fingerprint.
 

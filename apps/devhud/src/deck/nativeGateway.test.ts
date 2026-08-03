@@ -4,6 +4,8 @@ import {
   ErrorDetailSchema,
   ErrorReason,
   DevicePlatform,
+  NotificationTransition,
+  RefreshClientKind,
   RefreshOrigin,
   ShortcutKey,
   ShortcutModifier,
@@ -11,7 +13,11 @@ import {
 } from "@delinoio/devhud-deck-connect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { DeckFailureCode, DeckProductError } from "./contracts";
+import {
+  DeckFailureCode,
+  DeckNotificationTransition,
+  DeckProductError,
+} from "./contracts";
 import { mapFailure, NativeDeckGateway } from "./nativeGateway";
 import { DeckProcedure, invokeDeckProcedure } from "./transport";
 
@@ -25,8 +31,14 @@ vi.mock("./transport", async (importOriginal) => {
   return { ...actual, invokeDeckProcedure: vi.fn() };
 });
 
+const originalUserAgent = navigator.userAgent;
+
 afterEach(() => {
   vi.clearAllMocks();
+  Object.defineProperty(navigator, "userAgent", {
+    configurable: true,
+    value: originalUserAgent,
+  });
 });
 
 function base64(bytes: Uint8Array): string {
@@ -222,6 +234,61 @@ describe("native Deck gateway", () => {
       "synchronize_deck_shortcuts",
       { accountId, definitions: [] },
     ]]);
+  });
+
+  it("writes explicit per-view notification preferences for the registered mobile device", async () => {
+    const accountId = "018f0000-0000-7000-8000-000000000001";
+    const deviceId = "018f0000-0000-7000-8000-000000000002";
+    const viewId = "018f0000-0000-7000-8000-000000000003";
+    const registrationId = "018f0000-0000-7000-8000-000000000004";
+    Object.defineProperty(navigator, "userAgent", { configurable: true, value: "Android" });
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command === "deck_device_id") return deviceId as never;
+      if (command === "write_widget_configuration") return 0 as never;
+      throw new Error(`Unexpected command: ${command}`);
+    });
+    vi.mocked(invokeDeckProcedure).mockImplementation(async (procedure) => {
+      if (procedure === DeckProcedure.ListOwners) {
+        return {
+          owners: [{
+            owner: { ownerId: { case: "accountId", value: { value: accountId } } },
+            canManage: true,
+            billingSelections: [],
+          }],
+        } as never;
+      }
+      if (procedure === DeckProcedure.RegisterDevice) {
+        return {
+          registration: {
+            registrationId: { value: registrationId },
+            device: { widgets: [], shortcuts: [] },
+          },
+        } as never;
+      }
+      if (procedure === DeckProcedure.UpdateViewNotificationPreference) return {} as never;
+      throw new Error(`Unexpected procedure: ${procedure}`);
+    });
+    const gateway = new NativeDeckGateway(RefreshClientKind.MOBILE);
+    await gateway.listOwners();
+    await gateway.synchronizeShortcuts();
+
+    await gateway.updateNativeNotificationPreference(viewId, {
+      enabled: true,
+      transitions: [DeckNotificationTransition.Assigned],
+    });
+
+    const update = vi.mocked(invokeDeckProcedure).mock.calls.find(
+      ([procedure]) => procedure === DeckProcedure.UpdateViewNotificationPreference,
+    )?.[3];
+    expect(update).toMatchObject({
+      registrationId: { value: registrationId },
+      viewId: { value: viewId },
+      preference: { enabled: true, transitions: [NotificationTransition.ASSIGNED] },
+    });
+    expect(update).not.toHaveProperty("expectedRevision");
+    expect(vi.mocked(invokeDeckProcedure).mock.calls.some(
+      ([procedure]) => procedure === DeckProcedure.MutatePullRequest,
+    )).toBe(false);
   });
 
   it("shares one preflight, confirmation, and dispatch across concurrent manual refreshes", async () => {

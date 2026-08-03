@@ -58,6 +58,7 @@ pub(crate) enum DeckProcedure {
     RegisterDevice,
     UpdateDevice,
     UnregisterDevice,
+    UpdateViewNotificationPreference,
     ResolveNotificationEvent,
 }
 
@@ -81,6 +82,9 @@ impl DeckProcedure {
             Self::RegisterDevice => "/devhud.deck.v1.DeckDeviceService/RegisterDevice",
             Self::UpdateDevice => "/devhud.deck.v1.DeckDeviceService/UpdateDevice",
             Self::UnregisterDevice => "/devhud.deck.v1.DeckDeviceService/UnregisterDevice",
+            Self::UpdateViewNotificationPreference => {
+                "/devhud.deck.v1.DeckDeviceService/UpdateViewNotificationPreference"
+            }
             Self::ResolveNotificationEvent => {
                 "/devhud.deck.v1.DeckDeviceService/ResolveNotificationEvent"
             }
@@ -594,6 +598,7 @@ mod tests {
             DeckProcedure::RegisterDevice,
             DeckProcedure::UpdateDevice,
             DeckProcedure::UnregisterDevice,
+            DeckProcedure::UpdateViewNotificationPreference,
             DeckProcedure::ResolveNotificationEvent,
         ]
         .map(DeckProcedure::path);
@@ -603,7 +608,7 @@ mod tests {
                 .all(|path| path.starts_with("/devhud.deck.v1."))
         );
         assert_eq!(
-            16,
+            17,
             paths
                 .iter()
                 .collect::<std::collections::BTreeSet<_>>()

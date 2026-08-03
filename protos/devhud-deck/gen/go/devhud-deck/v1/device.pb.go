@@ -1720,9 +1720,11 @@ func (x *ViewNotificationState) GetUpdatedAt() *timestamppb.Timestamp {
 }
 
 type UpdateViewNotificationPreferenceRequest struct {
-	state            protoimpl.MessageState      `protogen:"open.v1"`
-	RegistrationId   *UuidV7                     `protobuf:"bytes,1,opt,name=registration_id,json=registrationId,proto3" json:"registration_id,omitempty"`
-	ViewId           *UuidV7                     `protobuf:"bytes,2,opt,name=view_id,json=viewId,proto3" json:"view_id,omitempty"`
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	RegistrationId *UuidV7                `protobuf:"bytes,1,opt,name=registration_id,json=registrationId,proto3" json:"registration_id,omitempty"`
+	ViewId         *UuidV7                `protobuf:"bytes,2,opt,name=view_id,json=viewId,proto3" json:"view_id,omitempty"`
+	// Omit after a client restart to create or resynchronize this device-local
+	// preference. Supplying a revision preserves strict compare-and-swap.
 	ExpectedRevision *Revision                   `protobuf:"bytes,3,opt,name=expected_revision,json=expectedRevision,proto3" json:"expected_revision,omitempty"`
 	Preference       *ViewNotificationPreference `protobuf:"bytes,4,opt,name=preference,proto3" json:"preference,omitempty"`
 	unknownFields    protoimpl.UnknownFields

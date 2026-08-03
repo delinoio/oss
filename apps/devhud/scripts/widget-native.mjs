@@ -32,7 +32,7 @@ if (platform === "android") {
 } else {
   if (process.platform !== "darwin") {
     throw new Error(
-      "The build-only WidgetKit target requires macOS, Xcode, and XcodeGen.",
+      "The WidgetKit target requires macOS, Xcode, and XcodeGen.",
     );
   }
   const iosRoot = resolve(appRoot, "native-widgets/ios");
@@ -41,9 +41,9 @@ if (platform === "android") {
   });
   const common = [
     "-project",
-    "DevHudWidgetBuildOnly.xcodeproj",
+    "DevHudWidget.xcodeproj",
     "-scheme",
-    "DevHudWidgetBuildOnly",
+    "DevHudWidget",
     "-sdk",
     "iphonesimulator",
     "CODE_SIGNING_ALLOWED=NO",

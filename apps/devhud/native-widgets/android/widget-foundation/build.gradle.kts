@@ -4,7 +4,7 @@ plugins {
 }
 
 android {
-    namespace = "dev.deli.devhud.widget.foundation"
+    namespace = "dev.deli.devhud.widget"
     compileSdk = 36
 
     defaultConfig {

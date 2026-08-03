@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
@@ -252,18 +253,30 @@ func (service *Device) UpdateViewNotificationPreference(
 	if _, err := viewService.getAuthorizedView(ctx, viewer, viewID, false); err != nil {
 		return nil, err
 	}
-	if request.Msg.ExpectedRevision == nil || request.Msg.Preference == nil {
+	if request.Msg.Preference == nil {
 		return nil, rpcerr.New(connect.CodeInvalidArgument,
 			deckv1.ErrorReason_ERROR_REASON_INVALID_ARGUMENT)
 	}
-	expected, err := validateExpected(
-		request.Msg.ExpectedRevision, viewID, service.dependencies.Hasher)
-	if err != nil {
-		return nil, err
+	var expected uint64
+	if request.Msg.ExpectedRevision != nil {
+		expected, err = validateExpected(
+			request.Msg.ExpectedRevision, viewID, service.dependencies.Hasher)
+		if err != nil {
+			return nil, err
+		}
 	}
 	notification, err := service.dependencies.Store.UpdateNotificationPreference(
 		ctx, registrationID, viewID, expected,
 		request.Msg.Preference, service.dependencies.Clock.Now().UTC())
+	// A device that has restarted does not retain this encrypted server revision.
+	// An omitted expected revision creates the preference or retries once against
+	// the authoritative revision; explicit revisions keep strict CAS behavior.
+	var stale *database.StaleError
+	if request.Msg.ExpectedRevision == nil && errors.As(err, &stale) && stale.Revision > 0 {
+		notification, err = service.dependencies.Store.UpdateNotificationPreference(
+			ctx, registrationID, viewID, stale.Revision,
+			request.Msg.Preference, service.dependencies.Clock.Now().UTC())
+	}
 	if err != nil {
 		return nil, (&View{dependencies: service.dependencies}).mapStaleWithETag(err)
 	}

@@ -113,8 +113,10 @@ descriptors, generated Go/TypeScript artifacts, and private
 exports are implemented, including Deck's structured request-only shortcut
 configurations and server-authored shortcut/widget state; Deck's inactive
 server provider/client-owned refresh slices, dependency-injected desktop/mobile
-client, closed native transport, tray, and unified shortcut registration are
-implemented, while push delivery and native-widget distribution remain planned.
+client, closed native transport, tray, unified shortcut registration,
+distributed WidgetKit/AppWidgetProvider surfaces, exact action links, and native
+notification presentation are implemented. Production service/push operation
+remains separately controlled.
 RealQA's inactive preset/tracker/auth/deletion
 foundation is implemented. Issues #755/#757 authorize two bounded
 authenticated exceptions: Deck on

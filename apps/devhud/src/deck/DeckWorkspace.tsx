@@ -7,6 +7,7 @@ import {
   DeckGrouping,
   DeckMergeMethod,
   DeckMutationKind,
+  DeckNotificationTransition,
   DeckOwnerKind,
   DeckProductError,
   DeckSort,
@@ -42,6 +43,16 @@ function failureMessage(error: unknown): string {
   }
   return deckFailureGuidance[DeckFailureCode.ServiceUnavailable];
 }
+
+const notificationTransitionLabels: Readonly<Record<DeckNotificationTransition, string>> = {
+  [DeckNotificationTransition.Assigned]: "Assigned to me",
+  [DeckNotificationTransition.ReviewRequested]: "Review requested from me",
+  [DeckNotificationTransition.ChecksFailed]: "Checks failed",
+  [DeckNotificationTransition.BecameMergeable]: "Became mergeable",
+  [DeckNotificationTransition.Conflicted]: "Merge conflict detected",
+  [DeckNotificationTransition.Merged]: "Merged",
+  [DeckNotificationTransition.Closed]: "Closed",
+};
 
 export function DeckNavigation() {
   const { actions, state } = useDeck();
@@ -149,10 +160,57 @@ function ViewForm({
           </select>
         </label>
       </div>
+      <fieldset className="deck-notification-preferences">
+        <legend>Native notifications</legend>
+        <label className="check-field">
+          <input
+            checked={input.notificationPreference.enabled}
+            onChange={(event) => setInput({
+              ...input,
+              notificationPreference: {
+                enabled: event.target.checked,
+                transitions: event.target.checked
+                  ? input.notificationPreference.transitions
+                  : [],
+              },
+            })}
+            type="checkbox"
+          />
+          Enable notifications for this view
+        </label>
+        {input.notificationPreference.enabled ? (
+          <div aria-label="Notification events" className="deck-notification-events" role="group">
+            {Object.values(DeckNotificationTransition).map((transition) => (
+              <label className="check-field" key={transition}>
+                <input
+                  checked={input.notificationPreference.transitions.includes(transition)}
+                  onChange={(event) => setInput({
+                    ...input,
+                    notificationPreference: {
+                      enabled: true,
+                      transitions: event.target.checked
+                        ? [...input.notificationPreference.transitions, transition]
+                        : input.notificationPreference.transitions.filter((value) => value !== transition),
+                    },
+                  })}
+                  type="checkbox"
+                />
+                {notificationTransitionLabels[transition]}
+              </label>
+            ))}
+          </div>
+        ) : null}
+        <p className="muted">
+          The OS may suppress alerts with Do Not Disturb. Notification text defaults to
+          exactly “Deck view updated”; repository and PR titles require separate local
+          device detail permission.
+        </p>
+      </fieldset>
       <div className="button-row">
         <button
           className="primary-button"
-          disabled={state.busy || input.name.trim().length === 0 || !hasAuthorizedBilling}
+          disabled={state.busy || input.name.trim().length === 0 || !hasAuthorizedBilling ||
+            (input.notificationPreference.enabled && input.notificationPreference.transitions.length === 0)}
           onClick={() => void onSave({ ...input, name: input.name.trim() })}
           type="button"
         >

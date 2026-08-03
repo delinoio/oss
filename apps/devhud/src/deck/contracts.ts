@@ -237,6 +237,15 @@ export interface DeckConflict<T> {
   readonly current: DeckView;
 }
 
+export interface DeckNotificationDestination {
+  readonly viewId?: string;
+  readonly pullRequest?: {
+    readonly repositoryOwner: string;
+    readonly repositoryName: string;
+    readonly number: number;
+  };
+}
+
 export interface DeckGateway {
   listOwners(): Promise<readonly DeckOwner[]>;
   listViews(owner: DeckOwner, cursor: string): Promise<DeckCursorPage<DeckView>>;
@@ -262,6 +271,12 @@ export interface DeckGateway {
     viewId: string,
     confirm: (warning: ManualRefreshWarning) => Promise<boolean>,
   ): Promise<void>;
+  requestWidgetRefresh(viewId: string): Promise<void>;
+  updateNativeNotificationPreference(
+    viewId: string,
+    preference: DeckNotificationPreference,
+  ): Promise<void>;
+  resolveNotificationEvent(eventId: string): Promise<DeckNotificationDestination>;
   openPullRequest(pullRequest: DeckPullRequest): Promise<void>;
   recordViewOpened(viewId: string): void;
   synchronizeShortcuts(): Promise<void>;
@@ -304,6 +319,15 @@ export const unavailableDeckGateway: DeckGateway = {
     throw new DeckProductError(DeckFailureCode.ServiceUnavailable);
   },
   refreshView: async () => {
+    throw new DeckProductError(DeckFailureCode.ServiceUnavailable);
+  },
+  requestWidgetRefresh: async () => {
+    throw new DeckProductError(DeckFailureCode.ServiceUnavailable);
+  },
+  updateNativeNotificationPreference: async () => {
+    throw new DeckProductError(DeckFailureCode.ServiceUnavailable);
+  },
+  resolveNotificationEvent: async () => {
     throw new DeckProductError(DeckFailureCode.ServiceUnavailable);
   },
   openPullRequest: async () => {

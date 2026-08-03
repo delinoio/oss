@@ -24,6 +24,12 @@ android {
         getByName("main").java.srcDir(
             "../../../native-widgets/android/shared/src/main/java",
         )
+        getByName("main").java.srcDir(
+            "../../../native-widgets/android/widget-foundation/src/main/java",
+        )
+        getByName("main").res.srcDir(
+            "../../../native-widgets/android/widget-foundation/src/main/res",
+        )
     }
 }
 

@@ -22,6 +22,7 @@ export enum DeckProcedure {
   RegisterDevice = "register-device",
   UpdateDevice = "update-device",
   UnregisterDevice = "unregister-device",
+  UpdateViewNotificationPreference = "update-view-notification-preference",
   ResolveNotificationEvent = "resolve-notification-event",
 }
 interface NativeConnectResponse {
