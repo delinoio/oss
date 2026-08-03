@@ -10,10 +10,7 @@ const extensionRoot = resolve(appRoot, "build/realqa-extension");
 const outputRoot = resolve(appRoot, "build/realqa-fixtures");
 const cargo = process.platform === "win32" ? "cargo.exe" : "cargo";
 const executableName = process.platform === "win32" ? "devhud-native-host.exe" : "devhud-native-host";
-const configuredHost = process.env.DEVHUD_REALQA_FIXTURE_NATIVE_HOST;
-const nativeHost = configuredHost === undefined
-  ? resolve(repositoryRoot, "target/debug", executableName)
-  : resolve(configuredHost);
+const nativeHost = resolve(repositoryRoot, "target/debug", executableName);
 
 async function filesUnder(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
@@ -38,12 +35,10 @@ const extensionId = /^chrome-extension:\/\/([a-p]{32})\/$/u.exec(
 if (extensionId === undefined) {
   throw new Error("the fixture Native Messaging manifest has no exact Chrome extension origin");
 }
-if (configuredHost === undefined) {
-  await run(cargo, ["build", "-p", "devhud", "--bin", "devhud-native-host", "--locked"], {
-    cwd: repositoryRoot,
-    env: { ...process.env, DEVHUD_CHROME_EXTENSION_ID: extensionId },
-  });
-}
+await run(cargo, ["build", "-p", "devhud", "--bin", "devhud-native-host", "--locked"], {
+  cwd: repositoryRoot,
+  env: { ...process.env, DEVHUD_CHROME_EXTENSION_ID: extensionId },
+});
 if (!(await stat(nativeHost)).isFile()) {
   throw new Error("the RealQA fixture Native Messaging host is not a file");
 }

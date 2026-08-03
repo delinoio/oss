@@ -46,9 +46,26 @@ requireCondition(
   ),
   "RealQA CI safety guard must reject quoted job permissions overrides",
 );
+const hasJobKey = (document, key) =>
+  Object.values(document?.jobs ?? {}).some((job) => Object.hasOwn(job ?? {}, key));
 requireCondition(
-  !/^    environment\s*:/mu.test(workflow),
+  !hasJobKey(workflowDocument, "environment"),
   "RealQA CI must not reference a GitHub deployment environment",
+);
+requireCondition(
+  hasJobKey(load('jobs:\n  fixture:\n    "environment": production\n    steps: []'), "environment"),
+  "RealQA CI safety guard must reject quoted deployment environments",
+);
+requireCondition(
+  !hasJobKey(workflowDocument, "secrets"),
+  "RealQA CI must not pass secrets to a reusable workflow",
+);
+requireCondition(
+  hasJobKey(
+    load('jobs:\n  fixture:\n    uses: example/repository/.github/workflows/publish.yml@main\n    "secrets": inherit'),
+    "secrets",
+  ),
+  "RealQA CI safety guard must reject reusable workflow secret inheritance",
 );
 
 const workflowShellSource = (source) => {
@@ -96,7 +113,7 @@ const forbiddenWorkflowPatterns = [
   [/\bghcr\.io\b/u, "must not name a GHCR publication target"],
   [/\bactions\/attest\b/u, "must not publish GitHub attestations"],
   [/\b(?:wrangler|cloudflare\/wrangler-action)\b/iu, "must not invoke Cloudflare provisioning"],
-  [/\bsecrets(?:\.|\s*\[)/u, "must not read repository or environment secrets"],
+  [/\bsecrets\b/u, "must not read repository or environment secrets"],
   [/\bDEVHUD_CHROME_EXTENSION_ID\s*[:=]/u, "must not inject a production extension identity"],
   [/\bpush:\s*true\b/u, "must not push an image"],
 ];
@@ -144,6 +161,10 @@ for (const [source, expectedMessage] of [
   [
     "jobs:\n  fixture:\n    steps:\n      - run: docker buildx b --push .",
     "must not push a buildx image from the shell",
+  ],
+  [
+    "jobs:\n  fixture:\n    steps:\n      - run: echo '${{ toJSON(secrets) }}'",
+    "must not read repository or environment secrets",
   ],
 ]) {
   const fixtureSource = workflowShellSource(source);
