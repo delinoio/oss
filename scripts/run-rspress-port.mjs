@@ -1,15 +1,29 @@
 #!/usr/bin/env node
 
-import net from "node:net";
 import { spawn } from "node:child_process";
+import net from "node:net";
 
-const [command, defaultPort, envName, ...rspressArgs] = process.argv.slice(2);
-const portText = process.env[envName] || defaultPort;
+const [appName, command, defaultPort, overrideEnvName, ...rspressArgs] =
+  process.argv.slice(2);
+const hasOverride = overrideEnvName && overrideEnvName !== "-";
+const portText = hasOverride
+  ? process.env[overrideEnvName] || defaultPort
+  : defaultPort;
 const port = Number(portText);
 const defaultHost = "127.0.0.1";
 
-if (!command || !defaultPort || !envName || !Number.isInteger(port) || port < 1 || port > 65535) {
-  console.error("Usage: run-rspress-port.mjs <dev|preview> <default-port> <override-env-name>");
+if (
+  !appName ||
+  !["dev", "preview"].includes(command) ||
+  !defaultPort ||
+  !overrideEnvName ||
+  !Number.isInteger(port) ||
+  port < 1 ||
+  port > 65535
+) {
+  console.error(
+    "Usage: run-rspress-port.mjs <app-name> <dev|preview> <default-port> <override-env-name|-> [rspress-args...]",
+  );
   process.exit(1);
 }
 
@@ -17,7 +31,11 @@ function findHostArg(args) {
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
 
-    if (arg === "--host" && args[index + 1] && !args[index + 1].startsWith("-")) {
+    if (
+      arg === "--host" &&
+      args[index + 1] &&
+      !args[index + 1].startsWith("-")
+    ) {
       return args[index + 1];
     }
 
@@ -55,16 +73,22 @@ function checkPortAvailable(portToCheck, hostToCheck) {
 }
 
 function printPortConflict(portInUse) {
-  console.error(`nodeup-docs: port ${portInUse} is already in use.`);
+  console.error(`${appName}: port ${portInUse} is already in use.`);
   console.error("");
   console.error("Recovery:");
-  console.error(`  1. Find the listener: lsof -nP -iTCP:${portInUse} -sTCP:LISTEN`);
-  console.error("  2. Stop that process, then rerun this command.");
   console.error(
-    `  3. For a temporary override, run: ${envName}=<free-port> pnpm --filter nodeup-docs ${command}`,
+    `  1. Find the listener: lsof -nP -iTCP:${portInUse} -sTCP:LISTEN`,
   );
+  console.error("  2. Stop that process, then rerun this command.");
+
+  if (hasOverride) {
+    console.error(
+      `  3. For an explicit temporary override, run: ${overrideEnvName}=<free-port> pnpm --filter ${appName} ${command}`,
+    );
+  }
+
   console.error("");
-  console.error(`The default ${command} port remains ${defaultPort}.`);
+  console.error(`The fixed ${command} port remains ${defaultPort}.`);
 }
 
 const host = findHostArg(rspressArgs);
@@ -79,6 +103,9 @@ if (!isAvailable) {
 }
 
 const child = spawn("rspress", args, {
+  // Rspress exposes no strict-port CLI flag, so the app configs read this
+  // process-local marker and delegate conflict enforcement to Rsbuild.
+  env: { ...process.env, DELINO_RSPRESS_STRICT_PORT: "1" },
   stdio: "inherit",
   shell: process.platform === "win32",
 });
@@ -93,6 +120,8 @@ child.on("exit", (code, signal) => {
 });
 
 child.on("error", (error) => {
-  console.error(`nodeup-docs: failed to start Rspress ${command}: ${error.message}`);
+  console.error(
+    `${appName}: failed to start Rspress ${command}: ${error.message}`,
+  );
   process.exit(1);
 });

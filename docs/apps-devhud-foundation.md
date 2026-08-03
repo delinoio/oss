@@ -11,6 +11,7 @@
 ## Runtime and Language
 
 - Frontend runtime: React with TypeScript, built by Rsbuild.
+- The frontend development server uses fixed port `46300` and exits on conflicts without automatically selecting another port.
 - Native runtime: Tauri Rust application under `src-tauri`.
 - Desktop runtime: Tauri's upstream CEF runtime from the `feat/cef` line, pinned exactly to commit `f49ebda2fdba5755456b0f049e32593ca0ea331a` with `@tauri-apps/cli-cef` `3.0.0-alpha.6` in lockfiles. The implementation must not build from a moving branch.
 - Mobile runtime: standard Tauri iOS WKWebView and Android System WebView. Mobile must not compile, link, embed, or launch the desktop CEF runtime.

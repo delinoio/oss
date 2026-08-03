@@ -20,6 +20,8 @@ This document defines default technology choices and repository workflow default
 - Newly created pull requests must use Conventional Commit-style titles with a required scope: `<type>(<scope>): <description>`.
 - Pull request title scopes should use stable lowercase project, component, domain, or tooling identifiers from repository contracts when one applies.
 - Pull request titles must not omit the scope and must not use bracket-style project prefixes.
+- Root `pnpm install` must support linked worktrees when the configured Git hooks path is exactly the repository's shared common-directory hooks path, without overriding an unrelated custom hooks path.
+- Root `pnpm dev` and package-local development commands use each app's documented fixed port and must fail when that port is occupied rather than automatically selecting another port.
 
 ## References
 - `docs/README.md`

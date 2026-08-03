@@ -24,7 +24,7 @@ pnpm --filter public-docs dev
 ```
 
 Rspress starts a local docs server for previewing navigation and page content.
-The development server port is fixed to `46249`.
+The development server port is fixed to `46302`. If it is occupied, the command exits with recovery guidance instead of selecting another port.
 
 ## Validate Links
 

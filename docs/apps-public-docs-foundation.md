@@ -8,6 +8,7 @@
 - Runtime: Rspress static documentation app
 - Primary language: Markdown/TypeScript content and configuration with web build tooling
 - Production deployment target: Cloudflare Pages static output
+- The development server uses fixed port `46302`, preflights availability, and exits on conflicts without automatically selecting another port.
 
 ## Users and Operators
 - External users reading public product documentation

@@ -15,17 +15,17 @@ pnpm --filter nodeup-docs build
 pnpm --filter nodeup-docs preview
 ```
 
-`pnpm --filter nodeup-docs dev` runs Rspress on fixed port `46250`.
+`pnpm --filter nodeup-docs dev` runs Rspress on fixed port `46303`.
 `pnpm --filter nodeup-docs preview` serves the production build on fixed port `46251`.
 
 If either fixed port is already in use, the command prints recovery steps before exiting. Stop the conflicting listener with a tool such as `lsof -nP -iTCP:<port> -sTCP:LISTEN`, or use a temporary local override:
 
 ```bash
-NODEUP_DOCS_DEV_PORT=46252 pnpm --filter nodeup-docs dev
+NODEUP_DOCS_DEV_PORT=46313 pnpm --filter nodeup-docs dev
 NODEUP_DOCS_PREVIEW_PORT=46253 pnpm --filter nodeup-docs preview
 ```
 
-The documented defaults remain `46250` for development and `46251` for preview.
+These are explicit temporary overrides; the commands never search for a free port. The documented defaults remain `46303` for development and `46251` for preview.
 
 ## Files
 

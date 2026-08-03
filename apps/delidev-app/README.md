@@ -14,6 +14,8 @@ pnpm --filter @delinoio/devhud-deck-connect build
 pnpm --filter delidev-app dev
 ```
 
+The development server uses fixed port `46301` and exits if that port is already occupied instead of selecting another port. The production preview and Playwright server continue to use their existing configuration.
+
 Only browser-safe values belong in `.env`. Never add Logto client secrets,
 access tokens, Polar secrets, or invitation tokens.
 
