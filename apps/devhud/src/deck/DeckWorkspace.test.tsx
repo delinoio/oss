@@ -444,6 +444,37 @@ describe("Deck composable production workspace", () => {
     expect(tauri.pendingWidgetActions).toHaveLength(0);
   });
 
+  it("keeps cold-start widget actions queued until owners and registration are ready", async () => {
+    tauri.enabled = true;
+    tauri.pendingWidgetActions.push({ action: "resolve-event", eventId: "opaque-event" });
+    let resolveOwners: ((owners: readonly DeckOwner[]) => void) | undefined;
+    let resolveSynchronization: (() => void) | undefined;
+    const ownersReady = new Promise<readonly DeckOwner[]>((resolve) => {
+      resolveOwners = resolve;
+    });
+    const synchronizationReady = new Promise<void>((resolve) => {
+      resolveSynchronization = resolve;
+    });
+    const backend = gateway({
+      listOwners: vi.fn(() => ownersReady),
+      synchronizeShortcuts: vi.fn(() => synchronizationReady),
+    });
+
+    renderDeck(backend);
+    await waitFor(() => expect(backend.listOwners).toHaveBeenCalledOnce());
+    expect(tauri.pendingWidgetActions).toHaveLength(1);
+    expect(backend.resolveNotificationEvent).not.toHaveBeenCalled();
+
+    resolveOwners?.([owner]);
+    await waitFor(() => expect(backend.synchronizeShortcuts).toHaveBeenCalled());
+    expect(tauri.pendingWidgetActions).toHaveLength(1);
+    expect(backend.resolveNotificationEvent).not.toHaveBeenCalled();
+
+    resolveSynchronization?.();
+    await waitFor(() => expect(backend.resolveNotificationEvent).toHaveBeenCalledWith("opaque-event"));
+    expect(tauri.pendingWidgetActions).toHaveLength(0);
+  });
+
   it("loads permission-filtered rows, exposes truncation, and hands comments to GitHub", async () => {
     const backend = gateway();
     const user = userEvent.setup();

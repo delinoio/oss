@@ -468,7 +468,7 @@ describe("native Deck gateway", () => {
     expect(widgets).toHaveLength(1);
   });
 
-  it("reloads and rewrites native widget snapshots after a widget refresh", async () => {
+  it("reloads and rewrites native widget snapshots after widget and manual refreshes", async () => {
     const accountId = "018f0000-0000-7000-8000-000000000001";
     const deviceId = "018f0000-0000-7000-8000-000000000002";
     const viewId = "018f0000-0000-7000-8000-000000000003";
@@ -538,6 +538,15 @@ describe("native Deck gateway", () => {
     const procedures = vi.mocked(invokeDeckProcedure).mock.calls.map(([procedure]) => procedure);
     expect(procedures.lastIndexOf(DeckProcedure.GetDevice)).toBeGreaterThan(
       procedures.indexOf(DeckProcedure.RefreshView),
+    );
+
+    await gateway.refreshView(viewId, async () => true);
+
+    expect(records).toHaveLength(3);
+    expect(JSON.parse(records.at(-1)!).configuration.widgets[0].snapshot.matchingCount).toBe(7);
+    const refreshedProcedures = vi.mocked(invokeDeckProcedure).mock.calls.map(([procedure]) => procedure);
+    expect(refreshedProcedures.lastIndexOf(DeckProcedure.GetDevice)).toBeGreaterThan(
+      refreshedProcedures.lastIndexOf(DeckProcedure.RefreshView),
     );
   });
 

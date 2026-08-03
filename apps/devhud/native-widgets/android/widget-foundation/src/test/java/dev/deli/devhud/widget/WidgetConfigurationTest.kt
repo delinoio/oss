@@ -1,5 +1,6 @@
 package dev.deli.devhud.widget
 
+import android.appwidget.AppWidgetManager
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -18,6 +19,39 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class WidgetConfigurationTest {
+    @Test fun configurationRequestRequiresSystemActionAndOwnedWidgetId() {
+        val applicationPackage = "dev.deli.devhud"
+        val providerClass = DevHudWidgetProvider::class.java.name
+        assertTrue(isDevHudWidgetConfigurationRequest(
+            AppWidgetManager.ACTION_APPWIDGET_CONFIGURE,
+            42,
+            applicationPackage,
+            providerClass,
+            applicationPackage,
+        ))
+        assertFalse(isDevHudWidgetConfigurationRequest(
+            null,
+            42,
+            applicationPackage,
+            providerClass,
+            applicationPackage,
+        ))
+        assertFalse(isDevHudWidgetConfigurationRequest(
+            AppWidgetManager.ACTION_APPWIDGET_CONFIGURE,
+            AppWidgetManager.INVALID_APPWIDGET_ID,
+            applicationPackage,
+            providerClass,
+            applicationPackage,
+        ))
+        assertFalse(isDevHudWidgetConfigurationRequest(
+            AppWidgetManager.ACTION_APPWIDGET_CONFIGURE,
+            42,
+            "example.attacker",
+            "example.attacker.WidgetProvider",
+            applicationPackage,
+        ))
+    }
+
     @Test fun dataStoreNameResolvesToContractedFile() {
         assertEquals("devhud-widget-state.preferences_pb", DevHudWidgetContract.DATASTORE_FILE)
     }

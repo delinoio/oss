@@ -759,6 +759,9 @@ export class NativeDeckGateway implements DeckGateway {
     }
     try {
       await this.#call(() => invokeDeckProcedure(DeckProcedure.RefreshView, RefreshViewRequestSchema, RefreshViewResponseSchema, create(RefreshViewRequestSchema, { viewId: uuid(viewId), refreshRequestId: idempotencyKey(attempt!.request.requestId), origin: RefreshOrigin.MANUAL, billingPreflightToken: attempt!.preflightToken, clientKind: this.#clientKind })));
+      if (this.#clientKind === RefreshClientKind.MOBILE) {
+        await this.#runShortcutSynchronization();
+      }
       this.#manualAttempts.delete(viewId);
     } catch (error) {
       if (!isAmbiguousRefreshError(error)) this.#manualAttempts.delete(viewId);

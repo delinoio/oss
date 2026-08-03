@@ -149,6 +149,10 @@ export function DeckProvider({
   const [operationError, setOperationError] = useState<unknown>(null);
   const [manualRefreshWarning, setManualRefreshWarning] = useState<ManualRefreshWarning | null>(null);
   const [manualRefreshResolver, setManualRefreshResolver] = useState<((confirmed: boolean) => void) | null>(null);
+  const [widgetActionReadiness, setWidgetActionReadiness] = useState<{
+    readonly gateway: DeckGateway;
+    readonly ownersUpdatedAt: number;
+  } | null>(null);
 
   useEffect(() => {
     const update = () => setOnline(navigator.onLine);
@@ -233,11 +237,19 @@ export function DeckProvider({
   }, [gateway, selectedViewId]);
 
   useEffect(() => {
-    void gateway.synchronizeShortcuts().catch((error: unknown) => {
-      if (!shouldClearShortcuts(error)) return;
-      return gateway.clearShortcuts().catch(() => undefined);
-    });
-  }, [gateway, views]);
+    if (!online || !ownersQuery.isSuccess) return;
+    let active = true;
+    const ownersUpdatedAt = ownersQuery.dataUpdatedAt;
+    void gateway.synchronizeShortcuts()
+      .then(() => {
+        if (active) setWidgetActionReadiness({ gateway, ownersUpdatedAt });
+      })
+      .catch((error: unknown) => {
+        if (!shouldClearShortcuts(error)) return;
+        return gateway.clearShortcuts().catch(() => undefined);
+      });
+    return () => { active = false; };
+  }, [gateway, online, ownersQuery.dataUpdatedAt, ownersQuery.isSuccess, views]);
   useEffect(
     () => () => { void gateway.clearShortcuts().catch(() => undefined); },
     [gateway],
@@ -506,7 +518,9 @@ export function DeckProvider({
     [gateway, openShortcut, queryClient, run],
   );
   useEffect(() => {
-    if (!isTauri()) return;
+    const widgetActionsReady = widgetActionReadiness?.gateway === gateway &&
+      widgetActionReadiness.ownersUpdatedAt === ownersQuery.dataUpdatedAt;
+    if (!isTauri() || !online || !ownersQuery.isSuccess || !widgetActionsReady) return;
     let active = true;
     let drainRequested = false;
     let draining = false;
@@ -544,7 +558,16 @@ export function DeckProvider({
       active = false;
       void Promise.all(cleanups).then((unlisten) => unlisten.forEach((remove) => remove()));
     };
-  }, [handleWidgetAction, openShortcut, refresh]);
+  }, [
+    gateway,
+    handleWidgetAction,
+    online,
+    openShortcut,
+    ownersQuery.dataUpdatedAt,
+    ownersQuery.isSuccess,
+    refresh,
+    widgetActionReadiness,
+  ]);
   const retry = useCallback(async () => {
     setOperationError(null);
     const requests: Promise<unknown>[] = [ownersQuery.refetch()];

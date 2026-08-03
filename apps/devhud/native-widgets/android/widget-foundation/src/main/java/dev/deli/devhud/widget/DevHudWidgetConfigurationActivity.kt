@@ -18,6 +18,18 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+internal fun isDevHudWidgetConfigurationRequest(
+    action: String?,
+    appWidgetId: Int,
+    providerPackage: String?,
+    providerClassName: String?,
+    applicationPackage: String,
+): Boolean =
+    action == AppWidgetManager.ACTION_APPWIDGET_CONFIGURE &&
+        appWidgetId != AppWidgetManager.INVALID_APPWIDGET_ID &&
+        providerPackage == applicationPackage &&
+        providerClassName == DevHudWidgetProvider::class.java.name
+
 class DevHudWidgetConfigurationActivity : Activity() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var appWidgetId = AppWidgetManager.INVALID_APPWIDGET_ID
@@ -29,7 +41,19 @@ class DevHudWidgetConfigurationActivity : Activity() {
             AppWidgetManager.EXTRA_APPWIDGET_ID,
             AppWidgetManager.INVALID_APPWIDGET_ID,
         ) ?: AppWidgetManager.INVALID_APPWIDGET_ID
-        if (appWidgetId == AppWidgetManager.INVALID_APPWIDGET_ID) {
+        val provider = if (appWidgetId == AppWidgetManager.INVALID_APPWIDGET_ID) {
+            null
+        } else {
+            AppWidgetManager.getInstance(this).getAppWidgetInfo(appWidgetId)?.provider
+        }
+        if (!isDevHudWidgetConfigurationRequest(
+                intent?.action,
+                appWidgetId,
+                provider?.packageName,
+                provider?.className,
+                packageName,
+            )
+        ) {
             finish()
             return
         }
