@@ -27,26 +27,6 @@ if (
   process.exit(1);
 }
 
-function findHostArg(args) {
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index];
-
-    if (
-      arg === "--host" &&
-      args[index + 1] &&
-      !args[index + 1].startsWith("-")
-    ) {
-      return args[index + 1];
-    }
-
-    if (arg.startsWith("--host=")) {
-      return arg.slice("--host=".length);
-    }
-  }
-
-  return defaultHost;
-}
-
 function hasHostArg(args) {
   return args.some((arg) => arg === "--host" || arg.startsWith("--host="));
 }
@@ -110,10 +90,22 @@ function printPortConflict(portInUse) {
   console.error(`The fixed ${command} port remains ${defaultPort}.`);
 }
 
-const host = findHostArg(rspressArgs);
-const args = hasHostArg(rspressArgs)
-  ? [command, ...rspressArgs, "--port", String(port)]
-  : [command, ...rspressArgs, "--host", host, "--port", String(port)];
+if (hasHostArg(rspressArgs)) {
+  console.error(
+    `${appName}: --host cannot override the fixed loopback host ${defaultHost}.`,
+  );
+  process.exit(1);
+}
+
+const host = defaultHost;
+const args = [
+  command,
+  ...rspressArgs,
+  "--host",
+  host,
+  "--port",
+  String(port),
+];
 
 const isAvailable = await checkPortAvailable(port, host);
 if (!isAvailable) {

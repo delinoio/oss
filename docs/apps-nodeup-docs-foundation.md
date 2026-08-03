@@ -20,7 +20,7 @@
 - The canonical production URL is `https://nodeup.delino.io`.
 - Stable documentation route IDs are `/`, `/installation`, `/getting-started`, `/commands`, `/runtime-resolution`, `/shims-and-package-managers`, `/output`, `/completions`, `/releases`, `/troubleshooting`, and `/reference`.
 - Stable public direct-installer file entrypoints are `/install.sh` and `/install.ps1`.
-- The development server uses fixed port `46303`.
+- The development server binds to loopback on fixed port `46303` and rejects host overrides.
 - Local production preview uses fixed port `46251`.
 - Fixed-port dev and preview commands must preflight port availability, fail without automatic remapping, and print actionable recovery steps when a listener already owns the requested port. Temporary explicit local overrides are supported through `NODEUP_DOCS_DEV_PORT` and `NODEUP_DOCS_PREVIEW_PORT`; those overrides do not change the canonical defaults or CI validation behavior.
 - The production output directory is `doc_build`.

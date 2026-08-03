@@ -9,7 +9,7 @@
 - Runtime: browser PWA
 - Primary language: TypeScript with React
 - Build: Rsbuild; output: `apps/delidev-app/dist`
-- The development server uses fixed port `46301` and exits on conflicts without automatically selecting another port. The existing preview and Playwright port remains unchanged.
+- The development server binds to loopback on fixed port `46301` and exits on conflicts without automatically selecting another port. The existing preview and Playwright port remains unchanged.
 - Use React Query and `@connectrpc/connect-query` for server state and Connect RPC integration.
 - English-only, responsive desktop/mobile UI for current Chrome, Edge, Firefox, and Safari.
 - Follow Toss Design Guidelines and WCAG 2.2 AA. The wordmark is text `DeliDev`; the PWA uses a simple `D` lettermark. A complete brand system is out of scope.

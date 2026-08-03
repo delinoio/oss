@@ -8,7 +8,7 @@
 - Follow Toss Design Guidelines for frontend UX/UI decisions across web and mobile apps.
 - For new static sites under `apps/`, default to Rsbuild/Rspress-style toolchains and Cloudflare Pages deployment unless a project contract documents a different platform.
 - Prefer Rspack-family build tools for app build pipelines when they fit the runtime and deployment target.
-- Root and package-local development use fixed loopback ports: DevHud `46300`, DeliDev `46301`, public-docs `46302`, nodeup-docs `46303`, and binpm-docs `46304`. Development commands must fail with an actionable conflict message instead of searching for or incrementing to another port.
+- Root and package-local development use fixed loopback ports: DevHud `46300`, DeliDev `46301`, public-docs `46302`, nodeup-docs `46303`, and binpm-docs `46304`. Rspress development commands must reject host overrides, and every development command must fail with an actionable conflict message instead of searching for or incrementing to another port.
 - App file upload/download flows should default to Cloudflare R2 plus signed URLs unless the app contract documents a different storage or access pattern.
 - If a form has a single critical input, that input must receive focus when the form is shown.
 - Dialog UIs must support closing with the `Esc` key.
