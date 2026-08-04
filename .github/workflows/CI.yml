@@ -1207,8 +1207,10 @@ jobs:
               - pnpm-workspace.yaml
               - rust-toolchain
               - rust-toolchain.toml
+              - turbo.json
               - apps/devhud/native-widgets/**
               - apps/devhud/package.json
+              - apps/devhud/turbo.json
               - apps/devhud/scripts/check-widget-artifacts.mjs
               - apps/devhud/scripts/mobile.mjs
               - apps/devhud/scripts/process.mjs
@@ -1294,8 +1296,10 @@ jobs:
               - pnpm-workspace.yaml
               - rust-toolchain
               - rust-toolchain.toml
+              - turbo.json
               - apps/devhud/native-widgets/**
               - apps/devhud/package.json
+              - apps/devhud/turbo.json
               - apps/devhud/scripts/check-widget-artifacts.mjs
               - apps/devhud/scripts/mobile.mjs
               - apps/devhud/scripts/process.mjs
@@ -1724,12 +1728,16 @@ jobs:
               - apps/devhud/scripts/check-contracts.mjs
               - apps/devhud/scripts/check-mobile-contracts.mjs
               - apps/devhud/src/**
+              - apps/devhud/src-tauri/Cargo.toml
               - apps/devhud/src-tauri/auth-bridge/**
               - apps/devhud/src-tauri/capabilities/**
+              - apps/devhud/src-tauri/gen/android/**
+              - apps/devhud/src-tauri/gen/apple/**
               - apps/devhud/src-tauri/src/auth.rs
               - apps/devhud/src-tauri/src/auth_native.rs
               - apps/devhud/src-tauri/src/deck_transport.rs
               - apps/devhud/src-tauri/src/lib.rs
+              - apps/devhud/src-tauri/tauri.conf.json
               - apps/devhud/src-tauri/tauri.*.conf.json
               - protos/devhud-deck/gen/ts/**
             widgets:
