@@ -1,14 +1,115 @@
 <?xml version="1.0" encoding="utf-8"?>
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/devhud_widget_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:background="@android:color/background_light"
+    android:contentDescription="@string/devhud_widget_content_description"
+    android:orientation="vertical"
     android:padding="16dp">
 
     <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/devhud_widget_name"
+        android:textColor="@android:color/primary_text_light"
+        android:textStyle="bold" />
+    <TextView
+        android:id="@+id/devhud_widget_count"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="—"
+        android:textColor="@android:color/primary_text_light"
+        android:textSize="34sp"
+        android:textStyle="bold" />
+    <TextView
         android:id="@+id/devhud_widget_status"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:gravity="center"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
         android:text="@string/devhud_widget_empty"
-        android:textSize="16sp" />
-</FrameLayout>
+        android:textColor="@android:color/secondary_text_light"
+        android:textSize="12sp" />
+    <LinearLayout
+        android:id="@+id/devhud_widget_pull_request_one"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingTop="8dp"
+        android:visibility="gone">
+        <TextView
+            android:id="@+id/devhud_widget_repository_one"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textColor="@android:color/secondary_text_light"
+            android:textSize="11sp" />
+        <TextView
+            android:id="@+id/devhud_widget_title_one"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textColor="@android:color/primary_text_light"
+            android:textSize="12sp" />
+    </LinearLayout>
+    <LinearLayout
+        android:id="@+id/devhud_widget_pull_request_two"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingTop="6dp"
+        android:visibility="gone">
+        <TextView
+            android:id="@+id/devhud_widget_repository_two"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textColor="@android:color/secondary_text_light"
+            android:textSize="11sp" />
+        <TextView
+            android:id="@+id/devhud_widget_title_two"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textColor="@android:color/primary_text_light"
+            android:textSize="12sp" />
+    </LinearLayout>
+    <LinearLayout
+        android:id="@+id/devhud_widget_pull_request_three"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingTop="6dp"
+        android:visibility="gone">
+        <TextView
+            android:id="@+id/devhud_widget_repository_three"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textColor="@android:color/secondary_text_light"
+            android:textSize="11sp" />
+        <TextView
+            android:id="@+id/devhud_widget_title_three"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textColor="@android:color/primary_text_light"
+            android:textSize="12sp" />
+    </LinearLayout>
+    <TextView
+        android:id="@+id/devhud_widget_refresh"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:contentDescription="@string/devhud_widget_refresh_description"
+        android:padding="6dp"
+        android:text="@string/devhud_widget_refresh"
+        android:textColor="@android:color/holo_blue_dark"
+        android:textSize="12sp"
+        android:visibility="gone" />
+</LinearLayout>

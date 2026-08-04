@@ -50,6 +50,27 @@ impl<R: Runtime> DevHudAuthBridge<R> {
         response.completed.then_some(()).ok_or(Error::Rejected)
     }
 
+    pub fn read_device_registration(&self) -> Result<Option<String>> {
+        let response: SessionRecord = self
+            .0
+            .run_mobile_plugin("readDeviceRegistration", EmptyRequest::default())?;
+        Ok(response.record)
+    }
+
+    pub fn write_device_registration(&self, record: String) -> Result<()> {
+        let response: OperationResponse = self
+            .0
+            .run_mobile_plugin("writeDeviceRegistration", WriteSessionRequest { record })?;
+        response.completed.then_some(()).ok_or(Error::Rejected)
+    }
+
+    pub fn clear_device_registration(&self) -> Result<()> {
+        let response: OperationResponse = self
+            .0
+            .run_mobile_plugin("clearDeviceRegistration", EmptyRequest::default())?;
+        response.completed.then_some(()).ok_or(Error::Rejected)
+    }
+
     pub fn open_authorization(&self, url: String) -> Result<()> {
         let response: OperationResponse = self
             .0

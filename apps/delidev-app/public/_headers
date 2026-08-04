@@ -29,6 +29,21 @@
   Cache-Control: no-cache, no-store, must-revalidate
   Referrer-Policy: no-referrer
 
+/devhud/deck/open
+  Cache-Control: no-cache, no-store, must-revalidate
+  Content-Security-Policy: default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+  Referrer-Policy: no-referrer
+
+/devhud/deck/open/
+  Cache-Control: no-cache, no-store, must-revalidate
+  Content-Security-Policy: default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+  Referrer-Policy: no-referrer
+
+/devhud/deck/open/index.html
+  Cache-Control: no-cache, no-store, must-revalidate
+  Content-Security-Policy: default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+  Referrer-Policy: no-referrer
+
 /.well-known/apple-app-site-association
   Content-Type: application/json
   Cache-Control: public, max-age=3600

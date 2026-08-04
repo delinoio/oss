@@ -57,6 +57,27 @@ class DevHudAuthPlugin(private val activity: Activity) : Plugin(activity) {
     }
 
     @Command
+    fun readDeviceRegistration(invoke: Invoke) = guarded(invoke) {
+        JSObject().apply {
+            put("record", preferences.getString("deck-device-registration", null) ?: JSONObject.NULL)
+        }
+    }
+
+    @Command
+    fun writeDeviceRegistration(invoke: Invoke) = guarded(invoke) {
+        val value = invoke.parseArgs(SessionArgs::class.java).record
+        check(value.length in 1..32_768)
+        check(preferences.edit().putString("deck-device-registration", value).commit())
+        completed()
+    }
+
+    @Command
+    fun clearDeviceRegistration(invoke: Invoke) = guarded(invoke) {
+        check(preferences.edit().remove("deck-device-registration").commit())
+        completed()
+    }
+
+    @Command
     fun openAuthorization(invoke: Invoke) = guarded(invoke) {
         val value = invoke.parseArgs(AuthorizationArgs::class.java).url
         val target = Uri.parse(value)

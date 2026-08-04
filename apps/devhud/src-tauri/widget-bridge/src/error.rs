@@ -6,6 +6,7 @@ pub enum WidgetBridgeErrorCode {
     RefreshFailed,
     StorageUnavailable,
     WriteFailed,
+    EncryptionFailed,
 }
 
 #[cfg(any(mobile, test))]
@@ -18,6 +19,7 @@ impl WidgetBridgeErrorCode {
             "refresh-failed" => Some(Self::RefreshFailed),
             "shared-store-unavailable" | "storage-unavailable" => Some(Self::StorageUnavailable),
             "write-failed" => Some(Self::WriteFailed),
+            "encryption-failed" => Some(Self::EncryptionFailed),
             _ => None,
         }
     }

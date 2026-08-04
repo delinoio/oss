@@ -236,9 +236,13 @@ const expectedCapabilities = {
       "allow-write-shortcut-effective-state",
       "allow-read-widget-configuration",
       "allow-write-widget-configuration",
+      "allow-deck-notification-authorization-enabled",
+      "allow-has-pending-deck-widget-action",
+      "allow-take-pending-deck-widget-action",
       "allow-export-diagnostics",
       "allow-reset-dev-hud",
       "allow-deck-connect",
+      "allow-deck-device-id",
       "allow-deck-open-pull-request",
       "allow-get-auth-session",
       "allow-start-authentication",
@@ -631,13 +635,17 @@ for (const command of invokedCommands) {
 
 requireCondition(
   (androidManifest.match(/android\.permission\.INTERNET/gu) ?? []).length === 1 &&
-    (androidManifest.match(/android\.intent\.category\.BROWSABLE/gu) ?? []).length === 1 &&
+    (androidManifest.match(/android\.intent\.category\.BROWSABLE/gu) ?? []).length === 2 &&
     androidManifest.includes('android:scheme="https"') &&
     androidManifest.includes('android:host="deli.dev"') &&
     androidManifest.includes('android:path="/auth/devhud/callback"') &&
+    androidManifest.includes('android:path="/devhud/deck/open"') &&
+    (androidManifest.match(/<receiver\b/gu) ?? []).length === 1 &&
+    androidManifest.includes("DevHudWidgetProvider") &&
+    androidManifest.includes('android:exported="false"') &&
     androidManifest.includes('android:usesCleartextTraffic="false"') &&
     androidManifest.includes('android:allowBackup="false"'),
-  "Android must limit network/deep-link authority to native auth and deny cleartext/backup",
+  "Android must limit network/link authority to exact auth/Deck paths, one non-exported widget receiver, and deny cleartext/backup",
 );
 requireCondition(
   !iosInfo.includes("CFBundleURLTypes") &&
@@ -645,9 +653,10 @@ requireCondition(
     iosEntitlements.includes("com.apple.developer.associated-domains") &&
     (iosEntitlements.match(/applinks:/gu) ?? []).length === 1 &&
     iosEntitlements.includes("applinks:deli.dev") &&
-    !iosProject.includes("WidgetKit") &&
-    !iosProject.includes(".appex"),
-  "iOS must contain only the verified DeliDev associated-domain and no custom scheme/widget",
+    iosProject.includes("DevHudWidgetExtension:") &&
+    iosProject.includes("PRODUCT_BUNDLE_IDENTIFIER: dev.deli.devhud.widget") &&
+    /target: DevHudWidgetExtension[\s\S]*?embed: true/u.test(iosProject),
+  "iOS must contain only the verified DeliDev domain/custom-scheme boundary and the exact embedded widget",
 );
 
 requireCondition(
@@ -696,11 +705,13 @@ for (const path of bundleFiles.filter((file) =>
 }
 
 const repositoryFiles = await filesUnder(appRoot, new Set([
+  ".tauri",
   ".gradle",
   "DerivedData",
   "Externals",
   "build",
   "dist",
+  "generated",
   "node_modules",
   "target",
 ]));
@@ -718,9 +729,23 @@ for (const path of repositoryFiles.filter((file) =>
   nativeTextExtensions.has(extname(file)),
 )) {
   const source = await readFile(path, "utf8");
+  const relativePath = relative(appRoot, path).replaceAll("\\", "/");
+  const testFixture =
+    relativePath.includes("/Tests/") ||
+    relativePath.includes("/src/test/") ||
+    relativePath.includes("/src/androidTest/");
+  const endpoints = [...source.matchAll(/https?:\/\/[^\s"'`<>)\\]+/giu)]
+    .map((match) => match[0].replace(/[;,]+$/u, ""))
+    .filter((endpoint) =>
+      !endpoint.startsWith("http://schemas.android.com/") &&
+      !endpoint.startsWith("http://www.apple.com/DTDs/"),
+    );
   requireCondition(
-    !/https?:\/\/(?!(?:schemas\.android\.com|www\.apple\.com\/DTDs\/))/u.test(source),
-    `native surface contains an unintended endpoint: ${relative(appRoot, path)}`,
+    testFixture || endpoints.every((endpoint) =>
+      endpoint === "https://deli.dev/devhud/deck/open" ||
+      endpoint.startsWith("https://deli.dev/devhud/deck/open?"),
+    ),
+    `native surface contains an unintended endpoint: ${relativePath}`,
   );
 }
 

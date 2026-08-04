@@ -1,4 +1,8 @@
-import type { StructuredShortcut } from "../persistence/contracts";
+import type {
+  DeckWidgetFamily,
+  DeckWidgetPrivacy,
+  StructuredShortcut,
+} from "../persistence/contracts";
 import type { ManualRefreshWarning } from "./refreshController";
 
 export enum DeckOwnerKind {
@@ -72,6 +76,8 @@ export enum DeckFailureCode {
   BillingPreflightRejected = "billing-preflight-rejected",
   BillingUnavailable = "billing-unavailable",
   BrowserUnavailable = "browser-unavailable",
+  NotificationPermissionRequired = "notification-permission-required",
+  WidgetLimitReached = "widget-limit-reached",
   BranchProtectionBlocked = "branch-protection-blocked",
   MergeConfirmationRequired = "merge-confirmation-required",
   UnsupportedAction = "unsupported-action",
@@ -106,6 +112,10 @@ export const deckFailureGuidance: Readonly<Record<DeckFailureCode, string>> = {
     "The refresh confirmation expired or no longer matches this request. Start a new refresh.",
   [DeckFailureCode.BillingUnavailable]: "Refresh billing is unavailable, so GitHub was not contacted.",
   [DeckFailureCode.BrowserUnavailable]: "DevHud could not open GitHub in the system browser. Try again.",
+  [DeckFailureCode.NotificationPermissionRequired]:
+    "Enable notifications for DevHud in system settings before enabling this view preference.",
+  [DeckFailureCode.WidgetLimitReached]:
+    "This device already has the maximum of 20 Deck widget configurations.",
   [DeckFailureCode.BranchProtectionBlocked]: "Repository rules currently block this action.",
   [DeckFailureCode.MergeConfirmationRequired]: "Confirm the merge before trying again.",
   [DeckFailureCode.UnsupportedAction]: "That action is not allowed for this pull request.",
@@ -237,7 +247,17 @@ export interface DeckConflict<T> {
   readonly current: DeckView;
 }
 
+export interface DeckNotificationDestination {
+  readonly viewId?: string;
+  readonly pullRequest?: {
+    readonly repositoryOwner: string;
+    readonly repositoryName: string;
+    readonly number: number;
+  };
+}
+
 export interface DeckGateway {
+  readonly supportedWidgetFamilies: readonly DeckWidgetFamily[];
   listOwners(): Promise<readonly DeckOwner[]>;
   listViews(owner: DeckOwner, cursor: string): Promise<DeckCursorPage<DeckView>>;
   createView(owner: DeckOwner, input: DeckViewInput, idempotencyKey: string): Promise<DeckView>;
@@ -262,10 +282,23 @@ export interface DeckGateway {
     viewId: string,
     confirm: (warning: ManualRefreshWarning) => Promise<boolean>,
   ): Promise<void>;
+  requestWidgetRefresh(viewId: string): Promise<void>;
+  ensureNativeNotificationPermission(preference: DeckNotificationPreference): Promise<void>;
+  updateNativeNotificationPreference(
+    viewId: string,
+    preference: DeckNotificationPreference,
+  ): Promise<void>;
+  resolveNotificationEvent(eventId: string): Promise<DeckNotificationDestination>;
   openPullRequest(pullRequest: DeckPullRequest): Promise<void>;
   recordViewOpened(viewId: string): void;
+  createWidgetConfiguration(
+    viewId: string,
+    family: DeckWidgetFamily,
+    privacy: DeckWidgetPrivacy,
+  ): Promise<void>;
   synchronizeShortcuts(): Promise<void>;
   clearShortcuts(): Promise<void>;
+  clearWidgetSnapshots(): Promise<void>;
   startEligibleRefreshes(
     views: readonly DeckView[],
     onRefreshed: (viewId: string) => void,
@@ -273,6 +306,7 @@ export interface DeckGateway {
 }
 
 export const unavailableDeckGateway: DeckGateway = {
+  supportedWidgetFamilies: [],
   listOwners: async () => {
     throw new DeckProductError(DeckFailureCode.ServiceUnavailable);
   },
@@ -306,14 +340,32 @@ export const unavailableDeckGateway: DeckGateway = {
   refreshView: async () => {
     throw new DeckProductError(DeckFailureCode.ServiceUnavailable);
   },
+  requestWidgetRefresh: async () => {
+    throw new DeckProductError(DeckFailureCode.ServiceUnavailable);
+  },
+  ensureNativeNotificationPermission: async () => {
+    throw new DeckProductError(DeckFailureCode.ServiceUnavailable);
+  },
+  updateNativeNotificationPreference: async () => {
+    throw new DeckProductError(DeckFailureCode.ServiceUnavailable);
+  },
+  resolveNotificationEvent: async () => {
+    throw new DeckProductError(DeckFailureCode.ServiceUnavailable);
+  },
   openPullRequest: async () => {
     throw new DeckProductError(DeckFailureCode.ServiceUnavailable);
   },
   recordViewOpened: () => undefined,
+  createWidgetConfiguration: async () => {
+    throw new DeckProductError(DeckFailureCode.ServiceUnavailable);
+  },
   synchronizeShortcuts: async () => {
     throw new DeckProductError(DeckFailureCode.ServiceUnavailable);
   },
   clearShortcuts: async () => {
+    throw new DeckProductError(DeckFailureCode.ServiceUnavailable);
+  },
+  clearWidgetSnapshots: async () => {
     throw new DeckProductError(DeckFailureCode.ServiceUnavailable);
   },
   startEligibleRefreshes: () => () => undefined,

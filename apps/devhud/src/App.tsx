@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { invoke, isTauri } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
 import { AuthFeature, SessionProvider, useSession } from "./auth/SessionProvider";
 import type { NativeSessionBridge } from "./auth/contracts";
@@ -587,12 +589,29 @@ function MobileWidgets() {
       ) : null}
       {persistenceReady &&
       widgetIssue === undefined &&
-      widgetConfiguration.slots.length === 0 ? (
+      widgetConfiguration.widgets.length === 0 ? (
         <section aria-labelledby="widgets-empty-title" className="state-card">
-          <h2 id="widgets-empty-title">No widgets available</h2>
+          <h2 id="widgets-empty-title">No Deck widgets configured</h2>
           <p>
-            Visible widgets are not included. DevHud has not registered a system widget on
-            this device.
+            Add DevHud from the system widget gallery, then select one Deck view. New
+            widgets show counts only until you explicitly allow repository and PR titles.
+          </p>
+        </section>
+      ) : null}
+      {persistenceReady && widgetIssue === undefined && widgetConfiguration.widgets.length > 0 ? (
+        <section aria-labelledby="widgets-configured-title" className="state-card">
+          <h2 id="widgets-configured-title">Configured Deck widgets</h2>
+          <ul>
+            {widgetConfiguration.widgets.map((widget) => (
+              <li key={widget.widgetId}>
+                {widget.family}: {widget.snapshot.matchingCount} matching pull requests
+                {widget.snapshot.offline ? " · Offline snapshot" : ""}
+              </li>
+            ))}
+          </ul>
+          <p className="muted">
+            System refresh timing is best effort. Refresh requests use Deck’s normal
+            coalescing and billing path and do not promise five-minute execution.
           </p>
         </section>
       ) : null}
@@ -813,6 +832,23 @@ function MobileShell({
       setMobileScreen(MobileScreen.Home);
     }
   }, [mobileScreen, session.status, setMobileScreen]);
+  useEffect(() => {
+    if (!isTauri()) return;
+    let active = true;
+    const openDeckForPendingAction = async () => {
+      if (session.status !== "signed-in") return;
+      const pending = await invoke<boolean>("has_pending_deck_widget_action");
+      if (active && pending) setMobileScreen(MobileScreen.Deck);
+    };
+    const listener = listen("devhud://deck-widget-action", () => {
+      void openDeckForPendingAction();
+    });
+    void listener.then(openDeckForPendingAction);
+    return () => {
+      active = false;
+      void listener.then((unlisten) => unlisten());
+    };
+  }, [session.status, setMobileScreen]);
   return (
     <main className="mobile-shell">
       <header className="app-header mobile-header">

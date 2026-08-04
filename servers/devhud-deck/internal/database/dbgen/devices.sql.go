@@ -549,10 +549,10 @@ func (q *Queries) UpdateDeviceWidgetsAfterViewChange(ctx context.Context, arg Up
 const upsertViewNotificationPreference = `-- name: UpsertViewNotificationPreference :one
 INSERT INTO deck_view_notification_preferences (
     registration_id, view_id, preference_ciphertext, revision, updated_at
-) VALUES (
+) SELECT
     $1, $2,
     $3, 1, $4
-)
+WHERE $5::bigint = 0
 ON CONFLICT (registration_id, view_id) DO UPDATE
 SET preference_ciphertext = EXCLUDED.preference_ciphertext,
     revision = deck_view_notification_preferences.revision + 1,

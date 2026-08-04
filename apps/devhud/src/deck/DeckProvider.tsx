@@ -15,7 +15,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { isTauri } from "@tauri-apps/api/core";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
 import {
@@ -35,6 +35,8 @@ import {
 } from "./contracts";
 import type { ManualRefreshWarning } from "./refreshController";
 import { createUuidV7 } from "./uuid";
+import { openDeckPullRequest } from "./transport";
+import type { DeckWidgetFamily, DeckWidgetPrivacy } from "../persistence/contracts";
 
 // Gateway injection keeps component tests native-free, while Connect Query's
 // generated-service key keeps every server-state cache operation namespaced to
@@ -77,6 +79,11 @@ interface DeckActions {
   loadMoreViews(): Promise<void>;
   loadMorePullRequests(): Promise<void>;
   refresh(): Promise<boolean>;
+  createWidgetConfiguration(
+    viewId: string,
+    family: DeckWidgetFamily,
+    privacy: DeckWidgetPrivacy,
+  ): Promise<boolean>;
   resolveManualRefresh(confirmed: boolean): void;
   searchMutationCandidates(
     pullRequest: DeckPullRequest,
@@ -92,6 +99,18 @@ interface DeckActions {
 interface DeckMeta {
   readonly gateway: DeckGateway;
 }
+
+type DeckWidgetActionEvent =
+  | { readonly action: "open-view"; readonly viewId: string }
+  | { readonly action: "refresh"; readonly viewId: string }
+  | {
+      readonly action: "open-pr";
+      readonly viewId: string;
+      readonly owner: string;
+      readonly repository: string;
+      readonly number: number;
+    }
+  | { readonly action: "resolve-event"; readonly eventId: string };
 
 export interface DeckContextValue {
   readonly state: DeckState;
@@ -130,6 +149,10 @@ export function DeckProvider({
   const [operationError, setOperationError] = useState<unknown>(null);
   const [manualRefreshWarning, setManualRefreshWarning] = useState<ManualRefreshWarning | null>(null);
   const [manualRefreshResolver, setManualRefreshResolver] = useState<((confirmed: boolean) => void) | null>(null);
+  const [widgetActionReadiness, setWidgetActionReadiness] = useState<{
+    readonly gateway: DeckGateway;
+    readonly ownersUpdatedAt: number;
+  } | null>(null);
 
   useEffect(() => {
     const update = () => setOnline(navigator.onLine);
@@ -214,11 +237,22 @@ export function DeckProvider({
   }, [gateway, selectedViewId]);
 
   useEffect(() => {
-    void gateway.synchronizeShortcuts().catch((error: unknown) => {
-      if (!shouldClearShortcuts(error)) return;
-      return gateway.clearShortcuts().catch(() => undefined);
-    });
-  }, [gateway, views]);
+    if (!online || !ownersQuery.isSuccess) return;
+    let active = true;
+    const ownersUpdatedAt = ownersQuery.dataUpdatedAt;
+    void gateway.synchronizeShortcuts()
+      .then(() => {
+        if (active) setWidgetActionReadiness({ gateway, ownersUpdatedAt });
+      })
+      .catch((error: unknown) => {
+        if (!shouldClearShortcuts(error)) return;
+        return Promise.allSettled([
+          gateway.clearShortcuts(),
+          gateway.clearWidgetSnapshots(),
+        ]).then(() => undefined);
+      });
+    return () => { active = false; };
+  }, [gateway, online, ownersQuery.dataUpdatedAt, ownersQuery.isSuccess, views]);
   useEffect(
     () => () => { void gateway.clearShortcuts().catch(() => undefined); },
     [gateway],
@@ -287,21 +321,38 @@ export function DeckProvider({
     }
   }, []);
 
+  const syncNativeNotificationPreference = useCallback(
+    async (viewId: string, input: DeckViewInput) => {
+      try {
+        await gateway.updateNativeNotificationPreference(
+          viewId,
+          input.notificationPreference,
+        );
+      } catch (error) {
+        // The view mutation is already committed. Report this device-local
+        // failure without making the create/edit form retry the server write.
+        setOperationError(error);
+      }
+    },
+    [gateway],
+  );
+
   const createView = useCallback(
     (owner: DeckOwner, input: DeckViewInput) => run(async () => {
+      await gateway.ensureNativeNotificationPermission(input.notificationPreference);
       const created = await gateway.createView(owner, input, createUuidV7());
-      await invalidateViews();
       setSelectedView(created);
+      await invalidateViews();
+      await syncNativeNotificationPreference(created.viewId, input);
     }),
-    [gateway, invalidateViews, run],
+    [gateway, invalidateViews, run, syncNativeNotificationPreference],
   );
   const saveView = useCallback(
     (view: DeckView, input: DeckViewInput) => run(async () => {
+      await gateway.ensureNativeNotificationPermission(input.notificationPreference);
+      let updated: DeckView;
       try {
-        const updated = await gateway.updateView(view, input);
-        setConflict(null);
-        setSelectedView(updated);
-        await invalidateViews();
+        updated = await gateway.updateView(view, input);
       } catch (error) {
         if (isStaleRevision(error)) {
           const current = await gateway.getView(view.viewId);
@@ -309,8 +360,12 @@ export function DeckProvider({
         }
         throw error;
       }
+      setConflict(null);
+      setSelectedView(updated);
+      await invalidateViews();
+      await syncNativeNotificationPreference(updated.viewId, input);
     }),
-    [gateway, invalidateViews, run],
+    [gateway, invalidateViews, run, syncNativeNotificationPreference],
   );
   const deleteView = useCallback(
     (view: DeckView) => run(async () => {
@@ -339,6 +394,11 @@ export function DeckProvider({
       await invalidatePullRequests();
     }),
     [gateway, invalidatePullRequests, run, selectedView],
+  );
+  const createWidgetConfiguration = useCallback(
+    (viewId: string, family: DeckWidgetFamily, privacy: DeckWidgetPrivacy) =>
+      run(() => gateway.createWidgetConfiguration(viewId, family, privacy)),
+    [gateway, run],
   );
   const resolveManualRefresh = useCallback((confirmed: boolean) => {
     manualRefreshResolver?.(confirmed);
@@ -430,17 +490,97 @@ export function DeckProvider({
     }),
     [gateway, owners, queryClient, resolveManualRefresh, run],
   );
+  const handleWidgetAction = useCallback(
+    (action: DeckWidgetActionEvent) => run(async () => {
+      if (action.action === "open-view") {
+        await openShortcut(action.viewId);
+        return;
+      }
+      if (action.action === "refresh") {
+        await gateway.requestWidgetRefresh(action.viewId);
+        await openShortcut(action.viewId);
+        await queryClient.invalidateQueries({
+          queryKey: [...viewServiceKey, "ListPullRequests", action.viewId],
+        });
+        return;
+      }
+      if (action.action === "open-pr") {
+        await gateway.getView(action.viewId);
+        const page = await gateway.listPullRequests(action.viewId, "");
+        const pullRequest = page.items.find((candidate) =>
+          candidate.repositoryOwner === action.owner &&
+          candidate.repositoryName === action.repository &&
+          candidate.number === action.number
+        );
+        if (pullRequest === undefined) {
+          throw new DeckProductError(DeckFailureCode.PermissionDenied);
+        }
+        await gateway.openPullRequest(pullRequest);
+        return;
+      }
+      const destination = await gateway.resolveNotificationEvent(action.eventId);
+      if (destination.viewId !== undefined) await openShortcut(destination.viewId);
+      if (destination.pullRequest !== undefined) {
+        await openDeckPullRequest(
+          destination.pullRequest.repositoryOwner,
+          destination.pullRequest.repositoryName,
+          destination.pullRequest.number,
+        );
+      }
+    }),
+    [gateway, openShortcut, queryClient, run],
+  );
   useEffect(() => {
-    if (!isTauri()) return;
+    const widgetActionsReady = widgetActionReadiness?.gateway === gateway &&
+      widgetActionReadiness.ownersUpdatedAt === ownersQuery.dataUpdatedAt;
+    if (!isTauri() || !online || !ownersQuery.isSuccess || !widgetActionsReady) return;
+    let active = true;
+    let drainRequested = false;
+    let draining = false;
+    const requestWidgetActionDrain = () => {
+      drainRequested = true;
+      if (draining) return;
+      draining = true;
+      void (async () => {
+        while (active && drainRequested) {
+          drainRequested = false;
+          while (active) {
+            const action = await invoke<DeckWidgetActionEvent | null>(
+              "take_pending_deck_widget_action",
+            );
+            if (action === null) break;
+            await handleWidgetAction(action);
+          }
+        }
+      })().finally(() => {
+        draining = false;
+        if (active && drainRequested) requestWidgetActionDrain();
+      });
+    };
+    const widgetListener = listen("devhud://deck-widget-action", requestWidgetActionDrain);
+    void widgetListener.then(requestWidgetActionDrain);
     const cleanups = [
       listen("devhud://deck-open", () => {
         document.getElementById("deck-workspace-title")?.focus();
       }),
       listen("devhud://deck-refresh", () => void refresh()),
       listen<string>("devhud://deck-shortcut", (event) => void openShortcut(event.payload)),
+      widgetListener,
     ];
-    return () => { void Promise.all(cleanups).then((unlisten) => unlisten.forEach((remove) => remove())); };
-  }, [openShortcut, refresh]);
+    return () => {
+      active = false;
+      void Promise.all(cleanups).then((unlisten) => unlisten.forEach((remove) => remove()));
+    };
+  }, [
+    gateway,
+    handleWidgetAction,
+    online,
+    openShortcut,
+    ownersQuery.dataUpdatedAt,
+    ownersQuery.isSuccess,
+    refresh,
+    widgetActionReadiness,
+  ]);
   const retry = useCallback(async () => {
     setOperationError(null);
     const requests: Promise<unknown>[] = [ownersQuery.refetch()];
@@ -518,6 +658,7 @@ export function DeckProvider({
     loadMoreViews: async () => { await viewsQuery.fetchNextPage(); },
     loadMorePullRequests: async () => { await pullRequestsQuery.fetchNextPage(); },
     refresh,
+    createWidgetConfiguration,
     resolveManualRefresh,
     searchMutationCandidates,
     mutate,
@@ -525,6 +666,7 @@ export function DeckProvider({
     retry,
   }), [
     createView,
+    createWidgetConfiguration,
     deleteView,
     mutate,
     openOnGitHub,

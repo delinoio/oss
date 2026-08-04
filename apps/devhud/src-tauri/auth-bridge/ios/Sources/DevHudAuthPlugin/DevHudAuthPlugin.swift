@@ -10,12 +10,14 @@ private struct SessionResponse: Encodable { let record: String? }
 private struct CallbackResponse: Encodable { let url: String? }
 
 final class DevHudAuthPlugin: Plugin {
-    private let service = "dev.deli.devhud.auth"
-    private let account = "active-session"
+    private let authService = "dev.deli.devhud.auth"
+    private let authAccount = "active-session"
+    private let deviceService = "dev.deli.devhud.deck-device"
+    private let deviceAccount = "active-registration"
 
     @objc func readSession(_ invoke: Invoke) {
         guarded(invoke) {
-            invoke.resolve(SessionResponse(record: try self.read()))
+            invoke.resolve(SessionResponse(record: try self.read(service: self.authService, account: self.authAccount)))
         }
     }
 
@@ -23,14 +25,36 @@ final class DevHudAuthPlugin: Plugin {
         guarded(invoke) {
             let value = try invoke.parseArgs(SessionArgs.self).record
             guard !value.isEmpty, value.utf8.count <= 32_768 else { throw VaultError.invalid }
-            try self.write(value)
+            try self.write(value, service: self.authService, account: self.authAccount)
             invoke.resolve(OperationResponse(completed: true))
         }
     }
 
     @objc func clearSession(_ invoke: Invoke) {
         guarded(invoke) {
-            try self.clear()
+            try self.clear(service: self.authService, account: self.authAccount)
+            invoke.resolve(OperationResponse(completed: true))
+        }
+    }
+
+    @objc func readDeviceRegistration(_ invoke: Invoke) {
+        guarded(invoke) {
+            invoke.resolve(SessionResponse(record: try self.read(service: self.deviceService, account: self.deviceAccount)))
+        }
+    }
+
+    @objc func writeDeviceRegistration(_ invoke: Invoke) {
+        guarded(invoke) {
+            let value = try invoke.parseArgs(SessionArgs.self).record
+            guard !value.isEmpty, value.utf8.count <= 32_768 else { throw VaultError.invalid }
+            try self.write(value, service: self.deviceService, account: self.deviceAccount)
+            invoke.resolve(OperationResponse(completed: true))
+        }
+    }
+
+    @objc func clearDeviceRegistration(_ invoke: Invoke) {
+        guarded(invoke) {
+            try self.clear(service: self.deviceService, account: self.deviceAccount)
             invoke.resolve(OperationResponse(completed: true))
         }
     }
@@ -97,8 +121,8 @@ final class DevHudAuthPlugin: Plugin {
         invoke.resolve(CallbackResponse(url: nil))
     }
 
-    private func read() throws -> String? {
-        var query = baseQuery()
+    private func read(service: String, account: String) throws -> String? {
+        var query = baseQuery(service: service, account: account)
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
         var item: CFTypeRef?
@@ -110,14 +134,14 @@ final class DevHudAuthPlugin: Plugin {
         return value
     }
 
-    private func write(_ value: String) throws {
+    private func write(_ value: String, service: String, account: String) throws {
         let attributes: [String: Any] = [
             kSecValueData as String: Data(value.utf8),
             kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
         ]
-        let status = SecItemUpdate(baseQuery() as CFDictionary, attributes as CFDictionary)
+        let status = SecItemUpdate(baseQuery(service: service, account: account) as CFDictionary, attributes as CFDictionary)
         if status == errSecItemNotFound {
-            var query = baseQuery()
+            var query = baseQuery(service: service, account: account)
             attributes.forEach { query[$0.key] = $0.value }
             guard SecItemAdd(query as CFDictionary, nil) == errSecSuccess else {
                 throw VaultError.storage
@@ -129,14 +153,14 @@ final class DevHudAuthPlugin: Plugin {
         }
     }
 
-    private func clear() throws {
-        let status = SecItemDelete(baseQuery() as CFDictionary)
+    private func clear(service: String, account: String) throws {
+        let status = SecItemDelete(baseQuery(service: service, account: account) as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else {
             throw VaultError.storage
         }
     }
 
-    private func baseQuery() -> [String: Any] {
+    private func baseQuery(service: String, account: String) -> [String: Any] {
         [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,

@@ -37,12 +37,16 @@ const [
   androidFoundationManifest,
   androidPluginManifest,
   androidPluginSource,
+  androidNotificationSource,
+  androidConfigurationActivitySource,
   androidProviderSource,
+  androidProviderInfo,
   fixtureSource,
   iosAppEntitlements,
   iosAppProject,
   iosExtensionSource,
   iosPluginSource,
+  iosNotificationSource,
   iosWidgetEntitlements,
   iosWidgetProject,
   packageSource,
@@ -62,14 +66,24 @@ const [
     "src-tauri/widget-bridge/android/src/main/java/dev/deli/devhud/widget/DevHudWidgetPlugin.kt",
   ),
   read(
+    "native-widgets/android/widget-foundation/src/main/java/dev/deli/devhud/widget/DeckNotificationPublisher.kt",
+  ),
+  read(
+    "native-widgets/android/widget-foundation/src/main/java/dev/deli/devhud/widget/DevHudWidgetConfigurationActivity.kt",
+  ),
+  read(
     "native-widgets/android/widget-foundation/src/main/java/dev/deli/devhud/widget/DevHudWidgetProvider.kt",
   ),
+  read("native-widgets/android/widget-foundation/src/main/res/xml/devhud_widget_info.xml"),
   read("native-widgets/fixtures/widget-configuration.v1.json"),
   read("src-tauri/gen/apple/devhud_iOS/devhud_iOS.entitlements"),
   read("src-tauri/gen/apple/project.yml"),
   read("native-widgets/ios/Sources/Extension/DevHudWidget.swift"),
   read(
     "src-tauri/widget-bridge/ios/Sources/DevHudWidgetPlugin/DevHudWidgetPlugin.swift",
+  ),
+  read(
+    "src-tauri/widget-bridge/ios/Sources/DevHudWidgetCore/DeckNotificationService.swift",
   ),
   read("native-widgets/ios/Support/DevHudWidgetExtension.entitlements"),
   read("native-widgets/ios/project.yml"),
@@ -92,7 +106,7 @@ requireCondition(
   ) &&
     iosWidgetProject.includes("type: app-extension") &&
     iosWidgetProject.includes("DevHudWidgetExtension.entitlements"),
-  "the build-only iOS project must compile the exact widget extension identifier",
+  "the WidgetKit project must compile the exact widget extension identifier",
 );
 requireCondition(
   androidPluginSource.includes("@TauriPlugin") &&
@@ -122,25 +136,67 @@ requireCondition(
     kotlinConfigurationSource.includes(
       'DATASTORE_NAME = "devhud-widget-state"',
     ) &&
-    JSON.stringify(JSON.parse(fixtureSource)) ===
-      JSON.stringify({
-        version: 1,
-        configuration: {
-          slots: [{ slot: "primary", toolId: "fixture-diagnostics" }],
-        },
-      }),
-  "both native adapters and the fixture must preserve the exact v1 schema and stable toolId reference",
+    JSON.parse(fixtureSource).configuration.widgets.length === 1 &&
+    JSON.parse(fixtureSource).configuration.widgets[0].snapshot.offline === true &&
+    swiftConfigurationSource.includes('case countsOnly = "counts-only"') &&
+    kotlinConfigurationSource.includes('COUNTS_ONLY("counts-only")'),
+  "both native adapters and the fixture must preserve the minimal account-bound v1 Deck snapshot schema",
 );
 requireCondition(
   androidProviderSource.includes(": AppWidgetProvider()") &&
     iosExtensionSource.includes("struct DevHudWidget: Widget") &&
+    iosExtensionSource.includes(".systemSmall") &&
+    iosExtensionSource.includes(".systemMedium") &&
+    iosExtensionSource.includes(".systemLarge") &&
+    androidProviderSource.includes("DeckWidgetFamily.ANDROID_COMPACT") &&
+    androidProviderSource.includes("DeckWidgetFamily.ANDROID_WIDE") &&
+    androidProviderSource.includes("DeckWidgetFamily.ANDROID_LIST") &&
+    androidProviderSource.includes("snapshot.pullRequests.take(detailLimit)") &&
+    androidProviderSource.includes("DeckWidgetAction.Refresh") &&
+    iosExtensionSource.includes("DeckWidgetAction.refresh") &&
+    !androidProviderSource.includes("MutatePullRequest") &&
+    !iosExtensionSource.includes("MutatePullRequest") &&
     !androidProviderSource.includes("fixture-diagnostics") &&
     !iosExtensionSource.includes("fixture-diagnostics"),
-  "build-only native targets must compile without presenting a fixture tool",
+  "native targets must render all contracted families and expose only open/refresh Deck widget actions",
+);
+requireCondition(
+  androidProviderInfo.includes(
+    'android:configure="dev.deli.devhud.widget.DevHudWidgetConfigurationActivity"',
+  ) &&
+    androidProviderInfo.includes('android:widgetFeatures="reconfigurable"') &&
+    !androidProviderInfo.includes("configuration_optional") &&
+    androidPluginManifest.includes("DevHudWidgetConfigurationActivity") &&
+    androidPluginManifest.includes("android.appwidget.action.APPWIDGET_CONFIGURE") &&
+    androidPluginManifest.includes('android:exported="true"') &&
+    androidAppManifest.includes("DevHudWidgetConfigurationActivity") &&
+    androidConfigurationActivitySource.includes("DeckWidgetSelections.set") &&
+    androidConfigurationActivitySource.includes("setResult(RESULT_OK") &&
+    androidProviderSource.includes(
+      "widgets.firstOrNull { it.widgetId == storedId && it.family == family }",
+    ) &&
+    !androidProviderSource.includes("compatible.firstOrNull"),
+  "Android widgets must require a narrow reconfigurable per-instance Deck selector without silently choosing the first compatible view",
+);
+requireCondition(
+  androidNotificationSource.includes("setBypassDnd(false)") &&
+    androidNotificationSource.includes("IMPORTANCE_DEFAULT") &&
+    !androidNotificationSource.includes("IMPORTANCE_HIGH") &&
+    iosNotificationSource.includes("content.interruptionLevel = .active") &&
+    !iosNotificationSource.includes(".critical") &&
+    !iosNotificationSource.includes(".timeSensitive") &&
+    swiftConfigurationSource.includes('genericNotificationText = "Deck view updated"') &&
+    kotlinConfigurationSource.includes('GENERIC_NOTIFICATION_TEXT = "Deck view updated"') &&
+    swiftConfigurationSource.includes('["eventId"]') &&
+    kotlinConfigurationSource.includes('payload.keys == setOf("eventId")') &&
+    iosNotificationSource.includes("localDetailEnabled") &&
+    androidNotificationSource.includes("localDetailEnabled") &&
+    androidNotificationSource.includes("DeckNotificationPolicy.text"),
+  "native notification policy must preserve DND, exact generic text, and opaque-only payload input",
 );
 requireCondition(
   iosWidgetEntitlements.includes("group.dev.deli.devhud"),
-  "the build-only WidgetKit target must use the future shared App Group",
+  "the WidgetKit target must use the exact shared App Group",
 );
 requireCondition(
   iosAppEntitlements.includes("group.dev.deli.devhud") &&
@@ -148,44 +204,30 @@ requireCondition(
   "the distributed iOS app may share widget state but must not claim the extension identity",
 );
 requireCondition(
-  !/(WidgetKit|app-extension|\.appex|dev\.deli\.devhud\.widget)/u.test(
-    iosAppProject,
-  ),
-  "the distributed iOS XcodeGen project must not contain or embed the WidgetKit target",
-);
-requireCondition(
+  iosAppProject.includes("DevHudWidgetExtension:") &&
+    iosAppProject.includes("type: app-extension") &&
+    iosAppProject.includes("PRODUCT_BUNDLE_IDENTIFIER: dev.deli.devhud.widget") &&
+    /dependencies:[\s\S]*?- target: DevHudWidgetExtension[\s\S]*?embed: true/u.test(iosAppProject) &&
   (iosAppProject.split("\ntargets:\n")[1]?.match(
     /^ {2}[A-Za-z0-9_]+:\s*$/gmu,
-  ) ?? []).length === 1,
-  "the distributed iOS project must contain exactly one application target",
+  ) ?? []).length === 3,
+  "the distributed iOS project must compile and embed exactly the app, widget core, and WidgetKit extension targets",
 );
 
 requireCondition(
-  androidAppManifest.includes(
-    'xmlns:tools="http://schemas.android.com/tools"',
-  ) &&
-    androidAppManifest.includes('<receiver tools:node="removeAll" />') &&
+  androidAppManifest.includes('android:name="dev.deli.devhud.widget.DevHudWidgetProvider"') &&
     (androidAppManifest.match(/<receiver\b/gu) ?? []).length === 1 &&
-    !/(APPWIDGET_UPDATE|android\.appwidget\.provider|AppWidgetProvider)/u.test(
-      androidAppManifest,
-    ),
-  "the distributed Android manifest must remove dependency receivers without registering an app-widget receiver",
+    androidAppManifest.includes("android.appwidget.action.APPWIDGET_UPDATE") &&
+    androidAppManifest.includes("android.appwidget.provider") &&
+    androidAppManifest.includes('android:exported="false"'),
+  "the distributed Android manifest must narrowly register the non-exported Deck app-widget receiver",
 );
-for (const [name, manifest] of [
-  ["private Android plugin", androidPluginManifest],
-  ["build-only Android foundation", androidFoundationManifest],
-]) {
-  requireCondition(
-    !/<receiver\b|APPWIDGET_UPDATE|android\.appwidget\.provider|AppWidgetProvider/u.test(
-      manifest,
-    ),
-    `${name} manifest must not register an app-widget receiver`,
-  );
-}
 requireCondition(
-  !androidAppBuild.includes("widget-foundation") &&
-    androidFoundationBuild.includes('namespace = "dev.deli.devhud.widget.foundation"'),
-  "the distributed Android app must not depend on the build-only widget module",
+  androidPluginManifest.includes("DevHudWidgetProvider") &&
+    !/<receiver\b/u.test(androidFoundationManifest) &&
+    !androidAppBuild.includes("widget-foundation") &&
+    androidFoundationBuild.includes('namespace = "dev.deli.devhud.widget"'),
+  "the private bridge module must package the receiver while the independent native test module stays manifest-free",
 );
 requireCondition(
   JSON.parse(packageSource).version === "0.1.0" &&
@@ -222,8 +264,8 @@ requireCondition(
   "distributed iOS entitlements must contain only the exact DeliDev associated domain",
 );
 requireCondition(
-  hasExactAndroidAuthSurface(androidAppManifest),
-  "distributed Android manifest must contain only the exact verified DeliDev callback",
+  hasExactAndroidLinkSurface(androidAppManifest),
+  "distributed Android manifest must contain only the exact verified DeliDev callback and Deck action links",
 );
 
 const mergedManifestRoots = [
@@ -277,22 +319,24 @@ console.log(
     check: "devhud-widget-artifacts",
     iosArtifactsInspected,
     releaseAndroidReceiverRegistered:
-      androidArtifactsInspected > 0 ? false : null,
-    releaseIosExtensionEmbedded: iosArtifactsInspected > 0 ? false : null,
+      androidArtifactsInspected > 0 ? true : null,
+    releaseIosExtensionEmbedded: iosArtifactsInspected > 0 ? true : null,
     status: "passed",
   }),
 );
 
 function inspectAndroidManifest(source, path) {
   requireCondition(
-    !/(<receiver\b|APPWIDGET_UPDATE|android\.appwidget\.provider|DevHudWidgetProvider|dev\.deli\.devhud\.widget)/u.test(
-      source,
-    ),
-    `distributed Android artifact registers receiver metadata: ${path}`,
+    (source.match(/<receiver\b/gu) ?? []).length === 1 &&
+      /DevHudWidgetProvider/u.test(source) &&
+      /APPWIDGET_UPDATE/u.test(source) &&
+      /android\.appwidget\.provider/u.test(source) &&
+      /android:exported\s*=\s*["']false["']/u.test(source),
+    `distributed Android artifact does not contain the exact non-exported widget receiver: ${path}`,
   );
   requireCondition(
-    hasExactAndroidAuthSurface(source),
-    `distributed Android artifact does not preserve the exact native auth surface: ${path}`,
+    hasExactAndroidLinkSurface(source),
+    `distributed Android artifact does not preserve the exact native auth/action link surface: ${path}`,
   );
   const application = source.match(/<application\b[^>]*>/su)?.[0] ?? "";
   const dataExtractionRules =
@@ -337,14 +381,14 @@ async function inspectIosApplication(path) {
       !prohibitedRemoteEndpoint.test(infoSource),
     `distributed iOS application contains prohibited Info.plist metadata: ${infoPlist}`,
   );
+  const extensionFiles = files.filter((file) =>
+    file.includes("/PlugIns/DevHudWidgetExtension.appex/") ||
+    file.includes("\\PlugIns\\DevHudWidgetExtension.appex\\")
+  );
   requireCondition(
-    !files.some(
-      (file) =>
-        extname(file) === ".appex" ||
-        file.includes("/PlugIns/") ||
-        file.includes("\\PlugIns\\"),
-    ),
-    `distributed iOS application embeds an extension: ${path}`,
+    extensionFiles.some((file) => file.endsWith("Info.plist")) &&
+      extensionFiles.some((file) => file.includes("DevHudWidgetExtension")),
+    `distributed iOS application does not embed the Deck WidgetKit extension: ${path}`,
   );
   for (const file of files.filter(
     (candidate) =>
@@ -355,13 +399,14 @@ async function inspectIosApplication(path) {
     const source = file.endsWith("embedded.mobileprovision")
       ? (await readFile(file)).toString("latin1")
       : readPropertyList(file);
+    const extensionPayload = file.includes("/PlugIns/") || file.includes("\\PlugIns\\");
     requireCondition(
-      !source.includes("dev.deli.devhud.widget"),
-      `distributed iOS provisioning payload claims the widget extension: ${file}`,
-    );
-    requireCondition(
-      hasExactIosAssociatedDomainEntitlement(source, true),
-      `distributed iOS provisioning payload does not preserve the exact DeliDev associated domain: ${file}`,
+      extensionPayload
+        ? source.includes("dev.deli.devhud.widget") && source.includes("group.dev.deli.devhud")
+        : !source.includes("dev.deli.devhud.widget") &&
+          hasExactIosAssociatedDomainEntitlement(source, true) &&
+          source.includes("group.dev.deli.devhud"),
+      `distributed iOS provisioning payload does not preserve its narrow app/widget identity: ${file}`,
     );
   }
   if (existsSync(resolve(path, "_CodeSignature"))) {
@@ -377,18 +422,19 @@ async function inspectIosApplication(path) {
   }
 }
 
-function hasExactAndroidAuthSurface(source) {
+function hasExactAndroidLinkSurface(source) {
   return (
     !prohibitedRemoteEndpoint.test(source) &&
     (source.match(/android\.permission\.INTERNET/gu) ?? []).length === 1 &&
-    (source.match(/android\.intent\.category\.BROWSABLE/gu) ?? []).length === 1 &&
-    (source.match(/android:autoVerify\s*=\s*["']true["']/gu) ?? []).length === 1 &&
-    (source.match(/android:scheme\s*=/gu) ?? []).length === 1 &&
-    /android:scheme\s*=\s*["']https["']/u.test(source) &&
-    (source.match(/android:host\s*=/gu) ?? []).length === 1 &&
-    /android:host\s*=\s*["']deli\.dev["']/u.test(source) &&
-    (source.match(/android:path\s*=/gu) ?? []).length === 1 &&
+    (source.match(/android\.intent\.category\.BROWSABLE/gu) ?? []).length === 2 &&
+    (source.match(/android:autoVerify\s*=\s*["']true["']/gu) ?? []).length === 2 &&
+    (source.match(/android:scheme\s*=/gu) ?? []).length === 2 &&
+    (source.match(/android:scheme\s*=\s*["']https["']/gu) ?? []).length === 2 &&
+    (source.match(/android:host\s*=/gu) ?? []).length === 2 &&
+    (source.match(/android:host\s*=\s*["']deli\.dev["']/gu) ?? []).length === 2 &&
+    (source.match(/android:path\s*=/gu) ?? []).length === 2 &&
     /android:path\s*=\s*["']\/auth\/devhud\/callback["']/u.test(source) &&
+    /android:path\s*=\s*["']\/devhud\/deck\/open["']/u.test(source) &&
     !/android:path(?:Prefix|Pattern)\s*=/u.test(source)
   );
 }

@@ -14,6 +14,7 @@ const requiredFiles = [
   "manifest.webmanifest",
   "sw.js",
   "auth/devhud/callback/index.html",
+  "devhud/deck/open/index.html",
   "deck-callback.js",
   ".well-known/apple-app-site-association",
   ".well-known/assetlinks.json",
@@ -30,6 +31,7 @@ const [
   redirects,
   headers,
   callback,
+  deckActionFallback,
   callbackScript,
   manifestText,
   serviceWorker,
@@ -41,6 +43,7 @@ const [
     readFile(join(dist, "_redirects"), "utf8"),
     readFile(join(dist, "_headers"), "utf8"),
     readFile(join(dist, "auth/devhud/callback/index.html"), "utf8"),
+    readFile(join(dist, "devhud/deck/open/index.html"), "utf8"),
     readFile(join(dist, "deck-callback.js"), "utf8"),
     readFile(join(dist, "manifest.webmanifest"), "utf8"),
     readFile(join(dist, "sw.js"), "utf8"),
@@ -61,6 +64,9 @@ if (
   !redirects.includes(
     "/auth/devhud/callback /auth/devhud/callback/index.html 200",
   ) ||
+  !redirects.includes(
+    "/devhud/deck/open /devhud/deck/open/index.html 200",
+  ) ||
   !headers.includes(
     "/auth/devhud/callback/index.html\n" +
       "  Cache-Control: no-cache, no-store, must-revalidate\n" +
@@ -76,6 +82,18 @@ if (
 ) {
   throw new Error("Deck callback handoff is missing or unsafe.");
 }
+if (
+  !headers.includes(
+    "/devhud/deck/open/index.html\n" +
+      "  Cache-Control: no-cache, no-store, must-revalidate\n" +
+      "  Content-Security-Policy: default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'\n" +
+      "  Referrer-Policy: no-referrer",
+  ) ||
+  !deckActionFallback.includes("This Deck action requires the DevHud app.") ||
+  deckActionFallback.includes("<script")
+) {
+  throw new Error("Deck action fallback is missing or unsafe.");
+}
 const appleDetails = appleAssociation?.applinks?.details;
 const appleRule = Array.isArray(appleDetails) && appleDetails.length === 1
   ? appleDetails[0]
@@ -88,10 +106,16 @@ if (
   appleAppIds.length !== 1 ||
   !/^[A-Z0-9]{10}\.dev\.deli\.devhud$/u.test(appleAppIds[0] ?? "") ||
   !Array.isArray(appleComponents) ||
-  appleComponents.length !== 1 ||
-  JSON.stringify(appleComponents[0]) !== JSON.stringify({ "/": "/auth/devhud/callback" })
+  appleComponents.length !== 5 ||
+  JSON.stringify(appleComponents) !== JSON.stringify([
+    { "/": "/auth/devhud/callback" },
+    { "/": "/devhud/deck/open", "?": { action: "open-view" } },
+    { "/": "/devhud/deck/open", "?": { action: "open-pr" } },
+    { "/": "/devhud/deck/open", "?": { action: "refresh" } },
+    { "/": "/devhud/deck/open", "?": { action: "resolve-event" } },
+  ])
 ) {
-  throw new Error("Apple association must authorize only the exact DevHud callback path.");
+  throw new Error("Apple association must authorize only the exact DevHud callback and Deck action paths.");
 }
 const androidRule = Array.isArray(androidAssociation) && androidAssociation.length === 1
   ? androidAssociation[0]
@@ -185,7 +209,8 @@ if (
   serviceWorker.includes("UsageService") ||
   serviceWorker.includes("RealQATrackerService") ||
   serviceWorker.includes("x-delibase-forwarded-user-token") ||
-  !serviceWorker.includes('url.pathname === "/auth/devhud/callback"')
+  !serviceWorker.includes('url.pathname === "/auth/devhud/callback"') ||
+  !serviceWorker.includes('url.pathname === "/devhud/deck/open"')
 ) {
   throw new Error("Service worker cache boundary is invalid.");
 }
@@ -193,6 +218,7 @@ if (
   shellFiles.some(
     (path) =>
       path.includes("auth/devhud/callback") ||
+      path.includes("devhud/deck/open") ||
       path.includes("deck-callback") ||
       path.includes(".well-known"),
   )

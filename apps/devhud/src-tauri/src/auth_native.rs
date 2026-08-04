@@ -16,7 +16,7 @@ use jsonwebtoken::{
 use reqwest::{StatusCode, blocking::Client, redirect::Policy};
 use serde::{Deserialize, Serialize};
 #[cfg(any(target_os = "android", target_os = "ios"))]
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 #[cfg(any(target_os = "android", target_os = "ios"))]
 use tauri_plugin_devhud_auth::DevHudAuthBridgeExt;
 use url::Url;

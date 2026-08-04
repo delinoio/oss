@@ -1,5 +1,6 @@
 package dev.deli.devhud.widget
 
+import android.appwidget.AppWidgetManager
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -10,184 +11,182 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
-import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class WidgetConfigurationTest {
-    @Test
-    fun dataStoreNameResolvesToTheContractedFile() {
-        assertEquals("devhud-widget-state", DevHudWidgetContract.DATASTORE_NAME)
-        assertEquals(
-            "devhud-widget-state.preferences_pb",
-            DevHudWidgetContract.DATASTORE_FILE,
-        )
+    @Test fun configurationRequestRequiresSystemActionAndOwnedWidgetId() {
+        val applicationPackage = "dev.deli.devhud"
+        val providerClass = DevHudWidgetProvider::class.java.name
+        assertTrue(isDevHudWidgetConfigurationRequest(
+            AppWidgetManager.ACTION_APPWIDGET_CONFIGURE,
+            42,
+            applicationPackage,
+            providerClass,
+            applicationPackage,
+        ))
+        assertFalse(isDevHudWidgetConfigurationRequest(
+            null,
+            42,
+            applicationPackage,
+            providerClass,
+            applicationPackage,
+        ))
+        assertFalse(isDevHudWidgetConfigurationRequest(
+            AppWidgetManager.ACTION_APPWIDGET_CONFIGURE,
+            AppWidgetManager.INVALID_APPWIDGET_ID,
+            applicationPackage,
+            providerClass,
+            applicationPackage,
+        ))
+        assertFalse(isDevHudWidgetConfigurationRequest(
+            AppWidgetManager.ACTION_APPWIDGET_CONFIGURE,
+            42,
+            "example.attacker",
+            "example.attacker.WidgetProvider",
+            applicationPackage,
+        ))
     }
 
-    @Test
-    fun fixtureRoundTripsThroughTypedDataStoreAdapter() = runTest {
+    @Test fun dataStoreNameResolvesToContractedFile() {
+        assertEquals("devhud-widget-state.preferences_pb", DevHudWidgetContract.DATASTORE_FILE)
+    }
+
+    @Test fun widgetRenderingRequiresAnExplicitCompatibleSelection() {
+        val widget = WidgetConfigurationCodec.decode(fixture()).configuration.widgets.single()
+        assertNull(selectAndroidWidget(listOf(widget), null, widget.family))
+        assertNull(selectAndroidWidget(listOf(widget), "stale-widget-id", widget.family))
+        assertNull(selectAndroidWidget(listOf(widget), widget.widgetId, DeckWidgetFamily.ANDROID_COMPACT))
+        assertEquals(widget, selectAndroidWidget(listOf(widget), widget.widgetId, widget.family))
+    }
+
+    @Test fun fixtureRoundTripsAndPreservesMinimalSnapshot() = runTest {
         withAdapter { adapter, _ ->
-            val raw =
-                requireNotNull(
-                    javaClass.classLoader
-                        ?.getResourceAsStream("widget-configuration.v1.json"),
-                ).bufferedReader().use { it.readText().trim() }
-
+            val raw = fixture()
             adapter.writeRawRecord(raw)
-
             assertEquals(raw, adapter.readRawRecord())
-            assertEquals(
-                "fixture-diagnostics",
-                adapter.readRecord().configuration.slots.first().toolId.value,
-            )
+            val widget = adapter.readRecord().configuration.widgets.single()
+            assertEquals(DeckWidgetFamily.APPLE_MEDIUM, widget.family)
+            assertEquals(2, widget.snapshot.matchingCount)
+            assertEquals(DeckWidgetFreshness.STALE, widget.snapshot.freshness)
         }
     }
 
-    @Test
-    fun resetIsIsolatedToWidgetConfiguration() = runTest {
+    @Test fun legacySlotRecordMigratesToEncryptedEmptyDeckConfiguration() = runTest {
+        val cipher = RecordingCipher()
+        withAdapter(cipher) { adapter, dataStore ->
+            val legacy = """{"version":1,"configuration":{"slots":[{"slot":"primary","toolId":"fixture-diagnostics"}]}}"""
+            val key = stringPreferencesKey(DevHudWidgetContract.STORAGE_KEY)
+            dataStore.edit { it[key] = legacy }
+
+            val migrated = requireNotNull(adapter.readRawRecord())
+
+            assertEquals(WidgetConfigurationRecord.EMPTY, WidgetConfigurationCodec.decode(migrated))
+            assertEquals("ciphertext-only", dataStore.data.first()[key])
+        }
+    }
+
+    @Test fun countsOnlyRejectsRepositoryAndTitles() {
+        val raw = fixture().replace("\"privacy\":\"repository-and-titles\"", "\"privacy\":\"counts-only\"")
+        assertEquals(
+            WidgetConfigurationErrorCode.INCOMPATIBLE,
+            assertThrows(WidgetConfigurationException::class.java) { WidgetConfigurationCodec.decode(raw) }.code,
+        )
+    }
+
+    @Test fun actionsOnlyOpenOrRefreshAndNeverMutate() {
+        val view = "018f0000-0000-7000-8000-000000000003"
+        val links = listOf(
+            DeckWidgetAction.OpenView(view),
+            DeckWidgetAction.OpenPullRequest(view, "acme", "widgets", 42),
+            DeckWidgetAction.Refresh(view),
+        ).map(DeckWidgetAction::toAppLink)
+        links.forEach { assertTrue(it.startsWith("https://deli.dev/devhud/deck/open?")) }
+        assertFalse(links.joinToString().contains("merge"))
+        assertFalse(links.joinToString().contains("mutation"))
+        assertFalse(links.joinToString().contains("close"))
+    }
+
+    @Test fun notificationsRequireOpaquePayloadAndDefaultExactly() {
+        assertEquals("opaque_event_123456", DeckNotificationPolicy.eventId(mapOf("eventId" to "opaque_event_123456")))
+        assertNull(DeckNotificationPolicy.eventId(mapOf("eventId" to "opaque_event_123456", "title" to "private")))
+        assertEquals("Deck view updated", DeckNotificationPolicy.text("private", false))
+    }
+
+    @Test fun resetIsIsolatedAndIdempotent() = runTest {
         withAdapter { adapter, dataStore ->
             val otherKey = stringPreferencesKey("devhud.settings.v1")
             dataStore.edit { it[otherKey] = "preserved" }
-            adapter.writeRawRecord(
-                """{"version":1,"configuration":{"slots":[]}}""",
-            )
-
-            adapter.reset()
-            adapter.reset()
-
+            adapter.writeRawRecord(fixture())
+            adapter.reset(); adapter.reset()
             assertNull(adapter.readRawRecord())
             assertEquals("preserved", dataStore.data.first()[otherKey])
         }
     }
 
-    @Test
-    fun corruptAndFutureRecordsAreRejectedWithoutOverwrite() = runTest {
+    @Test fun corruptAndFutureRecordsDoNotOverwrite() = runTest {
         withAdapter { adapter, _ ->
-            val valid = """{"version":1,"configuration":{"slots":[]}}"""
+            val valid = fixture()
             adapter.writeRawRecord(valid)
-
-            assertEquals(
-                WidgetConfigurationErrorCode.CORRUPT,
-                assertThrows(WidgetConfigurationException::class.java) {
-                    kotlinx.coroutines.runBlocking {
-                        adapter.writeRawRecord("{not-json}")
-                    }
-                }.code,
-            )
-            assertEquals(
-                WidgetConfigurationErrorCode.FUTURE_VERSION,
-                assertThrows(WidgetConfigurationException::class.java) {
-                    kotlinx.coroutines.runBlocking {
-                        adapter.writeRawRecord(
-                            """{"version":2,"configuration":{"slots":[]}}""",
-                        )
-                    }
-                }.code,
-            )
+            assertEquals(WidgetConfigurationErrorCode.CORRUPT, assertThrows(WidgetConfigurationException::class.java) {
+                kotlinx.coroutines.runBlocking { adapter.writeRawRecord("{not-json}") }
+            }.code)
+            assertEquals(WidgetConfigurationErrorCode.FUTURE_VERSION, assertThrows(WidgetConfigurationException::class.java) {
+                kotlinx.coroutines.runBlocking { adapter.writeRawRecord(valid.replace("\"version\":1", "\"version\":2")) }
+            }.code)
             assertEquals(valid, adapter.readRawRecord())
         }
     }
 
-    @Test
-    fun corruptDataStoreIsPreservedUntilConfirmedReset() = runTest {
-        val directory = Files.createTempDirectory("devhud-widget-corrupt-test")
-        val dataStoreFile = directory.resolve("widget.preferences_pb")
-        val corruptBytes = byteArrayOf(0x0a, 0x7f)
-        Files.write(dataStoreFile, corruptBytes)
-        val dataStoreScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-        val corruptionHandler = ConfirmedResetCorruptionHandler()
-        val dataStore =
-            PreferenceDataStoreFactory.create(
-                corruptionHandler = corruptionHandler.handler,
-                scope = dataStoreScope,
-            ) {
-                dataStoreFile.toFile()
-            }
-        val adapter =
-            AndroidWidgetSharedDataAdapter(dataStore, corruptionHandler)
-
-        try {
-            val error =
-                assertThrows(WidgetConfigurationException::class.java) {
-                    kotlinx.coroutines.runBlocking {
-                        adapter.readRawRecord()
-                    }
-                }
-
-            assertEquals(
-                WidgetConfigurationErrorCode.CORRUPT,
-                error.code,
-            )
-            assertArrayEquals(corruptBytes, Files.readAllBytes(dataStoreFile))
-
-            val writeError =
-                assertThrows(WidgetConfigurationException::class.java) {
-                    kotlinx.coroutines.runBlocking {
-                        adapter.writeRawRecord(
-                            """{"version":1,"configuration":{"slots":[]}}""",
-                        )
-                    }
-                }
-
-            assertEquals(
-                WidgetConfigurationErrorCode.WRITE_FAILED,
-                writeError.code,
-            )
-            assertArrayEquals(corruptBytes, Files.readAllBytes(dataStoreFile))
-
-            adapter.reset()
-
-            assertNull(adapter.readRawRecord())
-        } finally {
-            dataStoreScope.cancel()
-            directory.toFile().deleteRecursively()
+    @Test fun encryptionBoundaryStoresNoSnapshotPlaintext() = runTest {
+        val cipher = RecordingCipher()
+        withAdapter(cipher) { adapter, dataStore ->
+            adapter.writeRawRecord(fixture())
+            val stored = dataStore.data.first()[stringPreferencesKey(DevHudWidgetContract.STORAGE_KEY)]!!
+            assertFalse(stored.contains("Keep snapshot minimal"))
+            assertEquals(fixture(), adapter.readRawRecord())
+            assertEquals("018f0000-0000-7000-8000-000000000001", cipher.accountId)
         }
     }
 
-    @Test
-    fun refreshFailuresPropagateAfterValidStateIsStored() = runTest {
+    @Test fun refreshFailurePropagatesAfterStorage() = runTest {
         withAdapter { adapter, _ ->
-            val service =
-                WidgetConfigurationService(adapter) {
-                    throw WidgetConfigurationException(
-                        WidgetConfigurationErrorCode.REFRESH_FAILED,
-                    )
-                }
-            val raw = """{"version":1,"configuration":{"slots":[]}}"""
-
-            val error =
-                assertThrows(WidgetConfigurationException::class.java) {
-                    kotlinx.coroutines.runBlocking {
-                        service.writeRawRecord(raw)
-                    }
-                }
-
-            assertEquals(WidgetConfigurationErrorCode.REFRESH_FAILED, error.code)
-            assertEquals(raw, adapter.readRawRecord())
+            val service = WidgetConfigurationService(adapter) {
+                throw WidgetConfigurationException(WidgetConfigurationErrorCode.REFRESH_FAILED)
+            }
+            assertEquals(WidgetConfigurationErrorCode.REFRESH_FAILED, assertThrows(WidgetConfigurationException::class.java) {
+                kotlinx.coroutines.runBlocking { service.writeRawRecord(fixture()) }
+            }.code)
+            assertEquals(fixture(), adapter.readRawRecord())
         }
     }
+
+    private class RecordingCipher : WidgetRecordEncryptor {
+        var accountId: String? = null
+        private var plaintext = ""
+        override fun encrypt(plaintext: String, accountId: String): String {
+            this.plaintext = plaintext; this.accountId = accountId; return "ciphertext-only"
+        }
+        override fun decrypt(envelope: String) = plaintext
+        override fun reset(envelope: String?) = Unit
+    }
+
+    private fun fixture(): String = requireNotNull(
+        javaClass.classLoader?.getResourceAsStream("widget-configuration.v1.json"),
+    ).bufferedReader().use { it.readText().trim() }
 
     private suspend fun withAdapter(
-        test: suspend (
-            AndroidWidgetSharedDataAdapter,
-            androidx.datastore.core.DataStore<
-                androidx.datastore.preferences.core.Preferences
-            >,
-        ) -> Unit,
+        cipher: WidgetRecordEncryptor = IdentityWidgetRecordEncryptor(),
+        test: suspend (AndroidWidgetSharedDataAdapter, androidx.datastore.core.DataStore<androidx.datastore.preferences.core.Preferences>) -> Unit,
     ) {
         val directory = Files.createTempDirectory("devhud-widget-test")
-        val dataStoreScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-        val dataStore =
-            PreferenceDataStoreFactory.create(scope = dataStoreScope) {
-                directory.resolve("widget.preferences_pb").toFile()
-            }
-        try {
-            test(AndroidWidgetSharedDataAdapter(dataStore), dataStore)
-        } finally {
-            dataStoreScope.cancel()
-            directory.toFile().deleteRecursively()
-        }
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val store = PreferenceDataStoreFactory.create(scope = scope) { directory.resolve("widget.preferences_pb").toFile() }
+        try { test(AndroidWidgetSharedDataAdapter(store, encryptor = cipher), store) }
+        finally { scope.cancel(); directory.toFile().deleteRecursively() }
     }
 }

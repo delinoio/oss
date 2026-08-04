@@ -239,6 +239,8 @@ message ViewNotificationState {
 message UpdateViewNotificationPreferenceRequest {
   UuidV7 registration_id = 1;
   UuidV7 view_id = 2;
+  // Omit after a client restart to create or resynchronize this device-local
+  // preference. Supplying a revision preserves strict compare-and-swap.
   Revision expected_revision = 3;
   ViewNotificationPreference preference = 4;
 }

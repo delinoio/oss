@@ -4,6 +4,7 @@ import android.app.Activity
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
 import android.content.Intent
+import androidx.core.app.NotificationManagerCompat
 import app.tauri.annotation.Command
 import app.tauri.annotation.InvokeArg
 import app.tauri.annotation.TauriPlugin
@@ -53,6 +54,18 @@ class DevHudWidgetPlugin(
                 put(
                     "refreshedWidgetCount",
                     service.writeRawRecord(arguments.record),
+                )
+            }
+        }
+    }
+
+    @Command
+    fun notificationAuthorizationStatus(invoke: Invoke) {
+        execute(invoke) {
+            JSObject().apply {
+                put(
+                    "authorized",
+                    NotificationManagerCompat.from(activity).areNotificationsEnabled(),
                 )
             }
         }
@@ -115,9 +128,8 @@ private class AndroidWidgetRefresher(
         )
 
     override suspend fun refresh(): Int {
-        // The 0.1.0 release has no registered receiver, so this deterministically
-        // returns an empty set. A future registered provider can consume the same
-        // adapter and explicit component identity without widening this bridge.
+        // Refresh only the exact registered Deck provider. OS delivery remains
+        // best effort and this bridge performs no network request itself.
         try {
             val widgetIds = appWidgetManager.getAppWidgetIds(componentName)
             if (widgetIds.isNotEmpty()) {

@@ -15,6 +15,10 @@ private struct WidgetRefreshResponse: Encodable {
     let refreshedWidgetCount: UInt32
 }
 
+private struct NotificationAuthorizationResponse: Encodable {
+    let authorized: Bool
+}
+
 private struct PrepareResetResponse: Encodable {
     let prepared: Bool
 }
@@ -40,6 +44,13 @@ final class DevHudWidgetPlugin: Plugin {
             let arguments = try invoke.parseArgs(WriteConfigurationArgs.self)
             let count = try service.writeRawRecord(arguments.record)
             invoke.resolve(WidgetRefreshResponse(refreshedWidgetCount: count))
+        }
+    }
+
+    @objc func notificationAuthorizationStatus(_ invoke: Invoke) {
+        Task {
+            let authorized = await DeckNotificationService().authorizationEnabled()
+            invoke.resolve(NotificationAuthorizationResponse(authorized: authorized))
         }
     }
 

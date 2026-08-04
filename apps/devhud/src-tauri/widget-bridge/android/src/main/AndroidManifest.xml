@@ -1,2 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" />
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <receiver
+            android:name="dev.deli.devhud.widget.DevHudWidgetProvider"
+            android:exported="false"
+            android:label="@string/devhud_widget_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/devhud_widget_info" />
+        </receiver>
+        <activity
+            android:name="dev.deli.devhud.widget.DevHudWidgetConfigurationActivity"
+            android:exported="true"
+            android:label="@string/devhud_widget_configure_title">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

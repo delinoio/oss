@@ -27,6 +27,7 @@
 - `DeckViewService`: `ListOwners`, `ListViews`, `GetView`, `CreateView`, `UpdateView`, `DeleteView`, `ListPullRequests`, `ListPullRequestMutationCandidates`, `GetRefreshPreflight`, `RefreshView`, `MutatePullRequest`, `DeleteFeatureData`.
 - `DeckIntegrationService`: `GetGitHubConnection`, `StartGitHubConnection`, `ListGitHubInstallations`, `DisconnectGitHubConnection`.
 - `DeckDeviceService`: `GetDevice`, `RegisterDevice`, `UpdateDevice`, `UnregisterDevice`, `UpdateViewNotificationPreference`, `ResolveNotificationEvent`.
+- `UpdateViewNotificationPreference` stores the explicit view preference for one registered device. A client restart may omit `expected_revision` to create or resynchronize that device-local record; an explicit revision remains strict compare-and-swap.
 
 No additional v1 service or RPC is implied. GitHub callback/webhook handlers and push delivery are HTTP/server boundaries, not public Connect services.
 
@@ -61,7 +62,7 @@ No additional v1 service or RPC is implied. GitHub callback/webhook handlers and
   stable GitHub account ID, login, and closed user/organization kind needed to
   identify the installation in DevHud and DeliDev settings.
 - Device registration/update requests may omit `push` while platform delivery is inactive and otherwise require a supported provider plus a non-empty opaque token. They carry request-only shortcut configurations using closed modifier/key enums. Effective shortcut conflict state and synchronized shortcut revisions are server-authored response state; clients cannot submit either field or unchecked binding strings.
-- Device registration/update requests carry widget identity, selected view, family, and privacy configuration only. Widget snapshots, freshness/offline state, and synchronized widget revisions are server-authored response state.
+- Device registration/update requests carry at most 20 widget configurations containing only widget identity, selected view, family, and privacy. Widget snapshots, freshness/offline state, and synchronized widget revisions are server-authored response state; renewal preserves that state for unchanged configurations and initializes only new or changed configurations.
 - `GetDevice` reloads the authenticated caller's current registration, bounded
   lease, server-authored shortcut/widget state, and device revision by stable
   device ID so a restarted or stale client can compare and reapply before

@@ -16,6 +16,11 @@ pub struct ReadConfigurationResponse {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct NotificationAuthorizationResponse {
+    pub authorized: bool,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct PrepareResetResponse {
     pub prepared: bool,
 }

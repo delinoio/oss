@@ -24,6 +24,39 @@ targetTemplates:
     settings:
       groups: [app]
 targets:
+  DevHudWidgetCore:
+    type: framework
+    platform: iOS
+    sources:
+      - path: ../../widget-bridge/ios/Sources/DevHudWidgetCore
+    settings:
+      base:
+        APPLICATION_EXTENSION_API_ONLY: true
+        PRODUCT_BUNDLE_IDENTIFIER: dev.deli.devhud.widget.core
+        SKIP_INSTALL: true
+  DevHudWidgetExtension:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: ../../../native-widgets/ios/Sources/Extension
+    dependencies:
+      - target: DevHudWidgetCore
+    info:
+      path: ../../../native-widgets/ios/Support/DevHudWidgetExtension-Info.plist
+      properties:
+        CFBundleDisplayName: Deck
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    entitlements:
+      path: ../../../native-widgets/ios/Support/DevHudWidgetExtension.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.dev.deli.devhud
+    settings:
+      base:
+        APPLICATION_EXTENSION_API_ONLY: true
+        PRODUCT_BUNDLE_IDENTIFIER: dev.deli.devhud.widget
+        SKIP_INSTALL: true
   devhud_iOS:
     type: application
     platform: iOS
@@ -60,6 +93,7 @@ targets:
           - group.dev.deli.devhud
         com.apple.developer.associated-domains:
           - applinks:deli.dev
+        aps-environment: $(DEVHUD_APS_ENVIRONMENT)
     settings:
       base:
         ENABLE_BITCODE: false
@@ -72,6 +106,9 @@ targets:
         EXCLUDED_ARCHS[sdk=iphoneos*]: x86_64
       groups: [app]
     dependencies:
+      - target: DevHudWidgetExtension
+        embed: true
+        codeSign: true
       - framework: libapp.a
         embed: false
       - sdk: CoreGraphics.framework

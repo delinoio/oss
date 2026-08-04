@@ -2,11 +2,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Dialog } from "../ui/Dialog";
 import {
+  DeckWidgetFamily,
+  DeckWidgetPrivacy,
+} from "../persistence/contracts";
+import {
   DeckFailureCode,
   DeckFreshness,
   DeckGrouping,
   DeckMergeMethod,
   DeckMutationKind,
+  DeckNotificationTransition,
   DeckOwnerKind,
   DeckProductError,
   DeckSort,
@@ -42,6 +47,25 @@ function failureMessage(error: unknown): string {
   }
   return deckFailureGuidance[DeckFailureCode.ServiceUnavailable];
 }
+
+const notificationTransitionLabels: Readonly<Record<DeckNotificationTransition, string>> = {
+  [DeckNotificationTransition.Assigned]: "Assigned to me",
+  [DeckNotificationTransition.ReviewRequested]: "Review requested from me",
+  [DeckNotificationTransition.ChecksFailed]: "Checks failed",
+  [DeckNotificationTransition.BecameMergeable]: "Became mergeable",
+  [DeckNotificationTransition.Conflicted]: "Merge conflict detected",
+  [DeckNotificationTransition.Merged]: "Merged",
+  [DeckNotificationTransition.Closed]: "Closed",
+};
+
+const widgetFamilyLabels: Readonly<Record<DeckWidgetFamily, string>> = {
+  [DeckWidgetFamily.AppleSmall]: "Small",
+  [DeckWidgetFamily.AppleMedium]: "Medium",
+  [DeckWidgetFamily.AppleLarge]: "Large",
+  [DeckWidgetFamily.AndroidCompact]: "Compact",
+  [DeckWidgetFamily.AndroidWide]: "Wide",
+  [DeckWidgetFamily.AndroidList]: "List",
+};
 
 export function DeckNavigation() {
   const { actions, state } = useDeck();
@@ -149,10 +173,57 @@ function ViewForm({
           </select>
         </label>
       </div>
+      <fieldset className="deck-notification-preferences">
+        <legend>Native notifications</legend>
+        <label className="check-field">
+          <input
+            checked={input.notificationPreference.enabled}
+            onChange={(event) => setInput({
+              ...input,
+              notificationPreference: {
+                enabled: event.target.checked,
+                transitions: event.target.checked
+                  ? input.notificationPreference.transitions
+                  : [],
+              },
+            })}
+            type="checkbox"
+          />
+          Enable notifications for this view
+        </label>
+        {input.notificationPreference.enabled ? (
+          <div aria-label="Notification events" className="deck-notification-events" role="group">
+            {Object.values(DeckNotificationTransition).map((transition) => (
+              <label className="check-field" key={transition}>
+                <input
+                  checked={input.notificationPreference.transitions.includes(transition)}
+                  onChange={(event) => setInput({
+                    ...input,
+                    notificationPreference: {
+                      enabled: true,
+                      transitions: event.target.checked
+                        ? [...input.notificationPreference.transitions, transition]
+                        : input.notificationPreference.transitions.filter((value) => value !== transition),
+                    },
+                  })}
+                  type="checkbox"
+                />
+                {notificationTransitionLabels[transition]}
+              </label>
+            ))}
+          </div>
+        ) : null}
+        <p className="muted">
+          The OS may suppress alerts with Do Not Disturb. Notification text defaults to
+          exactly “Deck view updated”; repository and PR titles require separate local
+          device detail permission.
+        </p>
+      </fieldset>
       <div className="button-row">
         <button
           className="primary-button"
-          disabled={state.busy || input.name.trim().length === 0 || !hasAuthorizedBilling}
+          disabled={state.busy || input.name.trim().length === 0 || !hasAuthorizedBilling ||
+            (input.notificationPreference.enabled && input.notificationPreference.transitions.length === 0)}
           onClick={() => void onSave({ ...input, name: input.name.trim() })}
           type="button"
         >
@@ -167,9 +238,14 @@ function ViewForm({
 }
 
 export function DeckViewManager() {
-  const { actions, state } = useDeck();
+  const { actions, meta, state } = useDeck();
   const [editing, setEditing] = useState<"create" | "update" | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<DeckView | null>(null);
+  const [configuringWidget, setConfiguringWidget] = useState(false);
+  const [widgetFamily, setWidgetFamily] = useState(
+    meta.gateway.supportedWidgetFamilies[0] ?? DeckWidgetFamily.AppleSmall,
+  );
+  const [detailedWidget, setDetailedWidget] = useState(false);
   if (state.selectedOwner === null) return null;
   const canManage = state.selectedOwner.canManage;
   const inputForView = (view: DeckView): DeckViewInput => ({
@@ -257,11 +333,81 @@ export function DeckViewManager() {
           ) : null}
         </div>
       ) : null}
-      {editing === null && state.selectedView !== null && canManage ? (
+      {editing === null && state.selectedView !== null && (
+        canManage || meta.gateway.supportedWidgetFamilies.length > 0
+      ) ? (
         <div className="button-row deck-view-actions">
-          <button className="secondary-button" onClick={() => setEditing("update")} type="button">Edit view</button>
-          <button className="danger-button" onClick={() => setConfirmDelete(state.selectedView)} type="button">Delete view</button>
+          {canManage ? (
+            <button className="secondary-button" onClick={() => setEditing("update")} type="button">Edit view</button>
+          ) : null}
+          {meta.gateway.supportedWidgetFamilies.length > 0 ? (
+            <button
+              className="secondary-button"
+              onClick={() => setConfiguringWidget(true)}
+              type="button"
+            >
+              Configure widget
+            </button>
+          ) : null}
+          {canManage ? (
+            <button className="danger-button" onClick={() => setConfirmDelete(state.selectedView)} type="button">Delete view</button>
+          ) : null}
         </div>
+      ) : null}
+      {configuringWidget && state.selectedView !== null ? (
+        <Dialog title="Configure Deck widget" onClose={() => setConfiguringWidget(false)}>
+          <p>
+            Create a server-backed configuration, then add DevHud from the system widget
+            gallery and select this Deck entry.
+          </p>
+          <label className="field" htmlFor="deck-widget-family">
+            Widget size
+            <select
+              id="deck-widget-family"
+              onChange={(event) => setWidgetFamily(event.target.value as DeckWidgetFamily)}
+              value={widgetFamily}
+            >
+              {meta.gateway.supportedWidgetFamilies.map((family) => (
+                <option key={family} value={family}>{widgetFamilyLabels[family]}</option>
+              ))}
+            </select>
+          </label>
+          <label className="check-field">
+            <input
+              checked={detailedWidget}
+              onChange={(event) => setDetailedWidget(event.target.checked)}
+              type="checkbox"
+            />
+            Show repository and pull request titles
+          </label>
+          <p className="muted">Counts only is the default. Title visibility applies only to this widget configuration.</p>
+          <div className="button-row">
+            <button
+              className="primary-button"
+              disabled={state.busy}
+              onClick={() => void actions.createWidgetConfiguration(
+                state.selectedView!.viewId,
+                widgetFamily,
+                detailedWidget
+                  ? DeckWidgetPrivacy.RepositoryAndTitles
+                  : DeckWidgetPrivacy.CountsOnly,
+              ).then((created) => {
+                if (created) setConfiguringWidget(false);
+              })}
+              type="button"
+            >
+              {state.busy ? "Configuring…" : "Create widget configuration"}
+            </button>
+            <button
+              className="secondary-button"
+              disabled={state.busy}
+              onClick={() => setConfiguringWidget(false)}
+              type="button"
+            >
+              Cancel
+            </button>
+          </div>
+        </Dialog>
       ) : null}
       {confirmDelete ? (
         <Dialog title="Delete Deck view" onClose={() => setConfirmDelete(null)}>

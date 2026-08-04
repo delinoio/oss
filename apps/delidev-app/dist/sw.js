@@ -79,10 +79,12 @@ self.addEventListener("fetch", (event) => {
     url.origin === self.location.origin &&
     (url.pathname === "/auth/callback" ||
       url.pathname === "/auth/devhud/callback" ||
-      url.pathname === "/auth/devhud/callback/")
+      url.pathname === "/auth/devhud/callback/" ||
+      url.pathname === "/devhud/deck/open" ||
+      url.pathname === "/devhud/deck/open/")
   ) {
-    // Credential callbacks are always network-only and never receive the SPA
-    // fallback, even during an outage.
+    // Credential callbacks and Deck action handoffs are always network-only
+    // and never receive the SPA fallback, even during an outage.
     return;
   }
 
