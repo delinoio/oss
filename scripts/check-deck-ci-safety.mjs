@@ -43,33 +43,78 @@ for (const [jobName, job] of Object.entries(jobs)) {
   );
 }
 
-const workflowShell = [
-  workflow,
-  ...Object.values(jobs).flatMap((job) =>
+const workflowShellSource = (source) => {
+  const document = load(source);
+  const runCommands = Object.values(document?.jobs ?? {}).flatMap((job) =>
     (job?.steps ?? []).flatMap((step) =>
       typeof step?.run === "string" ? [step.run] : [],
     ),
-  ),
-].join("\n").replace(/\\\r?\n[ \t]*/gu, " ");
+  );
+  return [source, ...runCommands].join("\n").replace(/\\\r?\n[ \t]*/gu, " ");
+};
+
+const workflowShell = workflowShellSource(workflow);
+const shellValue = String.raw`(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s]+)`;
+const dockerGlobalOption = String.raw`(?:(?:--(?:config|context|host|log-level|tlscacert|tlscert|tlskey)|-[cHl])(?:=|\s+)${shellValue}|(?:--(?:debug|tls|tlsverify)|-D)(?:=(?:true|false))?)`;
+const buildxGlobalOption = String.raw`(?:--builder(?:=|\s+)${shellValue}|(?:--debug|-D)(?:=(?:true|false))?)`;
+const dockerCommand = String.raw`\bdocker\s+(?:${dockerGlobalOption}\s+)*`;
+const dockerBuildCommand = String.raw`${dockerCommand}(?:build|builder\s+build|image\s+build|buildx\s+(?:${buildxGlobalOption}\s+)*(?:build|b))\b`;
 const forbiddenWorkflowPatterns = [
   [/docker\/login-action/iu, "authenticate to a registry"],
-  [/\bdocker\s+(?:--[^\s]+\s+)*login\b/iu, "authenticate to a registry"],
+  [new RegExp(`${dockerCommand}login\\b`, "u"), "authenticate to a registry"],
   [/docker\/build-push-action/iu, "use an image publishing action"],
-  [/\bdocker\s+(?:--[^\s]+\s+)*push\b/iu, "push an image"],
-  [/\bdocker\s+(?:build|buildx\s+build|builder\s+build|image\s+build)\b[^\r\n]*--push\b/iu,
+  [new RegExp(`${dockerCommand}push\\b`, "u"), "push an image"],
+  [new RegExp(`${dockerBuildCommand}[^\\r\\n]*?--push\\b`, "u"),
     "push a built image"],
-  [/\bdocker\s+(?:build|buildx\s+build|builder\s+build|image\s+build)\b[^\r\n]*?(?:--output|-o)(?:=|\s+)["']?type=registry\b/iu,
+  [new RegExp(
+    `${dockerBuildCommand}[^\\r\\n]*?(?:--output|-o)(?:=|\\s+)["']?type=registry\\b`,
+    "u",
+  ),
     "export a built image to a registry"],
-  [/\bdocker\s+(?:build|buildx\s+build|builder\s+build|image\s+build)\b[^\r\n]*?(?:--output|-o)(?:=|\s+)["']?type=image,[^\s"']*\bpush=true\b/iu,
+  [new RegExp(
+    `${dockerBuildCommand}[^\\r\\n]*?(?:--output|-o)(?:=|\\s+)["']?type=image,[^\\s"']*\\bpush=true\\b`,
+    "u",
+  ),
     "push a built image through the image exporter"],
   [/\bghcr\.io\b/iu, "name a GHCR publication target"],
   [/\bactions\/attest\b/iu, "publish a GitHub attestation"],
   [/\b(?:wrangler|cloudflare\/wrangler-action|terraform\s+apply)\b/iu,
     "provision DNS or infrastructure"],
-  [/\$\{\{\s*(?:secrets|vars)\./iu, "read production configuration"],
+  [/\b(?:secrets|vars)\b/u, "read production configuration"],
 ];
 for (const [pattern, action] of forbiddenWorkflowPatterns) {
   requireCondition(!pattern.test(workflowShell), `Deck CI must not ${action}`);
+}
+
+for (const [source, expectedAction] of [
+  [
+    "jobs:\n  fixture:\n    steps:\n      - run: docker -c default buildx --builder ci b --push .",
+    "push a built image",
+  ],
+  [
+    "jobs:\n  fixture:\n    steps:\n      - run: docker buildx b -o type=registry .",
+    "export a built image to a registry",
+  ],
+  [
+    "jobs:\n  fixture:\n    steps:\n      - run: docker buildx b -o=type=image,push=true .",
+    "push a built image through the image exporter",
+  ],
+  [
+    "jobs:\n  fixture:\n    steps:\n      - run: echo '${{ secrets['TOKEN'] }}'",
+    "read production configuration",
+  ],
+  [
+    "jobs:\n  fixture:\n    steps:\n      - run: echo '${{ toJSON(vars) }}'",
+    "read production configuration",
+  ],
+]) {
+  const fixtureSource = workflowShellSource(source);
+  const matchedAction = forbiddenWorkflowPatterns.find(([pattern]) =>
+    pattern.test(fixtureSource))?.[1];
+  requireCondition(
+    matchedAction === expectedAction,
+    `Deck CI safety guard must reject fixture command: ${source}`,
+  );
 }
 
 const requiredDeckScopes = new Map([
