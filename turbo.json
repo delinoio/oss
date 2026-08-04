@@ -62,6 +62,27 @@
       ]
     },
     "test": {},
+    "ci:deck:proto": {
+      "cache": false,
+      "env": [
+        "DEVHUD_DECK_PROTO_BASELINE"
+      ]
+    },
+    "ci:deck:frontend": {
+      "cache": false
+    },
+    "ci:deck:auth-smoke": {
+      "cache": false
+    },
+    "ci:deck:widget-policy": {
+      "cache": false
+    },
+    "ci:deck:widget:android": {
+      "cache": false
+    },
+    "ci:deck:widget:ios": {
+      "cache": false
+    },
     "ci:realqa:proto": {
       "cache": false,
       "env": [

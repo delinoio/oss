@@ -20,6 +20,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "build:api": "pnpm run generate:proto",
+    "ci:deck:proto": "pnpm run check:proto && go test ./gen/go/... && go vet ./gen/go/... && pnpm run typecheck",
     "check:proto": "../../scripts/check-proto-component.sh devhud-deck devhud.deck.v1.binpb",
     "generate": "../../scripts/generate-proto-component.sh devhud-deck devhud.deck.v1.binpb",
     "generate:proto": "pnpm run generate && pnpm run build",
