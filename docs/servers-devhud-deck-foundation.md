@@ -280,8 +280,7 @@
 
 ## Build and Test
 
-The shared wire contract already runs its package-local checks. Once the server
-implementation exists, canonical server checks are:
+The shared wire contract and implemented server run these canonical checks:
 
 - `gofmt`/format verification for `servers/devhud-deck`;
 - `go vet ./servers/devhud-deck/...`;
@@ -291,12 +290,21 @@ implementation exists, canonical server checks are:
 - mock GitHub App callback, webhook, permission, rate-limit, and provider tests;
 - non-root `linux/amd64` and `linux/arm64` image validation with SBOM and signature/attestation verification.
 
-The implemented bounded foundation currently runs the format, vet, unit,
-sqlc reproducibility, ordered-migration, redaction, PostgreSQL integration,
-signed callback/webhook, permission intersection, GitHub rate/concurrency,
-search non-disclosure, candidate, and mutation fixture checks. Billing,
-notification-delivery, and image checks remain blocked with their
-corresponding RPCs failing closed; those bullets do not claim implementation.
+The `deck-changes` scope job coordinates separate proto, Go quality,
+PostgreSQL/sqlc, GitHub fixture, no-server-scheduler, refresh/billing race,
+frontend, auth/native smoke, widget policy, observation report, image, and
+inactive-production safety jobs. `CI Result` depends on each of them and every
+pre-existing repository job. Unaffected jobs are valid no-ops; executed
+failures and cancellations fail the aggregate exactly.
+
+The image matrix builds local non-root `linux/amd64` and `linux/arm64` fixture
+images, generates per-platform SPDX JSON, and verifies ephemeral local
+Sigstore bundles over the SBOM and in-toto/SLSA provenance statement. It never
+logs into a registry, pushes an image, publishes an attestation, or reads a
+production secret. Deterministic reports record only the closed latency
+interface, fixture test names, and widget source byte sizes; they contain no
+credentials/content and set `numericSlo` to `null`. Push delivery remains
+unimplemented and is not implied by this validation.
 
 Coverage must include unknown-clause preservation, per-viewer `@me`,
 repository non-disclosure, limits/pagination/truncation, deterministic reviewer

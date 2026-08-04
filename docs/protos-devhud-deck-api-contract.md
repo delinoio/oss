@@ -162,6 +162,14 @@ aggregate and `proto-contracts` CI job include Deck. CI fails on compatibility,
 service/RPC/enum drift, stale artifacts, sensitive metadata leakage,
 cross-component writes, or missing cross-consumer generation.
 
+The dedicated uncached `pnpm ci:deck:proto` Turborepo entrypoint and
+change-scoped `deck-proto` job supplement, but never replace, the fixed-order
+root aggregate and `proto-contracts` job. They resolve only
+`DEVHUD_DECK_PROTO_BASELINE`, run component-local compatibility and two-pass
+reproducibility, then run generated Go test/vet and TypeScript typecheck. Both
+jobs remain exact dependencies of `CI Result` and never publish the private
+package.
+
 Checks do not publish the TypeScript package, deploy `https://deck.deli.dev`, register the GitHub App, activate a catalog entry, or publish a server image.
 
 ## Dependencies and Change Triggers
