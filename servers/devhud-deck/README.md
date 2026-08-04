@@ -25,6 +25,7 @@ go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.30.0
 servers/devhud-deck/scripts/generate-sqlc.sh
 go test ./servers/devhud-deck/...
 go vet ./servers/devhud-deck/...
+pnpm ci:deck:safety
 ```
 
 PostgreSQL integration tests use `DECK_TEST_DATABASE_URL` and are skipped when
@@ -32,6 +33,14 @@ that variable is absent.
 
 The GitHub App manifest and signature payloads under `testdata/github-app` are
 fixtures only. They must not be used to register a production App.
+
+Change-scoped CI separates the Deck proto, Go quality, PostgreSQL/sqlc,
+GitHub fixture, active-client-only refresh, billing/race, frontend, native
+auth/smoke, widget policy, deterministic report, local multi-architecture
+image, and inactive-production safety slices. Image, SBOM, signature,
+provenance, and observation outputs are run-scoped fixtures only; CI has no
+registry, deployment, DNS, production App, secret, catalog, publication, or
+numeric-SLO authority.
 
 Logout and reset remain client operations. Both unregister the current device
 before deleting local credentials; reset does not call feature deletion and

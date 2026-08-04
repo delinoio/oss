@@ -136,9 +136,10 @@ registration, catalog activation, widget/extension/store publication, or
 rollout is claimed. Production-facing Deck and RealQA catalog records remain
 disabled.
 
-RealQA's complete change-scoped CI contract is indexed by the DevHud project,
-app, server, and API documents above. It retains all existing aggregate checks,
-builds only local non-root multi-architecture server images and run-scoped
-desktop/Chrome fixtures, verifies SPDX and ephemeral Sigstore/provenance
-definitions, and grants no mobile, production identity, registration,
-publication, provisioning, deployment, or catalog authority.
+Deck and RealQA's complete change-scoped CI contracts are indexed by the DevHud
+project, app, server, and API documents above. They retain all existing
+aggregate checks, build only local non-root multi-architecture server images
+and run-scoped fixtures/reports, verify SPDX and ephemeral
+Sigstore/provenance definitions, define no numeric performance SLO, and grant
+no production identity, registration, publication, provisioning, deployment,
+or catalog authority.

@@ -1207,8 +1207,10 @@ jobs:
               - pnpm-workspace.yaml
               - rust-toolchain
               - rust-toolchain.toml
+              - turbo.json
               - apps/devhud/native-widgets/**
               - apps/devhud/package.json
+              - apps/devhud/turbo.json
               - apps/devhud/scripts/check-widget-artifacts.mjs
               - apps/devhud/scripts/mobile.mjs
               - apps/devhud/scripts/process.mjs
@@ -1268,7 +1270,7 @@ jobs:
             "build-tools;36.0.0"
       - name: Test the Android widget foundation, plugin, and release artifact
         if: ${{ steps.gate.outputs.run == 'true' }}
-        run: pnpm --filter devhud test:widget:android
+        run: pnpm ci:deck:widget:android
 
   devhud-widget-ios:
     name: DevHud Widget iOS
@@ -1294,8 +1296,10 @@ jobs:
               - pnpm-workspace.yaml
               - rust-toolchain
               - rust-toolchain.toml
+              - turbo.json
               - apps/devhud/native-widgets/**
               - apps/devhud/package.json
+              - apps/devhud/turbo.json
               - apps/devhud/scripts/check-widget-artifacts.mjs
               - apps/devhud/scripts/mobile.mjs
               - apps/devhud/scripts/process.mjs
@@ -1346,7 +1350,7 @@ jobs:
         run: brew install xcodegen
       - name: Test the iOS widget foundation, plugin, and release artifact
         if: ${{ steps.gate.outputs.run == 'true' }}
-        run: pnpm --filter devhud test:widget:ios
+        run: pnpm ci:deck:widget:ios
 
   node-binpm-docs-test:
     name: Node binpm-docs test
@@ -1643,6 +1647,680 @@ jobs:
           DELIDEV_DEVHUD_APPLE_TEAM_ID: TESTONLY01
           DELIDEV_DEVHUD_ANDROID_CERTIFICATE_SHA256: "00112233445566778899AABBCCDDEEFF00112233445566778899AABBCCDDEEFF"
         run: pnpm --filter delidev-app test:browser
+
+  deck-changes:
+    name: Deck change scopes
+    runs-on: ubuntu-latest
+    outputs:
+      proto: ${{ steps.filter.outputs.proto }}
+      server: ${{ steps.filter.outputs.server }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      native: ${{ steps.filter.outputs.native }}
+      widgets: ${{ steps.filter.outputs.widgets }}
+      reports: ${{ steps.filter.outputs.reports }}
+      packaging: ${{ steps.filter.outputs.packaging }}
+      safety: ${{ steps.filter.outputs.safety }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Resolve Deck scopes
+        id: filter
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            proto:
+              - .github/workflows/CI.yml
+              - .nvmrc
+              - package.json
+              - pnpm-lock.yaml
+              - pnpm-workspace.yaml
+              - turbo.json
+              - go.mod
+              - go.sum
+              - protos/buf.yaml
+              - protos/devhud-deck/**
+              - scripts/check-proto-component.sh
+              - scripts/generate-proto-component.sh
+              - scripts/lib/go-proto-tools.sh
+            server:
+              - .github/workflows/CI.yml
+              - package.json
+              - go.mod
+              - go.sum
+              - protos/delibase/gen/go/**
+              - protos/devhud-deck/gen/go/**
+              - servers/internal/**
+              - servers/devhud-deck/**
+            frontend:
+              - .github/workflows/CI.yml
+              - .nvmrc
+              - package.json
+              - pnpm-lock.yaml
+              - pnpm-workspace.yaml
+              - turbo.json
+              - apps/devhud/package.json
+              - apps/devhud/turbo.json
+              - apps/devhud/rsbuild.config.ts
+              - apps/devhud/tsconfig.json
+              - apps/devhud/vitest.config.ts
+              - apps/devhud/src/**
+              - apps/devhud/public/**
+              - protos/devhud-deck/gen/ts/**
+              - protos/devhud-deck/index.ts
+              - protos/devhud-deck/package.json
+              - protos/devhud-deck/tsconfig.json
+            native:
+              - .github/workflows/CI.yml
+              - .nvmrc
+              - Cargo.toml
+              - Cargo.lock
+              - package.json
+              - pnpm-lock.yaml
+              - pnpm-workspace.yaml
+              - rust-toolchain
+              - turbo.json
+              - apps/devhud/package.json
+              - apps/devhud/turbo.json
+              - apps/devhud/scripts/check-contracts.mjs
+              - apps/devhud/scripts/check-mobile-contracts.mjs
+              - apps/devhud/src/**
+              - apps/devhud/src-tauri/Cargo.toml
+              - apps/devhud/src-tauri/auth-bridge/**
+              - apps/devhud/src-tauri/capabilities/**
+              - apps/devhud/src-tauri/gen/android/**
+              - apps/devhud/src-tauri/gen/apple/**
+              - apps/devhud/src-tauri/src/auth.rs
+              - apps/devhud/src-tauri/src/auth_native.rs
+              - apps/devhud/src-tauri/src/deck_transport.rs
+              - apps/devhud/src-tauri/src/lib.rs
+              - apps/devhud/src-tauri/tauri.conf.json
+              - apps/devhud/src-tauri/tauri.*.conf.json
+              - protos/devhud-deck/gen/ts/**
+            widgets:
+              - .github/workflows/CI.yml
+              - .nvmrc
+              - Cargo.toml
+              - Cargo.lock
+              - package.json
+              - pnpm-lock.yaml
+              - pnpm-workspace.yaml
+              - rust-toolchain
+              - turbo.json
+              - apps/devhud/native-widgets/**
+              - apps/devhud/package.json
+              - apps/devhud/turbo.json
+              - apps/devhud/scripts/check-widget-artifacts.mjs
+              - apps/devhud/scripts/widget-native.mjs
+              - apps/devhud/src/deck/**
+              - apps/devhud/src-tauri/widget-bridge/**
+              - servers/devhud-deck/internal/database/notifications*
+              - servers/devhud-deck/internal/service/device*
+              - servers/devhud-deck/internal/service/notifications.go
+            reports:
+              - .github/workflows/CI.yml
+              - package.json
+              - scripts/build-deck-ci-reports.mjs
+              - apps/devhud/native-widgets/**
+              - servers/devhud-deck/internal/contracts/**
+              - servers/devhud-deck/internal/github/**
+              - servers/devhud-deck/internal/query/**
+              - servers/devhud-deck/internal/service/**
+              - docs/servers-devhud-deck-foundation.md
+            packaging:
+              - .github/workflows/CI.yml
+              - go.mod
+              - go.sum
+              - protos/delibase/gen/go/**
+              - protos/devhud-deck/gen/go/**
+              - servers/internal/**
+              - servers/devhud-deck/**
+            safety:
+              - .github/workflows/CI.yml
+              - .nvmrc
+              - AGENTS.md
+              - apps/AGENTS.md
+              - servers/AGENTS.md
+              - protos/AGENTS.md
+              - package.json
+              - pnpm-lock.yaml
+              - pnpm-workspace.yaml
+              - turbo.json
+              - scripts/build-deck-ci-reports.mjs
+              - scripts/check-deck-ci-safety.mjs
+              - apps/devhud/**
+              - servers/delibase/catalog.json
+              - servers/devhud-deck/**
+              - protos/devhud-deck/**
+              - docs/project-devhud.md
+              - docs/apps-devhud-foundation.md
+              - docs/servers-devhud-deck-foundation.md
+              - docs/protos-devhud-deck-api-contract.md
+              - README.md
+              - docs/README.md
+
+      - name: Explain full manual validation
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        run: echo "Manual dispatch runs every Deck validation scope"
+
+  deck-proto:
+    name: Deck devhud.deck.v1 contract
+    runs-on: ubuntu-latest
+    needs: deck-changes
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.deck-changes.outputs.proto == 'true' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Resolve immutable Deck compatibility baseline
+        shell: bash
+        env:
+          BASELINE_COMMIT: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
+        run: |
+          set -euo pipefail
+          descriptor=protos/devhud-deck/devhud.deck.v1.binpb
+          if [ -n "${BASELINE_COMMIT}" ] && ! [[ "${BASELINE_COMMIT}" =~ ^0+$ ]]; then
+            if git cat-file -e "${BASELINE_COMMIT}:${descriptor}"; then
+              baseline="${RUNNER_TEMP}/devhud.deck.v1.binpb"
+              git show "${BASELINE_COMMIT}:${descriptor}" > "${baseline}"
+              echo "DEVHUD_DECK_PROTO_BASELINE=${baseline}" >> "${GITHUB_ENV}"
+            elif git cat-file -e "${BASELINE_COMMIT}^{commit}"; then
+              echo "The prior commit has no Deck descriptor; using the checked-in initial baseline"
+            else
+              echo "The prior event commit is unavailable: ${BASELINE_COMMIT}" >&2
+              exit 1
+            fi
+          fi
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.26.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check Deck compatibility and two-pass reproducibility
+        run: pnpm ci:deck:proto
+
+  deck-go-quality:
+    name: Deck Go format, vet, and unit
+    runs-on: ubuntu-latest
+    needs: deck-changes
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.deck-changes.outputs.server == 'true' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.26.2
+
+      - name: Check Deck formatting
+        shell: bash
+        run: |
+          set -euo pipefail
+          unformatted="$(gofmt -l servers/devhud-deck protos/devhud-deck)"
+          if [ -n "${unformatted}" ]; then
+            printf '%s\n' "${unformatted}"
+            exit 1
+          fi
+
+      - name: Vet Deck server
+        run: go vet ./servers/devhud-deck/...
+
+      - name: Run Deck unit suite
+        run: pnpm ci:deck:go:unit
+
+  deck-postgres:
+    name: Deck PostgreSQL, migrations, concurrency, and sqlc
+    runs-on: ubuntu-latest
+    needs: deck-changes
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.deck-changes.outputs.server == 'true' }}
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: deck
+          POSTGRES_PASSWORD: deck_test
+          POSTGRES_DB: deck
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U deck -d deck"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Install sqlc
+        run: go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.30.0
+
+      - name: Check generated sqlc output
+        run: |
+          servers/devhud-deck/scripts/generate-sqlc.sh
+          git diff --exit-code -- servers/devhud-deck/internal/database/dbgen
+
+      - name: Run ordered migration and PostgreSQL concurrency fixtures
+        env:
+          DECK_TEST_DATABASE_URL: postgres://deck:deck_test@127.0.0.1:5432/deck?sslmode=disable
+        run: go test -p 1 -count=1 ./servers/devhud-deck/db/migrations ./servers/devhud-deck/internal/database
+
+  deck-github-fixtures:
+    name: Deck GitHub App fixtures
+    runs-on: ubuntu-latest
+    needs: deck-changes
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.deck-changes.outputs.server == 'true' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.26.2
+
+      - name: Validate credential-free App, callback, webhook, permission, and rate-limit fixtures
+        run: pnpm ci:deck:go:github-fixtures
+
+  deck-no-server-scheduler:
+    name: Deck active-client-only refresh
+    runs-on: ubuntu-latest
+    needs: deck-changes
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.deck-changes.outputs.server == 'true' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.26.2
+
+      - name: Assert no scheduler, worker, detached continuation, or background authorization
+        run: pnpm ci:deck:go:no-scheduler
+
+  deck-refresh-billing-races:
+    name: Deck refresh, billing, notification, and race fixtures
+    runs-on: ubuntu-latest
+    needs: deck-changes
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.deck-changes.outputs.server == 'true' }}
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: deck
+          POSTGRES_PASSWORD: deck_test
+          POSTGRES_DB: deck
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U deck -d deck"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.26.2
+
+      - name: Run exact refresh, live billing, coalescing, notification, and race fixtures
+        env:
+          DECK_TEST_DATABASE_URL: postgres://deck:deck_test@127.0.0.1:5432/deck?sslmode=disable
+        run: pnpm ci:deck:go:refresh-race
+
+  deck-frontend:
+    name: Deck frontend typecheck, lint, unit, accessibility, and build
+    runs-on: ubuntu-latest
+    needs: deck-changes
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.deck-changes.outputs.frontend == 'true' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.26.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate complete Deck frontend
+        run: pnpm ci:deck:frontend
+
+  deck-auth-smoke:
+    name: Deck desktop and mobile auth smoke
+    runs-on: ubuntu-latest
+    needs: deck-changes
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.deck-changes.outputs.native == 'true' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: nightly-2026-01-01
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.26.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Test desktop/mobile auth, closed Deck transport, and portable smoke paths
+        run: pnpm ci:deck:auth-smoke
+
+  deck-widget-policy:
+    name: Deck DND, privacy, snapshot, and widget policy
+    runs-on: ubuntu-latest
+    needs: deck-changes
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.deck-changes.outputs.widgets == 'true' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.26.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Test client DND, privacy, cold-action, and encrypted snapshot policy
+        run: pnpm ci:deck:widget-policy
+
+      - name: Test server-authored bounded widget snapshots
+        run: |
+          go test -count=1 ./servers/devhud-deck/internal/database -run 'TestWidgetSnapshotPullRequestItemsAreBounded'
+          go test -count=1 ./servers/devhud-deck/internal/service -run 'Test(DeviceWriteRejectsMoreThanTwentyWidgets|PreserveWidgetSnapshotsKeepsOnlyUnchangedConfigurations|NotificationTransitionsAreTypedAndPreferenceFiltered)'
+
+  deck-observation-reports:
+    name: Deck latency, query, mutation, and widget-size reports
+    runs-on: ubuntu-latest
+    needs: deck-changes
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.deck-changes.outputs.reports == 'true' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.26.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Exercise each observation fixture
+        run: |
+          go test -count=1 ./servers/devhud-deck/internal/contracts
+          go test -count=1 ./servers/devhud-deck/internal/query
+          go test -count=1 ./servers/devhud-deck/internal/github -run 'Test(Mutation|Search|Candidate|Snapshot|Assignee|Label|Merge)'
+          go test -count=1 ./servers/devhud-deck/internal/database -run 'TestWidgetSnapshotPullRequestItemsAreBounded'
+
+      - name: Prove deterministic, content-free output with no numeric SLO
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/build-deck-ci-reports.mjs deck-reports-first
+          node scripts/build-deck-ci-reports.mjs deck-reports-second
+          diff -ru deck-reports-first deck-reports-second
+          for report in latency.json query.json mutation.json widget-size.json; do
+            jq -e '.artifactOnly and (.containsUserContent | not) and (.containsCredentials | not) and (.numericSlo == null)' "deck-reports-first/${report}" >/dev/null
+          done
+
+      - name: Upload deterministic Deck observations
+        uses: actions/upload-artifact@v7
+        with:
+          name: deck-observation-reports
+          path: deck-reports-first
+          if-no-files-found: error
+          overwrite: true
+
+  deck-server-images:
+    name: Deck non-root image fixture (${{ matrix.platform }})
+    runs-on: ubuntu-latest
+    needs: deck-changes
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.deck-changes.outputs.packaging == 'true' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            arch: amd64
+          - platform: linux/arm64
+            arch: arm64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Build local architecture fixture
+        shell: bash
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          docker buildx build \
+            --platform "${PLATFORM}" \
+            --output type=docker \
+            --build-arg VERSION=ci-fixture \
+            --build-arg "REVISION=${GITHUB_SHA}" \
+            --build-arg SOURCE=https://github.com/delinoio/oss \
+            --file servers/devhud-deck/Dockerfile \
+            --tag "devhud-deck:ci-${ARCH}" \
+            .
+
+      - name: Validate non-root image contents and metadata
+        env:
+          DECK_TEST_IMAGE: devhud-deck:ci-${{ matrix.arch }}
+          DECK_TEST_BUILD_IMAGE: "false"
+          DECK_TEST_EXPECTED_VERSION: ci-fixture
+          DECK_TEST_EXPECTED_REVISION: ${{ github.sha }}
+        run: servers/devhud-deck/scripts/test-image.sh
+
+      - name: Generate platform SPDX SBOM
+        uses: anchore/sbom-action@v0.24.0
+        with:
+          image: devhud-deck:ci-${{ matrix.arch }}
+          format: spdx-json
+          output-file: deck-${{ matrix.arch }}.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v4.1.1
+
+      - name: Validate local SBOM, signature, and provenance statement
+        shell: bash
+        env:
+          ARCH: ${{ matrix.arch }}
+          COSIGN_PASSWORD: deck-ci-fixture-only
+        run: |
+          set -euo pipefail
+          sbom="deck-${ARCH}.spdx.json"
+          jq -e '.spdxVersion | startswith("SPDX-")' "${sbom}" >/dev/null
+          image_id="$(docker image inspect --format '{{.Id}}' "devhud-deck:ci-${ARCH}")"
+          image_digest="${image_id#sha256:}"
+          jq -n \
+            --arg digest "${image_digest}" \
+            --arg arch "${ARCH}" \
+            '{
+              _type: "https://in-toto.io/Statement/v1",
+              subject: [{name: "devhud-deck-ci-fixture", digest: {sha256: $digest}}],
+              predicateType: "https://slsa.dev/provenance/v1",
+              predicate: {buildDefinition: {buildType: "https://deli.dev/deck/ci-fixture/v1", externalParameters: {platform: ("linux/" + $arch)}}, runDetails: {builder: {id: "github-actions-ci-fixture"}}}
+            }' > "deck-${ARCH}.provenance.json"
+          prefix="${RUNNER_TEMP}/deck-${ARCH}-fixture"
+          signing_config="${RUNNER_TEMP}/deck-${ARCH}-fixture-signing-config.json"
+          cosign generate-key-pair --output-key-prefix "${prefix}"
+          cosign signing-config create --out "${signing_config}"
+          cosign sign-blob --yes --signing-config "${signing_config}" --key "${prefix}.key" --bundle "deck-${ARCH}.sbom.sigstore.json" "${sbom}"
+          cosign verify-blob --insecure-ignore-tlog=true --key "${prefix}.pub" --bundle "deck-${ARCH}.sbom.sigstore.json" "${sbom}"
+          cosign sign-blob --yes --signing-config "${signing_config}" --key "${prefix}.key" --bundle "deck-${ARCH}.provenance.sigstore.json" "deck-${ARCH}.provenance.json"
+          cosign verify-blob --insecure-ignore-tlog=true --key "${prefix}.pub" --bundle "deck-${ARCH}.provenance.sigstore.json" "deck-${ARCH}.provenance.json"
+          cp "${prefix}.pub" "deck-${ARCH}.fixture.pub"
+          go test -count=1 -run TestSupplyChainDefinitionIsFixtureOnlyAndFailClosed ./servers/devhud-deck/artifacts
+
+      - name: Upload image validation fixtures
+        uses: actions/upload-artifact@v7
+        with:
+          name: deck-image-${{ matrix.arch }}-fixtures
+          path: |
+            deck-${{ matrix.arch }}.spdx.json
+            deck-${{ matrix.arch }}.sbom.sigstore.json
+            deck-${{ matrix.arch }}.provenance.json
+            deck-${{ matrix.arch }}.provenance.sigstore.json
+            deck-${{ matrix.arch }}.fixture.pub
+          if-no-files-found: error
+          overwrite: true
+
+  deck-safety:
+    name: Deck inactive-production safety boundary
+    runs-on: ubuntu-latest
+    needs: deck-changes
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.deck-changes.outputs.safety == 'true' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.26.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate no publication, deployment, production identity, catalog, or content authority
+        run: |
+          pnpm ci:deck:safety
+          go test -count=1 ./servers/devhud-deck/artifacts ./servers/devhud-deck/internal/config ./servers/devhud-deck/internal/contracts ./servers/devhud-deck/internal/authn
+          pnpm ci:deck:go:github-fixtures
 
   realqa-changes:
     name: RealQA change scopes
@@ -2491,6 +3169,19 @@ jobs:
       - node-nodeup-docs-test
       - node-public-docs-test
       - node-delidev-app
+      - deck-changes
+      - deck-proto
+      - deck-go-quality
+      - deck-postgres
+      - deck-github-fixtures
+      - deck-no-server-scheduler
+      - deck-refresh-billing-races
+      - deck-frontend
+      - deck-auth-smoke
+      - deck-widget-policy
+      - deck-observation-reports
+      - deck-server-images
+      - deck-safety
       - realqa-changes
       - realqa-proto
       - realqa-go-quality

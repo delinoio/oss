@@ -45,6 +45,24 @@
     "check:widget-artifacts": {
       "cache": false
     },
+    "ci:deck:frontend": {
+      "cache": false,
+      "outputs": ["dist/**"]
+    },
+    "ci:deck:auth-smoke": {
+      "cache": false,
+      "outputs": ["dist/**"]
+    },
+    "ci:deck:widget-policy": {
+      "cache": false
+    },
+    "ci:deck:widget:android": {
+      "cache": false,
+      "passThroughEnv": ["ANDROID_HOME", "ANDROID_SDK_ROOT"]
+    },
+    "ci:deck:widget:ios": {
+      "cache": false
+    },
     "ci:realqa:frontend": {
       "cache": false,
       "outputs": ["dist/**"]
