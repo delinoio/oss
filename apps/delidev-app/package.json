@@ -39,7 +39,7 @@
     "@axe-core/playwright": "4.11.1",
     "@eslint/js": "9.39.2",
     "@playwright/test": "1.61.1",
-    "@rsbuild/core": "2.1.9",
+    "@rsbuild/core": "2.1.10",
     "@rsbuild/plugin-react": "2.1.0",
     "@testing-library/jest-dom": "6.9.1",
     "@testing-library/react": "16.3.2",
