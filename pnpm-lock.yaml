@@ -57,7 +57,7 @@ importers:
   apps/binpm-docs:
     devDependencies:
       '@rspress/core':
-        specifier: ^2.0.0
+        specifier: ^2.0.14
         version: 2.0.14(@rspack/core@2.1.8(@swc/helpers@0.5.23))(@types/mdast@4.0.4)(@types/react@19.2.14)(micromark-util-types@2.0.2)(micromark@4.0.2)
 
   apps/delidev-app:
@@ -312,13 +312,13 @@ importers:
   apps/nodeup-docs:
     devDependencies:
       '@rspress/core':
-        specifier: ^2.0.0
+        specifier: ^2.0.14
         version: 2.0.14(@rspack/core@2.1.8(@swc/helpers@0.5.23))(@types/mdast@4.0.4)(@types/react@19.2.14)(micromark-util-types@2.0.2)(micromark@4.0.2)
 
   apps/public-docs:
     devDependencies:
       '@rspress/core':
-        specifier: ^2.0.0
+        specifier: ^2.0.14
         version: 2.0.14(@rspack/core@2.1.8(@swc/helpers@0.5.23))(@types/mdast@4.0.4)(@types/react@19.2.14)(micromark-util-types@2.0.2)(micromark@4.0.2)
 
   protos/delibase:
@@ -1336,12 +1336,6 @@ packages:
   '@napi-rs/wasm-runtime@0.2.12':
     resolution: {integrity: sha512-ZVWUcfwY4E/yPitQJl481FjFo3K22D6qF0DuFH6Y/nbnE11GY5uguDxZMGXPQ8WQ0128MXQD7TnfHyK4oWoIJQ==}
 
-  '@napi-rs/wasm-runtime@1.1.4':
-    resolution: {integrity: sha512-3NQNNgA1YSlJb/kMH1ildASP9HW7/7kYnRI2szWJaofaS1hWmbGI4H+d3+22aGzXXN9IJ+n+GiFVcGipJP18ow==}
-    peerDependencies:
-      '@emnapi/core': ^1.7.1
-      '@emnapi/runtime': ^1.7.1
-
   '@napi-rs/wasm-runtime@1.1.6':
     resolution: {integrity: sha512-ZLv/JdUfkvOy9eCnnBaGfiO+XimbjebAeO+MRQqD/B+FR1tnRN0tpKSJHRbE8sFfS6aqsXZ67TQjfwfsxULVbg==}
     peerDependencies:
@@ -1537,16 +1531,6 @@ packages:
   '@rolldown/pluginutils@1.0.1':
     resolution: {integrity: sha512-2j9bGt5Jh8hj+vPtgzPtl72j0yRxHAyumoo6TNfAjsLB04UtpSvPbPcDcBMxz7n+9CYB0c1GxQFxYRg2jimqGw==}
 
-  '@rsbuild/core@2.0.15':
-    resolution: {integrity: sha512-O8vmMhZu1YImO6jOqt/K/vlJSvkq7UtSq5YM1DIlcEd9LW8Gf6/dkQ1B2KPI6F+hSMFBnTTTumdcIowSLCw97g==}
-    engines: {node: ^20.19.0 || >=22.12.0}
-    hasBin: true
-    peerDependencies:
-      core-js: '>= 3.0.0'
-    peerDependenciesMeta:
-      core-js:
-        optional: true
-
   '@rsbuild/core@2.1.10':
     resolution: {integrity: sha512-lwxC5w88U2AMv6aNwG3VH7+AV33N4JJQjD//egVWFsMbV+OE/bnfCsurSpX8s3lGyRYkJMwUVN+YXMbmmYZFfw==}
     engines: {node: ^20.19.0 || >=22.12.0}
@@ -1573,19 +1557,9 @@ packages:
       '@rsbuild/core':
         optional: true
 
-  '@rspack/binding-darwin-arm64@2.0.8':
-    resolution: {integrity: sha512-vCgbgH7B7qom+uID+RCZsTCOYFb9wC4/4+1U6rMfytrXGVJ72eNQs2tbdjOl0lb18CT3N/n+VkWynUiLk84GwA==}
-    cpu: [arm64]
-    os: [darwin]
-
   '@rspack/binding-darwin-arm64@2.1.8':
     resolution: {integrity: sha512-kia+eWtyWPvR4ntg1bWYoVU8nLPbUg2fG3zgBEocsTcsh5ZENSiEPxEKymDgMyIMONUqj611E0775cdUBoNmqw==}
     cpu: [arm64]
-    os: [darwin]
-
-  '@rspack/binding-darwin-x64@2.0.8':
-    resolution: {integrity: sha512-satPm2PD4B7jDTVlVAdvMVdUszwLvWUEnUDzLb77mvVkezKNDZmuhb+e8s+FfKs8hJpNbZ9VAejuA2rr8o985w==}
-    cpu: [x64]
     os: [darwin]
 
   '@rspack/binding-darwin-x64@2.1.8':
@@ -1593,18 +1567,8 @@ packages:
     cpu: [x64]
     os: [darwin]
 
-  '@rspack/binding-linux-arm64-gnu@2.0.8':
-    resolution: {integrity: sha512-pSI+npPQE/uDtiboqvcOIRJbEV2+B+H1xffmko/gw50la92oTUW60kVULFwsb6L0+GVCzIcwX3yq60GtYIn+Ug==}
-    cpu: [arm64]
-    os: [linux]
-
   '@rspack/binding-linux-arm64-gnu@2.1.8':
     resolution: {integrity: sha512-KLniMc9GzhKpVqhPzaJo3KJwzdAllXVVqZIk/uL1QipXOxs57fgM4u7IexKPFVla0o/u1PQG/Ah2YLDmda24Ow==}
-    cpu: [arm64]
-    os: [linux]
-
-  '@rspack/binding-linux-arm64-musl@2.0.8':
-    resolution: {integrity: sha512-igjJ43yxWQ72GZqjDDZSSHax9/Vg+6rLMmOvFglTJUkQpB4Tyvu/YjW+WRjYj2xRw6blOjLxUSJWASvuSqqlvg==}
     cpu: [arm64]
     os: [linux]
 
@@ -1623,18 +1587,8 @@ packages:
     cpu: [riscv64]
     os: [linux]
 
-  '@rspack/binding-linux-x64-gnu@2.0.8':
-    resolution: {integrity: sha512-zrkoEOnqj1hOEBO5T2I/2Ts2HSJsYFh1qXwMpK4dMJFGGNWDfNeUa6/LF5uq3VINF3JUl7RL47AgrucoSZJXPA==}
-    cpu: [x64]
-    os: [linux]
-
   '@rspack/binding-linux-x64-gnu@2.1.8':
     resolution: {integrity: sha512-EyegohSx0BJRqieCg9f/caCqFARRWkqI5hwJt6k530MoOTLeq8I3vsbeg24/2MktwIC1dmJi8bl0+WhPKQs4eQ==}
-    cpu: [x64]
-    os: [linux]
-
-  '@rspack/binding-linux-x64-musl@2.0.8':
-    resolution: {integrity: sha512-6CtDaGZjNDvJd9TBp7a9zABbrPORO21W96+3ZcGBn0YNUPUk4ARxIxrTTpeJ/1F41QDM8AYIkGDdqEYMqTYBsA==}
     cpu: [x64]
     os: [linux]
 
@@ -1643,27 +1597,13 @@ packages:
     cpu: [x64]
     os: [linux]
 
-  '@rspack/binding-wasm32-wasi@2.0.8':
-    resolution: {integrity: sha512-Yf4SiqTUroT5Ju+te0YAY2xxKOb35tECsO21v7hYyGa705wrgoAK/MmF7enOvs9GR1iZIqgiLD/wxsIxl8GjJw==}
-    cpu: [wasm32]
-
   '@rspack/binding-wasm32-wasi@2.1.8':
     resolution: {integrity: sha512-om7GAKWAU3lcSvbCon2m7mzw8v9OTrO2LW2MZ1lGe/uVJJmwGGkl9HVoXFyWFLrN6YVFyx8iP+AkN4owDWB9Cw==}
     cpu: [wasm32]
 
-  '@rspack/binding-win32-arm64-msvc@2.0.8':
-    resolution: {integrity: sha512-8NCuiQsAhXrwRBy57QZoypqrws/zLBkaQVGiB8hksr6v++8hNigNjqpQARLbd0iyMuHsQQ++8+auGk6xlDXmzw==}
-    cpu: [arm64]
-    os: [win32]
-
   '@rspack/binding-win32-arm64-msvc@2.1.8':
     resolution: {integrity: sha512-WDnsP/SUb9zbxyGX9XjPw5AXrX86u5oidn0MDdfJduOOqdCSpHwmRjlQ8NUJhbBq9WqVJMFlcab7NwZVWX/yyg==}
     cpu: [arm64]
-    os: [win32]
-
-  '@rspack/binding-win32-ia32-msvc@2.0.8':
-    resolution: {integrity: sha512-bxiekytbX7V9KFAra+HkwtNWC6pYfHEBBZFpiT0xUs3mCFOmAAFVBsBSQsoCP9AdCEXoMAvNdnrHNw3iov4OZw==}
-    cpu: [ia32]
     os: [win32]
 
   '@rspack/binding-win32-ia32-msvc@2.1.8':
@@ -1671,33 +1611,13 @@ packages:
     cpu: [ia32]
     os: [win32]
 
-  '@rspack/binding-win32-x64-msvc@2.0.8':
-    resolution: {integrity: sha512-7zPs8YCe/ZVJTwd+5lpB0CP0tkn2pONf/T1ycmVY76u21Nrwt8mXQGc/2yH2eWP4B7fikYBr3hGr7mpR2fajqQ==}
-    cpu: [x64]
-    os: [win32]
-
   '@rspack/binding-win32-x64-msvc@2.1.8':
     resolution: {integrity: sha512-b7sA5eB64vo2mbsuc//MOYzVLeCKHPn0dfP/GmNEoHdWbhRgZ/orZLWurYMQj04ELTLW6YCJEy59g5KRzNYHfw==}
     cpu: [x64]
     os: [win32]
 
-  '@rspack/binding@2.0.8':
-    resolution: {integrity: sha512-3uZ+y8aQxq33ty2srMxg2Nu0XuBI6vVrG50rkDaXqwWqOohfgGUSfFuQK7EnSUNy4aFUQlCG6NHialQHJov0wg==}
-
   '@rspack/binding@2.1.8':
     resolution: {integrity: sha512-tmAyHzDbPiy8V7HvQqtuPsbs6dPgwV0YjzW5XrPRV9gzf+Hdm7pvsZJKE1QKO9WV5RuvGYav98xIX6O+abZxzQ==}
-
-  '@rspack/core@2.0.8':
-    resolution: {integrity: sha512-+NLGJf8gZxihDmMFzjlly3toc2SMjeDmuvz0/Cai9AMdV4F+Pqcnt2BA9V4e3SY2jmhJQtPwgyyLtR1RiJO77g==}
-    engines: {node: ^20.19.0 || >=22.12.0}
-    peerDependencies:
-      '@module-federation/runtime-tools': ^0.24.1 || ^2.0.0
-      '@swc/helpers': ^0.5.23
-    peerDependenciesMeta:
-      '@module-federation/runtime-tools':
-        optional: true
-      '@swc/helpers':
-        optional: true
 
   '@rspack/core@2.1.8':
     resolution: {integrity: sha512-na1kyA6Mj8/LWw9O3A8NsrG9rNKN3Iq2WiXrEuIwsU5r/Nl/evm3hO7bWKHxgsRyydI6W7okwx3MXgf8rzel6g==}
@@ -5350,29 +5270,12 @@ packages:
     peerDependencies:
       react: '>=19'
 
-  react-router-dom@7.18.0:
-    resolution: {integrity: sha512-Fi0yY6kgtKae/Th2xibdWK0KSdYZ4B53Gyf6wRtomOKWgpNm7H7+DyfDhncdz9FKbpS+1jmDhg3F4WoGJ+yFOA==}
-    engines: {node: '>=20.0.0'}
-    peerDependencies:
-      react: '>=18'
-      react-dom: '>=18'
-
   react-router-dom@7.18.1:
     resolution: {integrity: sha512-KaZh+X/6UtEp28x51AUYZDMg9NGoz2ja3dNHa+ta/tk40vCzKhQ/RypCWBMLbmDr6//E24Vv5uPsrqXFozdkAg==}
     engines: {node: '>=20.0.0'}
     peerDependencies:
       react: '>=18'
       react-dom: '>=18'
-
-  react-router@7.18.0:
-    resolution: {integrity: sha512-pTTGt8J+ji1NOmYnjzT+bAJy/1zD+Jp4ziO6cL7T3ZLvXKtusO7BpFqlRXitqpcPVqllsIXFHRMt+2/k3Xn6HQ==}
-    engines: {node: '>=20.0.0'}
-    peerDependencies:
-      react: '>=18'
-      react-dom: '>=18'
-    peerDependenciesMeta:
-      react-dom:
-        optional: true
 
   react-router@7.18.1:
     resolution: {integrity: sha512-GDLgg3i3uM0aeJO3Fm+TCS+sDQ7gu12T6x0qdTEzcwqEfleci7JwugVNIF3U//0FWKnJT7ptG+20B2jfDqnZAg==}
@@ -7897,13 +7800,6 @@ snapshots:
       '@tybys/wasm-util': 0.10.1
     optional: true
 
-  '@napi-rs/wasm-runtime@1.1.4(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0)':
-    dependencies:
-      '@emnapi/core': 1.10.0
-      '@emnapi/runtime': 1.10.0
-      '@tybys/wasm-util': 0.10.1
-    optional: true
-
   '@napi-rs/wasm-runtime@1.1.6(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)':
     dependencies:
       '@emnapi/core': 1.11.1
@@ -8137,13 +8033,6 @@ snapshots:
 
   '@rolldown/pluginutils@1.0.1': {}
 
-  '@rsbuild/core@2.0.15':
-    dependencies:
-      '@rspack/core': 2.0.8(@swc/helpers@0.5.23)
-      '@swc/helpers': 0.5.23
-    transitivePeerDependencies:
-      - '@module-federation/runtime-tools'
-
   '@rsbuild/core@2.1.10':
     dependencies:
       '@rspack/core': 2.1.8(@swc/helpers@0.5.23)
@@ -8151,12 +8040,12 @@ snapshots:
     transitivePeerDependencies:
       - '@module-federation/runtime-tools'
 
-  '@rsbuild/plugin-react@2.0.1(@rsbuild/core@2.0.15)(@rspack/core@2.1.8(@swc/helpers@0.5.23))':
+  '@rsbuild/plugin-react@2.0.1(@rsbuild/core@2.1.10)(@rspack/core@2.1.8(@swc/helpers@0.5.23))':
     dependencies:
       '@rspack/plugin-react-refresh': 2.0.0(@rspack/core@2.1.8(@swc/helpers@0.5.23))(react-refresh@0.18.0)
       react-refresh: 0.18.0
     optionalDependencies:
-      '@rsbuild/core': 2.0.15
+      '@rsbuild/core': 2.1.10
     transitivePeerDependencies:
       - '@rspack/core'
 
@@ -8169,25 +8058,13 @@ snapshots:
     transitivePeerDependencies:
       - '@rspack/core'
 
-  '@rspack/binding-darwin-arm64@2.0.8':
-    optional: true
-
   '@rspack/binding-darwin-arm64@2.1.8':
-    optional: true
-
-  '@rspack/binding-darwin-x64@2.0.8':
     optional: true
 
   '@rspack/binding-darwin-x64@2.1.8':
     optional: true
 
-  '@rspack/binding-linux-arm64-gnu@2.0.8':
-    optional: true
-
   '@rspack/binding-linux-arm64-gnu@2.1.8':
-    optional: true
-
-  '@rspack/binding-linux-arm64-musl@2.0.8':
     optional: true
 
   '@rspack/binding-linux-arm64-musl@2.1.8':
@@ -8199,23 +8076,10 @@ snapshots:
   '@rspack/binding-linux-riscv64-musl@2.1.8':
     optional: true
 
-  '@rspack/binding-linux-x64-gnu@2.0.8':
-    optional: true
-
   '@rspack/binding-linux-x64-gnu@2.1.8':
     optional: true
 
-  '@rspack/binding-linux-x64-musl@2.0.8':
-    optional: true
-
   '@rspack/binding-linux-x64-musl@2.1.8':
-    optional: true
-
-  '@rspack/binding-wasm32-wasi@2.0.8':
-    dependencies:
-      '@emnapi/core': 1.10.0
-      '@emnapi/runtime': 1.10.0
-      '@napi-rs/wasm-runtime': 1.1.4(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0)
     optional: true
 
   '@rspack/binding-wasm32-wasi@2.1.8':
@@ -8225,36 +8089,14 @@ snapshots:
       '@napi-rs/wasm-runtime': 1.1.6(@emnapi/core@1.11.3)(@emnapi/runtime@1.11.3)
     optional: true
 
-  '@rspack/binding-win32-arm64-msvc@2.0.8':
-    optional: true
-
   '@rspack/binding-win32-arm64-msvc@2.1.8':
-    optional: true
-
-  '@rspack/binding-win32-ia32-msvc@2.0.8':
     optional: true
 
   '@rspack/binding-win32-ia32-msvc@2.1.8':
     optional: true
 
-  '@rspack/binding-win32-x64-msvc@2.0.8':
-    optional: true
-
   '@rspack/binding-win32-x64-msvc@2.1.8':
     optional: true
-
-  '@rspack/binding@2.0.8':
-    optionalDependencies:
-      '@rspack/binding-darwin-arm64': 2.0.8
-      '@rspack/binding-darwin-x64': 2.0.8
-      '@rspack/binding-linux-arm64-gnu': 2.0.8
-      '@rspack/binding-linux-arm64-musl': 2.0.8
-      '@rspack/binding-linux-x64-gnu': 2.0.8
-      '@rspack/binding-linux-x64-musl': 2.0.8
-      '@rspack/binding-wasm32-wasi': 2.0.8
-      '@rspack/binding-win32-arm64-msvc': 2.0.8
-      '@rspack/binding-win32-ia32-msvc': 2.0.8
-      '@rspack/binding-win32-x64-msvc': 2.0.8
 
   '@rspack/binding@2.1.8':
     optionalDependencies:
@@ -8270,12 +8112,6 @@ snapshots:
       '@rspack/binding-win32-arm64-msvc': 2.1.8
       '@rspack/binding-win32-ia32-msvc': 2.1.8
       '@rspack/binding-win32-x64-msvc': 2.1.8
-
-  '@rspack/core@2.0.8(@swc/helpers@0.5.23)':
-    dependencies:
-      '@rspack/binding': 2.0.8
-    optionalDependencies:
-      '@swc/helpers': 0.5.23
 
   '@rspack/core@2.1.8(@swc/helpers@0.5.23)':
     dependencies:
@@ -8299,8 +8135,8 @@ snapshots:
     dependencies:
       '@mdx-js/mdx': 3.1.1
       '@mdx-js/react': 3.1.1(@types/react@19.2.14)(react@19.2.7)
-      '@rsbuild/core': 2.0.15
-      '@rsbuild/plugin-react': 2.0.1(@rsbuild/core@2.0.15)(@rspack/core@2.1.8(@swc/helpers@0.5.23))
+      '@rsbuild/core': 2.1.10
+      '@rsbuild/plugin-react': 2.0.1(@rsbuild/core@2.1.10)(@rspack/core@2.1.8(@swc/helpers@0.5.23))
       '@rspress/shared': 2.0.14
       '@shikijs/rehype': 4.2.0
       '@types/unist': 3.0.3
@@ -8320,7 +8156,7 @@ snapshots:
       react-lazy-with-preload: 2.2.1
       react-reconciler: 0.33.0(react@19.2.7)
       react-render-to-markdown: 19.1.0(react@19.2.7)
-      react-router-dom: 7.18.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      react-router-dom: 7.18.1(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       rehype-external-links: 3.0.0
       rehype-raw: 7.0.0
       remark-cjk-friendly: 2.3.1(@types/mdast@4.0.4)(micromark-util-types@2.0.2)(micromark@4.0.2)(unified@11.0.5)
@@ -9967,9 +9803,9 @@ snapshots:
       '@typescript-eslint/eslint-plugin': 8.53.1(@typescript-eslint/parser@8.53.1(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3))(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3)
       '@typescript-eslint/parser': 8.53.1(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3)
       eslint: 9.39.4(jiti@2.6.1)
-      eslint-import-resolver-typescript: 3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.53.1(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3))(eslint@9.39.4(jiti@2.6.1)))(eslint@9.39.4(jiti@2.6.1))
+      eslint-import-resolver-typescript: 3.10.1(eslint-plugin-import@2.32.0)(eslint@9.39.4(jiti@2.6.1))
       eslint-plugin-expo: 0.1.4(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3)
-      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.53.1(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.53.1(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3))(eslint@9.39.4(jiti@2.6.1)))(eslint@9.39.4(jiti@2.6.1)))(eslint@9.39.4(jiti@2.6.1))
+      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.53.1(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.4(jiti@2.6.1))
       eslint-plugin-react: 7.37.5(eslint@9.39.4(jiti@2.6.1))
       eslint-plugin-react-hooks: 5.2.0(eslint@9.39.4(jiti@2.6.1))
       globals: 16.5.0
@@ -9987,7 +9823,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.53.1(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3))(eslint@9.39.4(jiti@2.6.1)))(eslint@9.39.4(jiti@2.6.1)):
+  eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0)(eslint@9.39.4(jiti@2.6.1)):
     dependencies:
       '@nolyfill/is-core-module': 1.0.39
       debug: 4.4.3
@@ -9998,18 +9834,18 @@ snapshots:
       tinyglobby: 0.2.15
       unrs-resolver: 1.11.1
     optionalDependencies:
-      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.53.1(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.53.1(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3))(eslint@9.39.4(jiti@2.6.1)))(eslint@9.39.4(jiti@2.6.1)))(eslint@9.39.4(jiti@2.6.1))
+      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.53.1(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.4(jiti@2.6.1))
     transitivePeerDependencies:
       - supports-color
 
-  eslint-module-utils@2.12.1(@typescript-eslint/parser@8.53.1(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3))(eslint-import-resolver-node@0.3.9)(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.53.1(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3))(eslint@9.39.4(jiti@2.6.1)))(eslint@9.39.4(jiti@2.6.1)))(eslint@9.39.4(jiti@2.6.1)):
+  eslint-module-utils@2.12.1(@typescript-eslint/parser@8.53.1(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3))(eslint-import-resolver-node@0.3.9)(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.4(jiti@2.6.1)):
     dependencies:
       debug: 3.2.7
     optionalDependencies:
       '@typescript-eslint/parser': 8.53.1(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3)
       eslint: 9.39.4(jiti@2.6.1)
       eslint-import-resolver-node: 0.3.9
-      eslint-import-resolver-typescript: 3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.53.1(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3))(eslint@9.39.4(jiti@2.6.1)))(eslint@9.39.4(jiti@2.6.1))
+      eslint-import-resolver-typescript: 3.10.1(eslint-plugin-import@2.32.0)(eslint@9.39.4(jiti@2.6.1))
     transitivePeerDependencies:
       - supports-color
 
@@ -10022,7 +9858,7 @@ snapshots:
       - supports-color
       - typescript
 
-  eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.53.1(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.53.1(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3))(eslint@9.39.4(jiti@2.6.1)))(eslint@9.39.4(jiti@2.6.1)))(eslint@9.39.4(jiti@2.6.1)):
+  eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.53.1(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.4(jiti@2.6.1)):
     dependencies:
       '@rtsao/scc': 1.1.0
       array-includes: 3.1.9
@@ -10033,7 +9869,7 @@ snapshots:
       doctrine: 2.1.0
       eslint: 9.39.4(jiti@2.6.1)
       eslint-import-resolver-node: 0.3.9
-      eslint-module-utils: 2.12.1(@typescript-eslint/parser@8.53.1(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3))(eslint-import-resolver-node@0.3.9)(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.53.1(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3))(eslint@9.39.4(jiti@2.6.1)))(eslint@9.39.4(jiti@2.6.1)))(eslint@9.39.4(jiti@2.6.1))
+      eslint-module-utils: 2.12.1(@typescript-eslint/parser@8.53.1(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3))(eslint-import-resolver-node@0.3.9)(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.4(jiti@2.6.1))
       hasown: 2.0.4
       is-core-module: 2.16.1
       is-glob: 4.0.3
@@ -12970,25 +12806,17 @@ snapshots:
       react: 19.2.7
       react-reconciler: 0.33.0(react@19.2.7)
 
-  react-router-dom@7.18.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7):
-    dependencies:
-      react: 19.2.7
-      react-dom: 19.2.7(react@19.2.7)
-      react-router: 7.18.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
-
   react-router-dom@7.18.1(react-dom@19.2.3(react@19.2.3))(react@19.2.3):
     dependencies:
       react: 19.2.3
       react-dom: 19.2.3(react@19.2.3)
       react-router: 7.18.1(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
 
-  react-router@7.18.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7):
+  react-router-dom@7.18.1(react-dom@19.2.7(react@19.2.7))(react@19.2.7):
     dependencies:
-      cookie: 1.1.1
       react: 19.2.7
-      set-cookie-parser: 2.7.2
-    optionalDependencies:
       react-dom: 19.2.7(react@19.2.7)
+      react-router: 7.18.1(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
 
   react-router@7.18.1(react-dom@19.2.3(react@19.2.3))(react@19.2.3):
     dependencies:
@@ -12997,6 +12825,14 @@ snapshots:
       set-cookie-parser: 2.7.2
     optionalDependencies:
       react-dom: 19.2.3(react@19.2.3)
+
+  react-router@7.18.1(react-dom@19.2.7(react@19.2.7))(react@19.2.7):
+    dependencies:
+      cookie: 1.1.1
+      react: 19.2.7
+      set-cookie-parser: 2.7.2
+    optionalDependencies:
+      react-dom: 19.2.7(react@19.2.7)
 
   react-test-renderer@19.0.0(react@19.2.4):
     dependencies:
