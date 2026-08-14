@@ -4,34 +4,8 @@
   "private": true,
   "scripts": {
     "prepare": "./scripts/install-git-hooks.sh && ./scripts/prepare-apps.sh",
-    "predev": "./scripts/generate-proto.sh",
     "dev": "./scripts/dev.sh",
     "build": "turbo build",
-    "generate:proto": "./scripts/generate-proto.sh",
-    "check:proto": "./scripts/check-proto.sh",
-    "ci:deck:proto": "turbo run ci:deck:proto --filter=@delinoio/devhud-deck-connect",
-    "ci:deck:go:unit": "go test -count=1 ./servers/devhud-deck/...",
-    "ci:deck:go:github-fixtures": "go test -count=1 ./servers/devhud-deck/internal/github -run 'Test(DeterministicSignatureFixtures|FixtureManifestHasOnlyDeckPermissionsAndLifecycleEvents|PermissionIntersection|SignedInstallationAndOAuthCallbacksAreOneUse|WebhookAcceptsOnlySignedLifecycleAndNeverRefreshesFromPRStatus|GitHubHostAndTokenRedactionFailClosed)'",
-    "ci:deck:go:no-scheduler": "go test -count=1 ./servers/devhud-deck/internal/service -run 'TestRefreshImplementationHasNoSchedulerOrBackgroundAuthorization'",
-    "ci:deck:go:refresh-race": "go test -race -count=1 ./servers/devhud-deck/internal/service ./servers/devhud-deck/internal/database ./servers/devhud-deck/internal/delibase -run 'Test(Refresh|PostgreSQLRefresh|LiveForwardedUsage|Catalog|Notification|Widget)'",
-    "ci:deck:frontend": "turbo run ci:deck:frontend --filter=devhud",
-    "ci:deck:auth-smoke": "turbo run ci:deck:auth-smoke --filter=devhud",
-    "ci:deck:widget-policy": "turbo run ci:deck:widget-policy --filter=devhud",
-    "ci:deck:widget:android": "turbo run ci:deck:widget:android --filter=devhud",
-    "ci:deck:widget:ios": "turbo run ci:deck:widget:ios --filter=devhud",
-    "ci:deck:reports": "node scripts/build-deck-ci-reports.mjs",
-    "ci:deck:safety": "node scripts/check-deck-ci-safety.mjs",
-    "ci:realqa:proto": "turbo run ci:realqa:proto --filter=@delinoio/devhud-realqa-connect",
-    "ci:realqa:go:unit": "go test -count=1 ./servers/devhud-realqa/...",
-    "ci:realqa:go:integrations": "go test -count=1 ./servers/devhud-realqa/internal/github ./servers/devhud-realqa/internal/imageassets ./servers/devhud-realqa/internal/delibase ./servers/devhud-realqa/artifacts",
-    "ci:realqa:go:billing-race": "go test -race -count=1 -run 'TestPostgreSQLPresetReplayRevisionRolesAndDeletion' ./servers/devhud-realqa/internal/service",
-    "ci:realqa:frontend": "turbo run ci:realqa:frontend --filter=devhud",
-    "ci:realqa:rust": "turbo run ci:realqa:rust --filter=devhud",
-    "ci:realqa:linux": "turbo run ci:realqa:linux --filter=devhud",
-    "ci:realqa:extension": "turbo run ci:realqa:extension --filter=devhud",
-    "ci:realqa:fixture-artifacts": "turbo run ci:realqa:fixture-artifacts --filter=devhud",
-    "ci:realqa:delidev-settings": "turbo run ci:realqa:settings --filter=delidev-app",
-    "ci:realqa:safety": "node scripts/check-realqa-ci-safety.mjs",
     "test": "turbo test",
     "lint": "turbo lint",
     "format": "turbo format"
@@ -67,9 +41,6 @@
       "ws@>=6.0.0 <6.2.4": "6.2.4",
       "ws@>=7.0.0 <7.5.11": "7.5.11",
       "ws@>=8.0.0 <8.21.0": "8.21.0"
-    },
-    "patchedDependencies": {
-      "@bufbuild/protobuf@2.13.0": "patches/@bufbuild__protobuf@2.13.0.patch"
     }
   },
   "devDependencies": {

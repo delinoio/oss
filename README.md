@@ -1,14 +1,12 @@
 # OSS Monorepo
 
-This repository hosts multiple products and shared tooling across apps, CLIs, servers, Rust crates, and Connect RPC contracts.
+This repository hosts multiple products and shared tooling across apps, CLIs, and Rust crates.
 
 ## Repository Overview
 
 - `apps/`: User-facing apps (React Native and documentation web surfaces)
 - `cmds/`: Go command tools and workflow CLIs
 - `crates/`: Rust crates and Rust-based tooling
-- `servers/`: Backend services and APIs
-- `protos/`: Shared Connect RPC proto contracts
 - `packaging/`: Package manager and release automation assets
 - `docs/`: Canonical contracts, project indexes, and domain-level documentation
 
@@ -26,9 +24,6 @@ This repository hosts multiple products and shared tooling across apps, CLIs, se
 | `serde-feather` | Size-first serialization contract split between runtime core and derive-macro crates. | `crates/serde-feather`<br>`crates/serde-feather-macros` | `active` | [project-serde-feather](docs/project-serde-feather.md), [crates-serde-feather-core-foundation](docs/crates-serde-feather-core-foundation.md), [crates-serde-feather-macros-foundation](docs/crates-serde-feather-macros-foundation.md) |
 | `rustia` | Serde-based LLM JSON parsing and function-calling tool adapter utilities split across runtime, aisdk adapter, and macro crates. | `crates/rustia`<br>`crates/rustia-llm`<br>`crates/rustia-macros` | `active` | [project-rustia](docs/project-rustia.md), [crates-rustia-core-foundation](docs/crates-rustia-core-foundation.md), [crates-rustia-llm-foundation](docs/crates-rustia-llm-foundation.md), [crates-rustia-macros-foundation](docs/crates-rustia-macros-foundation.md) |
 | `public-docs` | Rspress-based public documentation site for user-facing product and platform content. | `apps/public-docs` | `active` | [project-public-docs](docs/project-public-docs.md), [apps-public-docs-foundation](docs/apps-public-docs-foundation.md) |
-| `delidev` | React/TypeScript/Rsbuild Cloudflare Pages PWA foundation for the DeliDev developer-tools catalog and organization UI, including bounded RealQA GitHub connection and destination settings through only `RealQATrackerService` in the existing account and organization settings sections. The static artifact is implemented; public activation remains planned. | `apps/delidev-app` | `implemented artifact; planned activation` | [project-delidev](docs/project-delidev.md), [apps-delidev-app-foundation](docs/apps-delidev-app-foundation.md) |
-| `delibase` | Planned reusable Go/PostgreSQL/sqlc organization, billing, and metered-usage service with a shared versioned Connect API. | `servers/delibase`<br>`protos/delibase` | `planned` | [project-delibase](docs/project-delibase.md), [servers-delibase-server-foundation](docs/servers-delibase-server-foundation.md), [protos-delibase-api-contract](docs/protos-delibase-api-contract.md) |
-| `devhud` | Developer-tool shell whose signed-out base remains bundled and usable without an account. Deck is registered as a closed internal production tool on desktop, iOS, and Android with authenticated pull-request workflows, a closed native Connect transport, tray entries, unified shortcuts, distributed privacy-gated native widgets with per-instance system selection, exact action links, and native notification presentation. RealQA is registered as a closed internal production tool only on macOS, Windows, and Ubuntu with authenticated capture-to-issue management, prior-bound offline encrypted drafts, and exact-origin native Connect/upload transport. Complete change-scoped Deck and RealQA CI builds and signs only local fixture images and run-scoped validation artifacts; it has no publication, deployment, provisioning, registration, production-identity, numeric-SLO, or catalog authority. Production push operation, catalog enablement, service deployment, production GitHub/Chrome identities, store publication, and operational rollout remain separately controlled by the canonical contracts. | `apps/devhud`<br>`servers/devhud-deck` (inactive implemented provider/refresh slice)<br>`protos/devhud-deck`<br>`servers/devhud-realqa` (inactive foundation/provider/submission slice)<br>`protos/devhud-realqa` | `active signed-out shell and closed internal Deck plus desktop RealQA clients; distributed Deck widgets; inactive services/catalog/push operation` | [project-devhud](docs/project-devhud.md), [apps-devhud-foundation](docs/apps-devhud-foundation.md), [Deck server](docs/servers-devhud-deck-foundation.md), [Deck API](docs/protos-devhud-deck-api-contract.md), [RealQA server](docs/servers-devhud-realqa-foundation.md), [RealQA API](docs/protos-devhud-realqa-api-contract.md) |
 
 ## Documentation Contract
 
@@ -36,6 +31,3 @@ This repository hosts multiple products and shared tooling across apps, CLIs, se
 - Every project is defined by `docs/project-<id>.md` plus one or more domain contract documents.
 - When ownership, interfaces, or runtime behavior changes, update the relevant `docs/` contracts in the same change.
 - Start from [docs/README.md](docs/README.md) for the canonical documentation catalog.
-- `servers/internal` is repository-shared Go infrastructure consumed by
-  `delibase` and reviewed DevHud server subsets. It is intentionally not a
-  project catalog entry.

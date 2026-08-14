@@ -62,57 +62,6 @@
       ]
     },
     "test": {},
-    "ci:deck:proto": {
-      "cache": false,
-      "env": [
-        "DEVHUD_DECK_PROTO_BASELINE"
-      ]
-    },
-    "ci:deck:frontend": {
-      "cache": false
-    },
-    "ci:deck:auth-smoke": {
-      "cache": false
-    },
-    "ci:deck:widget-policy": {
-      "cache": false
-    },
-    "ci:deck:widget:android": {
-      "cache": false
-    },
-    "ci:deck:widget:ios": {
-      "cache": false
-    },
-    "ci:realqa:proto": {
-      "cache": false,
-      "env": [
-        "DEVHUD_REALQA_PROTO_BASELINE"
-      ]
-    },
-    "ci:realqa:frontend": {
-      "cache": false
-    },
-    "ci:realqa:rust": {
-      "cache": false
-    },
-    "ci:realqa:linux": {
-      "cache": false
-    },
-    "ci:realqa:extension": {
-      "cache": false
-    },
-    "ci:realqa:fixture-artifacts": {
-      "cache": false,
-      "env": [
-        "DEVHUD_REALQA_FIXTURE_TARGET"
-      ],
-      "outputs": [
-        "build/realqa-fixtures/**"
-      ]
-    },
-    "ci:realqa:settings": {
-      "cache": false
-    },
     "lint": {
       "dependsOn": [
         "^lint"

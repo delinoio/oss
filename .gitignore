@@ -24,10 +24,6 @@ profile.cov
 go.work
 go.work.sum
 
-# Generated protobuf Go code
-servers/**/gen/proto/**/*.pb.go
-servers/**/gen/proto/**/*.connect.go
-
 # env file
 .env
 
@@ -137,8 +133,6 @@ next-env.d.ts
 # Nuxt.js build / generate output
 .nuxt
 dist
-!apps/delidev-app/dist/
-!apps/delidev-app/dist/**
 .output
 
 # Gatsby files
