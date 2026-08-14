@@ -1,10 +1,6 @@
 [workspace]
 resolver = "2"
 members = [
-    "apps/devhud/src-tauri",
-    "apps/devhud/src-tauri/auth-bridge",
-    "apps/devhud/src-tauri/diagnostics-bridge",
-    "apps/devhud/src-tauri/widget-bridge",
     "crates/binpm",
     "crates/cargo-mono",
     "crates/nodeup",
