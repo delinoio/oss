@@ -64,7 +64,7 @@ The package-level Turbo configuration disables caching for DevHud's native `buil
 
 - `pnpm --filter devhud dev` — launch the pinned Tauri CLI and strict-port frontend.
 - `pnpm --filter devhud build` — produce a production desktop build with bundled frontend and CEF material.
-- `pnpm --filter devhud test` — type-check, reject Tauri CLI configuration overrides, validate English/Korean locale selection and light/dark eyebrow contrast, and compare two clean frontend builds by path, mode, and SHA-256 while rejecting remote HTML, JavaScript, and CSS loads, including protocol-relative references.
+- `pnpm --filter devhud test` — type-check, reject Tauri CLI configuration overrides, validate English/Korean locale selection and light/dark eyebrow contrast, and compare two clean frontend builds by path, mode, and SHA-256 while rejecting remote HTML, JavaScript, and CSS loads, including protocol-relative references and WebSocket, EventSource, and XMLHttpRequest connections.
 - `pnpm --filter devhud verify:pins` — verify exact git revisions, registry checksums, archive hashes, frontend versions, production CSP directives, all-target Cargo features, target coverage, and absence of branch/fork/patch dependencies.
 - `pnpm --filter devhud smoke:platform` — validate helper/resource discovery, sandboxed browser startup, three independent startup/shutdown cycles, renderer-failure diagnostics, fatal missing-resource diagnostics, and every expected marker in an isolated persisted JSONL sink against a production artifact. Linux requires `--artifact` to reference an installed or root-prepared package layout whose CEF SUID sandbox is owned by `root:root` with mode `4755`; macOS and Windows retain their default production-artifact paths.
 
