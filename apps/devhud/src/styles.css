@@ -1,6 +1,9 @@
 :root {
+  --devhud-background: #f2f4f6;
+  --devhud-eyebrow: #1b64da;
+
   color: #191f28;
-  background: #f2f4f6;
+  background: var(--devhud-background);
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     sans-serif;
@@ -26,7 +29,7 @@ body {
 
 .eyebrow {
   margin: 0 0 12px;
-  color: #3182f6;
+  color: var(--devhud-eyebrow);
   font-size: 14px;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -49,8 +52,11 @@ h1 {
 
 @media (prefers-color-scheme: dark) {
   :root {
+    --devhud-background: #17171c;
+    --devhud-eyebrow: #3182f6;
+
     color: #f2f4f6;
-    background: #17171c;
+    background: var(--devhud-background);
   }
 
   .summary {

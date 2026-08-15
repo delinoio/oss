@@ -261,16 +261,16 @@ fn main() {
             })
             .build()?;
 
-            if smoke_mode == Some(SmokeMode::RendererCrash) {
-                webview.on_dev_tools_protocol(move |message| {
-                    if let tauri::CefDevToolsProtocol::Event { method, .. } = message
-                        && method.contains("targetCrashed")
-                    {
-                        renderer_crashed_for_protocol.store(true, Ordering::SeqCst);
-                        error!(event = "renderer_terminated", source = "cdp");
-                    }
-                })?;
+            webview.on_dev_tools_protocol(move |message| {
+                if let tauri::CefDevToolsProtocol::Event { method, .. } = message
+                    && method.contains("targetCrashed")
+                {
+                    renderer_crashed_for_protocol.store(true, Ordering::SeqCst);
+                    error!(event = "renderer_terminated", source = "cdp");
+                }
+            })?;
 
+            if smoke_mode == Some(SmokeMode::RendererCrash) {
                 let app_handle = app.handle().clone();
                 let renderer_crashed = renderer_crashed.clone();
                 std::thread::spawn(move || {

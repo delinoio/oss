@@ -20,6 +20,24 @@ const rsbuildConfig = readFileSync(join(appRoot, "rsbuild.config.ts"), "utf8");
 
 const TAURI_REPOSITORY = "https://github.com/tauri-apps/tauri";
 const TAURI_REVISION = "4af26a3f7f8b692d62cca549bbacd93f5ce90b41";
+const CANONICAL_CEF_RUST = {
+  revision: "c73f792f245d71ac1716448cdb7c165c8009e20c",
+  packages: {
+    cef: {
+      version: "150.0.0+150.0.10",
+      checksum: "8dd6aaa08e30ced80c7c18445807984243a06b7f4004c264922302b7e05d5c41",
+    },
+    "cef-dll-sys": {
+      version: "150.0.0+150.0.10",
+      checksum: "d0ec349898441a7e9f91add53716d9c40f6fc381c9b41818241e4f63fb73f0b8",
+    },
+  },
+};
+const CANONICAL_DOWNLOAD_CEF = {
+  version: "2.3.2",
+  checksum: "c169adf067a787e1f1c58ed62906a557de85388bee4b54fb878b722ff606b113",
+  revision: "0c577ce44dbd36952ac3721b577c6e423ceff44f",
+};
 const CANONICAL_CEF_ARCHIVES = {
   "aarch64-apple-darwin": {
     name: "cef_binary_150.0.10+g8042e43+chromium-150.0.7871.101_macosarm64_minimal.tar.bz2",
@@ -77,7 +95,18 @@ assert(
 assert(tauriConfig.identifier === "io.delino.devhud", "application identifier changed");
 assert(tauriConfig.build.devUrl === "http://127.0.0.1:46305", "development origin changed");
 assert(tauriConfig.build.frontendDist === "../dist", "bundled frontend path changed");
-assert(tauriConfig.app.security.csp.includes("connect-src 'none'"), "local-only CSP changed");
+const productionCsp = tauriConfig.app.security.csp;
+assert(productionCsp.includes("connect-src 'none'"), "production connection CSP changed");
+assert(productionCsp.includes("style-src 'self'"), "production style CSP changed");
+assert(!productionCsp.includes("'unsafe-inline'"), "production CSP permits inline content");
+assert(
+  rsbuildConfig.includes('"style-src \'self\' \'unsafe-inline\'"'),
+  "development CSP does not permit injected styles",
+);
+assert(
+  rsbuildConfig.includes('"connect-src ws://127.0.0.1:46305"'),
+  "development CSP does not permit the fixed HMR endpoint",
+);
 assert(rsbuildConfig.includes('host: "127.0.0.1"'), "development host is not loopback-only");
 assert(rsbuildConfig.includes("port: 46305"), "fixed development port changed");
 assert(rsbuildConfig.includes("strictPort: true"), "strict development port failure is disabled");
@@ -111,17 +140,38 @@ for (const [name, version] of Object.entries(pins.tauri.packages)) {
   );
 }
 
-for (const [name, record] of Object.entries(pins.cefRust).filter(([name]) => name !== "revision")) {
-  const block = packageBlock(name, record.version);
-  assert(block, `${name} ${record.version} is absent from Cargo.lock`);
-  assert(block.includes(`checksum = "${record.checksum}"`), `${name} checksum changed`);
+assert(pins.cefRust.revision === CANONICAL_CEF_RUST.revision, "CEF Rust revision changed");
+assert(
+  Object.keys(pins.cefRust).filter((name) => name !== "revision").length ===
+    Object.keys(CANONICAL_CEF_RUST.packages).length,
+  "CEF Rust package set changed",
+);
+for (const [name, canonical] of Object.entries(CANONICAL_CEF_RUST.packages)) {
+  const record = pins.cefRust[name];
+  assert(record?.version === canonical.version, `${name} version changed`);
+  assert(record?.checksum === canonical.checksum, `${name} manifest checksum changed`);
+  const block = packageBlock(name, canonical.version);
+  assert(block, `${name} ${canonical.version} is absent from Cargo.lock`);
+  assert(block.includes(`checksum = "${canonical.checksum}"`), `${name} lockfile checksum changed`);
 }
 
-const downloadBlock = packageBlock("download-cef", pins.downloadCef.version);
+assert(
+  pins.downloadCef.revision === CANONICAL_DOWNLOAD_CEF.revision,
+  "download-cef revision changed",
+);
+assert(
+  pins.downloadCef.version === CANONICAL_DOWNLOAD_CEF.version,
+  "download-cef version changed",
+);
+assert(
+  pins.downloadCef.checksum === CANONICAL_DOWNLOAD_CEF.checksum,
+  "download-cef manifest checksum changed",
+);
+const downloadBlock = packageBlock("download-cef", CANONICAL_DOWNLOAD_CEF.version);
 assert(downloadBlock, "download-cef is absent from Cargo.lock");
 assert(
-  downloadBlock.includes(`checksum = "${pins.downloadCef.checksum}"`),
-  "download-cef checksum changed",
+  downloadBlock.includes(`checksum = "${CANONICAL_DOWNLOAD_CEF.checksum}"`),
+  "download-cef lockfile checksum changed",
 );
 
 const cargoFeatures = spawnSync(

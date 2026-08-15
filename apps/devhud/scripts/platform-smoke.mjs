@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import {
   mkdtempSync,
   readFileSync,
@@ -19,6 +19,13 @@ const definitions = JSON.parse(readFileSync(join(appRoot, "platforms.json"), "ut
 const target = definitions.targets.find(
   ({ os, arch }) => os === process.platform && arch === process.arch,
 );
+const temporaryInstallRoots = new Set();
+
+process.on("exit", () => {
+  for (const root of temporaryInstallRoots) {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 
 function fail(message) {
   console.error(`devhud: ${message}`);
@@ -46,9 +53,43 @@ function parseArguments() {
   return { artifact };
 }
 
+function extractLinuxPackage() {
+  const bundleRoot = join(repoRoot, "target/release/bundle/deb");
+  let packages;
+  try {
+    packages = readdirSync(bundleRoot)
+      .filter((name) => name.endsWith(".deb"))
+      .toSorted();
+  } catch (error) {
+    fail(`Linux Debian bundle is unavailable: ${error.message}`);
+  }
+  if (packages.length !== 1) {
+    fail(
+      `expected one Linux Debian bundle in ${bundleRoot}, found ${packages.length}; pass --artifact to select an installed layout`,
+    );
+  }
+
+  const installRoot = mkdtempSync(join(tmpdir(), "devhud-smoke-install-"));
+  temporaryInstallRoots.add(installRoot);
+  const packagePath = join(bundleRoot, packages[0]);
+  const extraction = spawnSync("dpkg-deb", ["-x", packagePath, installRoot], {
+    encoding: "utf8",
+    shell: false,
+  });
+  if (extraction.error || extraction.status !== 0) {
+    fail(
+      `failed to extract ${packagePath}: ${extraction.error?.message ?? extraction.stderr?.trim() ?? "dpkg-deb failed"}`,
+    );
+  }
+  return join(installRoot, "usr/bin/devhud");
+}
+
 function defaultArtifact() {
   if (process.platform === "darwin") {
     return join(repoRoot, "target/release/bundle/macos/DevHUD.app/Contents/MacOS/devhud");
+  }
+  if (process.platform === "linux") {
+    return extractLinuxPackage();
   }
   return join(repoRoot, `target/release/devhud${process.platform === "win32" ? ".exe" : ""}`);
 }

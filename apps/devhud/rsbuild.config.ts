@@ -1,13 +1,13 @@
 import { defineConfig } from "@rsbuild/core";
 import { pluginReact } from "@rsbuild/plugin-react";
 
-export const DEVHUD_CSP = [
+export const DEVHUD_DEVELOPMENT_CSP = [
   "default-src 'self'",
   "script-src 'self'",
-  "style-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data:",
   "font-src 'self'",
-  "connect-src 'none'",
+  "connect-src ws://127.0.0.1:46305",
   "object-src 'none'",
   "base-uri 'none'",
   "form-action 'none'",
@@ -43,7 +43,7 @@ export default defineConfig({
   },
   server: {
     headers: {
-      "Content-Security-Policy": DEVHUD_CSP,
+      "Content-Security-Policy": DEVHUD_DEVELOPMENT_CSP,
     },
     host: "127.0.0.1",
     port: 46305,

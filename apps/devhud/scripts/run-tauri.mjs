@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { spawnSync } from "node:child_process";
+import { exitLikeChild, spawnDevServer } from "../../../scripts/spawn-dev-server.mjs";
 
 const [command, ...rawArgs] = process.argv.slice(2);
 const forwardedArgs = rawArgs[0] === "--" ? rawArgs.slice(1) : rawArgs;
@@ -16,29 +16,28 @@ if (forwardedArgs.some((argument) => argument === "--config" || argument.startsW
   process.exit(1);
 }
 
-const result = spawnSync(
-  "cargo",
-  [
-    "run",
-    "--locked",
-    "--manifest-path",
-    "src-tauri/Cargo.toml",
-    "--features",
-    "cli",
-    "--bin",
-    "devhud-tauri-cli",
-    "--",
-    ...args,
-  ],
-  {
-    stdio: "inherit",
-    shell: false,
-  },
-);
-
-if (result.error) {
-  console.error(`devhud: failed to start the pinned Tauri CLI: ${result.error.message}`);
+try {
+  const result = await spawnDevServer(
+    "cargo",
+    [
+      "run",
+      "--locked",
+      "--manifest-path",
+      "src-tauri/Cargo.toml",
+      "--features",
+      "cli",
+      "--bin",
+      "devhud-tauri-cli",
+      "--",
+      ...args,
+    ],
+    {
+      stdio: "inherit",
+      shell: false,
+    },
+  );
+  exitLikeChild(result);
+} catch (error) {
+  console.error(`devhud: failed to start the pinned Tauri CLI: ${error.message}`);
   process.exit(1);
 }
-
-process.exit(result.status ?? 1);
