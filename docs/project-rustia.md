@@ -29,6 +29,7 @@ Provide serde-based LLM JSON parsing and function-calling tool adapter utilities
   failures, while direct `Validate::validate` / `validate_equals` calls remain
   strict.
 - `rustia-llm::tool` must parse aisdk tool inputs via `LLMData::parse` before handler execution and return deterministic validation feedback on failure.
+- Rustia adapter input failures preserve the original input, recovered JSON, and complete parse diagnostics in the stable public error types; internal boundaries keep that error unboxed and narrowly allow Clippy's `result_large_err` lint rather than changing the public layout.
 - `LLMData` derive expansion must remain compatible with runtime trait bounds and helper types from `crates/rustia`.
 - Lenient parse parity baseline is pinned to
   `samchon/rustia@29a02742661d476ce5ef5414fe32acc7e97c0e6c` parse tests.
