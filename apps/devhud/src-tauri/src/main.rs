@@ -74,6 +74,10 @@ fn validate_host() -> Result<(), String> {
         ),
     }
 
+    if tauri::is_dev() {
+        return Ok(());
+    }
+
     let executable = std::env::current_exe()
         .map_err(|error| format!("failed to resolve the current executable: {error}"))?;
     let layout = ResourceLayout::for_executable(&executable)?;

@@ -6,6 +6,7 @@ on:
       - .github/workflows/devhud-desktop.yml
       - apps/devhud/**
       - scripts/run-rsbuild-dev.mjs
+      - scripts/spawn-dev-server.mjs
       - Cargo.toml
       - Cargo.lock
       - pnpm-lock.yaml
@@ -17,6 +18,7 @@ on:
       - .github/workflows/devhud-desktop.yml
       - apps/devhud/**
       - scripts/run-rsbuild-dev.mjs
+      - scripts/spawn-dev-server.mjs
       - Cargo.toml
       - Cargo.lock
       - pnpm-lock.yaml
