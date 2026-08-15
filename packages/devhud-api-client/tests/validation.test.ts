@@ -4,6 +4,10 @@ import { describe, expect, it } from "vitest";
 import { UuidV7Schema } from "../src/gen/devhud/v1/common_pb.js";
 import {
   ClientBuildSchema,
+  DiagnosticArchitecture,
+  DiagnosticComponent,
+  DiagnosticPlatform,
+  DiagnosticSeverity,
   SubmitCrashReportRequestSchema,
 } from "../src/gen/devhud/v1/diagnostics_pb.js";
 import {
@@ -15,6 +19,24 @@ import {
 } from "../src/validation.js";
 
 const uuid = "018f47a2-7b3c-7def-8abc-1234567890ab";
+const clientBuild = create(ClientBuildSchema, {
+  appVersion: "1.0.0",
+  buildId: "devhud-20260815.1",
+  platform: DiagnosticPlatform.MACOS,
+  architecture: DiagnosticArchitecture.ARM64,
+  osVersion: "macOS 15.0",
+});
+const safeCrashReport = create(SubmitCrashReportRequestSchema, {
+  reportSchemaVersion: 1,
+  clientBuild,
+  occurredAt: { seconds: 1_787_000_000n, nanos: 0 },
+  component: DiagnosticComponent.UPLOAD,
+  severity: DiagnosticSeverity.ERROR,
+  errorCode: "UPLOAD_FINALIZE_FAILED",
+  redactedSummary: "Upload finalization failed after a checksum mismatch.",
+  redactedStackTrace: "UploadBoundary > Finalize > VerifyChecksum",
+  relatedCorrelationIds: [{ value: uuid }],
+});
 
 describe("wire validation helpers", () => {
   it("accepts only canonical UUID v7 and 32-byte digests", () => {
@@ -51,20 +73,101 @@ describe("wire validation helpers", () => {
     );
   });
 
+  it("rejects incomplete crash report envelopes", () => {
+    expect(() => validateCrashReport(safeCrashReport)).not.toThrow();
+    expect(() =>
+      validateCrashReport(create(SubmitCrashReportRequestSchema, {})),
+    ).toThrow(RangeError);
+    expect(() =>
+      validateCrashReport(
+        create(SubmitCrashReportRequestSchema, {
+          ...safeCrashReport,
+          reportSchemaVersion: 0,
+        }),
+      ),
+    ).toThrow(RangeError);
+    expect(() =>
+      validateCrashReport(
+        create(SubmitCrashReportRequestSchema, {
+          ...safeCrashReport,
+          clientBuild: undefined,
+        }),
+      ),
+    ).toThrow(TypeError);
+    expect(() =>
+      validateCrashReport(
+        create(SubmitCrashReportRequestSchema, {
+          ...safeCrashReport,
+          occurredAt: undefined,
+        }),
+      ),
+    ).toThrow(TypeError);
+    expect(() =>
+      validateCrashReport(
+        create(SubmitCrashReportRequestSchema, {
+          ...safeCrashReport,
+          clientBuild: { ...clientBuild, platform: DiagnosticPlatform.UNSPECIFIED },
+        }),
+      ),
+    ).toThrow(TypeError);
+    expect(() =>
+      validateCrashReport(
+        create(SubmitCrashReportRequestSchema, {
+          ...safeCrashReport,
+          clientBuild: {
+            ...clientBuild,
+            architecture: DiagnosticArchitecture.UNSPECIFIED,
+          },
+        }),
+      ),
+    ).toThrow(TypeError);
+    expect(() =>
+      validateCrashReport(
+        create(SubmitCrashReportRequestSchema, {
+          ...safeCrashReport,
+          component: DiagnosticComponent.UNSPECIFIED,
+        }),
+      ),
+    ).toThrow(TypeError);
+    expect(() =>
+      validateCrashReport(
+        create(SubmitCrashReportRequestSchema, {
+          ...safeCrashReport,
+          severity: DiagnosticSeverity.UNSPECIFIED,
+        }),
+      ),
+    ).toThrow(TypeError);
+  });
+
+  it("rejects lone surrogates in every crash diagnostic string", () => {
+    const loneSurrogate = "\ud800";
+    const invalidDiagnostics = [
+      { ...safeCrashReport, errorCode: loneSurrogate },
+      { ...safeCrashReport, clientBuild: { ...clientBuild, appVersion: loneSurrogate } },
+      { ...safeCrashReport, clientBuild: { ...clientBuild, buildId: loneSurrogate } },
+      { ...safeCrashReport, clientBuild: { ...clientBuild, osVersion: loneSurrogate } },
+      { ...safeCrashReport, redactedSummary: loneSurrogate },
+      { ...safeCrashReport, redactedStackTrace: loneSurrogate },
+    ];
+
+    for (const report of invalidDiagnostics) {
+      expect(() =>
+        validateCrashReport(create(SubmitCrashReportRequestSchema, report)),
+      ).toThrow(TypeError);
+    }
+
+    expect(() =>
+      validateCrashReport(
+        create(SubmitCrashReportRequestSchema, {
+          ...safeCrashReport,
+          redactedSummary: "Upload failed safely 😀",
+        }),
+      ),
+    ).not.toThrow();
+  });
+
   it("rejects local paths and credential-shaped crash diagnostics", () => {
-    const clientBuild = create(ClientBuildSchema, {
-      appVersion: "1.0.0",
-      buildId: "devhud-20260815.1",
-      osVersion: "macOS 15.0",
-    });
-    const safe = create(SubmitCrashReportRequestSchema, {
-      reportSchemaVersion: 1,
-      clientBuild,
-      errorCode: "UPLOAD_FINALIZE_FAILED",
-      redactedSummary: "Upload finalization failed after a checksum mismatch.",
-      redactedStackTrace: "UploadBoundary > Finalize > VerifyChecksum",
-      relatedCorrelationIds: [{ value: uuid }],
-    });
+    const safe = safeCrashReport;
     expect(() => validateCrashReport(safe)).not.toThrow();
 
     const invalidCorrelationId = create(SubmitCrashReportRequestSchema, {

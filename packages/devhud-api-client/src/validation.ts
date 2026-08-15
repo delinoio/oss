@@ -1,4 +1,10 @@
-import type { SubmitCrashReportRequest } from "./gen/devhud/v1/diagnostics_pb.js";
+import {
+  DiagnosticArchitecture,
+  DiagnosticComponent,
+  DiagnosticPlatform,
+  DiagnosticSeverity,
+  type SubmitCrashReportRequest,
+} from "./gen/devhud/v1/diagnostics_pb.js";
 
 export const MAX_SETTINGS_JSON_BYTES = 1_048_576;
 export const MAX_CRASH_IDENTIFIER_BYTES = 256;
@@ -55,24 +61,44 @@ export function validateCanonicalSettingsJson(value: Uint8Array): unknown {
 }
 
 export function validateCrashReport(report: SubmitCrashReportRequest): void {
-  validateDiagnosticText(report.errorCode, MAX_CRASH_IDENTIFIER_BYTES, "errorCode");
-  if (report.clientBuild !== undefined) {
-    validateDiagnosticText(
-      report.clientBuild.appVersion,
-      MAX_CRASH_IDENTIFIER_BYTES,
-      "clientBuild.appVersion",
-    );
-    validateDiagnosticText(
-      report.clientBuild.buildId,
-      MAX_CRASH_IDENTIFIER_BYTES,
-      "clientBuild.buildId",
-    );
-    validateDiagnosticText(
-      report.clientBuild.osVersion,
-      MAX_CRASH_IDENTIFIER_BYTES,
-      "clientBuild.osVersion",
-    );
+  if (report.reportSchemaVersion === 0) {
+    throw new RangeError("reportSchemaVersion must be nonzero");
   }
+  if (report.clientBuild === undefined) {
+    throw new TypeError("clientBuild is required");
+  }
+  if (report.occurredAt === undefined) {
+    throw new TypeError("occurredAt is required");
+  }
+  if (report.clientBuild.platform === DiagnosticPlatform.UNSPECIFIED) {
+    throw new TypeError("clientBuild.platform must be specified");
+  }
+  if (report.clientBuild.architecture === DiagnosticArchitecture.UNSPECIFIED) {
+    throw new TypeError("clientBuild.architecture must be specified");
+  }
+  if (report.component === DiagnosticComponent.UNSPECIFIED) {
+    throw new TypeError("component must be specified");
+  }
+  if (report.severity === DiagnosticSeverity.UNSPECIFIED) {
+    throw new TypeError("severity must be specified");
+  }
+
+  validateDiagnosticText(report.errorCode, MAX_CRASH_IDENTIFIER_BYTES, "errorCode");
+  validateDiagnosticText(
+    report.clientBuild.appVersion,
+    MAX_CRASH_IDENTIFIER_BYTES,
+    "clientBuild.appVersion",
+  );
+  validateDiagnosticText(
+    report.clientBuild.buildId,
+    MAX_CRASH_IDENTIFIER_BYTES,
+    "clientBuild.buildId",
+  );
+  validateDiagnosticText(
+    report.clientBuild.osVersion,
+    MAX_CRASH_IDENTIFIER_BYTES,
+    "clientBuild.osVersion",
+  );
   validateDiagnosticText(report.redactedSummary, MAX_CRASH_SUMMARY_BYTES, "redactedSummary");
   validateDiagnosticText(
     report.redactedStackTrace,
@@ -85,6 +111,7 @@ export function validateCrashReport(report: SubmitCrashReportRequest): void {
 }
 
 function validateDiagnosticText(value: string, maximum: number, field: string): void {
+  assertWellFormedUnicode(value, field);
   if (textEncoder.encode(value).byteLength > maximum) {
     throw new RangeError(`${field} must not exceed ${maximum} UTF-8 bytes`);
   }
@@ -125,17 +152,17 @@ function canonicalizeJson(value: unknown): string {
   throw new TypeError("settings JSON contains a value outside the JSON data model");
 }
 
-function assertWellFormedUnicode(value: string): void {
+function assertWellFormedUnicode(value: string, field = "settings JSON"): void {
   for (let index = 0; index < value.length; index += 1) {
     const codeUnit = value.charCodeAt(index);
     if (codeUnit >= 0xd800 && codeUnit <= 0xdbff) {
       const nextCodeUnit = value.charCodeAt(index + 1);
       if (!(nextCodeUnit >= 0xdc00 && nextCodeUnit <= 0xdfff)) {
-        throw new TypeError("settings JSON contains invalid Unicode data");
+        throw new TypeError(`${field} contains invalid Unicode data`);
       }
       index += 1;
     } else if (codeUnit >= 0xdc00 && codeUnit <= 0xdfff) {
-      throw new TypeError("settings JSON contains invalid Unicode data");
+      throw new TypeError(`${field} contains invalid Unicode data`);
     }
   }
 }
