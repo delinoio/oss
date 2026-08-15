@@ -12,7 +12,7 @@ const platforms = JSON.parse(readFileSync(join(appRoot, "platforms.json"), "utf8
 const appCargo = readFileSync(join(appRoot, "src-tauri/Cargo.toml"), "utf8");
 const rootCargo = readFileSync(join(repoRoot, "Cargo.toml"), "utf8");
 const cargoLock = readFileSync(join(repoRoot, "Cargo.lock"), "utf8").replace(/\r\n?/gu, "\n");
-const desktopWorkflow = readFileSync(join(repoRoot, ".github/workflows/devhud-desktop.yml"), "utf8");
+const ciWorkflow = readFileSync(join(repoRoot, ".github/workflows/CI.yml"), "utf8");
 const packageJson = JSON.parse(readFileSync(join(appRoot, "package.json"), "utf8"));
 const pnpmLock = readFileSync(join(repoRoot, "pnpm-lock.yaml"), "utf8");
 const tauriConfig = JSON.parse(readFileSync(join(appRoot, "src-tauri/tauri.conf.json"), "utf8"));
@@ -208,8 +208,8 @@ for (const { id, os, arch, rustTarget, runner } of platforms.targets) {
   assert(["darwin", "win32", "linux"].includes(os), `invalid operating system for ${id}`);
   assert(["x64", "arm64"].includes(arch), `invalid architecture for ${id}`);
   assert(typeof runner === "string" && runner.length > 0, `missing native runner for ${id}`);
-  assert(desktopWorkflow.includes(`- id: ${id}`), `native CI matrix is missing ${id}`);
-  assert(desktopWorkflow.includes(`runner: ${runner}`), `native CI matrix is missing runner ${runner}`);
+  assert(ciWorkflow.includes(`- id: ${id}`), `native CI matrix is missing ${id}`);
+  assert(ciWorkflow.includes(`runner: ${runner}`), `native CI matrix is missing runner ${runner}`);
 }
 
 for (const [name, version] of Object.entries({
