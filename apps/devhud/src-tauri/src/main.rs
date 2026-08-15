@@ -196,11 +196,14 @@ fn handle_frontend_ready(
         }
         Some(SmokeMode::RendererCrash) => {
             info!(event = "renderer_crash_requested");
-            if let Err(error) =
-                webview.send_dev_tools_message(br#"{"id":9001,"method":"Page.crash","params":{}}"#)
-            {
-                error!(event = "renderer_crash_request_failed", reason = %error);
-            }
+            let webview = webview.clone();
+            std::thread::spawn(move || {
+                if let Err(error) = webview
+                    .send_dev_tools_message(br#"{"id":9001,"method":"Page.crash","params":{}}"#)
+                {
+                    error!(event = "renderer_crash_request_failed", reason = %error);
+                }
+            });
         }
         Some(SmokeMode::MissingResource) | None => {}
     }

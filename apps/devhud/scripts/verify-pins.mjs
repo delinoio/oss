@@ -103,6 +103,10 @@ assert(
   tauriConfig.bundle.macOS.signingIdentity === "-",
   "macOS development bundle must be ad hoc signed",
 );
+assert(
+  tauriConfig.bundle.macOS.hardenedRuntime === false,
+  "macOS ad hoc bundle must not enable hardened runtime",
+);
 assert(tauriConfig.build.devUrl === "http://127.0.0.1:46305", "development origin changed");
 assert(tauriConfig.build.frontendDist === "../dist", "bundled frontend path changed");
 const productionCsp = tauriConfig.app.security.csp;
