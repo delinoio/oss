@@ -36,6 +36,9 @@
 - `apps/`: User-facing apps (React Native and documentation web surfaces).
 - `crates/`: Rust crates and Rust-based tooling.
 - `cmds/`: Go command tools for workflow orchestration.
+- `servers/`: Backend services, including planned DevHud API services.
+- `protos/`: Versioned protocol schemas, including planned DevHud Connect RPC schemas.
+- `packages/`: Shared generated and runtime packages, including the planned DevHud API client.
 - `packaging/`: Package-manager template assets for release automation.
 - `.agents/skills/`: Workspace-local Codex skills and reusable agent workflows.
 
@@ -58,6 +61,7 @@
 - `docs/project-public-docs.md`: Public docs app project index.
 - `docs/project-serde-feather.md`: Serde Feather multi-crate project index.
 - `docs/project-rustia.md`: Rustia multi-crate project index.
+- `docs/project-devhud.md`: DevHud cross-platform desktop/mobile utility project index and current issue #815 contract.
 - `docs/crates-binpm-foundation.md`: binpm Rust CLI, release asset source selection, global cache, and local tooling contract.
 - `docs/crates-with-watch-foundation.md`: with-watch CLI and watcher foundation contract.
 - `docs/crates-rustia-core-foundation.md`: Rustia core runtime LLM data contract.
@@ -82,6 +86,7 @@ enum ProjectId {
   SerdeFeather = "serde-feather",
   Rustia = "rustia",
   PublicDocs = "public-docs",
+  DevHud = "devhud",
 }
 ```
 
@@ -97,6 +102,21 @@ enum ProjectId {
 - `serde-feather` -> `crates/serde-feather`, `crates/serde-feather-macros`
 - `rustia` -> `crates/rustia`, `crates/rustia-llm`, `crates/rustia-macros`
 - `public-docs` -> `apps/public-docs`
+- `devhud` -> `apps/devhud`, `apps/devhud-chrome-extension`, `apps/devhud-admin`, `servers/devhud-api`, `protos/devhud/v1`, `packages/devhud-api-client`, `crates/devhud-native-messaging-host` (all planned)
+
+### DevHud Contract
+
+- Issue [#815](https://github.com/delinoio/oss/issues/815) is the current normative DevHud contract and supersedes closed historical issues #729, #755, and #757 without inheriting their architecture.
+- DevHud fixed development ports are frontend `46305`, admin `46306`, and API `46307`; conflicts fail instead of remapping.
+- DevHud browser/API CORS is an exact allowlist: `http://localhost:46305`, `http://127.0.0.1:46305`, `http://localhost:46306`, `http://127.0.0.1:46306`, and the pinned Tauri shell origin `http://tauri.localhost`. Connect preflights allow only the documented Connect methods and headers, expose `x-devhud-correlation-id`, and forbid wildcard origins and headers.
+- DevHud Deck refresh intervals apply only to active clients; suspended widgets use OS-controlled best-effort scheduling and must expose stale state with the last successful refresh.
+- DevHud account deletion must purge or irreversibly pseudonymize official-upload metadata and invalidate public CDN copies; recovery is provided by an ownership-checked `AccountService.RestoreAccount` during the 30-day window. Restore and final purge use a mutually exclusive atomic account-state transition, and a successful restore must never follow irreversible purge work.
+- DevHud desktop updates use the fixed signed manifest endpoint served by the API deployment and explicit platform/architecture mapping documented in `docs/project-devhud.md`; bootstrap is not an updater-discovery override.
+- Desktop targets are macOS 13+, Windows 10 22H2+, and Ubuntu 22.04 LTS on X11, with x64 and arm64 artifacts. Mobile targets are iOS 16+ and Android 10/API 29+. Native Wayland, product analytics, remote feature flags, plugin SDK/ABI, server-side GitHub brokerage, and partial GA are excluded.
+- Desktop uses Tauri CEF from `https://github.com/tauri-apps/tauri` at commit `4af26a3f7f8b692d62cca549bbacd93f5ce90b41`; mobile uses system webviews. Bundle ID is `io.delino.devhud` and deep links use `devhud`, with native Logto callback `devhud://auth/callback`. Bootstrap also provides an `admin` client key and exact deployment-configured admin redirect; development uses `http://localhost:46306/auth/callback` and embedded production uses the API origin's `/admin/auth/callback`.
+- DevHud Native Messaging uses host name `io.delino.devhud.native_messaging` and one fixed 32-character release-configured Chrome extension ID, shared by the extension, host manifest, and installer. The app-owned v1 IPC contract uses user-scoped platform endpoints and pairing-secret challenge/response authentication; it is not a Connect RPC or API path.
+- DevHud iOS widgets use bundle ID `io.delino.devhud.widget`, App Group `group.io.delino.devhud`, and Keychain access group `$(AppIdentifierPrefix)io.delino.devhud.shared`; upload submissions own all groups and enforce 10 finalized images across groups, with 4096×4096/16,777,216-pixel pre-decode limits, 32-byte raw checksums encoded as Base64 only for the R2 checksum header, and immutable checksum/version-bound staging promotion.
+- Planned paths remain documentation-only. Do not add `crates/devhud-native-messaging-host` to the Cargo workspace until its crate skeleton exists. `CreateUpload` must atomically reserve the signed-URL issuance quota before issuing a URL; `FinalizeUpload` must validate that reservation without charging it again and atomically recheck or reserve all other applicable upload quotas during finalization. Direct R2 staging uploads use the exact DevHud origins, `PUT`/`OPTIONS`, and checksum headers documented in `docs/servers-devhud-api-contract.md`. A dedicated idempotent `devhud-api-sweeper` deployment owns staging expiry and post-recovery account purge with multi-instance coordination and ships as a separate signed/provenanced OCI image. Account restoration clears deletion state only and never clears an administrative block.
 
 ### Repository Default Technology Choices
 

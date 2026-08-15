@@ -73,3 +73,13 @@ Each project must have one project index document and one or more domain contrac
 - `docs/project-ttl.md`
 - `docs/cmds-ttl-foundation.md`
 - `docs/cmds-ttl-language-contract.md`
+
+### devhud
+- `docs/project-devhud.md`
+- `docs/apps-devhud-foundation.md`
+- `docs/apps-devhud-chrome-extension-contract.md`
+- `docs/apps-devhud-admin-contract.md`
+- `docs/servers-devhud-api-contract.md`
+- `docs/protos-devhud-v1-contract.md`
+- `docs/packages-devhud-api-client-contract.md`
+- `docs/crates-devhud-native-messaging-host-contract.md`
