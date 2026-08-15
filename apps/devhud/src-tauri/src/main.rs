@@ -337,15 +337,10 @@ fn main() {
                     return;
                 }
 
-                let origin = match webview.url() {
-                    Ok(url) => url.origin().ascii_serialization(),
-                    Err(error) => {
-                        error!(event = "frontend_readiness_probe_failed", reason = %error);
-                        if smoke_mode.is_some() {
-                            app_handle_for_frontend.exit(1);
-                        }
-                        return;
-                    }
+                let origin = if tauri::is_dev() {
+                    DEVELOPMENT_ORIGIN
+                } else {
+                    PRODUCTION_ORIGIN
                 };
                 if frontend_readiness_for_title.swap(true, Ordering::SeqCst) {
                     return;
@@ -354,7 +349,7 @@ fn main() {
                     &webview,
                     &app_handle_for_frontend,
                     smoke_mode,
-                    &origin,
+                    origin,
                     renderer_crashed_for_frontend.clone(),
                 );
             })
