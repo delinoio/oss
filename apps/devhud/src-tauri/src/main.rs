@@ -178,11 +178,30 @@ fn validate_host(smoke_mode: Option<SmokeMode>) -> Result<(), String> {
     Ok(())
 }
 
+fn start_renderer_crash_watchdog(
+    app_handle: tauri::AppHandle<tauri::Cef>,
+    renderer_crashed: Arc<AtomicBool>,
+) {
+    std::thread::spawn(move || {
+        for _ in 0..100 {
+            if renderer_crashed.load(Ordering::SeqCst) {
+                std::thread::sleep(Duration::from_millis(100));
+                app_handle.exit(0);
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        error!(event = "renderer_diagnostic_timeout");
+        app_handle.exit(70);
+    });
+}
+
 fn handle_frontend_ready(
     webview: &tauri::WebviewWindow<tauri::Cef>,
     app_handle: &tauri::AppHandle<tauri::Cef>,
     smoke_mode: Option<SmokeMode>,
     origin: &str,
+    renderer_crashed: Arc<AtomicBool>,
 ) {
     info!(event = "frontend_ready", origin);
     match smoke_mode {
@@ -195,13 +214,20 @@ fn handle_frontend_ready(
             });
         }
         Some(SmokeMode::RendererCrash) => {
-            info!(event = "renderer_crash_requested");
             let webview = webview.clone();
+            let app_handle = app_handle.clone();
             std::thread::spawn(move || {
-                if let Err(error) = webview
+                match webview
                     .send_dev_tools_message(br#"{"id":9001,"method":"Page.crash","params":{}}"#)
                 {
-                    error!(event = "renderer_crash_request_failed", reason = %error);
+                    Ok(()) => {
+                        info!(event = "renderer_crash_requested");
+                        start_renderer_crash_watchdog(app_handle, renderer_crashed);
+                    }
+                    Err(error) => {
+                        error!(event = "renderer_crash_request_failed", reason = %error);
+                        app_handle.exit(70);
+                    }
                 }
             });
         }
@@ -215,12 +241,14 @@ fn probe_frontend_ready(
     smoke_mode: Option<SmokeMode>,
     origin: String,
     frontend_ready: Arc<AtomicBool>,
+    renderer_crashed: Arc<AtomicBool>,
     attempts_remaining: u8,
 ) {
     let retry_webview = webview.clone();
     let retry_app_handle = app_handle.clone();
     let retry_origin = origin.clone();
     let retry_frontend_ready = frontend_ready.clone();
+    let retry_renderer_crashed = renderer_crashed.clone();
     let failure_app_handle = app_handle.clone();
     let failure_frontend_ready = frontend_ready.clone();
 
@@ -235,6 +263,7 @@ fn probe_frontend_ready(
                             &retry_app_handle,
                             smoke_mode,
                             &retry_origin,
+                            retry_renderer_crashed.clone(),
                         );
                     }
                 }
@@ -243,6 +272,7 @@ fn probe_frontend_ready(
                     let app_handle = retry_app_handle.clone();
                     let origin = retry_origin.clone();
                     let frontend_ready = retry_frontend_ready.clone();
+                    let renderer_crashed = retry_renderer_crashed.clone();
                     std::thread::spawn(move || {
                         std::thread::sleep(Duration::from_millis(50));
                         probe_frontend_ready(
@@ -251,6 +281,7 @@ fn probe_frontend_ready(
                             smoke_mode,
                             origin,
                             frontend_ready,
+                            renderer_crashed,
                             attempts_remaining - 1,
                         );
                     });
@@ -309,6 +340,7 @@ fn main() {
         .setup(move |app| {
             let app_handle = app.handle().clone();
             let renderer_crashed_for_protocol = renderer_crashed.clone();
+            let renderer_crashed_for_page_load = renderer_crashed.clone();
             let frontend_ready_for_page_load = frontend_ready.clone();
             let webview = tauri::WebviewWindowBuilder::<tauri::Cef, _>::new(
                 app,
@@ -345,6 +377,7 @@ fn main() {
                     smoke_mode,
                     payload.url().origin().ascii_serialization(),
                     frontend_ready_for_page_load.clone(),
+                    renderer_crashed_for_page_load.clone(),
                     FRONTEND_READY_ATTEMPTS,
                 );
             })
@@ -364,22 +397,6 @@ fn main() {
                 error!(event = "renderer_diagnostic_enable_failed", reason = %error);
             }
 
-            if smoke_mode == Some(SmokeMode::RendererCrash) {
-                let app_handle = app.handle().clone();
-                let renderer_crashed = renderer_crashed.clone();
-                std::thread::spawn(move || {
-                    for _ in 0..100 {
-                        if renderer_crashed.load(Ordering::SeqCst) {
-                            std::thread::sleep(Duration::from_millis(100));
-                            app_handle.exit(0);
-                            return;
-                        }
-                        std::thread::sleep(Duration::from_millis(50));
-                    }
-                    error!(event = "renderer_diagnostic_timeout");
-                    app_handle.exit(70);
-                });
-            }
             Ok(())
         })
         .run(tauri::generate_context!());
