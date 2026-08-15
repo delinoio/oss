@@ -20,6 +20,8 @@ const textDecoder = new TextDecoder("utf-8", { fatal: true });
 const unicodeNonWhitespacePattern = /\P{White_Space}/u;
 const urlPattern = /\b[A-Za-z][A-Za-z0-9+.-]*:[^\s<>"']+/gu;
 const trailingUrlPunctuationPattern = /[)\]}>.,;]+$/u;
+const percentEncodedOctetsPattern = /(?:%[0-9a-f]{2})+/giu;
+const encodedWindowsDrivePathPattern = /^[A-Za-z]:(?:%2f|%5c)/iu;
 const credentialParameterNamePattern =
   /^(?:code|password|passwd|pwd|secret|token|client[_.-]?secret|(?:access|refresh|id)[_.-]?token|api[_.-]?key|private[_.-]?key|authorization|cookie|set-cookie|x-amz-(?:credential|signature))$/iu;
 const MIN_PROTOBUF_TIMESTAMP_SECONDS = -62_135_596_800n;
@@ -49,15 +51,18 @@ const diagnosticSeverities: ReadonlySet<DiagnosticSeverity> = new Set([
   DiagnosticSeverity.FATAL,
 ]);
 
-const forbiddenSensitiveTextPatterns: ReadonlyArray<RegExp> = [
+const forbiddenLocalPathPatterns: ReadonlyArray<RegExp> = [
   // Keep this lookbehind-free while iOS 16.0-16.3 system webviews are supported.
-  /(?:^(?:[\s\p{P}])?|[^:][\s\p{P}]|:\s+)(?:[A-Za-z]:[\\/][^\s]*|\\\\[^\s]+|~\/[^\s]+|\/(?!\/)[^\s]+)/u,
+  /(?:^(?:[\s\p{P}])?|[^:][\s\p{P}=]|:\s+)(?:[A-Za-z]:[\\/][^\s]*|\\\\[^\s]+|~\/[^\s]+|\/(?!\/)[^\s]+)/u,
   // Relative paths require explicit prefixes or structural/file evidence so labels such as
   // React/Native, iOS/18.6, and 1.0.0/42 remain valid diagnostic text.
   /(?:^|[\s([{<"'=:])\.{1,2}[\\/](?:[\p{L}\p{N}_@.-]+[\\/])*[\p{L}\p{N}_@.-]+(?::\d+){0,2}(?=$|[\s\p{P}])/u,
   /(?:^|[\s([{<"'=:])(?:[\p{L}\p{N}_@.-]+[\\/])+(?:\.[\p{L}\p{N}_@.-]+|[\p{L}\p{N}_@.-]+\.[\p{L}][\p{L}\p{N}]*|Dockerfile|Makefile)(?::\d+){0,2}(?=$|[\s\p{P}])/u,
   /(?:^|[\s([{<"'=:])(?:[\p{L}\p{N}_@.-]+[\\/])+[\p{L}\p{N}_@.-]+:\d+(?::\d+)?(?=$|[\s\p{P}])/u,
   /(?:^|[\s([{<"'=:])[\p{L}\p{N}_@.-]+\.[\p{L}][\p{L}\p{N}]*:\d+(?::\d+)?(?=$|[\s\p{P}])/u,
+];
+
+const forbiddenSensitiveTextPatterns: ReadonlyArray<RegExp> = [
   /file:\/\/[^\s]*/iu,
   /-----BEGIN [A-Z ]*PRIVATE KEY-----/u,
   /\b(?:ghp|github_pat)_[A-Za-z0-9_]+\b/u,
@@ -183,6 +188,9 @@ function validateSensitiveText(
     publicAssetBaseUrl === undefined
       ? "sensitive or local-path"
       : "sensitive, public asset locator, or local-path";
+  if (containsForbiddenLocalPath(value)) {
+    throw new TypeError(`${field} contains forbidden ${forbiddenContent} content`);
+  }
   for (const pattern of forbiddenSensitiveTextPatterns) {
     if (pattern.test(value)) {
       throw new TypeError(`${field} contains forbidden ${forbiddenContent} content`);
@@ -191,6 +199,53 @@ function validateSensitiveText(
   if (containsForbiddenUrlContent(value, publicAssetBaseUrl)) {
     throw new TypeError(`${field} contains forbidden ${forbiddenContent} content`);
   }
+}
+
+function containsForbiddenLocalPath(value: string): boolean {
+  if (matchesForbiddenLocalPath(value)) {
+    return true;
+  }
+
+  let previousEnd = 0;
+  for (const match of value.matchAll(urlPattern)) {
+    const matchedUrl = match[0];
+    if (matchedUrl === undefined || match.index === undefined) {
+      continue;
+    }
+
+    if (
+      matchesForbiddenLocalPath(decodePercentEncodedOctets(value.slice(previousEnd, match.index)))
+    ) {
+      return true;
+    }
+
+    // A percent-encoded Windows drive path is URL-shaped to the platform parser, but it is
+    // still a local path. Keep other URL spans encoded so remote URL paths are not mistaken
+    // for local filesystem paths after decoding.
+    if (
+      encodedWindowsDrivePathPattern.test(matchedUrl) &&
+      matchesForbiddenLocalPath(decodePercentEncodedOctets(matchedUrl))
+    ) {
+      return true;
+    }
+    previousEnd = match.index + matchedUrl.length;
+  }
+
+  return matchesForbiddenLocalPath(decodePercentEncodedOctets(value.slice(previousEnd)));
+}
+
+function matchesForbiddenLocalPath(value: string): boolean {
+  return forbiddenLocalPathPatterns.some((pattern) => pattern.test(value));
+}
+
+function decodePercentEncodedOctets(value: string): string {
+  return value.replace(percentEncodedOctetsPattern, (encoded) => {
+    try {
+      return decodeURIComponent(encoded);
+    } catch {
+      return encoded;
+    }
+  });
 }
 
 function parsePublicAssetBaseUrl(value: string): URL {

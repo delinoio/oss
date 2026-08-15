@@ -100,6 +100,8 @@ describe("wire validation helpers", () => {
       "See src/private/incident.txt",
       "source:src/private/app.ts:10",
       "frame:src\\private\\app.ts:10",
+      "source=%2Fworkspace%2Fprivate%2Fapp.ts",
+      "C:%5CUsers%5Calice%5Capp.ts",
       encodedLocalFileUrl,
       "https://example.com/audit?token=unsafe-value",
       "devhud://auth/callback?co%64e=unsafe-value",
@@ -434,6 +436,8 @@ describe("wire validation helpers", () => {
       "src\\private\\module:10",
       "source:src/private/app.ts:10",
       "frame:src\\private\\app.ts:10",
+      "source=%2Fworkspace%2Fprivate%2Fapp.ts",
+      "C:%5CUsers%5Calice%5Capp.ts",
     ]) {
       const relativePathDiagnostics = [
         { ...safe, errorCode: relativePath },
@@ -453,6 +457,7 @@ describe("wire validation helpers", () => {
 
     for (const remoteUrl of [
       "https://example.com/assets/app.js:10:2",
+      "https://example.com/assets%2Fapp.js:10:2",
       "https://cdn.example.com/app.js?v=42",
       "https://docs.example.com/guide#configuration",
       "wss://example.com/socket",
