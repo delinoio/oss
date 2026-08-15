@@ -167,8 +167,11 @@ async function runScenario(executable, mode, expectedExit, expectedMarkers) {
         child.kill("SIGKILL");
         reject(new Error(`${mode} smoke timed out`));
       }, 30_000);
-      child.once("error", reject);
-      child.once("exit", (code) => {
+      child.once("error", (error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+      child.once("close", (code) => {
         clearTimeout(timer);
         resolveExit(code);
       });

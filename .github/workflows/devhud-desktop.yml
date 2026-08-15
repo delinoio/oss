@@ -12,7 +12,7 @@ on:
       - Cargo.lock
       - pnpm-lock.yaml
       - pnpm-workspace.yaml
-      - rust-toolchain.toml
+      - rust-toolchain
   push:
     branches: [main]
     paths:
@@ -25,7 +25,7 @@ on:
       - Cargo.lock
       - pnpm-lock.yaml
       - pnpm-workspace.yaml
-      - rust-toolchain.toml
+      - rust-toolchain
   workflow_dispatch:
 
 permissions:
