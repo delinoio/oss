@@ -180,6 +180,21 @@ async function runScenario(executable, mode, expectedExit, expectedMarkers) {
       }
     }
     const persistedOutput = readFileSync(join(logRoot, "devhud.jsonl"), "utf8");
+    const persistedEntries = persistedOutput
+      .trim()
+      .split("\n")
+      .map((line, index) => {
+        try {
+          return JSON.parse(line);
+        } catch (error) {
+          throw new Error(`${mode} smoke persisted invalid JSON on line ${index + 1}: ${error.message}`);
+        }
+      });
+    for (const [index, entry] of persistedEntries.entries()) {
+      if (typeof entry.timestamp !== "string" || Number.isNaN(Date.parse(entry.timestamp))) {
+        throw new Error(`${mode} smoke persisted an invalid timestamp on line ${index + 1}`);
+      }
+    }
     for (const marker of expectedMarkers) {
       if (!persistedOutput.includes(marker)) {
         throw new Error(`${mode} smoke did not persist ${marker}\n${persistedOutput}`);

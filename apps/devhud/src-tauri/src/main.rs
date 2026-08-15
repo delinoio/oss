@@ -133,7 +133,6 @@ fn init_logging(smoke_mode: Option<SmokeMode>, subprocess: bool) {
         .with_env_filter(filter)
         .with_writer(writer)
         .with_target(false)
-        .without_time()
         .try_init();
 }
 

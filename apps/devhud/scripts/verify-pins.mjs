@@ -5,6 +5,8 @@ import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { hasExactCspDirectiveSources } from "./frontend-output-policy.mjs";
+
 const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = resolve(appRoot, "../..");
 const pins = JSON.parse(readFileSync(join(appRoot, "cef-pins.json"), "utf8"));
@@ -104,7 +106,10 @@ assert(
 assert(tauriConfig.build.devUrl === "http://127.0.0.1:46305", "development origin changed");
 assert(tauriConfig.build.frontendDist === "../dist", "bundled frontend path changed");
 const productionCsp = tauriConfig.app.security.csp;
-assert(productionCsp.includes("connect-src 'none'"), "production connection CSP changed");
+assert(
+  hasExactCspDirectiveSources(productionCsp, "connect-src", ["'none'"]),
+  "production connection CSP changed",
+);
 assert(productionCsp.includes("style-src 'self'"), "production style CSP changed");
 assert(!productionCsp.includes("'unsafe-inline'"), "production CSP permits inline content");
 assert(
@@ -184,7 +189,7 @@ assert(
 
 const cargoFeatures = spawnSync(
   "cargo",
-  ["tree", "--locked", "-p", "devhud", "-e", "features"],
+  ["tree", "--locked", "--target", "all", "-p", "devhud", "-e", "features"],
   { cwd: repoRoot, encoding: "utf8", shell: process.platform === "win32" },
 );
 assert(cargoFeatures.status === 0, cargoFeatures.stderr || "cargo feature resolution failed");

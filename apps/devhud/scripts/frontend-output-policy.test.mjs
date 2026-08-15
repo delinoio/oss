@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { hasExecutableRemoteLoad } from "./frontend-output-policy.mjs";
+import {
+  hasExactCspDirectiveSources,
+  hasExecutableRemoteLoad,
+} from "./frontend-output-policy.mjs";
 
 const remoteLoads = [
   '<script src="https://example.com/app.js"></script>',
@@ -31,5 +34,24 @@ test("allows bundled and inline frontend resources", () => {
 
   for (const bundledLoad of bundledLoads) {
     assert.equal(hasExecutableRemoteLoad(bundledLoad), false);
+  }
+});
+
+test("requires an exact CSP directive source list", () => {
+  assert.equal(
+    hasExactCspDirectiveSources(
+      "default-src 'self'; connect-src   'none'; object-src 'none'",
+      "connect-src",
+      ["'none'"],
+    ),
+    true,
+  );
+
+  for (const policy of [
+    "default-src 'self'",
+    "connect-src 'none' https://example.com",
+    "connect-src 'none'; connect-src https://example.com",
+  ]) {
+    assert.equal(hasExactCspDirectiveSources(policy, "connect-src", ["'none'"]), false);
   }
 });
