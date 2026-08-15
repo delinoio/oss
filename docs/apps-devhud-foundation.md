@@ -6,7 +6,7 @@
 
 ## Runtime and Language
 
-- Desktop: Tauri `tauri-runtime-cef` pinned to `4af26a3f7f8b692d62cca549bbacd93f5ce90b41`; CEF renders bundled resources only with restrictive CSP and no arbitrary navigation, popups, or downloads.
+- Desktop: Tauri `tauri-runtime-cef` from `https://github.com/tauri-apps/tauri`, pinned to `4af26a3f7f8b692d62cca549bbacd93f5ce90b41`; CEF renders bundled resources only with restrictive CSP and no arbitrary navigation, popups, or downloads.
 - Mobile: platform WKWebView/Android System WebView with native Swift/Kotlin widget implementations.
 - Targets: macOS 13+, Windows 10 22H2+, Ubuntu 22.04 LTS on X11, iOS 16+, Android 10/API 29+; desktop x64 and arm64.
 - Bundle ID: `io.delino.devhud`; deep-link scheme: `devhud`. Fixed frontend port: `46305`.
@@ -20,7 +20,7 @@ Guest users, authenticated individual users, maintainers, and platform release o
 
 - First-party mini-app IDs: `realqa`, `deck`. Action IDs include the five `realqa.capture.*` identifiers defined in the project index.
 - First run exposes editable `https://devhud.api.delino.io`, Sign in, and Continue locally. Non-loopback endpoints require HTTPS; loopback HTTP is allowed; no TLS bypass.
-- Logto uses system-browser Authorization Code with PKCE and `devhud` callback. Bootstrap advertises protocol/API version, Logto data, public client IDs, asset base URL, capabilities, and enforced limits; it is not a remote feature-flag mechanism.
+- Logto uses system-browser Authorization Code with PKCE and the exact callback URI `devhud://auth/callback`. Bootstrap advertises protocol/API version, Logto data, public client IDs keyed as `desktop`, `ios`, and `android`, asset base URL, capabilities, and enforced limits; clients select the matching platform key and it is not a remote feature-flag mechanism.
 - Local guest settings and authenticated synchronized settings use whole-snapshot import choice, schema version, monotonic revision, expected-revision writes, typed conflict, and explicit reapply. Offline authenticated settings are read-only.
 - RealQA supports display/window/all-display/region/toolbar capture, editing, encrypted drafts, URL mappings, optional sanitized Chrome context, GitHub issue creation, official/BYO R2, and explicit Codex/Claude Code/OpenCode draft/direct modes. It excludes mobile capture, screen recording, full-page/console/network/cookie/storage capture, comments, assignees, milestones, projects, and updating existing issues.
 - Deck calls GitHub directly, preserves raw `is:pr` queries, caches at most 100 results/Deck, permits 25 Decks/user, and offers 1/5/15/30-minute refresh intervals while a desktop or mobile client is active and able to poll. Widgets and local notifications use the operating system's best-effort background schedule; WidgetKit or the Android scheduler may delay refreshes and cannot honor an app-selected one- or five-minute interval while the app is suspended. Widgets show one Deck and three PRs, deep-link to `devhud://deck/<deck-id>`, and visibly show the last successful refresh when data is stale. Notifications must not imply that suspended-widget data is current.

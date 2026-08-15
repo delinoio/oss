@@ -112,8 +112,9 @@ enum ProjectId {
 - DevHud account deletion must purge or irreversibly pseudonymize official-upload metadata and invalidate public CDN copies; recovery is provided by an ownership-checked `AccountService.RestoreAccount` during the 30-day window.
 - DevHud desktop updates use the fixed signed manifest endpoint and explicit platform/architecture mapping documented in `docs/project-devhud.md`; bootstrap is not an updater-discovery override.
 - Desktop targets are macOS 13+, Windows 10 22H2+, and Ubuntu 22.04 LTS on X11, with x64 and arm64 artifacts. Mobile targets are iOS 16+ and Android 10/API 29+. Native Wayland, product analytics, remote feature flags, plugin SDK/ABI, server-side GitHub brokerage, and partial GA are excluded.
-- Desktop uses Tauri CEF commit `4af26a3f7f8b692d62cca549bbacd93f5ce90b41`; mobile uses system webviews. Bundle ID is `io.delino.devhud` and deep links use `devhud`.
-- Planned paths remain documentation-only. Do not add `crates/devhud-native-messaging-host` to the Cargo workspace until its crate skeleton exists.
+- Desktop uses Tauri CEF from `https://github.com/tauri-apps/tauri` at commit `4af26a3f7f8b692d62cca549bbacd93f5ce90b41`; mobile uses system webviews. Bundle ID is `io.delino.devhud` and deep links use `devhud`, with Logto callback `devhud://auth/callback`.
+- DevHud Native Messaging uses host name `io.delino.devhud.native_messaging` and one fixed 32-character release-configured Chrome extension ID, shared by the extension, host manifest, and installer.
+- Planned paths remain documentation-only. Do not add `crates/devhud-native-messaging-host` to the Cargo workspace until its crate skeleton exists. `FinalizeUpload` must atomically recheck or reserve all applicable upload quotas during finalization.
 
 ### Repository Default Technology Choices
 

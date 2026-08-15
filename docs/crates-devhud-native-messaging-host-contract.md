@@ -14,7 +14,7 @@ Desktop DevHud users, Chrome extension users, installer/release operators, and s
 
 ## Interfaces and Contracts
 
-Accept Chrome Native Messaging framing and validate the Web Store extension ID, Native Messaging origin, one-time pairing nonce, schema version, message size, and timeout. Forward only bounded, sanitized browser-context messages through user-scoped local IPC to `apps/devhud`; never call the API, GitHub, or R2. Maintain the `devhud` app identity and pairing lifecycle across install, logout, and removal.
+Register and connect using the stable Native Messaging host name `io.delino.devhud.native_messaging`. The Web Store extension ID is a fixed 32-character release-configured value shared by the extension package, host manifest, and desktop installer; accept only the exact origin `chrome-extension://<DEVHUD_CHROME_EXTENSION_ID>/`. Accept Chrome Native Messaging framing and validate the exact extension ID, Native Messaging origin, one-time pairing nonce, schema version, message size, and timeout. Forward only bounded, sanitized browser-context messages through user-scoped local IPC to `apps/devhud`; never call the API, GitHub, or R2. Maintain the `devhud` app identity and pairing lifecycle across install, logout, and removal.
 
 ## Storage
 
