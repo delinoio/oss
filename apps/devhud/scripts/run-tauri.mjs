@@ -11,8 +11,12 @@ if (!command || !["dev", "build"].includes(command)) {
   process.exit(1);
 }
 
-if (forwardedArgs.some((argument) => argument === "--config" || argument.startsWith("--config="))) {
-  console.error("devhud: --config cannot override the pinned application, CSP, or development origin");
+if (
+  forwardedArgs.some(
+    (argument) => argument.startsWith("-c") || argument === "--config" || argument.startsWith("--config="),
+  )
+) {
+  console.error("devhud: -c/--config cannot override the pinned application, CSP, or development origin");
   process.exit(1);
 }
 
