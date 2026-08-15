@@ -13,6 +13,8 @@ import { release, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { waitForChildClose } from "./platform-smoke-child.mjs";
+
 const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = resolve(appRoot, "../..");
 const definitions = JSON.parse(readFileSync(join(appRoot, "platforms.json"), "utf8"));
@@ -164,20 +166,7 @@ async function runScenario(executable, mode, expectedExit, expectedMarkers) {
     child.stderr.on("data", (chunk) => {
       output += chunk.toString();
     });
-    const exitCode = await new Promise((resolveExit, reject) => {
-      const timer = setTimeout(() => {
-        child.kill("SIGKILL");
-        reject(new Error(`${mode} smoke timed out`));
-      }, 30_000);
-      child.once("error", (error) => {
-        clearTimeout(timer);
-        reject(error);
-      });
-      child.once("close", (code) => {
-        clearTimeout(timer);
-        resolveExit(code);
-      });
-    });
+    const exitCode = await waitForChildClose(child, mode, 30_000);
     if (exitCode !== expectedExit) {
       throw new Error(`${mode} smoke exited ${exitCode}, expected ${expectedExit}\n${output}`);
     }
@@ -186,12 +175,10 @@ async function runScenario(executable, mode, expectedExit, expectedMarkers) {
         throw new Error(`${mode} smoke did not emit ${marker}\n${output}`);
       }
     }
-    if (process.platform === "win32") {
-      const persistedOutput = readFileSync(join(logRoot, "devhud.jsonl"), "utf8");
-      for (const marker of expectedMarkers) {
-        if (!persistedOutput.includes(marker)) {
-          throw new Error(`${mode} smoke did not persist ${marker}\n${persistedOutput}`);
-        }
+    const persistedOutput = readFileSync(join(logRoot, "devhud.jsonl"), "utf8");
+    for (const marker of expectedMarkers) {
+      if (!persistedOutput.includes(marker)) {
+        throw new Error(`${mode} smoke did not persist ${marker}\n${persistedOutput}`);
       }
     }
   } finally {

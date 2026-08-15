@@ -57,18 +57,36 @@ fn is_cef_subprocess() -> bool {
 }
 
 #[cfg(target_os = "windows")]
-fn windows_log_directory(smoke_mode: Option<SmokeMode>) -> Option<std::path::PathBuf> {
+fn platform_log_directory() -> Option<std::path::PathBuf> {
+    dirs::data_local_dir().map(|directory| directory.join("io.delino.devhud").join("logs"))
+}
+
+#[cfg(target_os = "macos")]
+fn platform_log_directory() -> Option<std::path::PathBuf> {
+    dirs::home_dir().map(|directory| directory.join("Library/Logs/io.delino.devhud"))
+}
+
+#[cfg(target_os = "linux")]
+fn platform_log_directory() -> Option<std::path::PathBuf> {
+    dirs::state_dir().map(|directory| directory.join("io.delino.devhud").join("logs"))
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+fn platform_log_directory() -> Option<std::path::PathBuf> {
+    None
+}
+
+fn diagnostic_log_directory(smoke_mode: Option<SmokeMode>) -> Option<std::path::PathBuf> {
     if smoke_mode.is_some()
         && let Some(directory) = std::env::var_os("DEVHUD_SMOKE_LOG_DIR")
     {
         return Some(directory.into());
     }
 
-    dirs::data_local_dir().map(|directory| directory.join("io.delino.devhud").join("logs"))
+    platform_log_directory()
 }
 
-#[cfg(target_os = "windows")]
-fn windows_diagnostic_writer(
+fn diagnostic_writer(
     smoke_mode: Option<SmokeMode>,
     subprocess: bool,
 ) -> tracing_subscriber::fmt::writer::BoxMakeWriter {
@@ -81,7 +99,7 @@ fn windows_diagnostic_writer(
     }
 
     let result = (|| {
-        let directory = windows_log_directory(smoke_mode).ok_or(std::io::ErrorKind::NotFound)?;
+        let directory = diagnostic_log_directory(smoke_mode).ok_or(std::io::ErrorKind::NotFound)?;
         std::fs::create_dir_all(&directory).map_err(|error| error.kind())?;
         OpenOptions::new()
             .create(true)
@@ -108,13 +126,7 @@ fn init_logging(smoke_mode: Option<SmokeMode>, subprocess: bool) {
     let filter = tracing_subscriber::EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
 
-    #[cfg(target_os = "windows")]
-    let writer = windows_diagnostic_writer(smoke_mode, subprocess);
-    #[cfg(not(target_os = "windows"))]
-    let writer = {
-        let _ = (smoke_mode, subprocess);
-        tracing_subscriber::fmt::writer::BoxMakeWriter::new(std::io::stderr)
-    };
+    let writer = diagnostic_writer(smoke_mode, subprocess);
 
     let _ = tracing_subscriber::fmt()
         .json()

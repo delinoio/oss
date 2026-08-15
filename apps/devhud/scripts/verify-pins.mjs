@@ -93,6 +93,10 @@ assert(
   "DevHUD Rust host is not a root Cargo workspace member",
 );
 assert(tauriConfig.identifier === "io.delino.devhud", "application identifier changed");
+assert(
+  tauriConfig.bundle.macOS.minimumSystemVersion === "13.0",
+  "macOS bundle minimum changed",
+);
 assert(tauriConfig.build.devUrl === "http://127.0.0.1:46305", "development origin changed");
 assert(tauriConfig.build.frontendDist === "../dist", "bundled frontend path changed");
 const productionCsp = tauriConfig.app.security.csp;
