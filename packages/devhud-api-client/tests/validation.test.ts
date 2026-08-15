@@ -27,6 +27,18 @@ describe("wire validation helpers", () => {
     ).toThrow(TypeError);
   });
 
+  it("rejects lone surrogates in settings JSON strings and object keys", () => {
+    const textEncoder = new TextEncoder();
+
+    expect(() => validateCanonicalSettingsJson(textEncoder.encode('"😀"'))).not.toThrow();
+    expect(() => validateCanonicalSettingsJson(textEncoder.encode('"\\ud800"'))).toThrow(
+      TypeError,
+    );
+    expect(() => validateCanonicalSettingsJson(textEncoder.encode('{"\\udc00":1}'))).toThrow(
+      TypeError,
+    );
+  });
+
   it("rejects local paths and credential-shaped crash diagnostics", () => {
     const safe = create(SubmitCrashReportRequestSchema, {
       reportSchemaVersion: 1,
@@ -41,6 +53,18 @@ describe("wire validation helpers", () => {
       redactedStackTrace: "at /Users/example/project/app.ts:10",
     });
     expect(() => validateCrashReport(localPath)).toThrow(TypeError);
+
+    const parenthesizedLocalPath = create(SubmitCrashReportRequestSchema, {
+      ...safe,
+      redactedStackTrace: "at render (/Users/example/project/app.ts:10:2)",
+    });
+    expect(() => validateCrashReport(parenthesizedLocalPath)).toThrow(TypeError);
+
+    const parenthesizedWindowsPath = create(SubmitCrashReportRequestSchema, {
+      ...safe,
+      redactedStackTrace: "at render (C:\\Users\\example\\project\\app.ts:10:2)",
+    });
+    expect(() => validateCrashReport(parenthesizedWindowsPath)).toThrow(TypeError);
 
     const credential = create(SubmitCrashReportRequestSchema, {
       ...safe,

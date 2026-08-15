@@ -10,8 +10,8 @@ const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder("utf-8", { fatal: true });
 
 const forbiddenDiagnosticPatterns: ReadonlyArray<RegExp> = [
-  /(?:^|\s)(?:[A-Za-z]:\\|\\\\)[^\s]*/u,
-  /(?:^|\s)(?:~\/|\/(?:Users|home|private|tmp|var|etc|opt|mnt|srv)\/)[^\s]*/u,
+  /(?:^|[\s\p{P}])(?:[A-Za-z]:\\|\\\\)[^\s]*/u,
+  /(?:^|[\s\p{P}])(?:~\/|\/(?:Users|home|private|tmp|var|etc|opt|mnt|srv)\/)[^\s]*/u,
   /file:\/\/[^\s]*/iu,
   /-----BEGIN [A-Z ]*PRIVATE KEY-----/u,
   /\b(?:ghp|github_pat)_[A-Za-z0-9_]+\b/u,
@@ -61,7 +61,11 @@ function validateRedactedText(value: string, maximum: number, field: string): vo
 }
 
 function canonicalizeJson(value: unknown): string {
-  if (value === null || typeof value === "boolean" || typeof value === "string") {
+  if (typeof value === "string") {
+    assertWellFormedUnicode(value);
+    return JSON.stringify(value);
+  }
+  if (value === null || typeof value === "boolean") {
     return JSON.stringify(value);
   }
   if (typeof value === "number") {
@@ -77,8 +81,26 @@ function canonicalizeJson(value: unknown): string {
     const object = value as Record<string, unknown>;
     return `{${Object.keys(object)
       .sort()
-      .map((key) => `${JSON.stringify(key)}:${canonicalizeJson(object[key])}`)
+      .map((key) => {
+        assertWellFormedUnicode(key);
+        return `${JSON.stringify(key)}:${canonicalizeJson(object[key])}`;
+      })
       .join(",")}}`;
   }
   throw new TypeError("settings JSON contains a value outside the JSON data model");
+}
+
+function assertWellFormedUnicode(value: string): void {
+  for (let index = 0; index < value.length; index += 1) {
+    const codeUnit = value.charCodeAt(index);
+    if (codeUnit >= 0xd800 && codeUnit <= 0xdbff) {
+      const nextCodeUnit = value.charCodeAt(index + 1);
+      if (!(nextCodeUnit >= 0xdc00 && nextCodeUnit <= 0xdfff)) {
+        throw new TypeError("settings JSON contains invalid Unicode data");
+      }
+      index += 1;
+    } else if (codeUnit >= 0xdc00 && codeUnit <= 0xdfff) {
+      throw new TypeError("settings JSON contains invalid Unicode data");
+    }
+  }
 }

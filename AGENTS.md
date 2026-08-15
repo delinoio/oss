@@ -330,6 +330,7 @@ Coverage expectations:
 - `node-binpm-docs-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter binpm-docs test`.
 - `node-nodeup-docs-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter nodeup-docs test`.
 - `node-public-docs-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter public-docs test`.
+- `devhud-protocol`: runs schema formatting, lint, compatibility, and generated-freshness checks; Go binding tests; and TypeScript client lint, tests, and build on Ubuntu.
 - `ci-result`: provides a single aggregate status that fails when any executed domain job fails or is cancelled.
 
 Change-scoped execution rules:
