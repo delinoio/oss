@@ -75,14 +75,18 @@ function waitForPosixProcessGroupExit(processGroupId) {
         }
         // macOS can report EPERM after the group-wide signal succeeded when no
         // remaining group member can be probed by this process.
-        if (error.code === "EPERM") {
+        if (error.code === "EPERM" && process.platform === "darwin") {
           resolve();
           return;
         }
-        reject(
-          new Error(`failed to await POSIX process group ${-processGroupId}: ${error.message}`),
-        );
-        return;
+        if (error.code !== "EPERM" || process.platform !== "linux") {
+          reject(
+            new Error(`failed to await POSIX process group ${-processGroupId}: ${error.message}`),
+          );
+          return;
+        }
+        // Linux can report EPERM while an unprobeable SUID process remains in
+        // the group, so continue to the /proc live-member check below.
       }
       try {
         if (

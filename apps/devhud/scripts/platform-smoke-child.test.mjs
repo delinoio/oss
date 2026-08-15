@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
+import { terminatePosixProcessGroup } from "../../../scripts/spawn-dev-server.mjs";
 import { waitForChildClose } from "./platform-smoke-child.mjs";
 
 const processTreeChildPath = fileURLToPath(new URL("./process-tree-child.mjs", import.meta.url));
@@ -77,6 +78,62 @@ test("waits for a timed-out child to close before rejecting", async () => {
   await assert.rejects(waitForChildClose(child, "hung", 50), /hung smoke timed out/u);
   assert.equal(closed, true);
 });
+
+test(
+  "does not treat Linux EPERM as process-group exit while a member is live",
+  { skip: process.platform !== "linux", timeout: 5_000 },
+  async (t) => {
+    const child = spawn(
+      process.execPath,
+      [
+        "-e",
+        "process.on('SIGTERM', () => {}); process.send('ready'); setInterval(() => {}, 1_000)",
+      ],
+      {
+        detached: true,
+        stdio: ["ignore", "ignore", "ignore", "ipc"],
+        windowsHide: true,
+      },
+    );
+    const closePromise = once(child, "close");
+    await once(child, "message");
+
+    const originalKill = process.kill;
+    t.after(async () => {
+      process.kill = originalKill;
+      if (child.exitCode === null && child.signalCode === null) {
+        try {
+          originalKill(-child.pid, "SIGKILL");
+        } catch (error) {
+          if (error.code !== "ESRCH") {
+            throw error;
+          }
+        }
+      }
+      await closePromise;
+    });
+
+    process.kill = (pid, signal) => {
+      if (pid === -child.pid && signal === 0) {
+        const error = new Error("operation not permitted");
+        error.code = "EPERM";
+        throw error;
+      }
+      return originalKill(pid, signal);
+    };
+
+    let settled = false;
+    const terminationPromise = terminatePosixProcessGroup(child, "SIGTERM").finally(() => {
+      settled = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    assert.equal(settled, false);
+
+    originalKill(-child.pid, "SIGKILL");
+    await terminationPromise;
+  },
+);
 
 test(
   "terminates and awaits a timed-out process tree",
