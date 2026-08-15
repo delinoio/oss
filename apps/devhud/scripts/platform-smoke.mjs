@@ -75,6 +75,8 @@ function requiredResources(executable) {
       ],
     };
   }
+  const resourceDir =
+    process.platform === "linux" ? resolve(binaryDir, "../share/DevHUD") : binaryDir;
   const names =
     process.platform === "win32"
       ? [
@@ -96,8 +98,8 @@ function requiredResources(executable) {
           "chrome-sandbox",
         ];
   return {
-    missingScenario: join(binaryDir, "resources.pak"),
-    paths: names.map((name) => join(binaryDir, name)),
+    missingScenario: join(resourceDir, "resources.pak"),
+    paths: names.map((name) => join(resourceDir, name)),
   };
 }
 

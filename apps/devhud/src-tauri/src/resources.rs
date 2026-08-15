@@ -63,20 +63,25 @@ impl ResourceLayout {
         );
 
         #[cfg(target_os = "linux")]
-        let (root, required) = (
-            binary_dir.to_path_buf(),
-            [
-                "libcef.so",
-                "icudtl.dat",
-                "resources.pak",
-                "v8_context_snapshot.bin",
-                "locales/en-US.pak",
-                "chrome-sandbox",
-            ]
-            .into_iter()
-            .map(PathBuf::from)
-            .collect(),
-        );
+        let (root, required) = {
+            let package_prefix = binary_dir.parent().ok_or_else(|| {
+                "the Linux executable is not inside a package bin directory".to_string()
+            })?;
+            (
+                package_prefix.join("share/DevHUD"),
+                [
+                    "libcef.so",
+                    "icudtl.dat",
+                    "resources.pak",
+                    "v8_context_snapshot.bin",
+                    "locales/en-US.pak",
+                    "chrome-sandbox",
+                ]
+                .into_iter()
+                .map(PathBuf::from)
+                .collect(),
+            )
+        };
 
         Ok(Self { root, required })
     }
@@ -96,6 +101,9 @@ impl ResourceLayout {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(target_os = "linux")]
+    use std::path::Path;
+
     use super::ResourceLayout;
 
     #[test]
@@ -105,5 +113,17 @@ mod tests {
         let required: Vec<_> = layout.required_relative_paths().collect();
         assert!(required.len() >= 6);
         assert!(required.iter().any(|path| path.ends_with("icudtl.dat")));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_uses_package_resource_directory() {
+        let executable = Path::new("/tmp/devhud-smoke-root/usr/bin/devhud");
+        let layout = ResourceLayout::for_executable(executable).expect("resource layout");
+
+        assert_eq!(
+            layout.root,
+            Path::new("/tmp/devhud-smoke-root/usr/share/DevHUD")
+        );
     }
 }
