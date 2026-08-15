@@ -211,6 +211,8 @@ describe("wire validation helpers", () => {
       "/workspace/oss/app.ts:10:2",
       " /workspace/oss/app.ts:10:2",
       "(/workspace/oss/app.ts:10:2)",
+      "source: /workspace/private/app.ts:10",
+      "frame: C:\\Users\\alice\\app.ts:10",
     ]) {
       const report = create(SubmitCrashReportRequestSchema, {
         ...safe,
