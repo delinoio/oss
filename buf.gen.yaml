@@ -35,3 +35,5 @@ plugins:
 
 inputs:
   - directory: protos
+    paths:
+      - protos/devhud/v1

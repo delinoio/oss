@@ -215,6 +215,38 @@ describe("wire validation helpers", () => {
     }
   });
 
+  it("rejects unknown crash report enum values", () => {
+    const unknownEnumValue = 99;
+    const reports = [
+      {
+        ...safeCrashReport,
+        clientBuild: {
+          ...clientBuild,
+          platform: unknownEnumValue as DiagnosticPlatform,
+        },
+      },
+      {
+        ...safeCrashReport,
+        clientBuild: {
+          ...clientBuild,
+          architecture: unknownEnumValue as DiagnosticArchitecture,
+        },
+      },
+      {
+        ...safeCrashReport,
+        component: unknownEnumValue as DiagnosticComponent,
+      },
+      {
+        ...safeCrashReport,
+        severity: unknownEnumValue as DiagnosticSeverity,
+      },
+    ];
+
+    for (const report of reports) {
+      expect(() => validateCrashReport(report)).toThrow(TypeError);
+    }
+  });
+
   it("rejects lone surrogates in every crash diagnostic string", () => {
     const loneSurrogate = "\ud800";
     const invalidDiagnostics = [

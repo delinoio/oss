@@ -21,6 +21,29 @@ const unicodeNonWhitespacePattern = /\P{White_Space}/u;
 const MIN_PROTOBUF_TIMESTAMP_SECONDS = -62_135_596_800n;
 const MAX_PROTOBUF_TIMESTAMP_SECONDS = 253_402_300_799n;
 const MAX_PROTOBUF_TIMESTAMP_NANOS = 999_999_999;
+const diagnosticPlatforms: ReadonlySet<DiagnosticPlatform> = new Set([
+  DiagnosticPlatform.MACOS,
+  DiagnosticPlatform.WINDOWS,
+  DiagnosticPlatform.LINUX,
+  DiagnosticPlatform.IOS,
+  DiagnosticPlatform.ANDROID,
+]);
+const diagnosticArchitectures: ReadonlySet<DiagnosticArchitecture> = new Set([
+  DiagnosticArchitecture.X86_64,
+  DiagnosticArchitecture.ARM64,
+]);
+const diagnosticComponents: ReadonlySet<DiagnosticComponent> = new Set([
+  DiagnosticComponent.APP,
+  DiagnosticComponent.AUTHENTICATION,
+  DiagnosticComponent.SETTINGS,
+  DiagnosticComponent.UPLOAD,
+  DiagnosticComponent.ACCOUNT,
+  DiagnosticComponent.NATIVE_SHELL,
+]);
+const diagnosticSeverities: ReadonlySet<DiagnosticSeverity> = new Set([
+  DiagnosticSeverity.ERROR,
+  DiagnosticSeverity.FATAL,
+]);
 
 const forbiddenSensitiveTextPatterns: ReadonlyArray<RegExp> = [
   // Keep this lookbehind-free while iOS 16.0-16.3 system webviews are supported.
@@ -101,17 +124,17 @@ export function validateCrashReport(report: SubmitCrashReportRequest): void {
   ) {
     throw new RangeError("occurredAt must be a valid google.protobuf.Timestamp");
   }
-  if (report.clientBuild.platform === DiagnosticPlatform.UNSPECIFIED) {
-    throw new TypeError("clientBuild.platform must be specified");
+  if (!diagnosticPlatforms.has(report.clientBuild.platform)) {
+    throw new TypeError("clientBuild.platform must be a recognized nonzero value");
   }
-  if (report.clientBuild.architecture === DiagnosticArchitecture.UNSPECIFIED) {
-    throw new TypeError("clientBuild.architecture must be specified");
+  if (!diagnosticArchitectures.has(report.clientBuild.architecture)) {
+    throw new TypeError("clientBuild.architecture must be a recognized nonzero value");
   }
-  if (report.component === DiagnosticComponent.UNSPECIFIED) {
-    throw new TypeError("component must be specified");
+  if (!diagnosticComponents.has(report.component)) {
+    throw new TypeError("component must be a recognized nonzero value");
   }
-  if (report.severity === DiagnosticSeverity.UNSPECIFIED) {
-    throw new TypeError("severity must be specified");
+  if (!diagnosticSeverities.has(report.severity)) {
+    throw new TypeError("severity must be a recognized nonzero value");
   }
 
   validateSensitiveText(report.errorCode, MAX_CRASH_IDENTIFIER_BYTES, "errorCode");
