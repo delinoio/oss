@@ -1,9 +1,12 @@
-import { terminateWindowsProcessTree } from "../../../scripts/spawn-dev-server.mjs";
+import {
+  terminatePosixProcessGroup,
+  terminateWindowsProcessTree,
+} from "../../../scripts/spawn-dev-server.mjs";
 
 function terminateTimedOutChild(child) {
   return process.platform === "win32"
     ? terminateWindowsProcessTree(child, "SIGKILL")
-    : Promise.resolve(child.kill("SIGKILL"));
+    : terminatePosixProcessGroup(child, "SIGKILL");
 }
 
 export function waitForChildClose(child, mode, timeoutMs) {

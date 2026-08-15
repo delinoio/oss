@@ -159,6 +159,7 @@ async function runScenario(
   const logRoot = join(cacheRoot, "logs");
   try {
     const child = spawn(executable, [], {
+      detached: process.platform !== "win32",
       env: {
         ...process.env,
         DEVHUD_PLATFORM_SMOKE: mode,

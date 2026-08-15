@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { readFileSync, readdirSync } from "node:fs";
 
 const terminationSignals = ["SIGINT", "SIGTERM"];
 const posixProcessGroupExitTimeoutMs = 10_000;
@@ -37,6 +38,30 @@ export function terminateWindowsProcessTree(child, signal) {
   });
 }
 
+// A container PID 1 may not promptly reap group-killed descendants. Those
+// zombies hold no resources but keep kill(-pgid, 0) successful, so Linux uses
+// /proc to wait only for live group members. Remove this when every supported
+// Linux host guarantees a reaping init or Node exposes a live-group query.
+function linuxProcessGroupHasLiveMembers(processGroupId) {
+  for (const entry of readdirSync("/proc", { withFileTypes: true })) {
+    if (!entry.isDirectory() || !/^\d+$/u.test(entry.name)) {
+      continue;
+    }
+    try {
+      const stat = readFileSync(`/proc/${entry.name}/stat`, "utf8");
+      const [state, , groupId] = stat.slice(stat.lastIndexOf(")") + 1).trim().split(/\s+/u);
+      if (groupId === String(processGroupId) && state !== "Z" && state !== "X") {
+        return true;
+      }
+    } catch (error) {
+      if (error.code !== "ENOENT") {
+        throw error;
+      }
+    }
+  }
+  return false;
+}
+
 function waitForPosixProcessGroupExit(processGroupId) {
   return new Promise((resolve, reject) => {
     const deadline = Date.now() + posixProcessGroupExitTimeoutMs;
@@ -51,6 +76,18 @@ function waitForPosixProcessGroupExit(processGroupId) {
         reject(new Error(`failed to await POSIX process group ${-processGroupId}: ${error.message}`));
         return;
       }
+      try {
+        if (
+          process.platform === "linux" &&
+          !linuxProcessGroupHasLiveMembers(-processGroupId)
+        ) {
+          resolve();
+          return;
+        }
+      } catch (error) {
+        reject(error);
+        return;
+      }
       if (Date.now() >= deadline) {
         reject(new Error(`timed out awaiting POSIX process group ${-processGroupId}`));
         return;
@@ -62,7 +99,7 @@ function waitForPosixProcessGroupExit(processGroupId) {
   });
 }
 
-function terminatePosixProcessGroup(child, signal) {
+export function terminatePosixProcessGroup(child, signal) {
   const processGroupId = -child.pid;
   try {
     process.kill(processGroupId, signal);

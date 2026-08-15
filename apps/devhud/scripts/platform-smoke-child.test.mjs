@@ -37,6 +37,22 @@ function listenOnPort(port) {
   });
 }
 
+function assertProcessIsNotLive(pid) {
+  try {
+    process.kill(pid, 0);
+  } catch (error) {
+    assert.equal(error.code, "ESRCH");
+    return;
+  }
+  if (process.platform === "linux") {
+    const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+    const [state] = stat.slice(stat.lastIndexOf(")") + 1).trim().split(/\s+/u);
+    assert.ok(state === "Z" || state === "X");
+    return;
+  }
+  assert.fail(`process ${pid} is still live`);
+}
+
 test("returns the exit code after a child closes", async () => {
   const child = spawn(process.execPath, ["-e", "process.exit(7)"], {
     stdio: "ignore",
@@ -48,6 +64,7 @@ test("returns the exit code after a child closes", async () => {
 
 test("waits for a timed-out child to close before rejecting", async () => {
   const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1_000)"], {
+    detached: process.platform !== "win32",
     stdio: "ignore",
     windowsHide: true,
   });
@@ -62,14 +79,15 @@ test("waits for a timed-out child to close before rejecting", async () => {
 });
 
 test(
-  "terminates and awaits a timed-out Windows process tree",
-  { skip: process.platform !== "win32", timeout: 20_000 },
+  "terminates and awaits a timed-out process tree",
+  { timeout: 20_000 },
   async (t) => {
     const temporaryDirectory = mkdtempSync(join(tmpdir(), "devhud-smoke-process-tree-"));
     const statusPath = join(temporaryDirectory, "status.json");
     t.after(() => rmSync(temporaryDirectory, { force: true, recursive: true }));
 
     const child = spawn(process.execPath, [processTreeChildPath, "manager", statusPath], {
+      detached: process.platform !== "win32",
       shell: false,
       stdio: "ignore",
       windowsHide: true,
@@ -77,7 +95,7 @@ test(
     const { pid, port } = await waitForStatus(statusPath);
 
     await assert.rejects(waitForChildClose(child, "hung-tree", 50), /hung-tree smoke timed out/u);
-    assert.throws(() => process.kill(pid, 0));
+    assertProcessIsNotLive(pid);
     await listenOnPort(port);
   },
 );
