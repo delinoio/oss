@@ -46,6 +46,14 @@ const r2SignedCredentialUrls = [
 const r2UnsignedMetadataUrl =
   "https://account.r2.cloudflarestorage.com/bucket/report?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Date=20260815T180000Z&X-Amz-Expires=900&X-Amz-SignedHeaders=host";
 const encodedLocalFileUrl = "file:%2FUsers%2Falice%2Fproject%2Fapp.ts";
+const encodedCredentialParameterUrls = [
+  "https://example.com/?context=password%3Dhunter2",
+  "https://example.com/#context=password%3Dhunter2",
+] as const;
+const encodedLocalPathParameterUrls = [
+  "https://example.com/?source=%2Fworkspace%2Fprivate%2Fapp.ts",
+  "https://example.com/#source=%2Fworkspace%2Fprivate%2Fapp.ts",
+] as const;
 const publicAssetBaseUrl = "https://assets.example.com/uploads/";
 const validateReason = (reason: string) => validateAdminReason(reason, publicAssetBaseUrl);
 
@@ -70,6 +78,11 @@ describe("wire validation helpers", () => {
     ).not.toThrow();
     expect(() =>
       validateReason("Reviewed https://example.com/?na%6de=release"),
+    ).not.toThrow();
+    expect(() =>
+      validateReason(
+        "Reviewed https://example.com/?context=release%3D2026#component=React%2FNative",
+      ),
     ).not.toThrow();
     expect(() =>
       validateReason("Reviewed https://assets.example.com/docs/upload-policy"),
@@ -110,6 +123,8 @@ describe("wire validation helpers", () => {
       "https://assets.example.com/uploads",
       "https://assets.example.com/uploads/018f47a2-7b3c-7def-8abc-1234567890ab/image.png?size=full#preview",
       "https://assets.example.com/%75ploads/018f47a2-7b3c-7def-8abc-1234567890ab/image.png",
+      ...encodedCredentialParameterUrls,
+      ...encodedLocalPathParameterUrls,
       ...r2SignedCredentialUrls,
     ]) {
       expect(() => validateReason(reason), reason).toThrow(TypeError);
@@ -438,6 +453,7 @@ describe("wire validation helpers", () => {
       "frame:src\\private\\app.ts:10",
       "source=%2Fworkspace%2Fprivate%2Fapp.ts",
       "C:%5CUsers%5Calice%5Capp.ts",
+      ...encodedLocalPathParameterUrls,
     ]) {
       const relativePathDiagnostics = [
         { ...safe, errorCode: relativePath },
@@ -464,6 +480,7 @@ describe("wire validation helpers", () => {
       "devhud://auth/callback",
       "mailto:user@example.com?subject=secret",
       "https://example.com/?na%6de=release",
+      "https://example.com/?context=release%3D2026#component=React%2FNative",
       r2UnsignedMetadataUrl,
     ]) {
       const report = create(SubmitCrashReportRequestSchema, {
@@ -521,6 +538,7 @@ describe("wire validation helpers", () => {
       "GITHUB_TOKEN=unsafe-value",
       "devhud://auth/callback?co%64e=unsafe-value",
       "https://example.com/?to%6ben=unsafe-value",
+      ...encodedCredentialParameterUrls,
     ]) {
       const credentialDiagnostics = [
         { ...safe, errorCode: credentialValue },

@@ -291,8 +291,8 @@ function containsForbiddenUrlContent(value: string, publicAssetBaseUrl?: URL): b
       return true;
     }
     if (
-      containsCredentialParameterName(url.search.slice(1)) ||
-      containsCredentialParameterName(url.hash.slice(1))
+      containsForbiddenParameterContent(url.search.slice(1), publicAssetBaseUrl) ||
+      containsForbiddenParameterContent(url.hash.slice(1), publicAssetBaseUrl)
     ) {
       return true;
     }
@@ -312,18 +312,31 @@ function isPublicAssetLocator(url: URL, publicAssetBaseUrl: URL): boolean {
   );
 }
 
-function containsCredentialParameterName(parameters: string): boolean {
+function containsForbiddenParameterContent(
+  parameters: string,
+  publicAssetBaseUrl?: URL,
+): boolean {
   for (const parameter of parameters.split("&")) {
     const separatorIndex = parameter.search(/[=:]/u);
     const encodedName = separatorIndex === -1 ? parameter : parameter.slice(0, separatorIndex);
+    const encodedValue = separatorIndex === -1 ? "" : parameter.slice(separatorIndex + 1);
 
     let name: string;
+    let value: string;
     try {
       name = decodeURIComponent(encodedName.replace(/\+/gu, " "));
+      value = decodeURIComponent(encodedValue.replace(/\+/gu, " "));
     } catch {
       return true;
     }
     if (credentialParameterNamePattern.test(name)) {
+      return true;
+    }
+    if (
+      containsForbiddenLocalPath(value) ||
+      forbiddenSensitiveTextPatterns.some((pattern) => pattern.test(value)) ||
+      containsForbiddenUrlContent(value, publicAssetBaseUrl)
+    ) {
       return true;
     }
   }
