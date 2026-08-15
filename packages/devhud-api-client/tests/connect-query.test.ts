@@ -3,7 +3,11 @@ import { createClient, createRouterTransport } from "@connectrpc/connect";
 import { describe, expect, it } from "vitest";
 
 import * as clientPackage from "../src/index.js";
-import { getAccount, restoreAccount } from "../src/gen/devhud/v1/account-AccountService_connectquery.js";
+import {
+  deleteAccount,
+  getAccount,
+  restoreAccount,
+} from "../src/gen/devhud/v1/account-AccountService_connectquery.js";
 import {
   deleteUpload as adminDeleteUpload,
   getUserUsage,
@@ -41,6 +45,7 @@ describe("generated Connect Query exports", () => {
     expect(listUploads.name).toBe("ListUploads");
     expect(deleteUpload.name).toBe("DeleteUpload");
     expect(getAccount.name).toBe("GetAccount");
+    expect(deleteAccount.name).toBe("DeleteAccount");
     expect(restoreAccount.name).toBe("RestoreAccount");
     expect(submitCrashReport.name).toBe("SubmitCrashReport");
 
