@@ -116,6 +116,33 @@ describe("wire validation helpers", () => {
       expect(() => validateCrashReport(report), stackTrace).toThrow(TypeError);
     }
 
+    for (const stackTrace of [
+      "src/main.rs:12",
+      "at render (src/private/customer/app.ts:10:2)",
+      "at render (src\\private\\customer\\app.ts:10:2)",
+    ]) {
+      const report = create(SubmitCrashReportRequestSchema, {
+        ...safe,
+        redactedStackTrace: stackTrace,
+      });
+      expect(() => validateCrashReport(report), stackTrace).toThrow(TypeError);
+    }
+
+    const relativePath = "src/private/customer/app.ts:10:2";
+    const relativePathDiagnostics = [
+      { ...safe, errorCode: relativePath },
+      { ...safe, clientBuild: { ...clientBuild, appVersion: relativePath } },
+      { ...safe, clientBuild: { ...clientBuild, buildId: relativePath } },
+      { ...safe, clientBuild: { ...clientBuild, osVersion: relativePath } },
+      { ...safe, redactedSummary: relativePath },
+      { ...safe, redactedStackTrace: relativePath },
+    ];
+    for (const report of relativePathDiagnostics) {
+      expect(() =>
+        validateCrashReport(create(SubmitCrashReportRequestSchema, report)),
+      ).toThrow(TypeError);
+    }
+
     const remoteUrl = create(SubmitCrashReportRequestSchema, {
       ...safe,
       redactedStackTrace: "at load (https://example.com/assets/app.js:10:2)",

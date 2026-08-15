@@ -13,6 +13,8 @@ const textDecoder = new TextDecoder("utf-8", { fatal: true });
 const forbiddenDiagnosticPatterns: ReadonlyArray<RegExp> = [
   // Keep this lookbehind-free while iOS 16.0-16.3 system webviews are supported.
   /(?:^(?:[\s\p{P}])?|[^:][\s\p{P}])(?:[A-Za-z]:[\\/]|\\\\|~\/|\/(?!\/))[^\s]*/u,
+  // Require a leading text boundary so URL path segments are not treated as local paths.
+  /(?:^|[\s([{<"'=])(?:\.{1,2}[\\/])?(?:[\p{L}\p{N}_@.-]+[\\/])+[\p{L}\p{N}_@.-]+\.[\p{L}][\p{L}\p{N}]*(?::\d+){0,2}(?=$|[\s\p{P}])/u,
   /file:\/\/[^\s]*/iu,
   // URL userinfo, queries, and fragments can contain opaque credentials.
   /\bhttps?:\/\/[^/\s?#]*@/iu,
