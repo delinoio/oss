@@ -25,7 +25,7 @@
 
 ### DevHud Rules
 
-- DevHud is documentation-first and these paths are planned; do not claim runtime behavior exists before the project/domain contracts are updated. Logto uses `devhud://auth/callback`, platform client keys `desktop`/`ios`/`android`, and Native Messaging host `io.delino.devhud.native_messaging` with one fixed release-configured extension ID.
+- DevHud is documentation-first and these paths are planned; do not claim runtime behavior exists before the project/domain contracts are updated. Logto uses native callback `devhud://auth/callback`, platform client keys `desktop`/`ios`/`android`, an `admin` client key with the documented exact browser redirect, and Native Messaging host `io.delino.devhud.native_messaging` with one fixed release-configured extension ID. The Native Messaging host uses the documented authenticated v1 user-scoped IPC contract owned by the app.
 - Fixed loopback ports are DevHud frontend `46305`, admin `46306`, and API `46307`; fail on conflicts and never auto-remap.
 - DevHud API calls use the exact CORS origins `http://localhost:46305`, `http://127.0.0.1:46305`, `http://localhost:46306`, `http://127.0.0.1:46306`, and pinned Tauri origin `http://tauri.localhost`; clients must use the documented Connect preflight behavior.
 - Desktop uses the exact pinned Tauri CEF revision `4af26a3f7f8b692d62cca549bbacd93f5ce90b41` from `https://github.com/tauri-apps/tauri`; mobile uses WKWebView/Android System WebView. Bundle ID is `io.delino.devhud`, deep-link scheme is `devhud`, and supported desktop targets are macOS 13+, Windows 10 22H2+, Ubuntu 22.04 LTS on X11, x64 and arm64. Native Wayland is out of scope.

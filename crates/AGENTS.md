@@ -23,6 +23,7 @@
 - Keep the canonical planned path at `crates/devhud-native-messaging-host` and document behavior in `docs/crates-devhud-native-messaging-host-contract.md`.
 - Do not add the path to root `Cargo.toml` until its crate skeleton exists. The host is a bounded Chrome-to-desktop broker, not a plugin SDK or API/GitHub/R2 client.
 - Preserve Native Messaging origin/extension-ID/nonce/schema/size/timeout validation, user-scoped IPC, redacted `tracing` diagnostics, and the supported desktop OS/architecture matrix.
+- The host-to-app IPC is an app-owned, versioned v1 length-prefixed JSON protocol over the documented per-user Unix socket or Windows named pipe, authenticated with a platform-secure pairing secret and challenge/response; it is independent of Connect RPC.
 
 ### Rust Workspace Rules
 

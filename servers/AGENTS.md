@@ -16,4 +16,5 @@
 - RestoreAccount and final purge must serialize through an atomic account-state transition or row lock: purge claims the account before destructive work, and a successful restore cannot follow irreversible deletion. A dedicated idempotent `devhud-api-sweeper` deployment owns staging expiry and post-recovery purge, coordinated across instances with a database lease or advisory lock.
 - CORS must use the exact DevHud development and pinned Tauri origins, with explicit Connect preflight methods and headers and no wildcard origin/header policy.
 - `GetBootstrap` is unauthenticated; settings, uploads, diagnostics, and account methods use authenticated user/ownership policies, while AdminService requires `devhud-admin`.
+- Bootstrap publishes the native callback, the `desktop`/`ios`/`android`/`admin` public client IDs, and the exact deployment-configured admin redirect; the admin SPA uses PKCE with state/nonce validation.
 - Keep `docs/servers-devhud-api-contract.md`, `docs/protos-devhud-v1-contract.md`, and `docs/project-devhud.md` synchronized with every interface or operational change.
