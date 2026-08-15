@@ -29,4 +29,13 @@ describe("bounded opaque pagination", () => {
     );
     expect(() => createPageRequest(50, "한".repeat(MAX_PAGE_TOKEN_BYTES))).toThrow(RangeError);
   });
+
+  it("rejects malformed Unicode without changing valid opaque tokens", () => {
+    const validToken = "opaque-😀-token";
+    expect(createPageRequest(50, validToken).pageToken).toBe(validToken);
+
+    for (const malformedToken of ["\ud800", "\udc00", "opaque-\ud800-token"]) {
+      expect(() => createPageRequest(50, malformedToken)).toThrow(TypeError);
+    }
+  });
 });

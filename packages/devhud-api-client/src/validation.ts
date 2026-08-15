@@ -5,6 +5,7 @@ import {
   DiagnosticSeverity,
   type SubmitCrashReportRequest,
 } from "./gen/devhud/v1/diagnostics_pb.js";
+import { assertWellFormedUnicode } from "./unicode.js";
 
 export const MAX_SETTINGS_JSON_BYTES = 1_048_576;
 export const MAX_ADMIN_REASON_BYTES = 4_096;
@@ -20,8 +21,12 @@ const textDecoder = new TextDecoder("utf-8", { fatal: true });
 const forbiddenSensitiveTextPatterns: ReadonlyArray<RegExp> = [
   // Keep this lookbehind-free while iOS 16.0-16.3 system webviews are supported.
   /(?:^(?:[\s\p{P}])?|[^:][\s\p{P}]|:\s+)(?:[A-Za-z]:[\\/]|\\\\|~\/|\/(?!\/))[^\s]*/u,
-  // Require a leading text boundary so URL path segments are not treated as local paths.
-  /(?:^|[\s([{<"'=])(?:\.{1,2}[\\/])?(?:[\p{L}\p{N}_@.-]+[\\/])+[\p{L}\p{N}_@.-]+(?::\d+){0,2}(?=$|[\s\p{P}])/u,
+  // Relative paths require explicit prefixes or structural/file evidence so labels such as
+  // React/Native, iOS/18.6, and 1.0.0/42 remain valid diagnostic text.
+  /(?:^|[\s([{<"'=])\.{1,2}[\\/](?:[\p{L}\p{N}_@.-]+[\\/])*[\p{L}\p{N}_@.-]+(?::\d+){0,2}(?=$|[\s\p{P}])/u,
+  /(?:^|[\s([{<"'=])(?:[\p{L}\p{N}_@.-]+[\\/]){2,}[\p{L}\p{N}_@.-]+(?::\d+){0,2}(?=$|[\s\p{P}])/u,
+  /(?:^|[\s([{<"'=])[\p{L}\p{N}_@.-]+[\\/](?:\.[\p{L}\p{N}_@.-]+|[\p{L}\p{N}_@.-]+\.[\p{L}][\p{L}\p{N}]*|Dockerfile|Makefile)(?::\d+){0,2}(?=$|[\s\p{P}])/u,
+  /(?:^|[\s([{<"'=])[\p{L}\p{N}_@.-]+[\\/][\p{L}\p{N}_@.-]+:\d+(?::\d+)?(?=$|[\s\p{P}])/u,
   /file:\/\/[^\s]*/iu,
   // URL userinfo, queries, and fragments can contain opaque credentials.
   /\b[A-Za-z][A-Za-z0-9+.-]*:\/\/[^/\s?#]*@/u,
@@ -197,19 +202,4 @@ function canonicalizeJson(value: unknown): string {
   }
 
   return output.join("");
-}
-
-function assertWellFormedUnicode(value: string, field = "settings JSON"): void {
-  for (let index = 0; index < value.length; index += 1) {
-    const codeUnit = value.charCodeAt(index);
-    if (codeUnit >= 0xd800 && codeUnit <= 0xdbff) {
-      const nextCodeUnit = value.charCodeAt(index + 1);
-      if (!(nextCodeUnit >= 0xdc00 && nextCodeUnit <= 0xdfff)) {
-        throw new TypeError(`${field} contains invalid Unicode data`);
-      }
-      index += 1;
-    } else if (codeUnit >= 0xdc00 && codeUnit <= 0xdfff) {
-      throw new TypeError(`${field} contains invalid Unicode data`);
-    }
-  }
 }

@@ -214,6 +214,20 @@ describe("wire validation helpers", () => {
     ).not.toThrow();
   });
 
+  it("accepts slash-delimited diagnostic labels without local-path evidence", () => {
+    const report = create(SubmitCrashReportRequestSchema, {
+      ...safeCrashReport,
+      clientBuild: {
+        ...clientBuild,
+        appVersion: "1.0.0/42",
+        osVersion: "iOS/18.6",
+      },
+      redactedSummary: "React/Native failure",
+    });
+
+    expect(() => validateCrashReport(report)).not.toThrow();
+  });
+
   it("rejects local paths and credential-shaped crash diagnostics", () => {
     const safe = safeCrashReport;
     expect(() => validateCrashReport(safe)).not.toThrow();
