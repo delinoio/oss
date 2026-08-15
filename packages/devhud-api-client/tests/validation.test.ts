@@ -46,6 +46,7 @@ const r2SignedCredentialUrls = [
 const r2UnsignedMetadataUrl =
   "https://account.r2.cloudflarestorage.com/bucket/report?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Date=20260815T180000Z&X-Amz-Expires=900&X-Amz-SignedHeaders=host";
 const encodedLocalFileUrl = "file:%2FUsers%2Falice%2Fproject%2Fapp.ts";
+const bareJwt = "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiIxMjMifQ.signature";
 const encodedCredentialParameterUrls = [
   "https://example.com/?context=password%3Dhunter2",
   "https://example.com/#context=password%3Dhunter2",
@@ -94,6 +95,7 @@ describe("wire validation helpers", () => {
     expect(() =>
       validateReason("ERROR_CODE=E_UPLOAD RETRY_COUNT=3 TOKEN_COUNT=2"),
     ).not.toThrow();
+    expect(() => validateReason("Reviewed service.component.error.")).not.toThrow();
 
     expect(() => validateReason("")).toThrow(TypeError);
     expect(() => validateReason(" \n\t ")).toThrow(TypeError);
@@ -105,6 +107,7 @@ describe("wire validation helpers", () => {
 
     for (const reason of [
       "Authorization: Bearer unsafe-value",
+      `Authentication failure exposed ${bareJwt}`,
       "refresh_token=unsafe-value",
       "AWS_SECRET_ACCESS_KEY=unsafe-value",
       "AWS_SESSION_TOKEN=unsafe-value",
@@ -527,6 +530,7 @@ describe("wire validation helpers", () => {
     }
 
     for (const credentialValue of [
+      bareJwt,
       "password=hunter2",
       "client_secret: unsafe-value",
       "refresh_token=unsafe-value",
@@ -559,6 +563,7 @@ describe("wire validation helpers", () => {
       "Password validation failed because the field was empty.",
       "Cookie parsing failed after session expiry.",
       "ERROR_CODE=E_UPLOAD RETRY_COUNT=3 TOKEN_COUNT=2",
+      "service.component.error",
     ]) {
       expect(() =>
         validateCrashReport(
