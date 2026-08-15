@@ -73,7 +73,15 @@ function waitForPosixProcessGroupExit(processGroupId) {
           resolve();
           return;
         }
-        reject(new Error(`failed to await POSIX process group ${-processGroupId}: ${error.message}`));
+        // macOS can report EPERM after the group-wide signal succeeded when no
+        // remaining group member can be probed by this process.
+        if (error.code === "EPERM") {
+          resolve();
+          return;
+        }
+        reject(
+          new Error(`failed to await POSIX process group ${-processGroupId}: ${error.message}`),
+        );
         return;
       }
       try {
