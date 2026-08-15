@@ -1,0 +1,50 @@
+# protos-devhud-v1-contract
+
+## Scope
+
+`protos/devhud/v1` is the planned versioned protobuf/Connect RPC contract. It owns wire types, service names, stable enum identifiers, compatibility rules, and generated-source inputs. No schema or generated code exists yet.
+
+## Runtime and Language
+
+Protocol definitions use English names/comments and package `devhud.v1`. The directory is not a runtime package and has no development server port.
+
+## Users and Operators
+
+The Go API, DevHud app, administrator SPA, generated TypeScript client, CI compatibility checks, and self-hosting operators.
+
+## Interfaces and Contracts
+
+Define Bootstrap, Settings, Upload, Account, Diagnostics, and Admin services with the RPCs listed in `docs/servers-devhud-api-contract.md`. Stable values include project `devhud`, mini-apps `realqa`/`deck`, capture action IDs, `devhud-admin`, protocol/API version, and typed Connect error semantics. Bootstrap capabilities are static compatibility declarations, never remote feature flags.
+
+Settings are schema-versioned full snapshots with monotonic revisions and expected-revision replacement; stale writes return `Aborted` and a conflict payload. Service identifiers use UUID v7; Logto and GitHub identifiers are external IDs. Protocols must not include secrets, PATs, R2 keys, DOM, screenshots, Deck results, agent output, or local paths.
+
+## Storage
+
+The protocol defines representations only. Persistence and retention belong to the API contract; generated clients must not add a second storage or secret policy.
+
+## Security
+
+Keep credentials out of messages and logs. Mark authenticated/admin methods and upload-finalization invariants explicitly. Preserve compatibility without weakening authorization, quota, redaction, or deletion rules.
+
+## Logging
+
+Protocol diagnostics may expose typed safe error fields and UUID v7 correlation IDs only; never serialize credentials or sensitive content into error details.
+
+## Build and Test
+
+Run schema lint, breaking-change checks, generated-client freshness, API conformance, enum/path consistency, and golden error/compatibility tests in CI. Any wire change updates this contract, the server, client, and app contracts together.
+
+## Dependencies and Integrations
+
+Consumed by `servers/devhud-api` and `packages/devhud-api-client`; used by the app/admin surfaces. Connect RPC is the business transport; REST remains limited to the server contract’s operational endpoints.
+
+## Change Triggers
+
+Update the project index, server/client/admin/app contracts, `protos/AGENTS.md`, and CI generation/compatibility rules for any service, message, enum, revision, error, or field change.
+
+## References
+
+- [DevHud project index](project-devhud.md)
+- [Server contract](servers-devhud-api-contract.md)
+- [Client contract](packages-devhud-api-client-contract.md)
+- [Repository defaults](repository-defaults.md)

@@ -36,6 +36,9 @@
 - `apps/`: User-facing apps (React Native and documentation web surfaces).
 - `crates/`: Rust crates and Rust-based tooling.
 - `cmds/`: Go command tools for workflow orchestration.
+- `servers/`: Backend services, including planned DevHud API services.
+- `protos/`: Versioned protocol schemas, including planned DevHud Connect RPC schemas.
+- `packages/`: Shared generated and runtime packages, including the planned DevHud API client.
 - `packaging/`: Package-manager template assets for release automation.
 - `.agents/skills/`: Workspace-local Codex skills and reusable agent workflows.
 
@@ -58,6 +61,7 @@
 - `docs/project-public-docs.md`: Public docs app project index.
 - `docs/project-serde-feather.md`: Serde Feather multi-crate project index.
 - `docs/project-rustia.md`: Rustia multi-crate project index.
+- `docs/project-devhud.md`: DevHud cross-platform desktop/mobile utility project index and current issue #815 contract.
 - `docs/crates-binpm-foundation.md`: binpm Rust CLI, release asset source selection, global cache, and local tooling contract.
 - `docs/crates-with-watch-foundation.md`: with-watch CLI and watcher foundation contract.
 - `docs/crates-rustia-core-foundation.md`: Rustia core runtime LLM data contract.
@@ -82,6 +86,7 @@ enum ProjectId {
   SerdeFeather = "serde-feather",
   Rustia = "rustia",
   PublicDocs = "public-docs",
+  DevHud = "devhud",
 }
 ```
 
@@ -97,6 +102,15 @@ enum ProjectId {
 - `serde-feather` -> `crates/serde-feather`, `crates/serde-feather-macros`
 - `rustia` -> `crates/rustia`, `crates/rustia-llm`, `crates/rustia-macros`
 - `public-docs` -> `apps/public-docs`
+- `devhud` -> `apps/devhud`, `apps/devhud-chrome-extension`, `apps/devhud-admin`, `servers/devhud-api`, `protos/devhud/v1`, `packages/devhud-api-client`, `crates/devhud-native-messaging-host` (all planned)
+
+### DevHud Contract
+
+- Issue [#815](https://github.com/delinoio/oss/issues/815) is the current normative DevHud contract and supersedes closed historical issues #729, #755, and #757 without inheriting their architecture.
+- DevHud fixed development ports are frontend `46305`, admin `46306`, and API `46307`; conflicts fail instead of remapping.
+- Desktop targets are macOS 13+, Windows 10 22H2+, and Ubuntu 22.04 LTS on X11, with x64 and arm64 artifacts. Mobile targets are iOS 16+ and Android 10/API 29+. Native Wayland, product analytics, remote feature flags, plugin SDK/ABI, server-side GitHub brokerage, and partial GA are excluded.
+- Desktop uses Tauri CEF commit `4af26a3f7f8b692d62cca549bbacd93f5ce90b41`; mobile uses system webviews. Bundle ID is `io.delino.devhud` and deep links use `devhud`.
+- Planned paths remain documentation-only. Do not add `crates/devhud-native-messaging-host` to the Cargo workspace until its crate skeleton exists.
 
 ### Repository Default Technology Choices
 
