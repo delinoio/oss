@@ -53,17 +53,17 @@ describe("devhud.v1 service contract", () => {
   });
 
   it("generates a Connect Query export for every RPC", () => {
-    expect(Object.keys(BootstrapQuery)).toEqual(["getBootstrap"]);
-    expect(Object.keys(SettingsQuery)).toEqual(["getSettings", "replaceSettings"]);
-    expect(Object.keys(UploadQuery)).toEqual([
+    expectExactQueryExports(BootstrapQuery, ["getBootstrap"]);
+    expectExactQueryExports(SettingsQuery, ["getSettings", "replaceSettings"]);
+    expectExactQueryExports(UploadQuery, [
       "createUpload",
       "finalizeUpload",
       "listUploads",
       "deleteUpload",
     ]);
-    expect(Object.keys(AccountQuery)).toEqual(["getAccount", "deleteAccount", "restoreAccount"]);
-    expect(Object.keys(DiagnosticsQuery)).toEqual(["submitCrashReport"]);
-    expect(Object.keys(AdminQuery)).toEqual([
+    expectExactQueryExports(AccountQuery, ["getAccount", "deleteAccount", "restoreAccount"]);
+    expectExactQueryExports(DiagnosticsQuery, ["submitCrashReport"]);
+    expectExactQueryExports(AdminQuery, [
       "listUsers",
       "setUserBlocked",
       "getUserUsage",
@@ -128,6 +128,10 @@ describe("devhud.v1 service contract", () => {
     ).toBe(false);
   });
 });
+
+function expectExactQueryExports(namespace: object, expected: ReadonlyArray<string>): void {
+  expect(Object.keys(namespace).sort()).toEqual([...expected].sort());
+}
 
 function collectReachableAdminMessages(service: DescService): Set<DescMessage> {
   const seen = new Set<DescMessage>();

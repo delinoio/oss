@@ -1,6 +1,7 @@
 import { create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 
+import { UuidV7Schema } from "../src/gen/devhud/v1/common_pb.js";
 import {
   ClientBuildSchema,
   SubmitCrashReportRequestSchema,
@@ -13,9 +14,11 @@ import {
   validateCrashReport,
 } from "../src/validation.js";
 
+const uuid = "018f47a2-7b3c-7def-8abc-1234567890ab";
+
 describe("wire validation helpers", () => {
   it("accepts only canonical UUID v7 and 32-byte digests", () => {
-    expect(() => assertUuidV7("018f47a2-7b3c-7def-8abc-1234567890ab")).not.toThrow();
+    expect(() => assertUuidV7(uuid)).not.toThrow();
     expect(() => assertUuidV7("018F47A2-7B3C-7DEF-8ABC-1234567890AB")).toThrow(TypeError);
     expect(() => assertUuidV7("018f47a2-7b3c-6def-8abc-1234567890ab")).toThrow(TypeError);
     expect(() => assertSha256(new Uint8Array(32))).not.toThrow();
@@ -60,8 +63,15 @@ describe("wire validation helpers", () => {
       errorCode: "UPLOAD_FINALIZE_FAILED",
       redactedSummary: "Upload finalization failed after a checksum mismatch.",
       redactedStackTrace: "UploadBoundary > Finalize > VerifyChecksum",
+      relatedCorrelationIds: [{ value: uuid }],
     });
     expect(() => validateCrashReport(safe)).not.toThrow();
+
+    const invalidCorrelationId = create(SubmitCrashReportRequestSchema, {
+      ...safe,
+      relatedCorrelationIds: [create(UuidV7Schema, { value: "not-a-uuid" })],
+    });
+    expect(() => validateCrashReport(invalidCorrelationId)).toThrow(TypeError);
 
     const localPath = create(SubmitCrashReportRequestSchema, {
       ...safe,
@@ -111,6 +121,18 @@ describe("wire validation helpers", () => {
       redactedStackTrace: "at load (https://example.com/assets/app.js:10:2)",
     });
     expect(() => validateCrashReport(remoteUrl)).not.toThrow();
+
+    for (const credentialUrl of [
+      "https://alice:password@example.com/app.js",
+      "https://example.com/app.js?token=secret",
+      "https://example.com/app.js#access-token",
+    ]) {
+      const report = create(SubmitCrashReportRequestSchema, {
+        ...safe,
+        redactedStackTrace: `at load (${credentialUrl})`,
+      });
+      expect(() => validateCrashReport(report), credentialUrl).toThrow(TypeError);
+    }
 
     const credential = create(SubmitCrashReportRequestSchema, {
       ...safe,

@@ -14,6 +14,9 @@ const forbiddenDiagnosticPatterns: ReadonlyArray<RegExp> = [
   // Keep this lookbehind-free while iOS 16.0-16.3 system webviews are supported.
   /(?:^(?:[\s\p{P}])?|[^:][\s\p{P}])(?:[A-Za-z]:[\\/]|\\\\|~\/|\/(?!\/))[^\s]*/u,
   /file:\/\/[^\s]*/iu,
+  // URL userinfo, queries, and fragments can contain opaque credentials.
+  /\bhttps?:\/\/[^/\s?#]*@/iu,
+  /\bhttps?:\/\/[^\s?#]*[?#]\S*/iu,
   /-----BEGIN [A-Z ]*PRIVATE KEY-----/u,
   /\b(?:ghp|github_pat)_[A-Za-z0-9_]+\b/u,
   /\bAuthorization\s*:\s*(?:Basic|Bearer)\s+\S+/iu,
@@ -73,6 +76,9 @@ export function validateCrashReport(report: SubmitCrashReportRequest): void {
     MAX_CRASH_STACK_BYTES,
     "redactedStackTrace",
   );
+  for (const correlationId of report.relatedCorrelationIds) {
+    assertUuidV7(correlationId.value);
+  }
 }
 
 function validateDiagnosticText(value: string, maximum: number, field: string): void {
