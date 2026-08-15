@@ -22,7 +22,7 @@ const DEVELOPMENT_ORIGIN: &str = "http://127.0.0.1:46305";
 const PRODUCTION_ORIGIN: &str = "http://tauri.localhost";
 const FRONTEND_READY_TITLE: &str = "DevHUD";
 const FRONTEND_READY_TIMEOUT: Duration = Duration::from_secs(5);
-const DEVHUD_ERROR_FILTER_DIRECTIVE: &str = "devhud=error";
+const DEVHUD_DIAGNOSTIC_FILTER_DIRECTIVE: &str = "devhud=info";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum SmokeMode {
@@ -127,12 +127,12 @@ fn diagnostic_filter(rust_log: Option<&str>) -> tracing_subscriber::EnvFilter {
         .and_then(|value| tracing_subscriber::EnvFilter::try_new(value).ok())
         .unwrap_or_else(|| tracing_subscriber::EnvFilter::new("info"));
 
-    // Operator filters may tune dependency verbosity, but fatal application
-    // diagnostics must remain available when a packaged GUI cannot start.
+    // Operator filters may tune dependency verbosity, but application lifecycle
+    // and failure diagnostics must remain available to managed launches.
     filter.add_directive(
-        DEVHUD_ERROR_FILTER_DIRECTIVE
+        DEVHUD_DIAGNOSTIC_FILTER_DIRECTIVE
             .parse()
-            .expect("the DevHUD error filter directive must remain valid"),
+            .expect("the DevHUD diagnostic filter directive must remain valid"),
     )
 }
 
@@ -402,8 +402,9 @@ mod tests {
     };
 
     use super::{
-        DEVHUD_ERROR_FILTER_DIRECTIVE, SmokeMode, diagnostic_filter, inject_smoke_missing_resource,
-        is_frontend_ready_title, wait_for_frontend_readiness_timeout,
+        DEVHUD_DIAGNOSTIC_FILTER_DIRECTIVE, SmokeMode, diagnostic_filter,
+        inject_smoke_missing_resource, is_frontend_ready_title,
+        wait_for_frontend_readiness_timeout,
     };
 
     #[test]
@@ -413,15 +414,15 @@ mod tests {
     }
 
     #[test]
-    fn diagnostic_filter_keeps_devhud_errors_enabled() {
+    fn diagnostic_filter_keeps_devhud_diagnostics_enabled() {
         for rust_log in [Some("off"), Some("devhud=off"), Some("warn,devhud=trace")] {
             let configured = diagnostic_filter(rust_log).to_string();
 
             assert!(
                 configured
                     .split(',')
-                    .any(|directive| directive == DEVHUD_ERROR_FILTER_DIRECTIVE),
-                "missing error floor in {configured}"
+                    .any(|directive| directive == DEVHUD_DIAGNOSTIC_FILTER_DIRECTIVE),
+                "missing diagnostic floor in {configured}"
             );
         }
     }
