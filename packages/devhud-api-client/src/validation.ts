@@ -54,10 +54,10 @@ const forbiddenSensitiveTextPatterns: ReadonlyArray<RegExp> = [
   /(?:^(?:[\s\p{P}])?|[^:][\s\p{P}]|:\s+)(?:[A-Za-z]:[\\/][^\s]*|\\\\[^\s]+|~\/[^\s]+|\/(?!\/)[^\s]+)/u,
   // Relative paths require explicit prefixes or structural/file evidence so labels such as
   // React/Native, iOS/18.6, and 1.0.0/42 remain valid diagnostic text.
-  /(?:^|[\s([{<"'=])\.{1,2}[\\/](?:[\p{L}\p{N}_@.-]+[\\/])*[\p{L}\p{N}_@.-]+(?::\d+){0,2}(?=$|[\s\p{P}])/u,
-  /(?:^|[\s([{<"'=])(?:[\p{L}\p{N}_@.-]+[\\/])+(?:\.[\p{L}\p{N}_@.-]+|[\p{L}\p{N}_@.-]+\.[\p{L}][\p{L}\p{N}]*|Dockerfile|Makefile)(?::\d+){0,2}(?=$|[\s\p{P}])/u,
-  /(?:^|[\s([{<"'=])(?:[\p{L}\p{N}_@.-]+[\\/])+[\p{L}\p{N}_@.-]+:\d+(?::\d+)?(?=$|[\s\p{P}])/u,
-  /(?:^|[\s([{<"'=])[\p{L}\p{N}_@.-]+\.[\p{L}][\p{L}\p{N}]*:\d+(?::\d+)?(?=$|[\s\p{P}])/u,
+  /(?:^|[\s([{<"'=:])\.{1,2}[\\/](?:[\p{L}\p{N}_@.-]+[\\/])*[\p{L}\p{N}_@.-]+(?::\d+){0,2}(?=$|[\s\p{P}])/u,
+  /(?:^|[\s([{<"'=:])(?:[\p{L}\p{N}_@.-]+[\\/])+(?:\.[\p{L}\p{N}_@.-]+|[\p{L}\p{N}_@.-]+\.[\p{L}][\p{L}\p{N}]*|Dockerfile|Makefile)(?::\d+){0,2}(?=$|[\s\p{P}])/u,
+  /(?:^|[\s([{<"'=:])(?:[\p{L}\p{N}_@.-]+[\\/])+[\p{L}\p{N}_@.-]+:\d+(?::\d+)?(?=$|[\s\p{P}])/u,
+  /(?:^|[\s([{<"'=:])[\p{L}\p{N}_@.-]+\.[\p{L}][\p{L}\p{N}]*:\d+(?::\d+)?(?=$|[\s\p{P}])/u,
   /file:\/\/[^\s]*/iu,
   /-----BEGIN [A-Z ]*PRIVATE KEY-----/u,
   /\b(?:ghp|github_pat)_[A-Za-z0-9_]+\b/u,

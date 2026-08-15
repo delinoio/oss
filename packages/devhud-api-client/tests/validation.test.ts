@@ -76,6 +76,8 @@ describe("wire validation helpers", () => {
       "refresh_token=unsafe-value",
       "See /Users/example/private/incident.txt",
       "See src/private/incident.txt",
+      "source:src/private/app.ts:10",
+      "frame:src\\private\\app.ts:10",
       "https://example.com/audit?token=unsafe-value",
       "devhud://auth/callback?co%64e=unsafe-value",
       "https://example.com/?to%6ben=unsafe-value",
@@ -395,6 +397,8 @@ describe("wire validation helpers", () => {
       "config/Dockerfile",
       "src/private/module:10",
       "src\\private\\module:10",
+      "source:src/private/app.ts:10",
+      "frame:src\\private\\app.ts:10",
     ]) {
       const relativePathDiagnostics = [
         { ...safe, errorCode: relativePath },
