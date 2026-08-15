@@ -57,6 +57,9 @@ describe("wire validation helpers", () => {
     expect(() =>
       validateAdminReason("Reviewed https://docs.example.com/policy?v=42#quarantine"),
     ).not.toThrow();
+    expect(() =>
+      validateAdminReason("Reviewed https://example.com/?na%6de=release"),
+    ).not.toThrow();
 
     expect(() => validateAdminReason("")).toThrow(TypeError);
     expect(() => validateAdminReason(" \n\t ")).toThrow(TypeError);
@@ -72,6 +75,9 @@ describe("wire validation helpers", () => {
       "See /Users/example/private/incident.txt",
       "See src/private/incident.txt",
       "https://example.com/audit?token=unsafe-value",
+      "devhud://auth/callback?co%64e=unsafe-value",
+      "https://example.com/?to%6ben=unsafe-value",
+      "https://example.com/?to%6=unsafe-value",
     ]) {
       expect(() => validateAdminReason(reason), reason).toThrow(TypeError);
     }
@@ -393,6 +399,7 @@ describe("wire validation helpers", () => {
       "wss://example.com/socket",
       "devhud://auth/callback",
       "mailto:user@example.com?subject=secret",
+      "https://example.com/?na%6de=release",
     ]) {
       const report = create(SubmitCrashReportRequestSchema, {
         ...safe,
@@ -407,6 +414,8 @@ describe("wire validation helpers", () => {
       "https://example.com/app.js#access-token",
       "wss://user:pass@example.com/socket",
       "devhud://auth/callback?code=secret&state=x",
+      "https://example.com/#access%2Dtoken=secret",
+      "https://example.com/?to%6=secret",
     ]) {
       const report = create(SubmitCrashReportRequestSchema, {
         ...safe,
@@ -441,6 +450,8 @@ describe("wire validation helpers", () => {
       "cookie: session=unsafe-value",
       '{"apiKey":"unsafe-value"}',
       "AUTHORIZATION=unsafe-value",
+      "devhud://auth/callback?co%64e=unsafe-value",
+      "https://example.com/?to%6ben=unsafe-value",
     ]) {
       const credentialDiagnostics = [
         { ...safe, errorCode: credentialValue },

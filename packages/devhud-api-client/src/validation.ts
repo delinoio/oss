@@ -18,6 +18,10 @@ const UUID_V7_PATTERN =
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder("utf-8", { fatal: true });
 const unicodeNonWhitespacePattern = /\P{White_Space}/u;
+const urlPattern = /\b[A-Za-z][A-Za-z0-9+.-]*:[^\s<>"']+/gu;
+const trailingUrlPunctuationPattern = /[)\]}>.,;]+$/u;
+const credentialParameterNamePattern =
+  /^(?:code|password|passwd|pwd|secret|token|client[_.-]?secret|(?:access|refresh|id)[_.-]?token|api[_.-]?key|private[_.-]?key|authorization|cookie|set-cookie)$/iu;
 const MIN_PROTOBUF_TIMESTAMP_SECONDS = -62_135_596_800n;
 const MAX_PROTOBUF_TIMESTAMP_SECONDS = 253_402_300_799n;
 const MAX_PROTOBUF_TIMESTAMP_NANOS = 999_999_999;
@@ -56,9 +60,6 @@ const forbiddenSensitiveTextPatterns: ReadonlyArray<RegExp> = [
   /(?:^|[\s([{<"'=])[\p{L}\p{N}_@.-]+[\\/][\p{L}\p{N}_@.-]+:\d+(?::\d+)?(?=$|[\s\p{P}])/u,
   /(?:^|[\s([{<"'=])[\p{L}\p{N}_@.-]+\.[\p{L}][\p{L}\p{N}]*:\d+(?::\d+)?(?=$|[\s\p{P}])/u,
   /file:\/\/[^\s]*/iu,
-  // URL userinfo and credential-bearing query or fragment names can contain opaque secrets.
-  /\b[A-Za-z][A-Za-z0-9+.-]*:\/\/[^/\s?#]*@/u,
-  /\b[A-Za-z][A-Za-z0-9+.-]*:[^\s?#]*[?#](?:[^\s&#]*[&#])*(?:code|password|passwd|pwd|secret|token|client[_.-]?secret|(?:access|refresh|id)[_.-]?token|api[_.-]?key|private[_.-]?key|authorization|cookie|set-cookie)(?:[=:]|(?=$|[\s)\]}>.,;&]))/iu,
   /-----BEGIN [A-Z ]*PRIVATE KEY-----/u,
   /\b(?:ghp|github_pat)_[A-Za-z0-9_]+\b/u,
   /\bAuthorization\s*:\s*(?:Basic|Bearer)\s+\S+/iu,
@@ -174,6 +175,63 @@ function validateSensitiveText(value: string, maximum: number, field: string): v
       throw new TypeError(`${field} contains forbidden sensitive or local-path content`);
     }
   }
+  if (containsForbiddenUrlContent(value)) {
+    throw new TypeError(`${field} contains forbidden sensitive or local-path content`);
+  }
+}
+
+function containsForbiddenUrlContent(value: string): boolean {
+  for (const match of value.matchAll(urlPattern)) {
+    const matchedUrl = match[0];
+    if (matchedUrl === undefined) {
+      continue;
+    }
+    const candidate = matchedUrl.replace(trailingUrlPunctuationPattern, "");
+
+    // URL and URLSearchParams tolerate malformed percent escapes, so validate the complete
+    // encoded URL first and reject undecodable URL-shaped content conservatively.
+    try {
+      decodeURI(candidate);
+    } catch {
+      return true;
+    }
+
+    let url: URL;
+    try {
+      url = new URL(candidate);
+    } catch {
+      continue;
+    }
+
+    if (url.username !== "" || url.password !== "") {
+      return true;
+    }
+    if (
+      containsCredentialParameterName(url.search.slice(1)) ||
+      containsCredentialParameterName(url.hash.slice(1))
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function containsCredentialParameterName(parameters: string): boolean {
+  for (const parameter of parameters.split("&")) {
+    const separatorIndex = parameter.search(/[=:]/u);
+    const encodedName = separatorIndex === -1 ? parameter : parameter.slice(0, separatorIndex);
+
+    let name: string;
+    try {
+      name = decodeURIComponent(encodedName.replace(/\+/gu, " "));
+    } catch {
+      return true;
+    }
+    if (credentialParameterNamePattern.test(name)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 type CanonicalizationFrame =
