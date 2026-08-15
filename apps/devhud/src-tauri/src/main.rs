@@ -356,7 +356,6 @@ fn main() {
     let result = builder
         .setup(move |app| {
             let app_handle = app.handle().clone();
-            let renderer_crashed_for_protocol = renderer_crashed.clone();
             let renderer_crashed_for_page_load = renderer_crashed.clone();
             let frontend_readiness_for_page_load = frontend_readiness_complete.clone();
             let frontend_readiness_for_watchdog = frontend_readiness_complete.clone();
@@ -406,18 +405,22 @@ fn main() {
                 frontend_readiness_for_watchdog,
             );
 
-            webview.on_dev_tools_protocol(move |message| {
-                if let tauri::CefDevToolsProtocol::Event { method, .. } = message
-                    && method.contains("targetCrashed")
-                {
-                    renderer_crashed_for_protocol.store(true, Ordering::SeqCst);
-                    error!(event = "renderer_terminated", source = "cdp");
+            #[cfg(not(target_os = "macos"))]
+            if smoke_mode == Some(SmokeMode::RendererCrash) {
+                let renderer_crashed_for_protocol = renderer_crashed.clone();
+                webview.on_dev_tools_protocol(move |message| {
+                    if let tauri::CefDevToolsProtocol::Event { method, .. } = message
+                        && method.contains("targetCrashed")
+                    {
+                        renderer_crashed_for_protocol.store(true, Ordering::SeqCst);
+                        error!(event = "renderer_terminated", source = "cdp");
+                    }
+                })?;
+                if let Err(error) = webview.send_dev_tools_message(
+                    br#"{"id":9000,"method":"Inspector.enable","params":{}}"#,
+                ) {
+                    error!(event = "renderer_diagnostic_enable_failed", reason = %error);
                 }
-            })?;
-            if let Err(error) = webview
-                .send_dev_tools_message(br#"{"id":9000,"method":"Inspector.enable","params":{}}"#)
-            {
-                error!(event = "renderer_diagnostic_enable_failed", reason = %error);
             }
 
             Ok(())
