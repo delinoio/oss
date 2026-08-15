@@ -11,7 +11,7 @@ const pins = JSON.parse(readFileSync(join(appRoot, "cef-pins.json"), "utf8"));
 const platforms = JSON.parse(readFileSync(join(appRoot, "platforms.json"), "utf8"));
 const appCargo = readFileSync(join(appRoot, "src-tauri/Cargo.toml"), "utf8");
 const rootCargo = readFileSync(join(repoRoot, "Cargo.toml"), "utf8");
-const cargoLock = readFileSync(join(repoRoot, "Cargo.lock"), "utf8");
+const cargoLock = readFileSync(join(repoRoot, "Cargo.lock"), "utf8").replace(/\r\n?/gu, "\n");
 const desktopWorkflow = readFileSync(join(repoRoot, ".github/workflows/devhud-desktop.yml"), "utf8");
 const packageJson = JSON.parse(readFileSync(join(appRoot, "package.json"), "utf8"));
 const pnpmLock = readFileSync(join(repoRoot, "pnpm-lock.yaml"), "utf8");
@@ -20,6 +20,32 @@ const rsbuildConfig = readFileSync(join(appRoot, "rsbuild.config.ts"), "utf8");
 
 const TAURI_REPOSITORY = "https://github.com/tauri-apps/tauri";
 const TAURI_REVISION = "4af26a3f7f8b692d62cca549bbacd93f5ce90b41";
+const CANONICAL_CEF_ARCHIVES = {
+  "aarch64-apple-darwin": {
+    name: "cef_binary_150.0.10+g8042e43+chromium-150.0.7871.101_macosarm64_minimal.tar.bz2",
+    sha1: "e73f7ce767420791b1965e15816a955d88cf1f9a",
+  },
+  "x86_64-apple-darwin": {
+    name: "cef_binary_150.0.10+g8042e43+chromium-150.0.7871.101_macosx64_minimal.tar.bz2",
+    sha1: "13e95f8bd0e13abe5283f67537d18b1b22f38ce7",
+  },
+  "aarch64-pc-windows-msvc": {
+    name: "cef_binary_150.0.10+g8042e43+chromium-150.0.7871.101_windowsarm64_minimal.tar.bz2",
+    sha1: "1e059f57e1f641a8925d140ae3724175605fb282",
+  },
+  "x86_64-pc-windows-msvc": {
+    name: "cef_binary_150.0.10+g8042e43+chromium-150.0.7871.101_windows64_minimal.tar.bz2",
+    sha1: "bce95ec52696c6725447fd0bf993cc928aefecd4",
+  },
+  "aarch64-unknown-linux-gnu": {
+    name: "cef_binary_150.0.10+g8042e43+chromium-150.0.7871.101_linuxarm64_minimal.tar.bz2",
+    sha1: "03e7a836ee73326280b8a3032e9741898133447e",
+  },
+  "x86_64-unknown-linux-gnu": {
+    name: "cef_binary_150.0.10+g8042e43+chromium-150.0.7871.101_linux64_minimal.tar.bz2",
+    sha1: "74a1186c566cbbac38c6b0f5298fc0bcfc1b9606",
+  },
+};
 
 function assert(condition, message) {
   if (!condition) {
@@ -120,7 +146,11 @@ assert(
 );
 for (const [target, archive] of Object.entries(pins.runtime.archives)) {
   assert(targetIds.has(target), `CEF archive has no platform definition: ${target}`);
+  const canonical = CANONICAL_CEF_ARCHIVES[target];
+  assert(canonical, `CEF archive has no immutable verifier pin: ${target}`);
   assert(/^[a-f0-9]{40}$/u.test(archive.sha1), `invalid CEF archive SHA-1 for ${target}`);
+  assert(archive.name === canonical.name, `CEF archive name changed for ${target}`);
+  assert(archive.sha1 === canonical.sha1, `CEF archive SHA-1 changed for ${target}`);
   assert(archive.name.includes(pins.runtime.cefVersion), `CEF archive version mismatch for ${target}`);
 }
 for (const { id, os, arch, rustTarget, runner } of platforms.targets) {

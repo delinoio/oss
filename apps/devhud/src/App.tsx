@@ -1,11 +1,17 @@
-export function App() {
+import { shellCopy, type SupportedLanguage } from "./localization";
+
+interface AppProps {
+  language: SupportedLanguage;
+}
+
+export function App({ language }: AppProps) {
+  const copy = shellCopy[language];
+
   return (
     <main className="shell" data-devhud-ready="true">
-      <p className="eyebrow">Desktop foundation</p>
+      <p className="eyebrow">{copy.eyebrow}</p>
       <h1>DevHUD</h1>
-      <p className="summary">
-        The pinned CEF desktop host is ready for the first DevHUD mini-apps.
-      </p>
+      <p className="summary">{copy.summary}</p>
     </main>
   );
 }

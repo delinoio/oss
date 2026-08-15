@@ -1,3 +1,5 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 mod platform;
 mod resources;
 
@@ -18,6 +20,9 @@ use tracing::{error, info, warn};
 
 const DEVELOPMENT_ORIGIN: &str = "http://127.0.0.1:46305";
 const PRODUCTION_ORIGIN: &str = "http://tauri.localhost";
+const FRONTEND_READY_PROBE: &str =
+    r#"document.querySelector('[data-devhud-ready="true"]') !== null"#;
+const FRONTEND_READY_ATTEMPTS: u8 = 100;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum SmokeMode {
@@ -87,6 +92,104 @@ fn validate_host() -> Result<(), String> {
     Ok(())
 }
 
+fn handle_frontend_ready(
+    webview: &tauri::WebviewWindow<tauri::Cef>,
+    app_handle: &tauri::AppHandle<tauri::Cef>,
+    smoke_mode: Option<SmokeMode>,
+    origin: &str,
+) {
+    info!(event = "frontend_ready", origin);
+    match smoke_mode {
+        Some(SmokeMode::Normal) => {
+            let app_handle = app_handle.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_millis(250));
+                info!(event = "smoke_shutdown_requested");
+                app_handle.exit(0);
+            });
+        }
+        Some(SmokeMode::RendererCrash) => {
+            info!(event = "renderer_crash_requested");
+            if let Err(error) =
+                webview.send_dev_tools_message(br#"{"id":9001,"method":"Page.crash","params":{}}"#)
+            {
+                error!(event = "renderer_crash_request_failed", reason = %error);
+            }
+        }
+        None => {}
+    }
+}
+
+fn probe_frontend_ready(
+    webview: tauri::WebviewWindow<tauri::Cef>,
+    app_handle: tauri::AppHandle<tauri::Cef>,
+    smoke_mode: Option<SmokeMode>,
+    origin: String,
+    frontend_ready: Arc<AtomicBool>,
+    attempts_remaining: u8,
+) {
+    let retry_webview = webview.clone();
+    let retry_app_handle = app_handle.clone();
+    let retry_origin = origin.clone();
+    let retry_frontend_ready = frontend_ready.clone();
+    let failure_app_handle = app_handle.clone();
+    let failure_frontend_ready = frontend_ready.clone();
+
+    if let Err(error) =
+        webview.eval_with_callback(
+            FRONTEND_READY_PROBE,
+            move |result| match serde_json::from_str::<bool>(&result) {
+                Ok(true) => {
+                    if !retry_frontend_ready.swap(true, Ordering::SeqCst) {
+                        handle_frontend_ready(
+                            &retry_webview,
+                            &retry_app_handle,
+                            smoke_mode,
+                            &retry_origin,
+                        );
+                    }
+                }
+                Ok(false) if attempts_remaining > 1 => {
+                    let webview = retry_webview.clone();
+                    let app_handle = retry_app_handle.clone();
+                    let origin = retry_origin.clone();
+                    let frontend_ready = retry_frontend_ready.clone();
+                    std::thread::spawn(move || {
+                        std::thread::sleep(Duration::from_millis(50));
+                        probe_frontend_ready(
+                            webview,
+                            app_handle,
+                            smoke_mode,
+                            origin,
+                            frontend_ready,
+                            attempts_remaining - 1,
+                        );
+                    });
+                }
+                Ok(false) => {
+                    if !retry_frontend_ready.load(Ordering::SeqCst) {
+                        error!(event = "frontend_readiness_timeout");
+                        if smoke_mode.is_some() {
+                            retry_app_handle.exit(1);
+                        }
+                    }
+                }
+                Err(error) => {
+                    error!(event = "frontend_readiness_probe_failed", reason = %error, result);
+                    if smoke_mode.is_some() {
+                        retry_app_handle.exit(1);
+                    }
+                }
+            },
+        )
+    {
+        error!(event = "frontend_readiness_probe_failed", reason = %error);
+        if smoke_mode.is_some() && !failure_frontend_ready.load(Ordering::SeqCst) {
+            failure_app_handle.exit(1);
+        }
+    }
+}
+
 fn main() {
     init_logging();
     let subprocess = is_cef_subprocess();
@@ -97,6 +200,7 @@ fn main() {
 
     let smoke_mode = SmokeMode::from_environment();
     let renderer_crashed = Arc::new(AtomicBool::new(false));
+    let frontend_ready = Arc::new(AtomicBool::new(false));
 
     let mut builder = tauri::Builder::<tauri::Cef>::default();
     if let Some(cache_path) = std::env::var_os("DEVHUD_SMOKE_CACHE_DIR") {
@@ -116,6 +220,7 @@ fn main() {
         .setup(move |app| {
             let app_handle = app.handle().clone();
             let renderer_crashed_for_protocol = renderer_crashed.clone();
+            let frontend_ready_for_page_load = frontend_ready.clone();
             let webview = tauri::WebviewWindowBuilder::<tauri::Cef, _>::new(
                 app,
                 "main",
@@ -145,26 +250,14 @@ fn main() {
                 if payload.event() != tauri::webview::PageLoadEvent::Finished {
                     return;
                 }
-                info!(event = "frontend_ready", origin = %payload.url().origin().ascii_serialization());
-                match smoke_mode {
-                    Some(SmokeMode::Normal) => {
-                        let app_handle = app_handle.clone();
-                        std::thread::spawn(move || {
-                            std::thread::sleep(Duration::from_millis(250));
-                            info!(event = "smoke_shutdown_requested");
-                            app_handle.exit(0);
-                        });
-                    }
-                    Some(SmokeMode::RendererCrash) => {
-                        info!(event = "renderer_crash_requested");
-                        if let Err(error) = webview.send_dev_tools_message(
-                            br#"{"id":9001,"method":"Page.crash","params":{}}"#,
-                        ) {
-                            error!(event = "renderer_crash_request_failed", reason = %error);
-                        }
-                    }
-                    None => {}
-                }
+                probe_frontend_ready(
+                    webview.clone(),
+                    app_handle.clone(),
+                    smoke_mode,
+                    payload.url().origin().ascii_serialization(),
+                    frontend_ready_for_page_load.clone(),
+                    FRONTEND_READY_ATTEMPTS,
+                );
             })
             .build()?;
 

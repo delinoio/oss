@@ -10,7 +10,7 @@
     "build": "node scripts/run-tauri.mjs build",
     "build:frontend": "rsbuild build",
     "lint": "tsc --noEmit",
-    "test": "pnpm lint && node scripts/verify-frontend-output.mjs",
+    "test": "pnpm lint && node --experimental-strip-types --test scripts/localization.test.mjs && node scripts/verify-frontend-output.mjs",
     "verify:pins": "node scripts/verify-pins.mjs",
     "smoke:platform": "node scripts/platform-smoke.mjs"
   },
