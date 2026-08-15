@@ -23,6 +23,8 @@ const PRODUCTION_ORIGIN: &str = "http://tauri.localhost";
 const FRONTEND_READY_PROBE: &str =
     r#"document.querySelector('[data-devhud-ready="true"]') !== null"#;
 const FRONTEND_READY_ATTEMPTS: u8 = 100;
+const FRONTEND_READY_RETRY_DELAY: Duration = Duration::from_millis(50);
+const FRONTEND_READY_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum SmokeMode {
@@ -196,6 +198,27 @@ fn start_renderer_crash_watchdog(
     });
 }
 
+fn wait_for_frontend_readiness_timeout(
+    frontend_readiness_complete: &AtomicBool,
+    timeout: Duration,
+) -> bool {
+    std::thread::sleep(timeout);
+    !frontend_readiness_complete.swap(true, Ordering::SeqCst)
+}
+
+fn start_frontend_readiness_watchdog(
+    app_handle: tauri::AppHandle<tauri::Cef>,
+    frontend_readiness_complete: Arc<AtomicBool>,
+) {
+    std::thread::spawn(move || {
+        if wait_for_frontend_readiness_timeout(&frontend_readiness_complete, FRONTEND_READY_TIMEOUT)
+        {
+            error!(event = "frontend_readiness_timeout");
+            app_handle.exit(1);
+        }
+    });
+}
+
 fn handle_frontend_ready(
     webview: &tauri::WebviewWindow<tauri::Cef>,
     app_handle: &tauri::AppHandle<tauri::Cef>,
@@ -240,24 +263,24 @@ fn probe_frontend_ready(
     app_handle: tauri::AppHandle<tauri::Cef>,
     smoke_mode: Option<SmokeMode>,
     origin: String,
-    frontend_ready: Arc<AtomicBool>,
+    frontend_readiness_complete: Arc<AtomicBool>,
     renderer_crashed: Arc<AtomicBool>,
     attempts_remaining: u8,
 ) {
     let retry_webview = webview.clone();
     let retry_app_handle = app_handle.clone();
     let retry_origin = origin.clone();
-    let retry_frontend_ready = frontend_ready.clone();
+    let retry_frontend_readiness_complete = frontend_readiness_complete.clone();
     let retry_renderer_crashed = renderer_crashed.clone();
     let failure_app_handle = app_handle.clone();
-    let failure_frontend_ready = frontend_ready.clone();
+    let failure_frontend_readiness_complete = frontend_readiness_complete.clone();
 
     if let Err(error) =
         webview.eval_with_callback(
             FRONTEND_READY_PROBE,
             move |result| match serde_json::from_str::<bool>(&result) {
                 Ok(true) => {
-                    if !retry_frontend_ready.swap(true, Ordering::SeqCst) {
+                    if !retry_frontend_readiness_complete.swap(true, Ordering::SeqCst) {
                         handle_frontend_ready(
                             &retry_webview,
                             &retry_app_handle,
@@ -271,29 +294,22 @@ fn probe_frontend_ready(
                     let webview = retry_webview.clone();
                     let app_handle = retry_app_handle.clone();
                     let origin = retry_origin.clone();
-                    let frontend_ready = retry_frontend_ready.clone();
+                    let frontend_readiness_complete = retry_frontend_readiness_complete.clone();
                     let renderer_crashed = retry_renderer_crashed.clone();
                     std::thread::spawn(move || {
-                        std::thread::sleep(Duration::from_millis(50));
+                        std::thread::sleep(FRONTEND_READY_RETRY_DELAY);
                         probe_frontend_ready(
                             webview,
                             app_handle,
                             smoke_mode,
                             origin,
-                            frontend_ready,
+                            frontend_readiness_complete,
                             renderer_crashed,
                             attempts_remaining - 1,
                         );
                     });
                 }
-                Ok(false) => {
-                    if !retry_frontend_ready.load(Ordering::SeqCst) {
-                        error!(event = "frontend_readiness_timeout");
-                        if smoke_mode.is_some() {
-                            retry_app_handle.exit(1);
-                        }
-                    }
-                }
+                Ok(false) => {}
                 Err(error) => {
                     error!(event = "frontend_readiness_probe_failed", reason = %error, result);
                     if smoke_mode.is_some() {
@@ -304,7 +320,7 @@ fn probe_frontend_ready(
         )
     {
         error!(event = "frontend_readiness_probe_failed", reason = %error);
-        if smoke_mode.is_some() && !failure_frontend_ready.load(Ordering::SeqCst) {
+        if smoke_mode.is_some() && !failure_frontend_readiness_complete.load(Ordering::SeqCst) {
             failure_app_handle.exit(1);
         }
     }
@@ -321,7 +337,7 @@ fn main() {
     }
 
     let renderer_crashed = Arc::new(AtomicBool::new(false));
-    let frontend_ready = Arc::new(AtomicBool::new(false));
+    let frontend_readiness_complete = Arc::new(AtomicBool::new(false));
 
     let mut builder = tauri::Builder::<tauri::Cef>::default();
     if let Some(cache_path) = std::env::var_os("DEVHUD_SMOKE_CACHE_DIR") {
@@ -342,7 +358,8 @@ fn main() {
             let app_handle = app.handle().clone();
             let renderer_crashed_for_protocol = renderer_crashed.clone();
             let renderer_crashed_for_page_load = renderer_crashed.clone();
-            let frontend_ready_for_page_load = frontend_ready.clone();
+            let frontend_readiness_for_page_load = frontend_readiness_complete.clone();
+            let frontend_readiness_for_watchdog = frontend_readiness_complete.clone();
             let webview = tauri::WebviewWindowBuilder::<tauri::Cef, _>::new(
                 app,
                 "main",
@@ -377,12 +394,17 @@ fn main() {
                     app_handle.clone(),
                     smoke_mode,
                     payload.url().origin().ascii_serialization(),
-                    frontend_ready_for_page_load.clone(),
+                    frontend_readiness_for_page_load.clone(),
                     renderer_crashed_for_page_load.clone(),
                     FRONTEND_READY_ATTEMPTS,
                 );
             })
             .build()?;
+
+            start_frontend_readiness_watchdog(
+                app.handle().clone(),
+                frontend_readiness_for_watchdog,
+            );
 
             webview.on_dev_tools_protocol(move |message| {
                 if let tauri::CefDevToolsProtocol::Event { method, .. } = message
@@ -413,7 +435,33 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{SmokeMode, inject_smoke_missing_resource};
+    use std::{
+        sync::atomic::{AtomicBool, Ordering},
+        time::Duration,
+    };
+
+    use super::{SmokeMode, inject_smoke_missing_resource, wait_for_frontend_readiness_timeout};
+
+    #[test]
+    fn frontend_readiness_timeout_claims_pending_state() {
+        let frontend_readiness_complete = AtomicBool::new(false);
+
+        assert!(wait_for_frontend_readiness_timeout(
+            &frontend_readiness_complete,
+            Duration::ZERO,
+        ));
+        assert!(frontend_readiness_complete.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn frontend_readiness_timeout_ignores_completed_state() {
+        let frontend_readiness_complete = AtomicBool::new(true);
+
+        assert!(!wait_for_frontend_readiness_timeout(
+            &frontend_readiness_complete,
+            Duration::ZERO,
+        ));
+    }
 
     #[test]
     fn missing_resource_smoke_injects_resources_pak_once() {

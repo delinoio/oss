@@ -119,8 +119,10 @@ assert(
   hasExactCspDirectiveSources(productionCsp, "connect-src", ["'none'"]),
   "production connection CSP changed",
 );
-assert(productionCsp.includes("style-src 'self'"), "production style CSP changed");
-assert(!productionCsp.includes("'unsafe-inline'"), "production CSP permits inline content");
+assert(
+  hasExactCspDirectiveSources(productionCsp, "style-src", ["'self'"]),
+  "production style CSP changed",
+);
 assert(
   rsbuildConfig.includes('"style-src \'self\' \'unsafe-inline\'"'),
   "development CSP does not permit injected styles",
