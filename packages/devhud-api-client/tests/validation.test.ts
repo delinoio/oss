@@ -46,6 +46,8 @@ const r2SignedCredentialUrls = [
 const r2UnsignedMetadataUrl =
   "https://account.r2.cloudflarestorage.com/bucket/report?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Date=20260815T180000Z&X-Amz-Expires=900&X-Amz-SignedHeaders=host";
 const encodedLocalFileUrl = "file:%2FUsers%2Falice%2Fproject%2Fapp.ts";
+const publicAssetBaseUrl = "https://assets.example.com/uploads/";
+const validateReason = (reason: string) => validateAdminReason(reason, publicAssetBaseUrl);
 
 describe("wire validation helpers", () => {
   it("accepts only canonical UUID v7 and 32-byte digests", () => {
@@ -57,28 +59,34 @@ describe("wire validation helpers", () => {
   });
 
   it("validates bounded sensitive-content-safe administrator reasons", () => {
-    expect(() => validateAdminReason("Quarantined after repeated policy violations.")).not.toThrow();
-    expect(() => validateAdminReason("Expected yes / no")).not.toThrow();
-    expect(() => validateAdminReason("Reviewed incident from 2026/08/15.")).not.toThrow();
-    expect(() => validateAdminReason("Rolled back release 1/2/3.")).not.toThrow();
-    expect(() => validateAdminReason("\u0085Reviewed policy breach")).not.toThrow();
-    expect(() => validateAdminReason("é".repeat(MAX_ADMIN_REASON_BYTES / 2))).not.toThrow();
+    expect(() => validateReason("Quarantined after repeated policy violations.")).not.toThrow();
+    expect(() => validateReason("Expected yes / no")).not.toThrow();
+    expect(() => validateReason("Reviewed incident from 2026/08/15.")).not.toThrow();
+    expect(() => validateReason("Rolled back release 1/2/3.")).not.toThrow();
+    expect(() => validateReason("\u0085Reviewed policy breach")).not.toThrow();
+    expect(() => validateReason("é".repeat(MAX_ADMIN_REASON_BYTES / 2))).not.toThrow();
     expect(() =>
-      validateAdminReason("Reviewed https://docs.example.com/policy?v=42#quarantine"),
+      validateReason("Reviewed https://docs.example.com/policy?v=42#quarantine"),
     ).not.toThrow();
     expect(() =>
-      validateAdminReason("Reviewed https://example.com/?na%6de=release"),
+      validateReason("Reviewed https://example.com/?na%6de=release"),
     ).not.toThrow();
-    expect(() => validateAdminReason(`Reviewed ${r2UnsignedMetadataUrl}`)).not.toThrow();
     expect(() =>
-      validateAdminReason("ERROR_CODE=E_UPLOAD RETRY_COUNT=3 TOKEN_COUNT=2"),
+      validateReason("Reviewed https://assets.example.com/docs/upload-policy"),
+    ).not.toThrow();
+    expect(() =>
+      validateReason("Reviewed https://assets.example.com/uploads-archive/image-policy"),
+    ).not.toThrow();
+    expect(() => validateReason(`Reviewed ${r2UnsignedMetadataUrl}`)).not.toThrow();
+    expect(() =>
+      validateReason("ERROR_CODE=E_UPLOAD RETRY_COUNT=3 TOKEN_COUNT=2"),
     ).not.toThrow();
 
-    expect(() => validateAdminReason("")).toThrow(TypeError);
-    expect(() => validateAdminReason(" \n\t ")).toThrow(TypeError);
-    expect(() => validateAdminReason("\u0085\u2007\u2028")).toThrow(TypeError);
-    expect(() => validateAdminReason("\ud800")).toThrow(TypeError);
-    expect(() => validateAdminReason("é".repeat(MAX_ADMIN_REASON_BYTES / 2 + 1))).toThrow(
+    expect(() => validateReason("")).toThrow(TypeError);
+    expect(() => validateReason(" \n\t ")).toThrow(TypeError);
+    expect(() => validateReason("\u0085\u2007\u2028")).toThrow(TypeError);
+    expect(() => validateReason("\ud800")).toThrow(TypeError);
+    expect(() => validateReason("é".repeat(MAX_ADMIN_REASON_BYTES / 2 + 1))).toThrow(
       RangeError,
     );
 
@@ -97,10 +105,15 @@ describe("wire validation helpers", () => {
       "devhud://auth/callback?co%64e=unsafe-value",
       "https://example.com/?to%6ben=unsafe-value",
       "https://example.com/?to%6=unsafe-value",
+      "https://assets.example.com/uploads",
+      "https://assets.example.com/uploads/018f47a2-7b3c-7def-8abc-1234567890ab/image.png?size=full#preview",
+      "https://assets.example.com/%75ploads/018f47a2-7b3c-7def-8abc-1234567890ab/image.png",
       ...r2SignedCredentialUrls,
     ]) {
-      expect(() => validateAdminReason(reason), reason).toThrow(TypeError);
+      expect(() => validateReason(reason), reason).toThrow(TypeError);
     }
+
+    expect(() => validateAdminReason("Reviewed policy", "relative/assets")).toThrow(TypeError);
   });
 
   it("rejects noncanonical settings JSON", () => {

@@ -94,11 +94,16 @@ export function validateCanonicalSettingsJson(value: Uint8Array): unknown {
   return parsed;
 }
 
-export function validateAdminReason(reason: string): void {
+export function validateAdminReason(reason: string, publicAssetBaseUrl: string): void {
   if (!unicodeNonWhitespacePattern.test(reason)) {
     throw new TypeError("reason must contain at least one non-whitespace character");
   }
-  validateSensitiveText(reason, MAX_ADMIN_REASON_BYTES, "reason");
+  validateSensitiveText(
+    reason,
+    MAX_ADMIN_REASON_BYTES,
+    "reason",
+    parsePublicAssetBaseUrl(publicAssetBaseUrl),
+  );
 }
 
 export function validateCrashReport(report: SubmitCrashReportRequest): void {
@@ -164,22 +169,41 @@ export function validateCrashReport(report: SubmitCrashReportRequest): void {
   }
 }
 
-function validateSensitiveText(value: string, maximum: number, field: string): void {
+function validateSensitiveText(
+  value: string,
+  maximum: number,
+  field: string,
+  publicAssetBaseUrl?: URL,
+): void {
   assertWellFormedUnicode(value, field);
   if (textEncoder.encode(value).byteLength > maximum) {
     throw new RangeError(`${field} must not exceed ${maximum} UTF-8 bytes`);
   }
+  const forbiddenContent =
+    publicAssetBaseUrl === undefined
+      ? "sensitive or local-path"
+      : "sensitive, public asset locator, or local-path";
   for (const pattern of forbiddenSensitiveTextPatterns) {
     if (pattern.test(value)) {
-      throw new TypeError(`${field} contains forbidden sensitive or local-path content`);
+      throw new TypeError(`${field} contains forbidden ${forbiddenContent} content`);
     }
   }
-  if (containsForbiddenUrlContent(value)) {
-    throw new TypeError(`${field} contains forbidden sensitive or local-path content`);
+  if (containsForbiddenUrlContent(value, publicAssetBaseUrl)) {
+    throw new TypeError(`${field} contains forbidden ${forbiddenContent} content`);
   }
 }
 
-function containsForbiddenUrlContent(value: string): boolean {
+function parsePublicAssetBaseUrl(value: string): URL {
+  assertWellFormedUnicode(value, "publicAssetBaseUrl");
+  try {
+    decodeURI(value);
+    return new URL(value);
+  } catch {
+    throw new TypeError("publicAssetBaseUrl must be an absolute URL");
+  }
+}
+
+function containsForbiddenUrlContent(value: string, publicAssetBaseUrl?: URL): boolean {
   for (const match of value.matchAll(urlPattern)) {
     const matchedUrl = match[0];
     if (matchedUrl === undefined) {
@@ -205,6 +229,9 @@ function containsForbiddenUrlContent(value: string): boolean {
     if (url.protocol === "file:") {
       return true;
     }
+    if (publicAssetBaseUrl !== undefined && isPublicAssetLocator(url, publicAssetBaseUrl)) {
+      return true;
+    }
     if (url.username !== "" || url.password !== "") {
       return true;
     }
@@ -216,6 +243,18 @@ function containsForbiddenUrlContent(value: string): boolean {
     }
   }
   return false;
+}
+
+function isPublicAssetLocator(url: URL, publicAssetBaseUrl: URL): boolean {
+  if (url.origin !== publicAssetBaseUrl.origin) {
+    return false;
+  }
+
+  const basePath = decodeURIComponent(publicAssetBaseUrl.pathname).replace(/\/+$/u, "");
+  const candidatePath = decodeURIComponent(url.pathname);
+  return (
+    basePath === "" || candidatePath === basePath || candidatePath.startsWith(`${basePath}/`)
+  );
 }
 
 function containsCredentialParameterName(parameters: string): boolean {
