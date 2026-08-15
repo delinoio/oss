@@ -21,7 +21,7 @@ const unicodeNonWhitespacePattern = /\P{White_Space}/u;
 const urlPattern = /\b[A-Za-z][A-Za-z0-9+.-]*:[^\s<>"']+/gu;
 const trailingUrlPunctuationPattern = /[)\]}>.,;]+$/u;
 const credentialParameterNamePattern =
-  /^(?:code|password|passwd|pwd|secret|token|client[_.-]?secret|(?:access|refresh|id)[_.-]?token|api[_.-]?key|private[_.-]?key|authorization|cookie|set-cookie)$/iu;
+  /^(?:code|password|passwd|pwd|secret|token|client[_.-]?secret|(?:access|refresh|id)[_.-]?token|api[_.-]?key|private[_.-]?key|authorization|cookie|set-cookie|x-amz-(?:credential|signature))$/iu;
 const MIN_PROTOBUF_TIMESTAMP_SECONDS = -62_135_596_800n;
 const MAX_PROTOBUF_TIMESTAMP_SECONDS = 253_402_300_799n;
 const MAX_PROTOBUF_TIMESTAMP_NANOS = 999_999_999;

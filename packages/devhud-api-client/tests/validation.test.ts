@@ -39,6 +39,12 @@ const safeCrashReport = create(SubmitCrashReportRequestSchema, {
   redactedStackTrace: "UploadBoundary > Finalize > VerifyChecksum",
   relatedCorrelationIds: [{ value: uuid }],
 });
+const r2SignedCredentialUrls = [
+  "https://account.r2.cloudflarestorage.com/bucket/report?X-Amz-Credential=R2ACCESSKEY%2F20260815%2Fauto%2Fs3%2Faws4_request",
+  "https://account.r2.cloudflarestorage.com/bucket/report?X-Amz-Signature=0123456789abcdef",
+] as const;
+const r2UnsignedMetadataUrl =
+  "https://account.r2.cloudflarestorage.com/bucket/report?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Date=20260815T180000Z&X-Amz-Expires=900&X-Amz-SignedHeaders=host";
 
 describe("wire validation helpers", () => {
   it("accepts only canonical UUID v7 and 32-byte digests", () => {
@@ -62,6 +68,7 @@ describe("wire validation helpers", () => {
     expect(() =>
       validateAdminReason("Reviewed https://example.com/?na%6de=release"),
     ).not.toThrow();
+    expect(() => validateAdminReason(`Reviewed ${r2UnsignedMetadataUrl}`)).not.toThrow();
 
     expect(() => validateAdminReason("")).toThrow(TypeError);
     expect(() => validateAdminReason(" \n\t ")).toThrow(TypeError);
@@ -82,6 +89,7 @@ describe("wire validation helpers", () => {
       "devhud://auth/callback?co%64e=unsafe-value",
       "https://example.com/?to%6ben=unsafe-value",
       "https://example.com/?to%6=unsafe-value",
+      ...r2SignedCredentialUrls,
     ]) {
       expect(() => validateAdminReason(reason), reason).toThrow(TypeError);
     }
@@ -424,6 +432,7 @@ describe("wire validation helpers", () => {
       "devhud://auth/callback",
       "mailto:user@example.com?subject=secret",
       "https://example.com/?na%6de=release",
+      r2UnsignedMetadataUrl,
     ]) {
       const report = create(SubmitCrashReportRequestSchema, {
         ...safe,
@@ -440,6 +449,7 @@ describe("wire validation helpers", () => {
       "devhud://auth/callback?code=secret&state=x",
       "https://example.com/#access%2Dtoken=secret",
       "https://example.com/?to%6=secret",
+      ...r2SignedCredentialUrls,
     ]) {
       const report = create(SubmitCrashReportRequestSchema, {
         ...safe,
