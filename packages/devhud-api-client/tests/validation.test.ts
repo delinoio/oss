@@ -180,6 +180,40 @@ describe("wire validation helpers", () => {
       ).toThrow(TypeError);
     }
 
+    for (const credentialValue of [
+      "password=hunter2",
+      "client_secret: unsafe-value",
+      "refresh_token=unsafe-value",
+      "cookie: session=unsafe-value",
+      '{"apiKey":"unsafe-value"}',
+      "AUTHORIZATION=unsafe-value",
+    ]) {
+      const credentialDiagnostics = [
+        { ...safe, errorCode: credentialValue },
+        { ...safe, clientBuild: { ...clientBuild, appVersion: credentialValue } },
+        { ...safe, clientBuild: { ...clientBuild, buildId: credentialValue } },
+        { ...safe, clientBuild: { ...clientBuild, osVersion: credentialValue } },
+        { ...safe, redactedSummary: credentialValue },
+        { ...safe, redactedStackTrace: credentialValue },
+      ];
+      for (const report of credentialDiagnostics) {
+        expect(() =>
+          validateCrashReport(create(SubmitCrashReportRequestSchema, report)),
+        ).toThrow(TypeError);
+      }
+    }
+
+    for (const redactedSummary of [
+      "Password validation failed because the field was empty.",
+      "Cookie parsing failed after session expiry.",
+    ]) {
+      expect(() =>
+        validateCrashReport(
+          create(SubmitCrashReportRequestSchema, { ...safe, redactedSummary }),
+        ),
+      ).not.toThrow();
+    }
+
     const oversizedValue = "a".repeat(MAX_CRASH_IDENTIFIER_BYTES + 1);
     const oversizedIdentifiers = [
       { ...safe, errorCode: oversizedValue },
