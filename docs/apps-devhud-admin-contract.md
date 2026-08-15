@@ -30,7 +30,7 @@ Use redacted structured client and server diagnostics. Never log tokens, setting
 
 ## Build and Test
 
-Validate role denial, block/unblock reason enforcement, concurrent admin mutations, quota and upload views, quarantine/delete placeholder behavior, audit integrity, settings non-disclosure, English/Korean layouts, accessibility, and fixed port `46306` conflict failure.
+Validate role denial, block/unblock reason enforcement, concurrent admin mutations, quota and upload-group views, quarantine/delete origin replacement before CDN purge/revalidation, audit integrity, settings non-disclosure, English/Korean layouts, accessibility, and fixed port `46306` conflict failure.
 
 ## Dependencies and Integrations
 

@@ -12,6 +12,6 @@
 
 - `servers/devhud-api` uses fixed development port `46307`, PostgreSQL, Cloudflare R2 signed uploads, external Logto, Connect RPC, and a non-root OCI artifact.
 - It must not proxy GitHub or upload bodies, broker credentials, poll Decks, receive GitHub webhooks, or persist Deck results.
-- FinalizeUpload must revalidate ownership/block state and the exact staging object, verify size/checksum/image safety, atomically recheck or reserve all applicable upload quotas, reject replay, and clean invalid staging objects. Deletion and quarantine must invalidate public CDN copies before replacement; account purge must remove or irreversibly pseudonymize upload metadata.
+- FinalizeUpload must revalidate ownership/block state and the exact staging object and server-issued upload-group binding, verify size/checksum/image safety, atomically recheck or reserve all applicable upload quotas, reject replay, and clean invalid staging objects. Deletion and quarantine must replace or remove origin bytes before invalidating public CDN copies; the operation is not effective while the original remains retrievable from a CDN cache. Account purge must remove or irreversibly pseudonymize upload metadata.
 - `GetBootstrap` is unauthenticated; settings, uploads, diagnostics, and account methods use authenticated user/ownership policies, while AdminService requires `devhud-admin`.
 - Keep `docs/servers-devhud-api-contract.md`, `docs/protos-devhud-v1-contract.md`, and `docs/project-devhud.md` synchronized with every interface or operational change.
