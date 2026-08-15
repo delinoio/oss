@@ -16,6 +16,8 @@ Only individual accounts with the stable Logto role `devhud-admin`; API and secu
 
 Support user search through `AdminService.ListUsers`, block/unblock with mandatory reason through `AdminService.SetUserBlocked`, quota inspection through `AdminService.GetUserUsage`, upload listing through `AdminService.ListUploads`, quarantine/delete through `AdminService.QuarantineUpload` and `AdminService.DeleteUpload`, and audit-event inspection through `AdminService.ListAuditEvents`. Every mutation creates an audit record. Denied roles receive typed permission errors. The UI must not expose settings snapshots, PATs, R2 secrets, local paths, issue bodies, or browser data.
 
+The embedded admin SPA calls the API cross-origin during development and from the packaged shell. It must use the API's exact CORS allowlist and Connect preflight policy: frontend/admin loopback origins and pinned Tauri `http://tauri.localhost` only, with no wildcard origin or header behavior.
+
 ## Storage
 
 No independent persistent store. Server-side admin actions and audit records are owned by `devhud-api`; browser state contains no secrets beyond the authenticated session boundary.

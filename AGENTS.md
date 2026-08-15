@@ -108,13 +108,14 @@ enum ProjectId {
 
 - Issue [#815](https://github.com/delinoio/oss/issues/815) is the current normative DevHud contract and supersedes closed historical issues #729, #755, and #757 without inheriting their architecture.
 - DevHud fixed development ports are frontend `46305`, admin `46306`, and API `46307`; conflicts fail instead of remapping.
+- DevHud browser/API CORS is an exact allowlist: `http://localhost:46305`, `http://127.0.0.1:46305`, `http://localhost:46306`, `http://127.0.0.1:46306`, and the pinned Tauri shell origin `http://tauri.localhost`. Connect preflights allow only the documented Connect methods and headers; wildcard origins and headers are forbidden.
 - DevHud Deck refresh intervals apply only to active clients; suspended widgets use OS-controlled best-effort scheduling and must expose stale state with the last successful refresh.
-- DevHud account deletion must purge or irreversibly pseudonymize official-upload metadata and invalidate public CDN copies; recovery is provided by an ownership-checked `AccountService.RestoreAccount` during the 30-day window.
+- DevHud account deletion must purge or irreversibly pseudonymize official-upload metadata and invalidate public CDN copies; recovery is provided by an ownership-checked `AccountService.RestoreAccount` during the 30-day window. Restore and final purge use a mutually exclusive atomic account-state transition, and a successful restore must never follow irreversible purge work.
 - DevHud desktop updates use the fixed signed manifest endpoint and explicit platform/architecture mapping documented in `docs/project-devhud.md`; bootstrap is not an updater-discovery override.
 - Desktop targets are macOS 13+, Windows 10 22H2+, and Ubuntu 22.04 LTS on X11, with x64 and arm64 artifacts. Mobile targets are iOS 16+ and Android 10/API 29+. Native Wayland, product analytics, remote feature flags, plugin SDK/ABI, server-side GitHub brokerage, and partial GA are excluded.
 - Desktop uses Tauri CEF from `https://github.com/tauri-apps/tauri` at commit `4af26a3f7f8b692d62cca549bbacd93f5ce90b41`; mobile uses system webviews. Bundle ID is `io.delino.devhud` and deep links use `devhud`, with Logto callback `devhud://auth/callback`.
 - DevHud Native Messaging uses host name `io.delino.devhud.native_messaging` and one fixed 32-character release-configured Chrome extension ID, shared by the extension, host manifest, and installer.
-- Planned paths remain documentation-only. Do not add `crates/devhud-native-messaging-host` to the Cargo workspace until its crate skeleton exists. `FinalizeUpload` must atomically recheck or reserve all applicable upload quotas during finalization.
+- Planned paths remain documentation-only. Do not add `crates/devhud-native-messaging-host` to the Cargo workspace until its crate skeleton exists. `CreateUpload` must atomically reserve the signed-URL issuance quota before issuing a URL; `FinalizeUpload` must validate that reservation without charging it again and atomically recheck or reserve all other applicable upload quotas during finalization. A dedicated idempotent `devhud-api-sweeper` deployment owns staging expiry and post-recovery account purge with multi-instance coordination.
 
 ### Repository Default Technology Choices
 
