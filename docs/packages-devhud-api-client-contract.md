@@ -14,7 +14,7 @@ TypeScript package generated from the canonical protocol schemas. Use `@connectr
 
 ## Interfaces and Contracts
 
-Expose generated clients for every v1 service/RPC, including `AccountService.RestoreAccount` and the explicitly named `AdminService` methods, without inventing alternate REST or Tauri bindings. Preserve package `devhud.v1`, enum-backed IDs, UUID v7 fields, revision-conflict payloads, typed Connect errors, bootstrap capability declarations, platform-keyed (`desktop`, `ios`, `android`, `admin`) Logto client IDs, the native callback URI `devhud://auth/callback`, the exact deployment-configured admin redirect URI, and upload-group, upload/checksum/finalization fields. Generated output must be reproducible and must not contain secrets or local-only device state.
+Expose generated clients for every v1 service/RPC, including `AccountService.RestoreAccount` and the explicitly named `AdminService` methods, without inventing alternate REST or Tauri bindings. Preserve package `devhud.v1`, enum-backed IDs, UUID v7 fields, revision-conflict payloads, typed Connect errors, the shared bounded opaque-token pagination fields for administrative list RPCs, bootstrap capability declarations, platform-keyed (`desktop`, `ios`, `android`, `admin`) Logto client IDs, the native callback URI `devhud://auth/callback`, the exact deployment-configured admin redirect URI, and upload-group, upload/checksum/finalization fields. Generated output must be reproducible and must not contain secrets or local-only device state.
 
 ## Storage
 
