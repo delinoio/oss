@@ -52,6 +52,8 @@ describe("wire validation helpers", () => {
   it("validates bounded sensitive-content-safe administrator reasons", () => {
     expect(() => validateAdminReason("Quarantined after repeated policy violations.")).not.toThrow();
     expect(() => validateAdminReason("Expected yes / no")).not.toThrow();
+    expect(() => validateAdminReason("Reviewed incident from 2026/08/15.")).not.toThrow();
+    expect(() => validateAdminReason("Rolled back release 1/2/3.")).not.toThrow();
     expect(() => validateAdminReason("\u0085Reviewed policy breach")).not.toThrow();
     expect(() => validateAdminReason("é".repeat(MAX_ADMIN_REASON_BYTES / 2))).not.toThrow();
     expect(() =>
@@ -297,6 +299,24 @@ describe("wire validation helpers", () => {
       });
 
       expect(() => validateCrashReport(report), redactedSummary).not.toThrow();
+    }
+
+    for (const diagnostic of ["2026/08/15", "1/2/3"]) {
+      const reports = [
+        { ...safeCrashReport, errorCode: diagnostic },
+        { ...safeCrashReport, clientBuild: { ...clientBuild, appVersion: diagnostic } },
+        { ...safeCrashReport, clientBuild: { ...clientBuild, buildId: diagnostic } },
+        { ...safeCrashReport, clientBuild: { ...clientBuild, osVersion: diagnostic } },
+        { ...safeCrashReport, redactedSummary: diagnostic },
+        { ...safeCrashReport, redactedStackTrace: diagnostic },
+      ];
+
+      for (const report of reports) {
+        expect(
+          () => validateCrashReport(create(SubmitCrashReportRequestSchema, report)),
+          diagnostic,
+        ).not.toThrow();
+      }
     }
   });
 
