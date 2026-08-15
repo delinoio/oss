@@ -6,11 +6,41 @@ import { fileURLToPath } from "node:url";
 const [mode, statusPath] = process.argv.slice(2);
 
 if (mode === "manager") {
-  spawn(process.execPath, [fileURLToPath(import.meta.url), "server", statusPath], {
+  const child = spawn(process.execPath, [fileURLToPath(import.meta.url), "server", statusPath], {
     shell: false,
     stdio: "ignore",
     windowsHide: true,
   });
+
+  if (process.platform !== "win32") {
+    // Model the managed Cargo/Tauri tree by reaping the server before the
+    // manager preserves its signal exit, including under a container PID 1.
+    let forwardedSignal;
+    const handlers = new Map();
+    for (const signal of ["SIGINT", "SIGTERM"]) {
+      const handler = () => {
+        if (forwardedSignal) {
+          return;
+        }
+        forwardedSignal = signal;
+        const exitWithSignal = () => {
+          for (const [registeredSignal, registeredHandler] of handlers) {
+            process.off(registeredSignal, registeredHandler);
+          }
+          process.kill(process.pid, signal);
+        };
+        if (child.exitCode === null && child.signalCode === null) {
+          child.once("exit", exitWithSignal);
+          child.kill(signal);
+        } else {
+          exitWithSignal();
+        }
+      };
+      handlers.set(signal, handler);
+      process.on(signal, handler);
+    }
+  }
+
   setInterval(() => {}, 1_000);
 } else if (mode === "server") {
   const server = createServer();

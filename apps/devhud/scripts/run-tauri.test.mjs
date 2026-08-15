@@ -60,8 +60,8 @@ function listenOnPort(port) {
 }
 
 test(
-  "terminates and awaits the complete Windows process tree",
-  { skip: process.platform !== "win32", timeout: 20_000 },
+  "terminates and awaits the complete process tree",
+  { timeout: 20_000 },
   async (t) => {
     const temporaryDirectory = mkdtempSync(join(tmpdir(), "devhud-process-tree-"));
     const statusPath = join(temporaryDirectory, "status.json");
@@ -75,7 +75,7 @@ test(
         stdio: "ignore",
         windowsHide: true,
       },
-      { terminateProcessTreeOnWindows: true },
+      { terminateProcessTree: true },
     );
     const { pid, port } = await waitForStatus(statusPath);
 

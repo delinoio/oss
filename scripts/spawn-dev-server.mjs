@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 
 const terminationSignals = ["SIGINT", "SIGTERM"];
+const posixProcessGroupExitTimeoutMs = 10_000;
 
 export function terminateWindowsProcessTree(child, signal) {
   const taskkill = spawn(
@@ -36,13 +37,61 @@ export function terminateWindowsProcessTree(child, signal) {
   });
 }
 
+function waitForPosixProcessGroupExit(processGroupId) {
+  return new Promise((resolve, reject) => {
+    const deadline = Date.now() + posixProcessGroupExitTimeoutMs;
+    const checkProcessGroup = () => {
+      try {
+        process.kill(processGroupId, 0);
+      } catch (error) {
+        if (error.code === "ESRCH") {
+          resolve();
+          return;
+        }
+        reject(new Error(`failed to await POSIX process group ${-processGroupId}: ${error.message}`));
+        return;
+      }
+      if (Date.now() >= deadline) {
+        reject(new Error(`timed out awaiting POSIX process group ${-processGroupId}`));
+        return;
+      }
+      setTimeout(checkProcessGroup, 25);
+    };
+
+    checkProcessGroup();
+  });
+}
+
+function terminatePosixProcessGroup(child, signal) {
+  const processGroupId = -child.pid;
+  try {
+    process.kill(processGroupId, signal);
+  } catch (error) {
+    if (error.code === "ESRCH") {
+      return Promise.resolve();
+    }
+    if (child.exitCode === null && child.signalCode === null) {
+      child.kill(signal);
+    }
+    return Promise.reject(
+      new Error(`failed to terminate POSIX process group ${child.pid}: ${error.message}`),
+    );
+  }
+  return waitForPosixProcessGroupExit(processGroupId);
+}
+
 export async function spawnDevServer(
   command,
   args,
   options,
-  { terminateProcessTreeOnWindows = false } = {},
+  { terminateProcessTree = false } = {},
 ) {
-  const child = spawn(command, args, options);
+  const managePosixProcessGroup = process.platform !== "win32" && terminateProcessTree;
+  const child = spawn(
+    command,
+    args,
+    managePosixProcessGroup ? { ...options, detached: true } : options,
+  );
   const signalHandlers = new Map();
   let forwardedSignal = null;
   let terminationPromise = null;
@@ -65,8 +114,10 @@ export async function spawnDevServer(
 
       forwardedSignal = signal;
       terminationPromise =
-        process.platform === "win32" && terminateProcessTreeOnWindows
-          ? terminateWindowsProcessTree(child, signal)
+        terminateProcessTree
+          ? process.platform === "win32"
+            ? terminateWindowsProcessTree(child, signal)
+            : terminatePosixProcessGroup(child, signal)
           : Promise.resolve(child.kill(signal));
       // The child may take longer to exit than the termination command takes to
       // fail. Attach a handler now and rethrow when both operations are awaited.

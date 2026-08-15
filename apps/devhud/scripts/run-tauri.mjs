@@ -40,7 +40,7 @@ try {
       shell: false,
     },
     {
-      terminateProcessTreeOnWindows: true,
+      terminateProcessTree: true,
     },
   );
   exitLikeChild(result);
