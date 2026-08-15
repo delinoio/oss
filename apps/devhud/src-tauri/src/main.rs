@@ -28,6 +28,7 @@ const FRONTEND_READY_ATTEMPTS: u8 = 100;
 enum SmokeMode {
     Normal,
     RendererCrash,
+    MissingResource,
 }
 
 impl SmokeMode {
@@ -35,8 +36,19 @@ impl SmokeMode {
         match std::env::var("DEVHUD_PLATFORM_SMOKE").ok().as_deref() {
             Some("normal") => Some(Self::Normal),
             Some("renderer-crash") => Some(Self::RendererCrash),
+            Some("missing-resource") => Some(Self::MissingResource),
             _ => None,
         }
+    }
+}
+
+fn inject_smoke_missing_resource(missing: &mut Vec<String>, smoke_mode: Option<SmokeMode>) {
+    if smoke_mode == Some(SmokeMode::MissingResource)
+        && !missing
+            .iter()
+            .any(|resource| resource.ends_with("resources.pak"))
+    {
+        missing.push("resources.pak".to_string());
     }
 }
 
@@ -60,7 +72,7 @@ fn is_allowed_navigation(url: &tauri::Url) -> bool {
     origin == PRODUCTION_ORIGIN || (tauri::is_dev() && origin == DEVELOPMENT_ORIGIN)
 }
 
-fn validate_host() -> Result<(), String> {
+fn validate_host(smoke_mode: Option<SmokeMode>) -> Result<(), String> {
     let target = DesktopTarget::current();
     info!(event = "platform_detected", target = %target);
 
@@ -81,7 +93,8 @@ fn validate_host() -> Result<(), String> {
     let executable = std::env::current_exe()
         .map_err(|error| format!("failed to resolve the current executable: {error}"))?;
     let layout = ResourceLayout::for_executable(&executable)?;
-    let missing = layout.missing();
+    let mut missing = layout.missing();
+    inject_smoke_missing_resource(&mut missing, smoke_mode);
     if !missing.is_empty() {
         return Err(format!(
             "CEF initialization cannot continue; missing bundled resources: {}",
@@ -120,7 +133,7 @@ fn handle_frontend_ready(
                 error!(event = "renderer_crash_request_failed", reason = %error);
             }
         }
-        None => {}
+        Some(SmokeMode::MissingResource) | None => {}
     }
 }
 
@@ -196,13 +209,13 @@ fn probe_frontend_ready(
 
 fn main() {
     init_logging();
+    let smoke_mode = SmokeMode::from_environment();
     let subprocess = is_cef_subprocess();
-    if !subprocess && let Err(message) = validate_host() {
+    if !subprocess && let Err(message) = validate_host(smoke_mode) {
         error!(event = "cef_fatal_initialization", reason = %message);
         std::process::exit(78);
     }
 
-    let smoke_mode = SmokeMode::from_environment();
     let renderer_crashed = Arc::new(AtomicBool::new(false));
     let frontend_ready = Arc::new(AtomicBool::new(false));
 
@@ -299,6 +312,34 @@ fn main() {
         Err(error) => {
             error!(event = "cef_fatal_initialization", reason = %error);
             std::process::exit(1);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{SmokeMode, inject_smoke_missing_resource};
+
+    #[test]
+    fn missing_resource_smoke_injects_resources_pak_once() {
+        let mut missing = Vec::new();
+
+        inject_smoke_missing_resource(&mut missing, Some(SmokeMode::MissingResource));
+        inject_smoke_missing_resource(&mut missing, Some(SmokeMode::MissingResource));
+
+        assert_eq!(missing, ["resources.pak"]);
+    }
+
+    #[test]
+    fn other_smoke_modes_do_not_inject_resources() {
+        for smoke_mode in [
+            None,
+            Some(SmokeMode::Normal),
+            Some(SmokeMode::RendererCrash),
+        ] {
+            let mut missing = Vec::new();
+            inject_smoke_missing_resource(&mut missing, smoke_mode);
+            assert!(missing.is_empty());
         }
     }
 }

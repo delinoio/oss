@@ -6,7 +6,6 @@ import {
   readFileSync,
   readdirSync,
   realpathSync,
-  renameSync,
   rmSync,
   statSync,
 } from "node:fs";
@@ -67,10 +66,6 @@ function requiredResources(executable) {
       return join(contents, `Frameworks/${helper}.app/Contents/MacOS/${helper}`);
     });
     return {
-      missingScenario: join(
-        contents,
-        "Frameworks/Chromium Embedded Framework.framework/Resources/resources.pak",
-      ),
       paths: [
         join(contents, "Frameworks/Chromium Embedded Framework.framework/Chromium Embedded Framework"),
         join(contents, "Frameworks/Chromium Embedded Framework.framework/Resources/icudtl.dat"),
@@ -103,7 +98,6 @@ function requiredResources(executable) {
           "chrome-sandbox",
         ];
   return {
-    missingScenario: join(resourceDir, "resources.pak"),
     paths: names.map((name) => join(resourceDir, name)),
   };
 }
@@ -244,14 +238,8 @@ await runScenario(executable, "renderer-crash", 0, [
 ]);
 console.log("devhud: renderer diagnostic smoke passed");
 
-const withheld = `${resources.missingScenario}.devhud-smoke-withheld`;
-renameSync(resources.missingScenario, withheld);
-try {
-  await runScenario(executable, "normal", 78, [
-    "cef_fatal_initialization",
-    "resources.pak",
-  ]);
-} finally {
-  renameSync(withheld, resources.missingScenario);
-}
+await runScenario(executable, "missing-resource", 78, [
+  "cef_fatal_initialization",
+  "resources.pak",
+]);
 console.log(`devhud: platform smoke passed for ${target.id} (${target.minimum})`);
