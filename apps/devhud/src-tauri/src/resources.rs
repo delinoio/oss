@@ -64,11 +64,16 @@ impl ResourceLayout {
 
         #[cfg(target_os = "linux")]
         let (root, required) = {
-            let package_prefix = binary_dir.parent().ok_or_else(|| {
-                "the Linux executable is not inside a package bin directory".to_string()
-            })?;
+            let root = if binary_dir.ends_with("share/DevHUD") {
+                binary_dir.to_path_buf()
+            } else {
+                let package_prefix = binary_dir.parent().ok_or_else(|| {
+                    "the Linux executable is not inside a package bin directory".to_string()
+                })?;
+                package_prefix.join("share/DevHUD")
+            };
             (
-                package_prefix.join("share/DevHUD"),
+                root,
                 [
                     "libcef.so",
                     "icudtl.dat",
@@ -119,6 +124,18 @@ mod tests {
     #[test]
     fn linux_uses_package_resource_directory() {
         let executable = Path::new("/tmp/devhud-smoke-root/usr/bin/devhud");
+        let layout = ResourceLayout::for_executable(executable).expect("resource layout");
+
+        assert_eq!(
+            layout.root,
+            Path::new("/tmp/devhud-smoke-root/usr/share/DevHUD")
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_accepts_packaged_executable_location() {
+        let executable = Path::new("/tmp/devhud-smoke-root/usr/share/DevHUD/devhud");
         let layout = ResourceLayout::for_executable(executable).expect("resource layout");
 
         assert_eq!(

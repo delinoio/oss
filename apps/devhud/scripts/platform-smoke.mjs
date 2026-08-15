@@ -78,7 +78,11 @@ function requiredResources(executable) {
     };
   }
   const resourceDir =
-    process.platform === "linux" ? resolve(binaryDir, "../share/DevHUD") : binaryDir;
+    process.platform === "linux"
+      ? binaryDir.endsWith(join("share", "DevHUD"))
+        ? binaryDir
+        : resolve(binaryDir, "../share/DevHUD")
+      : binaryDir;
   const names =
     process.platform === "win32"
       ? [

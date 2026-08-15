@@ -97,6 +97,10 @@ assert(
   tauriConfig.bundle.macOS.minimumSystemVersion === "13.0",
   "macOS bundle minimum changed",
 );
+assert(
+  tauriConfig.bundle.macOS.signingIdentity === "-",
+  "macOS development bundle must be ad hoc signed",
+);
 assert(tauriConfig.build.devUrl === "http://127.0.0.1:46305", "development origin changed");
 assert(tauriConfig.build.frontendDist === "../dist", "bundled frontend path changed");
 const productionCsp = tauriConfig.app.security.csp;
