@@ -54,6 +54,9 @@ describe("wire validation helpers", () => {
     expect(() => validateAdminReason("Expected yes / no")).not.toThrow();
     expect(() => validateAdminReason("\u0085Reviewed policy breach")).not.toThrow();
     expect(() => validateAdminReason("é".repeat(MAX_ADMIN_REASON_BYTES / 2))).not.toThrow();
+    expect(() =>
+      validateAdminReason("Reviewed https://docs.example.com/policy?v=42#quarantine"),
+    ).not.toThrow();
 
     expect(() => validateAdminReason("")).toThrow(TypeError);
     expect(() => validateAdminReason(" \n\t ")).toThrow(TypeError);
@@ -188,6 +191,28 @@ describe("wire validation helpers", () => {
         }),
       ),
     ).toThrow(TypeError);
+  });
+
+  it("validates the occurredAt protobuf timestamp range", () => {
+    const withTimestamp = (seconds: bigint, nanos: number) => ({
+      ...safeCrashReport,
+      occurredAt: { ...safeCrashReport.occurredAt!, seconds, nanos },
+    });
+
+    expect(() => validateCrashReport(withTimestamp(-62_135_596_800n, 0))).not.toThrow();
+    expect(() =>
+      validateCrashReport(withTimestamp(253_402_300_799n, 999_999_999)),
+    ).not.toThrow();
+
+    for (const [seconds, nanos] of [
+      [-62_135_596_801n, 0],
+      [253_402_300_800n, 0],
+      [0n, -1],
+      [0n, 1.5],
+      [0n, 1_000_000_000],
+    ] as const) {
+      expect(() => validateCrashReport(withTimestamp(seconds, nanos))).toThrow(RangeError);
+    }
   });
 
   it("rejects lone surrogates in every crash diagnostic string", () => {
@@ -331,8 +356,11 @@ describe("wire validation helpers", () => {
 
     for (const remoteUrl of [
       "https://example.com/assets/app.js:10:2",
+      "https://cdn.example.com/app.js?v=42",
+      "https://docs.example.com/guide#configuration",
       "wss://example.com/socket",
       "devhud://auth/callback",
+      "mailto:user@example.com?subject=secret",
     ]) {
       const report = create(SubmitCrashReportRequestSchema, {
         ...safe,
@@ -343,11 +371,10 @@ describe("wire validation helpers", () => {
 
     for (const credentialUrl of [
       "https://alice:password@example.com/app.js",
-      "https://example.com/app.js?token=secret",
+      "https://example.com/app.js?v=42&token=secret",
       "https://example.com/app.js#access-token",
       "wss://user:pass@example.com/socket",
       "devhud://auth/callback?code=secret&state=x",
-      "mailto:user@example.com?subject=secret",
     ]) {
       const report = create(SubmitCrashReportRequestSchema, {
         ...safe,

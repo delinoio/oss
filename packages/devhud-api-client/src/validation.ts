@@ -18,6 +18,9 @@ const UUID_V7_PATTERN =
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder("utf-8", { fatal: true });
 const unicodeNonWhitespacePattern = /\P{White_Space}/u;
+const MIN_PROTOBUF_TIMESTAMP_SECONDS = -62_135_596_800n;
+const MAX_PROTOBUF_TIMESTAMP_SECONDS = 253_402_300_799n;
+const MAX_PROTOBUF_TIMESTAMP_NANOS = 999_999_999;
 
 const forbiddenSensitiveTextPatterns: ReadonlyArray<RegExp> = [
   // Keep this lookbehind-free while iOS 16.0-16.3 system webviews are supported.
@@ -30,9 +33,9 @@ const forbiddenSensitiveTextPatterns: ReadonlyArray<RegExp> = [
   /(?:^|[\s([{<"'=])[\p{L}\p{N}_@.-]+[\\/][\p{L}\p{N}_@.-]+:\d+(?::\d+)?(?=$|[\s\p{P}])/u,
   /(?:^|[\s([{<"'=])[\p{L}\p{N}_@.-]+\.[\p{L}][\p{L}\p{N}]*:\d+(?::\d+)?(?=$|[\s\p{P}])/u,
   /file:\/\/[^\s]*/iu,
-  // URL userinfo, queries, and fragments can contain opaque credentials.
+  // URL userinfo and credential-bearing query or fragment names can contain opaque secrets.
   /\b[A-Za-z][A-Za-z0-9+.-]*:\/\/[^/\s?#]*@/u,
-  /\b[A-Za-z][A-Za-z0-9+.-]*:[^\s?#]*[?#]\S*/u,
+  /\b[A-Za-z][A-Za-z0-9+.-]*:[^\s?#]*[?#](?:[^\s&#]*[&#])*(?:code|password|passwd|pwd|secret|token|client[_.-]?secret|(?:access|refresh|id)[_.-]?token|api[_.-]?key|private[_.-]?key|authorization|cookie|set-cookie)(?:[=:]|(?=$|[\s)\]}>.,;&]))/iu,
   /-----BEGIN [A-Z ]*PRIVATE KEY-----/u,
   /\b(?:ghp|github_pat)_[A-Za-z0-9_]+\b/u,
   /\bAuthorization\s*:\s*(?:Basic|Bearer)\s+\S+/iu,
@@ -88,6 +91,15 @@ export function validateCrashReport(report: SubmitCrashReportRequest): void {
   }
   if (report.occurredAt === undefined) {
     throw new TypeError("occurredAt is required");
+  }
+  if (
+    report.occurredAt.seconds < MIN_PROTOBUF_TIMESTAMP_SECONDS ||
+    report.occurredAt.seconds > MAX_PROTOBUF_TIMESTAMP_SECONDS ||
+    !Number.isInteger(report.occurredAt.nanos) ||
+    report.occurredAt.nanos < 0 ||
+    report.occurredAt.nanos > MAX_PROTOBUF_TIMESTAMP_NANOS
+  ) {
+    throw new RangeError("occurredAt must be a valid google.protobuf.Timestamp");
   }
   if (report.clientBuild.platform === DiagnosticPlatform.UNSPECIFIED) {
     throw new TypeError("clientBuild.platform must be specified");
