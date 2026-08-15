@@ -732,6 +732,8 @@ jobs:
 
       - name: Check schemas and generated freshness
         if: ${{ steps.gate.outputs.run == 'true' }}
+        env:
+          DEVHUD_PROTO_BASELINE: ${{ github.event_name == 'push' && github.event.before || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && 'HEAD^') || 'origin/main' }}
         run: pnpm proto:check
 
       - name: Test Go bindings
