@@ -172,7 +172,10 @@ async function runScenario(executable, mode, expectedExit, expectedMarkers) {
     });
     const exitCode = await waitForChildClose(child, mode, 30_000);
     if (exitCode !== expectedExit) {
-      throw new Error(`${mode} smoke exited ${exitCode}, expected ${expectedExit}\n${output}`);
+      const outcome = child.signalCode
+        ? `was terminated by ${child.signalCode}`
+        : `exited ${exitCode}`;
+      throw new Error(`${mode} smoke ${outcome}, expected exit ${expectedExit}\n${output}`);
     }
     for (const marker of expectedMarkers) {
       if (!output.includes(marker)) {

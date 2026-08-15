@@ -355,6 +355,11 @@ fn main() {
                     error!(event = "renderer_terminated", source = "cdp");
                 }
             })?;
+            if let Err(error) = webview
+                .send_dev_tools_message(br#"{"id":9000,"method":"Inspector.enable","params":{}}"#)
+            {
+                error!(event = "renderer_diagnostic_enable_failed", reason = %error);
+            }
 
             if smoke_mode == Some(SmokeMode::RendererCrash) {
                 let app_handle = app.handle().clone();
