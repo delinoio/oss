@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "protocolVersion": "devhud.v1",
+  "apiVersion": "1.0.0",
+  "logto": {
+    "issuer": "https://auth.example.test/oidc",
+    "audience": "https://api.example.test",
+    "publicClientIds": {
+      "desktop": "desktop-public-client",
+      "ios": "ios-public-client",
+      "android": "android-public-client",
+      "admin": "admin-public-client"
+    },
+    "nativeRedirectUri": "devhud://auth/callback",
+    "adminRedirectUri": "https://api.example.test/admin/auth/callback"
+  },
+  "publicAssetBaseUrl": "https://assets.example.test",
+  "capabilities": [
+    "CAPABILITY_SETTINGS_SYNC",
+    "CAPABILITY_OFFICIAL_UPLOADS",
+    "CAPABILITY_ACCOUNT_RECOVERY",
+    "CAPABILITY_CRASH_REPORTS",
+    "CAPABILITY_ADMINISTRATION"
+  ],
+  "uploadLimits": {
+    "maximumObjectBytes": "52428800",
+    "maximumImagesPerSubmission": 10,
+    "rollingUploadBytes": "1073741824",
+    "rollingUploadWindowSeconds": "86400",
+    "maximumStoredBytes": "21474836480",
+    "signedUrlsPerWindow": 120,
+    "signedUrlWindowSeconds": "3600",
+    "publicGetsPerIpPerWindow": 300,
+    "publicGetWindowSeconds": "60",
+    "maximumImageWidth": 4096,
+    "maximumImageHeight": 4096,
+    "maximumImagePixels": "16777216",
+    "stagingRetentionSeconds": "86400"
+  }
+}

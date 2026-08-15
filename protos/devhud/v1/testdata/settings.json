@@ -1,0 +1,12 @@
+{
+  "settings": {
+    "schemaVersion": 3,
+    "revision": "42",
+    "body": {
+      "language": "ko",
+      "theme": "dark",
+      "notificationsEnabled": true
+    },
+    "updatedAt": "2026-08-15T10:11:12Z"
+  }
+}

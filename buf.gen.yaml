@@ -1,0 +1,36 @@
+version: v2
+
+inputs:
+  - directory: protos
+
+plugins:
+  - local:
+      - go
+      - tool
+      - protoc-gen-go
+    out: protos
+    opt:
+      - paths=source_relative
+  - local:
+      - go
+      - tool
+      - protoc-gen-connect-go
+    out: protos
+    opt:
+      - paths=source_relative
+  - local:
+      - pnpm
+      - exec
+      - protoc-gen-es
+    out: packages/devhud-api-client/src/gen
+    opt:
+      - target=ts
+      - import_extension=js
+  - local:
+      - pnpm
+      - exec
+      - protoc-gen-connect-query
+    out: packages/devhud-api-client/src/gen
+    opt:
+      - target=ts
+      - import_extension=js

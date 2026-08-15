@@ -1,0 +1,158 @@
+syntax = "proto3";
+
+package devhud.v1;
+
+option go_package = "github.com/delinoio/oss/protos/devhud/v1;devhudv1";
+
+import "devhud/v1/account.proto";
+import "devhud/v1/common.proto";
+import "devhud/v1/upload.proto";
+import "google/protobuf/timestamp.proto";
+
+service AdminService {
+  rpc ListUsers(AdminServiceListUsersRequest) returns (AdminServiceListUsersResponse);
+  rpc SetUserBlocked(AdminServiceSetUserBlockedRequest) returns (AdminServiceSetUserBlockedResponse);
+  rpc GetUserUsage(AdminServiceGetUserUsageRequest) returns (AdminServiceGetUserUsageResponse);
+  rpc ListUploads(AdminServiceListUploadsRequest) returns (AdminServiceListUploadsResponse);
+  rpc QuarantineUpload(AdminServiceQuarantineUploadRequest) returns (AdminServiceQuarantineUploadResponse);
+  rpc DeleteUpload(AdminServiceDeleteUploadRequest) returns (AdminServiceDeleteUploadResponse);
+  rpc ListAuditEvents(AdminServiceListAuditEventsRequest) returns (AdminServiceListAuditEventsResponse);
+}
+
+enum AuditAction {
+  AUDIT_ACTION_UNSPECIFIED = 0;
+  AUDIT_ACTION_USER_BLOCKED = 1;
+  AUDIT_ACTION_USER_UNBLOCKED = 2;
+  AUDIT_ACTION_UPLOAD_QUARANTINED = 3;
+  AUDIT_ACTION_UPLOAD_DELETED_BY_ADMIN = 4;
+  AUDIT_ACTION_UPLOAD_DELETED_BY_OWNER = 5;
+  AUDIT_ACTION_ACCOUNT_DELETION_REQUESTED = 6;
+  AUDIT_ACTION_ACCOUNT_RESTORED = 7;
+}
+
+enum AuditTargetType {
+  AUDIT_TARGET_TYPE_UNSPECIFIED = 0;
+  AUDIT_TARGET_TYPE_USER = 1;
+  AUDIT_TARGET_TYPE_UPLOAD = 2;
+}
+
+message AdminUser {
+  UuidV7 user_id = 1;
+  string logto_subject = 2;
+  string display_name = 3;
+  string email = 4;
+  AccountState account_state = 5;
+  bool administratively_blocked = 6;
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp deletion_requested_at = 8;
+}
+
+message AdminUpload {
+  Upload upload = 1;
+  UuidV7 owner_user_id = 2;
+}
+
+message QuotaUsage {
+  QuotaKind quota = 1;
+  uint64 used = 2;
+  uint64 limit = 3;
+  google.protobuf.Timestamp window_started_at = 4;
+  google.protobuf.Timestamp window_ends_at = 5;
+}
+
+message UserUsage {
+  UuidV7 user_id = 1;
+  repeated QuotaUsage quotas = 2;
+}
+
+message AuditTarget {
+  AuditTargetType type = 1;
+  oneof target {
+    UuidV7 user_id = 2;
+    UuidV7 upload_id = 3;
+  }
+}
+
+message AuditEvent {
+  UuidV7 audit_event_id = 1;
+  UuidV7 actor_user_id = 2;
+  AuditAction action = 3;
+  AuditTarget target = 4;
+  string reason = 5;
+  google.protobuf.Timestamp created_at = 6;
+}
+
+message AdminServiceListUsersRequest {
+  PageRequest page = 1;
+  // query is NFC-normalized, trimmed, case-folded, and prefix-matched.
+  string query = 2;
+}
+
+message AdminServiceListUsersResponse {
+  repeated AdminUser users = 1;
+  PageResponse page = 2;
+}
+
+message AdminServiceSetUserBlockedRequest {
+  UuidV7 user_id = 1;
+  bool blocked = 2;
+  string reason = 3;
+}
+
+message AdminServiceSetUserBlockedResponse {
+  AdminUser user = 1;
+  AuditEvent audit_event = 2;
+}
+
+message AdminServiceGetUserUsageRequest {
+  UuidV7 user_id = 1;
+}
+
+message AdminServiceGetUserUsageResponse {
+  UserUsage usage = 1;
+}
+
+message AdminServiceListUploadsRequest {
+  PageRequest page = 1;
+  UuidV7 owner_user_id = 2;
+  UuidV7 submission_id = 3;
+  optional UploadState state = 4;
+}
+
+message AdminServiceListUploadsResponse {
+  repeated AdminUpload uploads = 1;
+  PageResponse page = 2;
+}
+
+message AdminServiceQuarantineUploadRequest {
+  UuidV7 upload_id = 1;
+  string reason = 2;
+}
+
+message AdminServiceQuarantineUploadResponse {
+  AdminUpload upload = 1;
+  AuditEvent audit_event = 2;
+}
+
+message AdminServiceDeleteUploadRequest {
+  UuidV7 upload_id = 1;
+  string reason = 2;
+}
+
+message AdminServiceDeleteUploadResponse {
+  AdminUpload upload = 1;
+  AuditEvent audit_event = 2;
+}
+
+message AdminServiceListAuditEventsRequest {
+  PageRequest page = 1;
+  optional AuditAction action = 2;
+  UuidV7 actor_user_id = 3;
+  UuidV7 target_user_id = 4;
+  UuidV7 target_upload_id = 5;
+}
+
+message AdminServiceListAuditEventsResponse {
+  repeated AuditEvent audit_events = 1;
+  PageResponse page = 2;
+}

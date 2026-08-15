@@ -1,0 +1,61 @@
+syntax = "proto3";
+
+package devhud.v1;
+
+option go_package = "github.com/delinoio/oss/protos/devhud/v1;devhudv1";
+
+import "devhud/v1/common.proto";
+import "google/protobuf/timestamp.proto";
+
+service AccountService {
+  rpc GetAccount(GetAccountRequest) returns (GetAccountResponse);
+  rpc DeleteAccount(DeleteAccountRequest) returns (DeleteAccountResponse);
+  rpc RestoreAccount(RestoreAccountRequest) returns (RestoreAccountResponse);
+}
+
+enum AccountState {
+  ACCOUNT_STATE_UNSPECIFIED = 0;
+  ACCOUNT_STATE_ACTIVE = 1;
+  ACCOUNT_STATE_PENDING_DELETION = 2;
+}
+
+enum AccountPreconditionReason {
+  ACCOUNT_PRECONDITION_REASON_UNSPECIFIED = 0;
+  ACCOUNT_PRECONDITION_REASON_NOT_PENDING_DELETION = 1;
+  ACCOUNT_PRECONDITION_REASON_RECOVERY_WINDOW_EXPIRED = 2;
+  ACCOUNT_PRECONDITION_REASON_PURGE_CLAIMED = 3;
+}
+
+message AccountPreconditionDetail {
+  AccountPreconditionReason reason = 1;
+}
+
+message Account {
+  UuidV7 user_id = 1;
+  string logto_subject = 2;
+  string display_name = 3;
+  string email = 4;
+  AccountState state = 5;
+  bool administratively_blocked = 6;
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp deletion_requested_at = 8;
+  google.protobuf.Timestamp recoverable_until = 9;
+}
+
+message GetAccountRequest {}
+
+message GetAccountResponse {
+  Account account = 1;
+}
+
+message DeleteAccountRequest {}
+
+message DeleteAccountResponse {
+  Account account = 1;
+}
+
+message RestoreAccountRequest {}
+
+message RestoreAccountResponse {
+  Account account = 1;
+}

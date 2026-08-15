@@ -1,0 +1,16 @@
+{
+  "auditEvents": [
+    {
+      "auditEventId": {"value": "0198b8d0-07d0-7c4d-8d61-4f2019a76504"},
+      "actorUserId": {"value": "0198b8d0-07d0-7c4d-8d61-4f2019a76505"},
+      "action": "AUDIT_ACTION_UPLOAD_QUARANTINED",
+      "target": {
+        "type": "AUDIT_TARGET_TYPE_UPLOAD",
+        "uploadId": {"value": "0198b8d0-07d0-7c4d-8d61-4f2019a76501"}
+      },
+      "reason": "Confirmed sensitive content",
+      "createdAt": "2026-08-15T10:12:00Z"
+    }
+  ],
+  "page": {}
+}

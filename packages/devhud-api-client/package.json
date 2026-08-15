@@ -1,0 +1,44 @@
+{
+  "name": "@delinoio/devhud-api-client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "files": ["dist"],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./correlation": {
+      "types": "./dist/correlation.d.ts",
+      "import": "./dist/correlation.js"
+    },
+    "./devhud/v1/*": {
+      "types": "./dist/gen/devhud/v1/*.d.ts",
+      "import": "./dist/gen/devhud/v1/*.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "tsc --noEmit",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "2.14.0",
+    "@connectrpc/connect": "2.1.2",
+    "@connectrpc/connect-query": "2.3.1"
+  },
+  "peerDependencies": {
+    "@tanstack/react-query": "^5.101.4",
+    "react": "^19.2.4"
+  },
+  "devDependencies": {
+    "@tanstack/react-query": "5.101.4",
+    "@types/node": "^24.10.1",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "typescript": "5.9.3",
+    "vitest": "4.1.10"
+  }
+}

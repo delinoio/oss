@@ -1,0 +1,14 @@
+{
+  "upload": {
+    "uploadId": {"value": "0198b8d0-07d0-7c4d-8d61-4f2019a76501"},
+    "submissionId": {"value": "0198b8d0-07d0-7c4d-8d61-4f2019a76502"},
+    "uploadGroupId": {"value": "0198b8d0-07d0-7c4d-8d61-4f2019a76503"},
+    "state": "UPLOAD_STATE_FINALIZED",
+    "contentType": "IMAGE_CONTENT_TYPE_PNG",
+    "sizeBytes": "1048576",
+    "sha256": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+    "publicUrl": "https://assets.example.test/i/opaque-image-id",
+    "createdAt": "2026-08-15T10:00:00Z",
+    "finalizedAt": "2026-08-15T10:01:00Z"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "platform": "CLIENT_PLATFORM_DESKTOP",
+  "appVersion": "1.0.0",
+  "crashedAt": "2026-08-15T10:11:12Z",
+  "entries": [
+    {
+      "occurredAt": "2026-08-15T10:11:11Z",
+      "severity": "DIAGNOSTIC_SEVERITY_FATAL",
+      "component": "DIAGNOSTIC_COMPONENT_NATIVE_SHELL",
+      "errorCode": "native-shell-unavailable",
+      "redactedMessage": "The native shell stopped unexpectedly.",
+      "stack": [
+        {"module": "devhud_shell", "function": "run_event_loop"}
+      ]
+    }
+  ]
+}

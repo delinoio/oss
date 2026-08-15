@@ -1,0 +1,58 @@
+syntax = "proto3";
+
+package devhud.v1;
+
+option go_package = "github.com/delinoio/oss/protos/devhud/v1;devhudv1";
+
+import "devhud/v1/common.proto";
+import "google/protobuf/timestamp.proto";
+
+service DiagnosticsService {
+  rpc SubmitCrashReport(SubmitCrashReportRequest) returns (SubmitCrashReportResponse);
+}
+
+enum DiagnosticSeverity {
+  DIAGNOSTIC_SEVERITY_UNSPECIFIED = 0;
+  DIAGNOSTIC_SEVERITY_INFO = 1;
+  DIAGNOSTIC_SEVERITY_WARNING = 2;
+  DIAGNOSTIC_SEVERITY_ERROR = 3;
+  DIAGNOSTIC_SEVERITY_FATAL = 4;
+}
+
+enum DiagnosticComponent {
+  DIAGNOSTIC_COMPONENT_UNSPECIFIED = 0;
+  DIAGNOSTIC_COMPONENT_APP = 1;
+  DIAGNOSTIC_COMPONENT_NATIVE_SHELL = 2;
+  DIAGNOSTIC_COMPONENT_NETWORK = 3;
+  DIAGNOSTIC_COMPONENT_STORAGE = 4;
+  DIAGNOSTIC_COMPONENT_CAPTURE = 5;
+  DIAGNOSTIC_COMPONENT_WIDGET = 6;
+}
+
+message RedactedStackFrame {
+  string module = 1;
+  string function = 2;
+}
+
+message RedactedDiagnosticEntry {
+  google.protobuf.Timestamp occurred_at = 1;
+  DiagnosticSeverity severity = 2;
+  DiagnosticComponent component = 3;
+  string error_code = 4;
+  // redacted_message must be user-previewed and contain no secrets or paths.
+  string redacted_message = 5;
+  repeated RedactedStackFrame stack = 6;
+}
+
+message SubmitCrashReportRequest {
+  uint32 schema_version = 1;
+  ClientPlatform platform = 2;
+  string app_version = 3;
+  google.protobuf.Timestamp crashed_at = 4;
+  repeated RedactedDiagnosticEntry entries = 5;
+}
+
+message SubmitCrashReportResponse {
+  UuidV7 crash_report_id = 1;
+  google.protobuf.Timestamp accepted_at = 2;
+}

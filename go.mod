@@ -3,8 +3,10 @@ module github.com/delinoio/oss
 go 1.25.7
 
 require (
+	connectrpc.com/connect v1.20.0
 	github.com/creack/pty v1.1.24
 	golang.org/x/sys v0.43.0
+	google.golang.org/protobuf v1.36.12
 	modernc.org/sqlite v1.48.0
 )
 
@@ -18,4 +20,9 @@ require (
 	modernc.org/libc v1.70.0 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
+)
+
+tool (
+	connectrpc.com/connect/cmd/protoc-gen-connect-go
+	google.golang.org/protobuf/cmd/protoc-gen-go
 )

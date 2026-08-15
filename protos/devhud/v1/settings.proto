@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+package devhud.v1;
+
+option go_package = "github.com/delinoio/oss/protos/devhud/v1;devhudv1";
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+service SettingsService {
+  rpc GetSettings(GetSettingsRequest) returns (GetSettingsResponse);
+  rpc ReplaceSettings(ReplaceSettingsRequest) returns (ReplaceSettingsResponse);
+}
+
+message SettingsSnapshot {
+  uint32 schema_version = 1;
+  // revision increases monotonically for every accepted replacement.
+  uint64 revision = 2;
+  // body is a complete non-secret JSON settings snapshot.
+  google.protobuf.Struct body = 3;
+  google.protobuf.Timestamp updated_at = 4;
+}
+
+message GetSettingsRequest {}
+
+message GetSettingsResponse {
+  SettingsSnapshot settings = 1;
+}
+
+message ReplaceSettingsRequest {
+  uint32 schema_version = 1;
+  // expected_revision is zero only when creating the first server snapshot.
+  uint64 expected_revision = 2;
+  google.protobuf.Struct body = 3;
+}
+
+message ReplaceSettingsResponse {
+  SettingsSnapshot settings = 1;
+}
+
+// SettingsRevisionConflict is attached to an Aborted Connect error.
+message SettingsRevisionConflict {
+  uint64 expected_revision = 1;
+  uint64 actual_revision = 2;
+  SettingsSnapshot current = 3;
+}

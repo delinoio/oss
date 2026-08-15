@@ -2,11 +2,11 @@
 
 ## Scope
 
-`packages/devhud-api-client` is the planned generated TypeScript client and React Query bindings for `protos/devhud/v1`. It is not implemented.
+`packages/devhud-api-client` is the implemented private `@delinoio/devhud-api-client` workspace generated from `protos/devhud/v1`. It provides TypeScript messages/service descriptors, Connect Query method exports, and a minimal correlation-header helper for both DevHud SPAs.
 
 ## Runtime and Language
 
-TypeScript package generated from the canonical protocol schemas. Use `@connectrpc/connect` and `@connectrpc/connect-query`; preserve repository preference for React Query. No standalone server or fixed port.
+Strict TypeScript ESM package generated with Protobuf-ES and `@connectrpc/connect-query`; it uses `@connectrpc/connect` descriptors and preserves repository preference for React Query. It emits JavaScript and declaration files to untracked `dist/` output and has no standalone server or fixed port.
 
 ## Users and Operators
 
@@ -15,6 +15,8 @@ TypeScript package generated from the canonical protocol schemas. Use `@connectr
 ## Interfaces and Contracts
 
 Expose generated clients for every v1 service/RPC, including `AccountService.RestoreAccount` and the explicitly named `AdminService` methods, without inventing alternate REST or Tauri bindings. Preserve package `devhud.v1`, enum-backed IDs, UUID v7 fields, revision-conflict payloads, typed Connect errors, shared bounded opaque-token pagination for administrative and user upload list RPCs, authenticated-owner filtering for user upload reads/deletes, bootstrap capability declarations, platform-keyed (`desktop`, `ios`, `android`, `admin`) Logto client IDs, the native callback URI `devhud://auth/callback`, the exact deployment-configured admin redirect URI, and upload-group, upload/checksum/finalization fields. Generated output must be reproducible and must not contain secrets or local-only device state.
+
+The root export exposes all generated message/service descriptors and collision-free `BootstrapQueries`, `SettingsQueries`, `UploadQueries`, `AccountQueries`, `DiagnosticsQueries`, and `AdminQueries` namespaces. Stable `devhud/v1/*` subpath exports provide direct access to each generated file. `DEVHUD_CORRELATION_ID_HEADER` and `getDevHudCorrelationId` read and validate response metadata without logging or retaining it. Callers own transports, authorization headers, React Query providers, and token persistence.
 
 ## Storage
 
@@ -32,7 +34,7 @@ The package must not log by default. Integrators provide redacted structured log
 
 ## Build and Test
 
-CI must regenerate from `protos/devhud/v1`, fail on stale output, run TypeScript checks, Connect compatibility tests, React Query integration tests, and verify no secret-bearing fields are generated.
+`pnpm proto:generate` is the only generation entrypoint. Generator versions are pinned in the root pnpm lockfile and Go module; `src/gen` is generator-owned and contains no handwritten files. CI regenerates from `protos/devhud/v1`, fails on stale/orphaned output, runs strict TypeScript checks and build, exercises generated descriptors through an in-memory Connect transport, round-trips shared Go/TypeScript fixtures, and verifies no secret-bearing fields or Admin settings bodies are generated.
 
 ## Dependencies and Integrations
 

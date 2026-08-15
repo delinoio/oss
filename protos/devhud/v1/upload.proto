@@ -1,0 +1,122 @@
+syntax = "proto3";
+
+package devhud.v1;
+
+option go_package = "github.com/delinoio/oss/protos/devhud/v1;devhudv1";
+
+import "devhud/v1/common.proto";
+import "google/protobuf/timestamp.proto";
+
+service UploadService {
+  rpc CreateUpload(CreateUploadRequest) returns (CreateUploadResponse);
+  rpc FinalizeUpload(FinalizeUploadRequest) returns (FinalizeUploadResponse);
+  rpc ListUploads(ListUploadsRequest) returns (ListUploadsResponse);
+  rpc DeleteUpload(DeleteUploadRequest) returns (DeleteUploadResponse);
+}
+
+enum UploadState {
+  UPLOAD_STATE_UNSPECIFIED = 0;
+  UPLOAD_STATE_STAGING = 1;
+  UPLOAD_STATE_FINALIZED = 2;
+  UPLOAD_STATE_QUARANTINED = 3;
+  UPLOAD_STATE_DELETED = 4;
+}
+
+enum UploadPreconditionReason {
+  UPLOAD_PRECONDITION_REASON_UNSPECIFIED = 0;
+  UPLOAD_PRECONDITION_REASON_INVALID_GROUP_LIFECYCLE = 1;
+  UPLOAD_PRECONDITION_REASON_BINDING_MISMATCH = 2;
+  UPLOAD_PRECONDITION_REASON_CHECKSUM_MISMATCH = 3;
+  UPLOAD_PRECONDITION_REASON_SIZE_MISMATCH = 4;
+  UPLOAD_PRECONDITION_REASON_CONTENT_TYPE_MISMATCH = 5;
+  UPLOAD_PRECONDITION_REASON_INVALID_PNG = 6;
+  UPLOAD_PRECONDITION_REASON_DIMENSIONS_EXCEEDED = 7;
+  UPLOAD_PRECONDITION_REASON_STAGING_VERSION_MISMATCH = 8;
+  UPLOAD_PRECONDITION_REASON_ALREADY_FINALIZED = 9;
+  UPLOAD_PRECONDITION_REASON_STAGING_EXPIRED = 10;
+}
+
+message UploadPreconditionDetail {
+  UploadPreconditionReason reason = 1;
+  UuidV7 upload_id = 2;
+}
+
+message Upload {
+  UuidV7 upload_id = 1;
+  UuidV7 submission_id = 2;
+  UuidV7 upload_group_id = 3;
+  UploadState state = 4;
+  ImageContentType content_type = 5;
+  uint64 size_bytes = 6;
+  // sha256 is exactly 32 raw bytes.
+  bytes sha256 = 7;
+  string public_url = 8;
+  google.protobuf.Timestamp created_at = 9;
+  google.protobuf.Timestamp finalized_at = 10;
+  google.protobuf.Timestamp removed_at = 11;
+}
+
+message CreateUploadRequest {
+  // No IDs creates a submission and its first group. A submission ID alone
+  // creates a later group. Both IDs reuse an existing owned group.
+  UuidV7 submission_id = 1;
+  UuidV7 upload_group_id = 2;
+  ImageContentType content_type = 3;
+  uint64 size_bytes = 4;
+  // expected_sha256 is exactly 32 raw bytes.
+  bytes expected_sha256 = 5;
+}
+
+message UploadPutHeaders {
+  string content_type = 1;
+  // checksum_sha256_base64 is standard Base64 of the 32 raw checksum bytes.
+  string checksum_sha256_base64 = 2;
+}
+
+message CreateUploadResponse {
+  UuidV7 upload_id = 1;
+  UuidV7 submission_id = 2;
+  UuidV7 upload_group_id = 3;
+  UuidV7 signed_url_reservation_id = 4;
+  string staging_key = 5;
+  string staging_version = 6;
+  string upload_url = 7;
+  UploadPutHeaders required_headers = 8;
+  google.protobuf.Timestamp upload_url_expires_at = 9;
+}
+
+message FinalizeUploadRequest {
+  UuidV7 upload_id = 1;
+  UuidV7 submission_id = 2;
+  UuidV7 upload_group_id = 3;
+  UuidV7 signed_url_reservation_id = 4;
+  string staging_key = 5;
+  string staging_version = 6;
+  ImageContentType content_type = 7;
+  uint64 declared_size_bytes = 8;
+  // expected_sha256 must equal the immutable 32-byte CreateUpload value.
+  bytes expected_sha256 = 9;
+  string etag = 10;
+}
+
+message FinalizeUploadResponse {
+  Upload upload = 1;
+}
+
+message ListUploadsRequest {
+  PageRequest page = 1;
+  optional UploadState state = 2;
+}
+
+message ListUploadsResponse {
+  repeated Upload uploads = 1;
+  PageResponse page = 2;
+}
+
+message DeleteUploadRequest {
+  UuidV7 upload_id = 1;
+}
+
+message DeleteUploadResponse {
+  Upload upload = 1;
+}

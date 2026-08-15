@@ -5,7 +5,7 @@
 
 ### Scope in This Domain
 
-- `packages/devhud-api-client`: planned generated TypeScript DevHud API client and Connect Query bindings.
+- `packages/devhud-api-client`: implemented private generated TypeScript DevHud API client and Connect Query workspace.
 
 ### DevHud Rules
 
@@ -16,3 +16,4 @@
 - Generated administrative and user-upload-list clients must preserve the shared bounded page-size, opaque-token, deterministic-order pagination contract defined by the protocol, including query/user scope.
 - Keep `docs/packages-devhud-api-client-contract.md` and `docs/project-devhud.md` synchronized with schema, transport, or generated API changes.
 - Generated upload clients must preserve submission-scoped groups, expected 32-byte raw checksum/version fields, immutable finalization semantics, and correlation-ID response metadata.
+- Treat `src/gen` as generator-owned output and never hand-edit it. Handwritten exports, response-header helpers, tests, and package metadata must remain outside that directory and must not introduce transport, token, persistence, or logging policy.

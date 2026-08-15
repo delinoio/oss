@@ -1,0 +1,102 @@
+syntax = "proto3";
+
+package devhud.v1;
+
+option go_package = "github.com/delinoio/oss/protos/devhud/v1;devhudv1";
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+// UuidV7 distinguishes service-owned identifiers from external provider IDs.
+message UuidV7 {
+  // value is a canonical lowercase RFC 9562 UUID version 7 string.
+  string value = 1;
+}
+
+// PageRequest is shared by every bounded list operation.
+message PageRequest {
+  // page_size defaults to 50 and must not exceed 100.
+  uint32 page_size = 1;
+  // page_token is opaque and bound to the authenticated actor and filters.
+  string page_token = 2;
+}
+
+message PageResponse {
+  // next_page_token is empty when there are no more results.
+  string next_page_token = 1;
+}
+
+enum ClientPlatform {
+  CLIENT_PLATFORM_UNSPECIFIED = 0;
+  CLIENT_PLATFORM_DESKTOP = 1;
+  CLIENT_PLATFORM_IOS = 2;
+  CLIENT_PLATFORM_ANDROID = 3;
+  CLIENT_PLATFORM_ADMIN = 4;
+}
+
+// Capability values are static compatibility declarations, not feature flags.
+enum Capability {
+  CAPABILITY_UNSPECIFIED = 0;
+  CAPABILITY_SETTINGS_SYNC = 1;
+  CAPABILITY_OFFICIAL_UPLOADS = 2;
+  CAPABILITY_ACCOUNT_RECOVERY = 3;
+  CAPABILITY_CRASH_REPORTS = 4;
+  CAPABILITY_ADMINISTRATION = 5;
+}
+
+enum MiniApp {
+  MINI_APP_UNSPECIFIED = 0;
+  MINI_APP_REALQA = 1;
+  MINI_APP_DECK = 2;
+}
+
+enum CaptureAction {
+  CAPTURE_ACTION_UNSPECIFIED = 0;
+  CAPTURE_ACTION_DISPLAY = 1;
+  CAPTURE_ACTION_ACTIVE_WINDOW = 2;
+  CAPTURE_ACTION_ALL_DISPLAYS = 3;
+  CAPTURE_ACTION_SELECTION = 4;
+  CAPTURE_ACTION_TOOLBAR = 5;
+}
+
+enum ImageContentType {
+  IMAGE_CONTENT_TYPE_UNSPECIFIED = 0;
+  IMAGE_CONTENT_TYPE_PNG = 1;
+}
+
+enum QuotaKind {
+  QUOTA_KIND_UNSPECIFIED = 0;
+  QUOTA_KIND_OBJECT_BYTES = 1;
+  QUOTA_KIND_SUBMISSION_IMAGES = 2;
+  QUOTA_KIND_ROLLING_UPLOAD_BYTES = 3;
+  QUOTA_KIND_STORED_BYTES = 4;
+  QUOTA_KIND_SIGNED_URLS = 5;
+  QUOTA_KIND_PUBLIC_GETS = 6;
+}
+
+enum PermissionDeniedReason {
+  PERMISSION_DENIED_REASON_UNSPECIFIED = 0;
+  PERMISSION_DENIED_REASON_USER_BLOCKED = 1;
+  PERMISSION_DENIED_REASON_ACCOUNT_PENDING_DELETION = 2;
+  PERMISSION_DENIED_REASON_ADMIN_ROLE_REQUIRED = 3;
+  PERMISSION_DENIED_REASON_NOT_OWNER = 4;
+}
+
+message PermissionDeniedDetail {
+  PermissionDeniedReason reason = 1;
+}
+
+message QuotaExceededDetail {
+  QuotaKind quota = 1;
+  uint64 limit = 2;
+  uint64 current = 3;
+  google.protobuf.Duration retry_after = 4;
+}
+
+// CorrelationMetadata documents transport metadata without duplicating it in
+// every response body.
+message CorrelationMetadata {
+  // correlation_id is returned in the x-devhud-correlation-id response header.
+  UuidV7 correlation_id = 1;
+  google.protobuf.Timestamp received_at = 2;
+}
