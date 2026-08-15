@@ -69,6 +69,9 @@ describe("wire validation helpers", () => {
       validateAdminReason("Reviewed https://example.com/?na%6de=release"),
     ).not.toThrow();
     expect(() => validateAdminReason(`Reviewed ${r2UnsignedMetadataUrl}`)).not.toThrow();
+    expect(() =>
+      validateAdminReason("ERROR_CODE=E_UPLOAD RETRY_COUNT=3 TOKEN_COUNT=2"),
+    ).not.toThrow();
 
     expect(() => validateAdminReason("")).toThrow(TypeError);
     expect(() => validateAdminReason(" \n\t ")).toThrow(TypeError);
@@ -81,6 +84,9 @@ describe("wire validation helpers", () => {
     for (const reason of [
       "Authorization: Bearer unsafe-value",
       "refresh_token=unsafe-value",
+      "AWS_SECRET_ACCESS_KEY=unsafe-value",
+      "AWS_SESSION_TOKEN=unsafe-value",
+      "GITHUB_TOKEN=unsafe-value",
       "See /Users/example/private/incident.txt",
       "See src/private/incident.txt",
       "source:src/private/app.ts:10",
@@ -484,6 +490,9 @@ describe("wire validation helpers", () => {
       "cookie: session=unsafe-value",
       '{"apiKey":"unsafe-value"}',
       "AUTHORIZATION=unsafe-value",
+      "AWS_SECRET_ACCESS_KEY=unsafe-value",
+      "AWS_SESSION_TOKEN=unsafe-value",
+      "GITHUB_TOKEN=unsafe-value",
       "devhud://auth/callback?co%64e=unsafe-value",
       "https://example.com/?to%6ben=unsafe-value",
     ]) {
@@ -505,6 +514,7 @@ describe("wire validation helpers", () => {
     for (const redactedSummary of [
       "Password validation failed because the field was empty.",
       "Cookie parsing failed after session expiry.",
+      "ERROR_CODE=E_UPLOAD RETRY_COUNT=3 TOKEN_COUNT=2",
     ]) {
       expect(() =>
         validateCrashReport(

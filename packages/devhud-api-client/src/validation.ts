@@ -62,7 +62,7 @@ const forbiddenSensitiveTextPatterns: ReadonlyArray<RegExp> = [
   /-----BEGIN [A-Z ]*PRIVATE KEY-----/u,
   /\b(?:ghp|github_pat)_[A-Za-z0-9_]+\b/u,
   /\bAuthorization\s*:\s*(?:Basic|Bearer)\s+\S+/iu,
-  /\b(?:password|passwd|pwd|secret|token|client[_.-]?secret|(?:access|refresh|id)[_.-]?token|api[_.-]?key|private[_.-]?key|authorization|cookie|set-cookie)\b["']?\s*[:=]\s*\S+/iu,
+  /\b(?:[\p{L}\p{N}]+_)*(?:password|passwd|pwd|secret(?:_access_key)?|token|client[_.-]?secret|(?:access|refresh|id)[_.-]?token|api[_.-]?key|private[_.-]?key|authorization|cookie|set-cookie)\b["']?\s*[:=]\s*\S+/iu,
   /\bAKIA[0-9A-Z]{16}\b/u,
 ];
 
