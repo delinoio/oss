@@ -10,7 +10,8 @@ option go_package = "github.com/delinoio/oss/protos/gen/go/devhud/v1;devhudv1";
 message SettingsSnapshot {
   uint32 schema_version = 1;
   uint64 revision = 2;
-  // canonical_json is RFC 8785 canonical JSON encoded as UTF-8, at most 1 MiB.
+  // canonical_json is RFC 8785 canonical JSON encoded as UTF-8 without a BOM,
+  // at most 1 MiB.
   bytes canonical_json = 3;
   google.protobuf.Timestamp updated_at = 4;
 }

@@ -38,7 +38,7 @@ Upload hardening: the first upload request creates a server-owned UUID v7 submis
 
 Validate Logto credentials and admin role. Never persist or log PATs, R2 secrets, Logto tokens, DOM, screenshots outside upload ownership, issue bodies, agent output, or local paths. Official uploads require authenticated, unblocked users. BYO R2 credentials never reach this service.
 
-Crash reports accept a schema version and typed build, platform, component, severity, code, and correlation fields. The only free text is user-previewed redacted diagnostic text: summary is capped at 4 KiB and stack trace at 32 KiB. Credential patterns and local-path content are invalid. Administrator responses and error details use only the schema's admin-safe user, usage, upload, and audit projections; their message graph cannot reach settings bodies, secrets, DOM, screenshots, Deck results, agent output, or local paths.
+Crash reports accept a schema version and typed build, platform, component, severity, code, and correlation fields. Build/code identifier strings are capped at 256 UTF-8 bytes; user-previewed redacted diagnostic summary is capped at 4 KiB and stack trace at 32 KiB. Credential patterns and local-path content are invalid in every crash string. Administrator responses and error details use only the schema's admin-safe user, usage, metadata-only upload, and audit projections; their message graph cannot reach the user-facing upload object, settings bodies, secrets, DOM, screenshots, public or signed asset locators, Deck results, agent output, or local paths.
 
 ## Logging
 

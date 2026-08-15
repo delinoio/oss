@@ -26,7 +26,8 @@ type SettingsSnapshot struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	SchemaVersion uint32                 `protobuf:"varint,1,opt,name=schema_version,json=schemaVersion,proto3" json:"schema_version,omitempty"`
 	Revision      uint64                 `protobuf:"varint,2,opt,name=revision,proto3" json:"revision,omitempty"`
-	// canonical_json is RFC 8785 canonical JSON encoded as UTF-8, at most 1 MiB.
+	// canonical_json is RFC 8785 canonical JSON encoded as UTF-8 without a BOM,
+	// at most 1 MiB.
 	CanonicalJson []byte                 `protobuf:"bytes,3,opt,name=canonical_json,json=canonicalJson,proto3" json:"canonical_json,omitempty"`
 	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	unknownFields protoimpl.UnknownFields

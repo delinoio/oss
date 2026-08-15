@@ -592,12 +592,26 @@ func (x *GetUserUsageResponse) GetCounters() []*UsageCounter {
 	return nil
 }
 
+// AdminUpload contains moderation metadata only. It cannot carry a public or
+// signed asset locator or reach the user-facing Upload message.
 type AdminUpload struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Upload        *Upload                `protobuf:"bytes,1,opt,name=upload,proto3" json:"upload,omitempty"`
-	OwnerUserId   *UuidV7                `protobuf:"bytes,2,opt,name=owner_user_id,json=ownerUserId,proto3" json:"owner_user_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	OwnerUserId       *UuidV7                `protobuf:"bytes,2,opt,name=owner_user_id,json=ownerUserId,proto3" json:"owner_user_id,omitempty"`
+	UploadId          *UuidV7                `protobuf:"bytes,3,opt,name=upload_id,json=uploadId,proto3" json:"upload_id,omitempty"`
+	SubmissionId      *UuidV7                `protobuf:"bytes,4,opt,name=submission_id,json=submissionId,proto3" json:"submission_id,omitempty"`
+	UploadGroupId     *UuidV7                `protobuf:"bytes,5,opt,name=upload_group_id,json=uploadGroupId,proto3" json:"upload_group_id,omitempty"`
+	State             UploadState            `protobuf:"varint,6,opt,name=state,proto3,enum=devhud.v1.UploadState" json:"state,omitempty"`
+	ContentType       UploadContentType      `protobuf:"varint,7,opt,name=content_type,json=contentType,proto3,enum=devhud.v1.UploadContentType" json:"content_type,omitempty"`
+	SizeBytes         uint64                 `protobuf:"varint,8,opt,name=size_bytes,json=sizeBytes,proto3" json:"size_bytes,omitempty"`
+	Sha256            []byte                 `protobuf:"bytes,9,opt,name=sha256,proto3" json:"sha256,omitempty"`
+	StagingGeneration uint64                 `protobuf:"varint,10,opt,name=staging_generation,json=stagingGeneration,proto3" json:"staging_generation,omitempty"`
+	Width             uint32                 `protobuf:"varint,11,opt,name=width,proto3" json:"width,omitempty"`
+	Height            uint32                 `protobuf:"varint,12,opt,name=height,proto3" json:"height,omitempty"`
+	CreatedAt         *timestamppb.Timestamp `protobuf:"bytes,13,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	FinalizedAt       *timestamppb.Timestamp `protobuf:"bytes,14,opt,name=finalized_at,json=finalizedAt,proto3" json:"finalized_at,omitempty"`
+	RemovedAt         *timestamppb.Timestamp `protobuf:"bytes,15,opt,name=removed_at,json=removedAt,proto3" json:"removed_at,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *AdminUpload) Reset() {
@@ -630,16 +644,100 @@ func (*AdminUpload) Descriptor() ([]byte, []int) {
 	return file_devhud_v1_admin_proto_rawDescGZIP(), []int{8}
 }
 
-func (x *AdminUpload) GetUpload() *Upload {
+func (x *AdminUpload) GetOwnerUserId() *UuidV7 {
 	if x != nil {
-		return x.Upload
+		return x.OwnerUserId
 	}
 	return nil
 }
 
-func (x *AdminUpload) GetOwnerUserId() *UuidV7 {
+func (x *AdminUpload) GetUploadId() *UuidV7 {
 	if x != nil {
-		return x.OwnerUserId
+		return x.UploadId
+	}
+	return nil
+}
+
+func (x *AdminUpload) GetSubmissionId() *UuidV7 {
+	if x != nil {
+		return x.SubmissionId
+	}
+	return nil
+}
+
+func (x *AdminUpload) GetUploadGroupId() *UuidV7 {
+	if x != nil {
+		return x.UploadGroupId
+	}
+	return nil
+}
+
+func (x *AdminUpload) GetState() UploadState {
+	if x != nil {
+		return x.State
+	}
+	return UploadState_UPLOAD_STATE_UNSPECIFIED
+}
+
+func (x *AdminUpload) GetContentType() UploadContentType {
+	if x != nil {
+		return x.ContentType
+	}
+	return UploadContentType_UPLOAD_CONTENT_TYPE_UNSPECIFIED
+}
+
+func (x *AdminUpload) GetSizeBytes() uint64 {
+	if x != nil {
+		return x.SizeBytes
+	}
+	return 0
+}
+
+func (x *AdminUpload) GetSha256() []byte {
+	if x != nil {
+		return x.Sha256
+	}
+	return nil
+}
+
+func (x *AdminUpload) GetStagingGeneration() uint64 {
+	if x != nil {
+		return x.StagingGeneration
+	}
+	return 0
+}
+
+func (x *AdminUpload) GetWidth() uint32 {
+	if x != nil {
+		return x.Width
+	}
+	return 0
+}
+
+func (x *AdminUpload) GetHeight() uint32 {
+	if x != nil {
+		return x.Height
+	}
+	return 0
+}
+
+func (x *AdminUpload) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+func (x *AdminUpload) GetFinalizedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.FinalizedAt
+	}
+	return nil
+}
+
+func (x *AdminUpload) GetRemovedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.RemovedAt
 	}
 	return nil
 }
@@ -1236,7 +1334,7 @@ var File_devhud_v1_admin_proto protoreflect.FileDescriptor
 
 const file_devhud_v1_admin_proto_rawDesc = "" +
 	"\n" +
-	"\x15devhud/v1/admin.proto\x12\tdevhud.v1\x1a\x16devhud/v1/common.proto\x1a\x16devhud/v1/upload.proto\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xff\x03\n" +
+	"\x15devhud/v1/admin.proto\x12\tdevhud.v1\x1a\x16devhud/v1/common.proto\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xff\x03\n" +
 	"\tAdminUser\x12*\n" +
 	"\auser_id\x18\x01 \x01(\v2\x11.devhud.v1.UuidV7R\x06userId\x12#\n" +
 	"\rlogto_subject\x18\x02 \x01(\tR\flogtoSubject\x12!\n" +
@@ -1275,10 +1373,26 @@ const file_devhud_v1_admin_proto_rawDesc = "" +
 	"\x14GetUserUsageResponse\x127\n" +
 	"\bmetadata\x18\x01 \x01(\v2\x1b.devhud.v1.ResponseMetadataR\bmetadata\x12*\n" +
 	"\auser_id\x18\x02 \x01(\v2\x11.devhud.v1.UuidV7R\x06userId\x123\n" +
-	"\bcounters\x18\x03 \x03(\v2\x17.devhud.v1.UsageCounterR\bcounters\"o\n" +
-	"\vAdminUpload\x12)\n" +
-	"\x06upload\x18\x01 \x01(\v2\x11.devhud.v1.UploadR\x06upload\x125\n" +
-	"\rowner_user_id\x18\x02 \x01(\v2\x11.devhud.v1.UuidV7R\vownerUserId\"\xa6\x02\n" +
+	"\bcounters\x18\x03 \x03(\v2\x17.devhud.v1.UsageCounterR\bcounters\"\xad\x05\n" +
+	"\vAdminUpload\x125\n" +
+	"\rowner_user_id\x18\x02 \x01(\v2\x11.devhud.v1.UuidV7R\vownerUserId\x12.\n" +
+	"\tupload_id\x18\x03 \x01(\v2\x11.devhud.v1.UuidV7R\buploadId\x126\n" +
+	"\rsubmission_id\x18\x04 \x01(\v2\x11.devhud.v1.UuidV7R\fsubmissionId\x129\n" +
+	"\x0fupload_group_id\x18\x05 \x01(\v2\x11.devhud.v1.UuidV7R\ruploadGroupId\x12,\n" +
+	"\x05state\x18\x06 \x01(\x0e2\x16.devhud.v1.UploadStateR\x05state\x12?\n" +
+	"\fcontent_type\x18\a \x01(\x0e2\x1c.devhud.v1.UploadContentTypeR\vcontentType\x12\x1d\n" +
+	"\n" +
+	"size_bytes\x18\b \x01(\x04R\tsizeBytes\x12\x16\n" +
+	"\x06sha256\x18\t \x01(\fR\x06sha256\x12-\n" +
+	"\x12staging_generation\x18\n" +
+	" \x01(\x04R\x11stagingGeneration\x12\x14\n" +
+	"\x05width\x18\v \x01(\rR\x05width\x12\x16\n" +
+	"\x06height\x18\f \x01(\rR\x06height\x129\n" +
+	"\n" +
+	"created_at\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12=\n" +
+	"\ffinalized_at\x18\x0e \x01(\v2\x1a.google.protobuf.TimestampR\vfinalizedAt\x129\n" +
+	"\n" +
+	"removed_at\x18\x0f \x01(\v2\x1a.google.protobuf.TimestampR\tremovedAtJ\x04\b\x01\x10\x02R\x06upload\"\xa6\x02\n" +
 	"\x1eAdminServiceListUploadsRequest\x12*\n" +
 	"\x04page\x18\x01 \x01(\v2\x16.devhud.v1.PageRequestR\x04page\x125\n" +
 	"\rowner_user_id\x18\x02 \x01(\v2\x11.devhud.v1.UuidV7R\vownerUserId\x126\n" +
@@ -1382,8 +1496,8 @@ var file_devhud_v1_admin_proto_goTypes = []any{
 	(*ResponseMetadata)(nil),                 // 24: devhud.v1.ResponseMetadata
 	(QuotaKind)(0),                           // 25: devhud.v1.QuotaKind
 	(*durationpb.Duration)(nil),              // 26: google.protobuf.Duration
-	(*Upload)(nil),                           // 27: devhud.v1.Upload
-	(UploadState)(0),                         // 28: devhud.v1.UploadState
+	(UploadState)(0),                         // 27: devhud.v1.UploadState
+	(UploadContentType)(0),                   // 28: devhud.v1.UploadContentType
 }
 var file_devhud_v1_admin_proto_depIdxs = []int32{
 	19, // 0: devhud.v1.AdminUser.user_id:type_name -> devhud.v1.UuidV7
@@ -1406,55 +1520,62 @@ var file_devhud_v1_admin_proto_depIdxs = []int32{
 	24, // 17: devhud.v1.GetUserUsageResponse.metadata:type_name -> devhud.v1.ResponseMetadata
 	19, // 18: devhud.v1.GetUserUsageResponse.user_id:type_name -> devhud.v1.UuidV7
 	6,  // 19: devhud.v1.GetUserUsageResponse.counters:type_name -> devhud.v1.UsageCounter
-	27, // 20: devhud.v1.AdminUpload.upload:type_name -> devhud.v1.Upload
-	19, // 21: devhud.v1.AdminUpload.owner_user_id:type_name -> devhud.v1.UuidV7
-	23, // 22: devhud.v1.AdminServiceListUploadsRequest.page:type_name -> devhud.v1.PageRequest
-	19, // 23: devhud.v1.AdminServiceListUploadsRequest.owner_user_id:type_name -> devhud.v1.UuidV7
-	19, // 24: devhud.v1.AdminServiceListUploadsRequest.submission_id:type_name -> devhud.v1.UuidV7
-	19, // 25: devhud.v1.AdminServiceListUploadsRequest.upload_group_id:type_name -> devhud.v1.UuidV7
-	28, // 26: devhud.v1.AdminServiceListUploadsRequest.states:type_name -> devhud.v1.UploadState
-	24, // 27: devhud.v1.AdminServiceListUploadsResponse.metadata:type_name -> devhud.v1.ResponseMetadata
-	9,  // 28: devhud.v1.AdminServiceListUploadsResponse.uploads:type_name -> devhud.v1.AdminUpload
-	19, // 29: devhud.v1.QuarantineUploadRequest.upload_id:type_name -> devhud.v1.UuidV7
-	24, // 30: devhud.v1.QuarantineUploadResponse.metadata:type_name -> devhud.v1.ResponseMetadata
-	9,  // 31: devhud.v1.QuarantineUploadResponse.upload:type_name -> devhud.v1.AdminUpload
-	16, // 32: devhud.v1.QuarantineUploadResponse.audit_event:type_name -> devhud.v1.AuditEvent
-	19, // 33: devhud.v1.AdminServiceDeleteUploadRequest.upload_id:type_name -> devhud.v1.UuidV7
-	24, // 34: devhud.v1.AdminServiceDeleteUploadResponse.metadata:type_name -> devhud.v1.ResponseMetadata
-	9,  // 35: devhud.v1.AdminServiceDeleteUploadResponse.upload:type_name -> devhud.v1.AdminUpload
-	16, // 36: devhud.v1.AdminServiceDeleteUploadResponse.audit_event:type_name -> devhud.v1.AuditEvent
-	19, // 37: devhud.v1.AuditEvent.audit_event_id:type_name -> devhud.v1.UuidV7
-	19, // 38: devhud.v1.AuditEvent.actor_user_id:type_name -> devhud.v1.UuidV7
-	19, // 39: devhud.v1.AuditEvent.target_user_id:type_name -> devhud.v1.UuidV7
-	19, // 40: devhud.v1.AuditEvent.target_upload_id:type_name -> devhud.v1.UuidV7
-	0,  // 41: devhud.v1.AuditEvent.action:type_name -> devhud.v1.AuditAction
-	22, // 42: devhud.v1.AuditEvent.created_at:type_name -> google.protobuf.Timestamp
-	23, // 43: devhud.v1.ListAuditEventsRequest.page:type_name -> devhud.v1.PageRequest
-	19, // 44: devhud.v1.ListAuditEventsRequest.actor_user_id:type_name -> devhud.v1.UuidV7
-	19, // 45: devhud.v1.ListAuditEventsRequest.target_user_id:type_name -> devhud.v1.UuidV7
-	19, // 46: devhud.v1.ListAuditEventsRequest.target_upload_id:type_name -> devhud.v1.UuidV7
-	0,  // 47: devhud.v1.ListAuditEventsRequest.actions:type_name -> devhud.v1.AuditAction
-	24, // 48: devhud.v1.ListAuditEventsResponse.metadata:type_name -> devhud.v1.ResponseMetadata
-	16, // 49: devhud.v1.ListAuditEventsResponse.audit_events:type_name -> devhud.v1.AuditEvent
-	2,  // 50: devhud.v1.AdminService.ListUsers:input_type -> devhud.v1.ListUsersRequest
-	4,  // 51: devhud.v1.AdminService.SetUserBlocked:input_type -> devhud.v1.SetUserBlockedRequest
-	7,  // 52: devhud.v1.AdminService.GetUserUsage:input_type -> devhud.v1.GetUserUsageRequest
-	10, // 53: devhud.v1.AdminService.ListUploads:input_type -> devhud.v1.AdminServiceListUploadsRequest
-	12, // 54: devhud.v1.AdminService.QuarantineUpload:input_type -> devhud.v1.QuarantineUploadRequest
-	14, // 55: devhud.v1.AdminService.DeleteUpload:input_type -> devhud.v1.AdminServiceDeleteUploadRequest
-	17, // 56: devhud.v1.AdminService.ListAuditEvents:input_type -> devhud.v1.ListAuditEventsRequest
-	3,  // 57: devhud.v1.AdminService.ListUsers:output_type -> devhud.v1.ListUsersResponse
-	5,  // 58: devhud.v1.AdminService.SetUserBlocked:output_type -> devhud.v1.SetUserBlockedResponse
-	8,  // 59: devhud.v1.AdminService.GetUserUsage:output_type -> devhud.v1.GetUserUsageResponse
-	11, // 60: devhud.v1.AdminService.ListUploads:output_type -> devhud.v1.AdminServiceListUploadsResponse
-	13, // 61: devhud.v1.AdminService.QuarantineUpload:output_type -> devhud.v1.QuarantineUploadResponse
-	15, // 62: devhud.v1.AdminService.DeleteUpload:output_type -> devhud.v1.AdminServiceDeleteUploadResponse
-	18, // 63: devhud.v1.AdminService.ListAuditEvents:output_type -> devhud.v1.ListAuditEventsResponse
-	57, // [57:64] is the sub-list for method output_type
-	50, // [50:57] is the sub-list for method input_type
-	50, // [50:50] is the sub-list for extension type_name
-	50, // [50:50] is the sub-list for extension extendee
-	0,  // [0:50] is the sub-list for field type_name
+	19, // 20: devhud.v1.AdminUpload.owner_user_id:type_name -> devhud.v1.UuidV7
+	19, // 21: devhud.v1.AdminUpload.upload_id:type_name -> devhud.v1.UuidV7
+	19, // 22: devhud.v1.AdminUpload.submission_id:type_name -> devhud.v1.UuidV7
+	19, // 23: devhud.v1.AdminUpload.upload_group_id:type_name -> devhud.v1.UuidV7
+	27, // 24: devhud.v1.AdminUpload.state:type_name -> devhud.v1.UploadState
+	28, // 25: devhud.v1.AdminUpload.content_type:type_name -> devhud.v1.UploadContentType
+	22, // 26: devhud.v1.AdminUpload.created_at:type_name -> google.protobuf.Timestamp
+	22, // 27: devhud.v1.AdminUpload.finalized_at:type_name -> google.protobuf.Timestamp
+	22, // 28: devhud.v1.AdminUpload.removed_at:type_name -> google.protobuf.Timestamp
+	23, // 29: devhud.v1.AdminServiceListUploadsRequest.page:type_name -> devhud.v1.PageRequest
+	19, // 30: devhud.v1.AdminServiceListUploadsRequest.owner_user_id:type_name -> devhud.v1.UuidV7
+	19, // 31: devhud.v1.AdminServiceListUploadsRequest.submission_id:type_name -> devhud.v1.UuidV7
+	19, // 32: devhud.v1.AdminServiceListUploadsRequest.upload_group_id:type_name -> devhud.v1.UuidV7
+	27, // 33: devhud.v1.AdminServiceListUploadsRequest.states:type_name -> devhud.v1.UploadState
+	24, // 34: devhud.v1.AdminServiceListUploadsResponse.metadata:type_name -> devhud.v1.ResponseMetadata
+	9,  // 35: devhud.v1.AdminServiceListUploadsResponse.uploads:type_name -> devhud.v1.AdminUpload
+	19, // 36: devhud.v1.QuarantineUploadRequest.upload_id:type_name -> devhud.v1.UuidV7
+	24, // 37: devhud.v1.QuarantineUploadResponse.metadata:type_name -> devhud.v1.ResponseMetadata
+	9,  // 38: devhud.v1.QuarantineUploadResponse.upload:type_name -> devhud.v1.AdminUpload
+	16, // 39: devhud.v1.QuarantineUploadResponse.audit_event:type_name -> devhud.v1.AuditEvent
+	19, // 40: devhud.v1.AdminServiceDeleteUploadRequest.upload_id:type_name -> devhud.v1.UuidV7
+	24, // 41: devhud.v1.AdminServiceDeleteUploadResponse.metadata:type_name -> devhud.v1.ResponseMetadata
+	9,  // 42: devhud.v1.AdminServiceDeleteUploadResponse.upload:type_name -> devhud.v1.AdminUpload
+	16, // 43: devhud.v1.AdminServiceDeleteUploadResponse.audit_event:type_name -> devhud.v1.AuditEvent
+	19, // 44: devhud.v1.AuditEvent.audit_event_id:type_name -> devhud.v1.UuidV7
+	19, // 45: devhud.v1.AuditEvent.actor_user_id:type_name -> devhud.v1.UuidV7
+	19, // 46: devhud.v1.AuditEvent.target_user_id:type_name -> devhud.v1.UuidV7
+	19, // 47: devhud.v1.AuditEvent.target_upload_id:type_name -> devhud.v1.UuidV7
+	0,  // 48: devhud.v1.AuditEvent.action:type_name -> devhud.v1.AuditAction
+	22, // 49: devhud.v1.AuditEvent.created_at:type_name -> google.protobuf.Timestamp
+	23, // 50: devhud.v1.ListAuditEventsRequest.page:type_name -> devhud.v1.PageRequest
+	19, // 51: devhud.v1.ListAuditEventsRequest.actor_user_id:type_name -> devhud.v1.UuidV7
+	19, // 52: devhud.v1.ListAuditEventsRequest.target_user_id:type_name -> devhud.v1.UuidV7
+	19, // 53: devhud.v1.ListAuditEventsRequest.target_upload_id:type_name -> devhud.v1.UuidV7
+	0,  // 54: devhud.v1.ListAuditEventsRequest.actions:type_name -> devhud.v1.AuditAction
+	24, // 55: devhud.v1.ListAuditEventsResponse.metadata:type_name -> devhud.v1.ResponseMetadata
+	16, // 56: devhud.v1.ListAuditEventsResponse.audit_events:type_name -> devhud.v1.AuditEvent
+	2,  // 57: devhud.v1.AdminService.ListUsers:input_type -> devhud.v1.ListUsersRequest
+	4,  // 58: devhud.v1.AdminService.SetUserBlocked:input_type -> devhud.v1.SetUserBlockedRequest
+	7,  // 59: devhud.v1.AdminService.GetUserUsage:input_type -> devhud.v1.GetUserUsageRequest
+	10, // 60: devhud.v1.AdminService.ListUploads:input_type -> devhud.v1.AdminServiceListUploadsRequest
+	12, // 61: devhud.v1.AdminService.QuarantineUpload:input_type -> devhud.v1.QuarantineUploadRequest
+	14, // 62: devhud.v1.AdminService.DeleteUpload:input_type -> devhud.v1.AdminServiceDeleteUploadRequest
+	17, // 63: devhud.v1.AdminService.ListAuditEvents:input_type -> devhud.v1.ListAuditEventsRequest
+	3,  // 64: devhud.v1.AdminService.ListUsers:output_type -> devhud.v1.ListUsersResponse
+	5,  // 65: devhud.v1.AdminService.SetUserBlocked:output_type -> devhud.v1.SetUserBlockedResponse
+	8,  // 66: devhud.v1.AdminService.GetUserUsage:output_type -> devhud.v1.GetUserUsageResponse
+	11, // 67: devhud.v1.AdminService.ListUploads:output_type -> devhud.v1.AdminServiceListUploadsResponse
+	13, // 68: devhud.v1.AdminService.QuarantineUpload:output_type -> devhud.v1.QuarantineUploadResponse
+	15, // 69: devhud.v1.AdminService.DeleteUpload:output_type -> devhud.v1.AdminServiceDeleteUploadResponse
+	18, // 70: devhud.v1.AdminService.ListAuditEvents:output_type -> devhud.v1.ListAuditEventsResponse
+	64, // [64:71] is the sub-list for method output_type
+	57, // [57:64] is the sub-list for method input_type
+	57, // [57:57] is the sub-list for extension type_name
+	57, // [57:57] is the sub-list for extension extendee
+	0,  // [0:57] is the sub-list for field type_name
 }
 
 func init() { file_devhud_v1_admin_proto_init() }
@@ -1463,7 +1584,6 @@ func file_devhud_v1_admin_proto_init() {
 		return
 	}
 	file_devhud_v1_common_proto_init()
-	file_devhud_v1_upload_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

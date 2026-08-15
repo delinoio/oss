@@ -111,7 +111,21 @@ describe("devhud.v1 service contract", () => {
 
     const reachable = collectReachableAdminMessages(AdminService);
     expect([...reachable].some((message) => message.typeName === "devhud.v1.SettingsSnapshot")).toBe(false);
+    expect(
+      [...reachable].some(
+        (message) =>
+          message.typeName === "devhud.v1.Upload" ||
+          message.typeName === "devhud.v1.UploadReservation",
+      ),
+    ).toBe(false);
     expect([...reachable].some((message) => message.field.canonicalJson !== undefined)).toBe(false);
+    expect(
+      [...reachable].some((message) =>
+        message.fields.some(
+          (field) => field.name === "public_url" || field.name === "signed_put_url",
+        ),
+      ),
+    ).toBe(false);
   });
 });
 

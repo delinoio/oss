@@ -38,7 +38,7 @@ Logout deletes local credentials, cached settings, Deck data, clones, drafts, an
 
 ## Logging
 
-Use redacted structured diagnostics. Never log tokens, headers, DOM, screenshots, URL fragments, form values, full paths, agent environments, or issue bodies. Crash reports are off by default, previewed/redacted, authenticated, and retained 30 days. Submissions use typed build/platform/component/severity/code fields; the redacted summary is at most 4 KiB and the redacted stack trace is at most 32 KiB, and neither may contain credential or local-path patterns.
+Use redacted structured diagnostics. Never log tokens, headers, DOM, screenshots, URL fragments, form values, full paths, agent environments, or issue bodies. Crash reports are off by default, previewed/redacted, authenticated, and retained 30 days. Submissions use typed build/platform/component/severity/code fields; build/code identifier strings are at most 256 UTF-8 bytes, the redacted summary is at most 4 KiB, and the redacted stack trace is at most 32 KiB. No crash string may contain credential or local-path patterns.
 
 ## Build and Test
 

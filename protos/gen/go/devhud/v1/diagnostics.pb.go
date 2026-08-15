@@ -239,6 +239,8 @@ func (DiagnosticSeverity) EnumDescriptor() ([]byte, []int) {
 	return file_devhud_v1_diagnostics_proto_rawDescGZIP(), []int{3}
 }
 
+// ClientBuild string fields are each at most 256 UTF-8 bytes and cannot
+// contain credential or local-path patterns.
 type ClientBuild struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	AppVersion    string                 `protobuf:"bytes,1,opt,name=app_version,json=appVersion,proto3" json:"app_version,omitempty"`
@@ -322,7 +324,9 @@ type SubmitCrashReportRequest struct {
 	OccurredAt          *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=occurred_at,json=occurredAt,proto3" json:"occurred_at,omitempty"`
 	Component           DiagnosticComponent    `protobuf:"varint,4,opt,name=component,proto3,enum=devhud.v1.DiagnosticComponent" json:"component,omitempty"`
 	Severity            DiagnosticSeverity     `protobuf:"varint,5,opt,name=severity,proto3,enum=devhud.v1.DiagnosticSeverity" json:"severity,omitempty"`
-	ErrorCode           string                 `protobuf:"bytes,6,opt,name=error_code,json=errorCode,proto3" json:"error_code,omitempty"`
+	// error_code is at most 256 UTF-8 bytes and cannot contain credential or
+	// local-path patterns.
+	ErrorCode string `protobuf:"bytes,6,opt,name=error_code,json=errorCode,proto3" json:"error_code,omitempty"`
 	// redacted_summary is user-previewed UTF-8 text, at most 4 KiB.
 	RedactedSummary string `protobuf:"bytes,7,opt,name=redacted_summary,json=redactedSummary,proto3" json:"redacted_summary,omitempty"`
 	// redacted_stack_trace is user-previewed UTF-8 text, at most 32 KiB.

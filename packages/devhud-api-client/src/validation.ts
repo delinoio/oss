@@ -1,6 +1,7 @@
 import type { SubmitCrashReportRequest } from "./gen/devhud/v1/diagnostics_pb.js";
 
 export const MAX_SETTINGS_JSON_BYTES = 1_048_576;
+export const MAX_CRASH_IDENTIFIER_BYTES = 256;
 export const MAX_CRASH_SUMMARY_BYTES = 4_096;
 export const MAX_CRASH_STACK_BYTES = 32_768;
 
@@ -10,8 +11,7 @@ const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder("utf-8", { fatal: true });
 
 const forbiddenDiagnosticPatterns: ReadonlyArray<RegExp> = [
-  /(?:^|[\s\p{P}])(?:[A-Za-z]:\\|\\\\)[^\s]*/u,
-  /(?:^|[\s\p{P}])(?:~\/|\/(?:Users|home|private|tmp|var|etc|opt|mnt|srv)\/)[^\s]*/u,
+  /(?<!:)(?:^|[\s\p{P}])(?:[A-Za-z]:[\\/]|\\\\|~\/|\/(?!\/))[^\s]*/u,
   /file:\/\/[^\s]*/iu,
   /-----BEGIN [A-Z ]*PRIVATE KEY-----/u,
   /\b(?:ghp|github_pat)_[A-Za-z0-9_]+\b/u,
@@ -35,6 +35,9 @@ export function validateCanonicalSettingsJson(value: Uint8Array): unknown {
   if (value.byteLength > MAX_SETTINGS_JSON_BYTES) {
     throw new RangeError(`settings JSON must not exceed ${MAX_SETTINGS_JSON_BYTES} bytes`);
   }
+  if (value[0] === 0xef && value[1] === 0xbb && value[2] === 0xbf) {
+    throw new TypeError("settings JSON must not begin with a UTF-8 byte-order mark");
+  }
 
   const source = textDecoder.decode(value);
   const parsed: unknown = JSON.parse(source);
@@ -45,11 +48,33 @@ export function validateCanonicalSettingsJson(value: Uint8Array): unknown {
 }
 
 export function validateCrashReport(report: SubmitCrashReportRequest): void {
-  validateRedactedText(report.redactedSummary, MAX_CRASH_SUMMARY_BYTES, "redactedSummary");
-  validateRedactedText(report.redactedStackTrace, MAX_CRASH_STACK_BYTES, "redactedStackTrace");
+  validateDiagnosticText(report.errorCode, MAX_CRASH_IDENTIFIER_BYTES, "errorCode");
+  if (report.clientBuild !== undefined) {
+    validateDiagnosticText(
+      report.clientBuild.appVersion,
+      MAX_CRASH_IDENTIFIER_BYTES,
+      "clientBuild.appVersion",
+    );
+    validateDiagnosticText(
+      report.clientBuild.buildId,
+      MAX_CRASH_IDENTIFIER_BYTES,
+      "clientBuild.buildId",
+    );
+    validateDiagnosticText(
+      report.clientBuild.osVersion,
+      MAX_CRASH_IDENTIFIER_BYTES,
+      "clientBuild.osVersion",
+    );
+  }
+  validateDiagnosticText(report.redactedSummary, MAX_CRASH_SUMMARY_BYTES, "redactedSummary");
+  validateDiagnosticText(
+    report.redactedStackTrace,
+    MAX_CRASH_STACK_BYTES,
+    "redactedStackTrace",
+  );
 }
 
-function validateRedactedText(value: string, maximum: number, field: string): void {
+function validateDiagnosticText(value: string, maximum: number, field: string): void {
   if (textEncoder.encode(value).byteLength > maximum) {
     throw new RangeError(`${field} must not exceed ${maximum} UTF-8 bytes`);
   }

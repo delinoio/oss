@@ -3,7 +3,6 @@ syntax = "proto3";
 package devhud.v1;
 
 import "devhud/v1/common.proto";
-import "devhud/v1/upload.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 
@@ -63,9 +62,26 @@ message GetUserUsageResponse {
   repeated UsageCounter counters = 3;
 }
 
+// AdminUpload contains moderation metadata only. It cannot carry a public or
+// signed asset locator or reach the user-facing Upload message.
 message AdminUpload {
-  Upload upload = 1;
+  reserved 1;
+  reserved "upload";
+
   UuidV7 owner_user_id = 2;
+  UuidV7 upload_id = 3;
+  UuidV7 submission_id = 4;
+  UuidV7 upload_group_id = 5;
+  UploadState state = 6;
+  UploadContentType content_type = 7;
+  uint64 size_bytes = 8;
+  bytes sha256 = 9;
+  uint64 staging_generation = 10;
+  uint32 width = 11;
+  uint32 height = 12;
+  google.protobuf.Timestamp created_at = 13;
+  google.protobuf.Timestamp finalized_at = 14;
+  google.protobuf.Timestamp removed_at = 15;
 }
 
 message AdminServiceListUploadsRequest {

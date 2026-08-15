@@ -31,7 +31,8 @@ export type SettingsSnapshot = Message<"devhud.v1.SettingsSnapshot"> & {
   revision: bigint;
 
   /**
-   * canonical_json is RFC 8785 canonical JSON encoded as UTF-8, at most 1 MiB.
+   * canonical_json is RFC 8785 canonical JSON encoded as UTF-8 without a BOM,
+   * at most 1 MiB.
    *
    * @generated from field: bytes canonical_json = 3;
    */

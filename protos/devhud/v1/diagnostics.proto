@@ -38,6 +38,8 @@ enum DiagnosticSeverity {
   DIAGNOSTIC_SEVERITY_FATAL = 2;
 }
 
+// ClientBuild string fields are each at most 256 UTF-8 bytes and cannot
+// contain credential or local-path patterns.
 message ClientBuild {
   string app_version = 1;
   string build_id = 2;
@@ -52,6 +54,8 @@ message SubmitCrashReportRequest {
   google.protobuf.Timestamp occurred_at = 3;
   DiagnosticComponent component = 4;
   DiagnosticSeverity severity = 5;
+  // error_code is at most 256 UTF-8 bytes and cannot contain credential or
+  // local-path patterns.
   string error_code = 6;
   // redacted_summary is user-previewed UTF-8 text, at most 4 KiB.
   string redacted_summary = 7;
