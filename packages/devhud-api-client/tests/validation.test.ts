@@ -94,6 +94,18 @@ describe("wire validation helpers", () => {
       expect(() => validateCrashReport(report), absolutePath).toThrow(TypeError);
     }
 
+    for (const stackTrace of [
+      "/workspace/oss/app.ts:10:2",
+      " /workspace/oss/app.ts:10:2",
+      "(/workspace/oss/app.ts:10:2)",
+    ]) {
+      const report = create(SubmitCrashReportRequestSchema, {
+        ...safe,
+        redactedStackTrace: stackTrace,
+      });
+      expect(() => validateCrashReport(report), stackTrace).toThrow(TypeError);
+    }
+
     const remoteUrl = create(SubmitCrashReportRequestSchema, {
       ...safe,
       redactedStackTrace: "at load (https://example.com/assets/app.js:10:2)",

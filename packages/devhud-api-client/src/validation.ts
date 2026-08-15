@@ -11,7 +11,8 @@ const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder("utf-8", { fatal: true });
 
 const forbiddenDiagnosticPatterns: ReadonlyArray<RegExp> = [
-  /(?<!:)(?:^|[\s\p{P}])(?:[A-Za-z]:[\\/]|\\\\|~\/|\/(?!\/))[^\s]*/u,
+  // Keep this lookbehind-free while iOS 16.0-16.3 system webviews are supported.
+  /(?:^(?:[\s\p{P}])?|[^:][\s\p{P}])(?:[A-Za-z]:[\\/]|\\\\|~\/|\/(?!\/))[^\s]*/u,
   /file:\/\/[^\s]*/iu,
   /-----BEGIN [A-Z ]*PRIVATE KEY-----/u,
   /\b(?:ghp|github_pat)_[A-Za-z0-9_]+\b/u,
