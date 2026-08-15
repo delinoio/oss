@@ -16,7 +16,7 @@ Desktop RealQA users, Chrome Web Store reviewers, and release operators.
 
 Use the stable Native Messaging host name `io.delino.devhud.native_messaging`. The Web Store extension ID is a fixed 32-character release-configured value shared by the extension package, host manifest, and desktop installer; the host origin must be exactly `chrome-extension://<DEVHUD_CHROME_EXTENSION_ID>/`. Request optional host permissions only after a user gesture and only for configured URL-mapping origins; never request `<all_urls>`. Use `activeTab` where applicable. Maintain a persistent Native Messaging connection to `crates/devhud-native-messaging-host`, which forwards schema-versioned messages through user-scoped local IPC to `apps/devhud`. Validate the exact extension ID, Native Messaging origin, one-time pairing nonce, schema, message size, and timeout.
 
-Capture only privacy-stripped URL, title, viewport, user agent, selected selector/bounds, accessibility attributes, and sanitized `outerHTML` capped at 128 KiB. Remove scripts, styles, handlers, form/password/hidden credential data; never collect cookies, storage, console/network data, or page-wide DOM. Missing, denied, revoked, disconnected, unsupported-incognito, or absent extension must degrade to capture without browser context and manual repository selection. Chrome incognito support is excluded.
+Capture only privacy-stripped URL, title, viewport, user agent, selected selector/bounds, accessibility attributes, and sanitized `outerHTML` capped at 128 KiB. Build the DOM fragment from an explicit element allowlist (`a`, `article`, `aside`, `blockquote`, `code`, `dd`, `details`, `div`, `dl`, `dt`, `em`, `figcaption`, `figure`, `footer`, `h1`-`h6`, `header`, `hr`, `img`, `li`, `main`, `nav`, `ol`, `p`, `pre`, `section`, `summary`, `table`, `tbody`, `td`, `tfoot`, `th`, `thead`, `tr`, `ul`) and an explicit attribute allowlist limited to the approved accessibility/text attributes (`alt`, `aria-describedby`, `aria-hidden`, `aria-label`, `aria-labelledby`, `role`, `title`). Drop all other elements and attributes, including `meta`, `link`, scripts, styles, event handlers, `data-*`, form controls, and hidden/password fields. Redact every URL-valued attribute (`href`, `src`, `cite`, `poster`, `ping`, `srcset`, and form URL attributes) rather than preserving query strings, fragments, signed URLs, or credentials. Never collect cookies, storage, console/network data, or page-wide DOM. Missing, denied, revoked, disconnected, unsupported-incognito, or absent extension must degrade to capture without browser context and manual repository selection. Chrome incognito support is excluded.
 
 ## Storage
 
@@ -32,7 +32,7 @@ Use redacted structured diagnostics. Never log page content, credentials, cookie
 
 ## Build and Test
 
-Validate manifest permissions, extension ID/origin pairing, malformed/replayed/oversized messages, no-active-tab and sensitive-form behavior, absent/denied/revoked permissions, unsupported incognito behavior, sanitized DOM cap, reproducible ZIP parity, and Web Store packaging.
+Validate manifest permissions, extension ID/origin pairing, malformed/replayed/oversized messages, no-active-tab and sensitive-form behavior, absent/denied/revoked permissions, unsupported incognito behavior, element/attribute allowlist enforcement, URL-value redaction (including signed URLs and `data-*` secrets), sanitized DOM cap, reproducible ZIP parity, and Web Store packaging.
 
 ## Dependencies and Integrations
 
