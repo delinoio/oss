@@ -39,6 +39,9 @@ try {
       stdio: "inherit",
       shell: false,
     },
+    {
+      terminateProcessTreeOnWindows: true,
+    },
   );
   exitLikeChild(result);
 } catch (error) {
