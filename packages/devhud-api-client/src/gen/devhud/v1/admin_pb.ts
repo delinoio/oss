@@ -140,6 +140,9 @@ export type SetUserBlockedRequest = Message<"devhud.v1.SetUserBlockedRequest"> &
   targetState: AdministrativeBlockState;
 
   /**
+   * reason is required, must be well-formed Unicode, is capped at 4 KiB of
+   * UTF-8, and cannot contain credential or local-path patterns.
+   *
    * @generated from field: string reason = 3;
    */
   reason: string;
@@ -414,6 +417,9 @@ export type QuarantineUploadRequest = Message<"devhud.v1.QuarantineUploadRequest
   uploadId?: UuidV7 | undefined;
 
   /**
+   * reason follows the bounded, sensitive-content-safe administrator reason
+   * contract and is validated before the mutation is persisted.
+   *
    * @generated from field: string reason = 2;
    */
   reason: string;
@@ -463,6 +469,9 @@ export type AdminServiceDeleteUploadRequest = Message<"devhud.v1.AdminServiceDel
   uploadId?: UuidV7 | undefined;
 
   /**
+   * reason follows the bounded, sensitive-content-safe administrator reason
+   * contract and is validated before the mutation is persisted.
+   *
    * @generated from field: string reason = 2;
    */
   reason: string;
@@ -532,6 +541,8 @@ export type AuditEvent = Message<"devhud.v1.AuditEvent"> & {
   action: AuditAction;
 
   /**
+   * reason contains only a previously validated administrator mutation reason.
+   *
    * @generated from field: string reason = 6;
    */
   reason: string;

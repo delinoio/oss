@@ -11,9 +11,11 @@ import {
   SubmitCrashReportRequestSchema,
 } from "../src/gen/devhud/v1/diagnostics_pb.js";
 import {
+  MAX_ADMIN_REASON_BYTES,
   MAX_CRASH_IDENTIFIER_BYTES,
   assertSha256,
   assertUuidV7,
+  validateAdminReason,
   validateCanonicalSettingsJson,
   validateCrashReport,
 } from "../src/validation.js";
@@ -45,6 +47,28 @@ describe("wire validation helpers", () => {
     expect(() => assertUuidV7("018f47a2-7b3c-6def-8abc-1234567890ab")).toThrow(TypeError);
     expect(() => assertSha256(new Uint8Array(32))).not.toThrow();
     expect(() => assertSha256(new Uint8Array(31))).toThrow(RangeError);
+  });
+
+  it("validates bounded sensitive-content-safe administrator reasons", () => {
+    expect(() => validateAdminReason("Quarantined after repeated policy violations.")).not.toThrow();
+    expect(() => validateAdminReason("é".repeat(MAX_ADMIN_REASON_BYTES / 2))).not.toThrow();
+
+    expect(() => validateAdminReason("")).toThrow(TypeError);
+    expect(() => validateAdminReason(" \n\t ")).toThrow(TypeError);
+    expect(() => validateAdminReason("\ud800")).toThrow(TypeError);
+    expect(() => validateAdminReason("é".repeat(MAX_ADMIN_REASON_BYTES / 2 + 1))).toThrow(
+      RangeError,
+    );
+
+    for (const reason of [
+      "Authorization: Bearer unsafe-value",
+      "refresh_token=unsafe-value",
+      "See /Users/example/private/incident.txt",
+      "See src/private/incident.txt",
+      "https://example.com/audit?token=unsafe-value",
+    ]) {
+      expect(() => validateAdminReason(reason), reason).toThrow(TypeError);
+    }
   });
 
   it("rejects noncanonical settings JSON", () => {

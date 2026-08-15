@@ -301,10 +301,12 @@ func (x *ListUsersResponse) GetNextPageToken() string {
 }
 
 type SetUserBlockedRequest struct {
-	state         protoimpl.MessageState   `protogen:"open.v1"`
-	UserId        *UuidV7                  `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
-	TargetState   AdministrativeBlockState `protobuf:"varint,2,opt,name=target_state,json=targetState,proto3,enum=devhud.v1.AdministrativeBlockState" json:"target_state,omitempty"`
-	Reason        string                   `protobuf:"bytes,3,opt,name=reason,proto3" json:"reason,omitempty"`
+	state       protoimpl.MessageState   `protogen:"open.v1"`
+	UserId      *UuidV7                  `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	TargetState AdministrativeBlockState `protobuf:"varint,2,opt,name=target_state,json=targetState,proto3,enum=devhud.v1.AdministrativeBlockState" json:"target_state,omitempty"`
+	// reason is required, must be well-formed Unicode, is capped at 4 KiB of
+	// UTF-8, and cannot contain credential or local-path patterns.
+	Reason        string `protobuf:"bytes,3,opt,name=reason,proto3" json:"reason,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -879,9 +881,11 @@ func (x *AdminServiceListUploadsResponse) GetNextPageToken() string {
 }
 
 type QuarantineUploadRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	UploadId      *UuidV7                `protobuf:"bytes,1,opt,name=upload_id,json=uploadId,proto3" json:"upload_id,omitempty"`
-	Reason        string                 `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"`
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	UploadId *UuidV7                `protobuf:"bytes,1,opt,name=upload_id,json=uploadId,proto3" json:"upload_id,omitempty"`
+	// reason follows the bounded, sensitive-content-safe administrator reason
+	// contract and is validated before the mutation is persisted.
+	Reason        string `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -991,9 +995,11 @@ func (x *QuarantineUploadResponse) GetAuditEvent() *AuditEvent {
 }
 
 type AdminServiceDeleteUploadRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	UploadId      *UuidV7                `protobuf:"bytes,1,opt,name=upload_id,json=uploadId,proto3" json:"upload_id,omitempty"`
-	Reason        string                 `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"`
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	UploadId *UuidV7                `protobuf:"bytes,1,opt,name=upload_id,json=uploadId,proto3" json:"upload_id,omitempty"`
+	// reason follows the bounded, sensitive-content-safe administrator reason
+	// contract and is validated before the mutation is persisted.
+	Reason        string `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1109,10 +1115,11 @@ type AuditEvent struct {
 	TargetUserId   *UuidV7                `protobuf:"bytes,3,opt,name=target_user_id,json=targetUserId,proto3" json:"target_user_id,omitempty"`
 	TargetUploadId *UuidV7                `protobuf:"bytes,4,opt,name=target_upload_id,json=targetUploadId,proto3" json:"target_upload_id,omitempty"`
 	Action         AuditAction            `protobuf:"varint,5,opt,name=action,proto3,enum=devhud.v1.AuditAction" json:"action,omitempty"`
-	Reason         string                 `protobuf:"bytes,6,opt,name=reason,proto3" json:"reason,omitempty"`
-	CreatedAt      *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// reason contains only a previously validated administrator mutation reason.
+	Reason        string                 `protobuf:"bytes,6,opt,name=reason,proto3" json:"reason,omitempty"`
+	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *AuditEvent) Reset() {

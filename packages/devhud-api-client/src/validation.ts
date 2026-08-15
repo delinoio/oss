@@ -7,6 +7,7 @@ import {
 } from "./gen/devhud/v1/diagnostics_pb.js";
 
 export const MAX_SETTINGS_JSON_BYTES = 1_048_576;
+export const MAX_ADMIN_REASON_BYTES = 4_096;
 export const MAX_CRASH_IDENTIFIER_BYTES = 256;
 export const MAX_CRASH_SUMMARY_BYTES = 4_096;
 export const MAX_CRASH_STACK_BYTES = 32_768;
@@ -16,7 +17,7 @@ const UUID_V7_PATTERN =
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder("utf-8", { fatal: true });
 
-const forbiddenDiagnosticPatterns: ReadonlyArray<RegExp> = [
+const forbiddenSensitiveTextPatterns: ReadonlyArray<RegExp> = [
   // Keep this lookbehind-free while iOS 16.0-16.3 system webviews are supported.
   /(?:^(?:[\s\p{P}])?|[^:][\s\p{P}]|:\s+)(?:[A-Za-z]:[\\/]|\\\\|~\/|\/(?!\/))[^\s]*/u,
   // Require a leading text boundary so URL path segments are not treated as local paths.
@@ -60,6 +61,13 @@ export function validateCanonicalSettingsJson(value: Uint8Array): unknown {
   return parsed;
 }
 
+export function validateAdminReason(reason: string): void {
+  if (reason.trim().length === 0) {
+    throw new TypeError("reason must contain at least one non-whitespace character");
+  }
+  validateSensitiveText(reason, MAX_ADMIN_REASON_BYTES, "reason");
+}
+
 export function validateCrashReport(report: SubmitCrashReportRequest): void {
   if (
     !Number.isInteger(report.reportSchemaVersion) ||
@@ -87,24 +95,24 @@ export function validateCrashReport(report: SubmitCrashReportRequest): void {
     throw new TypeError("severity must be specified");
   }
 
-  validateDiagnosticText(report.errorCode, MAX_CRASH_IDENTIFIER_BYTES, "errorCode");
-  validateDiagnosticText(
+  validateSensitiveText(report.errorCode, MAX_CRASH_IDENTIFIER_BYTES, "errorCode");
+  validateSensitiveText(
     report.clientBuild.appVersion,
     MAX_CRASH_IDENTIFIER_BYTES,
     "clientBuild.appVersion",
   );
-  validateDiagnosticText(
+  validateSensitiveText(
     report.clientBuild.buildId,
     MAX_CRASH_IDENTIFIER_BYTES,
     "clientBuild.buildId",
   );
-  validateDiagnosticText(
+  validateSensitiveText(
     report.clientBuild.osVersion,
     MAX_CRASH_IDENTIFIER_BYTES,
     "clientBuild.osVersion",
   );
-  validateDiagnosticText(report.redactedSummary, MAX_CRASH_SUMMARY_BYTES, "redactedSummary");
-  validateDiagnosticText(
+  validateSensitiveText(report.redactedSummary, MAX_CRASH_SUMMARY_BYTES, "redactedSummary");
+  validateSensitiveText(
     report.redactedStackTrace,
     MAX_CRASH_STACK_BYTES,
     "redactedStackTrace",
@@ -114,12 +122,12 @@ export function validateCrashReport(report: SubmitCrashReportRequest): void {
   }
 }
 
-function validateDiagnosticText(value: string, maximum: number, field: string): void {
+function validateSensitiveText(value: string, maximum: number, field: string): void {
   assertWellFormedUnicode(value, field);
   if (textEncoder.encode(value).byteLength > maximum) {
     throw new RangeError(`${field} must not exceed ${maximum} UTF-8 bytes`);
   }
-  for (const pattern of forbiddenDiagnosticPatterns) {
+  for (const pattern of forbiddenSensitiveTextPatterns) {
     if (pattern.test(value)) {
       throw new TypeError(`${field} contains forbidden sensitive or local-path content`);
     }
