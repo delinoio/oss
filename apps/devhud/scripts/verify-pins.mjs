@@ -18,6 +18,7 @@ const ciWorkflow = readFileSync(join(repoRoot, ".github/workflows/CI.yml"), "utf
 const packageJson = JSON.parse(readFileSync(join(appRoot, "package.json"), "utf8"));
 const pnpmLock = readFileSync(join(repoRoot, "pnpm-lock.yaml"), "utf8");
 const tauriConfig = JSON.parse(readFileSync(join(appRoot, "src-tauri/tauri.conf.json"), "utf8"));
+const tauriMain = readFileSync(join(appRoot, "src-tauri/src/main.rs"), "utf8");
 const rsbuildConfig = readFileSync(join(appRoot, "rsbuild.config.ts"), "utf8");
 
 const TAURI_REPOSITORY = "https://github.com/tauri-apps/tauri";
@@ -93,6 +94,10 @@ assert(pins.tauri.revision === TAURI_REVISION, "Tauri revision changed");
 assert(
   rootCargo.includes('"apps/devhud/src-tauri"'),
   "DevHUD Rust host is not a root Cargo workspace member",
+);
+assert(
+  tauriMain.includes("#[tauri::cef_entry_point]"),
+  "DevHUD must route CEF helper processes through the CEF entry point",
 );
 assert(tauriConfig.identifier === "io.delino.devhud", "application identifier changed");
 assert(

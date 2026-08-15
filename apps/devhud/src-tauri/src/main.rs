@@ -310,6 +310,7 @@ fn probe_frontend_ready(
     }
 }
 
+#[tauri::cef_entry_point]
 fn main() {
     let smoke_mode = SmokeMode::from_environment();
     let subprocess = is_cef_subprocess();
