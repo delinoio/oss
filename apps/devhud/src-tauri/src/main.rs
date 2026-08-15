@@ -17,12 +17,17 @@ use platform::LinuxDisplayMode;
 use resources::ResourceLayout;
 use tauri::WebviewUrl;
 use tracing::{error, info, warn};
+use tracing_subscriber::{
+    Layer,
+    filter::{FilterExt, filter_fn},
+    layer::SubscriberExt,
+    util::SubscriberInitExt,
+};
 
 const DEVELOPMENT_ORIGIN: &str = "http://127.0.0.1:46305";
 const PRODUCTION_ORIGIN: &str = "http://tauri.localhost";
 const FRONTEND_READY_TITLE: &str = "DevHUD";
 const FRONTEND_READY_TIMEOUT: Duration = Duration::from_secs(5);
-const DEVHUD_DIAGNOSTIC_FILTER_DIRECTIVE: &str = "devhud=info";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum SmokeMode {
@@ -122,18 +127,19 @@ fn diagnostic_writer(
     }
 }
 
-fn diagnostic_filter(rust_log: Option<&str>) -> tracing_subscriber::EnvFilter {
+fn diagnostic_filter(
+    rust_log: Option<&str>,
+) -> impl tracing_subscriber::layer::Filter<tracing_subscriber::Registry> + use<> {
     let filter = rust_log
         .and_then(|value| tracing_subscriber::EnvFilter::try_new(value).ok())
         .unwrap_or_else(|| tracing_subscriber::EnvFilter::new("info"));
 
-    // Operator filters may tune dependency verbosity, but application lifecycle
-    // and failure diagnostics must remain available to managed launches.
-    filter.add_directive(
-        DEVHUD_DIAGNOSTIC_FILTER_DIRECTIVE
-            .parse()
-            .expect("the DevHUD diagnostic filter directive must remain valid"),
-    )
+    // Operator filters may tune dependency verbosity, but fatal application
+    // diagnostics must remain available when a packaged GUI cannot start.
+    filter.or(filter_fn(|metadata| {
+        metadata.level() == &tracing::Level::ERROR
+            && (metadata.target() == "devhud" || metadata.target().starts_with("devhud::"))
+    }))
 }
 
 fn init_logging(smoke_mode: Option<SmokeMode>, subprocess: bool) {
@@ -142,12 +148,12 @@ fn init_logging(smoke_mode: Option<SmokeMode>, subprocess: bool) {
 
     let writer = diagnostic_writer(smoke_mode, subprocess);
 
-    let _ = tracing_subscriber::fmt()
+    let layer = tracing_subscriber::fmt::layer()
         .json()
-        .with_env_filter(filter)
         .with_writer(writer)
         .with_target(false)
-        .try_init();
+        .with_filter(filter);
+    let _ = tracing_subscriber::registry().with(layer).try_init();
 }
 
 fn is_allowed_navigation(url: &tauri::Url) -> bool {
@@ -397,13 +403,19 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use std::{
-        sync::atomic::{AtomicBool, Ordering},
+        io::{self, Write},
+        sync::{
+            Arc, Mutex,
+            atomic::{AtomicBool, Ordering},
+        },
         time::Duration,
     };
 
+    use tracing::{debug, error, info, warn};
+    use tracing_subscriber::{Layer, layer::SubscriberExt};
+
     use super::{
-        DEVHUD_DIAGNOSTIC_FILTER_DIRECTIVE, SmokeMode, diagnostic_filter,
-        inject_smoke_missing_resource, is_frontend_ready_title,
+        SmokeMode, diagnostic_filter, inject_smoke_missing_resource, is_frontend_ready_title,
         wait_for_frontend_readiness_timeout,
     };
 
@@ -414,29 +426,58 @@ mod tests {
     }
 
     #[test]
-    fn diagnostic_filter_keeps_devhud_diagnostics_enabled() {
-        for rust_log in [Some("off"), Some("devhud=off"), Some("warn,devhud=trace")] {
-            let configured = diagnostic_filter(rust_log).to_string();
+    fn diagnostic_filter_preserves_configured_devhud_info() {
+        let output = capture_diagnostics(Some("info"), || {
+            info!(target: "devhud", "configured info");
+            debug!(target: "devhud", "unconfigured debug");
+        });
 
-            assert!(
-                configured
-                    .split(',')
-                    .any(|directive| directive == DEVHUD_DIAGNOSTIC_FILTER_DIRECTIVE),
-                "missing diagnostic floor in {configured}"
-            );
-        }
+        assert!(output.contains("configured info"));
+        assert!(!output.contains("unconfigured debug"));
+    }
+
+    #[test]
+    fn diagnostic_filter_keeps_only_devhud_errors_enabled_when_off() {
+        let output = capture_diagnostics(Some("off"), || {
+            error!(target: "devhud", "fatal DevHUD diagnostic");
+            warn!(target: "devhud", "disabled DevHUD warning");
+            error!(target: "dependency", "disabled dependency error");
+        });
+
+        assert!(output.contains("fatal DevHUD diagnostic"));
+        assert!(!output.contains("disabled DevHUD warning"));
+        assert!(!output.contains("disabled dependency error"));
     }
 
     #[test]
     fn diagnostic_filter_uses_info_for_missing_or_invalid_configuration() {
         for rust_log in [None, Some("devhud=invalid-level")] {
-            let configured = diagnostic_filter(rust_log).to_string();
+            let output = capture_diagnostics(rust_log, || {
+                info!(target: "devhud", "fallback info");
+                debug!(target: "devhud", "fallback debug");
+            });
 
-            assert!(
-                configured.split(',').any(|directive| directive == "info"),
-                "missing info fallback in {configured}"
-            );
+            assert!(output.contains("fallback info"));
+            assert!(!output.contains("fallback debug"));
         }
+    }
+
+    fn capture_diagnostics(rust_log: Option<&str>, callback: impl FnOnce()) -> String {
+        let buffer = Arc::new(Mutex::new(Vec::new()));
+        let writer = SharedWriter(buffer.clone());
+        let layer = tracing_subscriber::fmt::layer()
+            .with_ansi(false)
+            .with_target(false)
+            .with_level(false)
+            .without_time()
+            .with_writer(move || writer.clone())
+            .with_filter(diagnostic_filter(rust_log));
+        let subscriber = tracing_subscriber::registry().with(layer);
+
+        tracing::subscriber::with_default(subscriber, callback);
+
+        let output = buffer.lock().expect("lock log buffer").clone();
+        String::from_utf8(output).expect("utf8 log output")
     }
 
     #[test]
@@ -480,6 +521,23 @@ mod tests {
             let mut missing = Vec::new();
             inject_smoke_missing_resource(&mut missing, smoke_mode);
             assert!(missing.is_empty());
+        }
+    }
+
+    #[derive(Clone)]
+    struct SharedWriter(Arc<Mutex<Vec<u8>>>);
+
+    impl Write for SharedWriter {
+        fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+            self.0
+                .lock()
+                .expect("lock log buffer")
+                .extend_from_slice(buffer);
+            Ok(buffer.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
         }
     }
 }
