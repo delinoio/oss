@@ -23,8 +23,8 @@ const forbiddenDiagnosticPatterns: ReadonlyArray<RegExp> = [
   /(?:^|[\s([{<"'=])(?:\.{1,2}[\\/])?(?:[\p{L}\p{N}_@.-]+[\\/])+[\p{L}\p{N}_@.-]+\.[\p{L}][\p{L}\p{N}]*(?::\d+){0,2}(?=$|[\s\p{P}])/u,
   /file:\/\/[^\s]*/iu,
   // URL userinfo, queries, and fragments can contain opaque credentials.
-  /\bhttps?:\/\/[^/\s?#]*@/iu,
-  /\bhttps?:\/\/[^\s?#]*[?#]\S*/iu,
+  /\b[A-Za-z][A-Za-z0-9+.-]*:\/\/[^/\s?#]*@/u,
+  /\b[A-Za-z][A-Za-z0-9+.-]*:[^\s?#]*[?#]\S*/u,
   /-----BEGIN [A-Z ]*PRIVATE KEY-----/u,
   /\b(?:ghp|github_pat)_[A-Za-z0-9_]+\b/u,
   /\bAuthorization\s*:\s*(?:Basic|Bearer)\s+\S+/iu,

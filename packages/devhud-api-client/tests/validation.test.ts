@@ -246,16 +246,25 @@ describe("wire validation helpers", () => {
       ).toThrow(TypeError);
     }
 
-    const remoteUrl = create(SubmitCrashReportRequestSchema, {
-      ...safe,
-      redactedStackTrace: "at load (https://example.com/assets/app.js:10:2)",
-    });
-    expect(() => validateCrashReport(remoteUrl)).not.toThrow();
+    for (const remoteUrl of [
+      "https://example.com/assets/app.js:10:2",
+      "wss://example.com/socket",
+      "devhud://auth/callback",
+    ]) {
+      const report = create(SubmitCrashReportRequestSchema, {
+        ...safe,
+        redactedStackTrace: `at load (${remoteUrl})`,
+      });
+      expect(() => validateCrashReport(report), remoteUrl).not.toThrow();
+    }
 
     for (const credentialUrl of [
       "https://alice:password@example.com/app.js",
       "https://example.com/app.js?token=secret",
       "https://example.com/app.js#access-token",
+      "wss://user:pass@example.com/socket",
+      "devhud://auth/callback?code=secret&state=x",
+      "mailto:user@example.com?subject=secret",
     ]) {
       const report = create(SubmitCrashReportRequestSchema, {
         ...safe,
