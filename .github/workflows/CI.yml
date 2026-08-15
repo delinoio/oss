@@ -806,6 +806,10 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
+      - name: Install macOS Rust targets
+        if: ${{ steps.gate.outputs.run == 'true' && matrix.os == 'macos' }}
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
       - name: Install Linux desktop prerequisites
         if: ${{ steps.gate.outputs.run == 'true' && matrix.os == 'linux' }}
         run: |
@@ -814,7 +818,9 @@ jobs:
 
       - name: Install dependencies
         if: ${{ steps.gate.outputs.run == 'true' }}
-        run: pnpm install --frozen-lockfile
+        # CI runs the app checks explicitly; skip developer-only root prepare hooks,
+        # which pnpm otherwise invokes through cmd.exe on Windows.
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Verify frontend and immutable pins
         if: ${{ steps.gate.outputs.run == 'true' }}
@@ -858,7 +864,7 @@ jobs:
         env:
           XDG_SESSION_TYPE: x11
           WAYLAND_DISPLAY: ""
-        run: xvfb-run -a pnpm --filter devhud smoke:platform -- --artifact target/devhud-smoke-root/usr/bin/devhud
+        run: xvfb-run -a pnpm --filter devhud smoke:platform -- --artifact "${{ github.workspace }}/target/devhud-smoke-root/usr/bin/devhud"
 
 
   ci-result:
