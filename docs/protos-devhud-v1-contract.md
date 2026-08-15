@@ -24,6 +24,8 @@ The protocol defines representations only. Persistence and retention belong to t
 
 ## Security
 
+Upload wire types carry the server-owned `submission_id`, upload-group binding, expected checksum, and staging object version/generation. A submission owns at most 10 finalized images across its groups; finalization rejects dimensions above 4096×4096 or 16,777,216 total pixels before raster decoding and conditionally promotes only the recorded staging version.
+
 Keep credentials out of messages and logs. Mark authenticated/admin methods and upload-finalization invariants explicitly. Preserve compatibility without weakening authorization, quota, redaction, or deletion rules.
 
 ## Logging

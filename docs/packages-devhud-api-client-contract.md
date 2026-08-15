@@ -18,6 +18,8 @@ Expose generated clients for every v1 service/RPC, including `AccountService.Res
 
 ## Storage
 
+Generated upload types preserve the server-owned `submission_id`, cross-group 10-image limit, signed expected checksum, staging version/generation, and immutable conditional-finalization fields.
+
 No persistence. App callers own local encrypted storage and secure credentials; the client package must not cache tokens, settings, Deck results, or upload bodies implicitly.
 
 ## Security

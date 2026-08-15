@@ -24,7 +24,9 @@ Store only non-secret extension configuration and pairing state required by the 
 
 ## Security
 
-Origin permissions are least-privilege and user initiated. Pairing is one-time and timeout/size/schema bounded. Browser context is editable/removable, and top-level URLs always use the normalized origin/path form defined above with credentials, query strings, and fragments removed.
+Origin permissions are least-privilege and user initiated. Pairing is one-time and timeout/size/schema bounded. Browser context is editable/removable, and top-level URLs always use the normalized origin plus the redacted path structure defined below with credentials, query strings, and fragments removed.
+
+The path component is redacted before persistence or submission: replace every non-empty segment with the literal `<redacted>` placeholder while preserving slash structure. This prevents reset tokens, invite secrets, capability URLs, and other path credentials from entering drafts, issues, or agent input; literal path values are never retained.
 
 ## Logging
 
@@ -32,7 +34,7 @@ Use redacted structured diagnostics. Never log page content, credentials, cookie
 
 ## Build and Test
 
-Validate manifest permissions, extension ID/origin pairing, malformed/replayed/oversized messages, no-active-tab and sensitive-form behavior, absent/denied/revoked permissions, unsupported incognito behavior, element/attribute allowlist enforcement, URL-value redaction (including signed URLs and `data-*` secrets), sanitized DOM cap, reproducible ZIP parity, and Web Store packaging.
+Validate manifest permissions, extension ID/origin pairing, malformed/replayed/oversized messages, no-active-tab and sensitive-form behavior, absent/denied/revoked permissions, unsupported incognito behavior, element/attribute allowlist enforcement, path-segment redaction, URL-value redaction (including signed URLs and `data-*` secrets), sanitized DOM cap, reproducible ZIP parity, and Web Store packaging.
 
 ## Dependencies and Integrations
 

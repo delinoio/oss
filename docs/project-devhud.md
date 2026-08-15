@@ -38,6 +38,9 @@ No planned path is a Cargo workspace member or an implemented runtime until its 
 
 ## Cross-Domain Invariants
 
+- Upload finalization is submission-scoped: the first upload creates a server-owned UUID v7 submission and group, later groups carry that submission ID, and no submission may finalize more than 10 images across its groups. Signed checksums and staging versions are immutable finalization inputs; PNG dimensions are checked before decoding and must be at most 4096×4096 and 16,777,216 total pixels, and promotion is conditional on the recorded version/checksum.
+- The iOS widget target is `io.delino.devhud.widget` and shares App Group `group.io.delino.devhud` and Keychain access group `$(AppIdentifierPrefix)io.delino.devhud.shared` with the main app. CEF `connect-src` permits only validated API, GitHub, and signed-upload origins.
+
 - Fixed loopback development ports are frontend `46305`, administrator `46306`, and API `46307`; every launcher fails with an actionable conflict instead of remapping.
 - Browser/API CORS uses the exact origins `http://localhost:46305`, `http://127.0.0.1:46305`, `http://localhost:46306`, `http://127.0.0.1:46306`, and pinned Tauri `http://tauri.localhost`. Direct R2 staging uploads use the same origins with only `PUT`/`OPTIONS`, `Content-Type` and `x-amz-checksum-sha256` request headers, and `ETag` exposure. Connect preflight methods and headers are explicit; wildcard origins and headers are not allowed.
 - Desktop targets are macOS 13+, Windows 10 22H2+, and Ubuntu 22.04 LTS on X11, each in x64 and arm64 builds. XWayland is best effort; native Wayland is excluded. Mobile targets are iOS 16+ and Android 10/API 29+.

@@ -28,6 +28,8 @@ Retain request logs and crash reports 30 days; retain pseudonymized security/adm
 
 ## Security
 
+Upload hardening: the first upload request creates a server-owned UUID v7 submission with its first group; later groups and finalizations carry both IDs and the submission owns the maximum of 10 finalized images across all groups. Signed URLs bind the expected SHA-256 checksum and versioned staging object. Finalization checks PNG IHDR dimensions before decoding, rejecting width or height above 4096 or total pixels above 16,777,216, and promotes only the recorded version with conditional ETag/checksum validation.
+
 Validate Logto credentials and admin role. Never persist or log PATs, R2 secrets, Logto tokens, DOM, screenshots outside upload ownership, issue bodies, agent output, or local paths. Official uploads require authenticated, unblocked users. BYO R2 credentials never reach this service.
 
 ## Logging

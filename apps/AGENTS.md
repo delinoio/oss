@@ -32,6 +32,7 @@
 - User-facing DevHud UI, widgets, extension UI, validation, and errors support English and Korean. RealQA is desktop-only; Deck is desktop/mobile. Follow the documented browser-context, local-agent, secret, accessibility, and no-plugin boundaries.
 - Deck refresh intervals are client-polling targets only; suspended widgets use OS-controlled best-effort scheduling and display stale state with the last successful refresh.
 - Update `docs/project-devhud.md` and the applicable DevHud domain contract with every path, UI, platform, interface, or release change.
+- The DevHud iOS widget target must use `io.delino.devhud.widget` with App Group `group.io.delino.devhud` and Keychain access group `$(AppIdentifierPrefix)io.delino.devhud.shared`; the desktop CEF session CSP may add only validated API, GitHub, and signed-upload origins. Chrome captures redact every path segment before persistence.
 
 ### mpapp Rules
 
