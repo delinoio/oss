@@ -680,6 +680,7 @@ jobs:
               - go.sum
               - .nvmrc
               - package.json
+              - pnpm-workspace.yaml
               - pnpm-lock.yaml
               - protos/**
               - packages/devhud-api-client/**
