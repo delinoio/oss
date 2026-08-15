@@ -144,12 +144,14 @@ function validateMinimumHost() {
 
 async function runScenario(executable, mode, expectedExit, expectedMarkers) {
   const cacheRoot = mkdtempSync(join(tmpdir(), "devhud-smoke-cache-"));
+  const logRoot = join(cacheRoot, "logs");
   try {
     const child = spawn(executable, [], {
       env: {
         ...process.env,
         DEVHUD_PLATFORM_SMOKE: mode,
         DEVHUD_SMOKE_CACHE_DIR: cacheRoot,
+        DEVHUD_SMOKE_LOG_DIR: logRoot,
         RUST_LOG: "info",
       },
       stdio: ["ignore", "pipe", "pipe"],
@@ -182,6 +184,14 @@ async function runScenario(executable, mode, expectedExit, expectedMarkers) {
     for (const marker of expectedMarkers) {
       if (!output.includes(marker)) {
         throw new Error(`${mode} smoke did not emit ${marker}\n${output}`);
+      }
+    }
+    if (process.platform === "win32") {
+      const persistedOutput = readFileSync(join(logRoot, "devhud.jsonl"), "utf8");
+      for (const marker of expectedMarkers) {
+        if (!persistedOutput.includes(marker)) {
+          throw new Error(`${mode} smoke did not persist ${marker}\n${persistedOutput}`);
+        }
       }
     }
   } finally {

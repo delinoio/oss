@@ -21,6 +21,9 @@ tauri-cli = { git = "https://github.com/tauri-apps/tauri", rev = "4af26a3f7f8b69
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
 
+[target.'cfg(windows)'.dependencies]
+dirs = "6"
+
 [features]
 default = []
 cli = ["dep:tauri-cli"]

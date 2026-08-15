@@ -56,12 +56,70 @@ fn is_cef_subprocess() -> bool {
     std::env::args().any(|argument| argument.starts_with("--type="))
 }
 
-fn init_logging() {
+#[cfg(target_os = "windows")]
+fn windows_log_directory(smoke_mode: Option<SmokeMode>) -> Option<std::path::PathBuf> {
+    if smoke_mode.is_some()
+        && let Some(directory) = std::env::var_os("DEVHUD_SMOKE_LOG_DIR")
+    {
+        return Some(directory.into());
+    }
+
+    dirs::data_local_dir().map(|directory| directory.join("io.delino.devhud").join("logs"))
+}
+
+#[cfg(target_os = "windows")]
+fn windows_diagnostic_writer(
+    smoke_mode: Option<SmokeMode>,
+    subprocess: bool,
+) -> tracing_subscriber::fmt::writer::BoxMakeWriter {
+    use std::{fs::OpenOptions, sync::Mutex};
+
+    use tracing_subscriber::fmt::writer::MakeWriterExt;
+
+    if cfg!(debug_assertions) || subprocess {
+        return tracing_subscriber::fmt::writer::BoxMakeWriter::new(std::io::stderr);
+    }
+
+    let result = (|| {
+        let directory = windows_log_directory(smoke_mode).ok_or(std::io::ErrorKind::NotFound)?;
+        std::fs::create_dir_all(&directory).map_err(|error| error.kind())?;
+        OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(directory.join("devhud.jsonl"))
+            .map_err(|error| error.kind())
+    })();
+
+    match result {
+        Ok(file) => tracing_subscriber::fmt::writer::BoxMakeWriter::new(
+            std::io::stderr.and(Mutex::new(file)),
+        ),
+        Err(kind) => {
+            eprintln!(
+                "{{\"level\":\"WARN\",\"event\":\"file_logging_unavailable\",\"kind\":\"{kind:?}\"\
+                 }}"
+            );
+            tracing_subscriber::fmt::writer::BoxMakeWriter::new(std::io::stderr)
+        }
+    }
+}
+
+fn init_logging(smoke_mode: Option<SmokeMode>, subprocess: bool) {
     let filter = tracing_subscriber::EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
+
+    #[cfg(target_os = "windows")]
+    let writer = windows_diagnostic_writer(smoke_mode, subprocess);
+    #[cfg(not(target_os = "windows"))]
+    let writer = {
+        let _ = (smoke_mode, subprocess);
+        tracing_subscriber::fmt::writer::BoxMakeWriter::new(std::io::stderr)
+    };
+
     let _ = tracing_subscriber::fmt()
         .json()
         .with_env_filter(filter)
+        .with_writer(writer)
         .with_target(false)
         .without_time()
         .try_init();
@@ -208,9 +266,9 @@ fn probe_frontend_ready(
 }
 
 fn main() {
-    init_logging();
     let smoke_mode = SmokeMode::from_environment();
     let subprocess = is_cef_subprocess();
+    init_logging(smoke_mode, subprocess);
     if !subprocess && let Err(message) = validate_host(smoke_mode) {
         error!(event = "cef_fatal_initialization", reason = %message);
         std::process::exit(78);
