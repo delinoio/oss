@@ -51,10 +51,13 @@ describe("wire validation helpers", () => {
 
   it("validates bounded sensitive-content-safe administrator reasons", () => {
     expect(() => validateAdminReason("Quarantined after repeated policy violations.")).not.toThrow();
+    expect(() => validateAdminReason("Expected yes / no")).not.toThrow();
+    expect(() => validateAdminReason("\u0085Reviewed policy breach")).not.toThrow();
     expect(() => validateAdminReason("é".repeat(MAX_ADMIN_REASON_BYTES / 2))).not.toThrow();
 
     expect(() => validateAdminReason("")).toThrow(TypeError);
     expect(() => validateAdminReason(" \n\t ")).toThrow(TypeError);
+    expect(() => validateAdminReason("\u0085\u2007\u2028")).toThrow(TypeError);
     expect(() => validateAdminReason("\ud800")).toThrow(TypeError);
     expect(() => validateAdminReason("é".repeat(MAX_ADMIN_REASON_BYTES / 2 + 1))).toThrow(
       RangeError,
@@ -215,17 +218,23 @@ describe("wire validation helpers", () => {
   });
 
   it("accepts slash-delimited diagnostic labels without local-path evidence", () => {
-    const report = create(SubmitCrashReportRequestSchema, {
-      ...safeCrashReport,
-      clientBuild: {
-        ...clientBuild,
-        appVersion: "1.0.0/42",
-        osVersion: "iOS/18.6",
-      },
-      redactedSummary: "React/Native failure",
-    });
+    for (const redactedSummary of [
+      "React/Native failure",
+      "Upload failed / retry scheduled",
+      "Expected yes / no",
+    ]) {
+      const report = create(SubmitCrashReportRequestSchema, {
+        ...safeCrashReport,
+        clientBuild: {
+          ...clientBuild,
+          appVersion: "1.0.0/42",
+          osVersion: "iOS/18.6",
+        },
+        redactedSummary,
+      });
 
-    expect(() => validateCrashReport(report)).not.toThrow();
+      expect(() => validateCrashReport(report), redactedSummary).not.toThrow();
+    }
   });
 
   it("rejects local paths and credential-shaped crash diagnostics", () => {
@@ -284,6 +293,8 @@ describe("wire validation helpers", () => {
     }
 
     for (const stackTrace of [
+      "at render (app.ts:10:2)",
+      "main.rs:12",
       "src/main.rs:12",
       "at render (src/private/customer/app.ts:10:2)",
       "at render (src\\private\\customer\\app.ts:10:2)",

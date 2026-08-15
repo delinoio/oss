@@ -678,6 +678,7 @@ jobs:
               - buf.gen.yaml
               - go.mod
               - go.sum
+              - .nvmrc
               - package.json
               - pnpm-lock.yaml
               - protos/**

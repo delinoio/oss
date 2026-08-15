@@ -17,16 +17,18 @@ const UUID_V7_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder("utf-8", { fatal: true });
+const unicodeNonWhitespacePattern = /\P{White_Space}/u;
 
 const forbiddenSensitiveTextPatterns: ReadonlyArray<RegExp> = [
   // Keep this lookbehind-free while iOS 16.0-16.3 system webviews are supported.
-  /(?:^(?:[\s\p{P}])?|[^:][\s\p{P}]|:\s+)(?:[A-Za-z]:[\\/]|\\\\|~\/|\/(?!\/))[^\s]*/u,
+  /(?:^(?:[\s\p{P}])?|[^:][\s\p{P}]|:\s+)(?:[A-Za-z]:[\\/][^\s]*|\\\\[^\s]+|~\/[^\s]+|\/(?!\/)[^\s]+)/u,
   // Relative paths require explicit prefixes or structural/file evidence so labels such as
   // React/Native, iOS/18.6, and 1.0.0/42 remain valid diagnostic text.
   /(?:^|[\s([{<"'=])\.{1,2}[\\/](?:[\p{L}\p{N}_@.-]+[\\/])*[\p{L}\p{N}_@.-]+(?::\d+){0,2}(?=$|[\s\p{P}])/u,
   /(?:^|[\s([{<"'=])(?:[\p{L}\p{N}_@.-]+[\\/]){2,}[\p{L}\p{N}_@.-]+(?::\d+){0,2}(?=$|[\s\p{P}])/u,
   /(?:^|[\s([{<"'=])[\p{L}\p{N}_@.-]+[\\/](?:\.[\p{L}\p{N}_@.-]+|[\p{L}\p{N}_@.-]+\.[\p{L}][\p{L}\p{N}]*|Dockerfile|Makefile)(?::\d+){0,2}(?=$|[\s\p{P}])/u,
   /(?:^|[\s([{<"'=])[\p{L}\p{N}_@.-]+[\\/][\p{L}\p{N}_@.-]+:\d+(?::\d+)?(?=$|[\s\p{P}])/u,
+  /(?:^|[\s([{<"'=])[\p{L}\p{N}_@.-]+\.[\p{L}][\p{L}\p{N}]*:\d+(?::\d+)?(?=$|[\s\p{P}])/u,
   /file:\/\/[^\s]*/iu,
   // URL userinfo, queries, and fragments can contain opaque credentials.
   /\b[A-Za-z][A-Za-z0-9+.-]*:\/\/[^/\s?#]*@/u,
@@ -67,7 +69,7 @@ export function validateCanonicalSettingsJson(value: Uint8Array): unknown {
 }
 
 export function validateAdminReason(reason: string): void {
-  if (reason.trim().length === 0) {
+  if (!unicodeNonWhitespacePattern.test(reason)) {
     throw new TypeError("reason must contain at least one non-whitespace character");
   }
   validateSensitiveText(reason, MAX_ADMIN_REASON_BYTES, "reason");
