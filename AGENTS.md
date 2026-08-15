@@ -37,8 +37,8 @@
 - `crates/`: Rust crates and Rust-based tooling.
 - `cmds/`: Go command tools for workflow orchestration.
 - `servers/`: Backend services, including planned DevHud API services.
-- `protos/`: Versioned protocol schemas, including planned DevHud Connect RPC schemas.
-- `packages/`: Shared generated and runtime packages, including the planned DevHud API client.
+- `protos/`: Versioned protocol schemas, including the implemented DevHud Connect RPC schemas and committed Go bindings.
+- `packages/`: Shared generated and runtime packages, including the implemented DevHud API client.
 - `packaging/`: Package-manager template assets for release automation.
 - `.agents/skills/`: Workspace-local Codex skills and reusable agent workflows.
 
@@ -102,7 +102,7 @@ enum ProjectId {
 - `serde-feather` -> `crates/serde-feather`, `crates/serde-feather-macros`
 - `rustia` -> `crates/rustia`, `crates/rustia-llm`, `crates/rustia-macros`
 - `public-docs` -> `apps/public-docs`
-- `devhud` -> `apps/devhud`, `apps/devhud-chrome-extension`, `apps/devhud-admin`, `servers/devhud-api`, `protos/devhud/v1`, `packages/devhud-api-client`, `crates/devhud-native-messaging-host` (all planned)
+- `devhud` -> `apps/devhud`, `apps/devhud-chrome-extension`, `apps/devhud-admin`, `servers/devhud-api`, `protos/devhud/v1` (implemented), `packages/devhud-api-client` (implemented), `crates/devhud-native-messaging-host`; all other listed paths remain planned.
 
 ### DevHud Contract
 
@@ -116,7 +116,8 @@ enum ProjectId {
 - Desktop uses Tauri CEF from `https://github.com/tauri-apps/tauri` at commit `4af26a3f7f8b692d62cca549bbacd93f5ce90b41`; mobile uses system webviews. Bundle ID is `io.delino.devhud` and deep links use `devhud`, with native Logto callback `devhud://auth/callback`. Bootstrap also provides an `admin` client key and exact deployment-configured admin redirect; development uses `http://localhost:46306/auth/callback` and embedded production uses the API origin's `/admin/auth/callback`.
 - DevHud Native Messaging uses host name `io.delino.devhud.native_messaging` and one fixed 32-character release-configured Chrome extension ID, shared by the extension, host manifest, and installer. The app-owned v1 IPC contract uses user-scoped platform endpoints and pairing-secret challenge/response authentication; it is not a Connect RPC or API path.
 - DevHud iOS widgets use bundle ID `io.delino.devhud.widget`, App Group `group.io.delino.devhud`, and Keychain access group `$(AppIdentifierPrefix)io.delino.devhud.shared`; upload submissions own all groups and enforce 10 finalized images across groups, with 4096×4096/16,777,216-pixel pre-decode limits, 32-byte raw checksums encoded as Base64 only for the R2 checksum header, and immutable checksum/version-bound staging promotion.
-- Planned paths remain documentation-only. Do not add `crates/devhud-native-messaging-host` to the Cargo workspace until its crate skeleton exists. `CreateUpload` must atomically reserve the signed-URL issuance quota before issuing a URL; `FinalizeUpload` must validate that reservation without charging it again and atomically recheck or reserve all other applicable upload quotas during finalization. Direct R2 staging uploads use the exact DevHud origins, `PUT`/`OPTIONS`, and checksum headers documented in `docs/servers-devhud-api-contract.md`. A dedicated idempotent `devhud-api-sweeper` deployment owns staging expiry and post-recovery account purge with multi-instance coordination and ships as a separate signed/provenanced OCI image. Account restoration clears deletion state only and never clears an administrative block.
+- The implemented v1 wire model uses canonical lowercase RFC 9562 UUID-v7 wrappers, unsigned schema versions, RFC 8785 settings bytes capped at 1 MiB, exact monotonic revisions, bounded opaque pagination, typed bounded redacted crash details, and response/error correlation metadata mirrored to `x-devhud-correlation-id`. Generated Go and TypeScript sources are tool-owned and must reproduce without drift. Administrator message graphs must not expose settings bodies, secrets, DOM, screenshots, Deck results, agent output, or local paths.
+- Remaining planned paths remain documentation-only. Do not add `crates/devhud-native-messaging-host` to the Cargo workspace until its crate skeleton exists. `CreateUpload` must atomically reserve the signed-URL issuance quota before issuing a URL; `FinalizeUpload` must validate that reservation without charging it again and atomically recheck or reserve all other applicable upload quotas during finalization. Direct R2 staging uploads use the exact DevHud origins, `PUT`/`OPTIONS`, and checksum headers documented in `docs/servers-devhud-api-contract.md`. A dedicated idempotent `devhud-api-sweeper` deployment owns staging expiry and post-recovery account purge with multi-instance coordination and ships as a separate signed/provenanced OCI image. Account restoration clears deletion state only and never clears an administrative block.
 
 ### Repository Default Technology Choices
 

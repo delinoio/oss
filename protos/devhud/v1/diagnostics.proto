@@ -1,0 +1,72 @@
+syntax = "proto3";
+
+package devhud.v1;
+
+import "devhud/v1/common.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/delinoio/oss/protos/gen/go/devhud/v1;devhudv1";
+
+enum DiagnosticPlatform {
+  DIAGNOSTIC_PLATFORM_UNSPECIFIED = 0;
+  DIAGNOSTIC_PLATFORM_MACOS = 1;
+  DIAGNOSTIC_PLATFORM_WINDOWS = 2;
+  DIAGNOSTIC_PLATFORM_LINUX = 3;
+  DIAGNOSTIC_PLATFORM_IOS = 4;
+  DIAGNOSTIC_PLATFORM_ANDROID = 5;
+}
+
+enum DiagnosticArchitecture {
+  DIAGNOSTIC_ARCHITECTURE_UNSPECIFIED = 0;
+  DIAGNOSTIC_ARCHITECTURE_X86_64 = 1;
+  DIAGNOSTIC_ARCHITECTURE_ARM64 = 2;
+}
+
+enum DiagnosticComponent {
+  DIAGNOSTIC_COMPONENT_UNSPECIFIED = 0;
+  DIAGNOSTIC_COMPONENT_APP = 1;
+  DIAGNOSTIC_COMPONENT_AUTHENTICATION = 2;
+  DIAGNOSTIC_COMPONENT_SETTINGS = 3;
+  DIAGNOSTIC_COMPONENT_UPLOAD = 4;
+  DIAGNOSTIC_COMPONENT_ACCOUNT = 5;
+  DIAGNOSTIC_COMPONENT_NATIVE_SHELL = 6;
+}
+
+enum DiagnosticSeverity {
+  DIAGNOSTIC_SEVERITY_UNSPECIFIED = 0;
+  DIAGNOSTIC_SEVERITY_ERROR = 1;
+  DIAGNOSTIC_SEVERITY_FATAL = 2;
+}
+
+message ClientBuild {
+  string app_version = 1;
+  string build_id = 2;
+  DiagnosticPlatform platform = 3;
+  DiagnosticArchitecture architecture = 4;
+  string os_version = 5;
+}
+
+message SubmitCrashReportRequest {
+  uint32 report_schema_version = 1;
+  ClientBuild client_build = 2;
+  google.protobuf.Timestamp occurred_at = 3;
+  DiagnosticComponent component = 4;
+  DiagnosticSeverity severity = 5;
+  string error_code = 6;
+  // redacted_summary is user-previewed UTF-8 text, at most 4 KiB.
+  string redacted_summary = 7;
+  // redacted_stack_trace is user-previewed UTF-8 text, at most 32 KiB.
+  string redacted_stack_trace = 8;
+  repeated UuidV7 related_correlation_ids = 9;
+}
+
+message SubmitCrashReportResponse {
+  ResponseMetadata metadata = 1;
+  UuidV7 crash_report_id = 2;
+  google.protobuf.Timestamp accepted_at = 3;
+  google.protobuf.Timestamp expires_at = 4;
+}
+
+service DiagnosticsService {
+  rpc SubmitCrashReport(SubmitCrashReportRequest) returns (SubmitCrashReportResponse);
+}

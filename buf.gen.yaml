@@ -1,0 +1,37 @@
+version: v2
+clean: true
+
+plugins:
+  - local:
+      - go
+      - run
+      - google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.12
+    out: protos/gen/go
+    opt:
+      - paths=source_relative
+  - local:
+      - go
+      - run
+      - connectrpc.com/connect/cmd/protoc-gen-connect-go@v1.20.0
+    out: protos/gen/go
+    opt:
+      - paths=source_relative
+  - local:
+      - pnpm
+      - exec
+      - protoc-gen-es
+    out: packages/devhud-api-client/src/gen
+    opt:
+      - target=ts
+      - import_extension=js
+  - local:
+      - pnpm
+      - exec
+      - protoc-gen-connect-query
+    out: packages/devhud-api-client/src/gen
+    opt:
+      - target=ts
+      - import_extension=js
+
+inputs:
+  - directory: protos

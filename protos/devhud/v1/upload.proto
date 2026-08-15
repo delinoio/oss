@@ -1,0 +1,142 @@
+syntax = "proto3";
+
+package devhud.v1;
+
+import "devhud/v1/common.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/delinoio/oss/protos/gen/go/devhud/v1;devhudv1";
+
+message NewSubmission {}
+
+message NewUploadGroup {
+  UuidV7 submission_id = 1;
+}
+
+message ExistingUploadGroup {
+  UuidV7 submission_id = 1;
+  UuidV7 upload_group_id = 2;
+}
+
+message CreateUploadTarget {
+  oneof target {
+    NewSubmission new_submission = 1;
+    NewUploadGroup new_group = 2;
+    ExistingUploadGroup existing_group = 3;
+  }
+}
+
+message CreateUploadRequest {
+  CreateUploadTarget target = 1;
+  uint64 expected_size_bytes = 2;
+  // expected_sha256 is exactly 32 immutable raw bytes.
+  bytes expected_sha256 = 3;
+  UploadContentType content_type = 4;
+}
+
+message SignedUploadHeaders {
+  string content_type = 1;
+  // checksum_sha256_base64 is standard padded Base64 of the 32 raw bytes.
+  string checksum_sha256_base64 = 2;
+}
+
+message UploadReservation {
+  UuidV7 upload_id = 1;
+  UuidV7 submission_id = 2;
+  UuidV7 upload_group_id = 3;
+  UuidV7 reservation_id = 4;
+  uint64 staging_generation = 5;
+  string signed_put_url = 6;
+  SignedUploadHeaders required_headers = 7;
+  google.protobuf.Timestamp expires_at = 8;
+  string public_url = 9;
+}
+
+message CreateUploadResponse {
+  ResponseMetadata metadata = 1;
+  UploadReservation reservation = 2;
+}
+
+message FinalizeUploadRequest {
+  UuidV7 upload_id = 1;
+  UuidV7 submission_id = 2;
+  UuidV7 upload_group_id = 3;
+  UuidV7 reservation_id = 4;
+  uint64 staging_generation = 5;
+  uint64 expected_size_bytes = 6;
+  // expected_sha256 must exactly match the 32 bytes supplied at creation.
+  bytes expected_sha256 = 7;
+  // observed_etag is the exact ETag exposed by the staging PUT response.
+  string observed_etag = 8;
+}
+
+message Upload {
+  UuidV7 upload_id = 1;
+  UuidV7 submission_id = 2;
+  UuidV7 upload_group_id = 3;
+  UploadState state = 4;
+  UploadContentType content_type = 5;
+  uint64 size_bytes = 6;
+  bytes sha256 = 7;
+  uint64 staging_generation = 8;
+  uint32 width = 9;
+  uint32 height = 10;
+  string public_url = 11;
+  google.protobuf.Timestamp created_at = 12;
+  google.protobuf.Timestamp finalized_at = 13;
+  google.protobuf.Timestamp removed_at = 14;
+}
+
+message FinalizeUploadResponse {
+  ResponseMetadata metadata = 1;
+  Upload upload = 2;
+}
+
+message ListUploadsRequest {
+  PageRequest page = 1;
+  repeated UploadState states = 2;
+  UuidV7 submission_id = 3;
+}
+
+message ListUploadsResponse {
+  ResponseMetadata metadata = 1;
+  repeated Upload uploads = 2;
+  string next_page_token = 3;
+}
+
+message DeleteUploadRequest {
+  UuidV7 upload_id = 1;
+}
+
+message DeleteUploadResponse {
+  ResponseMetadata metadata = 1;
+  Upload upload = 2;
+}
+
+enum UploadFailureReason {
+  UPLOAD_FAILURE_REASON_UNSPECIFIED = 0;
+  UPLOAD_FAILURE_REASON_RESERVATION_MISSING = 1;
+  UPLOAD_FAILURE_REASON_RESERVATION_EXPIRED = 2;
+  UPLOAD_FAILURE_REASON_BINDING_MISMATCH = 3;
+  UPLOAD_FAILURE_REASON_STAGING_OBJECT_MISSING = 4;
+  UPLOAD_FAILURE_REASON_STAGING_OBJECT_CHANGED = 5;
+  UPLOAD_FAILURE_REASON_SIZE_MISMATCH = 6;
+  UPLOAD_FAILURE_REASON_CHECKSUM_MISMATCH = 7;
+  UPLOAD_FAILURE_REASON_INVALID_CONTENT_TYPE = 8;
+  UPLOAD_FAILURE_REASON_INVALID_PNG_SIGNATURE = 9;
+  UPLOAD_FAILURE_REASON_UNSAFE_DIMENSIONS = 10;
+  UPLOAD_FAILURE_REASON_ALREADY_FINALIZED = 11;
+  UPLOAD_FAILURE_REASON_INVALID_STATE = 12;
+}
+
+message UploadFailure {
+  UploadFailureReason reason = 1;
+  UuidV7 upload_id = 2;
+}
+
+service UploadService {
+  rpc CreateUpload(CreateUploadRequest) returns (CreateUploadResponse);
+  rpc FinalizeUpload(FinalizeUploadRequest) returns (FinalizeUploadResponse);
+  rpc ListUploads(ListUploadsRequest) returns (ListUploadsResponse);
+  rpc DeleteUpload(DeleteUploadRequest) returns (DeleteUploadResponse);
+}

@@ -2,7 +2,7 @@
 
 ## Goal
 
-DevHud is a coordinated desktop and mobile developer utility. V1 contains the desktop-only RealQA capture and GitHub issue workflow and the desktop/mobile Deck pull-request monitor with native widgets. This document is a documentation-first contract; no DevHud runtime implementation exists yet.
+DevHud is a coordinated desktop and mobile developer utility. V1 contains the desktop-only RealQA capture and GitHub issue workflow and the desktop/mobile Deck pull-request monitor with native widgets. The versioned protocol and generated client are implemented; no DevHud app or server runtime exists yet.
 
 Issue [#815](https://github.com/delinoio/oss/issues/815) is the current product contract. It supersedes closed historical DevHud issues #729, #755, and #757; those issues are historical context only and must not supply architecture or scope.
 
@@ -20,11 +20,11 @@ enum ProjectId {
 - `apps/devhud-chrome-extension` — Chrome Manifest V3 extension (planned).
 - `apps/devhud-admin` — administrator SPA embedded at `/admin` in the API artifact (planned).
 - `servers/devhud-api` — stateless Go API (planned).
-- `protos/devhud/v1` — versioned Connect RPC schemas (planned).
-- `packages/devhud-api-client` — generated TypeScript client and Connect Query bindings (planned).
+- `protos/devhud/v1` — implemented versioned Connect RPC schemas with committed Go bindings.
+- `packages/devhud-api-client` — implemented generated TypeScript messages/services, Connect Query exports, and safe client helpers.
 - `crates/devhud-native-messaging-host` — Rust Native Messaging broker packaged with desktop installers (planned canonical Rust workspace path).
 
-No planned path is a Cargo workspace member or an implemented runtime until its skeleton and contract exist.
+The protocol and client paths above are implemented. Remaining planned paths are not implemented runtimes, and the planned Rust host is not a Cargo workspace member until its skeleton exists.
 
 ## Domain Contract Documents
 
@@ -58,6 +58,7 @@ No planned path is a Cargo workspace member or an implemented runtime until its 
 - Account recovery is exposed as authenticated, ownership-checked, idempotent `AccountService.RestoreAccount` during the 30-day window; restore clears only the deletion-state block and never clears an independent administrative block. Restore and final purge serialize on the account state, and after purge claims the account no restore can succeed. Calls after the window fail with `FailedPrecondition`.
 - Official desktop updates use the fixed HTTPS manifest endpoint `https://devhud.api.delino.io/updates/{channel}/{platform}/{architecture}.json`, served by the API deployment; v1 exposes the `stable` channel and maps `darwin-x86_64`, `darwin-aarch64`, `windows-x86_64`, `windows-aarch64`, `linux-x86_64`, and `linux-aarch64` artifacts explicitly. Installers pin the `devhud-release-root-v1` public-key fingerprint, key rotation requires signed successor metadata chained to that root, unknown or invalid signatures are rejected, versions cannot roll back without signed rollback authorization, and a failed update preserves the last known-good installation.
 - Administration requires the `devhud-admin` Logto role, mandatory mutation reasons, audit records, and no synchronized-settings-content display.
+- The v1 wire contract uses canonical lowercase RFC 9562 UUID-v7 wrappers, response/error correlation metadata mirrored to `x-devhud-correlation-id`, RFC 8785 settings bytes capped at 1 MiB, and typed bounded crash diagnostics (4 KiB summary, 32 KiB stack). Upload creation explicitly distinguishes a new submission, a new group in an owned submission, and an existing owned group; finalization repeats immutable reservation, generation, checksum, size, and ETag bindings. Generated Go and TypeScript sources are committed but tool-owned and freshness-checked.
 - CI must cover Go format/vet/unit/integration/migrations, Rust format/clippy/unit/native-host protocol tests, frontend lint/tests, schema compatibility and generated-client freshness, supported desktop/mobile/widget builds, extension packaging, installer/signature/updater-manifest checks, SBOM/provenance, and non-root OCI validation.
 - CI and integration validation must cover owner-filtered user upload listing/deletion, bounded user-upload pagination, ListUsers prefix-query normalization and query-scoped tokens, submission-wide quota enforcement across multiple groups, concurrent CreateUpload signed-URL reservation and issuance failure rollback, finalization non-double-charging, raw checksum/Base64 conversion, upload-finalization rejection and staging cleanup, restore-versus-purge races at the recovery boundary, idempotent multi-instance sweeper execution, exact CORS origin rejection and Connect preflight/correlation-header behavior, origin replacement before CDN purge/revalidation for user deletion/quarantine/account purge, 256 KiB pre-framing IPC rejection and 128 KiB sanitized DOM acceptance, selector omission, stale widget presentation, recovery-window boundaries, and updater signature/key-rotation/rollback behavior.
 - Release is one coordinated GA only after all desktop architectures, both mobile apps/widgets, extension, API/admin deployment, artifacts, updater, and documentation pass gates. Partial GA is prohibited.

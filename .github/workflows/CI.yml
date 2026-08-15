@@ -36,6 +36,7 @@ jobs:
               - go.mod
               - go.sum
               - cmds/**
+              - protos/**
 
       - name: Determine whether to run
         id: gate
@@ -108,6 +109,7 @@ jobs:
               - go.mod
               - go.sum
               - cmds/**
+              - protos/**
 
       - name: Determine whether to run
         id: gate
@@ -655,6 +657,94 @@ jobs:
         if: ${{ steps.gate.outputs.run == 'true' }}
         run: pnpm --filter public-docs test
 
+  devhud-protocol:
+    name: DevHud Protocol and Client
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Filter changed paths
+        id: filter
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            devhud_protocol:
+              - .github/workflows/CI.yml
+              - buf.yaml
+              - buf.gen.yaml
+              - go.mod
+              - go.sum
+              - package.json
+              - pnpm-lock.yaml
+              - protos/**
+              - packages/devhud-api-client/**
+              - scripts/check-proto-breaking.sh
+
+      - name: Determine whether to run
+        id: gate
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PROTOCOL_CHANGED: ${{ steps.filter.outputs.devhud_protocol }}
+        run: |
+          set -euo pipefail
+
+          run=false
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ] || [ "${PROTOCOL_CHANGED}" = "true" ]; then
+            run=true
+          fi
+
+          echo "run=${run}" >> "${GITHUB_OUTPUT}"
+
+      - name: Skip (DevHud protocol unaffected)
+        if: ${{ steps.gate.outputs.run != 'true' }}
+        run: |
+          echo "Skipping DevHud protocol and client checks: paths unaffected"
+
+      - name: Setup pnpm
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.26.2
+
+      - name: Setup Node.js
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Setup Go
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Install dependencies
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: pnpm install --frozen-lockfile
+
+      - name: Check schemas and generated freshness
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: pnpm proto:check
+
+      - name: Test Go bindings
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: go test ./protos/...
+
+      - name: Check TypeScript client
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: |
+          pnpm --filter @delinoio/devhud-api-client lint
+          pnpm --filter @delinoio/devhud-api-client test
+          pnpm --filter @delinoio/devhud-api-client build
+
 
   ci-result:
     name: CI Result
@@ -671,6 +761,7 @@ jobs:
       - node-binpm-docs-test
       - node-nodeup-docs-test
       - node-public-docs-test
+      - devhud-protocol
     steps:
       - run: exit 1
         if: ${{ always() && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) }}

@@ -16,6 +16,8 @@ Only individual accounts with the stable Logto role `devhud-admin`; API and secu
 
 Use the bootstrap `admin` public client ID with Logto Authorization Code plus PKCE. Validate state and nonce, use the exact development redirect `http://localhost:46306/auth/callback` or the embedded API-origin `/admin/auth/callback` redirect supplied by bootstrap, and require the `devhud-admin` role before rendering or calling admin RPCs. Support bounded, newest-first cursor pagination for user search through `AdminService.ListUsers`, with an optional Unicode-NFC-normalized, trimmed, case-insensitive prefix query over display name, email, and Logto subject; the query must be included in page-token scope. Support the same pagination contract for upload listing through `AdminService.ListUploads` and audit-event inspection through `AdminService.ListAuditEvents`; block/unblock with mandatory reason through `AdminService.SetUserBlocked`, quota inspection through `AdminService.GetUserUsage`, and quarantine/delete through `AdminService.QuarantineUpload` and `AdminService.DeleteUpload`. Every mutation creates an audit record. Denied roles receive typed permission errors. The UI must not expose settings snapshots, PATs, R2 secrets, local paths, issue bodies, or browser data.
 
+Use the generated `AdminQuery` namespace so administrator list/upload methods cannot collide with user-service methods. Page size defaults to 50 and is capped at 100, opaque tokens are capped at 2 KiB, and invalid pagination returns the typed `InvalidArgument` mapping. Every response and typed error preserves the UUID-v7 correlation metadata matching `x-devhud-correlation-id`. User search sends the normalized query scope used by the continuation token; the UI must reset pagination whenever its normalized query or filters change.
+
 The embedded admin SPA calls the API cross-origin during development and from the packaged shell. It must use the API's exact CORS allowlist and Connect preflight policy: frontend/admin loopback origins and pinned Tauri `http://tauri.localhost` only, with no wildcard origin or header behavior.
 
 ## Storage
@@ -24,11 +26,11 @@ No independent persistent store. Server-side admin actions and audit records are
 
 ## Security
 
-Require Logto authentication and `devhud-admin`; require reasoned mutations; preserve immutable audit identity and timestamps; display only the minimum user/usage/upload metadata required for administration.
+Require Logto authentication and `devhud-admin`; require reasoned mutations; preserve immutable audit identity and timestamps; display only the minimum user/usage/upload metadata required for administration. The administrator protobuf message graph is intentionally disconnected from settings snapshots and may not carry secrets, DOM, screenshots, Deck results, agent output, settings bodies, or local paths.
 
 ## Logging
 
-Use redacted structured client and server diagnostics. Never log tokens, settings bodies, upload bytes, or sensitive user content.
+Use redacted structured client and server diagnostics. Never log tokens, settings bodies, upload bytes, correlation-associated sensitive content, or any field forbidden from the administrator wire model.
 
 ## Build and Test
 
