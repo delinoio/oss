@@ -25,6 +25,7 @@ const FRONTEND_READY_PROBE: &str =
 const FRONTEND_READY_ATTEMPTS: u8 = 100;
 const FRONTEND_READY_RETRY_DELAY: Duration = Duration::from_millis(50);
 const FRONTEND_READY_TIMEOUT: Duration = Duration::from_secs(5);
+const DEVHUD_ERROR_FILTER_DIRECTIVE: &str = "devhud=error";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum SmokeMode {
@@ -124,9 +125,23 @@ fn diagnostic_writer(
     }
 }
 
+fn diagnostic_filter(rust_log: Option<&str>) -> tracing_subscriber::EnvFilter {
+    let filter = rust_log
+        .and_then(|value| tracing_subscriber::EnvFilter::try_new(value).ok())
+        .unwrap_or_else(|| tracing_subscriber::EnvFilter::new("info"));
+
+    // Operator filters may tune dependency verbosity, but fatal application
+    // diagnostics must remain available when a packaged GUI cannot start.
+    filter.add_directive(
+        DEVHUD_ERROR_FILTER_DIRECTIVE
+            .parse()
+            .expect("the DevHUD error filter directive must remain valid"),
+    )
+}
+
 fn init_logging(smoke_mode: Option<SmokeMode>, subprocess: bool) {
-    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
+    let rust_log = std::env::var("RUST_LOG").ok();
+    let filter = diagnostic_filter(rust_log.as_deref());
 
     let writer = diagnostic_writer(smoke_mode, subprocess);
 
@@ -443,7 +458,36 @@ mod tests {
         time::Duration,
     };
 
-    use super::{SmokeMode, inject_smoke_missing_resource, wait_for_frontend_readiness_timeout};
+    use super::{
+        DEVHUD_ERROR_FILTER_DIRECTIVE, SmokeMode, diagnostic_filter, inject_smoke_missing_resource,
+        wait_for_frontend_readiness_timeout,
+    };
+
+    #[test]
+    fn diagnostic_filter_keeps_devhud_errors_enabled() {
+        for rust_log in [Some("off"), Some("devhud=off"), Some("warn,devhud=trace")] {
+            let configured = diagnostic_filter(rust_log).to_string();
+
+            assert!(
+                configured
+                    .split(',')
+                    .any(|directive| directive == DEVHUD_ERROR_FILTER_DIRECTIVE),
+                "missing error floor in {configured}"
+            );
+        }
+    }
+
+    #[test]
+    fn diagnostic_filter_uses_info_for_missing_or_invalid_configuration() {
+        for rust_log in [None, Some("devhud=invalid-level")] {
+            let configured = diagnostic_filter(rust_log).to_string();
+
+            assert!(
+                configured.split(',').any(|directive| directive == "info"),
+                "missing info fallback in {configured}"
+            );
+        }
+    }
 
     #[test]
     fn frontend_readiness_timeout_claims_pending_state() {

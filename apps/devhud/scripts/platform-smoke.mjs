@@ -148,7 +148,13 @@ function validateMinimumHost() {
   }
 }
 
-async function runScenario(executable, mode, expectedExit, expectedMarkers) {
+async function runScenario(
+  executable,
+  mode,
+  expectedExit,
+  expectedMarkers,
+  { rustLog = "info" } = {},
+) {
   const cacheRoot = mkdtempSync(join(tmpdir(), "devhud-smoke-cache-"));
   const logRoot = join(cacheRoot, "logs");
   try {
@@ -158,7 +164,7 @@ async function runScenario(executable, mode, expectedExit, expectedMarkers) {
         DEVHUD_PLATFORM_SMOKE: mode,
         DEVHUD_SMOKE_CACHE_DIR: cacheRoot,
         DEVHUD_SMOKE_LOG_DIR: logRoot,
-        RUST_LOG: "info",
+        RUST_LOG: rustLog,
       },
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true,
@@ -260,8 +266,11 @@ await runScenario(executable, "renderer-crash", 0, [
 ]);
 console.log("devhud: renderer diagnostic smoke passed");
 
-await runScenario(executable, "missing-resource", 78, [
-  "cef_fatal_initialization",
-  "resources.pak",
-]);
+await runScenario(
+  executable,
+  "missing-resource",
+  78,
+  ["cef_fatal_initialization", "resources.pak"],
+  { rustLog: "off" },
+);
 console.log(`devhud: platform smoke passed for ${target.id} (${target.minimum})`);

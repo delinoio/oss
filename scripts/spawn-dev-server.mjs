@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 
 const terminationSignals = ["SIGINT", "SIGTERM"];
 
-function terminateWindowsProcessTree(child, signal) {
+export function terminateWindowsProcessTree(child, signal) {
   const taskkill = spawn(
     "taskkill.exe",
     ["/pid", String(child.pid), "/t", "/f"],
