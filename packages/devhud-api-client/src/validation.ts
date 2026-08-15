@@ -20,7 +20,7 @@ const forbiddenDiagnosticPatterns: ReadonlyArray<RegExp> = [
   // Keep this lookbehind-free while iOS 16.0-16.3 system webviews are supported.
   /(?:^(?:[\s\p{P}])?|[^:][\s\p{P}]|:\s+)(?:[A-Za-z]:[\\/]|\\\\|~\/|\/(?!\/))[^\s]*/u,
   // Require a leading text boundary so URL path segments are not treated as local paths.
-  /(?:^|[\s([{<"'=])(?:\.{1,2}[\\/])?(?:[\p{L}\p{N}_@.-]+[\\/])+[\p{L}\p{N}_@.-]+\.[\p{L}][\p{L}\p{N}]*(?::\d+){0,2}(?=$|[\s\p{P}])/u,
+  /(?:^|[\s([{<"'=])(?:\.{1,2}[\\/])?(?:[\p{L}\p{N}_@.-]+[\\/])+[\p{L}\p{N}_@.-]+(?::\d+){0,2}(?=$|[\s\p{P}])/u,
   /file:\/\/[^\s]*/iu,
   // URL userinfo, queries, and fragments can contain opaque credentials.
   /\b[A-Za-z][A-Za-z0-9+.-]*:\/\/[^/\s?#]*@/u,
@@ -61,8 +61,12 @@ export function validateCanonicalSettingsJson(value: Uint8Array): unknown {
 }
 
 export function validateCrashReport(report: SubmitCrashReportRequest): void {
-  if (report.reportSchemaVersion === 0) {
-    throw new RangeError("reportSchemaVersion must be nonzero");
+  if (
+    !Number.isInteger(report.reportSchemaVersion) ||
+    report.reportSchemaVersion < 1 ||
+    report.reportSchemaVersion > 0xffff_ffff
+  ) {
+    throw new RangeError("reportSchemaVersion must be an integer from 1 through 4294967295");
   }
   if (report.clientBuild === undefined) {
     throw new TypeError("clientBuild is required");
@@ -122,34 +126,69 @@ function validateDiagnosticText(value: string, maximum: number, field: string): 
   }
 }
 
+type CanonicalizationFrame =
+  | { readonly kind: "token"; readonly value: string }
+  | { readonly kind: "value"; readonly value: unknown };
+
 function canonicalizeJson(value: unknown): string {
-  if (typeof value === "string") {
-    assertWellFormedUnicode(value);
-    return JSON.stringify(value);
-  }
-  if (value === null || typeof value === "boolean") {
-    return JSON.stringify(value);
-  }
-  if (typeof value === "number") {
-    if (!Number.isFinite(value)) {
-      throw new TypeError("settings JSON contains a non-finite number");
+  const output: string[] = [];
+  // The byte limit still permits nesting deep enough to overflow the JavaScript call stack.
+  const pending: CanonicalizationFrame[] = [{ kind: "value", value }];
+
+  while (pending.length > 0) {
+    const frame = pending.pop();
+    if (frame === undefined) {
+      break;
     }
-    return JSON.stringify(value);
-  }
-  if (Array.isArray(value)) {
-    return `[${value.map(canonicalizeJson).join(",")}]`;
-  }
-  if (typeof value === "object") {
-    const object = value as Record<string, unknown>;
-    return `{${Object.keys(object)
-      .sort()
-      .map((key) => {
+    if (frame.kind === "token") {
+      output.push(frame.value);
+      continue;
+    }
+
+    const current = frame.value;
+    if (typeof current === "string") {
+      assertWellFormedUnicode(current);
+      output.push(JSON.stringify(current));
+    } else if (current === null || typeof current === "boolean") {
+      output.push(JSON.stringify(current));
+    } else if (typeof current === "number") {
+      if (!Number.isFinite(current)) {
+        throw new TypeError("settings JSON contains a non-finite number");
+      }
+      output.push(JSON.stringify(current));
+    } else if (Array.isArray(current)) {
+      output.push("[");
+      pending.push({ kind: "token", value: "]" });
+      for (let index = current.length - 1; index >= 0; index -= 1) {
+        if (index < current.length - 1) {
+          pending.push({ kind: "token", value: "," });
+        }
+        pending.push({ kind: "value", value: current[index] });
+      }
+    } else if (typeof current === "object") {
+      const object = current as Record<string, unknown>;
+      const keys = Object.keys(object).sort();
+      output.push("{");
+      pending.push({ kind: "token", value: "}" });
+      for (let index = keys.length - 1; index >= 0; index -= 1) {
+        const key = keys[index];
+        if (key === undefined) {
+          continue;
+        }
         assertWellFormedUnicode(key);
-        return `${JSON.stringify(key)}:${canonicalizeJson(object[key])}`;
-      })
-      .join(",")}}`;
+        if (index < keys.length - 1) {
+          pending.push({ kind: "token", value: "," });
+        }
+        pending.push({ kind: "value", value: object[key] });
+        pending.push({ kind: "token", value: ":" });
+        pending.push({ kind: "token", value: JSON.stringify(key) });
+      }
+    } else {
+      throw new TypeError("settings JSON contains a value outside the JSON data model");
+    }
   }
-  throw new TypeError("settings JSON contains a value outside the JSON data model");
+
+  return output.join("");
 }
 
 function assertWellFormedUnicode(value: string, field = "settings JSON"): void {

@@ -61,6 +61,15 @@ describe("wire validation helpers", () => {
     ).toThrow(TypeError);
   });
 
+  it("accepts deeply nested canonical settings JSON", () => {
+    const depth = 10_000;
+    const source = `${"[".repeat(depth)}0${"]".repeat(depth)}`;
+
+    expect(() =>
+      validateCanonicalSettingsJson(new TextEncoder().encode(source)),
+    ).not.toThrow();
+  });
+
   it("rejects lone surrogates in settings JSON strings and object keys", () => {
     const textEncoder = new TextEncoder();
 
@@ -75,6 +84,21 @@ describe("wire validation helpers", () => {
 
   it("rejects incomplete crash report envelopes", () => {
     expect(() => validateCrashReport(safeCrashReport)).not.toThrow();
+    expect(() =>
+      validateCrashReport({ ...safeCrashReport, reportSchemaVersion: 0xffff_ffff }),
+    ).not.toThrow();
+    for (const reportSchemaVersion of [
+      -1,
+      0,
+      1.5,
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      0x1_0000_0000,
+    ]) {
+      expect(() =>
+        validateCrashReport({ ...safeCrashReport, reportSchemaVersion }),
+      ).toThrow(RangeError);
+    }
     expect(() =>
       validateCrashReport(create(SubmitCrashReportRequestSchema, {})),
     ).toThrow(RangeError);
@@ -233,19 +257,27 @@ describe("wire validation helpers", () => {
       expect(() => validateCrashReport(report), stackTrace).toThrow(TypeError);
     }
 
-    const relativePath = "src/private/customer/app.ts:10:2";
-    const relativePathDiagnostics = [
-      { ...safe, errorCode: relativePath },
-      { ...safe, clientBuild: { ...clientBuild, appVersion: relativePath } },
-      { ...safe, clientBuild: { ...clientBuild, buildId: relativePath } },
-      { ...safe, clientBuild: { ...clientBuild, osVersion: relativePath } },
-      { ...safe, redactedSummary: relativePath },
-      { ...safe, redactedStackTrace: relativePath },
-    ];
-    for (const report of relativePathDiagnostics) {
-      expect(() =>
-        validateCrashReport(create(SubmitCrashReportRequestSchema, report)),
-      ).toThrow(TypeError);
+    for (const relativePath of [
+      "src/private/customer/app.ts:10:2",
+      "config/.env",
+      "config/Dockerfile",
+      "src/private/module:10",
+      "src\\private\\module:10",
+    ]) {
+      const relativePathDiagnostics = [
+        { ...safe, errorCode: relativePath },
+        { ...safe, clientBuild: { ...clientBuild, appVersion: relativePath } },
+        { ...safe, clientBuild: { ...clientBuild, buildId: relativePath } },
+        { ...safe, clientBuild: { ...clientBuild, osVersion: relativePath } },
+        { ...safe, redactedSummary: relativePath },
+        { ...safe, redactedStackTrace: relativePath },
+      ];
+      for (const report of relativePathDiagnostics) {
+        expect(
+          () => validateCrashReport(create(SubmitCrashReportRequestSchema, report)),
+          relativePath,
+        ).toThrow(TypeError);
+      }
     }
 
     for (const remoteUrl of [
