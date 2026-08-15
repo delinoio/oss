@@ -7,6 +7,7 @@ on:
       - apps/devhud/**
       - scripts/run-rsbuild-dev.mjs
       - scripts/spawn-dev-server.mjs
+      - .nvmrc
       - Cargo.toml
       - Cargo.lock
       - pnpm-lock.yaml
@@ -19,6 +20,7 @@ on:
       - apps/devhud/**
       - scripts/run-rsbuild-dev.mjs
       - scripts/spawn-dev-server.mjs
+      - .nvmrc
       - Cargo.toml
       - Cargo.lock
       - pnpm-lock.yaml

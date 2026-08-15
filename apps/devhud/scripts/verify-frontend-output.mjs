@@ -6,6 +6,8 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { hasExecutableRemoteLoad } from "./frontend-output-policy.mjs";
+
 const appRoot = fileURLToPath(new URL("..", import.meta.url));
 const distRoot = join(appRoot, "dist");
 
@@ -36,10 +38,7 @@ function snapshot() {
     const contents = readFileSync(path);
     const name = relative(distRoot, path).replaceAll("\\", "/");
     const text = contents.toString("utf8");
-    const executableRemoteLoad =
-      /<(?:script|link|img|iframe)[^>]+(?:src|href)=["']https?:\/\//iu.test(text) ||
-      /\b(?:fetch|import)\s*\(\s*["']https?:\/\//u.test(text);
-    if (executableRemoteLoad) {
+    if (hasExecutableRemoteLoad(text)) {
       throw new Error(`remote URL found in deterministic frontend output: ${name}`);
     }
     return {

@@ -62,9 +62,9 @@ Package-local commands are:
 
 - `pnpm --filter devhud dev` — launch the pinned Tauri CLI and strict-port frontend.
 - `pnpm --filter devhud build` — produce a production desktop build with bundled frontend and CEF material.
-- `pnpm --filter devhud test` — type-check, validate English/Korean locale selection and light/dark eyebrow contrast, and compare two clean frontend builds by path, mode, and SHA-256 while rejecting executable remote loads.
+- `pnpm --filter devhud test` — type-check, validate English/Korean locale selection and light/dark eyebrow contrast, and compare two clean frontend builds by path, mode, and SHA-256 while rejecting remote HTML, JavaScript, and CSS loads, including protocol-relative references.
 - `pnpm --filter devhud verify:pins` — verify exact git revisions, registry checksums, archive hashes, frontend versions, target coverage, and absence of branch/fork/patch dependencies.
-- `pnpm --filter devhud smoke:platform` — validate helper/resource discovery, sandboxed browser startup, three independent startup/shutdown cycles, renderer-failure diagnostics, and fatal missing-resource diagnostics against a production artifact. A no-argument Linux run extracts the single built Debian package into a temporary installed layout; `--artifact` remains available for an explicitly prepared layout.
+- `pnpm --filter devhud smoke:platform` — validate helper/resource discovery, sandboxed browser startup, three independent startup/shutdown cycles, renderer-failure diagnostics, and fatal missing-resource diagnostics against a production artifact. Linux requires `--artifact` to reference an installed or root-prepared package layout whose CEF SUID sandbox is owned by `root:root` with mode `4755`; macOS and Windows retain their default production-artifact paths.
 
 `.github/workflows/devhud-desktop.yml` provides native x64 and arm64 build/smoke definitions for macOS, Windows, and Ubuntu 22.04 X11. Root Rust validation remains `cargo fmt --all --check`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, and `cargo test --workspace --all-targets`.
 

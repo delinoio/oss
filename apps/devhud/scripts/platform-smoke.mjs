@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import {
   mkdtempSync,
   readFileSync,
@@ -8,6 +8,7 @@ import {
   realpathSync,
   renameSync,
   rmSync,
+  statSync,
 } from "node:fs";
 import { release, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -19,13 +20,6 @@ const definitions = JSON.parse(readFileSync(join(appRoot, "platforms.json"), "ut
 const target = definitions.targets.find(
   ({ os, arch }) => os === process.platform && arch === process.arch,
 );
-const temporaryInstallRoots = new Set();
-
-process.on("exit", () => {
-  for (const root of temporaryInstallRoots) {
-    rmSync(root, { recursive: true, force: true });
-  }
-});
 
 function fail(message) {
   console.error(`devhud: ${message}`);
@@ -44,7 +38,11 @@ function parseArguments() {
   let artifact;
   for (let index = 0; index < args.length; index += 1) {
     if (args[index] === "--artifact") {
-      artifact = args[index + 1];
+      const value = args[index + 1];
+      if (!value || value.startsWith("--")) {
+        fail("--artifact requires an executable path");
+      }
+      artifact = value;
       index += 1;
     } else {
       fail(`unknown platform smoke argument: ${args[index]}`);
@@ -53,43 +51,9 @@ function parseArguments() {
   return { artifact };
 }
 
-function extractLinuxPackage() {
-  const bundleRoot = join(repoRoot, "target/release/bundle/deb");
-  let packages;
-  try {
-    packages = readdirSync(bundleRoot)
-      .filter((name) => name.endsWith(".deb"))
-      .toSorted();
-  } catch (error) {
-    fail(`Linux Debian bundle is unavailable: ${error.message}`);
-  }
-  if (packages.length !== 1) {
-    fail(
-      `expected one Linux Debian bundle in ${bundleRoot}, found ${packages.length}; pass --artifact to select an installed layout`,
-    );
-  }
-
-  const installRoot = mkdtempSync(join(tmpdir(), "devhud-smoke-install-"));
-  temporaryInstallRoots.add(installRoot);
-  const packagePath = join(bundleRoot, packages[0]);
-  const extraction = spawnSync("dpkg-deb", ["-x", packagePath, installRoot], {
-    encoding: "utf8",
-    shell: false,
-  });
-  if (extraction.error || extraction.status !== 0) {
-    fail(
-      `failed to extract ${packagePath}: ${extraction.error?.message ?? extraction.stderr?.trim() ?? "dpkg-deb failed"}`,
-    );
-  }
-  return join(installRoot, "usr/bin/devhud");
-}
-
 function defaultArtifact() {
   if (process.platform === "darwin") {
     return join(repoRoot, "target/release/bundle/macos/DevHUD.app/Contents/MacOS/devhud");
-  }
-  if (process.platform === "linux") {
-    return extractLinuxPackage();
   }
   return join(repoRoot, `target/release/devhud${process.platform === "win32" ? ".exe" : ""}`);
 }
@@ -229,6 +193,11 @@ async function runScenario(executable, mode, expectedExit, expectedMarkers) {
 }
 
 const { artifact } = parseArguments();
+if (process.platform === "linux" && !artifact) {
+  fail(
+    "Linux platform smoke requires --artifact <path> from an installed or root-prepared package layout",
+  );
+}
 validateMinimumHost();
 let executable;
 try {
@@ -246,6 +215,17 @@ const missing = [executable, ...resources.paths].filter((path) => {
 });
 if (missing.length > 0) {
   fail(`CEF helper/resource discovery failed: ${missing.join(", ")}`);
+}
+
+if (process.platform === "linux") {
+  const sandbox = resources.paths.find((path) => path.endsWith("chrome-sandbox"));
+  const metadata = statSync(sandbox);
+  const sandboxMode = metadata.mode & 0o7777;
+  if (metadata.uid !== 0 || metadata.gid !== 0 || sandboxMode !== 0o4755) {
+    fail(
+      `CEF SUID sandbox must be owned by root:root with mode 4755; found ${metadata.uid}:${metadata.gid} mode ${sandboxMode.toString(8)}`,
+    );
+  }
 }
 
 for (let iteration = 1; iteration <= 3; iteration += 1) {
