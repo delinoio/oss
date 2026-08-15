@@ -2,11 +2,11 @@
 
 ## Scope
 
-`apps/devhud` is the planned shared React/TypeScript UI and desktop/mobile shell for `devhud`. It owns first-party UI composition, guest/authenticated settings, RealQA, Deck, local persistence, native capability adapters, accessibility, and platform filtering. It does not exist yet.
+`apps/devhud` contains the implemented deterministic React/TypeScript frontend and Rust/Tauri CEF desktop-host foundation for `devhud`. The current UI is intentionally a static shell; guest/authenticated settings, RealQA, Deck, persistence, capture, shortcuts, deep links, mobile shells, and native widgets remain planned. Future implementations in this path own those first-party surfaces and their platform filtering.
 
 ## Runtime and Language
 
-- Desktop: Tauri `tauri-runtime-cef` from `https://github.com/tauri-apps/tauri`, pinned to `4af26a3f7f8b692d62cca549bbacd93f5ce90b41`; CEF renders bundled resources only with restrictive CSP and no arbitrary navigation, popups, or downloads. Its per-session `connect-src` is built only from the validated selected API origin, `https://api.github.com`, and validated HTTPS signed-upload origins; loopback HTTP is permitted only for documented development origins. No arbitrary remote origin may be added.
+- Desktop: Tauri `tauri-runtime-cef` from `https://github.com/tauri-apps/tauri`, pinned to `4af26a3f7f8b692d62cca549bbacd93f5ce90b41`; CEF renders bundled resources only with restrictive CSP and no arbitrary navigation, popups, or downloads. The foundation uses `connect-src 'none'` and has no remote frontend dependency. A later authenticated implementation may build a per-session `connect-src` only from the validated selected API origin, `https://api.github.com`, and validated HTTPS signed-upload origins; loopback HTTP is permitted only for documented development origins.
 - Mobile: platform WKWebView/Android System WebView with native Swift/Kotlin widget implementations.
 - Targets: macOS 13+, Windows 10 22H2+, Ubuntu 22.04 LTS on X11, iOS 16+, Android 10/API 29+; desktop x64 and arm64.
 - Bundle ID: `io.delino.devhud`; deep-link scheme: `devhud`. Fixed frontend port: `46305`.
@@ -15,6 +15,24 @@
 ## Users and Operators
 
 Guest users, authenticated individual users, maintainers, and platform release operators. RealQA is desktop-only; Deck is desktop/mobile.
+
+## Implemented Desktop Host
+
+- `apps/devhud/src-tauri` is a root Cargo workspace member. It uses only authoritative upstream Tauri git dependencies at revision `4af26a3f7f8b692d62cca549bbacd93f5ce90b41`; branch dependencies, `feat/cef`, forks, Cargo patches, and vendored upstream modifications are forbidden and mechanically checked.
+- `apps/devhud/cef-pins.json` records the resolved Tauri package versions (`tauri` 2.11.5, `tauri-build` 2.6.3, `tauri-cli` 2.11.4, and `tauri-runtime-cef` 0.1.0), CEF Rust crates `cef` and `cef-dll-sys` `150.0.0+150.0.10`, `download-cef` 2.3.2, their registry checksums, upstream source revisions, and every platform archive SHA-1. The runtime archive version is CEF `150.0.10+g8042e43+chromium-150.0.7871.101`.
+- The runtime's default sandbox feature remains enabled. Production startup preflights the platform-specific CEF library, ICU/resource packs, locale, sandbox/bootstrap files, and macOS helper applications relative to the installed executable. Missing material produces a structured `cef_fatal_initialization` diagnostic and exit code 78 before the browser starts.
+- Navigation is restricted to bundled `http://tauri.localhost` content in production and exact `http://127.0.0.1:46305` content in development. Popups and downloads are denied. The Rsbuild development launcher binds only `127.0.0.1:46305`, preflights collisions, and never chooses another port.
+- Structured diagnostics cover platform/display selection, resource discovery, frontend readiness, renderer termination, fatal initialization, smoke shutdown, and clean host shutdown. macOS uses the typed CEF renderer-termination callback; all platforms also exercise the CEF DevTools protocol crash signal in smoke validation.
+
+The architecture definitions in `apps/devhud/platforms.json` are authoritative for the desktop foundation:
+
+| Platform | Architectures | Product minimum | Native CI definition |
+| --- | --- | --- | --- |
+| macOS | x64, arm64 | 13.0 | `macos-15-intel`, `macos-15` |
+| Windows | x64, arm64 | 10 22H2 | `windows-2022`, `windows-11-arm` |
+| Ubuntu X11 | x64, arm64 | 22.04 LTS | `ubuntu-22.04`, `ubuntu-22.04-arm` |
+
+XWayland is best effort. Native Wayland is unsupported and rejected before CEF initialization. CI hosts newer than the macOS and Windows product minimums prove current native build/smoke compatibility, not the exact minimum OS; release qualification on macOS 13 and Windows 10 22H2 remains required. Ubuntu smoke certification is intentionally limited to Ubuntu 22.04+ with an X11 `DISPLAY`.
 
 ## Interfaces and Contracts
 
@@ -40,7 +58,17 @@ Use redacted structured diagnostics. Never log tokens, headers, DOM, screenshots
 
 ## Build and Test
 
-The future app contract must validate frontend tests/lint, platform capability filtering, capture/shortcut abstractions, deep links, accessibility, mobile/widget builds, shared iOS entitlements, dynamic-CSP origin rejection, and desktop builds for every supported OS/architecture. Fixed port `46305` must be preflighted and never remapped.
+Package-local commands are:
+
+- `pnpm --filter devhud dev` — launch the pinned Tauri CLI and strict-port frontend.
+- `pnpm --filter devhud build` — produce a production desktop build with bundled frontend and CEF material.
+- `pnpm --filter devhud test` — type-check and compare two clean frontend builds by path, mode, and SHA-256 while rejecting executable remote loads.
+- `pnpm --filter devhud verify:pins` — verify exact git revisions, registry checksums, archive hashes, frontend versions, target coverage, and absence of branch/fork/patch dependencies.
+- `pnpm --filter devhud smoke:platform` — validate helper/resource discovery, sandboxed browser startup, three independent startup/shutdown cycles, renderer-failure diagnostics, and fatal missing-resource diagnostics against a production artifact.
+
+`.github/workflows/devhud-desktop.yml` provides native x64 and arm64 build/smoke definitions for macOS, Windows, and Ubuntu 22.04 X11. Root Rust validation remains `cargo fmt --all --check`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, and `cargo test --workspace --all-targets`.
+
+Current proven limitations are deliberate: the frontend is a static local shell with `connect-src 'none'`; product APIs, dynamic CSP, deep links, capture/shortcut abstractions, accessibility qualification, installers/signing, mobile/widget builds, and shared iOS entitlements are not implemented. The hosted Linux development environment may validate compilation but cannot claim the Ubuntu platform smoke unless it is Ubuntu 22.04+ under X11. Minimum-version and signed-release qualification remain release gates.
 
 ## Dependencies and Integrations
 

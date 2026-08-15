@@ -187,6 +187,10 @@ where
         })
 }
 
+#[allow(
+    clippy::result_large_err,
+    reason = "tool failures retain structured parse diagnostics for the public error contract"
+)]
 fn execute_tool<I, O, F, E>(
     tool_name: &str,
     handler: &F,
@@ -232,6 +236,10 @@ where
     Ok(payload)
 }
 
+#[allow(
+    clippy::result_large_err,
+    reason = "the parse boundary intentionally returns all structured recovery diagnostics"
+)]
 fn parse_input<I>(input_json: Value) -> Result<I, LlmToolInputError>
 where
     I: LlmToolInput,

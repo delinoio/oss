@@ -2,7 +2,7 @@
 
 ## Goal
 
-DevHud is a coordinated desktop and mobile developer utility. V1 contains the desktop-only RealQA capture and GitHub issue workflow and the desktop/mobile Deck pull-request monitor with native widgets. This document is a documentation-first contract; no DevHud runtime implementation exists yet.
+DevHud is a coordinated desktop and mobile developer utility. V1 contains the desktop-only RealQA capture and GitHub issue workflow and the desktop/mobile Deck pull-request monitor with native widgets. The deterministic frontend and pinned Tauri CEF desktop-host foundation now exist at `apps/devhud`; product workflows, services, mobile clients, widgets, and the other planned domains remain documentation-first contracts.
 
 Issue [#815](https://github.com/delinoio/oss/issues/815) is the current product contract. It supersedes closed historical DevHud issues #729, #755, and #757; those issues are historical context only and must not supply architecture or scope.
 
@@ -16,7 +16,7 @@ enum ProjectId {
 
 ## Domain Ownership Map
 
-- `apps/devhud` — shared React/TypeScript UI and Tauri desktop/mobile shell (planned).
+- `apps/devhud` — implemented React/TypeScript shell and Rust/Tauri CEF desktop-host foundation; product UI and mobile shell planned.
 - `apps/devhud-chrome-extension` — Chrome Manifest V3 extension (planned).
 - `apps/devhud-admin` — administrator SPA embedded at `/admin` in the API artifact (planned).
 - `servers/devhud-api` — stateless Go API (planned).
@@ -24,7 +24,7 @@ enum ProjectId {
 - `packages/devhud-api-client` — generated TypeScript client and Connect Query bindings (planned).
 - `crates/devhud-native-messaging-host` — Rust Native Messaging broker packaged with desktop installers (planned canonical Rust workspace path).
 
-No planned path is a Cargo workspace member or an implemented runtime until its skeleton and contract exist.
+Only `apps/devhud/src-tauri` is currently a DevHud Cargo workspace member. No other planned path is a workspace member or implemented runtime until its skeleton and contract exist.
 
 ## Domain Contract Documents
 

@@ -19,13 +19,13 @@
 - `apps/binpm-docs`: Rspress static documentation app for `binpm`.
 - `apps/nodeup-docs`: Rspress static documentation app for `nodeup`.
 - `apps/public-docs`: Rspress static public documentation app.
-- `apps/devhud`: planned shared React/TypeScript DevHud UI and Tauri desktop/mobile shell.
+- `apps/devhud`: implemented deterministic React/TypeScript shell and Rust/Tauri CEF desktop-host foundation; product UI and mobile shell remain planned.
 - `apps/devhud-chrome-extension`: planned Chrome Manifest V3 DevHud extension.
 - `apps/devhud-admin`: planned DevHud administrator SPA embedded at `/admin`.
 
 ### DevHud Rules
 
-- DevHud is documentation-first and these paths are planned; do not claim runtime behavior exists before the project/domain contracts are updated. Logto uses native callback `devhud://auth/callback`, platform client keys `desktop`/`ios`/`android`, an `admin` client key with the documented exact browser redirect, and Native Messaging host `io.delino.devhud.native_messaging` with one fixed release-configured extension ID. The Native Messaging host uses the documented authenticated v1 user-scoped IPC contract owned by the app.
+- DevHud remains documentation-first outside the implemented `apps/devhud` desktop-host foundation; do not claim product, mobile, service, extension, or admin runtime behavior exists before its project/domain contracts are updated. Logto uses native callback `devhud://auth/callback`, platform client keys `desktop`/`ios`/`android`, an `admin` client key with the documented exact browser redirect, and Native Messaging host `io.delino.devhud.native_messaging` with one fixed release-configured extension ID. The Native Messaging host uses the documented authenticated v1 user-scoped IPC contract owned by the app.
 - Fixed loopback ports are DevHud frontend `46305`, admin `46306`, and API `46307`; fail on conflicts and never auto-remap.
 - DevHud API calls use the exact CORS origins `http://localhost:46305`, `http://127.0.0.1:46305`, `http://localhost:46306`, `http://127.0.0.1:46306`, and pinned Tauri origin `http://tauri.localhost`; direct R2 staging uploads use those origins with only `PUT`/`OPTIONS`, `Content-Type`, and `x-amz-checksum-sha256`; clients must use the documented Connect preflight behavior and read correlation IDs from the exposed `x-devhud-correlation-id` header. Upload checksums are 32 raw bytes, encoded as standard Base64 only for the R2 header.
 - Desktop uses the exact pinned Tauri CEF revision `4af26a3f7f8b692d62cca549bbacd93f5ce90b41` from `https://github.com/tauri-apps/tauri`; mobile uses WKWebView/Android System WebView. Bundle ID is `io.delino.devhud`, deep-link scheme is `devhud`, and supported desktop targets are macOS 13+, Windows 10 22H2+, Ubuntu 22.04 LTS on X11, x64 and arm64. Native Wayland is out of scope.
@@ -91,6 +91,7 @@
 ### Testing and Validation
 
 - If frontend code changes in this domain, run `pnpm test` before finishing.
+- If `apps/devhud` changes, run `pnpm --filter devhud test` and `pnpm --filter devhud verify:pins`; run its platform smoke on a supported native production artifact when the host is available.
 - If `apps/binpm-docs` changes, run `pnpm --filter binpm-docs test` before finishing.
 - If `apps/nodeup-docs` changes, run `pnpm --filter nodeup-docs test` before finishing.
 - If `apps/public-docs` changes, run `pnpm --filter public-docs test` before finishing.

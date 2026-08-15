@@ -262,6 +262,12 @@ jobs:
           toolchain: nightly-2026-01-01
           components: clippy
 
+      - name: Install DevHUD Linux prerequisites
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake libgtk-3-dev libx11-dev ninja-build
+
       - name: Cache Rust dependencies
         if: ${{ steps.gate.outputs.run == 'true' }}
         uses: Swatinem/rust-cache@v2
@@ -324,6 +330,12 @@ jobs:
         uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: nightly-2026-01-01
+
+      - name: Install DevHUD Linux prerequisites
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake libgtk-3-dev libx11-dev ninja-build
 
       - name: Cache Rust dependencies
         if: ${{ steps.gate.outputs.run == 'true' }}

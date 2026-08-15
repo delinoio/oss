@@ -1,0 +1,28 @@
+{
+  "name": "devhud",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "prepare:app": "echo 'devhud: no prepare step'",
+    "dev": "node scripts/run-tauri.mjs dev",
+    "dev:frontend": "node ../../scripts/run-rsbuild-dev.mjs devhud 46305",
+    "build": "node scripts/run-tauri.mjs build",
+    "build:frontend": "rsbuild build",
+    "lint": "tsc --noEmit",
+    "test": "pnpm lint && node scripts/verify-frontend-output.mjs",
+    "verify:pins": "node scripts/verify-pins.mjs",
+    "smoke:platform": "node scripts/platform-smoke.mjs"
+  },
+  "dependencies": {
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@rsbuild/core": "2.1.10",
+    "@rsbuild/plugin-react": "2.0.1",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "typescript": "5.9.3"
+  }
+}

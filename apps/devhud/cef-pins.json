@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "tauri": {
+    "repository": "https://github.com/tauri-apps/tauri",
+    "revision": "4af26a3f7f8b692d62cca549bbacd93f5ce90b41",
+    "packages": {
+      "tauri": "2.11.5",
+      "tauri-build": "2.6.3",
+      "tauri-cli": "2.11.4",
+      "tauri-runtime-cef": "0.1.0"
+    }
+  },
+  "cefRust": {
+    "revision": "c73f792f245d71ac1716448cdb7c165c8009e20c",
+    "cef": {
+      "version": "150.0.0+150.0.10",
+      "checksum": "8dd6aaa08e30ced80c7c18445807984243a06b7f4004c264922302b7e05d5c41"
+    },
+    "cef-dll-sys": {
+      "version": "150.0.0+150.0.10",
+      "checksum": "d0ec349898441a7e9f91add53716d9c40f6fc381c9b41818241e4f63fb73f0b8"
+    }
+  },
+  "downloadCef": {
+    "version": "2.3.2",
+    "checksum": "c169adf067a787e1f1c58ed62906a557de85388bee4b54fb878b722ff606b113",
+    "revision": "0c577ce44dbd36952ac3721b577c6e423ceff44f"
+  },
+  "runtime": {
+    "cefVersion": "150.0.10+g8042e43+chromium-150.0.7871.101",
+    "chromiumVersion": "150.0.7871.101",
+    "requiredFeatures": [
+      "tauri-runtime-cef/default",
+      "tauri-runtime-cef/sandbox",
+      "cef/build-util",
+      "cef/linux-x11",
+      "cef/sandbox",
+      "cef-dll-sys/sandbox"
+    ],
+    "archives": {
+      "aarch64-apple-darwin": {
+        "name": "cef_binary_150.0.10+g8042e43+chromium-150.0.7871.101_macosarm64_minimal.tar.bz2",
+        "sha1": "e73f7ce767420791b1965e15816a955d88cf1f9a"
+      },
+      "x86_64-apple-darwin": {
+        "name": "cef_binary_150.0.10+g8042e43+chromium-150.0.7871.101_macosx64_minimal.tar.bz2",
+        "sha1": "13e95f8bd0e13abe5283f67537d18b1b22f38ce7"
+      },
+      "aarch64-pc-windows-msvc": {
+        "name": "cef_binary_150.0.10+g8042e43+chromium-150.0.7871.101_windowsarm64_minimal.tar.bz2",
+        "sha1": "1e059f57e1f641a8925d140ae3724175605fb282"
+      },
+      "x86_64-pc-windows-msvc": {
+        "name": "cef_binary_150.0.10+g8042e43+chromium-150.0.7871.101_windows64_minimal.tar.bz2",
+        "sha1": "bce95ec52696c6725447fd0bf993cc928aefecd4"
+      },
+      "aarch64-unknown-linux-gnu": {
+        "name": "cef_binary_150.0.10+g8042e43+chromium-150.0.7871.101_linuxarm64_minimal.tar.bz2",
+        "sha1": "03e7a836ee73326280b8a3032e9741898133447e"
+      },
+      "x86_64-unknown-linux-gnu": {
+        "name": "cef_binary_150.0.10+g8042e43+chromium-150.0.7871.101_linux64_minimal.tar.bz2",
+        "sha1": "74a1186c566cbbac38c6b0f5298fc0bcfc1b9606"
+      }
+    }
+  }
+}
