@@ -14,7 +14,7 @@ Only individual accounts with the stable Logto role `devhud-admin`; API and secu
 
 ## Interfaces and Contracts
 
-Support user search, block/unblock with mandatory reason, quota inspection, upload listing, quarantine/delete, and audit-event inspection through `AdminService`. Every mutation creates an audit record. Denied roles receive typed permission errors. The UI must not expose settings snapshots, PATs, R2 secrets, local paths, issue bodies, or browser data.
+Support user search through `AdminService.ListUsers`, block/unblock with mandatory reason through `AdminService.SetUserBlocked`, quota inspection through `AdminService.GetUserUsage`, upload listing through `AdminService.ListUploads`, quarantine/delete through `AdminService.QuarantineUpload` and `AdminService.DeleteUpload`, and audit-event inspection through `AdminService.ListAuditEvents`. Every mutation creates an audit record. Denied roles receive typed permission errors. The UI must not expose settings snapshots, PATs, R2 secrets, local paths, issue bodies, or browser data.
 
 ## Storage
 

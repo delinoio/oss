@@ -108,6 +108,9 @@ enum ProjectId {
 
 - Issue [#815](https://github.com/delinoio/oss/issues/815) is the current normative DevHud contract and supersedes closed historical issues #729, #755, and #757 without inheriting their architecture.
 - DevHud fixed development ports are frontend `46305`, admin `46306`, and API `46307`; conflicts fail instead of remapping.
+- DevHud Deck refresh intervals apply only to active clients; suspended widgets use OS-controlled best-effort scheduling and must expose stale state with the last successful refresh.
+- DevHud account deletion must purge or irreversibly pseudonymize official-upload metadata and invalidate public CDN copies; recovery is provided by an ownership-checked `AccountService.RestoreAccount` during the 30-day window.
+- DevHud desktop updates use the fixed signed manifest endpoint and explicit platform/architecture mapping documented in `docs/project-devhud.md`; bootstrap is not an updater-discovery override.
 - Desktop targets are macOS 13+, Windows 10 22H2+, and Ubuntu 22.04 LTS on X11, with x64 and arm64 artifacts. Mobile targets are iOS 16+ and Android 10/API 29+. Native Wayland, product analytics, remote feature flags, plugin SDK/ABI, server-side GitHub brokerage, and partial GA are excluded.
 - Desktop uses Tauri CEF commit `4af26a3f7f8b692d62cca549bbacd93f5ce90b41`; mobile uses system webviews. Bundle ID is `io.delino.devhud` and deep links use `devhud`.
 - Planned paths remain documentation-only. Do not add `crates/devhud-native-messaging-host` to the Cargo workspace until its crate skeleton exists.

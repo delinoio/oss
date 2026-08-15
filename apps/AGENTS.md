@@ -29,6 +29,7 @@
 - Fixed loopback ports are DevHud frontend `46305`, admin `46306`, and API `46307`; fail on conflicts and never auto-remap.
 - Desktop uses the exact pinned Tauri CEF revision `4af26a3f7f8b692d62cca549bbacd93f5ce90b41`; mobile uses WKWebView/Android System WebView. Bundle ID is `io.delino.devhud`, deep-link scheme is `devhud`, and supported desktop targets are macOS 13+, Windows 10 22H2+, Ubuntu 22.04 LTS on X11, x64 and arm64. Native Wayland is out of scope.
 - User-facing DevHud UI, widgets, extension UI, validation, and errors support English and Korean. RealQA is desktop-only; Deck is desktop/mobile. Follow the documented browser-context, local-agent, secret, accessibility, and no-plugin boundaries.
+- Deck refresh intervals are client-polling targets only; suspended widgets use OS-controlled best-effort scheduling and display stale state with the last successful refresh.
 - Update `docs/project-devhud.md` and the applicable DevHud domain contract with every path, UI, platform, interface, or release change.
 
 ### mpapp Rules

@@ -14,15 +14,15 @@ DevHud guest/authenticated clients, self-hosting operators, `devhud-admin` opera
 
 ## Interfaces and Contracts
 
-Services in package `devhud.v1`: `BootstrapService.GetBootstrap`; `SettingsService.GetSettings`/`ReplaceSettings`; `UploadService.CreateUpload`/`FinalizeUpload`/`ListUploads`/`DeleteUpload`; `AccountService.GetAccount`/`DeleteAccount`; `DiagnosticsService.SubmitCrashReport`; and administrator list users, block, usage, uploads, quarantine/delete, and audit methods. Bootstrap supplies protocol/API version, Logto issuer/audience/client IDs, public asset base URL, static capabilities, and upload limits; it is not a remote feature-flag channel.
+Services in package `devhud.v1`: `BootstrapService.GetBootstrap`; `SettingsService.GetSettings`/`ReplaceSettings`; `UploadService.CreateUpload`/`FinalizeUpload`/`ListUploads`/`DeleteUpload`; `AccountService.GetAccount`/`DeleteAccount`/`RestoreAccount`; `DiagnosticsService.SubmitCrashReport`; and `AdminService.ListUsers`/`SetUserBlocked`/`GetUserUsage`/`ListUploads`/`QuarantineUpload`/`DeleteUpload`/`ListAuditEvents`. Bootstrap supplies protocol/API version, Logto issuer/audience/client IDs, public asset base URL, static capabilities, and upload limits; it is not a remote feature-flag channel.
 
-Use `Unauthenticated`, `PermissionDenied`, `Aborted`, `ResourceExhausted`, and `FailedPrecondition` for the contracted failure classes. Attach a UUID v7 correlation ID to every response/log context. The API never proxies GitHub or R2 upload bodies, stores Deck results, polls Decks, receives webhooks, or acts as a GitHub credential broker.
+Use `Unauthenticated`, `PermissionDenied`, `Aborted`, `ResourceExhausted`, and `FailedPrecondition` for the contracted failure classes. `RestoreAccount` requires authenticated ownership, is idempotent during the 30-day recovery window, cancels pending purge, and removes the account block; calls after the window return `FailedPrecondition`. Attach a UUID v7 correlation ID to every response/log context. The API never proxies GitHub or R2 upload bodies, stores Deck results, polls Decks, receives webhooks, or acts as a GitHub credential broker.
 
 ## Storage
 
-Persist users, schema-versioned settings snapshots/revisions, official uploads/tombstones, blocks/admin actions, audit records, and opt-in crash reports. Use PostgreSQL for metadata and private R2 staging/public assets. Signed upload URLs are one-time; staging expires after 24 hours. Enforce 50 MiB/object, 10 images/issue, 1 GiB rolling-24-hour, 20 GiB stored, 120 signed URLs/rolling-hour, and 300 public GETs/IP/minute. Deleted/quarantined objects are replaced by a non-sensitive localized removal PNG.
+Persist users, schema-versioned settings snapshots/revisions, official uploads/tombstones, blocks/admin actions, audit records, and opt-in crash reports. Use PostgreSQL for metadata and private R2 staging/public assets. Signed upload URLs are one-time; staging expires after 24 hours. Enforce 50 MiB/object, 10 images/issue, 1 GiB rolling-24-hour, 20 GiB stored, 120 signed URLs/rolling-hour, and 300 public GETs/IP/minute. `FinalizeUpload` revalidates authentication, block status, ownership, exact staging-key binding, size, checksum, allowed image content, PNG signature, and safe raster dimensions; it rejects replay and deletes invalid staging objects. Deleted/quarantined objects are replaced by a non-sensitive localized removal PNG only after the public CDN has been purged or revalidated for the stable URL; the operation is not considered effective deletion while a cached original remains retrievable.
 
-Retain request logs and crash reports 30 days; retain pseudonymized security/admin audit events at most 180 days. Account deletion blocks immediately, permits 30-day recovery, then purges synchronized settings, users, reports, and official image bytes.
+Retain request logs and crash reports 30 days; retain pseudonymized security/admin audit events at most 180 days. Account deletion blocks immediately, permits 30-day recovery, then purges synchronized settings, users, reports, official image bytes, and official-upload/tombstone metadata. Owner IDs, object keys, checksums, and timestamps are deleted or irreversibly pseudonymized; any retained security/admin audit subset follows the explicit 180-day limit.
 
 ## Security
 
@@ -34,7 +34,7 @@ Use `log/slog` structured logs with correlation IDs and redaction. Provide safe 
 
 ## Build and Test
 
-Validate Go format/vet/unit/integration/migration/API conformance tests, Connect compatibility, quota and upload validation, auth/blocking, revision conflicts, deletion/retention, admin audit behavior, non-root OCI execution, SBOM/signature/provenance, and fixed port `46307` conflict failure.
+Validate Go format/vet/unit/integration/migration/API conformance tests, Connect compatibility, quota and upload validation, auth/blocking, revision conflicts, deletion/retention, admin audit behavior, CDN purge/revalidation for user deletion, admin quarantine, and account purge, non-root OCI execution, SBOM/signature/provenance, and fixed port `46307` conflict failure.
 
 ## Dependencies and Integrations
 
