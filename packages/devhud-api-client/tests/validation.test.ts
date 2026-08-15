@@ -45,6 +45,7 @@ const r2SignedCredentialUrls = [
 ] as const;
 const r2UnsignedMetadataUrl =
   "https://account.r2.cloudflarestorage.com/bucket/report?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Date=20260815T180000Z&X-Amz-Expires=900&X-Amz-SignedHeaders=host";
+const encodedLocalFileUrl = "file:%2FUsers%2Falice%2Fproject%2Fapp.ts";
 
 describe("wire validation helpers", () => {
   it("accepts only canonical UUID v7 and 32-byte digests", () => {
@@ -91,6 +92,7 @@ describe("wire validation helpers", () => {
       "See src/private/incident.txt",
       "source:src/private/app.ts:10",
       "frame:src\\private\\app.ts:10",
+      encodedLocalFileUrl,
       "https://example.com/audit?token=unsafe-value",
       "devhud://auth/callback?co%64e=unsafe-value",
       "https://example.com/?to%6ben=unsafe-value",
@@ -390,6 +392,12 @@ describe("wire validation helpers", () => {
       });
       expect(() => validateCrashReport(report), stackTrace).toThrow(TypeError);
     }
+
+    const encodedLocalFileUrlReport = create(SubmitCrashReportRequestSchema, {
+      ...safe,
+      redactedStackTrace: `at load (${encodedLocalFileUrl})`,
+    });
+    expect(() => validateCrashReport(encodedLocalFileUrlReport)).toThrow(TypeError);
 
     for (const stackTrace of [
       "at render (app.ts:10:2)",

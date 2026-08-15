@@ -202,6 +202,9 @@ function containsForbiddenUrlContent(value: string): boolean {
       continue;
     }
 
+    if (url.protocol === "file:") {
+      return true;
+    }
     if (url.username !== "" || url.password !== "") {
       return true;
     }
