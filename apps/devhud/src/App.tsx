@@ -1,3 +1,5 @@
+import { useEffect } from "react";
+
 import { shellCopy, type SupportedLanguage } from "./localization";
 
 interface AppProps {
@@ -6,6 +8,10 @@ interface AppProps {
 
 export function App({ language }: AppProps) {
   const copy = shellCopy[language];
+
+  useEffect(() => {
+    document.title = "DevHUD";
+  }, []);
 
   return (
     <main className="shell" data-devhud-ready="true">

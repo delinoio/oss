@@ -20,10 +20,7 @@ use tracing::{error, info, warn};
 
 const DEVELOPMENT_ORIGIN: &str = "http://127.0.0.1:46305";
 const PRODUCTION_ORIGIN: &str = "http://tauri.localhost";
-const FRONTEND_READY_PROBE: &str =
-    r#"document.querySelector('[data-devhud-ready="true"]') !== null"#;
-const FRONTEND_READY_ATTEMPTS: u8 = 100;
-const FRONTEND_READY_RETRY_DELAY: Duration = Duration::from_millis(50);
+const FRONTEND_READY_TITLE: &str = "DevHUD";
 const FRONTEND_READY_TIMEOUT: Duration = Duration::from_secs(5);
 const DEVHUD_ERROR_FILTER_DIRECTIVE: &str = "devhud=error";
 
@@ -158,6 +155,10 @@ fn is_allowed_navigation(url: &tauri::Url) -> bool {
     origin == PRODUCTION_ORIGIN || (tauri::is_dev() && origin == DEVELOPMENT_ORIGIN)
 }
 
+fn is_frontend_ready_title(title: &str) -> bool {
+    title == FRONTEND_READY_TITLE
+}
+
 fn validate_host(smoke_mode: Option<SmokeMode>) -> Result<(), String> {
     let target = DesktopTarget::current();
     info!(event = "platform_detected", target = %target);
@@ -273,74 +274,6 @@ fn handle_frontend_ready(
     }
 }
 
-fn probe_frontend_ready(
-    webview: tauri::WebviewWindow<tauri::Cef>,
-    app_handle: tauri::AppHandle<tauri::Cef>,
-    smoke_mode: Option<SmokeMode>,
-    origin: String,
-    frontend_readiness_complete: Arc<AtomicBool>,
-    renderer_crashed: Arc<AtomicBool>,
-    attempts_remaining: u8,
-) {
-    let retry_webview = webview.clone();
-    let retry_app_handle = app_handle.clone();
-    let retry_origin = origin.clone();
-    let retry_frontend_readiness_complete = frontend_readiness_complete.clone();
-    let retry_renderer_crashed = renderer_crashed.clone();
-    let failure_app_handle = app_handle.clone();
-    let failure_frontend_readiness_complete = frontend_readiness_complete.clone();
-
-    if let Err(error) =
-        webview.eval_with_callback(
-            FRONTEND_READY_PROBE,
-            move |result| match serde_json::from_str::<bool>(&result) {
-                Ok(true) => {
-                    if !retry_frontend_readiness_complete.swap(true, Ordering::SeqCst) {
-                        handle_frontend_ready(
-                            &retry_webview,
-                            &retry_app_handle,
-                            smoke_mode,
-                            &retry_origin,
-                            retry_renderer_crashed.clone(),
-                        );
-                    }
-                }
-                Ok(false) if attempts_remaining > 1 => {
-                    let webview = retry_webview.clone();
-                    let app_handle = retry_app_handle.clone();
-                    let origin = retry_origin.clone();
-                    let frontend_readiness_complete = retry_frontend_readiness_complete.clone();
-                    let renderer_crashed = retry_renderer_crashed.clone();
-                    std::thread::spawn(move || {
-                        std::thread::sleep(FRONTEND_READY_RETRY_DELAY);
-                        probe_frontend_ready(
-                            webview,
-                            app_handle,
-                            smoke_mode,
-                            origin,
-                            frontend_readiness_complete,
-                            renderer_crashed,
-                            attempts_remaining - 1,
-                        );
-                    });
-                }
-                Ok(false) => {}
-                Err(error) => {
-                    error!(event = "frontend_readiness_probe_failed", reason = %error, result);
-                    if smoke_mode.is_some() {
-                        retry_app_handle.exit(1);
-                    }
-                }
-            },
-        )
-    {
-        error!(event = "frontend_readiness_probe_failed", reason = %error);
-        if smoke_mode.is_some() && !failure_frontend_readiness_complete.load(Ordering::SeqCst) {
-            failure_app_handle.exit(1);
-        }
-    }
-}
-
 #[tauri::cef_entry_point]
 fn main() {
     let smoke_mode = SmokeMode::from_environment();
@@ -370,9 +303,9 @@ fn main() {
 
     let result = builder
         .setup(move |app| {
-            let app_handle = app.handle().clone();
-            let renderer_crashed_for_page_load = renderer_crashed.clone();
-            let frontend_readiness_for_page_load = frontend_readiness_complete.clone();
+            let app_handle_for_frontend = app.handle().clone();
+            let renderer_crashed_for_frontend = renderer_crashed.clone();
+            let frontend_readiness_for_title = frontend_readiness_complete.clone();
             let frontend_readiness_for_watchdog = frontend_readiness_complete.clone();
             let webview = tauri::WebviewWindowBuilder::<tauri::Cef, _>::new(
                 app,
@@ -399,18 +332,30 @@ fn main() {
                 }
                 false
             })
-            .on_page_load(move |webview, payload| {
-                if payload.event() != tauri::webview::PageLoadEvent::Finished {
+            .on_document_title_changed(move |webview, title| {
+                if !is_frontend_ready_title(&title) {
                     return;
                 }
-                probe_frontend_ready(
-                    webview.clone(),
-                    app_handle.clone(),
+
+                let origin = match webview.url() {
+                    Ok(url) => url.origin().ascii_serialization(),
+                    Err(error) => {
+                        error!(event = "frontend_readiness_probe_failed", reason = %error);
+                        if smoke_mode.is_some() {
+                            app_handle_for_frontend.exit(1);
+                        }
+                        return;
+                    }
+                };
+                if frontend_readiness_for_title.swap(true, Ordering::SeqCst) {
+                    return;
+                }
+                handle_frontend_ready(
+                    &webview,
+                    &app_handle_for_frontend,
                     smoke_mode,
-                    payload.url().origin().ascii_serialization(),
-                    frontend_readiness_for_page_load.clone(),
-                    renderer_crashed_for_page_load.clone(),
-                    FRONTEND_READY_ATTEMPTS,
+                    &origin,
+                    renderer_crashed_for_frontend.clone(),
                 );
             })
             .build()?;
@@ -438,6 +383,9 @@ fn main() {
                 }
             }
 
+            #[cfg(target_os = "macos")]
+            drop(webview);
+
             Ok(())
         })
         .run(tauri::generate_context!());
@@ -460,8 +408,14 @@ mod tests {
 
     use super::{
         DEVHUD_ERROR_FILTER_DIRECTIVE, SmokeMode, diagnostic_filter, inject_smoke_missing_resource,
-        wait_for_frontend_readiness_timeout,
+        is_frontend_ready_title, wait_for_frontend_readiness_timeout,
     };
+
+    #[test]
+    fn frontend_readiness_requires_the_mounted_title() {
+        assert!(!is_frontend_ready_title("DevHUD Loading"));
+        assert!(is_frontend_ready_title("DevHUD"));
+    }
 
     #[test]
     fn diagnostic_filter_keeps_devhud_errors_enabled() {
