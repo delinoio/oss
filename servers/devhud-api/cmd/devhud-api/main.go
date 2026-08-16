@@ -110,6 +110,9 @@ func serveUntilStopped(ctx context.Context, httpServer *http.Server, listener ne
 		defer cancel()
 		if err := httpServer.Shutdown(shutdownContext); err != nil {
 			logger.Error("HTTP shutdown failed", "error", err)
+			if closeErr := httpServer.Close(); closeErr != nil {
+				logger.Error("HTTP force-close failed", "error", closeErr)
+			}
 		}
 		if err := <-serveErrors; err != nil && !errors.Is(err, http.ErrServerClosed) {
 			return err

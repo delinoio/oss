@@ -88,6 +88,55 @@ func TestServeUntilStoppedWaitsForActiveRequests(t *testing.T) {
 	}
 }
 
+func TestServeUntilStoppedForceClosesRequestsAfterTimeout(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+
+	requestStarted := make(chan struct{})
+	requestCanceled := make(chan struct{})
+	httpServer := &http.Server{Handler: http.HandlerFunc(func(_ http.ResponseWriter, request *http.Request) {
+		close(requestStarted)
+		<-request.Context().Done()
+		close(requestCanceled)
+	})}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	serveDone := make(chan error, 1)
+	go func() {
+		serveDone <- serveUntilStopped(ctx, httpServer, listener, 25*time.Millisecond, slog.New(slog.NewJSONHandler(io.Discard, nil)))
+	}()
+
+	requestDone := make(chan error, 1)
+	go func() {
+		response, requestErr := (&http.Client{Timeout: time.Second}).Get("http://" + listener.Addr().String())
+		if requestErr == nil {
+			requestErr = response.Body.Close()
+		}
+		requestDone <- requestErr
+	}()
+	select {
+	case <-requestStarted:
+	case <-time.After(time.Second):
+		t.Fatal("request did not reach the handler")
+	}
+
+	cancel()
+	select {
+	case <-requestCanceled:
+	case <-time.After(time.Second):
+		t.Fatal("request context was not canceled after the shutdown timeout")
+	}
+	if serveErr := <-serveDone; serveErr != nil {
+		t.Fatal(serveErr)
+	}
+	if requestErr := <-requestDone; requestErr == nil {
+		t.Fatal("request succeeded after the server force-closed its connection")
+	}
+}
+
 func setServeEnvironment(t *testing.T) {
 	t.Helper()
 	t.Setenv("DEVHUD_ENVIRONMENT", "development")

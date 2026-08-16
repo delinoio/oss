@@ -2,28 +2,31 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"sort"
+	"time"
 
 	"github.com/delinoio/oss/servers/devhud-api/migrations"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const migrationAdvisoryLock int64 = 0x6465766875646d67
+const migrationAdvisoryUnlockTimeout = time.Second
 
-func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
+func Migrate(ctx context.Context, pool *pgxpool.Pool) (returnErr error) {
 	connection, err := pool.Acquire(ctx)
 	if err != nil {
 		return fmt.Errorf("acquire migration connection: %w", err)
 	}
-	defer connection.Release()
 
 	if _, err := connection.Exec(ctx, "SELECT pg_advisory_lock($1)", migrationAdvisoryLock); err != nil {
+		connection.Release()
 		return fmt.Errorf("lock migrations: %w", err)
 	}
 	defer func() {
-		_, _ = connection.Exec(context.Background(), "SELECT pg_advisory_unlock($1)", migrationAdvisoryLock)
+		returnErr = errors.Join(returnErr, releaseMigrationLock(ctx, connection))
 	}()
 
 	if _, err := connection.Exec(ctx, `CREATE TABLE IF NOT EXISTS devhud_schema_migrations (
@@ -65,6 +68,20 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 			return fmt.Errorf("commit migration %s: %w", version, err)
 		}
 	}
+	return nil
+}
+
+func releaseMigrationLock(ctx context.Context, connection *pgxpool.Conn) error {
+	cleanupContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), migrationAdvisoryUnlockTimeout)
+	defer cancel()
+	var unlocked bool
+	if err := connection.QueryRow(cleanupContext, "SELECT pg_advisory_unlock($1)", migrationAdvisoryLock).Scan(&unlocked); err != nil {
+		return errors.Join(fmt.Errorf("unlock migrations: %w", err), connection.Hijack().Close(cleanupContext))
+	}
+	if !unlocked {
+		return errors.Join(errors.New("migration advisory lock was not held"), connection.Hijack().Close(cleanupContext))
+	}
+	connection.Release()
 	return nil
 }
 

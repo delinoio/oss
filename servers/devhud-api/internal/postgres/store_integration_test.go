@@ -65,6 +65,73 @@ func TestSchemaCurrentUsesConfiguredSearchPath(t *testing.T) {
 	}
 }
 
+func TestMigrationLockCleanupUsesBoundedIndependentContext(t *testing.T) {
+	databaseURL := os.Getenv("DEVHUD_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("DEVHUD_TEST_DATABASE_URL is not set")
+	}
+	ctx := context.Background()
+	pool, err := NewPool(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+
+	connection, err := pool.Acquire(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := connection.Exec(ctx, "SELECT pg_advisory_lock($1)", migrationAdvisoryLock); err != nil {
+		connection.Release()
+		t.Fatal(err)
+	}
+	canceledContext, cancel := context.WithCancel(ctx)
+	cancel()
+	if err := releaseMigrationLock(canceledContext, connection); err != nil {
+		t.Fatal(err)
+	}
+	if acquired := pool.Stat().AcquiredConns(); acquired != 0 {
+		t.Fatalf("acquired connections after unlock = %d, want 0", acquired)
+	}
+}
+
+func TestMigrationLockCleanupDiscardsSessionWhenLockWasNotHeld(t *testing.T) {
+	databaseURL := os.Getenv("DEVHUD_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("DEVHUD_TEST_DATABASE_URL is not set")
+	}
+	ctx := context.Background()
+	configuration, err := pgxpool.ParseConfig(databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	configuration.MaxConns = 1
+	configuration.MinConns = 0
+	pool, err := pgxpool.NewWithConfig(ctx, configuration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+
+	connection, err := pool.Acquire(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	discardedPID := connection.Conn().PgConn().PID()
+	if err := releaseMigrationLock(ctx, connection); err == nil {
+		t.Fatal("cleanup succeeded without a held migration lock")
+	}
+	replacement, err := pool.Acquire(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replacementPID := replacement.Conn().PgConn().PID()
+	replacement.Release()
+	if replacementPID == discardedPID {
+		t.Fatalf("failed-unlock session was reused: discarded PID=%d replacement PID=%d", discardedPID, replacementPID)
+	}
+}
+
 func TestFoundationTransactionsAndRetention(t *testing.T) {
 	databaseURL := os.Getenv("DEVHUD_TEST_DATABASE_URL")
 	if databaseURL == "" {
