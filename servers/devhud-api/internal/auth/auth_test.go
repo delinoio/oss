@@ -74,6 +74,7 @@ func TestLogtoVerifierBoundsJWKSRefresh(t *testing.T) {
 		t.Fatal(err)
 	}
 	var issuer string
+	jwksRequested := make(chan struct{}, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		switch request.URL.Path {
 		case "/.well-known/openid-configuration":
@@ -83,6 +84,7 @@ func TestLogtoVerifierBoundsJWKSRefresh(t *testing.T) {
 				"id_token_signing_alg_values_supported": []string{"RS256"},
 			})
 		case "/jwks":
+			jwksRequested <- struct{}{}
 			<-request.Context().Done()
 		default:
 			http.NotFound(response, request)
@@ -91,11 +93,12 @@ func TestLogtoVerifierBoundsJWKSRefresh(t *testing.T) {
 	defer server.Close()
 	issuer = server.URL
 
-	verifier, err := NewLogtoVerifier(context.Background(), issuer, "devhud-api", [][]byte{[]byte("01234567890123456789012345678901")})
+	constructorContext, cancelConstructor := context.WithCancel(context.Background())
+	verifier, err := newLogtoVerifier(constructorContext, issuer, "devhud-api", [][]byte{[]byte("01234567890123456789012345678901")}, 25*time.Millisecond)
 	if err != nil {
 		t.Fatal(err)
 	}
-	verifier.timeout = 25 * time.Millisecond
+	cancelConstructor()
 	token := signToken(t, privateKey, issuer, "devhud-api", "logto-user", time.Now().Add(time.Hour))
 	started := time.Now()
 	if _, err := verifier.Verify(context.Background(), "Bearer "+token); !errors.Is(err, ErrUnauthenticated) {
@@ -103,6 +106,11 @@ func TestLogtoVerifierBoundsJWKSRefresh(t *testing.T) {
 	}
 	if elapsed := time.Since(started); elapsed > time.Second {
 		t.Fatalf("JWKS refresh took %v, want a bounded verification", elapsed)
+	}
+	select {
+	case <-jwksRequested:
+	default:
+		t.Fatal("JWKS refresh did not outlive the constructor context")
 	}
 }
 

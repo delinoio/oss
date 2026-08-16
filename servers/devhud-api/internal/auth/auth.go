@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"net/http"
 	"strings"
 	"time"
 
@@ -27,7 +28,13 @@ type LogtoVerifier struct {
 }
 
 func NewLogtoVerifier(ctx context.Context, issuer, audience string, hmacKeys [][]byte) (*LogtoVerifier, error) {
-	provider, err := oidc.NewProvider(ctx, issuer)
+	return newLogtoVerifier(ctx, issuer, audience, hmacKeys, defaultVerificationTimeout)
+}
+
+func newLogtoVerifier(ctx context.Context, issuer, audience string, hmacKeys [][]byte, timeout time.Duration) (*LogtoVerifier, error) {
+	httpClient := &http.Client{Timeout: timeout}
+	providerContext := oidc.ClientContext(context.WithoutCancel(ctx), httpClient)
+	provider, err := oidc.NewProvider(providerContext, issuer)
 	if err != nil {
 		return nil, err
 	}
@@ -35,7 +42,7 @@ func NewLogtoVerifier(ctx context.Context, issuer, audience string, hmacKeys [][
 		issuer:  issuer,
 		keys:    hmacKeys,
 		verify:  provider.Verifier(&oidc.Config{ClientID: audience}),
-		timeout: defaultVerificationTimeout,
+		timeout: timeout,
 	}, nil
 }
 
