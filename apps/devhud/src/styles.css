@@ -1,0 +1,73 @@
+:root {
+  --devhud-background: #f2f4f6;
+  --devhud-eyebrow: #1b64da;
+
+  color: #191f28;
+  background: var(--devhud-background);
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  font-synthesis: none;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+}
+
+.shell {
+  display: grid;
+  min-height: 100vh;
+  align-content: center;
+  padding: 48px;
+}
+
+.eyebrow {
+  margin: 0 0 12px;
+  color: var(--devhud-eyebrow);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+h1 {
+  margin: 0;
+  font-size: clamp(48px, 10vw, 96px);
+  letter-spacing: -0.06em;
+}
+
+.summary {
+  max-width: 560px;
+  margin: 20px 0 0;
+  color: #4e5968;
+  font-size: 20px;
+  line-height: 1.5;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --devhud-background: #17171c;
+    --devhud-eyebrow: #3182f6;
+
+    color: #f2f4f6;
+    background: var(--devhud-background);
+  }
+
+  .summary {
+    color: #b0b8c1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+  }
+}

@@ -2,7 +2,7 @@
 
 ## Goal
 
-DevHud is a coordinated desktop and mobile developer utility. V1 contains the desktop-only RealQA capture and GitHub issue workflow and the desktop/mobile Deck pull-request monitor with native widgets. The versioned protocol and generated client are implemented; no DevHud app or server runtime exists yet.
+DevHud is a coordinated desktop and mobile developer utility. V1 contains the desktop-only RealQA capture and GitHub issue workflow and the desktop/mobile Deck pull-request monitor with native widgets. The deterministic frontend and pinned Tauri CEF desktop-host foundation now exist at `apps/devhud`, and the versioned protocol and generated client are implemented; product workflows, services, mobile clients, widgets, and the other planned domains remain documentation-first contracts.
 
 Issue [#815](https://github.com/delinoio/oss/issues/815) is the current product contract. It supersedes closed historical DevHud issues #729, #755, and #757; those issues are historical context only and must not supply architecture or scope.
 
@@ -16,7 +16,7 @@ enum ProjectId {
 
 ## Domain Ownership Map
 
-- `apps/devhud` — shared React/TypeScript UI and Tauri desktop/mobile shell (planned).
+- `apps/devhud` — implemented localized React/TypeScript shell and Rust/Tauri CEF desktop-host foundation; product UI and mobile shell planned.
 - `apps/devhud-chrome-extension` — Chrome Manifest V3 extension (planned).
 - `apps/devhud-admin` — administrator SPA embedded at `/admin` in the API artifact (planned).
 - `servers/devhud-api` — stateless Go API (planned).
@@ -24,7 +24,7 @@ enum ProjectId {
 - `packages/devhud-api-client` — implemented generated TypeScript messages/services, Connect Query exports, and safe client helpers.
 - `crates/devhud-native-messaging-host` — Rust Native Messaging broker packaged with desktop installers (planned canonical Rust workspace path).
 
-The protocol and client paths above are implemented. Remaining planned paths are not implemented runtimes, and the planned Rust host is not a Cargo workspace member until its skeleton exists.
+The desktop host, protocol, and client paths above are implemented. Only `apps/devhud/src-tauri` is currently a DevHud Cargo workspace member; remaining planned paths are not implemented runtimes, and the planned Rust host is not a workspace member until its skeleton and contract exist.
 
 ## Domain Contract Documents
 
@@ -44,8 +44,8 @@ The protocol and client paths above are implemented. Remaining planned paths are
 - Fixed loopback development ports are frontend `46305`, administrator `46306`, and API `46307`; every launcher fails with an actionable conflict instead of remapping.
 - Browser/API CORS uses the exact origins `http://localhost:46305`, `http://127.0.0.1:46305`, `http://localhost:46306`, `http://127.0.0.1:46306`, and pinned Tauri `http://tauri.localhost`. Direct R2 staging uploads use the same origins with only `PUT`/`OPTIONS`, `Content-Type` and `x-amz-checksum-sha256` request headers, and `ETag` exposure. Connect preflight methods and headers are explicit, exposes `x-devhud-correlation-id`, and wildcard origins and headers are not allowed.
 - Desktop targets are macOS 13+, Windows 10 22H2+, and Ubuntu 22.04 LTS on X11, each in x64 and arm64 builds. XWayland is best effort; native Wayland is excluded. Mobile targets are iOS 16+ and Android 10/API 29+.
-- Desktop uses `tauri-runtime-cef` from the authoritative `https://github.com/tauri-apps/tauri` repository, pinned exactly to Tauri commit `4af26a3f7f8b692d62cca549bbacd93f5ce90b41`; mobile uses WKWebView/Android System WebView and native Swift/Kotlin widgets. The bundle identifier is `io.delino.devhud` and the deep-link scheme is `devhud`.
-- Code, schemas, logs, and internal contracts are English. End-user UI, validation, widgets, extension UI, and errors support English and Korean, initially following the system language with a synchronized override.
+- Desktop uses `tauri-runtime-cef` from the authoritative `https://github.com/tauri-apps/tauri` repository, pinned exactly to Tauri commit `4af26a3f7f8b692d62cca549bbacd93f5ce90b41`; mobile uses WKWebView/Android System WebView and native Swift/Kotlin widgets. The Tauri command wrapper rejects all `-c` and `--config` CLI overrides, including attached short values, so callers cannot replace the pinned application configuration; on every supported desktop platform the wrapper and timed-out platform smokes terminate and await their complete managed process trees before cleanup. The bundle identifier is `io.delino.devhud` and the deep-link scheme is `devhud`.
+- Code, schemas, logs, and internal contracts are English. The implemented shell selects English or Korean from the system language, defaults to English, and mechanically preserves WCAG AA contrast for its small theme-specific eyebrow text; future end-user UI, validation, widgets, extension UI, and errors follow the same language contract with a synchronized override. Desktop startup enforces frontend readiness with an independent five-second watchdog and exits with a structured timeout diagnostic instead of leaving an unresponsive blank window. Packaged hosts observe renderer termination during normal launches on every desktop platform, while deliberate renderer-crash injection remains smoke-only. Desktop release hosts persist the same redacted structured diagnostics emitted to stderr in UTC-daily `devhud.YYYY-MM-DD.jsonl` files under `%LOCALAPPDATA%\io.delino.devhud\logs` on Windows, `~/Library/Logs/io.delino.devhud` on macOS, and `${XDG_STATE_HOME:-~/.local/state}/io.delino.devhud/logs` on Linux, keeping at most seven files and including failures that occur before the GUI starts; operator `RUST_LOG` filters cannot suppress error-level DevHUD events.
 - Stable first-party identifiers are enum-backed: mini-apps `realqa` and `deck`; capture actions `realqa.capture.display`, `realqa.capture.active-window`, `realqa.capture.all-displays`, `realqa.capture.selection`, and `realqa.capture.toolbar`.
 - Business flows use Connect RPC. The API never brokers GitHub, polls Decks, receives GitHub webhooks, or stores PR results. GitHub calls remain client-side.
 - Service-owned identifiers use UUID v7. Logto subjects/issuers and GitHub identifiers remain external IDs.
