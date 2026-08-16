@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/delinoio/oss/servers/devhud-api/internal/domain"
 )
 
 const MaximumBatchSize = 500
+const advisoryUnlockTimeout = time.Second
 
 type Sweeper struct {
 	repository  domain.Repository
@@ -44,7 +46,9 @@ func (s *Sweeper) RunOnce(ctx context.Context) (result Result, returnErr error) 
 	}
 	result.LockAcquired = true
 	defer func() {
-		if err := unlock(context.WithoutCancel(ctx)); err != nil && returnErr == nil {
+		unlockContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), advisoryUnlockTimeout)
+		defer cancel()
+		if err := unlock(unlockContext); err != nil && returnErr == nil {
 			returnErr = fmt.Errorf("release sweep lock: %w", err)
 		}
 	}()

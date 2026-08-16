@@ -12,8 +12,58 @@ import (
 
 	"github.com/delinoio/oss/servers/devhud-api/internal/domain"
 	"github.com/delinoio/oss/servers/devhud-api/internal/idgen"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+func TestSchemaCurrentUsesConfiguredSearchPath(t *testing.T) {
+	databaseURL := os.Getenv("DEVHUD_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("DEVHUD_TEST_DATABASE_URL is not set")
+	}
+	ctx := context.Background()
+	adminPool, err := NewPool(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(adminPool.Close)
+	dropFoundation(t, ctx, adminPool)
+
+	const schemaName = "devhud_search_path_test"
+	quotedSchema := pgx.Identifier{schemaName}.Sanitize()
+	if _, err := adminPool.Exec(ctx, "DROP SCHEMA IF EXISTS "+quotedSchema+" CASCADE"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := adminPool.Exec(ctx, "CREATE SCHEMA "+quotedSchema); err != nil {
+		t.Fatal(err)
+	}
+
+	configuration, err := pgxpool.ParseConfig(databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	configuration.ConnConfig.RuntimeParams["search_path"] = schemaName
+	pool, err := pgxpool.NewWithConfig(ctx, configuration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		pool.Close()
+		if _, cleanupErr := adminPool.Exec(context.Background(), "DROP SCHEMA IF EXISTS "+quotedSchema+" CASCADE"); cleanupErr != nil {
+			t.Errorf("drop search-path test schema: %v", cleanupErr)
+		}
+	})
+	if err := pool.Ping(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := Migrate(ctx, pool); err != nil {
+		t.Fatal(err)
+	}
+	store := New(pool, idgen.UUIDv7{}, domain.RealClock{})
+	if current, err := store.SchemaCurrent(ctx); err != nil || !current {
+		t.Fatalf("schema current = %v, err=%v", current, err)
+	}
+}
 
 func TestFoundationTransactionsAndRetention(t *testing.T) {
 	databaseURL := os.Getenv("DEVHUD_TEST_DATABASE_URL")

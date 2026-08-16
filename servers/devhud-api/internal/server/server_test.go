@@ -60,6 +60,20 @@ func TestBootstrapCorrelationAndFoundationCapabilities(t *testing.T) {
 	}
 }
 
+func TestHealthzDoesNotPersistRequestMetadata(t *testing.T) {
+	handler, repository := testHandler(t)
+	request := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	request.RemoteAddr = "127.0.0.1:12345"
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d", response.Code)
+	}
+	if repository.requestCount() != 0 {
+		t.Fatalf("persisted health request logs = %d", repository.requestCount())
+	}
+}
+
 func TestSettingsRequiresAuthenticationWithCorrelationDetail(t *testing.T) {
 	handler, _ := testHandler(t)
 	testServer := httptest.NewServer(handler)

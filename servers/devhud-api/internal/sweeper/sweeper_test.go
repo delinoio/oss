@@ -52,6 +52,35 @@ func TestLockContentionSkipsWork(t *testing.T) {
 	}
 }
 
+func TestRunOnceBoundsUnlockAfterCallerCancellation(t *testing.T) {
+	var unlockErr error
+	var unlockDeadline time.Time
+	coordinator := &fakeCoordinator{
+		acquired: true,
+		unlock: func(ctx context.Context) error {
+			unlockErr = ctx.Err()
+			unlockDeadline, _ = ctx.Deadline()
+			return nil
+		},
+	}
+	worker, err := New(&fakeRepository{}, coordinator, nil, fixedClock{}, slog.Default(), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := worker.RunOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if unlockErr != nil {
+		t.Fatalf("unlock context was already canceled: %v", unlockErr)
+	}
+	remaining := time.Until(unlockDeadline)
+	if unlockDeadline.IsZero() || remaining <= 0 || remaining > advisoryUnlockTimeout {
+		t.Fatalf("unlock deadline remaining = %v", remaining)
+	}
+}
+
 type fixedClock struct{}
 
 func (fixedClock) Now() time.Time { return time.Date(2026, 8, 16, 0, 0, 0, 0, time.UTC) }
@@ -59,10 +88,17 @@ func (fixedClock) Now() time.Time { return time.Date(2026, 8, 16, 0, 0, 0, 0, ti
 type fakeCoordinator struct {
 	acquired bool
 	unlocks  int
+	unlock   func(context.Context) error
 }
 
 func (coordinator *fakeCoordinator) TryLock(context.Context) (func(context.Context) error, bool, error) {
-	return func(context.Context) error { coordinator.unlocks++; return nil }, coordinator.acquired, nil
+	return func(ctx context.Context) error {
+		coordinator.unlocks++
+		if coordinator.unlock != nil {
+			return coordinator.unlock(ctx)
+		}
+		return nil
+	}, coordinator.acquired, nil
 }
 
 type failingOncePurger struct {

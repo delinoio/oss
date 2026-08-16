@@ -33,7 +33,7 @@ func New(pool *pgxpool.Pool, ids domain.IDGenerator, clock domain.Clock) *Store 
 func NewPool(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
 	configuration, err := pgxpool.ParseConfig(databaseURL)
 	if err != nil {
-		return nil, fmt.Errorf("parse PostgreSQL configuration: %w", err)
+		return nil, errors.New("parse PostgreSQL configuration")
 	}
 	pool, err := pgxpool.NewWithConfig(ctx, configuration)
 	if err != nil {
@@ -50,7 +50,7 @@ func (s *Store) Ping(ctx context.Context) error { return s.pool.Ping(ctx) }
 
 func (s *Store) SchemaCurrent(ctx context.Context) (bool, error) {
 	var ledgerExists bool
-	if err := s.pool.QueryRow(ctx, "SELECT to_regclass('public.devhud_schema_migrations') IS NOT NULL").Scan(&ledgerExists); err != nil {
+	if err := s.pool.QueryRow(ctx, "SELECT to_regclass('devhud_schema_migrations') IS NOT NULL").Scan(&ledgerExists); err != nil {
 		return false, err
 	}
 	if !ledgerExists {

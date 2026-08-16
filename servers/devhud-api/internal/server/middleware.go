@@ -181,6 +181,9 @@ func observeRequests(logger *slog.Logger, repository domain.Repository, clock do
 			"http_status", status.status,
 			"duration_ms", duration.Milliseconds(),
 		)
+		if request.URL.Path == "/healthz" {
+			return
+		}
 		requestLogID, err := ids.New()
 		if err != nil {
 			return
