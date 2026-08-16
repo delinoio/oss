@@ -21,6 +21,7 @@ import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
 import java.security.KeyStore
 import java.util.Base64
+import java.util.concurrent.Executors
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -38,6 +39,7 @@ private const val notificationChannel = "deck-changes"
 )
 class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
     private var pendingAuthCallback: String? = null
+    private val secureSettingsExecutor = Executors.newSingleThreadExecutor()
 
     override fun load(webView: android.webkit.WebView) {
         captureAuthCallback(activity.intent)
@@ -139,21 +141,40 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
 
     private fun writeSecure(invoke: Invoke) {
         val args = invoke.getArgs()
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, secretKey()) }
-        val encrypted = cipher.doFinal(args.getString("value").toByteArray(Charsets.UTF_8))
-        val payload = cipher.iv + encrypted
-        activity.getSharedPreferences(storeName, Context.MODE_PRIVATE).edit()
-            .putString(settingKey(args), Base64.getEncoder().encodeToString(payload)).apply()
-        invoke.resolve(JSObject().put("kind", "ok"))
+        val key = settingKey(args)
+        val value = args.getString("value")
+        persistSecure(invoke) {
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, secretKey()) }
+            val encrypted = cipher.doFinal(value.toByteArray(Charsets.UTF_8))
+            val payload = cipher.iv + encrypted
+            activity.getSharedPreferences(storeName, Context.MODE_PRIVATE).edit()
+                .putString(key, Base64.getEncoder().encodeToString(payload)).commit()
+        }
     }
 
     private fun removeSecure(invoke: Invoke) {
-        activity.getSharedPreferences(storeName, Context.MODE_PRIVATE).edit().remove(settingKey(invoke.getArgs())).apply()
-        invoke.resolve(JSObject().put("kind", "ok"))
+        val key = settingKey(invoke.getArgs())
+        persistSecure(invoke) {
+            activity.getSharedPreferences(storeName, Context.MODE_PRIVATE).edit().remove(key).commit()
+        }
+    }
+
+    private fun persistSecure(invoke: Invoke, operation: () -> Boolean) {
+        secureSettingsExecutor.execute {
+            try {
+                if (operation()) invoke.resolve(JSObject().put("kind", "ok"))
+                else invoke.reject("storage-failure", "storage-failure")
+            } catch (error: Exception) {
+                invoke.reject("storage-failure", "storage-failure", error)
+            }
+        }
     }
 
     private fun permissionValue(): String {
-        if (Build.VERSION.SDK_INT < 33) return "authorized"
+        if (Build.VERSION.SDK_INT < 33) {
+            val manager = activity.getSystemService(NotificationManager::class.java)
+            return if (manager.areNotificationsEnabled()) "authorized" else "denied"
+        }
         return when (getPermissionState(notificationAlias)) {
             PermissionState.GRANTED -> "authorized"
             PermissionState.PROMPT, PermissionState.PROMPT_WITH_RATIONALE -> "not-determined"

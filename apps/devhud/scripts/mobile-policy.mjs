@@ -34,7 +34,22 @@ export function assertAndroidBackupExclusions({ androidManifest, androidBackupRu
   }
 }
 
-export function assertMobileContracts({ platforms, tauri, ios, android, cargo, androidManifest, androidBackupRules, androidDataExtractionRules, androidPluginManifest, iosPlist, packageJson, nativeBridge, app, workflow }) {
+export function assertAndroidNativeBridge(androidNativeBridge) {
+  assert(androidNativeBridge.includes("Executors.newSingleThreadExecutor()"), "Android secure-setting persistence must run off the command thread");
+  assert((androidNativeBridge.match(/\.commit\(\)/gu) ?? []).length === 2, "Android secure-setting writes and removals must confirm persistence");
+  assert(androidNativeBridge.includes('invoke.reject("storage-failure", "storage-failure"'), "Android secure-setting persistence failures must use storage-failure");
+  assert(androidNativeBridge.includes("areNotificationsEnabled()"), "Android notification state must honor app-level disablement");
+}
+
+export function assertMobileCi(workflow) {
+  const iosJob = workflow.match(/\n  devhud-ios-simulator:\n([\s\S]*?)(?=\n  devhud-android-emulator:)/u)?.[1] ?? "";
+  for (const [target, runner] of [["aarch64", "macos-15"], ["aarch64-sim", "macos-15"], ["x86_64", "macos-15-intel"]]) {
+    assert(iosJob.includes(`- target: ${target}\n            runner: ${runner}`), `iOS CI target ${target} must run on ${runner}`);
+  }
+  assert(iosJob.includes("ios build --target ${{ matrix.target }} --ci"), "iOS CI must build every matrix target without signing");
+}
+
+export function assertMobileContracts({ platforms, tauri, ios, android, cargo, androidManifest, androidBackupRules, androidDataExtractionRules, androidPluginManifest, androidNativeBridge, iosPlist, packageJson, nativeBridge, app, workflow }) {
   assert(platforms.schemaVersion === 1, "unsupported mobile platform schema");
   assert(platforms.identity === "io.delino.devhud" && tauri.identifier === platforms.identity, "mobile identity changed");
   assert(platforms.deepLinkScheme === "devhud", "deep-link scheme changed");
@@ -56,6 +71,7 @@ export function assertMobileContracts({ platforms, tauri, ios, android, cargo, a
   assert((androidManifest.match(/android:scheme="devhud"/gu) ?? []).length === 1, "Android must register only one devhud scheme");
   assert(androidManifest.includes('android:host="auth" android:path="/callback"'), "Android auth callback filter changed");
   assertAndroidBackupExclusions({ androidManifest, androidBackupRules, androidDataExtractionRules });
+  assertAndroidNativeBridge(androidNativeBridge);
   assert((androidPluginManifest.match(/<uses-permission/gu) ?? []).length === 1 && androidPluginManifest.includes("android.permission.POST_NOTIFICATIONS"), "Android native bridge permissions are not least-privileged");
   assert((iosPlist.match(/<string>devhud<\/string>/gu) ?? []).length === 1, "iOS must register only one devhud scheme");
   assert(!/com\.apple\.developer\.|NSExtension/iu.test(iosPlist), "uncontracted iOS entitlement or extension detected");
@@ -65,5 +81,6 @@ export function assertMobileContracts({ platforms, tauri, ios, android, cargo, a
   assert(nativeBridge.includes("readonly widgets: false"), "widget scope must remain bridge-only");
   assert(app.includes("mobile &&") && app.includes("copy.realqaMobileTitle"), "mobile RealQA unavailable state is missing");
   assert(app.includes("!mobile") && app.includes("ExternalLinkTarget.Issue"), "issue creation is not explicitly desktop-only");
-  assert(workflow.includes("devhud-mobile-contracts") && workflow.includes("devhud-ios-simulator") && workflow.includes("devhud-android-emulator"), "mobile CI validation jobs are incomplete");
+  assert(workflow.includes("devhud-mobile-contracts") && workflow.includes("devhud-android-emulator"), "mobile CI validation jobs are incomplete");
+  assertMobileCi(workflow);
 }

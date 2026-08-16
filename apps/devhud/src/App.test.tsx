@@ -92,4 +92,21 @@ describe("native App state", () => {
     expect(screen.getByText(messages.ko.diagnosticArchitecture)).toBeTruthy();
     expect(screen.getByText(messages.ko.diagnosticBridge)).toBeTruthy();
   });
+
+  it("updates the Deck state when connectivity changes", () => {
+    let online = true;
+    vi.spyOn(window.navigator, "onLine", "get").mockImplementation(() => online);
+
+    render(<App bridge={bridgeWith(async () => { throw new Error("unexpected request"); })} initialRuntime={mobileRuntime} />);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deck }));
+    expect(screen.getByText(messages.en.emptyTitle)).toBeTruthy();
+
+    online = false;
+    fireEvent(window, new Event("offline"));
+    expect(screen.getByText(messages.en.offlineTitle)).toBeTruthy();
+
+    online = true;
+    fireEvent(window, new Event("online"));
+    expect(screen.getByText(messages.en.emptyTitle)).toBeTruthy();
+  });
 });

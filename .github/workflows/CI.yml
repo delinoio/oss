@@ -918,6 +918,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - target: aarch64
+            runner: macos-15
           - target: aarch64-sim
             runner: macos-15
           - target: x86_64
@@ -949,7 +951,7 @@ jobs:
       - name: Generate pinned iOS project
         run: pnpm --filter devhud mobile:generate -- --platform ios
 
-      - name: Build iOS simulator host
+      - name: Build iOS host
         working-directory: apps/devhud
         run: node scripts/run-mobile.mjs ios build --target ${{ matrix.target }} --ci
 

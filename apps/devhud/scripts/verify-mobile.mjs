@@ -60,6 +60,7 @@ assertMobileContracts({
   androidBackupRules: text("mobile/overrides/android/app/src/main/res/xml/backup_rules.xml"),
   androidDataExtractionRules: text("mobile/overrides/android/app/src/main/res/xml/data_extraction_rules.xml"),
   androidPluginManifest: text("src-tauri/mobile/android/src/main/AndroidManifest.xml"),
+  androidNativeBridge: text("src-tauri/mobile/android/src/main/java/io/delino/devhud/bridge/DevhudNativePlugin.kt"),
   iosPlist: text("src-tauri/Info.ios.plist"),
   packageJson: json("package.json"),
   nativeBridge: text("src/native-bridge.ts"),

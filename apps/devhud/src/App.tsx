@@ -49,6 +49,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>(NotificationPermission.NotDetermined);
   const [storeConfigured, setStoreConfigured] = useState(false);
   const [authCallbackReceived, setAuthCallbackReceived] = useState(false);
+  const [online, setOnline] = useState(() => navigator.onLine);
   const search = useRef<HTMLInputElement>(null);
   const apiOriginInput = useRef<HTMLInputElement>(null);
   const paletteRef = useRef<HTMLElement>(null);
@@ -136,6 +137,15 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
     const updateSystemLanguage = () => { setSystemLanguage(resolveLanguage(LanguagePreference.System, navigator.languages)); };
     addEventListener("languagechange", updateSystemLanguage);
     return () => removeEventListener("languagechange", updateSystemLanguage);
+  }, []);
+  useEffect(() => {
+    const updateConnectivity = () => { setOnline(navigator.onLine); };
+    addEventListener("online", updateConnectivity);
+    addEventListener("offline", updateConnectivity);
+    return () => {
+      removeEventListener("online", updateConnectivity);
+      removeEventListener("offline", updateConnectivity);
+    };
   }, []);
   useEffect(() => {
     const media = matchMedia("(prefers-color-scheme: dark)");
@@ -248,7 +258,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
       {surface === SurfaceId.Home && <><p className="eyebrow">{copy.available}</p><h2>{copy.welcome}</h2><p>{copy.homeSummary}</p></>}
       {surface === SurfaceId.Realqa && mobile && <><p className="eyebrow">{copy.desktopOnly}</p><h2>{copy.realqaMobileTitle}</h2><p>{copy.realqaMobileSummary}</p><p className="notice">{copy.unavailable}</p></>}
       {surface === SurfaceId.Realqa && !mobile && <><p className="eyebrow">{copy.realqa}</p><h2>{copy.realqaTitle}</h2><p>{copy.realqaSummary}</p><div className="disabled-actions">{unavailableCaptureActions.map((action) => <button disabled key={action.id}>{copy[action.title]}</button>)}</div><p className="notice">{copy.planned}</p></>}
-      {surface === SurfaceId.Deck && <><p className="eyebrow">{copy.deck}</p><h2>{copy.deckTitle}</h2><p>{copy.deckSummary}</p>{navigator.onLine ? <EmptyState copy={copy} /> : <OfflineState copy={copy} />}</>}
+      {surface === SurfaceId.Deck && <><p className="eyebrow">{copy.deck}</p><h2>{copy.deckTitle}</h2><p>{copy.deckSummary}</p>{online ? <EmptyState copy={copy} /> : <OfflineState copy={copy} />}</>}
       {surface === SurfaceId.Settings && <><p className="eyebrow">{copy.settings}</p><h2>{copy.settingsTitle}</h2><p>{copy.settingsSummary}</p><label>{copy.theme}<select value={preferences.theme} onChange={(event) => update({ theme: event.target.value as ThemePreference })}>{Object.values(ThemePreference).map((value) => <option key={value} value={value}>{copy[value]}</option>)}</select></label><label>{copy.language}<select value={preferences.language} onChange={(event) => update({ language: event.target.value as LanguagePreference })}><option value="system">{copy.system}</option><option value="en">{copy.english}</option><option value="ko">{copy.korean}</option></select></label>{supportsLaunchAtLogin && <><label className="check"><input type="checkbox" checked={preferences.launchAtLogin} onChange={(event) => { update({ launchAtLogin: event.target.checked }); void browserShell.setLaunchAtLogin(event.target.checked); }} />{copy.launchAtLogin}</label><p>{copy.launchAtLoginHint}</p></>}{runtime?.capabilities.notifications && <div className="native-setting"><button className="primary" onClick={() => void requestNotifications()}>{copy.notificationPermission}</button><output aria-live="polite">{copy[notificationPermissionLabels[notificationPermission]]}</output></div>}{runtime?.capabilities.storeUpdates && <div className="native-setting"><p>{copy.updatePolicy}</p>{storeConfigured && <button className="primary" onClick={() => void openStore()}>{copy.updatePolicy}</button>}</div>}</>}
       {surface === SurfaceId.Account && <><p className="eyebrow">{copy.account}</p><h2>{copy.accountTitle}</h2><p>{copy.accountSummary}</p><label>{copy.apiOrigin}<input ref={apiOriginInput} value={preferences.apiOrigin} onChange={(event) => update({ apiOrigin: event.target.value })} /></label><p>{copy.apiOriginHint}</p><div className="actions"><button onClick={() => void external(ExternalLinkTarget.Authentication)}>{copy.signIn}</button><button onClick={() => void external(ExternalLinkTarget.Pat)}>{copy.pat}</button>{!mobile && <button onClick={() => void external(ExternalLinkTarget.Issue)}>{copy.issue}</button>}</div>{authCallbackReceived && <p role="status">{copy.runtimeReady}</p>}{externalMessage && <p className="external-message" role={externalMessageIsError ? "alert" : "status"}>{externalMessageText}</p>}</>}
       {surface === SurfaceId.Diagnostics && <><p className="eyebrow">{copy.diagnostics}</p><h2>{copy.diagnosticsTitle}</h2><p>{copy.diagnosticsSummary}</p><p className="notice">{copy.diagnosticsUnavailable}</p>{runtime && <dl className="runtime-diagnostics"><dt>{copy.diagnosticPlatform}</dt><dd>{runtime.platform}</dd><dt>{copy.diagnosticArchitecture}</dt><dd>{runtime.architecture}</dd><dt>{copy.diagnosticBridge}</dt><dd>v{runtime.bridgeVersion}</dd></dl>}</>}

@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { assertAndroidBackupExclusions, assertMobileContracts, assertMobileTargets } from "./mobile-policy.mjs";
+import { assertAndroidBackupExclusions, assertAndroidNativeBridge, assertMobileCi, assertMobileContracts, assertMobileTargets } from "./mobile-policy.mjs";
 
 const appRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const mobileTargets = JSON.parse(readFileSync(join(appRoot, "mobile-platforms.json"), "utf8")).targets;
@@ -33,12 +33,26 @@ test("mobile policy excludes encrypted preferences from every Android backup pat
   assert.throws(() => assertAndroidBackupExclusions({ ...policies, androidDataExtractionRules: policies.androidDataExtractionRules.replace("devhud-secure-settings-v1.xml", "other.xml") }), /cloud-backup secure-setting exclusion/u);
 });
 
+test("mobile policy requires checked Android persistence and app-level notification state", () => {
+  const androidNativeBridge = readFileSync(join(appRoot, "src-tauri/mobile/android/src/main/java/io/delino/devhud/bridge/DevhudNativePlugin.kt"), "utf8");
+  assert.doesNotThrow(() => assertAndroidNativeBridge(androidNativeBridge));
+  assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace(".commit()", ".apply()")), /writes and removals must confirm persistence/u);
+  assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace("areNotificationsEnabled()", "isNotificationPolicyAccessGranted")), /app-level disablement/u);
+});
+
+test("mobile policy requires production and simulator iOS builds", () => {
+  const workflow = readFileSync(join(appRoot, "../../.github/workflows/CI.yml"), "utf8");
+  assert.doesNotThrow(() => assertMobileCi(workflow));
+  const withoutDeviceBuild = workflow.replace("          - target: aarch64\n            runner: macos-15\n", "");
+  assert.throws(() => assertMobileCi(withoutDeviceBuild), /iOS CI target aarch64/u);
+});
+
 test("mobile policy rejects release networking and CEF leakage", () => {
   const base = {
     platforms: { schemaVersion: 1, identity: "io.delino.devhud", deepLinkScheme: "devhud", authCallback: "devhud://auth/callback", frontendDist: "../dist", minimumVersions: { ios: "16.0", androidApi: 29 }, targets: mobileTargets },
     tauri: { identifier: "io.delino.devhud", build: { frontendDist: "../dist" } },
     ios: { bundle: { iOS: { minimumSystemVersion: "16.0" } } },
-    android: { bundle: { android: { minSdkVersion: 29 } } }, cargo: "", androidManifest: "android.permission.INTERNET", androidPluginManifest: "", iosPlist: "", packageJson: { scripts: {} }, nativeBridge: "", app: "", workflow: "",
+    android: { bundle: { android: { minSdkVersion: 29 } } }, cargo: "", androidManifest: "android.permission.INTERNET", androidPluginManifest: "", androidNativeBridge: "", iosPlist: "", packageJson: { scripts: {} }, nativeBridge: "", app: "", workflow: "",
   };
   assert.throws(() => assertMobileContracts(base), /system-webview features/u);
 });
