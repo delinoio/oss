@@ -41,6 +41,7 @@ gtk = "0.18"
 default = []
 cli = ["dep:tauri-cli"]
 custom-protocol = ["tauri/custom-protocol"]
+desktop-cef = ["tauri/cef"]
 
 [lib]
 name = "devhud_lib"

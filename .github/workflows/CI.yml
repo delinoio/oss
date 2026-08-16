@@ -951,6 +951,12 @@ jobs:
       - name: Generate pinned iOS project
         run: pnpm --filter devhud mobile:generate -- --platform ios
 
+      # cargo-mobile2 selects a named simulator on Intel. Initialize
+      # CoreSimulator first so Xcode exposes devices instead of placeholders.
+      - name: Initialize Intel iOS simulators
+        if: ${{ matrix.target == 'x86_64' }}
+        run: xcrun simctl list > /dev/null
+
       - name: Build iOS host
         working-directory: apps/devhud
         run: node scripts/run-mobile.mjs ios build --target ${{ matrix.target }} --ci --no-sign

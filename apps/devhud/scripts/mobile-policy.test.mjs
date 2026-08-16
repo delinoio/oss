@@ -67,6 +67,7 @@ test("mobile policy requires production and simulator iOS builds", () => {
   assert.doesNotThrow(() => assertMobileCi(workflow));
   const withoutDeviceBuild = workflow.replace("          - target: aarch64\n            runner: macos-15\n", "");
   assert.throws(() => assertMobileCi(withoutDeviceBuild), /iOS CI target aarch64/u);
+  assert.throws(() => assertMobileCi(workflow.replace("xcrun simctl list > /dev/null", "true")), /initialize simulator devices/u);
   assert.throws(() => assertMobileCi(workflow.replace(" --no-sign", "")), /without signing/u);
 });
 

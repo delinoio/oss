@@ -21,10 +21,10 @@ const configOverrides = [
 ];
 
 test("forwards the desktop CEF feature to the pinned Tauri command", () => {
-  assert.deepEqual(desktopTauriArguments("dev", []), ["dev", "--features", "tauri/cef"]);
+  assert.deepEqual(desktopTauriArguments("dev", []), ["dev", "--features", "desktop-cef"]);
   assert.deepEqual(
     desktopTauriArguments("build", ["--bundles", "app"]),
-    ["build", "--features", "tauri/cef", "--bundles", "app"],
+    ["build", "--features", "desktop-cef", "--bundles", "app"],
   );
 });
 
