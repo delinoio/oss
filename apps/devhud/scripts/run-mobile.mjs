@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 
-import { copyFileSync, existsSync, mkdirSync, readdirSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { basename, dirname, extname, join, resolve } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { exitLikeChild, spawnDevServer } from "../../../scripts/spawn-dev-server.mjs";
@@ -14,6 +17,8 @@ const targets = {
 };
 const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = resolve(appRoot, "../..");
+const scriptPath = fileURLToPath(import.meta.url);
+const iosOptionsPath = join(tmpdir(), "io.delino.devhud-server-addr");
 
 function targetValues(arguments_) {
   return arguments_.flatMap((argument, index) => {
@@ -66,16 +71,95 @@ export function mobileCargoArguments(rawArguments) {
 
 export function mobileExecution(rawArguments) {
   const cargoArguments = mobileCargoArguments(rawArguments);
+  const [platform, command, ...forwarded] = rawArguments;
+  const requestedTargets = targetValues(forwarded);
+  const nonTargetArguments = forwarded.filter((argument, index) => (
+    argument !== "--target"
+    && forwarded[index - 1] !== "--target"
+    && !argument.startsWith("--target=")
+  ));
+  const directIntelSimulatorBuild = platform === "ios"
+    && command === "build"
+    && requestedTargets.length === 1
+    && requestedTargets[0] === "x86_64"
+    && nonTargetArguments.every((argument) => argument === "--ci" || argument === "--no-sign");
+  if (directIntelSimulatorBuild) {
+    return {
+      command: "xcodebuild",
+      prerequisites: [{ command: "pnpm", arguments: ["build:frontend"] }],
+      optionsServerArguments: [...rawArguments, "--open"],
+      arguments: [
+        "-workspace", "src-tauri/gen/apple/devhud.xcodeproj/project.xcworkspace",
+        "-scheme", "devhud_iOS",
+        "-sdk", "iphonesimulator",
+        "-configuration", "release",
+        "-destination", "generic/platform=iOS Simulator",
+        "ARCHS=x86_64",
+        "CODE_SIGNING_ALLOWED=NO",
+        "build",
+      ],
+    };
+  }
   return { command: "cargo", arguments: cargoArguments };
 }
 
-export async function runMobile(rawArguments) {
-  const execution = mobileExecution(rawArguments);
+function childOutcome(child) {
+  let settled = false;
+  const promise = new Promise((resolve) => {
+    const finish = (result) => {
+      settled = true;
+      resolve(result);
+    };
+    child.once("error", (error) => finish({ error }));
+    child.once("exit", (code, signal) => finish({ code, signal }));
+  });
+  return { promise, settled: () => settled };
+}
+
+async function waitForOptionsServer(child, outcome, timeoutMs = 120_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (existsSync(iosOptionsPath) && statSync(iosOptionsPath).size > 0) return;
+    if (outcome.settled() || child.exitCode !== null || child.signalCode !== null) {
+      const result = await outcome.promise;
+      throw result.error ?? new Error(`devhud: iOS options server stopped before Xcode started (${result.signal ?? `exit ${result.code}`})`);
+    }
+    await delay(100);
+  }
+  throw new Error("devhud: timed out waiting for the pinned Tauri iOS options server");
+}
+
+async function runIntelSimulator(execution) {
+  rmSync(iosOptionsPath, { force: true });
+  const optionsServer = spawn(
+    process.execPath,
+    [scriptPath, "--options-server", ...execution.optionsServerArguments],
+    { cwd: appRoot, stdio: "inherit", shell: false },
+  );
+  const outcome = childOutcome(optionsServer);
+  let result;
+  try {
+    await waitForOptionsServer(optionsServer, outcome);
+    result = await spawnDevServer(execution.command, execution.arguments, { cwd: appRoot, stdio: "inherit", shell: false }, { terminateProcessTree: true });
+  } finally {
+    if (optionsServer.exitCode === null && optionsServer.signalCode === null) optionsServer.kill("SIGTERM");
+    await outcome.promise;
+    rmSync(iosOptionsPath, { force: true });
+  }
+  return result;
+}
+
+export async function runMobile(rawArguments, { forceCargo = false } = {}) {
+  const execution = forceCargo
+    ? { command: "cargo", arguments: mobileCargoArguments(rawArguments) }
+    : mobileExecution(rawArguments);
   for (const prerequisite of execution.prerequisites ?? []) {
     const prerequisiteResult = await spawnDevServer(prerequisite.command, prerequisite.arguments, { cwd: appRoot, stdio: "inherit", shell: false }, { terminateProcessTree: true });
     if (prerequisiteResult.code !== 0 || prerequisiteResult.signal) exitLikeChild(prerequisiteResult);
   }
-  const result = await spawnDevServer(execution.command, execution.arguments, { cwd: appRoot, stdio: "inherit", shell: false }, { terminateProcessTree: true });
+  const result = execution.optionsServerArguments
+    ? await runIntelSimulator(execution)
+    : await spawnDevServer(execution.command, execution.arguments, { cwd: appRoot, stdio: "inherit", shell: false }, { terminateProcessTree: true });
   const [platform, command, ...forwarded] = rawArguments;
   const target = targetValues(forwarded).at(-1);
   if (result.code === 0 && !result.signal && platform === "android" && command === "build" && target) {
@@ -86,7 +170,9 @@ export async function runMobile(rawArguments) {
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
-    await runMobile(process.argv.slice(2));
+    const rawArguments = process.argv.slice(2);
+    const optionsServer = rawArguments[0] === "--options-server";
+    await runMobile(optionsServer ? rawArguments.slice(1) : rawArguments, { forceCargo: optionsServer });
   } catch (error) {
     console.error(error.message);
     process.exit(1);

@@ -19,12 +19,20 @@ test("does not permit callers to replace pinned platform configuration", () => {
   assert.throws(() => mobileCargoArguments(["ios", "build", "--config", "other.json"]), /overrides are not allowed/u);
 });
 
-test("keeps the pinned Tauri options server alive for Intel iOS builds", () => {
+test("builds Intel iOS through Xcode while keeping the pinned Tauri options server alive", () => {
   const execution = mobileExecution(["ios", "build", "--target", "x86_64", "--ci", "--no-sign"]);
-  assert.equal(execution.command, "cargo");
+  assert.equal(execution.command, "xcodebuild");
+  assert.deepEqual(execution.prerequisites, [{ command: "pnpm", arguments: ["build:frontend"] }]);
+  assert.deepEqual(execution.optionsServerArguments, ["ios", "build", "--target", "x86_64", "--ci", "--no-sign", "--open"]);
   assert.deepEqual(execution.arguments, [
-    "run", "--locked", "--manifest-path", "src-tauri/Cargo.toml", "--features", "cli",
-    "--bin", "devhud-tauri-cli", "--", "ios", "build", "--target", "x86_64", "--ci", "--no-sign",
+    "-workspace", "src-tauri/gen/apple/devhud.xcodeproj/project.xcworkspace",
+    "-scheme", "devhud_iOS",
+    "-sdk", "iphonesimulator",
+    "-configuration", "release",
+    "-destination", "generic/platform=iOS Simulator",
+    "ARCHS=x86_64",
+    "CODE_SIGNING_ALLOWED=NO",
+    "build",
   ]);
   assert.equal(mobileExecution(["ios", "build", "--target", "aarch64-sim", "--ci", "--no-sign"]).command, "cargo");
 });
