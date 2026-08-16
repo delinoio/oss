@@ -42,6 +42,8 @@ test("sanitizes each persisted preference independently", () => {
   assert.equal(isValidApiOrigin("http://126.255.255.255:46307/"), false);
   assert.equal(isValidApiOrigin("https://devhud.api.delino.io/"), true);
   assert.equal(isValidApiOrigin("https://devhud.api.delino.io/path"), false);
+  assert.equal(isValidApiOrigin("https://devhud.api.delino.io/?"), false);
+  assert.equal(isValidApiOrigin("https://devhud.api.delino.io/#"), false);
 });
 
 test("describes Korean diagnostics as redacted rather than deleted", () => {

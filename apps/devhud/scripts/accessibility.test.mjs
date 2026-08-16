@@ -98,8 +98,12 @@ test("document preferences are synchronized before the first localized render", 
   assert.match(main, /synchronizeDocumentPreferences\(document\.documentElement, preferences, matchMedia\("\(prefers-color-scheme: dark\)"\)\.matches, navigator\.languages\); createRoot\(root\)\.render/u);
 });
 
-test("system-theme changes retain the current language preference", () => {
-  assert.match(app, /\}, \[preferences\.language, preferences\.theme\]\);/u);
+test("system language changes synchronize the rendered copy, document language, and tray", () => {
+  assert.match(app, /const \[systemLanguage, setSystemLanguage\] = useState\(\(\) => resolveLanguage\(LanguagePreference\.System, navigator\.languages\)\);/u);
+  assert.match(app, /addEventListener\("languagechange", updateSystemLanguage\);/u);
+  assert.match(app, /removeEventListener\("languagechange", updateSystemLanguage\);/u);
+  assert.match(app, /preferences\.language === LanguagePreference\.System \? systemLanguage : preferences\.language/u);
+  assert.match(app, /\}, \[preferences\.language, preferences\.theme, language\]\);/u);
 });
 
 test("resolved themes apply their native control color scheme", () => {
@@ -141,7 +145,8 @@ test("API-origin edits and local onboarding completion clear stale external mess
   assert.match(app, /const update = \(next: Partial<Preferences>\) => \{\s+if \("apiOrigin" in next\) setExternalMessage\(null\);/u);
   assert.match(app, /const signInAttempt = useRef\(0\);/u);
   assert.match(app, /const finishOnboarding = \(\) => \{\s+signInAttempt\.current \+= 1;\s+setExternalMessage\(null\);/u);
-  assert.match(app, /const attempt = signInAttempt\.current \+ 1;\s+signInAttempt\.current = attempt;\s+if \(await external\(ExternalLinkTarget\.Authentication\) && attempt === signInAttempt\.current\) finishOnboarding\(\);/u);
+  assert.match(app, /const external = async \(target: ExternalLinkTarget, attempt\?: number\) => \{\s+const updateExternalMessage = \(message: ExternalMessage \| null\) => \{\s+if \(attempt === undefined \|\| attempt === signInAttempt\.current\) setExternalMessage\(message\);/u);
+  assert.match(app, /const attempt = signInAttempt\.current \+ 1;\s+signInAttempt\.current = attempt;\s+if \(await external\(ExternalLinkTarget\.Authentication, attempt\) && attempt === signInAttempt\.current\) finishOnboarding\(\);/u);
 });
 
 test("RealQA exposes unsupported capture actions as disabled controls", () => {

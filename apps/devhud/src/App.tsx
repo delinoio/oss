@@ -16,13 +16,14 @@ export function App() {
   const [palette, setPalette] = useState(false);
   const [query, setQuery] = useState("");
   const [externalMessage, setExternalMessage] = useState<ExternalMessage | null>(null);
+  const [systemLanguage, setSystemLanguage] = useState(() => resolveLanguage(LanguagePreference.System, navigator.languages));
   const search = useRef<HTMLInputElement>(null);
   const apiOriginInput = useRef<HTMLInputElement>(null);
   const paletteRef = useRef<HTMLElement>(null);
   const paletteTrigger = useRef<HTMLButtonElement>(null);
   const rightModifier = useRef<"ControlRight" | "MetaRight" | null>(null);
   const signInAttempt = useRef(0);
-  const language = resolveLanguage(preferences.language, navigator.languages);
+  const language = preferences.language === LanguagePreference.System ? systemLanguage : preferences.language;
   const copy = messages[language];
   const update = (next: Partial<Preferences>) => {
     if ("apiOrigin" in next) setExternalMessage(null);
@@ -44,12 +45,17 @@ export function App() {
     void setTrayLanguage(language).catch(() => {});
   }, [language]);
   useEffect(() => {
+    const updateSystemLanguage = () => { setSystemLanguage(resolveLanguage(LanguagePreference.System, navigator.languages)); };
+    addEventListener("languagechange", updateSystemLanguage);
+    return () => removeEventListener("languagechange", updateSystemLanguage);
+  }, []);
+  useEffect(() => {
     const media = matchMedia("(prefers-color-scheme: dark)");
     const updateTheme = () => { synchronizeDocumentPreferences(document.documentElement, preferences, media.matches, navigator.languages); };
     updateTheme();
     media.addEventListener("change", updateTheme);
     return () => media.removeEventListener("change", updateTheme);
-  }, [preferences.language, preferences.theme]);
+  }, [preferences.language, preferences.theme, language]);
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
       const platformModifier = isMac ? "MetaRight" : "ControlRight";
@@ -100,18 +106,21 @@ export function App() {
       first.focus();
     }
   };
-  const external = async (target: ExternalLinkTarget) => {
-    setExternalMessage(null);
+  const external = async (target: ExternalLinkTarget, attempt?: number) => {
+    const updateExternalMessage = (message: ExternalMessage | null) => {
+      if (attempt === undefined || attempt === signInAttempt.current) setExternalMessage(message);
+    };
+    updateExternalMessage(null);
     if (target === ExternalLinkTarget.Authentication && !isValidApiOrigin(preferences.apiOrigin)) {
-      setExternalMessage("invalid-api-origin");
+      updateExternalMessage("invalid-api-origin");
       return false;
     }
     try {
       await browserShell.openExternal(target, preferences.apiOrigin);
-      setExternalMessage("opened");
+      updateExternalMessage("opened");
       return true;
     } catch {
-      setExternalMessage("failed");
+      updateExternalMessage("failed");
       return false;
     }
   };
@@ -125,7 +134,7 @@ export function App() {
   const startSignIn = async () => {
     const attempt = signInAttempt.current + 1;
     signInAttempt.current = attempt;
-    if (await external(ExternalLinkTarget.Authentication) && attempt === signInAttempt.current) finishOnboarding();
+    if (await external(ExternalLinkTarget.Authentication, attempt) && attempt === signInAttempt.current) finishOnboarding();
   };
   const supportsLaunchAtLogin = desktopCapabilities.available.has(PlatformCapability.LaunchAtLogin);
   const externalMessageText = externalMessage === "invalid-api-origin" ? copy.invalidApiOrigin : externalMessage === "opened" ? copy.externalOpened : copy.externalFailed;
