@@ -22,8 +22,7 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) (returnErr error) {
 	}
 
 	if _, err := connection.Exec(ctx, "SELECT pg_advisory_lock($1)", migrationAdvisoryLock); err != nil {
-		connection.Release()
-		return fmt.Errorf("lock migrations: %w", err)
+		return errors.Join(fmt.Errorf("lock migrations: %w", err), discardPoolConnection(connection))
 	}
 	defer func() {
 		returnErr = errors.Join(returnErr, releaseMigrationLock(ctx, connection))

@@ -132,6 +132,57 @@ func TestMigrationLockCleanupDiscardsSessionWhenLockWasNotHeld(t *testing.T) {
 	}
 }
 
+func TestMigrationLockAcquisitionErrorDiscardsSession(t *testing.T) {
+	databaseURL := os.Getenv("DEVHUD_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("DEVHUD_TEST_DATABASE_URL is not set")
+	}
+	ctx := context.Background()
+	configuration, err := pgxpool.ParseConfig(databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	configuration.MaxConns = 1
+	configuration.MinConns = 0
+	cancelAcquisition := func() {}
+	var failedSessionPID uint32
+	cancelOnAcquire := false
+	configuration.BeforeAcquire = func(_ context.Context, connection *pgx.Conn) bool {
+		if cancelOnAcquire {
+			cancelOnAcquire = false
+			failedSessionPID = connection.PgConn().PID()
+			cancelAcquisition()
+		}
+		return true
+	}
+	pool, err := pgxpool.NewWithConfig(ctx, configuration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	if err := pool.Ping(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	acquisitionContext, cancel := context.WithCancel(ctx)
+	cancelAcquisition = cancel
+	cancelOnAcquire = true
+	if err := Migrate(acquisitionContext, pool); !errors.Is(err, context.Canceled) {
+		t.Fatalf("migration lock acquisition error = %v, want context cancellation", err)
+	}
+	cancel()
+
+	replacement, err := pool.Acquire(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replacementPID := replacement.Conn().PgConn().PID()
+	replacement.Release()
+	if failedSessionPID == 0 || replacementPID == failedSessionPID {
+		t.Fatalf("migration acquisition-error session was reused: failed PID=%d replacement PID=%d", failedSessionPID, replacementPID)
+	}
+}
+
 func TestFoundationTransactionsAndRetention(t *testing.T) {
 	databaseURL := os.Getenv("DEVHUD_TEST_DATABASE_URL")
 	if databaseURL == "" {

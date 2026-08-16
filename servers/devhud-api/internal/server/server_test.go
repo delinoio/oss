@@ -74,6 +74,28 @@ func TestHealthzDoesNotPersistRequestMetadata(t *testing.T) {
 	}
 }
 
+func TestDatabaseBackedHandlerHasServerDeadlineWithoutClientTimeout(t *testing.T) {
+	repository := &deadlineRepository{observations: make(chan deadlineObservation, 1)}
+	handler := testHandlerWithRepositoryAndVerifier(t, repository, validVerifier{})
+	testServer := httptest.NewServer(handler)
+	defer testServer.Close()
+	client := devhudv1connect.NewSettingsServiceClient(http.DefaultClient, testServer.URL)
+	request := connect.NewRequest(&devhudv1.GetSettingsRequest{})
+	request.Header().Set("Authorization", "Bearer valid")
+	if _, err := client.GetSettings(context.Background(), request); err != nil {
+		t.Fatal(err)
+	}
+
+	observation := <-repository.observations
+	if !observation.ok {
+		t.Fatal("database-backed handler context has no deadline")
+	}
+	remaining := observation.deadline.Sub(observation.observedAt)
+	if remaining < handlerExecutionTimeout-time.Second || remaining > handlerExecutionTimeout {
+		t.Fatalf("handler deadline remaining = %v, want approximately %v", remaining, handlerExecutionTimeout)
+	}
+}
+
 func TestSettingsRequiresAuthenticationWithCorrelationDetail(t *testing.T) {
 	handler, _ := testHandler(t)
 	testServer := httptest.NewServer(handler)
@@ -319,6 +341,11 @@ func testHandler(t *testing.T) (http.Handler, *fakeRepository) {
 func testHandlerWithVerifier(t *testing.T, verifier auth.Verifier) (http.Handler, *fakeRepository) {
 	t.Helper()
 	repository := &fakeRepository{}
+	return testHandlerWithRepositoryAndVerifier(t, repository, verifier), repository
+}
+
+func testHandlerWithRepositoryAndVerifier(t *testing.T, repository domain.Repository, verifier auth.Verifier) http.Handler {
+	t.Helper()
 	httpServer, err := New(Dependencies{
 		Config: config.Config{
 			Environment: config.EnvironmentDevelopment, ListenAddress: "127.0.0.1:46307", APIVersion: "test", LogtoIssuer: "https://issuer.example",
@@ -335,7 +362,7 @@ func testHandlerWithVerifier(t *testing.T, verifier auth.Verifier) (http.Handler
 	if err != nil {
 		t.Fatal(err)
 	}
-	return httpServer.Handler, repository
+	return httpServer.Handler
 }
 
 type fakeVerifier struct{}
@@ -348,6 +375,12 @@ type panicVerifier struct{}
 
 func (panicVerifier) Verify(context.Context, string) (domain.Identity, error) {
 	panic("test panic")
+}
+
+type validVerifier struct{}
+
+func (validVerifier) Verify(context.Context, string) (domain.Identity, error) {
+	return domain.Identity{Issuer: "https://issuer.example", Subject: "subject"}, nil
 }
 
 type fixedClock struct{ now time.Time }
@@ -364,6 +397,23 @@ func (randomIDs) New() (string, error) {
 type fakeRepository struct {
 	mu       sync.Mutex
 	requests []domain.RequestLog
+}
+
+type deadlineObservation struct {
+	deadline   time.Time
+	observedAt time.Time
+	ok         bool
+}
+
+type deadlineRepository struct {
+	fakeRepository
+	observations chan deadlineObservation
+}
+
+func (repository *deadlineRepository) ProvisionUser(ctx context.Context, _ domain.Identity) (domain.User, error) {
+	deadline, ok := ctx.Deadline()
+	repository.observations <- deadlineObservation{deadline: deadline, observedAt: time.Now(), ok: ok}
+	return domain.User{ID: "user"}, nil
 }
 
 func (repository *fakeRepository) requestCount() int {

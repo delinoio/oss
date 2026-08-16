@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -14,6 +15,8 @@ import (
 	"github.com/delinoio/oss/servers/devhud-api/internal/rpc"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
+
+const handlerExecutionTimeout = 25 * time.Second
 
 type Dependencies struct {
 	Config         config.Config
@@ -73,7 +76,7 @@ func New(dependencies Dependencies) (*http.Server, error) {
 		return nil, err
 	}
 
-	var handler http.Handler = mux
+	var handler http.Handler = withHandlerExecutionDeadline(mux, handlerExecutionTimeout)
 	handler = connectErrorMetadata(connectPaths, handler)
 	handler = otelhttp.NewHandler(handler, "devhud-api")
 	handler = requireHTTPS(dependencies.Config.Environment, dependencies.Config.TrustedProxyCIDRs, handler)
@@ -90,6 +93,14 @@ func New(dependencies Dependencies) (*http.Server, error) {
 		WriteTimeout:      30 * time.Second,
 		IdleTimeout:       2 * time.Minute,
 	}, nil
+}
+
+func withHandlerExecutionDeadline(next http.Handler, timeout time.Duration) http.Handler {
+	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		ctx, cancel := context.WithTimeout(request.Context(), timeout)
+		defer cancel()
+		next.ServeHTTP(response, request.WithContext(ctx))
+	})
 }
 
 func writeJSON(response http.ResponseWriter, status int, value any) {
