@@ -122,7 +122,10 @@ fn open_external(target: String, api_origin: String) -> Result<(), String> {
     let result = Command::new("explorer.exe").arg(&destination).spawn();
     #[cfg(target_os = "linux")]
     let result = Command::new("xdg-open").arg(&destination).spawn();
-    let child = result.map_err(|_| "unable to open system browser".to_string())?;
+    let child = result.map_err(|reason| {
+        error!(event = "external_opener_spawn_failed", %reason);
+        "unable to open system browser".to_string()
+    })?;
     wait_for_external_opener(child)
 }
 
