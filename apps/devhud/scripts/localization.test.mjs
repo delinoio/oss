@@ -29,6 +29,8 @@ test("sanitizes each persisted preference independently", () => {
   assert.deepEqual(readPreferences({ getItem: () => stored }), defaultPreferences);
   const valid = JSON.stringify({ version: 1, theme: ThemePreference.Dark, language: LanguagePreference.Korean, apiOrigin: "http://127.0.0.1:46307/", launchAtLogin: true });
   assert.deepEqual(readPreferences({ getItem: () => valid }), { version: 1, theme: ThemePreference.Dark, language: LanguagePreference.Korean, apiOrigin: "http://127.0.0.1:46307/", launchAtLogin: true });
+  assert.equal(isValidApiOrigin("http://127.0.0.2:46307/"), true);
+  assert.equal(isValidApiOrigin("http://126.255.255.255:46307/"), false);
   assert.equal(isValidApiOrigin("https://devhud.api.delino.io/"), true);
   assert.equal(isValidApiOrigin("https://devhud.api.delino.io/path"), false);
 });

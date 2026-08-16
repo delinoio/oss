@@ -4,6 +4,7 @@ mod platform;
 mod resources;
 
 use std::{
+    net::IpAddr,
     process::{Child, Command},
     sync::{
         Arc,
@@ -69,10 +70,13 @@ fn set_tray_language(
 
 fn validated_api_origin(origin: &str) -> Option<String> {
     let url = tauri::Url::parse(origin).ok()?;
-    let loopback = matches!(
-        url.host_str(),
-        Some("localhost") | Some("127.0.0.1") | Some("[::1]") | Some("::1")
-    );
+    let loopback = url.host_str().is_some_and(|host| {
+        host == "localhost"
+            || host
+                .trim_matches(['[', ']'])
+                .parse::<IpAddr>()
+                .is_ok_and(|ip| ip.is_loopback())
+    });
     if url.username().is_empty()
         && url.password().is_none()
         && url.query().is_none()
@@ -664,6 +668,10 @@ mod review_tests {
         assert_eq!(
             external_destination("authentication", "http://[::1]:46307"),
             Some("http://[::1]:46307/".to_string())
+        );
+        assert_eq!(
+            external_destination("authentication", "http://127.0.0.2:46307"),
+            Some("http://127.0.0.2:46307/".to_string())
         );
         assert_eq!(
             external_destination("documentation", "https://example.test"),
