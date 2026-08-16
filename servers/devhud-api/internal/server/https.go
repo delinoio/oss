@@ -32,7 +32,8 @@ func forwardedHTTPS(request *http.Request, trustedProxyCIDRs []*net.IPNet) bool 
 			break
 		}
 	}
-	return trusted && strings.EqualFold(strings.TrimSpace(strings.Split(request.Header.Get("X-Forwarded-Proto"), ",")[0]), "https")
+	forwardedProtocols := request.Header.Values("X-Forwarded-Proto")
+	return trusted && len(forwardedProtocols) == 1 && strings.EqualFold(strings.TrimSpace(forwardedProtocols[0]), "https")
 }
 
 func loopbackPeer(remoteAddress string) bool {

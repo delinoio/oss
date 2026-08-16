@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io/fs"
 	"sort"
-	"strings"
 
 	"github.com/delinoio/oss/servers/devhud-api/migrations"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -34,11 +33,10 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 		return fmt.Errorf("create migration ledger: %w", err)
 	}
 
-	entries, err := fs.Glob(migrations.Files, "*.sql")
+	entries, err := expectedMigrationVersions()
 	if err != nil {
 		return fmt.Errorf("list migrations: %w", err)
 	}
-	sort.Strings(entries)
 	for _, version := range entries {
 		var applied bool
 		if err := connection.QueryRow(ctx, "SELECT EXISTS (SELECT 1 FROM devhud_schema_migrations WHERE version = $1)", version).Scan(&applied); err != nil {
@@ -70,16 +68,11 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	return nil
 }
 
-func expectedMigrationCount() int {
+func expectedMigrationVersions() ([]string, error) {
 	entries, err := fs.Glob(migrations.Files, "*.sql")
 	if err != nil {
-		return 0
+		return nil, err
 	}
-	count := 0
-	for _, entry := range entries {
-		if strings.HasSuffix(entry, ".sql") {
-			count++
-		}
-	}
-	return count
+	sort.Strings(entries)
+	return entries, nil
 }

@@ -36,6 +36,26 @@ func TestFoundationTransactionsAndRetention(t *testing.T) {
 	if current, err := store.SchemaCurrent(ctx); err != nil || !current {
 		t.Fatalf("schema current = %v, err=%v", current, err)
 	}
+	expectedVersions, err := expectedMigrationVersions()
+	if err != nil || len(expectedVersions) == 0 {
+		t.Fatalf("expected migration versions = %v, err=%v", expectedVersions, err)
+	}
+	missingVersion := expectedVersions[0]
+	if _, err := pool.Exec(ctx, "DELETE FROM devhud_schema_migrations WHERE version = $1", missingVersion); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, "INSERT INTO devhud_schema_migrations (version) VALUES ('99999_unknown.sql')"); err != nil {
+		t.Fatal(err)
+	}
+	if current, err := store.SchemaCurrent(ctx); err != nil || current {
+		t.Fatalf("schema with equal-count ledger drift current = %v, err=%v", current, err)
+	}
+	if _, err := pool.Exec(ctx, "DELETE FROM devhud_schema_migrations WHERE version = '99999_unknown.sql'"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, "INSERT INTO devhud_schema_migrations (version) VALUES ($1)", missingVersion); err != nil {
+		t.Fatal(err)
+	}
 
 	identity := domain.Identity{
 		Issuer: "https://issuer.example", Subject: "subject", DisplayName: "User", Email: "user@example.com",
@@ -45,6 +65,9 @@ func TestFoundationTransactionsAndRetention(t *testing.T) {
 	user, err := store.ProvisionUser(ctx, identity)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if _, err := store.RestoreAccount(ctx, user.ID, clock.Now()); !accountFailureIs(err, domain.AccountFailureRecoveryExpired) {
+		t.Fatalf("never-deleted account restore error = %v", err)
 	}
 	if snapshot, err := store.GetSettings(ctx, user.ID); err != nil || snapshot != nil {
 		t.Fatalf("initial settings = %+v, err=%v", snapshot, err)
@@ -97,6 +120,12 @@ func TestFoundationTransactionsAndRetention(t *testing.T) {
 	if err != nil || restored.DeletionState != domain.DeletionStateActive || restored.AdministrativeBlockState != domain.AdministrativeBlockStateBlocked {
 		t.Fatalf("restore account = %+v, err=%v", restored, err)
 	}
+	if retried, err := store.RestoreAccount(ctx, user.ID, clock.Now().Add(48*time.Hour)); err != nil || retried.ID != user.ID {
+		t.Fatalf("in-window restore retry = %+v, err=%v", retried, err)
+	}
+	if _, err := store.RestoreAccount(ctx, user.ID, *deleted.RecoverableUntil); !accountFailureIs(err, domain.AccountFailureRecoveryExpired) {
+		t.Fatalf("expired active-account restore error = %v", err)
+	}
 	if snapshot, err := store.GetSettings(ctx, user.ID); err != nil || snapshot == nil || snapshot.Revision != 2 {
 		t.Fatalf("account backup/restore lost settings: %+v, err=%v", snapshot, err)
 	}
@@ -119,6 +148,43 @@ func TestFoundationTransactionsAndRetention(t *testing.T) {
 	if _, err := store.RestoreAccount(ctx, user.ID, boundary); err == nil {
 		t.Fatal("restore succeeded after purge claim")
 	}
+	blocker, err := pool.Acquire(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	identityLockKey := identityAdvisoryLockKey(identity.Issuer, identity.Subject)
+	if _, err := blocker.Exec(ctx, "SELECT pg_advisory_lock($1)", identityLockKey); err != nil {
+		blocker.Release()
+		t.Fatal(err)
+	}
+	lockHeld := true
+	defer func() {
+		if lockHeld {
+			_, _ = blocker.Exec(context.Background(), "SELECT pg_advisory_unlock($1)", identityLockKey)
+		}
+		blocker.Release()
+	}()
+	for name, operation := range map[string]func(context.Context) error{
+		"purge": func(operationContext context.Context) error {
+			return store.CompleteAccountPurge(operationContext, accounts[0], boundary)
+		},
+		"provision": func(operationContext context.Context) error {
+			_, operationErr := store.ProvisionUser(operationContext, identity)
+			return operationErr
+		},
+	} {
+		operationContext, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+		operationErr := operation(operationContext)
+		cancel()
+		if !errors.Is(operationErr, context.DeadlineExceeded) {
+			t.Fatalf("%s did not wait for the shared identity lock: %v", name, operationErr)
+		}
+	}
+	var unlocked bool
+	if err := blocker.QueryRow(ctx, "SELECT pg_advisory_unlock($1)", identityLockKey).Scan(&unlocked); err != nil || !unlocked {
+		t.Fatalf("unlock identity: unlocked=%v err=%v", unlocked, err)
+	}
+	lockHeld = false
 	if err := store.CompleteAccountPurge(ctx, accounts[0], boundary); err != nil {
 		t.Fatal(err)
 	}
@@ -163,6 +229,11 @@ func TestFoundationTransactionsAndRetention(t *testing.T) {
 	if err := unlock(ctx); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func accountFailureIs(err error, failure domain.AccountFailure) bool {
+	var state *domain.AccountStateError
+	return errors.As(err, &state) && state.Failure == failure
 }
 
 type mutableClock struct {

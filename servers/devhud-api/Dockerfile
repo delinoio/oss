@@ -7,8 +7,9 @@ COPY protos ./protos
 COPY servers/devhud-api ./servers/devhud-api
 ARG TARGETOS
 ARG TARGETARCH
+ARG VERSION=0.1.0-dev
 RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} \
-    go build -trimpath -ldflags='-s -w' -o /out/devhud-api ./servers/devhud-api/cmd/devhud-api
+    go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /out/devhud-api ./servers/devhud-api/cmd/devhud-api
 RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} \
     go build -trimpath -ldflags='-s -w' -o /out/devhud-api-sweeper ./servers/devhud-api/cmd/devhud-api-sweeper
 

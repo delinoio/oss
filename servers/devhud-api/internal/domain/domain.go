@@ -50,6 +50,7 @@ type User struct {
 	UpdatedAt                time.Time
 	DeletionRequestedAt      *time.Time
 	RecoverableUntil         *time.Time
+	RestoreRetryUntil        *time.Time
 }
 
 type Settings struct {

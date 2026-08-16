@@ -41,7 +41,7 @@ func New(ctx context.Context, serviceName, serviceVersion string) (*Providers, e
 	otel.SetMeterProvider(meterProvider)
 
 	tracerOptions := []trace.TracerProviderOption{trace.WithResource(serviceResource)}
-	if os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") != "" {
+	if traceExportConfigured() {
 		exporter, err := otlptracehttp.New(ctx)
 		if err != nil {
 			_ = meterProvider.Shutdown(ctx)
@@ -57,6 +57,10 @@ func New(ctx context.Context, serviceName, serviceVersion string) (*Providers, e
 		TracerProvider: tracerProvider,
 		MetricsHandler: promhttp.HandlerFor(registry, promhttp.HandlerOpts{}),
 	}, nil
+}
+
+func traceExportConfigured() bool {
+	return os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") != "" || os.Getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT") != ""
 }
 
 func (p *Providers) Shutdown(ctx context.Context) error {

@@ -2,8 +2,11 @@ package postgres
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/binary"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"time"
 
@@ -13,6 +16,8 @@ import (
 )
 
 const sweepAdvisoryLock int64 = 0x6465766875647377
+
+const identityAdvisoryLockNamespace = "devhud-identity-v1"
 
 type Store struct {
 	pool  *pgxpool.Pool
@@ -50,11 +55,27 @@ func (s *Store) SchemaCurrent(ctx context.Context) (bool, error) {
 	if !ledgerExists {
 		return false, nil
 	}
-	var count int
-	if err := s.pool.QueryRow(ctx, "SELECT count(*) FROM devhud_schema_migrations").Scan(&count); err != nil {
+	expected, err := expectedMigrationVersions()
+	if err != nil {
 		return false, err
 	}
-	return count == expectedMigrationCount(), nil
+	rows, err := s.pool.Query(ctx, "SELECT version FROM devhud_schema_migrations ORDER BY version")
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	applied := make([]string, 0, len(expected))
+	for rows.Next() {
+		var version string
+		if err := rows.Scan(&version); err != nil {
+			return false, err
+		}
+		applied = append(applied, version)
+	}
+	if err := rows.Err(); err != nil {
+		return false, err
+	}
+	return slices.Equal(applied, expected), nil
 }
 
 func (s *Store) ProvisionUser(ctx context.Context, identity domain.Identity) (domain.User, error) {
@@ -63,6 +84,9 @@ func (s *Store) ProvisionUser(ctx context.Context, identity domain.Identity) (do
 		return domain.User{}, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	if err := lockIdentity(ctx, tx, identity.Issuer, identity.Subject); err != nil {
+		return domain.User{}, err
+	}
 
 	candidates := identity.FingerprintCandidates
 	if len(candidates) == 0 {
@@ -202,7 +226,8 @@ func (s *Store) DeleteAccount(ctx context.Context, userID string, now time.Time)
 	if user.DeletionState == domain.DeletionStateActive {
 		recoverableUntil := now.Add(domain.RecoveryWindow)
 		user, err = scanUser(tx.QueryRow(ctx, `UPDATE devhud_users SET
-            deletion_state = 2, deletion_requested_at = $2, recoverable_until = $3, updated_at = $2
+            deletion_state = 2, deletion_requested_at = $2, recoverable_until = $3,
+            restore_retry_until = NULL, updated_at = $2
             WHERE user_id = $1 RETURNING `+userColumns, userID, now, recoverableUntil))
 		if err != nil {
 			return domain.User{}, err
@@ -229,13 +254,16 @@ func (s *Store) RestoreAccount(ctx context.Context, userID string, now time.Time
 	}
 	switch user.DeletionState {
 	case domain.DeletionStateActive:
-		// Idempotent retry after a prior successful restoration.
+		if user.RestoreRetryUntil == nil || !now.Before(*user.RestoreRetryUntil) {
+			return domain.User{}, &domain.AccountStateError{Failure: domain.AccountFailureRecoveryExpired}
+		}
 	case domain.DeletionStatePending:
 		if user.RecoverableUntil == nil || !now.Before(*user.RecoverableUntil) {
 			return domain.User{}, &domain.AccountStateError{Failure: domain.AccountFailureRecoveryExpired}
 		}
 		user, err = scanUser(tx.QueryRow(ctx, `UPDATE devhud_users SET
-            deletion_state = 1, deletion_requested_at = NULL, recoverable_until = NULL, updated_at = $2
+            deletion_state = 1, restore_retry_until = recoverable_until,
+            deletion_requested_at = NULL, recoverable_until = NULL, updated_at = $2
             WHERE user_id = $1 RETURNING `+userColumns, userID, now))
 		if err != nil {
 			return domain.User{}, err
@@ -313,6 +341,9 @@ func (s *Store) CompleteAccountPurge(ctx context.Context, user domain.User, now 
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	if err := lockIdentity(ctx, tx, user.Issuer, user.Subject); err != nil {
+		return err
+	}
 	var state domain.DeletionState
 	var currentFingerprint []byte
 	if err := tx.QueryRow(ctx, `SELECT deletion_state, identity_fingerprint
@@ -396,12 +427,13 @@ func (s *Store) TryLock(ctx context.Context) (func(context.Context) error, bool,
 
 const userColumns = `user_id::text, logto_issuer, logto_subject, identity_fingerprint,
     display_name, email, deletion_state, administrative_block_state,
-    created_at, updated_at, deletion_requested_at, recoverable_until`
+    created_at, updated_at, deletion_requested_at, recoverable_until, restore_retry_until`
 
 func prefixedUserColumns(prefix string) string {
 	return prefix + `.user_id::text, ` + prefix + `.logto_issuer, ` + prefix + `.logto_subject, ` + prefix + `.identity_fingerprint,
     ` + prefix + `.display_name, ` + prefix + `.email, ` + prefix + `.deletion_state, ` + prefix + `.administrative_block_state,
-    ` + prefix + `.created_at, ` + prefix + `.updated_at, ` + prefix + `.deletion_requested_at, ` + prefix + `.recoverable_until`
+    ` + prefix + `.created_at, ` + prefix + `.updated_at, ` + prefix + `.deletion_requested_at, ` + prefix + `.recoverable_until,
+    ` + prefix + `.restore_retry_until`
 }
 
 type rowScanner interface {
@@ -412,8 +444,26 @@ func scanUser(row rowScanner) (domain.User, error) {
 	var user domain.User
 	err := row.Scan(&user.ID, &user.Issuer, &user.Subject, &user.IdentityFingerprint, &user.DisplayName, &user.Email,
 		&user.DeletionState, &user.AdministrativeBlockState, &user.CreatedAt, &user.UpdatedAt,
-		&user.DeletionRequestedAt, &user.RecoverableUntil)
+		&user.DeletionRequestedAt, &user.RecoverableUntil, &user.RestoreRetryUntil)
 	return user, err
+}
+
+func lockIdentity(ctx context.Context, tx pgx.Tx, issuer, subject string) error {
+	_, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock($1)", identityAdvisoryLockKey(issuer, subject))
+	return err
+}
+
+func identityAdvisoryLockKey(issuer, subject string) int64 {
+	hash := sha256.New()
+	_, _ = hash.Write([]byte(identityAdvisoryLockNamespace))
+	var encodedLength [8]byte
+	binary.BigEndian.PutUint64(encodedLength[:], uint64(len(issuer)))
+	_, _ = hash.Write(encodedLength[:])
+	_, _ = hash.Write([]byte(issuer))
+	binary.BigEndian.PutUint64(encodedLength[:], uint64(len(subject)))
+	_, _ = hash.Write(encodedLength[:])
+	_, _ = hash.Write([]byte(subject))
+	return int64(binary.BigEndian.Uint64(hash.Sum(nil)[:8]))
 }
 
 func scanSettings(row rowScanner) (domain.Settings, error) {

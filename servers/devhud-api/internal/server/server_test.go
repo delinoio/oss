@@ -153,6 +153,25 @@ func TestHTTPSAcceptsOnlyTrustedForwarding(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d", response.Code)
 	}
+
+	for name, protocols := range map[string][]string{
+		"client prepended": {"https,http"},
+		"proxy prepended":  {"http,https"},
+		"repeated fields":  {"https", "http"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+			request.RemoteAddr = "192.0.2.12:12345"
+			for _, protocol := range protocols {
+				request.Header.Add("X-Forwarded-Proto", protocol)
+			}
+			response := httptest.NewRecorder()
+			httpServer.Handler.ServeHTTP(response, request)
+			if response.Code != http.StatusUpgradeRequired {
+				t.Fatalf("status = %d", response.Code)
+			}
+		})
+	}
 }
 
 func testHandler(t *testing.T) (http.Handler, *fakeRepository) {
