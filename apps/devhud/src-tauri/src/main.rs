@@ -306,7 +306,7 @@ fn frontend_ready(
     let app_handle = webview.app_handle();
     handle_frontend_ready(
         &webview,
-        &app_handle,
+        app_handle,
         readiness.smoke_mode,
         origin,
         readiness.renderer_crashed.clone(),
