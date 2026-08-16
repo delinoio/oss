@@ -882,6 +882,127 @@ jobs:
           WAYLAND_DISPLAY: ""
         run: xvfb-run -a pnpm --filter devhud smoke:platform -- --artifact "${{ github.workspace }}/target/devhud-smoke-root/usr/bin/devhud"
 
+  devhud-mobile-contracts:
+    name: DevHUD mobile contracts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.26.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Verify shared frontend and mobile contracts
+        run: |
+          pnpm --filter devhud build:frontend
+          pnpm --filter devhud mobile:check
+          pnpm --filter devhud test:components
+
+  devhud-ios-simulator:
+    name: DevHUD iOS simulator (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-sim
+            runner: macos-15
+          - target: x86_64
+            runner: macos-15-intel
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.26.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Generate pinned iOS project
+        run: pnpm --filter devhud mobile:generate -- --platform ios
+
+      - name: Build iOS simulator host
+        working-directory: apps/devhud
+        run: node scripts/run-mobile.mjs ios build --target ${{ matrix.target }} --ci
+
+  devhud-android-emulator:
+    name: DevHUD Android (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64
+            abi: arm64-v8a
+          - target: armv7
+            abi: armeabi-v7a
+          - target: x86_64
+            abi: x86_64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.26.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install Linux host prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake libayatana-appindicator3-dev libgtk-3-dev libx11-dev ninja-build
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Generate pinned Android project
+        run: pnpm --filter devhud mobile:generate -- --platform android
+
+      - name: Build Android APK
+        working-directory: apps/devhud
+        run: node scripts/run-mobile.mjs android build --target ${{ matrix.target }} --apk --ci
+
+      - name: Verify Android APK contracts
+        working-directory: apps/devhud
+        run: node scripts/verify-mobile.mjs --android-artifact src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk --android-abi ${{ matrix.abi }}
+
   devhud-protocol:
     name: DevHud Protocol and Client
     runs-on: ubuntu-latest
@@ -991,6 +1112,9 @@ jobs:
       - node-nodeup-docs-test
       - node-public-docs-test
       - devhud-desktop
+      - devhud-mobile-contracts
+      - devhud-ios-simulator
+      - devhud-android-emulator
       - devhud-protocol
     steps:
       - run: exit 1
