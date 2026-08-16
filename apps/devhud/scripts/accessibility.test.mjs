@@ -98,6 +98,15 @@ test("document preferences are synchronized before the first localized render", 
   assert.match(main, /synchronizeDocumentPreferences\(document\.documentElement, preferences, matchMedia\("\(prefers-color-scheme: dark\)"\)\.matches, navigator\.languages\); createRoot\(root\)\.render/u);
 });
 
+test("system-theme changes retain the current language preference", () => {
+  assert.match(app, /\}, \[preferences\.language, preferences\.theme\]\);/u);
+});
+
+test("resolved themes apply their native control color scheme", () => {
+  assert.match(themeBlocks[0], /color-scheme:light/u);
+  assert.match(themeBlocks[1], /color-scheme:dark/u);
+});
+
 test("the palette trigger retains contrast while hovered", () => {
   assert.match(app, /className="palette-trigger"/u);
   assert.match(styles, /aside > \.palette-trigger:hover\s*\{\s*color:#fff; background:var\(--button-accent\);/u);

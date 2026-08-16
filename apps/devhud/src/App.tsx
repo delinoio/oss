@@ -48,7 +48,7 @@ export function App() {
     updateTheme();
     media.addEventListener("change", updateTheme);
     return () => media.removeEventListener("change", updateTheme);
-  }, [preferences.theme]);
+  }, [preferences.language, preferences.theme]);
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
       const platformModifier = isMac ? "MetaRight" : "ControlRight";

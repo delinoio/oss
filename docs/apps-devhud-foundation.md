@@ -10,7 +10,7 @@
 - Mobile: platform WKWebView/Android System WebView with native Swift/Kotlin widget implementations.
 - Targets: macOS 13+, Windows 10 22H2+, Ubuntu 22.04 LTS on X11, iOS 16+, Android 10/API 29+; desktop x64 and arm64.
 - Bundle ID: `io.delino.devhud`; deep-link scheme: `devhud`. Fixed frontend port: `46305`.
-- English source and Korean/English user-facing UI. The shell selects English or Korean from the system with English fallback and persists a local explicit language override; System/Light/Dark is likewise a local explicit preference. Those preferences are versioned local non-secret state, not synchronized settings. The shell follows Toss Design Guidelines and includes WCAG 2.2 AA-oriented checks for named controls, deterministic focus, reduced motion, high-contrast tokens, and Escape closure for its command palette; formal accessibility qualification remains pending.
+- English source and Korean/English user-facing UI. The shell selects English or Korean from the system with English fallback and persists a local explicit language override; System/Light/Dark is likewise a local explicit preference. Those preferences are versioned local non-secret state, not synchronized settings. The resolved theme also sets the document color scheme so native controls follow the selected appearance. The shell follows Toss Design Guidelines and includes WCAG 2.2 AA-oriented checks for named controls, deterministic focus, reduced motion, high-contrast tokens, and Escape closure for its command palette; formal accessibility qualification remains pending.
 
 ## Users and Operators
 
