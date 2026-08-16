@@ -953,6 +953,8 @@ jobs:
 
       - name: Build iOS host
         working-directory: apps/devhud
+        env:
+          CODE_SIGNING_ALLOWED: "NO"
         run: node scripts/run-mobile.mjs ios build --target ${{ matrix.target }} --ci
 
   devhud-android-emulator:
