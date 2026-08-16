@@ -49,7 +49,7 @@ func cors(next http.Handler, connectPaths map[string]struct{}) http.Handler {
 			return
 		}
 		requestedMethod := request.Header.Get("Access-Control-Request-Method")
-		if requestedMethod != http.MethodPost && requestedMethod != http.MethodGet {
+		if requestedMethod != http.MethodPost {
 			http.Error(response, "method is not allowed", http.StatusForbidden)
 			return
 		}
@@ -57,7 +57,7 @@ func cors(next http.Handler, connectPaths map[string]struct{}) http.Handler {
 			http.Error(response, "request header is not allowed", http.StatusForbidden)
 			return
 		}
-		response.Header().Set("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
+		response.Header().Set("Access-Control-Allow-Methods", "POST,OPTIONS")
 		response.Header().Set("Access-Control-Allow-Headers", "Authorization,Connect-Protocol-Version,Connect-Timeout-Ms,Content-Type")
 		response.Header().Set("Access-Control-Max-Age", "7200")
 		response.WriteHeader(http.StatusNoContent)

@@ -208,15 +208,19 @@ func TestExactCORSPreflightContract(t *testing.T) {
 		if response.Code != http.StatusNoContent || response.Header().Get("Access-Control-Allow-Origin") != origin {
 			t.Errorf("origin %q: status=%d allow-origin=%q", origin, response.Code, response.Header().Get("Access-Control-Allow-Origin"))
 		}
+		if methods := response.Header().Get("Access-Control-Allow-Methods"); methods != "POST,OPTIONS" {
+			t.Errorf("origin %q returned methods %q", origin, methods)
+		}
 		if strings.Contains(response.Header().Get("Access-Control-Allow-Headers"), "*") || !strings.Contains(strings.ToLower(response.Header().Get("Access-Control-Expose-Headers")), correlationHeader) {
 			t.Errorf("origin %q returned invalid headers: %v", origin, response.Header())
 		}
 	}
 
 	for name, mutate := range map[string]func(*http.Request){
-		"origin": func(request *http.Request) { request.Header.Set("Origin", "http://localhost:46305.evil.example") },
-		"header": func(request *http.Request) { request.Header.Set("Access-Control-Request-Headers", "X-Not-Allowed") },
-		"method": func(request *http.Request) { request.Header.Set("Access-Control-Request-Method", http.MethodDelete) },
+		"origin":        func(request *http.Request) { request.Header.Set("Origin", "http://localhost:46305.evil.example") },
+		"header":        func(request *http.Request) { request.Header.Set("Access-Control-Request-Headers", "X-Not-Allowed") },
+		"GET method":    func(request *http.Request) { request.Header.Set("Access-Control-Request-Method", http.MethodGet) },
+		"DELETE method": func(request *http.Request) { request.Header.Set("Access-Control-Request-Method", http.MethodDelete) },
 	} {
 		t.Run(name, func(t *testing.T) {
 			request := httptest.NewRequest(http.MethodOptions, devhudv1connect.SettingsServiceGetSettingsProcedure, nil)
