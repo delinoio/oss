@@ -938,6 +938,11 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
+      # The pinned Tauri bundler embeds a universal macOS CEF helper even when
+      # its host CLI is invoked only to generate or build an iOS project.
+      - name: Install macOS Rust targets
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
 

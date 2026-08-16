@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 import { spawnDevServer } from "../../../scripts/spawn-dev-server.mjs";
+import { desktopTauriArguments } from "./run-tauri-arguments.mjs";
 
 const scriptPath = fileURLToPath(new URL("./run-tauri.mjs", import.meta.url));
 const processTreeChildPath = fileURLToPath(new URL("./process-tree-child.mjs", import.meta.url));
@@ -18,6 +19,14 @@ const configOverrides = [
   ["separated long option", ["build", "--", "--config", "alternate.json"]],
   ["equals-delimited long option", ["build", "--", "--config=alternate.json"]],
 ];
+
+test("forwards the desktop CEF feature to the pinned Tauri command", () => {
+  assert.deepEqual(desktopTauriArguments("dev", []), ["dev", "--features", "tauri/cef"]);
+  assert.deepEqual(
+    desktopTauriArguments("build", ["--bundles", "app"]),
+    ["build", "--features", "tauri/cef", "--bundles", "app"],
+  );
+});
 
 for (const [name, args] of configOverrides) {
   test(`rejects the ${name}`, () => {
