@@ -27,9 +27,9 @@ export function App() {
     writePreferences(localStorage, value);
     return value;
   });
-  const closePalette = () => {
+  const closePalette = (restoreTriggerFocus = true) => {
     setPalette(false);
-    requestAnimationFrame(() => paletteTrigger.current?.focus());
+    if (restoreTriggerFocus) requestAnimationFrame(() => paletteTrigger.current?.focus());
   };
 
   useEffect(() => {
@@ -79,7 +79,7 @@ export function App() {
   const execute = (id: ActionId) => {
     const action = actions.find((item) => item.id === id);
     if (action?.surface) setSurface(action.surface);
-    closePalette();
+    closePalette(action?.surface !== SurfaceId.Account);
   };
   const trapPaletteFocus = (event: ReactKeyboardEvent<HTMLElement>) => {
     if (event.key !== "Tab") return;
@@ -138,6 +138,6 @@ export function App() {
       {surface === SurfaceId.Account && <><p className="eyebrow">{copy.account}</p><h2>{copy.accountTitle}</h2><p>{copy.accountSummary}</p><label>{copy.apiOrigin}<input ref={apiOriginInput} value={preferences.apiOrigin} onChange={(event) => update({ apiOrigin: event.target.value })} /></label><p>{copy.apiOriginHint}</p><div className="actions"><button onClick={() => void external(ExternalLinkTarget.Authentication)}>{copy.signIn}</button><button onClick={() => void external(ExternalLinkTarget.Pat)}>{copy.pat}</button><button onClick={() => void external(ExternalLinkTarget.Issue)}>{copy.issue}</button></div>{externalMessage && <p className="external-message" role={externalMessageIsError ? "alert" : "status"}>{externalMessageText}</p>}</>}
       {surface === SurfaceId.Diagnostics && <><p className="eyebrow">{copy.diagnostics}</p><h2>{copy.diagnosticsTitle}</h2><p>{copy.diagnosticsSummary}</p><p className="notice">{copy.diagnosticsUnavailable}</p></>}
     </section>
-    {palette && <div className="overlay" role="presentation"><section ref={paletteRef} className="palette" role="dialog" aria-modal="true" aria-label={copy.commandPalette} onKeyDown={trapPaletteFocus}><input ref={search} value={query} onChange={(event) => setQuery(event.target.value)} placeholder={copy.searchCommands} aria-label={copy.searchCommands} /><div className="commands">{actions.length === 0 ? <p role="status">{copy.noCommands}</p> : actions.map((action) => <button key={action.id} onClick={() => execute(action.id)}>{copy[action.title]}</button>)}</div><button onClick={closePalette}>{copy.close}</button></section></div>}
+    {palette && <div className="overlay" role="presentation"><section ref={paletteRef} className="palette" role="dialog" aria-modal="true" aria-label={copy.commandPalette} onKeyDown={trapPaletteFocus}><input ref={search} value={query} onChange={(event) => setQuery(event.target.value)} placeholder={copy.searchCommands} aria-label={copy.searchCommands} /><div className="commands">{actions.length === 0 ? <p role="status">{copy.noCommands}</p> : actions.map((action) => <button key={action.id} onClick={() => execute(action.id)}>{copy[action.title]}</button>)}</div><button onClick={() => closePalette()}>{copy.close}</button></section></div>}
   </main>;
 }

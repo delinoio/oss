@@ -28,10 +28,12 @@ use tracing_subscriber::{
     layer::SubscriberExt,
     util::SubscriberInitExt,
 };
+use wait_timeout::ChildExt;
 
 const DEVELOPMENT_ORIGIN: &str = "http://127.0.0.1:46305";
 const PRODUCTION_ORIGIN: &str = "http://tauri.localhost";
 const FRONTEND_READY_TIMEOUT: Duration = Duration::from_secs(5);
+const EXTERNAL_OPENER_TIMEOUT: Duration = Duration::from_secs(5);
 const RENDERER_CRASH_LISTENER_READY_ATTEMPTS: usize = 100;
 const RENDERER_CRASH_LISTENER_READY_DELAY: Duration = Duration::from_millis(50);
 const DIAGNOSTIC_LOG_FILE_LIMIT: usize = 7;
@@ -103,8 +105,18 @@ fn confirm_external_opener_status(status: std::process::ExitStatus) -> Result<()
 }
 
 fn wait_for_external_opener(mut child: Child) -> Result<(), String> {
-    match child.wait() {
-        Ok(status) => confirm_external_opener_status(status),
+    match child.wait_timeout(EXTERNAL_OPENER_TIMEOUT) {
+        Ok(Some(status)) => confirm_external_opener_status(status),
+        Ok(None) => {
+            error!(event = "external_opener_timeout");
+            if let Err(reason) = child.kill() {
+                error!(event = "external_opener_kill_failed", %reason);
+            }
+            if let Err(reason) = child.wait() {
+                error!(event = "external_opener_reap_failed", %reason);
+            }
+            Err("system browser opener timed out".to_string())
+        }
         Err(reason) => {
             error!(event = "external_opener_wait_failed", %reason);
             Err("unable to confirm system browser opener".to_string())
@@ -113,7 +125,7 @@ fn wait_for_external_opener(mut child: Child) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn open_external(target: String, api_origin: String) -> Result<(), String> {
+async fn open_external(target: String, api_origin: String) -> Result<(), String> {
     let destination = external_destination(&target, &api_origin)
         .ok_or_else(|| "external destination is not allowlisted".to_string())?;
     #[cfg(target_os = "macos")]
@@ -126,7 +138,12 @@ fn open_external(target: String, api_origin: String) -> Result<(), String> {
         error!(event = "external_opener_spawn_failed", %reason);
         "unable to open system browser".to_string()
     })?;
-    wait_for_external_opener(child)
+    tauri::async_runtime::spawn_blocking(move || wait_for_external_opener(child))
+        .await
+        .map_err(|reason| {
+            error!(event = "external_opener_worker_failed", %reason);
+            "unable to confirm system browser opener".to_string()
+        })?
 }
 
 fn restore_main_window(app: &tauri::AppHandle<tauri::Cef>) {
@@ -548,6 +565,7 @@ fn main() {
     let result = builder
         .setup(move |app| {
             let readiness = frontend_readiness.clone();
+            create_tray(&app.handle().clone())?;
             let webview = tauri::WebviewWindowBuilder::<tauri::Cef, _>::new(
                 app,
                 "main",
@@ -574,8 +592,6 @@ fn main() {
                 false
             })
             .build()?;
-
-            create_tray(&app.handle().clone())?;
 
             start_frontend_readiness_watchdog(app.handle().clone(), readiness.complete.clone());
 

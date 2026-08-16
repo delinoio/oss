@@ -112,6 +112,7 @@ test("Account focuses its API origin input when the surface opens", () => {
   assert.match(app, /const apiOriginInput = useRef<HTMLInputElement>\(null\);/u);
   assert.match(app, /surface === SurfaceId\.Account\) apiOriginInput\.current\?\.focus\(\)/u);
   assert.match(app, /<input ref=\{apiOriginInput\} value=\{preferences\.apiOrigin\}/u);
+  assert.match(app, /closePalette\(action\?\.surface !== SurfaceId\.Account\);/u);
 });
 
 test("RealQA exposes unsupported capture actions as disabled controls", () => {

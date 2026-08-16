@@ -2227,6 +2227,7 @@ dependencies = [
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
+ "wait-timeout",
 ]
 
 [[package]]

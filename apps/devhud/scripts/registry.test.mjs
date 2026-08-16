@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ActionId, PlatformCapability, actionRegistry, availableActions, desktopCapabilities } from "../src/shell.ts";
+import { ActionId, PlatformCapability, actionRegistry, availableActions, completeOnboarding, desktopCapabilities, hasCompletedOnboarding } from "../src/shell.ts";
 
 test("registers exactly the five contracted RealQA capture actions", () => {
   const capture = actionRegistry.filter(({ id }) => id.startsWith("realqa.capture.")).map(({ id }) => id).toSorted();
@@ -21,4 +21,13 @@ test("does not advertise native integrations the shell has not implemented", () 
   assert(!desktopCapabilities.available.has(PlatformCapability.LaunchAtLogin));
   assert(!actions.some(({ id }) => id.startsWith("realqa.capture.")));
   assert(!actions.some(({ id }) => id === ActionId.LaunchAtLogin));
+});
+
+test("keeps onboarding usable when persistent storage is unavailable", () => {
+  const unavailableStorage = {
+    getItem() { throw new Error("storage unavailable"); },
+    setItem() { throw new Error("storage unavailable"); },
+  };
+  assert.equal(hasCompletedOnboarding(unavailableStorage), false);
+  assert.doesNotThrow(() => completeOnboarding(unavailableStorage));
 });
