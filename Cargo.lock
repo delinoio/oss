@@ -2224,6 +2224,7 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tauri-cli",
+ "tauri-plugin",
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
@@ -9788,6 +9789,21 @@ dependencies = [
  "syn 2.0.117",
  "tauri-codegen",
  "tauri-utils",
+]
+
+[[package]]
+name = "tauri-plugin"
+version = "2.6.3"
+source = "git+https://github.com/tauri-apps/tauri?rev=4af26a3f7f8b692d62cca549bbacd93f5ce90b41#4af26a3f7f8b692d62cca549bbacd93f5ce90b41"
+dependencies = [
+ "anyhow",
+ "glob",
+ "plist",
+ "schemars 1.2.1",
+ "serde",
+ "serde_json",
+ "tauri-utils",
+ "walkdir",
 ]
 
 [[package]]

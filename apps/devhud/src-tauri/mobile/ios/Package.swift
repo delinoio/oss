@@ -3,11 +3,11 @@
 import PackageDescription
 
 let package = Package(
-    name: "tauri-plugin-devhud-native",
+    name: "devhud",
     platforms: [.iOS(.v16)],
-    products: [.library(name: "tauri-plugin-devhud-native", type: .static, targets: ["tauri-plugin-devhud-native"])],
+    products: [.library(name: "devhud", type: .static, targets: ["devhud"])],
     dependencies: [.package(name: "Tauri", path: "../.tauri/tauri-api")],
     targets: [
-        .target(name: "tauri-plugin-devhud-native", dependencies: [.byName(name: "Tauri")], path: "Sources")
+        .target(name: "devhud", dependencies: [.byName(name: "Tauri")], path: "Sources")
     ]
 )
