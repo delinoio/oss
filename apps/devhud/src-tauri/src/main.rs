@@ -17,7 +17,9 @@ use std::{
 };
 
 #[cfg(target_os = "linux")]
-use gtk::gio;
+use gtk::prelude::CancellableExt;
+#[cfg(target_os = "linux")]
+use gtk::{gio, glib};
 use platform::DesktopTarget;
 #[cfg(target_os = "linux")]
 use platform::LinuxDisplayMode;
@@ -126,32 +128,76 @@ fn external_opener_command(destination: &str) -> Command {
 }
 
 #[cfg(target_os = "linux")]
-fn dispatch_linux_external_opener(destination: String) -> Result<(), String> {
-    gio::AppInfo::launch_default_for_uri(&destination, None::<&gio::AppLaunchContext>).map_err(
-        |reason| {
-            error!(event = "external_opener_failed", %reason);
-            "system browser opener failed".to_string()
-        },
-    )
+fn confirm_linux_external_dispatch(
+    result: Result<(), glib::Error>,
+    cancellable: &gio::Cancellable,
+) -> Result<(), String> {
+    if cancellable.is_cancelled() {
+        return Err("system browser opener timed out".to_string());
+    }
+    result.map_err(|reason| {
+        error!(event = "external_opener_failed", %reason);
+        "system browser opener failed".to_string()
+    })
 }
 
 #[cfg(target_os = "linux")]
 fn wait_for_linux_external_dispatch(destination: String) -> Result<(), String> {
-    let (sender, receiver) = mpsc::sync_channel(1);
+    let (result_sender, result_receiver) = mpsc::sync_channel(1);
+    let (loop_sender, loop_receiver) = mpsc::sync_channel(1);
+    let cancellable = gio::Cancellable::new();
+    let worker_cancellable = cancellable.clone();
     std::thread::spawn(move || {
-        let _ = sender.send(dispatch_linux_external_opener(destination));
+        let context = glib::MainContext::new();
+        let main_loop = glib::MainLoop::new(Some(&context), false);
+        let _ = loop_sender.send(main_loop.clone());
+        if context
+            .with_thread_default(|| {
+                let completion_loop = main_loop.clone();
+                let completion_cancellable = worker_cancellable.clone();
+                gio::AppInfo::launch_default_for_uri_async(
+                    &destination,
+                    None::<&gio::AppLaunchContext>,
+                    Some(&worker_cancellable),
+                    move |result| {
+                        let _ = result_sender.send(confirm_linux_external_dispatch(
+                            result,
+                            &completion_cancellable,
+                        ));
+                        completion_loop.quit();
+                    },
+                );
+                main_loop.run();
+            })
+            .is_err()
+        {
+            error!(event = "external_opener_worker_failed");
+        }
     });
-    await_linux_external_dispatch(receiver)
+    let main_loop = loop_receiver.recv().map_err(|_| {
+        error!(event = "external_opener_worker_failed");
+        "unable to confirm system browser opener".to_string()
+    })?;
+    await_linux_external_dispatch(result_receiver, &cancellable, &main_loop)
+}
+
+#[cfg(target_os = "linux")]
+fn cancel_linux_external_dispatch(cancellable: &gio::Cancellable, main_loop: &glib::MainLoop) {
+    cancellable.cancel();
+    main_loop.quit();
 }
 
 #[cfg(target_os = "linux")]
 fn await_linux_external_dispatch(
     receiver: mpsc::Receiver<Result<(), String>>,
+    cancellable: &gio::Cancellable,
+    main_loop: &glib::MainLoop,
 ) -> Result<(), String> {
     match receiver.recv_timeout(EXTERNAL_OPENER_TIMEOUT) {
         Ok(result) => result,
         Err(mpsc::RecvTimeoutError::Timeout) => {
             error!(event = "external_opener_timeout");
+            cancel_linux_external_dispatch(cancellable, main_loop);
             Err("system browser opener timed out".to_string())
         }
         Err(mpsc::RecvTimeoutError::Disconnected) => {
@@ -712,9 +758,14 @@ mod review_tests {
     use std::sync::mpsc;
 
     #[cfg(target_os = "linux")]
-    use super::await_linux_external_dispatch;
+    use gtk::prelude::CancellableExt;
+    #[cfg(target_os = "linux")]
+    use gtk::{gio, glib};
+
     #[cfg(target_os = "macos")]
     use super::confirm_external_opener_status;
+    #[cfg(target_os = "linux")]
+    use super::{await_linux_external_dispatch, cancel_linux_external_dispatch};
     use super::{external_destination, tray_labels};
 
     #[test]
@@ -767,7 +818,20 @@ mod review_tests {
     fn linux_external_opener_uses_bounded_gio_dispatch() {
         let (sender, receiver) = mpsc::sync_channel(1);
         sender.send(Ok(())).expect("dispatch result channel");
-        assert!(await_linux_external_dispatch(receiver).is_ok());
+        let cancellable = gio::Cancellable::new();
+        let main_loop = glib::MainLoop::new(None, false);
+        assert!(await_linux_external_dispatch(receiver, &cancellable, &main_loop).is_ok());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_external_opener_cancels_timed_out_gio_dispatch() {
+        let cancellable = gio::Cancellable::new();
+        let main_loop = glib::MainLoop::new(None, false);
+
+        cancel_linux_external_dispatch(&cancellable, &main_loop);
+
+        assert!(cancellable.is_cancelled());
     }
 }
 
