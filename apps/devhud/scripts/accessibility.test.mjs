@@ -141,12 +141,13 @@ test("Account focuses its API origin input when the surface opens or is reselect
   assert.match(app, /action\?\.surface === SurfaceId\.Account\) requestAnimationFrame\(\(\) => apiOriginInput\.current\?\.focus\(\)\)/u);
 });
 
-test("API-origin edits and local onboarding completion clear stale external messages", () => {
-  assert.match(app, /const update = \(next: Partial<Preferences>\) => \{\s+if \("apiOrigin" in next\) setExternalMessage\(null\);/u);
-  assert.match(app, /const signInAttempt = useRef\(0\);/u);
-  assert.match(app, /const finishOnboarding = \(\) => \{\s+signInAttempt\.current \+= 1;\s+setExternalMessage\(null\);/u);
-  assert.match(app, /const external = async \(target: ExternalLinkTarget, attempt\?: number\) => \{\s+const updateExternalMessage = \(message: ExternalMessage \| null\) => \{\s+if \(attempt === undefined \|\| attempt === signInAttempt\.current\) setExternalMessage\(message\);/u);
-  assert.match(app, /const attempt = signInAttempt\.current \+ 1;\s+signInAttempt\.current = attempt;\s+if \(await external\(ExternalLinkTarget\.Authentication, attempt\) && attempt === signInAttempt\.current\) finishOnboarding\(\);/u);
+test("Account opener actions and invalidating edits ignore stale external completions", () => {
+  assert.match(app, /const externalAttempt = useRef\(0\);/u);
+  assert.match(app, /if \("apiOrigin" in next\) \{\s+externalAttempt\.current \+= 1;\s+setExternalMessage\(null\);/u);
+  assert.match(app, /const external = async \(target: ExternalLinkTarget\) => \{\s+const attempt = externalAttempt\.current \+ 1;\s+externalAttempt\.current = attempt;/u);
+  assert.match(app, /if \(attempt === externalAttempt\.current\) setExternalMessage\(message\);/u);
+  assert.match(app, /const finishOnboarding = \(\) => \{\s+externalAttempt\.current \+= 1;\s+setExternalMessage\(null\);/u);
+  assert.match(app, /if \(await external\(ExternalLinkTarget\.Authentication\)\) finishOnboarding\(\);/u);
 });
 
 test("RealQA exposes unsupported capture actions as disabled controls", () => {
@@ -165,6 +166,12 @@ test("tray localization failures are caught and recorded", () => {
 test("rejected external destinations emit a safe structured diagnostic", () => {
   assert.match(nativeHost, /event = "external_destination_rejected"/u);
   assert.doesNotMatch(nativeHost, /external_destination_rejected[^\n]*api_origin/u);
+});
+
+test("Linux external links use bounded GIO dispatch rather than browser lifetime", () => {
+  assert.match(nativeHost, /gio::AppInfo::launch_default_for_uri/u);
+  assert.match(nativeHost, /receiver\.recv_timeout\(EXTERNAL_OPENER_TIMEOUT\)/u);
+  assert.doesNotMatch(nativeHost, /Command::new\("xdg-open"\)/u);
 });
 
 test("command palette overlay stacks above the mobile sidebar", () => {

@@ -22,11 +22,14 @@ export function App() {
   const paletteRef = useRef<HTMLElement>(null);
   const paletteTrigger = useRef<HTMLButtonElement>(null);
   const rightModifier = useRef<"ControlRight" | "MetaRight" | null>(null);
-  const signInAttempt = useRef(0);
+  const externalAttempt = useRef(0);
   const language = preferences.language === LanguagePreference.System ? systemLanguage : preferences.language;
   const copy = messages[language];
   const update = (next: Partial<Preferences>) => {
-    if ("apiOrigin" in next) setExternalMessage(null);
+    if ("apiOrigin" in next) {
+      externalAttempt.current += 1;
+      setExternalMessage(null);
+    }
     const value = { ...preferences, ...next };
     synchronizeDocumentPreferences(document.documentElement, value, matchMedia("(prefers-color-scheme: dark)").matches, navigator.languages);
     writePreferences(storage, value);
@@ -106,9 +109,11 @@ export function App() {
       first.focus();
     }
   };
-  const external = async (target: ExternalLinkTarget, attempt?: number) => {
+  const external = async (target: ExternalLinkTarget) => {
+    const attempt = externalAttempt.current + 1;
+    externalAttempt.current = attempt;
     const updateExternalMessage = (message: ExternalMessage | null) => {
-      if (attempt === undefined || attempt === signInAttempt.current) setExternalMessage(message);
+      if (attempt === externalAttempt.current) setExternalMessage(message);
     };
     updateExternalMessage(null);
     if (target === ExternalLinkTarget.Authentication && !isValidApiOrigin(preferences.apiOrigin)) {
@@ -125,16 +130,14 @@ export function App() {
     }
   };
   const finishOnboarding = () => {
-    signInAttempt.current += 1;
+    externalAttempt.current += 1;
     setExternalMessage(null);
     completeOnboarding(storage);
     setOnboarding(false);
     setSurface(SurfaceId.Home);
   };
   const startSignIn = async () => {
-    const attempt = signInAttempt.current + 1;
-    signInAttempt.current = attempt;
-    if (await external(ExternalLinkTarget.Authentication, attempt) && attempt === signInAttempt.current) finishOnboarding();
+    if (await external(ExternalLinkTarget.Authentication)) finishOnboarding();
   };
   const supportsLaunchAtLogin = desktopCapabilities.available.has(PlatformCapability.LaunchAtLogin);
   const externalMessageText = externalMessage === "invalid-api-origin" ? copy.invalidApiOrigin : externalMessage === "opened" ? copy.externalOpened : copy.externalFailed;

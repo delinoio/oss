@@ -3,9 +3,12 @@
 mod platform;
 mod resources;
 
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+use std::process::{Child, Command};
+#[cfg(target_os = "linux")]
+use std::sync::mpsc;
 use std::{
     net::IpAddr,
-    process::{Child, Command},
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -13,6 +16,8 @@ use std::{
     time::Duration,
 };
 
+#[cfg(target_os = "linux")]
+use gtk::gio;
 use platform::DesktopTarget;
 #[cfg(target_os = "linux")]
 use platform::LinuxDisplayMode;
@@ -29,6 +34,7 @@ use tracing_subscriber::{
     layer::SubscriberExt,
     util::SubscriberInitExt,
 };
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 use wait_timeout::ChildExt;
 
 const DEVELOPMENT_ORIGIN: &str = "http://127.0.0.1:46305";
@@ -99,6 +105,7 @@ fn external_destination(target: &str, api_origin: &str) -> Option<String> {
     }
 }
 
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 fn confirm_external_opener_status(status: std::process::ExitStatus) -> Result<(), String> {
     if status.success() {
         Ok(())
@@ -108,6 +115,53 @@ fn confirm_external_opener_status(status: std::process::ExitStatus) -> Result<()
     }
 }
 
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+fn external_opener_command(destination: &str) -> Command {
+    #[cfg(target_os = "macos")]
+    let mut command = Command::new("open");
+    #[cfg(target_os = "windows")]
+    let mut command = Command::new("explorer.exe");
+    command.arg(destination);
+    command
+}
+
+#[cfg(target_os = "linux")]
+fn dispatch_linux_external_opener(destination: String) -> Result<(), String> {
+    gio::AppInfo::launch_default_for_uri(&destination, None::<&gio::AppLaunchContext>).map_err(
+        |reason| {
+            error!(event = "external_opener_failed", %reason);
+            "system browser opener failed".to_string()
+        },
+    )
+}
+
+#[cfg(target_os = "linux")]
+fn wait_for_linux_external_dispatch(destination: String) -> Result<(), String> {
+    let (sender, receiver) = mpsc::sync_channel(1);
+    std::thread::spawn(move || {
+        let _ = sender.send(dispatch_linux_external_opener(destination));
+    });
+    await_linux_external_dispatch(receiver)
+}
+
+#[cfg(target_os = "linux")]
+fn await_linux_external_dispatch(
+    receiver: mpsc::Receiver<Result<(), String>>,
+) -> Result<(), String> {
+    match receiver.recv_timeout(EXTERNAL_OPENER_TIMEOUT) {
+        Ok(result) => result,
+        Err(mpsc::RecvTimeoutError::Timeout) => {
+            error!(event = "external_opener_timeout");
+            Err("system browser opener timed out".to_string())
+        }
+        Err(mpsc::RecvTimeoutError::Disconnected) => {
+            error!(event = "external_opener_worker_failed");
+            Err("unable to confirm system browser opener".to_string())
+        }
+    }
+}
+
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 fn wait_for_external_opener(mut child: Child) -> Result<(), String> {
     match child.wait_timeout(EXTERNAL_OPENER_TIMEOUT) {
         Ok(Some(status)) => confirm_external_opener_status(status),
@@ -134,16 +188,24 @@ async fn open_external(target: String, api_origin: String) -> Result<(), String>
         error!(event = "external_destination_rejected");
         "external destination is not allowlisted".to_string()
     })?;
-    #[cfg(target_os = "macos")]
-    let result = Command::new("open").arg(&destination).spawn();
-    #[cfg(target_os = "windows")]
-    let result = Command::new("explorer.exe").arg(&destination).spawn();
     #[cfg(target_os = "linux")]
-    let result = Command::new("xdg-open").arg(&destination).spawn();
-    let child = result.map_err(|reason| {
-        error!(event = "external_opener_spawn_failed", %reason);
-        "unable to open system browser".to_string()
+    return tauri::async_runtime::spawn_blocking(move || {
+        wait_for_linux_external_dispatch(destination)
+    })
+    .await
+    .map_err(|reason| {
+        error!(event = "external_opener_worker_failed", %reason);
+        "unable to confirm system browser opener".to_string()
     })?;
+
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    let child = external_opener_command(&destination)
+        .spawn()
+        .map_err(|reason| {
+            error!(event = "external_opener_spawn_failed", %reason);
+            "unable to open system browser".to_string()
+        })?;
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
     tauri::async_runtime::spawn_blocking(move || wait_for_external_opener(child))
         .await
         .map_err(|reason| {
@@ -644,10 +706,14 @@ fn main() {
 
 #[cfg(test)]
 mod review_tests {
-    #[cfg(unix)]
+    #[cfg(target_os = "macos")]
     use std::os::unix::process::ExitStatusExt;
+    #[cfg(target_os = "linux")]
+    use std::sync::mpsc;
 
-    #[cfg(unix)]
+    #[cfg(target_os = "linux")]
+    use super::await_linux_external_dispatch;
+    #[cfg(target_os = "macos")]
     use super::confirm_external_opener_status;
     use super::{external_destination, tray_labels};
 
@@ -689,11 +755,19 @@ mod review_tests {
         assert_eq!(tray_labels("ko"), ("DevHUD 표시", "DevHUD 종료"));
     }
 
-    #[cfg(unix)]
+    #[cfg(target_os = "macos")]
     #[test]
     fn external_opener_requires_a_successful_exit_status() {
         assert!(confirm_external_opener_status(std::process::ExitStatus::from_raw(0)).is_ok());
         assert!(confirm_external_opener_status(std::process::ExitStatus::from_raw(256)).is_err());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_external_opener_uses_bounded_gio_dispatch() {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        sender.send(Ok(())).expect("dispatch result channel");
+        assert!(await_linux_external_dispatch(receiver).is_ok());
     }
 }
 
