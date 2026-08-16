@@ -3,7 +3,7 @@ import { writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { fileURLToPath } from "node:url";
 
-const [mode, statusPath] = process.argv.slice(2);
+const [mode, statusPath, managerPid] = process.argv.slice(2);
 
 if (mode === "manager") {
   const child = spawn(process.execPath, [fileURLToPath(import.meta.url), "server", statusPath], {
@@ -42,11 +42,37 @@ if (mode === "manager") {
   }
 
   setInterval(() => {}, 1_000);
-} else if (mode === "server") {
+} else if (mode === "exiting-manager") {
+  spawn(
+    process.execPath,
+    [
+      fileURLToPath(import.meta.url),
+      "signal-resistant-server",
+      statusPath,
+      String(process.pid),
+    ],
+    {
+      shell: false,
+      stdio: "ignore",
+      windowsHide: true,
+    },
+  );
+  setInterval(() => {}, 1_000);
+} else if (mode === "server" || mode === "signal-resistant-server") {
+  if (mode === "signal-resistant-server") {
+    process.on("SIGINT", () => {});
+  }
   const server = createServer();
   server.listen(0, "127.0.0.1", () => {
     const address = server.address();
-    writeFileSync(statusPath, JSON.stringify({ pid: process.pid, port: address.port }));
+    writeFileSync(
+      statusPath,
+      JSON.stringify({
+        pid: process.pid,
+        port: address.port,
+        ...(managerPid ? { managerPid: Number(managerPid) } : {}),
+      }),
+    );
   });
 } else if (mode === "signal-escalation") {
   process.on("SIGINT", () => {});

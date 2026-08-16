@@ -49,6 +49,22 @@ async function waitForStatus(statusPath) {
   throw new Error("timed out waiting for the process-tree child status");
 }
 
+async function waitForProcessExit(pid) {
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    try {
+      process.kill(pid, 0);
+    } catch (error) {
+      if (error.code === "ESRCH") {
+        return;
+      }
+      throw error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`timed out waiting for process ${pid} to exit`);
+}
+
 function listenOnPort(port) {
   return new Promise((resolve, reject) => {
     const server = createServer();
@@ -124,6 +140,50 @@ test(
 
     assert.deepEqual(result, { code: null, signal: "SIGTERM" });
     assert.throws(() => process.kill(pid, 0));
+    await listenOnPort(port);
+  },
+);
+
+test(
+  "forwards escalation after the managed POSIX root exits",
+  { skip: process.platform === "win32", timeout: 20_000 },
+  async (t) => {
+    const temporaryDirectory = mkdtempSync(join(tmpdir(), "devhud-group-escalation-"));
+    const statusPath = join(temporaryDirectory, "status.json");
+    let processGroupId;
+    t.after(() => {
+      if (processGroupId) {
+        try {
+          process.kill(-processGroupId, "SIGKILL");
+        } catch (error) {
+          if (error.code !== "ESRCH") {
+            throw error;
+          }
+        }
+      }
+      rmSync(temporaryDirectory, { force: true, recursive: true });
+    });
+
+    const resultPromise = spawnDevServer(
+      process.execPath,
+      [processTreeChildPath, "exiting-manager", statusPath],
+      {
+        shell: false,
+        stdio: "ignore",
+        windowsHide: true,
+      },
+      { terminateProcessTree: true },
+    );
+    const { managerPid, pid, port } = await waitForStatus(statusPath);
+    processGroupId = managerPid;
+
+    process.emit("SIGINT");
+    await waitForProcessExit(managerPid);
+    process.kill(pid, 0);
+    await assert.rejects(listenOnPort(port), { code: "EADDRINUSE" });
+
+    process.emit("SIGTERM");
+    assert.deepEqual(await resultPromise, { code: null, signal: "SIGTERM" });
     await listenOnPort(port);
   },
 );

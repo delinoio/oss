@@ -153,7 +153,10 @@ export async function spawnDevServer(
 
   for (const signal of terminationSignals) {
     const handler = () => {
-      if (child.exitCode !== null || child.signalCode !== null) {
+      if (
+        !managePosixProcessGroup &&
+        (child.exitCode !== null || child.signalCode !== null)
+      ) {
         return;
       }
 
