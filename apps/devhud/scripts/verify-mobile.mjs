@@ -6,7 +6,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { assertGeneratedOverlays } from "./generate-mobile.mjs";
-import { assertMobileContracts, assertMobileDependencyClosures, mobileCargoTreeDigest } from "./mobile-policy.mjs";
+import { assertMobileContracts, assertMobileDependencyClosures, assertMobileDependencyResolution, mobileCargoTreeDigest } from "./mobile-policy.mjs";
 
 const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = resolve(appRoot, "../..");
@@ -22,7 +22,7 @@ function commandOutput(command, args, encoding = "utf8") {
 function mobileCargoTree(target) {
   const result = spawnSync("cargo", [
     "tree", "--locked", "--manifest-path", "apps/devhud/src-tauri/Cargo.toml", "-p", "devhud",
-    "--target", target, "--edges", "normal", "--no-default-features", "--prefix", "depth", "--format", "{p} {f}",
+    "--target", target, "--edges", "normal", "--prefix", "depth", "--format", "{p} {f}",
   ], { cwd: repoRoot, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, shell: false });
   if (result.status !== 0) throw new Error(`cargo tree failed while resolving mobile target ${target}: ${result.stderr.trim()}`);
   return result.stdout;
@@ -60,6 +60,7 @@ function assertAndroidArtifact(artifact, abi) {
 }
 
 const platforms = json("mobile-platforms.json");
+assertMobileDependencyResolution(text("scripts/verify-mobile.mjs"));
 
 assertMobileContracts({
   platforms,

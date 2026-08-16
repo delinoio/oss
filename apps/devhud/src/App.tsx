@@ -118,13 +118,13 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
     };
   }, [bridge]);
   useEffect(() => {
-    if (!runtime?.capabilities.notifications) return;
+    if (!runtime?.capabilities.notifications || lifecycle !== LifecycleState.Active) return;
     let active = true;
     void bridge.request({ operation: "notifications.permission" }).then((response) => {
       if (active && response.kind === "notification-permission") setNotificationPermission(response.permission);
     }).catch(() => {});
     return () => { active = false; };
-  }, [bridge, runtime?.capabilities.notifications]);
+  }, [bridge, lifecycle, runtime?.capabilities.notifications]);
   useEffect(() => {
     if (!runtime?.capabilities.storeUpdates) return;
     let active = true;

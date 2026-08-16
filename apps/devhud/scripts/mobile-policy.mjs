@@ -44,8 +44,22 @@ export function assertAndroidNativeBridge(androidNativeBridge) {
   assert(androidNativeBridge.includes("areNotificationsEnabled()"), "Android notification state must honor app-level disablement");
   assert(androidNativeBridge.includes("NotificationManager.IMPORTANCE_NONE"), "Android notification publication must honor channel disablement");
   assert(androidNativeBridge.includes("devhud_notification_channel_deck_changes"), "Android notification channels must use localized resources");
+  assert(androidNativeBridge.includes('PermissionState.PROMPT -> "not-determined"') && !androidNativeBridge.includes("PermissionState.PROMPT, PermissionState.PROMPT_WITH_RATIONALE"), "Android rationale-required notification permission must be denied");
+  assert(androidNativeBridge.includes(".setGroup(deckId)") && androidNativeBridge.includes("manager.notify(notificationId, 0, built)"), "Android Deck changes must retain distinct notification identities");
+  assert(androidNativeBridge.includes("manager.activeNotifications") && androidNativeBridge.includes("it.notification.group == deckId"), "Android Deck cancellation must remove every associated notification");
   assert(androidNativeBridge.includes("activity.intent = Intent(activity.intent).setData(null)"), "Android consumed auth callbacks must be removed from the activity intent");
   assert(androidNativeBridge.includes("storeIntent().resolveActivity(activity.packageManager)"), "Android update status must resolve a market handler");
+}
+
+export function assertIosNativeBridge(iosNativeBridge) {
+  assert(iosNativeBridge.includes('invoke.reject("storage-failure", code: "storage-failure")'), "iOS Keychain failures must use storage-failure");
+  assert(iosNativeBridge.includes('invoke.reject("permission-denied", code: "permission-denied")'), "iOS notification publication must honor authorization");
+  assert(iosNativeBridge.includes("UNUserNotificationCenterDelegate") && iosNativeBridge.includes("willPresent notification"), "iOS foreground Deck notifications must be presented by a delegate");
+  assert(iosNativeBridge.includes('(url.path.isEmpty || url.path == "/")'), "iOS native navigation must accept both root API-origin spellings");
+}
+
+export function assertMobileDependencyResolution(verifier) {
+  assert(!verifier.includes('"--no-default-features"'), "mobile dependency closure must include production default features");
 }
 
 export function mobileCargoTreeDigest(cargoTree, workspaceRoot) {
@@ -116,9 +130,7 @@ export function assertMobileContracts({ platforms, tauri, ios, android, cargo, a
   assert((androidPluginManifest.match(/<uses-permission/gu) ?? []).length === 1 && androidPluginManifest.includes("android.permission.POST_NOTIFICATIONS"), "Android native bridge permissions are not least-privileged");
   assert((iosPlist.match(/<string>devhud<\/string>/gu) ?? []).length === 1, "iOS must register only one devhud scheme");
   assert(!/com\.apple\.developer\.|NSExtension/iu.test(iosPlist), "uncontracted iOS entitlement or extension detected");
-  assert(iosNativeBridge.includes('invoke.reject("storage-failure", code: "storage-failure")'), "iOS Keychain failures must use storage-failure");
-  assert(iosNativeBridge.includes('invoke.reject("permission-denied", code: "permission-denied")'), "iOS notification publication must honor authorization");
-  assert(iosNativeBridge.includes("UNUserNotificationCenterDelegate") && iosNativeBridge.includes("willPresent notification"), "iOS foreground Deck notifications must be presented by a delegate");
+  assertIosNativeBridge(iosNativeBridge);
 
   assert(packageJson.scripts["build:ios"] && packageJson.scripts["build:android"] && packageJson.scripts["mobile:generate"], "package-local mobile commands are incomplete");
   for (const operation of ["runtime.snapshot", "lifecycle.open-external", "secure.read", "secure.write", "notifications.request-permission", "updates.status", "widgets.replace-deck-snapshot"]) assert(nativeBridge.includes(`\"${operation}\"`), `typed bridge operation missing: ${operation}`);

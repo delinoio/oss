@@ -61,7 +61,7 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate {
         } else if args.target == "authentication", let origin = args.apiOrigin, let url = URL(string: origin) {
             let host = url.host ?? ""
             let loopback = host == "localhost" || host == "::1" || host.hasPrefix("127.")
-            guard (url.scheme == "https" || (url.scheme == "http" && loopback)), url.path == "/", url.query == nil, url.fragment == nil, url.user == nil, url.password == nil else { throw NativeError.invalidArgument }
+            guard (url.scheme == "https" || (url.scheme == "http" && loopback)), (url.path.isEmpty || url.path == "/"), url.query == nil, url.fragment == nil, url.user == nil, url.password == nil else { throw NativeError.invalidArgument }
             destination = url
         } else {
             throw NativeError.invalidArgument

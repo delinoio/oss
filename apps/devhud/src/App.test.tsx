@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
@@ -106,6 +106,34 @@ describe("native App state", () => {
     expect(screen.getByText(messages.ko.diagnosticPlatform)).toBeTruthy();
     expect(screen.getByText(messages.ko.diagnosticArchitecture)).toBeTruthy();
     expect(screen.getByText(messages.ko.diagnosticBridge)).toBeTruthy();
+  });
+
+  it("refreshes notification permission when the app returns to the active lifecycle", async () => {
+    let receive!: (event: NativeBridgeEventV1) => void;
+    let permission: NotificationPermission = NotificationPermission.Authorized;
+    const runtime = { ...mobileRuntime, capabilities: { ...mobileRuntime.capabilities, notifications: true } };
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      if (value.operation === "notifications.permission") return { kind: "notification-permission", permission };
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    const bridge: NativeBridgeV1 = {
+      request,
+      async listen(listener) { receive = listener; return () => {}; },
+    };
+
+    render(<App bridge={bridge} initialRuntime={runtime} />);
+    await waitFor(() => expect(receive).toBeTypeOf("function"));
+    await waitFor(() => expect(request).toHaveBeenCalledTimes(1));
+
+    await act(async () => { receive({ version: 1, kind: "lifecycle", state: LifecycleState.Background }); });
+    expect(request).toHaveBeenCalledTimes(1);
+
+    permission = NotificationPermission.Denied;
+    await act(async () => { receive({ version: 1, kind: "lifecycle", state: LifecycleState.Active }); });
+    await waitFor(() => expect(request).toHaveBeenCalledTimes(2));
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.settings }));
+    expect(await screen.findByText(messages.en.notificationDenied)).toBeTruthy();
   });
 
   it("updates the Deck state when connectivity changes", () => {

@@ -187,7 +187,7 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
         }
         return when (getPermissionState(notificationAlias)) {
             PermissionState.GRANTED -> "authorized"
-            PermissionState.PROMPT, PermissionState.PROMPT_WITH_RATIONALE -> "not-determined"
+            PermissionState.PROMPT -> "not-determined"
             else -> "denied"
         }
     }
@@ -215,6 +215,8 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
             return
         }
         val notification = invoke.getArgs().getJSObject("notification") ?: throw IllegalArgumentException("notification")
+        val notificationId = notification.getString("id")
+        val deckId = notification.getString("deckId")
         val manager = activity.getSystemService(NotificationManager::class.java)
         val channelNameId = activity.resources.getIdentifier("devhud_notification_channel_deck_changes", "string", activity.packageName)
         require(channelNameId != 0) { "notification channel name resource" }
@@ -230,15 +232,19 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
             .setContentTitle(notification.getString("title"))
             .setContentText(notification.getString("body"))
             .setContentIntent(pendingIntent)
+            .setGroup(deckId)
             .setAutoCancel(true)
             .build()
-        manager.notify(notification.getString("deckId").hashCode(), built)
+        manager.notify(notificationId, 0, built)
         invoke.resolve(JSObject().put("kind", "ok"))
     }
 
     private fun cancelNotification(invoke: Invoke) {
         val deckId = invoke.getArgs().getString("deckId")
-        activity.getSystemService(NotificationManager::class.java).cancel(deckId.hashCode())
+        val manager = activity.getSystemService(NotificationManager::class.java)
+        manager.activeNotifications
+            .filter { it.notification.group == deckId }
+            .forEach { manager.cancel(it.tag, it.id) }
         invoke.resolve(JSObject().put("kind", "ok"))
     }
 
