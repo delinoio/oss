@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const appRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const styles = readFileSync(join(appRoot, "src/styles.css"), "utf8");
+const app = readFileSync(join(appRoot, "src/App.tsx"), "utf8");
 const themeBlocks = [
   styles.match(/:root\s*\{([^}]*)\}/u)?.[1],
   styles.match(/html\[data-theme="dark"\]\s*\{([^}]*)\}/u)?.[1],
@@ -49,4 +50,9 @@ test("eyebrow text meets WCAG AA contrast in light and dark themes", () => {
 test("active navigation buttons meet WCAG AA contrast in dark mode", () => {
   const darkTheme = themeBlocks[1];
   assert(contrastRatio("#ffffff", customColor(darkTheme, "--button-accent")) >= 4.5);
+});
+
+test("command palette uses buttons and has a localized empty state", () => {
+  assert.doesNotMatch(app, /role="listbox"|role="option"/u);
+  assert.match(app, /actions\.length === 0/u);
 });

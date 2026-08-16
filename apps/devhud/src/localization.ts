@@ -25,7 +25,7 @@ export const messages = {
     captureDisplay: "Capture display", captureWindow: "Capture active window", captureAll: "Capture all displays", captureSelection: "Capture selection", captureToolbar: "Open capture toolbar",
     navHome: "Go to Home", navRealqa: "Open RealQA", navDeck: "Open Deck", navSettings: "Open Settings", navAccount: "Open Account", navDiagnostics: "Open Diagnostics",
     settingTheme: "Set theme", settingLanguage: "Set language", settingLaunch: "Toggle launch at login",
-    externalOpened: "Opened in your system browser.",
+    externalOpened: "Opened in your system browser.", externalFailed: "DevHUD could not open your system browser.", invalidApiOrigin: "Enter a valid HTTPS or loopback HTTP API origin.",
   },
   ko: {
     appName: "DevHUD",
@@ -49,7 +49,7 @@ export const messages = {
     captureDisplay: "디스플레이 캡처", captureWindow: "활성 창 캡처", captureAll: "모든 디스플레이 캡처", captureSelection: "선택 영역 캡처", captureToolbar: "캡처 도구 모음 열기",
     navHome: "홈으로 이동", navRealqa: "RealQA 열기", navDeck: "Deck 열기", navSettings: "설정 열기", navAccount: "계정 열기", navDiagnostics: "진단 열기",
     settingTheme: "테마 설정", settingLanguage: "언어 설정", settingLaunch: "로그인 시 실행 전환",
-    externalOpened: "시스템 브라우저에서 열었습니다.",
+    externalOpened: "시스템 브라우저에서 열었습니다.", externalFailed: "DevHUD에서 시스템 브라우저를 열 수 없습니다.", invalidApiOrigin: "유효한 HTTPS 또는 루프백 HTTP API 원본을 입력하세요.",
   },
 } as const;
 

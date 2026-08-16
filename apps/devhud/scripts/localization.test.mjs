@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { messages, selectSupportedLanguage } from "../src/localization.ts";
-import { LanguagePreference, ThemePreference, readPreferences, resolveLanguage, resolveTheme } from "../src/shell.ts";
+import { LanguagePreference, ThemePreference, defaultPreferences, isValidApiOrigin, readPreferences, resolveLanguage, resolveTheme } from "../src/shell.ts";
 
 test("selects English from an English platform locale", () => {
   assert.equal(selectSupportedLanguage(["en-US"]), "en");
@@ -22,6 +22,15 @@ test("resolves system preferences and safely falls back to defaults", () => {
   assert.equal(resolveTheme(ThemePreference.System, false), ThemePreference.Light);
   assert.equal(readPreferences({ getItem: () => "not json" }).language, LanguagePreference.System);
   assert.equal(resolveLanguage(LanguagePreference.System, ["en-US", "ko-KR"]), "en");
+});
+
+test("sanitizes each persisted preference independently", () => {
+  const stored = JSON.stringify({ version: 1, theme: "contrast", language: null, apiOrigin: "http://example.com", launchAtLogin: "yes" });
+  assert.deepEqual(readPreferences({ getItem: () => stored }), defaultPreferences);
+  const valid = JSON.stringify({ version: 1, theme: ThemePreference.Dark, language: LanguagePreference.Korean, apiOrigin: "http://127.0.0.1:46307/", launchAtLogin: true });
+  assert.deepEqual(readPreferences({ getItem: () => valid }), { version: 1, theme: ThemePreference.Dark, language: LanguagePreference.Korean, apiOrigin: "http://127.0.0.1:46307/", launchAtLogin: true });
+  assert.equal(isValidApiOrigin("https://devhud.api.delino.io/"), true);
+  assert.equal(isValidApiOrigin("https://devhud.api.delino.io/path"), false);
 });
 
 test("describes Korean diagnostics as redacted rather than deleted", () => {
