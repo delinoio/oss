@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { messages, selectSupportedLanguage } from "../src/localization.ts";
-import { LanguagePreference, ThemePreference, completeOnboarding, defaultPreferences, hasCompletedOnboarding, isValidApiOrigin, readPreferences, resolveLanguage, resolveTheme } from "../src/shell.ts";
+import { LanguagePreference, ThemePreference, completeOnboarding, defaultPreferences, hasCompletedOnboarding, isValidApiOrigin, readPreferences, resolveLanguage, resolveTheme, synchronizeDocumentPreferences } from "../src/shell.ts";
 
 test("selects English from an English platform locale", () => {
   assert.equal(selectSupportedLanguage(["en-US"]), "en");
@@ -22,6 +22,15 @@ test("resolves system preferences and safely falls back to defaults", () => {
   assert.equal(resolveTheme(ThemePreference.System, false), ThemePreference.Light);
   assert.equal(readPreferences({ getItem: () => "not json" }).language, LanguagePreference.System);
   assert.equal(resolveLanguage(LanguagePreference.System, ["en-US", "ko-KR"]), "en");
+});
+
+test("synchronizes the resolved language and theme onto the document before rendering", () => {
+  const documentElement = { lang: "en", dataset: {} };
+  assert.deepEqual(
+    synchronizeDocumentPreferences(documentElement, { ...defaultPreferences, language: LanguagePreference.Korean, theme: ThemePreference.System }, true, ["ko-KR"]),
+    { language: "ko", theme: ThemePreference.Dark },
+  );
+  assert.deepEqual(documentElement, { lang: "ko", dataset: { theme: ThemePreference.Dark } });
 });
 
 test("sanitizes each persisted preference independently", () => {

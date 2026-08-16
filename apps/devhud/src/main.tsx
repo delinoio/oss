@@ -1,2 +1,2 @@
-import { StrictMode } from "react"; import { createRoot } from "react-dom/client"; import { App } from "./App"; import "./styles.css";
-const root = document.getElementById("root"); if (!root) throw new Error("DevHUD root element is missing"); createRoot(root).render(<StrictMode><App /></StrictMode>);
+import { StrictMode } from "react"; import { createRoot } from "react-dom/client"; import { App } from "./App"; import { getLocalStorage, readPreferences, synchronizeDocumentPreferences } from "./shell"; import "./styles.css";
+const root = document.getElementById("root"); if (!root) throw new Error("DevHUD root element is missing"); const preferences = readPreferences(getLocalStorage()); synchronizeDocumentPreferences(document.documentElement, preferences, matchMedia("(prefers-color-scheme: dark)").matches, navigator.languages); createRoot(root).render(<StrictMode><App /></StrictMode>);

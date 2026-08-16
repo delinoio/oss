@@ -58,6 +58,13 @@ export function hasCompletedOnboarding(storage: Pick<Storage, "getItem">) { try 
 export function completeOnboarding(storage: Pick<Storage, "setItem">) { try { storage.setItem(onboardingKey, "complete"); } catch {} }
 export function resolveLanguage(preference: LanguagePreference, languages: readonly string[]): SupportedLanguage { if (preference !== LanguagePreference.System) return preference; for (const locale of languages) { const language = locale.trim().toLowerCase().split(/[-_]/u, 1)[0]; if (language === "en" || language === "ko") return language; } return "en"; }
 export function resolveTheme(preference: ThemePreference, dark: boolean) { return preference === ThemePreference.System ? (dark ? ThemePreference.Dark : ThemePreference.Light) : preference; }
+export function synchronizeDocumentPreferences(documentElement: Pick<HTMLElement, "lang" | "dataset">, preferences: Preferences, systemDark: boolean, languages: readonly string[]) {
+  const language = resolveLanguage(preferences.language, languages);
+  const theme = resolveTheme(preferences.theme, systemDark);
+  documentElement.lang = language;
+  documentElement.dataset.theme = theme;
+  return { language, theme };
+}
 
 export interface NativeShell { setLaunchAtLogin(enabled: boolean): Promise<void>; openExternal(target: ExternalLinkTarget, apiOrigin: string): Promise<void>; quit(): Promise<void>; }
 interface TauriInternals { invoke(command: string, args?: Record<string, unknown>): Promise<unknown>; }

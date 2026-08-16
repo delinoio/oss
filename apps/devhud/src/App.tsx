@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { messages } from "./localization";
-import { ActionId, ExternalLinkTarget, LanguagePreference, PlatformCapability, SurfaceId, ThemePreference, actionRegistry, availableActions, browserShell, completeOnboarding, desktopCapabilities, getLocalStorage, hasCompletedOnboarding, isValidApiOrigin, markFrontendReady, readPreferences, resolveLanguage, resolveTheme, setTrayLanguage, writePreferences, type Preferences } from "./shell";
+import { ActionId, ExternalLinkTarget, LanguagePreference, PlatformCapability, SurfaceId, ThemePreference, actionRegistry, availableActions, browserShell, completeOnboarding, desktopCapabilities, getLocalStorage, hasCompletedOnboarding, isValidApiOrigin, markFrontendReady, readPreferences, resolveLanguage, setTrayLanguage, synchronizeDocumentPreferences, writePreferences, type Preferences } from "./shell";
 
 const surfaces: readonly SurfaceId[] = [SurfaceId.Home, SurfaceId.Realqa, SurfaceId.Deck, SurfaceId.Settings, SurfaceId.Account, SurfaceId.Diagnostics];
 const labels: Record<SurfaceId, keyof typeof messages.en> = { home: "home", realqa: "realqa", deck: "deck", settings: "settings", account: "account", diagnostics: "diagnostics" };
@@ -25,11 +25,10 @@ export function App() {
   const copy = messages[language];
   const update = (next: Partial<Preferences>) => {
     if ("apiOrigin" in next) setExternalMessage(null);
-    setPreferences((current) => {
-      const value = { ...current, ...next };
-      writePreferences(storage, value);
-      return value;
-    });
+    const value = { ...preferences, ...next };
+    synchronizeDocumentPreferences(document.documentElement, value, matchMedia("(prefers-color-scheme: dark)").matches, navigator.languages);
+    writePreferences(storage, value);
+    setPreferences(value);
   };
   const closePalette = (restoreTriggerFocus = true) => {
     setPalette(false);
@@ -41,12 +40,11 @@ export function App() {
     void markFrontendReady();
   }, []);
   useEffect(() => {
-    document.documentElement.lang = language;
     void setTrayLanguage(language).catch(() => {});
   }, [language]);
   useEffect(() => {
     const media = matchMedia("(prefers-color-scheme: dark)");
-    const updateTheme = () => { document.documentElement.dataset.theme = resolveTheme(preferences.theme, media.matches); };
+    const updateTheme = () => { synchronizeDocumentPreferences(document.documentElement, preferences, media.matches, navigator.languages); };
     updateTheme();
     media.addEventListener("change", updateTheme);
     return () => media.removeEventListener("change", updateTheme);
@@ -56,7 +54,8 @@ export function App() {
       const platformModifier = isMac ? "MetaRight" : "ControlRight";
       if (event.code === platformModifier && event.location === rightModifierLocation) rightModifier.current = event.code;
       const matchingRightModifier = rightModifier.current === platformModifier && (isMac ? event.metaKey : event.ctrlKey);
-      if (!onboarding && matchingRightModifier && event.code === "KeyK") {
+      const exactRightModifierChord = matchingRightModifier && !event.shiftKey && !event.altKey && (isMac ? !event.ctrlKey : !event.metaKey);
+      if (!onboarding && exactRightModifierChord && event.code === "KeyK") {
         event.preventDefault();
         setPalette(true);
       }
@@ -134,7 +133,7 @@ export function App() {
     <aside aria-label="DevHUD">
       <h1>{copy.appName}</h1>
       <nav>{surfaces.map((item) => <button className={surface === item ? "active" : ""} aria-current={surface === item ? "page" : undefined} key={item} onClick={() => setSurface(item)}>{copy[labels[item]]}</button>)}</nav>
-      <button ref={paletteTrigger} onClick={() => setPalette(true)} aria-label={copy.openPalette}>{isMac ? copy.rightCommandK : copy.rightControlK}</button>
+      <button className="palette-trigger" ref={paletteTrigger} onClick={() => setPalette(true)} aria-label={copy.openPalette}>{isMac ? copy.rightCommandK : copy.rightControlK}</button>
     </aside>
     <section className="content">
       {surface === SurfaceId.Home && <><p className="eyebrow">{copy.available}</p><h2>{copy.welcome}</h2><p>{copy.homeSummary}</p></>}

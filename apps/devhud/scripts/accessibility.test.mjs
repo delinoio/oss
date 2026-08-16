@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 const appRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const styles = readFileSync(join(appRoot, "src/styles.css"), "utf8");
 const app = readFileSync(join(appRoot, "src/App.tsx"), "utf8");
+const main = readFileSync(join(appRoot, "src/main.tsx"), "utf8");
 const nativeHost = readFileSync(join(appRoot, "src-tauri/src/main.rs"), "utf8");
 const themeBlocks = [
   styles.match(/:root\s*\{([^}]*)\}/u)?.[1],
@@ -85,11 +86,21 @@ test("command palette shortcut is unavailable during onboarding", () => {
   assert.match(app, /const platformModifier = isMac \? "MetaRight" : "ControlRight"/u);
   assert.match(app, /rightModifier\.current === platformModifier/u);
   assert.match(app, /isMac \? event\.metaKey : event\.ctrlKey/u);
+  assert.match(app, /const exactRightModifierChord = matchingRightModifier && !event\.shiftKey && !event\.altKey && \(isMac \? !event\.ctrlKey : !event\.metaKey\);/u);
   assert.match(app, /event\.location === rightModifierLocation/u);
   assert.match(app, /addEventListener\("keyup", releaseRightModifier\)/u);
-  assert.match(app, /!onboarding && matchingRightModifier/u);
+  assert.match(app, /!onboarding && exactRightModifierChord/u);
   assert.match(app, /event\.code === "KeyK"/u);
   assert.match(app, /copy\.rightCommandK : copy\.rightControlK/u);
+});
+
+test("document preferences are synchronized before the first localized render", () => {
+  assert.match(main, /synchronizeDocumentPreferences\(document\.documentElement, preferences, matchMedia\("\(prefers-color-scheme: dark\)"\)\.matches, navigator\.languages\); createRoot\(root\)\.render/u);
+});
+
+test("the palette trigger retains contrast while hovered", () => {
+  assert.match(app, /className="palette-trigger"/u);
+  assert.match(styles, /aside > \.palette-trigger:hover\s*\{\s*color:#fff; background:var\(--button-accent\);/u);
 });
 
 test("external status remains localized and noopener does not report a false failure", () => {
