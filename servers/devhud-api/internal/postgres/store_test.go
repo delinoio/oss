@@ -18,3 +18,13 @@ func TestNewPoolDoesNotExposeMalformedDatabaseURL(t *testing.T) {
 		t.Fatalf("error exposed database credentials: %q", got)
 	}
 }
+
+func TestNewSweeperPoolRequiresTwoConnections(t *testing.T) {
+	_, err := NewSweeperPool(context.Background(), "postgres://unused?pool_max_conns=1")
+	if err == nil {
+		t.Fatal("NewSweeperPool accepted a one-connection pool")
+	}
+	if got := err.Error(); got != "sweeper PostgreSQL pool must allow at least 2 connections" {
+		t.Fatalf("error = %q", got)
+	}
+}

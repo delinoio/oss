@@ -89,19 +89,33 @@ func run(ctx context.Context, arguments []string, logger *slog.Logger) error {
 	}
 	stopContext, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	logger.Info("devhud-api listening", "address", configuration.ListenAddress)
+	return serveUntilStopped(stopContext, httpServer, listener, configuration.ShutdownTimeout, logger)
+}
+
+func serveUntilStopped(ctx context.Context, httpServer *http.Server, listener net.Listener, shutdownTimeout time.Duration, logger *slog.Logger) error {
+	serveErrors := make(chan error, 1)
 	go func() {
-		<-stopContext.Done()
-		shutdownContext, cancel := context.WithTimeout(context.Background(), configuration.ShutdownTimeout)
+		serveErrors <- httpServer.Serve(listener)
+	}()
+
+	select {
+	case err := <-serveErrors:
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			return err
+		}
+		return nil
+	case <-ctx.Done():
+		shutdownContext, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 		defer cancel()
 		if err := httpServer.Shutdown(shutdownContext); err != nil {
 			logger.Error("HTTP shutdown failed", "error", err)
 		}
-	}()
-	logger.Info("devhud-api listening", "address", configuration.ListenAddress)
-	if err := httpServer.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		return err
+		if err := <-serveErrors; err != nil && !errors.Is(err, http.ErrServerClosed) {
+			return err
+		}
+		return nil
 	}
-	return nil
 }
 
 func runMigrations(ctx context.Context) error {

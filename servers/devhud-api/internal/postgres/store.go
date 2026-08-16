@@ -31,10 +31,33 @@ func New(pool *pgxpool.Pool, ids domain.IDGenerator, clock domain.Clock) *Store 
 }
 
 func NewPool(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
+	configuration, err := parsePoolConfig(databaseURL)
+	if err != nil {
+		return nil, err
+	}
+	return newPool(ctx, configuration)
+}
+
+func NewSweeperPool(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
+	configuration, err := parsePoolConfig(databaseURL)
+	if err != nil {
+		return nil, err
+	}
+	if configuration.MaxConns < 2 {
+		return nil, errors.New("sweeper PostgreSQL pool must allow at least 2 connections")
+	}
+	return newPool(ctx, configuration)
+}
+
+func parsePoolConfig(databaseURL string) (*pgxpool.Config, error) {
 	configuration, err := pgxpool.ParseConfig(databaseURL)
 	if err != nil {
 		return nil, errors.New("parse PostgreSQL configuration")
 	}
+	return configuration, nil
+}
+
+func newPool(ctx context.Context, configuration *pgxpool.Config) (*pgxpool.Pool, error) {
 	pool, err := pgxpool.NewWithConfig(ctx, configuration)
 	if err != nil {
 		return nil, fmt.Errorf("create PostgreSQL pool: %w", err)
@@ -238,6 +261,9 @@ func (s *Store) DeleteAccount(ctx context.Context, userID string, now time.Time)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	user, err := scanUser(tx.QueryRow(ctx, "SELECT "+userColumns+" FROM devhud_users WHERE user_id = $1 FOR UPDATE", userID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.User{}, domain.ErrNotFound
+	}
 	if err != nil {
 		return domain.User{}, err
 	}
@@ -445,8 +471,7 @@ func (s *Store) TryLock(ctx context.Context) (func(context.Context) error, bool,
 	}
 	var acquired bool
 	if err := connection.QueryRow(ctx, "SELECT pg_try_advisory_lock($1)", sweepAdvisoryLock).Scan(&acquired); err != nil {
-		connection.Release()
-		return nil, false, err
+		return nil, false, errors.Join(err, discardPoolConnection(connection))
 	}
 	if !acquired {
 		connection.Release()

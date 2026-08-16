@@ -4,9 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"errors"
+	"io"
 	"log/slog"
 	"net"
+	"net/http"
 	"testing"
+	"time"
 )
 
 func TestDevelopmentPortConflictFailsWithoutRemapping(t *testing.T) {
@@ -23,6 +27,64 @@ func TestDevelopmentPortConflictFailsWithoutRemapping(t *testing.T) {
 	}
 	if alternative, probeErr := net.Listen("tcp", "127.0.0.1:46308"); probeErr == nil {
 		_ = alternative.Close()
+	}
+}
+
+func TestServeUntilStoppedWaitsForActiveRequests(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+
+	requestStarted := make(chan struct{})
+	releaseRequest := make(chan struct{})
+	released := false
+	defer func() {
+		if !released {
+			close(releaseRequest)
+		}
+	}()
+	httpServer := &http.Server{Handler: http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
+		close(requestStarted)
+		<-releaseRequest
+		response.WriteHeader(http.StatusNoContent)
+	})}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	serveDone := make(chan error, 1)
+	go func() {
+		serveDone <- serveUntilStopped(ctx, httpServer, listener, time.Second, slog.New(slog.NewJSONHandler(io.Discard, nil)))
+	}()
+
+	requestDone := make(chan error, 1)
+	go func() {
+		response, requestErr := (&http.Client{Timeout: 2 * time.Second}).Get("http://" + listener.Addr().String())
+		if requestErr == nil {
+			_, requestErr = io.Copy(io.Discard, response.Body)
+			requestErr = errors.Join(requestErr, response.Body.Close())
+		}
+		requestDone <- requestErr
+	}()
+	select {
+	case <-requestStarted:
+	case <-time.After(time.Second):
+		t.Fatal("request did not reach the handler")
+	}
+
+	cancel()
+	select {
+	case serveErr := <-serveDone:
+		t.Fatalf("server returned before the active request drained: %v", serveErr)
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(releaseRequest)
+	released = true
+	if requestErr := <-requestDone; requestErr != nil {
+		t.Fatal(requestErr)
+	}
+	if serveErr := <-serveDone; serveErr != nil {
+		t.Fatal(serveErr)
 	}
 }
 

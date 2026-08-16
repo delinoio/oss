@@ -83,6 +83,33 @@ func TestRestoreAccountUsesAuthenticatedOwnerAndMapsPurgeClaim(t *testing.T) {
 	}
 }
 
+func TestDeleteAccountMapsCompletedPurge(t *testing.T) {
+	repository := &serviceRepository{deleteAccount: func(_ context.Context, userID string, _ time.Time) (domain.User, error) {
+		if userID != "018f7c1e-7b4a-7abc-8def-0123456789ab" {
+			t.Fatalf("delete used user %q", userID)
+		}
+		return domain.User{}, domain.ErrNotFound
+	}}
+	_, err := NewAccountService(repository, serviceClock{}).DeleteAccount(authenticatedContext(), connect.NewRequest(&devhudv1.DeleteAccountRequest{}))
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("code = %v, want FailedPrecondition", connect.CodeOf(err))
+	}
+	connectError := new(connect.Error)
+	if !errors.As(err, &connectError) {
+		t.Fatalf("error = %v", err)
+	}
+	for _, detail := range connectError.Details() {
+		value, valueErr := detail.Value()
+		if valueErr != nil {
+			t.Fatal(valueErr)
+		}
+		if failure, ok := value.(*devhudv1.AccountFailure); ok && failure.GetReason() == devhudv1.AccountFailureReason_ACCOUNT_FAILURE_REASON_PURGE_CLAIMED {
+			return
+		}
+	}
+	t.Fatal("missing purge-completed account failure detail")
+}
+
 const testCorrelationID = "018f7c1e-7b4a-7abc-8def-0123456789ac"
 
 func authenticatedContext() context.Context {
@@ -98,6 +125,7 @@ type serviceRepository struct {
 	getAccount      func(context.Context, string) (domain.User, error)
 	getSettings     func(context.Context, string) (*domain.Settings, error)
 	replaceSettings func(context.Context, string, uint32, []byte, uint64, time.Time) (domain.Settings, error)
+	deleteAccount   func(context.Context, string, time.Time) (domain.User, error)
 	restoreAccount  func(context.Context, string, time.Time) (domain.User, error)
 }
 
@@ -115,8 +143,8 @@ func (repository *serviceRepository) ReplaceSettings(ctx context.Context, userID
 func (repository *serviceRepository) GetAccount(ctx context.Context, userID string) (domain.User, error) {
 	return repository.getAccount(ctx, userID)
 }
-func (*serviceRepository) DeleteAccount(context.Context, string, time.Time) (domain.User, error) {
-	return domain.User{}, nil
+func (repository *serviceRepository) DeleteAccount(ctx context.Context, userID string, now time.Time) (domain.User, error) {
+	return repository.deleteAccount(ctx, userID, now)
 }
 func (repository *serviceRepository) RestoreAccount(ctx context.Context, userID string, now time.Time) (domain.User, error) {
 	return repository.restoreAccount(ctx, userID, now)

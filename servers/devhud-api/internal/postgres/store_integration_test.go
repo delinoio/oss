@@ -251,6 +251,9 @@ func TestFoundationTransactionsAndRetention(t *testing.T) {
 	if _, err := store.RestoreAccount(ctx, user.ID, boundary); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("restore after purge error = %v, want ErrNotFound", err)
 	}
+	if _, err := store.DeleteAccount(ctx, user.ID, boundary); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("delete after purge error = %v, want ErrNotFound", err)
+	}
 	rotatedIdentity := identity
 	rotatedIdentity.Fingerprint = []byte("abcdefghijklmnopqrstuvwxyz123456")
 	rotatedIdentity.FingerprintCandidates = [][]byte{rotatedIdentity.Fingerprint}
@@ -314,6 +317,49 @@ func TestFoundationTransactionsAndRetention(t *testing.T) {
 	}
 	if err := otherUnlock(ctx); err != nil {
 		t.Fatal(err)
+	}
+
+	acquisitionConfiguration, err := pgxpool.ParseConfig(databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	acquisitionConfiguration.MaxConns = 1
+	acquisitionConfiguration.MinConns = 0
+	cancelAcquisition := func() {}
+	var failedSessionPID uint32
+	cancelOnAcquire := false
+	acquisitionConfiguration.BeforeAcquire = func(_ context.Context, connection *pgx.Conn) bool {
+		if cancelOnAcquire {
+			cancelOnAcquire = false
+			failedSessionPID = connection.PgConn().PID()
+			cancelAcquisition()
+		}
+		return true
+	}
+	acquisitionPool, err := pgxpool.NewWithConfig(ctx, acquisitionConfiguration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer acquisitionPool.Close()
+	if err := acquisitionPool.Ping(ctx); err != nil {
+		t.Fatal(err)
+	}
+	acquisitionContext, cancel := context.WithCancel(ctx)
+	cancelAcquisition = cancel
+	cancelOnAcquire = true
+	acquisitionStore := New(acquisitionPool, idgen.UUIDv7{}, clock)
+	if _, _, err := acquisitionStore.TryLock(acquisitionContext); !errors.Is(err, context.Canceled) {
+		t.Fatalf("failed acquisition error = %v, want context cancellation", err)
+	}
+	cancel()
+	replacement, err := acquisitionPool.Acquire(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replacementPID := replacement.Conn().PgConn().PID()
+	replacement.Release()
+	if failedSessionPID == 0 || replacementPID == failedSessionPID {
+		t.Fatalf("acquisition-error session was reused: failed PID=%d replacement PID=%d", failedSessionPID, replacementPID)
 	}
 }
 

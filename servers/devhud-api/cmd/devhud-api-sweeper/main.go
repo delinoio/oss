@@ -37,7 +37,7 @@ func run(ctx context.Context, arguments []string, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	pool, err := postgres.NewPool(ctx, configuration.DatabaseURL)
+	pool, err := postgres.NewSweeperPool(ctx, configuration.DatabaseURL)
 	if err != nil {
 		return err
 	}
