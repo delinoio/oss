@@ -189,7 +189,14 @@ async function runScenario(
         throw new Error(`${mode} smoke did not emit ${marker}\n${output}`);
       }
     }
-    const persistedOutput = readFileSync(join(logRoot, "devhud.jsonl"), "utf8");
+    const persistedLogPaths = readdirSync(logRoot)
+      .filter((name) => /^devhud\.\d{4}-\d{2}-\d{2}\.jsonl$/u.test(name))
+      .sort()
+      .map((name) => join(logRoot, name));
+    if (persistedLogPaths.length === 0) {
+      throw new Error(`${mode} smoke did not create a dated diagnostic log`);
+    }
+    const persistedOutput = persistedLogPaths.map((path) => readFileSync(path, "utf8")).join("");
     const persistedEntries = persistedOutput
       .trim()
       .split("\n")

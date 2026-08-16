@@ -30,6 +30,7 @@ const FRONTEND_READY_TITLE: &str = "DevHUD";
 const FRONTEND_READY_TIMEOUT: Duration = Duration::from_secs(5);
 const RENDERER_CRASH_LISTENER_READY_ATTEMPTS: usize = 100;
 const RENDERER_CRASH_LISTENER_READY_DELAY: Duration = Duration::from_millis(50);
+const DIAGNOSTIC_LOG_FILE_LIMIT: usize = 7;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum SmokeMode {
@@ -97,8 +98,7 @@ fn diagnostic_writer(
     smoke_mode: Option<SmokeMode>,
     subprocess: bool,
 ) -> tracing_subscriber::fmt::writer::BoxMakeWriter {
-    use std::{fs::OpenOptions, sync::Mutex};
-
+    use tracing_appender::rolling::{RollingFileAppender, Rotation};
     use tracing_subscriber::fmt::writer::MakeWriterExt;
 
     if cfg!(debug_assertions) || subprocess {
@@ -106,24 +106,23 @@ fn diagnostic_writer(
     }
 
     let result = (|| {
-        let directory = diagnostic_log_directory(smoke_mode).ok_or(std::io::ErrorKind::NotFound)?;
-        std::fs::create_dir_all(&directory).map_err(|error| error.kind())?;
-        OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(directory.join("devhud.jsonl"))
-            .map_err(|error| error.kind())
+        let directory = diagnostic_log_directory(smoke_mode).ok_or(())?;
+        std::fs::create_dir_all(&directory).map_err(|_| ())?;
+        RollingFileAppender::builder()
+            .rotation(Rotation::DAILY)
+            .filename_prefix("devhud")
+            .filename_suffix("jsonl")
+            .max_log_files(DIAGNOSTIC_LOG_FILE_LIMIT)
+            .build(directory)
+            .map_err(|_| ())
     })();
 
     match result {
-        Ok(file) => tracing_subscriber::fmt::writer::BoxMakeWriter::new(
-            std::io::stderr.and(Mutex::new(file)),
-        ),
-        Err(kind) => {
-            eprintln!(
-                "{{\"level\":\"WARN\",\"event\":\"file_logging_unavailable\",\"kind\":\"{kind:?}\"\
-                 }}"
-            );
+        Ok(appender) => {
+            tracing_subscriber::fmt::writer::BoxMakeWriter::new(std::io::stderr.and(appender))
+        }
+        Err(()) => {
+            eprintln!("{{\"level\":\"WARN\",\"event\":\"file_logging_unavailable\"}}");
             tracing_subscriber::fmt::writer::BoxMakeWriter::new(std::io::stderr)
         }
     }

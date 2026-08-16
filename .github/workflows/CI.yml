@@ -845,8 +845,22 @@ jobs:
       - name: Prepare Ubuntu installed layout
         if: ${{ steps.gate.outputs.run == 'true' && matrix.os == 'linux' }}
         run: |
+          set -o pipefail
+          shopt -s nullglob
+          deb_packages=(target/release/bundle/deb/*.deb)
+          if [ "${#deb_packages[@]}" -ne 1 ]; then
+            echo "Expected exactly one DevHUD Debian package, found ${#deb_packages[@]}" >&2
+            exit 1
+          fi
+
+          sandbox_metadata="$(dpkg-deb --fsys-tarfile "${deb_packages[0]}" | tar --numeric-owner -tvf - | awk '$6 == "usr/share/DevHUD/chrome-sandbox" || $6 == "./usr/share/DevHUD/chrome-sandbox" { print $1, $2 }')"
+          if [ "${sandbox_metadata}" != "-rwsr-xr-x 0/0" ]; then
+            echo "DevHUD Debian chrome-sandbox must record UID/GID 0/0 and mode 4755; found: ${sandbox_metadata:-missing}" >&2
+            exit 1
+          fi
+
           mkdir -p target/devhud-smoke-root
-          dpkg-deb -x target/release/bundle/deb/*.deb target/devhud-smoke-root
+          dpkg-deb -x "${deb_packages[0]}" target/devhud-smoke-root
           sudo chown root:root target/devhud-smoke-root/usr/share/DevHUD/chrome-sandbox
           sudo chmod 4755 target/devhud-smoke-root/usr/share/DevHUD/chrome-sandbox
 

@@ -142,9 +142,11 @@ const dependencyText = dependencyFiles.join("\n");
 assert(!dependencyText.includes("feat/cef"), "moving feat/cef dependency detected");
 assert(!/tauri[^\n]*branch\s*=/u.test(dependencyText), "branch-based Tauri dependency detected");
 assert(
-  !appCargo.includes("[patch.") && !rootCargo.includes("[patch."),
-  "local Cargo patch detected in the DevHUD dependency graph",
+  !appCargo.includes("[patch."),
+  "local Cargo patch declared by the DevHUD manifest",
 );
+// Root patches for unrelated workspace crates are valid. The exact source and checksum
+// assertions below reject patches that alter DevHUD's protected dependency graph.
 assert(!dependencyText.includes("github.com/delinoio/tauri"), "Tauri fork dependency detected");
 
 for (const dependency of ["tauri", "tauri-build", "tauri-cli"]) {
