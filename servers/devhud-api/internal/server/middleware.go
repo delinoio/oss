@@ -379,7 +379,7 @@ func observeRequests(logger *slog.Logger, repository domain.Repository, clock do
 			CreatedAt:            started,
 			ExpiresAt:            started.Add(domain.RequestLogRetention),
 		}); err != nil {
-			logger.WarnContext(request.Context(), "request metadata persistence failed", "correlation_id", rpc.CorrelationID(request.Context()))
+			logger.WarnContext(request.Context(), "request metadata persistence failed", "correlation_id", rpc.CorrelationID(request.Context()), "error", err)
 		}
 	})
 }

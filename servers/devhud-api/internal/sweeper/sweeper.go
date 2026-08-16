@@ -77,11 +77,16 @@ func (s *Sweeper) RunOnce(ctx context.Context) (result Result, returnErr error) 
 		}
 		result.AccountsPurged++
 	}
-	retention, err := s.repository.PruneRetention(ctx, now, s.batchSize)
-	if err != nil {
-		return result, fmt.Errorf("prune retention: %w", err)
+	for {
+		retention, err := s.repository.PruneRetention(ctx, now, s.batchSize)
+		if err != nil {
+			return result, fmt.Errorf("prune retention: %w", err)
+		}
+		result.RequestLogsDeleted += retention.RequestLogsDeleted
+		result.AuditEventsDeleted += retention.AuditEventsDeleted
+		if retention.RequestLogsDeleted < int64(s.batchSize) && retention.AuditEventsDeleted < int64(s.batchSize) {
+			break
+		}
 	}
-	result.RequestLogsDeleted = retention.RequestLogsDeleted
-	result.AuditEventsDeleted = retention.AuditEventsDeleted
 	return result, nil
 }

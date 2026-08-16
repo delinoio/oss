@@ -84,10 +84,14 @@ func New(dependencies Dependencies) (*http.Server, error) {
 	handler = recoverPanics(dependencies.Logger, handler)
 	handler = observeRequests(dependencies.Logger, dependencies.Repository, dependencies.Clock, dependencies.IDs, requestMetrics, handler)
 	handler = correlation(dependencies.IDs, handler)
+	protocols := new(http.Protocols)
+	protocols.SetHTTP1(true)
+	protocols.SetUnencryptedHTTP2(true)
 
 	return &http.Server{
 		Addr:              dependencies.Config.ListenAddress,
 		Handler:           handler,
+		Protocols:         protocols,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      30 * time.Second,

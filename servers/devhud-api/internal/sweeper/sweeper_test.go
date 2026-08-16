@@ -13,7 +13,14 @@ import (
 )
 
 func TestRunOnceIsBoundedCoordinatedAndRetryable(t *testing.T) {
-	repository := &fakeRepository{accounts: []domain.User{{ID: "one"}, {ID: "two"}}, retention: domain.RetentionResult{RequestLogsDeleted: 3, AuditEventsDeleted: 4}}
+	repository := &fakeRepository{
+		accounts: []domain.User{{ID: "one"}, {ID: "two"}},
+		retentionBatches: []domain.RetentionResult{
+			{RequestLogsDeleted: 2, AuditEventsDeleted: 2},
+			{RequestLogsDeleted: 1, AuditEventsDeleted: 2},
+			{},
+		},
+	}
 	coordinator := &fakeCoordinator{acquired: true}
 	purger := &failingOncePurger{}
 	worker, err := New(repository, coordinator, []domain.AccountPurgeAdapter{purger}, fixedClock{}, slog.New(slog.NewJSONHandler(&bytes.Buffer{}, nil)), 2)
@@ -27,8 +34,8 @@ func TestRunOnceIsBoundedCoordinatedAndRetryable(t *testing.T) {
 	if result.AccountsClaimed != 2 || result.AccountsPurged != 1 || result.RequestLogsDeleted != 3 || result.AuditEventsDeleted != 4 {
 		t.Fatalf("unexpected result: %+v", result)
 	}
-	if repository.limit != 2 || repository.retentionLimit != 2 || coordinator.unlocks != 1 {
-		t.Fatalf("coordination/bound mismatch: account_limit=%d retention_limit=%d unlocks=%d", repository.limit, repository.retentionLimit, coordinator.unlocks)
+	if repository.limit != 2 || repository.retentionLimit != 2 || repository.retentionCalls != 3 || coordinator.unlocks != 1 {
+		t.Fatalf("coordination/bound mismatch: account_limit=%d retention_limit=%d retention_calls=%d unlocks=%d", repository.limit, repository.retentionLimit, repository.retentionCalls, coordinator.unlocks)
 	}
 
 	result, err = worker.RunOnce(context.Background())
@@ -117,11 +124,12 @@ func (purger *failingOncePurger) PurgeAccount(_ context.Context, _ domain.User) 
 }
 
 type fakeRepository struct {
-	accounts       []domain.User
-	retention      domain.RetentionResult
-	limit          int
-	retentionLimit int
-	claims         int
+	accounts         []domain.User
+	retentionBatches []domain.RetentionResult
+	limit            int
+	retentionLimit   int
+	retentionCalls   int
+	claims           int
 }
 
 func (*fakeRepository) SchemaCurrent(context.Context) (bool, error) { return true, nil }
@@ -162,5 +170,10 @@ func (repository *fakeRepository) CompleteAccountPurge(_ context.Context, user d
 }
 func (repository *fakeRepository) PruneRetention(_ context.Context, _ time.Time, limit int) (domain.RetentionResult, error) {
 	repository.retentionLimit = limit
-	return repository.retention, nil
+	call := repository.retentionCalls
+	repository.retentionCalls++
+	if call >= len(repository.retentionBatches) {
+		return domain.RetentionResult{}, nil
+	}
+	return repository.retentionBatches[call], nil
 }

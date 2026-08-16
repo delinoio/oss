@@ -82,6 +82,35 @@ func TestBootstrapGRPCProtocolsPreserveSuccessResponses(t *testing.T) {
 	}
 }
 
+func TestBootstrapSupportsNativeGRPCOverH2C(t *testing.T) {
+	httpServer := testHTTPServerWithRepositoryAndVerifier(
+		t,
+		&fakeRepository{},
+		fakeVerifier{},
+		slog.New(slog.NewJSONHandler(io.Discard, nil)),
+	)
+	if httpServer.Protocols == nil || !httpServer.Protocols.HTTP1() || !httpServer.Protocols.UnencryptedHTTP2() {
+		t.Fatalf("server protocols = %v, want HTTP/1 and unencrypted HTTP/2", httpServer.Protocols)
+	}
+	testServer := httptest.NewUnstartedServer(httpServer.Handler)
+	testServer.Config.Protocols = httpServer.Protocols
+	testServer.Start()
+	defer testServer.Close()
+
+	clientProtocols := new(http.Protocols)
+	clientProtocols.SetUnencryptedHTTP2(true)
+	transport := &http.Transport{Protocols: clientProtocols}
+	defer transport.CloseIdleConnections()
+	client := devhudv1connect.NewBootstrapServiceClient(&http.Client{Transport: transport}, testServer.URL, connect.WithGRPC())
+	response, err := client.GetBootstrap(context.Background(), connect.NewRequest(&devhudv1.GetBootstrapRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.Msg.GetMetadata().GetCorrelationId().GetValue() == "" {
+		t.Fatal("native gRPC response is missing correlation metadata")
+	}
+}
+
 func TestHealthzDoesNotPersistRequestMetadata(t *testing.T) {
 	handler, repository := testHandler(t)
 	request := httptest.NewRequest(http.MethodGet, "/healthz", nil)
@@ -238,6 +267,29 @@ func TestProvisioningFailuresAreLoggedBeforeInternalResponse(t *testing.T) {
 	}
 	if strings.Contains(logs.String(), "Bearer valid") {
 		t.Fatalf("log exposed authorization header: %q", logs.String())
+	}
+}
+
+func TestRequestPersistenceFailuresIncludeCauseInWarning(t *testing.T) {
+	repository := &requestPersistenceFailureRepository{err: errors.New("request log timeout")}
+	var logs bytes.Buffer
+	httpServer := testHTTPServerWithRepositoryAndVerifier(
+		t,
+		repository,
+		fakeVerifier{},
+		slog.New(slog.NewJSONHandler(&logs, nil)),
+	)
+	request := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	request.RemoteAddr = "127.0.0.1:12345"
+	response := httptest.NewRecorder()
+	httpServer.Handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+	}
+	for _, value := range []string{"request metadata persistence failed", `"error":"request log timeout"`, `"correlation_id":"`} {
+		if !strings.Contains(logs.String(), value) {
+			t.Fatalf("log %q does not contain %q", logs.String(), value)
+		}
 	}
 }
 
@@ -556,6 +608,10 @@ func testHandlerWithVerifier(t *testing.T, verifier auth.Verifier) (http.Handler
 }
 
 func testHandlerWithRepositoryAndVerifier(t *testing.T, repository domain.Repository, verifier auth.Verifier) http.Handler {
+	return testHTTPServerWithRepositoryAndVerifier(t, repository, verifier, slog.New(slog.NewJSONHandler(&bytes.Buffer{}, nil))).Handler
+}
+
+func testHTTPServerWithRepositoryAndVerifier(t *testing.T, repository domain.Repository, verifier auth.Verifier, logger *slog.Logger) *http.Server {
 	t.Helper()
 	httpServer, err := New(Dependencies{
 		Config: config.Config{
@@ -567,13 +623,13 @@ func testHandlerWithRepositoryAndVerifier(t *testing.T, repository domain.Reposi
 		Verifier:       verifier,
 		Clock:          fixedClock{now: time.Date(2026, 8, 16, 0, 0, 0, 0, time.UTC)},
 		IDs:            randomIDs{},
-		Logger:         slog.New(slog.NewJSONHandler(&bytes.Buffer{}, nil)),
+		Logger:         logger,
 		MetricsHandler: http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) { response.WriteHeader(http.StatusOK) }),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return httpServer.Handler
+	return httpServer
 }
 
 type fakeVerifier struct{}
@@ -637,6 +693,15 @@ type provisionFailureRepository struct {
 
 func (repository *provisionFailureRepository) ProvisionUser(context.Context, domain.Identity) (domain.User, error) {
 	return domain.User{}, repository.err
+}
+
+type requestPersistenceFailureRepository struct {
+	fakeRepository
+	err error
+}
+
+func (repository *requestPersistenceFailureRepository) RecordRequest(context.Context, domain.RequestLog) error {
+	return repository.err
 }
 
 type deadlineObservation struct {
