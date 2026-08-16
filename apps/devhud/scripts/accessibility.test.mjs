@@ -52,6 +52,18 @@ test("active navigation buttons meet WCAG AA contrast in dark mode", () => {
   assert(contrastRatio("#ffffff", customColor(darkTheme, "--button-accent")) >= 4.5);
 });
 
+test("error messages meet WCAG AA contrast in light and dark themes", () => {
+  for (const block of themeBlocks) {
+    const error = customColor(block, "--error");
+    const surface = customColor(block, "--surface");
+    assert(
+      contrastRatio(error, surface) >= 4.5,
+      `${error} does not have sufficient contrast against ${surface}`,
+    );
+  }
+  assert.match(styles, /\.external-message\[role="alert"\]\s*\{\s*color:var\(--error\)/u);
+});
+
 test("command palette uses buttons and has a localized empty state", () => {
   assert.doesNotMatch(app, /role="listbox"|role="option"/u);
   assert.match(app, /actions\.length === 0/u);
