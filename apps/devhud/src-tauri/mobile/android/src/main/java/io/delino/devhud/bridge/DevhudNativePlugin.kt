@@ -102,7 +102,7 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
         val uri = when (args.getString("target")) {
             "pat" -> Uri.parse("https://github.com/settings/personal-access-tokens/new")
             "authentication" -> Uri.parse(args.getString("apiOrigin")).also {
-                val loopback = it.host == "localhost" || it.host == "::1" || it.host?.startsWith("127.") == true
+                val loopback = it.host == "localhost" || it.host == "::1" || it.host == "[::1]" || it.host?.startsWith("127.") == true
                 val validScheme = it.scheme == "https" || (it.scheme == "http" && loopback)
                 if (!validScheme || (it.path != "" && it.path != "/") || it.query != null || it.fragment != null || it.userInfo != null) {
                     throw IllegalArgumentException("apiOrigin")

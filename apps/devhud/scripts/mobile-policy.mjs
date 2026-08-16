@@ -43,6 +43,7 @@ export function assertAndroidNativeBridge(androidNativeBridge) {
   assert(androidNativeBridge.includes('invoke.reject("storage-failure", "storage-failure"'), "Android secure-setting persistence failures must use storage-failure");
   assert(androidNativeBridge.includes("return@execute") && androidNativeBridge.includes("Base64.getDecoder().decode"), "Android secure-setting reads must map decoding and Keystore failures off-thread");
   assert(androidNativeBridge.includes('(it.path != "" && it.path != "/")'), "Android native navigation must accept both root API-origin spellings");
+  assert(androidNativeBridge.includes('it.host == "[::1]"'), "Android native navigation must accept bracketed IPv6 loopback origins");
   assert(androidNativeBridge.includes("areNotificationsEnabled()"), "Android notification state must honor app-level disablement");
   assert(androidNativeBridge.includes("NotificationManager.IMPORTANCE_NONE"), "Android notification publication must honor channel disablement");
   assert(androidNativeBridge.includes("devhud_notification_channel_deck_changes"), "Android notification channels must use localized resources");

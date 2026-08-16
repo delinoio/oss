@@ -136,6 +136,33 @@ describe("native App state", () => {
     expect(await screen.findByText(messages.en.notificationDenied)).toBeTruthy();
   });
 
+  it("surfaces expected notification permission failures inline and clears them after retry", async () => {
+    let requestAttempts = 0;
+    const runtime = { ...mobileRuntime, capabilities: { ...mobileRuntime.capabilities, notifications: true } };
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      if (value.operation === "notifications.permission") return { kind: "notification-permission", permission: NotificationPermission.Authorized };
+      if (value.operation === "notifications.request-permission") {
+        requestAttempts += 1;
+        if (requestAttempts === 1) throw new NativeBridgeError(NativeBridgeErrorCode.PlatformFailure);
+        return { kind: "notification-permission", permission: NotificationPermission.Denied };
+      }
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+
+    render(<App bridge={bridgeWith(request)} initialRuntime={runtime} />);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.settings }));
+    expect(await screen.findByText(messages.en.notificationAuthorized)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.notificationPermission }));
+    expect((await screen.findByRole("alert")).textContent).toBe(messages.en.notificationPermissionFailed);
+    expect(screen.getByText(messages.en.notificationAuthorized)).toBeTruthy();
+    expect(screen.queryByText(messages.en.errorTitle)).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.notificationPermission }));
+    expect(await screen.findByText(messages.en.notificationDenied)).toBeTruthy();
+    await waitFor(() => expect(screen.queryByText(messages.en.notificationPermissionFailed)).toBeNull());
+  });
+
   it("updates the Deck state when connectivity changes", () => {
     let online = true;
     vi.spyOn(window.navigator, "onLine", "get").mockImplementation(() => online);

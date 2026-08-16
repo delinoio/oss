@@ -34,7 +34,7 @@ export const messages = {
     blocked: "Limited", blockedTitle: "Official services are unavailable", blockedSummary: "This account cannot use authenticated DevHUD API operations.", blockedLocalHint: "Guest mode and local-only behavior remain available.",
     error: "Error", errorTitle: "DevHUD could not finish that action", errorSummary: "No sensitive values were included in this message. Try again or review local diagnostics.", retry: "Try again", correlationId: "Correlation ID",
     runtimeReady: "Native capabilities ready.", runtimeFailed: "Native capabilities could not be loaded.",
-    mobileNavigation: "Primary navigation", desktopOnly: "Desktop only", notificationPermission: "Notification permission", notificationNotDetermined: "Not determined", notificationDenied: "Denied", notificationAuthorized: "Authorized", updatePolicy: "Updates are managed by your app store.",
+    mobileNavigation: "Primary navigation", desktopOnly: "Desktop only", notificationPermission: "Notification permission", notificationNotDetermined: "Not determined", notificationDenied: "Denied", notificationAuthorized: "Authorized", notificationPermissionFailed: "DevHUD could not request notification permission. Try again.", updatePolicy: "Updates are managed by your app store.",
     diagnosticPlatform: "Platform", diagnosticArchitecture: "Architecture", diagnosticBridge: "Bridge",
   },
   ko: {
@@ -67,7 +67,7 @@ export const messages = {
     blocked: "제한됨", blockedTitle: "공식 서비스를 사용할 수 없습니다", blockedSummary: "이 계정은 인증된 DevHUD API 작업을 사용할 수 없습니다.", blockedLocalHint: "게스트 모드와 로컬 전용 기능은 계속 사용할 수 있습니다.",
     error: "오류", errorTitle: "DevHUD에서 작업을 완료하지 못했습니다", errorSummary: "이 메시지에는 민감한 값이 포함되지 않았습니다. 다시 시도하거나 로컬 진단을 확인하세요.", retry: "다시 시도", correlationId: "상관관계 ID",
     runtimeReady: "네이티브 기능이 준비되었습니다.", runtimeFailed: "네이티브 기능을 불러오지 못했습니다.",
-    mobileNavigation: "기본 탐색", desktopOnly: "데스크톱 전용", notificationPermission: "알림 권한", notificationNotDetermined: "결정되지 않음", notificationDenied: "거부됨", notificationAuthorized: "허용됨", updatePolicy: "업데이트는 앱 스토어에서 관리합니다.",
+    mobileNavigation: "기본 탐색", desktopOnly: "데스크톱 전용", notificationPermission: "알림 권한", notificationNotDetermined: "결정되지 않음", notificationDenied: "거부됨", notificationAuthorized: "허용됨", notificationPermissionFailed: "DevHUD에서 알림 권한을 요청하지 못했습니다. 다시 시도하세요.", updatePolicy: "업데이트는 앱 스토어에서 관리합니다.",
     diagnosticPlatform: "플랫폼", diagnosticArchitecture: "아키텍처", diagnosticBridge: "브리지",
   },
 } as const;
