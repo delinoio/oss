@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { messages } from "./localization";
-import { ActionId, ExternalLinkTarget, LanguagePreference, PlatformCapability, SurfaceId, ThemePreference, availableActions, browserShell, desktopCapabilities, isValidApiOrigin, readPreferences, resolveLanguage, resolveTheme, setTrayLanguage, writePreferences, type Preferences } from "./shell";
+import { ActionId, ExternalLinkTarget, LanguagePreference, PlatformCapability, SurfaceId, ThemePreference, availableActions, browserShell, completeOnboarding, desktopCapabilities, hasCompletedOnboarding, isValidApiOrigin, markFrontendReady, readPreferences, resolveLanguage, resolveTheme, setTrayLanguage, writePreferences, type Preferences } from "./shell";
 
 const surfaces: readonly SurfaceId[] = [SurfaceId.Home, SurfaceId.Realqa, SurfaceId.Deck, SurfaceId.Settings, SurfaceId.Account, SurfaceId.Diagnostics];
 const labels: Record<SurfaceId, keyof typeof messages.en> = { home: "home", realqa: "realqa", deck: "deck", settings: "settings", account: "account", diagnostics: "diagnostics" };
@@ -8,6 +8,7 @@ const isMac = /Mac|iPhone|iPad/u.test(navigator.userAgent);
 
 export function App() {
   const [preferences, setPreferences] = useState<Preferences>(() => readPreferences(localStorage));
+  const [onboarding, setOnboarding] = useState(() => !hasCompletedOnboarding(localStorage));
   const [surface, setSurface] = useState<SurfaceId>(SurfaceId.Home);
   const [palette, setPalette] = useState(false);
   const [query, setQuery] = useState("");
@@ -29,6 +30,9 @@ export function App() {
 
   useEffect(() => {
     document.title = "DevHUD";
+    void markFrontendReady();
+  }, []);
+  useEffect(() => {
     document.documentElement.lang = language;
     void setTrayLanguage(language);
   }, [language]);
@@ -76,16 +80,28 @@ export function App() {
     setExternalMessage(null);
     if (target === ExternalLinkTarget.Authentication && !isValidApiOrigin(preferences.apiOrigin)) {
       setExternalMessage({ error: true, text: copy.invalidApiOrigin });
-      return;
+      return false;
     }
     try {
       await browserShell.openExternal(target, preferences.apiOrigin);
       setExternalMessage({ error: false, text: copy.externalOpened });
+      return true;
     } catch {
       setExternalMessage({ error: true, text: copy.externalFailed });
+      return false;
     }
   };
+  const finishOnboarding = () => {
+    completeOnboarding(localStorage);
+    setOnboarding(false);
+    setSurface(SurfaceId.Home);
+  };
+  const startSignIn = async () => {
+    if (await external(ExternalLinkTarget.Authentication)) finishOnboarding();
+  };
   const supportsLaunchAtLogin = desktopCapabilities.available.has(PlatformCapability.LaunchAtLogin);
+
+  if (onboarding) return <main className="app-shell onboarding" data-devhud-ready="true"><section className="content"><p className="eyebrow">{copy.account}</p><h1>{copy.accountTitle}</h1><p>{copy.accountSummary}</p><label>{copy.apiOrigin}<input autoFocus value={preferences.apiOrigin} onChange={(event) => update({ apiOrigin: event.target.value })} /></label><p>{copy.apiOriginHint}</p><div className="actions"><button onClick={() => void startSignIn()}>{copy.signIn}</button><button onClick={finishOnboarding}>{copy.continueLocally}</button></div>{externalMessage && <p className="external-message" role={externalMessage.error ? "alert" : "status"}>{externalMessage.text}</p>}</section></main>;
 
   return <main className="app-shell" data-devhud-ready="true">
     <aside aria-label="DevHUD">

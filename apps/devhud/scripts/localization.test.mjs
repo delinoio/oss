@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { messages, selectSupportedLanguage } from "../src/localization.ts";
-import { LanguagePreference, ThemePreference, defaultPreferences, isValidApiOrigin, readPreferences, resolveLanguage, resolveTheme } from "../src/shell.ts";
+import { LanguagePreference, ThemePreference, completeOnboarding, defaultPreferences, hasCompletedOnboarding, isValidApiOrigin, readPreferences, resolveLanguage, resolveTheme } from "../src/shell.ts";
 
 test("selects English from an English platform locale", () => {
   assert.equal(selectSupportedLanguage(["en-US"]), "en");
@@ -45,4 +45,13 @@ test("uses the first supported platform language", () => {
 test("falls back to English when no platform language is supported", () => {
   assert.equal(selectSupportedLanguage(["fr-FR"]), "en");
   assert.equal(selectSupportedLanguage([]), "en");
+});
+
+test("keeps first-run completion separate from versioned preferences", () => {
+  const storage = new Map();
+  const localStorage = { getItem: (key) => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value) };
+  assert.equal(hasCompletedOnboarding(localStorage), false);
+  completeOnboarding(localStorage);
+  assert.equal(hasCompletedOnboarding(localStorage), true);
+  assert.deepEqual(readPreferences(localStorage), defaultPreferences);
 });

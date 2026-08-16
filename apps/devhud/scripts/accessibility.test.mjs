@@ -56,3 +56,10 @@ test("command palette uses buttons and has a localized empty state", () => {
   assert.doesNotMatch(app, /role="listbox"|role="option"/u);
   assert.match(app, /actions\.length === 0/u);
 });
+
+test("first run renders the localized local-choice controls and focuses the API origin", () => {
+  assert.match(app, /onboarding/u);
+  assert.match(app, /autoFocus value=\{preferences\.apiOrigin\}/u);
+  assert.match(app, /copy\.signIn/u);
+  assert.match(app, /copy\.continueLocally/u);
+});

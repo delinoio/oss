@@ -31,7 +31,6 @@ use tracing_subscriber::{
 
 const DEVELOPMENT_ORIGIN: &str = "http://127.0.0.1:46305";
 const PRODUCTION_ORIGIN: &str = "http://tauri.localhost";
-const FRONTEND_READY_TITLE: &str = "DevHUD";
 const FRONTEND_READY_TIMEOUT: Duration = Duration::from_secs(5);
 const RENDERER_CRASH_LISTENER_READY_ATTEMPTS: usize = 100;
 const RENDERER_CRASH_LISTENER_READY_DELAY: Duration = Duration::from_millis(50);
@@ -159,6 +158,14 @@ enum SmokeMode {
     MissingResource,
 }
 
+#[derive(Clone)]
+struct FrontendReadiness {
+    complete: Arc<AtomicBool>,
+    smoke_mode: Option<SmokeMode>,
+    renderer_crashed: Arc<AtomicBool>,
+    renderer_crash_listener_ready: Arc<AtomicBool>,
+}
+
 impl SmokeMode {
     fn from_environment() -> Option<Self> {
         match std::env::var("DEVHUD_PLATFORM_SMOKE").ok().as_deref() {
@@ -282,8 +289,29 @@ fn is_allowed_navigation(url: &tauri::Url) -> bool {
     origin == PRODUCTION_ORIGIN || (tauri::is_dev() && origin == DEVELOPMENT_ORIGIN)
 }
 
-fn is_frontend_ready_title(title: &str) -> bool {
-    title == FRONTEND_READY_TITLE
+#[tauri::command]
+fn frontend_ready(
+    webview: tauri::WebviewWindow<tauri::Cef>,
+    readiness: tauri::State<'_, FrontendReadiness>,
+) {
+    if readiness.complete.swap(true, Ordering::SeqCst) {
+        return;
+    }
+
+    let origin = if tauri::is_dev() {
+        DEVELOPMENT_ORIGIN
+    } else {
+        PRODUCTION_ORIGIN
+    };
+    let app_handle = webview.app_handle();
+    handle_frontend_ready(
+        &webview,
+        &app_handle,
+        readiness.smoke_mode,
+        origin,
+        readiness.renderer_crashed.clone(),
+        readiness.renderer_crash_listener_ready.clone(),
+    );
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -440,12 +468,20 @@ fn main() {
         std::process::exit(78);
     }
 
-    let renderer_crashed = Arc::new(AtomicBool::new(false));
-    let renderer_crash_listener_ready = Arc::new(AtomicBool::new(cfg!(target_os = "macos")));
-    let frontend_readiness_complete = Arc::new(AtomicBool::new(false));
+    let frontend_readiness = FrontendReadiness {
+        complete: Arc::new(AtomicBool::new(false)),
+        smoke_mode,
+        renderer_crashed: Arc::new(AtomicBool::new(false)),
+        renderer_crash_listener_ready: Arc::new(AtomicBool::new(cfg!(target_os = "macos"))),
+    };
 
     let mut builder = tauri::Builder::<tauri::Cef>::default()
-        .invoke_handler(tauri::generate_handler![open_external, set_tray_language])
+        .manage(frontend_readiness.clone())
+        .invoke_handler(tauri::generate_handler![
+            frontend_ready,
+            open_external,
+            set_tray_language
+        ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
@@ -458,7 +494,7 @@ fn main() {
 
     #[cfg(target_os = "macos")]
     {
-        let renderer_crashed = renderer_crashed.clone();
+        let renderer_crashed = frontend_readiness.renderer_crashed.clone();
         builder = builder.on_web_content_process_terminate(move |_| {
             renderer_crashed.store(true, Ordering::SeqCst);
             error!(event = "renderer_terminated", source = "cef_callback");
@@ -467,9 +503,7 @@ fn main() {
 
     let result = builder
         .setup(move |app| {
-            let renderer_crashed_for_frontend = renderer_crashed.clone();
-            let renderer_crash_listener_ready_for_frontend = renderer_crash_listener_ready.clone();
-            let frontend_readiness_for_watchdog = frontend_readiness_complete.clone();
+            let readiness = frontend_readiness.clone();
             let webview = tauri::WebviewWindowBuilder::<tauri::Cef, _>::new(
                 app,
                 "main",
@@ -495,14 +529,11 @@ fn main() {
 
             create_tray(&app.handle().clone())?;
 
-            start_frontend_readiness_watchdog(
-                app.handle().clone(),
-                frontend_readiness_for_watchdog,
-            );
+            start_frontend_readiness_watchdog(app.handle().clone(), readiness.complete.clone());
 
             #[cfg(not(target_os = "macos"))]
             if should_observe_renderer_crashes(tauri::is_dev()) {
-                let renderer_crashed_for_protocol = renderer_crashed.clone();
+                let renderer_crashed_for_protocol = readiness.renderer_crashed.clone();
                 webview.on_dev_tools_protocol(move |message| {
                     if let tauri::CefDevToolsProtocol::Event { method, .. } = message
                         && method.contains("targetCrashed")
@@ -519,7 +550,9 @@ fn main() {
                         app.handle().exit(70);
                     }
                 } else {
-                    renderer_crash_listener_ready.store(true, Ordering::SeqCst);
+                    readiness
+                        .renderer_crash_listener_ready
+                        .store(true, Ordering::SeqCst);
                 }
             }
 
@@ -587,14 +620,16 @@ mod tests {
     #[cfg(not(target_os = "macos"))]
     use super::should_observe_renderer_crashes;
     use super::{
-        SmokeMode, diagnostic_filter, inject_smoke_missing_resource, is_frontend_ready_title,
+        SmokeMode, diagnostic_filter, inject_smoke_missing_resource,
         wait_for_frontend_readiness_timeout, wait_for_renderer_crash_listener,
     };
 
     #[test]
-    fn frontend_readiness_requires_the_mounted_title() {
-        assert!(!is_frontend_ready_title("DevHUD Loading"));
-        assert!(is_frontend_ready_title("DevHUD"));
+    fn frontend_readiness_claim_is_one_shot() {
+        let frontend_readiness_complete = AtomicBool::new(false);
+
+        assert!(!frontend_readiness_complete.swap(true, Ordering::SeqCst));
+        assert!(frontend_readiness_complete.swap(true, Ordering::SeqCst));
     }
 
     #[test]
