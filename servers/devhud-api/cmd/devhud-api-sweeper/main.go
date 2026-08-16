@@ -16,6 +16,12 @@ import (
 	"github.com/delinoio/oss/servers/devhud-api/internal/sweeper"
 )
 
+const sweepIterationTimeout = 25 * time.Second
+
+type sweepRunner interface {
+	RunOnce(context.Context) (sweeper.Result, error)
+}
+
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 	if err := run(context.Background(), os.Args[1:], logger); err != nil {
@@ -74,12 +80,14 @@ func run(ctx context.Context, arguments []string, logger *slog.Logger) error {
 	}
 }
 
-func sweep(ctx context.Context, worker *sweeper.Sweeper, logger *slog.Logger) error {
-	result, err := worker.RunOnce(ctx)
+func sweep(ctx context.Context, worker sweepRunner, logger *slog.Logger) error {
+	iterationContext, cancel := context.WithTimeout(ctx, sweepIterationTimeout)
+	defer cancel()
+	result, err := worker.RunOnce(iterationContext)
 	if err != nil {
 		return err
 	}
-	logger.InfoContext(ctx, "sweep completed",
+	logger.InfoContext(iterationContext, "sweep completed",
 		"lock_acquired", result.LockAcquired,
 		"accounts_claimed", result.AccountsClaimed,
 		"accounts_purged", result.AccountsPurged,

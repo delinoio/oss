@@ -44,7 +44,7 @@ func New(dependencies Dependencies) (*http.Server, error) {
 		AdminRedirectURI:   dependencies.Config.AdminRedirectURI,
 		PublicAssetBaseURL: dependencies.Config.PublicAssetBaseURL,
 	}), handlerOptions...)
-	settingsPath, settingsHandler := devhudv1connect.NewSettingsServiceHandler(rpc.NewSettingsService(dependencies.Repository, dependencies.Clock), handlerOptions...)
+	settingsPath, settingsHandler := devhudv1connect.NewSettingsServiceHandler(rpc.NewSettingsService(dependencies.Repository, dependencies.Clock, dependencies.Logger), handlerOptions...)
 	accountPath, accountHandler := devhudv1connect.NewAccountServiceHandler(rpc.NewAccountService(dependencies.Repository, dependencies.Clock, dependencies.Logger), handlerOptions...)
 	mux.Handle(bootstrapPath, bootstrapHandler)
 	mux.Handle(settingsPath, settingsHandler)

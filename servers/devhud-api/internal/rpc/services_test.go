@@ -25,7 +25,7 @@ func TestReplaceSettingsReturnsTypedConflict(t *testing.T) {
 		}
 		return domain.Settings{}, &domain.RevisionConflict{Expected: revision, Current: current}
 	}}
-	service := NewSettingsService(repository, serviceClock{})
+	service := NewSettingsService(repository, serviceClock{}, testServiceLogger())
 	ctx := authenticatedContext()
 	_, err := service.ReplaceSettings(ctx, connect.NewRequest(&devhudv1.ReplaceSettingsRequest{
 		SchemaVersion: 2, CanonicalJson: []byte(`{"theme":"light"}`), ExpectedRevision: 6,
@@ -67,7 +67,7 @@ func TestGetSettingsMapsTransactionalEligibilityFailures(t *testing.T) {
 				}
 				return nil, &domain.PermissionError{Failure: failure}
 			}}
-			_, err := NewSettingsService(repository, serviceClock{}).GetSettings(authenticatedContext(), connect.NewRequest(&devhudv1.GetSettingsRequest{}))
+			_, err := NewSettingsService(repository, serviceClock{}, testServiceLogger()).GetSettings(authenticatedContext(), connect.NewRequest(&devhudv1.GetSettingsRequest{}))
 			if connect.CodeOf(err) != connect.CodePermissionDenied {
 				t.Fatalf("code = %v, want PermissionDenied", connect.CodeOf(err))
 			}
@@ -79,7 +79,7 @@ func TestGetSettingsMapsCompletedPurge(t *testing.T) {
 	repository := &serviceRepository{getSettings: func(context.Context, string) (*domain.Settings, error) {
 		return nil, domain.ErrNotFound
 	}}
-	_, err := NewSettingsService(repository, serviceClock{}).GetSettings(authenticatedContext(), connect.NewRequest(&devhudv1.GetSettingsRequest{}))
+	_, err := NewSettingsService(repository, serviceClock{}, testServiceLogger()).GetSettings(authenticatedContext(), connect.NewRequest(&devhudv1.GetSettingsRequest{}))
 	if connect.CodeOf(err) != connect.CodePermissionDenied {
 		t.Fatalf("code = %v, want PermissionDenied", connect.CodeOf(err))
 	}
@@ -103,7 +103,7 @@ func TestReplaceSettingsMapsCompletedPurge(t *testing.T) {
 	repository := &serviceRepository{replaceSettings: func(context.Context, string, uint32, []byte, uint64, time.Time) (domain.Settings, error) {
 		return domain.Settings{}, domain.ErrNotFound
 	}}
-	_, err := NewSettingsService(repository, serviceClock{}).ReplaceSettings(authenticatedContext(), connect.NewRequest(&devhudv1.ReplaceSettingsRequest{
+	_, err := NewSettingsService(repository, serviceClock{}, testServiceLogger()).ReplaceSettings(authenticatedContext(), connect.NewRequest(&devhudv1.ReplaceSettingsRequest{
 		SchemaVersion: 1,
 		CanonicalJson: []byte(`{}`),
 	}))
@@ -183,6 +183,31 @@ func TestAccountRepositoryFailuresAreLoggedBeforeInternalResponse(t *testing.T) 
 		"account repository operation failed",
 		testCorrelationID,
 		devhudv1connect.AccountServiceGetAccountProcedure,
+		"database timeout",
+	} {
+		if !strings.Contains(logs.String(), value) {
+			t.Fatalf("log %q does not contain %q", logs.String(), value)
+		}
+	}
+}
+
+func TestSettingsReadFailuresAreLoggedBeforeInternalResponse(t *testing.T) {
+	repository := &serviceRepository{getSettings: func(context.Context, string) (*domain.Settings, error) {
+		return nil, errors.New("database timeout")
+	}}
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logs, nil))
+	_, err := NewSettingsService(repository, serviceClock{}, logger).GetSettings(authenticatedContext(), connect.NewRequest(&devhudv1.GetSettingsRequest{}))
+	if connect.CodeOf(err) != connect.CodeInternal {
+		t.Fatalf("code = %v, want Internal", connect.CodeOf(err))
+	}
+	if strings.Contains(err.Error(), "database timeout") {
+		t.Fatalf("internal response exposed repository error: %v", err)
+	}
+	for _, value := range []string{
+		"settings repository operation failed",
+		testCorrelationID,
+		devhudv1connect.SettingsServiceGetSettingsProcedure,
 		"database timeout",
 	} {
 		if !strings.Contains(logs.String(), value) {

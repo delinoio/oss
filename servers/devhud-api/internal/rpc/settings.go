@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"unicode/utf8"
 
 	"connectrpc.com/connect"
 	devhudv1 "github.com/delinoio/oss/protos/gen/go/devhud/v1"
+	"github.com/delinoio/oss/protos/gen/go/devhud/v1/devhudv1connect"
 	"github.com/delinoio/oss/servers/devhud-api/internal/auth"
 	"github.com/delinoio/oss/servers/devhud-api/internal/domain"
 	"github.com/gowebpki/jcs"
@@ -17,10 +19,11 @@ import (
 type SettingsService struct {
 	repository domain.Repository
 	clock      domain.Clock
+	logger     *slog.Logger
 }
 
-func NewSettingsService(repository domain.Repository, clock domain.Clock) *SettingsService {
-	return &SettingsService{repository: repository, clock: clock}
+func NewSettingsService(repository domain.Repository, clock domain.Clock, logger *slog.Logger) *SettingsService {
+	return &SettingsService{repository: repository, clock: clock, logger: logger}
 }
 
 func (s *SettingsService) GetSettings(ctx context.Context, _ *connect.Request[devhudv1.GetSettingsRequest]) (*connect.Response[devhudv1.GetSettingsResponse], error) {
@@ -37,6 +40,11 @@ func (s *SettingsService) GetSettings(ctx context.Context, _ *connect.Request[de
 		if errors.As(err, &permission) {
 			return nil, permissionError(ctx, permission)
 		}
+		s.logger.ErrorContext(ctx, "settings repository operation failed",
+			"correlation_id", CorrelationID(ctx),
+			"procedure", devhudv1connect.SettingsServiceGetSettingsProcedure,
+			"error", err,
+		)
 		return nil, internalError(ctx)
 	}
 	return connect.NewResponse(&devhudv1.GetSettingsResponse{
