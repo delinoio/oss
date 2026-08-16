@@ -4,11 +4,14 @@ import (
 	"net"
 	"net/http"
 	"strings"
+
+	"github.com/delinoio/oss/servers/devhud-api/internal/config"
 )
 
-func requireHTTPS(trustedProxyCIDRs []*net.IPNet, next http.Handler) http.Handler {
+func requireHTTPS(environment config.Environment, trustedProxyCIDRs []*net.IPNet, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-		if request.TLS != nil || loopbackPeer(request.RemoteAddr) || forwardedHTTPS(request, trustedProxyCIDRs) {
+		developmentLoopback := environment == config.EnvironmentDevelopment && loopbackPeer(request.RemoteAddr)
+		if request.TLS != nil || developmentLoopback || forwardedHTTPS(request, trustedProxyCIDRs) {
 			next.ServeHTTP(response, request)
 			return
 		}

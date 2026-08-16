@@ -18,6 +18,7 @@ import (
 const sweepAdvisoryLock int64 = 0x6465766875647377
 
 const identityAdvisoryLockNamespace = "devhud-identity-v1"
+const purgedIdentityNamespace = "devhud-purged-identity-v1"
 
 type Store struct {
 	pool  *pgxpool.Pool
@@ -88,9 +89,12 @@ func (s *Store) ProvisionUser(ctx context.Context, identity domain.Identity) (do
 		return domain.User{}, err
 	}
 
-	candidates := identity.FingerprintCandidates
-	if len(candidates) == 0 {
-		candidates = [][]byte{identity.Fingerprint}
+	candidates := make([][]byte, 0, len(identity.FingerprintCandidates)+1)
+	candidates = append(candidates, purgedIdentityFingerprint(identity.Issuer, identity.Subject))
+	if len(identity.FingerprintCandidates) == 0 {
+		candidates = append(candidates, identity.Fingerprint)
+	} else {
+		candidates = append(candidates, identity.FingerprintCandidates...)
 	}
 	for _, fingerprint := range candidates {
 		var purged bool
@@ -249,6 +253,9 @@ func (s *Store) RestoreAccount(ctx context.Context, userID string, now time.Time
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	user, err := scanUser(tx.QueryRow(ctx, "SELECT "+userColumns+" FROM devhud_users WHERE user_id = $1 FOR UPDATE", userID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.User{}, domain.ErrNotFound
+	}
 	if err != nil {
 		return domain.User{}, err
 	}
@@ -357,7 +364,7 @@ func (s *Store) CompleteAccountPurge(ctx context.Context, user domain.User, now 
 		return fmt.Errorf("account %s is not purge-claimed", user.ID)
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO devhud_purged_identities (identity_fingerprint, purged_at)
-        VALUES ($1, $2) ON CONFLICT (identity_fingerprint) DO NOTHING`, currentFingerprint, now); err != nil {
+		VALUES ($1, $2) ON CONFLICT (identity_fingerprint) DO NOTHING`, purgedIdentityFingerprint(user.Issuer, user.Subject), now); err != nil {
 		return err
 	}
 	user.IdentityFingerprint = currentFingerprint
@@ -413,16 +420,20 @@ func (s *Store) TryLock(ctx context.Context) (func(context.Context) error, bool,
 		return func(context.Context) error { return nil }, false, nil
 	}
 	return func(unlockContext context.Context) error {
-		defer connection.Release()
 		var unlocked bool
 		if err := connection.QueryRow(unlockContext, "SELECT pg_advisory_unlock($1)", sweepAdvisoryLock).Scan(&unlocked); err != nil {
-			return err
+			return errors.Join(err, discardPoolConnection(connection))
 		}
 		if !unlocked {
-			return errors.New("sweeper advisory lock was not held")
+			return errors.Join(errors.New("sweeper advisory lock was not held"), discardPoolConnection(connection))
 		}
+		connection.Release()
 		return nil
 	}, true, nil
+}
+
+func discardPoolConnection(connection *pgxpool.Conn) error {
+	return connection.Hijack().Close(context.Background())
 }
 
 const userColumns = `user_id::text, logto_issuer, logto_subject, identity_fingerprint,
@@ -454,8 +465,16 @@ func lockIdentity(ctx context.Context, tx pgx.Tx, issuer, subject string) error 
 }
 
 func identityAdvisoryLockKey(issuer, subject string) int64 {
+	return int64(binary.BigEndian.Uint64(identityDigest(identityAdvisoryLockNamespace, issuer, subject)[:8]))
+}
+
+func purgedIdentityFingerprint(issuer, subject string) []byte {
+	return identityDigest(purgedIdentityNamespace, issuer, subject)
+}
+
+func identityDigest(namespace, issuer, subject string) []byte {
 	hash := sha256.New()
-	_, _ = hash.Write([]byte(identityAdvisoryLockNamespace))
+	_, _ = hash.Write([]byte(namespace))
 	var encodedLength [8]byte
 	binary.BigEndian.PutUint64(encodedLength[:], uint64(len(issuer)))
 	_, _ = hash.Write(encodedLength[:])
@@ -463,7 +482,7 @@ func identityAdvisoryLockKey(issuer, subject string) int64 {
 	binary.BigEndian.PutUint64(encodedLength[:], uint64(len(subject)))
 	_, _ = hash.Write(encodedLength[:])
 	_, _ = hash.Write([]byte(subject))
-	return int64(binary.BigEndian.Uint64(hash.Sum(nil)[:8]))
+	return hash.Sum(nil)
 }
 
 func scanSettings(row rowScanner) (domain.Settings, error) {

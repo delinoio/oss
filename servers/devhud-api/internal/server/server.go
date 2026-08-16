@@ -74,8 +74,9 @@ func New(dependencies Dependencies) (*http.Server, error) {
 	}
 
 	var handler http.Handler = mux
+	handler = connectErrorMetadata(connectPaths, handler)
 	handler = otelhttp.NewHandler(handler, "devhud-api")
-	handler = requireHTTPS(dependencies.Config.TrustedProxyCIDRs, handler)
+	handler = requireHTTPS(dependencies.Config.Environment, dependencies.Config.TrustedProxyCIDRs, handler)
 	handler = cors(handler, connectPaths)
 	handler = recoverPanics(dependencies.Logger, handler)
 	handler = observeRequests(dependencies.Logger, dependencies.Repository, dependencies.Clock, dependencies.IDs, requestMetrics, handler)

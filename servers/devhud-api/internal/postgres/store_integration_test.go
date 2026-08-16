@@ -191,7 +191,13 @@ func TestFoundationTransactionsAndRetention(t *testing.T) {
 	if err := store.CompleteAccountPurge(ctx, accounts[0], boundary); err != nil {
 		t.Fatalf("idempotent purge retry failed: %v", err)
 	}
-	if _, err := store.ProvisionUser(ctx, identity); !errors.Is(err, domain.ErrIdentityPurged) {
+	if _, err := store.RestoreAccount(ctx, user.ID, boundary); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("restore after purge error = %v, want ErrNotFound", err)
+	}
+	rotatedIdentity := identity
+	rotatedIdentity.Fingerprint = []byte("abcdefghijklmnopqrstuvwxyz123456")
+	rotatedIdentity.FingerprintCandidates = [][]byte{rotatedIdentity.Fingerprint}
+	if _, err := store.ProvisionUser(ctx, rotatedIdentity); !errors.Is(err, domain.ErrIdentityPurged) {
 		t.Fatalf("purged identity provision error = %v", err)
 	}
 
@@ -227,6 +233,29 @@ func TestFoundationTransactionsAndRetention(t *testing.T) {
 		t.Fatalf("second lock acquired=%v err=%v", secondAcquired, err)
 	}
 	if err := unlock(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	failedUnlock, acquired, err := store.TryLock(ctx)
+	if err != nil || !acquired {
+		t.Fatalf("failure-case lock acquired=%v err=%v", acquired, err)
+	}
+	canceledContext, cancel := context.WithCancel(ctx)
+	cancel()
+	if err := failedUnlock(canceledContext); !errors.Is(err, context.Canceled) {
+		t.Fatalf("failed unlock error = %v, want context cancellation", err)
+	}
+	otherPool, err := NewPool(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer otherPool.Close()
+	otherStore := New(otherPool, idgen.UUIDv7{}, clock)
+	otherUnlock, acquired, err := otherStore.TryLock(ctx)
+	if err != nil || !acquired {
+		t.Fatalf("lock after discarded session acquired=%v err=%v", acquired, err)
+	}
+	if err := otherUnlock(ctx); err != nil {
 		t.Fatal(err)
 	}
 }

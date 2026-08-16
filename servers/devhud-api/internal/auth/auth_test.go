@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -64,6 +65,44 @@ func TestLogtoVerifier(t *testing.T) {
 				t.Fatal("Verify succeeded")
 			}
 		})
+	}
+}
+
+func TestLogtoVerifierBoundsJWKSRefresh(t *testing.T) {
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var issuer string
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/.well-known/openid-configuration":
+			_ = json.NewEncoder(response).Encode(map[string]any{
+				"issuer": issuer, "jwks_uri": issuer + "/jwks",
+				"authorization_endpoint": issuer + "/authorize", "token_endpoint": issuer + "/token",
+				"id_token_signing_alg_values_supported": []string{"RS256"},
+			})
+		case "/jwks":
+			<-request.Context().Done()
+		default:
+			http.NotFound(response, request)
+		}
+	}))
+	defer server.Close()
+	issuer = server.URL
+
+	verifier, err := NewLogtoVerifier(context.Background(), issuer, "devhud-api", [][]byte{[]byte("01234567890123456789012345678901")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	verifier.timeout = 25 * time.Millisecond
+	token := signToken(t, privateKey, issuer, "devhud-api", "logto-user", time.Now().Add(time.Hour))
+	started := time.Now()
+	if _, err := verifier.Verify(context.Background(), "Bearer "+token); !errors.Is(err, ErrUnauthenticated) {
+		t.Fatalf("Verify error = %v, want ErrUnauthenticated", err)
+	}
+	if elapsed := time.Since(started); elapsed > time.Second {
+		t.Fatalf("JWKS refresh took %v, want a bounded verification", elapsed)
 	}
 }
 

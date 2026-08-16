@@ -3,7 +3,10 @@ package server
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -19,6 +22,7 @@ import (
 	"github.com/delinoio/oss/servers/devhud-api/internal/config"
 	"github.com/delinoio/oss/servers/devhud-api/internal/domain"
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestBootstrapCorrelationAndFoundationCapabilities(t *testing.T) {
@@ -67,6 +71,54 @@ func TestSettingsRequiresAuthenticationWithCorrelationDetail(t *testing.T) {
 	var connectError *connect.Error
 	if !errors.As(err, &connectError) || len(connectError.Details()) == 0 {
 		t.Fatalf("missing Connect error details: %v", err)
+	}
+}
+
+func TestFrameworkConnectErrorsCarryCorrelationDetail(t *testing.T) {
+	handler, _ := testHandler(t)
+	testServer := httptest.NewServer(handler)
+	defer testServer.Close()
+	for name, configure := range map[string]func(*http.Request){
+		"malformed JSON":       func(*http.Request) {},
+		"unsupported encoding": func(request *http.Request) { request.Header.Set("Content-Encoding", "unsupported") },
+	} {
+		t.Run(name, func(t *testing.T) {
+			request, err := http.NewRequest(http.MethodPost, testServer.URL+devhudv1connect.BootstrapServiceGetBootstrapProcedure, strings.NewReader("{"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			request.Header.Set("Content-Type", "application/json")
+			configure(request)
+			response, err := http.DefaultClient.Do(request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			body, readErr := io.ReadAll(response.Body)
+			_ = response.Body.Close()
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+			var wireError connectWireError
+			if err := json.Unmarshal(body, &wireError); err != nil {
+				t.Fatalf("decode Connect error: %v: %s", err, body)
+			}
+			headerID := response.Header.Get(correlationHeader)
+			var metadata devhudv1.ErrorMetadata
+			found := false
+			for _, detail := range wireError.Details {
+				if detail.Type != "devhud.v1.ErrorMetadata" {
+					continue
+				}
+				encoded, err := base64.RawStdEncoding.DecodeString(detail.Value)
+				if err != nil || proto.Unmarshal(encoded, &metadata) != nil {
+					t.Fatalf("decode ErrorMetadata: %v", err)
+				}
+				found = metadata.GetCorrelationId().GetValue() == headerID
+			}
+			if !found {
+				t.Fatalf("missing matching ErrorMetadata: header=%q body=%s", headerID, body)
+			}
+		})
 	}
 }
 
@@ -134,7 +186,7 @@ func TestHTTPSAcceptsOnlyTrustedForwarding(t *testing.T) {
 	}
 	httpServer, err := New(Dependencies{
 		Config: config.Config{
-			ListenAddress: "0.0.0.0:8080", APIVersion: "test", LogtoIssuer: "https://issuer.example",
+			Environment: config.EnvironmentProduction, ListenAddress: "0.0.0.0:8080", APIVersion: "test", LogtoIssuer: "https://issuer.example",
 			LogtoAudience: "audience", DesktopClientID: "desktop", IOSClientID: "ios", AndroidClientID: "android",
 			AdminClientID: "admin", AdminRedirectURI: "https://api.example/admin/auth/callback", PublicAssetBaseURL: "https://assets.example",
 			TrustedProxyCIDRs: []*net.IPNet{trustedNetwork},
@@ -174,12 +226,51 @@ func TestHTTPSAcceptsOnlyTrustedForwarding(t *testing.T) {
 	}
 }
 
+func TestProductionLoopbackRequiresTrustedForwardedHTTPS(t *testing.T) {
+	repository := &fakeRepository{}
+	_, loopbackNetwork, err := net.ParseCIDR("127.0.0.0/8")
+	if err != nil {
+		t.Fatal(err)
+	}
+	httpServer, err := New(Dependencies{
+		Config: config.Config{
+			Environment: config.EnvironmentProduction, ListenAddress: "127.0.0.1:8080", APIVersion: "test", LogtoIssuer: "https://issuer.example",
+			LogtoAudience: "audience", DesktopClientID: "desktop", IOSClientID: "ios", AndroidClientID: "android",
+			AdminClientID: "admin", AdminRedirectURI: "https://api.example/admin/auth/callback", PublicAssetBaseURL: "https://assets.example",
+			TrustedProxyCIDRs: []*net.IPNet{loopbackNetwork},
+		},
+		Repository: repository, Verifier: fakeVerifier{}, Clock: fixedClock{now: time.Now()}, IDs: randomIDs{},
+		Logger: slog.New(slog.NewJSONHandler(&bytes.Buffer{}, nil)), MetricsHandler: http.NotFoundHandler(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, protocol := range map[string]string{"missing": "", "insecure": "http", "secure": "https"} {
+		t.Run(name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+			request.RemoteAddr = "127.0.0.1:12345"
+			if protocol != "" {
+				request.Header.Set("X-Forwarded-Proto", protocol)
+			}
+			response := httptest.NewRecorder()
+			httpServer.Handler.ServeHTTP(response, request)
+			want := http.StatusUpgradeRequired
+			if protocol == "https" {
+				want = http.StatusOK
+			}
+			if response.Code != want {
+				t.Fatalf("status = %d, want %d", response.Code, want)
+			}
+		})
+	}
+}
+
 func testHandler(t *testing.T) (http.Handler, *fakeRepository) {
 	t.Helper()
 	repository := &fakeRepository{}
 	httpServer, err := New(Dependencies{
 		Config: config.Config{
-			ListenAddress: "127.0.0.1:46307", APIVersion: "test", LogtoIssuer: "https://issuer.example",
+			Environment: config.EnvironmentDevelopment, ListenAddress: "127.0.0.1:46307", APIVersion: "test", LogtoIssuer: "https://issuer.example",
 			LogtoAudience: "audience", DesktopClientID: "desktop", IOSClientID: "ios", AndroidClientID: "android",
 			AdminClientID: "admin", AdminRedirectURI: "https://api.example/admin/auth/callback", PublicAssetBaseURL: "https://assets.example",
 		},

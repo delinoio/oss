@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/delinoio/oss/servers/devhud-api/internal/config"
@@ -12,14 +13,17 @@ import (
 
 var ErrUnauthenticated = errors.New("request is unauthenticated")
 
+const defaultVerificationTimeout = 5 * time.Second
+
 type Verifier interface {
 	Verify(context.Context, string) (domain.Identity, error)
 }
 
 type LogtoVerifier struct {
-	issuer string
-	keys   [][]byte
-	verify *oidc.IDTokenVerifier
+	issuer  string
+	keys    [][]byte
+	verify  *oidc.IDTokenVerifier
+	timeout time.Duration
 }
 
 func NewLogtoVerifier(ctx context.Context, issuer, audience string, hmacKeys [][]byte) (*LogtoVerifier, error) {
@@ -28,9 +32,10 @@ func NewLogtoVerifier(ctx context.Context, issuer, audience string, hmacKeys [][
 		return nil, err
 	}
 	return &LogtoVerifier{
-		issuer: issuer,
-		keys:   hmacKeys,
-		verify: provider.Verifier(&oidc.Config{ClientID: audience}),
+		issuer:  issuer,
+		keys:    hmacKeys,
+		verify:  provider.Verifier(&oidc.Config{ClientID: audience}),
+		timeout: defaultVerificationTimeout,
 	}, nil
 }
 
@@ -39,7 +44,9 @@ func (v *LogtoVerifier) Verify(ctx context.Context, authorization string) (domai
 	if !strings.HasPrefix(authorization, prefix) || len(authorization) == len(prefix) || strings.Contains(authorization[len(prefix):], " ") {
 		return domain.Identity{}, ErrUnauthenticated
 	}
-	token, err := v.verify.Verify(ctx, authorization[len(prefix):])
+	verificationContext, cancel := context.WithTimeout(ctx, v.timeout)
+	defer cancel()
+	token, err := v.verify.Verify(verificationContext, authorization[len(prefix):])
 	if err != nil || token.Subject == "" || token.Issuer != v.issuer {
 		return domain.Identity{}, ErrUnauthenticated
 	}

@@ -1,11 +1,18 @@
 package server
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
+	"connectrpc.com/connect"
+	devhudv1 "github.com/delinoio/oss/protos/gen/go/devhud/v1"
 	"github.com/delinoio/oss/servers/devhud-api/internal/domain"
 	"github.com/delinoio/oss/servers/devhud-api/internal/rpc"
 	"go.opentelemetry.io/otel"
@@ -43,6 +50,94 @@ func correlation(ids domain.IDGenerator, next http.Handler) http.Handler {
 		response.Header().Set(correlationHeader, id)
 		next.ServeHTTP(response, request.WithContext(rpc.WithCorrelationID(request.Context(), id)))
 	})
+}
+
+func connectErrorMetadata(connectPaths map[string]struct{}, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if _, ok := connectPaths[request.URL.Path]; !ok {
+			next.ServeHTTP(response, request)
+			return
+		}
+		writer := &connectErrorResponseWriter{ResponseWriter: response}
+		next.ServeHTTP(writer, request)
+		writer.flush(rpc.CorrelationID(request.Context()))
+	})
+}
+
+type connectErrorResponseWriter struct {
+	http.ResponseWriter
+	status      int
+	wroteHeader bool
+	buffering   bool
+	body        bytes.Buffer
+}
+
+func (w *connectErrorResponseWriter) WriteHeader(status int) {
+	if w.wroteHeader {
+		return
+	}
+	w.wroteHeader = true
+	w.status = status
+	w.buffering = status >= http.StatusBadRequest && strings.HasPrefix(w.Header().Get("Content-Type"), "application/json")
+	if !w.buffering {
+		w.ResponseWriter.WriteHeader(status)
+	}
+}
+
+func (w *connectErrorResponseWriter) Write(data []byte) (int, error) {
+	if !w.wroteHeader {
+		w.WriteHeader(http.StatusOK)
+	}
+	if w.buffering {
+		return w.body.Write(data)
+	}
+	return w.ResponseWriter.Write(data)
+}
+
+func (w *connectErrorResponseWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
+func (w *connectErrorResponseWriter) flush(correlationID string) {
+	if !w.buffering {
+		return
+	}
+	data := w.body.Bytes()
+	var wireError connectWireError
+	if correlationID != "" && json.Unmarshal(data, &wireError) == nil && !wireError.hasDetail("devhud.v1.ErrorMetadata") {
+		metadata := &devhudv1.ErrorMetadata{CorrelationId: &devhudv1.UuidV7{Value: correlationID}}
+		if detail, err := connect.NewErrorDetail(metadata); err == nil {
+			wireError.Details = append(wireError.Details, connectWireDetail{
+				Type:  detail.Type(),
+				Value: base64.RawStdEncoding.EncodeToString(detail.Bytes()),
+			})
+			if encoded, err := json.Marshal(wireError); err == nil {
+				data = encoded
+			}
+		}
+	}
+	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
+	w.ResponseWriter.WriteHeader(w.status)
+	_, _ = w.ResponseWriter.Write(data)
+}
+
+type connectWireError struct {
+	Code    string              `json:"code"`
+	Message string              `json:"message,omitempty"`
+	Details []connectWireDetail `json:"details,omitempty"`
+}
+
+func (e connectWireError) hasDetail(detailType string) bool {
+	for _, detail := range e.Details {
+		if detail.Type == detailType {
+			return true
+		}
+	}
+	return false
+}
+
+type connectWireDetail struct {
+	Type  string          `json:"type"`
+	Value string          `json:"value"`
+	Debug json.RawMessage `json:"debug,omitempty"`
 }
 
 func recoverPanics(logger *slog.Logger, next http.Handler) http.Handler {
