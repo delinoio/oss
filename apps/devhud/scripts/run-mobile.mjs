@@ -81,6 +81,7 @@ export function mobileExecution(rawArguments) {
   if (directIntelSimulatorBuild) {
     return {
       command: "xcodebuild",
+      prerequisites: [{ command: "pnpm", arguments: ["build:frontend"] }],
       arguments: [
         "-workspace", "src-tauri/gen/apple/devhud.xcworkspace",
         "-scheme", "devhud_iOS",
@@ -98,6 +99,10 @@ export function mobileExecution(rawArguments) {
 
 export async function runMobile(rawArguments) {
   const execution = mobileExecution(rawArguments);
+  for (const prerequisite of execution.prerequisites ?? []) {
+    const prerequisiteResult = await spawnDevServer(prerequisite.command, prerequisite.arguments, { cwd: appRoot, stdio: "inherit", shell: false }, { terminateProcessTree: true });
+    if (prerequisiteResult.code !== 0 || prerequisiteResult.signal) exitLikeChild(prerequisiteResult);
+  }
   const result = await spawnDevServer(execution.command, execution.arguments, { cwd: appRoot, stdio: "inherit", shell: false }, { terminateProcessTree: true });
   const [platform, command, ...forwarded] = rawArguments;
   const target = targetValues(forwarded).at(-1);

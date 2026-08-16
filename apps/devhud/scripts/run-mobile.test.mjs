@@ -22,6 +22,7 @@ test("does not permit callers to replace pinned platform configuration", () => {
 test("builds the Intel iOS simulator through the generated simulator workspace", () => {
   const execution = mobileExecution(["ios", "build", "--target", "x86_64", "--ci", "--no-sign"]);
   assert.equal(execution.command, "xcodebuild");
+  assert.deepEqual(execution.prerequisites, [{ command: "pnpm", arguments: ["build:frontend"] }]);
   assert.deepEqual(execution.arguments, [
     "-workspace", "src-tauri/gen/apple/devhud.xcworkspace",
     "-scheme", "devhud_iOS",
