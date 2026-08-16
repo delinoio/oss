@@ -1,0 +1,243 @@
+package server
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"log/slog"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"connectrpc.com/connect"
+	devhudv1 "github.com/delinoio/oss/protos/gen/go/devhud/v1"
+	"github.com/delinoio/oss/protos/gen/go/devhud/v1/devhudv1connect"
+	"github.com/delinoio/oss/servers/devhud-api/internal/config"
+	"github.com/delinoio/oss/servers/devhud-api/internal/domain"
+	"github.com/google/uuid"
+)
+
+func TestBootstrapCorrelationAndFoundationCapabilities(t *testing.T) {
+	handler, repository := testHandler(t)
+	testServer := httptest.NewServer(handler)
+	defer testServer.Close()
+	client := devhudv1connect.NewBootstrapServiceClient(http.DefaultClient, testServer.URL)
+	response, err := client.GetBootstrap(context.Background(), connect.NewRequest(&devhudv1.GetBootstrapRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	headerID := response.Header().Get(correlationHeader)
+	parsedID, parseErr := uuid.Parse(headerID)
+	if parseErr != nil || parsedID.Version() != 7 || response.Msg.Metadata.GetCorrelationId().GetValue() != headerID {
+		t.Fatalf("correlation metadata/header mismatch: header=%q message=%q error=%v", headerID, response.Msg.Metadata.GetCorrelationId().GetValue(), parseErr)
+	}
+	wantCapabilities := []devhudv1.StaticCapability{
+		devhudv1.StaticCapability_STATIC_CAPABILITY_SETTINGS_SYNC,
+		devhudv1.StaticCapability_STATIC_CAPABILITY_ACCOUNT_RECOVERY,
+	}
+	if len(response.Msg.Capabilities) != len(wantCapabilities) {
+		t.Fatalf("capabilities = %v", response.Msg.Capabilities)
+	}
+	for index := range wantCapabilities {
+		if response.Msg.Capabilities[index] != wantCapabilities[index] {
+			t.Fatalf("capabilities = %v", response.Msg.Capabilities)
+		}
+	}
+	if response.Msg.LogtoRedirects.GetNative() != config.NativeRedirectURI || response.Msg.UploadLimits.GetMaxObjectBytes() != 50*1024*1024 {
+		t.Fatalf("unexpected bootstrap: %v", response.Msg)
+	}
+	if repository.requestCount() != 1 {
+		t.Fatalf("persisted request logs = %d", repository.requestCount())
+	}
+}
+
+func TestSettingsRequiresAuthenticationWithCorrelationDetail(t *testing.T) {
+	handler, _ := testHandler(t)
+	testServer := httptest.NewServer(handler)
+	defer testServer.Close()
+	client := devhudv1connect.NewSettingsServiceClient(http.DefaultClient, testServer.URL)
+	_, err := client.GetSettings(context.Background(), connect.NewRequest(&devhudv1.GetSettingsRequest{}))
+	if connect.CodeOf(err) != connect.CodeUnauthenticated {
+		t.Fatalf("code = %v, want unauthenticated", connect.CodeOf(err))
+	}
+	var connectError *connect.Error
+	if !errors.As(err, &connectError) || len(connectError.Details()) == 0 {
+		t.Fatalf("missing Connect error details: %v", err)
+	}
+}
+
+func TestExactCORSPreflightContract(t *testing.T) {
+	handler, _ := testHandler(t)
+	for _, origin := range []string{
+		"http://localhost:46305", "http://127.0.0.1:46305", "http://localhost:46306",
+		"http://127.0.0.1:46306", "http://tauri.localhost",
+	} {
+		request := httptest.NewRequest(http.MethodOptions, devhudv1connect.SettingsServiceGetSettingsProcedure, nil)
+		request.Host = "localhost:46307"
+		request.RemoteAddr = "127.0.0.1:12345"
+		request.Header.Set("Origin", origin)
+		request.Header.Set("Access-Control-Request-Method", http.MethodPost)
+		request.Header.Set("Access-Control-Request-Headers", "Authorization, Content-Type, Connect-Protocol-Version, Connect-Timeout-Ms")
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != http.StatusNoContent || response.Header().Get("Access-Control-Allow-Origin") != origin {
+			t.Errorf("origin %q: status=%d allow-origin=%q", origin, response.Code, response.Header().Get("Access-Control-Allow-Origin"))
+		}
+		if strings.Contains(response.Header().Get("Access-Control-Allow-Headers"), "*") || !strings.Contains(strings.ToLower(response.Header().Get("Access-Control-Expose-Headers")), correlationHeader) {
+			t.Errorf("origin %q returned invalid headers: %v", origin, response.Header())
+		}
+	}
+
+	for name, mutate := range map[string]func(*http.Request){
+		"origin": func(request *http.Request) { request.Header.Set("Origin", "http://localhost:46305.evil.example") },
+		"header": func(request *http.Request) { request.Header.Set("Access-Control-Request-Headers", "X-Not-Allowed") },
+		"method": func(request *http.Request) { request.Header.Set("Access-Control-Request-Method", http.MethodDelete) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodOptions, devhudv1connect.SettingsServiceGetSettingsProcedure, nil)
+			request.Host = "localhost:46307"
+			request.RemoteAddr = "127.0.0.1:12345"
+			request.Header.Set("Origin", "http://localhost:46305")
+			request.Header.Set("Access-Control-Request-Method", http.MethodPost)
+			request.Header.Set("Access-Control-Request-Headers", "Content-Type")
+			mutate(request)
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			if response.Code != http.StatusForbidden {
+				t.Fatalf("status = %d", response.Code)
+			}
+		})
+	}
+}
+
+func TestHTTPSRequiredForNonLoopback(t *testing.T) {
+	handler, _ := testHandler(t)
+	request := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	request.Host = "localhost:46307"
+	request.Header.Set("X-Forwarded-Proto", "https")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusUpgradeRequired {
+		t.Fatalf("status = %d", response.Code)
+	}
+}
+
+func TestHTTPSAcceptsOnlyTrustedForwarding(t *testing.T) {
+	repository := &fakeRepository{}
+	_, trustedNetwork, err := net.ParseCIDR("192.0.2.0/24")
+	if err != nil {
+		t.Fatal(err)
+	}
+	httpServer, err := New(Dependencies{
+		Config: config.Config{
+			ListenAddress: "0.0.0.0:8080", APIVersion: "test", LogtoIssuer: "https://issuer.example",
+			LogtoAudience: "audience", DesktopClientID: "desktop", IOSClientID: "ios", AndroidClientID: "android",
+			AdminClientID: "admin", AdminRedirectURI: "https://api.example/admin/auth/callback", PublicAssetBaseURL: "https://assets.example",
+			TrustedProxyCIDRs: []*net.IPNet{trustedNetwork},
+		},
+		Repository: repository, Verifier: fakeVerifier{}, Clock: fixedClock{now: time.Now()}, IDs: randomIDs{},
+		Logger: slog.New(slog.NewJSONHandler(&bytes.Buffer{}, nil)), MetricsHandler: http.NotFoundHandler(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	request.RemoteAddr = "192.0.2.12:12345"
+	request.Header.Set("X-Forwarded-Proto", "https")
+	response := httptest.NewRecorder()
+	httpServer.Handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d", response.Code)
+	}
+}
+
+func testHandler(t *testing.T) (http.Handler, *fakeRepository) {
+	t.Helper()
+	repository := &fakeRepository{}
+	httpServer, err := New(Dependencies{
+		Config: config.Config{
+			ListenAddress: "127.0.0.1:46307", APIVersion: "test", LogtoIssuer: "https://issuer.example",
+			LogtoAudience: "audience", DesktopClientID: "desktop", IOSClientID: "ios", AndroidClientID: "android",
+			AdminClientID: "admin", AdminRedirectURI: "https://api.example/admin/auth/callback", PublicAssetBaseURL: "https://assets.example",
+		},
+		Repository:     repository,
+		Verifier:       fakeVerifier{},
+		Clock:          fixedClock{now: time.Date(2026, 8, 16, 0, 0, 0, 0, time.UTC)},
+		IDs:            randomIDs{},
+		Logger:         slog.New(slog.NewJSONHandler(&bytes.Buffer{}, nil)),
+		MetricsHandler: http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) { response.WriteHeader(http.StatusOK) }),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return httpServer.Handler, repository
+}
+
+type fakeVerifier struct{}
+
+func (fakeVerifier) Verify(context.Context, string) (domain.Identity, error) {
+	return domain.Identity{}, errors.New("invalid token")
+}
+
+type fixedClock struct{ now time.Time }
+
+func (clock fixedClock) Now() time.Time { return clock.now }
+
+type randomIDs struct{}
+
+func (randomIDs) New() (string, error) {
+	id, err := uuid.NewV7()
+	return id.String(), err
+}
+
+type fakeRepository struct {
+	mu       sync.Mutex
+	requests []domain.RequestLog
+}
+
+func (repository *fakeRepository) requestCount() int {
+	repository.mu.Lock()
+	defer repository.mu.Unlock()
+	return len(repository.requests)
+}
+
+func (*fakeRepository) SchemaCurrent(context.Context) (bool, error) { return true, nil }
+func (*fakeRepository) Ping(context.Context) error                  { return nil }
+func (*fakeRepository) ProvisionUser(context.Context, domain.Identity) (domain.User, error) {
+	return domain.User{}, nil
+}
+func (*fakeRepository) GetSettings(context.Context, string) (*domain.Settings, error) {
+	return nil, nil
+}
+func (*fakeRepository) ReplaceSettings(context.Context, string, uint32, []byte, uint64, time.Time) (domain.Settings, error) {
+	return domain.Settings{}, nil
+}
+func (*fakeRepository) GetAccount(context.Context, string) (domain.User, error) {
+	return domain.User{}, nil
+}
+func (*fakeRepository) DeleteAccount(context.Context, string, time.Time) (domain.User, error) {
+	return domain.User{}, nil
+}
+func (*fakeRepository) RestoreAccount(context.Context, string, time.Time) (domain.User, error) {
+	return domain.User{}, nil
+}
+func (repository *fakeRepository) RecordRequest(_ context.Context, request domain.RequestLog) error {
+	repository.mu.Lock()
+	defer repository.mu.Unlock()
+	repository.requests = append(repository.requests, request)
+	return nil
+}
+func (*fakeRepository) RecordAudit(context.Context, domain.AuditEvent) error { return nil }
+func (*fakeRepository) ClaimPurgeBatch(context.Context, time.Time, int) ([]domain.User, error) {
+	return nil, nil
+}
+func (*fakeRepository) CompleteAccountPurge(context.Context, domain.User, time.Time) error {
+	return nil
+}
+func (*fakeRepository) PruneRetention(context.Context, time.Time) (domain.RetentionResult, error) {
+	return domain.RetentionResult{}, nil
+}

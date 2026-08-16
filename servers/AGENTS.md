@@ -6,7 +6,7 @@
 
 ### Scope in This Domain
 
-- `servers/devhud-api`: planned stateless Go DevHud API.
+- `servers/devhud-api`: implemented stateless Go foundation for Bootstrap, Settings, Account, and the account/retention sweeper; Upload, Diagnostics, and Admin remain planned and unregistered.
 
 ### DevHud Rules
 

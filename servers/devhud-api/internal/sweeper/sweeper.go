@@ -1,0 +1,83 @@
+package sweeper
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+
+	"github.com/delinoio/oss/servers/devhud-api/internal/domain"
+)
+
+const MaximumBatchSize = 500
+
+type Sweeper struct {
+	repository  domain.Repository
+	coordinator domain.SweepCoordinator
+	purgers     []domain.AccountPurgeAdapter
+	clock       domain.Clock
+	logger      *slog.Logger
+	batchSize   int
+}
+
+type Result struct {
+	LockAcquired       bool
+	AccountsClaimed    int
+	AccountsPurged     int
+	RequestLogsDeleted int64
+	AuditEventsDeleted int64
+}
+
+func New(repository domain.Repository, coordinator domain.SweepCoordinator, purgers []domain.AccountPurgeAdapter, clock domain.Clock, logger *slog.Logger, batchSize int) (*Sweeper, error) {
+	if batchSize < 1 || batchSize > MaximumBatchSize {
+		return nil, fmt.Errorf("sweeper batch size must be between 1 and %d", MaximumBatchSize)
+	}
+	return &Sweeper{repository: repository, coordinator: coordinator, purgers: purgers, clock: clock, logger: logger, batchSize: batchSize}, nil
+}
+
+func (s *Sweeper) RunOnce(ctx context.Context) (result Result, returnErr error) {
+	unlock, acquired, err := s.coordinator.TryLock(ctx)
+	if err != nil {
+		return result, fmt.Errorf("acquire sweep lock: %w", err)
+	}
+	if !acquired {
+		return result, nil
+	}
+	result.LockAcquired = true
+	defer func() {
+		if err := unlock(context.WithoutCancel(ctx)); err != nil && returnErr == nil {
+			returnErr = fmt.Errorf("release sweep lock: %w", err)
+		}
+	}()
+
+	now := s.clock.Now()
+	accounts, err := s.repository.ClaimPurgeBatch(ctx, now, s.batchSize)
+	if err != nil {
+		return result, fmt.Errorf("claim purge batch: %w", err)
+	}
+	result.AccountsClaimed = len(accounts)
+	for _, account := range accounts {
+		failed := false
+		for _, purger := range s.purgers {
+			if err := purger.PurgeAccount(ctx, account); err != nil {
+				s.logger.WarnContext(ctx, "account purge adapter failed", "error", err)
+				failed = true
+				break
+			}
+		}
+		if failed {
+			continue
+		}
+		if err := s.repository.CompleteAccountPurge(ctx, account, now); err != nil {
+			s.logger.WarnContext(ctx, "account purge finalization failed", "error", err)
+			continue
+		}
+		result.AccountsPurged++
+	}
+	retention, err := s.repository.PruneRetention(ctx, now)
+	if err != nil {
+		return result, fmt.Errorf("prune retention: %w", err)
+	}
+	result.RequestLogsDeleted = retention.RequestLogsDeleted
+	result.AuditEventsDeleted = retention.AuditEventsDeleted
+	return result, nil
+}

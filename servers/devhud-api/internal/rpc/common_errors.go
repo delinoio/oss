@@ -1,0 +1,27 @@
+package rpc
+
+import (
+	"context"
+
+	"connectrpc.com/connect"
+	devhudv1 "github.com/delinoio/oss/protos/gen/go/devhud/v1"
+	"github.com/delinoio/oss/servers/devhud-api/internal/domain"
+)
+
+func unauthenticatedError(ctx context.Context) error {
+	return NewError(connect.CodeUnauthenticated, "valid Logto credentials are required", CorrelationID(ctx))
+}
+
+func internalError(ctx context.Context) error {
+	return NewError(connect.CodeInternal, "internal service error", CorrelationID(ctx))
+}
+
+func permissionError(ctx context.Context, permission *domain.PermissionError) error {
+	reason := devhudv1.PermissionFailureReason_PERMISSION_FAILURE_REASON_UNSPECIFIED
+	if permission.Failure == domain.PermissionFailureAdministrativeBlock {
+		reason = devhudv1.PermissionFailureReason_PERMISSION_FAILURE_REASON_USER_BLOCKED
+	} else if permission.Failure == domain.PermissionFailureDeletionPending {
+		reason = devhudv1.PermissionFailureReason_PERMISSION_FAILURE_REASON_ACCOUNT_DELETION_PENDING
+	}
+	return NewError(connect.CodePermissionDenied, "account is blocked", CorrelationID(ctx), &devhudv1.PermissionFailure{Reason: reason})
+}

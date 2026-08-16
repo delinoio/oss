@@ -2,7 +2,7 @@
 
 ## Goal
 
-DevHud is a coordinated desktop and mobile developer utility. V1 contains the desktop-only RealQA capture and GitHub issue workflow and the desktop/mobile Deck pull-request monitor with native widgets. The deterministic frontend and pinned Tauri CEF desktop-host foundation now exist at `apps/devhud`, and the versioned protocol and generated client are implemented; product workflows, services, mobile clients, widgets, and the other planned domains remain documentation-first contracts.
+DevHud is a coordinated desktop and mobile developer utility. V1 contains the desktop-only RealQA capture and GitHub issue workflow and the desktop/mobile Deck pull-request monitor with native widgets. The deterministic frontend and pinned Tauri CEF desktop-host foundation now exist at `apps/devhud`; the versioned protocol, generated client, and Bootstrap/Settings/Account API foundation are implemented. Product workflows, the remaining API services, mobile clients, widgets, and the other planned domains remain documentation-first contracts.
 
 Issue [#815](https://github.com/delinoio/oss/issues/815) is the current product contract. It supersedes closed historical DevHud issues #729, #755, and #757; those issues are historical context only and must not supply architecture or scope.
 
@@ -19,12 +19,12 @@ enum ProjectId {
 - `apps/devhud` — implemented localized React/TypeScript shell and Rust/Tauri CEF desktop-host foundation; product UI and mobile shell planned.
 - `apps/devhud-chrome-extension` — Chrome Manifest V3 extension (planned).
 - `apps/devhud-admin` — administrator SPA embedded at `/admin` in the API artifact (planned).
-- `servers/devhud-api` — stateless Go API (planned).
+- `servers/devhud-api` — implemented stateless Go Bootstrap/Settings/Account foundation and account/retention sweeper; Upload, Diagnostics, and Admin services planned.
 - `protos/devhud/v1` — implemented versioned Connect RPC schemas with committed Go bindings.
 - `packages/devhud-api-client` — implemented generated TypeScript messages/services, Connect Query exports, and safe client helpers.
 - `crates/devhud-native-messaging-host` — Rust Native Messaging broker packaged with desktop installers (planned canonical Rust workspace path).
 
-The desktop host, protocol, and client paths above are implemented. Only `apps/devhud/src-tauri` is currently a DevHud Cargo workspace member; remaining planned paths are not implemented runtimes, and the planned Rust host is not a workspace member until its skeleton and contract exist.
+The desktop host, protocol, client, and server foundation paths above are implemented. Only `apps/devhud/src-tauri` is currently a DevHud Cargo workspace member; remaining planned paths are not implemented runtimes, and the planned Rust host is not a workspace member until its skeleton and contract exist.
 
 ## Domain Contract Documents
 

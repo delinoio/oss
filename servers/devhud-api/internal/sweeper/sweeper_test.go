@@ -1,0 +1,128 @@
+package sweeper
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"log/slog"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/delinoio/oss/servers/devhud-api/internal/domain"
+)
+
+func TestRunOnceIsBoundedCoordinatedAndRetryable(t *testing.T) {
+	repository := &fakeRepository{accounts: []domain.User{{ID: "one"}, {ID: "two"}}, retention: domain.RetentionResult{RequestLogsDeleted: 3, AuditEventsDeleted: 4}}
+	coordinator := &fakeCoordinator{acquired: true}
+	purger := &failingOncePurger{}
+	worker, err := New(repository, coordinator, []domain.AccountPurgeAdapter{purger}, fixedClock{}, slog.New(slog.NewJSONHandler(&bytes.Buffer{}, nil)), 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := worker.RunOnce(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.AccountsClaimed != 2 || result.AccountsPurged != 1 || result.RequestLogsDeleted != 3 || result.AuditEventsDeleted != 4 {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+	if repository.limit != 2 || coordinator.unlocks != 1 {
+		t.Fatalf("coordination/bound mismatch: limit=%d unlocks=%d", repository.limit, coordinator.unlocks)
+	}
+
+	result, err = worker.RunOnce(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.AccountsPurged != 1 || len(repository.accounts) != 0 {
+		t.Fatalf("retry did not complete the remaining idempotent purge: %+v", result)
+	}
+}
+
+func TestLockContentionSkipsWork(t *testing.T) {
+	repository := &fakeRepository{}
+	worker, err := New(repository, &fakeCoordinator{}, nil, fixedClock{}, slog.Default(), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := worker.RunOnce(context.Background())
+	if err != nil || result.LockAcquired || repository.claims != 0 {
+		t.Fatalf("unexpected contention result: %+v, err=%v", result, err)
+	}
+}
+
+type fixedClock struct{}
+
+func (fixedClock) Now() time.Time { return time.Date(2026, 8, 16, 0, 0, 0, 0, time.UTC) }
+
+type fakeCoordinator struct {
+	acquired bool
+	unlocks  int
+}
+
+func (coordinator *fakeCoordinator) TryLock(context.Context) (func(context.Context) error, bool, error) {
+	return func(context.Context) error { coordinator.unlocks++; return nil }, coordinator.acquired, nil
+}
+
+type failingOncePurger struct {
+	mu     sync.Mutex
+	failed bool
+}
+
+func (purger *failingOncePurger) PurgeAccount(_ context.Context, _ domain.User) error {
+	purger.mu.Lock()
+	defer purger.mu.Unlock()
+	if !purger.failed {
+		purger.failed = true
+		return errors.New("temporary failure")
+	}
+	return nil
+}
+
+type fakeRepository struct {
+	accounts  []domain.User
+	retention domain.RetentionResult
+	limit     int
+	claims    int
+}
+
+func (*fakeRepository) SchemaCurrent(context.Context) (bool, error) { return true, nil }
+func (*fakeRepository) Ping(context.Context) error                  { return nil }
+func (*fakeRepository) ProvisionUser(context.Context, domain.Identity) (domain.User, error) {
+	return domain.User{}, nil
+}
+func (*fakeRepository) GetSettings(context.Context, string) (*domain.Settings, error) {
+	return nil, nil
+}
+func (*fakeRepository) ReplaceSettings(context.Context, string, uint32, []byte, uint64, time.Time) (domain.Settings, error) {
+	return domain.Settings{}, nil
+}
+func (*fakeRepository) GetAccount(context.Context, string) (domain.User, error) {
+	return domain.User{}, nil
+}
+func (*fakeRepository) DeleteAccount(context.Context, string, time.Time) (domain.User, error) {
+	return domain.User{}, nil
+}
+func (*fakeRepository) RestoreAccount(context.Context, string, time.Time) (domain.User, error) {
+	return domain.User{}, nil
+}
+func (*fakeRepository) RecordRequest(context.Context, domain.RequestLog) error { return nil }
+func (*fakeRepository) RecordAudit(context.Context, domain.AuditEvent) error   { return nil }
+func (repository *fakeRepository) ClaimPurgeBatch(_ context.Context, _ time.Time, limit int) ([]domain.User, error) {
+	repository.limit = limit
+	repository.claims++
+	return append([]domain.User(nil), repository.accounts...), nil
+}
+func (repository *fakeRepository) CompleteAccountPurge(_ context.Context, user domain.User, _ time.Time) error {
+	for index, account := range repository.accounts {
+		if account.ID == user.ID {
+			repository.accounts = append(repository.accounts[:index], repository.accounts[index+1:]...)
+			break
+		}
+	}
+	return nil
+}
+func (repository *fakeRepository) PruneRetention(context.Context, time.Time) (domain.RetentionResult, error) {
+	return repository.retention, nil
+}
