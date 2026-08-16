@@ -134,16 +134,33 @@ func (s *Store) ProvisionUser(ctx context.Context, identity domain.Identity) (do
 }
 
 func (s *Store) GetSettings(ctx context.Context, userID string) (*domain.Settings, error) {
-	row := s.pool.QueryRow(ctx, `SELECT schema_version, revision::text, canonical_json, updated_at
-        FROM devhud_settings WHERE user_id = $1`, userID)
-	settings, err := scanSettings(row)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
-	}
+	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return &settings, nil
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var deletionState domain.DeletionState
+	var blockState domain.AdministrativeBlockState
+	if err := tx.QueryRow(ctx, `SELECT deletion_state, administrative_block_state
+        FROM devhud_users WHERE user_id = $1 FOR SHARE`, userID).Scan(&deletionState, &blockState); err != nil {
+		return nil, err
+	}
+	if blockState == domain.AdministrativeBlockStateBlocked {
+		return nil, &domain.PermissionError{Failure: domain.PermissionFailureAdministrativeBlock}
+	}
+	if deletionState != domain.DeletionStateActive {
+		return nil, &domain.PermissionError{Failure: domain.PermissionFailureDeletionPending}
+	}
+
+	settings, err := getSettingsTx(ctx, tx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return settings, nil
 }
 
 func (s *Store) ReplaceSettings(ctx context.Context, userID string, schemaVersion uint32, canonicalJSON []byte, expectedRevision uint64, now time.Time) (domain.Settings, error) {
@@ -312,29 +329,45 @@ func (s *Store) ClaimPurgeBatch(ctx context.Context, now time.Time, limit int) (
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	rows, err := tx.Query(ctx, `WITH candidates AS (
-        SELECT user_id FROM devhud_users
-        WHERE (deletion_state = 2 AND recoverable_until <= $1) OR deletion_state = 3
-        ORDER BY recoverable_until, user_id
-        FOR UPDATE SKIP LOCKED
-        LIMIT $2
-    )
-    UPDATE devhud_users u SET deletion_state = 3, updated_at = $1
-    FROM candidates c WHERE u.user_id = c.user_id
-    RETURNING `+prefixedUserColumns("u"), now, limit)
+		SELECT user_id, deletion_state AS previous_deletion_state FROM devhud_users
+		WHERE (deletion_state = 2 AND recoverable_until <= $1) OR deletion_state = 3
+		ORDER BY (deletion_state = 3), recoverable_until, user_id
+		FOR UPDATE SKIP LOCKED
+		LIMIT $2
+	)
+	UPDATE devhud_users u SET deletion_state = 3, updated_at = $1
+	FROM candidates c WHERE u.user_id = c.user_id
+	RETURNING `+prefixedUserColumns("u")+`, c.previous_deletion_state`, now, limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	users := make([]domain.User, 0, limit)
+	type claimedUser struct {
+		user          domain.User
+		previousState domain.DeletionState
+	}
+	claims := make([]claimedUser, 0, limit)
 	for rows.Next() {
-		user, err := scanUser(rows)
-		if err != nil {
+		var claim claimedUser
+		destinations := append(userScanDestinations(&claim.user), &claim.previousState)
+		if err := rows.Scan(destinations...); err != nil {
 			return nil, err
 		}
-		users = append(users, user)
+		claims = append(claims, claim)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
+	}
+	rows.Close()
+
+	users := make([]domain.User, 0, len(claims))
+	for _, claim := range claims {
+		if claim.previousState == domain.DeletionStatePending {
+			if err := s.insertAccountAudit(ctx, tx, claim.user, domain.AuditActionAccountPurgeClaimed, now); err != nil {
+				return nil, err
+			}
+		}
+		users = append(users, claim.user)
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, err
@@ -453,10 +486,14 @@ type rowScanner interface {
 
 func scanUser(row rowScanner) (domain.User, error) {
 	var user domain.User
-	err := row.Scan(&user.ID, &user.Issuer, &user.Subject, &user.IdentityFingerprint, &user.DisplayName, &user.Email,
-		&user.DeletionState, &user.AdministrativeBlockState, &user.CreatedAt, &user.UpdatedAt,
-		&user.DeletionRequestedAt, &user.RecoverableUntil, &user.RestoreRetryUntil)
+	err := row.Scan(userScanDestinations(&user)...)
 	return user, err
+}
+
+func userScanDestinations(user *domain.User) []any {
+	return []any{&user.ID, &user.Issuer, &user.Subject, &user.IdentityFingerprint, &user.DisplayName, &user.Email,
+		&user.DeletionState, &user.AdministrativeBlockState, &user.CreatedAt, &user.UpdatedAt,
+		&user.DeletionRequestedAt, &user.RecoverableUntil, &user.RestoreRetryUntil}
 }
 
 func lockIdentity(ctx context.Context, tx pgx.Tx, issuer, subject string) error {

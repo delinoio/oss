@@ -27,6 +27,16 @@ type requestMetrics struct {
 	duration metric.Float64Histogram
 }
 
+func recoverConnectPanics(logger *slog.Logger) connect.HandlerOption {
+	return connect.WithRecover(func(ctx context.Context, specification connect.Spec, _ http.Header, _ any) error {
+		logger.ErrorContext(ctx, "Connect RPC panic recovered",
+			"correlation_id", rpc.CorrelationID(ctx),
+			"procedure", safeProcedure(specification.Procedure),
+		)
+		return rpc.NewError(connect.CodeInternal, "internal service error", rpc.CorrelationID(ctx))
+	})
+}
+
 func newRequestMetrics() (requestMetrics, error) {
 	meter := otel.Meter("github.com/delinoio/oss/servers/devhud-api")
 	requests, err := meter.Int64Counter("devhud_api_requests", metric.WithUnit("{request}"))

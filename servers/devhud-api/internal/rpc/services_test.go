@@ -50,13 +50,18 @@ func TestReplaceSettingsReturnsTypedConflict(t *testing.T) {
 	}
 }
 
-func TestGetSettingsRejectsAdministrativeAndDeletionBlocks(t *testing.T) {
-	for name, user := range map[string]domain.User{
-		"administrator": {ID: "018f7c1e-7b4a-7abc-8def-0123456789ab", DeletionState: domain.DeletionStateActive, AdministrativeBlockState: domain.AdministrativeBlockStateBlocked},
-		"deletion":      {ID: "018f7c1e-7b4a-7abc-8def-0123456789ab", DeletionState: domain.DeletionStatePending, AdministrativeBlockState: domain.AdministrativeBlockStateUnblocked},
+func TestGetSettingsMapsTransactionalEligibilityFailures(t *testing.T) {
+	for name, failure := range map[string]domain.PermissionFailure{
+		"administrator": domain.PermissionFailureAdministrativeBlock,
+		"deletion":      domain.PermissionFailureDeletionPending,
 	} {
 		t.Run(name, func(t *testing.T) {
-			repository := &serviceRepository{getAccount: func(context.Context, string) (domain.User, error) { return user, nil }}
+			repository := &serviceRepository{getSettings: func(_ context.Context, userID string) (*domain.Settings, error) {
+				if userID != "018f7c1e-7b4a-7abc-8def-0123456789ab" {
+					t.Fatalf("settings read used user %q", userID)
+				}
+				return nil, &domain.PermissionError{Failure: failure}
+			}}
 			_, err := NewSettingsService(repository, serviceClock{}).GetSettings(authenticatedContext(), connect.NewRequest(&devhudv1.GetSettingsRequest{}))
 			if connect.CodeOf(err) != connect.CodePermissionDenied {
 				t.Fatalf("code = %v, want PermissionDenied", connect.CodeOf(err))
@@ -91,6 +96,7 @@ func (serviceClock) Now() time.Time { return time.Date(2026, 8, 16, 0, 0, 0, 0, 
 
 type serviceRepository struct {
 	getAccount      func(context.Context, string) (domain.User, error)
+	getSettings     func(context.Context, string) (*domain.Settings, error)
 	replaceSettings func(context.Context, string, uint32, []byte, uint64, time.Time) (domain.Settings, error)
 	restoreAccount  func(context.Context, string, time.Time) (domain.User, error)
 }
@@ -100,8 +106,8 @@ func (*serviceRepository) Ping(context.Context) error                  { return 
 func (*serviceRepository) ProvisionUser(context.Context, domain.Identity) (domain.User, error) {
 	return domain.User{}, nil
 }
-func (*serviceRepository) GetSettings(context.Context, string) (*domain.Settings, error) {
-	return nil, nil
+func (repository *serviceRepository) GetSettings(ctx context.Context, userID string) (*domain.Settings, error) {
+	return repository.getSettings(ctx, userID)
 }
 func (repository *serviceRepository) ReplaceSettings(ctx context.Context, userID string, schemaVersion uint32, body []byte, revision uint64, now time.Time) (domain.Settings, error) {
 	return repository.replaceSettings(ctx, userID, schemaVersion, body, revision, now)

@@ -126,6 +126,13 @@ func TestFoundationTransactionsAndRetention(t *testing.T) {
 	if _, err := store.RestoreAccount(ctx, user.ID, *deleted.RecoverableUntil); !accountFailureIs(err, domain.AccountFailureRecoveryExpired) {
 		t.Fatalf("expired active-account restore error = %v", err)
 	}
+	var blocked *domain.PermissionError
+	if _, err := store.GetSettings(ctx, user.ID); !errors.As(err, &blocked) || blocked.Failure != domain.PermissionFailureAdministrativeBlock {
+		t.Fatalf("settings read error = %v, want administrative-block permission failure", err)
+	}
+	if _, err := pool.Exec(ctx, "UPDATE devhud_users SET administrative_block_state = 1 WHERE user_id = $1", user.ID); err != nil {
+		t.Fatal(err)
+	}
 	if snapshot, err := store.GetSettings(ctx, user.ID); err != nil || snapshot == nil || snapshot.Revision != 2 {
 		t.Fatalf("account backup/restore lost settings: %+v, err=%v", snapshot, err)
 	}
@@ -257,6 +264,133 @@ func TestFoundationTransactionsAndRetention(t *testing.T) {
 	}
 	if err := otherUnlock(ctx); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestSettingsReadSerializesWithDeletionStateTransition(t *testing.T) {
+	ctx, pool, store := newIntegrationStore(t, time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC))
+	identity := domain.Identity{
+		Issuer: "https://issuer.example", Subject: "settings-reader", Fingerprint: []byte("settings-reader-fingerprint-0000"),
+	}
+	identity.FingerprintCandidates = [][]byte{identity.Fingerprint}
+	user, err := store.ProvisionUser(ctx, identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ReplaceSettings(ctx, user.ID, 1, []byte(`{"theme":"dark"}`), 0, time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatal(err)
+	}
+
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deletionRequestedAt := time.Date(2026, 4, 2, 0, 0, 0, 0, time.UTC)
+	if _, err := tx.Exec(ctx, `UPDATE devhud_users SET deletion_state = 2, deletion_requested_at = $2,
+        recoverable_until = $3, updated_at = $2 WHERE user_id = $1`, user.ID, deletionRequestedAt, deletionRequestedAt.Add(domain.RecoveryWindow)); err != nil {
+		_ = tx.Rollback(ctx)
+		t.Fatal(err)
+	}
+
+	readResult := make(chan error, 1)
+	go func() {
+		_, readErr := store.GetSettings(ctx, user.ID)
+		readResult <- readErr
+	}()
+	select {
+	case readErr := <-readResult:
+		_ = tx.Rollback(ctx)
+		t.Fatalf("settings read bypassed the deletion-state row lock: %v", readErr)
+	case <-time.After(100 * time.Millisecond):
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case readErr := <-readResult:
+		var permission *domain.PermissionError
+		if !errors.As(readErr, &permission) || permission.Failure != domain.PermissionFailureDeletionPending {
+			t.Fatalf("settings read error = %v, want deletion-pending permission failure", readErr)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("settings read remained blocked after deletion committed")
+	}
+}
+
+func TestPurgeClaimsPrioritizePendingAccountsAndAuditOnce(t *testing.T) {
+	ctx, pool, store := newIntegrationStore(t, time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
+	retryIdentity := domain.Identity{
+		Issuer: "https://issuer.example", Subject: "retry", Fingerprint: []byte("retry-fingerprint-00000000000000"),
+	}
+	retryIdentity.FingerprintCandidates = [][]byte{retryIdentity.Fingerprint}
+	retryUser, err := store.ProvisionUser(ctx, retryIdentity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	retryDeletedAt := time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)
+	if _, err := store.DeleteAccount(ctx, retryUser.ID, retryDeletedAt); err != nil {
+		t.Fatal(err)
+	}
+	if accounts, err := store.ClaimPurgeBatch(ctx, retryDeletedAt.Add(domain.RecoveryWindow), 1); err != nil || len(accounts) != 1 || accounts[0].ID != retryUser.ID {
+		t.Fatalf("initial retry claim = %+v, err=%v", accounts, err)
+	}
+
+	pendingIdentity := domain.Identity{
+		Issuer: "https://issuer.example", Subject: "pending", Fingerprint: []byte("pending-fingerprint-000000000000"),
+	}
+	pendingIdentity.FingerprintCandidates = [][]byte{pendingIdentity.Fingerprint}
+	pendingUser, err := store.ProvisionUser(ctx, pendingIdentity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pendingDeletedAt := time.Date(2026, 2, 2, 0, 0, 0, 0, time.UTC)
+	if _, err := store.DeleteAccount(ctx, pendingUser.ID, pendingDeletedAt); err != nil {
+		t.Fatal(err)
+	}
+	boundary := pendingDeletedAt.Add(domain.RecoveryWindow)
+	accounts, err := store.ClaimPurgeBatch(ctx, boundary, 1)
+	if err != nil || len(accounts) != 1 || accounts[0].ID != pendingUser.ID {
+		t.Fatalf("pending account was starved by retry claim: accounts=%+v err=%v", accounts, err)
+	}
+
+	assertPurgeClaimAuditCount(t, ctx, pool, 2)
+	if _, err := store.ClaimPurgeBatch(ctx, boundary.Add(time.Hour), 10); err != nil {
+		t.Fatal(err)
+	}
+	assertPurgeClaimAuditCount(t, ctx, pool, 2)
+}
+
+func newIntegrationStore(t *testing.T, now time.Time) (context.Context, *pgxpool.Pool, *Store) {
+	t.Helper()
+	databaseURL := os.Getenv("DEVHUD_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("DEVHUD_TEST_DATABASE_URL is not set")
+	}
+	ctx := context.Background()
+	pool, err := NewPool(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dropFoundation(t, ctx, pool)
+	if err := Migrate(ctx, pool); err != nil {
+		pool.Close()
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		dropFoundation(t, ctx, pool)
+		pool.Close()
+	})
+	return ctx, pool, New(pool, idgen.UUIDv7{}, &mutableClock{now: now})
+}
+
+func assertPurgeClaimAuditCount(t *testing.T, ctx context.Context, pool *pgxpool.Pool, want int) {
+	t.Helper()
+	var count int
+	if err := pool.QueryRow(ctx, "SELECT count(*) FROM devhud_audit_events WHERE action = $1", domain.AuditActionAccountPurgeClaimed).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != want {
+		t.Fatalf("purge-claim audit count = %d, want %d", count, want)
 	}
 }
 

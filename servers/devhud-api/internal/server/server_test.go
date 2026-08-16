@@ -19,6 +19,7 @@ import (
 	"connectrpc.com/connect"
 	devhudv1 "github.com/delinoio/oss/protos/gen/go/devhud/v1"
 	"github.com/delinoio/oss/protos/gen/go/devhud/v1/devhudv1connect"
+	"github.com/delinoio/oss/servers/devhud-api/internal/auth"
 	"github.com/delinoio/oss/servers/devhud-api/internal/config"
 	"github.com/delinoio/oss/servers/devhud-api/internal/domain"
 	"github.com/google/uuid"
@@ -119,6 +120,38 @@ func TestFrameworkConnectErrorsCarryCorrelationDetail(t *testing.T) {
 				t.Fatalf("missing matching ErrorMetadata: header=%q body=%s", headerID, body)
 			}
 		})
+	}
+}
+
+func TestRecoveredConnectPanicCarriesCorrelationDetail(t *testing.T) {
+	handler, _ := testHandlerWithVerifier(t, panicVerifier{})
+	testServer := httptest.NewServer(handler)
+	defer testServer.Close()
+	client := devhudv1connect.NewSettingsServiceClient(http.DefaultClient, testServer.URL)
+	request := connect.NewRequest(&devhudv1.GetSettingsRequest{})
+	request.Header().Set("Authorization", "Bearer panic")
+	_, err := client.GetSettings(context.Background(), request)
+	if connect.CodeOf(err) != connect.CodeInternal {
+		t.Fatalf("code = %v, want internal", connect.CodeOf(err))
+	}
+	var connectError *connect.Error
+	if !errors.As(err, &connectError) {
+		t.Fatalf("error = %v", err)
+	}
+	headerID := connectError.Meta().Get(correlationHeader)
+	found := false
+	for _, detail := range connectError.Details() {
+		value, valueErr := detail.Value()
+		if valueErr != nil {
+			t.Fatal(valueErr)
+		}
+		metadata, ok := value.(*devhudv1.ErrorMetadata)
+		if ok && metadata.GetCorrelationId().GetValue() == headerID {
+			found = true
+		}
+	}
+	if headerID == "" || !found {
+		t.Fatalf("missing matching panic correlation metadata: header=%q error=%v", headerID, err)
 	}
 }
 
@@ -266,6 +299,10 @@ func TestProductionLoopbackRequiresTrustedForwardedHTTPS(t *testing.T) {
 }
 
 func testHandler(t *testing.T) (http.Handler, *fakeRepository) {
+	return testHandlerWithVerifier(t, fakeVerifier{})
+}
+
+func testHandlerWithVerifier(t *testing.T, verifier auth.Verifier) (http.Handler, *fakeRepository) {
 	t.Helper()
 	repository := &fakeRepository{}
 	httpServer, err := New(Dependencies{
@@ -275,7 +312,7 @@ func testHandler(t *testing.T) (http.Handler, *fakeRepository) {
 			AdminClientID: "admin", AdminRedirectURI: "https://api.example/admin/auth/callback", PublicAssetBaseURL: "https://assets.example",
 		},
 		Repository:     repository,
-		Verifier:       fakeVerifier{},
+		Verifier:       verifier,
 		Clock:          fixedClock{now: time.Date(2026, 8, 16, 0, 0, 0, 0, time.UTC)},
 		IDs:            randomIDs{},
 		Logger:         slog.New(slog.NewJSONHandler(&bytes.Buffer{}, nil)),
@@ -291,6 +328,12 @@ type fakeVerifier struct{}
 
 func (fakeVerifier) Verify(context.Context, string) (domain.Identity, error) {
 	return domain.Identity{}, errors.New("invalid token")
+}
+
+type panicVerifier struct{}
+
+func (panicVerifier) Verify(context.Context, string) (domain.Identity, error) {
+	panic("test panic")
 }
 
 type fixedClock struct{ now time.Time }

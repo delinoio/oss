@@ -28,7 +28,7 @@ type Dependencies struct {
 func New(dependencies Dependencies) (*http.Server, error) {
 	mux := http.NewServeMux()
 	authInterceptor := rpc.NewAuthInterceptor(dependencies.Verifier, dependencies.Repository)
-	handlerOptions := []connect.HandlerOption{connect.WithInterceptors(authInterceptor)}
+	handlerOptions := []connect.HandlerOption{recoverConnectPanics(dependencies.Logger), connect.WithInterceptors(authInterceptor)}
 
 	bootstrapPath, bootstrapHandler := devhudv1connect.NewBootstrapServiceHandler(rpc.NewBootstrapService(rpc.BootstrapConfig{
 		APIVersion:         dependencies.Config.APIVersion,

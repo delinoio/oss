@@ -24,12 +24,16 @@ func NewSettingsService(repository domain.Repository, clock domain.Clock) *Setti
 }
 
 func (s *SettingsService) GetSettings(ctx context.Context, _ *connect.Request[devhudv1.GetSettingsRequest]) (*connect.Response[devhudv1.GetSettingsResponse], error) {
-	user, err := s.activeUser(ctx)
-	if err != nil {
-		return nil, err
+	user, ok := auth.UserFromContext(ctx)
+	if !ok {
+		return nil, unauthenticatedError(ctx)
 	}
 	snapshot, err := s.repository.GetSettings(ctx, user.ID)
 	if err != nil {
+		var permission *domain.PermissionError
+		if errors.As(err, &permission) {
+			return nil, permissionError(ctx, permission)
+		}
 		return nil, internalError(ctx)
 	}
 	return connect.NewResponse(&devhudv1.GetSettingsResponse{
@@ -68,24 +72,6 @@ func (s *SettingsService) ReplaceSettings(ctx context.Context, request *connect.
 		Metadata: metadata(CorrelationID(ctx)),
 		Snapshot: settingsMessage(&snapshot),
 	}), nil
-}
-
-func (s *SettingsService) activeUser(ctx context.Context) (domain.User, error) {
-	principal, ok := auth.UserFromContext(ctx)
-	if !ok {
-		return domain.User{}, unauthenticatedError(ctx)
-	}
-	user, err := s.repository.GetAccount(ctx, principal.ID)
-	if err != nil {
-		return domain.User{}, internalError(ctx)
-	}
-	if user.AdministrativeBlockState == domain.AdministrativeBlockStateBlocked {
-		return domain.User{}, permissionError(ctx, &domain.PermissionError{Failure: domain.PermissionFailureAdministrativeBlock})
-	}
-	if user.DeletionState != domain.DeletionStateActive {
-		return domain.User{}, permissionError(ctx, &domain.PermissionError{Failure: domain.PermissionFailureDeletionPending})
-	}
-	return user, nil
 }
 
 func validateCanonicalJSON(value []byte) error {
