@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 const appRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const styles = readFileSync(join(appRoot, "src/styles.css"), "utf8");
 const app = readFileSync(join(appRoot, "src/App.tsx"), "utf8");
+const nativeHost = readFileSync(join(appRoot, "src-tauri/src/main.rs"), "utf8");
 const themeBlocks = [
   styles.match(/:root\s*\{([^}]*)\}/u)?.[1],
   styles.match(/html\[data-theme="dark"\]\s*\{([^}]*)\}/u)?.[1],
@@ -111,4 +112,22 @@ test("Account focuses its API origin input when the surface opens", () => {
   assert.match(app, /const apiOriginInput = useRef<HTMLInputElement>\(null\);/u);
   assert.match(app, /surface === SurfaceId\.Account\) apiOriginInput\.current\?\.focus\(\)/u);
   assert.match(app, /<input ref=\{apiOriginInput\} value=\{preferences\.apiOrigin\}/u);
+});
+
+test("RealQA exposes unsupported capture actions as disabled controls", () => {
+  assert.match(app, /const unavailableCaptureActions = actionRegistry\.filter/u);
+  assert.match(app, /action\.required\.includes\(PlatformCapability\.Capture\)/u);
+  assert.match(app, /<div className="disabled-actions">\{unavailableCaptureActions\.map\(\(action\) => <button disabled/u);
+});
+
+test("tray localization failures are caught and recorded", () => {
+  const shell = readFileSync(join(appRoot, "src/shell.ts"), "utf8");
+  assert.match(shell, /\?\? Promise\.resolve\(\)/u);
+  assert.match(app, /void setTrayLanguage\(language\)\.catch\(\(\) => \{\}\);/u);
+  assert.match(nativeHost, /event = "tray_language_update_failed"/u);
+});
+
+test("command palette overlay stacks above the mobile sidebar", () => {
+  assert.match(styles, /\.overlay\s*\{[^}]*z-index:2/u);
+  assert.match(styles, /aside\s*\{[^}]*z-index:1/u);
 });

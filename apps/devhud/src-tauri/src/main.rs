@@ -55,12 +55,14 @@ fn set_tray_language(
     tray: tauri::State<'_, TrayMenuItems>,
 ) -> Result<(), String> {
     let (show, quit) = tray_labels(&language);
-    tray.show
-        .set_text(show)
-        .map_err(|_| "unable to update tray menu".to_string())?;
-    tray.quit
-        .set_text(quit)
-        .map_err(|_| "unable to update tray menu".to_string())
+    tray.show.set_text(show).map_err(|error| {
+        error!(event = "tray_language_update_failed", menu_item = "show", error = %error);
+        "unable to update tray menu".to_string()
+    })?;
+    tray.quit.set_text(quit).map_err(|error| {
+        error!(event = "tray_language_update_failed", menu_item = "quit", error = %error);
+        "unable to update tray menu".to_string()
+    })
 }
 
 fn validated_api_origin(origin: &str) -> Option<String> {

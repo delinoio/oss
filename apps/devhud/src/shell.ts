@@ -50,6 +50,6 @@ export interface NativeShell { setLaunchAtLogin(enabled: boolean): Promise<void>
 interface TauriInternals { invoke(command: string, args?: Record<string, unknown>): Promise<unknown>; }
 declare global { interface Window { __TAURI_INTERNALS__?: TauriInternals; } }
 function invoke(command: string, args?: Record<string, unknown>) { return window.__TAURI_INTERNALS__?.invoke(command, args); }
-export function setTrayLanguage(language: SupportedLanguage) { return invoke("set_tray_language", { language }); }
+export function setTrayLanguage(language: SupportedLanguage) { return invoke("set_tray_language", { language }) ?? Promise.resolve(); }
 export function markFrontendReady() { return invoke("frontend_ready"); }
 export const browserShell: NativeShell = { async setLaunchAtLogin() {}, async openExternal(target, apiOrigin) { if (target === ExternalLinkTarget.Authentication && !isValidApiOrigin(apiOrigin)) throw new Error("invalid API origin"); const native = invoke("open_external", { target, apiOrigin }); if (native) { await native; return; } const path = target === ExternalLinkTarget.Authentication ? apiOrigin : target === ExternalLinkTarget.Pat ? "https://github.com/settings/personal-access-tokens/new" : "https://github.com/delinoio/oss/issues/new"; window.open(path, "_blank", "noopener,noreferrer"); }, async quit() {} };
