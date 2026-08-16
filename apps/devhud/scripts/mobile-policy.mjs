@@ -51,10 +51,22 @@ export function assertAndroidNativeBridge(androidNativeBridge) {
 export function mobileCargoTreeDigest(cargoTree, workspaceRoot) {
   const escapedRoot = workspaceRoot.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
   const workspacePath = new RegExp(` \\(${escapedRoot}/([^)]*)\\)`, "gu");
-  const packages = cargoTree
-    .split("\n")
-    .map((line) => line.trim().replace(/ \\(\*\\)$/u, "").replace(workspacePath, " (workspace:$1)"))
-    .filter(Boolean);
+  const packages = [];
+  let skippedProcMacroDepth;
+  for (const rawLine of cargoTree.split("\n")) {
+    const match = rawLine.match(/^(\d+)(.*)$/u);
+    if (!match) continue;
+    const depth = Number(match[1]);
+    if (skippedProcMacroDepth !== undefined && depth > skippedProcMacroDepth) continue;
+    skippedProcMacroDepth = undefined;
+    // Proc macros and their dependencies execute on the Cargo host, not in the mobile artifact.
+    if (match[2].includes("(proc-macro)")) {
+      skippedProcMacroDepth = depth;
+      continue;
+    }
+    const packageLine = match[2].trim().replace(/ \(\*\)$/u, "").replace(workspacePath, " (workspace:$1)");
+    if (packageLine) packages.push(packageLine);
+  }
   return `sha256-${createHash("sha256").update(`${[...new Set(packages)].sort().join("\n")}\n`).digest("hex")}`;
 }
 

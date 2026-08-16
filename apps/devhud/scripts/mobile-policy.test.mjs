@@ -46,12 +46,15 @@ test("mobile policy requires checked Android persistence and app-level notificat
 
 test("mobile policy pins normalized resolved dependency closures", () => {
   const tree = [
-    "devhud v0.1.0 (/checkout/apps/devhud/src-tauri) ",
-    "serde v1.0.0 default,derive",
-    "serde v1.0.0 default,derive (*)",
+    "0devhud v0.1.0 (/checkout/apps/devhud/src-tauri) ",
+    "1serde v1.0.0 default,derive",
+    "2serde_derive v1.0.0 (proc-macro) default",
+    "3host-only v1.0.0 default",
+    "1serde v1.0.0 default,derive (*)",
   ].join("\n");
   assert.equal(mobileCargoTreeDigest(tree, "/checkout"), mobileCargoTreeDigest(tree.replaceAll("/checkout", "/other"), "/other"));
-  assert.notEqual(mobileCargoTreeDigest(tree, "/checkout"), mobileCargoTreeDigest(`${tree}\nreqwest v1.0.0 default`, "/checkout"));
+  assert.equal(mobileCargoTreeDigest(tree, "/checkout"), mobileCargoTreeDigest(tree.replace("host-only v1.0.0", "other-host-only v1.0.0"), "/checkout"));
+  assert.notEqual(mobileCargoTreeDigest(tree, "/checkout"), mobileCargoTreeDigest(`${tree}\n1reqwest v1.0.0 default`, "/checkout"));
   assert.doesNotThrow(() => assertMobileDependencyClosures(mobilePlatforms, mobilePlatforms.dependencyClosures));
   assert.throws(
     () => assertMobileDependencyClosures(mobilePlatforms, { ...mobilePlatforms.dependencyClosures, "aarch64-linux-android": "sha256-changed" }),

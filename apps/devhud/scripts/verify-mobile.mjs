@@ -22,7 +22,7 @@ function commandOutput(command, args, encoding = "utf8") {
 function mobileCargoTree(target) {
   const result = spawnSync("cargo", [
     "tree", "--locked", "--manifest-path", "apps/devhud/src-tauri/Cargo.toml", "-p", "devhud",
-    "--target", target, "--edges", "normal", "--no-default-features", "--prefix", "none", "--format", "{p} {f}",
+    "--target", target, "--edges", "normal", "--no-default-features", "--prefix", "depth", "--format", "{p} {f}",
   ], { cwd: repoRoot, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, shell: false });
   if (result.status !== 0) throw new Error(`cargo tree failed while resolving mobile target ${target}: ${result.stderr.trim()}`);
   return result.stdout;
