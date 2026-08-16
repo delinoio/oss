@@ -46,8 +46,7 @@ export function assertMobileCi(workflow) {
   for (const [target, runner] of [["aarch64", "macos-15"], ["aarch64-sim", "macos-15"], ["x86_64", "macos-15-intel"]]) {
     assert(iosJob.includes(`- target: ${target}\n            runner: ${runner}`), `iOS CI target ${target} must run on ${runner}`);
   }
-  assert(iosJob.includes('CODE_SIGNING_ALLOWED: "NO"'), "iOS CI builds must disable code signing");
-  assert(iosJob.includes("ios build --target ${{ matrix.target }} --ci"), "iOS CI must build every matrix target without signing");
+  assert(iosJob.includes("ios build --target ${{ matrix.target }} --ci --no-sign"), "iOS CI must build every matrix target without signing");
 }
 
 export function assertMobileContracts({ platforms, tauri, ios, android, cargo, androidManifest, androidBackupRules, androidDataExtractionRules, androidPluginManifest, androidNativeBridge, iosPlist, packageJson, nativeBridge, app, workflow }) {
