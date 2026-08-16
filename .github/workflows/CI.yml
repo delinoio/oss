@@ -290,7 +290,7 @@ jobs:
         if: ${{ steps.gate.outputs.run == 'true' }}
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang cmake libgtk-3-dev libx11-dev ninja-build
+          sudo apt-get install -y clang cmake libayatana-appindicator3-dev libgtk-3-dev libx11-dev ninja-build
 
       - name: Cache Rust dependencies
         if: ${{ steps.gate.outputs.run == 'true' }}
@@ -381,7 +381,7 @@ jobs:
         if: ${{ steps.gate.outputs.run == 'true' }}
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang cmake libgtk-3-dev libx11-dev ninja-build
+          sudo apt-get install -y clang cmake libayatana-appindicator3-dev libgtk-3-dev libx11-dev ninja-build
 
       - name: Cache Rust dependencies
         if: ${{ steps.gate.outputs.run == 'true' }}
@@ -816,7 +816,7 @@ jobs:
         if: ${{ steps.gate.outputs.run == 'true' && matrix.os == 'linux' }}
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang cmake dbus-x11 libfuse2 libgtk-3-dev libx11-dev libxkbcommon-x11-0 ninja-build patchelf xauth xvfb
+          sudo apt-get install -y clang cmake dbus-x11 libayatana-appindicator3-dev libfuse2 libgtk-3-dev libx11-dev libxkbcommon-x11-0 ninja-build patchelf xauth xvfb
 
       - name: Install dependencies
         if: ${{ steps.gate.outputs.run == 'true' }}
