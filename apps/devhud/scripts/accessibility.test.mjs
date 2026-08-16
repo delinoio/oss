@@ -139,7 +139,9 @@ test("Account focuses its API origin input when the surface opens or is reselect
 
 test("API-origin edits and local onboarding completion clear stale external messages", () => {
   assert.match(app, /const update = \(next: Partial<Preferences>\) => \{\s+if \("apiOrigin" in next\) setExternalMessage\(null\);/u);
-  assert.match(app, /const finishOnboarding = \(\) => \{\s+setExternalMessage\(null\);/u);
+  assert.match(app, /const signInAttempt = useRef\(0\);/u);
+  assert.match(app, /const finishOnboarding = \(\) => \{\s+signInAttempt\.current \+= 1;\s+setExternalMessage\(null\);/u);
+  assert.match(app, /const attempt = signInAttempt\.current \+ 1;\s+signInAttempt\.current = attempt;\s+if \(await external\(ExternalLinkTarget\.Authentication\) && attempt === signInAttempt\.current\) finishOnboarding\(\);/u);
 });
 
 test("RealQA exposes unsupported capture actions as disabled controls", () => {

@@ -21,6 +21,7 @@ export function App() {
   const paletteRef = useRef<HTMLElement>(null);
   const paletteTrigger = useRef<HTMLButtonElement>(null);
   const rightModifier = useRef<"ControlRight" | "MetaRight" | null>(null);
+  const signInAttempt = useRef(0);
   const language = resolveLanguage(preferences.language, navigator.languages);
   const copy = messages[language];
   const update = (next: Partial<Preferences>) => {
@@ -115,13 +116,16 @@ export function App() {
     }
   };
   const finishOnboarding = () => {
+    signInAttempt.current += 1;
     setExternalMessage(null);
     completeOnboarding(storage);
     setOnboarding(false);
     setSurface(SurfaceId.Home);
   };
   const startSignIn = async () => {
-    if (await external(ExternalLinkTarget.Authentication)) finishOnboarding();
+    const attempt = signInAttempt.current + 1;
+    signInAttempt.current = attempt;
+    if (await external(ExternalLinkTarget.Authentication) && attempt === signInAttempt.current) finishOnboarding();
   };
   const supportsLaunchAtLogin = desktopCapabilities.available.has(PlatformCapability.LaunchAtLogin);
   const externalMessageText = externalMessage === "invalid-api-origin" ? copy.invalidApiOrigin : externalMessage === "opened" ? copy.externalOpened : copy.externalFailed;
