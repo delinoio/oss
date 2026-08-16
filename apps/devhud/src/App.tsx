@@ -22,11 +22,14 @@ export function App() {
   const rightModifier = useRef<"ControlRight" | "MetaRight" | null>(null);
   const language = resolveLanguage(preferences.language, navigator.languages);
   const copy = messages[language];
-  const update = (next: Partial<Preferences>) => setPreferences((current) => {
-    const value = { ...current, ...next };
-    writePreferences(localStorage, value);
-    return value;
-  });
+  const update = (next: Partial<Preferences>) => {
+    if ("apiOrigin" in next) setExternalMessage(null);
+    setPreferences((current) => {
+      const value = { ...current, ...next };
+      writePreferences(localStorage, value);
+      return value;
+    });
+  };
   const closePalette = (restoreTriggerFocus = true) => {
     setPalette(false);
     if (restoreTriggerFocus) requestAnimationFrame(() => paletteTrigger.current?.focus());
@@ -52,7 +55,7 @@ export function App() {
       const platformModifier = isMac ? "MetaRight" : "ControlRight";
       if (event.code === platformModifier && event.location === rightModifierLocation) rightModifier.current = event.code;
       const matchingRightModifier = rightModifier.current === platformModifier && (isMac ? event.metaKey : event.ctrlKey);
-      if (!onboarding && matchingRightModifier && event.key.toLowerCase() === "k") {
+      if (!onboarding && matchingRightModifier && event.code === "KeyK") {
         event.preventDefault();
         setPalette(true);
       }
@@ -111,6 +114,7 @@ export function App() {
     }
   };
   const finishOnboarding = () => {
+    setExternalMessage(null);
     completeOnboarding(localStorage);
     setOnboarding(false);
     setSurface(SurfaceId.Home);

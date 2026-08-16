@@ -88,6 +88,7 @@ test("command palette shortcut is unavailable during onboarding", () => {
   assert.match(app, /event\.location === rightModifierLocation/u);
   assert.match(app, /addEventListener\("keyup", releaseRightModifier\)/u);
   assert.match(app, /!onboarding && matchingRightModifier/u);
+  assert.match(app, /event\.code === "KeyK"/u);
   assert.match(app, /copy\.rightCommandK : copy\.rightControlK/u);
 });
 
@@ -115,6 +116,11 @@ test("Account focuses its API origin input when the surface opens", () => {
   assert.match(app, /closePalette\(action\?\.surface !== SurfaceId\.Account\);/u);
 });
 
+test("API-origin edits and local onboarding completion clear stale external messages", () => {
+  assert.match(app, /const update = \(next: Partial<Preferences>\) => \{\s+if \("apiOrigin" in next\) setExternalMessage\(null\);/u);
+  assert.match(app, /const finishOnboarding = \(\) => \{\s+setExternalMessage\(null\);/u);
+});
+
 test("RealQA exposes unsupported capture actions as disabled controls", () => {
   assert.match(app, /const unavailableCaptureActions = actionRegistry\.filter/u);
   assert.match(app, /action\.required\.includes\(PlatformCapability\.Capture\)/u);
@@ -126,6 +132,11 @@ test("tray localization failures are caught and recorded", () => {
   assert.match(shell, /\?\? Promise\.resolve\(\)/u);
   assert.match(app, /void setTrayLanguage\(language\)\.catch\(\(\) => \{\}\);/u);
   assert.match(nativeHost, /event = "tray_language_update_failed"/u);
+});
+
+test("rejected external destinations emit a safe structured diagnostic", () => {
+  assert.match(nativeHost, /event = "external_destination_rejected"/u);
+  assert.doesNotMatch(nativeHost, /external_destination_rejected[^\n]*api_origin/u);
 });
 
 test("command palette overlay stacks above the mobile sidebar", () => {

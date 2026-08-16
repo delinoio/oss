@@ -126,8 +126,10 @@ fn wait_for_external_opener(mut child: Child) -> Result<(), String> {
 
 #[tauri::command]
 async fn open_external(target: String, api_origin: String) -> Result<(), String> {
-    let destination = external_destination(&target, &api_origin)
-        .ok_or_else(|| "external destination is not allowlisted".to_string())?;
+    let destination = external_destination(&target, &api_origin).ok_or_else(|| {
+        error!(event = "external_destination_rejected");
+        "external destination is not allowlisted".to_string()
+    })?;
     #[cfg(target_os = "macos")]
     let result = Command::new("open").arg(&destination).spawn();
     #[cfg(target_os = "windows")]
