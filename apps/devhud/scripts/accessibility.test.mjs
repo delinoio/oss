@@ -6,7 +6,10 @@ import { fileURLToPath } from "node:url";
 
 const appRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const styles = readFileSync(join(appRoot, "src/styles.css"), "utf8");
-const themeBlocks = [...styles.matchAll(/:root\s*\{([^}]*)\}/gu)].map((match) => match[1]);
+const themeBlocks = [
+  styles.match(/:root\s*\{([^}]*)\}/u)?.[1],
+  styles.match(/html\[data-theme="dark"\]\s*\{([^}]*)\}/u)?.[1],
+];
 
 function customColor(block, name) {
   const match = block.match(new RegExp(`${name}:\\s*(#[a-f0-9]{6})`, "iu"));
@@ -41,4 +44,9 @@ test("eyebrow text meets WCAG AA contrast in light and dark themes", () => {
       `${eyebrow} does not have sufficient contrast against ${background}`,
     );
   }
+});
+
+test("active navigation buttons meet WCAG AA contrast in dark mode", () => {
+  const darkTheme = themeBlocks[1];
+  assert(contrastRatio("#ffffff", customColor(darkTheme, "--button-accent")) >= 4.5);
 });

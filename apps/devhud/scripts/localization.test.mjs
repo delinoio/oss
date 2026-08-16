@@ -21,6 +21,11 @@ test("resolves system preferences and safely falls back to defaults", () => {
   assert.equal(resolveTheme(ThemePreference.System, true), ThemePreference.Dark);
   assert.equal(resolveTheme(ThemePreference.System, false), ThemePreference.Light);
   assert.equal(readPreferences({ getItem: () => "not json" }).language, LanguagePreference.System);
+  assert.equal(resolveLanguage(LanguagePreference.System, ["en-US", "ko-KR"]), "en");
+});
+
+test("describes Korean diagnostics as redacted rather than deleted", () => {
+  assert.match(messages.ko.diagnosticsSummary, /민감 정보가 삭제된/u);
 });
 
 test("uses the first supported platform language", () => {

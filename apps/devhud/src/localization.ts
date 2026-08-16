@@ -43,7 +43,7 @@ export const messages = {
     accountTitle: "계정 및 API", accountSummary: "DevHUD를 로컬에서 사용하거나 향후 로그인을 위해 공식 API 엔드포인트를 준비하세요.",
     apiOrigin: "API 원본", apiOriginHint: "루프백 개발 엔드포인트를 제외하면 HTTPS가 필요합니다.",
     signIn: "로그인 열기", continueLocally: "로컬에서 계속", pat: "GitHub PAT 만들기", docs: "문서 열기", issue: "이슈 신고",
-    diagnosticsTitle: "진단", diagnosticsSummary: "삭제된 호스트 진단은 크래시 보고를 명시적으로 활성화하기 전까지 로컬에 유지됩니다.",
+    diagnosticsTitle: "진단", diagnosticsSummary: "민감 정보가 삭제된 호스트 진단은 크래시 보고를 명시적으로 활성화하기 전까지 로컬에 유지됩니다.",
     diagnosticsEmpty: "이 셸 세션에는 기록된 진단이 없습니다.",
     saved: "로컬에 저장됨", settingsTitle: "환경설정", settingsSummary: "표시 환경설정은 이 장치에만 저장됩니다.",
     captureDisplay: "디스플레이 캡처", captureWindow: "활성 창 캡처", captureAll: "모든 디스플레이 캡처", captureSelection: "선택 영역 캡처", captureToolbar: "캡처 도구 모음 열기",

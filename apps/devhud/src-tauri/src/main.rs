@@ -4,6 +4,7 @@ mod platform;
 mod resources;
 
 use std::{
+    process::Command,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -36,6 +37,77 @@ const RENDERER_CRASH_LISTENER_READY_ATTEMPTS: usize = 100;
 const RENDERER_CRASH_LISTENER_READY_DELAY: Duration = Duration::from_millis(50);
 const DIAGNOSTIC_LOG_FILE_LIMIT: usize = 7;
 
+#[derive(Clone)]
+struct TrayMenuItems {
+    show: MenuItem<tauri::Cef>,
+    quit: MenuItem<tauri::Cef>,
+}
+
+fn tray_labels(language: &str) -> (&'static str, &'static str) {
+    match language {
+        "ko" => ("DevHUD 표시", "DevHUD 종료"),
+        _ => ("Show DevHUD", "Quit DevHUD"),
+    }
+}
+
+#[tauri::command]
+fn set_tray_language(
+    language: String,
+    tray: tauri::State<'_, TrayMenuItems>,
+) -> Result<(), String> {
+    let (show, quit) = tray_labels(&language);
+    tray.show
+        .set_text(show)
+        .map_err(|_| "unable to update tray menu".to_string())?;
+    tray.quit
+        .set_text(quit)
+        .map_err(|_| "unable to update tray menu".to_string())
+}
+
+fn validated_api_origin(origin: &str) -> Option<String> {
+    let url = tauri::Url::parse(origin).ok()?;
+    let loopback = matches!(
+        url.host_str(),
+        Some("localhost") | Some("127.0.0.1") | Some("[::1]")
+    );
+    if url.username().is_empty()
+        && url.password().is_none()
+        && url.query().is_none()
+        && url.fragment().is_none()
+        && url.path() == "/"
+        && (url.scheme() == "https" || (url.scheme() == "http" && loopback))
+    {
+        Some(url.to_string())
+    } else {
+        None
+    }
+}
+
+fn external_destination(target: &str, api_origin: &str) -> Option<String> {
+    match target {
+        "authentication" => validated_api_origin(api_origin),
+        "pat" => Some("https://github.com/settings/personal-access-tokens/new".to_string()),
+        "documentation" => Some("https://github.com/delinoio/oss/tree/main/docs".to_string()),
+        "issue" => Some("https://github.com/delinoio/oss/issues/new".to_string()),
+        _ => None,
+    }
+}
+
+#[tauri::command]
+fn open_external(target: String, api_origin: String) -> Result<(), String> {
+    let destination = external_destination(&target, &api_origin)
+        .ok_or_else(|| "external destination is not allowlisted".to_string())?;
+    #[cfg(target_os = "macos")]
+    let result = Command::new("open").arg(&destination).spawn();
+    #[cfg(target_os = "windows")]
+    let result = Command::new("explorer.exe").arg(&destination).spawn();
+    #[cfg(target_os = "linux")]
+    let result = Command::new("xdg-open").arg(&destination).spawn();
+    result
+        .map(|_| ())
+        .map_err(|_| "unable to open system browser".to_string())
+}
+
 fn restore_main_window(app: &tauri::AppHandle<tauri::Cef>) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.unminimize();
@@ -48,6 +120,10 @@ fn create_tray(app: &tauri::AppHandle<tauri::Cef>) -> tauri::Result<()> {
     let show = MenuItem::with_id(app, "show", "Show DevHUD", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit DevHUD", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&show, &quit])?;
+    app.manage(TrayMenuItems {
+        show: show.clone(),
+        quit: quit.clone(),
+    });
     TrayIconBuilder::with_id("devhud")
         .tooltip("DevHUD")
         .icon(
@@ -368,7 +444,8 @@ fn main() {
     let renderer_crash_listener_ready = Arc::new(AtomicBool::new(cfg!(target_os = "macos")));
     let frontend_readiness_complete = Arc::new(AtomicBool::new(false));
 
-    let mut builder = tauri::Builder::<tauri::Cef>::default();
+    let mut builder = tauri::Builder::<tauri::Cef>::default()
+        .invoke_handler(tauri::generate_handler![open_external, set_tray_language]);
     if let Some(cache_path) = std::env::var_os("DEVHUD_SMOKE_CACHE_DIR") {
         builder = builder.root_cache_path(cache_path);
     }
@@ -487,6 +564,37 @@ fn main() {
             error!(event = "cef_fatal_initialization", reason = %error);
             std::process::exit(1);
         }
+    }
+}
+
+#[cfg(test)]
+mod review_tests {
+    use super::{external_destination, tray_labels};
+
+    #[test]
+    fn external_destinations_are_closed_and_validate_the_authentication_origin() {
+        assert_eq!(
+            external_destination("pat", "https://example.test"),
+            Some("https://github.com/settings/personal-access-tokens/new".to_string())
+        );
+        assert_eq!(
+            external_destination("authentication", "https://example.test"),
+            Some("https://example.test/".to_string())
+        );
+        assert_eq!(
+            external_destination("authentication", "http://example.test"),
+            None
+        );
+        assert_eq!(
+            external_destination("unknown", "https://example.test"),
+            None
+        );
+    }
+
+    #[test]
+    fn tray_labels_are_localized() {
+        assert_eq!(tray_labels("en"), ("Show DevHUD", "Quit DevHUD"));
+        assert_eq!(tray_labels("ko"), ("DevHUD 표시", "DevHUD 종료"));
     }
 }
 

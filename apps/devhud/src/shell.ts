@@ -16,7 +16,7 @@ export const PlatformCapability = { Desktop: "desktop", Capture: "capture", Tray
 export type PlatformCapability = (typeof PlatformCapability)[keyof typeof PlatformCapability];
 
 export interface RuntimeCapabilities { readonly available: ReadonlySet<PlatformCapability>; }
-export const desktopCapabilities: RuntimeCapabilities = { available: new Set(Object.values(PlatformCapability)) };
+export const desktopCapabilities: RuntimeCapabilities = { available: new Set([PlatformCapability.Desktop, PlatformCapability.Tray]) };
 export interface RegisteredAction { id: ActionId; title: CopyKey; required: readonly PlatformCapability[]; surface?: SurfaceId; }
 export const actionRegistry: readonly RegisteredAction[] = [
   { id: ActionId.CaptureDisplay, title: "captureDisplay", required: [PlatformCapability.Capture], surface: SurfaceId.Realqa },
@@ -38,8 +38,12 @@ export interface Preferences { version: 1; theme: ThemePreference; language: Lan
 export const defaultPreferences: Preferences = { version: 1, theme: ThemePreference.System, language: LanguagePreference.System, apiOrigin: "https://devhud.api.delino.io", launchAtLogin: false };
 export function readPreferences(storage: Pick<Storage, "getItem">): Preferences { try { const stored = JSON.parse(storage.getItem(preferenceKey) ?? "null") as Partial<Preferences> | null; return stored?.version === 1 ? { ...defaultPreferences, ...stored } : defaultPreferences; } catch { return defaultPreferences; } }
 export function writePreferences(storage: Pick<Storage, "setItem">, preferences: Preferences) { storage.setItem(preferenceKey, JSON.stringify(preferences)); }
-export function resolveLanguage(preference: LanguagePreference, languages: readonly string[]): SupportedLanguage { return preference === LanguagePreference.System ? (languages.find((value) => value.toLowerCase().startsWith("ko")) ? "ko" : "en") : preference; }
+export function resolveLanguage(preference: LanguagePreference, languages: readonly string[]): SupportedLanguage { if (preference !== LanguagePreference.System) return preference; for (const locale of languages) { const language = locale.trim().toLowerCase().split(/[-_]/u, 1)[0]; if (language === "en" || language === "ko") return language; } return "en"; }
 export function resolveTheme(preference: ThemePreference, dark: boolean) { return preference === ThemePreference.System ? (dark ? ThemePreference.Dark : ThemePreference.Light) : preference; }
 
 export interface NativeShell { setLaunchAtLogin(enabled: boolean): Promise<void>; openExternal(target: ExternalLinkTarget, apiOrigin: string): Promise<void>; quit(): Promise<void>; }
-export const browserShell: NativeShell = { async setLaunchAtLogin() {}, async openExternal(target, apiOrigin) { const path = target === ExternalLinkTarget.Authentication ? apiOrigin : target === ExternalLinkTarget.Pat ? "https://github.com/settings/personal-access-tokens/new" : target === ExternalLinkTarget.Documentation ? "https://github.com/delinoio/oss/tree/main/docs" : "https://github.com/delinoio/oss/issues/new"; window.open(path, "_blank", "noopener,noreferrer"); }, async quit() {} };
+interface TauriInternals { invoke(command: string, args?: Record<string, unknown>): Promise<unknown>; }
+declare global { interface Window { __TAURI_INTERNALS__?: TauriInternals; } }
+function invoke(command: string, args?: Record<string, unknown>) { return window.__TAURI_INTERNALS__?.invoke(command, args); }
+export function setTrayLanguage(language: SupportedLanguage) { return invoke("set_tray_language", { language }); }
+export const browserShell: NativeShell = { async setLaunchAtLogin() {}, async openExternal(target, apiOrigin) { const native = invoke("open_external", { target, apiOrigin }); if (native) { await native; return; } const path = target === ExternalLinkTarget.Authentication ? apiOrigin : target === ExternalLinkTarget.Pat ? "https://github.com/settings/personal-access-tokens/new" : target === ExternalLinkTarget.Documentation ? "https://github.com/delinoio/oss/tree/main/docs" : "https://github.com/delinoio/oss/issues/new"; window.open(path, "_blank", "noopener,noreferrer"); }, async quit() {} };
