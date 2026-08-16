@@ -70,7 +70,20 @@ test("command palette uses buttons and has a localized empty state", () => {
 });
 
 test("command palette shortcut is unavailable during onboarding", () => {
-  assert.match(app, /!onboarding && \(event\.metaKey \|\| event\.ctrlKey\)/u);
+  assert.match(app, /rightModifier\.current === "ControlRight"/u);
+  assert.match(app, /rightModifier\.current === "MetaRight"/u);
+  assert.match(app, /event\.location === rightModifierLocation/u);
+  assert.match(app, /addEventListener\("keyup", releaseRightModifier\)/u);
+  assert.match(app, /!onboarding && matchingRightModifier/u);
+});
+
+test("external status remains localized and noopener does not report a false failure", () => {
+  const shell = readFileSync(join(appRoot, "src/shell.ts"), "utf8");
+  assert.match(app, /type ExternalMessage = "opened" \| "failed" \| "invalid-api-origin"/u);
+  assert.match(app, /const externalMessageText = externalMessage === "invalid-api-origin"/u);
+  assert.doesNotMatch(shell, /ExternalLinkTarget\.Documentation|tree\/main\/docs/u);
+  assert.doesNotMatch(shell, /if \(!window\.open/u);
+  assert.match(shell, /window\.open\(path, "_blank", "noopener,noreferrer"\);/u);
 });
 
 test("first run renders the localized local-choice controls and focuses the API origin", () => {

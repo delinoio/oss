@@ -4,7 +4,7 @@ mod platform;
 mod resources;
 
 use std::{
-    process::Command,
+    process::{Child, Command},
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -86,10 +86,19 @@ fn external_destination(target: &str, api_origin: &str) -> Option<String> {
     match target {
         "authentication" => validated_api_origin(api_origin),
         "pat" => Some("https://github.com/settings/personal-access-tokens/new".to_string()),
-        "documentation" => Some("https://github.com/delinoio/oss/tree/main/docs".to_string()),
         "issue" => Some("https://github.com/delinoio/oss/issues/new".to_string()),
         _ => None,
     }
+}
+
+fn reap_external_opener(child: Child) -> Result<(), String> {
+    std::thread::Builder::new()
+        .name("devhud-external-opener".to_string())
+        .spawn(move || {
+            let _ = child.wait();
+        })
+        .map(|_| ())
+        .map_err(|_| "unable to monitor system browser opener".to_string())
 }
 
 #[tauri::command]
@@ -102,9 +111,8 @@ fn open_external(target: String, api_origin: String) -> Result<(), String> {
     let result = Command::new("explorer.exe").arg(&destination).spawn();
     #[cfg(target_os = "linux")]
     let result = Command::new("xdg-open").arg(&destination).spawn();
-    result
-        .map(|_| ())
-        .map_err(|_| "unable to open system browser".to_string())
+    let child = result.map_err(|_| "unable to open system browser".to_string())?;
+    reap_external_opener(child)
 }
 
 fn restore_main_window(app: &tauri::AppHandle<tauri::Cef>) {
@@ -597,6 +605,10 @@ mod review_tests {
         );
         assert_eq!(
             external_destination("authentication", "http://example.test"),
+            None
+        );
+        assert_eq!(
+            external_destination("documentation", "https://example.test"),
             None
         );
         assert_eq!(

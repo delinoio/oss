@@ -5,6 +5,8 @@ import { ActionId, ExternalLinkTarget, LanguagePreference, PlatformCapability, S
 const surfaces: readonly SurfaceId[] = [SurfaceId.Home, SurfaceId.Realqa, SurfaceId.Deck, SurfaceId.Settings, SurfaceId.Account, SurfaceId.Diagnostics];
 const labels: Record<SurfaceId, keyof typeof messages.en> = { home: "home", realqa: "realqa", deck: "deck", settings: "settings", account: "account", diagnostics: "diagnostics" };
 const isMac = /Mac|iPhone|iPad/u.test(navigator.userAgent);
+const rightModifierLocation = 2;
+type ExternalMessage = "opened" | "failed" | "invalid-api-origin";
 
 export function App() {
   const [preferences, setPreferences] = useState<Preferences>(() => readPreferences(localStorage));
@@ -12,10 +14,11 @@ export function App() {
   const [surface, setSurface] = useState<SurfaceId>(SurfaceId.Home);
   const [palette, setPalette] = useState(false);
   const [query, setQuery] = useState("");
-  const [externalMessage, setExternalMessage] = useState<{ error: boolean; text: string } | null>(null);
+  const [externalMessage, setExternalMessage] = useState<ExternalMessage | null>(null);
   const search = useRef<HTMLInputElement>(null);
   const paletteRef = useRef<HTMLElement>(null);
   const paletteTrigger = useRef<HTMLButtonElement>(null);
+  const rightModifier = useRef<"ControlRight" | "MetaRight" | null>(null);
   const language = resolveLanguage(preferences.language, navigator.languages);
   const copy = messages[language];
   const update = (next: Partial<Preferences>) => setPreferences((current) => {
@@ -45,14 +48,26 @@ export function App() {
   }, [preferences.theme]);
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
-      if (!onboarding && (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+      if ((event.code === "ControlRight" || event.code === "MetaRight") && event.location === rightModifierLocation) rightModifier.current = event.code;
+      const matchingRightModifier = (rightModifier.current === "ControlRight" && event.ctrlKey) || (rightModifier.current === "MetaRight" && event.metaKey);
+      if (!onboarding && matchingRightModifier && event.key.toLowerCase() === "k") {
         event.preventDefault();
         setPalette(true);
       }
       if (event.key === "Escape" && palette) closePalette();
     };
+    const releaseRightModifier = (event: KeyboardEvent) => {
+      if (rightModifier.current === event.code) rightModifier.current = null;
+    };
+    const clearRightModifier = () => { rightModifier.current = null; };
     addEventListener("keydown", key);
-    return () => removeEventListener("keydown", key);
+    addEventListener("keyup", releaseRightModifier);
+    addEventListener("blur", clearRightModifier);
+    return () => {
+      removeEventListener("keydown", key);
+      removeEventListener("keyup", releaseRightModifier);
+      removeEventListener("blur", clearRightModifier);
+    };
   }, [onboarding, palette]);
   useEffect(() => { if (palette) search.current?.focus(); }, [palette]);
 
@@ -79,15 +94,15 @@ export function App() {
   const external = async (target: ExternalLinkTarget) => {
     setExternalMessage(null);
     if (target === ExternalLinkTarget.Authentication && !isValidApiOrigin(preferences.apiOrigin)) {
-      setExternalMessage({ error: true, text: copy.invalidApiOrigin });
+      setExternalMessage("invalid-api-origin");
       return false;
     }
     try {
       await browserShell.openExternal(target, preferences.apiOrigin);
-      setExternalMessage({ error: false, text: copy.externalOpened });
+      setExternalMessage("opened");
       return true;
     } catch {
-      setExternalMessage({ error: true, text: copy.externalFailed });
+      setExternalMessage("failed");
       return false;
     }
   };
@@ -100,8 +115,10 @@ export function App() {
     if (await external(ExternalLinkTarget.Authentication)) finishOnboarding();
   };
   const supportsLaunchAtLogin = desktopCapabilities.available.has(PlatformCapability.LaunchAtLogin);
+  const externalMessageText = externalMessage === "invalid-api-origin" ? copy.invalidApiOrigin : externalMessage === "opened" ? copy.externalOpened : copy.externalFailed;
+  const externalMessageIsError = externalMessage !== "opened";
 
-  if (onboarding) return <main className="app-shell onboarding" data-devhud-ready="true"><section className="content"><p className="eyebrow">{copy.account}</p><h1>{copy.accountTitle}</h1><p>{copy.accountSummary}</p><label>{copy.apiOrigin}<input autoFocus value={preferences.apiOrigin} onChange={(event) => update({ apiOrigin: event.target.value })} /></label><p>{copy.apiOriginHint}</p><div className="actions"><button onClick={() => void startSignIn()}>{copy.signIn}</button><button onClick={finishOnboarding}>{copy.continueLocally}</button></div>{externalMessage && <p className="external-message" role={externalMessage.error ? "alert" : "status"}>{externalMessage.text}</p>}</section></main>;
+  if (onboarding) return <main className="app-shell onboarding" data-devhud-ready="true"><section className="content"><p className="eyebrow">{copy.account}</p><h1>{copy.accountTitle}</h1><p>{copy.accountSummary}</p><label>{copy.apiOrigin}<input autoFocus value={preferences.apiOrigin} onChange={(event) => update({ apiOrigin: event.target.value })} /></label><p>{copy.apiOriginHint}</p><div className="actions"><button onClick={() => void startSignIn()}>{copy.signIn}</button><button onClick={finishOnboarding}>{copy.continueLocally}</button></div>{externalMessage && <p className="external-message" role={externalMessageIsError ? "alert" : "status"}>{externalMessageText}</p>}</section></main>;
 
   return <main className="app-shell" data-devhud-ready="true">
     <aside aria-label="DevHUD">
@@ -114,7 +131,7 @@ export function App() {
       {surface === SurfaceId.Realqa && <><p className="eyebrow">{copy.realqa}</p><h2>{copy.realqaTitle}</h2><p>{copy.realqaSummary}</p><p className="notice">{copy.planned}</p></>}
       {surface === SurfaceId.Deck && <><p className="eyebrow">{copy.deck}</p><h2>{copy.deckTitle}</h2><p>{copy.deckSummary}</p><p className="notice">{copy.planned}</p></>}
       {surface === SurfaceId.Settings && <><p className="eyebrow">{copy.settings}</p><h2>{copy.settingsTitle}</h2><p>{copy.settingsSummary}</p><label>{copy.theme}<select value={preferences.theme} onChange={(event) => update({ theme: event.target.value as ThemePreference })}>{Object.values(ThemePreference).map((value) => <option key={value} value={value}>{copy[value]}</option>)}</select></label><label>{copy.language}<select value={preferences.language} onChange={(event) => update({ language: event.target.value as LanguagePreference })}><option value="system">{copy.system}</option><option value="en">{copy.english}</option><option value="ko">{copy.korean}</option></select></label>{supportsLaunchAtLogin && <><label className="check"><input type="checkbox" checked={preferences.launchAtLogin} onChange={(event) => { update({ launchAtLogin: event.target.checked }); void browserShell.setLaunchAtLogin(event.target.checked); }} />{copy.launchAtLogin}</label><p>{copy.launchAtLoginHint}</p></>}</>}
-      {surface === SurfaceId.Account && <><p className="eyebrow">{copy.account}</p><h2>{copy.accountTitle}</h2><p>{copy.accountSummary}</p><label>{copy.apiOrigin}<input value={preferences.apiOrigin} onChange={(event) => update({ apiOrigin: event.target.value })} /></label><p>{copy.apiOriginHint}</p><div className="actions"><button onClick={() => void external(ExternalLinkTarget.Authentication)}>{copy.signIn}</button><button onClick={() => void external(ExternalLinkTarget.Pat)}>{copy.pat}</button><button onClick={() => void external(ExternalLinkTarget.Documentation)}>{copy.docs}</button><button onClick={() => void external(ExternalLinkTarget.Issue)}>{copy.issue}</button></div>{externalMessage && <p className="external-message" role={externalMessage.error ? "alert" : "status"}>{externalMessage.text}</p>}</>}
+      {surface === SurfaceId.Account && <><p className="eyebrow">{copy.account}</p><h2>{copy.accountTitle}</h2><p>{copy.accountSummary}</p><label>{copy.apiOrigin}<input value={preferences.apiOrigin} onChange={(event) => update({ apiOrigin: event.target.value })} /></label><p>{copy.apiOriginHint}</p><div className="actions"><button onClick={() => void external(ExternalLinkTarget.Authentication)}>{copy.signIn}</button><button onClick={() => void external(ExternalLinkTarget.Pat)}>{copy.pat}</button><button onClick={() => void external(ExternalLinkTarget.Issue)}>{copy.issue}</button></div>{externalMessage && <p className="external-message" role={externalMessageIsError ? "alert" : "status"}>{externalMessageText}</p>}</>}
       {surface === SurfaceId.Diagnostics && <><p className="eyebrow">{copy.diagnostics}</p><h2>{copy.diagnosticsTitle}</h2><p>{copy.diagnosticsSummary}</p><p className="notice">{copy.diagnosticsUnavailable}</p></>}
     </section>
     {palette && <div className="overlay" role="presentation"><section ref={paletteRef} className="palette" role="dialog" aria-modal="true" aria-label={copy.commandPalette} onKeyDown={trapPaletteFocus}><input ref={search} value={query} onChange={(event) => setQuery(event.target.value)} placeholder={copy.searchCommands} aria-label={copy.searchCommands} /><div className="commands">{actions.length === 0 ? <p role="status">{copy.noCommands}</p> : actions.map((action) => <button key={action.id} onClick={() => execute(action.id)}>{copy[action.title]}</button>)}</div><button onClick={closePalette}>{copy.close}</button></section></div>}

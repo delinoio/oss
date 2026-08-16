@@ -10,7 +10,7 @@ export const ThemePreference = { System: "system", Light: "light", Dark: "dark" 
 export type ThemePreference = (typeof ThemePreference)[keyof typeof ThemePreference];
 export const LanguagePreference = { System: "system", English: "en", Korean: "ko" } as const;
 export type LanguagePreference = (typeof LanguagePreference)[keyof typeof LanguagePreference];
-export const ExternalLinkTarget = { Authentication: "authentication", Pat: "pat", Documentation: "documentation", Issue: "issue" } as const;
+export const ExternalLinkTarget = { Authentication: "authentication", Pat: "pat", Issue: "issue" } as const;
 export type ExternalLinkTarget = (typeof ExternalLinkTarget)[keyof typeof ExternalLinkTarget];
 export const PlatformCapability = { Desktop: "desktop", Capture: "capture", Tray: "tray", LaunchAtLogin: "launch-at-login" } as const;
 export type PlatformCapability = (typeof PlatformCapability)[keyof typeof PlatformCapability];
@@ -52,4 +52,4 @@ declare global { interface Window { __TAURI_INTERNALS__?: TauriInternals; } }
 function invoke(command: string, args?: Record<string, unknown>) { return window.__TAURI_INTERNALS__?.invoke(command, args); }
 export function setTrayLanguage(language: SupportedLanguage) { return invoke("set_tray_language", { language }); }
 export function markFrontendReady() { return invoke("frontend_ready"); }
-export const browserShell: NativeShell = { async setLaunchAtLogin() {}, async openExternal(target, apiOrigin) { if (target === ExternalLinkTarget.Authentication && !isValidApiOrigin(apiOrigin)) throw new Error("invalid API origin"); const native = invoke("open_external", { target, apiOrigin }); if (native) { await native; return; } const path = target === ExternalLinkTarget.Authentication ? apiOrigin : target === ExternalLinkTarget.Pat ? "https://github.com/settings/personal-access-tokens/new" : target === ExternalLinkTarget.Documentation ? "https://github.com/delinoio/oss/tree/main/docs" : "https://github.com/delinoio/oss/issues/new"; if (!window.open(path, "_blank", "noopener,noreferrer")) throw new Error("unable to open system browser"); }, async quit() {} };
+export const browserShell: NativeShell = { async setLaunchAtLogin() {}, async openExternal(target, apiOrigin) { if (target === ExternalLinkTarget.Authentication && !isValidApiOrigin(apiOrigin)) throw new Error("invalid API origin"); const native = invoke("open_external", { target, apiOrigin }); if (native) { await native; return; } const path = target === ExternalLinkTarget.Authentication ? apiOrigin : target === ExternalLinkTarget.Pat ? "https://github.com/settings/personal-access-tokens/new" : "https://github.com/delinoio/oss/issues/new"; window.open(path, "_blank", "noopener,noreferrer"); }, async quit() {} };

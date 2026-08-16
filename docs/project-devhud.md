@@ -2,7 +2,7 @@
 
 ## Goal
 
-DevHud is a coordinated desktop and mobile developer utility. V1 contains the desktop-only RealQA capture and GitHub issue workflow and the desktop/mobile Deck pull-request monitor with native widgets. The deterministic frontend and pinned Tauri CEF desktop-host foundation now exist at `apps/devhud`; product workflows, services, mobile clients, widgets, and the other planned domains remain documentation-first contracts.
+DevHud is a coordinated desktop and mobile developer utility. V1 contains the desktop-only RealQA capture and GitHub issue workflow and the desktop/mobile Deck pull-request monitor with native widgets. The deterministic frontend and pinned Tauri CEF desktop-host foundation now exist at `apps/devhud`; its Account surface exposes only the approved authentication, GitHub PAT, and issue browser links until curated public DevHud documentation exists. Product workflows, services, mobile clients, widgets, and the other planned domains remain documentation-first contracts.
 
 Issue [#815](https://github.com/delinoio/oss/issues/815) is the current product contract. It supersedes closed historical DevHud issues #729, #755, and #757; those issues are historical context only and must not supply architecture or scope.
 
