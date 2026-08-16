@@ -16,7 +16,8 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} \
 FROM gcr.io/distroless/static-debian12:nonroot AS api
 COPY --from=build /out/devhud-api /usr/local/bin/devhud-api
 EXPOSE 46307
-ENTRYPOINT ["/usr/local/bin/devhud-api", "serve"]
+ENTRYPOINT ["/usr/local/bin/devhud-api"]
+CMD ["serve"]
 
 FROM gcr.io/distroless/static-debian12:nonroot AS sweeper
 COPY --from=build /out/devhud-api-sweeper /usr/local/bin/devhud-api-sweeper
