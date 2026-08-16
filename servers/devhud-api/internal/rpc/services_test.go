@@ -1,13 +1,18 @@
 package rpc
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
+	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
 	"connectrpc.com/connect"
 	devhudv1 "github.com/delinoio/oss/protos/gen/go/devhud/v1"
+	"github.com/delinoio/oss/protos/gen/go/devhud/v1/devhudv1connect"
 	"github.com/delinoio/oss/servers/devhud-api/internal/auth"
 	"github.com/delinoio/oss/servers/devhud-api/internal/domain"
 )
@@ -101,7 +106,7 @@ func TestRestoreAccountUsesAuthenticatedOwnerAndMapsPurgeClaim(t *testing.T) {
 		}
 		return domain.User{}, &domain.AccountStateError{Failure: domain.AccountFailurePurgeClaimed}
 	}}
-	_, err := NewAccountService(repository, serviceClock{}).RestoreAccount(authenticatedContext(), connect.NewRequest(&devhudv1.RestoreAccountRequest{}))
+	_, err := NewAccountService(repository, serviceClock{}, testServiceLogger()).RestoreAccount(authenticatedContext(), connect.NewRequest(&devhudv1.RestoreAccountRequest{}))
 	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
 		t.Fatalf("code = %v, want FailedPrecondition", connect.CodeOf(err))
 	}
@@ -114,7 +119,7 @@ func TestDeleteAccountMapsCompletedPurge(t *testing.T) {
 		}
 		return domain.User{}, domain.ErrNotFound
 	}}
-	_, err := NewAccountService(repository, serviceClock{}).DeleteAccount(authenticatedContext(), connect.NewRequest(&devhudv1.DeleteAccountRequest{}))
+	_, err := NewAccountService(repository, serviceClock{}, testServiceLogger()).DeleteAccount(authenticatedContext(), connect.NewRequest(&devhudv1.DeleteAccountRequest{}))
 	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
 		t.Fatalf("code = %v, want FailedPrecondition", connect.CodeOf(err))
 	}
@@ -134,11 +139,40 @@ func TestDeleteAccountMapsCompletedPurge(t *testing.T) {
 	t.Fatal("missing purge-completed account failure detail")
 }
 
+func TestAccountRepositoryFailuresAreLoggedBeforeInternalResponse(t *testing.T) {
+	repository := &serviceRepository{getAccount: func(context.Context, string) (domain.User, error) {
+		return domain.User{}, errors.New("database timeout")
+	}}
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logs, nil))
+	_, err := NewAccountService(repository, serviceClock{}, logger).GetAccount(authenticatedContext(), connect.NewRequest(&devhudv1.GetAccountRequest{}))
+	if connect.CodeOf(err) != connect.CodeInternal {
+		t.Fatalf("code = %v, want Internal", connect.CodeOf(err))
+	}
+	if strings.Contains(err.Error(), "database timeout") {
+		t.Fatalf("internal response exposed repository error: %v", err)
+	}
+	for _, value := range []string{
+		"account repository operation failed",
+		testCorrelationID,
+		devhudv1connect.AccountServiceGetAccountProcedure,
+		"database timeout",
+	} {
+		if !strings.Contains(logs.String(), value) {
+			t.Fatalf("log %q does not contain %q", logs.String(), value)
+		}
+	}
+}
+
 const testCorrelationID = "018f7c1e-7b4a-7abc-8def-0123456789ac"
 
 func authenticatedContext() context.Context {
 	ctx := WithCorrelationID(context.Background(), testCorrelationID)
 	return auth.WithUser(ctx, domain.User{ID: "018f7c1e-7b4a-7abc-8def-0123456789ab"})
+}
+
+func testServiceLogger() *slog.Logger {
+	return slog.New(slog.NewJSONHandler(io.Discard, nil))
 }
 
 type serviceClock struct{}

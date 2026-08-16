@@ -3,9 +3,11 @@ package rpc
 import (
 	"context"
 	"errors"
+	"log/slog"
 
 	"connectrpc.com/connect"
 	devhudv1 "github.com/delinoio/oss/protos/gen/go/devhud/v1"
+	"github.com/delinoio/oss/protos/gen/go/devhud/v1/devhudv1connect"
 	"github.com/delinoio/oss/servers/devhud-api/internal/auth"
 	"github.com/delinoio/oss/servers/devhud-api/internal/domain"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -14,10 +16,11 @@ import (
 type AccountService struct {
 	repository domain.Repository
 	clock      domain.Clock
+	logger     *slog.Logger
 }
 
-func NewAccountService(repository domain.Repository, clock domain.Clock) *AccountService {
-	return &AccountService{repository: repository, clock: clock}
+func NewAccountService(repository domain.Repository, clock domain.Clock, logger *slog.Logger) *AccountService {
+	return &AccountService{repository: repository, clock: clock, logger: logger}
 }
 
 func (s *AccountService) GetAccount(ctx context.Context, _ *connect.Request[devhudv1.GetAccountRequest]) (*connect.Response[devhudv1.GetAccountResponse], error) {
@@ -35,7 +38,7 @@ func (s *AccountService) DeleteAccount(ctx context.Context, _ *connect.Request[d
 	}
 	user, err := s.repository.DeleteAccount(ctx, principal.ID, s.clock.Now())
 	if err != nil {
-		return nil, mapAccountError(ctx, err)
+		return nil, s.mapAccountError(ctx, devhudv1connect.AccountServiceDeleteAccountProcedure, err)
 	}
 	return connect.NewResponse(&devhudv1.DeleteAccountResponse{Metadata: metadata(CorrelationID(ctx)), Account: accountMessage(user)}), nil
 }
@@ -47,7 +50,7 @@ func (s *AccountService) RestoreAccount(ctx context.Context, _ *connect.Request[
 	}
 	user, err := s.repository.RestoreAccount(ctx, principal.ID, s.clock.Now())
 	if err != nil {
-		return nil, mapAccountError(ctx, err)
+		return nil, s.mapAccountError(ctx, devhudv1connect.AccountServiceRestoreAccountProcedure, err)
 	}
 	return connect.NewResponse(&devhudv1.RestoreAccountResponse{Metadata: metadata(CorrelationID(ctx)), Account: accountMessage(user)}), nil
 }
@@ -59,12 +62,12 @@ func (s *AccountService) currentUser(ctx context.Context) (domain.User, error) {
 	}
 	user, err := s.repository.GetAccount(ctx, principal.ID)
 	if err != nil {
-		return domain.User{}, mapAccountError(ctx, err)
+		return domain.User{}, s.mapAccountError(ctx, devhudv1connect.AccountServiceGetAccountProcedure, err)
 	}
 	return user, nil
 }
 
-func mapAccountError(ctx context.Context, err error) error {
+func (s *AccountService) mapAccountError(ctx context.Context, procedure string, err error) error {
 	var state *domain.AccountStateError
 	if errors.As(err, &state) {
 		reason := devhudv1.AccountFailureReason_ACCOUNT_FAILURE_REASON_UNSPECIFIED
@@ -80,6 +83,11 @@ func mapAccountError(ctx context.Context, err error) error {
 			Reason: devhudv1.AccountFailureReason_ACCOUNT_FAILURE_REASON_PURGE_CLAIMED,
 		})
 	}
+	s.logger.ErrorContext(ctx, "account repository operation failed",
+		"correlation_id", CorrelationID(ctx),
+		"procedure", procedure,
+		"error", err,
+	)
 	return internalError(ctx)
 }
 
