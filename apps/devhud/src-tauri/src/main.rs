@@ -91,7 +91,7 @@ fn external_destination(target: &str, api_origin: &str) -> Option<String> {
     }
 }
 
-fn reap_external_opener(child: Child) -> Result<(), String> {
+fn reap_external_opener(mut child: Child) -> Result<(), String> {
     std::thread::Builder::new()
         .name("devhud-external-opener".to_string())
         .spawn(move || {

@@ -2218,6 +2218,7 @@ name = "devhud"
 version = "0.1.0"
 dependencies = [
  "dirs 6.0.0",
+ "gtk",
  "serde",
  "serde_json",
  "tauri",
