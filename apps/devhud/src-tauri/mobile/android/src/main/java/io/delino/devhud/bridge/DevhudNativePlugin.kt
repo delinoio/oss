@@ -11,6 +11,7 @@ import android.net.Uri
 import android.os.Build
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
+import androidx.appcompat.app.AppCompatActivity
 import app.tauri.PermissionState
 import app.tauri.annotation.Command
 import app.tauri.annotation.Permission
@@ -47,6 +48,10 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
 
     override fun onNewIntent(intent: Intent) {
         captureAuthCallback(intent)
+    }
+
+    override fun onDestroy(activity: AppCompatActivity) {
+        secureSettingsExecutor.shutdown()
     }
 
     @Command
@@ -99,7 +104,7 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
             "authentication" -> Uri.parse(args.getString("apiOrigin")).also {
                 val loopback = it.host == "localhost" || it.host == "::1" || it.host?.startsWith("127.") == true
                 val validScheme = it.scheme == "https" || (it.scheme == "http" && loopback)
-                if (!validScheme || it.path != "/" || it.query != null || it.fragment != null || it.userInfo != null) {
+                if (!validScheme || (it.path != "" && it.path != "/") || it.query != null || it.fragment != null || it.userInfo != null) {
                     throw IllegalArgumentException("apiOrigin")
                 }
             }
