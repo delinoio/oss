@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "identity": "io.delino.devhud",
+  "deepLinkScheme": "devhud",
+  "authCallback": "devhud://auth/callback",
+  "frontendDist": "../dist",
+  "minimumVersions": {
+    "ios": "16.0",
+    "androidApi": 29
+  },
+  "targets": [
+    {
+      "id": "ios-device-arm64",
+      "platform": "ios",
+      "kind": "production",
+      "tauriTarget": "aarch64",
+      "rustTarget": "aarch64-apple-ios",
+      "architecture": "arm64"
+    },
+    {
+      "id": "ios-simulator-arm64",
+      "platform": "ios",
+      "kind": "simulator",
+      "tauriTarget": "aarch64-sim",
+      "rustTarget": "aarch64-apple-ios-sim",
+      "architecture": "arm64"
+    },
+    {
+      "id": "ios-simulator-x64",
+      "platform": "ios",
+      "kind": "simulator",
+      "tauriTarget": "x86_64",
+      "rustTarget": "x86_64-apple-ios",
+      "architecture": "x64"
+    },
+    {
+      "id": "android-arm64",
+      "platform": "android",
+      "kind": "production",
+      "tauriTarget": "aarch64",
+      "rustTarget": "aarch64-linux-android",
+      "architecture": "arm64-v8a"
+    },
+    {
+      "id": "android-armv7",
+      "platform": "android",
+      "kind": "production",
+      "tauriTarget": "armv7",
+      "rustTarget": "armv7-linux-androideabi",
+      "architecture": "armeabi-v7a"
+    },
+    {
+      "id": "android-emulator-x64",
+      "platform": "android",
+      "kind": "emulator",
+      "tauriTarget": "x86_64",
+      "rustTarget": "x86_64-linux-android",
+      "architecture": "x86_64"
+    }
+  ]
+}

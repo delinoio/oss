@@ -2227,6 +2227,7 @@ dependencies = [
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
+ "url",
  "wait-timeout",
 ]
 
@@ -9566,6 +9567,8 @@ dependencies = [
  "tracing",
  "tray-icon",
  "url",
+ "webkit2gtk",
+ "webview2-com",
  "window-vibrancy",
  "windows",
 ]
@@ -10534,7 +10537,7 @@ dependencies = [
  "png 0.18.1",
  "serde",
  "thiserror 2.0.18",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

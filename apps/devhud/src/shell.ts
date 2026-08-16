@@ -12,7 +12,7 @@ export const LanguagePreference = { System: "system", English: "en", Korean: "ko
 export type LanguagePreference = (typeof LanguagePreference)[keyof typeof LanguagePreference];
 export const ExternalLinkTarget = { Authentication: "authentication", Pat: "pat", Issue: "issue" } as const;
 export type ExternalLinkTarget = (typeof ExternalLinkTarget)[keyof typeof ExternalLinkTarget];
-export const PlatformCapability = { Desktop: "desktop", Capture: "capture", Tray: "tray", LaunchAtLogin: "launch-at-login" } as const;
+export const PlatformCapability = { Desktop: "desktop", Mobile: "mobile", Capture: "capture", Tray: "tray", LaunchAtLogin: "launch-at-login", Notifications: "notifications", SecureSettings: "secure-settings" } as const;
 export type PlatformCapability = (typeof PlatformCapability)[keyof typeof PlatformCapability];
 
 export interface RuntimeCapabilities { readonly available: ReadonlySet<PlatformCapability>; }
@@ -67,8 +67,6 @@ export function synchronizeDocumentPreferences(documentElement: Pick<HTMLElement
 }
 
 export interface NativeShell { setLaunchAtLogin(enabled: boolean): Promise<void>; openExternal(target: ExternalLinkTarget, apiOrigin: string): Promise<void>; quit(): Promise<void>; }
-interface TauriInternals { invoke(command: string, args?: Record<string, unknown>): Promise<unknown>; }
-declare global { interface Window { __TAURI_INTERNALS__?: TauriInternals; } }
 function invoke(command: string, args?: Record<string, unknown>) { return window.__TAURI_INTERNALS__?.invoke(command, args); }
 export function setTrayLanguage(language: SupportedLanguage) { return invoke("set_tray_language", { language }) ?? Promise.resolve(); }
 export function markFrontendReady() { return invoke("frontend_ready"); }

@@ -1,5 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod bridge;
+mod native_plugin;
 mod platform;
 mod resources;
 
@@ -643,8 +645,11 @@ fn main() {
     };
 
     let mut builder = tauri::Builder::<tauri::Cef>::default()
+        .plugin(native_plugin::init())
+        .manage(bridge::NativeBridgeState::default())
         .manage(frontend_readiness.clone())
         .invoke_handler(tauri::generate_handler![
+            bridge::native_bridge_v1,
             frontend_ready,
             open_external,
             set_tray_language
