@@ -8,7 +8,12 @@
     "build": "turbo build",
     "test": "turbo test",
     "lint": "turbo lint",
-    "format": "turbo format"
+    "format": "turbo format",
+    "proto:generate": "buf generate",
+    "proto:lint": "buf format --diff --exit-code && buf lint",
+    "proto:breaking": "./scripts/check-proto-breaking.sh",
+    "proto:fresh": "pnpm proto:generate && git diff --exit-code -- 'protos/gen' 'packages/devhud-api-client/src/gen' && test -z \"$(git ls-files --others --exclude-standard -- 'protos/gen' 'packages/devhud-api-client/src/gen')\"",
+    "proto:check": "pnpm proto:lint && pnpm proto:breaking && pnpm proto:fresh"
   },
   "pnpm": {
     "overrides": {
@@ -44,6 +49,9 @@
     }
   },
   "devDependencies": {
+    "@bufbuild/buf": "1.72.0",
+    "@bufbuild/protoc-gen-es": "2.14.0",
+    "@connectrpc/protoc-gen-connect-query": "2.3.1",
     "js-yaml": "4.3.1",
     "lefthook": "^2.1.4",
     "turbo": "^2.9.14"

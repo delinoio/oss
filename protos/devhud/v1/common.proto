@@ -1,0 +1,138 @@
+syntax = "proto3";
+
+package devhud.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/delinoio/oss/protos/gen/go/devhud/v1;devhudv1";
+
+// ProjectId contains stable first-party project identifiers.
+enum ProjectId {
+  PROJECT_ID_UNSPECIFIED = 0;
+  PROJECT_ID_DEVHUD = 1;
+}
+
+// MiniAppId contains the first-party mini-app registry. Canonical text IDs are
+// "realqa" and "deck".
+enum MiniAppId {
+  MINI_APP_ID_UNSPECIFIED = 0;
+  MINI_APP_ID_REALQA = 1;
+  MINI_APP_ID_DECK = 2;
+}
+
+// CaptureActionId contains stable RealQA capture actions.
+enum CaptureActionId {
+  CAPTURE_ACTION_ID_UNSPECIFIED = 0;
+  CAPTURE_ACTION_ID_DISPLAY = 1;
+  CAPTURE_ACTION_ID_ACTIVE_WINDOW = 2;
+  CAPTURE_ACTION_ID_ALL_DISPLAYS = 3;
+  CAPTURE_ACTION_ID_SELECTION = 4;
+  CAPTURE_ACTION_ID_TOOLBAR = 5;
+}
+
+enum ClientPlatform {
+  CLIENT_PLATFORM_UNSPECIFIED = 0;
+  CLIENT_PLATFORM_DESKTOP = 1;
+  CLIENT_PLATFORM_IOS = 2;
+  CLIENT_PLATFORM_ANDROID = 3;
+  CLIENT_PLATFORM_ADMIN = 4;
+}
+
+// StaticCapability declares server compatibility. It is not a feature flag.
+enum StaticCapability {
+  STATIC_CAPABILITY_UNSPECIFIED = 0;
+  STATIC_CAPABILITY_SETTINGS_SYNC = 1;
+  STATIC_CAPABILITY_OFFICIAL_UPLOADS = 2;
+  STATIC_CAPABILITY_CRASH_REPORTS = 3;
+  STATIC_CAPABILITY_ACCOUNT_RECOVERY = 4;
+  STATIC_CAPABILITY_ADMINISTRATION = 5;
+}
+
+enum AdministrativeBlockState {
+  ADMINISTRATIVE_BLOCK_STATE_UNSPECIFIED = 0;
+  ADMINISTRATIVE_BLOCK_STATE_UNBLOCKED = 1;
+  ADMINISTRATIVE_BLOCK_STATE_BLOCKED = 2;
+}
+
+enum AccountDeletionState {
+  ACCOUNT_DELETION_STATE_UNSPECIFIED = 0;
+  ACCOUNT_DELETION_STATE_ACTIVE = 1;
+  ACCOUNT_DELETION_STATE_PENDING = 2;
+  ACCOUNT_DELETION_STATE_PURGE_CLAIMED = 3;
+}
+
+enum UploadState {
+  UPLOAD_STATE_UNSPECIFIED = 0;
+  UPLOAD_STATE_PENDING = 1;
+  UPLOAD_STATE_FINALIZED = 2;
+  UPLOAD_STATE_QUARANTINED = 3;
+  UPLOAD_STATE_DELETED = 4;
+  UPLOAD_STATE_EXPIRED = 5;
+  UPLOAD_STATE_REJECTED = 6;
+}
+
+enum UploadContentType {
+  UPLOAD_CONTENT_TYPE_UNSPECIFIED = 0;
+  UPLOAD_CONTENT_TYPE_PNG = 1;
+}
+
+enum QuotaKind {
+  QUOTA_KIND_UNSPECIFIED = 0;
+  QUOTA_KIND_SIGNED_URLS_ROLLING_HOUR = 1;
+  QUOTA_KIND_SUBMISSION_IMAGES = 2;
+  QUOTA_KIND_UPLOAD_BYTES_ROLLING_DAY = 3;
+  QUOTA_KIND_STORED_BYTES = 4;
+}
+
+enum PermissionFailureReason {
+  PERMISSION_FAILURE_REASON_UNSPECIFIED = 0;
+  PERMISSION_FAILURE_REASON_USER_BLOCKED = 1;
+  PERMISSION_FAILURE_REASON_ADMIN_ROLE_REQUIRED = 2;
+  PERMISSION_FAILURE_REASON_ACCOUNT_DELETION_PENDING = 3;
+  PERMISSION_FAILURE_REASON_NOT_OWNER = 4;
+}
+
+enum PaginationFailureReason {
+  PAGINATION_FAILURE_REASON_UNSPECIFIED = 0;
+  PAGINATION_FAILURE_REASON_PAGE_SIZE_TOO_LARGE = 1;
+  PAGINATION_FAILURE_REASON_TOKEN_INVALID = 2;
+  PAGINATION_FAILURE_REASON_TOKEN_EXPIRED = 3;
+  PAGINATION_FAILURE_REASON_TOKEN_SCOPE_MISMATCH = 4;
+}
+
+// UuidV7 is a canonical lowercase RFC 9562 UUID version 7 string.
+message UuidV7 {
+  string value = 1;
+}
+
+message ResponseMetadata {
+  UuidV7 correlation_id = 1;
+}
+
+// ErrorMetadata is attached as a Connect error detail and mirrors the
+// x-devhud-correlation-id response header.
+message ErrorMetadata {
+  UuidV7 correlation_id = 1;
+}
+
+// PageRequest is shared by all list RPCs. A zero page_size selects the default
+// of 50; values above 100 are invalid. page_token is opaque and at most 2 KiB.
+message PageRequest {
+  uint32 page_size = 1;
+  string page_token = 2;
+}
+
+message PermissionFailure {
+  PermissionFailureReason reason = 1;
+}
+
+message PaginationFailure {
+  PaginationFailureReason reason = 1;
+}
+
+message QuotaFailure {
+  QuotaKind quota = 1;
+  uint64 limit = 2;
+  uint64 observed = 3;
+  google.protobuf.Timestamp retry_at = 4;
+}

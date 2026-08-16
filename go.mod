@@ -3,8 +3,10 @@ module github.com/delinoio/oss
 go 1.25.7
 
 require (
+	connectrpc.com/connect v1.20.0
 	github.com/creack/pty v1.1.24
 	golang.org/x/sys v0.43.0
+	google.golang.org/protobuf v1.36.12
 	modernc.org/sqlite v1.48.0
 )
 

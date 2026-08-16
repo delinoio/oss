@@ -1,0 +1,49 @@
+syntax = "proto3";
+
+package devhud.v1;
+
+import "devhud/v1/common.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/delinoio/oss/protos/gen/go/devhud/v1;devhudv1";
+
+message SettingsSnapshot {
+  uint32 schema_version = 1;
+  uint64 revision = 2;
+  // canonical_json is RFC 8785 canonical JSON encoded as UTF-8 without a BOM,
+  // at most 1 MiB.
+  bytes canonical_json = 3;
+  google.protobuf.Timestamp updated_at = 4;
+}
+
+message GetSettingsRequest {}
+
+message GetSettingsResponse {
+  ResponseMetadata metadata = 1;
+  // snapshot is absent when the account has never stored settings.
+  SettingsSnapshot snapshot = 2;
+}
+
+message ReplaceSettingsRequest {
+  uint32 schema_version = 1;
+  bytes canonical_json = 2;
+  // expected_revision is zero only when creating the first snapshot.
+  uint64 expected_revision = 3;
+}
+
+message ReplaceSettingsResponse {
+  ResponseMetadata metadata = 1;
+  SettingsSnapshot snapshot = 2;
+}
+
+// SettingsRevisionConflict is attached to an Aborted Connect error.
+message SettingsRevisionConflict {
+  uint64 expected_revision = 1;
+  // current_snapshot is absent if no snapshot exists.
+  SettingsSnapshot current_snapshot = 2;
+}
+
+service SettingsService {
+  rpc GetSettings(GetSettingsRequest) returns (GetSettingsResponse);
+  rpc ReplaceSettings(ReplaceSettingsRequest) returns (ReplaceSettingsResponse);
+}

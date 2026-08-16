@@ -1,0 +1,57 @@
+syntax = "proto3";
+
+package devhud.v1;
+
+import "devhud/v1/common.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/delinoio/oss/protos/gen/go/devhud/v1;devhudv1";
+
+message Account {
+  UuidV7 user_id = 1;
+  string logto_subject = 2;
+  string display_name = 3;
+  string email = 4;
+  AccountDeletionState deletion_state = 5;
+  AdministrativeBlockState administrative_block_state = 6;
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp deletion_requested_at = 8;
+  google.protobuf.Timestamp recoverable_until = 9;
+}
+
+message GetAccountRequest {}
+
+message GetAccountResponse {
+  ResponseMetadata metadata = 1;
+  Account account = 2;
+}
+
+message DeleteAccountRequest {}
+
+message DeleteAccountResponse {
+  ResponseMetadata metadata = 1;
+  Account account = 2;
+}
+
+message RestoreAccountRequest {}
+
+message RestoreAccountResponse {
+  ResponseMetadata metadata = 1;
+  Account account = 2;
+}
+
+enum AccountFailureReason {
+  ACCOUNT_FAILURE_REASON_UNSPECIFIED = 0;
+  ACCOUNT_FAILURE_REASON_RECOVERY_WINDOW_EXPIRED = 1;
+  ACCOUNT_FAILURE_REASON_PURGE_CLAIMED = 2;
+}
+
+message AccountFailure {
+  AccountFailureReason reason = 1;
+}
+
+service AccountService {
+  rpc GetAccount(GetAccountRequest) returns (GetAccountResponse);
+  rpc DeleteAccount(DeleteAccountRequest) returns (DeleteAccountResponse);
+  rpc RestoreAccount(RestoreAccountRequest) returns (RestoreAccountResponse);
+}

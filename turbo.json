@@ -48,6 +48,7 @@
         "**/*.mts",
         "**/*.tsx",
         "tsconfig.json",
+        "tsconfig.build.json",
         "!**/e2e/",
         "!.next/**",
         "!*/**/*.test.ts",
