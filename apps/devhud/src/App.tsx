@@ -49,8 +49,9 @@ export function App() {
   }, [preferences.theme]);
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
-      if ((event.code === "ControlRight" || event.code === "MetaRight") && event.location === rightModifierLocation) rightModifier.current = event.code;
-      const matchingRightModifier = (rightModifier.current === "ControlRight" && event.ctrlKey) || (rightModifier.current === "MetaRight" && event.metaKey);
+      const platformModifier = isMac ? "MetaRight" : "ControlRight";
+      if (event.code === platformModifier && event.location === rightModifierLocation) rightModifier.current = event.code;
+      const matchingRightModifier = rightModifier.current === platformModifier && (isMac ? event.metaKey : event.ctrlKey);
       if (!onboarding && matchingRightModifier && event.key.toLowerCase() === "k") {
         event.preventDefault();
         setPalette(true);

@@ -81,8 +81,9 @@ test("command palette uses buttons and has a localized empty state", () => {
 });
 
 test("command palette shortcut is unavailable during onboarding", () => {
-  assert.match(app, /rightModifier\.current === "ControlRight"/u);
-  assert.match(app, /rightModifier\.current === "MetaRight"/u);
+  assert.match(app, /const platformModifier = isMac \? "MetaRight" : "ControlRight"/u);
+  assert.match(app, /rightModifier\.current === platformModifier/u);
+  assert.match(app, /isMac \? event\.metaKey : event\.ctrlKey/u);
   assert.match(app, /event\.location === rightModifierLocation/u);
   assert.match(app, /addEventListener\("keyup", releaseRightModifier\)/u);
   assert.match(app, /!onboarding && matchingRightModifier/u);
