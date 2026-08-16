@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ActionId, PlatformCapability, actionRegistry, availableActions, completeOnboarding, desktopCapabilities, hasCompletedOnboarding } from "../src/shell.ts";
+import { ActionId, PlatformCapability, actionRegistry, availableActions, completeOnboarding, defaultPreferences, desktopCapabilities, hasCompletedOnboarding, writePreferences } from "../src/shell.ts";
 
 test("registers exactly the five contracted RealQA capture actions", () => {
   const capture = actionRegistry.filter(({ id }) => id.startsWith("realqa.capture.")).map(({ id }) => id).toSorted();
@@ -30,4 +30,9 @@ test("keeps onboarding usable when persistent storage is unavailable", () => {
   };
   assert.equal(hasCompletedOnboarding(unavailableStorage), false);
   assert.doesNotThrow(() => completeOnboarding(unavailableStorage));
+});
+
+test("keeps preference changes usable when persistent storage is unavailable", () => {
+  const unavailableStorage = { setItem() { throw new Error("storage unavailable"); } };
+  assert.doesNotThrow(() => writePreferences(unavailableStorage, defaultPreferences));
 });
