@@ -37,6 +37,11 @@ test("describes Korean diagnostics as redacted rather than deleted", () => {
   assert.match(messages.ko.diagnosticsSummary, /민감 정보가 삭제된/u);
 });
 
+test("does not report a packaged diagnostics session as empty", () => {
+  assert.match(messages.en.diagnosticsUnavailable, /recorded locally/u);
+  assert.match(messages.ko.diagnosticsUnavailable, /로컬에 기록/u);
+});
+
 test("uses the first supported platform language", () => {
   assert.equal(selectSupportedLanguage(["fr-FR", "ko-KR", "en-US"]), "ko");
   assert.equal(selectSupportedLanguage(["fr-FR", "en-US", "ko-KR"]), "en");

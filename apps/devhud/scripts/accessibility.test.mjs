@@ -57,9 +57,14 @@ test("command palette uses buttons and has a localized empty state", () => {
   assert.match(app, /actions\.length === 0/u);
 });
 
+test("command palette shortcut is unavailable during onboarding", () => {
+  assert.match(app, /!onboarding && \(event\.metaKey \|\| event\.ctrlKey\)/u);
+});
+
 test("first run renders the localized local-choice controls and focuses the API origin", () => {
   assert.match(app, /onboarding/u);
   assert.match(app, /autoFocus value=\{preferences\.apiOrigin\}/u);
   assert.match(app, /copy\.signIn/u);
   assert.match(app, /copy\.continueLocally/u);
+  assert.match(styles, /\.app-shell\.onboarding\s*\{\s*grid-template-columns:minmax\(0,1fr\)/u);
 });

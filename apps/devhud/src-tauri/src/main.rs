@@ -519,6 +519,10 @@ fn main() {
                 }
                 allowed
             })
+            .on_new_window(|url, _| {
+                warn!(event = "popup_denied", scheme = url.scheme());
+                tauri::webview::NewWindowResponse::Deny
+            })
             .on_download(|_, event| {
                 if let tauri::webview::DownloadEvent::Requested { url, .. } = event {
                     warn!(event = "download_denied", scheme = url.scheme());
