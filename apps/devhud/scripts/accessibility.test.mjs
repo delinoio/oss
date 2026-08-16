@@ -6,7 +6,13 @@ import { fileURLToPath } from "node:url";
 
 const appRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const styles = readFileSync(join(appRoot, "src/styles.css"), "utf8");
-const themeBlocks = [...styles.matchAll(/:root\s*\{([^}]*)\}/gu)].map((match) => match[1]);
+const app = readFileSync(join(appRoot, "src/App.tsx"), "utf8");
+const main = readFileSync(join(appRoot, "src/main.tsx"), "utf8");
+const nativeHost = readFileSync(join(appRoot, "src-tauri/src/main.rs"), "utf8");
+const themeBlocks = [
+  styles.match(/:root\s*\{([^}]*)\}/u)?.[1],
+  styles.match(/html\[data-theme="dark"\]\s*\{([^}]*)\}/u)?.[1],
+];
 
 function customColor(block, name) {
   const match = block.match(new RegExp(`${name}:\\s*(#[a-f0-9]{6})`, "iu"));
@@ -41,4 +47,134 @@ test("eyebrow text meets WCAG AA contrast in light and dark themes", () => {
       `${eyebrow} does not have sufficient contrast against ${background}`,
     );
   }
+});
+
+test("active navigation buttons meet WCAG AA contrast in dark mode", () => {
+  const darkTheme = themeBlocks[1];
+  assert(contrastRatio("#ffffff", customColor(darkTheme, "--button-accent")) >= 4.5);
+});
+
+test("error messages meet WCAG AA contrast in light and dark themes", () => {
+  for (const block of themeBlocks) {
+    const error = customColor(block, "--error");
+    const surface = customColor(block, "--surface");
+    assert(
+      contrastRatio(error, surface) >= 4.5,
+      `${error} does not have sufficient contrast against ${surface}`,
+    );
+  }
+  assert.match(styles, /\.external-message\[role="alert"\]\s*\{\s*color:var\(--error\)/u);
+});
+
+test("form-control boundaries meet non-text contrast in light and dark themes", () => {
+  for (const block of themeBlocks) {
+    const line = customColor(block, "--line");
+    const surface = customColor(block, "--surface");
+    assert(
+      contrastRatio(line, surface) >= 3,
+      `${line} does not provide a sufficient boundary against ${surface}`,
+    );
+  }
+});
+
+test("command palette uses buttons and has a localized empty state", () => {
+  assert.doesNotMatch(app, /role="listbox"|role="option"/u);
+  assert.match(app, /actions\.length === 0/u);
+});
+
+test("command palette shortcut is unavailable during onboarding", () => {
+  assert.match(app, /const platformModifier = isMac \? "MetaRight" : "ControlRight"/u);
+  assert.match(app, /rightModifier\.current === platformModifier/u);
+  assert.match(app, /isMac \? event\.metaKey : event\.ctrlKey/u);
+  assert.match(app, /const exactRightModifierChord = matchingRightModifier && !event\.shiftKey && !event\.altKey && \(isMac \? !event\.ctrlKey : !event\.metaKey\);/u);
+  assert.match(app, /event\.location === rightModifierLocation/u);
+  assert.match(app, /addEventListener\("keyup", releaseRightModifier\)/u);
+  assert.match(app, /!onboarding && exactRightModifierChord/u);
+  assert.match(app, /event\.code === "KeyK"/u);
+  assert.match(app, /copy\.rightCommandK : copy\.rightControlK/u);
+});
+
+test("document preferences are synchronized before the first localized render", () => {
+  assert.match(main, /synchronizeDocumentPreferences\(document\.documentElement, preferences, matchMedia\("\(prefers-color-scheme: dark\)"\)\.matches, navigator\.languages\); createRoot\(root\)\.render/u);
+});
+
+test("system language changes synchronize the rendered copy, document language, and tray", () => {
+  assert.match(app, /const \[systemLanguage, setSystemLanguage\] = useState\(\(\) => resolveLanguage\(LanguagePreference\.System, navigator\.languages\)\);/u);
+  assert.match(app, /addEventListener\("languagechange", updateSystemLanguage\);/u);
+  assert.match(app, /removeEventListener\("languagechange", updateSystemLanguage\);/u);
+  assert.match(app, /preferences\.language === LanguagePreference\.System \? systemLanguage : preferences\.language/u);
+  assert.match(app, /\}, \[preferences\.language, preferences\.theme, language\]\);/u);
+});
+
+test("resolved themes apply their native control color scheme", () => {
+  assert.match(themeBlocks[0], /color-scheme:light/u);
+  assert.match(themeBlocks[1], /color-scheme:dark/u);
+});
+
+test("the palette trigger retains contrast while hovered", () => {
+  assert.match(app, /className="palette-trigger"/u);
+  assert.match(styles, /aside > \.palette-trigger:hover\s*\{\s*color:#fff; background:var\(--button-accent\);/u);
+});
+
+test("external status remains localized and noopener does not report a false failure", () => {
+  const shell = readFileSync(join(appRoot, "src/shell.ts"), "utf8");
+  assert.match(app, /type ExternalMessage = "opened" \| "failed" \| "invalid-api-origin"/u);
+  assert.match(app, /const externalMessageText = externalMessage === "invalid-api-origin"/u);
+  assert.doesNotMatch(shell, /ExternalLinkTarget\.Documentation|tree\/main\/docs/u);
+  assert.doesNotMatch(shell, /if \(!window\.open/u);
+  assert.match(shell, /window\.open\(path, "_blank", "noopener,noreferrer"\);/u);
+});
+
+test("first run renders the localized local-choice controls and focuses the API origin", () => {
+  assert.match(app, /onboarding/u);
+  assert.match(app, /autoFocus value=\{preferences\.apiOrigin\}/u);
+  assert.match(app, /copy\.signIn/u);
+  assert.match(app, /copy\.continueLocally/u);
+  assert.match(styles, /\.app-shell\.onboarding\s*\{\s*grid-template-columns:minmax\(0,1fr\)/u);
+});
+
+test("Account focuses its API origin input when the surface opens or is reselected from the palette", () => {
+  assert.match(app, /const apiOriginInput = useRef<HTMLInputElement>\(null\);/u);
+  assert.match(app, /surface === SurfaceId\.Account\) apiOriginInput\.current\?\.focus\(\)/u);
+  assert.match(app, /<input ref=\{apiOriginInput\} value=\{preferences\.apiOrigin\}/u);
+  assert.match(app, /closePalette\(action\?\.surface !== SurfaceId\.Account\);/u);
+  assert.match(app, /action\?\.surface === SurfaceId\.Account\) requestAnimationFrame\(\(\) => apiOriginInput\.current\?\.focus\(\)\)/u);
+});
+
+test("Account opener actions and invalidating edits ignore stale external completions", () => {
+  assert.match(app, /const externalAttempt = useRef\(0\);/u);
+  assert.match(app, /if \("apiOrigin" in next\) \{\s+externalAttempt\.current \+= 1;\s+setExternalMessage\(null\);/u);
+  assert.match(app, /const external = async \(target: ExternalLinkTarget\) => \{\s+const attempt = externalAttempt\.current \+ 1;\s+externalAttempt\.current = attempt;/u);
+  assert.match(app, /if \(attempt === externalAttempt\.current\) setExternalMessage\(message\);/u);
+  assert.match(app, /const finishOnboarding = \(\) => \{\s+externalAttempt\.current \+= 1;\s+setExternalMessage\(null\);/u);
+  assert.match(app, /if \(await external\(ExternalLinkTarget\.Authentication\)\) finishOnboarding\(\);/u);
+});
+
+test("RealQA exposes unsupported capture actions as disabled controls", () => {
+  assert.match(app, /const unavailableCaptureActions = actionRegistry\.filter/u);
+  assert.match(app, /action\.required\.includes\(PlatformCapability\.Capture\)/u);
+  assert.match(app, /<div className="disabled-actions">\{unavailableCaptureActions\.map\(\(action\) => <button disabled/u);
+});
+
+test("tray localization failures are caught and recorded", () => {
+  const shell = readFileSync(join(appRoot, "src/shell.ts"), "utf8");
+  assert.match(shell, /\?\? Promise\.resolve\(\)/u);
+  assert.match(app, /void setTrayLanguage\(language\)\.catch\(\(\) => \{\}\);/u);
+  assert.match(nativeHost, /event = "tray_language_update_failed"/u);
+});
+
+test("rejected external destinations emit a safe structured diagnostic", () => {
+  assert.match(nativeHost, /event = "external_destination_rejected"/u);
+  assert.doesNotMatch(nativeHost, /external_destination_rejected[^\n]*api_origin/u);
+});
+
+test("Linux external links use bounded GIO dispatch rather than browser lifetime", () => {
+  assert.match(nativeHost, /gio::AppInfo::launch_default_for_uri/u);
+  assert.match(nativeHost, /receiver\.recv_timeout\(EXTERNAL_OPENER_TIMEOUT\)/u);
+  assert.doesNotMatch(nativeHost, /Command::new\("xdg-open"\)/u);
+});
+
+test("command palette overlay stacks above the mobile sidebar", () => {
+  assert.match(styles, /\.overlay\s*\{[^}]*z-index:2/u);
+  assert.match(styles, /aside\s*\{[^}]*z-index:1/u);
 });

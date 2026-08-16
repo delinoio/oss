@@ -35,6 +35,8 @@
 - Deck refresh intervals are client-polling targets only; suspended widgets use OS-controlled best-effort scheduling and display stale state with the last successful refresh.
 - Update `docs/project-devhud.md` and the applicable DevHud domain contract with every path, UI, platform, interface, or release change.
 - The DevHud iOS widget target must use `io.delino.devhud.widget` with App Group `group.io.delino.devhud` and Keychain access group `$(AppIdentifierPrefix)io.delino.devhud.shared`; the desktop CEF session CSP may add only validated API, GitHub, and signed-upload origins. Chrome captures omit DOM-derived selectors, retain selected bounds only, and redact every path segment before persistence.
+- The implemented DevHud shell keeps its first-party action registry closed and capability-filtered, shows unavailable capture/service actions as unavailable, and persists only versioned non-secret local preferences. First-run onboarding must remain usable when Web Storage is unavailable.
+- Initialize and localize the native tray before the frontend can invoke tray commands. The command palette traps focus, restores its trigger on Escape and normal completion, and preserves focus for a destination surface's sole critical input. Native external links use only the documented closed allowlist and confirm opener success with a bounded background wait; timeout or opener failures must return an error and emit structured diagnostics.
 
 ### mpapp Rules
 
