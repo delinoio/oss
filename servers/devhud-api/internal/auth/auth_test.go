@@ -102,7 +102,7 @@ func TestLogtoVerifierBoundsJWKSRefresh(t *testing.T) {
 	issuer = server.URL
 
 	constructorContext, cancelConstructor := context.WithCancel(context.Background())
-	verifier, err := newLogtoVerifier(constructorContext, issuer, "devhud-api", [][]byte{[]byte("01234567890123456789012345678901")}, 25*time.Millisecond)
+	verifier, err := newLogtoVerifier(constructorContext, issuer, "devhud-api", [][]byte{[]byte("01234567890123456789012345678901")}, 250*time.Millisecond)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -64,7 +64,14 @@ func (v *LogtoVerifier) Verify(ctx context.Context, authorization string) (domai
 		if ctx.Err() != nil {
 			return domain.Identity{}, ctx.Err()
 		}
-		if errors.Is(err, ErrVerificationUnavailable) || verificationContext.Err() != nil {
+		// go-oidc flattens key-set errors with %v, so the stable sentinel text is
+		// required when the original error chain is no longer available.
+		operationalFailure := errors.Is(err, ErrVerificationUnavailable) ||
+			strings.Contains(err.Error(), ErrVerificationUnavailable.Error()) ||
+			errors.Is(err, context.Canceled) ||
+			errors.Is(err, context.DeadlineExceeded) ||
+			verificationContext.Err() != nil
+		if operationalFailure {
 			return domain.Identity{}, errors.Join(ErrVerificationUnavailable, err)
 		}
 		return domain.Identity{}, ErrUnauthenticated
