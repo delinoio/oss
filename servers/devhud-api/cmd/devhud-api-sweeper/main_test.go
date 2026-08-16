@@ -21,6 +21,28 @@ func TestSweepBoundsEachIteration(t *testing.T) {
 	}
 }
 
+func TestStartupContextBoundsDatabaseInitialization(t *testing.T) {
+	ctx, cancel := newStartupContext(context.Background())
+	defer cancel()
+	deadline, ok := ctx.Deadline()
+	remaining := time.Until(deadline)
+	if !ok || remaining < sweepStartupTimeout-time.Second || remaining > sweepStartupTimeout {
+		t.Fatalf("startup deadline remaining = %v", remaining)
+	}
+}
+
+func TestStartupContextPreservesEarlierParentDeadline(t *testing.T) {
+	parentDeadline := time.Now().Add(time.Second)
+	parent, cancelParent := context.WithDeadline(context.Background(), parentDeadline)
+	defer cancelParent()
+	ctx, cancel := newStartupContext(parent)
+	defer cancel()
+	deadline, ok := ctx.Deadline()
+	if !ok || !deadline.Equal(parentDeadline) {
+		t.Fatalf("startup deadline = %v, want parent deadline %v", deadline, parentDeadline)
+	}
+}
+
 func TestSweepPreservesEarlierParentDeadline(t *testing.T) {
 	parentDeadline := time.Now().Add(time.Second)
 	ctx, cancel := context.WithDeadline(context.Background(), parentDeadline)

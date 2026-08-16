@@ -383,13 +383,26 @@ func TestFoundationTransactionsAndRetention(t *testing.T) {
 	oldCorrelation, _ := idgen.UUIDv7{}.New()
 	newID, _ := idgen.UUIDv7{}.New()
 	newCorrelation, _ := idgen.UUIDv7{}.New()
-	if err := store.RecordRequest(ctx, domain.RequestLog{ID: oldID, CorrelationID: oldCorrelation, Procedure: "/healthz", HTTPStatus: 200, CreatedAt: boundary.Add(-domain.RequestLogRetention), ExpiresAt: boundary}); err != nil {
+	if err := store.RecordRequest(ctx, domain.RequestLog{ID: oldID, CorrelationID: oldCorrelation, Procedure: "/devhud.v1.SettingsService/GetSettings", HTTPStatus: 200, RPCStatusCode: domain.RPCStatusCodeUnauthenticated, CreatedAt: boundary.Add(-domain.RequestLogRetention), ExpiresAt: boundary}); err != nil {
 		t.Fatal(err)
+	}
+	var persistedRPCStatus string
+	if err := pool.QueryRow(ctx, "SELECT COALESCE(rpc_status_code, '') FROM devhud_request_logs WHERE request_log_id = $1", oldID).Scan(&persistedRPCStatus); err != nil {
+		t.Fatal(err)
+	}
+	if persistedRPCStatus != string(domain.RPCStatusCodeUnauthenticated) {
+		t.Fatalf("persisted RPC status = %q", persistedRPCStatus)
 	}
 	secondOldID, _ := idgen.UUIDv7{}.New()
 	secondOldCorrelation, _ := idgen.UUIDv7{}.New()
 	if err := store.RecordRequest(ctx, domain.RequestLog{ID: secondOldID, CorrelationID: secondOldCorrelation, Procedure: "/readyz", HTTPStatus: 200, CreatedAt: boundary.Add(-domain.RequestLogRetention), ExpiresAt: boundary}); err != nil {
 		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, "SELECT COALESCE(rpc_status_code, '') FROM devhud_request_logs WHERE request_log_id = $1", secondOldID).Scan(&persistedRPCStatus); err != nil {
+		t.Fatal(err)
+	}
+	if persistedRPCStatus != "" {
+		t.Fatalf("non-RPC request persisted status %q", persistedRPCStatus)
 	}
 	if err := store.RecordRequest(ctx, domain.RequestLog{ID: newID, CorrelationID: newCorrelation, Procedure: "/healthz", HTTPStatus: 200, CreatedAt: boundary, ExpiresAt: boundary.Add(domain.RequestLogRetention)}); err != nil {
 		t.Fatal(err)

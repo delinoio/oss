@@ -78,7 +78,7 @@ func connectErrorMetadata(connectPaths map[string]struct{}, next http.Handler) h
 			next.ServeHTTP(response, request)
 			return
 		}
-		writer := &connectErrorResponseWriter{ResponseWriter: response}
+		writer := &connectErrorResponseWriter{ResponseWriter: response, rpcStatus: rpcStatusCaptureFromContext(request.Context())}
 		next.ServeHTTP(writer, request)
 		writer.flush(rpc.CorrelationID(request.Context()))
 	})
@@ -90,6 +90,7 @@ type connectErrorResponseWriter struct {
 	wroteHeader bool
 	buffering   bool
 	body        bytes.Buffer
+	rpcStatus   *rpcStatusCapture
 }
 
 func (w *connectErrorResponseWriter) WriteHeader(status int) {
@@ -129,14 +130,21 @@ func (w *connectErrorResponseWriter) Flush() {
 func (w *connectErrorResponseWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
 func (w *connectErrorResponseWriter) flush(correlationID string) {
-	if !w.wroteHeader && shouldBufferConnectResponse(http.StatusOK, w.Header().Get("Content-Type")) {
+	if !w.wroteHeader {
 		w.WriteHeader(http.StatusOK)
+	}
+	contentType := w.Header().Get("Content-Type")
+	if strings.HasPrefix(contentType, "application/grpc") {
+		w.rpcStatus.set(rpcStatusFromGRPCHeader(w.Header()))
+	} else if w.buffering {
+		w.rpcStatus.set(rpcStatusFromConnectJSON(w.body.Bytes()))
+	} else if w.status < http.StatusBadRequest {
+		w.rpcStatus.set(domain.RPCStatusCodeOK)
 	}
 	if !w.buffering {
 		return
 	}
 	data := w.body.Bytes()
-	contentType := w.Header().Get("Content-Type")
 	if strings.HasPrefix(contentType, "application/grpc") {
 		addGRPCErrorMetadata(w.Header(), correlationID)
 	} else {
@@ -251,6 +259,66 @@ type connectWireDetail struct {
 	Debug json.RawMessage `json:"debug,omitempty"`
 }
 
+type rpcStatusContextKey struct{}
+
+type rpcStatusCapture struct {
+	code domain.RPCStatusCode
+}
+
+func (capture *rpcStatusCapture) set(code domain.RPCStatusCode) {
+	if capture != nil && code != "" {
+		capture.code = code
+	}
+}
+
+func rpcStatusCaptureFromContext(ctx context.Context) *rpcStatusCapture {
+	capture, _ := ctx.Value(rpcStatusContextKey{}).(*rpcStatusCapture)
+	return capture
+}
+
+func rpcStatusFromGRPCHeader(header http.Header) domain.RPCStatusCode {
+	value, _ := grpcHeaderValue(header, grpcStatusHeader)
+	code, err := strconv.Atoi(value)
+	if err != nil || code < 0 || code >= len(rpcStatusCodes) {
+		return ""
+	}
+	return rpcStatusCodes[code]
+}
+
+func rpcStatusFromConnectJSON(data []byte) domain.RPCStatusCode {
+	var wireError connectWireError
+	if json.Unmarshal(data, &wireError) != nil {
+		return ""
+	}
+	value := strings.ToUpper(wireError.Code)
+	for _, code := range rpcStatusCodes {
+		if string(code) == value {
+			return code
+		}
+	}
+	return ""
+}
+
+var rpcStatusCodes = [...]domain.RPCStatusCode{
+	domain.RPCStatusCodeOK,
+	domain.RPCStatusCodeCanceled,
+	domain.RPCStatusCodeUnknown,
+	domain.RPCStatusCodeInvalidArgument,
+	domain.RPCStatusCodeDeadlineExceeded,
+	domain.RPCStatusCodeNotFound,
+	domain.RPCStatusCodeAlreadyExists,
+	domain.RPCStatusCodePermissionDenied,
+	domain.RPCStatusCodeResourceExhausted,
+	domain.RPCStatusCodeFailedPrecondition,
+	domain.RPCStatusCodeAborted,
+	domain.RPCStatusCodeOutOfRange,
+	domain.RPCStatusCodeUnimplemented,
+	domain.RPCStatusCodeInternal,
+	domain.RPCStatusCodeUnavailable,
+	domain.RPCStatusCodeDataLoss,
+	domain.RPCStatusCodeUnauthenticated,
+}
+
 func recoverPanics(logger *slog.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		defer func() {
@@ -267,21 +335,31 @@ func observeRequests(logger *slog.Logger, repository domain.Repository, clock do
 	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		started := clock.Now()
 		status := &statusWriter{ResponseWriter: response, status: http.StatusOK}
+		rpcStatus := &rpcStatusCapture{}
+		request = request.WithContext(context.WithValue(request.Context(), rpcStatusContextKey{}, rpcStatus))
 		next.ServeHTTP(status, request)
 		duration := clock.Now().Sub(started)
 		procedure := safeProcedure(request.URL.Path)
-		attributes := metric.WithAttributes(
+		metricAttributes := []attribute.KeyValue{
 			attribute.String("rpc.procedure", procedure),
 			attribute.Int("http.response.status_code", status.status),
-		)
+		}
+		if rpcStatus.code != "" {
+			metricAttributes = append(metricAttributes, attribute.String("rpc.response.status_code", string(rpcStatus.code)))
+		}
+		attributes := metric.WithAttributes(metricAttributes...)
 		metrics.requests.Add(request.Context(), 1, attributes)
 		metrics.duration.Record(request.Context(), float64(duration.Milliseconds()), attributes)
-		logger.InfoContext(request.Context(), "request completed",
+		logAttributes := []any{
 			"correlation_id", rpc.CorrelationID(request.Context()),
 			"procedure", procedure,
 			"http_status", status.status,
 			"duration_ms", duration.Milliseconds(),
-		)
+		}
+		if rpcStatus.code != "" {
+			logAttributes = append(logAttributes, "rpc_status_code", rpcStatus.code)
+		}
+		logger.InfoContext(request.Context(), "request completed", logAttributes...)
 		if request.URL.Path == "/healthz" {
 			return
 		}
@@ -296,6 +374,7 @@ func observeRequests(logger *slog.Logger, repository domain.Repository, clock do
 			CorrelationID:        rpc.CorrelationID(request.Context()),
 			Procedure:            procedure,
 			HTTPStatus:           status.status,
+			RPCStatusCode:        rpcStatus.code,
 			DurationMilliseconds: max(duration.Milliseconds(), 0),
 			CreatedAt:            started,
 			ExpiresAt:            started.Add(domain.RequestLogRetention),

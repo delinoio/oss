@@ -12,7 +12,10 @@ import (
 	"github.com/delinoio/oss/servers/devhud-api/internal/domain"
 )
 
-var ErrUnauthenticated = errors.New("request is unauthenticated")
+var (
+	ErrUnauthenticated         = errors.New("request is unauthenticated")
+	ErrVerificationUnavailable = errors.New("identity verification is unavailable")
+)
 
 const defaultVerificationTimeout = 5 * time.Second
 
@@ -32,7 +35,10 @@ func NewLogtoVerifier(ctx context.Context, issuer, audience string, hmacKeys [][
 }
 
 func newLogtoVerifier(ctx context.Context, issuer, audience string, hmacKeys [][]byte, timeout time.Duration) (*LogtoVerifier, error) {
-	httpClient := &http.Client{Timeout: timeout}
+	httpClient := &http.Client{
+		Timeout:   timeout,
+		Transport: availabilityTransport{base: http.DefaultTransport},
+	}
 	providerContext := oidc.ClientContext(context.WithoutCancel(ctx), httpClient)
 	provider, err := oidc.NewProvider(providerContext, issuer)
 	if err != nil {
@@ -54,7 +60,16 @@ func (v *LogtoVerifier) Verify(ctx context.Context, authorization string) (domai
 	verificationContext, cancel := context.WithTimeout(ctx, v.timeout)
 	defer cancel()
 	token, err := v.verify.Verify(verificationContext, parts[1])
-	if err != nil || token.Subject == "" || token.Issuer != v.issuer {
+	if err != nil {
+		if ctx.Err() != nil {
+			return domain.Identity{}, ctx.Err()
+		}
+		if errors.Is(err, ErrVerificationUnavailable) || verificationContext.Err() != nil {
+			return domain.Identity{}, errors.Join(ErrVerificationUnavailable, err)
+		}
+		return domain.Identity{}, ErrUnauthenticated
+	}
+	if token.Subject == "" || token.Issuer != v.issuer {
 		return domain.Identity{}, ErrUnauthenticated
 	}
 	var claims struct {
@@ -72,4 +87,20 @@ func (v *LogtoVerifier) Verify(ctx context.Context, authorization string) (domai
 		Fingerprint:           config.IdentityFingerprint(v.keys, token.Issuer, token.Subject),
 		FingerprintCandidates: config.IdentityFingerprintCandidates(v.keys, token.Issuer, token.Subject),
 	}, nil
+}
+
+type availabilityTransport struct {
+	base http.RoundTripper
+}
+
+func (t availabilityTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	response, err := t.base.RoundTrip(request)
+	if err != nil {
+		return nil, errors.Join(ErrVerificationUnavailable, err)
+	}
+	if response.StatusCode == http.StatusTooManyRequests || response.StatusCode >= http.StatusInternalServerError {
+		_ = response.Body.Close()
+		return nil, errors.Join(ErrVerificationUnavailable, errors.New("identity provider returned a transient HTTP failure"))
+	}
+	return response, nil
 }

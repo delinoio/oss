@@ -133,6 +133,73 @@ func TestSettingsRequiresAuthenticationWithCorrelationDetail(t *testing.T) {
 	}
 }
 
+func TestRPCStatusRecordedForEveryProtocol(t *testing.T) {
+	for name, protocolOption := range map[string]connect.ClientOption{
+		"Connect":  nil,
+		"gRPC":     connect.WithGRPC(),
+		"gRPC-Web": connect.WithGRPCWeb(),
+	} {
+		t.Run(name, func(t *testing.T) {
+			handler, repository := testHandler(t)
+			testServer := httptest.NewServer(handler)
+			defer testServer.Close()
+			options := []connect.ClientOption{}
+			if protocolOption != nil {
+				options = append(options, protocolOption)
+			}
+			client := devhudv1connect.NewSettingsServiceClient(http.DefaultClient, testServer.URL, options...)
+			_, err := client.GetSettings(context.Background(), connect.NewRequest(&devhudv1.GetSettingsRequest{}))
+			if connect.CodeOf(err) != connect.CodeUnauthenticated {
+				t.Fatalf("code = %v, want Unauthenticated", connect.CodeOf(err))
+			}
+			record := repository.lastRequest(t)
+			if record.RPCStatusCode != domain.RPCStatusCodeUnauthenticated {
+				t.Fatalf("RPC status = %q, want %q", record.RPCStatusCode, domain.RPCStatusCodeUnauthenticated)
+			}
+			if name != "Connect" && record.HTTPStatus != http.StatusOK {
+				t.Fatalf("gRPC transport status = %d, want 200", record.HTTPStatus)
+			}
+		})
+	}
+}
+
+func TestVerificationOutagesAreLoggedAndReturnUnavailable(t *testing.T) {
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logs, nil))
+	httpServer, err := New(Dependencies{
+		Config: config.Config{
+			Environment: config.EnvironmentDevelopment, ListenAddress: "127.0.0.1:46307", APIVersion: "test", LogtoIssuer: "https://issuer.example",
+			LogtoAudience: "audience", DesktopClientID: "desktop", IOSClientID: "ios", AndroidClientID: "android",
+			AdminClientID: "admin", AdminRedirectURI: "https://api.example/admin/auth/callback", PublicAssetBaseURL: "https://assets.example",
+		},
+		Repository: &fakeRepository{}, Verifier: unavailableVerifier{}, Clock: fixedClock{now: time.Now()}, IDs: randomIDs{},
+		Logger: logger, MetricsHandler: http.NotFoundHandler(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	testServer := httptest.NewServer(httpServer.Handler)
+	defer testServer.Close()
+	client := devhudv1connect.NewSettingsServiceClient(http.DefaultClient, testServer.URL)
+	request := connect.NewRequest(&devhudv1.GetSettingsRequest{})
+	request.Header().Set("Authorization", "Bearer secret-token")
+	_, err = client.GetSettings(context.Background(), request)
+	if connect.CodeOf(err) != connect.CodeUnavailable {
+		t.Fatalf("code = %v, want Unavailable", connect.CodeOf(err))
+	}
+	if strings.Contains(err.Error(), "JWKS timeout") || strings.Contains(err.Error(), "secret-token") {
+		t.Fatalf("response exposed verification details: %v", err)
+	}
+	for _, value := range []string{"identity verification failed", devhudv1connect.SettingsServiceGetSettingsProcedure, "JWKS timeout"} {
+		if !strings.Contains(logs.String(), value) {
+			t.Fatalf("log %q does not contain %q", logs.String(), value)
+		}
+	}
+	if strings.Contains(logs.String(), "secret-token") || !strings.Contains(logs.String(), `"correlation_id":"`) {
+		t.Fatalf("verification log was not safely correlated: %q", logs.String())
+	}
+}
+
 func TestProvisioningFailuresAreLoggedBeforeInternalResponse(t *testing.T) {
 	repository := &provisionFailureRepository{err: errors.New("database timeout")}
 	var logs bytes.Buffer
@@ -512,7 +579,13 @@ func testHandlerWithRepositoryAndVerifier(t *testing.T, repository domain.Reposi
 type fakeVerifier struct{}
 
 func (fakeVerifier) Verify(context.Context, string) (domain.Identity, error) {
-	return domain.Identity{}, errors.New("invalid token")
+	return domain.Identity{}, auth.ErrUnauthenticated
+}
+
+type unavailableVerifier struct{}
+
+func (unavailableVerifier) Verify(context.Context, string) (domain.Identity, error) {
+	return domain.Identity{}, errors.Join(auth.ErrVerificationUnavailable, errors.New("JWKS timeout"))
 }
 
 type panicVerifier struct{}
@@ -587,6 +660,16 @@ func (repository *fakeRepository) requestCount() int {
 	repository.mu.Lock()
 	defer repository.mu.Unlock()
 	return len(repository.requests)
+}
+
+func (repository *fakeRepository) lastRequest(t *testing.T) domain.RequestLog {
+	t.Helper()
+	repository.mu.Lock()
+	defer repository.mu.Unlock()
+	if len(repository.requests) == 0 {
+		t.Fatal("no request metadata was persisted")
+	}
+	return repository.requests[len(repository.requests)-1]
 }
 
 func (*fakeRepository) SchemaCurrent(context.Context) (bool, error) { return true, nil }

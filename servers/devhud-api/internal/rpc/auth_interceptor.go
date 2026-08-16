@@ -29,7 +29,21 @@ func (i *AuthInterceptor) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc {
 		}
 		identity, err := i.verifier.Verify(ctx, request.Header().Get("Authorization"))
 		if err != nil {
-			return nil, unauthenticatedError(ctx)
+			if errors.Is(err, auth.ErrUnauthenticated) {
+				return nil, unauthenticatedError(ctx)
+			}
+			if errors.Is(err, context.Canceled) && !errors.Is(err, auth.ErrVerificationUnavailable) {
+				return nil, NewError(connect.CodeCanceled, "request canceled", CorrelationID(ctx))
+			}
+			if errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, auth.ErrVerificationUnavailable) {
+				return nil, NewError(connect.CodeDeadlineExceeded, "request deadline exceeded", CorrelationID(ctx))
+			}
+			i.logger.ErrorContext(ctx, "identity verification failed",
+				"correlation_id", CorrelationID(ctx),
+				"procedure", request.Spec().Procedure,
+				"error", err,
+			)
+			return nil, NewError(connect.CodeUnavailable, "identity provider unavailable", CorrelationID(ctx))
 		}
 		user, err := i.repository.ProvisionUser(ctx, identity)
 		if err != nil {

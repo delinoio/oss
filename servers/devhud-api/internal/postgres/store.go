@@ -340,9 +340,9 @@ func (s *Store) RestoreAccount(ctx context.Context, userID string, now time.Time
 
 func (s *Store) RecordRequest(ctx context.Context, record domain.RequestLog) error {
 	_, err := s.pool.Exec(ctx, `INSERT INTO devhud_request_logs
-        (request_log_id, correlation_id, procedure, http_status, duration_milliseconds, created_at, expires_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)`, record.ID, record.CorrelationID, record.Procedure,
-		record.HTTPStatus, record.DurationMilliseconds, record.CreatedAt, record.ExpiresAt)
+		(request_log_id, correlation_id, procedure, http_status, rpc_status_code, duration_milliseconds, created_at, expires_at)
+		VALUES ($1, $2, $3, $4, NULLIF($5, ''), $6, $7, $8)`, record.ID, record.CorrelationID, record.Procedure,
+		record.HTTPStatus, record.RPCStatusCode, record.DurationMilliseconds, record.CreatedAt, record.ExpiresAt)
 	return err
 }
 

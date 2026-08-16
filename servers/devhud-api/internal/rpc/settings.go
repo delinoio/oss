@@ -80,6 +80,11 @@ func (s *SettingsService) ReplaceSettings(ctx context.Context, request *connect.
 		if errors.As(err, &permission) {
 			return nil, permissionError(ctx, permission)
 		}
+		s.logger.ErrorContext(ctx, "settings repository operation failed",
+			"correlation_id", CorrelationID(ctx),
+			"procedure", devhudv1connect.SettingsServiceReplaceSettingsProcedure,
+			"error", err,
+		)
 		return nil, internalError(ctx)
 	}
 	return connect.NewResponse(&devhudv1.ReplaceSettingsResponse{

@@ -216,6 +216,34 @@ func TestSettingsReadFailuresAreLoggedBeforeInternalResponse(t *testing.T) {
 	}
 }
 
+func TestSettingsWriteFailuresAreLoggedBeforeInternalResponse(t *testing.T) {
+	repository := &serviceRepository{replaceSettings: func(context.Context, string, uint32, []byte, uint64, time.Time) (domain.Settings, error) {
+		return domain.Settings{}, errors.New("database timeout")
+	}}
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logs, nil))
+	_, err := NewSettingsService(repository, serviceClock{}, logger).ReplaceSettings(authenticatedContext(), connect.NewRequest(&devhudv1.ReplaceSettingsRequest{
+		SchemaVersion: 1,
+		CanonicalJson: []byte(`{}`),
+	}))
+	if connect.CodeOf(err) != connect.CodeInternal {
+		t.Fatalf("code = %v, want Internal", connect.CodeOf(err))
+	}
+	if strings.Contains(err.Error(), "database timeout") {
+		t.Fatalf("internal response exposed repository error: %v", err)
+	}
+	for _, value := range []string{
+		"settings repository operation failed",
+		testCorrelationID,
+		devhudv1connect.SettingsServiceReplaceSettingsProcedure,
+		"database timeout",
+	} {
+		if !strings.Contains(logs.String(), value) {
+			t.Fatalf("log %q does not contain %q", logs.String(), value)
+		}
+	}
+}
+
 const testCorrelationID = "018f7c1e-7b4a-7abc-8def-0123456789ac"
 
 func authenticatedContext() context.Context {

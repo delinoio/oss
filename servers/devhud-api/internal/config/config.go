@@ -150,6 +150,9 @@ func (c Config) Validate() error {
 	if len(c.IdentityHMACKeys) == 0 {
 		return errors.New("DEVHUD_IDENTITY_HMAC_KEYS must contain at least one key")
 	}
+	if c.Environment == EnvironmentProduction && len(c.TrustedProxyCIDRs) == 0 {
+		return errors.New("DEVHUD_TRUSTED_PROXY_CIDRS is required in production")
+	}
 
 	publicAPI, err := validateHTTPURL("DEVHUD_PUBLIC_API_URL", c.PublicAPIURL)
 	if err != nil {

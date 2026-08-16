@@ -93,6 +93,7 @@ func TestLogtoVerifierBoundsJWKSRefresh(t *testing.T) {
 		case "/jwks":
 			jwksRequested <- struct{}{}
 			<-request.Context().Done()
+			http.Error(response, "temporarily unavailable", http.StatusServiceUnavailable)
 		default:
 			http.NotFound(response, request)
 		}
@@ -108,8 +109,8 @@ func TestLogtoVerifierBoundsJWKSRefresh(t *testing.T) {
 	cancelConstructor()
 	token := signToken(t, privateKey, issuer, "devhud-api", "logto-user", time.Now().Add(time.Hour))
 	started := time.Now()
-	if _, err := verifier.Verify(context.Background(), "Bearer "+token); !errors.Is(err, ErrUnauthenticated) {
-		t.Fatalf("Verify error = %v, want ErrUnauthenticated", err)
+	if _, err := verifier.Verify(context.Background(), "Bearer "+token); !errors.Is(err, ErrVerificationUnavailable) {
+		t.Fatalf("Verify error = %v, want ErrVerificationUnavailable", err)
 	}
 	if elapsed := time.Since(started); elapsed > time.Second {
 		t.Fatalf("JWKS refresh took %v, want a bounded verification", elapsed)

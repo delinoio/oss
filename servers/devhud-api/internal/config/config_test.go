@@ -46,6 +46,23 @@ func TestHTTPSRequiredOutsideLoopback(t *testing.T) {
 	}
 }
 
+func TestProductionRequiresTrustedProxyCIDRs(t *testing.T) {
+	setValidEnvironment(t)
+	t.Setenv("DEVHUD_ENVIRONMENT", "production")
+	t.Setenv("DEVHUD_LISTEN_ADDRESS", "0.0.0.0:8080")
+	t.Setenv("DEVHUD_PUBLIC_API_URL", "https://api.example.com")
+	t.Setenv("DEVHUD_LOGTO_ISSUER", "https://issuer.example.com/oidc")
+	t.Setenv("DEVHUD_ADMIN_REDIRECT_URI", "https://api.example.com/admin/auth/callback")
+
+	if _, err := Load("test"); err == nil || !strings.Contains(err.Error(), "DEVHUD_TRUSTED_PROXY_CIDRS") {
+		t.Fatalf("Load error = %v, want trusted-proxy requirement", err)
+	}
+	t.Setenv("DEVHUD_TRUSTED_PROXY_CIDRS", "10.0.0.0/8")
+	if _, err := Load("test"); err != nil {
+		t.Fatalf("Load with trusted proxy: %v", err)
+	}
+}
+
 func TestIdentityFingerprintRotation(t *testing.T) {
 	oldKey := []byte("01234567890123456789012345678901")
 	newKey := []byte("abcdefghijklmnopqrstuvwxyz123456")

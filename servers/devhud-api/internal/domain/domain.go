@@ -131,10 +131,33 @@ type RequestLog struct {
 	CorrelationID        string
 	Procedure            string
 	HTTPStatus           int
+	RPCStatusCode        RPCStatusCode
 	DurationMilliseconds int64
 	CreatedAt            time.Time
 	ExpiresAt            time.Time
 }
+
+type RPCStatusCode string
+
+const (
+	RPCStatusCodeOK                 RPCStatusCode = "OK"
+	RPCStatusCodeCanceled           RPCStatusCode = "CANCELED"
+	RPCStatusCodeUnknown            RPCStatusCode = "UNKNOWN"
+	RPCStatusCodeInvalidArgument    RPCStatusCode = "INVALID_ARGUMENT"
+	RPCStatusCodeDeadlineExceeded   RPCStatusCode = "DEADLINE_EXCEEDED"
+	RPCStatusCodeNotFound           RPCStatusCode = "NOT_FOUND"
+	RPCStatusCodeAlreadyExists      RPCStatusCode = "ALREADY_EXISTS"
+	RPCStatusCodePermissionDenied   RPCStatusCode = "PERMISSION_DENIED"
+	RPCStatusCodeResourceExhausted  RPCStatusCode = "RESOURCE_EXHAUSTED"
+	RPCStatusCodeFailedPrecondition RPCStatusCode = "FAILED_PRECONDITION"
+	RPCStatusCodeAborted            RPCStatusCode = "ABORTED"
+	RPCStatusCodeOutOfRange         RPCStatusCode = "OUT_OF_RANGE"
+	RPCStatusCodeUnimplemented      RPCStatusCode = "UNIMPLEMENTED"
+	RPCStatusCodeInternal           RPCStatusCode = "INTERNAL"
+	RPCStatusCodeUnavailable        RPCStatusCode = "UNAVAILABLE"
+	RPCStatusCodeDataLoss           RPCStatusCode = "DATA_LOSS"
+	RPCStatusCodeUnauthenticated    RPCStatusCode = "UNAUTHENTICATED"
+)
 
 type AuditAction int16
 

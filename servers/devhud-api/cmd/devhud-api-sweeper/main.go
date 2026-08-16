@@ -16,7 +16,10 @@ import (
 	"github.com/delinoio/oss/servers/devhud-api/internal/sweeper"
 )
 
-const sweepIterationTimeout = 25 * time.Second
+const (
+	sweepStartupTimeout   = 15 * time.Second
+	sweepIterationTimeout = 25 * time.Second
+)
 
 type sweepRunner interface {
 	RunOnce(context.Context) (sweeper.Result, error)
@@ -43,14 +46,19 @@ func run(ctx context.Context, arguments []string, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	pool, err := postgres.NewSweeperPool(ctx, configuration.DatabaseURL)
+	stopContext, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	startupContext, cancelStartup := newStartupContext(stopContext)
+	pool, err := postgres.NewSweeperPool(startupContext, configuration.DatabaseURL)
 	if err != nil {
+		cancelStartup()
 		return err
 	}
 	defer pool.Close()
 	clock := domain.RealClock{}
 	repository := postgres.New(pool, idgen.UUIDv7{}, clock)
-	current, err := repository.SchemaCurrent(ctx)
+	current, err := repository.SchemaCurrent(startupContext)
+	cancelStartup()
 	if err != nil {
 		return err
 	}
@@ -62,10 +70,8 @@ func run(ctx context.Context, arguments []string, logger *slog.Logger) error {
 		return err
 	}
 	if configuration.RunOnce {
-		return sweep(ctx, worker, logger)
+		return sweep(stopContext, worker, logger)
 	}
-	stopContext, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
-	defer stop()
 	ticker := time.NewTicker(configuration.Interval)
 	defer ticker.Stop()
 	for {
@@ -78,6 +84,10 @@ func run(ctx context.Context, arguments []string, logger *slog.Logger) error {
 		case <-ticker.C:
 		}
 	}
+}
+
+func newStartupContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(ctx, sweepStartupTimeout)
 }
 
 func sweep(ctx context.Context, worker sweepRunner, logger *slog.Logger) error {

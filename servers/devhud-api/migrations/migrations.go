@@ -7,4 +7,4 @@ import "embed"
 //go:embed *.sql
 var Files embed.FS
 
-const LatestVersion = "00002_restore_retry_window.sql"
+const LatestVersion = "00003_request_rpc_status.sql"
