@@ -1,0 +1,170 @@
+syntax = "proto3";
+
+package devhud.v1;
+
+import "devhud/v1/common.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/delinoio/oss/protos/gen/go/devhud/v1;devhudv1";
+
+message AdminUser {
+  UuidV7 user_id = 1;
+  string logto_subject = 2;
+  string display_name = 3;
+  string email = 4;
+  AccountDeletionState deletion_state = 5;
+  AdministrativeBlockState administrative_block_state = 6;
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp updated_at = 8;
+  google.protobuf.Timestamp recoverable_until = 9;
+}
+
+message ListUsersRequest {
+  PageRequest page = 1;
+  // query is normalized by the server with Unicode NFC, trim, and
+  // locale-independent full case folding before prefix matching.
+  string query = 2;
+}
+
+message ListUsersResponse {
+  ResponseMetadata metadata = 1;
+  repeated AdminUser users = 2;
+  string next_page_token = 3;
+}
+
+message SetUserBlockedRequest {
+  UuidV7 user_id = 1;
+  AdministrativeBlockState target_state = 2;
+  // reason is required, must be well-formed Unicode, is capped at 4 KiB of
+  // UTF-8, and cannot contain credential or local-path patterns.
+  string reason = 3;
+}
+
+message SetUserBlockedResponse {
+  ResponseMetadata metadata = 1;
+  AdminUser user = 2;
+  AuditEvent audit_event = 3;
+}
+
+message UsageCounter {
+  QuotaKind quota = 1;
+  uint64 used = 2;
+  uint64 limit = 3;
+  google.protobuf.Duration window = 4;
+}
+
+message GetUserUsageRequest {
+  UuidV7 user_id = 1;
+}
+
+message GetUserUsageResponse {
+  ResponseMetadata metadata = 1;
+  UuidV7 user_id = 2;
+  repeated UsageCounter counters = 3;
+}
+
+// AdminUpload contains moderation metadata only. It cannot carry a public or
+// signed asset locator or reach the user-facing Upload message.
+message AdminUpload {
+  reserved 1;
+  reserved "upload";
+
+  UuidV7 owner_user_id = 2;
+  UuidV7 upload_id = 3;
+  UuidV7 submission_id = 4;
+  UuidV7 upload_group_id = 5;
+  UploadState state = 6;
+  UploadContentType content_type = 7;
+  uint64 size_bytes = 8;
+  bytes sha256 = 9;
+  uint64 staging_generation = 10;
+  uint32 width = 11;
+  uint32 height = 12;
+  google.protobuf.Timestamp created_at = 13;
+  google.protobuf.Timestamp finalized_at = 14;
+  google.protobuf.Timestamp removed_at = 15;
+}
+
+message AdminServiceListUploadsRequest {
+  PageRequest page = 1;
+  UuidV7 owner_user_id = 2;
+  UuidV7 submission_id = 3;
+  UuidV7 upload_group_id = 4;
+  repeated UploadState states = 5;
+}
+
+message AdminServiceListUploadsResponse {
+  ResponseMetadata metadata = 1;
+  repeated AdminUpload uploads = 2;
+  string next_page_token = 3;
+}
+
+message QuarantineUploadRequest {
+  UuidV7 upload_id = 1;
+  // reason follows the bounded, sensitive-content-safe administrator reason
+  // contract and is validated before the mutation is persisted.
+  string reason = 2;
+}
+
+message QuarantineUploadResponse {
+  ResponseMetadata metadata = 1;
+  AdminUpload upload = 2;
+  AuditEvent audit_event = 3;
+}
+
+message AdminServiceDeleteUploadRequest {
+  UuidV7 upload_id = 1;
+  // reason follows the bounded, sensitive-content-safe administrator reason
+  // contract and is validated before the mutation is persisted.
+  string reason = 2;
+}
+
+message AdminServiceDeleteUploadResponse {
+  ResponseMetadata metadata = 1;
+  AdminUpload upload = 2;
+  AuditEvent audit_event = 3;
+}
+
+enum AuditAction {
+  AUDIT_ACTION_UNSPECIFIED = 0;
+  AUDIT_ACTION_USER_BLOCKED = 1;
+  AUDIT_ACTION_USER_UNBLOCKED = 2;
+  AUDIT_ACTION_UPLOAD_QUARANTINED = 3;
+  AUDIT_ACTION_UPLOAD_DELETED = 4;
+}
+
+message AuditEvent {
+  UuidV7 audit_event_id = 1;
+  UuidV7 actor_user_id = 2;
+  UuidV7 target_user_id = 3;
+  UuidV7 target_upload_id = 4;
+  AuditAction action = 5;
+  // reason contains only a previously validated administrator mutation reason.
+  string reason = 6;
+  google.protobuf.Timestamp created_at = 7;
+}
+
+message ListAuditEventsRequest {
+  PageRequest page = 1;
+  UuidV7 actor_user_id = 2;
+  UuidV7 target_user_id = 3;
+  UuidV7 target_upload_id = 4;
+  repeated AuditAction actions = 5;
+}
+
+message ListAuditEventsResponse {
+  ResponseMetadata metadata = 1;
+  repeated AuditEvent audit_events = 2;
+  string next_page_token = 3;
+}
+
+service AdminService {
+  rpc ListUsers(ListUsersRequest) returns (ListUsersResponse);
+  rpc SetUserBlocked(SetUserBlockedRequest) returns (SetUserBlockedResponse);
+  rpc GetUserUsage(GetUserUsageRequest) returns (GetUserUsageResponse);
+  rpc ListUploads(AdminServiceListUploadsRequest) returns (AdminServiceListUploadsResponse);
+  rpc QuarantineUpload(QuarantineUploadRequest) returns (QuarantineUploadResponse);
+  rpc DeleteUpload(AdminServiceDeleteUploadRequest) returns (AdminServiceDeleteUploadResponse);
+  rpc ListAuditEvents(ListAuditEventsRequest) returns (ListAuditEventsResponse);
+}

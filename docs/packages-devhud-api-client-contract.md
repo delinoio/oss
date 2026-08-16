@@ -2,7 +2,7 @@
 
 ## Scope
 
-`packages/devhud-api-client` is the planned generated TypeScript client and React Query bindings for `protos/devhud/v1`. It is not implemented.
+`packages/devhud-api-client` is the implemented private `@delinoio/devhud-api-client` TypeScript package generated from `protos/devhud/v1` with small handwritten validation, pagination, and error-mapping helpers.
 
 ## Runtime and Language
 
@@ -14,7 +14,9 @@ TypeScript package generated from the canonical protocol schemas. Use `@connectr
 
 ## Interfaces and Contracts
 
-Expose generated clients for every v1 service/RPC, including `AccountService.RestoreAccount` and the explicitly named `AdminService` methods, without inventing alternate REST or Tauri bindings. Preserve package `devhud.v1`, enum-backed IDs, UUID v7 fields, revision-conflict payloads, typed Connect errors, shared bounded opaque-token pagination for administrative and user upload list RPCs, authenticated-owner filtering for user upload reads/deletes, bootstrap capability declarations, platform-keyed (`desktop`, `ios`, `android`, `admin`) Logto client IDs, the native callback URI `devhud://auth/callback`, the exact deployment-configured admin redirect URI, and upload-group, upload/checksum/finalization fields. Generated output must be reproducible and must not contain secrets or local-only device state.
+Expose generated messages/service descriptors and per-service Connect Query namespaces for every v1 RPC, including `AccountService.RestoreAccount` and the explicitly named `AdminService` methods, without inventing alternate REST or Tauri bindings. Separate `UploadQuery.listUploads` from `AdminQuery.listUploads`. Preserve package `devhud.v1`, enum-backed IDs, UUID v7 fields, revision-conflict payloads, typed Connect errors, shared bounded opaque-token pagination for administrative and user upload list RPCs, authenticated-owner filtering for user upload reads/deletes, bootstrap capability declarations, explicit (`desktop`, `ios`, `android`, `admin`) Logto client-ID fields, the native callback URI `devhud://auth/callback`, the exact deployment-configured admin redirect URI, and upload-group, upload/checksum/finalization fields. Generated output under `src/gen` is reproducible, committed, and never handwritten.
+
+Handwritten helpers enforce canonical UUID-v7 text, 32 raw checksum bytes, the default/maximum page sizes and well-formed-Unicode 2 KiB opaque-token ceiling, the 1 MiB RFC 8785 settings snapshot limit without a UTF-8 BOM, non-blank administrator mutation reasons capped at 4 KiB of well-formed UTF-8 with credential and local-path patterns rejected, and configured public asset locators rejected using the bootstrap-provided public asset base URL. They also enforce the 256-byte crash build/code identifier limit and the 4 KiB/32 KiB redacted crash-report limits and forbidden local-path/credential patterns across every crash string. `mapDevHudError` maps Connect codes plus generated details into a discriminated client error while preserving response correlation metadata. Transport, authorization, and React Query ownership remain with callers.
 
 ## Storage
 
@@ -32,7 +34,7 @@ The package must not log by default. Integrators provide redacted structured log
 
 ## Build and Test
 
-CI must regenerate from `protos/devhud/v1`, fail on stale output, run TypeScript checks, Connect compatibility tests, React Query integration tests, and verify no secret-bearing fields are generated.
+CI regenerates from `protos/devhud/v1`, fails on stale output, runs TypeScript lint/build/tests, verifies the exact 18-RPC and Connect Query export inventory, executes generated query and mutation descriptors through the React Query adapter, exercises binary/ProtoJSON serialization and error mapping, and proves forbidden fields, settings bodies, and asset locators are absent from administrator message graphs.
 
 ## Dependencies and Integrations
 

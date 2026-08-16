@@ -1,0 +1,59 @@
+syntax = "proto3";
+
+package devhud.v1;
+
+import "devhud/v1/common.proto";
+import "google/protobuf/duration.proto";
+
+option go_package = "github.com/delinoio/oss/protos/gen/go/devhud/v1;devhudv1";
+
+message GetBootstrapRequest {}
+
+// LogtoClients has explicit stable platform keys. These are public OAuth
+// client identifiers, never client secrets.
+message LogtoClients {
+  string desktop = 1;
+  string ios = 2;
+  string android = 3;
+  string admin = 4;
+}
+
+message LogtoRedirects {
+  string native = 1;
+  string admin = 2;
+}
+
+message UploadLimits {
+  uint64 max_object_bytes = 1;
+  uint32 max_images_per_submission = 2;
+  uint64 rolling_upload_bytes = 3;
+  google.protobuf.Duration rolling_upload_window = 4;
+  uint64 stored_bytes = 5;
+  uint32 signed_urls = 6;
+  google.protobuf.Duration signed_url_window = 7;
+  uint32 public_gets_per_ip = 8;
+  google.protobuf.Duration public_get_window = 9;
+  google.protobuf.Duration staging_ttl = 10;
+  uint32 max_image_width = 11;
+  uint32 max_image_height = 12;
+  uint64 max_image_pixels = 13;
+}
+
+message GetBootstrapResponse {
+  ResponseMetadata metadata = 1;
+  ProjectId project_id = 2;
+  uint32 protocol_schema_version = 3;
+  string api_version = 4;
+  string logto_issuer = 5;
+  string logto_audience = 6;
+  LogtoClients logto_clients = 7;
+  LogtoRedirects logto_redirects = 8;
+  string public_asset_base_url = 9;
+  repeated StaticCapability capabilities = 10;
+  UploadLimits upload_limits = 11;
+}
+
+service BootstrapService {
+  // GetBootstrap is the only unauthenticated DevHud business RPC.
+  rpc GetBootstrap(GetBootstrapRequest) returns (GetBootstrapResponse);
+}
