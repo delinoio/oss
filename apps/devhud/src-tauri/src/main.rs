@@ -468,6 +468,11 @@ fn main() {
         std::process::exit(78);
     }
 
+    #[cfg(target_os = "linux")]
+    if !subprocess {
+        gtk::init().expect("initialize GTK for the DevHUD tray");
+    }
+
     let frontend_readiness = FrontendReadiness {
         complete: Arc::new(AtomicBool::new(false)),
         smoke_mode,

@@ -23,6 +23,9 @@ tracing = "0.1"
 tracing-appender = "0.2.5"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
 
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = "0.18"
+
 [features]
 default = []
 cli = ["dep:tauri-cli"]
