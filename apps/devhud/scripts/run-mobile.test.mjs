@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { mobileCargoArguments, preserveAndroidArtifacts } from "./run-mobile.mjs";
+import { mobileCargoArguments, mobileExecution, preserveAndroidArtifacts } from "./run-mobile.mjs";
 
 test("builds only contracted mobile commands and architectures", () => {
   assert.deepEqual(mobileCargoArguments(["ios", "build", "--target", "x86_64"]).slice(-4), ["ios", "build", "--target", "x86_64"]);
@@ -17,6 +17,22 @@ test("builds only contracted mobile commands and architectures", () => {
 
 test("does not permit callers to replace pinned platform configuration", () => {
   assert.throws(() => mobileCargoArguments(["ios", "build", "--config", "other.json"]), /overrides are not allowed/u);
+});
+
+test("builds the Intel iOS simulator through the generated simulator workspace", () => {
+  const execution = mobileExecution(["ios", "build", "--target", "x86_64", "--ci", "--no-sign"]);
+  assert.equal(execution.command, "xcodebuild");
+  assert.deepEqual(execution.arguments, [
+    "-workspace", "src-tauri/gen/apple/devhud.xcworkspace",
+    "-scheme", "devhud_iOS",
+    "-sdk", "iphonesimulator",
+    "-configuration", "release",
+    "-destination", "generic/platform=iOS Simulator",
+    "ARCHS=x86_64",
+    "CODE_SIGNING_ALLOWED=NO",
+    "build",
+  ]);
+  assert.equal(mobileExecution(["ios", "build", "--target", "aarch64-sim", "--ci", "--no-sign"]).command, "cargo");
 });
 
 test("preserves each Android target's requested artifacts outside generated output", () => {

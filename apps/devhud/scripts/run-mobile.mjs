@@ -64,9 +64,41 @@ export function mobileCargoArguments(rawArguments) {
   ];
 }
 
+export function mobileExecution(rawArguments) {
+  const cargoArguments = mobileCargoArguments(rawArguments);
+  const [platform, command, ...forwarded] = rawArguments;
+  const requestedTargets = targetValues(forwarded);
+  const nonTargetArguments = forwarded.filter((argument, index) => (
+    argument !== "--target"
+    && forwarded[index - 1] !== "--target"
+    && !argument.startsWith("--target=")
+  ));
+  const directIntelSimulatorBuild = platform === "ios"
+    && command === "build"
+    && requestedTargets.length === 1
+    && requestedTargets[0] === "x86_64"
+    && nonTargetArguments.every((argument) => argument === "--ci" || argument === "--no-sign");
+  if (directIntelSimulatorBuild) {
+    return {
+      command: "xcodebuild",
+      arguments: [
+        "-workspace", "src-tauri/gen/apple/devhud.xcworkspace",
+        "-scheme", "devhud_iOS",
+        "-sdk", "iphonesimulator",
+        "-configuration", "release",
+        "-destination", "generic/platform=iOS Simulator",
+        "ARCHS=x86_64",
+        "CODE_SIGNING_ALLOWED=NO",
+        "build",
+      ],
+    };
+  }
+  return { command: "cargo", arguments: cargoArguments };
+}
+
 export async function runMobile(rawArguments) {
-  const args = mobileCargoArguments(rawArguments);
-  const result = await spawnDevServer("cargo", args, { stdio: "inherit", shell: false }, { terminateProcessTree: true });
+  const execution = mobileExecution(rawArguments);
+  const result = await spawnDevServer(execution.command, execution.arguments, { cwd: appRoot, stdio: "inherit", shell: false }, { terminateProcessTree: true });
   const [platform, command, ...forwarded] = rawArguments;
   const target = targetValues(forwarded).at(-1);
   if (result.code === 0 && !result.signal && platform === "android" && command === "build" && target) {
