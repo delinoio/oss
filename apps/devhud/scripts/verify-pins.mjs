@@ -5,7 +5,13 @@ import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import yaml from "js-yaml";
+
 import { hasExactCspDirectiveSources } from "./frontend-output-policy.mjs";
+import {
+  validateCiTargetMatrix,
+  validateResolvedDependencySources,
+} from "./verify-pins-policy.mjs";
 
 const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = resolve(appRoot, "../..");
@@ -23,6 +29,8 @@ const rsbuildConfig = readFileSync(join(appRoot, "rsbuild.config.ts"), "utf8");
 
 const TAURI_REPOSITORY = "https://github.com/tauri-apps/tauri";
 const TAURI_REVISION = "4af26a3f7f8b692d62cca549bbacd93f5ce90b41";
+const CRATES_IO_SOURCE = "registry+https://github.com/rust-lang/crates.io-index";
+const TAURI_SOURCE = `git+${TAURI_REPOSITORY}?rev=${TAURI_REVISION}#${TAURI_REVISION}`;
 const CANONICAL_CEF_RUST = {
   revision: "c73f792f245d71ac1716448cdb7c165c8009e20c",
   packages: {
@@ -145,8 +153,6 @@ assert(
   !appCargo.includes("[patch."),
   "local Cargo patch declared by the DevHUD manifest",
 );
-// Root patches for unrelated workspace crates are valid. The exact source and checksum
-// assertions below reject patches that alter DevHUD's protected dependency graph.
 assert(!dependencyText.includes("github.com/delinoio/tauri"), "Tauri fork dependency detected");
 
 for (const dependency of ["tauri", "tauri-build", "tauri-cli"]) {
@@ -200,16 +206,50 @@ assert(
   "download-cef lockfile checksum changed",
 );
 
-const cargoFeatures = spawnSync(
+const cargoMetadataResult = spawnSync(
   "cargo",
-  ["tree", "--locked", "--target", "all", "-p", "devhud", "-e", "features"],
-  { cwd: repoRoot, encoding: "utf8", shell: process.platform === "win32" },
+  [
+    "metadata",
+    "--locked",
+    "--format-version",
+    "1",
+    "--all-features",
+    "--manifest-path",
+    join(appRoot, "src-tauri/Cargo.toml"),
+  ],
+  {
+    cwd: repoRoot,
+    encoding: "utf8",
+    maxBuffer: 32 * 1024 * 1024,
+    shell: process.platform === "win32",
+  },
 );
-assert(cargoFeatures.status === 0, cargoFeatures.stderr || "cargo feature resolution failed");
+assert(
+  cargoMetadataResult.status === 0,
+  cargoMetadataResult.error?.message ||
+    cargoMetadataResult.stderr ||
+    "Cargo dependency resolution failed",
+);
+const cargoMetadata = JSON.parse(cargoMetadataResult.stdout);
+const devhudManifestPath = resolve(appRoot, "src-tauri/Cargo.toml");
+const devhudPackage = cargoMetadata.packages.find(
+  (pkg) => resolve(pkg.manifest_path) === devhudManifestPath,
+);
+assert(devhudPackage, "DevHUD is absent from Cargo metadata");
+const dependencyClosure = validateResolvedDependencySources(
+  cargoMetadata,
+  devhudPackage.id,
+  new Set([CRATES_IO_SOURCE, TAURI_SOURCE]),
+);
 for (const feature of pins.runtime.requiredFeatures) {
   const [crate, name] = feature.split("/");
+  const featureResolved = [...dependencyClosure.packageIds].some((packageId) => {
+    const pkg = dependencyClosure.packagesById.get(packageId);
+    const node = dependencyClosure.nodesById.get(packageId);
+    return pkg.name === crate && node.features.includes(name);
+  });
   assert(
-    cargoFeatures.stdout.includes(`${crate} feature "${name}"`),
+    featureResolved,
     `required production feature is not resolved: ${feature}`,
   );
 }
@@ -234,13 +274,13 @@ for (const { id, os, arch, rustTarget, runner } of platforms.targets) {
   assert(["darwin", "win32", "linux"].includes(os), `invalid operating system for ${id}`);
   assert(["x64", "arm64"].includes(arch), `invalid architecture for ${id}`);
   assert(typeof runner === "string" && runner.length > 0, `missing native runner for ${id}`);
-  assert(ciWorkflow.includes(`- id: ${id}`), `native CI matrix is missing ${id}`);
-  assert(ciWorkflow.includes(`runner: ${runner}`), `native CI matrix is missing runner ${runner}`);
 }
+validateCiTargetMatrix(yaml.load(ciWorkflow), platforms.targets);
 
 for (const [name, version] of Object.entries({
   "@rsbuild/core": "2.1.10",
   "@rsbuild/plugin-react": "2.0.1",
+  "js-yaml": "4.3.1",
   react: "19.2.8",
   "react-dom": "19.2.8",
   typescript: "5.9.3",

@@ -10,7 +10,7 @@
     "build": "node scripts/run-tauri.mjs build",
     "build:frontend": "rsbuild build",
     "lint": "tsc --noEmit",
-    "test": "pnpm lint && node --experimental-strip-types --test scripts/localization.test.mjs scripts/accessibility.test.mjs scripts/frontend-output-policy.test.mjs scripts/platform-smoke-child.test.mjs scripts/run-tauri.test.mjs && node scripts/verify-frontend-output.mjs",
+    "test": "pnpm lint && node --experimental-strip-types --test scripts/localization.test.mjs scripts/accessibility.test.mjs scripts/frontend-output-policy.test.mjs scripts/platform-smoke-child.test.mjs scripts/run-tauri.test.mjs scripts/verify-pins-policy.test.mjs && node scripts/verify-frontend-output.mjs",
     "verify:pins": "node scripts/verify-pins.mjs",
     "smoke:platform": "node scripts/platform-smoke.mjs"
   },
@@ -23,6 +23,7 @@
     "@rsbuild/plugin-react": "2.0.1",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
+    "js-yaml": "4.3.1",
     "typescript": "5.9.3"
   }
 }
