@@ -531,6 +531,32 @@ func TestSettingsReadSerializesWithDeletionStateTransition(t *testing.T) {
 	}
 }
 
+func TestGetSettingsNormalizesCompletedPurge(t *testing.T) {
+	ctx, _, store := newIntegrationStore(t, time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC))
+	identity := domain.Identity{
+		Issuer: "https://issuer.example", Subject: "purged-settings-reader", Fingerprint: []byte("purged-settings-reader-fingerprt"),
+	}
+	identity.FingerprintCandidates = [][]byte{identity.Fingerprint}
+	user, err := store.ProvisionUser(ctx, identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deletedAt := time.Date(2026, 4, 2, 0, 0, 0, 0, time.UTC)
+	if _, err := store.DeleteAccount(ctx, user.ID, deletedAt); err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := store.ClaimPurgeBatch(ctx, deletedAt.Add(domain.RecoveryWindow), 1)
+	if err != nil || len(claimed) != 1 {
+		t.Fatalf("purge claim = %+v, err=%v", claimed, err)
+	}
+	if err := store.CompleteAccountPurge(ctx, claimed[0], deletedAt.Add(domain.RecoveryWindow)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.GetSettings(ctx, user.ID); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("settings after completed purge error = %v, want ErrNotFound", err)
+	}
+}
+
 func TestPurgeClaimsPrioritizePendingAccountsAndAuditOnce(t *testing.T) {
 	ctx, pool, store := newIntegrationStore(t, time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
 	retryIdentity := domain.Identity{

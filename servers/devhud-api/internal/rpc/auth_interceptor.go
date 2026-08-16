@@ -37,9 +37,7 @@ func (i *AuthInterceptor) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc {
 						Reason: devhudv1.AccountFailureReason_ACCOUNT_FAILURE_REASON_PURGE_CLAIMED,
 					})
 				}
-				return nil, NewError(connect.CodePermissionDenied, "account deletion is complete", CorrelationID(ctx), &devhudv1.PermissionFailure{
-					Reason: devhudv1.PermissionFailureReason_PERMISSION_FAILURE_REASON_ACCOUNT_DELETION_PENDING,
-				})
+				return nil, deletionCompletePermissionError(ctx)
 			}
 			return nil, internalError(ctx)
 		}

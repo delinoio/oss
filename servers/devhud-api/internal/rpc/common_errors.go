@@ -16,6 +16,12 @@ func internalError(ctx context.Context) error {
 	return NewError(connect.CodeInternal, "internal service error", CorrelationID(ctx))
 }
 
+func deletionCompletePermissionError(ctx context.Context) error {
+	return NewError(connect.CodePermissionDenied, "account deletion is complete", CorrelationID(ctx), &devhudv1.PermissionFailure{
+		Reason: devhudv1.PermissionFailureReason_PERMISSION_FAILURE_REASON_ACCOUNT_DELETION_PENDING,
+	})
+}
+
 func permissionError(ctx context.Context, permission *domain.PermissionError) error {
 	reason := devhudv1.PermissionFailureReason_PERMISSION_FAILURE_REASON_UNSPECIFIED
 	if permission.Failure == domain.PermissionFailureAdministrativeBlock {

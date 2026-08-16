@@ -30,6 +30,9 @@ func (s *SettingsService) GetSettings(ctx context.Context, _ *connect.Request[de
 	}
 	snapshot, err := s.repository.GetSettings(ctx, user.ID)
 	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			return nil, deletionCompletePermissionError(ctx)
+		}
 		var permission *domain.PermissionError
 		if errors.As(err, &permission) {
 			return nil, permissionError(ctx, permission)

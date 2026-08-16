@@ -167,6 +167,9 @@ func (s *Store) GetSettings(ctx context.Context, userID string) (*domain.Setting
 	var blockState domain.AdministrativeBlockState
 	if err := tx.QueryRow(ctx, `SELECT deletion_state, administrative_block_state
         FROM devhud_users WHERE user_id = $1 FOR SHARE`, userID).Scan(&deletionState, &blockState); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, domain.ErrNotFound
+		}
 		return nil, err
 	}
 	if blockState == domain.AdministrativeBlockStateBlocked {
