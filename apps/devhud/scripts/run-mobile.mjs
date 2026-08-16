@@ -83,7 +83,7 @@ export function mobileExecution(rawArguments) {
       command: "xcodebuild",
       prerequisites: [{ command: "pnpm", arguments: ["build:frontend"] }],
       arguments: [
-        "-workspace", "src-tauri/gen/apple/devhud.xcworkspace",
+        "-workspace", "src-tauri/gen/apple/devhud.xcodeproj/project.xcworkspace",
         "-scheme", "devhud_iOS",
         "-sdk", "iphonesimulator",
         "-configuration", "release",

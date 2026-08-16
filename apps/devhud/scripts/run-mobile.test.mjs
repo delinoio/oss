@@ -24,7 +24,7 @@ test("builds the Intel iOS simulator through the generated simulator workspace",
   assert.equal(execution.command, "xcodebuild");
   assert.deepEqual(execution.prerequisites, [{ command: "pnpm", arguments: ["build:frontend"] }]);
   assert.deepEqual(execution.arguments, [
-    "-workspace", "src-tauri/gen/apple/devhud.xcworkspace",
+    "-workspace", "src-tauri/gen/apple/devhud.xcodeproj/project.xcworkspace",
     "-scheme", "devhud_iOS",
     "-sdk", "iphonesimulator",
     "-configuration", "release",
