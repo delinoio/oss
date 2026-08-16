@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "targets": [
+    {
+      "id": "macos-x64",
+      "os": "darwin",
+      "arch": "x64",
+      "rustTarget": "x86_64-apple-darwin",
+      "minimum": "macOS 13.0",
+      "minimumKernelMajor": 22,
+      "runner": "macos-15-intel",
+      "minimumRuntimeAvailableInHostedCi": false
+    },
+    {
+      "id": "macos-arm64",
+      "os": "darwin",
+      "arch": "arm64",
+      "rustTarget": "aarch64-apple-darwin",
+      "minimum": "macOS 13.0",
+      "minimumKernelMajor": 22,
+      "runner": "macos-15",
+      "minimumRuntimeAvailableInHostedCi": false
+    },
+    {
+      "id": "windows-x64",
+      "os": "win32",
+      "arch": "x64",
+      "rustTarget": "x86_64-pc-windows-msvc",
+      "minimum": "Windows 10 22H2 (10.0.19045)",
+      "minimumBuild": 19045,
+      "runner": "windows-2022",
+      "minimumRuntimeAvailableInHostedCi": false
+    },
+    {
+      "id": "windows-arm64",
+      "os": "win32",
+      "arch": "arm64",
+      "rustTarget": "aarch64-pc-windows-msvc",
+      "minimum": "Windows 10 22H2 (10.0.19045)",
+      "minimumBuild": 19045,
+      "runner": "windows-11-arm",
+      "minimumRuntimeAvailableInHostedCi": false
+    },
+    {
+      "id": "ubuntu-x64",
+      "os": "linux",
+      "arch": "x64",
+      "rustTarget": "x86_64-unknown-linux-gnu",
+      "minimum": "Ubuntu 22.04 LTS on X11",
+      "minimumVersion": "22.04",
+      "runner": "ubuntu-22.04",
+      "minimumRuntimeAvailableInHostedCi": true
+    },
+    {
+      "id": "ubuntu-arm64",
+      "os": "linux",
+      "arch": "arm64",
+      "rustTarget": "aarch64-unknown-linux-gnu",
+      "minimum": "Ubuntu 22.04 LTS on X11",
+      "minimumVersion": "22.04",
+      "runner": "ubuntu-22.04-arm",
+      "minimumRuntimeAvailableInHostedCi": true
+    }
+  ]
+}

@@ -75,6 +75,8 @@ Each project must have one project index document and one or more domain contrac
 - `docs/cmds-ttl-language-contract.md`
 
 ### devhud
+The deterministic frontend and Tauri CEF desktop-host foundation are implemented in `apps/devhud`; the remaining DevHUD domains are planned.
+
 - `docs/project-devhud.md`
 - `docs/apps-devhud-foundation.md`
 - `docs/apps-devhud-chrome-extension-contract.md`

@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="DevHUD">
+  <rect width="512" height="512" rx="112" fill="#101820"/>
+  <path d="M128 144h112c88 0 144 44 144 112s-56 112-144 112H128V144Zm72 64v96h40c43 0 72-17 72-48s-29-48-72-48h-40Z" fill="#57e3a1"/>
+  <path d="M96 112h320v32H96zm0 256h320v32H96z" fill="#f5f7fa"/>
+</svg>

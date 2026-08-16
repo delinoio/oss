@@ -33,6 +33,8 @@
   - aisdk-provided `serde_json::Value` input is converted to string and parsed through `I::parse`
   - rustia parse/parse-coercion/validation feedback harness is always applied before handler execution
   - validation failure returns deterministic error feedback text including rustia paths (`$input...`) and expected constraints
+  - `LlmToolInputError` retains the original input, recovered JSON, and complete parse diagnostics, and `LlmToolExecutionError::Input` preserves that structured error without boxing or truncation
+  - internal parse and execution boundaries narrowly allow Clippy's `result_large_err` lint rather than changing the public error layout
 - Output execution contract:
   - handler success payload is serialized as JSON string via `serde_json::to_string`
   - handler and serialization failures are returned as tool errors
