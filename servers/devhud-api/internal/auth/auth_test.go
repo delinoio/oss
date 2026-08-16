@@ -51,12 +51,19 @@ func TestLogtoVerifier(t *testing.T) {
 	if identity.Subject != "logto-user" || identity.DisplayName != "Dev User" || len(identity.Fingerprint) != 32 {
 		t.Fatalf("unexpected identity: %+v", identity)
 	}
+	for _, scheme := range []string{"bearer", "BEARER", "BeArEr"} {
+		if _, err := verifier.Verify(context.Background(), scheme+" "+valid); err != nil {
+			t.Errorf("scheme %q was rejected: %v", scheme, err)
+		}
+	}
 
 	invalidAudience := signToken(t, privateKey, issuer, "other", "logto-user", time.Now().Add(time.Hour))
 	expired := signToken(t, privateKey, issuer, "devhud-api", "logto-user", time.Now().Add(-time.Hour))
 	for name, authorization := range map[string]string{
 		"missing":          "",
 		"malformed":        "Basic value",
+		"missing token":    "Bearer",
+		"extra token":      "Bearer " + valid + " extra",
 		"invalid audience": "Bearer " + invalidAudience,
 		"expired":          "Bearer " + expired,
 	} {

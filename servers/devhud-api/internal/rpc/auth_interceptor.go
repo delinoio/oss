@@ -3,6 +3,7 @@ package rpc
 import (
 	"context"
 	"errors"
+	"log/slog"
 
 	"connectrpc.com/connect"
 	devhudv1 "github.com/delinoio/oss/protos/gen/go/devhud/v1"
@@ -14,10 +15,11 @@ import (
 type AuthInterceptor struct {
 	verifier   auth.Verifier
 	repository domain.Repository
+	logger     *slog.Logger
 }
 
-func NewAuthInterceptor(verifier auth.Verifier, repository domain.Repository) *AuthInterceptor {
-	return &AuthInterceptor{verifier: verifier, repository: repository}
+func NewAuthInterceptor(verifier auth.Verifier, repository domain.Repository, logger *slog.Logger) *AuthInterceptor {
+	return &AuthInterceptor{verifier: verifier, repository: repository, logger: logger}
 }
 
 func (i *AuthInterceptor) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc {
@@ -39,6 +41,11 @@ func (i *AuthInterceptor) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc {
 				}
 				return nil, deletionCompletePermissionError(ctx)
 			}
+			i.logger.ErrorContext(ctx, "account provisioning failed",
+				"correlation_id", CorrelationID(ctx),
+				"procedure", request.Spec().Procedure,
+				"error", err,
+			)
 			return nil, internalError(ctx)
 		}
 		return next(auth.WithUser(ctx, user), request)

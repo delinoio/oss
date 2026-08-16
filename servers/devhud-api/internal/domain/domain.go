@@ -123,7 +123,7 @@ type Repository interface {
 	RecordAudit(context.Context, AuditEvent) error
 	ClaimPurgeBatch(context.Context, time.Time, int) ([]User, error)
 	CompleteAccountPurge(context.Context, User, time.Time) error
-	PruneRetention(context.Context, time.Time) (RetentionResult, error)
+	PruneRetention(context.Context, time.Time, int) (RetentionResult, error)
 }
 
 type RequestLog struct {

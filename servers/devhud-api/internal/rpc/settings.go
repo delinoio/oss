@@ -58,6 +58,9 @@ func (s *SettingsService) ReplaceSettings(ctx context.Context, request *connect.
 	}
 	snapshot, err := s.repository.ReplaceSettings(ctx, user.ID, request.Msg.SchemaVersion, request.Msg.CanonicalJson, request.Msg.ExpectedRevision, s.clock.Now())
 	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			return nil, deletionCompletePermissionError(ctx)
+		}
 		var conflict *domain.RevisionConflict
 		if errors.As(err, &conflict) {
 			return nil, NewError(connect.CodeAborted, "settings revision conflict", CorrelationID(ctx), &devhudv1.SettingsRevisionConflict{

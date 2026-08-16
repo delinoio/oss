@@ -60,6 +60,28 @@ func TestBootstrapCorrelationAndFoundationCapabilities(t *testing.T) {
 	}
 }
 
+func TestBootstrapGRPCProtocolsPreserveSuccessResponses(t *testing.T) {
+	handler, _ := testHandler(t)
+	testServer := httptest.NewServer(handler)
+	defer testServer.Close()
+	for name, protocolOption := range map[string]connect.ClientOption{
+		"gRPC":     connect.WithGRPC(),
+		"gRPC-Web": connect.WithGRPCWeb(),
+	} {
+		t.Run(name, func(t *testing.T) {
+			client := devhudv1connect.NewBootstrapServiceClient(http.DefaultClient, testServer.URL, protocolOption)
+			response, err := client.GetBootstrap(context.Background(), connect.NewRequest(&devhudv1.GetBootstrapRequest{}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			headerID := response.Header().Get(correlationHeader)
+			if headerID == "" || response.Msg.GetMetadata().GetCorrelationId().GetValue() != headerID {
+				t.Fatalf("correlation metadata/header mismatch: header=%q message=%q", headerID, response.Msg.GetMetadata().GetCorrelationId().GetValue())
+			}
+		})
+	}
+}
+
 func TestHealthzDoesNotPersistRequestMetadata(t *testing.T) {
 	handler, repository := testHandler(t)
 	request := httptest.NewRequest(http.MethodGet, "/healthz", nil)
@@ -111,6 +133,47 @@ func TestSettingsRequiresAuthenticationWithCorrelationDetail(t *testing.T) {
 	}
 }
 
+func TestProvisioningFailuresAreLoggedBeforeInternalResponse(t *testing.T) {
+	repository := &provisionFailureRepository{err: errors.New("database timeout")}
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logs, nil))
+	httpServer, err := New(Dependencies{
+		Config: config.Config{
+			Environment: config.EnvironmentDevelopment, ListenAddress: "127.0.0.1:46307", APIVersion: "test", LogtoIssuer: "https://issuer.example",
+			LogtoAudience: "audience", DesktopClientID: "desktop", IOSClientID: "ios", AndroidClientID: "android",
+			AdminClientID: "admin", AdminRedirectURI: "https://api.example/admin/auth/callback", PublicAssetBaseURL: "https://assets.example",
+		},
+		Repository: repository, Verifier: validVerifier{}, Clock: fixedClock{now: time.Now()}, IDs: randomIDs{},
+		Logger: logger, MetricsHandler: http.NotFoundHandler(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	testServer := httptest.NewServer(httpServer.Handler)
+	defer testServer.Close()
+	client := devhudv1connect.NewSettingsServiceClient(http.DefaultClient, testServer.URL)
+	request := connect.NewRequest(&devhudv1.GetSettingsRequest{})
+	request.Header().Set("Authorization", "Bearer valid")
+	_, err = client.GetSettings(context.Background(), request)
+	if connect.CodeOf(err) != connect.CodeInternal {
+		t.Fatalf("code = %v, want Internal", connect.CodeOf(err))
+	}
+	if strings.Contains(err.Error(), "database timeout") {
+		t.Fatalf("internal response exposed repository error: %v", err)
+	}
+	for _, value := range []string{"account provisioning failed", devhudv1connect.SettingsServiceGetSettingsProcedure, "database timeout"} {
+		if !strings.Contains(logs.String(), value) {
+			t.Fatalf("log %q does not contain %q", logs.String(), value)
+		}
+	}
+	if !strings.Contains(logs.String(), `"correlation_id":"`) || strings.Contains(logs.String(), `"correlation_id":""`) {
+		t.Fatalf("log is missing a nonempty correlation ID: %q", logs.String())
+	}
+	if strings.Contains(logs.String(), "Bearer valid") {
+		t.Fatalf("log exposed authorization header: %q", logs.String())
+	}
+}
+
 func TestFrameworkConnectErrorsCarryCorrelationDetail(t *testing.T) {
 	handler, _ := testHandler(t)
 	testServer := httptest.NewServer(handler)
@@ -155,6 +218,45 @@ func TestFrameworkConnectErrorsCarryCorrelationDetail(t *testing.T) {
 			if !found {
 				t.Fatalf("missing matching ErrorMetadata: header=%q body=%s", headerID, body)
 			}
+		})
+	}
+}
+
+func TestMalformedProtobufErrorsCarryCorrelationDetailForEveryProtocol(t *testing.T) {
+	handler, _ := testHandler(t)
+	testServer := httptest.NewServer(handler)
+	defer testServer.Close()
+	for name, protocolOption := range map[string]connect.ClientOption{
+		"Connect":  nil,
+		"gRPC":     connect.WithGRPC(),
+		"gRPC-Web": connect.WithGRPCWeb(),
+	} {
+		t.Run(name, func(t *testing.T) {
+			options := []connect.ClientOption{connect.WithCodec(malformedProtoCodec{})}
+			if protocolOption != nil {
+				options = append(options, protocolOption)
+			}
+			client := devhudv1connect.NewBootstrapServiceClient(http.DefaultClient, testServer.URL, options...)
+			_, err := client.GetBootstrap(context.Background(), connect.NewRequest(&devhudv1.GetBootstrapRequest{}))
+			if connect.CodeOf(err) != connect.CodeInvalidArgument {
+				t.Fatalf("code = %v, want InvalidArgument: %v", connect.CodeOf(err), err)
+			}
+			connectError := new(connect.Error)
+			if !errors.As(err, &connectError) {
+				t.Fatalf("error = %v", err)
+			}
+			headerID := connectError.Meta().Get(correlationHeader)
+			for _, detail := range connectError.Details() {
+				value, valueErr := detail.Value()
+				if valueErr != nil {
+					t.Fatal(valueErr)
+				}
+				metadata, ok := value.(*devhudv1.ErrorMetadata)
+				if ok && headerID != "" && metadata.GetCorrelationId().GetValue() == headerID {
+					return
+				}
+			}
+			t.Fatalf("missing matching ErrorMetadata: header=%q error=%v", headerID, err)
 		})
 	}
 }
@@ -248,6 +350,44 @@ func TestHTTPSRequiredForNonLoopback(t *testing.T) {
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusUpgradeRequired {
 		t.Fatalf("status = %d", response.Code)
+	}
+}
+
+func TestHTTPSIsRequiredBeforeCORSPreflight(t *testing.T) {
+	httpServer, err := New(Dependencies{
+		Config: config.Config{
+			Environment: config.EnvironmentProduction, ListenAddress: "0.0.0.0:8080", APIVersion: "test", LogtoIssuer: "https://issuer.example",
+			LogtoAudience: "audience", DesktopClientID: "desktop", IOSClientID: "ios", AndroidClientID: "android",
+			AdminClientID: "admin", AdminRedirectURI: "https://api.example/admin/auth/callback", PublicAssetBaseURL: "https://assets.example",
+		},
+		Repository: &fakeRepository{}, Verifier: fakeVerifier{}, Clock: fixedClock{now: time.Now()}, IDs: randomIDs{},
+		Logger: slog.New(slog.NewJSONHandler(io.Discard, nil)), MetricsHandler: http.NotFoundHandler(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, target := range map[string]struct {
+		url  string
+		code int
+	}{
+		"plaintext": {url: devhudv1connect.SettingsServiceGetSettingsProcedure, code: http.StatusUpgradeRequired},
+		"TLS":       {url: "https://api.example" + devhudv1connect.SettingsServiceGetSettingsProcedure, code: http.StatusNoContent},
+	} {
+		t.Run(name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodOptions, target.url, nil)
+			request.RemoteAddr = "192.0.2.1:12345"
+			request.Header.Set("Origin", "http://localhost:46305")
+			request.Header.Set("Access-Control-Request-Method", http.MethodPost)
+			request.Header.Set("Access-Control-Request-Headers", "Authorization, Content-Type")
+			response := httptest.NewRecorder()
+			httpServer.Handler.ServeHTTP(response, request)
+			if response.Code != target.code {
+				t.Fatalf("status = %d, want %d", response.Code, target.code)
+			}
+			if name == "plaintext" && response.Header().Get("Access-Control-Allow-Origin") != "" {
+				t.Fatalf("plaintext preflight advertised CORS: %v", response.Header())
+			}
+		})
 	}
 }
 
@@ -398,9 +538,32 @@ func (randomIDs) New() (string, error) {
 	return id.String(), err
 }
 
+type malformedProtoCodec struct{}
+
+func (malformedProtoCodec) Name() string { return "proto" }
+
+func (malformedProtoCodec) Marshal(any) ([]byte, error) { return []byte{0xff}, nil }
+
+func (malformedProtoCodec) Unmarshal(data []byte, message any) error {
+	protobuf, ok := message.(proto.Message)
+	if !ok {
+		return errors.New("message does not implement proto.Message")
+	}
+	return proto.Unmarshal(data, protobuf)
+}
+
 type fakeRepository struct {
 	mu       sync.Mutex
 	requests []domain.RequestLog
+}
+
+type provisionFailureRepository struct {
+	fakeRepository
+	err error
+}
+
+func (repository *provisionFailureRepository) ProvisionUser(context.Context, domain.Identity) (domain.User, error) {
+	return domain.User{}, repository.err
 }
 
 type deadlineObservation struct {
@@ -459,6 +622,6 @@ func (*fakeRepository) ClaimPurgeBatch(context.Context, time.Time, int) ([]domai
 func (*fakeRepository) CompleteAccountPurge(context.Context, domain.User, time.Time) error {
 	return nil
 }
-func (*fakeRepository) PruneRetention(context.Context, time.Time) (domain.RetentionResult, error) {
+func (*fakeRepository) PruneRetention(context.Context, time.Time, int) (domain.RetentionResult, error) {
 	return domain.RetentionResult{}, nil
 }

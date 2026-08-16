@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -18,9 +19,18 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
+	statuspb "google.golang.org/genproto/googleapis/rpc/status"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/anypb"
 )
 
 const correlationHeader = "x-devhud-correlation-id"
+
+const (
+	grpcStatusHeader        = "Grpc-Status"
+	grpcMessageHeader       = "Grpc-Message"
+	grpcStatusDetailsHeader = "Grpc-Status-Details-Bin"
+)
 
 type requestMetrics struct {
 	requests metric.Int64Counter
@@ -88,7 +98,7 @@ func (w *connectErrorResponseWriter) WriteHeader(status int) {
 	}
 	w.wroteHeader = true
 	w.status = status
-	w.buffering = status >= http.StatusBadRequest && strings.HasPrefix(w.Header().Get("Content-Type"), "application/json")
+	w.buffering = shouldBufferConnectResponse(status, w.Header().Get("Content-Type"))
 	if !w.buffering {
 		w.ResponseWriter.WriteHeader(status)
 	}
@@ -104,13 +114,45 @@ func (w *connectErrorResponseWriter) Write(data []byte) (int, error) {
 	return w.ResponseWriter.Write(data)
 }
 
+func (w *connectErrorResponseWriter) Flush() {
+	if !w.wroteHeader {
+		w.WriteHeader(http.StatusOK)
+	}
+	if w.buffering {
+		return
+	}
+	if flusher, ok := w.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
+
 func (w *connectErrorResponseWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
 func (w *connectErrorResponseWriter) flush(correlationID string) {
+	if !w.wroteHeader && shouldBufferConnectResponse(http.StatusOK, w.Header().Get("Content-Type")) {
+		w.WriteHeader(http.StatusOK)
+	}
 	if !w.buffering {
 		return
 	}
 	data := w.body.Bytes()
+	contentType := w.Header().Get("Content-Type")
+	if strings.HasPrefix(contentType, "application/grpc") {
+		addGRPCErrorMetadata(w.Header(), correlationID)
+	} else {
+		data = addConnectJSONErrorMetadata(data, correlationID)
+		w.Header().Set("Content-Length", strconv.Itoa(len(data)))
+	}
+	w.ResponseWriter.WriteHeader(w.status)
+	_, _ = w.ResponseWriter.Write(data)
+}
+
+func shouldBufferConnectResponse(status int, contentType string) bool {
+	return strings.HasPrefix(contentType, "application/grpc") ||
+		(status >= http.StatusBadRequest && strings.HasPrefix(contentType, "application/json"))
+}
+
+func addConnectJSONErrorMetadata(data []byte, correlationID string) []byte {
 	var wireError connectWireError
 	if correlationID != "" && json.Unmarshal(data, &wireError) == nil && !wireError.hasDetail("devhud.v1.ErrorMetadata") {
 		metadata := &devhudv1.ErrorMetadata{CorrelationId: &devhudv1.UuidV7{Value: correlationID}}
@@ -124,9 +166,68 @@ func (w *connectErrorResponseWriter) flush(correlationID string) {
 			}
 		}
 	}
-	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
-	w.ResponseWriter.WriteHeader(w.status)
-	_, _ = w.ResponseWriter.Write(data)
+	return data
+}
+
+func addGRPCErrorMetadata(header http.Header, correlationID string) {
+	if correlationID == "" {
+		return
+	}
+	statusValue, statusTrailer := grpcHeaderValue(header, grpcStatusHeader)
+	if statusValue == "" || statusValue == "0" {
+		return
+	}
+
+	var status statuspb.Status
+	detailsValue, _ := grpcHeaderValue(header, grpcStatusDetailsHeader)
+	if detailsValue != "" {
+		details, err := connect.DecodeBinaryHeader(detailsValue)
+		if err != nil || proto.Unmarshal(details, &status) != nil {
+			return
+		}
+	} else {
+		code, err := strconv.ParseInt(statusValue, 10, 32)
+		if err != nil {
+			return
+		}
+		message, err := url.PathUnescape(grpcHeaderValueOnly(header, grpcMessageHeader))
+		if err != nil {
+			return
+		}
+		status.Code = int32(code)
+		status.Message = message
+	}
+	for _, detail := range status.Details {
+		if detail.GetTypeUrl() == "type.googleapis.com/devhud.v1.ErrorMetadata" {
+			return
+		}
+	}
+	metadata, err := anypb.New(&devhudv1.ErrorMetadata{CorrelationId: &devhudv1.UuidV7{Value: correlationID}})
+	if err != nil {
+		return
+	}
+	status.Details = append(status.Details, metadata)
+	encoded, err := proto.Marshal(&status)
+	if err != nil {
+		return
+	}
+	key := grpcStatusDetailsHeader
+	if statusTrailer {
+		key = http.TrailerPrefix + key
+	}
+	header.Set(key, connect.EncodeBinaryHeader(encoded))
+}
+
+func grpcHeaderValue(header http.Header, key string) (string, bool) {
+	if value := header.Get(http.TrailerPrefix + key); value != "" {
+		return value, true
+	}
+	return header.Get(key), false
+}
+
+func grpcHeaderValueOnly(header http.Header, key string) string {
+	value, _ := grpcHeaderValue(header, key)
+	return value
 }
 
 type connectWireError struct {

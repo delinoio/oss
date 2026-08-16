@@ -386,6 +386,11 @@ func TestFoundationTransactionsAndRetention(t *testing.T) {
 	if err := store.RecordRequest(ctx, domain.RequestLog{ID: oldID, CorrelationID: oldCorrelation, Procedure: "/healthz", HTTPStatus: 200, CreatedAt: boundary.Add(-domain.RequestLogRetention), ExpiresAt: boundary}); err != nil {
 		t.Fatal(err)
 	}
+	secondOldID, _ := idgen.UUIDv7{}.New()
+	secondOldCorrelation, _ := idgen.UUIDv7{}.New()
+	if err := store.RecordRequest(ctx, domain.RequestLog{ID: secondOldID, CorrelationID: secondOldCorrelation, Procedure: "/readyz", HTTPStatus: 200, CreatedAt: boundary.Add(-domain.RequestLogRetention), ExpiresAt: boundary}); err != nil {
+		t.Fatal(err)
+	}
 	if err := store.RecordRequest(ctx, domain.RequestLog{ID: newID, CorrelationID: newCorrelation, Procedure: "/healthz", HTTPStatus: 200, CreatedAt: boundary, ExpiresAt: boundary.Add(domain.RequestLogRetention)}); err != nil {
 		t.Fatal(err)
 	}
@@ -394,12 +399,24 @@ func TestFoundationTransactionsAndRetention(t *testing.T) {
 	if err := store.RecordAudit(ctx, domain.AuditEvent{ID: oldAuditID, Action: domain.AuditActionAccountPurged, CreatedAt: boundary.Add(-domain.AuditRetention), ExpiresAt: boundary}); err != nil {
 		t.Fatal(err)
 	}
+	secondOldAuditID, _ := idgen.UUIDv7{}.New()
+	if err := store.RecordAudit(ctx, domain.AuditEvent{ID: secondOldAuditID, Action: domain.AuditActionAccountPurged, CreatedAt: boundary.Add(-domain.AuditRetention), ExpiresAt: boundary}); err != nil {
+		t.Fatal(err)
+	}
 	if err := store.RecordAudit(ctx, domain.AuditEvent{ID: newAuditID, Action: domain.AuditActionAccountPurged, CreatedAt: boundary, ExpiresAt: boundary.Add(domain.AuditRetention)}); err != nil {
 		t.Fatal(err)
 	}
-	retention, err := store.PruneRetention(ctx, boundary)
+	retention, err := store.PruneRetention(ctx, boundary, 1)
 	if err != nil || retention.RequestLogsDeleted != 1 || retention.AuditEventsDeleted != 1 {
 		t.Fatalf("retention result = %+v, err=%v", retention, err)
+	}
+	retention, err = store.PruneRetention(ctx, boundary, 1)
+	if err != nil || retention.RequestLogsDeleted != 1 || retention.AuditEventsDeleted != 1 {
+		t.Fatalf("second retention result = %+v, err=%v", retention, err)
+	}
+	retention, err = store.PruneRetention(ctx, boundary, 1)
+	if err != nil || retention.RequestLogsDeleted != 0 || retention.AuditEventsDeleted != 0 {
+		t.Fatalf("drained retention result = %+v, err=%v", retention, err)
 	}
 
 	unlock, acquired, err := store.TryLock(ctx)
@@ -554,6 +571,9 @@ func TestGetSettingsNormalizesCompletedPurge(t *testing.T) {
 	}
 	if _, err := store.GetSettings(ctx, user.ID); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("settings after completed purge error = %v, want ErrNotFound", err)
+	}
+	if _, err := store.ReplaceSettings(ctx, user.ID, 1, []byte(`{}`), 0, deletedAt.Add(domain.RecoveryWindow)); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("settings replacement after completed purge error = %v, want ErrNotFound", err)
 	}
 }
 

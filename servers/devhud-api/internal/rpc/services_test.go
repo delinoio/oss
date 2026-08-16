@@ -99,6 +99,33 @@ func TestGetSettingsMapsCompletedPurge(t *testing.T) {
 	t.Fatal("missing deletion-complete permission failure detail")
 }
 
+func TestReplaceSettingsMapsCompletedPurge(t *testing.T) {
+	repository := &serviceRepository{replaceSettings: func(context.Context, string, uint32, []byte, uint64, time.Time) (domain.Settings, error) {
+		return domain.Settings{}, domain.ErrNotFound
+	}}
+	_, err := NewSettingsService(repository, serviceClock{}).ReplaceSettings(authenticatedContext(), connect.NewRequest(&devhudv1.ReplaceSettingsRequest{
+		SchemaVersion: 1,
+		CanonicalJson: []byte(`{}`),
+	}))
+	if connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("code = %v, want PermissionDenied", connect.CodeOf(err))
+	}
+	connectError := new(connect.Error)
+	if !errors.As(err, &connectError) {
+		t.Fatalf("error = %v", err)
+	}
+	for _, detail := range connectError.Details() {
+		value, valueErr := detail.Value()
+		if valueErr != nil {
+			t.Fatal(valueErr)
+		}
+		if failure, ok := value.(*devhudv1.PermissionFailure); ok && failure.GetReason() == devhudv1.PermissionFailureReason_PERMISSION_FAILURE_REASON_ACCOUNT_DELETION_PENDING {
+			return
+		}
+	}
+	t.Fatal("missing deletion-complete permission failure detail")
+}
+
 func TestRestoreAccountUsesAuthenticatedOwnerAndMapsPurgeClaim(t *testing.T) {
 	repository := &serviceRepository{restoreAccount: func(_ context.Context, userID string, _ time.Time) (domain.User, error) {
 		if userID != "018f7c1e-7b4a-7abc-8def-0123456789ab" {
@@ -215,6 +242,6 @@ func (*serviceRepository) ClaimPurgeBatch(context.Context, time.Time, int) ([]do
 func (*serviceRepository) CompleteAccountPurge(context.Context, domain.User, time.Time) error {
 	return nil
 }
-func (*serviceRepository) PruneRetention(context.Context, time.Time) (domain.RetentionResult, error) {
+func (*serviceRepository) PruneRetention(context.Context, time.Time, int) (domain.RetentionResult, error) {
 	return domain.RetentionResult{}, nil
 }

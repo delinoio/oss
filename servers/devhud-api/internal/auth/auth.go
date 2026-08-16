@@ -47,13 +47,13 @@ func newLogtoVerifier(ctx context.Context, issuer, audience string, hmacKeys [][
 }
 
 func (v *LogtoVerifier) Verify(ctx context.Context, authorization string) (domain.Identity, error) {
-	const prefix = "Bearer "
-	if !strings.HasPrefix(authorization, prefix) || len(authorization) == len(prefix) || strings.Contains(authorization[len(prefix):], " ") {
+	parts := strings.Fields(authorization)
+	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
 		return domain.Identity{}, ErrUnauthenticated
 	}
 	verificationContext, cancel := context.WithTimeout(ctx, v.timeout)
 	defer cancel()
-	token, err := v.verify.Verify(verificationContext, authorization[len(prefix):])
+	token, err := v.verify.Verify(verificationContext, parts[1])
 	if err != nil || token.Subject == "" || token.Issuer != v.issuer {
 		return domain.Identity{}, ErrUnauthenticated
 	}

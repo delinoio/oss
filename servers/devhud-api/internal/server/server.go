@@ -30,7 +30,7 @@ type Dependencies struct {
 
 func New(dependencies Dependencies) (*http.Server, error) {
 	mux := http.NewServeMux()
-	authInterceptor := rpc.NewAuthInterceptor(dependencies.Verifier, dependencies.Repository)
+	authInterceptor := rpc.NewAuthInterceptor(dependencies.Verifier, dependencies.Repository, dependencies.Logger)
 	handlerOptions := []connect.HandlerOption{recoverConnectPanics(dependencies.Logger), connect.WithInterceptors(authInterceptor)}
 
 	bootstrapPath, bootstrapHandler := devhudv1connect.NewBootstrapServiceHandler(rpc.NewBootstrapService(rpc.BootstrapConfig{
@@ -79,8 +79,8 @@ func New(dependencies Dependencies) (*http.Server, error) {
 	var handler http.Handler = withHandlerExecutionDeadline(mux, handlerExecutionTimeout)
 	handler = connectErrorMetadata(connectPaths, handler)
 	handler = otelhttp.NewHandler(handler, "devhud-api")
-	handler = requireHTTPS(dependencies.Config.Environment, dependencies.Config.TrustedProxyCIDRs, handler)
 	handler = cors(handler, connectPaths)
+	handler = requireHTTPS(dependencies.Config.Environment, dependencies.Config.TrustedProxyCIDRs, handler)
 	handler = recoverPanics(dependencies.Logger, handler)
 	handler = observeRequests(dependencies.Logger, dependencies.Repository, dependencies.Clock, dependencies.IDs, requestMetrics, handler)
 	handler = correlation(dependencies.IDs, handler)

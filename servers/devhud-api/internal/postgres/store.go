@@ -199,7 +199,10 @@ func (s *Store) ReplaceSettings(ctx context.Context, userID string, schemaVersio
 	var deletionState domain.DeletionState
 	var blockState domain.AdministrativeBlockState
 	if err := tx.QueryRow(ctx, `SELECT deletion_state, administrative_block_state
-        FROM devhud_users WHERE user_id = $1 FOR UPDATE`, userID).Scan(&deletionState, &blockState); err != nil {
+		FROM devhud_users WHERE user_id = $1 FOR UPDATE`, userID).Scan(&deletionState, &blockState); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domain.Settings{}, domain.ErrNotFound
+		}
 		return domain.Settings{}, err
 	}
 	if blockState == domain.AdministrativeBlockStateBlocked {
@@ -447,17 +450,31 @@ func (s *Store) CompleteAccountPurge(ctx context.Context, user domain.User, now 
 	return tx.Commit(ctx)
 }
 
-func (s *Store) PruneRetention(ctx context.Context, now time.Time) (domain.RetentionResult, error) {
+func (s *Store) PruneRetention(ctx context.Context, now time.Time, limit int) (domain.RetentionResult, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return domain.RetentionResult{}, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	requestResult, err := tx.Exec(ctx, "DELETE FROM devhud_request_logs WHERE expires_at <= $1", now)
+	requestResult, err := tx.Exec(ctx, `WITH expired AS (
+		SELECT request_log_id FROM devhud_request_logs
+		WHERE expires_at <= $1
+		ORDER BY expires_at, request_log_id
+		LIMIT $2
+	)
+	DELETE FROM devhud_request_logs logs
+	USING expired WHERE logs.request_log_id = expired.request_log_id`, now, limit)
 	if err != nil {
 		return domain.RetentionResult{}, err
 	}
-	auditResult, err := tx.Exec(ctx, "DELETE FROM devhud_audit_events WHERE expires_at <= $1", now)
+	auditResult, err := tx.Exec(ctx, `WITH expired AS (
+		SELECT audit_event_id FROM devhud_audit_events
+		WHERE expires_at <= $1
+		ORDER BY expires_at, audit_event_id
+		LIMIT $2
+	)
+	DELETE FROM devhud_audit_events events
+	USING expired WHERE events.audit_event_id = expired.audit_event_id`, now, limit)
 	if err != nil {
 		return domain.RetentionResult{}, err
 	}
