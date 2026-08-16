@@ -3,7 +3,12 @@
 mod platform;
 mod resources;
 
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+use std::process::{Child, Command};
+#[cfg(target_os = "linux")]
+use std::sync::mpsc;
 use std::{
+    net::IpAddr,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -11,11 +16,19 @@ use std::{
     time::Duration,
 };
 
+#[cfg(target_os = "linux")]
+use gtk::prelude::CancellableExt;
+#[cfg(target_os = "linux")]
+use gtk::{gio, glib};
 use platform::DesktopTarget;
 #[cfg(target_os = "linux")]
 use platform::LinuxDisplayMode;
 use resources::ResourceLayout;
-use tauri::WebviewUrl;
+use tauri::{
+    Manager, WebviewUrl,
+    menu::{Menu, MenuItem},
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+};
 use tracing::{error, info, warn};
 use tracing_subscriber::{
     Layer,
@@ -23,20 +36,295 @@ use tracing_subscriber::{
     layer::SubscriberExt,
     util::SubscriberInitExt,
 };
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+use wait_timeout::ChildExt;
 
 const DEVELOPMENT_ORIGIN: &str = "http://127.0.0.1:46305";
 const PRODUCTION_ORIGIN: &str = "http://tauri.localhost";
-const FRONTEND_READY_TITLE: &str = "DevHUD";
 const FRONTEND_READY_TIMEOUT: Duration = Duration::from_secs(5);
+const EXTERNAL_OPENER_TIMEOUT: Duration = Duration::from_secs(5);
 const RENDERER_CRASH_LISTENER_READY_ATTEMPTS: usize = 100;
 const RENDERER_CRASH_LISTENER_READY_DELAY: Duration = Duration::from_millis(50);
 const DIAGNOSTIC_LOG_FILE_LIMIT: usize = 7;
+
+#[derive(Clone)]
+struct TrayMenuItems {
+    show: MenuItem<tauri::Cef>,
+    quit: MenuItem<tauri::Cef>,
+}
+
+fn tray_labels(language: &str) -> (&'static str, &'static str) {
+    match language {
+        "ko" => ("DevHUD 표시", "DevHUD 종료"),
+        _ => ("Show DevHUD", "Quit DevHUD"),
+    }
+}
+
+#[tauri::command]
+fn set_tray_language(
+    language: String,
+    tray: tauri::State<'_, TrayMenuItems>,
+) -> Result<(), String> {
+    let (show, quit) = tray_labels(&language);
+    tray.show.set_text(show).map_err(|error| {
+        error!(event = "tray_language_update_failed", menu_item = "show", error = %error);
+        "unable to update tray menu".to_string()
+    })?;
+    tray.quit.set_text(quit).map_err(|error| {
+        error!(event = "tray_language_update_failed", menu_item = "quit", error = %error);
+        "unable to update tray menu".to_string()
+    })
+}
+
+fn validated_api_origin(origin: &str) -> Option<String> {
+    let url = tauri::Url::parse(origin).ok()?;
+    let loopback = url.host_str().is_some_and(|host| {
+        host == "localhost"
+            || host
+                .trim_matches(['[', ']'])
+                .parse::<IpAddr>()
+                .is_ok_and(|ip| ip.is_loopback())
+    });
+    if url.username().is_empty()
+        && url.password().is_none()
+        && url.query().is_none()
+        && url.fragment().is_none()
+        && url.path() == "/"
+        && (url.scheme() == "https" || (url.scheme() == "http" && loopback))
+    {
+        Some(url.to_string())
+    } else {
+        None
+    }
+}
+
+fn external_destination(target: &str, api_origin: &str) -> Option<String> {
+    match target {
+        "authentication" => validated_api_origin(api_origin),
+        "pat" => Some("https://github.com/settings/personal-access-tokens/new".to_string()),
+        "issue" => Some("https://github.com/delinoio/oss/issues/new".to_string()),
+        _ => None,
+    }
+}
+
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+fn confirm_external_opener_status(status: std::process::ExitStatus) -> Result<(), String> {
+    if status.success() {
+        Ok(())
+    } else {
+        error!(event = "external_opener_failed", code = ?status.code());
+        Err("system browser opener failed".to_string())
+    }
+}
+
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+fn external_opener_command(destination: &str) -> Command {
+    #[cfg(target_os = "macos")]
+    let mut command = Command::new("open");
+    #[cfg(target_os = "windows")]
+    let mut command = Command::new("explorer.exe");
+    command.arg(destination);
+    command
+}
+
+#[cfg(target_os = "linux")]
+fn confirm_linux_external_dispatch(
+    result: Result<(), glib::Error>,
+    cancellable: &gio::Cancellable,
+) -> Result<(), String> {
+    if cancellable.is_cancelled() {
+        return Err("system browser opener timed out".to_string());
+    }
+    result.map_err(|reason| {
+        error!(event = "external_opener_failed", %reason);
+        "system browser opener failed".to_string()
+    })
+}
+
+#[cfg(target_os = "linux")]
+fn wait_for_linux_external_dispatch(destination: String) -> Result<(), String> {
+    let (result_sender, result_receiver) = mpsc::sync_channel(1);
+    let (loop_sender, loop_receiver) = mpsc::sync_channel(1);
+    let cancellable = gio::Cancellable::new();
+    let worker_cancellable = cancellable.clone();
+    std::thread::spawn(move || {
+        let context = glib::MainContext::new();
+        let main_loop = glib::MainLoop::new(Some(&context), false);
+        let _ = loop_sender.send(main_loop.clone());
+        if context
+            .with_thread_default(|| {
+                let completion_loop = main_loop.clone();
+                let completion_cancellable = worker_cancellable.clone();
+                gio::AppInfo::launch_default_for_uri_async(
+                    &destination,
+                    None::<&gio::AppLaunchContext>,
+                    Some(&worker_cancellable),
+                    move |result| {
+                        let _ = result_sender.send(confirm_linux_external_dispatch(
+                            result,
+                            &completion_cancellable,
+                        ));
+                        completion_loop.quit();
+                    },
+                );
+                main_loop.run();
+            })
+            .is_err()
+        {
+            error!(event = "external_opener_worker_failed");
+        }
+    });
+    let main_loop = loop_receiver.recv().map_err(|_| {
+        error!(event = "external_opener_worker_failed");
+        "unable to confirm system browser opener".to_string()
+    })?;
+    await_linux_external_dispatch(result_receiver, &cancellable, &main_loop)
+}
+
+#[cfg(target_os = "linux")]
+fn cancel_linux_external_dispatch(cancellable: &gio::Cancellable, main_loop: &glib::MainLoop) {
+    cancellable.cancel();
+    main_loop.quit();
+}
+
+#[cfg(target_os = "linux")]
+fn await_linux_external_dispatch(
+    receiver: mpsc::Receiver<Result<(), String>>,
+    cancellable: &gio::Cancellable,
+    main_loop: &glib::MainLoop,
+) -> Result<(), String> {
+    match receiver.recv_timeout(EXTERNAL_OPENER_TIMEOUT) {
+        Ok(result) => result,
+        Err(mpsc::RecvTimeoutError::Timeout) => {
+            error!(event = "external_opener_timeout");
+            cancel_linux_external_dispatch(cancellable, main_loop);
+            Err("system browser opener timed out".to_string())
+        }
+        Err(mpsc::RecvTimeoutError::Disconnected) => {
+            error!(event = "external_opener_worker_failed");
+            Err("unable to confirm system browser opener".to_string())
+        }
+    }
+}
+
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+fn wait_for_external_opener(mut child: Child) -> Result<(), String> {
+    match child.wait_timeout(EXTERNAL_OPENER_TIMEOUT) {
+        Ok(Some(status)) => confirm_external_opener_status(status),
+        Ok(None) => {
+            error!(event = "external_opener_timeout");
+            if let Err(reason) = child.kill() {
+                error!(event = "external_opener_kill_failed", %reason);
+            }
+            if let Err(reason) = child.wait() {
+                error!(event = "external_opener_reap_failed", %reason);
+            }
+            Err("system browser opener timed out".to_string())
+        }
+        Err(reason) => {
+            error!(event = "external_opener_wait_failed", %reason);
+            Err("unable to confirm system browser opener".to_string())
+        }
+    }
+}
+
+#[tauri::command]
+async fn open_external(target: String, api_origin: String) -> Result<(), String> {
+    let destination = external_destination(&target, &api_origin).ok_or_else(|| {
+        error!(event = "external_destination_rejected");
+        "external destination is not allowlisted".to_string()
+    })?;
+    #[cfg(target_os = "linux")]
+    return tauri::async_runtime::spawn_blocking(move || {
+        wait_for_linux_external_dispatch(destination)
+    })
+    .await
+    .map_err(|reason| {
+        error!(event = "external_opener_worker_failed", %reason);
+        "unable to confirm system browser opener".to_string()
+    })?;
+
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    let child = external_opener_command(&destination)
+        .spawn()
+        .map_err(|reason| {
+            error!(event = "external_opener_spawn_failed", %reason);
+            "unable to open system browser".to_string()
+        })?;
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    tauri::async_runtime::spawn_blocking(move || wait_for_external_opener(child))
+        .await
+        .map_err(|reason| {
+            error!(event = "external_opener_worker_failed", %reason);
+            "unable to confirm system browser opener".to_string()
+        })?
+}
+
+fn restore_main_window(app: &tauri::AppHandle<tauri::Cef>) {
+    let Some(window) = app.get_webview_window("main") else {
+        error!(event = "tray_window_restore_missing");
+        return;
+    };
+    if let Err(reason) = window.unminimize() {
+        error!(event = "tray_window_restore_unminimize_failed", %reason);
+    }
+    if let Err(reason) = window.show() {
+        error!(event = "tray_window_restore_show_failed", %reason);
+    }
+    if let Err(reason) = window.set_focus() {
+        error!(event = "tray_window_restore_focus_failed", %reason);
+    }
+}
+
+fn create_tray(app: &tauri::AppHandle<tauri::Cef>) -> tauri::Result<()> {
+    let show = MenuItem::with_id(app, "show", "Show DevHUD", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "Quit DevHUD", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&show, &quit])?;
+    app.manage(TrayMenuItems {
+        show: show.clone(),
+        quit: quit.clone(),
+    });
+    TrayIconBuilder::with_id("devhud")
+        .tooltip("DevHUD")
+        .icon(
+            app.default_window_icon()
+                .expect("DevHUD bundle icon")
+                .clone(),
+        )
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| match event.id.as_ref() {
+            "show" => restore_main_window(app),
+            "quit" => app.exit(0),
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                restore_main_window(tray.app_handle());
+            }
+        })
+        .build(app)?;
+    Ok(())
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum SmokeMode {
     Normal,
     RendererCrash,
     MissingResource,
+}
+
+#[derive(Clone)]
+struct FrontendReadiness {
+    complete: Arc<AtomicBool>,
+    smoke_mode: Option<SmokeMode>,
+    renderer_crashed: Arc<AtomicBool>,
+    renderer_crash_listener_ready: Arc<AtomicBool>,
 }
 
 impl SmokeMode {
@@ -162,8 +450,29 @@ fn is_allowed_navigation(url: &tauri::Url) -> bool {
     origin == PRODUCTION_ORIGIN || (tauri::is_dev() && origin == DEVELOPMENT_ORIGIN)
 }
 
-fn is_frontend_ready_title(title: &str) -> bool {
-    title == FRONTEND_READY_TITLE
+#[tauri::command]
+fn frontend_ready(
+    webview: tauri::WebviewWindow<tauri::Cef>,
+    readiness: tauri::State<'_, FrontendReadiness>,
+) {
+    if readiness.complete.swap(true, Ordering::SeqCst) {
+        return;
+    }
+
+    let origin = if tauri::is_dev() {
+        DEVELOPMENT_ORIGIN
+    } else {
+        PRODUCTION_ORIGIN
+    };
+    let app_handle = webview.app_handle();
+    handle_frontend_ready(
+        &webview,
+        app_handle,
+        readiness.smoke_mode,
+        origin,
+        readiness.renderer_crashed.clone(),
+        readiness.renderer_crash_listener_ready.clone(),
+    );
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -320,18 +629,47 @@ fn main() {
         std::process::exit(78);
     }
 
-    let renderer_crashed = Arc::new(AtomicBool::new(false));
-    let renderer_crash_listener_ready = Arc::new(AtomicBool::new(cfg!(target_os = "macos")));
-    let frontend_readiness_complete = Arc::new(AtomicBool::new(false));
+    #[cfg(target_os = "linux")]
+    if !subprocess && let Err(error) = gtk::init() {
+        error!(event = "gtk_initialization_failed", reason = %error);
+        std::process::exit(78);
+    }
 
-    let mut builder = tauri::Builder::<tauri::Cef>::default();
+    let frontend_readiness = FrontendReadiness {
+        complete: Arc::new(AtomicBool::new(false)),
+        smoke_mode,
+        renderer_crashed: Arc::new(AtomicBool::new(false)),
+        renderer_crash_listener_ready: Arc::new(AtomicBool::new(cfg!(target_os = "macos"))),
+    };
+
+    let mut builder = tauri::Builder::<tauri::Cef>::default()
+        .manage(frontend_readiness.clone())
+        .invoke_handler(tauri::generate_handler![
+            frontend_ready,
+            open_external,
+            set_tray_language
+        ])
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                if let Err(reason) = window.hide() {
+                    error!(event = "tray_window_hide_failed", %reason);
+                    if let Err(reason) = window.show() {
+                        error!(event = "tray_window_hide_recovery_show_failed", %reason);
+                    }
+                    if let Err(reason) = window.set_focus() {
+                        error!(event = "tray_window_hide_recovery_focus_failed", %reason);
+                    }
+                }
+            }
+        });
     if let Some(cache_path) = std::env::var_os("DEVHUD_SMOKE_CACHE_DIR") {
         builder = builder.root_cache_path(cache_path);
     }
 
     #[cfg(target_os = "macos")]
     {
-        let renderer_crashed = renderer_crashed.clone();
+        let renderer_crashed = frontend_readiness.renderer_crashed.clone();
         builder = builder.on_web_content_process_terminate(move |_| {
             renderer_crashed.store(true, Ordering::SeqCst);
             error!(event = "renderer_terminated", source = "cef_callback");
@@ -340,11 +678,8 @@ fn main() {
 
     let result = builder
         .setup(move |app| {
-            let app_handle_for_frontend = app.handle().clone();
-            let renderer_crashed_for_frontend = renderer_crashed.clone();
-            let renderer_crash_listener_ready_for_frontend = renderer_crash_listener_ready.clone();
-            let frontend_readiness_for_title = frontend_readiness_complete.clone();
-            let frontend_readiness_for_watchdog = frontend_readiness_complete.clone();
+            let readiness = frontend_readiness.clone();
+            create_tray(&app.handle().clone())?;
             let webview = tauri::WebviewWindowBuilder::<tauri::Cef, _>::new(
                 app,
                 "main",
@@ -370,38 +705,13 @@ fn main() {
                 }
                 false
             })
-            .on_document_title_changed(move |webview, title| {
-                if !is_frontend_ready_title(&title) {
-                    return;
-                }
-
-                let origin = if tauri::is_dev() {
-                    DEVELOPMENT_ORIGIN
-                } else {
-                    PRODUCTION_ORIGIN
-                };
-                if frontend_readiness_for_title.swap(true, Ordering::SeqCst) {
-                    return;
-                }
-                handle_frontend_ready(
-                    &webview,
-                    &app_handle_for_frontend,
-                    smoke_mode,
-                    origin,
-                    renderer_crashed_for_frontend.clone(),
-                    renderer_crash_listener_ready_for_frontend.clone(),
-                );
-            })
             .build()?;
 
-            start_frontend_readiness_watchdog(
-                app.handle().clone(),
-                frontend_readiness_for_watchdog,
-            );
+            start_frontend_readiness_watchdog(app.handle().clone(), readiness.complete.clone());
 
             #[cfg(not(target_os = "macos"))]
             if should_observe_renderer_crashes(tauri::is_dev()) {
-                let renderer_crashed_for_protocol = renderer_crashed.clone();
+                let renderer_crashed_for_protocol = readiness.renderer_crashed.clone();
                 webview.on_dev_tools_protocol(move |message| {
                     if let tauri::CefDevToolsProtocol::Event { method, .. } = message
                         && method.contains("targetCrashed")
@@ -418,7 +728,9 @@ fn main() {
                         app.handle().exit(70);
                     }
                 } else {
-                    renderer_crash_listener_ready.store(true, Ordering::SeqCst);
+                    readiness
+                        .renderer_crash_listener_ready
+                        .store(true, Ordering::SeqCst);
                 }
             }
 
@@ -439,6 +751,91 @@ fn main() {
 }
 
 #[cfg(test)]
+mod review_tests {
+    #[cfg(target_os = "macos")]
+    use std::os::unix::process::ExitStatusExt;
+    #[cfg(target_os = "linux")]
+    use std::sync::mpsc;
+
+    #[cfg(target_os = "linux")]
+    use gtk::prelude::CancellableExt;
+    #[cfg(target_os = "linux")]
+    use gtk::{gio, glib};
+
+    #[cfg(target_os = "macos")]
+    use super::confirm_external_opener_status;
+    #[cfg(target_os = "linux")]
+    use super::{await_linux_external_dispatch, cancel_linux_external_dispatch};
+    use super::{external_destination, tray_labels};
+
+    #[test]
+    fn external_destinations_are_closed_and_validate_the_authentication_origin() {
+        assert_eq!(
+            external_destination("pat", "https://example.test"),
+            Some("https://github.com/settings/personal-access-tokens/new".to_string())
+        );
+        assert_eq!(
+            external_destination("authentication", "https://example.test"),
+            Some("https://example.test/".to_string())
+        );
+        assert_eq!(
+            external_destination("authentication", "http://example.test"),
+            None
+        );
+        assert_eq!(
+            external_destination("authentication", "http://[::1]:46307"),
+            Some("http://[::1]:46307/".to_string())
+        );
+        assert_eq!(
+            external_destination("authentication", "http://127.0.0.2:46307"),
+            Some("http://127.0.0.2:46307/".to_string())
+        );
+        assert_eq!(
+            external_destination("documentation", "https://example.test"),
+            None
+        );
+        assert_eq!(
+            external_destination("unknown", "https://example.test"),
+            None
+        );
+    }
+
+    #[test]
+    fn tray_labels_are_localized() {
+        assert_eq!(tray_labels("en"), ("Show DevHUD", "Quit DevHUD"));
+        assert_eq!(tray_labels("ko"), ("DevHUD 표시", "DevHUD 종료"));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn external_opener_requires_a_successful_exit_status() {
+        assert!(confirm_external_opener_status(std::process::ExitStatus::from_raw(0)).is_ok());
+        assert!(confirm_external_opener_status(std::process::ExitStatus::from_raw(256)).is_err());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_external_opener_uses_bounded_gio_dispatch() {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        sender.send(Ok(())).expect("dispatch result channel");
+        let cancellable = gio::Cancellable::new();
+        let main_loop = glib::MainLoop::new(None, false);
+        assert!(await_linux_external_dispatch(receiver, &cancellable, &main_loop).is_ok());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_external_opener_cancels_timed_out_gio_dispatch() {
+        let cancellable = gio::Cancellable::new();
+        let main_loop = glib::MainLoop::new(None, false);
+
+        cancel_linux_external_dispatch(&cancellable, &main_loop);
+
+        assert!(cancellable.is_cancelled());
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use std::{
         io::{self, Write},
@@ -455,14 +852,16 @@ mod tests {
     #[cfg(not(target_os = "macos"))]
     use super::should_observe_renderer_crashes;
     use super::{
-        SmokeMode, diagnostic_filter, inject_smoke_missing_resource, is_frontend_ready_title,
+        SmokeMode, diagnostic_filter, inject_smoke_missing_resource,
         wait_for_frontend_readiness_timeout, wait_for_renderer_crash_listener,
     };
 
     #[test]
-    fn frontend_readiness_requires_the_mounted_title() {
-        assert!(!is_frontend_ready_title("DevHUD Loading"));
-        assert!(is_frontend_ready_title("DevHUD"));
+    fn frontend_readiness_claim_is_one_shot() {
+        let frontend_readiness_complete = AtomicBool::new(false);
+
+        assert!(!frontend_readiness_complete.swap(true, Ordering::SeqCst));
+        assert!(frontend_readiness_complete.swap(true, Ordering::SeqCst));
     }
 
     #[test]

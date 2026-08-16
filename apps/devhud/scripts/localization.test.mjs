@@ -1,17 +1,58 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { selectSupportedLanguage, shellCopy } from "../src/localization.ts";
+import { messages, selectSupportedLanguage } from "../src/localization.ts";
+import { LanguagePreference, ThemePreference, completeOnboarding, defaultPreferences, hasCompletedOnboarding, isValidApiOrigin, readPreferences, resolveLanguage, resolveTheme, synchronizeDocumentPreferences } from "../src/shell.ts";
 
 test("selects English from an English platform locale", () => {
   assert.equal(selectSupportedLanguage(["en-US"]), "en");
-  assert.equal(shellCopy.en.eyebrow, "Desktop foundation");
+  assert.equal(messages.en.home, "Home");
 });
 
 test("selects Korean from Korean regional platform locales", () => {
   assert.equal(selectSupportedLanguage(["ko-KR"]), "ko");
   assert.equal(selectSupportedLanguage(["ko_KR"]), "ko");
-  assert.equal(shellCopy.ko.eyebrow, "데스크톱 기반");
+  assert.equal(messages.ko.home, "홈");
+});
+
+test("resolves system preferences and safely falls back to defaults", () => {
+  assert.equal(resolveLanguage(LanguagePreference.System, ["fr-FR"]), "en");
+  assert.equal(resolveLanguage(LanguagePreference.System, ["ko-KR"]), "ko");
+  assert.equal(resolveTheme(ThemePreference.System, true), ThemePreference.Dark);
+  assert.equal(resolveTheme(ThemePreference.System, false), ThemePreference.Light);
+  assert.equal(readPreferences({ getItem: () => "not json" }).language, LanguagePreference.System);
+  assert.equal(resolveLanguage(LanguagePreference.System, ["en-US", "ko-KR"]), "en");
+});
+
+test("synchronizes the resolved language and theme onto the document before rendering", () => {
+  const documentElement = { lang: "en", dataset: {} };
+  assert.deepEqual(
+    synchronizeDocumentPreferences(documentElement, { ...defaultPreferences, language: LanguagePreference.Korean, theme: ThemePreference.System }, true, ["ko-KR"]),
+    { language: "ko", theme: ThemePreference.Dark },
+  );
+  assert.deepEqual(documentElement, { lang: "ko", dataset: { theme: ThemePreference.Dark } });
+});
+
+test("sanitizes each persisted preference independently", () => {
+  const stored = JSON.stringify({ version: 1, theme: "contrast", language: null, apiOrigin: "http://example.com", launchAtLogin: "yes" });
+  assert.deepEqual(readPreferences({ getItem: () => stored }), defaultPreferences);
+  const valid = JSON.stringify({ version: 1, theme: ThemePreference.Dark, language: LanguagePreference.Korean, apiOrigin: "http://127.0.0.1:46307/", launchAtLogin: true });
+  assert.deepEqual(readPreferences({ getItem: () => valid }), { version: 1, theme: ThemePreference.Dark, language: LanguagePreference.Korean, apiOrigin: "http://127.0.0.1:46307/", launchAtLogin: true });
+  assert.equal(isValidApiOrigin("http://127.0.0.2:46307/"), true);
+  assert.equal(isValidApiOrigin("http://126.255.255.255:46307/"), false);
+  assert.equal(isValidApiOrigin("https://devhud.api.delino.io/"), true);
+  assert.equal(isValidApiOrigin("https://devhud.api.delino.io/path"), false);
+  assert.equal(isValidApiOrigin("https://devhud.api.delino.io/?"), false);
+  assert.equal(isValidApiOrigin("https://devhud.api.delino.io/#"), false);
+});
+
+test("describes Korean diagnostics as redacted rather than deleted", () => {
+  assert.match(messages.ko.diagnosticsSummary, /민감 정보가 삭제된/u);
+});
+
+test("does not report a packaged diagnostics session as empty", () => {
+  assert.match(messages.en.diagnosticsUnavailable, /recorded locally/u);
+  assert.match(messages.ko.diagnosticsUnavailable, /로컬에 기록/u);
 });
 
 test("uses the first supported platform language", () => {
@@ -22,4 +63,13 @@ test("uses the first supported platform language", () => {
 test("falls back to English when no platform language is supported", () => {
   assert.equal(selectSupportedLanguage(["fr-FR"]), "en");
   assert.equal(selectSupportedLanguage([]), "en");
+});
+
+test("keeps first-run completion separate from versioned preferences", () => {
+  const storage = new Map();
+  const localStorage = { getItem: (key) => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value) };
+  assert.equal(hasCompletedOnboarding(localStorage), false);
+  completeOnboarding(localStorage);
+  assert.equal(hasCompletedOnboarding(localStorage), true);
+  assert.deepEqual(readPreferences(localStorage), defaultPreferences);
 });
