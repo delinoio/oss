@@ -445,7 +445,13 @@ fn main() {
     let frontend_readiness_complete = Arc::new(AtomicBool::new(false));
 
     let mut builder = tauri::Builder::<tauri::Cef>::default()
-        .invoke_handler(tauri::generate_handler![open_external, set_tray_language]);
+        .invoke_handler(tauri::generate_handler![open_external, set_tray_language])
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+            }
+        });
     if let Some(cache_path) = std::env::var_os("DEVHUD_SMOKE_CACHE_DIR") {
         builder = builder.root_cache_path(cache_path);
     }
@@ -461,10 +467,8 @@ fn main() {
 
     let result = builder
         .setup(move |app| {
-            let app_handle_for_frontend = app.handle().clone();
             let renderer_crashed_for_frontend = renderer_crashed.clone();
             let renderer_crash_listener_ready_for_frontend = renderer_crash_listener_ready.clone();
-            let frontend_readiness_for_title = frontend_readiness_complete.clone();
             let frontend_readiness_for_watchdog = frontend_readiness_complete.clone();
             let webview = tauri::WebviewWindowBuilder::<tauri::Cef, _>::new(
                 app,
@@ -474,12 +478,6 @@ fn main() {
             .title("DevHUD")
             .inner_size(960.0, 640.0)
             .min_inner_size(640.0, 480.0)
-            .on_window_event(|event| {
-                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                    api.prevent_close();
-                    let _ = event.window().hide();
-                }
-            })
             .on_navigation(|url| {
                 let allowed = is_allowed_navigation(url);
                 if !allowed {
@@ -487,37 +485,11 @@ fn main() {
                 }
                 allowed
             })
-            .on_new_window(|url, _| {
-                warn!(event = "popup_denied", scheme = url.scheme());
-                tauri::webview::NewWindowResponse::Deny
-            })
             .on_download(|_, event| {
                 if let tauri::webview::DownloadEvent::Requested { url, .. } = event {
                     warn!(event = "download_denied", scheme = url.scheme());
                 }
                 false
-            })
-            .on_document_title_changed(move |webview, title| {
-                if !is_frontend_ready_title(&title) {
-                    return;
-                }
-
-                let origin = if tauri::is_dev() {
-                    DEVELOPMENT_ORIGIN
-                } else {
-                    PRODUCTION_ORIGIN
-                };
-                if frontend_readiness_for_title.swap(true, Ordering::SeqCst) {
-                    return;
-                }
-                handle_frontend_ready(
-                    &webview,
-                    &app_handle_for_frontend,
-                    smoke_mode,
-                    origin,
-                    renderer_crashed_for_frontend.clone(),
-                    renderer_crash_listener_ready_for_frontend.clone(),
-                );
             })
             .build()?;
 
