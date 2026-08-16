@@ -15,7 +15,11 @@ use platform::DesktopTarget;
 #[cfg(target_os = "linux")]
 use platform::LinuxDisplayMode;
 use resources::ResourceLayout;
-use tauri::WebviewUrl;
+use tauri::{
+    Manager, WebviewUrl,
+    menu::{Menu, MenuItem},
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+};
 use tracing::{error, info, warn};
 use tracing_subscriber::{
     Layer,
@@ -31,6 +35,46 @@ const FRONTEND_READY_TIMEOUT: Duration = Duration::from_secs(5);
 const RENDERER_CRASH_LISTENER_READY_ATTEMPTS: usize = 100;
 const RENDERER_CRASH_LISTENER_READY_DELAY: Duration = Duration::from_millis(50);
 const DIAGNOSTIC_LOG_FILE_LIMIT: usize = 7;
+
+fn restore_main_window(app: &tauri::AppHandle<tauri::Cef>) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
+fn create_tray(app: &tauri::AppHandle<tauri::Cef>) -> tauri::Result<()> {
+    let show = MenuItem::with_id(app, "show", "Show DevHUD", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "Quit DevHUD", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&show, &quit])?;
+    TrayIconBuilder::with_id("devhud")
+        .tooltip("DevHUD")
+        .icon(
+            app.default_window_icon()
+                .expect("DevHUD bundle icon")
+                .clone(),
+        )
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| match event.id.as_ref() {
+            "show" => restore_main_window(app),
+            "quit" => app.exit(0),
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                restore_main_window(tray.app_handle());
+            }
+        })
+        .build(app)?;
+    Ok(())
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum SmokeMode {
@@ -353,6 +397,12 @@ fn main() {
             .title("DevHUD")
             .inner_size(960.0, 640.0)
             .min_inner_size(640.0, 480.0)
+            .on_window_event(|event| {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    let _ = event.window().hide();
+                }
+            })
             .on_navigation(|url| {
                 let allowed = is_allowed_navigation(url);
                 if !allowed {
@@ -393,6 +443,8 @@ fn main() {
                 );
             })
             .build()?;
+
+            create_tray(&app.handle().clone())?;
 
             start_frontend_readiness_watchdog(
                 app.handle().clone(),

@@ -2,7 +2,7 @@
 
 ## Scope
 
-`apps/devhud` contains the implemented deterministic React/TypeScript frontend and Rust/Tauri CEF desktop-host foundation for `devhud`. The current UI is intentionally a static localized shell; guest/authenticated settings, RealQA, Deck, persistence, capture, shortcuts, deep links, mobile shells, and native widgets remain planned. Future implementations in this path own those first-party surfaces and their platform filtering.
+`apps/devhud` contains the implemented deterministic React/TypeScript frontend and Rust/Tauri CEF desktop-host foundation for `devhud`. The local shell implements composed Home, RealQA, Deck, Settings, Account, and Diagnostics surfaces; a closed first-party registry; local presentation preferences; and a keyboard-first command palette. Service-backed settings, authentication, capture, GitHub, deep links, mobile shells, and native widgets remain planned.
 
 ## Runtime and Language
 
@@ -10,7 +10,7 @@
 - Mobile: platform WKWebView/Android System WebView with native Swift/Kotlin widget implementations.
 - Targets: macOS 13+, Windows 10 22H2+, Ubuntu 22.04 LTS on X11, iOS 16+, Android 10/API 29+; desktop x64 and arm64.
 - Bundle ID: `io.delino.devhud`; deep-link scheme: `devhud`. Fixed frontend port: `46305`.
-- English source and Korean/English user-facing UI. The static shell selects the first supported language reported by the platform and defaults to English; a synchronized override remains planned. Its small eyebrow text is mechanically checked for WCAG AA contrast in both light and dark themes. Follow Toss Design Guidelines and WCAG 2.2 AA.
+- English source and Korean/English user-facing UI. The shell selects English or Korean from the system with English fallback and persists a local explicit language override; System/Light/Dark is likewise a local explicit preference. Those preferences are versioned local non-secret state, not synchronized settings. The shell follows Toss Design Guidelines and WCAG 2.2 AA with named controls, deterministic focus, reduced motion, high-contrast tokens, and Escape closure for its command palette.
 
 ## Users and Operators
 
@@ -36,7 +36,9 @@ XWayland is best effort. Native Wayland is unsupported and rejected before CEF i
 
 ## Interfaces and Contracts
 
-- First-party mini-app IDs: `realqa`, `deck`. Action IDs include the five `realqa.capture.*` identifiers defined in the project index.
+- First-party mini-app IDs: `realqa`, `deck`. Action IDs include the five `realqa.capture.*` identifiers defined in the project index. The registry is closed and enum-backed, includes navigation/settings actions, filters actions by platform capability before rendering navigation or the command palette, and cannot load third-party mini-apps.
+- The command palette opens with the configured keyboard shortcut, contains its keyboard focus while open, offers only capability-available actions, and returns focus to its trigger on Escape or completion. Capture and service actions remain visibly unavailable until their native/service integrations exist.
+- Local shell links use the system browser only through a native closed allowlist: the validated configured authentication origin and the approved GitHub PAT, documentation, and issue destinations. Arbitrary browser navigation is rejected.
 - First run exposes editable `https://devhud.api.delino.io`, Sign in, and Continue locally. Non-loopback endpoints require HTTPS; loopback HTTP is allowed; no TLS bypass. A selected self-hosted API origin is validated before it is added to the session CSP, and signed-upload origins are validated from the server response.
 - Logto uses system-browser Authorization Code with PKCE and the exact native callback URI `devhud://auth/callback`. Bootstrap advertises protocol/API version, Logto data, public client IDs keyed as `desktop`, `ios`, `android`, and `admin`, the exact deployment-configured admin redirect URI, asset base URL, capabilities, and enforced limits; clients select the matching key and it is not a remote feature-flag mechanism. Browser/API requests use the documented exact development and pinned Tauri CORS origins and Connect preflight policy.
 - Local guest settings and authenticated synchronized settings use whole-snapshot import choice, schema version, monotonic revision, expected-revision writes, typed conflict, and explicit reapply. Offline authenticated settings are read-only.

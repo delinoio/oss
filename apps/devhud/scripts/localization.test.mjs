@@ -1,17 +1,26 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { selectSupportedLanguage, shellCopy } from "../src/localization.ts";
+import { messages, selectSupportedLanguage } from "../src/localization.ts";
+import { LanguagePreference, ThemePreference, readPreferences, resolveLanguage, resolveTheme } from "../src/shell.ts";
 
 test("selects English from an English platform locale", () => {
   assert.equal(selectSupportedLanguage(["en-US"]), "en");
-  assert.equal(shellCopy.en.eyebrow, "Desktop foundation");
+  assert.equal(messages.en.home, "Home");
 });
 
 test("selects Korean from Korean regional platform locales", () => {
   assert.equal(selectSupportedLanguage(["ko-KR"]), "ko");
   assert.equal(selectSupportedLanguage(["ko_KR"]), "ko");
-  assert.equal(shellCopy.ko.eyebrow, "데스크톱 기반");
+  assert.equal(messages.ko.home, "홈");
+});
+
+test("resolves system preferences and safely falls back to defaults", () => {
+  assert.equal(resolveLanguage(LanguagePreference.System, ["fr-FR"]), "en");
+  assert.equal(resolveLanguage(LanguagePreference.System, ["ko-KR"]), "ko");
+  assert.equal(resolveTheme(ThemePreference.System, true), ThemePreference.Dark);
+  assert.equal(resolveTheme(ThemePreference.System, false), ThemePreference.Light);
+  assert.equal(readPreferences({ getItem: () => "not json" }).language, LanguagePreference.System);
 });
 
 test("uses the first supported platform language", () => {

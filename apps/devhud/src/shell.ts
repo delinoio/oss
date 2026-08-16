@@ -1,0 +1,45 @@
+import type { CopyKey, SupportedLanguage } from "./localization";
+
+export const MiniAppId = { Realqa: "realqa", Deck: "deck" } as const;
+export type MiniAppId = (typeof MiniAppId)[keyof typeof MiniAppId];
+export const ActionId = { CaptureDisplay: "realqa.capture.display", CaptureActiveWindow: "realqa.capture.active-window", CaptureAllDisplays: "realqa.capture.all-displays", CaptureSelection: "realqa.capture.selection", CaptureToolbar: "realqa.capture.toolbar", Home: "navigation.home", Realqa: "navigation.realqa", Deck: "navigation.deck", Settings: "navigation.settings", Account: "navigation.account", Diagnostics: "navigation.diagnostics", Theme: "settings.theme", Language: "settings.language", LaunchAtLogin: "settings.launch-at-login" } as const;
+export type ActionId = (typeof ActionId)[keyof typeof ActionId];
+export const SurfaceId = { Home: "home", Realqa: "realqa", Deck: "deck", Settings: "settings", Account: "account", Diagnostics: "diagnostics" } as const;
+export type SurfaceId = (typeof SurfaceId)[keyof typeof SurfaceId];
+export const ThemePreference = { System: "system", Light: "light", Dark: "dark" } as const;
+export type ThemePreference = (typeof ThemePreference)[keyof typeof ThemePreference];
+export const LanguagePreference = { System: "system", English: "en", Korean: "ko" } as const;
+export type LanguagePreference = (typeof LanguagePreference)[keyof typeof LanguagePreference];
+export const ExternalLinkTarget = { Authentication: "authentication", Pat: "pat", Documentation: "documentation", Issue: "issue" } as const;
+export type ExternalLinkTarget = (typeof ExternalLinkTarget)[keyof typeof ExternalLinkTarget];
+export const PlatformCapability = { Desktop: "desktop", Capture: "capture", Tray: "tray", LaunchAtLogin: "launch-at-login" } as const;
+export type PlatformCapability = (typeof PlatformCapability)[keyof typeof PlatformCapability];
+
+export interface RuntimeCapabilities { readonly available: ReadonlySet<PlatformCapability>; }
+export const desktopCapabilities: RuntimeCapabilities = { available: new Set(Object.values(PlatformCapability)) };
+export interface RegisteredAction { id: ActionId; title: CopyKey; required: readonly PlatformCapability[]; surface?: SurfaceId; }
+export const actionRegistry: readonly RegisteredAction[] = [
+  { id: ActionId.CaptureDisplay, title: "captureDisplay", required: [PlatformCapability.Capture], surface: SurfaceId.Realqa },
+  { id: ActionId.CaptureActiveWindow, title: "captureWindow", required: [PlatformCapability.Capture], surface: SurfaceId.Realqa },
+  { id: ActionId.CaptureAllDisplays, title: "captureAll", required: [PlatformCapability.Capture], surface: SurfaceId.Realqa },
+  { id: ActionId.CaptureSelection, title: "captureSelection", required: [PlatformCapability.Capture], surface: SurfaceId.Realqa },
+  { id: ActionId.CaptureToolbar, title: "captureToolbar", required: [PlatformCapability.Capture], surface: SurfaceId.Realqa },
+  { id: ActionId.Home, title: "navHome", required: [], surface: SurfaceId.Home }, { id: ActionId.Realqa, title: "navRealqa", required: [], surface: SurfaceId.Realqa },
+  { id: ActionId.Deck, title: "navDeck", required: [], surface: SurfaceId.Deck }, { id: ActionId.Settings, title: "navSettings", required: [], surface: SurfaceId.Settings },
+  { id: ActionId.Account, title: "navAccount", required: [], surface: SurfaceId.Account }, { id: ActionId.Diagnostics, title: "navDiagnostics", required: [], surface: SurfaceId.Diagnostics },
+  { id: ActionId.Theme, title: "settingTheme", required: [], surface: SurfaceId.Settings }, { id: ActionId.Language, title: "settingLanguage", required: [], surface: SurfaceId.Settings },
+  { id: ActionId.LaunchAtLogin, title: "settingLaunch", required: [PlatformCapability.LaunchAtLogin], surface: SurfaceId.Settings },
+];
+export const miniAppRegistry = [{ id: MiniAppId.Realqa, surface: SurfaceId.Realqa, required: [PlatformCapability.Desktop] }, { id: MiniAppId.Deck, surface: SurfaceId.Deck, required: [] }] as const;
+export function availableActions(capabilities: RuntimeCapabilities) { return actionRegistry.filter(({ required }) => required.every((item) => capabilities.available.has(item))); }
+
+const preferenceKey = "devhud.shell.preferences.v1";
+export interface Preferences { version: 1; theme: ThemePreference; language: LanguagePreference; apiOrigin: string; launchAtLogin: boolean; }
+export const defaultPreferences: Preferences = { version: 1, theme: ThemePreference.System, language: LanguagePreference.System, apiOrigin: "https://devhud.api.delino.io", launchAtLogin: false };
+export function readPreferences(storage: Pick<Storage, "getItem">): Preferences { try { const stored = JSON.parse(storage.getItem(preferenceKey) ?? "null") as Partial<Preferences> | null; return stored?.version === 1 ? { ...defaultPreferences, ...stored } : defaultPreferences; } catch { return defaultPreferences; } }
+export function writePreferences(storage: Pick<Storage, "setItem">, preferences: Preferences) { storage.setItem(preferenceKey, JSON.stringify(preferences)); }
+export function resolveLanguage(preference: LanguagePreference, languages: readonly string[]): SupportedLanguage { return preference === LanguagePreference.System ? (languages.find((value) => value.toLowerCase().startsWith("ko")) ? "ko" : "en") : preference; }
+export function resolveTheme(preference: ThemePreference, dark: boolean) { return preference === ThemePreference.System ? (dark ? ThemePreference.Dark : ThemePreference.Light) : preference; }
+
+export interface NativeShell { setLaunchAtLogin(enabled: boolean): Promise<void>; openExternal(target: ExternalLinkTarget, apiOrigin: string): Promise<void>; quit(): Promise<void>; }
+export const browserShell: NativeShell = { async setLaunchAtLogin() {}, async openExternal(target, apiOrigin) { const path = target === ExternalLinkTarget.Authentication ? apiOrigin : target === ExternalLinkTarget.Pat ? "https://github.com/settings/personal-access-tokens/new" : target === ExternalLinkTarget.Documentation ? "https://github.com/delinoio/oss/tree/main/docs" : "https://github.com/delinoio/oss/issues/new"; window.open(path, "_blank", "noopener,noreferrer"); }, async quit() {} };

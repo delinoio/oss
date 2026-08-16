@@ -1,23 +1,20 @@
-import { useEffect } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { messages } from "./localization";
+import { ActionId, ExternalLinkTarget, LanguagePreference, SurfaceId, ThemePreference, availableActions, browserShell, desktopCapabilities, readPreferences, resolveLanguage, resolveTheme, writePreferences, type Preferences } from "./shell";
 
-import { shellCopy, type SupportedLanguage } from "./localization";
+const surfaces: readonly SurfaceId[] = [SurfaceId.Home, SurfaceId.Realqa, SurfaceId.Deck, SurfaceId.Settings, SurfaceId.Account, SurfaceId.Diagnostics];
+const labels: Record<SurfaceId, keyof typeof messages.en> = { home: "home", realqa: "realqa", deck: "deck", settings: "settings", account: "account", diagnostics: "diagnostics" };
 
-interface AppProps {
-  language: SupportedLanguage;
-}
-
-export function App({ language }: AppProps) {
-  const copy = shellCopy[language];
-
-  useEffect(() => {
-    document.title = "DevHUD";
-  }, []);
-
-  return (
-    <main className="shell" data-devhud-ready="true">
-      <p className="eyebrow">{copy.eyebrow}</p>
-      <h1>DevHUD</h1>
-      <p className="summary">{copy.summary}</p>
-    </main>
-  );
+export function App() {
+  const [preferences, setPreferences] = useState<Preferences>(() => readPreferences(localStorage));
+  const [surface, setSurface] = useState<SurfaceId>(SurfaceId.Home); const [palette, setPalette] = useState(false); const [query, setQuery] = useState(""); const search = useRef<HTMLInputElement>(null);
+  const language = resolveLanguage(preferences.language, navigator.languages); const copy = messages[language];
+  const update = (next: Partial<Preferences>) => setPreferences((current) => { const value = { ...current, ...next }; writePreferences(localStorage, value); return value; });
+  useEffect(() => { document.title = "DevHUD"; document.documentElement.lang = language; document.documentElement.dataset.theme = resolveTheme(preferences.theme, matchMedia("(prefers-color-scheme: dark)").matches); }, [language, preferences.theme]);
+  useEffect(() => { const key = (event: KeyboardEvent) => { if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") { event.preventDefault(); setPalette(true); } if (event.key === "Escape") setPalette(false); }; addEventListener("keydown", key); return () => removeEventListener("keydown", key); }, []);
+  useEffect(() => { if (palette) search.current?.focus(); }, [palette]);
+  const actions = useMemo(() => availableActions(desktopCapabilities).filter((a) => copy[a.title].toLowerCase().includes(query.toLowerCase())), [copy, query]);
+  const execute = (id: ActionId) => { const action = actions.find((item) => item.id === id); if (action?.surface) setSurface(action.surface); setPalette(false); };
+  const external = (target: ExternalLinkTarget) => void browserShell.openExternal(target, preferences.apiOrigin);
+  return <main className="app-shell" data-devhud-ready="true"><aside aria-label="DevHUD"><h1>{copy.appName}</h1><nav>{surfaces.map((item) => <button className={surface === item ? "active" : ""} aria-current={surface === item ? "page" : undefined} key={item} onClick={() => setSurface(item)}>{copy[labels[item]]}</button>)}</nav><button onClick={() => setPalette(true)} aria-label={copy.openPalette}>⌘ K</button></aside><section className="content">{surface === SurfaceId.Home && <><p className="eyebrow">{copy.available}</p><h2>{copy.welcome}</h2><p>{copy.homeSummary}</p></>}{surface === SurfaceId.Realqa && <><p className="eyebrow">{copy.realqa}</p><h2>{copy.realqaTitle}</h2><p>{copy.realqaSummary}</p><p className="notice">{copy.planned}</p></>}{surface === SurfaceId.Deck && <><p className="eyebrow">{copy.deck}</p><h2>{copy.deckTitle}</h2><p>{copy.deckSummary}</p><p className="notice">{copy.planned}</p></>}{surface === SurfaceId.Settings && <><p className="eyebrow">{copy.settings}</p><h2>{copy.settingsTitle}</h2><p>{copy.settingsSummary}</p><label>{copy.theme}<select value={preferences.theme} onChange={(e) => update({ theme: e.target.value as ThemePreference })}>{Object.values(ThemePreference).map((v) => <option key={v} value={v}>{copy[v]}</option>)}</select></label><label>{copy.language}<select value={preferences.language} onChange={(e) => update({ language: e.target.value as LanguagePreference })}><option value="system">{copy.system}</option><option value="en">{copy.english}</option><option value="ko">{copy.korean}</option></select></label><label className="check"><input type="checkbox" checked={preferences.launchAtLogin} onChange={(e) => { update({ launchAtLogin: e.target.checked }); void browserShell.setLaunchAtLogin(e.target.checked); }}/>{copy.launchAtLogin}</label><p>{copy.launchAtLoginHint}</p></>}{surface === SurfaceId.Account && <><p className="eyebrow">{copy.account}</p><h2>{copy.accountTitle}</h2><p>{copy.accountSummary}</p><label>{copy.apiOrigin}<input value={preferences.apiOrigin} onChange={(e) => update({ apiOrigin: e.target.value })}/></label><p>{copy.apiOriginHint}</p><div className="actions"><button onClick={() => external(ExternalLinkTarget.Authentication)}>{copy.signIn}</button><button onClick={() => external(ExternalLinkTarget.Pat)}>{copy.pat}</button><button onClick={() => external(ExternalLinkTarget.Documentation)}>{copy.docs}</button><button onClick={() => external(ExternalLinkTarget.Issue)}>{copy.issue}</button></div></>}{surface === SurfaceId.Diagnostics && <><p className="eyebrow">{copy.diagnostics}</p><h2>{copy.diagnosticsTitle}</h2><p>{copy.diagnosticsSummary}</p><p className="notice">{copy.diagnosticsEmpty}</p></>}</section>{palette && <div className="overlay" role="presentation"><section className="palette" role="dialog" aria-modal="true" aria-label={copy.commandPalette}><input ref={search} value={query} onChange={(e) => setQuery(e.target.value)} placeholder={copy.searchCommands} aria-label={copy.searchCommands}/><div role="listbox">{actions.map((a) => <button role="option" key={a.id} onClick={() => execute(a.id)}>{copy[a.title]}</button>) || <p>{copy.noCommands}</p>}</div><button onClick={() => setPalette(false)}>{copy.close}</button></section></div>}</main>;
 }
