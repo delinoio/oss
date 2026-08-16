@@ -91,14 +91,23 @@ fn external_destination(target: &str, api_origin: &str) -> Option<String> {
     }
 }
 
-fn reap_external_opener(mut child: Child) -> Result<(), String> {
-    std::thread::Builder::new()
-        .name("devhud-external-opener".to_string())
-        .spawn(move || {
-            let _ = child.wait();
-        })
-        .map(|_| ())
-        .map_err(|_| "unable to monitor system browser opener".to_string())
+fn confirm_external_opener_status(status: std::process::ExitStatus) -> Result<(), String> {
+    if status.success() {
+        Ok(())
+    } else {
+        error!(event = "external_opener_failed", code = ?status.code());
+        Err("system browser opener failed".to_string())
+    }
+}
+
+fn wait_for_external_opener(mut child: Child) -> Result<(), String> {
+    match child.wait() {
+        Ok(status) => confirm_external_opener_status(status),
+        Err(reason) => {
+            error!(event = "external_opener_wait_failed", %reason);
+            Err("unable to confirm system browser opener".to_string())
+        }
+    }
 }
 
 #[tauri::command]
@@ -112,7 +121,7 @@ fn open_external(target: String, api_origin: String) -> Result<(), String> {
     #[cfg(target_os = "linux")]
     let result = Command::new("xdg-open").arg(&destination).spawn();
     let child = result.map_err(|_| "unable to open system browser".to_string())?;
-    reap_external_opener(child)
+    wait_for_external_opener(child)
 }
 
 fn restore_main_window(app: &tauri::AppHandle<tauri::Cef>) {
@@ -507,7 +516,15 @@ fn main() {
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
-                let _ = window.hide();
+                if let Err(reason) = window.hide() {
+                    error!(event = "tray_window_hide_failed", %reason);
+                    if let Err(reason) = window.show() {
+                        error!(event = "tray_window_hide_recovery_show_failed", %reason);
+                    }
+                    if let Err(reason) = window.set_focus() {
+                        error!(event = "tray_window_hide_recovery_focus_failed", %reason);
+                    }
+                }
             }
         });
     if let Some(cache_path) = std::env::var_os("DEVHUD_SMOKE_CACHE_DIR") {
@@ -600,6 +617,11 @@ fn main() {
 
 #[cfg(test)]
 mod review_tests {
+    #[cfg(unix)]
+    use std::os::unix::process::ExitStatusExt;
+
+    #[cfg(unix)]
+    use super::confirm_external_opener_status;
     use super::{external_destination, tray_labels};
 
     #[test]
@@ -630,6 +652,13 @@ mod review_tests {
     fn tray_labels_are_localized() {
         assert_eq!(tray_labels("en"), ("Show DevHUD", "Quit DevHUD"));
         assert_eq!(tray_labels("ko"), ("DevHUD 표시", "DevHUD 종료"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn external_opener_requires_a_successful_exit_status() {
+        assert!(confirm_external_opener_status(std::process::ExitStatus::from_raw(0)).is_ok());
+        assert!(confirm_external_opener_status(std::process::ExitStatus::from_raw(256)).is_err());
     }
 }
 
