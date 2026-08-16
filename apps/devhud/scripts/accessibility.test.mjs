@@ -64,6 +64,17 @@ test("error messages meet WCAG AA contrast in light and dark themes", () => {
   assert.match(styles, /\.external-message\[role="alert"\]\s*\{\s*color:var\(--error\)/u);
 });
 
+test("form-control boundaries meet non-text contrast in light and dark themes", () => {
+  for (const block of themeBlocks) {
+    const line = customColor(block, "--line");
+    const surface = customColor(block, "--surface");
+    assert(
+      contrastRatio(line, surface) >= 3,
+      `${line} does not provide a sufficient boundary against ${surface}`,
+    );
+  }
+});
+
 test("command palette uses buttons and has a localized empty state", () => {
   assert.doesNotMatch(app, /role="listbox"|role="option"/u);
   assert.match(app, /actions\.length === 0/u);
@@ -75,6 +86,7 @@ test("command palette shortcut is unavailable during onboarding", () => {
   assert.match(app, /event\.location === rightModifierLocation/u);
   assert.match(app, /addEventListener\("keyup", releaseRightModifier\)/u);
   assert.match(app, /!onboarding && matchingRightModifier/u);
+  assert.match(app, /copy\.rightCommandK : copy\.rightControlK/u);
 });
 
 test("external status remains localized and noopener does not report a false failure", () => {
@@ -92,4 +104,10 @@ test("first run renders the localized local-choice controls and focuses the API 
   assert.match(app, /copy\.signIn/u);
   assert.match(app, /copy\.continueLocally/u);
   assert.match(styles, /\.app-shell\.onboarding\s*\{\s*grid-template-columns:minmax\(0,1fr\)/u);
+});
+
+test("Account focuses its API origin input when the surface opens", () => {
+  assert.match(app, /const apiOriginInput = useRef<HTMLInputElement>\(null\);/u);
+  assert.match(app, /surface === SurfaceId\.Account\) apiOriginInput\.current\?\.focus\(\)/u);
+  assert.match(app, /<input ref=\{apiOriginInput\} value=\{preferences\.apiOrigin\}/u);
 });

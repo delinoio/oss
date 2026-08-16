@@ -116,10 +116,18 @@ fn open_external(target: String, api_origin: String) -> Result<(), String> {
 }
 
 fn restore_main_window(app: &tauri::AppHandle<tauri::Cef>) {
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = window.unminimize();
-        let _ = window.show();
-        let _ = window.set_focus();
+    let Some(window) = app.get_webview_window("main") else {
+        error!(event = "tray_window_restore_missing");
+        return;
+    };
+    if let Err(reason) = window.unminimize() {
+        error!(event = "tray_window_restore_unminimize_failed", %reason);
+    }
+    if let Err(reason) = window.show() {
+        error!(event = "tray_window_restore_show_failed", %reason);
+    }
+    if let Err(reason) = window.set_focus() {
+        error!(event = "tray_window_restore_focus_failed", %reason);
     }
 }
 

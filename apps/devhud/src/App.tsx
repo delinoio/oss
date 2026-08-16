@@ -16,6 +16,7 @@ export function App() {
   const [query, setQuery] = useState("");
   const [externalMessage, setExternalMessage] = useState<ExternalMessage | null>(null);
   const search = useRef<HTMLInputElement>(null);
+  const apiOriginInput = useRef<HTMLInputElement>(null);
   const paletteRef = useRef<HTMLElement>(null);
   const paletteTrigger = useRef<HTMLButtonElement>(null);
   const rightModifier = useRef<"ControlRight" | "MetaRight" | null>(null);
@@ -70,6 +71,7 @@ export function App() {
     };
   }, [onboarding, palette]);
   useEffect(() => { if (palette) search.current?.focus(); }, [palette]);
+  useEffect(() => { if (surface === SurfaceId.Account) apiOriginInput.current?.focus(); }, [surface]);
 
   const actions = useMemo(() => availableActions(desktopCapabilities).filter((action) => copy[action.title].toLowerCase().includes(query.toLowerCase())), [copy, query]);
   const execute = (id: ActionId) => {
@@ -124,14 +126,14 @@ export function App() {
     <aside aria-label="DevHUD">
       <h1>{copy.appName}</h1>
       <nav>{surfaces.map((item) => <button className={surface === item ? "active" : ""} aria-current={surface === item ? "page" : undefined} key={item} onClick={() => setSurface(item)}>{copy[labels[item]]}</button>)}</nav>
-      <button ref={paletteTrigger} onClick={() => setPalette(true)} aria-label={copy.openPalette}>{isMac ? "⌘ K" : "Ctrl K"}</button>
+      <button ref={paletteTrigger} onClick={() => setPalette(true)} aria-label={copy.openPalette}>{isMac ? copy.rightCommandK : copy.rightControlK}</button>
     </aside>
     <section className="content">
       {surface === SurfaceId.Home && <><p className="eyebrow">{copy.available}</p><h2>{copy.welcome}</h2><p>{copy.homeSummary}</p></>}
       {surface === SurfaceId.Realqa && <><p className="eyebrow">{copy.realqa}</p><h2>{copy.realqaTitle}</h2><p>{copy.realqaSummary}</p><p className="notice">{copy.planned}</p></>}
       {surface === SurfaceId.Deck && <><p className="eyebrow">{copy.deck}</p><h2>{copy.deckTitle}</h2><p>{copy.deckSummary}</p><p className="notice">{copy.planned}</p></>}
       {surface === SurfaceId.Settings && <><p className="eyebrow">{copy.settings}</p><h2>{copy.settingsTitle}</h2><p>{copy.settingsSummary}</p><label>{copy.theme}<select value={preferences.theme} onChange={(event) => update({ theme: event.target.value as ThemePreference })}>{Object.values(ThemePreference).map((value) => <option key={value} value={value}>{copy[value]}</option>)}</select></label><label>{copy.language}<select value={preferences.language} onChange={(event) => update({ language: event.target.value as LanguagePreference })}><option value="system">{copy.system}</option><option value="en">{copy.english}</option><option value="ko">{copy.korean}</option></select></label>{supportsLaunchAtLogin && <><label className="check"><input type="checkbox" checked={preferences.launchAtLogin} onChange={(event) => { update({ launchAtLogin: event.target.checked }); void browserShell.setLaunchAtLogin(event.target.checked); }} />{copy.launchAtLogin}</label><p>{copy.launchAtLoginHint}</p></>}</>}
-      {surface === SurfaceId.Account && <><p className="eyebrow">{copy.account}</p><h2>{copy.accountTitle}</h2><p>{copy.accountSummary}</p><label>{copy.apiOrigin}<input value={preferences.apiOrigin} onChange={(event) => update({ apiOrigin: event.target.value })} /></label><p>{copy.apiOriginHint}</p><div className="actions"><button onClick={() => void external(ExternalLinkTarget.Authentication)}>{copy.signIn}</button><button onClick={() => void external(ExternalLinkTarget.Pat)}>{copy.pat}</button><button onClick={() => void external(ExternalLinkTarget.Issue)}>{copy.issue}</button></div>{externalMessage && <p className="external-message" role={externalMessageIsError ? "alert" : "status"}>{externalMessageText}</p>}</>}
+      {surface === SurfaceId.Account && <><p className="eyebrow">{copy.account}</p><h2>{copy.accountTitle}</h2><p>{copy.accountSummary}</p><label>{copy.apiOrigin}<input ref={apiOriginInput} value={preferences.apiOrigin} onChange={(event) => update({ apiOrigin: event.target.value })} /></label><p>{copy.apiOriginHint}</p><div className="actions"><button onClick={() => void external(ExternalLinkTarget.Authentication)}>{copy.signIn}</button><button onClick={() => void external(ExternalLinkTarget.Pat)}>{copy.pat}</button><button onClick={() => void external(ExternalLinkTarget.Issue)}>{copy.issue}</button></div>{externalMessage && <p className="external-message" role={externalMessageIsError ? "alert" : "status"}>{externalMessageText}</p>}</>}
       {surface === SurfaceId.Diagnostics && <><p className="eyebrow">{copy.diagnostics}</p><h2>{copy.diagnosticsTitle}</h2><p>{copy.diagnosticsSummary}</p><p className="notice">{copy.diagnosticsUnavailable}</p></>}
     </section>
     {palette && <div className="overlay" role="presentation"><section ref={paletteRef} className="palette" role="dialog" aria-modal="true" aria-label={copy.commandPalette} onKeyDown={trapPaletteFocus}><input ref={search} value={query} onChange={(event) => setQuery(event.target.value)} placeholder={copy.searchCommands} aria-label={copy.searchCommands} /><div className="commands">{actions.length === 0 ? <p role="status">{copy.noCommands}</p> : actions.map((action) => <button key={action.id} onClick={() => execute(action.id)}>{copy[action.title]}</button>)}</div><button onClick={closePalette}>{copy.close}</button></section></div>}
