@@ -19,13 +19,13 @@
 - `apps/binpm-docs`: Rspress static documentation app for `binpm`.
 - `apps/nodeup-docs`: Rspress static documentation app for `nodeup`.
 - `apps/public-docs`: Rspress static public documentation app.
-- `apps/devhud`: implemented deterministic React/TypeScript shell and Rust/Tauri CEF desktop-host foundation; product UI and mobile shell remain planned.
+- `apps/devhud`: implemented deterministic bilingual React/TypeScript shell and target-isolated Rust/Tauri desktop CEF plus iOS/Android system-webview host foundations; service-backed product workflows and native widgets remain planned.
 - `apps/devhud-chrome-extension`: planned Chrome Manifest V3 DevHud extension.
 - `apps/devhud-admin`: planned DevHud administrator SPA embedded at `/admin`.
 
 ### DevHud Rules
 
-- DevHud remains documentation-first outside the implemented `apps/devhud` desktop-host foundation, `protos/devhud/v1`, and `packages/devhud-api-client`; do not claim product, mobile, service, extension, or admin runtime behavior exists before its project/domain contracts are updated. Logto uses native callback `devhud://auth/callback`, platform client keys `desktop`/`ios`/`android`, an `admin` client key with the documented exact browser redirect, and Native Messaging host `io.delino.devhud.native_messaging` with one fixed release-configured extension ID. The Native Messaging host uses the documented authenticated v1 user-scoped IPC contract owned by the app.
+- DevHud remains documentation-first outside the implemented `apps/devhud` desktop/mobile host foundation, `protos/devhud/v1`, and `packages/devhud-api-client`; do not claim service-backed product, widget, extension, service, or admin runtime behavior exists before its project/domain contracts are updated. Logto uses native callback `devhud://auth/callback`, platform client keys `desktop`/`ios`/`android`, an `admin` client key with the documented exact browser redirect, and Native Messaging host `io.delino.devhud.native_messaging` with one fixed release-configured extension ID. The Native Messaging host uses the documented authenticated v1 user-scoped IPC contract owned by the app.
 - Fixed loopback ports are DevHud frontend `46305`, admin `46306`, and API `46307`; fail on conflicts and never auto-remap.
 - DevHud API calls use the exact CORS origins `http://localhost:46305`, `http://127.0.0.1:46305`, `http://localhost:46306`, `http://127.0.0.1:46306`, and pinned Tauri origin `http://tauri.localhost`; direct R2 staging uploads use those origins with only `PUT`/`OPTIONS`, `Content-Type`, and `x-amz-checksum-sha256`; clients must use the documented Connect preflight behavior and read correlation IDs from the exposed `x-devhud-correlation-id` header. Upload checksums are 32 raw bytes, encoded as standard Base64 only for the R2 header.
 - App and administrator API state must use the generated service-specific Connect Query exports. Clients preserve message correlation metadata, render typed errors, enforce bounded pagination, treat synchronized settings as at most 1 MiB RFC 8785 canonical JSON bytes, and explicitly resolve revision conflicts instead of silently retrying them.
