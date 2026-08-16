@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { messages } from "./localization";
-import { ActionId, ExternalLinkTarget, LanguagePreference, PlatformCapability, SurfaceId, ThemePreference, actionRegistry, availableActions, browserShell, completeOnboarding, desktopCapabilities, hasCompletedOnboarding, isValidApiOrigin, markFrontendReady, readPreferences, resolveLanguage, resolveTheme, setTrayLanguage, writePreferences, type Preferences } from "./shell";
+import { ActionId, ExternalLinkTarget, LanguagePreference, PlatformCapability, SurfaceId, ThemePreference, actionRegistry, availableActions, browserShell, completeOnboarding, desktopCapabilities, getLocalStorage, hasCompletedOnboarding, isValidApiOrigin, markFrontendReady, readPreferences, resolveLanguage, resolveTheme, setTrayLanguage, writePreferences, type Preferences } from "./shell";
 
 const surfaces: readonly SurfaceId[] = [SurfaceId.Home, SurfaceId.Realqa, SurfaceId.Deck, SurfaceId.Settings, SurfaceId.Account, SurfaceId.Diagnostics];
 const labels: Record<SurfaceId, keyof typeof messages.en> = { home: "home", realqa: "realqa", deck: "deck", settings: "settings", account: "account", diagnostics: "diagnostics" };
@@ -9,8 +9,9 @@ const rightModifierLocation = 2;
 type ExternalMessage = "opened" | "failed" | "invalid-api-origin";
 
 export function App() {
-  const [preferences, setPreferences] = useState<Preferences>(() => readPreferences(localStorage));
-  const [onboarding, setOnboarding] = useState(() => !hasCompletedOnboarding(localStorage));
+  const storage = getLocalStorage();
+  const [preferences, setPreferences] = useState<Preferences>(() => readPreferences(storage));
+  const [onboarding, setOnboarding] = useState(() => !hasCompletedOnboarding(storage));
   const [surface, setSurface] = useState<SurfaceId>(SurfaceId.Home);
   const [palette, setPalette] = useState(false);
   const [query, setQuery] = useState("");
@@ -26,7 +27,7 @@ export function App() {
     if ("apiOrigin" in next) setExternalMessage(null);
     setPreferences((current) => {
       const value = { ...current, ...next };
-      writePreferences(localStorage, value);
+      writePreferences(storage, value);
       return value;
     });
   };
@@ -83,6 +84,7 @@ export function App() {
     const action = actions.find((item) => item.id === id);
     if (action?.surface) setSurface(action.surface);
     closePalette(action?.surface !== SurfaceId.Account);
+    if (action?.surface === SurfaceId.Account) requestAnimationFrame(() => apiOriginInput.current?.focus());
   };
   const trapPaletteFocus = (event: ReactKeyboardEvent<HTMLElement>) => {
     if (event.key !== "Tab") return;
@@ -115,7 +117,7 @@ export function App() {
   };
   const finishOnboarding = () => {
     setExternalMessage(null);
-    completeOnboarding(localStorage);
+    completeOnboarding(storage);
     setOnboarding(false);
     setSurface(SurfaceId.Home);
   };

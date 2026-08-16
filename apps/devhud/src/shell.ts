@@ -37,6 +37,19 @@ const preferenceKey = "devhud.shell.preferences.v1";
 const onboardingKey = "devhud.shell.onboarding.v1";
 export interface Preferences { version: 1; theme: ThemePreference; language: LanguagePreference; apiOrigin: string; launchAtLogin: boolean; }
 export const defaultPreferences: Preferences = { version: 1, theme: ThemePreference.System, language: LanguagePreference.System, apiOrigin: "https://devhud.api.delino.io", launchAtLogin: false };
+type LocalStorage = Pick<Storage, "getItem" | "setItem">;
+const sessionStorage = new Map<string, string>();
+const inMemoryStorage: LocalStorage = {
+  getItem: (key) => sessionStorage.get(key) ?? null,
+  setItem: (key, value) => { sessionStorage.set(key, value); },
+};
+export function getLocalStorage(): LocalStorage {
+  try {
+    return window.localStorage;
+  } catch {
+    return inMemoryStorage;
+  }
+}
 function isEnumValue<T extends Record<string, string>>(values: T, value: unknown): value is T[keyof T] { return typeof value === "string" && Object.values(values).includes(value); }
 export function isValidApiOrigin(value: unknown): value is string { if (typeof value !== "string" || value !== value.trim()) return false; try { const url = new URL(value); const loopback = ["localhost", "127.0.0.1", "[::1]", "::1"].includes(url.hostname); return !url.username && !url.password && !url.search && !url.hash && url.pathname === "/" && (url.protocol === "https:" || (url.protocol === "http:" && loopback)); } catch { return false; } }
 export function readPreferences(storage: Pick<Storage, "getItem">): Preferences { try { const stored: unknown = JSON.parse(storage.getItem(preferenceKey) ?? "null"); if (!stored || typeof stored !== "object" || Array.isArray(stored)) return defaultPreferences; const value = stored as Record<string, unknown>; if (value.version !== 1) return defaultPreferences; return { version: 1, theme: isEnumValue(ThemePreference, value.theme) ? value.theme : defaultPreferences.theme, language: isEnumValue(LanguagePreference, value.language) ? value.language : defaultPreferences.language, apiOrigin: isValidApiOrigin(value.apiOrigin) ? value.apiOrigin : defaultPreferences.apiOrigin, launchAtLogin: typeof value.launchAtLogin === "boolean" ? value.launchAtLogin : defaultPreferences.launchAtLogin }; } catch { return defaultPreferences; } }

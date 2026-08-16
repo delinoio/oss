@@ -71,7 +71,7 @@ fn validated_api_origin(origin: &str) -> Option<String> {
     let url = tauri::Url::parse(origin).ok()?;
     let loopback = matches!(
         url.host_str(),
-        Some("localhost") | Some("127.0.0.1") | Some("[::1]")
+        Some("localhost") | Some("127.0.0.1") | Some("[::1]") | Some("::1")
     );
     if url.username().is_empty()
         && url.password().is_none()
@@ -660,6 +660,10 @@ mod review_tests {
         assert_eq!(
             external_destination("authentication", "http://example.test"),
             None
+        );
+        assert_eq!(
+            external_destination("authentication", "http://[::1]:46307"),
+            Some("http://[::1]:46307/".to_string())
         );
         assert_eq!(
             external_destination("documentation", "https://example.test"),

@@ -109,11 +109,12 @@ test("first run renders the localized local-choice controls and focuses the API 
   assert.match(styles, /\.app-shell\.onboarding\s*\{\s*grid-template-columns:minmax\(0,1fr\)/u);
 });
 
-test("Account focuses its API origin input when the surface opens", () => {
+test("Account focuses its API origin input when the surface opens or is reselected from the palette", () => {
   assert.match(app, /const apiOriginInput = useRef<HTMLInputElement>\(null\);/u);
   assert.match(app, /surface === SurfaceId\.Account\) apiOriginInput\.current\?\.focus\(\)/u);
   assert.match(app, /<input ref=\{apiOriginInput\} value=\{preferences\.apiOrigin\}/u);
   assert.match(app, /closePalette\(action\?\.surface !== SurfaceId\.Account\);/u);
+  assert.match(app, /action\?\.surface === SurfaceId\.Account\) requestAnimationFrame\(\(\) => apiOriginInput\.current\?\.focus\(\)\)/u);
 });
 
 test("API-origin edits and local onboarding completion clear stale external messages", () => {

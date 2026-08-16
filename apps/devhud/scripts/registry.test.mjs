@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ActionId, PlatformCapability, actionRegistry, availableActions, completeOnboarding, defaultPreferences, desktopCapabilities, hasCompletedOnboarding, writePreferences } from "../src/shell.ts";
+import { ActionId, PlatformCapability, actionRegistry, availableActions, completeOnboarding, defaultPreferences, desktopCapabilities, getLocalStorage, hasCompletedOnboarding, writePreferences } from "../src/shell.ts";
 
 test("registers exactly the five contracted RealQA capture actions", () => {
   const capture = actionRegistry.filter(({ id }) => id.startsWith("realqa.capture.")).map(({ id }) => id).toSorted();
@@ -35,4 +35,19 @@ test("keeps onboarding usable when persistent storage is unavailable", () => {
 test("keeps preference changes usable when persistent storage is unavailable", () => {
   const unavailableStorage = { setItem() { throw new Error("storage unavailable"); } };
   assert.doesNotThrow(() => writePreferences(unavailableStorage, defaultPreferences));
+});
+
+test("falls back to session storage when the localStorage getter throws", () => {
+  const originalWindow = globalThis.window;
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: { get localStorage() { throw new Error("storage unavailable"); } },
+  });
+  try {
+    const storage = getLocalStorage();
+    completeOnboarding(storage);
+    assert.equal(hasCompletedOnboarding(storage), true);
+  } finally {
+    Object.defineProperty(globalThis, "window", { configurable: true, value: originalWindow });
+  }
 });
