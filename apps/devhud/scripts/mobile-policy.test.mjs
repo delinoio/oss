@@ -4,10 +4,11 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { assertAndroidBackupExclusions, assertAndroidNativeBridge, assertMobileCi, assertMobileContracts, assertMobileTargets } from "./mobile-policy.mjs";
+import { assertAndroidBackupExclusions, assertAndroidNativeBridge, assertMobileCi, assertMobileContracts, assertMobileDependencyClosures, assertMobileTargets, mobileCargoTreeDigest } from "./mobile-policy.mjs";
 
 const appRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const mobileTargets = JSON.parse(readFileSync(join(appRoot, "mobile-platforms.json"), "utf8")).targets;
+const mobilePlatforms = JSON.parse(readFileSync(join(appRoot, "mobile-platforms.json"), "utf8"));
 
 test("mobile policy validates every field in every immutable target tuple", () => {
   assert.doesNotThrow(() => assertMobileTargets(mobileTargets));
@@ -38,6 +39,24 @@ test("mobile policy requires checked Android persistence and app-level notificat
   assert.doesNotThrow(() => assertAndroidNativeBridge(androidNativeBridge));
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace(".commit()", ".apply()")), /writes and removals must confirm persistence/u);
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace("areNotificationsEnabled()", "isNotificationPolicyAccessGranted")), /app-level disablement/u);
+  assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace("NotificationManager.IMPORTANCE_NONE", "NotificationManager.IMPORTANCE_LOW")), /channel disablement/u);
+  assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace("Intent(activity.intent).setData(null)", "Intent(activity.intent)")), /activity intent/u);
+  assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace("storeIntent().resolveActivity(activity.packageManager)", "true")), /market handler/u);
+});
+
+test("mobile policy pins normalized resolved dependency closures", () => {
+  const tree = [
+    "devhud v0.1.0 (/checkout/apps/devhud/src-tauri) ",
+    "serde v1.0.0 default,derive",
+    "serde v1.0.0 default,derive (*)",
+  ].join("\n");
+  assert.equal(mobileCargoTreeDigest(tree, "/checkout"), mobileCargoTreeDigest(tree.replaceAll("/checkout", "/other"), "/other"));
+  assert.notEqual(mobileCargoTreeDigest(tree, "/checkout"), mobileCargoTreeDigest(`${tree}\nreqwest v1.0.0 default`, "/checkout"));
+  assert.doesNotThrow(() => assertMobileDependencyClosures(mobilePlatforms, mobilePlatforms.dependencyClosures));
+  assert.throws(
+    () => assertMobileDependencyClosures(mobilePlatforms, { ...mobilePlatforms.dependencyClosures, "aarch64-linux-android": "sha256-changed" }),
+    /dependency closure changed/u,
+  );
 });
 
 test("mobile policy requires production and simulator iOS builds", () => {

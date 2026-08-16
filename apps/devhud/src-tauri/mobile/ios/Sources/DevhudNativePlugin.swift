@@ -30,7 +30,11 @@ private struct RequestArgs: Decodable {
     let deckId: String?
 }
 
-final class DevhudNativePlugin: Plugin {
+final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate {
+    @objc public override func load(webview: WKWebView) {
+        UNUserNotificationCenter.current().delegate = self
+    }
+
     @objc func request(_ invoke: Invoke) throws {
         let args = try invoke.parseArgs(RequestArgs.self)
         switch args.operation {
@@ -75,6 +79,10 @@ final class DevhudNativePlugin: Plugin {
          kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly]
     }
 
+    private func rejectStorageFailure(_ invoke: Invoke) {
+        invoke.reject("storage-failure", code: "storage-failure")
+    }
+
     private func readSecure(_ args: RequestArgs, _ invoke: Invoke) throws {
         guard let setting = args.setting else { throw NativeError.invalidArgument }
         var itemQuery = query(setting)
@@ -83,7 +91,10 @@ final class DevhudNativePlugin: Plugin {
         var item: CFTypeRef?
         let status = SecItemCopyMatching(itemQuery as CFDictionary, &item)
         if status == errSecItemNotFound { invoke.resolve(["kind": "secure-value", "value": NSNull()]); return }
-        guard status == errSecSuccess, let data = item as? Data, let value = String(data: data, encoding: .utf8) else { throw NativeError.storageFailure }
+        guard status == errSecSuccess, let data = item as? Data, let value = String(data: data, encoding: .utf8) else {
+            rejectStorageFailure(invoke)
+            return
+        }
         invoke.resolve(["kind": "secure-value", "value": value])
     }
 
@@ -94,15 +105,24 @@ final class DevhudNativePlugin: Plugin {
         if status == errSecItemNotFound {
             var item = itemQuery
             item[kSecValueData as String] = data
-            guard SecItemAdd(item as CFDictionary, nil) == errSecSuccess else { throw NativeError.storageFailure }
-        } else if status != errSecSuccess { throw NativeError.storageFailure }
+            guard SecItemAdd(item as CFDictionary, nil) == errSecSuccess else {
+                rejectStorageFailure(invoke)
+                return
+            }
+        } else if status != errSecSuccess {
+            rejectStorageFailure(invoke)
+            return
+        }
         invoke.resolve(["kind": "ok"])
     }
 
     private func removeSecure(_ args: RequestArgs, _ invoke: Invoke) throws {
         guard let setting = args.setting else { throw NativeError.invalidArgument }
         let status = SecItemDelete(query(setting) as CFDictionary)
-        guard status == errSecSuccess || status == errSecItemNotFound else { throw NativeError.storageFailure }
+        guard status == errSecSuccess || status == errSecItemNotFound else {
+            rejectStorageFailure(invoke)
+            return
+        }
         invoke.resolve(["kind": "ok"])
     }
 
@@ -129,16 +149,32 @@ final class DevhudNativePlugin: Plugin {
 
     private func publishNotification(_ args: RequestArgs, _ invoke: Invoke) throws {
         guard let notification = args.notification else { throw NativeError.invalidArgument }
-        let content = UNMutableNotificationContent()
-        content.title = notification.title
-        content.body = notification.body
-        content.sound = .default
-        content.userInfo = ["deckId": notification.deckId]
-        let request = UNNotificationRequest(identifier: notification.id, content: content, trigger: nil)
-        UNUserNotificationCenter.current().add(request) { error in
-            if error != nil { invoke.reject("platform-failure", code: "platform-failure") }
-            else { invoke.resolve(["kind": "ok"]) }
+        let center = UNUserNotificationCenter.current()
+        center.getNotificationSettings { settings in
+            guard self.permissionName(settings.authorizationStatus) == "authorized" else {
+                invoke.reject("permission-denied", code: "permission-denied")
+                return
+            }
+            let content = UNMutableNotificationContent()
+            content.title = notification.title
+            content.body = notification.body
+            content.sound = .default
+            content.userInfo = ["deckId": notification.deckId]
+            let request = UNNotificationRequest(identifier: notification.id, content: content, trigger: nil)
+            center.add(request) { error in
+                if error != nil { invoke.reject("platform-failure", code: "platform-failure") }
+                else { invoke.resolve(["kind": "ok"]) }
+            }
         }
+    }
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        let deckNotification = notification.request.content.userInfo["deckId"] is String
+        completionHandler(deckNotification ? [.banner, .sound] : [])
     }
 
     private func cancelNotifications(_ args: RequestArgs, _ invoke: Invoke) throws {
@@ -156,7 +192,7 @@ final class DevhudNativePlugin: Plugin {
     }
 }
 
-private enum NativeError: Error { case invalidArgument, storageFailure }
+private enum NativeError: Error { case invalidArgument }
 
 @_cdecl("init_plugin_devhud_native")
 func initPlugin() -> Plugin { DevhudNativePlugin() }

@@ -103,7 +103,10 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
     const receive = (event: NativeBridgeEventV1) => {
       if (event.version !== 1) return;
       if (event.kind === "lifecycle") setLifecycle(event.state);
-      if (event.kind === "auth-callback") setAuthCallbackReceived(true);
+      if (event.kind === "auth-callback") {
+        setAuthCallbackReceived(true);
+        void bridge.request({ operation: "auth.take-pending-callback" }).catch(() => {});
+      }
     };
     void bridge.listen(receive).then((value) => {
       if (active) unlisten = value;
@@ -238,7 +241,9 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   };
   const openStore = async () => {
     try { await bridge.request({ operation: "updates.open-store" }); }
-    catch { setRuntimeState({ kind: ContentStateKind.Error, retryable: true }); }
+    catch (error) {
+      if (!(error instanceof NativeBridgeError)) setRuntimeState({ kind: ContentStateKind.Error, retryable: true });
+    }
   };
   const supportsLaunchAtLogin = runtimeCapabilities.available.has(PlatformCapability.LaunchAtLogin);
   const externalMessageText = externalMessage === "invalid-api-origin" ? copy.invalidApiOrigin : externalMessage === "opened" ? copy.externalOpened : copy.externalFailed;

@@ -6,7 +6,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { assertGeneratedOverlays } from "./generate-mobile.mjs";
-import { assertMobileContracts } from "./mobile-policy.mjs";
+import { assertMobileContracts, assertMobileDependencyClosures, mobileCargoTreeDigest } from "./mobile-policy.mjs";
 
 const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = resolve(appRoot, "../..");
@@ -16,6 +16,15 @@ const json = (path) => JSON.parse(text(path));
 function commandOutput(command, args, encoding = "utf8") {
   const result = spawnSync(command, args, { encoding, maxBuffer: 64 * 1024 * 1024, shell: false });
   if (result.status !== 0) throw new Error(`${command} failed while inspecting the Android artifact`);
+  return result.stdout;
+}
+
+function mobileCargoTree(target) {
+  const result = spawnSync("cargo", [
+    "tree", "--locked", "--manifest-path", "apps/devhud/src-tauri/Cargo.toml", "-p", "devhud",
+    "--target", target, "--edges", "normal", "--no-default-features", "--prefix", "none", "--format", "{p} {f}",
+  ], { cwd: repoRoot, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, shell: false });
+  if (result.status !== 0) throw new Error(`cargo tree failed while resolving mobile target ${target}: ${result.stderr.trim()}`);
   return result.stdout;
 }
 
@@ -50,23 +59,33 @@ function assertAndroidArtifact(artifact, abi) {
   for (const value of ['="devhud"', '="auth"', '="/callback"']) if (!manifest.includes(value)) throw new Error("Android artifact auth callback registration changed");
 }
 
+const platforms = json("mobile-platforms.json");
+
 assertMobileContracts({
-  platforms: json("mobile-platforms.json"),
+  platforms,
   tauri: json("src-tauri/tauri.conf.json"),
   ios: json("src-tauri/tauri.ios.conf.json"),
   android: json("src-tauri/tauri.android.conf.json"),
   cargo: text("src-tauri/Cargo.toml"),
   androidManifest: text("mobile/overrides/android/app/src/main/AndroidManifest.xml"),
+  androidDebugManifest: text("mobile/overrides/android/app/src/debug/AndroidManifest.xml"),
   androidBackupRules: text("mobile/overrides/android/app/src/main/res/xml/backup_rules.xml"),
   androidDataExtractionRules: text("mobile/overrides/android/app/src/main/res/xml/data_extraction_rules.xml"),
   androidPluginManifest: text("src-tauri/mobile/android/src/main/AndroidManifest.xml"),
   androidNativeBridge: text("src-tauri/mobile/android/src/main/java/io/delino/devhud/bridge/DevhudNativePlugin.kt"),
+  androidChannelEnglish: text("mobile/overrides/android/app/src/main/res/values/devhud_strings.xml"),
+  androidChannelKorean: text("mobile/overrides/android/app/src/main/res/values-ko/devhud_strings.xml"),
+  iosNativeBridge: text("src-tauri/mobile/ios/Sources/DevhudNativePlugin.swift"),
   iosPlist: text("src-tauri/Info.ios.plist"),
   packageJson: json("package.json"),
   nativeBridge: text("src/native-bridge.ts"),
   app: text("src/App.tsx"),
   workflow: readFileSync(join(repoRoot, ".github/workflows/CI.yml"), "utf8"),
 });
+
+const closureTargets = [...new Set(platforms.targets.map(({ rustTarget }) => rustTarget))];
+const dependencyClosures = Object.fromEntries(closureTargets.map((target) => [target, mobileCargoTreeDigest(mobileCargoTree(target), repoRoot)]));
+assertMobileDependencyClosures(platforms, dependencyClosures);
 
 if (existsSync(join(appRoot, "src-tauri/gen/android"))) assertGeneratedOverlays("android");
 

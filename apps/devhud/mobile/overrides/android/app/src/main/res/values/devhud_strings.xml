@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="devhud_notification_channel_deck_changes">Deck changes</string>
+</resources>

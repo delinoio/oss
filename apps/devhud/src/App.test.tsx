@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
 import { messages } from "./localization";
-import { LifecycleState, NotificationPermission, RuntimePlatform, type NativeBridgeEventV1, type NativeBridgeRequestV1, type NativeBridgeResponseV1, type NativeBridgeV1, type RuntimeSnapshot } from "./native-bridge";
+import { LifecycleState, NativeBridgeError, NativeBridgeErrorCode, NotificationPermission, RuntimePlatform, type NativeBridgeEventV1, type NativeBridgeRequestV1, type NativeBridgeResponseV1, type NativeBridgeV1, type RuntimeSnapshot } from "./native-bridge";
 
 const mobileRuntime: RuntimeSnapshot = {
   bridgeVersion: 1,
@@ -67,6 +67,21 @@ describe("native App state", () => {
     await waitFor(() => expect(unsubscribe).toHaveBeenCalledOnce());
   });
 
+  it("consumes a queued callback after foreground event delivery", async () => {
+    let receive!: (event: NativeBridgeEventV1) => void;
+    const request = vi.fn(async (): Promise<NativeBridgeResponseV1> => ({ kind: "auth-callback", url: null }));
+    const bridge: NativeBridgeV1 = {
+      request,
+      async listen(listener) { receive = listener; return () => {}; },
+    };
+
+    render(<App bridge={bridge} initialRuntime={mobileRuntime} />);
+    await waitFor(() => expect(receive).toBeTypeOf("function"));
+    receive({ version: 1, kind: "auth-callback", url: "devhud://auth/callback?state=opaque" });
+
+    await waitFor(() => expect(request).toHaveBeenCalledWith({ operation: "auth.take-pending-callback" }));
+  });
+
   it("reads and localizes notification permission and diagnostic labels", async () => {
     localStorage.setItem("devhud.shell.preferences.v1", JSON.stringify({
       version: 1,
@@ -108,5 +123,21 @@ describe("native App state", () => {
     online = true;
     fireEvent(window, new Event("online"));
     expect(screen.getByText(messages.en.emptyTitle)).toBeTruthy();
+  });
+
+  it("keeps the shell ready for expected native update errors", async () => {
+    const runtime = { ...mobileRuntime, capabilities: { ...mobileRuntime.capabilities, storeUpdates: true } };
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      if (value.operation === "updates.status") return { kind: "update-status", store: "play-store", installedVersion: "1", configured: true };
+      if (value.operation === "updates.open-store") throw new NativeBridgeError(NativeBridgeErrorCode.NotConfigured);
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+
+    render(<App bridge={bridgeWith(request)} initialRuntime={runtime} />);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.settings }));
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.updatePolicy }));
+
+    await waitFor(() => expect(request.mock.calls.some(([value]) => value.operation === "updates.open-store")).toBe(true));
+    expect(screen.queryByText(messages.en.errorTitle)).toBeNull();
   });
 });

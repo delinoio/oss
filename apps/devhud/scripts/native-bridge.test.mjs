@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { NativeBridgeError, NativeBridgeErrorCode, SecureSettingKind, isAuthCallback, validateExternalRequest, validateSecretValue, validateSecureSettingRef } from "../src/native-bridge.ts";
+import { NativeBridgeError, NativeBridgeErrorCode, SecureSettingKind, isAuthCallback, nativeBridge, validateExternalRequest, validateSecretValue, validateSecureSettingRef } from "../src/native-bridge.ts";
 
 const fixtures = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../fixtures/deep-links.json"), "utf8"));
 
@@ -25,4 +25,17 @@ test("external navigation is restricted to account destinations", () => {
   assert.doesNotThrow(() => validateExternalRequest({ target: "pat", apiOrigin: "ignored" }));
   assert.throws(() => validateExternalRequest({ target: "authentication", apiOrigin: "http://example.com/" }), NativeBridgeError);
   assert.throws(() => validateExternalRequest({ target: "authentication", apiOrigin: "https://user@example.com/" }), NativeBridgeError);
+});
+
+test("Tauri rejection codes become typed native bridge errors", async () => {
+  const previousWindow = globalThis.window;
+  globalThis.window = { __TAURI_INTERNALS__: { invoke: async () => { throw NativeBridgeErrorCode.NotConfigured; } } };
+  try {
+    await assert.rejects(
+      nativeBridge.request({ operation: "updates.open-store" }),
+      (error) => error instanceof NativeBridgeError && error.code === NativeBridgeErrorCode.NotConfigured,
+    );
+  } finally {
+    globalThis.window = previousWindow;
+  }
 });

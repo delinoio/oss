@@ -122,6 +122,7 @@ declare global {
 
 const profilePattern = /^[a-zA-Z0-9._-]{1,128}$/u;
 const secretLimit = 64 * 1024;
+const nativeBridgeErrorCodes = new Set<string>(Object.values(NativeBridgeErrorCode));
 
 export class NativeBridgeError extends Error {
   readonly code: NativeBridgeErrorCode;
@@ -195,7 +196,14 @@ export const nativeBridge: NativeBridgeV1 = {
       if (request.operation.startsWith("widgets.")) return { kind: "unsupported", feature: "widgets" };
       throw new NativeBridgeError(NativeBridgeErrorCode.Unsupported);
     }
-    return await invokeTauri<NativeBridgeResponseV1>("native_bridge_v1", { request });
+    try {
+      return await invokeTauri<NativeBridgeResponseV1>("native_bridge_v1", { request });
+    } catch (error) {
+      if (typeof error === "string" && nativeBridgeErrorCodes.has(error)) {
+        throw new NativeBridgeError(error as NativeBridgeErrorCode);
+      }
+      throw error;
+    }
   },
   async listen(listener) {
     if (window.__TAURI_INTERNALS__) {

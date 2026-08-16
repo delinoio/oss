@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 const expectedMobileTargets = [
   { id: "ios-device-arm64", platform: "ios", kind: "production", tauriTarget: "aarch64", rustTarget: "aarch64-apple-ios", architecture: "arm64" },
   { id: "ios-simulator-arm64", platform: "ios", kind: "simulator", tauriTarget: "aarch64-sim", rustTarget: "aarch64-apple-ios-sim", architecture: "arm64" },
@@ -38,7 +40,30 @@ export function assertAndroidNativeBridge(androidNativeBridge) {
   assert(androidNativeBridge.includes("Executors.newSingleThreadExecutor()"), "Android secure-setting persistence must run off the command thread");
   assert((androidNativeBridge.match(/\.commit\(\)/gu) ?? []).length === 2, "Android secure-setting writes and removals must confirm persistence");
   assert(androidNativeBridge.includes('invoke.reject("storage-failure", "storage-failure"'), "Android secure-setting persistence failures must use storage-failure");
+  assert(androidNativeBridge.includes("return@execute") && androidNativeBridge.includes("Base64.getDecoder().decode"), "Android secure-setting reads must map decoding and Keystore failures off-thread");
   assert(androidNativeBridge.includes("areNotificationsEnabled()"), "Android notification state must honor app-level disablement");
+  assert(androidNativeBridge.includes("NotificationManager.IMPORTANCE_NONE"), "Android notification publication must honor channel disablement");
+  assert(androidNativeBridge.includes("devhud_notification_channel_deck_changes"), "Android notification channels must use localized resources");
+  assert(androidNativeBridge.includes("activity.intent = Intent(activity.intent).setData(null)"), "Android consumed auth callbacks must be removed from the activity intent");
+  assert(androidNativeBridge.includes("storeIntent().resolveActivity(activity.packageManager)"), "Android update status must resolve a market handler");
+}
+
+export function mobileCargoTreeDigest(cargoTree, workspaceRoot) {
+  const escapedRoot = workspaceRoot.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  const workspacePath = new RegExp(` \\(${escapedRoot}/([^)]*)\\)`, "gu");
+  const packages = cargoTree
+    .split("\n")
+    .map((line) => line.trim().replace(/ \\(\*\\)$/u, "").replace(workspacePath, " (workspace:$1)"))
+    .filter(Boolean);
+  return `sha256-${createHash("sha256").update(`${[...new Set(packages)].sort().join("\n")}\n`).digest("hex")}`;
+}
+
+export function assertMobileDependencyClosures(platforms, actualClosures) {
+  const targets = [...new Set(platforms.targets.map(({ rustTarget }) => rustTarget))].sort();
+  assert(Object.keys(platforms.dependencyClosures ?? {}).sort().join("\n") === targets.join("\n"), "mobile dependency closure targets changed");
+  for (const target of targets) {
+    assert(platforms.dependencyClosures[target] === actualClosures[target], `mobile dependency closure changed for ${target}`);
+  }
 }
 
 export function assertMobileCi(workflow) {
@@ -49,7 +74,7 @@ export function assertMobileCi(workflow) {
   assert(iosJob.includes("ios build --target ${{ matrix.target }} --ci --no-sign"), "iOS CI must build every matrix target without signing");
 }
 
-export function assertMobileContracts({ platforms, tauri, ios, android, cargo, androidManifest, androidBackupRules, androidDataExtractionRules, androidPluginManifest, androidNativeBridge, iosPlist, packageJson, nativeBridge, app, workflow }) {
+export function assertMobileContracts({ platforms, tauri, ios, android, cargo, androidManifest, androidDebugManifest, androidBackupRules, androidDataExtractionRules, androidPluginManifest, androidNativeBridge, androidChannelEnglish, androidChannelKorean, iosNativeBridge, iosPlist, packageJson, nativeBridge, app, workflow }) {
   assert(platforms.schemaVersion === 1, "unsupported mobile platform schema");
   assert(platforms.identity === "io.delino.devhud" && tauri.identifier === platforms.identity, "mobile identity changed");
   assert(platforms.deepLinkScheme === "devhud", "deep-link scheme changed");
@@ -66,15 +91,21 @@ export function assertMobileContracts({ platforms, tauri, ios, android, cargo, a
   assert(/features = \["cef"/u.test(cargo), "desktop CEF contract was lost");
 
   assert(!androidManifest.includes("android.permission.INTERNET"), "release Android manifest must not grant networking");
+  assert((androidDebugManifest.match(/<uses-permission/gu) ?? []).length === 1 && androidDebugManifest.includes("android.permission.INTERNET"), "debug Android manifest must grant only development networking");
   assert((androidManifest.match(/<uses-permission/gu) ?? []).length === 1 && androidManifest.includes("android.permission.POST_NOTIFICATIONS"), "release Android permissions are not least-privileged");
+  assert(androidManifest.includes('android:scheme="market"'), "Android market handler visibility is missing");
   assert(!androidManifest.includes("LEANBACK") && !androidManifest.includes("FileProvider"), "unneeded Android surface was generated");
   assert((androidManifest.match(/android:scheme="devhud"/gu) ?? []).length === 1, "Android must register only one devhud scheme");
   assert(androidManifest.includes('android:host="auth" android:path="/callback"'), "Android auth callback filter changed");
   assertAndroidBackupExclusions({ androidManifest, androidBackupRules, androidDataExtractionRules });
   assertAndroidNativeBridge(androidNativeBridge);
+  assert(androidChannelEnglish.includes("Deck changes") && androidChannelKorean.includes("Deck 변경사항"), "Android notification channel names must be bilingual");
   assert((androidPluginManifest.match(/<uses-permission/gu) ?? []).length === 1 && androidPluginManifest.includes("android.permission.POST_NOTIFICATIONS"), "Android native bridge permissions are not least-privileged");
   assert((iosPlist.match(/<string>devhud<\/string>/gu) ?? []).length === 1, "iOS must register only one devhud scheme");
   assert(!/com\.apple\.developer\.|NSExtension/iu.test(iosPlist), "uncontracted iOS entitlement or extension detected");
+  assert(iosNativeBridge.includes('invoke.reject("storage-failure", code: "storage-failure")'), "iOS Keychain failures must use storage-failure");
+  assert(iosNativeBridge.includes('invoke.reject("permission-denied", code: "permission-denied")'), "iOS notification publication must honor authorization");
+  assert(iosNativeBridge.includes("UNUserNotificationCenterDelegate") && iosNativeBridge.includes("willPresent notification"), "iOS foreground Deck notifications must be presented by a delegate");
 
   assert(packageJson.scripts["build:ios"] && packageJson.scripts["build:android"] && packageJson.scripts["mobile:generate"], "package-local mobile commands are incomplete");
   for (const operation of ["runtime.snapshot", "lifecycle.open-external", "secure.read", "secure.write", "notifications.request-permission", "updates.status", "widgets.replace-deck-snapshot"]) assert(nativeBridge.includes(`\"${operation}\"`), `typed bridge operation missing: ${operation}`);

@@ -37,14 +37,19 @@ export function overlayFiles(platform) {
   ];
 }
 
-export function assertGeneratedOverlays(platform) {
-  for (const { source, destination } of overlayFiles(platform)) {
-    if (existsSync(destination)) {
-      const expected = readFileSync(source);
-      const actual = readFileSync(destination);
-      if (!expected.equals(actual)) throw new Error(`generated mobile overlay is stale: ${relative(appRoot, destination)}`);
-    }
+export function assertOverlayCopies(files, materialized, relativeRoot = appRoot) {
+  if (!materialized) return;
+  for (const { source, destination } of files) {
+    if (!existsSync(destination)) throw new Error(`generated mobile overlay is missing: ${relative(relativeRoot, destination)}`);
+    const expected = readFileSync(source);
+    const actual = readFileSync(destination);
+    if (!expected.equals(actual)) throw new Error(`generated mobile overlay is stale: ${relative(relativeRoot, destination)}`);
   }
+}
+
+export function assertGeneratedOverlays(platform) {
+  const generatedPlatformRoot = join(generatedRoot, generatedNames[platform]);
+  assertOverlayCopies(overlayFiles(platform), existsSync(generatedPlatformRoot));
   const cargo = readFileSync(join(appRoot, "src-tauri/Cargo.toml"), "utf8");
   const mobileSection = cargo.match(/\[target\.'cfg\(any\(target_os = "android", target_os = "ios"\)\)'\.dependencies\]([\s\S]*?)(?=\n\[|$)/u)?.[1] ?? "";
   if (!mobileSection.includes(mobileTauriFeatures) || /cef|tray-icon|unstable/iu.test(mobileSection)) throw new Error("mobile Cargo features were broadened by project generation");

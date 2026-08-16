@@ -83,7 +83,11 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
     }
 
     private fun takeAuthCallback(invoke: Invoke) {
-        val response = JSObject().put("kind", "auth-callback").put("url", pendingAuthCallback)
+        val callback = pendingAuthCallback
+        val response = JSObject().put("kind", "auth-callback").put("url", callback)
+        if (callback != null && activity.intent?.dataString == callback) {
+            activity.intent = Intent(activity.intent).setData(null)
+        }
         pendingAuthCallback = null
         invoke.resolve(response)
     }
@@ -125,18 +129,24 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
     }
 
     private fun readSecure(invoke: Invoke) {
-        val encoded = activity.getSharedPreferences(storeName, Context.MODE_PRIVATE).getString(settingKey(invoke.getArgs()), null)
-        if (encoded == null) {
-            invoke.resolve(JSObject().put("kind", "secure-value").put("value", null))
-            return
+        secureSettingsExecutor.execute {
+            try {
+                val encoded = activity.getSharedPreferences(storeName, Context.MODE_PRIVATE).getString(settingKey(invoke.getArgs()), null)
+                if (encoded == null) {
+                    invoke.resolve(JSObject().put("kind", "secure-value").put("value", null))
+                    return@execute
+                }
+                val payload = Base64.getDecoder().decode(encoded)
+                val iv = payload.copyOfRange(0, 12)
+                val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply {
+                    init(Cipher.DECRYPT_MODE, secretKey(), GCMParameterSpec(128, iv))
+                }
+                val value = String(cipher.doFinal(payload.copyOfRange(12, payload.size)), Charsets.UTF_8)
+                invoke.resolve(JSObject().put("kind", "secure-value").put("value", value))
+            } catch (error: Exception) {
+                invoke.reject("storage-failure", "storage-failure", error)
+            }
         }
-        val payload = Base64.getDecoder().decode(encoded)
-        val iv = payload.copyOfRange(0, 12)
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply {
-            init(Cipher.DECRYPT_MODE, secretKey(), GCMParameterSpec(128, iv))
-        }
-        val value = String(cipher.doFinal(payload.copyOfRange(12, payload.size)), Charsets.UTF_8)
-        invoke.resolve(JSObject().put("kind", "secure-value").put("value", value))
     }
 
     private fun writeSecure(invoke: Invoke) {
@@ -206,7 +216,13 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
         }
         val notification = invoke.getArgs().getJSObject("notification") ?: throw IllegalArgumentException("notification")
         val manager = activity.getSystemService(NotificationManager::class.java)
-        manager.createNotificationChannel(NotificationChannel(notificationChannel, "Deck changes", NotificationManager.IMPORTANCE_DEFAULT))
+        val channelNameId = activity.resources.getIdentifier("devhud_notification_channel_deck_changes", "string", activity.packageName)
+        require(channelNameId != 0) { "notification channel name resource" }
+        manager.createNotificationChannel(NotificationChannel(notificationChannel, activity.getString(channelNameId), NotificationManager.IMPORTANCE_DEFAULT))
+        if (manager.getNotificationChannel(notificationChannel)?.importance == NotificationManager.IMPORTANCE_NONE) {
+            invoke.reject("permission-denied", "permission-denied")
+            return
+        }
         val launchIntent = activity.packageManager.getLaunchIntentForPackage(activity.packageName)
         val pendingIntent = PendingIntent.getActivity(activity, 0, launchIntent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val built = android.app.Notification.Builder(activity, notificationChannel)
@@ -228,12 +244,21 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
 
     private fun resolveUpdateStatus(invoke: Invoke) {
         val version = activity.packageManager.getPackageInfo(activity.packageName, 0).versionName ?: "0"
-        invoke.resolve(JSObject().put("kind", "update-status").put("store", "play-store").put("installedVersion", version).put("configured", true))
+        val configured = storeIntent().resolveActivity(activity.packageManager) != null
+        invoke.resolve(JSObject().put("kind", "update-status").put("store", "play-store").put("installedVersion", version).put("configured", configured))
     }
 
     private fun openStore(invoke: Invoke) {
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=${activity.packageName}"))
+        val intent = storeIntent()
+        if (intent.resolveActivity(activity.packageManager) == null) {
+            invoke.reject("not-configured", "not-configured")
+            return
+        }
         activity.startActivity(intent)
         invoke.resolve(JSObject().put("kind", "ok"))
     }
+
+    private fun storeIntent(): Intent =
+        Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=${activity.packageName}"))
+            .addCategory(Intent.CATEGORY_BROWSABLE)
 }

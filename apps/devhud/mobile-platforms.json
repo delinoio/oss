@@ -8,6 +8,14 @@
     "ios": "16.0",
     "androidApi": 29
   },
+  "dependencyClosures": {
+    "aarch64-apple-ios": "sha256-15e1adf1a3bbdcc4623649aecab15333d55b4ddbd56c5422d33055c5bad65d18",
+    "aarch64-apple-ios-sim": "sha256-15e1adf1a3bbdcc4623649aecab15333d55b4ddbd56c5422d33055c5bad65d18",
+    "x86_64-apple-ios": "sha256-15e1adf1a3bbdcc4623649aecab15333d55b4ddbd56c5422d33055c5bad65d18",
+    "aarch64-linux-android": "sha256-44c76870a4855eb266b18d9fa13430be69c86ce38b6856861864d662403c3288",
+    "armv7-linux-androideabi": "sha256-44c76870a4855eb266b18d9fa13430be69c86ce38b6856861864d662403c3288",
+    "x86_64-linux-android": "sha256-44c76870a4855eb266b18d9fa13430be69c86ce38b6856861864d662403c3288"
+  },
   "targets": [
     {
       "id": "ios-device-arm64",
