@@ -167,6 +167,11 @@ fn is_frontend_ready_title(title: &str) -> bool {
     title == FRONTEND_READY_TITLE
 }
 
+#[cfg(not(target_os = "macos"))]
+fn should_observe_renderer_crashes(development: bool) -> bool {
+    !development
+}
+
 fn validate_host(smoke_mode: Option<SmokeMode>) -> Result<(), String> {
     let target = DesktopTarget::current();
     info!(event = "platform_detected", target = %target);
@@ -396,7 +401,7 @@ fn main() {
             );
 
             #[cfg(not(target_os = "macos"))]
-            if smoke_mode == Some(SmokeMode::RendererCrash) {
+            if should_observe_renderer_crashes(tauri::is_dev()) {
                 let renderer_crashed_for_protocol = renderer_crashed.clone();
                 webview.on_dev_tools_protocol(move |message| {
                     if let tauri::CefDevToolsProtocol::Event { method, .. } = message
@@ -410,7 +415,9 @@ fn main() {
                     br#"{"id":9000,"method":"Inspector.enable","params":{}}"#,
                 ) {
                     error!(event = "renderer_diagnostic_enable_failed", reason = %error);
-                    app.handle().exit(70);
+                    if smoke_mode == Some(SmokeMode::RendererCrash) {
+                        app.handle().exit(70);
+                    }
                 } else {
                     renderer_crash_listener_ready.store(true, Ordering::SeqCst);
                 }
@@ -446,6 +453,8 @@ mod tests {
     use tracing::{debug, error, info, warn};
     use tracing_subscriber::{Layer, layer::SubscriberExt};
 
+    #[cfg(not(target_os = "macos"))]
+    use super::should_observe_renderer_crashes;
     use super::{
         SmokeMode, diagnostic_filter, inject_smoke_missing_resource, is_frontend_ready_title,
         wait_for_frontend_readiness_timeout, wait_for_renderer_crash_listener,
@@ -474,6 +483,13 @@ mod tests {
         listener_ready.store(true, Ordering::SeqCst);
 
         assert!(waiter.join().expect("listener readiness waiter panicked"));
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn renderer_crash_observation_is_enabled_only_for_packaged_launches() {
+        assert!(should_observe_renderer_crashes(false));
+        assert!(!should_observe_renderer_crashes(true));
     }
 
     #[test]
