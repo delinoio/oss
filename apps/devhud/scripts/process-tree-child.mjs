@@ -48,6 +48,10 @@ if (mode === "manager") {
     const address = server.address();
     writeFileSync(statusPath, JSON.stringify({ pid: process.pid, port: address.port }));
   });
+} else if (mode === "signal-escalation") {
+  process.on("SIGINT", () => {});
+  writeFileSync(statusPath, JSON.stringify({ pid: process.pid }));
+  setInterval(() => {}, 1_000);
 } else {
   throw new Error(`unsupported process-tree child mode: ${mode}`);
 }

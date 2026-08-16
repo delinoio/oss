@@ -28,6 +28,8 @@ const DEVELOPMENT_ORIGIN: &str = "http://127.0.0.1:46305";
 const PRODUCTION_ORIGIN: &str = "http://tauri.localhost";
 const FRONTEND_READY_TITLE: &str = "DevHUD";
 const FRONTEND_READY_TIMEOUT: Duration = Duration::from_secs(5);
+const RENDERER_CRASH_LISTENER_READY_ATTEMPTS: usize = 100;
+const RENDERER_CRASH_LISTENER_READY_DELAY: Duration = Duration::from_millis(50);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum SmokeMode {
@@ -220,6 +222,20 @@ fn start_renderer_crash_watchdog(
     });
 }
 
+fn wait_for_renderer_crash_listener(
+    listener_ready: &AtomicBool,
+    attempts: usize,
+    retry_delay: Duration,
+) -> bool {
+    for _ in 0..attempts {
+        if listener_ready.load(Ordering::SeqCst) {
+            return true;
+        }
+        std::thread::sleep(retry_delay);
+    }
+    false
+}
+
 fn wait_for_frontend_readiness_timeout(
     frontend_readiness_complete: &AtomicBool,
     timeout: Duration,
@@ -247,6 +263,7 @@ fn handle_frontend_ready(
     smoke_mode: Option<SmokeMode>,
     origin: &str,
     renderer_crashed: Arc<AtomicBool>,
+    renderer_crash_listener_ready: Arc<AtomicBool>,
 ) {
     info!(event = "frontend_ready", origin);
     match smoke_mode {
@@ -262,6 +279,15 @@ fn handle_frontend_ready(
             let webview = webview.clone();
             let app_handle = app_handle.clone();
             std::thread::spawn(move || {
+                if !wait_for_renderer_crash_listener(
+                    &renderer_crash_listener_ready,
+                    RENDERER_CRASH_LISTENER_READY_ATTEMPTS,
+                    RENDERER_CRASH_LISTENER_READY_DELAY,
+                ) {
+                    error!(event = "renderer_crash_listener_timeout");
+                    app_handle.exit(70);
+                    return;
+                }
                 match webview
                     .send_dev_tools_message(br#"{"id":9001,"method":"Page.crash","params":{}}"#)
                 {
@@ -291,6 +317,7 @@ fn main() {
     }
 
     let renderer_crashed = Arc::new(AtomicBool::new(false));
+    let renderer_crash_listener_ready = Arc::new(AtomicBool::new(cfg!(target_os = "macos")));
     let frontend_readiness_complete = Arc::new(AtomicBool::new(false));
 
     let mut builder = tauri::Builder::<tauri::Cef>::default();
@@ -311,6 +338,7 @@ fn main() {
         .setup(move |app| {
             let app_handle_for_frontend = app.handle().clone();
             let renderer_crashed_for_frontend = renderer_crashed.clone();
+            let renderer_crash_listener_ready_for_frontend = renderer_crash_listener_ready.clone();
             let frontend_readiness_for_title = frontend_readiness_complete.clone();
             let frontend_readiness_for_watchdog = frontend_readiness_complete.clone();
             let webview = tauri::WebviewWindowBuilder::<tauri::Cef, _>::new(
@@ -357,6 +385,7 @@ fn main() {
                     smoke_mode,
                     origin,
                     renderer_crashed_for_frontend.clone(),
+                    renderer_crash_listener_ready_for_frontend.clone(),
                 );
             })
             .build()?;
@@ -381,6 +410,9 @@ fn main() {
                     br#"{"id":9000,"method":"Inspector.enable","params":{}}"#,
                 ) {
                     error!(event = "renderer_diagnostic_enable_failed", reason = %error);
+                    app.handle().exit(70);
+                } else {
+                    renderer_crash_listener_ready.store(true, Ordering::SeqCst);
                 }
             }
 
@@ -416,13 +448,32 @@ mod tests {
 
     use super::{
         SmokeMode, diagnostic_filter, inject_smoke_missing_resource, is_frontend_ready_title,
-        wait_for_frontend_readiness_timeout,
+        wait_for_frontend_readiness_timeout, wait_for_renderer_crash_listener,
     };
 
     #[test]
     fn frontend_readiness_requires_the_mounted_title() {
         assert!(!is_frontend_ready_title("DevHUD Loading"));
         assert!(is_frontend_ready_title("DevHUD"));
+    }
+
+    #[test]
+    fn renderer_crash_dispatch_waits_for_the_listener() {
+        let listener_ready = Arc::new(AtomicBool::new(false));
+        let listener_ready_for_wait = listener_ready.clone();
+        let waiter = std::thread::spawn(move || {
+            wait_for_renderer_crash_listener(
+                &listener_ready_for_wait,
+                100,
+                Duration::from_millis(1),
+            )
+        });
+
+        std::thread::sleep(Duration::from_millis(5));
+        assert!(!waiter.is_finished());
+        listener_ready.store(true, Ordering::SeqCst);
+
+        assert!(waiter.join().expect("listener readiness waiter panicked"));
     }
 
     #[test]

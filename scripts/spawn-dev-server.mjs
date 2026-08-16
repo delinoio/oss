@@ -143,7 +143,7 @@ export async function spawnDevServer(
   );
   const signalHandlers = new Map();
   let forwardedSignal = null;
-  let terminationPromise = null;
+  const terminationPromises = [];
 
   const removeSignalHandlers = () => {
     for (const [signal, handler] of signalHandlers) {
@@ -153,21 +153,18 @@ export async function spawnDevServer(
 
   for (const signal of terminationSignals) {
     const handler = () => {
-      if (
-        terminationPromise ||
-        child.exitCode !== null ||
-        child.signalCode !== null
-      ) {
+      if (child.exitCode !== null || child.signalCode !== null) {
         return;
       }
 
       forwardedSignal = signal;
-      terminationPromise =
+      const terminationPromise =
         terminateProcessTree
           ? process.platform === "win32"
             ? terminateWindowsProcessTree(child, signal)
             : terminatePosixProcessGroup(child, signal)
           : Promise.resolve(child.kill(signal));
+      terminationPromises.push(terminationPromise);
       // The child may take longer to exit than the termination command takes to
       // fail. Attach a handler now and rethrow when both operations are awaited.
       void terminationPromise.catch(() => {});
@@ -189,7 +186,7 @@ export async function spawnDevServer(
 
   try {
     const result = await childResult;
-    await terminationPromise;
+    await Promise.all(terminationPromises);
     return forwardedSignal ? { code: null, signal: forwardedSignal } : result;
   } finally {
     removeSignalHandlers();

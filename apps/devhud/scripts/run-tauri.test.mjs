@@ -60,6 +60,46 @@ function listenOnPort(port) {
 }
 
 test(
+  "forwards an escalation signal while the child remains alive",
+  { skip: process.platform === "win32", timeout: 20_000 },
+  async (t) => {
+    const temporaryDirectory = mkdtempSync(join(tmpdir(), "devhud-signal-escalation-"));
+    const statusPath = join(temporaryDirectory, "status.json");
+    let pid;
+    t.after(() => {
+      if (pid) {
+        try {
+          process.kill(pid, "SIGKILL");
+        } catch (error) {
+          if (error.code !== "ESRCH") {
+            throw error;
+          }
+        }
+      }
+      rmSync(temporaryDirectory, { force: true, recursive: true });
+    });
+
+    const resultPromise = spawnDevServer(
+      process.execPath,
+      [processTreeChildPath, "signal-escalation", statusPath],
+      {
+        shell: false,
+        stdio: "ignore",
+        windowsHide: true,
+      },
+    );
+    ({ pid } = await waitForStatus(statusPath));
+
+    process.emit("SIGINT");
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    process.kill(pid, 0);
+
+    process.emit("SIGTERM");
+    assert.deepEqual(await resultPromise, { code: null, signal: "SIGTERM" });
+  },
+);
+
+test(
   "terminates and awaits the complete process tree",
   { timeout: 20_000 },
   async (t) => {
