@@ -16,10 +16,9 @@ const nativeHostFiles = {
     source,
     destination: join(generatedRoot, "android/app/src/main/java", relative(join(appRoot, "src-tauri/mobile/android/src/main/java"), source)),
   })),
-  ios: () => [{
-    source: join(appRoot, "src-tauri/mobile/ios/Sources/DevhudNativePlugin.swift"),
-    destination: join(generatedRoot, "apple/Sources/devhud/DevhudNativePlugin.swift"),
-  }],
+  // build.rs compiles the iOS Swift package; copying it into the app target
+  // would compile the plugin twice without the package's Tauri dependency.
+  ios: () => [],
 };
 
 function filesBelow(root) {
