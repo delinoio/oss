@@ -66,34 +66,6 @@ export function mobileCargoArguments(rawArguments) {
 
 export function mobileExecution(rawArguments) {
   const cargoArguments = mobileCargoArguments(rawArguments);
-  const [platform, command, ...forwarded] = rawArguments;
-  const requestedTargets = targetValues(forwarded);
-  const nonTargetArguments = forwarded.filter((argument, index) => (
-    argument !== "--target"
-    && forwarded[index - 1] !== "--target"
-    && !argument.startsWith("--target=")
-  ));
-  const directIntelSimulatorBuild = platform === "ios"
-    && command === "build"
-    && requestedTargets.length === 1
-    && requestedTargets[0] === "x86_64"
-    && nonTargetArguments.every((argument) => argument === "--ci" || argument === "--no-sign");
-  if (directIntelSimulatorBuild) {
-    return {
-      command: "xcodebuild",
-      prerequisites: [{ command: "pnpm", arguments: ["build:frontend"] }],
-      arguments: [
-        "-workspace", "src-tauri/gen/apple/devhud.xcodeproj/project.xcworkspace",
-        "-scheme", "devhud_iOS",
-        "-sdk", "iphonesimulator",
-        "-configuration", "release",
-        "-destination", "generic/platform=iOS Simulator",
-        "ARCHS=x86_64",
-        "CODE_SIGNING_ALLOWED=NO",
-        "build",
-      ],
-    };
-  }
   return { command: "cargo", arguments: cargoArguments };
 }
 
