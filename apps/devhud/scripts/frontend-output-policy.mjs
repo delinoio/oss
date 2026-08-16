@@ -6,7 +6,7 @@ const executableRemoteLoadPatterns = [
     "iu",
   ),
   new RegExp(
-    String.raw`\b(?:fetch|import|WebSocket|EventSource)\s*\(\s*["']${remoteUrl}`,
+    String.raw`\b(?:fetch|import|WebSocket|EventSource|Worker|SharedWorker|sendBeacon)\s*\(\s*["']${remoteUrl}`,
     "iu",
   ),
   new RegExp(
