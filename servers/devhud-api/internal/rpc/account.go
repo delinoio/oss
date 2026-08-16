@@ -79,9 +79,7 @@ func (s *AccountService) mapAccountError(ctx context.Context, procedure string, 
 		return NewError(connect.CodeFailedPrecondition, "account cannot be restored", CorrelationID(ctx), &devhudv1.AccountFailure{Reason: reason})
 	}
 	if errors.Is(err, domain.ErrIdentityPurged) || errors.Is(err, domain.ErrNotFound) {
-		return NewError(connect.CodeFailedPrecondition, "account purge has completed", CorrelationID(ctx), &devhudv1.AccountFailure{
-			Reason: devhudv1.AccountFailureReason_ACCOUNT_FAILURE_REASON_PURGE_CLAIMED,
-		})
+		return accountPurgeCompleteError(ctx)
 	}
 	s.logger.ErrorContext(ctx, "account repository operation failed",
 		"correlation_id", CorrelationID(ctx),

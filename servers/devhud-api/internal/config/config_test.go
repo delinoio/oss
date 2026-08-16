@@ -8,6 +8,7 @@ import (
 
 func TestDevelopmentConfigurationUsesFixedPortAndExactRedirect(t *testing.T) {
 	setValidEnvironment(t)
+	t.Setenv("DEVHUD_PUBLIC_ASSET_BASE_URL", "http://127.0.0.1:9000")
 	configuration, err := Load("test-version")
 	if err != nil {
 		t.Fatal(err)
@@ -43,6 +44,32 @@ func TestHTTPSRequiredOutsideLoopback(t *testing.T) {
 	}
 	if IsLoopbackHost("127.0.0.2.example.com") {
 		t.Fatal("deceptive hostname was recognized as loopback")
+	}
+}
+
+func TestProductionRejectsLoopbackHTTPURLs(t *testing.T) {
+	tests := map[string]string{
+		"DEVHUD_PUBLIC_API_URL":        "http://localhost:46307",
+		"DEVHUD_LOGTO_ISSUER":          "http://127.0.0.1:3001/oidc",
+		"DEVHUD_PUBLIC_ASSET_BASE_URL": "http://[::1]:9000",
+		"DEVHUD_ADMIN_REDIRECT_URI":    "http://localhost:46306/auth/callback",
+	}
+	for name, value := range tests {
+		t.Run(name, func(t *testing.T) {
+			setValidEnvironment(t)
+			t.Setenv("DEVHUD_ENVIRONMENT", "production")
+			t.Setenv("DEVHUD_LISTEN_ADDRESS", "0.0.0.0:8080")
+			t.Setenv("DEVHUD_PUBLIC_API_URL", "https://api.example.com")
+			t.Setenv("DEVHUD_LOGTO_ISSUER", "https://issuer.example.com/oidc")
+			t.Setenv("DEVHUD_ADMIN_REDIRECT_URI", "https://api.example.com/admin/auth/callback")
+			t.Setenv("DEVHUD_TRUSTED_PROXY_CIDRS", "10.0.0.0/8")
+			t.Setenv(name, value)
+
+			_, err := Load("test")
+			if err == nil || !strings.Contains(err.Error(), name) || !strings.Contains(err.Error(), "HTTPS") {
+				t.Fatalf("Load error = %v, want %s HTTPS error", err, name)
+			}
+		})
 	}
 }
 

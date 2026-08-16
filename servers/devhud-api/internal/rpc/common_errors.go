@@ -22,6 +22,12 @@ func deletionCompletePermissionError(ctx context.Context) error {
 	})
 }
 
+func accountPurgeCompleteError(ctx context.Context) error {
+	return NewError(connect.CodeFailedPrecondition, "account purge has completed", CorrelationID(ctx), &devhudv1.AccountFailure{
+		Reason: devhudv1.AccountFailureReason_ACCOUNT_FAILURE_REASON_PURGE_CLAIMED,
+	})
+}
+
 func permissionError(ctx context.Context, permission *domain.PermissionError) error {
 	reason := devhudv1.PermissionFailureReason_PERMISSION_FAILURE_REASON_UNSPECIFIED
 	if permission.Failure == domain.PermissionFailureAdministrativeBlock {

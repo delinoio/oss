@@ -154,17 +154,18 @@ func (c Config) Validate() error {
 		return errors.New("DEVHUD_TRUSTED_PROXY_CIDRS is required in production")
 	}
 
-	publicAPI, err := validateHTTPURL("DEVHUD_PUBLIC_API_URL", c.PublicAPIURL)
+	allowLoopbackHTTP := c.Environment == EnvironmentDevelopment
+	publicAPI, err := validateHTTPURL("DEVHUD_PUBLIC_API_URL", c.PublicAPIURL, allowLoopbackHTTP)
 	if err != nil {
 		return err
 	}
-	if _, err := validateHTTPURL("DEVHUD_LOGTO_ISSUER", c.LogtoIssuer); err != nil {
+	if _, err := validateHTTPURL("DEVHUD_LOGTO_ISSUER", c.LogtoIssuer, allowLoopbackHTTP); err != nil {
 		return err
 	}
-	if _, err := validateHTTPURL("DEVHUD_PUBLIC_ASSET_BASE_URL", c.PublicAssetBaseURL); err != nil {
+	if _, err := validateHTTPURL("DEVHUD_PUBLIC_ASSET_BASE_URL", c.PublicAssetBaseURL, allowLoopbackHTTP); err != nil {
 		return err
 	}
-	adminRedirect, err := validateHTTPURL("DEVHUD_ADMIN_REDIRECT_URI", c.AdminRedirectURI)
+	adminRedirect, err := validateHTTPURL("DEVHUD_ADMIN_REDIRECT_URI", c.AdminRedirectURI, allowLoopbackHTTP)
 	if err != nil {
 		return err
 	}
@@ -196,13 +197,16 @@ func IdentityFingerprintCandidates(keys [][]byte, issuer, subject string) [][]by
 	return result
 }
 
-func validateHTTPURL(name, raw string) (*url.URL, error) {
+func validateHTTPURL(name, raw string, allowLoopbackHTTP bool) (*url.URL, error) {
 	parsed, err := url.Parse(raw)
 	if err != nil || parsed.Hostname() == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
 		return nil, fmt.Errorf("%s must be an absolute HTTP URL without credentials, query, or fragment", name)
 	}
-	if parsed.Scheme != "https" && !(parsed.Scheme == "http" && IsLoopbackHost(parsed.Hostname())) {
-		return nil, fmt.Errorf("%s must use HTTPS outside loopback", name)
+	if parsed.Scheme != "https" && !(allowLoopbackHTTP && parsed.Scheme == "http" && IsLoopbackHost(parsed.Hostname())) {
+		if allowLoopbackHTTP {
+			return nil, fmt.Errorf("%s must use HTTPS outside loopback", name)
+		}
+		return nil, fmt.Errorf("%s must use HTTPS", name)
 	}
 	return parsed, nil
 }

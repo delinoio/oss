@@ -270,6 +270,102 @@ func TestProvisioningFailuresAreLoggedBeforeInternalResponse(t *testing.T) {
 	}
 }
 
+func TestPurgedIdentityMapsEveryAccountProcedureToAccountFailure(t *testing.T) {
+	repository := &provisionFailureRepository{err: domain.ErrIdentityPurged}
+	httpServer := testHTTPServerWithRepositoryAndVerifier(
+		t,
+		repository,
+		validVerifier{},
+		slog.New(slog.NewJSONHandler(io.Discard, nil)),
+	)
+	testServer := httptest.NewServer(httpServer.Handler)
+	defer testServer.Close()
+
+	accountClient := devhudv1connect.NewAccountServiceClient(http.DefaultClient, testServer.URL)
+	settingsClient := devhudv1connect.NewSettingsServiceClient(http.DefaultClient, testServer.URL)
+	tests := []struct {
+		name               string
+		call               func() error
+		wantCode           connect.Code
+		wantAccountFailure bool
+	}{
+		{
+			name: "get account",
+			call: func() error {
+				request := connect.NewRequest(&devhudv1.GetAccountRequest{})
+				request.Header().Set("Authorization", "Bearer valid")
+				_, err := accountClient.GetAccount(context.Background(), request)
+				return err
+			},
+			wantCode:           connect.CodeFailedPrecondition,
+			wantAccountFailure: true,
+		},
+		{
+			name: "delete account",
+			call: func() error {
+				request := connect.NewRequest(&devhudv1.DeleteAccountRequest{})
+				request.Header().Set("Authorization", "Bearer valid")
+				_, err := accountClient.DeleteAccount(context.Background(), request)
+				return err
+			},
+			wantCode:           connect.CodeFailedPrecondition,
+			wantAccountFailure: true,
+		},
+		{
+			name: "restore account",
+			call: func() error {
+				request := connect.NewRequest(&devhudv1.RestoreAccountRequest{})
+				request.Header().Set("Authorization", "Bearer valid")
+				_, err := accountClient.RestoreAccount(context.Background(), request)
+				return err
+			},
+			wantCode:           connect.CodeFailedPrecondition,
+			wantAccountFailure: true,
+		},
+		{
+			name: "settings remain permission denied",
+			call: func() error {
+				request := connect.NewRequest(&devhudv1.GetSettingsRequest{})
+				request.Header().Set("Authorization", "Bearer valid")
+				_, err := settingsClient.GetSettings(context.Background(), request)
+				return err
+			},
+			wantCode: connect.CodePermissionDenied,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := test.call()
+			if connect.CodeOf(err) != test.wantCode {
+				t.Fatalf("code = %v, want %v: %v", connect.CodeOf(err), test.wantCode, err)
+			}
+			connectError := new(connect.Error)
+			if !errors.As(err, &connectError) {
+				t.Fatalf("error = %v", err)
+			}
+			for _, detail := range connectError.Details() {
+				value, valueErr := detail.Value()
+				if valueErr != nil {
+					t.Fatal(valueErr)
+				}
+				if test.wantAccountFailure {
+					failure, ok := value.(*devhudv1.AccountFailure)
+					if ok && failure.GetReason() == devhudv1.AccountFailureReason_ACCOUNT_FAILURE_REASON_PURGE_CLAIMED {
+						return
+					}
+					continue
+				}
+				failure, ok := value.(*devhudv1.PermissionFailure)
+				if ok && failure.GetReason() == devhudv1.PermissionFailureReason_PERMISSION_FAILURE_REASON_ACCOUNT_DELETION_PENDING {
+					return
+				}
+			}
+			t.Fatal("missing expected purge-completed error detail")
+		})
+	}
+}
+
 func TestRequestPersistenceFailuresIncludeCauseInWarning(t *testing.T) {
 	repository := &requestPersistenceFailureRepository{err: errors.New("request log timeout")}
 	var logs bytes.Buffer

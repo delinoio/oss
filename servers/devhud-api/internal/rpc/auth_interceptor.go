@@ -6,7 +6,6 @@ import (
 	"log/slog"
 
 	"connectrpc.com/connect"
-	devhudv1 "github.com/delinoio/oss/protos/gen/go/devhud/v1"
 	"github.com/delinoio/oss/protos/gen/go/devhud/v1/devhudv1connect"
 	"github.com/delinoio/oss/servers/devhud-api/internal/auth"
 	"github.com/delinoio/oss/servers/devhud-api/internal/domain"
@@ -48,10 +47,8 @@ func (i *AuthInterceptor) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc {
 		user, err := i.repository.ProvisionUser(ctx, identity)
 		if err != nil {
 			if errors.Is(err, domain.ErrIdentityPurged) {
-				if request.Spec().Procedure == devhudv1connect.AccountServiceRestoreAccountProcedure {
-					return nil, NewError(connect.CodeFailedPrecondition, "account purge has completed", CorrelationID(ctx), &devhudv1.AccountFailure{
-						Reason: devhudv1.AccountFailureReason_ACCOUNT_FAILURE_REASON_PURGE_CLAIMED,
-					})
+				if isAccountProcedure(request.Spec().Procedure) {
+					return nil, accountPurgeCompleteError(ctx)
 				}
 				return nil, deletionCompletePermissionError(ctx)
 			}
@@ -63,6 +60,17 @@ func (i *AuthInterceptor) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc {
 			return nil, internalError(ctx)
 		}
 		return next(auth.WithUser(ctx, user), request)
+	}
+}
+
+func isAccountProcedure(procedure string) bool {
+	switch procedure {
+	case devhudv1connect.AccountServiceGetAccountProcedure,
+		devhudv1connect.AccountServiceDeleteAccountProcedure,
+		devhudv1connect.AccountServiceRestoreAccountProcedure:
+		return true
+	default:
+		return false
 	}
 }
 
