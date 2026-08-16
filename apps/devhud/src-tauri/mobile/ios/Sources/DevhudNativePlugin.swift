@@ -145,10 +145,13 @@ final class DevhudNativePlugin: Plugin {
         guard let deckId = args.deckId else { throw NativeError.invalidArgument }
         let center = UNUserNotificationCenter.current()
         center.getPendingNotificationRequests { requests in
-            let identifiers = requests.filter { ($0.content.userInfo["deckId"] as? String) == deckId }.map(\.identifier)
-            center.removePendingNotificationRequests(withIdentifiers: identifiers)
-            center.removeDeliveredNotifications(withIdentifiers: identifiers)
-            invoke.resolve(["kind": "ok"])
+            let pendingIdentifiers = requests.filter { ($0.content.userInfo["deckId"] as? String) == deckId }.map(\.identifier)
+            center.removePendingNotificationRequests(withIdentifiers: pendingIdentifiers)
+            center.getDeliveredNotifications { notifications in
+                let deliveredIdentifiers = notifications.filter { ($0.request.content.userInfo["deckId"] as? String) == deckId }.map { $0.request.identifier }
+                center.removeDeliveredNotifications(withIdentifiers: deliveredIdentifiers)
+                invoke.resolve(["kind": "ok"])
+            }
         }
     }
 }

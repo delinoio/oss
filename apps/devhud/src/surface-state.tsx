@@ -40,8 +40,8 @@ export function EmptyState({ copy }: StateProps) {
   return <StateFrame eyebrow={copy.empty} title={copy.emptyTitle}><p>{copy.emptySummary}</p></StateFrame>;
 }
 
-export function OfflineState({ copy }: StateProps & { readonly lastSuccessfulAt?: string }) {
-  return <StateFrame eyebrow={copy.offline} title={copy.offlineTitle}><p>{copy.offlineSummary}</p>{copy.lastSuccessfulRefresh && <p className="notice">{copy.lastSuccessfulRefresh}</p>}</StateFrame>;
+export function OfflineState({ copy, lastSuccessfulAt }: StateProps & { readonly lastSuccessfulAt?: string }) {
+  return <StateFrame eyebrow={copy.offline} title={copy.offlineTitle}><p>{copy.offlineSummary}</p>{lastSuccessfulAt && <p className="notice">{copy.lastSuccessfulRefresh}: <time dateTime={lastSuccessfulAt}>{lastSuccessfulAt}</time></p>}</StateFrame>;
 }
 
 export function BlockedState({ copy }: StateProps) {
@@ -62,4 +62,3 @@ export function ContentStateView({ state, copy, onRetry }: { readonly state: Con
     case ContentStateKind.Ready: return null;
   }
 }
-

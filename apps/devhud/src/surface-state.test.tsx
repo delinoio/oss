@@ -28,4 +28,14 @@ describe.each(["en", "ko"] as const)("localized content states in %s", (language
     expect(screen.getByRole("button", { name: copy.retry })).toBeTruthy();
     expect(screen.getByText(/safe-123/u)).toBeTruthy();
   });
+
+  it("shows a supplied last-successful refresh without inventing one", () => {
+    const timestamp = "2026-08-16T12:34:56Z";
+    const { container, rerender } = render(<ContentStateView state={{ kind: ContentStateKind.Offline, lastSuccessfulAt: timestamp }} copy={copy} />);
+    expect(container.textContent).toContain(copy.lastSuccessfulRefresh);
+    expect(screen.getByText(timestamp).getAttribute("datetime")).toBe(timestamp);
+
+    rerender(<ContentStateView state={{ kind: ContentStateKind.Offline }} copy={copy} />);
+    expect(container.textContent).not.toContain(copy.lastSuccessfulRefresh);
+  });
 });

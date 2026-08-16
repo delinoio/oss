@@ -57,6 +57,8 @@ assertMobileContracts({
   android: json("src-tauri/tauri.android.conf.json"),
   cargo: text("src-tauri/Cargo.toml"),
   androidManifest: text("mobile/overrides/android/app/src/main/AndroidManifest.xml"),
+  androidBackupRules: text("mobile/overrides/android/app/src/main/res/xml/backup_rules.xml"),
+  androidDataExtractionRules: text("mobile/overrides/android/app/src/main/res/xml/data_extraction_rules.xml"),
   androidPluginManifest: text("src-tauri/mobile/android/src/main/AndroidManifest.xml"),
   iosPlist: text("src-tauri/Info.ios.plist"),
   packageJson: json("package.json"),

@@ -5,7 +5,7 @@ use serde_json::Value;
 #[cfg(mobile)]
 use tauri::AppHandle;
 #[cfg(mobile)]
-use tauri::plugin::{PluginApi, PluginHandle};
+use tauri::plugin::{PluginApi, PluginHandle, mobile::PluginInvokeError};
 use tauri::{
     Emitter, Manager, Runtime,
     plugin::{Builder, TauriPlugin},
@@ -17,6 +17,28 @@ tauri::ios_plugin_binding!(init_plugin_devhud_native);
 #[cfg(mobile)]
 pub struct NativePlatformBridge<R: Runtime>(PluginHandle<R>);
 
+#[cfg(any(mobile, test))]
+fn stable_plugin_error_code(code: Option<&str>) -> &'static str {
+    match code {
+        Some("invalid-argument") => "invalid-argument",
+        Some("permission-denied") => "permission-denied",
+        Some("not-configured") => "not-configured",
+        Some("unsupported") => "unsupported",
+        Some("storage-failure") => "storage-failure",
+        Some("platform-failure") => "platform-failure",
+        _ => "platform-failure",
+    }
+}
+
+#[cfg(mobile)]
+fn translate_plugin_error(error: &PluginInvokeError) -> String {
+    let code = match error {
+        PluginInvokeError::InvokeRejected(response) => response.code.as_deref(),
+        _ => None,
+    };
+    stable_plugin_error_code(code).to_string()
+}
+
 #[cfg(mobile)]
 impl<R: Runtime> NativePlatformBridge<R> {
     pub fn request(&self, request: &Value) -> Result<Value, String> {
@@ -24,7 +46,7 @@ impl<R: Runtime> NativePlatformBridge<R> {
             .run_mobile_plugin("request", request)
             .map_err(|error| {
                 tracing::warn!(event = "native_bridge_request_failed", %error);
-                "platform-failure".to_string()
+                translate_plugin_error(&error)
             })
     }
 }
@@ -92,4 +114,28 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
 #[cfg(mobile)]
 pub fn request<R: Runtime>(app: &AppHandle<R>, value: &Value) -> Result<Value, String> {
     app.state::<NativePlatformBridge<R>>().request(value)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::stable_plugin_error_code;
+
+    #[test]
+    fn preserves_only_stable_native_bridge_error_codes() {
+        for code in [
+            "invalid-argument",
+            "permission-denied",
+            "not-configured",
+            "unsupported",
+            "storage-failure",
+            "platform-failure",
+        ] {
+            assert_eq!(stable_plugin_error_code(Some(code)), code);
+        }
+        assert_eq!(
+            stable_plugin_error_code(Some("native-secret")),
+            "platform-failure"
+        );
+        assert_eq!(stable_plugin_error_code(None), "platform-failure");
+    }
 }

@@ -148,6 +148,15 @@ fn runtime_snapshot() -> Value {
     })
 }
 
+#[cfg(any(mobile, test))]
+fn routes_to_mobile_plugin(operation: &str, android: bool) -> bool {
+    operation.starts_with("lifecycle.")
+        || operation.starts_with("secure.")
+        || operation.starts_with("notifications.")
+        || operation.starts_with("updates.")
+        || (android && operation == "auth.take-pending-callback")
+}
+
 pub fn handle_native_bridge_request(
     request: &Value,
     state: &NativeBridgeState,
@@ -219,11 +228,7 @@ pub fn native_bridge_v1<R: tauri::Runtime>(
         if operation == "lifecycle.open-external" {
             validate_external_request(&request)?;
         }
-        if operation.starts_with("lifecycle.")
-            || operation.starts_with("secure.")
-            || operation.starts_with("notifications.")
-            || operation.starts_with("updates.")
-        {
+        if routes_to_mobile_plugin(operation, cfg!(target_os = "android")) {
             return crate::native_plugin::request(&app, &request);
         }
     }
@@ -236,7 +241,20 @@ pub fn native_bridge_v1<R: tauri::Runtime>(
 mod tests {
     use serde_json::json;
 
-    use super::{NativeBridgeState, handle_native_bridge_request, is_auth_callback};
+    use super::{
+        NativeBridgeState, handle_native_bridge_request, is_auth_callback, routes_to_mobile_plugin,
+    };
+
+    #[test]
+    fn routes_pending_auth_callbacks_only_to_the_android_plugin() {
+        assert!(routes_to_mobile_plugin("auth.take-pending-callback", true));
+        assert!(!routes_to_mobile_plugin(
+            "auth.take-pending-callback",
+            false
+        ));
+        assert!(routes_to_mobile_plugin("notifications.permission", false));
+        assert!(!routes_to_mobile_plugin("runtime.snapshot", true));
+    }
 
     #[test]
     fn accepts_only_the_auth_callback_route() {

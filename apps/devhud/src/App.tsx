@@ -6,6 +6,12 @@ import { ActionId, ExternalLinkTarget, LanguagePreference, PlatformCapability, S
 
 const surfaces: readonly SurfaceId[] = [SurfaceId.Home, SurfaceId.Realqa, SurfaceId.Deck, SurfaceId.Settings, SurfaceId.Account, SurfaceId.Diagnostics];
 const labels: Record<SurfaceId, keyof typeof messages.en> = { home: "home", realqa: "realqa", deck: "deck", settings: "settings", account: "account", diagnostics: "diagnostics" };
+const notificationPermissionLabels: Record<NotificationPermission, keyof typeof messages.en> = {
+  [NotificationPermission.NotDetermined]: "notificationNotDetermined",
+  [NotificationPermission.Denied]: "notificationDenied",
+  [NotificationPermission.Authorized]: "notificationAuthorized",
+};
+const defaultContentState: ContentState = { kind: ContentStateKind.Ready };
 const rightModifierLocation = 2;
 type ExternalMessage = "opened" | "failed" | "invalid-api-origin";
 
@@ -28,7 +34,7 @@ function capabilitiesFor(runtime: RuntimeSnapshot): RuntimeCapabilities {
   return { available };
 }
 
-export function App({ bridge = nativeBridge, initialRuntime, initialContentState = { kind: ContentStateKind.Ready } }: AppProps) {
+export function App({ bridge = nativeBridge, initialRuntime, initialContentState = defaultContentState }: AppProps) {
   const storage = getLocalStorage();
   const [preferences, setPreferences] = useState<Preferences>(() => readPreferences(storage));
   const [onboarding, setOnboarding] = useState(() => !hasCompletedOnboarding(storage));
@@ -91,15 +97,30 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
     return () => { active = false; };
   }, [bridge, initialContentState, initialRuntime]);
   useEffect(() => {
+    let active = true;
     let unlisten: (() => void) | undefined;
     const receive = (event: NativeBridgeEventV1) => {
       if (event.version !== 1) return;
       if (event.kind === "lifecycle") setLifecycle(event.state);
       if (event.kind === "auth-callback") setAuthCallbackReceived(true);
     };
-    void bridge.listen(receive).then((value) => { unlisten = value; }).catch(() => {});
-    return () => unlisten?.();
+    void bridge.listen(receive).then((value) => {
+      if (active) unlisten = value;
+      else value();
+    }).catch(() => {});
+    return () => {
+      active = false;
+      unlisten?.();
+    };
   }, [bridge]);
+  useEffect(() => {
+    if (!runtime?.capabilities.notifications) return;
+    let active = true;
+    void bridge.request({ operation: "notifications.permission" }).then((response) => {
+      if (active && response.kind === "notification-permission") setNotificationPermission(response.permission);
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [bridge, runtime?.capabilities.notifications]);
   useEffect(() => {
     if (!runtime?.capabilities.storeUpdates) return;
     let active = true;
@@ -228,9 +249,9 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
       {surface === SurfaceId.Realqa && mobile && <><p className="eyebrow">{copy.desktopOnly}</p><h2>{copy.realqaMobileTitle}</h2><p>{copy.realqaMobileSummary}</p><p className="notice">{copy.unavailable}</p></>}
       {surface === SurfaceId.Realqa && !mobile && <><p className="eyebrow">{copy.realqa}</p><h2>{copy.realqaTitle}</h2><p>{copy.realqaSummary}</p><div className="disabled-actions">{unavailableCaptureActions.map((action) => <button disabled key={action.id}>{copy[action.title]}</button>)}</div><p className="notice">{copy.planned}</p></>}
       {surface === SurfaceId.Deck && <><p className="eyebrow">{copy.deck}</p><h2>{copy.deckTitle}</h2><p>{copy.deckSummary}</p>{navigator.onLine ? <EmptyState copy={copy} /> : <OfflineState copy={copy} />}</>}
-      {surface === SurfaceId.Settings && <><p className="eyebrow">{copy.settings}</p><h2>{copy.settingsTitle}</h2><p>{copy.settingsSummary}</p><label>{copy.theme}<select value={preferences.theme} onChange={(event) => update({ theme: event.target.value as ThemePreference })}>{Object.values(ThemePreference).map((value) => <option key={value} value={value}>{copy[value]}</option>)}</select></label><label>{copy.language}<select value={preferences.language} onChange={(event) => update({ language: event.target.value as LanguagePreference })}><option value="system">{copy.system}</option><option value="en">{copy.english}</option><option value="ko">{copy.korean}</option></select></label>{supportsLaunchAtLogin && <><label className="check"><input type="checkbox" checked={preferences.launchAtLogin} onChange={(event) => { update({ launchAtLogin: event.target.checked }); void browserShell.setLaunchAtLogin(event.target.checked); }} />{copy.launchAtLogin}</label><p>{copy.launchAtLoginHint}</p></>}{runtime?.capabilities.notifications && <div className="native-setting"><button className="primary" onClick={() => void requestNotifications()}>{copy.notificationPermission}</button><output aria-live="polite">{notificationPermission}</output></div>}{runtime?.capabilities.storeUpdates && <div className="native-setting"><p>{copy.updatePolicy}</p>{storeConfigured && <button className="primary" onClick={() => void openStore()}>{copy.updatePolicy}</button>}</div>}</>}
+      {surface === SurfaceId.Settings && <><p className="eyebrow">{copy.settings}</p><h2>{copy.settingsTitle}</h2><p>{copy.settingsSummary}</p><label>{copy.theme}<select value={preferences.theme} onChange={(event) => update({ theme: event.target.value as ThemePreference })}>{Object.values(ThemePreference).map((value) => <option key={value} value={value}>{copy[value]}</option>)}</select></label><label>{copy.language}<select value={preferences.language} onChange={(event) => update({ language: event.target.value as LanguagePreference })}><option value="system">{copy.system}</option><option value="en">{copy.english}</option><option value="ko">{copy.korean}</option></select></label>{supportsLaunchAtLogin && <><label className="check"><input type="checkbox" checked={preferences.launchAtLogin} onChange={(event) => { update({ launchAtLogin: event.target.checked }); void browserShell.setLaunchAtLogin(event.target.checked); }} />{copy.launchAtLogin}</label><p>{copy.launchAtLoginHint}</p></>}{runtime?.capabilities.notifications && <div className="native-setting"><button className="primary" onClick={() => void requestNotifications()}>{copy.notificationPermission}</button><output aria-live="polite">{copy[notificationPermissionLabels[notificationPermission]]}</output></div>}{runtime?.capabilities.storeUpdates && <div className="native-setting"><p>{copy.updatePolicy}</p>{storeConfigured && <button className="primary" onClick={() => void openStore()}>{copy.updatePolicy}</button>}</div>}</>}
       {surface === SurfaceId.Account && <><p className="eyebrow">{copy.account}</p><h2>{copy.accountTitle}</h2><p>{copy.accountSummary}</p><label>{copy.apiOrigin}<input ref={apiOriginInput} value={preferences.apiOrigin} onChange={(event) => update({ apiOrigin: event.target.value })} /></label><p>{copy.apiOriginHint}</p><div className="actions"><button onClick={() => void external(ExternalLinkTarget.Authentication)}>{copy.signIn}</button><button onClick={() => void external(ExternalLinkTarget.Pat)}>{copy.pat}</button>{!mobile && <button onClick={() => void external(ExternalLinkTarget.Issue)}>{copy.issue}</button>}</div>{authCallbackReceived && <p role="status">{copy.runtimeReady}</p>}{externalMessage && <p className="external-message" role={externalMessageIsError ? "alert" : "status"}>{externalMessageText}</p>}</>}
-      {surface === SurfaceId.Diagnostics && <><p className="eyebrow">{copy.diagnostics}</p><h2>{copy.diagnosticsTitle}</h2><p>{copy.diagnosticsSummary}</p><p className="notice">{copy.diagnosticsUnavailable}</p>{runtime && <dl className="runtime-diagnostics"><dt>Platform</dt><dd>{runtime.platform}</dd><dt>Architecture</dt><dd>{runtime.architecture}</dd><dt>Bridge</dt><dd>v{runtime.bridgeVersion}</dd></dl>}</>}
+      {surface === SurfaceId.Diagnostics && <><p className="eyebrow">{copy.diagnostics}</p><h2>{copy.diagnosticsTitle}</h2><p>{copy.diagnosticsSummary}</p><p className="notice">{copy.diagnosticsUnavailable}</p>{runtime && <dl className="runtime-diagnostics"><dt>{copy.diagnosticPlatform}</dt><dd>{runtime.platform}</dd><dt>{copy.diagnosticArchitecture}</dt><dd>{runtime.architecture}</dd><dt>{copy.diagnosticBridge}</dt><dd>v{runtime.bridgeVersion}</dd></dl>}</>}
     </section>
     {palette && <div className="overlay" role="presentation"><section ref={paletteRef} className="palette" role="dialog" aria-modal="true" aria-label={copy.commandPalette} onKeyDown={trapPaletteFocus}><input ref={search} value={query} onChange={(event) => setQuery(event.target.value)} placeholder={copy.searchCommands} aria-label={copy.searchCommands} /><div className="commands">{actions.length === 0 ? <p role="status">{copy.noCommands}</p> : actions.map((action) => <button key={action.id} onClick={() => execute(action.id)}>{copy[action.title]}</button>)}</div><button onClick={() => closePalette()}>{copy.close}</button></section></div>}
   </main>;
