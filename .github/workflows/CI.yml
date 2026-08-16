@@ -1030,7 +1030,7 @@ jobs:
 
       - name: Skip (DevHud API unaffected)
         if: ${{ steps.gate.outputs.run != 'true' }}
-        run: echo "Skipping DevHud API integration checks: paths unaffected"
+        run: 'echo "Skipping DevHud API integration checks: paths unaffected"'
 
       - name: Setup Go
         if: ${{ steps.gate.outputs.run == 'true' }}
