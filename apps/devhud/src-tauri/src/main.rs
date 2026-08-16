@@ -485,11 +485,9 @@ fn main() {
     }
 
     #[cfg(target_os = "linux")]
-    if !subprocess {
-        if let Err(error) = gtk::init() {
-            error!(event = "gtk_initialization_failed", reason = %error);
-            std::process::exit(78);
-        }
+    if !subprocess && let Err(error) = gtk::init() {
+        error!(event = "gtk_initialization_failed", reason = %error);
+        std::process::exit(78);
     }
 
     let frontend_readiness = FrontendReadiness {
