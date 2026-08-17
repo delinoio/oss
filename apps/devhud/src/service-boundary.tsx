@@ -47,6 +47,7 @@ export interface IdentitySettingsValue {
   readonly signIn: () => Promise<void>;
   readonly retryIdentity: () => void;
   readonly retryAccount: () => Promise<void>;
+  readonly retrySettings: () => Promise<void>;
   readonly continueLocally: () => void;
   readonly uploadLocal: () => Promise<void>;
   readonly replaceLocal: () => void;
@@ -125,7 +126,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   const [conflict, setConflict] = useState<SettingsConflict | null>(null);
   const [account, setAccount] = useState<Account | null>(null);
   const [networkReady, setNetworkReady] = useState(false);
-  const [identityReady, setIdentityReady] = useState(!online);
+  const [identityReady, setIdentityReady] = useState(false);
   const [settingsReady, setSettingsReady] = useState(false);
   const [bootstrapAttempt, setBootstrapAttempt] = useState(0);
   const callbackHandled = useRef<string | null>(null);
@@ -211,10 +212,6 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   }, [active, apiOrigin, bootstrapAttempt, bridge]);
 
   useEffect(() => {
-    if (!online && status === "guest" && session === null) setIdentityReady(true);
-  }, [online, session, status]);
-
-  useEffect(() => {
     if (!active || !online || !networkReady || !bootstrapQuery.data) return;
     let cancelled = false;
     setStatus((current) => current === "guest" ? "starting" : current);
@@ -249,7 +246,10 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   useEffect(() => {
     if (!active || online || !networkReady) return;
     const cached = readCachedIdentityBootstrap(storage, apiOrigin);
-    if (cached === null) return;
+    if (cached === null) {
+      setIdentityReady(true);
+      return;
+    }
     let cancelled = false;
     void (async () => {
       try {
@@ -281,10 +281,10 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     if (!callbackUrl || callbackHandled.current === callbackUrl || session === null) return;
     callbackHandled.current = callbackUrl;
     void (async () => {
+      await session.handleCallback(callbackUrl);
       const pending = await bridge.request({ operation: "auth.take-pending-callback" });
       if (pending.kind !== "auth-callback" || pending.url !== callbackUrl) throw new Error("auth-callback-unavailable");
       onCallbackConsumed(callbackUrl);
-      await session.handleCallback(callbackUrl);
       setStatus("authenticated");
       setError(null);
     })().catch((reason) => {
@@ -296,9 +296,10 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
 
   useEffect(() => {
     if (!networkReady || !bootstrapQuery.error) return;
+    if (bootstrap !== null || session !== null) return;
     setStatus("error");
     setError("bootstrap-unavailable");
-  }, [bootstrapQuery.error, networkReady]);
+  }, [bootstrap, bootstrapQuery.error, networkReady, session]);
 
   useEffect(() => {
     if (!accountQuery.data?.account) return;
@@ -326,6 +327,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       if (mapped.detail.reason === PermissionFailureReason.ACCOUNT_DELETION_PENDING) {
         setAccountError(null);
         setStatus("deletion-pending");
+        void cleanPendingDeletion().catch((reason) => setError(safeError(reason)));
       } else if (mapped.detail.reason === PermissionFailureReason.USER_BLOCKED) {
         setAccountError(null);
         setStatus("blocked");
@@ -348,17 +350,12 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       return;
     }
     if (!settingsQuery.data) return;
-    let server = defaultDevHudSettings;
-    let currentRevision = 0n;
+    let server: DevHudSettingsV1;
+    let currentRevision: bigint;
     try {
-      if (settingsQuery.data.snapshot) {
-        if (settingsQuery.data.snapshot.schemaVersion !== SettingsSchemaVersion) throw new TypeError("unsupported settings schema version");
-        server = decodeDevHudSettings(settingsQuery.data.snapshot.canonicalJson);
-        currentRevision = settingsQuery.data.snapshot.revision;
-      }
+      ({ settings: server, revision: currentRevision } = validatedSettingsSnapshot(settingsQuery.data.snapshot));
     } catch {
-      setSettingsReady(false);
-      setError("settings-contract-invalid");
+      markSettingsContractInvalid();
       return;
     }
     setError((current) => current === "settings-contract-invalid" ? null : current);
@@ -388,7 +385,10 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     if (mapped.kind === "unauthenticated") {
       void clearInvalidSession().catch((reason) => setError(safeError(reason)));
     } else if (mapped.kind === "permissionDenied") {
-      if (mapped.detail.reason === PermissionFailureReason.ACCOUNT_DELETION_PENDING) setStatus("deletion-pending");
+      if (mapped.detail.reason === PermissionFailureReason.ACCOUNT_DELETION_PENDING) {
+        setStatus("deletion-pending");
+        void cleanPendingDeletion().catch((reason) => setError(safeError(reason)));
+      }
       if (mapped.detail.reason === PermissionFailureReason.USER_BLOCKED) setStatus("blocked");
     }
   }, [apiOrigin, online, settingsQuery.error, status, storage]);
@@ -405,34 +405,38 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     }
     try {
       const response = await replaceMutation.mutateAsync({ schemaVersion: 1, canonicalJson: Uint8Array.from(canonicalJson), expectedRevision });
-      if (!response.snapshot) throw new Error("settings-response-missing-snapshot");
-      if (response.snapshot.schemaVersion !== SettingsSchemaVersion) {
-        setSettingsReady(false);
-        setError("settings-contract-invalid");
-        throw new TypeError("unsupported settings schema version");
+      let validated: ValidatedSettingsSnapshot;
+      try {
+        if (!response.snapshot) throw new SettingsSnapshotError("settings response is missing its snapshot");
+        validated = validatedSettingsSnapshot(response.snapshot);
+      } catch (reason) {
+        markSettingsContractInvalid();
+        throw reason;
       }
-      const next = decodeDevHudSettings(response.snapshot.canonicalJson);
+      const next = validated.settings;
       setSettings(next);
-      setRevision(response.snapshot.revision);
+      setRevision(validated.revision);
       setSettingsReady(true);
       setError((current) => current === "settings-contract-invalid" ? null : current);
       setImportDiff(null);
       setConflict(null);
       clearGuestImportMarker(storage);
-      writeAuthenticatedSettingsCache(storage, apiOrigin, { settings: next, revision: response.snapshot.revision, cachedAt: new Date().toISOString() });
+      writeAuthenticatedSettingsCache(storage, apiOrigin, { settings: next, revision: validated.revision, cachedAt: new Date().toISOString() });
     } catch (reason) {
+      if (reason instanceof SettingsSnapshotError) throw reason;
       const mapped = mapDevHudError(reason);
       if (mapped.kind === "revisionConflict") {
         const serverSnapshot = mapped.detail.currentSnapshot;
-        if (serverSnapshot && serverSnapshot.schemaVersion !== SettingsSchemaVersion) {
-          setSettingsReady(false);
-          setError("settings-contract-invalid");
-          throw new TypeError("unsupported settings schema version");
+        let validated: ValidatedSettingsSnapshot;
+        try {
+          validated = validatedSettingsSnapshot(serverSnapshot);
+        } catch (snapshotReason) {
+          setConflict(null);
+          markSettingsContractInvalid();
+          throw snapshotReason;
         }
-        const server = serverSnapshot ? decodeDevHudSettings(serverSnapshot.canonicalJson) : defaultDevHudSettings;
-        const currentRevision = serverSnapshot?.revision ?? 0n;
         setImportDiff(null);
-        setConflict({ local, server, currentRevision, diff: diffSettings(local, server) });
+        setConflict({ local, server: validated.settings, currentRevision: validated.revision, diff: diffSettings(local, validated.settings) });
         return;
       }
       setSettingsError(mapped);
@@ -471,16 +475,26 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       setAccountError(null);
       await accountQuery.refetch();
     },
+    retrySettings: async () => {
+      setSettingsError(null);
+      setError((current) => current === "settings-contract-invalid" ? null : current);
+      await settingsQuery.refetch();
+    },
     continueLocally: () => { setStatus("guest"); setIdentityReady(true); onContinueLocally(); },
     uploadLocal: () => replaceAt(settings, revision),
     replaceLocal: () => {
-      const server = settingsQuery.data?.snapshot ? decodeDevHudSettings(settingsQuery.data.snapshot.canonicalJson) : defaultDevHudSettings;
-      const serverRevision = settingsQuery.data?.snapshot?.revision ?? 0n;
-      setSettings(server);
-      setRevision(serverRevision);
+      let validated: ValidatedSettingsSnapshot;
+      try {
+        validated = validatedSettingsSnapshot(settingsQuery.data?.snapshot);
+      } catch {
+        markSettingsContractInvalid();
+        return;
+      }
+      setSettings(validated.settings);
+      setRevision(validated.revision);
       setImportDiff(null);
       clearGuestImportMarker(storage);
-      writeAuthenticatedSettingsCache(storage, apiOrigin, { settings: server, revision: serverRevision, cachedAt: new Date().toISOString() });
+      writeAuthenticatedSettingsCache(storage, apiOrigin, { settings: validated.settings, revision: validated.revision, cachedAt: new Date().toISOString() });
     },
     replaceSettings: async (next) => {
       if (status === "guest" || status === "signed-out") {
@@ -543,7 +557,30 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     profileRequiresSetup: (kind, profileId) => profileRequiresSetup(bridge, kind, profileId),
   };
 
+  function markSettingsContractInvalid(): void {
+    setSettingsReady(false);
+    setSettingsError(null);
+    setError("settings-contract-invalid");
+  }
+
   return <IdentitySettingsContext value={value}>{children}</IdentitySettingsContext>;
+}
+
+interface ValidatedSettingsSnapshot {
+  readonly settings: DevHudSettingsV1;
+  readonly revision: bigint;
+}
+
+class SettingsSnapshotError extends TypeError {}
+
+function validatedSettingsSnapshot(snapshot: { readonly schemaVersion: number; readonly canonicalJson: Uint8Array; readonly revision: bigint } | undefined): ValidatedSettingsSnapshot {
+  if (!snapshot) return { settings: defaultDevHudSettings, revision: 0n };
+  if (snapshot.schemaVersion !== SettingsSchemaVersion) throw new SettingsSnapshotError("unsupported settings schema version");
+  try {
+    return { settings: decodeDevHudSettings(snapshot.canonicalJson), revision: snapshot.revision };
+  } catch (reason) {
+    throw new SettingsSnapshotError("invalid settings snapshot", { cause: reason });
+  }
 }
 
 export async function clearIdentityForApiChange(

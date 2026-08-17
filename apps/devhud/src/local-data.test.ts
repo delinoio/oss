@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clearAllContractedLocalData, clearAuthenticatedOriginData, clearAuthenticatedSettingsCache, hasGuestSettings, readAuthenticatedSettingsCache, readCachedIdentityBootstrap, writeAuthenticatedSettingsCache, writeCachedIdentityBootstrap, writeGuestSettings } from "./local-data";
+import { clearAllContractedLocalData, clearAuthenticatedOriginData, clearAuthenticatedSettingsCache, clearGuestImportMarker, hasGuestSettings, readAuthenticatedSettingsCache, readCachedIdentityBootstrap, writeAuthenticatedSettingsCache, writeCachedIdentityBootstrap, writeGuestSettings } from "./local-data";
 import { defaultDevHudSettings } from "./settings-contract";
 
 class MemoryStorage implements Storage {
@@ -70,6 +70,25 @@ describe("local identity data lifecycle", () => {
 
   it("treats an unavailable guest marker as absent", () => {
     const storage = { getItem: () => { throw new DOMException("denied", "SecurityError"); } };
+    expect(hasGuestSettings(storage)).toBe(false);
+  });
+
+  it("uses the guest snapshot as one durable import record", () => {
+    const storage = new MemoryStorage();
+    writeGuestSettings(storage, defaultDevHudSettings);
+
+    expect(storage.getItem("devhud.identity.v1.guest-settings")).not.toBeNull();
+    expect(storage.getItem("devhud.identity.v1.guest-used")).toBeNull();
+    expect(hasGuestSettings(storage)).toBe(true);
+  });
+
+  it("keeps guest-marker removal best-effort when Web Storage throws", () => {
+    const storage = {
+      getItem: () => null,
+      removeItem: () => { throw new DOMException("denied", "SecurityError"); },
+    };
+
+    expect(() => clearGuestImportMarker(storage)).not.toThrow();
     expect(hasGuestSettings(storage)).toBe(false);
   });
 

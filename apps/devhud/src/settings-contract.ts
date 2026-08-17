@@ -1,4 +1,5 @@
 import {
+  assertUuidV7,
   canonicalizeSettingsJson,
   encodeCanonicalSettingsJson,
   validateCanonicalSettingsJson,
@@ -153,8 +154,14 @@ function parseDeck(value: unknown, path: string): DevHudSettingsV1["decks"][numb
   const display = object(deck.display, `${path}.display`, ["groupBy", "showDrafts"]);
   const refresh = integer(deck.refreshMinutes, `${path}.refreshMinutes`, 1, 30);
   if (![1, 5, 15, 30].includes(refresh)) throw new SettingsContractError(`${path}.refreshMinutes`, "must be 1, 5, 15, or 30");
+  const id = text(deck.id, `${path}.id`);
+  try {
+    assertUuidV7(id);
+  } catch {
+    throw new SettingsContractError(`${path}.id`, "must be a canonical lowercase RFC 9562 UUID v7");
+  }
   return {
-    id: identifier(deck.id, `${path}.id`),
+    id,
     title: text(deck.title, `${path}.title`),
     query: text(deck.query, `${path}.query`, true),
     repository: deck.repository === null ? null : text(deck.repository, `${path}.repository`),

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { messages } from "./localization";
 import type { IdentitySession } from "./identity-client";
-import { AccountIdentity, FirstRunIdentity, SynchronizedSettingsBoundary } from "./identity-ui";
+import { AccountIdentity, FirstRunIdentity, SynchronizedAppearanceBoundary, SynchronizedSettingsBoundary } from "./identity-ui";
 import { LifecycleState, NativeBridgeError, NotificationPermission, RuntimePlatform, nativeBridge, type NativeBridgeEventV1, type NativeBridgeV1, type RuntimeSnapshot } from "./native-bridge";
 import { clearIdentityForApiChange, DevHudServiceBoundary } from "./service-boundary";
 import { ContentStateKind, ContentStateView, EmptyState, OfflineState, type ContentState } from "./surface-state";
@@ -88,22 +88,6 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
     void markFrontendReady()?.catch(() => {});
   }, []);
   useEffect(() => {
-    if (initialRuntime) return;
-    let active = true;
-    void bridge.request({ operation: "runtime.snapshot" }).then((response) => {
-      if (!active || response.kind !== "runtime") return;
-      setRuntime(response.snapshot);
-      setLifecycle(response.snapshot.lifecycle);
-      setRuntimeState(initialContentState);
-      return bridge.request({ operation: "auth.peek-pending-callback" });
-    }).then((response) => {
-      if (active && response?.kind === "auth-callback" && response.url) setAuthCallback(response.url);
-    }).catch(() => {
-      if (active) setRuntimeState({ kind: ContentStateKind.Error, retryable: true });
-    });
-    return () => { active = false; };
-  }, [bridge, initialContentState, initialRuntime]);
-  useEffect(() => {
     let active = true;
     let unlisten: (() => void) | undefined;
     const receive = (event: NativeBridgeEventV1) => {
@@ -113,15 +97,25 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
         setAuthCallback(event.url);
       }
     };
-    void bridge.listen(receive).then((value) => {
-      if (active) unlisten = value;
-      else value();
-    }).catch(() => {});
+    void bridge.listen(receive).then(async (value) => {
+      if (!active) { value(); return; }
+      unlisten = value;
+      if (initialRuntime) return;
+      const response = await bridge.request({ operation: "runtime.snapshot" });
+      if (!active || response.kind !== "runtime") return;
+      setRuntime(response.snapshot);
+      setLifecycle(response.snapshot.lifecycle);
+      setRuntimeState(initialContentState);
+      const pending = await bridge.request({ operation: "auth.peek-pending-callback" });
+      if (active && pending.kind === "auth-callback" && pending.url) setAuthCallback(pending.url);
+    }).catch(() => {
+      if (active && !initialRuntime) setRuntimeState({ kind: ContentStateKind.Error, retryable: true });
+    });
     return () => {
       active = false;
       unlisten?.();
     };
-  }, [bridge]);
+  }, [bridge, initialContentState, initialRuntime]);
   useEffect(() => {
     if (!runtime?.capabilities.notifications || lifecycle !== LifecycleState.Active) return;
     let active = true;
@@ -271,7 +265,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   const externalMessageText = externalMessage === "invalid-api-origin" ? copy.invalidApiOrigin : externalMessage === "opened" ? copy.externalOpened : copy.externalFailed;
   const externalMessageIsError = externalMessage !== "opened";
 
-  const boundary = (content: ReactNode) => runtime ? <DevHudServiceBoundary key={preferences.apiOrigin} apiOrigin={preferences.apiOrigin} active={onboarding || surface === SurfaceId.Account || surface === SurfaceId.Settings || authCallback !== null} online={online} callbackUrl={authCallback} platform={runtime.platform} bridge={bridge} onCallbackConsumed={clearConsumedAuthCallback} onContinueLocally={finishOnboarding} onLoggedOut={() => setSurface(SurfaceId.Account)} initialAppearance={{ theme: preferences.theme, language: preferences.language }} identitySessionRef={identitySession}>{content}</DevHudServiceBoundary> : content;
+  const boundary = (content: ReactNode) => runtime ? <DevHudServiceBoundary key={preferences.apiOrigin} apiOrigin={preferences.apiOrigin} active={onboarding || surface === SurfaceId.Account || surface === SurfaceId.Settings || authCallback !== null} online={online} callbackUrl={authCallback} platform={runtime.platform} bridge={bridge} onCallbackConsumed={clearConsumedAuthCallback} onContinueLocally={finishOnboarding} onLoggedOut={() => setSurface(SurfaceId.Account)} initialAppearance={{ theme: preferences.theme, language: preferences.language }} identitySessionRef={identitySession}><SynchronizedAppearanceBoundary onAppearance={(appearance) => update({ theme: appearance.theme, language: appearance.language })} />{content}</DevHudServiceBoundary> : content;
 
   if (runtimeState.kind !== ContentStateKind.Ready) return <main className="app-shell onboarding" data-devhud-ready="true"><section className="content"><ContentStateView state={runtimeState} copy={copy} onRetry={() => location.reload()} /></section></main>;
 
@@ -288,7 +282,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
       {surface === SurfaceId.Realqa && mobile && <><p className="eyebrow">{copy.desktopOnly}</p><h2>{copy.realqaMobileTitle}</h2><p>{copy.realqaMobileSummary}</p><p className="notice">{copy.unavailable}</p></>}
       {surface === SurfaceId.Realqa && !mobile && <><p className="eyebrow">{copy.realqa}</p><h2>{copy.realqaTitle}</h2><p>{copy.realqaSummary}</p><div className="disabled-actions">{unavailableCaptureActions.map((action) => <button disabled key={action.id}>{copy[action.title]}</button>)}</div><p className="notice">{copy.planned}</p></>}
       {surface === SurfaceId.Deck && <><p className="eyebrow">{copy.deck}</p><h2>{copy.deckTitle}</h2><p>{copy.deckSummary}</p>{online ? <EmptyState copy={copy} /> : <OfflineState copy={copy} />}</>}
-      {surface === SurfaceId.Settings && <><p className="eyebrow">{copy.settings}</p><h2>{copy.settingsTitle}</h2><p>{copy.settingsSummary}</p><SynchronizedSettingsBoundary copy={copy} onAppearance={(appearance) => update({ theme: appearance.theme, language: appearance.language })} />{supportsLaunchAtLogin && <><label className="check"><input type="checkbox" checked={preferences.launchAtLogin} onChange={(event) => { update({ launchAtLogin: event.target.checked }); void browserShell.setLaunchAtLogin(event.target.checked); }} />{copy.launchAtLogin}</label><p>{copy.launchAtLoginHint}</p></>}{runtime?.capabilities.notifications && <div className="native-setting"><button className="primary" onClick={() => void requestNotifications()}>{copy.notificationPermission}</button><output aria-live="polite">{copy[notificationPermissionLabels[notificationPermission]]}</output>{notificationRequestFailed && <p className="native-setting-error" role="alert">{copy.notificationPermissionFailed}</p>}</div>}{runtime?.capabilities.storeUpdates && <div className="native-setting"><p>{copy.updatePolicy}</p>{storeConfigured && <button className="primary" onClick={() => void openStore()}>{copy.updatePolicy}</button>}{storeOpenFailed && <p className="native-setting-error" role="alert">{copy.storeOpenFailed}</p>}</div>}</>}
+      {surface === SurfaceId.Settings && <><p className="eyebrow">{copy.settings}</p><h2>{copy.settingsTitle}</h2><p>{copy.settingsSummary}</p><SynchronizedSettingsBoundary copy={copy} />{supportsLaunchAtLogin && <><label className="check"><input type="checkbox" checked={preferences.launchAtLogin} onChange={(event) => { update({ launchAtLogin: event.target.checked }); void browserShell.setLaunchAtLogin(event.target.checked); }} />{copy.launchAtLogin}</label><p>{copy.launchAtLoginHint}</p></>}{runtime?.capabilities.notifications && <div className="native-setting"><button className="primary" onClick={() => void requestNotifications()}>{copy.notificationPermission}</button><output aria-live="polite">{copy[notificationPermissionLabels[notificationPermission]]}</output>{notificationRequestFailed && <p className="native-setting-error" role="alert">{copy.notificationPermissionFailed}</p>}</div>}{runtime?.capabilities.storeUpdates && <div className="native-setting"><p>{copy.updatePolicy}</p>{storeConfigured && <button className="primary" onClick={() => void openStore()}>{copy.updatePolicy}</button>}{storeOpenFailed && <p className="native-setting-error" role="alert">{copy.storeOpenFailed}</p>}</div>}</>}
       {surface === SurfaceId.Account && <><AccountIdentity copy={copy} apiOrigin={preferences.apiOrigin} inputRef={apiOriginInput} onApiOrigin={applyApiOrigin} /><div className="actions"><button onClick={() => void external(ExternalLinkTarget.Pat)}>{copy.pat}</button>{!mobile && <button onClick={() => void external(ExternalLinkTarget.Issue)}>{copy.issue}</button>}</div>{externalMessage && <p className="external-message" role={externalMessageIsError ? "alert" : "status"}>{externalMessageText}</p>}</>}
       {surface === SurfaceId.Diagnostics && <><p className="eyebrow">{copy.diagnostics}</p><h2>{copy.diagnosticsTitle}</h2><p>{copy.diagnosticsSummary}</p><p className="notice">{copy.diagnosticsUnavailable}</p>{runtime && <dl className="runtime-diagnostics"><dt>{copy.diagnosticPlatform}</dt><dd>{runtime.platform}</dd><dt>{copy.diagnosticArchitecture}</dt><dd>{runtime.architecture}</dd><dt>{copy.diagnosticBridge}</dt><dd>v{runtime.bridgeVersion}</dd></dl>}</>}
     </section>

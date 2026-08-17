@@ -4,6 +4,8 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
+import * as identityClient from "./identity-client";
+import type { IdentitySession } from "./identity-client";
 import { messages } from "./localization";
 import { LifecycleState, NativeBridgeError, NativeBridgeErrorCode, NotificationPermission, RuntimePlatform, type NativeBridgeEventV1, type NativeBridgeRequestV1, type NativeBridgeResponseV1, type NativeBridgeV1, type RuntimeSnapshot } from "./native-bridge";
 
@@ -106,8 +108,35 @@ describe("native App state", () => {
     expect(request.mock.calls.filter(([value]) => value.operation === "auth.peek-pending-callback")).toHaveLength(1);
   });
 
+  it("peeks for a callback only after the native listener is installed", async () => {
+    const operations: string[] = [];
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      operations.push(value.operation);
+      if (value.operation === "runtime.snapshot") return { kind: "runtime", snapshot: mobileRuntime };
+      if (value.operation === "auth.peek-pending-callback") return { kind: "auth-callback", url: null };
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    const bridge: NativeBridgeV1 = {
+      request,
+      async listen() { operations.push("listener-installed"); return () => {}; },
+    };
+
+    render(<App bridge={bridge} />);
+    await screen.findByText(messages.en.welcome);
+
+    expect(operations).toEqual(["listener-installed", "runtime.snapshot", "auth.peek-pending-callback"]);
+  });
+
   it("drains a cold-start callback after the identity session becomes ready", async () => {
-    const secureReads: NativeBridgeRequestV1[] = [];
+    let authenticated = false;
+    const handleCallback = vi.fn(async () => { authenticated = true; });
+    vi.spyOn(identityClient, "createIdentitySession").mockResolvedValue({
+      getAccessToken: async () => "fixture-access-token",
+      isAuthenticated: async () => authenticated,
+      signIn: async () => {},
+      handleCallback,
+      clear: async () => {},
+    } as unknown as IdentitySession);
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
       protocolSchemaVersion: 1,
       apiVersion: "0.1.0-dev",
@@ -120,13 +149,12 @@ describe("native App state", () => {
       if (request.operation === "runtime.snapshot") return { kind: "runtime", snapshot: mobileRuntime };
       if (request.operation === "auth.peek-pending-callback" || request.operation === "auth.take-pending-callback") return { kind: "auth-callback", url: "devhud://auth/callback?code=opaque&state=opaque" };
       if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
-      if (request.operation === "secure.read") { secureReads.push(request); return { kind: "secure-value", value: null }; }
       throw new Error(`unexpected operation ${request.operation}`);
     });
 
     render(<App bridge={bridgeWith(request)} />);
 
-    await waitFor(() => expect(secureReads.length).toBeGreaterThanOrEqual(2));
+    await waitFor(() => expect(handleCallback).toHaveBeenCalledOnce());
     expect(request.mock.calls.filter(([value]) => value.operation === "auth.peek-pending-callback")).toHaveLength(1);
     expect(request.mock.calls.filter(([value]) => value.operation === "auth.take-pending-callback")).toHaveLength(1);
   });
@@ -135,6 +163,15 @@ describe("native App state", () => {
     const callbackUrl = "devhud://auth/callback?code=opaque&state=opaque";
     let pendingCallback: string | null = callbackUrl;
     let issuerConfigured = false;
+    let authenticated = false;
+    const handleCallback = vi.fn(async () => { authenticated = true; });
+    vi.spyOn(identityClient, "createIdentitySession").mockResolvedValue({
+      getAccessToken: async () => "fixture-access-token",
+      isAuthenticated: async () => authenticated,
+      signIn: async () => {},
+      handleCallback,
+      clear: async () => {},
+    } as unknown as IdentitySession);
     vi.stubGlobal("location", { reload: vi.fn() });
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
       protocolSchemaVersion: 1,
@@ -159,7 +196,6 @@ describe("native App state", () => {
         }
         return { kind: "session-network-policy", changed: false };
       }
-      if (request.operation === "secure.read") return { kind: "secure-value", value: null };
       throw new Error(`unexpected operation ${request.operation}`);
     });
 
@@ -172,6 +208,7 @@ describe("native App state", () => {
     render(<App bridge={bridgeWith(request)} />);
     await waitFor(() => expect(request.mock.calls.filter(([value]) => value.operation === "auth.take-pending-callback")).toHaveLength(1));
     expect(pendingCallback).toBeNull();
+    expect(handleCallback).toHaveBeenCalledWith(callbackUrl);
   });
 
   it("unsubscribes when a listener resolves after cleanup", async () => {

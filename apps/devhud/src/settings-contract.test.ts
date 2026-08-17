@@ -39,6 +39,22 @@ describe("DevHud settings boundary", () => {
     expect(() => parseDevHudSettings({ ...defaultDevHudSettings, decks: Array.from({ length: 26 }, (_, index) => ({ ...deck, id: `deck-${index}` })) })).toThrow(/at most 25/u);
   });
 
+  it("accepts only canonical UUID-v7 Deck IDs", () => {
+    const deck = {
+      id: "018f47a2-7b3c-7def-8abc-1234567890ab",
+      title: "Deck",
+      query: "is:pr",
+      repository: null,
+      display: { groupBy: "none", showDrafts: true },
+      refreshMinutes: 15,
+      notifications: [],
+    };
+
+    expect(parseDevHudSettings({ ...defaultDevHudSettings, decks: [deck] }).decks[0]?.id).toBe(deck.id);
+    expect(() => parseDevHudSettings({ ...defaultDevHudSettings, decks: [{ ...deck, id: "deck" }] })).toThrow(/UUID v7/u);
+    expect(() => parseDevHudSettings({ ...defaultDevHudSettings, decks: [{ ...deck, id: deck.id.toUpperCase() }] })).toThrow(/UUID v7/u);
+  });
+
   it.each(["?token=plain-secret", "?X-Amz-Signature=plain-secret", "#credential", "?", "#"])("rejects query or fragment delimiters in synchronized URL fields: %s", (suffix) => {
     expect(() => parseDevHudSettings({
       ...defaultDevHudSettings,

@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useState, type Ref } from "react";
+import { useEffect, useEffectEvent, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type Ref } from "react";
 import type { Copy } from "./localization";
 import { useIdentitySettings } from "./service-boundary";
 import { LanguagePreference, normalizeApiOrigin, ThemePreference } from "./shell";
@@ -72,10 +72,18 @@ export function AccountIdentity({ copy, apiOrigin, inputRef, onApiOrigin }: Acco
   const identity = useIdentitySettings();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [actionError, setActionError] = useState(false);
+  const deleteTrigger = useRef<HTMLButtonElement>(null);
+  const deleteDialog = useRef<HTMLElement>(null);
+  const cancelDelete = useRef<HTMLButtonElement>(null);
   const invoke = (action: () => Promise<void>) => { setActionError(false); void action().catch(() => setActionError(true)); };
+  const closeDeleteConfirmation = () => {
+    setConfirmDelete(false);
+    requestAnimationFrame(() => deleteTrigger.current?.focus());
+  };
   useEffect(() => {
     if (!confirmDelete) return;
-    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") setConfirmDelete(false); };
+    cancelDelete.current?.focus();
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") closeDeleteConfirmation(); };
     addEventListener("keydown", closeOnEscape);
     return () => removeEventListener("keydown", closeOnEscape);
   }, [confirmDelete]);
@@ -91,23 +99,28 @@ export function AccountIdentity({ copy, apiOrigin, inputRef, onApiOrigin }: Acco
     {identity.status === "authenticated" && !identity.accountError && identity.account === null && <p role="status">{copy.loadingAccount}</p>}
     {identity.status === "authenticated" && !identity.accountError && identity.account !== null && <section className="account-session" aria-label={copy.signedInSession}>
       <p>{identity.account.displayName || identity.account.email || copy.signedIn}</p>
-      <div className="actions"><button onClick={() => invoke(identity.logout)}>{copy.logout}</button><button className="danger" onClick={() => setConfirmDelete(true)}>{copy.deleteAccount}</button></div>
+      <div className="actions"><button onClick={() => invoke(identity.logout)}>{copy.logout}</button><button ref={deleteTrigger} className="danger" onClick={() => setConfirmDelete(true)}>{copy.deleteAccount}</button></div>
     </section>}
     {identity.status === "blocked" && <section className="notice" role="status"><h3>{copy.blockedTitle}</h3><p>{copy.blockedSummary}</p><p>{copy.blockedLocalHint}</p><button onClick={() => invoke(identity.logout)}>{copy.logout}</button></section>}
     {identity.status === "deletion-pending" && <section className="notice" role="status"><h3>{copy.deletionPendingTitle}</h3><p>{copy.deletionPendingSummary}</p>{identity.account?.recoverableUntil && <p>{copy.recoverableUntil}: {new Date(Number(identity.account.recoverableUntil.seconds) * 1000).toLocaleString()}</p>}<div className="actions"><button onClick={() => invoke(identity.restoreAccount)}>{copy.restoreAccount}</button><button onClick={() => invoke(identity.logout)}>{copy.logout}</button></div></section>}
-    {confirmDelete && identity.status === "authenticated" && !identity.accountError && identity.account !== null && <section className="confirmation" role="alertdialog" aria-modal="true" aria-labelledby="delete-account-title"><h3 id="delete-account-title">{copy.deleteAccountConfirmTitle}</h3><p>{copy.deleteAccountConfirmSummary}</p><div className="actions"><button className="danger" onClick={() => { setConfirmDelete(false); invoke(identity.deleteAccount); }}>{copy.deleteAccount}</button><button onClick={() => setConfirmDelete(false)}>{copy.cancel}</button></div></section>}
+    {confirmDelete && identity.status === "authenticated" && !identity.accountError && identity.account !== null && <section ref={deleteDialog} className="confirmation" role="alertdialog" aria-modal="true" aria-labelledby="delete-account-title" onKeyDown={(event) => trapDialogFocus(event, deleteDialog.current)}><h3 id="delete-account-title">{copy.deleteAccountConfirmTitle}</h3><p>{copy.deleteAccountConfirmSummary}</p><div className="actions"><button className="danger" onClick={() => { closeDeleteConfirmation(); invoke(identity.deleteAccount); }}>{copy.deleteAccount}</button><button ref={cancelDelete} onClick={closeDeleteConfirmation}>{copy.cancel}</button></div></section>}
     {actionError && <p role="alert">{copy.accountActionFailed}</p>}
   </>;
 }
 
-export function SynchronizedSettingsBoundary({ copy, onAppearance }: { readonly copy: Copy; readonly onAppearance: (appearance: DevHudSettingsV1["appearance"]) => void }) {
+export function SynchronizedAppearanceBoundary({ onAppearance }: { readonly onAppearance: (appearance: DevHudSettingsV1["appearance"]) => void }) {
   const identity = useIdentitySettings();
-  const [actionError, setActionError] = useState(false);
-  const invoke = (action: () => Promise<void>) => { setActionError(false); void action().catch(() => setActionError(true)); };
   const applyAppearance = useEffectEvent(onAppearance);
   useEffect(() => {
     applyAppearance(identity.settings.appearance);
   }, [identity.settings.appearance.language, identity.settings.appearance.theme]);
+  return null;
+}
+
+export function SynchronizedSettingsBoundary({ copy }: { readonly copy: Copy }) {
+  const identity = useIdentitySettings();
+  const [actionError, setActionError] = useState(false);
+  const invoke = (action: () => Promise<void>) => { setActionError(false); void action().catch(() => setActionError(true)); };
   const replaceAppearance = (appearance: Partial<DevHudSettingsV1["appearance"]>) => invoke(() => identity.replaceSettings({
     ...identity.settings,
     appearance: { ...identity.settings.appearance, ...appearance },
@@ -124,27 +137,55 @@ export function SynchronizedSettingsBoundary({ copy, onAppearance }: { readonly 
       {!identity.offline && <p>{copy.settingsRevision}: {identity.revision.toString()}</p>}
     {identity.importDiff && <SnapshotChoice key="import" choiceId="import" copy={copy} entries={identity.importDiff} title={copy.importSettingsTitle} summary={copy.importSettingsSummary} primary={copy.uploadLocal} secondary={copy.replaceLocal} onPrimary={() => invoke(identity.uploadLocal)} onSecondary={identity.replaceLocal} />}
     {identity.conflict && <SnapshotChoice key="conflict" choiceId="conflict" copy={copy} entries={identity.conflict.diff} title={copy.conflictTitle} summary={copy.conflictSummary} primary={copy.reapplyLocal} secondary={copy.adoptServer} onPrimary={() => invoke(identity.reapplyConflictLocal)} onSecondary={identity.adoptConflictServer} />}
-    {(actionError || identity.error?.startsWith("settings-") || identity.settingsError) && <p role="alert">{copy.settingsActionFailed}{identity.error?.startsWith("settings-") && <> <code>{identity.error}</code></>}{identity.settingsError && <> <code>{`settings-connect-${identity.settingsError.code}`}</code>{identity.settingsError.correlationId && <> {copy.correlationId}: <code>{identity.settingsError.correlationId}</code></>}</>}</p>}
+    {(actionError || identity.error?.startsWith("settings-") || identity.settingsError) && <section className="notice" role="alert"><p>{copy.settingsActionFailed}{identity.error?.startsWith("settings-") && <> <code>{identity.error}</code></>}{identity.settingsError && <> <code>{`settings-connect-${identity.settingsError.code}`}</code>{identity.settingsError.correlationId && <> {copy.correlationId}: <code>{identity.settingsError.correlationId}</code></>}</>}</p><button onClick={() => invoke(identity.retrySettings)}>{copy.retry}</button></section>}
     </section>}
   </>;
 }
 
 function SnapshotChoice({ choiceId, copy, entries, title, summary, primary, secondary, onPrimary, onSecondary }: { readonly choiceId: string; readonly copy: Copy; readonly entries: readonly SettingsDiffEntry[]; readonly title: string; readonly summary: string; readonly primary: string; readonly secondary: string; readonly onPrimary: () => void; readonly onSecondary: () => void }) {
   const [open, setOpen] = useState(true);
+  const dialog = useRef<HTMLElement>(null);
+  const closeButton = useRef<HTMLButtonElement>(null);
+  const restoreFocus = useRef<HTMLElement | null>(null);
+  const close = () => {
+    setOpen(false);
+    requestAnimationFrame(() => restoreFocus.current?.focus());
+  };
+  const choose = (action: () => void) => {
+    action();
+    requestAnimationFrame(() => restoreFocus.current?.focus());
+  };
   useEffect(() => {
     if (!open) return;
-    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") setOpen(false); };
+    restoreFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    closeButton.current?.focus();
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") close(); };
     addEventListener("keydown", closeOnEscape);
     return () => removeEventListener("keydown", closeOnEscape);
   }, [open]);
   if (!open) return <section className="notice"><p>{summary}</p><button onClick={() => setOpen(true)}>{title}</button></section>;
   const titleId = `snapshot-choice-${choiceId}-title`;
-  return <section className="snapshot-choice" role="dialog" aria-modal="true" aria-labelledby={titleId}>
-    <button type="button" onClick={() => setOpen(false)}>{copy.close}</button>
+  return <section ref={dialog} className="snapshot-choice" role="dialog" aria-modal="true" aria-labelledby={titleId} onKeyDown={(event) => trapDialogFocus(event, dialog.current)}>
+    <button ref={closeButton} type="button" onClick={close}>{copy.close}</button>
     <h4 id={titleId}>{title}</h4><p>{summary}</p>
     <table><caption>{copy.completeSnapshotDiff}</caption><thead><tr><th scope="col">{copy.settingPath}</th><th scope="col">{copy.localValue}</th><th scope="col">{copy.serverValue}</th></tr></thead><tbody>{entries.length === 0 ? <tr><td colSpan={3}>{copy.noDifferences}</td></tr> : entries.map((entry) => <tr key={`${entry.path}:${entry.kind}`}><th scope="row">{entry.path}</th><td><code>{printValue(entry.local)}</code></td><td><code>{printValue(entry.server)}</code></td></tr>)}</tbody></table>
-    <div className="actions"><button onClick={onPrimary}>{primary}</button><button onClick={onSecondary}>{secondary}</button></div>
+    <div className="actions"><button onClick={() => choose(onPrimary)}>{primary}</button><button onClick={() => choose(onSecondary)}>{secondary}</button></div>
   </section>;
+}
+
+function trapDialogFocus(event: ReactKeyboardEvent<HTMLElement>, dialog: HTMLElement | null): void {
+  if (event.key !== "Tab" || dialog === null) return;
+  const focusable = dialog.querySelectorAll<HTMLElement>("button:not([disabled]), input:not([disabled]), select:not([disabled]), [href]");
+  if (focusable.length === 0) return;
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
 }
 
 function printValue(value: unknown): string {

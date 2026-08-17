@@ -6,6 +6,7 @@ const guestSettingsKey = `${prefix}guest-settings`;
 const guestUsedKey = `${prefix}guest-used`;
 const accountPrefix = `${prefix}account.`;
 const invalidatedSettingsKeys = new Set<string>();
+const clearedGuestSettings = new WeakSet<object>();
 
 type ReadStorage = Pick<Storage, "getItem">;
 type WriteStorage = Pick<Storage, "setItem">;
@@ -21,24 +22,34 @@ export function readGuestSettings(storage: ReadStorage): DevHudSettingsV1 {
 }
 
 export function writeGuestSettings(storage: WriteStorage, settings: DevHudSettingsV1): void {
+  const parsed = parseDevHudSettings(settings);
+  clearedGuestSettings.delete(storage);
   try {
-    storage.setItem(guestSettingsKey, canonicalDevHudSettings(settings));
-    storage.setItem(guestUsedKey, "true");
+    // The snapshot itself is the durable import marker so quota failures cannot split the two values.
+    storage.setItem(guestSettingsKey, canonicalDevHudSettings(parsed));
   } catch {
     // Guest settings remain usable in memory when Web Storage becomes unavailable.
   }
 }
 
 export function hasGuestSettings(storage: ReadStorage): boolean {
+  if (clearedGuestSettings.has(storage)) return false;
   try {
-    return storage.getItem(guestUsedKey) === "true";
+    return storage.getItem(guestSettingsKey) !== null || storage.getItem(guestUsedKey) === "true";
   } catch {
     return false;
   }
 }
 
 export function clearGuestImportMarker(storage: Pick<Storage, "removeItem">): void {
-  storage.removeItem(guestUsedKey);
+  clearedGuestSettings.add(storage);
+  for (const key of [guestSettingsKey, guestUsedKey]) {
+    try {
+      storage.removeItem(key);
+    } catch {
+      // The in-memory tombstone prevents a failed removal from reopening the import choice this session.
+    }
+  }
 }
 
 export interface CachedSettings {
@@ -117,6 +128,7 @@ export function clearAuthenticatedOriginData(storage: MutableStorage, apiOrigin:
 }
 
 export function clearAllContractedLocalData(storage: MutableStorage): void {
+  clearedGuestSettings.add(storage);
   removeMatching(storage, (key) => key.startsWith(prefix) || /^(?:devhud\.(?:deck|draft|clone|cache|permission|pairing)|devhud-extension\.)/u.test(key));
 }
 
