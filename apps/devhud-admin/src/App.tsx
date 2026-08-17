@@ -88,8 +88,12 @@ function initializeAppOnce(): Promise<Phase> {
 }
 
 function localeInitial(): Locale {
-  const stored = localStorage.getItem("devhud.admin.locale");
-  if (stored === "en" || stored === "ko") return stored;
+  try {
+    const stored = localStorage.getItem("devhud.admin.locale");
+    if (stored === "en" || stored === "ko") return stored;
+  } catch {
+    // Web Storage can throw when browser policy disables or blocks access.
+  }
   return navigator.language.toLowerCase().startsWith("ko") ? "ko" : "en";
 }
 

@@ -95,6 +95,22 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("administrator console review regressions", () => {
+  it("falls back to the browser locale when Web Storage is unavailable", async () => {
+    const getItem = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new DOMException("Storage is unavailable", "SecurityError");
+    });
+    const language = vi.spyOn(navigator, "language", "get").mockReturnValue("ko-KR");
+
+    try {
+      render(<App />);
+      expect(await screen.findByText("신원")).toBeTruthy();
+      expect(document.documentElement.lang).toBe("ko");
+    } finally {
+      getItem.mockRestore();
+      language.mockRestore();
+    }
+  });
+
   it("offers a fresh sign-in after an unusable callback is discarded", async () => {
     runtime.auth.isAuthenticated.mockResolvedValue(false);
     render(<App />);

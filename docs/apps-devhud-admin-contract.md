@@ -6,7 +6,7 @@
 
 ## Runtime and Language
 
-React/TypeScript SPA using the shared frontend conventions, English/Korean UI, Toss Design Guidelines, and WCAG 2.2 AA. Fixed development origin: `http://localhost:46306`.
+React/TypeScript SPA using the shared frontend conventions, English/Korean UI, Toss Design Guidelines, and WCAG 2.2 AA. Startup uses a valid stored locale when available and otherwise derives the locale from the browser, including when Web Storage access fails. Fixed development origin: `http://localhost:46306`.
 
 ## Users and Operators
 
