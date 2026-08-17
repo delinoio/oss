@@ -37,6 +37,7 @@ const diagnosticPlatforms: ReadonlySet<DiagnosticPlatform> = new Set([
   DiagnosticPlatform.LINUX,
   DiagnosticPlatform.IOS,
   DiagnosticPlatform.ANDROID,
+  DiagnosticPlatform.BROWSER,
 ]);
 const diagnosticArchitectures: ReadonlySet<DiagnosticArchitecture> = new Set([
   DiagnosticArchitecture.X86_64,
@@ -201,14 +202,20 @@ export function validateCrashReport(report: SubmitCrashReportRequest): void {
   if (!report.clientBuild.appVersion || !report.clientBuild.buildId || !report.clientBuild.osVersion) {
     throw new TypeError("clientBuild version and operating-system fields must not be empty");
   }
-  if (!/^[0-9a-f]{40}$/u.test(report.clientBuild.tauriRevision)) {
+  const browser = report.clientBuild.platform === DiagnosticPlatform.BROWSER;
+  if (browser !== (report.clientBuild.tauriRevision.length === 0)) {
+    throw new TypeError(
+      "clientBuild.tauriRevision must be exact on native hosts and empty in browsers",
+    );
+  }
+  if (!browser && !/^[0-9a-f]{40}$/u.test(report.clientBuild.tauriRevision)) {
     throw new TypeError("clientBuild.tauriRevision must be an exact lowercase source revision");
   }
   const desktop = report.clientBuild.platform === DiagnosticPlatform.MACOS
     || report.clientBuild.platform === DiagnosticPlatform.WINDOWS
     || report.clientBuild.platform === DiagnosticPlatform.LINUX;
   if (desktop ? report.clientBuild.cefRevision.length === 0 : report.clientBuild.cefRevision.length !== 0) {
-    throw new TypeError("clientBuild.cefRevision must be present only for desktop reports");
+    throw new TypeError("clientBuild.cefRevision must be present only for native desktop reports");
   }
   validateDiagnosticText(report.redactedSummary, MAX_CRASH_SUMMARY_BYTES, "redactedSummary");
   validateDiagnosticText(

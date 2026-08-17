@@ -66,20 +66,28 @@ func TestSubmitCrashReportRequiresAuthenticationAndMapsBlockedUsers(t *testing.T
 
 func TestValidateCrashReportRejectsHostileDiagnosticContent(t *testing.T) {
 	for name, hostile := range map[string]string{
-		"authorization": "Authorization: Bearer abc",
-		"pat":           "github_pat=secret",
-		"r2":            "r2_secret=value",
-		"signing":       "signing_key=value",
-		"dom":           "innerHTML=<form>",
-		"screenshot":    "screenshot bytes",
-		"fragment":      "https://example.test/path#private",
-		"form":          "form_value=private",
-		"issue":         "issue_body=private",
-		"agent":         "agent_prompt=private",
-		"environment":   "child_env=private",
-		"unix path":     "/home/alice/project/main.ts",
-		"windows path":  `C:\\Users\\alice\\project\\main.ts`,
-		"shortcut":      "Ctrl+Shift+P",
+		"authorization":        "Authorization: Bearer abc",
+		"pat":                  "github_pat=secret",
+		"raw classic pat":      "ghp_0123456789abcdefghijklmnopqrstuvwxyz",
+		"raw fine-grained pat": "github_pat_0123456789abcdefghijklmnopqrstuvwxyz",
+		"r2":                   "r2_secret=value",
+		"signing":              "signing_key=value",
+		"dom":                  "innerHTML=<form>",
+		"screenshot":           "screenshot bytes",
+		"fragment":             "https://example.test/path#private",
+		"form":                 "form_value=private",
+		"issue":                "issue_body=private",
+		"agent":                "agent_prompt=private",
+		"environment":          "child_env=private",
+		"unix path":            "/home/alice/project/main.ts",
+		"workspace path":       "/workspace/project/main.ts",
+		"root path":            "/root/project/main.ts",
+		"usr path":             "/usr/src/project/main.ts",
+		"home path":            "~/project/main.ts",
+		"windows path":         `C:\\Users\\alice\\project\\main.ts`,
+		"windows slash path":   `C:/Users/alice/project/main.ts`,
+		"unc path":             `\\\\server\\share\\project\\main.ts`,
+		"shortcut":             "Ctrl+Shift+P",
 	} {
 		t.Run(name, func(t *testing.T) {
 			request := validCrashReportRequest()
@@ -88,6 +96,36 @@ func TestValidateCrashReportRejectsHostileDiagnosticContent(t *testing.T) {
 				t.Fatal("hostile content was accepted")
 			}
 		})
+	}
+}
+
+func TestValidateCrashReportAcceptsSafeSlashLabelsAndRemoteURLs(t *testing.T) {
+	for _, safe := range []string{
+		"React/Native renderer failed.",
+		"iOS/18.6 runtime classification.",
+		"https://example.test/assets/app.js:10:2",
+	} {
+		request := validCrashReportRequest()
+		request.RedactedSummary = safe
+		if err := validateCrashReport(request); err != nil {
+			t.Fatalf("safe diagnostic %q was rejected: %v", safe, err)
+		}
+	}
+}
+
+func TestValidateCrashReportAcceptsTruthfulBrowserBuilds(t *testing.T) {
+	request := validCrashReportRequest()
+	request.ClientBuild.Platform = devhudv1.DiagnosticPlatform_DIAGNOSTIC_PLATFORM_BROWSER
+	request.ClientBuild.OsVersion = "browser"
+	request.ClientBuild.TauriRevision = ""
+	request.ClientBuild.CefRevision = ""
+	if err := validateCrashReport(request); err != nil {
+		t.Fatalf("browser build was rejected: %v", err)
+	}
+
+	request.ClientBuild.TauriRevision = "4af26a3f7f8b692d62cca549bbacd93f5ce90b41"
+	if err := validateCrashReport(request); err == nil {
+		t.Fatal("browser build with a fabricated Tauri revision was accepted")
 	}
 }
 

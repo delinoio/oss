@@ -1,10 +1,14 @@
 // @vitest-environment jsdom
 
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { Code, ConnectError } from "@connectrpc/connect";
 import { toJsonString } from "@bufbuild/protobuf";
-import { DiagnosticComponent, DiagnosticPlatform, DiagnosticSeverity, SubmitCrashReportRequestSchema } from "@delinoio/devhud-api-client";
-import { beforeEach, describe, expect, it } from "vitest";
+import { DiagnosticComponent, DiagnosticPlatform, DiagnosticSeverity, ErrorMetadataSchema, PermissionFailureReason, PermissionFailureSchema, SubmitCrashReportRequestSchema } from "@delinoio/devhud-api-client";
+import { createElement } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   DiagnosticsMaximumEvents,
+  DiagnosticsCorrelationsKey,
   DiagnosticsRetentionDays,
   DiagnosticsStorageKey,
   appendDiagnosticCorrelation,
@@ -18,9 +22,17 @@ import {
   uuidV7,
   type LocalDiagnosticEvent,
 } from "./diagnostics";
-import { LifecycleState, RuntimePlatform, type RuntimeSnapshot } from "./native-bridge";
-import { diagnosticsSubmissionBlock } from "./diagnostics-ui";
+import { LifecycleState, RuntimePlatform, type NativeBridgeV1, type RuntimeSnapshot } from "./native-bridge";
+import { DiagnosticsPanel, diagnosticsSubmissionBlock } from "./diagnostics-ui";
 import { NativeBridgeError, NativeBridgeErrorCode, nativeBridge, validateDiagnosticsExport } from "./native-bridge";
+import { messages } from "./localization";
+import * as serviceBoundary from "./service-boundary";
+
+const diagnosticsMutation = vi.hoisted(() => ({ mutateAsync: vi.fn(), isPending: false }));
+vi.mock("@connectrpc/connect-query", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@connectrpc/connect-query")>(),
+  useMutation: () => diagnosticsMutation,
+}));
 
 const runtime: RuntimeSnapshot = {
   bridgeVersion: 1,
@@ -39,6 +51,12 @@ const runtime: RuntimeSnapshot = {
 beforeEach(() => {
   localStorage.clear();
   delete window.showSaveFilePicker;
+  diagnosticsMutation.mutateAsync.mockReset();
+});
+
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
 });
 
 describe("diagnostics privacy boundary", () => {
@@ -84,6 +102,47 @@ describe("diagnostics privacy boundary", () => {
     expect(new TextEncoder().encode(localStorage.getItem(DiagnosticsStorageKey) ?? "").byteLength).toBeLessThanOrEqual(1024 * 1024);
   });
 
+  it("physically removes expired events and correlations during read maintenance", () => {
+    const now = Date.parse("2026-08-17T00:00:00.000Z");
+    const expiredAt = now - (DiagnosticsRetentionDays + 1) * 86_400_000;
+    const expired = fixtureEvent(expiredAt);
+    localStorage.setItem(DiagnosticsStorageKey, JSON.stringify([expired]));
+    localStorage.setItem(DiagnosticsCorrelationsKey, JSON.stringify([{
+      source: "connect-response",
+      correlationId: expired.correlationId,
+      operation: "diagnostics",
+      occurredAt: expired.occurredAt,
+      durationMilliseconds: 1,
+    }]));
+
+    expect(readDiagnosticEvents(localStorage, now)).toEqual([]);
+    expect(readDiagnosticCorrelations(localStorage, now)).toEqual([]);
+    expect(localStorage.getItem(DiagnosticsStorageKey)).toBeNull();
+    expect(localStorage.getItem(DiagnosticsCorrelationsKey)).toBeNull();
+  });
+
+  it("reports browser development without fabricated native runtime revisions", async () => {
+    const response = await nativeBridge.request({ operation: "runtime.snapshot" });
+    expect(response.kind).toBe("runtime");
+    if (response.kind !== "runtime") return;
+    expect(response.snapshot).toMatchObject({
+      platform: RuntimePlatform.Browser,
+      operatingSystem: "browser",
+      tauriRevision: "",
+      cefRevision: "",
+    });
+    const now = Date.parse("2026-08-17T00:00:00.000Z");
+    const event = captureDiagnosticEvent(response.snapshot, {
+      component: DiagnosticComponent.APP,
+      severity: DiagnosticSeverity.ERROR,
+      errorCode: "BROWSER_FAILURE",
+    }, now);
+    const prepared = prepareDiagnosticsBundle(event, [event]);
+    expect(prepared.request.clientBuild?.platform).toBe(DiagnosticPlatform.BROWSER);
+    expect(prepared.request.clientBuild?.tauriRevision).toBe("");
+    expect(prepared.request.clientBuild?.cefRevision).toBe("");
+  });
+
   it("normalizes persisted events to the closed local schema and drops unsafe classifications", () => {
     const now = Date.parse("2026-08-17T00:00:00.000Z");
     const valid = { ...fixtureEvent(now), persistentUserId: "user-123" };
@@ -127,6 +186,34 @@ describe("diagnostics privacy boundary", () => {
     expect(diagnosticsSubmissionBlock("authenticated", false, true)).toBe("offline");
     expect(diagnosticsSubmissionBlock("authenticated", true, false)).toBe("consent-required");
     expect(diagnosticsSubmissionBlock("authenticated", true, true)).toBeNull();
+  });
+
+  it("preserves typed denial errors and their server correlation", async () => {
+    const correlationId = "0198c8b0-77d6-7d4a-a7d9-e4d7b11c4402";
+    diagnosticsMutation.mutateAsync.mockRejectedValue(new ConnectError("blocked", Code.PermissionDenied, undefined, [
+      { desc: PermissionFailureSchema, value: { reason: PermissionFailureReason.USER_BLOCKED } },
+      { desc: ErrorMetadataSchema, value: { correlationId: { value: correlationId } } },
+    ]));
+    await renderDiagnosticsPanelAndSubmit();
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain(messages.en.diagnosticsSubmitDenied);
+    expect(alert.textContent).toContain(`diagnostics-connect-${Code.PermissionDenied}`);
+    expect(alert.textContent).toContain(correlationId);
+  });
+
+  it("preserves retryable submission classifications and header correlations", async () => {
+    const correlationId = "0198c8b0-77d6-7d4a-a7d9-e4d7b11c4403";
+    diagnosticsMutation.mutateAsync.mockRejectedValue(new ConnectError("retry", Code.Unavailable, {
+      "x-devhud-correlation-id": correlationId,
+    }));
+    await renderDiagnosticsPanelAndSubmit();
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain(messages.en.diagnosticsSubmitFailed);
+    expect(alert.textContent).toContain(`diagnostics-connect-${Code.Unavailable}`);
+    expect(alert.textContent).toContain(correlationId);
+    expect(screen.getByTestId("diagnostics-export-preview")).toBeTruthy();
   });
 
   it("accepts only bounded redacted exports with an app-selected name", () => {
@@ -182,4 +269,22 @@ function fixtureEvent(now: number): LocalDiagnosticEvent {
     errorCode: "APP_FAILURE",
     occurredAt: new Date(now),
   }, now);
+}
+
+async function renderDiagnosticsPanelAndSubmit(): Promise<void> {
+  const now = Date.parse("2026-08-17T00:00:00.000Z");
+  appendDiagnosticEvent(localStorage, fixtureEvent(now), now);
+  vi.spyOn(serviceBoundary, "useIdentitySettings").mockReturnValue({
+    status: "authenticated",
+  } as ReturnType<typeof serviceBoundary.useIdentitySettings>);
+  const bridge: NativeBridgeV1 = {
+    async request() { return { kind: "ok" }; },
+    async listen() { return () => {}; },
+  };
+  render(createElement(DiagnosticsPanel, { copy: messages.en, runtime, bridge, storage: localStorage, online: true }));
+  fireEvent.click(screen.getByRole("button", { name: messages.en.diagnosticsPreview }));
+  fireEvent.click(screen.getByRole("checkbox", { name: messages.en.diagnosticsConsent }));
+  await waitFor(() => expect((screen.getByRole("button", { name: messages.en.diagnosticsSubmit }) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(screen.getByRole("button", { name: messages.en.diagnosticsSubmit }));
+  await waitFor(() => expect(diagnosticsMutation.mutateAsync).toHaveBeenCalledOnce());
 }

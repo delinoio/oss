@@ -12,9 +12,11 @@ use std::process::{Child, Command};
 #[cfg(target_os = "linux")]
 use std::sync::mpsc;
 use std::{
+    io::{self, Write},
     net::IpAddr,
+    path::{Path, PathBuf},
     sync::{
-        Arc,
+        Arc, Mutex, OnceLock,
         atomic::{AtomicBool, Ordering},
     },
     time::Duration,
@@ -51,6 +53,132 @@ const EXTERNAL_OPENER_TIMEOUT: Duration = Duration::from_secs(5);
 const RENDERER_CRASH_LISTENER_READY_ATTEMPTS: usize = 100;
 const RENDERER_CRASH_LISTENER_READY_DELAY: Duration = Duration::from_millis(50);
 const DIAGNOSTIC_LOG_FILE_LIMIT: usize = 7;
+
+static DIAGNOSTIC_LOG_CONTROLLER: OnceLock<DiagnosticLogController> = OnceLock::new();
+
+struct DiagnosticFileSink {
+    directory: PathBuf,
+    appender: Option<tracing_appender::rolling::RollingFileAppender>,
+}
+
+#[derive(Clone, Default)]
+struct DiagnosticLogController {
+    sink: Option<Arc<Mutex<DiagnosticFileSink>>>,
+}
+
+impl DiagnosticLogController {
+    fn new(directory: PathBuf) -> Result<Self, ()> {
+        let appender = build_diagnostic_appender(&directory)?;
+        Ok(Self {
+            sink: Some(Arc::new(Mutex::new(DiagnosticFileSink {
+                directory,
+                appender: Some(appender),
+            }))),
+        })
+    }
+
+    fn reset(&self) -> Result<(), String> {
+        let Some(sink) = &self.sink else {
+            return Ok(());
+        };
+        let mut sink = sink.lock().map_err(|_| "storage-failure")?;
+        sink.appender.take();
+        let removal = remove_diagnostic_log_files(&sink.directory);
+        let replacement =
+            build_diagnostic_appender(&sink.directory).map_err(|_| "storage-failure".to_string());
+        if let Ok(appender) = replacement {
+            sink.appender = Some(appender);
+        } else {
+            return Err("storage-failure".to_string());
+        }
+        removal
+    }
+}
+
+impl Write for DiagnosticLogController {
+    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+        let Some(sink) = &self.sink else {
+            return Ok(buffer.len());
+        };
+        let mut sink = sink
+            .lock()
+            .map_err(|_| io::Error::other("diagnostic log lock poisoned"))?;
+        match sink.appender.as_mut() {
+            Some(appender) => appender.write(buffer),
+            None => Ok(buffer.len()),
+        }
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        let Some(sink) = &self.sink else {
+            return Ok(());
+        };
+        let mut sink = sink
+            .lock()
+            .map_err(|_| io::Error::other("diagnostic log lock poisoned"))?;
+        match sink.appender.as_mut() {
+            Some(appender) => appender.flush(),
+            None => Ok(()),
+        }
+    }
+}
+
+impl<'writer> tracing_subscriber::fmt::MakeWriter<'writer> for DiagnosticLogController {
+    type Writer = Self;
+
+    fn make_writer(&'writer self) -> Self::Writer {
+        self.clone()
+    }
+}
+
+fn build_diagnostic_appender(
+    directory: &Path,
+) -> Result<tracing_appender::rolling::RollingFileAppender, ()> {
+    use tracing_appender::rolling::{RollingFileAppender, Rotation};
+
+    std::fs::create_dir_all(directory).map_err(|_| ())?;
+    RollingFileAppender::builder()
+        .rotation(Rotation::DAILY)
+        .filename_prefix("devhud")
+        .filename_suffix("jsonl")
+        .max_log_files(DIAGNOSTIC_LOG_FILE_LIMIT)
+        .build(directory)
+        .map_err(|_| ())
+}
+
+fn remove_diagnostic_log_files(directory: &Path) -> Result<(), String> {
+    let Ok(entries) = std::fs::read_dir(directory) else {
+        return Ok(());
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let diagnostic_file = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(is_diagnostic_log_name);
+        if diagnostic_file {
+            std::fs::remove_file(path).map_err(|_| "storage-failure")?;
+        }
+    }
+    Ok(())
+}
+
+fn is_diagnostic_log_name(name: &str) -> bool {
+    let bytes = name.as_bytes();
+    bytes.len() == 23
+        && name.starts_with("devhud.")
+        && name.ends_with(".jsonl")
+        && bytes[7..17].iter().enumerate().all(|(index, byte)| {
+            matches!(index, 4 | 7) && *byte == b'-'
+                || !matches!(index, 4 | 7) && byte.is_ascii_digit()
+        })
+}
+
+pub(crate) fn reset_diagnostic_logs() -> Result<(), String> {
+    DIAGNOSTIC_LOG_CONTROLLER
+        .get()
+        .map_or(Ok(()), DiagnosticLogController::reset)
+}
 
 #[derive(Clone)]
 struct TrayMenuItems {
@@ -393,30 +521,25 @@ fn diagnostic_writer(
     smoke_mode: Option<SmokeMode>,
     subprocess: bool,
 ) -> tracing_subscriber::fmt::writer::BoxMakeWriter {
-    use tracing_appender::rolling::{RollingFileAppender, Rotation};
     use tracing_subscriber::fmt::writer::MakeWriterExt;
 
     if cfg!(debug_assertions) || subprocess {
+        let _ = DIAGNOSTIC_LOG_CONTROLLER.set(DiagnosticLogController::default());
         return tracing_subscriber::fmt::writer::BoxMakeWriter::new(std::io::stderr);
     }
 
-    let result = (|| {
+    let controller = (|| {
         let directory = diagnostic_log_directory(smoke_mode).ok_or(())?;
-        std::fs::create_dir_all(&directory).map_err(|_| ())?;
-        RollingFileAppender::builder()
-            .rotation(Rotation::DAILY)
-            .filename_prefix("devhud")
-            .filename_suffix("jsonl")
-            .max_log_files(DIAGNOSTIC_LOG_FILE_LIMIT)
-            .build(directory)
-            .map_err(|_| ())
+        DiagnosticLogController::new(directory)
     })();
 
-    match result {
-        Ok(appender) => {
-            tracing_subscriber::fmt::writer::BoxMakeWriter::new(std::io::stderr.and(appender))
+    match controller {
+        Ok(controller) => {
+            let _ = DIAGNOSTIC_LOG_CONTROLLER.set(controller.clone());
+            tracing_subscriber::fmt::writer::BoxMakeWriter::new(std::io::stderr.and(controller))
         }
         Err(()) => {
+            let _ = DIAGNOSTIC_LOG_CONTROLLER.set(DiagnosticLogController::default());
             eprintln!("{{\"level\":\"WARN\",\"event\":\"file_logging_unavailable\"}}");
             tracing_subscriber::fmt::writer::BoxMakeWriter::new(std::io::stderr)
         }
@@ -482,17 +605,59 @@ fn frontend_ready(
     );
 }
 
+#[derive(Debug, Eq, PartialEq)]
+struct HostValidationFailure {
+    classification: &'static str,
+    reasons: Vec<&'static str>,
+}
+
+impl HostValidationFailure {
+    fn new(classification: &'static str, reason: &'static str) -> Self {
+        Self {
+            classification,
+            reasons: vec![reason],
+        }
+    }
+}
+
+fn missing_resource_reason(resource: &str) -> &'static str {
+    if resource.contains(" Helper") {
+        "helper-application"
+    } else if resource.starts_with("locales/") {
+        "locale-pack"
+    } else if resource.contains("sandbox") {
+        "sandbox"
+    } else if resource.starts_with("bootstrap") {
+        "bootstrap"
+    } else if resource.contains("libcef") || resource.contains("Chromium Embedded Framework") {
+        "cef-library"
+    } else if resource.ends_with("icudtl.dat") {
+        "icu-data"
+    } else if resource.ends_with("resources.pak") || resource.ends_with("v8_context_snapshot.bin") {
+        "resource-pack"
+    } else {
+        "bundled-resource"
+    }
+}
+
 #[cfg(not(target_os = "macos"))]
 fn should_observe_renderer_crashes(development: bool) -> bool {
     !development
 }
 
-fn validate_host(smoke_mode: Option<SmokeMode>) -> Result<(), String> {
+fn validate_host(smoke_mode: Option<SmokeMode>) -> Result<(), HostValidationFailure> {
     let target = DesktopTarget::current();
     info!(event = "platform_detected", target = %target);
 
     #[cfg(target_os = "linux")]
-    match platform::validate_current_environment().map_err(|error| error.to_string())? {
+    match platform::validate_current_environment().map_err(|error| match error {
+        platform::PlatformError::NativeWaylandUnsupported => {
+            HostValidationFailure::new("platform-prerequisite", "native-wayland")
+        }
+        platform::PlatformError::X11DisplayMissing => {
+            HostValidationFailure::new("platform-prerequisite", "x11-display")
+        }
+    })? {
         LinuxDisplayMode::X11 => info!(event = "linux_display_ready", mode = "x11"),
         LinuxDisplayMode::XWayland => warn!(
             event = "linux_display_best_effort",
@@ -506,15 +671,23 @@ fn validate_host(smoke_mode: Option<SmokeMode>) -> Result<(), String> {
     }
 
     let executable = std::env::current_exe()
-        .map_err(|error| format!("failed to resolve the current executable: {error}"))?;
-    let layout = ResourceLayout::for_executable(&executable)?;
+        .map_err(|_| HostValidationFailure::new("executable-resolution", "current-executable"))?;
+    let layout = ResourceLayout::for_executable(&executable)
+        .map_err(|_| HostValidationFailure::new("resource-layout", "invalid-layout"))?;
     let mut missing = layout.missing();
     inject_smoke_missing_resource(&mut missing, smoke_mode);
     if !missing.is_empty() {
-        return Err(format!(
-            "CEF initialization cannot continue; missing bundled resources: {}",
-            missing.join(", ")
-        ));
+        let mut reasons = Vec::new();
+        for resource in &missing {
+            let reason = missing_resource_reason(resource);
+            if !reasons.contains(&reason) {
+                reasons.push(reason);
+            }
+        }
+        return Err(HostValidationFailure {
+            classification: "missing-resource",
+            reasons,
+        });
     }
     info!(
         event = "cef_resources_verified",
@@ -631,10 +804,11 @@ fn main() {
     let smoke_mode = SmokeMode::from_environment();
     let subprocess = is_cef_subprocess();
     init_logging(smoke_mode, subprocess);
-    if !subprocess && validate_host(smoke_mode).is_err() {
+    if !subprocess && let Err(failure) = validate_host(smoke_mode) {
         error!(
             event = "cef_fatal_initialization",
-            classification = "resource_validation"
+            classification = failure.classification,
+            reasons = ?failure.reasons
         );
         std::process::exit(78);
     }
@@ -896,8 +1070,9 @@ mod tests {
     #[cfg(not(target_os = "macos"))]
     use super::should_observe_renderer_crashes;
     use super::{
-        SmokeMode, diagnostic_filter, inject_smoke_missing_resource,
-        wait_for_frontend_readiness_timeout, wait_for_renderer_crash_listener,
+        DiagnosticLogController, SmokeMode, diagnostic_filter, inject_smoke_missing_resource,
+        is_diagnostic_log_name, missing_resource_reason, wait_for_frontend_readiness_timeout,
+        wait_for_renderer_crash_listener,
     };
 
     #[test]
@@ -1018,6 +1193,77 @@ mod tests {
         inject_smoke_missing_resource(&mut missing, Some(SmokeMode::MissingResource));
 
         assert_eq!(missing, ["resources.pak"]);
+    }
+
+    #[test]
+    fn missing_resources_map_to_safe_actionable_reasons() {
+        assert_eq!(missing_resource_reason("resources.pak"), "resource-pack");
+        assert_eq!(missing_resource_reason("locales/en-US.pak"), "locale-pack");
+        assert_eq!(missing_resource_reason("chrome-sandbox"), "sandbox");
+        assert_eq!(
+            missing_resource_reason("Frameworks/DevHUD Helper.app/Contents/MacOS/DevHUD Helper"),
+            "helper-application"
+        );
+        assert_eq!(
+            missing_resource_reason("/private/user/file"),
+            "bundled-resource"
+        );
+    }
+
+    #[test]
+    fn diagnostic_log_reset_reopens_the_active_sink() {
+        let temporary = tempfile::tempdir().expect("temporary diagnostics directory");
+        let controller = DiagnosticLogController::new(temporary.path().to_path_buf())
+            .expect("diagnostic log controller");
+        let mut writer = controller.clone();
+        writer
+            .write_all(b"before cleanup\n")
+            .expect("initial diagnostic");
+        writer.flush().expect("flush initial diagnostic");
+        std::fs::write(temporary.path().join("unrelated.txt"), "preserved")
+            .expect("unrelated fixture");
+
+        controller.reset().expect("reset diagnostic logs");
+        writer
+            .write_all(b"after cleanup\n")
+            .expect("new diagnostic");
+        writer.flush().expect("flush new diagnostic");
+
+        let diagnostic = std::fs::read_dir(temporary.path())
+            .expect("diagnostic directory")
+            .flatten()
+            .find(|entry| {
+                entry
+                    .file_name()
+                    .to_str()
+                    .is_some_and(is_diagnostic_log_name)
+            })
+            .expect("reopened diagnostic log");
+        let contents = std::fs::read_to_string(diagnostic.path()).expect("diagnostic contents");
+        assert!(!contents.contains("before cleanup"));
+        assert!(contents.contains("after cleanup"));
+        assert_eq!(
+            std::fs::read_to_string(temporary.path().join("unrelated.txt"))
+                .expect("unrelated contents"),
+            "preserved"
+        );
+    }
+
+    #[test]
+    fn diagnostic_cleanup_matches_only_exact_app_log_names() {
+        assert!(is_diagnostic_log_name("devhud.2026-08-17.jsonl"));
+        for name in [
+            "devhud.jsonl",
+            "devhud-secrets.jsonl",
+            "devhud.2026-08-17.jsonl.bak",
+            "devhud.2026-8-17.jsonl",
+            "other.2026-08-17.jsonl",
+        ] {
+            assert!(
+                !is_diagnostic_log_name(name),
+                "unexpected cleanup match: {name}"
+            );
+        }
     }
 
     #[test]

@@ -171,10 +171,10 @@ for (const dependency of ["tauri", "tauri-plugin", "tauri-utils"]) {
   assert(linePattern.test(rootPatch), `${dependency} compatibility patch is not pinned to the required revision`);
 }
 assert(!dependencyText.includes("github.com/delinoio/tauri"), "Tauri fork dependency detected");
-for (const source of [nativeBridgeRust, nativeBridgeTypeScript]) {
-  assert(source.includes(TAURI_REVISION), "runtime diagnostics Tauri revision drifted from the immutable pin");
-  assert(source.includes(pins.runtime.cefVersion), "runtime diagnostics CEF revision drifted from the immutable pin");
-}
+assert(nativeBridgeRust.includes(TAURI_REVISION), "native runtime diagnostics Tauri revision drifted from the immutable pin");
+assert(nativeBridgeRust.includes(pins.runtime.cefVersion), "native runtime diagnostics CEF revision drifted from the immutable pin");
+assert(nativeBridgeTypeScript.includes('tauriRevision: ""'), "browser runtime diagnostics must not claim a Tauri revision");
+assert(nativeBridgeTypeScript.includes('cefRevision: ""'), "browser runtime diagnostics must not claim a CEF revision");
 
 assert(appCargo.includes('tauri-plugin-deep-link = "=2.4.9"'), "desktop deep-link plugin version changed");
 assert(appCargo.includes('tauri-plugin-single-instance = { version = "=2.4.3", features = ["deep-link"] }'), "desktop single-instance deep-link integration changed");

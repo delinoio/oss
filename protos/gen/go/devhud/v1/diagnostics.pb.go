@@ -31,6 +31,7 @@ const (
 	DiagnosticPlatform_DIAGNOSTIC_PLATFORM_LINUX       DiagnosticPlatform = 3
 	DiagnosticPlatform_DIAGNOSTIC_PLATFORM_IOS         DiagnosticPlatform = 4
 	DiagnosticPlatform_DIAGNOSTIC_PLATFORM_ANDROID     DiagnosticPlatform = 5
+	DiagnosticPlatform_DIAGNOSTIC_PLATFORM_BROWSER     DiagnosticPlatform = 6
 )
 
 // Enum value maps for DiagnosticPlatform.
@@ -42,6 +43,7 @@ var (
 		3: "DIAGNOSTIC_PLATFORM_LINUX",
 		4: "DIAGNOSTIC_PLATFORM_IOS",
 		5: "DIAGNOSTIC_PLATFORM_ANDROID",
+		6: "DIAGNOSTIC_PLATFORM_BROWSER",
 	}
 	DiagnosticPlatform_value = map[string]int32{
 		"DIAGNOSTIC_PLATFORM_UNSPECIFIED": 0,
@@ -50,6 +52,7 @@ var (
 		"DIAGNOSTIC_PLATFORM_LINUX":       3,
 		"DIAGNOSTIC_PLATFORM_IOS":         4,
 		"DIAGNOSTIC_PLATFORM_ANDROID":     5,
+		"DIAGNOSTIC_PLATFORM_BROWSER":     6,
 	}
 )
 
@@ -251,9 +254,11 @@ type ClientBuild struct {
 	Platform     DiagnosticPlatform     `protobuf:"varint,3,opt,name=platform,proto3,enum=devhud.v1.DiagnosticPlatform" json:"platform,omitempty"`
 	Architecture DiagnosticArchitecture `protobuf:"varint,4,opt,name=architecture,proto3,enum=devhud.v1.DiagnosticArchitecture" json:"architecture,omitempty"`
 	OsVersion    string                 `protobuf:"bytes,5,opt,name=os_version,json=osVersion,proto3" json:"os_version,omitempty"`
-	// Exact 40-character lowercase Tauri source revision.
+	// Exact 40-character lowercase Tauri source revision on native hosts; empty
+	// for browser development.
 	TauriRevision string `protobuf:"bytes,6,opt,name=tauri_revision,json=tauriRevision,proto3" json:"tauri_revision,omitempty"`
-	// Exact CEF runtime revision on desktop; empty on system-webview mobile hosts.
+	// Exact CEF runtime revision on desktop; empty on system-webview mobile and
+	// browser hosts.
 	CefRevision   string `protobuf:"bytes,7,opt,name=cef_revision,json=cefRevision,proto3" json:"cef_revision,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -573,14 +578,15 @@ const file_devhud_v1_diagnostics_proto_rawDesc = "" +
 	"\vaccepted_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"acceptedAt\x129\n" +
 	"\n" +
-	"expires_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt*\xd6\x01\n" +
+	"expires_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt*\xf7\x01\n" +
 	"\x12DiagnosticPlatform\x12#\n" +
 	"\x1fDIAGNOSTIC_PLATFORM_UNSPECIFIED\x10\x00\x12\x1d\n" +
 	"\x19DIAGNOSTIC_PLATFORM_MACOS\x10\x01\x12\x1f\n" +
 	"\x1bDIAGNOSTIC_PLATFORM_WINDOWS\x10\x02\x12\x1d\n" +
 	"\x19DIAGNOSTIC_PLATFORM_LINUX\x10\x03\x12\x1b\n" +
 	"\x17DIAGNOSTIC_PLATFORM_IOS\x10\x04\x12\x1f\n" +
-	"\x1bDIAGNOSTIC_PLATFORM_ANDROID\x10\x05*\xab\x01\n" +
+	"\x1bDIAGNOSTIC_PLATFORM_ANDROID\x10\x05\x12\x1f\n" +
+	"\x1bDIAGNOSTIC_PLATFORM_BROWSER\x10\x06*\xab\x01\n" +
 	"\x16DiagnosticArchitecture\x12'\n" +
 	"#DIAGNOSTIC_ARCHITECTURE_UNSPECIFIED\x10\x00\x12\"\n" +
 	"\x1eDIAGNOSTIC_ARCHITECTURE_X86_64\x10\x01\x12!\n" +

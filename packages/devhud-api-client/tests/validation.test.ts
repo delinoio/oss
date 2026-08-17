@@ -608,4 +608,27 @@ describe("wire validation helpers", () => {
       ).toThrow(RangeError);
     }
   });
+
+  it("accepts browser reports only without fabricated native revisions", () => {
+    const browser = create(SubmitCrashReportRequestSchema, {
+      ...safeCrashReport,
+      clientBuild: {
+        ...clientBuild,
+        platform: DiagnosticPlatform.BROWSER,
+        osVersion: "browser",
+        tauriRevision: "",
+        cefRevision: "",
+      },
+    });
+    expect(() => validateCrashReport(browser)).not.toThrow();
+
+    const fabricated = create(SubmitCrashReportRequestSchema, {
+      ...browser,
+      clientBuild: {
+        ...browser.clientBuild,
+        tauriRevision: clientBuild.tauriRevision,
+      },
+    });
+    expect(() => validateCrashReport(fabricated)).toThrow(TypeError);
+  });
 });

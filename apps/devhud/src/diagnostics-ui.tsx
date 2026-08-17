@@ -1,4 +1,4 @@
-import { DiagnosticsQuery } from "@delinoio/devhud-api-client";
+import { DiagnosticsQuery, mapDevHudError, type DevHudClientError } from "@delinoio/devhud-api-client";
 import { useMutation } from "@connectrpc/connect-query";
 import { useState } from "react";
 import { diagnosticsConsentDigest, prepareDiagnosticsBundle, readDiagnosticEvents, type PreparedDiagnosticsBundle } from "./diagnostics";
@@ -23,6 +23,7 @@ export function DiagnosticsPanel({ copy, bridge, storage, online }: DiagnosticsP
   const [consentDigest, setConsentDigest] = useState<string | null>(null);
   const [exportState, setExportState] = useState<ExportState>("idle");
   const [submitState, setSubmitState] = useState<"idle" | "sent" | "failed">("idle");
+  const [submitError, setSubmitError] = useState<DevHudClientError | null>(null);
   const [serverCorrelation, setServerCorrelation] = useState<string | null>(null);
   const authenticated = identity.status === "authenticated";
   const blocked = identity.status === "blocked" || identity.status === "deletion-pending";
@@ -33,6 +34,7 @@ export function DiagnosticsPanel({ copy, bridge, storage, online }: DiagnosticsP
     const latest = events.at(-1);
     setConsentDigest(null);
     setSubmitState("idle");
+    setSubmitError(null);
     setServerCorrelation(null);
     setBundle(latest ? prepareDiagnosticsBundle(latest, events) : null);
   };
@@ -55,6 +57,7 @@ export function DiagnosticsPanel({ copy, bridge, storage, online }: DiagnosticsP
 
   const submitBundle = async () => {
     if (!bundle || submissionBlock !== null || consentDigest === null) return;
+    setSubmitError(null);
     if (await diagnosticsConsentDigest(bundle.requestJson) !== consentDigest) {
       setConsentDigest(null);
       setSubmitState("failed");
@@ -65,7 +68,8 @@ export function DiagnosticsPanel({ copy, bridge, storage, online }: DiagnosticsP
       setServerCorrelation(response.metadata?.correlationId?.value ?? null);
       setSubmitState("sent");
       setConsentDigest(null);
-    } catch {
+    } catch (reason) {
+      setSubmitError(mapDevHudError(reason));
       setSubmitState("failed");
       setConsentDigest(null);
     }
@@ -89,7 +93,10 @@ export function DiagnosticsPanel({ copy, bridge, storage, online }: DiagnosticsP
       {blocked && <p className="notice" role="alert">{copy.diagnosticsBlocked}</p>}
       {authenticated && !online && <p className="notice">{copy.diagnosticsOffline}</p>}
       {submitState === "sent" && <p role="status">{copy.diagnosticsSent} {serverCorrelation}</p>}
-      {submitState === "failed" && <p role="alert">{copy.diagnosticsSubmitFailed}</p>}
+      {submitState === "failed" && <p role="alert">
+        {submitError?.kind === "permissionDenied" || submitError?.kind === "unauthenticated" ? copy.diagnosticsSubmitDenied : copy.diagnosticsSubmitFailed}
+        {submitError && <> <code>{`diagnostics-connect-${submitError.code}`}</code>{submitError.correlationId && <> {copy.correlationId}: <code>{submitError.correlationId}</code></>}</>}
+      </p>}
     </>}
   </section>;
 }

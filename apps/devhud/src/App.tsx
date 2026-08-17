@@ -32,7 +32,7 @@ function capabilitiesFor(runtime: RuntimeSnapshot): RuntimeCapabilities {
   if (runtime.platform === RuntimePlatform.Desktop) {
     available.add(PlatformCapability.Desktop);
     available.add(PlatformCapability.Tray);
-  } else {
+  } else if (runtime.platform === RuntimePlatform.Ios || runtime.platform === RuntimePlatform.Android) {
     available.add(PlatformCapability.Mobile);
   }
   if (runtime.capabilities.notifications) available.add(PlatformCapability.Notifications);

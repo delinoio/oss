@@ -14,6 +14,7 @@ enum DiagnosticPlatform {
   DIAGNOSTIC_PLATFORM_LINUX = 3;
   DIAGNOSTIC_PLATFORM_IOS = 4;
   DIAGNOSTIC_PLATFORM_ANDROID = 5;
+  DIAGNOSTIC_PLATFORM_BROWSER = 6;
 }
 
 enum DiagnosticArchitecture {
@@ -47,9 +48,11 @@ message ClientBuild {
   DiagnosticPlatform platform = 3;
   DiagnosticArchitecture architecture = 4;
   string os_version = 5;
-  // Exact 40-character lowercase Tauri source revision.
+  // Exact 40-character lowercase Tauri source revision on native hosts; empty
+  // for browser development.
   string tauri_revision = 6;
-  // Exact CEF runtime revision on desktop; empty on system-webview mobile hosts.
+  // Exact CEF runtime revision on desktop; empty on system-webview mobile and
+  // browser hosts.
   string cef_revision = 7;
 }
 

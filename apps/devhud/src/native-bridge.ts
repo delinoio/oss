@@ -6,6 +6,7 @@ export const RuntimePlatform = {
   Desktop: "desktop",
   Ios: "ios",
   Android: "android",
+  Browser: "browser",
 } as const;
 export type RuntimePlatform = (typeof RuntimePlatform)[keyof typeof RuntimePlatform];
 
@@ -44,7 +45,7 @@ export type NativeBridgeErrorCode = (typeof NativeBridgeErrorCode)[keyof typeof 
 export interface RuntimeSnapshot {
   readonly bridgeVersion: typeof NativeBridgeVersion;
   readonly platform: RuntimePlatform;
-  readonly operatingSystem: "macos" | "windows" | "linux" | "ios" | "android";
+  readonly operatingSystem: "macos" | "windows" | "linux" | "ios" | "android" | "browser";
   readonly architecture: string;
   readonly osVersion: string;
   readonly appVersion: string;
@@ -207,18 +208,17 @@ export function isAuthCallback(value: string) {
   }
 }
 
-function desktopSnapshot(): RuntimeSnapshot {
-	const operatingSystem = /Mac/u.test(navigator.platform) ? "macos" : /Win/u.test(navigator.platform) ? "windows" : "linux";
+function browserSnapshot(): RuntimeSnapshot {
   return {
     bridgeVersion: NativeBridgeVersion,
-    platform: RuntimePlatform.Desktop,
-    operatingSystem,
+    platform: RuntimePlatform.Browser,
+    operatingSystem: "browser",
     architecture: /arm|aarch64/u.test(navigator.userAgent.toLowerCase()) ? "arm64" : "x86_64",
-    osVersion: "system",
+    osVersion: "browser",
     appVersion: "0.1.0",
     buildId: "browser-development",
-    tauriRevision: "4af26a3f7f8b692d62cca549bbacd93f5ce90b41",
-    cefRevision: "150.0.10+g8042e43+chromium-150.0.7871.101",
+    tauriRevision: "",
+    cefRevision: "",
     lifecycle: document.visibilityState === "hidden" ? LifecycleState.Background : LifecycleState.Active,
     capabilities: { secureSettings: false, notifications: false, storeUpdates: false, widgets: false },
   };
@@ -237,7 +237,7 @@ export const nativeBridge: NativeBridgeV1 = {
     if (request.operation === "auth.open-system-browser") validateAuthenticationBrowserRequest(request);
     if (request.operation === "diagnostics.export") validateDiagnosticsExport(request);
     if (!window.__TAURI_INTERNALS__) {
-      if (request.operation === "runtime.snapshot") return { kind: "runtime", snapshot: desktopSnapshot() };
+      if (request.operation === "runtime.snapshot") return { kind: "runtime", snapshot: browserSnapshot() };
       if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
       if (request.operation === "auth.peek-pending-callback") return { kind: "auth-callback", url: null };
       if (request.operation === "auth.take-pending-callback") return { kind: "auth-callback", url: null };

@@ -411,48 +411,14 @@ fn export_diagnostics(request: &Value) -> Result<Value, String> {
 
 #[cfg(desktop)]
 fn clear_diagnostic_logs() -> Result<(), String> {
-    let Some(directory) = ({
-        #[cfg(target_os = "windows")]
-        {
-            dirs::data_local_dir().map(|path| path.join("io.delino.devhud").join("logs"))
-        }
-        #[cfg(target_os = "macos")]
-        {
-            dirs::home_dir().map(|path| path.join("Library/Logs/io.delino.devhud"))
-        }
-        #[cfg(target_os = "linux")]
-        {
-            dirs::state_dir().map(|path| path.join("io.delino.devhud").join("logs"))
-        }
-    }) else {
-        return Ok(());
-    };
-    let Ok(entries) = std::fs::read_dir(directory) else {
-        return Ok(());
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        let diagnostic_file = path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .is_some_and(is_diagnostic_log_name);
-        if diagnostic_file {
-            std::fs::remove_file(path).map_err(|_| "storage-failure")?;
-        }
-    }
-    Ok(())
+    crate::reset_diagnostic_logs()
 }
 
-#[cfg(any(desktop, test))]
-fn is_diagnostic_log_name(name: &str) -> bool {
-    let bytes = name.as_bytes();
-    bytes.len() == 23
-        && name.starts_with("devhud.")
-        && name.ends_with(".jsonl")
-        && bytes[7..17].iter().enumerate().all(|(index, byte)| {
-            matches!(index, 4 | 7) && *byte == b'-'
-                || !matches!(index, 4 | 7) && byte.is_ascii_digit()
-        })
+fn purge_clears_diagnostics(request: &Value) -> bool {
+    matches!(
+        request.get("scope").and_then(Value::as_str),
+        Some("logout" | "account-deletion")
+    )
 }
 
 #[cfg(mobile)]
@@ -581,7 +547,7 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
         }
         if routes_to_mobile_plugin(operation, cfg!(target_os = "android")) {
             let response = crate::native_plugin::request(&app, &request)?;
-            if operation == "secure.purge" {
+            if operation == "secure.purge" && purge_clears_diagnostics(&request) {
                 clear_diagnostic_logs()?;
             }
             return Ok(response);
@@ -601,7 +567,7 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
                 validate_secure_request(&request)?;
             }
             let response = crate::secure_store::handle(&request)?;
-            if operation == "secure.purge" {
+            if operation == "secure.purge" && purge_clears_diagnostics(&request) {
                 clear_diagnostic_logs()?;
             }
             return Ok(response);
@@ -627,8 +593,9 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        NativeBridgeState, handle_native_bridge_request, is_auth_callback, is_diagnostic_log_name,
-        routes_to_mobile_plugin, validate_auth_browser_request, validate_diagnostics_export,
+        NativeBridgeState, handle_native_bridge_request, is_auth_callback,
+        purge_clears_diagnostics, routes_to_mobile_plugin, validate_auth_browser_request,
+        validate_diagnostics_export,
     };
 
     #[test]
@@ -666,20 +633,14 @@ mod tests {
     }
 
     #[test]
-    fn diagnostics_cleanup_matches_only_exact_rotated_app_log_names() {
-        assert!(is_diagnostic_log_name("devhud.2026-08-17.jsonl"));
-        for name in [
-            "devhud.jsonl",
-            "devhud-secrets.jsonl",
-            "devhud.2026-08-17.jsonl.bak",
-            "devhud.2026-8-17.jsonl",
-            "other.2026-08-17.jsonl",
-        ] {
-            assert!(
-                !is_diagnostic_log_name(name),
-                "unexpected cleanup match: {name}"
-            );
-        }
+    fn diagnostics_cleanup_is_limited_to_destructive_purge_scopes() {
+        assert!(purge_clears_diagnostics(&json!({ "scope": "logout" })));
+        assert!(purge_clears_diagnostics(
+            &json!({ "scope": "account-deletion", "profileId": "profile" })
+        ));
+        assert!(!purge_clears_diagnostics(
+            &json!({ "scope": "api-change", "profileId": "profile" })
+        ));
     }
 
     #[test]

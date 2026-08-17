@@ -203,22 +203,25 @@ function isForbiddenDiagnosticKey(key: string): boolean {
 export function appendDiagnosticEvent(storage: Storage, event: LocalDiagnosticEvent, now = Date.now()): readonly LocalDiagnosticEvent[] {
   const normalized = normalizeLocalDiagnosticEvent(event);
   if (!normalized) throw new TypeError("local diagnostic event is invalid");
-  const events = pruneDiagnosticEvents([...readDiagnosticEvents(storage, now), normalized], now);
-  let serialized = JSON.stringify(events);
-  while (textEncoder.encode(serialized).byteLength > DiagnosticsMaximumStorageBytes && events.length > 0) {
-    events.shift();
-    serialized = JSON.stringify(events);
-  }
+  const { events, serialized } = boundedDiagnosticEvents([...readDiagnosticEvents(storage, now), normalized], now);
   try { storage.setItem(DiagnosticsStorageKey, serialized); } catch { /* Local troubleshooting remains best-effort in memory-constrained hosts. */ }
   return events;
 }
 
-export function readDiagnosticEvents(storage: Pick<Storage, "getItem">, now = Date.now()): LocalDiagnosticEvent[] {
+export function readDiagnosticEvents(storage: Storage, now = Date.now()): LocalDiagnosticEvent[] {
   try {
-    const parsed: unknown = JSON.parse(storage.getItem(DiagnosticsStorageKey) ?? "[]");
-    if (!Array.isArray(parsed)) return [];
-    return pruneDiagnosticEvents(parsed.map(normalizeLocalDiagnosticEvent).filter((event): event is LocalDiagnosticEvent => event !== null), now);
+    const persisted = storage.getItem(DiagnosticsStorageKey);
+    if (persisted === null) return [];
+    const parsed: unknown = JSON.parse(persisted);
+    if (!Array.isArray(parsed)) {
+      removeStorageKey(storage, DiagnosticsStorageKey);
+      return [];
+    }
+    const { events, serialized } = boundedDiagnosticEvents(parsed.map(normalizeLocalDiagnosticEvent).filter((event): event is LocalDiagnosticEvent => event !== null), now);
+    persistPrunedCollection(storage, DiagnosticsStorageKey, persisted, serialized, events.length);
+    return events;
   } catch {
+    removeStorageKey(storage, DiagnosticsStorageKey);
     return [];
   }
 }
@@ -234,20 +237,31 @@ export function appendDiagnosticCorrelation(storage: Storage, correlationId: str
   try { storage.setItem(DiagnosticsCorrelationsKey, JSON.stringify(correlations.slice(-128))); } catch { /* Correlation breadcrumbs are optional offline data. */ }
 }
 
-export function readDiagnosticCorrelations(storage: Pick<Storage, "getItem">, now = Date.now()): DiagnosticCorrelationEvent[] {
+export function readDiagnosticCorrelations(storage: Storage, now = Date.now()): DiagnosticCorrelationEvent[] {
   try {
-    const value: unknown = JSON.parse(storage.getItem(DiagnosticsCorrelationsKey) ?? "[]");
-    if (!Array.isArray(value)) return [];
+    const persisted = storage.getItem(DiagnosticsCorrelationsKey);
+    if (persisted === null) return [];
+    const value: unknown = JSON.parse(persisted);
+    if (!Array.isArray(value)) {
+      removeStorageKey(storage, DiagnosticsCorrelationsKey);
+      return [];
+    }
     const cutoff = now - DiagnosticsRetentionDays * 86_400_000;
-    return value.filter((candidate): candidate is DiagnosticCorrelationEvent => {
+    const correlations = value.filter((candidate): candidate is DiagnosticCorrelationEvent => {
       if (candidate === null || typeof candidate !== "object") return false;
       const record = candidate as Partial<DiagnosticCorrelationEvent>;
       return record.source === "connect-response" && isUuidV7(record.correlationId) && Object.values<string>(DiagnosticConnectOperation).includes(record.operation ?? "") && typeof record.occurredAt === "string" && Number.isFinite(Date.parse(record.occurredAt)) && Date.parse(record.occurredAt) >= cutoff && Number.isSafeInteger(record.durationMilliseconds) && record.durationMilliseconds! >= 0 && record.durationMilliseconds! <= 86_400_000;
     }).slice(-128);
-  } catch { return []; }
+    const serialized = JSON.stringify(correlations);
+    persistPrunedCollection(storage, DiagnosticsCorrelationsKey, persisted, serialized, correlations.length);
+    return correlations;
+  } catch {
+    removeStorageKey(storage, DiagnosticsCorrelationsKey);
+    return [];
+  }
 }
 
-export function recentDiagnosticCorrelationIds(storage: Pick<Storage, "getItem">, now = Date.now()): string[] {
+export function recentDiagnosticCorrelationIds(storage: Storage, now = Date.now()): string[] {
   return [...new Set(readDiagnosticCorrelations(storage, now).map((event) => event.correlationId))].slice(-maximumRelatedCorrelations);
 }
 
@@ -281,6 +295,27 @@ export async function diagnosticsConsentDigest(preview: string): Promise<string>
 function pruneDiagnosticEvents(events: LocalDiagnosticEvent[], now: number): LocalDiagnosticEvent[] {
   const cutoff = now - DiagnosticsRetentionDays * 24 * 60 * 60 * 1000;
   return events.filter((event) => Date.parse(event.occurredAt) >= cutoff).slice(-DiagnosticsMaximumEvents);
+}
+
+function boundedDiagnosticEvents(events: LocalDiagnosticEvent[], now: number): { events: LocalDiagnosticEvent[]; serialized: string } {
+  const bounded = pruneDiagnosticEvents(events, now);
+  let serialized = JSON.stringify(bounded);
+  while (textEncoder.encode(serialized).byteLength > DiagnosticsMaximumStorageBytes && bounded.length > 0) {
+    bounded.shift();
+    serialized = JSON.stringify(bounded);
+  }
+  return { events: bounded, serialized };
+}
+
+function persistPrunedCollection(storage: Storage, key: string, persisted: string, serialized: string, length: number): void {
+  try {
+    if (length === 0) storage.removeItem(key);
+    else if (serialized !== persisted) storage.setItem(key, serialized);
+  } catch { /* Retention remains enforced in memory when Web Storage is unavailable. */ }
+}
+
+function removeStorageKey(storage: Pick<Storage, "removeItem">, key: string): void {
+  try { storage.removeItem(key); } catch { /* Invalid persisted diagnostics are ignored in unavailable storage. */ }
 }
 
 function isLocalDiagnosticEvent(value: unknown): value is LocalDiagnosticEvent {
@@ -329,13 +364,14 @@ function isDiagnosticBuild(value: unknown): value is DiagnosticBuild {
   if (!strings.every((item) => typeof item === "string" && textEncoder.encode(item).byteLength <= 256 && !forbiddenValue.test(item))) return false;
   if (!build.appVersion || !build.buildId || !build.osVersion) return false;
   if (!isDiagnosticPlatform(build.platform) || !isDiagnosticArchitecture(build.architecture)) return false;
-  if (!/^[0-9a-f]{40}$/u.test(build.tauriRevision!)) return false;
+  const browser = build.platform === DiagnosticPlatform.BROWSER;
+  if (browser ? build.tauriRevision !== "" : !/^[0-9a-f]{40}$/u.test(build.tauriRevision!)) return false;
   const desktop = build.platform! >= DiagnosticPlatform.MACOS && build.platform! <= DiagnosticPlatform.LINUX;
   return desktop ? build.cefRevision!.length > 0 : build.cefRevision === "";
 }
 
 function isDiagnosticPlatform(value: unknown): value is DiagnosticPlatform {
-  return typeof value === "number" && value >= DiagnosticPlatform.MACOS && value <= DiagnosticPlatform.ANDROID;
+  return typeof value === "number" && value >= DiagnosticPlatform.MACOS && value <= DiagnosticPlatform.BROWSER;
 }
 
 function isDiagnosticArchitecture(value: unknown): value is DiagnosticArchitecture {
@@ -371,6 +407,7 @@ function isUuidV7(value: unknown): value is string {
 }
 
 function diagnosticPlatform(runtime: RuntimeSnapshot): DiagnosticPlatform {
+  if (runtime.platform === RuntimePlatform.Browser) return DiagnosticPlatform.BROWSER;
   if (runtime.platform === RuntimePlatform.Ios) return DiagnosticPlatform.IOS;
   if (runtime.platform === RuntimePlatform.Android) return DiagnosticPlatform.ANDROID;
   if (runtime.operatingSystem === "macos") return DiagnosticPlatform.MACOS;

@@ -35,9 +35,10 @@ var (
 	safeErrorCode       = regexp.MustCompile(`^[A-Z][A-Z0-9_]{0,63}$`)
 	forbiddenDiagnostic = []*regexp.Regexp{
 		regexp.MustCompile(`(?i)(authorization|bearer[[:space:]]|access[_ -]?token|refresh[_ -]?token|personal[_ -]?access[_ -]?token|github[_ -]?pat|api[_ -]?key|password|cookie|session[_ -]?id|r2[_ -]?(secret|token|key)|signing[_ -]?(secret|key|value))`),
+		regexp.MustCompile(`\b(ghp|github_pat)_[A-Za-z0-9_]+\b`),
 		regexp.MustCompile(`(?i)(browser[._ -]?dom|outerhtml|innerhtml|screenshot|form[._ -]?value|issue[._ -]?body|agent[._ -]?(prompt|output)|child[._ -]?env|shortcut[._ -]?(key|keystroke))`),
 		regexp.MustCompile(`(?i)https?://[^[:space:]]*#`),
-		regexp.MustCompile(`(?i)(^|[[:space:]"'(])(?:/Users/|/home/|/private/|/var/|/tmp/|/etc/|/opt/|[a-z]:\\)`),
+		regexp.MustCompile(`(?i)(^|[[:space:]([{<"'=:])(?:[a-z]:[\\/][^[:space:]]*|\\\\[^[:space:]]+|~/[^[:space:]]+|/[^/[:space:]][^[:space:]]*)`),
 		regexp.MustCompile(`(?i)(ctrl|control|cmd|command|meta|alt|option|shift)[[:space:]]*[+-][[:space:]]*[a-z0-9]`),
 	}
 )
@@ -148,21 +149,25 @@ func validateCrashReport(request *devhudv1.SubmitCrashReportRequest) error {
 	if !validPlatform(build.GetPlatform()) || !validArchitecture(build.GetArchitecture()) {
 		return errors.New("client_build classifications must be specified")
 	}
+	browser := build.GetPlatform() == devhudv1.DiagnosticPlatform_DIAGNOSTIC_PLATFORM_BROWSER
 	for name, value := range map[string]string{
 		"app_version": build.GetAppVersion(), "build_id": build.GetBuildId(),
 		"os_version": build.GetOsVersion(), "tauri_revision": build.GetTauriRevision(),
 		"cef_revision": build.GetCefRevision(),
 	} {
-		if err := validateDiagnosticText(name, value, 256, name == "cef_revision"); err != nil {
+		if err := validateDiagnosticText(name, value, 256, name == "cef_revision" || name == "tauri_revision" && browser); err != nil {
 			return err
 		}
 	}
-	if !exactTauriRevision.MatchString(build.GetTauriRevision()) {
+	if browser != (build.GetTauriRevision() == "") {
+		return errors.New("tauri_revision must be exact on native hosts and empty in browsers")
+	}
+	if !browser && !exactTauriRevision.MatchString(build.GetTauriRevision()) {
 		return errors.New("tauri_revision must be an exact lowercase source revision")
 	}
 	desktop := build.GetPlatform() >= devhudv1.DiagnosticPlatform_DIAGNOSTIC_PLATFORM_MACOS && build.GetPlatform() <= devhudv1.DiagnosticPlatform_DIAGNOSTIC_PLATFORM_LINUX
 	if desktop == (build.GetCefRevision() == "") {
-		return errors.New("cef_revision must be exact on desktop and empty on mobile")
+		return errors.New("cef_revision must be exact on desktop and empty on mobile or browser hosts")
 	}
 	if request.GetOccurredAt() == nil || request.GetOccurredAt().CheckValid() != nil {
 		return errors.New("occurred_at must be a valid timestamp")
@@ -233,7 +238,7 @@ func validateDiagnosticText(name, value string, maximumBytes int, emptyAllowed b
 }
 
 func validPlatform(value devhudv1.DiagnosticPlatform) bool {
-	return value >= devhudv1.DiagnosticPlatform_DIAGNOSTIC_PLATFORM_MACOS && value <= devhudv1.DiagnosticPlatform_DIAGNOSTIC_PLATFORM_ANDROID
+	return value >= devhudv1.DiagnosticPlatform_DIAGNOSTIC_PLATFORM_MACOS && value <= devhudv1.DiagnosticPlatform_DIAGNOSTIC_PLATFORM_BROWSER
 }
 
 func validArchitecture(value devhudv1.DiagnosticArchitecture) bool {
