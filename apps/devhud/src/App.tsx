@@ -195,6 +195,14 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
       event.preventDefault(); first.focus();
     }
   };
+  const openExternal = async (target: ExternalLinkTarget) => {
+    if (mobile) {
+      if (target === ExternalLinkTarget.Issue) throw new Error("mobile issue creation is unavailable");
+      await bridge.request({ operation: "lifecycle.open-external", target, apiOrigin: preferences.apiOrigin });
+      return;
+    }
+    await browserShell.openExternal(target, preferences.apiOrigin);
+  };
   const external = async (target: ExternalLinkTarget) => {
     const attempt = externalAttempt.current + 1;
     externalAttempt.current = attempt;
@@ -204,12 +212,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
       updateExternalMessage("invalid-api-origin"); return false;
     }
     try {
-      if (mobile) {
-        if (target === ExternalLinkTarget.Issue) throw new Error("mobile issue creation is unavailable");
-        await bridge.request({ operation: "lifecycle.open-external", target, apiOrigin: preferences.apiOrigin });
-      } else {
-        await browserShell.openExternal(target, preferences.apiOrigin);
-      }
+      await openExternal(target);
       updateExternalMessage("opened"); return true;
     } catch {
       updateExternalMessage("failed"); return false;
@@ -258,7 +261,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   const externalMessageText = externalMessage === "invalid-api-origin" ? copy.invalidApiOrigin : externalMessage === "opened" ? copy.externalOpened : copy.externalFailed;
   const externalMessageIsError = externalMessage !== "opened";
 
-  const boundary = (content: ReactNode) => runtime ? <DevHudServiceBoundary key={preferences.apiOrigin} apiOrigin={preferences.apiOrigin} active={onboarding || runtime.platform === RuntimePlatform.Desktop || surface === SurfaceId.Account || surface === SurfaceId.Settings || authCallback !== null} online={online} callbackUrl={authCallback} platform={runtime.platform} bridge={bridge} onCallbackConsumed={clearConsumedAuthCallback} onContinueLocally={finishOnboarding} onLoggedOut={() => setSurface(SurfaceId.Account)} initialAppearance={{ theme: preferences.theme, language: preferences.language }} identitySessionRef={identitySession}><SynchronizedAppearanceBoundary onAppearance={(appearance) => update({ theme: appearance.theme, language: appearance.language })} />{content}</DevHudServiceBoundary> : content;
+  const boundary = (content: ReactNode) => runtime ? <DevHudServiceBoundary key={preferences.apiOrigin} apiOrigin={preferences.apiOrigin} active online={online} callbackUrl={authCallback} platform={runtime.platform} bridge={bridge} onCallbackConsumed={clearConsumedAuthCallback} onContinueLocally={finishOnboarding} onLoggedOut={() => setSurface(SurfaceId.Account)} initialAppearance={{ theme: preferences.theme, language: preferences.language }} identitySessionRef={identitySession}><SynchronizedAppearanceBoundary onAppearance={(appearance) => update({ theme: appearance.theme, language: appearance.language })} />{content}</DevHudServiceBoundary> : content;
 
   if (runtimeState.kind !== ContentStateKind.Ready) return <main className="app-shell onboarding" data-devhud-ready="true"><section className="content"><ContentStateView state={runtimeState} copy={copy} onRetry={() => location.reload()} /></section></main>;
 
@@ -276,8 +279,8 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
       {surface === SurfaceId.Realqa && mobile && <><p className="eyebrow">{copy.desktopOnly}</p><h2>{copy.realqaMobileTitle}</h2><p>{copy.realqaMobileSummary}</p><p className="notice">{copy.unavailable}</p></>}
       {surface === SurfaceId.Realqa && !mobile && <><p className="eyebrow">{copy.realqa}</p><h2>{copy.realqaTitle}</h2><p>{copy.realqaSummary}</p><div className="disabled-actions">{unavailableCaptureActions.map((action) => <button disabled key={action.id}>{copy[action.title]}</button>)}</div><p className="notice">{copy.planned}</p></>}
       {surface === SurfaceId.Deck && <><p className="eyebrow">{copy.deck}</p><h2>{copy.deckTitle}</h2><p>{copy.deckSummary}</p>{online ? <EmptyState copy={copy} /> : <OfflineState copy={copy} />}</>}
-      {surface === SurfaceId.Settings && <><p className="eyebrow">{copy.settings}</p><h2>{copy.settingsTitle}</h2><p>{copy.settingsSummary}</p><SynchronizedSettingsBoundary copy={copy} bridge={bridge} showNativeShortcuts={runtime?.platform === RuntimePlatform.Desktop} shortcutCapabilities={runtimeCapabilities} />{supportsLaunchAtLogin && <><label className="check"><input type="checkbox" checked={preferences.launchAtLogin} onChange={(event) => { update({ launchAtLogin: event.target.checked }); void browserShell.setLaunchAtLogin(event.target.checked); }} />{copy.launchAtLogin}</label><p>{copy.launchAtLoginHint}</p></>}{runtime?.capabilities.notifications && <div className="native-setting"><button className="primary" onClick={() => void requestNotifications()}>{copy.notificationPermission}</button><output aria-live="polite">{copy[notificationPermissionLabels[notificationPermission]]}</output>{notificationRequestFailed && <p className="native-setting-error" role="alert">{copy.notificationPermissionFailed}</p>}</div>}{runtime?.capabilities.storeUpdates && <div className="native-setting"><p>{copy.updatePolicy}</p>{storeConfigured && <button className="primary" onClick={() => void openStore()}>{copy.updatePolicy}</button>}{storeOpenFailed && <p className="native-setting-error" role="alert">{copy.storeOpenFailed}</p>}</div>}</>}
-      {surface === SurfaceId.Account && <><AccountIdentity copy={copy} apiOrigin={preferences.apiOrigin} inputRef={apiOriginInput} onApiOrigin={applyApiOrigin} /><div className="actions"><button onClick={() => void external(ExternalLinkTarget.Pat)}>{copy.pat}</button>{!mobile && <button onClick={() => void external(ExternalLinkTarget.Issue)}>{copy.issue}</button>}</div>{externalMessage && <p className="external-message" role={externalMessageIsError ? "alert" : "status"}>{externalMessageText}</p>}</>}
+      {surface === SurfaceId.Settings && <><p className="eyebrow">{copy.settings}</p><h2>{copy.settingsTitle}</h2><p>{copy.settingsSummary}</p><SynchronizedSettingsBoundary copy={copy} bridge={bridge} onOpenExternal={openExternal} showNativeShortcuts={runtime?.platform === RuntimePlatform.Desktop} shortcutCapabilities={runtimeCapabilities} />{supportsLaunchAtLogin && <><label className="check"><input type="checkbox" checked={preferences.launchAtLogin} onChange={(event) => { update({ launchAtLogin: event.target.checked }); void browserShell.setLaunchAtLogin(event.target.checked); }} />{copy.launchAtLogin}</label><p>{copy.launchAtLoginHint}</p></>}{runtime?.capabilities.notifications && <div className="native-setting"><button className="primary" onClick={() => void requestNotifications()}>{copy.notificationPermission}</button><output aria-live="polite">{copy[notificationPermissionLabels[notificationPermission]]}</output>{notificationRequestFailed && <p className="native-setting-error" role="alert">{copy.notificationPermissionFailed}</p>}</div>}{runtime?.capabilities.storeUpdates && <div className="native-setting"><p>{copy.updatePolicy}</p>{storeConfigured && <button className="primary" onClick={() => void openStore()}>{copy.updatePolicy}</button>}{storeOpenFailed && <p className="native-setting-error" role="alert">{copy.storeOpenFailed}</p>}</div>}</>}
+      {surface === SurfaceId.Account && <><AccountIdentity copy={copy} apiOrigin={preferences.apiOrigin} inputRef={apiOriginInput} onApiOrigin={applyApiOrigin} /><div className="actions"><button onClick={() => void external(ExternalLinkTarget.Pat)}>{copy.githubCreateFinePat}</button><button onClick={() => void external(ExternalLinkTarget.ClassicPat)}>{copy.githubCreateClassicPat}</button>{!mobile && <button onClick={() => void external(ExternalLinkTarget.Issue)}>{copy.issue}</button>}</div>{externalMessage && <p className="external-message" role={externalMessageIsError ? "alert" : "status"}>{externalMessageText}</p>}</>}
       {surface === SurfaceId.Diagnostics && <><p className="eyebrow">{copy.diagnostics}</p><h2>{copy.diagnosticsTitle}</h2><p>{copy.diagnosticsSummary}</p><p className="notice">{copy.diagnosticsUnavailable}</p>{runtime && <dl className="runtime-diagnostics"><dt>{copy.diagnosticPlatform}</dt><dd>{runtime.platform}</dd><dt>{copy.diagnosticArchitecture}</dt><dd>{runtime.architecture}</dd><dt>{copy.diagnosticBridge}</dt><dd>v{runtime.bridgeVersion}</dd></dl>}</>}
     </section>
     {palette && <div className="overlay" role="presentation"><section ref={paletteRef} className="palette" role="dialog" aria-modal="true" aria-label={copy.commandPalette} onKeyDown={trapPaletteFocus}><input ref={search} value={query} onChange={(event) => setQuery(event.target.value)} placeholder={copy.searchCommands} aria-label={copy.searchCommands} /><div className="commands">{actions.length === 0 ? <p role="status">{copy.noCommands}</p> : actions.map((action) => <button key={action.id} onClick={() => execute(action.id)}>{copy[action.title]}</button>)}</div><button onClick={() => closePalette()}>{copy.close}</button></section></div>}

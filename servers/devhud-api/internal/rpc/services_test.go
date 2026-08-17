@@ -18,9 +18,9 @@ import (
 )
 
 func TestReplaceSettingsReturnsTypedConflict(t *testing.T) {
-	current := &domain.Settings{SchemaVersion: 2, Revision: 7, CanonicalJSON: []byte(`{"theme":"dark"}`), UpdatedAt: time.Now()}
+	current := &domain.Settings{SchemaVersion: 3, Revision: 7, CanonicalJSON: []byte(`{"theme":"dark"}`), UpdatedAt: time.Now()}
 	repository := &serviceRepository{replaceSettings: func(_ context.Context, userID string, schemaVersion uint32, body []byte, revision uint64, _ time.Time) (domain.Settings, error) {
-		if userID != "018f7c1e-7b4a-7abc-8def-0123456789ab" || schemaVersion != 2 || string(body) != `{"theme":"light"}` || revision != 6 {
+		if userID != "018f7c1e-7b4a-7abc-8def-0123456789ab" || schemaVersion != 3 || string(body) != canonicalSettingsV3 || revision != 6 {
 			t.Fatalf("unexpected replacement inputs: user=%q schema=%d body=%q revision=%d", userID, schemaVersion, body, revision)
 		}
 		return domain.Settings{}, &domain.RevisionConflict{Expected: revision, Current: current}
@@ -28,7 +28,7 @@ func TestReplaceSettingsReturnsTypedConflict(t *testing.T) {
 	service := NewSettingsService(repository, serviceClock{}, testServiceLogger())
 	ctx := authenticatedContext()
 	_, err := service.ReplaceSettings(ctx, connect.NewRequest(&devhudv1.ReplaceSettingsRequest{
-		SchemaVersion: 2, CanonicalJson: []byte(`{"theme":"light"}`), ExpectedRevision: 6,
+		SchemaVersion: 3, CanonicalJson: []byte(canonicalSettingsV3), ExpectedRevision: 6,
 	}))
 	if connect.CodeOf(err) != connect.CodeAborted {
 		t.Fatalf("code = %v, want Aborted", connect.CodeOf(err))
@@ -52,6 +52,31 @@ func TestReplaceSettingsReturnsTypedConflict(t *testing.T) {
 	}
 	if !foundMetadata || !foundConflict {
 		t.Fatalf("missing typed details: metadata=%v conflict=%v", foundMetadata, foundConflict)
+	}
+}
+
+func TestReplaceSettingsRejectsSecretsBeforeRepositoryPersistence(t *testing.T) {
+	called := false
+	repository := &serviceRepository{replaceSettings: func(context.Context, string, uint32, []byte, uint64, time.Time) (domain.Settings, error) {
+		called = true
+		return domain.Settings{}, nil
+	}}
+	malicious := strings.Replace(
+		canonicalSettingsV2,
+		`"profiles":[]`,
+		`"profiles":[{"id":"018f47a2-7b3c-7def-8abc-1234567890ab","kind":"fine-grained","name":"Work","token":"plain"}]`,
+		1,
+	)
+
+	_, err := NewSettingsService(repository, serviceClock{}, testServiceLogger()).ReplaceSettings(authenticatedContext(), connect.NewRequest(&devhudv1.ReplaceSettingsRequest{
+		SchemaVersion: 2,
+		CanonicalJson: []byte(malicious),
+	}))
+	if connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("code = %v, want InvalidArgument", connect.CodeOf(err))
+	}
+	if called {
+		t.Fatal("repository was called for invalid settings")
 	}
 }
 
@@ -105,7 +130,7 @@ func TestReplaceSettingsMapsCompletedPurge(t *testing.T) {
 	}}
 	_, err := NewSettingsService(repository, serviceClock{}, testServiceLogger()).ReplaceSettings(authenticatedContext(), connect.NewRequest(&devhudv1.ReplaceSettingsRequest{
 		SchemaVersion: 1,
-		CanonicalJson: []byte(`{}`),
+		CanonicalJson: []byte(canonicalSettingsV1),
 	}))
 	if connect.CodeOf(err) != connect.CodePermissionDenied {
 		t.Fatalf("code = %v, want PermissionDenied", connect.CodeOf(err))
@@ -224,7 +249,7 @@ func TestSettingsWriteFailuresAreLoggedBeforeInternalResponse(t *testing.T) {
 	logger := slog.New(slog.NewJSONHandler(&logs, nil))
 	_, err := NewSettingsService(repository, serviceClock{}, logger).ReplaceSettings(authenticatedContext(), connect.NewRequest(&devhudv1.ReplaceSettingsRequest{
 		SchemaVersion: 1,
-		CanonicalJson: []byte(`{}`),
+		CanonicalJson: []byte(canonicalSettingsV1),
 	}))
 	if connect.CodeOf(err) != connect.CodeInternal {
 		t.Fatalf("code = %v, want Internal", connect.CodeOf(err))

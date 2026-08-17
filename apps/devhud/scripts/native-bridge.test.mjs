@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { NativeBridgeError, NativeBridgeErrorCode, SecureSettingKind, isAuthCallback, nativeBridge, validateAuthenticationBrowserRequest, validateExternalRequest, validateSecretValue, validateSecureSettingRef } from "../src/native-bridge.ts";
+import { NativeBridgeError, NativeBridgeErrorCode, SecureSettingKind, isAuthCallback, nativeBridge, validateAuthenticationBrowserRequest, validateExternalRequest, validateGitHubPatReconciliation, validateSecretValue, validateSecureSettingRef } from "../src/native-bridge.ts";
 import { ShortcutActionId, ShortcutKey, ShortcutModifier, ShortcutValidationCode, defaultDesktopShortcutBindings, parseDesktopShortcutBindings } from "../src/shortcuts.ts";
 
 const fixtures = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../fixtures/deep-links.json"), "utf8"));
@@ -16,6 +16,8 @@ const desktopSecureStore = readFileSync(join(dirname(fileURLToPath(import.meta.u
 const desktopHost = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/main.rs"), "utf8");
 const nativeBridgeHost = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/bridge.rs"), "utf8");
 const nativeShortcuts = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/shortcuts.rs"), "utf8");
+const androidBridgeHost = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/mobile/android/src/main/java/io/delino/devhud/bridge/DevhudNativePlugin.kt"), "utf8");
+const iosBridgeHost = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/mobile/ios/Sources/DevhudNativePlugin.swift"), "utf8");
 
 test("deep-link fixtures accept only the contracted auth callback", () => {
   assert.deepEqual(tauriConfig.plugins["deep-link"].desktop.schemes, ["devhud"]);
@@ -30,9 +32,13 @@ test("deep-link fixtures accept only the contracted auth callback", () => {
 });
 
 test("secure setting references and values are bounded before native invocation", () => {
-  assert.doesNotThrow(() => validateSecureSettingRef({ kind: SecureSettingKind.GithubPat, profileId: "work-profile" }));
-  assert.throws(() => validateSecureSettingRef({ kind: SecureSettingKind.GithubPat, profileId: "../escape" }), (error) => error instanceof NativeBridgeError && error.code === NativeBridgeErrorCode.InvalidArgument);
+  assert.doesNotThrow(() => validateSecureSettingRef({ kind: SecureSettingKind.GithubPat, profileId: "work-profile", scopeId: "origin.scope" }));
+  assert.throws(() => validateSecureSettingRef({ kind: SecureSettingKind.GithubPat, profileId: "../escape", scopeId: "origin.scope" }), (error) => error instanceof NativeBridgeError && error.code === NativeBridgeErrorCode.InvalidArgument);
+  assert.throws(() => validateSecureSettingRef({ kind: SecureSettingKind.GithubPat, profileId: "work-profile", scopeId: "../escape" }), NativeBridgeError);
   assert.throws(() => validateSecretValue("x".repeat(65 * 1024)), NativeBridgeError);
+  assert.doesNotThrow(() => validateGitHubPatReconciliation("origin.scope", ["work-profile"]));
+  assert.throws(() => validateGitHubPatReconciliation("origin.scope", ["work-profile", "work-profile"]), NativeBridgeError);
+  assert.throws(() => validateGitHubPatReconciliation("origin.scope", ["../escape"]), NativeBridgeError);
 });
 
 test("desktop secure storage resolves Keychain, Credential Manager, and Secret Service without plaintext fallback", () => {
@@ -46,9 +52,18 @@ test("desktop secure storage resolves Keychain, Credential Manager, and Secret S
 test("external navigation is restricted to account destinations", () => {
   assert.doesNotThrow(() => validateExternalRequest({ target: "authentication", apiOrigin: "https://api.delino.io/" }));
   assert.doesNotThrow(() => validateExternalRequest({ target: "authentication", apiOrigin: "http://127.0.0.1:8787/" }));
-  assert.doesNotThrow(() => validateExternalRequest({ target: "pat", apiOrigin: "ignored" }));
+  assert.doesNotThrow(() => validateExternalRequest({ target: "fine-grained-pat", apiOrigin: "ignored" }));
+  assert.doesNotThrow(() => validateExternalRequest({ target: "classic-pat", apiOrigin: "ignored" }));
   assert.throws(() => validateExternalRequest({ target: "authentication", apiOrigin: "http://example.com/" }), NativeBridgeError);
   assert.throws(() => validateExternalRequest({ target: "authentication", apiOrigin: "https://user@example.com/" }), NativeBridgeError);
+});
+
+test("all native hosts expose only the contracted PAT creation links", () => {
+  for (const source of [desktopHost, androidBridgeHost, iosBridgeHost]) {
+    assert.match(source, /personal-access-tokens\/new\?contents=read&issues=write&metadata=read&pull_requests=read/u);
+    assert.match(source, /settings\/tokens\/new\?scopes=repo/u);
+    assert.doesNotMatch(source, /target_name/u);
+  }
 });
 
 test("authentication navigation is restricted to the discovered HTTPS issuer", () => {

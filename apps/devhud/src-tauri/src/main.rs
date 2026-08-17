@@ -107,7 +107,8 @@ fn validated_api_origin(origin: &str) -> Option<String> {
 fn external_destination(target: &str, api_origin: &str) -> Option<String> {
     match target {
         "authentication" => validated_api_origin(api_origin),
-        "pat" => Some("https://github.com/settings/personal-access-tokens/new".to_string()),
+        "fine-grained-pat" => Some("https://github.com/settings/personal-access-tokens/new?contents=read&issues=write&metadata=read&pull_requests=read".to_string()),
+        "classic-pat" => Some("https://github.com/settings/tokens/new?scopes=repo".to_string()),
         "issue" => Some("https://github.com/delinoio/oss/issues/new".to_string()),
         _ => None,
     }
@@ -809,8 +810,12 @@ mod review_tests {
     #[test]
     fn external_destinations_are_closed_and_validate_the_authentication_origin() {
         assert_eq!(
-            external_destination("pat", "https://example.test"),
-            Some("https://github.com/settings/personal-access-tokens/new".to_string())
+            external_destination("fine-grained-pat", "https://example.test"),
+            Some("https://github.com/settings/personal-access-tokens/new?contents=read&issues=write&metadata=read&pull_requests=read".to_string())
+        );
+        assert_eq!(
+            external_destination("classic-pat", "ignored"),
+            Some("https://github.com/settings/tokens/new?scopes=repo".to_string())
         );
         assert_eq!(
             external_destination("authentication", "https://example.test"),

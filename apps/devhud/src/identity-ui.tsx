@@ -1,10 +1,12 @@
 import { useEffect, useEffectEvent, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type Ref } from "react";
 import type { Copy } from "./localization";
+import { GitHubSettings } from "./github-settings-ui.tsx";
+import type { GitHubProvider } from "./github-provider.ts";
+import { NativeBridgeError, nativeBridge, type NativeBridgeV1, type NativeShortcutPermission, type NativeShortcutPlatform } from "./native-bridge";
 import { useIdentitySettings } from "./service-boundary";
-import { LanguagePreference, PlatformCapability, normalizeApiOrigin, ThemePreference, type RuntimeCapabilities } from "./shell";
+import { browserShell, LanguagePreference, PlatformCapability, normalizeApiOrigin, ThemePreference, type ExternalLinkTarget, type RuntimeCapabilities } from "./shell";
 import type { DevHudSettingsV1 } from "./settings-contract";
 import type { SettingsDiffEntry } from "./settings-diff";
-import { NativeBridgeError, nativeBridge, type NativeBridgeV1, type NativeShortcutPermission, type NativeShortcutPlatform } from "./native-bridge";
 import { ShortcutActionId, ShortcutContractError, ShortcutKey, ShortcutModifier, ShortcutValidationCode, availableShortcutActions, parseDesktopShortcutBindings, type ShortcutBinding } from "./shortcuts";
 
 interface ApiEditorProps {
@@ -141,20 +143,18 @@ export function SynchronizedShortcutBoundary({ bridge = nativeBridge }: { readon
   return null;
 }
 
-export function SynchronizedSettingsBoundary({ copy, bridge = nativeBridge, showNativeShortcuts = false, shortcutCapabilities = { available: new Set<PlatformCapability>() } }: { readonly copy: Copy; readonly bridge?: NativeBridgeV1; readonly showNativeShortcuts?: boolean; readonly shortcutCapabilities?: RuntimeCapabilities }) {
+export function SynchronizedSettingsBoundary({ copy, bridge = nativeBridge, githubProvider, onOpenExternal = (target) => browserShell.openExternal(target, ""), showNativeShortcuts = false, shortcutCapabilities = { available: new Set<PlatformCapability>() } }: { readonly copy: Copy; readonly bridge?: NativeBridgeV1; readonly githubProvider?: GitHubProvider; readonly onOpenExternal?: (target: ExternalLinkTarget) => Promise<void>; readonly showNativeShortcuts?: boolean; readonly shortcutCapabilities?: RuntimeCapabilities }) {
   const identity = useIdentitySettings();
   const [actionError, setActionError] = useState(false);
-  const invoke = (action: () => Promise<void>) => { setActionError(false); void action().catch(() => setActionError(true)); };
-  const replaceAppearance = (appearance: Partial<DevHudSettingsV1["appearance"]>) => invoke(async () => {
-    await identity.replaceSettings({
-      ...identity.settings,
-      appearance: { ...identity.settings.appearance, ...appearance },
-    });
-  });
+  const invoke = (action: () => Promise<unknown>) => { setActionError(false); void action().catch(() => setActionError(true)); };
+  const replaceAppearance = (appearance: Partial<DevHudSettingsV1["appearance"]>) => invoke(() => identity.replaceSettings((current) => ({
+    ...current,
+    appearance: { ...current.appearance, ...appearance },
+  })));
   return <>
     <label>{copy.theme}<select value={identity.settings.appearance.theme} disabled={identity.readOnly} onChange={(event) => replaceAppearance({ theme: event.target.value as DevHudSettingsV1["appearance"]["theme"] })}>{Object.values(ThemePreference).map((value) => <option key={value} value={value}>{copy[value]}</option>)}</select></label>
     <label>{copy.language}<select value={identity.settings.appearance.language} disabled={identity.readOnly} onChange={(event) => replaceAppearance({ language: event.target.value as DevHudSettingsV1["appearance"]["language"] })}><option value={LanguagePreference.System}>{copy.system}</option><option value={LanguagePreference.English}>{copy.english}</option><option value={LanguagePreference.Korean}>{copy.korean}</option></select></label>
-    {showNativeShortcuts && <ShortcutSettings copy={copy} bridge={bridge} disabled={identity.readOnly} capabilities={shortcutCapabilities} bindings={identity.settings.shortcuts.desktop} onPersist={(desktop) => identity.replaceSettings({ ...identity.settings, shortcuts: { ...identity.settings.shortcuts, desktop } })} />}
+    {showNativeShortcuts && <ShortcutSettings copy={copy} bridge={bridge} disabled={identity.readOnly} capabilities={shortcutCapabilities} bindings={identity.settings.shortcuts.desktop} onPersist={(desktop) => identity.replaceSettings((current) => ({ ...current, shortcuts: { ...current.shortcuts, desktop } }))} />}
     {(identity.status === "guest" || identity.status === "signed-out" || identity.status === "starting") && <p className="notice">{copy.guestSettingsLocal}</p>}
     {identity.status === "blocked" && <p className="notice">{copy.blockedLocalHint}</p>}
     {identity.status === "deletion-pending" && <p className="notice">{copy.deletionPendingSummary}</p>}
@@ -166,6 +166,7 @@ export function SynchronizedSettingsBoundary({ copy, bridge = nativeBridge, show
     {identity.conflict && <SnapshotChoice key="conflict" choiceId="conflict" copy={copy} entries={identity.conflict.diff} title={copy.conflictTitle} summary={copy.conflictSummary} primary={copy.reapplyLocal} secondary={copy.adoptServer} onPrimary={() => invoke(identity.reapplyConflictLocal)} onSecondary={identity.adoptConflictServer} />}
     {(actionError || identity.error?.startsWith("settings-") || identity.settingsError) && <section className="notice" role="alert"><p>{copy.settingsActionFailed}{identity.error?.startsWith("settings-") && <> <code>{identity.error}</code></>}{identity.settingsError && <> <code>{`settings-connect-${identity.settingsError.code}`}</code>{identity.settingsError.correlationId && <> {copy.correlationId}: <code>{identity.settingsError.correlationId}</code></>}</>}</p><button onClick={() => invoke(identity.retrySettings)}>{copy.retry}</button></section>}
     </section>}
+    <GitHubSettings copy={copy} bridge={bridge} provider={githubProvider} openExternal={onOpenExternal} />
   </>;
 }
 

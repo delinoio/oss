@@ -232,7 +232,11 @@ impl NativeBridgeState {
             .session_origins
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let mut connect = vec!["'self'".to_string(), origins.api_origin.clone()];
+        let mut connect = vec![
+            "'self'".to_string(),
+            origins.api_origin.clone(),
+            "https://api.github.com".to_string(),
+        ];
         if let Some(issuer) = &origins.logto_issuer {
             connect.push(issuer.origin().ascii_serialization());
         }
@@ -376,10 +380,43 @@ fn validate_secure_request(request: &Value) -> Result<(), String> {
     if !is_profile_id(profile_id) {
         return Err("invalid-argument".to_string());
     }
+    if kind == "github-pat"
+        && !setting
+            .get("scopeId")
+            .and_then(Value::as_str)
+            .is_some_and(is_profile_id)
+    {
+        return Err("invalid-argument".to_string());
+    }
     if let Some(value) = request.get("value").and_then(Value::as_str)
         && value.len() > SECRET_LIMIT
     {
         return Err("invalid-argument".to_string());
+    }
+    Ok(())
+}
+
+fn validate_github_pat_reconciliation(request: &Value) -> Result<(), String> {
+    let scope_id = request
+        .get("scopeId")
+        .and_then(Value::as_str)
+        .ok_or("invalid-argument")?;
+    if !is_profile_id(scope_id) {
+        return Err("invalid-argument".to_string());
+    }
+    let profile_ids = request
+        .get("profileIds")
+        .and_then(Value::as_array)
+        .ok_or("invalid-argument")?;
+    if profile_ids.len() > 25 {
+        return Err("invalid-argument".to_string());
+    }
+    let mut unique = std::collections::BTreeSet::new();
+    for profile_id in profile_ids {
+        let profile_id = profile_id.as_str().ok_or("invalid-argument")?;
+        if !is_profile_id(profile_id) || !unique.insert(profile_id) {
+            return Err("invalid-argument".to_string());
+        }
     }
     Ok(())
 }
@@ -389,7 +426,7 @@ fn validate_external_request(request: &Value) -> Result<(), String> {
         .get("target")
         .and_then(Value::as_str)
         .ok_or("invalid-argument")?;
-    if target == "pat" {
+    if target == "fine-grained-pat" || target == "classic-pat" {
         return Ok(());
     }
     if target != "authentication" {
@@ -567,6 +604,14 @@ pub fn handle_native_bridge_request(
                 Err("unsupported".to_string())
             }
         }
+        "secure.reconcile-github-pats" => {
+            validate_github_pat_reconciliation(request)?;
+            if cfg!(any(target_os = "android", target_os = "ios")) {
+                Err("platform-failure".to_string())
+            } else {
+                Err("unsupported".to_string())
+            }
+        }
         "secure.purge" => {
             validate_purge_request(request)?;
             if cfg!(any(target_os = "android", target_os = "ios")) {
@@ -618,6 +663,8 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
         if operation.starts_with("secure.") {
             if operation == "secure.purge" {
                 validate_purge_request(&request)?;
+            } else if operation == "secure.reconcile-github-pats" {
+                validate_github_pat_reconciliation(&request)?;
             } else {
                 validate_secure_request(&request)?;
             }
@@ -641,6 +688,8 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
         if operation.starts_with("secure.") {
             if operation == "secure.purge" {
                 validate_purge_request(&request)?;
+            } else if operation == "secure.reconcile-github-pats" {
+                validate_github_pat_reconciliation(&request)?;
             } else {
                 validate_secure_request(&request)?;
             }
@@ -775,7 +824,7 @@ mod tests {
         .expect("configure origins");
         assert_eq!(changed["changed"], true);
         let csp = state.session_csp(false);
-        assert!(csp.contains("connect-src 'self' https://custom.example https://identity.example"));
+        assert!(csp.contains("connect-src 'self' https://custom.example https://api.github.com https://identity.example"));
         assert!(!csp.contains("devhud.api.delino.io"));
         assert!(!csp.contains("connect-src https:"));
         assert!(!csp.contains("style-src 'self' 'unsafe-inline'"));
@@ -810,7 +859,7 @@ mod tests {
         .expect("change API and clear discovered issuer");
         assert_eq!(api_changed["changed"], true);
         let csp = state.session_csp(false);
-        assert!(csp.contains("connect-src 'self' https://other.example"));
+        assert!(csp.contains("connect-src 'self' https://other.example https://api.github.com"));
         assert!(!csp.contains("identity.example"));
 
         assert_eq!(
@@ -892,11 +941,38 @@ mod tests {
         let state = NativeBridgeState::default();
         let invalid = json!({
             "operation": "secure.write",
-            "setting": { "kind": "github-pat", "profileId": "../escape" },
+            "setting": { "kind": "github-pat", "profileId": "../escape", "scopeId": "origin.scope" },
             "value": "secret"
         });
         assert_eq!(
             handle_native_bridge_request(&invalid, &state),
+            Err("invalid-argument".to_string())
+        );
+    }
+
+    #[test]
+    fn validates_github_pat_reconciliation_profile_ids() {
+        let state = NativeBridgeState::default();
+        assert_eq!(
+            handle_native_bridge_request(
+                &json!({
+                    "operation": "secure.reconcile-github-pats",
+                    "scopeId": "origin.scope",
+                    "profileIds": ["profile-one", "profile-two"]
+                }),
+                &state,
+            ),
+            Err("unsupported".to_string())
+        );
+        assert_eq!(
+            handle_native_bridge_request(
+                &json!({
+                    "operation": "secure.reconcile-github-pats",
+                    "scopeId": "origin.scope",
+                    "profileIds": ["../escape"]
+                }),
+                &state,
+            ),
             Err("invalid-argument".to_string())
         );
     }
@@ -907,7 +983,7 @@ mod tests {
         for request in [
             json!({ "operation": "lifecycle.open-external", "target": "authentication", "apiOrigin": "https://api.delino.io/" }),
             json!({ "operation": "lifecycle.open-external", "target": "authentication", "apiOrigin": "http://127.0.0.1:8787/" }),
-            json!({ "operation": "lifecycle.open-external", "target": "pat", "apiOrigin": "ignored" }),
+            json!({ "operation": "lifecycle.open-external", "target": "fine-grained-pat", "apiOrigin": "ignored" }),
         ] {
             assert_eq!(
                 handle_native_bridge_request(&request, &state),

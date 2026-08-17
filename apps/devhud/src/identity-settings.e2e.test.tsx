@@ -2,7 +2,7 @@
 
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { create, toBinary } from "@bufbuild/protobuf";
-import { PermissionFailureReason, PermissionFailureSchema, SettingsRevisionConflictSchema } from "@delinoio/devhud-api-client";
+import { canonicalizeSettingsJson, PermissionFailureReason, PermissionFailureSchema, SettingsRevisionConflictSchema } from "@delinoio/devhud-api-client";
 import { LogtoRequestError } from "@logto/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -13,7 +13,7 @@ import type { IdentitySession } from "./identity-client";
 import { SynchronizedSettingsBoundary } from "./identity-ui";
 import { messages } from "./localization";
 import { hasGuestSettings, readAuthenticatedSettingsCache, readGuestSettings, writeAuthenticatedSettingsCache, writeCachedIdentityBootstrap, writeGuestSettings } from "./local-data";
-import { canonicalDevHudSettings, defaultDevHudSettings } from "./settings-contract";
+import { canonicalDevHudSettings, defaultDevHudSettings, parseDevHudSettings } from "./settings-contract";
 import { LifecycleState, RuntimePlatform, type NativeBridgeEventV1, type NativeBridgeRequestV1, type NativeBridgeResponseV1, type NativeBridgeV1, type RuntimeSnapshot } from "./native-bridge";
 import { clearIdentityForApiChange, DevHudServiceBoundary, useIdentitySettings } from "./service-boundary";
 import { ShortcutActionId, ShortcutKey, ShortcutModifier } from "./shortcuts";
@@ -31,7 +31,7 @@ function connectResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json", "Connect-Protocol-Version": "1" } });
 }
 
-function authenticatedBridge(purgeScopes: string[] = [], secureOperations: string[] = []): NativeBridgeV1 {
+function authenticatedBridge(purgeScopes: string[] = [], secureOperations: string[] = [], reconciliations: NativeBridgeRequestV1[] = []): NativeBridgeV1 {
   const accessTokenMap = JSON.stringify({ "@https://api.example/api": { token: "fixture-access-token", scope: "", expiresAt: 4_102_444_800 } });
   const secureSession = JSON.stringify({ idToken: "fixture-id-token", accessToken: accessTokenMap });
   return {
@@ -40,6 +40,7 @@ function authenticatedBridge(purgeScopes: string[] = [], secureOperations: strin
       if (request.operation === "secure.read") { secureOperations.push("read"); return { kind: "secure-value", value: request.setting.kind === "logto-session" ? secureSession : null }; }
       if (request.operation === "secure.purge") { purgeScopes.push(request.scope); return { kind: "ok" }; }
       if (request.operation === "secure.write" || request.operation === "secure.remove") { secureOperations.push(request.operation); return { kind: "ok" }; }
+      if (request.operation === "secure.reconcile-github-pats") { reconciliations.push(request); return { kind: "ok" }; }
       if (request.operation === "auth.take-pending-callback") return { kind: "auth-callback", url: null };
       throw new Error(`unexpected bridge operation ${request.operation}`);
     },
@@ -52,6 +53,7 @@ function signedOutBridge(): NativeBridgeV1 {
     async request(request) {
       if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
       if (request.operation === "secure.read") return { kind: "secure-value", value: null };
+      if (request.operation === "secure.reconcile-github-pats") return { kind: "ok" };
       if (request.operation === "auth.take-pending-callback") return { kind: "auth-callback", url: null };
       throw new Error(`unexpected bridge operation ${request.operation}`);
     },
@@ -62,6 +64,12 @@ function signedOutBridge(): NativeBridgeV1 {
 function encodedSettings(value: unknown): string {
   return btoa(String.fromCharCode(...new TextEncoder().encode(canonicalDevHudSettings(value))));
 }
+
+function encodedCanonicalJson(value: unknown): string {
+  return btoa(String.fromCharCode(...new TextEncoder().encode(canonicalizeSettingsJson(value))));
+}
+
+const legacyDevHudSettings = { ...defaultDevHudSettings, schemaVersion: 1, github: { repositories: [], issueTracker: null } };
 
 function IdentityStateProbe({ replacement = defaultDevHudSettings }: { readonly replacement?: typeof defaultDevHudSettings }) {
   const identity = useIdentitySettings();
@@ -145,10 +153,10 @@ describe("generated Connect identity/settings fixture", () => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
       if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
-      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 1, revision: "1", canonicalJson: encodedSettings(server) } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "1", canonicalJson: encodedSettings(server) } });
       if (url.endsWith("/devhud.v1.SettingsService/ReplaceSettings")) {
         replacements += 1;
-        return connectResponse({ snapshot: { schemaVersion: 1, revision: "2", canonicalJson: encodedSettings(replacement) } });
+        return connectResponse({ snapshot: { schemaVersion: 3, revision: "2", canonicalJson: encodedSettings(replacement) } });
       }
       throw new Error(`unexpected request ${url}`);
     }));
@@ -174,7 +182,7 @@ describe("generated Connect identity/settings fixture", () => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
       if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
-      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 1, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
       throw new Error(`unexpected request ${url}`);
     }));
 
@@ -241,7 +249,7 @@ describe("generated Connect identity/settings fixture", () => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
       if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
-      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 1, revision: "1", canonicalJson: encodedSettings(server) } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "1", canonicalJson: encodedSettings(server) } });
       throw new Error(`unexpected request ${url}`);
     }));
 
@@ -363,7 +371,7 @@ describe("generated Connect identity/settings fixture", () => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
       if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
-      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 1, revision: "1", canonicalJson: encodedSettings(server) } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "1", canonicalJson: encodedSettings(server) } });
       if (url.endsWith("/devhud.v1.SettingsService/ReplaceSettings")) {
         const source = typeof init?.body === "string" ? init.body : new TextDecoder().decode(init?.body as ArrayBufferView<ArrayBuffer>);
         replaceBodies.push(JSON.parse(source) as Record<string, unknown>);
@@ -373,7 +381,7 @@ describe("generated Connect identity/settings fixture", () => {
         if (replacementNumber === 1) await firstPending;
         activeReplacements -= 1;
         const replacement = replacementNumber === 1 ? firstReplacement : secondReplacement;
-        return connectResponse({ snapshot: { schemaVersion: 1, revision: String(replacementNumber + 1), canonicalJson: encodedSettings(replacement) } });
+        return connectResponse({ snapshot: { schemaVersion: 3, revision: String(replacementNumber + 1), canonicalJson: encodedSettings(replacement) } });
       }
       throw new Error(`unexpected request ${url}`);
     }));
@@ -410,7 +418,7 @@ describe("generated Connect identity/settings fixture", () => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
       if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
-      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 1, revision: "1", canonicalJson: encodedSettings(server) } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "1", canonicalJson: encodedSettings(server) } });
       throw new Error(`unexpected request ${url}`);
     }));
 
@@ -420,6 +428,84 @@ describe("generated Connect identity/settings fixture", () => {
     await waitFor(() => {
       expect(document.documentElement.dataset.theme).toBe("dark");
       expect(document.documentElement.lang).toBe("ko");
+    });
+  });
+
+  it("reconciles GitHub PATs from the identity boundary while Home is active", async () => {
+    const profile = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", name: "Work", kind: "fine-grained" as const };
+    const removedProfileId = "018f47a2-7b3c-7def-8abc-1234567890ac";
+    const server = parseDevHudSettings({ ...defaultDevHudSettings, github: { ...defaultDevHudSettings.github, profiles: [profile], pendingPatRemovals: [removedProfileId] } });
+    const cleaned = { ...server, github: { ...server.github, pendingPatRemovals: [] } };
+    const reconciliations: NativeBridgeRequestV1[] = [];
+    const replacements: Record<string, unknown>[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "1", canonicalJson: encodedSettings(server) } });
+      if (url.endsWith("/devhud.v1.SettingsService/ReplaceSettings")) {
+        const source = typeof init?.body === "string" ? init.body : new TextDecoder().decode(init?.body as ArrayBufferView<ArrayBuffer>);
+        replacements.push(JSON.parse(source) as Record<string, unknown>);
+        return connectResponse({ snapshot: { schemaVersion: 3, revision: "2", canonicalJson: encodedSettings(cleaned) } });
+      }
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    render(<App bridge={authenticatedBridge([], [], reconciliations)} initialRuntime={runtime} />);
+
+    expect(await screen.findByRole("heading", { name: messages.en.welcome })).toBeTruthy();
+    await waitFor(() => expect(reconciliations).toContainEqual({
+      operation: "secure.reconcile-github-pats",
+      scopeId: expect.any(String),
+      profileIds: [profile.id],
+    }));
+    await waitFor(() => expect(replacements).toHaveLength(1));
+    expect(replacements[0]?.canonicalJson).toBe(encodedSettings(cleaned));
+    expect(screen.queryByRole("heading", { name: messages.en.githubSetupTitle })).toBeNull();
+  });
+
+  it("reconciles GitHub PATs again after adopting an unchanged server snapshot", async () => {
+    const profile = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", name: "Work", kind: "fine-grained" as const };
+    const server = parseDevHudSettings(defaultDevHudSettings);
+    const proposed = parseDevHudSettings({ ...server, github: { ...server.github, profiles: [profile] } });
+    const reconciliations: NativeBridgeRequestV1[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "1", canonicalJson: encodedSettings(server) } });
+      if (url.endsWith("/devhud.v1.SettingsService/ReplaceSettings")) {
+        const detail = create(SettingsRevisionConflictSchema, {
+          expectedRevision: 1n,
+          currentSnapshot: { schemaVersion: 3, revision: 2n, canonicalJson: new TextEncoder().encode(canonicalDevHudSettings(server)) },
+        });
+        const value = btoa(String.fromCharCode(...toBinary(SettingsRevisionConflictSchema, detail)));
+        return new Response(JSON.stringify({ code: "aborted", message: "settings revision conflict", details: [{ type: SettingsRevisionConflictSchema.typeName, value }] }), { status: 409, headers: { "Content-Type": "application/json" } });
+      }
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    render(<DevHudServiceBoundary
+      apiOrigin="https://devhud.api.delino.io"
+      active
+      online
+      callbackUrl={null}
+      platform={RuntimePlatform.Desktop}
+      bridge={authenticatedBridge([], [], reconciliations)}
+      onCallbackConsumed={() => {}}
+      onContinueLocally={() => {}}
+      onLoggedOut={() => {}}
+    ><IdentityStateProbe replacement={proposed} /><SynchronizedSettingsBoundary copy={messages.en} /></DevHudServiceBoundary>);
+
+    await waitFor(() => expect(reconciliations).toHaveLength(1));
+    fireEvent.click(screen.getByRole("button", { name: "replace probe settings" }));
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.adoptServer }));
+
+    await waitFor(() => expect(reconciliations).toHaveLength(2));
+    expect(reconciliations[1]).toEqual({
+      operation: "secure.reconcile-github-pats",
+      scopeId: expect.any(String),
+      profileIds: [],
     });
   });
 
@@ -435,19 +521,19 @@ describe("generated Connect identity/settings fixture", () => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
       if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
-      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 1, revision: fixture.serverRevision, canonicalJson: toBase64(server) } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: fixture.serverRevision, canonicalJson: toBase64(server) } });
       if (url.endsWith("/devhud.v1.SettingsService/ReplaceSettings")) {
         const source = typeof init?.body === "string" ? init.body : new TextDecoder().decode(init?.body as ArrayBufferView<ArrayBuffer>);
         replaceBodies.push(JSON.parse(source) as Record<string, unknown>);
         if (replaceBodies.length === 1) {
           const detail = create(SettingsRevisionConflictSchema, {
             expectedRevision: 3n,
-            currentSnapshot: { schemaVersion: 1, revision: 4n, canonicalJson: encoder.encode(canonicalDevHudSettings(server)) },
+            currentSnapshot: { schemaVersion: 3, revision: 4n, canonicalJson: encoder.encode(canonicalDevHudSettings(server)) },
           });
           const value = btoa(String.fromCharCode(...toBinary(SettingsRevisionConflictSchema, detail)));
           return new Response(JSON.stringify({ code: "aborted", message: "settings revision conflict", details: [{ type: SettingsRevisionConflictSchema.typeName, value }] }), { status: 409, headers: { "Content-Type": "application/json" } });
         }
-        return connectResponse({ snapshot: { schemaVersion: 1, revision: "5", canonicalJson: toBase64(local) } });
+        return connectResponse({ snapshot: { schemaVersion: 3, revision: "5", canonicalJson: toBase64(local) } });
       }
       if (url.endsWith("/devhud.v1.AccountService/DeleteAccount")) return connectResponse({ account: { ...fixture.account, deletionState: "ACCOUNT_DELETION_STATE_PENDING", recoverableUntil: recoveryUntil } });
       if (url.endsWith("/devhud.v1.AccountService/RestoreAccount")) return connectResponse({ account: fixture.account });
@@ -615,7 +701,7 @@ describe("generated Connect identity/settings fixture", () => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
       if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: { ...fixture.account, administrativeBlockState: "ADMINISTRATIVE_BLOCK_STATE_BLOCKED" } });
-      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 1, revision: "1", canonicalJson: toBase64(defaultDevHudSettings) } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "1", canonicalJson: toBase64(defaultDevHudSettings) } });
       throw new Error(`unexpected fixture request ${url}`);
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -649,7 +735,7 @@ describe("generated Connect identity/settings fixture", () => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
       if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: { ...fixture.account, deletionState: "ACCOUNT_DELETION_STATE_PENDING" } });
-      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 1, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
       throw new Error(`unexpected fixture request ${url}`);
     }));
 
@@ -687,7 +773,7 @@ describe("generated Connect identity/settings fixture", () => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
       if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
-      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 1, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
       if (url.endsWith("/devhud.v1.AccountService/DeleteAccount")) {
         deletionRequests += 1;
         return connectResponse({ account: { ...fixture.account, deletionState: "ACCOUNT_DELETION_STATE_PENDING" } });
@@ -736,7 +822,7 @@ describe("generated Connect identity/settings fixture", () => {
         return connectResponse(fixture.bootstrap);
       }
       if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
-      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 1, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
       throw new Error(`unexpected fixture request ${url}`);
     }));
 
@@ -761,7 +847,7 @@ describe("generated Connect identity/settings fixture", () => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
       if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: { ...fixture.account, deletionState: "ACCOUNT_DELETION_STATE_PURGE_CLAIMED" } });
-      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 1, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
       throw new Error(`unexpected fixture request ${url}`);
     }));
 
@@ -780,7 +866,7 @@ describe("generated Connect identity/settings fixture", () => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
       if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return new Response(JSON.stringify({ code: "unauthenticated", message: "invalid credentials" }), { status: 401, headers: { "Content-Type": "application/json" } });
-      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 1, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
       throw new Error(`unexpected fixture request ${url}`);
     }));
 
@@ -837,7 +923,7 @@ describe("generated Connect identity/settings fixture", () => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
       if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
-      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 1, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
       throw new Error(`unexpected fixture request ${url}`);
     }));
 
@@ -879,7 +965,7 @@ describe("generated Connect identity/settings fixture", () => {
         if (accountRequests === 1) return new Response(JSON.stringify({ code: "unavailable", message: "retry later" }), { status: 503, headers: { "Content-Type": "application/json", "x-devhud-correlation-id": correlationId } });
         return connectResponse({ account: fixture.account });
       }
-      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 1, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
       throw new Error(`unexpected fixture request ${url}`);
     }));
 
@@ -1028,7 +1114,7 @@ describe("generated Connect identity/settings fixture", () => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
       if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
-      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 1, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
       throw new Error(`unexpected request ${url}`);
     }));
     const bridge: NativeBridgeV1 = {
@@ -1081,7 +1167,7 @@ describe("generated Connect identity/settings fixture", () => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
       if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
-      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 1, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
       throw new Error(`unexpected request ${url}`);
     }));
     const bridge: NativeBridgeV1 = {
@@ -1149,7 +1235,7 @@ describe("generated Connect identity/settings fixture", () => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
       if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
-      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 1, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
       if (url.endsWith("/devhud.v1.SettingsService/ReplaceSettings")) return new Response(JSON.stringify({ code: "unavailable", message: "retry later" }), { status: 503, headers: { "Content-Type": "application/json", "x-devhud-correlation-id": correlationId } });
       throw new Error(`unexpected request ${url}`);
     }));
@@ -1200,7 +1286,7 @@ describe("generated Connect identity/settings fixture", () => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
       if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
-      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 1, revision: "7", canonicalJson: encodedSettings(defaultDevHudSettings) } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "7", canonicalJson: encodedSettings(defaultDevHudSettings) } });
       throw new Error(`unexpected request ${url}`);
     }));
 
@@ -1295,7 +1381,7 @@ describe("generated Connect identity/settings fixture", () => {
       if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) {
         settingsRequests += 1;
         if (settingsRequests === 1) return new Response(JSON.stringify({ code: "unavailable", message: "retry later" }), { status: 503, headers: { "Content-Type": "application/json", "x-devhud-correlation-id": correlationId } });
-        return connectResponse({ snapshot: { schemaVersion: 1, revision: "10", canonicalJson: encodedSettings(defaultDevHudSettings) } });
+        return connectResponse({ snapshot: { schemaVersion: 3, revision: "10", canonicalJson: encodedSettings(defaultDevHudSettings) } });
       }
       throw new Error(`unexpected request ${url}`);
     }));
@@ -1334,7 +1420,7 @@ describe("generated Connect identity/settings fixture", () => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
       if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
-      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 1, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
       throw new Error(`unexpected request ${url}`);
     }));
 
@@ -1373,7 +1459,7 @@ describe("generated Connect identity/settings fixture", () => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
       if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
-      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 1, revision: "7", canonicalJson: encodedSettings(defaultDevHudSettings) } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "7", canonicalJson: encodedSettings(defaultDevHudSettings) } });
       throw new Error(`unexpected request ${url}`);
     }));
 
@@ -1402,8 +1488,8 @@ describe("generated Connect identity/settings fixture", () => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
       if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
-      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 1, revision: "1", canonicalJson: encodedSettings(server) } });
-      if (url.endsWith("/devhud.v1.SettingsService/ReplaceSettings")) return connectResponse({ snapshot: { schemaVersion: 2, revision: "2", canonicalJson: encodedSettings(replacement) } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "1", canonicalJson: encodedSettings(server) } });
+      if (url.endsWith("/devhud.v1.SettingsService/ReplaceSettings")) return connectResponse({ snapshot: { schemaVersion: 4, revision: "2", canonicalJson: encodedSettings(replacement) } });
       throw new Error(`unexpected request ${url}`);
     }));
 
@@ -1430,11 +1516,11 @@ describe("generated Connect identity/settings fixture", () => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
       if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
-      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 1, revision: "1", canonicalJson: encodedSettings(server) } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "1", canonicalJson: encodedSettings(server) } });
       if (url.endsWith("/devhud.v1.SettingsService/ReplaceSettings")) {
         return kind === "missing"
           ? connectResponse({})
-          : connectResponse({ snapshot: { schemaVersion: 1, revision: "2", canonicalJson: btoa('{ "schemaVersion": 1 }') } });
+          : connectResponse({ snapshot: { schemaVersion: 3, revision: "2", canonicalJson: btoa('{ "schemaVersion": 1 }') } });
       }
       throw new Error(`unexpected request ${url}`);
     }));
@@ -1459,11 +1545,11 @@ describe("generated Connect identity/settings fixture", () => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
       if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
-      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 1, revision: "1", canonicalJson: encodedSettings(server) } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "1", canonicalJson: encodedSettings(server) } });
       if (url.endsWith("/devhud.v1.SettingsService/ReplaceSettings")) {
         const detail = create(SettingsRevisionConflictSchema, {
           expectedRevision: 1n,
-          currentSnapshot: { schemaVersion: 2, revision: 2n, canonicalJson: new TextEncoder().encode(canonicalDevHudSettings(server)) },
+          currentSnapshot: { schemaVersion: 4, revision: 2n, canonicalJson: new TextEncoder().encode(canonicalDevHudSettings(server)) },
         });
         const value = btoa(String.fromCharCode(...toBinary(SettingsRevisionConflictSchema, detail)));
         return new Response(JSON.stringify({ code: "aborted", message: "settings revision conflict", details: [{ type: SettingsRevisionConflictSchema.typeName, value }] }), { status: 409, headers: { "Content-Type": "application/json" } });
@@ -1492,11 +1578,11 @@ describe("generated Connect identity/settings fixture", () => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
       if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
-      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 1, revision: "1", canonicalJson: encodedSettings(server) } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "1", canonicalJson: encodedSettings(server) } });
       if (url.endsWith("/devhud.v1.SettingsService/ReplaceSettings")) {
         const detail = create(SettingsRevisionConflictSchema, {
           expectedRevision: 1n,
-          currentSnapshot: { schemaVersion: 1, revision: 2n, canonicalJson: new TextEncoder().encode('{ "schemaVersion": 1 }') },
+          currentSnapshot: { schemaVersion: 3, revision: 2n, canonicalJson: new TextEncoder().encode('{ "schemaVersion": 1 }') },
         });
         const value = btoa(String.fromCharCode(...toBinary(SettingsRevisionConflictSchema, detail)));
         return new Response(JSON.stringify({ code: "aborted", message: "settings revision conflict", details: [{ type: SettingsRevisionConflictSchema.typeName, value }] }), { status: 409, headers: { "Content-Type": "application/json" } });
@@ -1527,7 +1613,7 @@ describe("generated Connect identity/settings fixture", () => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
       if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
-      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: invalidRefetch ? 2 : 1, revision: "1", canonicalJson: encodedSettings(server) } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: invalidRefetch ? 4 : 3, revision: "1", canonicalJson: encodedSettings(server) } });
       throw new Error(`unexpected request ${url}`);
     }));
 
@@ -1561,11 +1647,11 @@ describe("generated Connect identity/settings fixture", () => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
       if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
-      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 1, revision: "3", canonicalJson: encodedSettings(server) } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "3", canonicalJson: encodedSettings(server) } });
       if (url.endsWith("/devhud.v1.SettingsService/ReplaceSettings")) {
         const detail = create(SettingsRevisionConflictSchema, {
           expectedRevision: 3n,
-          currentSnapshot: { schemaVersion: 1, revision: 4n, canonicalJson: new TextEncoder().encode(canonicalDevHudSettings(server)) },
+          currentSnapshot: { schemaVersion: 3, revision: 4n, canonicalJson: new TextEncoder().encode(canonicalDevHudSettings(server)) },
         });
         const value = btoa(String.fromCharCode(...toBinary(SettingsRevisionConflictSchema, detail)));
         return new Response(JSON.stringify({ code: "aborted", message: "settings revision conflict", details: [{ type: SettingsRevisionConflictSchema.typeName, value }] }), { status: 409, headers: { "Content-Type": "application/json" } });
@@ -1591,7 +1677,7 @@ describe("generated Connect identity/settings fixture", () => {
       if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) {
         settingsRequests += 1;
         if (settingsRequests > 1) return new Response(JSON.stringify({ code: "permission_denied", message: "blocked" }), { status: 403, headers: { "Content-Type": "application/json" } });
-        return connectResponse({ snapshot: { schemaVersion: 1, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
+        return connectResponse({ snapshot: { schemaVersion: 3, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
       }
       if (url.endsWith("/devhud.v1.AccountService/RestoreAccount")) return connectResponse({ account: { ...fixture.account, administrativeBlockState: "ADMINISTRATIVE_BLOCK_STATE_BLOCKED" } });
       throw new Error(`unexpected request ${url}`);
@@ -1607,8 +1693,10 @@ describe("generated Connect identity/settings fixture", () => {
   });
 
   it.each([
-    ["unsupported schema", 2, encodedSettings(defaultDevHudSettings)],
-    ["noncanonical body", 1, btoa('{ "schemaVersion": 1 }')],
+    ["unsupported schema", 4, encodedSettings(defaultDevHudSettings)],
+    ["noncanonical body", 3, btoa('{ "schemaVersion": 3 }')],
+    ["v1 envelope with v3 body", 1, encodedSettings(defaultDevHudSettings)],
+    ["v2 envelope with v1 body", 2, encodedCanonicalJson(legacyDevHudSettings)],
   ])("keeps malformed server settings recoverable for %s", async (_name, schemaVersion, canonicalJson) => {
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
