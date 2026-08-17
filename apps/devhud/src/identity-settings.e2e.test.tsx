@@ -1691,6 +1691,29 @@ describe("generated Connect identity/settings fixture", () => {
     expect((screen.getByLabelText(messages.en.mappingPriority) as HTMLInputElement).value).toBe("-1");
   });
 
+  it("clears unsaved URL mapping drafts when the authenticated account changes", async () => {
+    const mapping = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", pattern: "https://first.example/**", repository: { owner: "delinoio", name: "oss" }, credentialProfileRef: mappingProfile.id, priority: 0, chromeOrigin: null, updatedAt: "2026-08-17T00:00:00.000Z" };
+    const first = withMappingProfile([mapping]);
+    const second = withMappingProfile([{ ...mapping, pattern: "https://second.example/**" }]);
+    let useSecondAccount = false;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: { ...fixture.account, logtoSubject: useSecondAccount ? "second-account" : "first-account" } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 2, revision: useSecondAccount ? "2" : "1", canonicalJson: encodedSettings(useSecondAccount ? second : first) } });
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    render(<DevHudServiceBoundary apiOrigin="https://devhud.api.delino.io" active online callbackUrl={null} platform={RuntimePlatform.Desktop} bridge={authenticatedBridge()} onCallbackConsumed={() => {}} onContinueLocally={() => {}} onLoggedOut={() => {}}><IdentityStateProbe /><SynchronizedSettingsBoundary copy={messages.en} /></DevHudServiceBoundary>);
+
+    const pattern = await screen.findByLabelText(messages.en.urlPattern) as HTMLInputElement;
+    fireEvent.change(pattern, { target: { value: "https://draft.example/**" } });
+    useSecondAccount = true;
+    fireEvent.click(screen.getByRole("button", { name: "refetch probe queries" }));
+
+    await waitFor(() => expect((screen.getByLabelText(messages.en.urlPattern) as HTMLInputElement).value).toBe("https://second.example/**"));
+  });
+
   it.each([
     ["unsupported schema", 3, encodedSettings(defaultDevHudSettings)],
     ["noncanonical body", 2, btoa('{ "schemaVersion": 2 }')],

@@ -142,6 +142,11 @@ const UrlMappingDraftContext = createContext<UrlMappingDraftValue | null>(null);
 
 export function UrlMappingDraftProvider({ children }: { readonly children: ReactNode }) {
   const identity = useIdentitySettings();
+  const identityScope = `${identity.status}:${identity.account?.userId?.value ?? identity.account?.logtoSubject ?? ""}`;
+  return <UrlMappingDraftStateProvider key={identityScope} identity={identity}>{children}</UrlMappingDraftStateProvider>;
+}
+
+function UrlMappingDraftStateProvider({ children, identity }: { readonly children: ReactNode; readonly identity: ReturnType<typeof useIdentitySettings> }) {
   const [draft, setDraft] = useState<UrlRepositoryMapping[]>(() => [...identity.settings.urlMappings]);
   const [invalid, setInvalid] = useState(false);
   const [saved, setSaved] = useState(false);
