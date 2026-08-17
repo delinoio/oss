@@ -5,13 +5,7 @@
 //! the six already configured shortcut bindings. Backends must pass all input
 //! through unchanged.
 
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
-};
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
@@ -162,8 +156,10 @@ pub enum ShortcutPlatform {
 pub enum NativeKey {
     RightPrimary,
     LeftPrimary,
-    Shift,
-    Alt,
+    LeftShift,
+    RightShift,
+    LeftAlt,
+    RightAlt,
     Key(ShortcutKey),
 }
 
@@ -182,8 +178,10 @@ pub fn normalize_global_event(event: &rdev::EventType) -> Option<NativeKeyEvent>
         _ => return None,
     };
     let native = match key {
-        Key::ShiftLeft | Key::ShiftRight => NativeKey::Shift,
-        Key::Alt | Key::AltGr => NativeKey::Alt,
+        Key::ShiftLeft => NativeKey::LeftShift,
+        Key::ShiftRight => NativeKey::RightShift,
+        Key::Alt => NativeKey::LeftAlt,
+        Key::AltGr => NativeKey::RightAlt,
         Key::KeyK => NativeKey::Key(ShortcutKey::KeyK),
         Key::Num1 => NativeKey::Key(ShortcutKey::Digit1),
         Key::Num2 => NativeKey::Key(ShortcutKey::Digit2),
@@ -218,8 +216,10 @@ pub fn normalize_native_key(platform: ShortcutPlatform, code: u32) -> Option<Nat
         ShortcutPlatform::Macos => match code {
             54 => Some(NativeKey::RightPrimary),
             55 => Some(NativeKey::LeftPrimary),
-            56 | 60 => Some(NativeKey::Shift),
-            58 | 61 => Some(NativeKey::Alt),
+            56 => Some(NativeKey::LeftShift),
+            60 => Some(NativeKey::RightShift),
+            58 => Some(NativeKey::LeftAlt),
+            61 => Some(NativeKey::RightAlt),
             40 => Some(NativeKey::Key(ShortcutKey::KeyK)),
             18 => Some(NativeKey::Key(ShortcutKey::Digit1)),
             19 => Some(NativeKey::Key(ShortcutKey::Digit2)),
@@ -237,8 +237,10 @@ pub fn normalize_native_key(platform: ShortcutPlatform, code: u32) -> Option<Nat
         ShortcutPlatform::Windows => match code {
             0xa3 => Some(NativeKey::RightPrimary),
             0xa2 => Some(NativeKey::LeftPrimary),
-            0x10 => Some(NativeKey::Shift),
-            0x12 => Some(NativeKey::Alt),
+            0xa0 => Some(NativeKey::LeftShift),
+            0xa1 => Some(NativeKey::RightShift),
+            0xa4 => Some(NativeKey::LeftAlt),
+            0xa5 => Some(NativeKey::RightAlt),
             0x4b => Some(NativeKey::Key(ShortcutKey::KeyK)),
             0x31..=0x35 => digit_key(code - 0x30),
             0x20 => Some(NativeKey::Key(ShortcutKey::Space)),
@@ -253,8 +255,10 @@ pub fn normalize_native_key(platform: ShortcutPlatform, code: u32) -> Option<Nat
         ShortcutPlatform::X11 => match code {
             105 => Some(NativeKey::RightPrimary),
             37 => Some(NativeKey::LeftPrimary),
-            50 | 62 => Some(NativeKey::Shift),
-            64 | 108 => Some(NativeKey::Alt),
+            50 => Some(NativeKey::LeftShift),
+            62 => Some(NativeKey::RightShift),
+            64 => Some(NativeKey::LeftAlt),
+            108 => Some(NativeKey::RightAlt),
             45 => Some(NativeKey::Key(ShortcutKey::KeyK)),
             10..=14 => digit_key(code - 9),
             65 => Some(NativeKey::Key(ShortcutKey::Space)),
@@ -299,8 +303,10 @@ pub struct ShortcutService<B> {
     active: ShortcutBindings,
     right_primary: bool,
     left_primary: bool,
-    shift: bool,
-    alt: bool,
+    left_shift: bool,
+    right_shift: bool,
+    left_alt: bool,
+    right_alt: bool,
 }
 
 impl<B: NativeShortcutBackend> ShortcutService<B> {
@@ -310,8 +316,10 @@ impl<B: NativeShortcutBackend> ShortcutService<B> {
             active: default_bindings(),
             right_primary: false,
             left_primary: false,
-            shift: false,
-            alt: false,
+            left_shift: false,
+            right_shift: false,
+            left_alt: false,
+            right_alt: false,
         }
     }
 
@@ -353,12 +361,20 @@ impl<B: NativeShortcutBackend> ShortcutService<B> {
                 self.left_primary = event.pressed;
                 return None;
             }
-            NativeKey::Shift => {
-                self.shift = event.pressed;
+            NativeKey::LeftShift => {
+                self.left_shift = event.pressed;
                 return None;
             }
-            NativeKey::Alt => {
-                self.alt = event.pressed;
+            NativeKey::RightShift => {
+                self.right_shift = event.pressed;
+                return None;
+            }
+            NativeKey::LeftAlt => {
+                self.left_alt = event.pressed;
+                return None;
+            }
+            NativeKey::RightAlt => {
+                self.right_alt = event.pressed;
                 return None;
             }
             NativeKey::Key(key) if event.pressed => key,
@@ -374,8 +390,8 @@ impl<B: NativeShortcutBackend> ShortcutService<B> {
         let modifiers = binding.modifiers.iter().copied().collect::<BTreeSet<_>>();
         modifiers.contains(&ShortcutModifier::RightPrimary) == self.right_primary
             && !self.left_primary
-            && modifiers.contains(&ShortcutModifier::Shift) == self.shift
-            && modifiers.contains(&ShortcutModifier::Alt) == self.alt
+            && modifiers.contains(&ShortcutModifier::Shift) == (self.left_shift || self.right_shift)
+            && modifiers.contains(&ShortcutModifier::Alt) == (self.left_alt || self.right_alt)
     }
 }
 
@@ -451,10 +467,9 @@ pub struct PlatformShortcutBackend {
     platform: ShortcutPlatform,
     installed: ShortcutBindings,
     fail_next: bool,
-    listener_failed: Arc<AtomicBool>,
 }
 impl PlatformShortcutBackend {
-    pub fn current(listener_failed: Arc<AtomicBool>) -> Self {
+    pub fn current() -> Self {
         #[cfg(target_os = "macos")]
         let (platform, permission) = (
             ShortcutPlatform::Macos,
@@ -481,15 +496,11 @@ impl PlatformShortcutBackend {
             platform,
             installed: default_bindings(),
             fail_next: false,
-            listener_failed,
         }
     }
 }
 impl NativeShortcutBackend for PlatformShortcutBackend {
     fn install(&mut self, bindings: &ShortcutBindings) -> Result<(), ShortcutFailure> {
-        if self.listener_failed.load(Ordering::SeqCst) {
-            return Err(ShortcutFailure::RegistrationFailed);
-        }
         if self.fail_next {
             self.fail_next = false;
             return Err(ShortcutFailure::RegistrationFailed);
@@ -699,6 +710,58 @@ mod tests {
             }),
             None
         );
+    }
+
+    #[test]
+    fn keeps_shift_and_alt_active_until_each_physical_key_is_released() {
+        let mut service = ShortcutService::new(Fake::default());
+        for (first, second) in [
+            (NativeKey::LeftShift, NativeKey::RightShift),
+            (NativeKey::LeftAlt, NativeKey::RightAlt),
+        ] {
+            assert_eq!(
+                service.process(NativeKeyEvent {
+                    key: first,
+                    pressed: true
+                }),
+                None
+            );
+            assert_eq!(
+                service.process(NativeKeyEvent {
+                    key: second,
+                    pressed: true
+                }),
+                None
+            );
+            assert_eq!(
+                service.process(NativeKeyEvent {
+                    key: first,
+                    pressed: false
+                }),
+                None
+            );
+            assert_eq!(
+                service.process(NativeKeyEvent {
+                    key: NativeKey::Key(ShortcutKey::Digit1),
+                    pressed: true
+                }),
+                None
+            );
+            assert_eq!(
+                service.process(NativeKeyEvent {
+                    key: second,
+                    pressed: false
+                }),
+                None
+            );
+            assert_eq!(
+                service.process(NativeKeyEvent {
+                    key: NativeKey::Key(ShortcutKey::Digit1),
+                    pressed: true
+                }),
+                Some(ShortcutAction::RealqaCaptureDisplay)
+            );
+        }
     }
     #[test]
     fn rolls_back_active_binding_when_registration_fails() {

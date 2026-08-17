@@ -190,6 +190,28 @@ describe("generated Connect identity/settings fixture", () => {
     expect((palette as HTMLFieldSetElement).disabled).toBe(false);
   });
 
+  it("hydrates persisted shortcuts on the desktop Home surface", async () => {
+    const bindings = {
+      ...defaultDevHudSettings.shortcuts.desktop,
+      [ShortcutActionId.CommandPalette]: { enabled: false, modifiers: [], key: ShortcutKey.Q },
+    };
+    writeGuestSettings(localStorage, { ...defaultDevHudSettings, shortcuts: { ...defaultDevHudSettings.shortcuts, desktop: bindings } });
+    const requests: NativeBridgeRequestV1[] = [];
+    const bridge: NativeBridgeV1 = {
+      async request(request) {
+        requests.push(request);
+        if (request.operation === "shortcuts.apply") return { kind: "shortcut-status", platform: "macos", permission: "available", bindings: request.bindings, error: null };
+        throw new Error(`unexpected bridge operation ${request.operation}`);
+      },
+      async listen() { return () => {}; },
+    };
+
+    render(<App bridge={bridge} initialRuntime={runtime} />);
+
+    await waitFor(() => expect(requests).toContainEqual({ operation: "shortcuts.apply", bindings }));
+    expect(screen.getByRole("heading", { name: messages.en.welcome })).toBeTruthy();
+  });
+
   it("reapplies persisted shortcut bindings after permission becomes available", async () => {
     const bindings = {
       ...defaultDevHudSettings.shortcuts.desktop,
@@ -204,6 +226,7 @@ describe("generated Connect identity/settings fixture", () => {
         if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
         if (request.operation === "secure.read") return { kind: "secure-value", value: null };
         if (request.operation === "auth.take-pending-callback") return { kind: "auth-callback", url: null };
+        if (request.operation === "shortcuts.status") return { kind: "shortcut-status", platform: "macos", permission: "not-determined", bindings: defaultDevHudSettings.shortcuts.desktop, error: "permission-denied" };
         if (request.operation === "shortcuts.request-permission") {
           permissionAvailable = true;
           return { kind: "shortcut-status", platform: "macos", permission: "available", bindings: defaultDevHudSettings.shortcuts.desktop, error: null };

@@ -2,6 +2,8 @@ use std::sync::{
     Arc, Condvar, Mutex,
     atomic::{AtomicBool, Ordering},
 };
+#[cfg(desktop)]
+use std::time::Duration;
 
 use serde_json::{Value, json};
 
@@ -20,6 +22,7 @@ pub struct NativeBridgeState {
     pending_auth_callback: Arc<Mutex<Option<String>>>,
     session_origins: Arc<Mutex<SessionOrigins>>,
     shortcuts: Arc<Mutex<ShortcutService<PlatformShortcutBackend>>>,
+    shortcuts_ready: Arc<AtomicBool>,
     shortcut_listener_failed: Arc<AtomicBool>,
     shortcut_listener_retry: Arc<(Mutex<u64>, Condvar)>,
 }
@@ -40,8 +43,9 @@ impl Default for NativeBridgeState {
                 logto_issuer: None,
             })),
             shortcuts: Arc::new(Mutex::new(ShortcutService::new(
-                PlatformShortcutBackend::current(shortcut_listener_failed.clone()),
+                PlatformShortcutBackend::current(),
             ))),
+            shortcuts_ready: Arc::new(AtomicBool::new(false)),
             shortcut_listener_failed,
             shortcut_listener_retry: Arc::new((Mutex::new(0), Condvar::new())),
         }
@@ -71,9 +75,12 @@ fn apply_shortcuts(request: &Value, state: &NativeBridgeState) -> Result<Value, 
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     match shortcuts.apply(bindings) {
-        Ok(()) => Ok(
-            json!({ "kind": "shortcut-status", "platform": shortcuts.platform(), "permission": shortcuts.permission(), "bindings": shortcuts.active(), "error": Value::Null }),
-        ),
+        Ok(()) => {
+            state.shortcuts_ready.store(true, Ordering::SeqCst);
+            Ok(
+                json!({ "kind": "shortcut-status", "platform": shortcuts.platform(), "permission": shortcuts.permission(), "bindings": shortcuts.active(), "error": Value::Null }),
+            )
+        }
         Err(error) => Ok(
             json!({ "kind": "shortcut-status", "platform": shortcuts.platform(), "permission": shortcuts.permission(), "bindings": shortcuts.active(), "error": error }),
         ),
@@ -83,6 +90,9 @@ fn apply_shortcuts(request: &Value, state: &NativeBridgeState) -> Result<Value, 
 impl NativeBridgeState {
     #[cfg(desktop)]
     pub fn process_shortcut_event(&self, event: NativeKeyEvent) -> Option<ShortcutAction> {
+        if !self.shortcuts_ready.load(Ordering::SeqCst) {
+            return None;
+        }
         self.shortcuts
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -108,13 +118,15 @@ impl NativeBridgeState {
     }
 
     #[cfg(desktop)]
-    pub fn wait_for_shortcut_listener_retry(&self, observed_generation: u64) {
+    pub fn wait_for_shortcut_listener_retry(&self, observed_generation: u64, timeout: Duration) {
         let (generation, ready) = &*self.shortcut_listener_retry;
         let generation = generation
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _ = ready
-            .wait_while(generation, |current| *current == observed_generation)
+            .wait_timeout_while(generation, timeout, |current| {
+                *current == observed_generation
+            })
             .unwrap_or_else(std::sync::PoisonError::into_inner);
     }
 
@@ -454,11 +466,14 @@ pub fn handle_native_bridge_request(
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             let permission = shortcuts.request_permission();
+            let platform = shortcuts.platform();
+            let bindings = shortcuts.active().clone();
+            drop(shortcuts);
             if permission == crate::shortcuts::ShortcutPermission::Available {
                 state.retry_shortcut_listener();
             }
             Ok(
-                json!({ "kind": "shortcut-status", "platform": shortcuts.platform(), "permission": shortcuts.permission(), "bindings": shortcuts.active(), "error": Value::Null }),
+                json!({ "kind": "shortcut-status", "platform": platform, "permission": permission, "bindings": bindings, "error": Value::Null }),
             )
         }
         "shortcuts.apply" => apply_shortcuts(request, state),
@@ -666,7 +681,8 @@ mod tests {
         let waiting_state = state.clone();
         let (ready, retried) = mpsc::channel();
         std::thread::spawn(move || {
-            waiting_state.wait_for_shortcut_listener_retry(observed_generation);
+            waiting_state
+                .wait_for_shortcut_listener_retry(observed_generation, Duration::from_secs(1));
             ready.send(()).expect("report retry");
         });
         state.retry_shortcut_listener();

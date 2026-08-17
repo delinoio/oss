@@ -120,6 +120,18 @@ export function SynchronizedAppearanceBoundary({ onAppearance }: { readonly onAp
   return null;
 }
 
+export function SynchronizedShortcutBoundary({ bridge = nativeBridge }: { readonly bridge?: NativeBridgeV1 }) {
+  const identity = useIdentitySettings();
+  const bindings = identity.settings.shortcuts.desktop;
+  useEffect(() => {
+    void bridge.request({ operation: "shortcuts.apply", bindings }).catch(() => {
+      // Shortcut status remains available in Settings; startup hydration must
+      // not turn the shell into an error state when native access is pending.
+    });
+  }, [bindings, bridge]);
+  return null;
+}
+
 export function SynchronizedSettingsBoundary({ copy, bridge = nativeBridge, showNativeShortcuts = false, shortcutCapabilities = { available: new Set<PlatformCapability>() } }: { readonly copy: Copy; readonly bridge?: NativeBridgeV1; readonly showNativeShortcuts?: boolean; readonly shortcutCapabilities?: RuntimeCapabilities }) {
   const identity = useIdentitySettings();
   const [actionError, setActionError] = useState(false);
@@ -184,7 +196,7 @@ function ShortcutSettings({ copy, bridge, disabled, capabilities, bindings, onPe
   const [saving, setSaving] = useState(false);
   useEffect(() => {
     let active = true;
-    void bridge.request({ operation: "shortcuts.apply", bindings }).then((response) => {
+    void bridge.request({ operation: "shortcuts.status" }).then((response) => {
       if (active && response.kind === "shortcut-status") setStatus(response);
     }).catch(() => {
       // A settings refresh must not turn an otherwise usable shell into a

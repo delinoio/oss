@@ -82,6 +82,7 @@ fn restore_main_window<R: Runtime>(app: &AppHandle<R>) {
 fn install_global_shortcut_listener<R: Runtime>(app: &AppHandle<R>) {
     let app = app.clone();
     std::thread::spawn(move || {
+        let mut retry_delay = std::time::Duration::from_millis(250);
         loop {
             let callback_app = app.clone();
             let result = rdev::listen(move |event| {
@@ -116,8 +117,11 @@ fn install_global_shortcut_listener<R: Runtime>(app: &AppHandle<R>) {
             state.mark_shortcut_listener_failed();
             tracing::warn!(event = "shortcut_listener_failed", ?error);
             let retry_generation = state.shortcut_listener_retry_generation();
-            state.wait_for_shortcut_listener_retry(retry_generation);
+            state.wait_for_shortcut_listener_retry(retry_generation, retry_delay);
             state.clear_shortcut_listener_failure();
+            retry_delay = retry_delay
+                .saturating_mul(2)
+                .min(std::time::Duration::from_secs(5));
         }
     });
 }
