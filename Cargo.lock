@@ -2354,6 +2354,7 @@ dependencies = [
  "gtk",
  "keyring",
  "open",
+ "plist",
  "serde",
  "serde_json",
  "tauri",

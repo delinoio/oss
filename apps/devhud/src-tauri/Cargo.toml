@@ -12,6 +12,7 @@ default-run = "devhud"
 links = "devhud"
 
 [build-dependencies]
+plist = "1.10.0"
 tauri-build = { git = "https://github.com/tauri-apps/tauri", rev = "4af26a3f7f8b692d62cca549bbacd93f5ce90b41", features = [] }
 tauri-plugin = { git = "https://github.com/tauri-apps/tauri", rev = "4af26a3f7f8b692d62cca549bbacd93f5ce90b41", features = ["build"] }
 

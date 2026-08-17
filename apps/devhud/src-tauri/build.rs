@@ -3,11 +3,15 @@ fn main() {
     tauri_plugin::mobile::update_entitlements(|entitlements| {
         entitlements.insert(
             "com.apple.security.application-groups".to_string(),
-            vec!["group.io.delino.devhud"].into(),
+            plist::Value::Array(vec![plist::Value::String(
+                "group.io.delino.devhud".to_string(),
+            )]),
         );
         entitlements.insert(
             "keychain-access-groups".to_string(),
-            vec!["$(AppIdentifierPrefix)io.delino.devhud.shared"].into(),
+            plist::Value::Array(vec![plist::Value::String(
+                "$(AppIdentifierPrefix)io.delino.devhud.shared".to_string(),
+            )]),
         );
     })
     .expect("configure DevHUD shared iOS entitlements");
