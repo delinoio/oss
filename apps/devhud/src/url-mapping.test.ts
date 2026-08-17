@@ -98,6 +98,7 @@ describe("URL repository matcher", () => {
 
   it("reports intersecting mappings before save", () => {
     expect(findMappingOverlaps([mapping({ pattern: "https://api.example.com/projects/**" }), mapping({ id: "018f47a2-7b3c-7def-8abc-1234567890ac", pattern: "https://api.example.com/projects/*" })])).toHaveLength(1);
+    expect(findMappingOverlaps([mapping({ pattern: "https://api.example.com/**/a" }), mapping({ id: "018f47a2-7b3c-7def-8abc-1234567890ac", pattern: "https://api.example.com/b/**" })])).toHaveLength(1);
     expect(findMappingOverlaps([mapping({ pattern: "https://api.example.com/a" }), mapping({ id: "018f47a2-7b3c-7def-8abc-1234567890ac", pattern: "https://api.example.com/b" })])).toHaveLength(0);
   });
 });

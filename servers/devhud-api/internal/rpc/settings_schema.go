@@ -342,9 +342,15 @@ func validateSettingsURLMappings(value any, legacy bool) ([]string, error) {
 	}
 	ids := make(map[string]struct{}, len(mappings))
 	profileRefs := make([]string, 0, len(mappings))
+	hasLegacyMapping := false
+	hasStructuredMapping := false
 	for index, entry := range mappings {
 		path := fmt.Sprintf("$.urlMappings[%d]", index)
 		if legacyMapping, err := settingsObject(entry, path, "sourcePrefix", "destinationPrefix"); err == nil {
+			if hasStructuredMapping {
+				return nil, errors.New("$.urlMappings must not mix legacy and structured entries")
+			}
+			hasLegacyMapping = true
 			for _, field := range []string{"sourcePrefix", "destinationPrefix"} {
 				if err := settingsURL(legacyMapping[field], path+"."+field, false); err != nil {
 					return nil, err
@@ -352,6 +358,10 @@ func validateSettingsURLMappings(value any, legacy bool) ([]string, error) {
 			}
 			continue
 		}
+		if hasLegacyMapping {
+			return nil, errors.New("$.urlMappings must not mix legacy and structured entries")
+		}
+		hasStructuredMapping = true
 		mapping, err := settingsObject(entry, path, "id", "pattern", "repository", "credentialProfileRef", "priority", "chromeOrigin", "updatedAt")
 		if err != nil {
 			return nil, err
@@ -605,8 +615,9 @@ func settingsURLMappingPattern(value any, path string) error {
 				labels[index] = fmt.Sprintf("devhud-wildcard-%d", index)
 			}
 		}
-		parsed, err := url.Parse("http://" + strings.Join(labels, "."))
-		if err != nil || parsed.Hostname() == "" {
+		parsedHost := strings.Join(labels, ".")
+		parsed, err := url.Parse("http://" + parsedHost)
+		if err != nil || parsed.Hostname() == "" || settingsInvalidDottedIPv4(parsedHost) {
 			return fmt.Errorf("%s has an invalid host", path)
 		}
 	}
@@ -640,10 +651,28 @@ func settingsChromeOrigin(value any, path string) error {
 		port = parsed.Port()
 	}
 	parsedPort, portErr := strconv.ParseUint(port, 10, 16)
-	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || (parsed.Path != "" && parsed.Path != "/") || strings.Contains(parsed.Hostname(), "*") || (port != "" && (portErr != nil || parsedPort > 65535)) {
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" || settingsInvalidDottedIPv4(parsed.Hostname()) || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || (parsed.Path != "" && parsed.Path != "/") || strings.Contains(parsed.Hostname(), "*") || (port != "" && (portErr != nil || parsedPort > 65535)) {
 		return fmt.Errorf("%s must be a concrete HTTP(S) origin without credentials, path, query, or fragment", path)
 	}
 	return nil
+}
+
+func settingsInvalidDottedIPv4(host string) bool {
+	labels := strings.Split(strings.TrimSuffix(host, "."), ".")
+	if len(labels) != 4 {
+		return false
+	}
+	for _, label := range labels {
+		if label == "" {
+			return false
+		}
+		for _, character := range label {
+			if character < '0' || character > '9' {
+				return false
+			}
+		}
+	}
+	return net.ParseIP(strings.Join(labels, ".")) == nil
 }
 
 func settingsCanonicalTimestamp(value any, path string) error {

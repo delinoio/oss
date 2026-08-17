@@ -56,11 +56,17 @@ func TestValidateDevHudSettings(t *testing.T) {
 	if err := validateDevHudSettings([]byte(strings.Replace(canonicalSettingsV2, `"urlMappings":[]`, `"urlMappings":`+legacyMapping, 1)), 2); err != nil {
 		t.Fatalf("schema-v2 legacy mapping validation failed: %v", err)
 	}
+	mixedMappings := strings.TrimSuffix(legacyMapping, "]") + "," + strings.TrimPrefix(structuredMapping, "[")
+	if err := validateDevHudSettings([]byte(strings.Replace(withProfile, `"urlMappings":[]`, `"urlMappings":`+mixedMappings, 1)), 2); err == nil {
+		t.Fatal("mixed legacy and structured mapping validation succeeded")
+	}
 	for name, mapping := range map[string]string{
-		"partial host wildcard":          strings.Replace(structuredMapping, `"https://example.com./**"`, `"https://api*.example.com/**"`, 1),
-		"partial path wildcard":          strings.Replace(structuredMapping, `"https://example.com./**"`, `"https://example.com/foo*bar"`, 1),
-		"invalid Chrome origin":          strings.Replace(structuredMapping, `"chromeOrigin":null`, `"chromeOrigin":"https://example.com/path"`, 1),
-		"Chrome origin port above 65535": strings.Replace(structuredMapping, `"chromeOrigin":null`, `"chromeOrigin":"https://example.com:65536"`, 1),
+		"partial host wildcard":              strings.Replace(structuredMapping, `"https://example.com./**"`, `"https://api*.example.com/**"`, 1),
+		"partial path wildcard":              strings.Replace(structuredMapping, `"https://example.com./**"`, `"https://example.com/foo*bar"`, 1),
+		"invalid numeric IPv4 pattern":       strings.Replace(structuredMapping, `"https://example.com./**"`, `"https://999.999.999.999/**"`, 1),
+		"invalid Chrome origin":              strings.Replace(structuredMapping, `"chromeOrigin":null`, `"chromeOrigin":"https://example.com/path"`, 1),
+		"Chrome origin port above 65535":     strings.Replace(structuredMapping, `"chromeOrigin":null`, `"chromeOrigin":"https://example.com:65536"`, 1),
+		"invalid numeric IPv4 Chrome origin": strings.Replace(structuredMapping, `"chromeOrigin":null`, `"chromeOrigin":"http://999.999.999.999"`, 1),
 	} {
 		t.Run(name, func(t *testing.T) {
 			if err := validateDevHudSettings([]byte(strings.Replace(withProfile, `"urlMappings":[]`, `"urlMappings":`+mapping, 1)), 2); err == nil {

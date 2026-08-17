@@ -233,16 +233,21 @@ function hostComponentsOverlap(left: string, right: string, leftIsIpLiteral: boo
 }
 
 function pathsOverlap(left: readonly string[], right: readonly string[]): boolean {
-  const memo = new Map<string, boolean>();
-  const visit = (leftIndex: number, rightIndex: number): boolean => {
+  const pending: [number, number][] = [[0, 0]];
+  const seen = new Set<string>();
+  while (pending.length > 0) {
+    const [leftIndex, rightIndex] = pending.pop()!;
     const key = `${leftIndex}:${rightIndex}`;
-    const previous = memo.get(key); if (previous !== undefined) return previous;
-    let result: boolean;
-    if (leftIndex === left.length && rightIndex === right.length) result = true;
-    else if (left[leftIndex] === "**") result = visit(leftIndex + 1, rightIndex) || (rightIndex < right.length && visit(leftIndex, rightIndex + 1));
-    else if (right[rightIndex] === "**") result = visit(leftIndex, rightIndex + 1) || (leftIndex < left.length && visit(leftIndex + 1, rightIndex));
-    else result = leftIndex < left.length && rightIndex < right.length && componentsOverlap(left[leftIndex] ?? "", right[rightIndex] ?? "", false) && visit(leftIndex + 1, rightIndex + 1);
-    memo.set(key, result); return result;
-  };
-  return visit(0, 0);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (leftIndex === left.length && rightIndex === right.length) return true;
+    const leftPart = left[leftIndex];
+    const rightPart = right[rightIndex];
+    if (leftPart === "**") pending.push([leftIndex + 1, rightIndex]);
+    if (rightPart === "**") pending.push([leftIndex, rightIndex + 1]);
+    if (leftPart !== undefined && rightPart !== undefined && (leftPart === "**" || rightPart === "**" || componentsOverlap(leftPart, rightPart, false))) {
+      pending.push([leftPart === "**" ? leftIndex : leftIndex + 1, rightPart === "**" ? rightIndex : rightIndex + 1]);
+    }
+  }
+  return false;
 }
