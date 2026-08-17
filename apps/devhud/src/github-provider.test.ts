@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import fixture from "../fixtures/github-provider.json";
 import { ClassicPatCreationUrl, createGitHubProvider, FineGrainedPatCreationUrl, githubDiagnostic, GitHubApiOrigin, GitHubErrorCode, GitHubProviderError, InternalProviderRegistryV1, InternalProviderRegistryVersion, issueMarker, ownsCanonicalUrl, readGitHubCredential, type GitHubCredential, type GitHubRepositoryRef } from "./github-provider.ts";
 import { referencedRepositories, validateGitHubProfile } from "./github-settings-ui.tsx";
-import type { NativeBridgeV1 } from "./native-bridge.ts";
+import { NativeBridgeError, NativeBridgeErrorCode, type NativeBridgeV1 } from "./native-bridge.ts";
 import { canonicalDevHudSettings, defaultDevHudSettings, parseDevHudSettings } from "./settings-contract.ts";
 
 const fine: GitHubCredential = { profileId: fixture.profiles.fine.id, kind: "fine-grained", token: fixture.profiles.fine.token };
@@ -30,7 +30,11 @@ function router() {
     if (token === fixture.profiles.restricted.token) return json({ message: "Not Found" }, 404);
     if (token === "org-denied") return json({ message: "organization policy denied" }, 403, { "x-github-sso": "required" });
     if (/^\/repos\/[^/]+\/[^/]+$/u.test(url.pathname)) return json({ private: url.pathname.includes("octo-private") }, 200, { etag: '"repository"', "x-ratelimit-limit": "5000", "x-ratelimit-remaining": "4999", "x-ratelimit-used": "1", "x-ratelimit-reset": "2000000000", "x-ratelimit-resource": "core", ...(token.includes("classic") ? { "x-oauth-scopes": "repo, read:user" } : {}) });
-    if (url.pathname.endsWith("/issues") && init?.method === "POST") return json(fixture.issue, 201);
+    if (url.pathname.endsWith("/issues") && init?.method === "POST") {
+      if (token === "fine-no-issues") return json({ message: "Resource not accessible by personal access token" }, 403);
+      if (init.body === "{}") return json({ message: "Validation Failed" }, 422);
+      return json(fixture.issue, 201);
+    }
     if (/^\/repos\/[^/]+\/[^/]+\/(pulls|issues|contents)$/u.test(url.pathname)) return json([]);
     if (url.pathname.endsWith("/labels")) {
       if (new Headers(init?.headers).get("if-none-match") === '"labels"') return new Response(null, { status: 304, headers: { etag: '"labels"' } });
@@ -58,8 +62,15 @@ describe("GitHub.com provider", () => {
     const provider = createGitHubProvider({ fetch });
     await expect(provider.validateRepository(fine, publicRepository)).resolves.toMatchObject({ private: false, permissions: { metadata: true, pullRequests: true, issues: true, contents: true } });
     await expect(provider.validateRepository(classic, privateRepository)).resolves.toMatchObject({ private: true });
+    const issueWriteProbes = fetch.mock.calls.filter(([input, init]) => new URL(String(input)).pathname.endsWith("/issues") && init?.method === "POST" && init.body === "{}");
+    expect(issueWriteProbes).toHaveLength(1);
     expect(fetch).toHaveBeenCalled();
     for (const [input] of fetch.mock.calls) expect(String(input).startsWith(GitHubApiOrigin)).toBe(true);
+  });
+
+  it("rejects a fine-grained PAT without Issues write permission", async () => {
+    const provider = createGitHubProvider({ fetch: router() });
+    await expect(provider.validateRepository({ ...fine, token: "fine-no-issues" }, publicRepository)).rejects.toMatchObject({ code: GitHubErrorCode.MissingScope, operation: "validate-repository", status: 403 });
   });
 
   it.each([
@@ -142,6 +153,17 @@ describe("GitHub profile and server isolation", () => {
     const bridge = bridgeWithValue(null);
     const error = await readGitHubCredential(bridge, settings.github.profiles[0]).catch((reason: unknown) => reason);
     expect(error).toMatchObject({ code: GitHubErrorCode.MissingToken });
+  });
+
+  it("preserves typed secure-store failures", async () => {
+    const failure = new NativeBridgeError(NativeBridgeErrorCode.StorageFailure);
+    const bridge = { request: vi.fn(async () => { throw failure; }), listen: vi.fn(async () => () => undefined) } as NativeBridgeV1;
+    await expect(readGitHubCredential(bridge, settings.github.profiles[0])).rejects.toBe(failure);
+  });
+
+  it("does not classify an invalid secure-store response as a missing PAT", async () => {
+    const bridge = { request: vi.fn(async () => ({ kind: "ok" as const })), listen: vi.fn(async () => () => undefined) } as NativeBridgeV1;
+    await expect(readGitHubCredential(bridge, settings.github.profiles[0])).rejects.toMatchObject({ code: GitHubErrorCode.InvalidResponse });
   });
 
   it("validates every referenced repository with only the explicitly selected profile", async () => {

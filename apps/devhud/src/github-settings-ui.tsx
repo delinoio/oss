@@ -1,13 +1,14 @@
 import { useState, type FormEvent } from "react";
 import { createGitHubProvider, GitHubErrorCode, GitHubProviderError, readGitHubCredential, type GitHubProvider, type GitHubRepositoryRef } from "./github-provider.ts";
 import type { Copy } from "./localization.ts";
-import { SecureSettingKind, type NativeBridgeV1 } from "./native-bridge.ts";
+import { NativeBridgeError, NativeBridgeErrorCode, SecureSettingKind, type NativeBridgeV1 } from "./native-bridge.ts";
 import { useIdentitySettings } from "./service-boundary.tsx";
 import { GitHubCredentialKind, type DevHudSettingsV1 } from "./settings-contract.ts";
+import { browserShell, ExternalLinkTarget, type ExternalLinkTarget as ExternalLinkTargetValue } from "./shell.ts";
 
-interface GitHubSettingsProps { readonly copy: Copy; readonly bridge: NativeBridgeV1; readonly provider?: GitHubProvider }
+interface GitHubSettingsProps { readonly copy: Copy; readonly bridge: NativeBridgeV1; readonly provider?: GitHubProvider; readonly openExternal?: (target: ExternalLinkTargetValue) => Promise<void> }
 
-export function GitHubSettings({ copy, bridge, provider = createGitHubProvider({ fetch: globalThis.fetch }) }: GitHubSettingsProps) {
+export function GitHubSettings({ copy, bridge, provider = createGitHubProvider({ fetch: globalThis.fetch }), openExternal = (target) => browserShell.openExternal(target, "") }: GitHubSettingsProps) {
   const identity = useIdentitySettings();
   const [name, setName] = useState("");
   const [kind, setKind] = useState<(typeof GitHubCredentialKind)[number]>("fine-grained");
@@ -16,12 +17,12 @@ export function GitHubSettings({ copy, bridge, provider = createGitHubProvider({
   const [status, setStatus] = useState<string | null>(null);
   const [statusError, setStatusError] = useState(false);
 
-  const invoke = async (action: () => Promise<void>) => {
+  const invoke = async (action: () => Promise<void>): Promise<boolean> => {
     setPending(true);
     setStatus(null);
     setStatusError(false);
-    try { await action(); }
-    catch (error) { setStatusError(true); setStatus(error instanceof GitHubProviderError ? copy[githubErrorCopy(error.code)] : copy.githubSetupFailed); }
+    try { await action(); return true; }
+    catch (error) { setStatusError(true); setStatus(error instanceof GitHubProviderError ? copy[githubErrorCopy(error.code)] : error instanceof NativeBridgeError && error.code === NativeBridgeErrorCode.StorageFailure ? copy.githubErrorSecureStorage : copy.githubSetupFailed); return false; }
     finally { setPending(false); }
   };
 
@@ -34,7 +35,11 @@ export function GitHubSettings({ copy, bridge, provider = createGitHubProvider({
       await provider.validateCredential({ profileId: id, kind, token });
       await bridge.request({ operation: "secure.write", setting: { kind: SecureSettingKind.GithubPat, profileId: id }, value: token });
       try {
-        await identity.replaceSettings({ ...identity.settings, github: { ...identity.settings.github, profiles: [...identity.settings.github.profiles, profile] } });
+        const committed = await identity.replaceSettings({ ...identity.settings, github: { ...identity.settings.github, profiles: [...identity.settings.github.profiles, profile] } });
+        if (!committed) {
+          await bridge.request({ operation: "secure.remove", setting: { kind: SecureSettingKind.GithubPat, profileId: id } }).catch(() => undefined);
+          return;
+        }
       } catch (error) {
         await bridge.request({ operation: "secure.remove", setting: { kind: SecureSettingKind.GithubPat, profileId: id } }).catch(() => undefined);
         throw error;
@@ -62,8 +67,9 @@ export function GitHubSettings({ copy, bridge, provider = createGitHubProvider({
       setStatus(copy.githubProfileInUse);
       return;
     }
+    const committed = await identity.replaceSettings({ ...identity.settings, github: { ...identity.settings.github, profiles: identity.settings.github.profiles.filter((item) => item.id !== profile.id) } });
+    if (!committed) return;
     await bridge.request({ operation: "secure.remove", setting: { kind: SecureSettingKind.GithubPat, profileId: profile.id } });
-    await identity.replaceSettings({ ...identity.settings, github: { ...identity.settings.github, profiles: identity.settings.github.profiles.filter((item) => item.id !== profile.id) } });
     setStatus(copy.githubProfileRemoved);
   });
 
@@ -99,8 +105,8 @@ export function GitHubSettings({ copy, bridge, provider = createGitHubProvider({
     <p className="notice">{copy.githubDirectSecurity}</p>
     <p>{copy.githubFineRecommendation}</p>
     <div className="actions">
-      <button type="button" onClick={() => void invoke(async () => { await bridge.request({ operation: "lifecycle.open-external", target: "fine-grained-pat", apiOrigin: "" }); })}>{copy.githubCreateFinePat}</button>
-      <button type="button" onClick={() => void invoke(async () => { await bridge.request({ operation: "lifecycle.open-external", target: "classic-pat", apiOrigin: "" }); })}>{copy.githubCreateClassicPat}</button>
+      <button type="button" onClick={() => void invoke(() => openExternal(ExternalLinkTarget.Pat))}>{copy.githubCreateFinePat}</button>
+      <button type="button" onClick={() => void invoke(() => openExternal(ExternalLinkTarget.ClassicPat))}>{copy.githubCreateClassicPat}</button>
     </div>
     <p>{copy.githubOwnerRepositoryVisible}</p>
     <form onSubmit={(event) => void addProfile(event)}>
@@ -121,13 +127,13 @@ export function GitHubSettings({ copy, bridge, provider = createGitHubProvider({
   </section>;
 }
 
-function GitHubProfileItem({ copy, profile, disabled, readOnly, onSaveToken, onValidate, onRemove }: { readonly copy: Copy; readonly profile: DevHudSettingsV1["github"]["profiles"][number]; readonly disabled: boolean; readonly readOnly: boolean; readonly onSaveToken: (profile: DevHudSettingsV1["github"]["profiles"][number], token: string) => void; readonly onValidate: (profile: DevHudSettingsV1["github"]["profiles"][number]) => void; readonly onRemove: (profile: DevHudSettingsV1["github"]["profiles"][number]) => void }) {
+function GitHubProfileItem({ copy, profile, disabled, readOnly, onSaveToken, onValidate, onRemove }: { readonly copy: Copy; readonly profile: DevHudSettingsV1["github"]["profiles"][number]; readonly disabled: boolean; readonly readOnly: boolean; readonly onSaveToken: (profile: DevHudSettingsV1["github"]["profiles"][number], token: string) => Promise<boolean>; readonly onValidate: (profile: DevHudSettingsV1["github"]["profiles"][number]) => void; readonly onRemove: (profile: DevHudSettingsV1["github"]["profiles"][number]) => void }) {
   const [token, setToken] = useState("");
   const id = `github-token-${profile.id}`;
   return <li>
     <strong>{profile.name}</strong> <span>({profile.kind === "fine-grained" ? copy.githubFineGrained : copy.githubClassic})</span>
-    <label htmlFor={id}>{copy.githubSetProfileToken}<input id={id} type="password" autoComplete="off" spellCheck={false} value={token} disabled={disabled} onChange={(event) => setToken(event.target.value)} /></label>
-    <div className="actions"><button type="button" disabled={disabled || token.length === 0} onClick={() => { onSaveToken(profile, token); setToken(""); }}>{copy.githubSaveProfileToken}</button><button type="button" disabled={disabled} onClick={() => onValidate(profile)}>{copy.githubValidateProfile}</button><button type="button" disabled={disabled || readOnly} onClick={() => onRemove(profile)}>{copy.githubRemoveProfile}</button></div>
+    <label htmlFor={id}>{copy.githubSetProfileToken}<input id={id} type="password" autoComplete="off" spellCheck={false} value={token} disabled={disabled || readOnly} onChange={(event) => setToken(event.target.value)} /></label>
+    <div className="actions"><button type="button" disabled={disabled || readOnly || token.length === 0} onClick={() => void onSaveToken(profile, token).then((saved) => { if (saved) setToken(""); })}>{copy.githubSaveProfileToken}</button><button type="button" disabled={disabled} onClick={() => onValidate(profile)}>{copy.githubValidateProfile}</button><button type="button" disabled={disabled || readOnly} onClick={() => onRemove(profile)}>{copy.githubRemoveProfile}</button></div>
   </li>;
 }
 

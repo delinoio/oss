@@ -17,6 +17,7 @@ const mobileRuntime: RuntimeSnapshot = {
   lifecycle: LifecycleState.Active,
   capabilities: { secureSettings: true, notifications: false, storeUpdates: false, widgets: false },
 };
+const desktopRuntime: RuntimeSnapshot = { ...mobileRuntime, platform: RuntimePlatform.Desktop, architecture: "x86_64", osVersion: "test" };
 
 function bridgeWith(request: (request: NativeBridgeRequestV1) => Promise<NativeBridgeResponseV1>): NativeBridgeV1 {
   return {
@@ -26,6 +27,7 @@ function bridgeWith(request: (request: NativeBridgeRequestV1) => Promise<NativeB
 }
 
 beforeEach(() => {
+  delete window.__TAURI_INTERNALS__;
   localStorage.clear();
   localStorage.setItem("devhud.shell.onboarding.v1", "complete");
   Object.defineProperty(window, "matchMedia", {
@@ -58,8 +60,22 @@ describe("native App state", () => {
     expect(screen.getByRole("combobox", { name: copy.githubTokenKind })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: copy.githubCreateFinePat }));
     fireEvent.click(screen.getByRole("button", { name: copy.githubCreateClassicPat }));
-    await waitFor(() => expect(request).toHaveBeenCalledWith({ operation: "lifecycle.open-external", target: "classic-pat", apiOrigin: "" }));
+    await waitFor(() => expect(request).toHaveBeenCalledWith({ operation: "lifecycle.open-external", target: "classic-pat", apiOrigin: "https://devhud.api.delino.io" }));
     expect(document.documentElement.lang).toBe(language);
+  });
+
+  it("routes Settings PAT links through the packaged desktop opener", async () => {
+    const invoke = vi.fn(async () => undefined);
+    window.__TAURI_INTERNALS__ = { invoke };
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));
+    const bridge = bridgeWith(async (request) => {
+      if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
+      throw new Error(`unexpected operation ${request.operation}`);
+    });
+    render(<App bridge={bridge} initialRuntime={desktopRuntime} />);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.settings }));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.githubCreateFinePat }));
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith("open_external", { target: "fine-grained-pat", apiOrigin: "https://devhud.api.delino.io" }));
   });
 
   it.each([
