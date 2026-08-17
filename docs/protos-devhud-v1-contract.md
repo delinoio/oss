@@ -28,6 +28,8 @@ Wire details are final for v1. `UuidV7` carries canonical lowercase RFC 9562 UUI
 
 Diagnostics schema version 1 carries a required client UUID v7, up to 32 unique related UUID v7 values, a duration capped at 24 hours, armv7 as an explicit architecture, and an explicit browser platform alongside the native platforms. Native reports require an exact Tauri revision while browser reports require it to be empty; desktop reports require CEF and mobile/browser reports require it to be empty.
 
+`ReplaceSettings` validates the complete supported body schema, matching envelope version, and recursive non-secret boundary before persistence; invalid snapshots return `InvalidArgument` without reaching storage.
+
 ## Storage
 
 The protocol defines representations only. Persistence and retention belong to the API contract; generated clients must not add a second storage or secret policy.

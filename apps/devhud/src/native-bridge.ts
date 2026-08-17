@@ -1,4 +1,5 @@
 import { normalizeLogtoIssuer } from "./identity-contract.ts";
+import { ClassicPatCreationUrl, FineGrainedPatCreationUrl } from "./github-links.ts";
 
 export const NativeBridgeVersion = 1 as const;
 
@@ -61,10 +62,9 @@ export interface RuntimeSnapshot {
   };
 }
 
-export interface SecureSettingRef {
-  readonly kind: SecureSettingKind;
-  readonly profileId: string;
-}
+export type SecureSettingRef =
+  | { readonly kind: typeof SecureSettingKind.GithubPat; readonly profileId: string; readonly scopeId: string }
+  | { readonly kind: Exclude<SecureSettingKind, typeof SecureSettingKind.GithubPat>; readonly profileId: string };
 
 export const DeckNotificationKind = {
   Review: "review",
@@ -92,13 +92,14 @@ export interface WidgetDeckSnapshot {
 export type NativeBridgeRequestV1 =
   | { readonly operation: "runtime.snapshot" }
   | { readonly operation: "session.configure-origins"; readonly apiOrigin: string; readonly logtoIssuer?: string }
-  | { readonly operation: "lifecycle.open-external"; readonly target: "authentication" | "pat"; readonly apiOrigin: string }
+  | { readonly operation: "lifecycle.open-external"; readonly target: "authentication" | "fine-grained-pat" | "classic-pat"; readonly apiOrigin: string }
   | { readonly operation: "auth.open-system-browser"; readonly url: string; readonly issuer: string }
   | { readonly operation: "auth.peek-pending-callback" }
   | { readonly operation: "auth.take-pending-callback" }
   | { readonly operation: "secure.read"; readonly setting: SecureSettingRef }
   | { readonly operation: "secure.write"; readonly setting: SecureSettingRef; readonly value: string }
   | { readonly operation: "secure.remove"; readonly setting: SecureSettingRef }
+  | { readonly operation: "secure.reconcile-github-pats"; readonly scopeId: string; readonly profileIds: readonly string[] }
   | { readonly operation: "secure.purge"; readonly scope: "logout" | "account-deletion" | "api-change"; readonly profileId?: string }
   | { readonly operation: "diagnostics.export"; readonly suggestedName: string; readonly contents: string }
   | { readonly operation: "diagnostics.clear" }
@@ -160,7 +161,8 @@ export class NativeBridgeError extends Error {
 }
 
 export function validateSecureSettingRef(setting: SecureSettingRef) {
-  if (!Object.values(SecureSettingKind).includes(setting.kind) || !profilePattern.test(setting.profileId)) {
+  if (!Object.values(SecureSettingKind).includes(setting.kind) || !profilePattern.test(setting.profileId)
+    || (setting.kind === SecureSettingKind.GithubPat && !profilePattern.test(setting.scopeId))) {
     throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument);
   }
 }
@@ -171,9 +173,15 @@ export function validateSecretValue(value: string) {
   }
 }
 
-export function validateExternalRequest(request: { readonly target: "authentication" | "pat"; readonly apiOrigin: string }) {
-  if (!(new Set<string>(["authentication", "pat"])).has(request.target)) throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument);
-  if (request.target === "pat") return;
+export function validateGitHubPatReconciliation(scopeId: string, profileIds: readonly string[]) {
+  if (!profilePattern.test(scopeId) || profileIds.length > 25 || new Set(profileIds).size !== profileIds.length || profileIds.some((profileId) => !profilePattern.test(profileId))) {
+    throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument);
+  }
+}
+
+export function validateExternalRequest(request: { readonly target: "authentication" | "fine-grained-pat" | "classic-pat"; readonly apiOrigin: string }) {
+  if (!(new Set<string>(["authentication", "fine-grained-pat", "classic-pat"])).has(request.target)) throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument);
+  if (request.target !== "authentication") return;
   try {
     const url = new URL(request.apiOrigin);
     const octets = url.hostname.split(".");
@@ -233,6 +241,7 @@ export const nativeBridge: NativeBridgeV1 = {
   async request(request) {
     if ("setting" in request) validateSecureSettingRef(request.setting);
     if (request.operation === "secure.write") validateSecretValue(request.value);
+    if (request.operation === "secure.reconcile-github-pats") validateGitHubPatReconciliation(request.scopeId, request.profileIds);
     if (request.operation === "lifecycle.open-external") validateExternalRequest(request);
     if (request.operation === "auth.open-system-browser") validateAuthenticationBrowserRequest(request);
     if (request.operation === "diagnostics.export") validateDiagnosticsExport(request);
@@ -244,6 +253,7 @@ export const nativeBridge: NativeBridgeV1 = {
       if (request.operation === "auth.open-system-browser") { window.open(request.url, "_blank", "noopener,noreferrer"); return { kind: "ok" }; }
       if (request.operation === "diagnostics.export") return exportDiagnosticsInBrowser(request);
       if (request.operation === "diagnostics.clear") return { kind: "ok" };
+      if (request.operation === "lifecycle.open-external" && request.target !== "authentication") { window.open(request.target === "fine-grained-pat" ? FineGrainedPatCreationUrl : ClassicPatCreationUrl, "_blank", "noopener,noreferrer"); return { kind: "ok" }; }
       if (request.operation.startsWith("widgets.")) return { kind: "unsupported", feature: "widgets" };
       throw new NativeBridgeError(NativeBridgeErrorCode.Unsupported);
     }
