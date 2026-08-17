@@ -308,6 +308,35 @@ describe("administrator console review regressions", () => {
     expect(screen.getAllByText("Continuation event")).toHaveLength(1);
   });
 
+  it("renders available audit actor and target identifiers", async () => {
+    const actorUserId = { value: "018f7c1e-7b4a-7abc-8def-0123456789b7" };
+    const targetUserId = { value: "018f7c1e-7b4a-7abc-8def-0123456789b8" };
+    const targetUploadId = { value: "018f7c1e-7b4a-7abc-8def-0123456789b9" };
+    runtime.client.listAuditEvents.mockResolvedValue({
+      auditEvents: [{
+        auditEventId: { value: "018f7c1e-7b4a-7abc-8def-0123456789ba" },
+        action: AuditAction.UPLOAD_DELETED,
+        outcome: AuditOutcome.REJECTED,
+        actorUserId,
+        targetUserId,
+        targetUploadId,
+      }],
+      nextPageToken: "",
+    });
+
+    render(<App />);
+    await screen.findByText("Target User");
+    fireEvent.click(screen.getByRole("button", { name: "Audit" }));
+    for (const [label, identifier] of [
+      ["Actor user", actorUserId.value],
+      ["Target user", targetUserId.value],
+      ["Target upload", targetUploadId.value],
+    ]) {
+      const term = await screen.findByText(label);
+      expect(term.nextElementSibling?.textContent).toBe(identifier);
+    }
+  });
+
   it("renders correlated unavailable errors and retries from the first page", async () => {
     const correlationId = "018f7c1e-7b4a-7abc-8def-0123456789b2";
     runtime.client.listUsers

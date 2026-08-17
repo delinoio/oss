@@ -142,6 +142,32 @@ func TestRejectedMutationDoesNotAuditSensitiveReason(t *testing.T) {
 	}
 }
 
+func TestFailedBlockMutationRecordsOperationFailedAudit(t *testing.T) {
+	var audits []domain.AuditEvent
+	repository := &adminRepository{
+		setBlocked: func(context.Context, string, string, domain.AdministrativeBlockState, domain.AdministrativeBlockState, domain.AuditEvent, time.Time) (domain.User, error) {
+			return domain.User{}, errors.New("database unavailable")
+		},
+		recordAudit: func(_ context.Context, event domain.AuditEvent) error {
+			audits = append(audits, event)
+			return nil
+		},
+	}
+	service := newTestAdminService(t, repository, &adminUploads{})
+	_, err := service.SetUserBlocked(administratorContext(), connect.NewRequest(&devhudv1.SetUserBlockedRequest{
+		UserId: uuid(targetUserID), ExpectedState: devhudv1.AdministrativeBlockState_ADMINISTRATIVE_BLOCK_STATE_UNBLOCKED,
+		TargetState: devhudv1.AdministrativeBlockState_ADMINISTRATIVE_BLOCK_STATE_BLOCKED, Reason: "Reviewed abuse report.",
+	}))
+	if connect.CodeOf(err) != connect.CodeInternal {
+		t.Fatalf("code = %v", connect.CodeOf(err))
+	}
+	if len(audits) != 1 || audits[0].Outcome != domain.AuditOutcomeRejected ||
+		audits[0].RejectionReason != domain.AuditRejectionOperationFailed ||
+		audits[0].CorrelationID != testCorrelationID || audits[0].TargetUserID == nil || *audits[0].TargetUserID != targetUserID {
+		t.Fatalf("audit = %+v", audits)
+	}
+}
+
 func TestPublicAssetReasonsAreRejectedForUserAndUploadMutations(t *testing.T) {
 	var audits []domain.AuditEvent
 	userMutationCalls := 0

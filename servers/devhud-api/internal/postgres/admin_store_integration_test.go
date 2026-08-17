@@ -95,6 +95,61 @@ func TestAdministratorSearchRaceAndAuditIntegrity(t *testing.T) {
 	}
 }
 
+func TestRejectedUploadAuditRetainsOwnerFingerprint(t *testing.T) {
+	now := time.Date(2026, 8, 17, 0, 0, 0, 0, time.UTC)
+	ctx, pool, store := newIntegrationStore(t, now)
+	actor := provisionUploadUser(t, ctx, store, "rejected-upload-actor")
+	ownerSubject := "rejected-upload-owner"
+	owner := provisionUploadUser(t, ctx, store, ownerSubject)
+	reservation, err := store.CreateUpload(ctx, domain.CreateUpload{
+		OwnerUserID: owner.ID, Target: domain.UploadTarget{Kind: domain.UploadTargetNewSubmission}, SizeBytes: 1, Now: now,
+	}, func(context.Context, domain.UploadReservation) (domain.SignedPUT, error) {
+		return domain.SignedPUT{}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	eventID, err := store.ids.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	correlationID, err := store.ids.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	event := domain.AuditEvent{
+		ID: eventID, ActorUserID: &actor.ID, TargetUploadID: &reservation.UploadID,
+		Action: domain.AuditActionUploadDeleted, Reason: "Upload mutation failed.",
+		CreatedAt: now, ExpiresAt: now.Add(domain.AuditRetention), CorrelationID: correlationID,
+		Outcome: domain.AuditOutcomeRejected, RejectionReason: domain.AuditRejectionOperationFailed,
+	}
+	if err := store.RecordAdministratorAudit(ctx, event); err != nil {
+		t.Fatal(err)
+	}
+	var targetUserID string
+	var targetFingerprint []byte
+	if err := pool.QueryRow(ctx, `SELECT target_user_id::text, target_fingerprint
+		FROM devhud_audit_events WHERE audit_event_id = $1`, eventID).Scan(&targetUserID, &targetFingerprint); err != nil {
+		t.Fatal(err)
+	}
+	expectedFingerprint := make([]byte, 32)
+	copy(expectedFingerprint, ownerSubject)
+	if targetUserID != owner.ID || string(targetFingerprint) != string(expectedFingerprint) {
+		t.Fatalf("target attribution = user %q fingerprint %x", targetUserID, targetFingerprint)
+	}
+	if _, err := pool.Exec(ctx, `DELETE FROM devhud_users WHERE user_id = $1`, owner.ID); err != nil {
+		t.Fatal(err)
+	}
+	var retainedUserID, retainedUploadID *string
+	if err := pool.QueryRow(ctx, `SELECT target_user_id::text, target_upload_id::text, target_fingerprint
+		FROM devhud_audit_events WHERE audit_event_id = $1`, eventID).Scan(&retainedUserID, &retainedUploadID, &targetFingerprint); err != nil {
+		t.Fatal(err)
+	}
+	if retainedUserID != nil || retainedUploadID != nil || string(targetFingerprint) != string(expectedFingerprint) {
+		t.Fatalf("retained target attribution = user %v upload %v fingerprint %x", retainedUserID, retainedUploadID, targetFingerprint)
+	}
+}
+
 func TestAdministratorSearchBackfillUsesBoundedKeysetBatches(t *testing.T) {
 	ctx, pool, store := newIntegrationStore(t, time.Date(2026, 8, 17, 0, 0, 0, 0, time.UTC))
 	var firstSubject, lastSubject string

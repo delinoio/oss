@@ -1,4 +1,4 @@
-const BASE_CONNECT_SOURCES = ["'self'", "http://127.0.0.1:46307", "https:"];
+const BASE_CONNECT_SOURCES = ["'self'", "http://127.0.0.1:46307"];
 
 function contentSecurityPolicy(connectSources: readonly string[]): string {
   return [

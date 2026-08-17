@@ -126,6 +126,7 @@ func (s *AdminService) SetUserBlocked(ctx context.Context, request *connect.Requ
 		if errors.As(err, &permission) {
 			return nil, permissionError(ctx, permission)
 		}
+		s.reject(ctx, event, domain.AuditRejectionOperationFailed)
 		return nil, s.internal(ctx, devhudv1connect.AdminServiceSetUserBlockedProcedure, err)
 	}
 	event.Outcome = domain.AuditOutcomeAccepted

@@ -155,9 +155,11 @@ func (s *Store) RecordAdministratorAudit(ctx context.Context, event domain.Audit
 		(audit_event_id, actor_user_id, target_user_id, actor_fingerprint, target_fingerprint, target_upload_id,
 		action, reason, created_at, expires_at, correlation_id, outcome, rejection_reason)
 		VALUES ($1, (SELECT user_id FROM devhud_users WHERE user_id = $2),
-		(SELECT user_id FROM devhud_users WHERE user_id = $3),
+		(SELECT user_id FROM devhud_users WHERE user_id = COALESCE($3::uuid,
+			(SELECT owner_user_id FROM devhud_uploads WHERE upload_id = $4))),
 		(SELECT identity_fingerprint FROM devhud_users WHERE user_id = $2),
-		(SELECT identity_fingerprint FROM devhud_users WHERE user_id = $3),
+		(SELECT identity_fingerprint FROM devhud_users WHERE user_id = COALESCE($3::uuid,
+			(SELECT owner_user_id FROM devhud_uploads WHERE upload_id = $4))),
 		(SELECT upload_id FROM devhud_uploads WHERE upload_id = $4),
 		$5, NULLIF($6, ''), $7, $8, $9, $10, NULLIF($11, 0))`, event.ID, validUUIDPointer(event.ActorUserID), validUUIDPointer(event.TargetUserID),
 		validUUIDPointer(event.TargetUploadID), event.Action, event.Reason, event.CreatedAt, event.ExpiresAt, event.CorrelationID, event.Outcome, event.RejectionReason)

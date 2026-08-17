@@ -153,6 +153,7 @@ tbody tr:last-child td { border-bottom: 0; }
   padding: 20px;
 }
 .timeline p { color: #4e5968; margin: 7px 0; white-space: pre-wrap; }
+.audit-identifiers { gap: 4px 12px; margin: 10px 0; }
 .timeline-meta { align-items: end; display: grid; gap: 8px; justify-items: end; white-space: nowrap; }
 .timeline time { color: #8b95a1; font-size: 12px; }
 .empty {

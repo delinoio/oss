@@ -820,6 +820,28 @@ function Audit({
                   <div>
                     <strong>{copy.auditActions[event.action]}</strong>
                     <p>{event.reason || "—"}</p>
+                    {(event.actorUserId || event.targetUserId || event.targetUploadId) && (
+                      <dl className="audit-identifiers">
+                        {event.actorUserId && (
+                          <>
+                            <dt>{copy.actorUser}</dt>
+                            <dd className="mono">{event.actorUserId.value}</dd>
+                          </>
+                        )}
+                        {event.targetUserId && (
+                          <>
+                            <dt>{copy.targetUser}</dt>
+                            <dd className="mono">{event.targetUserId.value}</dd>
+                          </>
+                        )}
+                        {event.targetUploadId && (
+                          <>
+                            <dt>{copy.targetUpload}</dt>
+                            <dd className="mono">{event.targetUploadId.value}</dd>
+                          </>
+                        )}
+                      </dl>
+                    )}
                     <span className="mono">{event.correlationId?.value}</span>
                   </div>
                   <div className="timeline-meta">
