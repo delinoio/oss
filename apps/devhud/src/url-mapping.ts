@@ -113,7 +113,7 @@ export function literalSpecificity(mapping: Pick<UrlRepositoryMapping, "pattern"
 export function selectUrlMapping(mappings: readonly UrlRepositoryMapping[], liveUrl: string | null): UrlRepositoryMapping | null {
   if (liveUrl === null) return null;
   const matched = mappings.filter((mapping) => mappingMatches(mapping, liveUrl));
-  return matched.toSorted(compareMappings)[0] ?? null;
+  return matched.sort(compareMappings)[0] ?? null;
 }
 
 export type RepositorySelection =
