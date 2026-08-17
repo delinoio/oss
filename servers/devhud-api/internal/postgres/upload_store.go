@@ -425,6 +425,8 @@ func (s *Store) ClaimUploadRemoval(ctx context.Context, ownerID, actorID, upload
 		}
 	}
 	if actorID != "" {
+		// The committed removal lease is the authorization boundary because
+		// object replacement and cache invalidation happen after this transaction.
 		if err := ensureAdminActor(ctx, tx, actorID); err != nil {
 			return domain.Upload{}, err
 		}
@@ -482,7 +484,7 @@ func (s *Store) ClaimUploadRemoval(ctx context.Context, ownerID, actorID, upload
 	if upload.State != domain.UploadStatePending && upload.State != domain.UploadStateFinalized && !(upload.State == domain.UploadStateRemoving && (operationExpiry == nil || !now.Before(*operationExpiry))) {
 		return domain.Upload{}, &domain.UploadError{Failure: domain.UploadFailureInvalidState}
 	}
-	if upload.State == domain.UploadStateRemoving && upload.RemovalReason != reason {
+	if upload.State == domain.UploadStateRemoving && upload.RemovalReason != reason && reason != domain.RemovalReasonAccountPurged {
 		return domain.Upload{}, &domain.UploadError{Failure: domain.UploadFailureInvalidState}
 	}
 	upload, err = scanUpload(tx.QueryRow(ctx, `UPDATE devhud_uploads SET state = 4,
@@ -512,14 +514,6 @@ func (s *Store) CompleteUploadRemoval(ctx context.Context, uploadID, token strin
 		return domain.Upload{}, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	if audit != nil {
-		// Recheck and lock the administrator at the atomic metadata/audit
-		// boundary. Public replacement and cache invalidation can take long
-		// enough for the actor's account state to change after the claim.
-		if err := ensureAdminActor(ctx, tx, audit.ActorUserID); err != nil {
-			return domain.Upload{}, err
-		}
-	}
 	upload, err := scanUpload(tx.QueryRow(ctx, `UPDATE devhud_uploads SET
 		state = CASE WHEN removal_reason = 2 THEN 5 ELSE 6 END, removed_at = $3,
 		operation_token = NULL, operation_expires_at = NULL
@@ -644,7 +638,8 @@ func (s *Store) GetUploadUsage(ctx context.Context, ownerID string, now time.Tim
 		WHERE state IN (2, 3) OR (state = 4 AND finalized_at IS NOT NULL)
 		GROUP BY submission_id
 	)
-	SELECT signed_urls, rolling_bytes, stored_bytes, finalized_images,
+	SELECT EXISTS (SELECT 1 FROM devhud_users WHERE user_id = $1),
+		signed_urls, rolling_bytes, stored_bytes, finalized_images,
 		COALESCE(submission_id::text, ''), COALESCE(images, 0)
 	FROM totals LEFT JOIN submissions ON true
 	ORDER BY submission_id`, ownerID, now)
@@ -653,11 +648,12 @@ func (s *Store) GetUploadUsage(ctx context.Context, ownerID string, now time.Tim
 	}
 	defer rows.Close()
 	usage := domain.UploadUsage{SubmissionImages: make(map[string]uint64)}
+	userExists := false
 	for rows.Next() {
 		var signed, rolling, stored, finalized int64
 		var submissionID string
 		var submissionImages int64
-		if err := rows.Scan(&signed, &rolling, &stored, &finalized, &submissionID, &submissionImages); err != nil {
+		if err := rows.Scan(&userExists, &signed, &rolling, &stored, &finalized, &submissionID, &submissionImages); err != nil {
 			return domain.UploadUsage{}, err
 		}
 		usage.SignedURLsRollingHour, usage.UploadBytesRollingDay = uint64(signed), uint64(rolling)
@@ -666,7 +662,13 @@ func (s *Store) GetUploadUsage(ctx context.Context, ownerID string, now time.Tim
 			usage.SubmissionImages[submissionID] = uint64(submissionImages)
 		}
 	}
-	return usage, rows.Err()
+	if err := rows.Err(); err != nil {
+		return domain.UploadUsage{}, err
+	}
+	if !userExists {
+		return domain.UploadUsage{}, domain.ErrNotFound
+	}
+	return usage, nil
 }
 
 func (s *Store) insertAdministratorUploadAudit(ctx context.Context, tx pgx.Tx, upload domain.Upload, audit domain.AdministratorUploadAudit, now time.Time) error {

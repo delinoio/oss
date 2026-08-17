@@ -331,6 +331,14 @@ func TestUsageIncludesBoundedGlobalAndSubmissionCounters(t *testing.T) {
 	}
 }
 
+func TestUsageRejectsMissingUser(t *testing.T) {
+	service := newTestAdminService(t, &adminRepository{}, &adminUploads{usageErr: domain.ErrNotFound})
+	_, err := service.GetUserUsage(administratorContext(), connect.NewRequest(&devhudv1.GetUserUsageRequest{UserId: uuid(targetUserID)}))
+	if connect.CodeOf(err) != connect.CodeNotFound {
+		t.Fatalf("code = %v, want NotFound", connect.CodeOf(err))
+	}
+}
+
 func TestAdminMessagesCannotExposeSynchronizedSettingsOrObjectLocations(t *testing.T) {
 	userFields := (&devhudv1.AdminUser{}).ProtoReflect().Descriptor().Fields()
 	uploadFields := (&devhudv1.AdminUpload{}).ProtoReflect().Descriptor().Fields()
@@ -410,6 +418,7 @@ func (*adminRepository) ListAuditEvents(context.Context, domain.AuditFilters, *d
 
 type adminUploads struct {
 	usage       domain.UploadUsage
+	usageErr    error
 	removeCalls int
 	remove      func(context.Context, string, string, domain.RemovalReason, domain.UploadState, string, domain.AuditEvent) (domain.Upload, error)
 }
@@ -418,7 +427,7 @@ func (*adminUploads) ListUploads(context.Context, string, domain.AdminUploadFilt
 	return domain.UploadList{}, "", nil
 }
 func (u *adminUploads) GetUsage(context.Context, string) (domain.UploadUsage, error) {
-	return u.usage, nil
+	return u.usage, u.usageErr
 }
 func (u *adminUploads) RemoveUpload(ctx context.Context, actorID, uploadID string, reason domain.RemovalReason, state domain.UploadState, rationale string, event domain.AuditEvent) (domain.Upload, error) {
 	u.removeCalls++

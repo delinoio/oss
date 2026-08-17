@@ -56,6 +56,9 @@ func TestGetUploadUsageReturnsSnapshotTotalsAndSubmissionCounters(t *testing.T) 
 	ctx, _, store := newIntegrationStore(t, time.Date(2026, 8, 17, 0, 0, 0, 0, time.UTC))
 	user := provisionUploadUser(t, ctx, store, "usage-snapshot")
 	now := time.Date(2026, 8, 17, 0, 0, 0, 0, time.UTC)
+	if _, err := store.GetUploadUsage(ctx, "0198b123-4567-7abc-8def-012345678999", now); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("missing user usage error = %v", err)
+	}
 
 	empty, err := store.GetUploadUsage(ctx, user.ID, now)
 	if err != nil {
@@ -377,7 +380,7 @@ func TestAdministratorAuditCommitsWithRemovalCompletion(t *testing.T) {
 		t.Fatal(err)
 	}
 	token := "IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII"
-	if _, err := store.ClaimUploadRemoval(ctx, "", "", reservation.UploadID, domain.RemovalReasonAdministratorDeleted, 0, token, now); err != nil {
+	if _, err := store.ClaimUploadRemoval(ctx, "", actor.ID, reservation.UploadID, domain.RemovalReasonAdministratorDeleted, 0, token, now); err != nil {
 		t.Fatal(err)
 	}
 	missingActor := domain.AdministratorUploadAudit{ActorUserID: "0198b123-4567-7abc-8def-012345678999", Rationale: "Reviewed policy violation."}
@@ -413,25 +416,14 @@ func TestAdministratorAuditCommitsWithRemovalCompletion(t *testing.T) {
 	if _, err := pool.Exec(ctx, `UPDATE devhud_users SET administrative_block_state = 2 WHERE user_id = $1`, actor.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.CompleteUploadRemoval(ctx, reservation.UploadID, token, now, &audit); err == nil {
-		t.Fatal("blocked administrator completed an in-flight removal")
-	} else {
-		var permission *domain.PermissionError
-		if !errors.As(err, &permission) || permission.Failure != domain.PermissionFailureAdministrativeBlock {
-			t.Fatalf("blocked completion error = %v", err)
-		}
+	if _, err := store.CompleteUploadRemoval(ctx, reservation.UploadID, token, now, &audit); err != nil {
+		t.Fatalf("authorized in-flight removal completion = %v", err)
 	}
 	if err := pool.QueryRow(ctx, `SELECT state, operation_token FROM devhud_uploads WHERE upload_id = $1`, reservation.UploadID).Scan(&state, &operationToken); err != nil {
 		t.Fatal(err)
 	}
-	if domain.UploadState(state) != domain.UploadStateRemoving || operationToken == nil || *operationToken != token {
-		t.Fatalf("blocked completion changed removal: state=%v token=%v", state, operationToken)
-	}
-	if _, err := pool.Exec(ctx, `UPDATE devhud_users SET administrative_block_state = 1 WHERE user_id = $1`, actor.ID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := store.CompleteUploadRemoval(ctx, reservation.UploadID, token, now.Add(time.Minute), &audit); err != nil {
-		t.Fatal(err)
+	if domain.UploadState(state) != domain.UploadStateDeleted || operationToken != nil {
+		t.Fatalf("authorized in-flight removal was not completed: state=%v token=%v", state, operationToken)
 	}
 	var persistedCreatedAt, persistedExpiresAt time.Time
 	var persistedCorrelationID string
@@ -442,6 +434,38 @@ func TestAdministratorAuditCommitsWithRemovalCompletion(t *testing.T) {
 	}
 	if !persistedCreatedAt.Equal(eventCreatedAt) || !persistedExpiresAt.Equal(eventExpiresAt) || persistedCorrelationID != correlationID {
 		t.Fatalf("persisted audit identity = created %v, expires %v, correlation %q", persistedCreatedAt, persistedExpiresAt, persistedCorrelationID)
+	}
+}
+
+func TestAccountPurgeSupersedesOnlyExpiredRemovalLease(t *testing.T) {
+	now := time.Date(2026, 8, 17, 0, 0, 0, 0, time.UTC)
+	ctx, _, store := newIntegrationStore(t, now)
+	user := provisionUploadUser(t, ctx, store, "purge-removal-takeover")
+	reservation, err := store.CreateUpload(ctx, domain.CreateUpload{
+		OwnerUserID: user.ID,
+		Target:      domain.UploadTarget{Kind: domain.UploadTargetNewSubmission},
+		SizeBytes:   1,
+		Now:         now,
+	}, func(context.Context, domain.UploadReservation) (domain.SignedPUT, error) {
+		return domain.SignedPUT{}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const ownerToken = "OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO"
+	if _, err := store.ClaimUploadRemoval(ctx, user.ID, "", reservation.UploadID, domain.RemovalReasonOwnerDeleted, 0, ownerToken, now); err != nil {
+		t.Fatal(err)
+	}
+	const purgeToken = "PPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPP"
+	if _, err := store.ClaimUploadRemoval(ctx, "", "", reservation.UploadID, domain.RemovalReasonAccountPurged, 0, purgeToken, now.Add(domain.UploadOperationLease-time.Second)); !uploadFailureIs(err, domain.UploadFailureInvalidState) {
+		t.Fatalf("account purge took over active lease: %v", err)
+	}
+	claimed, err := store.ClaimUploadRemoval(ctx, "", "", reservation.UploadID, domain.RemovalReasonAccountPurged, 0, purgeToken, now.Add(domain.UploadOperationLease))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claimed.OperationToken != purgeToken || claimed.RemovalReason != domain.RemovalReasonAccountPurged {
+		t.Fatalf("account purge takeover = %+v", claimed)
 	}
 }
 

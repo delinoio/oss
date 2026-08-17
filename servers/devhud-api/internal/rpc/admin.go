@@ -145,6 +145,9 @@ func (s *AdminService) GetUserUsage(ctx context.Context, request *connect.Reques
 	}
 	usage, err := s.uploads.GetUsage(ctx, request.Msg.GetUserId().GetValue())
 	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			return nil, NewError(connect.CodeNotFound, "user was not found", CorrelationID(ctx))
+		}
 		return nil, s.internal(ctx, devhudv1connect.AdminServiceGetUserUsageProcedure, err)
 	}
 	counters := []*devhudv1.UsageCounter{
