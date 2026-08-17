@@ -74,7 +74,9 @@ function canonicalizeLiteralSegment(value: string): string {
     const decoded = decodeURIComponent(value);
     return decoded === "*" ? "%2A" : decoded === "**" ? "%2A%2A" : decoded;
   } catch {
-    throw new UrlMappingError("path segments must have valid percent encoding");
+    // WHATWG URLs preserve escaped bytes that are not valid UTF-8, so retain them
+    // while canonicalizing their serialized escape spelling for stable matching.
+    return value.replace(/%[0-9a-f]{2}/giu, (escape) => escape.toUpperCase());
   }
 }
 

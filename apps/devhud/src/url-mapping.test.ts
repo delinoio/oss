@@ -26,6 +26,8 @@ describe("URL repository matcher", () => {
     expect(mappingMatches(mapping({ pattern: "https://example.com/teams/../projects" }), "https://example.com/projects")).toBe(true);
     expect(mappingMatches(mapping({ pattern: "https://example.com/%2a" }), "https://example.com/%2A")).toBe(true);
     expect(mappingMatches(mapping({ pattern: "https://example.com/%2a" }), "https://example.com/value")).toBe(false);
+    expect(parseUrlPattern("https://example.com/%ff").path).toEqual(["%FF"]);
+    expect(mappingMatches(mapping({ pattern: "https://example.com/%FF" }), "https://example.com/%ff")).toBe(true);
   });
 
   it("bounds multi-segment wildcard matching", () => {
