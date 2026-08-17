@@ -133,6 +133,11 @@ pub enum ShortcutFailure {
     PermissionDenied,
 }
 
+#[allow(
+    dead_code,
+    reason = "Permission states are platform-specific and retained in the shared shortcut \
+              contract."
+)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ShortcutPermission {
@@ -143,6 +148,11 @@ pub enum ShortcutPermission {
     Unsupported,
 }
 
+#[allow(
+    dead_code,
+    reason = "Platform variants are selected conditionally for the shared cross-platform shortcut \
+              contract."
+)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ShortcutPlatform {
@@ -217,6 +227,10 @@ pub fn normalize_global_event(event: &rdev::EventType) -> Option<NativeKeyEvent>
 /// are platform-native physical codes: macOS virtual key codes, Windows virtual
 /// key codes, and X11/XInput keycodes. Unknown codes are ignored rather than
 /// being captured, recorded, or sent across the bridge.
+#[allow(
+    dead_code,
+    reason = "Physical-code mapping is retained and unit-tested for every supported platform."
+)]
 pub fn normalize_native_key(platform: ShortcutPlatform, code: u32) -> Option<NativeKey> {
     match platform {
         // kVK_RightCommand / kVK_Command / kVK_Control and physical US ANSI key positions.
@@ -285,6 +299,10 @@ pub fn normalize_native_key(platform: ShortcutPlatform, code: u32) -> Option<Nat
     }
 }
 
+#[allow(
+    dead_code,
+    reason = "The shared physical-code mapper uses this helper only on platform-specific branches."
+)]
 fn digit_key(digit: u32) -> Option<NativeKey> {
     Some(NativeKey::Key(match digit {
         1 => ShortcutKey::Digit1,
