@@ -28,9 +28,12 @@ describe("Chrome browser context privacy", () => {
       { ...input, viewport: { width: Number.NaN, height: 50 } },
       { ...input, viewport: { width: -100, height: -50 } },
       { ...input, selectedBounds: { x: 1, y: 2, width: Number.POSITIVE_INFINITY, height: 4 } },
+      { ...input, selectedBounds: { x: 1, y: 2, width: 0, height: 4 } },
+      { ...input, selectedBounds: { x: 1, y: 2, width: 4, height: -1 } },
       { ...input, accessibility: { "aria-label": { cookie: "secret" } } },
     ]) expect(sanitizeChromeContext(malformedInput)).toEqual({ kind: "malformed" });
   });
+  it("keeps valid selections that extend off-screen", () => expect(sanitizeChromeContext({ ...input, selectedBounds: { x: -1, y: -2, width: 3, height: 4 } })).toMatchObject({ kind: "sanitized", context: { selectedBounds: { x: -1, y: -2, width: 3, height: 4 } } }));
   it("returns malformed rather than retaining an unsupported URL", () => expect(sanitizeChromeContext({ ...input, url: "file:///secret" })).toEqual({ kind: "malformed" }));
   it("keeps only allowlisted DOM and accessibility data within the DOM cap", () => {
     const result = sanitizeChromeContext({

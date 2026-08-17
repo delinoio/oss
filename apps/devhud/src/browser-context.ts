@@ -65,7 +65,7 @@ function isViewport(value: unknown): value is SanitizedBrowserContext["viewport"
 }
 
 function isSelectedBounds(value: unknown): value is NonNullable<SanitizedBrowserContext["selectedBounds"]> {
-  return isRecord(value) && isFiniteNumber(value.x) && isFiniteNumber(value.y) && isFiniteNumber(value.width) && isFiniteNumber(value.height);
+  return isRecord(value) && isFiniteNumber(value.x) && isFiniteNumber(value.y) && isFiniteNumber(value.width) && value.width > 0 && isFiniteNumber(value.height) && value.height > 0;
 }
 
 function isStringRecord(value: unknown): value is Readonly<Record<string, string>> {

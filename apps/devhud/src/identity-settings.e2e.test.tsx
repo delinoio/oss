@@ -1661,6 +1661,31 @@ describe("generated Connect identity/settings fixture", () => {
     expect(settingsRequests).toBeLessThanOrEqual(1);
   });
 
+  it("keeps unsaved URL mapping drafts while navigating between app surfaces", async () => {
+    const mapping = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", pattern: "https://server.example/**", repository: { owner: "delinoio", name: "oss" }, credentialProfileRef: "github.default", priority: 0, chromeOrigin: null, updatedAt: "2026-08-17T00:00:00.000Z" };
+    const server = { ...defaultDevHudSettings, urlMappings: [mapping] };
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 2, revision: "1", canonicalJson: encodedSettings(server) } });
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    render(<App bridge={authenticatedBridge()} initialRuntime={runtime} />);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.settings }));
+    const pattern = await screen.findByLabelText(messages.en.urlPattern) as HTMLInputElement;
+    const priority = screen.getByLabelText(messages.en.mappingPriority) as HTMLInputElement;
+    fireEvent.change(pattern, { target: { value: "https://draft.example/**" } });
+    fireEvent.change(priority, { target: { value: "-1" } });
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.account }));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.settings }));
+
+    expect((await screen.findByLabelText(messages.en.urlPattern) as HTMLInputElement).value).toBe("https://draft.example/**");
+    expect((screen.getByLabelText(messages.en.mappingPriority) as HTMLInputElement).value).toBe("-1");
+  });
+
   it.each([
     ["unsupported schema", 3, encodedSettings(defaultDevHudSettings)],
     ["noncanonical body", 2, btoa('{ "schemaVersion": 2 }')],

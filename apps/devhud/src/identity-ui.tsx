@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type Ref } from "react";
+import { createContext, use, useEffect, useEffectEvent, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type Ref } from "react";
 import type { Copy } from "./localization";
 import { GitHubSettings } from "./github-settings-ui.tsx";
 import type { GitHubProvider } from "./github-provider.ts";
@@ -122,35 +122,25 @@ export function SynchronizedAppearanceBoundary({ onAppearance }: { readonly onAp
   return null;
 }
 
-export function SynchronizedSettingsBoundary({ copy, bridge = nativeBridge, githubProvider, onOpenExternal = (target) => browserShell.openExternal(target, "") }: { readonly copy: Copy; readonly bridge?: NativeBridgeV1; readonly githubProvider?: GitHubProvider; readonly onOpenExternal?: (target: ExternalLinkTarget) => Promise<void> }) {
-  const identity = useIdentitySettings();
-  const [actionError, setActionError] = useState(false);
-  const [urlMappingReset, setUrlMappingReset] = useState(0);
-  const invoke = (action: () => Promise<unknown>) => { setActionError(false); void action().catch(() => setActionError(true)); };
-  const replaceAppearance = (appearance: Partial<DevHudSettingsV1["appearance"]>) => invoke(() => identity.replaceSettings((current) => ({
-    ...current,
-    appearance: { ...current.appearance, ...appearance },
-  })));
-  return <>
-    <label>{copy.theme}<select value={identity.settings.appearance.theme} disabled={identity.readOnly} onChange={(event) => replaceAppearance({ theme: event.target.value as DevHudSettingsV1["appearance"]["theme"] })}>{Object.values(ThemePreference).map((value) => <option key={value} value={value}>{copy[value]}</option>)}</select></label>
-    <label>{copy.language}<select value={identity.settings.appearance.language} disabled={identity.readOnly} onChange={(event) => replaceAppearance({ language: event.target.value as DevHudSettingsV1["appearance"]["language"] })}><option value={LanguagePreference.System}>{copy.system}</option><option value={LanguagePreference.English}>{copy.english}</option><option value={LanguagePreference.Korean}>{copy.korean}</option></select></label>
-    <UrlMappingSettings copy={copy} resetEpoch={urlMappingReset} />
-    {(identity.status === "guest" || identity.status === "signed-out" || identity.status === "starting") && <p className="notice">{copy.guestSettingsLocal}</p>}
-    {identity.status === "blocked" && <p className="notice">{copy.blockedLocalHint}</p>}
-    {identity.status === "deletion-pending" && <p className="notice">{copy.deletionPendingSummary}</p>}
-    {identity.status === "authenticated" && <section className="synchronized-settings" aria-label={copy.synchronizedSettings}>
-      <h3>{copy.synchronizedSettings}</h3>
-      {identity.offline && <p className="notice" role="status">{copy.offlineSettingsReadOnly}</p>}
-      {!identity.offline && <p>{copy.settingsRevision}: {identity.revision.toString()}</p>}
-    {identity.importDiff && <SnapshotChoice key="import" choiceId="import" copy={copy} entries={identity.importDiff} title={copy.importSettingsTitle} summary={copy.importSettingsSummary} primary={copy.uploadLocal} secondary={copy.replaceLocal} onPrimary={() => invoke(identity.uploadLocal)} onSecondary={() => { if (identity.replaceLocal()) setUrlMappingReset((current) => current + 1); }} />}
-    {identity.conflict && <SnapshotChoice key="conflict" choiceId="conflict" copy={copy} entries={identity.conflict.diff} title={copy.conflictTitle} summary={copy.conflictSummary} primary={copy.reapplyLocal} secondary={copy.adoptServer} onPrimary={() => invoke(async () => { if (await identity.reapplyConflictLocal()) setUrlMappingReset((current) => current + 1); })} onSecondary={() => { identity.adoptConflictServer(); setUrlMappingReset((current) => current + 1); }} />}
-    {(actionError || identity.error?.startsWith("settings-") || identity.settingsError) && <section className="notice" role="alert"><p>{copy.settingsActionFailed}{identity.error?.startsWith("settings-") && <> <code>{identity.error}</code></>}{identity.settingsError && <> <code>{`settings-connect-${identity.settingsError.code}`}</code>{identity.settingsError.correlationId && <> {copy.correlationId}: <code>{identity.settingsError.correlationId}</code></>}</>}</p><button onClick={() => invoke(identity.retrySettings)}>{copy.retry}</button></section>}
-    </section>}
-    <GitHubSettings copy={copy} bridge={bridge} provider={githubProvider} openExternal={onOpenExternal} />
-  </>;
+interface UrlMappingDraftValue {
+  readonly draft: UrlRepositoryMapping[];
+  readonly setDraft: (draft: UrlRepositoryMapping[] | ((current: UrlRepositoryMapping[]) => UrlRepositoryMapping[])) => void;
+  readonly invalid: boolean;
+  readonly setInvalid: (invalid: boolean) => void;
+  readonly saved: boolean;
+  readonly setSaved: (saved: boolean) => void;
+  readonly dirty: boolean;
+  readonly setDirty: (dirty: boolean) => void;
+  readonly saving: boolean;
+  readonly setSaving: (saving: boolean) => void;
+  readonly priorityDrafts: Record<string, string>;
+  readonly setPriorityDrafts: (drafts: Record<string, string> | ((current: Record<string, string>) => Record<string, string>)) => void;
+  readonly reset: () => void;
 }
 
-function UrlMappingSettings({ copy, resetEpoch }: { readonly copy: Copy; readonly resetEpoch: number }) {
+const UrlMappingDraftContext = createContext<UrlMappingDraftValue | null>(null);
+
+export function UrlMappingDraftProvider({ children }: { readonly children: ReactNode }) {
   const identity = useIdentitySettings();
   const [draft, setDraft] = useState<UrlRepositoryMapping[]>(() => [...identity.settings.urlMappings]);
   const [invalid, setInvalid] = useState(false);
@@ -159,13 +149,55 @@ function UrlMappingSettings({ copy, resetEpoch }: { readonly copy: Copy; readonl
   const [saving, setSaving] = useState(false);
   const [priorityDrafts, setPriorityDrafts] = useState<Record<string, string>>({});
   useEffect(() => { if (!dirty) setDraft([...identity.settings.urlMappings]); }, [dirty, identity.settings.urlMappings]);
-  useEffect(() => {
+  const reset = () => {
     setDraft([...identity.settings.urlMappings]);
     setDirty(false);
     setSaved(false);
     setInvalid(false);
     setPriorityDrafts({});
-  }, [resetEpoch]);
+  };
+  return <UrlMappingDraftContext value={{ draft, setDraft, invalid, setInvalid, saved, setSaved, dirty, setDirty, saving, setSaving, priorityDrafts, setPriorityDrafts, reset }}>{children}</UrlMappingDraftContext>;
+}
+
+export function SynchronizedSettingsBoundary(props: { readonly copy: Copy; readonly bridge?: NativeBridgeV1; readonly githubProvider?: GitHubProvider; readonly onOpenExternal?: (target: ExternalLinkTarget) => Promise<void> }) {
+  const mappingDraft = use(UrlMappingDraftContext);
+  return mappingDraft === null ? <UrlMappingDraftProvider><SynchronizedSettingsContent {...props} /></UrlMappingDraftProvider> : <SynchronizedSettingsContent {...props} />;
+}
+
+function SynchronizedSettingsContent({ copy, bridge = nativeBridge, githubProvider, onOpenExternal = (target) => browserShell.openExternal(target, "") }: { readonly copy: Copy; readonly bridge?: NativeBridgeV1; readonly githubProvider?: GitHubProvider; readonly onOpenExternal?: (target: ExternalLinkTarget) => Promise<void> }) {
+  const identity = useIdentitySettings();
+  const mappingDraft = use(UrlMappingDraftContext);
+  if (mappingDraft === null) throw new Error("URL mapping draft provider is required");
+  const [actionError, setActionError] = useState(false);
+  const invoke = (action: () => Promise<unknown>) => { setActionError(false); void action().catch(() => setActionError(true)); };
+  const replaceAppearance = (appearance: Partial<DevHudSettingsV1["appearance"]>) => invoke(() => identity.replaceSettings((current) => ({
+    ...current,
+    appearance: { ...current.appearance, ...appearance },
+  })));
+  return <>
+    <label>{copy.theme}<select value={identity.settings.appearance.theme} disabled={identity.readOnly} onChange={(event) => replaceAppearance({ theme: event.target.value as DevHudSettingsV1["appearance"]["theme"] })}>{Object.values(ThemePreference).map((value) => <option key={value} value={value}>{copy[value]}</option>)}</select></label>
+    <label>{copy.language}<select value={identity.settings.appearance.language} disabled={identity.readOnly} onChange={(event) => replaceAppearance({ language: event.target.value as DevHudSettingsV1["appearance"]["language"] })}><option value={LanguagePreference.System}>{copy.system}</option><option value={LanguagePreference.English}>{copy.english}</option><option value={LanguagePreference.Korean}>{copy.korean}</option></select></label>
+    <UrlMappingSettings copy={copy} />
+    {(identity.status === "guest" || identity.status === "signed-out" || identity.status === "starting") && <p className="notice">{copy.guestSettingsLocal}</p>}
+    {identity.status === "blocked" && <p className="notice">{copy.blockedLocalHint}</p>}
+    {identity.status === "deletion-pending" && <p className="notice">{copy.deletionPendingSummary}</p>}
+    {identity.status === "authenticated" && <section className="synchronized-settings" aria-label={copy.synchronizedSettings}>
+      <h3>{copy.synchronizedSettings}</h3>
+      {identity.offline && <p className="notice" role="status">{copy.offlineSettingsReadOnly}</p>}
+      {!identity.offline && <p>{copy.settingsRevision}: {identity.revision.toString()}</p>}
+    {identity.importDiff && <SnapshotChoice key="import" choiceId="import" copy={copy} entries={identity.importDiff} title={copy.importSettingsTitle} summary={copy.importSettingsSummary} primary={copy.uploadLocal} secondary={copy.replaceLocal} onPrimary={() => invoke(identity.uploadLocal)} onSecondary={() => { if (identity.replaceLocal()) mappingDraft.reset(); }} />}
+    {identity.conflict && <SnapshotChoice key="conflict" choiceId="conflict" copy={copy} entries={identity.conflict.diff} title={copy.conflictTitle} summary={copy.conflictSummary} primary={copy.reapplyLocal} secondary={copy.adoptServer} onPrimary={() => invoke(async () => { if (await identity.reapplyConflictLocal()) mappingDraft.reset(); })} onSecondary={() => { identity.adoptConflictServer(); mappingDraft.reset(); }} />}
+    {(actionError || identity.error?.startsWith("settings-") || identity.settingsError) && <section className="notice" role="alert"><p>{copy.settingsActionFailed}{identity.error?.startsWith("settings-") && <> <code>{identity.error}</code></>}{identity.settingsError && <> <code>{`settings-connect-${identity.settingsError.code}`}</code>{identity.settingsError.correlationId && <> {copy.correlationId}: <code>{identity.settingsError.correlationId}</code></>}</>}</p><button onClick={() => invoke(identity.retrySettings)}>{copy.retry}</button></section>}
+    </section>}
+    <GitHubSettings copy={copy} bridge={bridge} provider={githubProvider} openExternal={onOpenExternal} />
+  </>;
+}
+
+function UrlMappingSettings({ copy }: { readonly copy: Copy }) {
+  const identity = useIdentitySettings();
+  const mappingDraft = use(UrlMappingDraftContext);
+  if (mappingDraft === null) throw new Error("URL mapping draft provider is required");
+  const { draft, setDraft, invalid, setInvalid, saved, setSaved, dirty, setDirty, saving, setSaving, priorityDrafts, setPriorityDrafts } = mappingDraft;
   const overlaps = safeOverlaps(draft);
   const change = (id: string, field: keyof UrlRepositoryMapping, value: string | number | null) => {
     setSaved(false); setInvalid(false); setDirty(true);
