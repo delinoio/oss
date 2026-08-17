@@ -52,11 +52,11 @@ export function FirstRunIdentity({ copy, apiOrigin, onApiOrigin, onComplete }: I
     <p>{copy.firstRunSummary}</p>
     <ApiOriginEditor copy={copy} value={apiOrigin} autoFocus onApply={onApiOrigin} />
     <div className="actions">
-      <button onClick={() => { setActionError(false); void identity.signIn().catch(() => setActionError(true)); }} disabled={identity.status === "starting" || identity.bootstrap === null}>{copy.signIn}</button>
+      <button onClick={() => { setActionError(false); void identity.signIn().catch(() => setActionError(true)); }} disabled={identity.status === "starting" || identity.bootstrap === null || identity.signInPending}>{copy.signIn}</button>
       <button onClick={identity.continueLocally}>{copy.continueLocally}</button>
     </div>
     {identity.status === "starting" && <p role="status">{copy.fetchingBootstrap}</p>}
-    {identity.status === "error" && <section className="notice" role="alert"><p>{copy.bootstrapFailed}</p><button onClick={identity.retryIdentity}>{copy.retry}</button></section>}
+    {identity.status === "error" && <section className="notice" role="alert"><p>{copy.bootstrapFailed}</p>{identity.identityResetAvailable && <p>{copy.resetSignInHint}</p>}<div className="actions"><button onClick={identity.retryIdentity}>{copy.retry}</button>{identity.identityResetAvailable && <button onClick={() => void identity.resetIdentity().catch(() => {})}>{copy.resetSignIn}</button>}</div></section>}
     {actionError && <p role="alert">{copy.signInFailed}</p>}
   </>;
 }
@@ -93,8 +93,8 @@ export function AccountIdentity({ copy, apiOrigin, inputRef, onApiOrigin }: Acco
     <p>{copy.accountSummary}</p>
     <ApiOriginEditor copy={copy} value={apiOrigin} inputRef={inputRef} onApply={onApiOrigin} />
     {identity.status === "starting" && <p role="status">{copy.fetchingBootstrap}</p>}
-    {identity.status === "error" && <section className="notice" role="alert"><p>{copy.bootstrapFailed}</p><button onClick={identity.retryIdentity}>{copy.retry}</button></section>}
-    {(identity.status === "signed-out" || identity.status === "guest") && <button onClick={() => invoke(identity.signIn)} disabled={identity.bootstrap === null}>{copy.signIn}</button>}
+    {identity.status === "error" && <section className="notice" role="alert"><p>{copy.bootstrapFailed}</p>{identity.identityResetAvailable && <p>{copy.resetSignInHint}</p>}<div className="actions"><button onClick={identity.retryIdentity}>{copy.retry}</button>{identity.identityResetAvailable && <button onClick={() => void identity.resetIdentity().catch(() => {})}>{copy.resetSignIn}</button>}</div></section>}
+    {(identity.status === "signed-out" || identity.status === "guest") && <button onClick={() => invoke(identity.signIn)} disabled={identity.bootstrap === null || identity.signInPending}>{copy.signIn}</button>}
     {identity.status === "authenticated" && identity.accountError && <section className="notice" role="alert"><p>{copy.accountLoadFailed}</p><code>{`account-connect-${identity.accountError.code}`}</code>{identity.accountError.correlationId && <> {copy.correlationId}: <code>{identity.accountError.correlationId}</code></>}<button onClick={() => void identity.retryAccount()}>{copy.retry}</button></section>}
     {identity.status === "authenticated" && !identity.accountError && identity.account === null && <p role="status">{copy.loadingAccount}</p>}
     {identity.status === "authenticated" && !identity.accountError && identity.account !== null && <section className="account-session" aria-label={copy.signedInSession}>

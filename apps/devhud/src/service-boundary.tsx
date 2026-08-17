@@ -16,7 +16,7 @@ import {
 import { createContext, use, useEffect, useMemo, useRef, useState, type PropsWithChildren, type RefObject } from "react";
 import { createIdentitySession, sessionProfileId, validateBootstrap, type IdentitySession, type ValidatedBootstrap } from "./identity-client";
 import { clearAllContractedLocalData, clearAuthenticatedOriginData, clearAuthenticatedSettingsCache, clearGuestImportMarker, hasGuestSettings, readAuthenticatedSettingsCache, readCachedIdentityBootstrap, readGuestSettings, writeAuthenticatedSettingsCache, writeCachedIdentityBootstrap, writeGuestSettings } from "./local-data";
-import type { NativeBridgeV1, RuntimePlatform } from "./native-bridge";
+import { SecureSettingKind, type NativeBridgeV1, type RuntimePlatform } from "./native-bridge";
 import { profileRequiresSetup } from "./profile-secrets";
 import { defaultDevHudSettings, decodeDevHudSettings, encodeDevHudSettings, parseDevHudSettings, SettingsSchemaVersion, type DevHudSettingsV1 } from "./settings-contract";
 import { diffSettings, type SettingsDiffEntry } from "./settings-diff";
@@ -45,8 +45,11 @@ export interface IdentitySettingsValue {
   readonly deletionCleanupFailed: boolean;
   readonly importDiff: readonly SettingsDiffEntry[] | null;
   readonly conflict: SettingsConflict | null;
+  readonly signInPending: boolean;
+  readonly identityResetAvailable: boolean;
   readonly signIn: () => Promise<void>;
   readonly retryIdentity: () => void;
+  readonly resetIdentity: () => Promise<void>;
   readonly retryAccount: () => Promise<void>;
   readonly retrySettings: () => Promise<void>;
   readonly continueLocally: () => void;
@@ -132,6 +135,9 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   const [identityReady, setIdentityReady] = useState(false);
   const [settingsReady, setSettingsReady] = useState(false);
   const [bootstrapAttempt, setBootstrapAttempt] = useState(0);
+  const [signInPending, setSignInPending] = useState(false);
+  const [identityResetAvailable, setIdentityResetAvailable] = useState(false);
+  const signInPendingRef = useRef(false);
   const callbackHandled = useRef<string | null>(null);
 
   const accountQueryKey = useMemo(() => createConnectQueryKey({ schema: AccountQuery.getAccount, transport, input: {}, cardinality: "finite" }), [transport]);
@@ -233,11 +239,19 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
           return;
         }
         const session = await createIdentitySession(validated, apiOrigin, bridge);
-        const authenticated = await session.isAuthenticated();
+        let authenticated: boolean;
+        try {
+          authenticated = await session.isAuthenticated();
+        } catch (reason) {
+          if (!cancelled) setIdentityResetAvailable(true);
+          throw reason;
+        }
         if (cancelled) return;
+        if (!authenticated) clearAuthenticatedSettingsCache(storage, apiOrigin);
         sessionRef.current = session;
         setSession(session);
         setBootstrap(validated);
+        setIdentityResetAvailable(false);
         setStatus(authenticated ? "authenticated" : "signed-out");
         setIdentityReady(true);
         setError(null);
@@ -267,11 +281,19 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
           return;
         }
         const session = await createIdentitySession(cached, apiOrigin, bridge);
-        const authenticated = await session.isAuthenticated();
+        let authenticated: boolean;
+        try {
+          authenticated = await session.isAuthenticated();
+        } catch (reason) {
+          if (!cancelled) setIdentityResetAvailable(true);
+          throw reason;
+        }
         if (cancelled) return;
+        if (!authenticated) clearAuthenticatedSettingsCache(storage, apiOrigin);
         sessionRef.current = session;
         setSession(session);
         setBootstrap(cached);
+        setIdentityResetAvailable(false);
         setStatus(authenticated ? "authenticated" : "signed-out");
         setIdentityReady(true);
         setError(null);
@@ -452,6 +474,42 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     }
   }
 
+  function retryIdentity(): void {
+    setStatus("starting");
+    setError(null);
+    setIdentityResetAvailable(false);
+    setNetworkReady(false);
+    setBootstrapAttempt((current) => current + 1);
+  }
+
+  async function resetIdentity(): Promise<void> {
+    clearAuthenticatedSettingsCache(storage, apiOrigin);
+    setStatus("starting");
+    setError(null);
+    setIdentityResetAvailable(false);
+    try {
+      await bridge.request({
+        operation: "secure.remove",
+        setting: { kind: SecureSettingKind.LogtoSession, profileId: await sessionProfileId(apiOrigin) },
+      });
+      sessionRef.current = null;
+      setSession(null);
+      setBootstrap(null);
+      setAccount(null);
+      setAccountError(null);
+      setIdentityReady(false);
+      setSettingsReady(false);
+      setSettingsError(null);
+      await clearIdentityQueryCache();
+      retryIdentity();
+    } catch (reason) {
+      setStatus("error");
+      setError(safeError(reason));
+      setIdentityResetAvailable(true);
+      throw reason;
+    }
+  }
+
   const localSettingsWritable = identityReady && (status === "guest" || status === "signed-out");
   const settingsReadOnly = replaceMutation.isPending || (!localSettingsWritable
     && (status !== "authenticated" || !online || !settingsReady || importDiff !== null || conflict !== null));
@@ -470,16 +528,23 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     deletionCleanupFailed,
     importDiff,
     conflict,
+    signInPending,
+    identityResetAvailable,
     signIn: async () => {
-      if (sessionRef.current === null) throw new Error("bootstrap-not-ready");
-      await sessionRef.current.signIn();
+      if (signInPendingRef.current) return;
+      const current = sessionRef.current;
+      if (current === null) throw new Error("bootstrap-not-ready");
+      signInPendingRef.current = true;
+      setSignInPending(true);
+      try {
+        await current.signIn();
+      } finally {
+        signInPendingRef.current = false;
+        setSignInPending(false);
+      }
     },
-    retryIdentity: () => {
-      setStatus("starting");
-      setError(null);
-      setNetworkReady(false);
-      setBootstrapAttempt((current) => current + 1);
-    },
+    retryIdentity,
+    resetIdentity,
     retryAccount: async () => {
       setAccountError(null);
       await accountQuery.refetch();

@@ -112,6 +112,11 @@ afterEach(() => {
 
 describe("generated Connect identity/settings fixture", () => {
   it("stores signed-out appearance edits in the guest snapshot", async () => {
+    writeAuthenticatedSettingsCache(localStorage, "https://devhud.api.delino.io", {
+      settings: { ...defaultDevHudSettings, appearance: { ...defaultDevHudSettings.appearance, theme: "dark" } },
+      revision: 9n,
+      cachedAt: "2026-08-17T00:00:00.000Z",
+    });
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
@@ -121,6 +126,7 @@ describe("generated Connect identity/settings fixture", () => {
 
     renderIdentityProbe(signedOutBridge(), replacement);
     await waitFor(() => expect(screen.getByTestId("identity-state").dataset.status).toBe("signed-out"));
+    expect(readAuthenticatedSettingsCache(localStorage, "https://devhud.api.delino.io")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "replace probe settings" }));
 
     await waitFor(() => expect(screen.getByTestId("identity-state").dataset.theme).toBe("dark"));
@@ -346,6 +352,39 @@ describe("generated Connect identity/settings fixture", () => {
     fireEvent.click(screen.getByRole("button", { name: messages.en.logout }));
     await waitFor(() => expect(purgeScopes).toEqual(["account-deletion", "logout"]));
     expect(await screen.findByRole("button", { name: messages.en.signIn })).toBeTruthy();
+  });
+
+  it("clears the authenticated cache when offline startup finds no session", async () => {
+    Object.defineProperty(navigator, "onLine", { configurable: true, value: false });
+    const apiOrigin = "https://devhud.api.delino.io";
+    writeCachedIdentityBootstrap(localStorage, apiOrigin, {
+      issuer: "https://identity.example",
+      audience: "https://api.example",
+      clientId: "desktop-client",
+      redirectUri: "devhud://auth/callback",
+    });
+    writeAuthenticatedSettingsCache(localStorage, apiOrigin, {
+      settings: { ...defaultDevHudSettings, appearance: { ...defaultDevHudSettings.appearance, theme: "dark" } },
+      revision: 9n,
+      cachedAt: "2026-08-17T00:00:00.000Z",
+    });
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const bridge: NativeBridgeV1 = {
+      async request(request) {
+        if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
+        if (request.operation === "secure.read") return { kind: "secure-value", value: null };
+        throw new Error(`unexpected bridge operation ${request.operation}`);
+      },
+      async listen() { return () => {}; },
+    };
+
+    render(<App bridge={bridge} initialRuntime={runtime} />);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.account }));
+
+    expect(await screen.findByRole("button", { name: messages.en.signIn })).toBeTruthy();
+    await waitFor(() => expect(readAuthenticatedSettingsCache(localStorage, apiOrigin)).toBeNull());
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("loads an authenticated cache read-only while offline and keeps direct local surfaces available", async () => {
@@ -596,6 +635,93 @@ describe("generated Connect identity/settings fixture", () => {
 
     expect(await screen.findByText("Fixture User")).toBeTruthy();
     expect(accountRequests).toBe(2);
+  });
+
+  it.each(["malformed", "storage-failure"] as const)("recovers a %s secure session only after explicit reset", async (failure) => {
+    let broken = true;
+    const secureRemovals: NativeBridgeRequestV1[] = [];
+    vi.spyOn(identityClient, "createIdentitySession").mockImplementation(async () => ({
+      client: {},
+      storage: {},
+      getAccessToken: async () => "fixture-access-token",
+      isAuthenticated: async () => {
+        if (broken) throw new Error(failure);
+        return false;
+      },
+      signIn: async () => {},
+      handleCallback: async () => {},
+      clear: async () => {},
+    } as unknown as IdentitySession));
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      throw new Error(`unexpected request ${url}`);
+    }));
+    const bridge: NativeBridgeV1 = {
+      async request(request) {
+        if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
+        if (request.operation === "secure.remove") {
+          secureRemovals.push(request);
+          broken = false;
+          return { kind: "ok" };
+        }
+        throw new Error(`unexpected bridge operation ${request.operation}`);
+      },
+      async listen() { return () => {}; },
+    };
+
+    render(<App bridge={bridge} initialRuntime={runtime} />);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.account }));
+
+    const reset = await screen.findByRole("button", { name: messages.en.resetSignIn });
+    expect(screen.getByText(messages.en.resetSignInHint)).toBeTruthy();
+    expect(secureRemovals).toEqual([]);
+    fireEvent.click(reset);
+
+    await waitFor(() => expect((screen.getByRole("button", { name: messages.en.signIn }) as HTMLButtonElement).disabled).toBe(false));
+    expect(secureRemovals).toHaveLength(1);
+    expect(secureRemovals[0]).toMatchObject({ operation: "secure.remove", setting: { kind: "logto-session", profileId: expect.stringMatching(/^origin\./u) } });
+  });
+
+  it.each(["first-run", "account"] as const)("guards the %s Sign in control with one in-flight authorization", async (surface) => {
+    if (surface === "first-run") localStorage.removeItem("devhud.shell.onboarding.v1");
+    let releaseSignIn!: () => void;
+    const pendingSignIn = new Promise<void>((resolve) => { releaseSignIn = resolve; });
+    const signIn = vi.fn(() => pendingSignIn);
+    vi.spyOn(identityClient, "createIdentitySession").mockResolvedValue({
+      client: {},
+      storage: {},
+      getAccessToken: async () => "fixture-access-token",
+      isAuthenticated: async () => false,
+      signIn,
+      handleCallback: async () => {},
+      clear: async () => {},
+    } as unknown as IdentitySession);
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      throw new Error(`unexpected request ${url}`);
+    }));
+    const bridge: NativeBridgeV1 = {
+      async request(request) {
+        if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
+        throw new Error(`unexpected bridge operation ${request.operation}`);
+      },
+      async listen() { return () => {}; },
+    };
+
+    render(<App bridge={bridge} initialRuntime={runtime} />);
+    if (surface === "account") fireEvent.click(screen.getByRole("button", { name: messages.en.account }));
+    const button = await screen.findByRole("button", { name: messages.en.signIn }) as HTMLButtonElement;
+    await waitFor(() => expect(button.disabled).toBe(false));
+    fireEvent.click(button);
+
+    expect(signIn).toHaveBeenCalledOnce();
+    expect(button.disabled).toBe(true);
+    fireEvent.click(button);
+    expect(signIn).toHaveBeenCalledOnce();
+    act(() => releaseSignIn());
+    await waitFor(() => expect(button.disabled).toBe(false));
   });
 
   it.each([

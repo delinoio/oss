@@ -241,7 +241,7 @@ fn validate_external_request(request: &Value) -> Result<(), String> {
     Ok(())
 }
 
-fn validate_auth_browser_request(request: &Value) -> Result<(), String> {
+fn validate_auth_browser_request(request: &Value, state: &NativeBridgeState) -> Result<(), String> {
     let issuer = request
         .get("issuer")
         .and_then(Value::as_str)
@@ -252,7 +252,14 @@ fn validate_auth_browser_request(request: &Value) -> Result<(), String> {
         .ok_or("invalid-argument")?;
     let issuer_origin = validated_logto_issuer_origin(issuer)?;
     let destination = url::Url::parse(destination).map_err(|_| "invalid-argument")?;
-    if destination.origin().ascii_serialization() != issuer_origin
+    let configured_issuer = state
+        .session_origins
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .logto_issuer
+        .clone();
+    if configured_issuer.as_deref() != Some(issuer_origin.as_str())
+        || destination.origin().ascii_serialization() != issuer_origin
         || !destination.username().is_empty()
         || destination.password().is_some()
         || destination.fragment().is_some()
@@ -343,7 +350,7 @@ pub fn handle_native_bridge_request(
             Err("unsupported".to_string())
         }
         "auth.open-system-browser" => {
-            validate_auth_browser_request(request)?;
+            validate_auth_browser_request(request, state)?;
             Err("unsupported".to_string())
         }
         "auth.peek-pending-callback" => {
@@ -419,7 +426,7 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
             validate_external_request(&request)?;
         }
         if operation == "auth.open-system-browser" {
-            validate_auth_browser_request(&request)?;
+            validate_auth_browser_request(&request, &state)?;
         }
         if routes_to_mobile_plugin(operation, cfg!(target_os = "android")) {
             return crate::native_plugin::request(&app, &request);
@@ -440,7 +447,7 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
             return crate::secure_store::handle(&request);
         }
         if operation == "auth.open-system-browser" {
-            validate_auth_browser_request(&request)?;
+            validate_auth_browser_request(&request, &state)?;
             let destination = request
                 .get("url")
                 .and_then(Value::as_str)
@@ -580,11 +587,46 @@ mod tests {
             json!({ "issuer": "https://identity.example/oidc", "url": "https://identity.example/oidc/auth?state=opaque" }),
             json!({ "issuer": "http://127.0.0.1:3001/oidc", "url": "http://127.0.0.1:3001/oidc/auth?state=opaque" }),
         ] {
-            assert_eq!(validate_auth_browser_request(&request), Ok(()));
+            let state = NativeBridgeState::default();
+            handle_native_bridge_request(
+                &json!({
+                    "operation": "session.configure-origins",
+                    "apiOrigin": "https://api.example/",
+                    "logtoIssuer": request["issuer"]
+                }),
+                &state,
+            )
+            .expect("configure issuer");
+            assert_eq!(validate_auth_browser_request(&request, &state), Ok(()));
         }
+        let state = NativeBridgeState::default();
         assert_eq!(
             validate_auth_browser_request(
-                &json!({ "issuer": "https://identity.example/oidc", "url": "https://attacker.example/auth" })
+                &json!({ "issuer": "https://identity.example/oidc", "url": "https://identity.example/auth" }),
+                &state,
+            ),
+            Err("invalid-argument".to_string())
+        );
+        handle_native_bridge_request(
+            &json!({
+                "operation": "session.configure-origins",
+                "apiOrigin": "https://api.example/",
+                "logtoIssuer": "https://configured.example/oidc"
+            }),
+            &state,
+        )
+        .expect("configure issuer");
+        assert_eq!(
+            validate_auth_browser_request(
+                &json!({ "issuer": "https://identity.example/oidc", "url": "https://identity.example/auth" }),
+                &state,
+            ),
+            Err("invalid-argument".to_string())
+        );
+        assert_eq!(
+            validate_auth_browser_request(
+                &json!({ "issuer": "https://configured.example/oidc", "url": "https://attacker.example/auth" }),
+                &state,
             ),
             Err("invalid-argument".to_string())
         );
