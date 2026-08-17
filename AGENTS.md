@@ -102,7 +102,7 @@ enum ProjectId {
 - `serde-feather` -> `crates/serde-feather`, `crates/serde-feather-macros`
 - `rustia` -> `crates/rustia`, `crates/rustia-llm`, `crates/rustia-macros`
 - `public-docs` -> `apps/public-docs`
-- `devhud` -> `apps/devhud` (shared shell plus desktop and mobile host foundations implemented; service-backed product workflows and widgets planned), `apps/devhud-chrome-extension` (planned), `apps/devhud-admin` (planned), `servers/devhud-api` (Bootstrap/Settings/Account foundation implemented; remaining services planned), `protos/devhud/v1` (implemented), `packages/devhud-api-client` (implemented), `crates/devhud-native-messaging-host` (planned)
+- `devhud` -> `apps/devhud` (shared shell, identity/settings, and desktop/mobile hosts implemented; capture/GitHub product workflows and widgets planned), `apps/devhud-chrome-extension` (planned), `apps/devhud-admin` (planned), `servers/devhud-api` (Bootstrap/Settings/Account foundation implemented; remaining services planned), `protos/devhud/v1` (implemented), `packages/devhud-api-client` (implemented), `crates/devhud-native-messaging-host` (planned)
 
 ### DevHud Contract
 
