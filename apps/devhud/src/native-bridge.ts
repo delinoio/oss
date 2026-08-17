@@ -110,7 +110,10 @@ export type NativeShortcutPlatform = "macos" | "windows" | "x11" | "unsupported"
 export type NativeBridgeRequestV1 = NativeBridgeRequestV1Base
   | { readonly operation: "shortcuts.status" }
   | { readonly operation: "shortcuts.request-permission" }
-  | { readonly operation: "shortcuts.apply"; readonly bindings: DesktopShortcutBindings };
+  | { readonly operation: "shortcuts.apply"; readonly bindings: DesktopShortcutBindings }
+  | { readonly operation: "shortcuts.stage"; readonly bindings: DesktopShortcutBindings }
+  | { readonly operation: "shortcuts.commit"; readonly bindings: DesktopShortcutBindings }
+  | { readonly operation: "shortcuts.rollback" };
 
 export type NativeBridgeResponseV1 =
   | { readonly kind: "runtime"; readonly snapshot: RuntimeSnapshot }
@@ -223,15 +226,15 @@ export const nativeBridge: NativeBridgeV1 = {
     if (request.operation === "secure.write") validateSecretValue(request.value);
     if (request.operation === "lifecycle.open-external") validateExternalRequest(request);
     if (request.operation === "auth.open-system-browser") validateAuthenticationBrowserRequest(request);
-    if (request.operation === "shortcuts.apply") parseDesktopShortcutBindings(request.bindings);
+    if (request.operation === "shortcuts.apply" || request.operation === "shortcuts.stage" || request.operation === "shortcuts.commit") parseDesktopShortcutBindings(request.bindings);
     if (!window.__TAURI_INTERNALS__) {
       if (request.operation === "runtime.snapshot") return { kind: "runtime", snapshot: desktopSnapshot() };
       if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
       if (request.operation === "auth.peek-pending-callback") return { kind: "auth-callback", url: null };
       if (request.operation === "auth.take-pending-callback") return { kind: "auth-callback", url: null };
       if (request.operation === "auth.open-system-browser") { window.open(request.url, "_blank", "noopener,noreferrer"); return { kind: "ok" }; }
-      if (request.operation === "shortcuts.status" || request.operation === "shortcuts.request-permission" || request.operation === "shortcuts.apply") {
-        return { kind: "shortcut-status", platform: "unsupported", permission: "unsupported", bindings: request.operation === "shortcuts.apply" ? request.bindings : defaultDesktopShortcutBindings, error: null };
+      if (request.operation === "shortcuts.status" || request.operation === "shortcuts.request-permission" || request.operation === "shortcuts.apply" || request.operation === "shortcuts.stage" || request.operation === "shortcuts.commit" || request.operation === "shortcuts.rollback") {
+        return { kind: "shortcut-status", platform: "unsupported", permission: "unsupported", bindings: "bindings" in request ? request.bindings : defaultDesktopShortcutBindings, error: null };
       }
       if (request.operation.startsWith("widgets.")) return { kind: "unsupported", feature: "widgets" };
       throw new NativeBridgeError(NativeBridgeErrorCode.Unsupported);

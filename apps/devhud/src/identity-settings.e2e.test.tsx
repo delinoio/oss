@@ -252,6 +252,29 @@ describe("generated Connect identity/settings fixture", () => {
     expect(requests.find((request) => request.operation === "shortcuts.apply")).toEqual({ operation: "shortcuts.apply", bindings });
   });
 
+  it("stages a shortcut edit before persisting and commits it afterward", async () => {
+    const requests: NativeBridgeRequestV1[] = [];
+    const bridge: NativeBridgeV1 = {
+      async request(request) {
+        requests.push(request);
+        if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
+        if (request.operation === "shortcuts.status") return { kind: "shortcut-status", platform: "windows", permission: "available", bindings: defaultDevHudSettings.shortcuts.desktop, error: null };
+        if (request.operation === "shortcuts.apply" || request.operation === "shortcuts.stage" || request.operation === "shortcuts.commit") return { kind: "shortcut-status", platform: "windows", permission: "available", bindings: request.bindings, error: null };
+        throw new Error(`unexpected bridge operation ${request.operation}`);
+      },
+      async listen() { return () => {}; },
+    };
+
+    render(<App bridge={bridge} initialRuntime={runtime} />);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.settings }));
+    const palette = await screen.findByRole("group", { name: messages.en.openPalette });
+    requests.splice(0);
+    fireEvent.click(within(palette).getByRole("checkbox", { name: messages.en.shortcutEnabled }));
+
+    await waitFor(() => expect(requests.filter((request) => request.operation.startsWith("shortcuts.")).slice(0, 2).map((request) => request.operation)).toEqual(["shortcuts.stage", "shortcuts.commit"]));
+    expect(requests.some((request) => request.operation === "shortcuts.rollback")).toBe(false);
+  });
+
   it("keeps synchronized appearance controls read-only while a replacement is pending", async () => {
     const server = { ...defaultDevHudSettings, appearance: { theme: "dark" as const, language: "en" as const } };
     const firstReplacement = { ...server, appearance: { ...server.appearance, theme: "light" as const } };

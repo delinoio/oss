@@ -301,6 +301,7 @@ pub trait NativeShortcutBackend {
 pub struct ShortcutService<B> {
     backend: B,
     active: ShortcutBindings,
+    staged: Option<ShortcutBindings>,
     right_primary: bool,
     left_primary: bool,
     left_shift: bool,
@@ -314,6 +315,7 @@ impl<B: NativeShortcutBackend> ShortcutService<B> {
         Self {
             backend,
             active: default_bindings(),
+            staged: None,
             right_primary: false,
             left_primary: false,
             left_shift: false,
@@ -340,12 +342,37 @@ impl<B: NativeShortcutBackend> ShortcutService<B> {
     }
 
     pub fn apply(&mut self, candidate: ShortcutBindings) -> Result<(), ShortcutFailure> {
+        self.stage(candidate.clone())?;
+        self.commit_staged(&candidate)
+    }
+
+    /// Registers a candidate without allowing it to emit actions. The caller
+    /// must commit it only after its persisted settings snapshot succeeds.
+    pub fn stage(&mut self, candidate: ShortcutBindings) -> Result<(), ShortcutFailure> {
         validate_bindings(&candidate, self.platform())?;
         if self.backend.refresh_permission() != ShortcutPermission::Available {
             return Err(ShortcutFailure::PermissionDenied);
         }
         self.backend.install(&candidate)?;
-        self.active = candidate;
+        self.staged = Some(candidate);
+        Ok(())
+    }
+
+    /// Activates the exact candidate that was successfully staged.
+    pub fn commit_staged(&mut self, candidate: &ShortcutBindings) -> Result<(), ShortcutFailure> {
+        if self.staged.as_ref() != Some(candidate) {
+            return Err(ShortcutFailure::Malformed);
+        }
+        self.active = candidate.clone();
+        self.staged = None;
+        Ok(())
+    }
+
+    /// Discards a pending candidate. The active matcher remains on the last
+    /// persisted binding even if restoring backend registration fails.
+    pub fn rollback_staged(&mut self) -> Result<(), ShortcutFailure> {
+        self.staged = None;
+        self.backend.install(&self.active.clone())?;
         Ok(())
     }
 
@@ -592,6 +619,7 @@ mod tests {
         refreshed_permission: Option<ShortcutPermission>,
         platform: ShortcutPlatform,
         fail: bool,
+        fail_on_install: Option<usize>,
         installs: usize,
     }
     impl Default for Fake {
@@ -601,6 +629,7 @@ mod tests {
                 refreshed_permission: None,
                 platform: ShortcutPlatform::X11,
                 fail: false,
+                fail_on_install: None,
                 installs: 0,
             }
         }
@@ -608,7 +637,7 @@ mod tests {
     impl NativeShortcutBackend for Fake {
         fn install(&mut self, _: &ShortcutBindings) -> Result<(), ShortcutFailure> {
             self.installs += 1;
-            if self.fail {
+            if self.fail || self.fail_on_install == Some(self.installs) {
                 Err(ShortcutFailure::RegistrationFailed)
             } else {
                 Ok(())
@@ -778,6 +807,48 @@ mod tests {
         assert_eq!(
             service.apply(next),
             Err(ShortcutFailure::RegistrationFailed)
+        );
+        assert_eq!(service.active(), &old);
+    }
+
+    #[test]
+    fn stages_candidates_until_persistence_commits_them() {
+        let mut service = ShortcutService::new(Fake::default());
+        let old = service.active().clone();
+        let mut candidate = old.clone();
+        candidate
+            .get_mut(&ShortcutAction::ShellCommandPalette)
+            .expect("binding")
+            .key = ShortcutKey::KeyQ;
+
+        assert_eq!(service.stage(candidate.clone()), Ok(()));
+        assert_eq!(service.active(), &old);
+        assert_eq!(service.commit_staged(&candidate), Ok(()));
+        assert_eq!(service.active(), &candidate);
+    }
+
+    #[test]
+    fn rollback_discards_staged_candidate_before_a_failed_backend_restore() {
+        let mut service = ShortcutService::new(Fake {
+            fail_on_install: Some(2),
+            ..Default::default()
+        });
+        let old = service.active().clone();
+        let mut candidate = old.clone();
+        candidate
+            .get_mut(&ShortcutAction::ShellCommandPalette)
+            .expect("binding")
+            .key = ShortcutKey::KeyQ;
+
+        assert_eq!(service.stage(candidate.clone()), Ok(()));
+        assert_eq!(
+            service.rollback_staged(),
+            Err(ShortcutFailure::RegistrationFailed)
+        );
+        assert_eq!(service.active(), &old);
+        assert_eq!(
+            service.commit_staged(&candidate),
+            Err(ShortcutFailure::Malformed)
         );
         assert_eq!(service.active(), &old);
     }

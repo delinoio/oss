@@ -206,19 +206,22 @@ function ShortcutSettings({ copy, bridge, disabled, capabilities, bindings, onPe
   }, [bindings, bridge]);
   const commit = async (action: ShortcutActionId, update: Partial<ShortcutBinding>) => {
     if (saving) return;
-    const previous = bindings;
     const candidate = { ...bindings, [action]: { ...bindings[action], ...update } };
     setSaving(true);
     try {
       const structured = parseDesktopShortcutBindings(candidate);
-      const result = await bridge.request({ operation: "shortcuts.apply", bindings: structured });
+      const result = await bridge.request({ operation: "shortcuts.stage", bindings: structured });
       if (result.kind !== "shortcut-status" || result.error !== null) { if (result.kind === "shortcut-status") setStatus(result); return; }
       try {
-        if (await onPersist(structured)) { setStatus(result); return; }
-        const rollback = await bridge.request({ operation: "shortcuts.apply", bindings: previous });
+        if (await onPersist(structured)) {
+          const committed = await bridge.request({ operation: "shortcuts.commit", bindings: structured });
+          if (committed.kind === "shortcut-status") setStatus(committed);
+          return;
+        }
+        const rollback = await bridge.request({ operation: "shortcuts.rollback" });
         if (rollback.kind === "shortcut-status") setStatus(rollback);
       } catch {
-        await bridge.request({ operation: "shortcuts.apply", bindings: previous }).catch(() => {});
+        await bridge.request({ operation: "shortcuts.rollback" }).catch(() => {});
         setStatus({ platform: result.platform, permission: result.permission, error: ShortcutValidationCode.RegistrationFailed });
       }
     } catch (error) {

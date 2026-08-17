@@ -67,9 +67,7 @@ fn shortcut_status(state: &NativeBridgeState, error: Option<ShortcutFailure>) ->
 }
 
 fn apply_shortcuts(request: &Value, state: &NativeBridgeState) -> Result<Value, String> {
-    let bindings: ShortcutBindings =
-        serde_json::from_value(request.get("bindings").cloned().ok_or("invalid-argument")?)
-            .map_err(|_| "invalid-argument")?;
+    let bindings = shortcut_bindings(request)?;
     let mut shortcuts = state
         .shortcuts
         .lock()
@@ -84,6 +82,61 @@ fn apply_shortcuts(request: &Value, state: &NativeBridgeState) -> Result<Value, 
         Err(error) => Ok(
             json!({ "kind": "shortcut-status", "platform": shortcuts.platform(), "permission": shortcuts.permission(), "bindings": shortcuts.active(), "error": error }),
         ),
+    }
+}
+
+fn shortcut_bindings(request: &Value) -> Result<ShortcutBindings, String> {
+    serde_json::from_value(request.get("bindings").cloned().ok_or("invalid-argument")?)
+        .map_err(|_| "invalid-argument".to_string())
+}
+
+fn stage_shortcuts(request: &Value, state: &NativeBridgeState) -> Result<Value, String> {
+    let bindings = shortcut_bindings(request)?;
+    let mut shortcuts = state
+        .shortcuts
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    match shortcuts.stage(bindings) {
+        Ok(()) => Ok(
+            json!({ "kind": "shortcut-status", "platform": shortcuts.platform(), "permission": shortcuts.permission(), "bindings": shortcuts.active(), "error": Value::Null }),
+        ),
+        Err(error) => Ok(
+            json!({ "kind": "shortcut-status", "platform": shortcuts.platform(), "permission": shortcuts.permission(), "bindings": shortcuts.active(), "error": error }),
+        ),
+    }
+}
+
+fn commit_staged_shortcuts(request: &Value, state: &NativeBridgeState) -> Result<Value, String> {
+    let bindings = shortcut_bindings(request)?;
+    let mut shortcuts = state
+        .shortcuts
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    match shortcuts.commit_staged(&bindings) {
+        Ok(()) => {
+            state.shortcuts_ready.store(true, Ordering::SeqCst);
+            Ok(
+                json!({ "kind": "shortcut-status", "platform": shortcuts.platform(), "permission": shortcuts.permission(), "bindings": shortcuts.active(), "error": Value::Null }),
+            )
+        }
+        Err(error) => Ok(
+            json!({ "kind": "shortcut-status", "platform": shortcuts.platform(), "permission": shortcuts.permission(), "bindings": shortcuts.active(), "error": error }),
+        ),
+    }
+}
+
+fn rollback_staged_shortcuts(state: &NativeBridgeState) -> Value {
+    let mut shortcuts = state
+        .shortcuts
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    match shortcuts.rollback_staged() {
+        Ok(()) => {
+            json!({ "kind": "shortcut-status", "platform": shortcuts.platform(), "permission": shortcuts.permission(), "bindings": shortcuts.active(), "error": Value::Null })
+        }
+        Err(error) => {
+            json!({ "kind": "shortcut-status", "platform": shortcuts.platform(), "permission": shortcuts.permission(), "bindings": shortcuts.active(), "error": error })
+        }
     }
 }
 
@@ -477,6 +530,9 @@ pub fn handle_native_bridge_request(
             )
         }
         "shortcuts.apply" => apply_shortcuts(request, state),
+        "shortcuts.stage" => stage_shortcuts(request, state),
+        "shortcuts.commit" => commit_staged_shortcuts(request, state),
+        "shortcuts.rollback" => Ok(rollback_staged_shortcuts(state)),
         "session.configure-origins" => Ok(json!({
             "kind": "session-network-policy",
             "changed": state.configure_session_origins(request)?
