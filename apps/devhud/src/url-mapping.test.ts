@@ -37,6 +37,13 @@ describe("URL repository matcher", () => {
     for (const pattern of ["http://[::1/app", "http://[*]/app", "http://[not-an-ip]/app"]) expect(() => parseUrlPattern(pattern)).toThrow();
   });
 
+  it("keeps DNS wildcards separate from IP literals and canonicalizes IPv4 patterns", () => {
+    expect(mappingMatches(mapping({ pattern: "http://*:3000/**" }), "http://[::1]:3000/app")).toBe(false);
+    expect(findMappingOverlaps([mapping({ pattern: "http://*:3000/**" }), mapping({ id: "018f47a2-7b3c-7def-8abc-1234567890ac", pattern: "http://[::1]:3000/**" })])).toHaveLength(0);
+    expect(mappingMatches(mapping({ pattern: "http://127.1/**" }), "http://127.0.0.1/app")).toBe(true);
+    expect(mappingMatches(mapping({ pattern: "http://0x7f000001/**" }), "http://127.0.0.1/app")).toBe(true);
+  });
+
   it("canonicalizes literal path segments with URL semantics", () => {
     expect(mappingMatches(mapping({ pattern: "https://example.com/한글" }), "https://example.com/%ED%95%9C%EA%B8%80")).toBe(true);
     expect(mappingMatches(mapping({ pattern: "https://example.com/hello world" }), "https://example.com/hello%20world")).toBe(true);

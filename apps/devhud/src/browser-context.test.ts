@@ -26,6 +26,7 @@ describe("Chrome browser context privacy", () => {
     for (const malformedInput of [
       { ...input, title: { cookie: "secret" } },
       { ...input, viewport: { width: Number.NaN, height: 50 } },
+      { ...input, viewport: { width: -100, height: -50 } },
       { ...input, selectedBounds: { x: 1, y: 2, width: Number.POSITIVE_INFINITY, height: 4 } },
       { ...input, accessibility: { "aria-label": { cookie: "secret" } } },
     ]) expect(sanitizeChromeContext(malformedInput)).toEqual({ kind: "malformed" });

@@ -11,6 +11,7 @@ export interface UrlRepositoryMapping {
 export interface ParsedUrlPattern {
   readonly scheme: string;
   readonly host: readonly string[];
+  readonly hostIsIpLiteral: boolean;
   readonly port: string;
   readonly path: readonly string[];
 }
@@ -29,24 +30,26 @@ export function parseUrlPattern(value: string): ParsedUrlPattern {
   const [, scheme, hostText, port = "", pathText = "/"] = match;
   if (hostText.includes("@")) throw new UrlMappingError("pattern must not contain credentials, query, or fragment");
   if (!literalScheme.test(scheme) || !literalPort.test(port) || (port !== "" && port !== "*" && Number(port) > 65535)) throw new UrlMappingError("pattern has an invalid scheme or port");
-  const host = parsePatternHost(hostText);
+  const { host, hostIsIpLiteral } = parsePatternHost(hostText);
   const path = pathText.split("/").slice(1);
   if (path.some((part) => part.includes("*") && part !== "*" && part !== "**")) throw new UrlMappingError("path wildcards must occupy a complete segment");
-  return { scheme, host, port: normalizeDefaultPort(scheme, port), path: canonicalizePatternPath(pathText, path) };
+  return { scheme, host, hostIsIpLiteral, port: normalizeDefaultPort(scheme, port), path: canonicalizePatternPath(pathText, path) };
 }
 
-function parsePatternHost(hostText: string): readonly string[] {
+function parsePatternHost(hostText: string): Pick<ParsedUrlPattern, "host" | "hostIsIpLiteral"> {
   if (hostText.startsWith("[")) {
     try {
       // URL canonicalization keeps an IPv6 literal as one bracketed host component.
-      return [new URL(`http://${hostText}/`).hostname];
+      return { host: [new URL(`http://${hostText}/`).hostname], hostIsIpLiteral: true };
     } catch {
       throw new UrlMappingError("host must be a valid bracketed IPv6 literal");
     }
   }
   const host = hostText.split(".");
   if (host.some((part) => !literalHost.test(part) || part === "")) throw new UrlMappingError("host labels must be literals or *");
-  return host;
+  if (host.includes("*")) return { host, hostIsIpLiteral: false };
+  const canonicalHost = new URL(`http://${hostText}/`).hostname;
+  return { host: canonicalHost.split("."), hostIsIpLiteral: isIpv4Literal(canonicalHost) };
 }
 
 export function parseLiveUrl(value: string): ParsedUrlPattern {
@@ -54,7 +57,7 @@ export function parseLiveUrl(value: string): ParsedUrlPattern {
     const url = new URL(value);
     if ((url.protocol !== "http:" && url.protocol !== "https:") || !url.hostname) throw new Error();
     const scheme = url.protocol.slice(0, -1);
-    return { scheme, host: url.hostname.split("."), port: normalizeDefaultPort(scheme, url.port), path: canonicalizeLiteralPath(url.pathname) };
+    return { scheme, host: url.hostname.split("."), hostIsIpLiteral: isIpLiteral(url.hostname), port: normalizeDefaultPort(scheme, url.port), path: canonicalizeLiteralPath(url.pathname) };
   } catch {
     throw new UrlMappingError("live URL must be an HTTP(S) URL");
   }
@@ -99,7 +102,7 @@ export function mappingMatches(mapping: Pick<UrlRepositoryMapping, "pattern">, v
   return componentMatches(pattern.scheme, url.scheme, false)
     && componentMatches(normalizeDefaultPort(url.scheme, pattern.port), url.port, false)
     && pattern.host.length === url.host.length
-    && pattern.host.every((part, index) => componentMatches(part, url.host[index] ?? "", true))
+    && pattern.host.every((part, index) => hostComponentMatches(part, url.host[index] ?? "", pattern.hostIsIpLiteral, url.hostIsIpLiteral))
     && pathMatches(pattern.path, url.path);
 }
 
@@ -149,6 +152,19 @@ function componentMatches(pattern: string, value: string, insensitive: boolean):
   return pattern === "*" || (insensitive ? pattern.toLowerCase() === value.toLowerCase() : pattern === value);
 }
 
+function hostComponentMatches(pattern: string, value: string, patternIsIpLiteral: boolean, valueIsIpLiteral: boolean): boolean {
+  if (pattern === "*") return !patternIsIpLiteral && !valueIsIpLiteral;
+  return componentMatches(pattern, value, true);
+}
+
+function isIpLiteral(host: string): boolean {
+  return host.startsWith("[") || isIpv4Literal(host);
+}
+
+function isIpv4Literal(host: string): boolean {
+  return /^\d{1,3}(?:\.\d{1,3}){3}$/u.test(host);
+}
+
 function pathMatches(pattern: readonly string[], value: readonly string[], patternIndex = 0, valueIndex = 0): boolean {
   const memo = new Map<string, boolean>();
   const visit = (currentPatternIndex: number, currentValueIndex: number): boolean => {
@@ -169,12 +185,18 @@ function patternsOverlap(left: ParsedUrlPattern, right: ParsedUrlPattern): boole
     && componentsOverlap(right.scheme, scheme, false)
     && componentsOverlap(normalizeDefaultPort(scheme, left.port), normalizeDefaultPort(scheme, right.port), false))
     && left.host.length === right.host.length
-    && left.host.every((part, index) => componentsOverlap(part, right.host[index] ?? "", true))
+    && left.host.every((part, index) => hostComponentsOverlap(part, right.host[index] ?? "", left.hostIsIpLiteral, right.hostIsIpLiteral))
     && pathsOverlap(left.path, right.path);
 }
 
 function componentsOverlap(left: string, right: string, insensitive: boolean): boolean {
   return left === "*" || right === "*" || (insensitive ? left.toLowerCase() === right.toLowerCase() : left === right);
+}
+
+function hostComponentsOverlap(left: string, right: string, leftIsIpLiteral: boolean, rightIsIpLiteral: boolean): boolean {
+  if (left === "*") return !leftIsIpLiteral && !rightIsIpLiteral;
+  if (right === "*") return !leftIsIpLiteral && !rightIsIpLiteral;
+  return componentsOverlap(left, right, true);
 }
 
 function pathsOverlap(left: readonly string[], right: readonly string[]): boolean {

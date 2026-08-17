@@ -61,7 +61,7 @@ function isChromeContextInput(value: unknown): value is Omit<SanitizedBrowserCon
 }
 
 function isViewport(value: unknown): value is SanitizedBrowserContext["viewport"] {
-  return isRecord(value) && isFiniteNumber(value.width) && isFiniteNumber(value.height);
+  return isRecord(value) && isFiniteNumber(value.width) && value.width > 0 && isFiniteNumber(value.height) && value.height > 0;
 }
 
 function isSelectedBounds(value: unknown): value is NonNullable<SanitizedBrowserContext["selectedBounds"]> {
