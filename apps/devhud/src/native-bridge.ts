@@ -88,6 +88,7 @@ export type NativeBridgeRequestV1 =
   | { readonly operation: "session.configure-origins"; readonly apiOrigin: string; readonly logtoIssuer?: string }
   | { readonly operation: "lifecycle.open-external"; readonly target: "authentication" | "pat"; readonly apiOrigin: string }
   | { readonly operation: "auth.open-system-browser"; readonly url: string; readonly issuer: string }
+  | { readonly operation: "auth.peek-pending-callback" }
   | { readonly operation: "auth.take-pending-callback" }
   | { readonly operation: "secure.read"; readonly setting: SecureSettingRef }
   | { readonly operation: "secure.write"; readonly setting: SecureSettingRef; readonly value: string }
@@ -212,6 +213,7 @@ export const nativeBridge: NativeBridgeV1 = {
     if (!window.__TAURI_INTERNALS__) {
       if (request.operation === "runtime.snapshot") return { kind: "runtime", snapshot: desktopSnapshot() };
       if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
+      if (request.operation === "auth.peek-pending-callback") return { kind: "auth-callback", url: null };
       if (request.operation === "auth.take-pending-callback") return { kind: "auth-callback", url: null };
       if (request.operation === "auth.open-system-browser") { window.open(request.url, "_blank", "noopener,noreferrer"); return { kind: "ok" }; }
       if (request.operation.startsWith("widgets.")) return { kind: "unsupported", feature: "widgets" };

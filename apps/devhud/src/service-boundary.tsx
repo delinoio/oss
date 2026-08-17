@@ -1,6 +1,6 @@
-import { useMutation, useQuery, TransportProvider } from "@connectrpc/connect-query";
+import { createConnectQueryKey, useMutation, useQuery, useTransport, TransportProvider } from "@connectrpc/connect-query";
 import { createConnectTransport } from "@connectrpc/connect-web";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import {
   AccountFailureReason,
   AccountDeletionState,
@@ -78,7 +78,8 @@ interface BoundaryProps extends PropsWithChildren {
 
 export function DevHudServiceBoundary(props: BoundaryProps) {
   const sessionRef = useRef<IdentitySession | null>(null);
-  const queryClient = useMemo(() => new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } }), [props.apiOrigin]);
+  const [identityEpoch, setIdentityEpoch] = useState(0);
+  const queryClient = useMemo(() => new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } }), [identityEpoch, props.apiOrigin]);
   const transport = useMemo(() => createConnectTransport({
     baseUrl: props.apiOrigin,
     interceptors: [(next) => async (request) => {
@@ -93,14 +94,16 @@ export function DevHudServiceBoundary(props: BoundaryProps) {
   useEffect(() => () => queryClient.clear(), [queryClient]);
 
   return <TransportProvider transport={transport}><QueryClientProvider client={queryClient}>
-    <IdentitySettingsProvider {...props} sessionRef={sessionRef}>
+    <IdentitySettingsProvider key={identityEpoch} {...props} sessionRef={sessionRef} onIdentityReset={() => setIdentityEpoch((current) => current + 1)}>
       {props.children}
     </IdentitySettingsProvider>
   </QueryClientProvider></TransportProvider>;
 }
 
-function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, platform, bridge, onContinueLocally, onLoggedOut, children, sessionRef }: BoundaryProps & { readonly sessionRef: RefObject<IdentitySession | null> }) {
+function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, platform, bridge, onContinueLocally, onLoggedOut, children, sessionRef, onIdentityReset }: BoundaryProps & { readonly sessionRef: RefObject<IdentitySession | null>; readonly onIdentityReset: () => void }) {
   const storage = getLocalStorage();
+  const queryClient = useQueryClient();
+  const transport = useTransport();
   const [status, setStatus] = useState<IdentityStatus>("guest");
   const [session, setSession] = useState<IdentitySession | null>(null);
   const [bootstrap, setBootstrap] = useState<ValidatedBootstrap | null>(null);
@@ -112,8 +115,12 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   const [conflict, setConflict] = useState<SettingsConflict | null>(null);
   const [account, setAccount] = useState<Account | null>(null);
   const [networkReady, setNetworkReady] = useState(false);
+  const [settingsReady, setSettingsReady] = useState(false);
   const [bootstrapAttempt, setBootstrapAttempt] = useState(0);
   const callbackHandled = useRef<string | null>(null);
+
+  const accountQueryKey = useMemo(() => createConnectQueryKey({ schema: AccountQuery.getAccount, transport, input: {}, cardinality: "finite" }), [transport]);
+  const settingsQueryKey = useMemo(() => createConnectQueryKey({ schema: SettingsQuery.getSettings, transport, input: {}, cardinality: "finite" }), [transport]);
 
   const bootstrapQuery = useQuery(BootstrapQuery.getBootstrap, {}, { enabled: active && online && networkReady && isValidApiOrigin(apiOrigin) });
   const accountQuery = useQuery(AccountQuery.getAccount, {}, { enabled: status === "authenticated" && online });
@@ -121,6 +128,15 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   const replaceMutation = useMutation(SettingsQuery.replaceSettings);
   const deleteMutation = useMutation(AccountQuery.deleteAccount);
   const restoreMutation = useMutation(AccountQuery.restoreAccount);
+
+  async function clearIdentityQueryCache(): Promise<void> {
+    await Promise.all([
+      queryClient.cancelQueries({ queryKey: accountQueryKey }),
+      queryClient.cancelQueries({ queryKey: settingsQueryKey }),
+    ]);
+    queryClient.removeQueries({ queryKey: accountQueryKey });
+    queryClient.removeQueries({ queryKey: settingsQueryKey });
+  }
 
   async function clearInvalidSession(): Promise<void> {
     const current = sessionRef.current;
@@ -130,7 +146,13 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       await current?.clear();
     } finally {
       setAccount(null);
+      setSettings(defaultDevHudSettings);
+      setRevision(0n);
+      setSettingsReady(false);
+      setSettingsError(null);
       setStatus("signed-out");
+      await clearIdentityQueryCache();
+      onIdentityReset();
     }
   }
 
@@ -147,8 +169,14 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       sessionRef.current = null;
       setSession(null);
       setAccount(null);
+      setSettings(defaultDevHudSettings);
+      setRevision(0n);
+      setSettingsReady(false);
+      setSettingsError(null);
       setStatus("signed-out");
       setError(null);
+      await clearIdentityQueryCache();
+      onIdentityReset();
     } catch (reason) {
       setError(safeError(reason));
       throw reason;
@@ -175,7 +203,11 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     void (async () => {
       try {
         const validated = validateBootstrap(bootstrapQuery.data, platform);
-        writeCachedIdentityBootstrap(storage, apiOrigin, validated);
+        try {
+          writeCachedIdentityBootstrap(storage, apiOrigin, validated);
+        } catch {
+          // Bootstrap caching is optional; the online session remains usable when Web Storage rejects writes.
+        }
         const policy = await bridge.request({ operation: "session.configure-origins", apiOrigin, logtoIssuer: validated.issuer });
         if (policy.kind === "session-network-policy" && policy.changed) {
           location.reload();
@@ -232,15 +264,18 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   useEffect(() => {
     if (!callbackUrl || callbackHandled.current === callbackUrl || session === null) return;
     callbackHandled.current = callbackUrl;
-    void session.handleCallback(callbackUrl).then(() => {
+    void (async () => {
+      const pending = await bridge.request({ operation: "auth.take-pending-callback" });
+      if (pending.kind !== "auth-callback" || pending.url !== callbackUrl) throw new Error("auth-callback-unavailable");
+      await session.handleCallback(callbackUrl);
       setStatus("authenticated");
       setError(null);
-    }).catch((reason) => {
+    })().catch((reason) => {
       callbackHandled.current = null;
       setStatus("error");
       setError(safeError(reason));
     });
-  }, [callbackUrl, session]);
+  }, [bridge, callbackUrl, session]);
 
   useEffect(() => {
     if (!networkReady || !bootstrapQuery.error) return;
@@ -276,6 +311,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   useEffect(() => {
     if (status !== "authenticated") return;
     if (!online) {
+      setSettingsReady(false);
       const cached = readAuthenticatedSettingsCache(storage, apiOrigin);
       if (cached) { setSettings(cached.settings); setRevision(cached.revision); }
       return;
@@ -290,10 +326,13 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
         currentRevision = settingsQuery.data.snapshot.revision;
       }
     } catch {
+      setSettingsReady(false);
       setError("settings-contract-invalid");
       return;
     }
     setError((current) => current === "settings-contract-invalid" ? null : current);
+    setSettingsError(null);
+    setSettingsReady(true);
     setRevision(currentRevision);
     if (hasGuestSettings(storage)) {
       const local = readGuestSettings(storage);
@@ -304,6 +343,24 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       writeAuthenticatedSettingsCache(storage, apiOrigin, { settings: server, revision: currentRevision, cachedAt: new Date().toISOString() });
     }
   }, [apiOrigin, online, settingsQuery.data, status, storage]);
+
+  useEffect(() => {
+    if (status !== "authenticated" || !online || !settingsQuery.error) return;
+    const mapped = mapDevHudError(settingsQuery.error);
+    setSettingsReady(false);
+    setSettingsError(mapped);
+    const cached = readAuthenticatedSettingsCache(storage, apiOrigin);
+    if (cached) {
+      setSettings(cached.settings);
+      setRevision(cached.revision);
+    }
+    if (mapped.kind === "unauthenticated") {
+      void clearInvalidSession().catch((reason) => setError(safeError(reason)));
+    } else if (mapped.kind === "permissionDenied") {
+      if (mapped.detail.reason === PermissionFailureReason.ACCOUNT_DELETION_PENDING) setStatus("deletion-pending");
+      if (mapped.detail.reason === PermissionFailureReason.USER_BLOCKED) setStatus("blocked");
+    }
+  }, [apiOrigin, online, settingsQuery.error, status, storage]);
 
   async function replaceAt(local: DevHudSettingsV1, expectedRevision: bigint): Promise<void> {
     if (!online) throw new Error("offline-read-only");
@@ -318,9 +375,16 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     try {
       const response = await replaceMutation.mutateAsync({ schemaVersion: 1, canonicalJson: Uint8Array.from(canonicalJson), expectedRevision });
       if (!response.snapshot) throw new Error("settings-response-missing-snapshot");
+      if (response.snapshot.schemaVersion !== SettingsSchemaVersion) {
+        setSettingsReady(false);
+        setError("settings-contract-invalid");
+        throw new TypeError("unsupported settings schema version");
+      }
       const next = decodeDevHudSettings(response.snapshot.canonicalJson);
       setSettings(next);
       setRevision(response.snapshot.revision);
+      setSettingsReady(true);
+      setError((current) => current === "settings-contract-invalid" ? null : current);
       setImportDiff(null);
       setConflict(null);
       clearGuestImportMarker(storage);
@@ -346,7 +410,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     account,
     settings,
     revision,
-    readOnly: status !== "authenticated" || !online || importDiff !== null || conflict !== null,
+    readOnly: status !== "authenticated" || !online || !settingsReady || importDiff !== null || conflict !== null,
     offline: !online,
     error,
     settingsError,
@@ -379,6 +443,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       setSettings(conflict.server);
       setRevision(conflict.currentRevision);
       setConflict(null);
+      clearGuestImportMarker(storage);
       writeAuthenticatedSettingsCache(storage, apiOrigin, { settings: conflict.server, revision: conflict.currentRevision, cachedAt: new Date().toISOString() });
     },
     reapplyConflictLocal: async () => { if (conflict) await replaceAt(conflict.local, conflict.currentRevision); },
@@ -391,6 +456,11 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       setStatus("signed-out");
       setAccount(null);
       setSettings(defaultDevHudSettings);
+      setRevision(0n);
+      setSettingsReady(false);
+      setSettingsError(null);
+      await clearIdentityQueryCache();
+      onIdentityReset();
       onLoggedOut();
     },
     deleteAccount: async () => {

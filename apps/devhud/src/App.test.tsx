@@ -95,7 +95,7 @@ describe("native App state", () => {
   it("loads the default content state once", async () => {
     const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
       if (value.operation === "runtime.snapshot") return { kind: "runtime", snapshot: mobileRuntime };
-      if (value.operation === "auth.take-pending-callback") return { kind: "auth-callback", url: null };
+      if (value.operation === "auth.peek-pending-callback") return { kind: "auth-callback", url: null };
       throw new Error(`unexpected operation ${value.operation}`);
     });
 
@@ -103,7 +103,7 @@ describe("native App state", () => {
     await screen.findByText(messages.en.welcome);
 
     expect(request.mock.calls.filter(([value]) => value.operation === "runtime.snapshot")).toHaveLength(1);
-    expect(request.mock.calls.filter(([value]) => value.operation === "auth.take-pending-callback")).toHaveLength(1);
+    expect(request.mock.calls.filter(([value]) => value.operation === "auth.peek-pending-callback")).toHaveLength(1);
   });
 
   it("drains a cold-start callback after the identity session becomes ready", async () => {
@@ -116,17 +116,62 @@ describe("native App state", () => {
       logtoClients: { desktop: "desktop-client", ios: "ios-client", android: "android-client", admin: "admin-client" },
       logtoRedirects: { native: "devhud://auth/callback", admin: "https://admin.example/callback" },
     }), { status: 200, headers: { "Content-Type": "application/json", "Connect-Protocol-Version": "1" } })));
-    const bridge = bridgeWith(async (request) => {
+    const request = vi.fn(async (request: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
       if (request.operation === "runtime.snapshot") return { kind: "runtime", snapshot: mobileRuntime };
-      if (request.operation === "auth.take-pending-callback") return { kind: "auth-callback", url: "devhud://auth/callback?code=opaque&state=opaque" };
+      if (request.operation === "auth.peek-pending-callback" || request.operation === "auth.take-pending-callback") return { kind: "auth-callback", url: "devhud://auth/callback?code=opaque&state=opaque" };
       if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
       if (request.operation === "secure.read") { secureReads.push(request); return { kind: "secure-value", value: null }; }
       throw new Error(`unexpected operation ${request.operation}`);
     });
 
-    render(<App bridge={bridge} />);
+    render(<App bridge={bridgeWith(request)} />);
 
     await waitFor(() => expect(secureReads.length).toBeGreaterThanOrEqual(2));
+    expect(request.mock.calls.filter(([value]) => value.operation === "auth.peek-pending-callback")).toHaveLength(1);
+    expect(request.mock.calls.filter(([value]) => value.operation === "auth.take-pending-callback")).toHaveLength(1);
+  });
+
+  it("keeps a cold-start callback queued across an issuer-policy reload", async () => {
+    const callbackUrl = "devhud://auth/callback?code=opaque&state=opaque";
+    let pendingCallback: string | null = callbackUrl;
+    let issuerConfigured = false;
+    vi.stubGlobal("location", { reload: vi.fn() });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      protocolSchemaVersion: 1,
+      apiVersion: "0.1.0-dev",
+      logtoIssuer: "https://identity.example/oidc",
+      logtoAudience: "https://api.example/api",
+      logtoClients: { desktop: "desktop-client", ios: "ios-client", android: "android-client", admin: "admin-client" },
+      logtoRedirects: { native: "devhud://auth/callback", admin: "https://admin.example/callback" },
+    }), { status: 200, headers: { "Content-Type": "application/json", "Connect-Protocol-Version": "1" } })));
+    const request = vi.fn(async (request: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      if (request.operation === "runtime.snapshot") return { kind: "runtime", snapshot: mobileRuntime };
+      if (request.operation === "auth.peek-pending-callback") return { kind: "auth-callback", url: pendingCallback };
+      if (request.operation === "auth.take-pending-callback") {
+        const url = pendingCallback;
+        pendingCallback = null;
+        return { kind: "auth-callback", url };
+      }
+      if (request.operation === "session.configure-origins") {
+        if (request.logtoIssuer && !issuerConfigured) {
+          issuerConfigured = true;
+          return { kind: "session-network-policy", changed: true };
+        }
+        return { kind: "session-network-policy", changed: false };
+      }
+      if (request.operation === "secure.read") return { kind: "secure-value", value: null };
+      throw new Error(`unexpected operation ${request.operation}`);
+    });
+
+    const first = render(<App bridge={bridgeWith(request)} />);
+    await waitFor(() => expect(issuerConfigured).toBe(true));
+    expect(pendingCallback).toBe(callbackUrl);
+    expect(request.mock.calls.filter(([value]) => value.operation === "auth.take-pending-callback")).toHaveLength(0);
+    first.unmount();
+
+    render(<App bridge={bridgeWith(request)} />);
+    await waitFor(() => expect(request.mock.calls.filter(([value]) => value.operation === "auth.take-pending-callback")).toHaveLength(1));
+    expect(pendingCallback).toBeNull();
   });
 
   it("unsubscribes when a listener resolves after cleanup", async () => {
@@ -144,7 +189,7 @@ describe("native App state", () => {
     await waitFor(() => expect(unsubscribe).toHaveBeenCalledOnce());
   });
 
-  it("consumes a queued callback after foreground event delivery", async () => {
+  it("leaves a foreground callback queued until the identity session is ready", async () => {
     let receive!: (event: NativeBridgeEventV1) => void;
     const request = vi.fn(async (): Promise<NativeBridgeResponseV1> => ({ kind: "auth-callback", url: null }));
     const bridge: NativeBridgeV1 = {
@@ -156,7 +201,7 @@ describe("native App state", () => {
     await waitFor(() => expect(receive).toBeTypeOf("function"));
     receive({ version: 1, kind: "auth-callback", url: "devhud://auth/callback?state=opaque" });
 
-    await waitFor(() => expect(request).toHaveBeenCalledWith({ operation: "auth.take-pending-callback" }));
+    await waitFor(() => expect(request).not.toHaveBeenCalledWith({ operation: "auth.take-pending-callback" }));
   });
 
   it("reads and localizes notification permission and diagnostic labels", async () => {

@@ -54,6 +54,7 @@ export function assertAndroidNativeBridge(androidNativeBridge) {
   assert(androidNativeBridge.includes(".setGroup(deckId)") && androidNativeBridge.includes("manager.notify(notificationId, 0, built)"), "Android Deck changes must retain distinct notification identities");
   assert(androidNativeBridge.includes("manager.activeNotifications") && androidNativeBridge.includes("it.notification.group == deckId"), "Android Deck cancellation must remove every associated notification");
   assert(androidNativeBridge.includes("activity.intent = Intent(activity.intent).setData(null)"), "Android consumed auth callbacks must be removed from the activity intent");
+  assert(androidNativeBridge.includes("peekAuthCallback") && androidNativeBridge.includes("pendingAuthCallback"), "Android auth callback inspection must be non-destructive");
   assert(androidNativeBridge.includes("storeIntent().resolveActivity(activity.packageManager)"), "Android update status must resolve a market handler");
 }
 
@@ -174,7 +175,7 @@ export function assertMobileContracts({ platforms, tauri, ios, android, cargo, a
   assertIosNativeBridge(iosNativeBridge);
 
   assert(packageJson.scripts["build:ios"] && packageJson.scripts["build:android"] && packageJson.scripts["mobile:generate"], "package-local mobile commands are incomplete");
-  for (const operation of ["runtime.snapshot", "lifecycle.open-external", "secure.read", "secure.write", "notifications.request-permission", "updates.status", "widgets.replace-deck-snapshot"]) assert(nativeBridge.includes(`\"${operation}\"`), `typed bridge operation missing: ${operation}`);
+  for (const operation of ["runtime.snapshot", "lifecycle.open-external", "auth.peek-pending-callback", "auth.take-pending-callback", "secure.read", "secure.write", "notifications.request-permission", "updates.status", "widgets.replace-deck-snapshot"]) assert(nativeBridge.includes(`\"${operation}\"`), `typed bridge operation missing: ${operation}`);
   assert(nativeBridge.includes("readonly widgets: false"), "widget scope must remain bridge-only");
   assert(app.includes("mobile &&") && app.includes("copy.realqaMobileTitle"), "mobile RealQA unavailable state is missing");
   assert(app.includes("!mobile") && app.includes("ExternalLinkTarget.Issue"), "issue creation is not explicitly desktop-only");

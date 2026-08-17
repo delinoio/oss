@@ -93,7 +93,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
       setRuntime(response.snapshot);
       setLifecycle(response.snapshot.lifecycle);
       setRuntimeState(initialContentState);
-      return bridge.request({ operation: "auth.take-pending-callback" });
+      return bridge.request({ operation: "auth.peek-pending-callback" });
     }).then((response) => {
       if (active && response?.kind === "auth-callback" && response.url) setAuthCallback(response.url);
     }).catch(() => {
@@ -109,7 +109,6 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
       if (event.kind === "lifecycle") setLifecycle(event.state);
       if (event.kind === "auth-callback") {
         setAuthCallback(event.url);
-        void bridge.request({ operation: "auth.take-pending-callback" }).catch(() => {});
       }
     };
     void bridge.listen(receive).then((value) => {

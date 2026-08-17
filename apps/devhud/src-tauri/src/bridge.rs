@@ -52,6 +52,13 @@ impl NativeBridgeState {
             .take()
     }
 
+    fn peek_auth_callback(&self) -> Option<String> {
+        self.pending_auth_callback
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
     pub fn session_csp(&self, development: bool) -> String {
         let origins = self
             .session_origins
@@ -310,7 +317,11 @@ fn routes_to_mobile_plugin(operation: &str, android: bool) -> bool {
         || operation == "auth.open-system-browser"
         || operation.starts_with("notifications.")
         || operation.starts_with("updates.")
-        || (android && operation == "auth.take-pending-callback")
+        || (android
+            && matches!(
+                operation,
+                "auth.peek-pending-callback" | "auth.take-pending-callback"
+            ))
 }
 
 pub fn handle_native_bridge_request(
@@ -334,6 +345,9 @@ pub fn handle_native_bridge_request(
         "auth.open-system-browser" => {
             validate_auth_browser_request(request)?;
             Err("unsupported".to_string())
+        }
+        "auth.peek-pending-callback" => {
+            Ok(json!({ "kind": "auth-callback", "url": state.peek_auth_callback() }))
         }
         "auth.take-pending-callback" => {
             Ok(json!({ "kind": "auth-callback", "url": state.take_auth_callback() }))
@@ -452,6 +466,11 @@ mod tests {
 
     #[test]
     fn routes_pending_auth_callbacks_only_to_the_android_plugin() {
+        assert!(routes_to_mobile_plugin("auth.peek-pending-callback", true));
+        assert!(!routes_to_mobile_plugin(
+            "auth.peek-pending-callback",
+            false
+        ));
         assert!(routes_to_mobile_plugin("auth.take-pending-callback", true));
         assert!(!routes_to_mobile_plugin(
             "auth.take-pending-callback",
@@ -484,6 +503,9 @@ mod tests {
         let state = NativeBridgeState::default();
         assert!(state.offer_auth_callback("devhud://auth/callback?state=one"));
         assert!(state.offer_auth_callback("devhud://auth/callback?state=two"));
+        let peek = json!({ "operation": "auth.peek-pending-callback" });
+        let peeked = handle_native_bridge_request(&peek, &state).expect("peek callback");
+        assert_eq!(peeked["url"], "devhud://auth/callback?state=two");
         let request = json!({ "operation": "auth.take-pending-callback" });
         let first = handle_native_bridge_request(&request, &state).expect("callback");
         assert_eq!(first["url"], "devhud://auth/callback?state=two");
