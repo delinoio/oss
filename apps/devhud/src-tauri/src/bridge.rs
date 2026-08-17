@@ -163,6 +163,14 @@ impl NativeBridgeState {
     }
 
     #[cfg(desktop)]
+    pub fn clear_shortcut_pressed_keys(&self) {
+        self.shortcuts
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear_pressed_keys();
+    }
+
+    #[cfg(desktop)]
     pub fn shortcut_listener_retry_generation(&self) -> u64 {
         let (generation, _) = &*self.shortcut_listener_retry;
         *generation

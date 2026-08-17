@@ -124,11 +124,20 @@ export function SynchronizedShortcutBoundary({ bridge = nativeBridge }: { readon
   const identity = useIdentitySettings();
   const bindings = identity.settings.shortcuts.desktop;
   useEffect(() => {
-    void bridge.request({ operation: "shortcuts.apply", bindings }).catch(() => {
+    if (!identity.shortcutHydrationReady) return;
+    let active = true;
+    void bridge.request({ operation: "shortcuts.apply", bindings }).then(async (response) => {
+      if (!active || response.kind !== "shortcut-status" || response.error !== ShortcutValidationCode.Reserved) return;
+      // Synchronized bindings can be valid on their source desktop platform but
+      // reserved here. Keep the native backend's last known platform-valid map
+      // active without overwriting the shared settings snapshot.
+      await bridge.request({ operation: "shortcuts.apply", bindings: response.bindings });
+    }).catch(() => {
       // Shortcut status remains available in Settings; startup hydration must
       // not turn the shell into an error state when native access is pending.
     });
-  }, [bindings, bridge]);
+    return () => { active = false; };
+  }, [bindings, bridge, identity.shortcutHydrationReady]);
   return null;
 }
 

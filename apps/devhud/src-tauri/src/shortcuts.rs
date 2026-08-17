@@ -376,6 +376,18 @@ impl<B: NativeShortcutBackend> ShortcutService<B> {
         Ok(())
     }
 
+    /// Drops transient physical modifier state after a native listener restart.
+    /// Releases that occurred while the listener was unavailable cannot be
+    /// observed by the replacement listener.
+    pub fn clear_pressed_keys(&mut self) {
+        self.right_primary = false;
+        self.left_primary = false;
+        self.left_shift = false;
+        self.right_shift = false;
+        self.left_alt = false;
+        self.right_alt = false;
+    }
+
     /// Returns only a configured action. Unrelated input has no observable
     /// output and is intentionally not retained anywhere.
     pub fn process(&mut self, event: NativeKeyEvent) -> Option<ShortcutAction> {
@@ -791,6 +803,38 @@ mod tests {
                 Some(ShortcutAction::RealqaCaptureDisplay)
             );
         }
+    }
+
+    #[test]
+    fn clears_modifier_state_before_listener_recovery() {
+        let mut service = ShortcutService::new(Fake::default());
+        for key in [
+            NativeKey::RightPrimary,
+            NativeKey::LeftPrimary,
+            NativeKey::LeftShift,
+            NativeKey::RightShift,
+            NativeKey::LeftAlt,
+            NativeKey::RightAlt,
+        ] {
+            assert_eq!(service.process(NativeKeyEvent { key, pressed: true }), None);
+        }
+
+        service.clear_pressed_keys();
+
+        assert_eq!(
+            service.process(NativeKeyEvent {
+                key: NativeKey::Key(ShortcutKey::KeyK),
+                pressed: true,
+            }),
+            None
+        );
+        assert_eq!(
+            service.process(NativeKeyEvent {
+                key: NativeKey::Key(ShortcutKey::Digit1),
+                pressed: true,
+            }),
+            Some(ShortcutAction::RealqaCaptureDisplay)
+        );
     }
     #[test]
     fn rolls_back_active_binding_when_registration_fails() {

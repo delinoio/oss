@@ -118,6 +118,7 @@ fn install_global_shortcut_listener<R: Runtime>(app: &AppHandle<R>) {
             tracing::warn!(event = "shortcut_listener_failed", ?error);
             let retry_generation = state.shortcut_listener_retry_generation();
             state.wait_for_shortcut_listener_retry(retry_generation, retry_delay);
+            state.clear_shortcut_pressed_keys();
             state.clear_shortcut_listener_failure();
             retry_delay = retry_delay
                 .saturating_mul(2)

@@ -16,7 +16,7 @@ import { hasGuestSettings, readAuthenticatedSettingsCache, readGuestSettings, wr
 import { canonicalDevHudSettings, defaultDevHudSettings } from "./settings-contract";
 import { LifecycleState, RuntimePlatform, type NativeBridgeEventV1, type NativeBridgeRequestV1, type NativeBridgeResponseV1, type NativeBridgeV1, type RuntimeSnapshot } from "./native-bridge";
 import { clearIdentityForApiChange, DevHudServiceBoundary, useIdentitySettings } from "./service-boundary";
-import { ShortcutActionId, ShortcutKey } from "./shortcuts";
+import { ShortcutActionId, ShortcutKey, ShortcutModifier } from "./shortcuts";
 
 const runtime: RuntimeSnapshot = {
   bridgeVersion: 1,
@@ -200,16 +200,91 @@ describe("generated Connect identity/settings fixture", () => {
     const bridge: NativeBridgeV1 = {
       async request(request) {
         requests.push(request);
+        if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
+        if (request.operation === "secure.read") return { kind: "secure-value", value: null };
         if (request.operation === "shortcuts.apply") return { kind: "shortcut-status", platform: "macos", permission: "available", bindings: request.bindings, error: null };
         throw new Error(`unexpected bridge operation ${request.operation}`);
       },
       async listen() { return () => {}; },
     };
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      throw new Error(`unexpected request ${url}`);
+    }));
 
     render(<App bridge={bridge} initialRuntime={runtime} />);
 
     await waitFor(() => expect(requests).toContainEqual({ operation: "shortcuts.apply", bindings }));
     expect(screen.getByRole("heading", { name: messages.en.welcome })).toBeTruthy();
+  });
+
+  it("waits for authenticated shortcuts before hydrating the desktop Home surface", async () => {
+    const bindings = {
+      ...defaultDevHudSettings.shortcuts.desktop,
+      [ShortcutActionId.CommandPalette]: { enabled: false, modifiers: [], key: ShortcutKey.Q },
+    };
+    const server = { ...defaultDevHudSettings, shortcuts: { ...defaultDevHudSettings.shortcuts, desktop: bindings } };
+    const requests: NativeBridgeRequestV1[] = [];
+    const authenticated = authenticatedBridge();
+    const bridge: NativeBridgeV1 = {
+      async request(request) {
+        if (request.operation === "shortcuts.apply") {
+          requests.push(request);
+          return { kind: "shortcut-status", platform: "windows", permission: "available", bindings: request.bindings, error: null };
+        }
+        return authenticated.request(request);
+      },
+      listen: authenticated.listen,
+    };
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 1, revision: "1", canonicalJson: encodedSettings(server) } });
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    render(<App bridge={bridge} initialRuntime={runtime} />);
+
+    await waitFor(() => expect(requests).toEqual([{ operation: "shortcuts.apply", bindings }]));
+    expect(screen.getByRole("heading", { name: messages.en.welcome })).toBeTruthy();
+  });
+
+  it("falls back to the native platform-valid bindings when startup hydration is reserved", async () => {
+    const bindings = {
+      ...defaultDevHudSettings.shortcuts.desktop,
+      [ShortcutActionId.CommandPalette]: { enabled: true, modifiers: [ShortcutModifier.RightPrimary], key: ShortcutKey.Space },
+    };
+    const fallback = defaultDevHudSettings.shortcuts.desktop;
+    writeGuestSettings(localStorage, { ...defaultDevHudSettings, shortcuts: { ...defaultDevHudSettings.shortcuts, desktop: bindings } });
+    const requests: NativeBridgeRequestV1[] = [];
+    const bridge: NativeBridgeV1 = {
+      async request(request) {
+        if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
+        if (request.operation === "secure.read") return { kind: "secure-value", value: null };
+        if (request.operation === "shortcuts.apply") {
+          requests.push(request);
+          return requests.length === 1
+            ? { kind: "shortcut-status", platform: "macos", permission: "available", bindings: fallback, error: "reserved" }
+            : { kind: "shortcut-status", platform: "macos", permission: "available", bindings: request.bindings, error: null };
+        }
+        throw new Error(`unexpected bridge operation ${request.operation}`);
+      },
+      async listen() { return () => {}; },
+    };
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    render(<App bridge={bridge} initialRuntime={runtime} />);
+
+    await waitFor(() => expect(requests).toEqual([
+      { operation: "shortcuts.apply", bindings },
+      { operation: "shortcuts.apply", bindings: fallback },
+    ]));
   });
 
   it("reapplies persisted shortcut bindings after permission becomes available", async () => {
