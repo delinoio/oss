@@ -127,9 +127,24 @@ describe("GitHub.com provider", () => {
   });
 
   it("searches and enriches pull requests with pagination", async () => {
-    const provider = createGitHubProvider({ fetch: router() });
+    const fetch = router();
+    const provider = createGitHubProvider({ fetch });
     await expect(provider.searchPullRequests(fine, "repo:octo-private/controls")).resolves.toMatchObject({ nextPage: 2, items: [{ number: 9, repository: privateRepository }] });
+    const search = fetch.mock.calls.find(([input]) => new URL(String(input)).pathname === "/search/issues");
+    expect(new URL(String(search?.[0])).searchParams.get("q")).toBe("repo:octo-private/controls is:pr");
     await expect(provider.getPullRequest(fine, privateRepository, 9)).resolves.toMatchObject({ pullRequest: { author: "octocat", headSha: "0123456789abcdef", labels: ["needs-review"] }, metadata: { etag: '"pull"' } });
+  });
+
+  it.each([
+    ["repo:octo-private/controls is:pr", "repo:octo-private/controls is:pr"],
+    ["repo:octo-private/controls IS:PR", "repo:octo-private/controls IS:PR"],
+    ["repo:octo-private/controls is:private", "repo:octo-private/controls is:private is:pr"],
+    ["repo:octo-private/controls -is:pr", "repo:octo-private/controls -is:pr is:pr"],
+  ])("requires a standalone positive pull-request qualifier in %s", async (query, expected) => {
+    const fetch = router();
+    await createGitHubProvider({ fetch }).searchPullRequests(fine, query);
+    const search = fetch.mock.calls.find(([input]) => new URL(String(input)).pathname === "/search/issues");
+    expect(new URL(String(search?.[0])).searchParams.get("q")).toBe(expected);
   });
 
   it("owns only canonical GitHub.com issue and pull request URLs", () => {
@@ -147,7 +162,7 @@ describe("GitHub.com provider", () => {
 });
 
 describe("GitHub profile and server isolation", () => {
-  const settings = parseDevHudSettings({ ...defaultDevHudSettings, github: { profiles: [{ id: fine.profileId, name: "Fine", kind: fine.kind }, { id: classic.profileId, name: "Classic", kind: classic.kind }], repositories: [{ ...publicRepository, profileRef: fine.profileId }, { ...privateRepository, profileRef: fine.profileId }], issueTracker: { owner: privateRepository.owner, repository: privateRepository.name, labels: ["bug"], profileRef: fine.profileId } } });
+  const settings = parseDevHudSettings({ ...defaultDevHudSettings, github: { profiles: [{ id: fine.profileId, name: "Fine", kind: fine.kind }, { id: classic.profileId, name: "Classic", kind: classic.kind }], pendingPatRemovals: [], repositories: [{ ...publicRepository, profileRef: fine.profileId }, { ...privateRepository, profileRef: fine.profileId }], issueTracker: { owner: privateRepository.owner, repository: privateRepository.name, labels: ["bug"], profileRef: fine.profileId } } });
 
   it("distinguishes secure-store absence", async () => {
     const bridge = bridgeWithValue(null);

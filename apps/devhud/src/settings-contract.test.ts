@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canonicalDevHudSettings, decodeDevHudSettings, defaultDevHudSettings, encodeDevHudSettings, parseDevHudSettings, SettingsContractError } from "./settings-contract";
+import { canonicalDevHudSettings, decodeDevHudSettings, decodeVersionedDevHudSettings, defaultDevHudSettings, encodeDevHudSettings, parseDevHudSettings, SettingsContractError, SettingsSchemaVersion } from "./settings-contract";
 import { diffSettings, redactRecursively, RedactedValue } from "./settings-diff";
 
 describe("DevHud settings boundary", () => {
@@ -12,21 +12,32 @@ describe("DevHud settings boundary", () => {
     };
     const parsed = parseDevHudSettings(legacy);
     expect(parsed.schemaVersion).toBe(2);
-    expect(parsed.github).toEqual({ profiles: [], repositories: [{ owner: "octo", name: "private", profileRef: null }], issueTracker: { owner: "octo", repository: "private", labels: ["bug"], profileRef: null } });
+    expect(parsed.github).toEqual({ profiles: [], pendingPatRemovals: [], repositories: [{ owner: "octo", name: "private", profileRef: null }], issueTracker: { owner: "octo", repository: "private", labels: ["bug"], profileRef: null } });
   });
 
   it("accepts non-secret GitHub profile descriptors and rejects secret fields or duplicate IDs", () => {
     const profile = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", name: "Work", kind: "fine-grained" as const };
-    const settings = { ...defaultDevHudSettings, github: { profiles: [profile], repositories: [{ owner: "octo", name: "private", profileRef: profile.id }], issueTracker: null } };
+    const settings = { ...defaultDevHudSettings, github: { profiles: [profile], pendingPatRemovals: [], repositories: [{ owner: "octo", name: "private", profileRef: profile.id }], issueTracker: null } };
     expect(parseDevHudSettings(settings).github.profiles).toEqual([profile]);
     expect(canonicalDevHudSettings(settings)).not.toMatch(/token|secret|authorization/iu);
     expect(() => parseDevHudSettings({ ...settings, github: { ...settings.github, profiles: [profile, profile] } })).toThrow(/unique IDs/u);
     expect(() => parseDevHudSettings({ ...settings, github: { ...settings.github, profiles: [{ ...profile, token: "plain" }] } })).toThrow(/token/iu);
     expect(() => parseDevHudSettings({ ...settings, github: { ...settings.github, repositories: [{ owner: "octo", name: "private", profileRef: "missing" }] } })).toThrow(/configured GitHub profile/u);
   });
+
+  it("accepts only disjoint canonical pending PAT removal tombstones", () => {
+    const profile = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", name: "Work", kind: "fine-grained" as const };
+    const removedProfileId = "018f47a2-7b3c-7def-8abc-1234567890ac";
+    expect(parseDevHudSettings({ ...defaultDevHudSettings, github: { ...defaultDevHudSettings.github, pendingPatRemovals: [removedProfileId] } }).github.pendingPatRemovals).toEqual([removedProfileId]);
+    expect(() => parseDevHudSettings({ ...defaultDevHudSettings, github: { ...defaultDevHudSettings.github, profiles: [profile], pendingPatRemovals: [profile.id] } })).toThrow(/active GitHub profile/u);
+    expect(() => parseDevHudSettings({ ...defaultDevHudSettings, github: { ...defaultDevHudSettings.github, pendingPatRemovals: [removedProfileId, removedProfileId] } })).toThrow(/unique IDs/u);
+    expect(() => parseDevHudSettings({ ...defaultDevHudSettings, github: { ...defaultDevHudSettings.github, pendingPatRemovals: ["profile"] } })).toThrow(/UUID v7/u);
+  });
   it("round trips the exact versioned non-secret contract canonically", () => {
     const encoded = encodeDevHudSettings(defaultDevHudSettings);
     expect(decodeDevHudSettings(encoded)).toEqual(defaultDevHudSettings);
+    expect(decodeVersionedDevHudSettings(encoded, SettingsSchemaVersion)).toEqual(defaultDevHudSettings);
+    expect(() => decodeVersionedDevHudSettings(encoded, 1)).toThrow(/snapshot envelope/u);
     expect(new TextDecoder().decode(encoded)).toBe(canonicalDevHudSettings(defaultDevHudSettings));
   });
 
@@ -76,6 +87,23 @@ describe("DevHud settings boundary", () => {
     expect(parseDevHudSettings({ ...defaultDevHudSettings, decks: [deck] }).decks[0]?.id).toBe(deck.id);
     expect(() => parseDevHudSettings({ ...defaultDevHudSettings, decks: [{ ...deck, id: "deck" }] })).toThrow(/UUID v7/u);
     expect(() => parseDevHudSettings({ ...defaultDevHudSettings, decks: [{ ...deck, id: deck.id.toUpperCase() }] })).toThrow(/UUID v7/u);
+  });
+
+  it("rejects a GitHub profile reference when a Deck has no repository", () => {
+    const profile = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", name: "Work", kind: "fine-grained" as const };
+    const deck = {
+      id: "018f47a2-7b3c-7def-8abc-1234567890ac",
+      title: "Deck",
+      query: "is:pr",
+      repository: null,
+      profileRef: profile.id,
+      display: { groupBy: "none", showDrafts: true },
+      refreshMinutes: 15,
+      notifications: [],
+    };
+    const settings = { ...defaultDevHudSettings, github: { ...defaultDevHudSettings.github, profiles: [profile] }, decks: [deck] };
+    expect(() => parseDevHudSettings(settings)).toThrow(/profileRef.*repository is null/u);
+    expect(parseDevHudSettings({ ...settings, decks: [{ ...deck, profileRef: null }] }).decks[0]?.profileRef).toBeNull();
   });
 
   it.each(["?token=plain-secret", "?X-Amz-Signature=plain-secret", "#credential", "?", "#"])("rejects query or fragment delimiters in synchronized URL fields: %s", (suffix) => {

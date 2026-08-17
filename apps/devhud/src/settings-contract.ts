@@ -41,6 +41,7 @@ export interface DevHudSettings {
   }[];
   readonly github: {
     readonly profiles: readonly { readonly id: string; readonly name: string; readonly kind: GitHubCredentialKind }[];
+    readonly pendingPatRemovals: readonly string[];
     readonly repositories: readonly { readonly owner: string; readonly name: string; readonly profileRef: string | null }[];
     readonly issueTracker: { readonly owner: string; readonly repository: string; readonly labels: readonly string[]; readonly profileRef: string | null } | null;
   };
@@ -73,7 +74,7 @@ export const defaultDevHudSettings: DevHudSettingsV1 = Object.freeze<DevHudSetti
   schemaVersion: SettingsSchemaVersion,
   appearance: { theme: "system", language: "system" },
   decks: [],
-  github: { profiles: [], repositories: [], issueTracker: null },
+  github: { profiles: [], pendingPatRemovals: [], repositories: [], issueTracker: null },
   urlMappings: [],
   shortcuts: { desktop: {}, ios: {}, android: {} },
   agents: [],
@@ -110,10 +111,15 @@ export function parseDevHudSettings(value: unknown): DevHudSettingsV1 {
   const appearance = object(root.appearance, "$.appearance", ["theme", "language"]);
   const decks = array(root.decks, "$.decks");
   if (decks.length > 25) throw new SettingsContractError("$.decks", "must contain at most 25 entries");
-  const github = object(root.github, "$.github", legacy ? ["repositories", "issueTracker"] : ["profiles", "repositories", "issueTracker"]);
+  const github = object(root.github, "$.github", legacy ? ["repositories", "issueTracker"] : ["profiles", "pendingPatRemovals", "repositories", "issueTracker"]);
   const githubProfiles = legacy ? [] : array(github.profiles, "$.github.profiles").map((entry, index) => parseGitHubProfile(entry, `$.github.profiles[${index}]`));
   if (githubProfiles.length > 25) throw new SettingsContractError("$.github.profiles", "must contain at most 25 entries");
   if (new Set(githubProfiles.map((profile) => profile.id)).size !== githubProfiles.length) throw new SettingsContractError("$.github.profiles", "must contain unique IDs");
+  const pendingPatRemovals = legacy ? [] : array(github.pendingPatRemovals, "$.github.pendingPatRemovals").map((entry, index) => parseGitHubProfileId(entry, `$.github.pendingPatRemovals[${index}]`));
+  if (pendingPatRemovals.length > 25) throw new SettingsContractError("$.github.pendingPatRemovals", "must contain at most 25 entries");
+  if (new Set(pendingPatRemovals).size !== pendingPatRemovals.length) throw new SettingsContractError("$.github.pendingPatRemovals", "must contain unique IDs");
+  const githubProfileIds = new Set(githubProfiles.map((profile) => profile.id));
+  if (pendingPatRemovals.some((profileId) => githubProfileIds.has(profileId))) throw new SettingsContractError("$.github.pendingPatRemovals", "must not reference an active GitHub profile");
   const shortcuts = object(root.shortcuts, "$.shortcuts", [...Platform]);
   const uploads = object(root.uploads, "$.uploads", ["provider", "r2"]);
 
@@ -126,6 +132,7 @@ export function parseDevHudSettings(value: unknown): DevHudSettingsV1 {
     decks: decks.map((entry, index) => parseDeck(entry, `$.decks[${index}]`, legacy)),
     github: {
       profiles: githubProfiles,
+      pendingPatRemovals,
       repositories: array(github.repositories, "$.github.repositories").map((entry, index) => {
         const path = `$.github.repositories[${index}]`;
         const repository = object(entry, path, legacy ? ["owner", "name"] : ["owner", "name", "profileRef"]);
@@ -148,7 +155,6 @@ export function parseDevHudSettings(value: unknown): DevHudSettingsV1 {
       r2: uploads.r2 === null ? null : parseR2(uploads.r2),
     },
   };
-  const githubProfileIds = new Set(parsed.github.profiles.map((profile) => profile.id));
   for (const [index, repository] of parsed.github.repositories.entries()) validateGitHubProfileRef(repository.profileRef, `$.github.repositories[${index}].profileRef`, githubProfileIds);
   validateGitHubProfileRef(parsed.github.issueTracker?.profileRef ?? null, "$.github.issueTracker.profileRef", githubProfileIds);
   for (const [index, deck] of parsed.decks.entries()) validateGitHubProfileRef(deck.profileRef, `$.decks[${index}].profileRef`, githubProfileIds);
@@ -161,6 +167,14 @@ export function encodeDevHudSettings(value: unknown): Uint8Array {
 
 export function decodeDevHudSettings(value: Uint8Array): DevHudSettingsV1 {
   return parseDevHudSettings(validateCanonicalSettingsJson(value));
+}
+
+export function decodeVersionedDevHudSettings(value: Uint8Array, envelopeSchemaVersion: number): DevHudSettingsV1 {
+  const decoded = validateCanonicalSettingsJson(value);
+  if (decoded !== null && typeof decoded === "object" && !Array.isArray(decoded) && (decoded as Record<string, unknown>).schemaVersion !== envelopeSchemaVersion) {
+    throw new SettingsContractError("$.schemaVersion", "must match the snapshot envelope schema version");
+  }
+  return parseDevHudSettings(decoded);
 }
 
 export function canonicalDevHudSettings(value: unknown): string {
@@ -178,12 +192,15 @@ function parseDeck(value: unknown, path: string, legacy: boolean): DevHudSetting
   } catch {
     throw new SettingsContractError(`${path}.id`, "must be a canonical lowercase RFC 9562 UUID v7");
   }
+  const repository = deck.repository === null ? null : text(deck.repository, `${path}.repository`);
+  const profileRef = legacy ? null : parseProfileRef(deck.profileRef, `${path}.profileRef`);
+  if (repository === null && profileRef !== null) throw new SettingsContractError(`${path}.profileRef`, "must be null when repository is null");
   return {
     id,
     title: text(deck.title, `${path}.title`),
     query: text(deck.query, `${path}.query`, true),
-    repository: deck.repository === null ? null : text(deck.repository, `${path}.repository`),
-    profileRef: legacy ? null : parseProfileRef(deck.profileRef, `${path}.profileRef`),
+    repository,
+    profileRef,
     display: {
       groupBy: enumeration(display.groupBy, `${path}.display.groupBy`, ["none", "repository", "author"] as const),
       showDrafts: boolean(display.showDrafts, `${path}.display.showDrafts`),
@@ -206,15 +223,20 @@ function parseIssueTracker(value: unknown, legacy: boolean): NonNullable<DevHudS
 
 function parseGitHubProfile(value: unknown, path: string): DevHudSettingsV1["github"]["profiles"][number] {
   const profile = object(value, path, ["id", "name", "kind"]);
-  const id = text(profile.id, `${path}.id`);
-  try {
-    assertUuidV7(id);
-  } catch {
-    throw new SettingsContractError(`${path}.id`, "must be a canonical lowercase RFC 9562 UUID v7");
-  }
+  const id = parseGitHubProfileId(profile.id, `${path}.id`);
   const name = text(profile.name, `${path}.name`);
   if (name.trim() !== name || name.length > 80) throw new SettingsContractError(`${path}.name`, "must be a trimmed string of at most 80 characters");
   return { id, name, kind: enumeration(profile.kind, `${path}.kind`, GitHubCredentialKind) };
+}
+
+function parseGitHubProfileId(value: unknown, path: string): string {
+  const id = text(value, path);
+  try {
+    assertUuidV7(id);
+  } catch {
+    throw new SettingsContractError(path, "must be a canonical lowercase RFC 9562 UUID v7");
+  }
+  return id;
 }
 
 function parseProfileRef(value: unknown, path: string): string | null {

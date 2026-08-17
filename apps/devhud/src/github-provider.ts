@@ -7,6 +7,7 @@ export const InternalProviderRegistryVersion = 1 as const;
 export const InternalProviderRegistryV1 = Object.freeze({ issueTrackers: [GitHubProviderId] as const, pullRequests: [GitHubProviderId] as const });
 export const GitHubApiOrigin = "https://api.github.com" as const;
 export const GitHubApiVersion = "2026-03-10" as const;
+const positivePullRequestQualifierPattern = /(?:^|\s)is:pr(?=\s|$)/iu;
 
 export const GitHubOperation = {
   ValidateCredential: "validate-credential",
@@ -182,7 +183,7 @@ export function createGitHubProvider({ fetch: fetchImpl }: ProviderOptions): Git
     },
     async searchPullRequests(credential, query, options = {}) {
       const page = positiveInteger(options.page ?? 1);
-      const normalized = query.includes("is:pr") ? query : `${query} is:pr`;
+      const normalized = positivePullRequestQualifierPattern.test(query) ? query : `${query} is:pr`;
       const result = await request(GitHubOperation.SearchPullRequests, credential, `/search/issues?q=${encodeURIComponent(normalized)}&per_page=100&page=${page}`, options.etag ? { headers: { "If-None-Match": options.etag } } : {});
       if (result.response.status === 304) return { items: [], nextPage: null, notModified: true, metadata: result.metadata };
       const items = array(record(result.json, GitHubOperation.SearchPullRequests).items, GitHubOperation.SearchPullRequests).map((item) => pullSummary(record(item, GitHubOperation.SearchPullRequests)));

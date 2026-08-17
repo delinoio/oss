@@ -74,14 +74,50 @@ describe("GitHub settings", () => {
     expect(request).not.toHaveBeenCalled();
   });
 
-  it("removes the PAT only after profile descriptor removal commits", async () => {
-    const order: string[] = [];
-    const replaceSettings = vi.fn(async () => { order.push("settings"); return true; });
-    const request = vi.fn(async () => { order.push("secure-remove"); return { kind: "ok" as const }; });
+  it("commits a PAT cleanup tombstone with descriptor removal", async () => {
+    const replaceSettings = vi.fn(async () => true);
+    const request = vi.fn(async () => ({ kind: "ok" as const }));
     identity = identityWith({ replaceSettings });
     render(<GitHubSettings copy={messages.en} bridge={bridgeWith(request)} provider={providerWithValidation()} />);
     fireEvent.click(screen.getByRole("button", { name: messages.en.githubRemoveProfile }));
-    await waitFor(() => expect(request).toHaveBeenCalledWith({ operation: "secure.remove", setting: { kind: "github-pat", profileId: profile.id } }));
-    expect(order).toEqual(["settings", "secure-remove"]);
+    await waitFor(() => expect(replaceSettings).toHaveBeenCalledWith({
+      ...settings,
+      github: { ...settings.github, profiles: [], pendingPatRemovals: [profile.id] },
+    }));
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it("clears a persisted PAT cleanup tombstone only after secure removal succeeds", async () => {
+    const pendingSettings = parseDevHudSettings({ ...defaultDevHudSettings, github: { ...defaultDevHudSettings.github, pendingPatRemovals: [profile.id] } });
+    const order: string[] = [];
+    const replaceSettings = vi.fn(async () => { order.push("settings"); return true; });
+    const request = vi.fn(async () => { order.push("secure-remove"); return { kind: "ok" as const }; });
+    identity = identityWith({ settings: pendingSettings, replaceSettings });
+    render(<GitHubSettings copy={messages.en} bridge={bridgeWith(request)} provider={providerWithValidation()} />);
+
+    await waitFor(() => expect(replaceSettings).toHaveBeenCalledWith({ ...pendingSettings, github: { ...pendingSettings.github, pendingPatRemovals: [] } }));
+    expect(request).toHaveBeenCalledWith({ operation: "secure.remove", setting: { kind: "github-pat", profileId: profile.id } });
+    expect(order).toEqual(["secure-remove", "settings"]);
+    expect(await screen.findByText(messages.en.githubProfileRemoved)).toBeTruthy();
+  });
+
+  it("retains a failed PAT cleanup tombstone and offers an explicit retry", async () => {
+    const pendingSettings = parseDevHudSettings({ ...defaultDevHudSettings, github: { ...defaultDevHudSettings.github, pendingPatRemovals: [profile.id] } });
+    let attempts = 0;
+    const request = vi.fn(async () => {
+      attempts += 1;
+      if (attempts === 1) throw new NativeBridgeError(NativeBridgeErrorCode.StorageFailure);
+      return { kind: "ok" as const };
+    });
+    const replaceSettings = vi.fn(async () => true);
+    identity = identityWith({ settings: pendingSettings, replaceSettings });
+    render(<GitHubSettings copy={messages.en} bridge={bridgeWith(request)} provider={providerWithValidation()} />);
+
+    expect((await screen.findByRole("alert")).textContent).toBe(messages.en.githubErrorSecureStorage);
+    expect(screen.getByText(messages.en.githubProfileCleanupPending)).toBeTruthy();
+    expect(replaceSettings).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: messages.en.retry }));
+    await waitFor(() => expect(replaceSettings).toHaveBeenCalledWith({ ...pendingSettings, github: { ...pendingSettings.github, pendingPatRemovals: [] } }));
+    expect(request).toHaveBeenCalledTimes(2);
   });
 });
