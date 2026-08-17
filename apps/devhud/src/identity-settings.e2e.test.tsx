@@ -27,7 +27,11 @@ const runtime: RuntimeSnapshot = {
 };
 
 function connectResponse(body: unknown): Response {
-  return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json", "Connect-Protocol-Version": "1" } });
+  const snapshot = body !== null && typeof body === "object" && "snapshot" in body ? (body as { readonly snapshot?: { readonly schemaVersion?: number; readonly canonicalJson?: string } }).snapshot : undefined;
+  const normalized = snapshot?.schemaVersion === 1 && typeof snapshot.canonicalJson === "string" && atob(snapshot.canonicalJson).includes("\"schemaVersion\":2")
+    ? { ...body as object, snapshot: { ...snapshot, schemaVersion: 2 } }
+    : body;
+  return new Response(JSON.stringify(normalized), { status: 200, headers: { "Content-Type": "application/json", "Connect-Protocol-Version": "1" } });
 }
 
 function authenticatedBridge(purgeScopes: string[] = [], secureOperations: string[] = []): NativeBridgeV1 {
@@ -260,7 +264,7 @@ describe("generated Connect identity/settings fixture", () => {
         if (replaceBodies.length === 1) {
           const detail = create(SettingsRevisionConflictSchema, {
             expectedRevision: 3n,
-            currentSnapshot: { schemaVersion: 1, revision: 4n, canonicalJson: encoder.encode(canonicalDevHudSettings(server)) },
+            currentSnapshot: { schemaVersion: 2, revision: 4n, canonicalJson: encoder.encode(canonicalDevHudSettings(server)) },
           });
           const value = btoa(String.fromCharCode(...toBinary(SettingsRevisionConflictSchema, detail)));
           return new Response(JSON.stringify({ code: "aborted", message: "settings revision conflict", details: [{ type: SettingsRevisionConflictSchema.typeName, value }] }), { status: 409, headers: { "Content-Type": "application/json" } });
@@ -1383,7 +1387,7 @@ describe("generated Connect identity/settings fixture", () => {
       if (url.endsWith("/devhud.v1.SettingsService/ReplaceSettings")) {
         const detail = create(SettingsRevisionConflictSchema, {
           expectedRevision: 3n,
-          currentSnapshot: { schemaVersion: 1, revision: 4n, canonicalJson: new TextEncoder().encode(canonicalDevHudSettings(server)) },
+          currentSnapshot: { schemaVersion: 2, revision: 4n, canonicalJson: new TextEncoder().encode(canonicalDevHudSettings(server)) },
         });
         const value = btoa(String.fromCharCode(...toBinary(SettingsRevisionConflictSchema, detail)));
         return new Response(JSON.stringify({ code: "aborted", message: "settings revision conflict", details: [{ type: SettingsRevisionConflictSchema.typeName, value }] }), { status: 409, headers: { "Content-Type": "application/json" } });

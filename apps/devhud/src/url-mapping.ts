@@ -23,10 +23,11 @@ const literalPort = /^(?:[1-9]\d{0,4}|\*)?$/u;
 
 /** Parse a URL glob without allowing URL credentials, query, or fragment data. */
 export function parseUrlPattern(value: string): ParsedUrlPattern {
-  if (value !== value.trim() || value.includes("?") || value.includes("#") || value.includes("@")) throw new UrlMappingError("pattern must not contain credentials, query, or fragment");
+  if (value !== value.trim() || value.includes("?") || value.includes("#")) throw new UrlMappingError("pattern must not contain credentials, query, or fragment");
   const match = /^(\*|https?):\/\/([^/:]+)(?::([^/]*))?(\/.*)?$/u.exec(value);
   if (!match) throw new UrlMappingError("pattern must contain scheme, host, optional port, and path");
   const [, scheme, hostText, port = "", pathText = "/"] = match;
+  if (hostText.includes("@")) throw new UrlMappingError("pattern must not contain credentials, query, or fragment");
   if (!literalScheme.test(scheme) || !literalPort.test(port) || (port !== "" && port !== "*" && Number(port) > 65535)) throw new UrlMappingError("pattern has an invalid scheme or port");
   const host = hostText.split(".");
   if (host.some((part) => !literalHost.test(part) || part === "")) throw new UrlMappingError("host labels must be literals or *");
@@ -80,6 +81,8 @@ export type RepositorySelection =
 
 /** A live URL may only preselect a configured repository; it never creates one. */
 export function resolveRepositorySelection(mappings: readonly UrlRepositoryMapping[], liveUrl: string | null): RepositorySelection {
+  if (liveUrl === null) return { kind: "manual-required" };
+  try { parseLiveUrl(liveUrl); } catch { return { kind: "manual-required" }; }
   const mapping = selectUrlMapping(mappings, liveUrl);
   return mapping === null ? { kind: "manual-required" } : { kind: "matched", mapping };
 }
@@ -93,9 +96,10 @@ export function compareMappings(left: UrlRepositoryMapping, right: UrlRepository
 
 export function findMappingOverlaps(mappings: readonly UrlRepositoryMapping[]): readonly { readonly first: UrlRepositoryMapping; readonly second: UrlRepositoryMapping }[] {
   const overlaps: { first: UrlRepositoryMapping; second: UrlRepositoryMapping }[] = [];
-  for (let index = 0; index < mappings.length; index += 1) for (let other = index + 1; other < mappings.length; other += 1) {
-    const first = mappings[index]; const second = mappings[other];
-    if (first && second && patternsOverlap(parseUrlPattern(first.pattern), parseUrlPattern(second.pattern))) overlaps.push({ first, second });
+  const parsed = mappings.map((mapping) => ({ mapping, pattern: parseUrlPattern(mapping.pattern) }));
+  for (let index = 0; index < parsed.length; index += 1) for (let other = index + 1; other < parsed.length; other += 1) {
+    const first = parsed[index]; const second = parsed[other];
+    if (first && second && patternsOverlap(first.pattern, second.pattern)) overlaps.push({ first: first.mapping, second: second.mapping });
   }
   return overlaps;
 }

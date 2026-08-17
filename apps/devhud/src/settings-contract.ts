@@ -7,6 +7,7 @@ import {
 import { parseUrlPattern, type UrlRepositoryMapping } from "./url-mapping";
 
 export const SettingsSchemaVersion = 2 as const;
+export const MaximumUrlRepositoryMappings = 100;
 
 const Theme = ["system", "light", "dark"] as const;
 const Language = ["system", "en", "ko"] as const;
@@ -106,6 +107,7 @@ export function parseDevHudSettings(value: unknown): DevHudSettingsV1 {
   const shortcuts = object(root.shortcuts, "$.shortcuts", [...Platform]);
   const uploads = object(root.uploads, "$.uploads", ["provider", "r2"]);
   const urlMappings = sourceSchemaVersion === 1 ? parseLegacyMappings(root.urlMappings) : array(root.urlMappings, "$.urlMappings").map(parseUrlMapping);
+  if (urlMappings.length > MaximumUrlRepositoryMappings) throw new SettingsContractError("$.urlMappings", `must contain at most ${MaximumUrlRepositoryMappings} entries`);
   if (new Set(urlMappings.map((mapping) => mapping.id)).size !== urlMappings.length) throw new SettingsContractError("$.urlMappings", "must not contain duplicate mapping IDs");
 
   return {
@@ -173,7 +175,15 @@ export function encodeDevHudSettings(value: unknown): Uint8Array {
 }
 
 export function decodeDevHudSettings(value: Uint8Array): DevHudSettingsV1 {
-  return parseDevHudSettings(validateCanonicalSettingsJson(value));
+  return decodeDevHudSettingsSnapshot(value).settings;
+}
+
+export function decodeDevHudSettingsSnapshot(value: Uint8Array): { readonly sourceSchemaVersion: 1 | typeof SettingsSchemaVersion; readonly settings: DevHudSettingsV1 } {
+  const canonical = validateCanonicalSettingsJson(value);
+  const settings = parseDevHudSettings(canonical);
+  const sourceSchemaVersion = (canonical as { readonly schemaVersion: unknown }).schemaVersion;
+  if (sourceSchemaVersion !== 1 && sourceSchemaVersion !== SettingsSchemaVersion) throw new SettingsContractError("$.schemaVersion", "is unsupported");
+  return { sourceSchemaVersion, settings };
 }
 
 export function canonicalDevHudSettings(value: unknown): string {
@@ -309,7 +319,7 @@ function chromeOrigin(value: unknown, path: string): string {
   try {
     const candidate = new URL(parsed);
     if (candidate.protocol !== "http:" && candidate.protocol !== "https:") throw new Error();
-    if (candidate.username || candidate.password || candidate.search || candidate.hash || candidate.pathname !== "/") throw new Error();
+    if (candidate.username || candidate.password || candidate.search || candidate.hash || candidate.pathname !== "/" || candidate.hostname.includes("*")) throw new Error();
     return candidate.origin;
   } catch { throw new SettingsContractError(path, "must be a concrete HTTP(S) origin without credentials, path, query, or fragment"); }
 }

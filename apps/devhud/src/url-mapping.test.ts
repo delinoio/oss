@@ -21,6 +21,7 @@ describe("URL repository matcher", () => {
 
   it("rejects invalid wildcard placement and sensitive URL components", () => {
     for (const pattern of ["https://api*.example.com/", "https://api.example.com/**:123", "https://api.example.com/path?x=1", "https://user@api.example.com/"]) expect(() => parseUrlPattern(pattern)).toThrow();
+    expect(parseUrlPattern("https://social.example/@alice").path).toEqual(["@alice"]);
   });
 
   it("chooses priority, literal specificity, and recency deterministically", () => {
@@ -31,6 +32,7 @@ describe("URL repository matcher", () => {
     expect(selectUrlMapping([broad, specific, recent], "https://api.example.com/projects/devhud")?.id).toBe(recent.id);
     expect(selectUrlMapping([broad], null)).toBeNull();
     expect(resolveRepositorySelection([broad], "https://other.example.com/")).toEqual({ kind: "manual-required" });
+    expect(resolveRepositorySelection([broad], "not a URL")).toEqual({ kind: "manual-required" });
   });
 
   it("reports intersecting mappings before save", () => {

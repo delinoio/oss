@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canonicalDevHudSettings, decodeDevHudSettings, defaultDevHudSettings, encodeDevHudSettings, parseDevHudSettings, SettingsContractError } from "./settings-contract";
+import { canonicalDevHudSettings, decodeDevHudSettings, defaultDevHudSettings, encodeDevHudSettings, MaximumUrlRepositoryMappings, parseDevHudSettings, SettingsContractError } from "./settings-contract";
 import { diffSettings, redactRecursively, RedactedValue } from "./settings-diff";
 
 describe("DevHud settings boundary", () => {
@@ -80,6 +80,11 @@ describe("DevHud settings boundary", () => {
 
   it.each(["https://example.com/", "https://EXAMPLE.com", "https://example.com:443"])("normalizes equivalent Chrome origins: %s", (chromeOrigin) => {
     expect(parseDevHudSettings({ ...defaultDevHudSettings, urlMappings: [{ ...mapping, chromeOrigin }] }).urlMappings[0]?.chromeOrigin).toBe("https://example.com");
+  });
+
+  it("rejects wildcard Chrome origins and excessive mapping counts", () => {
+    expect(() => parseDevHudSettings({ ...defaultDevHudSettings, urlMappings: [{ ...mapping, chromeOrigin: "https://*.example.com" }] })).toThrow(/concrete HTTP\(S\) origin/u);
+    expect(() => parseDevHudSettings({ ...defaultDevHudSettings, urlMappings: Array.from({ length: MaximumUrlRepositoryMappings + 1 }, (_, index) => ({ ...mapping, id: `018f47a2-7b3c-7def-8abc-${(123456789000 + index).toString().padStart(12, "0")}` })) })).toThrow(/at most/u);
   });
 
   it("drops legacy v1 mapping entries while preserving other settings", () => {

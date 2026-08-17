@@ -122,6 +122,7 @@ export function SynchronizedAppearanceBoundary({ onAppearance }: { readonly onAp
 export function SynchronizedSettingsBoundary({ copy }: { readonly copy: Copy }) {
   const identity = useIdentitySettings();
   const [actionError, setActionError] = useState(false);
+  const [urlMappingReset, setUrlMappingReset] = useState(0);
   const invoke = (action: () => Promise<unknown>) => { setActionError(false); void action().catch(() => setActionError(true)); };
   const replaceAppearance = (appearance: Partial<DevHudSettingsV1["appearance"]>) => invoke(() => identity.replaceSettings({
     ...identity.settings,
@@ -130,7 +131,7 @@ export function SynchronizedSettingsBoundary({ copy }: { readonly copy: Copy }) 
   return <>
     <label>{copy.theme}<select value={identity.settings.appearance.theme} disabled={identity.readOnly} onChange={(event) => replaceAppearance({ theme: event.target.value as DevHudSettingsV1["appearance"]["theme"] })}>{Object.values(ThemePreference).map((value) => <option key={value} value={value}>{copy[value]}</option>)}</select></label>
     <label>{copy.language}<select value={identity.settings.appearance.language} disabled={identity.readOnly} onChange={(event) => replaceAppearance({ language: event.target.value as DevHudSettingsV1["appearance"]["language"] })}><option value={LanguagePreference.System}>{copy.system}</option><option value={LanguagePreference.English}>{copy.english}</option><option value={LanguagePreference.Korean}>{copy.korean}</option></select></label>
-    <UrlMappingSettings copy={copy} />
+    <UrlMappingSettings copy={copy} resetEpoch={urlMappingReset} />
     {(identity.status === "guest" || identity.status === "signed-out" || identity.status === "starting") && <p className="notice">{copy.guestSettingsLocal}</p>}
     {identity.status === "blocked" && <p className="notice">{copy.blockedLocalHint}</p>}
     {identity.status === "deletion-pending" && <p className="notice">{copy.deletionPendingSummary}</p>}
@@ -139,19 +140,25 @@ export function SynchronizedSettingsBoundary({ copy }: { readonly copy: Copy }) 
       {identity.offline && <p className="notice" role="status">{copy.offlineSettingsReadOnly}</p>}
       {!identity.offline && <p>{copy.settingsRevision}: {identity.revision.toString()}</p>}
     {identity.importDiff && <SnapshotChoice key="import" choiceId="import" copy={copy} entries={identity.importDiff} title={copy.importSettingsTitle} summary={copy.importSettingsSummary} primary={copy.uploadLocal} secondary={copy.replaceLocal} onPrimary={() => invoke(identity.uploadLocal)} onSecondary={identity.replaceLocal} />}
-    {identity.conflict && <SnapshotChoice key="conflict" choiceId="conflict" copy={copy} entries={identity.conflict.diff} title={copy.conflictTitle} summary={copy.conflictSummary} primary={copy.reapplyLocal} secondary={copy.adoptServer} onPrimary={() => invoke(identity.reapplyConflictLocal)} onSecondary={identity.adoptConflictServer} />}
+    {identity.conflict && <SnapshotChoice key="conflict" choiceId="conflict" copy={copy} entries={identity.conflict.diff} title={copy.conflictTitle} summary={copy.conflictSummary} primary={copy.reapplyLocal} secondary={copy.adoptServer} onPrimary={() => invoke(identity.reapplyConflictLocal)} onSecondary={() => { identity.adoptConflictServer(); setUrlMappingReset((current) => current + 1); }} />}
     {(actionError || identity.error?.startsWith("settings-") || identity.settingsError) && <section className="notice" role="alert"><p>{copy.settingsActionFailed}{identity.error?.startsWith("settings-") && <> <code>{identity.error}</code></>}{identity.settingsError && <> <code>{`settings-connect-${identity.settingsError.code}`}</code>{identity.settingsError.correlationId && <> {copy.correlationId}: <code>{identity.settingsError.correlationId}</code></>}</>}</p><button onClick={() => invoke(identity.retrySettings)}>{copy.retry}</button></section>}
     </section>}
   </>;
 }
 
-function UrlMappingSettings({ copy }: { readonly copy: Copy }) {
+function UrlMappingSettings({ copy, resetEpoch }: { readonly copy: Copy; readonly resetEpoch: number }) {
   const identity = useIdentitySettings();
   const [draft, setDraft] = useState<UrlRepositoryMapping[]>(() => [...identity.settings.urlMappings]);
   const [invalid, setInvalid] = useState(false);
   const [saved, setSaved] = useState(false);
   const [dirty, setDirty] = useState(false);
   useEffect(() => { if (!dirty) setDraft([...identity.settings.urlMappings]); }, [dirty, identity.settings.urlMappings]);
+  useEffect(() => {
+    setDraft([...identity.settings.urlMappings]);
+    setDirty(false);
+    setSaved(false);
+    setInvalid(false);
+  }, [resetEpoch]);
   const overlaps = safeOverlaps(draft);
   const change = (id: string, field: keyof UrlRepositoryMapping, value: string | number | null) => {
     setSaved(false); setInvalid(false); setDirty(true);
