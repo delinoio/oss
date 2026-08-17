@@ -8,7 +8,8 @@ import {
   StaticCapability,
   UploadState,
 } from "@delinoio/devhud-api-client";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 
@@ -88,6 +89,33 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("administrator console review regressions", () => {
+  it("single-flights initialization across StrictMode effect replays", async () => {
+    type Bootstrap = Awaited<ReturnType<typeof runtime.getBootstrap>>;
+    let resolveBootstrap = (_bootstrap: Bootstrap) => {};
+    const bootstrap = new Promise<Bootstrap>((resolve) => {
+      resolveBootstrap = resolve;
+    });
+    runtime.getBootstrap.mockReturnValue(bootstrap);
+
+    render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    );
+    expect(runtime.getBootstrap).toHaveBeenCalledOnce();
+
+    await act(async () => {
+      resolveBootstrap({
+        capabilities: [StaticCapability.OFFICIAL_UPLOADS],
+        publicAssetBaseUrl: "https://assets.example.com/uploads/",
+      });
+      await bootstrap;
+    });
+    expect(await screen.findByText("Target User")).toBeTruthy();
+    expect(runtime.fromBootstrap).toHaveBeenCalledOnce();
+    expect(runtime.auth.completeCallback).toHaveBeenCalledOnce();
+  });
+
   it("keeps continuation tokens bound to the submitted search query", async () => {
     runtime.client.listUsers
       .mockResolvedValueOnce({ users: [user], nextPageToken: "" })
@@ -143,6 +171,68 @@ describe("administrator console review regressions", () => {
     expect(screen.getByText("Newer Result")).toBeTruthy();
     expect(screen.queryByText("Stale Result")).toBeNull();
     expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
+  });
+
+  it("rejects search input exceeding 512 UTF-8 bytes before submission", async () => {
+    render(<App />);
+    const search = await screen.findByRole("search");
+    const input = screen.getByPlaceholderText("Search by name, email, or Logto subject");
+    const submit = within(search).getByRole("button", { name: "Users" });
+
+    fireEvent.change(input, { target: { value: "가".repeat(171) } });
+    expect((submit as HTMLButtonElement).disabled).toBe(true);
+    expect(
+      screen.getByText("Search text must be no longer than 512 bytes of UTF-8."),
+    ).toBeTruthy();
+    fireEvent.submit(search);
+    expect(runtime.client.listUsers).toHaveBeenCalledOnce();
+
+    fireEvent.change(input, { target: { value: "가".repeat(170) } });
+    expect((submit as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.submit(search);
+    await waitFor(() => expect(runtime.client.listUsers).toHaveBeenCalledTimes(2));
+  });
+
+  it("ignores stale usage responses after closing and switching users", async () => {
+    const otherUser = {
+      ...user,
+      userId: { value: "018f7c1e-7b4a-7abc-8def-0123456789b6" },
+      displayName: "Other User",
+      email: "other@example.com",
+    };
+    runtime.client.listUsers.mockResolvedValue({
+      users: [user, otherUser],
+      nextPageToken: "",
+    });
+    type UsageResponse = { counters: [] };
+    let resolveFirst = (_response: UsageResponse) => {};
+    let resolveSecond = (_response: UsageResponse) => {};
+    const first = new Promise<UsageResponse>((resolve) => {
+      resolveFirst = resolve;
+    });
+    const second = new Promise<UsageResponse>((resolve) => {
+      resolveSecond = resolve;
+    });
+    runtime.client.getUserUsage.mockReturnValueOnce(first).mockReturnValueOnce(second);
+
+    render(<App />);
+    const usageButtons = await screen.findAllByRole("button", { name: "Usage and quota" });
+    fireEvent.click(usageButtons[0]);
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    fireEvent.click(usageButtons[1]);
+
+    await act(async () => {
+      resolveSecond({ counters: [] });
+      await second;
+    });
+    expect(within(screen.getByRole("dialog")).getByText("Other User")).toBeTruthy();
+
+    await act(async () => {
+      resolveFirst({ counters: [] });
+      await first;
+    });
+    expect(within(screen.getByRole("dialog")).getByText("Other User")).toBeTruthy();
+    expect(within(screen.getByRole("dialog")).queryByText("Target User")).toBeNull();
   });
 
   it("prevents duplicate upload continuation requests", async () => {

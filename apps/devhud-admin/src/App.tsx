@@ -40,6 +40,40 @@ type UsageState =
   | { kind: "loaded"; user: AdminUser; counters: UsageCounter[] }
   | { kind: "error"; user: AdminUser };
 
+const maximumAdminSearchBytes = 512;
+const textEncoder = new TextEncoder();
+let appInitialization: Promise<Phase> | undefined;
+
+async function initializeApp(): Promise<Phase> {
+  const bootstrap = await getBootstrap();
+  const auth = AdminAuth.fromBootstrap(bootstrap);
+  if (await auth.completeCallback(window.location.href)) {
+    history.replaceState(null, "", "/admin/");
+  }
+  return (await auth.isAuthenticated())
+    ? {
+        kind: "ready",
+        auth,
+        client: createAdminClient(auth),
+        uploadsAvailable: bootstrap.capabilities.includes(
+          StaticCapability.OFFICIAL_UPLOADS,
+        ),
+        publicAssetBaseUrl: bootstrap.publicAssetBaseUrl,
+      }
+    : { kind: "signed-out", auth };
+}
+
+function initializeAppOnce(): Promise<Phase> {
+  if (appInitialization) return appInitialization;
+  const operation = initializeApp();
+  appInitialization = operation;
+  const clear = () => {
+    if (appInitialization === operation) appInitialization = undefined;
+  };
+  void operation.then(clear, clear);
+  return operation;
+}
+
 function localeInitial(): Locale {
   const stored = localStorage.getItem("devhud.admin.locale");
   if (stored === "en" || stored === "ko") return stored;
@@ -59,22 +93,7 @@ export function App() {
     let current = true;
     void (async () => {
       try {
-        const bootstrap = await getBootstrap();
-        const auth = AdminAuth.fromBootstrap(bootstrap);
-        if (await auth.completeCallback(window.location.href)) {
-          history.replaceState(null, "", "/admin/");
-        }
-        const next: Phase = (await auth.isAuthenticated())
-          ? {
-              kind: "ready",
-              auth,
-              client: createAdminClient(auth),
-              uploadsAvailable: bootstrap.capabilities.includes(
-                StaticCapability.OFFICIAL_UPLOADS,
-              ),
-              publicAssetBaseUrl: bootstrap.publicAssetBaseUrl,
-            }
-          : { kind: "signed-out", auth };
+        const next = await initializeAppOnce();
         if (current) setPhase(next);
       } catch (error) {
         if (current) setPhase({ kind: "error", error });
@@ -219,6 +238,7 @@ function Users({
   const [usage, setUsage] = useState<UsageState | null>(null);
   const [conflict, setConflict] = useState(false);
   const requestGeneration = useRef(0);
+  const usageRequestGeneration = useRef(0);
 
   const load = async (token = "", append = false, searchQuery = appliedQuery) => {
     const generation = ++requestGeneration.current;
@@ -245,14 +265,35 @@ function Users({
     }
   };
 
+  const loadUsage = async (user: AdminUser) => {
+    const generation = ++usageRequestGeneration.current;
+    setUsage({ kind: "loading", user });
+    try {
+      const response = await client.getUserUsage({ userId: user.userId });
+      if (generation !== usageRequestGeneration.current) return;
+      setUsage({ kind: "loaded", user, counters: response.counters });
+    } catch {
+      if (generation !== usageRequestGeneration.current) return;
+      setUsage({ kind: "error", user });
+    }
+  };
+
+  const closeUsage = () => {
+    usageRequestGeneration.current++;
+    setUsage(null);
+  };
+
   useEffect(() => {
     void load();
     return () => {
       requestGeneration.current++;
+      usageRequestGeneration.current++;
     };
     // Query is applied by the explicit search form.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const queryValid = textEncoder.encode(query).byteLength <= maximumAdminSearchBytes;
 
   return (
     <section aria-labelledby="users-title">
@@ -265,6 +306,7 @@ function Users({
           className="search"
           onSubmit={(event) => {
             event.preventDefault();
+            if (!queryValid) return;
             setAppliedQuery(query);
             void load("", false, query);
           }}
@@ -273,14 +315,23 @@ function Users({
           <label className="sr-only" htmlFor="user-query">
             {copy.search}
           </label>
-          <input
-            id="user-query"
-            maxLength={512}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder={copy.search}
-            value={query}
-          />
-          <button className="primary" type="submit">
+          <div className="search-field">
+            <input
+              aria-describedby={!queryValid ? "user-query-error" : undefined}
+              aria-invalid={!queryValid || undefined}
+              id="user-query"
+              maxLength={512}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder={copy.search}
+              value={query}
+            />
+            {!queryValid && (
+              <p className="inline-error" id="user-query-error" role="alert">
+                {copy.searchInvalid}
+              </p>
+            )}
+          </div>
+          <button className="primary" disabled={!queryValid} type="submit">
             {copy.users}
           </button>
         </form>
@@ -335,13 +386,7 @@ function Users({
                       <button
                         className="text-button"
                         onClick={() => {
-                          setUsage({ kind: "loading", user });
-                          void client
-                            .getUserUsage({ userId: user.userId })
-                            .then((response) =>
-                              setUsage({ kind: "loaded", user, counters: response.counters }),
-                              () => setUsage({ kind: "error", user }),
-                            )
+                          void loadUsage(user);
                         }}
                       >
                         {copy.usage}
@@ -378,7 +423,7 @@ function Users({
         />
       )}
       {usage && (
-        <Dialog title={copy.usage} onClose={() => setUsage(null)}>
+        <Dialog title={copy.usage} onClose={closeUsage}>
           <p>{usage.user.displayName || usage.user.email}</p>
           {usage.kind === "loading" ? (
             <Empty message={copy.loading} busy />
@@ -398,7 +443,7 @@ function Users({
               ))}
             </dl>
           )}
-          <button className="primary" data-autofocus onClick={() => setUsage(null)}>
+          <button className="primary" data-autofocus onClick={closeUsage}>
             {copy.confirm}
           </button>
         </Dialog>

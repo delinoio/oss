@@ -3,9 +3,11 @@ package adminassets
 import (
 	"bytes"
 	"embed"
+	"fmt"
 	"io/fs"
 	"mime"
 	"net/http"
+	"net/url"
 	"path"
 	"strings"
 	"time"
@@ -14,9 +16,14 @@ import (
 //go:embed dist
 var embedded embed.FS
 
-const contentSecurityPolicy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' https:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+const contentSecurityPolicyTemplate = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' %s; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 
-func Handler() (http.Handler, error) {
+func Handler(logtoIssuer string) (http.Handler, error) {
+	issuer, err := url.Parse(logtoIssuer)
+	if err != nil || issuer.Hostname() == "" || issuer.User != nil || issuer.RawQuery != "" || issuer.Fragment != "" || (issuer.Scheme != "http" && issuer.Scheme != "https") {
+		return nil, fmt.Errorf("logto issuer must be an absolute HTTP URL without credentials, query, or fragment")
+	}
+	contentSecurityPolicy := fmt.Sprintf(contentSecurityPolicyTemplate, issuer.Scheme+"://"+issuer.Host)
 	dist, err := fs.Sub(embedded, "dist")
 	if err != nil {
 		return nil, err

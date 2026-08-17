@@ -11,10 +11,10 @@ import type { AdminAuth } from "./auth";
 
 export type AdminClient = Client<typeof AdminService>;
 
-export function apiBaseUrl(): string {
-  return window.location.port === "46306"
+export function apiBaseUrl(origin = window.location.origin): string {
+  return origin === "http://localhost:46306"
     ? "http://127.0.0.1:46307"
-    : window.location.origin;
+    : origin;
 }
 
 export async function getBootstrap(): Promise<GetBootstrapResponse> {

@@ -88,6 +88,7 @@ h1 { font-size: clamp(28px, 4vw, 40px); letter-spacing: -.035em; margin-bottom: 
 h2 { font-size: 18px; letter-spacing: -.02em; }
 .eyebrow { color: #3182f6; font-size: 13px; font-weight: 800; letter-spacing: .08em; margin-bottom: 7px; text-transform: uppercase; }
 .search { display: flex; gap: 8px; width: min(100%, 580px); }
+.search-field { display: grid; flex: 1; gap: 6px; min-width: 0; }
 input, textarea {
   background: #f9fafb;
   border: 1px solid #d1d6db;
@@ -95,7 +96,7 @@ input, textarea {
   color: #191f28;
   padding: 12px 14px;
 }
-.search input { flex: 1; min-width: 0; }
+.search input { min-width: 0; width: 100%; }
 .primary, .secondary, .danger-button, .text-button, .load-more {
   border: 0;
   border-radius: 12px;

@@ -35,7 +35,7 @@ type Dependencies struct {
 
 func New(dependencies Dependencies) (*http.Server, error) {
 	mux := http.NewServeMux()
-	adminAssets, err := adminassets.Handler()
+	adminAssets, err := adminassets.Handler(dependencies.Config.LogtoIssuer)
 	if err != nil {
 		return nil, err
 	}

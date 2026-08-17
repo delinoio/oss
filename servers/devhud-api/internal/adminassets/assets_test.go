@@ -9,7 +9,7 @@ import (
 )
 
 func TestEmbeddedAdminSPAAndCaching(t *testing.T) {
-	handler, err := Handler()
+	handler, err := Handler("https://identity.example.com/oidc")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -22,6 +22,11 @@ func TestEmbeddedAdminSPAAndCaching(t *testing.T) {
 		if response.Header().Get("Cache-Control") != "no-store" ||
 			!strings.Contains(response.Header().Get("Content-Security-Policy"), "frame-ancestors 'none'") {
 			t.Fatalf("%s headers=%v", route, response.Header())
+		}
+		policy := response.Header().Get("Content-Security-Policy")
+		if !strings.Contains(policy, "connect-src 'self' https://identity.example.com") ||
+			strings.Contains(policy, "connect-src 'self' https:;") || strings.Contains(policy, "/oidc") {
+			t.Fatalf("%s content security policy=%q", route, policy)
 		}
 	}
 	assets, err := fs.Glob(embedded, "dist/static/js/assets/index.*.js")
@@ -37,7 +42,7 @@ func TestEmbeddedAdminSPAAndCaching(t *testing.T) {
 }
 
 func TestEmbeddedAdminRejectsMutationMethods(t *testing.T) {
-	handler, err := Handler()
+	handler, err := Handler("https://identity.example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,5 +50,15 @@ func TestEmbeddedAdminRejectsMutationMethods(t *testing.T) {
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/admin/", nil))
 	if response.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("status=%d", response.Code)
+	}
+}
+
+func TestEmbeddedAdminRejectsUnsafeLogtoIssuer(t *testing.T) {
+	for _, issuer := range []string{"", "file:///tmp/issuer", "https://user@example.com", "https://identity.example.com?redirect=https://attacker.example"} {
+		t.Run(issuer, func(t *testing.T) {
+			if _, err := Handler(issuer); err == nil {
+				t.Fatalf("Handler(%q) succeeded", issuer)
+			}
+		})
 	}
 }
