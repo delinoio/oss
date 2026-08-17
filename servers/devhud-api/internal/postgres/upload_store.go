@@ -336,7 +336,9 @@ func (s *Store) listUploadsForAdministrator(ctx context.Context, filters domain.
 	}
 	rows, err := s.pool.Query(ctx, uploadSelect+`
 		WHERE ($1::uuid IS NULL OR u.owner_user_id = $1)
-		AND (cardinality($2::smallint[]) = 0 OR u.state = ANY($2::smallint[]))
+		AND (cardinality($2::smallint[]) = 0 OR u.state = ANY($2::smallint[])
+			OR (u.state = 4 AND u.finalized_at IS NULL AND 1 = ANY($2::smallint[]))
+			OR (u.state = 4 AND u.finalized_at IS NOT NULL AND 3 = ANY($2::smallint[])))
 		AND ($3::uuid IS NULL OR u.submission_id = $3)
 		AND ($4::uuid IS NULL OR u.upload_group_id = $4)
 		AND ($5::timestamptz IS NULL OR (u.created_at, u.upload_id) < ($5, $6::uuid))
@@ -669,6 +671,8 @@ func (s *Store) insertAdministratorUploadAudit(ctx context.Context, tx pgx.Tx, u
 		}
 		event.CorrelationID = event.ID
 		event.Outcome = domain.AuditOutcomeAccepted
+		event.CreatedAt = now
+		event.ExpiresAt = now.Add(domain.AuditRetention)
 	}
 	command, err := tx.Exec(ctx, `INSERT INTO devhud_audit_events
 		(audit_event_id, actor_user_id, target_user_id, actor_fingerprint, target_fingerprint,
@@ -677,7 +681,7 @@ func (s *Store) insertAdministratorUploadAudit(ctx context.Context, tx pgx.Tx, u
 		 target.identity_fingerprint, $4, $5, $6, u.upload_id, $7, $8, $9
 		FROM devhud_users actor, devhud_uploads u
 		JOIN devhud_users target ON target.user_id = u.owner_user_id
-		WHERE actor.user_id = $2 AND u.upload_id = $3`, event.ID, audit.ActorUserID, upload.UploadID, action, now, now.Add(domain.AuditRetention), audit.Rationale, event.CorrelationID, domain.AuditOutcomeAccepted)
+		WHERE actor.user_id = $2 AND u.upload_id = $3`, event.ID, audit.ActorUserID, upload.UploadID, action, event.CreatedAt, event.ExpiresAt, audit.Rationale, event.CorrelationID, domain.AuditOutcomeAccepted)
 	if err != nil {
 		return err
 	}

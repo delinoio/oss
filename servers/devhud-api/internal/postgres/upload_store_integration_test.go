@@ -214,6 +214,46 @@ func TestAdministratorUploadListingAllowsNoOwnerFilter(t *testing.T) {
 	}
 }
 
+func TestAdministratorUploadListingIncludesRemovingVisibleStates(t *testing.T) {
+	ctx, _, store := newIntegrationStore(t, time.Date(2026, 8, 17, 0, 0, 0, 0, time.UTC))
+	now := time.Date(2026, 8, 17, 0, 0, 0, 0, time.UTC)
+	user := provisionUploadUser(t, ctx, store, "admin-list-removing")
+	sign := func(context.Context, domain.UploadReservation) (domain.SignedPUT, error) {
+		return domain.SignedPUT{}, nil
+	}
+
+	pending, err := store.CreateUpload(ctx, domain.CreateUpload{OwnerUserID: user.ID, Target: domain.UploadTarget{Kind: domain.UploadTargetNewSubmission}, SizeBytes: 1, Now: now}, sign)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ClaimUploadRemoval(ctx, "", "", pending.UploadID, domain.RemovalReasonAdministratorDeleted, domain.UploadStatePending, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", now); err != nil {
+		t.Fatal(err)
+	}
+
+	finalized, err := store.CreateUpload(ctx, domain.CreateUpload{OwnerUserID: user.ID, Target: domain.UploadTarget{Kind: domain.UploadTargetNewSubmission}, SizeBytes: 1, Now: now}, sign)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ClaimUploadPromotion(ctx, user.ID, reservationBinding(finalized, `"etag"`), domain.UploadObject{ETag: `"etag"`}, 1, 1, "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB", now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CompleteUploadPromotion(ctx, finalized.UploadID, "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB", `"public"`, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ClaimUploadRemoval(ctx, "", "", finalized.UploadID, domain.RemovalReasonAdministratorQuarantined, domain.UploadStateFinalized, "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC", now); err != nil {
+		t.Fatal(err)
+	}
+
+	pendingResult, err := store.ListUploadsForAdministrator(ctx, domain.AdminUploadFilters{States: []domain.UploadState{domain.UploadStatePending}}, nil, 10)
+	if err != nil || len(pendingResult.Uploads) != 1 || pendingResult.Uploads[0].UploadID != pending.UploadID {
+		t.Fatalf("pending removing uploads = %+v, err=%v", pendingResult.Uploads, err)
+	}
+	finalizedResult, err := store.ListUploadsForAdministrator(ctx, domain.AdminUploadFilters{States: []domain.UploadState{domain.UploadStateFinalized}}, nil, 10)
+	if err != nil || len(finalizedResult.Uploads) != 1 || finalizedResult.Uploads[0].UploadID != finalized.UploadID {
+		t.Fatalf("finalized removing uploads = %+v, err=%v", finalizedResult.Uploads, err)
+	}
+}
+
 func TestRemovalTerminalIdempotencyAndPendingQuarantine(t *testing.T) {
 	ctx, _, store := newIntegrationStore(t, time.Date(2026, 8, 17, 0, 0, 0, 0, time.UTC))
 	now := time.Date(2026, 8, 17, 0, 0, 0, 0, time.UTC)
@@ -295,7 +335,24 @@ func TestAdministratorAuditCommitsWithRemovalCompletion(t *testing.T) {
 	if domain.UploadState(state) != domain.UploadStateRemoving || operationToken == nil || *operationToken != token {
 		t.Fatalf("removal was not rolled back: state=%v token=%v", state, operationToken)
 	}
-	audit := domain.AdministratorUploadAudit{ActorUserID: actor.ID, Rationale: "Reviewed policy violation."}
+	eventID, err := store.ids.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	correlationID, err := store.ids.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	eventCreatedAt := now.Add(-5 * time.Minute)
+	eventExpiresAt := eventCreatedAt.Add(domain.AuditRetention)
+	audit := domain.AdministratorUploadAudit{
+		ActorUserID: actor.ID,
+		Rationale:   "Reviewed policy violation.",
+		Event: domain.AuditEvent{
+			ID: eventID, CorrelationID: correlationID, Action: domain.AuditActionUploadDeleted,
+			CreatedAt: eventCreatedAt, ExpiresAt: eventExpiresAt,
+		},
+	}
 	if _, err := pool.Exec(ctx, `UPDATE devhud_users SET administrative_block_state = 2 WHERE user_id = $1`, actor.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -316,15 +373,18 @@ func TestAdministratorAuditCommitsWithRemovalCompletion(t *testing.T) {
 	if _, err := pool.Exec(ctx, `UPDATE devhud_users SET administrative_block_state = 1 WHERE user_id = $1`, actor.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.CompleteUploadRemoval(ctx, reservation.UploadID, token, now, &audit); err != nil {
+	if _, err := store.CompleteUploadRemoval(ctx, reservation.UploadID, token, now.Add(time.Minute), &audit); err != nil {
 		t.Fatal(err)
 	}
-	var count int
-	if err := pool.QueryRow(ctx, `SELECT count(*) FROM devhud_audit_events WHERE target_upload_id = $1 AND actor_user_id = $2 AND action = $3 AND reason = $4`, reservation.UploadID, actor.ID, domain.AuditActionUploadDeleted, audit.Rationale).Scan(&count); err != nil {
+	var persistedCreatedAt, persistedExpiresAt time.Time
+	var persistedCorrelationID string
+	if err := pool.QueryRow(ctx, `SELECT created_at, expires_at, correlation_id FROM devhud_audit_events
+		WHERE audit_event_id = $1 AND target_upload_id = $2 AND actor_user_id = $3 AND action = $4 AND reason = $5`,
+		eventID, reservation.UploadID, actor.ID, domain.AuditActionUploadDeleted, audit.Rationale).Scan(&persistedCreatedAt, &persistedExpiresAt, &persistedCorrelationID); err != nil {
 		t.Fatal(err)
 	}
-	if count != 1 {
-		t.Fatalf("audit count = %d", count)
+	if !persistedCreatedAt.Equal(eventCreatedAt) || !persistedExpiresAt.Equal(eventExpiresAt) || persistedCorrelationID != correlationID {
+		t.Fatalf("persisted audit identity = created %v, expires %v, correlation %q", persistedCreatedAt, persistedExpiresAt, persistedCorrelationID)
 	}
 }
 
