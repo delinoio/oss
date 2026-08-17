@@ -690,6 +690,23 @@ describe("generated Connect identity/settings fixture", () => {
     expect(screen.getByTestId("identity-state").dataset.error).toBe("");
   });
 
+  it("rejects an oversized guest settings snapshot before persistence", async () => {
+    let rejectBootstrap!: (reason: unknown) => void;
+    const bootstrap = new Promise<Response>((_resolve, reject) => { rejectBootstrap = reject; });
+    vi.stubGlobal("fetch", vi.fn(() => bootstrap));
+    const mapping = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", pattern: `https://source.example/${"path".repeat(1_500)}`, repository: { owner: "owner".repeat(1_500), name: "repository".repeat(1_500) }, credentialProfileRef: "github.default", priority: 0, chromeOrigin: null, updatedAt: "2026-08-17T00:00:00.000Z" };
+    const oversized = { ...defaultDevHudSettings, urlMappings: Array.from({ length: 100 }, (_, index) => ({ ...mapping, id: `018f47a2-7b3c-7def-8abc-${(123456789000 + index).toString().padStart(12, "0")}` })) };
+
+    renderIdentityProbe(signedOutBridge(), oversized);
+    await waitFor(() => expect(screen.getByRole("button", { name: "continue probe locally" })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "continue probe locally" }));
+    await act(async () => { rejectBootstrap(new TypeError("network unavailable")); });
+    await waitFor(() => expect(screen.getByTestId("identity-state").dataset.status).toBe("guest"));
+
+    fireEvent.click(screen.getByRole("button", { name: "replace probe settings" }));
+    await waitFor(() => expect(hasGuestSettings(localStorage)).toBe(false));
+  });
+
   it("surfaces typed GetAccount failures without exposing destructive actions and retries them", async () => {
     const correlationId = "018f47a2-7b3c-7def-8abc-1234567890ef";
     let accountRequests = 0;

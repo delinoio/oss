@@ -604,6 +604,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     replaceSettings: async (next) => {
       if (status === "guest" || status === "signed-out") {
         const parsed = parseDevHudSettings(next);
+        encodeDevHudSettings(parsed);
         writeGuestSettings(storage, parsed);
         setSettings(parsed);
         return true;
