@@ -44,8 +44,13 @@ export type NativeBridgeErrorCode = (typeof NativeBridgeErrorCode)[keyof typeof 
 export interface RuntimeSnapshot {
   readonly bridgeVersion: typeof NativeBridgeVersion;
   readonly platform: RuntimePlatform;
+  readonly operatingSystem: "macos" | "windows" | "linux" | "ios" | "android";
   readonly architecture: string;
   readonly osVersion: string;
+  readonly appVersion: string;
+  readonly buildId: string;
+  readonly tauriRevision: string;
+  readonly cefRevision: string;
   readonly lifecycle: LifecycleState;
   readonly capabilities: {
     readonly secureSettings: boolean;
@@ -94,6 +99,8 @@ export type NativeBridgeRequestV1 =
   | { readonly operation: "secure.write"; readonly setting: SecureSettingRef; readonly value: string }
   | { readonly operation: "secure.remove"; readonly setting: SecureSettingRef }
   | { readonly operation: "secure.purge"; readonly scope: "logout" | "account-deletion" | "api-change"; readonly profileId?: string }
+  | { readonly operation: "diagnostics.export"; readonly suggestedName: string; readonly contents: string }
+  | { readonly operation: "diagnostics.clear" }
   | { readonly operation: "notifications.permission" }
   | { readonly operation: "notifications.request-permission" }
   | { readonly operation: "notifications.publish-deck-change"; readonly notification: DeckNotification }
@@ -111,6 +118,7 @@ export type NativeBridgeResponseV1 =
   | { readonly kind: "notification-permission"; readonly permission: NotificationPermission }
   | { readonly kind: "update-status"; readonly store: "app-store" | "play-store"; readonly installedVersion: string; readonly configured: boolean }
   | { readonly kind: "unsupported"; readonly feature: "widgets" }
+  | { readonly kind: "diagnostics-export"; readonly outcome: "saved" | "cancelled" }
   | { readonly kind: "ok" };
 
 export type NativeBridgeEventV1 =
@@ -121,14 +129,23 @@ interface TauriInternals {
   invoke(command: string, args?: Record<string, unknown>): Promise<unknown>;
 }
 
+interface DiagnosticsWritableFile {
+  write(data: Blob): Promise<void>;
+  close(): Promise<void>;
+  abort(): Promise<void>;
+}
+
 declare global {
   interface Window {
     __TAURI_INTERNALS__?: TauriInternals;
+    showSaveFilePicker?: (options: { suggestedName: string; types: readonly { description: string; accept: Record<string, readonly string[]> }[] }) => Promise<{ createWritable(): Promise<DiagnosticsWritableFile> }>;
   }
 }
 
 const profilePattern = /^[a-zA-Z0-9._-]{1,128}$/u;
 const secretLimit = 64 * 1024;
+const diagnosticsExportLimit = 1024 * 1024;
+const diagnosticsFileName = /^devhud-diagnostics-[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.json$/u;
 const nativeBridgeErrorCodes = new Set<string>(Object.values(NativeBridgeErrorCode));
 
 export class NativeBridgeError extends Error {
@@ -191,11 +208,17 @@ export function isAuthCallback(value: string) {
 }
 
 function desktopSnapshot(): RuntimeSnapshot {
+	const operatingSystem = /Mac/u.test(navigator.platform) ? "macos" : /Win/u.test(navigator.platform) ? "windows" : "linux";
   return {
     bridgeVersion: NativeBridgeVersion,
     platform: RuntimePlatform.Desktop,
-    architecture: "native",
-    osVersion: "native",
+    operatingSystem,
+    architecture: /arm|aarch64/u.test(navigator.userAgent.toLowerCase()) ? "arm64" : "x86_64",
+    osVersion: "system",
+    appVersion: "0.1.0",
+    buildId: "browser-development",
+    tauriRevision: "4af26a3f7f8b692d62cca549bbacd93f5ce90b41",
+    cefRevision: "150.0.10+g8042e43+chromium-150.0.7871.101",
     lifecycle: document.visibilityState === "hidden" ? LifecycleState.Background : LifecycleState.Active,
     capabilities: { secureSettings: false, notifications: false, storeUpdates: false, widgets: false },
   };
@@ -212,12 +235,15 @@ export const nativeBridge: NativeBridgeV1 = {
     if (request.operation === "secure.write") validateSecretValue(request.value);
     if (request.operation === "lifecycle.open-external") validateExternalRequest(request);
     if (request.operation === "auth.open-system-browser") validateAuthenticationBrowserRequest(request);
+    if (request.operation === "diagnostics.export") validateDiagnosticsExport(request);
     if (!window.__TAURI_INTERNALS__) {
       if (request.operation === "runtime.snapshot") return { kind: "runtime", snapshot: desktopSnapshot() };
       if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
       if (request.operation === "auth.peek-pending-callback") return { kind: "auth-callback", url: null };
       if (request.operation === "auth.take-pending-callback") return { kind: "auth-callback", url: null };
       if (request.operation === "auth.open-system-browser") { window.open(request.url, "_blank", "noopener,noreferrer"); return { kind: "ok" }; }
+      if (request.operation === "diagnostics.export") return exportDiagnosticsInBrowser(request);
+      if (request.operation === "diagnostics.clear") return { kind: "ok" };
       if (request.operation.startsWith("widgets.")) return { kind: "unsupported", feature: "widgets" };
       throw new NativeBridgeError(NativeBridgeErrorCode.Unsupported);
     }
@@ -239,5 +265,46 @@ export const nativeBridge: NativeBridgeV1 = {
     return () => document.removeEventListener("visibilitychange", visibility);
   },
 };
+
+export function validateDiagnosticsExport(request: { readonly suggestedName: string; readonly contents: string }): void {
+  if (!diagnosticsFileName.test(request.suggestedName) || new TextEncoder().encode(request.contents).byteLength > diagnosticsExportLimit) throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument);
+  try {
+    const parsed: unknown = JSON.parse(request.contents);
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error();
+  } catch {
+    throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument);
+  }
+}
+
+async function exportDiagnosticsInBrowser(request: { readonly suggestedName: string; readonly contents: string }): Promise<NativeBridgeResponseV1> {
+  const blob = new Blob([request.contents], { type: "application/json" });
+  if (window.showSaveFilePicker) {
+    let writable: DiagnosticsWritableFile | undefined;
+    try {
+      const handle = await window.showSaveFilePicker({ suggestedName: request.suggestedName, types: [{ description: "Redacted DevHUD diagnostics", accept: { "application/json": [".json"] } }] });
+      writable = await handle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      writable = undefined;
+      return { kind: "diagnostics-export", outcome: "saved" };
+    } catch (reason) {
+      if (writable) {
+        try { await writable.abort(); } catch { /* Preserve the stable export failure classification. */ }
+      }
+      if (reason instanceof DOMException && reason.name === "AbortError") return { kind: "diagnostics-export", outcome: "cancelled" };
+      throw new NativeBridgeError(NativeBridgeErrorCode.StorageFailure);
+    }
+  }
+  const link = document.createElement("a");
+  const url = URL.createObjectURL(blob);
+  try {
+    link.href = url;
+    link.download = request.suggestedName;
+    link.click();
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+  return { kind: "diagnostics-export", outcome: "saved" };
+}
 import { invoke as invokeTauri } from "@tauri-apps/api/core";
 import { listen as listenTauri } from "@tauri-apps/api/event";

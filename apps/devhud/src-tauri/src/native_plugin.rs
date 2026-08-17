@@ -43,7 +43,7 @@ impl<R: Runtime> NativePlatformBridge<R> {
         self.0
             .run_mobile_plugin("request", request)
             .map_err(|error| {
-                tracing::warn!(event = "native_bridge_request_failed", %error);
+                tracing::warn!(event = "native_bridge_request_failed");
                 translate_plugin_error(&error)
             })
     }

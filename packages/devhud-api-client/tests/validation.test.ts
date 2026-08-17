@@ -23,12 +23,15 @@ import {
 } from "../src/validation.js";
 
 const uuid = "018f47a2-7b3c-7def-8abc-1234567890ab";
+const relatedUuid = "018f47a2-7b3c-7def-9abc-1234567890ab";
 const clientBuild = create(ClientBuildSchema, {
   appVersion: "1.0.0",
   buildId: "devhud-20260815.1",
   platform: DiagnosticPlatform.MACOS,
   architecture: DiagnosticArchitecture.ARM64,
   osVersion: "macOS 15.0",
+  tauriRevision: "4af26a3f7f8b692d62cca549bbacd93f5ce90b41",
+  cefRevision: "150.0.10+g8042e43+chromium-150.0.7871.101",
 });
 const safeCrashReport = create(SubmitCrashReportRequestSchema, {
   reportSchemaVersion: 1,
@@ -39,7 +42,9 @@ const safeCrashReport = create(SubmitCrashReportRequestSchema, {
   errorCode: "UPLOAD_FINALIZE_FAILED",
   redactedSummary: "Upload finalization failed after a checksum mismatch.",
   redactedStackTrace: "UploadBoundary > Finalize > VerifyChecksum",
-  relatedCorrelationIds: [{ value: uuid }],
+  relatedCorrelationIds: [{ value: relatedUuid }],
+  clientCorrelationId: { value: uuid },
+  durationMilliseconds: 1200n,
 });
 const r2SignedCredentialUrls = [
   "https://account.r2.cloudflarestorage.com/bucket/report?X-Amz-Credential=R2ACCESSKEY%2F20260815%2Fauto%2Fs3%2Faws4_request",
@@ -262,6 +267,12 @@ describe("wire validation helpers", () => {
         }),
       ),
     ).toThrow(TypeError);
+    for (const field of ["appVersion", "buildId", "osVersion"] as const) {
+      expect(() => validateCrashReport(create(SubmitCrashReportRequestSchema, {
+        ...safeCrashReport,
+        clientBuild: { ...clientBuild, [field]: "" },
+      }))).toThrow(TypeError);
+    }
   });
 
   it("validates the occurredAt protobuf timestamp range", () => {
@@ -366,7 +377,6 @@ describe("wire validation helpers", () => {
 
     for (const diagnostic of ["2026/08/15", "1/2/3"]) {
       const reports = [
-        { ...safeCrashReport, errorCode: diagnostic },
         { ...safeCrashReport, clientBuild: { ...clientBuild, appVersion: diagnostic } },
         { ...safeCrashReport, clientBuild: { ...clientBuild, buildId: diagnostic } },
         { ...safeCrashReport, clientBuild: { ...clientBuild, osVersion: diagnostic } },
@@ -381,6 +391,7 @@ describe("wire validation helpers", () => {
         ).not.toThrow();
       }
     }
+    expect(() => validateCrashReport({ ...safeCrashReport, errorCode: "2026/08/15" })).toThrow(TypeError);
   });
 
   it("rejects local paths and credential-shaped crash diagnostics", () => {
@@ -490,12 +501,10 @@ describe("wire validation helpers", () => {
       "https://example.com/assets/app.js:10:2",
       "https://example.com/assets%2Fapp.js:10:2",
       "https://cdn.example.com/app.js?v=42",
-      "https://docs.example.com/guide#configuration",
       "wss://example.com/socket",
       "devhud://auth/callback",
       "mailto:user@example.com?subject=secret",
       "https://example.com/?na%6de=release",
-      "https://example.com/?context=release%3D2026#component=React%2FNative",
       r2UnsignedMetadataUrl,
     ]) {
       const report = create(SubmitCrashReportRequestSchema, {
@@ -509,6 +518,8 @@ describe("wire validation helpers", () => {
       "https://alice:password@example.com/app.js",
       "https://example.com/app.js?v=42&token=secret",
       "https://example.com/app.js#access-token",
+      "https://docs.example.com/guide#configuration",
+      "https://example.com/?context=release%3D2026#component=React%2FNative",
       "wss://user:pass@example.com/socket",
       "devhud://auth/callback?code=secret&state=x",
       "https://example.com/#access%2Dtoken=secret",
@@ -585,8 +596,8 @@ describe("wire validation helpers", () => {
     }
 
     const oversizedValue = "a".repeat(MAX_CRASH_IDENTIFIER_BYTES + 1);
+    expect(() => validateCrashReport({ ...safe, errorCode: oversizedValue })).toThrow(TypeError);
     const oversizedIdentifiers = [
-      { ...safe, errorCode: oversizedValue },
       { ...safe, clientBuild: { ...clientBuild, appVersion: oversizedValue } },
       { ...safe, clientBuild: { ...clientBuild, buildId: oversizedValue } },
       { ...safe, clientBuild: { ...clientBuild, osVersion: oversizedValue } },

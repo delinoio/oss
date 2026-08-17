@@ -12,8 +12,13 @@ import { LifecycleState, NativeBridgeError, NativeBridgeErrorCode, NotificationP
 const mobileRuntime: RuntimeSnapshot = {
   bridgeVersion: 1,
   platform: RuntimePlatform.Ios,
+  operatingSystem: "ios",
   architecture: "arm64",
   osVersion: "16.0",
+  appVersion: "0.1.0",
+  buildId: "test",
+  tauriRevision: "4af26a3f7f8b692d62cca549bbacd93f5ce90b41",
+  cefRevision: "",
   lifecycle: LifecycleState.Active,
   capabilities: { secureSettings: true, notifications: false, storeUpdates: false, widgets: false },
 };

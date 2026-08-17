@@ -51,6 +51,7 @@ func (s *BootstrapService) GetBootstrap(ctx context.Context, _ *connect.Request[
 		PublicAssetBaseUrl: s.configuration.PublicAssetBaseURL,
 		Capabilities: []devhudv1.StaticCapability{
 			devhudv1.StaticCapability_STATIC_CAPABILITY_SETTINGS_SYNC,
+			devhudv1.StaticCapability_STATIC_CAPABILITY_CRASH_REPORTS,
 			devhudv1.StaticCapability_STATIC_CAPABILITY_ACCOUNT_RECOVERY,
 		},
 		UploadLimits: &devhudv1.UploadLimits{

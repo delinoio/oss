@@ -49,9 +49,11 @@ func New(dependencies Dependencies) (*http.Server, error) {
 	}), handlerOptions...)
 	settingsPath, settingsHandler := devhudv1connect.NewSettingsServiceHandler(rpc.NewSettingsService(dependencies.Repository, dependencies.Clock, dependencies.Logger), handlerOptions...)
 	accountPath, accountHandler := devhudv1connect.NewAccountServiceHandler(rpc.NewAccountService(dependencies.Repository, dependencies.Clock, dependencies.Logger), handlerOptions...)
+	diagnosticsPath, diagnosticsHandler := devhudv1connect.NewDiagnosticsServiceHandler(rpc.NewDiagnosticsService(dependencies.Repository, dependencies.Clock, dependencies.Logger), handlerOptions...)
 	mux.Handle(bootstrapPath, bootstrapHandler)
 	mux.Handle(settingsPath, settingsHandler)
 	mux.Handle(accountPath, accountHandler)
+	mux.Handle(diagnosticsPath, diagnosticsHandler)
 	if dependencies.Uploads != nil {
 		uploadPath, uploadHandler := devhudv1connect.NewUploadServiceHandler(rpc.NewUploadService(dependencies.Uploads, dependencies.Logger), handlerOptions...)
 		mux.Handle(uploadPath, uploadHandler)
@@ -71,12 +73,13 @@ func New(dependencies Dependencies) (*http.Server, error) {
 	mux.Handle("GET /metrics", dependencies.MetricsHandler)
 
 	connectPaths := map[string]struct{}{
-		devhudv1connect.BootstrapServiceGetBootstrapProcedure:   {},
-		devhudv1connect.SettingsServiceGetSettingsProcedure:     {},
-		devhudv1connect.SettingsServiceReplaceSettingsProcedure: {},
-		devhudv1connect.AccountServiceGetAccountProcedure:       {},
-		devhudv1connect.AccountServiceDeleteAccountProcedure:    {},
-		devhudv1connect.AccountServiceRestoreAccountProcedure:   {},
+		devhudv1connect.BootstrapServiceGetBootstrapProcedure:        {},
+		devhudv1connect.SettingsServiceGetSettingsProcedure:          {},
+		devhudv1connect.SettingsServiceReplaceSettingsProcedure:      {},
+		devhudv1connect.AccountServiceGetAccountProcedure:            {},
+		devhudv1connect.AccountServiceDeleteAccountProcedure:         {},
+		devhudv1connect.AccountServiceRestoreAccountProcedure:        {},
+		devhudv1connect.DiagnosticsServiceSubmitCrashReportProcedure: {},
 	}
 	if dependencies.Uploads != nil {
 		connectPaths[devhudv1connect.UploadServiceCreateUploadProcedure] = struct{}{}
@@ -91,11 +94,13 @@ func New(dependencies Dependencies) (*http.Server, error) {
 
 	var handler http.Handler = withHandlerExecutionDeadline(mux, handlerExecutionTimeout)
 	handler = connectErrorMetadata(connectPaths, handler)
-	handler = otelhttp.NewHandler(handler, "devhud-api")
 	handler = cors(handler, connectPaths)
 	handler = requireHTTPS(dependencies.Config.Environment, dependencies.Config.TrustedProxyCIDRs, handler)
 	handler = recoverPanics(dependencies.Logger, handler)
 	handler = observeRequests(dependencies.Logger, dependencies.Repository, dependencies.Clock, dependencies.IDs, requestMetrics, handler)
+	// Keep request observation inside the HTTP span so metric recordings carry
+	// trace context (and trace-based exemplars when the exporter supports them).
+	handler = otelhttp.NewHandler(handler, "devhud-api")
 	handler = correlation(dependencies.IDs, handler)
 	protocols := new(http.Protocols)
 	protocols.SetHTTP1(true)

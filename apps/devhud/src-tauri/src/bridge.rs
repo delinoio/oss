@@ -1,9 +1,14 @@
+#[cfg(desktop)]
+use std::io::Write;
 use std::sync::{Arc, Mutex};
 
 use serde_json::{Value, json};
 
 const PROFILE_ID_LIMIT: usize = 128;
 const SECRET_LIMIT: usize = 64 * 1024;
+const DIAGNOSTICS_EXPORT_LIMIT: usize = 1024 * 1024;
+const TAURI_REVISION: &str = "4af26a3f7f8b692d62cca549bbacd93f5ce90b41";
+const CEF_REVISION: &str = "150.0.10+g8042e43+chromium-150.0.7871.101";
 
 const DEFAULT_API_ORIGIN: &str = "https://devhud.api.delino.io";
 
@@ -308,6 +313,20 @@ fn runtime_platform() -> &'static str {
     }
 }
 
+fn runtime_operating_system() -> &'static str {
+    if cfg!(target_os = "ios") {
+        "ios"
+    } else if cfg!(target_os = "android") {
+        "android"
+    } else if cfg!(target_os = "macos") {
+        "macos"
+    } else if cfg!(target_os = "windows") {
+        "windows"
+    } else {
+        "linux"
+    }
+}
+
 fn runtime_snapshot() -> Value {
     let mobile = cfg!(any(target_os = "android", target_os = "ios"));
     json!({
@@ -315,8 +334,13 @@ fn runtime_snapshot() -> Value {
         "snapshot": {
             "bridgeVersion": 1,
             "platform": runtime_platform(),
+            "operatingSystem": runtime_operating_system(),
             "architecture": std::env::consts::ARCH,
-            "osVersion": "system",
+            "osVersion": std::env::consts::OS,
+            "appVersion": env!("CARGO_PKG_VERSION"),
+            "buildId": option_env!("DEVHUD_BUILD_ID").unwrap_or(env!("CARGO_PKG_VERSION")),
+            "tauriRevision": TAURI_REVISION,
+            "cefRevision": if mobile { "" } else { CEF_REVISION },
             "lifecycle": "active",
             "capabilities": {
                 "secureSettings": true,
@@ -328,9 +352,118 @@ fn runtime_snapshot() -> Value {
     })
 }
 
+fn validate_diagnostics_export(request: &Value) -> Result<(&str, &str), String> {
+    let suggested_name = request
+        .get("suggestedName")
+        .and_then(Value::as_str)
+        .ok_or("invalid-argument")?;
+    let contents = request
+        .get("contents")
+        .and_then(Value::as_str)
+        .ok_or("invalid-argument")?;
+    let correlation = suggested_name
+        .strip_prefix("devhud-diagnostics-")
+        .and_then(|value| value.strip_suffix(".json"))
+        .ok_or("invalid-argument")?;
+    let canonical_uuid = correlation.len() == 36
+        && correlation.bytes().enumerate().all(|(index, byte)| {
+            if matches!(index, 8 | 13 | 18 | 23) {
+                byte == b'-'
+            } else {
+                byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)
+            }
+        })
+        && correlation.as_bytes().get(14) == Some(&b'7')
+        && correlation
+            .as_bytes()
+            .get(19)
+            .is_some_and(|byte| matches!(byte, b'8' | b'9' | b'a' | b'b'));
+    if !canonical_uuid
+        || contents.len() > DIAGNOSTICS_EXPORT_LIMIT
+        || !matches!(
+            serde_json::from_str::<Value>(contents),
+            Ok(Value::Object(_))
+        )
+    {
+        return Err("invalid-argument".to_string());
+    }
+    Ok((suggested_name, contents))
+}
+
+#[cfg(desktop)]
+fn export_diagnostics(request: &Value) -> Result<Value, String> {
+    let (suggested_name, contents) = validate_diagnostics_export(request)?;
+    let Some(destination) = rfd::FileDialog::new()
+        .add_filter("JSON", &["json"])
+        .set_file_name(suggested_name)
+        .save_file()
+    else {
+        return Ok(json!({ "kind": "diagnostics-export", "outcome": "cancelled" }));
+    };
+    let parent = destination.parent().ok_or("storage-failure")?;
+    let mut file = tempfile::NamedTempFile::new_in(parent).map_err(|_| "storage-failure")?;
+    file.write_all(contents.as_bytes())
+        .map_err(|_| "storage-failure")?;
+    file.as_file().sync_all().map_err(|_| "storage-failure")?;
+    file.persist(destination).map_err(|_| "storage-failure")?;
+    Ok(json!({ "kind": "diagnostics-export", "outcome": "saved" }))
+}
+
+#[cfg(desktop)]
+fn clear_diagnostic_logs() -> Result<(), String> {
+    let Some(directory) = ({
+        #[cfg(target_os = "windows")]
+        {
+            dirs::data_local_dir().map(|path| path.join("io.delino.devhud").join("logs"))
+        }
+        #[cfg(target_os = "macos")]
+        {
+            dirs::home_dir().map(|path| path.join("Library/Logs/io.delino.devhud"))
+        }
+        #[cfg(target_os = "linux")]
+        {
+            dirs::state_dir().map(|path| path.join("io.delino.devhud").join("logs"))
+        }
+    }) else {
+        return Ok(());
+    };
+    let Ok(entries) = std::fs::read_dir(directory) else {
+        return Ok(());
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let diagnostic_file = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(is_diagnostic_log_name);
+        if diagnostic_file {
+            std::fs::remove_file(path).map_err(|_| "storage-failure")?;
+        }
+    }
+    Ok(())
+}
+
+#[cfg(any(desktop, test))]
+fn is_diagnostic_log_name(name: &str) -> bool {
+    let bytes = name.as_bytes();
+    bytes.len() == 23
+        && name.starts_with("devhud.")
+        && name.ends_with(".jsonl")
+        && bytes[7..17].iter().enumerate().all(|(index, byte)| {
+            matches!(index, 4 | 7) && *byte == b'-'
+                || !matches!(index, 4 | 7) && byte.is_ascii_digit()
+        })
+}
+
+#[cfg(mobile)]
+fn clear_diagnostic_logs() -> Result<(), String> {
+    Ok(())
+}
+
 #[cfg(any(mobile, test))]
 fn routes_to_mobile_plugin(operation: &str, android: bool) -> bool {
-    operation.starts_with("lifecycle.")
+    operation == "diagnostics.export"
+        || operation.starts_with("lifecycle.")
         || operation.starts_with("secure.")
         || operation == "auth.open-system-browser"
         || operation.starts_with("notifications.")
@@ -420,12 +553,19 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
     state: tauri::State<'_, NativeBridgeState>,
     app: tauri::AppHandle<R>,
 ) -> Result<Value, String> {
+    let operation = request
+        .get("operation")
+        .and_then(Value::as_str)
+        .ok_or("invalid-argument")?;
+    if operation == "diagnostics.clear" {
+        clear_diagnostic_logs()?;
+        return Ok(json!({ "kind": "ok" }));
+    }
     #[cfg(mobile)]
     {
-        let operation = request
-            .get("operation")
-            .and_then(Value::as_str)
-            .ok_or("invalid-argument")?;
+        if operation == "diagnostics.export" {
+            validate_diagnostics_export(&request)?;
+        }
         if operation.starts_with("secure.") {
             if operation == "secure.purge" {
                 validate_purge_request(&request)?;
@@ -440,22 +580,31 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
             validate_auth_browser_request(&request, &state)?;
         }
         if routes_to_mobile_plugin(operation, cfg!(target_os = "android")) {
-            return crate::native_plugin::request(&app, &request);
+            let response = crate::native_plugin::request(&app, &request)?;
+            if operation == "secure.purge" {
+                clear_diagnostic_logs()?;
+            }
+            return Ok(response);
         }
     }
     #[cfg(desktop)]
     {
-        let operation = request
-            .get("operation")
-            .and_then(Value::as_str)
-            .ok_or("invalid-argument")?;
+        if operation == "diagnostics.export" {
+            return tauri::async_runtime::spawn_blocking(move || export_diagnostics(&request))
+                .await
+                .map_err(|_| "platform-failure".to_string())?;
+        }
         if operation.starts_with("secure.") {
             if operation == "secure.purge" {
                 validate_purge_request(&request)?;
             } else {
                 validate_secure_request(&request)?;
             }
-            return crate::secure_store::handle(&request);
+            let response = crate::secure_store::handle(&request)?;
+            if operation == "secure.purge" {
+                clear_diagnostic_logs()?;
+            }
+            return Ok(response);
         }
         if operation == "auth.open-system-browser" {
             validate_auth_browser_request(&request, &state)?;
@@ -478,8 +627,8 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        NativeBridgeState, handle_native_bridge_request, is_auth_callback, routes_to_mobile_plugin,
-        validate_auth_browser_request,
+        NativeBridgeState, handle_native_bridge_request, is_auth_callback, is_diagnostic_log_name,
+        routes_to_mobile_plugin, validate_auth_browser_request, validate_diagnostics_export,
     };
 
     #[test]
@@ -496,6 +645,62 @@ mod tests {
         ));
         assert!(routes_to_mobile_plugin("notifications.permission", false));
         assert!(!routes_to_mobile_plugin("runtime.snapshot", true));
+    }
+
+    #[test]
+    fn diagnostics_export_accepts_only_bounded_json_and_an_app_selected_name() {
+        let valid = json!({
+            "suggestedName": "devhud-diagnostics-0198c8b0-77d6-7d4a-a7d9-e4d7b11c4400.json",
+            "contents": "{\"schemaVersion\":1}"
+        });
+        assert!(validate_diagnostics_export(&valid).is_ok());
+        for invalid in [
+            json!({ "suggestedName": "../../private.json", "contents": "{}" }),
+            json!({ "suggestedName": "devhud-diagnostics-0198c8b0-77d6-7d4a-a7d9-e4d7b11c4400.json", "contents": "not-json" }),
+        ] {
+            assert_eq!(
+                validate_diagnostics_export(&invalid),
+                Err("invalid-argument".to_string())
+            );
+        }
+    }
+
+    #[test]
+    fn diagnostics_cleanup_matches_only_exact_rotated_app_log_names() {
+        assert!(is_diagnostic_log_name("devhud.2026-08-17.jsonl"));
+        for name in [
+            "devhud.jsonl",
+            "devhud-secrets.jsonl",
+            "devhud.2026-08-17.jsonl.bak",
+            "devhud.2026-8-17.jsonl",
+            "other.2026-08-17.jsonl",
+        ] {
+            assert!(
+                !is_diagnostic_log_name(name),
+                "unexpected cleanup match: {name}"
+            );
+        }
+    }
+
+    #[test]
+    fn runtime_snapshot_has_exact_pinned_runtime_revisions() {
+        let snapshot = handle_native_bridge_request(
+            &json!({ "operation": "runtime.snapshot" }),
+            &NativeBridgeState::default(),
+        )
+        .expect("runtime snapshot");
+        assert_eq!(
+            snapshot["snapshot"]["tauriRevision"],
+            "4af26a3f7f8b692d62cca549bbacd93f5ce90b41"
+        );
+        if cfg!(any(target_os = "android", target_os = "ios")) {
+            assert_eq!(snapshot["snapshot"]["cefRevision"], "");
+        } else {
+            assert_eq!(
+                snapshot["snapshot"]["cefRevision"],
+                "150.0.10+g8042e43+chromium-150.0.7871.101"
+            );
+        }
     }
 
     #[test]

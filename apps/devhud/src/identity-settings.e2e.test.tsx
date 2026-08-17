@@ -20,8 +20,13 @@ import { clearIdentityForApiChange, DevHudServiceBoundary, useIdentitySettings }
 const runtime: RuntimeSnapshot = {
   bridgeVersion: 1,
   platform: RuntimePlatform.Desktop,
+  operatingSystem: "linux",
   architecture: "x86_64",
   osVersion: "fixture",
+  appVersion: "0.1.0",
+  buildId: "test",
+  tauriRevision: "4af26a3f7f8b692d62cca549bbacd93f5ce90b41",
+  cefRevision: "150.0.10+g8042e43+chromium-150.0.7871.101",
   lifecycle: LifecycleState.Active,
   capabilities: { secureSettings: true, notifications: false, storeUpdates: false, widgets: false },
 };

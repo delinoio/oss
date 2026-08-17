@@ -11,8 +11,10 @@ import android.net.Uri
 import android.os.Build
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
+import androidx.activity.result.ActivityResult
 import androidx.appcompat.app.AppCompatActivity
 import app.tauri.PermissionState
+import app.tauri.annotation.ActivityCallback
 import app.tauri.annotation.Command
 import app.tauri.annotation.Permission
 import app.tauri.annotation.PermissionCallback
@@ -63,6 +65,7 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
                 "auth.take-pending-callback" -> takeAuthCallback(invoke)
                 "auth.open-system-browser" -> openAuthenticationBrowser(invoke)
                 "lifecycle.open-external" -> openExternal(invoke)
+                "diagnostics.export" -> exportDiagnostics(invoke)
                 "secure.read" -> readSecure(invoke)
                 "secure.write" -> writeSecure(invoke)
                 "secure.remove" -> removeSecure(invoke)
@@ -90,6 +93,45 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
         if (!validIssuer || !sameOrigin) throw IllegalArgumentException("issuer")
         activity.startActivity(Intent(Intent.ACTION_VIEW, destination).addCategory(Intent.CATEGORY_BROWSABLE))
         invoke.resolve(JSObject().put("kind", "ok"))
+    }
+
+    private fun exportDiagnostics(invoke: Invoke) {
+        val args = invoke.getArgs()
+        val suggestedName = args.getString("suggestedName")
+        val contents = args.getString("contents")
+        require(suggestedName.matches(Regex("devhud-diagnostics-[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\\.json")))
+        require(contents.toByteArray(Charsets.UTF_8).size <= 1024 * 1024)
+        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT)
+            .addCategory(Intent.CATEGORY_OPENABLE)
+            .setType("application/json")
+            .putExtra(Intent.EXTRA_TITLE, suggestedName)
+        startActivityForResult(invoke, intent, "diagnosticsExportResult")
+    }
+
+    @ActivityCallback
+    private fun diagnosticsExportResult(invoke: Invoke, result: ActivityResult) {
+        if (result.resultCode == Activity.RESULT_CANCELED) {
+            invoke.resolve(JSObject().put("kind", "diagnostics-export").put("outcome", "cancelled"))
+            return
+        }
+        if (result.resultCode != Activity.RESULT_OK || result.data?.data == null) {
+            invoke.reject("storage-failure", "storage-failure")
+            return
+        }
+        try {
+            val destination = result.data!!.data!!
+            val contents = invoke.getArgs().getString("contents")
+            activity.contentResolver.openOutputStream(destination, "wt").use { stream ->
+                requireNotNull(stream).write(contents.toByteArray(Charsets.UTF_8))
+                stream.flush()
+            }
+            invoke.resolve(JSObject().put("kind", "diagnostics-export").put("outcome", "saved"))
+        } catch (_: Exception) {
+            result.data?.data?.let { destination ->
+                try { activity.contentResolver.delete(destination, null, null) } catch (_: Exception) { }
+            }
+            invoke.reject("storage-failure", "storage-failure")
+        }
     }
 
     private fun captureAuthCallback(intent: Intent?) {

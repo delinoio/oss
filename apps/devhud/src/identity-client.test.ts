@@ -17,7 +17,7 @@ function memoryBridge(): NativeBridgeV1 & { readonly values: Map<string, string>
       if (request.operation === "secure.read") return { kind: "secure-value", value: values.get(`${request.setting.kind}:${request.setting.profileId}`) ?? null };
       if (request.operation === "secure.write") { values.set(`${request.setting.kind}:${request.setting.profileId}`, request.value); return { kind: "ok" }; }
       if (request.operation === "secure.remove") { values.delete(`${request.setting.kind}:${request.setting.profileId}`); return { kind: "ok" }; }
-      if (request.operation === "runtime.snapshot") return { kind: "runtime", snapshot: { bridgeVersion: 1, platform: RuntimePlatform.Desktop, architecture: "x64", osVersion: "test", lifecycle: LifecycleState.Active, capabilities: { secureSettings: true, notifications: false, storeUpdates: false, widgets: false } } };
+      if (request.operation === "runtime.snapshot") return { kind: "runtime", snapshot: { bridgeVersion: 1, platform: RuntimePlatform.Desktop, operatingSystem: "linux", architecture: "x86_64", osVersion: "test", appVersion: "0.1.0", buildId: "test", tauriRevision: "4af26a3f7f8b692d62cca549bbacd93f5ce90b41", cefRevision: "150.0.10+g8042e43+chromium-150.0.7871.101", lifecycle: LifecycleState.Active, capabilities: { secureSettings: true, notifications: false, storeUpdates: false, widgets: false } } };
       return { kind: "ok" };
     },
     async listen() { return () => {}; },

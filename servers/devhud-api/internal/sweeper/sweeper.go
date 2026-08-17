@@ -28,6 +28,7 @@ type Result struct {
 	AccountsPurged        int
 	RequestLogsDeleted    int64
 	AuditEventsDeleted    int64
+	CrashReportsDeleted   int64
 	StagingObjectsDeleted int
 }
 
@@ -108,7 +109,8 @@ func (s *Sweeper) RunOnce(ctx context.Context) (result Result, returnErr error) 
 		}
 		result.RequestLogsDeleted += retention.RequestLogsDeleted
 		result.AuditEventsDeleted += retention.AuditEventsDeleted
-		if retention.RequestLogsDeleted < int64(s.batchSize) && retention.AuditEventsDeleted < int64(s.batchSize) {
+		result.CrashReportsDeleted += retention.CrashReportsDeleted
+		if retention.RequestLogsDeleted < int64(s.batchSize) && retention.AuditEventsDeleted < int64(s.batchSize) && retention.CrashReportsDeleted < int64(s.batchSize) {
 			break
 		}
 	}

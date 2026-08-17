@@ -138,7 +138,7 @@ export function clearAuthenticatedOriginData(storage: MutableStorage, apiOrigin:
 export function clearAllContractedLocalData(storage: MutableStorage): void {
   clearedGuestSettings.add(storage);
   inMemoryGuestSettings.delete(storage);
-  removeMatching(storage, (key) => key.startsWith(prefix) || /^(?:devhud\.(?:deck|draft|clone|cache|permission|pairing)|devhud-extension\.)/u.test(key));
+  removeMatching(storage, (key) => key.startsWith(prefix) || /^(?:devhud\.(?:deck|draft|clone|cache|permission|pairing|diagnostics)|devhud-extension\.)/u.test(key));
 }
 
 function accountKey(apiOrigin: string, suffix: string): string {

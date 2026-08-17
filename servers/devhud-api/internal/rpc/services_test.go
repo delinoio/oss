@@ -260,11 +260,12 @@ type serviceClock struct{}
 func (serviceClock) Now() time.Time { return time.Date(2026, 8, 16, 0, 0, 0, 0, time.UTC) }
 
 type serviceRepository struct {
-	getAccount      func(context.Context, string) (domain.User, error)
-	getSettings     func(context.Context, string) (*domain.Settings, error)
-	replaceSettings func(context.Context, string, uint32, []byte, uint64, time.Time) (domain.Settings, error)
-	deleteAccount   func(context.Context, string, time.Time) (domain.User, error)
-	restoreAccount  func(context.Context, string, time.Time) (domain.User, error)
+	getAccount        func(context.Context, string) (domain.User, error)
+	getSettings       func(context.Context, string) (*domain.Settings, error)
+	replaceSettings   func(context.Context, string, uint32, []byte, uint64, time.Time) (domain.Settings, error)
+	deleteAccount     func(context.Context, string, time.Time) (domain.User, error)
+	restoreAccount    func(context.Context, string, time.Time) (domain.User, error)
+	submitCrashReport func(context.Context, string, domain.CrashReport) (domain.CrashReport, error)
 }
 
 func (*serviceRepository) SchemaCurrent(context.Context) (bool, error) { return true, nil }
@@ -286,6 +287,12 @@ func (repository *serviceRepository) DeleteAccount(ctx context.Context, userID s
 }
 func (repository *serviceRepository) RestoreAccount(ctx context.Context, userID string, now time.Time) (domain.User, error) {
 	return repository.restoreAccount(ctx, userID, now)
+}
+func (repository *serviceRepository) SubmitCrashReport(ctx context.Context, userID string, report domain.CrashReport) (domain.CrashReport, error) {
+	if repository.submitCrashReport == nil {
+		return domain.CrashReport{}, nil
+	}
+	return repository.submitCrashReport(ctx, userID, report)
 }
 func (*serviceRepository) RecordRequest(context.Context, domain.RequestLog) error { return nil }
 func (*serviceRepository) RecordAudit(context.Context, domain.AuditEvent) error   { return nil }

@@ -12,6 +12,10 @@ export const MAX_ADMIN_REASON_BYTES = 4_096;
 export const MAX_CRASH_IDENTIFIER_BYTES = 256;
 export const MAX_CRASH_SUMMARY_BYTES = 4_096;
 export const MAX_CRASH_STACK_BYTES = 32_768;
+export const MAX_CRASH_RELATED_CORRELATIONS = 32;
+export const MAX_CRASH_DURATION_MILLISECONDS = 86_400_000n;
+export const MAX_CRASH_STACK_LINES = 64;
+export const MAX_CRASH_STACK_LINE_BYTES = 512;
 
 const UUID_V7_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -37,6 +41,7 @@ const diagnosticPlatforms: ReadonlySet<DiagnosticPlatform> = new Set([
 const diagnosticArchitectures: ReadonlySet<DiagnosticArchitecture> = new Set([
   DiagnosticArchitecture.X86_64,
   DiagnosticArchitecture.ARM64,
+  DiagnosticArchitecture.ARMV7,
 ]);
 const diagnosticComponents: ReadonlySet<DiagnosticComponent> = new Set([
   DiagnosticComponent.APP,
@@ -50,6 +55,12 @@ const diagnosticSeverities: ReadonlySet<DiagnosticSeverity> = new Set([
   DiagnosticSeverity.ERROR,
   DiagnosticSeverity.FATAL,
 ]);
+const diagnosticErrorCodePattern = /^[A-Z][A-Z0-9_]{0,63}$/u;
+const forbiddenDiagnosticContentPatterns: ReadonlyArray<RegExp> = [
+  /\b(?:browser[._ -]?dom|outerhtml|innerhtml|screenshot|form[._ -]?value|issue[._ -]?body|agent[._ -]?(?:prompt|output)|child[._ -]?env|shortcut[._ -]?(?:key|keystroke))\b/iu,
+  /https?:\/\/[^\s]*#/iu,
+  /\b(?:ctrl|control|cmd|command|meta|alt|option|shift)\s*[+-]\s*[a-z0-9]/iu,
+];
 
 const forbiddenLocalPathPatterns: ReadonlyArray<RegExp> = [
   // Keep this lookbehind-free while iOS 16.0-16.3 system webviews are supported.
@@ -147,31 +158,85 @@ export function validateCrashReport(report: SubmitCrashReportRequest): void {
   if (!diagnosticSeverities.has(report.severity)) {
     throw new TypeError("severity must be a recognized nonzero value");
   }
+  if (report.clientCorrelationId === undefined) {
+    throw new TypeError("clientCorrelationId is required");
+  }
+  assertUuidV7(report.clientCorrelationId.value);
+  if (report.relatedCorrelationIds.length > MAX_CRASH_RELATED_CORRELATIONS) {
+    throw new RangeError(`relatedCorrelationIds must not exceed ${MAX_CRASH_RELATED_CORRELATIONS}`);
+  }
+  if (report.durationMilliseconds > MAX_CRASH_DURATION_MILLISECONDS) {
+    throw new RangeError("durationMilliseconds must not exceed 24 hours");
+  }
+  if (!diagnosticErrorCodePattern.test(report.errorCode)) {
+    throw new TypeError("errorCode must be an enum-style classification");
+  }
 
-  validateSensitiveText(report.errorCode, MAX_CRASH_IDENTIFIER_BYTES, "errorCode");
-  validateSensitiveText(
+  validateDiagnosticText(report.errorCode, MAX_CRASH_IDENTIFIER_BYTES, "errorCode");
+  validateDiagnosticText(
     report.clientBuild.appVersion,
     MAX_CRASH_IDENTIFIER_BYTES,
     "clientBuild.appVersion",
   );
-  validateSensitiveText(
+  validateDiagnosticText(
     report.clientBuild.buildId,
     MAX_CRASH_IDENTIFIER_BYTES,
     "clientBuild.buildId",
   );
-  validateSensitiveText(
+  validateDiagnosticText(
     report.clientBuild.osVersion,
     MAX_CRASH_IDENTIFIER_BYTES,
     "clientBuild.osVersion",
   );
-  validateSensitiveText(report.redactedSummary, MAX_CRASH_SUMMARY_BYTES, "redactedSummary");
-  validateSensitiveText(
+  validateDiagnosticText(
+    report.clientBuild.tauriRevision,
+    MAX_CRASH_IDENTIFIER_BYTES,
+    "clientBuild.tauriRevision",
+  );
+  validateDiagnosticText(
+    report.clientBuild.cefRevision,
+    MAX_CRASH_IDENTIFIER_BYTES,
+    "clientBuild.cefRevision",
+  );
+  if (!report.clientBuild.appVersion || !report.clientBuild.buildId || !report.clientBuild.osVersion) {
+    throw new TypeError("clientBuild version and operating-system fields must not be empty");
+  }
+  if (!/^[0-9a-f]{40}$/u.test(report.clientBuild.tauriRevision)) {
+    throw new TypeError("clientBuild.tauriRevision must be an exact lowercase source revision");
+  }
+  const desktop = report.clientBuild.platform === DiagnosticPlatform.MACOS
+    || report.clientBuild.platform === DiagnosticPlatform.WINDOWS
+    || report.clientBuild.platform === DiagnosticPlatform.LINUX;
+  if (desktop ? report.clientBuild.cefRevision.length === 0 : report.clientBuild.cefRevision.length !== 0) {
+    throw new TypeError("clientBuild.cefRevision must be present only for desktop reports");
+  }
+  validateDiagnosticText(report.redactedSummary, MAX_CRASH_SUMMARY_BYTES, "redactedSummary");
+  validateDiagnosticText(
     report.redactedStackTrace,
     MAX_CRASH_STACK_BYTES,
     "redactedStackTrace",
   );
+  const stackLines = report.redactedStackTrace.split("\n");
+  if (stackLines.length > MAX_CRASH_STACK_LINES) {
+    throw new RangeError(`redactedStackTrace must not exceed ${MAX_CRASH_STACK_LINES} lines`);
+  }
+  if (stackLines.some((line) => textEncoder.encode(line).byteLength > MAX_CRASH_STACK_LINE_BYTES)) {
+    throw new RangeError(`redactedStackTrace lines must not exceed ${MAX_CRASH_STACK_LINE_BYTES} bytes`);
+  }
+  const seenCorrelations = new Set([report.clientCorrelationId.value]);
   for (const correlationId of report.relatedCorrelationIds) {
     assertUuidV7(correlationId.value);
+    if (seenCorrelations.has(correlationId.value)) {
+      throw new TypeError("correlation identifiers must be unique");
+    }
+    seenCorrelations.add(correlationId.value);
+  }
+}
+
+function validateDiagnosticText(value: string, maximum: number, field: string): void {
+  validateSensitiveText(value, maximum, field);
+  if (forbiddenDiagnosticContentPatterns.some((pattern) => pattern.test(value))) {
+    throw new TypeError(`${field} contains prohibited diagnostic content`);
   }
 }
 

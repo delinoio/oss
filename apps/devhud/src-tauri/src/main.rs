@@ -71,12 +71,12 @@ fn set_tray_language(
     tray: tauri::State<'_, TrayMenuItems>,
 ) -> Result<(), String> {
     let (show, quit) = tray_labels(&language);
-    tray.show.set_text(show).map_err(|error| {
-        error!(event = "tray_language_update_failed", menu_item = "show", error = %error);
+    tray.show.set_text(show).map_err(|_| {
+        error!(event = "tray_language_update_failed", menu_item = "show");
         "unable to update tray menu".to_string()
     })?;
-    tray.quit.set_text(quit).map_err(|error| {
-        error!(event = "tray_language_update_failed", menu_item = "quit", error = %error);
+    tray.quit.set_text(quit).map_err(|_| {
+        error!(event = "tray_language_update_failed", menu_item = "quit");
         "unable to update tray menu".to_string()
     })
 }
@@ -140,8 +140,8 @@ fn confirm_linux_external_dispatch(
     if cancellable.is_cancelled() {
         return Err("system browser opener timed out".to_string());
     }
-    result.map_err(|reason| {
-        error!(event = "external_opener_failed", %reason);
+    result.map_err(|_| {
+        error!(event = "external_opener_failed");
         "system browser opener failed".to_string()
     })
 }
@@ -218,16 +218,16 @@ fn wait_for_external_opener(mut child: Child) -> Result<(), String> {
         Ok(Some(status)) => confirm_external_opener_status(status),
         Ok(None) => {
             error!(event = "external_opener_timeout");
-            if let Err(reason) = child.kill() {
-                error!(event = "external_opener_kill_failed", %reason);
+            if child.kill().is_err() {
+                error!(event = "external_opener_kill_failed");
             }
-            if let Err(reason) = child.wait() {
-                error!(event = "external_opener_reap_failed", %reason);
+            if child.wait().is_err() {
+                error!(event = "external_opener_reap_failed");
             }
             Err("system browser opener timed out".to_string())
         }
-        Err(reason) => {
-            error!(event = "external_opener_wait_failed", %reason);
+        Err(_) => {
+            error!(event = "external_opener_wait_failed");
             Err("unable to confirm system browser opener".to_string())
         }
     }
@@ -248,23 +248,21 @@ async fn open_system_browser(destination: String) -> Result<(), String> {
         wait_for_linux_external_dispatch(destination)
     })
     .await
-    .map_err(|reason| {
-        error!(event = "external_opener_worker_failed", %reason);
+    .map_err(|_| {
+        error!(event = "external_opener_worker_failed");
         "unable to confirm system browser opener".to_string()
     })?;
 
     #[cfg(any(target_os = "macos", target_os = "windows"))]
-    let child = external_opener_command(&destination)
-        .spawn()
-        .map_err(|reason| {
-            error!(event = "external_opener_spawn_failed", %reason);
-            "unable to open system browser".to_string()
-        })?;
+    let child = external_opener_command(&destination).spawn().map_err(|_| {
+        error!(event = "external_opener_spawn_failed");
+        "unable to open system browser".to_string()
+    })?;
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     tauri::async_runtime::spawn_blocking(move || wait_for_external_opener(child))
         .await
-        .map_err(|reason| {
-            error!(event = "external_opener_worker_failed", %reason);
+        .map_err(|_| {
+            error!(event = "external_opener_worker_failed");
             "unable to confirm system browser opener".to_string()
         })?
 }
@@ -274,14 +272,14 @@ fn restore_main_window(app: &tauri::AppHandle<tauri::Cef>) {
         error!(event = "tray_window_restore_missing");
         return;
     };
-    if let Err(reason) = window.unminimize() {
-        error!(event = "tray_window_restore_unminimize_failed", %reason);
+    if window.unminimize().is_err() {
+        error!(event = "tray_window_restore_unminimize_failed");
     }
-    if let Err(reason) = window.show() {
-        error!(event = "tray_window_restore_show_failed", %reason);
+    if window.show().is_err() {
+        error!(event = "tray_window_restore_show_failed");
     }
-    if let Err(reason) = window.set_focus() {
-        error!(event = "tray_window_restore_focus_failed", %reason);
+    if window.set_focus().is_err() {
+        error!(event = "tray_window_restore_focus_failed");
     }
 }
 
@@ -617,8 +615,8 @@ fn handle_frontend_ready(
                         info!(event = "renderer_crash_requested");
                         start_renderer_crash_watchdog(app_handle, renderer_crashed);
                     }
-                    Err(error) => {
-                        error!(event = "renderer_crash_request_failed", reason = %error);
+                    Err(_) => {
+                        error!(event = "renderer_crash_request_failed");
                         app_handle.exit(70);
                     }
                 }
@@ -633,14 +631,17 @@ fn main() {
     let smoke_mode = SmokeMode::from_environment();
     let subprocess = is_cef_subprocess();
     init_logging(smoke_mode, subprocess);
-    if !subprocess && let Err(message) = validate_host(smoke_mode) {
-        error!(event = "cef_fatal_initialization", reason = %message);
+    if !subprocess && validate_host(smoke_mode).is_err() {
+        error!(
+            event = "cef_fatal_initialization",
+            classification = "resource_validation"
+        );
         std::process::exit(78);
     }
 
     #[cfg(target_os = "linux")]
-    if !subprocess && let Err(error) = gtk::init() {
-        error!(event = "gtk_initialization_failed", reason = %error);
+    if !subprocess && gtk::init().is_err() {
+        error!(event = "gtk_initialization_failed");
         std::process::exit(78);
     }
 
@@ -668,13 +669,13 @@ fn main() {
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
-                if let Err(reason) = window.hide() {
-                    error!(event = "tray_window_hide_failed", %reason);
-                    if let Err(reason) = window.show() {
-                        error!(event = "tray_window_hide_recovery_show_failed", %reason);
+                if window.hide().is_err() {
+                    error!(event = "tray_window_hide_failed");
+                    if window.show().is_err() {
+                        error!(event = "tray_window_hide_recovery_show_failed");
                     }
-                    if let Err(reason) = window.set_focus() {
-                        error!(event = "tray_window_hide_recovery_focus_failed", %reason);
+                    if window.set_focus().is_err() {
+                        error!(event = "tray_window_hide_recovery_focus_failed");
                     }
                 }
             }
@@ -757,10 +758,13 @@ fn main() {
                         error!(event = "renderer_terminated", source = "cdp");
                     }
                 })?;
-                if let Err(error) = webview.send_dev_tools_message(
-                    br#"{"id":9000,"method":"Inspector.enable","params":{}}"#,
-                ) {
-                    error!(event = "renderer_diagnostic_enable_failed", reason = %error);
+                if webview
+                    .send_dev_tools_message(
+                        br#"{"id":9000,"method":"Inspector.enable","params":{}}"#,
+                    )
+                    .is_err()
+                {
+                    error!(event = "renderer_diagnostic_enable_failed");
                     if smoke_mode == Some(SmokeMode::RendererCrash) {
                         app.handle().exit(70);
                     }
@@ -780,8 +784,11 @@ fn main() {
 
     match result {
         Ok(()) => info!(event = "host_shutdown_complete"),
-        Err(error) => {
-            error!(event = "cef_fatal_initialization", reason = %error);
+        Err(_) => {
+            error!(
+                event = "cef_fatal_initialization",
+                classification = "runtime"
+            );
             std::process::exit(1);
         }
     }

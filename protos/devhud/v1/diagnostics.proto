@@ -20,6 +20,7 @@ enum DiagnosticArchitecture {
   DIAGNOSTIC_ARCHITECTURE_UNSPECIFIED = 0;
   DIAGNOSTIC_ARCHITECTURE_X86_64 = 1;
   DIAGNOSTIC_ARCHITECTURE_ARM64 = 2;
+  DIAGNOSTIC_ARCHITECTURE_ARMV7 = 3;
 }
 
 enum DiagnosticComponent {
@@ -46,6 +47,10 @@ message ClientBuild {
   DiagnosticPlatform platform = 3;
   DiagnosticArchitecture architecture = 4;
   string os_version = 5;
+  // Exact 40-character lowercase Tauri source revision.
+  string tauri_revision = 6;
+  // Exact CEF runtime revision on desktop; empty on system-webview mobile hosts.
+  string cef_revision = 7;
 }
 
 message SubmitCrashReportRequest {
@@ -54,14 +59,19 @@ message SubmitCrashReportRequest {
   google.protobuf.Timestamp occurred_at = 3;
   DiagnosticComponent component = 4;
   DiagnosticSeverity severity = 5;
-  // error_code is at most 256 UTF-8 bytes and cannot contain credential or
-  // local-path patterns.
+  // error_code is an uppercase ASCII enum-style classification of 1-64 bytes
+  // and cannot contain credential or local-path patterns.
   string error_code = 6;
   // redacted_summary is user-previewed UTF-8 text, at most 4 KiB.
   string redacted_summary = 7;
   // redacted_stack_trace is user-previewed UTF-8 text, at most 32 KiB.
   string redacted_stack_trace = 8;
   repeated UuidV7 related_correlation_ids = 9;
+  // A client-generated UUID v7 that binds preview, local events, retries, and
+  // the accepted server report without identifying a person or device.
+  UuidV7 client_correlation_id = 10;
+  // Duration of the failed operation. Values above 24 hours are invalid.
+  uint64 duration_milliseconds = 11;
 }
 
 message SubmitCrashReportResponse {

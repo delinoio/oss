@@ -22,6 +22,7 @@ import { profileRequiresSetup } from "./profile-secrets";
 import { defaultDevHudSettings, decodeDevHudSettings, encodeDevHudSettings, parseDevHudSettings, SettingsSchemaVersion, type DevHudSettingsV1 } from "./settings-contract";
 import { diffSettings, type SettingsDiffEntry } from "./settings-diff";
 import { getLocalStorage, isValidApiOrigin } from "./shell";
+import { appendDiagnosticCorrelation } from "./diagnostics";
 
 export type IdentityStatus = "guest" | "starting" | "signed-out" | "authenticated" | "blocked" | "deletion-pending" | "error";
 
@@ -105,7 +106,15 @@ export function DevHudServiceBoundary(props: BoundaryProps) {
           throw reason;
         }
       }
-      return next(request);
+      const startedAt = performance.now();
+      try {
+        const response = await next(request);
+        appendDiagnosticCorrelation(getLocalStorage(), response.header.get("x-devhud-correlation-id"), request.url, performance.now() - startedAt);
+        return response;
+      } catch (reason) {
+        appendDiagnosticCorrelation(getLocalStorage(), reason instanceof ConnectError ? reason.metadata.get("x-devhud-correlation-id") : null, request.url, performance.now() - startedAt);
+        throw reason;
+      }
     }],
   }), [props.apiOrigin]);
 

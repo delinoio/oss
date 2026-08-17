@@ -42,6 +42,7 @@ func TestBootstrapCorrelationAndFoundationCapabilities(t *testing.T) {
 	}
 	wantCapabilities := []devhudv1.StaticCapability{
 		devhudv1.StaticCapability_STATIC_CAPABILITY_SETTINGS_SYNC,
+		devhudv1.StaticCapability_STATIC_CAPABILITY_CRASH_REPORTS,
 		devhudv1.StaticCapability_STATIC_CAPABILITY_ACCOUNT_RECOVERY,
 	}
 	if len(response.Msg.Capabilities) != len(wantCapabilities) {
@@ -57,6 +58,12 @@ func TestBootstrapCorrelationAndFoundationCapabilities(t *testing.T) {
 	}
 	if repository.requestCount() != 1 {
 		t.Fatalf("persisted request logs = %d", repository.requestCount())
+	}
+}
+
+func TestDiagnosticsProcedureIsSafeForLogsAndMetrics(t *testing.T) {
+	if got := safeProcedure(devhudv1connect.DiagnosticsServiceSubmitCrashReportProcedure); got != devhudv1connect.DiagnosticsServiceSubmitCrashReportProcedure {
+		t.Fatalf("safe diagnostics procedure = %q", got)
 	}
 }
 
@@ -852,6 +859,11 @@ func (*fakeRepository) DeleteAccount(context.Context, string, time.Time) (domain
 }
 func (*fakeRepository) RestoreAccount(context.Context, string, time.Time) (domain.User, error) {
 	return domain.User{}, nil
+}
+func (*fakeRepository) SubmitCrashReport(_ context.Context, userID string, report domain.CrashReport) (domain.CrashReport, error) {
+	report.ID = "019a3b7c-8d9e-7f01-9234-56789abcdef0"
+	report.OwnerUserID = userID
+	return report, nil
 }
 func (repository *fakeRepository) RecordRequest(_ context.Context, request domain.RequestLog) error {
 	repository.mu.Lock()

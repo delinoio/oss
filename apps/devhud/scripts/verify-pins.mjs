@@ -25,6 +25,8 @@ const packageJson = JSON.parse(readFileSync(join(appRoot, "package.json"), "utf8
 const pnpmLock = readFileSync(join(repoRoot, "pnpm-lock.yaml"), "utf8");
 const tauriConfig = JSON.parse(readFileSync(join(appRoot, "src-tauri/tauri.conf.json"), "utf8"));
 const tauriMain = readFileSync(join(appRoot, "src-tauri/src/main.rs"), "utf8");
+const nativeBridgeRust = readFileSync(join(appRoot, "src-tauri/src/bridge.rs"), "utf8");
+const nativeBridgeTypeScript = readFileSync(join(appRoot, "src/native-bridge.ts"), "utf8");
 const rsbuildConfig = readFileSync(join(appRoot, "rsbuild.config.ts"), "utf8");
 
 const TAURI_REPOSITORY = "https://github.com/tauri-apps/tauri";
@@ -169,6 +171,10 @@ for (const dependency of ["tauri", "tauri-plugin", "tauri-utils"]) {
   assert(linePattern.test(rootPatch), `${dependency} compatibility patch is not pinned to the required revision`);
 }
 assert(!dependencyText.includes("github.com/delinoio/tauri"), "Tauri fork dependency detected");
+for (const source of [nativeBridgeRust, nativeBridgeTypeScript]) {
+  assert(source.includes(TAURI_REVISION), "runtime diagnostics Tauri revision drifted from the immutable pin");
+  assert(source.includes(pins.runtime.cefVersion), "runtime diagnostics CEF revision drifted from the immutable pin");
+}
 
 assert(appCargo.includes('tauri-plugin-deep-link = "=2.4.9"'), "desktop deep-link plugin version changed");
 assert(appCargo.includes('tauri-plugin-single-instance = { version = "=2.4.3", features = ["deep-link"] }'), "desktop single-instance deep-link integration changed");
