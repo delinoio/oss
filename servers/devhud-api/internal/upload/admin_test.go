@@ -32,6 +32,7 @@ func TestAdministratorReasonValidation(t *testing.T) {
 		"source:src/private/app.ts:10",
 		"frame:C:\\Users\\alice\\app.ts:10",
 		"source=%2Fworkspace%2Fprivate%2Fapp.ts",
+		"source=%252Fworkspace%252Fprivate%252Fapp.ts",
 		"https://example.com/audit?to%6ben=unsafe-value",
 		"file:///Users/example/private/incident.txt",
 		"Reviewed policy\x00violation",

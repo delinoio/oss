@@ -65,11 +65,16 @@ func containsSensitiveText(value string) bool {
 }
 
 func containsLocalPath(value string) bool {
-	if matchesLocalPath(value) {
-		return true
+	for {
+		if matchesLocalPath(value) {
+			return true
+		}
+		decoded := decodePercentEncodedOctets(value)
+		if decoded == value {
+			return false
+		}
+		value = decoded
 	}
-	decoded, err := url.PathUnescape(value)
-	return err == nil && decoded != value && matchesLocalPath(decoded)
 }
 
 func matchesLocalPath(value string) bool {

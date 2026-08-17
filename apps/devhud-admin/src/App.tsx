@@ -23,7 +23,7 @@ import { text, type Locale } from "./i18n";
 
 type Phase =
   | { kind: "loading" }
-  | { kind: "error"; error: unknown }
+  | { kind: "error"; error: DevHudClientError }
   | { kind: "signed-out"; auth: AdminAuth }
   | {
       kind: "ready";
@@ -96,6 +96,7 @@ function localeInitial(): Locale {
 export function App() {
   const [locale, setLocale] = useState<Locale>(localeInitial);
   const [phase, setPhase] = useState<Phase>({ kind: "loading" });
+  const [initializationAttempt, setInitializationAttempt] = useState(0);
   const copy = text(locale);
 
   useEffect(() => {
@@ -109,13 +110,18 @@ export function App() {
         const next = await initializeAppOnce();
         if (current) setPhase(next);
       } catch (error) {
-        if (current) setPhase({ kind: "error", error });
+        if (current) setPhase({ kind: "error", error: mapDevHudError(error) });
       }
     })();
     return () => {
       current = false;
     };
-  }, []);
+  }, [initializationAttempt]);
+
+  const retryInitialization = () => {
+    setPhase({ kind: "loading" });
+    setInitializationAttempt((attempt) => attempt + 1);
+  };
 
   const toggleLocale = () => {
     const next = locale === "en" ? "ko" : "en";
@@ -124,10 +130,23 @@ export function App() {
   };
 
   if (phase.kind === "loading") {
-    return <StatePage title={copy.app} message={copy.loading} busy />;
+    return (
+      <StatePage title={copy.app}>
+        <Empty message={copy.loading} busy />
+      </StatePage>
+    );
   }
   if (phase.kind === "error") {
-    return <StatePage title={copy.app} message={copy.error} />;
+    return (
+      <StatePage title={copy.app}>
+        <ClientFailure
+          copy={copy}
+          error={phase.error}
+          fallback={copy.error}
+          onRetry={retryInitialization}
+        />
+      </StatePage>
+    );
   }
   if (phase.kind === "signed-out") {
     return (
@@ -1150,18 +1169,16 @@ function Empty({ message, busy = false }: { message: string; busy?: boolean }) {
 
 function StatePage({
   title,
-  message,
-  busy = false,
+  children,
 }: {
   title: string;
-  message: string;
-  busy?: boolean;
+  children: React.ReactNode;
 }) {
   return (
     <main className="auth-page">
       <section className="auth-card">
         <h1>{title}</h1>
-        <Empty message={message} busy={busy} />
+        {children}
       </section>
     </main>
   );

@@ -128,6 +128,28 @@ describe("administrator console review regressions", () => {
     expect(runtime.auth.completeCallback).toHaveBeenCalledOnce();
   });
 
+  it("renders correlated initialization failures and retries explicitly", async () => {
+    const correlationId = "018f7c1e-7b4a-7abc-8def-0123456789be";
+    runtime.getBootstrap
+      .mockRejectedValueOnce(new ConnectError("temporarily unavailable", Code.Unavailable, {
+        "x-devhud-correlation-id": correlationId,
+      }))
+      .mockResolvedValueOnce({
+        capabilities: [StaticCapability.OFFICIAL_UPLOADS],
+        publicAssetBaseUrl: "https://assets.example.com/uploads/",
+      });
+
+    render(<App />);
+    expect(
+      await screen.findByText("The administrator service is temporarily unavailable. Try again."),
+    ).toBeTruthy();
+    expect(screen.getByText(correlationId)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(await screen.findByText("Target User")).toBeTruthy();
+    expect(runtime.getBootstrap).toHaveBeenCalledTimes(2);
+  });
+
   it("keeps continuation tokens bound to the submitted search query", async () => {
     runtime.client.listUsers
       .mockResolvedValueOnce({ users: [user], nextPageToken: "" })

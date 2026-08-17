@@ -95,6 +95,80 @@ func TestAdministratorSearchRaceAndAuditIntegrity(t *testing.T) {
 	}
 }
 
+func TestSetUserBlockedRechecksDeletionAfterLockAcquisition(t *testing.T) {
+	now := time.Date(2026, 8, 17, 0, 0, 0, 0, time.UTC)
+	ctx, pool, store := newIntegrationStore(t, now)
+	actor := provisionUploadUser(t, ctx, store, "deletion-pending-administrator")
+	target := provisionUploadUser(t, ctx, store, "deletion-pending-target")
+	eventID, err := store.ids.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	correlationID, err := store.ids.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	event := domain.AuditEvent{
+		ID: eventID, CorrelationID: correlationID, ActorUserID: &actor.ID, TargetUserID: &target.ID,
+		Action: domain.AuditActionUserBlocked, Reason: "Reviewed while deletion committed.",
+		CreatedAt: now, ExpiresAt: now.Add(domain.AuditRetention),
+	}
+
+	deletion, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deletionRequestedAt := now.Add(time.Minute)
+	if _, err := deletion.Exec(ctx, `UPDATE devhud_users SET deletion_state = 2,
+		deletion_requested_at = $2, recoverable_until = $3, updated_at = $2 WHERE user_id = $1`,
+		actor.ID, deletionRequestedAt, deletionRequestedAt.Add(domain.RecoveryWindow)); err != nil {
+		_ = deletion.Rollback(ctx)
+		t.Fatal(err)
+	}
+
+	mutationResult := make(chan error, 1)
+	go func() {
+		_, mutationErr := store.SetUserBlocked(ctx, actor.ID, target.ID,
+			domain.AdministrativeBlockStateUnblocked, domain.AdministrativeBlockStateBlocked, event, now)
+		mutationResult <- mutationErr
+	}()
+	select {
+	case mutationErr := <-mutationResult:
+		_ = deletion.Rollback(ctx)
+		t.Fatalf("administrator mutation bypassed the deletion-state row lock: %v", mutationErr)
+	case <-time.After(100 * time.Millisecond):
+	}
+	if err := deletion.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case mutationErr := <-mutationResult:
+		var permission *domain.PermissionError
+		if !errors.As(mutationErr, &permission) || permission.Failure != domain.PermissionFailureDeletionPending {
+			t.Fatalf("administrator mutation error = %v, want deletion-pending permission failure", mutationErr)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("administrator mutation remained blocked after deletion committed")
+	}
+
+	var targetState domain.AdministrativeBlockState
+	if err := pool.QueryRow(ctx, `SELECT administrative_block_state FROM devhud_users WHERE user_id = $1`, target.ID).Scan(&targetState); err != nil {
+		t.Fatal(err)
+	}
+	if targetState != domain.AdministrativeBlockStateUnblocked {
+		t.Fatalf("target administrative block state = %v, want unblocked", targetState)
+	}
+	audits, err := store.ListAuditEvents(ctx, domain.AuditFilters{CorrelationID: correlationID}, nil, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(audits.Events) != 1 || audits.Events[0].Outcome != domain.AuditOutcomeRejected ||
+		audits.Events[0].RejectionReason != domain.AuditRejectionActorBlocked {
+		t.Fatalf("rejected audit events = %+v", audits.Events)
+	}
+}
+
 func TestRejectedUploadAuditRetainsOwnerFingerprint(t *testing.T) {
 	now := time.Date(2026, 8, 17, 0, 0, 0, 0, time.UTC)
 	ctx, pool, store := newIntegrationStore(t, now)

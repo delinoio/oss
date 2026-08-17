@@ -68,8 +68,15 @@ func (s *Store) SetUserBlocked(ctx context.Context, actorID, targetID string, ex
 	if !actorFound {
 		return domain.User{}, pgx.ErrNoRows
 	}
-	if actor.DeletionState != domain.DeletionStateActive || actor.AdministrativeBlockState == domain.AdministrativeBlockStateBlocked {
-		err := &domain.PermissionError{Failure: domain.PermissionFailureAdministrativeBlock}
+	var actorPermissionFailure domain.PermissionFailure
+	switch {
+	case actor.AdministrativeBlockState == domain.AdministrativeBlockStateBlocked:
+		actorPermissionFailure = domain.PermissionFailureAdministrativeBlock
+	case actor.DeletionState != domain.DeletionStateActive:
+		actorPermissionFailure = domain.PermissionFailureDeletionPending
+	}
+	if actorPermissionFailure != 0 {
+		err := &domain.PermissionError{Failure: actorPermissionFailure}
 		event.Outcome = domain.AuditOutcomeRejected
 		event.RejectionReason = domain.AuditRejectionActorBlocked
 		if auditErr := insertAdministratorAudit(ctx, tx, event); auditErr != nil {
