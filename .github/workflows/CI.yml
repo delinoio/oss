@@ -888,13 +888,56 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Filter changed paths
+        id: filter
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            devhud:
+              - .github/workflows/CI.yml
+              - apps/devhud/**
+              - scripts/run-rsbuild-dev.mjs
+              - scripts/spawn-dev-server.mjs
+              - .nvmrc
+              - Cargo.toml
+              - Cargo.lock
+              - pnpm-lock.yaml
+              - pnpm-workspace.yaml
+              - rust-toolchain
+
+      - name: Determine whether to run
+        id: gate
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DEVHUD_CHANGED: ${{ steps.filter.outputs.devhud }}
+        run: |
+          set -euo pipefail
+
+          run=false
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ] || [ "${DEVHUD_CHANGED}" = "true" ]; then
+            run=true
+          fi
+
+          echo "run=${run}" >> "${GITHUB_OUTPUT}"
+
+      - name: Skip (DevHUD mobile unaffected)
+        if: ${{ steps.gate.outputs.run != 'true' }}
+        run: |
+          echo "Skipping DevHUD mobile validation: no relevant changes"
 
       - name: Setup pnpm
+        if: ${{ steps.gate.outputs.run == 'true' }}
         uses: pnpm/action-setup@v5
         with:
           version: 10.26.2
 
       - name: Setup Node.js
+        if: ${{ steps.gate.outputs.run == 'true' }}
         uses: actions/setup-node@v6
         with:
           node-version-file: .nvmrc
@@ -902,9 +945,11 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
 
       - name: Install dependencies
+        if: ${{ steps.gate.outputs.run == 'true' }}
         run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Verify shared frontend and mobile contracts
+        if: ${{ steps.gate.outputs.run == 'true' }}
         run: |
           pnpm --filter devhud build:frontend
           pnpm --filter devhud mobile:check
@@ -927,13 +972,56 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Filter changed paths
+        id: filter
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            devhud:
+              - .github/workflows/CI.yml
+              - apps/devhud/**
+              - scripts/run-rsbuild-dev.mjs
+              - scripts/spawn-dev-server.mjs
+              - .nvmrc
+              - Cargo.toml
+              - Cargo.lock
+              - pnpm-lock.yaml
+              - pnpm-workspace.yaml
+              - rust-toolchain
+
+      - name: Determine whether to run
+        id: gate
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DEVHUD_CHANGED: ${{ steps.filter.outputs.devhud }}
+        run: |
+          set -euo pipefail
+
+          run=false
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ] || [ "${DEVHUD_CHANGED}" = "true" ]; then
+            run=true
+          fi
+
+          echo "run=${run}" >> "${GITHUB_OUTPUT}"
+
+      - name: Skip (DevHUD mobile unaffected)
+        if: ${{ steps.gate.outputs.run != 'true' }}
+        run: |
+          echo "Skipping DevHUD mobile validation: no relevant changes"
 
       - name: Setup pnpm
+        if: ${{ steps.gate.outputs.run == 'true' }}
         uses: pnpm/action-setup@v5
         with:
           version: 10.26.2
 
       - name: Setup Node.js
+        if: ${{ steps.gate.outputs.run == 'true' }}
         uses: actions/setup-node@v6
         with:
           node-version-file: .nvmrc
@@ -943,21 +1031,25 @@ jobs:
       # The pinned Tauri bundler embeds a universal macOS CEF helper even when
       # its host CLI is invoked only to generate or build an iOS project.
       - name: Install macOS Rust targets
+        if: ${{ steps.gate.outputs.run == 'true' }}
         run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
 
       - name: Install dependencies
+        if: ${{ steps.gate.outputs.run == 'true' }}
         run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Generate pinned iOS project
+        if: ${{ steps.gate.outputs.run == 'true' }}
         run: pnpm --filter devhud mobile:generate -- --platform ios
 
       # cargo-mobile2 selects a named simulator on Intel. Initialize
       # CoreSimulator first so Xcode exposes devices instead of placeholders.
       - name: Initialize Intel iOS simulators
-        if: ${{ matrix.target == 'x86_64' }}
+        if: ${{ steps.gate.outputs.run == 'true' && matrix.target == 'x86_64' }}
         run: xcrun simctl list > /dev/null
 
       - name: Build iOS host
+        if: ${{ steps.gate.outputs.run == 'true' }}
         working-directory: apps/devhud
         run: node scripts/run-mobile.mjs ios build --target ${{ matrix.target }} --ci --no-sign
 
@@ -970,21 +1062,70 @@ jobs:
       matrix:
         include:
           - target: aarch64
+            artifacts: --apk --aab
             abi: arm64-v8a
+            production: true
           - target: armv7
+            artifacts: --apk --aab
             abi: armeabi-v7a
+            production: true
           - target: x86_64
+            artifacts: --apk
             abi: x86_64
+            production: false
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Filter changed paths
+        id: filter
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            devhud:
+              - .github/workflows/CI.yml
+              - apps/devhud/**
+              - scripts/run-rsbuild-dev.mjs
+              - scripts/spawn-dev-server.mjs
+              - .nvmrc
+              - Cargo.toml
+              - Cargo.lock
+              - pnpm-lock.yaml
+              - pnpm-workspace.yaml
+              - rust-toolchain
+
+      - name: Determine whether to run
+        id: gate
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DEVHUD_CHANGED: ${{ steps.filter.outputs.devhud }}
+        run: |
+          set -euo pipefail
+
+          run=false
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ] || [ "${DEVHUD_CHANGED}" = "true" ]; then
+            run=true
+          fi
+
+          echo "run=${run}" >> "${GITHUB_OUTPUT}"
+
+      - name: Skip (DevHUD mobile unaffected)
+        if: ${{ steps.gate.outputs.run != 'true' }}
+        run: |
+          echo "Skipping DevHUD mobile validation: no relevant changes"
 
       - name: Setup pnpm
+        if: ${{ steps.gate.outputs.run == 'true' }}
         uses: pnpm/action-setup@v5
         with:
           version: 10.26.2
 
       - name: Setup Node.js
+        if: ${{ steps.gate.outputs.run == 'true' }}
         uses: actions/setup-node@v6
         with:
           node-version-file: .nvmrc
@@ -992,29 +1133,49 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
 
       - name: Setup Java
+        if: ${{ steps.gate.outputs.run == 'true' }}
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
 
       - name: Install Linux host prerequisites
+        if: ${{ steps.gate.outputs.run == 'true' }}
         run: |
           sudo apt-get update
           sudo apt-get install -y clang cmake libayatana-appindicator3-dev libgtk-3-dev libx11-dev ninja-build
 
       - name: Install dependencies
+        if: ${{ steps.gate.outputs.run == 'true' }}
         run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Generate pinned Android project
+        if: ${{ steps.gate.outputs.run == 'true' }}
         run: pnpm --filter devhud mobile:generate -- --platform android
 
-      - name: Build Android APK
+      - name: Build Android artifacts
+        if: ${{ steps.gate.outputs.run == 'true' }}
         working-directory: apps/devhud
-        run: node scripts/run-mobile.mjs android build --target ${{ matrix.target }} --apk --ci
+        run: node scripts/run-mobile.mjs android build --target ${{ matrix.target }} ${{ matrix.artifacts }} --ci
 
       - name: Verify Android APK contracts
+        if: ${{ steps.gate.outputs.run == 'true' }}
         working-directory: apps/devhud
         run: node scripts/verify-mobile.mjs --android-artifact src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk --android-abi ${{ matrix.abi }}
+
+      - name: Verify Android App Bundle contracts
+        if: ${{ steps.gate.outputs.run == 'true' && matrix.production }}
+        shell: bash
+        working-directory: apps/devhud
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          aab_artifacts=(../../target/devhud-mobile/android/${{ matrix.target }}/*.aab)
+          if [ "${#aab_artifacts[@]}" -ne 1 ]; then
+            echo "Expected exactly one preserved Android App Bundle, found ${#aab_artifacts[@]}" >&2
+            exit 1
+          fi
+          node scripts/verify-mobile.mjs --android-artifact "${aab_artifacts[0]}" --android-abi ${{ matrix.abi }}
 
   devhud-protocol:
     name: DevHud Protocol and Client

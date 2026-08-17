@@ -95,13 +95,41 @@ export function assertMobileDependencyClosures(platforms, actualClosures) {
   }
 }
 
+export function assertAndroidArtifactEntries(entries, abi, format) {
+  assert(format === "apk" || format === "aab", `unsupported Android artifact format: ${format}`);
+  const prefix = format === "aab" ? "base/" : "";
+  const expectedLibrary = `${prefix}lib/${abi}/libdevhud_lib.so`;
+  const nativeEntries = entries.filter((entry) => entry.startsWith(`${prefix}lib/`));
+  assert(nativeEntries.length === 1 && nativeEntries[0] === expectedLibrary, `Android artifact architecture changed: expected only ${expectedLibrary}`);
+  assert(entries.includes(format === "aab" ? "base/dex/classes.dex" : "classes.dex"), "Android artifact classes.dex is missing");
+  assert(entries.includes(format === "aab" ? "base/manifest/AndroidManifest.xml" : "AndroidManifest.xml"), "Android artifact manifest is missing");
+  if (format === "aab") assert(entries.includes("BundleConfig.pb"), "Android App Bundle configuration is missing");
+  assert(!entries.some((entry) => /cef|chromium|chrome-extension|browser-extension/iu.test(entry)), "CEF or browser-extension file leaked into the Android artifact");
+}
+
+function workflowJob(workflow, name) {
+  return workflow.match(new RegExp(`\\n  ${name}:\\n([\\s\\S]*?)(?=\\n  [a-z0-9-]+:|$)`, "u"))?.[1] ?? "";
+}
+
 export function assertMobileCi(workflow) {
-  const iosJob = workflow.match(/\n  devhud-ios-simulator:\n([\s\S]*?)(?=\n  devhud-android-emulator:)/u)?.[1] ?? "";
+  const contractsJob = workflowJob(workflow, "devhud-mobile-contracts");
+  const iosJob = workflowJob(workflow, "devhud-ios-simulator");
+  const androidJob = workflowJob(workflow, "devhud-android-emulator");
+  for (const job of [contractsJob, iosJob, androidJob]) {
+    assert(job.includes("uses: dorny/paths-filter@v4") && job.includes("- apps/devhud/**"), "mobile CI job must filter relevant DevHUD paths");
+    assert(job.includes("EVENT_NAME: ${{ github.event_name }}") && job.includes('if [ "${EVENT_NAME}" = "workflow_dispatch" ] || [ "${DEVHUD_CHANGED}" = "true" ]; then'), "mobile CI job must run for manual dispatch or relevant paths");
+    assert(job.includes("Skip (DevHUD mobile unaffected)") && job.includes("if: ${{ steps.gate.outputs.run == 'true' }}\n        uses: pnpm/action-setup@v5"), "mobile CI job must skip expensive setup when DevHUD is unaffected");
+  }
   for (const [target, runner] of [["aarch64", "macos-15"], ["aarch64-sim", "macos-15"], ["x86_64", "macos-15-intel"]]) {
     assert(iosJob.includes(`- target: ${target}\n            runner: ${runner}`), `iOS CI target ${target} must run on ${runner}`);
   }
-  assert(iosJob.includes("if: ${{ matrix.target == 'x86_64' }}\n        run: xcrun simctl list > /dev/null"), "Intel iOS CI must initialize simulator devices");
+  assert(iosJob.includes("if: ${{ steps.gate.outputs.run == 'true' && matrix.target == 'x86_64' }}\n        run: xcrun simctl list > /dev/null"), "Intel iOS CI must initialize simulator devices");
   assert(iosJob.includes("ios build --target ${{ matrix.target }} --ci --no-sign"), "iOS CI must build every matrix target without signing");
+  for (const [target, artifacts] of [["aarch64", "--apk --aab"], ["armv7", "--apk --aab"], ["x86_64", "--apk"]]) {
+    assert(androidJob.includes(`- target: ${target}\n            artifacts: ${artifacts}`), `Android CI target ${target} must build ${artifacts}`);
+  }
+  assert(androidJob.includes("android build --target ${{ matrix.target }} ${{ matrix.artifacts }} --ci"), "Android CI must build each matrix artifact set");
+  assert(androidJob.includes("if: ${{ steps.gate.outputs.run == 'true' && matrix.production }}") && androidJob.includes('--android-artifact "${aab_artifacts[0]}"'), "Android production CI must inspect the generated App Bundle");
 }
 
 export function assertMobileContracts({ platforms, tauri, ios, android, cargo, androidManifest, androidDebugManifest, androidBackupRules, androidDataExtractionRules, androidPluginManifest, androidNativeBridge, androidChannelEnglish, androidChannelKorean, iosNativeBridge, iosPlist, packageJson, nativeBridge, app, workflow }) {

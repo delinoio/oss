@@ -180,11 +180,16 @@ describe("native App state", () => {
     expect(screen.getByText(messages.en.emptyTitle)).toBeTruthy();
   });
 
-  it("keeps the shell ready for expected native update errors", async () => {
+  it("surfaces expected native update errors inline and clears them after retry", async () => {
+    let openAttempts = 0;
     const runtime = { ...mobileRuntime, capabilities: { ...mobileRuntime.capabilities, storeUpdates: true } };
     const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
       if (value.operation === "updates.status") return { kind: "update-status", store: "play-store", installedVersion: "1", configured: true };
-      if (value.operation === "updates.open-store") throw new NativeBridgeError(NativeBridgeErrorCode.NotConfigured);
+      if (value.operation === "updates.open-store") {
+        openAttempts += 1;
+        if (openAttempts === 1) throw new NativeBridgeError(NativeBridgeErrorCode.NotConfigured);
+        return { kind: "ok" };
+      }
       throw new Error(`unexpected operation ${value.operation}`);
     });
 
@@ -192,7 +197,11 @@ describe("native App state", () => {
     fireEvent.click(screen.getByRole("button", { name: messages.en.settings }));
     fireEvent.click(await screen.findByRole("button", { name: messages.en.updatePolicy }));
 
-    await waitFor(() => expect(request.mock.calls.some(([value]) => value.operation === "updates.open-store")).toBe(true));
+    expect((await screen.findByRole("alert")).textContent).toBe(messages.en.storeOpenFailed);
     expect(screen.queryByText(messages.en.errorTitle)).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.updatePolicy }));
+    await waitFor(() => expect(screen.queryByText(messages.en.storeOpenFailed)).toBeNull());
+    expect(openAttempts).toBe(2);
   });
 });
