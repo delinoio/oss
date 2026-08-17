@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { NativeBridgeError, NativeBridgeErrorCode, SecureSettingKind, isAuthCallback, nativeBridge, validateAuthenticationBrowserRequest, validateExternalRequest, validateGitHubPatProfileIds, validateSecretValue, validateSecureSettingRef } from "../src/native-bridge.ts";
+import { NativeBridgeError, NativeBridgeErrorCode, SecureSettingKind, isAuthCallback, nativeBridge, validateAuthenticationBrowserRequest, validateExternalRequest, validateGitHubPatReconciliation, validateSecretValue, validateSecureSettingRef } from "../src/native-bridge.ts";
 
 const fixtures = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../fixtures/deep-links.json"), "utf8"));
 const tauriConfig = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/tauri.conf.json"), "utf8"));
@@ -30,12 +30,13 @@ test("deep-link fixtures accept only the contracted auth callback", () => {
 });
 
 test("secure setting references and values are bounded before native invocation", () => {
-  assert.doesNotThrow(() => validateSecureSettingRef({ kind: SecureSettingKind.GithubPat, profileId: "work-profile" }));
-  assert.throws(() => validateSecureSettingRef({ kind: SecureSettingKind.GithubPat, profileId: "../escape" }), (error) => error instanceof NativeBridgeError && error.code === NativeBridgeErrorCode.InvalidArgument);
+  assert.doesNotThrow(() => validateSecureSettingRef({ kind: SecureSettingKind.GithubPat, profileId: "work-profile", scopeId: "origin.scope" }));
+  assert.throws(() => validateSecureSettingRef({ kind: SecureSettingKind.GithubPat, profileId: "../escape", scopeId: "origin.scope" }), (error) => error instanceof NativeBridgeError && error.code === NativeBridgeErrorCode.InvalidArgument);
+  assert.throws(() => validateSecureSettingRef({ kind: SecureSettingKind.GithubPat, profileId: "work-profile", scopeId: "../escape" }), NativeBridgeError);
   assert.throws(() => validateSecretValue("x".repeat(65 * 1024)), NativeBridgeError);
-  assert.doesNotThrow(() => validateGitHubPatProfileIds(["work-profile"]));
-  assert.throws(() => validateGitHubPatProfileIds(["work-profile", "work-profile"]), NativeBridgeError);
-  assert.throws(() => validateGitHubPatProfileIds(["../escape"]), NativeBridgeError);
+  assert.doesNotThrow(() => validateGitHubPatReconciliation("origin.scope", ["work-profile"]));
+  assert.throws(() => validateGitHubPatReconciliation("origin.scope", ["work-profile", "work-profile"]), NativeBridgeError);
+  assert.throws(() => validateGitHubPatReconciliation("origin.scope", ["../escape"]), NativeBridgeError);
 });
 
 test("desktop secure storage resolves Keychain, Credential Manager, and Secret Service without plaintext fallback", () => {

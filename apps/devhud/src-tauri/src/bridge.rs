@@ -212,6 +212,14 @@ fn validate_secure_request(request: &Value) -> Result<(), String> {
     if !is_profile_id(profile_id) {
         return Err("invalid-argument".to_string());
     }
+    if kind == "github-pat"
+        && !setting
+            .get("scopeId")
+            .and_then(Value::as_str)
+            .is_some_and(is_profile_id)
+    {
+        return Err("invalid-argument".to_string());
+    }
     if let Some(value) = request.get("value").and_then(Value::as_str)
         && value.len() > SECRET_LIMIT
     {
@@ -221,6 +229,13 @@ fn validate_secure_request(request: &Value) -> Result<(), String> {
 }
 
 fn validate_github_pat_reconciliation(request: &Value) -> Result<(), String> {
+    let scope_id = request
+        .get("scopeId")
+        .and_then(Value::as_str)
+        .ok_or("invalid-argument")?;
+    if !is_profile_id(scope_id) {
+        return Err("invalid-argument".to_string());
+    }
     let profile_ids = request
         .get("profileIds")
         .and_then(Value::as_array)
@@ -696,7 +711,7 @@ mod tests {
         let state = NativeBridgeState::default();
         let invalid = json!({
             "operation": "secure.write",
-            "setting": { "kind": "github-pat", "profileId": "../escape" },
+            "setting": { "kind": "github-pat", "profileId": "../escape", "scopeId": "origin.scope" },
             "value": "secret"
         });
         assert_eq!(
@@ -712,6 +727,7 @@ mod tests {
             handle_native_bridge_request(
                 &json!({
                     "operation": "secure.reconcile-github-pats",
+                    "scopeId": "origin.scope",
                     "profileIds": ["profile-one", "profile-two"]
                 }),
                 &state,
@@ -722,6 +738,7 @@ mod tests {
             handle_native_bridge_request(
                 &json!({
                     "operation": "secure.reconcile-github-pats",
+                    "scopeId": "origin.scope",
                     "profileIds": ["../escape"]
                 }),
                 &state,

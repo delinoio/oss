@@ -40,12 +40,14 @@ export function GitHubSettings({ copy, bridge, provider = createGitHubProvider({
       setStatusError(false);
     }
     try {
-      await bridge.request({ operation: "secure.reconcile-github-pats", profileIds: activeProfileIds });
+      const scopeId = await identity.githubPatScopeId;
+      await bridge.request({ operation: "secure.reconcile-github-pats", scopeId, profileIds: activeProfileIds });
       if (pendingProfileIds.length > 0 && !identity.readOnly) {
-        const committed = await identity.replaceSettings({
-          ...identity.settings,
-          github: { ...identity.settings.github, pendingPatRemovals: [] },
-        });
+        const processed = new Set(pendingProfileIds);
+        const committed = await identity.replaceSettings((current) => ({
+          ...current,
+          github: { ...current.github, pendingPatRemovals: current.github.pendingPatRemovals.filter((profileId) => !processed.has(profileId)) },
+        }));
         if (!committed) return false;
       }
       if (announce || pendingProfileIds.length > 0) setStatus(copy.githubProfileRemoved);
@@ -87,12 +89,18 @@ export function GitHubSettings({ copy, bridge, provider = createGitHubProvider({
       if (profile.name.length === 0) throw new GitHubProviderError(GitHubErrorCode.InvalidResponse, "validate-credential");
       await provider.validateCredential({ profileId: id, kind, token });
       await Promise.all(cleanupsInFlight.current);
-      await bridge.request({ operation: "secure.write", setting: { kind: SecureSettingKind.GithubPat, profileId: id }, value: token });
+      const scopeId = await identity.githubPatScopeId;
+      await bridge.request({ operation: "secure.write", setting: { kind: SecureSettingKind.GithubPat, profileId: id, scopeId }, value: token });
       try {
-        const committed = await identity.replaceSettings({ ...identity.settings, github: { ...identity.settings.github, profiles: [...identity.settings.github.profiles, profile] } });
+        const committed = await identity.replaceSettings((current) => ({ ...current, github: { ...current.github, profiles: [...current.github.profiles, profile] } }));
         if (!committed) return;
       } catch (error) {
-        await bridge.request({ operation: "secure.remove", setting: { kind: SecureSettingKind.GithubPat, profileId: id } }).catch(() => undefined);
+        try {
+          await bridge.request({ operation: "secure.remove", setting: { kind: SecureSettingKind.GithubPat, profileId: id, scopeId } });
+        } catch (cleanupError) {
+          setLocalCleanupPending(true);
+          throw cleanupError;
+        }
         throw error;
       }
       setName("");
@@ -102,14 +110,14 @@ export function GitHubSettings({ copy, bridge, provider = createGitHubProvider({
   };
 
   const validateProfile = (profile: DevHudSettingsV1["github"]["profiles"][number]) => invoke(async () => {
-    await validateGitHubProfile(identity.settings, profile.id, bridge, provider);
+    await validateGitHubProfile(identity.settings, profile.id, bridge, provider, await identity.githubPatScopeId);
     setStatus(copy.githubValidationPassed);
   });
   const saveProfileToken = (profile: DevHudSettingsV1["github"]["profiles"][number], nextToken: string) => invoke(async () => {
     const credential = { profileId: profile.id, kind: profile.kind, token: nextToken };
     await provider.validateCredential(credential);
     await Promise.all(referencedRepositories(identity.settings, profile.id).map((repository) => provider.validateRepository(credential, repository)));
-    await bridge.request({ operation: "secure.write", setting: { kind: SecureSettingKind.GithubPat, profileId: profile.id }, value: nextToken });
+    await bridge.request({ operation: "secure.write", setting: { kind: SecureSettingKind.GithubPat, profileId: profile.id, scopeId: await identity.githubPatScopeId }, value: nextToken });
     setStatus(copy.githubProfileSaved);
   });
 
@@ -118,32 +126,32 @@ export function GitHubSettings({ copy, bridge, provider = createGitHubProvider({
       setStatus(copy.githubProfileInUse);
       return;
     }
-    await identity.replaceSettings({
-      ...identity.settings,
+    await identity.replaceSettings((current) => ({
+      ...current,
       github: {
-        ...identity.settings.github,
-        profiles: identity.settings.github.profiles.filter((item) => item.id !== profile.id),
-        pendingPatRemovals: [...identity.settings.github.pendingPatRemovals, profile.id],
+        ...current.github,
+        profiles: current.github.profiles.filter((item) => item.id !== profile.id),
+        pendingPatRemovals: [...current.github.pendingPatRemovals, profile.id],
       },
-    });
+    }));
   });
 
   const validateAssignment = async (profileRef: string | null, repository: GitHubRepositoryRef) => {
     if (profileRef === null) return;
     const profile = identity.settings.github.profiles.find((candidate) => candidate.id === profileRef);
     if (profile === undefined) throw new GitHubProviderError(GitHubErrorCode.MissingToken, "validate-repository");
-    await provider.validateRepository(await readGitHubCredential(bridge, profile), repository);
+    await provider.validateRepository(await readGitHubCredential(bridge, profile, await identity.githubPatScopeId), repository);
   };
   const assignRepository = (index: number, profileRef: string | null) => invoke(async () => {
     const repository = identity.settings.github.repositories[index];
     await validateAssignment(profileRef, repository);
-    await identity.replaceSettings({ ...identity.settings, github: { ...identity.settings.github, repositories: identity.settings.github.repositories.map((item, current) => current === index ? { ...item, profileRef } : item) } });
+    await identity.replaceSettings((current) => ({ ...current, github: { ...current.github, repositories: current.github.repositories.map((item, currentIndex) => currentIndex === index ? { ...item, profileRef } : item) } }));
   });
   const assignTracker = (profileRef: string | null) => invoke(async () => {
     const tracker = identity.settings.github.issueTracker;
     if (tracker === null) return;
     await validateAssignment(profileRef, { owner: tracker.owner, name: tracker.repository });
-    await identity.replaceSettings({ ...identity.settings, github: { ...identity.settings.github, issueTracker: { ...tracker, profileRef } } });
+    await identity.replaceSettings((current) => ({ ...current, github: { ...current.github, issueTracker: current.github.issueTracker === null ? null : { ...current.github.issueTracker, profileRef } } }));
   });
   const assignDeck = (index: number, profileRef: string | null) => invoke(async () => {
     const deck = identity.settings.decks[index];
@@ -151,7 +159,7 @@ export function GitHubSettings({ copy, bridge, provider = createGitHubProvider({
     const match = /^([^/]+)\/([^/]+)$/u.exec(deck.repository);
     if (match === null) throw new GitHubProviderError(GitHubErrorCode.InvalidResponse, "validate-repository");
     await validateAssignment(profileRef, { owner: match[1], name: match[2] });
-    await identity.replaceSettings({ ...identity.settings, decks: identity.settings.decks.map((item, current) => current === index ? { ...item, profileRef } : item) });
+    await identity.replaceSettings((current) => ({ ...current, decks: current.decks.map((item, currentIndex) => currentIndex === index ? { ...item, profileRef } : item) }));
   });
 
   return <section className="github-settings" aria-labelledby="github-settings-title">
@@ -197,10 +205,10 @@ function ProfileAssignment({ copy, id, label, value, profiles, disabled, onChang
   return <label htmlFor={id}>{label}<select id={id} value={value ?? ""} disabled={disabled} onChange={(event) => onChange(event.target.value || null)}><option value="">{copy.githubSelectProfile}</option>{profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></label>;
 }
 
-export async function validateGitHubProfile(settings: DevHudSettingsV1, profileId: string, bridge: NativeBridgeV1, provider: GitHubProvider): Promise<void> {
+export async function validateGitHubProfile(settings: DevHudSettingsV1, profileId: string, bridge: NativeBridgeV1, provider: GitHubProvider, scopeId: string): Promise<void> {
   const profile = settings.github.profiles.find((candidate) => candidate.id === profileId);
   if (profile === undefined) throw new GitHubProviderError(GitHubErrorCode.MissingToken, "validate-credential");
-  const credential = await readGitHubCredential(bridge, profile);
+  const credential = await readGitHubCredential(bridge, profile, scopeId);
   await provider.validateCredential(credential);
   await Promise.all(referencedRepositories(settings, profileId).map((repository) => provider.validateRepository(credential, repository)));
 }

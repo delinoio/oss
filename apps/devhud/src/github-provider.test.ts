@@ -10,6 +10,7 @@ const classic: GitHubCredential = { profileId: fixture.profiles.classic.id, kind
 const restricted: GitHubCredential = { profileId: fixture.profiles.restricted.id, kind: "fine-grained", token: fixture.profiles.restricted.token };
 const publicRepository = { owner: fixture.repositories.public.owner, name: fixture.repositories.public.name };
 const privateRepository = { owner: fixture.repositories.private.owner, name: fixture.repositories.private.name };
+const scopeId = "origin.scope";
 
 function json(value: unknown, status = 200, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(value), { status, headers: { "content-type": "application/json", ...headers } });
@@ -71,6 +72,26 @@ describe("GitHub.com provider", () => {
   it("rejects a fine-grained PAT without Issues write permission", async () => {
     const provider = createGitHubProvider({ fetch: router() });
     await expect(provider.validateRepository({ ...fine, token: "fine-no-issues" }, publicRepository)).rejects.toMatchObject({ code: GitHubErrorCode.MissingScope, operation: "validate-repository", status: 403 });
+  });
+
+  it("accepts a Contents 404 only for a repository that has never been pushed", async () => {
+    const emptyRepositoryFetch = vi.fn<typeof fetch>(async (input, init) => {
+      const url = new URL(String(input));
+      if (/^\/repos\/[^/]+\/[^/]+$/u.test(url.pathname)) return json({ private: false, pushed_at: null });
+      if (url.pathname.endsWith("/contents")) return json({ message: "Git Repository is empty." }, 404);
+      if (url.pathname.endsWith("/issues") && init?.method === "POST") return json({ message: "Validation Failed" }, 422);
+      return json([]);
+    });
+    await expect(createGitHubProvider({ fetch: emptyRepositoryFetch }).validateRepository(fine, publicRepository)).resolves.toMatchObject({ permissions: { contents: true } });
+
+    const inaccessibleContentsFetch = vi.fn<typeof fetch>(async (input, init) => {
+      const url = new URL(String(input));
+      if (/^\/repos\/[^/]+\/[^/]+$/u.test(url.pathname)) return json({ private: false, pushed_at: "2026-08-17T00:00:00Z" });
+      if (url.pathname.endsWith("/contents")) return json({ message: "Not Found" }, 404);
+      if (url.pathname.endsWith("/issues") && init?.method === "POST") return json({ message: "Validation Failed" }, 422);
+      return json([]);
+    });
+    await expect(createGitHubProvider({ fetch: inaccessibleContentsFetch }).validateRepository(fine, publicRepository)).rejects.toMatchObject({ code: GitHubErrorCode.FineGrainedRepositoryRestriction });
   });
 
   it.each([
@@ -193,25 +214,25 @@ describe("GitHub profile and server isolation", () => {
 
   it("distinguishes secure-store absence", async () => {
     const bridge = bridgeWithValue(null);
-    const error = await readGitHubCredential(bridge, settings.github.profiles[0]).catch((reason: unknown) => reason);
+    const error = await readGitHubCredential(bridge, settings.github.profiles[0], scopeId).catch((reason: unknown) => reason);
     expect(error).toMatchObject({ code: GitHubErrorCode.MissingToken });
   });
 
   it("preserves typed secure-store failures", async () => {
     const failure = new NativeBridgeError(NativeBridgeErrorCode.StorageFailure);
     const bridge = { request: vi.fn(async () => { throw failure; }), listen: vi.fn(async () => () => undefined) } as NativeBridgeV1;
-    await expect(readGitHubCredential(bridge, settings.github.profiles[0])).rejects.toBe(failure);
+    await expect(readGitHubCredential(bridge, settings.github.profiles[0], scopeId)).rejects.toBe(failure);
   });
 
   it("does not classify an invalid secure-store response as a missing PAT", async () => {
     const bridge = { request: vi.fn(async () => ({ kind: "ok" as const })), listen: vi.fn(async () => () => undefined) } as NativeBridgeV1;
-    await expect(readGitHubCredential(bridge, settings.github.profiles[0])).rejects.toMatchObject({ code: GitHubErrorCode.InvalidResponse });
+    await expect(readGitHubCredential(bridge, settings.github.profiles[0], scopeId)).rejects.toMatchObject({ code: GitHubErrorCode.InvalidResponse });
   });
 
   it("validates every referenced repository with only the explicitly selected profile", async () => {
     const validateRepository = vi.fn(async (_credential: GitHubCredential, _repository: GitHubRepositoryRef) => ({ repository: publicRepository, private: false, permissions: { metadata: true, pullRequests: true, issues: true, contents: true }, metadata: { etag: null, rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } } }));
     const provider = { ...createGitHubProvider({ fetch: router() }), validateCredential: vi.fn(async () => ({ etag: null, rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } })), validateRepository };
-    await validateGitHubProfile(settings, fine.profileId, bridgeWithValue(fine.token), provider);
+    await validateGitHubProfile(settings, fine.profileId, bridgeWithValue(fine.token), provider, scopeId);
     expect(referencedRepositories(settings, fine.profileId)).toEqual([publicRepository, privateRepository]);
     expect(validateRepository).toHaveBeenCalledTimes(2);
     expect(validateRepository.mock.calls.every(([credential]) => credential.profileId === fine.profileId)).toBe(true);

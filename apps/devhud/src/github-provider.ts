@@ -81,8 +81,8 @@ export interface GitHubProvider {
 interface RequestResult { readonly response: Response; readonly json: unknown; readonly metadata: GitHubResponseMetadata }
 interface ProviderOptions { readonly fetch: typeof globalThis.fetch }
 
-export async function readGitHubCredential(bridge: NativeBridgeV1, profile: DevHudSettingsV1["github"]["profiles"][number]): Promise<GitHubCredential> {
-  const response = await bridge.request({ operation: "secure.read", setting: { kind: SecureSettingKind.GithubPat, profileId: profile.id } });
+export async function readGitHubCredential(bridge: NativeBridgeV1, profile: DevHudSettingsV1["github"]["profiles"][number], scopeId: string): Promise<GitHubCredential> {
+  const response = await bridge.request({ operation: "secure.read", setting: { kind: SecureSettingKind.GithubPat, profileId: profile.id, scopeId } });
   if (response.kind !== "secure-value") throw new GitHubProviderError(GitHubErrorCode.InvalidResponse, GitHubOperation.ValidateCredential);
   if (response.value === null || response.value.trim() === "") throw new GitHubProviderError(GitHubErrorCode.MissingToken, GitHubOperation.ValidateCredential);
   return { profileId: profile.id, kind: profile.kind, token: response.value };
@@ -139,9 +139,11 @@ export function createGitHubProvider({ fetch: fetchImpl }: ProviderOptions): Git
       const validations = await Promise.all([
         request(GitHubOperation.ValidateRepository, credential, `${repositoryPath(repository)}/pulls?state=open&per_page=1`),
         request(GitHubOperation.ValidateRepository, credential, `${repositoryPath(repository)}/issues?state=open&per_page=1`),
-        request(GitHubOperation.ValidateRepository, credential, `${repositoryPath(repository)}/contents`),
+        request(GitHubOperation.ValidateRepository, credential, `${repositoryPath(repository)}/contents`, {}, [404]),
         ...(credential.kind === "fine-grained" ? [request(GitHubOperation.ValidateRepository, credential, `${repositoryPath(repository)}/issues`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }, [422])] : []),
       ]);
+      const contents = validations[2];
+      if (contents?.response.status === 404 && value.pushed_at !== null) throw classifyFailure(GitHubOperation.ValidateRepository, credential.kind, contents.response, contents.json, contents.metadata.rate);
       if (credential.kind === "fine-grained" && validations[3]?.response.status !== 422) throw new GitHubProviderError(GitHubErrorCode.InvalidResponse, GitHubOperation.ValidateRepository, validations[3]?.response.status ?? null, validations[3]?.metadata.rate ?? null);
       return {
         repository,

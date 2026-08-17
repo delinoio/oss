@@ -48,6 +48,7 @@ export interface IdentitySettingsValue {
   readonly conflict: SettingsConflict | null;
   readonly signInPending: boolean;
   readonly identityResetAvailable: boolean;
+  readonly githubPatScopeId: Promise<string>;
   readonly signIn: () => Promise<void>;
   readonly retryIdentity: () => void;
   readonly resetIdentity: () => Promise<void>;
@@ -56,7 +57,7 @@ export interface IdentitySettingsValue {
   readonly continueLocally: () => void;
   readonly uploadLocal: () => Promise<void>;
   readonly replaceLocal: () => void;
-  readonly replaceSettings: (settings: DevHudSettingsV1) => Promise<boolean>;
+  readonly replaceSettings: (settings: DevHudSettingsV1 | ((current: DevHudSettingsV1) => DevHudSettingsV1)) => Promise<boolean>;
   readonly adoptConflictServer: () => void;
   readonly reapplyConflictLocal: () => Promise<void>;
   readonly logout: () => Promise<void>;
@@ -129,7 +130,10 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     const guest = readGuestSettings(storage);
     return !hasGuestSettings(storage) && initialAppearance ? { ...guest, appearance: initialAppearance } : guest;
   });
+  const settingsRef = useRef(settings);
   const [revision, setRevision] = useState(0n);
+  const revisionRef = useRef(revision);
+  const githubPatScopeId = useMemo(() => sessionProfileId(apiOrigin), [apiOrigin]);
   const [error, setError] = useState<string | null>(null);
   const [accountError, setAccountError] = useState<DevHudClientError | null>(null);
   const [settingsError, setSettingsError] = useState<DevHudClientError | null>(null);
@@ -147,6 +151,16 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   const callbackHandled = useRef<string | null>(null);
   const invalidSessionCleanupRef = useRef<Promise<void> | null>(null);
   const continueLocallyRef = useRef(false);
+
+  function applySettings(next: DevHudSettingsV1): void {
+    settingsRef.current = next;
+    setSettings(next);
+  }
+
+  function applyRevision(next: bigint): void {
+    revisionRef.current = next;
+    setRevision(next);
+  }
 
   const accountQueryKey = useMemo(() => createConnectQueryKey({ schema: AccountQuery.getAccount, transport, input: {}, cardinality: "finite" }), [transport]);
   const settingsQueryKey = useMemo(() => createConnectQueryKey({ schema: SettingsQuery.getSettings, transport, input: {}, cardinality: "finite" }), [transport]);
@@ -179,8 +193,8 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       } finally {
         setAccount(null);
         setAccountError(null);
-        setSettings(defaultDevHudSettings);
-        setRevision(0n);
+        applySettings(defaultDevHudSettings);
+        applyRevision(0n);
         setSettingsReady(false);
         setSettingsError(null);
         setStatus("signed-out");
@@ -218,8 +232,8 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       setSession(null);
       setAccount(null);
       setAccountError(null);
-      setSettings(defaultDevHudSettings);
-      setRevision(0n);
+      applySettings(defaultDevHudSettings);
+      applyRevision(0n);
       setSettingsReady(false);
       setSettingsError(null);
       setStatus("signed-out");
@@ -397,7 +411,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     if (!online) {
       setSettingsReady(false);
       const cached = readAuthenticatedSettingsCache(storage, apiOrigin);
-      if (cached) { setSettings(cached.settings); setRevision(cached.revision); }
+      if (cached) { applySettings(cached.settings); applyRevision(cached.revision); }
       return;
     }
     if (!settingsQuery.data) return;
@@ -412,13 +426,13 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     setError((current) => current === "settings-contract-invalid" ? null : current);
     setSettingsError(null);
     setSettingsReady(true);
-    setRevision(currentRevision);
+    applyRevision(currentRevision);
     if (hasGuestSettings(storage)) {
       const local = readGuestSettings(storage);
-      setSettings(local);
+      applySettings(local);
       setImportDiff(diffSettings(local, server));
     } else {
-      setSettings(server);
+      applySettings(server);
       writeAuthenticatedSettingsCache(storage, apiOrigin, { settings: server, revision: currentRevision, cachedAt: new Date().toISOString() });
     }
   }, [apiOrigin, online, settingsQuery.data, status, storage]);
@@ -430,8 +444,8 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     setSettingsError(mapped);
     const cached = readAuthenticatedSettingsCache(storage, apiOrigin);
     if (cached) {
-      setSettings(cached.settings);
-      setRevision(cached.revision);
+      applySettings(cached.settings);
+      applyRevision(cached.revision);
     }
     if (mapped.kind === "unauthenticated") {
       void clearInvalidSession().catch((reason) => setError(safeError(reason)));
@@ -465,8 +479,8 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
         throw reason;
       }
       const next = validated.settings;
-      setSettings(next);
-      setRevision(validated.revision);
+      applySettings(next);
+      applyRevision(validated.revision);
       setSettingsReady(true);
       setError((current) => current === "settings-contract-invalid" ? null : current);
       setImportDiff(null);
@@ -553,6 +567,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     conflict,
     signInPending,
     identityResetAvailable,
+    githubPatScopeId,
     signIn: async () => {
       if (signInPendingRef.current) return;
       continueLocallyRef.current = false;
@@ -594,26 +609,27 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
         markSettingsContractInvalid();
         return;
       }
-      setSettings(validated.settings);
-      setRevision(validated.revision);
+      applySettings(validated.settings);
+      applyRevision(validated.revision);
       setImportDiff(null);
       clearGuestImportMarker(storage);
       writeAuthenticatedSettingsCache(storage, apiOrigin, { settings: validated.settings, revision: validated.revision, cachedAt: new Date().toISOString() });
     },
-    replaceSettings: async (next) => {
+    replaceSettings: async (update) => {
+      const next = typeof update === "function" ? update(settingsRef.current) : update;
       if (status === "guest" || status === "signed-out") {
         const parsed = parseDevHudSettings(next);
         writeGuestSettings(storage, parsed);
-        setSettings(parsed);
+        applySettings(parsed);
         return true;
       }
       if (settingsReadOnly) throw new Error("settings-read-only");
-      return replaceAt(next, revision);
+      return replaceAt(next, revisionRef.current);
     },
     adoptConflictServer: () => {
       if (!conflict) return;
-      setSettings(conflict.server);
-      setRevision(conflict.currentRevision);
+      applySettings(conflict.server);
+      applyRevision(conflict.currentRevision);
       setConflict(null);
       clearGuestImportMarker(storage);
       writeAuthenticatedSettingsCache(storage, apiOrigin, { settings: conflict.server, revision: conflict.currentRevision, cachedAt: new Date().toISOString() });
@@ -629,8 +645,8 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       setStatus("signed-out");
       setAccount(null);
       setAccountError(null);
-      setSettings(defaultDevHudSettings);
-      setRevision(0n);
+      applySettings(defaultDevHudSettings);
+      applyRevision(0n);
       setSettingsReady(false);
       setSettingsError(null);
       await clearIdentityQueryCache();
@@ -661,7 +677,9 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       }
     },
     retryDeletionCleanup: cleanPendingDeletion,
-    profileRequiresSetup: (kind, profileId) => profileRequiresSetup(bridge, kind, profileId),
+    profileRequiresSetup: async (kind, profileId) => kind === "github"
+      ? profileRequiresSetup(bridge, kind, profileId, await githubPatScopeId)
+      : profileRequiresSetup(bridge, kind, profileId),
   };
 
   function markSettingsContractInvalid(): void {

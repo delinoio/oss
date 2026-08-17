@@ -13,6 +13,7 @@ private let legacyAccessGroupKey = "DevHudLegacyKeychainAccessGroup"
 private struct SecureSetting: Decodable {
     let kind: String
     let profileId: String
+    let scopeId: String?
     var account: String { "\(kind):\(profileId)" }
 }
 
@@ -33,6 +34,7 @@ private struct RequestArgs: Decodable {
     let value: String?
     let scope: String?
     let profileId: String?
+    let scopeId: String?
     let profileIds: [String]?
     let notification: DeckNotification?
     let deckId: String?
@@ -171,6 +173,13 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate {
 
     private func writeSecure(_ args: RequestArgs, _ invoke: Invoke) throws {
         guard let setting = args.setting, let value = args.value, let data = value.data(using: .utf8) else { throw NativeError.invalidArgument }
+        if setting.kind == "github-pat" {
+            guard let scopeId = setting.scopeId, let markerData = "1".data(using: .utf8),
+                  storeData(markerData, setting: githubPatScope(scopeId, setting.profileId), accessGroupKey: sharedAccessGroupKey) == errSecSuccess else {
+                rejectStorageFailure(invoke)
+                return
+            }
+        }
         guard storeData(data, setting: setting, accessGroupKey: sharedAccessGroupKey) == errSecSuccess else {
             rejectStorageFailure(invoke)
             return
@@ -182,6 +191,12 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate {
 
     private func removeSecure(_ args: RequestArgs, _ invoke: Invoke) throws {
         guard let setting = args.setting else { throw NativeError.invalidArgument }
+        if setting.kind == "github-pat" {
+            guard let scopeId = setting.scopeId else { throw NativeError.invalidArgument }
+            guard removeGitHubPatScope(scopeId, setting.profileId) else { rejectStorageFailure(invoke); return }
+            invoke.resolve(["kind": "ok"])
+            return
+        }
         for accessGroupKey in [sharedAccessGroupKey, legacyAccessGroupKey] {
             let status = deleteData(setting, accessGroupKey: accessGroupKey)
             guard status == errSecSuccess || status == errSecItemNotFound else { rejectStorageFailure(invoke); return }
@@ -189,7 +204,11 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate {
         invoke.resolve(["kind": "ok"])
     }
 
-    private func reconcileGitHubPatsGroup(_ retained: Set<String>, accessGroupKey: String) -> Bool {
+    private func githubPatScope(_ scopeId: String, _ profileId: String) -> SecureSetting {
+        SecureSetting(kind: "github-pat-scope", profileId: "\(scopeId):\(profileId)", scopeId: nil)
+    }
+
+    private func secureAccounts(accessGroupKey: String) -> [String]? {
         var all: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
                                   kSecAttrService as String: keychainService,
                                   kSecReturnAttributes as String: true,
@@ -199,29 +218,55 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate {
         }
         var result: CFTypeRef?
         let status = SecItemCopyMatching(all as CFDictionary, &result)
-        if status == errSecItemNotFound { return true }
-        guard status == errSecSuccess, let items = result as? [[String: Any]] else { return false }
-        for item in items {
-            guard let account = item[kSecAttrAccount as String] as? String,
-                  account.hasPrefix("github-pat:") else { continue }
-            let profileId = String(account.dropFirst("github-pat:".count))
-            if retained.contains(profileId) { continue }
-            var itemQuery = all
-            itemQuery.removeValue(forKey: kSecReturnAttributes as String)
-            itemQuery.removeValue(forKey: kSecMatchLimit as String)
-            itemQuery[kSecAttrAccount as String] = account
-            let deletion = SecItemDelete(itemQuery as CFDictionary)
-            if deletion != errSecSuccess && deletion != errSecItemNotFound { return false }
+        if status == errSecItemNotFound { return [] }
+        guard status == errSecSuccess, let items = result as? [[String: Any]] else { return nil }
+        return items.compactMap { $0[kSecAttrAccount as String] as? String }
+    }
+
+    private func removeGitHubPatScope(_ scopeId: String, _ profileId: String) -> Bool {
+        guard let accounts = secureAccounts(accessGroupKey: sharedAccessGroupKey) else { return false }
+        let marker = githubPatScope(scopeId, profileId)
+        let markerSuffix = ":\(profileId)"
+        let retainedElsewhere = accounts.contains { account in
+            account.hasPrefix("github-pat-scope:") && account.hasSuffix(markerSuffix) && account != marker.account
         }
-        return true
+        if !retainedElsewhere {
+            let pat = SecureSetting(kind: "github-pat", profileId: profileId, scopeId: nil)
+            for accessGroupKey in [sharedAccessGroupKey, legacyAccessGroupKey] {
+                let deletion = deleteData(pat, accessGroupKey: accessGroupKey)
+                if deletion != errSecSuccess && deletion != errSecItemNotFound { return false }
+            }
+        }
+        let markerDeletion = deleteData(marker, accessGroupKey: sharedAccessGroupKey)
+        return markerDeletion == errSecSuccess || markerDeletion == errSecItemNotFound
     }
 
     private func reconcileGitHubPats(_ args: RequestArgs, _ invoke: Invoke) throws {
-        guard let profileIds = args.profileIds, profileIds.count <= 25,
+        guard let scopeId = args.scopeId, let profileIds = args.profileIds, profileIds.count <= 25,
               Set(profileIds).count == profileIds.count else { throw NativeError.invalidArgument }
+        guard let sharedAccounts = secureAccounts(accessGroupKey: sharedAccessGroupKey),
+              let legacyAccounts = secureAccounts(accessGroupKey: legacyAccessGroupKey) else {
+            rejectStorageFailure(invoke)
+            return
+        }
         let retained = Set(profileIds)
-        for accessGroupKey in [sharedAccessGroupKey, legacyAccessGroupKey] {
-            guard reconcileGitHubPatsGroup(retained, accessGroupKey: accessGroupKey) else { rejectStorageFailure(invoke); return }
+        for profileId in retained where sharedAccounts.contains("github-pat:\(profileId)") || legacyAccounts.contains("github-pat:\(profileId)") {
+            let marker = githubPatScope(scopeId, profileId)
+            if !sharedAccounts.contains(marker.account) {
+                guard let markerData = "1".data(using: .utf8), storeData(markerData, setting: marker, accessGroupKey: sharedAccessGroupKey) == errSecSuccess else {
+                    rejectStorageFailure(invoke)
+                    return
+                }
+            }
+        }
+        let prefix = "github-pat-scope:\(scopeId):"
+        for account in sharedAccounts where account.hasPrefix(prefix) {
+            let profileId = String(account.dropFirst(prefix.count))
+            if retained.contains(profileId) { continue }
+            guard removeGitHubPatScope(scopeId, profileId) else {
+                rejectStorageFailure(invoke)
+                return
+            }
         }
         invoke.resolve(["kind": "ok"])
     }

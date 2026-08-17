@@ -7,6 +7,8 @@ use tracing::error;
 
 const SERVICE: &str = "io.delino.devhud.secure-settings.v1";
 const INDEX_ACCOUNT: &str = "__index__";
+const GITHUB_PAT_KIND: &str = "github-pat";
+const GITHUB_PAT_SCOPE_KIND: &str = "github-pat-scope";
 const CHUNK_MANIFEST_PREFIX: &str = "devhud-credential-chunks-v1:";
 const CHUNK_MANIFEST_VERSION: u8 = 2;
 const WINDOWS_CREDENTIAL_CHUNK_BYTES: usize = 1024;
@@ -109,15 +111,23 @@ fn handle_with_backend<B: CredentialBackend>(
                 .get("value")
                 .and_then(Value::as_str)
                 .ok_or("invalid-argument")?;
-            write_setting(backend, &setting, value, chunk_values)?;
+            if setting.kind == GITHUB_PAT_KIND {
+                write_github_pat(request, backend, &setting, value, chunk_values)?;
+            } else {
+                write_setting(backend, &setting, value, chunk_values)?;
+            }
             Ok(serde_json::json!({ "kind": "ok" }))
         }
         Some("secure.remove") => {
             let setting = parse_setting(request)?;
-            delete_value(backend, &setting, chunk_values)?;
-            let mut index = read_index(backend, chunk_values)?;
-            index.remove(&setting);
-            write_index(backend, &index, chunk_values)?;
+            if setting.kind == GITHUB_PAT_KIND {
+                remove_github_pat_scope(request, backend, &setting.profile_id, chunk_values)?;
+            } else {
+                delete_value(backend, &setting, chunk_values)?;
+                let mut index = read_index(backend, chunk_values)?;
+                index.remove(&setting);
+                write_index(backend, &index, chunk_values)?;
+            }
             Ok(serde_json::json!({ "kind": "ok" }))
         }
         Some("secure.reconcile-github-pats") => {
@@ -137,6 +147,10 @@ fn reconcile_github_pats<B: CredentialBackend>(
     backend: &B,
     chunk_values: bool,
 ) -> Result<(), String> {
+    let scope_id = request
+        .get("scopeId")
+        .and_then(Value::as_str)
+        .ok_or("invalid-argument")?;
     let retained: BTreeSet<&str> = request
         .get("profileIds")
         .and_then(Value::as_array)
@@ -144,19 +158,98 @@ fn reconcile_github_pats<B: CredentialBackend>(
         .iter()
         .map(|value| value.as_str().ok_or("invalid-argument"))
         .collect::<Result<_, _>>()?;
-    let mut index = read_index(backend, chunk_values)?;
+    for profile_id in &retained {
+        let pat = setting(GITHUB_PAT_KIND, profile_id);
+        let marker = github_pat_scope(scope_id, profile_id);
+        if read_value(backend, &pat, chunk_values)?.is_some()
+            && read_value(backend, &marker, chunk_values)?.is_none()
+        {
+            write_setting(backend, &marker, "1", chunk_values)?;
+        }
+    }
+    let index = read_index(backend, chunk_values)?;
     let targets: Vec<_> = index
         .iter()
-        .filter(|setting| {
-            setting.kind == "github-pat" && !retained.contains(setting.profile_id.as_str())
-        })
-        .cloned()
+        .filter_map(|candidate| github_pat_scope_profile(candidate, scope_id))
+        .filter(|profile_id| !retained.contains(profile_id))
+        .map(str::to_string)
         .collect();
-    for setting in targets {
-        delete_value(backend, &setting, chunk_values)?;
-        index.remove(&setting);
+    for profile_id in targets {
+        remove_github_pat_scope(request, backend, &profile_id, chunk_values)?;
     }
+    Ok(())
+}
+
+fn write_github_pat<B: CredentialBackend>(
+    request: &Value,
+    backend: &B,
+    pat: &SettingRef,
+    value: &str,
+    chunk_values: bool,
+) -> Result<(), String> {
+    let scope_id = request
+        .get("setting")
+        .and_then(|setting| setting.get("scopeId"))
+        .and_then(Value::as_str)
+        .ok_or("invalid-argument")?;
+    write_setting(
+        backend,
+        &github_pat_scope(scope_id, &pat.profile_id),
+        "1",
+        chunk_values,
+    )?;
+    write_setting(backend, pat, value, chunk_values)
+}
+
+fn remove_github_pat_scope<B: CredentialBackend>(
+    request: &Value,
+    backend: &B,
+    profile_id: &str,
+    chunk_values: bool,
+) -> Result<(), String> {
+    let scope_id = request
+        .get("scopeId")
+        .or_else(|| {
+            request
+                .get("setting")
+                .and_then(|setting| setting.get("scopeId"))
+        })
+        .and_then(Value::as_str)
+        .ok_or("invalid-argument")?;
+    let marker = github_pat_scope(scope_id, profile_id);
+    let pat = setting(GITHUB_PAT_KIND, profile_id);
+    let mut index = read_index(backend, chunk_values)?;
+    let retained_elsewhere = index.iter().any(|candidate| {
+        candidate != &marker
+            && github_pat_scope_profile(candidate, "")
+                .is_some_and(|candidate_profile| candidate_profile == profile_id)
+    });
+    if !retained_elsewhere {
+        delete_value(backend, &pat, chunk_values)?;
+        index.remove(&pat);
+    }
+    delete_value(backend, &marker, chunk_values)?;
+    index.remove(&marker);
     write_index(backend, &index, chunk_values)
+}
+
+fn setting(kind: &str, profile_id: &str) -> SettingRef {
+    SettingRef {
+        kind: kind.to_string(),
+        profile_id: profile_id.to_string(),
+    }
+}
+
+fn github_pat_scope(scope_id: &str, profile_id: &str) -> SettingRef {
+    setting(GITHUB_PAT_SCOPE_KIND, &format!("{scope_id}:{profile_id}"))
+}
+
+fn github_pat_scope_profile<'a>(candidate: &'a SettingRef, scope_id: &str) -> Option<&'a str> {
+    if candidate.kind != GITHUB_PAT_SCOPE_KIND {
+        return None;
+    }
+    let (candidate_scope, profile_id) = candidate.profile_id.split_once(':')?;
+    (scope_id.is_empty() || candidate_scope == scope_id).then_some(profile_id)
 }
 
 fn write_setting<B: CredentialBackend>(
@@ -472,8 +565,9 @@ mod tests {
 
     use super::{
         CHUNK_MANIFEST_PREFIX, ChunkManifest, CredentialBackend, INDEX_ACCOUNT, SettingRef,
-        chunk_account, delete_value, read_index, read_value, reconcile_github_pats, should_remove,
-        split_chunks, write_index, write_setting, write_value,
+        chunk_account, delete_value, handle_with_backend, read_index, read_value,
+        reconcile_github_pats, should_remove, split_chunks, write_index, write_setting,
+        write_value,
     };
 
     #[derive(Clone, Debug, Eq, PartialEq)]
@@ -584,31 +678,68 @@ mod tests {
     }
 
     #[test]
-    fn github_pat_reconciliation_removes_only_unreferenced_profiles() {
+    fn github_pat_reconciliation_preserves_other_origin_profiles() {
         let backend = MemoryBackend::default();
-        let retained = setting("github-pat", "retained");
-        let removed = setting("github-pat", "removed");
+        let old_origin = setting("github-pat", "old-origin");
+        let current_origin = setting("github-pat", "current-origin");
         let r2 = setting("r2-secret-access-key", "removed");
-        write_setting(&backend, &retained, "retained-pat", false).expect("retained PAT");
-        write_setting(&backend, &removed, "removed-pat", false).expect("removed PAT");
+        handle_with_backend(
+            &serde_json::json!({ "operation": "secure.write", "setting": { "kind": "github-pat", "profileId": "old-origin", "scopeId": "origin.old" }, "value": "old-pat" }),
+            &backend,
+            false,
+        )
+        .expect("old-origin PAT");
+        handle_with_backend(
+            &serde_json::json!({ "operation": "secure.write", "setting": { "kind": "github-pat", "profileId": "current-origin", "scopeId": "origin.current" }, "value": "current-pat" }),
+            &backend,
+            false,
+        )
+        .expect("current-origin PAT");
         write_setting(&backend, &r2, "r2-secret", false).expect("R2 secret");
 
         reconcile_github_pats(
-            &serde_json::json!({ "profileIds": ["retained"] }),
+            &serde_json::json!({ "scopeId": "origin.current", "profileIds": [] }),
             &backend,
             false,
         )
         .expect("reconcile PATs");
 
         assert_eq!(
-            read_value(&backend, &retained, false),
-            Ok(Some("retained-pat".to_string()))
+            read_value(&backend, &old_origin, false),
+            Ok(Some("old-pat".to_string()))
         );
-        assert_eq!(read_value(&backend, &removed, false), Ok(None));
+        assert_eq!(read_value(&backend, &current_origin, false), Ok(None));
         assert_eq!(
             read_value(&backend, &r2, false),
             Ok(Some("r2-secret".to_string()))
         );
+    }
+
+    #[test]
+    fn github_pat_reconciliation_deletes_only_after_the_last_scope_releases_it() {
+        let backend = MemoryBackend::default();
+        let pat = setting("github-pat", "shared");
+        for scope_id in ["origin.first", "origin.second"] {
+            handle_with_backend(
+                &serde_json::json!({ "operation": "secure.write", "setting": { "kind": "github-pat", "profileId": "shared", "scopeId": scope_id }, "value": "shared-pat" }),
+                &backend,
+                false,
+            )
+            .expect("scoped PAT");
+        }
+
+        for (scope_id, expected) in [
+            ("origin.first", Some("shared-pat".to_string())),
+            ("origin.second", None),
+        ] {
+            reconcile_github_pats(
+                &serde_json::json!({ "scopeId": scope_id, "profileIds": [] }),
+                &backend,
+                false,
+            )
+            .expect("reconcile scope");
+            assert_eq!(read_value(&backend, &pat, false), Ok(expected));
+        }
     }
 
     #[test]
