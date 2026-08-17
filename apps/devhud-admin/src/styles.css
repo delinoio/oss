@@ -208,6 +208,7 @@ tbody tr:last-child td { border-bottom: 0; }
 .check input { height: 20px; margin: 1px 0 0; width: 20px; }
 .quota-list { display: grid; grid-template-columns: 1fr; }
 .quota-list div { align-items: center; display: flex; justify-content: space-between; }
+.quota-list dd { display: grid; gap: 3px; justify-items: end; }
 .sr-only { height: 1px; margin: -1px; overflow: hidden; position: absolute; width: 1px; clip: rect(0, 0, 0, 0); }
 
 @media (max-width: 720px) {

@@ -210,6 +210,25 @@ func TestPublicAssetReasonsAreRejectedForUserAndUploadMutations(t *testing.T) {
 	}
 }
 
+func TestAcceptedUploadMutationReturnsOwnerAuditTarget(t *testing.T) {
+	uploads := &adminUploads{remove: func(context.Context, string, string, domain.RemovalReason, domain.UploadState, string, domain.AuditEvent) (domain.Upload, error) {
+		return domain.Upload{
+			UploadReservation: domain.UploadReservation{UploadID: uploadID, OwnerUserID: targetUserID},
+			State:             domain.UploadStateDeleted,
+		}, nil
+	}}
+	service := newTestAdminService(t, &adminRepository{}, uploads)
+	response, err := service.DeleteUpload(administratorContext(), connect.NewRequest(&devhudv1.AdminServiceDeleteUploadRequest{
+		UploadId: uuid(uploadID), ExpectedState: devhudv1.UploadState_UPLOAD_STATE_FINALIZED, Reason: "Reviewed policy violation.",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := response.Msg.GetAuditEvent().GetTargetUserId().GetValue(); got != targetUserID {
+		t.Fatalf("target user ID = %q, want %q", got, targetUserID)
+	}
+}
+
 func TestRejectedMutationAuditPreservesRequestDeadline(t *testing.T) {
 	deadline := time.Now().Add(time.Minute)
 	var auditDeadline time.Time
@@ -376,6 +395,7 @@ func (*adminRepository) ListAuditEvents(context.Context, domain.AuditFilters, *d
 type adminUploads struct {
 	usage       domain.UploadUsage
 	removeCalls int
+	remove      func(context.Context, string, string, domain.RemovalReason, domain.UploadState, string, domain.AuditEvent) (domain.Upload, error)
 }
 
 func (*adminUploads) ListUploads(context.Context, string, domain.AdminUploadFilters, string, uint32) (domain.UploadList, string, error) {
@@ -384,7 +404,10 @@ func (*adminUploads) ListUploads(context.Context, string, domain.AdminUploadFilt
 func (u *adminUploads) GetUsage(context.Context, string) (domain.UploadUsage, error) {
 	return u.usage, nil
 }
-func (u *adminUploads) RemoveUpload(context.Context, string, string, domain.RemovalReason, domain.UploadState, string, domain.AuditEvent) (domain.Upload, error) {
+func (u *adminUploads) RemoveUpload(ctx context.Context, actorID, uploadID string, reason domain.RemovalReason, state domain.UploadState, rationale string, event domain.AuditEvent) (domain.Upload, error) {
 	u.removeCalls++
+	if u.remove != nil {
+		return u.remove(ctx, actorID, uploadID, reason, state, rationale, event)
+	}
 	return domain.Upload{}, errors.New("unexpected mutation")
 }

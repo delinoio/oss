@@ -127,6 +127,9 @@ importers:
       react-dom:
         specifier: 19.2.8
         version: 19.2.8(react@19.2.8)
+      unicode-case-folding:
+        specifier: 1.1.1
+        version: 1.1.1
     devDependencies:
       '@rsbuild/core':
         specifier: 2.1.10
@@ -5496,6 +5499,9 @@ packages:
   unicode-canonical-property-names-ecmascript@2.0.1:
     resolution: {integrity: sha512-dA8WbNeb2a6oQzAQ55YlT5vQAWGV9WXOsi3SskE3bcCdM0P4SDd+24zS/OCacdRq5BkdsRj9q3Pg6YyQoxIGqg==}
     engines: {node: '>=4'}
+
+  unicode-case-folding@1.1.1:
+    resolution: {integrity: sha512-ZAYziAnMTBisO2dT5tyGvBFMNsIfonOS/BZTd3UZaKWtXMOZqK8s8HRUCrlKxGCTeCxCuCjS/6HW+4a6G+rbzw==}
 
   unicode-match-property-ecmascript@2.0.0:
     resolution: {integrity: sha512-5kaZCrbp5mmbz5ulBkDkbY0SsPOjKqVS35VpL9ulMPfSl0J0Xsm+9Evphv9CoIZFwre7aJoa94AY6seMKGVN5Q==}
@@ -12677,6 +12683,8 @@ snapshots:
       hookable: 6.1.1
 
   unicode-canonical-property-names-ecmascript@2.0.1: {}
+
+  unicode-case-folding@1.1.1: {}
 
   unicode-match-property-ecmascript@2.0.0:
     dependencies:

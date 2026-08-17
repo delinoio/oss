@@ -17,7 +17,8 @@
     "@delinoio/devhud-api-client": "workspace:*",
     "@logto/browser": "2.1.0",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "unicode-case-folding": "1.1.1"
   },
   "devDependencies": {
     "@rsbuild/core": "2.1.10",

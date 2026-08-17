@@ -278,6 +278,8 @@ func (s *AdminService) mutateUpload(ctx context.Context, uploadID *devhudv1.Uuid
 		return domain.Upload{}, domain.AuditEvent{}, NewError(code, message, CorrelationID(ctx))
 	}
 	event.Outcome = domain.AuditOutcomeAccepted
+	targetUserID := upload.OwnerUserID
+	event.TargetUserID = &targetUserID
 	return upload, event, nil
 }
 

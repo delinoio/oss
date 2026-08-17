@@ -3,8 +3,10 @@ import {
   AdministrativeBlockState,
   AuditAction,
   AuditOutcome,
+  AuditRejectionReason,
   PaginationFailureReason,
   PaginationFailureSchema,
+  QuotaKind,
   StaticCapability,
   UploadState,
 } from "@delinoio/devhud-api-client";
@@ -193,6 +195,26 @@ describe("administrator console review regressions", () => {
     await waitFor(() => expect(runtime.client.listUsers).toHaveBeenCalledTimes(2));
   });
 
+  it("validates the normalized full-case-folded search size", async () => {
+    render(<App />);
+    const search = await screen.findByRole("search");
+    const input = screen.getByPlaceholderText("Search by name, email, or Logto subject");
+    const submit = within(search).getByRole("button", { name: "Users" });
+
+    fireEvent.change(input, { target: { value: "İ".repeat(171) } });
+    expect((submit as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.submit(search);
+    expect(runtime.client.listUsers).toHaveBeenCalledOnce();
+
+    fireEvent.change(input, { target: { value: "İ".repeat(170) } });
+    expect((submit as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.submit(search);
+    await waitFor(() => expect(runtime.client.listUsers).toHaveBeenCalledTimes(2));
+    expect(runtime.client.listUsers.mock.calls[1]?.[0]).toMatchObject({
+      query: "i\u0307".repeat(170),
+    });
+  });
+
   it("ignores stale usage responses after closing and switching users", async () => {
     const otherUser = {
       ...user,
@@ -233,6 +255,24 @@ describe("administrator console review regressions", () => {
     });
     expect(within(screen.getByRole("dialog")).getByText("Other User")).toBeTruthy();
     expect(within(screen.getByRole("dialog")).queryByText("Target User")).toBeNull();
+  });
+
+  it("renders the submission identifier for submission-scoped quotas", async () => {
+    const submissionId = { value: "018f7c1e-7b4a-7abc-8def-0123456789bb" };
+    runtime.client.getUserUsage.mockResolvedValue({
+      counters: [{
+        quota: QuotaKind.SUBMISSION_IMAGES,
+        used: 9n,
+        limit: 10n,
+        submissionId,
+      }],
+    });
+
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Usage and quota" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText(submissionId.value)).toBeTruthy();
+    expect(within(dialog).getByText("9 / 10")).toBeTruthy();
   });
 
   it("prevents duplicate upload continuation requests", async () => {
@@ -317,6 +357,7 @@ describe("administrator console review regressions", () => {
         auditEventId: { value: "018f7c1e-7b4a-7abc-8def-0123456789ba" },
         action: AuditAction.UPLOAD_DELETED,
         outcome: AuditOutcome.REJECTED,
+        rejectionReason: AuditRejectionReason.INVALID_ARGUMENT,
         actorUserId,
         targetUserId,
         targetUploadId,
@@ -327,6 +368,7 @@ describe("administrator console review regressions", () => {
     render(<App />);
     await screen.findByText("Target User");
     fireEvent.click(screen.getByRole("button", { name: "Audit" }));
+    expect(await screen.findByText("Rejected · Invalid argument")).toBeTruthy();
     for (const [label, identifier] of [
       ["Actor user", actorUserId.value],
       ["Target user", targetUserId.value],
@@ -457,6 +499,7 @@ describe("administrator console review regressions", () => {
         auditEventId: { value: "018f7c1e-7b4a-7abc-8def-0123456789aa" },
         action: AuditAction.USER_BLOCKED,
         outcome: AuditOutcome.REJECTED,
+        rejectionReason: AuditRejectionReason.INVALID_ARGUMENT,
       }],
       nextPageToken: "",
     });
@@ -473,7 +516,7 @@ describe("administrator console review regressions", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "감사 기록" }));
     expect(await screen.findByText("사용자 차단")).toBeTruthy();
-    expect(screen.getByText("거부됨")).toBeTruthy();
+    expect(screen.getByText("거부됨 · 잘못된 인수")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "English" }));
     expect(document.documentElement.lang).toBe("en");
   });

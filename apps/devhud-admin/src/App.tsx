@@ -2,6 +2,7 @@ import { Code, ConnectError } from "@connectrpc/connect";
 import {
   AdministrativeBlockState,
   AuditOutcome,
+  AuditRejectionReason,
   StaticCapability,
   UploadState,
   mapDevHudError,
@@ -13,6 +14,7 @@ import {
   type UsageCounter,
 } from "@delinoio/devhud-api-client";
 import { useEffect, useRef, useState } from "react";
+import { caseFold } from "unicode-case-folding";
 import { createAdminClient, getBootstrap, type AdminClient } from "./api";
 import { AdminAuth } from "./auth";
 import { Dialog } from "./Dialog";
@@ -42,7 +44,13 @@ type UsageState =
 
 const maximumAdminSearchBytes = 512;
 const textEncoder = new TextEncoder();
+const unicodeEdgeWhitespace = /^\p{White_Space}+|\p{White_Space}+$/gu;
 let appInitialization: Promise<Phase> | undefined;
+
+function normalizeAdminSearch(value: string): string {
+  const trimmed = value.normalize("NFC").replace(unicodeEdgeWhitespace, "");
+  return caseFold(trimmed).normalize("NFC");
+}
 
 async function initializeApp(): Promise<Phase> {
   const bootstrap = await getBootstrap();
@@ -293,7 +301,9 @@ function Users({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const queryValid = textEncoder.encode(query).byteLength <= maximumAdminSearchBytes;
+  const normalizedQuery = normalizeAdminSearch(query);
+  const queryValid =
+    textEncoder.encode(normalizedQuery).byteLength <= maximumAdminSearchBytes;
 
   return (
     <section aria-labelledby="users-title">
@@ -307,8 +317,8 @@ function Users({
           onSubmit={(event) => {
             event.preventDefault();
             if (!queryValid) return;
-            setAppliedQuery(query);
-            void load("", false, query);
+            setAppliedQuery(normalizedQuery);
+            void load("", false, normalizedQuery);
           }}
           role="search"
         >
@@ -437,7 +447,15 @@ function Users({
                 <div key={`${counter.quota}-${counter.submissionId?.value ?? index}`}>
                   <dt>{copy.quotaKinds[counter.quota]}</dt>
                   <dd>
-                    {counter.used.toLocaleString()} / {counter.limit.toLocaleString()}
+                    {counter.submissionId && (
+                      <span>
+                        {copy.submission}: {" "}
+                        <span className="mono">{counter.submissionId.value}</span>
+                      </span>
+                    )}
+                    <span>
+                      {counter.used.toLocaleString()} / {counter.limit.toLocaleString()}
+                    </span>
                   </dd>
                 </div>
               ))}
@@ -846,7 +864,13 @@ function Audit({
                   </div>
                   <div className="timeline-meta">
                     <Status tone={event.outcome === AuditOutcome.REJECTED ? "danger" : "success"}>
-                      {copy.auditOutcomes[event.outcome]}
+                      {event.outcome === AuditOutcome.REJECTED
+                        ? `${copy.auditOutcomes[event.outcome]} · ${
+                            copy.auditRejectionReasons[
+                              event.rejectionReason ?? AuditRejectionReason.UNSPECIFIED
+                            ]
+                          }`
+                        : copy.auditOutcomes[event.outcome]}
                     </Status>
                     <time>{formatTime(event.createdAt, locale)}</time>
                   </div>
