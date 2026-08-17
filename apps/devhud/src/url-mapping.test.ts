@@ -75,6 +75,11 @@ describe("URL repository matcher", () => {
     expect(mappingMatches(mapping({ pattern: `https://example.com/${wildcards}/missing` }), `https://example.com/${path}`)).toBe(false);
   });
 
+  it("matches long live paths without consuming the JavaScript call stack", () => {
+    const path = Array.from({ length: 10_000 }, () => "value").join("/");
+    expect(resolveRepositorySelection([mapping({ pattern: "https://example.com/**" })], `https://example.com/${path}`)).toMatchObject({ kind: "matched" });
+  });
+
   it("rejects invalid wildcard placement and sensitive URL components", () => {
     for (const pattern of ["https://api*.example.com/", "https://api.example.com/**:123", "https://api.example.com/path?x=1", "https://user@api.example.com/", "https://example.com\\evil/path"]) expect(() => parseUrlPattern(pattern)).toThrow();
     expect(parseUrlPattern("https://social.example/@alice").path).toEqual(["@alice"]);

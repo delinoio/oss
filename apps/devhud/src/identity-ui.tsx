@@ -135,6 +135,7 @@ interface UrlMappingDraftValue {
   readonly setSaving: (saving: boolean) => void;
   readonly priorityDrafts: Record<string, string>;
   readonly setPriorityDrafts: (drafts: Record<string, string> | ((current: Record<string, string>) => Record<string, string>)) => void;
+  readonly baseRevision: bigint;
   readonly reset: () => void;
 }
 
@@ -163,15 +164,22 @@ function UrlMappingDraftStateProvider({ children, identity }: { readonly childre
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [priorityDrafts, setPriorityDrafts] = useState<Record<string, string>>({});
-  useEffect(() => { if (!dirty) setDraft([...identity.settings.urlMappings]); }, [dirty, identity.settings.urlMappings]);
+  const [baseRevision, setBaseRevision] = useState(identity.revision);
+  useEffect(() => {
+    if (!dirty) {
+      setDraft([...identity.settings.urlMappings]);
+      setBaseRevision(identity.revision);
+    }
+  }, [dirty, identity.revision, identity.settings.urlMappings]);
   const reset = () => {
     setDraft([...identity.settings.urlMappings]);
+    setBaseRevision(identity.revision);
     setDirty(false);
     setSaved(false);
     setInvalid(false);
     setPriorityDrafts({});
   };
-  return <UrlMappingDraftContext value={{ draft, setDraft, invalid, setInvalid, saved, setSaved, dirty, setDirty, saving, setSaving, priorityDrafts, setPriorityDrafts, reset }}>{children}</UrlMappingDraftContext>;
+  return <UrlMappingDraftContext value={{ draft, setDraft, invalid, setInvalid, saved, setSaved, dirty, setDirty, saving, setSaving, priorityDrafts, setPriorityDrafts, baseRevision, reset }}>{children}</UrlMappingDraftContext>;
 }
 
 export function SynchronizedSettingsBoundary(props: { readonly copy: Copy; readonly bridge?: NativeBridgeV1; readonly githubProvider?: GitHubProvider; readonly onOpenExternal?: (target: ExternalLinkTarget) => Promise<void> }) {
@@ -212,7 +220,7 @@ function UrlMappingSettings({ copy, bridge, githubProvider = createGitHubProvide
   const identity = useIdentitySettings();
   const mappingDraft = use(UrlMappingDraftContext);
   if (mappingDraft === null) throw new Error("URL mapping draft provider is required");
-  const { draft, setDraft, invalid, setInvalid, saved, setSaved, dirty, setDirty, saving, setSaving, priorityDrafts, setPriorityDrafts } = mappingDraft;
+  const { draft, setDraft, invalid, setInvalid, saved, setSaved, dirty, setDirty, saving, setSaving, priorityDrafts, setPriorityDrafts, baseRevision } = mappingDraft;
   const [validationError, setValidationError] = useState<keyof Copy | null>(null);
   const overlaps = safeOverlaps(draft);
   const change = (id: string, field: keyof UrlRepositoryMapping, value: string | number | null) => {
@@ -251,11 +259,11 @@ function UrlMappingSettings({ copy, bridge, githubProvider = createGitHubProvide
     }
     try {
       let committedMappings = mappings;
-      if (!await identity.replaceSettings((current) => {
+      if (!await identity.replaceSettingsAt((current) => {
         const next = parseDevHudSettings({ ...current, urlMappings: withUpdatedMappings(draft, priorityDrafts, current.urlMappings) });
         committedMappings = next.urlMappings.slice();
         return next;
-      })) return;
+      }, baseRevision)) return;
       setDraft(committedMappings);
       setDirty(false);
       setPriorityDrafts({});

@@ -322,6 +322,9 @@ func validateSettingsURLMappings(value any, legacy bool) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	if len(mappings) > 100 {
+		return nil, errors.New("$.urlMappings must contain at most 100 entries")
+	}
 	if legacy {
 		for index, entry := range mappings {
 			path := fmt.Sprintf("$.urlMappings[%d]", index)
@@ -337,13 +340,18 @@ func validateSettingsURLMappings(value any, legacy bool) ([]string, error) {
 		}
 		return nil, nil
 	}
-	if len(mappings) > 100 {
-		return nil, errors.New("$.urlMappings must contain at most 100 entries")
-	}
 	ids := make(map[string]struct{}, len(mappings))
 	profileRefs := make([]string, 0, len(mappings))
 	for index, entry := range mappings {
 		path := fmt.Sprintf("$.urlMappings[%d]", index)
+		if legacyMapping, err := settingsObject(entry, path, "sourcePrefix", "destinationPrefix"); err == nil {
+			for _, field := range []string{"sourcePrefix", "destinationPrefix"} {
+				if err := settingsURL(legacyMapping[field], path+"."+field, false); err != nil {
+					return nil, err
+				}
+			}
+			continue
+		}
 		mapping, err := settingsObject(entry, path, "id", "pattern", "repository", "credentialProfileRef", "priority", "chromeOrigin", "updatedAt")
 		if err != nil {
 			return nil, err
@@ -627,7 +635,12 @@ func settingsChromeOrigin(value any, path string) error {
 		return err
 	}
 	parsed, err := url.Parse(text)
-	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || (parsed.Path != "" && parsed.Path != "/") || strings.Contains(parsed.Hostname(), "*") {
+	port := ""
+	if err == nil {
+		port = parsed.Port()
+	}
+	parsedPort, portErr := strconv.ParseUint(port, 10, 16)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || (parsed.Path != "" && parsed.Path != "/") || strings.Contains(parsed.Hostname(), "*") || (port != "" && (portErr != nil || parsedPort > 65535)) {
 		return fmt.Errorf("%s must be a concrete HTTP(S) origin without credentials, path, query, or fragment", path)
 	}
 	return nil

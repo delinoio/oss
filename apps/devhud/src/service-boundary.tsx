@@ -60,6 +60,7 @@ export interface IdentitySettingsValue {
   readonly uploadLocal: () => Promise<void>;
   readonly replaceLocal: () => boolean;
   readonly replaceSettings: (settings: DevHudSettingsV1 | ((current: DevHudSettingsV1) => DevHudSettingsV1)) => Promise<boolean>;
+  readonly replaceSettingsAt: (settings: DevHudSettingsV1 | ((current: DevHudSettingsV1) => DevHudSettingsV1), expectedRevision: bigint) => Promise<boolean>;
   readonly adoptConflictServer: () => void;
   readonly reapplyConflictLocal: () => Promise<boolean>;
   readonly logout: () => Promise<void>;
@@ -571,6 +572,12 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     if (settingsReadOnly) throw new Error("settings-read-only");
     return replaceAt(next, revisionRef.current);
   };
+  const replaceSettingsAt: IdentitySettingsValue["replaceSettingsAt"] = async (update, expectedRevision) => {
+    const next = typeof update === "function" ? update(settingsRef.current) : update;
+    if (status === "guest" || status === "signed-out") return replaceSettings(next);
+    if (settingsReadOnly) throw new Error("settings-read-only");
+    return replaceAt(next, expectedRevision);
+  };
   settingsWritableRef.current = githubPatSettingsReady;
   replaceSettingsRef.current = replaceSettings;
 
@@ -691,6 +698,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       return true;
     },
     replaceSettings,
+    replaceSettingsAt,
     adoptConflictServer: () => {
       if (!conflict) return;
       lastReconciledGitHubPatKeyRef.current = null;

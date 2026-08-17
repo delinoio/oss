@@ -1560,11 +1560,10 @@ describe("generated Connect identity/settings fixture", () => {
     expect(screen.getByRole("status").textContent).toBe(messages.en.mappingSaved);
   });
 
-  it("rebases a mapping save on settings changed while repository validation is pending", async () => {
+  it("preserves a mapping draft base revision while repository validation is pending", async () => {
     const mapping = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", pattern: "https://local.example/**", repository: { owner: "delinoio", name: "oss" }, credentialProfileRef: mappingProfile.id, priority: 0, chromeOrigin: null, updatedAt: "2026-08-17T00:00:00.000Z" };
     const server = withMappingProfile([mapping]);
     const themed = { ...server, appearance: { ...server.appearance, theme: "dark" as const } };
-    const final = { ...themed, urlMappings: [{ ...mapping, repository: { owner: "delinoio", name: "reviewed" }, updatedAt: "2026-08-18T00:00:00.000Z" }] };
     let releaseValidation!: () => void;
     const validation = new Promise<void>((resolve) => { releaseValidation = resolve; });
     const validateRepository = vi.fn(async () => validation);
@@ -1583,8 +1582,13 @@ describe("generated Connect identity/settings fixture", () => {
       if (url.endsWith("/devhud.v1.SettingsService/ReplaceSettings")) {
         const source = typeof init?.body === "string" ? init.body : new TextDecoder().decode(init?.body as ArrayBufferView<ArrayBuffer>);
         replacements.push(JSON.parse(source));
-        const next = replacements.length === 1 ? themed : final;
-        return connectResponse({ snapshot: { schemaVersion: 2, revision: String(replacements.length + 1), canonicalJson: encodedSettings(next) } });
+        if (replacements.length === 1) return connectResponse({ snapshot: { schemaVersion: 2, revision: "2", canonicalJson: encodedSettings(themed) } });
+        const detail = create(SettingsRevisionConflictSchema, {
+          expectedRevision: 1n,
+          currentSnapshot: { schemaVersion: 2, revision: 2n, canonicalJson: new TextEncoder().encode(canonicalDevHudSettings(themed)) },
+        });
+        const value = btoa(String.fromCharCode(...toBinary(SettingsRevisionConflictSchema, detail)));
+        return new Response(JSON.stringify({ code: "aborted", message: "settings revision conflict", details: [{ type: SettingsRevisionConflictSchema.typeName, value }] }), { status: 409, headers: { "Content-Type": "application/json" } });
       }
       throw new Error(`unexpected request ${url}`);
     }));
@@ -1600,9 +1604,9 @@ describe("generated Connect identity/settings fixture", () => {
     releaseValidation();
     await waitFor(() => expect(replacements).toHaveLength(2));
     const replacement = replacements[1] as { readonly expectedRevision: string; readonly canonicalJson: string };
-    const canonicalJson = new TextDecoder().decode(Uint8Array.from(atob(replacement.canonicalJson), (character) => character.codePointAt(0)!));
-    expect(replacement.expectedRevision).toBe("2");
-    expect(parseDevHudSettings(JSON.parse(canonicalJson))).toMatchObject({ appearance: { theme: "dark" }, urlMappings: [{ repository: { owner: "delinoio", name: "reviewed" } }] });
+    expect(replacement.expectedRevision).toBe("1");
+    expect(await screen.findByRole("dialog", { name: messages.en.conflictTitle })).toBeTruthy();
+    expect((screen.getByLabelText(messages.en.repositoryName) as HTMLInputElement).value).toBe("reviewed");
   });
 
   it("preserves a dirty mapping draft when conflict reapply encounters another revision conflict", async () => {

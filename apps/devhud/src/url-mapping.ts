@@ -185,19 +185,32 @@ function isIpv4Literal(host: string): boolean {
   return /^\d{1,3}(?:\.\d{1,3}){3}$/u.test(host);
 }
 
-function pathMatches(pattern: readonly string[], value: readonly string[], patternIndex = 0, valueIndex = 0): boolean {
-  const memo = new Map<string, boolean>();
-  const visit = (currentPatternIndex: number, currentValueIndex: number): boolean => {
-    const key = `${currentPatternIndex}:${currentValueIndex}`;
-    const previous = memo.get(key); if (previous !== undefined) return previous;
-    let result: boolean;
-    const component = pattern[currentPatternIndex];
-    if (currentPatternIndex === pattern.length) result = currentValueIndex === value.length;
-    else if (component === "**") result = visit(currentPatternIndex + 1, currentValueIndex) || (currentValueIndex < value.length && visit(currentPatternIndex, currentValueIndex + 1));
-    else result = currentValueIndex < value.length && componentMatches(component ?? "", value[currentValueIndex] ?? "", false) && visit(currentPatternIndex + 1, currentValueIndex + 1);
-    memo.set(key, result); return result;
+function pathMatches(pattern: readonly string[], value: readonly string[]): boolean {
+  let current = new Set<number>([0]);
+  const expandGlobstars = (states: Set<number>): Set<number> => {
+    const expanded = new Set(states);
+    const pending = [...states];
+    while (pending.length > 0) {
+      const index = pending.pop()!;
+      if (pattern[index] === "**" && !expanded.has(index + 1)) {
+        expanded.add(index + 1);
+        pending.push(index + 1);
+      }
+    }
+    return expanded;
   };
-  return visit(patternIndex, valueIndex);
+  current = expandGlobstars(current);
+  for (const segment of value) {
+    const next = new Set<number>();
+    for (const index of current) {
+      const component = pattern[index];
+      if (component === "**") next.add(index);
+      else if (component !== undefined && componentMatches(component, segment, false)) next.add(index + 1);
+    }
+    current = expandGlobstars(next);
+    if (current.size === 0) return false;
+  }
+  return expandGlobstars(current).has(pattern.length);
 }
 
 function patternsOverlap(left: ParsedUrlPattern, right: ParsedUrlPattern): boolean {
