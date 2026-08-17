@@ -55,6 +55,16 @@ test("does not report a packaged diagnostics session as empty", () => {
   assert.match(messages.ko.diagnosticsUnavailable, /로컬에 기록/u);
 });
 
+test("localizes recoverable notification permission failures", () => {
+  assert.match(messages.en.notificationPermissionFailed, /notification permission/u);
+  assert.match(messages.ko.notificationPermissionFailed, /알림 권한/u);
+});
+
+test("localizes recoverable app-store opening failures", () => {
+  assert.match(messages.en.storeOpenFailed, /app store/u);
+  assert.match(messages.ko.storeOpenFailed, /앱 스토어/u);
+});
+
 test("uses the first supported platform language", () => {
   assert.equal(selectSupportedLanguage(["fr-FR", "ko-KR", "en-US"]), "ko");
   assert.equal(selectSupportedLanguage(["fr-FR", "en-US", "ko-KR"]), "en");

@@ -9,21 +9,38 @@
     "dev:frontend": "node ../../scripts/run-rsbuild-dev.mjs devhud 46305",
     "build": "node scripts/run-tauri.mjs build",
     "build:frontend": "rsbuild build",
+    "mobile:generate": "node scripts/generate-mobile.mjs",
+    "mobile:check": "node scripts/generate-mobile.mjs --check && node scripts/verify-mobile.mjs",
+    "verify:mobile": "node scripts/verify-mobile.mjs",
+    "dev:ios": "node scripts/run-mobile.mjs ios dev",
+    "build:ios": "node scripts/run-mobile.mjs ios build --target aarch64",
+    "build:ios:sim:arm64": "node scripts/run-mobile.mjs ios build --target aarch64-sim",
+    "build:ios:sim:x64": "node scripts/run-mobile.mjs ios build --target x86_64",
+    "dev:android": "node scripts/run-mobile.mjs android dev",
+    "build:android": "pnpm build:android:arm64 && pnpm build:android:armv7",
+    "build:android:arm64": "node scripts/run-mobile.mjs android build --target aarch64 --apk --aab",
+    "build:android:armv7": "node scripts/run-mobile.mjs android build --target armv7 --apk --aab",
+    "build:android:emulator:x64": "node scripts/run-mobile.mjs android build --target x86_64 --apk",
     "lint": "tsc --noEmit",
-    "test": "pnpm lint && node --experimental-strip-types --test scripts/localization.test.mjs scripts/registry.test.mjs scripts/accessibility.test.mjs scripts/frontend-output-policy.test.mjs scripts/platform-smoke-child.test.mjs scripts/run-tauri.test.mjs scripts/verify-pins-policy.test.mjs && node scripts/verify-frontend-output.mjs",
+    "test:components": "vitest run src/App.test.tsx src/surface-state.test.tsx",
+    "test": "pnpm lint && pnpm test:components && node --experimental-strip-types --test scripts/localization.test.mjs scripts/registry.test.mjs scripts/accessibility.test.mjs scripts/native-bridge.test.mjs scripts/mobile-policy.test.mjs scripts/generate-mobile.test.mjs scripts/frontend-output-policy.test.mjs scripts/platform-smoke-child.test.mjs scripts/run-tauri.test.mjs scripts/run-mobile.test.mjs scripts/verify-pins-policy.test.mjs && node scripts/verify-frontend-output.mjs && pnpm mobile:check",
     "verify:pins": "node scripts/verify-pins.mjs",
     "smoke:platform": "node scripts/platform-smoke.mjs"
   },
   "dependencies": {
+    "@tauri-apps/api": "2.11.1",
     "react": "19.2.8",
     "react-dom": "19.2.8"
   },
   "devDependencies": {
     "@rsbuild/core": "2.1.10",
     "@rsbuild/plugin-react": "2.0.1",
+    "@testing-library/react": "16.3.0",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "js-yaml": "4.3.1",
-    "typescript": "5.9.3"
+    "jsdom": "20.0.3",
+    "typescript": "5.9.3",
+    "vitest": "4.1.10"
   }
 }

@@ -2224,9 +2224,11 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tauri-cli",
+ "tauri-plugin",
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
+ "url",
  "wait-timeout",
 ]
 
@@ -9566,6 +9568,8 @@ dependencies = [
  "tracing",
  "tray-icon",
  "url",
+ "webkit2gtk",
+ "webview2-com",
  "window-vibrancy",
  "windows",
 ]
@@ -9785,6 +9789,21 @@ dependencies = [
  "syn 2.0.117",
  "tauri-codegen",
  "tauri-utils",
+]
+
+[[package]]
+name = "tauri-plugin"
+version = "2.6.3"
+source = "git+https://github.com/tauri-apps/tauri?rev=4af26a3f7f8b692d62cca549bbacd93f5ce90b41#4af26a3f7f8b692d62cca549bbacd93f5ce90b41"
+dependencies = [
+ "anyhow",
+ "glob",
+ "plist",
+ "schemars 1.2.1",
+ "serde",
+ "serde_json",
+ "tauri-utils",
+ "walkdir",
 ]
 
 [[package]]
@@ -10534,7 +10553,7 @@ dependencies = [
  "png 0.18.1",
  "serde",
  "thiserror 2.0.18",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

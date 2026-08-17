@@ -64,6 +64,7 @@ test("error messages meet WCAG AA contrast in light and dark themes", () => {
     );
   }
   assert.match(styles, /\.external-message\[role="alert"\]\s*\{\s*color:var\(--error\)/u);
+  assert.match(styles, /\.native-setting-error\s*\{[^}]*color:var\(--error\)/u);
 });
 
 test("form-control boundaries meet non-text contrast in light and dark themes", () => {
