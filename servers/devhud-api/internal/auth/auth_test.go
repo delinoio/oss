@@ -48,7 +48,8 @@ func TestLogtoVerifier(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if identity.Subject != "logto-user" || identity.DisplayName != "Dev User" || len(identity.Fingerprint) != 32 {
+	if identity.Subject != "logto-user" || identity.DisplayName != "Dev User" || len(identity.Fingerprint) != 32 ||
+		len(identity.Roles) != 1 || identity.Roles[0] != "devhud-admin" {
 		t.Fatalf("unexpected identity: %+v", identity)
 	}
 	for _, scheme := range []string{"bearer", "BEARER", "BeArEr"} {
@@ -130,7 +131,7 @@ func signToken(t *testing.T, key *rsa.PrivateKey, issuer, audience, subject stri
 	}
 	value, err := jwt.Signed(signer).Claims(jwt.Claims{
 		Issuer: issuer, Subject: subject, Audience: jwt.Audience{audience}, Expiry: jwt.NewNumericDate(expires), IssuedAt: jwt.NewNumericDate(time.Now()),
-	}).Claims(map[string]any{"name": "Dev User", "email": "dev@example.com"}).Serialize()
+	}).Claims(map[string]any{"name": "Dev User", "email": "dev@example.com", "roles": []string{"devhud-admin"}}).Serialize()
 	if err != nil {
 		t.Fatal(err)
 	}

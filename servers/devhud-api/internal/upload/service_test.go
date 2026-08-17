@@ -401,11 +401,12 @@ func (r *fakeRepository) RejectUpload(context.Context, string, domain.UploadBind
 func (r *fakeRepository) ListUploads(context.Context, string, []domain.UploadState, string, *domain.UploadCursor, uint32) (domain.UploadList, error) {
 	return domain.UploadList{}, nil
 }
-func (r *fakeRepository) ListUploadsForAdministrator(_ context.Context, ownerID string, _ []domain.UploadState, _ *domain.UploadCursor, _ uint32) (domain.UploadList, error) {
+func (r *fakeRepository) ListUploadsForAdministrator(_ context.Context, filters domain.AdminUploadFilters, _ *domain.UploadCursor, _ uint32) (domain.UploadList, error) {
+	ownerID := filters.OwnerUserID
 	r.administratorListOwner = ownerID
 	return r.administratorList, nil
 }
-func (r *fakeRepository) ClaimUploadRemoval(_ context.Context, _ string, _ string, reason domain.RemovalReason, token string, _ time.Time) (domain.Upload, error) {
+func (r *fakeRepository) ClaimUploadRemoval(_ context.Context, _ string, _ string, _ string, reason domain.RemovalReason, _ domain.UploadState, token string, _ time.Time) (domain.Upload, error) {
 	r.event("claim-remove")
 	r.upload.State, r.upload.RemovalReason, r.upload.OperationToken = domain.UploadStateRemoving, reason, token
 	return r.upload, nil

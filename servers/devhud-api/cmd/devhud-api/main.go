@@ -111,6 +111,7 @@ func run(ctx context.Context, arguments []string, logger *slog.Logger) error {
 	httpServer, err := server.New(server.Dependencies{
 		Config: configuration, Repository: repository, Verifier: verifier, Clock: clock,
 		IDs: ids, Logger: logger, MetricsHandler: providers.MetricsHandler, Uploads: uploads,
+		Administration: repository, CursorKey: configuration.IdentityHMACKeys[0],
 	})
 	if err != nil {
 		return err

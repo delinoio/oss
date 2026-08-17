@@ -12,6 +12,12 @@ func unauthenticatedError(ctx context.Context) error {
 	return NewError(connect.CodeUnauthenticated, "valid Logto credentials are required", CorrelationID(ctx))
 }
 
+func adminRolePermissionError(ctx context.Context) error {
+	return NewError(connect.CodePermissionDenied, "administrator role is required", CorrelationID(ctx), &devhudv1.PermissionFailure{
+		Reason: devhudv1.PermissionFailureReason_PERMISSION_FAILURE_REASON_ADMIN_ROLE_REQUIRED,
+	})
+}
+
 func internalError(ctx context.Context) error {
 	return NewError(connect.CodeInternal, "internal service error", CorrelationID(ctx))
 }

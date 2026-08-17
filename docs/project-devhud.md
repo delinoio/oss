@@ -2,7 +2,7 @@
 
 ## Goal
 
-DevHud is a coordinated desktop and mobile developer utility. V1 contains the desktop-only RealQA capture and GitHub issue workflow and the desktop/mobile Deck pull-request monitor; native widgets remain a future product contract. The deterministic bilingual frontend, pinned Tauri CEF desktop host, target-isolated Tauri iOS/Android system-webview hosts, versioned protocol, generated client, and Bootstrap/Settings/Upload/Account API services are implemented. The host foundation exposes composed product states and a closed mobile-native bridge, while its Account surface exposes only the approved authentication, GitHub PAT, and issue browser links until curated public DevHud documentation exists. Service-backed workflows, the remaining API services, native widget targets, and the other planned domains remain documentation-first contracts.
+DevHud is a coordinated desktop and mobile developer utility. V1 contains the desktop-only RealQA capture and GitHub issue workflow and the desktop/mobile Deck pull-request monitor; native widgets remain a future product contract. The deterministic bilingual frontend, pinned Tauri CEF desktop host, target-isolated Tauri iOS/Android system-webview hosts, administrator SPA, versioned protocol, generated client, and Bootstrap/Settings/Upload/Account/Admin API services are implemented. The host foundation exposes composed product states and a closed mobile-native bridge, while its Account surface exposes only the approved authentication, GitHub PAT, and issue browser links until curated public DevHud documentation exists. Service-backed workflows, Diagnostics, native widget targets, and the other planned domains remain documentation-first contracts.
 
 Issue [#815](https://github.com/delinoio/oss/issues/815) is the current product contract. It supersedes closed historical DevHud issues #729, #755, and #757; those issues are historical context only and must not supply architecture or scope.
 
@@ -20,13 +20,13 @@ enum ProjectId {
 
 - `apps/devhud` — implemented localized React/TypeScript shell and target-isolated Rust/Tauri CEF desktop plus WKWebView/Android System WebView mobile host foundations; service-backed product workflows and native widgets planned.
 - `apps/devhud-chrome-extension` — Chrome Manifest V3 extension (planned).
-- `apps/devhud-admin` — administrator SPA embedded at `/admin` in the API artifact (planned).
-- `servers/devhud-api` — implemented stateless Go Bootstrap/Settings/Upload/Account service and account/upload/retention sweeper; Diagnostics and Admin RPC registration planned, with upload administrator hooks implemented internally.
+- `apps/devhud-admin` — implemented administrator SPA embedded at `/admin` in the API artifact.
+- `servers/devhud-api` — implemented stateless Go Bootstrap/Settings/Upload/Account/Admin service, embedded administrator assets, and account/upload/retention sweeper; Diagnostics remains planned.
 - `protos/devhud/v1` — implemented versioned Connect RPC schemas with committed Go bindings.
 - `packages/devhud-api-client` — implemented generated TypeScript messages/services, Connect Query exports, and safe client helpers.
 - `crates/devhud-native-messaging-host` — Rust Native Messaging broker packaged with desktop installers (planned canonical Rust workspace path).
 
-The desktop host, protocol, client, and server foundation paths above are implemented. Only `apps/devhud/src-tauri` is currently a DevHud Cargo workspace member; remaining planned paths are not implemented runtimes, and the planned Rust host is not a workspace member until its skeleton and contract exist.
+The desktop host, administrator SPA, protocol, client, and server foundation paths above are implemented. Only `apps/devhud/src-tauri` is currently a DevHud Cargo workspace member; remaining planned paths are not implemented runtimes, and the planned Rust host is not a workspace member until its skeleton and contract exist.
 
 ## Domain Contract Documents
 

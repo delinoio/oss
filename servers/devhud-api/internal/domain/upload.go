@@ -177,16 +177,25 @@ type UploadList struct {
 	Next    *UploadCursor
 }
 
+type AdminUploadFilters struct {
+	OwnerUserID   string
+	SubmissionID  string
+	UploadGroupID string
+	States        []UploadState
+}
+
 type UploadUsage struct {
 	SignedURLsRollingHour uint64
 	UploadBytesRollingDay uint64
 	StoredBytes           uint64
 	FinalizedImages       uint64
+	SubmissionImages      map[string]uint64
 }
 
 type AdministratorUploadAudit struct {
 	ActorUserID string
 	Rationale   string
+	Event       AuditEvent
 }
 
 type StagingSweepResult struct {
@@ -230,8 +239,8 @@ type UploadRepository interface {
 	ReleaseUploadPromotion(context.Context, string, string) error
 	RejectUpload(context.Context, string, UploadBinding, UploadFailure, time.Time) error
 	ListUploads(context.Context, string, []UploadState, string, *UploadCursor, uint32) (UploadList, error)
-	ListUploadsForAdministrator(context.Context, string, []UploadState, *UploadCursor, uint32) (UploadList, error)
-	ClaimUploadRemoval(context.Context, string, string, RemovalReason, string, time.Time) (Upload, error)
+	ListUploadsForAdministrator(context.Context, AdminUploadFilters, *UploadCursor, uint32) (UploadList, error)
+	ClaimUploadRemoval(context.Context, string, string, string, RemovalReason, UploadState, string, time.Time) (Upload, error)
 	RecordUploadReplacement(context.Context, string, string, string) (Upload, error)
 	CompleteUploadRemoval(context.Context, string, string, time.Time, *AdministratorUploadAudit) (Upload, error)
 	ReleaseUploadRemoval(context.Context, string, string) error
@@ -249,9 +258,9 @@ type UploadStagingSweeper interface {
 // UploadAdministration is deliberately an internal hook. AdminService wiring
 // is owned by the administrator milestone and must not expose object bytes.
 type UploadAdministration interface {
-	ListUploads(context.Context, string, []UploadState, string, uint32) (UploadList, string, error)
+	ListUploads(context.Context, string, AdminUploadFilters, string, uint32) (UploadList, string, error)
 	GetUsage(context.Context, string) (UploadUsage, error)
-	RemoveUpload(context.Context, string, string, RemovalReason, string) (Upload, error)
+	RemoveUpload(context.Context, string, string, RemovalReason, UploadState, string, AuditEvent) (Upload, error)
 }
 
 func formatGeneration(value uint64) string {

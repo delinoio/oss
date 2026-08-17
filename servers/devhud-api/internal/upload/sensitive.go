@@ -40,6 +40,10 @@ func validateAdministratorReason(reason string) error {
 	return nil
 }
 
+func ValidateAdministratorReason(reason string) error {
+	return validateAdministratorReason(strings.TrimSpace(reason))
+}
+
 func containsSensitiveText(value string) bool {
 	for _, pattern := range sensitiveTextPatterns {
 		if pattern.MatchString(value) {

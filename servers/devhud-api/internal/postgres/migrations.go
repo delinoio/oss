@@ -6,10 +6,14 @@ import (
 	"fmt"
 	"io/fs"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/delinoio/oss/servers/devhud-api/migrations"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/unicode/norm"
 )
 
 const migrationAdvisoryLock int64 = 0x6465766875646d67
@@ -59,6 +63,10 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) (returnErr error) {
 			_ = tx.Rollback(ctx)
 			return fmt.Errorf("apply migration %s: %w", version, err)
 		}
+		if err := runMigrationDataHook(ctx, tx, version); err != nil {
+			_ = tx.Rollback(ctx)
+			return fmt.Errorf("backfill migration %s: %w", version, err)
+		}
 		if _, err := tx.Exec(ctx, "INSERT INTO devhud_schema_migrations (version) VALUES ($1)", version); err != nil {
 			_ = tx.Rollback(ctx)
 			return fmt.Errorf("record migration %s: %w", version, err)
@@ -68,6 +76,42 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) (returnErr error) {
 		}
 	}
 	return nil
+}
+
+func runMigrationDataHook(ctx context.Context, tx pgx.Tx, version string) error {
+	if version != "00005_administration.sql" {
+		return nil
+	}
+	rows, err := tx.Query(ctx, `SELECT user_id, display_name, email, logto_subject FROM devhud_users`)
+	if err != nil {
+		return err
+	}
+	type searchRow struct{ id, displayName, email, subject string }
+	values := make([]searchRow, 0)
+	for rows.Next() {
+		var value searchRow
+		if err := rows.Scan(&value.id, &value.displayName, &value.email, &value.subject); err != nil {
+			rows.Close()
+			return err
+		}
+		values = append(values, value)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, value := range values {
+		if _, err := tx.Exec(ctx, `UPDATE devhud_users SET search_display_name = $2,
+			search_email = $3, search_logto_subject = $4 WHERE user_id = $1`, value.id,
+			normalizeSearch(value.displayName), normalizeSearch(value.email), normalizeSearch(value.subject)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func normalizeSearch(value string) string {
+	return norm.NFC.String(cases.Fold().String(strings.TrimSpace(norm.NFC.String(value))))
 }
 
 func releaseMigrationLock(ctx context.Context, connection *pgxpool.Conn) error {

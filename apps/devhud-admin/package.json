@@ -1,0 +1,32 @@
+{
+  "name": "devhud-admin",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node ../../scripts/run-rsbuild-dev.mjs devhud-admin 46306",
+    "build": "rsbuild build",
+    "lint": "tsc --noEmit",
+    "test": "pnpm lint && vitest run && pnpm build && node scripts/verify-build.mjs && pnpm test:port",
+    "test:port": "node scripts/port-collision.mjs"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "2.14.0",
+    "@connectrpc/connect": "2.1.2",
+    "@connectrpc/connect-web": "2.1.2",
+    "@delinoio/devhud-api-client": "workspace:*",
+    "@logto/browser": "2.1.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@rsbuild/core": "2.1.10",
+    "@rsbuild/plugin-react": "2.0.1",
+    "@testing-library/react": "16.3.2",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "jsdom": "20.0.3",
+    "typescript": "5.9.3",
+    "vitest": "4.1.10"
+  }
+}

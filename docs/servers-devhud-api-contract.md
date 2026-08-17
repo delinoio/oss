@@ -2,7 +2,7 @@
 
 ## Scope
 
-`servers/devhud-api` is an implemented stateless Go service backed by PostgreSQL, Cloudflare R2/CDN controls, and external Logto. It registers `BootstrapService`, `SettingsService`, `UploadService`, and `AccountService`; Diagnostics, Admin RPC registration, embedded admin assets, and updater serving remain planned. Upload administrator operations are internal metadata-only hooks for the later AdminService slice. Its fixed development port is `46307`. The separate `devhud-api-sweeper` owns bounded post-recovery account/upload purge, R2 staging expiry, and request/audit retention cleanup.
+`servers/devhud-api` is an implemented stateless Go service backed by PostgreSQL, Cloudflare R2/CDN controls, and external Logto. It registers `BootstrapService`, `SettingsService`, `UploadService`, `AccountService`, and `AdminService`, and embeds the administrator SPA at `/admin`; Diagnostics and updater serving remain planned. Its fixed development port is `46307`. The separate `devhud-api-sweeper` owns bounded post-recovery account/upload purge, R2 staging expiry, and request/audit retention cleanup.
 
 ## Runtime and Language
 
@@ -20,7 +20,7 @@ DevHud guest/authenticated clients, self-hosting operators, `devhud-admin` opera
 
 ## Interfaces and Contracts
 
-Services in package `devhud.v1`: `BootstrapService.GetBootstrap`; `SettingsService.GetSettings`/`ReplaceSettings`; `UploadService.CreateUpload`/`FinalizeUpload`/`ListUploads`/`DeleteUpload`; `AccountService.GetAccount`/`DeleteAccount`/`RestoreAccount`; Diagnostics; and the documented Admin methods. The server registers Bootstrap, Settings, Upload, and Account. `GetBootstrap` is unauthenticated. Settings and Upload require an authenticated user whose block/deletion state is transactionally revalidated; user upload lists are owner-scoped and bounded, and deletion resolves ownership without disclosing another user's record. Bootstrap advertises `OFFICIAL_UPLOADS` only when its upload adapters are configured, in addition to settings sync and account recovery.
+Services in package `devhud.v1`: `BootstrapService.GetBootstrap`; `SettingsService.GetSettings`/`ReplaceSettings`; `UploadService.CreateUpload`/`FinalizeUpload`/`ListUploads`/`DeleteUpload`; `AccountService.GetAccount`/`DeleteAccount`/`RestoreAccount`; the Admin methods; and planned Diagnostics. The server registers Bootstrap, Settings, Upload, Account, and Admin. `GetBootstrap` is unauthenticated. Settings and Upload require an authenticated user whose block/deletion state is transactionally revalidated; user upload lists are owner-scoped and bounded, and deletion resolves ownership without disclosing another user's record. Bootstrap advertises `OFFICIAL_UPLOADS` only when its upload adapters are configured and `ADMINISTRATION` whenever AdminService is registered, in addition to settings sync and account recovery.
 
 The server implements the generated Connect-Go handlers directly; no duplicate REST business API is permitted. Service-owned identifiers are canonical lowercase RFC 9562 UUID v7 values and schema versions are unsigned. Every successful response contains `ResponseMetadata` and every Connect error, including handler-generated decoding and protocol errors, carries `ErrorMetadata`; their UUID-v7 correlation ID matches the exposed `x-devhud-correlation-id` header. Bootstrap uses explicit platform client fields and explicit native/admin redirects, and its capability enum values are static compatibility declarations.
 
@@ -46,7 +46,7 @@ Retain request logs and crash reports 30 days; retain pseudonymized security/adm
 
 Upload hardening: the first upload request creates a server-owned UUID v7 submission with its first group; later groups and finalizations carry both IDs and the submission owns the maximum of 10 finalized images across all groups. Signed URLs bind the expected 32-byte SHA-256 checksum and versioned staging object. Finalization checks PNG IHDR dimensions before decoding, rejecting width or height above 4096 or total pixels above 16,777,216, and promotes only the recorded version with conditional ETag/checksum validation.
 
-Validate Logto credentials and admin role. Never persist or log PATs, R2 secrets, Logto tokens, DOM, screenshots outside upload ownership, issue bodies, agent output, or local paths. Official uploads require authenticated, unblocked users. BYO R2 credentials never reach this service.
+Validate Logto credentials and enforce the exact `devhud-admin` role on every administrator RPC. Administrator mutations use expected-state compare-and-set semantics and create a safe request-correlated accepted or rejected audit outcome; invalid reasons are never stored. Never persist or log PATs, R2 secrets, Logto tokens, DOM, screenshots outside upload ownership, issue bodies, agent output, or local paths. Official settings, uploads, diagnostics, and administration require authenticated, unblocked users; administrative blocks do not affect guest/local/direct-GitHub behavior or another self-hosted API. BYO R2 credentials never reach this service.
 
 Crash reports accept a schema version and typed build, platform, component, severity, code, and correlation fields. Build/code identifier strings are capped at 256 UTF-8 bytes; user-previewed redacted diagnostic summary is capped at 4 KiB and stack trace at 32 KiB. Credential patterns and local-path content are invalid in every crash string. Administrator mutation reasons must contain non-whitespace, well-formed Unicode text capped at 4 KiB of UTF-8 and reject the same credential and local-path patterns before storage. Mutation responses and `ListAuditEvents` return only reasons that passed this validation. Administrator responses and error details use only the schema's admin-safe user, usage, metadata-only upload, and audit projections; their message graph cannot reach the user-facing upload object, settings bodies, secrets, DOM, screenshots, public or signed asset locators, Deck results, agent output, or local paths.
 
@@ -60,7 +60,7 @@ Validation covers Go format/vet/unit tests, PostgreSQL migrations/integration, d
 
 ## Dependencies and Integrations
 
-Consumes generated `protos/devhud/v1` bindings and is consumed by `apps/devhud` through `packages/devhud-api-client`. Runtime requires PostgreSQL, Logto, private staging/public R2 buckets, the public asset custom domain, Cloudflare cache/rate controls, public client identifiers, and an HMAC identity key ring. Future Admin work consumes the internal upload hooks and serves `apps/devhud-admin`; this slice deliberately does not register AdminService.
+Consumes generated `protos/devhud/v1` bindings and is consumed by `apps/devhud` and `apps/devhud-admin` through `packages/devhud-api-client`. Runtime requires PostgreSQL, Logto, private staging/public R2 buckets, the public asset custom domain, Cloudflare cache/rate controls, public client identifiers, and an HMAC identity key ring. AdminService consumes the internal upload hooks and the API binary embeds the production administrator bundle.
 
 ## Change Triggers
 

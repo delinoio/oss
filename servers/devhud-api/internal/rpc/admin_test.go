@@ -1,0 +1,261 @@
+package rpc
+
+import (
+	"context"
+	"errors"
+	"io"
+	"log/slog"
+	"strings"
+	"testing"
+	"time"
+
+	"connectrpc.com/connect"
+	devhudv1 "github.com/delinoio/oss/protos/gen/go/devhud/v1"
+	"github.com/delinoio/oss/servers/devhud-api/internal/auth"
+	"github.com/delinoio/oss/servers/devhud-api/internal/domain"
+	"google.golang.org/protobuf/reflect/protoreflect"
+)
+
+const (
+	adminUserID  = "018f7c1e-7b4a-7abc-8def-0123456789ab"
+	targetUserID = "018f7c1e-7b4a-7abc-8def-0123456789ad"
+	uploadID     = "018f7c1e-7b4a-7abc-8def-0123456789ae"
+	eventID      = "018f7c1e-7b4a-7abc-8def-0123456789af"
+)
+
+func TestEveryAdminRPCRequiresExactRole(t *testing.T) {
+	service := newTestAdminService(t, &adminRepository{}, &adminUploads{})
+	ctx := auth.WithPrincipal(WithCorrelationID(context.Background(), testCorrelationID), auth.Principal{
+		User: domain.User{ID: adminUserID}, Roles: []string{"devhud-admin-helper"},
+	})
+	tests := map[string]func() error{
+		"ListUsers": func() error {
+			_, err := service.ListUsers(ctx, connect.NewRequest(&devhudv1.ListUsersRequest{}))
+			return err
+		},
+		"SetUserBlocked": func() error {
+			_, err := service.SetUserBlocked(ctx, connect.NewRequest(&devhudv1.SetUserBlockedRequest{}))
+			return err
+		},
+		"GetUserUsage": func() error {
+			_, err := service.GetUserUsage(ctx, connect.NewRequest(&devhudv1.GetUserUsageRequest{}))
+			return err
+		},
+		"ListUploads": func() error {
+			_, err := service.ListUploads(ctx, connect.NewRequest(&devhudv1.AdminServiceListUploadsRequest{}))
+			return err
+		},
+		"QuarantineUpload": func() error {
+			_, err := service.QuarantineUpload(ctx, connect.NewRequest(&devhudv1.QuarantineUploadRequest{}))
+			return err
+		},
+		"DeleteUpload": func() error {
+			_, err := service.DeleteUpload(ctx, connect.NewRequest(&devhudv1.AdminServiceDeleteUploadRequest{}))
+			return err
+		},
+		"ListAuditEvents": func() error {
+			_, err := service.ListAuditEvents(ctx, connect.NewRequest(&devhudv1.ListAuditEventsRequest{}))
+			return err
+		},
+	}
+	for name, call := range tests {
+		t.Run(name, func(t *testing.T) {
+			if code := connect.CodeOf(call()); code != connect.CodePermissionDenied {
+				t.Fatalf("code = %v, want PermissionDenied", code)
+			}
+		})
+	}
+}
+
+func TestUserSearchNormalizationAndQueryScopedPagination(t *testing.T) {
+	var queries []string
+	repository := &adminRepository{listUsers: func(_ context.Context, query string, cursor *domain.UserCursor, _ uint32) (domain.UserList, error) {
+		queries = append(queries, query)
+		if cursor == nil {
+			return domain.UserList{
+				Users: []domain.User{{ID: targetUserID, CreatedAt: serviceClock{}.Now()}},
+				Next:  &domain.UserCursor{CreatedAt: serviceClock{}.Now(), UserID: targetUserID},
+			}, nil
+		}
+		return domain.UserList{}, nil
+	}}
+	service := newTestAdminService(t, repository, &adminUploads{})
+	ctx := administratorContext()
+	first, err := service.ListUsers(ctx, connect.NewRequest(&devhudv1.ListUsersRequest{Query: "  E\u0301XAMPLE  "}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if queries[0] != "éxample" || first.Msg.GetNextPageToken() == "" {
+		t.Fatalf("query=%q token=%q", queries[0], first.Msg.GetNextPageToken())
+	}
+	_, err = service.ListUsers(ctx, connect.NewRequest(&devhudv1.ListUsersRequest{
+		Query: "éxample", Page: &devhudv1.PageRequest{PageToken: first.Msg.GetNextPageToken()},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = service.ListUsers(ctx, connect.NewRequest(&devhudv1.ListUsersRequest{
+		Query: "different", Page: &devhudv1.PageRequest{PageToken: first.Msg.GetNextPageToken()},
+	}))
+	if connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("cross-query token code = %v", connect.CodeOf(err))
+	}
+}
+
+func TestRejectedMutationRequiresReasonAndIsCorrelated(t *testing.T) {
+	var audits []domain.AuditEvent
+	repository := &adminRepository{recordAudit: func(_ context.Context, event domain.AuditEvent) error {
+		audits = append(audits, event)
+		return nil
+	}}
+	service := newTestAdminService(t, repository, &adminUploads{})
+	_, err := service.SetUserBlocked(administratorContext(), connect.NewRequest(&devhudv1.SetUserBlockedRequest{
+		UserId: uuid(targetUserID), ExpectedState: devhudv1.AdministrativeBlockState_ADMINISTRATIVE_BLOCK_STATE_UNBLOCKED,
+		TargetState: devhudv1.AdministrativeBlockState_ADMINISTRATIVE_BLOCK_STATE_BLOCKED, Reason: "   ",
+	}))
+	if connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("code = %v", connect.CodeOf(err))
+	}
+	if len(audits) != 1 || audits[0].Outcome != domain.AuditOutcomeRejected ||
+		audits[0].RejectionReason != domain.AuditRejectionInvalidArgument ||
+		audits[0].CorrelationID != testCorrelationID || audits[0].ID != eventID {
+		t.Fatalf("audit = %+v", audits)
+	}
+}
+
+func TestRejectedMutationDoesNotAuditSensitiveReason(t *testing.T) {
+	var audits []domain.AuditEvent
+	repository := &adminRepository{recordAudit: func(_ context.Context, event domain.AuditEvent) error {
+		audits = append(audits, event)
+		return nil
+	}}
+	service := newTestAdminService(t, repository, &adminUploads{})
+	_, err := service.SetUserBlocked(administratorContext(), connect.NewRequest(&devhudv1.SetUserBlockedRequest{
+		UserId: uuid(targetUserID), ExpectedState: devhudv1.AdministrativeBlockState_ADMINISTRATIVE_BLOCK_STATE_UNBLOCKED,
+		TargetState: devhudv1.AdministrativeBlockState_ADMINISTRATIVE_BLOCK_STATE_BLOCKED, Reason: "access_token=must-not-be-persisted",
+	}))
+	if connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("code = %v", connect.CodeOf(err))
+	}
+	if len(audits) != 1 || audits[0].Reason != "" || audits[0].Outcome != domain.AuditOutcomeRejected {
+		t.Fatalf("unsafe rejected audit = %+v", audits)
+	}
+}
+
+func TestConcurrentMutationReturnsCurrentStateWithoutSettings(t *testing.T) {
+	current := domain.User{
+		ID: targetUserID, Subject: "subject", AdministrativeBlockState: domain.AdministrativeBlockStateBlocked,
+		CreatedAt: serviceClock{}.Now(), UpdatedAt: serviceClock{}.Now(),
+	}
+	repository := &adminRepository{setBlocked: func(context.Context, string, string, domain.AdministrativeBlockState, domain.AdministrativeBlockState, domain.AuditEvent, time.Time) (domain.User, error) {
+		return domain.User{}, &domain.AdminConflictError{User: &current}
+	}}
+	service := newTestAdminService(t, repository, &adminUploads{})
+	_, err := service.SetUserBlocked(administratorContext(), connect.NewRequest(&devhudv1.SetUserBlockedRequest{
+		UserId: uuid(targetUserID), ExpectedState: devhudv1.AdministrativeBlockState_ADMINISTRATIVE_BLOCK_STATE_UNBLOCKED,
+		TargetState: devhudv1.AdministrativeBlockState_ADMINISTRATIVE_BLOCK_STATE_BLOCKED, Reason: "Reviewed abuse report.",
+	}))
+	if connect.CodeOf(err) != connect.CodeAborted {
+		t.Fatalf("code = %v", connect.CodeOf(err))
+	}
+	if strings.Contains(err.Error(), "canonical_json") || strings.Contains(err.Error(), "settings") {
+		t.Fatalf("conflict exposed settings: %v", err)
+	}
+}
+
+func TestUsageIncludesBoundedGlobalAndSubmissionCounters(t *testing.T) {
+	uploads := &adminUploads{usage: domain.UploadUsage{
+		SignedURLsRollingHour: 3, UploadBytesRollingDay: 42, StoredBytes: 99,
+		SubmissionImages: map[string]uint64{targetUserID: 2},
+	}}
+	service := newTestAdminService(t, &adminRepository{}, uploads)
+	response, err := service.GetUserUsage(administratorContext(), connect.NewRequest(&devhudv1.GetUserUsageRequest{UserId: uuid(targetUserID)}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(response.Msg.GetCounters()) != 5 {
+		t.Fatalf("counters = %+v", response.Msg.GetCounters())
+	}
+	for _, counter := range response.Msg.GetCounters() {
+		if counter.GetLimit() == 0 {
+			t.Fatalf("counter has no limit: %+v", counter)
+		}
+	}
+}
+
+func TestAdminMessagesCannotExposeSynchronizedSettingsOrObjectLocations(t *testing.T) {
+	userFields := (&devhudv1.AdminUser{}).ProtoReflect().Descriptor().Fields()
+	uploadFields := (&devhudv1.AdminUpload{}).ProtoReflect().Descriptor().Fields()
+	for _, fields := range []struct {
+		name string
+		set  protoreflect.FieldDescriptors
+	}{{"user", userFields}, {"upload", uploadFields}} {
+		for index := 0; index < fields.set.Len(); index++ {
+			name := string(fields.set.Get(index).Name())
+			for _, forbidden := range []string{"canonical_json", "settings", "token", "secret", "screenshot", "dom", "issue_body", "local_path", "public_url", "signed_url", "staging_key"} {
+				if strings.Contains(name, forbidden) {
+					t.Fatalf("%s field %q exposes forbidden data", fields.name, name)
+				}
+			}
+		}
+	}
+}
+
+func administratorContext() context.Context {
+	return auth.WithPrincipal(WithCorrelationID(context.Background(), testCorrelationID), auth.Principal{
+		User: domain.User{ID: adminUserID}, Roles: []string{domain.AdminRole},
+	})
+}
+
+func newTestAdminService(t *testing.T, repository domain.AdminRepository, uploads domain.UploadAdministration) *AdminService {
+	t.Helper()
+	service, err := NewAdminService(repository, uploads, serviceClock{}, fixedAdminIDs{}, slog.New(slog.NewJSONHandler(io.Discard, nil)), []byte("01234567890123456789012345678901"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return service
+}
+
+type fixedAdminIDs struct{}
+
+func (fixedAdminIDs) New() (string, error) { return eventID, nil }
+
+type adminRepository struct {
+	listUsers   func(context.Context, string, *domain.UserCursor, uint32) (domain.UserList, error)
+	setBlocked  func(context.Context, string, string, domain.AdministrativeBlockState, domain.AdministrativeBlockState, domain.AuditEvent, time.Time) (domain.User, error)
+	recordAudit func(context.Context, domain.AuditEvent) error
+}
+
+func (r *adminRepository) ListUsers(ctx context.Context, query string, cursor *domain.UserCursor, size uint32) (domain.UserList, error) {
+	if r.listUsers != nil {
+		return r.listUsers(ctx, query, cursor, size)
+	}
+	return domain.UserList{}, nil
+}
+func (r *adminRepository) SetUserBlocked(ctx context.Context, actor, target string, expected, state domain.AdministrativeBlockState, event domain.AuditEvent, now time.Time) (domain.User, error) {
+	if r.setBlocked != nil {
+		return r.setBlocked(ctx, actor, target, expected, state, event, now)
+	}
+	return domain.User{}, errors.New("unexpected mutation")
+}
+func (r *adminRepository) RecordAdministratorAudit(ctx context.Context, event domain.AuditEvent) error {
+	if r.recordAudit != nil {
+		return r.recordAudit(ctx, event)
+	}
+	return nil
+}
+func (*adminRepository) ListAuditEvents(context.Context, domain.AuditFilters, *domain.AuditCursor, uint32) (domain.AuditList, error) {
+	return domain.AuditList{}, nil
+}
+
+type adminUploads struct{ usage domain.UploadUsage }
+
+func (*adminUploads) ListUploads(context.Context, string, domain.AdminUploadFilters, string, uint32) (domain.UploadList, string, error) {
+	return domain.UploadList{}, "", nil
+}
+func (u *adminUploads) GetUsage(context.Context, string) (domain.UploadUsage, error) {
+	return u.usage, nil
+}
+func (*adminUploads) RemoveUpload(context.Context, string, string, domain.RemovalReason, domain.UploadState, string, domain.AuditEvent) (domain.Upload, error) {
+	return domain.Upload{}, errors.New("unexpected mutation")
+}

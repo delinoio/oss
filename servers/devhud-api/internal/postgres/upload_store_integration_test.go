@@ -122,7 +122,7 @@ func TestConcurrentFinalizationEnforcesSubmissionLimitAcrossGroupsAndFreesDelete
 		}
 	}
 	removeToken := "DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD"
-	claimed, err := store.ClaimUploadRemoval(ctx, user.ID, successes[0].upload.UploadID, domain.RemovalReasonOwnerDeleted, removeToken, now)
+	claimed, err := store.ClaimUploadRemoval(ctx, user.ID, "", successes[0].upload.UploadID, domain.RemovalReasonOwnerDeleted, 0, removeToken, now)
 	if err != nil || claimed.State != domain.UploadStateRemoving {
 		t.Fatalf("claim removal = %+v, err=%v", claimed, err)
 	}
@@ -157,7 +157,7 @@ func TestRemovingUploadFiltersUseFinalizationState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.ClaimUploadRemoval(ctx, user.ID, reservation.UploadID, domain.RemovalReasonOwnerDeleted, "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF", now); err != nil {
+	if _, err := store.ClaimUploadRemoval(ctx, user.ID, "", reservation.UploadID, domain.RemovalReasonOwnerDeleted, 0, "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF", now); err != nil {
 		t.Fatal(err)
 	}
 
@@ -204,11 +204,11 @@ func TestAdministratorUploadListingAllowsNoOwnerFilter(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	all, err := store.ListUploadsForAdministrator(ctx, "", nil, nil, 10)
+	all, err := store.ListUploadsForAdministrator(ctx, domain.AdminUploadFilters{}, nil, 10)
 	if err != nil || len(all.Uploads) != 2 {
 		t.Fatalf("unfiltered uploads = %d, err=%v", len(all.Uploads), err)
 	}
-	filtered, err := store.ListUploadsForAdministrator(ctx, first.ID, nil, nil, 10)
+	filtered, err := store.ListUploadsForAdministrator(ctx, domain.AdminUploadFilters{OwnerUserID: first.ID}, nil, 10)
 	if err != nil || len(filtered.Uploads) != 1 || filtered.Uploads[0].OwnerUserID != first.ID {
 		t.Fatalf("filtered uploads = %+v, err=%v", filtered.Uploads, err)
 	}
@@ -225,20 +225,20 @@ func TestRemovalTerminalIdempotencyAndPendingQuarantine(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.ClaimUploadRemoval(ctx, "", pending.UploadID, domain.RemovalReasonAdministratorQuarantined, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", now); !uploadFailureIs(err, domain.UploadFailureInvalidState) {
+	if _, err := store.ClaimUploadRemoval(ctx, "", "", pending.UploadID, domain.RemovalReasonAdministratorQuarantined, 0, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", now); !uploadFailureIs(err, domain.UploadFailureInvalidState) {
 		t.Fatalf("pending quarantine error = %v", err)
 	}
 	deleteToken := "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
-	if _, err := store.ClaimUploadRemoval(ctx, "", pending.UploadID, domain.RemovalReasonAdministratorDeleted, deleteToken, now); err != nil {
+	if _, err := store.ClaimUploadRemoval(ctx, "", "", pending.UploadID, domain.RemovalReasonAdministratorDeleted, 0, deleteToken, now); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.CompleteUploadRemoval(ctx, pending.UploadID, deleteToken, now, nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.ClaimUploadRemoval(ctx, "", pending.UploadID, domain.RemovalReasonAdministratorDeleted, "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC", now); err != nil {
+	if _, err := store.ClaimUploadRemoval(ctx, "", "", pending.UploadID, domain.RemovalReasonAdministratorDeleted, 0, "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC", now); err != nil {
 		t.Fatalf("matching deleted retry failed: %v", err)
 	}
-	if _, err := store.ClaimUploadRemoval(ctx, "", pending.UploadID, domain.RemovalReasonAdministratorQuarantined, "DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD", now); !uploadFailureIs(err, domain.UploadFailureInvalidState) {
+	if _, err := store.ClaimUploadRemoval(ctx, "", "", pending.UploadID, domain.RemovalReasonAdministratorQuarantined, 0, "DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD", now); !uploadFailureIs(err, domain.UploadFailureInvalidState) {
 		t.Fatalf("deleted-to-quarantine error = %v", err)
 	}
 
@@ -254,16 +254,16 @@ func TestRemovalTerminalIdempotencyAndPendingQuarantine(t *testing.T) {
 		t.Fatal(err)
 	}
 	quarantineToken := "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
-	if _, err := store.ClaimUploadRemoval(ctx, "", finalized.UploadID, domain.RemovalReasonAdministratorQuarantined, quarantineToken, now); err != nil {
+	if _, err := store.ClaimUploadRemoval(ctx, "", "", finalized.UploadID, domain.RemovalReasonAdministratorQuarantined, 0, quarantineToken, now); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.CompleteUploadRemoval(ctx, finalized.UploadID, quarantineToken, now, nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.ClaimUploadRemoval(ctx, "", finalized.UploadID, domain.RemovalReasonAdministratorQuarantined, "GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG", now); err != nil {
+	if _, err := store.ClaimUploadRemoval(ctx, "", "", finalized.UploadID, domain.RemovalReasonAdministratorQuarantined, 0, "GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG", now); err != nil {
 		t.Fatalf("matching quarantine retry failed: %v", err)
 	}
-	if _, err := store.ClaimUploadRemoval(ctx, "", finalized.UploadID, domain.RemovalReasonAdministratorDeleted, "HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH", now); !uploadFailureIs(err, domain.UploadFailureInvalidState) {
+	if _, err := store.ClaimUploadRemoval(ctx, "", "", finalized.UploadID, domain.RemovalReasonAdministratorDeleted, 0, "HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH", now); !uploadFailureIs(err, domain.UploadFailureInvalidState) {
 		t.Fatalf("quarantine-to-delete error = %v", err)
 	}
 }
@@ -280,7 +280,7 @@ func TestAdministratorAuditCommitsWithRemovalCompletion(t *testing.T) {
 		t.Fatal(err)
 	}
 	token := "IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII"
-	if _, err := store.ClaimUploadRemoval(ctx, "", reservation.UploadID, domain.RemovalReasonAdministratorDeleted, token, now); err != nil {
+	if _, err := store.ClaimUploadRemoval(ctx, "", "", reservation.UploadID, domain.RemovalReasonAdministratorDeleted, 0, token, now); err != nil {
 		t.Fatal(err)
 	}
 	missingActor := domain.AdministratorUploadAudit{ActorUserID: "0198b123-4567-7abc-8def-012345678999", Rationale: "Reviewed policy violation."}
@@ -296,6 +296,26 @@ func TestAdministratorAuditCommitsWithRemovalCompletion(t *testing.T) {
 		t.Fatalf("removal was not rolled back: state=%v token=%v", state, operationToken)
 	}
 	audit := domain.AdministratorUploadAudit{ActorUserID: actor.ID, Rationale: "Reviewed policy violation."}
+	if _, err := pool.Exec(ctx, `UPDATE devhud_users SET administrative_block_state = 2 WHERE user_id = $1`, actor.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CompleteUploadRemoval(ctx, reservation.UploadID, token, now, &audit); err == nil {
+		t.Fatal("blocked administrator completed an in-flight removal")
+	} else {
+		var permission *domain.PermissionError
+		if !errors.As(err, &permission) || permission.Failure != domain.PermissionFailureAdministrativeBlock {
+			t.Fatalf("blocked completion error = %v", err)
+		}
+	}
+	if err := pool.QueryRow(ctx, `SELECT state, operation_token FROM devhud_uploads WHERE upload_id = $1`, reservation.UploadID).Scan(&state, &operationToken); err != nil {
+		t.Fatal(err)
+	}
+	if domain.UploadState(state) != domain.UploadStateRemoving || operationToken == nil || *operationToken != token {
+		t.Fatalf("blocked completion changed removal: state=%v token=%v", state, operationToken)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE devhud_users SET administrative_block_state = 1 WHERE user_id = $1`, actor.ID); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := store.CompleteUploadRemoval(ctx, reservation.UploadID, token, now, &audit); err != nil {
 		t.Fatal(err)
 	}
@@ -337,7 +357,7 @@ func TestExpiredRemovalLeaseClaimsStagingWithoutChangingRemovalState(t *testing.
 		t.Fatal(err)
 	}
 	const token = "GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG"
-	if _, err := store.ClaimUploadRemoval(ctx, user.ID, reservation.UploadID, domain.RemovalReasonOwnerDeleted, token, now.Add(-3*time.Minute)); err != nil {
+	if _, err := store.ClaimUploadRemoval(ctx, user.ID, "", reservation.UploadID, domain.RemovalReasonOwnerDeleted, 0, token, now.Add(-3*time.Minute)); err != nil {
 		t.Fatal(err)
 	}
 	claimed, err := store.ClaimExpiredUploads(ctx, now, 10)
