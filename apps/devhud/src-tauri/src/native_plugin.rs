@@ -95,6 +95,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             if let tauri::RunEvent::Opened { urls } = event {
                 for url in urls {
                     offer_auth_callback(app, url.as_str());
+                    offer_deck_link(app, url.as_str());
                 }
             }
         })
@@ -111,6 +112,19 @@ pub fn offer_auth_callback<R: Runtime>(app: &AppHandle<R>, candidate: &str) {
     let _ = app.emit(
         "devhud:native-event:v1",
         serde_json::json!({ "version": 1, "kind": "auth-callback", "url": candidate }),
+    );
+}
+
+pub fn offer_deck_link<R: Runtime>(app: &AppHandle<R>, candidate: &str) {
+    let Some(deck_id) = crate::bridge::deck_id_from_deep_link(candidate) else {
+        return;
+    };
+    if let Some(state) = app.try_state::<crate::bridge::NativeBridgeState>() {
+        state.offer_deck_link(candidate);
+    }
+    let _ = app.emit(
+        "devhud:native-event:v1",
+        serde_json::json!({ "version": 1, "kind": "deck-link", "deckId": deck_id }),
     );
 }
 

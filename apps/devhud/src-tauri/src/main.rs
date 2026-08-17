@@ -701,12 +701,14 @@ fn main() {
             if let Some(urls) = app.deep_link().get_current()? {
                 for url in urls {
                     native_plugin::offer_auth_callback(app.handle(), url.as_str());
+                    native_plugin::offer_deck_link(app.handle(), url.as_str());
                 }
             }
             let callback_app = app.handle().clone();
             app.deep_link().on_open_url(move |event| {
                 for url in event.urls() {
                     native_plugin::offer_auth_callback(&callback_app, url.as_str());
+                    native_plugin::offer_deck_link(&callback_app, url.as_str());
                 }
             });
             create_tray(&app.handle().clone())?;

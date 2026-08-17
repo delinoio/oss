@@ -108,14 +108,6 @@ export function GitHubSettings({ copy, bridge, provider = createGitHubProvider({
     await validateAssignment(profileRef, { owner: tracker.owner, name: tracker.repository });
     await identity.replaceSettings((current) => ({ ...current, github: { ...current.github, issueTracker: current.github.issueTracker === null ? null : { ...current.github.issueTracker, profileRef } } }));
   });
-  const assignDeck = (index: number, profileRef: string | null) => invoke(async () => {
-    const deck = identity.settings.decks[index];
-    if (deck.repository === null) return;
-    const match = /^([^/]+)\/([^/]+)$/u.exec(deck.repository);
-    if (match === null) throw new GitHubProviderError(GitHubErrorCode.InvalidResponse, "validate-repository");
-    await validateAssignment(profileRef, { owner: match[1], name: match[2] });
-    await identity.replaceSettings((current) => ({ ...current, decks: current.decks.map((item, currentIndex) => currentIndex === index ? { ...item, profileRef } : item) }));
-  });
 
   return <section className="github-settings" aria-labelledby="github-settings-title">
     <h3 id="github-settings-title">{copy.githubSetupTitle}</h3>
@@ -141,7 +133,6 @@ export function GitHubSettings({ copy, bridge, provider = createGitHubProvider({
     <h4>{copy.githubAssignments}</h4>
     {identity.settings.github.repositories.map((repository, index) => <ProfileAssignment key={`repository:${repository.owner}/${repository.name}`} copy={copy} id={`github-repository-${index}`} label={`${repository.owner}/${repository.name}`} value={repository.profileRef} profiles={identity.settings.github.profiles} disabled={pending || identity.readOnly} onChange={(value) => void assignRepository(index, value)} />)}
     {identity.settings.github.issueTracker !== null && <ProfileAssignment copy={copy} id="github-issue-tracker" label={`${copy.githubIssueTracker}: ${identity.settings.github.issueTracker.owner}/${identity.settings.github.issueTracker.repository}`} value={identity.settings.github.issueTracker.profileRef} profiles={identity.settings.github.profiles} disabled={pending || identity.readOnly} onChange={(value) => void assignTracker(value)} />}
-    {identity.settings.decks.map((deck, index) => deck.repository === null ? null : <ProfileAssignment key={deck.id} copy={copy} id={`github-deck-${deck.id}`} label={`${copy.githubDeck}: ${deck.title} — ${deck.repository}`} value={deck.profileRef} profiles={identity.settings.github.profiles} disabled={pending || identity.readOnly} onChange={(value) => void assignDeck(index, value)} />)}
     {status !== null && <p role={statusError ? "alert" : "status"} aria-live={statusError ? "assertive" : "polite"}>{status}</p>}
   </section>;
 }
@@ -175,8 +166,8 @@ export function referencedRepositories(settings: DevHudSettingsV1, profileId: st
   const tracker = settings.github.issueTracker;
   if (tracker?.profileRef === profileId) add({ owner: tracker.owner, name: tracker.repository });
   for (const deck of settings.decks) {
-    if (deck.profileRef !== profileId || deck.repository === null) continue;
-    const match = /^([^/]+)\/([^/]+)$/u.exec(deck.repository);
+    if (deck.profileRef !== profileId || deck.builder?.repository === null || deck.builder === null) continue;
+    const match = /^([^/]+)\/([^/]+)$/u.exec(deck.builder.repository);
     if (match !== null) add({ owner: match[1], name: match[2] });
   }
   return [...unique.values()];

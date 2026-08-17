@@ -16,6 +16,7 @@ export const GitHubOperation = {
   SearchIssueMarker: "search-issue-marker",
   CreateIssue: "create-issue",
   SearchPullRequests: "search-pull-requests",
+  EnrichPullRequests: "enrich-pull-requests",
   GetPullRequest: "get-pull-request",
   OwnsCanonicalUrl: "owns-canonical-url",
 } as const;
@@ -31,6 +32,7 @@ export const GitHubErrorCode = {
   NetworkFailure: "network-failure",
   InvalidResponse: "invalid-response",
   AmbiguousWrite: "ambiguous-write",
+  InvalidQuery: "invalid-query",
 } as const;
 export type GitHubErrorCode = (typeof GitHubErrorCode)[keyof typeof GitHubErrorCode];
 
@@ -41,8 +43,18 @@ export interface GitHubResponseMetadata { readonly etag: string | null; readonly
 export interface GitHubPage<T> { readonly items: readonly T[]; readonly nextPage: number | null; readonly notModified: boolean; readonly metadata: GitHubResponseMetadata }
 export interface GitHubLabel { readonly name: string; readonly color: string; readonly description: string | null }
 export interface GitHubIssue { readonly number: number; readonly title: string; readonly url: string; readonly marker: string; readonly reconciled: boolean }
-export interface GitHubPullRequestSummary { readonly number: number; readonly title: string; readonly url: string; readonly draft: boolean; readonly repository: GitHubRepositoryRef }
+export interface GitHubPullRequestSummary { readonly nodeId: string; readonly number: number; readonly title: string; readonly url: string; readonly draft: boolean; readonly repository: GitHubRepositoryRef }
 export interface GitHubPullRequestDetail extends GitHubPullRequestSummary { readonly body: string | null; readonly author: string; readonly state: string; readonly headSha: string; readonly labels: readonly string[] }
+export interface GitHubDeckPullRequest extends GitHubPullRequestSummary {
+  readonly author: string;
+  readonly state: "open" | "closed" | "merged";
+  readonly reviewDecision: "approved" | "changes-requested" | "required" | null;
+  readonly requestedReviewers: readonly string[];
+  readonly checkRollup: { readonly state: string | null; readonly contexts: readonly { readonly name: string; readonly state: string }[] };
+  readonly mergeable: string;
+  readonly labels: readonly string[];
+  readonly updatedAt: string;
+}
 export interface GitHubValidation { readonly repository: GitHubRepositoryRef; readonly private: boolean; readonly permissions: { readonly metadata: boolean; readonly pullRequests: boolean; readonly issues: boolean; readonly contents: boolean }; readonly metadata: GitHubResponseMetadata }
 export interface GitHubDiagnostic { readonly provider: typeof GitHubProviderId; readonly operation: GitHubOperation; readonly code: GitHubErrorCode; readonly status: number | null; readonly rate: GitHubRate | null }
 
@@ -74,6 +86,7 @@ export interface GitHubProvider {
   searchIssueMarker(credential: GitHubCredential, repository: GitHubRepositoryRef, marker: string): Promise<{ readonly issue: GitHubIssue | null; readonly metadata: GitHubResponseMetadata }>;
   createIssue(credential: GitHubCredential, repository: GitHubRepositoryRef, input: { readonly title: string; readonly body: string; readonly labels: readonly string[]; readonly submissionId: string }): Promise<{ readonly issue: GitHubIssue; readonly metadata: GitHubResponseMetadata }>;
   searchPullRequests(credential: GitHubCredential, query: string, options?: { readonly page?: number; readonly etag?: string }): Promise<GitHubPage<GitHubPullRequestSummary>>;
+  enrichPullRequests(credential: GitHubCredential, nodeIds: readonly string[]): Promise<{ readonly items: readonly GitHubDeckPullRequest[]; readonly metadata: GitHubResponseMetadata }>;
   getPullRequest(credential: GitHubCredential, repository: GitHubRepositoryRef, number: number, etag?: string): Promise<{ readonly pullRequest: GitHubPullRequestDetail | null; readonly notModified: boolean; readonly metadata: GitHubResponseMetadata }>;
   ownsCanonicalUrl(url: string): { readonly kind: "issue" | "pull-request"; readonly repository: GitHubRepositoryRef; readonly number: number } | null;
 }
@@ -203,6 +216,21 @@ export function createGitHubProvider({ fetch: fetchImpl }: ProviderOptions): Git
       const items = array(record(result.json, GitHubOperation.SearchPullRequests).items, GitHubOperation.SearchPullRequests).map((item) => pullSummary(record(item, GitHubOperation.SearchPullRequests)));
       return { items, nextPage: nextPage(result.response.headers.get("link")), notModified: false, metadata: result.metadata };
     },
+    async enrichPullRequests(credential, nodeIds) {
+      if (nodeIds.length === 0) return { items: [], metadata: { etag: null, rate: emptyRate() } };
+      if (nodeIds.length > 100 || new Set(nodeIds).size !== nodeIds.length || nodeIds.some((id) => id.length === 0 || id.length > 256)) throw new GitHubProviderError(GitHubErrorCode.InvalidResponse, GitHubOperation.EnrichPullRequests);
+      const result = await request(GitHubOperation.EnrichPullRequests, credential, "/graphql", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: DeckPullRequestQuery, variables: { ids: nodeIds } }),
+      });
+      const root = record(result.json, GitHubOperation.EnrichPullRequests);
+      const errors = root.errors;
+      if (Array.isArray(errors) && errors.length > 0) throw graphQlFailure(result.response.status, result.metadata.rate, errors);
+      const data = record(root.data, GitHubOperation.EnrichPullRequests);
+      const items = array(data.nodes, GitHubOperation.EnrichPullRequests).flatMap((node) => node === null ? [] : [deckPullRequest(record(node, GitHubOperation.EnrichPullRequests))]);
+      return { items, metadata: result.metadata };
+    },
     async getPullRequest(credential, repository, number, etag) {
       const result = await request(GitHubOperation.GetPullRequest, credential, `${repositoryPath(repository)}/pulls/${positiveInteger(number)}`, etag ? { headers: { "If-None-Match": etag } } : {});
       if (result.response.status === 304) return { pullRequest: null, notModified: true, metadata: result.metadata };
@@ -259,6 +287,42 @@ function pullSummary(value: Record<string, unknown>, fallback?: GitHubRepository
   const url = canonicalApiHtmlUrl(value.html_url, "pull-request");
   const owned = ownsCanonicalUrl(url);
   if (owned === null || owned.kind !== "pull-request") throw new GitHubProviderError(GitHubErrorCode.InvalidResponse, GitHubOperation.SearchPullRequests);
-  return { number: positiveInteger(Number(value.number), GitHubOperation.GetPullRequest), title: string(value.title, GitHubOperation.GetPullRequest), url, draft: value.draft === true, repository: fallback ?? owned.repository };
+  return { nodeId: typeof value.node_id === "string" ? value.node_id : url, number: positiveInteger(Number(value.number), GitHubOperation.GetPullRequest), title: string(value.title, GitHubOperation.GetPullRequest), url, draft: value.draft === true, repository: fallback ?? owned.repository };
+}
+
+const DeckPullRequestQuery = `query DeckPullRequests($ids: [ID!]!) { nodes(ids: $ids) { ... on PullRequest { id number title url isDraft state merged mergedAt updatedAt mergeable reviewDecision repository { owner { login } name } author { login } labels(first: 100) { nodes { name } } reviewRequests(first: 100) { nodes { requestedReviewer { ... on User { login } ... on Team { slug } } } } commits(last: 1) { nodes { commit { statusCheckRollup { state contexts(first: 100) { nodes { __typename ... on CheckRun { name conclusion status } ... on StatusContext { context state } } } } } } } } } }`;
+
+function deckPullRequest(value: Record<string, unknown>): GitHubDeckPullRequest {
+  const operation = GitHubOperation.EnrichPullRequests;
+  const repository = record(value.repository, operation);
+  const owner = record(repository.owner, operation);
+  const stateValue = string(value.state, operation);
+  const merged = value.merged === true || value.mergedAt !== null && value.mergedAt !== undefined;
+  const state: GitHubDeckPullRequest["state"] = merged ? "merged" : stateValue === "OPEN" ? "open" : stateValue === "CLOSED" ? "closed" : invalidDeckState();
+  const review = nullableString(value.reviewDecision, operation);
+  const reviewDecision = review === null ? null : review === "APPROVED" ? "approved" : review === "CHANGES_REQUESTED" ? "changes-requested" : review === "REVIEW_REQUIRED" ? "required" : null;
+  const labels = array(record(value.labels, operation).nodes, operation).map((item) => string(record(item, operation).name, operation));
+  const requestedReviewers = array(record(value.reviewRequests, operation).nodes, operation).flatMap((item) => {
+    const requested = record(item, operation).requestedReviewer;
+    if (requested === null) return [];
+    const reviewer = record(requested, operation);
+    return [typeof reviewer.login === "string" ? reviewer.login : string(reviewer.slug, operation)];
+  });
+  const commitNodes = array(record(value.commits, operation).nodes, operation);
+  const rollup = commitNodes.length === 0 ? null : record(record(commitNodes[0], operation).commit, operation).statusCheckRollup;
+  const contexts = rollup === null || rollup === undefined ? [] : array(record(record(rollup, operation).contexts, operation).nodes, operation).map((context) => {
+    const item = record(context, operation);
+    return { name: typeof item.name === "string" ? item.name : string(item.context, operation), state: typeof item.conclusion === "string" && item.conclusion !== "null" ? item.conclusion : string(item.state ?? item.status, operation) };
+  });
+  return { nodeId: string(value.id, operation), number: positiveInteger(Number(value.number), operation), title: string(value.title, operation), url: canonicalApiHtmlUrl(value.url, "pull-request"), draft: value.isDraft === true, repository: { owner: string(owner.login, operation), name: string(repository.name, operation) }, author: value.author === null ? "ghost" : string(record(value.author, operation).login, operation), state, reviewDecision, requestedReviewers, checkRollup: { state: rollup === null || rollup === undefined ? null : nullableString(record(rollup, operation).state, operation), contexts }, mergeable: string(value.mergeable, operation), labels, updatedAt: string(value.updatedAt, operation) };
+}
+function invalidDeckState(): never { throw new GitHubProviderError(GitHubErrorCode.InvalidResponse, GitHubOperation.EnrichPullRequests); }
+function emptyRate(): GitHubRate { return { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null }; }
+function graphQlFailure(status: number, rate: GitHubRate, errors: readonly unknown[]): GitHubProviderError {
+  const messages = errors.map((error) => typeof error === "object" && error !== null ? (error as Record<string, unknown>).message : "").filter((message): message is string => typeof message === "string").join(" ").toLowerCase();
+  if (rate.remaining === 0 || messages.includes("rate limit")) return new GitHubProviderError(GitHubErrorCode.RateLimited, GitHubOperation.EnrichPullRequests, status, rate);
+  if (messages.includes("could not resolve") || messages.includes("syntax") || messages.includes("search")) return new GitHubProviderError(GitHubErrorCode.InvalidQuery, GitHubOperation.EnrichPullRequests, status, rate);
+  if (messages.includes("resource not accessible") || messages.includes("permission")) return new GitHubProviderError(GitHubErrorCode.MissingScope, GitHubOperation.EnrichPullRequests, status, rate);
+  return new GitHubProviderError(GitHubErrorCode.InvalidResponse, GitHubOperation.EnrichPullRequests, status, rate);
 }
 function canonicalApiHtmlUrl(value: unknown, expected: "issue" | "pull-request"): string { const operation = expected === "issue" ? GitHubOperation.CreateIssue : GitHubOperation.GetPullRequest; const url = string(value, operation); const owned = ownsCanonicalUrl(url); if (owned === null || owned.kind !== expected) throw new GitHubProviderError(GitHubErrorCode.InvalidResponse, operation); return url; }

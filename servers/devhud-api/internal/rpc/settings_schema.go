@@ -15,8 +15,9 @@ import (
 )
 
 const (
-	legacySettingsSchemaVersion = 1
-	settingsSchemaVersion       = 2
+	legacySettingsSchemaVersion   = 1
+	previousSettingsSchemaVersion = 2
+	settingsSchemaVersion         = 3
 )
 
 var (
@@ -29,6 +30,7 @@ var (
 	}
 	safeSettingsIdentifier = regexp.MustCompile(`^[a-zA-Z0-9._:-]{1,128}$`)
 	settingsProfileRef     = regexp.MustCompile(`^[a-zA-Z0-9._-]{1,128}$`)
+	pullRequestQuery       = regexp.MustCompile(`(^|[[:space:]])is:pr([[:space:]]|$)`)
 )
 
 func validateDevHudSettings(value []byte, envelopeSchemaVersion uint32) error {
@@ -56,6 +58,7 @@ func validateDevHudSettings(value []byte, envelopeSchemaVersion uint32) error {
 		return errors.New("$.schemaVersion must match the snapshot envelope schema version")
 	}
 	legacy := bodyVersion == legacySettingsSchemaVersion
+	previous := bodyVersion == previousSettingsSchemaVersion
 
 	appearance, err := settingsObject(root["appearance"], "$.appearance", "theme", "language")
 	if err != nil {
@@ -77,7 +80,7 @@ func validateDevHudSettings(value []byte, envelopeSchemaVersion uint32) error {
 	}
 	deckProfileRefs := make([]string, 0, len(decks))
 	for index, entry := range decks {
-		profileRef, err := validateSettingsDeck(entry, fmt.Sprintf("$.decks[%d]", index), legacy)
+		profileRef, err := validateSettingsDeck(entry, fmt.Sprintf("$.decks[%d]", index), legacy, previous)
 		if err != nil {
 			return err
 		}
@@ -179,10 +182,12 @@ func ensureJSONEnd(decoder *json.Decoder) error {
 	return errors.New("canonical_json must contain exactly one settings snapshot")
 }
 
-func validateSettingsDeck(value any, path string, legacy bool) (string, error) {
+func validateSettingsDeck(value any, path string, legacy bool, previous bool) (string, error) {
 	fields := []string{"id", "title", "query", "repository", "display", "refreshMinutes", "notifications"}
-	if !legacy {
+	if previous {
 		fields = []string{"id", "title", "query", "repository", "profileRef", "display", "refreshMinutes", "notifications"}
+	} else if !legacy {
+		fields = []string{"id", "name", "query", "builder", "profileRef", "display", "refreshMinutes", "notifications"}
 	}
 	deck, err := settingsObject(value, path, fields...)
 	if err != nil {
@@ -191,16 +196,22 @@ func validateSettingsDeck(value any, path string, legacy bool) (string, error) {
 	if _, err := settingsUUIDv7(deck["id"], path+".id"); err != nil {
 		return "", err
 	}
-	if _, err := settingsText(deck["title"], path+".title", false); err != nil {
+	nameField := "title"
+	if !legacy && !previous {
+		nameField = "name"
+	}
+	if _, err := settingsText(deck[nameField], path+"."+nameField, false); err != nil {
 		return "", err
 	}
-	if _, err := settingsText(deck["query"], path+".query", true); err != nil {
+	query, err := settingsText(deck["query"], path+".query", true)
+	if err != nil {
 		return "", err
 	}
-	repository := ""
-	if deck["repository"] != nil {
-		repository, err = settingsText(deck["repository"], path+".repository", false)
-		if err != nil {
+	if !legacy && !previous && !pullRequestQuery.MatchString(query) {
+		return "", fmt.Errorf("%s.query must contain a standalone positive is:pr qualifier", path)
+	}
+	if previous && deck["repository"] != nil {
+		if _, err = settingsText(deck["repository"], path+".repository", false); err != nil {
 			return "", err
 		}
 	}
@@ -210,8 +221,33 @@ func validateSettingsDeck(value any, path string, legacy bool) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		if repository == "" && profileRef != "" {
-			return "", fmt.Errorf("%s.profileRef must be null when repository is null", path)
+		if !previous && profileRef == "" {
+			return "", fmt.Errorf("%s.profileRef must be selected", path)
+		}
+	}
+	if !legacy && !previous {
+		builder, err := settingsObjectOrNull(deck["builder"], path+".builder", "repository", "author", "review", "label", "state")
+		if err != nil {
+			return "", err
+		}
+		if builder != nil {
+			for _, field := range []string{"repository", "author", "label"} {
+				if builder[field] != nil {
+					if _, err := settingsText(builder[field], path+".builder."+field, false); err != nil {
+						return "", err
+					}
+				}
+			}
+			if builder["review"] != nil {
+				if err := settingsEnum(builder["review"], path+".builder.review", "approved", "changes-requested", "required"); err != nil {
+					return "", err
+				}
+			}
+			if builder["state"] != nil {
+				if err := settingsEnum(builder["state"], path+".builder.state", "open", "closed", "merged"); err != nil {
+					return "", err
+				}
+			}
 		}
 	}
 	display, err := settingsObject(deck["display"], path+".display", "groupBy", "showDrafts")
@@ -439,6 +475,13 @@ func settingsObject(value any, path string, allowed ...string) (map[string]any, 
 		}
 	}
 	return record, nil
+}
+
+func settingsObjectOrNull(value any, path string, allowed ...string) (map[string]any, error) {
+	if value == nil {
+		return nil, nil
+	}
+	return settingsObject(value, path, allowed...)
 }
 
 func settingsArray(value any, path string) ([]any, error) {

@@ -3,7 +3,7 @@ import { canonicalDevHudSettings, decodeDevHudSettings, decodeVersionedDevHudSet
 import { diffSettings, redactRecursively, RedactedValue } from "./settings-diff";
 
 describe("DevHud settings boundary", () => {
-  it("migrates schema v1 to v2 with explicit unselected GitHub profiles", () => {
+  it("migrates schema v1 to v3 with explicit unselected GitHub profiles", () => {
     const legacy = {
       ...defaultDevHudSettings,
       schemaVersion: 1,
@@ -11,7 +11,7 @@ describe("DevHud settings boundary", () => {
       decks: [],
     };
     const parsed = parseDevHudSettings(legacy);
-    expect(parsed.schemaVersion).toBe(2);
+    expect(parsed.schemaVersion).toBe(3);
     expect(parsed.github).toEqual({ profiles: [], pendingPatRemovals: [], repositories: [{ owner: "octo", name: "private", profileRef: null }], issueTracker: { owner: "octo", repository: "private", labels: ["bug"], profileRef: null } });
   });
 
@@ -59,51 +59,55 @@ describe("DevHud settings boundary", () => {
   });
 
   it("rejects settings snapshots containing more than 25 Decks", () => {
-    const deck = {
-      id: "deck",
-      title: "Deck",
-      query: "is:pr",
-      repository: null,
-      profileRef: null,
-      display: { groupBy: "none", showDrafts: true },
-      refreshMinutes: 15,
-      notifications: [],
-    };
-    expect(() => parseDevHudSettings({ ...defaultDevHudSettings, decks: Array.from({ length: 26 }, (_, index) => ({ ...deck, id: `deck-${index}` })) })).toThrow(/at most 25/u);
-  });
-
-  it("accepts only canonical UUID-v7 Deck IDs", () => {
-    const deck = {
-      id: "018f47a2-7b3c-7def-8abc-1234567890ab",
-      title: "Deck",
-      query: "is:pr",
-      repository: null,
-      profileRef: null,
-      display: { groupBy: "none", showDrafts: true },
-      refreshMinutes: 15,
-      notifications: [],
-    };
-
-    expect(parseDevHudSettings({ ...defaultDevHudSettings, decks: [deck] }).decks[0]?.id).toBe(deck.id);
-    expect(() => parseDevHudSettings({ ...defaultDevHudSettings, decks: [{ ...deck, id: "deck" }] })).toThrow(/UUID v7/u);
-    expect(() => parseDevHudSettings({ ...defaultDevHudSettings, decks: [{ ...deck, id: deck.id.toUpperCase() }] })).toThrow(/UUID v7/u);
-  });
-
-  it("rejects a GitHub profile reference when a Deck has no repository", () => {
     const profile = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", name: "Work", kind: "fine-grained" as const };
     const deck = {
       id: "018f47a2-7b3c-7def-8abc-1234567890ac",
-      title: "Deck",
+      name: "Deck",
       query: "is:pr",
-      repository: null,
+      builder: null,
+      profileRef: profile.id,
+      display: { groupBy: "none", showDrafts: true },
+      refreshMinutes: 15,
+      notifications: [],
+    };
+    expect(() => parseDevHudSettings({ ...defaultDevHudSettings, github: { ...defaultDevHudSettings.github, profiles: [profile] }, decks: Array.from({ length: 26 }, (_, index) => ({ ...deck, id: `018f47a2-7b3c-7def-8abc-${String(index).padStart(12, "0")}` })) })).toThrow(/at most 25/u);
+  });
+
+  it("accepts only canonical UUID-v7 Deck IDs", () => {
+    const profile = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", name: "Work", kind: "fine-grained" as const };
+    const deck = {
+      id: "018f47a2-7b3c-7def-8abc-1234567890ab",
+      name: "Deck",
+      query: "is:pr",
+      builder: null,
+      profileRef: profile.id,
+      display: { groupBy: "none", showDrafts: true },
+      refreshMinutes: 15,
+      notifications: [],
+    };
+
+    const settings = { ...defaultDevHudSettings, github: { ...defaultDevHudSettings.github, profiles: [profile] } };
+    expect(parseDevHudSettings({ ...settings, decks: [deck] }).decks[0]?.id).toBe(deck.id);
+    expect(() => parseDevHudSettings({ ...settings, decks: [{ ...deck, id: "deck" }] })).toThrow(/UUID v7/u);
+    expect(() => parseDevHudSettings({ ...settings, decks: [{ ...deck, id: deck.id.toUpperCase() }] })).toThrow(/UUID v7/u);
+  });
+
+  it("requires an explicit configured GitHub profile for every Deck", () => {
+    const profile = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", name: "Work", kind: "fine-grained" as const };
+    const deck = {
+      id: "018f47a2-7b3c-7def-8abc-1234567890ac",
+      name: "Deck",
+      query: "is:pr",
+      builder: null,
       profileRef: profile.id,
       display: { groupBy: "none", showDrafts: true },
       refreshMinutes: 15,
       notifications: [],
     };
     const settings = { ...defaultDevHudSettings, github: { ...defaultDevHudSettings.github, profiles: [profile] }, decks: [deck] };
-    expect(() => parseDevHudSettings(settings)).toThrow(/profileRef.*repository is null/u);
-    expect(parseDevHudSettings({ ...settings, decks: [{ ...deck, profileRef: null }] }).decks[0]?.profileRef).toBeNull();
+    expect(parseDevHudSettings(settings).decks[0]?.profileRef).toBe(profile.id);
+    expect(() => parseDevHudSettings({ ...settings, decks: [{ ...deck, profileRef: "missing" }] })).toThrow(/configured GitHub profile/u);
+    expect(() => parseDevHudSettings({ ...settings, decks: [{ ...deck, profileRef: null }] })).toThrow(/must select a local GitHub credential profile/u);
   });
 
   it.each(["?token=plain-secret", "?X-Amz-Signature=plain-secret", "#credential", "?", "#"])("rejects query or fragment delimiters in synchronized URL fields: %s", (suffix) => {

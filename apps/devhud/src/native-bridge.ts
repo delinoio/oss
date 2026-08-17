@@ -90,6 +90,8 @@ export type NativeBridgeRequestV1 =
   | { readonly operation: "auth.open-system-browser"; readonly url: string; readonly issuer: string }
   | { readonly operation: "auth.peek-pending-callback" }
   | { readonly operation: "auth.take-pending-callback" }
+  | { readonly operation: "deck.peek-pending-link" }
+  | { readonly operation: "deck.take-pending-link" }
   | { readonly operation: "secure.read"; readonly setting: SecureSettingRef }
   | { readonly operation: "secure.write"; readonly setting: SecureSettingRef; readonly value: string }
   | { readonly operation: "secure.remove"; readonly setting: SecureSettingRef }
@@ -108,6 +110,7 @@ export type NativeBridgeResponseV1 =
   | { readonly kind: "runtime"; readonly snapshot: RuntimeSnapshot }
   | { readonly kind: "session-network-policy"; readonly changed: boolean }
   | { readonly kind: "auth-callback"; readonly url: string | null }
+  | { readonly kind: "deck-link"; readonly deckId: string | null }
   | { readonly kind: "secure-value"; readonly value: string | null }
   | { readonly kind: "notification-permission"; readonly permission: NotificationPermission }
   | { readonly kind: "update-status"; readonly store: "app-store" | "play-store"; readonly installedVersion: string; readonly configured: boolean }
@@ -116,7 +119,8 @@ export type NativeBridgeResponseV1 =
 
 export type NativeBridgeEventV1 =
   | { readonly version: typeof NativeBridgeVersion; readonly kind: "lifecycle"; readonly state: LifecycleState }
-  | { readonly version: typeof NativeBridgeVersion; readonly kind: "auth-callback"; readonly url: string };
+  | { readonly version: typeof NativeBridgeVersion; readonly kind: "auth-callback"; readonly url: string }
+  | { readonly version: typeof NativeBridgeVersion; readonly kind: "deck-link"; readonly deckId: string };
 
 interface TauriInternals {
   invoke(command: string, args?: Record<string, unknown>): Promise<unknown>;
@@ -198,6 +202,15 @@ export function isAuthCallback(value: string) {
   }
 }
 
+export function deckIdFromDeepLink(value: string): string | null {
+  if (value.trim() !== value || !value.startsWith("devhud://")) return null;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "devhud:" || url.hostname !== "deck" || !/^\/[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(url.pathname) || url.port || url.username || url.password || url.search || url.hash) return null;
+    return url.pathname.slice(1);
+  } catch { return null; }
+}
+
 function desktopSnapshot(): RuntimeSnapshot {
   return {
     bridgeVersion: NativeBridgeVersion,
@@ -226,6 +239,7 @@ export const nativeBridge: NativeBridgeV1 = {
       if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
       if (request.operation === "auth.peek-pending-callback") return { kind: "auth-callback", url: null };
       if (request.operation === "auth.take-pending-callback") return { kind: "auth-callback", url: null };
+      if (request.operation === "deck.peek-pending-link" || request.operation === "deck.take-pending-link") return { kind: "deck-link", deckId: null };
       if (request.operation === "auth.open-system-browser") { window.open(request.url, "_blank", "noopener,noreferrer"); return { kind: "ok" }; }
       if (request.operation === "lifecycle.open-external" && request.target !== "authentication") { window.open(request.target === "fine-grained-pat" ? FineGrainedPatCreationUrl : ClassicPatCreationUrl, "_blank", "noopener,noreferrer"); return { kind: "ok" }; }
       if (request.operation.startsWith("widgets.")) return { kind: "unsupported", feature: "widgets" };

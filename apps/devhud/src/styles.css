@@ -12,3 +12,14 @@ label { display:grid; gap:8px; max-width:510px; margin:22px 0; color:var(--text)
 @media (max-width:700px) { .app-shell { grid-template-columns:1fr; } aside { position:sticky; top:0; z-index:1; flex-direction:row; align-items:center; overflow:auto; padding:calc(12px + env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right)) 12px calc(12px + env(safe-area-inset-left)); } aside h1 { margin:0 8px 0 0; } nav { display:flex; } aside button { min-width:44px; min-height:44px; } aside > button:last-child { margin:0 0 0 auto; white-space:nowrap; } .content { padding:calc(48px + env(safe-area-inset-top)) calc(24px + env(safe-area-inset-right)) calc(48px + env(safe-area-inset-bottom)) calc(24px + env(safe-area-inset-left)); } }
 @media (prefers-contrast: more) { html { --line:currentColor; } button,input,select { border-width:2px; } }
 @media (prefers-reduced-motion: reduce) { *,*::before,*::after { scroll-behavior:auto!important; transition:none!important; animation:none!important; } }
+/* Deck keeps its navigation and PR details usable in a narrow mobile webview. */
+.deck-layout { display: grid; grid-template-columns: minmax(10rem, 16rem) minmax(0, 1fr); gap: 1rem; }
+.deck-layout nav ul, .deck-results { list-style: none; padding: 0; margin: 0; }
+.deck-layout nav button { width: 100%; text-align: start; }
+.deck-head, .deck-head .actions { display: flex; align-items: center; gap: .75rem; justify-content: space-between; }
+.deck-editor { display: grid; gap: .75rem; }
+.deck-editor label, .deck-editor fieldset { display: grid; gap: .35rem; }
+.deck-results { display: grid; gap: .65rem; }
+.deck-results li { border: 1px solid var(--control-border, currentColor); border-radius: .5rem; padding: .75rem; display: grid; gap: .25rem; }
+.deck-results span { font-size: .9em; }
+@media (max-width: 700px) { .deck-layout { grid-template-columns: 1fr; } .deck-layout nav ul { display: flex; overflow-x: auto; gap: .4rem; } .deck-layout nav button { white-space: nowrap; } }

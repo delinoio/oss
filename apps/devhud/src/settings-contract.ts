@@ -6,7 +6,8 @@ import {
 } from "@delinoio/devhud-api-client";
 
 export const LegacySettingsSchemaVersion = 1 as const;
-export const SettingsSchemaVersion = 2 as const;
+export const PreviousSettingsSchemaVersion = 2 as const;
+export const SettingsSchemaVersion = 3 as const;
 
 const Theme = ["system", "light", "dark"] as const;
 const Language = ["system", "en", "ko"] as const;
@@ -25,16 +26,26 @@ type UploadProvider = (typeof UploadProvider)[number];
 type NotificationKind = (typeof NotificationKind)[number];
 type Platform = (typeof Platform)[number];
 export type GitHubCredentialKind = (typeof GitHubCredentialKind)[number];
+export type DeckReviewFilter = "approved" | "changes-requested" | "required";
+export type DeckPullRequestState = "open" | "closed" | "merged";
+
+export interface DeckBuilder {
+  readonly repository: string | null;
+  readonly author: string | null;
+  readonly review: DeckReviewFilter | null;
+  readonly label: string | null;
+  readonly state: DeckPullRequestState | null;
+}
 
 export interface DevHudSettings {
   readonly schemaVersion: typeof SettingsSchemaVersion;
   readonly appearance: { readonly theme: Theme; readonly language: Language };
   readonly decks: readonly {
     readonly id: string;
-    readonly title: string;
+    readonly name: string;
     readonly query: string;
-    readonly repository: string | null;
-    readonly profileRef: string | null;
+    readonly builder: DeckBuilder | null;
+    readonly profileRef: string;
     readonly display: { readonly groupBy: "none" | "repository" | "author"; readonly showDrafts: boolean };
     readonly refreshMinutes: 1 | 5 | 15 | 30;
     readonly notifications: readonly NotificationKind[];
@@ -67,7 +78,7 @@ export interface DevHudSettings {
   };
 }
 
-/** Compatibility alias for callers written before the synchronized schema v2 migration. */
+/** Compatibility alias for callers written before the synchronized schema v3 migration. */
 export type DevHudSettingsV1 = DevHudSettings;
 
 export const defaultDevHudSettings: DevHudSettingsV1 = Object.freeze<DevHudSettingsV1>({
@@ -107,6 +118,7 @@ export function parseDevHudSettings(value: unknown): DevHudSettingsV1 {
   const root = object(value, "$", ["schemaVersion", "appearance", "decks", "github", "urlMappings", "shortcuts", "agents", "uploads"]);
   const schemaVersion = integer(root.schemaVersion, "$.schemaVersion", LegacySettingsSchemaVersion, SettingsSchemaVersion);
   const legacy = schemaVersion === LegacySettingsSchemaVersion;
+  const previous = schemaVersion === PreviousSettingsSchemaVersion;
 
   const appearance = object(root.appearance, "$.appearance", ["theme", "language"]);
   const decks = array(root.decks, "$.decks");
@@ -129,7 +141,7 @@ export function parseDevHudSettings(value: unknown): DevHudSettingsV1 {
       theme: enumeration(appearance.theme, "$.appearance.theme", Theme),
       language: enumeration(appearance.language, "$.appearance.language", Language),
     },
-    decks: decks.map((entry, index) => parseDeck(entry, `$.decks[${index}]`, legacy)),
+    decks: decks.flatMap((entry, index) => parseDeck(entry, `$.decks[${index}]`, legacy, previous)),
     github: {
       profiles: githubProfiles,
       pendingPatRemovals,
@@ -171,7 +183,11 @@ export function decodeDevHudSettings(value: Uint8Array): DevHudSettingsV1 {
 
 export function decodeVersionedDevHudSettings(value: Uint8Array, envelopeSchemaVersion: number): DevHudSettingsV1 {
   const decoded = validateCanonicalSettingsJson(value);
-  if (decoded !== null && typeof decoded === "object" && !Array.isArray(decoded) && (decoded as Record<string, unknown>).schemaVersion !== envelopeSchemaVersion) {
+  const embeddedSchemaVersion = decoded !== null && typeof decoded === "object" && !Array.isArray(decoded) ? (decoded as Record<string, unknown>).schemaVersion : undefined;
+  // A v2 service can return a v3 canonical body during a rolling client/server upgrade.
+  // The body is still fully validated as v3 and the next replacement uses envelope v3.
+  const rollingUpgrade = envelopeSchemaVersion === PreviousSettingsSchemaVersion && embeddedSchemaVersion === SettingsSchemaVersion;
+  if (embeddedSchemaVersion !== undefined && embeddedSchemaVersion !== envelopeSchemaVersion && !rollingUpgrade) {
     throw new SettingsContractError("$.schemaVersion", "must match the snapshot envelope schema version");
   }
   return parseDevHudSettings(decoded);
@@ -181,8 +197,8 @@ export function canonicalDevHudSettings(value: unknown): string {
   return canonicalizeSettingsJson(parseDevHudSettings(value));
 }
 
-function parseDeck(value: unknown, path: string, legacy: boolean): DevHudSettingsV1["decks"][number] {
-  const deck = object(value, path, legacy ? ["id", "title", "query", "repository", "display", "refreshMinutes", "notifications"] : ["id", "title", "query", "repository", "profileRef", "display", "refreshMinutes", "notifications"]);
+function parseDeck(value: unknown, path: string, legacy: boolean, previous: boolean): readonly DevHudSettingsV1["decks"][number][] {
+  const deck = object(value, path, legacy ? ["id", "title", "query", "repository", "display", "refreshMinutes", "notifications"] : previous ? ["id", "title", "query", "repository", "profileRef", "display", "refreshMinutes", "notifications"] : ["id", "name", "query", "builder", "profileRef", "display", "refreshMinutes", "notifications"]);
   const display = object(deck.display, `${path}.display`, ["groupBy", "showDrafts"]);
   const refresh = integer(deck.refreshMinutes, `${path}.refreshMinutes`, 1, 30);
   if (![1, 5, 15, 30].includes(refresh)) throw new SettingsContractError(`${path}.refreshMinutes`, "must be 1, 5, 15, or 30");
@@ -192,22 +208,59 @@ function parseDeck(value: unknown, path: string, legacy: boolean): DevHudSetting
   } catch {
     throw new SettingsContractError(`${path}.id`, "must be a canonical lowercase RFC 9562 UUID v7");
   }
-  const repository = deck.repository === null ? null : text(deck.repository, `${path}.repository`);
   const profileRef = legacy ? null : parseProfileRef(deck.profileRef, `${path}.profileRef`);
-  if (repository === null && profileRef !== null) throw new SettingsContractError(`${path}.profileRef`, "must be null when repository is null");
-  return {
+  // v1/v2 entries without a local credential are deliberately removed during migration.
+  if (profileRef === null) {
+    if (legacy || previous) return [];
+    throw new SettingsContractError(`${path}.profileRef`, "must select a local GitHub credential profile");
+  }
+  const rawQuery = text(deck.query, `${path}.query`, true);
+  const query = hasPositivePullRequestQualifier(rawQuery) ? rawQuery : `${rawQuery}${rawQuery.length === 0 ? "" : " "}is:pr`;
+  if (!hasPositivePullRequestQualifier(query)) throw new SettingsContractError(`${path}.query`, "must contain a standalone positive is:pr qualifier");
+  const builder = legacy ? null : previous ? legacyDeckBuilder(deck.repository, `${path}.repository`) : parseDeckBuilder(deck.builder, `${path}.builder`);
+  const notifications = array(deck.notifications, `${path}.notifications`).map((item, index) => enumeration(item, `${path}.notifications[${index}]`, NotificationKind));
+  if (new Set(notifications).size !== notifications.length) throw new SettingsContractError(`${path}.notifications`, "must contain unique values");
+  return [{
     id,
-    title: text(deck.title, `${path}.title`),
-    query: text(deck.query, `${path}.query`, true),
-    repository,
+    name: previous || legacy ? text(deck.title, `${path}.title`) : text(deck.name, `${path}.name`),
+    query,
+    builder,
     profileRef,
     display: {
       groupBy: enumeration(display.groupBy, `${path}.display.groupBy`, ["none", "repository", "author"] as const),
       showDrafts: boolean(display.showDrafts, `${path}.display.showDrafts`),
     },
     refreshMinutes: refresh as 1 | 5 | 15 | 30,
-    notifications: array(deck.notifications, `${path}.notifications`).map((item, index) => enumeration(item, `${path}.notifications[${index}]`, NotificationKind)),
+    notifications,
+  }];
+}
+
+function legacyDeckBuilder(value: unknown, path: string): DeckBuilder | null {
+  if (value === null) return null;
+  return { repository: text(value, path), author: null, review: null, label: null, state: null };
+}
+
+function parseDeckBuilder(value: unknown, path: string): DeckBuilder | null {
+  if (value === null) return null;
+  const builder = object(value, path, ["repository", "author", "review", "label", "state"]);
+  return {
+    repository: nullableTrimmedText(builder.repository, `${path}.repository`),
+    author: nullableTrimmedText(builder.author, `${path}.author`),
+    review: builder.review === null ? null : enumeration(builder.review, `${path}.review`, ["approved", "changes-requested", "required"] as const),
+    label: nullableTrimmedText(builder.label, `${path}.label`),
+    state: builder.state === null ? null : enumeration(builder.state, `${path}.state`, ["open", "closed", "merged"] as const),
   };
+}
+
+function nullableTrimmedText(value: unknown, path: string): string | null {
+  if (value === null) return null;
+  const result = text(value, path);
+  if (result.trim() !== result) throw new SettingsContractError(path, "must be trimmed");
+  return result;
+}
+
+export function hasPositivePullRequestQualifier(query: string): boolean {
+  return /(?:^|\s)is:pr(?=\s|$)/iu.test(query);
 }
 
 function parseIssueTracker(value: unknown, legacy: boolean): NonNullable<DevHudSettingsV1["github"]["issueTracker"]> {

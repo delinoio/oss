@@ -19,7 +19,7 @@ import { createIdentitySession, isTerminalAccessTokenError, sessionProfileId, va
 import { clearAllContractedLocalData, clearAuthenticatedOriginData, clearAuthenticatedSettingsCache, clearGuestImportMarker, hasGuestSettings, readAuthenticatedSettingsCache, readCachedIdentityBootstrap, readGuestSettings, writeAuthenticatedSettingsCache, writeCachedIdentityBootstrap, writeGuestSettings } from "./local-data";
 import { SecureSettingKind, type NativeBridgeV1, type RuntimePlatform } from "./native-bridge";
 import { profileRequiresSetup } from "./profile-secrets";
-import { defaultDevHudSettings, decodeVersionedDevHudSettings, encodeDevHudSettings, LegacySettingsSchemaVersion, parseDevHudSettings, SettingsSchemaVersion, type DevHudSettingsV1 } from "./settings-contract";
+import { defaultDevHudSettings, decodeVersionedDevHudSettings, encodeDevHudSettings, LegacySettingsSchemaVersion, parseDevHudSettings, PreviousSettingsSchemaVersion, SettingsSchemaVersion, type DevHudSettingsV1 } from "./settings-contract";
 import { diffSettings, type SettingsDiffEntry } from "./settings-diff";
 import { getLocalStorage, isValidApiOrigin } from "./shell";
 
@@ -764,7 +764,7 @@ class SettingsSnapshotError extends TypeError {}
 
 function validatedSettingsSnapshot(snapshot: { readonly schemaVersion: number; readonly canonicalJson: Uint8Array; readonly revision: bigint } | undefined): ValidatedSettingsSnapshot {
   if (!snapshot) return { settings: defaultDevHudSettings, revision: 0n };
-  if (snapshot.schemaVersion !== LegacySettingsSchemaVersion && snapshot.schemaVersion !== SettingsSchemaVersion) throw new SettingsSnapshotError("unsupported settings schema version");
+  if (snapshot.schemaVersion !== LegacySettingsSchemaVersion && snapshot.schemaVersion !== PreviousSettingsSchemaVersion && snapshot.schemaVersion !== SettingsSchemaVersion) throw new SettingsSnapshotError("unsupported settings schema version");
   try {
     return { settings: decodeVersionedDevHudSettings(snapshot.canonicalJson, snapshot.schemaVersion), revision: snapshot.revision };
   } catch (reason) {

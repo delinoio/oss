@@ -5,6 +5,7 @@ import { AccountIdentity, FirstRunIdentity, SynchronizedAppearanceBoundary, Sync
 import { LifecycleState, NativeBridgeError, NotificationPermission, RuntimePlatform, nativeBridge, type NativeBridgeEventV1, type NativeBridgeV1, type RuntimeSnapshot } from "./native-bridge";
 import { clearIdentityForApiChange, DevHudServiceBoundary } from "./service-boundary";
 import { ContentStateKind, ContentStateView, EmptyState, OfflineState, type ContentState } from "./surface-state";
+import { DeckSurface } from "./deck-ui.tsx";
 import { ActionId, ExternalLinkTarget, LanguagePreference, PlatformCapability, SurfaceId, actionRegistry, availableActions, browserShell, completeOnboarding, getLocalStorage, hasCompletedOnboarding, isValidApiOrigin, markFrontendReady, normalizeApiOrigin, readPreferences, resolveLanguage, setTrayLanguage, synchronizeDocumentPreferences, writePreferences, type Preferences, type RuntimeCapabilities } from "./shell";
 
 const surfaces: readonly SurfaceId[] = [SurfaceId.Home, SurfaceId.Realqa, SurfaceId.Deck, SurfaceId.Settings, SurfaceId.Account, SurfaceId.Diagnostics];
@@ -54,6 +55,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   const [storeConfigured, setStoreConfigured] = useState(false);
   const [storeOpenFailed, setStoreOpenFailed] = useState(false);
   const [authCallback, setAuthCallback] = useState<string | null>(null);
+  const [deckLink, setDeckLink] = useState<string | null>(null);
   const [online, setOnline] = useState(() => navigator.onLine);
   const search = useRef<HTMLInputElement>(null);
   const apiOriginInput = useRef<HTMLInputElement>(null);
@@ -96,6 +98,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
       if (event.kind === "auth-callback") {
         setAuthCallback(event.url);
       }
+      if (event.kind === "deck-link") { setDeckLink(event.deckId); setSurface(SurfaceId.Deck); }
     };
     void bridge.listen(receive).then(async (value) => {
       if (!active) { value(); return; }
@@ -108,6 +111,9 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
       setRuntimeState(initialContentState);
       const pending = await bridge.request({ operation: "auth.peek-pending-callback" });
       if (active && pending.kind === "auth-callback" && pending.url) setAuthCallback(pending.url);
+      if (window.__TAURI_INTERNALS__) void bridge.request({ operation: "deck.peek-pending-link" }).then((pendingDeck) => {
+        if (active && pendingDeck.kind === "deck-link" && pendingDeck.deckId) { setDeckLink(pendingDeck.deckId); setSurface(SurfaceId.Deck); }
+      }).catch(() => {});
     }).catch(() => {
       if (active && !initialRuntime) setRuntimeState({ kind: ContentStateKind.Error, retryable: true });
     });
@@ -284,7 +290,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
       {surface === SurfaceId.Home && <><p className="eyebrow">{copy.available}</p><h2>{copy.welcome}</h2><p>{copy.homeSummary}</p></>}
       {surface === SurfaceId.Realqa && mobile && <><p className="eyebrow">{copy.desktopOnly}</p><h2>{copy.realqaMobileTitle}</h2><p>{copy.realqaMobileSummary}</p><p className="notice">{copy.unavailable}</p></>}
       {surface === SurfaceId.Realqa && !mobile && <><p className="eyebrow">{copy.realqa}</p><h2>{copy.realqaTitle}</h2><p>{copy.realqaSummary}</p><div className="disabled-actions">{unavailableCaptureActions.map((action) => <button disabled key={action.id}>{copy[action.title]}</button>)}</div><p className="notice">{copy.planned}</p></>}
-      {surface === SurfaceId.Deck && <><p className="eyebrow">{copy.deck}</p><h2>{copy.deckTitle}</h2><p>{copy.deckSummary}</p>{online ? <EmptyState copy={copy} /> : <OfflineState copy={copy} />}</>}
+      {surface === SurfaceId.Deck && <DeckSurface copy={copy} bridge={bridge} active={lifecycle === LifecycleState.Active} online={online} selectedDeckId={deckLink} />}
       {surface === SurfaceId.Settings && <><p className="eyebrow">{copy.settings}</p><h2>{copy.settingsTitle}</h2><p>{copy.settingsSummary}</p><SynchronizedSettingsBoundary copy={copy} bridge={bridge} onOpenExternal={openExternal} />{supportsLaunchAtLogin && <><label className="check"><input type="checkbox" checked={preferences.launchAtLogin} onChange={(event) => { update({ launchAtLogin: event.target.checked }); void browserShell.setLaunchAtLogin(event.target.checked); }} />{copy.launchAtLogin}</label><p>{copy.launchAtLoginHint}</p></>}{runtime?.capabilities.notifications && <div className="native-setting"><button className="primary" onClick={() => void requestNotifications()}>{copy.notificationPermission}</button><output aria-live="polite">{copy[notificationPermissionLabels[notificationPermission]]}</output>{notificationRequestFailed && <p className="native-setting-error" role="alert">{copy.notificationPermissionFailed}</p>}</div>}{runtime?.capabilities.storeUpdates && <div className="native-setting"><p>{copy.updatePolicy}</p>{storeConfigured && <button className="primary" onClick={() => void openStore()}>{copy.updatePolicy}</button>}{storeOpenFailed && <p className="native-setting-error" role="alert">{copy.storeOpenFailed}</p>}</div>}</>}
       {surface === SurfaceId.Account && <><AccountIdentity copy={copy} apiOrigin={preferences.apiOrigin} inputRef={apiOriginInput} onApiOrigin={applyApiOrigin} /><div className="actions"><button onClick={() => void external(ExternalLinkTarget.Pat)}>{copy.githubCreateFinePat}</button><button onClick={() => void external(ExternalLinkTarget.ClassicPat)}>{copy.githubCreateClassicPat}</button>{!mobile && <button onClick={() => void external(ExternalLinkTarget.Issue)}>{copy.issue}</button>}</div>{externalMessage && <p className="external-message" role={externalMessageIsError ? "alert" : "status"}>{externalMessageText}</p>}</>}
       {surface === SurfaceId.Diagnostics && <><p className="eyebrow">{copy.diagnostics}</p><h2>{copy.diagnosticsTitle}</h2><p>{copy.diagnosticsSummary}</p><p className="notice">{copy.diagnosticsUnavailable}</p>{runtime && <dl className="runtime-diagnostics"><dt>{copy.diagnosticPlatform}</dt><dd>{runtime.platform}</dd><dt>{copy.diagnosticArchitecture}</dt><dd>{runtime.architecture}</dd><dt>{copy.diagnosticBridge}</dt><dd>v{runtime.bridgeVersion}</dd></dl>}</>}
