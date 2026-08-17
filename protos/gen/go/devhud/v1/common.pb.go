@@ -509,6 +509,7 @@ const (
 	QuotaKind_QUOTA_KIND_SUBMISSION_IMAGES        QuotaKind = 2
 	QuotaKind_QUOTA_KIND_UPLOAD_BYTES_ROLLING_DAY QuotaKind = 3
 	QuotaKind_QUOTA_KIND_STORED_BYTES             QuotaKind = 4
+	QuotaKind_QUOTA_KIND_OBJECT_BYTES             QuotaKind = 5
 )
 
 // Enum value maps for QuotaKind.
@@ -519,6 +520,7 @@ var (
 		2: "QUOTA_KIND_SUBMISSION_IMAGES",
 		3: "QUOTA_KIND_UPLOAD_BYTES_ROLLING_DAY",
 		4: "QUOTA_KIND_STORED_BYTES",
+		5: "QUOTA_KIND_OBJECT_BYTES",
 	}
 	QuotaKind_value = map[string]int32{
 		"QUOTA_KIND_UNSPECIFIED":              0,
@@ -526,6 +528,7 @@ var (
 		"QUOTA_KIND_SUBMISSION_IMAGES":        2,
 		"QUOTA_KIND_UPLOAD_BYTES_ROLLING_DAY": 3,
 		"QUOTA_KIND_STORED_BYTES":             4,
+		"QUOTA_KIND_OBJECT_BYTES":             5,
 	}
 )
 
@@ -1081,13 +1084,14 @@ const file_devhud_v1_common_proto_rawDesc = "" +
 	"\x15UPLOAD_STATE_REJECTED\x10\x06*U\n" +
 	"\x11UploadContentType\x12#\n" +
 	"\x1fUPLOAD_CONTENT_TYPE_UNSPECIFIED\x10\x00\x12\x1b\n" +
-	"\x17UPLOAD_CONTENT_TYPE_PNG\x10\x01*\xb8\x01\n" +
+	"\x17UPLOAD_CONTENT_TYPE_PNG\x10\x01*\xd5\x01\n" +
 	"\tQuotaKind\x12\x1a\n" +
 	"\x16QUOTA_KIND_UNSPECIFIED\x10\x00\x12'\n" +
 	"#QUOTA_KIND_SIGNED_URLS_ROLLING_HOUR\x10\x01\x12 \n" +
 	"\x1cQUOTA_KIND_SUBMISSION_IMAGES\x10\x02\x12'\n" +
 	"#QUOTA_KIND_UPLOAD_BYTES_ROLLING_DAY\x10\x03\x12\x1b\n" +
-	"\x17QUOTA_KIND_STORED_BYTES\x10\x04*\x84\x02\n" +
+	"\x17QUOTA_KIND_STORED_BYTES\x10\x04\x12\x1b\n" +
+	"\x17QUOTA_KIND_OBJECT_BYTES\x10\x05*\x84\x02\n" +
 	"\x17PermissionFailureReason\x12)\n" +
 	"%PERMISSION_FAILURE_REASON_UNSPECIFIED\x10\x00\x12*\n" +
 	"&PERMISSION_FAILURE_REASON_USER_BLOCKED\x10\x01\x121\n" +

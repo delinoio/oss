@@ -692,9 +692,14 @@ func (clock *mutableClock) Set(now time.Time) {
 func dropFoundation(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
 	t.Helper()
 	// This helper is intentionally scoped to the explicitly configured disposable test database.
-	_, err := pool.Exec(ctx, `DROP TABLE IF EXISTS devhud_audit_events, devhud_request_logs,
-        devhud_settings, devhud_purged_identities, devhud_users, devhud_schema_migrations CASCADE`)
+	_, err := pool.Exec(ctx, `DROP TABLE IF EXISTS devhud_audit_events, devhud_uploads,
+		devhud_upload_reservations, devhud_upload_groups, devhud_submissions,
+		devhud_request_logs, devhud_settings, devhud_purged_identities,
+		devhud_users, devhud_schema_migrations CASCADE`)
 	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `DROP SEQUENCE IF EXISTS devhud_upload_generation_seq CASCADE`); err != nil {
 		t.Fatal(err)
 	}
 }

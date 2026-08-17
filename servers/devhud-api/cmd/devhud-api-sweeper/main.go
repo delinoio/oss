@@ -4,16 +4,20 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	"github.com/delinoio/oss/servers/devhud-api/internal/cloudflare"
 	"github.com/delinoio/oss/servers/devhud-api/internal/config"
 	"github.com/delinoio/oss/servers/devhud-api/internal/domain"
 	"github.com/delinoio/oss/servers/devhud-api/internal/idgen"
 	"github.com/delinoio/oss/servers/devhud-api/internal/postgres"
+	"github.com/delinoio/oss/servers/devhud-api/internal/r2"
 	"github.com/delinoio/oss/servers/devhud-api/internal/sweeper"
+	uploadmanager "github.com/delinoio/oss/servers/devhud-api/internal/upload"
 )
 
 const (
@@ -58,14 +62,32 @@ func run(ctx context.Context, arguments []string, logger *slog.Logger) error {
 	clock := domain.RealClock{}
 	repository := postgres.New(pool, idgen.UUIDv7{}, clock)
 	current, err := repository.SchemaCurrent(startupContext)
-	cancelStartup()
 	if err != nil {
+		cancelStartup()
 		return err
 	}
 	if !current {
+		cancelStartup()
 		return errors.New("database migrations are not current")
 	}
-	worker, err := sweeper.New(repository, repository, nil, clock, logger, configuration.BatchSize)
+	objectStore, err := r2.New(startupContext, r2.Config{
+		Endpoint: configuration.R2Endpoint, AccessKeyID: configuration.R2AccessKeyID,
+		SecretAccessKey: configuration.R2SecretAccessKey, StagingBucket: configuration.R2StagingBucket,
+		PublicBucket: configuration.R2PublicBucket,
+	})
+	if err != nil {
+		cancelStartup()
+		return err
+	}
+	cursorCodec, err := uploadmanager.NewCursorCodec([]byte(configuration.R2SecretAccessKey))
+	if err != nil {
+		cancelStartup()
+		return err
+	}
+	cdn := cloudflare.New(&http.Client{Timeout: 10 * time.Second}, configuration.CloudflareAPIToken, configuration.CloudflareZoneID, configuration.CloudflareRateRuleID, configuration.PublicAssetBaseURL)
+	uploads := uploadmanager.NewService(repository, objectStore, cdn, cursorCodec, clock, logger, configuration.PublicAssetBaseURL, r2.RemovalPNG())
+	cancelStartup()
+	worker, err := sweeper.New(repository, repository, []domain.AccountPurgeAdapter{uploads}, clock, logger, configuration.BatchSize, sweeper.WithUploadStaging(uploads))
 	if err != nil {
 		return err
 	}
@@ -103,6 +125,7 @@ func sweep(ctx context.Context, worker sweepRunner, logger *slog.Logger) error {
 		"accounts_purged", result.AccountsPurged,
 		"request_logs_deleted", result.RequestLogsDeleted,
 		"audit_events_deleted", result.AuditEventsDeleted,
+		"staging_objects_deleted", result.StagingObjectsDeleted,
 	)
 	return nil
 }

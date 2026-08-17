@@ -2,9 +2,11 @@
 
 ## Goal
 
-DevHud is a coordinated desktop and mobile developer utility. V1 contains the desktop-only RealQA capture and GitHub issue workflow and the desktop/mobile Deck pull-request monitor with native widgets. The deterministic frontend and pinned Tauri CEF desktop-host foundation now exist at `apps/devhud`; the versioned protocol, generated client, and Bootstrap/Settings/Account API foundation are implemented. Its Account surface exposes only the approved authentication, GitHub PAT, and issue browser links until curated public DevHud documentation exists. Product workflows, the remaining API services, mobile clients, widgets, and the other planned domains remain documentation-first contracts.
+DevHud is a coordinated desktop and mobile developer utility. V1 contains the desktop-only RealQA capture and GitHub issue workflow and the desktop/mobile Deck pull-request monitor with native widgets. The deterministic frontend and pinned Tauri CEF desktop-host foundation now exist at `apps/devhud`; the versioned protocol, generated client, and Bootstrap/Settings/Upload/Account API services are implemented. Its Account surface exposes only the approved authentication, GitHub PAT, and issue browser links until curated public DevHud documentation exists. Product workflows, the remaining API services, mobile clients, widgets, and the other planned domains remain documentation-first contracts.
 
 Issue [#815](https://github.com/delinoio/oss/issues/815) is the current product contract. It supersedes closed historical DevHud issues #729, #755, and #757; those issues are historical context only and must not supply architecture or scope.
+
+Official uploads return a header-bound 15-minute direct-R2 PUT and a separate 24-hour staging deadline, use 256-bit opaque identifiers, and publish exactly `<configured-public-base>/<opaque-id>.png`. One-use is an application reservation/key/finalization invariant; finalization conditionally validates the recorded generation and ETag after reading only a 33-byte PNG prefix, never an API upload body. The committed exact R2 CORS and 300-public-GET/IP/minute Cloudflare artifacts are operator-applied and production-startup validated. The bilingual removal marker is embedded; owner deletion, administrator hooks, and account purge replace origin bytes before purge/revalidation. The sweeper owns staging expiry and deferred cleanup.
 
 ## Project ID
 
@@ -19,7 +21,7 @@ enum ProjectId {
 - `apps/devhud` — implemented localized React/TypeScript local shell and Rust/Tauri CEF desktop-host foundation; service-backed product workflows and mobile shell planned.
 - `apps/devhud-chrome-extension` — Chrome Manifest V3 extension (planned).
 - `apps/devhud-admin` — administrator SPA embedded at `/admin` in the API artifact (planned).
-- `servers/devhud-api` — implemented stateless Go Bootstrap/Settings/Account foundation and account/retention sweeper; Upload, Diagnostics, and Admin services planned.
+- `servers/devhud-api` — implemented stateless Go Bootstrap/Settings/Upload/Account service and account/upload/retention sweeper; Diagnostics and Admin RPC registration planned, with upload administrator hooks implemented internally.
 - `protos/devhud/v1` — implemented versioned Connect RPC schemas with committed Go bindings.
 - `packages/devhud-api-client` — implemented generated TypeScript messages/services, Connect Query exports, and safe client helpers.
 - `crates/devhud-native-messaging-host` — Rust Native Messaging broker packaged with desktop installers (planned canonical Rust workspace path).

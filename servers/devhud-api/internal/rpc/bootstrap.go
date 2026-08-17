@@ -19,6 +19,7 @@ type BootstrapConfig struct {
 	AdminClientID      string
 	AdminRedirectURI   string
 	PublicAssetBaseURL string
+	OfficialUploads    bool
 }
 
 type BootstrapService struct {
@@ -67,6 +68,9 @@ func (s *BootstrapService) GetBootstrap(ctx context.Context, _ *connect.Request[
 			MaxImageHeight:         4096,
 			MaxImagePixels:         16_777_216,
 		},
+	}
+	if s.configuration.OfficialUploads {
+		response.Capabilities = append(response.Capabilities, devhudv1.StaticCapability_STATIC_CAPABILITY_OFFICIAL_UPLOADS)
 	}
 	return connect.NewResponse(response), nil
 }

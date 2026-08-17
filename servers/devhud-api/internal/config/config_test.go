@@ -47,6 +47,22 @@ func TestHTTPSRequiredOutsideLoopback(t *testing.T) {
 	}
 }
 
+func TestPublicAssetBaseRejectsPathToKeepStableURLsExact(t *testing.T) {
+	setValidEnvironment(t)
+	t.Setenv("DEVHUD_PUBLIC_ASSET_BASE_URL", "https://assets.example.com/images")
+	if _, err := Load("test"); err == nil || !strings.Contains(err.Error(), "must not contain a path") {
+		t.Fatalf("Load error = %v", err)
+	}
+}
+
+func TestPartiallyConfiguredUploadAdaptersAreRejected(t *testing.T) {
+	setValidEnvironment(t)
+	t.Setenv("DEVHUD_R2_SECRET_ACCESS_KEY", "")
+	if _, err := Load("test"); err == nil || !strings.Contains(err.Error(), "DEVHUD_R2_SECRET_ACCESS_KEY") {
+		t.Fatalf("Load error = %v, want incomplete upload adapter error", err)
+	}
+}
+
 func TestProductionRejectsLoopbackHTTPURLs(t *testing.T) {
 	tests := map[string]string{
 		"DEVHUD_PUBLIC_API_URL":        "http://localhost:46307",
@@ -119,4 +135,12 @@ func setValidEnvironment(t *testing.T) {
 	t.Setenv("DEVHUD_ADMIN_REDIRECT_URI", "http://localhost:46306/auth/callback")
 	t.Setenv("DEVHUD_PUBLIC_ASSET_BASE_URL", "https://assets.example.com")
 	t.Setenv("DEVHUD_IDENTITY_HMAC_KEYS", base64.StdEncoding.EncodeToString([]byte("01234567890123456789012345678901")))
+	t.Setenv("DEVHUD_R2_ENDPOINT", "https://account.r2.cloudflarestorage.com")
+	t.Setenv("DEVHUD_R2_ACCESS_KEY_ID", "test-access-key")
+	t.Setenv("DEVHUD_R2_SECRET_ACCESS_KEY", "test-secret-key")
+	t.Setenv("DEVHUD_R2_STAGING_BUCKET", "devhud-staging")
+	t.Setenv("DEVHUD_R2_PUBLIC_BUCKET", "devhud-public")
+	t.Setenv("DEVHUD_CLOUDFLARE_API_TOKEN", "test-cloudflare-token")
+	t.Setenv("DEVHUD_CLOUDFLARE_ZONE_ID", "test-zone")
+	t.Setenv("DEVHUD_CLOUDFLARE_RATE_LIMIT_RULE_ID", "test-rule")
 }

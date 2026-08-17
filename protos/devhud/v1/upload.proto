@@ -38,6 +38,7 @@ message SignedUploadHeaders {
   string content_type = 1;
   // checksum_sha256_base64 is standard padded Base64 of the 32 raw bytes.
   string checksum_sha256_base64 = 2;
+  uint64 content_length = 3;
 }
 
 message UploadReservation {
@@ -50,6 +51,9 @@ message UploadReservation {
   SignedUploadHeaders required_headers = 7;
   google.protobuf.Timestamp expires_at = 8;
   string public_url = 9;
+  // staging_expires_at is the independent server-side cleanup deadline. The
+  // signed PUT expires earlier and is never renewed for this reservation.
+  google.protobuf.Timestamp staging_expires_at = 10;
 }
 
 message CreateUploadResponse {

@@ -25,29 +25,46 @@ const (
 )
 
 type Config struct {
-	Environment        Environment
-	ListenAddress      string
-	DatabaseURL        string
-	PublicAPIURL       string
-	APIVersion         string
-	LogtoIssuer        string
-	LogtoAudience      string
-	DesktopClientID    string
-	IOSClientID        string
-	AndroidClientID    string
-	AdminClientID      string
-	AdminRedirectURI   string
-	PublicAssetBaseURL string
-	IdentityHMACKeys   [][]byte
-	TrustedProxyCIDRs  []*net.IPNet
-	ShutdownTimeout    time.Duration
+	Environment          Environment
+	ListenAddress        string
+	DatabaseURL          string
+	PublicAPIURL         string
+	APIVersion           string
+	LogtoIssuer          string
+	LogtoAudience        string
+	DesktopClientID      string
+	IOSClientID          string
+	AndroidClientID      string
+	AdminClientID        string
+	AdminRedirectURI     string
+	PublicAssetBaseURL   string
+	IdentityHMACKeys     [][]byte
+	TrustedProxyCIDRs    []*net.IPNet
+	ShutdownTimeout      time.Duration
+	R2Endpoint           string
+	R2AccessKeyID        string
+	R2SecretAccessKey    string
+	R2StagingBucket      string
+	R2PublicBucket       string
+	CloudflareAPIToken   string
+	CloudflareZoneID     string
+	CloudflareRateRuleID string
 }
 
 type SweeperConfig struct {
-	DatabaseURL string
-	BatchSize   int
-	Interval    time.Duration
-	RunOnce     bool
+	DatabaseURL          string
+	BatchSize            int
+	Interval             time.Duration
+	RunOnce              bool
+	R2Endpoint           string
+	R2AccessKeyID        string
+	R2SecretAccessKey    string
+	R2StagingBucket      string
+	R2PublicBucket       string
+	PublicAssetBaseURL   string
+	CloudflareAPIToken   string
+	CloudflareZoneID     string
+	CloudflareRateRuleID string
 }
 
 func Load(apiVersion string) (Config, error) {
@@ -71,20 +88,28 @@ func Load(apiVersion string) (Config, error) {
 	}
 
 	configuration := Config{
-		Environment:        environment,
-		ListenAddress:      listenAddress,
-		DatabaseURL:        os.Getenv("DEVHUD_DATABASE_URL"),
-		PublicAPIURL:       os.Getenv("DEVHUD_PUBLIC_API_URL"),
-		APIVersion:         apiVersion,
-		LogtoIssuer:        os.Getenv("DEVHUD_LOGTO_ISSUER"),
-		LogtoAudience:      os.Getenv("DEVHUD_LOGTO_AUDIENCE"),
-		DesktopClientID:    os.Getenv("DEVHUD_LOGTO_DESKTOP_CLIENT_ID"),
-		IOSClientID:        os.Getenv("DEVHUD_LOGTO_IOS_CLIENT_ID"),
-		AndroidClientID:    os.Getenv("DEVHUD_LOGTO_ANDROID_CLIENT_ID"),
-		AdminClientID:      os.Getenv("DEVHUD_LOGTO_ADMIN_CLIENT_ID"),
-		AdminRedirectURI:   os.Getenv("DEVHUD_ADMIN_REDIRECT_URI"),
-		PublicAssetBaseURL: os.Getenv("DEVHUD_PUBLIC_ASSET_BASE_URL"),
-		ShutdownTimeout:    10 * time.Second,
+		Environment:          environment,
+		ListenAddress:        listenAddress,
+		DatabaseURL:          os.Getenv("DEVHUD_DATABASE_URL"),
+		PublicAPIURL:         os.Getenv("DEVHUD_PUBLIC_API_URL"),
+		APIVersion:           apiVersion,
+		LogtoIssuer:          os.Getenv("DEVHUD_LOGTO_ISSUER"),
+		LogtoAudience:        os.Getenv("DEVHUD_LOGTO_AUDIENCE"),
+		DesktopClientID:      os.Getenv("DEVHUD_LOGTO_DESKTOP_CLIENT_ID"),
+		IOSClientID:          os.Getenv("DEVHUD_LOGTO_IOS_CLIENT_ID"),
+		AndroidClientID:      os.Getenv("DEVHUD_LOGTO_ANDROID_CLIENT_ID"),
+		AdminClientID:        os.Getenv("DEVHUD_LOGTO_ADMIN_CLIENT_ID"),
+		AdminRedirectURI:     os.Getenv("DEVHUD_ADMIN_REDIRECT_URI"),
+		PublicAssetBaseURL:   os.Getenv("DEVHUD_PUBLIC_ASSET_BASE_URL"),
+		ShutdownTimeout:      10 * time.Second,
+		R2Endpoint:           os.Getenv("DEVHUD_R2_ENDPOINT"),
+		R2AccessKeyID:        os.Getenv("DEVHUD_R2_ACCESS_KEY_ID"),
+		R2SecretAccessKey:    os.Getenv("DEVHUD_R2_SECRET_ACCESS_KEY"),
+		R2StagingBucket:      os.Getenv("DEVHUD_R2_STAGING_BUCKET"),
+		R2PublicBucket:       os.Getenv("DEVHUD_R2_PUBLIC_BUCKET"),
+		CloudflareAPIToken:   os.Getenv("DEVHUD_CLOUDFLARE_API_TOKEN"),
+		CloudflareZoneID:     os.Getenv("DEVHUD_CLOUDFLARE_ZONE_ID"),
+		CloudflareRateRuleID: os.Getenv("DEVHUD_CLOUDFLARE_RATE_LIMIT_RULE_ID"),
 	}
 
 	var err error
@@ -126,7 +151,26 @@ func LoadSweeper(runOnce bool) (SweeperConfig, error) {
 			return SweeperConfig{}, errors.New("DEVHUD_SWEEPER_INTERVAL must be between 1s and 1h")
 		}
 	}
-	return SweeperConfig{DatabaseURL: databaseURL, BatchSize: batchSize, Interval: interval, RunOnce: runOnce}, nil
+	configuration := SweeperConfig{
+		DatabaseURL: databaseURL, BatchSize: batchSize, Interval: interval, RunOnce: runOnce,
+		R2Endpoint: os.Getenv("DEVHUD_R2_ENDPOINT"), R2AccessKeyID: os.Getenv("DEVHUD_R2_ACCESS_KEY_ID"),
+		R2SecretAccessKey: os.Getenv("DEVHUD_R2_SECRET_ACCESS_KEY"), R2StagingBucket: os.Getenv("DEVHUD_R2_STAGING_BUCKET"),
+		R2PublicBucket: os.Getenv("DEVHUD_R2_PUBLIC_BUCKET"), PublicAssetBaseURL: os.Getenv("DEVHUD_PUBLIC_ASSET_BASE_URL"),
+		CloudflareAPIToken: os.Getenv("DEVHUD_CLOUDFLARE_API_TOKEN"), CloudflareZoneID: os.Getenv("DEVHUD_CLOUDFLARE_ZONE_ID"),
+		CloudflareRateRuleID: os.Getenv("DEVHUD_CLOUDFLARE_RATE_LIMIT_RULE_ID"),
+	}
+	required := map[string]string{
+		"DEVHUD_R2_ENDPOINT": configuration.R2Endpoint, "DEVHUD_R2_ACCESS_KEY_ID": configuration.R2AccessKeyID,
+		"DEVHUD_R2_SECRET_ACCESS_KEY": configuration.R2SecretAccessKey, "DEVHUD_R2_STAGING_BUCKET": configuration.R2StagingBucket,
+		"DEVHUD_R2_PUBLIC_BUCKET": configuration.R2PublicBucket, "DEVHUD_PUBLIC_ASSET_BASE_URL": configuration.PublicAssetBaseURL,
+		"DEVHUD_CLOUDFLARE_API_TOKEN": configuration.CloudflareAPIToken, "DEVHUD_CLOUDFLARE_ZONE_ID": configuration.CloudflareZoneID,
+	}
+	for name, value := range required {
+		if strings.TrimSpace(value) == "" {
+			return SweeperConfig{}, fmt.Errorf("%s is required for the sweeper", name)
+		}
+	}
+	return configuration, nil
 }
 
 func (c Config) Validate() error {
@@ -153,6 +197,27 @@ func (c Config) Validate() error {
 	if c.Environment == EnvironmentProduction && len(c.TrustedProxyCIDRs) == 0 {
 		return errors.New("DEVHUD_TRUSTED_PROXY_CIDRS is required in production")
 	}
+	uploadRequired := map[string]string{
+		"DEVHUD_R2_ENDPOINT":                   c.R2Endpoint,
+		"DEVHUD_R2_ACCESS_KEY_ID":              c.R2AccessKeyID,
+		"DEVHUD_R2_SECRET_ACCESS_KEY":          c.R2SecretAccessKey,
+		"DEVHUD_R2_STAGING_BUCKET":             c.R2StagingBucket,
+		"DEVHUD_R2_PUBLIC_BUCKET":              c.R2PublicBucket,
+		"DEVHUD_CLOUDFLARE_API_TOKEN":          c.CloudflareAPIToken,
+		"DEVHUD_CLOUDFLARE_ZONE_ID":            c.CloudflareZoneID,
+		"DEVHUD_CLOUDFLARE_RATE_LIMIT_RULE_ID": c.CloudflareRateRuleID,
+	}
+	uploadConfigured := c.Environment == EnvironmentProduction
+	for _, value := range uploadRequired {
+		uploadConfigured = uploadConfigured || strings.TrimSpace(value) != ""
+	}
+	if uploadConfigured {
+		for name, value := range uploadRequired {
+			if strings.TrimSpace(value) == "" {
+				return fmt.Errorf("%s is required when uploads are configured", name)
+			}
+		}
+	}
 
 	allowLoopbackHTTP := c.Environment == EnvironmentDevelopment
 	publicAPI, err := validateHTTPURL("DEVHUD_PUBLIC_API_URL", c.PublicAPIURL, allowLoopbackHTTP)
@@ -162,8 +227,17 @@ func (c Config) Validate() error {
 	if _, err := validateHTTPURL("DEVHUD_LOGTO_ISSUER", c.LogtoIssuer, allowLoopbackHTTP); err != nil {
 		return err
 	}
-	if _, err := validateHTTPURL("DEVHUD_PUBLIC_ASSET_BASE_URL", c.PublicAssetBaseURL, allowLoopbackHTTP); err != nil {
+	publicAssets, err := validateHTTPURL("DEVHUD_PUBLIC_ASSET_BASE_URL", c.PublicAssetBaseURL, allowLoopbackHTTP)
+	if err != nil {
 		return err
+	}
+	if publicAssets.Path != "" && publicAssets.Path != "/" {
+		return errors.New("DEVHUD_PUBLIC_ASSET_BASE_URL must not contain a path")
+	}
+	if c.R2Endpoint != "" {
+		if _, err := validateHTTPURL("DEVHUD_R2_ENDPOINT", c.R2Endpoint, allowLoopbackHTTP); err != nil {
+			return err
+		}
 	}
 	adminRedirect, err := validateHTTPURL("DEVHUD_ADMIN_REDIRECT_URI", c.AdminRedirectURI, allowLoopbackHTTP)
 	if err != nil {
