@@ -176,7 +176,7 @@ describe("administrator console review regressions", () => {
     });
     render(<App />);
     expect(await screen.findByText("신원")).toBeTruthy();
-    expect(screen.getByText("Logto 주체")).toBeTruthy();
+    expect(await screen.findByText("Logto 주체")).toBeTruthy();
     expect(screen.getByText("차단되지 않음")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "업로드" }));
