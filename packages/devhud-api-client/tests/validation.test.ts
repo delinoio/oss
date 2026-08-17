@@ -625,7 +625,7 @@ describe("wire validation helpers", () => {
     const fabricated = create(SubmitCrashReportRequestSchema, {
       ...browser,
       clientBuild: {
-        ...browser.clientBuild,
+        ...browser.clientBuild!,
         tauriRevision: clientBuild.tauriRevision,
       },
     });
