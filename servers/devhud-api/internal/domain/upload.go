@@ -208,7 +208,7 @@ type UploadStorage interface {
 }
 
 type UploadCache interface {
-	PurgeAndRevalidate(context.Context, string) error
+	PurgeAndRevalidate(context.Context, string, []byte) error
 }
 
 type UploadRepository interface {

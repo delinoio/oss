@@ -259,7 +259,7 @@ func (s *fakeStorage) ReplacePublic(context.Context, domain.Upload, []byte) (str
 
 type fakeCache struct{ events *[]string }
 
-func (c *fakeCache) PurgeAndRevalidate(context.Context, string) error {
+func (c *fakeCache) PurgeAndRevalidate(context.Context, string, []byte) error {
 	*c.events = append(*c.events, "purge-revalidate")
 	return nil
 }

@@ -78,7 +78,7 @@ CREATE INDEX devhud_uploads_owner_quota_idx
     ON devhud_uploads (owner_user_id, state, quota_charged_at);
 CREATE INDEX devhud_uploads_staging_sweep_idx
     ON devhud_uploads (state, reservation_id)
-    WHERE state IN (1, 2, 7, 8);
+    WHERE state IN (1, 2, 4, 7, 8);
 
 ALTER TABLE devhud_audit_events
     DROP CONSTRAINT devhud_audit_events_action_check,

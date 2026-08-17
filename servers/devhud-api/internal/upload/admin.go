@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/delinoio/oss/servers/devhud-api/internal/domain"
 )
@@ -49,8 +48,8 @@ func (h *AdministratorHooks) GetUsage(ctx context.Context, ownerID string) (doma
 
 func (h *AdministratorHooks) RemoveUpload(ctx context.Context, actorID, uploadID string, reason domain.RemovalReason, rationale string) (domain.Upload, error) {
 	rationale = strings.TrimSpace(rationale)
-	if rationale == "" || len(rationale) > 4096 || !utf8.ValidString(rationale) {
-		return domain.Upload{}, errors.New("administrator reason must contain 1 to 4096 bytes")
+	if err := validateAdministratorReason(rationale); err != nil {
+		return domain.Upload{}, err
 	}
 	upload, err := h.service.RemoveAsAdministrator(ctx, uploadID, reason)
 	if err != nil {

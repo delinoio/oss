@@ -10,6 +10,7 @@ import (
 )
 
 func TestPurgeCompletesBeforeNoCacheRevalidation(t *testing.T) {
+	marker := []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n', 'm', 'a', 'r', 'k', 'e', 'r'}
 	events := []string{}
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		switch request.URL.Path {
@@ -26,7 +27,7 @@ func TestPurgeCompletesBeforeNoCacheRevalidation(t *testing.T) {
 				t.Fatalf("cache control = %q", request.Header.Get("Cache-Control"))
 			}
 			response.Header().Set("Content-Type", "image/png")
-			_, _ = response.Write([]byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'})
+			_, _ = response.Write(marker)
 		default:
 			http.NotFound(response, request)
 		}
@@ -34,11 +35,31 @@ func TestPurgeCompletesBeforeNoCacheRevalidation(t *testing.T) {
 	defer server.Close()
 	client := New(server.Client(), "token", "zone", "rule", server.URL)
 	client.apiBaseURL = server.URL
-	if err := client.PurgeAndRevalidate(context.Background(), server.URL+"/asset.png"); err != nil {
+	if err := client.PurgeAndRevalidate(context.Background(), server.URL+"/asset.png", marker); err != nil {
 		t.Fatal(err)
 	}
 	if !slices.Equal(events, []string{"purge", "revalidate"}) {
 		t.Fatalf("events = %v", events)
+	}
+}
+
+func TestPurgeRejectsAnotherValidPNG(t *testing.T) {
+	marker := []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n', 'm', 'a', 'r', 'k', 'e', 'r'}
+	original := []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n', 'o', 'r', 'i', 'g', 'i', 'n', 'a', 'l'}
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.URL.Path == "/zones/zone/purge_cache" {
+			response.Header().Set("Content-Type", "application/json")
+			_, _ = response.Write([]byte(`{"success":true}`))
+			return
+		}
+		response.Header().Set("Content-Type", "image/png")
+		_, _ = response.Write(original)
+	}))
+	defer server.Close()
+	client := New(server.Client(), "token", "zone", "rule", server.URL)
+	client.apiBaseURL = server.URL
+	if err := client.PurgeAndRevalidate(context.Background(), server.URL+"/asset.png", marker); err == nil {
+		t.Fatal("original PNG was accepted as the removal marker")
 	}
 }
 

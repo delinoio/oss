@@ -31,7 +31,10 @@ func New(httpClient *http.Client, apiToken, zoneID, rateLimitRuleID, publicBaseU
 
 func (c *Client) PublicURL(publicID string) string { return c.publicBaseURL + "/" + publicID + ".png" }
 
-func (c *Client) PurgeAndRevalidate(ctx context.Context, publicURL string) error {
+func (c *Client) PurgeAndRevalidate(ctx context.Context, publicURL string, expectedMarker []byte) error {
+	if len(expectedMarker) == 0 {
+		return errors.New("public removal marker is empty")
+	}
 	body, err := json.Marshal(map[string]any{"files": []string{publicURL}})
 	if err != nil {
 		return err
@@ -68,8 +71,8 @@ func (c *Client) PurgeAndRevalidate(ctx context.Context, publicURL string) error
 		return err
 	}
 	defer verification.Body.Close()
-	prefix, readErr := io.ReadAll(io.LimitReader(verification.Body, 8))
-	if readErr != nil || verification.StatusCode != http.StatusOK || verification.Header.Get("Content-Type") != "image/png" || !bytes.Equal(prefix, []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}) {
+	marker, readErr := io.ReadAll(io.LimitReader(verification.Body, int64(len(expectedMarker))+1))
+	if readErr != nil || verification.StatusCode != http.StatusOK || verification.Header.Get("Content-Type") != "image/png" || !bytes.Equal(marker, expectedMarker) {
 		return errors.New("public removal marker revalidation failed")
 	}
 	return nil

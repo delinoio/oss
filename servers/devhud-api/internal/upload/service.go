@@ -215,7 +215,7 @@ func (s *Service) remove(ctx context.Context, ownerID, uploadID string, reason d
 		}
 	}
 	publicURL := s.PublicURL(upload.PublicID)
-	if err := s.cache.PurgeAndRevalidate(ctx, publicURL); err != nil {
+	if err := s.cache.PurgeAndRevalidate(ctx, publicURL, s.removalPNG); err != nil {
 		return domain.Upload{}, err
 	}
 	return s.repository.CompleteUploadRemoval(ctx, uploadID, token, s.clock.Now())

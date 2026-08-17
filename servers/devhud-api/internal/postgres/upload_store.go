@@ -301,17 +301,33 @@ func (s *Store) RejectUpload(ctx context.Context, ownerID string, binding domain
 }
 
 func (s *Store) ListUploads(ctx context.Context, ownerID string, states []domain.UploadState, submissionID string, cursor *domain.UploadCursor, limit uint32) (domain.UploadList, error) {
-	if err := s.checkUploadEligible(ctx, ownerID); err != nil {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
 		return domain.UploadList{}, err
 	}
-	return s.listUploads(ctx, ownerID, states, submissionID, cursor, limit)
+	defer func() { _ = tx.Rollback(ctx) }()
+	if err := ensureUploadEligible(ctx, tx, ownerID, false); err != nil {
+		return domain.UploadList{}, err
+	}
+	result, err := s.listUploads(ctx, tx, ownerID, states, submissionID, cursor, limit)
+	if err != nil {
+		return domain.UploadList{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return domain.UploadList{}, err
+	}
+	return result, nil
 }
 
 func (s *Store) ListUploadsForAdministrator(ctx context.Context, ownerID string, states []domain.UploadState, cursor *domain.UploadCursor, limit uint32) (domain.UploadList, error) {
-	return s.listUploads(ctx, ownerID, states, "", cursor, limit)
+	return s.listUploads(ctx, s.pool, ownerID, states, "", cursor, limit)
 }
 
-func (s *Store) listUploads(ctx context.Context, ownerID string, states []domain.UploadState, submissionID string, cursor *domain.UploadCursor, limit uint32) (domain.UploadList, error) {
+type uploadQuerier interface {
+	Query(context.Context, string, ...any) (pgx.Rows, error)
+}
+
+func (s *Store) listUploads(ctx context.Context, querier uploadQuerier, ownerID string, states []domain.UploadState, submissionID string, cursor *domain.UploadCursor, limit uint32) (domain.UploadList, error) {
 	stateValues := make([]int16, len(states))
 	for index, state := range states {
 		stateValues[index] = int16(state)
@@ -321,9 +337,11 @@ func (s *Store) listUploads(ctx context.Context, ownerID string, states []domain
 	if cursor != nil {
 		cursorTime, cursorID = &cursor.CreatedAt, &cursor.UploadID
 	}
-	rows, err := s.pool.Query(ctx, uploadSelect+`
+	rows, err := querier.Query(ctx, uploadSelect+`
 		WHERE u.owner_user_id = $1
-		AND (cardinality($2::smallint[]) = 0 OR u.state = ANY($2::smallint[]))
+		AND (cardinality($2::smallint[]) = 0 OR u.state = ANY($2::smallint[])
+			OR (u.state = 4 AND u.finalized_at IS NULL AND 1 = ANY($2::smallint[]))
+			OR (u.state = 4 AND u.finalized_at IS NOT NULL AND 3 = ANY($2::smallint[])))
 		AND ($3::uuid IS NULL OR u.submission_id = $3)
 		AND ($4::timestamptz IS NULL OR (u.created_at, u.upload_id) < ($4, $5::uuid))
 		ORDER BY u.created_at DESC, u.upload_id DESC LIMIT $6`, ownerID, stateValues, nullableUUID(submissionID), cursorTime, cursorID, int(limit)+1)
@@ -429,7 +447,7 @@ func (s *Store) ClaimExpiredUploads(ctx context.Context, now time.Time, limit in
 	defer func() { _ = tx.Rollback(ctx) }()
 	rows, err := tx.Query(ctx, `WITH candidates AS (
 		SELECT u.upload_id FROM devhud_uploads u JOIN devhud_upload_reservations r USING (reservation_id)
-		WHERE (u.state IN (1, 3, 5, 6, 7, 8) OR (u.state = 2 AND u.operation_expires_at <= $1))
+		WHERE (u.state IN (1, 3, 5, 6, 7, 8) OR (u.state IN (2, 4) AND u.operation_expires_at <= $1))
 		AND u.staging_deleted_at IS NULL AND r.staging_expires_at <= $1
 		ORDER BY r.staging_expires_at, u.upload_id FOR UPDATE OF u SKIP LOCKED LIMIT $2
 	), updated AS (
@@ -533,19 +551,6 @@ func (s *Store) RecordAdministratorUploadAudit(ctx context.Context, actorID, upl
 		return domain.ErrNotFound
 	}
 	return nil
-}
-
-func (s *Store) checkUploadEligible(ctx context.Context, ownerID string) error {
-	var deletion domain.DeletionState
-	var block domain.AdministrativeBlockState
-	err := s.pool.QueryRow(ctx, `SELECT deletion_state, administrative_block_state FROM devhud_users WHERE user_id = $1`, ownerID).Scan(&deletion, &block)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return domain.ErrNotFound
-	}
-	if err != nil {
-		return err
-	}
-	return uploadEligibility(deletion, block)
 }
 
 func ensureUploadEligible(ctx context.Context, tx pgx.Tx, ownerID string, update bool) error {

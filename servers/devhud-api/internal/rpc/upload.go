@@ -182,7 +182,7 @@ func (s *UploadService) mapError(ctx context.Context, procedure, operation strin
 func (s *UploadService) uploadMessage(upload domain.Upload) *devhudv1.Upload {
 	message := &devhudv1.Upload{
 		UploadId: uuidMessage(upload.UploadID), SubmissionId: uuidMessage(upload.SubmissionID), UploadGroupId: uuidMessage(upload.UploadGroupID),
-		State: protocolUploadState(upload.State), ContentType: devhudv1.UploadContentType_UPLOAD_CONTENT_TYPE_PNG,
+		State: protocolUploadState(upload), ContentType: devhudv1.UploadContentType_UPLOAD_CONTENT_TYPE_PNG,
 		SizeBytes: upload.SizeBytes, Sha256: append([]byte(nil), upload.SHA256[:]...), StagingGeneration: upload.StagingGeneration,
 		Width: upload.Width, Height: upload.Height, PublicUrl: s.service.PublicURL(upload.PublicID), CreatedAt: timestamppb.New(upload.CreatedAt),
 	}
@@ -239,7 +239,7 @@ func uploadStates(values []devhudv1.UploadState) ([]domain.UploadState, error) {
 		case devhudv1.UploadState_UPLOAD_STATE_PENDING:
 			states = append(states, domain.UploadStatePending, domain.UploadStatePublishing)
 		case devhudv1.UploadState_UPLOAD_STATE_FINALIZED:
-			states = append(states, domain.UploadStateFinalized, domain.UploadStateRemoving)
+			states = append(states, domain.UploadStateFinalized)
 		case devhudv1.UploadState_UPLOAD_STATE_QUARANTINED:
 			states = append(states, domain.UploadStateQuarantined)
 		case devhudv1.UploadState_UPLOAD_STATE_DELETED:
@@ -255,11 +255,16 @@ func uploadStates(values []devhudv1.UploadState) ([]domain.UploadState, error) {
 	return states, nil
 }
 
-func protocolUploadState(state domain.UploadState) devhudv1.UploadState {
-	switch state {
+func protocolUploadState(upload domain.Upload) devhudv1.UploadState {
+	switch upload.State {
 	case domain.UploadStatePending, domain.UploadStatePublishing:
 		return devhudv1.UploadState_UPLOAD_STATE_PENDING
-	case domain.UploadStateFinalized, domain.UploadStateRemoving:
+	case domain.UploadStateFinalized:
+		return devhudv1.UploadState_UPLOAD_STATE_FINALIZED
+	case domain.UploadStateRemoving:
+		if upload.FinalizedAt == nil {
+			return devhudv1.UploadState_UPLOAD_STATE_PENDING
+		}
 		return devhudv1.UploadState_UPLOAD_STATE_FINALIZED
 	case domain.UploadStateQuarantined:
 		return devhudv1.UploadState_UPLOAD_STATE_QUARANTINED
