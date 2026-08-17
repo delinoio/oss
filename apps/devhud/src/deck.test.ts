@@ -14,6 +14,11 @@ describe("Deck query and local transitions", () => {
     expect(validateDeckQuery('"find is:pr here" repo:octo/widgets')).toBe(false);
     expect(validateDeckQuery("repo:octo/widgets IS:PR")).toBe(true);
   });
+  it("ignores builder-looking qualifiers inside quoted phrases", () => {
+    const raw = '"find repo:foo/bar" repo:real/project is:pr';
+    expect(parseDeckBuilder(raw)).toMatchObject({ repository: "real/project" });
+    expect(applyDeckBuilder(raw, "repository", "next/project")).toBe('"find repo:foo/bar" repo:next/project is:pr');
+  });
   it("uses rate reset and exponential backoff", () => {
     expect(Date.parse(nextDeckRefresh(0, 5, 2, { limit: 1, remaining: 0, used: 1, resetAt: "1970-01-01T00:30:00.000Z", resource: "core", retryAfterSeconds: null }))).toBe(1_800_000);
   });
@@ -35,6 +40,13 @@ describe("Deck query and local transitions", () => {
     const rerun = { ...base, checkRollup: { state: "PENDING", contexts: [] }, updatedAt: "2026-01-01T00:02:00Z" };
     const failedAgain = { ...base, checkRollup: { state: "FAILURE", contexts: [] }, updatedAt: "2026-01-01T00:03:00Z" };
     expect(deckTransitionKeys([base], [failed])[0]?.key).not.toBe(deckTransitionKeys([rerun], [failedAgain])[0]?.key);
+  });
+  it("gives repeated close transitions distinct notification keys", () => {
+    const base = { nodeId: "pr", number: 1, title: "PR", url: "https://github.com/o/r/pull/1", draft: false, repository: { owner: "o", name: "r" }, author: "a", state: "open" as const, reviewDecision: null, requestedReviewers: [], checkRollup: { state: "PENDING", contexts: [] }, mergeable: "MERGEABLE", labels: [], updatedAt: "2026-01-01T00:00:00Z" };
+    const closed = { ...base, state: "closed" as const, updatedAt: "2026-01-01T00:01:00Z" };
+    const reopened = { ...base, updatedAt: "2026-01-01T00:02:00Z" };
+    const closedAgain = { ...closed, updatedAt: "2026-01-01T00:03:00Z" };
+    expect(deckTransitionKeys([base], [closed])[0]?.key).not.toBe(deckTransitionKeys([reopened], [closedAgain])[0]?.key);
   });
   it("does not collapse token, permission, query, network, and rate failures", () => {
     expect(classifyDeckFailure(new GitHubProviderError(GitHubErrorCode.MissingToken, "validate-credential"))).toBe("token");

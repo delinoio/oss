@@ -76,6 +76,10 @@ func TestValidateDevHudSettingsDeckQualifiers(t *testing.T) {
 	if err := validateDevHudSettings([]byte(settings("repo:octo/widgets IS:PR", `[]`)), 3); err != nil {
 		t.Fatalf("mixed-case qualifier: %v", err)
 	}
+	matchingBuilder := strings.Replace(settings("repo:octo/widgets is:pr", `[]`), `"builder":null`, `"builder":{"author":null,"label":null,"repository":"octo/widgets","review":null,"state":null}`, 1)
+	if err := validateDevHudSettings([]byte(matchingBuilder), 3); err != nil {
+		t.Fatalf("matching builder: %v", err)
+	}
 	for name, value := range map[string]string{
 		"missing repository":      settings("is:pr", `[]`),
 		"malformed repository":    settings("repo:octo is:pr", `[]`),
@@ -86,6 +90,7 @@ func TestValidateDevHudSettingsDeckQualifiers(t *testing.T) {
 			`"decks":[]`, `"decks":[`+deck("repo:octo/widgets is:pr", `[]`)+`,`+deck("repo:octo/widgets is:pr", `[]`)+`]`, 1,
 		),
 		"untrimmed builder field": strings.Replace(settings("repo:octo/widgets is:pr", `[]`), `"builder":null`, `"builder":{"author":null,"label":null,"repository":" octo/widgets","review":null,"state":null}`, 1),
+		"mismatched builder":      strings.Replace(settings("repo:octo/widgets is:pr", `[]`), `"builder":null`, `"builder":{"author":null,"label":null,"repository":"octo/other","review":null,"state":null}`, 1),
 	} {
 		t.Run(name, func(t *testing.T) {
 			if err := validateDevHudSettings([]byte(value), 3); err == nil {

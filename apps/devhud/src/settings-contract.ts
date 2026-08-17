@@ -223,6 +223,9 @@ function parseDeck(value: unknown, path: string, legacy: boolean, previous: bool
   if (!hasPositivePullRequestQualifier(query)) throw new SettingsContractError(`${path}.query`, "must contain a standalone positive is:pr qualifier");
   if (!legacy && !previous && !hasRepositoryQualifier(query)) throw new SettingsContractError(`${path}.query`, "must contain a repository qualifier when a credential profile is selected");
   const builder = legacy ? null : previous ? legacyDeckBuilder(legacyRepository, `${path}.repository`) : parseDeckBuilder(deck.builder, `${path}.builder`);
+  if (!legacy && !previous && builder !== null && !sameDeckBuilder(builder, deckBuilderProjection(query))) {
+    throw new SettingsContractError(`${path}.builder`, "must be the lossless projection of the query");
+  }
   const notificationValues = array(deck.notifications, `${path}.notifications`).map((item, index) => enumeration(item, `${path}.notifications[${index}]`, NotificationKind));
   if (!legacy && !previous && new Set(notificationValues).size !== notificationValues.length) throw new SettingsContractError(`${path}.notifications`, "must contain unique values");
   const notifications = legacy || previous ? [...new Set(notificationValues)] : notificationValues;
@@ -258,6 +261,10 @@ function parseDeckBuilder(value: unknown, path: string): DeckBuilder | null {
   };
 }
 
+function sameDeckBuilder(left: DeckBuilder, right: DeckBuilder | null): boolean {
+  return right !== null && left.repository === right.repository && left.author === right.author && left.review === right.review && left.label === right.label && left.state === right.state;
+}
+
 function nullableTrimmedText(value: unknown, path: string): string | null {
   if (value === null) return null;
   const result = text(value, path);
@@ -266,7 +273,7 @@ function nullableTrimmedText(value: unknown, path: string): string | null {
 }
 
 export function hasPositivePullRequestQualifier(query: string): boolean {
-  return deckQueryTokens(query).some((token) => token.toLowerCase() === "is:pr");
+  return deckQueryTokens(query).some((token) => token.value.toLowerCase() === "is:pr");
 }
 
 export function hasRepositoryQualifier(query: string): boolean {
@@ -285,8 +292,8 @@ export interface DeckRepositoryRef { readonly owner: string; readonly name: stri
 export function deckRepositories(query: string): readonly DeckRepositoryRef[] | null {
   const repositories = new Map<string, DeckRepositoryRef>();
   for (const token of deckQueryTokens(query)) {
-    if (token.slice(0, "repo:".length).toLowerCase() !== "repo:") continue;
-    const value = token.slice("repo:".length);
+    if (token.value.slice(0, "repo:".length).toLowerCase() !== "repo:") continue;
+    const value = token.value.slice("repo:".length);
     const separator = value.indexOf("/");
     if (separator < 1 || separator !== value.lastIndexOf("/") || separator === value.length - 1 || /[\s"]/u.test(value)) return null;
     const repository = { owner: value.slice(0, separator), name: value.slice(separator + 1) };
@@ -296,21 +303,57 @@ export function deckRepositories(query: string): readonly DeckRepositoryRef[] | 
   return [...repositories.values()];
 }
 
+export interface DeckQueryToken { readonly value: string; readonly start: number; readonly end: number; }
+
+/** Returns the editable builder fields only when the query contains builder-owned qualifiers. */
+export function deckBuilderProjection(query: string): DeckBuilder | null {
+  const tokens = deckQueryTokens(query);
+  const repository = deckBuilderValue(tokens, "repo:");
+  const author = deckBuilderValue(tokens, "author:");
+  const label = deckBuilderValue(tokens, "label:");
+  const review = deckBuilderValue(tokens, "review:");
+  const state = deckBuilderValue(tokens, "is:");
+  const normalizedReview = review?.toLowerCase() === "changes_requested" ? "changes-requested" : review?.toLowerCase() === "approved" || review?.toLowerCase() === "required" ? review.toLowerCase() : null;
+  const normalizedState = state?.toLowerCase() === "open" || state?.toLowerCase() === "closed" || state?.toLowerCase() === "merged" ? state.toLowerCase() : null;
+  if ([repository, author, label, normalizedReview, normalizedState].every((value) => value === null)) return null;
+  return { repository, author, label, review: normalizedReview, state: normalizedState };
+}
+
+export function deckBuilderToken(query: string, prefix: "repo:" | "author:" | "review:" | "label:" | "is:"): DeckQueryToken | null {
+  return deckQueryTokens(query).find((token) => token.value.slice(0, prefix.length).toLowerCase() === prefix && builderTokenIsSupported(token.value, prefix)) ?? null;
+}
+
+function deckBuilderValue(tokens: readonly DeckQueryToken[], prefix: "repo:" | "author:" | "review:" | "label:" | "is:"): string | null {
+  const token = tokens.find((item) => item.value.slice(0, prefix.length).toLowerCase() === prefix && builderTokenIsSupported(item.value, prefix));
+  return token === undefined ? null : unquoteDeckQualifier(token.value.slice(prefix.length));
+}
+
+function builderTokenIsSupported(value: string, prefix: "repo:" | "author:" | "review:" | "label:" | "is:"): boolean {
+  const token = value.slice(prefix.length);
+  const normalized = token.toLowerCase();
+  return prefix === "review:" ? normalized === "approved" || normalized === "changes_requested" || normalized === "required" : prefix === "is:" ? normalized === "open" || normalized === "closed" || normalized === "merged" : token.length > 0;
+}
+
+function unquoteDeckQualifier(value: string): string { return value.startsWith("\"") && value.endsWith("\"") ? value.slice(1, -1).replaceAll(/\\(.)/gu, "$1") : value; }
+
 function appendDeckQualifier(query: string, qualifier: string): string {
   return `${query}${query.length === 0 || /\s$/u.test(query) ? "" : " "}${qualifier}`;
 }
 
 /** Splits GitHub search syntax without treating quoted phrases as qualifiers. */
-function deckQueryTokens(query: string): readonly string[] {
-  const tokens: string[] = [];
+function deckQueryTokens(query: string): readonly DeckQueryToken[] {
+  const tokens: DeckQueryToken[] = [];
   let token = "";
+  let start = 0;
   let quoted = false;
   let escaped = false;
   const flush = () => {
-    if (token.length > 0) tokens.push(token);
+    if (token.length > 0) tokens.push({ value: token, start, end: start + token.length });
     token = "";
   };
-  for (const character of query) {
+  for (let index = 0; index < query.length; index += 1) {
+    const character = query[index] as string;
+    if (token.length === 0 && !quoted && !/\s/u.test(character)) start = index;
     if (escaped) {
       token += character;
       escaped = false;

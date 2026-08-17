@@ -172,6 +172,14 @@ describe("DevHud settings boundary", () => {
     expect(() => parseDevHudSettings({ ...settings, decks: [deck, deck] })).toThrow(/unique IDs/u);
   });
 
+  it("requires a non-null Deck builder to match the executable query", () => {
+    const profile = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", name: "Work", kind: "fine-grained" as const };
+    const deck = { id: "018f47a2-7b3c-7def-8abc-1234567890ac", name: "Deck", profileRef: profile.id, query: "repo:octo/widgets is:pr", builder: { repository: "octo/widgets", author: null, review: null, label: null, state: null }, display: { groupBy: "none" as const, showDrafts: true }, refreshMinutes: 5 as const, notifications: [] };
+    const settings = { ...defaultDevHudSettings, github: { ...defaultDevHudSettings.github, profiles: [profile] }, decks: [deck] };
+    expect(parseDevHudSettings(settings).decks).toHaveLength(1);
+    expect(() => parseDevHudSettings({ ...settings, decks: [{ ...deck, builder: { ...deck.builder, repository: "other/repository" } }] })).toThrow(/lossless projection/u);
+  });
+
   it.each(["?token=plain-secret", "?X-Amz-Signature=plain-secret", "#credential", "?", "#"])("rejects query or fragment delimiters in synchronized URL fields: %s", (suffix) => {
     expect(() => parseDevHudSettings({
       ...defaultDevHudSettings,

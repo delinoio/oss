@@ -248,6 +248,7 @@ func validateSettingsDeck(value any, path string, legacy bool, previous bool) (s
 			return "", err
 		}
 		if builder != nil {
+			actual := settingsDeckBuilder{}
 			for _, field := range []string{"repository", "author", "label"} {
 				if builder[field] != nil {
 					value, err := settingsText(builder[field], path+".builder."+field, false)
@@ -257,17 +258,23 @@ func validateSettingsDeck(value any, path string, legacy bool, previous bool) (s
 					if strings.TrimSpace(value) != value {
 						return "", fmt.Errorf("%s.builder.%s must be trimmed", path, field)
 					}
+					actual.set(field, value)
 				}
 			}
 			if builder["review"] != nil {
 				if err := settingsEnum(builder["review"], path+".builder.review", "approved", "changes-requested", "required"); err != nil {
 					return "", err
 				}
+				actual.set("review", builder["review"].(string))
 			}
 			if builder["state"] != nil {
 				if err := settingsEnum(builder["state"], path+".builder.state", "open", "closed", "merged"); err != nil {
 					return "", err
 				}
+				actual.set("state", builder["state"].(string))
+			}
+			if !actual.equal(settingsDeckBuilderProjection(query)) {
+				return "", fmt.Errorf("%s.builder must be the lossless projection of the query", path)
 			}
 		}
 	}
@@ -306,6 +313,111 @@ func validateSettingsDeck(value any, path string, legacy bool, previous bool) (s
 		}
 	}
 	return profileRef, nil
+}
+
+type settingsDeckBuilder struct {
+	repository *string
+	author     *string
+	review     *string
+	label      *string
+	state      *string
+}
+
+func (builder *settingsDeckBuilder) set(field string, value string) {
+	switch field {
+	case "repository":
+		builder.repository = &value
+	case "author":
+		builder.author = &value
+	case "review":
+		builder.review = &value
+	case "label":
+		builder.label = &value
+	case "state":
+		builder.state = &value
+	}
+}
+
+func (builder settingsDeckBuilder) equal(other settingsDeckBuilder) bool {
+	return settingsDeckBuilderValueEqual(builder.repository, other.repository) &&
+		settingsDeckBuilderValueEqual(builder.author, other.author) &&
+		settingsDeckBuilderValueEqual(builder.review, other.review) &&
+		settingsDeckBuilderValueEqual(builder.label, other.label) &&
+		settingsDeckBuilderValueEqual(builder.state, other.state)
+}
+
+func settingsDeckBuilderValueEqual(left *string, right *string) bool {
+	return left == nil && right == nil || left != nil && right != nil && *left == *right
+}
+
+func settingsDeckBuilderProjection(query string) settingsDeckBuilder {
+	projection := settingsDeckBuilder{}
+	for _, token := range deckQueryTokens(query) {
+		for _, qualifier := range []struct {
+			prefix string
+			field  string
+		}{
+			{"repo:", "repository"},
+			{"author:", "author"},
+			{"review:", "review"},
+			{"label:", "label"},
+			{"is:", "state"},
+		} {
+			if len(token) < len(qualifier.prefix) || !strings.EqualFold(token[:len(qualifier.prefix)], qualifier.prefix) {
+				continue
+			}
+			value := token[len(qualifier.prefix):]
+			if qualifier.field == "review" {
+				value = strings.ToLower(value)
+				if value == "changes_requested" {
+					value = "changes-requested"
+				} else if value != "approved" && value != "required" {
+					continue
+				}
+			} else if qualifier.field == "state" {
+				value = strings.ToLower(value)
+				if value != "open" && value != "closed" && value != "merged" {
+					continue
+				}
+			} else {
+				if value == "" {
+					continue
+				}
+				value = unquoteSettingsDeckQualifier(value)
+			}
+			switch qualifier.field {
+			case "repository":
+				if projection.repository != nil {
+					continue
+				}
+			case "author":
+				if projection.author != nil {
+					continue
+				}
+			case "review":
+				if projection.review != nil {
+					continue
+				}
+			case "label":
+				if projection.label != nil {
+					continue
+				}
+			case "state":
+				if projection.state != nil {
+					continue
+				}
+			}
+			projection.set(qualifier.field, value)
+		}
+	}
+	return projection
+}
+
+func unquoteSettingsDeckQualifier(value string) string {
+	if len(value) >= 2 && value[0] == '"' && value[len(value)-1] == '"' {
+		return strings.ReplaceAll(strings.ReplaceAll(value[1:len(value)-1], `\"`, `"`), `\\`, `\`)
+	}
+	return value
 }
 
 func hasPositivePullRequestQualifier(query string) bool {

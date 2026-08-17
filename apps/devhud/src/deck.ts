@@ -1,5 +1,5 @@
 import { GitHubErrorCode, GitHubProviderError, type GitHubDeckPullRequest, type GitHubRate } from "./github-provider.ts";
-import { hasPositivePullRequestQualifier, type DeckBuilder, type DevHudSettingsV1 } from "./settings-contract.ts";
+import { deckBuilderProjection, deckBuilderToken, hasPositivePullRequestQualifier, type DeckBuilder, type DevHudSettingsV1 } from "./settings-contract.ts";
 
 export const DeckCacheVersion = 2 as const;
 export const DeckResultLimit = 100 as const;
@@ -77,7 +77,7 @@ export function deckTransitionKeys(previous: readonly GitHubDeckPullRequest[], n
     if (old.reviewDecision !== pullRequest.reviewDecision) transitions.push({ kind: "review", key: `${pullRequest.nodeId}:review:${pullRequest.reviewDecision}:${pullRequest.updatedAt}`, pullRequest });
     if (checkSignature(old) !== checkSignature(pullRequest)) transitions.push({ kind: "checks", key: `${pullRequest.nodeId}:checks:${checkSignature(pullRequest)}:${pullRequest.updatedAt}`, pullRequest });
     if (old.state !== "merged" && pullRequest.state === "merged") transitions.push({ kind: "merged", key: `${pullRequest.nodeId}:merged`, pullRequest });
-    if (old.state !== "closed" && pullRequest.state === "closed") transitions.push({ kind: "closed", key: `${pullRequest.nodeId}:closed`, pullRequest });
+    if (old.state !== "closed" && pullRequest.state === "closed") transitions.push({ kind: "closed", key: `${pullRequest.nodeId}:closed:${pullRequest.updatedAt}`, pullRequest });
   }
   return transitions;
 }
@@ -115,37 +115,28 @@ const qualifier: Record<BuilderField, (value: NonNullable<DeckBuilder[BuilderFie
   label: (value) => `label:${quoteQualifier(value)}`,
   state: (value) => value === "merged" ? "is:merged" : `is:${value}`,
 };
-const ownedToken: Record<BuilderField, RegExp> = {
-  repository: /(^|\s)repo:(?:"(?:\\.|[^"\\])*"|\S+)/iu,
-  author: /(^|\s)author:(?:"(?:\\.|[^"\\])*"|\S+)/iu,
-  review: /(^|\s)review:(?:approved|changes_requested|required)/iu,
-  label: /(^|\s)label:(?:"(?:\\.|[^"\\])*"|\S+)/iu,
-  state: /(^|\s)is:(?:open|closed|merged)/iu,
+const ownedToken: Record<BuilderField, "repo:" | "author:" | "review:" | "label:" | "is:"> = {
+  repository: "repo:",
+  author: "author:",
+  review: "review:",
+  label: "label:",
+  state: "is:",
 };
 
 /** Applies only the chosen builder token; all unowned syntax and whitespace are retained byte-for-byte. */
 export function applyDeckBuilder(query: string, field: BuilderField, value: DeckBuilder[BuilderField]): string {
-  const expression = ownedToken[field];
-  const found = expression.exec(query);
+  const found = deckBuilderToken(query, ownedToken[field]);
   if (found !== null) {
-    if (value === null) return `${query.slice(0, found.index)}${found[1]}${query.slice(found.index + found[0].length)}`;
-    return `${query.slice(0, found.index)}${found[1]}${qualifier[field](value as never)}${query.slice(found.index + found[0].length)}`;
+    if (value === null) return `${query.slice(0, found.start)}${query.slice(found.end)}`;
+    return `${query.slice(0, found.start)}${qualifier[field](value as never)}${query.slice(found.end)}`;
   }
   if (value === null) return query;
   return `${query}${query.length === 0 || /\s$/u.test(query) ? "" : " "}${qualifier[field](value as never)}`;
 }
 
 export function parseDeckBuilder(query: string): DeckBuilder | null {
-  const repository = readToken(query, ownedToken.repository, "repo:");
-  const author = readToken(query, ownedToken.author, "author:");
-  const label = readToken(query, ownedToken.label, "label:");
-  const reviewToken = readToken(query, ownedToken.review, "review:");
-  const stateToken = readToken(query, ownedToken.state, "is:");
-  if ([repository, author, label, reviewToken, stateToken].every((value) => value === null)) return null;
-  return { repository, author, label, review: reviewToken === "changes_requested" ? "changes-requested" : reviewToken === "approved" || reviewToken === "required" ? reviewToken : null, state: stateToken === "open" || stateToken === "closed" || stateToken === "merged" ? stateToken : null };
+  return deckBuilderProjection(query);
 }
 
 export function validateDeckQuery(query: string): boolean { return query.trim().length > 0 && hasPositivePullRequestQualifier(query); }
-function readToken(query: string, expression: RegExp, prefix: string): string | null { const match = expression.exec(query); return match === null ? null : unquote(match[0].trim().slice(prefix.length)); }
 function quoteQualifier(value: string): string { return /\s/u.test(value) ? `"${value.replaceAll("\\", "\\\\").replaceAll("\"", "\\\"")}"` : value; }
-function unquote(value: string): string { return value.startsWith("\"") && value.endsWith("\"") ? value.slice(1, -1).replaceAll(/\\(.)/gu, "$1") : value; }

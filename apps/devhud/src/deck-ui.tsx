@@ -42,6 +42,8 @@ export function DeckPollingBoundary({ bridge, active, online, provider: supplied
   const signatures = useRef(new Map<string, string>());
   const loading = useRef(new Set<string>());
   const queued = useRef(new Set<string>());
+  const validatedRepositories = useRef(new Map<string, { readonly token: string; readonly validation: Promise<void> }>());
+  const browserNotifications = useRef(new Map<string, Set<Notification>>());
   const decks = useRef<readonly Deck[]>(identity.settings.decks);
   const activeRef = useRef(active);
   const onlineRef = useRef(online);
@@ -54,15 +56,26 @@ export function DeckPollingBoundary({ bridge, active, online, provider: supplied
     setStates((current) => ({ ...current, [deckId]: update(current[deckId] ?? emptyDeckRefreshState) }));
   }, []);
 
+  const validateRepositories = useCallback(async (credential: GitHubCredential, repositories: ReturnType<typeof deckRepositories>, force = false) => {
+    if (repositories === null || repositories.length === 0) throw new GitHubProviderError(GitHubErrorCode.InvalidQuery, GitHubOperation.SearchPullRequests);
+    await Promise.all(repositories.map(async (repository) => {
+      const key = `${credential.profileId}\u0000${repository.owner}/${repository.name}`.toLowerCase();
+      const existing = validatedRepositories.current.get(key);
+      if (!force && existing?.token === credential.token) return existing.validation;
+      const validation = provider.validateRepository(credential, repository).then(() => {});
+      validatedRepositories.current.set(key, { token: credential.token, validation });
+      try { await validation; } catch (error) { if (validatedRepositories.current.get(key)?.validation === validation) validatedRepositories.current.delete(key); throw error; }
+    }));
+  }, [provider]);
+
   const validate = useCallback(async (currentDeck: Deck) => {
     const profile = identity.settings.github.profiles.find((item) => item.id === currentDeck.profileRef);
     if (profile === undefined) throw new GitHubProviderError(GitHubErrorCode.MissingToken, GitHubOperation.ValidateRepository);
     const repositories = deckRepositories(currentDeck.query);
-    if (repositories === null || repositories.length === 0) throw new GitHubProviderError(GitHubErrorCode.InvalidQuery, GitHubOperation.SearchPullRequests);
     const scopeId = await identity.githubPatScopeId;
     const credential = await readGitHubCredential(bridge, profile, scopeId);
-    await Promise.all(repositories.map((repository) => provider.validateRepository(credential, repository)));
-  }, [bridge, identity.githubPatScopeId, identity.settings.github.profiles, provider]);
+    await validateRepositories(credential, repositories, true);
+  }, [bridge, identity.githubPatScopeId, identity.settings.github.profiles, validateRepositories]);
 
   const refresh = useCallback(async (deckId: string, manual = false) => {
     const currentDeck = decks.current.find((deck) => deck.id === deckId);
@@ -78,10 +91,9 @@ export function DeckPollingBoundary({ bridge, active, online, provider: supplied
       const profile = identity.settings.github.profiles.find((item) => item.id === currentDeck.profileRef);
       if (profile === undefined) throw new GitHubProviderError(GitHubErrorCode.MissingToken, GitHubOperation.ValidateRepository);
       const repositories = deckRepositories(currentDeck.query);
-      if (repositories === null || repositories.length === 0) throw new GitHubProviderError(GitHubErrorCode.InvalidQuery, GitHubOperation.SearchPullRequests);
       const scopeId = await identity.githubPatScopeId;
       const credential = await readGitHubCredential(bridge, profile, scopeId);
-      await Promise.all(repositories.map((repository) => provider.validateRepository(credential, repository)));
+      await validateRepositories(credential, repositories);
       const search = await provider.searchPullRequests(credential, currentDeck.query, { etag: currentCache?.queryEtag ?? undefined });
       const resultNodeIds = search.notModified ? currentCache?.results.map((item) => item.nodeId) ?? [] : search.items.slice(0, 100).map((item) => item.nodeId);
       const missingNodeIds = currentCache !== null && currentDeck.notifications.length > 0 && !search.notModified ? currentCache.results.map((item) => item.nodeId).filter((nodeId) => !resultNodeIds.includes(nodeId)) : [];
@@ -89,13 +101,15 @@ export function DeckPollingBoundary({ bridge, active, online, provider: supplied
       const results = enriched.filter((item) => resultNodeIds.includes(item.nodeId));
       const reconciled = enriched.filter((item) => missingNodeIds.includes(item.nodeId));
       let transitionKeys = currentCache?.transitionKeys ?? [];
-      if (isCurrentDeck() && currentCache !== null && currentDeck.notifications.length > 0) {
+      if (isCurrentDeck() && activeRef.current && onlineRef.current && currentCache !== null && currentDeck.notifications.length > 0) {
         const transitions = deckTransitionKeys(currentCache.results, [...results, ...reconciled]).filter((transition) => currentDeck.notifications.includes(transition.kind) && !transitionKeys.includes(transition.key));
         for (const transition of transitions) {
-          await publishDeckNotification(bridge, currentDeck.id, transition.key, transition.kind, currentDeck.name, transition.pullRequest.title);
+          if (!isCurrentDeck() || !activeRef.current || !onlineRef.current) break;
+          await publishDeckNotification(bridge, browserNotifications.current, currentDeck.id, transition.key, transition.kind, currentDeck.name, transition.pullRequest.title);
           transitionKeys = [...transitionKeys, transition.key];
         }
       }
+      if (!isCurrentDeck()) return;
       const next: DeckCache = { version: 2, deckId: currentDeck.id, query: currentDeck.query, queryEtag: search.metadata.etag ?? currentCache?.queryEtag ?? null, results, lastSuccessfulAt: new Date().toISOString(), rate: search.metadata.rate, failures: 0, nextRefreshAt: null, transitionKeys };
       writeDeckCache(storage, `${scopeId}.${currentDeck.profileRef}`, next);
       if (isCurrentDeck()) {
@@ -103,6 +117,7 @@ export function DeckPollingBoundary({ bridge, active, online, provider: supplied
         setDeckState(deckId, (current) => ({ ...current, cache: next, failure: null }));
       }
     } catch (error) {
+      if (!isCurrentDeck()) return;
       const failures = (currentCache?.failures ?? 0) + 1;
       const rate = error instanceof GitHubProviderError ? error.rate : currentCache?.rate ?? null;
       const scopeId = await identity.githubPatScopeId;
@@ -114,13 +129,14 @@ export function DeckPollingBoundary({ bridge, active, online, provider: supplied
       }
     } finally {
       loading.current.delete(deckId);
-      setDeckState(deckId, (current) => ({ ...current, loading: false }));
+      if (isCurrentDeck()) setDeckState(deckId, (current) => ({ ...current, loading: false }));
       if (queued.current.delete(deckId) && activeRef.current && onlineRef.current) void refresh(deckId);
     }
-  }, [bridge, identity.githubPatScopeId, identity.settings.github.profiles, provider, setDeckState, storage]);
+  }, [bridge, identity.githubPatScopeId, identity.settings.github.profiles, setDeckState, storage, validateRepositories]);
 
   const clear = useCallback(async (deck: Deck) => {
     clearDeckCache(storage, `${await identity.githubPatScopeId}.${deck.profileRef}`, deck.id);
+    closeBrowserDeckNotifications(browserNotifications.current, deck.id);
     caches.current.delete(deck.id);
     signatures.current.delete(deck.id);
     setStates((current) => {
@@ -132,6 +148,7 @@ export function DeckPollingBoundary({ bridge, active, online, provider: supplied
   const scheduleKey = identity.settings.decks.map((deck) => `${deck.id}\u0000${deck.profileRef}\u0000${deck.query}\u0000${deck.refreshMinutes}`).join("\u0001");
   useEffect(() => {
     let cancelled = false;
+    validatedRepositories.current.clear();
     const configuredIds = new Set(identity.settings.decks.map((deck) => deck.id));
     for (const deckId of [...caches.current.keys()]) {
       if (!configuredIds.has(deckId)) caches.current.delete(deckId);
@@ -153,6 +170,7 @@ export function DeckPollingBoundary({ bridge, active, online, provider: supplied
     }).catch(() => {});
     return () => { cancelled = true; };
   }, [identity.githubPatScopeId, identity.settings.decks, scheduleKey, setDeckState, storage]);
+  useEffect(() => () => { closeBrowserDeckNotifications(browserNotifications.current); }, []);
   useEffect(() => {
     if (!active || !online) return;
     const timers = identity.settings.decks.map((deck) => {
@@ -174,7 +192,8 @@ export function DeckSurface({ copy, bridge, selectedDeckId = null }: DeckSurface
   const polling = useDeckPolling();
   const [selected, setSelected] = useState<string | null>(selectedDeckId);
   const [creating, setCreating] = useState(false);
-  const selectedDeck = identity.settings.decks.find((item) => item.id === selected) ?? identity.settings.decks[0] ?? null;
+  const missingLinkedDeck = selectedDeckId !== null && !identity.settings.decks.some((item) => item.id === selectedDeckId);
+  const selectedDeck = missingLinkedDeck ? null : identity.settings.decks.find((item) => item.id === selected) ?? identity.settings.decks[0] ?? null;
   const deck = creating ? null : selectedDeck;
   const refreshState = deck === null ? emptyDeckRefreshState : polling.states[deck.id] ?? emptyDeckRefreshState;
   useEffect(() => {
@@ -183,6 +202,7 @@ export function DeckSurface({ copy, bridge, selectedDeckId = null }: DeckSurface
       setCreating(false);
     }
   }, [identity.settings.decks, selectedDeckId]);
+  if (missingLinkedDeck) return <section className="deck" aria-labelledby="deck-title"><h2 id="deck-title">{copy.deckTitle}</h2><p role="alert">{copy.deckNotFound}</p></section>;
   if (identity.settings.github.profiles.length === 0) return <>{polling.online ? <EmptyState copy={copy} /> : <OfflineState copy={copy} />}<p role="status">{copy.deckNoProfiles}</p></>;
   const creationDisabled = identity.readOnly || identity.settings.decks.length >= DeckLimit;
   return <section className="deck" aria-labelledby="deck-title"><div className="deck-head"><h2 id="deck-title">{copy.deckTitle}</h2><button type="button" disabled={creationDisabled} onClick={() => { setSelected(null); setCreating(true); }}>{copy.deckCreate}</button></div>
@@ -223,6 +243,7 @@ function deckStateCopy(copy: Copy, state: GitHubDeckPullRequest["state"]): strin
 function reviewCopy(copy: Copy, review: GitHubDeckPullRequest["reviewDecision"]): string { return review === "approved" ? copy.deckApproved : review === "changes-requested" ? copy.deckChangesRequested : review === "required" ? copy.deckRequired : copy.deckNoReview; }
 function checkCopy(copy: Copy, state: string | null): string { return state === "PENDING" ? copy.deckChecksPending : state === "SUCCESS" ? copy.deckChecksSuccess : state === "FAILURE" ? copy.deckChecksFailure : state === "ERROR" ? copy.deckChecksError : state === "EXPECTED" ? copy.deckChecksExpected : state === "TIMED_OUT" ? copy.deckChecksTimedOut : state === null ? copy.deckNoChecks : copy.deckChecksUnknown; }
 function failureCopy(copy: Copy, failure: DeckFailure): string { return failure === "token" ? copy.deckErrorToken : failure === "permission" ? copy.deckErrorPermission : failure === "query" ? copy.deckErrorQuery : failure === "rate-limit" ? copy.deckErrorRate : copy.deckErrorNetwork; }
-async function publishDeckNotification(bridge: NativeBridgeV1, deckId: string, key: string, kind: "review" | "checks" | "merged" | "closed", title: string, body: string): Promise<void> { try { await bridge.request({ operation: "notifications.publish-deck-change", notification: { id: `deck:${deckId}:${key}`, deckId, kind: kind as DeckNotificationKind, title, body } }); } catch { if (typeof Notification !== "undefined" && Notification.permission === "granted") new Notification(title, { body, tag: `deck:${deckId}:${key}` }); } }
+function closeBrowserDeckNotifications(notifications: Map<string, Set<Notification>>, deckId?: string): void { const entries = deckId === undefined ? [...notifications] : [[deckId, notifications.get(deckId) ?? new Set<Notification>()] as const]; for (const [id, items] of entries) { for (const notification of items) notification.close(); notifications.delete(id); } }
+async function publishDeckNotification(bridge: NativeBridgeV1, browserNotifications: Map<string, Set<Notification>>, deckId: string, key: string, kind: "review" | "checks" | "merged" | "closed", title: string, body: string): Promise<void> { try { await bridge.request({ operation: "notifications.publish-deck-change", notification: { id: `deck:${deckId}:${key}`, deckId, kind: kind as DeckNotificationKind, title, body } }); } catch { if (typeof Notification !== "undefined" && Notification.permission === "granted") { const notification = new Notification(title, { body, tag: `deck:${deckId}:${key}` }); const items = browserNotifications.get(deckId) ?? new Set<Notification>(); items.add(notification); browserNotifications.set(deckId, items); notification.addEventListener("close", () => items.delete(notification), { once: true }); } } }
 async function enrichPullRequestBatches(provider: GitHubProvider, credential: GitHubCredential, nodeIds: readonly string[]): Promise<readonly GitHubDeckPullRequest[]> { const items: GitHubDeckPullRequest[] = []; for (let index = 0; index < nodeIds.length; index += 100) items.push(...(await provider.enrichPullRequests(credential, nodeIds.slice(index, index + 100))).items); return items; }
 function createUuidV7(now = Date.now()): string { const bytes = crypto.getRandomValues(new Uint8Array(16)); let timestamp = BigInt(now); for (let index = 5; index >= 0; index -= 1) { bytes[index] = Number(timestamp & 0xffn); timestamp >>= 8n; } bytes[6] = (bytes[6] & 0x0f) | 0x70; bytes[8] = (bytes[8] & 0x3f) | 0x80; const hex = [...bytes].map((value) => value.toString(16).padStart(2, "0")).join(""); return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`; }
