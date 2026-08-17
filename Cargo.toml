@@ -13,6 +13,14 @@ members = [
     "crates/rustia-macros",
 ]
 
+# Official Tauri plugins publish against crates.io Tauri. Redirect only their
+# shared public Tauri crates to the immutable CEF-enabled revision used by
+# DevHUD so one runtime type graph is compiled.
+[patch.crates-io]
+tauri = { git = "https://github.com/tauri-apps/tauri", rev = "4af26a3f7f8b692d62cca549bbacd93f5ce90b41" }
+tauri-plugin = { git = "https://github.com/tauri-apps/tauri", rev = "4af26a3f7f8b692d62cca549bbacd93f5ce90b41" }
+tauri-utils = { git = "https://github.com/tauri-apps/tauri", rev = "4af26a3f7f8b692d62cca549bbacd93f5ce90b41" }
+
 [workspace.metadata.cargo-mono.publish.tag]
 packages = ["binpm", "nodeup", "with-watch", "cargo-mono", "rustia-rs", "rustia-macros", "rustia-llm"]
 

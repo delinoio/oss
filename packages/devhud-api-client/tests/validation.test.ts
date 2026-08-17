@@ -15,6 +15,8 @@ import {
   MAX_CRASH_IDENTIFIER_BYTES,
   assertSha256,
   assertUuidV7,
+  canonicalizeSettingsJson,
+  encodeCanonicalSettingsJson,
   validateAdminReason,
   validateCanonicalSettingsJson,
   validateCrashReport,
@@ -148,6 +150,16 @@ describe("wire validation helpers", () => {
         new Uint8Array([0xef, 0xbb, 0xbf, ...new TextEncoder().encode("{}")]),
       ),
     ).toThrow(TypeError);
+  });
+
+  it("encodes settings with RFC 8785 key order and the shared size limit", () => {
+    const value = { theme: "dark", nested: { z: 1, a: true }, decks: [] };
+    const source = '{"decks":[],"nested":{"a":true,"z":1},"theme":"dark"}';
+
+    expect(canonicalizeSettingsJson(value)).toBe(source);
+    expect(new TextDecoder().decode(encodeCanonicalSettingsJson(value))).toBe(source);
+    expect(validateCanonicalSettingsJson(encodeCanonicalSettingsJson(value))).toEqual(value);
+    expect(() => encodeCanonicalSettingsJson("x".repeat(1_048_576))).toThrow(RangeError);
   });
 
   it("accepts deeply nested canonical settings JSON", () => {

@@ -1,8 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { messages } from "./localization";
+import type { IdentitySession } from "./identity-client";
+import { AccountIdentity, FirstRunIdentity, SynchronizedAppearanceBoundary, SynchronizedSettingsBoundary } from "./identity-ui";
 import { LifecycleState, NativeBridgeError, NotificationPermission, RuntimePlatform, nativeBridge, type NativeBridgeEventV1, type NativeBridgeV1, type RuntimeSnapshot } from "./native-bridge";
+import { clearIdentityForApiChange, DevHudServiceBoundary } from "./service-boundary";
 import { ContentStateKind, ContentStateView, EmptyState, OfflineState, type ContentState } from "./surface-state";
-import { ActionId, ExternalLinkTarget, LanguagePreference, PlatformCapability, SurfaceId, ThemePreference, actionRegistry, availableActions, browserShell, completeOnboarding, getLocalStorage, hasCompletedOnboarding, isValidApiOrigin, markFrontendReady, readPreferences, resolveLanguage, setTrayLanguage, synchronizeDocumentPreferences, writePreferences, type Preferences, type RuntimeCapabilities } from "./shell";
+import { ActionId, ExternalLinkTarget, LanguagePreference, PlatformCapability, SurfaceId, actionRegistry, availableActions, browserShell, completeOnboarding, getLocalStorage, hasCompletedOnboarding, isValidApiOrigin, markFrontendReady, normalizeApiOrigin, readPreferences, resolveLanguage, setTrayLanguage, synchronizeDocumentPreferences, writePreferences, type Preferences, type RuntimeCapabilities } from "./shell";
 
 const surfaces: readonly SurfaceId[] = [SurfaceId.Home, SurfaceId.Realqa, SurfaceId.Deck, SurfaceId.Settings, SurfaceId.Account, SurfaceId.Diagnostics];
 const labels: Record<SurfaceId, keyof typeof messages.en> = { home: "home", realqa: "realqa", deck: "deck", settings: "settings", account: "account", diagnostics: "diagnostics" };
@@ -50,7 +53,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   const [notificationRequestFailed, setNotificationRequestFailed] = useState(false);
   const [storeConfigured, setStoreConfigured] = useState(false);
   const [storeOpenFailed, setStoreOpenFailed] = useState(false);
-  const [authCallbackReceived, setAuthCallbackReceived] = useState(false);
+  const [authCallback, setAuthCallback] = useState<string | null>(null);
   const [online, setOnline] = useState(() => navigator.onLine);
   const search = useRef<HTMLInputElement>(null);
   const apiOriginInput = useRef<HTMLInputElement>(null);
@@ -58,6 +61,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   const paletteTrigger = useRef<HTMLButtonElement>(null);
   const rightModifier = useRef<"ControlRight" | "MetaRight" | null>(null);
   const externalAttempt = useRef(0);
+  const identitySession = useRef<IdentitySession | null>(null);
   const language = preferences.language === LanguagePreference.System ? systemLanguage : preferences.language;
   const copy = messages[language];
   const runtimeCapabilities = runtime ? capabilitiesFor(runtime) : { available: new Set<PlatformCapability>() };
@@ -84,41 +88,34 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
     void markFrontendReady()?.catch(() => {});
   }, []);
   useEffect(() => {
-    if (initialRuntime) return;
-    let active = true;
-    void bridge.request({ operation: "runtime.snapshot" }).then((response) => {
-      if (!active || response.kind !== "runtime") return;
-      setRuntime(response.snapshot);
-      setLifecycle(response.snapshot.lifecycle);
-      setRuntimeState(initialContentState);
-      return bridge.request({ operation: "auth.take-pending-callback" });
-    }).then((response) => {
-      if (active && response?.kind === "auth-callback" && response.url) setAuthCallbackReceived(true);
-    }).catch(() => {
-      if (active) setRuntimeState({ kind: ContentStateKind.Error, retryable: true });
-    });
-    return () => { active = false; };
-  }, [bridge, initialContentState, initialRuntime]);
-  useEffect(() => {
     let active = true;
     let unlisten: (() => void) | undefined;
     const receive = (event: NativeBridgeEventV1) => {
       if (event.version !== 1) return;
       if (event.kind === "lifecycle") setLifecycle(event.state);
       if (event.kind === "auth-callback") {
-        setAuthCallbackReceived(true);
-        void bridge.request({ operation: "auth.take-pending-callback" }).catch(() => {});
+        setAuthCallback(event.url);
       }
     };
-    void bridge.listen(receive).then((value) => {
-      if (active) unlisten = value;
-      else value();
-    }).catch(() => {});
+    void bridge.listen(receive).then(async (value) => {
+      if (!active) { value(); return; }
+      unlisten = value;
+      if (initialRuntime) return;
+      const response = await bridge.request({ operation: "runtime.snapshot" });
+      if (!active || response.kind !== "runtime") return;
+      setRuntime(response.snapshot);
+      setLifecycle(response.snapshot.lifecycle);
+      setRuntimeState(initialContentState);
+      const pending = await bridge.request({ operation: "auth.peek-pending-callback" });
+      if (active && pending.kind === "auth-callback" && pending.url) setAuthCallback(pending.url);
+    }).catch(() => {
+      if (active && !initialRuntime) setRuntimeState({ kind: ContentStateKind.Error, retryable: true });
+    });
     return () => {
       active = false;
       unlisten?.();
     };
-  }, [bridge]);
+  }, [bridge, initialContentState, initialRuntime]);
   useEffect(() => {
     if (!runtime?.capabilities.notifications || lifecycle !== LifecycleState.Active) return;
     let active = true;
@@ -232,7 +229,20 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
     setOnboarding(false);
     setSurface(SurfaceId.Home);
   };
-  const startSignIn = async () => { if (await external(ExternalLinkTarget.Authentication)) finishOnboarding(); };
+  const clearConsumedAuthCallback = useCallback((url: string) => {
+    setAuthCallback((current) => current === url ? null : current);
+  }, []);
+  const applyApiOrigin = async (nextOrigin: string) => {
+    const normalized = normalizeApiOrigin(nextOrigin);
+    if (normalized === null || normalized === normalizeApiOrigin(preferences.apiOrigin)) return;
+    if (!window.confirm(copy.apiChangeConfirm)) return;
+    try { await clearIdentityForApiChange(bridge, storage, preferences.apiOrigin, identitySession); }
+    catch { setExternalMessage("failed"); return; }
+    setAuthCallback(null);
+    update({ apiOrigin: normalized });
+    const policy = await bridge.request({ operation: "session.configure-origins", apiOrigin: normalized });
+    if (policy.kind === "session-network-policy" && policy.changed) location.reload();
+  };
   const requestNotifications = async () => {
     setNotificationRequestFailed(false);
     try {
@@ -255,11 +265,13 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   const externalMessageText = externalMessage === "invalid-api-origin" ? copy.invalidApiOrigin : externalMessage === "opened" ? copy.externalOpened : copy.externalFailed;
   const externalMessageIsError = externalMessage !== "opened";
 
+  const boundary = (content: ReactNode) => runtime ? <DevHudServiceBoundary key={preferences.apiOrigin} apiOrigin={preferences.apiOrigin} active={onboarding || surface === SurfaceId.Account || surface === SurfaceId.Settings || authCallback !== null} online={online} callbackUrl={authCallback} platform={runtime.platform} bridge={bridge} onCallbackConsumed={clearConsumedAuthCallback} onContinueLocally={finishOnboarding} onLoggedOut={() => setSurface(SurfaceId.Account)} initialAppearance={{ theme: preferences.theme, language: preferences.language }} identitySessionRef={identitySession}><SynchronizedAppearanceBoundary onAppearance={(appearance) => update({ theme: appearance.theme, language: appearance.language })} />{content}</DevHudServiceBoundary> : content;
+
   if (runtimeState.kind !== ContentStateKind.Ready) return <main className="app-shell onboarding" data-devhud-ready="true"><section className="content"><ContentStateView state={runtimeState} copy={copy} onRetry={() => location.reload()} /></section></main>;
 
-  if (onboarding) return <main className="app-shell onboarding" data-devhud-ready="true" data-runtime-platform={runtime?.platform ?? "loading"}><section className="content"><p className="eyebrow">{copy.account}</p><h1>{copy.accountTitle}</h1><p>{copy.accountSummary}</p><label>{copy.apiOrigin}<input autoFocus value={preferences.apiOrigin} onChange={(event) => update({ apiOrigin: event.target.value })} /></label><p>{copy.apiOriginHint}</p><div className="actions"><button onClick={() => void startSignIn()}>{copy.signIn}</button><button onClick={finishOnboarding}>{copy.continueLocally}</button></div>{externalMessage && <p className="external-message" role={externalMessageIsError ? "alert" : "status"}>{externalMessageText}</p>}</section></main>;
+  if (onboarding) return boundary(<main className="app-shell onboarding" data-devhud-ready="true" data-runtime-platform={runtime?.platform ?? "loading"}><section className="content"><FirstRunIdentity copy={copy} apiOrigin={preferences.apiOrigin} onApiOrigin={applyApiOrigin} onComplete={finishOnboarding} />{externalMessage && <p className="external-message" role={externalMessageIsError ? "alert" : "status"}>{externalMessageText}</p>}</section></main>);
 
-  return <main className="app-shell" data-devhud-ready="true" data-runtime-platform={runtime?.platform ?? "desktop"} data-lifecycle={lifecycle}>
+  return boundary(<main className="app-shell" data-devhud-ready="true" data-runtime-platform={runtime?.platform ?? "desktop"} data-lifecycle={lifecycle}>
     <aside aria-label={copy.mobileNavigation}>
       <h1>{copy.appName}</h1>
       <nav>{surfaces.map((item) => <button className={surface === item ? "active" : ""} aria-current={surface === item ? "page" : undefined} key={item} onClick={() => setSurface(item)}>{copy[labels[item]]}</button>)}</nav>
@@ -270,10 +282,10 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
       {surface === SurfaceId.Realqa && mobile && <><p className="eyebrow">{copy.desktopOnly}</p><h2>{copy.realqaMobileTitle}</h2><p>{copy.realqaMobileSummary}</p><p className="notice">{copy.unavailable}</p></>}
       {surface === SurfaceId.Realqa && !mobile && <><p className="eyebrow">{copy.realqa}</p><h2>{copy.realqaTitle}</h2><p>{copy.realqaSummary}</p><div className="disabled-actions">{unavailableCaptureActions.map((action) => <button disabled key={action.id}>{copy[action.title]}</button>)}</div><p className="notice">{copy.planned}</p></>}
       {surface === SurfaceId.Deck && <><p className="eyebrow">{copy.deck}</p><h2>{copy.deckTitle}</h2><p>{copy.deckSummary}</p>{online ? <EmptyState copy={copy} /> : <OfflineState copy={copy} />}</>}
-      {surface === SurfaceId.Settings && <><p className="eyebrow">{copy.settings}</p><h2>{copy.settingsTitle}</h2><p>{copy.settingsSummary}</p><label>{copy.theme}<select value={preferences.theme} onChange={(event) => update({ theme: event.target.value as ThemePreference })}>{Object.values(ThemePreference).map((value) => <option key={value} value={value}>{copy[value]}</option>)}</select></label><label>{copy.language}<select value={preferences.language} onChange={(event) => update({ language: event.target.value as LanguagePreference })}><option value="system">{copy.system}</option><option value="en">{copy.english}</option><option value="ko">{copy.korean}</option></select></label>{supportsLaunchAtLogin && <><label className="check"><input type="checkbox" checked={preferences.launchAtLogin} onChange={(event) => { update({ launchAtLogin: event.target.checked }); void browserShell.setLaunchAtLogin(event.target.checked); }} />{copy.launchAtLogin}</label><p>{copy.launchAtLoginHint}</p></>}{runtime?.capabilities.notifications && <div className="native-setting"><button className="primary" onClick={() => void requestNotifications()}>{copy.notificationPermission}</button><output aria-live="polite">{copy[notificationPermissionLabels[notificationPermission]]}</output>{notificationRequestFailed && <p className="native-setting-error" role="alert">{copy.notificationPermissionFailed}</p>}</div>}{runtime?.capabilities.storeUpdates && <div className="native-setting"><p>{copy.updatePolicy}</p>{storeConfigured && <button className="primary" onClick={() => void openStore()}>{copy.updatePolicy}</button>}{storeOpenFailed && <p className="native-setting-error" role="alert">{copy.storeOpenFailed}</p>}</div>}</>}
-      {surface === SurfaceId.Account && <><p className="eyebrow">{copy.account}</p><h2>{copy.accountTitle}</h2><p>{copy.accountSummary}</p><label>{copy.apiOrigin}<input ref={apiOriginInput} value={preferences.apiOrigin} onChange={(event) => update({ apiOrigin: event.target.value })} /></label><p>{copy.apiOriginHint}</p><div className="actions"><button onClick={() => void external(ExternalLinkTarget.Authentication)}>{copy.signIn}</button><button onClick={() => void external(ExternalLinkTarget.Pat)}>{copy.pat}</button>{!mobile && <button onClick={() => void external(ExternalLinkTarget.Issue)}>{copy.issue}</button>}</div>{authCallbackReceived && <p role="status">{copy.runtimeReady}</p>}{externalMessage && <p className="external-message" role={externalMessageIsError ? "alert" : "status"}>{externalMessageText}</p>}</>}
+      {surface === SurfaceId.Settings && <><p className="eyebrow">{copy.settings}</p><h2>{copy.settingsTitle}</h2><p>{copy.settingsSummary}</p><SynchronizedSettingsBoundary copy={copy} />{supportsLaunchAtLogin && <><label className="check"><input type="checkbox" checked={preferences.launchAtLogin} onChange={(event) => { update({ launchAtLogin: event.target.checked }); void browserShell.setLaunchAtLogin(event.target.checked); }} />{copy.launchAtLogin}</label><p>{copy.launchAtLoginHint}</p></>}{runtime?.capabilities.notifications && <div className="native-setting"><button className="primary" onClick={() => void requestNotifications()}>{copy.notificationPermission}</button><output aria-live="polite">{copy[notificationPermissionLabels[notificationPermission]]}</output>{notificationRequestFailed && <p className="native-setting-error" role="alert">{copy.notificationPermissionFailed}</p>}</div>}{runtime?.capabilities.storeUpdates && <div className="native-setting"><p>{copy.updatePolicy}</p>{storeConfigured && <button className="primary" onClick={() => void openStore()}>{copy.updatePolicy}</button>}{storeOpenFailed && <p className="native-setting-error" role="alert">{copy.storeOpenFailed}</p>}</div>}</>}
+      {surface === SurfaceId.Account && <><AccountIdentity copy={copy} apiOrigin={preferences.apiOrigin} inputRef={apiOriginInput} onApiOrigin={applyApiOrigin} /><div className="actions"><button onClick={() => void external(ExternalLinkTarget.Pat)}>{copy.pat}</button>{!mobile && <button onClick={() => void external(ExternalLinkTarget.Issue)}>{copy.issue}</button>}</div>{externalMessage && <p className="external-message" role={externalMessageIsError ? "alert" : "status"}>{externalMessageText}</p>}</>}
       {surface === SurfaceId.Diagnostics && <><p className="eyebrow">{copy.diagnostics}</p><h2>{copy.diagnosticsTitle}</h2><p>{copy.diagnosticsSummary}</p><p className="notice">{copy.diagnosticsUnavailable}</p>{runtime && <dl className="runtime-diagnostics"><dt>{copy.diagnosticPlatform}</dt><dd>{runtime.platform}</dd><dt>{copy.diagnosticArchitecture}</dt><dd>{runtime.architecture}</dd><dt>{copy.diagnosticBridge}</dt><dd>v{runtime.bridgeVersion}</dd></dl>}</>}
     </section>
     {palette && <div className="overlay" role="presentation"><section ref={paletteRef} className="palette" role="dialog" aria-modal="true" aria-label={copy.commandPalette} onKeyDown={trapPaletteFocus}><input ref={search} value={query} onChange={(event) => setQuery(event.target.value)} placeholder={copy.searchCommands} aria-label={copy.searchCommands} /><div className="commands">{actions.length === 0 ? <p role="status">{copy.noCommands}</p> : actions.map((action) => <button key={action.id} onClick={() => execute(action.id)}>{copy[action.title]}</button>)}</div><button onClick={() => closePalette()}>{copy.close}</button></section></div>}
-  </main>;
+  </main>);
 }

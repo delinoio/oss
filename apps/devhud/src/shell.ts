@@ -37,13 +37,16 @@ const preferenceKey = "devhud.shell.preferences.v1";
 const onboardingKey = "devhud.shell.onboarding.v1";
 export interface Preferences { version: 1; theme: ThemePreference; language: LanguagePreference; apiOrigin: string; launchAtLogin: boolean; }
 export const defaultPreferences: Preferences = { version: 1, theme: ThemePreference.System, language: LanguagePreference.System, apiOrigin: "https://devhud.api.delino.io", launchAtLogin: false };
-type LocalStorage = Pick<Storage, "getItem" | "setItem">;
-const sessionStorage = new Map<string, string>();
-const inMemoryStorage: LocalStorage = {
-  getItem: (key) => sessionStorage.get(key) ?? null,
-  setItem: (key, value) => { sessionStorage.set(key, value); },
+const sessionStorageValues = new Map<string, string>();
+const inMemoryStorage: Storage = {
+  get length() { return sessionStorageValues.size; },
+  clear: () => { sessionStorageValues.clear(); },
+  getItem: (key) => sessionStorageValues.get(key) ?? null,
+  key: (index) => [...sessionStorageValues.keys()][index] ?? null,
+  removeItem: (key) => { sessionStorageValues.delete(key); },
+  setItem: (key, value) => { sessionStorageValues.set(key, value); },
 };
-export function getLocalStorage(): LocalStorage {
+export function getLocalStorage(): Storage {
   try {
     return window.localStorage;
   } catch {
@@ -51,8 +54,9 @@ export function getLocalStorage(): LocalStorage {
   }
 }
 function isEnumValue<T extends Record<string, string>>(values: T, value: unknown): value is T[keyof T] { return typeof value === "string" && Object.values(values).includes(value); }
-export function isValidApiOrigin(value: unknown): value is string { if (typeof value !== "string" || value !== value.trim() || value.includes("?") || value.includes("#")) return false; try { const url = new URL(value); const octets = url.hostname.split("."); const loopback = url.hostname === "localhost" || url.hostname === "[::1]" || url.hostname === "::1" || (octets.length === 4 && octets[0] === "127" && octets.every((octet) => /^\d+$/u.test(octet) && Number(octet) <= 255)); return !url.username && !url.password && !url.search && !url.hash && url.pathname === "/" && (url.protocol === "https:" || (url.protocol === "http:" && loopback)); } catch { return false; } }
-export function readPreferences(storage: Pick<Storage, "getItem">): Preferences { try { const stored: unknown = JSON.parse(storage.getItem(preferenceKey) ?? "null"); if (!stored || typeof stored !== "object" || Array.isArray(stored)) return defaultPreferences; const value = stored as Record<string, unknown>; if (value.version !== 1) return defaultPreferences; return { version: 1, theme: isEnumValue(ThemePreference, value.theme) ? value.theme : defaultPreferences.theme, language: isEnumValue(LanguagePreference, value.language) ? value.language : defaultPreferences.language, apiOrigin: isValidApiOrigin(value.apiOrigin) ? value.apiOrigin : defaultPreferences.apiOrigin, launchAtLogin: typeof value.launchAtLogin === "boolean" ? value.launchAtLogin : defaultPreferences.launchAtLogin }; } catch { return defaultPreferences; } }
+export function normalizeApiOrigin(value: unknown): string | null { if (typeof value !== "string" || value !== value.trim() || value.includes("?") || value.includes("#")) return null; try { const url = new URL(value); const octets = url.hostname.split("."); const loopback = url.hostname === "localhost" || url.hostname === "[::1]" || url.hostname === "::1" || (octets.length === 4 && octets[0] === "127" && octets.every((octet) => /^\d+$/u.test(octet) && Number(octet) <= 255)); return !url.username && !url.password && !url.search && !url.hash && url.pathname === "/" && (url.protocol === "https:" || (url.protocol === "http:" && loopback)) ? url.origin : null; } catch { return null; } }
+export function isValidApiOrigin(value: unknown): value is string { return normalizeApiOrigin(value) !== null; }
+export function readPreferences(storage: Pick<Storage, "getItem">): Preferences { try { const stored: unknown = JSON.parse(storage.getItem(preferenceKey) ?? "null"); if (!stored || typeof stored !== "object" || Array.isArray(stored)) return defaultPreferences; const value = stored as Record<string, unknown>; if (value.version !== 1) return defaultPreferences; return { version: 1, theme: isEnumValue(ThemePreference, value.theme) ? value.theme : defaultPreferences.theme, language: isEnumValue(LanguagePreference, value.language) ? value.language : defaultPreferences.language, apiOrigin: normalizeApiOrigin(value.apiOrigin) ?? defaultPreferences.apiOrigin, launchAtLogin: typeof value.launchAtLogin === "boolean" ? value.launchAtLogin : defaultPreferences.launchAtLogin }; } catch { return defaultPreferences; } }
 export function writePreferences(storage: Pick<Storage, "setItem">, preferences: Preferences) { try { storage.setItem(preferenceKey, JSON.stringify(preferences)); } catch {} }
 export function hasCompletedOnboarding(storage: Pick<Storage, "getItem">) { try { return storage.getItem(onboardingKey) === "complete"; } catch { return false; } }
 export function completeOnboarding(storage: Pick<Storage, "setItem">) { try { storage.setItem(onboardingKey, "complete"); } catch {} }
