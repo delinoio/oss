@@ -66,6 +66,7 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
                 "secure.read" -> readSecure(invoke)
                 "secure.write" -> writeSecure(invoke)
                 "secure.remove" -> removeSecure(invoke)
+                "secure.reconcile-github-pats" -> reconcileGitHubPats(invoke)
                 "secure.purge" -> purgeSecure(invoke)
                 "notifications.permission" -> resolveNotificationPermission(invoke)
                 "notifications.request-permission" -> requestNotificationPermission(invoke)
@@ -120,7 +121,8 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
     private fun openExternal(invoke: Invoke) {
         val args = invoke.getArgs()
         val uri = when (args.getString("target")) {
-            "pat" -> Uri.parse("https://github.com/settings/personal-access-tokens/new")
+            "fine-grained-pat" -> Uri.parse("https://github.com/settings/personal-access-tokens/new?contents=read&issues=write&metadata=read&pull_requests=read")
+            "classic-pat" -> Uri.parse("https://github.com/settings/tokens/new?scopes=repo")
             "authentication" -> Uri.parse(args.getString("apiOrigin")).also {
                 val loopback = it.host == "localhost" || it.host == "::1" || it.host == "[::1]" || it.host?.startsWith("127.") == true
                 val validScheme = it.scheme == "https" || (it.scheme == "http" && loopback)
@@ -139,6 +141,11 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
         return "${setting.getString("kind")}:${setting.getString("profileId")}"
     }
 
+    private fun githubPatScopeKey(scopeId: String, profileId: String) = "github-pat-scope:$scopeId:$profileId"
+
+    private fun githubPatScopeKeys(keys: Set<String>, profileId: String) =
+        keys.filter { key -> key.startsWith("github-pat-scope:") && key.endsWith(":$profileId") }
+
     private fun secretKey(): SecretKey {
         val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
         (keyStore.getKey(keyAlias, null) as? SecretKey)?.let { return it }
@@ -156,8 +163,19 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
     private fun readSecure(invoke: Invoke) {
         secureSettingsExecutor.execute {
             try {
-                val key = settingKey(invoke.getArgs())
+                val args = invoke.getArgs()
+                val setting = args.getJSObject("setting") ?: throw IllegalArgumentException("setting")
+                val kind = setting.getString("kind")
+                val profileId = setting.getString("profileId")
+                val key = settingKey(args)
                 val preferences = activity.getSharedPreferences(storeName, Context.MODE_PRIVATE)
+                if (kind == "github-pat") {
+                    val scopeId = setting.getString("scopeId")
+                    if (!preferences.contains(githubPatScopeKey(scopeId, profileId))) {
+                        invoke.resolve(JSObject().put("kind", "secure-value").put("value", null))
+                        return@execute
+                    }
+                }
                 val encoded = preferences.getString(key, null)
                 if (encoded == null) {
                     invoke.resolve(JSObject().put("kind", "secure-value").put("value", null))
@@ -184,8 +202,13 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
         val key = settingKey(args)
         val value = args.getString("value")
         persistSecure(invoke) {
-            activity.getSharedPreferences(storeName, Context.MODE_PRIVATE).edit()
-                .putString(key, encryptSecure(value, key)).commit()
+            val editor = activity.getSharedPreferences(storeName, Context.MODE_PRIVATE).edit()
+            if (key.startsWith("github-pat:")) {
+                val setting = args.getJSObject("setting") ?: throw IllegalArgumentException("setting")
+                val marker = githubPatScopeKey(setting.getString("scopeId"), setting.getString("profileId"))
+                editor.putString(marker, encryptSecure("1", marker))
+            }
+            editor.putString(key, encryptSecure(value, key)).commit()
         }
     }
 
@@ -209,9 +232,43 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
     }
 
     private fun removeSecure(invoke: Invoke) {
-        val key = settingKey(invoke.getArgs())
+        val args = invoke.getArgs()
+        val key = settingKey(args)
         persistSecure(invoke) {
-            activity.getSharedPreferences(storeName, Context.MODE_PRIVATE).edit().remove(key).commit()
+            val preferences = activity.getSharedPreferences(storeName, Context.MODE_PRIVATE)
+            val editor = preferences.edit()
+            if (key.startsWith("github-pat:")) {
+                val setting = args.getJSObject("setting") ?: throw IllegalArgumentException("setting")
+                val marker = githubPatScopeKey(setting.getString("scopeId"), setting.getString("profileId"))
+                if (githubPatScopeKeys(preferences.all.keys, setting.getString("profileId")).none { it != marker }) editor.remove(key)
+                editor.remove(marker)
+            } else editor.remove(key)
+            editor.commit()
+        }
+    }
+
+    private fun reconcileGitHubPats(invoke: Invoke) {
+        val args = invoke.getArgs()
+        val scopeId = args.getString("scopeId")
+        val profileIdsJson = args.getJSONArray("profileIds")
+        val profileIds = (0 until profileIdsJson.length()).map { index -> profileIdsJson.getString(index) }
+        if (profileIds.size > 25 || profileIds.toSet().size != profileIds.size) throw IllegalArgumentException("profileIds")
+        persistSecure(invoke) {
+            val preferences = activity.getSharedPreferences(storeName, Context.MODE_PRIVATE)
+            val editor = preferences.edit()
+            profileIds.forEach { profileId ->
+                val pat = "github-pat:$profileId"
+                val marker = githubPatScopeKey(scopeId, profileId)
+                if (preferences.contains(pat) && !preferences.contains(marker)) editor.putString(marker, encryptSecure("1", marker))
+            }
+            preferences.all.keys.filter { key -> key.startsWith("github-pat-scope:$scopeId:") }
+                .map { marker -> marker to marker.removePrefix("github-pat-scope:$scopeId:") }
+                .filter { (_, profileId) -> profileId !in profileIds }
+                .forEach { (marker, profileId) ->
+                    if (githubPatScopeKeys(preferences.all.keys, profileId).none { it != marker }) editor.remove("github-pat:$profileId")
+                    editor.remove(marker)
+                }
+            editor.commit()
         }
     }
 

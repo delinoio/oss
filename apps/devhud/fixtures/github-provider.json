@@ -1,0 +1,18 @@
+{
+  "profiles": {
+    "fine": { "id": "018f1d8e-7c00-7000-8000-000000000001", "kind": "fine-grained", "token": "fixture-fine-token" },
+    "classic": { "id": "018f1d8e-7c00-7000-8000-000000000002", "kind": "classic", "token": "fixture-classic-token" },
+    "restricted": { "id": "018f1d8e-7c00-7000-8000-000000000003", "kind": "fine-grained", "token": "fixture-restricted-token" }
+  },
+  "repositories": {
+    "public": { "owner": "octo-public", "name": "widgets", "private": false },
+    "private": { "owner": "octo-private", "name": "controls", "private": true }
+  },
+  "labels": [
+    { "name": "bug", "color": "d73a4a", "description": "Something is not working" },
+    { "name": "needs-review", "color": "0e8a16", "description": null }
+  ],
+  "submissionId": "018f1d8e-7c00-7000-8000-000000000010",
+  "issue": { "number": 41, "title": "Deterministic issue", "html_url": "https://github.com/octo-private/controls/issues/41" },
+  "pullRequest": { "number": 9, "title": "Deterministic pull request", "html_url": "https://github.com/octo-private/controls/pull/9", "draft": false, "body": "Fixture body", "state": "open", "user": { "login": "octocat" }, "head": { "sha": "0123456789abcdef" }, "labels": [{ "name": "needs-review" }] }
+}

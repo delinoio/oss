@@ -19,7 +19,7 @@ import { createIdentitySession, isTerminalAccessTokenError, sessionProfileId, va
 import { clearAllContractedLocalData, clearAuthenticatedOriginData, clearAuthenticatedSettingsCache, clearGuestImportMarker, hasGuestSettings, readAuthenticatedSettingsCache, readCachedIdentityBootstrap, readGuestSettings, writeAuthenticatedSettingsCache, writeCachedIdentityBootstrap, writeGuestSettings } from "./local-data";
 import { SecureSettingKind, type NativeBridgeV1, type RuntimePlatform } from "./native-bridge";
 import { profileRequiresSetup } from "./profile-secrets";
-import { defaultDevHudSettings, decodeDevHudSettingsSnapshot, encodeDevHudSettings, parseDevHudSettings, SettingsSchemaVersion, type DevHudSettingsV1 } from "./settings-contract";
+import { defaultDevHudSettings, decodeVersionedDevHudSettings, encodeDevHudSettings, LegacySettingsSchemaVersion, parseDevHudSettings, SettingsSchemaVersion, type DevHudSettingsV1 } from "./settings-contract";
 import { diffSettings, type SettingsDiffEntry } from "./settings-diff";
 import { getLocalStorage, isValidApiOrigin } from "./shell";
 
@@ -48,6 +48,9 @@ export interface IdentitySettingsValue {
   readonly conflict: SettingsConflict | null;
   readonly signInPending: boolean;
   readonly identityResetAvailable: boolean;
+  readonly githubPatScopeId: Promise<string>;
+  readonly githubPatCleanupPending: boolean;
+  readonly reconcileGitHubPats: () => Promise<boolean>;
   readonly signIn: () => Promise<void>;
   readonly retryIdentity: () => void;
   readonly resetIdentity: () => Promise<void>;
@@ -56,7 +59,7 @@ export interface IdentitySettingsValue {
   readonly continueLocally: () => void;
   readonly uploadLocal: () => Promise<void>;
   readonly replaceLocal: () => boolean;
-  readonly replaceSettings: (settings: DevHudSettingsV1) => Promise<boolean>;
+  readonly replaceSettings: (settings: DevHudSettingsV1 | ((current: DevHudSettingsV1) => DevHudSettingsV1)) => Promise<boolean>;
   readonly adoptConflictServer: () => void;
   readonly reapplyConflictLocal: () => Promise<boolean>;
   readonly logout: () => Promise<void>;
@@ -129,7 +132,10 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     const guest = readGuestSettings(storage);
     return !hasGuestSettings(storage) && initialAppearance ? { ...guest, appearance: initialAppearance } : guest;
   });
+  const settingsRef = useRef(settings);
   const [revision, setRevision] = useState(0n);
+  const revisionRef = useRef(revision);
+  const githubPatScopeId = useMemo(() => sessionProfileId(apiOrigin), [apiOrigin]);
   const [error, setError] = useState<string | null>(null);
   const [accountError, setAccountError] = useState<DevHudClientError | null>(null);
   const [settingsError, setSettingsError] = useState<DevHudClientError | null>(null);
@@ -143,10 +149,25 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   const [bootstrapAttempt, setBootstrapAttempt] = useState(0);
   const [signInPending, setSignInPending] = useState(false);
   const [identityResetAvailable, setIdentityResetAvailable] = useState(false);
+  const [githubPatCleanupPending, setGitHubPatCleanupPending] = useState(false);
   const signInPendingRef = useRef(false);
   const callbackHandled = useRef<string | null>(null);
   const invalidSessionCleanupRef = useRef<Promise<void> | null>(null);
   const continueLocallyRef = useRef(false);
+  const githubPatReconciliationRef = useRef<Promise<boolean> | null>(null);
+  const lastReconciledGitHubPatKeyRef = useRef<string | null>(null);
+  const settingsWritableRef = useRef(false);
+  const replaceSettingsRef = useRef<IdentitySettingsValue["replaceSettings"]>(async () => false);
+
+  function applySettings(next: DevHudSettingsV1): void {
+    settingsRef.current = next;
+    setSettings(next);
+  }
+
+  function applyRevision(next: bigint): void {
+    revisionRef.current = next;
+    setRevision(next);
+  }
 
   const accountQueryKey = useMemo(() => createConnectQueryKey({ schema: AccountQuery.getAccount, transport, input: {}, cardinality: "finite" }), [transport]);
   const settingsQueryKey = useMemo(() => createConnectQueryKey({ schema: SettingsQuery.getSettings, transport, input: {}, cardinality: "finite" }), [transport]);
@@ -179,8 +200,8 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       } finally {
         setAccount(null);
         setAccountError(null);
-        setSettings(defaultDevHudSettings);
-        setRevision(0n);
+        applySettings(defaultDevHudSettings);
+        applyRevision(0n);
         setSettingsReady(false);
         setSettingsError(null);
         setStatus("signed-out");
@@ -218,8 +239,8 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       setSession(null);
       setAccount(null);
       setAccountError(null);
-      setSettings(defaultDevHudSettings);
-      setRevision(0n);
+      applySettings(defaultDevHudSettings);
+      applyRevision(0n);
       setSettingsReady(false);
       setSettingsError(null);
       setStatus("signed-out");
@@ -397,7 +418,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     if (!online) {
       setSettingsReady(false);
       const cached = readAuthenticatedSettingsCache(storage, apiOrigin);
-      if (cached) { setSettings(cached.settings); setRevision(cached.revision); }
+      if (cached) { applySettings(cached.settings); applyRevision(cached.revision); }
       return;
     }
     if (!settingsQuery.data) return;
@@ -412,13 +433,13 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     setError((current) => current === "settings-contract-invalid" ? null : current);
     setSettingsError(null);
     setSettingsReady(true);
-    setRevision(currentRevision);
+    applyRevision(currentRevision);
     if (hasGuestSettings(storage)) {
       const local = readGuestSettings(storage);
-      setSettings(local);
+      applySettings(local);
       setImportDiff(diffSettings(local, server));
     } else {
-      setSettings(server);
+      applySettings(server);
       writeAuthenticatedSettingsCache(storage, apiOrigin, { settings: server, revision: currentRevision, cachedAt: new Date().toISOString() });
     }
   }, [apiOrigin, online, settingsQuery.data, status, storage]);
@@ -430,8 +451,8 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     setSettingsError(mapped);
     const cached = readAuthenticatedSettingsCache(storage, apiOrigin);
     if (cached) {
-      setSettings(cached.settings);
-      setRevision(cached.revision);
+      applySettings(cached.settings);
+      applyRevision(cached.revision);
     }
     if (mapped.kind === "unauthenticated") {
       void clearInvalidSession().catch((reason) => setError(safeError(reason)));
@@ -465,8 +486,8 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
         throw reason;
       }
       const next = validated.settings;
-      setSettings(next);
-      setRevision(validated.revision);
+      applySettings(next);
+      applyRevision(validated.revision);
       setSettingsReady(true);
       setError((current) => current === "settings-contract-invalid" ? null : current);
       setImportDiff(null);
@@ -536,6 +557,71 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   const localSettingsWritable = identityReady && (status === "guest" || status === "signed-out");
   const settingsReadOnly = replaceMutation.isPending || (!localSettingsWritable
     && (status !== "authenticated" || !online || !settingsReady || importDiff !== null || conflict !== null));
+  const githubPatSettingsReady = identityReady && !settingsReadOnly && conflict === null;
+
+  const replaceSettings: IdentitySettingsValue["replaceSettings"] = async (update) => {
+    const next = typeof update === "function" ? update(settingsRef.current) : update;
+    if (status === "guest" || status === "signed-out") {
+      const parsed = parseDevHudSettings(next);
+      encodeDevHudSettings(parsed);
+      writeGuestSettings(storage, parsed);
+      applySettings(parsed);
+      return true;
+    }
+    if (settingsReadOnly) throw new Error("settings-read-only");
+    return replaceAt(next, revisionRef.current);
+  };
+  settingsWritableRef.current = githubPatSettingsReady;
+  replaceSettingsRef.current = replaceSettings;
+
+  function githubPatSnapshotKey(snapshot: DevHudSettingsV1): string {
+    return `${apiOrigin}|${snapshot.github.profiles.map((profile) => profile.id).join(":")}|${snapshot.github.pendingPatRemovals.join(":")}`;
+  }
+
+  function reconcileGitHubPats(): Promise<boolean> {
+    if (githubPatReconciliationRef.current !== null) return githubPatReconciliationRef.current;
+    const reconciliation = (async () => {
+      while (settingsWritableRef.current) {
+        const snapshot = settingsRef.current;
+        const snapshotKey = githubPatSnapshotKey(snapshot);
+        const activeProfileIds = snapshot.github.profiles.map((profile) => profile.id);
+        const pendingProfileIds = snapshot.github.pendingPatRemovals;
+        try {
+          await bridge.request({ operation: "secure.reconcile-github-pats", scopeId: await githubPatScopeId, profileIds: activeProfileIds });
+          if (pendingProfileIds.length > 0) {
+            if (!settingsWritableRef.current) return false;
+            const processed = new Set(pendingProfileIds);
+            const committed = await replaceSettingsRef.current((current) => ({
+              ...current,
+              github: { ...current.github, pendingPatRemovals: current.github.pendingPatRemovals.filter((profileId) => !processed.has(profileId)) },
+            }));
+            if (!committed) return false;
+          }
+          lastReconciledGitHubPatKeyRef.current = snapshotKey;
+          setGitHubPatCleanupPending(false);
+        } catch (error) {
+          setGitHubPatCleanupPending(true);
+          throw error;
+        }
+        if (githubPatSnapshotKey(settingsRef.current) === snapshotKey) return true;
+      }
+      return false;
+    })();
+    githubPatReconciliationRef.current = reconciliation;
+    void reconciliation.finally(() => {
+      if (githubPatReconciliationRef.current === reconciliation) githubPatReconciliationRef.current = null;
+    }).catch(() => {});
+    return reconciliation;
+  }
+
+  const activeGitHubProfileKey = settings.github.profiles.map((profile) => profile.id).join(":");
+  const pendingGitHubPatRemovalKey = settings.github.pendingPatRemovals.join(":");
+  useEffect(() => {
+    if (!githubPatSettingsReady) return;
+    const snapshotKey = githubPatSnapshotKey(settings);
+    if (lastReconciledGitHubPatKeyRef.current === snapshotKey) return;
+    void reconcileGitHubPats().catch(() => {});
+  }, [activeGitHubProfileKey, githubPatSettingsReady, pendingGitHubPatRemovalKey]);
 
   const value: IdentitySettingsValue = {
     status,
@@ -553,6 +639,9 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     conflict,
     signInPending,
     identityResetAvailable,
+    githubPatScopeId,
+    githubPatCleanupPending,
+    reconcileGitHubPats,
     signIn: async () => {
       if (signInPendingRef.current) return;
       continueLocallyRef.current = false;
@@ -594,28 +683,19 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
         markSettingsContractInvalid();
         return false;
       }
-      setSettings(validated.settings);
-      setRevision(validated.revision);
+      applySettings(validated.settings);
+      applyRevision(validated.revision);
       setImportDiff(null);
       clearGuestImportMarker(storage);
       writeAuthenticatedSettingsCache(storage, apiOrigin, { settings: validated.settings, revision: validated.revision, cachedAt: new Date().toISOString() });
       return true;
     },
-    replaceSettings: async (next) => {
-      if (status === "guest" || status === "signed-out") {
-        const parsed = parseDevHudSettings(next);
-        encodeDevHudSettings(parsed);
-        writeGuestSettings(storage, parsed);
-        setSettings(parsed);
-        return true;
-      }
-      if (settingsReadOnly) throw new Error("settings-read-only");
-      return replaceAt(next, revision);
-    },
+    replaceSettings,
     adoptConflictServer: () => {
       if (!conflict) return;
-      setSettings(conflict.server);
-      setRevision(conflict.currentRevision);
+      lastReconciledGitHubPatKeyRef.current = null;
+      applySettings(conflict.server);
+      applyRevision(conflict.currentRevision);
       setConflict(null);
       clearGuestImportMarker(storage);
       writeAuthenticatedSettingsCache(storage, apiOrigin, { settings: conflict.server, revision: conflict.currentRevision, cachedAt: new Date().toISOString() });
@@ -631,8 +711,8 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       setStatus("signed-out");
       setAccount(null);
       setAccountError(null);
-      setSettings(defaultDevHudSettings);
-      setRevision(0n);
+      applySettings(defaultDevHudSettings);
+      applyRevision(0n);
       setSettingsReady(false);
       setSettingsError(null);
       await clearIdentityQueryCache();
@@ -663,7 +743,9 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       }
     },
     retryDeletionCleanup: cleanPendingDeletion,
-    profileRequiresSetup: (kind, profileId) => profileRequiresSetup(bridge, kind, profileId),
+    profileRequiresSetup: async (kind, profileId) => kind === "github"
+      ? profileRequiresSetup(bridge, kind, profileId, await githubPatScopeId)
+      : profileRequiresSetup(bridge, kind, profileId),
   };
 
   function markSettingsContractInvalid(): void {
@@ -684,11 +766,9 @@ class SettingsSnapshotError extends TypeError {}
 
 function validatedSettingsSnapshot(snapshot: { readonly schemaVersion: number; readonly canonicalJson: Uint8Array; readonly revision: bigint } | undefined): ValidatedSettingsSnapshot {
   if (!snapshot) return { settings: defaultDevHudSettings, revision: 0n };
-  if (snapshot.schemaVersion !== 1 && snapshot.schemaVersion !== SettingsSchemaVersion) throw new SettingsSnapshotError("unsupported settings schema version");
+  if (snapshot.schemaVersion !== LegacySettingsSchemaVersion && snapshot.schemaVersion !== SettingsSchemaVersion) throw new SettingsSnapshotError("unsupported settings schema version");
   try {
-    const decoded = decodeDevHudSettingsSnapshot(snapshot.canonicalJson);
-    if (decoded.sourceSchemaVersion !== snapshot.schemaVersion) throw new SettingsSnapshotError("settings schema versions do not match");
-    return { settings: decoded.settings, revision: snapshot.revision };
+    return { settings: decodeVersionedDevHudSettings(snapshot.canonicalJson, snapshot.schemaVersion), revision: snapshot.revision };
   } catch (reason) {
     throw new SettingsSnapshotError("invalid settings snapshot", { cause: reason });
   }

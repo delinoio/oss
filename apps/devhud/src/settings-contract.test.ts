@@ -1,11 +1,43 @@
 import { describe, expect, it } from "vitest";
-import { canonicalDevHudSettings, decodeDevHudSettings, defaultDevHudSettings, encodeDevHudSettings, MaximumUrlRepositoryMappings, parseDevHudSettings, SettingsContractError } from "./settings-contract";
+import { canonicalDevHudSettings, decodeDevHudSettings, decodeVersionedDevHudSettings, defaultDevHudSettings, encodeDevHudSettings, MaximumUrlRepositoryMappings, parseDevHudSettings, SettingsContractError, SettingsSchemaVersion } from "./settings-contract";
 import { diffSettings, redactRecursively, RedactedValue } from "./settings-diff";
 
 describe("DevHud settings boundary", () => {
+  it("migrates schema v1 to v2 with explicit unselected GitHub profiles", () => {
+    const legacy = {
+      ...defaultDevHudSettings,
+      schemaVersion: 1,
+      github: { repositories: [{ owner: "octo", name: "private" }], issueTracker: { owner: "octo", repository: "private", labels: ["bug"] } },
+      decks: [],
+    };
+    const parsed = parseDevHudSettings(legacy);
+    expect(parsed.schemaVersion).toBe(2);
+    expect(parsed.github).toEqual({ profiles: [], pendingPatRemovals: [], repositories: [{ owner: "octo", name: "private", profileRef: null }], issueTracker: { owner: "octo", repository: "private", labels: ["bug"], profileRef: null } });
+  });
+
+  it("accepts non-secret GitHub profile descriptors and rejects secret fields or duplicate IDs", () => {
+    const profile = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", name: "Work", kind: "fine-grained" as const };
+    const settings = { ...defaultDevHudSettings, github: { profiles: [profile], pendingPatRemovals: [], repositories: [{ owner: "octo", name: "private", profileRef: profile.id }], issueTracker: null } };
+    expect(parseDevHudSettings(settings).github.profiles).toEqual([profile]);
+    expect(canonicalDevHudSettings(settings)).not.toMatch(/token|secret|authorization/iu);
+    expect(() => parseDevHudSettings({ ...settings, github: { ...settings.github, profiles: [profile, profile] } })).toThrow(/unique IDs/u);
+    expect(() => parseDevHudSettings({ ...settings, github: { ...settings.github, profiles: [{ ...profile, token: "plain" }] } })).toThrow(/token/iu);
+    expect(() => parseDevHudSettings({ ...settings, github: { ...settings.github, repositories: [{ owner: "octo", name: "private", profileRef: "missing" }] } })).toThrow(/configured GitHub profile/u);
+  });
+
+  it("accepts only disjoint canonical pending PAT removal tombstones", () => {
+    const profile = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", name: "Work", kind: "fine-grained" as const };
+    const removedProfileId = "018f47a2-7b3c-7def-8abc-1234567890ac";
+    expect(parseDevHudSettings({ ...defaultDevHudSettings, github: { ...defaultDevHudSettings.github, pendingPatRemovals: [removedProfileId] } }).github.pendingPatRemovals).toEqual([removedProfileId]);
+    expect(() => parseDevHudSettings({ ...defaultDevHudSettings, github: { ...defaultDevHudSettings.github, profiles: [profile], pendingPatRemovals: [profile.id] } })).toThrow(/active GitHub profile/u);
+    expect(() => parseDevHudSettings({ ...defaultDevHudSettings, github: { ...defaultDevHudSettings.github, pendingPatRemovals: [removedProfileId, removedProfileId] } })).toThrow(/unique IDs/u);
+    expect(() => parseDevHudSettings({ ...defaultDevHudSettings, github: { ...defaultDevHudSettings.github, pendingPatRemovals: ["profile"] } })).toThrow(/UUID v7/u);
+  });
   it("round trips the exact versioned non-secret contract canonically", () => {
     const encoded = encodeDevHudSettings(defaultDevHudSettings);
     expect(decodeDevHudSettings(encoded)).toEqual(defaultDevHudSettings);
+    expect(decodeVersionedDevHudSettings(encoded, SettingsSchemaVersion)).toEqual(defaultDevHudSettings);
+    expect(() => decodeVersionedDevHudSettings(encoded, 1)).toThrow(/snapshot envelope/u);
     expect(new TextDecoder().decode(encoded)).toBe(canonicalDevHudSettings(defaultDevHudSettings));
   });
 
@@ -32,6 +64,7 @@ describe("DevHud settings boundary", () => {
       title: "Deck",
       query: "is:pr",
       repository: null,
+      profileRef: null,
       display: { groupBy: "none", showDrafts: true },
       refreshMinutes: 15,
       notifications: [],
@@ -45,6 +78,7 @@ describe("DevHud settings boundary", () => {
       title: "Deck",
       query: "is:pr",
       repository: null,
+      profileRef: null,
       display: { groupBy: "none", showDrafts: true },
       refreshMinutes: 15,
       notifications: [],
@@ -55,15 +89,34 @@ describe("DevHud settings boundary", () => {
     expect(() => parseDevHudSettings({ ...defaultDevHudSettings, decks: [{ ...deck, id: deck.id.toUpperCase() }] })).toThrow(/UUID v7/u);
   });
 
-  const mapping = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", pattern: "https://source.example/path", repository: { owner: "delinoio", name: "oss" }, credentialProfileRef: "github.default", priority: 0, chromeOrigin: null, updatedAt: "2026-08-17T00:00:00.000Z" };
+  it("rejects a GitHub profile reference when a Deck has no repository", () => {
+    const profile = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", name: "Work", kind: "fine-grained" as const };
+    const deck = {
+      id: "018f47a2-7b3c-7def-8abc-1234567890ac",
+      title: "Deck",
+      query: "is:pr",
+      repository: null,
+      profileRef: profile.id,
+      display: { groupBy: "none", showDrafts: true },
+      refreshMinutes: 15,
+      notifications: [],
+    };
+    const settings = { ...defaultDevHudSettings, github: { ...defaultDevHudSettings.github, profiles: [profile] }, decks: [deck] };
+    expect(() => parseDevHudSettings(settings)).toThrow(/profileRef.*repository is null/u);
+    expect(parseDevHudSettings({ ...settings, decks: [{ ...deck, profileRef: null }] }).decks[0]?.profileRef).toBeNull();
+  });
+
+  const mappingProfile = { id: "018f47a2-7b3c-7def-8abc-1234567890ac", name: "Work", kind: "fine-grained" as const };
+  const mapping = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", pattern: "https://source.example/path", repository: { owner: "delinoio", name: "oss" }, credentialProfileRef: mappingProfile.id, priority: 0, chromeOrigin: null, updatedAt: "2026-08-17T00:00:00.000Z" };
+  const settingsWithMappingProfile = { ...defaultDevHudSettings, github: { ...defaultDevHudSettings.github, profiles: [mappingProfile] } };
 
   it.each(["?token=plain-secret", "?X-Amz-Signature=plain-secret", "#credential", "?", "#"])("rejects query or fragment delimiters in synchronized URL fields: %s", (suffix) => {
     expect(() => parseDevHudSettings({
-      ...defaultDevHudSettings,
+      ...settingsWithMappingProfile,
       urlMappings: [{ ...mapping, pattern: `https://source.example/path${suffix}` }],
     })).toThrow(/credentials, query, or fragment/u);
     expect(() => parseDevHudSettings({
-      ...defaultDevHudSettings,
+      ...settingsWithMappingProfile,
       uploads: {
         provider: "r2",
         r2: { profileRef: "profile", bucket: "bucket", endpoint: `https://r2.example${suffix}`, region: "auto", publicBaseUrl: null },
@@ -79,16 +132,16 @@ describe("DevHud settings boundary", () => {
   });
 
   it.each(["https://example.com/", "https://EXAMPLE.com", "https://example.com:443"])("normalizes equivalent Chrome origins: %s", (chromeOrigin) => {
-    expect(parseDevHudSettings({ ...defaultDevHudSettings, urlMappings: [{ ...mapping, chromeOrigin }] }).urlMappings[0]?.chromeOrigin).toBe("https://example.com");
+    expect(parseDevHudSettings({ ...settingsWithMappingProfile, urlMappings: [{ ...mapping, chromeOrigin }] }).urlMappings[0]?.chromeOrigin).toBe("https://example.com");
   });
 
   it("rejects wildcard Chrome origins and excessive mapping counts", () => {
-    expect(() => parseDevHudSettings({ ...defaultDevHudSettings, urlMappings: [{ ...mapping, chromeOrigin: "https://*.example.com" }] })).toThrow(/concrete HTTP\(S\) origin/u);
-    expect(() => parseDevHudSettings({ ...defaultDevHudSettings, urlMappings: Array.from({ length: MaximumUrlRepositoryMappings + 1 }, (_, index) => ({ ...mapping, id: `018f47a2-7b3c-7def-8abc-${(123456789000 + index).toString().padStart(12, "0")}` })) })).toThrow(/at most/u);
+    expect(() => parseDevHudSettings({ ...settingsWithMappingProfile, urlMappings: [{ ...mapping, chromeOrigin: "https://*.example.com" }] })).toThrow(/concrete HTTP\(S\) origin/u);
+    expect(() => parseDevHudSettings({ ...settingsWithMappingProfile, urlMappings: Array.from({ length: MaximumUrlRepositoryMappings + 1 }, (_, index) => ({ ...mapping, id: `018f47a2-7b3c-7def-8abc-${(123456789000 + index).toString().padStart(12, "0")}` })) })).toThrow(/at most/u);
   });
 
   it("drops legacy v1 mapping entries while preserving other settings", () => {
-    const legacy = { ...defaultDevHudSettings, schemaVersion: 1, appearance: { theme: "dark", language: "ko" }, urlMappings: [{ sourcePrefix: "https://source.example/path", destinationPrefix: "https://destination.example/path" }] };
+    const legacy = { ...defaultDevHudSettings, schemaVersion: 1, appearance: { theme: "dark", language: "ko" }, github: { repositories: [], issueTracker: null }, urlMappings: [{ sourcePrefix: "https://source.example/path", destinationPrefix: "https://destination.example/path" }] };
     expect(parseDevHudSettings(legacy)).toMatchObject({ schemaVersion: 2, appearance: { theme: "dark", language: "ko" }, urlMappings: [] });
   });
 

@@ -64,6 +64,9 @@ func (s *SettingsService) ReplaceSettings(ctx context.Context, request *connect.
 	if err := validateCanonicalJSON(request.Msg.CanonicalJson); err != nil {
 		return nil, NewError(connect.CodeInvalidArgument, err.Error(), CorrelationID(ctx))
 	}
+	if err := validateDevHudSettings(request.Msg.CanonicalJson, request.Msg.SchemaVersion); err != nil {
+		return nil, NewError(connect.CodeInvalidArgument, err.Error(), CorrelationID(ctx))
+	}
 	snapshot, err := s.repository.ReplaceSettings(ctx, user.ID, request.Msg.SchemaVersion, request.Msg.CanonicalJson, request.Msg.ExpectedRevision, s.clock.Now())
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
