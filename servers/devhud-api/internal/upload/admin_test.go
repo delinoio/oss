@@ -48,6 +48,7 @@ func TestAdministratorReasonValidationRejectsPublicAssetLocators(t *testing.T) {
 	for _, reason := range []string{
 		"Reviewed https://assets.example.com/uploads/image.png",
 		"Reviewed https://assets.example.com/%75ploads/image.png",
+		"Reviewed https%3A%2F%2Fassets.example.com%2Fuploads%2Fimage.png",
 		"Reviewed https://example.com/?asset=https%3A%2F%2Fassets.example.com%2Fuploads%2Fimage.png",
 	} {
 		if err := ValidateAdministratorReason(reason, publicAssetBaseURL); err == nil {

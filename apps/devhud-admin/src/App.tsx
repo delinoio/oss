@@ -1,5 +1,6 @@
 import { Code, ConnectError } from "@connectrpc/connect";
 import {
+  AccountDeletionState,
   AdministrativeBlockState,
   AuditOutcome,
   AuditRejectionReason,
@@ -366,20 +367,42 @@ function Users({
                       <h2>{user.displayName || user.email || user.logtoSubject}</h2>
                       <p>{user.email || "—"}</p>
                     </div>
-                    <Status
-                      tone={
-                        user.administrativeBlockState ===
-                        AdministrativeBlockState.BLOCKED
-                          ? "danger"
-                          : "success"
-                      }
-                    >
-                      {copy.administrativeBlockStates[user.administrativeBlockState]}
-                    </Status>
                   </div>
                   <dl>
                     <dt>{copy.logtoSubject}</dt>
                     <dd>{user.logtoSubject}</dd>
+                    <dt>{copy.administrativeBlock}</dt>
+                    <dd>
+                      <Status
+                        tone={
+                          user.administrativeBlockState ===
+                          AdministrativeBlockState.BLOCKED
+                            ? "danger"
+                            : user.administrativeBlockState ===
+                                AdministrativeBlockState.UNBLOCKED
+                              ? "success"
+                              : "neutral"
+                        }
+                      >
+                        {copy.administrativeBlockStates[user.administrativeBlockState]}
+                      </Status>
+                    </dd>
+                    <dt>{copy.deletionState}</dt>
+                    <dd>
+                      <Status
+                        tone={
+                          user.deletionState === AccountDeletionState.ACTIVE
+                            ? "success"
+                            : user.deletionState === AccountDeletionState.UNSPECIFIED
+                              ? "neutral"
+                              : "danger"
+                        }
+                      >
+                        {copy.accountDeletionStates[user.deletionState]}
+                      </Status>
+                    </dd>
+                    <dt>{copy.recoverableUntil}</dt>
+                    <dd>{formatTime(user.recoverableUntil, locale)}</dd>
                     <dt>{copy.created}</dt>
                     <dd>{formatTime(user.createdAt, locale)}</dd>
                   </dl>
@@ -622,6 +645,8 @@ function Uploads({
               <table>
                 <thead>
                   <tr>
+                    <th>{copy.owner}</th>
+                    <th>{copy.submission}</th>
                     <th>{copy.upload}</th>
                     <th>{copy.group}</th>
                     <th>{copy.state}</th>
@@ -633,6 +658,8 @@ function Uploads({
                 <tbody>
                   {value.uploads.map((upload) => (
                     <tr key={upload.uploadId?.value}>
+                      <td className="mono">{upload.ownerUserId?.value ?? "—"}</td>
+                      <td className="mono">{upload.submissionId?.value ?? "—"}</td>
                       <td className="mono">{upload.uploadId?.value}</td>
                       <td className="mono">{upload.uploadGroupId?.value}</td>
                       <td><Status>{copy.uploadStates[upload.state]}</Status></td>
@@ -729,7 +756,14 @@ function UploadMutationDialog({
   const reasonValid = isAdminReasonValid(normalizedReason, publicAssetBaseUrl);
   return (
     <Dialog title={label} onClose={onClose}>
-      <p className="mono break">{selection.upload.uploadId?.value}</p>
+      <dl>
+        <dt>{copy.owner}</dt>
+        <dd className="mono break">{selection.upload.ownerUserId?.value ?? "—"}</dd>
+        <dt>{copy.submission}</dt>
+        <dd className="mono break">{selection.upload.submissionId?.value ?? "—"}</dd>
+        <dt>{copy.upload}</dt>
+        <dd className="mono break">{selection.upload.uploadId?.value ?? "—"}</dd>
+      </dl>
       <MutationFields
         confirmed={confirmed}
         copy={copy}

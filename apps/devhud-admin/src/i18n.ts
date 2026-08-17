@@ -1,4 +1,5 @@
 import {
+  AccountDeletionState,
   AdministrativeBlockState,
   AuditAction,
   AuditOutcome,
@@ -41,6 +42,10 @@ const copy = {
     usage: "Usage and quota",
     submission: "Submission",
     logtoSubject: "Logto subject",
+    administrativeBlock: "Administrative block",
+    deletionState: "Account deletion",
+    recoverableUntil: "Recoverable until",
+    owner: "Owner user",
     created: "Created",
     upload: "Upload",
     group: "Group",
@@ -66,6 +71,12 @@ const copy = {
       [AdministrativeBlockState.UNBLOCKED]: "Unblocked",
       [AdministrativeBlockState.BLOCKED]: "Blocked",
     } satisfies Record<AdministrativeBlockState, string>,
+    accountDeletionStates: {
+      [AccountDeletionState.UNSPECIFIED]: "Unknown",
+      [AccountDeletionState.ACTIVE]: "Active",
+      [AccountDeletionState.PENDING]: "Deletion pending",
+      [AccountDeletionState.PURGE_CLAIMED]: "Purge claimed",
+    } satisfies Record<AccountDeletionState, string>,
     uploadStates: {
       [UploadState.UNSPECIFIED]: "Unknown",
       [UploadState.PENDING]: "Pending",
@@ -143,6 +154,10 @@ const copy = {
     usage: "사용량 및 할당량",
     submission: "제출",
     logtoSubject: "Logto 주체",
+    administrativeBlock: "관리자 차단",
+    deletionState: "계정 삭제",
+    recoverableUntil: "복구 가능 기한",
+    owner: "소유 사용자",
     created: "생성 시각",
     upload: "업로드",
     group: "그룹",
@@ -168,6 +183,12 @@ const copy = {
       [AdministrativeBlockState.UNBLOCKED]: "차단되지 않음",
       [AdministrativeBlockState.BLOCKED]: "차단됨",
     } satisfies Record<AdministrativeBlockState, string>,
+    accountDeletionStates: {
+      [AccountDeletionState.UNSPECIFIED]: "알 수 없음",
+      [AccountDeletionState.ACTIVE]: "활성",
+      [AccountDeletionState.PENDING]: "삭제 대기 중",
+      [AccountDeletionState.PURGE_CLAIMED]: "영구 삭제 작업 시작",
+    } satisfies Record<AccountDeletionState, string>,
     uploadStates: {
       [UploadState.UNSPECIFIED]: "알 수 없음",
       [UploadState.PENDING]: "대기 중",

@@ -77,6 +77,14 @@ func matchesLocalPath(value string) bool {
 }
 
 func containsSensitiveURL(value string, publicAssetBaseURL *url.URL) bool {
+	if matchesSensitiveURL(value, publicAssetBaseURL) {
+		return true
+	}
+	decoded, err := url.PathUnescape(value)
+	return err == nil && decoded != value && matchesSensitiveURL(decoded, publicAssetBaseURL)
+}
+
+func matchesSensitiveURL(value string, publicAssetBaseURL *url.URL) bool {
 	for _, match := range urlPattern.FindAllString(value, -1) {
 		candidate := trailingURLPunctuationPattern.ReplaceAllString(match, "")
 		if _, err := url.PathUnescape(candidate); err != nil {

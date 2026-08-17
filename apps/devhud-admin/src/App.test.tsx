@@ -1,5 +1,6 @@
 import { Code, ConnectError } from "@connectrpc/connect";
 import {
+  AccountDeletionState,
   AdministrativeBlockState,
   AuditAction,
   AuditOutcome,
@@ -50,11 +51,14 @@ const user = {
   logtoSubject: "target-subject",
   displayName: "Target User",
   email: "target@example.com",
+  deletionState: AccountDeletionState.ACTIVE,
   administrativeBlockState: AdministrativeBlockState.UNBLOCKED,
 };
 
 const upload = {
+  ownerUserId: { value: "018f7c1e-7b4a-7abc-8def-0123456789ac" },
   uploadId: { value: "018f7c1e-7b4a-7abc-8def-0123456789ae" },
+  submissionId: { value: "018f7c1e-7b4a-7abc-8def-0123456789ab" },
   uploadGroupId: { value: "018f7c1e-7b4a-7abc-8def-0123456789af" },
   state: UploadState.FINALIZED,
   sizeBytes: 1024n,
@@ -273,6 +277,42 @@ describe("administrator console review regressions", () => {
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText(submissionId.value)).toBeTruthy();
     expect(within(dialog).getByText("9 / 10")).toBeTruthy();
+  });
+
+  it("renders account deletion independently from administrative blocking", async () => {
+    runtime.client.listUsers.mockResolvedValue({
+      users: [{
+        ...user,
+        deletionState: AccountDeletionState.PENDING,
+        recoverableUntil: { seconds: 1_776_427_200n, nanos: 0 },
+      }],
+      nextPageToken: "",
+    });
+
+    render(<App />);
+    const blockLabel = await screen.findByText("Administrative block");
+    expect(blockLabel.nextElementSibling?.textContent).toBe("Unblocked");
+    const deletionLabel = screen.getByText("Account deletion");
+    expect(deletionLabel.nextElementSibling?.textContent).toBe("Deletion pending");
+    const recoveryLabel = screen.getByText("Recoverable until");
+    expect(recoveryLabel.nextElementSibling?.textContent).not.toBe("—");
+  });
+
+  it("renders upload owner and submission attribution before moderation", async () => {
+    render(<App />);
+    await screen.findByText("Target User");
+    fireEvent.click(screen.getByRole("button", { name: "Uploads" }));
+
+    expect(await screen.findByRole("columnheader", { name: "Owner user" })).toBeTruthy();
+    expect(screen.getByRole("columnheader", { name: "Submission" })).toBeTruthy();
+    expect(screen.getByText(upload.ownerUserId.value)).toBeTruthy();
+    expect(screen.getByText(upload.submissionId.value)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Quarantine" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText(upload.ownerUserId.value)).toBeTruthy();
+    expect(within(dialog).getByText(upload.submissionId.value)).toBeTruthy();
+    expect(within(dialog).getByText(upload.uploadId.value)).toBeTruthy();
   });
 
   it("prevents duplicate upload continuation requests", async () => {
@@ -537,9 +577,13 @@ describe("administrator console review regressions", () => {
     expect(document.documentElement.lang).toBe("ko");
     expect(await screen.findByText("Logto 주체")).toBeTruthy();
     expect(screen.getByText("차단되지 않음")).toBeTruthy();
+    expect(screen.getByText("계정 삭제")).toBeTruthy();
+    expect(screen.getByText("활성")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "업로드" }));
     expect(await screen.findByText("콘텐츠 관리")).toBeTruthy();
+    expect(screen.getByRole("columnheader", { name: "소유 사용자" })).toBeTruthy();
+    expect(screen.getByRole("columnheader", { name: "제출" })).toBeTruthy();
     expect(screen.getByRole("columnheader", { name: "그룹" })).toBeTruthy();
     expect(screen.getByText("완료됨")).toBeTruthy();
 
