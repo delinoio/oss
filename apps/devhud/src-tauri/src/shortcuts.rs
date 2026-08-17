@@ -67,6 +67,7 @@ pub enum ShortcutKey {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ShortcutBinding {
     pub enabled: bool,
     pub modifiers: Vec<ShortcutModifier>,

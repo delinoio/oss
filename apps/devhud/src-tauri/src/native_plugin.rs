@@ -82,33 +82,42 @@ fn restore_main_window<R: Runtime>(app: &AppHandle<R>) {
 fn install_global_shortcut_listener<R: Runtime>(app: &AppHandle<R>) {
     let app = app.clone();
     std::thread::spawn(move || {
-        let callback_app = app.clone();
-        let result = rdev::listen(move |event| {
-            let Some(event) = crate::shortcuts::normalize_global_event(&event.event_type) else {
+        loop {
+            let callback_app = app.clone();
+            let result = rdev::listen(move |event| {
+                let Some(event) = crate::shortcuts::normalize_global_event(&event.event_type)
+                else {
+                    return;
+                };
+                let Some(state) = callback_app.try_state::<crate::bridge::NativeBridgeState>()
+                else {
+                    return;
+                };
+                let Some(action) = state.process_shortcut_event(event) else {
+                    return;
+                };
+                if action == crate::shortcuts::ShortcutAction::ShellCommandPalette {
+                    restore_main_window(&callback_app);
+                }
+                let Ok(action) = serde_json::to_value(action) else {
+                    return;
+                };
+                let _ = callback_app.emit(
+                    "devhud:native-event:v1",
+                    serde_json::json!({ "version": 1, "kind": "shortcut-triggered", "action": action }),
+                );
+            });
+            let Err(error) = result else {
                 return;
             };
-            let Some(state) = callback_app.try_state::<crate::bridge::NativeBridgeState>() else {
+            let Some(state) = app.try_state::<crate::bridge::NativeBridgeState>() else {
                 return;
             };
-            let Some(action) = state.process_shortcut_event(event) else {
-                return;
-            };
-            if action == crate::shortcuts::ShortcutAction::ShellCommandPalette {
-                restore_main_window(&callback_app);
-            }
-            let Ok(action) = serde_json::to_value(action) else {
-                return;
-            };
-            let _ = callback_app.emit(
-                "devhud:native-event:v1",
-                serde_json::json!({ "version": 1, "kind": "shortcut-triggered", "action": action }),
-            );
-        });
-        if let Err(error) = result {
-            if let Some(state) = app.try_state::<crate::bridge::NativeBridgeState>() {
-                state.mark_shortcut_listener_failed();
-            }
+            state.mark_shortcut_listener_failed();
             tracing::warn!(event = "shortcut_listener_failed", ?error);
+            let retry_generation = state.shortcut_listener_retry_generation();
+            state.wait_for_shortcut_listener_retry(retry_generation);
+            state.clear_shortcut_listener_failure();
         }
     });
 }

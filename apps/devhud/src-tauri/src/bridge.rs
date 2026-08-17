@@ -1,5 +1,5 @@
 use std::sync::{
-    Arc, Mutex,
+    Arc, Condvar, Mutex,
     atomic::{AtomicBool, Ordering},
 };
 
@@ -21,6 +21,7 @@ pub struct NativeBridgeState {
     session_origins: Arc<Mutex<SessionOrigins>>,
     shortcuts: Arc<Mutex<ShortcutService<PlatformShortcutBackend>>>,
     shortcut_listener_failed: Arc<AtomicBool>,
+    shortcut_listener_retry: Arc<(Mutex<u64>, Condvar)>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -42,6 +43,7 @@ impl Default for NativeBridgeState {
                 PlatformShortcutBackend::current(shortcut_listener_failed.clone()),
             ))),
             shortcut_listener_failed,
+            shortcut_listener_retry: Arc::new((Mutex::new(0), Condvar::new())),
         }
     }
 }
@@ -90,6 +92,39 @@ impl NativeBridgeState {
     #[cfg(desktop)]
     pub fn mark_shortcut_listener_failed(&self) {
         self.shortcut_listener_failed.store(true, Ordering::SeqCst);
+    }
+
+    #[cfg(desktop)]
+    pub fn clear_shortcut_listener_failure(&self) {
+        self.shortcut_listener_failed.store(false, Ordering::SeqCst);
+    }
+
+    #[cfg(desktop)]
+    pub fn shortcut_listener_retry_generation(&self) -> u64 {
+        let (generation, _) = &*self.shortcut_listener_retry;
+        *generation
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    #[cfg(desktop)]
+    pub fn wait_for_shortcut_listener_retry(&self, observed_generation: u64) {
+        let (generation, ready) = &*self.shortcut_listener_retry;
+        let generation = generation
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _ = ready
+            .wait_while(generation, |current| *current == observed_generation)
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+    }
+
+    pub fn retry_shortcut_listener(&self) {
+        let (generation, ready) = &*self.shortcut_listener_retry;
+        let mut generation = generation
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        *generation = generation.wrapping_add(1);
+        ready.notify_all();
     }
 
     #[allow(dead_code)]
@@ -418,7 +453,10 @@ pub fn handle_native_bridge_request(
                 .shortcuts
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let _ = shortcuts.request_permission();
+            let permission = shortcuts.request_permission();
+            if permission == crate::shortcuts::ShortcutPermission::Available {
+                state.retry_shortcut_listener();
+            }
             Ok(
                 json!({ "kind": "shortcut-status", "platform": shortcuts.platform(), "permission": shortcuts.permission(), "bindings": shortcuts.active(), "error": Value::Null }),
             )
@@ -601,6 +639,46 @@ mod tests {
         assert_eq!(first["url"], "devhud://auth/callback?state=two");
         let second = handle_native_bridge_request(&request, &state).expect("empty callback");
         assert!(second["url"].is_null());
+    }
+
+    #[test]
+    fn native_shortcut_bindings_reject_unknown_fields() {
+        let mut bindings = serde_json::to_value(crate::shortcuts::default_bindings())
+            .expect("serialize default bindings");
+        bindings["shell.command-palette"]["scanCode"] = json!(54);
+        assert_eq!(
+            handle_native_bridge_request(
+                &json!({ "operation": "shortcuts.apply", "bindings": bindings }),
+                &NativeBridgeState::default(),
+            ),
+            Err("invalid-argument".to_string())
+        );
+    }
+
+    #[cfg(desktop)]
+    #[test]
+    fn failed_shortcut_listener_retries_after_permission_recovery() {
+        use std::{sync::mpsc, time::Duration};
+
+        let state = NativeBridgeState::default();
+        state.mark_shortcut_listener_failed();
+        let observed_generation = state.shortcut_listener_retry_generation();
+        let waiting_state = state.clone();
+        let (ready, retried) = mpsc::channel();
+        std::thread::spawn(move || {
+            waiting_state.wait_for_shortcut_listener_retry(observed_generation);
+            ready.send(()).expect("report retry");
+        });
+        state.retry_shortcut_listener();
+        retried
+            .recv_timeout(Duration::from_secs(1))
+            .expect("listener retry signal");
+        state.clear_shortcut_listener_failure();
+        assert!(
+            !state
+                .shortcut_listener_failed
+                .load(std::sync::atomic::Ordering::SeqCst)
+        );
     }
 
     #[test]

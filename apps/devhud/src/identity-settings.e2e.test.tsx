@@ -168,6 +168,27 @@ describe("generated Connect identity/settings fixture", () => {
     expect(replacements).toBe(1);
   });
 
+  it("keeps unavailable capture shortcuts visible but non-editable", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 1, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    render(<App bridge={authenticatedBridge()} initialRuntime={runtime} />);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.settings }));
+
+    const theme = await screen.findByLabelText(messages.en.theme) as HTMLSelectElement;
+    await waitFor(() => expect(theme.disabled).toBe(false));
+    const capture = await screen.findByRole("group", { name: messages.en.captureDisplay });
+    expect((capture as HTMLFieldSetElement).disabled).toBe(true);
+    expect(within(capture).getByText(messages.en.unavailable)).toBeTruthy();
+    const palette = screen.getByRole("group", { name: messages.en.openPalette });
+    expect((palette as HTMLFieldSetElement).disabled).toBe(false);
+  });
+
   it("keeps synchronized appearance controls read-only while a replacement is pending", async () => {
     const server = { ...defaultDevHudSettings, appearance: { theme: "dark" as const, language: "en" as const } };
     const firstReplacement = { ...server, appearance: { ...server.appearance, theme: "light" as const } };
