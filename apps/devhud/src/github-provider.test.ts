@@ -108,22 +108,49 @@ describe("GitHub.com provider", () => {
     expect(fetch.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false);
   });
 
-  it("reconciles an ambiguous issue write by marker search without a second POST", async () => {
+  it("reconciles an ambiguous issue write from the recent issue list without a second POST", async () => {
     let searches = 0;
+    let lists = 0;
     let posts = 0;
     const marker = issueMarker(fixture.submissionId);
     const fetch = vi.fn<typeof globalThis.fetch>(async (input, init) => {
       const url = new URL(String(input));
       if (url.pathname === "/search/issues") {
         searches += 1;
-        return json({ items: searches === 1 ? [] : [{ ...fixture.issue, body: `Body\n${marker}` }] });
+        return json({ items: [] });
+      }
+      if (url.pathname.endsWith("/issues") && init?.method !== "POST") {
+        lists += 1;
+        return json(posts === 0 ? [] : [{ ...fixture.issue, body: `Body\n${marker}` }]);
       }
       if (init?.method === "POST") { posts += 1; throw new TypeError("connection ended after write"); }
       return json({ message: "unexpected" }, 500);
     });
     const issue = await createGitHubProvider({ fetch }).createIssue(fine, privateRepository, { title: "Issue", body: "Body", labels: ["bug"], submissionId: fixture.submissionId });
     expect(issue.issue).toMatchObject({ number: 41, reconciled: true });
-    expect({ searches, posts }).toEqual({ searches: 2, posts: 1 });
+    expect({ searches, lists, posts }).toEqual({ searches: 1, lists: 2, posts: 1 });
+  });
+
+  it("does not repost while search indexing lags after an ambiguous write", async () => {
+    let searches = 0;
+    let lists = 0;
+    let posts = 0;
+    const marker = issueMarker(fixture.submissionId);
+    const fetch = vi.fn<typeof globalThis.fetch>(async (input, init) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/search/issues") { searches += 1; return json({ items: [] }); }
+      if (url.pathname.endsWith("/issues") && init?.method !== "POST") {
+        lists += 1;
+        return json(lists < 3 ? [] : [{ ...fixture.issue, body: `Body\n${marker}` }]);
+      }
+      if (init?.method === "POST") { posts += 1; throw new TypeError("connection ended after write"); }
+      return json({ message: "unexpected" }, 500);
+    });
+    const provider = createGitHubProvider({ fetch });
+    const input = { title: "Issue", body: "Body", labels: ["bug"], submissionId: fixture.submissionId };
+    await expect(provider.createIssue(fine, privateRepository, input)).rejects.toMatchObject({ code: GitHubErrorCode.AmbiguousWrite });
+    await expect(provider.createIssue(fine, privateRepository, input)).resolves.toMatchObject({ issue: { number: 41, reconciled: true } });
+    expect({ searches, lists, posts }).toEqual({ searches: 2, lists: 3, posts: 1 });
   });
 
   it("searches and enriches pull requests with pagination", async () => {

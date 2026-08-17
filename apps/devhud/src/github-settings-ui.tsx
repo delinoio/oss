@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { createGitHubProvider, GitHubErrorCode, GitHubProviderError, readGitHubCredential, type GitHubProvider, type GitHubRepositoryRef } from "./github-provider.ts";
 import type { Copy } from "./localization.ts";
 import { NativeBridgeError, NativeBridgeErrorCode, SecureSettingKind, type NativeBridgeV1 } from "./native-bridge.ts";
@@ -16,6 +16,7 @@ export function GitHubSettings({ copy, bridge, provider = createGitHubProvider({
   const [pending, setPending] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [statusError, setStatusError] = useState(false);
+  const [localCleanupPending, setLocalCleanupPending] = useState(false);
 
   const invoke = useCallback(async (action: () => Promise<void>): Promise<boolean> => {
     setPending(true);
@@ -27,29 +28,56 @@ export function GitHubSettings({ copy, bridge, provider = createGitHubProvider({
   }, [copy]);
 
   const cleanupAttempt = useRef<string | null>(null);
+  const cleanupsInFlight = useRef(new Set<Promise<boolean>>());
+  const activeProfileIds = useMemo(() => identity.settings.github.profiles.map((profile) => profile.id), [identity.settings.github.profiles]);
+  const activeProfileKey = activeProfileIds.join(":");
   const pendingPatRemovalKey = identity.settings.github.pendingPatRemovals.join(":");
-  const cleanupPendingPats = useCallback(() => invoke(async () => {
+  const cleanupPendingPats = useCallback(async (announce: boolean) => {
     const pendingProfileIds = identity.settings.github.pendingPatRemovals;
-    if (pendingProfileIds.length === 0) return;
-    const results = await Promise.allSettled(pendingProfileIds.map((profileId) => bridge.request({ operation: "secure.remove", setting: { kind: SecureSettingKind.GithubPat, profileId } })));
-    const removedProfileIds = new Set(pendingProfileIds.filter((_profileId, index) => results[index]?.status === "fulfilled"));
-    if (removedProfileIds.size > 0) {
-      const committed = await identity.replaceSettings({
-        ...identity.settings,
-        github: { ...identity.settings.github, pendingPatRemovals: pendingProfileIds.filter((profileId) => !removedProfileIds.has(profileId)) },
-      });
-      if (!committed) return;
+    if (announce) {
+      setPending(true);
+      setStatus(null);
+      setStatusError(false);
     }
-    const failure = results.find((result): result is PromiseRejectedResult => result.status === "rejected");
-    if (failure !== undefined) throw failure.reason;
-    setStatus(copy.githubProfileRemoved);
-  }), [bridge, copy.githubProfileRemoved, identity, invoke]);
+    try {
+      await bridge.request({ operation: "secure.reconcile-github-pats", profileIds: activeProfileIds });
+      if (pendingProfileIds.length > 0 && !identity.readOnly) {
+        const committed = await identity.replaceSettings({
+          ...identity.settings,
+          github: { ...identity.settings.github, pendingPatRemovals: [] },
+        });
+        if (!committed) return false;
+      }
+      if (announce || pendingProfileIds.length > 0) setStatus(copy.githubProfileRemoved);
+      setLocalCleanupPending(false);
+      return true;
+    } catch (error) {
+      setLocalCleanupPending(true);
+      setStatusError(true);
+      setStatus(error instanceof NativeBridgeError && error.code === NativeBridgeErrorCode.StorageFailure ? copy.githubErrorSecureStorage : copy.githubSetupFailed);
+      return false;
+    } finally {
+      if (announce) setPending(false);
+    }
+  }, [activeProfileIds, bridge, copy.githubErrorSecureStorage, copy.githubProfileRemoved, copy.githubSetupFailed, identity]);
+
+  const runPatCleanup = useCallback((announce: boolean) => {
+    const cleanup = cleanupPendingPats(announce);
+    cleanupsInFlight.current.add(cleanup);
+    void cleanup.finally(() => {
+      cleanupsInFlight.current.delete(cleanup);
+    });
+    return cleanup;
+  }, [cleanupPendingPats]);
 
   useEffect(() => {
-    if (pendingPatRemovalKey === "" || identity.readOnly || cleanupAttempt.current === pendingPatRemovalKey) return;
-    cleanupAttempt.current = pendingPatRemovalKey;
-    void cleanupPendingPats();
-  }, [cleanupPendingPats, identity.readOnly, pendingPatRemovalKey]);
+    if (identity.conflict !== null || identity.readOnly) { cleanupAttempt.current = null; return; }
+    if (pending) return;
+    const key = `${activeProfileKey}|${pendingPatRemovalKey}|${identity.readOnly}`;
+    if (cleanupAttempt.current === key) return;
+    cleanupAttempt.current = key;
+    void runPatCleanup(false);
+  }, [activeProfileKey, identity.conflict, identity.readOnly, pending, pendingPatRemovalKey, runPatCleanup]);
 
   const addProfile = async (event: FormEvent) => {
     event.preventDefault();
@@ -58,13 +86,11 @@ export function GitHubSettings({ copy, bridge, provider = createGitHubProvider({
       const profile = { id, name: name.trim(), kind } as const;
       if (profile.name.length === 0) throw new GitHubProviderError(GitHubErrorCode.InvalidResponse, "validate-credential");
       await provider.validateCredential({ profileId: id, kind, token });
+      await Promise.all(cleanupsInFlight.current);
       await bridge.request({ operation: "secure.write", setting: { kind: SecureSettingKind.GithubPat, profileId: id }, value: token });
       try {
         const committed = await identity.replaceSettings({ ...identity.settings, github: { ...identity.settings.github, profiles: [...identity.settings.github.profiles, profile] } });
-        if (!committed) {
-          await bridge.request({ operation: "secure.remove", setting: { kind: SecureSettingKind.GithubPat, profileId: id } }).catch(() => undefined);
-          return;
-        }
+        if (!committed) return;
       } catch (error) {
         await bridge.request({ operation: "secure.remove", setting: { kind: SecureSettingKind.GithubPat, profileId: id } }).catch(() => undefined);
         throw error;
@@ -147,7 +173,7 @@ export function GitHubSettings({ copy, bridge, provider = createGitHubProvider({
         <button type="submit">{copy.githubSaveProfile}</button>
       </fieldset>
     </form>
-    {identity.settings.github.pendingPatRemovals.length > 0 && <section className="notice" role="status"><p>{copy.githubProfileCleanupPending}</p><button type="button" disabled={pending || identity.readOnly} onClick={() => void cleanupPendingPats()}>{copy.retry}</button></section>}
+    {(identity.settings.github.pendingPatRemovals.length > 0 || localCleanupPending) && <section className="notice" role="status"><p>{copy.githubProfileCleanupPending}</p><button type="button" disabled={pending || identity.readOnly} onClick={() => void runPatCleanup(true)}>{copy.retry}</button></section>}
     {identity.settings.github.profiles.length === 0 ? <p>{copy.githubNoProfiles}</p> : <ul className="github-profiles">{identity.settings.github.profiles.map((profile) => <GitHubProfileItem key={profile.id} copy={copy} profile={profile} disabled={pending} readOnly={identity.readOnly} onSaveToken={saveProfileToken} onValidate={validateProfile} onRemove={removeProfile} />)}</ul>}
     <h4>{copy.githubAssignments}</h4>
     {identity.settings.github.repositories.map((repository, index) => <ProfileAssignment key={`repository:${repository.owner}/${repository.name}`} copy={copy} id={`github-repository-${index}`} label={`${repository.owner}/${repository.name}`} value={repository.profileRef} profiles={identity.settings.github.profiles} disabled={pending || identity.readOnly} onChange={(value) => void assignRepository(index, value)} />)}

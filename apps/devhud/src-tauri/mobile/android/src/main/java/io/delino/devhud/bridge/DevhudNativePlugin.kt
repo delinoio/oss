@@ -66,6 +66,7 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
                 "secure.read" -> readSecure(invoke)
                 "secure.write" -> writeSecure(invoke)
                 "secure.remove" -> removeSecure(invoke)
+                "secure.reconcile-github-pats" -> reconcileGitHubPats(invoke)
                 "secure.purge" -> purgeSecure(invoke)
                 "notifications.permission" -> resolveNotificationPermission(invoke)
                 "notifications.request-permission" -> requestNotificationPermission(invoke)
@@ -213,6 +214,20 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
         val key = settingKey(invoke.getArgs())
         persistSecure(invoke) {
             activity.getSharedPreferences(storeName, Context.MODE_PRIVATE).edit().remove(key).commit()
+        }
+    }
+
+    private fun reconcileGitHubPats(invoke: Invoke) {
+        val profileIdsJson = invoke.getArgs().getJSONArray("profileIds")
+        val profileIds = (0 until profileIdsJson.length()).map { index -> profileIdsJson.getString(index) }
+        if (profileIds.size > 25 || profileIds.toSet().size != profileIds.size) throw IllegalArgumentException("profileIds")
+        persistSecure(invoke) {
+            val preferences = activity.getSharedPreferences(storeName, Context.MODE_PRIVATE)
+            val editor = preferences.edit()
+            preferences.all.keys.filter { key ->
+                key.startsWith("github-pat:") && key.removePrefix("github-pat:") !in profileIds
+            }.forEach(editor::remove)
+            editor.commit()
         }
     }
 

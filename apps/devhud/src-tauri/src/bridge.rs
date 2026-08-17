@@ -220,6 +220,24 @@ fn validate_secure_request(request: &Value) -> Result<(), String> {
     Ok(())
 }
 
+fn validate_github_pat_reconciliation(request: &Value) -> Result<(), String> {
+    let profile_ids = request
+        .get("profileIds")
+        .and_then(Value::as_array)
+        .ok_or("invalid-argument")?;
+    if profile_ids.len() > 25 {
+        return Err("invalid-argument".to_string());
+    }
+    let mut unique = std::collections::BTreeSet::new();
+    for profile_id in profile_ids {
+        let profile_id = profile_id.as_str().ok_or("invalid-argument")?;
+        if !is_profile_id(profile_id) || !unique.insert(profile_id) {
+            return Err("invalid-argument".to_string());
+        }
+    }
+    Ok(())
+}
+
 fn validate_external_request(request: &Value) -> Result<(), String> {
     let target = request
         .get("target")
@@ -382,6 +400,14 @@ pub fn handle_native_bridge_request(
                 Err("unsupported".to_string())
             }
         }
+        "secure.reconcile-github-pats" => {
+            validate_github_pat_reconciliation(request)?;
+            if cfg!(any(target_os = "android", target_os = "ios")) {
+                Err("platform-failure".to_string())
+            } else {
+                Err("unsupported".to_string())
+            }
+        }
         "secure.purge" => {
             validate_purge_request(request)?;
             if cfg!(any(target_os = "android", target_os = "ios")) {
@@ -433,6 +459,8 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
         if operation.starts_with("secure.") {
             if operation == "secure.purge" {
                 validate_purge_request(&request)?;
+            } else if operation == "secure.reconcile-github-pats" {
+                validate_github_pat_reconciliation(&request)?;
             } else {
                 validate_secure_request(&request)?;
             }
@@ -456,6 +484,8 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
         if operation.starts_with("secure.") {
             if operation == "secure.purge" {
                 validate_purge_request(&request)?;
+            } else if operation == "secure.reconcile-github-pats" {
+                validate_github_pat_reconciliation(&request)?;
             } else {
                 validate_secure_request(&request)?;
             }
@@ -671,6 +701,31 @@ mod tests {
         });
         assert_eq!(
             handle_native_bridge_request(&invalid, &state),
+            Err("invalid-argument".to_string())
+        );
+    }
+
+    #[test]
+    fn validates_github_pat_reconciliation_profile_ids() {
+        let state = NativeBridgeState::default();
+        assert_eq!(
+            handle_native_bridge_request(
+                &json!({
+                    "operation": "secure.reconcile-github-pats",
+                    "profileIds": ["profile-one", "profile-two"]
+                }),
+                &state,
+            ),
+            Err("unsupported".to_string())
+        );
+        assert_eq!(
+            handle_native_bridge_request(
+                &json!({
+                    "operation": "secure.reconcile-github-pats",
+                    "profileIds": ["../escape"]
+                }),
+                &state,
+            ),
             Err("invalid-argument".to_string())
         );
     }

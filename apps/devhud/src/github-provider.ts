@@ -119,6 +119,16 @@ export function createGitHubProvider({ fetch: fetchImpl }: ProviderOptions): Git
     return result.metadata;
   }
 
+  async function listRecentIssueMarker(credential: GitHubCredential, repository: GitHubRepositoryRef, marker: string): Promise<{ readonly issue: GitHubIssue | null; readonly metadata: GitHubResponseMetadata }> {
+    const result = await request(GitHubOperation.SearchIssueMarker, credential, `${repositoryPath(repository)}/issues?state=all&sort=created&direction=desc&per_page=100`);
+    for (const candidate of array(result.json, GitHubOperation.SearchIssueMarker)) {
+      const issue = record(candidate, GitHubOperation.SearchIssueMarker);
+      if ("pull_request" in issue || typeof issue.body !== "string" || !issue.body.includes(marker)) continue;
+      return { issue: issueValue(issue, marker, true), metadata: result.metadata };
+    }
+    return { issue: null, metadata: result.metadata };
+  }
+
   return {
     id: GitHubProviderId,
     validateCredential,
@@ -165,6 +175,8 @@ export function createGitHubProvider({ fetch: fetchImpl }: ProviderOptions): Git
       const marker = issueMarker(input.submissionId);
       const existing = await this.searchIssueMarker(credential, repository, marker);
       if (existing.issue !== null) return { issue: existing.issue, metadata: existing.metadata };
+      const recent = await listRecentIssueMarker(credential, repository, marker);
+      if (recent.issue !== null) return { issue: recent.issue, metadata: recent.metadata };
       let result: RequestResult;
       try {
         result = await request(GitHubOperation.CreateIssue, credential, `${repositoryPath(repository)}/issues`, {
@@ -175,7 +187,7 @@ export function createGitHubProvider({ fetch: fetchImpl }: ProviderOptions): Git
       } catch (error) {
         const ambiguous = error instanceof GitHubProviderError && (error.code === GitHubErrorCode.NetworkFailure || (error.code === GitHubErrorCode.InvalidResponse && error.status !== null && (error.status >= 500 || (error.status >= 200 && error.status < 300))));
         if (!ambiguous) throw error;
-        const reconciled = await this.searchIssueMarker(credential, repository, marker);
+        const reconciled = await listRecentIssueMarker(credential, repository, marker);
         if (reconciled.issue !== null) return { issue: reconciled.issue, metadata: reconciled.metadata };
         throw new GitHubProviderError(GitHubErrorCode.AmbiguousWrite, GitHubOperation.CreateIssue);
       }

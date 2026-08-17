@@ -66,12 +66,35 @@ describe("GitHub settings", () => {
 
   it("preserves the PAT when profile descriptor removal conflicts", async () => {
     const replaceSettings = vi.fn(async () => false);
-    const request = vi.fn(async () => ({ kind: "ok" as const }));
+    const request = vi.fn(async (_request: NativeBridgeRequestV1) => ({ kind: "ok" as const }));
     identity = identityWith({ replaceSettings });
     render(<GitHubSettings copy={messages.en} bridge={bridgeWith(request)} provider={providerWithValidation()} />);
     fireEvent.click(screen.getByRole("button", { name: messages.en.githubRemoveProfile }));
     await waitFor(() => expect(replaceSettings).toHaveBeenCalled());
-    expect(request).not.toHaveBeenCalled();
+    expect(request).not.toHaveBeenCalledWith({ operation: "secure.remove", setting: { kind: "github-pat", profileId: profile.id } });
+  });
+
+  it("preserves a newly written PAT while its profile snapshot awaits conflict resolution", async () => {
+    let finishReconciliation: () => void = () => undefined;
+    const reconciliation = new Promise<void>((resolve) => { finishReconciliation = resolve; });
+    const replaceSettings = vi.fn(async () => false);
+    const request = vi.fn(async (value: NativeBridgeRequestV1) => {
+      if (value.operation === "secure.reconcile-github-pats") await reconciliation;
+      return { kind: "ok" as const };
+    });
+    const provider = providerWithValidation();
+    identity = identityWith({ replaceSettings });
+    render(<GitHubSettings copy={messages.en} bridge={bridgeWith(request)} provider={provider} />);
+    await waitFor(() => expect(request).toHaveBeenCalledWith({ operation: "secure.reconcile-github-pats", profileIds: [profile.id] }));
+    fireEvent.change(screen.getByLabelText(messages.en.githubProfileName), { target: { value: "New profile" } });
+    fireEvent.change(screen.getByLabelText(messages.en.githubToken), { target: { value: "new-pat" } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.githubSaveProfile }));
+    await waitFor(() => expect(provider.validateCredential).toHaveBeenCalledTimes(1));
+    expect(request.mock.calls.some(([value]) => value.operation === "secure.write")).toBe(false);
+    finishReconciliation();
+    await waitFor(() => expect(replaceSettings).toHaveBeenCalled());
+    expect(request.mock.calls.some(([value]) => value.operation === "secure.write")).toBe(true);
+    expect(request.mock.calls.some(([value]) => value.operation === "secure.remove")).toBe(false);
   });
 
   it("commits a PAT cleanup tombstone with descriptor removal", async () => {
@@ -84,20 +107,20 @@ describe("GitHub settings", () => {
       ...settings,
       github: { ...settings.github, profiles: [], pendingPatRemovals: [profile.id] },
     }));
-    expect(request).not.toHaveBeenCalled();
+    expect(request).not.toHaveBeenCalledWith({ operation: "secure.remove", setting: { kind: "github-pat", profileId: profile.id } });
   });
 
   it("clears a persisted PAT cleanup tombstone only after secure removal succeeds", async () => {
     const pendingSettings = parseDevHudSettings({ ...defaultDevHudSettings, github: { ...defaultDevHudSettings.github, pendingPatRemovals: [profile.id] } });
     const order: string[] = [];
     const replaceSettings = vi.fn(async () => { order.push("settings"); return true; });
-    const request = vi.fn(async () => { order.push("secure-remove"); return { kind: "ok" as const }; });
+    const request = vi.fn(async () => { order.push("secure-reconcile"); return { kind: "ok" as const }; });
     identity = identityWith({ settings: pendingSettings, replaceSettings });
     render(<GitHubSettings copy={messages.en} bridge={bridgeWith(request)} provider={providerWithValidation()} />);
 
     await waitFor(() => expect(replaceSettings).toHaveBeenCalledWith({ ...pendingSettings, github: { ...pendingSettings.github, pendingPatRemovals: [] } }));
-    expect(request).toHaveBeenCalledWith({ operation: "secure.remove", setting: { kind: "github-pat", profileId: profile.id } });
-    expect(order).toEqual(["secure-remove", "settings"]);
+    expect(request).toHaveBeenCalledWith({ operation: "secure.reconcile-github-pats", profileIds: [] });
+    expect(order).toEqual(["secure-reconcile", "settings"]);
     expect(await screen.findByText(messages.en.githubProfileRemoved)).toBeTruthy();
   });
 
@@ -119,5 +142,12 @@ describe("GitHub settings", () => {
     fireEvent.click(screen.getByRole("button", { name: messages.en.retry }));
     await waitFor(() => expect(replaceSettings).toHaveBeenCalledWith({ ...pendingSettings, github: { ...pendingSettings.github, pendingPatRemovals: [] } }));
     expect(request).toHaveBeenCalledTimes(2);
+  });
+
+  it("reconciles orphaned device PATs even after another device cleared the tombstone", async () => {
+    const request = vi.fn(async () => ({ kind: "ok" as const }));
+    identity = identityWith({ settings: defaultDevHudSettings });
+    render(<GitHubSettings copy={messages.en} bridge={bridgeWith(request)} provider={providerWithValidation()} />);
+    await waitFor(() => expect(request).toHaveBeenCalledWith({ operation: "secure.reconcile-github-pats", profileIds: [] }));
   });
 });

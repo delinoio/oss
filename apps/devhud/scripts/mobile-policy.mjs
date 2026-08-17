@@ -39,7 +39,7 @@ export function assertAndroidBackupExclusions({ androidManifest, androidBackupRu
 export function assertAndroidNativeBridge(androidNativeBridge) {
   assert(androidNativeBridge.includes("Executors.newSingleThreadExecutor()"), "Android secure-setting persistence must run off the command thread");
   assert(/override fun onDestroy\(activity: AppCompatActivity\) \{\s+secureSettingsExecutor\.shutdown\(\)\s+\}/u.test(androidNativeBridge), "Android secure-setting executor must stop with the plugin lifecycle");
-  assert((androidNativeBridge.match(/\.commit\(\)/gu) ?? []).length === 4, "Android secure-setting writes, migrations, removals, and purges must confirm persistence");
+  assert((androidNativeBridge.match(/\.commit\(\)/gu) ?? []).length === 5, "Android secure-setting writes, migrations, removals, reconciliation, and purges must confirm persistence");
   assert((androidNativeBridge.match(/updateAAD\(/gu) ?? []).length === 2, "Android secure values must authenticate their setting key as AES-GCM AAD");
   assert(androidNativeBridge.includes("AEADBadTagException") && androidNativeBridge.includes("authenticateKey = false") && androidNativeBridge.includes("encryptSecure(legacy, key)"), "Android must migrate authenticated legacy ciphertext before requiring key-bound AAD");
   assert(androidNativeBridge.includes('invoke.reject("storage-failure", "storage-failure"'), "Android secure-setting persistence failures must use storage-failure");

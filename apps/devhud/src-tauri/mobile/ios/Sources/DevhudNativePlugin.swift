@@ -33,6 +33,7 @@ private struct RequestArgs: Decodable {
     let value: String?
     let scope: String?
     let profileId: String?
+    let profileIds: [String]?
     let notification: DeckNotification?
     let deckId: String?
 }
@@ -51,6 +52,7 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate {
         case "secure.read": try readSecure(args, invoke)
         case "secure.write": try writeSecure(args, invoke)
         case "secure.remove": try removeSecure(args, invoke)
+        case "secure.reconcile-github-pats": try reconcileGitHubPats(args, invoke)
         case "secure.purge": try purgeSecure(args, invoke)
         case "notifications.permission": notificationPermission(invoke)
         case "notifications.request-permission": requestNotificationPermission(invoke)
@@ -183,6 +185,43 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate {
         for accessGroupKey in [sharedAccessGroupKey, legacyAccessGroupKey] {
             let status = deleteData(setting, accessGroupKey: accessGroupKey)
             guard status == errSecSuccess || status == errSecItemNotFound else { rejectStorageFailure(invoke); return }
+        }
+        invoke.resolve(["kind": "ok"])
+    }
+
+    private func reconcileGitHubPatsGroup(_ retained: Set<String>, accessGroupKey: String) -> Bool {
+        var all: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+                                  kSecAttrService as String: keychainService,
+                                  kSecReturnAttributes as String: true,
+                                  kSecMatchLimit as String: kSecMatchLimitAll]
+        if let accessGroup = Bundle.main.object(forInfoDictionaryKey: accessGroupKey) as? String {
+            all[kSecAttrAccessGroup as String] = accessGroup
+        }
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(all as CFDictionary, &result)
+        if status == errSecItemNotFound { return true }
+        guard status == errSecSuccess, let items = result as? [[String: Any]] else { return false }
+        for item in items {
+            guard let account = item[kSecAttrAccount as String] as? String,
+                  account.hasPrefix("github-pat:") else { continue }
+            let profileId = String(account.dropFirst("github-pat:".count))
+            if retained.contains(profileId) { continue }
+            var itemQuery = all
+            itemQuery.removeValue(forKey: kSecReturnAttributes as String)
+            itemQuery.removeValue(forKey: kSecMatchLimit as String)
+            itemQuery[kSecAttrAccount as String] = account
+            let deletion = SecItemDelete(itemQuery as CFDictionary)
+            if deletion != errSecSuccess && deletion != errSecItemNotFound { return false }
+        }
+        return true
+    }
+
+    private func reconcileGitHubPats(_ args: RequestArgs, _ invoke: Invoke) throws {
+        guard let profileIds = args.profileIds, profileIds.count <= 25,
+              Set(profileIds).count == profileIds.count else { throw NativeError.invalidArgument }
+        let retained = Set(profileIds)
+        for accessGroupKey in [sharedAccessGroupKey, legacyAccessGroupKey] {
+            guard reconcileGitHubPatsGroup(retained, accessGroupKey: accessGroupKey) else { rejectStorageFailure(invoke); return }
         }
         invoke.resolve(["kind": "ok"])
     }

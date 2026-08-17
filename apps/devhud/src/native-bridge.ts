@@ -94,6 +94,7 @@ export type NativeBridgeRequestV1 =
   | { readonly operation: "secure.read"; readonly setting: SecureSettingRef }
   | { readonly operation: "secure.write"; readonly setting: SecureSettingRef; readonly value: string }
   | { readonly operation: "secure.remove"; readonly setting: SecureSettingRef }
+  | { readonly operation: "secure.reconcile-github-pats"; readonly profileIds: readonly string[] }
   | { readonly operation: "secure.purge"; readonly scope: "logout" | "account-deletion" | "api-change"; readonly profileId?: string }
   | { readonly operation: "notifications.permission" }
   | { readonly operation: "notifications.request-permission" }
@@ -150,6 +151,12 @@ export function validateSecureSettingRef(setting: SecureSettingRef) {
 
 export function validateSecretValue(value: string) {
   if (new TextEncoder().encode(value).byteLength > secretLimit) {
+    throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument);
+  }
+}
+
+export function validateGitHubPatProfileIds(profileIds: readonly string[]) {
+  if (profileIds.length > 25 || new Set(profileIds).size !== profileIds.length || profileIds.some((profileId) => !profilePattern.test(profileId))) {
     throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument);
   }
 }
@@ -211,6 +218,7 @@ export const nativeBridge: NativeBridgeV1 = {
   async request(request) {
     if ("setting" in request) validateSecureSettingRef(request.setting);
     if (request.operation === "secure.write") validateSecretValue(request.value);
+    if (request.operation === "secure.reconcile-github-pats") validateGitHubPatProfileIds(request.profileIds);
     if (request.operation === "lifecycle.open-external") validateExternalRequest(request);
     if (request.operation === "auth.open-system-browser") validateAuthenticationBrowserRequest(request);
     if (!window.__TAURI_INTERNALS__) {

@@ -120,12 +120,43 @@ fn handle_with_backend<B: CredentialBackend>(
             write_index(backend, &index, chunk_values)?;
             Ok(serde_json::json!({ "kind": "ok" }))
         }
+        Some("secure.reconcile-github-pats") => {
+            reconcile_github_pats(request, backend, chunk_values)?;
+            Ok(serde_json::json!({ "kind": "ok" }))
+        }
         Some("secure.purge") => {
             purge(request, backend, chunk_values)?;
             Ok(serde_json::json!({ "kind": "ok" }))
         }
         _ => Err("invalid-argument".to_string()),
     }
+}
+
+fn reconcile_github_pats<B: CredentialBackend>(
+    request: &Value,
+    backend: &B,
+    chunk_values: bool,
+) -> Result<(), String> {
+    let retained: BTreeSet<&str> = request
+        .get("profileIds")
+        .and_then(Value::as_array)
+        .ok_or("invalid-argument")?
+        .iter()
+        .map(|value| value.as_str().ok_or("invalid-argument"))
+        .collect::<Result<_, _>>()?;
+    let mut index = read_index(backend, chunk_values)?;
+    let targets: Vec<_> = index
+        .iter()
+        .filter(|setting| {
+            setting.kind == "github-pat" && !retained.contains(setting.profile_id.as_str())
+        })
+        .cloned()
+        .collect();
+    for setting in targets {
+        delete_value(backend, &setting, chunk_values)?;
+        index.remove(&setting);
+    }
+    write_index(backend, &index, chunk_values)
 }
 
 fn write_setting<B: CredentialBackend>(
@@ -441,8 +472,8 @@ mod tests {
 
     use super::{
         CHUNK_MANIFEST_PREFIX, ChunkManifest, CredentialBackend, INDEX_ACCOUNT, SettingRef,
-        chunk_account, delete_value, read_index, read_value, should_remove, split_chunks,
-        write_index, write_setting, write_value,
+        chunk_account, delete_value, read_index, read_value, reconcile_github_pats, should_remove,
+        split_chunks, write_index, write_setting, write_value,
     };
 
     #[derive(Clone, Debug, Eq, PartialEq)]
@@ -550,6 +581,34 @@ mod tests {
             "api-change",
             Some("old-api")
         ));
+    }
+
+    #[test]
+    fn github_pat_reconciliation_removes_only_unreferenced_profiles() {
+        let backend = MemoryBackend::default();
+        let retained = setting("github-pat", "retained");
+        let removed = setting("github-pat", "removed");
+        let r2 = setting("r2-secret-access-key", "removed");
+        write_setting(&backend, &retained, "retained-pat", false).expect("retained PAT");
+        write_setting(&backend, &removed, "removed-pat", false).expect("removed PAT");
+        write_setting(&backend, &r2, "r2-secret", false).expect("R2 secret");
+
+        reconcile_github_pats(
+            &serde_json::json!({ "profileIds": ["retained"] }),
+            &backend,
+            false,
+        )
+        .expect("reconcile PATs");
+
+        assert_eq!(
+            read_value(&backend, &retained, false),
+            Ok(Some("retained-pat".to_string()))
+        );
+        assert_eq!(read_value(&backend, &removed, false), Ok(None));
+        assert_eq!(
+            read_value(&backend, &r2, false),
+            Ok(Some("r2-secret".to_string()))
+        );
     }
 
     #[test]
