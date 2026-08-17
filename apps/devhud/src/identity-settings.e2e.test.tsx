@@ -1474,6 +1474,60 @@ describe("generated Connect identity/settings fixture", () => {
     expect(screen.getByRole("status").textContent).toBe(messages.en.mappingSaved);
   });
 
+  it("preserves a dirty mapping draft when conflict reapply encounters another revision conflict", async () => {
+    const mapping = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", pattern: "https://server.example/**", repository: { owner: "delinoio", name: "oss" }, credentialProfileRef: "github.default", priority: 0, chromeOrigin: null, updatedAt: "2026-08-17T00:00:00.000Z" };
+    const initial = { ...defaultDevHudSettings, urlMappings: [mapping] };
+    const later = { ...defaultDevHudSettings, urlMappings: [{ ...mapping, pattern: "https://later.example/**" }] };
+    let replaceAttempts = 0;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 2, revision: "1", canonicalJson: encodedSettings(initial) } });
+      if (url.endsWith("/devhud.v1.SettingsService/ReplaceSettings")) {
+        replaceAttempts += 1;
+        const current = replaceAttempts === 1 ? initial : later;
+        const detail = create(SettingsRevisionConflictSchema, {
+          expectedRevision: BigInt(replaceAttempts),
+          currentSnapshot: { schemaVersion: 2, revision: BigInt(replaceAttempts + 1), canonicalJson: new TextEncoder().encode(canonicalDevHudSettings(current)) },
+        });
+        const value = btoa(String.fromCharCode(...toBinary(SettingsRevisionConflictSchema, detail)));
+        return new Response(JSON.stringify({ code: "aborted", message: "settings revision conflict", details: [{ type: SettingsRevisionConflictSchema.typeName, value }] }), { status: 409, headers: { "Content-Type": "application/json" } });
+      }
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    render(<DevHudServiceBoundary apiOrigin="https://devhud.api.delino.io" active online callbackUrl={null} platform={RuntimePlatform.Desktop} bridge={authenticatedBridge()} onCallbackConsumed={() => {}} onContinueLocally={() => {}} onLoggedOut={() => {}}><SynchronizedSettingsBoundary copy={messages.en} /></DevHudServiceBoundary>);
+
+    const pattern = await screen.findByLabelText(messages.en.urlPattern) as HTMLInputElement;
+    fireEvent.change(pattern, { target: { value: "https://draft.example/**" } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.saveUrlMappings }));
+    await screen.findByRole("dialog", { name: messages.en.conflictTitle });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.reapplyLocal }));
+    await waitFor(() => expect(replaceAttempts).toBe(2));
+    await waitFor(() => expect((screen.getByLabelText(messages.en.urlPattern) as HTMLInputElement).value).toBe("https://draft.example/**"));
+  });
+
+  it("does not report a mapping validation error when a mapping save has a transport failure", async () => {
+    const mapping = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", pattern: "https://server.example/**", repository: { owner: "delinoio", name: "oss" }, credentialProfileRef: "github.default", priority: 0, chromeOrigin: null, updatedAt: "2026-08-17T00:00:00.000Z" };
+    const server = { ...defaultDevHudSettings, urlMappings: [mapping] };
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 2, revision: "1", canonicalJson: encodedSettings(server) } });
+      if (url.endsWith("/devhud.v1.SettingsService/ReplaceSettings")) throw new TypeError("network unavailable");
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    render(<DevHudServiceBoundary apiOrigin="https://devhud.api.delino.io" active online callbackUrl={null} platform={RuntimePlatform.Desktop} bridge={authenticatedBridge()} onCallbackConsumed={() => {}} onContinueLocally={() => {}} onLoggedOut={() => {}}><SynchronizedSettingsBoundary copy={messages.en} /></DevHudServiceBoundary>);
+
+    await screen.findByLabelText(messages.en.urlPattern);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.saveUrlMappings }));
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain(messages.en.settingsActionFailed));
+    expect(screen.queryByText(messages.en.mappingInvalid)).toBeNull();
+  });
+
   it("clears the guest import marker when a conflicted upload adopts the server", async () => {
     const local = { ...defaultDevHudSettings, appearance: { ...defaultDevHudSettings.appearance, theme: "dark" as const } };
     const server = { ...defaultDevHudSettings, appearance: { ...defaultDevHudSettings.appearance, theme: "light" as const } };

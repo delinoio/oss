@@ -58,7 +58,7 @@ export interface IdentitySettingsValue {
   readonly replaceLocal: () => boolean;
   readonly replaceSettings: (settings: DevHudSettingsV1) => Promise<boolean>;
   readonly adoptConflictServer: () => void;
-  readonly reapplyConflictLocal: () => Promise<void>;
+  readonly reapplyConflictLocal: () => Promise<boolean>;
   readonly logout: () => Promise<void>;
   readonly deleteAccount: () => Promise<void>;
   readonly restoreAccount: () => Promise<void>;
@@ -620,7 +620,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       clearGuestImportMarker(storage);
       writeAuthenticatedSettingsCache(storage, apiOrigin, { settings: conflict.server, revision: conflict.currentRevision, cachedAt: new Date().toISOString() });
     },
-    reapplyConflictLocal: async () => { if (conflict) await replaceAt(conflict.local, conflict.currentRevision); },
+    reapplyConflictLocal: async () => conflict ? replaceAt(conflict.local, conflict.currentRevision) : false,
     logout: async () => {
       await bridge.request({ operation: "secure.purge", scope: "logout" });
       await sessionRef.current?.clear();
