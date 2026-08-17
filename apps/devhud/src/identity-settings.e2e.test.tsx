@@ -1375,6 +1375,39 @@ describe("generated Connect identity/settings fixture", () => {
     expect(readAuthenticatedSettingsCache(localStorage, "https://devhud.api.delino.io")).toBeNull();
   });
 
+  it("resets a dirty mapping draft when import replacement adopts the server snapshot", async () => {
+    const mapping = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", pattern: "https://local.example/**", repository: { owner: "delinoio", name: "oss" }, credentialProfileRef: "github.default", priority: 0, chromeOrigin: null, updatedAt: "2026-08-17T00:00:00.000Z" };
+    const local = { ...defaultDevHudSettings, urlMappings: [mapping] };
+    const server = { ...defaultDevHudSettings, urlMappings: [{ ...mapping, pattern: "https://server.example/**" }] };
+    writeGuestSettings(localStorage, local);
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 1, revision: "1", canonicalJson: encodedSettings(server) } });
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    render(<DevHudServiceBoundary
+      apiOrigin="https://devhud.api.delino.io"
+      active
+      online
+      callbackUrl={null}
+      platform={RuntimePlatform.Desktop}
+      bridge={authenticatedBridge()}
+      onCallbackConsumed={() => {}}
+      onContinueLocally={() => {}}
+      onLoggedOut={() => {}}
+    ><SynchronizedSettingsBoundary copy={messages.en} /></DevHudServiceBoundary>);
+
+    expect(await screen.findByRole("dialog", { name: messages.en.importSettingsTitle })).toBeTruthy();
+    const pattern = screen.getByLabelText(messages.en.urlPattern) as HTMLInputElement;
+    fireEvent.change(pattern, { target: { value: "https://draft.example/**" } });
+    expect(pattern.value).toBe("https://draft.example/**");
+    fireEvent.click(screen.getByRole("button", { name: messages.en.replaceLocal }));
+    await waitFor(() => expect((screen.getByLabelText(messages.en.urlPattern) as HTMLInputElement).value).toBe("https://server.example/**"));
+  });
+
   it("clears the guest import marker when a conflicted upload adopts the server", async () => {
     const local = { ...defaultDevHudSettings, appearance: { ...defaultDevHudSettings.appearance, theme: "dark" as const } };
     const server = { ...defaultDevHudSettings, appearance: { ...defaultDevHudSettings.appearance, theme: "light" as const } };

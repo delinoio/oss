@@ -33,7 +33,7 @@ export function parseUrlPattern(value: string): ParsedUrlPattern {
   if (host.some((part) => !literalHost.test(part) || part === "")) throw new UrlMappingError("host labels must be literals or *");
   const path = pathText.split("/").slice(1);
   if (path.some((part) => part === "" && path.length > 1) || path.some((part) => part.includes("*") && part !== "*" && part !== "**")) throw new UrlMappingError("path wildcards must occupy a complete segment");
-  return { scheme, host, port: normalizeDefaultPort(scheme, port), path: path.length === 1 && path[0] === "" ? [] : path };
+  return { scheme, host, port: normalizeDefaultPort(scheme, port), path: canonicalizePatternPath(pathText, path) };
 }
 
 export function parseLiveUrl(value: string): ParsedUrlPattern {
@@ -41,8 +41,7 @@ export function parseLiveUrl(value: string): ParsedUrlPattern {
     const url = new URL(value);
     if ((url.protocol !== "http:" && url.protocol !== "https:") || !url.hostname) throw new Error();
     const scheme = url.protocol.slice(0, -1);
-    const path = url.pathname.split("/").slice(1);
-    return { scheme, host: url.hostname.split("."), port: normalizeDefaultPort(scheme, url.port), path: path.length === 1 && path[0] === "" ? [] : path };
+    return { scheme, host: url.hostname.split("."), port: normalizeDefaultPort(scheme, url.port), path: canonicalizeLiteralPath(url.pathname) };
   } catch {
     throw new UrlMappingError("live URL must be an HTTP(S) URL");
   }
@@ -50,6 +49,33 @@ export function parseLiveUrl(value: string): ParsedUrlPattern {
 
 function normalizeDefaultPort(scheme: string, port: string): string {
   return (scheme === "http" && port === "80") || (scheme === "https" && port === "443") ? "" : port;
+}
+
+function canonicalizePatternPath(pathText: string, path: readonly string[]): readonly string[] {
+  // Shield glob syntax while the URL parser normalizes only literal path semantics.
+  const markers = new Map<string, "*" | "**">();
+  const rawPath = path.map((part, index) => {
+    if (part !== "*" && part !== "**") return part;
+    let marker = `__devhud_wildcard_${index}__`;
+    while (path.includes(marker)) marker = `_${marker}`;
+    markers.set(marker, part);
+    return marker;
+  });
+  const normalized = new URL(`https://example.invalid/${rawPath.join("/")}`).pathname;
+  return normalized === "/" ? [] : normalized.slice(1).split("/").map((part) => markers.get(part) ?? canonicalizeLiteralSegment(part));
+}
+
+function canonicalizeLiteralPath(pathname: string): readonly string[] {
+  return pathname === "/" ? [] : pathname.slice(1).split("/").map(canonicalizeLiteralSegment);
+}
+
+function canonicalizeLiteralSegment(value: string): string {
+  try {
+    const decoded = decodeURIComponent(value);
+    return decoded === "*" ? "%2A" : decoded === "**" ? "%2A%2A" : decoded;
+  } catch {
+    throw new UrlMappingError("path segments must have valid percent encoding");
+  }
 }
 
 export function mappingMatches(mapping: Pick<UrlRepositoryMapping, "pattern">, value: string): boolean {
@@ -109,17 +135,18 @@ function componentMatches(pattern: string, value: string, insensitive: boolean):
 }
 
 function pathMatches(pattern: readonly string[], value: readonly string[], patternIndex = 0, valueIndex = 0): boolean {
-  while (patternIndex < pattern.length) {
-    const component = pattern[patternIndex];
-    if (component === "**") {
-      if (patternIndex === pattern.length - 1) return true;
-      for (let next = valueIndex; next <= value.length; next += 1) if (pathMatches(pattern, value, patternIndex + 1, next)) return true;
-      return false;
-    }
-    if (valueIndex >= value.length || !componentMatches(component ?? "", value[valueIndex] ?? "", false)) return false;
-    patternIndex += 1; valueIndex += 1;
-  }
-  return valueIndex === value.length;
+  const memo = new Map<string, boolean>();
+  const visit = (currentPatternIndex: number, currentValueIndex: number): boolean => {
+    const key = `${currentPatternIndex}:${currentValueIndex}`;
+    const previous = memo.get(key); if (previous !== undefined) return previous;
+    let result: boolean;
+    const component = pattern[currentPatternIndex];
+    if (currentPatternIndex === pattern.length) result = currentValueIndex === value.length;
+    else if (component === "**") result = visit(currentPatternIndex + 1, currentValueIndex) || (currentValueIndex < value.length && visit(currentPatternIndex, currentValueIndex + 1));
+    else result = currentValueIndex < value.length && componentMatches(component ?? "", value[currentValueIndex] ?? "", false) && visit(currentPatternIndex + 1, currentValueIndex + 1);
+    memo.set(key, result); return result;
+  };
+  return visit(patternIndex, valueIndex);
 }
 
 function patternsOverlap(left: ParsedUrlPattern, right: ParsedUrlPattern): boolean {

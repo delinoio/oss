@@ -19,6 +19,21 @@ describe("URL repository matcher", () => {
     expect(mappingMatches(mapping({ pattern: "https://example.com/a/b" }), "https://example.com/a//b")).toBe(false);
   });
 
+  it("canonicalizes literal path segments with URL semantics", () => {
+    expect(mappingMatches(mapping({ pattern: "https://example.com/한글" }), "https://example.com/%ED%95%9C%EA%B8%80")).toBe(true);
+    expect(mappingMatches(mapping({ pattern: "https://example.com/hello world" }), "https://example.com/hello%20world")).toBe(true);
+    expect(mappingMatches(mapping({ pattern: "https://example.com/%ed%95%9c%ea%b8%80" }), "https://example.com/한글")).toBe(true);
+    expect(mappingMatches(mapping({ pattern: "https://example.com/teams/../projects" }), "https://example.com/projects")).toBe(true);
+    expect(mappingMatches(mapping({ pattern: "https://example.com/%2a" }), "https://example.com/%2A")).toBe(true);
+    expect(mappingMatches(mapping({ pattern: "https://example.com/%2a" }), "https://example.com/value")).toBe(false);
+  });
+
+  it("bounds multi-segment wildcard matching", () => {
+    const wildcards = Array.from({ length: 24 }, () => "**").join("/");
+    const path = Array.from({ length: 24 }, () => "value").join("/");
+    expect(mappingMatches(mapping({ pattern: `https://example.com/${wildcards}/missing` }), `https://example.com/${path}`)).toBe(false);
+  });
+
   it("rejects invalid wildcard placement and sensitive URL components", () => {
     for (const pattern of ["https://api*.example.com/", "https://api.example.com/**:123", "https://api.example.com/path?x=1", "https://user@api.example.com/"]) expect(() => parseUrlPattern(pattern)).toThrow();
     expect(parseUrlPattern("https://social.example/@alice").path).toEqual(["@alice"]);

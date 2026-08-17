@@ -55,7 +55,7 @@ export interface IdentitySettingsValue {
   readonly retrySettings: () => Promise<void>;
   readonly continueLocally: () => void;
   readonly uploadLocal: () => Promise<void>;
-  readonly replaceLocal: () => void;
+  readonly replaceLocal: () => boolean;
   readonly replaceSettings: (settings: DevHudSettingsV1) => Promise<boolean>;
   readonly adoptConflictServer: () => void;
   readonly reapplyConflictLocal: () => Promise<void>;
@@ -592,13 +592,14 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
         validated = validatedSettingsSnapshot(settingsQuery.data?.snapshot);
       } catch {
         markSettingsContractInvalid();
-        return;
+        return false;
       }
       setSettings(validated.settings);
       setRevision(validated.revision);
       setImportDiff(null);
       clearGuestImportMarker(storage);
       writeAuthenticatedSettingsCache(storage, apiOrigin, { settings: validated.settings, revision: validated.revision, cachedAt: new Date().toISOString() });
+      return true;
     },
     replaceSettings: async (next) => {
       if (status === "guest" || status === "signed-out") {
