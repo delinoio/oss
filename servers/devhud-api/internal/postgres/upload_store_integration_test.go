@@ -303,8 +303,14 @@ func TestRemovalTerminalIdempotencyAndPendingQuarantine(t *testing.T) {
 	if _, err := store.ClaimUploadRemoval(ctx, "", "", finalized.UploadID, domain.RemovalReasonAdministratorQuarantined, 0, "GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG", now); err != nil {
 		t.Fatalf("matching quarantine retry failed: %v", err)
 	}
-	if _, err := store.ClaimUploadRemoval(ctx, "", "", finalized.UploadID, domain.RemovalReasonAdministratorDeleted, 0, "HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH", now); !uploadFailureIs(err, domain.UploadFailureInvalidState) {
-		t.Fatalf("quarantine-to-delete error = %v", err)
+	quarantineDeleteToken := "HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH"
+	claimed, err := store.ClaimUploadRemoval(ctx, "", "", finalized.UploadID, domain.RemovalReasonAdministratorDeleted, domain.UploadStateQuarantined, quarantineDeleteToken, now)
+	if err != nil || claimed.State != domain.UploadStateRemoving || claimed.RemovalReason != domain.RemovalReasonAdministratorDeleted {
+		t.Fatalf("quarantine-to-delete claim = %+v, err=%v", claimed, err)
+	}
+	completed, err := store.CompleteUploadRemoval(ctx, finalized.UploadID, quarantineDeleteToken, now, nil)
+	if err != nil || completed.State != domain.UploadStateDeleted {
+		t.Fatalf("quarantine-to-delete completion = %+v, err=%v", completed, err)
 	}
 }
 

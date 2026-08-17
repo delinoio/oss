@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
@@ -141,7 +142,11 @@ func lockAdminMutationUsers(ctx context.Context, tx pgx.Tx, actorID, targetID st
 func ensureAdminActor(ctx context.Context, tx pgx.Tx, actorID string) error {
 	var deletion domain.DeletionState
 	var blocked domain.AdministrativeBlockState
-	if err := tx.QueryRow(ctx, `SELECT deletion_state, administrative_block_state FROM devhud_users WHERE user_id = $1 FOR SHARE`, actorID).Scan(&deletion, &blocked); err != nil {
+	err := tx.QueryRow(ctx, `SELECT deletion_state, administrative_block_state FROM devhud_users WHERE user_id = $1 FOR SHARE`, actorID).Scan(&deletion, &blocked)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.ErrNotFound
+	}
+	if err != nil {
 		return err
 	}
 	if deletion != domain.DeletionStateActive || blocked == domain.AdministrativeBlockStateBlocked {
