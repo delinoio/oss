@@ -24,16 +24,29 @@ const literalPort = /^(?:[1-9]\d{0,4}|\*)?$/u;
 /** Parse a URL glob without allowing URL credentials, query, or fragment data. */
 export function parseUrlPattern(value: string): ParsedUrlPattern {
   if (value !== value.trim() || value.includes("?") || value.includes("#")) throw new UrlMappingError("pattern must not contain credentials, query, or fragment");
-  const match = /^(\*|https?):\/\/([^/:]+)(?::([^/]*))?(\/.*)?$/u.exec(value);
+  const match = /^(\*|https?):\/\/(\[[^\]]+\]|[^/:]+)(?::([^/]*))?(\/.*)?$/u.exec(value);
   if (!match) throw new UrlMappingError("pattern must contain scheme, host, optional port, and path");
   const [, scheme, hostText, port = "", pathText = "/"] = match;
   if (hostText.includes("@")) throw new UrlMappingError("pattern must not contain credentials, query, or fragment");
   if (!literalScheme.test(scheme) || !literalPort.test(port) || (port !== "" && port !== "*" && Number(port) > 65535)) throw new UrlMappingError("pattern has an invalid scheme or port");
-  const host = hostText.split(".");
-  if (host.some((part) => !literalHost.test(part) || part === "")) throw new UrlMappingError("host labels must be literals or *");
+  const host = parsePatternHost(hostText);
   const path = pathText.split("/").slice(1);
   if (path.some((part) => part.includes("*") && part !== "*" && part !== "**")) throw new UrlMappingError("path wildcards must occupy a complete segment");
   return { scheme, host, port: normalizeDefaultPort(scheme, port), path: canonicalizePatternPath(pathText, path) };
+}
+
+function parsePatternHost(hostText: string): readonly string[] {
+  if (hostText.startsWith("[")) {
+    try {
+      // URL canonicalization keeps an IPv6 literal as one bracketed host component.
+      return [new URL(`http://${hostText}/`).hostname];
+    } catch {
+      throw new UrlMappingError("host must be a valid bracketed IPv6 literal");
+    }
+  }
+  const host = hostText.split(".");
+  if (host.some((part) => !literalHost.test(part) || part === "")) throw new UrlMappingError("host labels must be literals or *");
+  return host;
 }
 
 export function parseLiveUrl(value: string): ParsedUrlPattern {

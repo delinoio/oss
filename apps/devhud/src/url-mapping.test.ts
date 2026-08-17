@@ -22,6 +22,13 @@ describe("URL repository matcher", () => {
     expect(mappingMatches(mapping({ pattern: "https://example.com/a//b" }), "https://example.com/a/b")).toBe(false);
   });
 
+  it("matches bracketed IPv6 literals as concrete hosts", () => {
+    expect(parseUrlPattern("http://[::1]:3000/app").host).toEqual(["[::1]"]);
+    expect(mappingMatches(mapping({ pattern: "http://[::1]:3000/app" }), "http://[::1]:3000/app")).toBe(true);
+    expect(mappingMatches(mapping({ pattern: "http://[::ffff:192.0.2.1]/**" }), "http://[::FFFF:192.0.2.1]/app")).toBe(true);
+    for (const pattern of ["http://[::1/app", "http://[*]/app", "http://[not-an-ip]/app"]) expect(() => parseUrlPattern(pattern)).toThrow();
+  });
+
   it("canonicalizes literal path segments with URL semantics", () => {
     expect(mappingMatches(mapping({ pattern: "https://example.com/한글" }), "https://example.com/%ED%95%9C%EA%B8%80")).toBe(true);
     expect(mappingMatches(mapping({ pattern: "https://example.com/hello world" }), "https://example.com/hello%20world")).toBe(true);
