@@ -25,6 +25,11 @@ const runtime: RuntimeSnapshot = {
   lifecycle: LifecycleState.Active,
   capabilities: { secureSettings: true, notifications: false, storeUpdates: false, widgets: false },
 };
+const mappingProfile = { id: "018f47a2-7b3c-7def-8abc-1234567890ac", name: "Work", kind: "fine-grained" as const };
+
+function withMappingProfile(urlMappings: typeof defaultDevHudSettings.urlMappings) {
+  return { ...defaultDevHudSettings, github: { ...defaultDevHudSettings.github, profiles: [mappingProfile] }, urlMappings };
+}
 
 function connectResponse(body: unknown): Response {
   const snapshot = body !== null && typeof body === "object" && "snapshot" in body ? (body as { readonly snapshot?: { readonly schemaVersion?: number; readonly canonicalJson?: string } }).snapshot : undefined;
@@ -774,8 +779,8 @@ describe("generated Connect identity/settings fixture", () => {
     let rejectBootstrap!: (reason: unknown) => void;
     const bootstrap = new Promise<Response>((_resolve, reject) => { rejectBootstrap = reject; });
     vi.stubGlobal("fetch", vi.fn(() => bootstrap));
-    const mapping = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", pattern: `https://source.example/${"path".repeat(1_500)}`, repository: { owner: "owner".repeat(1_500), name: "repository".repeat(1_500) }, credentialProfileRef: "github.default", priority: 0, chromeOrigin: null, updatedAt: "2026-08-17T00:00:00.000Z" };
-    const oversized = { ...defaultDevHudSettings, urlMappings: Array.from({ length: 100 }, (_, index) => ({ ...mapping, id: `018f47a2-7b3c-7def-8abc-${(123456789000 + index).toString().padStart(12, "0")}` })) };
+    const mapping = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", pattern: `https://source.example/${"path".repeat(1_500)}`, repository: { owner: "owner".repeat(1_500), name: "repository".repeat(1_500) }, credentialProfileRef: mappingProfile.id, priority: 0, chromeOrigin: null, updatedAt: "2026-08-17T00:00:00.000Z" };
+    const oversized = withMappingProfile(Array.from({ length: 100 }, (_, index) => ({ ...mapping, id: `018f47a2-7b3c-7def-8abc-${(123456789000 + index).toString().padStart(12, "0")}` })));
 
     renderIdentityProbe(signedOutBridge(), oversized);
     await waitFor(() => expect(screen.getByRole("button", { name: "continue probe locally" })).toBeTruthy());
@@ -1473,9 +1478,9 @@ describe("generated Connect identity/settings fixture", () => {
   });
 
   it("resets a dirty mapping draft when import replacement adopts the server snapshot", async () => {
-    const mapping = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", pattern: "https://local.example/**", repository: { owner: "delinoio", name: "oss" }, credentialProfileRef: "github.default", priority: 0, chromeOrigin: null, updatedAt: "2026-08-17T00:00:00.000Z" };
-    const local = { ...defaultDevHudSettings, urlMappings: [mapping] };
-    const server = { ...defaultDevHudSettings, urlMappings: [{ ...mapping, pattern: "https://server.example/**" }] };
+    const mapping = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", pattern: "https://local.example/**", repository: { owner: "delinoio", name: "oss" }, credentialProfileRef: mappingProfile.id, priority: 0, chromeOrigin: null, updatedAt: "2026-08-17T00:00:00.000Z" };
+    const local = withMappingProfile([mapping]);
+    const server = withMappingProfile([{ ...mapping, pattern: "https://server.example/**" }]);
     writeGuestSettings(localStorage, local);
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
@@ -1506,9 +1511,9 @@ describe("generated Connect identity/settings fixture", () => {
   });
 
   it("keeps an intermediate negative mapping priority editable until save", async () => {
-    const mapping = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", pattern: "https://local.example/**", repository: { owner: "delinoio", name: "oss" }, credentialProfileRef: "github.default", priority: 0, chromeOrigin: null, updatedAt: "2026-08-17T00:00:00.000Z" };
-    const server = { ...defaultDevHudSettings, urlMappings: [{ ...mapping, pattern: "https://server.example/**" }] };
-    writeGuestSettings(localStorage, { ...defaultDevHudSettings, urlMappings: [mapping] });
+    const mapping = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", pattern: "https://local.example/**", repository: { owner: "delinoio", name: "oss" }, credentialProfileRef: mappingProfile.id, priority: 0, chromeOrigin: null, updatedAt: "2026-08-17T00:00:00.000Z" };
+    const server = withMappingProfile([{ ...mapping, pattern: "https://server.example/**" }]);
+    writeGuestSettings(localStorage, withMappingProfile([mapping]));
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
@@ -1528,8 +1533,8 @@ describe("generated Connect identity/settings fixture", () => {
   });
 
   it("disables mapping edits while a save is pending", async () => {
-    const mapping = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", pattern: "https://local.example/**", repository: { owner: "delinoio", name: "oss" }, credentialProfileRef: "github.default", priority: 0, chromeOrigin: null, updatedAt: "2026-08-17T00:00:00.000Z" };
-    const server = { ...defaultDevHudSettings, urlMappings: [mapping] };
+    const mapping = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", pattern: "https://local.example/**", repository: { owner: "delinoio", name: "oss" }, credentialProfileRef: mappingProfile.id, priority: 0, chromeOrigin: null, updatedAt: "2026-08-17T00:00:00.000Z" };
+    const server = withMappingProfile([mapping]);
     let resolveReplace!: (response: Response) => void;
     const replacement = new Promise<Response>((resolve) => { resolveReplace = resolve; });
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
@@ -1555,9 +1560,9 @@ describe("generated Connect identity/settings fixture", () => {
   });
 
   it("preserves a dirty mapping draft when conflict reapply encounters another revision conflict", async () => {
-    const mapping = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", pattern: "https://server.example/**", repository: { owner: "delinoio", name: "oss" }, credentialProfileRef: "github.default", priority: 0, chromeOrigin: null, updatedAt: "2026-08-17T00:00:00.000Z" };
-    const initial = { ...defaultDevHudSettings, urlMappings: [mapping] };
-    const later = { ...defaultDevHudSettings, urlMappings: [{ ...mapping, pattern: "https://later.example/**" }] };
+    const mapping = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", pattern: "https://server.example/**", repository: { owner: "delinoio", name: "oss" }, credentialProfileRef: mappingProfile.id, priority: 0, chromeOrigin: null, updatedAt: "2026-08-17T00:00:00.000Z" };
+    const initial = withMappingProfile([mapping]);
+    const later = withMappingProfile([{ ...mapping, pattern: "https://later.example/**" }]);
     let replaceAttempts = 0;
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
@@ -1589,8 +1594,8 @@ describe("generated Connect identity/settings fixture", () => {
   });
 
   it("does not report a mapping validation error when a mapping save has a transport failure", async () => {
-    const mapping = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", pattern: "https://server.example/**", repository: { owner: "delinoio", name: "oss" }, credentialProfileRef: "github.default", priority: 0, chromeOrigin: null, updatedAt: "2026-08-17T00:00:00.000Z" };
-    const server = { ...defaultDevHudSettings, urlMappings: [mapping] };
+    const mapping = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", pattern: "https://server.example/**", repository: { owner: "delinoio", name: "oss" }, credentialProfileRef: mappingProfile.id, priority: 0, chromeOrigin: null, updatedAt: "2026-08-17T00:00:00.000Z" };
+    const server = withMappingProfile([mapping]);
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
@@ -1662,8 +1667,8 @@ describe("generated Connect identity/settings fixture", () => {
   });
 
   it("keeps unsaved URL mapping drafts while navigating between app surfaces", async () => {
-    const mapping = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", pattern: "https://server.example/**", repository: { owner: "delinoio", name: "oss" }, credentialProfileRef: "github.default", priority: 0, chromeOrigin: null, updatedAt: "2026-08-17T00:00:00.000Z" };
-    const server = { ...defaultDevHudSettings, urlMappings: [mapping] };
+    const mapping = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", pattern: "https://server.example/**", repository: { owner: "delinoio", name: "oss" }, credentialProfileRef: mappingProfile.id, priority: 0, chromeOrigin: null, updatedAt: "2026-08-17T00:00:00.000Z" };
+    const server = withMappingProfile([mapping]);
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);

@@ -212,9 +212,11 @@ function UrlMappingSettings({ copy }: { readonly copy: Copy }) {
     setPriorityDrafts((current) => ({ ...current, [id]: value }));
   };
   const add = () => {
+    const credentialProfileRef = identity.settings.github.profiles[0]?.id;
+    if (credentialProfileRef === undefined) return;
     const timestamp = new Date().toISOString();
     setSaved(false); setInvalid(false); setDirty(true);
-    setDraft((current) => [...current, { id: uuidV7(), pattern: "https://example.com/**", repository: { owner: "owner", name: "repository" }, credentialProfileRef: "github.default", priority: 0, chromeOrigin: null, updatedAt: timestamp }]);
+    setDraft((current) => [...current, { id: uuidV7(), pattern: "https://example.com/**", repository: { owner: "owner", name: "repository" }, credentialProfileRef, priority: 0, chromeOrigin: null, updatedAt: timestamp }]);
   };
   const save = () => {
     try {
@@ -250,7 +252,7 @@ function UrlMappingSettings({ copy }: { readonly copy: Copy }) {
       <label>{copy.chromeOrigin}<input value={mapping.chromeOrigin ?? ""} onChange={(event) => change(mapping.id, "chromeOrigin", event.target.value || null)} /></label>
       <button type="button" onClick={() => { setSaved(false); setDirty(true); setPriorityDrafts((current) => { const { [mapping.id]: _removed, ...remaining } = current; return remaining; }); setDraft((current) => current.filter((item) => item.id !== mapping.id)); }}>{copy.removeUrlMapping}</button>
     </fieldset>)}
-    <div className="actions"><button type="button" disabled={identity.readOnly || saving} onClick={add}>{copy.addUrlMapping}</button><button type="button" disabled={identity.readOnly || saving} onClick={save}>{copy.saveUrlMappings}</button></div>
+    <div className="actions"><button type="button" disabled={identity.readOnly || saving || identity.settings.github.profiles.length === 0} onClick={add}>{copy.addUrlMapping}</button><button type="button" disabled={identity.readOnly || saving} onClick={save}>{copy.saveUrlMappings}</button></div>
     {invalid && <p role="alert">{copy.mappingInvalid}</p>}
     {overlaps.length > 0 && <p role="status">{copy.mappingOverlap}</p>}
     {saved && <p role="status">{copy.mappingSaved}</p>}

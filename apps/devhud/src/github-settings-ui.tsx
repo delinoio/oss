@@ -179,6 +179,7 @@ export function referencedRepositories(settings: DevHudSettingsV1, profileId: st
     const match = /^([^/]+)\/([^/]+)$/u.exec(deck.repository);
     if (match !== null) add({ owner: match[1], name: match[2] });
   }
+  for (const mapping of settings.urlMappings) if (mapping.credentialProfileRef === profileId) add(mapping.repository);
   return [...unique.values()];
 }
 
