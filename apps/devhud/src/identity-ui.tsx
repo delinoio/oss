@@ -1,7 +1,8 @@
-import { useEffect, useState, type Ref } from "react";
+import { useEffect, useEffectEvent, useState, type Ref } from "react";
 import type { Copy } from "./localization";
 import { useIdentitySettings } from "./service-boundary";
-import { normalizeApiOrigin } from "./shell";
+import { LanguagePreference, normalizeApiOrigin, ThemePreference } from "./shell";
+import type { DevHudSettingsV1 } from "./settings-contract";
 import type { SettingsDiffEntry } from "./settings-diff";
 
 interface ApiEditorProps {
@@ -99,21 +100,33 @@ export function AccountIdentity({ copy, apiOrigin, inputRef, onApiOrigin }: Acco
   </>;
 }
 
-export function SynchronizedSettingsBoundary({ copy }: { readonly copy: Copy }) {
+export function SynchronizedSettingsBoundary({ copy, onAppearance }: { readonly copy: Copy; readonly onAppearance: (appearance: DevHudSettingsV1["appearance"]) => void }) {
   const identity = useIdentitySettings();
   const [actionError, setActionError] = useState(false);
   const invoke = (action: () => Promise<void>) => { setActionError(false); void action().catch(() => setActionError(true)); };
-  if (identity.status === "guest" || identity.status === "signed-out" || identity.status === "starting") return <p className="notice">{copy.guestSettingsLocal}</p>;
-  if (identity.status === "blocked") return <p className="notice">{copy.blockedLocalHint}</p>;
-  if (identity.status === "deletion-pending") return <p className="notice">{copy.deletionPendingSummary}</p>;
-  return <section className="synchronized-settings" aria-label={copy.synchronizedSettings}>
-    <h3>{copy.synchronizedSettings}</h3>
-    {identity.offline && <p className="notice" role="status">{copy.offlineSettingsReadOnly}</p>}
-    {!identity.offline && <p>{copy.settingsRevision}: {identity.revision.toString()}</p>}
+  const applyAppearance = useEffectEvent(onAppearance);
+  useEffect(() => {
+    applyAppearance(identity.settings.appearance);
+  }, [identity.settings.appearance.language, identity.settings.appearance.theme]);
+  const replaceAppearance = (appearance: Partial<DevHudSettingsV1["appearance"]>) => invoke(() => identity.replaceSettings({
+    ...identity.settings,
+    appearance: { ...identity.settings.appearance, ...appearance },
+  }));
+  return <>
+    <label>{copy.theme}<select value={identity.settings.appearance.theme} disabled={identity.readOnly} onChange={(event) => replaceAppearance({ theme: event.target.value as DevHudSettingsV1["appearance"]["theme"] })}>{Object.values(ThemePreference).map((value) => <option key={value} value={value}>{copy[value]}</option>)}</select></label>
+    <label>{copy.language}<select value={identity.settings.appearance.language} disabled={identity.readOnly} onChange={(event) => replaceAppearance({ language: event.target.value as DevHudSettingsV1["appearance"]["language"] })}><option value={LanguagePreference.System}>{copy.system}</option><option value={LanguagePreference.English}>{copy.english}</option><option value={LanguagePreference.Korean}>{copy.korean}</option></select></label>
+    {(identity.status === "guest" || identity.status === "signed-out" || identity.status === "starting") && <p className="notice">{copy.guestSettingsLocal}</p>}
+    {identity.status === "blocked" && <p className="notice">{copy.blockedLocalHint}</p>}
+    {identity.status === "deletion-pending" && <p className="notice">{copy.deletionPendingSummary}</p>}
+    {identity.status === "authenticated" && <section className="synchronized-settings" aria-label={copy.synchronizedSettings}>
+      <h3>{copy.synchronizedSettings}</h3>
+      {identity.offline && <p className="notice" role="status">{copy.offlineSettingsReadOnly}</p>}
+      {!identity.offline && <p>{copy.settingsRevision}: {identity.revision.toString()}</p>}
     {identity.importDiff && <SnapshotChoice key="import" choiceId="import" copy={copy} entries={identity.importDiff} title={copy.importSettingsTitle} summary={copy.importSettingsSummary} primary={copy.uploadLocal} secondary={copy.replaceLocal} onPrimary={() => invoke(identity.uploadLocal)} onSecondary={identity.replaceLocal} />}
     {identity.conflict && <SnapshotChoice key="conflict" choiceId="conflict" copy={copy} entries={identity.conflict.diff} title={copy.conflictTitle} summary={copy.conflictSummary} primary={copy.reapplyLocal} secondary={copy.adoptServer} onPrimary={() => invoke(identity.reapplyConflictLocal)} onSecondary={identity.adoptConflictServer} />}
     {(actionError || identity.error?.startsWith("settings-") || identity.settingsError) && <p role="alert">{copy.settingsActionFailed}{identity.error?.startsWith("settings-") && <> <code>{identity.error}</code></>}{identity.settingsError && <> <code>{`settings-connect-${identity.settingsError.code}`}</code>{identity.settingsError.correlationId && <> {copy.correlationId}: <code>{identity.settingsError.correlationId}</code></>}</>}</p>}
-  </section>;
+    </section>}
+  </>;
 }
 
 function SnapshotChoice({ choiceId, copy, entries, title, summary, primary, secondary, onPrimary, onSecondary }: { readonly choiceId: string; readonly copy: Copy; readonly entries: readonly SettingsDiffEntry[]; readonly title: string; readonly summary: string; readonly primary: string; readonly secondary: string; readonly onPrimary: () => void; readonly onSecondary: () => void }) {

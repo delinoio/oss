@@ -33,6 +33,7 @@ use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
 };
+use tauri_plugin_deep_link::DeepLinkExt;
 use tracing::{error, info, warn};
 use tracing_subscriber::{
     Layer,
@@ -653,6 +654,8 @@ fn main() {
     let session_network_policy = bridge_state.clone();
 
     let mut builder = tauri::Builder::<tauri::Cef>::default()
+        .plugin(tauri_plugin_single_instance::init(|_, _, _| {}))
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(native_plugin::init())
         .manage(bridge_state)
         .manage(frontend_readiness.clone())
@@ -692,6 +695,19 @@ fn main() {
     let result = builder
         .setup(move |app| {
             let readiness = frontend_readiness.clone();
+            #[cfg(any(target_os = "linux", all(debug_assertions, target_os = "windows")))]
+            app.deep_link().register_all()?;
+            if let Some(urls) = app.deep_link().get_current()? {
+                for url in urls {
+                    native_plugin::offer_auth_callback(app.handle(), url.as_str());
+                }
+            }
+            let callback_app = app.handle().clone();
+            app.deep_link().on_open_url(move |event| {
+                for url in event.urls() {
+                    native_plugin::offer_auth_callback(&callback_app, url.as_str());
+                }
+            });
             create_tray(&app.handle().clone())?;
             let webview = tauri::WebviewWindowBuilder::<tauri::Cef, _>::new(
                 app,

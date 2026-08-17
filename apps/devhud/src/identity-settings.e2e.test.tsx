@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import fixture from "../fixtures/identity-settings-e2e.json";
 import { App } from "./App";
 import { messages } from "./localization";
-import { hasGuestSettings, readAuthenticatedSettingsCache, writeAuthenticatedSettingsCache, writeCachedIdentityBootstrap, writeGuestSettings } from "./local-data";
+import { hasGuestSettings, readAuthenticatedSettingsCache, readGuestSettings, writeAuthenticatedSettingsCache, writeCachedIdentityBootstrap, writeGuestSettings } from "./local-data";
 import { canonicalDevHudSettings, defaultDevHudSettings } from "./settings-contract";
 import { LifecycleState, RuntimePlatform, type NativeBridgeRequestV1, type NativeBridgeResponseV1, type NativeBridgeV1, type RuntimeSnapshot } from "./native-bridge";
 import { clearIdentityForApiChange, DevHudServiceBoundary, useIdentitySettings } from "./service-boundary";
@@ -35,6 +35,18 @@ function authenticatedBridge(purgeScopes: string[] = [], secureOperations: strin
       if (request.operation === "secure.read") { secureOperations.push("read"); return { kind: "secure-value", value: request.setting.kind === "logto-session" ? secureSession : null }; }
       if (request.operation === "secure.purge") { purgeScopes.push(request.scope); return { kind: "ok" }; }
       if (request.operation === "secure.write" || request.operation === "secure.remove") { secureOperations.push(request.operation); return { kind: "ok" }; }
+      if (request.operation === "auth.take-pending-callback") return { kind: "auth-callback", url: null };
+      throw new Error(`unexpected bridge operation ${request.operation}`);
+    },
+    async listen() { return () => {}; },
+  };
+}
+
+function signedOutBridge(): NativeBridgeV1 {
+  return {
+    async request(request) {
+      if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
+      if (request.operation === "secure.read") return { kind: "secure-value", value: null };
       if (request.operation === "auth.take-pending-callback") return { kind: "auth-callback", url: null };
       throw new Error(`unexpected bridge operation ${request.operation}`);
     },
@@ -94,6 +106,53 @@ afterEach(() => {
 });
 
 describe("generated Connect identity/settings fixture", () => {
+  it("stores signed-out appearance edits in the guest snapshot", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      throw new Error(`unexpected request ${url}`);
+    }));
+    const replacement = { ...defaultDevHudSettings, appearance: { ...defaultDevHudSettings.appearance, theme: "dark" as const } };
+
+    renderIdentityProbe(signedOutBridge(), replacement);
+    await waitFor(() => expect(screen.getByTestId("identity-state").dataset.status).toBe("signed-out"));
+    fireEvent.click(screen.getByRole("button", { name: "replace probe settings" }));
+
+    await waitFor(() => expect(screen.getByTestId("identity-state").dataset.theme).toBe("dark"));
+    expect(hasGuestSettings(localStorage)).toBe(true);
+    expect(readGuestSettings(localStorage).appearance.theme).toBe("dark");
+  });
+
+  it("applies fetched appearance and persists control edits through ReplaceSettings", async () => {
+    const server = { ...defaultDevHudSettings, appearance: { theme: "dark" as const, language: "en" as const } };
+    const replacement = { ...server, appearance: { ...server.appearance, theme: "light" as const } };
+    let replacements = 0;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 1, revision: "1", canonicalJson: encodedSettings(server) } });
+      if (url.endsWith("/devhud.v1.SettingsService/ReplaceSettings")) {
+        replacements += 1;
+        return connectResponse({ snapshot: { schemaVersion: 1, revision: "2", canonicalJson: encodedSettings(replacement) } });
+      }
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    render(<App bridge={authenticatedBridge()} initialRuntime={runtime} />);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.settings }));
+    const theme = await screen.findByLabelText(messages.en.theme) as HTMLSelectElement;
+    await waitFor(() => {
+      expect(theme.value).toBe("dark");
+      expect(theme.disabled).toBe(false);
+      expect(document.documentElement.dataset.theme).toBe("dark");
+    });
+    fireEvent.change(theme, { target: { value: "light" } });
+
+    await waitFor(() => expect(document.documentElement.dataset.theme).toBe("light"));
+    expect(replacements).toBe(1);
+  });
+
   it("requires explicit guest upload and preserves only the recovery session through deletion", async () => {
     const local = { ...defaultDevHudSettings, appearance: { ...defaultDevHudSettings.appearance, theme: "dark" as const } };
     const server = { ...defaultDevHudSettings, appearance: { ...defaultDevHudSettings.appearance, theme: "light" as const } };
@@ -566,6 +625,39 @@ describe("generated Connect identity/settings fixture", () => {
     const persisted = readAuthenticatedSettingsCache(localStorage, "https://devhud.api.delino.io");
     expect(persisted?.revision).toBe(1n);
     expect(persisted?.settings.appearance.theme).toBe("light");
+  });
+
+  it("rejects an unsupported conflict envelope before decoding it", async () => {
+    const server = { ...defaultDevHudSettings, appearance: { ...defaultDevHudSettings.appearance, theme: "light" as const } };
+    const replacement = { ...defaultDevHudSettings, appearance: { ...defaultDevHudSettings.appearance, theme: "dark" as const } };
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 1, revision: "1", canonicalJson: encodedSettings(server) } });
+      if (url.endsWith("/devhud.v1.SettingsService/ReplaceSettings")) {
+        const detail = create(SettingsRevisionConflictSchema, {
+          expectedRevision: 1n,
+          currentSnapshot: { schemaVersion: 2, revision: 2n, canonicalJson: new TextEncoder().encode(canonicalDevHudSettings(server)) },
+        });
+        const value = btoa(String.fromCharCode(...toBinary(SettingsRevisionConflictSchema, detail)));
+        return new Response(JSON.stringify({ code: "aborted", message: "settings revision conflict", details: [{ type: SettingsRevisionConflictSchema.typeName, value }] }), { status: 409, headers: { "Content-Type": "application/json" } });
+      }
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    renderIdentityProbe(authenticatedBridge(), replacement);
+    await waitFor(() => expect(screen.getByTestId("identity-state").dataset.readOnly).toBe("false"));
+    fireEvent.click(screen.getByRole("button", { name: "replace probe settings" }));
+
+    await waitFor(() => {
+      const state = screen.getByTestId("identity-state");
+      expect(state.dataset.readOnly).toBe("true");
+      expect(state.dataset.revision).toBe("1");
+      expect(state.dataset.theme).toBe("light");
+      expect(state.dataset.error).toBe("settings-contract-invalid");
+    });
+    expect(readAuthenticatedSettingsCache(localStorage, "https://devhud.api.delino.io")?.revision).toBe(1n);
   });
 
   it("clears the guest import marker when a conflicted upload adopts the server", async () => {

@@ -48,6 +48,11 @@ describe("local identity data lifecycle", () => {
     expect(() => writeAuthenticatedSettingsCache(storage, "https://api.example", { settings: defaultDevHudSettings, revision: 1n, cachedAt: "2026-08-17T00:00:00.000Z" })).not.toThrow();
   });
 
+  it("treats an unavailable guest marker as absent", () => {
+    const storage = { getItem: () => { throw new DOMException("denied", "SecurityError"); } };
+    expect(hasGuestSettings(storage)).toBe(false);
+  });
+
   it("clears only the authenticated settings snapshot when a session becomes invalid", () => {
     const storage = new MemoryStorage();
     const apiOrigin = "https://api.example";

@@ -18,7 +18,7 @@ import { createIdentitySession, sessionProfileId, validateBootstrap, type Identi
 import { clearAllContractedLocalData, clearAuthenticatedOriginData, clearAuthenticatedSettingsCache, clearGuestImportMarker, hasGuestSettings, readAuthenticatedSettingsCache, readCachedIdentityBootstrap, readGuestSettings, writeAuthenticatedSettingsCache, writeCachedIdentityBootstrap, writeGuestSettings } from "./local-data";
 import type { NativeBridgeV1, RuntimePlatform } from "./native-bridge";
 import { profileRequiresSetup } from "./profile-secrets";
-import { defaultDevHudSettings, decodeDevHudSettings, encodeDevHudSettings, SettingsSchemaVersion, type DevHudSettingsV1 } from "./settings-contract";
+import { defaultDevHudSettings, decodeDevHudSettings, encodeDevHudSettings, parseDevHudSettings, SettingsSchemaVersion, type DevHudSettingsV1 } from "./settings-contract";
 import { diffSettings, type SettingsDiffEntry } from "./settings-diff";
 import { getLocalStorage, isValidApiOrigin } from "./shell";
 
@@ -76,6 +76,7 @@ interface BoundaryProps extends PropsWithChildren {
   readonly bridge: NativeBridgeV1;
   readonly onContinueLocally: () => void;
   readonly onLoggedOut: () => void;
+  readonly initialAppearance?: DevHudSettingsV1["appearance"];
   readonly identitySessionRef?: RefObject<IdentitySession | null>;
 }
 
@@ -104,14 +105,17 @@ export function DevHudServiceBoundary(props: BoundaryProps) {
   </QueryClientProvider></TransportProvider>;
 }
 
-function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, platform, bridge, onContinueLocally, onLoggedOut, children, sessionRef, onIdentityReset }: BoundaryProps & { readonly sessionRef: RefObject<IdentitySession | null>; readonly onIdentityReset: () => void }) {
+function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, platform, bridge, onContinueLocally, onLoggedOut, initialAppearance, children, sessionRef, onIdentityReset }: BoundaryProps & { readonly sessionRef: RefObject<IdentitySession | null>; readonly onIdentityReset: () => void }) {
   const storage = getLocalStorage();
   const queryClient = useQueryClient();
   const transport = useTransport();
   const [status, setStatus] = useState<IdentityStatus>("guest");
   const [session, setSession] = useState<IdentitySession | null>(null);
   const [bootstrap, setBootstrap] = useState<ValidatedBootstrap | null>(null);
-  const [settings, setSettings] = useState<DevHudSettingsV1>(() => readGuestSettings(storage));
+  const [settings, setSettings] = useState<DevHudSettingsV1>(() => {
+    const guest = readGuestSettings(storage);
+    return !hasGuestSettings(storage) && initialAppearance ? { ...guest, appearance: initialAppearance } : guest;
+  });
   const [revision, setRevision] = useState(0n);
   const [error, setError] = useState<string | null>(null);
   const [accountError, setAccountError] = useState<DevHudClientError | null>(null);
@@ -120,6 +124,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   const [conflict, setConflict] = useState<SettingsConflict | null>(null);
   const [account, setAccount] = useState<Account | null>(null);
   const [networkReady, setNetworkReady] = useState(false);
+  const [identityReady, setIdentityReady] = useState(!online);
   const [settingsReady, setSettingsReady] = useState(false);
   const [bootstrapAttempt, setBootstrapAttempt] = useState(0);
   const callbackHandled = useRef<string | null>(null);
@@ -205,6 +210,10 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   }, [active, apiOrigin, bootstrapAttempt, bridge]);
 
   useEffect(() => {
+    if (!online && status === "guest" && session === null) setIdentityReady(true);
+  }, [online, session, status]);
+
+  useEffect(() => {
     if (!active || !online || !networkReady || !bootstrapQuery.data) return;
     let cancelled = false;
     setStatus((current) => current === "guest" ? "starting" : current);
@@ -224,6 +233,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
         setSession(session);
         setBootstrap(validated);
         setStatus(authenticated ? "authenticated" : "signed-out");
+        setIdentityReady(true);
         setError(null);
       } catch (reason) {
         if (!cancelled) {
@@ -254,6 +264,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
         setSession(session);
         setBootstrap(cached);
         setStatus(authenticated ? "authenticated" : "signed-out");
+        setIdentityReady(true);
         setError(null);
       } catch (reason) {
         if (!cancelled) {
@@ -411,6 +422,11 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       const mapped = mapDevHudError(reason);
       if (mapped.kind === "revisionConflict") {
         const serverSnapshot = mapped.detail.currentSnapshot;
+        if (serverSnapshot && serverSnapshot.schemaVersion !== SettingsSchemaVersion) {
+          setSettingsReady(false);
+          setError("settings-contract-invalid");
+          throw new TypeError("unsupported settings schema version");
+        }
         const server = serverSnapshot ? decodeDevHudSettings(serverSnapshot.canonicalJson) : defaultDevHudSettings;
         const currentRevision = serverSnapshot?.revision ?? 0n;
         setImportDiff(null);
@@ -422,13 +438,17 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     }
   }
 
+  const localSettingsWritable = identityReady && (status === "guest" || status === "signed-out");
+  const settingsReadOnly = !localSettingsWritable
+    && (status !== "authenticated" || !online || !settingsReady || importDiff !== null || conflict !== null);
+
   const value: IdentitySettingsValue = {
     status,
     bootstrap,
     account,
     settings,
     revision,
-    readOnly: status !== "authenticated" || !online || !settingsReady || importDiff !== null || conflict !== null,
+    readOnly: settingsReadOnly,
     offline: !online,
     error,
     accountError,
@@ -449,7 +469,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       setAccountError(null);
       await accountQuery.refetch();
     },
-    continueLocally: () => { setStatus("guest"); onContinueLocally(); },
+    continueLocally: () => { setStatus("guest"); setIdentityReady(true); onContinueLocally(); },
     uploadLocal: () => replaceAt(settings, revision),
     replaceLocal: () => {
       const server = settingsQuery.data?.snapshot ? decodeDevHudSettings(settingsQuery.data.snapshot.canonicalJson) : defaultDevHudSettings;
@@ -460,7 +480,16 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       clearGuestImportMarker(storage);
       writeAuthenticatedSettingsCache(storage, apiOrigin, { settings: server, revision: serverRevision, cachedAt: new Date().toISOString() });
     },
-    replaceSettings: (next) => replaceAt(next, revision),
+    replaceSettings: async (next) => {
+      if (status === "guest" || status === "signed-out") {
+        const parsed = parseDevHudSettings(next);
+        writeGuestSettings(storage, parsed);
+        setSettings(parsed);
+        return;
+      }
+      if (settingsReadOnly) throw new Error("settings-read-only");
+      await replaceAt(next, revision);
+    },
     adoptConflictServer: () => {
       if (!conflict) return;
       setSettings(conflict.server);

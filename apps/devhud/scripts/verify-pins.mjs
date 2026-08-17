@@ -153,7 +153,25 @@ assert(
   !appCargo.includes("[patch."),
   "local Cargo patch declared by the DevHUD manifest",
 );
+const rootPatchSections = rootCargo.match(/\[patch\.[^\]]+\]/gu) ?? [];
+assert(
+  rootPatchSections.length === 1 && rootPatchSections[0] === "[patch.crates-io]",
+  "workspace Cargo patches must be limited to the official Tauri compatibility patch",
+);
+const rootPatch = rootCargo.match(/\[patch\.crates-io\]\n([\s\S]*?)(?=\n\[|$)/u)?.[1] ?? "";
+const rootPatchEntries = rootPatch.split("\n").filter((line) => line.trim() && !line.trim().startsWith("#"));
+assert(rootPatchEntries.length === 3, "official Tauri compatibility patch set changed");
+for (const dependency of ["tauri", "tauri-plugin", "tauri-utils"]) {
+  const linePattern = new RegExp(
+    `^${escapeRegExp(dependency)}\\s*=\\s*\\{\\s*git\\s*=\\s*"${escapeRegExp(TAURI_REPOSITORY)}",\\s*rev\\s*=\\s*"${TAURI_REVISION}"\\s*\\}$`,
+    "mu",
+  );
+  assert(linePattern.test(rootPatch), `${dependency} compatibility patch is not pinned to the required revision`);
+}
 assert(!dependencyText.includes("github.com/delinoio/tauri"), "Tauri fork dependency detected");
+
+assert(appCargo.includes('tauri-plugin-deep-link = "=2.4.9"'), "desktop deep-link plugin version changed");
+assert(appCargo.includes('tauri-plugin-single-instance = { version = "=2.4.3", features = ["deep-link"] }'), "desktop single-instance deep-link integration changed");
 
 for (const dependency of ["tauri", "tauri-build", "tauri-cli"]) {
   const linePattern = new RegExp(

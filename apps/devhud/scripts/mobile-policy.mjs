@@ -39,8 +39,9 @@ export function assertAndroidBackupExclusions({ androidManifest, androidBackupRu
 export function assertAndroidNativeBridge(androidNativeBridge) {
   assert(androidNativeBridge.includes("Executors.newSingleThreadExecutor()"), "Android secure-setting persistence must run off the command thread");
   assert(/override fun onDestroy\(activity: AppCompatActivity\) \{\s+secureSettingsExecutor\.shutdown\(\)\s+\}/u.test(androidNativeBridge), "Android secure-setting executor must stop with the plugin lifecycle");
-  assert((androidNativeBridge.match(/\.commit\(\)/gu) ?? []).length === 3, "Android secure-setting writes, removals, and purges must confirm persistence");
+  assert((androidNativeBridge.match(/\.commit\(\)/gu) ?? []).length === 4, "Android secure-setting writes, migrations, removals, and purges must confirm persistence");
   assert((androidNativeBridge.match(/updateAAD\(/gu) ?? []).length === 2, "Android secure values must authenticate their setting key as AES-GCM AAD");
+  assert(androidNativeBridge.includes("AEADBadTagException") && androidNativeBridge.includes("authenticateKey = false") && androidNativeBridge.includes("encryptSecure(legacy, key)"), "Android must migrate authenticated legacy ciphertext before requiring key-bound AAD");
   assert(androidNativeBridge.includes('invoke.reject("storage-failure", "storage-failure"'), "Android secure-setting persistence failures must use storage-failure");
   assert(androidNativeBridge.includes("return@execute") && androidNativeBridge.includes("Base64.getDecoder().decode"), "Android secure-setting reads must map decoding and Keystore failures off-thread");
   assert(androidNativeBridge.includes('(it.path != "" && it.path != "/")'), "Android native navigation must accept both root API-origin spellings");
@@ -66,6 +67,7 @@ export function assertIosNativeBridge(iosNativeBridge) {
   assert(iosNativeBridge.includes("isSecureOrLoopback(issuer)") && iosNativeBridge.includes("destination.scheme == issuer.scheme"), "iOS authentication must accept configured issuer paths and loopback HTTP while preserving same-origin navigation");
   assert(!iosNativeBridge.includes('issuer.path == ""'), "iOS authentication must not restrict configured issuer paths");
   assert(iosNativeBridge.includes("kSecAttrAccessGroup") && iosNativeBridge.includes("kSecAttrSynchronizable"), "iOS secrets must use the shared non-synchronizing Keychain group");
+  assert(iosNativeBridge.includes("legacyAccessGroupKey") && iosNativeBridge.includes("for accessGroupKey in [sharedAccessGroupKey, legacyAccessGroupKey]"), "iOS must migrate and purge legacy application-group Keychain items");
   assert(iosNativeBridge.includes('UserDefaults(suiteName: appGroup)'), "iOS must bind the contracted App Group");
 }
 
@@ -172,6 +174,7 @@ export function assertMobileContracts({ platforms, tauri, ios, android, cargo, a
   assert(androidChannelEnglish.includes("Deck changes") && androidChannelKorean.includes("Deck 변경사항"), "Android notification channel names must be bilingual");
   assert((androidPluginManifest.match(/<uses-permission/gu) ?? []).length === 1 && androidPluginManifest.includes("android.permission.POST_NOTIFICATIONS"), "Android native bridge permissions are not least-privileged");
   assert((iosPlist.match(/<string>devhud<\/string>/gu) ?? []).length === 1, "iOS must register only one devhud scheme");
+  assert(iosPlist.includes("DevHudLegacyKeychainAccessGroup") && iosPlist.includes("$(AppIdentifierPrefix)io.delino.devhud"), "iOS legacy Keychain migration group changed");
   assert(!/com\.apple\.developer\.|NSExtension/iu.test(iosPlist), "uncontracted iOS entitlement or extension detected");
   assertIosNativeBridge(iosNativeBridge);
 

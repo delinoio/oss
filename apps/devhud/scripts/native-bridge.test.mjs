@@ -8,6 +8,8 @@ import { NativeBridgeError, NativeBridgeErrorCode, SecureSettingKind, isAuthCall
 
 const fixtures = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../fixtures/deep-links.json"), "utf8"));
 const tauriConfig = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/tauri.conf.json"), "utf8"));
+const appCargo = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/Cargo.toml"), "utf8");
+const nativePlugin = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/native_plugin.rs"), "utf8");
 const cargoLock = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../../../Cargo.lock"), "utf8");
 const desktopSecureStore = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/secure_store.rs"), "utf8");
 const desktopHost = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/main.rs"), "utf8");
@@ -15,6 +17,12 @@ const nativeBridgeHost = readFileSync(join(dirname(fileURLToPath(import.meta.url
 
 test("deep-link fixtures accept only the contracted auth callback", () => {
   assert.deepEqual(tauriConfig.plugins["deep-link"].desktop.schemes, ["devhud"]);
+  assert.match(appCargo, /tauri-plugin-deep-link = "=2\.4\.9"/u);
+  assert.match(appCargo, /tauri-plugin-single-instance = \{ version = "=2\.4\.3", features = \["deep-link"\] \}/u);
+  assert(desktopHost.indexOf("tauri_plugin_single_instance::init") < desktopHost.indexOf("tauri_plugin_deep_link::init"));
+  assert.match(desktopHost, /deep_link\(\)\.get_current/u);
+  assert.match(desktopHost, /deep_link\(\)\.on_open_url/u);
+  assert.match(nativePlugin, /offer_auth_callback/u);
   for (const candidate of fixtures.accepted) assert.equal(isAuthCallback(candidate), true, candidate);
   for (const candidate of fixtures.rejected) assert.equal(isAuthCallback(candidate), false, candidate);
 });

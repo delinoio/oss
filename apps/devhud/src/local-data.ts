@@ -21,12 +21,20 @@ export function readGuestSettings(storage: ReadStorage): DevHudSettingsV1 {
 }
 
 export function writeGuestSettings(storage: WriteStorage, settings: DevHudSettingsV1): void {
-  storage.setItem(guestSettingsKey, canonicalDevHudSettings(settings));
-  storage.setItem(guestUsedKey, "true");
+  try {
+    storage.setItem(guestSettingsKey, canonicalDevHudSettings(settings));
+    storage.setItem(guestUsedKey, "true");
+  } catch {
+    // Guest settings remain usable in memory when Web Storage becomes unavailable.
+  }
 }
 
 export function hasGuestSettings(storage: ReadStorage): boolean {
-  return storage.getItem(guestUsedKey) === "true";
+  try {
+    return storage.getItem(guestUsedKey) === "true";
+  } catch {
+    return false;
+  }
 }
 
 export function clearGuestImportMarker(storage: Pick<Storage, "removeItem">): void {

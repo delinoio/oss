@@ -3,11 +3,9 @@ use serde::de::DeserializeOwned;
 #[cfg(mobile)]
 use serde_json::Value;
 #[cfg(mobile)]
-use tauri::AppHandle;
-#[cfg(mobile)]
 use tauri::plugin::{PluginApi, PluginHandle, mobile::PluginInvokeError};
 use tauri::{
-    Emitter, Manager, Runtime,
+    AppHandle, Emitter, Manager, Runtime,
     plugin::{Builder, TauriPlugin},
 };
 
@@ -93,22 +91,27 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
                     serde_json::json!({ "version": 1, "kind": "lifecycle", "state": state }),
                 );
             }
+            #[cfg(mobile)]
             if let tauri::RunEvent::Opened { urls } = event {
                 for url in urls {
-                    let candidate = url.as_str();
-                    if crate::bridge::is_auth_callback(candidate) {
-                        if let Some(state) = app.try_state::<crate::bridge::NativeBridgeState>() {
-                            state.offer_auth_callback(candidate);
-                        }
-                        let _ = app.emit(
-                            "devhud:native-event:v1",
-                            serde_json::json!({ "version": 1, "kind": "auth-callback", "url": candidate }),
-                        );
-                    }
+                    offer_auth_callback(app, url.as_str());
                 }
             }
         })
         .build()
+}
+
+pub fn offer_auth_callback<R: Runtime>(app: &AppHandle<R>, candidate: &str) {
+    if !crate::bridge::is_auth_callback(candidate) {
+        return;
+    }
+    if let Some(state) = app.try_state::<crate::bridge::NativeBridgeState>() {
+        state.offer_auth_callback(candidate);
+    }
+    let _ = app.emit(
+        "devhud:native-event:v1",
+        serde_json::json!({ "version": 1, "kind": "auth-callback", "url": candidate }),
+    );
 }
 
 #[cfg(mobile)]

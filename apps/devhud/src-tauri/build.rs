@@ -9,9 +9,10 @@ fn main() {
         );
         entitlements.insert(
             "keychain-access-groups".to_string(),
-            plist::Value::Array(vec![plist::Value::String(
-                "$(AppIdentifierPrefix)io.delino.devhud.shared".to_string(),
-            )]),
+            plist::Value::Array(vec![
+                plist::Value::String("$(AppIdentifierPrefix)io.delino.devhud".to_string()),
+                plist::Value::String("$(AppIdentifierPrefix)io.delino.devhud.shared".to_string()),
+            ]),
         );
     })
     .expect("configure DevHUD shared iOS entitlements");

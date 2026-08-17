@@ -24,6 +24,7 @@ import java.security.KeyStore
 import java.util.Base64
 import java.util.concurrent.Executors
 import javax.crypto.Cipher
+import javax.crypto.AEADBadTagException
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
@@ -155,18 +156,22 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
     private fun readSecure(invoke: Invoke) {
         secureSettingsExecutor.execute {
             try {
-                val encoded = activity.getSharedPreferences(storeName, Context.MODE_PRIVATE).getString(settingKey(invoke.getArgs()), null)
+                val key = settingKey(invoke.getArgs())
+                val preferences = activity.getSharedPreferences(storeName, Context.MODE_PRIVATE)
+                val encoded = preferences.getString(key, null)
                 if (encoded == null) {
                     invoke.resolve(JSObject().put("kind", "secure-value").put("value", null))
                     return@execute
                 }
-                val payload = Base64.getDecoder().decode(encoded)
-                val iv = payload.copyOfRange(0, 12)
-                val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply {
-                    init(Cipher.DECRYPT_MODE, secretKey(), GCMParameterSpec(128, iv))
-                    updateAAD(settingKey(invoke.getArgs()).toByteArray(Charsets.UTF_8))
+                val value = try {
+                    decryptSecure(encoded, key, authenticateKey = true)
+                } catch (_: AEADBadTagException) {
+                    val legacy = decryptSecure(encoded, key, authenticateKey = false)
+                    if (!preferences.edit().putString(key, encryptSecure(legacy, key)).commit()) {
+                        throw IllegalStateException("secure migration persistence failed")
+                    }
+                    legacy
                 }
-                val value = String(cipher.doFinal(payload.copyOfRange(12, payload.size)), Charsets.UTF_8)
                 invoke.resolve(JSObject().put("kind", "secure-value").put("value", value))
             } catch (error: Exception) {
                 invoke.reject("storage-failure", "storage-failure", error)
@@ -179,15 +184,28 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
         val key = settingKey(args)
         val value = args.getString("value")
         persistSecure(invoke) {
-            val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply {
-                init(Cipher.ENCRYPT_MODE, secretKey())
-                updateAAD(key.toByteArray(Charsets.UTF_8))
-            }
-            val encrypted = cipher.doFinal(value.toByteArray(Charsets.UTF_8))
-            val payload = cipher.iv + encrypted
             activity.getSharedPreferences(storeName, Context.MODE_PRIVATE).edit()
-                .putString(key, Base64.getEncoder().encodeToString(payload)).commit()
+                .putString(key, encryptSecure(value, key)).commit()
         }
+    }
+
+    private fun encryptSecure(value: String, key: String): String {
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply {
+            init(Cipher.ENCRYPT_MODE, secretKey())
+            updateAAD(key.toByteArray(Charsets.UTF_8))
+        }
+        val encrypted = cipher.doFinal(value.toByteArray(Charsets.UTF_8))
+        return Base64.getEncoder().encodeToString(cipher.iv + encrypted)
+    }
+
+    private fun decryptSecure(encoded: String, key: String, authenticateKey: Boolean): String {
+        val payload = Base64.getDecoder().decode(encoded)
+        val iv = payload.copyOfRange(0, 12)
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply {
+            init(Cipher.DECRYPT_MODE, secretKey(), GCMParameterSpec(128, iv))
+            if (authenticateKey) updateAAD(key.toByteArray(Charsets.UTF_8))
+        }
+        return String(cipher.doFinal(payload.copyOfRange(12, payload.size)), Charsets.UTF_8)
     }
 
     private fun removeSecure(invoke: Invoke) {
