@@ -4,10 +4,12 @@ import {
   AuditOutcome,
   StaticCapability,
   UploadState,
+  mapDevHudError,
   validateAdminReason,
   type AdminUpload,
   type AdminUser,
   type AuditEvent,
+  type DevHudClientError,
   type UsageCounter,
 } from "@delinoio/devhud-api-client";
 import { useEffect, useRef, useState } from "react";
@@ -32,8 +34,7 @@ type View = "users" | "uploads" | "audit";
 type Loadable<T> =
   | { kind: "loading" }
   | { kind: "loaded"; value: T }
-  | { kind: "permission" }
-  | { kind: "error" };
+  | { kind: "error"; error: DevHudClientError };
 type UsageState =
   | { kind: "loading"; user: AdminUser }
   | { kind: "loaded"; user: AdminUser; counters: UsageCounter[] }
@@ -49,6 +50,10 @@ export function App() {
   const [locale, setLocale] = useState<Locale>(localeInitial);
   const [phase, setPhase] = useState<Phase>({ kind: "loading" });
   const copy = text(locale);
+
+  useEffect(() => {
+    document.documentElement.lang = locale;
+  }, [locale]);
 
   useEffect(() => {
     let current = true;
@@ -83,7 +88,6 @@ export function App() {
   const toggleLocale = () => {
     const next = locale === "en" ? "ko" : "en";
     localStorage.setItem("devhud.admin.locale", next);
-    document.documentElement.lang = next;
     setLocale(next);
   };
 
@@ -214,14 +218,17 @@ function Users({
   const [mutation, setMutation] = useState<AdminUser | null>(null);
   const [usage, setUsage] = useState<UsageState | null>(null);
   const [conflict, setConflict] = useState(false);
+  const requestGeneration = useRef(0);
 
   const load = async (token = "", append = false, searchQuery = appliedQuery) => {
+    const generation = ++requestGeneration.current;
     if (!append) setState({ kind: "loading" });
     try {
       const response = await client.listUsers({
         query: searchQuery,
         page: { pageSize: 50, pageToken: token },
       });
+      if (generation !== requestGeneration.current) return;
       setState((current) => ({
         kind: "loaded",
         value: {
@@ -233,12 +240,16 @@ function Users({
         },
       }));
     } catch (error) {
+      if (generation !== requestGeneration.current) return;
       setState(errorState(error));
     }
   };
 
   useEffect(() => {
     void load();
+    return () => {
+      requestGeneration.current++;
+    };
     // Query is applied by the explicit search form.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -275,7 +286,11 @@ function Users({
         </form>
       </div>
       {conflict && <p className="inline-error" role="alert">{copy.conflict}</p>}
-      <Resource state={state} copy={copy}>
+      <Resource
+        state={state}
+        copy={copy}
+        onRetry={() => void load("", false, appliedQuery)}
+      >
         {(value) => (
           <>
             <div className="cards">
@@ -509,7 +524,7 @@ function Uploads({
         </div>
       </div>
       {conflict && <p className="inline-error" role="alert">{copy.conflict}</p>}
-      <Resource state={state} copy={copy}>
+      <Resource state={state} copy={copy} onRetry={() => void load()}>
         {(value) => (
           <>
             <div className="table-wrap">
@@ -701,7 +716,7 @@ function Audit({
           <h1 id="audit-title">{copy.audit}</h1>
         </div>
       </div>
-      <Resource state={state} copy={copy}>
+      <Resource state={state} copy={copy} onRetry={() => void load()}>
         {(value) => (
           <>
             <ol className="timeline">
@@ -807,14 +822,42 @@ function Resource<T>({
   state,
   copy,
   children,
+  onRetry,
 }: {
   state: Loadable<T>;
   copy: ReturnType<typeof text>;
   children: (value: T) => React.ReactNode;
+  onRetry: () => void;
 }) {
   if (state.kind === "loading") return <Empty message={copy.loading} busy />;
-  if (state.kind === "permission") return <Empty message={copy.permission} />;
-  if (state.kind === "error") return <Empty message={copy.error} />;
+  if (state.kind === "error") {
+    const retryable =
+      state.error.kind !== "unauthenticated" &&
+      state.error.code !== Code.PermissionDenied;
+    const message =
+      state.error.kind === "unauthenticated"
+        ? copy.sessionExpired
+        : state.error.code === Code.PermissionDenied
+          ? copy.permission
+          : state.error.kind === "pagination"
+            ? copy.paginationError
+            : state.error.code === Code.Unavailable
+              ? copy.unavailable
+              : copy.error;
+    return (
+      <div className="empty" role="alert">
+        <p>{message}</p>
+        {state.error.correlationId && (
+          <p className="correlation">
+            {copy.correlationId}: <code>{state.error.correlationId}</code>
+          </p>
+        )}
+        {retryable && (
+          <button className="primary" onClick={onRetry}>{copy.retry}</button>
+        )}
+      </div>
+    );
+  }
   const value = state.value as T & { users?: unknown[]; uploads?: unknown[]; events?: unknown[] };
   if (
     value.users?.length === 0 ||
@@ -827,9 +870,7 @@ function Resource<T>({
 }
 
 function errorState(error: unknown): Loadable<never> {
-  return ConnectError.from(error).code === Code.PermissionDenied
-    ? { kind: "permission" }
-    : { kind: "error" };
+  return { kind: "error", error: mapDevHudError(error) };
 }
 
 function Empty({ message, busy = false }: { message: string; busy?: boolean }) {

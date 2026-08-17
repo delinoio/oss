@@ -3,10 +3,12 @@ import {
   AdministrativeBlockState,
   AuditAction,
   AuditOutcome,
+  PaginationFailureReason,
+  PaginationFailureSchema,
   StaticCapability,
   UploadState,
 } from "@delinoio/devhud-api-client";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 
@@ -57,6 +59,7 @@ const upload = {
 
 beforeEach(() => {
   localStorage.clear();
+  document.documentElement.lang = "en";
   for (const mock of [
     runtime.getBootstrap,
     runtime.createAdminClient,
@@ -103,6 +106,97 @@ describe("administrator console review regressions", () => {
       query: "submitted",
       page: { pageToken: "scoped-token" },
     });
+  });
+
+  it("ignores user responses superseded by a newer search", async () => {
+    type UserListResponse = { users: Array<typeof user>; nextPageToken: string };
+    let resolveInitial = (_response: UserListResponse) => {};
+    const initial = new Promise<UserListResponse>((resolve) => {
+      resolveInitial = resolve;
+    });
+    const newerUser = {
+      ...user,
+      userId: { value: "018f7c1e-7b4a-7abc-8def-0123456789b0" },
+      displayName: "Newer Result",
+    };
+    const staleUser = {
+      ...user,
+      userId: { value: "018f7c1e-7b4a-7abc-8def-0123456789b1" },
+      displayName: "Stale Result",
+    };
+    runtime.client.listUsers
+      .mockReturnValueOnce(initial)
+      .mockResolvedValueOnce({ users: [newerUser], nextPageToken: "" });
+
+    render(<App />);
+    const search = await screen.findByRole("search");
+    fireEvent.change(screen.getByPlaceholderText("Search by name, email, or Logto subject"), {
+      target: { value: "newer" },
+    });
+    fireEvent.submit(search);
+    expect(await screen.findByText("Newer Result")).toBeTruthy();
+
+    await act(async () => {
+      resolveInitial({ users: [staleUser], nextPageToken: "stale-token" });
+      await initial;
+    });
+    expect(screen.getByText("Newer Result")).toBeTruthy();
+    expect(screen.queryByText("Stale Result")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
+  });
+
+  it("renders correlated unavailable errors and retries from the first page", async () => {
+    const correlationId = "018f7c1e-7b4a-7abc-8def-0123456789b2";
+    runtime.client.listUsers
+      .mockRejectedValueOnce(new ConnectError("temporarily unavailable", Code.Unavailable, {
+        "x-devhud-correlation-id": correlationId,
+      }))
+      .mockResolvedValueOnce({ users: [user], nextPageToken: "" });
+
+    render(<App />);
+    expect(
+      await screen.findByText("The administrator service is temporarily unavailable. Try again."),
+    ).toBeTruthy();
+    expect(screen.getByText(correlationId)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(await screen.findByText("Target User")).toBeTruthy();
+    expect(runtime.client.listUsers.mock.calls[1]?.[0]).toMatchObject({
+      page: { pageToken: "" },
+    });
+  });
+
+  it("renders the typed pagination recovery path", async () => {
+    runtime.client.listUsers.mockRejectedValueOnce(
+      new ConnectError("page token scope mismatch", Code.InvalidArgument, undefined, [
+        {
+          desc: PaginationFailureSchema,
+          value: { reason: PaginationFailureReason.TOKEN_SCOPE_MISMATCH },
+        },
+      ]),
+    );
+
+    render(<App />);
+    expect(
+      await screen.findByText(
+        "These results changed or expired. Reload the first page to continue.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+  });
+
+  it("guides reauthentication without offering a failing list retry", async () => {
+    runtime.client.listUsers.mockRejectedValueOnce(
+      new ConnectError("expired", Code.Unauthenticated),
+    );
+
+    render(<App />);
+    expect(
+      await screen.findByText(
+        "Your administrator session expired. Sign out, then sign in again.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Sign out" })).toBeTruthy();
   });
 
   it("hides quota inspection without the official uploads capability", async () => {
@@ -176,6 +270,7 @@ describe("administrator console review regressions", () => {
     });
     render(<App />);
     expect(await screen.findByText("신원")).toBeTruthy();
+    expect(document.documentElement.lang).toBe("ko");
     expect(await screen.findByText("Logto 주체")).toBeTruthy();
     expect(screen.getByText("차단되지 않음")).toBeTruthy();
 
@@ -187,5 +282,7 @@ describe("administrator console review regressions", () => {
     fireEvent.click(screen.getByRole("button", { name: "감사 기록" }));
     expect(await screen.findByText("사용자 차단")).toBeTruthy();
     expect(screen.getByText("거부됨")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "English" }));
+    expect(document.documentElement.lang).toBe("en");
   });
 });

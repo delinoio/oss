@@ -31,7 +31,7 @@ export default defineConfig({
   },
   performance: { chunkSplit: { strategy: "all-in-one" } },
   server: {
-    host: "127.0.0.1",
+    host: "localhost",
     port: ADMIN_PORT,
     strictPort: true,
     headers: { "Content-Security-Policy": ADMIN_CSP },

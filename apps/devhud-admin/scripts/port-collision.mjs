@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 const blocker = createServer();
 await new Promise((resolve, reject) => {
   blocker.once("error", reject);
-  blocker.listen(46306, "127.0.0.1", resolve);
+  blocker.listen(46306, "localhost", resolve);
 });
 
 const child = spawn(
