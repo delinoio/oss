@@ -74,6 +74,7 @@ interface BoundaryProps extends PropsWithChildren {
   readonly callbackUrl: string | null;
   readonly platform: RuntimePlatform;
   readonly bridge: NativeBridgeV1;
+  readonly onCallbackConsumed: (url: string) => void;
   readonly onContinueLocally: () => void;
   readonly onLoggedOut: () => void;
   readonly initialAppearance?: DevHudSettingsV1["appearance"];
@@ -105,7 +106,7 @@ export function DevHudServiceBoundary(props: BoundaryProps) {
   </QueryClientProvider></TransportProvider>;
 }
 
-function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, platform, bridge, onContinueLocally, onLoggedOut, initialAppearance, children, sessionRef, onIdentityReset }: BoundaryProps & { readonly sessionRef: RefObject<IdentitySession | null>; readonly onIdentityReset: () => void }) {
+function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, platform, bridge, onCallbackConsumed, onContinueLocally, onLoggedOut, initialAppearance, children, sessionRef, onIdentityReset }: BoundaryProps & { readonly sessionRef: RefObject<IdentitySession | null>; readonly onIdentityReset: () => void }) {
   const storage = getLocalStorage();
   const queryClient = useQueryClient();
   const transport = useTransport();
@@ -282,6 +283,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     void (async () => {
       const pending = await bridge.request({ operation: "auth.take-pending-callback" });
       if (pending.kind !== "auth-callback" || pending.url !== callbackUrl) throw new Error("auth-callback-unavailable");
+      onCallbackConsumed(callbackUrl);
       await session.handleCallback(callbackUrl);
       setStatus("authenticated");
       setError(null);
@@ -290,7 +292,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       setStatus("error");
       setError(safeError(reason));
     });
-  }, [bridge, callbackUrl, session]);
+  }, [bridge, callbackUrl, onCallbackConsumed, session]);
 
   useEffect(() => {
     if (!networkReady || !bootstrapQuery.error) return;

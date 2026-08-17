@@ -18,6 +18,14 @@ describe("DevHud settings boundary", () => {
     expect(() => parseDevHudSettings({ ...defaultDevHudSettings, github: { ...defaultDevHudSettings.github, repositories: [{ owner: "github_pat_secret", name: "oss" }] } })).toThrow(/secret material/u);
   });
 
+  it.each(["__proto__", "constructor", "prototype"])("rejects prototype-sensitive shortcut action %s", (action) => {
+    const shortcuts = JSON.parse(`{"${action}":"ControlRight+KeyK"}`) as Record<string, string>;
+    expect(() => parseDevHudSettings({
+      ...defaultDevHudSettings,
+      shortcuts: { ...defaultDevHudSettings.shortcuts, desktop: shortcuts },
+    })).toThrow(SettingsContractError);
+  });
+
   it("rejects settings snapshots containing more than 25 Decks", () => {
     const deck = {
       id: "deck",

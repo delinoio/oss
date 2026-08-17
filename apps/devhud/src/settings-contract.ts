@@ -80,6 +80,7 @@ const sensitiveValuePatterns = [
 ] as const;
 const safeDynamicKeyPattern = /^[a-zA-Z0-9._:-]{1,128}$/u;
 const profileRefPattern = /^[a-zA-Z0-9._-]{1,128}$/u;
+const prototypeSensitiveKeys = new Set(["__proto__", "constructor", "prototype"]);
 
 export class SettingsContractError extends TypeError {
   readonly path: string;
@@ -248,7 +249,7 @@ function stringMap(value: unknown, path: string): Readonly<Record<string, string
   if (value === null || typeof value !== "object" || Array.isArray(value)) throw new SettingsContractError(path, "must be an object");
   const result: Record<string, string> = {};
   for (const [key, item] of Object.entries(value)) {
-    if (!safeDynamicKeyPattern.test(key) || sensitiveKeyPattern.test(key)) throw new SettingsContractError(`${path}.${key}`, "is not an allowed shortcut action");
+    if (!safeDynamicKeyPattern.test(key) || sensitiveKeyPattern.test(key) || prototypeSensitiveKeys.has(key)) throw new SettingsContractError(`${path}.${key}`, "is not an allowed shortcut action");
     result[key] = text(item, `${path}.${key}`);
   }
   return result;

@@ -42,6 +42,26 @@ describe("local identity data lifecycle", () => {
     expect(storage.getItem("devhud.shell.preferences.v1")).toBe("local-device-preferences");
   });
 
+  it("keeps bulk cleanup best-effort when Web Storage enumeration or removal fails", () => {
+    const enumerationFailure = {
+      get length(): number { throw new DOMException("denied", "SecurityError"); },
+      getItem: () => null,
+      key: () => null,
+      removeItem: () => {},
+      setItem: () => {},
+    };
+    const removalFailure = {
+      length: 1,
+      getItem: () => null,
+      key: () => "devhud.identity.v1.guest-settings",
+      removeItem: () => { throw new DOMException("denied", "SecurityError"); },
+      setItem: () => {},
+    };
+
+    expect(() => clearAllContractedLocalData(enumerationFailure)).not.toThrow();
+    expect(() => clearAllContractedLocalData(removalFailure)).not.toThrow();
+  });
+
   it("keeps authenticated cache writes best-effort when persistence rejects writes", () => {
     const storage = { setItem: () => { throw new DOMException("quota exceeded", "QuotaExceededError"); } };
     expect(() => writeCachedIdentityBootstrap(storage, "https://api.example", { issuer: "https://identity.example/", audience: "https://api.example", clientId: "desktop", redirectUri: "devhud://auth/callback" })).not.toThrow();

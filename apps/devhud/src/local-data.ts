@@ -129,9 +129,19 @@ function accountKey(apiOrigin: string, suffix: string): string {
 
 function removeMatching(storage: MutableStorage, predicate: (key: string) => boolean): void {
   const keys: string[] = [];
-  for (let index = 0; index < storage.length; index += 1) {
-    const key = storage.key(index);
-    if (key !== null && predicate(key)) keys.push(key);
+  try {
+    for (let index = 0; index < storage.length; index += 1) {
+      const key = storage.key(index);
+      if (key !== null && predicate(key)) keys.push(key);
+    }
+  } catch {
+    // Web Storage cleanup is best-effort and must not block native secure-store purges.
   }
-  for (const key of keys) storage.removeItem(key);
+  for (const key of keys) {
+    try {
+      storage.removeItem(key);
+    } catch {
+      // Continue removing independent entries when one Web Storage operation fails.
+    }
+  }
 }

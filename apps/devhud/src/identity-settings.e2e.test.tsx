@@ -1,16 +1,18 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { create, toBinary } from "@bufbuild/protobuf";
 import { SettingsRevisionConflictSchema } from "@delinoio/devhud-api-client";
 import { useQueryClient } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import fixture from "../fixtures/identity-settings-e2e.json";
 import { App } from "./App";
+import * as identityClient from "./identity-client";
+import type { IdentitySession } from "./identity-client";
 import { messages } from "./localization";
 import { hasGuestSettings, readAuthenticatedSettingsCache, readGuestSettings, writeAuthenticatedSettingsCache, writeCachedIdentityBootstrap, writeGuestSettings } from "./local-data";
 import { canonicalDevHudSettings, defaultDevHudSettings } from "./settings-contract";
-import { LifecycleState, RuntimePlatform, type NativeBridgeRequestV1, type NativeBridgeResponseV1, type NativeBridgeV1, type RuntimeSnapshot } from "./native-bridge";
+import { LifecycleState, RuntimePlatform, type NativeBridgeEventV1, type NativeBridgeRequestV1, type NativeBridgeResponseV1, type NativeBridgeV1, type RuntimeSnapshot } from "./native-bridge";
 import { clearIdentityForApiChange, DevHudServiceBoundary, useIdentitySettings } from "./service-boundary";
 
 const runtime: RuntimeSnapshot = {
@@ -87,6 +89,7 @@ function renderIdentityProbe(bridge: NativeBridgeV1, replacement = defaultDevHud
     callbackUrl={null}
     platform={RuntimePlatform.Desktop}
     bridge={bridge}
+    onCallbackConsumed={() => {}}
     onContinueLocally={() => {}}
     onLoggedOut={() => {}}
   ><IdentityStateProbe replacement={replacement} /></DevHudServiceBoundary>);
@@ -320,8 +323,9 @@ describe("generated Connect identity/settings fixture", () => {
     expect(await screen.findByRole("heading", { name: messages.en.welcome })).toBeTruthy();
   });
 
-  it("retries local credential cleanup when a pending deletion is observed", async () => {
+  it("purges secure credentials when pending-deletion Web Storage enumeration fails", async () => {
     const purges: string[] = [];
+    vi.spyOn(Storage.prototype, "key").mockImplementation(() => { throw new DOMException("denied", "SecurityError"); });
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
@@ -338,8 +342,14 @@ describe("generated Connect identity/settings fixture", () => {
     expect(screen.getByRole("button", { name: messages.en.restoreAccount })).toBeTruthy();
   });
 
-  it("clears an irreversible purge-claimed account without exposing restore", async () => {
+  it("purges an irreversible account when Web Storage removal fails", async () => {
     const purges: string[] = [];
+    localStorage.setItem("devhud.identity.v1.account.fixture", "sensitive");
+    const originalRemoveItem = Storage.prototype.removeItem;
+    vi.spyOn(Storage.prototype, "removeItem").mockImplementation(function (this: Storage, key) {
+      if (key.startsWith("devhud.identity.v1.")) throw new DOMException("denied", "SecurityError");
+      originalRemoveItem.call(this, key);
+    });
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
@@ -402,6 +412,81 @@ describe("generated Connect identity/settings fixture", () => {
 
     expect(await screen.findByText("Fixture User")).toBeTruthy();
     expect(accountRequests).toBe(2);
+  });
+
+  it.each([
+    ["en", messages.en],
+    ["ko", messages.ko],
+  ] as const)("recovers the first-run %s identity surface by retrying Bootstrap", async (language, copy) => {
+    localStorage.removeItem("devhud.shell.onboarding.v1");
+    localStorage.setItem("devhud.shell.preferences.v1", JSON.stringify({ version: 1, theme: "system", language, apiOrigin: "https://devhud.api.delino.io", launchAtLogin: false }));
+    let bootstrapRequests = 0;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (!url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) throw new Error(`unexpected request ${url}`);
+      bootstrapRequests += 1;
+      if (bootstrapRequests === 1) return new Response(JSON.stringify({ code: "unavailable", message: "retry" }), { status: 503, headers: { "Content-Type": "application/json" } });
+      return connectResponse(fixture.bootstrap);
+    }));
+
+    render(<App bridge={signedOutBridge()} initialRuntime={runtime} />);
+    expect((await screen.findByRole("alert")).textContent).toContain(copy.bootstrapFailed);
+    fireEvent.click(screen.getByRole("button", { name: copy.retry }));
+
+    await waitFor(() => expect((screen.getByRole("button", { name: copy.signIn }) as HTMLButtonElement).disabled).toBe(false));
+    expect(bootstrapRequests).toBe(2);
+  });
+
+  it("does not reuse a consumed callback after logout resets identity", async () => {
+    const callbackUrl = "devhud://auth/callback?code=opaque&state=opaque";
+    let receive!: (event: NativeBridgeEventV1) => void;
+    let pendingCallback: string | null = callbackUrl;
+    let authenticated = false;
+    let callbackTakes = 0;
+    const handleCallback = vi.fn(async () => { authenticated = true; });
+    const clear = vi.fn(async () => { authenticated = false; });
+    vi.spyOn(identityClient, "createIdentitySession").mockResolvedValue({
+      client: {},
+      storage: {},
+      getAccessToken: async () => "fixture-access-token",
+      isAuthenticated: async () => authenticated,
+      signIn: async () => {},
+      handleCallback,
+      clear,
+    } as unknown as IdentitySession);
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 1, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
+      throw new Error(`unexpected request ${url}`);
+    }));
+    const bridge: NativeBridgeV1 = {
+      async request(request) {
+        if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
+        if (request.operation === "auth.take-pending-callback") {
+          callbackTakes += 1;
+          const url = pendingCallback;
+          pendingCallback = null;
+          return { kind: "auth-callback", url };
+        }
+        if (request.operation === "secure.purge") return { kind: "ok" };
+        throw new Error(`unexpected bridge operation ${request.operation}`);
+      },
+      async listen(listener) { receive = listener; return () => {}; },
+    };
+
+    render(<App bridge={bridge} initialRuntime={runtime} />);
+    await waitFor(() => expect(receive).toBeTypeOf("function"));
+    act(() => receive({ version: 1, kind: "auth-callback", url: callbackUrl }));
+    await waitFor(() => expect(handleCallback).toHaveBeenCalledWith(callbackUrl));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.account }));
+    expect(await screen.findByText("Fixture User")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: messages.en.logout }));
+
+    expect(await screen.findByRole("button", { name: messages.en.signIn })).toBeTruthy();
+    expect(screen.queryByText(messages.en.bootstrapFailed)).toBeNull();
+    expect(callbackTakes).toBe(1);
   });
 
   it.each([

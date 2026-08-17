@@ -56,7 +56,7 @@ export function FirstRunIdentity({ copy, apiOrigin, onApiOrigin, onComplete }: I
       <button onClick={identity.continueLocally}>{copy.continueLocally}</button>
     </div>
     {identity.status === "starting" && <p role="status">{copy.fetchingBootstrap}</p>}
-    {identity.status === "error" && <p role="alert">{copy.bootstrapFailed}</p>}
+    {identity.status === "error" && <section className="notice" role="alert"><p>{copy.bootstrapFailed}</p><button onClick={identity.retryIdentity}>{copy.retry}</button></section>}
     {actionError && <p role="alert">{copy.signInFailed}</p>}
   </>;
 }
