@@ -51,14 +51,7 @@ func (h *AdministratorHooks) RemoveUpload(ctx context.Context, actorID, uploadID
 	if err := validateAdministratorReason(rationale); err != nil {
 		return domain.Upload{}, err
 	}
-	upload, err := h.service.RemoveAsAdministrator(ctx, uploadID, reason)
-	if err != nil {
-		return domain.Upload{}, err
-	}
-	if err := h.service.repository.RecordAdministratorUploadAudit(ctx, actorID, uploadID, reason, rationale, h.service.clock.Now()); err != nil {
-		return domain.Upload{}, err
-	}
-	return upload, nil
+	return h.service.RemoveAsAdministrator(ctx, actorID, uploadID, reason, rationale)
 }
 
 var _ domain.UploadAdministration = (*AdministratorHooks)(nil)

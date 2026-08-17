@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"hash/crc32"
 	"log/slog"
 	"strings"
 	"time"
@@ -14,7 +15,10 @@ import (
 	"github.com/delinoio/oss/servers/devhud-api/internal/idgen"
 )
 
-var pngSignature = []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}
+var (
+	pngSignature = []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}
+	pngIHDR      = []byte("IHDR")
+)
 
 const cleanupTimeout = 5 * time.Second
 
@@ -114,7 +118,7 @@ func validateObject(upload domain.Upload, binding domain.UploadBinding, object d
 	if len(object.Checksum) != 32 || !bytes.Equal(object.Checksum, upload.SHA256[:]) || binding.SHA256 != upload.SHA256 {
 		return 0, 0, domain.UploadFailureChecksumMismatch
 	}
-	if len(object.Header) < 24 || !bytes.Equal(object.Header[:8], pngSignature) || binary.BigEndian.Uint32(object.Header[8:12]) != 13 || !bytes.Equal(object.Header[12:16], []byte("IHDR")) {
+	if !validPNGHeader(object.Header) {
 		return 0, 0, domain.UploadFailureInvalidPNGSignature
 	}
 	width := binary.BigEndian.Uint32(object.Header[16:20])
@@ -125,11 +129,31 @@ func validateObject(upload domain.Upload, binding domain.UploadBinding, object d
 	return width, height, 0
 }
 
+func validPNGHeader(header []byte) bool {
+	if len(header) < 33 || !bytes.Equal(header[:8], pngSignature) || binary.BigEndian.Uint32(header[8:12]) != 13 || !bytes.Equal(header[12:16], pngIHDR) {
+		return false
+	}
+	if binary.BigEndian.Uint32(header[29:33]) != crc32.ChecksumIEEE(header[12:29]) || header[26] != 0 || header[27] != 0 || header[28] > 1 {
+		return false
+	}
+	switch header[25] {
+	case 0:
+		return header[24] == 1 || header[24] == 2 || header[24] == 4 || header[24] == 8 || header[24] == 16
+	case 2, 4, 6:
+		return header[24] == 8 || header[24] == 16
+	case 3:
+		return header[24] == 1 || header[24] == 2 || header[24] == 4 || header[24] == 8
+	default:
+		return false
+	}
+}
+
 func (s *Service) rejectAndClean(ctx context.Context, ownerID string, binding domain.UploadBinding, upload domain.Upload, failure domain.UploadFailure, now time.Time) {
 	cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
 	defer cancel()
 	if err := s.repository.RejectUpload(cleanup, ownerID, binding, failure, now); err != nil {
 		s.logger.WarnContext(ctx, "invalid upload rejection state update failed", "upload_id", upload.UploadID, "error_type", fmt.Sprintf("%T", err))
+		return
 	}
 	if err := s.objects.DeleteStaging(cleanup, upload.UploadReservation); err != nil {
 		s.logger.WarnContext(ctx, "invalid staging cleanup deferred to sweeper", "upload_id", upload.UploadID, "error_type", fmt.Sprintf("%T", err))
@@ -170,17 +194,17 @@ func (s *Service) List(ctx context.Context, ownerID string, states []domain.Uplo
 }
 
 func (s *Service) Delete(ctx context.Context, ownerID, uploadID string) (domain.Upload, error) {
-	return s.remove(ctx, ownerID, uploadID, domain.RemovalReasonOwnerDeleted)
+	return s.remove(ctx, ownerID, uploadID, domain.RemovalReasonOwnerDeleted, nil)
 }
 
-func (s *Service) RemoveAsAdministrator(ctx context.Context, uploadID string, reason domain.RemovalReason) (domain.Upload, error) {
+func (s *Service) RemoveAsAdministrator(ctx context.Context, actorID, uploadID string, reason domain.RemovalReason, rationale string) (domain.Upload, error) {
 	if reason != domain.RemovalReasonAdministratorDeleted && reason != domain.RemovalReasonAdministratorQuarantined {
 		return domain.Upload{}, errors.New("invalid administrator removal reason")
 	}
-	return s.remove(ctx, "", uploadID, reason)
+	return s.remove(ctx, "", uploadID, reason, &domain.AdministratorUploadAudit{ActorUserID: actorID, Rationale: rationale})
 }
 
-func (s *Service) remove(ctx context.Context, ownerID, uploadID string, reason domain.RemovalReason) (domain.Upload, error) {
+func (s *Service) remove(ctx context.Context, ownerID, uploadID string, reason domain.RemovalReason, audit *domain.AdministratorUploadAudit) (domain.Upload, error) {
 	token, err := idgen.Opaque()
 	if err != nil {
 		return domain.Upload{}, err
@@ -199,7 +223,7 @@ func (s *Service) remove(ctx context.Context, ownerID, uploadID string, reason d
 		_ = withCleanupContext(ctx, func(cleanup context.Context) error {
 			return s.repository.CompleteExpiredUpload(cleanup, uploadID, s.clock.Now())
 		})
-		return s.repository.CompleteUploadRemoval(ctx, uploadID, token, s.clock.Now())
+		return s.repository.CompleteUploadRemoval(ctx, uploadID, token, s.clock.Now(), audit)
 	}
 	if upload.ReplacementETag == "" {
 		replacementETag, err := s.objects.ReplacePublic(ctx, upload, s.removalPNG)
@@ -218,7 +242,7 @@ func (s *Service) remove(ctx context.Context, ownerID, uploadID string, reason d
 	if err := s.cache.PurgeAndRevalidate(ctx, publicURL, s.removalPNG); err != nil {
 		return domain.Upload{}, err
 	}
-	return s.repository.CompleteUploadRemoval(ctx, uploadID, token, s.clock.Now())
+	return s.repository.CompleteUploadRemoval(ctx, uploadID, token, s.clock.Now(), audit)
 }
 
 func (s *Service) PublicURL(publicID string) string { return s.publicBaseURL + "/" + publicID + ".png" }
@@ -230,6 +254,17 @@ func (s *Service) SweepExpiredUploads(ctx context.Context, now time.Time, limit 
 	}
 	result := domain.StagingSweepResult{Claimed: len(uploads)}
 	for _, upload := range uploads {
+		if upload.State == domain.UploadStatePublishing {
+			publicETag, err := s.objects.Promote(ctx, upload, upload.OperationToken)
+			if err != nil {
+				s.logger.WarnContext(ctx, "upload promotion reconciliation failed", "upload_id", upload.UploadID, "error_type", fmt.Sprintf("%T", err))
+				continue
+			}
+			upload, err = s.repository.CompleteUploadPromotion(ctx, upload.UploadID, upload.OperationToken, publicETag, now)
+			if err != nil {
+				return result, err
+			}
+		}
 		if err := s.objects.DeleteStaging(ctx, upload.UploadReservation); err != nil {
 			s.logger.WarnContext(ctx, "staging expiry cleanup failed", "upload_id", upload.UploadID, "error_type", fmt.Sprintf("%T", err))
 			continue
@@ -261,7 +296,7 @@ func (s *Service) PurgeAccount(ctx context.Context, user domain.User) error {
 				}
 				continue
 			}
-			if _, err := s.remove(ctx, "", candidate.UploadID, domain.RemovalReasonAccountPurged); err != nil {
+			if _, err := s.remove(ctx, "", candidate.UploadID, domain.RemovalReasonAccountPurged, nil); err != nil {
 				return fmt.Errorf("purge upload %s: %w", candidate.UploadID, err)
 			}
 		}

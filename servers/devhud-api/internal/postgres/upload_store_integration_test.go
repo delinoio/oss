@@ -126,7 +126,7 @@ func TestConcurrentFinalizationEnforcesSubmissionLimitAcrossGroupsAndFreesDelete
 	if err != nil || claimed.State != domain.UploadStateRemoving {
 		t.Fatalf("claim removal = %+v, err=%v", claimed, err)
 	}
-	if _, err := store.CompleteUploadRemoval(ctx, claimed.UploadID, removeToken, now); err != nil {
+	if _, err := store.CompleteUploadRemoval(ctx, claimed.UploadID, removeToken, now, nil); err != nil {
 		t.Fatal(err)
 	}
 	failed := reservations[failedIndex]
@@ -169,6 +169,10 @@ func TestRemovingUploadFiltersUseFinalizationState(t *testing.T) {
 	if err != nil || len(finalized.Uploads) != 0 {
 		t.Fatalf("finalized removals before finalization = %d, err=%v", len(finalized.Uploads), err)
 	}
+	usage, err := store.GetUploadUsage(ctx, user.ID, now)
+	if err != nil || usage.StoredBytes != 0 {
+		t.Fatalf("pending removal usage = %+v, err=%v", usage, err)
+	}
 
 	if _, err := pool.Exec(ctx, `UPDATE devhud_uploads SET finalized_at = $2, quota_charged_at = $2 WHERE upload_id = $1`, reservation.UploadID, now); err != nil {
 		t.Fatal(err)
@@ -180,6 +184,127 @@ func TestRemovingUploadFiltersUseFinalizationState(t *testing.T) {
 	finalized, err = store.ListUploads(ctx, user.ID, []domain.UploadState{domain.UploadStateFinalized}, "", nil, 10)
 	if err != nil || len(finalized.Uploads) != 1 {
 		t.Fatalf("finalized removals = %d, err=%v", len(finalized.Uploads), err)
+	}
+	usage, err = store.GetUploadUsage(ctx, user.ID, now)
+	if err != nil || usage.StoredBytes != 1 {
+		t.Fatalf("finalized removal usage = %+v, err=%v", usage, err)
+	}
+}
+
+func TestAdministratorUploadListingAllowsNoOwnerFilter(t *testing.T) {
+	ctx, _, store := newIntegrationStore(t, time.Date(2026, 8, 17, 0, 0, 0, 0, time.UTC))
+	now := time.Date(2026, 8, 17, 0, 0, 0, 0, time.UTC)
+	first := provisionUploadUser(t, ctx, store, "admin-list-first")
+	second := provisionUploadUser(t, ctx, store, "admin-list-second")
+	sign := func(context.Context, domain.UploadReservation) (domain.SignedPUT, error) {
+		return domain.SignedPUT{}, nil
+	}
+	for _, user := range []domain.User{first, second} {
+		if _, err := store.CreateUpload(ctx, domain.CreateUpload{OwnerUserID: user.ID, Target: domain.UploadTarget{Kind: domain.UploadTargetNewSubmission}, SizeBytes: 1, Now: now}, sign); err != nil {
+			t.Fatal(err)
+		}
+	}
+	all, err := store.ListUploadsForAdministrator(ctx, "", nil, nil, 10)
+	if err != nil || len(all.Uploads) != 2 {
+		t.Fatalf("unfiltered uploads = %d, err=%v", len(all.Uploads), err)
+	}
+	filtered, err := store.ListUploadsForAdministrator(ctx, first.ID, nil, nil, 10)
+	if err != nil || len(filtered.Uploads) != 1 || filtered.Uploads[0].OwnerUserID != first.ID {
+		t.Fatalf("filtered uploads = %+v, err=%v", filtered.Uploads, err)
+	}
+}
+
+func TestRemovalTerminalIdempotencyAndPendingQuarantine(t *testing.T) {
+	ctx, _, store := newIntegrationStore(t, time.Date(2026, 8, 17, 0, 0, 0, 0, time.UTC))
+	now := time.Date(2026, 8, 17, 0, 0, 0, 0, time.UTC)
+	user := provisionUploadUser(t, ctx, store, "removal-terminal")
+	sign := func(context.Context, domain.UploadReservation) (domain.SignedPUT, error) {
+		return domain.SignedPUT{}, nil
+	}
+	pending, err := store.CreateUpload(ctx, domain.CreateUpload{OwnerUserID: user.ID, Target: domain.UploadTarget{Kind: domain.UploadTargetNewSubmission}, SizeBytes: 1, Now: now}, sign)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ClaimUploadRemoval(ctx, "", pending.UploadID, domain.RemovalReasonAdministratorQuarantined, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", now); !uploadFailureIs(err, domain.UploadFailureInvalidState) {
+		t.Fatalf("pending quarantine error = %v", err)
+	}
+	deleteToken := "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+	if _, err := store.ClaimUploadRemoval(ctx, "", pending.UploadID, domain.RemovalReasonAdministratorDeleted, deleteToken, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CompleteUploadRemoval(ctx, pending.UploadID, deleteToken, now, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ClaimUploadRemoval(ctx, "", pending.UploadID, domain.RemovalReasonAdministratorDeleted, "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC", now); err != nil {
+		t.Fatalf("matching deleted retry failed: %v", err)
+	}
+	if _, err := store.ClaimUploadRemoval(ctx, "", pending.UploadID, domain.RemovalReasonAdministratorQuarantined, "DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD", now); !uploadFailureIs(err, domain.UploadFailureInvalidState) {
+		t.Fatalf("deleted-to-quarantine error = %v", err)
+	}
+
+	finalized, err := store.CreateUpload(ctx, domain.CreateUpload{OwnerUserID: user.ID, Target: domain.UploadTarget{Kind: domain.UploadTargetNewSubmission}, SizeBytes: 1, Now: now}, sign)
+	if err != nil {
+		t.Fatal(err)
+	}
+	promotionToken := "EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE"
+	if _, err := store.ClaimUploadPromotion(ctx, user.ID, reservationBinding(finalized, `"etag"`), domain.UploadObject{ETag: `"etag"`}, 1, 1, promotionToken, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CompleteUploadPromotion(ctx, finalized.UploadID, promotionToken, `"public"`, now); err != nil {
+		t.Fatal(err)
+	}
+	quarantineToken := "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
+	if _, err := store.ClaimUploadRemoval(ctx, "", finalized.UploadID, domain.RemovalReasonAdministratorQuarantined, quarantineToken, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CompleteUploadRemoval(ctx, finalized.UploadID, quarantineToken, now, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ClaimUploadRemoval(ctx, "", finalized.UploadID, domain.RemovalReasonAdministratorQuarantined, "GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG", now); err != nil {
+		t.Fatalf("matching quarantine retry failed: %v", err)
+	}
+	if _, err := store.ClaimUploadRemoval(ctx, "", finalized.UploadID, domain.RemovalReasonAdministratorDeleted, "HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH", now); !uploadFailureIs(err, domain.UploadFailureInvalidState) {
+		t.Fatalf("quarantine-to-delete error = %v", err)
+	}
+}
+
+func TestAdministratorAuditCommitsWithRemovalCompletion(t *testing.T) {
+	ctx, pool, store := newIntegrationStore(t, time.Date(2026, 8, 17, 0, 0, 0, 0, time.UTC))
+	now := time.Date(2026, 8, 17, 0, 0, 0, 0, time.UTC)
+	actor := provisionUploadUser(t, ctx, store, "audit-actor")
+	target := provisionUploadUser(t, ctx, store, "audit-target")
+	reservation, err := store.CreateUpload(ctx, domain.CreateUpload{OwnerUserID: target.ID, Target: domain.UploadTarget{Kind: domain.UploadTargetNewSubmission}, SizeBytes: 1, Now: now}, func(context.Context, domain.UploadReservation) (domain.SignedPUT, error) {
+		return domain.SignedPUT{}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := "IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII"
+	if _, err := store.ClaimUploadRemoval(ctx, "", reservation.UploadID, domain.RemovalReasonAdministratorDeleted, token, now); err != nil {
+		t.Fatal(err)
+	}
+	missingActor := domain.AdministratorUploadAudit{ActorUserID: "0198b123-4567-7abc-8def-012345678999", Rationale: "Reviewed policy violation."}
+	if _, err := store.CompleteUploadRemoval(ctx, reservation.UploadID, token, now, &missingActor); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("missing actor completion error = %v", err)
+	}
+	var state int16
+	var operationToken *string
+	if err := pool.QueryRow(ctx, `SELECT state, operation_token FROM devhud_uploads WHERE upload_id = $1`, reservation.UploadID).Scan(&state, &operationToken); err != nil {
+		t.Fatal(err)
+	}
+	if domain.UploadState(state) != domain.UploadStateRemoving || operationToken == nil || *operationToken != token {
+		t.Fatalf("removal was not rolled back: state=%v token=%v", state, operationToken)
+	}
+	audit := domain.AdministratorUploadAudit{ActorUserID: actor.ID, Rationale: "Reviewed policy violation."}
+	if _, err := store.CompleteUploadRemoval(ctx, reservation.UploadID, token, now, &audit); err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM devhud_audit_events WHERE target_upload_id = $1 AND actor_user_id = $2 AND action = $3 AND reason = $4`, reservation.UploadID, actor.ID, domain.AuditActionUploadDeleted, audit.Rationale).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("audit count = %d", count)
 	}
 }
 
@@ -231,6 +356,31 @@ func TestExpiredRemovalLeaseClaimsStagingWithoutChangingRemovalState(t *testing.
 	}
 	if domain.UploadState(state) != domain.UploadStateRemoving {
 		t.Fatalf("state after staging cleanup = %v", state)
+	}
+}
+
+func TestExpiredPublishingClaimPreservesPromotionRecoveryState(t *testing.T) {
+	now := time.Date(2026, 8, 17, 0, 0, 0, 0, time.UTC)
+	ctx, _, store := newIntegrationStore(t, now)
+	user := provisionUploadUser(t, ctx, store, "expired-publishing")
+	createdAt := now.Add(-25 * time.Hour)
+	reservation, err := store.CreateUpload(ctx, domain.CreateUpload{OwnerUserID: user.ID, Target: domain.UploadTarget{Kind: domain.UploadTargetNewSubmission}, SizeBytes: 1, Now: createdAt}, func(context.Context, domain.UploadReservation) (domain.SignedPUT, error) {
+		return domain.SignedPUT{}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := "JJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJ"
+	claimAt := createdAt.Add(time.Minute)
+	if _, err := store.ClaimUploadPromotion(ctx, user.ID, reservationBinding(reservation, `"etag"`), domain.UploadObject{ETag: `"etag"`}, 1, 1, token, claimAt); err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := store.ClaimExpiredUploads(ctx, now, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(claimed) != 1 || claimed[0].State != domain.UploadStatePublishing || claimed[0].OperationToken != token || claimed[0].RemovedAt != nil {
+		t.Fatalf("expired publishing claim = %+v", claimed)
 	}
 }
 
@@ -346,4 +496,9 @@ func reservationBinding(reservation domain.UploadReservation, etag string) domai
 	return domain.UploadBinding{UploadID: reservation.UploadID, SubmissionID: reservation.SubmissionID, UploadGroupID: reservation.UploadGroupID,
 		ReservationID: reservation.ReservationID, StagingGeneration: reservation.StagingGeneration, SizeBytes: reservation.SizeBytes,
 		SHA256: reservation.SHA256, ObservedETag: etag}
+}
+
+func uploadFailureIs(err error, failure domain.UploadFailure) bool {
+	var uploadError *domain.UploadError
+	return errors.As(err, &uploadError) && uploadError.Failure == failure
 }

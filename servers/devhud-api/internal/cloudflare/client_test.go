@@ -65,9 +65,10 @@ func TestPurgeRejectsAnotherValidPNG(t *testing.T) {
 
 func TestPublicRateLimitRequiresExact300PerIPPerMinute(t *testing.T) {
 	requests := 300
+	enabled := true
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
 		response.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprintf(response, `{"success":true,"result":{"rules":[{"id":"rule","action":"block","expression":"(http.host eq \"assets.example.com\" and http.request.method eq \"GET\")","ratelimit":{"characteristics":["ip.src"],"period":60,"requests_per_period":%d,"mitigation_timeout":60}}]}}`, requests)
+		_, _ = fmt.Fprintf(response, `{"success":true,"result":{"rules":[{"id":"rule","action":"block","enabled":%t,"expression":"(http.host eq \"assets.example.com\" and http.request.method eq \"GET\")","ratelimit":{"characteristics":["ip.src"],"period":60,"requests_per_period":%d,"mitigation_timeout":60}}]}}`, enabled, requests)
 	}))
 	defer server.Close()
 	client := New(server.Client(), "token", "zone", "rule", "https://assets.example.com")
@@ -78,5 +79,10 @@ func TestPublicRateLimitRequiresExact300PerIPPerMinute(t *testing.T) {
 	requests = 301
 	if err := client.ValidatePublicRateLimit(context.Background()); err == nil {
 		t.Fatal("301-request rule was accepted")
+	}
+	requests = 300
+	enabled = false
+	if err := client.ValidatePublicRateLimit(context.Background()); err == nil {
+		t.Fatal("disabled rule was accepted")
 	}
 }

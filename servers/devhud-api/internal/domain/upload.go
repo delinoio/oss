@@ -184,6 +184,11 @@ type UploadUsage struct {
 	FinalizedImages       uint64
 }
 
+type AdministratorUploadAudit struct {
+	ActorUserID string
+	Rationale   string
+}
+
 type StagingSweepResult struct {
 	Claimed int
 	Deleted int
@@ -228,14 +233,13 @@ type UploadRepository interface {
 	ListUploadsForAdministrator(context.Context, string, []UploadState, *UploadCursor, uint32) (UploadList, error)
 	ClaimUploadRemoval(context.Context, string, string, RemovalReason, string, time.Time) (Upload, error)
 	RecordUploadReplacement(context.Context, string, string, string) (Upload, error)
-	CompleteUploadRemoval(context.Context, string, string, time.Time) (Upload, error)
+	CompleteUploadRemoval(context.Context, string, string, time.Time, *AdministratorUploadAudit) (Upload, error)
 	ReleaseUploadRemoval(context.Context, string, string) error
 	ClaimExpiredUploads(context.Context, time.Time, int) ([]Upload, error)
 	CompleteExpiredUpload(context.Context, string, time.Time) error
 	ListAccountUploadsForPurge(context.Context, string, int) ([]Upload, error)
 	RemoveAccountUploadMetadata(context.Context, string) error
 	GetUploadUsage(context.Context, string, time.Time) (UploadUsage, error)
-	RecordAdministratorUploadAudit(context.Context, string, string, RemovalReason, string, time.Time) error
 }
 
 type UploadStagingSweeper interface {

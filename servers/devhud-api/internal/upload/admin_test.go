@@ -2,7 +2,9 @@ package upload
 
 import (
 	"context"
+	"crypto/sha256"
 	"testing"
+	"time"
 
 	"github.com/delinoio/oss/servers/devhud-api/internal/domain"
 )
@@ -34,6 +36,36 @@ func TestAdministratorReasonValidation(t *testing.T) {
 		if err := validateAdministratorReason(reason); err == nil {
 			t.Fatalf("sensitive reason %q was accepted", reason)
 		}
+	}
+}
+
+func TestAdministratorUnfilteredCursorCannotBeReusedWithOwnerFilter(t *testing.T) {
+	events := []string{}
+	next := domain.UploadCursor{CreatedAt: testNow.Add(-time.Minute), UploadID: "0198b123-4567-7abc-8def-012345678901"}
+	repository := &fakeRepository{events: &events, administratorList: domain.UploadList{Next: &next}}
+	hooks := NewAdministratorHooks(newTestService(t, repository, &fakeStorage{events: &events}, &fakeCache{events: &events}))
+	_, token, err := hooks.ListUploads(context.Background(), "", nil, "", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if repository.administratorListOwner != "" || token == "" {
+		t.Fatalf("owner = %q, token = %q", repository.administratorListOwner, token)
+	}
+	if _, _, err := hooks.ListUploads(context.Background(), "0198b123-4567-7abc-8def-012345678999", nil, token, 1); err == nil {
+		t.Fatal("unfiltered cursor was accepted with an owner filter")
+	}
+}
+
+func TestAdministratorRemovalCarriesAuditIntoCompletion(t *testing.T) {
+	events := []string{}
+	checksum := sha256.Sum256([]byte("image"))
+	repository := &fakeRepository{events: &events, upload: testUpload(checksum)}
+	hooks := NewAdministratorHooks(newTestService(t, repository, &fakeStorage{events: &events}, &fakeCache{events: &events}))
+	if _, err := hooks.RemoveUpload(context.Background(), "actor", repository.upload.UploadID, domain.RemovalReasonAdministratorDeleted, "Reviewed policy violation."); err != nil {
+		t.Fatal(err)
+	}
+	if repository.completedAudit == nil || repository.completedAudit.ActorUserID != "actor" || repository.completedAudit.Rationale != "Reviewed policy violation." {
+		t.Fatalf("audit = %+v", repository.completedAudit)
 	}
 }
 

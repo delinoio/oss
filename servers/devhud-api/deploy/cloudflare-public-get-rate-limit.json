@@ -1,5 +1,6 @@
 {
   "action": "block",
+  "enabled": true,
   "description": "DevHud public images: 300 GET requests per IP per minute",
   "expression": "(http.host eq \"devhud-assets.usercontents.delino.io\" and http.request.method eq \"GET\")",
   "ratelimit": {
