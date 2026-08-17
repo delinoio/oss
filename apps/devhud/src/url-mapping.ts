@@ -19,7 +19,6 @@ export interface ParsedUrlPattern {
 export class UrlMappingError extends TypeError {}
 
 const literalScheme = /^(?:https?|\*)$/u;
-const literalHost = /^(?:[A-Za-z0-9-]+|\*)$/u;
 const literalPort = /^(?:[1-9]\d{0,4}|\*)?$/u;
 
 /** Parse a URL glob without allowing URL credentials, query, or fragment data. */
@@ -45,11 +44,24 @@ function parsePatternHost(hostText: string): Pick<ParsedUrlPattern, "host" | "ho
       throw new UrlMappingError("host must be a valid bracketed IPv6 literal");
     }
   }
-  const host = hostText.split(".");
-  if (host.some((part) => !literalHost.test(part) || part === "")) throw new UrlMappingError("host labels must be literals or *");
-  if (host.includes("*")) return { host, hostIsIpLiteral: false };
-  const canonicalHost = new URL(`http://${hostText}/`).hostname;
-  return { host: canonicalHost.split("."), hostIsIpLiteral: isIpv4Literal(canonicalHost) };
+  const labels = hostText.split(".");
+  if (labels.some((part) => part === "" || (part.includes("*") && part !== "*"))) throw new UrlMappingError("host labels must be literals or *");
+  const canonicalInput = labels.map((part, index) => {
+    if (part !== "*") return part;
+    return `devhud-wildcard-${index}`;
+  }).join(".");
+  try {
+    const canonicalHost = new URL(`http://${canonicalInput}/`).hostname;
+    const canonicalLabels = canonicalHost.split(".");
+    if (!labels.includes("*")) {
+      if (canonicalLabels.some((part) => part.includes("*"))) throw new UrlMappingError("host labels must be literals or *");
+      return { host: canonicalLabels, hostIsIpLiteral: isIpv4Literal(canonicalHost) };
+    }
+    if (canonicalLabels.length !== labels.length || canonicalLabels.some((part, index) => labels[index] !== "*" && part.includes("*"))) throw new UrlMappingError("host labels must be literals or *");
+    return { host: canonicalLabels.map((part, index) => labels[index] === "*" ? "*" : part), hostIsIpLiteral: false };
+  } catch {
+    throw new UrlMappingError("host labels must be literals or *");
+  }
 }
 
 export function parseLiveUrl(value: string): ParsedUrlPattern {
