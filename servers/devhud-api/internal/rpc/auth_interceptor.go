@@ -104,12 +104,10 @@ func (i *AuthInterceptor) recordRejectedAdminMutation(ctx context.Context, reque
 	if i.admin == nil || !isAdminMutation(request.Spec().Procedure) {
 		return
 	}
-	eventID, err := i.ids.New()
+	event, err := i.rejectedAdminMutationEvent(ctx, reason)
 	if err != nil {
 		return
 	}
-	event := domain.AuditEvent{ID: eventID, CorrelationID: CorrelationID(ctx), Outcome: domain.AuditOutcomeRejected,
-		RejectionReason: reason, CreatedAt: i.clock.Now(), ExpiresAt: i.clock.Now().Add(domain.AuditRetention)}
 	if actor != nil {
 		event.ActorUserID = &actor.ID
 	}
@@ -137,6 +135,18 @@ func (i *AuthInterceptor) recordRejectedAdminMutation(ctx context.Context, reque
 	if err := i.admin.RecordAdministratorAudit(context.WithoutCancel(ctx), event); err != nil {
 		i.logger.WarnContext(ctx, "administrator rejection audit failed", "correlation_id", CorrelationID(ctx), "procedure", request.Spec().Procedure, "error_type", "persistence")
 	}
+}
+
+func (i *AuthInterceptor) rejectedAdminMutationEvent(ctx context.Context, reason domain.AuditRejectionReason) (domain.AuditEvent, error) {
+	eventID, err := i.ids.New()
+	if err != nil {
+		return domain.AuditEvent{}, err
+	}
+	now := i.clock.Now()
+	return domain.AuditEvent{
+		ID: eventID, CorrelationID: CorrelationID(ctx), Outcome: domain.AuditOutcomeRejected,
+		RejectionReason: reason, CreatedAt: now, ExpiresAt: now.Add(domain.AuditRetention),
+	}, nil
 }
 
 func isAccountProcedure(procedure string) bool {

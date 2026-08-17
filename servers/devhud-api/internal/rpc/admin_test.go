@@ -142,6 +142,51 @@ func TestRejectedMutationDoesNotAuditSensitiveReason(t *testing.T) {
 	}
 }
 
+func TestRejectedMutationAuditPreservesRequestDeadline(t *testing.T) {
+	deadline := time.Now().Add(time.Minute)
+	var auditDeadline time.Time
+	repository := &adminRepository{recordAudit: func(ctx context.Context, _ domain.AuditEvent) error {
+		var ok bool
+		auditDeadline, ok = ctx.Deadline()
+		if !ok {
+			t.Fatal("rejection audit context has no deadline")
+		}
+		return nil
+	}}
+	service := newTestAdminService(t, repository, &adminUploads{})
+	ctx, cancel := context.WithDeadline(administratorContext(), deadline)
+	defer cancel()
+	_, err := service.SetUserBlocked(ctx, connect.NewRequest(&devhudv1.SetUserBlockedRequest{
+		UserId: uuid(targetUserID), ExpectedState: devhudv1.AdministrativeBlockState_ADMINISTRATIVE_BLOCK_STATE_UNBLOCKED,
+		TargetState: devhudv1.AdministrativeBlockState_ADMINISTRATIVE_BLOCK_STATE_BLOCKED,
+	}))
+	if connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("code = %v", connect.CodeOf(err))
+	}
+	if !auditDeadline.Equal(deadline) {
+		t.Fatalf("audit deadline = %v, want %v", auditDeadline, deadline)
+	}
+}
+
+func TestRejectedInterceptorAuditUsesOneClockInstant(t *testing.T) {
+	now := time.Date(2026, 8, 17, 12, 0, 0, 999_999_999, time.UTC)
+	clock := &steppingAdminClock{now: now, step: time.Nanosecond}
+	interceptor := &AuthInterceptor{clock: clock, ids: fixedAdminIDs{}}
+	event, err := interceptor.rejectedAdminMutationEvent(
+		WithCorrelationID(context.Background(), testCorrelationID),
+		domain.AuditRejectionUnauthenticated,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if clock.calls != 1 {
+		t.Fatalf("clock calls = %d, want 1", clock.calls)
+	}
+	if !event.CreatedAt.Equal(now) || !event.ExpiresAt.Equal(now.Add(domain.AuditRetention)) {
+		t.Fatalf("audit window = %v to %v", event.CreatedAt, event.ExpiresAt)
+	}
+}
+
 func TestConcurrentMutationReturnsCurrentStateWithoutSettings(t *testing.T) {
 	current := domain.User{
 		ID: targetUserID, Subject: "subject", AdministrativeBlockState: domain.AdministrativeBlockStateBlocked,
@@ -219,6 +264,18 @@ func newTestAdminService(t *testing.T, repository domain.AdminRepository, upload
 type fixedAdminIDs struct{}
 
 func (fixedAdminIDs) New() (string, error) { return eventID, nil }
+
+type steppingAdminClock struct {
+	now   time.Time
+	step  time.Duration
+	calls int
+}
+
+func (clock *steppingAdminClock) Now() time.Time {
+	value := clock.now.Add(time.Duration(clock.calls) * clock.step)
+	clock.calls++
+	return value
+}
 
 type adminRepository struct {
 	listUsers   func(context.Context, string, *domain.UserCursor, uint32) (domain.UserList, error)

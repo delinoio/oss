@@ -2,7 +2,6 @@ package postgres
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"time"
 
@@ -60,22 +59,28 @@ func (s *Store) SetUserBlocked(ctx context.Context, actorID, targetID string, ex
 		return domain.User{}, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	if err := ensureAdminActor(ctx, tx, actorID); err != nil {
-		var permission *domain.PermissionError
-		if errors.As(err, &permission) {
-			event.Outcome = domain.AuditOutcomeRejected
-			event.RejectionReason = domain.AuditRejectionActorBlocked
-			if auditErr := insertAdministratorAudit(ctx, tx, event); auditErr != nil {
-				return domain.User{}, auditErr
-			}
-			if commitErr := tx.Commit(ctx); commitErr != nil {
-				return domain.User{}, commitErr
-			}
+	users, err := lockAdminMutationUsers(ctx, tx, actorID, targetID)
+	if err != nil {
+		return domain.User{}, err
+	}
+	actor, actorFound := users[actorID]
+	if !actorFound {
+		return domain.User{}, pgx.ErrNoRows
+	}
+	if actor.DeletionState != domain.DeletionStateActive || actor.AdministrativeBlockState == domain.AdministrativeBlockStateBlocked {
+		err := &domain.PermissionError{Failure: domain.PermissionFailureAdministrativeBlock}
+		event.Outcome = domain.AuditOutcomeRejected
+		event.RejectionReason = domain.AuditRejectionActorBlocked
+		if auditErr := insertAdministratorAudit(ctx, tx, event); auditErr != nil {
+			return domain.User{}, auditErr
+		}
+		if commitErr := tx.Commit(ctx); commitErr != nil {
+			return domain.User{}, commitErr
 		}
 		return domain.User{}, err
 	}
-	user, err := scanUser(tx.QueryRow(ctx, `SELECT `+userColumns+` FROM devhud_users WHERE user_id = $1 FOR UPDATE`, targetID))
-	if errors.Is(err, pgx.ErrNoRows) {
+	user, targetFound := users[targetID]
+	if !targetFound {
 		event.Outcome = domain.AuditOutcomeRejected
 		event.RejectionReason = domain.AuditRejectionTargetNotFound
 		if err := insertAdministratorAudit(ctx, tx, event); err != nil {
@@ -85,9 +90,6 @@ func (s *Store) SetUserBlocked(ctx context.Context, actorID, targetID string, ex
 			return domain.User{}, err
 		}
 		return domain.User{}, domain.ErrNotFound
-	}
-	if err != nil {
-		return domain.User{}, err
 	}
 	if user.AdministrativeBlockState != expected {
 		event.Outcome = domain.AuditOutcomeRejected
@@ -113,6 +115,27 @@ func (s *Store) SetUserBlocked(ctx context.Context, actorID, targetID string, ex
 		return domain.User{}, err
 	}
 	return user, nil
+}
+
+func lockAdminMutationUsers(ctx context.Context, tx pgx.Tx, actorID, targetID string) (map[string]domain.User, error) {
+	rows, err := tx.Query(ctx, `SELECT `+userColumns+` FROM devhud_users
+		WHERE user_id IN ($1, $2) ORDER BY user_id FOR UPDATE`, actorID, targetID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	users := make(map[string]domain.User, 2)
+	for rows.Next() {
+		user, err := scanUser(rows)
+		if err != nil {
+			return nil, err
+		}
+		users[user.ID] = user
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return users, nil
 }
 
 func ensureAdminActor(ctx context.Context, tx pgx.Tx, actorID string) error {

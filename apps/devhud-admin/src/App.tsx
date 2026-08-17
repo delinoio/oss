@@ -1,11 +1,10 @@
 import { Code, ConnectError } from "@connectrpc/connect";
 import {
   AdministrativeBlockState,
-  AuditAction,
   AuditOutcome,
-  QuotaKind,
   StaticCapability,
   UploadState,
+  validateAdminReason,
   type AdminUpload,
   type AdminUser,
   type AuditEvent,
@@ -26,6 +25,7 @@ type Phase =
       auth: AdminAuth;
       client: AdminClient;
       uploadsAvailable: boolean;
+      publicAssetBaseUrl: string;
     };
 
 type View = "users" | "uploads" | "audit";
@@ -67,6 +67,7 @@ export function App() {
               uploadsAvailable: bootstrap.capabilities.includes(
                 StaticCapability.OFFICIAL_UPLOADS,
               ),
+              publicAssetBaseUrl: bootstrap.publicAssetBaseUrl,
             }
           : { kind: "signed-out", auth };
         if (current) setPhase(next);
@@ -115,6 +116,7 @@ export function App() {
       copy={copy}
       locale={locale}
       onToggleLocale={toggleLocale}
+      publicAssetBaseUrl={phase.publicAssetBaseUrl}
       uploadsAvailable={phase.uploadsAvailable}
     />
   );
@@ -126,6 +128,7 @@ function Console({
   copy,
   locale,
   onToggleLocale,
+  publicAssetBaseUrl,
   uploadsAvailable,
 }: {
   auth: AdminAuth;
@@ -133,6 +136,7 @@ function Console({
   copy: ReturnType<typeof text>;
   locale: Locale;
   onToggleLocale: () => void;
+  publicAssetBaseUrl: string;
   uploadsAvailable: boolean;
 }) {
   const [view, setView] = useState<View>("users");
@@ -150,7 +154,7 @@ function Console({
           </button>
         </div>
       </header>
-      <nav aria-label="Administration" className="tabs">
+      <nav aria-label={copy.navigation} className="tabs">
         {(["users", "uploads", "audit"] as const).map((item) => (
           <button
             aria-current={view === item ? "page" : undefined}
@@ -163,10 +167,21 @@ function Console({
       </nav>
       <main className="content" id="main-content">
         {view === "users" ? (
-          <Users client={client} copy={copy} locale={locale} />
+          <Users
+            client={client}
+            copy={copy}
+            locale={locale}
+            publicAssetBaseUrl={publicAssetBaseUrl}
+            uploadsAvailable={uploadsAvailable}
+          />
         ) : view === "uploads" ? (
           uploadsAvailable ? (
-            <Uploads client={client} copy={copy} locale={locale} />
+            <Uploads
+              client={client}
+              copy={copy}
+              locale={locale}
+              publicAssetBaseUrl={publicAssetBaseUrl}
+            />
           ) : (
             <Empty message={copy.noUploads} />
           )
@@ -182,23 +197,29 @@ function Users({
   client,
   copy,
   locale,
+  publicAssetBaseUrl,
+  uploadsAvailable,
 }: {
   client: AdminClient;
   copy: ReturnType<typeof text>;
   locale: Locale;
+  publicAssetBaseUrl: string;
+  uploadsAvailable: boolean;
 }) {
   const [query, setQuery] = useState("");
+  const [appliedQuery, setAppliedQuery] = useState("");
   const [state, setState] = useState<Loadable<{ users: AdminUser[]; next: string }>>({
     kind: "loading",
   });
   const [mutation, setMutation] = useState<AdminUser | null>(null);
   const [usage, setUsage] = useState<UsageState | null>(null);
+  const [conflict, setConflict] = useState(false);
 
-  const load = async (token = "", append = false) => {
+  const load = async (token = "", append = false, searchQuery = appliedQuery) => {
     if (!append) setState({ kind: "loading" });
     try {
       const response = await client.listUsers({
-        query,
+        query: searchQuery,
         page: { pageSize: 50, pageToken: token },
       });
       setState((current) => ({
@@ -226,14 +247,15 @@ function Users({
     <section aria-labelledby="users-title">
       <div className="section-heading">
         <div>
-          <p className="eyebrow">Identity</p>
+          <p className="eyebrow">{copy.identity}</p>
           <h1 id="users-title">{copy.users}</h1>
         </div>
         <form
           className="search"
           onSubmit={(event) => {
             event.preventDefault();
-            void load();
+            setAppliedQuery(query);
+            void load("", false, query);
           }}
           role="search"
         >
@@ -252,6 +274,7 @@ function Users({
           </button>
         </form>
       </div>
+      {conflict && <p className="inline-error" role="alert">{copy.conflict}</p>}
       <Resource state={state} copy={copy}>
         {(value) => (
           <>
@@ -271,44 +294,50 @@ function Users({
                           : "success"
                       }
                     >
-                      {AdministrativeBlockState[
-                        user.administrativeBlockState
-                      ]?.toLowerCase()}
+                      {copy.administrativeBlockStates[user.administrativeBlockState]}
                     </Status>
                   </div>
                   <dl>
-                    <dt>Logto subject</dt>
+                    <dt>{copy.logtoSubject}</dt>
                     <dd>{user.logtoSubject}</dd>
-                    <dt>Created</dt>
+                    <dt>{copy.created}</dt>
                     <dd>{formatTime(user.createdAt, locale)}</dd>
                   </dl>
                   <div className="card-actions">
-                    <button className="secondary" onClick={() => setMutation(user)}>
+                    <button
+                      className="secondary"
+                      onClick={() => {
+                        setConflict(false);
+                        setMutation(user);
+                      }}
+                    >
                       {user.administrativeBlockState ===
                       AdministrativeBlockState.BLOCKED
                         ? copy.unblock
                         : copy.block}
                     </button>
-                    <button
-                      className="text-button"
-                      onClick={() => {
-                        setUsage({ kind: "loading", user });
-                        void client
-                          .getUserUsage({ userId: user.userId })
-                          .then((response) =>
-                            setUsage({ kind: "loaded", user, counters: response.counters }),
-                            () => setUsage({ kind: "error", user }),
-                          )
-                      }}
-                    >
-                      {copy.usage}
-                    </button>
+                    {uploadsAvailable && (
+                      <button
+                        className="text-button"
+                        onClick={() => {
+                          setUsage({ kind: "loading", user });
+                          void client
+                            .getUserUsage({ userId: user.userId })
+                            .then((response) =>
+                              setUsage({ kind: "loaded", user, counters: response.counters }),
+                              () => setUsage({ kind: "error", user }),
+                            )
+                        }}
+                      >
+                        {copy.usage}
+                      </button>
+                    )}
                   </div>
                 </article>
               ))}
             </div>
             {value.next && (
-              <button className="load-more" onClick={() => void load(value.next, true)}>
+              <button className="load-more" onClick={() => void load(value.next, true, appliedQuery)}>
                 {copy.next}
               </button>
             )}
@@ -319,10 +348,16 @@ function Users({
         <UserMutationDialog
           client={client}
           copy={copy}
+          publicAssetBaseUrl={publicAssetBaseUrl}
           user={mutation}
           onClose={() => setMutation(null)}
           onDone={() => {
             setMutation(null);
+            void load();
+          }}
+          onConflict={() => {
+            setMutation(null);
+            setConflict(true);
             void load();
           }}
         />
@@ -340,7 +375,7 @@ function Users({
             <dl className="quota-list">
               {usage.counters.map((counter, index) => (
                 <div key={`${counter.quota}-${counter.submissionId?.value ?? index}`}>
-                  <dt>{humanEnum(QuotaKind[counter.quota])}</dt>
+                  <dt>{copy.quotaKinds[counter.quota]}</dt>
                   <dd>
                     {counter.used.toLocaleString()} / {counter.limit.toLocaleString()}
                   </dd>
@@ -361,14 +396,18 @@ function UserMutationDialog({
   user,
   client,
   copy,
+  publicAssetBaseUrl,
   onClose,
   onDone,
+  onConflict,
 }: {
   user: AdminUser;
   client: AdminClient;
   copy: ReturnType<typeof text>;
+  publicAssetBaseUrl: string;
   onClose: () => void;
   onDone: () => void;
+  onConflict: () => void;
 }) {
   const blocked =
     user.administrativeBlockState === AdministrativeBlockState.BLOCKED;
@@ -376,6 +415,7 @@ function UserMutationDialog({
   const [confirmed, setConfirmed] = useState(false);
   const [pending, setPending] = useState(false);
   const [failed, setFailed] = useState(false);
+  const reasonValid = isAdminReasonValid(reason, publicAssetBaseUrl);
   return (
     <Dialog title={blocked ? copy.unblock : copy.block} onClose={onClose}>
       <MutationFields
@@ -384,11 +424,12 @@ function UserMutationDialog({
         onConfirmed={setConfirmed}
         onReason={setReason}
         reason={reason}
+        reasonValid={reasonValid}
       />
       {failed && <p className="inline-error" role="alert">{copy.mutationError}</p>}
       <DialogActions
         copy={copy}
-        disabled={!reason.trim() || !confirmed || pending}
+        disabled={!reasonValid || !confirmed || pending}
         onCancel={onClose}
         onConfirm={() => {
           setFailed(false);
@@ -402,8 +443,12 @@ function UserMutationDialog({
                 : AdministrativeBlockState.BLOCKED,
               reason,
             })
-            .then(onDone, () => {
+            .then(onDone, (error) => {
               setPending(false);
+              if (ConnectError.from(error).code === Code.Aborted) {
+                onConflict();
+                return;
+              }
               setFailed(true);
             });
         }}
@@ -416,10 +461,12 @@ function Uploads({
   client,
   copy,
   locale,
+  publicAssetBaseUrl,
 }: {
   client: AdminClient;
   copy: ReturnType<typeof text>;
   locale: Locale;
+  publicAssetBaseUrl: string;
 }) {
   const [state, setState] = useState<Loadable<{ uploads: AdminUpload[]; next: string }>>({
     kind: "loading",
@@ -428,6 +475,7 @@ function Uploads({
     upload: AdminUpload;
     action: "quarantine" | "delete";
   } | null>(null);
+  const [conflict, setConflict] = useState(false);
   const load = async (token = "", append = false) => {
     if (!append) setState({ kind: "loading" });
     try {
@@ -456,10 +504,11 @@ function Uploads({
     <section aria-labelledby="uploads-title">
       <div className="section-heading">
         <div>
-          <p className="eyebrow">Moderation</p>
+          <p className="eyebrow">{copy.moderation}</p>
           <h1 id="uploads-title">{copy.uploads}</h1>
         </div>
       </div>
+      {conflict && <p className="inline-error" role="alert">{copy.conflict}</p>}
       <Resource state={state} copy={copy}>
         {(value) => (
           <>
@@ -467,12 +516,12 @@ function Uploads({
               <table>
                 <thead>
                   <tr>
-                    <th>Upload</th>
-                    <th>Group</th>
-                    <th>State</th>
-                    <th>Size</th>
-                    <th>Created</th>
-                    <th aria-label="Actions" />
+                    <th>{copy.upload}</th>
+                    <th>{copy.group}</th>
+                    <th>{copy.state}</th>
+                    <th>{copy.size}</th>
+                    <th>{copy.created}</th>
+                    <th aria-label={copy.actions} />
                   </tr>
                 </thead>
                 <tbody>
@@ -480,14 +529,17 @@ function Uploads({
                     <tr key={upload.uploadId?.value}>
                       <td className="mono">{upload.uploadId?.value}</td>
                       <td className="mono">{upload.uploadGroupId?.value}</td>
-                      <td><Status>{UploadState[upload.state]?.toLowerCase()}</Status></td>
+                      <td><Status>{copy.uploadStates[upload.state]}</Status></td>
                       <td>{formatBytes(upload.sizeBytes)}</td>
                       <td>{formatTime(upload.createdAt, locale)}</td>
                       <td className="row-actions">
                         {upload.state === UploadState.FINALIZED && (
                           <button
                             className="secondary"
-                            onClick={() => setSelected({ upload, action: "quarantine" })}
+                            onClick={() => {
+                              setConflict(false);
+                              setSelected({ upload, action: "quarantine" });
+                            }}
                           >
                             {copy.quarantine}
                           </button>
@@ -497,7 +549,10 @@ function Uploads({
                           upload.state === UploadState.QUARANTINED) && (
                           <button
                             className="danger-button"
-                            onClick={() => setSelected({ upload, action: "delete" })}
+                            onClick={() => {
+                              setConflict(false);
+                              setSelected({ upload, action: "delete" });
+                            }}
                           >
                             {copy.delete}
                           </button>
@@ -520,10 +575,16 @@ function Uploads({
         <UploadMutationDialog
           client={client}
           copy={copy}
+          publicAssetBaseUrl={publicAssetBaseUrl}
           selection={selected}
           onClose={() => setSelected(null)}
           onDone={() => {
             setSelected(null);
+            void load();
+          }}
+          onConflict={() => {
+            setSelected(null);
+            setConflict(true);
             void load();
           }}
         />
@@ -536,20 +597,25 @@ function UploadMutationDialog({
   selection,
   client,
   copy,
+  publicAssetBaseUrl,
   onClose,
   onDone,
+  onConflict,
 }: {
   selection: { upload: AdminUpload; action: "quarantine" | "delete" };
   client: AdminClient;
   copy: ReturnType<typeof text>;
+  publicAssetBaseUrl: string;
   onClose: () => void;
   onDone: () => void;
+  onConflict: () => void;
 }) {
   const [reason, setReason] = useState("");
   const [confirmed, setConfirmed] = useState(false);
   const [pending, setPending] = useState(false);
   const [failed, setFailed] = useState(false);
   const label = selection.action === "delete" ? copy.delete : copy.quarantine;
+  const reasonValid = isAdminReasonValid(reason, publicAssetBaseUrl);
   return (
     <Dialog title={label} onClose={onClose}>
       <p className="mono break">{selection.upload.uploadId?.value}</p>
@@ -559,11 +625,12 @@ function UploadMutationDialog({
         onConfirmed={setConfirmed}
         onReason={setReason}
         reason={reason}
+        reasonValid={reasonValid}
       />
       {failed && <p className="inline-error" role="alert">{copy.mutationError}</p>}
       <DialogActions
         copy={copy}
-        disabled={!reason.trim() || !confirmed || pending}
+        disabled={!reasonValid || !confirmed || pending}
         onCancel={onClose}
         onConfirm={() => {
           setFailed(false);
@@ -577,8 +644,12 @@ function UploadMutationDialog({
             selection.action === "delete"
               ? client.deleteUpload(request)
               : client.quarantineUpload(request);
-          void promise.then(onDone, () => {
+          void promise.then(onDone, (error) => {
             setPending(false);
+            if (ConnectError.from(error).code === Code.Aborted) {
+              onConflict();
+              return;
+            }
             setFailed(true);
           });
         }}
@@ -626,7 +697,7 @@ function Audit({
     <section aria-labelledby="audit-title">
       <div className="section-heading">
         <div>
-          <p className="eyebrow">Security</p>
+          <p className="eyebrow">{copy.security}</p>
           <h1 id="audit-title">{copy.audit}</h1>
         </div>
       </div>
@@ -637,13 +708,13 @@ function Audit({
               {value.events.map((event) => (
                 <li key={event.auditEventId?.value}>
                   <div>
-                    <strong>{humanEnum(AuditAction[event.action])}</strong>
+                    <strong>{copy.auditActions[event.action]}</strong>
                     <p>{event.reason || "—"}</p>
                     <span className="mono">{event.correlationId?.value}</span>
                   </div>
                   <div className="timeline-meta">
                     <Status tone={event.outcome === AuditOutcome.REJECTED ? "danger" : "success"}>
-                      {AuditOutcome[event.outcome]?.toLowerCase()}
+                      {copy.auditOutcomes[event.outcome]}
                     </Status>
                     <time>{formatTime(event.createdAt, locale)}</time>
                   </div>
@@ -668,25 +739,37 @@ function MutationFields({
   confirmed,
   onReason,
   onConfirmed,
+  reasonValid,
 }: {
   copy: ReturnType<typeof text>;
   reason: string;
   confirmed: boolean;
   onReason: (value: string) => void;
   onConfirmed: (value: boolean) => void;
+  reasonValid: boolean;
 }) {
   return (
     <>
       <label htmlFor="mutation-reason">{copy.reason}</label>
       <textarea
+        aria-describedby={
+          reason !== "" && !reasonValid
+            ? "mutation-reason-help mutation-reason-error"
+            : "mutation-reason-help"
+        }
+        aria-invalid={reason !== "" && !reasonValid}
         data-autofocus
         id="mutation-reason"
-        maxLength={4096}
         onChange={(event) => onReason(event.target.value)}
         rows={4}
         value={reason}
       />
-      <p className="help">{copy.reasonHelp}</p>
+      <p className="help" id="mutation-reason-help">{copy.reasonHelp}</p>
+      {reason !== "" && !reasonValid && (
+        <p className="inline-error" id="mutation-reason-error" role="alert">
+          {copy.reasonInvalid}
+        </p>
+      )}
       <label className="check">
         <input
           checked={confirmed}
@@ -803,8 +886,13 @@ function formatBytes(value: bigint): string {
     : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
-function humanEnum(value: string | undefined): string {
-  return value?.toLowerCase().replaceAll("_", " ") ?? "—";
+function isAdminReasonValid(reason: string, publicAssetBaseUrl: string): boolean {
+  try {
+    validateAdminReason(reason, publicAssetBaseUrl);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function formatTime(

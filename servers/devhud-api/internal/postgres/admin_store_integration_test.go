@@ -3,7 +3,10 @@
 package postgres
 
 import (
+	"context"
+	"crypto/sha256"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -89,5 +92,131 @@ func TestAdministratorSearchRaceAndAuditIntegrity(t *testing.T) {
 	}
 	if outcomes[domain.AuditOutcomeAccepted] != 1 || outcomes[domain.AuditOutcomeRejected] != 1 {
 		t.Fatalf("outcomes=%v", outcomes)
+	}
+}
+
+func TestAdministratorSearchBackfillUsesBoundedKeysetBatches(t *testing.T) {
+	ctx, pool, store := newIntegrationStore(t, time.Date(2026, 8, 17, 0, 0, 0, 0, time.UTC))
+	var firstSubject, lastSubject string
+	for index := range administratorSearchBackfillBatchSize + 1 {
+		subject := fmt.Sprintf("backfill-subject-%03d", index)
+		fingerprint := sha256.Sum256([]byte(subject))
+		_, err := store.ProvisionUser(ctx, domain.Identity{
+			Issuer: "https://issuer.example", Subject: subject,
+			DisplayName: fmt.Sprintf("  E\u0301lodie %03d  ", index),
+			Email:       fmt.Sprintf("USER-%03d@EXAMPLE.COM", index),
+			Fingerprint: fingerprint[:], FingerprintCandidates: [][]byte{fingerprint[:]},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if index == 0 {
+			firstSubject = subject
+		}
+		lastSubject = subject
+	}
+	if _, err := pool.Exec(ctx, `UPDATE devhud_users SET search_display_name = '', search_email = '', search_logto_subject = ''`); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runMigrationDataHook(ctx, tx, "00005_administration.sql"); err != nil {
+		_ = tx.Rollback(ctx)
+		t.Fatal(err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var empty int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM devhud_users
+		WHERE search_display_name = '' OR search_email = '' OR search_logto_subject = ''`).Scan(&empty); err != nil {
+		t.Fatal(err)
+	}
+	if empty != 0 {
+		t.Fatalf("users with incomplete search backfill = %d", empty)
+	}
+	for index, subject := range []string{firstSubject, lastSubject} {
+		var displayName, email, storedSubject string
+		if err := pool.QueryRow(ctx, `SELECT search_display_name, search_email, search_logto_subject
+			FROM devhud_users WHERE logto_subject = $1`, subject).Scan(&displayName, &email, &storedSubject); err != nil {
+			t.Fatal(err)
+		}
+		wantIndex := index * administratorSearchBackfillBatchSize
+		if displayName != normalizeSearch(fmt.Sprintf("  E\u0301lodie %03d  ", wantIndex)) ||
+			email != normalizeSearch(fmt.Sprintf("USER-%03d@EXAMPLE.COM", wantIndex)) || storedSubject != subject {
+			t.Fatalf("backfill for %q = %q, %q, %q", subject, displayName, email, storedSubject)
+		}
+	}
+}
+
+func TestAdministratorsBlockingEachOtherUseStableLockOrder(t *testing.T) {
+	baseContext, pool, store := newIntegrationStore(t, time.Date(2026, 8, 17, 0, 0, 0, 0, time.UTC))
+	ctx, cancel := context.WithTimeout(baseContext, 5*time.Second)
+	defer cancel()
+	first := provisionUploadUser(t, ctx, store, "administrator-lock-first")
+	second := provisionUploadUser(t, ctx, store, "administrator-lock-second")
+	ids := idgen.UUIDv7{}
+	newEvent := func(actorID, targetID string) (domain.AuditEvent, string) {
+		eventID, err := ids.New()
+		if err != nil {
+			t.Fatal(err)
+		}
+		correlationID, err := ids.New()
+		if err != nil {
+			t.Fatal(err)
+		}
+		now := time.Now()
+		return domain.AuditEvent{
+			ID: eventID, CorrelationID: correlationID, ActorUserID: &actorID, TargetUserID: &targetID,
+			Action: domain.AuditActionUserBlocked, Reason: "Concurrent administrator review.",
+			CreatedAt: now, ExpiresAt: now.Add(domain.AuditRetention),
+		}, correlationID
+	}
+	firstEvent, firstCorrelation := newEvent(first.ID, second.ID)
+	secondEvent, secondCorrelation := newEvent(second.ID, first.ID)
+	start := make(chan struct{})
+	results := make(chan error, 2)
+	var wait sync.WaitGroup
+	for _, mutation := range []struct {
+		actor, target string
+		event         domain.AuditEvent
+	}{{first.ID, second.ID, firstEvent}, {second.ID, first.ID, secondEvent}} {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			<-start
+			_, err := store.SetUserBlocked(ctx, mutation.actor, mutation.target,
+				domain.AdministrativeBlockStateUnblocked, domain.AdministrativeBlockStateBlocked,
+				mutation.event, mutation.event.CreatedAt)
+			results <- err
+		}()
+	}
+	close(start)
+	wait.Wait()
+	close(results)
+	var accepted, rejected int
+	for err := range results {
+		var permission *domain.PermissionError
+		if err == nil {
+			accepted++
+		} else if errors.As(err, &permission) {
+			rejected++
+		} else {
+			t.Fatal(err)
+		}
+	}
+	if accepted != 1 || rejected != 1 {
+		t.Fatalf("accepted=%d rejected=%d", accepted, rejected)
+	}
+	var acceptedAudits, rejectedAudits int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FILTER (WHERE outcome = $3), count(*) FILTER (WHERE outcome = $4)
+		FROM devhud_audit_events WHERE correlation_id IN ($1, $2)`, firstCorrelation, secondCorrelation,
+		domain.AuditOutcomeAccepted, domain.AuditOutcomeRejected).Scan(&acceptedAudits, &rejectedAudits); err != nil {
+		t.Fatal(err)
+	}
+	if acceptedAudits != 1 || rejectedAudits != 1 {
+		t.Fatalf("accepted audits=%d rejected audits=%d", acceptedAudits, rejectedAudits)
 	}
 }
