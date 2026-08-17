@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 
 import { exitLikeChild, spawnDevServer } from "../../../scripts/spawn-dev-server.mjs";
+import { desktopTauriArguments } from "./run-tauri-arguments.mjs";
 
 const [command, ...rawArgs] = process.argv.slice(2);
 const forwardedArgs = rawArgs[0] === "--" ? rawArgs.slice(1) : rawArgs;
-const args = command ? [command, ...forwardedArgs] : [];
+const args = desktopTauriArguments(command, forwardedArgs);
 
 if (!command || !["dev", "build"].includes(command)) {
   console.error("Usage: run-tauri.mjs <dev|build> [tauri arguments...]");

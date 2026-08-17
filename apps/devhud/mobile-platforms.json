@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "identity": "io.delino.devhud",
+  "deepLinkScheme": "devhud",
+  "authCallback": "devhud://auth/callback",
+  "frontendDist": "../dist",
+  "minimumVersions": {
+    "ios": "16.0",
+    "androidApi": 29
+  },
+  "dependencyClosures": {
+    "aarch64-apple-ios": "sha256-42bb920dd1265d8b0d2708fcaed1f5cb51cea7e97460ecf993f99bdc2d5ada5c",
+    "aarch64-apple-ios-sim": "sha256-42bb920dd1265d8b0d2708fcaed1f5cb51cea7e97460ecf993f99bdc2d5ada5c",
+    "x86_64-apple-ios": "sha256-42bb920dd1265d8b0d2708fcaed1f5cb51cea7e97460ecf993f99bdc2d5ada5c",
+    "aarch64-linux-android": "sha256-515e07300f059f9ad4251e6b1ac5f7834cd997d3103b62e47e4b161abda07c18",
+    "armv7-linux-androideabi": "sha256-e80967011b0ac1ea78fedb3f281a8068279252f85fe83875609c8c850d018e79",
+    "x86_64-linux-android": "sha256-515e07300f059f9ad4251e6b1ac5f7834cd997d3103b62e47e4b161abda07c18"
+  },
+  "targets": [
+    {
+      "id": "ios-device-arm64",
+      "platform": "ios",
+      "kind": "production",
+      "tauriTarget": "aarch64",
+      "rustTarget": "aarch64-apple-ios",
+      "architecture": "arm64"
+    },
+    {
+      "id": "ios-simulator-arm64",
+      "platform": "ios",
+      "kind": "simulator",
+      "tauriTarget": "aarch64-sim",
+      "rustTarget": "aarch64-apple-ios-sim",
+      "architecture": "arm64"
+    },
+    {
+      "id": "ios-simulator-x64",
+      "platform": "ios",
+      "kind": "simulator",
+      "tauriTarget": "x86_64",
+      "rustTarget": "x86_64-apple-ios",
+      "architecture": "x64"
+    },
+    {
+      "id": "android-arm64",
+      "platform": "android",
+      "kind": "production",
+      "tauriTarget": "aarch64",
+      "rustTarget": "aarch64-linux-android",
+      "architecture": "arm64-v8a"
+    },
+    {
+      "id": "android-armv7",
+      "platform": "android",
+      "kind": "production",
+      "tauriTarget": "armv7",
+      "rustTarget": "armv7-linux-androideabi",
+      "architecture": "armeabi-v7a"
+    },
+    {
+      "id": "android-emulator-x64",
+      "platform": "android",
+      "kind": "emulator",
+      "tauriTarget": "x86_64",
+      "rustTarget": "x86_64-linux-android",
+      "architecture": "x86_64"
+    }
+  ]
+}

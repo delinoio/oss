@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "accepted": [
+    "devhud://auth/callback",
+    "devhud://auth/callback?code=redacted&state=opaque"
+  ],
+  "rejected": [
+    "devhud://deck/123",
+    "devhud://auth/other",
+    "devhud://auth/callback#token",
+    "devhud://user@auth/callback",
+    "devhud://auth:42/callback",
+    "https://auth/callback",
+    "DEVHUD://auth/callback",
+    " devhud://auth/callback"
+  ]
+}
