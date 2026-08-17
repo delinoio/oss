@@ -7,19 +7,20 @@ import (
 )
 
 const (
-	UploadMaximumObjectBytes      uint64 = 50 * 1024 * 1024
-	UploadMaximumSubmissionImages uint64 = 10
-	UploadMaximumRollingDayBytes  uint64 = 1024 * 1024 * 1024
-	UploadMaximumStoredBytes      uint64 = 20 * 1024 * 1024 * 1024
-	UploadMaximumURLsPerHour      uint64 = 120
-	UploadSignedURLLifetime              = 15 * time.Minute
-	UploadStagingLifetime                = 24 * time.Hour
-	UploadOperationLease                 = 2 * time.Minute
-	UploadMaximumPageSize         uint32 = 100
-	UploadDefaultPageSize         uint32 = 50
-	UploadMaximumPageTokenBytes          = 2048
-	UploadMaximumRasterAxis       uint32 = 4096
-	UploadMaximumRasterPixels     uint64 = 16_777_216
+	UploadMaximumObjectBytes       uint64 = 50 * 1024 * 1024
+	UploadMaximumSubmissionImages  uint64 = 10
+	UploadMaximumRollingDayBytes   uint64 = 1024 * 1024 * 1024
+	UploadMaximumStoredBytes       uint64 = 20 * 1024 * 1024 * 1024
+	UploadMaximumURLsPerHour       uint64 = 120
+	UploadSignedURLLifetime               = 15 * time.Minute
+	UploadStagingLifetime                 = 24 * time.Hour
+	UploadStagingCleanupRetryDelay        = time.Minute
+	UploadOperationLease                  = 2 * time.Minute
+	UploadMaximumPageSize          uint32 = 100
+	UploadDefaultPageSize          uint32 = 50
+	UploadMaximumPageTokenBytes           = 2048
+	UploadMaximumRasterAxis        uint32 = 4096
+	UploadMaximumRasterPixels      uint64 = 16_777_216
 )
 
 type UploadState int16
@@ -183,6 +184,11 @@ type UploadUsage struct {
 	FinalizedImages       uint64
 }
 
+type StagingSweepResult struct {
+	Claimed int
+	Deleted int
+}
+
 type UploadObject struct {
 	ETag        string
 	SizeBytes   uint64
@@ -233,7 +239,7 @@ type UploadRepository interface {
 }
 
 type UploadStagingSweeper interface {
-	SweepExpiredUploads(context.Context, time.Time, int) (int, error)
+	SweepExpiredUploads(context.Context, time.Time, int) (StagingSweepResult, error)
 }
 
 // UploadAdministration is deliberately an internal hook. AdminService wiring

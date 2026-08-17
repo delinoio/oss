@@ -189,6 +189,23 @@ func TestPendingDeletionNeverCreatesPublicObject(t *testing.T) {
 	}
 }
 
+func TestSweepExpiredUploadsReportsClaimsSeparatelyFromDeletes(t *testing.T) {
+	checksum := sha256.Sum256([]byte("image"))
+	events := []string{}
+	uploads := []domain.Upload{testUpload(checksum), testUpload(checksum)}
+	uploads[1].UploadID = "0198b123-4567-7abc-8def-012345678999"
+	repository := &fakeRepository{upload: testUpload(checksum), expired: uploads, events: &events}
+	storage := &fakeStorage{events: &events, deleteErrors: []error{errors.New("temporary R2 failure"), nil}}
+	service := newTestService(t, repository, storage, &fakeCache{events: &events})
+	result, err := service.SweepExpiredUploads(context.Background(), testNow, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Claimed != 2 || result.Deleted != 1 {
+		t.Fatalf("sweep result = %+v", result)
+	}
+}
+
 func newTestService(t *testing.T, repository *fakeRepository, storage *fakeStorage, cache *fakeCache) *Service {
 	t.Helper()
 	codec, err := NewCursorCodec([]byte("01234567890123456789012345678901"))
@@ -231,8 +248,10 @@ func testObject(checksum [32]byte, width, height uint32) domain.UploadObject {
 }
 
 type fakeStorage struct {
-	object domain.UploadObject
-	events *[]string
+	object       domain.UploadObject
+	events       *[]string
+	deleteErrors []error
+	deleteCalls  int
 }
 
 func (s *fakeStorage) event(value string) { *s.events = append(*s.events, value) }
@@ -250,6 +269,11 @@ func (s *fakeStorage) Promote(context.Context, domain.Upload, string) (string, e
 }
 func (s *fakeStorage) DeleteStaging(context.Context, domain.UploadReservation) error {
 	s.event("delete-staging")
+	call := s.deleteCalls
+	s.deleteCalls++
+	if call < len(s.deleteErrors) {
+		return s.deleteErrors[call]
+	}
 	return nil
 }
 func (s *fakeStorage) ReplacePublic(context.Context, domain.Upload, []byte) (string, error) {
@@ -266,6 +290,7 @@ func (c *fakeCache) PurgeAndRevalidate(context.Context, string, []byte) error {
 
 type fakeRepository struct {
 	upload     domain.Upload
+	expired    []domain.Upload
 	events     *[]string
 	getError   error
 	claimError error
@@ -329,8 +354,11 @@ func (r *fakeRepository) ReleaseUploadRemoval(context.Context, string, string) e
 	r.event("release-remove")
 	return nil
 }
-func (r *fakeRepository) ClaimExpiredUploads(context.Context, time.Time, int) ([]domain.Upload, error) {
-	return nil, nil
+func (r *fakeRepository) ClaimExpiredUploads(_ context.Context, _ time.Time, limit int) ([]domain.Upload, error) {
+	if limit > len(r.expired) {
+		limit = len(r.expired)
+	}
+	return append([]domain.Upload(nil), r.expired[:limit]...), nil
 }
 func (r *fakeRepository) CompleteExpiredUpload(context.Context, string, time.Time) error {
 	r.event("staging-deleted")

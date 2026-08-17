@@ -234,6 +234,102 @@ func TestExpiredRemovalLeaseClaimsStagingWithoutChangingRemovalState(t *testing.
 	}
 }
 
+func TestExpiredStagingClaimBacksOffAndPreservesRejectedState(t *testing.T) {
+	now := time.Date(2026, 8, 17, 0, 0, 0, 0, time.UTC)
+	ctx, pool, store := newIntegrationStore(t, now)
+	user := provisionUploadUser(t, ctx, store, "rejected-staging")
+	reservation, err := store.CreateUpload(ctx, domain.CreateUpload{
+		OwnerUserID: user.ID,
+		Target:      domain.UploadTarget{Kind: domain.UploadTargetNewSubmission},
+		SizeBytes:   1,
+		Now:         now.Add(-25 * time.Hour),
+	}, func(context.Context, domain.UploadReservation) (domain.SignedPUT, error) {
+		return domain.SignedPUT{}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rejectedAt := now.Add(-24 * time.Hour)
+	if err := store.RejectUpload(ctx, user.ID, reservationBinding(reservation, ""), domain.UploadFailureStagingObjectMissing, rejectedAt); err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := store.ClaimExpiredUploads(ctx, now, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(claimed) != 1 || claimed[0].State != domain.UploadStateRejected || claimed[0].RemovedAt == nil || !claimed[0].RemovedAt.Equal(rejectedAt) {
+		t.Fatalf("rejected staging claim = %+v", claimed)
+	}
+	claimed, err = store.ClaimExpiredUploads(ctx, now.Add(domain.UploadStagingCleanupRetryDelay-time.Nanosecond), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(claimed) != 0 {
+		t.Fatalf("staging was reclaimed during backoff: %+v", claimed)
+	}
+	claimed, err = store.ClaimExpiredUploads(ctx, now.Add(domain.UploadStagingCleanupRetryDelay), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(claimed) != 1 || claimed[0].State != domain.UploadStateRejected {
+		t.Fatalf("staging was not retryable after backoff: %+v", claimed)
+	}
+	var state int16
+	var removedAt time.Time
+	if err := pool.QueryRow(ctx, `SELECT state, removed_at FROM devhud_uploads WHERE upload_id = $1`, reservation.UploadID).Scan(&state, &removedAt); err != nil {
+		t.Fatal(err)
+	}
+	if domain.UploadState(state) != domain.UploadStateRejected || !removedAt.Equal(rejectedAt) {
+		t.Fatalf("rejected state changed: state=%v removed_at=%v", state, removedAt)
+	}
+}
+
+func TestStagingCompletionWaitsForSignedURLExpiry(t *testing.T) {
+	now := time.Date(2026, 8, 17, 0, 0, 0, 0, time.UTC)
+	ctx, pool, store := newIntegrationStore(t, now)
+	user := provisionUploadUser(t, ctx, store, "staging-marker")
+	reservation, err := store.CreateUpload(ctx, domain.CreateUpload{
+		OwnerUserID: user.ID,
+		Target:      domain.UploadTarget{Kind: domain.UploadTargetNewSubmission},
+		SizeBytes:   1,
+		Now:         now,
+	}, func(context.Context, domain.UploadReservation) (domain.SignedPUT, error) {
+		return domain.SignedPUT{}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE devhud_upload_reservations SET staging_expires_at = $2 WHERE reservation_id = $1`, reservation.ReservationID, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CompleteExpiredUpload(ctx, reservation.UploadID, now); err != nil {
+		t.Fatal(err)
+	}
+	var deletedAt *time.Time
+	if err := pool.QueryRow(ctx, `SELECT staging_deleted_at FROM devhud_uploads WHERE upload_id = $1`, reservation.UploadID).Scan(&deletedAt); err != nil {
+		t.Fatal(err)
+	}
+	if deletedAt != nil {
+		t.Fatalf("staging marked deleted before signed URL expiry: %v", *deletedAt)
+	}
+	claimed, err := store.ClaimExpiredUploads(ctx, now, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(claimed) != 1 {
+		t.Fatalf("early cleanup was not rechecked: %+v", claimed)
+	}
+	if err := store.CompleteExpiredUpload(ctx, reservation.UploadID, reservation.SignedURLExpiresAt); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT staging_deleted_at FROM devhud_uploads WHERE upload_id = $1`, reservation.UploadID).Scan(&deletedAt); err != nil {
+		t.Fatal(err)
+	}
+	if deletedAt == nil || !deletedAt.Equal(reservation.SignedURLExpiresAt) {
+		t.Fatalf("staging marker after signed URL expiry = %v", deletedAt)
+	}
+}
+
 func provisionUploadUser(t *testing.T, ctx context.Context, store *Store, subject string) domain.User {
 	t.Helper()
 	fingerprint := make([]byte, 32)

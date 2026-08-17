@@ -449,17 +449,19 @@ func (s *Store) ClaimExpiredUploads(ctx context.Context, now time.Time, limit in
 		SELECT u.upload_id FROM devhud_uploads u JOIN devhud_upload_reservations r USING (reservation_id)
 		WHERE (u.state IN (1, 3, 5, 6, 7, 8) OR (u.state IN (2, 4) AND u.operation_expires_at <= $1))
 		AND u.staging_deleted_at IS NULL AND r.staging_expires_at <= $1
+		AND (u.staging_cleanup_retry_at IS NULL OR u.staging_cleanup_retry_at <= $1)
 		ORDER BY r.staging_expires_at, u.upload_id FOR UPDATE OF u SKIP LOCKED LIMIT $2
 	), updated AS (
-		UPDATE devhud_uploads u SET state = CASE WHEN u.state IN (1, 2, 8) THEN 7 ELSE u.state END,
-		removed_at = CASE WHEN u.state IN (1, 2, 8) THEN $1 ELSE u.removed_at END,
+		UPDATE devhud_uploads u SET state = CASE WHEN u.state IN (1, 2) THEN 7 ELSE u.state END,
+		removed_at = CASE WHEN u.state IN (1, 2) THEN $1 ELSE u.removed_at END,
 		operation_token = CASE WHEN u.state = 2 THEN NULL ELSE u.operation_token END,
-		operation_expires_at = CASE WHEN u.state = 2 THEN NULL ELSE u.operation_expires_at END FROM candidates c
+		operation_expires_at = CASE WHEN u.state = 2 THEN NULL ELSE u.operation_expires_at END,
+		staging_cleanup_retry_at = $3 FROM candidates c
 		WHERE u.upload_id = c.upload_id RETURNING u.upload_id
 	)
 	SELECT `+uploadSelectColumnsWithAliases()+` FROM updated x
 	JOIN devhud_uploads u ON u.upload_id = x.upload_id
-	JOIN devhud_upload_reservations r ON r.reservation_id = u.reservation_id`, now, limit)
+	JOIN devhud_upload_reservations r ON r.reservation_id = u.reservation_id`, now, limit, now.Add(domain.UploadStagingCleanupRetryDelay))
 	if err != nil {
 		return nil, err
 	}
@@ -483,7 +485,11 @@ func (s *Store) ClaimExpiredUploads(ctx context.Context, now time.Time, limit in
 }
 
 func (s *Store) CompleteExpiredUpload(ctx context.Context, uploadID string, now time.Time) error {
-	_, err := s.pool.Exec(ctx, `UPDATE devhud_uploads SET staging_deleted_at = $2 WHERE upload_id = $1`, uploadID, now)
+	_, err := s.pool.Exec(ctx, `UPDATE devhud_uploads u
+		SET staging_deleted_at = $2, staging_cleanup_retry_at = NULL
+		FROM devhud_upload_reservations r
+		WHERE u.upload_id = $1 AND r.reservation_id = u.reservation_id
+		AND r.signed_url_expires_at <= $2`, uploadID, now)
 	return err
 }
 

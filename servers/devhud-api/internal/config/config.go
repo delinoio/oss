@@ -68,9 +68,9 @@ type SweeperConfig struct {
 }
 
 func Load(apiVersion string) (Config, error) {
-	environment := Environment(valueOrDefault("DEVHUD_ENVIRONMENT", string(EnvironmentDevelopment)))
-	if environment != EnvironmentDevelopment && environment != EnvironmentProduction {
-		return Config{}, fmt.Errorf("DEVHUD_ENVIRONMENT must be development or production")
+	environment, err := loadEnvironment()
+	if err != nil {
+		return Config{}, err
 	}
 
 	listenAddress := DevelopmentAddress
@@ -112,7 +112,6 @@ func Load(apiVersion string) (Config, error) {
 		CloudflareRateRuleID: os.Getenv("DEVHUD_CLOUDFLARE_RATE_LIMIT_RULE_ID"),
 	}
 
-	var err error
 	configuration.IdentityHMACKeys, err = parseHMACKeys(os.Getenv("DEVHUD_IDENTITY_HMAC_KEYS"))
 	if err != nil {
 		return Config{}, err
@@ -136,6 +135,10 @@ func LoadDatabaseURL() (string, error) {
 }
 
 func LoadSweeper(runOnce bool) (SweeperConfig, error) {
+	environment, err := loadEnvironment()
+	if err != nil {
+		return SweeperConfig{}, err
+	}
 	databaseURL, err := LoadDatabaseURL()
 	if err != nil {
 		return SweeperConfig{}, err
@@ -170,7 +173,18 @@ func LoadSweeper(runOnce bool) (SweeperConfig, error) {
 			return SweeperConfig{}, fmt.Errorf("%s is required for the sweeper", name)
 		}
 	}
+	if _, err := validateHTTPURL("DEVHUD_R2_ENDPOINT", configuration.R2Endpoint, environment == EnvironmentDevelopment); err != nil {
+		return SweeperConfig{}, err
+	}
 	return configuration, nil
+}
+
+func loadEnvironment() (Environment, error) {
+	environment := Environment(valueOrDefault("DEVHUD_ENVIRONMENT", string(EnvironmentDevelopment)))
+	if environment != EnvironmentDevelopment && environment != EnvironmentProduction {
+		return "", errors.New("DEVHUD_ENVIRONMENT must be development or production")
+	}
+	return environment, nil
 }
 
 func (c Config) Validate() error {

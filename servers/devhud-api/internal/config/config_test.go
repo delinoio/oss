@@ -106,6 +106,39 @@ func TestProductionRequiresTrustedProxyCIDRs(t *testing.T) {
 	}
 }
 
+func TestSweeperR2EndpointUsesEnvironmentURLPolicy(t *testing.T) {
+	tests := []struct {
+		name        string
+		environment string
+		endpoint    string
+		wantError   string
+	}{
+		{name: "development loopback HTTP", environment: "development", endpoint: "http://127.0.0.1:9000"},
+		{name: "development external HTTP", environment: "development", endpoint: "http://r2.example.com", wantError: "HTTPS outside loopback"},
+		{name: "production loopback HTTP", environment: "production", endpoint: "http://127.0.0.1:9000", wantError: "must use HTTPS"},
+		{name: "credentials", environment: "production", endpoint: "https://user:password@r2.example.com", wantError: "without credentials, query, or fragment"},
+		{name: "query", environment: "production", endpoint: "https://r2.example.com?token=secret", wantError: "without credentials, query, or fragment"},
+		{name: "fragment", environment: "production", endpoint: "https://r2.example.com#secret", wantError: "without credentials, query, or fragment"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			setValidEnvironment(t)
+			t.Setenv("DEVHUD_ENVIRONMENT", test.environment)
+			t.Setenv("DEVHUD_R2_ENDPOINT", test.endpoint)
+			_, err := LoadSweeper(false)
+			if test.wantError == "" {
+				if err != nil {
+					t.Fatalf("LoadSweeper error = %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), test.wantError) {
+				t.Fatalf("LoadSweeper error = %v, want %q", err, test.wantError)
+			}
+		})
+	}
+}
+
 func TestIdentityFingerprintRotation(t *testing.T) {
 	oldKey := []byte("01234567890123456789012345678901")
 	newKey := []byte("abcdefghijklmnopqrstuvwxyz123456")

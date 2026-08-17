@@ -68,12 +68,12 @@ func (s *Sweeper) RunOnce(ctx context.Context) (result Result, returnErr error) 
 	now := s.clock.Now()
 	if s.staging != nil {
 		for {
-			deleted, err := s.staging.SweepExpiredUploads(ctx, now, s.batchSize)
+			staging, err := s.staging.SweepExpiredUploads(ctx, now, s.batchSize)
 			if err != nil {
 				return result, fmt.Errorf("sweep expired staging: %w", err)
 			}
-			result.StagingObjectsDeleted += deleted
-			if deleted < s.batchSize {
+			result.StagingObjectsDeleted += staging.Deleted
+			if staging.Claimed < s.batchSize {
 				break
 			}
 		}

@@ -223,23 +223,23 @@ func (s *Service) remove(ctx context.Context, ownerID, uploadID string, reason d
 
 func (s *Service) PublicURL(publicID string) string { return s.publicBaseURL + "/" + publicID + ".png" }
 
-func (s *Service) SweepExpiredUploads(ctx context.Context, now time.Time, limit int) (int, error) {
+func (s *Service) SweepExpiredUploads(ctx context.Context, now time.Time, limit int) (domain.StagingSweepResult, error) {
 	uploads, err := s.repository.ClaimExpiredUploads(ctx, now, limit)
 	if err != nil {
-		return 0, err
+		return domain.StagingSweepResult{}, err
 	}
-	completed := 0
+	result := domain.StagingSweepResult{Claimed: len(uploads)}
 	for _, upload := range uploads {
 		if err := s.objects.DeleteStaging(ctx, upload.UploadReservation); err != nil {
 			s.logger.WarnContext(ctx, "staging expiry cleanup failed", "upload_id", upload.UploadID, "error_type", fmt.Sprintf("%T", err))
 			continue
 		}
 		if err := s.repository.CompleteExpiredUpload(ctx, upload.UploadID, now); err != nil {
-			return completed, err
+			return result, err
 		}
-		completed++
+		result.Deleted++
 	}
-	return completed, nil
+	return result, nil
 }
 
 func (s *Service) PurgeAccount(ctx context.Context, user domain.User) error {
