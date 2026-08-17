@@ -125,9 +125,10 @@ function workflowJob(workflow, name) {
 }
 
 export function assertMobileCi(workflow) {
-  const contractsJob = workflowJob(workflow, "devhud-mobile-contracts");
-  const iosJob = workflowJob(workflow, "devhud-ios-simulator");
-  const androidJob = workflowJob(workflow, "devhud-android-emulator");
+  const normalizedWorkflow = workflow.replace(/\r\n?/gu, "\n");
+  const contractsJob = workflowJob(normalizedWorkflow, "devhud-mobile-contracts");
+  const iosJob = workflowJob(normalizedWorkflow, "devhud-ios-simulator");
+  const androidJob = workflowJob(normalizedWorkflow, "devhud-android-emulator");
   for (const job of [contractsJob, iosJob, androidJob]) {
     assert(job.includes("uses: dorny/paths-filter@v4") && job.includes("- apps/devhud/**"), "mobile CI job must filter relevant DevHUD paths");
     assert(job.includes("EVENT_NAME: ${{ github.event_name }}") && job.includes('if [ "${EVENT_NAME}" = "workflow_dispatch" ] || [ "${DEVHUD_CHANGED}" = "true" ]; then'), "mobile CI job must run for manual dispatch or relevant paths");

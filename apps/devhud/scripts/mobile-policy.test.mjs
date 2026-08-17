@@ -101,8 +101,9 @@ test("mobile policy pins normalized resolved dependency closures", () => {
 });
 
 test("mobile policy requires production and simulator iOS builds", () => {
-  const workflow = readFileSync(join(appRoot, "../../.github/workflows/CI.yml"), "utf8");
+  const workflow = readFileSync(join(appRoot, "../../.github/workflows/CI.yml"), "utf8").replace(/\r\n?/gu, "\n");
   assert.doesNotThrow(() => assertMobileCi(workflow));
+  assert.doesNotThrow(() => assertMobileCi(workflow.replaceAll("\n", "\r\n")));
   const withoutDeviceBuild = workflow.replace("          - target: aarch64\n            runner: macos-15\n", "");
   assert.throws(() => assertMobileCi(withoutDeviceBuild), /iOS CI target aarch64/u);
   assert.throws(() => assertMobileCi(workflow.replace("xcrun simctl list > /dev/null", "true")), /initialize simulator devices/u);
