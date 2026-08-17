@@ -32,7 +32,7 @@ overrides:
   shell-quote: 1.9.0
   uuid: 11.1.1
   ws@>=6.0.0 <6.2.4: 6.2.6
-  ws@>=7.0.0 <7.5.11: 7.5.11
+  ws@>=7.0.0 <7.5.11: 7.5.13
   ws@>=8.0.0 <8.21.0: 8.21.3
 
 importers:
@@ -5696,8 +5696,8 @@ packages:
       utf-8-validate:
         optional: true
 
-  ws@7.5.11:
-    resolution: {integrity: sha512-zS54Oen9bITtp7kp2XM3AydrCIq1D+HwJOuH+c+e4LfpL/lotP5osijd+UoMnxwAam1GN8R4KtLAyIrIcBNpiA==}
+  ws@7.5.13:
+    resolution: {integrity: sha512-rsKI6xDBFVf4r/x8XyChGK04QR/XHroxs/jUcoWvtEZM8TPU/X/uIY9B1CsSzYws9ZJb/6bbBu7dPhFW00CAoA==}
     engines: {node: '>=8.3.0'}
     peerDependencies:
       bufferutil: ^4.0.1
@@ -10956,7 +10956,7 @@ snapshots:
       serialize-error: 2.1.0
       source-map: 0.5.7
       throat: 5.0.0
-      ws: 7.5.11
+      ws: 7.5.13
       yargs: 17.7.2
     transitivePeerDependencies:
       - bufferutil
@@ -11634,7 +11634,7 @@ snapshots:
   react-devtools-core@6.1.5:
     dependencies:
       shell-quote: 1.9.0
-      ws: 7.5.11
+      ws: 7.5.13
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
@@ -12843,7 +12843,7 @@ snapshots:
     dependencies:
       async-limiter: 1.0.1
 
-  ws@7.5.11: {}
+  ws@7.5.13: {}
 
   ws@8.21.3: {}
 
