@@ -142,8 +142,18 @@ const UrlMappingDraftContext = createContext<UrlMappingDraftValue | null>(null);
 
 export function UrlMappingDraftProvider({ children }: { readonly children: ReactNode }) {
   const identity = useIdentitySettings();
-  const identityScope = `${identity.status}:${identity.account?.userId?.value ?? identity.account?.logtoSubject ?? ""}`;
-  return <UrlMappingDraftStateProvider key={identityScope} identity={identity}>{children}</UrlMappingDraftStateProvider>;
+  const accountId = identity.account?.userId?.value ?? identity.account?.logtoSubject ?? "";
+  const scope = useRef({ status: identity.status, accountId, generation: 0 });
+  const leavesAuthenticatedSession = scope.current.status === "authenticated" && identity.status !== "authenticated";
+  const changesAuthenticatedAccount = identity.status === "authenticated" && scope.current.status === "authenticated" && accountId !== "" && scope.current.accountId !== "" && scope.current.accountId !== accountId;
+  if (leavesAuthenticatedSession || changesAuthenticatedAccount) {
+    scope.current = { status: identity.status, accountId, generation: scope.current.generation + 1 };
+  } else {
+    scope.current.status = identity.status;
+    // Account and Settings queries resolve independently; learning this account's ID must not discard an editable draft.
+    if (accountId !== "") scope.current.accountId = accountId;
+  }
+  return <UrlMappingDraftStateProvider key={scope.current.generation} identity={identity}>{children}</UrlMappingDraftStateProvider>;
 }
 
 function UrlMappingDraftStateProvider({ children, identity }: { readonly children: ReactNode; readonly identity: ReturnType<typeof useIdentitySettings> }) {
@@ -217,11 +227,9 @@ function UrlMappingSettings({ copy }: { readonly copy: Copy }) {
     setPriorityDrafts((current) => ({ ...current, [id]: value }));
   };
   const add = () => {
-    const credentialProfileRef = identity.settings.github.profiles[0]?.id;
-    if (credentialProfileRef === undefined) return;
     const timestamp = new Date().toISOString();
     setSaved(false); setInvalid(false); setDirty(true);
-    setDraft((current) => [...current, { id: uuidV7(), pattern: "https://example.com/**", repository: { owner: "owner", name: "repository" }, credentialProfileRef, priority: 0, chromeOrigin: null, updatedAt: timestamp }]);
+    setDraft((current) => [...current, { id: uuidV7(), pattern: "https://example.com/**", repository: { owner: "owner", name: "repository" }, credentialProfileRef: "", priority: 0, chromeOrigin: null, updatedAt: timestamp }]);
   };
   const save = () => {
     try {
@@ -252,7 +260,7 @@ function UrlMappingSettings({ copy }: { readonly copy: Copy }) {
       <label>{copy.urlPattern}<input value={mapping.pattern} aria-describedby="url-mapping-hint" onChange={(event) => change(mapping.id, "pattern", event.target.value)} /></label>
       <label>{copy.repositoryOwner}<input value={mapping.repository.owner} onChange={(event) => changeRepository(mapping.id, "owner", event.target.value)} /></label>
       <label>{copy.repositoryName}<input value={mapping.repository.name} onChange={(event) => changeRepository(mapping.id, "name", event.target.value)} /></label>
-      <label>{copy.credentialProfile}<input value={mapping.credentialProfileRef} onChange={(event) => change(mapping.id, "credentialProfileRef", event.target.value)} /></label>
+      <label>{copy.credentialProfile}<select value={mapping.credentialProfileRef} onChange={(event) => change(mapping.id, "credentialProfileRef", event.target.value)}><option value="">{copy.githubSelectProfile}</option>{identity.settings.github.profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></label>
       <label>{copy.mappingPriority}<input type="number" value={priorityDrafts[mapping.id] ?? String(mapping.priority)} onChange={(event) => changePriority(mapping.id, event.target.value)} /></label>
       <label>{copy.chromeOrigin}<input value={mapping.chromeOrigin ?? ""} onChange={(event) => change(mapping.id, "chromeOrigin", event.target.value || null)} /></label>
       <button type="button" onClick={() => { setSaved(false); setDirty(true); setPriorityDrafts((current) => { const { [mapping.id]: _removed, ...remaining } = current; return remaining; }); setDraft((current) => current.filter((item) => item.id !== mapping.id)); }}>{copy.removeUrlMapping}</button>

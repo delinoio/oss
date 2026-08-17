@@ -55,6 +55,8 @@ describe("URL repository matcher", () => {
     expect(mappingMatches(mapping({ pattern: "https://example.com/%ed%95%9c%ea%b8%80" }), "https://example.com/한글")).toBe(true);
     expect(mappingMatches(mapping({ pattern: "https://example.com/teams/../projects" }), "https://example.com/projects")).toBe(true);
     expect(mappingMatches(mapping({ pattern: "https://example.com/%2a" }), "https://example.com/%2A")).toBe(true);
+    expect(mappingMatches(mapping({ pattern: "https://example.com/%2A" }), "https://example.com/%252A")).toBe(false);
+    expect(mappingMatches(mapping({ pattern: "https://example.com/%252A" }), "https://example.com/%252A")).toBe(true);
     expect(mappingMatches(mapping({ pattern: "https://example.com/%2a" }), "https://example.com/value")).toBe(false);
     expect(parseUrlPattern("https://example.com/%ff").path).toEqual(["%FF"]);
     expect(mappingMatches(mapping({ pattern: "https://example.com/%FF" }), "https://example.com/%ff")).toBe(true);
@@ -67,7 +69,7 @@ describe("URL repository matcher", () => {
   });
 
   it("rejects invalid wildcard placement and sensitive URL components", () => {
-    for (const pattern of ["https://api*.example.com/", "https://api.example.com/**:123", "https://api.example.com/path?x=1", "https://user@api.example.com/"]) expect(() => parseUrlPattern(pattern)).toThrow();
+    for (const pattern of ["https://api*.example.com/", "https://api.example.com/**:123", "https://api.example.com/path?x=1", "https://user@api.example.com/", "https://example.com\\evil/path"]) expect(() => parseUrlPattern(pattern)).toThrow();
     expect(parseUrlPattern("https://social.example/@alice").path).toEqual(["@alice"]);
   });
 

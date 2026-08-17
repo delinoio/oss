@@ -1691,6 +1691,55 @@ describe("generated Connect identity/settings fixture", () => {
     expect((screen.getByLabelText(messages.en.mappingPriority) as HTMLInputElement).value).toBe("-1");
   });
 
+  it("keeps an editable mapping draft while the authenticated account hydrates", async () => {
+    const mapping = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", pattern: "https://server.example/**", repository: { owner: "delinoio", name: "oss" }, credentialProfileRef: mappingProfile.id, priority: 0, chromeOrigin: null, updatedAt: "2026-08-17T00:00:00.000Z" };
+    const server = withMappingProfile([mapping]);
+    let resolveAccount!: (response: Response) => void;
+    const account = new Promise<Response>((resolve) => { resolveAccount = resolve; });
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return account;
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 2, revision: "1", canonicalJson: encodedSettings(server) } });
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    render(<DevHudServiceBoundary apiOrigin="https://devhud.api.delino.io" active online callbackUrl={null} platform={RuntimePlatform.Desktop} bridge={authenticatedBridge()} onCallbackConsumed={() => {}} onContinueLocally={() => {}} onLoggedOut={() => {}}><SynchronizedSettingsBoundary copy={messages.en} /></DevHudServiceBoundary>);
+
+    const pattern = await screen.findByLabelText(messages.en.urlPattern) as HTMLInputElement;
+    fireEvent.change(pattern, { target: { value: "https://draft.example/**" } });
+    await act(async () => { resolveAccount(connectResponse({ account: fixture.account })); });
+
+    await waitFor(() => expect((screen.getByLabelText(messages.en.urlPattern) as HTMLInputElement).value).toBe("https://draft.example/**"));
+  });
+
+  it("requires an explicit credential profile for a newly added mapping", async () => {
+    const server = withMappingProfile([]);
+    let replacements = 0;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 2, revision: "1", canonicalJson: encodedSettings(server) } });
+      if (url.endsWith("/devhud.v1.SettingsService/ReplaceSettings")) { replacements += 1; return connectResponse({ snapshot: { schemaVersion: 2, revision: "2", canonicalJson: encodedSettings(server) } }); }
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    render(<DevHudServiceBoundary apiOrigin="https://devhud.api.delino.io" active online callbackUrl={null} platform={RuntimePlatform.Desktop} bridge={authenticatedBridge()} onCallbackConsumed={() => {}} onContinueLocally={() => {}} onLoggedOut={() => {}}><SynchronizedSettingsBoundary copy={messages.en} /></DevHudServiceBoundary>);
+
+    await screen.findByRole("button", { name: messages.en.addUrlMapping });
+    await waitFor(() => expect((screen.getByRole("button", { name: messages.en.addUrlMapping }) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.addUrlMapping }));
+    const profile = screen.getByLabelText(messages.en.credentialProfile) as HTMLSelectElement;
+    expect(profile.value).toBe("");
+    fireEvent.click(screen.getByRole("button", { name: messages.en.saveUrlMappings }));
+    expect((await screen.findByRole("alert")).textContent).toContain(messages.en.mappingInvalid);
+    expect(replacements).toBe(0);
+    fireEvent.change(profile, { target: { value: mappingProfile.id } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.saveUrlMappings }));
+    await waitFor(() => expect(replacements).toBe(1));
+  });
+
   it("clears unsaved URL mapping drafts when the authenticated account changes", async () => {
     const mapping = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", pattern: "https://first.example/**", repository: { owner: "delinoio", name: "oss" }, credentialProfileRef: mappingProfile.id, priority: 0, chromeOrigin: null, updatedAt: "2026-08-17T00:00:00.000Z" };
     const first = withMappingProfile([mapping]);

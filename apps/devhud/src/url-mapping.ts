@@ -27,7 +27,7 @@ export function parseUrlPattern(value: string): ParsedUrlPattern {
   const match = /^(\*|https?):\/\/(\[[^\]]+\]|[^/:]+)(?::([^/]*))?(\/.*)?$/u.exec(value);
   if (!match) throw new UrlMappingError("pattern must contain scheme, host, optional port, and path");
   const [, scheme, hostText, port = "", pathText = "/"] = match;
-  if (hostText.includes("@")) throw new UrlMappingError("pattern must not contain credentials, query, or fragment");
+  if (hostText.includes("@") || hostText.includes("\\")) throw new UrlMappingError("pattern must not contain credentials or backslashes");
   if (!literalScheme.test(scheme) || !literalPort.test(port) || (port !== "" && port !== "*" && Number(port) > 65535)) throw new UrlMappingError("pattern has an invalid scheme or port");
   const { host, hostIsIpLiteral } = parsePatternHost(hostText);
   const path = pathText.split("/").slice(1);
@@ -100,7 +100,8 @@ function canonicalizeLiteralPath(pathname: string): readonly string[] {
 function canonicalizeLiteralSegment(value: string): string {
   try {
     const decoded = decodeURIComponent(value);
-    return decoded === "*" ? "%2A" : decoded === "**" ? "%2A%2A" : decoded;
+    // Escape only percent and wildcard text so literal serialized escapes remain distinguishable.
+    return decoded.replace(/%/gu, "%25").replace(/\*/gu, "%2A");
   } catch {
     // WHATWG URLs preserve escaped bytes that are not valid UTF-8, so retain them
     // while canonicalizing their serialized escape spelling for stable matching.
