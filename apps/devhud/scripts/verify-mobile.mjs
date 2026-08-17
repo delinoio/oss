@@ -58,7 +58,7 @@ function assertAndroidArtifact(artifact, abi) {
   const aapt = androidAapt();
   const badging = commandOutput(aapt, ["dump", "badging", artifact]);
   if (!badging.includes("package: name='io.delino.devhud'") || !badging.includes("sdkVersion:'29'")) throw new Error("Android artifact identity or minimum SDK changed");
-  if (!badging.includes("uses-permission: name='android.permission.POST_NOTIFICATIONS'") || badging.includes("android.permission.INTERNET")) throw new Error("Android artifact permissions are not least-privileged");
+  if (!badging.includes("uses-permission: name='android.permission.INTERNET'") || !badging.includes("uses-permission: name='android.permission.POST_NOTIFICATIONS'")) throw new Error("Android artifact is missing required System WebView networking or notification permissions");
   const manifest = commandOutput(aapt, ["dump", "xmltree", artifact, "AndroidManifest.xml"]);
   for (const value of ['="devhud"', '="auth"', '="/callback"']) if (!manifest.includes(value)) throw new Error("Android artifact auth callback registration changed");
 }

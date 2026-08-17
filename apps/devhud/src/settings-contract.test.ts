@@ -18,6 +18,19 @@ describe("DevHud settings boundary", () => {
     expect(() => parseDevHudSettings({ ...defaultDevHudSettings, github: { ...defaultDevHudSettings.github, repositories: [{ owner: "github_pat_secret", name: "oss" }] } })).toThrow(/secret material/u);
   });
 
+  it("rejects settings snapshots containing more than 25 Decks", () => {
+    const deck = {
+      id: "deck",
+      title: "Deck",
+      query: "is:pr",
+      repository: null,
+      display: { groupBy: "none", showDrafts: true },
+      refreshMinutes: 15,
+      notifications: [],
+    };
+    expect(() => parseDevHudSettings({ ...defaultDevHudSettings, decks: Array.from({ length: 26 }, (_, index) => ({ ...deck, id: `deck-${index}` })) })).toThrow(/at most 25/u);
+  });
+
   it("produces a complete recursive, secret-redacted snapshot diff", () => {
     const local = { deck: { title: "Local", nested: [1, { token: "cleartext" }] }, extra: true };
     const server = { deck: { title: "Server", nested: [2, { token: "different" }] }, added: "github_pat_abcdefghijklmnopqrstuvwxyz" };

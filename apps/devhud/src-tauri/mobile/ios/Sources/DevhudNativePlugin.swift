@@ -65,14 +65,20 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate {
     private func openAuthenticationBrowser(_ args: RequestArgs, _ invoke: Invoke) throws {
         guard let value = args.url, let issuerValue = args.issuer,
               let destination = URL(string: value), let issuer = URL(string: issuerValue),
-              issuer.scheme == "https", issuer.path == "", issuer.query == nil, issuer.fragment == nil,
-              destination.scheme == "https", destination.host == issuer.host,
+              issuer.user == nil, issuer.password == nil, issuer.query == nil, issuer.fragment == nil,
+              isSecureOrLoopback(issuer), destination.scheme == issuer.scheme, destination.host == issuer.host,
               destination.port == issuer.port, destination.user == nil, destination.password == nil,
               destination.fragment == nil else { throw NativeError.invalidArgument }
         UIApplication.shared.open(destination, options: [:]) { opened in
             if opened { invoke.resolve(["kind": "ok"]) }
             else { invoke.reject("platform-failure", code: "platform-failure") }
         }
+    }
+
+    private func isSecureOrLoopback(_ url: URL) -> Bool {
+        if url.scheme == "https" { return true }
+        let host = url.host ?? ""
+        return url.scheme == "http" && (host == "localhost" || host == "::1" || host.hasPrefix("127."))
     }
 
     private func openExternal(_ args: RequestArgs, _ invoke: Invoke) throws {

@@ -115,6 +115,12 @@ describe("generated Connect identity/settings fixture", () => {
     expect(screen.getByText("light")).toBeTruthy();
     expect(replaceBodies).toHaveLength(0);
 
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: messages.en.importSettingsTitle })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: messages.en.importSettingsTitle }));
+    expect(screen.getByRole("dialog", { name: messages.en.importSettingsTitle })).toBeTruthy();
+    expect(screen.getByText("$.appearance.theme")).toBeTruthy();
+
     fireEvent.click(screen.getByRole("button", { name: messages.en.uploadLocal }));
     expect(await screen.findByText(messages.en.conflictTitle)).toBeTruthy();
     expect(replaceBodies[0]?.expectedRevision).toBe(fixture.serverRevision);
@@ -270,6 +276,83 @@ describe("generated Connect identity/settings fixture", () => {
 
     await waitFor(() => expect(secureOperations).toContain("secure.remove"));
     expect(screen.getByRole("button", { name: messages.en.signIn })).toBeTruthy();
+  });
+
+  it.each([
+    ["en", messages.en],
+    ["ko", messages.ko],
+  ] as const)("recovers the post-onboarding %s identity surface by retrying Bootstrap", async (language, copy) => {
+    localStorage.setItem("devhud.shell.preferences.v1", JSON.stringify({ version: 1, theme: "system", language, apiOrigin: "https://devhud.api.delino.io", launchAtLogin: false }));
+    let bootstrapRequests = 0;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (!url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) throw new Error(`unexpected request ${url}`);
+      bootstrapRequests += 1;
+      if (bootstrapRequests === 1) return new Response(JSON.stringify({ code: "unavailable", message: "retry" }), { status: 503, headers: { "Content-Type": "application/json" } });
+      return connectResponse(fixture.bootstrap);
+    }));
+    const bridge: NativeBridgeV1 = {
+      async request(request) {
+        if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
+        if (request.operation === "secure.read") return { kind: "secure-value", value: null };
+        if (request.operation === "auth.take-pending-callback") return { kind: "auth-callback", url: null };
+        throw new Error(`unexpected bridge operation ${request.operation}`);
+      },
+      async listen() { return () => {}; },
+    };
+
+    render(<App bridge={bridge} initialRuntime={runtime} />);
+    fireEvent.click(screen.getByRole("button", { name: copy.account }));
+    expect((await screen.findByRole("alert")).textContent).toContain(copy.bootstrapFailed);
+    fireEvent.click(screen.getByRole("button", { name: copy.retry }));
+    expect(await screen.findByRole("button", { name: copy.signIn })).toBeTruthy();
+    expect(bootstrapRequests).toBeGreaterThanOrEqual(2);
+  });
+
+  it("preserves the correlation ID from a failed Settings replacement", async () => {
+    const correlationId = "018f47a2-7b3c-7def-8abc-1234567890ab";
+    writeGuestSettings(localStorage, { ...defaultDevHudSettings, appearance: { ...defaultDevHudSettings.appearance, theme: "dark" } });
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 1, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
+      if (url.endsWith("/devhud.v1.SettingsService/ReplaceSettings")) return new Response(JSON.stringify({ code: "unavailable", message: "retry later" }), { status: 503, headers: { "Content-Type": "application/json", "x-devhud-correlation-id": correlationId } });
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    render(<App bridge={authenticatedBridge()} initialRuntime={runtime} />);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.settings }));
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.uploadLocal }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain(messages.en.settingsActionFailed);
+    expect(alert.textContent).toContain(messages.en.correlationId);
+    expect(alert.textContent).toContain(correlationId);
+  });
+
+  it("restores a deletion-pending blocked account without refetching forbidden settings", async () => {
+    let settingsRequests = 0;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: { ...fixture.account, deletionState: "ACCOUNT_DELETION_STATE_PENDING", administrativeBlockState: "ADMINISTRATIVE_BLOCK_STATE_BLOCKED" } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) {
+        settingsRequests += 1;
+        if (settingsRequests > 1) return new Response(JSON.stringify({ code: "permission_denied", message: "blocked" }), { status: 403, headers: { "Content-Type": "application/json" } });
+        return connectResponse({ snapshot: { schemaVersion: 1, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
+      }
+      if (url.endsWith("/devhud.v1.AccountService/RestoreAccount")) return connectResponse({ account: { ...fixture.account, administrativeBlockState: "ADMINISTRATIVE_BLOCK_STATE_BLOCKED" } });
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    render(<App bridge={authenticatedBridge()} initialRuntime={runtime} />);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.account }));
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.restoreAccount }));
+
+    expect(await screen.findByText(messages.en.blockedTitle)).toBeTruthy();
+    expect(screen.queryByText(messages.en.accountActionFailed)).toBeNull();
+    expect(settingsRequests).toBeLessThanOrEqual(1);
   });
 
   it.each([

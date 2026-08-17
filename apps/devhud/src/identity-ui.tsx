@@ -84,6 +84,7 @@ export function AccountIdentity({ copy, apiOrigin, inputRef, onApiOrigin }: Acco
     <p>{copy.accountSummary}</p>
     <ApiOriginEditor copy={copy} value={apiOrigin} inputRef={inputRef} onApply={onApiOrigin} />
     {identity.status === "starting" && <p role="status">{copy.fetchingBootstrap}</p>}
+    {identity.status === "error" && <section className="notice" role="alert"><p>{copy.bootstrapFailed}</p><button onClick={identity.retryIdentity}>{copy.retry}</button></section>}
     {(identity.status === "signed-out" || identity.status === "guest") && <button onClick={() => invoke(identity.signIn)} disabled={identity.bootstrap === null}>{copy.signIn}</button>}
     {identity.status === "authenticated" && <section className="account-session" aria-label={copy.signedInSession}>
       <p>{identity.account?.displayName || identity.account?.email || copy.signedIn}</p>
@@ -107,15 +108,25 @@ export function SynchronizedSettingsBoundary({ copy }: { readonly copy: Copy }) 
     <h3>{copy.synchronizedSettings}</h3>
     {identity.offline && <p className="notice" role="status">{copy.offlineSettingsReadOnly}</p>}
     {!identity.offline && <p>{copy.settingsRevision}: {identity.revision.toString()}</p>}
-    {identity.importDiff && <SnapshotChoice copy={copy} entries={identity.importDiff} title={copy.importSettingsTitle} summary={copy.importSettingsSummary} primary={copy.uploadLocal} secondary={copy.replaceLocal} onPrimary={() => invoke(identity.uploadLocal)} onSecondary={identity.replaceLocal} />}
-    {identity.conflict && <SnapshotChoice copy={copy} entries={identity.conflict.diff} title={copy.conflictTitle} summary={copy.conflictSummary} primary={copy.reapplyLocal} secondary={copy.adoptServer} onPrimary={() => invoke(identity.reapplyConflictLocal)} onSecondary={identity.adoptConflictServer} />}
-    {(actionError || identity.error?.startsWith("settings-")) && <p role="alert">{copy.settingsActionFailed}{identity.error && <> <code>{identity.error}</code></>}</p>}
+    {identity.importDiff && <SnapshotChoice key="import" choiceId="import" copy={copy} entries={identity.importDiff} title={copy.importSettingsTitle} summary={copy.importSettingsSummary} primary={copy.uploadLocal} secondary={copy.replaceLocal} onPrimary={() => invoke(identity.uploadLocal)} onSecondary={identity.replaceLocal} />}
+    {identity.conflict && <SnapshotChoice key="conflict" choiceId="conflict" copy={copy} entries={identity.conflict.diff} title={copy.conflictTitle} summary={copy.conflictSummary} primary={copy.reapplyLocal} secondary={copy.adoptServer} onPrimary={() => invoke(identity.reapplyConflictLocal)} onSecondary={identity.adoptConflictServer} />}
+    {(actionError || identity.error?.startsWith("settings-") || identity.settingsError) && <p role="alert">{copy.settingsActionFailed}{identity.error?.startsWith("settings-") && <> <code>{identity.error}</code></>}{identity.settingsError && <> <code>{`settings-connect-${identity.settingsError.code}`}</code>{identity.settingsError.correlationId && <> {copy.correlationId}: <code>{identity.settingsError.correlationId}</code></>}</>}</p>}
   </section>;
 }
 
-function SnapshotChoice({ copy, entries, title, summary, primary, secondary, onPrimary, onSecondary }: { readonly copy: Copy; readonly entries: readonly SettingsDiffEntry[]; readonly title: string; readonly summary: string; readonly primary: string; readonly secondary: string; readonly onPrimary: () => void; readonly onSecondary: () => void }) {
-  return <section className="snapshot-choice" role="dialog" aria-modal="true" aria-labelledby="snapshot-choice-title">
-    <h4 id="snapshot-choice-title">{title}</h4><p>{summary}</p>
+function SnapshotChoice({ choiceId, copy, entries, title, summary, primary, secondary, onPrimary, onSecondary }: { readonly choiceId: string; readonly copy: Copy; readonly entries: readonly SettingsDiffEntry[]; readonly title: string; readonly summary: string; readonly primary: string; readonly secondary: string; readonly onPrimary: () => void; readonly onSecondary: () => void }) {
+  const [open, setOpen] = useState(true);
+  useEffect(() => {
+    if (!open) return;
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") setOpen(false); };
+    addEventListener("keydown", closeOnEscape);
+    return () => removeEventListener("keydown", closeOnEscape);
+  }, [open]);
+  if (!open) return <section className="notice"><p>{summary}</p><button onClick={() => setOpen(true)}>{title}</button></section>;
+  const titleId = `snapshot-choice-${choiceId}-title`;
+  return <section className="snapshot-choice" role="dialog" aria-modal="true" aria-labelledby={titleId}>
+    <button type="button" onClick={() => setOpen(false)}>{copy.close}</button>
+    <h4 id={titleId}>{title}</h4><p>{summary}</p>
     <table><caption>{copy.completeSnapshotDiff}</caption><thead><tr><th scope="col">{copy.settingPath}</th><th scope="col">{copy.localValue}</th><th scope="col">{copy.serverValue}</th></tr></thead><tbody>{entries.length === 0 ? <tr><td colSpan={3}>{copy.noDifferences}</td></tr> : entries.map((entry) => <tr key={`${entry.path}:${entry.kind}`}><th scope="row">{entry.path}</th><td><code>{printValue(entry.local)}</code></td><td><code>{printValue(entry.server)}</code></td></tr>)}</tbody></table>
     <div className="actions"><button onClick={onPrimary}>{primary}</button><button onClick={onSecondary}>{secondary}</button></div>
   </section>;

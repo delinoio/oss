@@ -54,9 +54,10 @@ test("desktop authentication uses the diagnosed bounded system opener", () => {
   assert.doesNotMatch(nativeBridgeHost, /open::that_detached/u);
 });
 
-test("desktop secure writes roll back credentials when index maintenance fails", () => {
-  assert.match(desktopSecureStore, /if let Err\(reason\) = index_result/u);
-  assert.match(desktopSecureStore, /delete\(&setting\)/u);
+test("desktop secure writes preserve credentials across bounded Windows storage and index failures", () => {
+  assert.match(desktopSecureStore, /WINDOWS_CREDENTIAL_CHUNK_BYTES: usize = 1024/u);
+  assert.match(desktopSecureStore, /let previous = read_value/u);
+  assert.match(desktopSecureStore, /Some\(previous\) => write_value/u);
   assert.match(desktopSecureStore, /secure_store_write_rollback_failed/u);
 });
 

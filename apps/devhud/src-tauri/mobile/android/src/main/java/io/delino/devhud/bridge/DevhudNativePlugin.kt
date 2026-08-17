@@ -82,8 +82,9 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
         val args = invoke.getArgs()
         val destination = Uri.parse(args.getString("url"))
         val issuer = Uri.parse(args.getString("issuer"))
-        val validIssuer = issuer.scheme == "https" && (issuer.path == "" || issuer.path == "/") && issuer.query == null && issuer.fragment == null && issuer.userInfo == null
-        val sameOrigin = destination.scheme == "https" && destination.host == issuer.host && destination.port == issuer.port && destination.userInfo == null && destination.fragment == null
+        val loopback = issuer.host == "localhost" || issuer.host == "::1" || issuer.host == "[::1]" || issuer.host?.startsWith("127.") == true
+        val validIssuer = (issuer.scheme == "https" || (issuer.scheme == "http" && loopback)) && issuer.query == null && issuer.fragment == null && issuer.userInfo == null
+        val sameOrigin = destination.scheme == issuer.scheme && destination.host == issuer.host && destination.port == issuer.port && destination.userInfo == null && destination.fragment == null
         if (!validIssuer || !sameOrigin) throw IllegalArgumentException("issuer")
         activity.startActivity(Intent(Intent.ACTION_VIEW, destination).addCategory(Intent.CATEGORY_BROWSABLE))
         invoke.resolve(JSObject().put("kind", "ok"))

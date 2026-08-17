@@ -97,6 +97,8 @@ export function parseDevHudSettings(value: unknown): DevHudSettingsV1 {
   integer(root.schemaVersion, "$.schemaVersion", 1, 1);
 
   const appearance = object(root.appearance, "$.appearance", ["theme", "language"]);
+  const decks = array(root.decks, "$.decks");
+  if (decks.length > 25) throw new SettingsContractError("$.decks", "must contain at most 25 entries");
   const github = object(root.github, "$.github", ["repositories", "issueTracker"]);
   const shortcuts = object(root.shortcuts, "$.shortcuts", [...Platform]);
   const uploads = object(root.uploads, "$.uploads", ["provider", "r2"]);
@@ -107,7 +109,7 @@ export function parseDevHudSettings(value: unknown): DevHudSettingsV1 {
       theme: enumeration(appearance.theme, "$.appearance.theme", Theme),
       language: enumeration(appearance.language, "$.appearance.language", Language),
     },
-    decks: array(root.decks, "$.decks").map((entry, index) => parseDeck(entry, `$.decks[${index}]`)),
+    decks: decks.map((entry, index) => parseDeck(entry, `$.decks[${index}]`)),
     github: {
       repositories: array(github.repositories, "$.github.repositories").map((entry, index) => {
         const path = `$.github.repositories[${index}]`;

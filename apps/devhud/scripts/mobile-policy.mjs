@@ -45,6 +45,8 @@ export function assertAndroidNativeBridge(androidNativeBridge) {
   assert(androidNativeBridge.includes("return@execute") && androidNativeBridge.includes("Base64.getDecoder().decode"), "Android secure-setting reads must map decoding and Keystore failures off-thread");
   assert(androidNativeBridge.includes('(it.path != "" && it.path != "/")'), "Android native navigation must accept both root API-origin spellings");
   assert(androidNativeBridge.includes('it.host == "[::1]"'), "Android native navigation must accept bracketed IPv6 loopback origins");
+  assert(androidNativeBridge.includes('issuer.scheme == "http" && loopback') && androidNativeBridge.includes("destination.scheme == issuer.scheme"), "Android authentication must accept configured issuer paths and loopback HTTP while preserving same-origin navigation");
+  assert(!androidNativeBridge.includes('issuer.path == ""') && !androidNativeBridge.includes('issuer.path == "/"'), "Android authentication must not restrict configured issuer paths");
   assert(androidNativeBridge.includes("areNotificationsEnabled()"), "Android notification state must honor app-level disablement");
   assert(androidNativeBridge.includes("NotificationManager.IMPORTANCE_NONE"), "Android notification publication must honor channel disablement");
   assert(androidNativeBridge.includes("devhud_notification_channel_deck_changes"), "Android notification channels must use localized resources");
@@ -60,12 +62,19 @@ export function assertIosNativeBridge(iosNativeBridge) {
   assert(iosNativeBridge.includes('invoke.reject("permission-denied", code: "permission-denied")'), "iOS notification publication must honor authorization");
   assert(iosNativeBridge.includes("UNUserNotificationCenterDelegate") && iosNativeBridge.includes("willPresent notification"), "iOS foreground Deck notifications must be presented by a delegate");
   assert(iosNativeBridge.includes('(url.path.isEmpty || url.path == "/")'), "iOS native navigation must accept both root API-origin spellings");
+  assert(iosNativeBridge.includes("isSecureOrLoopback(issuer)") && iosNativeBridge.includes("destination.scheme == issuer.scheme"), "iOS authentication must accept configured issuer paths and loopback HTTP while preserving same-origin navigation");
+  assert(!iosNativeBridge.includes('issuer.path == ""'), "iOS authentication must not restrict configured issuer paths");
   assert(iosNativeBridge.includes("kSecAttrAccessGroup") && iosNativeBridge.includes("kSecAttrSynchronizable"), "iOS secrets must use the shared non-synchronizing Keychain group");
   assert(iosNativeBridge.includes('UserDefaults(suiteName: appGroup)'), "iOS must bind the contracted App Group");
 }
 
 export function assertMobileDependencyResolution(verifier) {
   assert(!verifier.includes('"--no-default-features"'), "mobile dependency closure must include production default features");
+}
+
+export function assertAndroidPermissions(androidManifest, androidDebugManifest) {
+  assert((androidDebugManifest.match(/<uses-permission/gu) ?? []).length === 1 && androidDebugManifest.includes("android.permission.INTERNET"), "debug Android manifest must grant only development networking");
+  assert((androidManifest.match(/<uses-permission/gu) ?? []).length === 2 && androidManifest.includes("android.permission.INTERNET") && androidManifest.includes("android.permission.POST_NOTIFICATIONS"), "release Android must grant only System WebView networking and notifications");
 }
 
 export function mobileCargoTreeDigest(cargoTree, workspaceRoot) {
@@ -151,9 +160,7 @@ export function assertMobileContracts({ platforms, tauri, ios, android, cargo, a
   assert(!/cef|chromium|chrome-extension/iu.test(mobileCargo), "CEF or browser-extension dependency leaked into the mobile dependency set");
   assert(/features = \["cef"/u.test(cargo), "desktop CEF contract was lost");
 
-  assert(!androidManifest.includes("android.permission.INTERNET"), "release Android manifest must not grant networking");
-  assert((androidDebugManifest.match(/<uses-permission/gu) ?? []).length === 1 && androidDebugManifest.includes("android.permission.INTERNET"), "debug Android manifest must grant only development networking");
-  assert((androidManifest.match(/<uses-permission/gu) ?? []).length === 1 && androidManifest.includes("android.permission.POST_NOTIFICATIONS"), "release Android permissions are not least-privileged");
+  assertAndroidPermissions(androidManifest, androidDebugManifest);
   assert(androidManifest.includes('android:scheme="market"'), "Android market handler visibility is missing");
   assert(!androidManifest.includes("LEANBACK") && !androidManifest.includes("FileProvider"), "unneeded Android surface was generated");
   assert((androidManifest.match(/android:scheme="devhud"/gu) ?? []).length === 1, "Android must register only one devhud scheme");

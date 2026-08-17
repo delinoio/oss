@@ -11,6 +11,7 @@ import {
   PermissionFailureReason,
   SettingsQuery,
   type Account,
+  type DevHudClientError,
 } from "@delinoio/devhud-api-client";
 import { createContext, use, useEffect, useMemo, useRef, useState, type PropsWithChildren, type RefObject } from "react";
 import { createIdentitySession, sessionProfileId, validateBootstrap, type IdentitySession, type ValidatedBootstrap } from "./identity-client";
@@ -39,9 +40,11 @@ export interface IdentitySettingsValue {
   readonly readOnly: boolean;
   readonly offline: boolean;
   readonly error: string | null;
+  readonly settingsError: DevHudClientError | null;
   readonly importDiff: readonly SettingsDiffEntry[] | null;
   readonly conflict: SettingsConflict | null;
   readonly signIn: () => Promise<void>;
+  readonly retryIdentity: () => void;
   readonly continueLocally: () => void;
   readonly uploadLocal: () => Promise<void>;
   readonly replaceLocal: () => void;
@@ -104,10 +107,12 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   const [settings, setSettings] = useState<DevHudSettingsV1>(() => readGuestSettings(storage));
   const [revision, setRevision] = useState(0n);
   const [error, setError] = useState<string | null>(null);
+  const [settingsError, setSettingsError] = useState<DevHudClientError | null>(null);
   const [importDiff, setImportDiff] = useState<readonly SettingsDiffEntry[] | null>(null);
   const [conflict, setConflict] = useState<SettingsConflict | null>(null);
   const [account, setAccount] = useState<Account | null>(null);
   const [networkReady, setNetworkReady] = useState(false);
+  const [bootstrapAttempt, setBootstrapAttempt] = useState(0);
   const callbackHandled = useRef<string | null>(null);
 
   const bootstrapQuery = useQuery(BootstrapQuery.getBootstrap, {}, { enabled: active && online && networkReady && isValidApiOrigin(apiOrigin) });
@@ -161,10 +166,10 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       if (!cancelled) { setStatus("error"); setError(safeError(reason)); }
     });
     return () => { cancelled = true; };
-  }, [active, apiOrigin, bridge]);
+  }, [active, apiOrigin, bootstrapAttempt, bridge]);
 
   useEffect(() => {
-    if (!active || !online || !bootstrapQuery.data) return;
+    if (!active || !online || !networkReady || !bootstrapQuery.data) return;
     let cancelled = false;
     setStatus((current) => current === "guest" ? "starting" : current);
     void (async () => {
@@ -192,7 +197,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       }
     })();
     return () => { cancelled = true; };
-  }, [active, apiOrigin, bootstrapQuery.data, bridge, online, platform, sessionRef, storage]);
+  }, [active, apiOrigin, bootstrapQuery.data, bridge, networkReady, online, platform, sessionRef, storage]);
 
   useEffect(() => {
     if (!active || online || !networkReady) return;
@@ -238,10 +243,10 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   }, [callbackUrl, session]);
 
   useEffect(() => {
-    if (!bootstrapQuery.error) return;
+    if (!networkReady || !bootstrapQuery.error) return;
     setStatus("error");
     setError("bootstrap-unavailable");
-  }, [bootstrapQuery.error]);
+  }, [bootstrapQuery.error, networkReady]);
 
   useEffect(() => {
     if (!accountQuery.data?.account) return;
@@ -302,6 +307,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
 
   async function replaceAt(local: DevHudSettingsV1, expectedRevision: bigint): Promise<void> {
     if (!online) throw new Error("offline-read-only");
+    setSettingsError(null);
     let canonicalJson: Uint8Array;
     try {
       canonicalJson = encodeDevHudSettings(local);
@@ -329,7 +335,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
         setConflict({ local, server, currentRevision, diff: diffSettings(local, server) });
         return;
       }
-      setError(`settings-connect-${mapped.code}`);
+      setSettingsError(mapped);
       throw reason;
     }
   }
@@ -343,11 +349,18 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     readOnly: status !== "authenticated" || !online || importDiff !== null || conflict !== null,
     offline: !online,
     error,
+    settingsError,
     importDiff,
     conflict,
     signIn: async () => {
       if (sessionRef.current === null) throw new Error("bootstrap-not-ready");
       await sessionRef.current.signIn();
+    },
+    retryIdentity: () => {
+      setStatus("starting");
+      setError(null);
+      setNetworkReady(false);
+      setBootstrapAttempt((current) => current + 1);
     },
     continueLocally: () => { setStatus("guest"); onContinueLocally(); },
     uploadLocal: () => replaceAt(settings, revision),
@@ -390,8 +403,9 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       try {
         const response = await restoreMutation.mutateAsync({});
         setAccount(response.account ?? null);
-        setStatus(response.account?.administrativeBlockState === AdministrativeBlockState.BLOCKED ? "blocked" : "authenticated");
-        await settingsQuery.refetch();
+        const blocked = response.account?.administrativeBlockState === AdministrativeBlockState.BLOCKED;
+        setStatus(blocked ? "blocked" : "authenticated");
+        if (!blocked) await settingsQuery.refetch();
       } catch (reason) {
         const mapped = mapDevHudError(reason);
         if (mapped.kind === "accountPrecondition" && mapped.detail.reason === AccountFailureReason.PURGE_CLAIMED) {
