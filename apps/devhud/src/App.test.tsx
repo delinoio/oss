@@ -4,6 +4,8 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
+import * as identityClient from "./identity-client";
+import type { IdentitySession } from "./identity-client";
 import { messages } from "./localization";
 import { LifecycleState, NativeBridgeError, NativeBridgeErrorCode, NotificationPermission, RuntimePlatform, type NativeBridgeEventV1, type NativeBridgeRequestV1, type NativeBridgeResponseV1, type NativeBridgeV1, type RuntimeSnapshot } from "./native-bridge";
 
@@ -35,13 +37,80 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe("native App state", () => {
+  it.each([
+    ["en", messages.en],
+    ["ko", messages.ko],
+  ] as const)("renders the complete %s first-run identity choice accessibly", async (language, copy) => {
+    localStorage.removeItem("devhud.shell.onboarding.v1");
+    localStorage.setItem("devhud.shell.preferences.v1", JSON.stringify({ version: 1, theme: "system", language, apiOrigin: "https://devhud.api.delino.io", launchAtLogin: false }));
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));
+    const bridge = bridgeWith(async (request) => {
+      if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
+      throw new Error(`unexpected operation ${request.operation}`);
+    });
+
+    render(<App bridge={bridge} initialRuntime={mobileRuntime} />);
+
+    const input = screen.getByRole("textbox", { name: copy.apiOrigin }) as HTMLInputElement;
+    expect(input.value).toBe("https://devhud.api.delino.io");
+    expect(input).toBe(document.activeElement);
+    expect(screen.getByRole("button", { name: copy.signIn })).toBeTruthy();
+    expect(screen.getByRole("button", { name: copy.continueLocally })).toBeTruthy();
+    expect(screen.getByText(copy.customApiWarning)).toBeTruthy();
+    expect(document.documentElement.lang).toBe(language);
+  });
+
+  it("rejects insecure custom APIs and confirms a secure API change before clearing its session", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const transitionOperations: string[] = [];
+    let pendingCallback: string | null = "devhud://auth/callback?code=old&state=old";
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      if (value.operation === "session.configure-origins") {
+        if (value.apiOrigin === "https://custom.example") transitionOperations.push("configure-new-origin");
+        return { kind: "session-network-policy", changed: false };
+      }
+      if (value.operation === "auth.take-pending-callback") {
+        transitionOperations.push("discard-callback");
+        const url = pendingCallback;
+        pendingCallback = null;
+        return { kind: "auth-callback", url };
+      }
+      if (value.operation === "secure.purge") { transitionOperations.push("purge-session"); return { kind: "ok" }; }
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+
+    render(<App bridge={bridgeWith(request)} initialRuntime={mobileRuntime} />);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.account }));
+    const input = screen.getByRole("textbox", { name: messages.en.apiOrigin });
+
+    fireEvent.change(input, { target: { value: "https://devhud.api.delino.io/" } });
+    expect((screen.getByRole("button", { name: messages.en.applyApiOrigin }) as HTMLButtonElement).disabled).toBe(true);
+    expect(confirm).not.toHaveBeenCalled();
+    expect(request).not.toHaveBeenCalledWith(expect.objectContaining({ operation: "secure.purge" }));
+
+    fireEvent.change(input, { target: { value: "http://remote.example" } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.applyApiOrigin }));
+    expect(screen.getByRole("alert").textContent).toBe(messages.en.invalidApiOrigin);
+    expect(confirm).not.toHaveBeenCalled();
+
+    fireEvent.change(input, { target: { value: "https://custom.example" } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.applyApiOrigin }));
+    await waitFor(() => expect(JSON.parse(localStorage.getItem("devhud.shell.preferences.v1") ?? "null").apiOrigin).toBe("https://custom.example"));
+    expect(confirm).toHaveBeenCalledWith(messages.en.apiChangeConfirm);
+    expect(request).toHaveBeenCalledWith(expect.objectContaining({ operation: "secure.purge", scope: "api-change", profileId: expect.stringMatching(/^origin\./u) }));
+    expect(pendingCallback).toBeNull();
+    expect(transitionOperations).toEqual(["discard-callback", "purge-session", "configure-new-origin"]);
+  });
+
   it("loads the default content state once", async () => {
     const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
       if (value.operation === "runtime.snapshot") return { kind: "runtime", snapshot: mobileRuntime };
-      if (value.operation === "auth.take-pending-callback") return { kind: "auth-callback", url: null };
+      if (value.operation === "auth.peek-pending-callback") return { kind: "auth-callback", url: null };
       throw new Error(`unexpected operation ${value.operation}`);
     });
 
@@ -49,7 +118,112 @@ describe("native App state", () => {
     await screen.findByText(messages.en.welcome);
 
     expect(request.mock.calls.filter(([value]) => value.operation === "runtime.snapshot")).toHaveLength(1);
+    expect(request.mock.calls.filter(([value]) => value.operation === "auth.peek-pending-callback")).toHaveLength(1);
+  });
+
+  it("peeks for a callback only after the native listener is installed", async () => {
+    const operations: string[] = [];
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      operations.push(value.operation);
+      if (value.operation === "runtime.snapshot") return { kind: "runtime", snapshot: mobileRuntime };
+      if (value.operation === "auth.peek-pending-callback") return { kind: "auth-callback", url: null };
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    const bridge: NativeBridgeV1 = {
+      request,
+      async listen() { operations.push("listener-installed"); return () => {}; },
+    };
+
+    render(<App bridge={bridge} />);
+    await screen.findByText(messages.en.welcome);
+
+    expect(operations).toEqual(["listener-installed", "runtime.snapshot", "auth.peek-pending-callback"]);
+  });
+
+  it("drains a cold-start callback after the identity session becomes ready", async () => {
+    let authenticated = false;
+    const handleCallback = vi.fn(async () => { authenticated = true; });
+    vi.spyOn(identityClient, "createIdentitySession").mockResolvedValue({
+      getAccessToken: async () => "fixture-access-token",
+      isAuthenticated: async () => authenticated,
+      signIn: async () => {},
+      handleCallback,
+      clear: async () => {},
+    } as unknown as IdentitySession);
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      projectId: "PROJECT_ID_DEVHUD",
+      protocolSchemaVersion: 1,
+      apiVersion: "0.1.0-dev",
+      logtoIssuer: "https://identity.example/oidc",
+      logtoAudience: "https://api.example/api",
+      logtoClients: { desktop: "desktop-client", ios: "ios-client", android: "android-client", admin: "admin-client" },
+      logtoRedirects: { native: "devhud://auth/callback", admin: "https://admin.example/callback" },
+    }), { status: 200, headers: { "Content-Type": "application/json", "Connect-Protocol-Version": "1" } })));
+    const request = vi.fn(async (request: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      if (request.operation === "runtime.snapshot") return { kind: "runtime", snapshot: mobileRuntime };
+      if (request.operation === "auth.peek-pending-callback" || request.operation === "auth.take-pending-callback") return { kind: "auth-callback", url: "devhud://auth/callback?code=opaque&state=opaque" };
+      if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
+      throw new Error(`unexpected operation ${request.operation}`);
+    });
+
+    render(<App bridge={bridgeWith(request)} />);
+
+    await waitFor(() => expect(handleCallback).toHaveBeenCalledOnce());
+    expect(request.mock.calls.filter(([value]) => value.operation === "auth.peek-pending-callback")).toHaveLength(1);
     expect(request.mock.calls.filter(([value]) => value.operation === "auth.take-pending-callback")).toHaveLength(1);
+  });
+
+  it("keeps a cold-start callback queued across an issuer-policy reload", async () => {
+    const callbackUrl = "devhud://auth/callback?code=opaque&state=opaque";
+    let pendingCallback: string | null = callbackUrl;
+    let issuerConfigured = false;
+    let authenticated = false;
+    const handleCallback = vi.fn(async () => { authenticated = true; });
+    vi.spyOn(identityClient, "createIdentitySession").mockResolvedValue({
+      getAccessToken: async () => "fixture-access-token",
+      isAuthenticated: async () => authenticated,
+      signIn: async () => {},
+      handleCallback,
+      clear: async () => {},
+    } as unknown as IdentitySession);
+    vi.stubGlobal("location", { reload: vi.fn() });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      projectId: "PROJECT_ID_DEVHUD",
+      protocolSchemaVersion: 1,
+      apiVersion: "0.1.0-dev",
+      logtoIssuer: "https://identity.example/oidc",
+      logtoAudience: "https://api.example/api",
+      logtoClients: { desktop: "desktop-client", ios: "ios-client", android: "android-client", admin: "admin-client" },
+      logtoRedirects: { native: "devhud://auth/callback", admin: "https://admin.example/callback" },
+    }), { status: 200, headers: { "Content-Type": "application/json", "Connect-Protocol-Version": "1" } })));
+    const request = vi.fn(async (request: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      if (request.operation === "runtime.snapshot") return { kind: "runtime", snapshot: mobileRuntime };
+      if (request.operation === "auth.peek-pending-callback") return { kind: "auth-callback", url: pendingCallback };
+      if (request.operation === "auth.take-pending-callback") {
+        const url = pendingCallback;
+        pendingCallback = null;
+        return { kind: "auth-callback", url };
+      }
+      if (request.operation === "session.configure-origins") {
+        if (request.logtoIssuer && !issuerConfigured) {
+          issuerConfigured = true;
+          return { kind: "session-network-policy", changed: true };
+        }
+        return { kind: "session-network-policy", changed: false };
+      }
+      throw new Error(`unexpected operation ${request.operation}`);
+    });
+
+    const first = render(<App bridge={bridgeWith(request)} />);
+    await waitFor(() => expect(issuerConfigured).toBe(true));
+    expect(pendingCallback).toBe(callbackUrl);
+    expect(request.mock.calls.filter(([value]) => value.operation === "auth.take-pending-callback")).toHaveLength(0);
+    first.unmount();
+
+    render(<App bridge={bridgeWith(request)} />);
+    await waitFor(() => expect(request.mock.calls.filter(([value]) => value.operation === "auth.take-pending-callback")).toHaveLength(1));
+    expect(pendingCallback).toBeNull();
+    expect(handleCallback).toHaveBeenCalledWith(callbackUrl);
   });
 
   it("unsubscribes when a listener resolves after cleanup", async () => {
@@ -67,7 +241,7 @@ describe("native App state", () => {
     await waitFor(() => expect(unsubscribe).toHaveBeenCalledOnce());
   });
 
-  it("consumes a queued callback after foreground event delivery", async () => {
+  it("leaves a foreground callback queued until the identity session is ready", async () => {
     let receive!: (event: NativeBridgeEventV1) => void;
     const request = vi.fn(async (): Promise<NativeBridgeResponseV1> => ({ kind: "auth-callback", url: null }));
     const bridge: NativeBridgeV1 = {
@@ -79,7 +253,7 @@ describe("native App state", () => {
     await waitFor(() => expect(receive).toBeTypeOf("function"));
     receive({ version: 1, kind: "auth-callback", url: "devhud://auth/callback?state=opaque" });
 
-    await waitFor(() => expect(request).toHaveBeenCalledWith({ operation: "auth.take-pending-callback" }));
+    await waitFor(() => expect(request).not.toHaveBeenCalledWith({ operation: "auth.take-pending-callback" }));
   });
 
   it("reads and localizes notification permission and diagnostic labels", async () => {

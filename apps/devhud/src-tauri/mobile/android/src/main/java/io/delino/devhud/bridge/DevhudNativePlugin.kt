@@ -24,6 +24,7 @@ import java.security.KeyStore
 import java.util.Base64
 import java.util.concurrent.Executors
 import javax.crypto.Cipher
+import javax.crypto.AEADBadTagException
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
@@ -58,11 +59,14 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
     fun request(invoke: Invoke) {
         try {
             when (invoke.getArgs().getString("operation")) {
+                "auth.peek-pending-callback" -> peekAuthCallback(invoke)
                 "auth.take-pending-callback" -> takeAuthCallback(invoke)
+                "auth.open-system-browser" -> openAuthenticationBrowser(invoke)
                 "lifecycle.open-external" -> openExternal(invoke)
                 "secure.read" -> readSecure(invoke)
                 "secure.write" -> writeSecure(invoke)
                 "secure.remove" -> removeSecure(invoke)
+                "secure.purge" -> purgeSecure(invoke)
                 "notifications.permission" -> resolveNotificationPermission(invoke)
                 "notifications.request-permission" -> requestNotificationPermission(invoke)
                 "notifications.publish-deck-change" -> publishNotification(invoke)
@@ -74,6 +78,18 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
         } catch (error: Exception) {
             invoke.reject("platform-failure", "platform-failure", error)
         }
+    }
+
+    private fun openAuthenticationBrowser(invoke: Invoke) {
+        val args = invoke.getArgs()
+        val destination = Uri.parse(args.getString("url"))
+        val issuer = Uri.parse(args.getString("issuer"))
+        val loopback = issuer.host == "localhost" || issuer.host == "::1" || issuer.host == "[::1]" || issuer.host?.startsWith("127.") == true
+        val validIssuer = (issuer.scheme == "https" || (issuer.scheme == "http" && loopback)) && issuer.query == null && issuer.fragment == null && issuer.userInfo == null
+        val sameOrigin = destination.scheme == issuer.scheme && destination.host == issuer.host && destination.port == issuer.port && destination.userInfo == null && destination.fragment == null
+        if (!validIssuer || !sameOrigin) throw IllegalArgumentException("issuer")
+        activity.startActivity(Intent(Intent.ACTION_VIEW, destination).addCategory(Intent.CATEGORY_BROWSABLE))
+        invoke.resolve(JSObject().put("kind", "ok"))
     }
 
     private fun captureAuthCallback(intent: Intent?) {
@@ -95,6 +111,10 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
         }
         pendingAuthCallback = null
         invoke.resolve(response)
+    }
+
+    private fun peekAuthCallback(invoke: Invoke) {
+        invoke.resolve(JSObject().put("kind", "auth-callback").put("url", pendingAuthCallback))
     }
 
     private fun openExternal(invoke: Invoke) {
@@ -136,17 +156,22 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
     private fun readSecure(invoke: Invoke) {
         secureSettingsExecutor.execute {
             try {
-                val encoded = activity.getSharedPreferences(storeName, Context.MODE_PRIVATE).getString(settingKey(invoke.getArgs()), null)
+                val key = settingKey(invoke.getArgs())
+                val preferences = activity.getSharedPreferences(storeName, Context.MODE_PRIVATE)
+                val encoded = preferences.getString(key, null)
                 if (encoded == null) {
                     invoke.resolve(JSObject().put("kind", "secure-value").put("value", null))
                     return@execute
                 }
-                val payload = Base64.getDecoder().decode(encoded)
-                val iv = payload.copyOfRange(0, 12)
-                val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply {
-                    init(Cipher.DECRYPT_MODE, secretKey(), GCMParameterSpec(128, iv))
+                val value = try {
+                    decryptSecure(encoded, key, authenticateKey = true)
+                } catch (_: AEADBadTagException) {
+                    val legacy = decryptSecure(encoded, key, authenticateKey = false)
+                    if (!preferences.edit().putString(key, encryptSecure(legacy, key)).commit()) {
+                        throw IllegalStateException("secure migration persistence failed")
+                    }
+                    legacy
                 }
-                val value = String(cipher.doFinal(payload.copyOfRange(12, payload.size)), Charsets.UTF_8)
                 invoke.resolve(JSObject().put("kind", "secure-value").put("value", value))
             } catch (error: Exception) {
                 invoke.reject("storage-failure", "storage-failure", error)
@@ -159,18 +184,51 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
         val key = settingKey(args)
         val value = args.getString("value")
         persistSecure(invoke) {
-            val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, secretKey()) }
-            val encrypted = cipher.doFinal(value.toByteArray(Charsets.UTF_8))
-            val payload = cipher.iv + encrypted
             activity.getSharedPreferences(storeName, Context.MODE_PRIVATE).edit()
-                .putString(key, Base64.getEncoder().encodeToString(payload)).commit()
+                .putString(key, encryptSecure(value, key)).commit()
         }
+    }
+
+    private fun encryptSecure(value: String, key: String): String {
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply {
+            init(Cipher.ENCRYPT_MODE, secretKey())
+            updateAAD(key.toByteArray(Charsets.UTF_8))
+        }
+        val encrypted = cipher.doFinal(value.toByteArray(Charsets.UTF_8))
+        return Base64.getEncoder().encodeToString(cipher.iv + encrypted)
+    }
+
+    private fun decryptSecure(encoded: String, key: String, authenticateKey: Boolean): String {
+        val payload = Base64.getDecoder().decode(encoded)
+        val iv = payload.copyOfRange(0, 12)
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply {
+            init(Cipher.DECRYPT_MODE, secretKey(), GCMParameterSpec(128, iv))
+            if (authenticateKey) updateAAD(key.toByteArray(Charsets.UTF_8))
+        }
+        return String(cipher.doFinal(payload.copyOfRange(12, payload.size)), Charsets.UTF_8)
     }
 
     private fun removeSecure(invoke: Invoke) {
         val key = settingKey(invoke.getArgs())
         persistSecure(invoke) {
             activity.getSharedPreferences(storeName, Context.MODE_PRIVATE).edit().remove(key).commit()
+        }
+    }
+
+    private fun purgeSecure(invoke: Invoke) {
+        val args = invoke.getArgs()
+        val scope = args.getString("scope")
+        val profileId = if (args.has("profileId")) args.getString("profileId") else null
+        if (scope !in setOf("logout", "account-deletion", "api-change") || (scope != "logout" && profileId == null)) throw IllegalArgumentException("scope")
+        persistSecure(invoke) {
+            val preferences = activity.getSharedPreferences(storeName, Context.MODE_PRIVATE)
+            val editor = preferences.edit()
+            preferences.all.keys.filter { key ->
+                scope == "logout" ||
+                    (scope == "account-deletion" && key != "logto-session:$profileId") ||
+                    (scope == "api-change" && key == "logto-session:$profileId")
+            }.forEach(editor::remove)
+            editor.commit()
         }
     }
 

@@ -4,6 +4,8 @@ mod bridge;
 mod native_plugin;
 mod platform;
 mod resources;
+#[cfg(desktop)]
+mod secure_store;
 
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 use std::process::{Child, Command};
@@ -31,6 +33,7 @@ use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
 };
+use tauri_plugin_deep_link::DeepLinkExt;
 use tracing::{error, info, warn};
 use tracing_subscriber::{
     Layer,
@@ -236,6 +239,10 @@ async fn open_external(target: String, api_origin: String) -> Result<(), String>
         error!(event = "external_destination_rejected");
         "external destination is not allowlisted".to_string()
     })?;
+    open_system_browser(destination).await
+}
+
+async fn open_system_browser(destination: String) -> Result<(), String> {
     #[cfg(target_os = "linux")]
     return tauri::async_runtime::spawn_blocking(move || {
         wait_for_linux_external_dispatch(destination)
@@ -643,10 +650,14 @@ fn main() {
         renderer_crashed: Arc::new(AtomicBool::new(false)),
         renderer_crash_listener_ready: Arc::new(AtomicBool::new(cfg!(target_os = "macos"))),
     };
+    let bridge_state = bridge::NativeBridgeState::default();
+    let session_network_policy = bridge_state.clone();
 
     let mut builder = tauri::Builder::<tauri::Cef>::default()
+        .plugin(tauri_plugin_single_instance::init(|_, _, _| {}))
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(native_plugin::init())
-        .manage(bridge::NativeBridgeState::default())
+        .manage(bridge_state)
         .manage(frontend_readiness.clone())
         .invoke_handler(tauri::generate_handler![
             bridge::native_bridge_v1,
@@ -684,6 +695,19 @@ fn main() {
     let result = builder
         .setup(move |app| {
             let readiness = frontend_readiness.clone();
+            #[cfg(any(target_os = "linux", all(debug_assertions, target_os = "windows")))]
+            app.deep_link().register_all()?;
+            if let Some(urls) = app.deep_link().get_current()? {
+                for url in urls {
+                    native_plugin::offer_auth_callback(app.handle(), url.as_str());
+                }
+            }
+            let callback_app = app.handle().clone();
+            app.deep_link().on_open_url(move |event| {
+                for url in event.urls() {
+                    native_plugin::offer_auth_callback(&callback_app, url.as_str());
+                }
+            });
             create_tray(&app.handle().clone())?;
             let webview = tauri::WebviewWindowBuilder::<tauri::Cef, _>::new(
                 app,
@@ -693,6 +717,14 @@ fn main() {
             .title("DevHUD")
             .inner_size(960.0, 640.0)
             .min_inner_size(640.0, 480.0)
+            .on_web_resource_request(move |_request, response| {
+                let csp = session_network_policy.session_csp(cfg!(debug_assertions));
+                if let Ok(value) = csp.parse() {
+                    response
+                        .headers_mut()
+                        .insert("Content-Security-Policy", value);
+                }
+            })
             .on_navigation(|url| {
                 let allowed = is_allowed_navigation(url);
                 if !allowed {

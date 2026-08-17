@@ -47,6 +47,11 @@ test("falls back to session storage when the localStorage getter throws", () => 
     const storage = getLocalStorage();
     completeOnboarding(storage);
     assert.equal(hasCompletedOnboarding(storage), true);
+    storage.setItem("remove-me", "value");
+    assert.equal(storage.length >= 2, true);
+    assert.equal(typeof storage.key(0), "string");
+    storage.removeItem("remove-me");
+    assert.equal(storage.getItem("remove-me"), null);
   } finally {
     Object.defineProperty(globalThis, "window", { configurable: true, value: originalWindow });
   }
