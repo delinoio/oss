@@ -215,7 +215,17 @@ function ShortcutSettings({ copy, bridge, disabled, capabilities, bindings, onPe
       setSaving(false);
     }
   };
-  const requestPermission = () => void bridge.request({ operation: "shortcuts.request-permission" }).then((response) => { if (response.kind === "shortcut-status") setStatus(response); }).catch((error) => setStatus((current) => ({ platform: current?.platform ?? "unsupported", permission: error instanceof NativeBridgeError ? "denied" : current?.permission ?? "unsupported", error: error instanceof NativeBridgeError ? ShortcutValidationCode.PermissionDenied : ShortcutValidationCode.RegistrationFailed })));
+  const requestPermission = async () => {
+    try {
+      const permission = await bridge.request({ operation: "shortcuts.request-permission" });
+      if (permission.kind !== "shortcut-status") return;
+      if (permission.permission !== "available") { setStatus(permission); return; }
+      const result = await bridge.request({ operation: "shortcuts.apply", bindings });
+      if (result.kind === "shortcut-status") setStatus(result);
+    } catch (error) {
+      setStatus((current) => ({ platform: current?.platform ?? "unsupported", permission: error instanceof NativeBridgeError ? "denied" : current?.permission ?? "unsupported", error: error instanceof NativeBridgeError ? ShortcutValidationCode.PermissionDenied : ShortcutValidationCode.RegistrationFailed }));
+    }
+  };
   const errorCopy = status?.error === ShortcutValidationCode.Conflict ? copy.shortcutConflict : status?.error === ShortcutValidationCode.Reserved ? copy.shortcutReserved : status?.error === ShortcutValidationCode.PermissionDenied ? copy.shortcutPermissionDenied : status?.error === ShortcutValidationCode.RegistrationFailed ? copy.shortcutRegistrationFailed : status?.error === ShortcutValidationCode.Malformed ? copy.shortcutMalformed : null;
   const availableActions = availableShortcutActions(capabilities);
   return <section className="native-setting" aria-label={copy.keyboardShortcuts}>

@@ -16,6 +16,7 @@ import { hasGuestSettings, readAuthenticatedSettingsCache, readGuestSettings, wr
 import { canonicalDevHudSettings, defaultDevHudSettings } from "./settings-contract";
 import { LifecycleState, RuntimePlatform, type NativeBridgeEventV1, type NativeBridgeRequestV1, type NativeBridgeResponseV1, type NativeBridgeV1, type RuntimeSnapshot } from "./native-bridge";
 import { clearIdentityForApiChange, DevHudServiceBoundary, useIdentitySettings } from "./service-boundary";
+import { ShortcutActionId, ShortcutKey } from "./shortcuts";
 
 const runtime: RuntimeSnapshot = {
   bridgeVersion: 1,
@@ -187,6 +188,45 @@ describe("generated Connect identity/settings fixture", () => {
     expect(within(capture).getByText(messages.en.unavailable)).toBeTruthy();
     const palette = screen.getByRole("group", { name: messages.en.openPalette });
     expect((palette as HTMLFieldSetElement).disabled).toBe(false);
+  });
+
+  it("reapplies persisted shortcut bindings after permission becomes available", async () => {
+    const bindings = {
+      ...defaultDevHudSettings.shortcuts.desktop,
+      [ShortcutActionId.CommandPalette]: { enabled: false, modifiers: [], key: ShortcutKey.Q },
+    };
+    writeGuestSettings(localStorage, { ...defaultDevHudSettings, shortcuts: { ...defaultDevHudSettings.shortcuts, desktop: bindings } });
+    const requests: NativeBridgeRequestV1[] = [];
+    let permissionAvailable = false;
+    const bridge: NativeBridgeV1 = {
+      async request(request) {
+        requests.push(request);
+        if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
+        if (request.operation === "secure.read") return { kind: "secure-value", value: null };
+        if (request.operation === "auth.take-pending-callback") return { kind: "auth-callback", url: null };
+        if (request.operation === "shortcuts.request-permission") {
+          permissionAvailable = true;
+          return { kind: "shortcut-status", platform: "macos", permission: "available", bindings: defaultDevHudSettings.shortcuts.desktop, error: null };
+        }
+        if (request.operation === "shortcuts.apply") return { kind: "shortcut-status", platform: "macos", permission: permissionAvailable ? "available" : "not-determined", bindings: request.bindings, error: permissionAvailable ? null : "permission-denied" };
+        throw new Error(`unexpected bridge operation ${request.operation}`);
+      },
+      async listen() { return () => {}; },
+    };
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    render(<App bridge={bridge} initialRuntime={runtime} />);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.settings }));
+    const permission = await screen.findByRole("button", { name: messages.en.shortcutRequestPermission });
+    requests.splice(0);
+    fireEvent.click(permission);
+
+    await waitFor(() => expect(requests.filter((request) => request.operation.startsWith("shortcuts.")).map((request) => request.operation)).toEqual(["shortcuts.request-permission", "shortcuts.apply"]));
+    expect(requests.find((request) => request.operation === "shortcuts.apply")).toEqual({ operation: "shortcuts.apply", bindings });
   });
 
   it("keeps synchronized appearance controls read-only while a replacement is pending", async () => {
