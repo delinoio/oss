@@ -8,6 +8,7 @@ use tracing::error;
 const SERVICE: &str = "io.delino.devhud.secure-settings.v1";
 const INDEX_ACCOUNT: &str = "__index__";
 const CHUNK_MANIFEST_PREFIX: &str = "devhud-credential-chunks-v1:";
+const CHUNK_MANIFEST_VERSION: u8 = 2;
 const WINDOWS_CREDENTIAL_CHUNK_BYTES: usize = 1024;
 const WINDOWS_CREDENTIAL_MAX_CHUNKS: usize = 64;
 
@@ -34,7 +35,9 @@ struct ChunkManifest {
 
 trait CredentialBackend {
     fn get(&self, account: &str) -> Result<Option<String>, String>;
+    fn get_secret(&self, account: &str) -> Result<Option<Vec<u8>>, String>;
     fn set(&self, account: &str, value: &str) -> Result<(), String>;
+    fn set_secret(&self, account: &str, value: &[u8]) -> Result<(), String>;
     fn delete(&self, account: &str) -> Result<(), String>;
 }
 
@@ -55,9 +58,23 @@ impl CredentialBackend for KeyringBackend {
         }
     }
 
+    fn get_secret(&self, account: &str) -> Result<Option<Vec<u8>>, String> {
+        match Self::entry(account)?.get_secret() {
+            Ok(value) => Ok(Some(value)),
+            Err(Error::NoEntry) => Ok(None),
+            Err(_) => Err("storage-failure".to_string()),
+        }
+    }
+
     fn set(&self, account: &str, value: &str) -> Result<(), String> {
         Self::entry(account)?
             .set_password(value)
+            .map_err(|_| "storage-failure".to_string())
+    }
+
+    fn set_secret(&self, account: &str, value: &[u8]) -> Result<(), String> {
+        Self::entry(account)?
+            .set_secret(value)
             .map_err(|_| "storage-failure".to_string())
     }
 
@@ -98,9 +115,9 @@ fn handle_with_backend<B: CredentialBackend>(
         Some("secure.remove") => {
             let setting = parse_setting(request)?;
             delete_value(backend, &setting, chunk_values)?;
-            let mut index = read_index(backend)?;
+            let mut index = read_index(backend, chunk_values)?;
             index.remove(&setting);
-            write_index(backend, &index)?;
+            write_index(backend, &index, chunk_values)?;
             Ok(serde_json::json!({ "kind": "ok" }))
         }
         Some("secure.purge") => {
@@ -118,14 +135,14 @@ fn write_setting<B: CredentialBackend>(
     chunk_values: bool,
 ) -> Result<(), String> {
     let previous = read_value(backend, setting, chunk_values)?;
-    let mut index = read_index(backend)?;
+    let mut index = read_index(backend, chunk_values)?;
     let already_indexed = index.contains(setting);
     write_value(backend, setting, value, chunk_values)?;
     if already_indexed {
         return Ok(());
     }
     index.insert(setting.clone());
-    if let Err(reason) = write_index(backend, &index) {
+    if let Err(reason) = write_index(backend, &index, chunk_values) {
         let rollback = match previous {
             Some(previous) => write_value(backend, setting, &previous, chunk_values),
             None => delete_value(backend, setting, chunk_values),
@@ -153,7 +170,7 @@ fn purge<B: CredentialBackend>(
     {
         return Err("invalid-argument".to_string());
     }
-    let mut index = read_index(backend)?;
+    let mut index = read_index(backend, chunk_values)?;
     let targets: Vec<_> = index
         .iter()
         .filter(|setting| should_remove(setting, scope, profile))
@@ -163,7 +180,7 @@ fn purge<B: CredentialBackend>(
         delete_value(backend, &setting, chunk_values)?;
         index.remove(&setting);
     }
-    write_index(backend, &index)
+    write_index(backend, &index, chunk_values)
 }
 
 fn should_remove(setting: &SettingRef, scope: &str, profile: Option<&str>) -> bool {
@@ -201,29 +218,46 @@ fn read_value<B: CredentialBackend>(
     chunk_values: bool,
 ) -> Result<Option<String>, String> {
     let account = setting.account();
-    let Some(stored) = backend.get(&account)? else {
+    if !chunk_values {
+        return backend.get(&account);
+    }
+    read_chunked_value(backend, &account)
+}
+
+fn read_chunked_value<B: CredentialBackend>(
+    backend: &B,
+    account: &str,
+) -> Result<Option<String>, String> {
+    let Some(stored) = backend.get(account)? else {
         return Ok(None);
     };
-    if !chunk_values {
-        return Ok(Some(stored));
-    }
     let Some(manifest) = parse_manifest(&stored)? else {
         return Ok(Some(stored));
     };
-    let mut value = String::with_capacity(manifest.bytes);
+    let mut value = Vec::with_capacity(manifest.bytes);
     for index in 0..manifest.chunks {
-        let chunk = backend
-            .get(&chunk_account(&account, manifest.slot, index))?
-            .ok_or_else(|| "storage-failure".to_string())?;
+        let chunk_account = chunk_account(account, manifest.slot, index);
+        let chunk = if manifest.version == 1 {
+            backend
+                .get(&chunk_account)?
+                .map(String::into_bytes)
+                .ok_or_else(|| "storage-failure".to_string())?
+        } else {
+            backend
+                .get_secret(&chunk_account)?
+                .ok_or_else(|| "storage-failure".to_string())?
+        };
         if chunk.len() > WINDOWS_CREDENTIAL_CHUNK_BYTES {
             return Err("storage-failure".to_string());
         }
-        value.push_str(&chunk);
+        value.extend_from_slice(&chunk);
     }
     if value.len() != manifest.bytes {
         return Err("storage-failure".to_string());
     }
-    Ok(Some(value))
+    String::from_utf8(value)
+        .map(Some)
+        .map_err(|_| "storage-failure".to_string())
 }
 
 fn write_value<B: CredentialBackend>(
@@ -236,8 +270,16 @@ fn write_value<B: CredentialBackend>(
     if !chunk_values {
         return backend.set(&account, value);
     }
+    write_chunked_value(backend, &account, value)
+}
+
+fn write_chunked_value<B: CredentialBackend>(
+    backend: &B,
+    account: &str,
+    value: &str,
+) -> Result<(), String> {
     let old_manifest = backend
-        .get(&account)?
+        .get(account)?
         .as_deref()
         .map(parse_manifest)
         .transpose()?
@@ -248,14 +290,14 @@ fn write_value<B: CredentialBackend>(
     let chunks = split_chunks(value)?;
     let mut written = 0;
     for (index, chunk) in chunks.iter().enumerate() {
-        if let Err(reason) = backend.set(&chunk_account(&account, slot, index), chunk) {
-            cleanup_chunks(backend, &account, slot, written);
+        if let Err(reason) = backend.set_secret(&chunk_account(account, slot, index), chunk) {
+            cleanup_chunks(backend, account, slot, written);
             return Err(reason);
         }
         written += 1;
     }
     let manifest = ChunkManifest {
-        version: 1,
+        version: CHUNK_MANIFEST_VERSION,
         slot,
         chunks: chunks.len(),
         bytes: value.len(),
@@ -264,16 +306,16 @@ fn write_value<B: CredentialBackend>(
         "{CHUNK_MANIFEST_PREFIX}{}",
         serde_json::to_string(&manifest).map_err(|_| "storage-failure")?
     );
-    if let Err(reason) = backend.set(&account, &encoded) {
-        cleanup_chunks(backend, &account, slot, written);
+    if let Err(reason) = backend.set(account, &encoded) {
+        cleanup_chunks(backend, account, slot, written);
         return Err(reason);
     }
     if let Some(old) = old_manifest {
-        cleanup_chunks(backend, &account, old.slot, old.chunks);
+        cleanup_chunks(backend, account, old.slot, old.chunks);
     }
     for index in chunks.len()..WINDOWS_CREDENTIAL_MAX_CHUNKS {
         if backend
-            .delete(&chunk_account(&account, slot, index))
+            .delete(&chunk_account(account, slot, index))
             .is_err()
         {
             error!(event = "secure_store_stale_chunk_cleanup_failed");
@@ -289,14 +331,19 @@ fn delete_value<B: CredentialBackend>(
     chunk_values: bool,
 ) -> Result<(), String> {
     let account = setting.account();
-    if chunk_values {
-        for slot in 0..=1 {
-            for index in 0..WINDOWS_CREDENTIAL_MAX_CHUNKS {
-                backend.delete(&chunk_account(&account, slot, index))?;
-            }
+    if !chunk_values {
+        return backend.delete(&account);
+    }
+    delete_chunked_value(backend, &account)
+}
+
+fn delete_chunked_value<B: CredentialBackend>(backend: &B, account: &str) -> Result<(), String> {
+    for slot in 0..=1 {
+        for index in 0..WINDOWS_CREDENTIAL_MAX_CHUNKS {
+            backend.delete(&chunk_account(account, slot, index))?;
         }
     }
-    backend.delete(&account)
+    backend.delete(account)
 }
 
 fn parse_manifest(value: &str) -> Result<Option<ChunkManifest>, String> {
@@ -305,7 +352,7 @@ fn parse_manifest(value: &str) -> Result<Option<ChunkManifest>, String> {
     };
     let manifest: ChunkManifest =
         serde_json::from_str(value).map_err(|_| "storage-failure".to_string())?;
-    if manifest.version != 1
+    if !matches!(manifest.version, 1 | CHUNK_MANIFEST_VERSION)
         || manifest.slot > 1
         || manifest.chunks == 0
         || manifest.chunks > WINDOWS_CREDENTIAL_MAX_CHUNKS
@@ -316,27 +363,17 @@ fn parse_manifest(value: &str) -> Result<Option<ChunkManifest>, String> {
     Ok(Some(manifest))
 }
 
-fn split_chunks(value: &str) -> Result<Vec<&str>, String> {
+fn split_chunks(value: &str) -> Result<Vec<&[u8]>, String> {
     if value.len() > WINDOWS_CREDENTIAL_CHUNK_BYTES * WINDOWS_CREDENTIAL_MAX_CHUNKS {
         return Err("storage-failure".to_string());
     }
     if value.is_empty() {
-        return Ok(vec![""]);
+        return Ok(vec![&[]]);
     }
-    let mut chunks = Vec::new();
-    let mut start = 0;
-    while start < value.len() {
-        let mut end = (start + WINDOWS_CREDENTIAL_CHUNK_BYTES).min(value.len());
-        while !value.is_char_boundary(end) {
-            end -= 1;
-        }
-        if end == start {
-            return Err("storage-failure".to_string());
-        }
-        chunks.push(&value[start..end]);
-        start = end;
-    }
-    Ok(chunks)
+    Ok(value
+        .as_bytes()
+        .chunks(WINDOWS_CREDENTIAL_CHUNK_BYTES)
+        .collect())
 }
 
 fn chunk_account(account: &str, slot: u8, index: usize) -> String {
@@ -354,8 +391,16 @@ fn cleanup_chunks<B: CredentialBackend>(backend: &B, account: &str, slot: u8, ch
     }
 }
 
-fn read_index<B: CredentialBackend>(backend: &B) -> Result<BTreeSet<SettingRef>, String> {
-    let Some(value) = backend.get(INDEX_ACCOUNT)? else {
+fn read_index<B: CredentialBackend>(
+    backend: &B,
+    chunk_values: bool,
+) -> Result<BTreeSet<SettingRef>, String> {
+    let value = if chunk_values {
+        read_chunked_value(backend, INDEX_ACCOUNT)?
+    } else {
+        backend.get(INDEX_ACCOUNT)?
+    };
+    let Some(value) = value else {
         return Ok(BTreeSet::new());
     };
     let tuples: Vec<(String, String)> =
@@ -369,18 +414,25 @@ fn read_index<B: CredentialBackend>(backend: &B) -> Result<BTreeSet<SettingRef>,
 fn write_index<B: CredentialBackend>(
     backend: &B,
     index: &BTreeSet<SettingRef>,
+    chunk_values: bool,
 ) -> Result<(), String> {
     if index.is_empty() {
-        return backend.delete(INDEX_ACCOUNT);
+        return if chunk_values {
+            delete_chunked_value(backend, INDEX_ACCOUNT)
+        } else {
+            backend.delete(INDEX_ACCOUNT)
+        };
     }
     let tuples: Vec<_> = index
         .iter()
         .map(|setting| (&setting.kind, &setting.profile_id))
         .collect();
-    backend.set(
-        INDEX_ACCOUNT,
-        &serde_json::to_string(&tuples).map_err(|_| "storage-failure")?,
-    )
+    let encoded = serde_json::to_string(&tuples).map_err(|_| "storage-failure")?;
+    if chunk_values {
+        write_chunked_value(backend, INDEX_ACCOUNT, &encoded)
+    } else {
+        backend.set(INDEX_ACCOUNT, &encoded)
+    }
 }
 
 #[cfg(test)]
@@ -388,19 +440,38 @@ mod tests {
     use std::{cell::RefCell, collections::BTreeMap};
 
     use super::{
-        CredentialBackend, INDEX_ACCOUNT, SettingRef, chunk_account, delete_value, read_value,
-        should_remove, split_chunks, write_setting, write_value,
+        CHUNK_MANIFEST_PREFIX, ChunkManifest, CredentialBackend, INDEX_ACCOUNT, SettingRef,
+        chunk_account, delete_value, read_index, read_value, should_remove, split_chunks,
+        write_index, write_setting, write_value,
     };
+
+    #[derive(Clone, Debug, Eq, PartialEq)]
+    enum MemoryCredential {
+        Password(String),
+        Secret(Vec<u8>),
+    }
 
     #[derive(Default)]
     struct MemoryBackend {
-        values: RefCell<BTreeMap<String, String>>,
+        values: RefCell<BTreeMap<String, MemoryCredential>>,
         fail_next_set: RefCell<Option<String>>,
     }
 
     impl CredentialBackend for MemoryBackend {
         fn get(&self, account: &str) -> Result<Option<String>, String> {
-            Ok(self.values.borrow().get(account).cloned())
+            match self.values.borrow().get(account) {
+                Some(MemoryCredential::Password(value)) => Ok(Some(value.clone())),
+                Some(MemoryCredential::Secret(_)) => Err("storage-failure".to_string()),
+                None => Ok(None),
+            }
+        }
+
+        fn get_secret(&self, account: &str) -> Result<Option<Vec<u8>>, String> {
+            match self.values.borrow().get(account) {
+                Some(MemoryCredential::Secret(value)) => Ok(Some(value.clone())),
+                Some(MemoryCredential::Password(_)) => Err("storage-failure".to_string()),
+                None => Ok(None),
+            }
         }
 
         fn set(&self, account: &str, value: &str) -> Result<(), String> {
@@ -408,9 +479,22 @@ mod tests {
                 self.fail_next_set.borrow_mut().take();
                 return Err("storage-failure".to_string());
             }
-            self.values
-                .borrow_mut()
-                .insert(account.to_string(), value.to_string());
+            self.values.borrow_mut().insert(
+                account.to_string(),
+                MemoryCredential::Password(value.to_string()),
+            );
+            Ok(())
+        }
+
+        fn set_secret(&self, account: &str, value: &[u8]) -> Result<(), String> {
+            if self.fail_next_set.borrow().as_deref() == Some(account) {
+                self.fail_next_set.borrow_mut().take();
+                return Err("storage-failure".to_string());
+            }
+            self.values.borrow_mut().insert(
+                account.to_string(),
+                MemoryCredential::Secret(value.to_vec()),
+            );
             Ok(())
         }
 
@@ -472,15 +556,75 @@ mod tests {
     fn windows_credentials_round_trip_the_full_utf8_contract_in_bounded_chunks() {
         let backend = MemoryBackend::default();
         let setting = setting("logto-session", "profile");
-        let value = format!("{}{}", "a".repeat(60 * 1024), "한".repeat(1024));
+        let value = "한".repeat(21_845);
+        assert_eq!(value.len(), (64 * 1024) - 1);
         write_value(&backend, &setting, &value, true).expect("write chunks");
+        let chunks = split_chunks(&value).expect("chunks");
+        assert_eq!(chunks.len(), 64);
+        assert!(chunks.iter().all(|chunk| chunk.len() <= 1024));
+        assert_eq!(chunks.concat(), "한".repeat(21_845).as_bytes());
         assert_eq!(read_value(&backend, &setting, true), Ok(Some(value)));
         assert!(
-            split_chunks("한글".repeat(1000).as_str())
-                .expect("chunks")
-                .iter()
-                .all(|chunk| chunk.len() <= 1024)
+            backend
+                .values
+                .borrow()
+                .values()
+                .all(|credential| match credential {
+                    MemoryCredential::Password(value) => value.len() <= 1024,
+                    MemoryCredential::Secret(value) => value.len() <= 1024,
+                })
         );
+    }
+
+    #[test]
+    fn windows_credentials_read_legacy_string_chunks() {
+        let backend = MemoryBackend::default();
+        let setting = setting("logto-session", "profile");
+        let first = "한".repeat(300);
+        let second = "글".repeat(100);
+        let value = format!("{first}{second}");
+        backend
+            .set(&chunk_account(&setting.account(), 0, 0), &first)
+            .expect("first legacy chunk");
+        backend
+            .set(&chunk_account(&setting.account(), 0, 1), &second)
+            .expect("second legacy chunk");
+        let manifest = ChunkManifest {
+            version: 1,
+            slot: 0,
+            chunks: 2,
+            bytes: value.len(),
+        };
+        backend
+            .set(
+                &setting.account(),
+                &format!(
+                    "{CHUNK_MANIFEST_PREFIX}{}",
+                    serde_json::to_string(&manifest).expect("manifest")
+                ),
+            )
+            .expect("legacy manifest");
+
+        assert_eq!(read_value(&backend, &setting, true), Ok(Some(value)));
+    }
+
+    #[test]
+    fn windows_index_round_trips_across_bounded_physical_chunks() {
+        let backend = MemoryBackend::default();
+        let index = (0..24)
+            .map(|number| setting("github-pat", &format!("{number:03}{}", "p".repeat(125))))
+            .collect();
+        write_index(&backend, &index, true).expect("write chunked index");
+
+        assert_eq!(read_index(&backend, true), Ok(index));
+        assert!(matches!(
+            backend.values.borrow().get(INDEX_ACCOUNT),
+            Some(MemoryCredential::Password(value)) if value.starts_with(CHUNK_MANIFEST_PREFIX)
+        ));
+        assert!(backend.values.borrow().iter().all(|(account, credential)| {
+            !account.starts_with(&format!("{INDEX_ACCOUNT}:__chunk_v1:"))
+                || matches!(credential, MemoryCredential::Secret(value) if value.len() <= 1024)
+        }));
     }
 
     #[test]
@@ -507,7 +651,7 @@ mod tests {
         write_value(&backend, &setting, &"b".repeat(1024), true).expect("second generation");
         backend.values.borrow_mut().insert(
             chunk_account(&setting.account(), 0, 63),
-            "stale".to_string(),
+            MemoryCredential::Secret(b"stale".to_vec()),
         );
         delete_value(&backend, &setting, true).expect("delete");
         assert!(

@@ -258,10 +258,10 @@ function url(value: unknown, path: string, httpsOnly = false): string {
   const parsed = text(value, path);
   try {
     const candidate = new URL(parsed);
-    if (candidate.username || candidate.password || (httpsOnly && candidate.protocol !== "https:")) throw new Error();
+    if (candidate.username || candidate.password || candidate.href.includes("?") || candidate.href.includes("#") || (httpsOnly && candidate.protocol !== "https:")) throw new Error();
     return candidate.toString();
   } catch {
-    throw new SettingsContractError(path, httpsOnly ? "must be an HTTPS URL without credentials" : "must be a URL without credentials");
+    throw new SettingsContractError(path, httpsOnly ? "must be an HTTPS URL without credentials, query, or fragment" : "must be a URL without credentials, query, or fragment");
   }
 }
 

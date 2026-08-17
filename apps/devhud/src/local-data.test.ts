@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clearAllContractedLocalData, clearAuthenticatedOriginData, hasGuestSettings, readAuthenticatedSettingsCache, readCachedIdentityBootstrap, writeAuthenticatedSettingsCache, writeCachedIdentityBootstrap, writeGuestSettings } from "./local-data";
+import { clearAllContractedLocalData, clearAuthenticatedOriginData, clearAuthenticatedSettingsCache, hasGuestSettings, readAuthenticatedSettingsCache, readCachedIdentityBootstrap, writeAuthenticatedSettingsCache, writeCachedIdentityBootstrap, writeGuestSettings } from "./local-data";
 import { defaultDevHudSettings } from "./settings-contract";
 
 class MemoryStorage implements Storage {
@@ -40,5 +40,34 @@ describe("local identity data lifecycle", () => {
     expect(hasGuestSettings(storage)).toBe(false);
     expect(storage.length).toBe(1);
     expect(storage.getItem("devhud.shell.preferences.v1")).toBe("local-device-preferences");
+  });
+
+  it("keeps authenticated cache writes best-effort when persistence rejects writes", () => {
+    const storage = { setItem: () => { throw new DOMException("quota exceeded", "QuotaExceededError"); } };
+    expect(() => writeCachedIdentityBootstrap(storage, "https://api.example", { issuer: "https://identity.example/", audience: "https://api.example", clientId: "desktop", redirectUri: "devhud://auth/callback" })).not.toThrow();
+    expect(() => writeAuthenticatedSettingsCache(storage, "https://api.example", { settings: defaultDevHudSettings, revision: 1n, cachedAt: "2026-08-17T00:00:00.000Z" })).not.toThrow();
+  });
+
+  it("clears only the authenticated settings snapshot when a session becomes invalid", () => {
+    const storage = new MemoryStorage();
+    const apiOrigin = "https://api.example";
+    const bootstrap = { issuer: "https://identity.example/", audience: "https://api.example", clientId: "desktop", redirectUri: "devhud://auth/callback" as const };
+    writeCachedIdentityBootstrap(storage, apiOrigin, bootstrap);
+    writeAuthenticatedSettingsCache(storage, apiOrigin, { settings: defaultDevHudSettings, revision: 7n, cachedAt: "2026-08-17T00:00:00.000Z" });
+
+    clearAuthenticatedSettingsCache(storage, apiOrigin);
+
+    expect(readAuthenticatedSettingsCache(storage, apiOrigin)).toBeNull();
+    expect(readCachedIdentityBootstrap(storage, apiOrigin)).toEqual(bootstrap);
+  });
+
+  it("tombstones an invalid session cache when Web Storage rejects removal", () => {
+    const storage = new MemoryStorage();
+    const apiOrigin = "https://removal-failure.example";
+    writeAuthenticatedSettingsCache(storage, apiOrigin, { settings: defaultDevHudSettings, revision: 7n, cachedAt: "2026-08-17T00:00:00.000Z" });
+
+    clearAuthenticatedSettingsCache({ removeItem: () => { throw new DOMException("denied", "SecurityError"); } }, apiOrigin);
+
+    expect(readAuthenticatedSettingsCache(storage, apiOrigin)).toBeNull();
   });
 });

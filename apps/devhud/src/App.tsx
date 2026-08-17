@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { messages } from "./localization";
+import type { IdentitySession } from "./identity-client";
 import { AccountIdentity, FirstRunIdentity, SynchronizedSettingsBoundary } from "./identity-ui";
 import { LifecycleState, NativeBridgeError, NotificationPermission, RuntimePlatform, nativeBridge, type NativeBridgeEventV1, type NativeBridgeV1, type RuntimeSnapshot } from "./native-bridge";
 import { clearIdentityForApiChange, DevHudServiceBoundary } from "./service-boundary";
@@ -60,6 +61,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   const paletteTrigger = useRef<HTMLButtonElement>(null);
   const rightModifier = useRef<"ControlRight" | "MetaRight" | null>(null);
   const externalAttempt = useRef(0);
+  const identitySession = useRef<IdentitySession | null>(null);
   const language = preferences.language === LanguagePreference.System ? systemLanguage : preferences.language;
   const copy = messages[language];
   const runtimeCapabilities = runtime ? capabilitiesFor(runtime) : { available: new Set<PlatformCapability>() };
@@ -237,7 +239,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
     const normalized = normalizeApiOrigin(nextOrigin);
     if (normalized === null || normalized === normalizeApiOrigin(preferences.apiOrigin)) return;
     if (!window.confirm(copy.apiChangeConfirm)) return;
-    try { await clearIdentityForApiChange(bridge, storage, preferences.apiOrigin); }
+    try { await clearIdentityForApiChange(bridge, storage, preferences.apiOrigin, identitySession); }
     catch { setExternalMessage("failed"); return; }
     setAuthCallback(null);
     update({ apiOrigin: normalized });
@@ -266,7 +268,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   const externalMessageText = externalMessage === "invalid-api-origin" ? copy.invalidApiOrigin : externalMessage === "opened" ? copy.externalOpened : copy.externalFailed;
   const externalMessageIsError = externalMessage !== "opened";
 
-  const boundary = (content: ReactNode) => runtime ? <DevHudServiceBoundary key={preferences.apiOrigin} apiOrigin={preferences.apiOrigin} active={onboarding || surface === SurfaceId.Account || surface === SurfaceId.Settings || authCallback !== null} online={online} callbackUrl={authCallback} platform={runtime.platform} bridge={bridge} onContinueLocally={finishOnboarding} onLoggedOut={() => setSurface(SurfaceId.Account)}>{content}</DevHudServiceBoundary> : content;
+  const boundary = (content: ReactNode) => runtime ? <DevHudServiceBoundary key={preferences.apiOrigin} apiOrigin={preferences.apiOrigin} active={onboarding || surface === SurfaceId.Account || surface === SurfaceId.Settings || authCallback !== null} online={online} callbackUrl={authCallback} platform={runtime.platform} bridge={bridge} onContinueLocally={finishOnboarding} onLoggedOut={() => setSurface(SurfaceId.Account)} identitySessionRef={identitySession}>{content}</DevHudServiceBoundary> : content;
 
   if (runtimeState.kind !== ContentStateKind.Ready) return <main className="app-shell onboarding" data-devhud-ready="true"><section className="content"><ContentStateView state={runtimeState} copy={copy} onRetry={() => location.reload()} /></section></main>;
 

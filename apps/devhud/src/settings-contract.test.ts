@@ -31,6 +31,31 @@ describe("DevHud settings boundary", () => {
     expect(() => parseDevHudSettings({ ...defaultDevHudSettings, decks: Array.from({ length: 26 }, (_, index) => ({ ...deck, id: `deck-${index}` })) })).toThrow(/at most 25/u);
   });
 
+  it.each(["?token=plain-secret", "?X-Amz-Signature=plain-secret", "#credential", "?", "#"])("rejects query or fragment delimiters in synchronized URL fields: %s", (suffix) => {
+    expect(() => parseDevHudSettings({
+      ...defaultDevHudSettings,
+      urlMappings: [{ sourcePrefix: `https://source.example/path${suffix}`, destinationPrefix: "https://destination.example/path" }],
+    })).toThrow(/without credentials, query, or fragment/u);
+    expect(() => parseDevHudSettings({
+      ...defaultDevHudSettings,
+      urlMappings: [{ sourcePrefix: "https://source.example/path", destinationPrefix: `https://destination.example/path${suffix}` }],
+    })).toThrow(/without credentials, query, or fragment/u);
+    expect(() => parseDevHudSettings({
+      ...defaultDevHudSettings,
+      uploads: {
+        provider: "r2",
+        r2: { profileRef: "profile", bucket: "bucket", endpoint: `https://r2.example${suffix}`, region: "auto", publicBaseUrl: null },
+      },
+    })).toThrow(/without credentials, query, or fragment/u);
+    expect(() => parseDevHudSettings({
+      ...defaultDevHudSettings,
+      uploads: {
+        provider: "r2",
+        r2: { profileRef: "profile", bucket: "bucket", endpoint: "https://r2.example", region: "auto", publicBaseUrl: `https://cdn.example${suffix}` },
+      },
+    })).toThrow(/without credentials, query, or fragment/u);
+  });
+
   it("produces a complete recursive, secret-redacted snapshot diff", () => {
     const local = { deck: { title: "Local", nested: [1, { token: "cleartext" }] }, extra: true };
     const server = { deck: { title: "Server", nested: [2, { token: "different" }] }, added: "github_pat_abcdefghijklmnopqrstuvwxyz" };

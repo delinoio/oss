@@ -86,13 +86,15 @@ export function AccountIdentity({ copy, apiOrigin, inputRef, onApiOrigin }: Acco
     {identity.status === "starting" && <p role="status">{copy.fetchingBootstrap}</p>}
     {identity.status === "error" && <section className="notice" role="alert"><p>{copy.bootstrapFailed}</p><button onClick={identity.retryIdentity}>{copy.retry}</button></section>}
     {(identity.status === "signed-out" || identity.status === "guest") && <button onClick={() => invoke(identity.signIn)} disabled={identity.bootstrap === null}>{copy.signIn}</button>}
-    {identity.status === "authenticated" && <section className="account-session" aria-label={copy.signedInSession}>
-      <p>{identity.account?.displayName || identity.account?.email || copy.signedIn}</p>
+    {identity.status === "authenticated" && identity.accountError && <section className="notice" role="alert"><p>{copy.accountLoadFailed}</p><code>{`account-connect-${identity.accountError.code}`}</code>{identity.accountError.correlationId && <> {copy.correlationId}: <code>{identity.accountError.correlationId}</code></>}<button onClick={() => void identity.retryAccount()}>{copy.retry}</button></section>}
+    {identity.status === "authenticated" && !identity.accountError && identity.account === null && <p role="status">{copy.loadingAccount}</p>}
+    {identity.status === "authenticated" && !identity.accountError && identity.account !== null && <section className="account-session" aria-label={copy.signedInSession}>
+      <p>{identity.account.displayName || identity.account.email || copy.signedIn}</p>
       <div className="actions"><button onClick={() => invoke(identity.logout)}>{copy.logout}</button><button className="danger" onClick={() => setConfirmDelete(true)}>{copy.deleteAccount}</button></div>
     </section>}
     {identity.status === "blocked" && <section className="notice" role="status"><h3>{copy.blockedTitle}</h3><p>{copy.blockedSummary}</p><p>{copy.blockedLocalHint}</p><button onClick={() => invoke(identity.logout)}>{copy.logout}</button></section>}
     {identity.status === "deletion-pending" && <section className="notice" role="status"><h3>{copy.deletionPendingTitle}</h3><p>{copy.deletionPendingSummary}</p>{identity.account?.recoverableUntil && <p>{copy.recoverableUntil}: {new Date(Number(identity.account.recoverableUntil.seconds) * 1000).toLocaleString()}</p>}<div className="actions"><button onClick={() => invoke(identity.restoreAccount)}>{copy.restoreAccount}</button><button onClick={() => invoke(identity.logout)}>{copy.logout}</button></div></section>}
-    {confirmDelete && <section className="confirmation" role="alertdialog" aria-modal="true" aria-labelledby="delete-account-title"><h3 id="delete-account-title">{copy.deleteAccountConfirmTitle}</h3><p>{copy.deleteAccountConfirmSummary}</p><div className="actions"><button className="danger" onClick={() => { setConfirmDelete(false); invoke(identity.deleteAccount); }}>{copy.deleteAccount}</button><button onClick={() => setConfirmDelete(false)}>{copy.cancel}</button></div></section>}
+    {confirmDelete && identity.status === "authenticated" && !identity.accountError && identity.account !== null && <section className="confirmation" role="alertdialog" aria-modal="true" aria-labelledby="delete-account-title"><h3 id="delete-account-title">{copy.deleteAccountConfirmTitle}</h3><p>{copy.deleteAccountConfirmSummary}</p><div className="actions"><button className="danger" onClick={() => { setConfirmDelete(false); invoke(identity.deleteAccount); }}>{copy.deleteAccount}</button><button onClick={() => setConfirmDelete(false)}>{copy.cancel}</button></div></section>}
     {actionError && <p role="alert">{copy.accountActionFailed}</p>}
   </>;
 }

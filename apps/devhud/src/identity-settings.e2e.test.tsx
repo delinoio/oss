@@ -11,7 +11,7 @@ import { messages } from "./localization";
 import { hasGuestSettings, readAuthenticatedSettingsCache, writeAuthenticatedSettingsCache, writeCachedIdentityBootstrap, writeGuestSettings } from "./local-data";
 import { canonicalDevHudSettings, defaultDevHudSettings } from "./settings-contract";
 import { LifecycleState, RuntimePlatform, type NativeBridgeRequestV1, type NativeBridgeResponseV1, type NativeBridgeV1, type RuntimeSnapshot } from "./native-bridge";
-import { DevHudServiceBoundary, useIdentitySettings } from "./service-boundary";
+import { clearIdentityForApiChange, DevHudServiceBoundary, useIdentitySettings } from "./service-boundary";
 
 const runtime: RuntimeSnapshot = {
   bridgeVersion: 1,
@@ -57,6 +57,8 @@ function IdentityStateProbe({ replacement = defaultDevHudSettings }: { readonly 
       data-revision={identity.revision.toString()}
       data-theme={identity.settings.appearance.theme}
       data-error={identity.error ?? ""}
+      data-account-error={identity.accountError?.code ?? ""}
+      data-account-correlation={identity.accountError?.correlationId ?? ""}
       data-correlation={identity.settingsError?.correlationId ?? ""}
       data-query-data-count={queryClient.getQueryCache().getAll().filter((query) => query.state.data !== undefined).length}
     />
@@ -297,6 +299,7 @@ describe("generated Connect identity/settings fixture", () => {
 
   it("clears an invalid session when GetAccount returns unauthenticated", async () => {
     const secureOperations: string[] = [];
+    writeAuthenticatedSettingsCache(localStorage, "https://devhud.api.delino.io", { settings: { ...defaultDevHudSettings, appearance: { ...defaultDevHudSettings.appearance, theme: "dark" } }, revision: 9n, cachedAt: "2026-08-17T00:00:00.000Z" });
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
@@ -310,6 +313,36 @@ describe("generated Connect identity/settings fixture", () => {
 
     await waitFor(() => expect(secureOperations).toContain("secure.remove"));
     expect(screen.getByRole("button", { name: messages.en.signIn })).toBeTruthy();
+    await waitFor(() => expect(readAuthenticatedSettingsCache(localStorage, "https://devhud.api.delino.io")).toBeNull());
+  });
+
+  it("surfaces typed GetAccount failures without exposing destructive actions and retries them", async () => {
+    const correlationId = "018f47a2-7b3c-7def-8abc-1234567890ef";
+    let accountRequests = 0;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) {
+        accountRequests += 1;
+        if (accountRequests === 1) return new Response(JSON.stringify({ code: "unavailable", message: "retry later" }), { status: 503, headers: { "Content-Type": "application/json", "x-devhud-correlation-id": correlationId } });
+        return connectResponse({ account: fixture.account });
+      }
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 1, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
+      throw new Error(`unexpected fixture request ${url}`);
+    }));
+
+    render(<App bridge={authenticatedBridge()} initialRuntime={runtime} />);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.account }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain(messages.en.accountLoadFailed);
+    expect(alert.textContent).toContain("account-connect-14");
+    expect(alert.textContent).toContain(correlationId);
+    expect(screen.queryByRole("button", { name: messages.en.deleteAccount })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: messages.en.retry }));
+
+    expect(await screen.findByText("Fixture User")).toBeTruthy();
+    expect(accountRequests).toBe(2);
   });
 
   it.each([
@@ -389,6 +422,61 @@ describe("generated Connect identity/settings fixture", () => {
     fireEvent.click(screen.getByRole("button", { name: messages.en.account }));
 
     await waitFor(() => expect((screen.getByRole("button", { name: messages.en.signIn }) as HTMLButtonElement).disabled).toBe(false));
+  });
+
+  it("keeps authenticated settings usable when Web Storage rejects cache writes", async () => {
+    const originalSetItem = Storage.prototype.setItem;
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (this: Storage, key, value) {
+      if (key.endsWith(".settings")) throw new DOMException("quota exceeded", "QuotaExceededError");
+      originalSetItem.call(this, key, value);
+    });
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 1, revision: "7", canonicalJson: encodedSettings(defaultDevHudSettings) } });
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    renderIdentityProbe(authenticatedBridge());
+
+    await waitFor(() => {
+      const state = screen.getByTestId("identity-state");
+      expect(state.dataset.status).toBe("authenticated");
+      expect(state.dataset.readOnly).toBe("false");
+      expect(state.dataset.revision).toBe("7");
+      expect(state.dataset.error).toBe("");
+    });
+  });
+
+  it("drains the old identity session before the final API-origin purge", async () => {
+    const operations: string[] = [];
+    let release: (() => void) | undefined;
+    const draining = new Promise<void>((resolve) => { release = resolve; });
+    const sessionRef = {
+      current: {
+        clear: async () => {
+          operations.push("drain-start");
+          await draining;
+          operations.push("late-secure-write-settled");
+        },
+      },
+    } as unknown as Parameters<typeof clearIdentityForApiChange>[3];
+    const bridge: NativeBridgeV1 = {
+      async request(request) {
+        if (request.operation === "secure.purge") { operations.push("purge"); return { kind: "ok" }; }
+        throw new Error(`unexpected bridge operation ${request.operation}`);
+      },
+      async listen() { return () => {}; },
+    };
+
+    const clearing = clearIdentityForApiChange(bridge, localStorage, "https://devhud.api.delino.io", sessionRef);
+    await waitFor(() => expect(operations).toEqual(["drain-start"]));
+    expect(sessionRef?.current).toBeNull();
+    release?.();
+    await clearing;
+
+    expect(operations).toEqual(["drain-start", "late-secure-write-settled", "purge"]);
   });
 
   it("keeps the last cached settings read-only and surfaces GetSettings correlation metadata", async () => {

@@ -151,7 +151,7 @@ test("Account opener actions and invalidating edits ignore stale external comple
   assert.match(app, /const external = async \(target: ExternalLinkTarget\) => \{\s+const attempt = externalAttempt\.current \+ 1;\s+externalAttempt\.current = attempt;/u);
   assert.match(app, /if \(attempt === externalAttempt\.current\) setExternalMessage\(message\);/u);
   assert.match(app, /const finishOnboarding = \(\) => \{\s+externalAttempt\.current \+= 1;\s+setExternalMessage\(null\);/u);
-  assert.match(app, /clearIdentityForApiChange\(bridge, storage, preferences\.apiOrigin\)/u);
+  assert.match(app, /clearIdentityForApiChange\(bridge, storage, preferences\.apiOrigin, identitySession\)/u);
   assert.match(identityUi, /identity\.signIn\(\)/u);
 });
 

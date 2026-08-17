@@ -5,6 +5,7 @@ const prefix = "devhud.identity.v1.";
 const guestSettingsKey = `${prefix}guest-settings`;
 const guestUsedKey = `${prefix}guest-used`;
 const accountPrefix = `${prefix}account.`;
+const invalidatedSettingsKeys = new Set<string>();
 
 type ReadStorage = Pick<Storage, "getItem">;
 type WriteStorage = Pick<Storage, "setItem">;
@@ -60,12 +61,18 @@ export function readCachedIdentityBootstrap(storage: ReadStorage, apiOrigin: str
 }
 
 export function writeCachedIdentityBootstrap(storage: WriteStorage, apiOrigin: string, bootstrap: CachedIdentityBootstrap): void {
-  storage.setItem(accountKey(apiOrigin, "bootstrap"), JSON.stringify(bootstrap));
+  try {
+    storage.setItem(accountKey(apiOrigin, "bootstrap"), JSON.stringify(bootstrap));
+  } catch {
+    // Identity bootstrap caching is optional; the online session remains usable when persistence is unavailable.
+  }
 }
 
 export function readAuthenticatedSettingsCache(storage: ReadStorage, apiOrigin: string): CachedSettings | null {
+  const key = accountKey(apiOrigin, "settings");
+  if (invalidatedSettingsKeys.has(key)) return null;
   try {
-    const value: unknown = JSON.parse(storage.getItem(accountKey(apiOrigin, "settings")) ?? "null");
+    const value: unknown = JSON.parse(storage.getItem(key) ?? "null");
     if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
     const record = value as Record<string, unknown>;
     if (typeof record.revision !== "string" || !/^\d+$/u.test(record.revision) || typeof record.cachedAt !== "string") return null;
@@ -76,10 +83,27 @@ export function readAuthenticatedSettingsCache(storage: ReadStorage, apiOrigin: 
 }
 
 export function writeAuthenticatedSettingsCache(storage: WriteStorage, apiOrigin: string, cache: CachedSettings): void {
-  storage.setItem(accountKey(apiOrigin, "settings"), JSON.stringify({ settings: cache.settings, revision: cache.revision.toString(), cachedAt: cache.cachedAt }));
+  const key = accountKey(apiOrigin, "settings");
+  try {
+    storage.setItem(key, JSON.stringify({ settings: cache.settings, revision: cache.revision.toString(), cachedAt: cache.cachedAt }));
+    invalidatedSettingsKeys.delete(key);
+  } catch {
+    // Settings caching is best-effort; a valid service response must remain usable without Web Storage.
+  }
+}
+
+export function clearAuthenticatedSettingsCache(storage: Pick<Storage, "removeItem">, apiOrigin: string): void {
+  const key = accountKey(apiOrigin, "settings");
+  invalidatedSettingsKeys.add(key);
+  try {
+    storage.removeItem(key);
+  } catch {
+    // The in-memory tombstone prevents this session from reading a stale persisted snapshot.
+  }
 }
 
 export function clearAuthenticatedOriginData(storage: MutableStorage, apiOrigin: string): void {
+  invalidatedSettingsKeys.add(accountKey(apiOrigin, "settings"));
   const originPrefix = accountKey(apiOrigin, "");
   removeMatching(storage, (key) => key.startsWith(originPrefix));
 }

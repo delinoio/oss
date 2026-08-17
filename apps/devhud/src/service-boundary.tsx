@@ -15,7 +15,7 @@ import {
 } from "@delinoio/devhud-api-client";
 import { createContext, use, useEffect, useMemo, useRef, useState, type PropsWithChildren, type RefObject } from "react";
 import { createIdentitySession, sessionProfileId, validateBootstrap, type IdentitySession, type ValidatedBootstrap } from "./identity-client";
-import { clearAllContractedLocalData, clearAuthenticatedOriginData, clearGuestImportMarker, hasGuestSettings, readAuthenticatedSettingsCache, readCachedIdentityBootstrap, readGuestSettings, writeAuthenticatedSettingsCache, writeCachedIdentityBootstrap, writeGuestSettings } from "./local-data";
+import { clearAllContractedLocalData, clearAuthenticatedOriginData, clearAuthenticatedSettingsCache, clearGuestImportMarker, hasGuestSettings, readAuthenticatedSettingsCache, readCachedIdentityBootstrap, readGuestSettings, writeAuthenticatedSettingsCache, writeCachedIdentityBootstrap, writeGuestSettings } from "./local-data";
 import type { NativeBridgeV1, RuntimePlatform } from "./native-bridge";
 import { profileRequiresSetup } from "./profile-secrets";
 import { defaultDevHudSettings, decodeDevHudSettings, encodeDevHudSettings, SettingsSchemaVersion, type DevHudSettingsV1 } from "./settings-contract";
@@ -40,11 +40,13 @@ export interface IdentitySettingsValue {
   readonly readOnly: boolean;
   readonly offline: boolean;
   readonly error: string | null;
+  readonly accountError: DevHudClientError | null;
   readonly settingsError: DevHudClientError | null;
   readonly importDiff: readonly SettingsDiffEntry[] | null;
   readonly conflict: SettingsConflict | null;
   readonly signIn: () => Promise<void>;
   readonly retryIdentity: () => void;
+  readonly retryAccount: () => Promise<void>;
   readonly continueLocally: () => void;
   readonly uploadLocal: () => Promise<void>;
   readonly replaceLocal: () => void;
@@ -74,10 +76,12 @@ interface BoundaryProps extends PropsWithChildren {
   readonly bridge: NativeBridgeV1;
   readonly onContinueLocally: () => void;
   readonly onLoggedOut: () => void;
+  readonly identitySessionRef?: RefObject<IdentitySession | null>;
 }
 
 export function DevHudServiceBoundary(props: BoundaryProps) {
-  const sessionRef = useRef<IdentitySession | null>(null);
+  const internalSessionRef = useRef<IdentitySession | null>(null);
+  const sessionRef = props.identitySessionRef ?? internalSessionRef;
   const [identityEpoch, setIdentityEpoch] = useState(0);
   const queryClient = useMemo(() => new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } }), [identityEpoch, props.apiOrigin]);
   const transport = useMemo(() => createConnectTransport({
@@ -110,6 +114,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   const [settings, setSettings] = useState<DevHudSettingsV1>(() => readGuestSettings(storage));
   const [revision, setRevision] = useState(0n);
   const [error, setError] = useState<string | null>(null);
+  const [accountError, setAccountError] = useState<DevHudClientError | null>(null);
   const [settingsError, setSettingsError] = useState<DevHudClientError | null>(null);
   const [importDiff, setImportDiff] = useState<readonly SettingsDiffEntry[] | null>(null);
   const [conflict, setConflict] = useState<SettingsConflict | null>(null);
@@ -146,11 +151,13 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       await current?.clear();
     } finally {
       setAccount(null);
+      setAccountError(null);
       setSettings(defaultDevHudSettings);
       setRevision(0n);
       setSettingsReady(false);
       setSettingsError(null);
       setStatus("signed-out");
+      clearAuthenticatedSettingsCache(storage, apiOrigin);
       await clearIdentityQueryCache();
       onIdentityReset();
     }
@@ -169,6 +176,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       sessionRef.current = null;
       setSession(null);
       setAccount(null);
+      setAccountError(null);
       setSettings(defaultDevHudSettings);
       setRevision(0n);
       setSettingsReady(false);
@@ -203,11 +211,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     void (async () => {
       try {
         const validated = validateBootstrap(bootstrapQuery.data, platform);
-        try {
-          writeCachedIdentityBootstrap(storage, apiOrigin, validated);
-        } catch {
-          // Bootstrap caching is optional; the online session remains usable when Web Storage rejects writes.
-        }
+        writeCachedIdentityBootstrap(storage, apiOrigin, validated);
         const policy = await bridge.request({ operation: "session.configure-origins", apiOrigin, logtoIssuer: validated.issuer });
         if (policy.kind === "session-network-policy" && policy.changed) {
           location.reload();
@@ -287,6 +291,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     if (!accountQuery.data?.account) return;
     const next = accountQuery.data.account;
     setAccount(next);
+    setAccountError(null);
     if (next.deletionState === AccountDeletionState.PURGE_CLAIMED) {
       void clearIrrecoverableAccount().catch(() => {});
     } else if (next.deletionState === AccountDeletionState.PENDING) {
@@ -299,12 +304,25 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     if (!accountQuery.error) return;
     const mapped = mapDevHudError(accountQuery.error);
     if (mapped.kind === "unauthenticated") {
+      setAccountError(null);
       void clearInvalidSession().catch((reason) => setError(safeError(reason)));
     } else if (mapped.kind === "accountPrecondition" && mapped.detail.reason === AccountFailureReason.PURGE_CLAIMED) {
+      setAccountError(null);
       void clearIrrecoverableAccount().catch(() => {});
     } else if (mapped.kind === "permissionDenied") {
-      if (mapped.detail.reason === PermissionFailureReason.ACCOUNT_DELETION_PENDING) setStatus("deletion-pending");
-      if (mapped.detail.reason === PermissionFailureReason.USER_BLOCKED) setStatus("blocked");
+      if (mapped.detail.reason === PermissionFailureReason.ACCOUNT_DELETION_PENDING) {
+        setAccountError(null);
+        setStatus("deletion-pending");
+      } else if (mapped.detail.reason === PermissionFailureReason.USER_BLOCKED) {
+        setAccountError(null);
+        setStatus("blocked");
+      } else {
+        setAccount(null);
+        setAccountError(mapped);
+      }
+    } else {
+      setAccount(null);
+      setAccountError(mapped);
     }
   }, [accountQuery.error]);
 
@@ -413,6 +431,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     readOnly: status !== "authenticated" || !online || !settingsReady || importDiff !== null || conflict !== null,
     offline: !online,
     error,
+    accountError,
     settingsError,
     importDiff,
     conflict,
@@ -425,6 +444,10 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       setError(null);
       setNetworkReady(false);
       setBootstrapAttempt((current) => current + 1);
+    },
+    retryAccount: async () => {
+      setAccountError(null);
+      await accountQuery.refetch();
     },
     continueLocally: () => { setStatus("guest"); onContinueLocally(); },
     uploadLocal: () => replaceAt(settings, revision),
@@ -455,6 +478,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       clearAllContractedLocalData(storage);
       setStatus("signed-out");
       setAccount(null);
+      setAccountError(null);
       setSettings(defaultDevHudSettings);
       setRevision(0n);
       setSettingsReady(false);
@@ -491,7 +515,15 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   return <IdentitySettingsContext value={value}>{children}</IdentitySettingsContext>;
 }
 
-export async function clearIdentityForApiChange(bridge: NativeBridgeV1, storage: Storage, oldApiOrigin: string): Promise<void> {
+export async function clearIdentityForApiChange(
+  bridge: NativeBridgeV1,
+  storage: Storage,
+  oldApiOrigin: string,
+  sessionRef?: RefObject<IdentitySession | null>,
+): Promise<void> {
+  const session = sessionRef?.current ?? null;
+  if (sessionRef) sessionRef.current = null;
+  await session?.clear();
   await bridge.request({ operation: "secure.purge", scope: "api-change", profileId: await sessionProfileId(oldApiOrigin) });
   clearAuthenticatedOriginData(storage, oldApiOrigin);
 }

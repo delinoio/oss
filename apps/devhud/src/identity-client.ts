@@ -129,19 +129,22 @@ export async function createIdentitySession(bootstrap: ValidatedBootstrap, apiOr
     client,
     storage,
     getAccessToken: () => {
-      currentAccessToken ??= client.getAccessToken(bootstrap.audience).catch((reason) => {
-        currentAccessToken = null;
-        throw reason;
-      });
-      return currentAccessToken.then((token) => {
-        currentAccessToken = null;
-        return token;
-      });
+      if (currentAccessToken === null) {
+        const tracked = client.getAccessToken(bootstrap.audience).finally(() => {
+          if (currentAccessToken === tracked) currentAccessToken = null;
+        });
+        currentAccessToken = tracked;
+      }
+      return currentAccessToken;
     },
     isAuthenticated: () => client.isAuthenticated(),
     signIn: () => client.signIn({ redirectUri: bootstrap.redirectUri }),
     handleCallback: (url) => client.handleSignInCallback(url),
-    clear: async () => { await storage.clear(); },
+    clear: async () => {
+      const accessToken = currentAccessToken;
+      if (accessToken !== null) await accessToken.catch(() => {});
+      await storage.clear();
+    },
   };
 }
 
