@@ -120,7 +120,8 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
     private fun openExternal(invoke: Invoke) {
         val args = invoke.getArgs()
         val uri = when (args.getString("target")) {
-            "pat" -> Uri.parse("https://github.com/settings/personal-access-tokens/new")
+            "fine-grained-pat" -> Uri.parse("https://github.com/settings/personal-access-tokens/new?contents=read&issues=write&metadata=read&pull_requests=read")
+            "classic-pat" -> Uri.parse("https://github.com/settings/tokens/new?scopes=repo")
             "authentication" -> Uri.parse(args.getString("apiOrigin")).also {
                 val loopback = it.host == "localhost" || it.host == "::1" || it.host == "[::1]" || it.host?.startsWith("127.") == true
                 val validScheme = it.scheme == "https" || (it.scheme == "http" && loopback)

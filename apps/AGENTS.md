@@ -19,7 +19,7 @@
 - `apps/binpm-docs`: Rspress static documentation app for `binpm`.
 - `apps/nodeup-docs`: Rspress static documentation app for `nodeup`.
 - `apps/public-docs`: Rspress static public documentation app.
-- `apps/devhud`: implemented deterministic bilingual React/TypeScript shell, complete guest/Logto identity and synchronized Settings boundary, and target-isolated Rust/Tauri desktop CEF plus iOS/Android system-webview hosts; capture/GitHub product workflows and native widgets remain planned.
+- `apps/devhud`: implemented deterministic bilingual React/TypeScript shell, complete guest/Logto identity and synchronized Settings boundary, direct-client GitHub.com provider/setup foundation, and target-isolated Rust/Tauri desktop CEF plus iOS/Android system-webview hosts; capture/populated product surfaces and native widgets remain planned.
 - `apps/devhud-chrome-extension`: planned Chrome Manifest V3 DevHud extension.
 - `apps/devhud-admin`: planned DevHud administrator SPA embedded at `/admin`.
 
@@ -34,6 +34,7 @@
 - Android release artifacts grant `INTERNET` for the shared System WebView's authenticated API traffic and `POST_NOTIFICATIONS` for local Deck notifications; this permission does not authorize a native networking client or broaden the mobile dependency closure. Windows Credential Manager adapters must preserve the 64 KiB secure-value contract by keeping every physical value and internal-index credential blob within the platform limit.
 - User-facing DevHud UI, widgets, extension UI, validation, and errors support English and Korean. RealQA is desktop-only; Deck is desktop/mobile. Follow the documented browser-context, local-agent, secret, accessibility, and no-plugin boundaries.
 - Deck refresh intervals are client-polling targets only; suspended widgets use OS-controlled best-effort scheduling and display stale state with the last successful refresh.
+- GitHub.com is the only v1 issue/pull-request provider. Its PAT profiles require explicit per-repository selection with no fallback; PAT values stay in platform secure storage while only stable non-secret IDs/descriptors synchronize. GitHub REST traffic goes directly to `api.github.com`, never through `devhud-api`, and validation/errors must preserve the documented permission/restriction/rate/network distinctions without logging credentials, headers, URL queries/fragments, bodies, or private response data.
 - Update `docs/project-devhud.md` and the applicable DevHud domain contract with every path, UI, platform, interface, or release change.
 - The DevHud iOS widget target must use `io.delino.devhud.widget` with App Group `group.io.delino.devhud` and Keychain access group `$(AppIdentifierPrefix)io.delino.devhud.shared`; the desktop CEF session CSP may add only validated API, GitHub, and signed-upload origins. Chrome captures omit DOM-derived selectors, retain selected bounds only, and redact every path segment before persistence.
 - The implemented DevHud shell keeps its first-party action registry closed and capability-filtered, shows unavailable capture/service actions as unavailable, and persists only versioned non-secret local preferences. First-run onboarding must remain usable when Web Storage is unavailable.

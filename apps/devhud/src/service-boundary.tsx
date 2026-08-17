@@ -19,7 +19,7 @@ import { createIdentitySession, isTerminalAccessTokenError, sessionProfileId, va
 import { clearAllContractedLocalData, clearAuthenticatedOriginData, clearAuthenticatedSettingsCache, clearGuestImportMarker, hasGuestSettings, readAuthenticatedSettingsCache, readCachedIdentityBootstrap, readGuestSettings, writeAuthenticatedSettingsCache, writeCachedIdentityBootstrap, writeGuestSettings } from "./local-data";
 import { SecureSettingKind, type NativeBridgeV1, type RuntimePlatform } from "./native-bridge";
 import { profileRequiresSetup } from "./profile-secrets";
-import { defaultDevHudSettings, decodeDevHudSettings, encodeDevHudSettings, parseDevHudSettings, SettingsSchemaVersion, type DevHudSettingsV1 } from "./settings-contract";
+import { defaultDevHudSettings, decodeDevHudSettings, encodeDevHudSettings, LegacySettingsSchemaVersion, parseDevHudSettings, SettingsSchemaVersion, type DevHudSettingsV1 } from "./settings-contract";
 import { diffSettings, type SettingsDiffEntry } from "./settings-diff";
 import { getLocalStorage, isValidApiOrigin } from "./shell";
 
@@ -455,7 +455,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       throw reason;
     }
     try {
-      const response = await replaceMutation.mutateAsync({ schemaVersion: 1, canonicalJson: Uint8Array.from(canonicalJson), expectedRevision });
+      const response = await replaceMutation.mutateAsync({ schemaVersion: SettingsSchemaVersion, canonicalJson: Uint8Array.from(canonicalJson), expectedRevision });
       let validated: ValidatedSettingsSnapshot;
       try {
         if (!response.snapshot) throw new SettingsSnapshotError("settings response is missing its snapshot");
@@ -681,7 +681,7 @@ class SettingsSnapshotError extends TypeError {}
 
 function validatedSettingsSnapshot(snapshot: { readonly schemaVersion: number; readonly canonicalJson: Uint8Array; readonly revision: bigint } | undefined): ValidatedSettingsSnapshot {
   if (!snapshot) return { settings: defaultDevHudSettings, revision: 0n };
-  if (snapshot.schemaVersion !== SettingsSchemaVersion) throw new SettingsSnapshotError("unsupported settings schema version");
+  if (snapshot.schemaVersion !== LegacySettingsSchemaVersion && snapshot.schemaVersion !== SettingsSchemaVersion) throw new SettingsSnapshotError("unsupported settings schema version");
   try {
     return { settings: decodeDevHudSettings(snapshot.canonicalJson), revision: snapshot.revision };
   } catch (reason) {

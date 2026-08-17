@@ -64,7 +64,11 @@ impl NativeBridgeState {
             .session_origins
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let mut connect = vec!["'self'".to_string(), origins.api_origin.clone()];
+        let mut connect = vec![
+            "'self'".to_string(),
+            origins.api_origin.clone(),
+            "https://api.github.com".to_string(),
+        ];
         if let Some(issuer) = &origins.logto_issuer {
             connect.push(issuer.origin().ascii_serialization());
         }
@@ -221,7 +225,7 @@ fn validate_external_request(request: &Value) -> Result<(), String> {
         .get("target")
         .and_then(Value::as_str)
         .ok_or("invalid-argument")?;
-    if target == "pat" {
+    if target == "fine-grained-pat" || target == "classic-pat" {
         return Ok(());
     }
     if target != "authentication" {
@@ -545,7 +549,7 @@ mod tests {
         .expect("configure origins");
         assert_eq!(changed["changed"], true);
         let csp = state.session_csp(false);
-        assert!(csp.contains("connect-src 'self' https://custom.example https://identity.example"));
+        assert!(csp.contains("connect-src 'self' https://custom.example https://api.github.com https://identity.example"));
         assert!(!csp.contains("devhud.api.delino.io"));
         assert!(!csp.contains("connect-src https:"));
         assert!(!csp.contains("style-src 'self' 'unsafe-inline'"));
@@ -580,7 +584,7 @@ mod tests {
         .expect("change API and clear discovered issuer");
         assert_eq!(api_changed["changed"], true);
         let csp = state.session_csp(false);
-        assert!(csp.contains("connect-src 'self' https://other.example"));
+        assert!(csp.contains("connect-src 'self' https://other.example https://api.github.com"));
         assert!(!csp.contains("identity.example"));
 
         assert_eq!(
@@ -677,7 +681,7 @@ mod tests {
         for request in [
             json!({ "operation": "lifecycle.open-external", "target": "authentication", "apiOrigin": "https://api.delino.io/" }),
             json!({ "operation": "lifecycle.open-external", "target": "authentication", "apiOrigin": "http://127.0.0.1:8787/" }),
-            json!({ "operation": "lifecycle.open-external", "target": "pat", "apiOrigin": "ignored" }),
+            json!({ "operation": "lifecycle.open-external", "target": "fine-grained-pat", "apiOrigin": "ignored" }),
         ] {
             assert_eq!(
                 handle_native_bridge_request(&request, &state),

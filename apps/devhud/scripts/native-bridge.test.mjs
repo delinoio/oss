@@ -14,6 +14,8 @@ const cargoLock = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..
 const desktopSecureStore = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/secure_store.rs"), "utf8");
 const desktopHost = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/main.rs"), "utf8");
 const nativeBridgeHost = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/bridge.rs"), "utf8");
+const androidBridgeHost = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/mobile/android/src/main/java/io/delino/devhud/bridge/DevhudNativePlugin.kt"), "utf8");
+const iosBridgeHost = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/mobile/ios/Sources/DevhudNativePlugin.swift"), "utf8");
 
 test("deep-link fixtures accept only the contracted auth callback", () => {
   assert.deepEqual(tauriConfig.plugins["deep-link"].desktop.schemes, ["devhud"]);
@@ -44,9 +46,18 @@ test("desktop secure storage resolves Keychain, Credential Manager, and Secret S
 test("external navigation is restricted to account destinations", () => {
   assert.doesNotThrow(() => validateExternalRequest({ target: "authentication", apiOrigin: "https://api.delino.io/" }));
   assert.doesNotThrow(() => validateExternalRequest({ target: "authentication", apiOrigin: "http://127.0.0.1:8787/" }));
-  assert.doesNotThrow(() => validateExternalRequest({ target: "pat", apiOrigin: "ignored" }));
+  assert.doesNotThrow(() => validateExternalRequest({ target: "fine-grained-pat", apiOrigin: "ignored" }));
+  assert.doesNotThrow(() => validateExternalRequest({ target: "classic-pat", apiOrigin: "ignored" }));
   assert.throws(() => validateExternalRequest({ target: "authentication", apiOrigin: "http://example.com/" }), NativeBridgeError);
   assert.throws(() => validateExternalRequest({ target: "authentication", apiOrigin: "https://user@example.com/" }), NativeBridgeError);
+});
+
+test("all native hosts expose only the contracted PAT creation links", () => {
+  for (const source of [desktopHost, androidBridgeHost, iosBridgeHost]) {
+    assert.match(source, /personal-access-tokens\/new\?contents=read&issues=write&metadata=read&pull_requests=read/u);
+    assert.match(source, /settings\/tokens\/new\?scopes=repo/u);
+    assert.doesNotMatch(source, /target_name/u);
+  }
 });
 
 test("authentication navigation is restricted to the discovered HTTPS issuer", () => {

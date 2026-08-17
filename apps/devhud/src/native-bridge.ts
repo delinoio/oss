@@ -1,4 +1,5 @@
 import { normalizeLogtoIssuer } from "./identity-contract.ts";
+import { ClassicPatCreationUrl, FineGrainedPatCreationUrl } from "./github-links.ts";
 
 export const NativeBridgeVersion = 1 as const;
 
@@ -86,7 +87,7 @@ export interface WidgetDeckSnapshot {
 export type NativeBridgeRequestV1 =
   | { readonly operation: "runtime.snapshot" }
   | { readonly operation: "session.configure-origins"; readonly apiOrigin: string; readonly logtoIssuer?: string }
-  | { readonly operation: "lifecycle.open-external"; readonly target: "authentication" | "pat"; readonly apiOrigin: string }
+  | { readonly operation: "lifecycle.open-external"; readonly target: "authentication" | "fine-grained-pat" | "classic-pat"; readonly apiOrigin: string }
   | { readonly operation: "auth.open-system-browser"; readonly url: string; readonly issuer: string }
   | { readonly operation: "auth.peek-pending-callback" }
   | { readonly operation: "auth.take-pending-callback" }
@@ -153,9 +154,9 @@ export function validateSecretValue(value: string) {
   }
 }
 
-export function validateExternalRequest(request: { readonly target: "authentication" | "pat"; readonly apiOrigin: string }) {
-  if (!(new Set<string>(["authentication", "pat"])).has(request.target)) throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument);
-  if (request.target === "pat") return;
+export function validateExternalRequest(request: { readonly target: "authentication" | "fine-grained-pat" | "classic-pat"; readonly apiOrigin: string }) {
+  if (!(new Set<string>(["authentication", "fine-grained-pat", "classic-pat"])).has(request.target)) throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument);
+  if (request.target !== "authentication") return;
   try {
     const url = new URL(request.apiOrigin);
     const octets = url.hostname.split(".");
@@ -218,6 +219,7 @@ export const nativeBridge: NativeBridgeV1 = {
       if (request.operation === "auth.peek-pending-callback") return { kind: "auth-callback", url: null };
       if (request.operation === "auth.take-pending-callback") return { kind: "auth-callback", url: null };
       if (request.operation === "auth.open-system-browser") { window.open(request.url, "_blank", "noopener,noreferrer"); return { kind: "ok" }; }
+      if (request.operation === "lifecycle.open-external" && request.target !== "authentication") { window.open(request.target === "fine-grained-pat" ? FineGrainedPatCreationUrl : ClassicPatCreationUrl, "_blank", "noopener,noreferrer"); return { kind: "ok" }; }
       if (request.operation.startsWith("widgets.")) return { kind: "unsupported", feature: "widgets" };
       throw new NativeBridgeError(NativeBridgeErrorCode.Unsupported);
     }

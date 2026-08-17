@@ -85,8 +85,10 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate {
 
     private func openExternal(_ args: RequestArgs, _ invoke: Invoke) throws {
         let destination: URL
-        if args.target == "pat" {
-            destination = URL(string: "https://github.com/settings/personal-access-tokens/new")!
+        if args.target == "fine-grained-pat" {
+            destination = URL(string: "https://github.com/settings/personal-access-tokens/new?contents=read&issues=write&metadata=read&pull_requests=read")!
+        } else if args.target == "classic-pat" {
+            destination = URL(string: "https://github.com/settings/tokens/new?scopes=repo")!
         } else if args.target == "authentication", let origin = args.apiOrigin, let url = URL(string: origin) {
             let host = url.host ?? ""
             let loopback = host == "localhost" || host == "::1" || host.hasPrefix("127.")

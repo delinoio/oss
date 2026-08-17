@@ -1221,7 +1221,7 @@ describe("generated Connect identity/settings fixture", () => {
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
       if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
       if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 1, revision: "1", canonicalJson: encodedSettings(server) } });
-      if (url.endsWith("/devhud.v1.SettingsService/ReplaceSettings")) return connectResponse({ snapshot: { schemaVersion: 2, revision: "2", canonicalJson: encodedSettings(replacement) } });
+      if (url.endsWith("/devhud.v1.SettingsService/ReplaceSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "2", canonicalJson: encodedSettings(replacement) } });
       throw new Error(`unexpected request ${url}`);
     }));
 
@@ -1281,7 +1281,7 @@ describe("generated Connect identity/settings fixture", () => {
       if (url.endsWith("/devhud.v1.SettingsService/ReplaceSettings")) {
         const detail = create(SettingsRevisionConflictSchema, {
           expectedRevision: 1n,
-          currentSnapshot: { schemaVersion: 2, revision: 2n, canonicalJson: new TextEncoder().encode(canonicalDevHudSettings(server)) },
+          currentSnapshot: { schemaVersion: 3, revision: 2n, canonicalJson: new TextEncoder().encode(canonicalDevHudSettings(server)) },
         });
         const value = btoa(String.fromCharCode(...toBinary(SettingsRevisionConflictSchema, detail)));
         return new Response(JSON.stringify({ code: "aborted", message: "settings revision conflict", details: [{ type: SettingsRevisionConflictSchema.typeName, value }] }), { status: 409, headers: { "Content-Type": "application/json" } });
@@ -1345,7 +1345,7 @@ describe("generated Connect identity/settings fixture", () => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
       if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
-      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: invalidRefetch ? 2 : 1, revision: "1", canonicalJson: encodedSettings(server) } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: invalidRefetch ? 3 : 1, revision: "1", canonicalJson: encodedSettings(server) } });
       throw new Error(`unexpected request ${url}`);
     }));
 
@@ -1425,7 +1425,7 @@ describe("generated Connect identity/settings fixture", () => {
   });
 
   it.each([
-    ["unsupported schema", 2, encodedSettings(defaultDevHudSettings)],
+    ["unsupported schema", 3, encodedSettings(defaultDevHudSettings)],
     ["noncanonical body", 1, btoa('{ "schemaVersion": 1 }')],
   ])("keeps malformed server settings recoverable for %s", async (_name, schemaVersion, canonicalJson) => {
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {

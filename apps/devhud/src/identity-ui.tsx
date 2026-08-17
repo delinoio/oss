@@ -1,5 +1,8 @@
 import { useEffect, useEffectEvent, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type Ref } from "react";
 import type { Copy } from "./localization";
+import { GitHubSettings } from "./github-settings-ui.tsx";
+import type { GitHubProvider } from "./github-provider.ts";
+import { nativeBridge, type NativeBridgeV1 } from "./native-bridge.ts";
 import { useIdentitySettings } from "./service-boundary";
 import { LanguagePreference, normalizeApiOrigin, ThemePreference } from "./shell";
 import type { DevHudSettingsV1 } from "./settings-contract";
@@ -118,7 +121,7 @@ export function SynchronizedAppearanceBoundary({ onAppearance }: { readonly onAp
   return null;
 }
 
-export function SynchronizedSettingsBoundary({ copy }: { readonly copy: Copy }) {
+export function SynchronizedSettingsBoundary({ copy, bridge = nativeBridge, githubProvider }: { readonly copy: Copy; readonly bridge?: NativeBridgeV1; readonly githubProvider?: GitHubProvider }) {
   const identity = useIdentitySettings();
   const [actionError, setActionError] = useState(false);
   const invoke = (action: () => Promise<void>) => { setActionError(false); void action().catch(() => setActionError(true)); };
@@ -140,6 +143,7 @@ export function SynchronizedSettingsBoundary({ copy }: { readonly copy: Copy }) 
     {identity.conflict && <SnapshotChoice key="conflict" choiceId="conflict" copy={copy} entries={identity.conflict.diff} title={copy.conflictTitle} summary={copy.conflictSummary} primary={copy.reapplyLocal} secondary={copy.adoptServer} onPrimary={() => invoke(identity.reapplyConflictLocal)} onSecondary={identity.adoptConflictServer} />}
     {(actionError || identity.error?.startsWith("settings-") || identity.settingsError) && <section className="notice" role="alert"><p>{copy.settingsActionFailed}{identity.error?.startsWith("settings-") && <> <code>{identity.error}</code></>}{identity.settingsError && <> <code>{`settings-connect-${identity.settingsError.code}`}</code>{identity.settingsError.correlationId && <> {copy.correlationId}: <code>{identity.settingsError.correlationId}</code></>}</>}</p><button onClick={() => invoke(identity.retrySettings)}>{copy.retry}</button></section>}
     </section>}
+    <GitHubSettings copy={copy} bridge={bridge} provider={githubProvider} />
   </>;
 }
 

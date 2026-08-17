@@ -41,6 +41,27 @@ afterEach(() => {
 });
 
 describe("native App state", () => {
+  it.each([["en", messages.en], ["ko", messages.ko]] as const)("renders the accessible %s GitHub setup surface", async (language, copy) => {
+    localStorage.setItem("devhud.shell.preferences.v1", JSON.stringify({ version: 1, theme: "system", language, apiOrigin: "https://devhud.api.delino.io", launchAtLogin: false }));
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      if (value.operation === "lifecycle.open-external") return { kind: "ok" };
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    render(<App bridge={bridgeWith(request)} initialRuntime={mobileRuntime} />);
+    fireEvent.click(screen.getByRole("button", { name: copy.settings }));
+
+    expect(screen.getByRole("heading", { name: copy.githubSetupTitle })).toBeTruthy();
+    expect(screen.getByText(copy.githubDirectSecurity)).toBeTruthy();
+    expect(screen.getByRole("textbox", { name: copy.githubProfileName })).toBeTruthy();
+    expect((screen.getByLabelText(copy.githubToken) as HTMLInputElement).type).toBe("password");
+    expect(screen.getByRole("combobox", { name: copy.githubTokenKind })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: copy.githubCreateFinePat }));
+    fireEvent.click(screen.getByRole("button", { name: copy.githubCreateClassicPat }));
+    await waitFor(() => expect(request).toHaveBeenCalledWith({ operation: "lifecycle.open-external", target: "classic-pat", apiOrigin: "" }));
+    expect(document.documentElement.lang).toBe(language);
+  });
+
   it.each([
     ["en", messages.en],
     ["ko", messages.ko],

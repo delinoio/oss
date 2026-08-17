@@ -3,6 +3,27 @@ import { canonicalDevHudSettings, decodeDevHudSettings, defaultDevHudSettings, e
 import { diffSettings, redactRecursively, RedactedValue } from "./settings-diff";
 
 describe("DevHud settings boundary", () => {
+  it("migrates schema v1 to v2 with explicit unselected GitHub profiles", () => {
+    const legacy = {
+      ...defaultDevHudSettings,
+      schemaVersion: 1,
+      github: { repositories: [{ owner: "octo", name: "private" }], issueTracker: { owner: "octo", repository: "private", labels: ["bug"] } },
+      decks: [],
+    };
+    const parsed = parseDevHudSettings(legacy);
+    expect(parsed.schemaVersion).toBe(2);
+    expect(parsed.github).toEqual({ profiles: [], repositories: [{ owner: "octo", name: "private", profileRef: null }], issueTracker: { owner: "octo", repository: "private", labels: ["bug"], profileRef: null } });
+  });
+
+  it("accepts non-secret GitHub profile descriptors and rejects secret fields or duplicate IDs", () => {
+    const profile = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", name: "Work", kind: "fine-grained" as const };
+    const settings = { ...defaultDevHudSettings, github: { profiles: [profile], repositories: [{ owner: "octo", name: "private", profileRef: profile.id }], issueTracker: null } };
+    expect(parseDevHudSettings(settings).github.profiles).toEqual([profile]);
+    expect(canonicalDevHudSettings(settings)).not.toMatch(/token|secret|authorization/iu);
+    expect(() => parseDevHudSettings({ ...settings, github: { ...settings.github, profiles: [profile, profile] } })).toThrow(/unique IDs/u);
+    expect(() => parseDevHudSettings({ ...settings, github: { ...settings.github, profiles: [{ ...profile, token: "plain" }] } })).toThrow(/token/iu);
+    expect(() => parseDevHudSettings({ ...settings, github: { ...settings.github, repositories: [{ owner: "octo", name: "private", profileRef: "missing" }] } })).toThrow(/configured GitHub profile/u);
+  });
   it("round trips the exact versioned non-secret contract canonically", () => {
     const encoded = encodeDevHudSettings(defaultDevHudSettings);
     expect(decodeDevHudSettings(encoded)).toEqual(defaultDevHudSettings);
@@ -32,6 +53,7 @@ describe("DevHud settings boundary", () => {
       title: "Deck",
       query: "is:pr",
       repository: null,
+      profileRef: null,
       display: { groupBy: "none", showDrafts: true },
       refreshMinutes: 15,
       notifications: [],
@@ -45,6 +67,7 @@ describe("DevHud settings boundary", () => {
       title: "Deck",
       query: "is:pr",
       repository: null,
+      profileRef: null,
       display: { groupBy: "none", showDrafts: true },
       refreshMinutes: 15,
       notifications: [],
