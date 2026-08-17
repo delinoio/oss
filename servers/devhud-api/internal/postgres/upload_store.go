@@ -337,8 +337,9 @@ func (s *Store) listUploadsForAdministrator(ctx context.Context, filters domain.
 	rows, err := s.pool.Query(ctx, uploadSelect+`
 		WHERE ($1::uuid IS NULL OR u.owner_user_id = $1)
 		AND (cardinality($2::smallint[]) = 0 OR u.state = ANY($2::smallint[])
-			OR (u.state = 4 AND u.finalized_at IS NULL AND 1 = ANY($2::smallint[]))
-			OR (u.state = 4 AND u.finalized_at IS NOT NULL AND 3 = ANY($2::smallint[])))
+			OR (u.state = 4 AND u.removed_at IS NULL AND u.finalized_at IS NULL AND 1 = ANY($2::smallint[]))
+			OR (u.state = 4 AND u.removed_at IS NULL AND u.finalized_at IS NOT NULL AND 3 = ANY($2::smallint[]))
+			OR (u.state = 4 AND u.removed_at IS NOT NULL AND 5 = ANY($2::smallint[])))
 		AND ($3::uuid IS NULL OR u.submission_id = $3)
 		AND ($4::uuid IS NULL OR u.upload_group_id = $4)
 		AND ($5::timestamptz IS NULL OR (u.created_at, u.upload_id) < ($5, $6::uuid))
@@ -385,8 +386,9 @@ func (s *Store) listUploads(ctx context.Context, querier uploadQuerier, ownerID 
 	rows, err := querier.Query(ctx, uploadSelect+`
 		WHERE ($1::uuid IS NULL OR u.owner_user_id = $1)
 		AND (cardinality($2::smallint[]) = 0 OR u.state = ANY($2::smallint[])
-			OR (u.state = 4 AND u.finalized_at IS NULL AND 1 = ANY($2::smallint[]))
-			OR (u.state = 4 AND u.finalized_at IS NOT NULL AND 3 = ANY($2::smallint[])))
+			OR (u.state = 4 AND u.removed_at IS NULL AND u.finalized_at IS NULL AND 1 = ANY($2::smallint[]))
+			OR (u.state = 4 AND u.removed_at IS NULL AND u.finalized_at IS NOT NULL AND 3 = ANY($2::smallint[]))
+			OR (u.state = 4 AND u.removed_at IS NOT NULL AND 5 = ANY($2::smallint[])))
 		AND ($3::uuid IS NULL OR u.submission_id = $3)
 		AND ($4::timestamptz IS NULL OR (u.created_at, u.upload_id) < ($4, $5::uuid))
 		ORDER BY u.created_at DESC, u.upload_id DESC LIMIT $6`, nullableUUID(ownerID), stateValues, nullableUUID(submissionID), cursorTime, cursorID, int(limit)+1)
@@ -445,7 +447,9 @@ func (s *Store) ClaimUploadRemoval(ctx context.Context, ownerID, actorID, upload
 	currentForCAS := upload.State
 	if upload.State == domain.UploadStateRemoving {
 		currentForCAS = domain.UploadStatePending
-		if upload.FinalizedAt != nil {
+		if upload.RemovedAt != nil {
+			currentForCAS = domain.UploadStateQuarantined
+		} else if upload.FinalizedAt != nil {
 			currentForCAS = domain.UploadStateFinalized
 		}
 	}
@@ -536,7 +540,8 @@ func (s *Store) CompleteUploadRemoval(ctx context.Context, uploadID, token strin
 }
 
 func (s *Store) ReleaseUploadRemoval(ctx context.Context, uploadID, token string) error {
-	_, err := s.pool.Exec(ctx, `UPDATE devhud_uploads SET state = CASE WHEN finalized_at IS NULL THEN 1 ELSE 3 END,
+	_, err := s.pool.Exec(ctx, `UPDATE devhud_uploads SET state = CASE
+		WHEN removed_at IS NOT NULL THEN 5 WHEN finalized_at IS NULL THEN 1 ELSE 3 END,
 		operation_token = NULL, operation_expires_at = NULL, removal_reason = NULL
 		WHERE upload_id = $1 AND state = 4 AND operation_token = $2 AND replacement_etag IS NULL`, uploadID, token)
 	return err

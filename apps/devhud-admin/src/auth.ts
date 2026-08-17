@@ -58,7 +58,11 @@ export class AdminAuth {
   async completeCallback(currentUrl: string): Promise<boolean> {
     if (!(await this.client.isSignInRedirected(currentUrl))) return false;
     const expectedNonce = sessionStorage.getItem(NONCE_KEY);
-    if (!expectedNonce) throw new Error("The sign-in nonce is missing.");
+    if (!expectedNonce) {
+      history.replaceState(null, "", new URL("/admin/", window.location.origin));
+      await this.client.clearAllTokens();
+      return false;
+    }
     await this.client.handleSignInCallback(currentUrl);
     const claims = await this.client.getIdTokenClaims();
     sessionStorage.removeItem(NONCE_KEY);

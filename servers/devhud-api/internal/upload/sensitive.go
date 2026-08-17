@@ -77,11 +77,19 @@ func matchesLocalPath(value string) bool {
 }
 
 func containsSensitiveURL(value string, publicAssetBaseURL *url.URL) bool {
-	if matchesSensitiveURL(value, publicAssetBaseURL) {
-		return true
+	for {
+		if matchesSensitiveURL(value, publicAssetBaseURL) {
+			return true
+		}
+		decoded, err := url.PathUnescape(value)
+		if err != nil {
+			return true
+		}
+		if decoded == value {
+			return false
+		}
+		value = decoded
 	}
-	decoded, err := url.PathUnescape(value)
-	return err == nil && decoded != value && matchesSensitiveURL(decoded, publicAssetBaseURL)
 }
 
 func matchesSensitiveURL(value string, publicAssetBaseURL *url.URL) bool {

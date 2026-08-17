@@ -298,6 +298,28 @@ func TestAdministratorUploadListingIncludesRemovingVisibleStates(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	quarantined, err := store.CreateUpload(ctx, domain.CreateUpload{OwnerUserID: user.ID, Target: domain.UploadTarget{Kind: domain.UploadTargetNewSubmission}, SizeBytes: 1, Now: now}, sign)
+	if err != nil {
+		t.Fatal(err)
+	}
+	promotionToken := strings.Repeat("D", 43)
+	if _, err := store.ClaimUploadPromotion(ctx, user.ID, reservationBinding(quarantined, `"etag"`), domain.UploadObject{ETag: `"etag"`}, 1, 1, promotionToken, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CompleteUploadPromotion(ctx, quarantined.UploadID, promotionToken, `"public"`, now); err != nil {
+		t.Fatal(err)
+	}
+	quarantineToken := strings.Repeat("E", 43)
+	if _, err := store.ClaimUploadRemoval(ctx, "", "", quarantined.UploadID, domain.RemovalReasonAdministratorQuarantined, domain.UploadStateFinalized, quarantineToken, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CompleteUploadRemoval(ctx, quarantined.UploadID, quarantineToken, now, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ClaimUploadRemoval(ctx, "", "", quarantined.UploadID, domain.RemovalReasonAdministratorDeleted, domain.UploadStateQuarantined, strings.Repeat("F", 43), now); err != nil {
+		t.Fatal(err)
+	}
+
 	pendingResult, err := store.ListUploadsForAdministrator(ctx, domain.AdminUploadFilters{States: []domain.UploadState{domain.UploadStatePending}}, nil, 10)
 	if err != nil || len(pendingResult.Uploads) != 1 || pendingResult.Uploads[0].UploadID != pending.UploadID {
 		t.Fatalf("pending removing uploads = %+v, err=%v", pendingResult.Uploads, err)
@@ -306,10 +328,14 @@ func TestAdministratorUploadListingIncludesRemovingVisibleStates(t *testing.T) {
 	if err != nil || len(finalizedResult.Uploads) != 1 || finalizedResult.Uploads[0].UploadID != finalized.UploadID {
 		t.Fatalf("finalized removing uploads = %+v, err=%v", finalizedResult.Uploads, err)
 	}
+	quarantinedResult, err := store.ListUploadsForAdministrator(ctx, domain.AdminUploadFilters{States: []domain.UploadState{domain.UploadStateQuarantined}}, nil, 10)
+	if err != nil || len(quarantinedResult.Uploads) != 1 || quarantinedResult.Uploads[0].UploadID != quarantined.UploadID {
+		t.Fatalf("quarantined removing uploads = %+v, err=%v", quarantinedResult.Uploads, err)
+	}
 }
 
 func TestRemovalTerminalIdempotencyAndPendingQuarantine(t *testing.T) {
-	ctx, _, store := newIntegrationStore(t, time.Date(2026, 8, 17, 0, 0, 0, 0, time.UTC))
+	ctx, pool, store := newIntegrationStore(t, time.Date(2026, 8, 17, 0, 0, 0, 0, time.UTC))
 	now := time.Date(2026, 8, 17, 0, 0, 0, 0, time.UTC)
 	user := provisionUploadUser(t, ctx, store, "removal-terminal")
 	sign := func(context.Context, domain.UploadReservation) (domain.SignedPUT, error) {
@@ -362,7 +388,26 @@ func TestRemovalTerminalIdempotencyAndPendingQuarantine(t *testing.T) {
 	if err != nil || claimed.State != domain.UploadStateRemoving || claimed.RemovalReason != domain.RemovalReasonAdministratorDeleted {
 		t.Fatalf("quarantine-to-delete claim = %+v, err=%v", claimed, err)
 	}
-	completed, err := store.CompleteUploadRemoval(ctx, finalized.UploadID, quarantineDeleteToken, now, nil)
+	retryToken := strings.Repeat("I", 43)
+	retried, err := store.ClaimUploadRemoval(ctx, "", "", finalized.UploadID, domain.RemovalReasonAdministratorDeleted, domain.UploadStateQuarantined, retryToken, now.Add(domain.UploadOperationLease))
+	if err != nil || retried.State != domain.UploadStateRemoving || retried.OperationToken != retryToken {
+		t.Fatalf("expired quarantine-to-delete retry = %+v, err=%v", retried, err)
+	}
+	if err := store.ReleaseUploadRemoval(ctx, finalized.UploadID, retryToken); err != nil {
+		t.Fatal(err)
+	}
+	var restoredState int16
+	if err := pool.QueryRow(ctx, `SELECT state FROM devhud_uploads WHERE upload_id = $1`, finalized.UploadID).Scan(&restoredState); err != nil {
+		t.Fatal(err)
+	}
+	if domain.UploadState(restoredState) != domain.UploadStateQuarantined {
+		t.Fatalf("released quarantine-to-delete state = %v", restoredState)
+	}
+	finalDeleteToken := strings.Repeat("J", 43)
+	if _, err := store.ClaimUploadRemoval(ctx, "", "", finalized.UploadID, domain.RemovalReasonAdministratorDeleted, domain.UploadStateQuarantined, finalDeleteToken, now); err != nil {
+		t.Fatal(err)
+	}
+	completed, err := store.CompleteUploadRemoval(ctx, finalized.UploadID, finalDeleteToken, now, nil)
 	if err != nil || completed.State != domain.UploadStateDeleted {
 		t.Fatalf("quarantine-to-delete completion = %+v, err=%v", completed, err)
 	}

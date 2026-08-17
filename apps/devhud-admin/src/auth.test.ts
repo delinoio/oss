@@ -27,6 +27,7 @@ import type { GetBootstrapResponse } from "@delinoio/devhud-api-client";
 
 describe("AdminAuth", () => {
   beforeEach(() => {
+    history.replaceState(null, "", "/admin/");
     sessionStorage.clear();
     methods.constructorConfig.mockReset();
     methods.signIn.mockReset().mockResolvedValue(undefined);
@@ -86,5 +87,22 @@ describe("AdminAuth", () => {
     );
     expect(methods.handleSignInCallback).toHaveBeenCalledOnce();
     expect(methods.clearAllTokens).toHaveBeenCalledOnce();
+  });
+
+  it("discards callbacks whose nonce state is unavailable", async () => {
+    history.replaceState(null, "", "/admin/auth/callback?code=code&state=state#fragment");
+    const auth = new AdminAuth(
+      "https://identity.example",
+      "https://api.example",
+      "admin-public-client",
+      "http://localhost:46306/auth/callback",
+    );
+
+    await expect(auth.completeCallback(window.location.href)).resolves.toBe(false);
+    expect(methods.handleSignInCallback).not.toHaveBeenCalled();
+    expect(methods.clearAllTokens).toHaveBeenCalledOnce();
+    expect(window.location.pathname).toBe("/admin/");
+    expect(window.location.search).toBe("");
+    expect(window.location.hash).toBe("");
   });
 });

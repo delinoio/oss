@@ -95,6 +95,12 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("administrator console review regressions", () => {
+  it("offers a fresh sign-in after an unusable callback is discarded", async () => {
+    runtime.auth.isAuthenticated.mockResolvedValue(false);
+    render(<App />);
+    expect(await screen.findByRole("button", { name: "Sign in with Logto" })).toBeTruthy();
+  });
+
   it("single-flights initialization across StrictMode effect replays", async () => {
     type Bootstrap = Awaited<ReturnType<typeof runtime.getBootstrap>>;
     let resolveBootstrap = (_bootstrap: Bootstrap) => {};
