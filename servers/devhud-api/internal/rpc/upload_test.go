@@ -46,3 +46,27 @@ func TestUploadStateFiltersLeaveRemovalClassificationToStorage(t *testing.T) {
 		t.Fatalf("finalized filter = %v, err=%v", finalized, err)
 	}
 }
+
+func TestUploadStateFiltersAreNormalizedForPaginationScope(t *testing.T) {
+	states, err := uploadStates([]devhudv1.UploadState{
+		devhudv1.UploadState_UPLOAD_STATE_FINALIZED,
+		devhudv1.UploadState_UPLOAD_STATE_PENDING,
+		devhudv1.UploadState_UPLOAD_STATE_FINALIZED,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []domain.UploadState{
+		domain.UploadStatePending,
+		domain.UploadStatePublishing,
+		domain.UploadStateFinalized,
+	}
+	if len(states) != len(want) {
+		t.Fatalf("normalized states = %v", states)
+	}
+	for index := range want {
+		if states[index] != want[index] {
+			t.Fatalf("normalized states = %v", states)
+		}
+	}
+}

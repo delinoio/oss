@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 
 	"connectrpc.com/connect"
@@ -252,7 +253,8 @@ func uploadStates(values []devhudv1.UploadState) ([]domain.UploadState, error) {
 			return nil, errors.New("states contains an unsupported value")
 		}
 	}
-	return states, nil
+	slices.Sort(states)
+	return slices.Compact(states), nil
 }
 
 func protocolUploadState(upload domain.Upload) devhudv1.UploadState {
