@@ -8,6 +8,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import fixture from "../fixtures/identity-settings-e2e.json";
 import { App } from "./App";
+import type { GitHubProvider } from "./github-provider";
 import * as identityClient from "./identity-client";
 import type { IdentitySession } from "./identity-client";
 import { SynchronizedSettingsBoundary } from "./identity-ui";
@@ -1557,6 +1558,51 @@ describe("generated Connect identity/settings fixture", () => {
     await act(async () => { resolveReplace(connectResponse({ snapshot: { schemaVersion: 2, revision: "2", canonicalJson: encodedSettings(server) } })); });
     await waitFor(() => expect(pattern.matches(":disabled")).toBe(false));
     expect(screen.getByRole("status").textContent).toBe(messages.en.mappingSaved);
+  });
+
+  it("rebases a mapping save on settings changed while repository validation is pending", async () => {
+    const mapping = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", pattern: "https://local.example/**", repository: { owner: "delinoio", name: "oss" }, credentialProfileRef: mappingProfile.id, priority: 0, chromeOrigin: null, updatedAt: "2026-08-17T00:00:00.000Z" };
+    const server = withMappingProfile([mapping]);
+    const themed = { ...server, appearance: { ...server.appearance, theme: "dark" as const } };
+    const final = { ...themed, urlMappings: [{ ...mapping, repository: { owner: "delinoio", name: "reviewed" }, updatedAt: "2026-08-18T00:00:00.000Z" }] };
+    let releaseValidation!: () => void;
+    const validation = new Promise<void>((resolve) => { releaseValidation = resolve; });
+    const validateRepository = vi.fn(async () => validation);
+    const githubProvider = { id: "github.com", validateRepository } as unknown as GitHubProvider;
+    const baseBridge = authenticatedBridge();
+    const bridge: NativeBridgeV1 = { ...baseBridge, async request(request) {
+      if (request.operation === "secure.read" && request.setting.kind === "github-pat") return { kind: "secure-value", value: "fixture-github-token" };
+      return baseBridge.request(request);
+    } };
+    const replacements: unknown[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 2, revision: "1", canonicalJson: encodedSettings(server) } });
+      if (url.endsWith("/devhud.v1.SettingsService/ReplaceSettings")) {
+        const source = typeof init?.body === "string" ? init.body : new TextDecoder().decode(init?.body as ArrayBufferView<ArrayBuffer>);
+        replacements.push(JSON.parse(source));
+        const next = replacements.length === 1 ? themed : final;
+        return connectResponse({ snapshot: { schemaVersion: 2, revision: String(replacements.length + 1), canonicalJson: encodedSettings(next) } });
+      }
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    render(<DevHudServiceBoundary apiOrigin="https://devhud.api.delino.io" active online callbackUrl={null} platform={RuntimePlatform.Desktop} bridge={bridge} onCallbackConsumed={() => {}} onContinueLocally={() => {}} onLoggedOut={() => {}}><SynchronizedSettingsBoundary copy={messages.en} bridge={bridge} githubProvider={githubProvider} /></DevHudServiceBoundary>);
+
+    const repositoryName = await screen.findByLabelText(messages.en.repositoryName) as HTMLInputElement;
+    fireEvent.change(repositoryName, { target: { value: "reviewed" } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.saveUrlMappings }));
+    await waitFor(() => expect(validateRepository).toHaveBeenCalled());
+    fireEvent.change(screen.getByLabelText(messages.en.theme), { target: { value: "dark" } });
+    await waitFor(() => expect(replacements).toHaveLength(1));
+    releaseValidation();
+    await waitFor(() => expect(replacements).toHaveLength(2));
+    const replacement = replacements[1] as { readonly expectedRevision: string; readonly canonicalJson: string };
+    const canonicalJson = new TextDecoder().decode(Uint8Array.from(atob(replacement.canonicalJson), (character) => character.codePointAt(0)!));
+    expect(replacement.expectedRevision).toBe("2");
+    expect(parseDevHudSettings(JSON.parse(canonicalJson))).toMatchObject({ appearance: { theme: "dark" }, urlMappings: [{ repository: { owner: "delinoio", name: "reviewed" } }] });
   });
 
   it("preserves a dirty mapping draft when conflict reapply encounters another revision conflict", async () => {

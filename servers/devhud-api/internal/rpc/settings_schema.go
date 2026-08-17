@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/url"
 	"regexp"
 	"strconv"
@@ -32,6 +33,7 @@ var (
 	safeSettingsIdentifier = regexp.MustCompile(`^[a-zA-Z0-9._:-]{1,128}$`)
 	settingsProfileRef     = regexp.MustCompile(`^[a-zA-Z0-9._-]{1,128}$`)
 	settingsMappingPattern = regexp.MustCompile(`^(https?|\*)://(\[[^\]]+\]|[^/:]+)(?::([^/]*))?(/.*)?$`)
+	settingsMappingPort    = regexp.MustCompile(`^[1-9]\d{0,4}$`)
 	settingsTimestamp      = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$`)
 )
 
@@ -157,7 +159,7 @@ func validateDevHudSettings(value []byte, envelopeSchemaVersion uint32) error {
 	if err != nil {
 		return err
 	}
-	mappingProfileRefs, err := validateSettingsURLMappings(root["urlMappings"])
+	mappingProfileRefs, err := validateSettingsURLMappings(root["urlMappings"], legacy)
 	if err != nil {
 		return err
 	}
@@ -315,10 +317,25 @@ func validateSettingsGitHub(github map[string]any, legacy bool) ([]string, error
 	return profileRefs, nil
 }
 
-func validateSettingsURLMappings(value any) ([]string, error) {
+func validateSettingsURLMappings(value any, legacy bool) ([]string, error) {
 	mappings, err := settingsArray(value, "$.urlMappings")
 	if err != nil {
 		return nil, err
+	}
+	if legacy {
+		for index, entry := range mappings {
+			path := fmt.Sprintf("$.urlMappings[%d]", index)
+			mapping, err := settingsObject(entry, path, "sourcePrefix", "destinationPrefix")
+			if err != nil {
+				return nil, err
+			}
+			for _, field := range []string{"sourcePrefix", "destinationPrefix"} {
+				if err := settingsURL(mapping[field], path+"."+field, false); err != nil {
+					return nil, err
+				}
+			}
+		}
+		return nil, nil
 	}
 	if len(mappings) > 100 {
 		return nil, errors.New("$.urlMappings must contain at most 100 entries")
@@ -360,7 +377,7 @@ func validateSettingsURLMappings(value any) ([]string, error) {
 			return nil, err
 		}
 		if mapping["chromeOrigin"] != nil {
-			if err := settingsURL(mapping["chromeOrigin"], path+".chromeOrigin", true); err != nil {
+			if err := settingsChromeOrigin(mapping["chromeOrigin"], path+".chromeOrigin"); err != nil {
 				return nil, err
 			}
 		}
@@ -562,13 +579,56 @@ func settingsURLMappingPattern(value any, path string) error {
 	if match == nil || strings.ContainsAny(match[2], "@\\") {
 		return fmt.Errorf("%s must be a URL pattern without credentials, query, or fragment", path)
 	}
-	port := match[3]
-	if port == "" || port == "*" {
-		return nil
+	host := match[2]
+	if strings.HasPrefix(host, "[") {
+		if !strings.HasSuffix(host, "]") || net.ParseIP(strings.TrimSuffix(strings.TrimPrefix(host, "["), "]")) == nil {
+			return fmt.Errorf("%s has an invalid host", path)
+		}
+	} else {
+		labels := strings.Split(strings.TrimSuffix(host, "."), ".")
+		if len(labels) == 0 || strings.TrimSuffix(host, ".") == "" {
+			return fmt.Errorf("%s has an invalid host", path)
+		}
+		for index, label := range labels {
+			if label == "" || (strings.Contains(label, "*") && label != "*") {
+				return fmt.Errorf("%s has an invalid host", path)
+			}
+			if label == "*" {
+				labels[index] = fmt.Sprintf("devhud-wildcard-%d", index)
+			}
+		}
+		parsed, err := url.Parse("http://" + strings.Join(labels, "."))
+		if err != nil || parsed.Hostname() == "" {
+			return fmt.Errorf("%s has an invalid host", path)
+		}
 	}
-	parsed, err := strconv.ParseUint(port, 10, 16)
-	if err != nil || parsed == 0 || parsed > 65535 {
-		return fmt.Errorf("%s has an invalid port", path)
+	port := match[3]
+	if port != "" && port != "*" {
+		if !settingsMappingPort.MatchString(port) {
+			return fmt.Errorf("%s has an invalid port", path)
+		}
+		parsed, err := strconv.ParseUint(port, 10, 16)
+		if err != nil || parsed == 0 || parsed > 65535 {
+			return fmt.Errorf("%s has an invalid port", path)
+		}
+	}
+	pathText := match[4]
+	for _, segment := range strings.Split(pathText, "/")[1:] {
+		if strings.Contains(segment, "*") && segment != "*" && segment != "**" {
+			return fmt.Errorf("%s has invalid path wildcards", path)
+		}
+	}
+	return nil
+}
+
+func settingsChromeOrigin(value any, path string) error {
+	text, err := settingsText(value, path, false)
+	if err != nil {
+		return err
+	}
+	parsed, err := url.Parse(text)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || (parsed.Path != "" && parsed.Path != "/") || strings.Contains(parsed.Hostname(), "*") {
+		return fmt.Errorf("%s must be a concrete HTTP(S) origin without credentials, path, query, or fragment", path)
 	}
 	return nil
 }

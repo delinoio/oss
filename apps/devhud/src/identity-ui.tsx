@@ -234,33 +234,29 @@ function UrlMappingSettings({ copy, bridge, githubProvider = createGitHubProvide
   };
   const save = async () => {
     let mappings: UrlRepositoryMapping[];
-    let next: DevHudSettingsV1;
     try {
       if (Object.values(priorityDrafts).some((value) => value === "" || !Number.isInteger(Number(value)))) throw new TypeError("priority must be an integer");
-      const previous = new Map(identity.settings.urlMappings.map((mapping) => [mapping.id, mapping]));
-      const now = new Date().toISOString();
-      mappings = draft.map((mapping) => {
-        const withPriority = priorityDrafts[mapping.id] === undefined ? mapping : { ...mapping, priority: Number(priorityDrafts[mapping.id]) };
-        const existing = previous.get(withPriority.id);
-        const unchanged = existing !== undefined && JSON.stringify({ ...existing, updatedAt: "" }) === JSON.stringify({ ...withPriority, updatedAt: "" });
-        return unchanged ? withPriority : { ...withPriority, updatedAt: now };
-      });
-      next = parseDevHudSettings({ ...identity.settings, urlMappings: mappings });
+      mappings = parseDevHudSettings({ ...identity.settings, urlMappings: withUpdatedMappings(draft, priorityDrafts, identity.settings.urlMappings) }).urlMappings.slice();
     } catch {
       setInvalid(true);
       return;
     }
     setInvalid(false); setValidationError(null); setSaved(false); setSaving(true);
     try {
-      await validateChangedMappings(mappings, identity.settings.urlMappings, next, bridge, githubProvider, identity.githubPatScopeId);
+      await validateChangedMappings(mappings, identity.settings.urlMappings, { ...identity.settings, urlMappings: mappings }, bridge, githubProvider, identity.githubPatScopeId);
     } catch (error) {
       setValidationError(error instanceof GitHubProviderError ? githubErrorCopy(error.code) : error instanceof NativeBridgeError && error.code === NativeBridgeErrorCode.StorageFailure ? "githubErrorSecureStorage" : "githubSetupFailed");
       setSaving(false);
       return;
     }
     try {
-      if (!await identity.replaceSettings(next)) return;
-      setDraft(mappings);
+      let committedMappings = mappings;
+      if (!await identity.replaceSettings((current) => {
+        const next = parseDevHudSettings({ ...current, urlMappings: withUpdatedMappings(draft, priorityDrafts, current.urlMappings) });
+        committedMappings = next.urlMappings.slice();
+        return next;
+      })) return;
+      setDraft(committedMappings);
       setDirty(false);
       setPriorityDrafts({});
       setSaved(true);
@@ -286,6 +282,17 @@ function UrlMappingSettings({ copy, bridge, githubProvider = createGitHubProvide
     {overlaps.length > 0 && <p role="status">{copy.mappingOverlap}</p>}
     {saved && <p role="status">{copy.mappingSaved}</p>}
   </section>;
+}
+
+function withUpdatedMappings(draft: readonly UrlRepositoryMapping[], priorityDrafts: Readonly<Record<string, string>>, previousMappings: readonly UrlRepositoryMapping[]): UrlRepositoryMapping[] {
+  const previous = new Map(previousMappings.map((mapping) => [mapping.id, mapping]));
+  const now = new Date().toISOString();
+  return draft.map((mapping) => {
+    const withPriority = priorityDrafts[mapping.id] === undefined ? mapping : { ...mapping, priority: Number(priorityDrafts[mapping.id]) };
+    const existing = previous.get(withPriority.id);
+    const unchanged = existing !== undefined && JSON.stringify({ ...existing, updatedAt: "" }) === JSON.stringify({ ...withPriority, updatedAt: "" });
+    return unchanged ? withPriority : { ...withPriority, updatedAt: now };
+  });
 }
 
 async function validateChangedMappings(mappings: readonly UrlRepositoryMapping[], previousMappings: readonly UrlRepositoryMapping[], settings: DevHudSettingsV1, bridge: NativeBridgeV1, provider: GitHubProvider, scopeId: Promise<string>): Promise<void> {

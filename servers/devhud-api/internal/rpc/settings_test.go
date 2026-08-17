@@ -49,6 +49,25 @@ func TestValidateDevHudSettings(t *testing.T) {
 	if err := validateDevHudSettings([]byte(strings.Replace(withProfile, `"urlMappings":[]`, `"urlMappings":`+structuredMapping, 1)), 2); err != nil {
 		t.Fatalf("structured mapping validation failed: %v", err)
 	}
+	legacyMapping := `[{"destinationPrefix":"https://destination.example/path","sourcePrefix":"https://source.example/path"}]`
+	if err := validateDevHudSettings([]byte(strings.Replace(canonicalSettingsV1, `"urlMappings":[]`, `"urlMappings":`+legacyMapping, 1)), 1); err != nil {
+		t.Fatalf("legacy mapping validation failed: %v", err)
+	}
+	for name, mapping := range map[string]string{
+		"partial host wildcard": strings.Replace(structuredMapping, `"https://example.com./**"`, `"https://api*.example.com/**"`, 1),
+		"partial path wildcard": strings.Replace(structuredMapping, `"https://example.com./**"`, `"https://example.com/foo*bar"`, 1),
+		"invalid Chrome origin": strings.Replace(structuredMapping, `"chromeOrigin":null`, `"chromeOrigin":"https://example.com/path"`, 1),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := validateDevHudSettings([]byte(strings.Replace(withProfile, `"urlMappings":[]`, `"urlMappings":`+mapping, 1)), 2); err == nil {
+				t.Fatal("validation succeeded")
+			}
+		})
+	}
+	httpChromeOrigin := strings.Replace(structuredMapping, `"chromeOrigin":null`, `"chromeOrigin":"http://localhost:3000"`, 1)
+	if err := validateDevHudSettings([]byte(strings.Replace(withProfile, `"urlMappings":[]`, `"urlMappings":`+httpChromeOrigin, 1)), 2); err != nil {
+		t.Fatalf("HTTP Chrome origin validation failed: %v", err)
+	}
 	for name, test := range map[string]struct {
 		version uint32
 		value   string
