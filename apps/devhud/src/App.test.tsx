@@ -67,9 +67,20 @@ describe("native App state", () => {
   it("rejects insecure custom APIs and confirms a secure API change before clearing its session", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const transitionOperations: string[] = [];
+    let pendingCallback: string | null = "devhud://auth/callback?code=old&state=old";
     const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
-      if (value.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
-      if (value.operation === "secure.purge") return { kind: "ok" };
+      if (value.operation === "session.configure-origins") {
+        if (value.apiOrigin === "https://custom.example") transitionOperations.push("configure-new-origin");
+        return { kind: "session-network-policy", changed: false };
+      }
+      if (value.operation === "auth.take-pending-callback") {
+        transitionOperations.push("discard-callback");
+        const url = pendingCallback;
+        pendingCallback = null;
+        return { kind: "auth-callback", url };
+      }
+      if (value.operation === "secure.purge") { transitionOperations.push("purge-session"); return { kind: "ok" }; }
       throw new Error(`unexpected operation ${value.operation}`);
     });
 
@@ -89,9 +100,11 @@ describe("native App state", () => {
 
     fireEvent.change(input, { target: { value: "https://custom.example" } });
     fireEvent.click(screen.getByRole("button", { name: messages.en.applyApiOrigin }));
-    await waitFor(() => expect(request).toHaveBeenCalledWith(expect.objectContaining({ operation: "secure.purge", scope: "api-change", profileId: expect.stringMatching(/^origin\./u) })));
+    await waitFor(() => expect(JSON.parse(localStorage.getItem("devhud.shell.preferences.v1") ?? "null").apiOrigin).toBe("https://custom.example"));
     expect(confirm).toHaveBeenCalledWith(messages.en.apiChangeConfirm);
-    expect(JSON.parse(localStorage.getItem("devhud.shell.preferences.v1") ?? "null").apiOrigin).toBe("https://custom.example");
+    expect(request).toHaveBeenCalledWith(expect.objectContaining({ operation: "secure.purge", scope: "api-change", profileId: expect.stringMatching(/^origin\./u) }));
+    expect(pendingCallback).toBeNull();
+    expect(transitionOperations).toEqual(["discard-callback", "purge-session", "configure-new-origin"]);
   });
 
   it("loads the default content state once", async () => {

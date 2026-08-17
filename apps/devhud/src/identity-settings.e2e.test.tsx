@@ -1063,8 +1063,9 @@ describe("generated Connect identity/settings fixture", () => {
     });
   });
 
-  it("drains the old identity session before the final API-origin purge", async () => {
+  it("discards a pending callback before draining the old identity session and purging the API origin", async () => {
     const operations: string[] = [];
+    let pendingCallback: string | null = "devhud://auth/callback?code=old&state=old";
     let release: (() => void) | undefined;
     const draining = new Promise<void>((resolve) => { release = resolve; });
     const sessionRef = {
@@ -1078,6 +1079,12 @@ describe("generated Connect identity/settings fixture", () => {
     } as unknown as Parameters<typeof clearIdentityForApiChange>[3];
     const bridge: NativeBridgeV1 = {
       async request(request) {
+        if (request.operation === "auth.take-pending-callback") {
+          operations.push("discard-callback");
+          const url = pendingCallback;
+          pendingCallback = null;
+          return { kind: "auth-callback", url };
+        }
         if (request.operation === "secure.purge") { operations.push("purge"); return { kind: "ok" }; }
         throw new Error(`unexpected bridge operation ${request.operation}`);
       },
@@ -1085,12 +1092,13 @@ describe("generated Connect identity/settings fixture", () => {
     };
 
     const clearing = clearIdentityForApiChange(bridge, localStorage, "https://devhud.api.delino.io", sessionRef);
-    await waitFor(() => expect(operations).toEqual(["drain-start"]));
+    await waitFor(() => expect(operations).toEqual(["discard-callback", "drain-start"]));
     expect(sessionRef?.current).toBeNull();
+    expect(pendingCallback).toBeNull();
     release?.();
     await clearing;
 
-    expect(operations).toEqual(["drain-start", "late-secure-write-settled", "purge"]);
+    expect(operations).toEqual(["discard-callback", "drain-start", "late-secure-write-settled", "purge"]);
   });
 
   it("keeps cached settings read-only, surfaces correlation metadata, and retries GetSettings", async () => {

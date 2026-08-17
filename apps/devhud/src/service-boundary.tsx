@@ -697,6 +697,8 @@ export async function clearIdentityForApiChange(
 ): Promise<void> {
   const session = sessionRef?.current ?? null;
   if (sessionRef) sessionRef.current = null;
+  const discardedCallback = await bridge.request({ operation: "auth.take-pending-callback" });
+  if (discardedCallback.kind !== "auth-callback") throw new Error("auth-callback-discard-failed");
   await session?.clear();
   await bridge.request({ operation: "secure.purge", scope: "api-change", profileId: await sessionProfileId(oldApiOrigin) });
   clearAuthenticatedOriginData(storage, oldApiOrigin);
