@@ -138,6 +138,43 @@ func TestAdminInterceptorReportsActorAccountState(t *testing.T) {
 	}
 }
 
+func TestRejectedInterceptorDoesNotRecordInvalidTargetStateAsUnblock(t *testing.T) {
+	for _, targetState := range []devhudv1.AdministrativeBlockState{
+		devhudv1.AdministrativeBlockState_ADMINISTRATIVE_BLOCK_STATE_UNSPECIFIED,
+		devhudv1.AdministrativeBlockState(99),
+	} {
+		t.Run(targetState.String(), func(t *testing.T) {
+			var audits []domain.AuditEvent
+			repository := &interceptorAdminRepository{
+				serviceRepository: &serviceRepository{},
+				adminRepository: &adminRepository{recordAudit: func(_ context.Context, event domain.AuditEvent) error {
+					audits = append(audits, event)
+					return nil
+				}},
+			}
+			service, err := NewAdminService(repository, &adminUploads{}, serviceClock{}, fixedAdminIDs{}, testServiceLogger(), []byte(strings.Repeat("K", 32)), "https://assets.example.com/uploads/")
+			if err != nil {
+				t.Fatal(err)
+			}
+			interceptor := NewAuthInterceptor(unauthenticatedAdminVerifier{}, repository, repository, serviceClock{}, fixedAdminIDs{}, testServiceLogger())
+			_, handler := devhudv1connect.NewAdminServiceHandler(service, connect.WithInterceptors(interceptor))
+			server := httptest.NewServer(handler)
+			defer server.Close()
+
+			client := devhudv1connect.NewAdminServiceClient(http.DefaultClient, server.URL)
+			_, err = client.SetUserBlocked(context.Background(), connect.NewRequest(&devhudv1.SetUserBlockedRequest{
+				UserId: uuid(targetUserID), TargetState: targetState,
+			}))
+			if connect.CodeOf(err) != connect.CodeUnauthenticated {
+				t.Fatalf("code = %v, want Unauthenticated", connect.CodeOf(err))
+			}
+			if len(audits) != 1 || audits[0].Action != domain.AuditActionUserBlocked {
+				t.Fatalf("audits = %+v", audits)
+			}
+		})
+	}
+}
+
 func TestUserSearchNormalizationAndQueryScopedPagination(t *testing.T) {
 	var queries []string
 	repository := &adminRepository{listUsers: func(_ context.Context, query string, cursor *domain.UserCursor, _ uint32) (domain.UserList, error) {
@@ -344,10 +381,12 @@ func TestFailedUploadMutationRecordsOperationFailedAudit(t *testing.T) {
 	}
 }
 
-func TestRejectedMutationAuditPreservesRequestDeadline(t *testing.T) {
-	deadline := time.Now().Add(time.Minute)
+func TestRejectedMutationAuditSurvivesRequestCancellation(t *testing.T) {
 	var auditDeadline time.Time
 	repository := &adminRepository{recordAudit: func(ctx context.Context, _ domain.AuditEvent) error {
+		if err := ctx.Err(); err != nil {
+			t.Fatalf("rejection audit context inherited request cancellation: %v", err)
+		}
 		var ok bool
 		auditDeadline, ok = ctx.Deadline()
 		if !ok {
@@ -356,8 +395,9 @@ func TestRejectedMutationAuditPreservesRequestDeadline(t *testing.T) {
 		return nil
 	}}
 	service := newTestAdminService(t, repository, &adminUploads{})
-	ctx, cancel := context.WithDeadline(administratorContext(), deadline)
-	defer cancel()
+	started := time.Now()
+	ctx, cancel := context.WithCancel(administratorContext())
+	cancel()
 	_, err := service.SetUserBlocked(ctx, connect.NewRequest(&devhudv1.SetUserBlockedRequest{
 		UserId: uuid(targetUserID), ExpectedState: devhudv1.AdministrativeBlockState_ADMINISTRATIVE_BLOCK_STATE_UNBLOCKED,
 		TargetState: devhudv1.AdministrativeBlockState_ADMINISTRATIVE_BLOCK_STATE_BLOCKED,
@@ -365,21 +405,21 @@ func TestRejectedMutationAuditPreservesRequestDeadline(t *testing.T) {
 	if connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Fatalf("code = %v", connect.CodeOf(err))
 	}
-	if !auditDeadline.Equal(deadline) {
-		t.Fatalf("audit deadline = %v, want %v", auditDeadline, deadline)
+	if minimum, maximum := started.Add(rejectedAuditTimeout-time.Second), time.Now().Add(rejectedAuditTimeout); auditDeadline.Before(minimum) || auditDeadline.After(maximum) {
+		t.Fatalf("audit deadline = %v, want between %v and %v", auditDeadline, minimum, maximum)
 	}
 }
 
-func TestDetachedAuditContextPreservesDeadlineAndIgnoresCancellation(t *testing.T) {
-	deadline := time.Now().Add(time.Minute)
-	requestContext, cancelRequest := context.WithDeadline(context.Background(), deadline)
+func TestDetachedAuditContextUsesIndependentBoundedDeadline(t *testing.T) {
+	requestContext, cancelRequest := context.WithTimeout(context.Background(), time.Nanosecond)
 	cancelRequest()
+	started := time.Now()
 	auditContext, cancelAudit := detachedAuditContext(requestContext)
 	defer cancelAudit()
 
 	auditDeadline, ok := auditContext.Deadline()
-	if !ok || !auditDeadline.Equal(deadline) {
-		t.Fatalf("audit deadline = %v, ok=%v, want %v", auditDeadline, ok, deadline)
+	if minimum, maximum := started.Add(rejectedAuditTimeout-time.Second), time.Now().Add(rejectedAuditTimeout); !ok || auditDeadline.Before(minimum) || auditDeadline.After(maximum) {
+		t.Fatalf("audit deadline = %v, ok=%v, want between %v and %v", auditDeadline, ok, minimum, maximum)
 	}
 	if err := auditContext.Err(); err != nil {
 		t.Fatalf("detached audit context inherited request cancellation: %v", err)
@@ -495,6 +535,12 @@ type adminIdentityVerifier struct{}
 
 func (adminIdentityVerifier) Verify(context.Context, string) (domain.Identity, error) {
 	return domain.Identity{Roles: []string{domain.AdminRole}}, nil
+}
+
+type unauthenticatedAdminVerifier struct{}
+
+func (unauthenticatedAdminVerifier) Verify(context.Context, string) (domain.Identity, error) {
+	return domain.Identity{}, auth.ErrUnauthenticated
 }
 
 type interceptorAdminRepository struct {

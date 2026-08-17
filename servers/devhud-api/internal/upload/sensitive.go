@@ -12,6 +12,7 @@ const maximumAdministratorReasonBytes = 4096
 
 var (
 	credentialParameterNamePattern = regexp.MustCompile(`(?i)^(code|password|passwd|pwd|secret|token|client[_.-]?secret|(access|refresh|id)[_.-]?token|api[_.-]?key|private[_.-]?key|authorization|cookie|set-cookie|x-amz-(credential|signature))$`)
+	percentEncodedOctetsPattern    = regexp.MustCompile(`(?i)(?:%[0-9a-f]{2})+`)
 	urlPattern                     = regexp.MustCompile(`\b[A-Za-z][A-Za-z0-9+.-]*:[^\s<>"']+`)
 	trailingURLPunctuationPattern  = regexp.MustCompile(`[)\]}>.,;]+$`)
 	absoluteLocalPathPattern       = regexp.MustCompile(`(^|[\s([{<"'=:])([A-Za-z]:[\\/][^\s]*|\\\\[^\s]+|~/[^\s]+|/[^/\s][^\s]*)`)
@@ -84,15 +85,22 @@ func containsSensitiveURL(value string, publicAssetBaseURL *url.URL) bool {
 		if matchesSensitiveURL(value, publicAssetBaseURL) {
 			return true
 		}
-		decoded, err := url.PathUnescape(value)
-		if err != nil {
-			return true
-		}
+		decoded := decodePercentEncodedOctets(value)
 		if decoded == value {
 			return false
 		}
 		value = decoded
 	}
+}
+
+func decodePercentEncodedOctets(value string) string {
+	return percentEncodedOctetsPattern.ReplaceAllStringFunc(value, func(encoded string) string {
+		decoded, err := url.PathUnescape(encoded)
+		if err != nil {
+			return encoded
+		}
+		return decoded
+	})
 }
 
 func matchesSensitiveURL(value string, publicAssetBaseURL *url.URL) bool {

@@ -418,7 +418,9 @@ func (s *AdminService) mutationEvent(ctx context.Context, actorID, targetUserID,
 
 func (s *AdminService) reject(ctx context.Context, event domain.AuditEvent, reason domain.AuditRejectionReason) {
 	event.Outcome, event.RejectionReason = domain.AuditOutcomeRejected, reason
-	if err := s.repository.RecordAdministratorAudit(ctx, event); err != nil {
+	auditContext, cancel := detachedAuditContext(ctx)
+	defer cancel()
+	if err := s.repository.RecordAdministratorAudit(auditContext, event); err != nil {
 		s.logger.WarnContext(ctx, "administrator rejection audit failed", "correlation_id", CorrelationID(ctx), "error_type", fmt.Sprintf("%T", err))
 	}
 }

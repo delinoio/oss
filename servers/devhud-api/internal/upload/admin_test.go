@@ -16,6 +16,7 @@ func TestAdministratorReasonValidation(t *testing.T) {
 		"Expected yes / no",
 		"Reviewed incident from 2026/08/15.",
 		"Reviewed https://docs.example.com/policy?v=42#quarantine",
+		"Upload exceeded quota by 95%.",
 	} {
 		if err := validateAdministratorReason(reason); err != nil {
 			t.Fatalf("safe reason %q rejected: %v", reason, err)

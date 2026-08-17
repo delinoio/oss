@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"slices"
+	"time"
 
 	"connectrpc.com/connect"
 	devhudv1 "github.com/delinoio/oss/protos/gen/go/devhud/v1"
@@ -12,6 +13,8 @@ import (
 	"github.com/delinoio/oss/servers/devhud-api/internal/auth"
 	"github.com/delinoio/oss/servers/devhud-api/internal/domain"
 )
+
+const rejectedAuditTimeout = 5 * time.Second
 
 type AuthInterceptor struct {
 	verifier   auth.Verifier
@@ -117,10 +120,13 @@ func (i *AuthInterceptor) recordRejectedAdminMutation(ctx context.Context, reque
 	}
 	switch message := request.Any().(type) {
 	case *devhudv1.SetUserBlockedRequest:
-		if message.GetTargetState() == devhudv1.AdministrativeBlockState_ADMINISTRATIVE_BLOCK_STATE_BLOCKED {
-			event.Action = domain.AuditActionUserBlocked
-		} else {
+		switch message.GetTargetState() {
+		case devhudv1.AdministrativeBlockState_ADMINISTRATIVE_BLOCK_STATE_UNBLOCKED:
 			event.Action = domain.AuditActionUserUnblocked
+		case devhudv1.AdministrativeBlockState_ADMINISTRATIVE_BLOCK_STATE_BLOCKED:
+			event.Action = domain.AuditActionUserBlocked
+		default:
+			event.Action = domain.AuditActionUserBlocked
 		}
 		if value := message.GetUserId().GetValue(); value != "" {
 			event.TargetUserID = &value
@@ -144,12 +150,7 @@ func (i *AuthInterceptor) recordRejectedAdminMutation(ctx context.Context, reque
 }
 
 func detachedAuditContext(ctx context.Context) (context.Context, context.CancelFunc) {
-	detached := context.WithoutCancel(ctx)
-	deadline, ok := ctx.Deadline()
-	if !ok {
-		return detached, func() {}
-	}
-	return context.WithDeadline(detached, deadline)
+	return context.WithTimeout(context.WithoutCancel(ctx), rejectedAuditTimeout)
 }
 
 func (i *AuthInterceptor) rejectedAdminMutationEvent(ctx context.Context, reason domain.AuditRejectionReason) (domain.AuditEvent, error) {

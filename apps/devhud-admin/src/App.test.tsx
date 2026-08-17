@@ -148,6 +148,35 @@ describe("administrator console review regressions", () => {
     });
   });
 
+  it("prevents duplicate user continuation requests", async () => {
+    type UserListResponse = { users: Array<typeof user>; nextPageToken: string };
+    let resolveContinuation = (_response: UserListResponse) => {};
+    const continuation = new Promise<UserListResponse>((resolve) => {
+      resolveContinuation = resolve;
+    });
+    const nextUser = {
+      ...user,
+      userId: { value: "018f7c1e-7b4a-7abc-8def-0123456789bc" },
+      displayName: "Next User",
+    };
+    runtime.client.listUsers
+      .mockResolvedValueOnce({ users: [user], nextPageToken: "user-token" })
+      .mockReturnValueOnce(continuation);
+
+    render(<App />);
+    const loadMore = await screen.findByRole("button", { name: "Load more" });
+    fireEvent.click(loadMore);
+    fireEvent.click(loadMore);
+
+    expect(runtime.client.listUsers).toHaveBeenCalledTimes(2);
+    expect((loadMore as HTMLButtonElement).disabled).toBe(true);
+    await act(async () => {
+      resolveContinuation({ users: [nextUser], nextPageToken: "" });
+      await continuation;
+    });
+    expect(screen.getByText("Next User")).toBeTruthy();
+  });
+
   it("ignores user responses superseded by a newer search", async () => {
     type UserListResponse = { users: Array<typeof user>; nextPageToken: string };
     let resolveInitial = (_response: UserListResponse) => {};
@@ -265,6 +294,28 @@ describe("administrator console review regressions", () => {
     });
     expect(within(screen.getByRole("dialog")).getByText("Other User")).toBeTruthy();
     expect(within(screen.getByRole("dialog")).queryByText("Target User")).toBeNull();
+  });
+
+  it("renders and retries typed quota errors with correlation metadata", async () => {
+    const correlationId = "018f7c1e-7b4a-7abc-8def-0123456789bd";
+    runtime.client.getUserUsage
+      .mockRejectedValueOnce(new ConnectError("temporarily unavailable", Code.Unavailable, {
+        "x-devhud-correlation-id": correlationId,
+      }))
+      .mockResolvedValueOnce({ counters: [] });
+
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Usage and quota" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      await within(dialog).findByText(
+        "The administrator service is temporarily unavailable. Try again.",
+      ),
+    ).toBeTruthy();
+    expect(within(dialog).getByText(correlationId)).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Retry" }));
+    expect(await within(dialog).findByText("No records match these filters.")).toBeTruthy();
+    expect(runtime.client.getUserUsage).toHaveBeenCalledTimes(2);
   });
 
   it("renders the submission identifier for submission-scoped quotas", async () => {
@@ -536,6 +587,62 @@ describe("administrator console review regressions", () => {
     await waitFor(() => expect(runtime.client.quarantineUpload).toHaveBeenCalledWith(
       expect.objectContaining({ reason: "Café upload reviewed." }),
     ));
+  });
+
+  it("keeps a user mutation dialog open while its request is pending", async () => {
+    let resolveMutation = (_response: object) => {};
+    const mutation = new Promise<object>((resolve) => {
+      resolveMutation = resolve;
+    });
+    runtime.client.setUserBlocked.mockReturnValueOnce(mutation);
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Block" }));
+    fireEvent.change(screen.getByLabelText("Reason"), {
+      target: { value: "Reviewed the policy violation." },
+    });
+    fireEvent.click(screen.getByLabelText("I understand this action is destructive."));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    const dialog = screen.getByRole("dialog");
+    expect((within(dialog).getByRole("button", { name: "Cancel" }) as HTMLButtonElement).disabled)
+      .toBe(true);
+    fireEvent(dialog, new Event("cancel", { bubbles: true, cancelable: true }));
+    expect(screen.getByRole("dialog")).toBeTruthy();
+
+    await act(async () => {
+      resolveMutation({});
+      await mutation;
+    });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("keeps an upload mutation dialog open while its request is pending", async () => {
+    let resolveMutation = (_response: object) => {};
+    const mutation = new Promise<object>((resolve) => {
+      resolveMutation = resolve;
+    });
+    runtime.client.quarantineUpload.mockReturnValueOnce(mutation);
+    render(<App />);
+
+    await screen.findByText("Target User");
+    fireEvent.click(screen.getByRole("button", { name: "Uploads" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Quarantine" }));
+    fireEvent.change(screen.getByLabelText("Reason"), {
+      target: { value: "Reviewed the uploaded object." },
+    });
+    fireEvent.click(screen.getByLabelText("I understand this action is destructive."));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    const dialog = screen.getByRole("dialog");
+    expect((within(dialog).getByRole("button", { name: "Cancel" }) as HTMLButtonElement).disabled)
+      .toBe(true);
+    fireEvent(dialog, new Event("cancel", { bubbles: true, cancelable: true }));
+    expect(screen.getByRole("dialog")).toBeTruthy();
+
+    await act(async () => {
+      resolveMutation({});
+      await mutation;
+    });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 
   it("reloads user and upload records after concurrent mutation conflicts", async () => {

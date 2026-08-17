@@ -41,7 +41,7 @@ type Loadable<T> =
 type UsageState =
   | { kind: "loading"; user: AdminUser }
   | { kind: "loaded"; user: AdminUser; counters: UsageCounter[] }
-  | { kind: "error"; user: AdminUser };
+  | { kind: "error"; user: AdminUser; error: DevHudClientError };
 
 const maximumAdminSearchBytes = 512;
 const textEncoder = new TextEncoder();
@@ -250,10 +250,20 @@ function Users({
   const [mutation, setMutation] = useState<AdminUser | null>(null);
   const [usage, setUsage] = useState<UsageState | null>(null);
   const [conflict, setConflict] = useState(false);
+  const [continuationPending, setContinuationPending] = useState(false);
+  const continuationPendingRef = useRef(false);
   const requestGeneration = useRef(0);
   const usageRequestGeneration = useRef(0);
 
   const load = async (token = "", append = false, searchQuery = appliedQuery) => {
+    if (append && continuationPendingRef.current) return;
+    if (append) {
+      continuationPendingRef.current = true;
+      setContinuationPending(true);
+    } else {
+      continuationPendingRef.current = false;
+      setContinuationPending(false);
+    }
     const generation = ++requestGeneration.current;
     if (!append) setState({ kind: "loading" });
     try {
@@ -275,6 +285,11 @@ function Users({
     } catch (error) {
       if (generation !== requestGeneration.current) return;
       setState(errorState(error));
+    } finally {
+      if (append && generation === requestGeneration.current) {
+        continuationPendingRef.current = false;
+        setContinuationPending(false);
+      }
     }
   };
 
@@ -285,9 +300,9 @@ function Users({
       const response = await client.getUserUsage({ userId: user.userId });
       if (generation !== usageRequestGeneration.current) return;
       setUsage({ kind: "loaded", user, counters: response.counters });
-    } catch {
+    } catch (error) {
       if (generation !== usageRequestGeneration.current) return;
-      setUsage({ kind: "error", user });
+      setUsage({ kind: "error", user, error: mapDevHudError(error) });
     }
   };
 
@@ -301,6 +316,7 @@ function Users({
     return () => {
       requestGeneration.current++;
       usageRequestGeneration.current++;
+      continuationPendingRef.current = false;
     };
     // Query is applied by the explicit search form.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -434,7 +450,11 @@ function Users({
               ))}
             </div>
             {value.next && (
-              <button className="load-more" onClick={() => void load(value.next, true, appliedQuery)}>
+              <button
+                className="load-more"
+                disabled={continuationPending}
+                onClick={() => void load(value.next, true, appliedQuery)}
+              >
                 {copy.next}
               </button>
             )}
@@ -465,7 +485,12 @@ function Users({
           {usage.kind === "loading" ? (
             <Empty message={copy.loading} busy />
           ) : usage.kind === "error" ? (
-            <p className="inline-error" role="alert">{copy.error}</p>
+            <ClientFailure
+              copy={copy}
+              error={usage.error}
+              fallback={copy.error}
+              onRetry={() => void loadUsage(usage.user)}
+            />
           ) : usage.counters.length === 0 ? (
             <Empty message={copy.empty} />
           ) : (
@@ -522,8 +547,11 @@ function UserMutationDialog({
   const [failure, setFailure] = useState<DevHudClientError | null>(null);
   const normalizedReason = normalizeAdminReason(reason);
   const reasonValid = isAdminReasonValid(normalizedReason, publicAssetBaseUrl);
+  const close = () => {
+    if (!pending) onClose();
+  };
   return (
-    <Dialog title={blocked ? copy.unblock : copy.block} onClose={onClose}>
+    <Dialog title={blocked ? copy.unblock : copy.block} onClose={close}>
       <MutationFields
         confirmed={confirmed}
         copy={copy}
@@ -534,9 +562,10 @@ function UserMutationDialog({
       />
       {failure && <MutationFailure copy={copy} error={failure} />}
       <DialogActions
+        cancelDisabled={pending}
         copy={copy}
         disabled={!reasonValid || !confirmed || pending}
-        onCancel={onClose}
+        onCancel={close}
         onConfirm={() => {
           setFailure(null);
           setPending(true);
@@ -755,8 +784,11 @@ function UploadMutationDialog({
   const label = selection.action === "delete" ? copy.delete : copy.quarantine;
   const normalizedReason = normalizeAdminReason(reason);
   const reasonValid = isAdminReasonValid(normalizedReason, publicAssetBaseUrl);
+  const close = () => {
+    if (!pending) onClose();
+  };
   return (
-    <Dialog title={label} onClose={onClose}>
+    <Dialog title={label} onClose={close}>
       <dl>
         <dt>{copy.owner}</dt>
         <dd className="mono break">{selection.upload.ownerUserId?.value ?? "—"}</dd>
@@ -775,9 +807,10 @@ function UploadMutationDialog({
       />
       {failure && <MutationFailure copy={copy} error={failure} />}
       <DialogActions
+        cancelDisabled={pending}
         copy={copy}
         disabled={!reasonValid || !confirmed || pending}
-        onCancel={onClose}
+        onCancel={close}
         onConfirm={() => {
           setFailure(null);
           setPending(true);
@@ -985,11 +1018,13 @@ function MutationFields({
 }
 
 function DialogActions({
+  cancelDisabled,
   copy,
   disabled,
   onCancel,
   onConfirm,
 }: {
+  cancelDisabled: boolean;
   copy: ReturnType<typeof text>;
   disabled: boolean;
   onCancel: () => void;
@@ -997,7 +1032,9 @@ function DialogActions({
 }) {
   return (
     <div className="dialog-actions">
-      <button className="secondary" onClick={onCancel}>{copy.cancel}</button>
+      <button className="secondary" disabled={cancelDisabled} onClick={onCancel}>
+        {copy.cancel}
+      </button>
       <button className="danger-button" disabled={disabled} onClick={onConfirm}>
         {copy.confirm}
       </button>
@@ -1012,7 +1049,23 @@ function MutationFailure({
   copy: ReturnType<typeof text>;
   error: DevHudClientError;
 }) {
-  const message = clientErrorMessage(error, copy, copy.mutationError);
+  return <ClientFailure copy={copy} error={error} fallback={copy.mutationError} />;
+}
+
+function ClientFailure({
+  copy,
+  error,
+  fallback,
+  onRetry,
+}: {
+  copy: ReturnType<typeof text>;
+  error: DevHudClientError;
+  fallback: string;
+  onRetry?: () => void;
+}) {
+  const message = clientErrorMessage(error, copy, fallback);
+  const retryable =
+    error.kind !== "unauthenticated" && error.code !== Code.PermissionDenied;
   return (
     <div className="inline-error" role="alert">
       <p>{message}</p>
@@ -1020,6 +1073,9 @@ function MutationFailure({
         <p className="correlation">
           {copy.correlationId}: <code>{error.correlationId}</code>
         </p>
+      )}
+      {onRetry && retryable && (
+        <button className="primary" onClick={onRetry}>{copy.retry}</button>
       )}
     </div>
   );
