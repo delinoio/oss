@@ -81,11 +81,13 @@ export function assertAndroidPermissions(androidManifest, androidDebugManifest) 
 }
 
 export function mobileCargoTreeDigest(cargoTree, workspaceRoot) {
-  const escapedRoot = workspaceRoot.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  const normalizedCargoTree = cargoTree.replaceAll("\\", "/");
+  const normalizedRoot = workspaceRoot.replaceAll("\\", "/");
+  const escapedRoot = normalizedRoot.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
   const workspacePath = new RegExp(` \\(${escapedRoot}/([^)]*)\\)`, "gu");
   const packages = [];
   let skippedProcMacroDepth;
-  for (const rawLine of cargoTree.split("\n")) {
+  for (const rawLine of normalizedCargoTree.split("\n")) {
     const match = rawLine.match(/^(\d+)(.*)$/u);
     if (!match) continue;
     const depth = Number(match[1]);

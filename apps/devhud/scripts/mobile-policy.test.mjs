@@ -92,7 +92,10 @@ test("mobile policy pins normalized resolved dependency closures", () => {
     "3host-only v1.0.0 default",
     "1serde v1.0.0 default,derive (*)",
   ].join("\n");
+  const windowsRoot = String.raw`C:\a\oss\oss`;
+  const windowsTree = tree.replace("/checkout/apps/devhud/src-tauri", String.raw`C:\a\oss\oss\apps\devhud\src-tauri`);
   assert.equal(mobileCargoTreeDigest(tree, "/checkout"), mobileCargoTreeDigest(tree.replaceAll("/checkout", "/other"), "/other"));
+  assert.equal(mobileCargoTreeDigest(tree, "/checkout"), mobileCargoTreeDigest(windowsTree, windowsRoot));
   assert.equal(mobileCargoTreeDigest(tree, "/checkout"), mobileCargoTreeDigest(tree.replace("host-only v1.0.0", "other-host-only v1.0.0"), "/checkout"));
   assert.notEqual(mobileCargoTreeDigest(tree, "/checkout"), mobileCargoTreeDigest(`${tree}\n1reqwest v1.0.0 default`, "/checkout"));
   assert.doesNotThrow(() => assertMobileDependencyClosures(mobilePlatforms, mobilePlatforms.dependencyClosures));
