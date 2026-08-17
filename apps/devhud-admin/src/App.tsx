@@ -571,6 +571,16 @@ function UserMutationDialog({
   };
   return (
     <Dialog title={blocked ? copy.unblock : copy.block} onClose={close}>
+      <dl>
+        <dt>{copy.targetUser}</dt>
+        <dd className="mono break">{user.userId?.value ?? "—"}</dd>
+        <dt>{copy.displayName}</dt>
+        <dd>{user.displayName || "—"}</dd>
+        <dt>{copy.email}</dt>
+        <dd>{user.email || "—"}</dd>
+        <dt>{copy.logtoSubject}</dt>
+        <dd className="break">{user.logtoSubject || "—"}</dd>
+      </dl>
       <MutationFields
         confirmed={confirmed}
         copy={copy}

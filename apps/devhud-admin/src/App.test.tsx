@@ -377,6 +377,22 @@ describe("administrator console review regressions", () => {
     expect(recoveryLabel.nextElementSibling?.textContent).not.toBe("—");
   });
 
+  it("identifies the target account before a block mutation", async () => {
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Block" }));
+    const dialog = await screen.findByRole("dialog");
+
+    for (const [label, value] of [
+      ["Target user", user.userId.value],
+      ["Display name", user.displayName],
+      ["Email", user.email],
+      ["Logto subject", user.logtoSubject],
+    ]) {
+      const term = within(dialog).getByText(label);
+      expect(term.nextElementSibling?.textContent).toBe(value);
+    }
+  });
+
   it("renders upload owner and submission attribution before moderation", async () => {
     render(<App />);
     await screen.findByText("Target User");
