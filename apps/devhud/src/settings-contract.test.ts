@@ -49,14 +49,14 @@ describe("DevHud settings boundary", () => {
     expect(canonicalDevHudSettings(parsed)).not.toContain("ControlRight");
   });
 
-  it("rejects malformed, conflicting, and reserved shortcut chords before settings persistence", () => {
+  it("rejects malformed and conflicting shortcut chords before settings persistence", () => {
     const duplicate = structuredShortcuts();
     duplicate[ShortcutActionId.CaptureDisplay] = { ...duplicate[ShortcutActionId.CaptureDisplay], key: ShortcutKey.Digit2 };
     expect(() => parseDesktopShortcutBindings(duplicate)).toThrow(ShortcutValidationCode.Conflict);
 
     const reserved = structuredShortcuts();
     reserved[ShortcutActionId.CommandPalette] = { enabled: true, modifiers: [ShortcutModifier.RightPrimary], key: ShortcutKey.Space };
-    expect(() => parseDesktopShortcutBindings(reserved)).toThrow(ShortcutValidationCode.Reserved);
+    expect(parseDesktopShortcutBindings(reserved)).toEqual(reserved);
 
     const malformed = structuredShortcuts();
     malformed[ShortcutActionId.CommandPalette] = { enabled: true, modifiers: [], key: ShortcutKey.K };

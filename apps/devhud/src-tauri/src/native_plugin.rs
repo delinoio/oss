@@ -62,6 +62,23 @@ fn initialize_mobile<R: Runtime, C: DeserializeOwned>(
 }
 
 #[cfg(desktop)]
+fn restore_main_window<R: Runtime>(app: &AppHandle<R>) {
+    let Some(window) = app.get_webview_window("main") else {
+        tracing::error!(event = "shortcut_window_restore_missing");
+        return;
+    };
+    if let Err(reason) = window.unminimize() {
+        tracing::error!(event = "shortcut_window_restore_unminimize_failed", %reason);
+    }
+    if let Err(reason) = window.show() {
+        tracing::error!(event = "shortcut_window_restore_show_failed", %reason);
+    }
+    if let Err(reason) = window.set_focus() {
+        tracing::error!(event = "shortcut_window_restore_focus_failed", %reason);
+    }
+}
+
+#[cfg(desktop)]
 fn install_global_shortcut_listener<R: Runtime>(app: &AppHandle<R>) {
     let app = app.clone();
     std::thread::spawn(move || {
@@ -76,6 +93,9 @@ fn install_global_shortcut_listener<R: Runtime>(app: &AppHandle<R>) {
             let Some(action) = state.process_shortcut_event(event) else {
                 return;
             };
+            if action == crate::shortcuts::ShortcutAction::ShellCommandPalette {
+                restore_main_window(&callback_app);
+            }
             let Ok(action) = serde_json::to_value(action) else {
                 return;
             };

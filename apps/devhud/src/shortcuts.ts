@@ -71,7 +71,6 @@ export function validateBindings(bindings: DesktopShortcutBindings): void {
     const binding = bindings[action];
     const identifier = chordIdentifier(binding);
     if (!binding.enabled) continue;
-    if (isReserved(binding)) throw new ShortcutContractError(ShortcutValidationCode.Reserved);
     if (seen.has(identifier)) throw new ShortcutContractError(ShortcutValidationCode.Conflict);
     seen.add(identifier);
   }
@@ -95,10 +94,4 @@ function parseBinding(value: unknown): ShortcutBinding {
   if (new Set(parsed.modifiers).size !== parsed.modifiers.length || parsed.modifiers.filter((modifier) => modifier === ShortcutModifier.RightPrimary).length > 1) throw new ShortcutContractError(ShortcutValidationCode.Malformed);
   if (parsed.enabled && parsed.modifiers.length === 0 && !bareKeys.has(parsed.key)) throw new ShortcutContractError(ShortcutValidationCode.Malformed);
   return parsed;
-}
-
-function isReserved(binding: ShortcutBinding): boolean {
-  const modifierSet = new Set(binding.modifiers);
-  return (modifierSet.has(ShortcutModifier.RightPrimary) && (binding.key === ShortcutKey.Space || binding.key === ShortcutKey.Tab || binding.key === ShortcutKey.Q))
-    || (modifierSet.has(ShortcutModifier.RightPrimary) && modifierSet.has(ShortcutModifier.Alt) && (binding.key === ShortcutKey.Delete || binding.key === ShortcutKey.Backspace));
 }

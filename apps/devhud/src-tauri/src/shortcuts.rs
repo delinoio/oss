@@ -284,6 +284,9 @@ pub trait NativeShortcutBackend {
     /// or record key events.
     fn install(&mut self, bindings: &ShortcutBindings) -> Result<(), ShortcutFailure>;
     fn permission(&self) -> ShortcutPermission;
+    fn refresh_permission(&mut self) -> ShortcutPermission {
+        self.permission()
+    }
     fn request_permission(&mut self) -> ShortcutPermission {
         self.permission()
     }
@@ -294,6 +297,7 @@ pub struct ShortcutService<B> {
     backend: B,
     active: ShortcutBindings,
     right_primary: bool,
+    left_primary: bool,
     shift: bool,
     alt: bool,
 }
@@ -304,6 +308,7 @@ impl<B: NativeShortcutBackend> ShortcutService<B> {
             backend,
             active: default_bindings(),
             right_primary: false,
+            left_primary: false,
             shift: false,
             alt: false,
         }
@@ -327,7 +332,7 @@ impl<B: NativeShortcutBackend> ShortcutService<B> {
 
     pub fn apply(&mut self, candidate: ShortcutBindings) -> Result<(), ShortcutFailure> {
         validate_bindings(&candidate, self.platform())?;
-        if self.permission() != ShortcutPermission::Available {
+        if self.backend.refresh_permission() != ShortcutPermission::Available {
             return Err(ShortcutFailure::PermissionDenied);
         }
         self.backend.install(&candidate)?;
@@ -343,7 +348,10 @@ impl<B: NativeShortcutBackend> ShortcutService<B> {
                 self.right_primary = event.pressed;
                 return None;
             }
-            NativeKey::LeftPrimary => return None,
+            NativeKey::LeftPrimary => {
+                self.left_primary = event.pressed;
+                return None;
+            }
             NativeKey::Shift => {
                 self.shift = event.pressed;
                 return None;
@@ -364,6 +372,7 @@ impl<B: NativeShortcutBackend> ShortcutService<B> {
     fn modifiers_match(&self, binding: &ShortcutBinding) -> bool {
         let modifiers = binding.modifiers.iter().copied().collect::<BTreeSet<_>>();
         modifiers.contains(&ShortcutModifier::RightPrimary) == self.right_primary
+            && !self.left_primary
             && modifiers.contains(&ShortcutModifier::Shift) == self.shift
             && modifiers.contains(&ShortcutModifier::Alt) == self.alt
     }
@@ -445,25 +454,27 @@ pub struct PlatformShortcutBackend {
 }
 impl PlatformShortcutBackend {
     pub fn current(listener_failed: Arc<AtomicBool>) -> Self {
-        let (platform, permission) = if cfg!(target_os = "macos") {
-            (ShortcutPlatform::Macos, ShortcutPermission::NotDetermined)
-        } else if cfg!(target_os = "windows") {
-            (ShortcutPlatform::Windows, ShortcutPermission::Available)
-        } else if cfg!(target_os = "linux") {
-            (
-                ShortcutPlatform::X11,
-                if std::env::var_os("DISPLAY").is_some() {
-                    ShortcutPermission::Available
-                } else {
-                    ShortcutPermission::X11Unavailable
-                },
-            )
-        } else {
-            (
-                ShortcutPlatform::Unsupported,
-                ShortcutPermission::Unsupported,
-            )
-        };
+        #[cfg(target_os = "macos")]
+        let (platform, permission) = (
+            ShortcutPlatform::Macos,
+            macos_accessibility_permission(false),
+        );
+        #[cfg(target_os = "windows")]
+        let (platform, permission) = (ShortcutPlatform::Windows, ShortcutPermission::Available);
+        #[cfg(target_os = "linux")]
+        let (platform, permission) = (
+            ShortcutPlatform::X11,
+            if std::env::var_os("DISPLAY").is_some() {
+                ShortcutPermission::Available
+            } else {
+                ShortcutPermission::X11Unavailable
+            },
+        );
+        #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+        let (platform, permission) = (
+            ShortcutPlatform::Unsupported,
+            ShortcutPermission::Unsupported,
+        );
         Self {
             permission,
             platform,
@@ -490,7 +501,19 @@ impl NativeShortcutBackend for PlatformShortcutBackend {
         self.permission
     }
 
+    fn refresh_permission(&mut self) -> ShortcutPermission {
+        #[cfg(target_os = "macos")]
+        {
+            self.permission = macos_accessibility_permission(false);
+        }
+        self.permission
+    }
+
     fn request_permission(&mut self) -> ShortcutPermission {
+        #[cfg(target_os = "macos")]
+        {
+            self.permission = macos_accessibility_permission(true);
+        }
         self.permission
     }
 
@@ -499,11 +522,62 @@ impl NativeShortcutBackend for PlatformShortcutBackend {
     }
 }
 
+#[cfg(target_os = "macos")]
+fn macos_accessibility_permission(prompt: bool) -> ShortcutPermission {
+    use std::ffi::c_void;
+
+    #[link(name = "ApplicationServices", kind = "framework")]
+    #[link(name = "CoreFoundation", kind = "framework")]
+    unsafe extern "C" {
+        fn AXIsProcessTrusted() -> bool;
+        fn AXIsProcessTrustedWithOptions(options: *const c_void) -> bool;
+        fn CFDictionaryCreate(
+            allocator: *const c_void,
+            keys: *const *const c_void,
+            values: *const *const c_void,
+            value_count: isize,
+            key_callbacks: *const c_void,
+            value_callbacks: *const c_void,
+        ) -> *const c_void;
+        fn CFRelease(value: *const c_void);
+        static kAXTrustedCheckOptionPrompt: *const c_void;
+        static kCFBooleanTrue: *const c_void;
+    }
+
+    let trusted = unsafe {
+        if !prompt {
+            AXIsProcessTrusted()
+        } else {
+            let key = kAXTrustedCheckOptionPrompt;
+            let value = kCFBooleanTrue;
+            let options = CFDictionaryCreate(
+                std::ptr::null(),
+                &key,
+                &value,
+                1,
+                std::ptr::null(),
+                std::ptr::null(),
+            );
+            let trusted = AXIsProcessTrustedWithOptions(options);
+            if !options.is_null() {
+                CFRelease(options);
+            }
+            trusted
+        }
+    };
+    if trusted {
+        ShortcutPermission::Available
+    } else {
+        ShortcutPermission::NotDetermined
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     struct Fake {
         permission: ShortcutPermission,
+        refreshed_permission: Option<ShortcutPermission>,
         platform: ShortcutPlatform,
         fail: bool,
         installs: usize,
@@ -512,6 +586,7 @@ mod tests {
         fn default() -> Self {
             Self {
                 permission: ShortcutPermission::Available,
+                refreshed_permission: None,
                 platform: ShortcutPlatform::X11,
                 fail: false,
                 installs: 0,
@@ -532,13 +607,55 @@ mod tests {
             self.permission
         }
 
+        fn refresh_permission(&mut self) -> ShortcutPermission {
+            if let Some(permission) = self.refreshed_permission {
+                self.permission = permission;
+            }
+            self.permission
+        }
+
         fn platform(&self) -> ShortcutPlatform {
             self.platform
         }
     }
     #[test]
-    fn matches_right_not_left_and_discards_unrelated_input() {
+    fn matches_only_exact_primary_modifier_state() {
         let mut service = ShortcutService::new(Fake::default());
+        assert_eq!(
+            service.process(NativeKeyEvent {
+                key: NativeKey::LeftPrimary,
+                pressed: true
+            }),
+            None
+        );
+        assert_eq!(
+            service.process(NativeKeyEvent {
+                key: NativeKey::Key(ShortcutKey::Digit1),
+                pressed: true
+            }),
+            None
+        );
+        assert_eq!(
+            service.process(NativeKeyEvent {
+                key: NativeKey::LeftPrimary,
+                pressed: false
+            }),
+            None
+        );
+        assert_eq!(
+            service.process(NativeKeyEvent {
+                key: NativeKey::Key(ShortcutKey::Digit1),
+                pressed: true
+            }),
+            Some(ShortcutAction::RealqaCaptureDisplay)
+        );
+        assert_eq!(
+            service.process(NativeKeyEvent {
+                key: NativeKey::Key(ShortcutKey::KeyK),
+                pressed: true
+            }),
+            None
+        );
         assert_eq!(
             service.process(NativeKeyEvent {
                 key: NativeKey::LeftPrimary,
@@ -550,6 +667,13 @@ mod tests {
             service.process(NativeKeyEvent {
                 key: NativeKey::Key(ShortcutKey::KeyK),
                 pressed: true
+            }),
+            None
+        );
+        assert_eq!(
+            service.process(NativeKeyEvent {
+                key: NativeKey::LeftPrimary,
+                pressed: false
             }),
             None
         );
@@ -612,6 +736,34 @@ mod tests {
             service.apply(default_bindings()),
             Err(ShortcutFailure::PermissionDenied)
         );
+    }
+
+    #[test]
+    fn refreshes_permission_before_applying_bindings() {
+        let mut service = ShortcutService::new(Fake {
+            permission: ShortcutPermission::NotDetermined,
+            refreshed_permission: Some(ShortcutPermission::Available),
+            ..Default::default()
+        });
+        assert_eq!(service.apply(default_bindings()), Ok(()));
+    }
+
+    #[test]
+    fn applies_reserved_chord_rules_per_platform() {
+        let mut bindings = default_bindings();
+        let palette = bindings
+            .get_mut(&ShortcutAction::ShellCommandPalette)
+            .expect("palette binding");
+        palette.key = ShortcutKey::Space;
+        assert_eq!(
+            validate_bindings(&bindings, ShortcutPlatform::Macos),
+            Err(ShortcutFailure::Reserved)
+        );
+        assert_eq!(
+            validate_bindings(&bindings, ShortcutPlatform::Windows),
+            Ok(())
+        );
+        assert_eq!(validate_bindings(&bindings, ShortcutPlatform::X11), Ok(()));
     }
 
     #[test]
