@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clearAllContractedLocalData, clearAuthenticatedOriginData, clearAuthenticatedSettingsCache, clearGuestImportMarker, hasGuestSettings, readAuthenticatedSettingsCache, readCachedIdentityBootstrap, writeAuthenticatedSettingsCache, writeCachedIdentityBootstrap, writeGuestSettings } from "./local-data";
+import { clearAllContractedLocalData, clearAuthenticatedOriginData, clearAuthenticatedSettingsCache, clearGuestImportMarker, hasGuestSettings, readAuthenticatedSettingsCache, readCachedIdentityBootstrap, readGuestSettings, writeAuthenticatedSettingsCache, writeCachedIdentityBootstrap, writeGuestSettings } from "./local-data";
 import { defaultDevHudSettings } from "./settings-contract";
 
 class MemoryStorage implements Storage {
@@ -80,6 +80,23 @@ describe("local identity data lifecycle", () => {
     expect(storage.getItem("devhud.identity.v1.guest-settings")).not.toBeNull();
     expect(storage.getItem("devhud.identity.v1.guest-used")).toBeNull();
     expect(hasGuestSettings(storage)).toBe(true);
+  });
+
+  it("retains the guest snapshot and import marker in memory when persistence rejects writes", () => {
+    const storage = {
+      getItem: () => null,
+      removeItem: () => {},
+      setItem: () => { throw new DOMException("quota exceeded", "QuotaExceededError"); },
+    };
+    const settings = { ...defaultDevHudSettings, appearance: { ...defaultDevHudSettings.appearance, theme: "dark" as const } };
+
+    writeGuestSettings(storage, settings);
+
+    expect(hasGuestSettings(storage)).toBe(true);
+    expect(readGuestSettings(storage)).toEqual(settings);
+    clearGuestImportMarker(storage);
+    expect(hasGuestSettings(storage)).toBe(false);
+    expect(readGuestSettings(storage)).toEqual(defaultDevHudSettings);
   });
 
   it("keeps guest-marker removal best-effort when Web Storage throws", () => {

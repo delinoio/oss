@@ -160,6 +160,59 @@ describe("generated Connect identity/settings fixture", () => {
     expect(replacements).toBe(1);
   });
 
+  it("keeps synchronized appearance controls read-only while a replacement is pending", async () => {
+    const server = { ...defaultDevHudSettings, appearance: { theme: "dark" as const, language: "en" as const } };
+    const firstReplacement = { ...server, appearance: { ...server.appearance, theme: "light" as const } };
+    const secondReplacement = { ...firstReplacement, appearance: { ...firstReplacement.appearance, language: "ko" as const } };
+    const replaceBodies: Record<string, unknown>[] = [];
+    let releaseFirst!: () => void;
+    const firstPending = new Promise<void>((resolve) => { releaseFirst = resolve; });
+    let activeReplacements = 0;
+    let maximumActiveReplacements = 0;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 1, revision: "1", canonicalJson: encodedSettings(server) } });
+      if (url.endsWith("/devhud.v1.SettingsService/ReplaceSettings")) {
+        const source = typeof init?.body === "string" ? init.body : new TextDecoder().decode(init?.body as ArrayBufferView<ArrayBuffer>);
+        replaceBodies.push(JSON.parse(source) as Record<string, unknown>);
+        activeReplacements += 1;
+        maximumActiveReplacements = Math.max(maximumActiveReplacements, activeReplacements);
+        const replacementNumber = replaceBodies.length;
+        if (replacementNumber === 1) await firstPending;
+        activeReplacements -= 1;
+        const replacement = replacementNumber === 1 ? firstReplacement : secondReplacement;
+        return connectResponse({ snapshot: { schemaVersion: 1, revision: String(replacementNumber + 1), canonicalJson: encodedSettings(replacement) } });
+      }
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    render(<App bridge={authenticatedBridge()} initialRuntime={runtime} />);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.settings }));
+    const theme = await screen.findByLabelText(messages.en.theme) as HTMLSelectElement;
+    const language = screen.getByLabelText(messages.en.language) as HTMLSelectElement;
+    await waitFor(() => expect(theme.disabled).toBe(false));
+    fireEvent.change(theme, { target: { value: "light" } });
+
+    await waitFor(() => {
+      expect(theme.disabled).toBe(true);
+      expect(language.disabled).toBe(true);
+      expect(replaceBodies).toHaveLength(1);
+    });
+    releaseFirst();
+    await waitFor(() => {
+      expect(theme.disabled).toBe(false);
+      expect(theme.value).toBe("light");
+    });
+    fireEvent.change(language, { target: { value: "ko" } });
+
+    await waitFor(() => expect(replaceBodies).toHaveLength(2));
+    expect(maximumActiveReplacements).toBe(1);
+    expect(replaceBodies.map((body) => body.expectedRevision)).toEqual(["1", "2"]);
+    expect(replaceBodies[1]?.canonicalJson).toBe(encodedSettings(secondReplacement));
+  });
+
   it("applies authenticated appearance while Home is the active surface", async () => {
     localStorage.removeItem("devhud.shell.onboarding.v1");
     const server = { ...defaultDevHudSettings, appearance: { theme: "dark" as const, language: "ko" as const } };
@@ -402,6 +455,52 @@ describe("generated Connect identity/settings fixture", () => {
 
     expect(await screen.findByText(messages.en.deletionPendingTitle)).toBeTruthy();
     await waitFor(() => expect(purges).toContain("account-deletion"));
+  });
+
+  it("retries secure cleanup without repeating a successful account deletion", async () => {
+    let deletionRequests = 0;
+    let cleanupAttempts = 0;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 1, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
+      if (url.endsWith("/devhud.v1.AccountService/DeleteAccount")) {
+        deletionRequests += 1;
+        return connectResponse({ account: { ...fixture.account, deletionState: "ACCOUNT_DELETION_STATE_PENDING" } });
+      }
+      throw new Error(`unexpected request ${url}`);
+    }));
+    const accessTokenMap = JSON.stringify({ "@https://api.example/api": { token: "fixture-access-token", scope: "", expiresAt: 4_102_444_800 } });
+    const secureSession = JSON.stringify({ idToken: "fixture-id-token", accessToken: accessTokenMap });
+    const bridge: NativeBridgeV1 = {
+      async request(request) {
+        if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
+        if (request.operation === "secure.read") return { kind: "secure-value", value: request.setting.kind === "logto-session" ? secureSession : null };
+        if (request.operation === "secure.write" || request.operation === "secure.remove") return { kind: "ok" };
+        if (request.operation === "secure.purge" && request.scope === "account-deletion") {
+          cleanupAttempts += 1;
+          if (cleanupAttempts === 1) throw new Error("secure-store-unavailable");
+          return { kind: "ok" };
+        }
+        throw new Error(`unexpected bridge operation ${request.operation}`);
+      },
+      async listen() { return () => {}; },
+    };
+
+    render(<App bridge={bridge} initialRuntime={runtime} />);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.account }));
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.deleteAccount }));
+    fireEvent.click(within(screen.getByRole("alertdialog", { name: messages.en.deleteAccountConfirmTitle })).getByRole("button", { name: messages.en.deleteAccount }));
+
+    expect(await screen.findByText(messages.en.deletionPendingTitle)).toBeTruthy();
+    const cleanupAlert = await screen.findByRole("alert");
+    expect(cleanupAlert.textContent).toContain(messages.en.accountActionFailed);
+    fireEvent.click(within(cleanupAlert).getByRole("button", { name: messages.en.retry }));
+
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    expect(cleanupAttempts).toBe(2);
+    expect(deletionRequests).toBe(1);
   });
 
   it("keeps an established session usable after a background Bootstrap failure", async () => {
@@ -858,6 +957,48 @@ describe("generated Connect identity/settings fixture", () => {
       expect(state.dataset.status).toBe("signed-out");
       expect(state.dataset.queryDataCount).toBe("1");
     });
+  });
+
+  it("tombstones the current origin cache when logout cannot enumerate or remove it", async () => {
+    const apiOrigin = "https://devhud.api.delino.io";
+    writeAuthenticatedSettingsCache(localStorage, apiOrigin, { settings: defaultDevHudSettings, revision: 7n, cachedAt: "2026-08-17T00:00:00.000Z" });
+    const accessTokenMap = JSON.stringify({ "@https://api.example/api": { token: "fixture-access-token", scope: "", expiresAt: 4_102_444_800 } });
+    const secureSession = JSON.stringify({ idToken: "fixture-id-token", accessToken: accessTokenMap });
+    let authenticated = true;
+    const bridge: NativeBridgeV1 = {
+      async request(request) {
+        if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
+        if (request.operation === "secure.read") return { kind: "secure-value", value: authenticated && request.setting.kind === "logto-session" ? secureSession : null };
+        if (request.operation === "secure.purge" || request.operation === "secure.remove") { authenticated = false; return { kind: "ok" }; }
+        if (request.operation === "secure.write") return { kind: "ok" };
+        throw new Error(`unexpected bridge operation ${request.operation}`);
+      },
+      async listen() { return () => {}; },
+    };
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 1, revision: "7", canonicalJson: encodedSettings(defaultDevHudSettings) } });
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    renderIdentityProbe(bridge);
+    await waitFor(() => expect(screen.getByTestId("identity-state").dataset.status).toBe("authenticated"));
+    const cacheKey = Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index)).find((key) => key?.endsWith(".settings"));
+    expect(cacheKey).toBeTypeOf("string");
+    vi.spyOn(Storage.prototype, "key").mockImplementation(() => { throw new DOMException("denied", "SecurityError"); });
+    const originalRemoveItem = Storage.prototype.removeItem;
+    vi.spyOn(Storage.prototype, "removeItem").mockImplementation(function (this: Storage, key) {
+      if (key === cacheKey) throw new DOMException("denied", "SecurityError");
+      originalRemoveItem.call(this, key);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "logout probe identity" }));
+
+    await waitFor(() => expect(screen.getByTestId("identity-state").dataset.status).toBe("signed-out"));
+    expect(localStorage.getItem(cacheKey as string)).not.toBeNull();
+    expect(readAuthenticatedSettingsCache(localStorage, apiOrigin)).toBeNull();
   });
 
   it("rejects an unsupported ReplaceSettings envelope without changing or caching it", async () => {

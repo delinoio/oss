@@ -42,6 +42,7 @@ export interface IdentitySettingsValue {
   readonly error: string | null;
   readonly accountError: DevHudClientError | null;
   readonly settingsError: DevHudClientError | null;
+  readonly deletionCleanupFailed: boolean;
   readonly importDiff: readonly SettingsDiffEntry[] | null;
   readonly conflict: SettingsConflict | null;
   readonly signIn: () => Promise<void>;
@@ -57,6 +58,7 @@ export interface IdentitySettingsValue {
   readonly logout: () => Promise<void>;
   readonly deleteAccount: () => Promise<void>;
   readonly restoreAccount: () => Promise<void>;
+  readonly retryDeletionCleanup: () => Promise<void>;
   readonly profileRequiresSetup: (kind: "github" | "r2", profileId: string) => Promise<boolean>;
 }
 
@@ -122,6 +124,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   const [error, setError] = useState<string | null>(null);
   const [accountError, setAccountError] = useState<DevHudClientError | null>(null);
   const [settingsError, setSettingsError] = useState<DevHudClientError | null>(null);
+  const [deletionCleanupFailed, setDeletionCleanupFailed] = useState(false);
   const [importDiff, setImportDiff] = useState<readonly SettingsDiffEntry[] | null>(null);
   const [conflict, setConflict] = useState<SettingsConflict | null>(null);
   const [account, setAccount] = useState<Account | null>(null);
@@ -172,7 +175,12 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
 
   async function cleanPendingDeletion(): Promise<void> {
     clearAllContractedLocalData(storage);
-    await bridge.request({ operation: "secure.purge", scope: "account-deletion", profileId: await sessionProfileId(apiOrigin) });
+    try {
+      await bridge.request({ operation: "secure.purge", scope: "account-deletion", profileId: await sessionProfileId(apiOrigin) });
+      setDeletionCleanupFailed(false);
+    } catch {
+      setDeletionCleanupFailed(true);
+    }
   }
 
   async function clearIrrecoverableAccount(): Promise<void> {
@@ -310,7 +318,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       void clearIrrecoverableAccount().catch(() => {});
     } else if (next.deletionState === AccountDeletionState.PENDING) {
       setStatus("deletion-pending");
-      void cleanPendingDeletion().catch((reason) => setError(safeError(reason)));
+      void cleanPendingDeletion();
     } else if (next.administrativeBlockState === AdministrativeBlockState.BLOCKED) setStatus("blocked");
   }, [accountQuery.data]);
 
@@ -327,7 +335,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       if (mapped.detail.reason === PermissionFailureReason.ACCOUNT_DELETION_PENDING) {
         setAccountError(null);
         setStatus("deletion-pending");
-        void cleanPendingDeletion().catch((reason) => setError(safeError(reason)));
+        void cleanPendingDeletion();
       } else if (mapped.detail.reason === PermissionFailureReason.USER_BLOCKED) {
         setAccountError(null);
         setStatus("blocked");
@@ -387,7 +395,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     } else if (mapped.kind === "permissionDenied") {
       if (mapped.detail.reason === PermissionFailureReason.ACCOUNT_DELETION_PENDING) {
         setStatus("deletion-pending");
-        void cleanPendingDeletion().catch((reason) => setError(safeError(reason)));
+        void cleanPendingDeletion();
       }
       if (mapped.detail.reason === PermissionFailureReason.USER_BLOCKED) setStatus("blocked");
     }
@@ -445,8 +453,8 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   }
 
   const localSettingsWritable = identityReady && (status === "guest" || status === "signed-out");
-  const settingsReadOnly = !localSettingsWritable
-    && (status !== "authenticated" || !online || !settingsReady || importDiff !== null || conflict !== null);
+  const settingsReadOnly = replaceMutation.isPending || (!localSettingsWritable
+    && (status !== "authenticated" || !online || !settingsReady || importDiff !== null || conflict !== null));
 
   const value: IdentitySettingsValue = {
     status,
@@ -459,6 +467,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     error,
     accountError,
     settingsError,
+    deletionCleanupFailed,
     importDiff,
     conflict,
     signIn: async () => {
@@ -520,6 +529,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       await sessionRef.current?.clear();
       sessionRef.current = null;
       setSession(null);
+      clearAuthenticatedSettingsCache(storage, apiOrigin);
       clearAllContractedLocalData(storage);
       setStatus("signed-out");
       setAccount(null);
@@ -542,6 +552,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       try {
         const response = await restoreMutation.mutateAsync({});
         setAccount(response.account ?? null);
+        setDeletionCleanupFailed(false);
         const blocked = response.account?.administrativeBlockState === AdministrativeBlockState.BLOCKED;
         setStatus(blocked ? "blocked" : "authenticated");
         if (!blocked) await settingsQuery.refetch();
@@ -554,6 +565,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
         throw reason;
       }
     },
+    retryDeletionCleanup: cleanPendingDeletion,
     profileRequiresSetup: (kind, profileId) => profileRequiresSetup(bridge, kind, profileId),
   };
 

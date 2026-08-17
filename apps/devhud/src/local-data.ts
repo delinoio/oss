@@ -7,12 +7,16 @@ const guestUsedKey = `${prefix}guest-used`;
 const accountPrefix = `${prefix}account.`;
 const invalidatedSettingsKeys = new Set<string>();
 const clearedGuestSettings = new WeakSet<object>();
+const inMemoryGuestSettings = new WeakMap<object, DevHudSettingsV1>();
 
 type ReadStorage = Pick<Storage, "getItem">;
 type WriteStorage = Pick<Storage, "setItem">;
 type MutableStorage = Pick<Storage, "getItem" | "setItem" | "removeItem" | "key" | "length">;
 
 export function readGuestSettings(storage: ReadStorage): DevHudSettingsV1 {
+  if (clearedGuestSettings.has(storage)) return defaultDevHudSettings;
+  const inMemory = inMemoryGuestSettings.get(storage);
+  if (inMemory !== undefined) return inMemory;
   try {
     const source = storage.getItem(guestSettingsKey);
     return source === null ? defaultDevHudSettings : parseDevHudSettings(JSON.parse(source));
@@ -27,13 +31,16 @@ export function writeGuestSettings(storage: WriteStorage, settings: DevHudSettin
   try {
     // The snapshot itself is the durable import marker so quota failures cannot split the two values.
     storage.setItem(guestSettingsKey, canonicalDevHudSettings(parsed));
+    inMemoryGuestSettings.delete(storage);
   } catch {
-    // Guest settings remain usable in memory when Web Storage becomes unavailable.
+    // Preserve both the snapshot and its import marker for this session when persistence is unavailable.
+    inMemoryGuestSettings.set(storage, parsed);
   }
 }
 
 export function hasGuestSettings(storage: ReadStorage): boolean {
   if (clearedGuestSettings.has(storage)) return false;
+  if (inMemoryGuestSettings.has(storage)) return true;
   try {
     return storage.getItem(guestSettingsKey) !== null || storage.getItem(guestUsedKey) === "true";
   } catch {
@@ -43,6 +50,7 @@ export function hasGuestSettings(storage: ReadStorage): boolean {
 
 export function clearGuestImportMarker(storage: Pick<Storage, "removeItem">): void {
   clearedGuestSettings.add(storage);
+  inMemoryGuestSettings.delete(storage);
   for (const key of [guestSettingsKey, guestUsedKey]) {
     try {
       storage.removeItem(key);
@@ -129,6 +137,7 @@ export function clearAuthenticatedOriginData(storage: MutableStorage, apiOrigin:
 
 export function clearAllContractedLocalData(storage: MutableStorage): void {
   clearedGuestSettings.add(storage);
+  inMemoryGuestSettings.delete(storage);
   removeMatching(storage, (key) => key.startsWith(prefix) || /^(?:devhud\.(?:deck|draft|clone|cache|permission|pairing)|devhud-extension\.)/u.test(key));
 }
 
