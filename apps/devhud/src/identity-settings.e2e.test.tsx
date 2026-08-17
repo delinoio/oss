@@ -1,0 +1,198 @@
+// @vitest-environment jsdom
+
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { create, toBinary } from "@bufbuild/protobuf";
+import { SettingsRevisionConflictSchema } from "@delinoio/devhud-api-client";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import fixture from "../fixtures/identity-settings-e2e.json";
+import { App } from "./App";
+import { messages } from "./localization";
+import { writeAuthenticatedSettingsCache, writeCachedIdentityBootstrap, writeGuestSettings } from "./local-data";
+import { canonicalDevHudSettings, defaultDevHudSettings } from "./settings-contract";
+import { LifecycleState, RuntimePlatform, type NativeBridgeRequestV1, type NativeBridgeResponseV1, type NativeBridgeV1, type RuntimeSnapshot } from "./native-bridge";
+
+const runtime: RuntimeSnapshot = {
+  bridgeVersion: 1,
+  platform: RuntimePlatform.Desktop,
+  architecture: "x86_64",
+  osVersion: "fixture",
+  lifecycle: LifecycleState.Active,
+  capabilities: { secureSettings: true, notifications: false, storeUpdates: false, widgets: false },
+};
+
+function connectResponse(body: unknown): Response {
+  return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json", "Connect-Protocol-Version": "1" } });
+}
+
+beforeEach(() => {
+  localStorage.clear();
+  localStorage.setItem("devhud.shell.onboarding.v1", "complete");
+  Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
+  Object.defineProperty(window, "matchMedia", { configurable: true, value: vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })) });
+});
+
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
+
+describe("generated Connect identity/settings fixture", () => {
+  it("requires explicit guest upload and preserves only the recovery session through deletion", async () => {
+    const local = { ...defaultDevHudSettings, appearance: { ...defaultDevHudSettings.appearance, theme: "dark" as const } };
+    const server = { ...defaultDevHudSettings, appearance: { ...defaultDevHudSettings.appearance, theme: "light" as const } };
+    writeGuestSettings(localStorage, local);
+    const encoder = new TextEncoder();
+    const toBase64 = (value: unknown) => btoa(String.fromCharCode(...encoder.encode(canonicalDevHudSettings(value))));
+    const replaceBodies: Record<string, unknown>[] = [];
+    const recoveryUntil = new Date(Date.now() + (30 * 24 * 60 * 60 * 1000)).toISOString();
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 1, revision: fixture.serverRevision, canonicalJson: toBase64(server) } });
+      if (url.endsWith("/devhud.v1.SettingsService/ReplaceSettings")) {
+        const source = typeof init?.body === "string" ? init.body : new TextDecoder().decode(init?.body as ArrayBufferView<ArrayBuffer>);
+        replaceBodies.push(JSON.parse(source) as Record<string, unknown>);
+        if (replaceBodies.length === 1) {
+          const detail = create(SettingsRevisionConflictSchema, {
+            expectedRevision: 3n,
+            currentSnapshot: { schemaVersion: 1, revision: 4n, canonicalJson: encoder.encode(canonicalDevHudSettings(server)) },
+          });
+          const value = btoa(String.fromCharCode(...toBinary(SettingsRevisionConflictSchema, detail)));
+          return new Response(JSON.stringify({ code: "aborted", message: "settings revision conflict", details: [{ type: SettingsRevisionConflictSchema.typeName, value }] }), { status: 409, headers: { "Content-Type": "application/json" } });
+        }
+        return connectResponse({ snapshot: { schemaVersion: 1, revision: "5", canonicalJson: toBase64(local) } });
+      }
+      if (url.endsWith("/devhud.v1.AccountService/DeleteAccount")) return connectResponse({ account: { ...fixture.account, deletionState: "ACCOUNT_DELETION_STATE_PENDING", recoverableUntil: recoveryUntil } });
+      if (url.endsWith("/devhud.v1.AccountService/RestoreAccount")) return connectResponse({ account: fixture.account });
+      throw new Error(`unexpected fixture request ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const accessTokenMap = JSON.stringify({ "@https://api.example": { token: "fixture-access-token", scope: "", expiresAt: 4_102_444_800 } });
+    const secureSession = JSON.stringify({ idToken: "fixture-id-token", accessToken: accessTokenMap });
+    const purgeScopes: string[] = [];
+    const bridge: NativeBridgeV1 = {
+      async request(request: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> {
+        if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
+        if (request.operation === "secure.read") return { kind: "secure-value", value: request.setting.kind === "logto-session" ? secureSession : null };
+        if (request.operation === "secure.purge") { purgeScopes.push(request.scope); return { kind: "ok" }; }
+        if (request.operation === "secure.write" || request.operation === "secure.remove") return { kind: "ok" };
+        if (request.operation === "auth.take-pending-callback") return { kind: "auth-callback", url: null };
+        throw new Error(`unexpected bridge operation ${request.operation}`);
+      },
+      async listen() { return () => {}; },
+    };
+
+    render(<App bridge={bridge} initialRuntime={runtime} />);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.account }));
+    expect(await screen.findByText("Fixture User")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.settings }));
+    expect(await screen.findByText(messages.en.importSettingsTitle)).toBeTruthy();
+    expect(screen.getByText("$.appearance.theme")).toBeTruthy();
+    expect(screen.getByText("dark")).toBeTruthy();
+    expect(screen.getByText("light")).toBeTruthy();
+    expect(replaceBodies).toHaveLength(0);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.uploadLocal }));
+    expect(await screen.findByText(messages.en.conflictTitle)).toBeTruthy();
+    expect(replaceBodies[0]?.expectedRevision).toBe(fixture.serverRevision);
+    expect(screen.getByText("$.appearance.theme")).toBeTruthy();
+    expect(screen.queryByText(messages.en.importSettingsTitle)).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.reapplyLocal }));
+    await waitFor(() => expect(replaceBodies).toHaveLength(2));
+    expect(replaceBodies[1]?.expectedRevision).toBe("4");
+    await waitFor(() => expect(screen.getByLabelText(messages.en.synchronizedSettings).textContent).toContain(`${messages.en.settingsRevision}: 5`));
+    expect(screen.queryByText(messages.en.importSettingsTitle)).toBeNull();
+    expect(screen.queryByText(messages.en.conflictTitle)).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.account }));
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.deleteAccount }));
+    const confirmation = screen.getByRole("alertdialog", { name: messages.en.deleteAccountConfirmTitle });
+    fireEvent.click(within(confirmation).getByRole("button", { name: messages.en.deleteAccount }));
+    expect(await screen.findByText(messages.en.deletionPendingTitle)).toBeTruthy();
+    expect(purgeScopes).toEqual(["account-deletion"]);
+    expect(screen.getByRole("button", { name: messages.en.restoreAccount })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.restoreAccount }));
+    expect(await screen.findByText("Fixture User")).toBeTruthy();
+    expect(purgeScopes).toEqual(["account-deletion"]);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.logout }));
+    await waitFor(() => expect(purgeScopes).toEqual(["account-deletion", "logout"]));
+    expect(await screen.findByRole("button", { name: messages.en.signIn })).toBeTruthy();
+  });
+
+  it("loads an authenticated cache read-only while offline and keeps direct local surfaces available", async () => {
+    Object.defineProperty(navigator, "onLine", { configurable: true, value: false });
+    const apiOrigin = "https://devhud.api.delino.io";
+    writeCachedIdentityBootstrap(localStorage, apiOrigin, {
+      issuer: "https://identity.example",
+      audience: "https://api.example",
+      clientId: "desktop-client",
+      redirectUri: "devhud://auth/callback",
+    });
+    writeAuthenticatedSettingsCache(localStorage, apiOrigin, {
+      settings: { ...defaultDevHudSettings, appearance: { ...defaultDevHudSettings.appearance, theme: "dark" } },
+      revision: 9n,
+      cachedAt: "2026-08-17T00:00:00.000Z",
+    });
+    const accessTokenMap = JSON.stringify({ "@https://api.example": { token: "offline-token", scope: "", expiresAt: 4_102_444_800 } });
+    const secureSession = JSON.stringify({ idToken: "offline-id-token", accessToken: accessTokenMap });
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const bridge: NativeBridgeV1 = {
+      async request(request) {
+        if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
+        if (request.operation === "secure.read") return { kind: "secure-value", value: request.setting.kind === "logto-session" ? secureSession : null };
+        if (request.operation === "auth.take-pending-callback") return { kind: "auth-callback", url: null };
+        throw new Error(`unexpected bridge operation ${request.operation}`);
+      },
+      async listen() { return () => {}; },
+    };
+
+    render(<App bridge={bridge} initialRuntime={runtime} />);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.settings }));
+    expect(await screen.findByText(messages.en.offlineSettingsReadOnly)).toBeTruthy();
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.home }));
+    expect(await screen.findByRole("heading", { name: messages.en.welcome })).toBeTruthy();
+  });
+
+  it("blocks authenticated service actions without disabling local navigation", async () => {
+    const encoder = new TextEncoder();
+    const toBase64 = (value: unknown) => btoa(String.fromCharCode(...encoder.encode(canonicalDevHudSettings(value))));
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: { ...fixture.account, administrativeBlockState: "ADMINISTRATIVE_BLOCK_STATE_BLOCKED" } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 1, revision: "1", canonicalJson: toBase64(defaultDevHudSettings) } });
+      throw new Error(`unexpected fixture request ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const accessTokenMap = JSON.stringify({ "@https://api.example": { token: "blocked-token", scope: "", expiresAt: 4_102_444_800 } });
+    const secureSession = JSON.stringify({ idToken: "blocked-id-token", accessToken: accessTokenMap });
+    const bridge: NativeBridgeV1 = {
+      async request(request) {
+        if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
+        if (request.operation === "secure.read") return { kind: "secure-value", value: request.setting.kind === "logto-session" ? secureSession : null };
+        if (request.operation === "auth.take-pending-callback") return { kind: "auth-callback", url: null };
+        if (request.operation === "secure.purge" || request.operation === "secure.remove") return { kind: "ok" };
+        throw new Error(`unexpected bridge operation ${request.operation}`);
+      },
+      async listen() { return () => {}; },
+    };
+
+    render(<App bridge={bridge} initialRuntime={runtime} />);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.account }));
+    expect(await screen.findByText(messages.en.blockedTitle)).toBeTruthy();
+    expect(screen.getByText(messages.en.blockedLocalHint)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: messages.en.deleteAccount })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.home }));
+    expect(await screen.findByRole("heading", { name: messages.en.welcome })).toBeTruthy();
+  });
+});

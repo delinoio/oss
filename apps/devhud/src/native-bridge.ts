@@ -83,11 +83,14 @@ export interface WidgetDeckSnapshot {
 
 export type NativeBridgeRequestV1 =
   | { readonly operation: "runtime.snapshot" }
+  | { readonly operation: "session.configure-origins"; readonly apiOrigin: string; readonly logtoIssuer?: string }
   | { readonly operation: "lifecycle.open-external"; readonly target: "authentication" | "pat"; readonly apiOrigin: string }
+  | { readonly operation: "auth.open-system-browser"; readonly url: string; readonly issuer: string }
   | { readonly operation: "auth.take-pending-callback" }
   | { readonly operation: "secure.read"; readonly setting: SecureSettingRef }
   | { readonly operation: "secure.write"; readonly setting: SecureSettingRef; readonly value: string }
   | { readonly operation: "secure.remove"; readonly setting: SecureSettingRef }
+  | { readonly operation: "secure.purge"; readonly scope: "logout" | "account-deletion" | "api-change"; readonly profileId?: string }
   | { readonly operation: "notifications.permission" }
   | { readonly operation: "notifications.request-permission" }
   | { readonly operation: "notifications.publish-deck-change"; readonly notification: DeckNotification }
@@ -99,6 +102,7 @@ export type NativeBridgeRequestV1 =
 
 export type NativeBridgeResponseV1 =
   | { readonly kind: "runtime"; readonly snapshot: RuntimeSnapshot }
+  | { readonly kind: "session-network-policy"; readonly changed: boolean }
   | { readonly kind: "auth-callback"; readonly url: string | null }
   | { readonly kind: "secure-value"; readonly value: string | null }
   | { readonly kind: "notification-permission"; readonly permission: NotificationPermission }
@@ -159,6 +163,16 @@ export function validateExternalRequest(request: { readonly target: "authenticat
   }
 }
 
+export function validateAuthenticationBrowserRequest(request: { readonly url: string; readonly issuer: string }) {
+  try {
+    const issuer = new URL(request.issuer);
+    const destination = new URL(request.url);
+    if (issuer.protocol !== "https:" || issuer.username || issuer.password || issuer.search || issuer.hash || issuer.pathname !== "/" || destination.origin !== issuer.origin || destination.protocol !== "https:" || destination.username || destination.password || destination.hash) throw new Error();
+  } catch {
+    throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument);
+  }
+}
+
 export function isAuthCallback(value: string) {
   if (value !== value.trim() || !value.startsWith("devhud://")) return false;
   try {
@@ -190,9 +204,12 @@ export const nativeBridge: NativeBridgeV1 = {
     if ("setting" in request) validateSecureSettingRef(request.setting);
     if (request.operation === "secure.write") validateSecretValue(request.value);
     if (request.operation === "lifecycle.open-external") validateExternalRequest(request);
+    if (request.operation === "auth.open-system-browser") validateAuthenticationBrowserRequest(request);
     if (!window.__TAURI_INTERNALS__) {
       if (request.operation === "runtime.snapshot") return { kind: "runtime", snapshot: desktopSnapshot() };
+      if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
       if (request.operation === "auth.take-pending-callback") return { kind: "auth-callback", url: null };
+      if (request.operation === "auth.open-system-browser") { window.open(request.url, "_blank", "noopener,noreferrer"); return { kind: "ok" }; }
       if (request.operation.startsWith("widgets.")) return { kind: "unsupported", feature: "widgets" };
       throw new NativeBridgeError(NativeBridgeErrorCode.Unsupported);
     }

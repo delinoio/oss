@@ -4,6 +4,8 @@ mod bridge;
 mod native_plugin;
 mod platform;
 mod resources;
+#[cfg(desktop)]
+mod secure_store;
 
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 use std::process::{Child, Command};
@@ -643,10 +645,12 @@ fn main() {
         renderer_crashed: Arc::new(AtomicBool::new(false)),
         renderer_crash_listener_ready: Arc::new(AtomicBool::new(cfg!(target_os = "macos"))),
     };
+    let bridge_state = bridge::NativeBridgeState::default();
+    let session_network_policy = bridge_state.clone();
 
     let mut builder = tauri::Builder::<tauri::Cef>::default()
         .plugin(native_plugin::init())
-        .manage(bridge::NativeBridgeState::default())
+        .manage(bridge_state)
         .manage(frontend_readiness.clone())
         .invoke_handler(tauri::generate_handler![
             bridge::native_bridge_v1,
@@ -693,6 +697,14 @@ fn main() {
             .title("DevHUD")
             .inner_size(960.0, 640.0)
             .min_inner_size(640.0, 480.0)
+            .on_web_resource_request(move |_request, response| {
+                let csp = session_network_policy.session_csp(cfg!(debug_assertions));
+                if let Ok(value) = csp.parse() {
+                    response
+                        .headers_mut()
+                        .insert("Content-Security-Policy", value);
+                }
+            })
             .on_navigation(|url| {
                 let allowed = is_allowed_navigation(url);
                 if !allowed {

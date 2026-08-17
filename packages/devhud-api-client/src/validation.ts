@@ -94,7 +94,7 @@ export function validateCanonicalSettingsJson(value: Uint8Array): unknown {
 
   const source = textDecoder.decode(value);
   const parsed: unknown = JSON.parse(source);
-  if (canonicalizeJson(parsed) !== source) {
+  if (canonicalizeSettingsJson(parsed) !== source) {
     throw new TypeError("settings JSON must use RFC 8785 canonical encoding");
   }
   return parsed;
@@ -348,7 +348,7 @@ type CanonicalizationFrame =
   | { readonly kind: "token"; readonly value: string }
   | { readonly kind: "value"; readonly value: unknown };
 
-function canonicalizeJson(value: unknown): string {
+export function canonicalizeSettingsJson(value: unknown): string {
   const output: string[] = [];
   // The byte limit still permits nesting deep enough to overflow the JavaScript call stack.
   const pending: CanonicalizationFrame[] = [{ kind: "value", value }];
@@ -407,4 +407,12 @@ function canonicalizeJson(value: unknown): string {
   }
 
   return output.join("");
+}
+
+export function encodeCanonicalSettingsJson(value: unknown): Uint8Array {
+  const encoded = textEncoder.encode(canonicalizeSettingsJson(value));
+  if (encoded.byteLength > MAX_SETTINGS_JSON_BYTES) {
+    throw new RangeError(`settings JSON must not exceed ${MAX_SETTINGS_JSON_BYTES} bytes`);
+  }
+  return encoded;
 }

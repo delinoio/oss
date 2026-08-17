@@ -22,17 +22,23 @@
     "build:android:armv7": "node scripts/run-mobile.mjs android build --target armv7 --apk --aab",
     "build:android:emulator:x64": "node scripts/run-mobile.mjs android build --target x86_64 --apk",
     "lint": "tsc --noEmit",
-    "test:components": "vitest run src/App.test.tsx src/surface-state.test.tsx",
+    "test:components": "vitest run src/App.test.tsx src/surface-state.test.tsx src/settings-contract.test.ts src/local-data.test.ts src/profile-secrets.test.ts src/identity-client.test.ts src/identity-settings.e2e.test.tsx",
     "test": "pnpm lint && pnpm test:components && node --experimental-strip-types --test scripts/localization.test.mjs scripts/registry.test.mjs scripts/accessibility.test.mjs scripts/native-bridge.test.mjs scripts/mobile-policy.test.mjs scripts/generate-mobile.test.mjs scripts/frontend-output-policy.test.mjs scripts/platform-smoke-child.test.mjs scripts/run-tauri.test.mjs scripts/run-mobile.test.mjs scripts/verify-pins-policy.test.mjs && node scripts/verify-frontend-output.mjs && pnpm mobile:check",
     "verify:pins": "node scripts/verify-pins.mjs",
     "smoke:platform": "node scripts/platform-smoke.mjs"
   },
   "dependencies": {
+    "@connectrpc/connect-query": "2.3.1",
+    "@connectrpc/connect-web": "2.1.2",
+    "@delinoio/devhud-api-client": "workspace:*",
+    "@logto/client": "3.1.8",
+    "@tanstack/react-query": "5.101.4",
     "@tauri-apps/api": "2.11.1",
     "react": "19.2.8",
     "react-dom": "19.2.8"
   },
   "devDependencies": {
+    "@bufbuild/protobuf": "2.14.0",
     "@rsbuild/core": "2.1.10",
     "@rsbuild/plugin-react": "2.0.1",
     "@testing-library/react": "16.3.0",

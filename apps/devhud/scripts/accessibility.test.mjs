@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 const appRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const styles = readFileSync(join(appRoot, "src/styles.css"), "utf8");
 const app = readFileSync(join(appRoot, "src/App.tsx"), "utf8");
+const identityUi = readFileSync(join(appRoot, "src/identity-ui.tsx"), "utf8");
 const main = readFileSync(join(appRoot, "src/main.tsx"), "utf8");
 const nativeHost = readFileSync(join(appRoot, "src-tauri/src/main.rs"), "utf8");
 const themeBlocks = [
@@ -128,16 +129,18 @@ test("external status remains localized and noopener does not report a false fai
 
 test("first run renders the localized local-choice controls and focuses the API origin", () => {
   assert.match(app, /onboarding/u);
-  assert.match(app, /autoFocus value=\{preferences\.apiOrigin\}/u);
-  assert.match(app, /copy\.signIn/u);
-  assert.match(app, /copy\.continueLocally/u);
+  assert.match(identityUi, /value=\{apiOrigin\} autoFocus/u);
+  assert.match(identityUi, /copy\.signIn/u);
+  assert.match(identityUi, /copy\.continueLocally/u);
+  assert.match(identityUi, /copy\.customApiWarning/u);
   assert.match(styles, /\.app-shell\.onboarding\s*\{\s*grid-template-columns:minmax\(0,1fr\)/u);
 });
 
 test("Account focuses its API origin input when the surface opens or is reselected from the palette", () => {
   assert.match(app, /const apiOriginInput = useRef<HTMLInputElement>\(null\);/u);
   assert.match(app, /surface === SurfaceId\.Account\) apiOriginInput\.current\?\.focus\(\)/u);
-  assert.match(app, /<input ref=\{apiOriginInput\} value=\{preferences\.apiOrigin\}/u);
+  assert.match(app, /inputRef=\{apiOriginInput\}/u);
+  assert.match(identityUi, /<input ref=\{inputRef\} autoFocus=\{autoFocus\}/u);
   assert.match(app, /closePalette\(action\?\.surface !== SurfaceId\.Account\);/u);
   assert.match(app, /action\?\.surface === SurfaceId\.Account\) requestAnimationFrame\(\(\) => apiOriginInput\.current\?\.focus\(\)\)/u);
 });
@@ -148,7 +151,8 @@ test("Account opener actions and invalidating edits ignore stale external comple
   assert.match(app, /const external = async \(target: ExternalLinkTarget\) => \{\s+const attempt = externalAttempt\.current \+ 1;\s+externalAttempt\.current = attempt;/u);
   assert.match(app, /if \(attempt === externalAttempt\.current\) setExternalMessage\(message\);/u);
   assert.match(app, /const finishOnboarding = \(\) => \{\s+externalAttempt\.current \+= 1;\s+setExternalMessage\(null\);/u);
-  assert.match(app, /if \(await external\(ExternalLinkTarget\.Authentication\)\) finishOnboarding\(\);/u);
+  assert.match(app, /clearIdentityForApiChange\(bridge, storage as Storage, preferences\.apiOrigin\)/u);
+  assert.match(identityUi, /identity\.signIn\(\)/u);
 });
 
 test("RealQA exposes unsupported capture actions as disabled controls", () => {

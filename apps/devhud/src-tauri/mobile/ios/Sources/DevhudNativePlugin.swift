@@ -6,6 +6,7 @@ import UserNotifications
 import WebKit
 
 private let keychainService = "io.delino.devhud.secure-settings.v1"
+private let appGroup = "group.io.delino.devhud"
 
 private struct SecureSetting: Decodable {
     let kind: String
@@ -24,14 +25,19 @@ private struct RequestArgs: Decodable {
     let operation: String
     let target: String?
     let apiOrigin: String?
+    let url: String?
+    let issuer: String?
     let setting: SecureSetting?
     let value: String?
+    let scope: String?
+    let profileId: String?
     let notification: DeckNotification?
     let deckId: String?
 }
 
 final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate {
     @objc public override func load(webview: WKWebView) {
+        guard UserDefaults(suiteName: appGroup) != nil else { return }
         UNUserNotificationCenter.current().delegate = self
     }
 
@@ -39,9 +45,11 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate {
         let args = try invoke.parseArgs(RequestArgs.self)
         switch args.operation {
         case "lifecycle.open-external": try openExternal(args, invoke)
+        case "auth.open-system-browser": try openAuthenticationBrowser(args, invoke)
         case "secure.read": try readSecure(args, invoke)
         case "secure.write": try writeSecure(args, invoke)
         case "secure.remove": try removeSecure(args, invoke)
+        case "secure.purge": try purgeSecure(args, invoke)
         case "notifications.permission": notificationPermission(invoke)
         case "notifications.request-permission": requestNotificationPermission(invoke)
         case "notifications.publish-deck-change": try publishNotification(args, invoke)
@@ -51,6 +59,19 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate {
             invoke.resolve(["kind": "update-status", "store": "app-store", "installedVersion": version, "configured": false])
         case "updates.open-store": invoke.reject("not-configured", code: "not-configured")
         default: invoke.reject("invalid-argument", code: "invalid-argument")
+        }
+    }
+
+    private func openAuthenticationBrowser(_ args: RequestArgs, _ invoke: Invoke) throws {
+        guard let value = args.url, let issuerValue = args.issuer,
+              let destination = URL(string: value), let issuer = URL(string: issuerValue),
+              issuer.scheme == "https", issuer.path == "", issuer.query == nil, issuer.fragment == nil,
+              destination.scheme == "https", destination.host == issuer.host,
+              destination.port == issuer.port, destination.user == nil, destination.password == nil,
+              destination.fragment == nil else { throw NativeError.invalidArgument }
+        UIApplication.shared.open(destination, options: [:]) { opened in
+            if opened { invoke.resolve(["kind": "ok"]) }
+            else { invoke.reject("platform-failure", code: "platform-failure") }
         }
     }
 
@@ -73,10 +94,15 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate {
     }
 
     private func query(_ setting: SecureSetting) -> [String: Any] {
-        [kSecClass as String: kSecClassGenericPassword,
+        var item: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
          kSecAttrService as String: keychainService,
          kSecAttrAccount as String: setting.account,
-         kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly]
+         kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+         kSecAttrSynchronizable as String: false]
+        if let accessGroup = Bundle.main.object(forInfoDictionaryKey: "DevHudKeychainAccessGroup") as? String {
+            item[kSecAttrAccessGroup as String] = accessGroup
+        }
+        return item
     }
 
     private func rejectStorageFailure(_ invoke: Invoke) {
@@ -122,6 +148,37 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate {
         guard status == errSecSuccess || status == errSecItemNotFound else {
             rejectStorageFailure(invoke)
             return
+        }
+        invoke.resolve(["kind": "ok"])
+    }
+
+    private func purgeSecure(_ args: RequestArgs, _ invoke: Invoke) throws {
+        guard let scope = args.scope, ["logout", "account-deletion", "api-change"].contains(scope),
+              scope == "logout" || args.profileId != nil else { throw NativeError.invalidArgument }
+        var all: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+                                  kSecAttrService as String: keychainService,
+                                  kSecReturnAttributes as String: true,
+                                  kSecMatchLimit as String: kSecMatchLimitAll]
+        if let accessGroup = Bundle.main.object(forInfoDictionaryKey: "DevHudKeychainAccessGroup") as? String {
+            all[kSecAttrAccessGroup as String] = accessGroup
+        }
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(all as CFDictionary, &result)
+        if status == errSecItemNotFound { invoke.resolve(["kind": "ok"]); return }
+        guard status == errSecSuccess, let items = result as? [[String: Any]] else { rejectStorageFailure(invoke); return }
+        for item in items {
+            guard let account = item[kSecAttrAccount as String] as? String else { continue }
+            let remove = scope == "logout"
+                || (scope == "account-deletion" && account != "logto-session:\(args.profileId!)")
+                || (scope == "api-change" && account == "logto-session:\(args.profileId!)")
+            if remove {
+                var query = all
+                query.removeValue(forKey: kSecReturnAttributes as String)
+                query.removeValue(forKey: kSecMatchLimit as String)
+                query[kSecAttrAccount as String] = account
+                let deletion = SecItemDelete(query as CFDictionary)
+                guard deletion == errSecSuccess || deletion == errSecItemNotFound else { rejectStorageFailure(invoke); return }
+            }
         }
         invoke.resolve(["kind": "ok"])
     }

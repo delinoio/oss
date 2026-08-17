@@ -1,13 +1,34 @@
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use serde_json::{Value, json};
 
 const PROFILE_ID_LIMIT: usize = 128;
 const SECRET_LIMIT: usize = 64 * 1024;
 
-#[derive(Default)]
+const DEFAULT_API_ORIGIN: &str = "https://devhud.api.delino.io";
+
+#[derive(Clone)]
 pub struct NativeBridgeState {
-    pending_auth_callback: Mutex<Option<String>>,
+    pending_auth_callback: Arc<Mutex<Option<String>>>,
+    session_origins: Arc<Mutex<SessionOrigins>>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct SessionOrigins {
+    api_origin: String,
+    logto_issuer: Option<String>,
+}
+
+impl Default for NativeBridgeState {
+    fn default() -> Self {
+        Self {
+            pending_auth_callback: Arc::new(Mutex::new(None)),
+            session_origins: Arc::new(Mutex::new(SessionOrigins {
+                api_origin: DEFAULT_API_ORIGIN.to_string(),
+                logto_issuer: None,
+            })),
+        }
+    }
 }
 
 impl NativeBridgeState {
@@ -30,6 +51,87 @@ impl NativeBridgeState {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .take()
     }
+
+    pub fn session_csp(&self, development: bool) -> String {
+        let origins = self
+            .session_origins
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut connect = vec!["'self'".to_string(), origins.api_origin.clone()];
+        if let Some(issuer) = &origins.logto_issuer {
+            connect.push(issuer.clone());
+        }
+        if development {
+            connect.push("ws://127.0.0.1:46305".to_string());
+        }
+        format!(
+            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src \
+             'self' data:; font-src 'self'; connect-src {}; object-src 'none'; base-uri 'none'; \
+             form-action 'none'; frame-src 'none'; worker-src 'none'",
+            connect.join(" ")
+        )
+    }
+
+    fn configure_session_origins(&self, request: &Value) -> Result<bool, String> {
+        let api_origin = request
+            .get("apiOrigin")
+            .and_then(Value::as_str)
+            .ok_or("invalid-argument")?;
+        let api_origin = validated_api_origin(api_origin)?;
+        let mut origins = self
+            .session_origins
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let logto_issuer = match request.get("logtoIssuer") {
+            Some(Value::String(value)) => Some(validated_https_origin(value)?),
+            Some(Value::Null) => None,
+            Some(_) => return Err("invalid-argument".to_string()),
+            None if origins.api_origin == api_origin => origins.logto_issuer.clone(),
+            None => None,
+        };
+        let next = SessionOrigins {
+            api_origin,
+            logto_issuer,
+        };
+        let changed = *origins != next;
+        *origins = next;
+        Ok(changed)
+    }
+}
+
+fn validated_api_origin(value: &str) -> Result<String, String> {
+    let url = url::Url::parse(value).map_err(|_| "invalid-argument")?;
+    let loopback = url.host_str().is_some_and(|host| {
+        host == "localhost"
+            || host
+                .trim_matches(['[', ']'])
+                .parse::<std::net::IpAddr>()
+                .is_ok_and(|ip| ip.is_loopback())
+    });
+    if !url.username().is_empty()
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+        || url.path() != "/"
+        || (url.scheme() != "https" && !(url.scheme() == "http" && loopback))
+    {
+        return Err("invalid-argument".to_string());
+    }
+    Ok(url.origin().ascii_serialization())
+}
+
+fn validated_https_origin(value: &str) -> Result<String, String> {
+    let url = url::Url::parse(value).map_err(|_| "invalid-argument")?;
+    if url.scheme() != "https"
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+        || url.path() != "/"
+    {
+        return Err("invalid-argument".to_string());
+    }
+    Ok(url.origin().ascii_serialization())
 }
 
 fn is_profile_id(value: &str) -> bool {
@@ -118,6 +220,52 @@ fn validate_external_request(request: &Value) -> Result<(), String> {
     Ok(())
 }
 
+fn validate_auth_browser_request(request: &Value) -> Result<(), String> {
+    let issuer = request
+        .get("issuer")
+        .and_then(Value::as_str)
+        .ok_or("invalid-argument")?;
+    let destination = request
+        .get("url")
+        .and_then(Value::as_str)
+        .ok_or("invalid-argument")?;
+    let issuer = url::Url::parse(issuer).map_err(|_| "invalid-argument")?;
+    let destination = url::Url::parse(destination).map_err(|_| "invalid-argument")?;
+    if issuer.scheme() != "https"
+        || !issuer.username().is_empty()
+        || issuer.password().is_some()
+        || issuer.query().is_some()
+        || issuer.fragment().is_some()
+        || issuer.path() != "/"
+        || destination.scheme() != "https"
+        || destination.origin() != issuer.origin()
+        || !destination.username().is_empty()
+        || destination.password().is_some()
+        || destination.fragment().is_some()
+    {
+        return Err("invalid-argument".to_string());
+    }
+    Ok(())
+}
+
+fn validate_purge_request(request: &Value) -> Result<(), String> {
+    match request.get("scope").and_then(Value::as_str) {
+        Some("logout") => Ok(()),
+        Some("account-deletion" | "api-change") => {
+            let profile = request
+                .get("profileId")
+                .and_then(Value::as_str)
+                .ok_or("invalid-argument")?;
+            if is_profile_id(profile) {
+                Ok(())
+            } else {
+                Err("invalid-argument".to_string())
+            }
+        }
+        _ => Err("invalid-argument".to_string()),
+    }
+}
+
 fn runtime_platform() -> &'static str {
     if cfg!(target_os = "ios") {
         "ios"
@@ -139,7 +287,7 @@ fn runtime_snapshot() -> Value {
             "osVersion": "system",
             "lifecycle": "active",
             "capabilities": {
-                "secureSettings": mobile,
+                "secureSettings": true,
                 "notifications": mobile,
                 "storeUpdates": mobile,
                 "widgets": false
@@ -152,6 +300,7 @@ fn runtime_snapshot() -> Value {
 fn routes_to_mobile_plugin(operation: &str, android: bool) -> bool {
     operation.starts_with("lifecycle.")
         || operation.starts_with("secure.")
+        || operation == "auth.open-system-browser"
         || operation.starts_with("notifications.")
         || operation.starts_with("updates.")
         || (android && operation == "auth.take-pending-callback")
@@ -167,8 +316,16 @@ pub fn handle_native_bridge_request(
         .ok_or("invalid-argument")?;
     match operation {
         "runtime.snapshot" => Ok(runtime_snapshot()),
+        "session.configure-origins" => Ok(json!({
+            "kind": "session-network-policy",
+            "changed": state.configure_session_origins(request)?
+        })),
         "lifecycle.open-external" => {
             validate_external_request(request)?;
+            Err("unsupported".to_string())
+        }
+        "auth.open-system-browser" => {
+            validate_auth_browser_request(request)?;
             Err("unsupported".to_string())
         }
         "auth.take-pending-callback" => {
@@ -176,6 +333,14 @@ pub fn handle_native_bridge_request(
         }
         "secure.read" | "secure.write" | "secure.remove" => {
             validate_secure_request(request)?;
+            if cfg!(any(target_os = "android", target_os = "ios")) {
+                Err("platform-failure".to_string())
+            } else {
+                Err("unsupported".to_string())
+            }
+        }
+        "secure.purge" => {
+            validate_purge_request(request)?;
             if cfg!(any(target_os = "android", target_os = "ios")) {
                 Err("platform-failure".to_string())
             } else {
@@ -223,17 +388,47 @@ pub fn native_bridge_v1<R: tauri::Runtime>(
             .and_then(Value::as_str)
             .ok_or("invalid-argument")?;
         if operation.starts_with("secure.") {
-            validate_secure_request(&request)?;
+            if operation == "secure.purge" {
+                validate_purge_request(&request)?;
+            } else {
+                validate_secure_request(&request)?;
+            }
         }
         if operation == "lifecycle.open-external" {
             validate_external_request(&request)?;
+        }
+        if operation == "auth.open-system-browser" {
+            validate_auth_browser_request(&request)?;
         }
         if routes_to_mobile_plugin(operation, cfg!(target_os = "android")) {
             return crate::native_plugin::request(&app, &request);
         }
     }
     #[cfg(desktop)]
-    let _ = app;
+    {
+        let operation = request
+            .get("operation")
+            .and_then(Value::as_str)
+            .ok_or("invalid-argument")?;
+        if operation.starts_with("secure.") {
+            if operation == "secure.purge" {
+                validate_purge_request(&request)?;
+            } else {
+                validate_secure_request(&request)?;
+            }
+            return crate::secure_store::handle(&request);
+        }
+        if operation == "auth.open-system-browser" {
+            validate_auth_browser_request(&request)?;
+            let destination = request
+                .get("url")
+                .and_then(Value::as_str)
+                .ok_or("invalid-argument")?;
+            open::that_detached(destination).map_err(|_| "platform-failure")?;
+            return Ok(json!({ "kind": "ok" }));
+        }
+        let _ = app;
+    }
     handle_native_bridge_request(&request, &state)
 }
 
@@ -284,6 +479,61 @@ mod tests {
         assert_eq!(first["url"], "devhud://auth/callback?state=two");
         let second = handle_native_bridge_request(&request, &state).expect("empty callback");
         assert!(second["url"].is_null());
+    }
+
+    #[test]
+    fn session_csp_contains_only_the_selected_api_and_discovered_issuer() {
+        let state = NativeBridgeState::default();
+        let changed = handle_native_bridge_request(
+            &json!({
+                "operation": "session.configure-origins",
+                "apiOrigin": "https://custom.example/",
+                "logtoIssuer": "https://identity.example/"
+            }),
+            &state,
+        )
+        .expect("configure origins");
+        assert_eq!(changed["changed"], true);
+        let csp = state.session_csp(false);
+        assert!(csp.contains("connect-src 'self' https://custom.example https://identity.example"));
+        assert!(!csp.contains("devhud.api.delino.io"));
+        assert!(!csp.contains("connect-src https:"));
+
+        let unchanged = handle_native_bridge_request(
+            &json!({
+                "operation": "session.configure-origins",
+                "apiOrigin": "https://custom.example/"
+            }),
+            &state,
+        )
+        .expect("preserve discovered issuer");
+        assert_eq!(unchanged["changed"], false);
+        assert!(
+            state
+                .session_csp(false)
+                .contains("https://identity.example")
+        );
+
+        let api_changed = handle_native_bridge_request(
+            &json!({
+                "operation": "session.configure-origins",
+                "apiOrigin": "https://other.example/"
+            }),
+            &state,
+        )
+        .expect("change API and clear discovered issuer");
+        assert_eq!(api_changed["changed"], true);
+        let csp = state.session_csp(false);
+        assert!(csp.contains("connect-src 'self' https://other.example"));
+        assert!(!csp.contains("identity.example"));
+
+        assert_eq!(
+            handle_native_bridge_request(
+                &json!({ "operation": "session.configure-origins", "apiOrigin": "http://remote.example/" }),
+                &state,
+            ),
+            Err("invalid-argument".to_string())
+        );
     }
 
     #[test]

@@ -39,7 +39,8 @@ export function assertAndroidBackupExclusions({ androidManifest, androidBackupRu
 export function assertAndroidNativeBridge(androidNativeBridge) {
   assert(androidNativeBridge.includes("Executors.newSingleThreadExecutor()"), "Android secure-setting persistence must run off the command thread");
   assert(/override fun onDestroy\(activity: AppCompatActivity\) \{\s+secureSettingsExecutor\.shutdown\(\)\s+\}/u.test(androidNativeBridge), "Android secure-setting executor must stop with the plugin lifecycle");
-  assert((androidNativeBridge.match(/\.commit\(\)/gu) ?? []).length === 2, "Android secure-setting writes and removals must confirm persistence");
+  assert((androidNativeBridge.match(/\.commit\(\)/gu) ?? []).length === 3, "Android secure-setting writes, removals, and purges must confirm persistence");
+  assert((androidNativeBridge.match(/updateAAD\(/gu) ?? []).length === 2, "Android secure values must authenticate their setting key as AES-GCM AAD");
   assert(androidNativeBridge.includes('invoke.reject("storage-failure", "storage-failure"'), "Android secure-setting persistence failures must use storage-failure");
   assert(androidNativeBridge.includes("return@execute") && androidNativeBridge.includes("Base64.getDecoder().decode"), "Android secure-setting reads must map decoding and Keystore failures off-thread");
   assert(androidNativeBridge.includes('(it.path != "" && it.path != "/")'), "Android native navigation must accept both root API-origin spellings");
@@ -59,6 +60,8 @@ export function assertIosNativeBridge(iosNativeBridge) {
   assert(iosNativeBridge.includes('invoke.reject("permission-denied", code: "permission-denied")'), "iOS notification publication must honor authorization");
   assert(iosNativeBridge.includes("UNUserNotificationCenterDelegate") && iosNativeBridge.includes("willPresent notification"), "iOS foreground Deck notifications must be presented by a delegate");
   assert(iosNativeBridge.includes('(url.path.isEmpty || url.path == "/")'), "iOS native navigation must accept both root API-origin spellings");
+  assert(iosNativeBridge.includes("kSecAttrAccessGroup") && iosNativeBridge.includes("kSecAttrSynchronizable"), "iOS secrets must use the shared non-synchronizing Keychain group");
+  assert(iosNativeBridge.includes('UserDefaults(suiteName: appGroup)'), "iOS must bind the contracted App Group");
 }
 
 export function assertMobileDependencyResolution(verifier) {

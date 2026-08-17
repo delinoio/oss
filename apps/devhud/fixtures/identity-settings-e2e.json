@@ -1,0 +1,25 @@
+{
+  "bootstrap": {
+    "protocolSchemaVersion": 1,
+    "apiVersion": "v1",
+    "logtoIssuer": "https://identity.example/",
+    "logtoAudience": "https://api.example/",
+    "logtoClients": {
+      "desktop": "desktop-client",
+      "ios": "ios-client",
+      "android": "android-client",
+      "admin": "admin-client"
+    },
+    "logtoRedirects": {
+      "native": "devhud://auth/callback",
+      "admin": "https://admin.example/callback"
+    }
+  },
+  "account": {
+    "displayName": "Fixture User",
+    "email": "fixture@example.com",
+    "deletionState": "ACCOUNT_DELETION_STATE_ACTIVE",
+    "administrativeBlockState": "ADMINISTRATIVE_BLOCK_STATE_UNBLOCKED"
+  },
+  "serverRevision": "3"
+}

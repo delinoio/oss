@@ -35,9 +35,58 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe("native App state", () => {
+  it.each([
+    ["en", messages.en],
+    ["ko", messages.ko],
+  ] as const)("renders the complete %s first-run identity choice accessibly", async (language, copy) => {
+    localStorage.removeItem("devhud.shell.onboarding.v1");
+    localStorage.setItem("devhud.shell.preferences.v1", JSON.stringify({ version: 1, theme: "system", language, apiOrigin: "https://devhud.api.delino.io", launchAtLogin: false }));
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));
+    const bridge = bridgeWith(async (request) => {
+      if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
+      throw new Error(`unexpected operation ${request.operation}`);
+    });
+
+    render(<App bridge={bridge} initialRuntime={mobileRuntime} />);
+
+    const input = screen.getByRole("textbox", { name: copy.apiOrigin }) as HTMLInputElement;
+    expect(input.value).toBe("https://devhud.api.delino.io");
+    expect(input).toBe(document.activeElement);
+    expect(screen.getByRole("button", { name: copy.signIn })).toBeTruthy();
+    expect(screen.getByRole("button", { name: copy.continueLocally })).toBeTruthy();
+    expect(screen.getByText(copy.customApiWarning)).toBeTruthy();
+    expect(document.documentElement.lang).toBe(language);
+  });
+
+  it("rejects insecure custom APIs and confirms a secure API change before clearing its session", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      if (value.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
+      if (value.operation === "secure.purge") return { kind: "ok" };
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+
+    render(<App bridge={bridgeWith(request)} initialRuntime={mobileRuntime} />);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.account }));
+    const input = screen.getByRole("textbox", { name: messages.en.apiOrigin });
+
+    fireEvent.change(input, { target: { value: "http://remote.example" } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.applyApiOrigin }));
+    expect(screen.getByRole("alert").textContent).toBe(messages.en.invalidApiOrigin);
+    expect(confirm).not.toHaveBeenCalled();
+
+    fireEvent.change(input, { target: { value: "https://custom.example" } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.applyApiOrigin }));
+    await waitFor(() => expect(request).toHaveBeenCalledWith(expect.objectContaining({ operation: "secure.purge", scope: "api-change", profileId: expect.stringMatching(/^origin\./u) })));
+    expect(confirm).toHaveBeenCalledWith(messages.en.apiChangeConfirm);
+    expect(JSON.parse(localStorage.getItem("devhud.shell.preferences.v1") ?? "null").apiOrigin).toBe("https://custom.example");
+  });
+
   it("loads the default content state once", async () => {
     const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
       if (value.operation === "runtime.snapshot") return { kind: "runtime", snapshot: mobileRuntime };

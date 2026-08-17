@@ -59,10 +59,12 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
         try {
             when (invoke.getArgs().getString("operation")) {
                 "auth.take-pending-callback" -> takeAuthCallback(invoke)
+                "auth.open-system-browser" -> openAuthenticationBrowser(invoke)
                 "lifecycle.open-external" -> openExternal(invoke)
                 "secure.read" -> readSecure(invoke)
                 "secure.write" -> writeSecure(invoke)
                 "secure.remove" -> removeSecure(invoke)
+                "secure.purge" -> purgeSecure(invoke)
                 "notifications.permission" -> resolveNotificationPermission(invoke)
                 "notifications.request-permission" -> requestNotificationPermission(invoke)
                 "notifications.publish-deck-change" -> publishNotification(invoke)
@@ -74,6 +76,17 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
         } catch (error: Exception) {
             invoke.reject("platform-failure", "platform-failure", error)
         }
+    }
+
+    private fun openAuthenticationBrowser(invoke: Invoke) {
+        val args = invoke.getArgs()
+        val destination = Uri.parse(args.getString("url"))
+        val issuer = Uri.parse(args.getString("issuer"))
+        val validIssuer = issuer.scheme == "https" && (issuer.path == "" || issuer.path == "/") && issuer.query == null && issuer.fragment == null && issuer.userInfo == null
+        val sameOrigin = destination.scheme == "https" && destination.host == issuer.host && destination.port == issuer.port && destination.userInfo == null && destination.fragment == null
+        if (!validIssuer || !sameOrigin) throw IllegalArgumentException("issuer")
+        activity.startActivity(Intent(Intent.ACTION_VIEW, destination).addCategory(Intent.CATEGORY_BROWSABLE))
+        invoke.resolve(JSObject().put("kind", "ok"))
     }
 
     private fun captureAuthCallback(intent: Intent?) {
@@ -145,6 +158,7 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
                 val iv = payload.copyOfRange(0, 12)
                 val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply {
                     init(Cipher.DECRYPT_MODE, secretKey(), GCMParameterSpec(128, iv))
+                    updateAAD(settingKey(invoke.getArgs()).toByteArray(Charsets.UTF_8))
                 }
                 val value = String(cipher.doFinal(payload.copyOfRange(12, payload.size)), Charsets.UTF_8)
                 invoke.resolve(JSObject().put("kind", "secure-value").put("value", value))
@@ -159,7 +173,10 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
         val key = settingKey(args)
         val value = args.getString("value")
         persistSecure(invoke) {
-            val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, secretKey()) }
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply {
+                init(Cipher.ENCRYPT_MODE, secretKey())
+                updateAAD(key.toByteArray(Charsets.UTF_8))
+            }
             val encrypted = cipher.doFinal(value.toByteArray(Charsets.UTF_8))
             val payload = cipher.iv + encrypted
             activity.getSharedPreferences(storeName, Context.MODE_PRIVATE).edit()
@@ -171,6 +188,23 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
         val key = settingKey(invoke.getArgs())
         persistSecure(invoke) {
             activity.getSharedPreferences(storeName, Context.MODE_PRIVATE).edit().remove(key).commit()
+        }
+    }
+
+    private fun purgeSecure(invoke: Invoke) {
+        val args = invoke.getArgs()
+        val scope = args.getString("scope")
+        val profileId = if (args.has("profileId")) args.getString("profileId") else null
+        if (scope !in setOf("logout", "account-deletion", "api-change") || (scope != "logout" && profileId == null)) throw IllegalArgumentException("scope")
+        persistSecure(invoke) {
+            val preferences = activity.getSharedPreferences(storeName, Context.MODE_PRIVATE)
+            val editor = preferences.edit()
+            preferences.all.keys.filter { key ->
+                scope == "logout" ||
+                    (scope == "account-deletion" && key != "logto-session:$profileId") ||
+                    (scope == "api-change" && key == "logto-session:$profileId")
+            }.forEach(editor::remove)
+            editor.commit()
         }
     }
 
