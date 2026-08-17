@@ -1,3 +1,5 @@
+// @vitest-environment jsdom
+
 import { describe, expect, it } from "vitest";
 import { queryFragmentWarningRequired, sanitizeChromeContext } from "./browser-context";
 
@@ -9,6 +11,15 @@ describe("Chrome browser context privacy", () => {
     expect(JSON.stringify(result)).not.toContain("selector");
   });
   it("returns malformed rather than retaining an unsupported URL", () => expect(sanitizeChromeContext({ ...input, url: "file:///secret" })).toEqual({ kind: "malformed" }));
+  it("keeps only allowlisted DOM and accessibility data within the DOM cap", () => {
+    const result = sanitizeChromeContext({
+      ...input,
+      accessibility: { "aria-label": "safe", onclick: "steal()", "data-token": "secret" },
+      outerHtml: '<main aria-label="safe" onclick="steal()"><a href="https://example.com/?token=secret">safe</a><input value="secret"><script>steal()</script></main>',
+    });
+    expect(result).toMatchObject({ kind: "sanitized", context: { accessibility: { "aria-label": "safe" }, outerHtml: '<main aria-label="safe"><a>safe</a></main>' } });
+    expect(sanitizeChromeContext({ ...input, outerHtml: `<main>${"x".repeat((128 * 1024) + 1)}</main>` })).toMatchObject({ kind: "sanitized", context: { outerHtml: "" } });
+  });
   it("permits a warning only for an explicitly permitted non-Chrome source", () => {
     expect(queryFragmentWarningRequired("contract-permitted-other", true)).toBe(true);
     expect(() => queryFragmentWarningRequired("chrome", true)).toThrow(/cannot include/u);

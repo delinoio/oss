@@ -32,17 +32,23 @@ export function parseUrlPattern(value: string): ParsedUrlPattern {
   if (host.some((part) => !literalHost.test(part) || part === "")) throw new UrlMappingError("host labels must be literals or *");
   const path = pathText.split("/").slice(1);
   if (path.some((part) => part === "" && path.length > 1) || path.some((part) => part.includes("*") && part !== "*" && part !== "**")) throw new UrlMappingError("path wildcards must occupy a complete segment");
-  return { scheme, host, port, path: path.length === 1 && path[0] === "" ? [] : path };
+  return { scheme, host, port: normalizeDefaultPort(scheme, port), path: path.length === 1 && path[0] === "" ? [] : path };
 }
 
 export function parseLiveUrl(value: string): ParsedUrlPattern {
   try {
     const url = new URL(value);
     if ((url.protocol !== "http:" && url.protocol !== "https:") || !url.hostname) throw new Error();
-    return { scheme: url.protocol.slice(0, -1), host: url.hostname.split("."), port: url.port, path: url.pathname.split("/").slice(1).filter(Boolean) };
+    const scheme = url.protocol.slice(0, -1);
+    const path = url.pathname.split("/").slice(1);
+    return { scheme, host: url.hostname.split("."), port: normalizeDefaultPort(scheme, url.port), path: path.length === 1 && path[0] === "" ? [] : path };
   } catch {
     throw new UrlMappingError("live URL must be an HTTP(S) URL");
   }
+}
+
+function normalizeDefaultPort(scheme: string, port: string): string {
+  return (scheme === "http" && port === "80") || (scheme === "https" && port === "443") ? "" : port;
 }
 
 export function mappingMatches(mapping: Pick<UrlRepositoryMapping, "pattern">, value: string): boolean {

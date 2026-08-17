@@ -56,7 +56,7 @@ export interface IdentitySettingsValue {
   readonly continueLocally: () => void;
   readonly uploadLocal: () => Promise<void>;
   readonly replaceLocal: () => void;
-  readonly replaceSettings: (settings: DevHudSettingsV1) => Promise<void>;
+  readonly replaceSettings: (settings: DevHudSettingsV1) => Promise<boolean>;
   readonly adoptConflictServer: () => void;
   readonly reapplyConflictLocal: () => Promise<void>;
   readonly logout: () => Promise<void>;
@@ -444,7 +444,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     }
   }, [apiOrigin, online, settingsQuery.error, status, storage]);
 
-  async function replaceAt(local: DevHudSettingsV1, expectedRevision: bigint): Promise<void> {
+  async function replaceAt(local: DevHudSettingsV1, expectedRevision: bigint): Promise<boolean> {
     if (!online) throw new Error("offline-read-only");
     setSettingsError(null);
     let canonicalJson: Uint8Array;
@@ -473,6 +473,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       setConflict(null);
       clearGuestImportMarker(storage);
       writeAuthenticatedSettingsCache(storage, apiOrigin, { settings: next, revision: validated.revision, cachedAt: new Date().toISOString() });
+      return true;
     } catch (reason) {
       if (reason instanceof SettingsSnapshotError) throw reason;
       const mapped = mapDevHudError(reason);
@@ -488,7 +489,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
         }
         setImportDiff(null);
         setConflict({ local, server: validated.settings, currentRevision: validated.revision, diff: diffSettings(local, validated.settings) });
-        return;
+        return false;
       }
       setSettingsError(mapped);
       throw reason;
@@ -584,7 +585,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       setError(null);
       onContinueLocally();
     },
-    uploadLocal: () => replaceAt(settings, revision),
+    uploadLocal: async () => { await replaceAt(settings, revision); },
     replaceLocal: () => {
       let validated: ValidatedSettingsSnapshot;
       try {
@@ -604,10 +605,10 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
         const parsed = parseDevHudSettings(next);
         writeGuestSettings(storage, parsed);
         setSettings(parsed);
-        return;
+        return true;
       }
       if (settingsReadOnly) throw new Error("settings-read-only");
-      await replaceAt(next, revision);
+      return replaceAt(next, revision);
     },
     adoptConflictServer: () => {
       if (!conflict) return;

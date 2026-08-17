@@ -309,7 +309,7 @@ function chromeOrigin(value: unknown, path: string): string {
   try {
     const candidate = new URL(parsed);
     if (candidate.protocol !== "http:" && candidate.protocol !== "https:") throw new Error();
-    if (candidate.username || candidate.password || candidate.search || candidate.hash || candidate.pathname !== "/" || candidate.origin !== parsed) throw new Error();
+    if (candidate.username || candidate.password || candidate.search || candidate.hash || candidate.pathname !== "/") throw new Error();
     return candidate.origin;
   } catch { throw new SettingsContractError(path, "must be a concrete HTTP(S) origin without credentials, path, query, or fragment"); }
 }

@@ -13,6 +13,12 @@ describe("URL repository matcher", () => {
     expect(mappingMatches(mapping({ pattern: "https://api.example.com/teams/A" }), "https://api.example.com/teams/a")).toBe(false);
   });
 
+  it("treats explicit default ports as portless and preserves repeated path slashes", () => {
+    expect(mappingMatches(mapping({ pattern: "https://example.com:443/**" }), "https://example.com/a")).toBe(true);
+    expect(findMappingOverlaps([mapping({ pattern: "https://example.com:443/**" }), mapping({ id: "018f47a2-7b3c-7def-8abc-1234567890ac", pattern: "https://example.com/**" })])).toHaveLength(1);
+    expect(mappingMatches(mapping({ pattern: "https://example.com/a/b" }), "https://example.com/a//b")).toBe(false);
+  });
+
   it("rejects invalid wildcard placement and sensitive URL components", () => {
     for (const pattern of ["https://api*.example.com/", "https://api.example.com/**:123", "https://api.example.com/path?x=1", "https://user@api.example.com/"]) expect(() => parseUrlPattern(pattern)).toThrow();
   });

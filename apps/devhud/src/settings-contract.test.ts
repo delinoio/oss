@@ -78,6 +78,10 @@ describe("DevHud settings boundary", () => {
     })).toThrow(/without credentials, query, or fragment/u);
   });
 
+  it.each(["https://example.com/", "https://EXAMPLE.com", "https://example.com:443"])("normalizes equivalent Chrome origins: %s", (chromeOrigin) => {
+    expect(parseDevHudSettings({ ...defaultDevHudSettings, urlMappings: [{ ...mapping, chromeOrigin }] }).urlMappings[0]?.chromeOrigin).toBe("https://example.com");
+  });
+
   it("drops legacy v1 mapping entries while preserving other settings", () => {
     const legacy = { ...defaultDevHudSettings, schemaVersion: 1, appearance: { theme: "dark", language: "ko" }, urlMappings: [{ sourcePrefix: "https://source.example/path", destinationPrefix: "https://destination.example/path" }] };
     expect(parseDevHudSettings(legacy)).toMatchObject({ schemaVersion: 2, appearance: { theme: "dark", language: "ko" }, urlMappings: [] });

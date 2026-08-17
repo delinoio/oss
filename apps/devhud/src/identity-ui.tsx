@@ -122,7 +122,7 @@ export function SynchronizedAppearanceBoundary({ onAppearance }: { readonly onAp
 export function SynchronizedSettingsBoundary({ copy }: { readonly copy: Copy }) {
   const identity = useIdentitySettings();
   const [actionError, setActionError] = useState(false);
-  const invoke = (action: () => Promise<void>) => { setActionError(false); void action().catch(() => setActionError(true)); };
+  const invoke = (action: () => Promise<unknown>) => { setActionError(false); void action().catch(() => setActionError(true)); };
   const replaceAppearance = (appearance: Partial<DevHudSettingsV1["appearance"]>) => invoke(() => identity.replaceSettings({
     ...identity.settings,
     appearance: { ...identity.settings.appearance, ...appearance },
@@ -150,19 +150,20 @@ function UrlMappingSettings({ copy }: { readonly copy: Copy }) {
   const [draft, setDraft] = useState<UrlRepositoryMapping[]>(() => [...identity.settings.urlMappings]);
   const [invalid, setInvalid] = useState(false);
   const [saved, setSaved] = useState(false);
-  useEffect(() => setDraft([...identity.settings.urlMappings]), [identity.settings.urlMappings]);
+  const [dirty, setDirty] = useState(false);
+  useEffect(() => { if (!dirty) setDraft([...identity.settings.urlMappings]); }, [dirty, identity.settings.urlMappings]);
   const overlaps = safeOverlaps(draft);
   const change = (id: string, field: keyof UrlRepositoryMapping, value: string | number | null) => {
-    setSaved(false); setInvalid(false);
+    setSaved(false); setInvalid(false); setDirty(true);
     setDraft((current) => current.map((mapping) => mapping.id === id ? { ...mapping, [field]: value } : mapping));
   };
   const changeRepository = (id: string, field: "owner" | "name", value: string) => {
-    setSaved(false); setInvalid(false);
+    setSaved(false); setInvalid(false); setDirty(true);
     setDraft((current) => current.map((mapping) => mapping.id === id ? { ...mapping, repository: { ...mapping.repository, [field]: value } } : mapping));
   };
   const add = () => {
     const timestamp = new Date().toISOString();
-    setSaved(false); setInvalid(false);
+    setSaved(false); setInvalid(false); setDirty(true);
     setDraft((current) => [...current, { id: uuidV7(), pattern: "https://example.com/**", repository: { owner: "owner", name: "repository" }, credentialProfileRef: "github.default", priority: 0, chromeOrigin: null, updatedAt: timestamp }]);
   };
   const save = () => {
@@ -176,7 +177,12 @@ function UrlMappingSettings({ copy }: { readonly copy: Copy }) {
       });
       const next = parseDevHudSettings({ ...identity.settings, urlMappings: mappings });
       setInvalid(false); setSaved(false);
-      void identity.replaceSettings(next).then(() => setSaved(true)).catch(() => setInvalid(true));
+      void identity.replaceSettings(next).then((applied) => {
+        if (!applied) return;
+        setDraft(mappings);
+        setDirty(false);
+        setSaved(true);
+      }).catch(() => setInvalid(true));
     } catch { setInvalid(true); }
   };
   return <section className="url-mappings" aria-labelledby="url-mappings-title">
@@ -189,7 +195,7 @@ function UrlMappingSettings({ copy }: { readonly copy: Copy }) {
       <label>{copy.credentialProfile}<input value={mapping.credentialProfileRef} onChange={(event) => change(mapping.id, "credentialProfileRef", event.target.value)} /></label>
       <label>{copy.mappingPriority}<input type="number" value={mapping.priority} onChange={(event) => change(mapping.id, "priority", Number(event.target.value))} /></label>
       <label>{copy.chromeOrigin}<input value={mapping.chromeOrigin ?? ""} onChange={(event) => change(mapping.id, "chromeOrigin", event.target.value || null)} /></label>
-      <button type="button" onClick={() => { setSaved(false); setDraft((current) => current.filter((item) => item.id !== mapping.id)); }}>{copy.removeUrlMapping}</button>
+      <button type="button" onClick={() => { setSaved(false); setDirty(true); setDraft((current) => current.filter((item) => item.id !== mapping.id)); }}>{copy.removeUrlMapping}</button>
     </fieldset>)}
     <div className="actions"><button type="button" disabled={identity.readOnly} onClick={add}>{copy.addUrlMapping}</button><button type="button" disabled={identity.readOnly} onClick={save}>{copy.saveUrlMappings}</button></div>
     {invalid && <p role="alert">{copy.mappingInvalid}</p>}
