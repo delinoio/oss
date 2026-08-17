@@ -40,6 +40,8 @@ export interface IdentitySettingsValue {
   readonly revision: bigint;
   readonly readOnly: boolean;
   readonly shortcutHydrationReady: boolean;
+  readonly activeShortcutBindings: DevHudSettingsV1["shortcuts"]["desktop"];
+  readonly setActiveShortcutBindings: (bindings: DevHudSettingsV1["shortcuts"]["desktop"]) => void;
   readonly offline: boolean;
   readonly error: string | null;
   readonly accountError: DevHudClientError | null;
@@ -148,6 +150,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   const [identityReady, setIdentityReady] = useState(false);
   const [settingsReady, setSettingsReady] = useState(false);
   const [shortcutSettingsReady, setShortcutSettingsReady] = useState(false);
+  const [activeShortcutBindings, setActiveShortcutBindings] = useState(() => settings.shortcuts.desktop);
   const [bootstrapAttempt, setBootstrapAttempt] = useState(0);
   const [signInPending, setSignInPending] = useState(false);
   const [identityResetAvailable, setIdentityResetAvailable] = useState(false);
@@ -416,6 +419,14 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   }, [accountQuery.error]);
 
   useEffect(() => {
+    if (status === "blocked") {
+      if (!settingsReady) {
+        const cached = readAuthenticatedSettingsCache(storage, apiOrigin);
+        if (cached) { applySettings(cached.settings); applyRevision(cached.revision); }
+      }
+      setShortcutSettingsReady(true);
+      return;
+    }
     if (status !== "authenticated") return;
     if (!online) {
       const cached = readAuthenticatedSettingsCache(storage, apiOrigin);
@@ -446,7 +457,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       applySettings(server);
       writeAuthenticatedSettingsCache(storage, apiOrigin, { settings: server, revision: currentRevision, cachedAt: new Date().toISOString() });
     }
-  }, [apiOrigin, online, settingsQuery.data, status, storage]);
+  }, [apiOrigin, online, settingsQuery.data, settingsReady, status, storage]);
 
   useEffect(() => {
     if (status !== "authenticated" || !online || !settingsQuery.error) return;
@@ -471,10 +482,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   }, [apiOrigin, online, settingsQuery.error, status, storage]);
 
   useEffect(() => {
-    if (status !== "authenticated") setShortcutSettingsReady(false);
-  }, [status]);
-  useEffect(() => {
-    if (status !== "authenticated") setShortcutSettingsReady(false);
+    if (status !== "authenticated" && status !== "blocked") setShortcutSettingsReady(false);
   }, [status]);
   async function replaceAt(local: DevHudSettingsV1, expectedRevision: bigint): Promise<boolean> {
     if (!online) throw new Error("offline-read-only");
@@ -568,7 +576,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   const localSettingsWritable = identityReady && (status === "guest" || status === "signed-out");
   const settingsReadOnly = replaceMutation.isPending || (!localSettingsWritable
     && (status !== "authenticated" || !online || !settingsReady || importDiff !== null || conflict !== null));
-  const shortcutHydrationReady = identityReady && (status !== "authenticated" || shortcutSettingsReady);
+  const shortcutHydrationReady = identityReady && ((status !== "authenticated" && status !== "blocked") || shortcutSettingsReady);
   const githubPatSettingsReady = identityReady && !settingsReadOnly && conflict === null;
 
   const replaceSettings: IdentitySettingsValue["replaceSettings"] = async (update) => {
@@ -642,6 +650,8 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     revision,
     readOnly: settingsReadOnly,
     shortcutHydrationReady,
+    activeShortcutBindings,
+    setActiveShortcutBindings,
     offline: !online,
     error,
     accountError,

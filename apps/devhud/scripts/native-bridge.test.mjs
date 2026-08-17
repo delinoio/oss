@@ -127,7 +127,8 @@ test("desktop shortcuts persist only structured enums and reject unsafe candidat
 
 test("native shortcut boundary is physical-key-only and redacts unrelated input", () => {
   assert.match(nativeShortcuts, /NativeKey::RightPrimary/u);
-  assert.match(nativeShortcuts, /NativeKey::LeftPrimary/u);
+  assert.match(nativeShortcuts, /NativeKey::LeftControl/u);
+  assert.match(nativeShortcuts, /NativeKey::LeftMeta/u);
   assert.match(nativeShortcuts, /normalize_native_key\(platform/u);
   assert.match(nativeShortcuts, /_\s*=> None/u);
   assert.match(nativeShortcuts, /never exposes raw input/u);

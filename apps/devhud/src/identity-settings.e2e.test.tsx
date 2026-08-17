@@ -293,6 +293,39 @@ describe("generated Connect identity/settings fixture", () => {
       { operation: "shortcuts.apply", bindings },
       { operation: "shortcuts.apply", bindings: fallback },
     ]));
+    await waitFor(() => expect(screen.getByRole("button", { name: messages.en.openPalette }).textContent).toBe("Right Ctrl + K"));
+  });
+
+  it("hydrates guest shortcuts after post-onboarding Bootstrap failure when continuing locally", async () => {
+    const bindings = {
+      ...defaultDevHudSettings.shortcuts.desktop,
+      [ShortcutActionId.CommandPalette]: { enabled: false, modifiers: [], key: ShortcutKey.Q },
+    };
+    writeGuestSettings(localStorage, { ...defaultDevHudSettings, shortcuts: { ...defaultDevHudSettings.shortcuts, desktop: bindings } });
+    const requests: NativeBridgeRequestV1[] = [];
+    const bridge: NativeBridgeV1 = {
+      async request(request) {
+        if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
+        if (request.operation === "secure.read") return { kind: "secure-value", value: null };
+        if (request.operation === "shortcuts.apply") {
+          requests.push(request);
+          return { kind: "shortcut-status", platform: "macos", permission: "available", bindings: request.bindings, error: null };
+        }
+        throw new Error(`unexpected bridge operation ${request.operation}`);
+      },
+      async listen() { return () => {}; },
+    };
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return new Response(JSON.stringify({ code: "unavailable", message: "retry" }), { status: 503, headers: { "Content-Type": "application/json" } });
+      throw new Error(`unexpected request ${input}`);
+    }));
+
+    render(<App bridge={bridge} initialRuntime={runtime} />);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.account }));
+    expect((await screen.findByRole("alert")).textContent).toContain(messages.en.bootstrapFailed);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.continueLocally }));
+
+    await waitFor(() => expect(requests).toEqual([{ operation: "shortcuts.apply", bindings }]));
   });
 
   it("reapplies persisted shortcut bindings after permission becomes available", async () => {
@@ -726,6 +759,43 @@ describe("generated Connect identity/settings fixture", () => {
 
     fireEvent.click(screen.getByRole("button", { name: messages.en.home }));
     expect(await screen.findByRole("heading", { name: messages.en.welcome })).toBeTruthy();
+  });
+
+  it("hydrates cached shortcuts before enabling a blocked account's native bindings", async () => {
+    const bindings = {
+      ...defaultDevHudSettings.shortcuts.desktop,
+      [ShortcutActionId.CommandPalette]: { enabled: false, modifiers: [], key: ShortcutKey.Q },
+    };
+    writeAuthenticatedSettingsCache(localStorage, "https://devhud.api.delino.io", {
+      settings: { ...defaultDevHudSettings, shortcuts: { ...defaultDevHudSettings.shortcuts, desktop: bindings } },
+      revision: 7n,
+      cachedAt: "2026-08-17T00:00:00.000Z",
+    });
+    const requests: NativeBridgeRequestV1[] = [];
+    const authenticated = authenticatedBridge();
+    const bridge: NativeBridgeV1 = {
+      async request(request) {
+        if (request.operation === "shortcuts.apply") {
+          requests.push(request);
+          return { kind: "shortcut-status", platform: "windows", permission: "available", bindings: request.bindings, error: null };
+        }
+        return authenticated.request(request);
+      },
+      listen: authenticated.listen,
+    };
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: { ...fixture.account, administrativeBlockState: "ADMINISTRATIVE_BLOCK_STATE_BLOCKED" } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return new Promise<Response>(() => {});
+      throw new Error(`unexpected fixture request ${url}`);
+    }));
+
+    render(<App bridge={bridge} initialRuntime={runtime} />);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.account }));
+
+    expect(await screen.findByText(messages.en.blockedTitle)).toBeTruthy();
+    await waitFor(() => expect(requests).toEqual([{ operation: "shortcuts.apply", bindings }]));
   });
 
   it("purges secure credentials when pending-deletion Web Storage enumeration fails", async () => {

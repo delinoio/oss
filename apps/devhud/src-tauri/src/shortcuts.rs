@@ -155,7 +155,8 @@ pub enum ShortcutPlatform {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NativeKey {
     RightPrimary,
-    LeftPrimary,
+    LeftControl,
+    LeftMeta,
     OtherPrimary,
     LeftShift,
     RightShift,
@@ -202,7 +203,8 @@ pub fn normalize_global_event(event: &rdev::EventType) -> Option<NativeKeyEvent>
         Key::ControlRight => NativeKey::RightPrimary,
         #[cfg(not(target_os = "macos"))]
         Key::MetaRight => NativeKey::OtherPrimary,
-        Key::ControlLeft | Key::MetaLeft => NativeKey::LeftPrimary,
+        Key::ControlLeft => NativeKey::LeftControl,
+        Key::MetaLeft => NativeKey::LeftMeta,
         _ => return None,
     };
     Some(NativeKeyEvent {
@@ -217,10 +219,11 @@ pub fn normalize_global_event(event: &rdev::EventType) -> Option<NativeKeyEvent>
 /// being captured, recorded, or sent across the bridge.
 pub fn normalize_native_key(platform: ShortcutPlatform, code: u32) -> Option<NativeKey> {
     match platform {
-        // kVK_RightCommand / kVK_Command and physical US ANSI key positions.
+        // kVK_RightCommand / kVK_Command / kVK_Control and physical US ANSI key positions.
         ShortcutPlatform::Macos => match code {
             54 => Some(NativeKey::RightPrimary),
-            55 => Some(NativeKey::LeftPrimary),
+            55 => Some(NativeKey::LeftMeta),
+            59 => Some(NativeKey::LeftControl),
             62 => Some(NativeKey::OtherPrimary), // kVK_RightControl
             56 => Some(NativeKey::LeftShift),
             60 => Some(NativeKey::RightShift),
@@ -239,10 +242,11 @@ pub fn normalize_native_key(platform: ShortcutPlatform, code: u32) -> Option<Nat
             51 => Some(NativeKey::Key(ShortcutKey::Backspace)),
             _ => None,
         },
-        // VK_RCONTROL / VK_LCONTROL and printable virtual-key codes.
+        // VK_RCONTROL / VK_LCONTROL / VK_LWIN and printable virtual-key codes.
         ShortcutPlatform::Windows => match code {
             0xa3 => Some(NativeKey::RightPrimary),
-            0xa2 => Some(NativeKey::LeftPrimary),
+            0xa2 => Some(NativeKey::LeftControl),
+            0x5b => Some(NativeKey::LeftMeta),
             0x5c => Some(NativeKey::OtherPrimary), // VK_RWIN
             0xa0 => Some(NativeKey::LeftShift),
             0xa1 => Some(NativeKey::RightShift),
@@ -261,7 +265,8 @@ pub fn normalize_native_key(platform: ShortcutPlatform, code: u32) -> Option<Nat
         // supplies the same physical distinction for Control_L/Control_R.
         ShortcutPlatform::X11 => match code {
             105 => Some(NativeKey::RightPrimary),
-            37 => Some(NativeKey::LeftPrimary),
+            37 => Some(NativeKey::LeftControl),
+            133 => Some(NativeKey::LeftMeta),
             134 => Some(NativeKey::OtherPrimary), // Super_R
             50 => Some(NativeKey::LeftShift),
             62 => Some(NativeKey::RightShift),
@@ -311,7 +316,8 @@ pub struct ShortcutService<B> {
     active: ShortcutBindings,
     staged: Option<ShortcutBindings>,
     right_primary: bool,
-    left_primary: bool,
+    left_control: bool,
+    left_meta: bool,
     other_primary: bool,
     left_shift: bool,
     right_shift: bool,
@@ -326,7 +332,8 @@ impl<B: NativeShortcutBackend> ShortcutService<B> {
             active: default_bindings(),
             staged: None,
             right_primary: false,
-            left_primary: false,
+            left_control: false,
+            left_meta: false,
             other_primary: false,
             left_shift: false,
             right_shift: false,
@@ -391,7 +398,8 @@ impl<B: NativeShortcutBackend> ShortcutService<B> {
     /// observed by the replacement listener.
     pub fn clear_pressed_keys(&mut self) {
         self.right_primary = false;
-        self.left_primary = false;
+        self.left_control = false;
+        self.left_meta = false;
         self.other_primary = false;
         self.left_shift = false;
         self.right_shift = false;
@@ -407,8 +415,12 @@ impl<B: NativeShortcutBackend> ShortcutService<B> {
                 self.right_primary = event.pressed;
                 return None;
             }
-            NativeKey::LeftPrimary => {
-                self.left_primary = event.pressed;
+            NativeKey::LeftControl => {
+                self.left_control = event.pressed;
+                return None;
+            }
+            NativeKey::LeftMeta => {
+                self.left_meta = event.pressed;
                 return None;
             }
             NativeKey::OtherPrimary => {
@@ -443,7 +455,8 @@ impl<B: NativeShortcutBackend> ShortcutService<B> {
     fn modifiers_match(&self, binding: &ShortcutBinding) -> bool {
         let modifiers = binding.modifiers.iter().copied().collect::<BTreeSet<_>>();
         modifiers.contains(&ShortcutModifier::RightPrimary) == self.right_primary
-            && !self.left_primary
+            && !self.left_control
+            && !self.left_meta
             && !self.other_primary
             && modifiers.contains(&ShortcutModifier::Shift) == (self.left_shift || self.right_shift)
             && modifiers.contains(&ShortcutModifier::Alt) == (self.left_alt || self.right_alt)
@@ -692,7 +705,7 @@ mod tests {
         let mut service = ShortcutService::new(Fake::default());
         assert_eq!(
             service.process(NativeKeyEvent {
-                key: NativeKey::LeftPrimary,
+                key: NativeKey::LeftControl,
                 pressed: true
             }),
             None
@@ -706,7 +719,7 @@ mod tests {
         );
         assert_eq!(
             service.process(NativeKeyEvent {
-                key: NativeKey::LeftPrimary,
+                key: NativeKey::LeftControl,
                 pressed: false
             }),
             None
@@ -727,7 +740,7 @@ mod tests {
         );
         assert_eq!(
             service.process(NativeKeyEvent {
-                key: NativeKey::LeftPrimary,
+                key: NativeKey::LeftControl,
                 pressed: true
             }),
             None
@@ -741,7 +754,7 @@ mod tests {
         );
         assert_eq!(
             service.process(NativeKeyEvent {
-                key: NativeKey::LeftPrimary,
+                key: NativeKey::LeftControl,
                 pressed: false
             }),
             None
@@ -851,11 +864,48 @@ mod tests {
     }
 
     #[test]
+    fn keeps_left_primary_family_active_until_each_physical_key_is_released() {
+        let mut service = ShortcutService::new(Fake::default());
+        for key in [NativeKey::LeftControl, NativeKey::LeftMeta] {
+            assert_eq!(service.process(NativeKeyEvent { key, pressed: true }), None);
+        }
+        assert_eq!(
+            service.process(NativeKeyEvent {
+                key: NativeKey::LeftControl,
+                pressed: false,
+            }),
+            None
+        );
+        assert_eq!(
+            service.process(NativeKeyEvent {
+                key: NativeKey::Key(ShortcutKey::Digit1),
+                pressed: true,
+            }),
+            None
+        );
+        assert_eq!(
+            service.process(NativeKeyEvent {
+                key: NativeKey::LeftMeta,
+                pressed: false,
+            }),
+            None
+        );
+        assert_eq!(
+            service.process(NativeKeyEvent {
+                key: NativeKey::Key(ShortcutKey::Digit1),
+                pressed: true,
+            }),
+            Some(ShortcutAction::RealqaCaptureDisplay)
+        );
+    }
+
+    #[test]
     fn clears_modifier_state_before_listener_recovery() {
         let mut service = ShortcutService::new(Fake::default());
         for key in [
             NativeKey::RightPrimary,
-            NativeKey::LeftPrimary,
+            NativeKey::LeftControl,
+            NativeKey::LeftMeta,
             NativeKey::OtherPrimary,
             NativeKey::LeftShift,
             NativeKey::RightShift,
@@ -1004,18 +1054,22 @@ mod tests {
 
     #[test]
     fn native_platform_mappings_keep_primary_family_keys_distinct() {
-        for (platform, right, left, other, key_k) in [
-            (ShortcutPlatform::Macos, 54, 55, 62, 40),
-            (ShortcutPlatform::Windows, 0xa3, 0xa2, 0x5c, 0x4b),
-            (ShortcutPlatform::X11, 105, 37, 134, 45),
+        for (platform, right, left_control, left_meta, other, key_k) in [
+            (ShortcutPlatform::Macos, 54, 59, 55, 62, 40),
+            (ShortcutPlatform::Windows, 0xa3, 0xa2, 0x5b, 0x5c, 0x4b),
+            (ShortcutPlatform::X11, 105, 37, 133, 134, 45),
         ] {
             assert_eq!(
                 normalize_native_key(platform, right),
                 Some(NativeKey::RightPrimary)
             );
             assert_eq!(
-                normalize_native_key(platform, left),
-                Some(NativeKey::LeftPrimary)
+                normalize_native_key(platform, left_control),
+                Some(NativeKey::LeftControl)
+            );
+            assert_eq!(
+                normalize_native_key(platform, left_meta),
+                Some(NativeKey::LeftMeta)
             );
             assert_eq!(
                 normalize_native_key(platform, other),

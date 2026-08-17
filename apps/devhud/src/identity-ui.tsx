@@ -97,7 +97,7 @@ export function AccountIdentity({ copy, apiOrigin, inputRef, onApiOrigin }: Acco
     <p>{copy.accountSummary}</p>
     <ApiOriginEditor copy={copy} value={apiOrigin} inputRef={inputRef} onApply={onApiOrigin} />
     {identity.status === "starting" && <p role="status">{copy.fetchingBootstrap}</p>}
-    {identity.status === "error" && <section className="notice" role="alert"><p>{copy.bootstrapFailed}</p>{identity.identityResetAvailable && <p>{copy.resetSignInHint}</p>}<div className="actions"><button onClick={identity.retryIdentity}>{copy.retry}</button>{identity.identityResetAvailable && <button onClick={() => void identity.resetIdentity().catch(() => {})}>{copy.resetSignIn}</button>}</div></section>}
+    {identity.status === "error" && <section className="notice" role="alert"><p>{copy.bootstrapFailed}</p>{identity.identityResetAvailable && <p>{copy.resetSignInHint}</p>}<div className="actions"><button onClick={identity.retryIdentity}>{copy.retry}</button><button onClick={identity.continueLocally}>{copy.continueLocally}</button>{identity.identityResetAvailable && <button onClick={() => void identity.resetIdentity().catch(() => {})}>{copy.resetSignIn}</button>}</div></section>}
     {(identity.status === "signed-out" || identity.status === "guest") && <button onClick={() => invoke(identity.signIn)} disabled={identity.bootstrap === null || identity.signInPending}>{copy.signIn}</button>}
     {identity.status === "authenticated" && identity.accountError && <section className="notice" role="alert"><p>{copy.accountLoadFailed}</p><code>{`account-connect-${identity.accountError.code}`}</code>{identity.accountError.correlationId && <> {copy.correlationId}: <code>{identity.accountError.correlationId}</code></>}<button onClick={() => void identity.retryAccount()}>{copy.retry}</button></section>}
     {identity.status === "authenticated" && !identity.accountError && identity.account === null && <p role="status">{copy.loadingAccount}</p>}
@@ -129,17 +129,24 @@ export function SynchronizedShortcutBoundary({ bridge = nativeBridge }: { readon
     if (!identity.shortcutHydrationReady) return;
     let active = true;
     void bridge.request({ operation: "shortcuts.apply", bindings }).then(async (response) => {
-      if (!active || response.kind !== "shortcut-status" || response.error !== ShortcutValidationCode.Reserved) return;
+      if (!active || response.kind !== "shortcut-status") return;
+      if (response.error === null) {
+        identity.setActiveShortcutBindings(response.bindings);
+        return;
+      }
+      if (response.error !== ShortcutValidationCode.Reserved) return;
       // Synchronized bindings can be valid on their source desktop platform but
       // reserved here. Keep the native backend's last known platform-valid map
       // active without overwriting the shared settings snapshot.
-      await bridge.request({ operation: "shortcuts.apply", bindings: response.bindings });
+      identity.setActiveShortcutBindings(response.bindings);
+      const fallback = await bridge.request({ operation: "shortcuts.apply", bindings: response.bindings });
+      if (active && fallback.kind === "shortcut-status" && fallback.error === null) identity.setActiveShortcutBindings(fallback.bindings);
     }).catch(() => {
       // Shortcut status remains available in Settings; startup hydration must
       // not turn the shell into an error state when native access is pending.
     });
     return () => { active = false; };
-  }, [bindings, bridge, identity.shortcutHydrationReady]);
+  }, [bindings, bridge, identity.setActiveShortcutBindings, identity.shortcutHydrationReady]);
   return null;
 }
 
@@ -181,7 +188,7 @@ const shortcutLabels: Record<ShortcutActionId, keyof Copy> = {
 
 export function ShortcutPaletteTrigger({ copy, isMac, onOpen, triggerRef }: { readonly copy: Copy; readonly isMac: boolean; readonly onOpen: () => void; readonly triggerRef: Ref<HTMLButtonElement> }) {
   const identity = useIdentitySettings();
-  const binding = identity.settings.shortcuts.desktop[ShortcutActionId.CommandPalette];
+  const binding = identity.activeShortcutBindings[ShortcutActionId.CommandPalette];
   const modifiers = binding.modifiers.map((modifier) => modifier === ShortcutModifier.RightPrimary ? isMac ? copy.rightCommandK.replace(/ K$/u, "") : copy.rightControlK.replace(/ K$/u, "") : modifier === ShortcutModifier.Shift ? copy.shortcutShift : copy.shortcutAlt);
   const label = binding.enabled ? [...modifiers, copy[shortcutKeyLabels[binding.key]]].join(" + ") : copy.shortcutNone;
   return <button ref={triggerRef} className="palette-trigger" onClick={onOpen} aria-label={copy.openPalette}>{label}</button>;
