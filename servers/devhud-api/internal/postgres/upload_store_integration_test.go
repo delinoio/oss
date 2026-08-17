@@ -105,7 +105,7 @@ func TestGetUploadUsageReturnsSnapshotTotalsAndSubmissionCounters(t *testing.T) 
 	}
 }
 
-func TestConcurrentFinalizationEnforcesSubmissionLimitAcrossGroupsAndFreesDeletedSlot(t *testing.T) {
+func TestConcurrentFinalizationEnforcesSubmissionLimitAcrossGroupsAndKeepsQuarantinedSlotFreeDuringDeletion(t *testing.T) {
 	ctx, _, store := newIntegrationStore(t, time.Date(2026, 8, 17, 0, 0, 0, 0, time.UTC))
 	user := provisionUploadUser(t, ctx, store, "finalization")
 	now := time.Date(2026, 8, 17, 0, 0, 0, 0, time.UTC)
@@ -175,17 +175,22 @@ func TestConcurrentFinalizationEnforcesSubmissionLimitAcrossGroupsAndFreesDelete
 			t.Fatalf("replay error = %v", err)
 		}
 	}
-	removeToken := "DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD"
-	claimed, err := store.ClaimUploadRemoval(ctx, user.ID, "", successes[0].upload.UploadID, domain.RemovalReasonOwnerDeleted, 0, removeToken, now)
+	quarantineToken := strings.Repeat("D", 43)
+	claimed, err := store.ClaimUploadRemoval(ctx, "", "", successes[0].upload.UploadID, domain.RemovalReasonAdministratorQuarantined, domain.UploadStateFinalized, quarantineToken, now)
 	if err != nil || claimed.State != domain.UploadStateRemoving {
-		t.Fatalf("claim removal = %+v, err=%v", claimed, err)
+		t.Fatalf("claim quarantine = %+v, err=%v", claimed, err)
 	}
-	if _, err := store.CompleteUploadRemoval(ctx, claimed.UploadID, removeToken, now, nil); err != nil {
+	if _, err := store.CompleteUploadRemoval(ctx, claimed.UploadID, quarantineToken, now, nil); err != nil {
 		t.Fatal(err)
 	}
+	deleteToken := strings.Repeat("E", 43)
+	claimed, err = store.ClaimUploadRemoval(ctx, "", "", claimed.UploadID, domain.RemovalReasonAdministratorDeleted, domain.UploadStateQuarantined, deleteToken, now)
+	if err != nil || claimed.State != domain.UploadStateRemoving || claimed.RemovedAt == nil {
+		t.Fatalf("claim quarantined deletion = %+v, err=%v", claimed, err)
+	}
 	failed := reservations[failedIndex]
-	if _, err := store.ClaimUploadPromotion(ctx, user.ID, reservationBinding(failed, `"etag"`), domain.UploadObject{ETag: `"etag"`}, 1, 1, "EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE", now); err != nil {
-		t.Fatalf("freed submission slot was not reusable: %v", err)
+	if _, err := store.ClaimUploadPromotion(ctx, user.ID, reservationBinding(failed, `"etag"`), domain.UploadObject{ETag: `"etag"`}, 1, 1, strings.Repeat("F", 43), now); err != nil {
+		t.Fatalf("quarantined submission slot was not reusable during deletion: %v", err)
 	}
 	usage, err := store.GetUploadUsage(ctx, user.ID, now)
 	if err != nil {
@@ -387,6 +392,13 @@ func TestRemovalTerminalIdempotencyAndPendingQuarantine(t *testing.T) {
 	claimed, err := store.ClaimUploadRemoval(ctx, "", "", finalized.UploadID, domain.RemovalReasonAdministratorDeleted, domain.UploadStateQuarantined, quarantineDeleteToken, now)
 	if err != nil || claimed.State != domain.UploadStateRemoving || claimed.RemovalReason != domain.RemovalReasonAdministratorDeleted {
 		t.Fatalf("quarantine-to-delete claim = %+v, err=%v", claimed, err)
+	}
+	usage, err := store.GetUploadUsage(ctx, user.ID, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if usage.StoredBytes != 0 || usage.FinalizedImages != 0 || len(usage.SubmissionImages) != 0 {
+		t.Fatalf("quarantined deletion usage = %+v", usage)
 	}
 	retryToken := strings.Repeat("I", 43)
 	retried, err := store.ClaimUploadRemoval(ctx, "", "", finalized.UploadID, domain.RemovalReasonAdministratorDeleted, domain.UploadStateQuarantined, retryToken, now.Add(domain.UploadOperationLease))

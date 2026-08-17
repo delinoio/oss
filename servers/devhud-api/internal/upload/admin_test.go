@@ -33,6 +33,7 @@ func TestAdministratorReasonValidation(t *testing.T) {
 		"source=%2Fworkspace%2Fprivate%2Fapp.ts",
 		"https://example.com/audit?to%6ben=unsafe-value",
 		"file:///Users/example/private/incident.txt",
+		"Reviewed policy\x00violation",
 	} {
 		if err := validateAdministratorReason(reason); err == nil {
 			t.Fatalf("sensitive reason %q was accepted", reason)
@@ -97,13 +98,15 @@ func TestAdministratorRemovalCarriesAuditIntoCompletion(t *testing.T) {
 }
 
 func TestAdministratorReasonIsRejectedBeforeRemoval(t *testing.T) {
-	events := []string{}
-	repository := &fakeRepository{events: &events}
-	hooks := NewAdministratorHooks(newTestService(t, repository, &fakeStorage{events: &events}, &fakeCache{events: &events}))
-	if _, err := hooks.RemoveUpload(context.Background(), "actor", "upload", domain.RemovalReasonAdministratorDeleted, domain.UploadStateFinalized, "token=unsafe-value", domain.AuditEvent{}); err == nil {
-		t.Fatal("sensitive administrator reason was accepted")
-	}
-	if len(events) != 0 {
-		t.Fatalf("invalid reason triggered side effects: %v", events)
+	for _, rationale := range []string{"token=unsafe-value", "Reviewed policy\x00violation"} {
+		events := []string{}
+		repository := &fakeRepository{events: &events}
+		hooks := NewAdministratorHooks(newTestService(t, repository, &fakeStorage{events: &events}, &fakeCache{events: &events}))
+		if _, err := hooks.RemoveUpload(context.Background(), "actor", "upload", domain.RemovalReasonAdministratorDeleted, domain.UploadStateFinalized, rationale, domain.AuditEvent{}); err == nil {
+			t.Fatalf("invalid administrator reason %q was accepted", rationale)
+		}
+		if len(events) != 0 {
+			t.Fatalf("invalid reason %q triggered side effects: %v", rationale, events)
+		}
 	}
 }

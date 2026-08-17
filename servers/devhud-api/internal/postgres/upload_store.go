@@ -238,7 +238,7 @@ func (s *Store) ClaimUploadPromotion(ctx context.Context, ownerID string, bindin
 func enforceFinalizeQuotas(ctx context.Context, tx pgx.Tx, upload domain.Upload, now time.Time) error {
 	var submissionCount int64
 	if err := tx.QueryRow(ctx, `SELECT count(*) FROM devhud_uploads WHERE submission_id = $1 AND upload_id <> $2
-		AND (state IN (2, 3) OR (state = 4 AND finalized_at IS NOT NULL))`, upload.SubmissionID, upload.UploadID).Scan(&submissionCount); err != nil {
+		AND (state IN (2, 3) OR (state = 4 AND finalized_at IS NOT NULL AND removed_at IS NULL))`, upload.SubmissionID, upload.UploadID).Scan(&submissionCount); err != nil {
 		return err
 	}
 	if uint64(submissionCount) >= domain.UploadMaximumSubmissionImages {
@@ -257,7 +257,7 @@ func enforceFinalizeQuotas(ctx context.Context, tx pgx.Tx, upload domain.Upload,
 	}
 	if err := tx.QueryRow(ctx, `SELECT COALESCE(sum(expected_size_bytes), 0) FROM devhud_uploads
 		WHERE owner_user_id = $1 AND upload_id <> $2
-		AND (state IN (2, 3) OR (state = 4 AND finalized_at IS NOT NULL))`, upload.OwnerUserID, upload.UploadID).Scan(&storedBytes); err != nil {
+		AND (state IN (2, 3) OR (state = 4 AND finalized_at IS NOT NULL AND removed_at IS NULL))`, upload.OwnerUserID, upload.UploadID).Scan(&storedBytes); err != nil {
 		return err
 	}
 	storedObserved := uint64(storedBytes) + upload.SizeBytes
@@ -625,7 +625,7 @@ func (s *Store) RemoveAccountUploadMetadata(ctx context.Context, ownerID string)
 
 func (s *Store) GetUploadUsage(ctx context.Context, ownerID string, now time.Time) (domain.UploadUsage, error) {
 	rows, err := s.pool.Query(ctx, `WITH owned_uploads AS MATERIALIZED (
-		SELECT submission_id, expected_size_bytes, quota_charged_at, state, finalized_at
+		SELECT submission_id, expected_size_bytes, quota_charged_at, state, finalized_at, removed_at
 		FROM devhud_uploads WHERE owner_user_id = $1
 	), totals AS (
 		SELECT
@@ -634,13 +634,13 @@ func (s *Store) GetUploadUsage(ctx context.Context, ownerID string, now time.Tim
 			COALESCE(sum(expected_size_bytes) FILTER
 				(WHERE quota_charged_at > $2::timestamptz - interval '24 hours'), 0) AS rolling_bytes,
 			COALESCE(sum(expected_size_bytes) FILTER
-				(WHERE state IN (2, 3) OR (state = 4 AND finalized_at IS NOT NULL)), 0) AS stored_bytes,
+				(WHERE state IN (2, 3) OR (state = 4 AND finalized_at IS NOT NULL AND removed_at IS NULL)), 0) AS stored_bytes,
 			count(*) FILTER
-				(WHERE state IN (2, 3) OR (state = 4 AND finalized_at IS NOT NULL)) AS finalized_images
+				(WHERE state IN (2, 3) OR (state = 4 AND finalized_at IS NOT NULL AND removed_at IS NULL)) AS finalized_images
 		FROM owned_uploads
 	), submissions AS (
 		SELECT submission_id, count(*) AS images FROM owned_uploads
-		WHERE state IN (2, 3) OR (state = 4 AND finalized_at IS NOT NULL)
+		WHERE state IN (2, 3) OR (state = 4 AND finalized_at IS NOT NULL AND removed_at IS NULL)
 		GROUP BY submission_id
 	)
 	SELECT EXISTS (SELECT 1 FROM devhud_users WHERE user_id = $1),

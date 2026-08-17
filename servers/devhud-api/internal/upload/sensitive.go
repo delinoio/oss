@@ -38,6 +38,9 @@ func validateAdministratorReasonForPublicAssets(reason string, publicAssetBaseUR
 	if reason == "" || len(reason) > maximumAdministratorReasonBytes || !utf8.ValidString(reason) {
 		return errors.New("administrator reason must contain 1 to 4096 bytes of well-formed UTF-8")
 	}
+	if strings.ContainsRune(reason, '\x00') {
+		return errors.New("administrator reason must not contain NUL characters")
+	}
 	if containsSensitiveText(reason) || containsLocalPath(reason) || containsSensitiveURL(reason, publicAssetBaseURL) {
 		if publicAssetBaseURL != nil {
 			return errors.New("administrator reason contains credential, public asset locator, or local-path content")

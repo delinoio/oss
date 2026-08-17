@@ -505,6 +505,8 @@ describe("administrator console review regressions", () => {
     expect(screen.getByText("Enter a safe reason no longer than 4 KiB of UTF-8.")).toBeTruthy();
     fireEvent.change(reason, { target: { value: "See /Users/example/private/incident.txt" } });
     expect((submit as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(reason, { target: { value: "Reviewed policy\0violation" } });
+    expect((submit as HTMLButtonElement).disabled).toBe(true);
     fireEvent.change(reason, { target: { value: "Reviewed the policy violation." } });
     expect((submit as HTMLButtonElement).disabled).toBe(false);
   });
@@ -565,6 +567,64 @@ describe("administrator console review regressions", () => {
         "The record changed. Current data was reloaded; review it before trying again.",
       ),
     ).toBeTruthy();
+  });
+
+  it("renders typed mutation recovery guidance and correlation metadata", async () => {
+    const sessionCorrelation = "018f7c1e-7b4a-7abc-8def-0123456789b6";
+    const uploadCorrelation = "018f7c1e-7b4a-7abc-8def-0123456789b7";
+    const internalCorrelation = "018f7c1e-7b4a-7abc-8def-0123456789b8";
+    runtime.client.setUserBlocked
+      .mockRejectedValueOnce(new ConnectError("forbidden", Code.PermissionDenied))
+      .mockRejectedValueOnce(new ConnectError("expired", Code.Unauthenticated, {
+        "x-devhud-correlation-id": sessionCorrelation,
+      }));
+    runtime.client.quarantineUpload
+      .mockRejectedValueOnce(new ConnectError("temporarily unavailable", Code.Unavailable, {
+        "x-devhud-correlation-id": uploadCorrelation,
+      }))
+      .mockRejectedValueOnce(new ConnectError("unknown outcome", Code.Internal, {
+        "x-devhud-correlation-id": internalCorrelation,
+      }));
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Block" }));
+    fireEvent.change(screen.getByLabelText("Reason"), {
+      target: { value: "Reviewed the policy violation." },
+    });
+    fireEvent.click(screen.getByLabelText("I understand this action is destructive."));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    expect(await screen.findByText("You need the devhud-admin role to use this console.")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    expect(
+      await screen.findByText(
+        "Your administrator session expired. Sign out, then sign in again.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText(sessionCorrelation)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Uploads" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Quarantine" }));
+    fireEvent.change(screen.getByLabelText("Reason"), {
+      target: { value: "Reviewed the uploaded object." },
+    });
+    fireEvent.click(screen.getByLabelText("I understand this action is destructive."));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    expect(
+      await screen.findByText(
+        "The administrator service is temporarily unavailable. Try again.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText(uploadCorrelation)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    expect(
+      await screen.findByText(
+        "The operation was not completed. Refresh the data and try again.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText(internalCorrelation)).toBeTruthy();
   });
 
   it("renders administrator labels and enum values in Korean", async () => {

@@ -1,4 +1,4 @@
-import { Code, ConnectError } from "@connectrpc/connect";
+import { Code } from "@connectrpc/connect";
 import {
   AccountDeletionState,
   AdministrativeBlockState,
@@ -519,7 +519,7 @@ function UserMutationDialog({
   const [reason, setReason] = useState("");
   const [confirmed, setConfirmed] = useState(false);
   const [pending, setPending] = useState(false);
-  const [failed, setFailed] = useState(false);
+  const [failure, setFailure] = useState<DevHudClientError | null>(null);
   const normalizedReason = normalizeAdminReason(reason);
   const reasonValid = isAdminReasonValid(normalizedReason, publicAssetBaseUrl);
   return (
@@ -532,13 +532,13 @@ function UserMutationDialog({
         reason={reason}
         reasonValid={reasonValid}
       />
-      {failed && <p className="inline-error" role="alert">{copy.mutationError}</p>}
+      {failure && <MutationFailure copy={copy} error={failure} />}
       <DialogActions
         copy={copy}
         disabled={!reasonValid || !confirmed || pending}
         onCancel={onClose}
         onConfirm={() => {
-          setFailed(false);
+          setFailure(null);
           setPending(true);
           void client
             .setUserBlocked({
@@ -551,11 +551,12 @@ function UserMutationDialog({
             })
             .then(onDone, (error) => {
               setPending(false);
-              if (ConnectError.from(error).code === Code.Aborted) {
+              const mapped = mapDevHudError(error);
+              if (mapped.code === Code.Aborted) {
                 onConflict();
                 return;
               }
-              setFailed(true);
+              setFailure(mapped);
             });
         }}
       />
@@ -750,7 +751,7 @@ function UploadMutationDialog({
   const [reason, setReason] = useState("");
   const [confirmed, setConfirmed] = useState(false);
   const [pending, setPending] = useState(false);
-  const [failed, setFailed] = useState(false);
+  const [failure, setFailure] = useState<DevHudClientError | null>(null);
   const label = selection.action === "delete" ? copy.delete : copy.quarantine;
   const normalizedReason = normalizeAdminReason(reason);
   const reasonValid = isAdminReasonValid(normalizedReason, publicAssetBaseUrl);
@@ -772,13 +773,13 @@ function UploadMutationDialog({
         reason={reason}
         reasonValid={reasonValid}
       />
-      {failed && <p className="inline-error" role="alert">{copy.mutationError}</p>}
+      {failure && <MutationFailure copy={copy} error={failure} />}
       <DialogActions
         copy={copy}
         disabled={!reasonValid || !confirmed || pending}
         onCancel={onClose}
         onConfirm={() => {
-          setFailed(false);
+          setFailure(null);
           setPending(true);
           const request = {
             uploadId: selection.upload.uploadId,
@@ -791,11 +792,12 @@ function UploadMutationDialog({
               : client.quarantineUpload(request);
           void promise.then(onDone, (error) => {
             setPending(false);
-            if (ConnectError.from(error).code === Code.Aborted) {
+            const mapped = mapDevHudError(error);
+            if (mapped.code === Code.Aborted) {
               onConflict();
               return;
             }
-            setFailed(true);
+            setFailure(mapped);
           });
         }}
       />
@@ -1003,6 +1005,26 @@ function DialogActions({
   );
 }
 
+function MutationFailure({
+  copy,
+  error,
+}: {
+  copy: ReturnType<typeof text>;
+  error: DevHudClientError;
+}) {
+  const message = clientErrorMessage(error, copy, copy.mutationError);
+  return (
+    <div className="inline-error" role="alert">
+      <p>{message}</p>
+      {error.correlationId && (
+        <p className="correlation">
+          {copy.correlationId}: <code>{error.correlationId}</code>
+        </p>
+      )}
+    </div>
+  );
+}
+
 function Resource<T>({
   state,
   copy,
@@ -1019,16 +1041,7 @@ function Resource<T>({
     const retryable =
       state.error.kind !== "unauthenticated" &&
       state.error.code !== Code.PermissionDenied;
-    const message =
-      state.error.kind === "unauthenticated"
-        ? copy.sessionExpired
-        : state.error.code === Code.PermissionDenied
-          ? copy.permission
-          : state.error.kind === "pagination"
-            ? copy.paginationError
-            : state.error.code === Code.Unavailable
-              ? copy.unavailable
-              : copy.error;
+    const message = clientErrorMessage(state.error, copy, copy.error);
     return (
       <div className="empty" role="alert">
         <p>{message}</p>
@@ -1052,6 +1065,18 @@ function Resource<T>({
     return <Empty message={copy.empty} />;
   }
   return children(state.value);
+}
+
+function clientErrorMessage(
+  error: DevHudClientError,
+  copy: ReturnType<typeof text>,
+  fallback: string,
+): string {
+  if (error.kind === "unauthenticated") return copy.sessionExpired;
+  if (error.code === Code.PermissionDenied) return copy.permission;
+  if (error.kind === "pagination") return copy.paginationError;
+  if (error.code === Code.Unavailable) return copy.unavailable;
+  return fallback;
 }
 
 function errorState(error: unknown): Loadable<never> {

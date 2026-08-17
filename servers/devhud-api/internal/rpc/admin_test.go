@@ -5,12 +5,15 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
 	"connectrpc.com/connect"
 	devhudv1 "github.com/delinoio/oss/protos/gen/go/devhud/v1"
+	"github.com/delinoio/oss/protos/gen/go/devhud/v1/devhudv1connect"
 	"github.com/delinoio/oss/servers/devhud-api/internal/auth"
 	"github.com/delinoio/oss/servers/devhud-api/internal/domain"
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -63,6 +66,74 @@ func TestEveryAdminRPCRequiresExactRole(t *testing.T) {
 			if code := connect.CodeOf(call()); code != connect.CodePermissionDenied {
 				t.Fatalf("code = %v, want PermissionDenied", code)
 			}
+		})
+	}
+}
+
+func TestAdminInterceptorReportsActorAccountState(t *testing.T) {
+	tests := []struct {
+		name        string
+		user        domain.User
+		wantReason  devhudv1.PermissionFailureReason
+		wantMessage string
+	}{
+		{
+			name:        "administratively blocked",
+			user:        domain.User{AdministrativeBlockState: domain.AdministrativeBlockStateBlocked, DeletionState: domain.DeletionStateActive},
+			wantReason:  devhudv1.PermissionFailureReason_PERMISSION_FAILURE_REASON_USER_BLOCKED,
+			wantMessage: "account is blocked",
+		},
+		{
+			name:        "deletion pending",
+			user:        domain.User{AdministrativeBlockState: domain.AdministrativeBlockStateUnblocked, DeletionState: domain.DeletionStatePending},
+			wantReason:  devhudv1.PermissionFailureReason_PERMISSION_FAILURE_REASON_ACCOUNT_DELETION_PENDING,
+			wantMessage: "account deletion is pending",
+		},
+		{
+			name:        "block takes precedence",
+			user:        domain.User{AdministrativeBlockState: domain.AdministrativeBlockStateBlocked, DeletionState: domain.DeletionStatePending},
+			wantReason:  devhudv1.PermissionFailureReason_PERMISSION_FAILURE_REASON_USER_BLOCKED,
+			wantMessage: "account is blocked",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			repository := &interceptorAdminRepository{
+				serviceRepository: &serviceRepository{},
+				adminRepository:   &adminRepository{},
+				user:              test.user,
+			}
+			service, err := NewAdminService(repository, &adminUploads{}, serviceClock{}, fixedAdminIDs{}, testServiceLogger(), []byte(strings.Repeat("K", 32)), "https://assets.example.com/uploads/")
+			if err != nil {
+				t.Fatal(err)
+			}
+			interceptor := NewAuthInterceptor(adminIdentityVerifier{}, repository, repository, serviceClock{}, fixedAdminIDs{}, testServiceLogger())
+			_, handler := devhudv1connect.NewAdminServiceHandler(service, connect.WithInterceptors(interceptor))
+			server := httptest.NewServer(handler)
+			defer server.Close()
+
+			request := connect.NewRequest(&devhudv1.ListUsersRequest{})
+			request.Header().Set("Authorization", "Bearer valid")
+			client := devhudv1connect.NewAdminServiceClient(http.DefaultClient, server.URL)
+			_, err = client.ListUsers(context.Background(), request)
+			if connect.CodeOf(err) != connect.CodePermissionDenied || !strings.Contains(err.Error(), test.wantMessage) {
+				t.Fatalf("error = %v", err)
+			}
+			connectError := new(connect.Error)
+			if !errors.As(err, &connectError) {
+				t.Fatalf("error type = %T", err)
+			}
+			for _, detail := range connectError.Details() {
+				value, valueErr := detail.Value()
+				if valueErr != nil {
+					t.Fatal(valueErr)
+				}
+				failure, ok := value.(*devhudv1.PermissionFailure)
+				if ok && failure.GetReason() == test.wantReason {
+					return
+				}
+			}
+			t.Fatalf("missing permission failure %v", test.wantReason)
 		})
 	}
 }
@@ -124,21 +195,23 @@ func TestRejectedMutationRequiresReasonAndIsCorrelated(t *testing.T) {
 }
 
 func TestRejectedMutationDoesNotAuditSensitiveReason(t *testing.T) {
-	var audits []domain.AuditEvent
-	repository := &adminRepository{recordAudit: func(_ context.Context, event domain.AuditEvent) error {
-		audits = append(audits, event)
-		return nil
-	}}
-	service := newTestAdminService(t, repository, &adminUploads{})
-	_, err := service.SetUserBlocked(administratorContext(), connect.NewRequest(&devhudv1.SetUserBlockedRequest{
-		UserId: uuid(targetUserID), ExpectedState: devhudv1.AdministrativeBlockState_ADMINISTRATIVE_BLOCK_STATE_UNBLOCKED,
-		TargetState: devhudv1.AdministrativeBlockState_ADMINISTRATIVE_BLOCK_STATE_BLOCKED, Reason: "access_token=must-not-be-persisted",
-	}))
-	if connect.CodeOf(err) != connect.CodeInvalidArgument {
-		t.Fatalf("code = %v", connect.CodeOf(err))
-	}
-	if len(audits) != 1 || audits[0].Reason != "" || audits[0].Outcome != domain.AuditOutcomeRejected {
-		t.Fatalf("unsafe rejected audit = %+v", audits)
+	for _, rationale := range []string{"access_token=must-not-be-persisted", "Reviewed policy\x00violation"} {
+		var audits []domain.AuditEvent
+		repository := &adminRepository{recordAudit: func(_ context.Context, event domain.AuditEvent) error {
+			audits = append(audits, event)
+			return nil
+		}}
+		service := newTestAdminService(t, repository, &adminUploads{})
+		_, err := service.SetUserBlocked(administratorContext(), connect.NewRequest(&devhudv1.SetUserBlockedRequest{
+			UserId: uuid(targetUserID), ExpectedState: devhudv1.AdministrativeBlockState_ADMINISTRATIVE_BLOCK_STATE_UNBLOCKED,
+			TargetState: devhudv1.AdministrativeBlockState_ADMINISTRATIVE_BLOCK_STATE_BLOCKED, Reason: rationale,
+		}))
+		if connect.CodeOf(err) != connect.CodeInvalidArgument {
+			t.Fatalf("reason %q code = %v", rationale, connect.CodeOf(err))
+		}
+		if len(audits) != 1 || audits[0].Reason != "" || audits[0].Outcome != domain.AuditOutcomeRejected {
+			t.Fatalf("unsafe rejected audit for %q = %+v", rationale, audits)
+		}
 	}
 }
 
@@ -375,6 +448,22 @@ func newTestAdminService(t *testing.T, repository domain.AdminRepository, upload
 type fixedAdminIDs struct{}
 
 func (fixedAdminIDs) New() (string, error) { return eventID, nil }
+
+type adminIdentityVerifier struct{}
+
+func (adminIdentityVerifier) Verify(context.Context, string) (domain.Identity, error) {
+	return domain.Identity{Roles: []string{domain.AdminRole}}, nil
+}
+
+type interceptorAdminRepository struct {
+	*serviceRepository
+	*adminRepository
+	user domain.User
+}
+
+func (repository *interceptorAdminRepository) ProvisionUser(context.Context, domain.Identity) (domain.User, error) {
+	return repository.user, nil
+}
 
 type steppingAdminClock struct {
 	now   time.Time

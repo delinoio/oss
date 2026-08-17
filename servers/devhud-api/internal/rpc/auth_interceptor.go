@@ -70,9 +70,13 @@ func (i *AuthInterceptor) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc {
 				i.recordRejectedAdminMutation(ctx, request, &user, domain.AuditRejectionAdminRoleRequired)
 				return nil, adminRolePermissionError(ctx)
 			}
-			if user.AdministrativeBlockState == domain.AdministrativeBlockStateBlocked || user.DeletionState != domain.DeletionStateActive {
+			if user.AdministrativeBlockState == domain.AdministrativeBlockStateBlocked {
 				i.recordRejectedAdminMutation(ctx, request, &user, domain.AuditRejectionActorBlocked)
 				return nil, permissionError(ctx, &domain.PermissionError{Failure: domain.PermissionFailureAdministrativeBlock})
+			}
+			if user.DeletionState != domain.DeletionStateActive {
+				i.recordRejectedAdminMutation(ctx, request, &user, domain.AuditRejectionActorBlocked)
+				return nil, permissionError(ctx, &domain.PermissionError{Failure: domain.PermissionFailureDeletionPending})
 			}
 		}
 		return next(auth.WithPrincipal(ctx, auth.Principal{User: user, Roles: identity.Roles}), request)

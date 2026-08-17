@@ -101,6 +101,7 @@ describe("wire validation helpers", () => {
     expect(() => validateReason(" \n\t ")).toThrow(TypeError);
     expect(() => validateReason("\u0085\u2007\u2028")).toThrow(TypeError);
     expect(() => validateReason("\ud800")).toThrow(TypeError);
+    expect(() => validateReason("Reviewed policy\0violation")).toThrow(TypeError);
     expect(() => validateReason("é".repeat(MAX_ADMIN_REASON_BYTES / 2 + 1))).toThrow(
       RangeError,
     );
