@@ -174,7 +174,7 @@ describe("native App state", () => {
     render(<App bridge={bridge} />);
     await screen.findByText(messages.en.welcome);
 
-    expect(operations).toEqual(["listener-installed", "runtime.snapshot", "auth.peek-pending-callback"]);
+    expect(operations).toEqual(["listener-installed", "runtime.snapshot", "auth.peek-pending-callback", "session.configure-origins"]);
   });
 
   it("drains a cold-start callback after the identity session becomes ready", async () => {
@@ -334,14 +334,14 @@ describe("native App state", () => {
 
     render(<App bridge={bridge} initialRuntime={runtime} />);
     await waitFor(() => expect(receive).toBeTypeOf("function"));
-    await waitFor(() => expect(request).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(request.mock.calls.filter(([value]) => value.operation === "notifications.permission")).toHaveLength(1));
 
     await act(async () => { receive({ version: 1, kind: "lifecycle", state: LifecycleState.Background }); });
-    expect(request).toHaveBeenCalledTimes(1);
+    expect(request.mock.calls.filter(([value]) => value.operation === "notifications.permission")).toHaveLength(1);
 
     permission = NotificationPermission.Denied;
     await act(async () => { receive({ version: 1, kind: "lifecycle", state: LifecycleState.Active }); });
-    await waitFor(() => expect(request).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(request.mock.calls.filter(([value]) => value.operation === "notifications.permission")).toHaveLength(2));
 
     fireEvent.click(screen.getByRole("button", { name: messages.en.settings }));
     expect(await screen.findByText(messages.en.notificationDenied)).toBeTruthy();

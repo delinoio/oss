@@ -49,6 +49,8 @@ export interface IdentitySettingsValue {
   readonly signInPending: boolean;
   readonly identityResetAvailable: boolean;
   readonly githubPatScopeId: Promise<string>;
+  readonly githubPatCleanupPending: boolean;
+  readonly reconcileGitHubPats: () => Promise<boolean>;
   readonly signIn: () => Promise<void>;
   readonly retryIdentity: () => void;
   readonly resetIdentity: () => Promise<void>;
@@ -147,10 +149,15 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   const [bootstrapAttempt, setBootstrapAttempt] = useState(0);
   const [signInPending, setSignInPending] = useState(false);
   const [identityResetAvailable, setIdentityResetAvailable] = useState(false);
+  const [githubPatCleanupPending, setGitHubPatCleanupPending] = useState(false);
   const signInPendingRef = useRef(false);
   const callbackHandled = useRef<string | null>(null);
   const invalidSessionCleanupRef = useRef<Promise<void> | null>(null);
   const continueLocallyRef = useRef(false);
+  const githubPatReconciliationRef = useRef<Promise<boolean> | null>(null);
+  const lastReconciledGitHubPatKeyRef = useRef<string | null>(null);
+  const settingsWritableRef = useRef(false);
+  const replaceSettingsRef = useRef<IdentitySettingsValue["replaceSettings"]>(async () => false);
 
   function applySettings(next: DevHudSettingsV1): void {
     settingsRef.current = next;
@@ -550,6 +557,70 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   const localSettingsWritable = identityReady && (status === "guest" || status === "signed-out");
   const settingsReadOnly = replaceMutation.isPending || (!localSettingsWritable
     && (status !== "authenticated" || !online || !settingsReady || importDiff !== null || conflict !== null));
+  const githubPatSettingsReady = identityReady && !settingsReadOnly && conflict === null;
+
+  const replaceSettings: IdentitySettingsValue["replaceSettings"] = async (update) => {
+    const next = typeof update === "function" ? update(settingsRef.current) : update;
+    if (status === "guest" || status === "signed-out") {
+      const parsed = parseDevHudSettings(next);
+      writeGuestSettings(storage, parsed);
+      applySettings(parsed);
+      return true;
+    }
+    if (settingsReadOnly) throw new Error("settings-read-only");
+    return replaceAt(next, revisionRef.current);
+  };
+  settingsWritableRef.current = githubPatSettingsReady;
+  replaceSettingsRef.current = replaceSettings;
+
+  function githubPatSnapshotKey(snapshot: DevHudSettingsV1): string {
+    return `${apiOrigin}|${snapshot.github.profiles.map((profile) => profile.id).join(":")}|${snapshot.github.pendingPatRemovals.join(":")}`;
+  }
+
+  function reconcileGitHubPats(): Promise<boolean> {
+    if (githubPatReconciliationRef.current !== null) return githubPatReconciliationRef.current;
+    const reconciliation = (async () => {
+      while (settingsWritableRef.current) {
+        const snapshot = settingsRef.current;
+        const snapshotKey = githubPatSnapshotKey(snapshot);
+        const activeProfileIds = snapshot.github.profiles.map((profile) => profile.id);
+        const pendingProfileIds = snapshot.github.pendingPatRemovals;
+        try {
+          await bridge.request({ operation: "secure.reconcile-github-pats", scopeId: await githubPatScopeId, profileIds: activeProfileIds });
+          if (pendingProfileIds.length > 0) {
+            if (!settingsWritableRef.current) return false;
+            const processed = new Set(pendingProfileIds);
+            const committed = await replaceSettingsRef.current((current) => ({
+              ...current,
+              github: { ...current.github, pendingPatRemovals: current.github.pendingPatRemovals.filter((profileId) => !processed.has(profileId)) },
+            }));
+            if (!committed) return false;
+          }
+          lastReconciledGitHubPatKeyRef.current = snapshotKey;
+          setGitHubPatCleanupPending(false);
+        } catch (error) {
+          setGitHubPatCleanupPending(true);
+          throw error;
+        }
+        if (githubPatSnapshotKey(settingsRef.current) === snapshotKey) return true;
+      }
+      return false;
+    })();
+    githubPatReconciliationRef.current = reconciliation;
+    void reconciliation.finally(() => {
+      if (githubPatReconciliationRef.current === reconciliation) githubPatReconciliationRef.current = null;
+    }).catch(() => {});
+    return reconciliation;
+  }
+
+  const activeGitHubProfileKey = settings.github.profiles.map((profile) => profile.id).join(":");
+  const pendingGitHubPatRemovalKey = settings.github.pendingPatRemovals.join(":");
+  useEffect(() => {
+    if (!githubPatSettingsReady) return;
+    const snapshotKey = githubPatSnapshotKey(settings);
+    if (lastReconciledGitHubPatKeyRef.current === snapshotKey) return;
+    void reconcileGitHubPats().catch(() => {});
+  }, [activeGitHubProfileKey, githubPatSettingsReady, pendingGitHubPatRemovalKey]);
 
   const value: IdentitySettingsValue = {
     status,
@@ -568,6 +639,8 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     signInPending,
     identityResetAvailable,
     githubPatScopeId,
+    githubPatCleanupPending,
+    reconcileGitHubPats,
     signIn: async () => {
       if (signInPendingRef.current) return;
       continueLocallyRef.current = false;
@@ -615,17 +688,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       clearGuestImportMarker(storage);
       writeAuthenticatedSettingsCache(storage, apiOrigin, { settings: validated.settings, revision: validated.revision, cachedAt: new Date().toISOString() });
     },
-    replaceSettings: async (update) => {
-      const next = typeof update === "function" ? update(settingsRef.current) : update;
-      if (status === "guest" || status === "signed-out") {
-        const parsed = parseDevHudSettings(next);
-        writeGuestSettings(storage, parsed);
-        applySettings(parsed);
-        return true;
-      }
-      if (settingsReadOnly) throw new Error("settings-read-only");
-      return replaceAt(next, revisionRef.current);
-    },
+    replaceSettings,
     adoptConflictServer: () => {
       if (!conflict) return;
       applySettings(conflict.server);

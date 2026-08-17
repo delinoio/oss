@@ -13,7 +13,7 @@ import type { IdentitySession } from "./identity-client";
 import { SynchronizedSettingsBoundary } from "./identity-ui";
 import { messages } from "./localization";
 import { hasGuestSettings, readAuthenticatedSettingsCache, readGuestSettings, writeAuthenticatedSettingsCache, writeCachedIdentityBootstrap, writeGuestSettings } from "./local-data";
-import { canonicalDevHudSettings, defaultDevHudSettings } from "./settings-contract";
+import { canonicalDevHudSettings, defaultDevHudSettings, parseDevHudSettings } from "./settings-contract";
 import { LifecycleState, RuntimePlatform, type NativeBridgeEventV1, type NativeBridgeRequestV1, type NativeBridgeResponseV1, type NativeBridgeV1, type RuntimeSnapshot } from "./native-bridge";
 import { clearIdentityForApiChange, DevHudServiceBoundary, useIdentitySettings } from "./service-boundary";
 
@@ -30,7 +30,7 @@ function connectResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json", "Connect-Protocol-Version": "1" } });
 }
 
-function authenticatedBridge(purgeScopes: string[] = [], secureOperations: string[] = []): NativeBridgeV1 {
+function authenticatedBridge(purgeScopes: string[] = [], secureOperations: string[] = [], reconciliations: NativeBridgeRequestV1[] = []): NativeBridgeV1 {
   const accessTokenMap = JSON.stringify({ "@https://api.example/api": { token: "fixture-access-token", scope: "", expiresAt: 4_102_444_800 } });
   const secureSession = JSON.stringify({ idToken: "fixture-id-token", accessToken: accessTokenMap });
   return {
@@ -39,6 +39,7 @@ function authenticatedBridge(purgeScopes: string[] = [], secureOperations: strin
       if (request.operation === "secure.read") { secureOperations.push("read"); return { kind: "secure-value", value: request.setting.kind === "logto-session" ? secureSession : null }; }
       if (request.operation === "secure.purge") { purgeScopes.push(request.scope); return { kind: "ok" }; }
       if (request.operation === "secure.write" || request.operation === "secure.remove") { secureOperations.push(request.operation); return { kind: "ok" }; }
+      if (request.operation === "secure.reconcile-github-pats") { reconciliations.push(request); return { kind: "ok" }; }
       if (request.operation === "auth.take-pending-callback") return { kind: "auth-callback", url: null };
       throw new Error(`unexpected bridge operation ${request.operation}`);
     },
@@ -51,6 +52,7 @@ function signedOutBridge(): NativeBridgeV1 {
     async request(request) {
       if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
       if (request.operation === "secure.read") return { kind: "secure-value", value: null };
+      if (request.operation === "secure.reconcile-github-pats") return { kind: "ok" };
       if (request.operation === "auth.take-pending-callback") return { kind: "auth-callback", url: null };
       throw new Error(`unexpected bridge operation ${request.operation}`);
     },
@@ -245,6 +247,39 @@ describe("generated Connect identity/settings fixture", () => {
       expect(document.documentElement.dataset.theme).toBe("dark");
       expect(document.documentElement.lang).toBe("ko");
     });
+  });
+
+  it("reconciles GitHub PATs from the identity boundary while Home is active", async () => {
+    const profile = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", name: "Work", kind: "fine-grained" as const };
+    const removedProfileId = "018f47a2-7b3c-7def-8abc-1234567890ac";
+    const server = parseDevHudSettings({ ...defaultDevHudSettings, github: { ...defaultDevHudSettings.github, profiles: [profile], pendingPatRemovals: [removedProfileId] } });
+    const cleaned = { ...server, github: { ...server.github, pendingPatRemovals: [] } };
+    const reconciliations: NativeBridgeRequestV1[] = [];
+    const replacements: Record<string, unknown>[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 2, revision: "1", canonicalJson: encodedSettings(server) } });
+      if (url.endsWith("/devhud.v1.SettingsService/ReplaceSettings")) {
+        const source = typeof init?.body === "string" ? init.body : new TextDecoder().decode(init?.body as ArrayBufferView<ArrayBuffer>);
+        replacements.push(JSON.parse(source) as Record<string, unknown>);
+        return connectResponse({ snapshot: { schemaVersion: 2, revision: "2", canonicalJson: encodedSettings(cleaned) } });
+      }
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    render(<App bridge={authenticatedBridge([], [], reconciliations)} initialRuntime={runtime} />);
+
+    expect(await screen.findByRole("heading", { name: messages.en.welcome })).toBeTruthy();
+    await waitFor(() => expect(reconciliations).toContainEqual({
+      operation: "secure.reconcile-github-pats",
+      scopeId: expect.any(String),
+      profileIds: [profile.id],
+    }));
+    await waitFor(() => expect(replacements).toHaveLength(1));
+    expect(replacements[0]?.canonicalJson).toBe(encodedSettings(cleaned));
+    expect(screen.queryByRole("heading", { name: messages.en.githubSetupTitle })).toBeNull();
   });
 
   it("requires explicit guest upload and preserves only the recovery session through deletion", async () => {
