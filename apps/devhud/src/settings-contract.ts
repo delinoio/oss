@@ -4,8 +4,9 @@ import {
   encodeCanonicalSettingsJson,
   validateCanonicalSettingsJson,
 } from "@delinoio/devhud-api-client";
+import { parseUrlPattern, type UrlRepositoryMapping } from "./url-mapping";
 
-export const SettingsSchemaVersion = 1 as const;
+export const SettingsSchemaVersion = 2 as const;
 
 const Theme = ["system", "light", "dark"] as const;
 const Language = ["system", "en", "ko"] as const;
@@ -39,7 +40,7 @@ export interface DevHudSettingsV1 {
     readonly repositories: readonly { readonly owner: string; readonly name: string }[];
     readonly issueTracker: { readonly owner: string; readonly repository: string; readonly labels: readonly string[] } | null;
   };
-  readonly urlMappings: readonly { readonly sourcePrefix: string; readonly destinationPrefix: string }[];
+  readonly urlMappings: readonly UrlRepositoryMapping[];
   readonly shortcuts: Readonly<Record<Platform, Readonly<Record<string, string>>>>;
   readonly agents: readonly {
     readonly id: string;
@@ -96,7 +97,7 @@ export class SettingsContractError extends TypeError {
 export function parseDevHudSettings(value: unknown): DevHudSettingsV1 {
   rejectSensitiveContent(value, "$", new WeakSet());
   const root = object(value, "$", ["schemaVersion", "appearance", "decks", "github", "urlMappings", "shortcuts", "agents", "uploads"]);
-  integer(root.schemaVersion, "$.schemaVersion", 1, 1);
+  const sourceSchemaVersion = integer(root.schemaVersion, "$.schemaVersion", 1, SettingsSchemaVersion);
 
   const appearance = object(root.appearance, "$.appearance", ["theme", "language"]);
   const decks = array(root.decks, "$.decks");
@@ -104,6 +105,8 @@ export function parseDevHudSettings(value: unknown): DevHudSettingsV1 {
   const github = object(root.github, "$.github", ["repositories", "issueTracker"]);
   const shortcuts = object(root.shortcuts, "$.shortcuts", [...Platform]);
   const uploads = object(root.uploads, "$.uploads", ["provider", "r2"]);
+  const urlMappings = sourceSchemaVersion === 1 ? parseLegacyMappings(root.urlMappings) : array(root.urlMappings, "$.urlMappings").map(parseUrlMapping);
+  if (new Set(urlMappings.map((mapping) => mapping.id)).size !== urlMappings.length) throw new SettingsContractError("$.urlMappings", "must not contain duplicate mapping IDs");
 
   return {
     schemaVersion: SettingsSchemaVersion,
@@ -120,20 +123,48 @@ export function parseDevHudSettings(value: unknown): DevHudSettingsV1 {
       }),
       issueTracker: github.issueTracker === null ? null : parseIssueTracker(github.issueTracker),
     },
-    urlMappings: array(root.urlMappings, "$.urlMappings").map((entry, index) => {
-      const path = `$.urlMappings[${index}]`;
-      const mapping = object(entry, path, ["sourcePrefix", "destinationPrefix"]);
-      return {
-        sourcePrefix: url(mapping.sourcePrefix, `${path}.sourcePrefix`),
-        destinationPrefix: url(mapping.destinationPrefix, `${path}.destinationPrefix`),
-      };
-    }),
+    // v1 mappings cannot identify a repository or credential. They are deliberately
+    // discarded rather than guessed during the approved v1 -> v2 migration.
+    urlMappings,
     shortcuts: Object.fromEntries(Platform.map((platform) => [platform, stringMap(shortcuts[platform], `$.shortcuts.${platform}`)])) as DevHudSettingsV1["shortcuts"],
     agents: array(root.agents, "$.agents").map((entry, index) => parseAgent(entry, `$.agents[${index}]`)),
     uploads: {
       provider: enumeration(uploads.provider, "$.uploads.provider", UploadProvider),
       r2: uploads.r2 === null ? null : parseR2(uploads.r2),
     },
+  };
+}
+
+function parseLegacyMappings(value: unknown): readonly [] {
+  for (const [index, entry] of array(value, "$.urlMappings").entries()) {
+    const path = `$.urlMappings[${index}]`;
+    const mapping = object(entry, path, ["sourcePrefix", "destinationPrefix"]);
+    url(mapping.sourcePrefix, `${path}.sourcePrefix`);
+    url(mapping.destinationPrefix, `${path}.destinationPrefix`);
+  }
+  return [];
+}
+
+function parseUrlMapping(value: unknown, index: number): UrlRepositoryMapping {
+  const path = `$.urlMappings[${index}]`;
+  const mapping = object(value, path, ["id", "pattern", "repository", "credentialProfileRef", "priority", "chromeOrigin", "updatedAt"]);
+  const id = text(mapping.id, `${path}.id`);
+  try { assertUuidV7(id); } catch { throw new SettingsContractError(`${path}.id`, "must be a canonical lowercase RFC 9562 UUID v7"); }
+  const pattern = text(mapping.pattern, `${path}.pattern`);
+  try { parseUrlPattern(pattern); } catch (error) { throw new SettingsContractError(`${path}.pattern`, error instanceof Error ? error.message : "is invalid"); }
+  const repository = object(mapping.repository, `${path}.repository`, ["owner", "name"]);
+  const credentialProfileRef = text(mapping.credentialProfileRef, `${path}.credentialProfileRef`);
+  if (!profileRefPattern.test(credentialProfileRef)) throw new SettingsContractError(`${path}.credentialProfileRef`, "is invalid");
+  const updatedAt = text(mapping.updatedAt, `${path}.updatedAt`);
+  if (!Number.isFinite(Date.parse(updatedAt)) || new Date(updatedAt).toISOString() !== updatedAt) throw new SettingsContractError(`${path}.updatedAt`, "must be a canonical UTC timestamp");
+  return {
+    id,
+    pattern,
+    repository: { owner: text(repository.owner, `${path}.repository.owner`), name: text(repository.name, `${path}.repository.name`) },
+    credentialProfileRef,
+    priority: integer(mapping.priority, `${path}.priority`, -1_000_000, 1_000_000),
+    chromeOrigin: mapping.chromeOrigin === null ? null : chromeOrigin(mapping.chromeOrigin, `${path}.chromeOrigin`),
+    updatedAt,
   };
 }
 
@@ -271,6 +302,16 @@ function url(value: unknown, path: string, httpsOnly = false): string {
   } catch {
     throw new SettingsContractError(path, httpsOnly ? "must be an HTTPS URL without credentials, query, or fragment" : "must be a URL without credentials, query, or fragment");
   }
+}
+
+function chromeOrigin(value: unknown, path: string): string {
+  const parsed = text(value, path);
+  try {
+    const candidate = new URL(parsed);
+    if (candidate.protocol !== "http:" && candidate.protocol !== "https:") throw new Error();
+    if (candidate.username || candidate.password || candidate.search || candidate.hash || candidate.pathname !== "/" || candidate.origin !== parsed) throw new Error();
+    return candidate.origin;
+  } catch { throw new SettingsContractError(path, "must be a concrete HTTP(S) origin without credentials, path, query, or fragment"); }
 }
 
 function rejectSensitiveContent(value: unknown, path: string, seen: WeakSet<object>): void {

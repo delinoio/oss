@@ -55,15 +55,13 @@ describe("DevHud settings boundary", () => {
     expect(() => parseDevHudSettings({ ...defaultDevHudSettings, decks: [{ ...deck, id: deck.id.toUpperCase() }] })).toThrow(/UUID v7/u);
   });
 
+  const mapping = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", pattern: "https://source.example/path", repository: { owner: "delinoio", name: "oss" }, credentialProfileRef: "github.default", priority: 0, chromeOrigin: null, updatedAt: "2026-08-17T00:00:00.000Z" };
+
   it.each(["?token=plain-secret", "?X-Amz-Signature=plain-secret", "#credential", "?", "#"])("rejects query or fragment delimiters in synchronized URL fields: %s", (suffix) => {
     expect(() => parseDevHudSettings({
       ...defaultDevHudSettings,
-      urlMappings: [{ sourcePrefix: `https://source.example/path${suffix}`, destinationPrefix: "https://destination.example/path" }],
-    })).toThrow(/without credentials, query, or fragment/u);
-    expect(() => parseDevHudSettings({
-      ...defaultDevHudSettings,
-      urlMappings: [{ sourcePrefix: "https://source.example/path", destinationPrefix: `https://destination.example/path${suffix}` }],
-    })).toThrow(/without credentials, query, or fragment/u);
+      urlMappings: [{ ...mapping, pattern: `https://source.example/path${suffix}` }],
+    })).toThrow(/credentials, query, or fragment/u);
     expect(() => parseDevHudSettings({
       ...defaultDevHudSettings,
       uploads: {
@@ -78,6 +76,11 @@ describe("DevHud settings boundary", () => {
         r2: { profileRef: "profile", bucket: "bucket", endpoint: "https://r2.example", region: "auto", publicBaseUrl: `https://cdn.example${suffix}` },
       },
     })).toThrow(/without credentials, query, or fragment/u);
+  });
+
+  it("drops legacy v1 mapping entries while preserving other settings", () => {
+    const legacy = { ...defaultDevHudSettings, schemaVersion: 1, appearance: { theme: "dark", language: "ko" }, urlMappings: [{ sourcePrefix: "https://source.example/path", destinationPrefix: "https://destination.example/path" }] };
+    expect(parseDevHudSettings(legacy)).toMatchObject({ schemaVersion: 2, appearance: { theme: "dark", language: "ko" }, urlMappings: [] });
   });
 
   it("produces a complete recursive, secret-redacted snapshot diff", () => {

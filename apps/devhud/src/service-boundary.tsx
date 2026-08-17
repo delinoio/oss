@@ -455,7 +455,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       throw reason;
     }
     try {
-      const response = await replaceMutation.mutateAsync({ schemaVersion: 1, canonicalJson: Uint8Array.from(canonicalJson), expectedRevision });
+      const response = await replaceMutation.mutateAsync({ schemaVersion: SettingsSchemaVersion, canonicalJson: Uint8Array.from(canonicalJson), expectedRevision });
       let validated: ValidatedSettingsSnapshot;
       try {
         if (!response.snapshot) throw new SettingsSnapshotError("settings response is missing its snapshot");
@@ -681,7 +681,7 @@ class SettingsSnapshotError extends TypeError {}
 
 function validatedSettingsSnapshot(snapshot: { readonly schemaVersion: number; readonly canonicalJson: Uint8Array; readonly revision: bigint } | undefined): ValidatedSettingsSnapshot {
   if (!snapshot) return { settings: defaultDevHudSettings, revision: 0n };
-  if (snapshot.schemaVersion !== SettingsSchemaVersion) throw new SettingsSnapshotError("unsupported settings schema version");
+  if (snapshot.schemaVersion !== 1 && snapshot.schemaVersion !== SettingsSchemaVersion) throw new SettingsSnapshotError("unsupported settings schema version");
   try {
     return { settings: decodeDevHudSettings(snapshot.canonicalJson), revision: snapshot.revision };
   } catch (reason) {

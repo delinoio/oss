@@ -2,8 +2,9 @@ import { useEffect, useEffectEvent, useRef, useState, type KeyboardEvent as Reac
 import type { Copy } from "./localization";
 import { useIdentitySettings } from "./service-boundary";
 import { LanguagePreference, normalizeApiOrigin, ThemePreference } from "./shell";
-import type { DevHudSettingsV1 } from "./settings-contract";
+import { parseDevHudSettings, type DevHudSettingsV1 } from "./settings-contract";
 import type { SettingsDiffEntry } from "./settings-diff";
+import { findMappingOverlaps, type UrlRepositoryMapping } from "./url-mapping";
 
 interface ApiEditorProps {
   readonly copy: Copy;
@@ -129,6 +130,7 @@ export function SynchronizedSettingsBoundary({ copy }: { readonly copy: Copy }) 
   return <>
     <label>{copy.theme}<select value={identity.settings.appearance.theme} disabled={identity.readOnly} onChange={(event) => replaceAppearance({ theme: event.target.value as DevHudSettingsV1["appearance"]["theme"] })}>{Object.values(ThemePreference).map((value) => <option key={value} value={value}>{copy[value]}</option>)}</select></label>
     <label>{copy.language}<select value={identity.settings.appearance.language} disabled={identity.readOnly} onChange={(event) => replaceAppearance({ language: event.target.value as DevHudSettingsV1["appearance"]["language"] })}><option value={LanguagePreference.System}>{copy.system}</option><option value={LanguagePreference.English}>{copy.english}</option><option value={LanguagePreference.Korean}>{copy.korean}</option></select></label>
+    <UrlMappingSettings copy={copy} />
     {(identity.status === "guest" || identity.status === "signed-out" || identity.status === "starting") && <p className="notice">{copy.guestSettingsLocal}</p>}
     {identity.status === "blocked" && <p className="notice">{copy.blockedLocalHint}</p>}
     {identity.status === "deletion-pending" && <p className="notice">{copy.deletionPendingSummary}</p>}
@@ -141,6 +143,71 @@ export function SynchronizedSettingsBoundary({ copy }: { readonly copy: Copy }) 
     {(actionError || identity.error?.startsWith("settings-") || identity.settingsError) && <section className="notice" role="alert"><p>{copy.settingsActionFailed}{identity.error?.startsWith("settings-") && <> <code>{identity.error}</code></>}{identity.settingsError && <> <code>{`settings-connect-${identity.settingsError.code}`}</code>{identity.settingsError.correlationId && <> {copy.correlationId}: <code>{identity.settingsError.correlationId}</code></>}</>}</p><button onClick={() => invoke(identity.retrySettings)}>{copy.retry}</button></section>}
     </section>}
   </>;
+}
+
+function UrlMappingSettings({ copy }: { readonly copy: Copy }) {
+  const identity = useIdentitySettings();
+  const [draft, setDraft] = useState<UrlRepositoryMapping[]>(() => [...identity.settings.urlMappings]);
+  const [invalid, setInvalid] = useState(false);
+  const [saved, setSaved] = useState(false);
+  useEffect(() => setDraft([...identity.settings.urlMappings]), [identity.settings.urlMappings]);
+  const overlaps = safeOverlaps(draft);
+  const change = (id: string, field: keyof UrlRepositoryMapping, value: string | number | null) => {
+    setSaved(false); setInvalid(false);
+    setDraft((current) => current.map((mapping) => mapping.id === id ? { ...mapping, [field]: value } : mapping));
+  };
+  const changeRepository = (id: string, field: "owner" | "name", value: string) => {
+    setSaved(false); setInvalid(false);
+    setDraft((current) => current.map((mapping) => mapping.id === id ? { ...mapping, repository: { ...mapping.repository, [field]: value } } : mapping));
+  };
+  const add = () => {
+    const timestamp = new Date().toISOString();
+    setSaved(false); setInvalid(false);
+    setDraft((current) => [...current, { id: uuidV7(), pattern: "https://example.com/**", repository: { owner: "owner", name: "repository" }, credentialProfileRef: "github.default", priority: 0, chromeOrigin: null, updatedAt: timestamp }]);
+  };
+  const save = () => {
+    try {
+      const previous = new Map(identity.settings.urlMappings.map((mapping) => [mapping.id, mapping]));
+      const now = new Date().toISOString();
+      const mappings = draft.map((mapping) => {
+        const existing = previous.get(mapping.id);
+        const unchanged = existing !== undefined && JSON.stringify({ ...existing, updatedAt: "" }) === JSON.stringify({ ...mapping, updatedAt: "" });
+        return unchanged ? mapping : { ...mapping, updatedAt: now };
+      });
+      const next = parseDevHudSettings({ ...identity.settings, urlMappings: mappings });
+      setInvalid(false); setSaved(false);
+      void identity.replaceSettings(next).then(() => setSaved(true)).catch(() => setInvalid(true));
+    } catch { setInvalid(true); }
+  };
+  return <section className="url-mappings" aria-labelledby="url-mappings-title">
+    <h3 id="url-mappings-title">{copy.urlMappingsTitle}</h3><p>{copy.urlMappingsSummary}</p><p id="url-mapping-hint">{copy.mappingPatternHint}</p>
+    {draft.map((mapping, index) => <fieldset key={mapping.id} disabled={identity.readOnly} aria-label={`${copy.urlMappingsTitle} ${index + 1}`}>
+      <legend>{`${mapping.repository.owner}/${mapping.repository.name}`}</legend>
+      <label>{copy.urlPattern}<input value={mapping.pattern} aria-describedby="url-mapping-hint" onChange={(event) => change(mapping.id, "pattern", event.target.value)} /></label>
+      <label>{copy.repositoryOwner}<input value={mapping.repository.owner} onChange={(event) => changeRepository(mapping.id, "owner", event.target.value)} /></label>
+      <label>{copy.repositoryName}<input value={mapping.repository.name} onChange={(event) => changeRepository(mapping.id, "name", event.target.value)} /></label>
+      <label>{copy.credentialProfile}<input value={mapping.credentialProfileRef} onChange={(event) => change(mapping.id, "credentialProfileRef", event.target.value)} /></label>
+      <label>{copy.mappingPriority}<input type="number" value={mapping.priority} onChange={(event) => change(mapping.id, "priority", Number(event.target.value))} /></label>
+      <label>{copy.chromeOrigin}<input value={mapping.chromeOrigin ?? ""} onChange={(event) => change(mapping.id, "chromeOrigin", event.target.value || null)} /></label>
+      <button type="button" onClick={() => { setSaved(false); setDraft((current) => current.filter((item) => item.id !== mapping.id)); }}>{copy.removeUrlMapping}</button>
+    </fieldset>)}
+    <div className="actions"><button type="button" disabled={identity.readOnly} onClick={add}>{copy.addUrlMapping}</button><button type="button" disabled={identity.readOnly} onClick={save}>{copy.saveUrlMappings}</button></div>
+    {invalid && <p role="alert">{copy.mappingInvalid}</p>}
+    {overlaps.length > 0 && <p role="status">{copy.mappingOverlap}</p>}
+    {saved && <p role="status">{copy.mappingSaved}</p>}
+  </section>;
+}
+
+function safeOverlaps(mappings: readonly UrlRepositoryMapping[]) {
+  try { return findMappingOverlaps(mappings); } catch { return []; }
+}
+
+function uuidV7(): string {
+  const random = new Uint8Array(10); crypto.getRandomValues(random);
+  const time = Date.now().toString(16).padStart(12, "0");
+  const tail = Array.from(random, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  const variant = (8 + (random[0]! & 3)).toString(16);
+  return `${time.slice(0, 8)}-${time.slice(8)}-7${tail.slice(0, 3)}-${variant}${tail.slice(3, 6)}-${tail.slice(6, 18)}`;
 }
 
 function SnapshotChoice({ choiceId, copy, entries, title, summary, primary, secondary, onPrimary, onSecondary }: { readonly choiceId: string; readonly copy: Copy; readonly entries: readonly SettingsDiffEntry[]; readonly title: string; readonly summary: string; readonly primary: string; readonly secondary: string; readonly onPrimary: () => void; readonly onSecondary: () => void }) {
