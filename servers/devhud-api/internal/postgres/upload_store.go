@@ -625,34 +625,46 @@ func (s *Store) RemoveAccountUploadMetadata(ctx context.Context, ownerID string)
 }
 
 func (s *Store) GetUploadUsage(ctx context.Context, ownerID string, now time.Time) (domain.UploadUsage, error) {
-	var usage domain.UploadUsage
-	var signed, rolling, stored, finalized int64
-	err := s.pool.QueryRow(ctx, `SELECT
-		(SELECT count(*) FROM devhud_upload_reservations WHERE owner_user_id = $1 AND created_at > $2::timestamptz - interval '1 hour'),
-		(SELECT COALESCE(sum(expected_size_bytes), 0) FROM devhud_uploads WHERE owner_user_id = $1 AND quota_charged_at > $2::timestamptz - interval '24 hours'),
-		(SELECT COALESCE(sum(expected_size_bytes), 0) FROM devhud_uploads WHERE owner_user_id = $1 AND (state IN (2, 3) OR (state = 4 AND finalized_at IS NOT NULL))),
-		(SELECT count(*) FROM devhud_uploads WHERE owner_user_id = $1 AND (state IN (2, 3) OR (state = 4 AND finalized_at IS NOT NULL)))`, ownerID, now).Scan(
-		&signed, &rolling, &stored, &finalized)
-	if err != nil {
-		return domain.UploadUsage{}, err
-	}
-	usage.SignedURLsRollingHour, usage.UploadBytesRollingDay = uint64(signed), uint64(rolling)
-	usage.StoredBytes, usage.FinalizedImages = uint64(stored), uint64(finalized)
-	rows, err := s.pool.Query(ctx, `SELECT submission_id, count(*) FROM devhud_uploads
-		WHERE owner_user_id = $1 AND (state IN (2, 3) OR (state = 4 AND finalized_at IS NOT NULL))
-		GROUP BY submission_id ORDER BY submission_id`, ownerID)
+	rows, err := s.pool.Query(ctx, `WITH owned_uploads AS MATERIALIZED (
+		SELECT submission_id, expected_size_bytes, quota_charged_at, state, finalized_at
+		FROM devhud_uploads WHERE owner_user_id = $1
+	), totals AS (
+		SELECT
+			(SELECT count(*) FROM devhud_upload_reservations
+				WHERE owner_user_id = $1 AND created_at > $2::timestamptz - interval '1 hour') AS signed_urls,
+			COALESCE(sum(expected_size_bytes) FILTER
+				(WHERE quota_charged_at > $2::timestamptz - interval '24 hours'), 0) AS rolling_bytes,
+			COALESCE(sum(expected_size_bytes) FILTER
+				(WHERE state IN (2, 3) OR (state = 4 AND finalized_at IS NOT NULL)), 0) AS stored_bytes,
+			count(*) FILTER
+				(WHERE state IN (2, 3) OR (state = 4 AND finalized_at IS NOT NULL)) AS finalized_images
+		FROM owned_uploads
+	), submissions AS (
+		SELECT submission_id, count(*) AS images FROM owned_uploads
+		WHERE state IN (2, 3) OR (state = 4 AND finalized_at IS NOT NULL)
+		GROUP BY submission_id
+	)
+	SELECT signed_urls, rolling_bytes, stored_bytes, finalized_images,
+		COALESCE(submission_id::text, ''), COALESCE(images, 0)
+	FROM totals LEFT JOIN submissions ON true
+	ORDER BY submission_id`, ownerID, now)
 	if err != nil {
 		return domain.UploadUsage{}, err
 	}
 	defer rows.Close()
-	usage.SubmissionImages = make(map[string]uint64)
+	usage := domain.UploadUsage{SubmissionImages: make(map[string]uint64)}
 	for rows.Next() {
+		var signed, rolling, stored, finalized int64
 		var submissionID string
-		var count int64
-		if err := rows.Scan(&submissionID, &count); err != nil {
+		var submissionImages int64
+		if err := rows.Scan(&signed, &rolling, &stored, &finalized, &submissionID, &submissionImages); err != nil {
 			return domain.UploadUsage{}, err
 		}
-		usage.SubmissionImages[submissionID] = uint64(count)
+		usage.SignedURLsRollingHour, usage.UploadBytesRollingDay = uint64(signed), uint64(rolling)
+		usage.StoredBytes, usage.FinalizedImages = uint64(stored), uint64(finalized)
+		if submissionID != "" {
+			usage.SubmissionImages[submissionID] = uint64(submissionImages)
+		}
 	}
 	return usage, rows.Err()
 }

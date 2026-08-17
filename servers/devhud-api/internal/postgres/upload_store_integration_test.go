@@ -5,6 +5,7 @@ package postgres
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -48,6 +49,56 @@ func TestUploadIssuanceRollbackAndRollingHourBoundary(t *testing.T) {
 		if !errors.As(err, &quota) || quota.Quota != domain.QuotaSignedURLs || quota.Observed != 121 {
 			t.Fatalf("121st error = %#v", err)
 		}
+	}
+}
+
+func TestGetUploadUsageReturnsSnapshotTotalsAndSubmissionCounters(t *testing.T) {
+	ctx, _, store := newIntegrationStore(t, time.Date(2026, 8, 17, 0, 0, 0, 0, time.UTC))
+	user := provisionUploadUser(t, ctx, store, "usage-snapshot")
+	now := time.Date(2026, 8, 17, 0, 0, 0, 0, time.UTC)
+
+	empty, err := store.GetUploadUsage(ctx, user.ID, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if empty.SignedURLsRollingHour != 0 || empty.UploadBytesRollingDay != 0 || empty.StoredBytes != 0 || empty.FinalizedImages != 0 || len(empty.SubmissionImages) != 0 {
+		t.Fatalf("empty usage = %+v", empty)
+	}
+
+	sizes := []uint64{2, 3}
+	submissionIDs := make([]string, 0, len(sizes))
+	for index, size := range sizes {
+		reservation, err := store.CreateUpload(ctx, domain.CreateUpload{
+			OwnerUserID: user.ID,
+			Target:      domain.UploadTarget{Kind: domain.UploadTargetNewSubmission},
+			SizeBytes:   size,
+			Now:         now,
+		}, func(context.Context, domain.UploadReservation) (domain.SignedPUT, error) {
+			return domain.SignedPUT{}, nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		submissionIDs = append(submissionIDs, reservation.SubmissionID)
+		token := strings.Repeat(string(rune('A'+index)), 43)
+		claimed, err := store.ClaimUploadPromotion(ctx, user.ID, reservationBinding(reservation, `"etag"`), domain.UploadObject{ETag: `"etag"`}, 1, 1, token, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.CompleteUploadPromotion(ctx, claimed.UploadID, token, `"public"`, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	usage, err := store.GetUploadUsage(ctx, user.ID, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if usage.SignedURLsRollingHour != 2 || usage.UploadBytesRollingDay != 5 || usage.StoredBytes != 5 || usage.FinalizedImages != 2 {
+		t.Fatalf("global usage = %+v", usage)
+	}
+	if len(usage.SubmissionImages) != 2 || usage.SubmissionImages[submissionIDs[0]] != 1 || usage.SubmissionImages[submissionIDs[1]] != 1 {
+		t.Fatalf("submission usage = %+v", usage.SubmissionImages)
 	}
 }
 

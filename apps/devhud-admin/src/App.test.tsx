@@ -451,14 +451,43 @@ describe("administrator console review regressions", () => {
       "I understand this action is destructive.",
     );
     const submit = screen.getByRole("button", { name: "Confirm" });
-    fireEvent.change(reason, { target: { value: "가".repeat(1366) } });
+    fireEvent.change(reason, { target: { value: "\u0344".repeat(1025) } });
     fireEvent.click(confirmation);
+    expect((submit as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(reason, { target: { value: "가".repeat(1366) } });
     expect((submit as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText("Enter a safe reason no longer than 4 KiB of UTF-8.")).toBeTruthy();
     fireEvent.change(reason, { target: { value: "See /Users/example/private/incident.txt" } });
     expect((submit as HTMLButtonElement).disabled).toBe(true);
     fireEvent.change(reason, { target: { value: "Reviewed the policy violation." } });
     expect((submit as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("submits trimmed NFC mutation reasons for users and uploads", async () => {
+    runtime.client.setUserBlocked.mockResolvedValue({});
+    runtime.client.quarantineUpload.mockResolvedValue({});
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Block" }));
+    fireEvent.change(screen.getByLabelText("Reason"), {
+      target: { value: " \tCafe\u0301 reviewed.\n" },
+    });
+    fireEvent.click(screen.getByLabelText("I understand this action is destructive."));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    await waitFor(() => expect(runtime.client.setUserBlocked).toHaveBeenCalledWith(
+      expect.objectContaining({ reason: "Café reviewed." }),
+    ));
+
+    fireEvent.click(screen.getByRole("button", { name: "Uploads" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Quarantine" }));
+    fireEvent.change(screen.getByLabelText("Reason"), {
+      target: { value: " \tCafe\u0301 upload reviewed.\n" },
+    });
+    fireEvent.click(screen.getByLabelText("I understand this action is destructive."));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    await waitFor(() => expect(runtime.client.quarantineUpload).toHaveBeenCalledWith(
+      expect.objectContaining({ reason: "Café upload reviewed." }),
+    ));
   });
 
   it("reloads user and upload records after concurrent mutation conflicts", async () => {

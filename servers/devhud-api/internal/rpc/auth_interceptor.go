@@ -132,9 +132,20 @@ func (i *AuthInterceptor) recordRejectedAdminMutation(ctx context.Context, reque
 			event.TargetUploadID = &value
 		}
 	}
-	if err := i.admin.RecordAdministratorAudit(context.WithoutCancel(ctx), event); err != nil {
+	auditContext, cancel := detachedAuditContext(ctx)
+	defer cancel()
+	if err := i.admin.RecordAdministratorAudit(auditContext, event); err != nil {
 		i.logger.WarnContext(ctx, "administrator rejection audit failed", "correlation_id", CorrelationID(ctx), "procedure", request.Spec().Procedure, "error_type", "persistence")
 	}
+}
+
+func detachedAuditContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	detached := context.WithoutCancel(ctx)
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		return detached, func() {}
+	}
+	return context.WithDeadline(detached, deadline)
 }
 
 func (i *AuthInterceptor) rejectedAdminMutationEvent(ctx context.Context, reason domain.AuditRejectionReason) (domain.AuditEvent, error) {

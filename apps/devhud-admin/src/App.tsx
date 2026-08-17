@@ -52,6 +52,10 @@ function normalizeAdminSearch(value: string): string {
   return caseFold(trimmed).normalize("NFC");
 }
 
+function normalizeAdminReason(value: string): string {
+  return value.replace(unicodeEdgeWhitespace, "").normalize("NFC");
+}
+
 async function initializeApp(): Promise<Phase> {
   const bootstrap = await getBootstrap();
   const auth = AdminAuth.fromBootstrap(bootstrap);
@@ -493,7 +497,8 @@ function UserMutationDialog({
   const [confirmed, setConfirmed] = useState(false);
   const [pending, setPending] = useState(false);
   const [failed, setFailed] = useState(false);
-  const reasonValid = isAdminReasonValid(reason, publicAssetBaseUrl);
+  const normalizedReason = normalizeAdminReason(reason);
+  const reasonValid = isAdminReasonValid(normalizedReason, publicAssetBaseUrl);
   return (
     <Dialog title={blocked ? copy.unblock : copy.block} onClose={onClose}>
       <MutationFields
@@ -519,7 +524,7 @@ function UserMutationDialog({
               targetState: blocked
                 ? AdministrativeBlockState.UNBLOCKED
                 : AdministrativeBlockState.BLOCKED,
-              reason,
+              reason: normalizedReason,
             })
             .then(onDone, (error) => {
               setPending(false);
@@ -720,7 +725,8 @@ function UploadMutationDialog({
   const [pending, setPending] = useState(false);
   const [failed, setFailed] = useState(false);
   const label = selection.action === "delete" ? copy.delete : copy.quarantine;
-  const reasonValid = isAdminReasonValid(reason, publicAssetBaseUrl);
+  const normalizedReason = normalizeAdminReason(reason);
+  const reasonValid = isAdminReasonValid(normalizedReason, publicAssetBaseUrl);
   return (
     <Dialog title={label} onClose={onClose}>
       <p className="mono break">{selection.upload.uploadId?.value}</p>
@@ -743,7 +749,7 @@ function UploadMutationDialog({
           const request = {
             uploadId: selection.upload.uploadId,
             expectedState: selection.upload.state,
-            reason,
+            reason: normalizedReason,
           };
           const promise =
             selection.action === "delete"

@@ -255,6 +255,22 @@ func TestRejectedMutationAuditPreservesRequestDeadline(t *testing.T) {
 	}
 }
 
+func TestDetachedAuditContextPreservesDeadlineAndIgnoresCancellation(t *testing.T) {
+	deadline := time.Now().Add(time.Minute)
+	requestContext, cancelRequest := context.WithDeadline(context.Background(), deadline)
+	cancelRequest()
+	auditContext, cancelAudit := detachedAuditContext(requestContext)
+	defer cancelAudit()
+
+	auditDeadline, ok := auditContext.Deadline()
+	if !ok || !auditDeadline.Equal(deadline) {
+		t.Fatalf("audit deadline = %v, ok=%v, want %v", auditDeadline, ok, deadline)
+	}
+	if err := auditContext.Err(); err != nil {
+		t.Fatalf("detached audit context inherited request cancellation: %v", err)
+	}
+}
+
 func TestRejectedInterceptorAuditUsesOneClockInstant(t *testing.T) {
 	now := time.Date(2026, 8, 17, 12, 0, 0, 999_999_999, time.UTC)
 	clock := &steppingAdminClock{now: now, step: time.Nanosecond}
