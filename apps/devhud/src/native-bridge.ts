@@ -172,7 +172,9 @@ export function validateAuthenticationBrowserRequest(request: { readonly url: st
     if (normalizedIssuer === null) throw new Error();
     const issuer = new URL(normalizedIssuer);
     const destination = new URL(request.url);
-    if (request.url !== request.url.trim() || destination.origin !== issuer.origin || destination.username || destination.password || destination.hash) throw new Error();
+    const issuerPath = issuer.pathname.replace(/\/+$/u, "");
+    const withinIssuerPath = issuerPath === "" || destination.pathname === issuerPath || destination.pathname.startsWith(`${issuerPath}/`);
+    if (request.url !== request.url.trim() || destination.origin !== issuer.origin || !withinIssuerPath || destination.username || destination.password || destination.hash) throw new Error();
   } catch {
     throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument);
   }

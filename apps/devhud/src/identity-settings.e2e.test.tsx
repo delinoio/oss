@@ -3,6 +3,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { create, toBinary } from "@bufbuild/protobuf";
 import { PermissionFailureReason, PermissionFailureSchema, SettingsRevisionConflictSchema } from "@delinoio/devhud-api-client";
+import { LogtoRequestError } from "@logto/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import fixture from "../fixtures/identity-settings-e2e.json";
@@ -80,6 +81,7 @@ function IdentityStateProbe({ replacement = defaultDevHudSettings }: { readonly 
     <button type="button" onClick={() => void identity.replaceSettings(replacement).catch(() => {})}>replace probe settings</button>
     <button type="button" onClick={() => void queryClient.refetchQueries()}>refetch probe queries</button>
     <button type="button" onClick={() => void identity.logout().catch(() => {})}>logout probe identity</button>
+    <button type="button" onClick={identity.continueLocally}>continue probe locally</button>
   </>;
 }
 
@@ -606,6 +608,82 @@ describe("generated Connect identity/settings fixture", () => {
     await waitFor(() => expect(secureOperations).toContain("secure.remove"));
     expect(screen.getByRole("button", { name: messages.en.signIn })).toBeTruthy();
     await waitFor(() => expect(readAuthenticatedSettingsCache(localStorage, "https://devhud.api.delino.io")).toBeNull());
+  });
+
+  it("clears a terminal Logto refresh failure before any service request", async () => {
+    let authenticated = true;
+    const clear = vi.fn(async () => { authenticated = false; });
+    vi.spyOn(identityClient, "createIdentitySession").mockResolvedValue({
+      client: {},
+      storage: {},
+      getAccessToken: async () => { throw new LogtoRequestError("invalid_grant", "refresh token revoked"); },
+      isAuthenticated: async () => authenticated,
+      signIn: async () => {},
+      handleCallback: async () => {},
+      clear,
+    } as unknown as IdentitySession);
+    writeAuthenticatedSettingsCache(localStorage, "https://devhud.api.delino.io", { settings: defaultDevHudSettings, revision: 9n, cachedAt: "2026-08-17T00:00:00.000Z" });
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      throw new Error(`service request unexpectedly reached ${url}`);
+    }));
+
+    renderIdentityProbe(signedOutBridge());
+
+    await waitFor(() => expect(screen.getByTestId("identity-state").dataset.status).toBe("signed-out"));
+    expect(clear).toHaveBeenCalledOnce();
+    expect(readAuthenticatedSettingsCache(localStorage, "https://devhud.api.delino.io")).toBeNull();
+  });
+
+  it("retains the Logto session and retries transient token refresh failures", async () => {
+    let failing = true;
+    const clear = vi.fn(async () => {});
+    vi.spyOn(identityClient, "createIdentitySession").mockResolvedValue({
+      client: {},
+      storage: {},
+      getAccessToken: async () => {
+        if (failing) throw new TypeError("network unavailable");
+        return "fixture-access-token";
+      },
+      isAuthenticated: async () => true,
+      signIn: async () => {},
+      handleCallback: async () => {},
+      clear,
+    } as unknown as IdentitySession);
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 1, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
+      throw new Error(`unexpected fixture request ${url}`);
+    }));
+
+    renderIdentityProbe(signedOutBridge());
+    await waitFor(() => expect(screen.getByTestId("identity-state").dataset.accountError).not.toBe(""));
+    expect(screen.getByTestId("identity-state").dataset.status).toBe("authenticated");
+
+    failing = false;
+    fireEvent.click(screen.getByRole("button", { name: "refetch probe queries" }));
+
+    await waitFor(() => expect(screen.getByTestId("identity-state").dataset.accountError).toBe(""));
+    expect(clear).not.toHaveBeenCalled();
+  });
+
+  it("keeps guest settings writable when pending Bootstrap fails after Continue locally", async () => {
+    let rejectBootstrap!: (reason: unknown) => void;
+    const bootstrap = new Promise<Response>((_resolve, reject) => { rejectBootstrap = reject; });
+    const fetch = vi.fn(() => bootstrap);
+    vi.stubGlobal("fetch", fetch);
+
+    renderIdentityProbe(signedOutBridge());
+    await waitFor(() => expect(fetch).toHaveBeenCalledOnce());
+    fireEvent.click(screen.getByRole("button", { name: "continue probe locally" }));
+    await act(async () => { rejectBootstrap(new TypeError("network unavailable")); });
+
+    await waitFor(() => expect(screen.getByTestId("identity-state").dataset.status).toBe("guest"));
+    expect(screen.getByTestId("identity-state").dataset.readOnly).toBe("false");
+    expect(screen.getByTestId("identity-state").dataset.error).toBe("");
   });
 
   it("surfaces typed GetAccount failures without exposing destructive actions and retries them", async () => {

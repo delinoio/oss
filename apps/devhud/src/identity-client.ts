@@ -1,5 +1,5 @@
-import type { GetBootstrapResponse } from "@delinoio/devhud-api-client";
-import LogtoClient, { createRequester, type ClientAdapter, type Storage as LogtoStorage } from "@logto/client";
+import { ProjectId, type GetBootstrapResponse } from "@delinoio/devhud-api-client";
+import LogtoClient, { createRequester, isLogtoRequestError, LogtoClientError, type ClientAdapter, type Storage as LogtoStorage } from "@logto/client";
 import { isValidLogtoAudience, normalizeLogtoIssuer } from "./identity-contract.ts";
 import { nativeBridge, RuntimePlatform, SecureSettingKind, type NativeBridgeV1, type RuntimePlatform as RuntimePlatformType } from "./native-bridge";
 
@@ -21,6 +21,7 @@ export class BootstrapContractError extends TypeError {
 }
 
 export function validateBootstrap(response: GetBootstrapResponse, platform: RuntimePlatformType): ValidatedBootstrap {
+  if (response.projectId !== ProjectId.DEVHUD) throw new BootstrapContractError("Bootstrap project ID does not match DevHud");
   if (response.protocolSchemaVersion !== SupportedProtocolSchemaVersion) throw new BootstrapContractError("unsupported protocol schema version");
   const issuer = normalizeLogtoIssuer(response.logtoIssuer);
   if (issuer === null) throw new BootstrapContractError("Logto issuer must be an HTTPS or loopback HTTP URL without credentials, query, or fragment");
@@ -30,6 +31,11 @@ export function validateBootstrap(response: GetBootstrapResponse, platform: Runt
   const clientId = platform === RuntimePlatform.Ios ? response.logtoClients?.ios : platform === RuntimePlatform.Android ? response.logtoClients?.android : response.logtoClients?.desktop;
   if (clientId === undefined || !/^[\x21-\x7e]{1,256}$/u.test(clientId)) throw new BootstrapContractError("platform Logto client ID is missing or invalid");
   return { issuer, audience, clientId, redirectUri: NativeAuthCallback };
+}
+
+export function isTerminalAccessTokenError(reason: unknown): boolean {
+  return (reason instanceof LogtoClientError && reason.code === "not_authenticated")
+    || (isLogtoRequestError(reason) && reason.code === "invalid_grant");
 }
 
 export class SecureLogtoStorage implements LogtoStorage<string> {

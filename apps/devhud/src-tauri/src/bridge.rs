@@ -16,7 +16,7 @@ pub struct NativeBridgeState {
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct SessionOrigins {
     api_origin: String,
-    logto_issuer: Option<String>,
+    logto_issuer: Option<url::Url>,
 }
 
 impl Default for NativeBridgeState {
@@ -66,7 +66,7 @@ impl NativeBridgeState {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut connect = vec!["'self'".to_string(), origins.api_origin.clone()];
         if let Some(issuer) = &origins.logto_issuer {
-            connect.push(issuer.clone());
+            connect.push(issuer.origin().ascii_serialization());
         }
         if development {
             connect.push("ws://127.0.0.1:46305".to_string());
@@ -95,7 +95,7 @@ impl NativeBridgeState {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let logto_issuer = match request.get("logtoIssuer") {
-            Some(Value::String(value)) => Some(validated_logto_issuer_origin(value)?),
+            Some(Value::String(value)) => Some(validated_logto_issuer(value)?),
             Some(Value::Null) => None,
             Some(_) => return Err("invalid-argument".to_string()),
             None if origins.api_origin == api_origin => origins.logto_issuer.clone(),
@@ -132,7 +132,7 @@ fn validated_api_origin(value: &str) -> Result<String, String> {
     Ok(url.origin().ascii_serialization())
 }
 
-fn validated_logto_issuer_origin(value: &str) -> Result<String, String> {
+fn validated_logto_issuer(value: &str) -> Result<url::Url, String> {
     if value.trim() != value {
         return Err("invalid-argument".to_string());
     }
@@ -152,7 +152,17 @@ fn validated_logto_issuer_origin(value: &str) -> Result<String, String> {
     {
         return Err("invalid-argument".to_string());
     }
-    Ok(url.origin().ascii_serialization())
+    Ok(url)
+}
+
+fn destination_is_within_issuer_path(issuer: &url::Url, destination: &url::Url) -> bool {
+    let issuer_path = issuer.path().trim_end_matches('/');
+    issuer_path.is_empty()
+        || destination.path() == issuer_path
+        || destination
+            .path()
+            .strip_prefix(issuer_path)
+            .is_some_and(|suffix| suffix.starts_with('/'))
 }
 
 fn is_profile_id(value: &str) -> bool {
@@ -250,7 +260,7 @@ fn validate_auth_browser_request(request: &Value, state: &NativeBridgeState) -> 
         .get("url")
         .and_then(Value::as_str)
         .ok_or("invalid-argument")?;
-    let issuer_origin = validated_logto_issuer_origin(issuer)?;
+    let issuer = validated_logto_issuer(issuer)?;
     let destination = url::Url::parse(destination).map_err(|_| "invalid-argument")?;
     let configured_issuer = state
         .session_origins
@@ -258,8 +268,9 @@ fn validate_auth_browser_request(request: &Value, state: &NativeBridgeState) -> 
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .logto_issuer
         .clone();
-    if configured_issuer.as_deref() != Some(issuer_origin.as_str())
-        || destination.origin().ascii_serialization() != issuer_origin
+    if configured_issuer.as_ref() != Some(&issuer)
+        || destination.origin() != issuer.origin()
+        || !destination_is_within_issuer_path(&issuer, &destination)
         || !destination.username().is_empty()
         || destination.password().is_some()
         || destination.fragment().is_some()
@@ -602,7 +613,21 @@ mod tests {
         let state = NativeBridgeState::default();
         assert_eq!(
             validate_auth_browser_request(
-                &json!({ "issuer": "https://identity.example/oidc", "url": "https://identity.example/auth" }),
+                &json!({ "issuer": "https://configured.example/oidc", "url": "https://configured.example/auth" }),
+                &state,
+            ),
+            Err("invalid-argument".to_string())
+        );
+        assert_eq!(
+            validate_auth_browser_request(
+                &json!({ "issuer": "https://configured.example/oidc", "url": "https://configured.example/oidc-attacker/auth" }),
+                &state,
+            ),
+            Err("invalid-argument".to_string())
+        );
+        assert_eq!(
+            validate_auth_browser_request(
+                &json!({ "issuer": "https://configured.example/unrelated", "url": "https://configured.example/unrelated/auth" }),
                 &state,
             ),
             Err("invalid-argument".to_string())

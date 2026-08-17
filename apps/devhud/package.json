@@ -28,6 +28,7 @@
     "smoke:platform": "node scripts/platform-smoke.mjs"
   },
   "dependencies": {
+    "@connectrpc/connect": "2.1.2",
     "@connectrpc/connect-query": "2.3.1",
     "@connectrpc/connect-web": "2.1.2",
     "@delinoio/devhud-api-client": "workspace:*",

@@ -1,3 +1,4 @@
+import { Code, ConnectError } from "@connectrpc/connect";
 import { createConnectQueryKey, useMutation, useQuery, useTransport, TransportProvider } from "@connectrpc/connect-query";
 import { createConnectTransport } from "@connectrpc/connect-web";
 import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
@@ -14,7 +15,7 @@ import {
   type DevHudClientError,
 } from "@delinoio/devhud-api-client";
 import { createContext, use, useEffect, useMemo, useRef, useState, type PropsWithChildren, type RefObject } from "react";
-import { createIdentitySession, sessionProfileId, validateBootstrap, type IdentitySession, type ValidatedBootstrap } from "./identity-client";
+import { createIdentitySession, isTerminalAccessTokenError, sessionProfileId, validateBootstrap, type IdentitySession, type ValidatedBootstrap } from "./identity-client";
 import { clearAllContractedLocalData, clearAuthenticatedOriginData, clearAuthenticatedSettingsCache, clearGuestImportMarker, hasGuestSettings, readAuthenticatedSettingsCache, readCachedIdentityBootstrap, readGuestSettings, writeAuthenticatedSettingsCache, writeCachedIdentityBootstrap, writeGuestSettings } from "./local-data";
 import { SecureSettingKind, type NativeBridgeV1, type RuntimePlatform } from "./native-bridge";
 import { profileRequiresSetup } from "./profile-secrets";
@@ -96,8 +97,13 @@ export function DevHudServiceBoundary(props: BoundaryProps) {
     baseUrl: props.apiOrigin,
     interceptors: [(next) => async (request) => {
       if (!request.url.endsWith("/GetBootstrap") && sessionRef.current !== null) {
-        const token = await sessionRef.current.getAccessToken();
-        request.header.set("Authorization", `Bearer ${token}`);
+        try {
+          const token = await sessionRef.current.getAccessToken();
+          request.header.set("Authorization", `Bearer ${token}`);
+        } catch (reason) {
+          if (isTerminalAccessTokenError(reason)) throw ConnectError.from(reason, Code.Unauthenticated);
+          throw reason;
+        }
       }
       return next(request);
     }],
@@ -139,6 +145,8 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   const [identityResetAvailable, setIdentityResetAvailable] = useState(false);
   const signInPendingRef = useRef(false);
   const callbackHandled = useRef<string | null>(null);
+  const invalidSessionCleanupRef = useRef<Promise<void> | null>(null);
+  const continueLocallyRef = useRef(false);
 
   const accountQueryKey = useMemo(() => createConnectQueryKey({ schema: AccountQuery.getAccount, transport, input: {}, cardinality: "finite" }), [transport]);
   const settingsQueryKey = useMemo(() => createConnectQueryKey({ schema: SettingsQuery.getSettings, transport, input: {}, cardinality: "finite" }), [transport]);
@@ -159,24 +167,36 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     queryClient.removeQueries({ queryKey: settingsQueryKey });
   }
 
-  async function clearInvalidSession(): Promise<void> {
+  function clearInvalidSession(): Promise<void> {
+    if (invalidSessionCleanupRef.current !== null) return invalidSessionCleanupRef.current;
     const current = sessionRef.current;
     sessionRef.current = null;
     setSession(null);
-    try {
-      await current?.clear();
-    } finally {
-      setAccount(null);
-      setAccountError(null);
-      setSettings(defaultDevHudSettings);
-      setRevision(0n);
-      setSettingsReady(false);
-      setSettingsError(null);
-      setStatus("signed-out");
-      clearAuthenticatedSettingsCache(storage, apiOrigin);
-      await clearIdentityQueryCache();
-      onIdentityReset();
-    }
+    let cleanup: Promise<void>;
+    cleanup = (async () => {
+      try {
+        await current?.clear();
+      } finally {
+        setAccount(null);
+        setAccountError(null);
+        setSettings(defaultDevHudSettings);
+        setRevision(0n);
+        setSettingsReady(false);
+        setSettingsError(null);
+        setStatus("signed-out");
+        clearAuthenticatedSettingsCache(storage, apiOrigin);
+        await clearIdentityQueryCache();
+        onIdentityReset();
+      }
+    })().then(
+      () => { if (invalidSessionCleanupRef.current === cleanup) invalidSessionCleanupRef.current = null; },
+      (reason: unknown) => {
+        if (invalidSessionCleanupRef.current === cleanup) invalidSessionCleanupRef.current = null;
+        throw reason;
+      },
+    );
+    invalidSessionCleanupRef.current = cleanup;
+    return cleanup;
   }
 
   async function cleanPendingDeletion(): Promise<void> {
@@ -220,7 +240,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       if (response.changed) location.reload();
       else setNetworkReady(true);
     }).catch((reason) => {
-      if (!cancelled) { setStatus("error"); setError(safeError(reason)); }
+      if (!cancelled && !continueLocallyRef.current) { setStatus("error"); setError(safeError(reason)); }
     });
     return () => { cancelled = true; };
   }, [active, apiOrigin, bootstrapAttempt, bridge]);
@@ -228,7 +248,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   useEffect(() => {
     if (!active || !online || !networkReady || !bootstrapQuery.data) return;
     let cancelled = false;
-    setStatus((current) => current === "guest" ? "starting" : current);
+    if (!continueLocallyRef.current) setStatus((current) => current === "guest" ? "starting" : current);
     void (async () => {
       try {
         const validated = validateBootstrap(bootstrapQuery.data, platform);
@@ -243,7 +263,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
         try {
           authenticated = await session.isAuthenticated();
         } catch (reason) {
-          if (!cancelled) setIdentityResetAvailable(true);
+          if (!cancelled && !continueLocallyRef.current) setIdentityResetAvailable(true);
           throw reason;
         }
         if (cancelled) return;
@@ -252,11 +272,11 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
         setSession(session);
         setBootstrap(validated);
         setIdentityResetAvailable(false);
-        setStatus(authenticated ? "authenticated" : "signed-out");
+        setStatus(continueLocallyRef.current ? "guest" : authenticated ? "authenticated" : "signed-out");
         setIdentityReady(true);
         setError(null);
       } catch (reason) {
-        if (!cancelled) {
+        if (!cancelled && !continueLocallyRef.current) {
           setStatus("error");
           setError(safeError(reason));
         }
@@ -285,7 +305,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
         try {
           authenticated = await session.isAuthenticated();
         } catch (reason) {
-          if (!cancelled) setIdentityResetAvailable(true);
+          if (!cancelled && !continueLocallyRef.current) setIdentityResetAvailable(true);
           throw reason;
         }
         if (cancelled) return;
@@ -294,11 +314,11 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
         setSession(session);
         setBootstrap(cached);
         setIdentityResetAvailable(false);
-        setStatus(authenticated ? "authenticated" : "signed-out");
+        setStatus(continueLocallyRef.current ? "guest" : authenticated ? "authenticated" : "signed-out");
         setIdentityReady(true);
         setError(null);
       } catch (reason) {
-        if (!cancelled) {
+        if (!cancelled && !continueLocallyRef.current) {
           setStatus("error");
           setError(safeError(reason));
         }
@@ -326,6 +346,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
 
   useEffect(() => {
     if (!networkReady || !bootstrapQuery.error) return;
+    if (continueLocallyRef.current) return;
     if (bootstrap !== null || session !== null) return;
     setStatus("error");
     setError("bootstrap-unavailable");
@@ -475,6 +496,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   }
 
   function retryIdentity(): void {
+    continueLocallyRef.current = false;
     setStatus("starting");
     setError(null);
     setIdentityResetAvailable(false);
@@ -532,6 +554,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     identityResetAvailable,
     signIn: async () => {
       if (signInPendingRef.current) return;
+      continueLocallyRef.current = false;
       const current = sessionRef.current;
       if (current === null) throw new Error("bootstrap-not-ready");
       signInPendingRef.current = true;
@@ -554,7 +577,13 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       setError((current) => current === "settings-contract-invalid" ? null : current);
       await settingsQuery.refetch();
     },
-    continueLocally: () => { setStatus("guest"); setIdentityReady(true); onContinueLocally(); },
+    continueLocally: () => {
+      continueLocallyRef.current = true;
+      setStatus("guest");
+      setIdentityReady(true);
+      setError(null);
+      onContinueLocally();
+    },
     uploadLocal: () => replaceAt(settings, revision),
     replaceLocal: () => {
       let validated: ValidatedSettingsSnapshot;

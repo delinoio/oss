@@ -138,6 +138,7 @@ describe("native App state", () => {
       clear: async () => {},
     } as unknown as IdentitySession);
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      projectId: "PROJECT_ID_DEVHUD",
       protocolSchemaVersion: 1,
       apiVersion: "0.1.0-dev",
       logtoIssuer: "https://identity.example/oidc",
@@ -174,6 +175,7 @@ describe("native App state", () => {
     } as unknown as IdentitySession);
     vi.stubGlobal("location", { reload: vi.fn() });
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      projectId: "PROJECT_ID_DEVHUD",
       protocolSchemaVersion: 1,
       apiVersion: "0.1.0-dev",
       logtoIssuer: "https://identity.example/oidc",

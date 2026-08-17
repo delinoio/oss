@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 
 import { describe, expect, it, vi } from "vitest";
-import type { GetBootstrapResponse } from "@delinoio/devhud-api-client";
-import { BootstrapContractError, SecureLogtoStorage, sessionProfileId, validateBootstrap } from "./identity-client";
+import { ProjectId, type GetBootstrapResponse } from "@delinoio/devhud-api-client";
+import { LogtoClientError, LogtoRequestError } from "@logto/client";
+import { BootstrapContractError, isTerminalAccessTokenError, SecureLogtoStorage, sessionProfileId, validateBootstrap } from "./identity-client";
 import { LifecycleState, RuntimePlatform, type NativeBridgeRequestV1, type NativeBridgeResponseV1, type NativeBridgeV1 } from "./native-bridge";
 
 function memoryBridge(): NativeBridgeV1 & { readonly values: Map<string, string>; readonly requests: NativeBridgeRequestV1[] } {
@@ -24,6 +25,7 @@ function memoryBridge(): NativeBridgeV1 & { readonly values: Map<string, string>
 }
 
 const bootstrap = {
+  projectId: ProjectId.DEVHUD,
   protocolSchemaVersion: 1,
   apiVersion: "0.1.0-dev",
   logtoIssuer: "https://identity.example/oidc",
@@ -45,6 +47,18 @@ describe("identity client boundary", () => {
     expect(() => validateBootstrap({ ...bootstrap, logtoIssuer: "http://identity.example/" } as GetBootstrapResponse, RuntimePlatform.Desktop)).toThrow(BootstrapContractError);
     expect(() => validateBootstrap({ ...bootstrap, logtoAudience: "  " } as GetBootstrapResponse, RuntimePlatform.Desktop)).toThrow(BootstrapContractError);
     expect(() => validateBootstrap({ ...bootstrap, logtoRedirects: { ...bootstrap.logtoRedirects!, native: "https://attacker.example" } } as GetBootstrapResponse, RuntimePlatform.Desktop)).toThrow(BootstrapContractError);
+  });
+
+  it("rejects Bootstrap discovery for another project", () => {
+    expect(() => validateBootstrap({ ...bootstrap, projectId: ProjectId.UNSPECIFIED }, RuntimePlatform.Desktop)).toThrow(BootstrapContractError);
+    expect(() => validateBootstrap({ ...bootstrap, projectId: 999 as ProjectId }, RuntimePlatform.Desktop)).toThrow(BootstrapContractError);
+  });
+
+  it("classifies only terminal access-token failures", () => {
+    expect(isTerminalAccessTokenError(new LogtoClientError("not_authenticated"))).toBe(true);
+    expect(isTerminalAccessTokenError(new LogtoRequestError("invalid_grant", "refresh token revoked"))).toBe(true);
+    expect(isTerminalAccessTokenError(new LogtoRequestError("temporarily_unavailable", "retry later"))).toBe(false);
+    expect(isTerminalAccessTokenError(new TypeError("network unavailable"))).toBe(false);
   });
 
   it("serializes concurrent Logto writes into one non-enumerable secure value", async () => {

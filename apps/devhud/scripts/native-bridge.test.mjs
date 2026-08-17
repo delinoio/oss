@@ -52,6 +52,8 @@ test("external navigation is restricted to account destinations", () => {
 test("authentication navigation is restricted to the discovered HTTPS issuer", () => {
   assert.doesNotThrow(() => validateAuthenticationBrowserRequest({ issuer: "https://identity.example/oidc", url: "https://identity.example/oidc/auth?state=opaque" }));
   assert.doesNotThrow(() => validateAuthenticationBrowserRequest({ issuer: "http://127.0.0.1:3001/oidc", url: "http://127.0.0.1:3001/oidc/auth?state=opaque" }));
+  assert.throws(() => validateAuthenticationBrowserRequest({ issuer: "https://identity.example/oidc", url: "https://identity.example/auth" }), NativeBridgeError);
+  assert.throws(() => validateAuthenticationBrowserRequest({ issuer: "https://identity.example/oidc", url: "https://identity.example/oidc-attacker/auth" }), NativeBridgeError);
   assert.throws(() => validateAuthenticationBrowserRequest({ issuer: "https://identity.example/", url: "https://attacker.example/oidc/auth" }), NativeBridgeError);
   assert.throws(() => validateAuthenticationBrowserRequest({ issuer: "http://identity.example/", url: "http://identity.example/oidc/auth" }), NativeBridgeError);
 });
