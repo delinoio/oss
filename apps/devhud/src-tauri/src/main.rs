@@ -238,6 +238,10 @@ async fn open_external(target: String, api_origin: String) -> Result<(), String>
         error!(event = "external_destination_rejected");
         "external destination is not allowlisted".to_string()
     })?;
+    open_system_browser(destination).await
+}
+
+async fn open_system_browser(destination: String) -> Result<(), String> {
     #[cfg(target_os = "linux")]
     return tauri::async_runtime::spawn_blocking(move || {
         wait_for_linux_external_dispatch(destination)

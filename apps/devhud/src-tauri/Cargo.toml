@@ -26,7 +26,6 @@ url = "2"
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 dirs = "6"
 keyring = "=4.1.6"
-open = "=5.3.3"
 tauri = { git = "https://github.com/tauri-apps/tauri", rev = "4af26a3f7f8b692d62cca549bbacd93f5ce90b41", default-features = false, features = ["cef", "tray-icon", "unstable"] }
 tracing = "0.1"
 tracing-appender = "0.2.5"

@@ -10,6 +10,8 @@ const fixtures = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.
 const tauriConfig = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/tauri.conf.json"), "utf8"));
 const cargoLock = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../../../Cargo.lock"), "utf8");
 const desktopSecureStore = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/secure_store.rs"), "utf8");
+const desktopHost = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/main.rs"), "utf8");
+const nativeBridgeHost = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/bridge.rs"), "utf8");
 
 test("deep-link fixtures accept only the contracted auth callback", () => {
   assert.deepEqual(tauriConfig.plugins["deep-link"].desktop.schemes, ["devhud"]);
@@ -40,9 +42,22 @@ test("external navigation is restricted to account destinations", () => {
 });
 
 test("authentication navigation is restricted to the discovered HTTPS issuer", () => {
-  assert.doesNotThrow(() => validateAuthenticationBrowserRequest({ issuer: "https://identity.example/", url: "https://identity.example/oidc/auth?state=opaque" }));
+  assert.doesNotThrow(() => validateAuthenticationBrowserRequest({ issuer: "https://identity.example/oidc", url: "https://identity.example/oidc/auth?state=opaque" }));
+  assert.doesNotThrow(() => validateAuthenticationBrowserRequest({ issuer: "http://127.0.0.1:3001/oidc", url: "http://127.0.0.1:3001/oidc/auth?state=opaque" }));
   assert.throws(() => validateAuthenticationBrowserRequest({ issuer: "https://identity.example/", url: "https://attacker.example/oidc/auth" }), NativeBridgeError);
   assert.throws(() => validateAuthenticationBrowserRequest({ issuer: "http://identity.example/", url: "http://identity.example/oidc/auth" }), NativeBridgeError);
+});
+
+test("desktop authentication uses the diagnosed bounded system opener", () => {
+  assert.match(desktopHost, /async fn open_system_browser/u);
+  assert.match(nativeBridgeHost, /crate::open_system_browser\(destination\.to_string\(\)\)\s+\.await/u);
+  assert.doesNotMatch(nativeBridgeHost, /open::that_detached/u);
+});
+
+test("desktop secure writes roll back credentials when index maintenance fails", () => {
+  assert.match(desktopSecureStore, /if let Err\(reason\) = index_result/u);
+  assert.match(desktopSecureStore, /delete\(&setting\)/u);
+  assert.match(desktopSecureStore, /secure_store_write_rollback_failed/u);
 });
 
 test("Tauri rejection codes become typed native bridge errors", async () => {

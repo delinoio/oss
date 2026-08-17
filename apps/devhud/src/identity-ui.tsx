@@ -1,7 +1,7 @@
 import { useEffect, useState, type Ref } from "react";
 import type { Copy } from "./localization";
 import { useIdentitySettings } from "./service-boundary";
-import { isValidApiOrigin } from "./shell";
+import { normalizeApiOrigin } from "./shell";
 import type { SettingsDiffEntry } from "./settings-diff";
 
 interface ApiEditorProps {
@@ -17,13 +17,15 @@ export function ApiOriginEditor({ copy, value, inputRef, autoFocus = false, onAp
   const [error, setError] = useState(false);
   useEffect(() => setDraft(value), [value]);
   const apply = async () => {
-    if (!isValidApiOrigin(draft)) { setError(true); return; }
+    const normalized = normalizeApiOrigin(draft);
+    if (normalized === null) { setError(true); return; }
     setError(false);
-    await onApply(draft);
+    setDraft(normalized);
+    await onApply(normalized);
   };
   return <div className="api-origin-editor">
     <label>{copy.apiOrigin}<input ref={inputRef} autoFocus={autoFocus} value={draft} onChange={(event) => setDraft(event.target.value)} aria-describedby="api-origin-security-warning api-origin-validation" /></label>
-    <button type="button" onClick={() => void apply()} disabled={draft === value}>{copy.applyApiOrigin}</button>
+    <button type="button" onClick={() => void apply()} disabled={normalizeApiOrigin(draft) === normalizeApiOrigin(value)}>{copy.applyApiOrigin}</button>
     <p id="api-origin-security-warning" className="notice">{copy.customApiWarning}</p>
     <p>{copy.apiOriginHint}</p>
     {error && <p id="api-origin-validation" role="alert">{copy.invalidApiOrigin}</p>}
@@ -70,6 +72,12 @@ export function AccountIdentity({ copy, apiOrigin, inputRef, onApiOrigin }: Acco
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [actionError, setActionError] = useState(false);
   const invoke = (action: () => Promise<void>) => { setActionError(false); void action().catch(() => setActionError(true)); };
+  useEffect(() => {
+    if (!confirmDelete) return;
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") setConfirmDelete(false); };
+    addEventListener("keydown", closeOnEscape);
+    return () => removeEventListener("keydown", closeOnEscape);
+  }, [confirmDelete]);
   return <>
     <p className="eyebrow">{copy.account}</p>
     <h2>{copy.accountTitle}</h2>
@@ -101,7 +109,7 @@ export function SynchronizedSettingsBoundary({ copy }: { readonly copy: Copy }) 
     {!identity.offline && <p>{copy.settingsRevision}: {identity.revision.toString()}</p>}
     {identity.importDiff && <SnapshotChoice copy={copy} entries={identity.importDiff} title={copy.importSettingsTitle} summary={copy.importSettingsSummary} primary={copy.uploadLocal} secondary={copy.replaceLocal} onPrimary={() => invoke(identity.uploadLocal)} onSecondary={identity.replaceLocal} />}
     {identity.conflict && <SnapshotChoice copy={copy} entries={identity.conflict.diff} title={copy.conflictTitle} summary={copy.conflictSummary} primary={copy.reapplyLocal} secondary={copy.adoptServer} onPrimary={() => invoke(identity.reapplyConflictLocal)} onSecondary={identity.adoptConflictServer} />}
-    {actionError && <p role="alert">{copy.settingsActionFailed}{identity.error && <> <code>{identity.error}</code></>}</p>}
+    {(actionError || identity.error?.startsWith("settings-")) && <p role="alert">{copy.settingsActionFailed}{identity.error && <> <code>{identity.error}</code></>}</p>}
   </section>;
 }
 

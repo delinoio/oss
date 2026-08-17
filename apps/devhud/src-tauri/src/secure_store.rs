@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 
 use keyring::{Entry, Error};
 use serde_json::Value;
+use tracing::error;
 
 const SERVICE: &str = "io.delino.devhud.secure-settings.v1";
 const INDEX_ACCOUNT: &str = "__index__";
@@ -39,9 +40,17 @@ pub fn handle(request: &Value) -> Result<Value, String> {
             entry(&setting)?
                 .set_password(value)
                 .map_err(|_| "storage-failure")?;
-            let mut index = read_index()?;
-            index.insert(setting);
-            write_index(&index)?;
+            let index_result = (|| {
+                let mut index = read_index()?;
+                index.insert(setting.clone());
+                write_index(&index)
+            })();
+            if let Err(reason) = index_result {
+                if delete(&setting).is_err() {
+                    error!(event = "secure_store_write_rollback_failed");
+                }
+                return Err(reason);
+            }
             Ok(serde_json::json!({ "kind": "ok" }))
         }
         Some("secure.remove") => {

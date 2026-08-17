@@ -1,3 +1,5 @@
+import { normalizeLogtoIssuer } from "./identity-contract.ts";
+
 export const NativeBridgeVersion = 1 as const;
 
 export const RuntimePlatform = {
@@ -165,9 +167,11 @@ export function validateExternalRequest(request: { readonly target: "authenticat
 
 export function validateAuthenticationBrowserRequest(request: { readonly url: string; readonly issuer: string }) {
   try {
-    const issuer = new URL(request.issuer);
+    const normalizedIssuer = normalizeLogtoIssuer(request.issuer);
+    if (normalizedIssuer === null) throw new Error();
+    const issuer = new URL(normalizedIssuer);
     const destination = new URL(request.url);
-    if (issuer.protocol !== "https:" || issuer.username || issuer.password || issuer.search || issuer.hash || issuer.pathname !== "/" || destination.origin !== issuer.origin || destination.protocol !== "https:" || destination.username || destination.password || destination.hash) throw new Error();
+    if (request.url !== request.url.trim() || destination.origin !== issuer.origin || destination.username || destination.password || destination.hash) throw new Error();
   } catch {
     throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument);
   }

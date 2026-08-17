@@ -2,6 +2,7 @@ import { useMutation, useQuery, TransportProvider } from "@connectrpc/connect-qu
 import { createConnectTransport } from "@connectrpc/connect-web";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
+  AccountFailureReason,
   AccountDeletionState,
   AccountQuery,
   AdministrativeBlockState,
@@ -16,7 +17,7 @@ import { createIdentitySession, sessionProfileId, validateBootstrap, type Identi
 import { clearAllContractedLocalData, clearAuthenticatedOriginData, clearGuestImportMarker, hasGuestSettings, readAuthenticatedSettingsCache, readCachedIdentityBootstrap, readGuestSettings, writeAuthenticatedSettingsCache, writeCachedIdentityBootstrap, writeGuestSettings } from "./local-data";
 import type { NativeBridgeV1, RuntimePlatform } from "./native-bridge";
 import { profileRequiresSetup } from "./profile-secrets";
-import { defaultDevHudSettings, decodeDevHudSettings, encodeDevHudSettings, type DevHudSettingsV1 } from "./settings-contract";
+import { defaultDevHudSettings, decodeDevHudSettings, encodeDevHudSettings, SettingsSchemaVersion, type DevHudSettingsV1 } from "./settings-contract";
 import { diffSettings, type SettingsDiffEntry } from "./settings-diff";
 import { getLocalStorage, isValidApiOrigin } from "./shell";
 
@@ -96,8 +97,9 @@ export function DevHudServiceBoundary(props: BoundaryProps) {
 }
 
 function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, platform, bridge, onContinueLocally, onLoggedOut, children, sessionRef }: BoundaryProps & { readonly sessionRef: RefObject<IdentitySession | null> }) {
-  const storage = getLocalStorage() as Storage;
+  const storage = getLocalStorage();
   const [status, setStatus] = useState<IdentityStatus>("guest");
+  const [session, setSession] = useState<IdentitySession | null>(null);
   const [bootstrap, setBootstrap] = useState<ValidatedBootstrap | null>(null);
   const [settings, setSettings] = useState<DevHudSettingsV1>(() => readGuestSettings(storage));
   const [revision, setRevision] = useState(0n);
@@ -114,6 +116,39 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   const replaceMutation = useMutation(SettingsQuery.replaceSettings);
   const deleteMutation = useMutation(AccountQuery.deleteAccount);
   const restoreMutation = useMutation(AccountQuery.restoreAccount);
+
+  async function clearInvalidSession(): Promise<void> {
+    const current = sessionRef.current;
+    sessionRef.current = null;
+    setSession(null);
+    try {
+      await current?.clear();
+    } finally {
+      setAccount(null);
+      setStatus("signed-out");
+    }
+  }
+
+  async function cleanPendingDeletion(): Promise<void> {
+    clearAllContractedLocalData(storage);
+    await bridge.request({ operation: "secure.purge", scope: "account-deletion", profileId: await sessionProfileId(apiOrigin) });
+  }
+
+  async function clearIrrecoverableAccount(): Promise<void> {
+    setStatus("error");
+    clearAllContractedLocalData(storage);
+    try {
+      await bridge.request({ operation: "secure.purge", scope: "logout" });
+      sessionRef.current = null;
+      setSession(null);
+      setAccount(null);
+      setStatus("signed-out");
+      setError(null);
+    } catch (reason) {
+      setError(safeError(reason));
+      throw reason;
+    }
+  }
 
   useEffect(() => {
     if (!active || !isValidApiOrigin(apiOrigin)) { setNetworkReady(false); return; }
@@ -145,6 +180,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
         const authenticated = await session.isAuthenticated();
         if (cancelled) return;
         sessionRef.current = session;
+        setSession(session);
         setBootstrap(validated);
         setStatus(authenticated ? "authenticated" : "signed-out");
         setError(null);
@@ -174,6 +210,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
         const authenticated = await session.isAuthenticated();
         if (cancelled) return;
         sessionRef.current = session;
+        setSession(session);
         setBootstrap(cached);
         setStatus(authenticated ? "authenticated" : "signed-out");
         setError(null);
@@ -188,9 +225,9 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   }, [active, apiOrigin, bridge, networkReady, online, sessionRef, storage]);
 
   useEffect(() => {
-    if (!callbackUrl || callbackHandled.current === callbackUrl || sessionRef.current === null) return;
+    if (!callbackUrl || callbackHandled.current === callbackUrl || session === null) return;
     callbackHandled.current = callbackUrl;
-    void sessionRef.current.handleCallback(callbackUrl).then(() => {
+    void session.handleCallback(callbackUrl).then(() => {
       setStatus("authenticated");
       setError(null);
     }).catch((reason) => {
@@ -198,7 +235,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       setStatus("error");
       setError(safeError(reason));
     });
-  }, [callbackUrl, sessionRef]);
+  }, [callbackUrl, session]);
 
   useEffect(() => {
     if (!bootstrapQuery.error) return;
@@ -210,14 +247,22 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     if (!accountQuery.data?.account) return;
     const next = accountQuery.data.account;
     setAccount(next);
-    if (next.deletionState === AccountDeletionState.PENDING || next.deletionState === AccountDeletionState.PURGE_CLAIMED) setStatus("deletion-pending");
-    else if (next.administrativeBlockState === AdministrativeBlockState.BLOCKED) setStatus("blocked");
+    if (next.deletionState === AccountDeletionState.PURGE_CLAIMED) {
+      void clearIrrecoverableAccount().catch(() => {});
+    } else if (next.deletionState === AccountDeletionState.PENDING) {
+      setStatus("deletion-pending");
+      void cleanPendingDeletion().catch((reason) => setError(safeError(reason)));
+    } else if (next.administrativeBlockState === AdministrativeBlockState.BLOCKED) setStatus("blocked");
   }, [accountQuery.data]);
 
   useEffect(() => {
     if (!accountQuery.error) return;
     const mapped = mapDevHudError(accountQuery.error);
-    if (mapped.kind === "permissionDenied") {
+    if (mapped.kind === "unauthenticated") {
+      void clearInvalidSession().catch((reason) => setError(safeError(reason)));
+    } else if (mapped.kind === "accountPrecondition" && mapped.detail.reason === AccountFailureReason.PURGE_CLAIMED) {
+      void clearIrrecoverableAccount().catch(() => {});
+    } else if (mapped.kind === "permissionDenied") {
       if (mapped.detail.reason === PermissionFailureReason.ACCOUNT_DELETION_PENDING) setStatus("deletion-pending");
       if (mapped.detail.reason === PermissionFailureReason.USER_BLOCKED) setStatus("blocked");
     }
@@ -231,8 +276,19 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       return;
     }
     if (!settingsQuery.data) return;
-    const server = settingsQuery.data.snapshot ? decodeDevHudSettings(settingsQuery.data.snapshot.canonicalJson) : defaultDevHudSettings;
-    const currentRevision = settingsQuery.data.snapshot?.revision ?? 0n;
+    let server = defaultDevHudSettings;
+    let currentRevision = 0n;
+    try {
+      if (settingsQuery.data.snapshot) {
+        if (settingsQuery.data.snapshot.schemaVersion !== SettingsSchemaVersion) throw new TypeError("unsupported settings schema version");
+        server = decodeDevHudSettings(settingsQuery.data.snapshot.canonicalJson);
+        currentRevision = settingsQuery.data.snapshot.revision;
+      }
+    } catch {
+      setError("settings-contract-invalid");
+      return;
+    }
+    setError((current) => current === "settings-contract-invalid" ? null : current);
     setRevision(currentRevision);
     if (hasGuestSettings(storage)) {
       const local = readGuestSettings(storage);
@@ -316,6 +372,8 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     logout: async () => {
       await bridge.request({ operation: "secure.purge", scope: "logout" });
       await sessionRef.current?.clear();
+      sessionRef.current = null;
+      setSession(null);
       clearAllContractedLocalData(storage);
       setStatus("signed-out");
       setAccount(null);
@@ -326,14 +384,22 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       const response = await deleteMutation.mutateAsync({});
       setAccount(response.account ?? null);
       setStatus("deletion-pending");
-      clearAllContractedLocalData(storage);
-      await bridge.request({ operation: "secure.purge", scope: "account-deletion", profileId: await sessionProfileId(apiOrigin) });
+      await cleanPendingDeletion();
     },
     restoreAccount: async () => {
-      const response = await restoreMutation.mutateAsync({});
-      setAccount(response.account ?? null);
-      setStatus(response.account?.administrativeBlockState === AdministrativeBlockState.BLOCKED ? "blocked" : "authenticated");
-      await settingsQuery.refetch();
+      try {
+        const response = await restoreMutation.mutateAsync({});
+        setAccount(response.account ?? null);
+        setStatus(response.account?.administrativeBlockState === AdministrativeBlockState.BLOCKED ? "blocked" : "authenticated");
+        await settingsQuery.refetch();
+      } catch (reason) {
+        const mapped = mapDevHudError(reason);
+        if (mapped.kind === "accountPrecondition" && mapped.detail.reason === AccountFailureReason.PURGE_CLAIMED) {
+          await clearIrrecoverableAccount();
+          return;
+        }
+        throw reason;
+      }
     },
     profileRequiresSetup: (kind, profileId) => profileRequiresSetup(bridge, kind, profileId),
   };

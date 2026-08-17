@@ -24,6 +24,26 @@ function connectResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json", "Connect-Protocol-Version": "1" } });
 }
 
+function authenticatedBridge(purgeScopes: string[] = [], secureOperations: string[] = []): NativeBridgeV1 {
+  const accessTokenMap = JSON.stringify({ "@https://api.example/api": { token: "fixture-access-token", scope: "", expiresAt: 4_102_444_800 } });
+  const secureSession = JSON.stringify({ idToken: "fixture-id-token", accessToken: accessTokenMap });
+  return {
+    async request(request) {
+      if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
+      if (request.operation === "secure.read") { secureOperations.push("read"); return { kind: "secure-value", value: request.setting.kind === "logto-session" ? secureSession : null }; }
+      if (request.operation === "secure.purge") { purgeScopes.push(request.scope); return { kind: "ok" }; }
+      if (request.operation === "secure.write" || request.operation === "secure.remove") { secureOperations.push(request.operation); return { kind: "ok" }; }
+      if (request.operation === "auth.take-pending-callback") return { kind: "auth-callback", url: null };
+      throw new Error(`unexpected bridge operation ${request.operation}`);
+    },
+    async listen() { return () => {}; },
+  };
+}
+
+function encodedSettings(value: unknown): string {
+  return btoa(String.fromCharCode(...new TextEncoder().encode(canonicalDevHudSettings(value))));
+}
+
 beforeEach(() => {
   localStorage.clear();
   localStorage.setItem("devhud.shell.onboarding.v1", "complete");
@@ -69,7 +89,7 @@ describe("generated Connect identity/settings fixture", () => {
       throw new Error(`unexpected fixture request ${url}`);
     });
     vi.stubGlobal("fetch", fetchMock);
-    const accessTokenMap = JSON.stringify({ "@https://api.example": { token: "fixture-access-token", scope: "", expiresAt: 4_102_444_800 } });
+    const accessTokenMap = JSON.stringify({ "@https://api.example/api": { token: "fixture-access-token", scope: "", expiresAt: 4_102_444_800 } });
     const secureSession = JSON.stringify({ idToken: "fixture-id-token", accessToken: accessTokenMap });
     const purgeScopes: string[] = [];
     const bridge: NativeBridgeV1 = {
@@ -110,6 +130,9 @@ describe("generated Connect identity/settings fixture", () => {
 
     fireEvent.click(screen.getByRole("button", { name: messages.en.account }));
     fireEvent.click(await screen.findByRole("button", { name: messages.en.deleteAccount }));
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("alertdialog", { name: messages.en.deleteAccountConfirmTitle })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deleteAccount }));
     const confirmation = screen.getByRole("alertdialog", { name: messages.en.deleteAccountConfirmTitle });
     fireEvent.click(within(confirmation).getByRole("button", { name: messages.en.deleteAccount }));
     expect(await screen.findByText(messages.en.deletionPendingTitle)).toBeTruthy();
@@ -173,7 +196,7 @@ describe("generated Connect identity/settings fixture", () => {
       throw new Error(`unexpected fixture request ${url}`);
     });
     vi.stubGlobal("fetch", fetchMock);
-    const accessTokenMap = JSON.stringify({ "@https://api.example": { token: "blocked-token", scope: "", expiresAt: 4_102_444_800 } });
+    const accessTokenMap = JSON.stringify({ "@https://api.example/api": { token: "blocked-token", scope: "", expiresAt: 4_102_444_800 } });
     const secureSession = JSON.stringify({ idToken: "blocked-id-token", accessToken: accessTokenMap });
     const bridge: NativeBridgeV1 = {
       async request(request) {
@@ -194,5 +217,77 @@ describe("generated Connect identity/settings fixture", () => {
 
     fireEvent.click(screen.getByRole("button", { name: messages.en.home }));
     expect(await screen.findByRole("heading", { name: messages.en.welcome })).toBeTruthy();
+  });
+
+  it("retries local credential cleanup when a pending deletion is observed", async () => {
+    const purges: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: { ...fixture.account, deletionState: "ACCOUNT_DELETION_STATE_PENDING" } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 1, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
+      throw new Error(`unexpected fixture request ${url}`);
+    }));
+
+    render(<App bridge={authenticatedBridge(purges)} initialRuntime={runtime} />);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.account }));
+
+    expect(await screen.findByText(messages.en.deletionPendingTitle)).toBeTruthy();
+    await waitFor(() => expect(purges).toEqual(["account-deletion"]));
+    expect(screen.getByRole("button", { name: messages.en.restoreAccount })).toBeTruthy();
+  });
+
+  it("clears an irreversible purge-claimed account without exposing restore", async () => {
+    const purges: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: { ...fixture.account, deletionState: "ACCOUNT_DELETION_STATE_PURGE_CLAIMED" } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 1, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
+      throw new Error(`unexpected fixture request ${url}`);
+    }));
+
+    render(<App bridge={authenticatedBridge(purges)} initialRuntime={runtime} />);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.account }));
+
+    await waitFor(() => expect(purges).toEqual(["logout"]));
+    expect(screen.getByRole("button", { name: messages.en.signIn })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: messages.en.restoreAccount })).toBeNull();
+  });
+
+  it("clears an invalid session when GetAccount returns unauthenticated", async () => {
+    const secureOperations: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return new Response(JSON.stringify({ code: "unauthenticated", message: "invalid credentials" }), { status: 401, headers: { "Content-Type": "application/json" } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 1, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
+      throw new Error(`unexpected fixture request ${url}`);
+    }));
+
+    render(<App bridge={authenticatedBridge([], secureOperations)} initialRuntime={runtime} />);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.account }));
+
+    await waitFor(() => expect(secureOperations).toContain("secure.remove"));
+    expect(screen.getByRole("button", { name: messages.en.signIn })).toBeTruthy();
+  });
+
+  it.each([
+    ["unsupported schema", 2, encodedSettings(defaultDevHudSettings)],
+    ["noncanonical body", 1, btoa('{ "schemaVersion": 1 }')],
+  ])("keeps malformed server settings recoverable for %s", async (_name, schemaVersion, canonicalJson) => {
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion, revision: "1", canonicalJson } });
+      throw new Error(`unexpected fixture request ${url}`);
+    }));
+
+    render(<App bridge={authenticatedBridge()} initialRuntime={runtime} />);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.settings }));
+
+    expect((await screen.findByRole("alert")).textContent).toContain(messages.en.settingsActionFailed);
+    expect(screen.getByRole("heading", { name: messages.en.settingsTitle })).toBeTruthy();
   });
 });

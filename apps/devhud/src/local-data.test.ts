@@ -16,7 +16,7 @@ describe("local identity data lifecycle", () => {
   it("isolates cached bootstrap and settings by API origin", () => {
     const storage = new MemoryStorage();
     const apiOrigin = "https://api.example";
-    const bootstrap = { issuer: "https://identity.example", audience: "https://api.example", clientId: "desktop", redirectUri: "devhud://auth/callback" as const };
+    const bootstrap = { issuer: "https://identity.example/", audience: "https://api.example", clientId: "desktop", redirectUri: "devhud://auth/callback" as const };
     writeCachedIdentityBootstrap(storage, apiOrigin, bootstrap);
     writeAuthenticatedSettingsCache(storage, apiOrigin, { settings: defaultDevHudSettings, revision: 7n, cachedAt: "2026-08-17T00:00:00.000Z" });
 

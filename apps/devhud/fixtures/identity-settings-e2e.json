@@ -1,9 +1,9 @@
 {
   "bootstrap": {
     "protocolSchemaVersion": 1,
-    "apiVersion": "v1",
-    "logtoIssuer": "https://identity.example/",
-    "logtoAudience": "https://api.example/",
+    "apiVersion": "0.1.0-dev",
+    "logtoIssuer": "https://identity.example/oidc",
+    "logtoAudience": "https://api.example/api",
     "logtoClients": {
       "desktop": "desktop-client",
       "ios": "ios-client",

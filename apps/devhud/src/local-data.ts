@@ -1,4 +1,5 @@
 import { canonicalDevHudSettings, defaultDevHudSettings, parseDevHudSettings, type DevHudSettingsV1 } from "./settings-contract";
+import { isValidLogtoAudience, normalizeLogtoIssuer } from "./identity-contract.ts";
 
 const prefix = "devhud.identity.v1.";
 const guestSettingsKey = `${prefix}guest-settings`;
@@ -50,8 +51,9 @@ export function readCachedIdentityBootstrap(storage: ReadStorage, apiOrigin: str
     if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
     const record = value as Record<string, unknown>;
     if (record.redirectUri !== "devhud://auth/callback" || typeof record.clientId !== "string" || !/^[\x21-\x7e]{1,256}$/u.test(record.clientId)) return null;
-    if (!isHttpsOrigin(record.issuer) || !isHttpsOrigin(record.audience)) return null;
-    return { issuer: record.issuer, audience: record.audience, clientId: record.clientId, redirectUri: record.redirectUri };
+    const issuer = normalizeLogtoIssuer(record.issuer);
+    if (issuer === null || !isValidLogtoAudience(record.audience)) return null;
+    return { issuer, audience: record.audience, clientId: record.clientId, redirectUri: record.redirectUri };
   } catch {
     return null;
   }
@@ -100,14 +102,4 @@ function removeMatching(storage: MutableStorage, predicate: (key: string) => boo
     if (key !== null && predicate(key)) keys.push(key);
   }
   for (const key of keys) storage.removeItem(key);
-}
-
-function isHttpsOrigin(value: unknown): value is string {
-  if (typeof value !== "string") return false;
-  try {
-    const url = new URL(value);
-    return url.protocol === "https:" && !url.username && !url.password && !url.search && !url.hash && url.pathname === "/";
-  } catch {
-    return false;
-  }
 }

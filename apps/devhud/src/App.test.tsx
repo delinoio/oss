@@ -75,6 +75,11 @@ describe("native App state", () => {
     fireEvent.click(screen.getByRole("button", { name: messages.en.account }));
     const input = screen.getByRole("textbox", { name: messages.en.apiOrigin });
 
+    fireEvent.change(input, { target: { value: "https://devhud.api.delino.io/" } });
+    expect((screen.getByRole("button", { name: messages.en.applyApiOrigin }) as HTMLButtonElement).disabled).toBe(true);
+    expect(confirm).not.toHaveBeenCalled();
+    expect(request).not.toHaveBeenCalledWith(expect.objectContaining({ operation: "secure.purge" }));
+
     fireEvent.change(input, { target: { value: "http://remote.example" } });
     fireEvent.click(screen.getByRole("button", { name: messages.en.applyApiOrigin }));
     expect(screen.getByRole("alert").textContent).toBe(messages.en.invalidApiOrigin);
@@ -99,6 +104,29 @@ describe("native App state", () => {
 
     expect(request.mock.calls.filter(([value]) => value.operation === "runtime.snapshot")).toHaveLength(1);
     expect(request.mock.calls.filter(([value]) => value.operation === "auth.take-pending-callback")).toHaveLength(1);
+  });
+
+  it("drains a cold-start callback after the identity session becomes ready", async () => {
+    const secureReads: NativeBridgeRequestV1[] = [];
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      protocolSchemaVersion: 1,
+      apiVersion: "0.1.0-dev",
+      logtoIssuer: "https://identity.example/oidc",
+      logtoAudience: "https://api.example/api",
+      logtoClients: { desktop: "desktop-client", ios: "ios-client", android: "android-client", admin: "admin-client" },
+      logtoRedirects: { native: "devhud://auth/callback", admin: "https://admin.example/callback" },
+    }), { status: 200, headers: { "Content-Type": "application/json", "Connect-Protocol-Version": "1" } })));
+    const bridge = bridgeWith(async (request) => {
+      if (request.operation === "runtime.snapshot") return { kind: "runtime", snapshot: mobileRuntime };
+      if (request.operation === "auth.take-pending-callback") return { kind: "auth-callback", url: "devhud://auth/callback?code=opaque&state=opaque" };
+      if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
+      if (request.operation === "secure.read") { secureReads.push(request); return { kind: "secure-value", value: null }; }
+      throw new Error(`unexpected operation ${request.operation}`);
+    });
+
+    render(<App bridge={bridge} />);
+
+    await waitFor(() => expect(secureReads.length).toBeGreaterThanOrEqual(2));
   });
 
   it("unsubscribes when a listener resolves after cleanup", async () => {

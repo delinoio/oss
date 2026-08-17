@@ -64,10 +64,15 @@ impl NativeBridgeState {
         if development {
             connect.push("ws://127.0.0.1:46305".to_string());
         }
+        let style = if development {
+            "'self' 'unsafe-inline'"
+        } else {
+            "'self'"
+        };
         format!(
-            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src \
-             'self' data:; font-src 'self'; connect-src {}; object-src 'none'; base-uri 'none'; \
-             form-action 'none'; frame-src 'none'; worker-src 'none'",
+            "default-src 'self'; script-src 'self'; style-src {style}; img-src 'self' data:; \
+             font-src 'self'; connect-src {}; object-src 'none'; base-uri 'none'; form-action \
+             'none'; frame-src 'none'; worker-src 'none'",
             connect.join(" ")
         )
     }
@@ -83,7 +88,7 @@ impl NativeBridgeState {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let logto_issuer = match request.get("logtoIssuer") {
-            Some(Value::String(value)) => Some(validated_https_origin(value)?),
+            Some(Value::String(value)) => Some(validated_logto_issuer_origin(value)?),
             Some(Value::Null) => None,
             Some(_) => return Err("invalid-argument".to_string()),
             None if origins.api_origin == api_origin => origins.logto_issuer.clone(),
@@ -120,14 +125,23 @@ fn validated_api_origin(value: &str) -> Result<String, String> {
     Ok(url.origin().ascii_serialization())
 }
 
-fn validated_https_origin(value: &str) -> Result<String, String> {
+fn validated_logto_issuer_origin(value: &str) -> Result<String, String> {
+    if value.trim() != value {
+        return Err("invalid-argument".to_string());
+    }
     let url = url::Url::parse(value).map_err(|_| "invalid-argument")?;
-    if url.scheme() != "https"
-        || !url.username().is_empty()
+    let loopback = url.host_str().is_some_and(|host| {
+        host.eq_ignore_ascii_case("localhost")
+            || host
+                .trim_matches(['[', ']'])
+                .parse::<std::net::IpAddr>()
+                .is_ok_and(|ip| ip.is_loopback())
+    });
+    if !url.username().is_empty()
         || url.password().is_some()
         || url.query().is_some()
         || url.fragment().is_some()
-        || url.path() != "/"
+        || (url.scheme() != "https" && !(url.scheme() == "http" && loopback))
     {
         return Err("invalid-argument".to_string());
     }
@@ -229,16 +243,9 @@ fn validate_auth_browser_request(request: &Value) -> Result<(), String> {
         .get("url")
         .and_then(Value::as_str)
         .ok_or("invalid-argument")?;
-    let issuer = url::Url::parse(issuer).map_err(|_| "invalid-argument")?;
+    let issuer_origin = validated_logto_issuer_origin(issuer)?;
     let destination = url::Url::parse(destination).map_err(|_| "invalid-argument")?;
-    if issuer.scheme() != "https"
-        || !issuer.username().is_empty()
-        || issuer.password().is_some()
-        || issuer.query().is_some()
-        || issuer.fragment().is_some()
-        || issuer.path() != "/"
-        || destination.scheme() != "https"
-        || destination.origin() != issuer.origin()
+    if destination.origin().ascii_serialization() != issuer_origin
         || !destination.username().is_empty()
         || destination.password().is_some()
         || destination.fragment().is_some()
@@ -376,7 +383,7 @@ pub fn handle_native_bridge_request(
 }
 
 #[tauri::command]
-pub fn native_bridge_v1<R: tauri::Runtime>(
+pub async fn native_bridge_v1<R: tauri::Runtime>(
     request: Value,
     state: tauri::State<'_, NativeBridgeState>,
     app: tauri::AppHandle<R>,
@@ -424,7 +431,9 @@ pub fn native_bridge_v1<R: tauri::Runtime>(
                 .get("url")
                 .and_then(Value::as_str)
                 .ok_or("invalid-argument")?;
-            open::that_detached(destination).map_err(|_| "platform-failure")?;
+            crate::open_system_browser(destination.to_string())
+                .await
+                .map_err(|_| "platform-failure")?;
             return Ok(json!({ "kind": "ok" }));
         }
         let _ = app;
@@ -438,6 +447,7 @@ mod tests {
 
     use super::{
         NativeBridgeState, handle_native_bridge_request, is_auth_callback, routes_to_mobile_plugin,
+        validate_auth_browser_request,
     };
 
     #[test]
@@ -488,7 +498,7 @@ mod tests {
             &json!({
                 "operation": "session.configure-origins",
                 "apiOrigin": "https://custom.example/",
-                "logtoIssuer": "https://identity.example/"
+                "logtoIssuer": "https://identity.example/oidc"
             }),
             &state,
         )
@@ -498,6 +508,12 @@ mod tests {
         assert!(csp.contains("connect-src 'self' https://custom.example https://identity.example"));
         assert!(!csp.contains("devhud.api.delino.io"));
         assert!(!csp.contains("connect-src https:"));
+        assert!(!csp.contains("style-src 'self' 'unsafe-inline'"));
+        assert!(
+            state
+                .session_csp(true)
+                .contains("style-src 'self' 'unsafe-inline'")
+        );
 
         let unchanged = handle_native_bridge_request(
             &json!({
@@ -531,6 +547,22 @@ mod tests {
             handle_native_bridge_request(
                 &json!({ "operation": "session.configure-origins", "apiOrigin": "http://remote.example/" }),
                 &state,
+            ),
+            Err("invalid-argument".to_string())
+        );
+    }
+
+    #[test]
+    fn authentication_browser_accepts_configured_issuer_paths_and_loopback_http() {
+        for request in [
+            json!({ "issuer": "https://identity.example/oidc", "url": "https://identity.example/oidc/auth?state=opaque" }),
+            json!({ "issuer": "http://127.0.0.1:3001/oidc", "url": "http://127.0.0.1:3001/oidc/auth?state=opaque" }),
+        ] {
+            assert_eq!(validate_auth_browser_request(&request), Ok(()));
+        }
+        assert_eq!(
+            validate_auth_browser_request(
+                &json!({ "issuer": "https://identity.example/oidc", "url": "https://attacker.example/auth" })
             ),
             Err("invalid-argument".to_string())
         );

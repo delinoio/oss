@@ -25,9 +25,9 @@ function memoryBridge(): NativeBridgeV1 & { readonly values: Map<string, string>
 
 const bootstrap = {
   protocolSchemaVersion: 1,
-  apiVersion: "v1",
-  logtoIssuer: "https://identity.example/",
-  logtoAudience: "https://api.example/",
+  apiVersion: "0.1.0-dev",
+  logtoIssuer: "https://identity.example/oidc",
+  logtoAudience: "https://api.example/api",
   logtoClients: { desktop: "desktop-client", ios: "ios-client", android: "android-client", admin: "admin-client" },
   logtoRedirects: { native: "devhud://auth/callback", admin: "https://admin.example/callback" },
 } as GetBootstrapResponse;
@@ -37,11 +37,13 @@ describe("identity client boundary", () => {
     expect(validateBootstrap(bootstrap, RuntimePlatform.Desktop).clientId).toBe("desktop-client");
     expect(validateBootstrap(bootstrap, RuntimePlatform.Ios).clientId).toBe("ios-client");
     expect(validateBootstrap(bootstrap, RuntimePlatform.Android).redirectUri).toBe("devhud://auth/callback");
+    expect(validateBootstrap({ ...bootstrap, apiVersion: "2026.08.17" } as GetBootstrapResponse, RuntimePlatform.Desktop).audience).toBe("https://api.example/api");
+    expect(validateBootstrap({ ...bootstrap, logtoIssuer: "http://127.0.0.1:46307/oidc" } as GetBootstrapResponse, RuntimePlatform.Desktop).issuer).toBe("http://127.0.0.1:46307/oidc");
   });
 
   it("rejects insecure discovery and callback substitution", () => {
-    expect(() => validateBootstrap({ ...bootstrap, apiVersion: "v2" } as GetBootstrapResponse, RuntimePlatform.Desktop)).toThrow(BootstrapContractError);
     expect(() => validateBootstrap({ ...bootstrap, logtoIssuer: "http://identity.example/" } as GetBootstrapResponse, RuntimePlatform.Desktop)).toThrow(BootstrapContractError);
+    expect(() => validateBootstrap({ ...bootstrap, logtoAudience: "  " } as GetBootstrapResponse, RuntimePlatform.Desktop)).toThrow(BootstrapContractError);
     expect(() => validateBootstrap({ ...bootstrap, logtoRedirects: { ...bootstrap.logtoRedirects!, native: "https://attacker.example" } } as GetBootstrapResponse, RuntimePlatform.Desktop)).toThrow(BootstrapContractError);
   });
 
@@ -68,5 +70,22 @@ describe("identity client boundary", () => {
     const bridge = memoryBridge();
     bridge.request = vi.fn(async () => { throw new Error("unavailable"); });
     await expect(new SecureLogtoStorage(bridge, "origin.test").getItem("idToken")).rejects.toThrow("unavailable");
+  });
+
+  it("recovers its serialized queue after one secure mutation fails", async () => {
+    const bridge = memoryBridge();
+    const request = bridge.request.bind(bridge);
+    let failed = false;
+    bridge.request = vi.fn(async (value) => {
+      if (!failed && value.operation === "secure.write") {
+        failed = true;
+        throw new Error("unavailable");
+      }
+      return request(value);
+    });
+    const storage = new SecureLogtoStorage(bridge, "origin.test");
+    await expect(storage.setItem("idToken", "first")).rejects.toThrow("unavailable");
+    await expect(storage.setItem("idToken", "second")).resolves.toBeUndefined();
+    await expect(storage.getItem("idToken")).resolves.toBe("second");
   });
 });

@@ -1,5 +1,6 @@
 import type { GetBootstrapResponse } from "@delinoio/devhud-api-client";
 import LogtoClient, { createRequester, type ClientAdapter, type Storage as LogtoStorage } from "@logto/client";
+import { isValidLogtoAudience, normalizeLogtoIssuer } from "./identity-contract.ts";
 import { nativeBridge, RuntimePlatform, SecureSettingKind, type NativeBridgeV1, type RuntimePlatform as RuntimePlatformType } from "./native-bridge";
 
 export const NativeAuthCallback = "devhud://auth/callback" as const;
@@ -21,23 +22,14 @@ export class BootstrapContractError extends TypeError {
 
 export function validateBootstrap(response: GetBootstrapResponse, platform: RuntimePlatformType): ValidatedBootstrap {
   if (response.protocolSchemaVersion !== SupportedProtocolSchemaVersion) throw new BootstrapContractError("unsupported protocol schema version");
-  if (response.apiVersion !== "v1") throw new BootstrapContractError("unsupported API version");
-  const issuer = secureOrigin(response.logtoIssuer, "Logto issuer");
-  const audience = secureOrigin(response.logtoAudience, "Logto audience");
+  const issuer = normalizeLogtoIssuer(response.logtoIssuer);
+  if (issuer === null) throw new BootstrapContractError("Logto issuer must be an HTTPS or loopback HTTP URL without credentials, query, or fragment");
+  if (!isValidLogtoAudience(response.logtoAudience)) throw new BootstrapContractError("Logto audience must be nonblank");
+  const audience = response.logtoAudience;
   if (response.logtoRedirects?.native !== NativeAuthCallback) throw new BootstrapContractError("native redirect URI does not match the application contract");
   const clientId = platform === RuntimePlatform.Ios ? response.logtoClients?.ios : platform === RuntimePlatform.Android ? response.logtoClients?.android : response.logtoClients?.desktop;
   if (clientId === undefined || !/^[\x21-\x7e]{1,256}$/u.test(clientId)) throw new BootstrapContractError("platform Logto client ID is missing or invalid");
   return { issuer, audience, clientId, redirectUri: NativeAuthCallback };
-}
-
-function secureOrigin(value: string, label: string): string {
-  try {
-    const url = new URL(value);
-    if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash || url.pathname !== "/") throw new Error();
-    return url.origin;
-  } catch {
-    throw new BootstrapContractError(`${label} must be an HTTPS origin`);
-  }
 }
 
 export class SecureLogtoStorage implements LogtoStorage<string> {
@@ -69,16 +61,13 @@ export class SecureLogtoStorage implements LogtoStorage<string> {
   }
 
   async clear(): Promise<void> {
-    const previous = this.#pending;
-    this.#pending = previous.then(async () => {
+    await this.#enqueue(async () => {
       await this.#bridge.request({ operation: "secure.remove", setting: this.#setting() });
     });
-    await this.#pending;
   }
 
   async #mutate(update: (values: Record<string, string>) => Record<string, string>): Promise<void> {
-    const previous = this.#pending;
-    this.#pending = previous.then(async () => {
+    await this.#enqueue(async () => {
       const next = update(await this.#read());
       if (Object.keys(next).length === 0) {
         await this.#bridge.request({ operation: "secure.remove", setting: this.#setting() });
@@ -86,7 +75,12 @@ export class SecureLogtoStorage implements LogtoStorage<string> {
         await this.#bridge.request({ operation: "secure.write", setting: this.#setting(), value: JSON.stringify(next) });
       }
     });
-    await this.#pending;
+  }
+
+  async #enqueue(operation: () => Promise<void>): Promise<void> {
+    const current = this.#pending.then(operation);
+    this.#pending = current.catch(() => {});
+    await current;
   }
 
   async #read(): Promise<Record<string, string>> {

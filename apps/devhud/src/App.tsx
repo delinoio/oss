@@ -4,7 +4,7 @@ import { AccountIdentity, FirstRunIdentity, SynchronizedSettingsBoundary } from 
 import { LifecycleState, NativeBridgeError, NotificationPermission, RuntimePlatform, nativeBridge, type NativeBridgeEventV1, type NativeBridgeV1, type RuntimeSnapshot } from "./native-bridge";
 import { clearIdentityForApiChange, DevHudServiceBoundary } from "./service-boundary";
 import { ContentStateKind, ContentStateView, EmptyState, OfflineState, type ContentState } from "./surface-state";
-import { ActionId, ExternalLinkTarget, LanguagePreference, PlatformCapability, SurfaceId, ThemePreference, actionRegistry, availableActions, browserShell, completeOnboarding, getLocalStorage, hasCompletedOnboarding, isValidApiOrigin, markFrontendReady, readPreferences, resolveLanguage, setTrayLanguage, synchronizeDocumentPreferences, writePreferences, type Preferences, type RuntimeCapabilities } from "./shell";
+import { ActionId, ExternalLinkTarget, LanguagePreference, PlatformCapability, SurfaceId, ThemePreference, actionRegistry, availableActions, browserShell, completeOnboarding, getLocalStorage, hasCompletedOnboarding, isValidApiOrigin, markFrontendReady, normalizeApiOrigin, readPreferences, resolveLanguage, setTrayLanguage, synchronizeDocumentPreferences, writePreferences, type Preferences, type RuntimeCapabilities } from "./shell";
 
 const surfaces: readonly SurfaceId[] = [SurfaceId.Home, SurfaceId.Realqa, SurfaceId.Deck, SurfaceId.Settings, SurfaceId.Account, SurfaceId.Diagnostics];
 const labels: Record<SurfaceId, keyof typeof messages.en> = { home: "home", realqa: "realqa", deck: "deck", settings: "settings", account: "account", diagnostics: "diagnostics" };
@@ -235,13 +235,14 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
     setSurface(SurfaceId.Home);
   };
   const applyApiOrigin = async (nextOrigin: string) => {
-    if (nextOrigin === preferences.apiOrigin) return;
+    const normalized = normalizeApiOrigin(nextOrigin);
+    if (normalized === null || normalized === normalizeApiOrigin(preferences.apiOrigin)) return;
     if (!window.confirm(copy.apiChangeConfirm)) return;
-    try { await clearIdentityForApiChange(bridge, storage as Storage, preferences.apiOrigin); }
+    try { await clearIdentityForApiChange(bridge, storage, preferences.apiOrigin); }
     catch { setExternalMessage("failed"); return; }
     setAuthCallback(null);
-    update({ apiOrigin: nextOrigin });
-    const policy = await bridge.request({ operation: "session.configure-origins", apiOrigin: nextOrigin });
+    update({ apiOrigin: normalized });
+    const policy = await bridge.request({ operation: "session.configure-origins", apiOrigin: normalized });
     if (policy.kind === "session-network-policy" && policy.changed) location.reload();
   };
   const requestNotifications = async () => {
