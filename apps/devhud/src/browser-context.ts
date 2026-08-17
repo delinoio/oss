@@ -29,8 +29,9 @@ export function queryFragmentWarningRequired(source: BrowserContextSource, inclu
   return source === "contract-permitted-other" && includeQueryOrFragment;
 }
 
-export function sanitizeChromeContext(input: Omit<SanitizedBrowserContext, "url"> & { readonly url: string }): BrowserContextState {
+export function sanitizeChromeContext(input: unknown): BrowserContextState {
   try {
+    if (!isChromeContextInput(input)) return { kind: "malformed" };
     const url = new URL(input.url);
     if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error();
     const path = url.pathname.split("/").map((segment) => segment === "" ? "" : "<redacted>").join("/");
@@ -52,6 +53,31 @@ export function sanitizeChromeContext(input: Omit<SanitizedBrowserContext, "url"
       },
     };
   } catch { return { kind: "malformed" }; }
+}
+
+function isChromeContextInput(value: unknown): value is Omit<SanitizedBrowserContext, "url"> & { readonly url: string } {
+  if (!isRecord(value) || typeof value.url !== "string" || typeof value.title !== "string" || typeof value.userAgent !== "string" || typeof value.outerHtml !== "string") return false;
+  return isViewport(value.viewport) && (value.selectedBounds === null || isSelectedBounds(value.selectedBounds)) && isStringRecord(value.accessibility);
+}
+
+function isViewport(value: unknown): value is SanitizedBrowserContext["viewport"] {
+  return isRecord(value) && isFiniteNumber(value.width) && isFiniteNumber(value.height);
+}
+
+function isSelectedBounds(value: unknown): value is NonNullable<SanitizedBrowserContext["selectedBounds"]> {
+  return isRecord(value) && isFiniteNumber(value.x) && isFiniteNumber(value.y) && isFiniteNumber(value.width) && isFiniteNumber(value.height);
+}
+
+function isStringRecord(value: unknown): value is Readonly<Record<string, string>> {
+  return isRecord(value) && Object.values(value).every((entry) => typeof entry === "string");
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
 }
 
 function sanitizeAccessibility(value: Readonly<Record<string, string>>): Readonly<Record<string, string>> {

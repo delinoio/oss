@@ -22,6 +22,14 @@ describe("Chrome browser context privacy", () => {
     expect(JSON.stringify(result)).not.toContain("selector");
     expect(JSON.stringify(result)).not.toContain("session=secret");
   });
+  it("returns malformed for invalid runtime context values", () => {
+    for (const malformedInput of [
+      { ...input, title: { cookie: "secret" } },
+      { ...input, viewport: { width: Number.NaN, height: 50 } },
+      { ...input, selectedBounds: { x: 1, y: 2, width: Number.POSITIVE_INFINITY, height: 4 } },
+      { ...input, accessibility: { "aria-label": { cookie: "secret" } } },
+    ]) expect(sanitizeChromeContext(malformedInput)).toEqual({ kind: "malformed" });
+  });
   it("returns malformed rather than retaining an unsupported URL", () => expect(sanitizeChromeContext({ ...input, url: "file:///secret" })).toEqual({ kind: "malformed" }));
   it("keeps only allowlisted DOM and accessibility data within the DOM cap", () => {
     const result = sanitizeChromeContext({
