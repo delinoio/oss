@@ -63,6 +63,7 @@ test("mobile policy keeps native iOS origins aligned with normalized root URLs",
   assert.throws(() => assertIosNativeBridge(iosNativeBridge.replaceAll("legacyAccessGroupKey", "missingLegacyGroup")), /legacy application-group/u);
   assert.throws(() => assertIosNativeBridge(iosNativeBridge.replace("guard markerStatus == errSecSuccess", "guard true")), /matching API-origin scope marker/u);
   assert.throws(() => assertIosNativeBridge(iosNativeBridge.replace("rollbackCreatedGitHubPatScope(createdMarker)", "missingRollback(createdMarker)")), /roll back newly created scope markers/u);
+  assert.throws(() => assertIosNativeBridge(iosNativeBridge.replace("rollbackGitHubPatWrite(setting, previousData: previousGitHubPatData)", "true")), /restore or remove the shared GitHub PAT/u);
 });
 
 test("Android release permissions enable System WebView networking", () => {

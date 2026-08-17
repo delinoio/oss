@@ -282,6 +282,51 @@ describe("generated Connect identity/settings fixture", () => {
     expect(screen.queryByRole("heading", { name: messages.en.githubSetupTitle })).toBeNull();
   });
 
+  it("reconciles GitHub PATs again after adopting an unchanged server snapshot", async () => {
+    const profile = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", name: "Work", kind: "fine-grained" as const };
+    const server = parseDevHudSettings(defaultDevHudSettings);
+    const proposed = parseDevHudSettings({ ...server, github: { ...server.github, profiles: [profile] } });
+    const reconciliations: NativeBridgeRequestV1[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 2, revision: "1", canonicalJson: encodedSettings(server) } });
+      if (url.endsWith("/devhud.v1.SettingsService/ReplaceSettings")) {
+        const detail = create(SettingsRevisionConflictSchema, {
+          expectedRevision: 1n,
+          currentSnapshot: { schemaVersion: 2, revision: 2n, canonicalJson: new TextEncoder().encode(canonicalDevHudSettings(server)) },
+        });
+        const value = btoa(String.fromCharCode(...toBinary(SettingsRevisionConflictSchema, detail)));
+        return new Response(JSON.stringify({ code: "aborted", message: "settings revision conflict", details: [{ type: SettingsRevisionConflictSchema.typeName, value }] }), { status: 409, headers: { "Content-Type": "application/json" } });
+      }
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    render(<DevHudServiceBoundary
+      apiOrigin="https://devhud.api.delino.io"
+      active
+      online
+      callbackUrl={null}
+      platform={RuntimePlatform.Desktop}
+      bridge={authenticatedBridge([], [], reconciliations)}
+      onCallbackConsumed={() => {}}
+      onContinueLocally={() => {}}
+      onLoggedOut={() => {}}
+    ><IdentityStateProbe replacement={proposed} /><SynchronizedSettingsBoundary copy={messages.en} /></DevHudServiceBoundary>);
+
+    await waitFor(() => expect(reconciliations).toHaveLength(1));
+    fireEvent.click(screen.getByRole("button", { name: "replace probe settings" }));
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.adoptServer }));
+
+    await waitFor(() => expect(reconciliations).toHaveLength(2));
+    expect(reconciliations[1]).toEqual({
+      operation: "secure.reconcile-github-pats",
+      scopeId: expect.any(String),
+      profileIds: [],
+    });
+  });
+
   it("requires explicit guest upload and preserves only the recovery session through deletion", async () => {
     const local = { ...defaultDevHudSettings, appearance: { ...defaultDevHudSettings.appearance, theme: "dark" as const } };
     const server = { ...defaultDevHudSettings, appearance: { ...defaultDevHudSettings.appearance, theme: "light" as const } };

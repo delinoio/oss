@@ -62,6 +62,7 @@ export function assertAndroidNativeBridge(androidNativeBridge) {
 
 export function assertIosNativeBridge(iosNativeBridge) {
   const readSecure = iosNativeBridge.match(/private func readSecure[\s\S]*?(?=\n    private func writeSecure)/u)?.[0] ?? "";
+  const writeSecure = iosNativeBridge.match(/private func writeSecure[\s\S]*?(?=\n    private func removeSecure)/u)?.[0] ?? "";
   assert(iosNativeBridge.includes('invoke.reject("storage-failure", code: "storage-failure")'), "iOS Keychain failures must use storage-failure");
   assert(iosNativeBridge.includes('invoke.reject("permission-denied", code: "permission-denied")'), "iOS notification publication must honor authorization");
   assert(iosNativeBridge.includes("UNUserNotificationCenterDelegate") && iosNativeBridge.includes("willPresent notification"), "iOS foreground Deck notifications must be presented by a delegate");
@@ -72,6 +73,7 @@ export function assertIosNativeBridge(iosNativeBridge) {
   assert(iosNativeBridge.includes("legacyAccessGroupKey") && iosNativeBridge.includes("for accessGroupKey in [sharedAccessGroupKey, legacyAccessGroupKey]"), "iOS must migrate and purge legacy application-group Keychain items");
   assert(readSecure.includes("markerStatus == errSecItemNotFound") && readSecure.includes("guard markerStatus == errSecSuccess"), "iOS GitHub PAT reads must require the matching API-origin scope marker");
   assert((iosNativeBridge.match(/rollbackCreatedGitHubPatScope\(createdMarker\)/gu) ?? []).length === 2 && iosNativeBridge.includes("github_pat_scope_rollback_failed"), "iOS failed PAT writes must roll back newly created scope markers");
+  assert(writeSecure.includes("previousGitHubPatData = previousData") && writeSecure.includes("rollbackGitHubPatWrite(setting, previousData: previousGitHubPatData)") && writeSecure.includes("github_pat_write_rollback_failed"), "iOS failed legacy cleanup must restore or remove the shared GitHub PAT");
   assert(iosNativeBridge.includes('UserDefaults(suiteName: appGroup)'), "iOS must bind the contracted App Group");
 }
 

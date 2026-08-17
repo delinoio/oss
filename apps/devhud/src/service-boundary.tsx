@@ -691,6 +691,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     replaceSettings,
     adoptConflictServer: () => {
       if (!conflict) return;
+      lastReconciledGitHubPatKeyRef.current = null;
       applySettings(conflict.server);
       applyRevision(conflict.currentRevision);
       setConflict(null);

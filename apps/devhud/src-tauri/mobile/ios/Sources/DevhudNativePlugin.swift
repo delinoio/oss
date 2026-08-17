@@ -188,8 +188,15 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate {
     private func writeSecure(_ args: RequestArgs, _ invoke: Invoke) throws {
         guard let setting = args.setting, let value = args.value, let data = value.data(using: .utf8) else { throw NativeError.invalidArgument }
         var createdMarker: SecureSetting?
+        var previousGitHubPatData: Data?
         if setting.kind == "github-pat" {
             guard let scopeId = setting.scopeId, let markerData = "1".data(using: .utf8) else { throw NativeError.invalidArgument }
+            let (previousStatus, previousData) = readData(setting, accessGroupKey: sharedAccessGroupKey)
+            guard previousStatus == errSecItemNotFound || (previousStatus == errSecSuccess && previousData != nil) else {
+                rejectStorageFailure(invoke)
+                return
+            }
+            previousGitHubPatData = previousData
             let marker = githubPatScope(scopeId, setting.profileId)
             let (markerStatus, _) = readData(marker, accessGroupKey: sharedAccessGroupKey)
             guard markerStatus == errSecSuccess || markerStatus == errSecItemNotFound else {
@@ -211,11 +218,27 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate {
         }
         let legacyDeletion = deleteData(setting, accessGroupKey: legacyAccessGroupKey)
         guard legacyDeletion == errSecSuccess || legacyDeletion == errSecItemNotFound else {
-            rollbackCreatedGitHubPatScope(createdMarker)
+            if setting.kind != "github-pat" || rollbackGitHubPatWrite(setting, previousData: previousGitHubPatData) {
+                rollbackCreatedGitHubPatScope(createdMarker)
+            }
             rejectStorageFailure(invoke)
             return
         }
         invoke.resolve(["kind": "ok"])
+    }
+
+    private func rollbackGitHubPatWrite(_ setting: SecureSetting, previousData: Data?) -> Bool {
+        let rollback: OSStatus
+        if let previousData {
+            rollback = storeData(previousData, setting: setting, accessGroupKey: sharedAccessGroupKey)
+        } else {
+            rollback = deleteData(setting, accessGroupKey: sharedAccessGroupKey)
+        }
+        if rollback != errSecSuccess && rollback != errSecItemNotFound {
+            secureStoreLogger.error("event=github_pat_write_rollback_failed")
+            return false
+        }
+        return true
     }
 
     private func rollbackCreatedGitHubPatScope(_ marker: SecureSetting?) {
