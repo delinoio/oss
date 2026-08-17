@@ -498,8 +498,14 @@ func (s *Store) ClaimUploadRemoval(ctx context.Context, ownerID, uploadID string
 	if upload.State == domain.UploadStateRemoving && upload.RemovalReason != reason && reason != domain.RemovalReasonAccountPurged {
 		return domain.Upload{}, &domain.UploadError{Failure: domain.UploadFailureInvalidState}
 	}
-	if upload.State == domain.UploadStateRemoving && upload.RemovalAudit != nil && reason != domain.RemovalReasonAccountPurged {
-		audit = upload.RemovalAudit
+	if upload.State == domain.UploadStateRemoving && upload.RemovalAudit != nil {
+		if reason == domain.RemovalReasonAccountPurged {
+			if err := s.insertAdministratorUploadAudit(ctx, tx, upload, *upload.RemovalAudit, now); err != nil {
+				return domain.Upload{}, err
+			}
+		} else {
+			audit = upload.RemovalAudit
+		}
 	}
 	arguments := append([]any{uploadID, token, now.Add(domain.UploadOperationLease), int16(reason)}, removalAuditArguments(audit)...)
 	upload, err = scanUpload(tx.QueryRow(ctx, `UPDATE devhud_uploads SET state = 4,

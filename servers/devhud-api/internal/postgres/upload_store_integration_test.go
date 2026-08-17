@@ -596,6 +596,92 @@ func TestAccountPurgeSupersedesOnlyExpiredRemovalLease(t *testing.T) {
 	}
 }
 
+func TestAccountPurgeFinalizesExpiredAdministratorRemovalAudit(t *testing.T) {
+	now := time.Date(2026, 8, 17, 0, 0, 0, 0, time.UTC)
+	ctx, pool, store := newIntegrationStore(t, now)
+	actor := provisionUploadUser(t, ctx, store, "purge-audit-actor")
+	target := provisionUploadUser(t, ctx, store, "purge-audit-target")
+	reservation, err := store.CreateUpload(ctx, domain.CreateUpload{
+		OwnerUserID: target.ID,
+		Target:      domain.UploadTarget{Kind: domain.UploadTargetNewSubmission},
+		SizeBytes:   1,
+		Now:         now,
+	}, func(context.Context, domain.UploadReservation) (domain.SignedPUT, error) {
+		return domain.SignedPUT{}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	promotionToken := strings.Repeat("Q", 43)
+	if _, err := store.ClaimUploadPromotion(ctx, target.ID, reservationBinding(reservation, `"etag"`), domain.UploadObject{ETag: `"etag"`}, 1, 1, promotionToken, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CompleteUploadPromotion(ctx, reservation.UploadID, promotionToken, `"public"`, now); err != nil {
+		t.Fatal(err)
+	}
+	eventID, err := store.ids.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	correlationID, err := store.ids.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	eventCreatedAt := now.Add(-5 * time.Minute)
+	eventExpiresAt := eventCreatedAt.Add(domain.AuditRetention)
+	audit := domain.AdministratorUploadAudit{
+		ActorUserID: actor.ID,
+		Rationale:   "Reviewed quarantine policy violation.",
+		Event: domain.AuditEvent{
+			ID: eventID, CorrelationID: correlationID, Action: domain.AuditActionUploadQuarantined,
+			CreatedAt: eventCreatedAt, ExpiresAt: eventExpiresAt,
+		},
+	}
+	removalToken := strings.Repeat("R", 43)
+	if _, err := store.ClaimUploadRemoval(ctx, "", reservation.UploadID, domain.RemovalReasonAdministratorQuarantined, domain.UploadStateFinalized, &audit, removalToken, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.RecordUploadReplacement(ctx, reservation.UploadID, removalToken, `"replacement"`); err != nil {
+		t.Fatal(err)
+	}
+
+	purgeToken := strings.Repeat("S", 43)
+	claimed, err := store.ClaimUploadRemoval(ctx, "", reservation.UploadID, domain.RemovalReasonAccountPurged, 0, nil, purgeToken, now.Add(domain.UploadOperationLease))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claimed.OperationToken != purgeToken || claimed.RemovalReason != domain.RemovalReasonAccountPurged || claimed.RemovalAudit != nil {
+		t.Fatalf("account purge audit takeover = %+v", claimed)
+	}
+
+	var persistedActorID, persistedTargetID, persistedUploadID, persistedReason, persistedCorrelationID string
+	var persistedAction domain.AuditAction
+	var persistedCreatedAt, persistedExpiresAt time.Time
+	if err := pool.QueryRow(ctx, `SELECT actor_user_id::text, target_user_id::text, target_upload_id::text,
+		action, reason, correlation_id::text, created_at, expires_at
+		FROM devhud_audit_events WHERE audit_event_id = $1`, eventID).Scan(&persistedActorID, &persistedTargetID,
+		&persistedUploadID, &persistedAction, &persistedReason, &persistedCorrelationID, &persistedCreatedAt, &persistedExpiresAt); err != nil {
+		t.Fatal(err)
+	}
+	if persistedActorID != actor.ID || persistedTargetID != target.ID || persistedUploadID != reservation.UploadID ||
+		persistedAction != domain.AuditActionUploadQuarantined || persistedReason != audit.Rationale ||
+		persistedCorrelationID != correlationID || !persistedCreatedAt.Equal(eventCreatedAt) || !persistedExpiresAt.Equal(eventExpiresAt) {
+		t.Fatalf("persisted takeover audit = actor %q, target %q, upload %q, action %v, reason %q, correlation %q, created %v, expires %v",
+			persistedActorID, persistedTargetID, persistedUploadID, persistedAction, persistedReason, persistedCorrelationID, persistedCreatedAt, persistedExpiresAt)
+	}
+	completed, err := store.CompleteUploadRemoval(ctx, reservation.UploadID, purgeToken, now.Add(domain.UploadOperationLease))
+	if err != nil || completed.State != domain.UploadStateDeleted {
+		t.Fatalf("account purge completion = %+v, err=%v", completed, err)
+	}
+	var auditCount int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM devhud_audit_events WHERE audit_event_id = $1`, eventID).Scan(&auditCount); err != nil {
+		t.Fatal(err)
+	}
+	if auditCount != 1 {
+		t.Fatalf("account purge audit count = %d", auditCount)
+	}
+}
+
 func TestListUploadsRevalidatesBlockedUser(t *testing.T) {
 	ctx, pool, store := newIntegrationStore(t, time.Date(2026, 8, 17, 0, 0, 0, 0, time.UTC))
 	user := provisionUploadUser(t, ctx, store, "blocked-list")
