@@ -6,6 +6,7 @@ import { LifecycleState, NativeBridgeError, NotificationPermission, RuntimePlatf
 import { clearIdentityForApiChange, DevHudServiceBoundary } from "./service-boundary";
 import { ContentStateKind, ContentStateView, EmptyState, OfflineState, type ContentState } from "./surface-state";
 import { ActionId, ExternalLinkTarget, LanguagePreference, PlatformCapability, SurfaceId, actionRegistry, availableActions, browserShell, completeOnboarding, getLocalStorage, hasCompletedOnboarding, isValidApiOrigin, markFrontendReady, normalizeApiOrigin, readPreferences, resolveLanguage, setTrayLanguage, synchronizeDocumentPreferences, writePreferences, type Preferences, type RuntimeCapabilities } from "./shell";
+import { ShortcutActionId } from "./shortcuts";
 
 const surfaces: readonly SurfaceId[] = [SurfaceId.Home, SurfaceId.Realqa, SurfaceId.Deck, SurfaceId.Settings, SurfaceId.Account, SurfaceId.Diagnostics];
 const labels: Record<SurfaceId, keyof typeof messages.en> = { home: "home", realqa: "realqa", deck: "deck", settings: "settings", account: "account", diagnostics: "diagnostics" };
@@ -15,7 +16,6 @@ const notificationPermissionLabels: Record<NotificationPermission, keyof typeof 
   [NotificationPermission.Authorized]: "notificationAuthorized",
 };
 const defaultContentState: ContentState = { kind: ContentStateKind.Ready };
-const rightModifierLocation = 2;
 type ExternalMessage = "opened" | "failed" | "invalid-api-origin";
 
 export interface AppProps {
@@ -59,7 +59,6 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   const apiOriginInput = useRef<HTMLInputElement>(null);
   const paletteRef = useRef<HTMLElement>(null);
   const paletteTrigger = useRef<HTMLButtonElement>(null);
-  const rightModifier = useRef<"ControlRight" | "MetaRight" | null>(null);
   const externalAttempt = useRef(0);
   const identitySession = useRef<IdentitySession | null>(null);
   const language = preferences.language === LanguagePreference.System ? systemLanguage : preferences.language;
@@ -67,6 +66,8 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   const runtimeCapabilities = runtime ? capabilitiesFor(runtime) : { available: new Set<PlatformCapability>() };
   const mobile = runtime?.platform === RuntimePlatform.Ios || runtime?.platform === RuntimePlatform.Android;
   const isMac = runtime?.platform === RuntimePlatform.Ios || /Mac/u.test(navigator.userAgent);
+  const shortcutContext = useRef({ mobile, onboarding, capabilities: runtimeCapabilities });
+  shortcutContext.current = { mobile, onboarding, capabilities: runtimeCapabilities };
 
   const update = (next: Partial<Preferences>) => {
     if ("apiOrigin" in next) {
@@ -95,6 +96,16 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
       if (event.kind === "lifecycle") setLifecycle(event.state);
       if (event.kind === "auth-callback") {
         setAuthCallback(event.url);
+      }
+      if (event.kind === "shortcut-triggered") {
+        const context = shortcutContext.current;
+        if (context.mobile || context.onboarding) return;
+        if (event.action === ShortcutActionId.CommandPalette) {
+          setPalette((open) => { if (open) requestAnimationFrame(() => paletteTrigger.current?.focus()); return !open; });
+          return;
+        }
+        const action = actionRegistry.find((candidate) => candidate.id === event.action);
+        if (action && action.required.every((required) => context.capabilities.available.has(required)) && action.surface) setSurface(action.surface);
       }
     };
     void bridge.listen(receive).then(async (value) => {
@@ -157,28 +168,10 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
     return () => media.removeEventListener("change", updateTheme);
   }, [preferences.language, preferences.theme, language]);
   useEffect(() => {
-    const key = (event: KeyboardEvent) => {
-      const platformModifier = isMac ? "MetaRight" : "ControlRight";
-      if (event.code === platformModifier && event.location === rightModifierLocation) rightModifier.current = event.code;
-      const matchingRightModifier = rightModifier.current === platformModifier && (isMac ? event.metaKey : event.ctrlKey);
-      const exactRightModifierChord = matchingRightModifier && !event.shiftKey && !event.altKey && (isMac ? !event.ctrlKey : !event.metaKey);
-      if (!mobile && !onboarding && exactRightModifierChord && event.code === "KeyK") {
-        event.preventDefault();
-        setPalette(true);
-      }
-      if (event.key === "Escape" && palette) closePalette();
-    };
-    const releaseRightModifier = (event: KeyboardEvent) => { if (rightModifier.current === event.code) rightModifier.current = null; };
-    const clearRightModifier = () => { rightModifier.current = null; };
+    const key = (event: KeyboardEvent) => { if (event.key === "Escape" && palette) closePalette(); };
     addEventListener("keydown", key);
-    addEventListener("keyup", releaseRightModifier);
-    addEventListener("blur", clearRightModifier);
-    return () => {
-      removeEventListener("keydown", key);
-      removeEventListener("keyup", releaseRightModifier);
-      removeEventListener("blur", clearRightModifier);
-    };
-  }, [isMac, mobile, onboarding, palette]);
+    return () => removeEventListener("keydown", key);
+  }, [palette]);
   useEffect(() => { if (palette) search.current?.focus(); }, [palette]);
   useEffect(() => { if (surface === SurfaceId.Account) apiOriginInput.current?.focus(); }, [surface]);
 
@@ -282,7 +275,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
       {surface === SurfaceId.Realqa && mobile && <><p className="eyebrow">{copy.desktopOnly}</p><h2>{copy.realqaMobileTitle}</h2><p>{copy.realqaMobileSummary}</p><p className="notice">{copy.unavailable}</p></>}
       {surface === SurfaceId.Realqa && !mobile && <><p className="eyebrow">{copy.realqa}</p><h2>{copy.realqaTitle}</h2><p>{copy.realqaSummary}</p><div className="disabled-actions">{unavailableCaptureActions.map((action) => <button disabled key={action.id}>{copy[action.title]}</button>)}</div><p className="notice">{copy.planned}</p></>}
       {surface === SurfaceId.Deck && <><p className="eyebrow">{copy.deck}</p><h2>{copy.deckTitle}</h2><p>{copy.deckSummary}</p>{online ? <EmptyState copy={copy} /> : <OfflineState copy={copy} />}</>}
-      {surface === SurfaceId.Settings && <><p className="eyebrow">{copy.settings}</p><h2>{copy.settingsTitle}</h2><p>{copy.settingsSummary}</p><SynchronizedSettingsBoundary copy={copy} />{supportsLaunchAtLogin && <><label className="check"><input type="checkbox" checked={preferences.launchAtLogin} onChange={(event) => { update({ launchAtLogin: event.target.checked }); void browserShell.setLaunchAtLogin(event.target.checked); }} />{copy.launchAtLogin}</label><p>{copy.launchAtLoginHint}</p></>}{runtime?.capabilities.notifications && <div className="native-setting"><button className="primary" onClick={() => void requestNotifications()}>{copy.notificationPermission}</button><output aria-live="polite">{copy[notificationPermissionLabels[notificationPermission]]}</output>{notificationRequestFailed && <p className="native-setting-error" role="alert">{copy.notificationPermissionFailed}</p>}</div>}{runtime?.capabilities.storeUpdates && <div className="native-setting"><p>{copy.updatePolicy}</p>{storeConfigured && <button className="primary" onClick={() => void openStore()}>{copy.updatePolicy}</button>}{storeOpenFailed && <p className="native-setting-error" role="alert">{copy.storeOpenFailed}</p>}</div>}</>}
+      {surface === SurfaceId.Settings && <><p className="eyebrow">{copy.settings}</p><h2>{copy.settingsTitle}</h2><p>{copy.settingsSummary}</p><SynchronizedSettingsBoundary copy={copy} bridge={bridge} showNativeShortcuts={runtime?.platform === RuntimePlatform.Desktop} />{supportsLaunchAtLogin && <><label className="check"><input type="checkbox" checked={preferences.launchAtLogin} onChange={(event) => { update({ launchAtLogin: event.target.checked }); void browserShell.setLaunchAtLogin(event.target.checked); }} />{copy.launchAtLogin}</label><p>{copy.launchAtLoginHint}</p></>}{runtime?.capabilities.notifications && <div className="native-setting"><button className="primary" onClick={() => void requestNotifications()}>{copy.notificationPermission}</button><output aria-live="polite">{copy[notificationPermissionLabels[notificationPermission]]}</output>{notificationRequestFailed && <p className="native-setting-error" role="alert">{copy.notificationPermissionFailed}</p>}</div>}{runtime?.capabilities.storeUpdates && <div className="native-setting"><p>{copy.updatePolicy}</p>{storeConfigured && <button className="primary" onClick={() => void openStore()}>{copy.updatePolicy}</button>}{storeOpenFailed && <p className="native-setting-error" role="alert">{copy.storeOpenFailed}</p>}</div>}</>}
       {surface === SurfaceId.Account && <><AccountIdentity copy={copy} apiOrigin={preferences.apiOrigin} inputRef={apiOriginInput} onApiOrigin={applyApiOrigin} /><div className="actions"><button onClick={() => void external(ExternalLinkTarget.Pat)}>{copy.pat}</button>{!mobile && <button onClick={() => void external(ExternalLinkTarget.Issue)}>{copy.issue}</button>}</div>{externalMessage && <p className="external-message" role={externalMessageIsError ? "alert" : "status"}>{externalMessageText}</p>}</>}
       {surface === SurfaceId.Diagnostics && <><p className="eyebrow">{copy.diagnostics}</p><h2>{copy.diagnosticsTitle}</h2><p>{copy.diagnosticsSummary}</p><p className="notice">{copy.diagnosticsUnavailable}</p>{runtime && <dl className="runtime-diagnostics"><dt>{copy.diagnosticPlatform}</dt><dd>{runtime.platform}</dd><dt>{copy.diagnosticArchitecture}</dt><dd>{runtime.architecture}</dd><dt>{copy.diagnosticBridge}</dt><dd>v{runtime.bridgeVersion}</dd></dl>}</>}
     </section>

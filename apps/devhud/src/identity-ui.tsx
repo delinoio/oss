@@ -4,6 +4,8 @@ import { useIdentitySettings } from "./service-boundary";
 import { LanguagePreference, normalizeApiOrigin, ThemePreference } from "./shell";
 import type { DevHudSettingsV1 } from "./settings-contract";
 import type { SettingsDiffEntry } from "./settings-diff";
+import { NativeBridgeError, nativeBridge, type NativeBridgeV1, type NativeShortcutPermission, type NativeShortcutPlatform } from "./native-bridge";
+import { ShortcutActionId, ShortcutKey, ShortcutModifier, ShortcutValidationCode, parseDesktopShortcutBindings, type ShortcutBinding } from "./shortcuts";
 
 interface ApiEditorProps {
   readonly copy: Copy;
@@ -118,7 +120,7 @@ export function SynchronizedAppearanceBoundary({ onAppearance }: { readonly onAp
   return null;
 }
 
-export function SynchronizedSettingsBoundary({ copy }: { readonly copy: Copy }) {
+export function SynchronizedSettingsBoundary({ copy, bridge = nativeBridge, showNativeShortcuts = false }: { readonly copy: Copy; readonly bridge?: NativeBridgeV1; readonly showNativeShortcuts?: boolean }) {
   const identity = useIdentitySettings();
   const [actionError, setActionError] = useState(false);
   const invoke = (action: () => Promise<void>) => { setActionError(false); void action().catch(() => setActionError(true)); };
@@ -129,6 +131,7 @@ export function SynchronizedSettingsBoundary({ copy }: { readonly copy: Copy }) 
   return <>
     <label>{copy.theme}<select value={identity.settings.appearance.theme} disabled={identity.readOnly} onChange={(event) => replaceAppearance({ theme: event.target.value as DevHudSettingsV1["appearance"]["theme"] })}>{Object.values(ThemePreference).map((value) => <option key={value} value={value}>{copy[value]}</option>)}</select></label>
     <label>{copy.language}<select value={identity.settings.appearance.language} disabled={identity.readOnly} onChange={(event) => replaceAppearance({ language: event.target.value as DevHudSettingsV1["appearance"]["language"] })}><option value={LanguagePreference.System}>{copy.system}</option><option value={LanguagePreference.English}>{copy.english}</option><option value={LanguagePreference.Korean}>{copy.korean}</option></select></label>
+    {showNativeShortcuts && <ShortcutSettings copy={copy} bridge={bridge} disabled={identity.readOnly} bindings={identity.settings.shortcuts.desktop} onPersist={async (desktop) => identity.replaceSettings({ ...identity.settings, shortcuts: { ...identity.settings.shortcuts, desktop } })} />}
     {(identity.status === "guest" || identity.status === "signed-out" || identity.status === "starting") && <p className="notice">{copy.guestSettingsLocal}</p>}
     {identity.status === "blocked" && <p className="notice">{copy.blockedLocalHint}</p>}
     {identity.status === "deletion-pending" && <p className="notice">{copy.deletionPendingSummary}</p>}
@@ -141,6 +144,50 @@ export function SynchronizedSettingsBoundary({ copy }: { readonly copy: Copy }) 
     {(actionError || identity.error?.startsWith("settings-") || identity.settingsError) && <section className="notice" role="alert"><p>{copy.settingsActionFailed}{identity.error?.startsWith("settings-") && <> <code>{identity.error}</code></>}{identity.settingsError && <> <code>{`settings-connect-${identity.settingsError.code}`}</code>{identity.settingsError.correlationId && <> {copy.correlationId}: <code>{identity.settingsError.correlationId}</code></>}</>}</p><button onClick={() => invoke(identity.retrySettings)}>{copy.retry}</button></section>}
     </section>}
   </>;
+}
+
+const shortcutLabels: Record<ShortcutActionId, keyof Copy> = {
+  [ShortcutActionId.CommandPalette]: "openPalette",
+  [ShortcutActionId.CaptureDisplay]: "captureDisplay",
+  [ShortcutActionId.CaptureActiveWindow]: "captureWindow",
+  [ShortcutActionId.CaptureAllDisplays]: "captureAll",
+  [ShortcutActionId.CaptureSelection]: "captureSelection",
+  [ShortcutActionId.CaptureToolbar]: "captureToolbar",
+};
+
+function ShortcutSettings({ copy, bridge, disabled, bindings, onPersist }: { readonly copy: Copy; readonly bridge: NativeBridgeV1; readonly disabled: boolean; readonly bindings: DevHudSettingsV1["shortcuts"]["desktop"]; readonly onPersist: (bindings: DevHudSettingsV1["shortcuts"]["desktop"]) => Promise<void> }) {
+  const [status, setStatus] = useState<{ platform: NativeShortcutPlatform; permission: NativeShortcutPermission; error: ShortcutValidationCode | null } | null>(null);
+  const commit = async (action: ShortcutActionId, update: Partial<ShortcutBinding>) => {
+    const previous = bindings;
+    const candidate = { ...bindings, [action]: { ...bindings[action], ...update } };
+    try {
+      const structured = parseDesktopShortcutBindings(candidate);
+      const result = await bridge.request({ operation: "shortcuts.apply", bindings: structured });
+      if (result.kind !== "shortcut-status" || result.error !== null) { if (result.kind === "shortcut-status") setStatus(result); return; }
+      try { await onPersist(structured); setStatus(result); }
+      catch { await bridge.request({ operation: "shortcuts.apply", bindings: previous }).catch(() => {}); setStatus({ platform: result.platform, permission: result.permission, error: ShortcutValidationCode.RegistrationFailed }); }
+    } catch (error) {
+      setStatus({ platform: status?.platform ?? "unsupported", permission: error instanceof NativeBridgeError ? "denied" : status?.permission ?? "unsupported", error: error instanceof NativeBridgeError ? ShortcutValidationCode.PermissionDenied : ShortcutValidationCode.Malformed });
+    }
+  };
+  const requestPermission = () => void bridge.request({ operation: "shortcuts.request-permission" }).then((response) => { if (response.kind === "shortcut-status") setStatus(response); });
+  const errorCopy = status?.error === ShortcutValidationCode.Conflict ? copy.shortcutConflict : status?.error === ShortcutValidationCode.Reserved ? copy.shortcutReserved : status?.error === ShortcutValidationCode.PermissionDenied ? copy.shortcutPermissionDenied : status?.error === ShortcutValidationCode.RegistrationFailed ? copy.shortcutRegistrationFailed : status?.error === ShortcutValidationCode.Malformed ? copy.shortcutMalformed : null;
+  return <section className="native-setting" aria-label={copy.keyboardShortcuts}>
+    <h3>{copy.keyboardShortcuts}</h3>
+    {Object.values(ShortcutActionId).map((action) => {
+      const binding = bindings[action];
+      return <fieldset key={action} disabled={disabled}><legend>{copy[shortcutLabels[action]]}</legend>
+        <label className="check"><input type="checkbox" checked={binding.enabled} onChange={(event) => void commit(action, { enabled: event.target.checked })} />{copy.shortcutEnabled}</label>
+        <span>{copy.shortcutModifier}</span>{([ShortcutModifier.RightPrimary, ShortcutModifier.Shift, ShortcutModifier.Alt] as const).map((modifier) => <label className="check" key={modifier}><input type="checkbox" checked={binding.modifiers.includes(modifier)} onChange={(event) => void commit(action, { modifiers: event.target.checked ? [...binding.modifiers, modifier] : binding.modifiers.filter((current) => current !== modifier) })} />{modifier === ShortcutModifier.RightPrimary ? copy.shortcutRightPrimary : modifier === ShortcutModifier.Shift ? copy.shortcutShift : copy.shortcutAlt}</label>)}
+        <label>{copy.shortcutKey}<select value={binding.key} onChange={(event) => void commit(action, { key: event.target.value as ShortcutKey })}>{Object.values(ShortcutKey).map((key) => <option key={key} value={key}>{key}</option>)}</select></label>
+      </fieldset>;
+    })}
+    {status?.platform === "macos" && <p className="notice">{copy.shortcutMacAccessibility} {copy.shortcutMacInputMonitoring}</p>}
+    {status?.platform === "x11" && <p className="notice">{copy.shortcutLinuxGuidance}</p>}
+    {(status?.permission === "denied" || status?.permission === "not-determined") && <button type="button" onClick={requestPermission}>{copy.shortcutRequestPermission}</button>}
+    {status?.permission === "unsupported" && <p className="notice">{copy.shortcutUnsupported}</p>}
+    {errorCopy && <p className="native-setting-error" role="alert">{errorCopy}</p>}
+  </section>;
 }
 
 function SnapshotChoice({ choiceId, copy, entries, title, summary, primary, secondary, onPrimary, onSecondary }: { readonly choiceId: string; readonly copy: Copy; readonly entries: readonly SettingsDiffEntry[]; readonly title: string; readonly summary: string; readonly primary: string; readonly secondary: string; readonly onPrimary: () => void; readonly onSecondary: () => void }) {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { canonicalDevHudSettings, decodeDevHudSettings, defaultDevHudSettings, encodeDevHudSettings, parseDevHudSettings, SettingsContractError } from "./settings-contract";
 import { diffSettings, redactRecursively, RedactedValue } from "./settings-diff";
+import { ShortcutActionId, ShortcutKey, ShortcutModifier, ShortcutValidationCode, defaultDesktopShortcutBindings, parseDesktopShortcutBindings } from "./shortcuts";
 
 describe("DevHud settings boundary", () => {
   it("round trips the exact versioned non-secret contract canonically", () => {
@@ -24,6 +25,36 @@ describe("DevHud settings boundary", () => {
       ...defaultDevHudSettings,
       shortcuts: { ...defaultDevHudSettings.shortcuts, desktop: shortcuts },
     })).toThrow(SettingsContractError);
+  });
+
+  it("uses portable structured right-primary defaults and upgrades an empty legacy desktop map", () => {
+    expect(defaultDesktopShortcutBindings[ShortcutActionId.CommandPalette]).toEqual({ enabled: true, modifiers: [ShortcutModifier.RightPrimary], key: ShortcutKey.K });
+    expect(defaultDesktopShortcutBindings[ShortcutActionId.CaptureToolbar]).toEqual({ enabled: true, modifiers: [], key: ShortcutKey.Digit5 });
+    expect(parseDesktopShortcutBindings({})).toEqual(defaultDesktopShortcutBindings);
+    expect(parseDevHudSettings({ ...defaultDevHudSettings, shortcuts: { desktop: {}, ios: {}, android: {} } }).shortcuts.desktop).toEqual(defaultDesktopShortcutBindings);
+  });
+
+  it("rejects malformed, conflicting, and reserved shortcut chords before settings persistence", () => {
+    const duplicate = structuredShortcuts();
+    duplicate[ShortcutActionId.CaptureDisplay] = { ...duplicate[ShortcutActionId.CaptureDisplay], key: ShortcutKey.Digit2 };
+    expect(() => parseDesktopShortcutBindings(duplicate)).toThrow(ShortcutValidationCode.Conflict);
+
+    const reserved = structuredShortcuts();
+    reserved[ShortcutActionId.CommandPalette] = { enabled: true, modifiers: [ShortcutModifier.RightPrimary], key: ShortcutKey.Space };
+    expect(() => parseDesktopShortcutBindings(reserved)).toThrow(ShortcutValidationCode.Reserved);
+
+    const malformed = structuredShortcuts();
+    malformed[ShortcutActionId.CommandPalette] = { enabled: true, modifiers: [], key: ShortcutKey.K };
+    expect(() => parseDesktopShortcutBindings(malformed)).toThrow(ShortcutValidationCode.Malformed);
+  });
+
+  it("accepts explicit disabling while persisting only modifier and key enums", () => {
+    const disabled = structuredShortcuts();
+    disabled[ShortcutActionId.CaptureSelection] = { ...disabled[ShortcutActionId.CaptureSelection], enabled: false };
+    const parsed = parseDesktopShortcutBindings(disabled);
+    expect(parsed[ShortcutActionId.CaptureSelection].enabled).toBe(false);
+    expect(canonicalDevHudSettings({ ...defaultDevHudSettings, shortcuts: { desktop: parsed, ios: {}, android: {} } })).toContain('"right-primary"');
+    expect(canonicalDevHudSettings({ ...defaultDevHudSettings, shortcuts: { desktop: parsed, ios: {}, android: {} } })).not.toContain("ControlRight");
   });
 
   it("rejects settings snapshots containing more than 25 Decks", () => {
@@ -92,3 +123,7 @@ describe("DevHud settings boundary", () => {
     expect(redactRecursively({ a: [{ secret: "value" }] })).toEqual({ a: [{ secret: RedactedValue }] });
   });
 });
+
+function structuredShortcuts(): Record<typeof ShortcutActionId[keyof typeof ShortcutActionId], { enabled: boolean; modifiers: readonly (typeof ShortcutModifier)[keyof typeof ShortcutModifier][]; key: (typeof ShortcutKey)[keyof typeof ShortcutKey] }> {
+  return Object.fromEntries(Object.entries(defaultDesktopShortcutBindings).map(([action, binding]) => [action, { ...binding, modifiers: [...binding.modifiers] }])) as unknown as Record<typeof ShortcutActionId[keyof typeof ShortcutActionId], { enabled: boolean; modifiers: readonly (typeof ShortcutModifier)[keyof typeof ShortcutModifier][]; key: (typeof ShortcutKey)[keyof typeof ShortcutKey] }>;
+}

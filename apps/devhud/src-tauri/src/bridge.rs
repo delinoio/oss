@@ -2,6 +2,10 @@ use std::sync::{Arc, Mutex};
 
 use serde_json::{Value, json};
 
+use crate::shortcuts::{
+    PlatformShortcutBackend, ShortcutBindings, ShortcutFailure, ShortcutService,
+};
+
 const PROFILE_ID_LIMIT: usize = 128;
 const SECRET_LIMIT: usize = 64 * 1024;
 
@@ -11,6 +15,7 @@ const DEFAULT_API_ORIGIN: &str = "https://devhud.api.delino.io";
 pub struct NativeBridgeState {
     pending_auth_callback: Arc<Mutex<Option<String>>>,
     session_origins: Arc<Mutex<SessionOrigins>>,
+    shortcuts: Arc<Mutex<ShortcutService<PlatformShortcutBackend>>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -27,7 +32,36 @@ impl Default for NativeBridgeState {
                 api_origin: DEFAULT_API_ORIGIN.to_string(),
                 logto_issuer: None,
             })),
+            shortcuts: Arc::new(Mutex::new(ShortcutService::new(
+                PlatformShortcutBackend::current(),
+            ))),
         }
+    }
+}
+
+fn shortcut_status(state: &NativeBridgeState, error: Option<ShortcutFailure>) -> Value {
+    let shortcuts = state
+        .shortcuts
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    json!({ "kind": "shortcut-status", "platform": shortcuts.platform(), "permission": shortcuts.permission(), "bindings": shortcuts.active(), "error": error })
+}
+
+fn apply_shortcuts(request: &Value, state: &NativeBridgeState) -> Result<Value, String> {
+    let bindings: ShortcutBindings =
+        serde_json::from_value(request.get("bindings").cloned().ok_or("invalid-argument")?)
+            .map_err(|_| "invalid-argument")?;
+    let mut shortcuts = state
+        .shortcuts
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    match shortcuts.apply(bindings) {
+        Ok(()) => Ok(
+            json!({ "kind": "shortcut-status", "platform": shortcuts.platform(), "permission": shortcuts.permission(), "bindings": shortcuts.active(), "error": Value::Null }),
+        ),
+        Err(error) => Ok(
+            json!({ "kind": "shortcut-status", "platform": shortcuts.platform(), "permission": shortcuts.permission(), "bindings": shortcuts.active(), "error": error }),
+        ),
     }
 }
 
@@ -352,6 +386,18 @@ pub fn handle_native_bridge_request(
         .ok_or("invalid-argument")?;
     match operation {
         "runtime.snapshot" => Ok(runtime_snapshot()),
+        "shortcuts.status" => Ok(shortcut_status(state, None)),
+        "shortcuts.request-permission" => {
+            let mut shortcuts = state
+                .shortcuts
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let _ = shortcuts.request_permission();
+            Ok(
+                json!({ "kind": "shortcut-status", "platform": shortcuts.platform(), "permission": shortcuts.permission(), "bindings": shortcuts.active(), "error": Value::Null }),
+            )
+        }
+        "shortcuts.apply" => apply_shortcuts(request, state),
         "session.configure-origins" => Ok(json!({
             "kind": "session-network-policy",
             "changed": state.configure_session_origins(request)?

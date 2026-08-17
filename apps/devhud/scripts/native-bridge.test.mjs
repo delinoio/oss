@@ -5,6 +5,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { NativeBridgeError, NativeBridgeErrorCode, SecureSettingKind, isAuthCallback, nativeBridge, validateAuthenticationBrowserRequest, validateExternalRequest, validateSecretValue, validateSecureSettingRef } from "../src/native-bridge.ts";
+import { ShortcutActionId, ShortcutKey, ShortcutModifier, ShortcutValidationCode, defaultDesktopShortcutBindings, parseDesktopShortcutBindings } from "../src/shortcuts.ts";
 
 const fixtures = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../fixtures/deep-links.json"), "utf8"));
 const tauriConfig = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/tauri.conf.json"), "utf8"));
@@ -14,6 +15,7 @@ const cargoLock = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..
 const desktopSecureStore = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/secure_store.rs"), "utf8");
 const desktopHost = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/main.rs"), "utf8");
 const nativeBridgeHost = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/bridge.rs"), "utf8");
+const nativeShortcuts = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/shortcuts.rs"), "utf8");
 
 test("deep-link fixtures accept only the contracted auth callback", () => {
   assert.deepEqual(tauriConfig.plugins["deep-link"].desktop.schemes, ["devhud"]);
@@ -83,3 +85,40 @@ test("Tauri rejection codes become typed native bridge errors", async () => {
     globalThis.window = previousWindow;
   }
 });
+
+test("desktop shortcuts persist only structured enums and reject unsafe candidates before invoking native code", async () => {
+  assert.deepEqual(defaultDesktopShortcutBindings[ShortcutActionId.CommandPalette], {
+    enabled: true,
+    modifiers: [ShortcutModifier.RightPrimary],
+    key: ShortcutKey.K,
+  });
+  const conflicting = structuredShortcuts();
+  conflicting[ShortcutActionId.CaptureDisplay] = { ...conflicting[ShortcutActionId.CaptureDisplay], key: ShortcutKey.Digit2 };
+  assert.throws(() => parseDesktopShortcutBindings(conflicting), { message: ShortcutValidationCode.Conflict });
+
+  const previousWindow = globalThis.window;
+  let invoked = false;
+  globalThis.window = { __TAURI_INTERNALS__: { invoke: async () => { invoked = true; return { kind: "ok" }; } } };
+  try {
+    await assert.rejects(
+      nativeBridge.request({ operation: "shortcuts.apply", bindings: conflicting }),
+      { message: ShortcutValidationCode.Conflict },
+    );
+    assert.equal(invoked, false);
+  } finally {
+    globalThis.window = previousWindow;
+  }
+});
+
+test("native shortcut boundary is physical-key-only and redacts unrelated input", () => {
+  assert.match(nativeShortcuts, /NativeKey::RightPrimary/u);
+  assert.match(nativeShortcuts, /NativeKey::LeftPrimary/u);
+  assert.match(nativeShortcuts, /normalize_native_key\(platform/u);
+  assert.match(nativeShortcuts, /_\s*=> None/u);
+  assert.match(nativeShortcuts, /never exposes raw input/u);
+  assert.doesNotMatch(nativeShortcuts, /println!|info!|debug!|warn!/u);
+});
+
+function structuredShortcuts() {
+  return Object.fromEntries(Object.entries(defaultDesktopShortcutBindings).map(([action, binding]) => [action, { ...binding, modifiers: [...binding.modifiers] }]));
+}
