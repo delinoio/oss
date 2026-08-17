@@ -94,9 +94,10 @@ type UploadError struct{ Failure UploadFailure }
 func (e *UploadError) Error() string { return "upload cannot be finalized" }
 
 var (
-	ErrOperationLeaseLost = errors.New("upload operation lease lost")
-	ErrObjectNotFound     = errors.New("upload object not found")
-	ErrObjectPrecondition = errors.New("upload object precondition failed")
+	ErrOperationLeaseLost             = errors.New("upload operation lease lost")
+	ErrUploadRemovalPendingCompletion = errors.New("upload removal is pending completion")
+	ErrObjectNotFound                 = errors.New("upload object not found")
+	ErrObjectPrecondition             = errors.New("upload object precondition failed")
 )
 
 type UploadTarget struct {
@@ -165,6 +166,7 @@ type Upload struct {
 	RemovedAt       *time.Time
 	RemovalReason   RemovalReason
 	OperationToken  string
+	RemovalAudit    *AdministratorUploadAudit
 }
 
 type UploadCursor struct {
@@ -240,9 +242,9 @@ type UploadRepository interface {
 	RejectUpload(context.Context, string, UploadBinding, UploadFailure, time.Time) error
 	ListUploads(context.Context, string, []UploadState, string, *UploadCursor, uint32) (UploadList, error)
 	ListUploadsForAdministrator(context.Context, AdminUploadFilters, *UploadCursor, uint32) (UploadList, error)
-	ClaimUploadRemoval(context.Context, string, string, string, RemovalReason, UploadState, string, time.Time) (Upload, error)
+	ClaimUploadRemoval(context.Context, string, string, RemovalReason, UploadState, *AdministratorUploadAudit, string, time.Time) (Upload, error)
 	RecordUploadReplacement(context.Context, string, string, string) (Upload, error)
-	CompleteUploadRemoval(context.Context, string, string, time.Time, *AdministratorUploadAudit) (Upload, error)
+	CompleteUploadRemoval(context.Context, string, string, time.Time) (Upload, error)
 	ReleaseUploadRemoval(context.Context, string, string) error
 	ClaimExpiredUploads(context.Context, time.Time, int) ([]Upload, error)
 	CompleteExpiredUpload(context.Context, string, time.Time) error

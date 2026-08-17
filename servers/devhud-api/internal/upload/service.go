@@ -194,22 +194,22 @@ func (s *Service) List(ctx context.Context, ownerID string, states []domain.Uplo
 }
 
 func (s *Service) Delete(ctx context.Context, ownerID, uploadID string) (domain.Upload, error) {
-	return s.remove(ctx, ownerID, "", uploadID, domain.RemovalReasonOwnerDeleted, 0, nil)
+	return s.remove(ctx, ownerID, uploadID, domain.RemovalReasonOwnerDeleted, 0, nil)
 }
 
 func (s *Service) RemoveAsAdministrator(ctx context.Context, actorID, uploadID string, reason domain.RemovalReason, expected domain.UploadState, rationale string, event domain.AuditEvent) (domain.Upload, error) {
 	if reason != domain.RemovalReasonAdministratorDeleted && reason != domain.RemovalReasonAdministratorQuarantined {
 		return domain.Upload{}, errors.New("invalid administrator removal reason")
 	}
-	return s.remove(ctx, "", actorID, uploadID, reason, expected, &domain.AdministratorUploadAudit{ActorUserID: actorID, Rationale: rationale, Event: event})
+	return s.remove(ctx, "", uploadID, reason, expected, &domain.AdministratorUploadAudit{ActorUserID: actorID, Rationale: rationale, Event: event})
 }
 
-func (s *Service) remove(ctx context.Context, ownerID, actorID, uploadID string, reason domain.RemovalReason, expected domain.UploadState, audit *domain.AdministratorUploadAudit) (domain.Upload, error) {
+func (s *Service) remove(ctx context.Context, ownerID, uploadID string, reason domain.RemovalReason, expected domain.UploadState, audit *domain.AdministratorUploadAudit) (domain.Upload, error) {
 	token, err := idgen.Opaque()
 	if err != nil {
 		return domain.Upload{}, err
 	}
-	upload, err := s.repository.ClaimUploadRemoval(ctx, ownerID, actorID, uploadID, reason, expected, token, s.clock.Now())
+	upload, err := s.repository.ClaimUploadRemoval(ctx, ownerID, uploadID, reason, expected, audit, token, s.clock.Now())
 	if err != nil || upload.State == domain.UploadStateDeleted || upload.State == domain.UploadStateQuarantined {
 		return upload, err
 	}
@@ -223,7 +223,11 @@ func (s *Service) remove(ctx context.Context, ownerID, actorID, uploadID string,
 		_ = withCleanupContext(ctx, func(cleanup context.Context) error {
 			return s.repository.CompleteExpiredUpload(cleanup, uploadID, s.clock.Now())
 		})
-		return s.repository.CompleteUploadRemoval(ctx, uploadID, token, s.clock.Now(), audit)
+		completed, err := s.repository.CompleteUploadRemoval(ctx, uploadID, token, s.clock.Now())
+		if err != nil {
+			return upload, errors.Join(domain.ErrUploadRemovalPendingCompletion, err)
+		}
+		return completed, nil
 	}
 	if upload.ReplacementETag == "" {
 		replacementETag, err := s.objects.ReplacePublic(ctx, upload, s.removalPNG)
@@ -235,14 +239,18 @@ func (s *Service) remove(ctx context.Context, ownerID, actorID, uploadID string,
 		}
 		upload, err = s.repository.RecordUploadReplacement(ctx, uploadID, token, replacementETag)
 		if err != nil {
-			return domain.Upload{}, err
+			return upload, errors.Join(domain.ErrUploadRemovalPendingCompletion, err)
 		}
 	}
 	publicURL := s.PublicURL(upload.PublicID)
 	if err := s.cache.PurgeAndRevalidate(ctx, publicURL, s.removalPNG); err != nil {
-		return domain.Upload{}, err
+		return upload, errors.Join(domain.ErrUploadRemovalPendingCompletion, err)
 	}
-	return s.repository.CompleteUploadRemoval(ctx, uploadID, token, s.clock.Now(), audit)
+	completed, err := s.repository.CompleteUploadRemoval(ctx, uploadID, token, s.clock.Now())
+	if err != nil {
+		return upload, errors.Join(domain.ErrUploadRemovalPendingCompletion, err)
+	}
+	return completed, nil
 }
 
 func (s *Service) PublicURL(publicID string) string { return s.publicBaseURL + "/" + publicID + ".png" }
@@ -296,7 +304,7 @@ func (s *Service) PurgeAccount(ctx context.Context, user domain.User) error {
 				}
 				continue
 			}
-			if _, err := s.remove(ctx, "", "", candidate.UploadID, domain.RemovalReasonAccountPurged, 0, nil); err != nil {
+			if _, err := s.remove(ctx, "", candidate.UploadID, domain.RemovalReasonAccountPurged, 0, nil); err != nil {
 				return fmt.Errorf("purge upload %s: %w", candidate.UploadID, err)
 			}
 		}

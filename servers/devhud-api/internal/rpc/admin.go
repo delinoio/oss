@@ -254,6 +254,10 @@ func (s *AdminService) mutateUpload(ctx context.Context, uploadID *devhudv1.Uuid
 	}
 	upload, err := s.uploads.RemoveUpload(ctx, principal.User.ID, uploadID.GetValue(), removal, expected, reason, event)
 	if err != nil {
+		if errors.Is(err, domain.ErrUploadRemovalPendingCompletion) {
+			s.logger.ErrorContext(ctx, "administrator upload removal pending completion", "correlation_id", CorrelationID(ctx), "error_type", fmt.Sprintf("%T", err))
+			return domain.Upload{}, domain.AuditEvent{}, NewError(connect.CodeInternal, "upload mutation is pending completion", CorrelationID(ctx))
+		}
 		rejection := domain.AuditRejectionOperationFailed
 		code, message := connect.CodeInternal, "upload mutation failed"
 		var conflict *domain.AdminConflictError
@@ -279,6 +283,9 @@ func (s *AdminService) mutateUpload(ctx context.Context, uploadID *devhudv1.Uuid
 			s.logger.ErrorContext(ctx, "administrator upload mutation failed", "correlation_id", CorrelationID(ctx), "error_type", fmt.Sprintf("%T", err))
 		}
 		return domain.Upload{}, domain.AuditEvent{}, NewError(code, message, CorrelationID(ctx))
+	}
+	if upload.RemovalAudit != nil {
+		event = upload.RemovalAudit.Event
 	}
 	event.Outcome = domain.AuditOutcomeAccepted
 	targetUserID := upload.OwnerUserID

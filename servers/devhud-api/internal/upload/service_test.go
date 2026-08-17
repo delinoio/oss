@@ -198,6 +198,31 @@ func TestFinalizedDeletionReplacesOriginBeforeCacheAndTombstone(t *testing.T) {
 	}
 }
 
+func TestAdministratorRemovalCompletionFailurePreservesAcceptedAudit(t *testing.T) {
+	checksum := sha256.Sum256([]byte("image"))
+	events := []string{}
+	upload := testUpload(checksum)
+	finalized := testNow
+	upload.State, upload.FinalizedAt = domain.UploadStateFinalized, &finalized
+	repository := &fakeRepository{upload: upload, events: &events, completeRemovalError: errors.New("database unavailable")}
+	service := newTestService(t, repository, &fakeStorage{events: &events}, &fakeCache{events: &events})
+	event := domain.AuditEvent{
+		ID: "018f7c1e-7b4a-7abc-8def-0123456789af", CorrelationID: "018f7c1e-7b4a-7abc-8def-0123456789aa",
+		CreatedAt: testNow, ExpiresAt: testNow.Add(domain.AuditRetention),
+	}
+	removed, err := service.RemoveAsAdministrator(context.Background(), "actor", upload.UploadID, domain.RemovalReasonAdministratorDeleted, upload.State, "Reviewed policy violation.", event)
+	if !errors.Is(err, domain.ErrUploadRemovalPendingCompletion) {
+		t.Fatalf("error = %v, want pending completion", err)
+	}
+	if removed.RemovalAudit == nil || removed.RemovalAudit.Event.ID != event.ID {
+		t.Fatalf("pending audit = %+v", removed.RemovalAudit)
+	}
+	want := []string{"claim-remove", "replace-public", "record-replacement", "purge-revalidate", "complete-remove"}
+	if !slices.Equal(events, want) {
+		t.Fatalf("events = %v, want %v", events, want)
+	}
+}
+
 func TestPendingDeletionNeverCreatesPublicObject(t *testing.T) {
 	checksum := sha256.Sum256([]byte("image"))
 	events := []string{}
@@ -367,6 +392,7 @@ type fakeRepository struct {
 	getError               error
 	claimError             error
 	rejectError            error
+	completeRemovalError   error
 }
 
 func (r *fakeRepository) event(value string) { *r.events = append(*r.events, value) }
@@ -406,9 +432,13 @@ func (r *fakeRepository) ListUploadsForAdministrator(_ context.Context, filters 
 	r.administratorListOwner = ownerID
 	return r.administratorList, nil
 }
-func (r *fakeRepository) ClaimUploadRemoval(_ context.Context, _ string, _ string, _ string, reason domain.RemovalReason, _ domain.UploadState, token string, _ time.Time) (domain.Upload, error) {
+func (r *fakeRepository) ClaimUploadRemoval(_ context.Context, _ string, _ string, reason domain.RemovalReason, _ domain.UploadState, audit *domain.AdministratorUploadAudit, token string, _ time.Time) (domain.Upload, error) {
 	r.event("claim-remove")
 	r.upload.State, r.upload.RemovalReason, r.upload.OperationToken = domain.UploadStateRemoving, reason, token
+	if audit != nil {
+		copyAudit := *audit
+		r.upload.RemovalAudit = &copyAudit
+	}
 	return r.upload, nil
 }
 func (r *fakeRepository) RecordUploadReplacement(_ context.Context, _, _, etag string) (domain.Upload, error) {
@@ -416,10 +446,13 @@ func (r *fakeRepository) RecordUploadReplacement(_ context.Context, _, _, etag s
 	r.upload.ReplacementETag = etag
 	return r.upload, nil
 }
-func (r *fakeRepository) CompleteUploadRemoval(_ context.Context, _ string, _ string, _ time.Time, audit *domain.AdministratorUploadAudit) (domain.Upload, error) {
+func (r *fakeRepository) CompleteUploadRemoval(_ context.Context, _ string, _ string, _ time.Time) (domain.Upload, error) {
 	r.event("complete-remove")
-	if audit != nil {
-		copyAudit := *audit
+	if r.completeRemovalError != nil {
+		return domain.Upload{}, r.completeRemovalError
+	}
+	if r.upload.RemovalAudit != nil {
+		copyAudit := *r.upload.RemovalAudit
 		r.completedAudit = &copyAudit
 	}
 	if r.upload.RemovalReason == domain.RemovalReasonAdministratorQuarantined {

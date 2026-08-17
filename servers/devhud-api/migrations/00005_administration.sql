@@ -35,3 +35,27 @@ CREATE INDEX devhud_audit_events_admin_list_idx
     ON devhud_audit_events (created_at DESC, audit_event_id DESC);
 CREATE INDEX devhud_audit_events_correlation_idx
     ON devhud_audit_events (correlation_id);
+
+ALTER TABLE devhud_uploads
+    ADD COLUMN removal_audit_event_id uuid,
+    ADD COLUMN removal_audit_actor_user_id uuid,
+    ADD COLUMN removal_audit_reason text,
+    ADD COLUMN removal_audit_created_at timestamptz,
+    ADD COLUMN removal_audit_expires_at timestamptz,
+    ADD COLUMN removal_audit_correlation_id uuid,
+    ADD CONSTRAINT devhud_uploads_removal_audit_complete CHECK (
+        (removal_audit_event_id IS NULL
+            AND removal_audit_actor_user_id IS NULL
+            AND removal_audit_reason IS NULL
+            AND removal_audit_created_at IS NULL
+            AND removal_audit_expires_at IS NULL
+            AND removal_audit_correlation_id IS NULL)
+        OR
+        (removal_audit_event_id IS NOT NULL
+            AND removal_audit_actor_user_id IS NOT NULL
+            AND removal_audit_reason IS NOT NULL
+            AND removal_audit_created_at IS NOT NULL
+            AND removal_audit_expires_at IS NOT NULL
+            AND removal_audit_correlation_id IS NOT NULL
+            AND octet_length(removal_audit_reason) BETWEEN 1 AND 4096)
+    );

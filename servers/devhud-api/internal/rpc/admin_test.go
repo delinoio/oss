@@ -302,6 +302,48 @@ func TestAcceptedUploadMutationReturnsOwnerAuditTarget(t *testing.T) {
 	}
 }
 
+func TestPendingUploadCompletionDoesNotRecordRejectedAudit(t *testing.T) {
+	var audits []domain.AuditEvent
+	repository := &adminRepository{recordAudit: func(_ context.Context, event domain.AuditEvent) error {
+		audits = append(audits, event)
+		return nil
+	}}
+	uploads := &adminUploads{remove: func(context.Context, string, string, domain.RemovalReason, domain.UploadState, string, domain.AuditEvent) (domain.Upload, error) {
+		return domain.Upload{}, errors.Join(domain.ErrUploadRemovalPendingCompletion, errors.New("database unavailable"))
+	}}
+	service := newTestAdminService(t, repository, uploads)
+	_, err := service.DeleteUpload(administratorContext(), connect.NewRequest(&devhudv1.AdminServiceDeleteUploadRequest{
+		UploadId: uuid(uploadID), ExpectedState: devhudv1.UploadState_UPLOAD_STATE_FINALIZED, Reason: "Reviewed policy violation.",
+	}))
+	if connect.CodeOf(err) != connect.CodeInternal {
+		t.Fatalf("code = %v, want Internal", connect.CodeOf(err))
+	}
+	if len(audits) != 0 {
+		t.Fatalf("pending accepted mutation was rejected: %+v", audits)
+	}
+}
+
+func TestFailedUploadMutationRecordsOperationFailedAudit(t *testing.T) {
+	var audits []domain.AuditEvent
+	repository := &adminRepository{recordAudit: func(_ context.Context, event domain.AuditEvent) error {
+		audits = append(audits, event)
+		return nil
+	}}
+	uploads := &adminUploads{remove: func(context.Context, string, string, domain.RemovalReason, domain.UploadState, string, domain.AuditEvent) (domain.Upload, error) {
+		return domain.Upload{}, errors.New("object replacement failed")
+	}}
+	service := newTestAdminService(t, repository, uploads)
+	_, err := service.DeleteUpload(administratorContext(), connect.NewRequest(&devhudv1.AdminServiceDeleteUploadRequest{
+		UploadId: uuid(uploadID), ExpectedState: devhudv1.UploadState_UPLOAD_STATE_FINALIZED, Reason: "Reviewed policy violation.",
+	}))
+	if connect.CodeOf(err) != connect.CodeInternal {
+		t.Fatalf("code = %v, want Internal", connect.CodeOf(err))
+	}
+	if len(audits) != 1 || audits[0].Outcome != domain.AuditOutcomeRejected || audits[0].RejectionReason != domain.AuditRejectionOperationFailed {
+		t.Fatalf("rejected audit = %+v", audits)
+	}
+}
+
 func TestRejectedMutationAuditPreservesRequestDeadline(t *testing.T) {
 	deadline := time.Now().Add(time.Minute)
 	var auditDeadline time.Time
