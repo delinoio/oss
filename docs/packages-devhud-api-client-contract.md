@@ -38,7 +38,7 @@ CI regenerates from `protos/devhud/v1`, fails on stale output, runs TypeScript l
 
 ## Dependencies and Integrations
 
-Generated from `protos/devhud/v1`; consumed by the DevHud and admin apps; targets `servers/devhud-api`. It must remain independent of Tauri, Chrome Native Messaging, GitHub, and R2 SDKs.
+Generated from `protos/devhud/v1`; consumed by the DevHud and admin apps; targets `servers/devhud-api`. The generated client covers the complete v1 wire contract, while the current server foundation registers Bootstrap, Settings, and Account only. It must remain independent of Tauri, Chrome Native Messaging, GitHub, and R2 SDKs.
 
 ## Change Triggers
 

@@ -37,6 +37,7 @@ jobs:
               - go.sum
               - cmds/**
               - protos/**
+              - servers/**
 
       - name: Determine whether to run
         id: gate
@@ -110,6 +111,7 @@ jobs:
               - go.sum
               - cmds/**
               - protos/**
+              - servers/**
 
       - name: Determine whether to run
         id: gate
@@ -1108,6 +1110,81 @@ jobs:
           pnpm --filter @delinoio/devhud-api-client test
           pnpm --filter @delinoio/devhud-api-client build
 
+  devhud-api:
+    name: DevHud API Integration
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-bookworm
+        env:
+          POSTGRES_DB: devhud_api_test
+          POSTGRES_PASSWORD: devhud
+          POSTGRES_USER: devhud
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U devhud -d devhud_api_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Filter changed paths
+        id: filter
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            devhud_api:
+              - .github/workflows/CI.yml
+              - go.mod
+              - go.sum
+              - protos/**
+              - servers/devhud-api/**
+
+      - name: Determine whether to run
+        id: gate
+        shell: bash
+        env:
+          API_CHANGED: ${{ steps.filter.outputs.devhud_api }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+
+          run=false
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ] || [ "${API_CHANGED}" = "true" ]; then
+            run=true
+          fi
+
+          echo "run=${run}" >> "${GITHUB_OUTPUT}"
+
+      - name: Skip (DevHud API unaffected)
+        if: ${{ steps.gate.outputs.run != 'true' }}
+        run: 'echo "Skipping DevHud API integration checks: paths unaffected"'
+
+      - name: Setup Go
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Build API and sweeper
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: |
+          go build ./servers/devhud-api/cmd/devhud-api
+          go build ./servers/devhud-api/cmd/devhud-api-sweeper
+
+      - name: Run PostgreSQL integration tests
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        env:
+          DEVHUD_TEST_DATABASE_URL: postgres://devhud:devhud@127.0.0.1:5432/devhud_api_test?sslmode=disable
+        run: go test -tags=integration ./servers/devhud-api/internal/postgres
+
 
   ci-result:
     name: CI Result
@@ -1129,6 +1206,7 @@ jobs:
       - devhud-ios-simulator
       - devhud-android-emulator
       - devhud-protocol
+      - devhud-api
     steps:
       - run: exit 1
         if: ${{ always() && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) }}
