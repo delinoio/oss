@@ -1,0 +1,18 @@
+{
+  "rules": [
+    {
+      "allowed": {
+        "origins": [
+          "http://localhost:46305",
+          "http://127.0.0.1:46305",
+          "http://localhost:46306",
+          "http://127.0.0.1:46306",
+          "http://tauri.localhost"
+        ],
+        "methods": ["PUT"],
+        "headers": ["Content-Type", "x-amz-checksum-sha256"]
+      },
+      "exposeHeaders": ["ETag"]
+    }
+  ]
+}

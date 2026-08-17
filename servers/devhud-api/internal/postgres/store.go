@@ -348,9 +348,9 @@ func (s *Store) RecordRequest(ctx context.Context, record domain.RequestLog) err
 
 func (s *Store) RecordAudit(ctx context.Context, event domain.AuditEvent) error {
 	_, err := s.pool.Exec(ctx, `INSERT INTO devhud_audit_events
-        (audit_event_id, actor_user_id, target_user_id, actor_fingerprint, target_fingerprint, action, created_at, expires_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`, event.ID, event.ActorUserID, event.TargetUserID,
-		event.ActorFingerprint, event.TargetFingerprint, event.Action, event.CreatedAt, event.ExpiresAt)
+		(audit_event_id, actor_user_id, target_user_id, actor_fingerprint, target_fingerprint, action, created_at, expires_at, target_upload_id, reason)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULLIF($10, ''))`, event.ID, event.ActorUserID, event.TargetUserID,
+		event.ActorFingerprint, event.TargetFingerprint, event.Action, event.CreatedAt, event.ExpiresAt, event.TargetUploadID, event.Reason)
 	return err
 }
 

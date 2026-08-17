@@ -2,6 +2,7 @@ package contracttest
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 
 	devhudv1 "github.com/delinoio/oss/protos/gen/go/devhud/v1"
@@ -44,6 +45,26 @@ func TestServiceInventoryAndResponseMetadata(t *testing.T) {
 	}
 	if methodCount != 18 {
 		t.Fatalf("service inventory contains %d methods, want 18", methodCount)
+	}
+}
+
+func TestUploadContractSeparatesPUTAndStagingExpiryAndHasNoImageBody(t *testing.T) {
+	t.Parallel()
+	reservation := devhudv1.File_devhud_v1_upload_proto.Messages().ByName("UploadReservation")
+	putExpiry := reservation.Fields().ByName("expires_at")
+	stagingExpiry := reservation.Fields().ByName("staging_expires_at")
+	if putExpiry == nil || putExpiry.Number() != 8 || stagingExpiry == nil || stagingExpiry.Number() != 10 {
+		t.Fatalf("upload expiry fields changed: put=%v staging=%v", putExpiry, stagingExpiry)
+	}
+	for _, messageName := range []protoreflect.Name{"CreateUploadRequest", "FinalizeUploadRequest"} {
+		message := devhudv1.File_devhud_v1_upload_proto.Messages().ByName(messageName)
+		for index := 0; index < message.Fields().Len(); index++ {
+			field := message.Fields().Get(index)
+			name := string(field.Name())
+			if strings.Contains(name, "body") || strings.Contains(name, "image") || name == "data" {
+				t.Fatalf("%s can proxy an image through field %s", messageName, name)
+			}
+		}
 	}
 }
 

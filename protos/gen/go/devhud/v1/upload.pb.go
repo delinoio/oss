@@ -405,6 +405,7 @@ type SignedUploadHeaders struct {
 	ContentType string                 `protobuf:"bytes,1,opt,name=content_type,json=contentType,proto3" json:"content_type,omitempty"`
 	// checksum_sha256_base64 is standard padded Base64 of the 32 raw bytes.
 	ChecksumSha256Base64 string `protobuf:"bytes,2,opt,name=checksum_sha256_base64,json=checksumSha256Base64,proto3" json:"checksum_sha256_base64,omitempty"`
+	ContentLength        uint64 `protobuf:"varint,3,opt,name=content_length,json=contentLength,proto3" json:"content_length,omitempty"`
 	unknownFields        protoimpl.UnknownFields
 	sizeCache            protoimpl.SizeCache
 }
@@ -453,6 +454,13 @@ func (x *SignedUploadHeaders) GetChecksumSha256Base64() string {
 	return ""
 }
 
+func (x *SignedUploadHeaders) GetContentLength() uint64 {
+	if x != nil {
+		return x.ContentLength
+	}
+	return 0
+}
+
 type UploadReservation struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
 	UploadId          *UuidV7                `protobuf:"bytes,1,opt,name=upload_id,json=uploadId,proto3" json:"upload_id,omitempty"`
@@ -464,8 +472,11 @@ type UploadReservation struct {
 	RequiredHeaders   *SignedUploadHeaders   `protobuf:"bytes,7,opt,name=required_headers,json=requiredHeaders,proto3" json:"required_headers,omitempty"`
 	ExpiresAt         *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
 	PublicUrl         string                 `protobuf:"bytes,9,opt,name=public_url,json=publicUrl,proto3" json:"public_url,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// staging_expires_at is the independent server-side cleanup deadline. The
+	// signed PUT expires earlier and is never renewed for this reservation.
+	StagingExpiresAt *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=staging_expires_at,json=stagingExpiresAt,proto3" json:"staging_expires_at,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *UploadReservation) Reset() {
@@ -559,6 +570,13 @@ func (x *UploadReservation) GetPublicUrl() string {
 		return x.PublicUrl
 	}
 	return ""
+}
+
+func (x *UploadReservation) GetStagingExpiresAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.StagingExpiresAt
+	}
+	return nil
 }
 
 type CreateUploadResponse struct {
@@ -1203,10 +1221,11 @@ const file_devhud_v1_upload_proto_rawDesc = "" +
 	"\x06target\x18\x01 \x01(\v2\x1d.devhud.v1.CreateUploadTargetR\x06target\x12.\n" +
 	"\x13expected_size_bytes\x18\x02 \x01(\x04R\x11expectedSizeBytes\x12'\n" +
 	"\x0fexpected_sha256\x18\x03 \x01(\fR\x0eexpectedSha256\x12?\n" +
-	"\fcontent_type\x18\x04 \x01(\x0e2\x1c.devhud.v1.UploadContentTypeR\vcontentType\"n\n" +
+	"\fcontent_type\x18\x04 \x01(\x0e2\x1c.devhud.v1.UploadContentTypeR\vcontentType\"\x95\x01\n" +
 	"\x13SignedUploadHeaders\x12!\n" +
 	"\fcontent_type\x18\x01 \x01(\tR\vcontentType\x124\n" +
-	"\x16checksum_sha256_base64\x18\x02 \x01(\tR\x14checksumSha256Base64\"\xea\x03\n" +
+	"\x16checksum_sha256_base64\x18\x02 \x01(\tR\x14checksumSha256Base64\x12%\n" +
+	"\x0econtent_length\x18\x03 \x01(\x04R\rcontentLength\"\xb4\x04\n" +
 	"\x11UploadReservation\x12.\n" +
 	"\tupload_id\x18\x01 \x01(\v2\x11.devhud.v1.UuidV7R\buploadId\x126\n" +
 	"\rsubmission_id\x18\x02 \x01(\v2\x11.devhud.v1.UuidV7R\fsubmissionId\x129\n" +
@@ -1218,7 +1237,9 @@ const file_devhud_v1_upload_proto_rawDesc = "" +
 	"\n" +
 	"expires_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12\x1d\n" +
 	"\n" +
-	"public_url\x18\t \x01(\tR\tpublicUrl\"\x8f\x01\n" +
+	"public_url\x18\t \x01(\tR\tpublicUrl\x12H\n" +
+	"\x12staging_expires_at\x18\n" +
+	" \x01(\v2\x1a.google.protobuf.TimestampR\x10stagingExpiresAt\"\x8f\x01\n" +
 	"\x14CreateUploadResponse\x127\n" +
 	"\bmetadata\x18\x01 \x01(\v2\x1b.devhud.v1.ResponseMetadataR\bmetadata\x12>\n" +
 	"\vreservation\x18\x02 \x01(\v2\x1c.devhud.v1.UploadReservationR\vreservation\"\xa1\x03\n" +
@@ -1345,45 +1366,46 @@ var file_devhud_v1_upload_proto_depIdxs = []int32{
 	17, // 11: devhud.v1.UploadReservation.reservation_id:type_name -> devhud.v1.UuidV7
 	6,  // 12: devhud.v1.UploadReservation.required_headers:type_name -> devhud.v1.SignedUploadHeaders
 	19, // 13: devhud.v1.UploadReservation.expires_at:type_name -> google.protobuf.Timestamp
-	20, // 14: devhud.v1.CreateUploadResponse.metadata:type_name -> devhud.v1.ResponseMetadata
-	7,  // 15: devhud.v1.CreateUploadResponse.reservation:type_name -> devhud.v1.UploadReservation
-	17, // 16: devhud.v1.FinalizeUploadRequest.upload_id:type_name -> devhud.v1.UuidV7
-	17, // 17: devhud.v1.FinalizeUploadRequest.submission_id:type_name -> devhud.v1.UuidV7
-	17, // 18: devhud.v1.FinalizeUploadRequest.upload_group_id:type_name -> devhud.v1.UuidV7
-	17, // 19: devhud.v1.FinalizeUploadRequest.reservation_id:type_name -> devhud.v1.UuidV7
-	17, // 20: devhud.v1.Upload.upload_id:type_name -> devhud.v1.UuidV7
-	17, // 21: devhud.v1.Upload.submission_id:type_name -> devhud.v1.UuidV7
-	17, // 22: devhud.v1.Upload.upload_group_id:type_name -> devhud.v1.UuidV7
-	21, // 23: devhud.v1.Upload.state:type_name -> devhud.v1.UploadState
-	18, // 24: devhud.v1.Upload.content_type:type_name -> devhud.v1.UploadContentType
-	19, // 25: devhud.v1.Upload.created_at:type_name -> google.protobuf.Timestamp
-	19, // 26: devhud.v1.Upload.finalized_at:type_name -> google.protobuf.Timestamp
-	19, // 27: devhud.v1.Upload.removed_at:type_name -> google.protobuf.Timestamp
-	20, // 28: devhud.v1.FinalizeUploadResponse.metadata:type_name -> devhud.v1.ResponseMetadata
-	10, // 29: devhud.v1.FinalizeUploadResponse.upload:type_name -> devhud.v1.Upload
-	22, // 30: devhud.v1.ListUploadsRequest.page:type_name -> devhud.v1.PageRequest
-	21, // 31: devhud.v1.ListUploadsRequest.states:type_name -> devhud.v1.UploadState
-	17, // 32: devhud.v1.ListUploadsRequest.submission_id:type_name -> devhud.v1.UuidV7
-	20, // 33: devhud.v1.ListUploadsResponse.metadata:type_name -> devhud.v1.ResponseMetadata
-	10, // 34: devhud.v1.ListUploadsResponse.uploads:type_name -> devhud.v1.Upload
-	17, // 35: devhud.v1.DeleteUploadRequest.upload_id:type_name -> devhud.v1.UuidV7
-	20, // 36: devhud.v1.DeleteUploadResponse.metadata:type_name -> devhud.v1.ResponseMetadata
-	10, // 37: devhud.v1.DeleteUploadResponse.upload:type_name -> devhud.v1.Upload
-	0,  // 38: devhud.v1.UploadFailure.reason:type_name -> devhud.v1.UploadFailureReason
-	17, // 39: devhud.v1.UploadFailure.upload_id:type_name -> devhud.v1.UuidV7
-	5,  // 40: devhud.v1.UploadService.CreateUpload:input_type -> devhud.v1.CreateUploadRequest
-	9,  // 41: devhud.v1.UploadService.FinalizeUpload:input_type -> devhud.v1.FinalizeUploadRequest
-	12, // 42: devhud.v1.UploadService.ListUploads:input_type -> devhud.v1.ListUploadsRequest
-	14, // 43: devhud.v1.UploadService.DeleteUpload:input_type -> devhud.v1.DeleteUploadRequest
-	8,  // 44: devhud.v1.UploadService.CreateUpload:output_type -> devhud.v1.CreateUploadResponse
-	11, // 45: devhud.v1.UploadService.FinalizeUpload:output_type -> devhud.v1.FinalizeUploadResponse
-	13, // 46: devhud.v1.UploadService.ListUploads:output_type -> devhud.v1.ListUploadsResponse
-	15, // 47: devhud.v1.UploadService.DeleteUpload:output_type -> devhud.v1.DeleteUploadResponse
-	44, // [44:48] is the sub-list for method output_type
-	40, // [40:44] is the sub-list for method input_type
-	40, // [40:40] is the sub-list for extension type_name
-	40, // [40:40] is the sub-list for extension extendee
-	0,  // [0:40] is the sub-list for field type_name
+	19, // 14: devhud.v1.UploadReservation.staging_expires_at:type_name -> google.protobuf.Timestamp
+	20, // 15: devhud.v1.CreateUploadResponse.metadata:type_name -> devhud.v1.ResponseMetadata
+	7,  // 16: devhud.v1.CreateUploadResponse.reservation:type_name -> devhud.v1.UploadReservation
+	17, // 17: devhud.v1.FinalizeUploadRequest.upload_id:type_name -> devhud.v1.UuidV7
+	17, // 18: devhud.v1.FinalizeUploadRequest.submission_id:type_name -> devhud.v1.UuidV7
+	17, // 19: devhud.v1.FinalizeUploadRequest.upload_group_id:type_name -> devhud.v1.UuidV7
+	17, // 20: devhud.v1.FinalizeUploadRequest.reservation_id:type_name -> devhud.v1.UuidV7
+	17, // 21: devhud.v1.Upload.upload_id:type_name -> devhud.v1.UuidV7
+	17, // 22: devhud.v1.Upload.submission_id:type_name -> devhud.v1.UuidV7
+	17, // 23: devhud.v1.Upload.upload_group_id:type_name -> devhud.v1.UuidV7
+	21, // 24: devhud.v1.Upload.state:type_name -> devhud.v1.UploadState
+	18, // 25: devhud.v1.Upload.content_type:type_name -> devhud.v1.UploadContentType
+	19, // 26: devhud.v1.Upload.created_at:type_name -> google.protobuf.Timestamp
+	19, // 27: devhud.v1.Upload.finalized_at:type_name -> google.protobuf.Timestamp
+	19, // 28: devhud.v1.Upload.removed_at:type_name -> google.protobuf.Timestamp
+	20, // 29: devhud.v1.FinalizeUploadResponse.metadata:type_name -> devhud.v1.ResponseMetadata
+	10, // 30: devhud.v1.FinalizeUploadResponse.upload:type_name -> devhud.v1.Upload
+	22, // 31: devhud.v1.ListUploadsRequest.page:type_name -> devhud.v1.PageRequest
+	21, // 32: devhud.v1.ListUploadsRequest.states:type_name -> devhud.v1.UploadState
+	17, // 33: devhud.v1.ListUploadsRequest.submission_id:type_name -> devhud.v1.UuidV7
+	20, // 34: devhud.v1.ListUploadsResponse.metadata:type_name -> devhud.v1.ResponseMetadata
+	10, // 35: devhud.v1.ListUploadsResponse.uploads:type_name -> devhud.v1.Upload
+	17, // 36: devhud.v1.DeleteUploadRequest.upload_id:type_name -> devhud.v1.UuidV7
+	20, // 37: devhud.v1.DeleteUploadResponse.metadata:type_name -> devhud.v1.ResponseMetadata
+	10, // 38: devhud.v1.DeleteUploadResponse.upload:type_name -> devhud.v1.Upload
+	0,  // 39: devhud.v1.UploadFailure.reason:type_name -> devhud.v1.UploadFailureReason
+	17, // 40: devhud.v1.UploadFailure.upload_id:type_name -> devhud.v1.UuidV7
+	5,  // 41: devhud.v1.UploadService.CreateUpload:input_type -> devhud.v1.CreateUploadRequest
+	9,  // 42: devhud.v1.UploadService.FinalizeUpload:input_type -> devhud.v1.FinalizeUploadRequest
+	12, // 43: devhud.v1.UploadService.ListUploads:input_type -> devhud.v1.ListUploadsRequest
+	14, // 44: devhud.v1.UploadService.DeleteUpload:input_type -> devhud.v1.DeleteUploadRequest
+	8,  // 45: devhud.v1.UploadService.CreateUpload:output_type -> devhud.v1.CreateUploadResponse
+	11, // 46: devhud.v1.UploadService.FinalizeUpload:output_type -> devhud.v1.FinalizeUploadResponse
+	13, // 47: devhud.v1.UploadService.ListUploads:output_type -> devhud.v1.ListUploadsResponse
+	15, // 48: devhud.v1.UploadService.DeleteUpload:output_type -> devhud.v1.DeleteUploadResponse
+	45, // [45:49] is the sub-list for method output_type
+	41, // [41:45] is the sub-list for method input_type
+	41, // [41:41] is the sub-list for extension type_name
+	41, // [41:41] is the sub-list for extension extendee
+	0,  // [0:41] is the sub-list for field type_name
 }
 
 func init() { file_devhud_v1_upload_proto_init() }

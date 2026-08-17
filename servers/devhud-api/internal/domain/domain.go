@@ -166,6 +166,9 @@ const (
 	AuditActionAccountRestored
 	AuditActionAccountPurgeClaimed
 	AuditActionAccountPurged
+	AuditActionUploadQuarantined
+	AuditActionUploadDeleted
+	AuditActionUploadAccountPurged
 )
 
 type AuditEvent struct {
@@ -174,6 +177,8 @@ type AuditEvent struct {
 	TargetUserID      *string
 	ActorFingerprint  []byte
 	TargetFingerprint []byte
+	TargetUploadID    *string
+	Reason            string
 	Action            AuditAction
 	CreatedAt         time.Time
 	ExpiresAt         time.Time

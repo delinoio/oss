@@ -88,6 +88,25 @@ func TestRunOnceBoundsUnlockAfterCallerCancellation(t *testing.T) {
 	}
 }
 
+func TestRunOnceContinuesFullStagingBatchAfterDeleteFailure(t *testing.T) {
+	staging := &fakeStagingSweeper{results: []domain.StagingSweepResult{
+		{Claimed: 1},
+		{Claimed: 1, Deleted: 1},
+		{},
+	}}
+	worker, err := New(&fakeRepository{}, &fakeCoordinator{acquired: true}, nil, fixedClock{}, slog.Default(), 1, WithUploadStaging(staging))
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := worker.RunOnce(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if staging.calls != 3 || result.StagingObjectsDeleted != 1 {
+		t.Fatalf("staging calls = %d, result = %+v", staging.calls, result)
+	}
+}
+
 type fixedClock struct{}
 
 func (fixedClock) Now() time.Time { return time.Date(2026, 8, 16, 0, 0, 0, 0, time.UTC) }
@@ -111,6 +130,20 @@ func (coordinator *fakeCoordinator) TryLock(context.Context) (func(context.Conte
 type failingOncePurger struct {
 	mu     sync.Mutex
 	failed bool
+}
+
+type fakeStagingSweeper struct {
+	results []domain.StagingSweepResult
+	calls   int
+}
+
+func (sweeper *fakeStagingSweeper) SweepExpiredUploads(context.Context, time.Time, int) (domain.StagingSweepResult, error) {
+	call := sweeper.calls
+	sweeper.calls++
+	if call >= len(sweeper.results) {
+		return domain.StagingSweepResult{}, nil
+	}
+	return sweeper.results[call], nil
 }
 
 func (purger *failingOncePurger) PurgeAccount(_ context.Context, _ domain.User) error {

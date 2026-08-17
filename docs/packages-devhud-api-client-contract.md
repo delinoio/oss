@@ -20,7 +20,7 @@ Handwritten helpers enforce canonical UUID-v7 text, 32 raw checksum bytes, the d
 
 ## Storage
 
-Generated upload types preserve the server-owned `submission_id`, cross-group 10-image limit, signed expected checksum as 32 raw bytes, staging version/generation, immutable conditional-finalization fields, and the `x-devhud-correlation-id` response metadata used by integrators.
+Generated upload types preserve the server-owned `submission_id`, cross-group 10-image limit, signed expected checksum as 32 raw bytes, staging version/generation, immutable conditional-finalization fields, the 15-minute signed PUT `expires_at`, the independent 24-hour `staging_expires_at`, and the `x-devhud-correlation-id` response metadata used by integrators. Clients set the returned `Content-Type` and standard-Base64 checksum headers, upload the declared byte length directly to R2, and never send image bodies through a Connect message.
 
 No persistence. App callers own local encrypted storage and secure credentials; the client package must not cache tokens, settings, Deck results, or upload bodies implicitly.
 
@@ -38,7 +38,7 @@ CI regenerates from `protos/devhud/v1`, fails on stale output, runs TypeScript l
 
 ## Dependencies and Integrations
 
-Generated from `protos/devhud/v1`; consumed by the DevHud and admin apps; targets `servers/devhud-api`. The generated client covers the complete v1 wire contract, while the current server foundation registers Bootstrap, Settings, and Account only. It must remain independent of Tauri, Chrome Native Messaging, GitHub, and R2 SDKs.
+Generated from `protos/devhud/v1`; consumed by the DevHud and admin apps; targets `servers/devhud-api`. The generated client covers the complete v1 wire contract, while the current server registers Bootstrap, Settings, Upload, and Account. It must remain independent of Tauri, Chrome Native Messaging, GitHub, and R2 SDKs.
 
 ## Change Triggers
 
