@@ -215,11 +215,15 @@ function parseDeck(value: unknown, path: string, legacy: boolean, previous: bool
     throw new SettingsContractError(`${path}.profileRef`, "must select a local GitHub credential profile");
   }
   const rawQuery = text(deck.query, `${path}.query`, true);
-  const query = hasPositivePullRequestQualifier(rawQuery) ? rawQuery : `${rawQuery}${rawQuery.length === 0 ? "" : " "}is:pr`;
+  const legacyRepository = previous && deck.repository !== null ? text(deck.repository, `${path}.repository`) : null;
+  let query = hasPositivePullRequestQualifier(rawQuery) ? rawQuery : appendDeckQualifier(rawQuery, "is:pr");
+  if (legacyRepository !== null && !hasRepositoryQualifier(query)) query = appendDeckQualifier(query, `repo:${legacyRepository}`);
   if (!hasPositivePullRequestQualifier(query)) throw new SettingsContractError(`${path}.query`, "must contain a standalone positive is:pr qualifier");
-  const builder = legacy ? null : previous ? legacyDeckBuilder(deck.repository, `${path}.repository`) : parseDeckBuilder(deck.builder, `${path}.builder`);
-  const notifications = array(deck.notifications, `${path}.notifications`).map((item, index) => enumeration(item, `${path}.notifications[${index}]`, NotificationKind));
-  if (new Set(notifications).size !== notifications.length) throw new SettingsContractError(`${path}.notifications`, "must contain unique values");
+  if (!legacy && !previous && !hasRepositoryQualifier(query)) throw new SettingsContractError(`${path}.query`, "must contain a repository qualifier when a credential profile is selected");
+  const builder = legacy ? null : previous ? legacyDeckBuilder(legacyRepository, `${path}.repository`) : parseDeckBuilder(deck.builder, `${path}.builder`);
+  const notificationValues = array(deck.notifications, `${path}.notifications`).map((item, index) => enumeration(item, `${path}.notifications[${index}]`, NotificationKind));
+  if (!legacy && !previous && new Set(notificationValues).size !== notificationValues.length) throw new SettingsContractError(`${path}.notifications`, "must contain unique values");
+  const notifications = legacy || previous ? [...new Set(notificationValues)] : notificationValues;
   return [{
     id,
     name: previous || legacy ? text(deck.title, `${path}.title`) : text(deck.name, `${path}.name`),
@@ -260,7 +264,50 @@ function nullableTrimmedText(value: unknown, path: string): string | null {
 }
 
 export function hasPositivePullRequestQualifier(query: string): boolean {
-  return /(?:^|\s)is:pr(?=\s|$)/iu.test(query);
+  return deckQueryTokens(query).some((token) => token.toLowerCase() === "is:pr");
+}
+
+export function hasRepositoryQualifier(query: string): boolean {
+  return deckQueryTokens(query).some((token) => token.length > "repo:".length && token.slice(0, "repo:".length).toLowerCase() === "repo:");
+}
+
+function appendDeckQualifier(query: string, qualifier: string): string {
+  return `${query}${query.length === 0 || /\s$/u.test(query) ? "" : " "}${qualifier}`;
+}
+
+/** Splits GitHub search syntax without treating quoted phrases as qualifiers. */
+function deckQueryTokens(query: string): readonly string[] {
+  const tokens: string[] = [];
+  let token = "";
+  let quoted = false;
+  let escaped = false;
+  const flush = () => {
+    if (token.length > 0) tokens.push(token);
+    token = "";
+  };
+  for (const character of query) {
+    if (escaped) {
+      token += character;
+      escaped = false;
+      continue;
+    }
+    if (quoted) {
+      token += character;
+      if (character === "\\") escaped = true;
+      else if (character === "\"") quoted = false;
+      continue;
+    }
+    if (character === "\"") {
+      token += character;
+      quoted = true;
+    } else if (/\s/u.test(character)) {
+      flush();
+    } else {
+      token += character;
+    }
+  }
+  flush();
+  return tokens;
 }
 
 function parseIssueTracker(value: unknown, legacy: boolean): NonNullable<DevHudSettingsV1["github"]["issueTracker"]> {

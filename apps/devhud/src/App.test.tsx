@@ -158,6 +158,28 @@ describe("native App state", () => {
     expect(request.mock.calls.filter(([value]) => value.operation === "auth.peek-pending-callback")).toHaveLength(1);
   });
 
+  it("consumes a pending Deck link exactly once before navigating", async () => {
+    window.__TAURI_INTERNALS__ = { invoke: vi.fn() };
+    let deckLink: string | null = "018f47a2-7b3c-7def-8abc-1234567890ab";
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      if (value.operation === "runtime.snapshot") return { kind: "runtime", snapshot: desktopRuntime };
+      if (value.operation === "auth.peek-pending-callback") return { kind: "auth-callback", url: null };
+      if (value.operation === "deck.take-pending-link") {
+        const deckId = deckLink;
+        deckLink = null;
+        return { kind: "deck-link", deckId };
+      }
+      if (value.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+
+    render(<App bridge={bridgeWith(request)} />);
+
+    await waitFor(() => expect(request).toHaveBeenCalledWith({ operation: "deck.take-pending-link" }));
+    expect(deckLink).toBeNull();
+    expect(request.mock.calls.filter(([value]) => value.operation === "deck.take-pending-link")).toHaveLength(1);
+  });
+
   it("peeks for a callback only after the native listener is installed", async () => {
     const operations: string[] = [];
     const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {

@@ -10,6 +10,8 @@ describe("Deck query and local transitions", () => {
     expect(applyDeckBuilder(raw, "repository", "octo/next")).toBe('repo:octo/next "keep this exact text" is:pr label:"needs review"');
     expect(validateDeckQuery(raw)).toBe(true);
     expect(validateDeckQuery("-is:pr repo:octo/widgets")).toBe(false);
+    expect(validateDeckQuery('"find is:pr here" repo:octo/widgets')).toBe(false);
+    expect(validateDeckQuery("repo:octo/widgets IS:PR")).toBe(true);
   });
   it("uses rate reset and exponential backoff", () => {
     expect(Date.parse(nextDeckRefresh(0, 5, 2, { limit: 1, remaining: 0, used: 1, resetAt: "1970-01-01T00:30:00.000Z", resource: "core", retryAfterSeconds: null }))).toBe(1_800_000);

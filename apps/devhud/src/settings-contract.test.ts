@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canonicalDevHudSettings, decodeDevHudSettings, decodeVersionedDevHudSettings, defaultDevHudSettings, encodeDevHudSettings, parseDevHudSettings, SettingsContractError, SettingsSchemaVersion } from "./settings-contract";
+import { canonicalDevHudSettings, decodeDevHudSettings, decodeVersionedDevHudSettings, defaultDevHudSettings, encodeDevHudSettings, parseDevHudSettings, PreviousSettingsSchemaVersion, SettingsContractError, SettingsSchemaVersion } from "./settings-contract";
 import { diffSettings, redactRecursively, RedactedValue } from "./settings-diff";
 
 describe("DevHud settings boundary", () => {
@@ -63,7 +63,7 @@ describe("DevHud settings boundary", () => {
     const deck = {
       id: "018f47a2-7b3c-7def-8abc-1234567890ac",
       name: "Deck",
-      query: "is:pr",
+      query: "repo:octo/widgets is:pr",
       builder: null,
       profileRef: profile.id,
       display: { groupBy: "none", showDrafts: true },
@@ -78,7 +78,7 @@ describe("DevHud settings boundary", () => {
     const deck = {
       id: "018f47a2-7b3c-7def-8abc-1234567890ab",
       name: "Deck",
-      query: "is:pr",
+      query: "repo:octo/widgets is:pr",
       builder: null,
       profileRef: profile.id,
       display: { groupBy: "none", showDrafts: true },
@@ -97,7 +97,7 @@ describe("DevHud settings boundary", () => {
     const deck = {
       id: "018f47a2-7b3c-7def-8abc-1234567890ac",
       name: "Deck",
-      query: "is:pr",
+      query: "repo:octo/private is:pr",
       builder: null,
       profileRef: profile.id,
       display: { groupBy: "none", showDrafts: true },
@@ -108,6 +108,45 @@ describe("DevHud settings boundary", () => {
     expect(parseDevHudSettings(settings).decks[0]?.profileRef).toBe(profile.id);
     expect(() => parseDevHudSettings({ ...settings, decks: [{ ...deck, profileRef: "missing" }] })).toThrow(/configured GitHub profile/u);
     expect(() => parseDevHudSettings({ ...settings, decks: [{ ...deck, profileRef: null }] })).toThrow(/must select a local GitHub credential profile/u);
+  });
+
+  it("migrates v2 Deck repository scopes and duplicate notifications", () => {
+    const profile = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", name: "Work", kind: "fine-grained" as const };
+    const legacy = {
+      ...defaultDevHudSettings,
+      schemaVersion: PreviousSettingsSchemaVersion,
+      github: { ...defaultDevHudSettings.github, profiles: [profile] },
+      decks: [{
+        id: "018f47a2-7b3c-7def-8abc-1234567890ac",
+        title: "Legacy Deck",
+        query: "is:pr",
+        repository: "octo/widgets",
+        profileRef: profile.id,
+        display: { groupBy: "none", showDrafts: true },
+        refreshMinutes: 5,
+        notifications: ["review", "review", "merged"],
+      }],
+    };
+    expect(parseDevHudSettings(legacy).decks).toMatchObject([{ query: "is:pr repo:octo/widgets", builder: { repository: "octo/widgets" }, notifications: ["review", "merged"] }]);
+  });
+
+  it("requires real repository-scoped pull-request qualifiers in v3 Decks", () => {
+    const profile = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", name: "Work", kind: "fine-grained" as const };
+    const deck = {
+      id: "018f47a2-7b3c-7def-8abc-1234567890ac",
+      name: "Deck",
+      query: "repo:octo/widgets IS:PR",
+      builder: null,
+      profileRef: profile.id,
+      display: { groupBy: "none", showDrafts: true },
+      refreshMinutes: 5,
+      notifications: [],
+    };
+    const settings = { ...defaultDevHudSettings, github: { ...defaultDevHudSettings.github, profiles: [profile] }, decks: [deck] };
+    expect(parseDevHudSettings(settings).decks).toHaveLength(1);
+    expect(() => parseDevHudSettings({ ...settings, decks: [{ ...deck, query: "is:pr" }] })).toThrow(/repository qualifier/u);
+    expect(parseDevHudSettings({ ...settings, decks: [{ ...deck, query: '"find is:pr here" repo:octo/widgets' }] }).decks[0]?.query).toBe('"find is:pr here" repo:octo/widgets is:pr');
+    expect(() => parseDevHudSettings({ ...settings, decks: [{ ...deck, notifications: ["review", "review"] }] })).toThrow(/unique values/u);
   });
 
   it.each(["?token=plain-secret", "?X-Amz-Signature=plain-secret", "#credential", "?", "#"])("rejects query or fragment delimiters in synchronized URL fields: %s", (suffix) => {

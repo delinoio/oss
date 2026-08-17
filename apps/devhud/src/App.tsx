@@ -92,13 +92,21 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   useEffect(() => {
     let active = true;
     let unlisten: (() => void) | undefined;
+    const consumePendingDeckLink = () => {
+      void bridge.request({ operation: "deck.take-pending-link" }).then((pendingDeck) => {
+        if (active && pendingDeck.kind === "deck-link" && pendingDeck.deckId) {
+          setDeckLink(pendingDeck.deckId);
+          setSurface(SurfaceId.Deck);
+        }
+      }).catch(() => {});
+    };
     const receive = (event: NativeBridgeEventV1) => {
       if (event.version !== 1) return;
       if (event.kind === "lifecycle") setLifecycle(event.state);
       if (event.kind === "auth-callback") {
         setAuthCallback(event.url);
       }
-      if (event.kind === "deck-link") { setDeckLink(event.deckId); setSurface(SurfaceId.Deck); }
+      if (event.kind === "deck-link") consumePendingDeckLink();
     };
     void bridge.listen(receive).then(async (value) => {
       if (!active) { value(); return; }
@@ -111,9 +119,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
       setRuntimeState(initialContentState);
       const pending = await bridge.request({ operation: "auth.peek-pending-callback" });
       if (active && pending.kind === "auth-callback" && pending.url) setAuthCallback(pending.url);
-      if (window.__TAURI_INTERNALS__) void bridge.request({ operation: "deck.peek-pending-link" }).then((pendingDeck) => {
-        if (active && pendingDeck.kind === "deck-link" && pendingDeck.deckId) { setDeckLink(pendingDeck.deckId); setSurface(SurfaceId.Deck); }
-      }).catch(() => {});
+      if (window.__TAURI_INTERNALS__) consumePendingDeckLink();
     }).catch(() => {
       if (active && !initialRuntime) setRuntimeState({ kind: ContentStateKind.Error, retryable: true });
     });

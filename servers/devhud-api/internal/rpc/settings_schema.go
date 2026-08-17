@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"unicode"
 	"unicode/utf16"
 
 	googleuuid "github.com/google/uuid"
@@ -30,7 +31,6 @@ var (
 	}
 	safeSettingsIdentifier = regexp.MustCompile(`^[a-zA-Z0-9._:-]{1,128}$`)
 	settingsProfileRef     = regexp.MustCompile(`^[a-zA-Z0-9._-]{1,128}$`)
-	pullRequestQuery       = regexp.MustCompile(`(^|[[:space:]])is:pr([[:space:]]|$)`)
 )
 
 func validateDevHudSettings(value []byte, envelopeSchemaVersion uint32) error {
@@ -207,8 +207,11 @@ func validateSettingsDeck(value any, path string, legacy bool, previous bool) (s
 	if err != nil {
 		return "", err
 	}
-	if !legacy && !previous && !pullRequestQuery.MatchString(query) {
+	if !legacy && !previous && !hasPositivePullRequestQualifier(query) {
 		return "", fmt.Errorf("%s.query must contain a standalone positive is:pr qualifier", path)
+	}
+	if !legacy && !previous && !hasRepositoryQualifier(query) {
+		return "", fmt.Errorf("%s.query must contain a repository qualifier when a credential profile is selected", path)
 	}
 	if previous && deck["repository"] != nil {
 		if _, err = settingsText(deck["repository"], path+".repository", false); err != nil {
@@ -271,12 +274,78 @@ func validateSettingsDeck(value any, path string, legacy bool, previous bool) (s
 	if err != nil {
 		return "", err
 	}
+	seenNotifications := make(map[string]struct{}, len(notifications))
 	for index, notification := range notifications {
 		if err := settingsEnum(notification, fmt.Sprintf("%s.notifications[%d]", path, index), "review", "checks", "merged", "closed"); err != nil {
 			return "", err
 		}
+		if !legacy && !previous {
+			value := notification.(string)
+			if _, exists := seenNotifications[value]; exists {
+				return "", fmt.Errorf("%s.notifications must contain unique values", path)
+			}
+			seenNotifications[value] = struct{}{}
+		}
 	}
 	return profileRef, nil
+}
+
+func hasPositivePullRequestQualifier(query string) bool {
+	for _, token := range deckQueryTokens(query) {
+		if strings.EqualFold(token, "is:pr") {
+			return true
+		}
+	}
+	return false
+}
+
+func hasRepositoryQualifier(query string) bool {
+	for _, token := range deckQueryTokens(query) {
+		if len(token) > len("repo:") && strings.EqualFold(token[:len("repo:")], "repo:") {
+			return true
+		}
+	}
+	return false
+}
+
+// deckQueryTokens keeps quoted search phrases from being interpreted as qualifiers.
+func deckQueryTokens(query string) []string {
+	tokens := make([]string, 0)
+	var token strings.Builder
+	quoted := false
+	escaped := false
+	flush := func() {
+		if token.Len() > 0 {
+			tokens = append(tokens, token.String())
+			token.Reset()
+		}
+	}
+	for _, character := range query {
+		if escaped {
+			token.WriteRune(character)
+			escaped = false
+			continue
+		}
+		if quoted {
+			token.WriteRune(character)
+			if character == '\\' {
+				escaped = true
+			} else if character == '"' {
+				quoted = false
+			}
+			continue
+		}
+		if character == '"' {
+			token.WriteRune(character)
+			quoted = true
+		} else if unicode.IsSpace(character) {
+			flush()
+		} else {
+			token.WriteRune(character)
+		}
+	}
+	flush()
+	return tokens
 }
 
 func validateSettingsGitHub(github map[string]any, legacy bool) ([]string, error) {
