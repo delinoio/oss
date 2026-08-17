@@ -8,6 +8,7 @@ const PROFILE_ID_LIMIT: usize = 128;
 const SECRET_LIMIT: usize = 64 * 1024;
 const DIAGNOSTICS_EXPORT_LIMIT: usize = 1024 * 1024;
 const TAURI_REVISION: &str = "4af26a3f7f8b692d62cca549bbacd93f5ce90b41";
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 const CEF_REVISION: &str = "150.0.10+g8042e43+chromium-150.0.7871.101";
 
 const DEFAULT_API_ORIGIN: &str = "https://devhud.api.delino.io";
@@ -327,6 +328,14 @@ fn runtime_operating_system() -> &'static str {
     }
 }
 
+fn runtime_cef_revision() -> &'static str {
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    return "";
+
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    CEF_REVISION
+}
+
 fn runtime_snapshot() -> Value {
     let mobile = cfg!(any(target_os = "android", target_os = "ios"));
     json!({
@@ -340,7 +349,7 @@ fn runtime_snapshot() -> Value {
             "appVersion": env!("CARGO_PKG_VERSION"),
             "buildId": option_env!("DEVHUD_BUILD_ID").unwrap_or(env!("CARGO_PKG_VERSION")),
             "tauriRevision": TAURI_REVISION,
-            "cefRevision": if mobile { "" } else { CEF_REVISION },
+            "cefRevision": runtime_cef_revision(),
             "lifecycle": "active",
             "capabilities": {
                 "secureSettings": true,
