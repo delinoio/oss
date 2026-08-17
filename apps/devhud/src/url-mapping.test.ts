@@ -22,6 +22,14 @@ describe("URL repository matcher", () => {
     expect(mappingMatches(mapping({ pattern: "https://example.com/a//b" }), "https://example.com/a/b")).toBe(false);
   });
 
+  it("normalizes wildcard-scheme ports against each concrete scheme", () => {
+    expect(mappingMatches(mapping({ pattern: "*://example.com:443/**" }), "https://example.com/a")).toBe(true);
+    expect(mappingMatches(mapping({ pattern: "*://example.com:443/**" }), "http://example.com/a")).toBe(false);
+    expect(mappingMatches(mapping({ pattern: "*://example.com:80/**" }), "http://example.com/a")).toBe(true);
+    expect(findMappingOverlaps([mapping({ pattern: "*://example.com:443/**" }), mapping({ id: "018f47a2-7b3c-7def-8abc-1234567890ac", pattern: "https://example.com/**" })])).toHaveLength(1);
+    expect(findMappingOverlaps([mapping({ pattern: "*://example.com:80/**" }), mapping({ id: "018f47a2-7b3c-7def-8abc-1234567890ac", pattern: "https://example.com/**" })])).toHaveLength(0);
+  });
+
   it("matches bracketed IPv6 literals as concrete hosts", () => {
     expect(parseUrlPattern("http://[::1]:3000/app").host).toEqual(["[::1]"]);
     expect(mappingMatches(mapping({ pattern: "http://[::1]:3000/app" }), "http://[::1]:3000/app")).toBe(true);

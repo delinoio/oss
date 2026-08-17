@@ -97,7 +97,7 @@ export function mappingMatches(mapping: Pick<UrlRepositoryMapping, "pattern">, v
   const pattern = parseUrlPattern(mapping.pattern);
   const url = parseLiveUrl(value);
   return componentMatches(pattern.scheme, url.scheme, false)
-    && componentMatches(pattern.port, url.port, false)
+    && componentMatches(normalizeDefaultPort(url.scheme, pattern.port), url.port, false)
     && pattern.host.length === url.host.length
     && pattern.host.every((part, index) => componentMatches(part, url.host[index] ?? "", true))
     && pathMatches(pattern.path, url.path);
@@ -165,8 +165,9 @@ function pathMatches(pattern: readonly string[], value: readonly string[], patte
 }
 
 function patternsOverlap(left: ParsedUrlPattern, right: ParsedUrlPattern): boolean {
-  return componentsOverlap(left.scheme, right.scheme, false)
-    && componentsOverlap(left.port, right.port, false)
+  return ["http", "https"].some((scheme) => componentsOverlap(left.scheme, scheme, false)
+    && componentsOverlap(right.scheme, scheme, false)
+    && componentsOverlap(normalizeDefaultPort(scheme, left.port), normalizeDefaultPort(scheme, right.port), false))
     && left.host.length === right.host.length
     && left.host.every((part, index) => componentsOverlap(part, right.host[index] ?? "", true))
     && pathsOverlap(left.path, right.path);
