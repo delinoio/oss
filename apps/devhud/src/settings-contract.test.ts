@@ -34,6 +34,21 @@ describe("DevHud settings boundary", () => {
     expect(parseDevHudSettings({ ...defaultDevHudSettings, shortcuts: { desktop: {}, ios: {}, android: {} } }).shortcuts.desktop).toEqual(defaultDesktopShortcutBindings);
   });
 
+  it("upgrades every previously accepted v1 shortcut map without retaining raw chords", () => {
+    const parsed = parseDevHudSettings({
+      ...defaultDevHudSettings,
+      shortcuts: {
+        desktop: { "legacy.palette": "ControlRight+KeyK" },
+        ios: { "legacy.ios": "MetaRight+KeyK" },
+        android: { "legacy.android": "ControlRight+KeyK" },
+      },
+    });
+    expect(parsed.shortcuts.desktop).toEqual(defaultDesktopShortcutBindings);
+    expect(parsed.shortcuts.ios).toEqual({});
+    expect(parsed.shortcuts.android).toEqual({});
+    expect(canonicalDevHudSettings(parsed)).not.toContain("ControlRight");
+  });
+
   it("rejects malformed, conflicting, and reserved shortcut chords before settings persistence", () => {
     const duplicate = structuredShortcuts();
     duplicate[ShortcutActionId.CaptureDisplay] = { ...duplicate[ShortcutActionId.CaptureDisplay], key: ShortcutKey.Digit2 };

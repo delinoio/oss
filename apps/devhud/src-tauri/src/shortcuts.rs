@@ -5,18 +5,29 @@
 //! the six already configured shortcut bindings. Backends must pass all input
 //! through unchanged.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
-#[serde(rename_all = "kebab-case")]
 pub enum ShortcutAction {
+    #[serde(rename = "shell.command-palette")]
     ShellCommandPalette,
+    #[serde(rename = "realqa.capture.display")]
     RealqaCaptureDisplay,
+    #[serde(rename = "realqa.capture.active-window")]
     RealqaCaptureActiveWindow,
+    #[serde(rename = "realqa.capture.all-displays")]
     RealqaCaptureAllDisplays,
+    #[serde(rename = "realqa.capture.selection")]
     RealqaCaptureSelection,
+    #[serde(rename = "realqa.capture.toolbar")]
     RealqaCaptureToolbar,
 }
 
@@ -161,6 +172,41 @@ pub struct NativeKeyEvent {
     pub pressed: bool,
 }
 
+#[cfg(desktop)]
+pub fn normalize_global_event(event: &rdev::EventType) -> Option<NativeKeyEvent> {
+    use rdev::{EventType, Key};
+    let (key, pressed) = match event {
+        EventType::KeyPress(key) => (*key, true),
+        EventType::KeyRelease(key) => (*key, false),
+        _ => return None,
+    };
+    let native = match key {
+        Key::ShiftLeft | Key::ShiftRight => NativeKey::Shift,
+        Key::Alt | Key::AltGr => NativeKey::Alt,
+        Key::KeyK => NativeKey::Key(ShortcutKey::KeyK),
+        Key::Num1 => NativeKey::Key(ShortcutKey::Digit1),
+        Key::Num2 => NativeKey::Key(ShortcutKey::Digit2),
+        Key::Num3 => NativeKey::Key(ShortcutKey::Digit3),
+        Key::Num4 => NativeKey::Key(ShortcutKey::Digit4),
+        Key::Num5 => NativeKey::Key(ShortcutKey::Digit5),
+        Key::Space => NativeKey::Key(ShortcutKey::Space),
+        Key::Tab => NativeKey::Key(ShortcutKey::Tab),
+        Key::KeyQ => NativeKey::Key(ShortcutKey::KeyQ),
+        Key::Delete => NativeKey::Key(ShortcutKey::Delete),
+        Key::Backspace => NativeKey::Key(ShortcutKey::Backspace),
+        #[cfg(target_os = "macos")]
+        Key::MetaRight => NativeKey::RightPrimary,
+        #[cfg(not(target_os = "macos"))]
+        Key::ControlRight => NativeKey::RightPrimary,
+        Key::ControlLeft | Key::MetaLeft => NativeKey::LeftPrimary,
+        _ => return None,
+    };
+    Some(NativeKeyEvent {
+        key: native,
+        pressed,
+    })
+}
+
 /// Converts only the physical keys that this contract understands. The values
 /// are platform-native physical codes: macOS virtual key codes, Windows virtual
 /// key codes, and X11/XInput keycodes. Unknown codes are ignored rather than
@@ -174,7 +220,16 @@ pub fn normalize_native_key(platform: ShortcutPlatform, code: u32) -> Option<Nat
             56 | 60 => Some(NativeKey::Shift),
             58 | 61 => Some(NativeKey::Alt),
             40 => Some(NativeKey::Key(ShortcutKey::KeyK)),
-            18..=23 => digit_key(code - 18),
+            18 => Some(NativeKey::Key(ShortcutKey::Digit1)),
+            19 => Some(NativeKey::Key(ShortcutKey::Digit2)),
+            20 => Some(NativeKey::Key(ShortcutKey::Digit3)),
+            21 => Some(NativeKey::Key(ShortcutKey::Digit4)),
+            23 => Some(NativeKey::Key(ShortcutKey::Digit5)),
+            49 => Some(NativeKey::Key(ShortcutKey::Space)),
+            48 => Some(NativeKey::Key(ShortcutKey::Tab)),
+            12 => Some(NativeKey::Key(ShortcutKey::KeyQ)),
+            117 => Some(NativeKey::Key(ShortcutKey::Delete)),
+            51 => Some(NativeKey::Key(ShortcutKey::Backspace)),
             _ => None,
         },
         // VK_RCONTROL / VK_LCONTROL and printable virtual-key codes.
@@ -185,6 +240,11 @@ pub fn normalize_native_key(platform: ShortcutPlatform, code: u32) -> Option<Nat
             0x12 => Some(NativeKey::Alt),
             0x4b => Some(NativeKey::Key(ShortcutKey::KeyK)),
             0x31..=0x35 => digit_key(code - 0x30),
+            0x20 => Some(NativeKey::Key(ShortcutKey::Space)),
+            0x09 => Some(NativeKey::Key(ShortcutKey::Tab)),
+            0x51 => Some(NativeKey::Key(ShortcutKey::KeyQ)),
+            0x2e => Some(NativeKey::Key(ShortcutKey::Delete)),
+            0x08 => Some(NativeKey::Key(ShortcutKey::Backspace)),
             _ => None,
         },
         // Common X11 keycodes from XKB's default evdev mapping. XInput2
@@ -196,6 +256,11 @@ pub fn normalize_native_key(platform: ShortcutPlatform, code: u32) -> Option<Nat
             64 | 108 => Some(NativeKey::Alt),
             45 => Some(NativeKey::Key(ShortcutKey::KeyK)),
             10..=14 => digit_key(code - 9),
+            65 => Some(NativeKey::Key(ShortcutKey::Space)),
+            23 => Some(NativeKey::Key(ShortcutKey::Tab)),
+            24 => Some(NativeKey::Key(ShortcutKey::KeyQ)),
+            119 => Some(NativeKey::Key(ShortcutKey::Delete)),
+            22 => Some(NativeKey::Key(ShortcutKey::Backspace)),
             _ => None,
         },
         ShortcutPlatform::Unsupported => None,
@@ -376,9 +441,10 @@ pub struct PlatformShortcutBackend {
     platform: ShortcutPlatform,
     installed: ShortcutBindings,
     fail_next: bool,
+    listener_failed: Arc<AtomicBool>,
 }
 impl PlatformShortcutBackend {
-    pub fn current() -> Self {
+    pub fn current(listener_failed: Arc<AtomicBool>) -> Self {
         let (platform, permission) = if cfg!(target_os = "macos") {
             (ShortcutPlatform::Macos, ShortcutPermission::NotDetermined)
         } else if cfg!(target_os = "windows") {
@@ -403,11 +469,15 @@ impl PlatformShortcutBackend {
             platform,
             installed: default_bindings(),
             fail_next: false,
+            listener_failed,
         }
     }
 }
 impl NativeShortcutBackend for PlatformShortcutBackend {
     fn install(&mut self, bindings: &ShortcutBindings) -> Result<(), ShortcutFailure> {
+        if self.listener_failed.load(Ordering::SeqCst) {
+            return Err(ShortcutFailure::RegistrationFailed);
+        }
         if self.fail_next {
             self.fail_next = false;
             return Err(ShortcutFailure::RegistrationFailed);
@@ -576,5 +646,65 @@ mod tests {
             );
             assert_eq!(normalize_native_key(platform, 0), None);
         }
+    }
+
+    #[test]
+    fn serializes_contracted_dotted_action_ids() {
+        let bindings = default_bindings();
+        let serialized = serde_json::to_value(bindings).expect("serialize bindings");
+        assert!(serialized.get("shell.command-palette").is_some());
+        assert!(serialized.get("realqa.capture.active-window").is_some());
+        assert!(serialized.get("shell-command-palette").is_none());
+    }
+
+    #[test]
+    fn normalizes_every_selectable_key_on_every_platform() {
+        let cases = [
+            (
+                ShortcutPlatform::Macos,
+                [40, 18, 19, 20, 21, 23, 49, 48, 12, 117, 51],
+            ),
+            (
+                ShortcutPlatform::Windows,
+                [
+                    0x4b, 0x31, 0x32, 0x33, 0x34, 0x35, 0x20, 0x09, 0x51, 0x2e, 0x08,
+                ],
+            ),
+            (
+                ShortcutPlatform::X11,
+                [45, 10, 11, 12, 13, 14, 65, 23, 24, 119, 22],
+            ),
+        ];
+        for (platform, codes) in cases {
+            for code in codes {
+                assert!(matches!(
+                    normalize_native_key(platform, code),
+                    Some(NativeKey::Key(_))
+                ));
+            }
+        }
+    }
+
+    #[cfg(desktop)]
+    #[test]
+    fn global_listener_accepts_only_the_contracted_physical_keys() {
+        assert_eq!(
+            normalize_global_event(&rdev::EventType::KeyPress(rdev::Key::KeyK)),
+            Some(NativeKeyEvent {
+                key: NativeKey::Key(ShortcutKey::KeyK),
+                pressed: true
+            })
+        );
+        assert_eq!(
+            normalize_global_event(&rdev::EventType::KeyRelease(rdev::Key::KeyK)),
+            Some(NativeKeyEvent {
+                key: NativeKey::Key(ShortcutKey::KeyK),
+                pressed: false
+            })
+        );
+        assert_eq!(
+            normalize_global_event(&rdev::EventType::KeyPress(rdev::Key::KeyW)),
+            None
+        );
     }
 }

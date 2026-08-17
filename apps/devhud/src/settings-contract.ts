@@ -131,8 +131,8 @@ export function parseDevHudSettings(value: unknown): DevHudSettingsV1 {
     }),
     shortcuts: {
       desktop: desktopShortcutMap(shortcuts.desktop),
-      ios: emptyShortcutMap(shortcuts.ios, "$.shortcuts.ios"),
-      android: emptyShortcutMap(shortcuts.android, "$.shortcuts.android"),
+      ios: legacyShortcutMap(shortcuts.ios, "$.shortcuts.ios"),
+      android: legacyShortcutMap(shortcuts.android, "$.shortcuts.android"),
     },
     agents: array(root.agents, "$.agents").map((entry, index) => parseAgent(entry, `$.agents[${index}]`)),
     uploads: {
@@ -257,18 +257,33 @@ function enumeration<const Values extends readonly string[]>(value: unknown, pat
   return value as Values[number];
 }
 
-function emptyShortcutMap(value: unknown, path: string): Readonly<Record<string, never>> {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) throw new SettingsContractError(path, "must be an object");
-  if (Object.keys(value).length !== 0) throw new SettingsContractError(path, "mobile shortcut bindings are unsupported");
+function legacyShortcutMap(value: unknown, path: string): Readonly<Record<string, never>> {
+  validateLegacyShortcutMap(value, path);
   return {};
+}
+
+function validateLegacyShortcutMap(value: unknown, path: string): void {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) throw new SettingsContractError(path, "must be an object");
+  for (const [key, item] of Object.entries(value)) {
+    if (!safeDynamicKeyPattern.test(key) || sensitiveKeyPattern.test(key) || prototypeSensitiveKeys.has(key)) throw new SettingsContractError(`${path}.${key}`, "is not an allowed shortcut action");
+    text(item, `${path}.${key}`);
+  }
 }
 
 function desktopShortcutMap(value: unknown): DesktopShortcutBindings {
   try {
     return parseDesktopShortcutBindings(value);
   } catch (error) {
-    const detail = error instanceof ShortcutContractError ? error.code : "malformed";
-    throw new SettingsContractError("$.shortcuts.desktop", detail);
+    try {
+      // Version-1 snapshots accepted arbitrary string maps. Their raw display
+      // chords cannot enter the structured contract, so preserve the snapshot
+      // while upgrading its shortcut portion to safe documented defaults.
+      validateLegacyShortcutMap(value, "$.shortcuts.desktop");
+      return defaultDesktopShortcutBindings;
+    } catch {
+      const detail = error instanceof ShortcutContractError ? error.code : "malformed";
+      throw new SettingsContractError("$.shortcuts.desktop", detail);
+    }
   }
 }
 

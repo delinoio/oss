@@ -61,13 +61,48 @@ fn initialize_mobile<R: Runtime, C: DeserializeOwned>(
     Ok(NativePlatformBridge(handle))
 }
 
+#[cfg(desktop)]
+fn install_global_shortcut_listener<R: Runtime>(app: &AppHandle<R>) {
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let callback_app = app.clone();
+        let result = rdev::listen(move |event| {
+            let Some(event) = crate::shortcuts::normalize_global_event(&event.event_type) else {
+                return;
+            };
+            let Some(state) = callback_app.try_state::<crate::bridge::NativeBridgeState>() else {
+                return;
+            };
+            let Some(action) = state.process_shortcut_event(event) else {
+                return;
+            };
+            let Ok(action) = serde_json::to_value(action) else {
+                return;
+            };
+            let _ = callback_app.emit(
+                "devhud:native-event:v1",
+                serde_json::json!({ "version": 1, "kind": "shortcut-triggered", "action": action }),
+            );
+        });
+        if let Err(error) = result {
+            if let Some(state) = app.try_state::<crate::bridge::NativeBridgeState>() {
+                state.mark_shortcut_listener_failed();
+            }
+            tracing::warn!(event = "shortcut_listener_failed", ?error);
+        }
+    });
+}
+
 pub fn init<R: Runtime>() -> TauriPlugin<R> {
     Builder::new("devhud-native")
         .setup(|app, api| {
             #[cfg(mobile)]
             app.manage(initialize_mobile(app, api)?);
             #[cfg(desktop)]
-            let _ = (app, api);
+            {
+                let _ = api;
+                install_global_shortcut_listener(app);
+            }
             Ok(())
         })
         .on_event(|app, event| {

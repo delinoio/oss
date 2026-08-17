@@ -1,9 +1,13 @@
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicBool, Ordering},
+};
 
 use serde_json::{Value, json};
 
 use crate::shortcuts::{
-    PlatformShortcutBackend, ShortcutBindings, ShortcutFailure, ShortcutService,
+    NativeKeyEvent, PlatformShortcutBackend, ShortcutAction, ShortcutBindings, ShortcutFailure,
+    ShortcutService,
 };
 
 const PROFILE_ID_LIMIT: usize = 128;
@@ -16,6 +20,7 @@ pub struct NativeBridgeState {
     pending_auth_callback: Arc<Mutex<Option<String>>>,
     session_origins: Arc<Mutex<SessionOrigins>>,
     shortcuts: Arc<Mutex<ShortcutService<PlatformShortcutBackend>>>,
+    shortcut_listener_failed: Arc<AtomicBool>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -26,6 +31,7 @@ struct SessionOrigins {
 
 impl Default for NativeBridgeState {
     fn default() -> Self {
+        let shortcut_listener_failed = Arc::new(AtomicBool::new(false));
         Self {
             pending_auth_callback: Arc::new(Mutex::new(None)),
             session_origins: Arc::new(Mutex::new(SessionOrigins {
@@ -33,8 +39,9 @@ impl Default for NativeBridgeState {
                 logto_issuer: None,
             })),
             shortcuts: Arc::new(Mutex::new(ShortcutService::new(
-                PlatformShortcutBackend::current(),
+                PlatformShortcutBackend::current(shortcut_listener_failed.clone()),
             ))),
+            shortcut_listener_failed,
         }
     }
 }
@@ -44,6 +51,12 @@ fn shortcut_status(state: &NativeBridgeState, error: Option<ShortcutFailure>) ->
         .shortcuts
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let error = error.or_else(|| {
+        state
+            .shortcut_listener_failed
+            .load(Ordering::SeqCst)
+            .then_some(ShortcutFailure::RegistrationFailed)
+    });
     json!({ "kind": "shortcut-status", "platform": shortcuts.platform(), "permission": shortcuts.permission(), "bindings": shortcuts.active(), "error": error })
 }
 
@@ -66,6 +79,19 @@ fn apply_shortcuts(request: &Value, state: &NativeBridgeState) -> Result<Value, 
 }
 
 impl NativeBridgeState {
+    #[cfg(desktop)]
+    pub fn process_shortcut_event(&self, event: NativeKeyEvent) -> Option<ShortcutAction> {
+        self.shortcuts
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .process(event)
+    }
+
+    #[cfg(desktop)]
+    pub fn mark_shortcut_listener_failed(&self) {
+        self.shortcut_listener_failed.store(true, Ordering::SeqCst);
+    }
+
     #[allow(dead_code)]
     pub fn offer_auth_callback(&self, candidate: &str) -> bool {
         if !is_auth_callback(candidate) {

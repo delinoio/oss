@@ -90,7 +90,8 @@ test("command palette shortcut is unavailable during onboarding", () => {
   assert.match(app, /if \(context\.mobile \|\| context\.onboarding\) return;/u);
   assert.match(app, /event\.action === ShortcutActionId\.CommandPalette/u);
   assert.match(app, /actionRegistry\.find\(\(candidate\) => candidate\.id === event\.action\)/u);
-  assert.match(app, /copy\.rightCommandK : copy\.rightControlK/u);
+  assert.match(app, /ShortcutPaletteTrigger/u);
+  assert.match(identityUi, /binding\.enabled \? \[\.\.\.modifiers, copy\[shortcutKeyLabels\[binding\.key\]\]\]\.join/u);
 });
 
 test("document preferences are synchronized before the first localized render", () => {

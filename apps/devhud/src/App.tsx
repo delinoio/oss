@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { messages } from "./localization";
 import type { IdentitySession } from "./identity-client";
-import { AccountIdentity, FirstRunIdentity, SynchronizedAppearanceBoundary, SynchronizedSettingsBoundary } from "./identity-ui";
+import { AccountIdentity, FirstRunIdentity, ShortcutPaletteTrigger, SynchronizedAppearanceBoundary, SynchronizedSettingsBoundary } from "./identity-ui";
 import { LifecycleState, NativeBridgeError, NotificationPermission, RuntimePlatform, nativeBridge, type NativeBridgeEventV1, type NativeBridgeV1, type RuntimeSnapshot } from "./native-bridge";
 import { clearIdentityForApiChange, DevHudServiceBoundary } from "./service-boundary";
 import { ContentStateKind, ContentStateView, EmptyState, OfflineState, type ContentState } from "./surface-state";
@@ -101,7 +101,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
         const context = shortcutContext.current;
         if (context.mobile || context.onboarding) return;
         if (event.action === ShortcutActionId.CommandPalette) {
-          setPalette((open) => { if (open) requestAnimationFrame(() => paletteTrigger.current?.focus()); return !open; });
+          setPalette(true);
           return;
         }
         const action = actionRegistry.find((candidate) => candidate.id === event.action);
@@ -268,7 +268,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
     <aside aria-label={copy.mobileNavigation}>
       <h1>{copy.appName}</h1>
       <nav>{surfaces.map((item) => <button className={surface === item ? "active" : ""} aria-current={surface === item ? "page" : undefined} key={item} onClick={() => setSurface(item)}>{copy[labels[item]]}</button>)}</nav>
-      <button className="palette-trigger" ref={paletteTrigger} onClick={() => setPalette(true)} aria-label={copy.openPalette}>{mobile ? copy.openPalette : isMac ? copy.rightCommandK : copy.rightControlK}</button>
+      {mobile ? <button className="palette-trigger" ref={paletteTrigger} onClick={() => setPalette(true)} aria-label={copy.openPalette}>{copy.openPalette}</button> : <ShortcutPaletteTrigger copy={copy} isMac={isMac} triggerRef={paletteTrigger} onOpen={() => setPalette(true)} />}
     </aside>
     <section className="content" aria-live="polite">
       {surface === SurfaceId.Home && <><p className="eyebrow">{copy.available}</p><h2>{copy.welcome}</h2><p>{copy.homeSummary}</p></>}
