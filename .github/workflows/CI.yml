@@ -882,7 +882,7 @@ jobs:
         env:
           XDG_SESSION_TYPE: x11
           WAYLAND_DISPLAY: ""
-        run: xvfb-run -a pnpm --filter devhud smoke:platform -- --artifact "${{ github.workspace }}/target/devhud-smoke-root/usr/bin/devhud"
+        run: dbus-run-session -- xvfb-run -a pnpm --filter devhud smoke:platform -- --artifact "${{ github.workspace }}/target/devhud-smoke-root/usr/bin/devhud"
 
   devhud-mobile-contracts:
     name: DevHUD mobile contracts
