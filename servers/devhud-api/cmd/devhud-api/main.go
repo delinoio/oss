@@ -12,12 +12,15 @@ import (
 	"time"
 
 	"github.com/delinoio/oss/servers/devhud-api/internal/auth"
+	"github.com/delinoio/oss/servers/devhud-api/internal/cloudflare"
 	"github.com/delinoio/oss/servers/devhud-api/internal/config"
 	"github.com/delinoio/oss/servers/devhud-api/internal/domain"
 	"github.com/delinoio/oss/servers/devhud-api/internal/idgen"
 	"github.com/delinoio/oss/servers/devhud-api/internal/postgres"
+	"github.com/delinoio/oss/servers/devhud-api/internal/r2"
 	"github.com/delinoio/oss/servers/devhud-api/internal/server"
 	"github.com/delinoio/oss/servers/devhud-api/internal/telemetry"
+	uploadmanager "github.com/delinoio/oss/servers/devhud-api/internal/upload"
 )
 
 var version = "0.1.0-dev"
@@ -79,10 +82,35 @@ func run(ctx context.Context, arguments []string, logger *slog.Logger) error {
 			logger.Warn("telemetry shutdown failed", "error", err)
 		}
 	}()
+	var uploads *uploadmanager.Service
+	if configuration.R2Endpoint != "" {
+		objectStore, err := r2.New(startupContext, r2.Config{
+			Endpoint: configuration.R2Endpoint, AccessKeyID: configuration.R2AccessKeyID,
+			SecretAccessKey: configuration.R2SecretAccessKey, StagingBucket: configuration.R2StagingBucket,
+			PublicBucket: configuration.R2PublicBucket,
+		})
+		if err != nil {
+			return err
+		}
+		cdn := cloudflare.New(&http.Client{Timeout: 10 * time.Second}, configuration.CloudflareAPIToken, configuration.CloudflareZoneID, configuration.CloudflareRateRuleID, configuration.PublicAssetBaseURL)
+		if configuration.Environment == config.EnvironmentProduction {
+			if err := objectStore.ValidateCORS(startupContext); err != nil {
+				return err
+			}
+			if err := cdn.ValidatePublicRateLimit(startupContext); err != nil {
+				return err
+			}
+		}
+		cursorCodec, err := uploadmanager.NewCursorCodec(configuration.IdentityHMACKeys[0])
+		if err != nil {
+			return err
+		}
+		uploads = uploadmanager.NewService(repository, objectStore, cdn, cursorCodec, clock, logger, configuration.PublicAssetBaseURL, r2.RemovalPNG())
+	}
 
 	httpServer, err := server.New(server.Dependencies{
 		Config: configuration, Repository: repository, Verifier: verifier, Clock: clock,
-		IDs: ids, Logger: logger, MetricsHandler: providers.MetricsHandler,
+		IDs: ids, Logger: logger, MetricsHandler: providers.MetricsHandler, Uploads: uploads,
 	})
 	if err != nil {
 		return err

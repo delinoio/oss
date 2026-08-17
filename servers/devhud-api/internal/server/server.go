@@ -13,6 +13,7 @@ import (
 	"github.com/delinoio/oss/servers/devhud-api/internal/config"
 	"github.com/delinoio/oss/servers/devhud-api/internal/domain"
 	"github.com/delinoio/oss/servers/devhud-api/internal/rpc"
+	uploadmanager "github.com/delinoio/oss/servers/devhud-api/internal/upload"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
@@ -26,6 +27,7 @@ type Dependencies struct {
 	IDs            domain.IDGenerator
 	Logger         *slog.Logger
 	MetricsHandler http.Handler
+	Uploads        *uploadmanager.Service
 }
 
 func New(dependencies Dependencies) (*http.Server, error) {
@@ -43,12 +45,17 @@ func New(dependencies Dependencies) (*http.Server, error) {
 		AdminClientID:      dependencies.Config.AdminClientID,
 		AdminRedirectURI:   dependencies.Config.AdminRedirectURI,
 		PublicAssetBaseURL: dependencies.Config.PublicAssetBaseURL,
+		OfficialUploads:    dependencies.Uploads != nil,
 	}), handlerOptions...)
 	settingsPath, settingsHandler := devhudv1connect.NewSettingsServiceHandler(rpc.NewSettingsService(dependencies.Repository, dependencies.Clock, dependencies.Logger), handlerOptions...)
 	accountPath, accountHandler := devhudv1connect.NewAccountServiceHandler(rpc.NewAccountService(dependencies.Repository, dependencies.Clock, dependencies.Logger), handlerOptions...)
 	mux.Handle(bootstrapPath, bootstrapHandler)
 	mux.Handle(settingsPath, settingsHandler)
 	mux.Handle(accountPath, accountHandler)
+	if dependencies.Uploads != nil {
+		uploadPath, uploadHandler := devhudv1connect.NewUploadServiceHandler(rpc.NewUploadService(dependencies.Uploads, dependencies.Logger), handlerOptions...)
+		mux.Handle(uploadPath, uploadHandler)
+	}
 
 	mux.HandleFunc("GET /healthz", func(response http.ResponseWriter, _ *http.Request) {
 		writeJSON(response, http.StatusOK, map[string]string{"status": "alive"})
@@ -70,6 +77,12 @@ func New(dependencies Dependencies) (*http.Server, error) {
 		devhudv1connect.AccountServiceGetAccountProcedure:       {},
 		devhudv1connect.AccountServiceDeleteAccountProcedure:    {},
 		devhudv1connect.AccountServiceRestoreAccountProcedure:   {},
+	}
+	if dependencies.Uploads != nil {
+		connectPaths[devhudv1connect.UploadServiceCreateUploadProcedure] = struct{}{}
+		connectPaths[devhudv1connect.UploadServiceFinalizeUploadProcedure] = struct{}{}
+		connectPaths[devhudv1connect.UploadServiceListUploadsProcedure] = struct{}{}
+		connectPaths[devhudv1connect.UploadServiceDeleteUploadProcedure] = struct{}{}
 	}
 	requestMetrics, err := newRequestMetrics()
 	if err != nil {
