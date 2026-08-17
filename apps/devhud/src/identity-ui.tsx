@@ -152,12 +152,14 @@ function UrlMappingSettings({ copy, resetEpoch }: { readonly copy: Copy; readonl
   const [invalid, setInvalid] = useState(false);
   const [saved, setSaved] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [priorityDrafts, setPriorityDrafts] = useState<Record<string, string>>({});
   useEffect(() => { if (!dirty) setDraft([...identity.settings.urlMappings]); }, [dirty, identity.settings.urlMappings]);
   useEffect(() => {
     setDraft([...identity.settings.urlMappings]);
     setDirty(false);
     setSaved(false);
     setInvalid(false);
+    setPriorityDrafts({});
   }, [resetEpoch]);
   const overlaps = safeOverlaps(draft);
   const change = (id: string, field: keyof UrlRepositoryMapping, value: string | number | null) => {
@@ -168,6 +170,10 @@ function UrlMappingSettings({ copy, resetEpoch }: { readonly copy: Copy; readonl
     setSaved(false); setInvalid(false); setDirty(true);
     setDraft((current) => current.map((mapping) => mapping.id === id ? { ...mapping, repository: { ...mapping.repository, [field]: value } } : mapping));
   };
+  const changePriority = (id: string, value: string) => {
+    setSaved(false); setInvalid(false); setDirty(true);
+    setPriorityDrafts((current) => ({ ...current, [id]: value }));
+  };
   const add = () => {
     const timestamp = new Date().toISOString();
     setSaved(false); setInvalid(false); setDirty(true);
@@ -175,12 +181,14 @@ function UrlMappingSettings({ copy, resetEpoch }: { readonly copy: Copy; readonl
   };
   const save = () => {
     try {
+      if (Object.values(priorityDrafts).some((value) => value === "" || !Number.isInteger(Number(value)))) throw new TypeError("priority must be an integer");
       const previous = new Map(identity.settings.urlMappings.map((mapping) => [mapping.id, mapping]));
       const now = new Date().toISOString();
       const mappings = draft.map((mapping) => {
-        const existing = previous.get(mapping.id);
-        const unchanged = existing !== undefined && JSON.stringify({ ...existing, updatedAt: "" }) === JSON.stringify({ ...mapping, updatedAt: "" });
-        return unchanged ? mapping : { ...mapping, updatedAt: now };
+        const withPriority = priorityDrafts[mapping.id] === undefined ? mapping : { ...mapping, priority: Number(priorityDrafts[mapping.id]) };
+        const existing = previous.get(withPriority.id);
+        const unchanged = existing !== undefined && JSON.stringify({ ...existing, updatedAt: "" }) === JSON.stringify({ ...withPriority, updatedAt: "" });
+        return unchanged ? withPriority : { ...withPriority, updatedAt: now };
       });
       const next = parseDevHudSettings({ ...identity.settings, urlMappings: mappings });
       setInvalid(false); setSaved(false);
@@ -188,6 +196,7 @@ function UrlMappingSettings({ copy, resetEpoch }: { readonly copy: Copy; readonl
         if (!applied) return;
         setDraft(mappings);
         setDirty(false);
+        setPriorityDrafts({});
         setSaved(true);
       }).catch(() => setInvalid(true));
     } catch { setInvalid(true); }
@@ -200,9 +209,9 @@ function UrlMappingSettings({ copy, resetEpoch }: { readonly copy: Copy; readonl
       <label>{copy.repositoryOwner}<input value={mapping.repository.owner} onChange={(event) => changeRepository(mapping.id, "owner", event.target.value)} /></label>
       <label>{copy.repositoryName}<input value={mapping.repository.name} onChange={(event) => changeRepository(mapping.id, "name", event.target.value)} /></label>
       <label>{copy.credentialProfile}<input value={mapping.credentialProfileRef} onChange={(event) => change(mapping.id, "credentialProfileRef", event.target.value)} /></label>
-      <label>{copy.mappingPriority}<input type="number" value={mapping.priority} onChange={(event) => change(mapping.id, "priority", Number(event.target.value))} /></label>
+      <label>{copy.mappingPriority}<input type="number" value={priorityDrafts[mapping.id] ?? String(mapping.priority)} onChange={(event) => changePriority(mapping.id, event.target.value)} /></label>
       <label>{copy.chromeOrigin}<input value={mapping.chromeOrigin ?? ""} onChange={(event) => change(mapping.id, "chromeOrigin", event.target.value || null)} /></label>
-      <button type="button" onClick={() => { setSaved(false); setDirty(true); setDraft((current) => current.filter((item) => item.id !== mapping.id)); }}>{copy.removeUrlMapping}</button>
+      <button type="button" onClick={() => { setSaved(false); setDirty(true); setPriorityDrafts((current) => { const { [mapping.id]: _removed, ...remaining } = current; return remaining; }); setDraft((current) => current.filter((item) => item.id !== mapping.id)); }}>{copy.removeUrlMapping}</button>
     </fieldset>)}
     <div className="actions"><button type="button" disabled={identity.readOnly} onClick={add}>{copy.addUrlMapping}</button><button type="button" disabled={identity.readOnly} onClick={save}>{copy.saveUrlMappings}</button></div>
     {invalid && <p role="alert">{copy.mappingInvalid}</p>}

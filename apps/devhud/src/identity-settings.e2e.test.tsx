@@ -1408,6 +1408,28 @@ describe("generated Connect identity/settings fixture", () => {
     await waitFor(() => expect((screen.getByLabelText(messages.en.urlPattern) as HTMLInputElement).value).toBe("https://server.example/**"));
   });
 
+  it("keeps an intermediate negative mapping priority editable until save", async () => {
+    const mapping = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", pattern: "https://local.example/**", repository: { owner: "delinoio", name: "oss" }, credentialProfileRef: "github.default", priority: 0, chromeOrigin: null, updatedAt: "2026-08-17T00:00:00.000Z" };
+    const server = { ...defaultDevHudSettings, urlMappings: [{ ...mapping, pattern: "https://server.example/**" }] };
+    writeGuestSettings(localStorage, { ...defaultDevHudSettings, urlMappings: [mapping] });
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 1, revision: "1", canonicalJson: encodedSettings(server) } });
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    render(<DevHudServiceBoundary apiOrigin="https://devhud.api.delino.io" active online callbackUrl={null} platform={RuntimePlatform.Desktop} bridge={authenticatedBridge()} onCallbackConsumed={() => {}} onContinueLocally={() => {}} onLoggedOut={() => {}}><SynchronizedSettingsBoundary copy={messages.en} /></DevHudServiceBoundary>);
+
+    await screen.findByRole("dialog", { name: messages.en.importSettingsTitle });
+    const priority = screen.getByLabelText(messages.en.mappingPriority) as HTMLInputElement;
+    fireEvent.change(priority, { target: { value: "" } });
+    expect(priority.value).toBe("");
+    fireEvent.change(priority, { target: { value: "-1" } });
+    expect(priority.value).toBe("-1");
+  });
+
   it("clears the guest import marker when a conflicted upload adopts the server", async () => {
     const local = { ...defaultDevHudSettings, appearance: { ...defaultDevHudSettings.appearance, theme: "dark" as const } };
     const server = { ...defaultDevHudSettings, appearance: { ...defaultDevHudSettings.appearance, theme: "light" as const } };

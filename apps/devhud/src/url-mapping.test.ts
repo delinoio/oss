@@ -17,6 +17,9 @@ describe("URL repository matcher", () => {
     expect(mappingMatches(mapping({ pattern: "https://example.com:443/**" }), "https://example.com/a")).toBe(true);
     expect(findMappingOverlaps([mapping({ pattern: "https://example.com:443/**" }), mapping({ id: "018f47a2-7b3c-7def-8abc-1234567890ac", pattern: "https://example.com/**" })])).toHaveLength(1);
     expect(mappingMatches(mapping({ pattern: "https://example.com/a/b" }), "https://example.com/a//b")).toBe(false);
+    expect(mappingMatches(mapping({ pattern: "https://example.com/docs/" }), "https://example.com/docs/")).toBe(true);
+    expect(mappingMatches(mapping({ pattern: "https://example.com/a//b" }), "https://example.com/a//b")).toBe(true);
+    expect(mappingMatches(mapping({ pattern: "https://example.com/a//b" }), "https://example.com/a/b")).toBe(false);
   });
 
   it("canonicalizes literal path segments with URL semantics", () => {

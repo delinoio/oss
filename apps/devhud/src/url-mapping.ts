@@ -32,7 +32,7 @@ export function parseUrlPattern(value: string): ParsedUrlPattern {
   const host = hostText.split(".");
   if (host.some((part) => !literalHost.test(part) || part === "")) throw new UrlMappingError("host labels must be literals or *");
   const path = pathText.split("/").slice(1);
-  if (path.some((part) => part === "" && path.length > 1) || path.some((part) => part.includes("*") && part !== "*" && part !== "**")) throw new UrlMappingError("path wildcards must occupy a complete segment");
+  if (path.some((part) => part.includes("*") && part !== "*" && part !== "**")) throw new UrlMappingError("path wildcards must occupy a complete segment");
   return { scheme, host, port: normalizeDefaultPort(scheme, port), path: canonicalizePatternPath(pathText, path) };
 }
 
