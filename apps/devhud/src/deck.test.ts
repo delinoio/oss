@@ -22,12 +22,19 @@ describe("Deck query and local transitions", () => {
     expect(deckRepositories("repo:octo is:pr")).toBeNull();
   });
   it("discards malformed nested cache entries", () => {
-    const cache = { version: 1, deckId: "deck", queryEtag: null, results: [null], lastSuccessfulAt: null, rate: null, failures: 0, nextRefreshAt: null, transitionKeys: [] };
-    expect(readDeckCache({ getItem: () => JSON.stringify(cache) }, "profile", "deck")).toBeNull();
+    const cache = { version: 2, deckId: "deck", query: "repo:octo/widgets is:pr", queryEtag: null, results: [null], lastSuccessfulAt: null, rate: null, failures: 0, nextRefreshAt: null, transitionKeys: [] };
+    expect(readDeckCache({ getItem: () => JSON.stringify(cache) }, "origin", "deck", "repo:octo/widgets is:pr")).toBeNull();
   });
   it("notifies only changed existing pull requests", () => {
     const base = { nodeId: "pr", number: 1, title: "PR", url: "https://github.com/o/r/pull/1", draft: false, repository: { owner: "o", name: "r" }, author: "a", state: "open" as const, reviewDecision: null, requestedReviewers: [], checkRollup: { state: "PENDING", contexts: [] }, mergeable: "MERGEABLE", labels: [], updatedAt: "2026-01-01T00:00:00Z" };
     expect(deckTransitionKeys([base], [{ ...base, state: "merged", reviewDecision: "approved", checkRollup: { state: "SUCCESS", contexts: [] } }]).map((item) => item.kind)).toEqual(["review", "checks", "merged"]);
+  });
+  it("gives repeated review and check transitions distinct notification keys", () => {
+    const base = { nodeId: "pr", number: 1, title: "PR", url: "https://github.com/o/r/pull/1", draft: false, repository: { owner: "o", name: "r" }, author: "a", state: "open" as const, reviewDecision: null, requestedReviewers: [], checkRollup: { state: "PENDING", contexts: [] }, mergeable: "MERGEABLE", labels: [], updatedAt: "2026-01-01T00:00:00Z" };
+    const failed = { ...base, checkRollup: { state: "FAILURE", contexts: [] }, updatedAt: "2026-01-01T00:01:00Z" };
+    const rerun = { ...base, checkRollup: { state: "PENDING", contexts: [] }, updatedAt: "2026-01-01T00:02:00Z" };
+    const failedAgain = { ...base, checkRollup: { state: "FAILURE", contexts: [] }, updatedAt: "2026-01-01T00:03:00Z" };
+    expect(deckTransitionKeys([base], [failed])[0]?.key).not.toBe(deckTransitionKeys([rerun], [failedAgain])[0]?.key);
   });
   it("does not collapse token, permission, query, network, and rate failures", () => {
     expect(classifyDeckFailure(new GitHubProviderError(GitHubErrorCode.MissingToken, "validate-credential"))).toBe("token");

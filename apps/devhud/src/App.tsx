@@ -38,6 +38,9 @@ function capabilitiesFor(runtime: RuntimeSnapshot): RuntimeCapabilities {
   return { available };
 }
 
+function browserNotificationsSupported(): boolean { return typeof Notification !== "undefined"; }
+function browserNotificationPermission(): NotificationPermission { return !browserNotificationsSupported() || Notification.permission === "default" ? NotificationPermission.NotDetermined : Notification.permission === "granted" ? NotificationPermission.Authorized : NotificationPermission.Denied; }
+
 export function App({ bridge = nativeBridge, initialRuntime, initialContentState = defaultContentState }: AppProps) {
   const storage = getLocalStorage();
   const [preferences, setPreferences] = useState<Preferences>(() => readPreferences(storage));
@@ -69,6 +72,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   const runtimeCapabilities = runtime ? capabilitiesFor(runtime) : { available: new Set<PlatformCapability>() };
   const mobile = runtime?.platform === RuntimePlatform.Ios || runtime?.platform === RuntimePlatform.Android;
   const isMac = runtime?.platform === RuntimePlatform.Ios || /Mac/u.test(navigator.userAgent);
+  const supportsNotifications = runtime?.capabilities.notifications === true || runtime?.platform === RuntimePlatform.Desktop && browserNotificationsSupported();
 
   const update = (next: Partial<Preferences>) => {
     if ("apiOrigin" in next) {
@@ -129,13 +133,17 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
     };
   }, [bridge, initialContentState, initialRuntime]);
   useEffect(() => {
-    if (!runtime?.capabilities.notifications || lifecycle !== LifecycleState.Active) return;
+    if (!supportsNotifications || lifecycle !== LifecycleState.Active) return;
+    if (!runtime?.capabilities.notifications) {
+      setNotificationPermission(browserNotificationPermission());
+      return;
+    }
     let active = true;
     void bridge.request({ operation: "notifications.permission" }).then((response) => {
       if (active && response.kind === "notification-permission") setNotificationPermission(response.permission);
     }).catch(() => {});
     return () => { active = false; };
-  }, [bridge, lifecycle, runtime?.capabilities.notifications]);
+  }, [bridge, lifecycle, runtime?.capabilities.notifications, supportsNotifications]);
   useEffect(() => {
     if (!runtime?.capabilities.storeUpdates) return;
     let active = true;
@@ -261,10 +269,15 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   const requestNotifications = async () => {
     setNotificationRequestFailed(false);
     try {
+      if (!runtime?.capabilities.notifications) {
+        if (!browserNotificationsSupported()) throw new Error("browser-notifications-unsupported");
+        setNotificationPermission(Notification.permission === "granted" ? NotificationPermission.Authorized : (await Notification.requestPermission()) === "granted" ? NotificationPermission.Authorized : NotificationPermission.Denied);
+        return;
+      }
       const response = await bridge.request({ operation: "notifications.request-permission" });
       if (response.kind === "notification-permission") setNotificationPermission(response.permission);
     } catch (error) {
-      if (error instanceof NativeBridgeError) setNotificationRequestFailed(true);
+      if (error instanceof NativeBridgeError || !runtime?.capabilities.notifications) setNotificationRequestFailed(true);
       else setRuntimeState({ kind: ContentStateKind.Error, retryable: true });
     }
   };
@@ -297,7 +310,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
       {surface === SurfaceId.Realqa && mobile && <><p className="eyebrow">{copy.desktopOnly}</p><h2>{copy.realqaMobileTitle}</h2><p>{copy.realqaMobileSummary}</p><p className="notice">{copy.unavailable}</p></>}
       {surface === SurfaceId.Realqa && !mobile && <><p className="eyebrow">{copy.realqa}</p><h2>{copy.realqaTitle}</h2><p>{copy.realqaSummary}</p><div className="disabled-actions">{unavailableCaptureActions.map((action) => <button disabled key={action.id}>{copy[action.title]}</button>)}</div><p className="notice">{copy.planned}</p></>}
       {surface === SurfaceId.Deck && <DeckSurface copy={copy} bridge={bridge} active={lifecycle === LifecycleState.Active} online={online} selectedDeckId={deckLink} />}
-      {surface === SurfaceId.Settings && <><p className="eyebrow">{copy.settings}</p><h2>{copy.settingsTitle}</h2><p>{copy.settingsSummary}</p><SynchronizedSettingsBoundary copy={copy} bridge={bridge} onOpenExternal={openExternal} />{supportsLaunchAtLogin && <><label className="check"><input type="checkbox" checked={preferences.launchAtLogin} onChange={(event) => { update({ launchAtLogin: event.target.checked }); void browserShell.setLaunchAtLogin(event.target.checked); }} />{copy.launchAtLogin}</label><p>{copy.launchAtLoginHint}</p></>}{runtime?.capabilities.notifications && <div className="native-setting"><button className="primary" onClick={() => void requestNotifications()}>{copy.notificationPermission}</button><output aria-live="polite">{copy[notificationPermissionLabels[notificationPermission]]}</output>{notificationRequestFailed && <p className="native-setting-error" role="alert">{copy.notificationPermissionFailed}</p>}</div>}{runtime?.capabilities.storeUpdates && <div className="native-setting"><p>{copy.updatePolicy}</p>{storeConfigured && <button className="primary" onClick={() => void openStore()}>{copy.updatePolicy}</button>}{storeOpenFailed && <p className="native-setting-error" role="alert">{copy.storeOpenFailed}</p>}</div>}</>}
+      {surface === SurfaceId.Settings && <><p className="eyebrow">{copy.settings}</p><h2>{copy.settingsTitle}</h2><p>{copy.settingsSummary}</p><SynchronizedSettingsBoundary copy={copy} bridge={bridge} onOpenExternal={openExternal} />{supportsLaunchAtLogin && <><label className="check"><input type="checkbox" checked={preferences.launchAtLogin} onChange={(event) => { update({ launchAtLogin: event.target.checked }); void browserShell.setLaunchAtLogin(event.target.checked); }} />{copy.launchAtLogin}</label><p>{copy.launchAtLoginHint}</p></>}{supportsNotifications && <div className="native-setting"><button className="primary" onClick={() => void requestNotifications()}>{copy.notificationPermission}</button><output aria-live="polite">{copy[notificationPermissionLabels[notificationPermission]]}</output>{notificationRequestFailed && <p className="native-setting-error" role="alert">{copy.notificationPermissionFailed}</p>}</div>}{runtime?.capabilities.storeUpdates && <div className="native-setting"><p>{copy.updatePolicy}</p>{storeConfigured && <button className="primary" onClick={() => void openStore()}>{copy.updatePolicy}</button>}{storeOpenFailed && <p className="native-setting-error" role="alert">{copy.storeOpenFailed}</p>}</div>}</>}
       {surface === SurfaceId.Account && <><AccountIdentity copy={copy} apiOrigin={preferences.apiOrigin} inputRef={apiOriginInput} onApiOrigin={applyApiOrigin} /><div className="actions"><button onClick={() => void external(ExternalLinkTarget.Pat)}>{copy.githubCreateFinePat}</button><button onClick={() => void external(ExternalLinkTarget.ClassicPat)}>{copy.githubCreateClassicPat}</button>{!mobile && <button onClick={() => void external(ExternalLinkTarget.Issue)}>{copy.issue}</button>}</div>{externalMessage && <p className="external-message" role={externalMessageIsError ? "alert" : "status"}>{externalMessageText}</p>}</>}
       {surface === SurfaceId.Diagnostics && <><p className="eyebrow">{copy.diagnostics}</p><h2>{copy.diagnosticsTitle}</h2><p>{copy.diagnosticsSummary}</p><p className="notice">{copy.diagnosticsUnavailable}</p>{runtime && <dl className="runtime-diagnostics"><dt>{copy.diagnosticPlatform}</dt><dd>{runtime.platform}</dd><dt>{copy.diagnosticArchitecture}</dt><dd>{runtime.architecture}</dd><dt>{copy.diagnosticBridge}</dt><dd>v{runtime.bridgeVersion}</dd></dl>}</>}
     </section>

@@ -134,6 +134,8 @@ export function parseDevHudSettings(value: unknown): DevHudSettingsV1 {
   if (pendingPatRemovals.some((profileId) => githubProfileIds.has(profileId))) throw new SettingsContractError("$.github.pendingPatRemovals", "must not reference an active GitHub profile");
   const shortcuts = object(root.shortcuts, "$.shortcuts", [...Platform]);
   const uploads = object(root.uploads, "$.uploads", ["provider", "r2"]);
+  const parsedDecks = decks.flatMap((entry, index) => parseDeck(entry, `$.decks[${index}]`, legacy, previous));
+  if (new Set(parsedDecks.map((deck) => deck.id)).size !== parsedDecks.length) throw new SettingsContractError("$.decks", "must contain unique IDs");
 
   const parsed: DevHudSettingsV1 = {
     schemaVersion: SettingsSchemaVersion,
@@ -141,7 +143,7 @@ export function parseDevHudSettings(value: unknown): DevHudSettingsV1 {
       theme: enumeration(appearance.theme, "$.appearance.theme", Theme),
       language: enumeration(appearance.language, "$.appearance.language", Language),
     },
-    decks: decks.flatMap((entry, index) => parseDeck(entry, `$.decks[${index}]`, legacy, previous)),
+    decks: parsedDecks,
     github: {
       profiles: githubProfiles,
       pendingPatRemovals,
@@ -268,7 +270,8 @@ export function hasPositivePullRequestQualifier(query: string): boolean {
 }
 
 export function hasRepositoryQualifier(query: string): boolean {
-  return deckQueryTokens(query).some((token) => token.length > "repo:".length && token.slice(0, "repo:".length).toLowerCase() === "repo:");
+  const repositories = deckRepositories(query);
+  return repositories !== null && repositories.length > 0;
 }
 
 export interface DeckRepositoryRef { readonly owner: string; readonly name: string }
@@ -280,7 +283,7 @@ export function deckRepositories(query: string): readonly DeckRepositoryRef[] | 
     if (token.slice(0, "repo:".length).toLowerCase() !== "repo:") continue;
     const value = token.slice("repo:".length);
     const separator = value.indexOf("/");
-    if (separator < 1 || separator !== value.lastIndexOf("/") || separator === value.length - 1) return null;
+    if (separator < 1 || separator !== value.lastIndexOf("/") || separator === value.length - 1 || /[\s"]/u.test(value)) return null;
     const repository = { owner: value.slice(0, separator), name: value.slice(separator + 1) };
     const key = `${repository.owner}/${repository.name}`.toLowerCase();
     repositories.set(key, repository);

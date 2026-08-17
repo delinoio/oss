@@ -79,8 +79,22 @@ func validateDevHudSettings(value []byte, envelopeSchemaVersion uint32) error {
 		return errors.New("$.decks must contain at most 25 entries")
 	}
 	deckProfileRefs := make([]string, 0, len(decks))
+	deckIDs := make(map[string]struct{}, len(decks))
 	for index, entry := range decks {
-		profileRef, err := validateSettingsDeck(entry, fmt.Sprintf("$.decks[%d]", index), legacy, previous)
+		path := fmt.Sprintf("$.decks[%d]", index)
+		deck, ok := entry.(map[string]any)
+		if !ok {
+			return fmt.Errorf("%s must be an object", path)
+		}
+		deckID, err := settingsUUIDv7(deck["id"], path+".id")
+		if err != nil {
+			return err
+		}
+		if _, exists := deckIDs[deckID]; exists {
+			return errors.New("$.decks must contain unique IDs")
+		}
+		deckIDs[deckID] = struct{}{}
+		profileRef, err := validateSettingsDeck(entry, path, legacy, previous)
 		if err != nil {
 			return err
 		}
@@ -236,8 +250,12 @@ func validateSettingsDeck(value any, path string, legacy bool, previous bool) (s
 		if builder != nil {
 			for _, field := range []string{"repository", "author", "label"} {
 				if builder[field] != nil {
-					if _, err := settingsText(builder[field], path+".builder."+field, false); err != nil {
+					value, err := settingsText(builder[field], path+".builder."+field, false)
+					if err != nil {
 						return "", err
+					}
+					if strings.TrimSpace(value) != value {
+						return "", fmt.Errorf("%s.builder.%s must be trimmed", path, field)
 					}
 				}
 			}
@@ -300,12 +318,18 @@ func hasPositivePullRequestQualifier(query string) bool {
 }
 
 func hasRepositoryQualifier(query string) bool {
+	found := false
 	for _, token := range deckQueryTokens(query) {
-		if len(token) > len("repo:") && strings.EqualFold(token[:len("repo:")], "repo:") {
-			return true
+		if len(token) < len("repo:") || !strings.EqualFold(token[:len("repo:")], "repo:") {
+			continue
 		}
+		value := token[len("repo:"):]
+		if strings.Count(value, "/") != 1 || strings.HasPrefix(value, "/") || strings.HasSuffix(value, "/") || strings.TrimSpace(value) != value || strings.ContainsAny(value, "\" \t\n\r") {
+			return false
+		}
+		found = true
 	}
-	return false
+	return found
 }
 
 // deckQueryTokens keeps quoted search phrases from being interpreted as qualifiers.

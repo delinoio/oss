@@ -145,8 +145,10 @@ describe("DevHud settings boundary", () => {
     const settings = { ...defaultDevHudSettings, github: { ...defaultDevHudSettings.github, profiles: [profile] }, decks: [deck] };
     expect(parseDevHudSettings(settings).decks).toHaveLength(1);
     expect(() => parseDevHudSettings({ ...settings, decks: [{ ...deck, query: "is:pr" }] })).toThrow(/repository qualifier/u);
+    expect(() => parseDevHudSettings({ ...settings, decks: [{ ...deck, query: "repo:octo is:pr" }] })).toThrow(/repository qualifier/u);
     expect(parseDevHudSettings({ ...settings, decks: [{ ...deck, query: '"find is:pr here" repo:octo/widgets' }] }).decks[0]?.query).toBe('"find is:pr here" repo:octo/widgets is:pr');
     expect(() => parseDevHudSettings({ ...settings, decks: [{ ...deck, notifications: ["review", "review"] }] })).toThrow(/unique values/u);
+    expect(() => parseDevHudSettings({ ...settings, decks: [deck, deck] })).toThrow(/unique IDs/u);
   });
 
   it.each(["?token=plain-secret", "?X-Amz-Signature=plain-secret", "#credential", "?", "#"])("rejects query or fragment delimiters in synchronized URL fields: %s", (suffix) => {

@@ -1,13 +1,14 @@
 import { GitHubErrorCode, GitHubProviderError, type GitHubDeckPullRequest, type GitHubRate } from "./github-provider.ts";
 import { hasPositivePullRequestQualifier, type DeckBuilder, type DevHudSettingsV1 } from "./settings-contract.ts";
 
-export const DeckCacheVersion = 1 as const;
+export const DeckCacheVersion = 2 as const;
 export const DeckResultLimit = 100 as const;
 export const DeckLimit = 25 as const;
 
 export interface DeckCache {
   readonly version: typeof DeckCacheVersion;
   readonly deckId: string;
+  readonly query: string;
   readonly queryEtag: string | null;
   readonly results: readonly GitHubDeckPullRequest[];
   readonly lastSuccessfulAt: string | null;
@@ -21,12 +22,12 @@ export type DeckFailure = "token" | "permission" | "query" | "network" | "rate-l
 
 export function deckCacheKey(scope: string, deckId: string): string { return `devhud.deck.v${DeckCacheVersion}.${scope}.${deckId}`; }
 
-export function readDeckCache(storage: Pick<Storage, "getItem">, scope: string, deckId: string): DeckCache | null {
+export function readDeckCache(storage: Pick<Storage, "getItem">, scope: string, deckId: string, query: string): DeckCache | null {
   try {
     const value: unknown = JSON.parse(storage.getItem(deckCacheKey(scope, deckId)) ?? "null");
     if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
     const item = value as Record<string, unknown>;
-    if (item.version !== DeckCacheVersion || item.deckId !== deckId || !nullableString(item.queryEtag) || !Array.isArray(item.results) || item.results.length > DeckResultLimit || !item.results.every(isDeckPullRequest) || !nullableTimestamp(item.lastSuccessfulAt) || !nullableRate(item.rate) || !nonNegativeInteger(item.failures) || !nullableTimestamp(item.nextRefreshAt) || !Array.isArray(item.transitionKeys) || item.transitionKeys.length > DeckResultLimit * 4 || !item.transitionKeys.every((key) => typeof key === "string")) return null;
+    if (item.version !== DeckCacheVersion || item.deckId !== deckId || item.query !== query || !nullableString(item.queryEtag) || !Array.isArray(item.results) || item.results.length > DeckResultLimit || !item.results.every(isDeckPullRequest) || !nullableTimestamp(item.lastSuccessfulAt) || !nullableRate(item.rate) || !nonNegativeInteger(item.failures) || !nullableTimestamp(item.nextRefreshAt) || !Array.isArray(item.transitionKeys) || item.transitionKeys.length > DeckResultLimit * 4 || !item.transitionKeys.every((key) => typeof key === "string")) return null;
     return item as unknown as DeckCache;
   } catch { return null; }
 }
@@ -36,6 +37,14 @@ export function writeDeckCache(storage: Pick<Storage, "setItem">, scope: string,
 }
 
 export function clearDeckCache(storage: Pick<Storage, "removeItem">, scope: string, deckId: string): void { try { storage.removeItem(deckCacheKey(scope, deckId)); } catch { /* cache is best effort */ } }
+
+export function clearDeckCaches(storage: Pick<Storage, "key" | "length" | "removeItem">, scope: string): void {
+  const prefix = `devhud.deck.v${DeckCacheVersion}.${scope}.`;
+  try {
+    const keys = Array.from({ length: storage.length }, (_, index) => storage.key(index)).filter((key): key is string => key?.startsWith(prefix) ?? false);
+    for (const key of keys) storage.removeItem(key);
+  } catch { /* cache is best effort */ }
+}
 
 export function classifyDeckFailure(error: unknown): DeckFailure {
   if (!(error instanceof GitHubProviderError)) return "unknown";
@@ -65,8 +74,8 @@ export function deckTransitionKeys(previous: readonly GitHubDeckPullRequest[], n
   for (const pullRequest of next) {
     const old = before.get(pullRequest.nodeId);
     if (old === undefined) continue;
-    if (old.reviewDecision !== pullRequest.reviewDecision) transitions.push({ kind: "review", key: `${pullRequest.nodeId}:review:${pullRequest.reviewDecision}`, pullRequest });
-    if (checkSignature(old) !== checkSignature(pullRequest)) transitions.push({ kind: "checks", key: `${pullRequest.nodeId}:checks:${checkSignature(pullRequest)}`, pullRequest });
+    if (old.reviewDecision !== pullRequest.reviewDecision) transitions.push({ kind: "review", key: `${pullRequest.nodeId}:review:${pullRequest.reviewDecision}:${pullRequest.updatedAt}`, pullRequest });
+    if (checkSignature(old) !== checkSignature(pullRequest)) transitions.push({ kind: "checks", key: `${pullRequest.nodeId}:checks:${checkSignature(pullRequest)}:${pullRequest.updatedAt}`, pullRequest });
     if (old.state !== "merged" && pullRequest.state === "merged") transitions.push({ kind: "merged", key: `${pullRequest.nodeId}:merged`, pullRequest });
     if (old.state !== "closed" && pullRequest.state === "closed") transitions.push({ kind: "closed", key: `${pullRequest.nodeId}:closed`, pullRequest });
   }

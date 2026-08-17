@@ -3,7 +3,7 @@ import { createGitHubProvider, GitHubErrorCode, GitHubProviderError, readGitHubC
 import type { Copy } from "./localization.ts";
 import { NativeBridgeError, NativeBridgeErrorCode, SecureSettingKind, type NativeBridgeV1 } from "./native-bridge.ts";
 import { useIdentitySettings } from "./service-boundary.tsx";
-import { GitHubCredentialKind, type DevHudSettingsV1 } from "./settings-contract.ts";
+import { deckRepositories, GitHubCredentialKind, type DevHudSettingsV1 } from "./settings-contract.ts";
 import { browserShell, ExternalLinkTarget, type ExternalLinkTarget as ExternalLinkTargetValue } from "./shell.ts";
 
 interface GitHubSettingsProps { readonly copy: Copy; readonly bridge: NativeBridgeV1; readonly provider?: GitHubProvider; readonly openExternal?: (target: ExternalLinkTargetValue) => Promise<void> }
@@ -166,9 +166,8 @@ export function referencedRepositories(settings: DevHudSettingsV1, profileId: st
   const tracker = settings.github.issueTracker;
   if (tracker?.profileRef === profileId) add({ owner: tracker.owner, name: tracker.repository });
   for (const deck of settings.decks) {
-    if (deck.profileRef !== profileId || deck.builder?.repository === null || deck.builder === null) continue;
-    const match = /^([^/]+)\/([^/]+)$/u.exec(deck.builder.repository);
-    if (match !== null) add({ owner: match[1], name: match[2] });
+    if (deck.profileRef !== profileId) continue;
+    for (const repository of deckRepositories(deck.query) ?? []) add(repository);
   }
   return [...unique.values()];
 }

@@ -16,6 +16,7 @@ import {
 } from "@delinoio/devhud-api-client";
 import { createContext, use, useEffect, useMemo, useRef, useState, type PropsWithChildren, type RefObject } from "react";
 import { createIdentitySession, isTerminalAccessTokenError, sessionProfileId, validateBootstrap, type IdentitySession, type ValidatedBootstrap } from "./identity-client";
+import { clearDeckCaches } from "./deck.ts";
 import { clearAllContractedLocalData, clearAuthenticatedOriginData, clearAuthenticatedSettingsCache, clearGuestImportMarker, hasGuestSettings, readAuthenticatedSettingsCache, readCachedIdentityBootstrap, readGuestSettings, writeAuthenticatedSettingsCache, writeCachedIdentityBootstrap, writeGuestSettings } from "./local-data";
 import { SecureSettingKind, type NativeBridgeV1, type RuntimePlatform } from "./native-bridge";
 import { profileRequiresSetup } from "./profile-secrets";
@@ -783,8 +784,10 @@ export async function clearIdentityForApiChange(
   const discardedCallback = await bridge.request({ operation: "auth.take-pending-callback" });
   if (discardedCallback.kind !== "auth-callback") throw new Error("auth-callback-discard-failed");
   await session?.clear();
-  await bridge.request({ operation: "secure.purge", scope: "api-change", profileId: await sessionProfileId(oldApiOrigin) });
+  const scopeId = await sessionProfileId(oldApiOrigin);
+  await bridge.request({ operation: "secure.purge", scope: "api-change", profileId: scopeId });
   clearAuthenticatedOriginData(storage, oldApiOrigin);
+  clearDeckCaches(storage, scopeId);
 }
 
 export function saveGuestSettings(storage: Storage, settings: DevHudSettingsV1): void {

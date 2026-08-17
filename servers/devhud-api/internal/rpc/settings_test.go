@@ -78,8 +78,14 @@ func TestValidateDevHudSettingsDeckQualifiers(t *testing.T) {
 	}
 	for name, value := range map[string]string{
 		"missing repository":      settings("is:pr", `[]`),
+		"malformed repository":    settings("repo:octo is:pr", `[]`),
 		"quoted pull request":     settings(`\"find is:pr here\" repo:octo/widgets`, `[]`),
 		"duplicate notifications": settings("repo:octo/widgets is:pr", `["review","review"]`),
+		"duplicate deck IDs": strings.Replace(
+			strings.Replace(canonicalSettingsV3, `"profiles":[]`, `"profiles":[{"id":"`+profileID+`","kind":"fine-grained","name":"Work"}]`, 1),
+			`"decks":[]`, `"decks":[`+deck("repo:octo/widgets is:pr", `[]`)+`,`+deck("repo:octo/widgets is:pr", `[]`)+`]`, 1,
+		),
+		"untrimmed builder field": strings.Replace(settings("repo:octo/widgets is:pr", `[]`), `"builder":null`, `"builder":{"author":null,"label":null,"repository":" octo/widgets","review":null,"state":null}`, 1),
 	} {
 		t.Run(name, func(t *testing.T) {
 			if err := validateDevHudSettings([]byte(value), 3); err == nil {
