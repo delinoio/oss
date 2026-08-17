@@ -6,7 +6,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { assertGeneratedOverlays } from "./generate-mobile.mjs";
-import { assertMobileContracts, assertMobileDependencyClosures, assertMobileDependencyResolution, mobileCargoTreeDigest } from "./mobile-policy.mjs";
+import { assertAndroidArtifactEntries, assertMobileContracts, assertMobileDependencyClosures, assertMobileDependencyResolution, mobileCargoTreeDigest } from "./mobile-policy.mjs";
 
 const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = resolve(appRoot, "../..");
@@ -40,16 +40,20 @@ function androidAapt() {
 
 function assertAndroidArtifact(artifact, abi) {
   if (!existsSync(artifact)) throw new Error(`Android artifact is missing: ${artifact}`);
+  commandOutput("unzip", ["-t", artifact]);
   const entries = commandOutput("unzip", ["-Z1", artifact]).trim().split("\n");
-  const nativeEntries = entries.filter((entry) => entry.startsWith("lib/"));
-  const expectedLibrary = `lib/${abi}/libdevhud_lib.so`;
-  if (nativeEntries.length !== 1 || nativeEntries[0] !== expectedLibrary) throw new Error(`Android artifact architecture changed: expected only ${expectedLibrary}`);
-  if (entries.some((entry) => /cef|chromium|chrome-extension|browser-extension/iu.test(entry))) throw new Error("CEF or browser-extension file leaked into the Android artifact");
+  const format = artifact.endsWith(".aab") ? "aab" : artifact.endsWith(".apk") ? "apk" : "unknown";
+  assertAndroidArtifactEntries(entries, abi, format);
+  const prefix = format === "aab" ? "base/" : "";
+  const expectedLibrary = `${prefix}lib/${abi}/libdevhud_lib.so`;
+  const dexEntry = format === "aab" ? "base/dex/classes.dex" : "classes.dex";
 
-  const dex = commandOutput("unzip", ["-p", artifact, "classes.dex"], null).toString("latin1");
+  const dex = commandOutput("unzip", ["-p", artifact, dexEntry], null).toString("latin1");
   if (!dex.includes("Lio/delino/devhud/bridge/DevhudNativePlugin;") || !dex.includes("Landroid/webkit/WebView;")) throw new Error("Android native bridge or System WebView host is missing from the artifact");
   const nativeLibrary = commandOutput("unzip", ["-p", artifact, expectedLibrary], null).toString("latin1");
   if (/libcef|cef_initialize|chromium/iu.test(nativeLibrary)) throw new Error("CEF symbols leaked into the Android native library");
+
+  if (format === "aab") return;
 
   const aapt = androidAapt();
   const badging = commandOutput(aapt, ["dump", "badging", artifact]);

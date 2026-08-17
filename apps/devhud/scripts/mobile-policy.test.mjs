@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { assertAndroidBackupExclusions, assertAndroidNativeBridge, assertIosNativeBridge, assertMobileCi, assertMobileContracts, assertMobileDependencyClosures, assertMobileDependencyResolution, assertMobileTargets, mobileCargoTreeDigest } from "./mobile-policy.mjs";
+import { assertAndroidArtifactEntries, assertAndroidBackupExclusions, assertAndroidNativeBridge, assertIosNativeBridge, assertMobileCi, assertMobileContracts, assertMobileDependencyClosures, assertMobileDependencyResolution, assertMobileTargets, mobileCargoTreeDigest } from "./mobile-policy.mjs";
 
 const appRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const mobileTargets = JSON.parse(readFileSync(join(appRoot, "mobile-platforms.json"), "utf8")).targets;
@@ -61,6 +61,16 @@ test("mobile dependency resolution includes production default features", () => 
   assert.throws(() => assertMobileDependencyResolution('"cargo", "tree", "--no-default-features"'), /production default features/u);
 });
 
+test("mobile policy validates APK and App Bundle layouts", () => {
+  const apkEntries = ["AndroidManifest.xml", "classes.dex", "lib/arm64-v8a/libdevhud_lib.so"];
+  const aabEntries = ["BundleConfig.pb", "base/manifest/AndroidManifest.xml", "base/dex/classes.dex", "base/lib/arm64-v8a/libdevhud_lib.so"];
+  assert.doesNotThrow(() => assertAndroidArtifactEntries(apkEntries, "arm64-v8a", "apk"));
+  assert.doesNotThrow(() => assertAndroidArtifactEntries(aabEntries, "arm64-v8a", "aab"));
+  assert.throws(() => assertAndroidArtifactEntries(aabEntries.filter((entry) => entry !== "BundleConfig.pb"), "arm64-v8a", "aab"), /Bundle configuration/u);
+  assert.throws(() => assertAndroidArtifactEntries([...aabEntries, "base/lib/x86_64/libdevhud_lib.so"], "arm64-v8a", "aab"), /architecture changed/u);
+  assert.throws(() => assertAndroidArtifactEntries([...aabEntries, "base/assets/chromium.pak"], "arm64-v8a", "aab"), /CEF or browser-extension/u);
+});
+
 test("mobile policy pins normalized resolved dependency closures", () => {
   const tree = [
     "0devhud v0.1.0 (/checkout/apps/devhud/src-tauri) ",
@@ -86,6 +96,8 @@ test("mobile policy requires production and simulator iOS builds", () => {
   assert.throws(() => assertMobileCi(withoutDeviceBuild), /iOS CI target aarch64/u);
   assert.throws(() => assertMobileCi(workflow.replace("xcrun simctl list > /dev/null", "true")), /initialize simulator devices/u);
   assert.throws(() => assertMobileCi(workflow.replace(" --no-sign", "")), /without signing/u);
+  assert.throws(() => assertMobileCi(workflow.replace("            artifacts: --apk --aab", "            artifacts: --apk")), /build --apk --aab/u);
+  assert.throws(() => assertMobileCi(workflow.replace('--android-artifact "${aab_artifacts[0]}"', '--android-artifact "missing.aab"')), /inspect the generated App Bundle/u);
 });
 
 test("mobile policy rejects release networking and CEF leakage", () => {
