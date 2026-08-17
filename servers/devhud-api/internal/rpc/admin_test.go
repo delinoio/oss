@@ -142,6 +142,48 @@ func TestRejectedMutationDoesNotAuditSensitiveReason(t *testing.T) {
 	}
 }
 
+func TestPublicAssetReasonsAreRejectedForUserAndUploadMutations(t *testing.T) {
+	var audits []domain.AuditEvent
+	userMutationCalls := 0
+	repository := &adminRepository{
+		setBlocked: func(context.Context, string, string, domain.AdministrativeBlockState, domain.AdministrativeBlockState, domain.AuditEvent, time.Time) (domain.User, error) {
+			userMutationCalls++
+			return domain.User{}, errors.New("unexpected mutation")
+		},
+		recordAudit: func(_ context.Context, event domain.AuditEvent) error {
+			audits = append(audits, event)
+			return nil
+		},
+	}
+	uploads := &adminUploads{}
+	service := newTestAdminService(t, repository, uploads)
+
+	_, userErr := service.SetUserBlocked(administratorContext(), connect.NewRequest(&devhudv1.SetUserBlockedRequest{
+		UserId: uuid(targetUserID), ExpectedState: devhudv1.AdministrativeBlockState_ADMINISTRATIVE_BLOCK_STATE_UNBLOCKED,
+		TargetState: devhudv1.AdministrativeBlockState_ADMINISTRATIVE_BLOCK_STATE_BLOCKED,
+		Reason:      "Reviewed https://assets.example.com/uploads/018f7c1e.png",
+	}))
+	_, uploadErr := service.DeleteUpload(administratorContext(), connect.NewRequest(&devhudv1.AdminServiceDeleteUploadRequest{
+		UploadId: uuid(uploadID), ExpectedState: devhudv1.UploadState_UPLOAD_STATE_FINALIZED,
+		Reason: "Reviewed https://assets.example.com/%75ploads/018f7c1e.png",
+	}))
+
+	if connect.CodeOf(userErr) != connect.CodeInvalidArgument || connect.CodeOf(uploadErr) != connect.CodeInvalidArgument {
+		t.Fatalf("codes = (%v, %v), want InvalidArgument", connect.CodeOf(userErr), connect.CodeOf(uploadErr))
+	}
+	if userMutationCalls != 0 || uploads.removeCalls != 0 {
+		t.Fatalf("invalid reasons reached mutations: user=%d upload=%d", userMutationCalls, uploads.removeCalls)
+	}
+	if len(audits) != 2 {
+		t.Fatalf("audits = %+v", audits)
+	}
+	for _, event := range audits {
+		if event.Reason != "" || event.Outcome != domain.AuditOutcomeRejected || event.RejectionReason != domain.AuditRejectionInvalidArgument {
+			t.Fatalf("unsafe rejected audit = %+v", event)
+		}
+	}
+}
+
 func TestRejectedMutationAuditPreservesRequestDeadline(t *testing.T) {
 	deadline := time.Now().Add(time.Minute)
 	var auditDeadline time.Time
@@ -254,7 +296,7 @@ func administratorContext() context.Context {
 
 func newTestAdminService(t *testing.T, repository domain.AdminRepository, uploads domain.UploadAdministration) *AdminService {
 	t.Helper()
-	service, err := NewAdminService(repository, uploads, serviceClock{}, fixedAdminIDs{}, slog.New(slog.NewJSONHandler(io.Discard, nil)), []byte("01234567890123456789012345678901"))
+	service, err := NewAdminService(repository, uploads, serviceClock{}, fixedAdminIDs{}, slog.New(slog.NewJSONHandler(io.Discard, nil)), []byte("01234567890123456789012345678901"), "https://assets.example.com/uploads/")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -305,7 +347,10 @@ func (*adminRepository) ListAuditEvents(context.Context, domain.AuditFilters, *d
 	return domain.AuditList{}, nil
 }
 
-type adminUploads struct{ usage domain.UploadUsage }
+type adminUploads struct {
+	usage       domain.UploadUsage
+	removeCalls int
+}
 
 func (*adminUploads) ListUploads(context.Context, string, domain.AdminUploadFilters, string, uint32) (domain.UploadList, string, error) {
 	return domain.UploadList{}, "", nil
@@ -313,6 +358,7 @@ func (*adminUploads) ListUploads(context.Context, string, domain.AdminUploadFilt
 func (u *adminUploads) GetUsage(context.Context, string) (domain.UploadUsage, error) {
 	return u.usage, nil
 }
-func (*adminUploads) RemoveUpload(context.Context, string, string, domain.RemovalReason, domain.UploadState, string, domain.AuditEvent) (domain.Upload, error) {
+func (u *adminUploads) RemoveUpload(context.Context, string, string, domain.RemovalReason, domain.UploadState, string, domain.AuditEvent) (domain.Upload, error) {
+	u.removeCalls++
 	return domain.Upload{}, errors.New("unexpected mutation")
 }

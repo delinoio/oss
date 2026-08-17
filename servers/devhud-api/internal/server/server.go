@@ -76,7 +76,7 @@ func New(dependencies Dependencies) (*http.Server, error) {
 		if dependencies.Uploads != nil {
 			uploadAdministration = uploadmanager.NewAdministratorHooks(dependencies.Uploads)
 		}
-		adminService, err := rpc.NewAdminService(dependencies.Administration, uploadAdministration, dependencies.Clock, dependencies.IDs, dependencies.Logger, dependencies.CursorKey)
+		adminService, err := rpc.NewAdminService(dependencies.Administration, uploadAdministration, dependencies.Clock, dependencies.IDs, dependencies.Logger, dependencies.CursorKey, dependencies.Config.PublicAssetBaseURL)
 		if err != nil {
 			return nil, err
 		}

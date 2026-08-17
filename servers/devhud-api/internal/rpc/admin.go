@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"slices"
 	"strings"
 	"time"
@@ -26,20 +27,25 @@ import (
 const maximumAdminSearchBytes = 512
 
 type AdminService struct {
-	repository domain.AdminRepository
-	uploads    domain.UploadAdministration
-	clock      domain.Clock
-	ids        domain.IDGenerator
-	logger     *slog.Logger
-	cursors    *adminCursorCodec
+	repository         domain.AdminRepository
+	uploads            domain.UploadAdministration
+	clock              domain.Clock
+	ids                domain.IDGenerator
+	logger             *slog.Logger
+	cursors            *adminCursorCodec
+	publicAssetBaseURL *url.URL
 }
 
-func NewAdminService(repository domain.AdminRepository, uploads domain.UploadAdministration, clock domain.Clock, ids domain.IDGenerator, logger *slog.Logger, cursorKey []byte) (*AdminService, error) {
+func NewAdminService(repository domain.AdminRepository, uploads domain.UploadAdministration, clock domain.Clock, ids domain.IDGenerator, logger *slog.Logger, cursorKey []byte, rawPublicAssetBaseURL string) (*AdminService, error) {
 	cursors, err := newAdminCursorCodec(cursorKey)
 	if err != nil {
 		return nil, err
 	}
-	return &AdminService{repository: repository, uploads: uploads, clock: clock, ids: ids, logger: logger, cursors: cursors}, nil
+	publicAssetBaseURL, err := url.Parse(rawPublicAssetBaseURL)
+	if err != nil || !publicAssetBaseURL.IsAbs() || publicAssetBaseURL.Hostname() == "" {
+		return nil, errors.New("public asset base URL must be absolute")
+	}
+	return &AdminService{repository: repository, uploads: uploads, clock: clock, ids: ids, logger: logger, cursors: cursors, publicAssetBaseURL: publicAssetBaseURL}, nil
 }
 
 func (s *AdminService) ListUsers(ctx context.Context, request *connect.Request[devhudv1.ListUsersRequest]) (*connect.Response[devhudv1.ListUsersResponse], error) {
@@ -90,7 +96,7 @@ func (s *AdminService) SetUserBlocked(ctx context.Context, request *connect.Requ
 	target, okTarget := domainBlockState(request.Msg.GetTargetState())
 	expected, okExpected := domainBlockState(request.Msg.GetExpectedState())
 	reason := norm.NFC.String(strings.TrimSpace(request.Msg.GetReason()))
-	reasonErr := uploadmanager.ValidateAdministratorReason(reason)
+	reasonErr := uploadmanager.ValidateAdministratorReason(reason, s.publicAssetBaseURL)
 	auditReason := reason
 	if reasonErr != nil {
 		auditReason = ""
@@ -222,7 +228,7 @@ func (s *AdminService) mutateUpload(ctx context.Context, uploadID *devhudv1.Uuid
 		action = domain.AuditActionUploadQuarantined
 	}
 	reason := norm.NFC.String(strings.TrimSpace(rawReason))
-	reasonErr := uploadmanager.ValidateAdministratorReason(reason)
+	reasonErr := uploadmanager.ValidateAdministratorReason(reason, s.publicAssetBaseURL)
 	auditReason := reason
 	if reasonErr != nil {
 		auditReason = ""

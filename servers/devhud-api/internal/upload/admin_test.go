@@ -3,6 +3,7 @@ package upload
 import (
 	"context"
 	"crypto/sha256"
+	"net/url"
 	"testing"
 	"time"
 
@@ -35,6 +36,30 @@ func TestAdministratorReasonValidation(t *testing.T) {
 	} {
 		if err := validateAdministratorReason(reason); err == nil {
 			t.Fatalf("sensitive reason %q was accepted", reason)
+		}
+	}
+}
+
+func TestAdministratorReasonValidationRejectsPublicAssetLocators(t *testing.T) {
+	publicAssetBaseURL, err := url.Parse("https://assets.example.com/uploads/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, reason := range []string{
+		"Reviewed https://assets.example.com/uploads/image.png",
+		"Reviewed https://assets.example.com/%75ploads/image.png",
+		"Reviewed https://example.com/?asset=https%3A%2F%2Fassets.example.com%2Fuploads%2Fimage.png",
+	} {
+		if err := ValidateAdministratorReason(reason, publicAssetBaseURL); err == nil {
+			t.Fatalf("public asset reason %q was accepted", reason)
+		}
+	}
+	for _, reason := range []string{
+		"Reviewed https://assets.example.com/docs/upload-policy",
+		"Reviewed https://assets.example.com/uploads-archive/image-policy",
+	} {
+		if err := ValidateAdministratorReason(reason, publicAssetBaseURL); err != nil {
+			t.Fatalf("safe reason %q rejected: %v", reason, err)
 		}
 	}
 }
