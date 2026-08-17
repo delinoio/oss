@@ -73,6 +73,8 @@ The desktop host, protocol, client, and server foundation paths above are implem
 - Required releases include signed macOS DMG, Windows MSI and NSIS, Linux AppImage and Debian package, signed updater manifests, App Store/Google Play packages, Chrome Web Store package plus reproducible ZIP, and separate non-root signed/provenanced OCI API and `devhud-api-sweeper` images. Deployment requires Logto, PostgreSQL, R2/public asset hosting, signing identities, store accounts, and release secrets.
 - Product analytics, remote feature flags/kill switches, third-party plugin ABI/SDK, server-side GitHub brokerage, native Wayland, server-side Deck polling, webhooks, push infrastructure, and staged public beta are out of scope.
 
+- Native GitHub PAT reads require the matching API-origin/profile association, and failed desktop or iOS PAT persistence restores any newly created association state before returning failure.
+
 ## Change Policy
 
 Update this index, affected domain contracts, `docs/README.md`, and applicable root/domain `AGENTS.md` files together when ownership, identifiers, interfaces, platform support, persistence, security, release, or exclusions change. Do not add runtime code before the documentation-first contracts are updated.

@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 import Security
 import Tauri
 import UIKit
@@ -9,6 +10,7 @@ private let keychainService = "io.delino.devhud.secure-settings.v1"
 private let appGroup = "group.io.delino.devhud"
 private let sharedAccessGroupKey = "DevHudKeychainAccessGroup"
 private let legacyAccessGroupKey = "DevHudLegacyKeychainAccessGroup"
+private let secureStoreLogger = Logger(subsystem: "io.delino.devhud", category: "secure-store")
 
 private struct SecureSetting: Decodable {
     let kind: String
@@ -147,6 +149,18 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate {
 
     private func readSecure(_ args: RequestArgs, _ invoke: Invoke) throws {
         guard let setting = args.setting else { throw NativeError.invalidArgument }
+        if setting.kind == "github-pat" {
+            guard let scopeId = setting.scopeId else { throw NativeError.invalidArgument }
+            let (markerStatus, _) = readData(githubPatScope(scopeId, setting.profileId), accessGroupKey: sharedAccessGroupKey)
+            if markerStatus == errSecItemNotFound {
+                invoke.resolve(["kind": "secure-value", "value": NSNull()])
+                return
+            }
+            guard markerStatus == errSecSuccess else {
+                rejectStorageFailure(invoke)
+                return
+            }
+        }
         let (sharedStatus, sharedData) = readData(setting, accessGroupKey: sharedAccessGroupKey)
         if sharedStatus == errSecSuccess, let data = sharedData, let value = String(data: data, encoding: .utf8) {
             invoke.resolve(["kind": "secure-value", "value": value])
@@ -173,20 +187,43 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate {
 
     private func writeSecure(_ args: RequestArgs, _ invoke: Invoke) throws {
         guard let setting = args.setting, let value = args.value, let data = value.data(using: .utf8) else { throw NativeError.invalidArgument }
+        var createdMarker: SecureSetting?
         if setting.kind == "github-pat" {
-            guard let scopeId = setting.scopeId, let markerData = "1".data(using: .utf8),
-                  storeData(markerData, setting: githubPatScope(scopeId, setting.profileId), accessGroupKey: sharedAccessGroupKey) == errSecSuccess else {
+            guard let scopeId = setting.scopeId, let markerData = "1".data(using: .utf8) else { throw NativeError.invalidArgument }
+            let marker = githubPatScope(scopeId, setting.profileId)
+            let (markerStatus, _) = readData(marker, accessGroupKey: sharedAccessGroupKey)
+            guard markerStatus == errSecSuccess || markerStatus == errSecItemNotFound else {
                 rejectStorageFailure(invoke)
                 return
             }
+            if markerStatus == errSecItemNotFound {
+                guard storeData(markerData, setting: marker, accessGroupKey: sharedAccessGroupKey) == errSecSuccess else {
+                    rejectStorageFailure(invoke)
+                    return
+                }
+                createdMarker = marker
+            }
         }
         guard storeData(data, setting: setting, accessGroupKey: sharedAccessGroupKey) == errSecSuccess else {
+            rollbackCreatedGitHubPatScope(createdMarker)
             rejectStorageFailure(invoke)
             return
         }
         let legacyDeletion = deleteData(setting, accessGroupKey: legacyAccessGroupKey)
-        guard legacyDeletion == errSecSuccess || legacyDeletion == errSecItemNotFound else { rejectStorageFailure(invoke); return }
+        guard legacyDeletion == errSecSuccess || legacyDeletion == errSecItemNotFound else {
+            rollbackCreatedGitHubPatScope(createdMarker)
+            rejectStorageFailure(invoke)
+            return
+        }
         invoke.resolve(["kind": "ok"])
+    }
+
+    private func rollbackCreatedGitHubPatScope(_ marker: SecureSetting?) {
+        guard let marker else { return }
+        let rollback = deleteData(marker, accessGroupKey: sharedAccessGroupKey)
+        if rollback != errSecSuccess && rollback != errSecItemNotFound {
+            secureStoreLogger.error("event=github_pat_scope_rollback_failed")
+        }
     }
 
     private func removeSecure(_ args: RequestArgs, _ invoke: Invoke) throws {

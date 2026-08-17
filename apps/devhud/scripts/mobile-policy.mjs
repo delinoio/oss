@@ -44,6 +44,7 @@ export function assertAndroidNativeBridge(androidNativeBridge) {
   assert(androidNativeBridge.includes("AEADBadTagException") && androidNativeBridge.includes("authenticateKey = false") && androidNativeBridge.includes("encryptSecure(legacy, key)"), "Android must migrate authenticated legacy ciphertext before requiring key-bound AAD");
   assert(androidNativeBridge.includes('invoke.reject("storage-failure", "storage-failure"'), "Android secure-setting persistence failures must use storage-failure");
   assert(androidNativeBridge.includes("return@execute") && androidNativeBridge.includes("Base64.getDecoder().decode"), "Android secure-setting reads must map decoding and Keystore failures off-thread");
+  assert(androidNativeBridge.includes('if (kind == "github-pat")') && androidNativeBridge.includes('preferences.contains(githubPatScopeKey(scopeId, profileId))'), "Android GitHub PAT reads must require the matching API-origin scope marker");
   assert(androidNativeBridge.includes('(it.path != "" && it.path != "/")'), "Android native navigation must accept both root API-origin spellings");
   assert(androidNativeBridge.includes('it.host == "[::1]"'), "Android native navigation must accept bracketed IPv6 loopback origins");
   assert(androidNativeBridge.includes('issuer.scheme == "http" && loopback') && androidNativeBridge.includes("destination.scheme == issuer.scheme"), "Android authentication must accept configured issuer paths and loopback HTTP while preserving same-origin navigation");
@@ -60,6 +61,7 @@ export function assertAndroidNativeBridge(androidNativeBridge) {
 }
 
 export function assertIosNativeBridge(iosNativeBridge) {
+  const readSecure = iosNativeBridge.match(/private func readSecure[\s\S]*?(?=\n    private func writeSecure)/u)?.[0] ?? "";
   assert(iosNativeBridge.includes('invoke.reject("storage-failure", code: "storage-failure")'), "iOS Keychain failures must use storage-failure");
   assert(iosNativeBridge.includes('invoke.reject("permission-denied", code: "permission-denied")'), "iOS notification publication must honor authorization");
   assert(iosNativeBridge.includes("UNUserNotificationCenterDelegate") && iosNativeBridge.includes("willPresent notification"), "iOS foreground Deck notifications must be presented by a delegate");
@@ -68,6 +70,8 @@ export function assertIosNativeBridge(iosNativeBridge) {
   assert(!iosNativeBridge.includes('issuer.path == ""'), "iOS authentication must not restrict configured issuer paths");
   assert(iosNativeBridge.includes("kSecAttrAccessGroup") && iosNativeBridge.includes("kSecAttrSynchronizable"), "iOS secrets must use the shared non-synchronizing Keychain group");
   assert(iosNativeBridge.includes("legacyAccessGroupKey") && iosNativeBridge.includes("for accessGroupKey in [sharedAccessGroupKey, legacyAccessGroupKey]"), "iOS must migrate and purge legacy application-group Keychain items");
+  assert(readSecure.includes("markerStatus == errSecItemNotFound") && readSecure.includes("guard markerStatus == errSecSuccess"), "iOS GitHub PAT reads must require the matching API-origin scope marker");
+  assert((iosNativeBridge.match(/rollbackCreatedGitHubPatScope\(createdMarker\)/gu) ?? []).length === 2 && iosNativeBridge.includes("github_pat_scope_rollback_failed"), "iOS failed PAT writes must roll back newly created scope markers");
   assert(iosNativeBridge.includes('UserDefaults(suiteName: appGroup)'), "iOS must bind the contracted App Group");
 }
 

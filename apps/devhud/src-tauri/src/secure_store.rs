@@ -100,9 +100,14 @@ fn handle_with_backend<B: CredentialBackend>(
     match request.get("operation").and_then(Value::as_str) {
         Some("secure.read") => {
             let setting = parse_setting(request)?;
+            let value = if setting.kind == GITHUB_PAT_KIND {
+                read_github_pat(request, backend, &setting, chunk_values)?
+            } else {
+                read_value(backend, &setting, chunk_values)?
+            };
             Ok(serde_json::json!({
                 "kind": "secure-value",
-                "value": read_value(backend, &setting, chunk_values)?
+                "value": value
             }))
         }
         Some("secure.write") => {
@@ -187,18 +192,46 @@ fn write_github_pat<B: CredentialBackend>(
     value: &str,
     chunk_values: bool,
 ) -> Result<(), String> {
-    let scope_id = request
+    let marker = github_pat_scope(github_pat_scope_id(request)?, &pat.profile_id);
+    let previous_marker = read_value(backend, &marker, chunk_values)?;
+    let marker_was_indexed = read_index(backend, chunk_values)?.contains(&marker);
+    write_setting(backend, &marker, "1", chunk_values)?;
+    if let Err(reason) = write_setting(backend, pat, value, chunk_values) {
+        if restore_setting(
+            backend,
+            &marker,
+            previous_marker.as_deref(),
+            marker_was_indexed,
+            chunk_values,
+        )
+        .is_err()
+        {
+            error!(event = "github_pat_scope_rollback_failed");
+        }
+        return Err(reason);
+    }
+    Ok(())
+}
+
+fn read_github_pat<B: CredentialBackend>(
+    request: &Value,
+    backend: &B,
+    pat: &SettingRef,
+    chunk_values: bool,
+) -> Result<Option<String>, String> {
+    let marker = github_pat_scope(github_pat_scope_id(request)?, &pat.profile_id);
+    if read_value(backend, &marker, chunk_values)?.is_none() {
+        return Ok(None);
+    }
+    read_value(backend, pat, chunk_values)
+}
+
+fn github_pat_scope_id(request: &Value) -> Result<&str, String> {
+    request
         .get("setting")
         .and_then(|setting| setting.get("scopeId"))
         .and_then(Value::as_str)
-        .ok_or("invalid-argument")?;
-    write_setting(
-        backend,
-        &github_pat_scope(scope_id, &pat.profile_id),
-        "1",
-        chunk_values,
-    )?;
-    write_setting(backend, pat, value, chunk_values)
+        .ok_or("invalid-argument".to_string())
 }
 
 fn remove_github_pat_scope<B: CredentialBackend>(
@@ -277,6 +310,26 @@ fn write_setting<B: CredentialBackend>(
         return Err(reason);
     }
     Ok(())
+}
+
+fn restore_setting<B: CredentialBackend>(
+    backend: &B,
+    setting: &SettingRef,
+    previous: Option<&str>,
+    was_indexed: bool,
+    chunk_values: bool,
+) -> Result<(), String> {
+    match previous {
+        Some(value) => write_value(backend, setting, value, chunk_values)?,
+        None => delete_value(backend, setting, chunk_values)?,
+    }
+    let mut index = read_index(backend, chunk_values)?;
+    if was_indexed {
+        index.insert(setting.clone());
+    } else {
+        index.remove(setting);
+    }
+    write_index(backend, &index, chunk_values)
 }
 
 fn purge<B: CredentialBackend>(
@@ -740,6 +793,66 @@ mod tests {
             .expect("reconcile scope");
             assert_eq!(read_value(&backend, &pat, false), Ok(expected));
         }
+    }
+
+    #[test]
+    fn github_pat_reads_require_the_matching_origin_scope() {
+        let backend = MemoryBackend::default();
+        handle_with_backend(
+            &serde_json::json!({ "operation": "secure.write", "setting": { "kind": "github-pat", "profileId": "shared", "scopeId": "origin.first" }, "value": "shared-pat" }),
+            &backend,
+            false,
+        )
+        .expect("scoped PAT");
+
+        for (scope_id, expected) in [
+            ("origin.first", Some("shared-pat")),
+            ("origin.second", None),
+        ] {
+            let response = handle_with_backend(
+                &serde_json::json!({ "operation": "secure.read", "setting": { "kind": "github-pat", "profileId": "shared", "scopeId": scope_id } }),
+                &backend,
+                false,
+            )
+            .expect("PAT read");
+            assert_eq!(response["value"].as_str(), expected);
+        }
+    }
+
+    #[test]
+    fn failed_github_pat_write_rolls_back_its_new_scope_marker() {
+        let backend = MemoryBackend::default();
+        handle_with_backend(
+            &serde_json::json!({ "operation": "secure.write", "setting": { "kind": "github-pat", "profileId": "shared", "scopeId": "origin.first" }, "value": "old-pat" }),
+            &backend,
+            false,
+        )
+        .expect("existing PAT");
+        *backend.fail_next_set.borrow_mut() = Some("github-pat:shared".to_string());
+
+        assert_eq!(
+            handle_with_backend(
+                &serde_json::json!({ "operation": "secure.write", "setting": { "kind": "github-pat", "profileId": "shared", "scopeId": "origin.failed" }, "value": "new-pat" }),
+                &backend,
+                false,
+            ),
+            Err("storage-failure".to_string())
+        );
+
+        let marker = setting("github-pat-scope", "origin.failed:shared");
+        assert_eq!(read_value(&backend, &marker, false), Ok(None));
+        assert!(
+            !read_index(&backend, false)
+                .expect("index")
+                .contains(&marker)
+        );
+        let response = handle_with_backend(
+            &serde_json::json!({ "operation": "secure.read", "setting": { "kind": "github-pat", "profileId": "shared", "scopeId": "origin.first" } }),
+            &backend,
+            false,
+        )
+        .expect("existing PAT read");
+        assert_eq!(response["value"], "old-pat");
     }
 
     #[test]

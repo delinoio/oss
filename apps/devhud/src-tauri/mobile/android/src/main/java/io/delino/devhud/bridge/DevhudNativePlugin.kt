@@ -163,8 +163,19 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
     private fun readSecure(invoke: Invoke) {
         secureSettingsExecutor.execute {
             try {
-                val key = settingKey(invoke.getArgs())
+                val args = invoke.getArgs()
+                val setting = args.getJSObject("setting") ?: throw IllegalArgumentException("setting")
+                val kind = setting.getString("kind")
+                val profileId = setting.getString("profileId")
+                val key = settingKey(args)
                 val preferences = activity.getSharedPreferences(storeName, Context.MODE_PRIVATE)
+                if (kind == "github-pat") {
+                    val scopeId = setting.getString("scopeId")
+                    if (!preferences.contains(githubPatScopeKey(scopeId, profileId))) {
+                        invoke.resolve(JSObject().put("kind", "secure-value").put("value", null))
+                        return@execute
+                    }
+                }
                 val encoded = preferences.getString(key, null)
                 if (encoded == null) {
                     invoke.resolve(JSObject().put("kind", "secure-value").put("value", null))
