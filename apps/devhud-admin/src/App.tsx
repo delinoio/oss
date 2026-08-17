@@ -491,12 +491,25 @@ function Uploads({
     action: "quarantine" | "delete";
   } | null>(null);
   const [conflict, setConflict] = useState(false);
+  const [continuationPending, setContinuationPending] = useState(false);
+  const continuationPendingRef = useRef(false);
+  const requestGeneration = useRef(0);
   const load = async (token = "", append = false) => {
-    if (!append) setState({ kind: "loading" });
+    if (append && continuationPendingRef.current) return;
+    if (append) {
+      continuationPendingRef.current = true;
+      setContinuationPending(true);
+    } else {
+      continuationPendingRef.current = false;
+      setContinuationPending(false);
+      setState({ kind: "loading" });
+    }
+    const generation = ++requestGeneration.current;
     try {
       const response = await client.listUploads({
         page: { pageSize: 50, pageToken: token },
       });
+      if (generation !== requestGeneration.current) return;
       setState((current) => ({
         kind: "loaded",
         value: {
@@ -508,11 +521,21 @@ function Uploads({
         },
       }));
     } catch (error) {
+      if (generation !== requestGeneration.current) return;
       setState(errorState(error));
+    } finally {
+      if (append && generation === requestGeneration.current) {
+        continuationPendingRef.current = false;
+        setContinuationPending(false);
+      }
     }
   };
   useEffect(() => {
     void load();
+    return () => {
+      requestGeneration.current++;
+      continuationPendingRef.current = false;
+    };
   }, []);
 
   return (
@@ -579,7 +602,11 @@ function Uploads({
               </table>
             </div>
             {value.next && (
-              <button className="load-more" onClick={() => void load(value.next, true)}>
+              <button
+                className="load-more"
+                disabled={continuationPending}
+                onClick={() => void load(value.next, true)}
+              >
                 {copy.next}
               </button>
             )}
@@ -685,12 +712,25 @@ function Audit({
   const [state, setState] = useState<Loadable<{ events: AuditEvent[]; next: string }>>({
     kind: "loading",
   });
+  const [continuationPending, setContinuationPending] = useState(false);
+  const continuationPendingRef = useRef(false);
+  const requestGeneration = useRef(0);
   const load = async (token = "", append = false) => {
-    if (!append) setState({ kind: "loading" });
+    if (append && continuationPendingRef.current) return;
+    if (append) {
+      continuationPendingRef.current = true;
+      setContinuationPending(true);
+    } else {
+      continuationPendingRef.current = false;
+      setContinuationPending(false);
+      setState({ kind: "loading" });
+    }
+    const generation = ++requestGeneration.current;
     try {
       const response = await client.listAuditEvents({
         page: { pageSize: 50, pageToken: token },
       });
+      if (generation !== requestGeneration.current) return;
       setState((current) => ({
         kind: "loaded",
         value: {
@@ -702,11 +742,21 @@ function Audit({
         },
       }));
     } catch (error) {
+      if (generation !== requestGeneration.current) return;
       setState(errorState(error));
+    } finally {
+      if (append && generation === requestGeneration.current) {
+        continuationPendingRef.current = false;
+        setContinuationPending(false);
+      }
     }
   };
   useEffect(() => {
     void load();
+    return () => {
+      requestGeneration.current++;
+      continuationPendingRef.current = false;
+    };
   }, []);
   return (
     <section aria-labelledby="audit-title">
@@ -737,7 +787,11 @@ function Audit({
               ))}
             </ol>
             {value.next && (
-              <button className="load-more" onClick={() => void load(value.next, true)}>
+              <button
+                className="load-more"
+                disabled={continuationPending}
+                onClick={() => void load(value.next, true)}
+              >
                 {copy.next}
               </button>
             )}

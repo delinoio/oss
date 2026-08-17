@@ -1294,6 +1294,7 @@ jobs:
               - apps/devhud-admin/**
               - packages/devhud-api-client/**
               - protos/**
+              - servers/devhud-api/internal/adminassets/**
 
       - name: Determine whether to run
         id: gate
@@ -1332,11 +1333,14 @@ jobs:
         if: ${{ steps.gate.outputs.run == 'true' }}
         run: pnpm install --frozen-lockfile
 
-      - name: Build client and test administrator SPA
+      - name: Build client, test administrator SPA, and verify embedded assets
         if: ${{ steps.gate.outputs.run == 'true' }}
         run: |
           pnpm --filter @delinoio/devhud-api-client build
           pnpm --filter devhud-admin test
+          git status --short --untracked-files=all -- servers/devhud-api/internal/adminassets/dist
+          git diff --exit-code -- servers/devhud-api/internal/adminassets/dist
+          test -z "$(git ls-files --others --exclude-standard -- servers/devhud-api/internal/adminassets/dist)"
 
   devhud-api:
     name: DevHud API Integration

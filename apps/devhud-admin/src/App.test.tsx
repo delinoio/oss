@@ -145,6 +145,79 @@ describe("administrator console review regressions", () => {
     expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
   });
 
+  it("prevents duplicate upload continuation requests", async () => {
+    type UploadListResponse = {
+      uploads: Array<typeof upload>;
+      nextPageToken: string;
+    };
+    let resolveContinuation = (_response: UploadListResponse) => {};
+    const continuation = new Promise<UploadListResponse>((resolve) => {
+      resolveContinuation = resolve;
+    });
+    const nextUpload = {
+      ...upload,
+      uploadId: { value: "018f7c1e-7b4a-7abc-8def-0123456789b3" },
+    };
+    runtime.client.listUploads
+      .mockResolvedValueOnce({ uploads: [upload], nextPageToken: "upload-token" })
+      .mockReturnValueOnce(continuation);
+
+    render(<App />);
+    await screen.findByText("Target User");
+    fireEvent.click(screen.getByRole("button", { name: "Uploads" }));
+    const loadMore = await screen.findByRole("button", { name: "Load more" });
+    fireEvent.click(loadMore);
+    fireEvent.click(loadMore);
+
+    expect(runtime.client.listUploads).toHaveBeenCalledTimes(2);
+    expect((loadMore as HTMLButtonElement).disabled).toBe(true);
+    await act(async () => {
+      resolveContinuation({ uploads: [nextUpload], nextPageToken: "" });
+      await continuation;
+    });
+    expect(screen.getAllByText(nextUpload.uploadId.value)).toHaveLength(1);
+  });
+
+  it("prevents duplicate audit continuation requests", async () => {
+    const firstEvent = {
+      auditEventId: { value: "018f7c1e-7b4a-7abc-8def-0123456789b4" },
+      action: AuditAction.USER_BLOCKED,
+      outcome: AuditOutcome.ACCEPTED,
+      reason: "Initial event",
+    };
+    const nextEvent = {
+      ...firstEvent,
+      auditEventId: { value: "018f7c1e-7b4a-7abc-8def-0123456789b5" },
+      reason: "Continuation event",
+    };
+    type AuditListResponse = {
+      auditEvents: Array<typeof firstEvent>;
+      nextPageToken: string;
+    };
+    let resolveContinuation = (_response: AuditListResponse) => {};
+    const continuation = new Promise<AuditListResponse>((resolve) => {
+      resolveContinuation = resolve;
+    });
+    runtime.client.listAuditEvents
+      .mockResolvedValueOnce({ auditEvents: [firstEvent], nextPageToken: "audit-token" })
+      .mockReturnValueOnce(continuation);
+
+    render(<App />);
+    await screen.findByText("Target User");
+    fireEvent.click(screen.getByRole("button", { name: "Audit" }));
+    const loadMore = await screen.findByRole("button", { name: "Load more" });
+    fireEvent.click(loadMore);
+    fireEvent.click(loadMore);
+
+    expect(runtime.client.listAuditEvents).toHaveBeenCalledTimes(2);
+    expect((loadMore as HTMLButtonElement).disabled).toBe(true);
+    await act(async () => {
+      resolveContinuation({ auditEvents: [nextEvent], nextPageToken: "" });
+      await continuation;
+    });
+    expect(screen.getAllByText("Continuation event")).toHaveLength(1);
+  });
+
   it("renders correlated unavailable errors and retries from the first page", async () => {
     const correlationId = "018f7c1e-7b4a-7abc-8def-0123456789b2";
     runtime.client.listUsers
