@@ -166,8 +166,11 @@ export function validateCrashReport(report: SubmitCrashReportRequest): void {
   if (report.relatedCorrelationIds.length > MAX_CRASH_RELATED_CORRELATIONS) {
     throw new RangeError(`relatedCorrelationIds must not exceed ${MAX_CRASH_RELATED_CORRELATIONS}`);
   }
-  if (report.durationMilliseconds > MAX_CRASH_DURATION_MILLISECONDS) {
-    throw new RangeError("durationMilliseconds must not exceed 24 hours");
+  if (
+    report.durationMilliseconds < 0n ||
+    report.durationMilliseconds > MAX_CRASH_DURATION_MILLISECONDS
+  ) {
+    throw new RangeError("durationMilliseconds must be between zero and 24 hours");
   }
   if (!diagnosticErrorCodePattern.test(report.errorCode)) {
     throw new TypeError("errorCode must be an enum-style classification");

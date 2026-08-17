@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { describe, expect, it, vi } from "vitest";
-import { ProjectId, type GetBootstrapResponse } from "@delinoio/devhud-api-client";
+import { ProjectId, StaticCapability, type GetBootstrapResponse } from "@delinoio/devhud-api-client";
 import { LogtoClientError, LogtoRequestError } from "@logto/client";
 import { BootstrapContractError, isTerminalAccessTokenError, SecureLogtoStorage, sessionProfileId, validateBootstrap } from "./identity-client";
 import { LifecycleState, RuntimePlatform, type NativeBridgeRequestV1, type NativeBridgeResponseV1, type NativeBridgeV1 } from "./native-bridge";
@@ -32,6 +32,7 @@ const bootstrap = {
   logtoAudience: "https://api.example/api",
   logtoClients: { desktop: "desktop-client", ios: "ios-client", android: "android-client", admin: "admin-client" },
   logtoRedirects: { native: "devhud://auth/callback", admin: "https://admin.example/callback" },
+  capabilities: [StaticCapability.SETTINGS_SYNC, StaticCapability.CRASH_REPORTS],
 } as GetBootstrapResponse;
 
 describe("identity client boundary", () => {
@@ -41,6 +42,7 @@ describe("identity client boundary", () => {
     expect(validateBootstrap(bootstrap, RuntimePlatform.Android).redirectUri).toBe("devhud://auth/callback");
     expect(validateBootstrap({ ...bootstrap, apiVersion: "2026.08.17" } as GetBootstrapResponse, RuntimePlatform.Desktop).audience).toBe("https://api.example/api");
     expect(validateBootstrap({ ...bootstrap, logtoIssuer: "http://127.0.0.1:46307/oidc" } as GetBootstrapResponse, RuntimePlatform.Desktop).issuer).toBe("http://127.0.0.1:46307/oidc");
+    expect(validateBootstrap(bootstrap, RuntimePlatform.Desktop).capabilities).toEqual([StaticCapability.SETTINGS_SYNC, StaticCapability.CRASH_REPORTS]);
   });
 
   it("rejects insecure discovery and callback substitution", () => {

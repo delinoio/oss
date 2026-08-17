@@ -602,11 +602,10 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
             validate_auth_browser_request(&request, &state)?;
         }
         if routes_to_mobile_plugin(operation, cfg!(target_os = "android")) {
-            let response = crate::native_plugin::request(&app, &request)?;
             if operation == "secure.purge" && purge_clears_diagnostics(&request) {
                 clear_diagnostic_logs()?;
             }
-            return Ok(response);
+            return crate::native_plugin::request(&app, &request);
         }
     }
     #[cfg(desktop)]
@@ -624,11 +623,10 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
             } else {
                 validate_secure_request(&request)?;
             }
-            let response = crate::secure_store::handle(&request)?;
             if operation == "secure.purge" && purge_clears_diagnostics(&request) {
                 clear_diagnostic_logs()?;
             }
-            return Ok(response);
+            return crate::secure_store::handle(&request);
         }
         if operation == "auth.open-system-browser" {
             validate_auth_browser_request(&request, &state)?;

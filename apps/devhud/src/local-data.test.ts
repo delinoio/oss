@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { StaticCapability } from "@delinoio/devhud-api-client";
 import { clearAllContractedLocalData, clearAuthenticatedOriginData, clearAuthenticatedSettingsCache, clearGuestImportMarker, hasGuestSettings, readAuthenticatedSettingsCache, readCachedIdentityBootstrap, readGuestSettings, writeAuthenticatedSettingsCache, writeCachedIdentityBootstrap, writeGuestSettings } from "./local-data";
 import { defaultDevHudSettings } from "./settings-contract";
 
@@ -16,7 +17,7 @@ describe("local identity data lifecycle", () => {
   it("isolates cached bootstrap and settings by API origin", () => {
     const storage = new MemoryStorage();
     const apiOrigin = "https://api.example";
-    const bootstrap = { issuer: "https://identity.example/", audience: "https://api.example", clientId: "desktop", redirectUri: "devhud://auth/callback" as const };
+    const bootstrap = { issuer: "https://identity.example/", audience: "https://api.example", clientId: "desktop", redirectUri: "devhud://auth/callback" as const, capabilities: [StaticCapability.CRASH_REPORTS] };
     writeCachedIdentityBootstrap(storage, apiOrigin, bootstrap);
     writeAuthenticatedSettingsCache(storage, apiOrigin, { settings: defaultDevHudSettings, revision: 7n, cachedAt: "2026-08-17T00:00:00.000Z" });
 
@@ -64,7 +65,7 @@ describe("local identity data lifecycle", () => {
 
   it("keeps authenticated cache writes best-effort when persistence rejects writes", () => {
     const storage = { setItem: () => { throw new DOMException("quota exceeded", "QuotaExceededError"); } };
-    expect(() => writeCachedIdentityBootstrap(storage, "https://api.example", { issuer: "https://identity.example/", audience: "https://api.example", clientId: "desktop", redirectUri: "devhud://auth/callback" })).not.toThrow();
+    expect(() => writeCachedIdentityBootstrap(storage, "https://api.example", { issuer: "https://identity.example/", audience: "https://api.example", clientId: "desktop", redirectUri: "devhud://auth/callback", capabilities: [StaticCapability.CRASH_REPORTS] })).not.toThrow();
     expect(() => writeAuthenticatedSettingsCache(storage, "https://api.example", { settings: defaultDevHudSettings, revision: 1n, cachedAt: "2026-08-17T00:00:00.000Z" })).not.toThrow();
   });
 
@@ -112,7 +113,7 @@ describe("local identity data lifecycle", () => {
   it("clears only the authenticated settings snapshot when a session becomes invalid", () => {
     const storage = new MemoryStorage();
     const apiOrigin = "https://api.example";
-    const bootstrap = { issuer: "https://identity.example/", audience: "https://api.example", clientId: "desktop", redirectUri: "devhud://auth/callback" as const };
+    const bootstrap = { issuer: "https://identity.example/", audience: "https://api.example", clientId: "desktop", redirectUri: "devhud://auth/callback" as const, capabilities: [StaticCapability.CRASH_REPORTS] };
     writeCachedIdentityBootstrap(storage, apiOrigin, bootstrap);
     writeAuthenticatedSettingsCache(storage, apiOrigin, { settings: defaultDevHudSettings, revision: 7n, cachedAt: "2026-08-17T00:00:00.000Z" });
 

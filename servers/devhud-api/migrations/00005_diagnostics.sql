@@ -7,10 +7,13 @@ CREATE TABLE devhud_crash_reports (
     report_schema_version bigint NOT NULL CHECK (report_schema_version BETWEEN 1 AND 4294967295),
     app_version text NOT NULL CHECK (octet_length(app_version) BETWEEN 1 AND 256),
     build_id text NOT NULL CHECK (octet_length(build_id) BETWEEN 1 AND 256),
-    platform smallint NOT NULL CHECK (platform BETWEEN 1 AND 5),
+    platform smallint NOT NULL CHECK (platform BETWEEN 1 AND 6),
     architecture smallint NOT NULL CHECK (architecture BETWEEN 1 AND 3),
     os_version text NOT NULL CHECK (octet_length(os_version) BETWEEN 1 AND 256),
-    tauri_revision text NOT NULL CHECK (tauri_revision ~ '^[0-9a-f]{40}$'),
+    tauri_revision text NOT NULL CHECK (
+        (platform BETWEEN 1 AND 5 AND tauri_revision ~ '^[0-9a-f]{40}$')
+        OR (platform = 6 AND tauri_revision = '')
+    ),
     cef_revision text NOT NULL CHECK (octet_length(cef_revision) <= 256),
     occurred_at timestamptz NOT NULL,
     component smallint NOT NULL CHECK (component BETWEEN 1 AND 6),
@@ -25,11 +28,11 @@ CREATE TABLE devhud_crash_reports (
     expires_at timestamptz NOT NULL,
     CONSTRAINT devhud_crash_reports_client_idempotency UNIQUE (owner_user_id, client_correlation_id),
     CONSTRAINT devhud_crash_reports_retention CHECK (
-        expires_at = accepted_at + interval '30 days'
+        expires_at = accepted_at + interval '720 hours'
     ),
     CONSTRAINT devhud_crash_reports_webview_revision CHECK (
         (platform BETWEEN 1 AND 3 AND octet_length(cef_revision) BETWEEN 1 AND 256)
-        OR (platform BETWEEN 4 AND 5 AND cef_revision = '')
+        OR (platform BETWEEN 4 AND 6 AND cef_revision = '')
     )
 );
 

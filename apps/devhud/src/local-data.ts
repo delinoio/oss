@@ -1,3 +1,4 @@
+import type { StaticCapability } from "@delinoio/devhud-api-client";
 import { canonicalDevHudSettings, defaultDevHudSettings, parseDevHudSettings, type DevHudSettingsV1 } from "./settings-contract";
 import { isValidLogtoAudience, normalizeLogtoIssuer } from "./identity-contract.ts";
 
@@ -71,6 +72,7 @@ export interface CachedIdentityBootstrap {
   readonly audience: string;
   readonly clientId: string;
   readonly redirectUri: "devhud://auth/callback";
+  readonly capabilities: readonly StaticCapability[];
 }
 
 export function readCachedIdentityBootstrap(storage: ReadStorage, apiOrigin: string): CachedIdentityBootstrap | null {
@@ -81,7 +83,9 @@ export function readCachedIdentityBootstrap(storage: ReadStorage, apiOrigin: str
     if (record.redirectUri !== "devhud://auth/callback" || typeof record.clientId !== "string" || !/^[\x21-\x7e]{1,256}$/u.test(record.clientId)) return null;
     const issuer = normalizeLogtoIssuer(record.issuer);
     if (issuer === null || !isValidLogtoAudience(record.audience)) return null;
-    return { issuer, audience: record.audience, clientId: record.clientId, redirectUri: record.redirectUri };
+    const capabilities = record.capabilities === undefined ? [] : record.capabilities;
+    if (!Array.isArray(capabilities) || capabilities.some((capability) => !Number.isInteger(capability))) return null;
+    return { issuer, audience: record.audience, clientId: record.clientId, redirectUri: record.redirectUri, capabilities: Object.freeze([...new Set(capabilities as StaticCapability[])]) };
   } catch {
     return null;
   }

@@ -23,11 +23,19 @@ func TestCrashReportPersistenceRetentionIdempotencyAndAccountCascade(t *testing.
 		t.Skip("DEVHUD_TEST_DATABASE_URL is not set")
 	}
 	ctx := context.Background()
-	pool, err := NewPool(ctx, databaseURL)
+	configuration, err := pgxpool.ParseConfig(databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	configuration.ConnConfig.RuntimeParams["timezone"] = "America/New_York"
+	pool, err := pgxpool.NewWithConfig(ctx, configuration)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer pool.Close()
+	if err := pool.Ping(ctx); err != nil {
+		t.Fatal(err)
+	}
 	dropFoundation(t, ctx, pool)
 	defer dropFoundation(t, ctx, pool)
 	if err := Migrate(ctx, pool); err != nil {
@@ -43,7 +51,9 @@ func TestCrashReportPersistenceRetentionIdempotencyAndAccountCascade(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	now := time.Date(2026, 8, 17, 0, 0, 0, 0, time.UTC)
+	// This retention window crosses the New York DST fallback. The database
+	// constraint must still match Go's exact 720-hour duration.
+	now := time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC)
 	requestCorrelation, _ := idgen.UUIDv7{}.New()
 	clientCorrelation, _ := idgen.UUIDv7{}.New()
 	relatedCorrelation, _ := idgen.UUIDv7{}.New()
@@ -82,8 +92,12 @@ func TestCrashReportPersistenceRetentionIdempotencyAndAccountCascade(t *testing.
 	report.ClientCorrelationID, _ = idgen.UUIDv7{}.New()
 	report.AcceptedAt = now.Add(time.Hour)
 	report.ExpiresAt = report.AcceptedAt.Add(domain.CrashReportRetention)
+	report.Platform = 6
+	report.OSVersion = "browser"
+	report.TauriRevision = ""
+	report.CEFRevision = ""
 	if _, err := store.SubmitCrashReport(ctx, user.ID, report); err != nil {
-		t.Fatal(err)
+		t.Fatalf("persist browser crash report: %v", err)
 	}
 	if _, err := pool.Exec(ctx, "DELETE FROM devhud_users WHERE user_id = $1", user.ID); err != nil {
 		t.Fatal(err)

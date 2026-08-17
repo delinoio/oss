@@ -282,7 +282,12 @@ export function prepareDiagnosticsBundle(event: LocalDiagnosticEvent, allEvents:
   validateCrashReport(request);
   const requestJson = toJsonString(SubmitCrashReportRequestSchema, request, { prettySpaces: 2 });
   const safeEvents = allEvents.slice(-DiagnosticsMaximumEvents).map((candidate) => redactDiagnosticValue(candidate)).filter((candidate) => candidate !== undefined);
-  const exportJson = JSON.stringify({ schemaVersion: 1, generatedAt: new Date().toISOString(), crashReport: JSON.parse(requestJson), localEvents: safeEvents }, null, 2);
+  const exportBundle = { schemaVersion: 1, generatedAt: new Date().toISOString(), crashReport: JSON.parse(requestJson), localEvents: safeEvents };
+  let exportJson = JSON.stringify(exportBundle, null, 2);
+  while (textEncoder.encode(exportJson).byteLength > DiagnosticsMaximumExportBytes && safeEvents.length > 0) {
+    safeEvents.shift();
+    exportJson = JSON.stringify(exportBundle, null, 2);
+  }
   if (textEncoder.encode(exportJson).byteLength > DiagnosticsMaximumExportBytes) throw new Error("diagnostics-export-too-large");
   return Object.freeze({ correlationId: event.correlationId, request, requestJson, exportJson });
 }

@@ -209,6 +209,9 @@ describe("wire validation helpers", () => {
       validateCrashReport(create(SubmitCrashReportRequestSchema, {})),
     ).toThrow(RangeError);
     expect(() =>
+      validateCrashReport({ ...safeCrashReport, durationMilliseconds: -1n }),
+    ).toThrow(RangeError);
+    expect(() =>
       validateCrashReport(
         create(SubmitCrashReportRequestSchema, {
           ...safeCrashReport,

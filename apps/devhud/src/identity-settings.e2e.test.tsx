@@ -2,7 +2,7 @@
 
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { create, toBinary } from "@bufbuild/protobuf";
-import { canonicalizeSettingsJson, PermissionFailureReason, PermissionFailureSchema, SettingsRevisionConflictSchema } from "@delinoio/devhud-api-client";
+import { canonicalizeSettingsJson, PermissionFailureReason, PermissionFailureSchema, SettingsRevisionConflictSchema, StaticCapability } from "@delinoio/devhud-api-client";
 import { LogtoRequestError } from "@logto/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -455,6 +455,7 @@ describe("generated Connect identity/settings fixture", () => {
       audience: "https://api.example",
       clientId: "desktop-client",
       redirectUri: "devhud://auth/callback",
+      capabilities: [StaticCapability.CRASH_REPORTS],
     });
     writeAuthenticatedSettingsCache(localStorage, apiOrigin, {
       settings: { ...defaultDevHudSettings, appearance: { ...defaultDevHudSettings.appearance, theme: "dark" } },
@@ -488,6 +489,7 @@ describe("generated Connect identity/settings fixture", () => {
       audience: "https://api.example",
       clientId: "desktop-client",
       redirectUri: "devhud://auth/callback",
+      capabilities: [StaticCapability.CRASH_REPORTS],
     });
     writeAuthenticatedSettingsCache(localStorage, apiOrigin, {
       settings: { ...defaultDevHudSettings, appearance: { ...defaultDevHudSettings.appearance, theme: "dark" } },
@@ -1130,6 +1132,7 @@ describe("generated Connect identity/settings fixture", () => {
       audience: fixture.bootstrap.logtoAudience,
       clientId: fixture.bootstrap.logtoClients.desktop,
       redirectUri: "devhud://auth/callback",
+      capabilities: [StaticCapability.CRASH_REPORTS],
     });
     writeAuthenticatedSettingsCache(localStorage, "https://devhud.api.delino.io", { settings: defaultDevHudSettings, revision: 3n, cachedAt: "2026-08-17T00:00:00.000Z" });
 

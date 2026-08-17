@@ -1,13 +1,14 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { Code, ConnectError } from "@connectrpc/connect";
 import { toJsonString } from "@bufbuild/protobuf";
-import { DiagnosticComponent, DiagnosticPlatform, DiagnosticSeverity, ErrorMetadataSchema, PermissionFailureReason, PermissionFailureSchema, SubmitCrashReportRequestSchema } from "@delinoio/devhud-api-client";
+import { DiagnosticComponent, DiagnosticPlatform, DiagnosticSeverity, ErrorMetadataSchema, PermissionFailureReason, PermissionFailureSchema, StaticCapability, SubmitCrashReportRequestSchema } from "@delinoio/devhud-api-client";
 import { createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   DiagnosticsMaximumEvents,
+  DiagnosticsMaximumExportBytes,
   DiagnosticsCorrelationsKey,
   DiagnosticsRetentionDays,
   DiagnosticsStorageKey,
@@ -163,6 +164,20 @@ describe("diagnostics privacy boundary", () => {
     expect(prepared.request.clientCorrelationId?.value).toBe(event.correlationId);
   });
 
+  it("trims the oldest local events until the complete export fits", () => {
+    const now = Date.parse("2026-08-17T00:00:00.000Z");
+    const event = fixtureEvent(now);
+    const largeEvent = { ...fixtureEvent(now - 1), stackFrames: Array.from({ length: 64 }, () => `at ${"A".repeat(500)}`) };
+    const allEvents = [...Array.from({ length: 40 }, () => largeEvent), event];
+
+    const prepared = prepareDiagnosticsBundle(event, allEvents);
+    const exported = JSON.parse(prepared.exportJson) as { localEvents: LocalDiagnosticEvent[] };
+
+    expect(new TextEncoder().encode(prepared.exportJson).byteLength).toBeLessThanOrEqual(DiagnosticsMaximumExportBytes);
+    expect(exported.localEvents.length).toBeLessThan(allEvents.length);
+    expect(exported.localEvents.at(-1)?.correlationId).toBe(event.correlationId);
+  });
+
   it("retains bounded Connect response correlations without user identifiers", () => {
     const now = Date.parse("2026-08-17T00:00:00.000Z");
     const correlation = uuidV7(now, new Uint8Array(10).fill(7));
@@ -180,13 +195,51 @@ describe("diagnostics privacy boundary", () => {
   });
 
   it("allows exactly one explicitly consented authenticated online submission", () => {
-    expect(diagnosticsSubmissionBlock("guest", true, true)).toBe("guest");
-    expect(diagnosticsSubmissionBlock("blocked", true, true)).toBe("blocked");
-    expect(diagnosticsSubmissionBlock("deletion-pending", true, true)).toBe("blocked");
-    expect(diagnosticsSubmissionBlock("authenticated", false, true)).toBe("offline");
-    expect(diagnosticsSubmissionBlock("authenticated", true, false)).toBe("consent-required");
-    expect(diagnosticsSubmissionBlock("authenticated", true, true)).toBeNull();
+    expect(diagnosticsSubmissionBlock("guest", true, true, true)).toBe("guest");
+    expect(diagnosticsSubmissionBlock("blocked", true, true, true)).toBe("blocked");
+    expect(diagnosticsSubmissionBlock("deletion-pending", true, true, true)).toBe("blocked");
+    expect(diagnosticsSubmissionBlock("authenticated", true, true, false)).toBe("unsupported");
+    expect(diagnosticsSubmissionBlock("authenticated", false, true, true)).toBe("offline");
+    expect(diagnosticsSubmissionBlock("authenticated", true, false, true)).toBe("consent-required");
+    expect(diagnosticsSubmissionBlock("authenticated", true, true, true)).toBeNull();
   });
+
+  it("keeps preview and export available without the crash-report capability", () => {
+    const now = Date.parse("2026-08-17T00:00:00.000Z");
+    appendDiagnosticEvent(localStorage, fixtureEvent(now), now);
+    mockAuthenticatedIdentity([]);
+    renderDiagnosticsPanel();
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.diagnosticsPreview }));
+
+    expect(screen.getByRole("button", { name: messages.en.diagnosticsExport })).toBeTruthy();
+    expect(screen.queryByRole("checkbox", { name: messages.en.diagnosticsConsent })).toBeNull();
+    expect(screen.queryByRole("button", { name: messages.en.diagnosticsSubmit })).toBeNull();
+  });
+
+  for (const latestAction of ["uncheck", "preview"] as const) {
+    it(`discards a pending consent digest after ${latestAction}`, async () => {
+      const now = Date.parse("2026-08-17T00:00:00.000Z");
+      appendDiagnosticEvent(localStorage, fixtureEvent(now), now);
+      mockAuthenticatedIdentity([StaticCapability.CRASH_REPORTS]);
+      let resolveDigest!: (value: ArrayBuffer) => void;
+      const pendingDigest = new Promise<ArrayBuffer>((resolve) => { resolveDigest = resolve; });
+      vi.spyOn(crypto.subtle, "digest").mockReturnValueOnce(pendingDigest);
+      renderDiagnosticsPanel();
+      fireEvent.click(screen.getByRole("button", { name: messages.en.diagnosticsPreview }));
+      const consent = screen.getByRole("checkbox", { name: messages.en.diagnosticsConsent });
+      fireEvent.click(consent);
+
+      fireEvent.click(latestAction === "uncheck" ? consent : screen.getByRole("button", { name: messages.en.diagnosticsPreview }));
+      await act(async () => {
+        resolveDigest(new Uint8Array(32).buffer);
+        await pendingDigest;
+      });
+
+      expect((screen.getByRole("checkbox", { name: messages.en.diagnosticsConsent }) as HTMLInputElement).checked).toBe(false);
+      expect((screen.getByRole("button", { name: messages.en.diagnosticsSubmit }) as HTMLButtonElement).disabled).toBe(true);
+    });
+  }
 
   it("preserves typed denial errors and their server correlation", async () => {
     const correlationId = "0198c8b0-77d6-7d4a-a7d9-e4d7b11c4402";
@@ -274,17 +327,26 @@ function fixtureEvent(now: number): LocalDiagnosticEvent {
 async function renderDiagnosticsPanelAndSubmit(): Promise<void> {
   const now = Date.parse("2026-08-17T00:00:00.000Z");
   appendDiagnosticEvent(localStorage, fixtureEvent(now), now);
-  vi.spyOn(serviceBoundary, "useIdentitySettings").mockReturnValue({
-    status: "authenticated",
-  } as ReturnType<typeof serviceBoundary.useIdentitySettings>);
-  const bridge: NativeBridgeV1 = {
-    async request() { return { kind: "ok" }; },
-    async listen() { return () => {}; },
-  };
-  render(createElement(DiagnosticsPanel, { copy: messages.en, runtime, bridge, storage: localStorage, online: true }));
+  mockAuthenticatedIdentity([StaticCapability.CRASH_REPORTS]);
+  renderDiagnosticsPanel();
   fireEvent.click(screen.getByRole("button", { name: messages.en.diagnosticsPreview }));
   fireEvent.click(screen.getByRole("checkbox", { name: messages.en.diagnosticsConsent }));
   await waitFor(() => expect((screen.getByRole("button", { name: messages.en.diagnosticsSubmit }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(screen.getByRole("button", { name: messages.en.diagnosticsSubmit }));
   await waitFor(() => expect(diagnosticsMutation.mutateAsync).toHaveBeenCalledOnce());
+}
+
+function mockAuthenticatedIdentity(capabilities: readonly StaticCapability[]): void {
+  vi.spyOn(serviceBoundary, "useIdentitySettings").mockReturnValue({
+    status: "authenticated",
+    bootstrap: { capabilities },
+  } as ReturnType<typeof serviceBoundary.useIdentitySettings>);
+}
+
+function renderDiagnosticsPanel(): void {
+  const bridge: NativeBridgeV1 = {
+    async request() { return { kind: "ok" }; },
+    async listen() { return () => {}; },
+  };
+  render(createElement(DiagnosticsPanel, { copy: messages.en, runtime, bridge, storage: localStorage, online: true }));
 }
