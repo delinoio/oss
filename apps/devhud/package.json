@@ -35,7 +35,7 @@
   "devDependencies": {
     "@rsbuild/core": "2.1.10",
     "@rsbuild/plugin-react": "2.0.1",
-    "@testing-library/react": "16.3.0",
+    "@testing-library/react": "16.3.2",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "js-yaml": "4.3.1",
