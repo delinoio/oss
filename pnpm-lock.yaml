@@ -33,7 +33,7 @@ overrides:
   uuid: 11.1.1
   ws@>=6.0.0 <6.2.4: 6.2.6
   ws@>=7.0.0 <7.5.11: 7.5.11
-  ws@>=8.0.0 <8.21.0: 8.21.0
+  ws@>=8.0.0 <8.21.0: 8.21.3
 
 importers:
 
@@ -5708,8 +5708,8 @@ packages:
       utf-8-validate:
         optional: true
 
-  ws@8.21.0:
-    resolution: {integrity: sha512-Vsp28b7DRcimFQvrqu2Wek3z1iYxDCWqHYB8Qsnk/S4RfaCQzPGPyBNuVjJV3cd6UiKtUtp6sNM77gWvzcCH+g==}
+  ws@8.21.3:
+    resolution: {integrity: sha512-201TZ/kPWxoPr/OKWjquZR1SWKXcvxdH+e1xrx89b3YbmzLMFCLfnaG1HFIgWzJOEWZ7MvpK++odZufgYR50Rw==}
     engines: {node: '>=10.0.0'}
     peerDependencies:
       bufferutil: ^4.0.1
@@ -6677,7 +6677,7 @@ snapshots:
       terminal-link: 2.1.1
       undici: 7.29.0
       wrap-ansi: 7.0.0
-      ws: 8.21.0
+      ws: 8.21.3
     transitivePeerDependencies:
       - bufferutil
       - graphql
@@ -10342,7 +10342,7 @@ snapshots:
       whatwg-encoding: 2.0.0
       whatwg-mimetype: 3.0.0
       whatwg-url: 11.0.0
-      ws: 8.21.0
+      ws: 8.21.3
       xml-name-validator: 4.0.0
     transitivePeerDependencies:
       - bufferutil
@@ -12845,7 +12845,7 @@ snapshots:
 
   ws@7.5.11: {}
 
-  ws@8.21.0: {}
+  ws@8.21.3: {}
 
   xcode@3.0.1:
     dependencies:
