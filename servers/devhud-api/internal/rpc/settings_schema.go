@@ -8,7 +8,9 @@ import (
 	"io"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
+	"time"
 	"unicode/utf16"
 
 	googleuuid "github.com/google/uuid"
@@ -29,6 +31,8 @@ var (
 	}
 	safeSettingsIdentifier = regexp.MustCompile(`^[a-zA-Z0-9._:-]{1,128}$`)
 	settingsProfileRef     = regexp.MustCompile(`^[a-zA-Z0-9._-]{1,128}$`)
+	settingsMappingPattern = regexp.MustCompile(`^(https?|\*)://(\[[^\]]+\]|[^/:]+)(?::([^/]*))?(/.*)?$`)
+	settingsTimestamp      = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$`)
 )
 
 func validateDevHudSettings(value []byte, envelopeSchemaVersion uint32) error {
@@ -153,14 +157,14 @@ func validateDevHudSettings(value []byte, envelopeSchemaVersion uint32) error {
 	if err != nil {
 		return err
 	}
-	for _, profileRef := range append(githubProfileRefs, deckProfileRefs...) {
+	mappingProfileRefs, err := validateSettingsURLMappings(root["urlMappings"])
+	if err != nil {
+		return err
+	}
+	for _, profileRef := range append(append(githubProfileRefs, deckProfileRefs...), mappingProfileRefs...) {
 		if _, exists := profileIDs[profileRef]; !exists {
 			return errors.New("GitHub profile reference must reference a configured GitHub profile")
 		}
-	}
-
-	if err := validateSettingsURLMappings(root["urlMappings"]); err != nil {
-		return err
 	}
 	if err := validateSettingsShortcuts(root["shortcuts"]); err != nil {
 		return err
@@ -311,24 +315,60 @@ func validateSettingsGitHub(github map[string]any, legacy bool) ([]string, error
 	return profileRefs, nil
 }
 
-func validateSettingsURLMappings(value any) error {
+func validateSettingsURLMappings(value any) ([]string, error) {
 	mappings, err := settingsArray(value, "$.urlMappings")
 	if err != nil {
-		return err
+		return nil, err
 	}
+	if len(mappings) > 100 {
+		return nil, errors.New("$.urlMappings must contain at most 100 entries")
+	}
+	ids := make(map[string]struct{}, len(mappings))
+	profileRefs := make([]string, 0, len(mappings))
 	for index, entry := range mappings {
 		path := fmt.Sprintf("$.urlMappings[%d]", index)
-		mapping, err := settingsObject(entry, path, "sourcePrefix", "destinationPrefix")
+		mapping, err := settingsObject(entry, path, "id", "pattern", "repository", "credentialProfileRef", "priority", "chromeOrigin", "updatedAt")
 		if err != nil {
-			return err
+			return nil, err
 		}
-		for _, field := range []string{"sourcePrefix", "destinationPrefix"} {
-			if err := settingsURL(mapping[field], path+"."+field, false); err != nil {
-				return err
+		id, err := settingsUUIDv7(mapping["id"], path+".id")
+		if err != nil {
+			return nil, err
+		}
+		if _, exists := ids[id]; exists {
+			return nil, errors.New("$.urlMappings must not contain duplicate mapping IDs")
+		}
+		ids[id] = struct{}{}
+		if err := settingsURLMappingPattern(mapping["pattern"], path+".pattern"); err != nil {
+			return nil, err
+		}
+		repository, err := settingsObject(mapping["repository"], path+".repository", "owner", "name")
+		if err != nil {
+			return nil, err
+		}
+		for _, field := range []string{"owner", "name"} {
+			if _, err := settingsText(repository[field], path+".repository."+field, false); err != nil {
+				return nil, err
 			}
 		}
+		profileRef, err := settingsText(mapping["credentialProfileRef"], path+".credentialProfileRef", false)
+		if err != nil || !settingsProfileRef.MatchString(profileRef) {
+			return nil, fmt.Errorf("%s.credentialProfileRef is invalid", path)
+		}
+		profileRefs = append(profileRefs, profileRef)
+		if _, err := settingsInteger(mapping["priority"], path+".priority", -1_000_000, 1_000_000); err != nil {
+			return nil, err
+		}
+		if mapping["chromeOrigin"] != nil {
+			if err := settingsURL(mapping["chromeOrigin"], path+".chromeOrigin", true); err != nil {
+				return nil, err
+			}
+		}
+		if err := settingsCanonicalTimestamp(mapping["updatedAt"], path+".updatedAt"); err != nil {
+			return nil, err
+		}
 	}
-	return nil
+	return profileRefs, nil
 }
 
 func validateSettingsShortcuts(value any) error {
@@ -511,6 +551,37 @@ func settingsNullableProfileRef(value any, path string) (string, error) {
 		return "", fmt.Errorf("%s is invalid", path)
 	}
 	return profileRef, nil
+}
+
+func settingsURLMappingPattern(value any, path string) error {
+	pattern, err := settingsText(value, path, false)
+	if err != nil || pattern != strings.TrimSpace(pattern) || strings.ContainsAny(pattern, "?#") {
+		return fmt.Errorf("%s must be a URL pattern without credentials, query, or fragment", path)
+	}
+	match := settingsMappingPattern.FindStringSubmatch(pattern)
+	if match == nil || strings.ContainsAny(match[2], "@\\") {
+		return fmt.Errorf("%s must be a URL pattern without credentials, query, or fragment", path)
+	}
+	port := match[3]
+	if port == "" || port == "*" {
+		return nil
+	}
+	parsed, err := strconv.ParseUint(port, 10, 16)
+	if err != nil || parsed == 0 || parsed > 65535 {
+		return fmt.Errorf("%s has an invalid port", path)
+	}
+	return nil
+}
+
+func settingsCanonicalTimestamp(value any, path string) error {
+	timestamp, err := settingsText(value, path, false)
+	if err != nil || !settingsTimestamp.MatchString(timestamp) {
+		return fmt.Errorf("%s must be a canonical UTC timestamp", path)
+	}
+	if _, err := time.Parse(time.RFC3339Nano, timestamp); err != nil {
+		return fmt.Errorf("%s must be a canonical UTC timestamp", path)
+	}
+	return nil
 }
 
 func settingsURL(value any, path string, httpsOnly bool) error {

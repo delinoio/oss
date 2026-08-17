@@ -149,6 +149,11 @@ describe("DevHud settings boundary", () => {
     expect(parseDevHudSettings(legacy)).toMatchObject({ schemaVersion: 2, appearance: { theme: "dark", language: "ko" }, urlMappings: [] });
   });
 
+  it("drops legacy mapping entries from earlier schema-v2 snapshots", () => {
+    const legacy = { ...settingsWithMappingProfile, urlMappings: [{ sourcePrefix: "https://source.example/path", destinationPrefix: "https://destination.example/path" }] };
+    expect(parseDevHudSettings(legacy).urlMappings).toEqual([]);
+  });
+
   it("produces a complete recursive, secret-redacted snapshot diff", () => {
     const local = { deck: { title: "Local", nested: [1, { token: "cleartext" }] }, extra: true };
     const server = { deck: { title: "Server", nested: [2, { token: "different" }] }, added: "github_pat_abcdefghijklmnopqrstuvwxyz" };

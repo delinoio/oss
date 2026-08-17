@@ -183,7 +183,7 @@ export function referencedRepositories(settings: DevHudSettingsV1, profileId: st
   return [...unique.values()];
 }
 
-function githubErrorCopy(code: GitHubErrorCode): keyof Copy {
+export function githubErrorCopy(code: GitHubErrorCode): keyof Copy {
   switch (code) {
     case GitHubErrorCode.MissingToken: return "githubErrorMissingToken";
     case GitHubErrorCode.InvalidToken: return "githubErrorInvalidToken";

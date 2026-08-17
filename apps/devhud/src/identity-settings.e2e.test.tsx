@@ -1737,7 +1737,8 @@ describe("generated Connect identity/settings fixture", () => {
     expect(replacements).toBe(0);
     fireEvent.change(profile, { target: { value: mappingProfile.id } });
     fireEvent.click(screen.getByRole("button", { name: messages.en.saveUrlMappings }));
-    await waitFor(() => expect(replacements).toBe(1));
+    expect((await screen.findByRole("alert")).textContent).toContain(messages.en.githubSetupFailed);
+    expect(replacements).toBe(0);
   });
 
   it("clears unsaved URL mapping drafts when the authenticated account changes", async () => {

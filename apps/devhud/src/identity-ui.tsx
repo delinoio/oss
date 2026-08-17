@@ -1,8 +1,8 @@
 import { createContext, use, useEffect, useEffectEvent, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type Ref } from "react";
 import type { Copy } from "./localization";
-import { GitHubSettings } from "./github-settings-ui.tsx";
-import type { GitHubProvider } from "./github-provider.ts";
-import { nativeBridge, type NativeBridgeV1 } from "./native-bridge.ts";
+import { GitHubSettings, githubErrorCopy } from "./github-settings-ui.tsx";
+import { createGitHubProvider, GitHubErrorCode, GitHubProviderError, readGitHubCredential, type GitHubProvider } from "./github-provider.ts";
+import { NativeBridgeError, NativeBridgeErrorCode, nativeBridge, type NativeBridgeV1 } from "./native-bridge.ts";
 import { useIdentitySettings } from "./service-boundary";
 import { browserShell, LanguagePreference, normalizeApiOrigin, ThemePreference, type ExternalLinkTarget } from "./shell";
 import { parseDevHudSettings, type DevHudSettingsV1 } from "./settings-contract";
@@ -192,7 +192,7 @@ function SynchronizedSettingsContent({ copy, bridge = nativeBridge, githubProvid
   return <>
     <label>{copy.theme}<select value={identity.settings.appearance.theme} disabled={identity.readOnly} onChange={(event) => replaceAppearance({ theme: event.target.value as DevHudSettingsV1["appearance"]["theme"] })}>{Object.values(ThemePreference).map((value) => <option key={value} value={value}>{copy[value]}</option>)}</select></label>
     <label>{copy.language}<select value={identity.settings.appearance.language} disabled={identity.readOnly} onChange={(event) => replaceAppearance({ language: event.target.value as DevHudSettingsV1["appearance"]["language"] })}><option value={LanguagePreference.System}>{copy.system}</option><option value={LanguagePreference.English}>{copy.english}</option><option value={LanguagePreference.Korean}>{copy.korean}</option></select></label>
-    <UrlMappingSettings copy={copy} />
+    <UrlMappingSettings copy={copy} bridge={bridge} githubProvider={githubProvider} />
     {(identity.status === "guest" || identity.status === "signed-out" || identity.status === "starting") && <p className="notice">{copy.guestSettingsLocal}</p>}
     {identity.status === "blocked" && <p className="notice">{copy.blockedLocalHint}</p>}
     {identity.status === "deletion-pending" && <p className="notice">{copy.deletionPendingSummary}</p>}
@@ -208,50 +208,65 @@ function SynchronizedSettingsContent({ copy, bridge = nativeBridge, githubProvid
   </>;
 }
 
-function UrlMappingSettings({ copy }: { readonly copy: Copy }) {
+function UrlMappingSettings({ copy, bridge, githubProvider = createGitHubProvider({ fetch: globalThis.fetch }) }: { readonly copy: Copy; readonly bridge: NativeBridgeV1; readonly githubProvider?: GitHubProvider }) {
   const identity = useIdentitySettings();
   const mappingDraft = use(UrlMappingDraftContext);
   if (mappingDraft === null) throw new Error("URL mapping draft provider is required");
   const { draft, setDraft, invalid, setInvalid, saved, setSaved, dirty, setDirty, saving, setSaving, priorityDrafts, setPriorityDrafts } = mappingDraft;
+  const [validationError, setValidationError] = useState<keyof Copy | null>(null);
   const overlaps = safeOverlaps(draft);
   const change = (id: string, field: keyof UrlRepositoryMapping, value: string | number | null) => {
-    setSaved(false); setInvalid(false); setDirty(true);
+    setSaved(false); setInvalid(false); setValidationError(null); setDirty(true);
     setDraft((current) => current.map((mapping) => mapping.id === id ? { ...mapping, [field]: value } : mapping));
   };
   const changeRepository = (id: string, field: "owner" | "name", value: string) => {
-    setSaved(false); setInvalid(false); setDirty(true);
+    setSaved(false); setInvalid(false); setValidationError(null); setDirty(true);
     setDraft((current) => current.map((mapping) => mapping.id === id ? { ...mapping, repository: { ...mapping.repository, [field]: value } } : mapping));
   };
   const changePriority = (id: string, value: string) => {
-    setSaved(false); setInvalid(false); setDirty(true);
+    setSaved(false); setInvalid(false); setValidationError(null); setDirty(true);
     setPriorityDrafts((current) => ({ ...current, [id]: value }));
   };
   const add = () => {
     const timestamp = new Date().toISOString();
-    setSaved(false); setInvalid(false); setDirty(true);
+    setSaved(false); setInvalid(false); setValidationError(null); setDirty(true);
     setDraft((current) => [...current, { id: uuidV7(), pattern: "https://example.com/**", repository: { owner: "owner", name: "repository" }, credentialProfileRef: "", priority: 0, chromeOrigin: null, updatedAt: timestamp }]);
   };
-  const save = () => {
+  const save = async () => {
+    let mappings: UrlRepositoryMapping[];
+    let next: DevHudSettingsV1;
     try {
       if (Object.values(priorityDrafts).some((value) => value === "" || !Number.isInteger(Number(value)))) throw new TypeError("priority must be an integer");
       const previous = new Map(identity.settings.urlMappings.map((mapping) => [mapping.id, mapping]));
       const now = new Date().toISOString();
-      const mappings = draft.map((mapping) => {
+      mappings = draft.map((mapping) => {
         const withPriority = priorityDrafts[mapping.id] === undefined ? mapping : { ...mapping, priority: Number(priorityDrafts[mapping.id]) };
         const existing = previous.get(withPriority.id);
         const unchanged = existing !== undefined && JSON.stringify({ ...existing, updatedAt: "" }) === JSON.stringify({ ...withPriority, updatedAt: "" });
         return unchanged ? withPriority : { ...withPriority, updatedAt: now };
       });
-      const next = parseDevHudSettings({ ...identity.settings, urlMappings: mappings });
-      setInvalid(false); setSaved(false); setSaving(true);
-      void identity.replaceSettings(next).then((applied) => {
-        if (!applied) return;
-        setDraft(mappings);
-        setDirty(false);
-        setPriorityDrafts({});
-        setSaved(true);
-      }).catch(() => undefined).finally(() => setSaving(false));
-    } catch { setInvalid(true); }
+      next = parseDevHudSettings({ ...identity.settings, urlMappings: mappings });
+    } catch {
+      setInvalid(true);
+      return;
+    }
+    setInvalid(false); setValidationError(null); setSaved(false); setSaving(true);
+    try {
+      await validateChangedMappings(mappings, identity.settings.urlMappings, next, bridge, githubProvider, identity.githubPatScopeId);
+    } catch (error) {
+      setValidationError(error instanceof GitHubProviderError ? githubErrorCopy(error.code) : error instanceof NativeBridgeError && error.code === NativeBridgeErrorCode.StorageFailure ? "githubErrorSecureStorage" : "githubSetupFailed");
+      setSaving(false);
+      return;
+    }
+    try {
+      if (!await identity.replaceSettings(next)) return;
+      setDraft(mappings);
+      setDirty(false);
+      setPriorityDrafts({});
+      setSaved(true);
+    } catch {
+      // The synchronized-settings boundary exposes typed transport failures.
+    } finally { setSaving(false); }
   };
   return <section className="url-mappings" aria-labelledby="url-mappings-title">
     <h3 id="url-mappings-title">{copy.urlMappingsTitle}</h3><p>{copy.urlMappingsSummary}</p><p id="url-mapping-hint">{copy.mappingPatternHint}</p>
@@ -263,13 +278,37 @@ function UrlMappingSettings({ copy }: { readonly copy: Copy }) {
       <label>{copy.credentialProfile}<select value={mapping.credentialProfileRef} onChange={(event) => change(mapping.id, "credentialProfileRef", event.target.value)}><option value="">{copy.githubSelectProfile}</option>{identity.settings.github.profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></label>
       <label>{copy.mappingPriority}<input type="number" value={priorityDrafts[mapping.id] ?? String(mapping.priority)} onChange={(event) => changePriority(mapping.id, event.target.value)} /></label>
       <label>{copy.chromeOrigin}<input value={mapping.chromeOrigin ?? ""} onChange={(event) => change(mapping.id, "chromeOrigin", event.target.value || null)} /></label>
-      <button type="button" onClick={() => { setSaved(false); setDirty(true); setPriorityDrafts((current) => { const { [mapping.id]: _removed, ...remaining } = current; return remaining; }); setDraft((current) => current.filter((item) => item.id !== mapping.id)); }}>{copy.removeUrlMapping}</button>
+      <button type="button" onClick={() => { setSaved(false); setValidationError(null); setDirty(true); setPriorityDrafts((current) => { const { [mapping.id]: _removed, ...remaining } = current; return remaining; }); setDraft((current) => current.filter((item) => item.id !== mapping.id)); }}>{copy.removeUrlMapping}</button>
     </fieldset>)}
     <div className="actions"><button type="button" disabled={identity.readOnly || saving || identity.settings.github.profiles.length === 0} onClick={add}>{copy.addUrlMapping}</button><button type="button" disabled={identity.readOnly || saving} onClick={save}>{copy.saveUrlMappings}</button></div>
     {invalid && <p role="alert">{copy.mappingInvalid}</p>}
+    {validationError !== null && <p role="alert">{copy[validationError]}</p>}
     {overlaps.length > 0 && <p role="status">{copy.mappingOverlap}</p>}
     {saved && <p role="status">{copy.mappingSaved}</p>}
   </section>;
+}
+
+async function validateChangedMappings(mappings: readonly UrlRepositoryMapping[], previousMappings: readonly UrlRepositoryMapping[], settings: DevHudSettingsV1, bridge: NativeBridgeV1, provider: GitHubProvider, scopeId: Promise<string>): Promise<void> {
+  const previous = new Map(previousMappings.map((mapping) => [mapping.id, mapping]));
+  const assignments = new Map<string, UrlRepositoryMapping>();
+  for (const mapping of mappings) {
+    const existing = previous.get(mapping.id);
+    if (existing !== undefined && existing.credentialProfileRef === mapping.credentialProfileRef && existing.repository.owner === mapping.repository.owner && existing.repository.name === mapping.repository.name) continue;
+    assignments.set(`${mapping.credentialProfileRef}:${mapping.repository.owner.toLowerCase()}/${mapping.repository.name.toLowerCase()}`, mapping);
+  }
+  if (assignments.size === 0) return;
+  const resolvedScopeId = await scopeId;
+  const credentials = new Map<string, ReturnType<typeof readGitHubCredential>>();
+  await Promise.all([...assignments.values()].map(async (mapping) => {
+    const profile = settings.github.profiles.find((candidate) => candidate.id === mapping.credentialProfileRef);
+    if (profile === undefined) throw new GitHubProviderError(GitHubErrorCode.MissingToken, "validate-repository");
+    let credential = credentials.get(profile.id);
+    if (credential === undefined) {
+      credential = readGitHubCredential(bridge, profile, resolvedScopeId);
+      credentials.set(profile.id, credential);
+    }
+    await provider.validateRepository(await credential, mapping.repository);
+  }));
 }
 
 function safeOverlaps(mappings: readonly UrlRepositoryMapping[]) {

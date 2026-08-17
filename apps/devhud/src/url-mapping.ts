@@ -44,7 +44,7 @@ function parsePatternHost(hostText: string): Pick<ParsedUrlPattern, "host" | "ho
       throw new UrlMappingError("host must be a valid bracketed IPv6 literal");
     }
   }
-  const labels = hostText.split(".");
+  const labels = splitDnsLabels(hostText);
   if (labels.some((part) => part === "" || (part.includes("*") && part !== "*"))) throw new UrlMappingError("host labels must be literals or *");
   const canonicalInput = labels.map((part, index) => {
     if (part !== "*") return part;
@@ -69,10 +69,17 @@ export function parseLiveUrl(value: string): ParsedUrlPattern {
     const url = new URL(value);
     if ((url.protocol !== "http:" && url.protocol !== "https:") || !url.hostname) throw new Error();
     const scheme = url.protocol.slice(0, -1);
-    return { scheme, host: url.hostname.split("."), hostIsIpLiteral: isIpLiteral(url.hostname), port: normalizeDefaultPort(scheme, url.port), path: canonicalizeLiteralPath(url.pathname) };
+    return { scheme, host: splitDnsLabels(url.hostname), hostIsIpLiteral: isIpLiteral(url.hostname), port: normalizeDefaultPort(scheme, url.port), path: canonicalizeLiteralPath(url.pathname) };
   } catch {
     throw new UrlMappingError("live URL must be an HTTP(S) URL");
   }
+}
+
+function splitDnsLabels(host: string): string[] {
+  const labels = host.split(".");
+  // DNS absolute names are equivalent with or without their terminal root label.
+  if (labels.length > 1 && labels[labels.length - 1] === "") labels.pop();
+  return labels;
 }
 
 function normalizeDefaultPort(scheme: string, port: string): string {

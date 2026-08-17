@@ -44,15 +44,21 @@ func TestValidateDevHudSettings(t *testing.T) {
 	}
 
 	profileID := "018f47a2-7b3c-7def-8abc-1234567890ab"
+	withProfile := strings.Replace(canonicalSettingsV2, `"profiles":[]`, `"profiles":[{"id":"`+profileID+`","kind":"fine-grained","name":"Work"}]`, 1)
+	structuredMapping := `[{"chromeOrigin":null,"credentialProfileRef":"` + profileID + `","id":"018f47a2-7b3c-7def-8abc-1234567890ac","pattern":"https://example.com./**","priority":0,"repository":{"name":"oss","owner":"delinoio"},"updatedAt":"2026-08-17T00:00:00.000Z"}]`
+	if err := validateDevHudSettings([]byte(strings.Replace(withProfile, `"urlMappings":[]`, `"urlMappings":`+structuredMapping, 1)), 2); err != nil {
+		t.Fatalf("structured mapping validation failed: %v", err)
+	}
 	for name, test := range map[string]struct {
 		version uint32
 		value   string
 	}{
-		"envelope mismatch":          {1, canonicalSettingsV2},
-		"secret field":               {2, strings.Replace(canonicalSettingsV2, `"profiles":[]`, `"profiles":[{"id":"`+profileID+`","kind":"fine-grained","name":"Work","token":"plain"}]`, 1)},
-		"secret value":               {2, strings.Replace(canonicalSettingsV2, `"repositories":[]`, `"repositories":[{"name":"oss","owner":"github_pat_secret","profileRef":null}]`, 1)},
-		"unknown field":              {2, strings.Replace(canonicalSettingsV2, `"schemaVersion":2`, `"other":true,"schemaVersion":2`, 1)},
-		"dangling profile reference": {2, strings.Replace(canonicalSettingsV2, `"repositories":[]`, `"repositories":[{"name":"oss","owner":"delinoio","profileRef":"`+profileID+`"}]`, 1)},
+		"envelope mismatch":                  {1, canonicalSettingsV2},
+		"secret field":                       {2, strings.Replace(canonicalSettingsV2, `"profiles":[]`, `"profiles":[{"id":"`+profileID+`","kind":"fine-grained","name":"Work","token":"plain"}]`, 1)},
+		"secret value":                       {2, strings.Replace(canonicalSettingsV2, `"repositories":[]`, `"repositories":[{"name":"oss","owner":"github_pat_secret","profileRef":null}]`, 1)},
+		"unknown field":                      {2, strings.Replace(canonicalSettingsV2, `"schemaVersion":2`, `"other":true,"schemaVersion":2`, 1)},
+		"dangling profile reference":         {2, strings.Replace(canonicalSettingsV2, `"repositories":[]`, `"repositories":[{"name":"oss","owner":"delinoio","profileRef":"`+profileID+`"}]`, 1)},
+		"dangling mapping profile reference": {2, strings.Replace(canonicalSettingsV2, `"urlMappings":[]`, `"urlMappings":`+structuredMapping, 1)},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if err := validateDevHudSettings([]byte(test.value), test.version); err == nil {

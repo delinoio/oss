@@ -49,6 +49,13 @@ describe("URL repository matcher", () => {
     expect(mappingMatches(mapping({ pattern: "https://예시.한국/path" }), "https://xn--vv4b11d.xn--3e0b707e/path")).toBe(true);
   });
 
+  it("canonicalizes terminal DNS root labels", () => {
+    expect(parseUrlPattern("https://example.com./path").host).toEqual(["example", "com"]);
+    expect(mappingMatches(mapping({ pattern: "https://example.com./path" }), "https://example.com/path")).toBe(true);
+    expect(mappingMatches(mapping({ pattern: "https://example.com/path" }), "https://example.com./path")).toBe(true);
+    expect(() => parseUrlPattern("https://example..com/path")).toThrow();
+  });
+
   it("canonicalizes literal path segments with URL semantics", () => {
     expect(mappingMatches(mapping({ pattern: "https://example.com/한글" }), "https://example.com/%ED%95%9C%EA%B8%80")).toBe(true);
     expect(mappingMatches(mapping({ pattern: "https://example.com/hello world" }), "https://example.com/hello%20world")).toBe(true);

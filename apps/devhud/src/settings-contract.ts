@@ -124,7 +124,7 @@ export function parseDevHudSettings(value: unknown): DevHudSettingsV1 {
   if (pendingPatRemovals.some((profileId) => githubProfileIds.has(profileId))) throw new SettingsContractError("$.github.pendingPatRemovals", "must not reference an active GitHub profile");
   const shortcuts = object(root.shortcuts, "$.shortcuts", [...Platform]);
   const uploads = object(root.uploads, "$.uploads", ["provider", "r2"]);
-  const urlMappings = sourceSchemaVersion === 1 ? parseLegacyMappings(root.urlMappings) : array(root.urlMappings, "$.urlMappings").map(parseUrlMapping);
+  const urlMappings = sourceSchemaVersion === 1 ? parseLegacyMappings(root.urlMappings) : parseVersionTwoMappings(root.urlMappings);
   if (urlMappings.length > MaximumUrlRepositoryMappings) throw new SettingsContractError("$.urlMappings", `must contain at most ${MaximumUrlRepositoryMappings} entries`);
   if (new Set(urlMappings.map((mapping) => mapping.id)).size !== urlMappings.length) throw new SettingsContractError("$.urlMappings", "must not contain duplicate mapping IDs");
 
@@ -170,6 +170,20 @@ function parseLegacyMappings(value: unknown): readonly [] {
     url(mapping.destinationPrefix, `${path}.destinationPrefix`);
   }
   return [];
+}
+
+function parseVersionTwoMappings(value: unknown): readonly UrlRepositoryMapping[] {
+  const mappings = array(value, "$.urlMappings");
+  // Earlier schema-v2 snapshots used the v1 prefix shape before mappings gained
+  // repository/profile fields. Those entries cannot be assigned safely, so discard
+  // the complete legacy collection after validating its historical shape.
+  if (mappings.length > 0 && mappings.every(isLegacyMapping)) return parseLegacyMappings(mappings);
+  return mappings.map(parseUrlMapping);
+}
+
+function isLegacyMapping(value: unknown): boolean {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    && "sourcePrefix" in value && "destinationPrefix" in value;
 }
 
 function parseUrlMapping(value: unknown, index: number): UrlRepositoryMapping {
