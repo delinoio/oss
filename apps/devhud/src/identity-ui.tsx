@@ -152,6 +152,7 @@ function UrlMappingSettings({ copy, resetEpoch }: { readonly copy: Copy; readonl
   const [invalid, setInvalid] = useState(false);
   const [saved, setSaved] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [priorityDrafts, setPriorityDrafts] = useState<Record<string, string>>({});
   useEffect(() => { if (!dirty) setDraft([...identity.settings.urlMappings]); }, [dirty, identity.settings.urlMappings]);
   useEffect(() => {
@@ -191,19 +192,19 @@ function UrlMappingSettings({ copy, resetEpoch }: { readonly copy: Copy; readonl
         return unchanged ? withPriority : { ...withPriority, updatedAt: now };
       });
       const next = parseDevHudSettings({ ...identity.settings, urlMappings: mappings });
-      setInvalid(false); setSaved(false);
+      setInvalid(false); setSaved(false); setSaving(true);
       void identity.replaceSettings(next).then((applied) => {
         if (!applied) return;
         setDraft(mappings);
         setDirty(false);
         setPriorityDrafts({});
         setSaved(true);
-      }).catch(() => setInvalid(true));
+      }).catch(() => setInvalid(true)).finally(() => setSaving(false));
     } catch { setInvalid(true); }
   };
   return <section className="url-mappings" aria-labelledby="url-mappings-title">
     <h3 id="url-mappings-title">{copy.urlMappingsTitle}</h3><p>{copy.urlMappingsSummary}</p><p id="url-mapping-hint">{copy.mappingPatternHint}</p>
-    {draft.map((mapping, index) => <fieldset key={mapping.id} disabled={identity.readOnly} aria-label={`${copy.urlMappingsTitle} ${index + 1}`}>
+    {draft.map((mapping, index) => <fieldset key={mapping.id} disabled={identity.readOnly || saving} aria-label={`${copy.urlMappingsTitle} ${index + 1}`}>
       <legend>{`${mapping.repository.owner}/${mapping.repository.name}`}</legend>
       <label>{copy.urlPattern}<input value={mapping.pattern} aria-describedby="url-mapping-hint" onChange={(event) => change(mapping.id, "pattern", event.target.value)} /></label>
       <label>{copy.repositoryOwner}<input value={mapping.repository.owner} onChange={(event) => changeRepository(mapping.id, "owner", event.target.value)} /></label>
@@ -213,7 +214,7 @@ function UrlMappingSettings({ copy, resetEpoch }: { readonly copy: Copy; readonl
       <label>{copy.chromeOrigin}<input value={mapping.chromeOrigin ?? ""} onChange={(event) => change(mapping.id, "chromeOrigin", event.target.value || null)} /></label>
       <button type="button" onClick={() => { setSaved(false); setDirty(true); setPriorityDrafts((current) => { const { [mapping.id]: _removed, ...remaining } = current; return remaining; }); setDraft((current) => current.filter((item) => item.id !== mapping.id)); }}>{copy.removeUrlMapping}</button>
     </fieldset>)}
-    <div className="actions"><button type="button" disabled={identity.readOnly} onClick={add}>{copy.addUrlMapping}</button><button type="button" disabled={identity.readOnly} onClick={save}>{copy.saveUrlMappings}</button></div>
+    <div className="actions"><button type="button" disabled={identity.readOnly || saving} onClick={add}>{copy.addUrlMapping}</button><button type="button" disabled={identity.readOnly || saving} onClick={save}>{copy.saveUrlMappings}</button></div>
     {invalid && <p role="alert">{copy.mappingInvalid}</p>}
     {overlaps.length > 0 && <p role="status">{copy.mappingOverlap}</p>}
     {saved && <p role="status">{copy.mappingSaved}</p>}

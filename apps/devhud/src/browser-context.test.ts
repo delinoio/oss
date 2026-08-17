@@ -10,6 +10,18 @@ describe("Chrome browser context privacy", () => {
     expect(result).toMatchObject({ kind: "sanitized", context: { url: "https://example.com:444/<redacted>/<redacted>/" } });
     expect(JSON.stringify(result)).not.toContain("selector");
   });
+  it("drops undeclared runtime fields from the sanitized context", () => {
+    const result = sanitizeChromeContext({
+      ...input,
+      viewport: { ...input.viewport, deviceMemory: 16 },
+      selectedBounds: { x: 1, y: 2, width: 3, height: 4, selector: "#payment-form" },
+      cookie: "session=secret",
+    } as unknown as typeof input);
+    expect(result).toMatchObject({ kind: "sanitized", context: { viewport: { width: 100, height: 50 }, selectedBounds: { x: 1, y: 2, width: 3, height: 4 } } });
+    expect(JSON.stringify(result)).not.toContain("deviceMemory");
+    expect(JSON.stringify(result)).not.toContain("selector");
+    expect(JSON.stringify(result)).not.toContain("session=secret");
+  });
   it("returns malformed rather than retaining an unsupported URL", () => expect(sanitizeChromeContext({ ...input, url: "file:///secret" })).toEqual({ kind: "malformed" }));
   it("keeps only allowlisted DOM and accessibility data within the DOM cap", () => {
     const result = sanitizeChromeContext({

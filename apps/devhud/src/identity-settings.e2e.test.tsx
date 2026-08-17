@@ -1447,6 +1447,33 @@ describe("generated Connect identity/settings fixture", () => {
     expect(priority.value).toBe("-1");
   });
 
+  it("disables mapping edits while a save is pending", async () => {
+    const mapping = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", pattern: "https://local.example/**", repository: { owner: "delinoio", name: "oss" }, credentialProfileRef: "github.default", priority: 0, chromeOrigin: null, updatedAt: "2026-08-17T00:00:00.000Z" };
+    const server = { ...defaultDevHudSettings, urlMappings: [mapping] };
+    let resolveReplace!: (response: Response) => void;
+    const replacement = new Promise<Response>((resolve) => { resolveReplace = resolve; });
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 2, revision: "1", canonicalJson: encodedSettings(server) } });
+      if (url.endsWith("/devhud.v1.SettingsService/ReplaceSettings")) return replacement;
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    render(<DevHudServiceBoundary apiOrigin="https://devhud.api.delino.io" active online callbackUrl={null} platform={RuntimePlatform.Desktop} bridge={authenticatedBridge()} onCallbackConsumed={() => {}} onContinueLocally={() => {}} onLoggedOut={() => {}}><SynchronizedSettingsBoundary copy={messages.en} /></DevHudServiceBoundary>);
+
+    const pattern = await screen.findByLabelText(messages.en.urlPattern) as HTMLInputElement;
+    fireEvent.click(screen.getByRole("button", { name: messages.en.saveUrlMappings }));
+    await waitFor(() => expect(pattern.matches(":disabled")).toBe(true));
+    expect((screen.getByRole("button", { name: messages.en.addUrlMapping }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: messages.en.saveUrlMappings }) as HTMLButtonElement).disabled).toBe(true);
+
+    await act(async () => { resolveReplace(connectResponse({ snapshot: { schemaVersion: 2, revision: "2", canonicalJson: encodedSettings(server) } })); });
+    await waitFor(() => expect(pattern.matches(":disabled")).toBe(false));
+    expect(screen.getByRole("status").textContent).toBe(messages.en.mappingSaved);
+  });
+
   it("clears the guest import marker when a conflicted upload adopts the server", async () => {
     const local = { ...defaultDevHudSettings, appearance: { ...defaultDevHudSettings.appearance, theme: "dark" as const } };
     const server = { ...defaultDevHudSettings, appearance: { ...defaultDevHudSettings.appearance, theme: "light" as const } };

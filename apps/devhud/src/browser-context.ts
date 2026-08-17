@@ -37,8 +37,16 @@ export function sanitizeChromeContext(input: Omit<SanitizedBrowserContext, "url"
     return {
       kind: "sanitized",
       context: {
-        ...input,
         url: `${url.protocol}//${url.hostname.toLowerCase()}${url.port ? `:${url.port}` : ""}${path}`,
+        title: input.title,
+        viewport: { width: input.viewport.width, height: input.viewport.height },
+        userAgent: input.userAgent,
+        selectedBounds: input.selectedBounds === null ? null : {
+          x: input.selectedBounds.x,
+          y: input.selectedBounds.y,
+          width: input.selectedBounds.width,
+          height: input.selectedBounds.height,
+        },
         accessibility: sanitizeAccessibility(input.accessibility),
         outerHtml: sanitizeOuterHtml(input.outerHtml),
       },
