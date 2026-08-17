@@ -130,6 +130,27 @@ describe("DevHud settings boundary", () => {
     expect(parseDevHudSettings(legacy).decks).toMatchObject([{ query: "is:pr repo:octo/widgets", builder: { repository: "octo/widgets" }, notifications: ["review", "merged"] }]);
   });
 
+  it("retains a v2 Deck repository scope when its query names another repository", () => {
+    const profile = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", name: "Work", kind: "fine-grained" as const };
+    const legacy = {
+      ...defaultDevHudSettings,
+      schemaVersion: PreviousSettingsSchemaVersion,
+      github: { ...defaultDevHudSettings.github, profiles: [profile] },
+      decks: [{
+        id: "018f47a2-7b3c-7def-8abc-1234567890ac",
+        title: "Legacy Deck",
+        query: "repo:octo/other is:pr",
+        repository: "octo/widgets",
+        profileRef: profile.id,
+        display: { groupBy: "none", showDrafts: true },
+        refreshMinutes: 5,
+        notifications: [],
+      }],
+    };
+    expect(parseDevHudSettings(legacy).decks[0]?.query).toBe("repo:octo/other is:pr repo:octo/widgets");
+    expect(parseDevHudSettings({ ...legacy, decks: [{ ...legacy.decks[0], repository: "octo/other" }] }).decks[0]?.query).toBe("repo:octo/other is:pr");
+  });
+
   it("requires real repository-scoped pull-request qualifiers in v3 Decks", () => {
     const profile = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", name: "Work", kind: "fine-grained" as const };
     const deck = {

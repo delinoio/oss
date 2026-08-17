@@ -8,6 +8,8 @@ import * as identityClient from "./identity-client";
 import type { IdentitySession } from "./identity-client";
 import { messages } from "./localization";
 import { LifecycleState, NativeBridgeError, NativeBridgeErrorCode, NotificationPermission, RuntimePlatform, type NativeBridgeEventV1, type NativeBridgeRequestV1, type NativeBridgeResponseV1, type NativeBridgeV1, type RuntimeSnapshot } from "./native-bridge";
+import { saveGuestSettings } from "./service-boundary";
+import { defaultDevHudSettings } from "./settings-contract";
 
 const mobileRuntime: RuntimeSnapshot = {
   bridgeVersion: 1,
@@ -425,6 +427,27 @@ describe("native App state", () => {
     online = true;
     fireEvent(window, new Event("online"));
     expect(screen.getByText(messages.en.emptyTitle)).toBeTruthy();
+  });
+
+  it("polls every configured Deck while Home is selected", async () => {
+    const profile = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", name: "Work", kind: "fine-grained" as const };
+    const deck = (id: string, repository: string) => ({ id, name: repository, profileRef: profile.id, query: `repo:${repository} is:pr`, builder: null, display: { groupBy: "none" as const, showDrafts: true }, refreshMinutes: 5 as const, notifications: [] });
+    saveGuestSettings(localStorage, {
+      ...defaultDevHudSettings,
+      github: { ...defaultDevHudSettings.github, profiles: [profile] },
+      decks: [deck("018f47a2-7b3c-7def-8abc-1234567890ac", "octo/first"), deck("018f47a2-7b3c-7def-8abc-1234567890ad", "octo/second")],
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      if (value.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
+      if (value.operation === "secure.read") return { kind: "secure-value", value: "github_pat_fixture" };
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+
+    render(<App bridge={bridgeWith(request)} initialRuntime={mobileRuntime} />);
+
+    await waitFor(() => expect(request.mock.calls.filter(([value]) => value.operation === "secure.read")).toHaveLength(2));
+    expect(screen.getByText(messages.en.welcome)).toBeTruthy();
   });
 
   it("surfaces expected native update errors inline and clears them after retry", async () => {

@@ -219,7 +219,7 @@ function parseDeck(value: unknown, path: string, legacy: boolean, previous: bool
   const rawQuery = text(deck.query, `${path}.query`, true);
   const legacyRepository = previous && deck.repository !== null ? text(deck.repository, `${path}.repository`) : null;
   let query = hasPositivePullRequestQualifier(rawQuery) ? rawQuery : appendDeckQualifier(rawQuery, "is:pr");
-  if (legacyRepository !== null && !hasRepositoryQualifier(query)) query = appendDeckQualifier(query, `repo:${legacyRepository}`);
+  if (legacyRepository !== null && !hasExactRepositoryQualifier(query, legacyRepository)) query = appendDeckQualifier(query, `repo:${legacyRepository}`);
   if (!hasPositivePullRequestQualifier(query)) throw new SettingsContractError(`${path}.query`, "must contain a standalone positive is:pr qualifier");
   if (!legacy && !previous && !hasRepositoryQualifier(query)) throw new SettingsContractError(`${path}.query`, "must contain a repository qualifier when a credential profile is selected");
   const builder = legacy ? null : previous ? legacyDeckBuilder(legacyRepository, `${path}.repository`) : parseDeckBuilder(deck.builder, `${path}.builder`);
@@ -272,6 +272,11 @@ export function hasPositivePullRequestQualifier(query: string): boolean {
 export function hasRepositoryQualifier(query: string): boolean {
   const repositories = deckRepositories(query);
   return repositories !== null && repositories.length > 0;
+}
+
+function hasExactRepositoryQualifier(query: string, repository: string): boolean {
+  const repositories = deckRepositories(query);
+  return repositories !== null && repositories.some((item) => `${item.owner}/${item.name}`.toLowerCase() === repository.toLowerCase());
 }
 
 export interface DeckRepositoryRef { readonly owner: string; readonly name: string }
