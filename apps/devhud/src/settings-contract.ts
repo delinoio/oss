@@ -271,6 +271,23 @@ export function hasRepositoryQualifier(query: string): boolean {
   return deckQueryTokens(query).some((token) => token.length > "repo:".length && token.slice(0, "repo:".length).toLowerCase() === "repo:");
 }
 
+export interface DeckRepositoryRef { readonly owner: string; readonly name: string }
+
+/** Returns null when a repository qualifier cannot name one GitHub repository. */
+export function deckRepositories(query: string): readonly DeckRepositoryRef[] | null {
+  const repositories = new Map<string, DeckRepositoryRef>();
+  for (const token of deckQueryTokens(query)) {
+    if (token.slice(0, "repo:".length).toLowerCase() !== "repo:") continue;
+    const value = token.slice("repo:".length);
+    const separator = value.indexOf("/");
+    if (separator < 1 || separator !== value.lastIndexOf("/") || separator === value.length - 1) return null;
+    const repository = { owner: value.slice(0, separator), name: value.slice(separator + 1) };
+    const key = `${repository.owner}/${repository.name}`.toLowerCase();
+    repositories.set(key, repository);
+  }
+  return [...repositories.values()];
+}
+
 function appendDeckQualifier(query: string, qualifier: string): string {
   return `${query}${query.length === 0 || /\s$/u.test(query) ? "" : " "}${qualifier}`;
 }

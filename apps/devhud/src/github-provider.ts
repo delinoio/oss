@@ -268,6 +268,7 @@ function responseMetadata(headers: Headers): GitHubResponseMetadata {
 function numberHeader(headers: Headers, name: string): number | null { const value = headers.get(name); if (value === null || !/^\d+$/u.test(value)) return null; const parsed = Number(value); return Number.isSafeInteger(parsed) ? parsed : null; }
 function classifyFailure(operation: GitHubOperation, kind: GitHubCredentialKind, response: Response, json: unknown, rate: GitHubRate): GitHubProviderError {
   const message = typeof json === "object" && json !== null && typeof (json as Record<string, unknown>).message === "string" ? ((json as Record<string, unknown>).message as string).toLowerCase() : "";
+  if (operation === GitHubOperation.SearchPullRequests && response.status === 422) return new GitHubProviderError(GitHubErrorCode.InvalidQuery, operation, response.status, rate);
   if ((response.status === 403 || response.status === 429) && (rate.remaining === 0 || response.status === 429 || message.includes("rate limit"))) return new GitHubProviderError(GitHubErrorCode.RateLimited, operation, response.status, rate);
   if (response.status === 401) return new GitHubProviderError(GitHubErrorCode.InvalidToken, operation, response.status, rate);
   if (response.status === 403 && (response.headers.has("x-github-sso") || message.includes("organization") || message.includes("approval") || message.includes("policy"))) return new GitHubProviderError(GitHubErrorCode.OrganizationDenied, operation, response.status, rate);

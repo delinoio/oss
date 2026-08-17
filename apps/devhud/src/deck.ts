@@ -26,7 +26,7 @@ export function readDeckCache(storage: Pick<Storage, "getItem">, scope: string, 
     const value: unknown = JSON.parse(storage.getItem(deckCacheKey(scope, deckId)) ?? "null");
     if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
     const item = value as Record<string, unknown>;
-    if (item.version !== DeckCacheVersion || item.deckId !== deckId || !Array.isArray(item.results) || item.results.length > DeckResultLimit || !Array.isArray(item.transitionKeys)) return null;
+    if (item.version !== DeckCacheVersion || item.deckId !== deckId || !nullableString(item.queryEtag) || !Array.isArray(item.results) || item.results.length > DeckResultLimit || !item.results.every(isDeckPullRequest) || !nullableTimestamp(item.lastSuccessfulAt) || !nullableRate(item.rate) || !nonNegativeInteger(item.failures) || !nullableTimestamp(item.nextRefreshAt) || !Array.isArray(item.transitionKeys) || item.transitionKeys.length > DeckResultLimit * 4 || !item.transitionKeys.every((key) => typeof key === "string")) return null;
     return item as unknown as DeckCache;
   } catch { return null; }
 }
@@ -74,6 +74,29 @@ export function deckTransitionKeys(previous: readonly GitHubDeckPullRequest[], n
 }
 
 function checkSignature(pullRequest: GitHubDeckPullRequest): string { return JSON.stringify([pullRequest.checkRollup.state, pullRequest.checkRollup.contexts]); }
+
+function isDeckPullRequest(value: unknown): value is GitHubDeckPullRequest {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  const pullRequest = value as Record<string, unknown>;
+  if (typeof pullRequest.nodeId !== "string" || !positiveInteger(pullRequest.number) || typeof pullRequest.title !== "string" || typeof pullRequest.url !== "string" || typeof pullRequest.draft !== "boolean" || typeof pullRequest.author !== "string" || !["open", "closed", "merged"].includes(pullRequest.state as string) || ![null, "approved", "changes-requested", "required"].includes(pullRequest.reviewDecision as null | string) || !Array.isArray(pullRequest.requestedReviewers) || !pullRequest.requestedReviewers.every((reviewer) => typeof reviewer === "string") || typeof pullRequest.mergeable !== "string" || !Array.isArray(pullRequest.labels) || !pullRequest.labels.every((label) => typeof label === "string") || !timestamp(pullRequest.updatedAt)) return false;
+  const repository = pullRequest.repository;
+  if (repository === null || typeof repository !== "object" || Array.isArray(repository) || typeof (repository as Record<string, unknown>).owner !== "string" || typeof (repository as Record<string, unknown>).name !== "string") return false;
+  const checkRollup = pullRequest.checkRollup;
+  return checkRollup !== null && typeof checkRollup === "object" && !Array.isArray(checkRollup) && nullableString((checkRollup as Record<string, unknown>).state) && Array.isArray((checkRollup as Record<string, unknown>).contexts) && ((checkRollup as Record<string, unknown>).contexts as unknown[]).every((context) => context !== null && typeof context === "object" && !Array.isArray(context) && typeof (context as Record<string, unknown>).name === "string" && typeof (context as Record<string, unknown>).state === "string");
+}
+
+function positiveInteger(value: unknown): boolean { return typeof value === "number" && Number.isSafeInteger(value) && value > 0; }
+function nonNegativeInteger(value: unknown): boolean { return typeof value === "number" && Number.isSafeInteger(value) && value >= 0; }
+function nullableString(value: unknown): boolean { return value === null || typeof value === "string"; }
+function timestamp(value: unknown): boolean { return typeof value === "string" && Number.isFinite(Date.parse(value)); }
+function nullableTimestamp(value: unknown): boolean { return value === null || timestamp(value); }
+function nullableRate(value: unknown): boolean {
+  if (value === null) return true;
+  if (typeof value !== "object" || Array.isArray(value)) return false;
+  const rate = value as Record<string, unknown>;
+  return nullableNumber(rate.limit) && nullableNumber(rate.remaining) && nullableNumber(rate.used) && nullableTimestamp(rate.resetAt) && nullableString(rate.resource) && nullableNumber(rate.retryAfterSeconds);
+}
+function nullableNumber(value: unknown): boolean { return value === null || typeof value === "number" && Number.isFinite(value); }
 
 type BuilderField = keyof DeckBuilder;
 const qualifier: Record<BuilderField, (value: NonNullable<DeckBuilder[BuilderField]>) => string> = {

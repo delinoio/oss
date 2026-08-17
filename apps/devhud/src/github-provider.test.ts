@@ -183,6 +183,11 @@ describe("GitHub.com provider", () => {
     await expect(provider.getPullRequest(fine, privateRepository, 9)).resolves.toMatchObject({ pullRequest: { author: "octocat", headSha: "0123456789abcdef", labels: ["needs-review"] }, metadata: { etag: '"pull"' } });
   });
 
+  it("classifies REST pull-request search validation failures as query errors", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => json({ message: "Validation Failed" }, 422));
+    await expect(createGitHubProvider({ fetch }).searchPullRequests(fine, "repo:octo/widgets is:pr bad:query")).rejects.toMatchObject({ code: GitHubErrorCode.InvalidQuery });
+  });
+
   it.each([
     ["repo:octo-private/controls is:pr", "repo:octo-private/controls is:pr"],
     ["repo:octo-private/controls IS:PR", "repo:octo-private/controls IS:PR"],

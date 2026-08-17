@@ -95,7 +95,6 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             if let tauri::RunEvent::Opened { urls } = event {
                 for url in urls {
                     offer_auth_callback(app, url.as_str());
-                    offer_deck_link(app, url.as_str());
                 }
             }
         })
