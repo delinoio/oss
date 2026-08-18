@@ -61,7 +61,7 @@ export interface IdentitySettingsValue {
   readonly retryAccount: () => Promise<void>;
   readonly retrySettings: () => Promise<void>;
   readonly continueLocally: () => void;
-  readonly uploadLocal: () => Promise<void>;
+  readonly uploadLocal: () => Promise<boolean>;
   readonly replaceLocal: () => boolean;
   readonly replaceSettings: (settings: DevHudSettingsV1 | ((current: DevHudSettingsV1) => DevHudSettingsV1)) => Promise<boolean>;
   readonly replaceSettingsAt: (settings: DevHudSettingsV1 | ((current: DevHudSettingsV1) => DevHudSettingsV1), expectedRevision: bigint) => Promise<boolean>;
@@ -702,7 +702,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       setError(null);
       onContinueLocally();
     },
-    uploadLocal: async () => { await replaceAt(settings, revision); },
+    uploadLocal: () => replaceAt(settings, revision),
     replaceLocal: () => {
       let validated: ValidatedSettingsSnapshot;
       try {

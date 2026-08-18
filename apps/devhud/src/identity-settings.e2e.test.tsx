@@ -1514,6 +1514,41 @@ describe("generated Connect identity/settings fixture", () => {
     await waitFor(() => expect((screen.getByLabelText(messages.en.urlPattern) as HTMLInputElement).value).toBe("https://server.example/**"));
   });
 
+  it("resets a dirty mapping draft to the uploaded snapshot revision", async () => {
+    const mapping = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", pattern: "https://local.example/**", repository: { owner: "delinoio", name: "oss" }, credentialProfileRef: mappingProfile.id, priority: 0, chromeOrigin: null, updatedAt: "2026-08-17T00:00:00.000Z" };
+    const local = withMappingProfile([mapping]);
+    const server = withMappingProfile([{ ...mapping, pattern: "https://server.example/**" }]);
+    const replacements: unknown[] = [];
+    writeGuestSettings(localStorage, local);
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "1", canonicalJson: encodedSettings(server) } });
+      if (url.endsWith("/devhud.v1.SettingsService/ReplaceSettings")) {
+        const source = typeof init?.body === "string" ? init.body : new TextDecoder().decode(init?.body as ArrayBufferView<ArrayBuffer>);
+        replacements.push(JSON.parse(source));
+        return connectResponse({ snapshot: { schemaVersion: 3, revision: String(replacements.length + 1), canonicalJson: encodedSettings(local) } });
+      }
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    render(<DevHudServiceBoundary apiOrigin="https://devhud.api.delino.io" active online callbackUrl={null} platform={RuntimePlatform.Desktop} bridge={authenticatedBridge()} onCallbackConsumed={() => {}} onContinueLocally={() => {}} onLoggedOut={() => {}}><SynchronizedSettingsBoundary copy={messages.en} /></DevHudServiceBoundary>);
+
+    await screen.findByRole("dialog", { name: messages.en.importSettingsTitle });
+    const pattern = screen.getByLabelText(messages.en.urlPattern) as HTMLInputElement;
+    fireEvent.change(pattern, { target: { value: "https://draft.example/**" } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.uploadLocal }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: messages.en.importSettingsTitle })).toBeNull());
+    fireEvent.change(pattern, { target: { value: "https://after-upload.example/**" } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.saveUrlMappings }));
+
+    await waitFor(() => expect(replacements).toHaveLength(2));
+    expect((replacements[0] as { readonly expectedRevision: string }).expectedRevision).toBe("1");
+    expect((replacements[1] as { readonly expectedRevision: string }).expectedRevision).toBe("2");
+    expect(screen.queryByRole("dialog", { name: messages.en.conflictTitle })).toBeNull();
+  });
+
   it("keeps an intermediate negative mapping priority editable until save", async () => {
     const mapping = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", pattern: "https://local.example/**", repository: { owner: "delinoio", name: "oss" }, credentialProfileRef: mappingProfile.id, priority: 0, chromeOrigin: null, updatedAt: "2026-08-17T00:00:00.000Z" };
     const server = withMappingProfile([{ ...mapping, pattern: "https://server.example/**" }]);
