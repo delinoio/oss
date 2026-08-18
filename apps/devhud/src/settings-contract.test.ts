@@ -88,6 +88,11 @@ describe("DevHud settings boundary", () => {
     duplicate[ShortcutActionId.CaptureDisplay] = { ...duplicate[ShortcutActionId.CaptureDisplay], key: ShortcutKey.Digit2 };
     expect(() => parseDesktopShortcutBindings(duplicate)).toThrow(ShortcutValidationCode.Conflict);
 
+    const reorderedModifiers = structuredShortcuts();
+    reorderedModifiers[ShortcutActionId.CommandPalette] = { enabled: true, modifiers: [ShortcutModifier.Shift, ShortcutModifier.Alt], key: ShortcutKey.K };
+    reorderedModifiers[ShortcutActionId.CaptureDisplay] = { enabled: true, modifiers: [ShortcutModifier.Alt, ShortcutModifier.Shift], key: ShortcutKey.K };
+    expect(() => parseDesktopShortcutBindings(reorderedModifiers)).toThrow(ShortcutValidationCode.Conflict);
+
     const reserved = structuredShortcuts();
     reserved[ShortcutActionId.CommandPalette] = { enabled: true, modifiers: [ShortcutModifier.RightPrimary], key: ShortcutKey.Space };
     expect(parseDesktopShortcutBindings(reserved)).toEqual(reserved);

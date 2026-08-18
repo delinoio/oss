@@ -90,7 +90,7 @@ export function availableShortcutActions(capabilities: RuntimeCapabilities): rea
 }
 
 export function chordIdentifier(binding: ShortcutBinding): string {
-  return `${[...binding.modifiers].toSorted().join("+")}+${binding.key}`;
+  return `${[...binding.modifiers].sort().join("+")}+${binding.key}`;
 }
 
 function parseBinding(value: unknown): ShortcutBinding {

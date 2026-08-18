@@ -465,6 +465,13 @@ impl<B: NativeShortcutBackend> ShortcutService<B> {
                 return None;
             }
             NativeKey::Key(key) if event.pressed => {
+                if !self
+                    .active
+                    .values()
+                    .any(|binding| binding.enabled && binding.key == key)
+                {
+                    return None;
+                }
                 if !self.pressed_keys.insert(key) {
                     return None;
                 }
@@ -880,6 +887,36 @@ mod tests {
             }),
             Some(ShortcutAction::ShellCommandPalette)
         );
+    }
+
+    #[test]
+    fn does_not_track_keys_without_an_enabled_binding() {
+        let mut service = ShortcutService::new(Fake::default());
+        let mut bindings = default_bindings();
+        bindings
+            .get_mut(&ShortcutAction::RealqaCaptureDisplay)
+            .expect("default binding exists")
+            .enabled = false;
+        service
+            .apply(bindings)
+            .expect("disabled binding remains valid");
+
+        assert_eq!(
+            service.process(NativeKeyEvent {
+                key: NativeKey::Key(ShortcutKey::Digit1),
+                pressed: true,
+            }),
+            None
+        );
+        assert!(service.pressed_keys.is_empty());
+        assert_eq!(
+            service.process(NativeKeyEvent {
+                key: NativeKey::Key(ShortcutKey::KeyQ),
+                pressed: true,
+            }),
+            None
+        );
+        assert!(service.pressed_keys.is_empty());
     }
 
     #[test]
