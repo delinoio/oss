@@ -1323,7 +1323,7 @@ describe("generated Connect identity/settings fixture", () => {
     });
   });
 
-  it("tombstones the current origin cache when logout cannot enumerate or remove it", async () => {
+  it("keeps logout available to retry incomplete Web Storage cleanup", async () => {
     const apiOrigin = "https://devhud.api.delino.io";
     writeAuthenticatedSettingsCache(localStorage, apiOrigin, { settings: defaultDevHudSettings, revision: 7n, cachedAt: "2026-08-17T00:00:00.000Z" });
     const accessTokenMap = JSON.stringify({ "@https://api.example/api": { token: "fixture-access-token", scope: "", expiresAt: 4_102_444_800 } });
@@ -1351,21 +1351,41 @@ describe("generated Connect identity/settings fixture", () => {
     await waitFor(() => expect(screen.getByTestId("identity-state").dataset.status).toBe("authenticated"));
     const cacheKey = Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index)).find((key) => key?.endsWith(".settings"));
     expect(cacheKey).toBeTypeOf("string");
-    vi.spyOn(Storage.prototype, "key").mockImplementation(() => { throw new DOMException("denied", "SecurityError"); });
+    const originalKey = Storage.prototype.key;
+    let rejectEnumeration = true;
+    vi.spyOn(Storage.prototype, "key").mockImplementation(function (this: Storage, index) {
+      if (rejectEnumeration) {
+        rejectEnumeration = false;
+        throw new DOMException("denied", "SecurityError");
+      }
+      return originalKey.call(this, index);
+    });
     const originalRemoveItem = Storage.prototype.removeItem;
+    let rejectRemoval = true;
     vi.spyOn(Storage.prototype, "removeItem").mockImplementation(function (this: Storage, key) {
-      if (key === cacheKey) throw new DOMException("denied", "SecurityError");
+      if (key === cacheKey && rejectRemoval) {
+        rejectRemoval = false;
+        throw new DOMException("denied", "SecurityError");
+      }
       originalRemoveItem.call(this, key);
     });
 
     fireEvent.click(screen.getByRole("button", { name: "logout probe identity" }));
 
     await waitFor(() => {
-      expect(screen.getByTestId("identity-state").dataset.status).toBe("signed-out");
+      expect(screen.getByTestId("identity-state").dataset.status).toBe("authenticated");
       expect(screen.getByTestId("identity-state").dataset.actionError).toBe("true");
     });
     expect(localStorage.getItem(cacheKey as string)).not.toBeNull();
     expect(readAuthenticatedSettingsCache(localStorage, apiOrigin)).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "logout probe identity" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("identity-state").dataset.status).toBe("signed-out");
+      expect(screen.getByTestId("identity-state").dataset.actionError).toBe("false");
+    });
+    expect(localStorage.getItem(cacheKey as string)).toBeNull();
   });
 
   it("rejects an unsupported ReplaceSettings envelope without changing or caching it", async () => {

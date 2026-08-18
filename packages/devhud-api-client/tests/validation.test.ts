@@ -659,6 +659,12 @@ describe("wire validation helpers", () => {
     }
   });
 
+  it("keeps narrative filtering off enum error codes", () => {
+    for (const errorCode of ["SCREENSHOT_CAPTURE_FAILED", "BROWSER_DOM_REDACTED"]) {
+      expect(() => validateCrashReport({ ...safeCrashReport, errorCode })).not.toThrow();
+    }
+  });
+
   it("rejects NUL bytes in every persisted crash text group", () => {
     const invalidDiagnostics = [
       { ...safeCrashReport, clientBuild: { ...clientBuild, osVersion: "macOS\u000015.0" } },

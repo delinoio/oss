@@ -226,6 +226,7 @@ describe("diagnostics privacy boundary", () => {
     const now = Date.parse("2026-08-17T00:00:00.000Z");
     const event = fixtureEvent(now);
     const invalidCefRevision = { ...event, build: { ...event.build, cefRevision: "legacy-cef" } };
+    const invalidTauriRevision = { ...event, build: { ...event.build, tauriRevision: "a".repeat(40) } };
     const invalidArmV7 = [
       DiagnosticPlatform.MACOS,
       DiagnosticPlatform.WINDOWS,
@@ -255,7 +256,7 @@ describe("diagnostics privacy boundary", () => {
         cefRevision: "",
       },
     };
-    localStorage.setItem(DiagnosticsStorageKey, JSON.stringify([invalidCefRevision, ...invalidArmV7, androidArmV7]));
+    localStorage.setItem(DiagnosticsStorageKey, JSON.stringify([invalidCefRevision, invalidTauriRevision, ...invalidArmV7, androidArmV7]));
 
     const events = readDiagnosticEvents(localStorage, now);
 

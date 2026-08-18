@@ -25,6 +25,7 @@ const maximumRelatedCorrelations = 32;
 const maximumDepth = 5;
 const maximumCollectionEntries = 64;
 const maximumStringBytes = 512;
+const exactTauriRevision = "4af26a3f7f8b692d62cca549bbacd93f5ce90b41";
 const exactCefRevision = "150.0.10+g8042e43+chromium-150.0.7871.101";
 const textEncoder = new TextEncoder();
 
@@ -378,7 +379,7 @@ function isDiagnosticBuild(value: unknown): value is DiagnosticBuild {
   const browser = build.platform === DiagnosticPlatform.BROWSER;
   if (!isDiagnosticArchitecture(build.architecture, browser)) return false;
   if (build.architecture === DiagnosticArchitecture.ARMV7 && build.platform !== DiagnosticPlatform.ANDROID) return false;
-  if (browser ? build.tauriRevision !== "" : !/^[0-9a-f]{40}$/u.test(build.tauriRevision!)) return false;
+  if (browser ? build.tauriRevision !== "" : build.tauriRevision !== exactTauriRevision) return false;
   const desktop = build.platform! >= DiagnosticPlatform.MACOS && build.platform! <= DiagnosticPlatform.LINUX;
   return desktop ? build.cefRevision === exactCefRevision : build.cefRevision === "";
 }

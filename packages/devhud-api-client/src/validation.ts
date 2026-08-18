@@ -180,7 +180,6 @@ export function validateCrashReport(report: SubmitCrashReportRequest): void {
     throw new TypeError("errorCode must be an enum-style classification");
   }
 
-  validateDiagnosticText(report.errorCode, MAX_CRASH_IDENTIFIER_BYTES, "errorCode");
   validateDiagnosticText(
     report.clientBuild.appVersion,
     MAX_CRASH_IDENTIFIER_BYTES,
