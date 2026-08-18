@@ -27,6 +27,7 @@ import { LifecycleState, RuntimePlatform, type NativeBridgeV1, type RuntimeSnaps
 import { DiagnosticsPanel, diagnosticsSubmissionBlock } from "./diagnostics-ui";
 import { NativeBridgeError, NativeBridgeErrorCode, nativeBridge, validateDiagnosticsExport } from "./native-bridge";
 import { messages } from "./localization";
+import { clearAllContractedLocalData } from "./local-data";
 import * as serviceBoundary from "./service-boundary";
 
 const diagnosticsMutation = vi.hoisted(() => ({ mutateAsync: vi.fn(), isPending: false }));
@@ -48,6 +49,21 @@ const runtime: RuntimeSnapshot = {
   lifecycle: LifecycleState.Active,
   capabilities: { secureSettings: true, notifications: false, storeUpdates: false, widgets: false },
 };
+
+class RecoverableStorage implements Storage {
+  readonly #values = new Map<string, string>();
+  rejectWrites = true;
+
+  get length() { return this.#values.size; }
+  clear() { this.#values.clear(); }
+  getItem(key: string) { return this.#values.get(key) ?? null; }
+  key(index: number) { return [...this.#values.keys()][index] ?? null; }
+  removeItem(key: string) { this.#values.delete(key); }
+  setItem(key: string, value: string) {
+    if (this.rejectWrites) throw new DOMException("quota exceeded", "QuotaExceededError");
+    this.#values.set(key, value);
+  }
+}
 
 beforeEach(() => {
   localStorage.clear();
@@ -109,6 +125,33 @@ describe("diagnostics privacy boundary", () => {
     expect(events).toHaveLength(DiagnosticsMaximumEvents);
     expect(events.some((event) => event.occurredAt === old.occurredAt)).toBe(false);
     expect(new TextEncoder().encode(localStorage.getItem(DiagnosticsStorageKey) ?? "").byteLength).toBeLessThanOrEqual(1024 * 1024);
+  });
+
+  it("retains bounded diagnostic events in memory until Web Storage recovers", () => {
+    const storage = new RecoverableStorage();
+    const now = Date.parse("2026-08-17T00:00:00.000Z");
+    const recent = fixtureEvent(now);
+    for (let index = 0; index <= DiagnosticsMaximumEvents; index += 1) {
+      appendDiagnosticEvent(storage, { ...recent, correlationId: uuidV7(now + index, new Uint8Array(10).fill(index % 255)) }, now);
+    }
+
+    expect(storage.getItem(DiagnosticsStorageKey)).toBeNull();
+    expect(readDiagnosticEvents(storage, now)).toHaveLength(DiagnosticsMaximumEvents);
+
+    storage.rejectWrites = false;
+    const recovered = readDiagnosticEvents(storage, now);
+    expect(recovered).toHaveLength(DiagnosticsMaximumEvents);
+    expect(JSON.parse(storage.getItem(DiagnosticsStorageKey) ?? "null")).toEqual(recovered);
+  });
+
+  it("removes in-memory diagnostic events during contracted local cleanup", () => {
+    const storage = new RecoverableStorage();
+    const now = Date.parse("2026-08-17T00:00:00.000Z");
+    appendDiagnosticEvent(storage, fixtureEvent(now), now);
+    expect(readDiagnosticEvents(storage, now)).toHaveLength(1);
+
+    expect(clearAllContractedLocalData(storage)).toBe(true);
+    expect(readDiagnosticEvents(storage, now)).toEqual([]);
   });
 
   it("physically removes expired events and correlations during read maintenance", () => {

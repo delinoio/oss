@@ -1,4 +1,5 @@
 import type { StaticCapability } from "@delinoio/devhud-api-client";
+import { clearInMemoryDiagnosticEvents } from "./diagnostics";
 import { canonicalDevHudSettings, defaultDevHudSettings, parseDevHudSettings, type DevHudSettingsV1 } from "./settings-contract";
 import { isValidLogtoAudience, normalizeLogtoIssuer } from "./identity-contract.ts";
 
@@ -142,6 +143,7 @@ export function clearAuthenticatedOriginData(storage: MutableStorage, apiOrigin:
 export function clearAllContractedLocalData(storage: MutableStorage): boolean {
   clearedGuestSettings.add(storage);
   inMemoryGuestSettings.delete(storage);
+  clearInMemoryDiagnosticEvents(storage);
   return removeMatching(storage, (key) => key.startsWith(prefix) || /^(?:devhud\.(?:deck|draft|clone|cache|permission|pairing|diagnostics)|devhud-extension\.)/u.test(key));
 }
 

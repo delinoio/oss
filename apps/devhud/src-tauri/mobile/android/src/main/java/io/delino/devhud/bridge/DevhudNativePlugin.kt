@@ -147,6 +147,11 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
         val destination = result.data!!.data!!
         try {
             activity.contentResolver.takePersistableUriPermission(destination, Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        } catch (_: Exception) {
+            invoke.reject("storage-failure", "storage-failure")
+            return
+        }
+        try {
             // Retain cleanup ownership before writing so process death cannot orphan diagnostic bytes.
             if (!retainDiagnosticsCleanup(destination)) {
                 cleanupPendingDiagnosticsExport()
@@ -165,7 +170,6 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
             }
             invoke.resolve(JSObject().put("kind", "diagnostics-export").put("outcome", "saved"))
         } catch (_: Exception) {
-            if (pendingDiagnosticsCleanup == null) retainDiagnosticsCleanup(destination)
             cleanupPendingDiagnosticsExport()
             invoke.reject("storage-failure", "storage-failure")
         }
