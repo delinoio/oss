@@ -222,6 +222,44 @@ func TestValidateCrashReportAcceptsTruthfulBrowserBuilds(t *testing.T) {
 	}
 }
 
+func TestValidateCrashReportRestrictsARMV7ToAndroid(t *testing.T) {
+	tests := []struct {
+		name     string
+		platform devhudv1.DiagnosticPlatform
+		accept   bool
+	}{
+		{name: "macOS", platform: devhudv1.DiagnosticPlatform_DIAGNOSTIC_PLATFORM_MACOS},
+		{name: "Windows", platform: devhudv1.DiagnosticPlatform_DIAGNOSTIC_PLATFORM_WINDOWS},
+		{name: "Linux", platform: devhudv1.DiagnosticPlatform_DIAGNOSTIC_PLATFORM_LINUX},
+		{name: "iOS", platform: devhudv1.DiagnosticPlatform_DIAGNOSTIC_PLATFORM_IOS},
+		{name: "Android", platform: devhudv1.DiagnosticPlatform_DIAGNOSTIC_PLATFORM_ANDROID, accept: true},
+		{name: "browser", platform: devhudv1.DiagnosticPlatform_DIAGNOSTIC_PLATFORM_BROWSER},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			request := validCrashReportRequest()
+			request.ClientBuild.Platform = test.platform
+			request.ClientBuild.Architecture = devhudv1.DiagnosticArchitecture_DIAGNOSTIC_ARCHITECTURE_ARMV7
+			if test.platform == devhudv1.DiagnosticPlatform_DIAGNOSTIC_PLATFORM_IOS || test.platform == devhudv1.DiagnosticPlatform_DIAGNOSTIC_PLATFORM_ANDROID {
+				request.ClientBuild.CefRevision = ""
+			}
+			if test.platform == devhudv1.DiagnosticPlatform_DIAGNOSTIC_PLATFORM_BROWSER {
+				request.ClientBuild.TauriRevision = ""
+				request.ClientBuild.CefRevision = ""
+			}
+
+			err := validateCrashReport(request)
+			if test.accept && err != nil {
+				t.Fatalf("Android armv7 build was rejected: %v", err)
+			}
+			if !test.accept && err == nil {
+				t.Fatalf("%s armv7 build was accepted", test.name)
+			}
+		})
+	}
+}
+
 func TestValidateCrashReportBoundsStackAndClassifications(t *testing.T) {
 	request := validCrashReportRequest()
 	request.ErrorCode = "not an enum"

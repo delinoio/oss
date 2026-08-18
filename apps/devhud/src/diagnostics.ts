@@ -247,11 +247,10 @@ export function readDiagnosticCorrelations(storage: Storage, now = Date.now()): 
       removeStorageKey(storage, DiagnosticsCorrelationsKey);
       return [];
     }
-    const cutoff = now - DiagnosticsRetentionDays * 86_400_000;
     const correlations = value.filter((candidate): candidate is DiagnosticCorrelationEvent => {
       if (candidate === null || typeof candidate !== "object") return false;
       const record = candidate as Partial<DiagnosticCorrelationEvent>;
-      return record.source === "connect-response" && isUuidV7(record.correlationId) && Object.values<string>(DiagnosticConnectOperation).includes(record.operation ?? "") && typeof record.occurredAt === "string" && Number.isFinite(Date.parse(record.occurredAt)) && Date.parse(record.occurredAt) >= cutoff && Number.isSafeInteger(record.durationMilliseconds) && record.durationMilliseconds! >= 0 && record.durationMilliseconds! <= 86_400_000;
+      return record.source === "connect-response" && isUuidV7(record.correlationId) && Object.values<string>(DiagnosticConnectOperation).includes(record.operation ?? "") && typeof record.occurredAt === "string" && isWithinDiagnosticsRetention(record.occurredAt, now) && Number.isSafeInteger(record.durationMilliseconds) && record.durationMilliseconds! >= 0 && record.durationMilliseconds! <= 86_400_000;
     }).slice(-128);
     const serialized = JSON.stringify(correlations);
     persistPrunedCollection(storage, DiagnosticsCorrelationsKey, persisted, serialized, correlations.length);
@@ -299,8 +298,13 @@ export async function diagnosticsConsentDigest(preview: string): Promise<string>
 }
 
 function pruneDiagnosticEvents(events: LocalDiagnosticEvent[], now: number): LocalDiagnosticEvent[] {
+  return events.filter((event) => isWithinDiagnosticsRetention(event.occurredAt, now)).slice(-DiagnosticsMaximumEvents);
+}
+
+function isWithinDiagnosticsRetention(occurredAt: string, now: number): boolean {
+  const timestamp = Date.parse(occurredAt);
   const cutoff = now - DiagnosticsRetentionDays * 24 * 60 * 60 * 1000;
-  return events.filter((event) => Date.parse(event.occurredAt) >= cutoff).slice(-DiagnosticsMaximumEvents);
+  return Number.isFinite(timestamp) && timestamp >= cutoff && timestamp <= now;
 }
 
 function boundedDiagnosticEvents(events: LocalDiagnosticEvent[], now: number): { events: LocalDiagnosticEvent[]; serialized: string } {

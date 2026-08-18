@@ -153,8 +153,8 @@ func validateCrashReport(request *devhudv1.SubmitCrashReportRequest) error {
 		return errors.New("client_build classifications must be specified")
 	}
 	browser := build.GetPlatform() == devhudv1.DiagnosticPlatform_DIAGNOSTIC_PLATFORM_BROWSER
-	if !validArchitecture(build.GetArchitecture(), browser) {
-		return errors.New("client_build architecture must be specified except for unknown browser architecture")
+	if !validArchitecture(build.GetArchitecture(), build.GetPlatform()) {
+		return errors.New("client_build architecture is not supported for platform")
 	}
 	for name, value := range map[string]string{
 		"app_version": build.GetAppVersion(), "build_id": build.GetBuildId(),
@@ -250,9 +250,11 @@ func validPlatform(value devhudv1.DiagnosticPlatform) bool {
 	return value >= devhudv1.DiagnosticPlatform_DIAGNOSTIC_PLATFORM_MACOS && value <= devhudv1.DiagnosticPlatform_DIAGNOSTIC_PLATFORM_BROWSER
 }
 
-func validArchitecture(value devhudv1.DiagnosticArchitecture, browser bool) bool {
-	return (browser && value == devhudv1.DiagnosticArchitecture_DIAGNOSTIC_ARCHITECTURE_UNSPECIFIED) ||
-		(value >= devhudv1.DiagnosticArchitecture_DIAGNOSTIC_ARCHITECTURE_X86_64 && value <= devhudv1.DiagnosticArchitecture_DIAGNOSTIC_ARCHITECTURE_ARMV7)
+func validArchitecture(value devhudv1.DiagnosticArchitecture, platform devhudv1.DiagnosticPlatform) bool {
+	return value == devhudv1.DiagnosticArchitecture_DIAGNOSTIC_ARCHITECTURE_X86_64 ||
+		value == devhudv1.DiagnosticArchitecture_DIAGNOSTIC_ARCHITECTURE_ARM64 ||
+		value == devhudv1.DiagnosticArchitecture_DIAGNOSTIC_ARCHITECTURE_ARMV7 && platform == devhudv1.DiagnosticPlatform_DIAGNOSTIC_PLATFORM_ANDROID ||
+		value == devhudv1.DiagnosticArchitecture_DIAGNOSTIC_ARCHITECTURE_UNSPECIFIED && platform == devhudv1.DiagnosticPlatform_DIAGNOSTIC_PLATFORM_BROWSER
 }
 
 func validComponent(value devhudv1.DiagnosticComponent) bool {

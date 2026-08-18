@@ -126,6 +126,31 @@ describe("diagnostics privacy boundary", () => {
     expect(localStorage.getItem(DiagnosticsCorrelationsKey)).toBeNull();
   });
 
+  it("physically removes future-dated events and correlations during read maintenance", () => {
+    const now = Date.parse("2026-08-17T00:00:00.000Z");
+    const current = fixtureEvent(now);
+    const future = fixtureEvent(now + 1);
+    const currentCorrelation = {
+      source: "connect-response",
+      correlationId: current.correlationId,
+      operation: "diagnostics",
+      occurredAt: current.occurredAt,
+      durationMilliseconds: 1,
+    };
+    const futureCorrelation = {
+      ...currentCorrelation,
+      correlationId: future.correlationId,
+      occurredAt: future.occurredAt,
+    };
+    localStorage.setItem(DiagnosticsStorageKey, JSON.stringify([current, future]));
+    localStorage.setItem(DiagnosticsCorrelationsKey, JSON.stringify([currentCorrelation, futureCorrelation]));
+
+    expect(readDiagnosticEvents(localStorage, now)).toEqual([current]);
+    expect(readDiagnosticCorrelations(localStorage, now)).toEqual([currentCorrelation]);
+    expect(JSON.parse(localStorage.getItem(DiagnosticsStorageKey) ?? "null")).toEqual([current]);
+    expect(JSON.parse(localStorage.getItem(DiagnosticsCorrelationsKey) ?? "null")).toEqual([currentCorrelation]);
+  });
+
   it("reports browser development without fabricated native runtime revisions", async () => {
     const response = await nativeBridge.request({ operation: "runtime.snapshot" });
     expect(response.kind).toBe("runtime");
