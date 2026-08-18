@@ -26,6 +26,8 @@ const emptyDeckRefreshState: DeckRefreshState = { cache: null, loading: false, f
 const noDecks: readonly Deck[] = [];
 const DeckRepositoryValidationConcurrency = 2;
 
+class DeckPollingCancelledError extends Error {}
+
 function createRepositoryValidationQueue(limit: number): <Value>(operation: () => Promise<Value>) => Promise<Value> {
   let active = 0;
   const pending: Array<() => void> = [];
@@ -91,7 +93,7 @@ export function DeckPollingBoundary({ bridge, active, online, provider: supplied
       const existing = validatedRepositories.current.get(key);
       if (!force && existing?.token === credential.token) return existing.validation;
       const validation = repositoryValidationQueue(async () => {
-        if (canContinue !== undefined && !canContinue()) return;
+        if (canContinue !== undefined && !canContinue()) throw new DeckPollingCancelledError();
         await provider.validateRepository(credential, repository);
       });
       validatedRepositories.current.set(key, { token: credential.token, validation });
@@ -146,7 +148,7 @@ export function DeckPollingBoundary({ bridge, active, online, provider: supplied
         const transitions = deckTransitionKeys(currentCache.results, [...results, ...reconciled]).filter((transition) => currentDeck.notifications.includes(transition.kind) && !transitionKeys.includes(transition.key));
         for (const transition of transitions) {
           if (!isCurrentDeck() || !activeRef.current || !onlineRef.current) break;
-          await publishDeckNotification(bridge, browserNotifications.current, currentDeck.id, transition.key, transition.kind, currentDeck.name, transition.pullRequest.title);
+          if (!await publishDeckNotification(bridge, browserNotifications.current, currentDeck.id, transition.key, transition.kind, currentDeck.name, transition.pullRequest.title)) return;
           transitionKeys = [...transitionKeys, transition.key];
           const retainedCache = caches.current.get(deckId) ?? currentCache;
           if (isCurrentDeck() && retainedCache !== null) {
@@ -164,7 +166,7 @@ export function DeckPollingBoundary({ bridge, active, online, provider: supplied
         setDeckState(deckId, (current) => ({ ...current, cache: next, failure: null }));
       }
     } catch (error) {
-      if (!canContinue()) return;
+      if (error instanceof DeckPollingCancelledError || !canContinue()) return;
       const failures = (currentCache?.failures ?? 0) + 1;
       const rate = error instanceof GitHubProviderError ? error.rate : currentCache?.rate ?? null;
       const cacheScopeId = scopeId ?? await identity.githubPatScopeId;
@@ -331,6 +333,6 @@ function reviewCopy(copy: Copy, review: GitHubDeckPullRequest["reviewDecision"])
 function checkCopy(copy: Copy, state: string | null): string { return state === "PENDING" ? copy.deckChecksPending : state === "SUCCESS" ? copy.deckChecksSuccess : state === "FAILURE" ? copy.deckChecksFailure : state === "ERROR" ? copy.deckChecksError : state === "EXPECTED" ? copy.deckChecksExpected : state === "TIMED_OUT" ? copy.deckChecksTimedOut : state === null ? copy.deckNoChecks : copy.deckChecksUnknown; }
 function failureCopy(copy: Copy, failure: DeckFailure): string { return failure === "token" ? copy.deckErrorToken : failure === "secure-storage" ? copy.githubErrorSecureStorage : failure === "permission" ? copy.deckErrorPermission : failure === "query" ? copy.deckErrorQuery : failure === "rate-limit" ? copy.deckErrorRate : copy.deckErrorNetwork; }
 function closeBrowserDeckNotifications(notifications: Map<string, Set<Notification>>, deckId?: string): void { const entries = deckId === undefined ? [...notifications] : [[deckId, notifications.get(deckId) ?? new Set<Notification>()] as const]; for (const [id, items] of entries) { for (const notification of items) notification.close(); notifications.delete(id); } }
-async function publishDeckNotification(bridge: NativeBridgeV1, browserNotifications: Map<string, Set<Notification>>, deckId: string, key: string, kind: "review" | "checks" | "merged" | "closed", title: string, body: string): Promise<void> { try { await bridge.request({ operation: "notifications.publish-deck-change", notification: { id: `deck:${deckId}:${key}`, deckId, kind: kind as DeckNotificationKind, title, body } }); } catch { if (typeof Notification !== "undefined" && Notification.permission === "granted") { const notification = new Notification(title, { body, tag: `deck:${deckId}:${key}` }); const items = browserNotifications.get(deckId) ?? new Set<Notification>(); items.add(notification); browserNotifications.set(deckId, items); notification.addEventListener("close", () => items.delete(notification), { once: true }); } } }
+async function publishDeckNotification(bridge: NativeBridgeV1, browserNotifications: Map<string, Set<Notification>>, deckId: string, key: string, kind: "review" | "checks" | "merged" | "closed", title: string, body: string): Promise<boolean> { try { await bridge.request({ operation: "notifications.publish-deck-change", notification: { id: `deck:${deckId}:${key}`, deckId, kind: kind as DeckNotificationKind, title, body } }); return true; } catch { try { if (typeof Notification !== "undefined" && Notification.permission === "granted") { const notification = new Notification(title, { body, tag: `deck:${deckId}:${key}` }); const items = browserNotifications.get(deckId) ?? new Set<Notification>(); items.add(notification); browserNotifications.set(deckId, items); notification.addEventListener("close", () => items.delete(notification), { once: true }); return true; } } catch {} return false; } }
 async function enrichPullRequestBatches(provider: GitHubProvider, credential: GitHubCredential, nodeIds: readonly string[], canContinue: () => boolean = () => true): Promise<readonly GitHubDeckPullRequest[]> { const items: GitHubDeckPullRequest[] = []; for (let index = 0; index < nodeIds.length; index += 100) { if (!canContinue()) return items; items.push(...(await provider.enrichPullRequests(credential, nodeIds.slice(index, index + 100))).items); } return items; }
 function createUuidV7(now = Date.now()): string { const bytes = crypto.getRandomValues(new Uint8Array(16)); let timestamp = BigInt(now); for (let index = 5; index >= 0; index -= 1) { bytes[index] = Number(timestamp & 0xffn); timestamp >>= 8n; } bytes[6] = (bytes[6] & 0x0f) | 0x70; bytes[8] = (bytes[8] & 0x3f) | 0x80; const hex = [...bytes].map((value) => value.toString(16).padStart(2, "0")).join(""); return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`; }

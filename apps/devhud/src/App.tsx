@@ -264,7 +264,8 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
     try {
       if (!runtime?.capabilities.notifications) {
         if (!browserNotificationsSupported()) throw new Error("browser-notifications-unsupported");
-        setNotificationPermission(Notification.permission === "granted" ? NotificationPermission.Authorized : (await Notification.requestPermission()) === "granted" ? NotificationPermission.Authorized : NotificationPermission.Denied);
+        const permission = Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
+        setNotificationPermission(permission === "granted" ? NotificationPermission.Authorized : permission === "denied" ? NotificationPermission.Denied : NotificationPermission.NotDetermined);
         return;
       }
       const response = await bridge.request({ operation: "notifications.request-permission" });

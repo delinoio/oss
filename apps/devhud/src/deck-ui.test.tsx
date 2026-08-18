@@ -112,6 +112,31 @@ describe("Deck surface", () => {
     });
   });
 
+  it("retries an undelivered transition without recording its key", async () => {
+    const notificationsDeck = { ...deck, notifications: ["review" as const] };
+    const cacheScope = `origin.scope.${profile.id}`;
+    writeDeckCache(localStorage, cacheScope, { version: DeckCacheVersion, deckId: deck.id, query: deck.query, queryEtag: null, results: [pullRequest], lastSuccessfulAt: "2026-08-17T00:00:00.000Z", rate: null, failures: 0, nextRefreshAt: null, transitionKeys: [] });
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [notificationsDeck] }) });
+    vi.stubGlobal("Notification", { permission: "denied" });
+    let publicationAttempts = 0;
+    const request = vi.fn(async (request: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      if (request.operation === "secure.read") return { kind: "secure-value", value: "token" };
+      if (request.operation === "notifications.publish-deck-change") { publicationAttempts += 1; if (publicationAttempts === 1) throw new NativeBridgeError(NativeBridgeErrorCode.PlatformFailure); }
+      return { kind: "ok" };
+    });
+    const bridge = bridgeWith(request);
+    const updated = { ...pullRequest, reviewDecision: "approved" as const, updatedAt: "2026-08-18T00:01:00.000Z" };
+    const providerWithTransition = { ...provider(), searchPullRequests: vi.fn(async () => ({ items: [{ nodeId: pullRequest.nodeId, number: pullRequest.number, title: pullRequest.title, url: pullRequest.url, draft: pullRequest.draft, repository: pullRequest.repository }], nextPage: null, notModified: false, metadata: { etag: null, rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } } })), enrichPullRequests: vi.fn(async () => ({ items: [updated], metadata: { etag: null, rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } } })) };
+    render(<DeckPollingBoundary bridge={bridge} active online provider={providerWithTransition}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    await waitFor(() => expect(publicationAttempts).toBe(1));
+    expect(JSON.parse(localStorage.getItem(deckCacheKey(cacheScope, deck.id)) ?? "null").transitionKeys).toEqual([]);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckRefresh }));
+    await waitFor(() => expect(publicationAttempts).toBe(2));
+    await waitFor(() => expect(JSON.parse(localStorage.getItem(deckCacheKey(cacheScope, deck.id)) ?? "null").transitionKeys).toEqual([`${pullRequest.nodeId}:review:approved:${updated.updatedAt}`]));
+  });
+
   it("renders the secure-storage diagnostic when reading a Deck credential fails", async () => {
     const bridge = bridgeWith(async (request) => {
       if (request.operation === "secure.read") throw new NativeBridgeError(NativeBridgeErrorCode.StorageFailure);
@@ -240,7 +265,7 @@ describe("Deck surface", () => {
     releases[3]?.();
   });
 
-  it("does not start queued GitHub work after polling is suspended", async () => {
+  it("revalidates queued repositories after polling resumes", async () => {
     const releases: Array<() => void> = [];
     const validateRepository: ReturnType<typeof provider>["validateRepository"] = vi.fn(() => new Promise((resolve) => { releases.push(() => resolve({ repository: { owner: "octo", name: "widgets" }, private: true, permissions: { metadata: true, pullRequests: true, issues: true, contents: true }, metadata: { etag: null, rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } } })); }));
     const searchPullRequests = vi.fn();
@@ -257,6 +282,11 @@ describe("Deck surface", () => {
     await new Promise((resolve) => setTimeout(resolve, 10));
     expect(validateRepository).toHaveBeenCalledTimes(2);
     expect(searchPullRequests).not.toHaveBeenCalled();
+
+    view.rerender(<DeckPollingBoundary bridge={bridge} active online provider={{ ...provider(), validateRepository, searchPullRequests }}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+    await waitFor(() => expect(validateRepository).toHaveBeenCalledTimes(3));
+    releases[2]?.();
+    await waitFor(() => expect(searchPullRequests).toHaveBeenCalledOnce());
   });
 
   it("normalizes builder values and reprojects repeated qualifiers before saving", async () => {

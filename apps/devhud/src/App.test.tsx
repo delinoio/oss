@@ -357,6 +357,19 @@ describe("native App state", () => {
     expect(request.mock.calls.filter(([value]) => value.operation === "notifications.request-permission")).toHaveLength(0);
   });
 
+  it("preserves an undetermined browser notification permission when its prompt is dismissed", async () => {
+    const requestPermission = vi.fn(async () => "default" as NotificationPermission);
+    vi.stubGlobal("Notification", { permission: "default", requestPermission });
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => { throw new Error(`unexpected operation ${value.operation}`); });
+
+    render(<App bridge={bridgeWith(request)} initialRuntime={desktopRuntime} />);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.settings }));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.notificationPermission }));
+
+    await waitFor(() => expect(requestPermission).toHaveBeenCalledOnce());
+    expect(await screen.findByText(messages.en.notificationNotDetermined)).toBeTruthy();
+  });
+
   it("refreshes notification permission when the app returns to the active lifecycle", async () => {
     let receive!: (event: NativeBridgeEventV1) => void;
     let permission: NotificationPermission = NotificationPermission.Authorized;
