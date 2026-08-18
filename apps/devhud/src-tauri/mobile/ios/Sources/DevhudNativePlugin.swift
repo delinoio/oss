@@ -46,9 +46,10 @@ private struct RequestArgs: Decodable {
 
 final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocumentPickerDelegate {
     private var pendingDiagnosticsExport: (Invoke, URL)?
+    private var pendingDiagnosticsCleanup: URL?
 
     @objc public override func load(webview: WKWebView) {
-        try? FileManager.default.removeItem(at: diagnosticsTemporaryDirectory())
+        cleanupDiagnosticsTemporaryDirectory()
         guard UserDefaults(suiteName: appGroup) != nil else { return }
         UNUserNotificationCenter.current().delegate = self
     }
@@ -104,6 +105,10 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
 
         let fileManager = FileManager.default
         let directory = diagnosticsTemporaryDirectory()
+        guard cleanupDiagnosticsTemporaryDirectory() else {
+            invoke.reject("storage-failure", code: "storage-failure")
+            return
+        }
         do {
             try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
             let source = directory.appendingPathComponent(suggestedName, isDirectory: false)
@@ -120,20 +125,38 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
                 viewController.present(picker, animated: true)
             }
         } catch {
-            try? fileManager.removeItem(at: directory)
+            cleanupDiagnosticsTemporaryDirectory(at: directory)
             invoke.reject("storage-failure", code: "storage-failure")
         }
     }
 
-    private func finishDiagnosticsExport(saved: Bool, failed: Bool = false) {
-        guard let (invoke, source) = pendingDiagnosticsExport else { return }
+    @discardableResult
+    private func cleanupDiagnosticsTemporaryDirectory(at directory: URL? = nil) -> Bool {
+        let target = directory ?? pendingDiagnosticsCleanup ?? diagnosticsTemporaryDirectory()
+        do {
+            try FileManager.default.removeItem(at: target)
+            pendingDiagnosticsCleanup = nil
+            return true
+        } catch let error as CocoaError where error.code == .fileNoSuchFile {
+            pendingDiagnosticsCleanup = nil
+            return true
+        } catch {
+            pendingDiagnosticsCleanup = target
+            return false
+        }
+    }
+
+    @discardableResult
+    private func finishDiagnosticsExport(saved: Bool, failed: Bool = false) -> Bool {
+        guard let (invoke, source) = pendingDiagnosticsExport else { return true }
         pendingDiagnosticsExport = nil
-        try? FileManager.default.removeItem(at: source.deletingLastPathComponent())
-        if failed {
+        let cleanupSucceeded = cleanupDiagnosticsTemporaryDirectory(at: source.deletingLastPathComponent())
+        if failed || !cleanupSucceeded {
             invoke.reject("storage-failure", code: "storage-failure")
         } else {
             invoke.resolve(["kind": "diagnostics-export", "outcome": saved ? "saved" : "cancelled"])
         }
+        return cleanupSucceeded
     }
 
     func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
@@ -426,11 +449,13 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
         guard let scope = args.scope, ["logout", "account-deletion", "api-change"].contains(scope),
               scope == "logout" || args.profileId != nil else { throw NativeError.invalidArgument }
         if scope == "logout" || scope == "account-deletion" {
+            let diagnosticsCleanupSucceeded: Bool
             if pendingDiagnosticsExport != nil {
-                finishDiagnosticsExport(saved: false)
+                diagnosticsCleanupSucceeded = finishDiagnosticsExport(saved: false)
             } else {
-                try? FileManager.default.removeItem(at: diagnosticsTemporaryDirectory())
+                diagnosticsCleanupSucceeded = cleanupDiagnosticsTemporaryDirectory()
             }
+            guard diagnosticsCleanupSucceeded else { rejectStorageFailure(invoke); return }
         }
         for accessGroupKey in [sharedAccessGroupKey, legacyAccessGroupKey] {
             guard purgeSecureGroup(args, accessGroupKey: accessGroupKey) else { rejectStorageFailure(invoke); return }

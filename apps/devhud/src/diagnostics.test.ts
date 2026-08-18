@@ -333,6 +333,46 @@ describe("diagnostics privacy boundary", () => {
     expect(screen.queryByText(messages.en.diagnosticsExportSaved)).toBeNull();
   });
 
+  for (const completion of ["success", "failure"] as const) {
+    it(`ignores a stale submission ${completion} after replacing the preview`, async () => {
+      const now = Date.parse("2026-08-17T00:00:00.000Z");
+      const correlationId = "0198c8b0-77d6-7d4a-a7d9-e4d7b11c4404";
+      appendDiagnosticEvent(localStorage, fixtureEvent(now), now);
+      mockAuthenticatedIdentity([StaticCapability.CRASH_REPORTS]);
+      let resolveSubmit!: (value: { metadata: { correlationId: { value: string } } }) => void;
+      let rejectSubmit!: (reason: unknown) => void;
+      const pendingSubmit = new Promise<{ metadata: { correlationId: { value: string } } }>((resolve, reject) => {
+        resolveSubmit = resolve;
+        rejectSubmit = reject;
+      });
+      diagnosticsMutation.mutateAsync.mockReturnValue(pendingSubmit);
+      renderDiagnosticsPanel();
+      fireEvent.click(screen.getByRole("button", { name: messages.en.diagnosticsPreview }));
+      fireEvent.click(screen.getByRole("checkbox", { name: messages.en.diagnosticsConsent }));
+      await waitFor(() => expect((screen.getByRole("button", { name: messages.en.diagnosticsSubmit }) as HTMLButtonElement).disabled).toBe(false));
+      fireEvent.click(screen.getByRole("button", { name: messages.en.diagnosticsSubmit }));
+      await waitFor(() => expect(diagnosticsMutation.mutateAsync).toHaveBeenCalledOnce());
+
+      fireEvent.click(screen.getByRole("button", { name: messages.en.diagnosticsPreview }));
+      await act(async () => {
+        if (completion === "success") {
+          resolveSubmit({ metadata: { correlationId: { value: correlationId } } });
+          await pendingSubmit;
+        } else {
+          rejectSubmit(new ConnectError("retry", Code.Unavailable, { "x-devhud-correlation-id": correlationId }));
+          await pendingSubmit.catch(() => undefined);
+        }
+      });
+
+      expect(document.body.textContent).not.toContain(messages.en.diagnosticsSent);
+      expect(document.body.textContent).not.toContain(messages.en.diagnosticsSubmitFailed);
+      expect(document.body.textContent).not.toContain(correlationId);
+      expect(screen.queryByRole("alert")).toBeNull();
+      expect((screen.getByRole("checkbox", { name: messages.en.diagnosticsConsent }) as HTMLInputElement).checked).toBe(false);
+      expect((screen.getByRole("button", { name: messages.en.diagnosticsSubmit }) as HTMLButtonElement).disabled).toBe(true);
+    });
+  }
+
   it("preserves typed denial errors and their server correlation", async () => {
     const correlationId = "0198c8b0-77d6-7d4a-a7d9-e4d7b11c4402";
     diagnosticsMutation.mutateAsync.mockRejectedValue(new ConnectError("blocked", Code.PermissionDenied, undefined, [

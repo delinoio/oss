@@ -87,11 +87,13 @@ export function DiagnosticsPanel({ copy, bridge, storage, online }: DiagnosticsP
     }
     try {
       const response = await submit.mutateAsync(bundle.request);
+      if (consentAttempt.current !== attempt) return;
       setServerCorrelation(response.metadata?.correlationId?.value ?? null);
       setSubmitState("sent");
       setConsentSelected(false);
       setConsentDigest(null);
     } catch (reason) {
+      if (consentAttempt.current !== attempt) return;
       setSubmitError(mapDevHudError(reason));
       setSubmitState("failed");
       setConsentSelected(false);

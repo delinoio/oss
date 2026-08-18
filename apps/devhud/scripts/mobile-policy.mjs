@@ -61,6 +61,9 @@ export function assertAndroidNativeBridge(androidNativeBridge) {
 }
 
 export function assertIosNativeBridge(iosNativeBridge) {
+  const exportDiagnostics = iosNativeBridge.match(/private func exportDiagnostics[\s\S]*?(?=\n    @discardableResult\n    private func cleanupDiagnosticsTemporaryDirectory)/u)?.[0] ?? "";
+  const cleanupDiagnostics = iosNativeBridge.match(/private func cleanupDiagnosticsTemporaryDirectory[\s\S]*?(?=\n    @discardableResult\n    private func finishDiagnosticsExport)/u)?.[0] ?? "";
+  const finishDiagnosticsExport = iosNativeBridge.match(/private func finishDiagnosticsExport[\s\S]*?(?=\n    func documentPicker)/u)?.[0] ?? "";
   const readSecure = iosNativeBridge.match(/private func readSecure[\s\S]*?(?=\n    private func writeSecure)/u)?.[0] ?? "";
   const writeSecure = iosNativeBridge.match(/private func writeSecure[\s\S]*?(?=\n    private func removeSecure)/u)?.[0] ?? "";
   const purgeSecure = iosNativeBridge.match(/private func purgeSecure[\s\S]*?(?=\n    private func permissionName)/u)?.[0] ?? "";
@@ -75,7 +78,10 @@ export function assertIosNativeBridge(iosNativeBridge) {
   assert(readSecure.includes("markerStatus == errSecItemNotFound") && readSecure.includes("guard markerStatus == errSecSuccess"), "iOS GitHub PAT reads must require the matching API-origin scope marker");
   assert((iosNativeBridge.match(/rollbackCreatedGitHubPatScope\(createdMarker\)/gu) ?? []).length === 2 && iosNativeBridge.includes("github_pat_scope_rollback_failed"), "iOS failed PAT writes must roll back newly created scope markers");
   assert(writeSecure.includes("previousGitHubPatData = previousData") && writeSecure.includes("rollbackGitHubPatWrite(setting, previousData: previousGitHubPatData)") && writeSecure.includes("github_pat_write_rollback_failed"), "iOS failed legacy cleanup must restore or remove the shared GitHub PAT");
+  assert(cleanupDiagnostics.includes("pendingDiagnosticsCleanup = target") && cleanupDiagnostics.includes("error.code == .fileNoSuchFile"), "iOS failed diagnostics cleanup must remain pending while missing files count as clean");
+  assert(exportDiagnostics.includes("guard cleanupDiagnosticsTemporaryDirectory()") && finishDiagnosticsExport.includes("if failed || !cleanupSucceeded"), "iOS diagnostics exports must fail closed when temporary cleanup fails");
   assert(purgeSecure.includes('if scope == "logout" || scope == "account-deletion"'), "iOS API-origin changes must preserve pending diagnostics exports");
+  assert(purgeSecure.includes("guard diagnosticsCleanupSucceeded else"), "iOS destructive purges must propagate diagnostics cleanup failures");
   assert(iosNativeBridge.includes('UserDefaults(suiteName: appGroup)'), "iOS must bind the contracted App Group");
 }
 
