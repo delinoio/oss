@@ -166,7 +166,6 @@ pub enum CaptureError {
     RevisionConflict,
     StorageFailure,
     PlatformFailure,
-    Unsupported,
 }
 
 impl CaptureError {
@@ -185,7 +184,6 @@ impl CaptureError {
             Self::RevisionConflict => "revision-conflict",
             Self::StorageFailure => "storage-failure",
             Self::PlatformFailure => "platform-failure",
-            Self::Unsupported => "unsupported",
         }
     }
 }
@@ -1017,6 +1015,7 @@ impl CaptureService {
         Ok(topology)
     }
 
+    #[cfg(test)]
     pub fn capture(
         &self,
         action: CaptureAction,
@@ -1121,9 +1120,8 @@ impl CaptureService {
                     .adapter
                     .windows()?
                     .into_iter()
-                    .filter(|window| !window.minimized && window.bounds.contains(pointer))
                     // Native adapters preserve front-to-back z-order.
-                    .next()
+                    .find(|window| !window.minimized && window.bounds.contains(pointer))
                     .ok_or(CaptureError::NoWindow)?;
                 let image = self.capture_window(&window, options.remove_shadow)?;
                 if options.include_pointer && window.bounds.contains(pointer) {

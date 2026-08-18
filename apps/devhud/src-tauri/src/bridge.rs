@@ -668,87 +668,92 @@ pub fn handle_native_bridge_request(
     }
 }
 
+#[cfg(mobile)]
 #[tauri::command]
 pub async fn native_bridge_v1<R: tauri::Runtime>(
     request: Value,
     state: tauri::State<'_, NativeBridgeState>,
-    #[cfg(desktop)] capture: tauri::State<'_, std::sync::Arc<crate::capture::CaptureService>>,
     app: tauri::AppHandle<R>,
 ) -> Result<Value, String> {
-    #[cfg(mobile)]
-    {
-        let operation = request
-            .get("operation")
-            .and_then(Value::as_str)
-            .ok_or("invalid-argument")?;
-        if operation.starts_with("secure.") {
-            if operation == "secure.purge" {
-                validate_purge_request(&request)?;
-            } else if operation == "secure.reconcile-github-pats" {
-                validate_github_pat_reconciliation(&request)?;
-            } else {
-                validate_secure_request(&request)?;
-            }
-        }
-        if operation == "lifecycle.open-external" {
-            validate_external_request(&request)?;
-        }
-        if operation == "auth.open-system-browser" {
-            validate_auth_browser_request(&request, &state)?;
-        }
-        if routes_to_mobile_plugin(operation, cfg!(target_os = "android")) {
-            return crate::native_plugin::request(&app, &request);
+    let operation = request
+        .get("operation")
+        .and_then(Value::as_str)
+        .ok_or("invalid-argument")?;
+    if operation.starts_with("secure.") {
+        if operation == "secure.purge" {
+            validate_purge_request(&request)?;
+        } else if operation == "secure.reconcile-github-pats" {
+            validate_github_pat_reconciliation(&request)?;
+        } else {
+            validate_secure_request(&request)?;
         }
     }
-    #[cfg(desktop)]
-    {
-        let operation = request
-            .get("operation")
+    if operation == "lifecycle.open-external" {
+        validate_external_request(&request)?;
+    }
+    if operation == "auth.open-system-browser" {
+        validate_auth_browser_request(&request, &state)?;
+    }
+    if routes_to_mobile_plugin(operation, cfg!(target_os = "android")) {
+        return crate::native_plugin::request(&app, &request);
+    }
+    handle_native_bridge_request(&request, &state)
+}
+
+#[cfg(desktop)]
+#[tauri::command]
+pub async fn native_bridge_v1<R: tauri::Runtime>(
+    request: Value,
+    state: tauri::State<'_, NativeBridgeState>,
+    capture: tauri::State<'_, std::sync::Arc<crate::capture::CaptureService>>,
+    app: tauri::AppHandle<R>,
+) -> Result<Value, String> {
+    let operation = request
+        .get("operation")
+        .and_then(Value::as_str)
+        .ok_or("invalid-argument")?;
+    if operation.starts_with("capture.") {
+        return handle_capture_request(&request, capture.inner().clone(), &app).await;
+    }
+    if operation.starts_with("secure.") {
+        if operation == "secure.purge" {
+            validate_purge_request(&request)?;
+        } else if operation == "secure.reconcile-github-pats" {
+            validate_github_pat_reconciliation(&request)?;
+        } else {
+            validate_secure_request(&request)?;
+        }
+        if operation == "secure.purge"
+            && matches!(
+                request.get("scope").and_then(Value::as_str),
+                Some("logout" | "account-deletion")
+            )
+        {
+            let purge = capture
+                .begin_purge()
+                .map_err(|error| error.code().to_string())?;
+            let draft_result = purge.purge_drafts();
+            let secure_result = crate::secure_store::handle(&request);
+            drop(purge);
+            return match (draft_result, secure_result) {
+                (Ok(()), Ok(response)) => Ok(response),
+                _ => Err("storage-failure".to_string()),
+            };
+        }
+        return crate::secure_store::handle(&request);
+    }
+    if operation == "auth.open-system-browser" {
+        validate_auth_browser_request(&request, &state)?;
+        let destination = request
+            .get("url")
             .and_then(Value::as_str)
             .ok_or("invalid-argument")?;
-        if operation.starts_with("capture.") {
-            return handle_capture_request(&request, capture.inner().clone(), &app).await;
-        }
-        if operation.starts_with("secure.") {
-            if operation == "secure.purge" {
-                validate_purge_request(&request)?;
-            } else if operation == "secure.reconcile-github-pats" {
-                validate_github_pat_reconciliation(&request)?;
-            } else {
-                validate_secure_request(&request)?;
-            }
-            if operation == "secure.purge"
-                && matches!(
-                    request.get("scope").and_then(Value::as_str),
-                    Some("logout" | "account-deletion")
-                )
-            {
-                let purge = capture
-                    .begin_purge()
-                    .map_err(|error| error.code().to_string())?;
-                let draft_result = purge.purge_drafts();
-                let secure_result = crate::secure_store::handle(&request);
-                drop(purge);
-                return match (draft_result, secure_result) {
-                    (Ok(()), Ok(response)) => Ok(response),
-                    _ => Err("storage-failure".to_string()),
-                };
-            }
-            return crate::secure_store::handle(&request);
-        }
-        if operation == "auth.open-system-browser" {
-            validate_auth_browser_request(&request, &state)?;
-            let destination = request
-                .get("url")
-                .and_then(Value::as_str)
-                .ok_or("invalid-argument")?;
-            crate::open_system_browser(destination.to_string())
-                .await
-                .map_err(|_| "platform-failure")?;
-            return Ok(json!({ "kind": "ok" }));
-        }
-        let _ = app;
+        crate::open_system_browser(destination.to_string())
+            .await
+            .map_err(|_| "platform-failure")?;
+        return Ok(json!({ "kind": "ok" }));
     }
+    let _ = app;
     handle_native_bridge_request(&request, &state)
 }
 
@@ -799,11 +804,11 @@ async fn handle_capture_request(
         }
         Some("capture.start") => {
             exact_keys(request, &["operation", "actionId", "options"])?;
-            let action = request
+            let action_id = request
                 .get("actionId")
                 .and_then(Value::as_str)
-                .ok_or_else(|| "invalid-argument".to_string())
-                .and_then(|value| CaptureAction::from_action_id(value).map_err(failure))?;
+                .ok_or("invalid-argument")?;
+            let action = CaptureAction::from_action_id(action_id).map_err(failure)?;
             let options: CaptureOptions = serde_json::from_value(
                 request.get("options").cloned().unwrap_or_else(|| json!({})),
             )

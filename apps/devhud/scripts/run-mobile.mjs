@@ -86,7 +86,10 @@ export function mobileExecution(rawArguments) {
   if (directIntelSimulatorBuild) {
     return {
       command: "xcodebuild",
-      prerequisites: [{ command: "pnpm", arguments: ["build:frontend"] }],
+      prerequisites: [
+        { command: "pnpm", arguments: ["build:frontend"] },
+        { command: "cargo", arguments: ["build", "--locked", "--manifest-path", "src-tauri/Cargo.toml", "--features", "cli", "--bin", "devhud-tauri-cli"] },
+      ],
       optionsServerArguments: [...rawArguments, "--open"],
       arguments: [
         "-workspace", "src-tauri/gen/apple/devhud.xcodeproj/project.xcworkspace",
