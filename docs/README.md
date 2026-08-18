@@ -75,7 +75,7 @@ Each project must have one project index document and one or more domain contrac
 - `docs/cmds-ttl-language-contract.md`
 
 ### devhud
-The deterministic bilingual frontend and target-isolated Tauri desktop CEF plus iOS/Android system-webview host foundations are implemented in `apps/devhud`; the administrator SPA and Admin API are implemented in `apps/devhud-admin` and `servers/devhud-api`; service-backed product flows, native widgets, and the remaining DevHUD domains are planned.
+The deterministic bilingual frontend, target-isolated Tauri desktop CEF plus iOS/Android system-webview hosts, synchronized Settings boundary, and direct-client GitHub.com provider/setup foundation are implemented in `apps/devhud`; the administrator SPA and Admin API are implemented in `apps/devhud-admin` and `servers/devhud-api`; capture/product-result surfaces, native widgets, and the remaining DevHUD domains are planned.
 
 - `docs/project-devhud.md`
 - `docs/apps-devhud-foundation.md`

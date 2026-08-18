@@ -17,6 +17,7 @@ const mobileRuntime: RuntimeSnapshot = {
   lifecycle: LifecycleState.Active,
   capabilities: { secureSettings: true, notifications: false, storeUpdates: false, widgets: false },
 };
+const desktopRuntime: RuntimeSnapshot = { ...mobileRuntime, platform: RuntimePlatform.Desktop, architecture: "x86_64", osVersion: "test" };
 
 function bridgeWith(request: (request: NativeBridgeRequestV1) => Promise<NativeBridgeResponseV1>): NativeBridgeV1 {
   return {
@@ -26,6 +27,7 @@ function bridgeWith(request: (request: NativeBridgeRequestV1) => Promise<NativeB
 }
 
 beforeEach(() => {
+  delete window.__TAURI_INTERNALS__;
   localStorage.clear();
   localStorage.setItem("devhud.shell.onboarding.v1", "complete");
   Object.defineProperty(window, "matchMedia", {
@@ -41,6 +43,41 @@ afterEach(() => {
 });
 
 describe("native App state", () => {
+  it.each([["en", messages.en], ["ko", messages.ko]] as const)("renders the accessible %s GitHub setup surface", async (language, copy) => {
+    localStorage.setItem("devhud.shell.preferences.v1", JSON.stringify({ version: 1, theme: "system", language, apiOrigin: "https://devhud.api.delino.io", launchAtLogin: false }));
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      if (value.operation === "lifecycle.open-external") return { kind: "ok" };
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    render(<App bridge={bridgeWith(request)} initialRuntime={mobileRuntime} />);
+    fireEvent.click(screen.getByRole("button", { name: copy.settings }));
+
+    expect(screen.getByRole("heading", { name: copy.githubSetupTitle })).toBeTruthy();
+    expect(screen.getByText(copy.githubDirectSecurity)).toBeTruthy();
+    expect(screen.getByRole("textbox", { name: copy.githubProfileName })).toBeTruthy();
+    expect((screen.getByLabelText(copy.githubToken) as HTMLInputElement).type).toBe("password");
+    expect(screen.getByRole("combobox", { name: copy.githubTokenKind })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: copy.githubCreateFinePat }));
+    fireEvent.click(screen.getByRole("button", { name: copy.githubCreateClassicPat }));
+    await waitFor(() => expect(request).toHaveBeenCalledWith({ operation: "lifecycle.open-external", target: "classic-pat", apiOrigin: "https://devhud.api.delino.io" }));
+    expect(document.documentElement.lang).toBe(language);
+  });
+
+  it("routes Settings PAT links through the packaged desktop opener", async () => {
+    const invoke = vi.fn(async () => undefined);
+    window.__TAURI_INTERNALS__ = { invoke };
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));
+    const bridge = bridgeWith(async (request) => {
+      if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
+      throw new Error(`unexpected operation ${request.operation}`);
+    });
+    render(<App bridge={bridge} initialRuntime={desktopRuntime} />);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.settings }));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.githubCreateFinePat }));
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith("open_external", { target: "fine-grained-pat", apiOrigin: "https://devhud.api.delino.io" }));
+  });
+
   it.each([
     ["en", messages.en],
     ["ko", messages.ko],
@@ -137,7 +174,7 @@ describe("native App state", () => {
     render(<App bridge={bridge} />);
     await screen.findByText(messages.en.welcome);
 
-    expect(operations).toEqual(["listener-installed", "runtime.snapshot", "auth.peek-pending-callback"]);
+    expect(operations).toEqual(["listener-installed", "runtime.snapshot", "auth.peek-pending-callback", "session.configure-origins"]);
   });
 
   it("drains a cold-start callback after the identity session becomes ready", async () => {
@@ -297,14 +334,14 @@ describe("native App state", () => {
 
     render(<App bridge={bridge} initialRuntime={runtime} />);
     await waitFor(() => expect(receive).toBeTypeOf("function"));
-    await waitFor(() => expect(request).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(request.mock.calls.filter(([value]) => value.operation === "notifications.permission")).toHaveLength(1));
 
     await act(async () => { receive({ version: 1, kind: "lifecycle", state: LifecycleState.Background }); });
-    expect(request).toHaveBeenCalledTimes(1);
+    expect(request.mock.calls.filter(([value]) => value.operation === "notifications.permission")).toHaveLength(1);
 
     permission = NotificationPermission.Denied;
     await act(async () => { receive({ version: 1, kind: "lifecycle", state: LifecycleState.Active }); });
-    await waitFor(() => expect(request).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(request.mock.calls.filter(([value]) => value.operation === "notifications.permission")).toHaveLength(2));
 
     fireEvent.click(screen.getByRole("button", { name: messages.en.settings }));
     expect(await screen.findByText(messages.en.notificationDenied)).toBeTruthy();

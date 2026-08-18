@@ -28,6 +28,8 @@ Wire details are final for v1. `UuidV7` carries canonical lowercase RFC 9562 UUI
 
 `CreateUploadTarget` is an explicit oneof: create a new submission and first group, create a new group under an owned submission, or use an existing owned submission/group. The response supplies upload, submission, group, and quota-reservation UUIDs; an immutable nonzero staging generation; the signed PUT URL; exact PNG/checksum headers; a 15-minute `expires_at`; an independent 24-hour `staging_expires_at`; and the future stable public URL. Finalization repeats those bindings, size, raw checksum, generation, and observed ETag. There is no request or response field capable of carrying an image body. List requests may filter by state/submission, and administrator requests may additionally filter by owner/group.
 
+`ReplaceSettings` validates the complete supported body schema, matching envelope version, and recursive non-secret boundary before persistence; invalid snapshots return `InvalidArgument` without reaching storage.
+
 ## Storage
 
 The protocol defines representations only. Persistence and retention belong to the API contract; generated clients must not add a second storage or secret policy.
