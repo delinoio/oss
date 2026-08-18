@@ -11,7 +11,7 @@ describe("DevHud settings boundary", () => {
       decks: [],
     };
     const parsed = parseDevHudSettings(legacy);
-    expect(parsed.schemaVersion).toBe(2);
+    expect(parsed.schemaVersion).toBe(3);
     expect(parsed.github).toEqual({ profiles: [], pendingPatRemovals: [], repositories: [{ owner: "octo", name: "private", profileRef: null }], issueTracker: { owner: "octo", repository: "private", labels: ["bug"], profileRef: null } });
   });
 
@@ -146,11 +146,11 @@ describe("DevHud settings boundary", () => {
 
   it("drops legacy v1 mapping entries while preserving other settings", () => {
     const legacy = { ...defaultDevHudSettings, schemaVersion: 1, appearance: { theme: "dark", language: "ko" }, github: { repositories: [], issueTracker: null }, urlMappings: [{ sourcePrefix: "https://source.example/path", destinationPrefix: "https://destination.example/path" }] };
-    expect(parseDevHudSettings(legacy)).toMatchObject({ schemaVersion: 2, appearance: { theme: "dark", language: "ko" }, urlMappings: [] });
+    expect(parseDevHudSettings(legacy)).toMatchObject({ schemaVersion: 3, appearance: { theme: "dark", language: "ko" }, urlMappings: [] });
   });
 
-  it("drops legacy mapping entries from earlier schema-v2 snapshots", () => {
-    const legacy = { ...settingsWithMappingProfile, urlMappings: [{ sourcePrefix: "https://source.example/path", destinationPrefix: "https://destination.example/path" }] };
+  it("drops prefix mapping entries from schema-v2 snapshots", () => {
+    const legacy = { ...settingsWithMappingProfile, schemaVersion: 2, urlMappings: [{ sourcePrefix: "https://source.example/path", destinationPrefix: "https://destination.example/path" }] };
     expect(parseDevHudSettings(legacy).urlMappings).toEqual([]);
   });
 

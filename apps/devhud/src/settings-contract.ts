@@ -7,7 +7,8 @@ import {
 import { parseUrlPattern, type UrlRepositoryMapping } from "./url-mapping";
 
 export const LegacySettingsSchemaVersion = 1 as const;
-export const SettingsSchemaVersion = 2 as const;
+export const PrefixUrlMappingsSettingsSchemaVersion = 2 as const;
+export const SettingsSchemaVersion = 3 as const;
 export const MaximumUrlRepositoryMappings = 100;
 
 const Theme = ["system", "light", "dark"] as const;
@@ -69,7 +70,7 @@ export interface DevHudSettings {
   };
 }
 
-/** Compatibility alias for callers written before the synchronized schema v2 migration. */
+/** Compatibility alias retained for callers written before the schema-v3 migration. */
 export type DevHudSettingsV1 = DevHudSettings;
 
 export const defaultDevHudSettings: DevHudSettingsV1 = Object.freeze<DevHudSettingsV1>({
@@ -124,7 +125,7 @@ export function parseDevHudSettings(value: unknown): DevHudSettingsV1 {
   if (pendingPatRemovals.some((profileId) => githubProfileIds.has(profileId))) throw new SettingsContractError("$.github.pendingPatRemovals", "must not reference an active GitHub profile");
   const shortcuts = object(root.shortcuts, "$.shortcuts", [...Platform]);
   const uploads = object(root.uploads, "$.uploads", ["provider", "r2"]);
-  const urlMappings = sourceSchemaVersion === 1 ? parseLegacyMappings(root.urlMappings) : parseVersionTwoMappings(root.urlMappings);
+  const urlMappings = sourceSchemaVersion < SettingsSchemaVersion ? parseLegacyMappings(root.urlMappings) : parseStructuredMappings(root.urlMappings);
   if (urlMappings.length > MaximumUrlRepositoryMappings) throw new SettingsContractError("$.urlMappings", `must contain at most ${MaximumUrlRepositoryMappings} entries`);
   if (new Set(urlMappings.map((mapping) => mapping.id)).size !== urlMappings.length) throw new SettingsContractError("$.urlMappings", "must not contain duplicate mapping IDs");
 
@@ -145,8 +146,8 @@ export function parseDevHudSettings(value: unknown): DevHudSettingsV1 {
       }),
       issueTracker: github.issueTracker === null ? null : parseIssueTracker(github.issueTracker, legacy),
     },
-    // v1 mappings cannot identify a repository or credential. They are deliberately
-    // discarded rather than guessed during the approved v1 -> v2 migration.
+    // Prefix mappings cannot identify a repository or credential. They are deliberately
+    // discarded rather than guessed during the approved v1/v2 -> v3 migration.
     urlMappings,
     shortcuts: Object.fromEntries(Platform.map((platform) => [platform, stringMap(shortcuts[platform], `$.shortcuts.${platform}`)])) as DevHudSettingsV1["shortcuts"],
     agents: array(root.agents, "$.agents").map((entry, index) => parseAgent(entry, `$.agents[${index}]`)),
@@ -172,18 +173,8 @@ function parseLegacyMappings(value: unknown): readonly [] {
   return [];
 }
 
-function parseVersionTwoMappings(value: unknown): readonly UrlRepositoryMapping[] {
-  const mappings = array(value, "$.urlMappings");
-  // Earlier schema-v2 snapshots used the v1 prefix shape before mappings gained
-  // repository/profile fields. Those entries cannot be assigned safely, so discard
-  // the complete legacy collection after validating its historical shape.
-  if (mappings.length > 0 && mappings.every(isLegacyMapping)) return parseLegacyMappings(mappings);
-  return mappings.map(parseUrlMapping);
-}
-
-function isLegacyMapping(value: unknown): boolean {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    && "sourcePrefix" in value && "destinationPrefix" in value;
+function parseStructuredMappings(value: unknown): readonly UrlRepositoryMapping[] {
+  return array(value, "$.urlMappings").map(parseUrlMapping);
 }
 
 function parseUrlMapping(value: unknown, index: number): UrlRepositoryMapping {
@@ -217,11 +208,11 @@ export function decodeDevHudSettings(value: Uint8Array): DevHudSettingsV1 {
   return decodeDevHudSettingsSnapshot(value).settings;
 }
 
-export function decodeDevHudSettingsSnapshot(value: Uint8Array): { readonly sourceSchemaVersion: 1 | typeof SettingsSchemaVersion; readonly settings: DevHudSettingsV1 } {
+export function decodeDevHudSettingsSnapshot(value: Uint8Array): { readonly sourceSchemaVersion: 1 | typeof PrefixUrlMappingsSettingsSchemaVersion | typeof SettingsSchemaVersion; readonly settings: DevHudSettingsV1 } {
   const canonical = validateCanonicalSettingsJson(value);
   const settings = parseDevHudSettings(canonical);
   const sourceSchemaVersion = (canonical as { readonly schemaVersion: unknown }).schemaVersion;
-  if (sourceSchemaVersion !== 1 && sourceSchemaVersion !== SettingsSchemaVersion) throw new SettingsContractError("$.schemaVersion", "is unsupported");
+  if (sourceSchemaVersion !== LegacySettingsSchemaVersion && sourceSchemaVersion !== PrefixUrlMappingsSettingsSchemaVersion && sourceSchemaVersion !== SettingsSchemaVersion) throw new SettingsContractError("$.schemaVersion", "is unsupported");
   return { sourceSchemaVersion, settings };
 }
 

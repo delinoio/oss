@@ -7,6 +7,7 @@ import (
 
 const canonicalSettingsV1 = `{"agents":[],"appearance":{"language":"system","theme":"system"},"decks":[],"github":{"issueTracker":null,"repositories":[]},"schemaVersion":1,"shortcuts":{"android":{},"desktop":{},"ios":{}},"uploads":{"provider":"official","r2":null},"urlMappings":[]}`
 const canonicalSettingsV2 = `{"agents":[],"appearance":{"language":"system","theme":"system"},"decks":[],"github":{"issueTracker":null,"pendingPatRemovals":[],"profiles":[],"repositories":[]},"schemaVersion":2,"shortcuts":{"android":{},"desktop":{},"ios":{}},"uploads":{"provider":"official","r2":null},"urlMappings":[]}`
+const canonicalSettingsV3 = `{"agents":[],"appearance":{"language":"system","theme":"system"},"decks":[],"github":{"issueTracker":null,"pendingPatRemovals":[],"profiles":[],"repositories":[]},"schemaVersion":3,"shortcuts":{"android":{},"desktop":{},"ios":{}},"uploads":{"provider":"official","r2":null},"urlMappings":[]}`
 
 func TestValidateCanonicalJSON(t *testing.T) {
 	for _, value := range [][]byte{
@@ -37,6 +38,7 @@ func TestValidateDevHudSettings(t *testing.T) {
 	for version, value := range map[uint32]string{
 		1: canonicalSettingsV1,
 		2: canonicalSettingsV2,
+		3: canonicalSettingsV3,
 	} {
 		if err := validateDevHudSettings([]byte(value), version); err != nil {
 			t.Errorf("validateDevHudSettings(version %d): %v", version, err)
@@ -44,9 +46,9 @@ func TestValidateDevHudSettings(t *testing.T) {
 	}
 
 	profileID := "018f47a2-7b3c-7def-8abc-1234567890ab"
-	withProfile := strings.Replace(canonicalSettingsV2, `"profiles":[]`, `"profiles":[{"id":"`+profileID+`","kind":"fine-grained","name":"Work"}]`, 1)
+	withProfile := strings.Replace(canonicalSettingsV3, `"profiles":[]`, `"profiles":[{"id":"`+profileID+`","kind":"fine-grained","name":"Work"}]`, 1)
 	structuredMapping := `[{"chromeOrigin":null,"credentialProfileRef":"` + profileID + `","id":"018f47a2-7b3c-7def-8abc-1234567890ac","pattern":"https://example.com./**","priority":0,"repository":{"name":"oss","owner":"delinoio"},"updatedAt":"2026-08-17T00:00:00.000Z"}]`
-	if err := validateDevHudSettings([]byte(strings.Replace(withProfile, `"urlMappings":[]`, `"urlMappings":`+structuredMapping, 1)), 2); err != nil {
+	if err := validateDevHudSettings([]byte(strings.Replace(withProfile, `"urlMappings":[]`, `"urlMappings":`+structuredMapping, 1)), 3); err != nil {
 		t.Fatalf("structured mapping validation failed: %v", err)
 	}
 	legacyMapping := `[{"destinationPrefix":"https://destination.example/path","sourcePrefix":"https://source.example/path"}]`
@@ -56,9 +58,8 @@ func TestValidateDevHudSettings(t *testing.T) {
 	if err := validateDevHudSettings([]byte(strings.Replace(canonicalSettingsV2, `"urlMappings":[]`, `"urlMappings":`+legacyMapping, 1)), 2); err != nil {
 		t.Fatalf("schema-v2 legacy mapping validation failed: %v", err)
 	}
-	mixedMappings := strings.TrimSuffix(legacyMapping, "]") + "," + strings.TrimPrefix(structuredMapping, "[")
-	if err := validateDevHudSettings([]byte(strings.Replace(withProfile, `"urlMappings":[]`, `"urlMappings":`+mixedMappings, 1)), 2); err == nil {
-		t.Fatal("mixed legacy and structured mapping validation succeeded")
+	if err := validateDevHudSettings([]byte(strings.Replace(canonicalSettingsV3, `"urlMappings":[]`, `"urlMappings":`+legacyMapping, 1)), 3); err == nil {
+		t.Fatal("schema-v3 prefix mapping validation succeeded")
 	}
 	for name, mapping := range map[string]string{
 		"partial host wildcard":              strings.Replace(structuredMapping, `"https://example.com./**"`, `"https://api*.example.com/**"`, 1),
@@ -67,16 +68,24 @@ func TestValidateDevHudSettings(t *testing.T) {
 		"invalid Chrome origin":              strings.Replace(structuredMapping, `"chromeOrigin":null`, `"chromeOrigin":"https://example.com/path"`, 1),
 		"Chrome origin port above 65535":     strings.Replace(structuredMapping, `"chromeOrigin":null`, `"chromeOrigin":"https://example.com:65536"`, 1),
 		"invalid numeric IPv4 Chrome origin": strings.Replace(structuredMapping, `"chromeOrigin":null`, `"chromeOrigin":"http://999.999.999.999"`, 1),
+		"abbreviated invalid numeric host":   strings.Replace(structuredMapping, `"https://example.com./**"`, `"https://999.1/**"`, 1),
+		"invalid punycode host":              strings.Replace(structuredMapping, `"https://example.com./**"`, `"https://xn--/**"`, 1),
+		"too many path segments":             strings.Replace(structuredMapping, `"https://example.com./**"`, `"https://example.com/`+strings.Repeat("a/", 32)+`a"`, 1),
+		"too many globstar segments":         strings.Replace(structuredMapping, `"https://example.com./**"`, `"https://example.com/`+strings.Repeat("**/", 8)+`**"`, 1),
 	} {
 		t.Run(name, func(t *testing.T) {
-			if err := validateDevHudSettings([]byte(strings.Replace(withProfile, `"urlMappings":[]`, `"urlMappings":`+mapping, 1)), 2); err == nil {
+			if err := validateDevHudSettings([]byte(strings.Replace(withProfile, `"urlMappings":[]`, `"urlMappings":`+mapping, 1)), 3); err == nil {
 				t.Fatal("validation succeeded")
 			}
 		})
 	}
 	httpChromeOrigin := strings.Replace(structuredMapping, `"chromeOrigin":null`, `"chromeOrigin":"http://localhost:3000"`, 1)
-	if err := validateDevHudSettings([]byte(strings.Replace(withProfile, `"urlMappings":[]`, `"urlMappings":`+httpChromeOrigin, 1)), 2); err != nil {
+	if err := validateDevHudSettings([]byte(strings.Replace(withProfile, `"urlMappings":[]`, `"urlMappings":`+httpChromeOrigin, 1)), 3); err != nil {
 		t.Fatalf("HTTP Chrome origin validation failed: %v", err)
+	}
+	ipv6ChromeOrigin := strings.Replace(structuredMapping, `"chromeOrigin":null`, `"chromeOrigin":"http://[::1]:3000"`, 1)
+	if err := validateDevHudSettings([]byte(strings.Replace(withProfile, `"urlMappings":[]`, `"urlMappings":`+ipv6ChromeOrigin, 1)), 3); err != nil {
+		t.Fatalf("IPv6 Chrome origin validation failed: %v", err)
 	}
 	for name, test := range map[string]struct {
 		version uint32

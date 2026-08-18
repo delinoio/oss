@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findMappingOverlaps, literalSpecificity, mappingMatches, parseUrlPattern, resolveRepositorySelection, selectUrlMapping, type UrlRepositoryMapping } from "./url-mapping";
+import { findMappingOverlaps, literalSpecificity, mappingMatches, MaximumUrlMappingGlobstarSegments, MaximumUrlMappingPathSegments, parseUrlPattern, resolveRepositorySelection, selectUrlMapping, type UrlRepositoryMapping } from "./url-mapping";
 
 const mapping = (overrides: Partial<UrlRepositoryMapping> = {}): UrlRepositoryMapping => ({
   id: "018f47a2-7b3c-7def-8abc-1234567890ab", pattern: "https://*.example.com:*/teams/**", repository: { owner: "delinoio", name: "oss" }, credentialProfileRef: "github.default", priority: 0, chromeOrigin: null, updatedAt: "2026-08-17T00:00:00.000Z", ...overrides,
@@ -70,9 +70,16 @@ describe("URL repository matcher", () => {
   });
 
   it("bounds multi-segment wildcard matching", () => {
-    const wildcards = Array.from({ length: 24 }, () => "**").join("/");
-    const path = Array.from({ length: 24 }, () => "value").join("/");
+    const wildcards = Array.from({ length: MaximumUrlMappingGlobstarSegments }, () => "**").join("/");
+    const path = Array.from({ length: MaximumUrlMappingGlobstarSegments }, () => "value").join("/");
     expect(mappingMatches(mapping({ pattern: `https://example.com/${wildcards}/missing` }), `https://example.com/${path}`)).toBe(false);
+  });
+
+  it("rejects path complexity that would make overlap analysis unbounded", () => {
+    const segments = Array.from({ length: MaximumUrlMappingPathSegments + 1 }, () => "value").join("/");
+    const globstars = Array.from({ length: MaximumUrlMappingGlobstarSegments + 1 }, () => "**").join("/");
+    expect(() => parseUrlPattern(`https://example.com/${segments}`)).toThrow(/path.*at most/u);
+    expect(() => parseUrlPattern(`https://example.com/${globstars}`)).toThrow(/at most.*globstar/u);
   });
 
   it("matches long live paths without consuming the JavaScript call stack", () => {

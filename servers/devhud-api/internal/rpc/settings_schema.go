@@ -15,11 +15,15 @@ import (
 	"unicode/utf16"
 
 	googleuuid "github.com/google/uuid"
+	"golang.org/x/net/idna"
 )
 
 const (
 	legacySettingsSchemaVersion = 1
-	settingsSchemaVersion       = 2
+	prefixMappingsSchemaVersion = 2
+	settingsSchemaVersion       = 3
+	maximumMappingPathSegments  = 32
+	maximumMappingGlobstars     = 8
 )
 
 var (
@@ -35,6 +39,7 @@ var (
 	settingsMappingPattern = regexp.MustCompile(`^(https?|\*)://(\[[^\]]+\]|[^/:]+)(?::([^/]*))?(/.*)?$`)
 	settingsMappingPort    = regexp.MustCompile(`^[1-9]\d{0,4}$`)
 	settingsTimestamp      = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$`)
+	settingsIDNAProfile    = idna.New(idna.MapForLookup(), idna.StrictDomainName(true), idna.ValidateLabels(true), idna.VerifyDNSLength(true))
 )
 
 func validateDevHudSettings(value []byte, envelopeSchemaVersion uint32) error {
@@ -159,7 +164,7 @@ func validateDevHudSettings(value []byte, envelopeSchemaVersion uint32) error {
 	if err != nil {
 		return err
 	}
-	mappingProfileRefs, err := validateSettingsURLMappings(root["urlMappings"], legacy)
+	mappingProfileRefs, err := validateSettingsURLMappings(root["urlMappings"], bodyVersion <= prefixMappingsSchemaVersion)
 	if err != nil {
 		return err
 	}
@@ -317,7 +322,7 @@ func validateSettingsGitHub(github map[string]any, legacy bool) ([]string, error
 	return profileRefs, nil
 }
 
-func validateSettingsURLMappings(value any, legacy bool) ([]string, error) {
+func validateSettingsURLMappings(value any, prefixMappings bool) ([]string, error) {
 	mappings, err := settingsArray(value, "$.urlMappings")
 	if err != nil {
 		return nil, err
@@ -325,7 +330,7 @@ func validateSettingsURLMappings(value any, legacy bool) ([]string, error) {
 	if len(mappings) > 100 {
 		return nil, errors.New("$.urlMappings must contain at most 100 entries")
 	}
-	if legacy {
+	if prefixMappings {
 		for index, entry := range mappings {
 			path := fmt.Sprintf("$.urlMappings[%d]", index)
 			mapping, err := settingsObject(entry, path, "sourcePrefix", "destinationPrefix")
@@ -342,26 +347,8 @@ func validateSettingsURLMappings(value any, legacy bool) ([]string, error) {
 	}
 	ids := make(map[string]struct{}, len(mappings))
 	profileRefs := make([]string, 0, len(mappings))
-	hasLegacyMapping := false
-	hasStructuredMapping := false
 	for index, entry := range mappings {
 		path := fmt.Sprintf("$.urlMappings[%d]", index)
-		if legacyMapping, err := settingsObject(entry, path, "sourcePrefix", "destinationPrefix"); err == nil {
-			if hasStructuredMapping {
-				return nil, errors.New("$.urlMappings must not mix legacy and structured entries")
-			}
-			hasLegacyMapping = true
-			for _, field := range []string{"sourcePrefix", "destinationPrefix"} {
-				if err := settingsURL(legacyMapping[field], path+"."+field, false); err != nil {
-					return nil, err
-				}
-			}
-			continue
-		}
-		if hasLegacyMapping {
-			return nil, errors.New("$.urlMappings must not mix legacy and structured entries")
-		}
-		hasStructuredMapping = true
 		mapping, err := settingsObject(entry, path, "id", "pattern", "repository", "credentialProfileRef", "priority", "chromeOrigin", "updatedAt")
 		if err != nil {
 			return nil, err
@@ -597,29 +584,8 @@ func settingsURLMappingPattern(value any, path string) error {
 	if match == nil || strings.ContainsAny(match[2], "@\\") {
 		return fmt.Errorf("%s must be a URL pattern without credentials, query, or fragment", path)
 	}
-	host := match[2]
-	if strings.HasPrefix(host, "[") {
-		if !strings.HasSuffix(host, "]") || net.ParseIP(strings.TrimSuffix(strings.TrimPrefix(host, "["), "]")) == nil {
-			return fmt.Errorf("%s has an invalid host", path)
-		}
-	} else {
-		labels := strings.Split(strings.TrimSuffix(host, "."), ".")
-		if len(labels) == 0 || strings.TrimSuffix(host, ".") == "" {
-			return fmt.Errorf("%s has an invalid host", path)
-		}
-		for index, label := range labels {
-			if label == "" || (strings.Contains(label, "*") && label != "*") {
-				return fmt.Errorf("%s has an invalid host", path)
-			}
-			if label == "*" {
-				labels[index] = fmt.Sprintf("devhud-wildcard-%d", index)
-			}
-		}
-		parsedHost := strings.Join(labels, ".")
-		parsed, err := url.Parse("http://" + parsedHost)
-		if err != nil || parsed.Hostname() == "" || settingsInvalidDottedIPv4(parsedHost) {
-			return fmt.Errorf("%s has an invalid host", path)
-		}
+	if !settingsValidURLHost(match[2], true) {
+		return fmt.Errorf("%s has an invalid host", path)
 	}
 	port := match[3]
 	if port != "" && port != "*" {
@@ -632,10 +598,21 @@ func settingsURLMappingPattern(value any, path string) error {
 		}
 	}
 	pathText := match[4]
-	for _, segment := range strings.Split(pathText, "/")[1:] {
+	segments := strings.Split(pathText, "/")[1:]
+	if len(segments) > maximumMappingPathSegments {
+		return fmt.Errorf("%s must contain at most %d path segments", path, maximumMappingPathSegments)
+	}
+	globstars := 0
+	for _, segment := range segments {
 		if strings.Contains(segment, "*") && segment != "*" && segment != "**" {
 			return fmt.Errorf("%s has invalid path wildcards", path)
 		}
+		if segment == "**" {
+			globstars++
+		}
+	}
+	if globstars > maximumMappingGlobstars {
+		return fmt.Errorf("%s must contain at most %d globstar segments", path, maximumMappingGlobstars)
 	}
 	return nil
 }
@@ -651,28 +628,85 @@ func settingsChromeOrigin(value any, path string) error {
 		port = parsed.Port()
 	}
 	parsedPort, portErr := strconv.ParseUint(port, 10, 16)
-	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" || settingsInvalidDottedIPv4(parsed.Hostname()) || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || (parsed.Path != "" && parsed.Path != "/") || strings.Contains(parsed.Hostname(), "*") || (port != "" && (portErr != nil || parsedPort > 65535)) {
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" || !settingsValidURLHost(parsed.Hostname(), false) || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || (parsed.Path != "" && parsed.Path != "/") || strings.Contains(parsed.Hostname(), "*") || (port != "" && (portErr != nil || parsedPort > 65535)) {
 		return fmt.Errorf("%s must be a concrete HTTP(S) origin without credentials, path, query, or fragment", path)
 	}
 	return nil
 }
 
-func settingsInvalidDottedIPv4(host string) bool {
+func settingsValidURLHost(host string, allowWildcard bool) bool {
+	if strings.HasPrefix(host, "[") {
+		return strings.HasSuffix(host, "]") && net.ParseIP(strings.TrimSuffix(strings.TrimPrefix(host, "["), "]")) != nil
+	}
+	if net.ParseIP(host) != nil {
+		return true
+	}
 	labels := strings.Split(strings.TrimSuffix(host, "."), ".")
-	if len(labels) != 4 {
+	if len(labels) == 0 || strings.TrimSuffix(host, ".") == "" {
 		return false
 	}
-	for _, label := range labels {
-		if label == "" {
+	for index, label := range labels {
+		if label == "" || (strings.Contains(label, "*") && (!allowWildcard || label != "*")) {
 			return false
 		}
-		for _, character := range label {
-			if character < '0' || character > '9' {
-				return false
-			}
+		if label == "*" {
+			labels[index] = fmt.Sprintf("devhud-wildcard-%d", index)
 		}
 	}
-	return net.ParseIP(strings.Join(labels, ".")) == nil
+	concreteHost := strings.Join(labels, ".")
+	if numeric, valid := settingsWhatwgIPv4(concreteHost); numeric {
+		return valid
+	}
+	_, err := settingsIDNAProfile.ToASCII(concreteHost)
+	return err == nil
+}
+
+// settingsWhatwgIPv4 preserves the numeric IPv4 forms accepted by new URL while
+// rejecting out-of-range abbreviated forms before they can reach a browser client.
+func settingsWhatwgIPv4(host string) (numeric bool, valid bool) {
+	parts := strings.Split(strings.TrimSuffix(host, "."), ".")
+	if len(parts) == 0 {
+		return false, false
+	}
+	if _, ok := settingsWhatwgIPv4Number(parts[len(parts)-1]); !ok {
+		return false, false
+	}
+	if len(parts) > 4 {
+		return true, false
+	}
+	numbers := make([]uint64, len(parts))
+	for index, part := range parts {
+		number, ok := settingsWhatwgIPv4Number(part)
+		if !ok {
+			return true, false
+		}
+		numbers[index] = number
+	}
+	for _, number := range numbers[:len(numbers)-1] {
+		if number > 255 {
+			return true, false
+		}
+	}
+	return true, numbers[len(numbers)-1] < uint64(1)<<(8*(5-len(numbers)))
+}
+
+func settingsWhatwgIPv4Number(value string) (uint64, bool) {
+	if value == "" {
+		return 0, false
+	}
+	base := 10
+	digits := value
+	lower := strings.ToLower(value)
+	if strings.HasPrefix(lower, "0x") {
+		base, digits = 16, value[2:]
+	} else if len(value) > 1 && value[0] == '0' {
+		base, digits = 8, value[1:]
+	}
+	if digits == "" {
+		return 0, true
+	}
+	number, err := strconv.ParseUint(digits, base, 32)
+	return number, err == nil
 }
 
 func settingsCanonicalTimestamp(value any, path string) error {

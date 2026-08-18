@@ -16,6 +16,10 @@ export interface ParsedUrlPattern {
   readonly path: readonly string[];
 }
 
+/** Bound synchronous Settings overlap analysis for every accepted mapping set. */
+export const MaximumUrlMappingPathSegments = 32;
+export const MaximumUrlMappingGlobstarSegments = 8;
+
 export class UrlMappingError extends TypeError {}
 
 const literalScheme = /^(?:https?|\*)$/u;
@@ -31,6 +35,8 @@ export function parseUrlPattern(value: string): ParsedUrlPattern {
   if (!literalScheme.test(scheme) || !literalPort.test(port) || (port !== "" && port !== "*" && Number(port) > 65535)) throw new UrlMappingError("pattern has an invalid scheme or port");
   const { host, hostIsIpLiteral } = parsePatternHost(hostText);
   const path = pathText.split("/").slice(1);
+  if (path.length > MaximumUrlMappingPathSegments) throw new UrlMappingError(`pattern path must contain at most ${MaximumUrlMappingPathSegments} segments`);
+  if (path.filter((part) => part === "**").length > MaximumUrlMappingGlobstarSegments) throw new UrlMappingError(`pattern path must contain at most ${MaximumUrlMappingGlobstarSegments} globstar segments`);
   if (path.some((part) => part.includes("*") && part !== "*" && part !== "**")) throw new UrlMappingError("path wildcards must occupy a complete segment");
   return { scheme, host, hostIsIpLiteral, port: normalizeDefaultPort(scheme, port), path: canonicalizePatternPath(pathText, path) };
 }
