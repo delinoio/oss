@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { assertAndroidArtifactEntries, assertAndroidBackupExclusions, assertAndroidNativeBridge, assertAndroidPermissions, assertIosNativeBridge, assertMobileCi, assertMobileContracts, assertMobileDependencyClosures, assertMobileDependencyResolution, assertMobileTargets, mobileCargoTreeDigest } from "./mobile-policy.mjs";
+import { assertAndroidArtifactEntries, assertAndroidBackupExclusions, assertAndroidNativeBridge, assertAndroidNativeLibrary, assertAndroidPermissions, assertIosNativeBridge, assertMobileCi, assertMobileContracts, assertMobileDependencyClosures, assertMobileDependencyResolution, assertMobileTargets, mobileCargoTreeDigest } from "./mobile-policy.mjs";
 
 const appRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const mobileTargets = JSON.parse(readFileSync(join(appRoot, "mobile-platforms.json"), "utf8")).targets;
@@ -97,6 +97,12 @@ test("mobile policy validates APK and App Bundle layouts", () => {
   assert.throws(() => assertAndroidArtifactEntries(aabEntries.filter((entry) => entry !== "BundleConfig.pb"), "arm64-v8a", "aab"), /Bundle configuration/u);
   assert.throws(() => assertAndroidArtifactEntries([...aabEntries, "base/lib/x86_64/libdevhud_lib.so"], "arm64-v8a", "aab"), /architecture changed/u);
   assert.throws(() => assertAndroidArtifactEntries([...aabEntries, "base/assets/chromium.pak"], "arm64-v8a", "aab"), /CEF or browser-extension/u);
+});
+
+test("mobile policy distinguishes embedded runtime metadata from CEF symbols", () => {
+  assert.doesNotThrow(() => assertAndroidNativeLibrary("150.0.10+g8042e43+chromium-150.0.7871.101"));
+  assert.throws(() => assertAndroidNativeLibrary("libcef.so"), /CEF symbols/u);
+  assert.throws(() => assertAndroidNativeLibrary("cef_initialize"), /CEF symbols/u);
 });
 
 test("mobile policy pins normalized resolved dependency closures", () => {

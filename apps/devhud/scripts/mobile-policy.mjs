@@ -152,6 +152,12 @@ export function assertAndroidArtifactEntries(entries, abi, format) {
   assert(!entries.some((entry) => /cef|chromium|chrome-extension|browser-extension/iu.test(entry)), "CEF or browser-extension file leaked into the Android artifact");
 }
 
+export function assertAndroidNativeLibrary(nativeLibrary) {
+  // The shared frontend embeds the pinned desktop Chromium revision for validation;
+  // native CEF exports, rather than that inert metadata, identify a leaked runtime.
+  assert(!/libcef|cef_initialize/iu.test(nativeLibrary), "CEF symbols leaked into the Android native library");
+}
+
 function workflowJob(workflow, name) {
   return workflow.match(new RegExp(`\\n  ${name}:\\n([\\s\\S]*?)(?=\\n  [a-z0-9-]+:|$)`, "u"))?.[1] ?? "";
 }
