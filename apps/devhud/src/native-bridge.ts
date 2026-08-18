@@ -114,7 +114,8 @@ export type NativeBridgeRequestV1 = NativeBridgeRequestV1Base
   | { readonly operation: "shortcuts.apply"; readonly bindings: DesktopShortcutBindings }
   | { readonly operation: "shortcuts.stage"; readonly bindings: DesktopShortcutBindings }
   | { readonly operation: "shortcuts.commit"; readonly bindings: DesktopShortcutBindings }
-  | { readonly operation: "shortcuts.rollback" };
+  | { readonly operation: "shortcuts.rollback" }
+  | { readonly operation: "shortcuts.suspend" };
 
 export type NativeBridgeResponseV1 =
   | { readonly kind: "runtime"; readonly snapshot: RuntimeSnapshot }
@@ -242,7 +243,7 @@ export const nativeBridge: NativeBridgeV1 = {
       if (request.operation === "auth.peek-pending-callback") return { kind: "auth-callback", url: null };
       if (request.operation === "auth.take-pending-callback") return { kind: "auth-callback", url: null };
       if (request.operation === "auth.open-system-browser") { window.open(request.url, "_blank", "noopener,noreferrer"); return { kind: "ok" }; }
-      if (request.operation === "shortcuts.status" || request.operation === "shortcuts.request-permission" || request.operation === "shortcuts.apply" || request.operation === "shortcuts.stage" || request.operation === "shortcuts.commit" || request.operation === "shortcuts.rollback") {
+      if (request.operation === "shortcuts.status" || request.operation === "shortcuts.request-permission" || request.operation === "shortcuts.apply" || request.operation === "shortcuts.stage" || request.operation === "shortcuts.commit" || request.operation === "shortcuts.rollback" || request.operation === "shortcuts.suspend") {
         return { kind: "shortcut-status", platform: "unsupported", permission: "unsupported", bindings: "bindings" in request ? request.bindings : defaultDesktopShortcutBindings, error: null };
       }
       if (request.operation === "lifecycle.open-external" && request.target !== "authentication") { window.open(request.target === "fine-grained-pat" ? FineGrainedPatCreationUrl : ClassicPatCreationUrl, "_blank", "noopener,noreferrer"); return { kind: "ok" }; }

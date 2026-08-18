@@ -7,7 +7,7 @@ import { useIdentitySettings } from "./service-boundary";
 import { browserShell, LanguagePreference, PlatformCapability, normalizeApiOrigin, ThemePreference, type ExternalLinkTarget, type RuntimeCapabilities } from "./shell";
 import type { DevHudSettingsV1 } from "./settings-contract";
 import type { SettingsDiffEntry } from "./settings-diff";
-import { ShortcutActionId, ShortcutContractError, ShortcutKey, ShortcutModifier, ShortcutValidationCode, availableShortcutActions, parseDesktopShortcutBindings, type ShortcutBinding } from "./shortcuts";
+import { inactiveDesktopShortcutBindings, ShortcutActionId, ShortcutContractError, ShortcutKey, ShortcutModifier, ShortcutValidationCode, availableShortcutActions, parseDesktopShortcutBindings, type ShortcutBinding } from "./shortcuts";
 
 interface ApiEditorProps {
   readonly copy: Copy;
@@ -126,15 +126,26 @@ export function SynchronizedShortcutBoundary({ bridge = nativeBridge }: { readon
   const identity = useIdentitySettings();
   const bindings = identity.settings.shortcuts.desktop;
   useEffect(() => {
-    if (!identity.shortcutHydrationReady) return;
     let active = true;
+    if (!identity.shortcutHydrationReady) {
+      void bridge.request({ operation: "shortcuts.suspend" }).then((response) => {
+        if (active && response.kind === "shortcut-status") identity.setActiveShortcutBindings(inactiveDesktopShortcutBindings);
+      }).catch(() => {
+        // A pre-bridge host cannot suspend matching. Its status remains visible
+        // in Settings while the renderer waits for authenticated hydration.
+      });
+      return () => { active = false; };
+    }
     void bridge.request({ operation: "shortcuts.apply", bindings }).then(async (response) => {
       if (!active || response.kind !== "shortcut-status") return;
       if (response.error === null) {
         identity.setActiveShortcutBindings(response.bindings);
         return;
       }
-      if (response.error !== ShortcutValidationCode.Reserved) return;
+      if (response.error !== ShortcutValidationCode.Reserved) {
+        identity.setActiveShortcutBindings(inactiveDesktopShortcutBindings);
+        return;
+      }
       // Synchronized bindings can be valid on their source desktop platform but
       // reserved here. Keep the native backend's last known platform-valid map
       // active without overwriting the shared settings snapshot.

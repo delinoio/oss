@@ -538,7 +538,10 @@ fn reserved(binding: &ShortcutBinding, platform: ShortcutPlatform) -> bool {
                     ShortcutKey::Space | ShortcutKey::Tab | ShortcutKey::KeyQ
                 )
         }
-        ShortcutPlatform::Windows => has_primary && has_alt && binding.key == ShortcutKey::Delete,
+        ShortcutPlatform::Windows => {
+            (has_primary && has_alt && binding.key == ShortcutKey::Delete)
+                || (has_alt && binding.key == ShortcutKey::Tab)
+        }
         ShortcutPlatform::X11 => has_primary && has_alt && binding.key == ShortcutKey::Backspace,
         ShortcutPlatform::Unsupported => false,
     }
@@ -1044,10 +1047,10 @@ mod tests {
     #[test]
     fn applies_reserved_chord_rules_per_platform() {
         let mut bindings = default_bindings();
-        let palette = bindings
+        bindings
             .get_mut(&ShortcutAction::ShellCommandPalette)
-            .expect("palette binding");
-        palette.key = ShortcutKey::Space;
+            .expect("palette binding")
+            .key = ShortcutKey::Space;
         assert_eq!(
             validate_bindings(&bindings, ShortcutPlatform::Macos),
             Err(ShortcutFailure::Reserved)
@@ -1057,6 +1060,16 @@ mod tests {
             Ok(())
         );
         assert_eq!(validate_bindings(&bindings, ShortcutPlatform::X11), Ok(()));
+
+        let palette = bindings
+            .get_mut(&ShortcutAction::ShellCommandPalette)
+            .expect("palette binding");
+        palette.modifiers = vec![ShortcutModifier::Alt];
+        palette.key = ShortcutKey::Tab;
+        assert_eq!(
+            validate_bindings(&bindings, ShortcutPlatform::Windows),
+            Err(ShortcutFailure::Reserved)
+        );
     }
 
     #[test]

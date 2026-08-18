@@ -39,6 +39,15 @@ export const defaultDesktopShortcutBindings: DesktopShortcutBindings = Object.fr
   [ShortcutActionId.CaptureToolbar]: { enabled: true, modifiers: [], key: ShortcutKey.Digit5 },
 });
 
+export const inactiveDesktopShortcutBindings: DesktopShortcutBindings = Object.freeze({
+  [ShortcutActionId.CommandPalette]: { enabled: false, modifiers: [], key: ShortcutKey.K },
+  [ShortcutActionId.CaptureDisplay]: { enabled: false, modifiers: [], key: ShortcutKey.Digit1 },
+  [ShortcutActionId.CaptureActiveWindow]: { enabled: false, modifiers: [], key: ShortcutKey.Digit2 },
+  [ShortcutActionId.CaptureAllDisplays]: { enabled: false, modifiers: [], key: ShortcutKey.Digit3 },
+  [ShortcutActionId.CaptureSelection]: { enabled: false, modifiers: [], key: ShortcutKey.Digit4 },
+  [ShortcutActionId.CaptureToolbar]: { enabled: false, modifiers: [], key: ShortcutKey.Digit5 },
+});
+
 export class ShortcutContractError extends TypeError {
   readonly code: ShortcutValidationCode;
 

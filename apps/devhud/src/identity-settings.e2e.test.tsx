@@ -10,7 +10,7 @@ import fixture from "../fixtures/identity-settings-e2e.json";
 import { App } from "./App";
 import * as identityClient from "./identity-client";
 import type { IdentitySession } from "./identity-client";
-import { SynchronizedSettingsBoundary } from "./identity-ui";
+import { SynchronizedSettingsBoundary, SynchronizedShortcutBoundary } from "./identity-ui";
 import { messages } from "./localization";
 import { hasGuestSettings, readAuthenticatedSettingsCache, readGuestSettings, writeAuthenticatedSettingsCache, writeCachedIdentityBootstrap, writeGuestSettings } from "./local-data";
 import { canonicalDevHudSettings, defaultDevHudSettings, parseDevHudSettings } from "./settings-contract";
@@ -294,6 +294,69 @@ describe("generated Connect identity/settings fixture", () => {
       { operation: "shortcuts.apply", bindings: fallback },
     ]));
     await waitFor(() => expect(screen.getByRole("button", { name: messages.en.openPalette }).textContent).toBe("Right Ctrl + K"));
+  });
+
+  it("marks the shortcut unavailable after startup hydration fails", async () => {
+    const bindings = {
+      ...defaultDevHudSettings.shortcuts.desktop,
+      [ShortcutActionId.CommandPalette]: { enabled: true, modifiers: [ShortcutModifier.RightPrimary], key: ShortcutKey.Space },
+    };
+    const fallback = defaultDevHudSettings.shortcuts.desktop;
+    writeGuestSettings(localStorage, { ...defaultDevHudSettings, shortcuts: { ...defaultDevHudSettings.shortcuts, desktop: bindings } });
+    const bridge: NativeBridgeV1 = {
+      async request(request) {
+        if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
+        if (request.operation === "secure.read") return { kind: "secure-value", value: null };
+        if (request.operation === "shortcuts.apply") return { kind: "shortcut-status", platform: "windows", permission: "available", bindings: fallback, error: "registration-failed" };
+        throw new Error(`unexpected bridge operation ${request.operation}`);
+      },
+      async listen() { return () => {}; },
+    };
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    render(<App bridge={bridge} initialRuntime={runtime} />);
+
+    await waitFor(() => expect(screen.getByRole("button", { name: messages.en.openPalette }).textContent).toBe(messages.en.shortcutNone));
+  });
+
+  it("suspends native matching while authenticated shortcut hydration is pending", async () => {
+    const requests: NativeBridgeRequestV1[] = [];
+    const authenticated = authenticatedBridge();
+    const bridge: NativeBridgeV1 = {
+      async request(request) {
+        if (request.operation === "shortcuts.suspend") {
+          requests.push(request);
+          return { kind: "shortcut-status", platform: "windows", permission: "available", bindings: defaultDevHudSettings.shortcuts.desktop, error: null };
+        }
+        return authenticated.request(request);
+      },
+      listen: authenticated.listen,
+    };
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return new Promise<Response>(() => {});
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    render(<DevHudServiceBoundary
+      apiOrigin="https://devhud.api.delino.io"
+      active
+      online
+      callbackUrl={null}
+      platform={RuntimePlatform.Desktop}
+      bridge={bridge}
+      onCallbackConsumed={() => {}}
+      onContinueLocally={() => {}}
+      onLoggedOut={() => {}}
+    ><SynchronizedShortcutBoundary bridge={bridge} /></DevHudServiceBoundary>);
+
+    await waitFor(() => expect(requests).toEqual([{ operation: "shortcuts.suspend" }]));
   });
 
   it("hydrates guest shortcuts after post-onboarding Bootstrap failure when continuing locally", async () => {

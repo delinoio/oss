@@ -140,6 +140,11 @@ fn rollback_staged_shortcuts(state: &NativeBridgeState) -> Value {
     }
 }
 
+fn suspend_shortcuts(state: &NativeBridgeState) -> Value {
+    state.shortcuts_ready.store(false, Ordering::SeqCst);
+    shortcut_status(state, None)
+}
+
 impl NativeBridgeState {
     #[cfg(desktop)]
     pub fn process_shortcut_event(&self, event: NativeKeyEvent) -> Option<ShortcutAction> {
@@ -578,6 +583,7 @@ pub fn handle_native_bridge_request(
         "shortcuts.stage" => stage_shortcuts(request, state),
         "shortcuts.commit" => commit_staged_shortcuts(request, state),
         "shortcuts.rollback" => Ok(rollback_staged_shortcuts(state)),
+        "shortcuts.suspend" => Ok(suspend_shortcuts(state)),
         "session.configure-origins" => Ok(json!({
             "kind": "session-network-policy",
             "changed": state.configure_session_origins(request)?
@@ -713,6 +719,8 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::Ordering;
+
     use serde_json::json;
 
     use super::{
@@ -780,6 +788,24 @@ mod tests {
                 &NativeBridgeState::default(),
             ),
             Err("invalid-argument".to_string())
+        );
+    }
+
+    #[cfg(desktop)]
+    #[test]
+    fn suspending_shortcuts_blocks_matching_until_hydration_applies_bindings() {
+        let state = NativeBridgeState::default();
+        state.shortcuts_ready.store(true, Ordering::SeqCst);
+        let suspended =
+            handle_native_bridge_request(&json!({ "operation": "shortcuts.suspend" }), &state)
+                .expect("suspend shortcuts");
+        assert_eq!(suspended["kind"], "shortcut-status");
+        assert_eq!(
+            state.process_shortcut_event(crate::shortcuts::NativeKeyEvent {
+                key: crate::shortcuts::NativeKey::Key(crate::shortcuts::ShortcutKey::Digit1),
+                pressed: true,
+            }),
+            None
         );
     }
 
