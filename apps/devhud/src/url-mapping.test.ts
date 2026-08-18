@@ -77,8 +77,10 @@ describe("URL repository matcher", () => {
 
   it("rejects path complexity that would make overlap analysis unbounded", () => {
     const segments = Array.from({ length: MaximumUrlMappingPathSegments + 1 }, () => "value").join("/");
+    const backslashSegments = Array.from({ length: MaximumUrlMappingPathSegments + 1 }, () => "value").join("\\");
     const globstars = Array.from({ length: MaximumUrlMappingGlobstarSegments + 1 }, () => "**").join("/");
     expect(() => parseUrlPattern(`https://example.com/${segments}`)).toThrow(/path.*at most/u);
+    expect(() => parseUrlPattern(`https://example.com/${backslashSegments}`)).toThrow(/path.*at most/u);
     expect(() => parseUrlPattern(`https://example.com/${globstars}`)).toThrow(/at most.*globstar/u);
   });
 
