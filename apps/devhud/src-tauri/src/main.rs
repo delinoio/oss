@@ -87,18 +87,21 @@ impl DiagnosticLogController {
     }
 
     fn reset(&self) -> Result<(), String> {
+        self.reset_with_appender(build_diagnostic_appender)
+    }
+
+    fn reset_with_appender(
+        &self,
+        build_appender: impl FnOnce(&Path) -> Result<tracing_appender::rolling::RollingFileAppender, ()>,
+    ) -> Result<(), String> {
         let Some(sink) = &self.sink else {
             return Ok(());
         };
         let mut sink = sink.lock().map_err(|_| "storage-failure")?;
         sink.appender.take();
         let removal = remove_diagnostic_log_files(&sink.directory);
-        let replacement =
-            build_diagnostic_appender(&sink.directory).map_err(|_| "storage-failure".to_string());
-        if let Ok(appender) = replacement {
+        if let Ok(appender) = build_appender(&sink.directory) {
             sink.appender = Some(appender);
-        } else {
-            return Err("storage-failure".to_string());
         }
         removal
     }
@@ -1286,6 +1289,34 @@ mod tests {
                 .expect("diagnostic directory")
                 .flatten()
                 .any(|entry| entry
+                    .file_name()
+                    .to_str()
+                    .is_some_and(is_diagnostic_log_name))
+        );
+    }
+
+    #[test]
+    fn diagnostic_log_reset_succeeds_when_cleanup_completes_without_reopening() {
+        let temporary = tempfile::tempdir().expect("temporary diagnostics directory");
+        let retained = temporary.path().join("devhud.2026-08-17.jsonl");
+        std::fs::write(&retained, "retained diagnostic\n").expect("retained diagnostic fixture");
+        let controller = DiagnosticLogController::cleanup_only(temporary.path().to_path_buf());
+
+        controller
+            .reset_with_appender(|_| Err(()))
+            .expect("completed cleanup must not depend on reopening");
+
+        assert!(!retained.exists());
+        let mut writer = controller.clone();
+        writer
+            .write_all(b"stderr-only diagnostic\n")
+            .expect("stderr-only controller write");
+        writer.flush().expect("stderr-only controller flush");
+        assert!(
+            std::fs::read_dir(temporary.path())
+                .expect("diagnostic directory")
+                .flatten()
+                .all(|entry| !entry
                     .file_name()
                     .to_str()
                     .is_some_and(is_diagnostic_log_name))

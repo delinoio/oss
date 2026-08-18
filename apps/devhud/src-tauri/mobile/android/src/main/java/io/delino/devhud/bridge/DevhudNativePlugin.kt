@@ -183,10 +183,12 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
 
     private fun forgetDiagnosticsCleanup(): Boolean {
         val destination = pendingDiagnosticsCleanup ?: return true
-        try {
-            activity.contentResolver.releasePersistableUriPermission(destination, Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-        } catch (_: Exception) {
-            return false
+        if (hasPersistedDiagnosticsWriteGrant(destination)) {
+            try {
+                activity.contentResolver.releasePersistableUriPermission(destination, Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            } catch (_: Exception) {
+                return false
+            }
         }
         val removed = activity.getSharedPreferences(diagnosticsCleanupStoreName, Context.MODE_PRIVATE)
             .edit().remove(diagnosticsCleanupUriKey).commit()
@@ -197,6 +199,7 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
 
     private fun cleanupPendingDiagnosticsExport(): Boolean {
         val destination = pendingDiagnosticsCleanup ?: return true
+        if (!hasPersistedDiagnosticsWriteGrant(destination)) return forgetDiagnosticsCleanup()
         val deleted = try {
             activity.contentResolver.delete(destination, null, null) > 0
         } catch (_: Exception) {
@@ -213,6 +216,11 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
         }
         return absent && forgetDiagnosticsCleanup()
     }
+
+    private fun hasPersistedDiagnosticsWriteGrant(destination: Uri) =
+        activity.contentResolver.persistedUriPermissions.any { permission ->
+            permission.uri == destination && permission.isWritePermission
+        }
 
     private fun captureAuthCallback(intent: Intent?) {
         val candidate = intent?.dataString ?: return
