@@ -64,6 +64,47 @@ func TestSubmitCrashReportRequiresAuthenticationAndMapsBlockedUsers(t *testing.T
 	}
 }
 
+func TestSubmitCrashReportLogsSanitizedRepositoryCauses(t *testing.T) {
+	tests := []struct {
+		name     string
+		reason   error
+		category repositoryErrorCategory
+		sqlState string
+	}{
+		{name: "constraint", reason: testSQLStateError{state: "23505"}, category: repositoryErrorPostgreSQL, sqlState: "23505"},
+		{name: "transaction", reason: testSQLStateError{state: "40001"}, category: repositoryErrorPostgreSQL, sqlState: "40001"},
+		{name: "connectivity", reason: testNetworkError{}, category: repositoryErrorNetwork},
+		{name: "deadline", reason: context.DeadlineExceeded, category: repositoryErrorDeadline},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var logs bytes.Buffer
+			logger := slog.New(slog.NewJSONHandler(&logs, nil))
+			repository := &serviceRepository{submitCrashReport: func(context.Context, string, domain.CrashReport) (domain.CrashReport, error) {
+				return domain.CrashReport{}, test.reason
+			}}
+
+			_, err := NewDiagnosticsService(repository, serviceClock{}, logger).SubmitCrashReport(
+				authenticatedContext(), connect.NewRequest(validCrashReportRequest()),
+			)
+			if connect.CodeOf(err) != connect.CodeInternal {
+				t.Fatalf("repository failure code = %v", connect.CodeOf(err))
+			}
+			output := logs.String()
+			if !strings.Contains(output, `"error_category":"`+string(test.category)+`"`) {
+				t.Fatalf("repository failure category is missing: %s", output)
+			}
+			if test.sqlState != "" && !strings.Contains(output, `"sqlstate":"`+test.sqlState+`"`) {
+				t.Fatalf("repository SQLSTATE is missing: %s", output)
+			}
+			if strings.Contains(output, "sensitive repository detail") {
+				t.Fatalf("repository failure leaked error text: %s", output)
+			}
+		})
+	}
+}
+
 func TestValidateCrashReportRejectsHostileDiagnosticContent(t *testing.T) {
 	for name, hostile := range map[string]string{
 		"authorization":        "Authorization: Bearer abc",
@@ -291,6 +332,42 @@ func TestValidateCrashReportBoundsStackAndClassifications(t *testing.T) {
 	if err := validateCrashReport(request); err == nil {
 		t.Fatal("oversized stack line was accepted")
 	}
+}
+
+func TestValidateCrashReportAcceptsEnumCodesThatNameRedactedContent(t *testing.T) {
+	for _, code := range []string{"SCREENSHOT_CAPTURE_FAILED", "BROWSER_DOM_REDACTED"} {
+		request := validCrashReportRequest()
+		request.ErrorCode = code
+		if err := validateCrashReport(request); err != nil {
+			t.Fatalf("valid error code %q was rejected: %v", code, err)
+		}
+	}
+}
+
+type testSQLStateError struct {
+	state string
+}
+
+func (errorValue testSQLStateError) Error() string {
+	return "sensitive repository detail"
+}
+
+func (errorValue testSQLStateError) SQLState() string {
+	return errorValue.state
+}
+
+type testNetworkError struct{}
+
+func (testNetworkError) Error() string {
+	return "sensitive repository detail"
+}
+
+func (testNetworkError) Timeout() bool {
+	return false
+}
+
+func (testNetworkError) Temporary() bool {
+	return true
 }
 
 func validCrashReportRequest() *devhudv1.SubmitCrashReportRequest {

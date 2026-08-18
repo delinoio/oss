@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"regexp"
 	"strings"
 	"unicode/utf8"
@@ -34,6 +35,7 @@ const (
 var (
 	exactTauriRevision  = regexp.MustCompile(`^[0-9a-f]{40}$`)
 	safeErrorCode       = regexp.MustCompile(`^[A-Z][A-Z0-9_]{0,63}$`)
+	safeSQLState        = regexp.MustCompile(`^[0-9A-Z]{5}$`)
 	forbiddenDiagnostic = []*regexp.Regexp{
 		regexp.MustCompile(`(?i)\bbearer[[:space:]]+[^[:space:]]+`),
 		regexp.MustCompile(`(?i)\b([[:alnum:]]+_)*(password|passwd|pwd|pat|secret(_access_key)?|token|client[_.-]?secret|(access|refresh|id)[_.-]?token|api[_.-]?key|private[_.-]?key|authorization|cookie|set-cookie|session[_.-]?id|signing[_.-]?(secret|key|value))\b["']?[[:space:]]*[:=][[:space:]]*[^[:space:]]+`),
@@ -47,6 +49,20 @@ var (
 		regexp.MustCompile(`(?i)(ctrl|control|cmd|command|meta|alt|option|shift)[[:space:]]*[+-][[:space:]]*[a-z0-9]`),
 	}
 )
+
+type repositoryErrorCategory string
+
+const (
+	repositoryErrorPostgreSQL repositoryErrorCategory = "postgresql"
+	repositoryErrorDeadline   repositoryErrorCategory = "deadline"
+	repositoryErrorCanceled   repositoryErrorCategory = "canceled"
+	repositoryErrorNetwork    repositoryErrorCategory = "network"
+	repositoryErrorUnknown    repositoryErrorCategory = "unknown"
+)
+
+type sqlStateError interface {
+	SQLState() string
+}
 
 type DiagnosticsService struct {
 	repository domain.Repository
@@ -111,12 +127,13 @@ func (s *DiagnosticsService) SubmitCrashReport(ctx context.Context, request *con
 		if errors.As(err, &permission) {
 			return nil, permissionError(ctx, permission)
 		}
-		s.logger.ErrorContext(ctx, "diagnostics repository operation failed",
+		attributes := []any{
 			"correlation_id", CorrelationID(ctx),
 			"client_correlation_id", request.Msg.GetClientCorrelationId().GetValue(),
 			"procedure", devhudv1connect.DiagnosticsServiceSubmitCrashReportProcedure,
-			"error_type", fmt.Sprintf("%T", err),
-		)
+		}
+		attributes = append(attributes, diagnosticsRepositoryErrorAttributes(err)...)
+		s.logger.ErrorContext(ctx, "diagnostics repository operation failed", attributes...)
 		return nil, internalError(ctx)
 	}
 	trace.SpanFromContext(ctx).SetAttributes(
@@ -186,9 +203,6 @@ func validateCrashReport(request *devhudv1.SubmitCrashReportRequest) error {
 	if !safeErrorCode.MatchString(request.GetErrorCode()) {
 		return errors.New("error_code must be a safe enum-style classification")
 	}
-	if err := validateDiagnosticText("error_code", request.GetErrorCode(), 256, false); err != nil {
-		return err
-	}
 	if err := validateDiagnosticText("redacted_summary", request.GetRedactedSummary(), maximumSummaryBytes, true); err != nil {
 		return err
 	}
@@ -225,6 +239,47 @@ func validateCrashReport(request *devhudv1.SubmitCrashReportRequest) error {
 		return errors.New("duration_milliseconds exceeds 24 hours")
 	}
 	return nil
+}
+
+func diagnosticsRepositoryErrorAttributes(err error) []any {
+	sqlState := diagnosticsRepositorySQLState(err)
+	attributes := []any{
+		"error_type", fmt.Sprintf("%T", err),
+		"error_category", diagnosticsRepositoryErrorCategory(err, sqlState != ""),
+	}
+	if sqlState != "" {
+		attributes = append(attributes, "sqlstate", sqlState)
+	}
+	return attributes
+}
+
+func diagnosticsRepositoryErrorCategory(err error, hasSQLState bool) repositoryErrorCategory {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return repositoryErrorDeadline
+	}
+	if errors.Is(err, context.Canceled) {
+		return repositoryErrorCanceled
+	}
+	if hasSQLState {
+		return repositoryErrorPostgreSQL
+	}
+	var networkError net.Error
+	if errors.As(err, &networkError) {
+		return repositoryErrorNetwork
+	}
+	return repositoryErrorUnknown
+}
+
+func diagnosticsRepositorySQLState(err error) string {
+	var sqlState sqlStateError
+	if !errors.As(err, &sqlState) {
+		return ""
+	}
+	value := sqlState.SQLState()
+	if safeSQLState.MatchString(value) {
+		return value
+	}
+	return ""
 }
 
 func validateDiagnosticText(name, value string, maximumBytes int, emptyAllowed bool) error {
