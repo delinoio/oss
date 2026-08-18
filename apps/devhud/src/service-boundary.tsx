@@ -195,6 +195,11 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     queryClient.removeQueries({ queryKey: settingsQueryKey });
   }
 
+  function resetDesktopShortcuts() {
+    setShortcutSettingsReady(false);
+    setActiveShortcutBindings(inactiveDesktopShortcutBindings);
+  }
+
   function clearInvalidSession(): Promise<void> {
     if (invalidSessionCleanupRef.current !== null) return invalidSessionCleanupRef.current;
     const current = sessionRef.current;
@@ -210,6 +215,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
         applySettings(defaultDevHudSettings);
         applyRevision(0n);
         setSettingsReady(false);
+        resetDesktopShortcuts();
         setSettingsError(null);
         setStatus("signed-out");
         clearAuthenticatedSettingsCache(storage, apiOrigin);
@@ -249,6 +255,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       applySettings(defaultDevHudSettings);
       applyRevision(0n);
       setSettingsReady(false);
+      resetDesktopShortcuts();
       setSettingsError(null);
       setStatus("signed-out");
       setError(null);
@@ -575,7 +582,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   const localSettingsWritable = identityReady && (status === "guest" || status === "signed-out");
   const settingsReadOnly = replaceMutation.isPending || (!localSettingsWritable
     && (status !== "authenticated" || !online || !settingsReady || importDiff !== null || conflict !== null));
-  const shortcutHydrationReady = identityReady && ((status !== "authenticated" && status !== "blocked") || (shortcutSettingsReady && importDiff === null));
+  const shortcutHydrationReady = identityReady && (status === "guest" || ((status === "authenticated" || status === "blocked") && shortcutSettingsReady && importDiff === null));
   const githubPatSettingsReady = identityReady && !settingsReadOnly && conflict === null;
 
   const replaceSettings: IdentitySettingsValue["replaceSettings"] = async (update) => {
@@ -743,8 +750,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       applySettings(defaultDevHudSettings);
       applyRevision(0n);
       setSettingsReady(false);
-      setShortcutSettingsReady(false);
-      setActiveShortcutBindings(inactiveDesktopShortcutBindings);
+      resetDesktopShortcuts();
       setSettingsError(null);
       await clearIdentityQueryCache();
       onIdentityReset();

@@ -1,13 +1,14 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { AccountIdentity, ShortcutPaletteTrigger } from "./identity-ui";
+import { AccountIdentity, ShortcutPaletteTrigger, SynchronizedShortcutBoundary } from "./identity-ui";
 import { messages } from "./localization";
+import type { NativeBridgeV1 } from "./native-bridge";
 import type { IdentitySettingsValue } from "./service-boundary";
 import { defaultDevHudSettings } from "./settings-contract";
-import { ShortcutActionId, ShortcutKey, ShortcutModifier } from "./shortcuts";
+import { inactiveDesktopShortcutBindings, ShortcutActionId, ShortcutKey, ShortcutModifier } from "./shortcuts";
 
 let identity: IdentitySettingsValue;
 
@@ -44,5 +45,24 @@ describe("identity UI", () => {
     render(<ShortcutPaletteTrigger copy={messages.en} isMac={false} onOpen={vi.fn()} triggerRef={{ current: null }} />);
 
     expect(screen.getByRole("button", { name: messages.en.openPalette }).textContent).toBe(`${messages.en.shortcutShift} + ${messages.en.shortcutKeyQ}`);
+  });
+
+  it("suspends shortcuts while identity hydration is unavailable", async () => {
+    const operations: string[] = [];
+    const bridge: NativeBridgeV1 = {
+      async request(request) {
+        operations.push(request.operation);
+        if (request.operation === "shortcuts.suspend") return { kind: "shortcut-status", platform: "unsupported", permission: "unsupported", bindings: inactiveDesktopShortcutBindings, error: null };
+        throw new Error(`unexpected bridge operation ${request.operation}`);
+      },
+      async listen() { return () => {}; },
+    };
+    identity = identityWith({ status: "signed-out", shortcutHydrationReady: false });
+
+    render(<SynchronizedShortcutBoundary bridge={bridge} />);
+
+    await waitFor(() => expect(operations).toContain("shortcuts.suspend"));
+    expect(operations).not.toContain("shortcuts.apply");
+    expect(identity.setActiveShortcutBindings).toHaveBeenCalledWith(inactiveDesktopShortcutBindings);
   });
 });
