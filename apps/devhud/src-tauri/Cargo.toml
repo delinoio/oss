@@ -34,6 +34,7 @@ tracing = "0.1"
 tracing-appender = "0.2.5"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
 wait-timeout = "0.2"
+rdev = "0.5.3"
 tauri-plugin-deep-link = "=2.4.9"
 tauri-plugin-single-instance = { version = "=2.4.3", features = ["deep-link"] }
 
