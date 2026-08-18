@@ -71,12 +71,16 @@ describe("diagnostics privacy boundary", () => {
       agentPrompt: "private prompt",
       output: { childEnvironment: { TOKEN: "private" } },
       fullPath: "/home/alice/project/main.ts",
+      importedCredential: "ghp_0123456789abcdefghijklmnopqrstuvwxyz",
+      importedLocation: "/workspace/project/main.ts",
       shortcut: "Ctrl+Shift+P",
       urlFragment: "https://example.test/path#private",
+      safeSlashLabel: "React/Native renderer failed",
     };
     const serialized = JSON.stringify(redactDiagnosticValue(hostile));
     expect(serialized).toContain("bounded classification");
-    for (const prohibited of ["Bearer", "githubPat", "r2_secret", "signingKey", "nodeType", "screenshot", "issueBody", "agentPrompt", "childEnvironment", "/home/alice", "Ctrl+", "#private"]) {
+    expect(serialized).toContain("React/Native renderer failed");
+    for (const prohibited of ["Bearer", "githubPat", "r2_secret", "signingKey", "nodeType", "screenshot", "issueBody", "agentPrompt", "childEnvironment", "/home/alice", "ghp_", "/workspace/", "Ctrl+", "#private"]) {
       expect(serialized).not.toContain(prohibited);
     }
   });
@@ -156,11 +160,18 @@ describe("diagnostics privacy boundary", () => {
 
   it("binds export preview and sent request to byte-identical protobuf JSON", () => {
     const event = fixtureEvent(Date.parse("2026-08-17T00:00:00.000Z"));
-    const prepared = prepareDiagnosticsBundle(event, [event]);
+    const imported = {
+      ...event,
+      summary: "ghp_0123456789abcdefghijklmnopqrstuvwxyz",
+      stackFrames: ["/workspace/project/main.ts"],
+    };
+    const prepared = prepareDiagnosticsBundle(event, [imported, event]);
     expect(toJsonString(SubmitCrashReportRequestSchema, prepared.request, { prettySpaces: 2 })).toBe(prepared.requestJson);
     const exported = JSON.parse(prepared.exportJson);
     expect(exported.crashReport).toEqual(JSON.parse(prepared.requestJson));
-    expect(exported.localEvents[0].build.platform).toBe(DiagnosticPlatform.LINUX);
+    expect(exported.localEvents.at(-1).build.platform).toBe(DiagnosticPlatform.LINUX);
+    expect(prepared.exportJson).not.toContain("ghp_");
+    expect(prepared.exportJson).not.toContain("/workspace/");
     expect(prepared.request.clientCorrelationId?.value).toBe(event.correlationId);
   });
 

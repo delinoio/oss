@@ -27,7 +27,7 @@ const maximumCollectionEntries = 64;
 const maximumStringBytes = 512;
 const textEncoder = new TextEncoder();
 
-const forbiddenValue = /(?:authorization|bearer\s|github[_-]?pat|access[_-]?token|refresh[_-]?token|r2[_-]?(?:secret|token|key)|signing[_-]?(?:secret|key)|browser.?dom|innerhtml|outerhtml|screenshot|form.?value|issue.?body|agent.?(?:prompt|output)|child.?env|https?:\/\/\S*|(?:^|\s)(?:\/Users\/|\/home\/|\/private\/|\/var\/|\/tmp\/|\/etc\/|\/opt\/|[a-z]:\\)|(?:ctrl|control|cmd|command|meta|alt|option|shift)\s*[+-]\s*[a-z0-9])/iu;
+const forbiddenValue = /(?:authorization|bearer\s|github[_-]?pat|access[_-]?token|refresh[_-]?token|r2[_-]?(?:secret|token|key)|signing[_-]?(?:secret|key)|\b(?:ghp|github_pat)_[A-Za-z0-9_]+\b|browser.?dom|innerhtml|outerhtml|screenshot|form.?value|issue.?body|agent.?(?:prompt|output)|child.?env|https?:\/\/\S*|(?:^|[\s(\[{<"'=:])(?:[a-z]:[\\/]\S*|\\\\\S+|~\/\S+|\/[^/\s]\S*)|(?:ctrl|control|cmd|command|meta|alt|option|shift)\s*[+-]\s*[a-z0-9])/iu;
 const safeCode = /^[A-Z][A-Z0-9_]{0,63}$/u;
 const safeFrameName = /(?:^|\s)(?:at\s+)?([A-Za-z_$][A-Za-z0-9_$.<>-]{0,95})/u;
 
@@ -154,10 +154,11 @@ export function redactedStackFrames(error: unknown): string[] {
   if (typeof stack !== "string") return [];
   const frames: string[] = [];
   for (const line of stack.split("\n").slice(1)) {
-    if (forbiddenValue.test(line)) continue;
     const match = safeFrameName.exec(line.trim());
     if (!match?.[1]) continue;
-    frames.push(`at ${match[1]}`);
+    const frame = `at ${match[1]}`;
+    if (forbiddenValue.test(frame)) continue;
+    frames.push(frame);
     if (frames.length === maximumStackFrames) break;
   }
   return frames;

@@ -223,6 +223,9 @@ func validateDiagnosticText(name, value string, maximumBytes int, emptyAllowed b
 	if !utf8.ValidString(value) {
 		return fmt.Errorf("%s must be valid UTF-8", name)
 	}
+	if strings.ContainsRune(value, '\x00') {
+		return fmt.Errorf("%s must not contain NUL bytes", name)
+	}
 	if !emptyAllowed && value == "" {
 		return fmt.Errorf("%s must not be empty", name)
 	}

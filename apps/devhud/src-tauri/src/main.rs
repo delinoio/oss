@@ -147,11 +147,13 @@ fn build_diagnostic_appender(
 }
 
 fn remove_diagnostic_log_files(directory: &Path) -> Result<(), String> {
-    let Ok(entries) = std::fs::read_dir(directory) else {
-        return Ok(());
+    let entries = match std::fs::read_dir(directory) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(_) => return Err("storage-failure".to_string()),
     };
-    for entry in entries.flatten() {
-        let path = entry.path();
+    for entry in entries {
+        let path = entry.map_err(|_| "storage-failure")?.path();
         let diagnostic_file = path
             .file_name()
             .and_then(|name| name.to_str())
@@ -1076,8 +1078,8 @@ mod tests {
     use super::should_observe_renderer_crashes;
     use super::{
         DiagnosticLogController, SmokeMode, diagnostic_filter, inject_smoke_missing_resource,
-        is_diagnostic_log_name, missing_resource_reason, wait_for_frontend_readiness_timeout,
-        wait_for_renderer_crash_listener,
+        is_diagnostic_log_name, missing_resource_reason, remove_diagnostic_log_files,
+        wait_for_frontend_readiness_timeout, wait_for_renderer_crash_listener,
     };
 
     #[test]
@@ -1269,6 +1271,22 @@ mod tests {
                 "unexpected cleanup match: {name}"
             );
         }
+    }
+
+    #[test]
+    fn diagnostic_cleanup_tolerates_only_a_missing_directory() {
+        let temporary = tempfile::tempdir().expect("temporary diagnostics directory");
+        assert_eq!(
+            remove_diagnostic_log_files(&temporary.path().join("missing")),
+            Ok(())
+        );
+
+        let file = temporary.path().join("not-a-directory");
+        std::fs::write(&file, "fixture").expect("non-directory fixture");
+        assert_eq!(
+            remove_diagnostic_log_files(&file),
+            Err("storage-failure".to_string())
+        );
     }
 
     #[test]

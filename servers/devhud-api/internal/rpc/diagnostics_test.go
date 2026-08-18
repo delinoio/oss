@@ -99,6 +99,47 @@ func TestValidateCrashReportRejectsHostileDiagnosticContent(t *testing.T) {
 	}
 }
 
+func TestSubmitCrashReportRejectsNULBeforePersistence(t *testing.T) {
+	repositoryCalled := false
+	repository := &serviceRepository{submitCrashReport: func(context.Context, string, domain.CrashReport) (domain.CrashReport, error) {
+		repositoryCalled = true
+		return domain.CrashReport{}, nil
+	}}
+	service := NewDiagnosticsService(repository, serviceClock{}, testServiceLogger())
+	request := validCrashReportRequest()
+	request.RedactedSummary = "classified\x00summary"
+
+	_, err := service.SubmitCrashReport(authenticatedContext(), connect.NewRequest(request))
+	if connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("NUL diagnostic code = %v", connect.CodeOf(err))
+	}
+	if repositoryCalled {
+		t.Fatal("repository was called for a diagnostic containing NUL")
+	}
+}
+
+func TestValidateCrashReportRejectsNULInEveryPersistedTextGroup(t *testing.T) {
+	for name, mutate := range map[string]func(*devhudv1.SubmitCrashReportRequest){
+		"build": func(request *devhudv1.SubmitCrashReportRequest) {
+			request.ClientBuild.OsVersion = "15\x00.6"
+		},
+		"summary": func(request *devhudv1.SubmitCrashReportRequest) {
+			request.RedactedSummary = "classified\x00summary"
+		},
+		"stack": func(request *devhudv1.SubmitCrashReportRequest) {
+			request.RedactedStackTrace = "render\x00frame"
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			request := validCrashReportRequest()
+			mutate(request)
+			if err := validateCrashReport(request); err == nil {
+				t.Fatal("NUL diagnostic text was accepted")
+			}
+		})
+	}
+}
+
 func TestValidateCrashReportAcceptsSafeSlashLabelsAndRemoteURLs(t *testing.T) {
 	for _, safe := range []string{
 		"React/Native renderer failed.",
