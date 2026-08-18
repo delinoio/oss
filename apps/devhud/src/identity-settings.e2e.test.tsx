@@ -1588,6 +1588,7 @@ describe("generated Connect identity/settings fixture", () => {
     render(<DevHudServiceBoundary apiOrigin="https://devhud.api.delino.io" active online callbackUrl={null} platform={RuntimePlatform.Desktop} bridge={authenticatedBridge()} onCallbackConsumed={() => {}} onContinueLocally={() => {}} onLoggedOut={() => {}}><SynchronizedSettingsBoundary copy={messages.en} /></DevHudServiceBoundary>);
 
     const pattern = await screen.findByLabelText(messages.en.urlPattern) as HTMLInputElement;
+    fireEvent.change(pattern, { target: { value: "https://pending.example/**" } });
     fireEvent.click(screen.getByRole("button", { name: messages.en.saveUrlMappings }));
     await waitFor(() => expect(pattern.matches(":disabled")).toBe(true));
     expect((screen.getByRole("button", { name: messages.en.addUrlMapping }) as HTMLButtonElement).disabled).toBe(true);
@@ -1696,6 +1697,7 @@ describe("generated Connect identity/settings fixture", () => {
     render(<DevHudServiceBoundary apiOrigin="https://devhud.api.delino.io" active online callbackUrl={null} platform={RuntimePlatform.Desktop} bridge={authenticatedBridge()} onCallbackConsumed={() => {}} onContinueLocally={() => {}} onLoggedOut={() => {}}><SynchronizedSettingsBoundary copy={messages.en} /></DevHudServiceBoundary>);
 
     await screen.findByLabelText(messages.en.urlPattern);
+    fireEvent.change(screen.getByLabelText(messages.en.urlPattern), { target: { value: "https://changed.example/**" } });
     fireEvent.click(screen.getByRole("button", { name: messages.en.saveUrlMappings }));
     await waitFor(() => expect(screen.getByRole("alert").textContent).toContain(messages.en.settingsActionFailed));
     expect(screen.queryByText(messages.en.mappingInvalid)).toBeNull();

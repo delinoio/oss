@@ -334,6 +334,7 @@ function UrlMappingSettings({ copy, bridge, githubProvider = createGitHubProvide
     setDraft((current) => [...current, { id: uuidV7(), pattern: "https://example.com/**", repository: { owner: "owner", name: "repository" }, credentialProfileRef: "", priority: 0, chromeOrigin: null, updatedAt: timestamp }]);
   };
   const save = async () => {
+    if (!dirty) return;
     let mappings: UrlRepositoryMapping[];
     try {
       if (Object.values(priorityDrafts).some((value) => value === "" || !Number.isInteger(Number(value)))) throw new TypeError("priority must be an integer");
@@ -351,7 +352,12 @@ function UrlMappingSettings({ copy, bridge, githubProvider = createGitHubProvide
         validationCompleted = true;
         if (!isCurrentScope()) return false;
         return identity.replaceSettingsAt((current) => {
-          const next = parseDevHudSettings({ ...current, urlMappings: withUpdatedMappings(draft, priorityDrafts, current.urlMappings) });
+          let next: DevHudSettingsV1;
+          try {
+            next = parseDevHudSettings({ ...current, urlMappings: withUpdatedMappings(draft, priorityDrafts, current.urlMappings) });
+          } catch (reason) {
+            throw new UrlMappingSaveRebaseError(reason);
+          }
           committedMappings = next.urlMappings.slice();
           return next;
         }, baseRevision);
@@ -362,7 +368,8 @@ function UrlMappingSettings({ copy, bridge, githubProvider = createGitHubProvide
       setPriorityDrafts({});
       setSaved(true);
     } catch (error) {
-      if (!validationCompleted && isCurrentScope()) setValidationError(error instanceof GitHubProviderError ? githubErrorCopy(error.code) : error instanceof NativeBridgeError && error.code === NativeBridgeErrorCode.StorageFailure ? "githubErrorSecureStorage" : "githubSetupFailed");
+      if (isCurrentScope() && (error instanceof UrlMappingSaveRebaseError || error instanceof Error && error.message === "settings-read-only")) setValidationError("githubSetupFailed");
+      else if (!validationCompleted && isCurrentScope()) setValidationError(error instanceof GitHubProviderError ? githubErrorCopy(error.code) : error instanceof NativeBridgeError && error.code === NativeBridgeErrorCode.StorageFailure ? "githubErrorSecureStorage" : "githubSetupFailed");
       // The synchronized-settings boundary exposes typed transport failures.
     } finally { if (isCurrentScope()) setSaving(false); }
   };
@@ -378,12 +385,19 @@ function UrlMappingSettings({ copy, bridge, githubProvider = createGitHubProvide
       <label>{copy.chromeOrigin}<input value={mapping.chromeOrigin ?? ""} onChange={(event) => change(mapping.id, "chromeOrigin", event.target.value || null)} /></label>
       <button type="button" onClick={() => { setSaved(false); setValidationError(null); setDirty(true); setPriorityDrafts((current) => { const { [mapping.id]: _removed, ...remaining } = current; return remaining; }); setDraft((current) => current.filter((item) => item.id !== mapping.id)); }}>{copy.removeUrlMapping}</button>
     </fieldset>)}
-    <div className="actions"><button type="button" disabled={identity.readOnly || saving || credentialOperationPending || identity.settings.github.profiles.length === 0} onClick={add}>{copy.addUrlMapping}</button><button type="button" disabled={identity.readOnly || saving || credentialOperationPending} onClick={save}>{copy.saveUrlMappings}</button></div>
+    <div className="actions"><button type="button" disabled={identity.readOnly || saving || credentialOperationPending || identity.settings.github.profiles.length === 0} onClick={add}>{copy.addUrlMapping}</button><button type="button" disabled={identity.readOnly || saving || credentialOperationPending || !dirty} onClick={save}>{copy.saveUrlMappings}</button></div>
     {invalid && <p role="alert">{copy.mappingInvalid}</p>}
     {validationError !== null && <p role="alert">{copy[validationError]}</p>}
     {overlaps.length > 0 && <p role="status">{copy.mappingOverlap}</p>}
     {saved && <p role="status">{copy.mappingSaved}</p>}
   </section>;
+}
+
+class UrlMappingSaveRebaseError extends Error {
+  constructor(reason: unknown) {
+    super("URL mapping settings changed during validation");
+    this.cause = reason;
+  }
 }
 
 function withUpdatedMappings(draft: readonly UrlRepositoryMapping[], priorityDrafts: Readonly<Record<string, string>>, previousMappings: readonly UrlRepositoryMapping[]): UrlRepositoryMapping[] {

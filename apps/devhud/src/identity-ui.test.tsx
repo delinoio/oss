@@ -3,7 +3,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { AccountIdentity, ShortcutPaletteTrigger, SynchronizedShortcutBoundary } from "./identity-ui";
+import { AccountIdentity, ShortcutPaletteTrigger, SynchronizedSettingsBoundary, SynchronizedShortcutBoundary } from "./identity-ui";
 import { messages } from "./localization";
 import type { NativeBridgeV1 } from "./native-bridge";
 import type { IdentitySettingsValue } from "./service-boundary";
@@ -64,5 +64,38 @@ describe("identity UI", () => {
     await waitFor(() => expect(operations).toContain("shortcuts.suspend"));
     expect(operations).not.toContain("shortcuts.apply");
     expect(identity.setActiveShortcutBindings).toHaveBeenCalledWith(inactiveDesktopShortcutBindings);
+  });
+
+  it("does not offer an unchanged URL-mapping draft for saving", () => {
+    render(<SynchronizedSettingsBoundary copy={messages.en} />);
+
+    expect((screen.getByRole("button", { name: messages.en.saveUrlMappings }) as HTMLButtonElement).disabled).toBe(true);
+    expect(identity.replaceSettingsAt).not.toHaveBeenCalled();
+  });
+
+  it("reports a rebase failure after repository validation", async () => {
+    const profileId = "018f47a2-7b3c-7def-8abc-1234567890ab";
+    const mapping = { id: "018f47a2-7b3c-7def-8abc-1234567890ac", pattern: "https://example.com/**", repository: { owner: "delinoio", name: "oss" }, credentialProfileRef: profileId, priority: 0, chromeOrigin: null, updatedAt: "2026-08-18T00:00:00.000Z" };
+    const settings = { ...defaultDevHudSettings, github: { ...defaultDevHudSettings.github, profiles: [{ id: profileId, name: "Work", kind: "fine-grained" as const }] }, urlMappings: [mapping] };
+    const replaceSettingsAt = vi.fn(async (update: Parameters<IdentitySettingsValue["replaceSettingsAt"]>[0]) => {
+      if (typeof update === "function") update({ ...settings, github: { ...settings.github, profiles: [] } });
+      return false;
+    });
+    identity = identityWith({ settings, replaceSettingsAt });
+    const bridge: NativeBridgeV1 = {
+      async request(request) {
+        if (request.operation === "secure.read") return { kind: "secure-value", value: "fixture-token" };
+        throw new Error(`unexpected bridge operation ${request.operation}`);
+      },
+      async listen() { return () => {}; },
+    };
+    const githubProvider = { id: "github.com", validateRepository: vi.fn(async () => {}) } as unknown as import("./github-provider").GitHubProvider;
+
+    render(<SynchronizedSettingsBoundary copy={messages.en} bridge={bridge} githubProvider={githubProvider} />);
+    fireEvent.change(screen.getByLabelText(messages.en.repositoryName), { target: { value: "reviewed" } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.saveUrlMappings }));
+
+    expect((await screen.findByRole("alert")).textContent).toContain(messages.en.githubSetupFailed);
+    expect(replaceSettingsAt).toHaveBeenCalledOnce();
   });
 });

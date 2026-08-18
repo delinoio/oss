@@ -63,16 +63,17 @@ func TestValidateDevHudSettings(t *testing.T) {
 		t.Fatal("schema-v3 prefix mapping validation succeeded")
 	}
 	for name, mapping := range map[string]string{
-		"partial host wildcard":              strings.Replace(structuredMapping, `"https://example.com./**"`, `"https://api*.example.com/**"`, 1),
-		"partial path wildcard":              strings.Replace(structuredMapping, `"https://example.com./**"`, `"https://example.com/foo*bar"`, 1),
-		"invalid numeric IPv4 pattern":       strings.Replace(structuredMapping, `"https://example.com./**"`, `"https://999.999.999.999/**"`, 1),
-		"invalid Chrome origin":              strings.Replace(structuredMapping, `"chromeOrigin":null`, `"chromeOrigin":"https://example.com/path"`, 1),
-		"Chrome origin port above 65535":     strings.Replace(structuredMapping, `"chromeOrigin":null`, `"chromeOrigin":"https://example.com:65536"`, 1),
-		"invalid numeric IPv4 Chrome origin": strings.Replace(structuredMapping, `"chromeOrigin":null`, `"chromeOrigin":"http://999.999.999.999"`, 1),
-		"abbreviated invalid numeric host":   strings.Replace(structuredMapping, `"https://example.com./**"`, `"https://999.1/**"`, 1),
-		"invalid punycode host":              strings.Replace(structuredMapping, `"https://example.com./**"`, `"https://xn--/**"`, 1),
-		"too many path segments":             strings.Replace(structuredMapping, `"https://example.com./**"`, `"https://example.com/`+strings.Repeat("a/", 32)+`a"`, 1),
-		"too many globstar segments":         strings.Replace(structuredMapping, `"https://example.com./**"`, `"https://example.com/`+strings.Repeat("**/", 8)+`**"`, 1),
+		"partial host wildcard":               strings.Replace(structuredMapping, `"https://example.com./**"`, `"https://api*.example.com/**"`, 1),
+		"partial path wildcard":               strings.Replace(structuredMapping, `"https://example.com./**"`, `"https://example.com/foo*bar"`, 1),
+		"invalid numeric IPv4 pattern":        strings.Replace(structuredMapping, `"https://example.com./**"`, `"https://999.999.999.999/**"`, 1),
+		"invalid Chrome origin":               strings.Replace(structuredMapping, `"chromeOrigin":null`, `"chromeOrigin":"https://example.com/path"`, 1),
+		"Chrome origin port above 65535":      strings.Replace(structuredMapping, `"chromeOrigin":null`, `"chromeOrigin":"https://example.com:65536"`, 1),
+		"invalid numeric IPv4 Chrome origin":  strings.Replace(structuredMapping, `"chromeOrigin":null`, `"chromeOrigin":"http://999.999.999.999"`, 1),
+		"abbreviated invalid numeric host":    strings.Replace(structuredMapping, `"https://example.com./**"`, `"https://999.1/**"`, 1),
+		"invalid punycode host":               strings.Replace(structuredMapping, `"https://example.com./**"`, `"https://xn--/**"`, 1),
+		"wildcard host with mapped separator": strings.Replace(structuredMapping, `"https://example.com./**"`, `"https://*.example。com/**"`, 1),
+		"too many path segments":              strings.Replace(structuredMapping, `"https://example.com./**"`, `"https://example.com/`+strings.Repeat("a/", 32)+`a"`, 1),
+		"too many globstar segments":          strings.Replace(structuredMapping, `"https://example.com./**"`, `"https://example.com/`+strings.Repeat("**/", 8)+`**"`, 1),
 	} {
 		t.Run(name, func(t *testing.T) {
 			if err := validateDevHudSettings([]byte(strings.Replace(withProfile, `"urlMappings":[]`, `"urlMappings":`+mapping, 1)), 3); err == nil {

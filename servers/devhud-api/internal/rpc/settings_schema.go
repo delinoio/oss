@@ -739,7 +739,15 @@ func settingsValidURLHost(host string, allowWildcard bool) bool {
 	if numeric, valid := settingsWhatwgIPv4(concreteHost); numeric {
 		return valid
 	}
-	if _, err := settingsIDNAProfile.ToASCII(concreteHost); err != nil {
+	asciiHost, err := settingsIDNAProfile.ToASCII(concreteHost)
+	if err != nil {
+		return false
+	}
+	// IDNA maps several Unicode full-stop variants to '.'. Wildcards are
+	// label-based, so accepting a mapping that gains labels during that
+	// canonicalization would make the synchronized pattern unparsable by the
+	// browser client.
+	if len(strings.Split(strings.TrimSuffix(asciiHost, "."), ".")) != len(labels) {
 		return false
 	}
 	for _, label := range labels {
