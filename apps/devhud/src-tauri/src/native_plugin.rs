@@ -61,13 +61,91 @@ fn initialize_mobile<R: Runtime, C: DeserializeOwned>(
     Ok(NativePlatformBridge(handle))
 }
 
+#[cfg(desktop)]
+fn restore_main_window<R: Runtime>(app: &AppHandle<R>) {
+    let Some(window) = app.get_webview_window("main") else {
+        tracing::error!(event = "shortcut_window_restore_missing");
+        return;
+    };
+    if let Err(reason) = window.unminimize() {
+        tracing::error!(event = "shortcut_window_restore_unminimize_failed", %reason);
+    }
+    if let Err(reason) = window.show() {
+        tracing::error!(event = "shortcut_window_restore_show_failed", %reason);
+    }
+    if let Err(reason) = window.set_focus() {
+        tracing::error!(event = "shortcut_window_restore_focus_failed", %reason);
+    }
+}
+
+#[cfg(desktop)]
+fn emit_shortcut_status<R: Runtime>(app: &AppHandle<R>, state: &crate::bridge::NativeBridgeState) {
+    let mut status = crate::bridge::shortcut_status(state, None);
+    status["version"] = serde_json::json!(1);
+    let _ = app.emit("devhud:native-event:v1", status);
+}
+
+#[cfg(desktop)]
+fn install_global_shortcut_listener<R: Runtime>(app: &AppHandle<R>) {
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let mut retry_delay = std::time::Duration::from_millis(250);
+        loop {
+            let callback_app = app.clone();
+            let result = rdev::listen(move |event| {
+                let Some(event) = crate::shortcuts::normalize_global_event(&event.event_type)
+                else {
+                    return;
+                };
+                let Some(state) = callback_app.try_state::<crate::bridge::NativeBridgeState>()
+                else {
+                    return;
+                };
+                let Some(action) = state.process_shortcut_event(event) else {
+                    return;
+                };
+                if action == crate::shortcuts::ShortcutAction::ShellCommandPalette {
+                    restore_main_window(&callback_app);
+                }
+                let Ok(action) = serde_json::to_value(action) else {
+                    return;
+                };
+                let _ = callback_app.emit(
+                    "devhud:native-event:v1",
+                    serde_json::json!({ "version": 1, "kind": "shortcut-triggered", "action": action }),
+                );
+            });
+            let Err(error) = result else {
+                return;
+            };
+            let Some(state) = app.try_state::<crate::bridge::NativeBridgeState>() else {
+                return;
+            };
+            state.mark_shortcut_listener_failed();
+            emit_shortcut_status(&app, &state);
+            tracing::warn!(event = "shortcut_listener_failed", ?error);
+            let retry_generation = state.shortcut_listener_retry_generation();
+            state.wait_for_shortcut_listener_retry(retry_generation, retry_delay);
+            state.clear_shortcut_pressed_keys();
+            state.clear_shortcut_listener_failure();
+            emit_shortcut_status(&app, &state);
+            retry_delay = retry_delay
+                .saturating_mul(2)
+                .min(std::time::Duration::from_secs(5));
+        }
+    });
+}
+
 pub fn init<R: Runtime>() -> TauriPlugin<R> {
     Builder::new("devhud-native")
         .setup(|app, api| {
             #[cfg(mobile)]
             app.manage(initialize_mobile(app, api)?);
             #[cfg(desktop)]
-            let _ = (app, api);
+            {
+                let _ = api;
+                install_global_shortcut_listener(app);
+            }
             Ok(())
         })
         .on_event(|app, event| {

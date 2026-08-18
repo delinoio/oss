@@ -85,15 +85,13 @@ test("command palette uses buttons and has a localized empty state", () => {
 });
 
 test("command palette shortcut is unavailable during onboarding", () => {
-  assert.match(app, /const platformModifier = isMac \? "MetaRight" : "ControlRight"/u);
-  assert.match(app, /rightModifier\.current === platformModifier/u);
-  assert.match(app, /isMac \? event\.metaKey : event\.ctrlKey/u);
-  assert.match(app, /const exactRightModifierChord = matchingRightModifier && !event\.shiftKey && !event\.altKey && \(isMac \? !event\.ctrlKey : !event\.metaKey\);/u);
-  assert.match(app, /event\.location === rightModifierLocation/u);
-  assert.match(app, /addEventListener\("keyup", releaseRightModifier\)/u);
-  assert.match(app, /!onboarding && exactRightModifierChord/u);
-  assert.match(app, /event\.code === "KeyK"/u);
-  assert.match(app, /copy\.rightCommandK : copy\.rightControlK/u);
+  assert.doesNotMatch(app, /MetaRight|ControlRight|event\.code === "KeyK"/u);
+  assert.match(app, /event\.kind === "shortcut-triggered"/u);
+  assert.match(app, /if \(context\.mobile \|\| context\.onboarding\) return;/u);
+  assert.match(app, /event\.action === ShortcutActionId\.CommandPalette/u);
+  assert.match(app, /actionRegistry\.find\(\(candidate\) => candidate\.id === event\.action\)/u);
+  assert.match(app, /ShortcutPaletteTrigger/u);
+  assert.match(identityUi, /binding\.enabled \? \[\.\.\.modifiers, copy\[shortcutKeyLabels\[binding\.key\]\]\]\.join/u);
 });
 
 test("document preferences are synchronized before the first localized render", () => {

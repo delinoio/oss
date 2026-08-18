@@ -8,6 +8,7 @@ import (
 const canonicalSettingsV1 = `{"agents":[],"appearance":{"language":"system","theme":"system"},"decks":[],"github":{"issueTracker":null,"repositories":[]},"schemaVersion":1,"shortcuts":{"android":{},"desktop":{},"ios":{}},"uploads":{"provider":"official","r2":null},"urlMappings":[]}`
 const canonicalSettingsV2 = `{"agents":[],"appearance":{"language":"system","theme":"system"},"decks":[],"github":{"issueTracker":null,"pendingPatRemovals":[],"profiles":[],"repositories":[]},"schemaVersion":2,"shortcuts":{"android":{},"desktop":{},"ios":{}},"uploads":{"provider":"official","r2":null},"urlMappings":[]}`
 const canonicalSettingsV3 = `{"agents":[],"appearance":{"language":"system","theme":"system"},"decks":[],"github":{"issueTracker":null,"pendingPatRemovals":[],"profiles":[],"repositories":[]},"schemaVersion":3,"shortcuts":{"android":{},"desktop":{},"ios":{}},"uploads":{"provider":"official","r2":null},"urlMappings":[]}`
+const canonicalSettingsV4 = `{"agents":[],"appearance":{"language":"system","theme":"system"},"decks":[],"github":{"issueTracker":null,"pendingPatRemovals":[],"profiles":[],"repositories":[]},"schemaVersion":4,"shortcuts":{"android":{},"desktop":{"realqa.capture.active-window":{"enabled":true,"key":"digit-2","modifiers":[]},"realqa.capture.all-displays":{"enabled":true,"key":"digit-3","modifiers":[]},"realqa.capture.display":{"enabled":true,"key":"digit-1","modifiers":[]},"realqa.capture.selection":{"enabled":true,"key":"digit-4","modifiers":[]},"realqa.capture.toolbar":{"enabled":true,"key":"digit-5","modifiers":[]},"shell.command-palette":{"enabled":true,"key":"key-k","modifiers":["right-primary"]}},"ios":{}},"uploads":{"provider":"official","r2":null},"urlMappings":[]}`
 
 func TestValidateCanonicalJSON(t *testing.T) {
 	for _, value := range [][]byte{
@@ -39,6 +40,7 @@ func TestValidateDevHudSettings(t *testing.T) {
 		1: canonicalSettingsV1,
 		2: canonicalSettingsV2,
 		3: canonicalSettingsV3,
+		4: canonicalSettingsV4,
 	} {
 		if err := validateDevHudSettings([]byte(value), version); err != nil {
 			t.Errorf("validateDevHudSettings(version %d): %v", version, err)
@@ -70,7 +72,7 @@ func TestValidateDevHudSettingsDeckQualifiers(t *testing.T) {
 		return `{"builder":null,"display":{"groupBy":"none","showDrafts":true},"id":"018f47a2-7b3c-7def-8abc-1234567890ac","name":"Deck","notifications":` + notifications + `,"profileRef":"` + profileID + `","query":"` + query + `","refreshMinutes":5}`
 	}
 	settings := func(query string, notifications string) string {
-		value := strings.Replace(canonicalSettingsV3, `"profiles":[]`, `"profiles":[{"id":"`+profileID+`","kind":"fine-grained","name":"Work"}]`, 1)
+		value := strings.Replace(canonicalSettingsV4, `"profiles":[]`, `"profiles":[{"id":"`+profileID+`","kind":"fine-grained","name":"Work"}]`, 1)
 		return strings.Replace(value, `"decks":[]`, `"decks":[`+deck(query, notifications)+`]`, 1)
 	}
 	previousSettings := func(repository string) string {
@@ -78,15 +80,15 @@ func TestValidateDevHudSettingsDeckQualifiers(t *testing.T) {
 		legacyDeck := `{"display":{"groupBy":"none","showDrafts":true},"id":"018f47a2-7b3c-7def-8abc-1234567890ac","notifications":[],"profileRef":"` + profileID + `","query":"is:pr","refreshMinutes":5,"repository":` + repository + `,"title":"Legacy Deck"}`
 		return strings.Replace(value, `"decks":[]`, `"decks":[`+legacyDeck+`]`, 1)
 	}
-	if err := validateDevHudSettings([]byte(settings("repo:octo/widgets IS:PR", `[]`)), 3); err != nil {
+	if err := validateDevHudSettings([]byte(settings("repo:octo/widgets IS:PR", `[]`)), 4); err != nil {
 		t.Fatalf("mixed-case qualifier: %v", err)
 	}
 	matchingBuilder := strings.Replace(settings("repo:octo/widgets is:pr", `[]`), `"builder":null`, `"builder":{"author":null,"label":null,"repository":"octo/widgets","review":null,"state":null}`, 1)
-	if err := validateDevHudSettings([]byte(matchingBuilder), 3); err != nil {
+	if err := validateDevHudSettings([]byte(matchingBuilder), 4); err != nil {
 		t.Fatalf("matching builder: %v", err)
 	}
 	escapedBuilder := strings.Replace(settings(`repo:octo/widgets is:pr label:\"a \\q\"`, `[]`), `"builder":null`, `"builder":{"author":null,"label":"a q","repository":"octo/widgets","review":null,"state":null}`, 1)
-	if err := validateDevHudSettings([]byte(escapedBuilder), 3); err != nil {
+	if err := validateDevHudSettings([]byte(escapedBuilder), 4); err != nil {
 		t.Fatalf("client-compatible escaped builder: %v", err)
 	}
 	for name, value := range map[string]string{
@@ -101,14 +103,14 @@ func TestValidateDevHudSettingsDeckQualifiers(t *testing.T) {
 		"quoted pull request":     settings(`\"find is:pr here\" repo:octo/widgets`, `[]`),
 		"duplicate notifications": settings("repo:octo/widgets is:pr", `["review","review"]`),
 		"duplicate deck IDs": strings.Replace(
-			strings.Replace(canonicalSettingsV3, `"profiles":[]`, `"profiles":[{"id":"`+profileID+`","kind":"fine-grained","name":"Work"}]`, 1),
+			strings.Replace(canonicalSettingsV4, `"profiles":[]`, `"profiles":[{"id":"`+profileID+`","kind":"fine-grained","name":"Work"}]`, 1),
 			`"decks":[]`, `"decks":[`+deck("repo:octo/widgets is:pr", `[]`)+`,`+deck("repo:octo/widgets is:pr", `[]`)+`]`, 1,
 		),
 		"untrimmed builder field": strings.Replace(settings("repo:octo/widgets is:pr", `[]`), `"builder":null`, `"builder":{"author":null,"label":null,"repository":" octo/widgets","review":null,"state":null}`, 1),
 		"mismatched builder":      strings.Replace(settings("repo:octo/widgets is:pr", `[]`), `"builder":null`, `"builder":{"author":null,"label":null,"repository":"octo/other","review":null,"state":null}`, 1),
 	} {
 		t.Run(name, func(t *testing.T) {
-			if err := validateDevHudSettings([]byte(value), 3); err == nil {
+			if err := validateDevHudSettings([]byte(value), 4); err == nil {
 				t.Fatal("validation succeeded")
 			}
 		})

@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/url"
 	"regexp"
+	"sort"
 	"strings"
 	"unicode"
 	"unicode/utf16"
@@ -16,9 +17,10 @@ import (
 )
 
 const (
-	legacySettingsSchemaVersion   = 1
-	previousSettingsSchemaVersion = 2
-	settingsSchemaVersion         = 3
+	legacySettingsSchemaVersion    = 1
+	previousSettingsSchemaVersion  = 2
+	collidingSettingsSchemaVersion = 3
+	settingsSchemaVersion          = 4
 )
 
 var (
@@ -79,6 +81,9 @@ func validateDevHudSettings(value []byte, envelopeSchemaVersion uint32) error {
 	}
 	if len(decks) > 25 {
 		return errors.New("$.decks must contain at most 25 entries")
+	}
+	if bodyVersion == collidingSettingsSchemaVersion && (len(decks) == 0 || !hasCurrentDeckShape(decks[0])) {
+		previous = true
 	}
 	deckProfileRefs := make([]string, 0, len(decks))
 	deckIDs := make(map[string]struct{}, len(decks))
@@ -181,7 +186,8 @@ func validateDevHudSettings(value []byte, envelopeSchemaVersion uint32) error {
 	if err := validateSettingsURLMappings(root["urlMappings"]); err != nil {
 		return err
 	}
-	if err := validateSettingsShortcuts(root["shortcuts"]); err != nil {
+	structuredShortcuts := bodyVersion == settingsSchemaVersion || bodyVersion == collidingSettingsSchemaVersion && hasStructuredDesktopShortcutShape(root["shortcuts"])
+	if err := validateSettingsShortcuts(root["shortcuts"], structuredShortcuts); err != nil {
 		return err
 	}
 	if err := validateSettingsAgents(root["agents"]); err != nil {
@@ -612,10 +618,44 @@ func validateSettingsURLMappings(value any) error {
 	return nil
 }
 
-func validateSettingsShortcuts(value any) error {
+func hasCurrentDeckShape(value any) bool {
+	deck, ok := value.(map[string]any)
+	if !ok {
+		return false
+	}
+	_, ok = deck["name"]
+	return ok
+}
+
+func hasStructuredDesktopShortcutShape(value any) bool {
+	shortcuts, ok := value.(map[string]any)
+	if !ok {
+		return false
+	}
+	desktop, ok := shortcuts["desktop"].(map[string]any)
+	if !ok {
+		return false
+	}
+	_, ok = desktop["shell.command-palette"]
+	return ok
+}
+
+func validateSettingsShortcuts(value any, structured bool) error {
 	shortcuts, err := settingsObject(value, "$.shortcuts", "desktop", "ios", "android")
 	if err != nil {
 		return err
+	}
+	if structured {
+		if err := validateStructuredDesktopShortcuts(shortcuts["desktop"]); err != nil {
+			return err
+		}
+		for _, platform := range []string{"ios", "android"} {
+			items, ok := shortcuts[platform].(map[string]any)
+			if !ok || len(items) != 0 {
+				return fmt.Errorf("$.shortcuts.%s must be an empty object", platform)
+			}
+		}
+		return nil
 	}
 	for _, platform := range []string{"desktop", "ios", "android"} {
 		path := "$.shortcuts." + platform
@@ -630,6 +670,74 @@ func validateSettingsShortcuts(value any) error {
 			if _, err := settingsText(value, path+"."+key, false); err != nil {
 				return err
 			}
+		}
+	}
+	return nil
+}
+
+func validateStructuredDesktopShortcuts(value any) error {
+	bindings, ok := value.(map[string]any)
+	if !ok {
+		return errors.New("$.shortcuts.desktop must be an object")
+	}
+	actions := []string{"shell.command-palette", "realqa.capture.display", "realqa.capture.active-window", "realqa.capture.all-displays", "realqa.capture.selection", "realqa.capture.toolbar"}
+	if len(bindings) != len(actions) {
+		return errors.New("$.shortcuts.desktop must contain every contracted shortcut action")
+	}
+	keys := map[string]struct{}{"key-k": {}, "digit-1": {}, "digit-2": {}, "digit-3": {}, "digit-4": {}, "digit-5": {}, "space": {}, "tab": {}, "key-q": {}, "delete": {}, "backspace": {}}
+	modifiers := map[string]struct{}{"right-primary": {}, "shift": {}, "alt": {}}
+	bareKeys := map[string]struct{}{"digit-1": {}, "digit-2": {}, "digit-3": {}, "digit-4": {}, "digit-5": {}}
+	seen := make(map[string]struct{})
+	for _, action := range actions {
+		binding, err := settingsObject(bindings[action], "$.shortcuts.desktop."+action, "enabled", "modifiers", "key")
+		if err != nil {
+			return err
+		}
+		enabled, ok := binding["enabled"].(bool)
+		if !ok {
+			return fmt.Errorf("$.shortcuts.desktop.%s.enabled must be a boolean", action)
+		}
+		key, ok := binding["key"].(string)
+		if !ok {
+			return fmt.Errorf("$.shortcuts.desktop.%s.key must be a shortcut key", action)
+		}
+		if _, ok := keys[key]; !ok {
+			return fmt.Errorf("$.shortcuts.desktop.%s.key must be a shortcut key", action)
+		}
+		values, err := settingsArray(binding["modifiers"], "$.shortcuts.desktop."+action+".modifiers")
+		if err != nil {
+			return err
+		}
+		seenModifiers := make(map[string]struct{})
+		for _, value := range values {
+			modifier, ok := value.(string)
+			if !ok {
+				return fmt.Errorf("$.shortcuts.desktop.%s.modifiers must contain modifier enums", action)
+			}
+			if _, ok := modifiers[modifier]; !ok {
+				return fmt.Errorf("$.shortcuts.desktop.%s.modifiers must contain modifier enums", action)
+			}
+			if _, duplicate := seenModifiers[modifier]; duplicate {
+				return fmt.Errorf("$.shortcuts.desktop.%s.modifiers must be unique", action)
+			}
+			seenModifiers[modifier] = struct{}{}
+		}
+		if enabled && len(values) == 0 {
+			if _, ok := bareKeys[key]; !ok {
+				return fmt.Errorf("$.shortcuts.desktop.%s requires a modifier", action)
+			}
+		}
+		if enabled {
+			modifierNames := make([]string, 0, len(values))
+			for modifier := range seenModifiers {
+				modifierNames = append(modifierNames, modifier)
+			}
+			sort.Strings(modifierNames)
+			chord := strings.Join(modifierNames, "+") + "+" + key
+			if _, duplicate := seen[chord]; duplicate {
+				return errors.New("$.shortcuts.desktop must not contain duplicate enabled chords")
+			}
+			seen[chord] = struct{}{}
 		}
 	}
 	return nil
@@ -827,7 +935,7 @@ func rejectSensitiveSettings(value any, path string) error {
 		}
 	case map[string]any:
 		for key, item := range typed {
-			if sensitiveSettingsKey.MatchString(key) {
+			if sensitiveSettingsKey.MatchString(key) && !isContractedShortcutAction(path, key) {
 				return fmt.Errorf("%s.%s is a device-local or secret field", path, key)
 			}
 			if err := rejectSensitiveSettings(item, path+"."+key); err != nil {
@@ -842,4 +950,16 @@ func rejectSensitiveSettings(value any, path string) error {
 		}
 	}
 	return nil
+}
+
+func isContractedShortcutAction(path string, key string) bool {
+	if path != "$.shortcuts.desktop" {
+		return false
+	}
+	switch key {
+	case "shell.command-palette", "realqa.capture.display", "realqa.capture.active-window", "realqa.capture.all-displays", "realqa.capture.selection", "realqa.capture.toolbar":
+		return true
+	default:
+		return false
+	}
 }
