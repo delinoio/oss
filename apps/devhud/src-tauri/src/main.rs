@@ -656,7 +656,14 @@ fn main() {
     let session_network_policy = bridge_state.clone();
 
     let mut builder = tauri::Builder::<tauri::Cef>::default()
-        .plugin(tauri_plugin_single_instance::init(|_, _, _| {}))
+        .plugin(tauri_plugin_single_instance::init(|app, arguments, _| {
+            for argument in arguments {
+                native_plugin::offer_auth_callback(app, &argument);
+                if native_plugin::offer_deck_link(app, &argument) {
+                    restore_main_window(app);
+                }
+            }
+        }))
         .plugin(tauri_plugin_deep_link::init())
         .plugin(native_plugin::init())
         .manage(bridge_state)

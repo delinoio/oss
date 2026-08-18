@@ -82,6 +82,33 @@ describe("Deck surface", () => {
     await waitFor(() => expect(request).toHaveBeenCalledWith({ operation: "notifications.cancel-deck", deckId: deck.id }));
   });
 
+  it("cancels native notifications when the polling boundary unmounts", async () => {
+    const request = vi.fn(async () => ({ kind: "ok" as const }));
+    const bridge = bridgeWith(request);
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    view.unmount();
+
+    await waitFor(() => expect(request).toHaveBeenCalledWith({ operation: "notifications.cancel-deck", deckId: deck.id }));
+  });
+
+  it("ignores a failed refresh that started before the Deck was renamed", async () => {
+    let rejectSearch: (error: Error) => void = () => {};
+    const searchPullRequests = vi.fn(() => new Promise<never>((_resolve, reject) => { rejectSearch = reject; }));
+    const bridge = bridgeWith(async (request) => request.operation === "secure.read" ? { kind: "secure-value", value: "token" } : { kind: "ok" });
+    const setCache = vi.spyOn(Storage.prototype, "setItem");
+    const view = render(<DeckPollingBoundary bridge={bridge} active online provider={{ ...provider(), searchPullRequests }}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+    await waitFor(() => expect(searchPullRequests).toHaveBeenCalledOnce());
+
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [{ ...deck, name: "Renamed Deck" }] }) });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active online provider={{ ...provider(), searchPullRequests }}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+    rejectSearch(new Error("offline"));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(setCache).not.toHaveBeenCalledWith(expect.stringContaining(deck.id), expect.any(String));
+  });
+
   it("ignores a failed refresh that started before its interval changed", async () => {
     let rejectSearch: (error: Error) => void = () => {};
     const searchPullRequests = vi.fn(() => new Promise<never>((_resolve, reject) => { rejectSearch = reject; }));

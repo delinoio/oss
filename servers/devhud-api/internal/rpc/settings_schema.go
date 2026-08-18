@@ -636,7 +636,7 @@ func hasStructuredDesktopShortcutShape(value any) bool {
 	if !ok {
 		return false
 	}
-	_, ok = desktop["shell.command-palette"]
+	_, ok = desktop["shell.command-palette"].(map[string]any)
 	return ok
 }
 

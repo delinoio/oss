@@ -47,6 +47,11 @@ func TestValidateDevHudSettings(t *testing.T) {
 		}
 	}
 
+	legacyV3Shortcuts := strings.Replace(canonicalSettingsV3, `"desktop":{}`, `"desktop":{"shell.command-palette":"CommandOrControl+K"}`, 1)
+	if err := validateDevHudSettings([]byte(legacyV3Shortcuts), 3); err != nil {
+		t.Errorf("validateDevHudSettings(legacy schema v3 shortcuts): %v", err)
+	}
+
 	profileID := "018f47a2-7b3c-7def-8abc-1234567890ab"
 	for name, test := range map[string]struct {
 		version uint32
