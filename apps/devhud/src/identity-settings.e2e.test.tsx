@@ -360,6 +360,60 @@ describe("generated Connect identity/settings fixture", () => {
     await waitFor(() => expect(requests).toEqual([{ operation: "shortcuts.suspend" }]));
   });
 
+  it("unsubscribes the synchronized shortcut listener when it resolves after cleanup", async () => {
+    let resolveListen!: (unsubscribe: () => void) => void;
+    const unsubscribe = vi.fn();
+    const bridge: NativeBridgeV1 = {
+      request: signedOutBridge().request,
+      listen: vi.fn(() => new Promise<() => void>((resolve) => { resolveListen = resolve; })),
+    };
+
+    const view = render(<DevHudServiceBoundary
+      apiOrigin="https://devhud.api.delino.io"
+      active
+      online
+      callbackUrl={null}
+      platform={RuntimePlatform.Desktop}
+      bridge={bridge}
+      onCallbackConsumed={() => {}}
+      onContinueLocally={() => {}}
+      onLoggedOut={() => {}}
+    ><SynchronizedShortcutBoundary bridge={bridge} /></DevHudServiceBoundary>);
+    view.unmount();
+    resolveListen(unsubscribe);
+
+    await waitFor(() => expect(unsubscribe).toHaveBeenCalledOnce());
+  });
+
+  it("unsubscribes the Settings shortcut listener when it resolves after cleanup", async () => {
+    let resolveListen!: (unsubscribe: () => void) => void;
+    const unsubscribe = vi.fn();
+    const signedOut = signedOutBridge();
+    const bridge: NativeBridgeV1 = {
+      async request(request) {
+        if (request.operation === "shortcuts.status") return { kind: "shortcut-status", platform: "windows", permission: "available", bindings: defaultDevHudSettings.shortcuts.desktop, error: null };
+        return signedOut.request(request);
+      },
+      listen: vi.fn(() => new Promise<() => void>((resolve) => { resolveListen = resolve; })),
+    };
+
+    const view = render(<DevHudServiceBoundary
+      apiOrigin="https://devhud.api.delino.io"
+      active
+      online
+      callbackUrl={null}
+      platform={RuntimePlatform.Desktop}
+      bridge={bridge}
+      onCallbackConsumed={() => {}}
+      onContinueLocally={() => {}}
+      onLoggedOut={() => {}}
+    ><SynchronizedSettingsBoundary copy={messages.en} bridge={bridge} showNativeShortcuts /></DevHudServiceBoundary>);
+    view.unmount();
+    resolveListen(unsubscribe);
+
+    await waitFor(() => expect(unsubscribe).toHaveBeenCalledOnce());
+  });
+
   it("keeps shortcuts suspended until the guest import choice is resolved", async () => {
     const localBindings = {
       ...defaultDevHudSettings.shortcuts.desktop,
