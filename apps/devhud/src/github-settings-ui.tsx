@@ -1,5 +1,5 @@
 import { useCallback, useState, type FormEvent } from "react";
-import { createGitHubProvider, GitHubErrorCode, GitHubProviderError, readGitHubCredential, type GitHubProvider, type GitHubRepositoryRef } from "./github-provider.ts";
+import { createGitHubProvider, GitHubErrorCode, GitHubProviderError, readGitHubCredential, type GitHubCredential, type GitHubProvider, type GitHubRepositoryRef } from "./github-provider.ts";
 import type { Copy } from "./localization.ts";
 import { NativeBridgeError, NativeBridgeErrorCode, SecureSettingKind, type NativeBridgeV1 } from "./native-bridge.ts";
 import { useIdentitySettings } from "./service-boundary.tsx";
@@ -7,6 +7,8 @@ import { deckRepositories, GitHubCredentialKind, type DevHudSettingsV1 } from ".
 import { browserShell, ExternalLinkTarget, type ExternalLinkTarget as ExternalLinkTargetValue } from "./shell.ts";
 
 interface GitHubSettingsProps { readonly copy: Copy; readonly bridge: NativeBridgeV1; readonly provider?: GitHubProvider; readonly openExternal?: (target: ExternalLinkTargetValue) => Promise<void> }
+
+const GitHubRepositoryValidationConcurrency = 2;
 
 export function GitHubSettings({ copy, bridge, provider = createGitHubProvider({ fetch: globalThis.fetch }), openExternal = (target) => browserShell.openExternal(target, "") }: GitHubSettingsProps) {
   const identity = useIdentitySettings();
@@ -69,7 +71,7 @@ export function GitHubSettings({ copy, bridge, provider = createGitHubProvider({
   const saveProfileToken = (profile: DevHudSettingsV1["github"]["profiles"][number], nextToken: string) => invoke(async () => {
     const credential = { profileId: profile.id, kind: profile.kind, token: nextToken };
     await provider.validateCredential(credential);
-    await Promise.all(referencedRepositories(identity.settings, profile.id).map((repository) => provider.validateRepository(credential, repository)));
+    await validateRepositories(provider, credential, referencedRepositories(identity.settings, profile.id));
     await bridge.request({ operation: "secure.write", setting: { kind: SecureSettingKind.GithubPat, profileId: profile.id, scopeId: await identity.githubPatScopeId }, value: nextToken });
     setStatus(copy.githubProfileSaved);
   });
@@ -156,7 +158,19 @@ export async function validateGitHubProfile(settings: DevHudSettingsV1, profileI
   if (profile === undefined) throw new GitHubProviderError(GitHubErrorCode.MissingToken, "validate-credential");
   const credential = await readGitHubCredential(bridge, profile, scopeId);
   await provider.validateCredential(credential);
-  await Promise.all(referencedRepositories(settings, profileId).map((repository) => provider.validateRepository(credential, repository)));
+  await validateRepositories(provider, credential, referencedRepositories(settings, profileId));
+}
+
+async function validateRepositories(provider: GitHubProvider, credential: GitHubCredential, repositories: readonly GitHubRepositoryRef[]): Promise<void> {
+  let nextIndex = 0;
+  const worker = async () => {
+    while (true) {
+      const repository = repositories[nextIndex++];
+      if (repository === undefined) return;
+      await provider.validateRepository(credential, repository);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(GitHubRepositoryValidationConcurrency, repositories.length) }, worker));
 }
 
 export function referencedRepositories(settings: DevHudSettingsV1, profileId: string): readonly GitHubRepositoryRef[] {

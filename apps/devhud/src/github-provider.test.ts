@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import fixture from "../fixtures/github-provider.json";
-import { ClassicPatCreationUrl, createGitHubProvider, FineGrainedPatCreationUrl, githubDiagnostic, GitHubApiOrigin, GitHubErrorCode, GitHubProviderError, InternalProviderRegistryV1, InternalProviderRegistryVersion, issueMarker, ownsCanonicalUrl, readGitHubCredential, type GitHubCredential, type GitHubRepositoryRef } from "./github-provider.ts";
+import { ClassicPatCreationUrl, createGitHubProvider, FineGrainedPatCreationUrl, githubDiagnostic, GitHubApiOrigin, GitHubErrorCode, GitHubProviderError, InternalProviderRegistryV1, InternalProviderRegistryVersion, issueMarker, ownsCanonicalUrl, readGitHubCredential, type GitHubCredential, type GitHubProvider, type GitHubRepositoryRef, type GitHubValidation } from "./github-provider.ts";
 import { referencedRepositories, validateGitHubProfile } from "./github-settings-ui.tsx";
 import { NativeBridgeError, NativeBridgeErrorCode, type NativeBridgeV1 } from "./native-bridge.ts";
 import { canonicalDevHudSettings, defaultDevHudSettings, parseDevHudSettings } from "./settings-contract.ts";
@@ -241,6 +241,24 @@ describe("GitHub profile and server isolation", () => {
     expect(referencedRepositories(settings, fine.profileId)).toEqual([publicRepository, privateRepository]);
     expect(validateRepository).toHaveBeenCalledTimes(2);
     expect(validateRepository.mock.calls.every(([credential]) => credential.profileId === fine.profileId)).toBe(true);
+  });
+
+  it("bounds profile validation for multi-repository Decks", async () => {
+    const releases: Array<() => void> = [];
+    const validateRepository: GitHubProvider["validateRepository"] = vi.fn((_credential: GitHubCredential, repository: GitHubRepositoryRef) => new Promise<GitHubValidation>((resolve) => {
+      releases.push(() => resolve({ repository, private: false, permissions: { metadata: true, pullRequests: true, issues: true, contents: true }, metadata: { etag: null, rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } } }));
+    }));
+    const provider = { ...createGitHubProvider({ fetch: router() }), validateCredential: vi.fn(async () => ({ etag: null, rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } })), validateRepository };
+    const multiRepositoryDeck = { id: "018f47a2-7b3c-7def-8abc-1234567890ac", name: "Deck", profileRef: fine.profileId, query: "repo:octo/one repo:octo/two repo:octo/three is:pr", builder: null, display: { groupBy: "none" as const, showDrafts: true }, refreshMinutes: 5 as const, notifications: [] };
+    const deckSettings = parseDevHudSettings({ ...settings, github: { ...settings.github, repositories: [], issueTracker: null }, decks: [multiRepositoryDeck] });
+    const validation = validateGitHubProfile(deckSettings, fine.profileId, bridgeWithValue(fine.token), provider, scopeId);
+
+    await vi.waitFor(() => expect(validateRepository).toHaveBeenCalledTimes(2));
+    releases[0]?.();
+    await vi.waitFor(() => expect(validateRepository).toHaveBeenCalledTimes(3));
+    releases[1]?.();
+    releases[2]?.();
+    await validation;
   });
 
   it("synchronizes only stable IDs and sends PATs/GitHub requests to no server", async () => {

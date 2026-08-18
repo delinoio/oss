@@ -3,7 +3,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { createGitHubProvider, type GitHubProvider } from "./github-provider.ts";
+import { createGitHubProvider, type GitHubCredential, type GitHubProvider, type GitHubRepositoryRef, type GitHubValidation } from "./github-provider.ts";
 import { GitHubSettings } from "./github-settings-ui.tsx";
 import { messages } from "./localization.ts";
 import { NativeBridgeError, NativeBridgeErrorCode, type NativeBridgeRequestV1, type NativeBridgeResponseV1, type NativeBridgeV1 } from "./native-bridge.ts";
@@ -59,6 +59,25 @@ describe("GitHub settings", () => {
     failWrite = false;
     fireEvent.click(screen.getByRole("button", { name: messages.en.githubSaveProfileToken }));
     await waitFor(() => expect(input.value).toBe(""));
+  });
+
+  it("bounds repository validation while replacing a profile PAT", async () => {
+    const releases: Array<() => void> = [];
+    const validateRepository: GitHubProvider["validateRepository"] = vi.fn((_credential: GitHubCredential, repository: GitHubRepositoryRef) => new Promise<GitHubValidation>((resolve) => {
+      releases.push(() => resolve({ repository, private: false, permissions: { metadata: true, pullRequests: true, issues: true, contents: true }, metadata }));
+    }));
+    const multiRepositoryDeck = { id: "018f47a2-7b3c-7def-8abc-1234567890ac", name: "Deck", profileRef: profile.id, query: "repo:octo/one repo:octo/two repo:octo/three is:pr", builder: null, display: { groupBy: "none" as const, showDrafts: true }, refreshMinutes: 5 as const, notifications: [] };
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [multiRepositoryDeck] }) });
+    render(<GitHubSettings copy={messages.en} bridge={bridgeWith(async () => ({ kind: "ok" }))} provider={{ ...providerWithValidation(), validateRepository }} />);
+    fireEvent.change(screen.getByLabelText(messages.en.githubSetProfileToken), { target: { value: "replacement-pat" } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.githubSaveProfileToken }));
+
+    await waitFor(() => expect(validateRepository).toHaveBeenCalledTimes(2));
+    releases[0]?.();
+    await waitFor(() => expect(validateRepository).toHaveBeenCalledTimes(3));
+    releases[1]?.();
+    releases[2]?.();
+    await waitFor(() => expect((screen.getByLabelText(messages.en.githubSetProfileToken) as HTMLInputElement).value).toBe(""));
   });
 
   it("disables PAT replacement while settings are read-only", () => {

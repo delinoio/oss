@@ -100,20 +100,24 @@ describe("Deck surface", () => {
     expect(setCache).not.toHaveBeenCalledWith(expect.stringContaining(deck.id), expect.any(String));
   });
 
-  it("validates no more than two repositories concurrently", async () => {
+  it("shares the two-repository validation limit across scheduled Decks", async () => {
     const releases: Array<() => void> = [];
     const validateRepository: ReturnType<typeof provider>["validateRepository"] = vi.fn((_credential, repository) => new Promise((resolve) => {
       releases.push(() => resolve({ repository, private: true, permissions: { metadata: true, pullRequests: true, issues: true, contents: true }, metadata: { etag: null, rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } } }));
     }));
-    const multiRepositoryDeck = { ...deck, query: "repo:octo/one repo:octo/two repo:octo/three is:pr", builder: null };
-    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [multiRepositoryDeck] }) });
+    const firstDeck = { ...deck, query: "repo:octo/one repo:octo/two is:pr", builder: null };
+    const secondDeck = { ...deck, id: "018f47a2-7b3c-7def-8abc-1234567890ad", name: "Other Deck", query: "repo:octo/three repo:octo/four is:pr", builder: null };
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [firstDeck, secondDeck] }) });
     const bridge = bridgeWith(async (request) => request.operation === "secure.read" ? { kind: "secure-value", value: "token" } : { kind: "ok" });
     render(<DeckPollingBoundary bridge={bridge} active online provider={{ ...provider(), validateRepository }}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
 
     await waitFor(() => expect(validateRepository).toHaveBeenCalledTimes(2));
     releases[0]?.();
     await waitFor(() => expect(validateRepository).toHaveBeenCalledTimes(3));
-    for (const release of releases) release();
+    releases[1]?.();
+    await waitFor(() => expect(validateRepository).toHaveBeenCalledTimes(4));
+    releases[2]?.();
+    releases[3]?.();
   });
 
   it("recomputes a failed Deck cache deadline when its interval changes", async () => {

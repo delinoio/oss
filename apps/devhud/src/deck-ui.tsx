@@ -26,6 +26,28 @@ const emptyDeckRefreshState: DeckRefreshState = { cache: null, loading: false, f
 const noDecks: readonly Deck[] = [];
 const DeckRepositoryValidationConcurrency = 2;
 
+function createRepositoryValidationQueue(limit: number): <Value>(operation: () => Promise<Value>) => Promise<Value> {
+  let active = 0;
+  const pending: Array<() => void> = [];
+  const start = (task: () => void) => {
+    active += 1;
+    task();
+  };
+  return function enqueue<Value>(operation: () => Promise<Value>): Promise<Value> {
+    return new Promise((resolve, reject) => {
+      const task = () => {
+        void Promise.resolve().then(operation).then(resolve, reject).finally(() => {
+          active -= 1;
+          const next = pending.shift();
+          if (next !== undefined) start(next);
+        });
+      };
+      if (active < limit) start(task);
+      else pending.push(task);
+    });
+  };
+}
+
 function useDeckPolling(): DeckPollingContextValue {
   const value = use(DeckPollingContext);
   if (value === null) throw new Error("DeckPollingBoundary is missing");
@@ -46,6 +68,7 @@ export function DeckPollingBoundary({ bridge, active, online, provider: supplied
   const loading = useRef(new Set<string>());
   const queued = useRef(new Set<string>());
   const validatedRepositories = useRef(new Map<string, { readonly token: string; readonly validation: Promise<void> }>());
+  const repositoryValidationQueue = useMemo(() => createRepositoryValidationQueue(DeckRepositoryValidationConcurrency), []);
   const browserNotifications = useRef(new Map<string, Set<Notification>>());
   const decks = useRef<readonly Deck[]>(identity.settings.decks);
   const deckAccessAllowed = useRef(!identity.deckAccessSuspended);
@@ -67,20 +90,12 @@ export function DeckPollingBoundary({ bridge, active, online, provider: supplied
       const key = `${credential.profileId}\u0000${repository.owner}/${repository.name}`.toLowerCase();
       const existing = validatedRepositories.current.get(key);
       if (!force && existing?.token === credential.token) return existing.validation;
-      const validation = provider.validateRepository(credential, repository).then(() => {});
+      const validation = repositoryValidationQueue(() => provider.validateRepository(credential, repository).then(() => {}));
       validatedRepositories.current.set(key, { token: credential.token, validation });
       try { await validation; } catch (error) { if (validatedRepositories.current.get(key)?.validation === validation) validatedRepositories.current.delete(key); throw error; }
     };
-    let nextIndex = 0;
-    const worker = async () => {
-      while (true) {
-        const repository = repositories[nextIndex++];
-        if (repository === undefined) return;
-        await validateRepository(repository);
-      }
-    };
-    await Promise.all(Array.from({ length: Math.min(DeckRepositoryValidationConcurrency, repositories.length) }, worker));
-  }, [provider]);
+    await Promise.all(repositories.map(validateRepository));
+  }, [provider, repositoryValidationQueue]);
 
   const validate = useCallback(async (currentDeck: Deck) => {
     const profile = identity.settings.github.profiles.find((item) => item.id === currentDeck.profileRef);
