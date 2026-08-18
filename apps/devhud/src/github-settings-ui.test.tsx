@@ -21,7 +21,7 @@ const metadata = { etag: null, rate: { limit: null, remaining: null, used: null,
 
 function identityWith(overrides: Partial<IdentitySettingsValue> = {}): IdentitySettingsValue {
   return {
-    status: "guest", bootstrap: null, account: null, settings, revision: 0n, readOnly: false, offline: false, error: null, accountError: null, settingsError: null, deletionCleanupFailed: false, importDiff: null, conflict: null, signInPending: false, identityResetAvailable: false, githubPatScopeId: Promise.resolve(scopeId), githubPatCleanupPending: false, reconcileGitHubPats: vi.fn(async () => true),
+    status: "guest", bootstrap: null, account: null, settings, revision: 0n, readOnly: false, shortcutHydrationReady: true, activeShortcutBindings: settings.shortcuts.desktop, setActiveShortcutBindings: vi.fn(), offline: false, error: null, accountError: null, settingsError: null, deletionCleanupFailed: false, importDiff: null, conflict: null, signInPending: false, identityResetAvailable: false, githubPatScopeId: Promise.resolve(scopeId), githubPatCleanupPending: false, reconcileGitHubPats: vi.fn(async () => true),
     signIn: vi.fn(), retryIdentity: vi.fn(), resetIdentity: vi.fn(), retryAccount: vi.fn(), retrySettings: vi.fn(), continueLocally: vi.fn(), uploadLocal: vi.fn(), replaceLocal: vi.fn(), replaceSettings: vi.fn(async () => true), adoptConflictServer: vi.fn(), reapplyConflictLocal: vi.fn(), logout: vi.fn(), deleteAccount: vi.fn(), restoreAccount: vi.fn(), retryDeletionCleanup: vi.fn(), profileRequiresSetup: vi.fn(),
     ...overrides,
   };

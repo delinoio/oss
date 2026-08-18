@@ -292,7 +292,7 @@ jobs:
         if: ${{ steps.gate.outputs.run == 'true' }}
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang cmake libayatana-appindicator3-dev libgtk-3-dev libx11-dev ninja-build
+          sudo apt-get install -y clang cmake libayatana-appindicator3-dev libgtk-3-dev libx11-dev libxtst-dev ninja-build
 
       - name: Cache Rust dependencies
         if: ${{ steps.gate.outputs.run == 'true' }}
@@ -383,7 +383,7 @@ jobs:
         if: ${{ steps.gate.outputs.run == 'true' }}
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang cmake libayatana-appindicator3-dev libgtk-3-dev libx11-dev ninja-build
+          sudo apt-get install -y clang cmake libayatana-appindicator3-dev libgtk-3-dev libx11-dev libxtst-dev ninja-build
 
       - name: Cache Rust dependencies
         if: ${{ steps.gate.outputs.run == 'true' }}
@@ -818,7 +818,7 @@ jobs:
         if: ${{ steps.gate.outputs.run == 'true' && matrix.os == 'linux' }}
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang cmake dbus-x11 desktop-file-utils libayatana-appindicator3-dev libfuse2 libgtk-3-dev libx11-dev libxkbcommon-x11-0 ninja-build patchelf xauth xdg-utils xvfb
+          sudo apt-get install -y clang cmake dbus-x11 desktop-file-utils libayatana-appindicator3-dev libfuse2 libgtk-3-dev libx11-dev libxkbcommon-x11-0 libxtst-dev ninja-build patchelf xauth xdg-utils xvfb
 
       - name: Install dependencies
         if: ${{ steps.gate.outputs.run == 'true' }}
@@ -1145,7 +1145,7 @@ jobs:
         if: ${{ steps.gate.outputs.run == 'true' }}
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang cmake libayatana-appindicator3-dev libgtk-3-dev libx11-dev ninja-build
+          sudo apt-get install -y clang cmake libayatana-appindicator3-dev libgtk-3-dev libx11-dev libxtst-dev ninja-build
 
       - name: Install dependencies
         if: ${{ steps.gate.outputs.run == 'true' }}

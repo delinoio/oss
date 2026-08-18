@@ -1,6 +1,17 @@
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    Arc, Condvar, Mutex,
+    atomic::{AtomicBool, Ordering},
+};
+#[cfg(desktop)]
+use std::time::Duration;
 
 use serde_json::{Value, json};
+
+#[cfg(desktop)]
+use crate::shortcuts::{NativeKeyEvent, ShortcutAction};
+use crate::shortcuts::{
+    PlatformShortcutBackend, ShortcutBindings, ShortcutFailure, ShortcutService,
+};
 
 const PROFILE_ID_LIMIT: usize = 128;
 const SECRET_LIMIT: usize = 64 * 1024;
@@ -11,6 +22,10 @@ const DEFAULT_API_ORIGIN: &str = "https://devhud.api.delino.io";
 pub struct NativeBridgeState {
     pending_auth_callback: Arc<Mutex<Option<String>>>,
     session_origins: Arc<Mutex<SessionOrigins>>,
+    shortcuts: Arc<Mutex<ShortcutService<PlatformShortcutBackend>>>,
+    shortcuts_ready: Arc<AtomicBool>,
+    shortcut_listener_failed: Arc<AtomicBool>,
+    shortcut_listener_retry: Arc<(Mutex<u64>, Condvar)>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -21,17 +36,184 @@ struct SessionOrigins {
 
 impl Default for NativeBridgeState {
     fn default() -> Self {
+        let shortcut_listener_failed = Arc::new(AtomicBool::new(false));
         Self {
             pending_auth_callback: Arc::new(Mutex::new(None)),
             session_origins: Arc::new(Mutex::new(SessionOrigins {
                 api_origin: DEFAULT_API_ORIGIN.to_string(),
                 logto_issuer: None,
             })),
+            shortcuts: Arc::new(Mutex::new(ShortcutService::new(
+                PlatformShortcutBackend::current(),
+            ))),
+            shortcuts_ready: Arc::new(AtomicBool::new(false)),
+            shortcut_listener_failed,
+            shortcut_listener_retry: Arc::new((Mutex::new(0), Condvar::new())),
         }
     }
 }
 
+pub(crate) fn shortcut_status(state: &NativeBridgeState, error: Option<ShortcutFailure>) -> Value {
+    let shortcuts = state
+        .shortcuts
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let error = error.or_else(|| {
+        state
+            .shortcut_listener_failed
+            .load(Ordering::SeqCst)
+            .then_some(ShortcutFailure::RegistrationFailed)
+    });
+    json!({ "kind": "shortcut-status", "platform": shortcuts.platform(), "permission": shortcuts.permission(), "bindings": shortcuts.active(), "error": error })
+}
+
+fn apply_shortcuts(request: &Value, state: &NativeBridgeState) -> Result<Value, String> {
+    let bindings = shortcut_bindings(request)?;
+    let mut shortcuts = state
+        .shortcuts
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    match shortcuts.apply(bindings) {
+        Ok(()) => {
+            state.shortcuts_ready.store(true, Ordering::SeqCst);
+            drop(shortcuts);
+            Ok(shortcut_status(state, None))
+        }
+        Err(error) => Ok(
+            json!({ "kind": "shortcut-status", "platform": shortcuts.platform(), "permission": shortcuts.permission(), "bindings": shortcuts.active(), "error": error }),
+        ),
+    }
+}
+
+fn shortcut_bindings(request: &Value) -> Result<ShortcutBindings, String> {
+    serde_json::from_value(request.get("bindings").cloned().ok_or("invalid-argument")?)
+        .map_err(|_| "invalid-argument".to_string())
+}
+
+fn stage_shortcuts(request: &Value, state: &NativeBridgeState) -> Result<Value, String> {
+    let bindings = shortcut_bindings(request)?;
+    if state.shortcut_listener_failed.load(Ordering::SeqCst) {
+        return Ok(shortcut_status(
+            state,
+            Some(ShortcutFailure::RegistrationFailed),
+        ));
+    }
+    let mut shortcuts = state
+        .shortcuts
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    match shortcuts.stage(bindings) {
+        Ok(()) => Ok(
+            json!({ "kind": "shortcut-status", "platform": shortcuts.platform(), "permission": shortcuts.permission(), "bindings": shortcuts.active(), "error": Value::Null }),
+        ),
+        Err(error) => Ok(
+            json!({ "kind": "shortcut-status", "platform": shortcuts.platform(), "permission": shortcuts.permission(), "bindings": shortcuts.active(), "error": error }),
+        ),
+    }
+}
+
+fn commit_staged_shortcuts(request: &Value, state: &NativeBridgeState) -> Result<Value, String> {
+    let bindings = shortcut_bindings(request)?;
+    let mut shortcuts = state
+        .shortcuts
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    match shortcuts.commit_staged(&bindings) {
+        Ok(()) => {
+            state.shortcuts_ready.store(true, Ordering::SeqCst);
+            Ok(
+                json!({ "kind": "shortcut-status", "platform": shortcuts.platform(), "permission": shortcuts.permission(), "bindings": shortcuts.active(), "error": Value::Null }),
+            )
+        }
+        Err(error) => Ok(
+            json!({ "kind": "shortcut-status", "platform": shortcuts.platform(), "permission": shortcuts.permission(), "bindings": shortcuts.active(), "error": error }),
+        ),
+    }
+}
+
+fn rollback_staged_shortcuts(state: &NativeBridgeState) -> Value {
+    let mut shortcuts = state
+        .shortcuts
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    match shortcuts.rollback_staged() {
+        Ok(()) => {
+            json!({ "kind": "shortcut-status", "platform": shortcuts.platform(), "permission": shortcuts.permission(), "bindings": shortcuts.active(), "error": Value::Null })
+        }
+        Err(error) => {
+            json!({ "kind": "shortcut-status", "platform": shortcuts.platform(), "permission": shortcuts.permission(), "bindings": shortcuts.active(), "error": error })
+        }
+    }
+}
+
+fn suspend_shortcuts(state: &NativeBridgeState) -> Value {
+    state.shortcuts_ready.store(false, Ordering::SeqCst);
+    state.clear_shortcut_pressed_keys();
+    shortcut_status(state, None)
+}
+
 impl NativeBridgeState {
+    #[cfg(desktop)]
+    pub fn process_shortcut_event(&self, event: NativeKeyEvent) -> Option<ShortcutAction> {
+        if !self.shortcuts_ready.load(Ordering::SeqCst)
+            || self.shortcut_listener_failed.load(Ordering::SeqCst)
+        {
+            return None;
+        }
+        self.shortcuts
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .process(event)
+    }
+
+    #[cfg(desktop)]
+    pub fn mark_shortcut_listener_failed(&self) {
+        self.shortcut_listener_failed.store(true, Ordering::SeqCst);
+        self.clear_shortcut_pressed_keys();
+    }
+
+    #[cfg(desktop)]
+    pub fn clear_shortcut_listener_failure(&self) {
+        self.shortcut_listener_failed.store(false, Ordering::SeqCst);
+    }
+
+    pub fn clear_shortcut_pressed_keys(&self) {
+        self.shortcuts
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear_pressed_keys();
+    }
+
+    #[cfg(desktop)]
+    pub fn shortcut_listener_retry_generation(&self) -> u64 {
+        let (generation, _) = &*self.shortcut_listener_retry;
+        *generation
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    #[cfg(desktop)]
+    pub fn wait_for_shortcut_listener_retry(&self, observed_generation: u64, timeout: Duration) {
+        let (generation, ready) = &*self.shortcut_listener_retry;
+        let generation = generation
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _ = ready
+            .wait_timeout_while(generation, timeout, |current| {
+                *current == observed_generation
+            })
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+    }
+
+    pub fn retry_shortcut_listener(&self) {
+        let (generation, ready) = &*self.shortcut_listener_retry;
+        let mut generation = generation
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        *generation = generation.wrapping_add(1);
+        ready.notify_all();
+    }
+
     #[allow(dead_code)]
     pub fn offer_auth_callback(&self, candidate: &str) -> bool {
         if !is_auth_callback(candidate) {
@@ -389,6 +571,28 @@ pub fn handle_native_bridge_request(
         .ok_or("invalid-argument")?;
     match operation {
         "runtime.snapshot" => Ok(runtime_snapshot()),
+        "shortcuts.status" => Ok(shortcut_status(state, None)),
+        "shortcuts.request-permission" => {
+            let mut shortcuts = state
+                .shortcuts
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let permission = shortcuts.request_permission();
+            let platform = shortcuts.platform();
+            let bindings = shortcuts.active().clone();
+            drop(shortcuts);
+            if permission == crate::shortcuts::ShortcutPermission::Available {
+                state.retry_shortcut_listener();
+            }
+            Ok(
+                json!({ "kind": "shortcut-status", "platform": platform, "permission": permission, "bindings": bindings, "error": Value::Null }),
+            )
+        }
+        "shortcuts.apply" => apply_shortcuts(request, state),
+        "shortcuts.stage" => stage_shortcuts(request, state),
+        "shortcuts.commit" => commit_staged_shortcuts(request, state),
+        "shortcuts.rollback" => Ok(rollback_staged_shortcuts(state)),
+        "shortcuts.suspend" => Ok(suspend_shortcuts(state)),
         "session.configure-origins" => Ok(json!({
             "kind": "session-network-policy",
             "changed": state.configure_session_origins(request)?
@@ -524,11 +728,13 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::Ordering;
+
     use serde_json::json;
 
     use super::{
         NativeBridgeState, handle_native_bridge_request, is_auth_callback, routes_to_mobile_plugin,
-        validate_auth_browser_request,
+        shortcut_status, validate_auth_browser_request,
     };
 
     #[test]
@@ -578,6 +784,117 @@ mod tests {
         assert_eq!(first["url"], "devhud://auth/callback?state=two");
         let second = handle_native_bridge_request(&request, &state).expect("empty callback");
         assert!(second["url"].is_null());
+    }
+
+    #[test]
+    fn native_shortcut_bindings_reject_unknown_fields() {
+        let mut bindings = serde_json::to_value(crate::shortcuts::default_bindings())
+            .expect("serialize default bindings");
+        bindings["shell.command-palette"]["scanCode"] = json!(54);
+        assert_eq!(
+            handle_native_bridge_request(
+                &json!({ "operation": "shortcuts.apply", "bindings": bindings }),
+                &NativeBridgeState::default(),
+            ),
+            Err("invalid-argument".to_string())
+        );
+    }
+
+    #[cfg(desktop)]
+    #[test]
+    fn suspending_shortcuts_blocks_matching_until_hydration_applies_bindings() {
+        let state = NativeBridgeState::default();
+        state.shortcuts_ready.store(true, Ordering::SeqCst);
+        assert_eq!(
+            state.process_shortcut_event(crate::shortcuts::NativeKeyEvent {
+                key: crate::shortcuts::NativeKey::RightPrimary,
+                pressed: true,
+            }),
+            None
+        );
+        let suspended =
+            handle_native_bridge_request(&json!({ "operation": "shortcuts.suspend" }), &state)
+                .expect("suspend shortcuts");
+        assert_eq!(suspended["kind"], "shortcut-status");
+        assert_eq!(
+            state.process_shortcut_event(crate::shortcuts::NativeKeyEvent {
+                key: crate::shortcuts::NativeKey::Key(crate::shortcuts::ShortcutKey::Digit1),
+                pressed: true,
+            }),
+            None
+        );
+        state.shortcuts_ready.store(true, Ordering::SeqCst);
+        assert_eq!(
+            state.process_shortcut_event(crate::shortcuts::NativeKeyEvent {
+                key: crate::shortcuts::NativeKey::Key(crate::shortcuts::ShortcutKey::KeyK),
+                pressed: true,
+            }),
+            None
+        );
+    }
+
+    #[cfg(desktop)]
+    #[test]
+    fn failed_shortcut_listener_retries_after_permission_recovery() {
+        use std::{sync::mpsc, time::Duration};
+
+        let state = NativeBridgeState::default();
+        state.shortcuts_ready.store(true, Ordering::SeqCst);
+        state.mark_shortcut_listener_failed();
+        assert_eq!(
+            shortcut_status(&state, None)["error"],
+            "registration-failed"
+        );
+        assert_eq!(
+            state.process_shortcut_event(crate::shortcuts::NativeKeyEvent {
+                key: crate::shortcuts::NativeKey::Key(crate::shortcuts::ShortcutKey::Digit1),
+                pressed: true,
+            }),
+            None
+        );
+        let observed_generation = state.shortcut_listener_retry_generation();
+        let waiting_state = state.clone();
+        let (ready, retried) = mpsc::channel();
+        std::thread::spawn(move || {
+            waiting_state
+                .wait_for_shortcut_listener_retry(observed_generation, Duration::from_secs(1));
+            ready.send(()).expect("report retry");
+        });
+        state.retry_shortcut_listener();
+        retried
+            .recv_timeout(Duration::from_secs(1))
+            .expect("listener retry signal");
+        state.clear_shortcut_listener_failure();
+        assert!(shortcut_status(&state, None)["error"].is_null());
+        assert!(
+            !state
+                .shortcut_listener_failed
+                .load(std::sync::atomic::Ordering::SeqCst)
+        );
+    }
+
+    #[cfg(desktop)]
+    #[test]
+    fn staging_rejects_bindings_while_the_shortcut_listener_has_failed() {
+        let state = NativeBridgeState::default();
+        state.mark_shortcut_listener_failed();
+        let mut bindings = crate::shortcuts::default_bindings();
+        bindings
+            .get_mut(&crate::shortcuts::ShortcutAction::ShellCommandPalette)
+            .expect("palette binding")
+            .key = crate::shortcuts::ShortcutKey::KeyQ;
+        let request = json!({ "operation": "shortcuts.stage", "bindings": bindings });
+
+        let staged = handle_native_bridge_request(&request, &state).expect("stage response");
+        assert_eq!(staged["error"], "registration-failed");
+
+        state.clear_shortcut_listener_failure();
+        let committed = handle_native_bridge_request(
+            &json!({ "operation": "shortcuts.commit", "bindings": request["bindings"] }),
+            &state,
+        )
+        .expect("commit response");
+        assert_eq!(committed["error"], "malformed");
     }
 
     #[test]
