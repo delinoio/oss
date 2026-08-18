@@ -147,7 +147,10 @@ describe("DevHud settings boundary", () => {
         notifications: [],
       }],
     };
-    expect(parseDevHudSettings(legacy).decks[0]?.query).toBe("repo:octo/other is:pr repo:octo/widgets");
+    const migrated = parseDevHudSettings(legacy);
+    expect(migrated.decks[0]?.query).toBe("repo:octo/other is:pr repo:octo/widgets");
+    expect(migrated.decks[0]?.builder).toMatchObject({ repository: "octo/other" });
+    expect(() => encodeDevHudSettings(migrated)).not.toThrow();
     expect(parseDevHudSettings({ ...legacy, decks: [{ ...legacy.decks[0], repository: "octo/other" }] }).decks[0]?.query).toBe("repo:octo/other is:pr");
   });
 

@@ -9,6 +9,7 @@ import { getLocalStorage } from "./shell.ts";
 import { EmptyState, OfflineState } from "./surface-state.tsx";
 
 type Deck = DevHudSettingsV1["decks"][number];
+interface DeckPollingConfiguration { readonly signature: string; readonly refreshMinutes: Deck["refreshMinutes"]; }
 
 interface DeckRefreshState { readonly cache: DeckCache | null; readonly loading: boolean; readonly failure: DeckFailure | null; }
 interface DeckPollingContextValue {
@@ -40,7 +41,7 @@ export function DeckPollingBoundary({ bridge, active, online, provider: supplied
   const provider = suppliedProvider ?? defaultProvider;
   const [states, setStates] = useState<Record<string, DeckRefreshState>>({});
   const caches = useRef(new Map<string, DeckCache | null>());
-  const signatures = useRef(new Map<string, string>());
+  const configurations = useRef(new Map<string, DeckPollingConfiguration>());
   const loading = useRef(new Set<string>());
   const queued = useRef(new Set<string>());
   const validatedRepositories = useRef(new Map<string, { readonly token: string; readonly validation: Promise<void> }>());
@@ -141,7 +142,7 @@ export function DeckPollingBoundary({ bridge, active, online, provider: supplied
     clearDeckCache(storage, `${await identity.githubPatScopeId}.${deck.profileRef}`, deck.id);
     closeBrowserDeckNotifications(browserNotifications.current, deck.id);
     caches.current.delete(deck.id);
-    signatures.current.delete(deck.id);
+    configurations.current.delete(deck.id);
     setStates((current) => {
       const { [deck.id]: _removed, ...remaining } = current;
       return remaining;
@@ -156,7 +157,7 @@ export function DeckPollingBoundary({ bridge, active, online, provider: supplied
     if (identity.deckAccessSuspended) {
       closeBrowserDeckNotifications(browserNotifications.current);
       caches.current.clear();
-      signatures.current.clear();
+      configurations.current.clear();
       loading.current.clear();
       queued.current.clear();
       setStates({});
@@ -169,17 +170,22 @@ export function DeckPollingBoundary({ bridge, active, online, provider: supplied
         caches.current.delete(deckId);
       }
     }
-    for (const deckId of [...signatures.current.keys()]) {
-      if (!configuredIds.has(deckId)) signatures.current.delete(deckId);
+    for (const deckId of [...configurations.current.keys()]) {
+      if (!configuredIds.has(deckId)) configurations.current.delete(deckId);
     }
     setStates((current) => Object.fromEntries(Object.entries(current).filter(([deckId]) => configuredIds.has(deckId))));
     void identity.githubPatScopeId.then((scopeId) => {
       if (cancelled) return;
       for (const deck of configuredDecks) {
-        const signature = `${deck.profileRef}\u0000${deck.query}\u0000${deck.notifications.join(",")}`;
-        if (signatures.current.get(deck.id) === signature) continue;
-        const cache = readDeckCache(storage, `${scopeId}.${deck.profileRef}`, deck.id, deck.query);
-        signatures.current.set(deck.id, signature);
+        const signature = `${deck.profileRef}\u0000${deck.query}\u0000${deck.refreshMinutes}\u0000${deck.notifications.join(",")}`;
+        const previous = configurations.current.get(deck.id);
+        if (previous?.signature === signature) continue;
+        let cache = readDeckCache(storage, `${scopeId}.${deck.profileRef}`, deck.id, deck.query);
+        if (previous !== undefined && previous.refreshMinutes !== deck.refreshMinutes && cache !== null && cache.failures > 0 && cache.nextRefreshAt !== null) {
+          cache = { ...cache, nextRefreshAt: nextDeckRefresh(Date.now(), deck.refreshMinutes, cache.failures, cache.rate) };
+          writeDeckCache(storage, `${scopeId}.${deck.profileRef}`, cache);
+        }
+        configurations.current.set(deck.id, { signature, refreshMinutes: deck.refreshMinutes });
         caches.current.set(deck.id, cache);
         setDeckState(deck.id, (current) => ({ ...current, cache, failure: null }));
       }

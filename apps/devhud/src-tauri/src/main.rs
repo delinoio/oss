@@ -708,7 +708,9 @@ fn main() {
             app.deep_link().on_open_url(move |event| {
                 for url in event.urls() {
                     native_plugin::offer_auth_callback(&callback_app, url.as_str());
-                    native_plugin::offer_deck_link(&callback_app, url.as_str());
+                    if native_plugin::offer_deck_link(&callback_app, url.as_str()) {
+                        restore_main_window(&callback_app);
+                    }
                 }
             });
             create_tray(&app.handle().clone())?;

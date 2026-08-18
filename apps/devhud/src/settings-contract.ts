@@ -222,7 +222,7 @@ function parseDeck(value: unknown, path: string, legacy: boolean, previous: bool
   if (legacyRepository !== null && !hasExactRepositoryQualifier(query, legacyRepository)) query = appendDeckQualifier(query, `repo:${legacyRepository}`);
   if (!hasPositivePullRequestQualifier(query)) throw new SettingsContractError(`${path}.query`, "must contain a standalone positive is:pr qualifier");
   if (!legacy && !previous && !hasRepositoryQualifier(query)) throw new SettingsContractError(`${path}.query`, "must contain a repository qualifier when a credential profile is selected");
-  const builder = legacy ? null : previous ? legacyDeckBuilder(legacyRepository, `${path}.repository`) : parseDeckBuilder(deck.builder, `${path}.builder`);
+  const builder = legacy ? null : previous ? deckBuilderProjection(query) : parseDeckBuilder(deck.builder, `${path}.builder`);
   if (!legacy && !previous && builder !== null && !sameDeckBuilder(builder, deckBuilderProjection(query))) {
     throw new SettingsContractError(`${path}.builder`, "must be the lossless projection of the query");
   }
@@ -242,11 +242,6 @@ function parseDeck(value: unknown, path: string, legacy: boolean, previous: bool
     refreshMinutes: refresh as 1 | 5 | 15 | 30,
     notifications,
   }];
-}
-
-function legacyDeckBuilder(value: unknown, path: string): DeckBuilder | null {
-  if (value === null) return null;
-  return { repository: text(value, path), author: null, review: null, label: null, state: null };
 }
 
 function parseDeckBuilder(value: unknown, path: string): DeckBuilder | null {

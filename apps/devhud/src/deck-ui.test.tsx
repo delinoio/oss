@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DeckPollingBoundary, DeckSurface } from "./deck-ui.tsx";
+import { DeckCacheVersion, deckCacheKey, writeDeckCache } from "./deck.ts";
 import { createGitHubProvider } from "./github-provider.ts";
 import { messages } from "./localization.ts";
 import type { NativeBridgeRequestV1, NativeBridgeResponseV1, NativeBridgeV1 } from "./native-bridge.ts";
@@ -37,8 +38,8 @@ function provider() {
   };
 }
 
-beforeEach(() => { identity = identityWith(); });
-afterEach(cleanup);
+beforeEach(() => { localStorage.clear(); identity = identityWith(); });
+afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 describe("Deck surface", () => {
   it("keeps a missing deep link visible until the user returns to the Deck list", () => {
@@ -52,6 +53,38 @@ describe("Deck surface", () => {
 
     view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} onDismissMissingLink={dismiss} /></DeckPollingBoundary>);
     expect(screen.getByRole("button", { name: messages.en.deckCreate })).toBeTruthy();
+  });
+
+  it("recomputes a failed Deck cache deadline when its interval changes", async () => {
+    const initialSettings = parseDevHudSettings({ ...settings, decks: [{ ...deck, refreshMinutes: 30 }] });
+    const oldDeadline = new Date(Date.now() + 60 * 60_000).toISOString();
+    const cacheScope = `origin.scope.${profile.id}`;
+    writeDeckCache(localStorage, cacheScope, {
+      version: DeckCacheVersion,
+      deckId: deck.id,
+      query: deck.query,
+      queryEtag: null,
+      results: [],
+      lastSuccessfulAt: null,
+      rate: null,
+      failures: 1,
+      nextRefreshAt: oldDeadline,
+      transitionKeys: [],
+    });
+    identity = identityWith({ settings: initialSettings });
+    const bridge = bridgeWith(async () => { throw new Error("unexpected request"); });
+    const readCache = vi.spyOn(Storage.prototype, "getItem");
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+    await waitFor(() => expect(readCache).toHaveBeenCalledWith(deckCacheKey(cacheScope, deck.id)));
+
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [{ ...deck, refreshMinutes: 1 }] }) });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    await waitFor(() => {
+      const cache = JSON.parse(localStorage.getItem(deckCacheKey(cacheScope, deck.id)) ?? "null") as { nextRefreshAt: string | null };
+      expect(cache.nextRefreshAt).not.toBe(oldDeadline);
+      expect(Date.parse(cache.nextRefreshAt ?? "")).toBeLessThan(Date.now() + 3 * 60_000);
+    });
   });
 
 });
