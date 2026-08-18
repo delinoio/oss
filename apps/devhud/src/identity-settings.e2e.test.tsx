@@ -667,7 +667,6 @@ describe("generated Connect identity/settings fixture", () => {
       async listen() { return () => {}; },
     };
     const diagnosticsKey = "devhud.diagnostics.v1.events";
-    localStorage.setItem(diagnosticsKey, "[]");
     const originalRemoveItem = Storage.prototype.removeItem;
     let rejectDiagnosticsRemoval = true;
     vi.spyOn(Storage.prototype, "removeItem").mockImplementation(function (this: Storage, key) {
@@ -679,6 +678,7 @@ describe("generated Connect identity/settings fixture", () => {
     });
 
     render(<App bridge={bridge} initialRuntime={runtime} />);
+    localStorage.setItem(diagnosticsKey, "[]");
     fireEvent.click(screen.getByRole("button", { name: messages.en.account }));
     fireEvent.click(await screen.findByRole("button", { name: messages.en.deleteAccount }));
     fireEvent.click(within(screen.getByRole("alertdialog", { name: messages.en.deleteAccountConfirmTitle })).getByRole("button", { name: messages.en.deleteAccount }));
@@ -716,12 +716,16 @@ describe("generated Connect identity/settings fixture", () => {
     expect(screen.getByTestId("identity-state").dataset.error).toBe("");
   });
 
-  it("surfaces incomplete Web Storage cleanup after securely purging an irreversible account", async () => {
+  it("retries incomplete Web Storage cleanup after securely purging an irreversible account", async () => {
     const purges: string[] = [];
     localStorage.setItem("devhud.identity.v1.account.fixture", "sensitive");
     const originalRemoveItem = Storage.prototype.removeItem;
+    let rejectRemoval = true;
     vi.spyOn(Storage.prototype, "removeItem").mockImplementation(function (this: Storage, key) {
-      if (key.startsWith("devhud.identity.v1.")) throw new DOMException("denied", "SecurityError");
+      if (key.startsWith("devhud.identity.v1.") && rejectRemoval) {
+        rejectRemoval = false;
+        throw new DOMException("denied", "SecurityError");
+      }
       originalRemoveItem.call(this, key);
     });
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
@@ -737,8 +741,16 @@ describe("generated Connect identity/settings fixture", () => {
 
     await waitFor(() => expect(purges).toEqual(["logout"]));
     expect(localStorage.getItem("devhud.identity.v1.account.fixture")).toBe("sensitive");
-    expect(screen.getByRole("alert").textContent).toContain(messages.en.bootstrapFailed);
+    const cleanupAlert = screen.getByRole("alert");
+    expect(cleanupAlert.textContent).toContain(messages.en.bootstrapFailed);
     expect(screen.queryByRole("button", { name: messages.en.signIn })).toBeNull();
+    expect(screen.queryByRole("button", { name: messages.en.restoreAccount })).toBeNull();
+
+    fireEvent.click(within(cleanupAlert).getByRole("button", { name: messages.en.retry }));
+
+    await waitFor(() => expect(localStorage.getItem("devhud.identity.v1.account.fixture")).toBeNull());
+    await waitFor(() => expect(purges).toEqual(["logout", "logout"]));
+    expect(await screen.findByRole("button", { name: messages.en.signIn })).toBeTruthy();
     expect(screen.queryByRole("button", { name: messages.en.restoreAccount })).toBeNull();
   });
 

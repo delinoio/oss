@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/url"
 	"regexp"
 	"strings"
 	"unicode/utf8"
@@ -34,9 +35,12 @@ const (
 )
 
 var (
-	safeErrorCode       = regexp.MustCompile(`^[A-Z][A-Z0-9_]{0,63}$`)
-	safeSQLState        = regexp.MustCompile(`^[0-9A-Z]{5}$`)
-	forbiddenDiagnostic = []*regexp.Regexp{
+	safeErrorCode           = regexp.MustCompile(`^[A-Z][A-Z0-9_]{0,63}$`)
+	safeSQLState            = regexp.MustCompile(`^[0-9A-Z]{5}$`)
+	diagnosticURL           = regexp.MustCompile(`\b[A-Za-z][A-Za-z0-9+.-]*:[^\s<>"']+`)
+	trailingURLPunctuation  = regexp.MustCompile(`[)\]}>.,;]+$`)
+	credentialParameterName = regexp.MustCompile(`(?i)^(code|password|passwd|pwd|secret|token|client[_.-]?secret|(access|refresh|id)[_.-]?token|api[_.-]?key|private[_.-]?key|authorization|cookie|set-cookie|x-amz-(credential|signature))$`)
+	forbiddenDiagnostic     = []*regexp.Regexp{
 		regexp.MustCompile(`(?i)\bbearer[[:space:]]+[^[:space:]]+`),
 		regexp.MustCompile(`(?i)\b([[:alnum:]]+_)*(password|passwd|pwd|pat|secret(_access_key)?|token|client[_.-]?secret|(access|refresh|id)[_.-]?token|api[_.-]?key|private[_.-]?key|authorization|cookie|set-cookie|session[_.-]?id|signing[_.-]?(secret|key|value))\b["']?[[:space:]]*[:=][[:space:]]*[^[:space:]]+`),
 		regexp.MustCompile(`-----BEGIN [A-Z ]*PRIVATE KEY-----`),
@@ -296,12 +300,57 @@ func validateDiagnosticText(name, value string, maximumBytes int, emptyAllowed b
 	if len(value) > maximumBytes {
 		return fmt.Errorf("%s exceeds %d bytes", name, maximumBytes)
 	}
-	for _, pattern := range forbiddenDiagnostic {
-		if pattern.MatchString(value) {
-			return fmt.Errorf("%s contains prohibited diagnostic content", name)
-		}
+	if containsForbiddenDiagnosticContent(value) {
+		return fmt.Errorf("%s contains prohibited diagnostic content", name)
 	}
 	return nil
+}
+
+func containsForbiddenDiagnosticContent(value string) bool {
+	for _, pattern := range forbiddenDiagnostic {
+		if pattern.MatchString(value) {
+			return true
+		}
+	}
+	return containsForbiddenDiagnosticURL(value)
+}
+
+func containsForbiddenDiagnosticURL(value string) bool {
+	for _, match := range diagnosticURL.FindAllString(value, -1) {
+		candidate := trailingURLPunctuation.ReplaceAllString(match, "")
+		if _, err := url.PathUnescape(candidate); err != nil {
+			return true
+		}
+		parsed, err := url.Parse(candidate)
+		if err != nil {
+			continue
+		}
+		if strings.EqualFold(parsed.Scheme, "file") || parsed.User != nil {
+			return true
+		}
+		if containsForbiddenDiagnosticParameters(parsed.RawQuery) || containsForbiddenDiagnosticParameters(parsed.Fragment) {
+			return true
+		}
+	}
+	return false
+}
+
+func containsForbiddenDiagnosticParameters(parameters string) bool {
+	for _, parameter := range strings.Split(parameters, "&") {
+		name, value, found := strings.Cut(parameter, "=")
+		if !found {
+			name, value, _ = strings.Cut(parameter, ":")
+		}
+		decodedName, nameErr := url.QueryUnescape(name)
+		decodedValue, valueErr := url.QueryUnescape(value)
+		if nameErr != nil || valueErr != nil || credentialParameterName.MatchString(decodedName) {
+			return true
+		}
+		if containsForbiddenDiagnosticContent(decodedValue) {
+			return true
+		}
+	}
+	return false
 }
 
 func validPlatform(value devhudv1.DiagnosticPlatform) bool {

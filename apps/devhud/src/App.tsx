@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { messages } from "./localization";
-import { appendDiagnosticEvent, captureDiagnosticEvent, recentDiagnosticCorrelationIds } from "./diagnostics";
+import { appendDiagnosticEvent, captureDiagnosticEvent, readDiagnosticCorrelations, readDiagnosticEvents, recentDiagnosticCorrelationIds } from "./diagnostics";
 import { DiagnosticsPanel } from "./diagnostics-ui";
 import { DiagnosticComponent, DiagnosticSeverity } from "@delinoio/devhud-api-client";
 import type { IdentitySession } from "./identity-client";
@@ -90,6 +90,10 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
     document.title = "DevHUD";
     void markFrontendReady()?.catch(() => {});
   }, []);
+  useEffect(() => {
+    readDiagnosticEvents(storage);
+    readDiagnosticCorrelations(storage);
+  }, [storage]);
   useEffect(() => {
     let active = true;
     let unlisten: (() => void) | undefined;

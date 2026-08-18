@@ -77,6 +77,15 @@ impl DiagnosticLogController {
         })
     }
 
+    fn cleanup_only(directory: PathBuf) -> Self {
+        Self {
+            sink: Some(Arc::new(Mutex::new(DiagnosticFileSink {
+                directory,
+                appender: None,
+            }))),
+        }
+    }
+
     fn reset(&self) -> Result<(), String> {
         let Some(sink) = &self.sink else {
             return Ok(());
@@ -531,18 +540,19 @@ fn diagnostic_writer(
         return tracing_subscriber::fmt::writer::BoxMakeWriter::new(std::io::stderr);
     }
 
-    let controller = (|| {
-        let directory = diagnostic_log_directory(smoke_mode).ok_or(())?;
-        DiagnosticLogController::new(directory)
-    })();
+    let Some(directory) = diagnostic_log_directory(smoke_mode) else {
+        let _ = DIAGNOSTIC_LOG_CONTROLLER.set(DiagnosticLogController::default());
+        eprintln!("{{\"level\":\"WARN\",\"event\":\"file_logging_unavailable\"}}");
+        return tracing_subscriber::fmt::writer::BoxMakeWriter::new(std::io::stderr);
+    };
 
-    match controller {
+    match DiagnosticLogController::new(directory.clone()) {
         Ok(controller) => {
             let _ = DIAGNOSTIC_LOG_CONTROLLER.set(controller.clone());
             tracing_subscriber::fmt::writer::BoxMakeWriter::new(std::io::stderr.and(controller))
         }
         Err(()) => {
-            let _ = DIAGNOSTIC_LOG_CONTROLLER.set(DiagnosticLogController::default());
+            let _ = DIAGNOSTIC_LOG_CONTROLLER.set(DiagnosticLogController::cleanup_only(directory));
             eprintln!("{{\"level\":\"WARN\",\"event\":\"file_logging_unavailable\"}}");
             tracing_subscriber::fmt::writer::BoxMakeWriter::new(std::io::stderr)
         }
@@ -1254,6 +1264,42 @@ mod tests {
                 .expect("unrelated contents"),
             "preserved"
         );
+    }
+
+    #[test]
+    fn diagnostic_log_reset_cleans_a_retained_directory_without_an_active_sink() {
+        let temporary = tempfile::tempdir().expect("temporary diagnostics directory");
+        let retained = temporary.path().join("devhud.2026-08-17.jsonl");
+        std::fs::write(&retained, "retained diagnostic\n").expect("retained diagnostic fixture");
+        let controller = DiagnosticLogController::cleanup_only(temporary.path().to_path_buf());
+
+        controller.reset().expect("reset cleanup-only diagnostics");
+
+        assert!(!retained.exists());
+        let mut writer = controller.clone();
+        writer
+            .write_all(b"after cleanup\n")
+            .expect("reopened diagnostic");
+        writer.flush().expect("flush reopened diagnostic");
+        assert!(
+            std::fs::read_dir(temporary.path())
+                .expect("diagnostic directory")
+                .flatten()
+                .any(|entry| entry
+                    .file_name()
+                    .to_str()
+                    .is_some_and(is_diagnostic_log_name))
+        );
+    }
+
+    #[test]
+    fn diagnostic_log_reset_reports_an_unusable_retained_directory() {
+        let temporary = tempfile::tempdir().expect("temporary diagnostics directory");
+        let file = temporary.path().join("not-a-directory");
+        std::fs::write(&file, "fixture").expect("non-directory fixture");
+        let controller = DiagnosticLogController::cleanup_only(file);
+
+        assert_eq!(controller.reset(), Err("storage-failure".to_string()));
     }
 
     #[test]

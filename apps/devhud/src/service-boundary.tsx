@@ -163,6 +163,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   const signInPendingRef = useRef(false);
   const callbackHandled = useRef<string | null>(null);
   const invalidSessionCleanupRef = useRef<Promise<void> | null>(null);
+  const irrecoverableCleanupPendingRef = useRef(false);
   const continueLocallyRef = useRef(false);
   const githubPatReconciliationRef = useRef<Promise<boolean> | null>(null);
   const lastReconciledGitHubPatKeyRef = useRef<string | null>(null);
@@ -241,6 +242,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   }
 
   async function clearIrrecoverableAccount(): Promise<void> {
+    irrecoverableCleanupPendingRef.current = true;
     setStatus("error");
     const localCleanupComplete = clearAllContractedLocalData(storage);
     try {
@@ -256,6 +258,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       setSettingsError(null);
       setStatus("signed-out");
       setError(null);
+      irrecoverableCleanupPendingRef.current = false;
       await clearIdentityQueryCache();
       onIdentityReset();
     } catch (reason) {
@@ -529,6 +532,11 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   }
 
   function retryIdentity(): void {
+    if (irrecoverableCleanupPendingRef.current) {
+      setError(null);
+      void clearIrrecoverableAccount().catch(() => {});
+      return;
+    }
     continueLocallyRef.current = false;
     setStatus("starting");
     setError(null);

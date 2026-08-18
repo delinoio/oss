@@ -145,9 +145,14 @@ func TestValidateCrashReportRejectsHostileDiagnosticContent(t *testing.T) {
 
 func TestSubmitCrashReportRejectsUnlabeledCredentialsBeforePersistence(t *testing.T) {
 	credentials := map[string]string{
-		"AWS access key": "AKIA0123456789ABCDEF",
-		"JWT":            "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiIxMjMifQ.signature",
-		"private key":    "-----BEGIN PRIVATE KEY-----",
+		"AWS access key":          "AKIA0123456789ABCDEF",
+		"JWT":                     "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiIxMjMifQ.signature",
+		"private key":             "-----BEGIN PRIVATE KEY-----",
+		"OAuth callback URL":      "devhud://auth/callback?code=secret&state=x",
+		"encoded OAuth callback":  "devhud://auth/callback?co%64e=secret&state=x",
+		"encoded token fragment":  "devhud://auth/callback#access%2Dtoken=secret",
+		"credential-bearing user": "https://alice:password@example.test/app.js",
+		"malformed URL escape":    "https://example.test/?to%6=secret",
 	}
 	locations := map[string]func(*devhudv1.SubmitCrashReportRequest, string){
 		"build": func(request *devhudv1.SubmitCrashReportRequest, credential string) {
@@ -232,6 +237,7 @@ func TestValidateCrashReportAcceptsSafeSlashLabelsAndRemoteURLs(t *testing.T) {
 		"React/Native renderer failed.",
 		"iOS/18.6 runtime classification.",
 		"https://example.test/assets/app.js:10:2",
+		"devhud://auth/callback?state=opaque",
 		"Password validation failed because the field was empty.",
 		"Cookie parsing failed after session expiry.",
 		"ERROR_CODE=E_UPLOAD RETRY_COUNT=3 TOKEN_COUNT=2",
