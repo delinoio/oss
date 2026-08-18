@@ -79,6 +79,7 @@ function IdentityStateProbe({ replacement = defaultDevHudSettings }: { readonly 
       data-testid="identity-state"
       data-status={identity.status}
       data-read-only={String(identity.readOnly)}
+      data-shortcut-hydration-ready={String(identity.shortcutHydrationReady)}
       data-revision={identity.revision.toString()}
       data-theme={identity.settings.appearance.theme}
       data-error={identity.error ?? ""}
@@ -392,10 +393,7 @@ describe("generated Connect identity/settings fixture", () => {
   });
 
   it("reapplies persisted shortcut bindings after permission becomes available", async () => {
-    const bindings = {
-      ...defaultDevHudSettings.shortcuts.desktop,
-      [ShortcutActionId.CommandPalette]: { enabled: false, modifiers: [], key: ShortcutKey.Q },
-    };
+    const bindings = defaultDevHudSettings.shortcuts.desktop;
     writeGuestSettings(localStorage, { ...defaultDevHudSettings, shortcuts: { ...defaultDevHudSettings.shortcuts, desktop: bindings } });
     const requests: NativeBridgeRequestV1[] = [];
     let permissionAvailable = false;
@@ -429,6 +427,7 @@ describe("generated Connect identity/settings fixture", () => {
 
     await waitFor(() => expect(requests.filter((request) => request.operation.startsWith("shortcuts.")).map((request) => request.operation)).toEqual(["shortcuts.request-permission", "shortcuts.apply"]));
     expect(requests.find((request) => request.operation === "shortcuts.apply")).toEqual({ operation: "shortcuts.apply", bindings });
+    await waitFor(() => expect(screen.getByRole("button", { name: messages.en.openPalette }).textContent).toBe("Right Ctrl + K"));
   });
 
   it("stages a shortcut edit before persisting and commits it afterward", async () => {
@@ -1432,6 +1431,55 @@ describe("generated Connect identity/settings fixture", () => {
       expect(state.dataset.revision).toBe("7");
       expect(state.dataset.error).toBe("");
     });
+  });
+
+  it("keeps loaded native shortcuts active when cache writes fail before going offline", async () => {
+    const originalSetItem = Storage.prototype.setItem;
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (this: Storage, key, value) {
+      if (key.endsWith(".settings")) throw new DOMException("quota exceeded", "QuotaExceededError");
+      originalSetItem.call(this, key, value);
+    });
+    const requests: NativeBridgeRequestV1[] = [];
+    const authenticated = authenticatedBridge();
+    const bridge: NativeBridgeV1 = {
+      async request(request) {
+        if (request.operation === "shortcuts.apply" || request.operation === "shortcuts.suspend") {
+          requests.push(request);
+          return { kind: "shortcut-status", platform: "windows", permission: "available", bindings: defaultDevHudSettings.shortcuts.desktop, error: null };
+        }
+        return authenticated.request(request);
+      },
+      listen: authenticated.listen,
+    };
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "7", canonicalJson: encodedSettings(defaultDevHudSettings) } });
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    const renderBoundary = (online: boolean) => <DevHudServiceBoundary
+      apiOrigin="https://devhud.api.delino.io"
+      active
+      online={online}
+      callbackUrl={null}
+      platform={RuntimePlatform.Desktop}
+      bridge={bridge}
+      onCallbackConsumed={() => {}}
+      onContinueLocally={() => {}}
+      onLoggedOut={() => {}}
+    ><SynchronizedShortcutBoundary bridge={bridge} /><IdentityStateProbe /></DevHudServiceBoundary>;
+    const view = render(renderBoundary(true));
+
+    await waitFor(() => expect(screen.getByTestId("identity-state").dataset.revision).toBe("7"));
+    await waitFor(() => expect(requests).toContainEqual({ operation: "shortcuts.apply", bindings: defaultDevHudSettings.shortcuts.desktop }));
+    requests.splice(0);
+    view.rerender(renderBoundary(false));
+
+    await waitFor(() => expect(screen.getByTestId("identity-state").dataset.readOnly).toBe("true"));
+    expect(screen.getByTestId("identity-state").dataset.shortcutHydrationReady).toBe("true");
+    expect(requests.filter((request) => request.operation === "shortcuts.suspend")).toEqual([]);
   });
 
   it("keeps offline settings read-only while the cached session probe is pending", async () => {

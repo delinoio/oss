@@ -172,7 +172,7 @@ export function SynchronizedSettingsBoundary({ copy, bridge = nativeBridge, gith
   return <>
     <label>{copy.theme}<select value={identity.settings.appearance.theme} disabled={identity.readOnly} onChange={(event) => replaceAppearance({ theme: event.target.value as DevHudSettingsV1["appearance"]["theme"] })}>{Object.values(ThemePreference).map((value) => <option key={value} value={value}>{copy[value]}</option>)}</select></label>
     <label>{copy.language}<select value={identity.settings.appearance.language} disabled={identity.readOnly} onChange={(event) => replaceAppearance({ language: event.target.value as DevHudSettingsV1["appearance"]["language"] })}><option value={LanguagePreference.System}>{copy.system}</option><option value={LanguagePreference.English}>{copy.english}</option><option value={LanguagePreference.Korean}>{copy.korean}</option></select></label>
-    {showNativeShortcuts && <ShortcutSettings copy={copy} bridge={bridge} disabled={identity.readOnly} capabilities={shortcutCapabilities} bindings={identity.settings.shortcuts.desktop} onPersist={(desktop) => identity.replaceSettings((current) => ({ ...current, shortcuts: { ...current.shortcuts, desktop } }))} />}
+    {showNativeShortcuts && <ShortcutSettings copy={copy} bridge={bridge} disabled={identity.readOnly} capabilities={shortcutCapabilities} bindings={identity.settings.shortcuts.desktop} onActiveBindings={identity.setActiveShortcutBindings} onPersist={(desktop) => identity.replaceSettings((current) => ({ ...current, shortcuts: { ...current.shortcuts, desktop } }))} />}
     {(identity.status === "guest" || identity.status === "signed-out" || identity.status === "starting") && <p className="notice">{copy.guestSettingsLocal}</p>}
     {identity.status === "blocked" && <p className="notice">{copy.blockedLocalHint}</p>}
     {identity.status === "deletion-pending" && <p className="notice">{copy.deletionPendingSummary}</p>}
@@ -219,7 +219,7 @@ const shortcutKeyLabels: Record<ShortcutKey, keyof Copy> = {
   [ShortcutKey.Backspace]: "shortcutBackspace",
 };
 
-function ShortcutSettings({ copy, bridge, disabled, capabilities, bindings, onPersist }: { readonly copy: Copy; readonly bridge: NativeBridgeV1; readonly disabled: boolean; readonly capabilities: RuntimeCapabilities; readonly bindings: DevHudSettingsV1["shortcuts"]["desktop"]; readonly onPersist: (bindings: DevHudSettingsV1["shortcuts"]["desktop"]) => Promise<boolean> }) {
+function ShortcutSettings({ copy, bridge, disabled, capabilities, bindings, onActiveBindings, onPersist }: { readonly copy: Copy; readonly bridge: NativeBridgeV1; readonly disabled: boolean; readonly capabilities: RuntimeCapabilities; readonly bindings: DevHudSettingsV1["shortcuts"]["desktop"]; readonly onActiveBindings: (bindings: DevHudSettingsV1["shortcuts"]["desktop"]) => void; readonly onPersist: (bindings: DevHudSettingsV1["shortcuts"]["desktop"]) => Promise<boolean> }) {
   const [status, setStatus] = useState<{ platform: NativeShortcutPlatform; permission: NativeShortcutPermission; error: ShortcutValidationCode | null } | null>(null);
   const [saving, setSaving] = useState(false);
   useEffect(() => {
@@ -264,7 +264,24 @@ function ShortcutSettings({ copy, bridge, disabled, capabilities, bindings, onPe
       if (permission.kind !== "shortcut-status") return;
       if (permission.permission !== "available") { setStatus(permission); return; }
       const result = await bridge.request({ operation: "shortcuts.apply", bindings });
-      if (result.kind === "shortcut-status") setStatus(result);
+      if (result.kind !== "shortcut-status") return;
+      setStatus(result);
+      if (result.error === null) {
+        onActiveBindings(result.bindings);
+        return;
+      }
+      if (result.error !== ShortcutValidationCode.Reserved) {
+        onActiveBindings(inactiveDesktopShortcutBindings);
+        return;
+      }
+      // A synchronized binding can be reserved on this platform. Restore the
+      // platform-valid native map instead of overwriting the shared snapshot.
+      onActiveBindings(result.bindings);
+      const fallback = await bridge.request({ operation: "shortcuts.apply", bindings: result.bindings });
+      if (fallback.kind === "shortcut-status") {
+        setStatus(fallback);
+        if (fallback.error === null) onActiveBindings(fallback.bindings);
+      }
     } catch (error) {
       setStatus((current) => ({ platform: current?.platform ?? "unsupported", permission: error instanceof NativeBridgeError ? "denied" : current?.permission ?? "unsupported", error: error instanceof NativeBridgeError ? ShortcutValidationCode.PermissionDenied : ShortcutValidationCode.RegistrationFailed }));
     }
