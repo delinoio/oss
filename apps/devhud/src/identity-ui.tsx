@@ -127,6 +127,16 @@ export function SynchronizedShortcutBoundary({ bridge = nativeBridge }: { readon
   const bindings = identity.settings.shortcuts.desktop;
   useEffect(() => {
     let active = true;
+    void bridge.listen((event) => {
+      if (!active || event.version !== 1 || event.kind !== "shortcut-status") return;
+      identity.setActiveShortcutBindings(event.error === null && identity.shortcutHydrationReady ? event.bindings : inactiveDesktopShortcutBindings);
+    }).catch(() => {
+      // Status requests in Settings remain the fallback for hosts without events.
+    });
+    return () => { active = false; };
+  }, [bridge, identity.setActiveShortcutBindings, identity.shortcutHydrationReady]);
+  useEffect(() => {
+    let active = true;
     if (!identity.shortcutHydrationReady) {
       void bridge.request({ operation: "shortcuts.suspend" }).then((response) => {
         if (active && response.kind === "shortcut-status") identity.setActiveShortcutBindings(inactiveDesktopShortcutBindings);
@@ -232,6 +242,13 @@ function ShortcutSettings({ copy, bridge, disabled, capabilities, bindings, onAc
     });
     return () => { active = false; };
   }, [bindings, bridge]);
+  useEffect(() => {
+    let active = true;
+    void bridge.listen((event) => {
+      if (active && event.version === 1 && event.kind === "shortcut-status") setStatus(event);
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [bridge]);
   const commit = async (action: ShortcutActionId, update: Partial<ShortcutBinding>) => {
     if (saving) return;
     const candidate = { ...bindings, [action]: { ...bindings[action], ...update } };

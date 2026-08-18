@@ -360,6 +360,53 @@ describe("generated Connect identity/settings fixture", () => {
     await waitFor(() => expect(requests).toEqual([{ operation: "shortcuts.suspend" }]));
   });
 
+  it("keeps shortcuts suspended until the guest import choice is resolved", async () => {
+    const localBindings = {
+      ...defaultDevHudSettings.shortcuts.desktop,
+      [ShortcutActionId.CommandPalette]: { enabled: false, modifiers: [], key: ShortcutKey.Q },
+    };
+    const serverBindings = defaultDevHudSettings.shortcuts.desktop;
+    const server = { ...defaultDevHudSettings, shortcuts: { ...defaultDevHudSettings.shortcuts, desktop: serverBindings } };
+    writeGuestSettings(localStorage, { ...defaultDevHudSettings, shortcuts: { ...defaultDevHudSettings.shortcuts, desktop: localBindings } });
+    const requests: NativeBridgeRequestV1[] = [];
+    const authenticated = authenticatedBridge();
+    const bridge: NativeBridgeV1 = {
+      async request(request) {
+        if (request.operation === "shortcuts.suspend" || request.operation === "shortcuts.apply") {
+          requests.push(request);
+          return { kind: "shortcut-status", platform: "windows", permission: "available", bindings: "bindings" in request ? request.bindings : defaultDevHudSettings.shortcuts.desktop, error: null };
+        }
+        return authenticated.request(request);
+      },
+      listen: authenticated.listen,
+    };
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "1", canonicalJson: encodedSettings(server) } });
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    render(<DevHudServiceBoundary
+      apiOrigin="https://devhud.api.delino.io"
+      active
+      online
+      callbackUrl={null}
+      platform={RuntimePlatform.Desktop}
+      bridge={bridge}
+      onCallbackConsumed={() => {}}
+      onContinueLocally={() => {}}
+      onLoggedOut={() => {}}
+    ><SynchronizedShortcutBoundary bridge={bridge} /><SynchronizedSettingsBoundary copy={messages.en} /></DevHudServiceBoundary>);
+
+    expect(await screen.findByRole("dialog", { name: messages.en.importSettingsTitle })).toBeTruthy();
+    expect(requests.filter((request) => request.operation === "shortcuts.apply")).toEqual([]);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.replaceLocal }));
+    await waitFor(() => expect(requests).toContainEqual({ operation: "shortcuts.apply", bindings: serverBindings }));
+  });
+
   it("hydrates guest shortcuts after post-onboarding Bootstrap failure when continuing locally", async () => {
     const bindings = {
       ...defaultDevHudSettings.shortcuts.desktop,

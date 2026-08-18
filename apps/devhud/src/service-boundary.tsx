@@ -576,7 +576,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   const localSettingsWritable = identityReady && (status === "guest" || status === "signed-out");
   const settingsReadOnly = replaceMutation.isPending || (!localSettingsWritable
     && (status !== "authenticated" || !online || !settingsReady || importDiff !== null || conflict !== null));
-  const shortcutHydrationReady = identityReady && ((status !== "authenticated" && status !== "blocked") || shortcutSettingsReady);
+  const shortcutHydrationReady = identityReady && ((status !== "authenticated" && status !== "blocked") || (shortcutSettingsReady && importDiff === null));
   const githubPatSettingsReady = identityReady && !settingsReadOnly && conflict === null;
 
   const replaceSettings: IdentitySettingsValue["replaceSettings"] = async (update) => {

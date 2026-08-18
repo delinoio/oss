@@ -131,7 +131,8 @@ export type NativeBridgeResponseV1 =
 export type NativeBridgeEventV1 =
   | { readonly version: typeof NativeBridgeVersion; readonly kind: "lifecycle"; readonly state: LifecycleState }
   | { readonly version: typeof NativeBridgeVersion; readonly kind: "auth-callback"; readonly url: string }
-  | { readonly version: typeof NativeBridgeVersion; readonly kind: "shortcut-triggered"; readonly action: ShortcutActionId };
+  | { readonly version: typeof NativeBridgeVersion; readonly kind: "shortcut-triggered"; readonly action: ShortcutActionId }
+  | { readonly version: typeof NativeBridgeVersion; readonly kind: "shortcut-status"; readonly platform: NativeShortcutPlatform; readonly permission: NativeShortcutPermission; readonly bindings: DesktopShortcutBindings; readonly error: ShortcutValidationCode | null };
 
 interface TauriInternals {
   invoke(command: string, args?: Record<string, unknown>): Promise<unknown>;

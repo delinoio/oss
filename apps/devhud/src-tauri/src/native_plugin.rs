@@ -79,6 +79,13 @@ fn restore_main_window<R: Runtime>(app: &AppHandle<R>) {
 }
 
 #[cfg(desktop)]
+fn emit_shortcut_status<R: Runtime>(app: &AppHandle<R>, state: &crate::bridge::NativeBridgeState) {
+    let mut status = crate::bridge::shortcut_status(state, None);
+    status["version"] = serde_json::json!(1);
+    let _ = app.emit("devhud:native-event:v1", status);
+}
+
+#[cfg(desktop)]
 fn install_global_shortcut_listener<R: Runtime>(app: &AppHandle<R>) {
     let app = app.clone();
     std::thread::spawn(move || {
@@ -115,11 +122,13 @@ fn install_global_shortcut_listener<R: Runtime>(app: &AppHandle<R>) {
                 return;
             };
             state.mark_shortcut_listener_failed();
+            emit_shortcut_status(&app, &state);
             tracing::warn!(event = "shortcut_listener_failed", ?error);
             let retry_generation = state.shortcut_listener_retry_generation();
             state.wait_for_shortcut_listener_retry(retry_generation, retry_delay);
             state.clear_shortcut_pressed_keys();
             state.clear_shortcut_listener_failure();
+            emit_shortcut_status(&app, &state);
             retry_delay = retry_delay
                 .saturating_mul(2)
                 .min(std::time::Duration::from_secs(5));

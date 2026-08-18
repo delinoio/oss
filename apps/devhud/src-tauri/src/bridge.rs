@@ -52,7 +52,7 @@ impl Default for NativeBridgeState {
     }
 }
 
-fn shortcut_status(state: &NativeBridgeState, error: Option<ShortcutFailure>) -> Value {
+pub(crate) fn shortcut_status(state: &NativeBridgeState, error: Option<ShortcutFailure>) -> Value {
     let shortcuts = state
         .shortcuts
         .lock()
@@ -75,9 +75,8 @@ fn apply_shortcuts(request: &Value, state: &NativeBridgeState) -> Result<Value, 
     match shortcuts.apply(bindings) {
         Ok(()) => {
             state.shortcuts_ready.store(true, Ordering::SeqCst);
-            Ok(
-                json!({ "kind": "shortcut-status", "platform": shortcuts.platform(), "permission": shortcuts.permission(), "bindings": shortcuts.active(), "error": Value::Null }),
-            )
+            drop(shortcuts);
+            Ok(shortcut_status(state, None))
         }
         Err(error) => Ok(
             json!({ "kind": "shortcut-status", "platform": shortcuts.platform(), "permission": shortcuts.permission(), "bindings": shortcuts.active(), "error": error }),
@@ -142,13 +141,16 @@ fn rollback_staged_shortcuts(state: &NativeBridgeState) -> Value {
 
 fn suspend_shortcuts(state: &NativeBridgeState) -> Value {
     state.shortcuts_ready.store(false, Ordering::SeqCst);
+    state.clear_shortcut_pressed_keys();
     shortcut_status(state, None)
 }
 
 impl NativeBridgeState {
     #[cfg(desktop)]
     pub fn process_shortcut_event(&self, event: NativeKeyEvent) -> Option<ShortcutAction> {
-        if !self.shortcuts_ready.load(Ordering::SeqCst) {
+        if !self.shortcuts_ready.load(Ordering::SeqCst)
+            || self.shortcut_listener_failed.load(Ordering::SeqCst)
+        {
             return None;
         }
         self.shortcuts
@@ -160,6 +162,7 @@ impl NativeBridgeState {
     #[cfg(desktop)]
     pub fn mark_shortcut_listener_failed(&self) {
         self.shortcut_listener_failed.store(true, Ordering::SeqCst);
+        self.clear_shortcut_pressed_keys();
     }
 
     #[cfg(desktop)]
@@ -725,7 +728,7 @@ mod tests {
 
     use super::{
         NativeBridgeState, handle_native_bridge_request, is_auth_callback, routes_to_mobile_plugin,
-        validate_auth_browser_request,
+        shortcut_status, validate_auth_browser_request,
     };
 
     #[test]
@@ -796,6 +799,13 @@ mod tests {
     fn suspending_shortcuts_blocks_matching_until_hydration_applies_bindings() {
         let state = NativeBridgeState::default();
         state.shortcuts_ready.store(true, Ordering::SeqCst);
+        assert_eq!(
+            state.process_shortcut_event(crate::shortcuts::NativeKeyEvent {
+                key: crate::shortcuts::NativeKey::RightPrimary,
+                pressed: true,
+            }),
+            None
+        );
         let suspended =
             handle_native_bridge_request(&json!({ "operation": "shortcuts.suspend" }), &state)
                 .expect("suspend shortcuts");
@@ -803,6 +813,14 @@ mod tests {
         assert_eq!(
             state.process_shortcut_event(crate::shortcuts::NativeKeyEvent {
                 key: crate::shortcuts::NativeKey::Key(crate::shortcuts::ShortcutKey::Digit1),
+                pressed: true,
+            }),
+            None
+        );
+        state.shortcuts_ready.store(true, Ordering::SeqCst);
+        assert_eq!(
+            state.process_shortcut_event(crate::shortcuts::NativeKeyEvent {
+                key: crate::shortcuts::NativeKey::Key(crate::shortcuts::ShortcutKey::KeyK),
                 pressed: true,
             }),
             None
@@ -815,7 +833,19 @@ mod tests {
         use std::{sync::mpsc, time::Duration};
 
         let state = NativeBridgeState::default();
+        state.shortcuts_ready.store(true, Ordering::SeqCst);
         state.mark_shortcut_listener_failed();
+        assert_eq!(
+            shortcut_status(&state, None)["error"],
+            "registration-failed"
+        );
+        assert_eq!(
+            state.process_shortcut_event(crate::shortcuts::NativeKeyEvent {
+                key: crate::shortcuts::NativeKey::Key(crate::shortcuts::ShortcutKey::Digit1),
+                pressed: true,
+            }),
+            None
+        );
         let observed_generation = state.shortcut_listener_retry_generation();
         let waiting_state = state.clone();
         let (ready, retried) = mpsc::channel();
@@ -829,6 +859,7 @@ mod tests {
             .recv_timeout(Duration::from_secs(1))
             .expect("listener retry signal");
         state.clear_shortcut_listener_failure();
+        assert!(shortcut_status(&state, None)["error"].is_null());
         assert!(
             !state
                 .shortcut_listener_failed
