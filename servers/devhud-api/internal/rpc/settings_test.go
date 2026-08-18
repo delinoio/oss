@@ -7,7 +7,8 @@ import (
 
 const canonicalSettingsV1 = `{"agents":[],"appearance":{"language":"system","theme":"system"},"decks":[],"github":{"issueTracker":null,"repositories":[]},"schemaVersion":1,"shortcuts":{"android":{},"desktop":{},"ios":{}},"uploads":{"provider":"official","r2":null},"urlMappings":[]}`
 const canonicalSettingsV2 = `{"agents":[],"appearance":{"language":"system","theme":"system"},"decks":[],"github":{"issueTracker":null,"pendingPatRemovals":[],"profiles":[],"repositories":[]},"schemaVersion":2,"shortcuts":{"android":{},"desktop":{},"ios":{}},"uploads":{"provider":"official","r2":null},"urlMappings":[]}`
-const canonicalSettingsV3 = `{"agents":[],"appearance":{"language":"system","theme":"system"},"decks":[],"github":{"issueTracker":null,"pendingPatRemovals":[],"profiles":[],"repositories":[]},"schemaVersion":3,"shortcuts":{"android":{},"desktop":{},"ios":{}},"uploads":{"provider":"official","r2":null},"urlMappings":[]}`
+const canonicalStructuredDesktopShortcuts = `{"realqa.capture.active-window":{"enabled":true,"key":"digit-2","modifiers":[]},"realqa.capture.all-displays":{"enabled":true,"key":"digit-3","modifiers":[]},"realqa.capture.display":{"enabled":true,"key":"digit-1","modifiers":[]},"realqa.capture.selection":{"enabled":true,"key":"digit-4","modifiers":[]},"realqa.capture.toolbar":{"enabled":true,"key":"digit-5","modifiers":[]},"shell.command-palette":{"enabled":true,"key":"key-k","modifiers":["right-primary"]}}`
+const canonicalSettingsV3 = `{"agents":[],"appearance":{"language":"system","theme":"system"},"decks":[],"github":{"issueTracker":null,"pendingPatRemovals":[],"profiles":[],"repositories":[]},"schemaVersion":3,"shortcuts":{"android":{},"desktop":` + canonicalStructuredDesktopShortcuts + `,"ios":{}},"uploads":{"provider":"official","r2":null},"urlMappings":[]}`
 
 func TestValidateCanonicalJSON(t *testing.T) {
 	for _, value := range [][]byte{
@@ -86,6 +87,20 @@ func TestValidateDevHudSettings(t *testing.T) {
 	ipv6ChromeOrigin := strings.Replace(structuredMapping, `"chromeOrigin":null`, `"chromeOrigin":"http://[::1]:3000"`, 1)
 	if err := validateDevHudSettings([]byte(strings.Replace(withProfile, `"urlMappings":[]`, `"urlMappings":`+ipv6ChromeOrigin, 1)), 3); err != nil {
 		t.Fatalf("IPv6 Chrome origin validation failed: %v", err)
+	}
+	underscoreHostMapping := strings.Replace(structuredMapping, `https://example.com./**`, `https://foo_bar.example/**`, 1)
+	if err := validateDevHudSettings([]byte(strings.Replace(withProfile, `"urlMappings":[]`, `"urlMappings":`+underscoreHostMapping, 1)), 3); err != nil {
+		t.Fatalf("browser-valid underscore mapping host failed validation: %v", err)
+	}
+	underscoreChromeOrigin := strings.Replace(structuredMapping, `"chromeOrigin":null`, `"chromeOrigin":"https://foo_bar.example"`, 1)
+	if err := validateDevHudSettings([]byte(strings.Replace(withProfile, `"urlMappings":[]`, `"urlMappings":`+underscoreChromeOrigin, 1)), 3); err != nil {
+		t.Fatalf("browser-valid underscore Chrome origin failed validation: %v", err)
+	}
+	if err := validateDevHudSettings([]byte(strings.Replace(canonicalSettingsV3, `"desktop":`+canonicalStructuredDesktopShortcuts, `"desktop":{}`, 1)), 3); err == nil {
+		t.Fatal("schema-v3 empty desktop shortcut map validation succeeded")
+	}
+	if err := validateDevHudSettings([]byte(strings.Replace(canonicalSettingsV3, `"desktop":`+canonicalStructuredDesktopShortcuts, `"desktop":{"shell.command-palette":"ControlRight+KeyK"}`, 1)), 3); err == nil {
+		t.Fatal("schema-v3 legacy shortcut action validation succeeded")
 	}
 	for name, test := range map[string]struct {
 		version uint32

@@ -2,12 +2,12 @@ import { createContext, use, useEffect, useEffectEvent, useRef, useState, type K
 import type { Copy } from "./localization";
 import { GitHubSettings, githubErrorCopy } from "./github-settings-ui.tsx";
 import { createGitHubProvider, GitHubErrorCode, GitHubProviderError, readGitHubCredential, type GitHubProvider } from "./github-provider.ts";
-import { NativeBridgeError, NativeBridgeErrorCode, nativeBridge, type NativeBridgeV1 } from "./native-bridge.ts";
+import { NativeBridgeError, NativeBridgeErrorCode, nativeBridge, type NativeBridgeV1, type NativeShortcutPermission } from "./native-bridge.ts";
 import { useIdentitySettings } from "./service-boundary";
 import { browserShell, LanguagePreference, normalizeApiOrigin, ThemePreference, type ExternalLinkTarget, type RuntimeCapabilities } from "./shell";
 import { parseDevHudSettings, type DevHudSettingsV1 } from "./settings-contract";
 import type { SettingsDiffEntry } from "./settings-diff";
-import { ShortcutActionId, ShortcutKey, ShortcutModifier, defaultDesktopShortcutBindings } from "./shortcuts";
+import { inactiveDesktopShortcutBindings, ShortcutActionId, ShortcutKey, ShortcutModifier, ShortcutValidationCode, defaultDesktopShortcutBindings } from "./shortcuts";
 import { findMappingOverlaps, type UrlRepositoryMapping } from "./url-mapping";
 
 interface ApiEditorProps {
@@ -188,9 +188,55 @@ export function SynchronizedSettingsBoundary(props: { readonly copy: Copy; reado
   return mappingDraft === null ? <UrlMappingDraftProvider><SynchronizedSettingsContent {...props} /></UrlMappingDraftProvider> : <SynchronizedSettingsContent {...props} />;
 }
 
-// Shortcut registration is coordinated by the native host. The mapping draft
-// provider remains independent so settings edits do not alter active bindings.
-export function SynchronizedShortcutBoundary({ bridge: _bridge = nativeBridge }: { readonly bridge?: NativeBridgeV1 }) {
+function nativeShortcutsAreActive(status: { readonly error: ShortcutValidationCode | null; readonly permission: NativeShortcutPermission }) {
+  return status.error === null && status.permission === "available";
+}
+
+export function SynchronizedShortcutBoundary({ bridge = nativeBridge }: { readonly bridge?: NativeBridgeV1 }) {
+  const identity = useIdentitySettings();
+  const bindings = identity.settings.shortcuts.desktop;
+  useEffect(() => {
+    let active = true;
+    let unlisten: (() => void) | undefined;
+    void bridge.listen((event) => {
+      if (!active || event.version !== 1 || event.kind !== "shortcut-status") return;
+      identity.setActiveShortcutBindings(nativeShortcutsAreActive(event) && identity.shortcutHydrationReady ? event.bindings : inactiveDesktopShortcutBindings);
+    }).then((value) => {
+      if (!active) { value(); return; }
+      unlisten = value;
+    }).catch(() => {
+      // Status requests remain the fallback for hosts that do not emit events.
+    });
+    return () => { active = false; unlisten?.(); };
+  }, [bridge, identity.setActiveShortcutBindings, identity.shortcutHydrationReady]);
+  useEffect(() => {
+    let active = true;
+    if (!identity.shortcutHydrationReady) {
+      void bridge.request({ operation: "shortcuts.suspend" }).then((response) => {
+        if (active && response.kind === "shortcut-status") identity.setActiveShortcutBindings(inactiveDesktopShortcutBindings);
+      }).catch(() => {
+        // A pre-bridge host cannot suspend matching while hydration is pending.
+      });
+      return () => { active = false; };
+    }
+    void bridge.request({ operation: "shortcuts.apply", bindings }).then(async (response) => {
+      if (!active || response.kind !== "shortcut-status") return;
+      if (nativeShortcutsAreActive(response)) {
+        identity.setActiveShortcutBindings(response.bindings);
+        return;
+      }
+      if (response.error !== ShortcutValidationCode.Reserved) {
+        identity.setActiveShortcutBindings(inactiveDesktopShortcutBindings);
+        return;
+      }
+      identity.setActiveShortcutBindings(response.bindings);
+      const fallback = await bridge.request({ operation: "shortcuts.apply", bindings: response.bindings });
+      if (active && fallback.kind === "shortcut-status" && nativeShortcutsAreActive(fallback)) identity.setActiveShortcutBindings(fallback.bindings);
+    }).catch(() => {
+      // Native shortcut readiness must not make the shell itself fail to render.
+    });
+    return () => { active = false; };
+  }, [bindings, bridge, identity.setActiveShortcutBindings, identity.shortcutHydrationReady]);
   return null;
 }
 
