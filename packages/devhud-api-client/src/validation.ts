@@ -150,8 +150,10 @@ export function validateCrashReport(report: SubmitCrashReportRequest): void {
   if (!diagnosticPlatforms.has(report.clientBuild.platform)) {
     throw new TypeError("clientBuild.platform must be a recognized nonzero value");
   }
-  if (!diagnosticArchitectures.has(report.clientBuild.architecture)) {
-    throw new TypeError("clientBuild.architecture must be a recognized nonzero value");
+  const browser = report.clientBuild.platform === DiagnosticPlatform.BROWSER;
+  if (!diagnosticArchitectures.has(report.clientBuild.architecture)
+      && !(browser && report.clientBuild.architecture === DiagnosticArchitecture.UNSPECIFIED)) {
+    throw new TypeError("clientBuild.architecture must be recognized or unknown only in browsers");
   }
   if (!diagnosticComponents.has(report.component)) {
     throw new TypeError("component must be a recognized nonzero value");
@@ -205,7 +207,6 @@ export function validateCrashReport(report: SubmitCrashReportRequest): void {
   if (!report.clientBuild.appVersion || !report.clientBuild.buildId || !report.clientBuild.osVersion) {
     throw new TypeError("clientBuild version and operating-system fields must not be empty");
   }
-  const browser = report.clientBuild.platform === DiagnosticPlatform.BROWSER;
   if (browser !== (report.clientBuild.tauriRevision.length === 0)) {
     throw new TypeError(
       "clientBuild.tauriRevision must be exact on native hosts and empty in browsers",
@@ -257,6 +258,9 @@ function validateSensitiveText(
   publicAssetBaseUrl?: URL,
 ): void {
   assertWellFormedUnicode(value, field);
+  if (value.includes("\0")) {
+    throw new TypeError(`${field} must not contain NUL bytes`);
+  }
   if (textEncoder.encode(value).byteLength > maximum) {
     throw new RangeError(`${field} must not exceed ${maximum} UTF-8 bytes`);
   }

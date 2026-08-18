@@ -3,7 +3,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { Code, ConnectError } from "@connectrpc/connect";
 import { toJsonString } from "@bufbuild/protobuf";
-import { DiagnosticComponent, DiagnosticPlatform, DiagnosticSeverity, ErrorMetadataSchema, PermissionFailureReason, PermissionFailureSchema, StaticCapability, SubmitCrashReportRequestSchema } from "@delinoio/devhud-api-client";
+import { DiagnosticArchitecture, DiagnosticComponent, DiagnosticPlatform, DiagnosticSeverity, ErrorMetadataSchema, PermissionFailureReason, PermissionFailureSchema, StaticCapability, SubmitCrashReportRequestSchema } from "@delinoio/devhud-api-client";
 import { createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -133,6 +133,7 @@ describe("diagnostics privacy boundary", () => {
     expect(response.snapshot).toMatchObject({
       platform: RuntimePlatform.Browser,
       operatingSystem: "browser",
+      architecture: "unknown",
       tauriRevision: "",
       cefRevision: "",
     });
@@ -144,8 +145,22 @@ describe("diagnostics privacy boundary", () => {
     }, now);
     const prepared = prepareDiagnosticsBundle(event, [event]);
     expect(prepared.request.clientBuild?.platform).toBe(DiagnosticPlatform.BROWSER);
+    expect(prepared.request.clientBuild?.architecture).toBe(DiagnosticArchitecture.UNSPECIFIED);
     expect(prepared.request.clientBuild?.tauriRevision).toBe("");
     expect(prepared.request.clientBuild?.cefRevision).toBe("");
+  });
+
+  it("uses reliable client hints for browser architecture", async () => {
+    Object.defineProperty(navigator, "userAgentData", {
+      configurable: true,
+      value: { getHighEntropyValues: async () => ({ architecture: "arm", bitness: "64" }) },
+    });
+    try {
+      const response = await nativeBridge.request({ operation: "runtime.snapshot" });
+      expect(response).toMatchObject({ kind: "runtime", snapshot: { architecture: "arm64" } });
+    } finally {
+      Reflect.deleteProperty(navigator, "userAgentData");
+    }
   });
 
   it("normalizes persisted events to the closed local schema and drops unsafe classifications", () => {
@@ -250,7 +265,73 @@ describe("diagnostics privacy boundary", () => {
       expect((screen.getByRole("checkbox", { name: messages.en.diagnosticsConsent }) as HTMLInputElement).checked).toBe(false);
       expect((screen.getByRole("button", { name: messages.en.diagnosticsSubmit }) as HTMLButtonElement).disabled).toBe(true);
     });
+
+    it(`does not submit after consent is revoked by ${latestAction}`, async () => {
+      const now = Date.parse("2026-08-17T00:00:00.000Z");
+      appendDiagnosticEvent(localStorage, fixtureEvent(now), now);
+      mockAuthenticatedIdentity([StaticCapability.CRASH_REPORTS]);
+      let resolveVerification!: (value: ArrayBuffer) => void;
+      const pendingVerification = new Promise<ArrayBuffer>((resolve) => { resolveVerification = resolve; });
+      const digest = vi.spyOn(crypto.subtle, "digest")
+        .mockResolvedValueOnce(new Uint8Array(32).buffer)
+        .mockReturnValueOnce(pendingVerification);
+      renderDiagnosticsPanel();
+      fireEvent.click(screen.getByRole("button", { name: messages.en.diagnosticsPreview }));
+      const consent = screen.getByRole("checkbox", { name: messages.en.diagnosticsConsent });
+      fireEvent.click(consent);
+      await waitFor(() => expect((screen.getByRole("button", { name: messages.en.diagnosticsSubmit }) as HTMLButtonElement).disabled).toBe(false));
+
+      fireEvent.click(screen.getByRole("button", { name: messages.en.diagnosticsSubmit }));
+      await waitFor(() => expect(digest).toHaveBeenCalledTimes(2));
+      fireEvent.click(latestAction === "uncheck" ? consent : screen.getByRole("button", { name: messages.en.diagnosticsPreview }));
+      await act(async () => {
+        resolveVerification(new Uint8Array(32).buffer);
+        await pendingVerification;
+      });
+
+      expect(diagnosticsMutation.mutateAsync).not.toHaveBeenCalled();
+    });
   }
+
+  it("clears a completed export result when replacing the preview", async () => {
+    const now = Date.parse("2026-08-17T00:00:00.000Z");
+    appendDiagnosticEvent(localStorage, fixtureEvent(now), now);
+    mockAuthenticatedIdentity([]);
+    const bridge: NativeBridgeV1 = {
+      async request() { return { kind: "diagnostics-export", outcome: "saved" }; },
+      async listen() { return () => {}; },
+    };
+    renderDiagnosticsPanel(bridge);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.diagnosticsPreview }));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.diagnosticsExport }));
+    expect(await screen.findByText(messages.en.diagnosticsExportSaved)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.diagnosticsPreview }));
+
+    expect(screen.queryByText(messages.en.diagnosticsExportSaved)).toBeNull();
+  });
+
+  it("ignores an export completion after replacing the preview", async () => {
+    const now = Date.parse("2026-08-17T00:00:00.000Z");
+    appendDiagnosticEvent(localStorage, fixtureEvent(now), now);
+    mockAuthenticatedIdentity([]);
+    let resolveExport!: (value: { kind: "diagnostics-export"; outcome: "saved" }) => void;
+    const pendingExport = new Promise<{ kind: "diagnostics-export"; outcome: "saved" }>((resolve) => { resolveExport = resolve; });
+    const bridge: NativeBridgeV1 = {
+      async request() { return pendingExport; },
+      async listen() { return () => {}; },
+    };
+    renderDiagnosticsPanel(bridge);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.diagnosticsPreview }));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.diagnosticsExport }));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.diagnosticsPreview }));
+    await act(async () => {
+      resolveExport({ kind: "diagnostics-export", outcome: "saved" });
+      await pendingExport;
+    });
+
+    expect(screen.queryByText(messages.en.diagnosticsExportSaved)).toBeNull();
+  });
 
   it("preserves typed denial errors and their server correlation", async () => {
     const correlationId = "0198c8b0-77d6-7d4a-a7d9-e4d7b11c4402";
@@ -354,10 +435,9 @@ function mockAuthenticatedIdentity(capabilities: readonly StaticCapability[]): v
   } as ReturnType<typeof serviceBoundary.useIdentitySettings>);
 }
 
-function renderDiagnosticsPanel(): void {
-  const bridge: NativeBridgeV1 = {
+function renderDiagnosticsPanel(bridge: NativeBridgeV1 = {
     async request() { return { kind: "ok" }; },
     async listen() { return () => {}; },
-  };
+  }): void {
   render(createElement(DiagnosticsPanel, { copy: messages.en, runtime, bridge, storage: localStorage, online: true }));
 }

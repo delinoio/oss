@@ -8,7 +8,9 @@ CREATE TABLE devhud_crash_reports (
     app_version text NOT NULL CHECK (octet_length(app_version) BETWEEN 1 AND 256),
     build_id text NOT NULL CHECK (octet_length(build_id) BETWEEN 1 AND 256),
     platform smallint NOT NULL CHECK (platform BETWEEN 1 AND 6),
-    architecture smallint NOT NULL CHECK (architecture BETWEEN 1 AND 3),
+    architecture smallint NOT NULL CHECK (
+        architecture BETWEEN 1 AND 3 OR (platform = 6 AND architecture = 0)
+    ),
     os_version text NOT NULL CHECK (octet_length(os_version) BETWEEN 1 AND 256),
     tauri_revision text NOT NULL CHECK (
         (platform BETWEEN 1 AND 5 AND tauri_revision ~ '^[0-9a-f]{40}$')

@@ -163,10 +163,19 @@ func TestValidateCrashReportAcceptsTruthfulBrowserBuilds(t *testing.T) {
 	if err := validateCrashReport(request); err != nil {
 		t.Fatalf("browser build was rejected: %v", err)
 	}
+	request.ClientBuild.Architecture = devhudv1.DiagnosticArchitecture_DIAGNOSTIC_ARCHITECTURE_UNSPECIFIED
+	if err := validateCrashReport(request); err != nil {
+		t.Fatalf("browser build with unknown architecture was rejected: %v", err)
+	}
 
 	request.ClientBuild.TauriRevision = "4af26a3f7f8b692d62cca549bbacd93f5ce90b41"
 	if err := validateCrashReport(request); err == nil {
 		t.Fatal("browser build with a fabricated Tauri revision was accepted")
+	}
+	request = validCrashReportRequest()
+	request.ClientBuild.Architecture = devhudv1.DiagnosticArchitecture_DIAGNOSTIC_ARCHITECTURE_UNSPECIFIED
+	if err := validateCrashReport(request); err == nil {
+		t.Fatal("native build with unknown architecture was accepted")
 	}
 }
 

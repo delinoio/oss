@@ -27,6 +27,7 @@ export function DiagnosticsPanel({ copy, bridge, storage, online }: DiagnosticsP
   const [submitError, setSubmitError] = useState<DevHudClientError | null>(null);
   const [serverCorrelation, setServerCorrelation] = useState<string | null>(null);
   const consentAttempt = useRef(0);
+  const exportAttempt = useRef(0);
   const authenticated = identity.status === "authenticated";
   const blocked = identity.status === "blocked" || identity.status === "deletion-pending";
   const crashReportsSupported = identity.bootstrap?.capabilities.includes(StaticCapability.CRASH_REPORTS) === true;
@@ -36,8 +37,10 @@ export function DiagnosticsPanel({ copy, bridge, storage, online }: DiagnosticsP
     const events = readDiagnosticEvents(storage);
     const latest = events.at(-1);
     consentAttempt.current += 1;
+    exportAttempt.current += 1;
     setConsentSelected(false);
     setConsentDigest(null);
+    setExportState("idle");
     setSubmitState("idle");
     setSubmitError(null);
     setServerCorrelation(null);
@@ -59,20 +62,24 @@ export function DiagnosticsPanel({ copy, bridge, storage, online }: DiagnosticsP
 
   const exportBundle = async () => {
     if (!bundle) return;
+    const attempt = ++exportAttempt.current;
     setExportState("idle");
     try {
       const response = await bridge.request({ operation: "diagnostics.export", suggestedName: `devhud-diagnostics-${bundle.correlationId}.json`, contents: bundle.exportJson });
       if (response.kind !== "diagnostics-export") throw new Error("diagnostics-export-failed");
-      setExportState(response.outcome);
+      if (exportAttempt.current === attempt) setExportState(response.outcome);
     } catch {
-      setExportState("failed");
+      if (exportAttempt.current === attempt) setExportState("failed");
     }
   };
 
   const submitBundle = async () => {
     if (!bundle || submissionBlock !== null || consentDigest === null) return;
+    const attempt = consentAttempt.current;
     setSubmitError(null);
-    if (await diagnosticsConsentDigest(bundle.requestJson) !== consentDigest) {
+    const verifiedDigest = await diagnosticsConsentDigest(bundle.requestJson);
+    if (consentAttempt.current !== attempt) return;
+    if (verifiedDigest !== consentDigest) {
       setConsentSelected(false);
       setConsentDigest(null);
       setSubmitState("failed");

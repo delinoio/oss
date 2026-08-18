@@ -425,10 +425,12 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
     private func purgeSecure(_ args: RequestArgs, _ invoke: Invoke) throws {
         guard let scope = args.scope, ["logout", "account-deletion", "api-change"].contains(scope),
               scope == "logout" || args.profileId != nil else { throw NativeError.invalidArgument }
-        if pendingDiagnosticsExport != nil {
-            finishDiagnosticsExport(saved: false)
-        } else {
-            try? FileManager.default.removeItem(at: diagnosticsTemporaryDirectory())
+        if scope == "logout" || scope == "account-deletion" {
+            if pendingDiagnosticsExport != nil {
+                finishDiagnosticsExport(saved: false)
+            } else {
+                try? FileManager.default.removeItem(at: diagnosticsTemporaryDirectory())
+            }
         }
         for accessGroupKey in [sharedAccessGroupKey, legacyAccessGroupKey] {
             guard purgeSecureGroup(args, accessGroupKey: accessGroupKey) else { rejectStorageFailure(invoke); return }

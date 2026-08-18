@@ -93,6 +93,7 @@ func TestCrashReportPersistenceRetentionIdempotencyAndAccountCascade(t *testing.
 	report.AcceptedAt = now.Add(time.Hour)
 	report.ExpiresAt = report.AcceptedAt.Add(domain.CrashReportRetention)
 	report.Platform = 6
+	report.Architecture = 0
 	report.OSVersion = "browser"
 	report.TauriRevision = ""
 	report.CEFRevision = ""

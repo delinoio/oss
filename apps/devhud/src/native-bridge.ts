@@ -216,12 +216,30 @@ export function isAuthCallback(value: string) {
   }
 }
 
-function browserSnapshot(): RuntimeSnapshot {
+interface NavigatorUserAgentData {
+  getHighEntropyValues(hints: readonly string[]): Promise<{ readonly architecture?: string; readonly bitness?: string }>;
+}
+
+async function browserArchitecture(): Promise<string> {
+  const userAgentData = (navigator as Navigator & { readonly userAgentData?: NavigatorUserAgentData }).userAgentData;
+  if (!userAgentData) return "unknown";
+  try {
+    const hints = await userAgentData.getHighEntropyValues(["architecture", "bitness"]);
+    const architecture = hints.architecture?.trim().toLowerCase();
+    const bitness = hints.bitness?.trim();
+    if (architecture === "arm64" || architecture === "aarch64" || (architecture === "arm" && bitness === "64")) return "arm64";
+    if (architecture === "arm" && bitness === "32") return "arm";
+    if (architecture === "x86_64" || architecture === "amd64" || (architecture === "x86" && bitness === "64")) return "x86_64";
+  } catch { /* Unsupported or denied high-entropy hints leave the browser architecture unknown. */ }
+  return "unknown";
+}
+
+async function browserSnapshot(): Promise<RuntimeSnapshot> {
   return {
     bridgeVersion: NativeBridgeVersion,
     platform: RuntimePlatform.Browser,
     operatingSystem: "browser",
-    architecture: /arm|aarch64/u.test(navigator.userAgent.toLowerCase()) ? "arm64" : "x86_64",
+    architecture: await browserArchitecture(),
     osVersion: "browser",
     appVersion: "0.1.0",
     buildId: "browser-development",
@@ -246,7 +264,7 @@ export const nativeBridge: NativeBridgeV1 = {
     if (request.operation === "auth.open-system-browser") validateAuthenticationBrowserRequest(request);
     if (request.operation === "diagnostics.export") validateDiagnosticsExport(request);
     if (!window.__TAURI_INTERNALS__) {
-      if (request.operation === "runtime.snapshot") return { kind: "runtime", snapshot: browserSnapshot() };
+      if (request.operation === "runtime.snapshot") return { kind: "runtime", snapshot: await browserSnapshot() };
       if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
       if (request.operation === "auth.peek-pending-callback") return { kind: "auth-callback", url: null };
       if (request.operation === "auth.take-pending-callback") return { kind: "auth-callback", url: null };

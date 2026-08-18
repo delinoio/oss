@@ -369,8 +369,9 @@ function isDiagnosticBuild(value: unknown): value is DiagnosticBuild {
   const strings = [build.appVersion, build.buildId, build.osVersion, build.tauriRevision, build.cefRevision];
   if (!strings.every((item) => typeof item === "string" && textEncoder.encode(item).byteLength <= 256 && !forbiddenValue.test(item))) return false;
   if (!build.appVersion || !build.buildId || !build.osVersion) return false;
-  if (!isDiagnosticPlatform(build.platform) || !isDiagnosticArchitecture(build.architecture)) return false;
+  if (!isDiagnosticPlatform(build.platform)) return false;
   const browser = build.platform === DiagnosticPlatform.BROWSER;
+  if (!isDiagnosticArchitecture(build.architecture, browser)) return false;
   if (browser ? build.tauriRevision !== "" : !/^[0-9a-f]{40}$/u.test(build.tauriRevision!)) return false;
   const desktop = build.platform! >= DiagnosticPlatform.MACOS && build.platform! <= DiagnosticPlatform.LINUX;
   return desktop ? build.cefRevision!.length > 0 : build.cefRevision === "";
@@ -380,8 +381,9 @@ function isDiagnosticPlatform(value: unknown): value is DiagnosticPlatform {
   return typeof value === "number" && value >= DiagnosticPlatform.MACOS && value <= DiagnosticPlatform.BROWSER;
 }
 
-function isDiagnosticArchitecture(value: unknown): value is DiagnosticArchitecture {
-  return typeof value === "number" && value >= DiagnosticArchitecture.X86_64 && value <= DiagnosticArchitecture.ARMV7;
+function isDiagnosticArchitecture(value: unknown, browser = false): value is DiagnosticArchitecture {
+  return typeof value === "number" && ((browser && value === DiagnosticArchitecture.UNSPECIFIED)
+    || (value >= DiagnosticArchitecture.X86_64 && value <= DiagnosticArchitecture.ARMV7));
 }
 
 function isDiagnosticComponent(value: unknown): value is DiagnosticComponent {

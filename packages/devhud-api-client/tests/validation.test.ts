@@ -332,6 +332,22 @@ describe("wire validation helpers", () => {
     }
   });
 
+  it("allows unknown architecture only for browser reports", () => {
+    const browserBuild = {
+      ...clientBuild,
+      platform: DiagnosticPlatform.BROWSER,
+      architecture: DiagnosticArchitecture.UNSPECIFIED,
+      osVersion: "browser",
+      tauriRevision: "",
+      cefRevision: "",
+    };
+    expect(() => validateCrashReport({ ...safeCrashReport, clientBuild: browserBuild })).not.toThrow();
+    expect(() => validateCrashReport({
+      ...safeCrashReport,
+      clientBuild: { ...clientBuild, architecture: DiagnosticArchitecture.UNSPECIFIED },
+    })).toThrow(TypeError);
+  });
+
   it("rejects lone surrogates in every crash diagnostic string", () => {
     const loneSurrogate = "\ud800";
     const invalidDiagnostics = [
@@ -609,6 +625,18 @@ describe("wire validation helpers", () => {
       expect(() =>
         validateCrashReport(create(SubmitCrashReportRequestSchema, report)),
       ).toThrow(RangeError);
+    }
+  });
+
+  it("rejects NUL bytes in every persisted crash text group", () => {
+    const invalidDiagnostics = [
+      { ...safeCrashReport, clientBuild: { ...clientBuild, osVersion: "macOS\u000015.0" } },
+      { ...safeCrashReport, redactedSummary: "classified\0summary" },
+      { ...safeCrashReport, redactedStackTrace: "render\0frame" },
+    ];
+
+    for (const report of invalidDiagnostics) {
+      expect(() => validateCrashReport(create(SubmitCrashReportRequestSchema, report))).toThrow(TypeError);
     }
   });
 
