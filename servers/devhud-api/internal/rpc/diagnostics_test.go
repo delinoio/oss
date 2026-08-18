@@ -99,6 +99,49 @@ func TestValidateCrashReportRejectsHostileDiagnosticContent(t *testing.T) {
 	}
 }
 
+func TestSubmitCrashReportRejectsUnlabeledCredentialsBeforePersistence(t *testing.T) {
+	credentials := map[string]string{
+		"AWS access key": "AKIA0123456789ABCDEF",
+		"JWT":            "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiIxMjMifQ.signature",
+		"private key":    "-----BEGIN PRIVATE KEY-----",
+	}
+	locations := map[string]func(*devhudv1.SubmitCrashReportRequest, string){
+		"build": func(request *devhudv1.SubmitCrashReportRequest, credential string) {
+			request.ClientBuild.OsVersion = credential
+		},
+		"stack": func(request *devhudv1.SubmitCrashReportRequest, credential string) {
+			request.RedactedStackTrace = credential
+		},
+		"summary": func(request *devhudv1.SubmitCrashReportRequest, credential string) {
+			request.RedactedSummary = credential
+		},
+	}
+
+	for credentialName, credential := range credentials {
+		for locationName, mutate := range locations {
+			t.Run(credentialName+"/"+locationName, func(t *testing.T) {
+				repositoryCalled := false
+				repository := &serviceRepository{submitCrashReport: func(context.Context, string, domain.CrashReport) (domain.CrashReport, error) {
+					repositoryCalled = true
+					return domain.CrashReport{}, nil
+				}}
+				request := validCrashReportRequest()
+				mutate(request, credential)
+
+				_, err := NewDiagnosticsService(repository, serviceClock{}, testServiceLogger()).SubmitCrashReport(
+					authenticatedContext(), connect.NewRequest(request),
+				)
+				if connect.CodeOf(err) != connect.CodeInvalidArgument {
+					t.Fatalf("credential diagnostic code = %v", connect.CodeOf(err))
+				}
+				if repositoryCalled {
+					t.Fatal("repository was called for a diagnostic containing an unlabeled credential")
+				}
+			})
+		}
+	}
+}
+
 func TestSubmitCrashReportRejectsNULBeforePersistence(t *testing.T) {
 	repositoryCalled := false
 	repository := &serviceRepository{submitCrashReport: func(context.Context, string, domain.CrashReport) (domain.CrashReport, error) {

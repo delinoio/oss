@@ -35,7 +35,10 @@ var (
 	safeErrorCode       = regexp.MustCompile(`^[A-Z][A-Z0-9_]{0,63}$`)
 	forbiddenDiagnostic = []*regexp.Regexp{
 		regexp.MustCompile(`(?i)(authorization|bearer[[:space:]]|access[_ -]?token|refresh[_ -]?token|personal[_ -]?access[_ -]?token|github[_ -]?pat|api[_ -]?key|password|cookie|session[_ -]?id|r2[_ -]?(secret|token|key)|signing[_ -]?(secret|key|value))`),
+		regexp.MustCompile(`-----BEGIN [A-Z ]*PRIVATE KEY-----`),
 		regexp.MustCompile(`\b(ghp|github_pat)_[A-Za-z0-9_]+\b`),
+		regexp.MustCompile(`\beyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b`),
+		regexp.MustCompile(`\bAKIA[0-9A-Z]{16}\b`),
 		regexp.MustCompile(`(?i)(browser[._ -]?dom|outerhtml|innerhtml|screenshot|form[._ -]?value|issue[._ -]?body|agent[._ -]?(prompt|output)|child[._ -]?env|shortcut[._ -]?(key|keystroke))`),
 		regexp.MustCompile(`(?i)https?://[^[:space:]]*#`),
 		regexp.MustCompile(`(?i)(^|[[:space:]([{<"'=:])(?:[a-z]:[\\/][^[:space:]]*|\\\\[^[:space:]]+|~/[^[:space:]]+|/[^/[:space:]][^[:space:]]*)`),
