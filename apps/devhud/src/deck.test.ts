@@ -22,8 +22,17 @@ describe("Deck query and local transitions", () => {
   it("normalizes an emptied builder back to null", () => {
     expect(updateDeckBuilder({ repository: null, author: null, review: null, label: "needs review", state: null }, "label", null)).toBeNull();
   });
-  it("uses rate reset and exponential backoff", () => {
+  it("round-trips labels containing query syntax characters", () => {
+    const quoted = applyDeckBuilder("is:pr", "label", '"foo"');
+    const escaped = applyDeckBuilder("is:pr", "label", "path\\name");
+    expect(quoted).toBe('is:pr label:"\\"foo\\""');
+    expect(escaped).toBe('is:pr label:"path\\\\name"');
+    expect(parseDeckBuilder(quoted)).toMatchObject({ label: '"foo"' });
+    expect(parseDeckBuilder(escaped)).toMatchObject({ label: "path\\name" });
+  });
+  it("uses reset only for an exhausted quota and always honors retry-after", () => {
     expect(Date.parse(nextDeckRefresh(0, 5, 2, { limit: 1, remaining: 0, used: 1, resetAt: "1970-01-01T00:30:00.000Z", resource: "core", retryAfterSeconds: null }))).toBe(1_800_000);
+    expect(Date.parse(nextDeckRefresh(0, 5, 0, { limit: 1, remaining: 1, used: 0, resetAt: "1970-01-01T00:30:00.000Z", resource: "core", retryAfterSeconds: 900 }))).toBe(900_000);
   });
   it("parses every distinct repository qualifier and rejects malformed ones", () => {
     expect(deckRepositories("repo:octo/widgets repo:octo/widgets repo:delinoio/oss is:pr")).toEqual([{ owner: "octo", name: "widgets" }, { owner: "delinoio", name: "oss" }]);

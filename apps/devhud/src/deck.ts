@@ -64,7 +64,7 @@ export function classifyDeckFailure(error: unknown): DeckFailure {
 export function nextDeckRefresh(now: number, refreshMinutes: DevHudSettingsV1["decks"][number]["refreshMinutes"], failures: number, rate: GitHubRate | null): string {
   const exponential = Math.min(30, refreshMinutes * 2 ** Math.min(failures, 5));
   const retryAt = rate?.retryAfterSeconds === null || rate?.retryAfterSeconds === undefined ? 0 : now + rate.retryAfterSeconds * 1000;
-  const resetAt = rate?.resetAt === null || rate?.resetAt === undefined ? 0 : Date.parse(rate.resetAt);
+  const resetAt = rate?.remaining === 0 && rate.resetAt !== null && rate.resetAt !== undefined ? Date.parse(rate.resetAt) : 0;
   return new Date(Math.max(now + exponential * 60_000, retryAt, Number.isFinite(resetAt) ? resetAt : 0)).toISOString();
 }
 
@@ -145,4 +145,4 @@ export function parseDeckBuilder(query: string): DeckBuilder | null {
 }
 
 export function validateDeckQuery(query: string): boolean { return query.trim().length > 0 && hasPositivePullRequestQualifier(query); }
-function quoteQualifier(value: string): string { return /\s/u.test(value) ? `"${value.replaceAll("\\", "\\\\").replaceAll("\"", "\\\"")}"` : value; }
+function quoteQualifier(value: string): string { return /[\s"\\]/u.test(value) ? `"${value.replaceAll("\\", "\\\\").replaceAll("\"", "\\\"")}"` : value; }
