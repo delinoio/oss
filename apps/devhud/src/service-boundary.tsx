@@ -241,9 +241,10 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
 
   async function clearIrrecoverableAccount(): Promise<void> {
     setStatus("error");
-    clearAllContractedLocalData(storage);
+    const localCleanupComplete = clearAllContractedLocalData(storage);
     try {
       await bridge.request({ operation: "secure.purge", scope: "logout" });
+      if (!localCleanupComplete) throw new Error("local-data-cleanup-incomplete");
       sessionRef.current = null;
       setSession(null);
       setAccount(null);

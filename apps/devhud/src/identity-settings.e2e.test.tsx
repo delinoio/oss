@@ -716,7 +716,7 @@ describe("generated Connect identity/settings fixture", () => {
     expect(screen.getByTestId("identity-state").dataset.error).toBe("");
   });
 
-  it("purges an irreversible account when Web Storage removal fails", async () => {
+  it("surfaces incomplete Web Storage cleanup after securely purging an irreversible account", async () => {
     const purges: string[] = [];
     localStorage.setItem("devhud.identity.v1.account.fixture", "sensitive");
     const originalRemoveItem = Storage.prototype.removeItem;
@@ -736,7 +736,9 @@ describe("generated Connect identity/settings fixture", () => {
     fireEvent.click(screen.getByRole("button", { name: messages.en.account }));
 
     await waitFor(() => expect(purges).toEqual(["logout"]));
-    expect(screen.getByRole("button", { name: messages.en.signIn })).toBeTruthy();
+    expect(localStorage.getItem("devhud.identity.v1.account.fixture")).toBe("sensitive");
+    expect(screen.getByRole("alert").textContent).toContain(messages.en.bootstrapFailed);
+    expect(screen.queryByRole("button", { name: messages.en.signIn })).toBeNull();
     expect(screen.queryByRole("button", { name: messages.en.restoreAccount })).toBeNull();
   });
 
