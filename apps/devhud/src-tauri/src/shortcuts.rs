@@ -341,6 +341,7 @@ pub struct ShortcutService<B> {
     right_shift: bool,
     left_alt: bool,
     right_alt: bool,
+    pressed_keys: BTreeSet<ShortcutKey>,
 }
 
 impl<B: NativeShortcutBackend> ShortcutService<B> {
@@ -357,6 +358,7 @@ impl<B: NativeShortcutBackend> ShortcutService<B> {
             right_shift: false,
             left_alt: false,
             right_alt: false,
+            pressed_keys: BTreeSet::new(),
         }
     }
 
@@ -423,6 +425,7 @@ impl<B: NativeShortcutBackend> ShortcutService<B> {
         self.right_shift = false;
         self.left_alt = false;
         self.right_alt = false;
+        self.pressed_keys.clear();
     }
 
     /// Returns only a configured action. Unrelated input has no observable
@@ -461,8 +464,16 @@ impl<B: NativeShortcutBackend> ShortcutService<B> {
                 self.right_alt = event.pressed;
                 return None;
             }
-            NativeKey::Key(key) if event.pressed => key,
-            NativeKey::Key(_) => return None,
+            NativeKey::Key(key) if event.pressed => {
+                if !self.pressed_keys.insert(key) {
+                    return None;
+                }
+                key
+            }
+            NativeKey::Key(key) => {
+                self.pressed_keys.remove(&key);
+                return None;
+            }
         };
         self.active.iter().find_map(|(action, binding)| {
             (binding.enabled && binding.key == key && self.modifiers_match(binding))
@@ -740,6 +751,13 @@ mod tests {
         );
         assert_eq!(
             service.process(NativeKeyEvent {
+                key: NativeKey::Key(ShortcutKey::Digit1),
+                pressed: false
+            }),
+            None
+        );
+        assert_eq!(
+            service.process(NativeKeyEvent {
                 key: NativeKey::LeftControl,
                 pressed: false
             }),
@@ -754,8 +772,22 @@ mod tests {
         );
         assert_eq!(
             service.process(NativeKeyEvent {
+                key: NativeKey::Key(ShortcutKey::Digit1),
+                pressed: false
+            }),
+            None
+        );
+        assert_eq!(
+            service.process(NativeKeyEvent {
                 key: NativeKey::Key(ShortcutKey::KeyK),
                 pressed: true
+            }),
+            None
+        );
+        assert_eq!(
+            service.process(NativeKeyEvent {
+                key: NativeKey::Key(ShortcutKey::KeyK),
+                pressed: false
             }),
             None
         );
@@ -770,6 +802,13 @@ mod tests {
             service.process(NativeKeyEvent {
                 key: NativeKey::Key(ShortcutKey::KeyK),
                 pressed: true
+            }),
+            None
+        );
+        assert_eq!(
+            service.process(NativeKeyEvent {
+                key: NativeKey::Key(ShortcutKey::KeyK),
+                pressed: false
             }),
             None
         );
@@ -804,6 +843,46 @@ mod tests {
     }
 
     #[test]
+    fn emits_each_shortcut_key_once_until_it_is_released() {
+        let mut service = ShortcutService::new(Fake::default());
+        assert_eq!(
+            service.process(NativeKeyEvent {
+                key: NativeKey::RightPrimary,
+                pressed: true,
+            }),
+            None
+        );
+        assert_eq!(
+            service.process(NativeKeyEvent {
+                key: NativeKey::Key(ShortcutKey::KeyK),
+                pressed: true,
+            }),
+            Some(ShortcutAction::ShellCommandPalette)
+        );
+        assert_eq!(
+            service.process(NativeKeyEvent {
+                key: NativeKey::Key(ShortcutKey::KeyK),
+                pressed: true,
+            }),
+            None
+        );
+        assert_eq!(
+            service.process(NativeKeyEvent {
+                key: NativeKey::Key(ShortcutKey::KeyK),
+                pressed: false,
+            }),
+            None
+        );
+        assert_eq!(
+            service.process(NativeKeyEvent {
+                key: NativeKey::Key(ShortcutKey::KeyK),
+                pressed: true,
+            }),
+            Some(ShortcutAction::ShellCommandPalette)
+        );
+    }
+
+    #[test]
     fn rejects_chords_with_an_unconfigured_primary_family_modifier() {
         let mut service = ShortcutService::new(Fake::default());
         for key in [NativeKey::RightPrimary, NativeKey::OtherPrimary] {
@@ -813,6 +892,13 @@ mod tests {
             service.process(NativeKeyEvent {
                 key: NativeKey::Key(ShortcutKey::KeyK),
                 pressed: true,
+            }),
+            None
+        );
+        assert_eq!(
+            service.process(NativeKeyEvent {
+                key: NativeKey::Key(ShortcutKey::KeyK),
+                pressed: false,
             }),
             None
         );
@@ -869,6 +955,13 @@ mod tests {
             );
             assert_eq!(
                 service.process(NativeKeyEvent {
+                    key: NativeKey::Key(ShortcutKey::Digit1),
+                    pressed: false
+                }),
+                None
+            );
+            assert_eq!(
+                service.process(NativeKeyEvent {
                     key: second,
                     pressed: false
                 }),
@@ -880,6 +973,13 @@ mod tests {
                     pressed: true
                 }),
                 Some(ShortcutAction::RealqaCaptureDisplay)
+            );
+            assert_eq!(
+                service.process(NativeKeyEvent {
+                    key: NativeKey::Key(ShortcutKey::Digit1),
+                    pressed: false
+                }),
+                None
             );
         }
     }
@@ -901,6 +1001,13 @@ mod tests {
             service.process(NativeKeyEvent {
                 key: NativeKey::Key(ShortcutKey::Digit1),
                 pressed: true,
+            }),
+            None
+        );
+        assert_eq!(
+            service.process(NativeKeyEvent {
+                key: NativeKey::Key(ShortcutKey::Digit1),
+                pressed: false,
             }),
             None
         );

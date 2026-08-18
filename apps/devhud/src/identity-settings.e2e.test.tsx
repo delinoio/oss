@@ -324,6 +324,27 @@ describe("generated Connect identity/settings fixture", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: messages.en.openPalette }).textContent).toBe(messages.en.shortcutNone));
   });
 
+  it("marks shortcuts unavailable in the browser-only frontend runtime", async () => {
+    const bridge: NativeBridgeV1 = {
+      async request(request) {
+        if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
+        if (request.operation === "secure.read") return { kind: "secure-value", value: null };
+        if (request.operation === "shortcuts.apply") return { kind: "shortcut-status", platform: "unsupported", permission: "unsupported", bindings: request.bindings, error: null };
+        throw new Error(`unexpected bridge operation ${request.operation}`);
+      },
+      async listen() { return () => {}; },
+    };
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    render(<App bridge={bridge} initialRuntime={runtime} />);
+
+    await waitFor(() => expect(screen.getByRole("button", { name: messages.en.openPalette }).textContent).toBe(messages.en.shortcutNone));
+  });
+
   it("suspends native matching while authenticated shortcut hydration is pending", async () => {
     const requests: NativeBridgeRequestV1[] = [];
     const authenticated = authenticatedBridge();

@@ -122,6 +122,10 @@ export function SynchronizedAppearanceBoundary({ onAppearance }: { readonly onAp
   return null;
 }
 
+function nativeShortcutsAreActive(status: { readonly error: ShortcutValidationCode | null; readonly permission: NativeShortcutPermission }) {
+  return status.error === null && status.permission === "available";
+}
+
 export function SynchronizedShortcutBoundary({ bridge = nativeBridge }: { readonly bridge?: NativeBridgeV1 }) {
   const identity = useIdentitySettings();
   const bindings = identity.settings.shortcuts.desktop;
@@ -130,7 +134,7 @@ export function SynchronizedShortcutBoundary({ bridge = nativeBridge }: { readon
     let unlisten: (() => void) | undefined;
     void bridge.listen((event) => {
       if (!active || event.version !== 1 || event.kind !== "shortcut-status") return;
-      identity.setActiveShortcutBindings(event.error === null && identity.shortcutHydrationReady ? event.bindings : inactiveDesktopShortcutBindings);
+      identity.setActiveShortcutBindings(nativeShortcutsAreActive(event) && identity.shortcutHydrationReady ? event.bindings : inactiveDesktopShortcutBindings);
     }).then((value) => {
       if (!active) { value(); return; }
       unlisten = value;
@@ -155,7 +159,7 @@ export function SynchronizedShortcutBoundary({ bridge = nativeBridge }: { readon
     }
     void bridge.request({ operation: "shortcuts.apply", bindings }).then(async (response) => {
       if (!active || response.kind !== "shortcut-status") return;
-      if (response.error === null) {
+      if (nativeShortcutsAreActive(response)) {
         identity.setActiveShortcutBindings(response.bindings);
         return;
       }
@@ -168,7 +172,7 @@ export function SynchronizedShortcutBoundary({ bridge = nativeBridge }: { readon
       // active without overwriting the shared settings snapshot.
       identity.setActiveShortcutBindings(response.bindings);
       const fallback = await bridge.request({ operation: "shortcuts.apply", bindings: response.bindings });
-      if (active && fallback.kind === "shortcut-status" && fallback.error === null) identity.setActiveShortcutBindings(fallback.bindings);
+      if (active && fallback.kind === "shortcut-status" && nativeShortcutsAreActive(fallback)) identity.setActiveShortcutBindings(fallback.bindings);
     }).catch(() => {
       // Shortcut status remains available in Settings; startup hydration must
       // not turn the shell into an error state when native access is pending.
@@ -297,7 +301,7 @@ function ShortcutSettings({ copy, bridge, disabled, capabilities, bindings, onAc
       const result = await bridge.request({ operation: "shortcuts.apply", bindings });
       if (result.kind !== "shortcut-status") return;
       setStatus(result);
-      if (result.error === null) {
+      if (nativeShortcutsAreActive(result)) {
         onActiveBindings(result.bindings);
         return;
       }
@@ -311,7 +315,7 @@ function ShortcutSettings({ copy, bridge, disabled, capabilities, bindings, onAc
       const fallback = await bridge.request({ operation: "shortcuts.apply", bindings: result.bindings });
       if (fallback.kind === "shortcut-status") {
         setStatus(fallback);
-        if (fallback.error === null) onActiveBindings(fallback.bindings);
+        if (nativeShortcutsAreActive(fallback)) onActiveBindings(fallback.bindings);
       }
     } catch (error) {
       setStatus((current) => ({ platform: current?.platform ?? "unsupported", permission: error instanceof NativeBridgeError ? "denied" : current?.permission ?? "unsupported", error: error instanceof NativeBridgeError ? ShortcutValidationCode.PermissionDenied : ShortcutValidationCode.RegistrationFailed }));
