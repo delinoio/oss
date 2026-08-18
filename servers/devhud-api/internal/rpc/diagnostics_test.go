@@ -258,6 +258,18 @@ func TestValidateCrashReportRequiresPinnedCEFRevision(t *testing.T) {
 	}
 }
 
+func TestValidateCrashReportRequiresPinnedTauriRevision(t *testing.T) {
+	request := validCrashReportRequest()
+	request.ClientBuild.TauriRevision = strings.Repeat("a", 40)
+	if err := validateCrashReport(request); err == nil {
+		t.Fatal("arbitrary native Tauri revision was accepted")
+	}
+	request.ClientBuild.TauriRevision = exactTauriRevision
+	if err := validateCrashReport(request); err != nil {
+		t.Fatalf("pinned native Tauri revision was rejected: %v", err)
+	}
+}
+
 func TestValidateCrashReportAcceptsTruthfulBrowserBuilds(t *testing.T) {
 	request := validCrashReportRequest()
 	request.ClientBuild.Platform = devhudv1.DiagnosticPlatform_DIAGNOSTIC_PLATFORM_BROWSER

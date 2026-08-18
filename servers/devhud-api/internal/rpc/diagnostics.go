@@ -29,11 +29,11 @@ const (
 	maximumStackLineBytes      = 512
 	maximumRelatedCorrelations = 32
 	maximumCrashDuration       = uint64(24 * 60 * 60 * 1000)
+	exactTauriRevision         = "4af26a3f7f8b692d62cca549bbacd93f5ce90b41"
 	exactCEFRevision           = "150.0.10+g8042e43+chromium-150.0.7871.101"
 )
 
 var (
-	exactTauriRevision  = regexp.MustCompile(`^[0-9a-f]{40}$`)
 	safeErrorCode       = regexp.MustCompile(`^[A-Z][A-Z0-9_]{0,63}$`)
 	safeSQLState        = regexp.MustCompile(`^[0-9A-Z]{5}$`)
 	forbiddenDiagnostic = []*regexp.Regexp{
@@ -187,8 +187,8 @@ func validateCrashReport(request *devhudv1.SubmitCrashReportRequest) error {
 	if browser != (build.GetTauriRevision() == "") {
 		return errors.New("tauri_revision must be exact on native hosts and empty in browsers")
 	}
-	if !browser && !exactTauriRevision.MatchString(build.GetTauriRevision()) {
-		return errors.New("tauri_revision must be an exact lowercase source revision")
+	if !browser && build.GetTauriRevision() != exactTauriRevision {
+		return errors.New("tauri_revision must be the supported native revision")
 	}
 	desktop := build.GetPlatform() >= devhudv1.DiagnosticPlatform_DIAGNOSTIC_PLATFORM_MACOS && build.GetPlatform() <= devhudv1.DiagnosticPlatform_DIAGNOSTIC_PLATFORM_LINUX
 	if desktop && build.GetCefRevision() != exactCEFRevision || !desktop && build.GetCefRevision() != "" {
