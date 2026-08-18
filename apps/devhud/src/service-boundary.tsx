@@ -19,7 +19,7 @@ import { createIdentitySession, isTerminalAccessTokenError, sessionProfileId, va
 import { clearAllContractedLocalData, clearAuthenticatedOriginData, clearAuthenticatedSettingsCache, clearGuestImportMarker, hasGuestSettings, readAuthenticatedSettingsCache, readCachedIdentityBootstrap, readGuestSettings, writeAuthenticatedSettingsCache, writeCachedIdentityBootstrap, writeGuestSettings } from "./local-data";
 import { SecureSettingKind, type NativeBridgeV1, type RuntimePlatform } from "./native-bridge";
 import { profileRequiresSetup } from "./profile-secrets";
-import { defaultDevHudSettings, decodeVersionedDevHudSettings, encodeDevHudSettings, LegacySettingsSchemaVersion, parseDevHudSettings, SettingsSchemaVersion, type DevHudSettingsV1 } from "./settings-contract";
+import { defaultDevHudSettings, decodeVersionedDevHudSettings, encodeDevHudSettings, GitHubProfilesSettingsSchemaVersion, LegacySettingsSchemaVersion, parseDevHudSettings, SettingsSchemaVersion, type DevHudSettingsV1 } from "./settings-contract";
 import { diffSettings, type SettingsDiffEntry } from "./settings-diff";
 import { getLocalStorage, isValidApiOrigin } from "./shell";
 
@@ -39,6 +39,9 @@ export interface IdentitySettingsValue {
   readonly settings: DevHudSettingsV1;
   readonly revision: bigint;
   readonly readOnly: boolean;
+  readonly shortcutHydrationReady: boolean;
+  readonly activeShortcutBindings: DevHudSettingsV1["shortcuts"]["desktop"];
+  readonly setActiveShortcutBindings: (bindings: DevHudSettingsV1["shortcuts"]["desktop"]) => void;
   readonly offline: boolean;
   readonly error: string | null;
   readonly accountError: DevHudClientError | null;
@@ -146,6 +149,8 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   const [networkReady, setNetworkReady] = useState(false);
   const [identityReady, setIdentityReady] = useState(false);
   const [settingsReady, setSettingsReady] = useState(false);
+  const [shortcutSettingsReady, setShortcutSettingsReady] = useState(false);
+  const [activeShortcutBindings, setActiveShortcutBindings] = useState(() => settings.shortcuts.desktop);
   const [bootstrapAttempt, setBootstrapAttempt] = useState(0);
   const [signInPending, setSignInPending] = useState(false);
   const [identityResetAvailable, setIdentityResetAvailable] = useState(false);
@@ -414,10 +419,19 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   }, [accountQuery.error]);
 
   useEffect(() => {
+    if (status === "blocked") {
+      if (!settingsReady) {
+        const cached = readAuthenticatedSettingsCache(storage, apiOrigin);
+        if (cached) { applySettings(cached.settings); applyRevision(cached.revision); }
+      }
+      setShortcutSettingsReady(true);
+      return;
+    }
     if (status !== "authenticated") return;
     if (!online) {
-      setSettingsReady(false);
       const cached = readAuthenticatedSettingsCache(storage, apiOrigin);
+      setSettingsReady(false);
+      setShortcutSettingsReady((ready) => ready || settingsReady || cached !== null);
       if (cached) { applySettings(cached.settings); applyRevision(cached.revision); }
       return;
     }
@@ -433,6 +447,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     setError((current) => current === "settings-contract-invalid" ? null : current);
     setSettingsError(null);
     setSettingsReady(true);
+    setShortcutSettingsReady(true);
     applyRevision(currentRevision);
     if (hasGuestSettings(storage)) {
       const local = readGuestSettings(storage);
@@ -442,7 +457,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       applySettings(server);
       writeAuthenticatedSettingsCache(storage, apiOrigin, { settings: server, revision: currentRevision, cachedAt: new Date().toISOString() });
     }
-  }, [apiOrigin, online, settingsQuery.data, status, storage]);
+  }, [apiOrigin, online, settingsQuery.data, settingsReady, status, storage]);
 
   useEffect(() => {
     if (status !== "authenticated" || !online || !settingsQuery.error) return;
@@ -454,6 +469,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       applySettings(cached.settings);
       applyRevision(cached.revision);
     }
+    setShortcutSettingsReady(cached !== null);
     if (mapped.kind === "unauthenticated") {
       void clearInvalidSession().catch((reason) => setError(safeError(reason)));
     } else if (mapped.kind === "permissionDenied") {
@@ -465,6 +481,9 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     }
   }, [apiOrigin, online, settingsQuery.error, status, storage]);
 
+  useEffect(() => {
+    if (status !== "authenticated" && status !== "blocked") setShortcutSettingsReady(false);
+  }, [status]);
   async function replaceAt(local: DevHudSettingsV1, expectedRevision: bigint): Promise<boolean> {
     if (!online) throw new Error("offline-read-only");
     setSettingsError(null);
@@ -557,6 +576,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   const localSettingsWritable = identityReady && (status === "guest" || status === "signed-out");
   const settingsReadOnly = replaceMutation.isPending || (!localSettingsWritable
     && (status !== "authenticated" || !online || !settingsReady || importDiff !== null || conflict !== null));
+  const shortcutHydrationReady = identityReady && ((status !== "authenticated" && status !== "blocked") || (shortcutSettingsReady && importDiff === null));
   const githubPatSettingsReady = identityReady && !settingsReadOnly && conflict === null;
 
   const replaceSettings: IdentitySettingsValue["replaceSettings"] = async (update) => {
@@ -629,6 +649,9 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     settings,
     revision,
     readOnly: settingsReadOnly,
+    shortcutHydrationReady,
+    activeShortcutBindings,
+    setActiveShortcutBindings,
     offline: !online,
     error,
     accountError,
@@ -764,7 +787,7 @@ class SettingsSnapshotError extends TypeError {}
 
 function validatedSettingsSnapshot(snapshot: { readonly schemaVersion: number; readonly canonicalJson: Uint8Array; readonly revision: bigint } | undefined): ValidatedSettingsSnapshot {
   if (!snapshot) return { settings: defaultDevHudSettings, revision: 0n };
-  if (snapshot.schemaVersion !== LegacySettingsSchemaVersion && snapshot.schemaVersion !== SettingsSchemaVersion) throw new SettingsSnapshotError("unsupported settings schema version");
+  if (snapshot.schemaVersion !== LegacySettingsSchemaVersion && snapshot.schemaVersion !== GitHubProfilesSettingsSchemaVersion && snapshot.schemaVersion !== SettingsSchemaVersion) throw new SettingsSnapshotError("unsupported settings schema version");
   try {
     return { settings: decodeVersionedDevHudSettings(snapshot.canonicalJson, snapshot.schemaVersion), revision: snapshot.revision };
   } catch (reason) {
