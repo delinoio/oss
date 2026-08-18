@@ -2373,6 +2373,7 @@ dependencies = [
  "dirs 6.0.0",
  "gtk",
  "keyring",
+ "os_info",
  "plist",
  "rfd",
  "serde",

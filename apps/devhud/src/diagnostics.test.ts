@@ -58,6 +58,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe("diagnostics privacy boundary", () => {
@@ -278,6 +279,17 @@ describe("diagnostics privacy boundary", () => {
     expect(diagnosticsSubmissionBlock("authenticated", true, true, true)).toBeNull();
   });
 
+  it("announces an empty event store only after preview is requested", () => {
+    mockAuthenticatedIdentity([]);
+    renderDiagnosticsPanel();
+
+    expect(screen.queryByText(messages.en.diagnosticsNoEvents)).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.diagnosticsPreview }));
+
+    expect(screen.getByText(messages.en.diagnosticsNoEvents)).toBeTruthy();
+  });
+
   it("keeps preview and export available without the crash-report capability", () => {
     const now = Date.parse("2026-08-17T00:00:00.000Z");
     appendDiagnosticEvent(localStorage, fixtureEvent(now), now);
@@ -356,6 +368,22 @@ describe("diagnostics privacy boundary", () => {
 
     fireEvent.click(screen.getByRole("button", { name: messages.en.diagnosticsPreview }));
 
+    expect(screen.queryByText(messages.en.diagnosticsExportSaved)).toBeNull();
+  });
+
+  it("renders an unconfirmed browser download as initiated instead of saved", async () => {
+    const now = Date.parse("2026-08-17T00:00:00.000Z");
+    appendDiagnosticEvent(localStorage, fixtureEvent(now), now);
+    mockAuthenticatedIdentity([]);
+    const bridge: NativeBridgeV1 = {
+      async request() { return { kind: "diagnostics-export", outcome: "initiated" }; },
+      async listen() { return () => {}; },
+    };
+    renderDiagnosticsPanel(bridge);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.diagnosticsPreview }));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.diagnosticsExport }));
+
+    expect(await screen.findByText(messages.en.diagnosticsExportInitiated)).toBeTruthy();
     expect(screen.queryByText(messages.en.diagnosticsExportSaved)).toBeNull();
   });
 
@@ -460,6 +488,25 @@ describe("diagnostics privacy boundary", () => {
     window.showSaveFilePicker = async () => { throw new DOMException("cancelled", "AbortError"); };
     await expect(nativeBridge.request({ operation: "diagnostics.export", suggestedName: "devhud-diagnostics-0198c8b0-77d6-7d4a-a7d9-e4d7b11c4400.json", contents: "{}" }))
       .resolves.toEqual({ kind: "diagnostics-export", outcome: "cancelled" });
+  });
+
+  it("reports a fallback browser download as initiated because completion is unobservable", async () => {
+    const NativeUrl = URL;
+    class StubUrl extends NativeUrl {}
+    const createObjectURL = vi.fn(() => "blob:diagnostics");
+    const revokeObjectURL = vi.fn();
+    Object.defineProperties(StubUrl, {
+      createObjectURL: { value: createObjectURL },
+      revokeObjectURL: { value: revokeObjectURL },
+    });
+    vi.stubGlobal("URL", StubUrl);
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+
+    await expect(nativeBridge.request({ operation: "diagnostics.export", suggestedName: "devhud-diagnostics-0198c8b0-77d6-7d4a-a7d9-e4d7b11c4400.json", contents: "{}" }))
+      .resolves.toEqual({ kind: "diagnostics-export", outcome: "initiated" });
+    expect(click).toHaveBeenCalledOnce();
+    expect(createObjectURL).toHaveBeenCalledOnce();
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:diagnostics");
   });
 
   it("writes the exact redacted bundle to the destination selected by the user", async () => {

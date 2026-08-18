@@ -30,16 +30,19 @@ export function assertAndroidBackupExclusions({ androidManifest, androidBackupRu
     '<exclude domain="sharedpref" path="devhud-secure-settings-v1.xml" />',
     '<exclude domain="sharedpref" path="devhud-diagnostics-cleanup-v1.xml" />',
   ];
+  const webViewExclusion = '<exclude domain="root" path="app_webview/" />';
   assert(androidManifest.includes('android:fullBackupContent="@xml/backup_rules"'), "Android full-backup policy is missing");
   assert(androidManifest.includes('android:dataExtractionRules="@xml/data_extraction_rules"'), "Android data-extraction policy is missing");
   for (const exclusion of privatePreferenceExclusions) {
     assert(androidBackupRules.includes(exclusion), `Android full-backup exclusion changed: ${exclusion}`);
   }
+  assert(androidBackupRules.includes(webViewExclusion), "Android full-backup WebView exclusion changed");
   for (const section of ["cloud-backup", "device-transfer"]) {
     const content = androidDataExtractionRules.match(new RegExp(`<${section}>([\\s\\S]*?)<\\/${section}>`, "u"))?.[1] ?? "";
     for (const exclusion of privatePreferenceExclusions) {
       assert(content.includes(exclusion), `Android ${section} exclusion changed: ${exclusion}`);
     }
+    assert(content.includes(webViewExclusion), `Android ${section} WebView exclusion changed`);
   }
 }
 

@@ -373,6 +373,10 @@ fn runtime_cef_revision() -> &'static str {
     CEF_REVISION
 }
 
+fn runtime_os_version() -> String {
+    os_info::get().version().to_string()
+}
+
 fn runtime_snapshot() -> Value {
     let mobile = cfg!(any(target_os = "android", target_os = "ios"));
     json!({
@@ -382,7 +386,7 @@ fn runtime_snapshot() -> Value {
             "platform": runtime_platform(),
             "operatingSystem": runtime_operating_system(),
             "architecture": std::env::consts::ARCH,
-            "osVersion": std::env::consts::OS,
+            "osVersion": runtime_os_version(),
             "appVersion": env!("CARGO_PKG_VERSION"),
             "buildId": option_env!("DEVHUD_BUILD_ID").unwrap_or(env!("CARGO_PKG_VERSION")),
             "tauriRevision": TAURI_REVISION,
@@ -650,8 +654,8 @@ mod tests {
 
     use super::{
         NativeBridgeState, handle_native_bridge_request, is_auth_callback,
-        purge_clears_diagnostics, routes_to_mobile_plugin, validate_auth_browser_request,
-        validate_diagnostics_export,
+        purge_clears_diagnostics, routes_to_mobile_plugin, runtime_os_version,
+        validate_auth_browser_request, validate_diagnostics_export,
     };
 
     #[test]
@@ -710,6 +714,8 @@ mod tests {
             snapshot["snapshot"]["tauriRevision"],
             "4af26a3f7f8b692d62cca549bbacd93f5ce90b41"
         );
+        assert_eq!(snapshot["snapshot"]["osVersion"], runtime_os_version());
+        assert_ne!(snapshot["snapshot"]["osVersion"], std::env::consts::OS);
         if cfg!(any(target_os = "android", target_os = "ios")) {
             assert_eq!(snapshot["snapshot"]["cefRevision"], "");
         } else {

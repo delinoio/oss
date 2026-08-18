@@ -24,7 +24,7 @@ test("mobile policy validates every field in every immutable target tuple", () =
   assert.throws(() => assertMobileTargets(duplicate), /target IDs must be unique/u);
 });
 
-test("mobile policy excludes encrypted preferences from every Android backup path", () => {
+test("mobile policy excludes private preferences and System WebView storage from every Android backup path", () => {
   const policies = {
     androidManifest: readFileSync(join(appRoot, "mobile/overrides/android/app/src/main/AndroidManifest.xml"), "utf8"),
     androidBackupRules: readFileSync(join(appRoot, "mobile/overrides/android/app/src/main/res/xml/backup_rules.xml"), "utf8"),
@@ -33,6 +33,9 @@ test("mobile policy excludes encrypted preferences from every Android backup pat
   assert.doesNotThrow(() => assertAndroidBackupExclusions(policies));
   assert.throws(() => assertAndroidBackupExclusions({ ...policies, androidDataExtractionRules: policies.androidDataExtractionRules.replace("devhud-secure-settings-v1.xml", "other.xml") }), /cloud-backup exclusion/u);
   assert.throws(() => assertAndroidBackupExclusions({ ...policies, androidBackupRules: policies.androidBackupRules.replace("devhud-diagnostics-cleanup-v1.xml", "other.xml") }), /full-backup exclusion/u);
+  assert.throws(() => assertAndroidBackupExclusions({ ...policies, androidBackupRules: policies.androidBackupRules.replace('path="app_webview/"', 'path="other/"') }), /full-backup WebView exclusion/u);
+  assert.throws(() => assertAndroidBackupExclusions({ ...policies, androidDataExtractionRules: policies.androidDataExtractionRules.replace('path="app_webview/"', 'path="other/"') }), /cloud-backup WebView exclusion/u);
+  assert.throws(() => assertAndroidBackupExclusions({ ...policies, androidDataExtractionRules: policies.androidDataExtractionRules.replace(/(<device-transfer>[\s\S]*?)path="app_webview\/"/u, '$1path="other/"') }), /device-transfer WebView exclusion/u);
 });
 
 test("mobile policy requires lifecycle-owned Android persistence and native platform safeguards", () => {

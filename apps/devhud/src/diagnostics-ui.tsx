@@ -14,12 +14,13 @@ interface DiagnosticsPanelProps {
   readonly online: boolean;
 }
 
-type ExportState = "idle" | "saved" | "cancelled" | "failed";
+type ExportState = "idle" | "saved" | "cancelled" | "initiated" | "failed";
 
 export function DiagnosticsPanel({ copy, bridge, storage, online }: DiagnosticsPanelProps) {
   const identity = useIdentitySettings();
   const submit = useMutation(DiagnosticsQuery.submitCrashReport);
   const [bundle, setBundle] = useState<PreparedDiagnosticsBundle | null>(null);
+  const [previewRequested, setPreviewRequested] = useState(false);
   const [consentSelected, setConsentSelected] = useState(false);
   const [consentDigest, setConsentDigest] = useState<string | null>(null);
   const [exportState, setExportState] = useState<ExportState>("idle");
@@ -44,6 +45,7 @@ export function DiagnosticsPanel({ copy, bridge, storage, online }: DiagnosticsP
     setSubmitState("idle");
     setSubmitError(null);
     setServerCorrelation(null);
+    setPreviewRequested(true);
     setBundle(latest ? prepareDiagnosticsBundle(latest, events) : null);
   };
 
@@ -104,7 +106,7 @@ export function DiagnosticsPanel({ copy, bridge, storage, online }: DiagnosticsP
   return <section className="diagnostics-panel">
     <p>{copy.diagnosticsRetention}</p>
     <button className="primary" onClick={preview}>{copy.diagnosticsPreview}</button>
-    {bundle === null ? <p role="status">{copy.diagnosticsNoEvents}</p> : <>
+    {bundle === null ? previewRequested && <p role="status">{copy.diagnosticsNoEvents}</p> : <>
       <p>{copy.diagnosticsExactPayload}</p>
       <pre className="diagnostics-preview" data-testid="diagnostics-preview">{bundle.requestJson}</pre>
       <p>{copy.diagnosticsExactExport}</p>

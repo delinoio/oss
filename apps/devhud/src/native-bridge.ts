@@ -120,7 +120,7 @@ export type NativeBridgeResponseV1 =
   | { readonly kind: "notification-permission"; readonly permission: NotificationPermission }
   | { readonly kind: "update-status"; readonly store: "app-store" | "play-store"; readonly installedVersion: string; readonly configured: boolean }
   | { readonly kind: "unsupported"; readonly feature: "widgets" }
-  | { readonly kind: "diagnostics-export"; readonly outcome: "saved" | "cancelled" }
+  | { readonly kind: "diagnostics-export"; readonly outcome: "saved" | "cancelled" | "initiated" }
   | { readonly kind: "ok" };
 
 export type NativeBridgeEventV1 =
@@ -332,7 +332,7 @@ async function exportDiagnosticsInBrowser(request: { readonly suggestedName: str
   } finally {
     URL.revokeObjectURL(url);
   }
-  return { kind: "diagnostics-export", outcome: "saved" };
+  return { kind: "diagnostics-export", outcome: "initiated" };
 }
 import { invoke as invokeTauri } from "@tauri-apps/api/core";
 import { listen as listenTauri } from "@tauri-apps/api/event";
