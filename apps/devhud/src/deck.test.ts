@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { applyDeckBuilder, classifyDeckFailure, deckTransitionKeys, nextDeckRefresh, parseDeckBuilder, readDeckCache, updateDeckBuilder, validateDeckQuery } from "./deck.ts";
 import { GitHubErrorCode, GitHubProviderError } from "./github-provider.ts";
+import { NativeBridgeError, NativeBridgeErrorCode } from "./native-bridge.ts";
 import { deckRepositories } from "./settings-contract.ts";
 
 describe("Deck query and local transitions", () => {
@@ -60,8 +61,9 @@ describe("Deck query and local transitions", () => {
     const closedAgain = { ...closed, updatedAt: "2026-01-01T00:03:00Z" };
     expect(deckTransitionKeys([base], [closed])[0]?.key).not.toBe(deckTransitionKeys([reopened], [closedAgain])[0]?.key);
   });
-  it("does not collapse token, permission, query, network, and rate failures", () => {
+  it("does not collapse credential, secure-storage, permission, query, network, and rate failures", () => {
     expect(classifyDeckFailure(new GitHubProviderError(GitHubErrorCode.MissingToken, "validate-credential"))).toBe("token");
+    expect(classifyDeckFailure(new NativeBridgeError(NativeBridgeErrorCode.StorageFailure))).toBe("secure-storage");
     expect(classifyDeckFailure(new GitHubProviderError(GitHubErrorCode.MissingScope, "enrich-pull-requests"))).toBe("permission");
     expect(classifyDeckFailure(new GitHubProviderError(GitHubErrorCode.InvalidQuery, "enrich-pull-requests"))).toBe("query");
     expect(classifyDeckFailure(new GitHubProviderError(GitHubErrorCode.NetworkFailure, "search-pull-requests"))).toBe("network");

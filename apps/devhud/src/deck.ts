@@ -1,4 +1,5 @@
 import { GitHubErrorCode, GitHubProviderError, type GitHubDeckPullRequest, type GitHubRate } from "./github-provider.ts";
+import { NativeBridgeError, NativeBridgeErrorCode } from "./native-bridge.ts";
 import { deckBuilderProjection, deckBuilderToken, hasPositivePullRequestQualifier, type DeckBuilder, type DevHudSettingsV1 } from "./settings-contract.ts";
 
 export const DeckCacheVersion = 2 as const;
@@ -18,7 +19,7 @@ export interface DeckCache {
   readonly transitionKeys: readonly string[];
 }
 
-export type DeckFailure = "token" | "permission" | "query" | "network" | "rate-limit" | "unknown";
+export type DeckFailure = "token" | "secure-storage" | "permission" | "query" | "network" | "rate-limit" | "unknown";
 
 export function deckCacheKey(scope: string, deckId: string): string { return `devhud.deck.v${DeckCacheVersion}.${scope}.${deckId}`; }
 
@@ -47,6 +48,7 @@ export function clearDeckCaches(storage: Pick<Storage, "key" | "length" | "remov
 }
 
 export function classifyDeckFailure(error: unknown): DeckFailure {
+  if (error instanceof NativeBridgeError && error.code === NativeBridgeErrorCode.StorageFailure) return "secure-storage";
   if (!(error instanceof GitHubProviderError)) return "unknown";
   switch (error.code) {
     case GitHubErrorCode.MissingToken:

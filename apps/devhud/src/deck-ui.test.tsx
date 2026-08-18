@@ -7,7 +7,7 @@ import { DeckPollingBoundary, DeckSurface } from "./deck-ui.tsx";
 import { DeckCacheVersion, deckCacheKey, writeDeckCache } from "./deck.ts";
 import { createGitHubProvider } from "./github-provider.ts";
 import { messages } from "./localization.ts";
-import type { NativeBridgeRequestV1, NativeBridgeResponseV1, NativeBridgeV1 } from "./native-bridge.ts";
+import { NativeBridgeError, NativeBridgeErrorCode, type NativeBridgeRequestV1, type NativeBridgeResponseV1, type NativeBridgeV1 } from "./native-bridge.ts";
 import type { IdentitySettingsValue } from "./service-boundary.tsx";
 import { defaultDevHudSettings, parseDevHudSettings } from "./settings-contract.ts";
 
@@ -18,6 +18,7 @@ vi.mock("./service-boundary.tsx", () => ({ useIdentitySettings: () => identity }
 const profile = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", name: "Work", kind: "fine-grained" as const };
 const deck = { id: "018f47a2-7b3c-7def-8abc-1234567890ac", name: "Deck", profileRef: profile.id, query: "repo:octo/widgets is:pr label:\"needs review\"", builder: { repository: "octo/widgets", author: null, review: null, label: "needs review", state: null }, display: { groupBy: "none" as const, showDrafts: true }, refreshMinutes: 5 as const, notifications: [] };
 const settings = parseDevHudSettings({ ...defaultDevHudSettings, github: { ...defaultDevHudSettings.github, profiles: [profile] }, decks: [deck] });
+const pullRequest = { nodeId: "PR_kwDOA", number: 1, title: "Keep this result", url: "https://github.com/octo/widgets/pull/1", draft: false, repository: { owner: "octo", name: "widgets" }, author: "octocat", state: "open" as const, reviewDecision: null, requestedReviewers: [], checkRollup: { state: "PENDING", contexts: [] }, mergeable: "MERGEABLE", labels: [], updatedAt: "2026-08-18T00:00:00.000Z" };
 
 function identityWith(overrides: Partial<IdentitySettingsValue> = {}): IdentitySettingsValue {
   return {
@@ -42,6 +43,85 @@ beforeEach(() => { localStorage.clear(); identity = identityWith(); });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 describe("Deck surface", () => {
+  it("renders an unavailable state instead of empty results when an uncached Deck is offline", () => {
+    const bridge = bridgeWith(async () => { throw new Error("unexpected request"); });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online={false} provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    expect(screen.getByRole("heading", { name: messages.en.offlineTitle })).toBeTruthy();
+    expect(screen.queryByText(messages.en.empty)).toBeNull();
+  });
+
+  it("surfaces a failed Deck deletion and leaves its action available for retry", async () => {
+    const replaceSettings: IdentitySettingsValue["replaceSettings"] = vi.fn(async () => { throw new Error("offline"); });
+    identity = identityWith({ replaceSettings });
+    const bridge = bridgeWith(async () => ({ kind: "ok" as const }));
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckDelete }));
+
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toBe(messages.en.deckDeleteFailed));
+    expect(screen.getByRole("button", { name: messages.en.deckDelete })).not.toHaveProperty("disabled", true);
+  });
+
+  it("retains hydrated cached results when the first refresh fails", async () => {
+    let resolveScope: (scopeId: string) => void = () => {};
+    const scope = new Promise<string>((resolve) => { resolveScope = resolve; });
+    const cacheScope = `origin.scope.${profile.id}`;
+    writeDeckCache(localStorage, cacheScope, { version: DeckCacheVersion, deckId: deck.id, query: deck.query, queryEtag: "cached-etag", results: [pullRequest], lastSuccessfulAt: "2026-08-17T00:00:00.000Z", rate: null, failures: 0, nextRefreshAt: null, transitionKeys: [] });
+    identity = identityWith({ githubPatScopeId: scope });
+    let rejectSearch: (error: Error) => void = () => {};
+    const searchPullRequests = vi.fn(() => new Promise<never>((_resolve, reject) => { rejectSearch = reject; }));
+    const bridge = bridgeWith(async (request) => request.operation === "secure.read" ? { kind: "secure-value", value: "token" } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active online provider={{ ...provider(), searchPullRequests }}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    resolveScope("origin.scope");
+    await waitFor(() => expect(searchPullRequests).toHaveBeenCalledWith(expect.anything(), deck.query, { etag: "cached-etag" }));
+    rejectSearch(new Error("offline"));
+
+    await waitFor(() => {
+      const cache = JSON.parse(localStorage.getItem(deckCacheKey(cacheScope, deck.id)) ?? "null") as { results: unknown; lastSuccessfulAt: string | null };
+      expect(cache.results).toEqual([pullRequest]);
+      expect(cache.lastSuccessfulAt).toBe("2026-08-17T00:00:00.000Z");
+    });
+  });
+
+  it("persists a delivered transition key after polling is suspended", async () => {
+    const notificationsDeck = { ...deck, notifications: ["review" as const] };
+    const cacheScope = `origin.scope.${profile.id}`;
+    writeDeckCache(localStorage, cacheScope, { version: DeckCacheVersion, deckId: deck.id, query: deck.query, queryEtag: null, results: [pullRequest], lastSuccessfulAt: "2026-08-17T00:00:00.000Z", rate: null, failures: 0, nextRefreshAt: null, transitionKeys: [] });
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [notificationsDeck] }) });
+    let completeNotification: () => void = () => {};
+    const request = vi.fn<(request: NativeBridgeRequestV1) => Promise<NativeBridgeResponseV1>>(async (request) => {
+      if (request.operation === "secure.read") return { kind: "secure-value", value: "token" };
+      if (request.operation === "notifications.publish-deck-change") return new Promise<NativeBridgeResponseV1>((resolve) => { completeNotification = () => resolve({ kind: "ok" }); });
+      return { kind: "ok" };
+    });
+    const bridge = bridgeWith(request);
+    const updated = { ...pullRequest, reviewDecision: "approved" as const, updatedAt: "2026-08-18T00:01:00.000Z" };
+    const providerWithTransition = { ...provider(), searchPullRequests: vi.fn(async () => ({ items: [{ nodeId: pullRequest.nodeId, number: pullRequest.number, title: pullRequest.title, url: pullRequest.url, draft: pullRequest.draft, repository: pullRequest.repository }], nextPage: null, notModified: false, metadata: { etag: null, rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } } })), enrichPullRequests: vi.fn(async () => ({ items: [updated], metadata: { etag: null, rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } } })) };
+    const view = render(<DeckPollingBoundary bridge={bridge} active online provider={providerWithTransition}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+    await waitFor(() => expect(request).toHaveBeenCalledWith(expect.objectContaining({ operation: "notifications.publish-deck-change" })));
+
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={providerWithTransition}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    completeNotification();
+
+    await waitFor(() => {
+      const cache = JSON.parse(localStorage.getItem(deckCacheKey(cacheScope, deck.id)) ?? "null") as { transitionKeys: readonly string[] };
+      expect(cache.transitionKeys).toEqual([`${pullRequest.nodeId}:review:approved:${updated.updatedAt}`]);
+    });
+  });
+
+  it("renders the secure-storage diagnostic when reading a Deck credential fails", async () => {
+    const bridge = bridgeWith(async (request) => {
+      if (request.operation === "secure.read") throw new NativeBridgeError(NativeBridgeErrorCode.StorageFailure);
+      return { kind: "ok" };
+    });
+    render(<DeckPollingBoundary bridge={bridge} active online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toBe(messages.en.githubErrorSecureStorage));
+  });
+
   it("keeps a missing deep link visible until the user returns to the Deck list", () => {
     const dismiss = vi.fn();
     const bridge = bridgeWith(async () => { throw new Error("unexpected request"); });

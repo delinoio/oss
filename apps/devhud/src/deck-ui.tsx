@@ -113,18 +113,22 @@ export function DeckPollingBoundary({ bridge, active, online, provider: supplied
     const currentDeck = decks.current.find((deck) => deck.id === deckId);
     if (currentDeck === undefined || !deckAccessAllowed.current || !onlineRef.current || !activeRef.current) return;
     if (loading.current.has(deckId)) { queued.current.add(deckId); return; }
-    const currentCache = caches.current.get(deckId) ?? null;
-    if (!manual && currentCache?.nextRefreshAt !== null && currentCache?.nextRefreshAt !== undefined && Date.parse(currentCache.nextRefreshAt) > Date.now()) return;
     const signature = `${currentDeck.name}\u0000${currentDeck.profileRef}\u0000${currentDeck.query}\u0000${currentDeck.refreshMinutes}\u0000${currentDeck.notifications.join(",")}`;
     const isCurrentDeck = () => deckAccessAllowed.current && decks.current.some((deck) => deck.id === deckId && `${deck.name}\u0000${deck.profileRef}\u0000${deck.query}\u0000${deck.refreshMinutes}\u0000${deck.notifications.join(",")}` === signature);
     const canContinue = () => isCurrentDeck() && activeRef.current && onlineRef.current;
     loading.current.add(deckId);
     setDeckState(deckId, (current) => ({ ...current, loading: true, failure: null }));
+    let scopeId: string | null = null;
+    let currentCache: DeckCache | null = null;
     try {
       const profile = identity.settings.github.profiles.find((item) => item.id === currentDeck.profileRef);
       if (profile === undefined) throw new GitHubProviderError(GitHubErrorCode.MissingToken, GitHubOperation.ValidateRepository);
       const repositories = deckRepositories(currentDeck.query);
-      const scopeId = await identity.githubPatScopeId;
+      scopeId = await identity.githubPatScopeId;
+      if (!canContinue()) return;
+      const hydratedCache = caches.current.get(deckId);
+      currentCache = hydratedCache?.query === currentDeck.query ? hydratedCache : readDeckCache(storage, `${scopeId}.${currentDeck.profileRef}`, deckId, currentDeck.query);
+      if (!manual && currentCache?.nextRefreshAt !== null && currentCache?.nextRefreshAt !== undefined && Date.parse(currentCache.nextRefreshAt) > Date.now()) return;
       const credential = await readGitHubCredential(bridge, profile, scopeId);
       if (!canContinue()) return;
       await validateRepositories(credential, repositories, false, canContinue);
@@ -144,6 +148,12 @@ export function DeckPollingBoundary({ bridge, active, online, provider: supplied
           if (!isCurrentDeck() || !activeRef.current || !onlineRef.current) break;
           await publishDeckNotification(bridge, browserNotifications.current, currentDeck.id, transition.key, transition.kind, currentDeck.name, transition.pullRequest.title);
           transitionKeys = [...transitionKeys, transition.key];
+          const retainedCache = caches.current.get(deckId) ?? currentCache;
+          if (isCurrentDeck() && retainedCache !== null) {
+            const retained = { ...retainedCache, transitionKeys };
+            writeDeckCache(storage, `${scopeId}.${currentDeck.profileRef}`, retained);
+            caches.current.set(deckId, retained);
+          }
         }
       }
       if (!canContinue()) return;
@@ -157,10 +167,10 @@ export function DeckPollingBoundary({ bridge, active, online, provider: supplied
       if (!canContinue()) return;
       const failures = (currentCache?.failures ?? 0) + 1;
       const rate = error instanceof GitHubProviderError ? error.rate : currentCache?.rate ?? null;
-      const scopeId = await identity.githubPatScopeId;
+      const cacheScopeId = scopeId ?? await identity.githubPatScopeId;
       if (!canContinue()) return;
       const next: DeckCache = { version: 2, deckId: currentDeck.id, query: currentDeck.query, queryEtag: currentCache?.queryEtag ?? null, results: currentCache?.results ?? [], lastSuccessfulAt: currentCache?.lastSuccessfulAt ?? null, rate, failures, nextRefreshAt: nextDeckRefresh(Date.now(), currentDeck.refreshMinutes, failures, rate), transitionKeys: currentCache?.transitionKeys ?? [] };
-      writeDeckCache(storage, `${scopeId}.${currentDeck.profileRef}`, next);
+      writeDeckCache(storage, `${cacheScopeId}.${currentDeck.profileRef}`, next);
       caches.current.set(deckId, next);
       setDeckState(deckId, (current) => ({ ...current, cache: next, failure: classifyDeckFailure(error) }));
     } finally {
@@ -268,6 +278,7 @@ export function DeckSurface({ copy, bridge, selectedDeckId = null, onDismissMiss
   const polling = useDeckPolling();
   const [selected, setSelected] = useState<string | null>(selectedDeckId);
   const [creating, setCreating] = useState(false);
+  const [deleteFailed, setDeleteFailed] = useState(false);
   const missingLinkedDeck = selectedDeckId !== null && !identity.settings.decks.some((item) => item.id === selectedDeckId);
   const selectedDeck = missingLinkedDeck ? null : identity.settings.decks.find((item) => item.id === selected) ?? identity.settings.decks[0] ?? null;
   const deck = creating ? null : selectedDeck;
@@ -284,9 +295,9 @@ export function DeckSurface({ copy, bridge, selectedDeckId = null, onDismissMiss
   return <section className="deck" aria-labelledby="deck-title"><div className="deck-head"><h2 id="deck-title">{copy.deckTitle}</h2><button type="button" disabled={creationDisabled} onClick={() => { onDismissMissingLink?.(); setSelected(null); setCreating(true); }}>{copy.deckCreate}</button></div>
     <div className="deck-layout"><nav aria-label={copy.deck}><ul>{identity.settings.decks.map((item) => <li key={item.id}><button className={deck?.id === item.id ? "active" : ""} onClick={() => { onDismissMissingLink?.(); setSelected(item.id); setCreating(false); }}>{item.name}</button></li>)}</ul></nav>
       {deck === null ? <DeckEditor key="create" copy={copy} disabled={creationDisabled} onSave={async (next) => { await polling.validate(next); const committed = await identity.replaceSettings((current) => ({ ...current, decks: [...current.decks, next] })); if (committed) { setSelected(next.id); setCreating(false); } return committed; }} profiles={identity.settings.github.profiles} /> : <div><DeckEditor key={deck.id} copy={copy} value={deck} profiles={identity.settings.github.profiles} disabled={identity.readOnly} onSave={async (next) => { await polling.validate(next); return identity.replaceSettings((current) => ({ ...current, decks: current.decks.map((item) => item.id === deck.id ? next : item) })); }} />
-        <div className="actions"><button type="button" disabled={refreshState.loading || !polling.canPoll} onClick={() => void polling.refresh(deck.id, true)}>{copy.deckRefresh}</button><button type="button" disabled={identity.readOnly} onClick={() => void identity.replaceSettings((current) => ({ ...current, decks: current.decks.filter((item) => item.id !== deck.id) })).then(async (committed) => { if (!committed) return; await polling.clear(deck); }).catch(() => {})}>{copy.deckDelete}</button></div>
+        <div className="actions"><button type="button" disabled={refreshState.loading || !polling.canPoll} onClick={() => void polling.refresh(deck.id, true)}>{copy.deckRefresh}</button><button type="button" disabled={identity.readOnly} onClick={() => { setDeleteFailed(false); void identity.replaceSettings((current) => ({ ...current, decks: current.decks.filter((item) => item.id !== deck.id) })).then((committed) => { if (!committed) { setDeleteFailed(true); return; } void polling.clear(deck).catch(() => undefined); }).catch(() => setDeleteFailed(true)); }}>{copy.deckDelete}</button></div>
         {refreshState.cache?.lastSuccessfulAt && <p>{copy.lastSuccessfulRefresh}: <time dateTime={refreshState.cache.lastSuccessfulAt}>{refreshState.cache.lastSuccessfulAt}</time></p>}{refreshState.cache?.rate?.resetAt && <p>{copy.deckRateReset}: <time dateTime={refreshState.cache.rate.resetAt}>{refreshState.cache.rate.resetAt}</time></p>}{!polling.canPoll && refreshState.cache && <p className="notice">{copy.deckStale}</p>}{refreshState.failure && <p role="alert">{failureCopy(copy, refreshState.failure)}</p>}
-        <DeckResults copy={copy} groupBy={deck.display.groupBy} results={deck.display.showDrafts ? refreshState.cache?.results ?? [] : (refreshState.cache?.results ?? []).filter((pullRequest) => !pullRequest.draft)} />
+        {deleteFailed && <p role="alert">{copy.deckDeleteFailed}</p>}{!polling.online && refreshState.cache === null ? <OfflineState copy={copy} /> : <DeckResults copy={copy} groupBy={deck.display.groupBy} results={deck.display.showDrafts ? refreshState.cache?.results ?? [] : (refreshState.cache?.results ?? []).filter((pullRequest) => !pullRequest.draft)} />}
       </div>}</div></section>;
 }
 
@@ -318,7 +329,7 @@ function groupDeckResults(results: readonly GitHubDeckPullRequest[], groupBy: De
 function deckStateCopy(copy: Copy, state: GitHubDeckPullRequest["state"]): string { return state === "open" ? copy.deckOpen : state === "closed" ? copy.deckClosed : copy.deckMerged; }
 function reviewCopy(copy: Copy, review: GitHubDeckPullRequest["reviewDecision"]): string { return review === "approved" ? copy.deckApproved : review === "changes-requested" ? copy.deckChangesRequested : review === "required" ? copy.deckRequired : copy.deckNoReview; }
 function checkCopy(copy: Copy, state: string | null): string { return state === "PENDING" ? copy.deckChecksPending : state === "SUCCESS" ? copy.deckChecksSuccess : state === "FAILURE" ? copy.deckChecksFailure : state === "ERROR" ? copy.deckChecksError : state === "EXPECTED" ? copy.deckChecksExpected : state === "TIMED_OUT" ? copy.deckChecksTimedOut : state === null ? copy.deckNoChecks : copy.deckChecksUnknown; }
-function failureCopy(copy: Copy, failure: DeckFailure): string { return failure === "token" ? copy.deckErrorToken : failure === "permission" ? copy.deckErrorPermission : failure === "query" ? copy.deckErrorQuery : failure === "rate-limit" ? copy.deckErrorRate : copy.deckErrorNetwork; }
+function failureCopy(copy: Copy, failure: DeckFailure): string { return failure === "token" ? copy.deckErrorToken : failure === "secure-storage" ? copy.githubErrorSecureStorage : failure === "permission" ? copy.deckErrorPermission : failure === "query" ? copy.deckErrorQuery : failure === "rate-limit" ? copy.deckErrorRate : copy.deckErrorNetwork; }
 function closeBrowserDeckNotifications(notifications: Map<string, Set<Notification>>, deckId?: string): void { const entries = deckId === undefined ? [...notifications] : [[deckId, notifications.get(deckId) ?? new Set<Notification>()] as const]; for (const [id, items] of entries) { for (const notification of items) notification.close(); notifications.delete(id); } }
 async function publishDeckNotification(bridge: NativeBridgeV1, browserNotifications: Map<string, Set<Notification>>, deckId: string, key: string, kind: "review" | "checks" | "merged" | "closed", title: string, body: string): Promise<void> { try { await bridge.request({ operation: "notifications.publish-deck-change", notification: { id: `deck:${deckId}:${key}`, deckId, kind: kind as DeckNotificationKind, title, body } }); } catch { if (typeof Notification !== "undefined" && Notification.permission === "granted") { const notification = new Notification(title, { body, tag: `deck:${deckId}:${key}` }); const items = browserNotifications.get(deckId) ?? new Set<Notification>(); items.add(notification); browserNotifications.set(deckId, items); notification.addEventListener("close", () => items.delete(notification), { once: true }); } } }
 async function enrichPullRequestBatches(provider: GitHubProvider, credential: GitHubCredential, nodeIds: readonly string[], canContinue: () => boolean = () => true): Promise<readonly GitHubDeckPullRequest[]> { const items: GitHubDeckPullRequest[] = []; for (let index = 0; index < nodeIds.length; index += 100) { if (!canContinue()) return items; items.push(...(await provider.enrichPullRequests(credential, nodeIds.slice(index, index + 100))).items); } return items; }
