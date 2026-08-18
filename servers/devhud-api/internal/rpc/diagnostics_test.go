@@ -188,12 +188,32 @@ func TestValidateCrashReportAcceptsSafeSlashLabelsAndRemoteURLs(t *testing.T) {
 		"React/Native renderer failed.",
 		"iOS/18.6 runtime classification.",
 		"https://example.test/assets/app.js:10:2",
+		"Password validation failed because the field was empty.",
+		"Cookie parsing failed after session expiry.",
+		"ERROR_CODE=E_UPLOAD RETRY_COUNT=3 TOKEN_COUNT=2",
 	} {
 		request := validCrashReportRequest()
 		request.RedactedSummary = safe
 		if err := validateCrashReport(request); err != nil {
 			t.Fatalf("safe diagnostic %q was rejected: %v", safe, err)
 		}
+	}
+	request := validCrashReportRequest()
+	request.RedactedStackTrace = "at PasswordValidator.parse"
+	if err := validateCrashReport(request); err != nil {
+		t.Fatalf("safe credential-related identifier was rejected: %v", err)
+	}
+}
+
+func TestValidateCrashReportRequiresPinnedCEFRevision(t *testing.T) {
+	request := validCrashReportRequest()
+	request.ClientBuild.CefRevision = "x"
+	if err := validateCrashReport(request); err == nil {
+		t.Fatal("arbitrary desktop CEF revision was accepted")
+	}
+	request.ClientBuild.CefRevision = exactCEFRevision
+	if err := validateCrashReport(request); err != nil {
+		t.Fatalf("pinned desktop CEF revision was rejected: %v", err)
 	}
 }
 

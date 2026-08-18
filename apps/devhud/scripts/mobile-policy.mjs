@@ -26,20 +26,28 @@ export function assertMobileTargets(actualTargets) {
 }
 
 export function assertAndroidBackupExclusions({ androidManifest, androidBackupRules, androidDataExtractionRules }) {
-  const securePreferenceExclusion = '<exclude domain="sharedpref" path="devhud-secure-settings-v1.xml" />';
+  const privatePreferenceExclusions = [
+    '<exclude domain="sharedpref" path="devhud-secure-settings-v1.xml" />',
+    '<exclude domain="sharedpref" path="devhud-diagnostics-cleanup-v1.xml" />',
+  ];
   assert(androidManifest.includes('android:fullBackupContent="@xml/backup_rules"'), "Android full-backup policy is missing");
   assert(androidManifest.includes('android:dataExtractionRules="@xml/data_extraction_rules"'), "Android data-extraction policy is missing");
-  assert((androidBackupRules.match(/<exclude domain="sharedpref" path="devhud-secure-settings-v1\.xml" \/>/gu) ?? []).length === 1, "Android full-backup secure-setting exclusion changed");
+  for (const exclusion of privatePreferenceExclusions) {
+    assert(androidBackupRules.includes(exclusion), `Android full-backup exclusion changed: ${exclusion}`);
+  }
   for (const section of ["cloud-backup", "device-transfer"]) {
     const content = androidDataExtractionRules.match(new RegExp(`<${section}>([\\s\\S]*?)<\\/${section}>`, "u"))?.[1] ?? "";
-    assert(content.includes(securePreferenceExclusion), `Android ${section} secure-setting exclusion changed`);
+    for (const exclusion of privatePreferenceExclusions) {
+      assert(content.includes(exclusion), `Android ${section} exclusion changed: ${exclusion}`);
+    }
   }
 }
 
 export function assertAndroidNativeBridge(androidNativeBridge) {
+  const onDestroy = androidNativeBridge.match(/override fun onDestroy\(activity: AppCompatActivity\)[\s\S]*?(?=\n    @Command)/u)?.[0] ?? "";
   assert(androidNativeBridge.includes("Executors.newSingleThreadExecutor()"), "Android secure-setting persistence must run off the command thread");
-  assert(/override fun onDestroy\(activity: AppCompatActivity\) \{\s+secureSettingsExecutor\.shutdown\(\)\s+\}/u.test(androidNativeBridge), "Android secure-setting executor must stop with the plugin lifecycle");
-  assert((androidNativeBridge.match(/\.commit\(\)/gu) ?? []).length === 5, "Android secure-setting writes, migrations, removals, reconciliation, and purges must confirm persistence");
+  assert(onDestroy.includes("secureSettingsExecutor.shutdown()"), "Android secure-setting executor must stop with the plugin lifecycle");
+  assert((androidNativeBridge.match(/\.commit\(\)/gu) ?? []).length === 7, "Android secure-setting and diagnostics-cleanup writes must confirm persistence");
   assert((androidNativeBridge.match(/updateAAD\(/gu) ?? []).length === 2, "Android secure values must authenticate their setting key as AES-GCM AAD");
   assert(androidNativeBridge.includes("AEADBadTagException") && androidNativeBridge.includes("authenticateKey = false") && androidNativeBridge.includes("encryptSecure(legacy, key)"), "Android must migrate authenticated legacy ciphertext before requiring key-bound AAD");
   assert(androidNativeBridge.includes('invoke.reject("storage-failure", "storage-failure"'), "Android secure-setting persistence failures must use storage-failure");
@@ -57,6 +65,9 @@ export function assertAndroidNativeBridge(androidNativeBridge) {
   assert(androidNativeBridge.includes("manager.activeNotifications") && androidNativeBridge.includes("it.notification.group == deckId"), "Android Deck cancellation must remove every associated notification");
   assert(androidNativeBridge.includes("activity.intent = Intent(activity.intent).setData(null)"), "Android consumed auth callbacks must be removed from the activity intent");
   assert(androidNativeBridge.includes("peekAuthCallback") && androidNativeBridge.includes("pendingAuthCallback"), "Android auth callback inspection must be non-destructive");
+  assert(androidNativeBridge.includes("pendingDiagnosticsCleanup") && androidNativeBridge.includes("takePersistableUriPermission"), "Android failed diagnostics cleanup must retain a persistable destination URI");
+  assert(androidNativeBridge.includes("cleanupPendingDiagnosticsExport()") && androidNativeBridge.includes("FileNotFoundException"), "Android diagnostics cleanup must retry and confirm destination absence");
+  assert(androidNativeBridge.includes('scope in setOf("logout", "account-deletion") && !cleanupPendingDiagnosticsExport()'), "Android destructive purges must propagate diagnostics cleanup failures");
   assert(androidNativeBridge.includes("storeIntent().resolveActivity(activity.packageManager)"), "Android update status must resolve a market handler");
 }
 

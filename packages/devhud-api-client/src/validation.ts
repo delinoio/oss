@@ -31,6 +31,7 @@ const credentialParameterNamePattern =
 const MIN_PROTOBUF_TIMESTAMP_SECONDS = -62_135_596_800n;
 const MAX_PROTOBUF_TIMESTAMP_SECONDS = 253_402_300_799n;
 const MAX_PROTOBUF_TIMESTAMP_NANOS = 999_999_999;
+const EXACT_CEF_REVISION = "150.0.10+g8042e43+chromium-150.0.7871.101";
 const diagnosticPlatforms: ReadonlySet<DiagnosticPlatform> = new Set([
   DiagnosticPlatform.MACOS,
   DiagnosticPlatform.WINDOWS,
@@ -125,12 +126,8 @@ export function validateAdminReason(reason: string, publicAssetBaseUrl: string):
 }
 
 export function validateCrashReport(report: SubmitCrashReportRequest): void {
-  if (
-    !Number.isInteger(report.reportSchemaVersion) ||
-    report.reportSchemaVersion < 1 ||
-    report.reportSchemaVersion > 0xffff_ffff
-  ) {
-    throw new RangeError("reportSchemaVersion must be an integer from 1 through 4294967295");
+  if (report.reportSchemaVersion !== 1) {
+    throw new RangeError("reportSchemaVersion must be 1");
   }
   if (report.clientBuild === undefined) {
     throw new TypeError("clientBuild is required");
@@ -154,6 +151,10 @@ export function validateCrashReport(report: SubmitCrashReportRequest): void {
   if (!diagnosticArchitectures.has(report.clientBuild.architecture)
       && !(browser && report.clientBuild.architecture === DiagnosticArchitecture.UNSPECIFIED)) {
     throw new TypeError("clientBuild.architecture must be recognized or unknown only in browsers");
+  }
+  if (report.clientBuild.architecture === DiagnosticArchitecture.ARMV7
+      && report.clientBuild.platform !== DiagnosticPlatform.ANDROID) {
+    throw new TypeError("clientBuild.architecture ARMv7 is supported only on Android");
   }
   if (!diagnosticComponents.has(report.component)) {
     throw new TypeError("component must be a recognized nonzero value");
@@ -218,8 +219,8 @@ export function validateCrashReport(report: SubmitCrashReportRequest): void {
   const desktop = report.clientBuild.platform === DiagnosticPlatform.MACOS
     || report.clientBuild.platform === DiagnosticPlatform.WINDOWS
     || report.clientBuild.platform === DiagnosticPlatform.LINUX;
-  if (desktop ? report.clientBuild.cefRevision.length === 0 : report.clientBuild.cefRevision.length !== 0) {
-    throw new TypeError("clientBuild.cefRevision must be present only for native desktop reports");
+  if (desktop ? report.clientBuild.cefRevision !== EXACT_CEF_REVISION : report.clientBuild.cefRevision.length !== 0) {
+    throw new TypeError("clientBuild.cefRevision must be the supported desktop revision or empty on mobile and browser hosts");
   }
   validateDiagnosticText(report.redactedSummary, MAX_CRASH_SUMMARY_BYTES, "redactedSummary");
   validateDiagnosticText(

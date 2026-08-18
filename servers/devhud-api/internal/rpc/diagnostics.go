@@ -28,13 +28,15 @@ const (
 	maximumStackLineBytes      = 512
 	maximumRelatedCorrelations = 32
 	maximumCrashDuration       = uint64(24 * 60 * 60 * 1000)
+	exactCEFRevision           = "150.0.10+g8042e43+chromium-150.0.7871.101"
 )
 
 var (
 	exactTauriRevision  = regexp.MustCompile(`^[0-9a-f]{40}$`)
 	safeErrorCode       = regexp.MustCompile(`^[A-Z][A-Z0-9_]{0,63}$`)
 	forbiddenDiagnostic = []*regexp.Regexp{
-		regexp.MustCompile(`(?i)(authorization|bearer[[:space:]]|access[_ -]?token|refresh[_ -]?token|personal[_ -]?access[_ -]?token|github[_ -]?pat|api[_ -]?key|password|cookie|session[_ -]?id|r2[_ -]?(secret|token|key)|signing[_ -]?(secret|key|value))`),
+		regexp.MustCompile(`(?i)\bbearer[[:space:]]+[^[:space:]]+`),
+		regexp.MustCompile(`(?i)\b([[:alnum:]]+_)*(password|passwd|pwd|pat|secret(_access_key)?|token|client[_.-]?secret|(access|refresh|id)[_.-]?token|api[_.-]?key|private[_.-]?key|authorization|cookie|set-cookie|session[_.-]?id|signing[_.-]?(secret|key|value))\b["']?[[:space:]]*[:=][[:space:]]*[^[:space:]]+`),
 		regexp.MustCompile(`-----BEGIN [A-Z ]*PRIVATE KEY-----`),
 		regexp.MustCompile(`\b(ghp|github_pat)_[A-Za-z0-9_]+\b`),
 		regexp.MustCompile(`\beyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b`),
@@ -172,8 +174,8 @@ func validateCrashReport(request *devhudv1.SubmitCrashReportRequest) error {
 		return errors.New("tauri_revision must be an exact lowercase source revision")
 	}
 	desktop := build.GetPlatform() >= devhudv1.DiagnosticPlatform_DIAGNOSTIC_PLATFORM_MACOS && build.GetPlatform() <= devhudv1.DiagnosticPlatform_DIAGNOSTIC_PLATFORM_LINUX
-	if desktop == (build.GetCefRevision() == "") {
-		return errors.New("cef_revision must be exact on desktop and empty on mobile or browser hosts")
+	if desktop && build.GetCefRevision() != exactCEFRevision || !desktop && build.GetCefRevision() != "" {
+		return errors.New("cef_revision must be the supported desktop revision or empty on mobile and browser hosts")
 	}
 	if request.GetOccurredAt() == nil || request.GetOccurredAt().CheckValid() != nil {
 		return errors.New("occurred_at must be a valid timestamp")

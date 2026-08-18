@@ -72,6 +72,9 @@ describe("diagnostics privacy boundary", () => {
       output: { childEnvironment: { TOKEN: "private" } },
       fullPath: "/home/alice/project/main.ts",
       importedCredential: "ghp_0123456789abcdefghijklmnopqrstuvwxyz",
+      importedJwt: "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiIxMjMifQ.signature",
+      importedAwsKey: "AKIA0123456789ABCDEF",
+      importedPrivateKey: "-----BEGIN PRIVATE KEY-----",
       importedLocation: "/workspace/project/main.ts",
       shortcut: "Ctrl+Shift+P",
       urlFragment: "https://example.test/path#private",
@@ -80,7 +83,7 @@ describe("diagnostics privacy boundary", () => {
     const serialized = JSON.stringify(redactDiagnosticValue(hostile));
     expect(serialized).toContain("bounded classification");
     expect(serialized).toContain("React/Native renderer failed");
-    for (const prohibited of ["Bearer", "githubPat", "r2_secret", "signingKey", "nodeType", "screenshot", "issueBody", "agentPrompt", "childEnvironment", "/home/alice", "ghp_", "/workspace/", "Ctrl+", "#private"]) {
+    for (const prohibited of ["Bearer", "githubPat", "r2_secret", "signingKey", "nodeType", "screenshot", "issueBody", "agentPrompt", "childEnvironment", "/home/alice", "ghp_", "eyJ", "AKIA", "PRIVATE KEY", "/workspace/", "Ctrl+", "#private"]) {
       expect(serialized).not.toContain(prohibited);
     }
   });
@@ -198,12 +201,29 @@ describe("diagnostics privacy boundary", () => {
     expect(events[0]).not.toHaveProperty("persistentUserId");
   });
 
+  it("drops persisted events containing unlabeled credential shapes", () => {
+    const now = Date.parse("2026-08-17T00:00:00.000Z");
+    for (const credential of [
+      "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiIxMjMifQ.signature",
+      "AKIA0123456789ABCDEF",
+      "-----BEGIN PRIVATE KEY-----",
+    ]) {
+      localStorage.setItem(DiagnosticsStorageKey, JSON.stringify([{ ...fixtureEvent(now), summary: credential }]));
+      expect(readDiagnosticEvents(localStorage, now)).toEqual([]);
+    }
+  });
+
   it("binds export preview and sent request to byte-identical protobuf JSON", () => {
     const event = fixtureEvent(Date.parse("2026-08-17T00:00:00.000Z"));
     const imported = {
       ...event,
       summary: "ghp_0123456789abcdefghijklmnopqrstuvwxyz",
-      stackFrames: ["/workspace/project/main.ts"],
+      stackFrames: [
+        "/workspace/project/main.ts",
+        "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiIxMjMifQ.signature",
+        "AKIA0123456789ABCDEF",
+        "-----BEGIN PRIVATE KEY-----",
+      ],
     };
     const prepared = prepareDiagnosticsBundle(event, [imported, event]);
     expect(toJsonString(SubmitCrashReportRequestSchema, prepared.request, { prettySpaces: 2 })).toBe(prepared.requestJson);
@@ -211,6 +231,9 @@ describe("diagnostics privacy boundary", () => {
     expect(exported.crashReport).toEqual(JSON.parse(prepared.requestJson));
     expect(exported.localEvents.at(-1).build.platform).toBe(DiagnosticPlatform.LINUX);
     expect(prepared.exportJson).not.toContain("ghp_");
+    expect(prepared.exportJson).not.toContain("eyJ");
+    expect(prepared.exportJson).not.toContain("AKIA");
+    expect(prepared.exportJson).not.toContain("PRIVATE KEY");
     expect(prepared.exportJson).not.toContain("/workspace/");
     expect(prepared.request.clientCorrelationId?.value).toBe(event.correlationId);
   });

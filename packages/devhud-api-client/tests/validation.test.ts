@@ -190,15 +190,14 @@ describe("wire validation helpers", () => {
 
   it("rejects incomplete crash report envelopes", () => {
     expect(() => validateCrashReport(safeCrashReport)).not.toThrow();
-    expect(() =>
-      validateCrashReport({ ...safeCrashReport, reportSchemaVersion: 0xffff_ffff }),
-    ).not.toThrow();
     for (const reportSchemaVersion of [
       -1,
       0,
+      2,
       1.5,
       Number.NaN,
       Number.POSITIVE_INFINITY,
+      0xffff_ffff,
       0x1_0000_0000,
     ]) {
       expect(() =>
@@ -346,6 +345,38 @@ describe("wire validation helpers", () => {
       ...safeCrashReport,
       clientBuild: { ...clientBuild, architecture: DiagnosticArchitecture.UNSPECIFIED },
     })).toThrow(TypeError);
+  });
+
+  it("allows ARMv7 only for Android reports", () => {
+    for (const platform of [
+      DiagnosticPlatform.MACOS,
+      DiagnosticPlatform.WINDOWS,
+      DiagnosticPlatform.LINUX,
+      DiagnosticPlatform.IOS,
+      DiagnosticPlatform.BROWSER,
+    ]) {
+      const browser = platform === DiagnosticPlatform.BROWSER;
+      const mobile = platform === DiagnosticPlatform.IOS;
+      expect(() => validateCrashReport({
+        ...safeCrashReport,
+        clientBuild: {
+          ...clientBuild,
+          platform,
+          architecture: DiagnosticArchitecture.ARMV7,
+          tauriRevision: browser ? "" : clientBuild.tauriRevision,
+          cefRevision: browser || mobile ? "" : clientBuild.cefRevision,
+        },
+      })).toThrow(TypeError);
+    }
+    expect(() => validateCrashReport({
+      ...safeCrashReport,
+      clientBuild: {
+        ...clientBuild,
+        platform: DiagnosticPlatform.ANDROID,
+        architecture: DiagnosticArchitecture.ARMV7,
+        cefRevision: "",
+      },
+    })).not.toThrow();
   });
 
   it("rejects lone surrogates in every crash diagnostic string", () => {
@@ -661,5 +692,13 @@ describe("wire validation helpers", () => {
       },
     });
     expect(() => validateCrashReport(fabricated)).toThrow(TypeError);
+  });
+
+  it("accepts only the pinned CEF revision on desktop reports", () => {
+    expect(() => validateCrashReport({
+      ...safeCrashReport,
+      clientBuild: { ...clientBuild, cefRevision: "x" },
+    })).toThrow(TypeError);
+    expect(() => validateCrashReport(safeCrashReport)).not.toThrow();
   });
 });
