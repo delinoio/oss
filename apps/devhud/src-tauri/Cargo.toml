@@ -41,7 +41,7 @@ wait-timeout = "0.2"
 rdev = "0.5.3"
 tauri-plugin-deep-link = "=2.4.9"
 tauri-plugin-single-instance = { version = "=2.4.3", features = ["deep-link"] }
-xcap = { version = "=0.8.2", default-features = false }
+xcap = { version = "=0.4.0", default-features = false }
 zeroize = { version = "=1.8.2", features = ["derive"] }
 
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
