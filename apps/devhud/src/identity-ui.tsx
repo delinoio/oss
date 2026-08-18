@@ -126,12 +126,13 @@ export function SynchronizedAppearanceBoundary({ onAppearance }: { readonly onAp
 interface UrlMappingDraftValue {
   readonly draft: UrlRepositoryMapping[];
   readonly setDraft: (draft: UrlRepositoryMapping[] | ((current: UrlRepositoryMapping[]) => UrlRepositoryMapping[])) => void;
+  readonly setBaselineMappings: (mappings: UrlRepositoryMapping[]) => void;
+  readonly markDraftDirty: () => void;
   readonly invalid: boolean;
   readonly setInvalid: (invalid: boolean) => void;
   readonly saved: boolean;
   readonly setSaved: (saved: boolean) => void;
   readonly dirty: boolean;
-  readonly setDirty: (dirty: boolean) => void;
   readonly saving: boolean;
   readonly setSaving: (saving: boolean) => void;
   readonly priorityDrafts: Record<string, string>;
@@ -165,16 +166,15 @@ export function UrlMappingDraftProvider({ children }: { readonly children: React
 
 function UrlMappingDraftStateProvider({ children, identity, isCurrentScope }: { readonly children: ReactNode; readonly identity: ReturnType<typeof useIdentitySettings>; readonly isCurrentScope: () => boolean }) {
   const [draft, setDraft] = useState<UrlRepositoryMapping[]>(() => [...identity.settings.urlMappings]);
+  const [baselineMappings, setBaselineMappings] = useState<UrlRepositoryMapping[]>(() => [...identity.settings.urlMappings]);
   const [invalid, setInvalid] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [dirty, setDirtyState] = useState(false);
-  const dirtyRef = useRef(false);
-  const setDirty = (next: boolean) => {
-    dirtyRef.current = next;
-    setDirtyState(next);
-  };
   const [saving, setSaving] = useState(false);
   const [priorityDrafts, setPriorityDrafts] = useState<Record<string, string>>({});
+  const dirty = !mappingDraftMatchesBaseline(draft, priorityDrafts, baselineMappings);
+  const dirtyRef = useRef(dirty);
+  dirtyRef.current = dirty;
+  const markDraftDirty = () => { dirtyRef.current = true; };
   const [baseRevision, setBaseRevision] = useState(identity.revision);
   const credentialOperationTail = useRef(Promise.resolve());
   const credentialOperationCount = useRef(0);
@@ -197,18 +197,19 @@ function UrlMappingDraftStateProvider({ children, identity, isCurrentScope }: { 
   useEffect(() => {
     if (!dirtyRef.current) {
       setDraft([...identity.settings.urlMappings]);
+      setBaselineMappings([...identity.settings.urlMappings]);
       setBaseRevision(identity.revision);
     }
   }, [dirty, identity.revision, identity.settings.urlMappings]);
   const reset = () => {
     setDraft([...identity.settings.urlMappings]);
+    setBaselineMappings([...identity.settings.urlMappings]);
     setBaseRevision(identity.revision);
-    setDirty(false);
     setSaved(false);
     setInvalid(false);
     setPriorityDrafts({});
   };
-  return <UrlMappingDraftContext value={{ draft, setDraft, invalid, setInvalid, saved, setSaved, dirty, setDirty, saving, setSaving, priorityDrafts, setPriorityDrafts, baseRevision, credentialOperationPending, runCredentialOperation, isCurrentScope, reset }}>{children}</UrlMappingDraftContext>;
+  return <UrlMappingDraftContext value={{ draft, setDraft, setBaselineMappings, markDraftDirty, invalid, setInvalid, saved, setSaved, dirty, saving, setSaving, priorityDrafts, setPriorityDrafts, baseRevision, credentialOperationPending, runCredentialOperation, isCurrentScope, reset }}>{children}</UrlMappingDraftContext>;
 }
 
 export function SynchronizedSettingsBoundary(props: { readonly copy: Copy; readonly bridge?: NativeBridgeV1; readonly githubProvider?: GitHubProvider; readonly onOpenExternal?: (target: ExternalLinkTarget) => Promise<void>; readonly showNativeShortcuts?: boolean; readonly shortcutCapabilities?: RuntimeCapabilities }) {
@@ -414,24 +415,24 @@ function UrlMappingSettings({ copy, bridge, githubProvider = createGitHubProvide
   const identity = useIdentitySettings();
   const mappingDraft = use(UrlMappingDraftContext);
   if (mappingDraft === null) throw new Error("URL mapping draft provider is required");
-  const { draft, setDraft, invalid, setInvalid, saved, setSaved, dirty, setDirty, saving, setSaving, priorityDrafts, setPriorityDrafts, baseRevision, credentialOperationPending, runCredentialOperation, isCurrentScope } = mappingDraft;
+  const { draft, setDraft, setBaselineMappings, markDraftDirty, invalid, setInvalid, saved, setSaved, dirty, saving, setSaving, priorityDrafts, setPriorityDrafts, baseRevision, credentialOperationPending, runCredentialOperation, isCurrentScope } = mappingDraft;
   const [validationError, setValidationError] = useState<keyof Copy | null>(null);
   const overlaps = safeOverlaps(draft);
   const change = (id: string, field: keyof UrlRepositoryMapping, value: string | number | null) => {
-    setSaved(false); setInvalid(false); setValidationError(null); setDirty(true);
+    markDraftDirty(); setSaved(false); setInvalid(false); setValidationError(null);
     setDraft((current) => current.map((mapping) => mapping.id === id ? { ...mapping, [field]: value } : mapping));
   };
   const changeRepository = (id: string, field: "owner" | "name", value: string) => {
-    setSaved(false); setInvalid(false); setValidationError(null); setDirty(true);
+    markDraftDirty(); setSaved(false); setInvalid(false); setValidationError(null);
     setDraft((current) => current.map((mapping) => mapping.id === id ? { ...mapping, repository: { ...mapping.repository, [field]: value } } : mapping));
   };
   const changePriority = (id: string, value: string) => {
-    setSaved(false); setInvalid(false); setValidationError(null); setDirty(true);
+    markDraftDirty(); setSaved(false); setInvalid(false); setValidationError(null);
     setPriorityDrafts((current) => ({ ...current, [id]: value }));
   };
   const add = () => {
     const timestamp = new Date().toISOString();
-    setSaved(false); setInvalid(false); setValidationError(null); setDirty(true);
+    markDraftDirty(); setSaved(false); setInvalid(false); setValidationError(null);
     setDraft((current) => [...current, { id: uuidV7(), pattern: "https://example.com/**", repository: { owner: "owner", name: "repository" }, credentialProfileRef: "", priority: 0, chromeOrigin: null, updatedAt: timestamp }]);
   };
   const save = async () => {
@@ -465,7 +466,7 @@ function UrlMappingSettings({ copy, bridge, githubProvider = createGitHubProvide
       });
       if (!committed || !isCurrentScope()) return;
       setDraft(committedMappings);
-      setDirty(false);
+      setBaselineMappings(committedMappings);
       setPriorityDrafts({});
       setSaved(true);
     } catch (error) {
@@ -484,7 +485,7 @@ function UrlMappingSettings({ copy, bridge, githubProvider = createGitHubProvide
       <label>{copy.credentialProfile}<select value={mapping.credentialProfileRef} onChange={(event) => change(mapping.id, "credentialProfileRef", event.target.value)}><option value="">{copy.githubSelectProfile}</option>{identity.settings.github.profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></label>
       <label>{copy.mappingPriority}<input type="number" value={priorityDrafts[mapping.id] ?? String(mapping.priority)} onChange={(event) => changePriority(mapping.id, event.target.value)} /></label>
       <label>{copy.chromeOrigin}<input value={mapping.chromeOrigin ?? ""} onChange={(event) => change(mapping.id, "chromeOrigin", event.target.value || null)} /></label>
-      <button type="button" onClick={() => { setSaved(false); setValidationError(null); setDirty(true); setPriorityDrafts((current) => { const { [mapping.id]: _removed, ...remaining } = current; return remaining; }); setDraft((current) => current.filter((item) => item.id !== mapping.id)); }}>{copy.removeUrlMapping}</button>
+      <button type="button" onClick={() => { markDraftDirty(); setSaved(false); setValidationError(null); setPriorityDrafts((current) => { const { [mapping.id]: _removed, ...remaining } = current; return remaining; }); setDraft((current) => current.filter((item) => item.id !== mapping.id)); }}>{copy.removeUrlMapping}</button>
     </fieldset>)}
     <div className="actions"><button type="button" disabled={identity.readOnly || saving || credentialOperationPending || identity.settings.github.profiles.length === 0} onClick={add}>{copy.addUrlMapping}</button><button type="button" disabled={identity.readOnly || saving || credentialOperationPending || !dirty} onClick={save}>{copy.saveUrlMappings}</button></div>
     {invalid && <p role="alert">{copy.mappingInvalid}</p>}
@@ -492,6 +493,17 @@ function UrlMappingSettings({ copy, bridge, githubProvider = createGitHubProvide
     {overlaps.length > 0 && <p role="status">{copy.mappingOverlap}</p>}
     {saved && <p role="status">{copy.mappingSaved}</p>}
   </section>;
+}
+
+function mappingDraftMatchesBaseline(draft: readonly UrlRepositoryMapping[], priorityDrafts: Readonly<Record<string, string>>, baseline: readonly UrlRepositoryMapping[]): boolean {
+  if (draft.length !== baseline.length) return false;
+  return draft.every((mapping, index) => {
+    const priorityDraft = priorityDrafts[mapping.id];
+    if (priorityDraft !== undefined && (priorityDraft === "" || !Number.isInteger(Number(priorityDraft)))) return false;
+    const effective = priorityDraft === undefined ? mapping : { ...mapping, priority: Number(priorityDraft) };
+    const existing = baseline[index];
+    return existing !== undefined && existing.id === effective.id && JSON.stringify({ ...existing, updatedAt: "" }) === JSON.stringify({ ...effective, updatedAt: "" });
+  });
 }
 
 class UrlMappingSaveRebaseError extends Error {

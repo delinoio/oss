@@ -710,13 +710,19 @@ func settingsURLMappingPattern(value any, path string) error {
 // before applying complexity bounds, including percent-encoded dot segments.
 func settingsCanonicalMappingPathSegments(segments []string) []string {
 	canonical := make([]string, 0, len(segments))
-	for _, segment := range segments {
+	for index, segment := range segments {
 		switch strings.ToLower(segment) {
 		case ".", "%2e":
+			if len(canonical) > 0 && index == len(segments)-1 {
+				canonical = append(canonical, "")
+			}
 			continue
 		case "..", ".%2e", "%2e.", "%2e%2e":
 			if len(canonical) > 0 {
 				canonical = canonical[:len(canonical)-1]
+				if index == len(segments)-1 && len(canonical) > 0 {
+					canonical = append(canonical, "")
+				}
 			}
 		default:
 			canonical = append(canonical, segment)
