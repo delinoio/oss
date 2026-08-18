@@ -80,6 +80,10 @@ func TestValidateDevHudSettingsDeckQualifiers(t *testing.T) {
 	if err := validateDevHudSettings([]byte(matchingBuilder), 3); err != nil {
 		t.Fatalf("matching builder: %v", err)
 	}
+	escapedBuilder := strings.Replace(settings(`repo:octo/widgets is:pr label:\"a \\q\"`, `[]`), `"builder":null`, `"builder":{"author":null,"label":"a q","repository":"octo/widgets","review":null,"state":null}`, 1)
+	if err := validateDevHudSettings([]byte(escapedBuilder), 3); err != nil {
+		t.Fatalf("client-compatible escaped builder: %v", err)
+	}
 	for name, value := range map[string]string{
 		"missing repository":      settings("is:pr", `[]`),
 		"malformed repository":    settings("repo:octo is:pr", `[]`),

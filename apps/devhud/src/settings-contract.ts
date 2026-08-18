@@ -313,8 +313,8 @@ export function deckBuilderProjection(query: string): DeckBuilder | null {
   const label = deckBuilderValue(tokens, "label:");
   const review = deckBuilderValue(tokens, "review:");
   const state = deckBuilderValue(tokens, "is:");
-  const normalizedReview = review?.toLowerCase() === "changes_requested" ? "changes-requested" : review?.toLowerCase() === "approved" || review?.toLowerCase() === "required" ? review.toLowerCase() : null;
-  const normalizedState = state?.toLowerCase() === "open" || state?.toLowerCase() === "closed" || state?.toLowerCase() === "merged" ? state.toLowerCase() : null;
+  const normalizedReview: DeckReviewFilter | null = review?.toLowerCase() === "changes_requested" ? "changes-requested" : review?.toLowerCase() === "approved" || review?.toLowerCase() === "required" ? review.toLowerCase() as DeckReviewFilter : null;
+  const normalizedState: DeckPullRequestState | null = state?.toLowerCase() === "open" || state?.toLowerCase() === "closed" || state?.toLowerCase() === "merged" ? state.toLowerCase() as DeckPullRequestState : null;
   if ([repository, author, label, normalizedReview, normalizedState].every((value) => value === null)) return null;
   return { repository, author, label, review: normalizedReview, state: normalizedState };
 }

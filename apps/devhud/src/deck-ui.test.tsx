@@ -1,0 +1,57 @@
+// @vitest-environment jsdom
+
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { DeckPollingBoundary, DeckSurface } from "./deck-ui.tsx";
+import { createGitHubProvider } from "./github-provider.ts";
+import { messages } from "./localization.ts";
+import type { NativeBridgeRequestV1, NativeBridgeResponseV1, NativeBridgeV1 } from "./native-bridge.ts";
+import type { IdentitySettingsValue } from "./service-boundary.tsx";
+import { defaultDevHudSettings, parseDevHudSettings } from "./settings-contract.ts";
+
+let identity: IdentitySettingsValue;
+
+vi.mock("./service-boundary.tsx", () => ({ useIdentitySettings: () => identity }));
+
+const profile = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", name: "Work", kind: "fine-grained" as const };
+const deck = { id: "018f47a2-7b3c-7def-8abc-1234567890ac", name: "Deck", profileRef: profile.id, query: "repo:octo/widgets is:pr label:\"needs review\"", builder: { repository: "octo/widgets", author: null, review: null, label: "needs review", state: null }, display: { groupBy: "none" as const, showDrafts: true }, refreshMinutes: 5 as const, notifications: [] };
+const settings = parseDevHudSettings({ ...defaultDevHudSettings, github: { ...defaultDevHudSettings.github, profiles: [profile] }, decks: [deck] });
+
+function identityWith(overrides: Partial<IdentitySettingsValue> = {}): IdentitySettingsValue {
+  return {
+    status: "guest", bootstrap: null, account: null, settings, revision: 0n, readOnly: false, offline: false, error: null, accountError: null, settingsError: null, deletionCleanupFailed: false, deckAccessSuspended: false, importDiff: null, conflict: null, signInPending: false, identityResetAvailable: false, githubPatScopeId: Promise.resolve("origin.scope"), githubPatCleanupPending: false, reconcileGitHubPats: vi.fn(async () => true),
+    signIn: vi.fn(), retryIdentity: vi.fn(), resetIdentity: vi.fn(), retryAccount: vi.fn(), retrySettings: vi.fn(), continueLocally: vi.fn(), uploadLocal: vi.fn(), replaceLocal: vi.fn(), replaceSettings: vi.fn(async () => true), adoptConflictServer: vi.fn(), reapplyConflictLocal: vi.fn(), logout: vi.fn(), deleteAccount: vi.fn(), restoreAccount: vi.fn(), retryDeletionCleanup: vi.fn(), profileRequiresSetup: vi.fn(),
+    ...overrides,
+  };
+}
+
+function bridgeWith(request: (request: NativeBridgeRequestV1) => Promise<NativeBridgeResponseV1>): NativeBridgeV1 {
+  return { request, listen: vi.fn(async () => () => undefined) };
+}
+
+function provider() {
+  return {
+    ...createGitHubProvider({ fetch: vi.fn() }),
+    validateRepository: vi.fn(async (_credential, repository) => ({ repository, private: true, permissions: { metadata: true, pullRequests: true, issues: true, contents: true }, metadata: { etag: null, rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } } })),
+  };
+}
+
+beforeEach(() => { identity = identityWith(); });
+afterEach(cleanup);
+
+describe("Deck surface", () => {
+  it("keeps a missing deep link visible until the user returns to the Deck list", () => {
+    const dismiss = vi.fn();
+    const bridge = bridgeWith(async () => { throw new Error("unexpected request"); });
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} selectedDeckId="018f47a2-7b3c-7def-8abc-1234567890ad" onDismissMissingLink={dismiss} /></DeckPollingBoundary>);
+
+    expect(screen.getByRole("alert").textContent).toBe(messages.en.deckNotFound);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckReturnToList }));
+    expect(dismiss).toHaveBeenCalledOnce();
+
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} onDismissMissingLink={dismiss} /></DeckPollingBoundary>);
+    expect(screen.getByRole("button", { name: messages.en.deckCreate })).toBeTruthy();
+  });
+
+});

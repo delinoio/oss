@@ -134,6 +134,12 @@ export function applyDeckBuilder(query: string, field: BuilderField, value: Deck
   return `${query}${query.length === 0 || /\s$/u.test(query) ? "" : " "}${qualifier[field](value as never)}`;
 }
 
+/** Preserves the null representation when no editable builder qualifiers remain. */
+export function updateDeckBuilder(builder: DeckBuilder | null, field: BuilderField, value: DeckBuilder[BuilderField]): DeckBuilder | null {
+  const next = { repository: null, author: null, review: null, label: null, state: null, ...builder, [field]: value };
+  return Object.values(next).every((item) => item === null) ? null : next;
+}
+
 export function parseDeckBuilder(query: string): DeckBuilder | null {
   return deckBuilderProjection(query);
 }

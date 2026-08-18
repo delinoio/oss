@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyDeckBuilder, classifyDeckFailure, deckTransitionKeys, nextDeckRefresh, parseDeckBuilder, readDeckCache, validateDeckQuery } from "./deck.ts";
+import { applyDeckBuilder, classifyDeckFailure, deckTransitionKeys, nextDeckRefresh, parseDeckBuilder, readDeckCache, updateDeckBuilder, validateDeckQuery } from "./deck.ts";
 import { GitHubErrorCode, GitHubProviderError } from "./github-provider.ts";
 import { deckRepositories } from "./settings-contract.ts";
 
@@ -18,6 +18,9 @@ describe("Deck query and local transitions", () => {
     const raw = '"find repo:foo/bar" repo:real/project is:pr';
     expect(parseDeckBuilder(raw)).toMatchObject({ repository: "real/project" });
     expect(applyDeckBuilder(raw, "repository", "next/project")).toBe('"find repo:foo/bar" repo:next/project is:pr');
+  });
+  it("normalizes an emptied builder back to null", () => {
+    expect(updateDeckBuilder({ repository: null, author: null, review: null, label: "needs review", state: null }, "label", null)).toBeNull();
   });
   it("uses rate reset and exponential backoff", () => {
     expect(Date.parse(nextDeckRefresh(0, 5, 2, { limit: 1, remaining: 0, used: 1, resetAt: "1970-01-01T00:30:00.000Z", resource: "core", retryAfterSeconds: null }))).toBe(1_800_000);

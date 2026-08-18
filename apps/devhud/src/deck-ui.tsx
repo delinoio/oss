@@ -1,5 +1,5 @@
 import { createContext, use, useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type PropsWithChildren } from "react";
-import { applyDeckBuilder, classifyDeckFailure, clearDeckCache, DeckLimit, deckTransitionKeys, nextDeckRefresh, parseDeckBuilder, readDeckCache, validateDeckQuery, writeDeckCache, type DeckCache, type DeckFailure } from "./deck.ts";
+import { applyDeckBuilder, classifyDeckFailure, clearDeckCache, DeckLimit, deckTransitionKeys, nextDeckRefresh, parseDeckBuilder, readDeckCache, updateDeckBuilder, validateDeckQuery, writeDeckCache, type DeckCache, type DeckFailure } from "./deck.ts";
 import { createGitHubProvider, GitHubErrorCode, GitHubOperation, GitHubProviderError, readGitHubCredential, type GitHubCredential, type GitHubDeckPullRequest, type GitHubProvider } from "./github-provider.ts";
 import type { Copy } from "./localization.ts";
 import { DeckNotificationKind, type NativeBridgeV1 } from "./native-bridge.ts";
@@ -22,6 +22,7 @@ interface DeckPollingContextValue {
 
 const DeckPollingContext = createContext<DeckPollingContextValue | null>(null);
 const emptyDeckRefreshState: DeckRefreshState = { cache: null, loading: false, failure: null };
+const noDecks: readonly Deck[] = [];
 
 function useDeckPolling(): DeckPollingContextValue {
   const value = use(DeckPollingContext);
@@ -45,10 +46,12 @@ export function DeckPollingBoundary({ bridge, active, online, provider: supplied
   const validatedRepositories = useRef(new Map<string, { readonly token: string; readonly validation: Promise<void> }>());
   const browserNotifications = useRef(new Map<string, Set<Notification>>());
   const decks = useRef<readonly Deck[]>(identity.settings.decks);
+  const deckAccessAllowed = useRef(!identity.deckAccessSuspended);
   const activeRef = useRef(active);
   const onlineRef = useRef(online);
 
-  useEffect(() => { decks.current = identity.settings.decks; }, [identity.settings.decks]);
+  deckAccessAllowed.current = !identity.deckAccessSuspended;
+  decks.current = identity.deckAccessSuspended ? [] : identity.settings.decks;
   useEffect(() => { activeRef.current = active; }, [active]);
   useEffect(() => { onlineRef.current = online; }, [online]);
 
@@ -79,12 +82,12 @@ export function DeckPollingBoundary({ bridge, active, online, provider: supplied
 
   const refresh = useCallback(async (deckId: string, manual = false) => {
     const currentDeck = decks.current.find((deck) => deck.id === deckId);
-    if (currentDeck === undefined || !onlineRef.current || !activeRef.current) return;
+    if (currentDeck === undefined || !deckAccessAllowed.current || !onlineRef.current || !activeRef.current) return;
     if (loading.current.has(deckId)) { queued.current.add(deckId); return; }
     const currentCache = caches.current.get(deckId) ?? null;
     if (!manual && currentCache?.nextRefreshAt !== null && currentCache?.nextRefreshAt !== undefined && Date.parse(currentCache.nextRefreshAt) > Date.now()) return;
-    const signature = `${currentDeck.profileRef}\u0000${currentDeck.query}`;
-    const isCurrentDeck = () => decks.current.some((deck) => deck.id === deckId && `${deck.profileRef}\u0000${deck.query}` === signature);
+    const signature = `${currentDeck.profileRef}\u0000${currentDeck.query}\u0000${currentDeck.notifications.join(",")}`;
+    const isCurrentDeck = () => deckAccessAllowed.current && decks.current.some((deck) => deck.id === deckId && `${deck.profileRef}\u0000${deck.query}\u0000${deck.notifications.join(",")}` === signature);
     loading.current.add(deckId);
     setDeckState(deckId, (current) => ({ ...current, loading: true, failure: null }));
     try {
@@ -130,7 +133,7 @@ export function DeckPollingBoundary({ bridge, active, online, provider: supplied
     } finally {
       loading.current.delete(deckId);
       if (isCurrentDeck()) setDeckState(deckId, (current) => ({ ...current, loading: false }));
-      if (queued.current.delete(deckId) && activeRef.current && onlineRef.current) void refresh(deckId);
+      if (queued.current.delete(deckId) && deckAccessAllowed.current && activeRef.current && onlineRef.current) void refresh(deckId);
     }
   }, [bridge, identity.githubPatScopeId, identity.settings.github.profiles, setDeckState, storage, validateRepositories]);
 
@@ -145,13 +148,26 @@ export function DeckPollingBoundary({ bridge, active, online, provider: supplied
     });
   }, [identity.githubPatScopeId, storage]);
 
-  const scheduleKey = identity.settings.decks.map((deck) => `${deck.id}\u0000${deck.profileRef}\u0000${deck.query}\u0000${deck.refreshMinutes}`).join("\u0001");
+  const configuredDecks = identity.deckAccessSuspended ? noDecks : identity.settings.decks;
+  const scheduleKey = configuredDecks.map((deck) => `${deck.id}\u0000${deck.profileRef}\u0000${deck.query}\u0000${deck.refreshMinutes}\u0000${deck.notifications.join(",")}`).join("\u0001");
   useEffect(() => {
     let cancelled = false;
     validatedRepositories.current.clear();
-    const configuredIds = new Set(identity.settings.decks.map((deck) => deck.id));
+    if (identity.deckAccessSuspended) {
+      closeBrowserDeckNotifications(browserNotifications.current);
+      caches.current.clear();
+      signatures.current.clear();
+      loading.current.clear();
+      queued.current.clear();
+      setStates({});
+      return () => { cancelled = true; };
+    }
+    const configuredIds = new Set(configuredDecks.map((deck) => deck.id));
     for (const deckId of [...caches.current.keys()]) {
-      if (!configuredIds.has(deckId)) caches.current.delete(deckId);
+      if (!configuredIds.has(deckId)) {
+        closeBrowserDeckNotifications(browserNotifications.current, deckId);
+        caches.current.delete(deckId);
+      }
     }
     for (const deckId of [...signatures.current.keys()]) {
       if (!configuredIds.has(deckId)) signatures.current.delete(deckId);
@@ -159,8 +175,8 @@ export function DeckPollingBoundary({ bridge, active, online, provider: supplied
     setStates((current) => Object.fromEntries(Object.entries(current).filter(([deckId]) => configuredIds.has(deckId))));
     void identity.githubPatScopeId.then((scopeId) => {
       if (cancelled) return;
-      for (const deck of identity.settings.decks) {
-        const signature = `${deck.profileRef}\u0000${deck.query}`;
+      for (const deck of configuredDecks) {
+        const signature = `${deck.profileRef}\u0000${deck.query}\u0000${deck.notifications.join(",")}`;
         if (signatures.current.get(deck.id) === signature) continue;
         const cache = readDeckCache(storage, `${scopeId}.${deck.profileRef}`, deck.id, deck.query);
         signatures.current.set(deck.id, signature);
@@ -169,25 +185,25 @@ export function DeckPollingBoundary({ bridge, active, online, provider: supplied
       }
     }).catch(() => {});
     return () => { cancelled = true; };
-  }, [identity.githubPatScopeId, identity.settings.decks, scheduleKey, setDeckState, storage]);
+  }, [configuredDecks, identity.deckAccessSuspended, identity.githubPatScopeId, scheduleKey, setDeckState, storage]);
   useEffect(() => () => { closeBrowserDeckNotifications(browserNotifications.current); }, []);
   useEffect(() => {
-    if (!active || !online) return;
-    const timers = identity.settings.decks.map((deck) => {
+    if (!active || !online || identity.deckAccessSuspended) return;
+    const timers = configuredDecks.map((deck) => {
       const timeout = setTimeout(() => void refresh(deck.id), 0);
       const interval = setInterval(() => void refresh(deck.id), deck.refreshMinutes * 60_000);
       return { timeout, interval };
     });
     return () => { for (const timer of timers) { clearTimeout(timer.timeout); clearInterval(timer.interval); } };
-  }, [active, online, refresh, scheduleKey]);
+  }, [active, configuredDecks, identity.deckAccessSuspended, online, refresh, scheduleKey]);
 
-  const value = useMemo<DeckPollingContextValue>(() => ({ states, canPoll: active && online, online, refresh, validate, clear }), [active, clear, online, refresh, states, validate]);
+  const value = useMemo<DeckPollingContextValue>(() => ({ states, canPoll: active && online && !identity.deckAccessSuspended, online, refresh, validate, clear }), [active, clear, identity.deckAccessSuspended, online, refresh, states, validate]);
   return <DeckPollingContext value={value}>{children}</DeckPollingContext>;
 }
 
-interface DeckSurfaceProps { readonly copy: Copy; readonly bridge: NativeBridgeV1; readonly selectedDeckId?: string | null; }
+interface DeckSurfaceProps { readonly copy: Copy; readonly bridge: NativeBridgeV1; readonly selectedDeckId?: string | null; readonly onDismissMissingLink?: () => void; }
 
-export function DeckSurface({ copy, bridge, selectedDeckId = null }: DeckSurfaceProps) {
+export function DeckSurface({ copy, bridge, selectedDeckId = null, onDismissMissingLink }: DeckSurfaceProps) {
   const identity = useIdentitySettings();
   const polling = useDeckPolling();
   const [selected, setSelected] = useState<string | null>(selectedDeckId);
@@ -202,7 +218,7 @@ export function DeckSurface({ copy, bridge, selectedDeckId = null }: DeckSurface
       setCreating(false);
     }
   }, [identity.settings.decks, selectedDeckId]);
-  if (missingLinkedDeck) return <section className="deck" aria-labelledby="deck-title"><h2 id="deck-title">{copy.deckTitle}</h2><p role="alert">{copy.deckNotFound}</p></section>;
+  if (missingLinkedDeck) return <section className="deck" aria-labelledby="deck-title"><h2 id="deck-title">{copy.deckTitle}</h2><p role="alert">{copy.deckNotFound}</p><button type="button" onClick={onDismissMissingLink}>{copy.deckReturnToList}</button></section>;
   if (identity.settings.github.profiles.length === 0) return <>{polling.online ? <EmptyState copy={copy} /> : <OfflineState copy={copy} />}<p role="status">{copy.deckNoProfiles}</p></>;
   const creationDisabled = identity.readOnly || identity.settings.decks.length >= DeckLimit;
   return <section className="deck" aria-labelledby="deck-title"><div className="deck-head"><h2 id="deck-title">{copy.deckTitle}</h2><button type="button" disabled={creationDisabled} onClick={() => { setSelected(null); setCreating(true); }}>{copy.deckCreate}</button></div>
@@ -218,7 +234,7 @@ function DeckEditor({ copy, value, profiles, disabled = false, onSave }: { reado
   const [name, setName] = useState(value?.name ?? ""); const [profileRef, setProfileRef] = useState(value?.profileRef ?? profiles[0]?.id ?? ""); const [query, setQuery] = useState(value?.query ?? "is:pr"); const [builder, setBuilder] = useState<DeckBuilder | null>(value?.builder ?? parseDeckBuilder(value?.query ?? "")); const [refreshMinutes, setRefreshMinutes] = useState<1 | 5 | 15 | 30>(value?.refreshMinutes ?? 5); const [showDrafts, setShowDrafts] = useState(value?.display.showDrafts ?? true); const [notifications, setNotifications] = useState<readonly DeckNotificationKind[]>(value?.notifications ?? []); const [invalid, setInvalid] = useState<"query" | "repository" | null>(null); const [saveFailure, setSaveFailure] = useState<DeckFailure | null>(null); const [saving, setSaving] = useState(false);
   useEffect(() => { if (value) { setName(value.name); setProfileRef(value.profileRef); setQuery(value.query); setBuilder(value.builder ?? parseDeckBuilder(value.query)); setRefreshMinutes(value.refreshMinutes); setShowDrafts(value.display.showDrafts); setNotifications(value.notifications); } }, [value]);
   const submit = (event: FormEvent) => { event.preventDefault(); if (!validateDeckQuery(query) || !profileRef || !name.trim()) { setInvalid("query"); return; } if (!hasRepositoryQualifier(query) || deckRepositories(query) === null) { setInvalid("repository"); return; } setInvalid(null); setSaveFailure(null); setSaving(true); void onSave({ id: value?.id ?? createUuidV7(), name: name.trim(), profileRef, query, builder, display: { groupBy: value?.display.groupBy ?? "none", showDrafts }, refreshMinutes, notifications }).then((committed) => { if (!committed) setSaveFailure("unknown"); }).catch((error) => setSaveFailure(classifyDeckFailure(error))).finally(() => setSaving(false)); };
-  const setBuilderValue = (field: keyof DeckBuilder, next: string) => { const value = next === "" ? null : next as DeckBuilder[typeof field]; setBuilder((current) => ({ repository: null, author: null, review: null, label: null, state: null, ...current, [field]: value })); setQuery((current) => applyDeckBuilder(current, field, value)); };
+  const setBuilderValue = (field: keyof DeckBuilder, next: string) => { const value = next === "" ? null : next as DeckBuilder[typeof field]; setBuilder((current) => updateDeckBuilder(current, field, value)); setQuery((current) => applyDeckBuilder(current, field, value)); };
   return <form onSubmit={submit} className="deck-editor"><fieldset disabled={disabled || saving}><label>{copy.deckName}<input required value={name} onChange={(event) => setName(event.target.value)} /></label><label>{copy.deckProfile}<select required value={profileRef} onChange={(event) => setProfileRef(event.target.value)}>{profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></label><label>{copy.deckQuery}<input required value={query} onChange={(event) => { setQuery(event.target.value); setBuilder(parseDeckBuilder(event.target.value)); }} /></label><fieldset><legend>{copy.deckBuilder}</legend><label>{copy.deckBuilderRepository}<input value={builder?.repository ?? ""} onChange={(event) => setBuilderValue("repository", event.target.value)} /></label><label>{copy.deckBuilderAuthor}<input value={builder?.author ?? ""} onChange={(event) => setBuilderValue("author", event.target.value)} /></label><label>{copy.deckBuilderLabel}<input value={builder?.label ?? ""} onChange={(event) => setBuilderValue("label", event.target.value)} /></label><label>{copy.deckBuilderReview}<select value={builder?.review ?? ""} onChange={(event) => setBuilderValue("review", event.target.value)}><option value="">{copy.deckAny}</option><option value="approved">{copy.deckApproved}</option><option value="changes-requested">{copy.deckChangesRequested}</option><option value="required">{copy.deckRequired}</option></select></label><label>{copy.deckBuilderState}<select value={builder?.state ?? ""} onChange={(event) => setBuilderValue("state", event.target.value)}><option value="">{copy.deckAny}</option><option value="open">{copy.deckOpen}</option><option value="closed">{copy.deckClosed}</option><option value="merged">{copy.deckMerged}</option></select></label></fieldset><label>{copy.deckRefreshInterval}<select value={refreshMinutes} onChange={(event) => setRefreshMinutes(Number(event.target.value) as 1 | 5 | 15 | 30)}>{[1, 5, 15, 30].map((minutes) => <option key={minutes} value={minutes}>{minutes} {copy.deckMinutes}</option>)}</select></label><label><input type="checkbox" checked={showDrafts} onChange={(event) => setShowDrafts(event.target.checked)} />{copy.deckShowDrafts}</label><label><input type="checkbox" checked={notifications.length > 0} onChange={(event) => setNotifications(event.target.checked ? ["review", "checks", "merged", "closed"] : [])} />{copy.deckNotifications}</label><button type="submit">{copy.saved}</button>{invalid && <p role="alert">{invalid === "repository" ? copy.deckRequireRepository : copy.deckRequirePullRequests}</p>}{saveFailure && <p role="alert">{failureCopy(copy, saveFailure)}</p>}</fieldset></form>;
 }
 

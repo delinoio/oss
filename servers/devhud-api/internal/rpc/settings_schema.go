@@ -415,7 +415,25 @@ func settingsDeckBuilderProjection(query string) settingsDeckBuilder {
 
 func unquoteSettingsDeckQualifier(value string) string {
 	if len(value) >= 2 && value[0] == '"' && value[len(value)-1] == '"' {
-		return strings.ReplaceAll(strings.ReplaceAll(value[1:len(value)-1], `\"`, `"`), `\\`, `\`)
+		var unquoted strings.Builder
+		unquoted.Grow(len(value) - 2)
+		escaped := false
+		for _, character := range value[1 : len(value)-1] {
+			if escaped {
+				unquoted.WriteRune(character)
+				escaped = false
+				continue
+			}
+			if character == '\\' {
+				escaped = true
+				continue
+			}
+			unquoted.WriteRune(character)
+		}
+		if escaped {
+			unquoted.WriteByte('\\')
+		}
+		return unquoted.String()
 	}
 	return value
 }

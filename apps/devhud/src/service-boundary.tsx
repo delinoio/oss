@@ -45,6 +45,7 @@ export interface IdentitySettingsValue {
   readonly accountError: DevHudClientError | null;
   readonly settingsError: DevHudClientError | null;
   readonly deletionCleanupFailed: boolean;
+  readonly deckAccessSuspended: boolean;
   readonly importDiff: readonly SettingsDiffEntry[] | null;
   readonly conflict: SettingsConflict | null;
   readonly signInPending: boolean;
@@ -141,6 +142,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   const [accountError, setAccountError] = useState<DevHudClientError | null>(null);
   const [settingsError, setSettingsError] = useState<DevHudClientError | null>(null);
   const [deletionCleanupFailed, setDeletionCleanupFailed] = useState(false);
+  const [deckAccessSuspended, setDeckAccessSuspended] = useState(false);
   const [importDiff, setImportDiff] = useState<readonly SettingsDiffEntry[] | null>(null);
   const [conflict, setConflict] = useState<SettingsConflict | null>(null);
   const [account, setAccount] = useState<Account | null>(null);
@@ -206,6 +208,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
         setSettingsReady(false);
         setSettingsError(null);
         setStatus("signed-out");
+        setDeckAccessSuspended(false);
         clearAuthenticatedSettingsCache(storage, apiOrigin);
         await clearIdentityQueryCache();
         onIdentityReset();
@@ -222,6 +225,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   }
 
   async function cleanPendingDeletion(): Promise<void> {
+    setDeckAccessSuspended(true);
     clearAllContractedLocalData(storage);
     try {
       await bridge.request({ operation: "secure.purge", scope: "account-deletion", profileId: await sessionProfileId(apiOrigin) });
@@ -232,6 +236,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   }
 
   async function clearIrrecoverableAccount(): Promise<void> {
+    setDeckAccessSuspended(true);
     setStatus("error");
     clearAllContractedLocalData(storage);
     try {
@@ -245,6 +250,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       setSettingsReady(false);
       setSettingsError(null);
       setStatus("signed-out");
+      setDeckAccessSuspended(false);
       setError(null);
       await clearIdentityQueryCache();
       onIdentityReset();
@@ -635,6 +641,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     accountError,
     settingsError,
     deletionCleanupFailed,
+    deckAccessSuspended,
     importDiff,
     conflict,
     signInPending,
@@ -669,6 +676,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     },
     continueLocally: () => {
       continueLocallyRef.current = true;
+      setDeckAccessSuspended(false);
       setStatus("guest");
       setIdentityReady(true);
       setError(null);
@@ -714,6 +722,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       applyRevision(0n);
       setSettingsReady(false);
       setSettingsError(null);
+      setDeckAccessSuspended(false);
       await clearIdentityQueryCache();
       onIdentityReset();
       onLoggedOut();
@@ -729,6 +738,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
         const response = await restoreMutation.mutateAsync({});
         setAccount(response.account ?? null);
         setDeletionCleanupFailed(false);
+        setDeckAccessSuspended(false);
         const blocked = response.account?.administrativeBlockState === AdministrativeBlockState.BLOCKED;
         setStatus(blocked ? "blocked" : "authenticated");
         if (!blocked) await settingsQuery.refetch();
