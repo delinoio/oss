@@ -519,6 +519,44 @@ describe("generated Connect identity/settings fixture", () => {
     expect(await screen.findByRole("heading", { name: messages.en.welcome })).toBeTruthy();
   });
 
+  it("reapplies persisted shortcut bindings after permission becomes available", async () => {
+    const bindings = defaultDevHudSettings.shortcuts.desktop;
+    writeGuestSettings(localStorage, { ...defaultDevHudSettings, shortcuts: { ...defaultDevHudSettings.shortcuts, desktop: bindings } });
+    const requests: NativeBridgeRequestV1[] = [];
+    let permissionAvailable = false;
+    const bridge: NativeBridgeV1 = {
+      async request(request) {
+        requests.push(request);
+        if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
+        if (request.operation === "secure.read") return { kind: "secure-value", value: null };
+        if (request.operation === "auth.take-pending-callback") return { kind: "auth-callback", url: null };
+        if (request.operation === "shortcuts.status") return { kind: "shortcut-status", platform: "macos", permission: "not-determined", bindings, error: "permission-denied" };
+        if (request.operation === "shortcuts.request-permission") {
+          permissionAvailable = true;
+          return { kind: "shortcut-status", platform: "macos", permission: "available", bindings, error: null };
+        }
+        if (request.operation === "shortcuts.apply") return { kind: "shortcut-status", platform: "macos", permission: permissionAvailable ? "available" : "not-determined", bindings: request.bindings, error: permissionAvailable ? null : "permission-denied" };
+        if (request.operation === "shortcuts.suspend") return { kind: "shortcut-status", platform: "macos", permission: "not-determined", bindings, error: null };
+        throw new Error(`unexpected bridge operation ${request.operation}`);
+      },
+      async listen() { return () => {}; },
+    };
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    render(<App bridge={bridge} initialRuntime={runtime} />);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.settings }));
+    const permission = await screen.findByRole("button", { name: messages.en.shortcutRequestPermission });
+    requests.splice(0);
+    fireEvent.click(permission);
+
+    await waitFor(() => expect(requests.filter((request) => request.operation.startsWith("shortcuts.")).map((request) => request.operation)).toEqual(["shortcuts.request-permission", "shortcuts.apply"]));
+    expect(requests.find((request) => request.operation === "shortcuts.apply")).toEqual({ operation: "shortcuts.apply", bindings });
+  });
+
   it("blocks authenticated service actions without disabling local navigation", async () => {
     const encoder = new TextEncoder();
     const toBase64 = (value: unknown) => btoa(String.fromCharCode(...encoder.encode(canonicalDevHudSettings(value))));
