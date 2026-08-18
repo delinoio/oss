@@ -169,7 +169,7 @@ export type NativeBridgeResponseV1 =
   | { readonly kind: "update-status"; readonly store: "app-store" | "play-store"; readonly installedVersion: string; readonly configured: boolean }
   | { readonly kind: "shortcut-status"; readonly platform: NativeShortcutPlatform; readonly permission: NativeShortcutPermission; readonly bindings: DesktopShortcutBindings; readonly error: ShortcutValidationCode | null }
   | { readonly kind: "capture-status"; readonly available: boolean; readonly platform: "macos" | "windows" | "x11" | "unsupported"; readonly shadowRemovalSupported: boolean; readonly topology: readonly CaptureDisplay[] }
-  | { readonly kind: "capture-drafts"; readonly drafts: readonly CaptureDraft[] }
+  | { readonly kind: "capture-drafts"; readonly drafts: readonly CaptureDraft[]; readonly unreadableDraftIds: readonly string[] }
   | { readonly kind: "capture-draft"; readonly draft: CaptureDraft }
   | { readonly kind: "capture-flattened"; readonly images: readonly FlattenedCaptureImage[] }
   | { readonly kind: "unsupported"; readonly feature: "widgets" }

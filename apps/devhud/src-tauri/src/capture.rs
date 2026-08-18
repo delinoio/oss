@@ -4,8 +4,8 @@ use std::{
     io::Write,
     path::{Path, PathBuf},
     sync::{
-        Arc, Mutex,
-        atomic::{AtomicU64, Ordering},
+        Arc, Mutex, MutexGuard,
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -318,6 +318,37 @@ impl EditorLayer {
             Self::Redaction { bounds, .. } => bounds.valid(),
         }
     }
+
+    fn valid_for_image(&self, width: u32, height: u32) -> bool {
+        let point = |point: Point| {
+            valid_point(point)
+                && point.x >= 0.0
+                && point.y >= 0.0
+                && point.x <= f64::from(width)
+                && point.y <= f64::from(height)
+        };
+        let bounds = |bounds: Rect| {
+            bounds.valid()
+                && bounds.x >= 0.0
+                && bounds.y >= 0.0
+                && bounds.right() <= f64::from(width)
+                && bounds.bottom() <= f64::from(height)
+        };
+        match self {
+            Self::Arrow { start, end, .. } => point(*start) && point(*end),
+            Self::Rectangle {
+                bounds: rectangle, ..
+            }
+            | Self::Blur {
+                bounds: rectangle, ..
+            }
+            | Self::Redaction {
+                bounds: rectangle, ..
+            } => bounds(*rectangle),
+            Self::Drawing { points, .. } => points.iter().copied().all(point),
+            Self::Text { origin, .. } => point(*origin),
+        }
+    }
 }
 
 fn valid_point(point: Point) -> bool {
@@ -407,6 +438,11 @@ pub struct DraftImageSummary {
     pub preview_url: String,
     pub layers: Vec<EditorLayer>,
     pub crop: Option<Rect>,
+}
+
+pub struct DraftList {
+    pub drafts: Vec<DraftSummary>,
+    pub unreadable_draft_ids: Vec<Uuid>,
 }
 
 impl DraftDocument {
@@ -570,22 +606,35 @@ impl DraftStore {
         Ok(())
     }
 
-    pub fn list(&self) -> Result<Vec<DraftSummary>, CaptureError> {
+    pub fn list(&self) -> Result<DraftList, CaptureError> {
         self.recover()?;
         let _guard = self.lock.lock().map_err(|_| CaptureError::StorageFailure)?;
         let key = self.key()?;
         let mut drafts = Vec::new();
+        let mut unreadable_draft_ids = Vec::new();
         for entry in fs::read_dir(&self.root).map_err(|_| CaptureError::StorageFailure)? {
             let entry = entry.map_err(|_| CaptureError::StorageFailure)?;
             if !entry.path().is_dir() || entry.file_name().to_string_lossy().starts_with('.') {
                 continue;
             }
-            if let Ok(document) = read_document(&entry.path().join("manifest.bin"), &key) {
-                drafts.push(document.summary());
+            let Some(id) = entry
+                .file_name()
+                .to_str()
+                .and_then(|name| Uuid::parse_str(name).ok())
+            else {
+                continue;
+            };
+            match read_document(&entry.path().join("manifest.bin"), &key) {
+                Ok(document) => drafts.push(document.summary()),
+                Err(_) => unreadable_draft_ids.push(id),
             }
         }
         drafts.sort_by_key(|draft| std::cmp::Reverse(draft.updated_at));
-        Ok(drafts)
+        unreadable_draft_ids.sort_unstable();
+        Ok(DraftList {
+            drafts,
+            unreadable_draft_ids,
+        })
     }
 
     pub fn open(&self, id: Uuid) -> Result<DraftSummary, CaptureError> {
@@ -905,7 +954,30 @@ pub struct CaptureService {
     adapter: Arc<dyn CaptureAdapter>,
     store: Arc<DraftStore>,
     topology: Mutex<Vec<DisplayDescriptor>>,
+    lifecycle: Mutex<()>,
+    purge_lock: Mutex<()>,
+    purging: AtomicBool,
     cancellation_epoch: AtomicU64,
+}
+
+pub struct CapturePurgeGuard<'a> {
+    service: &'a CaptureService,
+    purge: Option<MutexGuard<'a, ()>>,
+    lifecycle: Option<MutexGuard<'a, ()>>,
+}
+
+impl CapturePurgeGuard<'_> {
+    pub fn purge_drafts(&self) -> Result<(), CaptureError> {
+        self.service.store.purge_all()
+    }
+}
+
+impl Drop for CapturePurgeGuard<'_> {
+    fn drop(&mut self) {
+        self.lifecycle.take();
+        self.service.purging.store(false, Ordering::Release);
+        self.purge.take();
+    }
 }
 
 impl CaptureService {
@@ -914,6 +986,9 @@ impl CaptureService {
             adapter,
             store,
             topology: Mutex::new(Vec::new()),
+            lifecycle: Mutex::new(()),
+            purge_lock: Mutex::new(()),
+            purging: AtomicBool::new(false),
             cancellation_epoch: AtomicU64::new(0),
         }
     }
@@ -947,12 +1022,20 @@ impl CaptureService {
         action: CaptureAction,
         options: CaptureOptions,
     ) -> Result<DraftSummary, CaptureError> {
-        let epoch = self.begin_capture();
+        let epoch = self.begin_capture()?;
         self.capture_with_epoch(action, options, epoch)
     }
 
-    pub fn begin_capture(&self) -> u64 {
-        self.cancellation_epoch.load(Ordering::Acquire)
+    pub fn begin_capture(&self) -> Result<u64, CaptureError> {
+        if self.purging.load(Ordering::Acquire) {
+            return Err(CaptureError::Cancelled);
+        }
+        let epoch = self.cancellation_epoch.load(Ordering::Acquire);
+        if self.purging.load(Ordering::Acquire) {
+            Err(CaptureError::Cancelled)
+        } else {
+            Ok(epoch)
+        }
     }
 
     pub fn cancel(&self) {
@@ -965,6 +1048,14 @@ impl CaptureService {
         options: CaptureOptions,
         epoch: u64,
     ) -> Result<DraftSummary, CaptureError> {
+        let _lifecycle = self
+            .lifecycle
+            .lock()
+            .map_err(|_| CaptureError::PlatformFailure)?;
+        if self.purging.load(Ordering::Acquire) {
+            return Err(CaptureError::Cancelled);
+        }
+        self.ensure_not_cancelled(epoch)?;
         options.validate()?;
         for _ in 0..u64::from(options.delay_seconds) * 10 {
             std::thread::sleep(Duration::from_millis(100));
@@ -988,6 +1079,7 @@ impl CaptureService {
     ) -> Result<DraftSummary, CaptureError> {
         let before = self.topology()?;
         let pointer = normalize_native_pointer(&before, self.adapter.pointer_position()?)?;
+        let mut pointer_bounds = None;
         let mut images = match action {
             CaptureAction::Display => {
                 let display =
@@ -1001,9 +1093,9 @@ impl CaptureService {
                     .into_iter()
                     .find(|window| window.focused && !window.minimized)
                     .ok_or(CaptureError::NoWindow)?;
-                let mut image = self.capture_window(&window, options.remove_shadow)?;
+                let image = self.capture_window(&window, options.remove_shadow)?;
                 if options.include_pointer && window.bounds.contains(pointer) {
-                    draw_pointer_in_rect(&mut image, pointer, window.bounds);
+                    pointer_bounds = Some(window.bounds);
                 }
                 vec![image]
             }
@@ -1033,17 +1125,18 @@ impl CaptureService {
                     // Native adapters preserve front-to-back z-order.
                     .next()
                     .ok_or(CaptureError::NoWindow)?;
-                let mut image = self.capture_window(&window, options.remove_shadow)?;
+                let image = self.capture_window(&window, options.remove_shadow)?;
                 if options.include_pointer && window.bounds.contains(pointer) {
-                    draw_pointer_in_rect(&mut image, pointer, window.bounds);
+                    pointer_bounds = Some(window.bounds);
                 }
                 vec![image]
             }
             CaptureAction::Selection | CaptureAction::Toolbar => {
                 let selection = options.selection.ok_or(CaptureError::InvalidArgument)?;
-                let mut image = capture_region(self.adapter.as_ref(), &before, selection)?;
-                if options.include_pointer && selection.contains(pointer) {
-                    draw_pointer_in_rect(&mut image, pointer, selection);
+                let (image, captured_bounds) =
+                    capture_region(self.adapter.as_ref(), &before, selection)?;
+                if options.include_pointer && captured_bounds.contains(pointer) {
+                    pointer_bounds = Some(captured_bounds);
                 }
                 vec![image]
             }
@@ -1057,6 +1150,9 @@ impl CaptureService {
             image.width() == 0 || image.height() == 0 || image.pixels().all(|pixel| pixel.0[3] == 0)
         }) {
             return Err(CaptureError::ProtectedContent);
+        }
+        if let Some(bounds) = pointer_bounds {
+            draw_pointer_in_rect(&mut images[0], pointer, bounds);
         }
         if options.include_pointer {
             apply_pointer(&before, pointer, &mut images, action);
@@ -1090,6 +1186,27 @@ impl CaptureService {
 
     pub fn store(&self) -> &DraftStore {
         &self.store
+    }
+
+    pub fn begin_purge(&self) -> Result<CapturePurgeGuard<'_>, CaptureError> {
+        let purge = self
+            .purge_lock
+            .lock()
+            .map_err(|_| CaptureError::StorageFailure)?;
+        self.purging.store(true, Ordering::Release);
+        self.cancel();
+        let lifecycle = match self.lifecycle.lock() {
+            Ok(lifecycle) => lifecycle,
+            Err(_) => {
+                self.purging.store(false, Ordering::Release);
+                return Err(CaptureError::StorageFailure);
+            }
+        };
+        Ok(CapturePurgeGuard {
+            service: self,
+            purge: Some(purge),
+            lifecycle: Some(lifecycle),
+        })
     }
 }
 
@@ -1130,7 +1247,9 @@ fn distance_to_rect(rect: Rect, point: Point) -> f64 {
     dx * dx + dy * dy
 }
 
-fn topology_signature(displays: &[DisplayDescriptor]) -> Vec<(String, i64, i64, u32, u32)> {
+fn topology_signature(
+    displays: &[DisplayDescriptor],
+) -> Vec<(String, i64, i64, i64, i64, u32, u32)> {
     displays
         .iter()
         .map(|display| {
@@ -1138,6 +1257,8 @@ fn topology_signature(displays: &[DisplayDescriptor]) -> Vec<(String, i64, i64, 
                 display.id.clone(),
                 (display.logical_bounds.x * 1000.0) as i64,
                 (display.logical_bounds.y * 1000.0) as i64,
+                (display.logical_bounds.width * 1000.0) as i64,
+                (display.logical_bounds.height * 1000.0) as i64,
                 display.pixel_width,
                 display.pixel_height,
             )
@@ -1149,7 +1270,11 @@ fn capture_region(
     adapter: &dyn CaptureAdapter,
     displays: &[DisplayDescriptor],
     selection: Rect,
-) -> Result<RgbaImage, CaptureError> {
+) -> Result<(RgbaImage, Rect), CaptureError> {
+    let desktop_bounds = virtual_desktop_bounds(displays)?;
+    let selection = selection
+        .intersection(desktop_bounds)
+        .ok_or(CaptureError::NoDisplay)?;
     let intersections = displays
         .iter()
         .filter_map(|display| {
@@ -1169,9 +1294,9 @@ fn capture_region(
                 .max(f64::from(display.pixel_height) / display.logical_bounds.height)
         })
         .fold(1.0, f64::max);
-    let width = (selection.width * scale).ceil().max(1.0) as u32;
-    let height = (selection.height * scale).ceil().max(1.0) as u32;
-    let mut output = RgbaImage::new(width, height);
+    let width = checked_pixel_dimension(selection.width, scale)?;
+    let height = checked_pixel_dimension(selection.height, scale)?;
+    let mut output = new_transparent_image(width, height)?;
     for (display, intersection) in intersections {
         let source = adapter.capture_display(&display.id)?;
         let scale_x = f64::from(source.width()) / display.logical_bounds.width;
@@ -1207,7 +1332,61 @@ fn capture_region(
         let target_y = ((intersection.y - selection.y) * scale).round() as i64;
         imageops::overlay(&mut output, &piece, target_x, target_y);
     }
-    Ok(output)
+    Ok((output, selection))
+}
+
+fn virtual_desktop_bounds(displays: &[DisplayDescriptor]) -> Result<Rect, CaptureError> {
+    let mut displays = displays.iter();
+    let first = displays.next().ok_or(CaptureError::NoDisplay)?;
+    if !first.logical_bounds.valid() || first.pixel_width == 0 || first.pixel_height == 0 {
+        return Err(CaptureError::PlatformFailure);
+    }
+    let mut left = first.logical_bounds.x;
+    let mut top = first.logical_bounds.y;
+    let mut right = first.logical_bounds.right();
+    let mut bottom = first.logical_bounds.bottom();
+    for display in displays {
+        if !display.logical_bounds.valid() || display.pixel_width == 0 || display.pixel_height == 0
+        {
+            return Err(CaptureError::PlatformFailure);
+        }
+        left = left.min(display.logical_bounds.x);
+        top = top.min(display.logical_bounds.y);
+        right = right.max(display.logical_bounds.right());
+        bottom = bottom.max(display.logical_bounds.bottom());
+    }
+    let bounds = Rect {
+        x: left,
+        y: top,
+        width: right - left,
+        height: bottom - top,
+    };
+    bounds
+        .valid()
+        .then_some(bounds)
+        .ok_or(CaptureError::PlatformFailure)
+}
+
+fn checked_pixel_dimension(logical: f64, scale: f64) -> Result<u32, CaptureError> {
+    let pixels = (logical * scale).ceil().max(1.0);
+    if !pixels.is_finite() || pixels > f64::from(u32::MAX) {
+        Err(CaptureError::InvalidArgument)
+    } else {
+        Ok(pixels as u32)
+    }
+}
+
+fn new_transparent_image(width: u32, height: u32) -> Result<RgbaImage, CaptureError> {
+    let length = (width as usize)
+        .checked_mul(height as usize)
+        .and_then(|pixels| pixels.checked_mul(4))
+        .ok_or(CaptureError::InvalidArgument)?;
+    let mut pixels = Vec::new();
+    pixels
+        .try_reserve_exact(length)
+        .map_err(|_| CaptureError::InvalidArgument)?;
+    pixels.resize(length, 0);
+    RgbaImage::from_raw(width, height, pixels).ok_or(CaptureError::InvalidArgument)
 }
 
 fn apply_pointer(
@@ -1329,6 +1508,9 @@ fn apply_command(state: &mut DraftState, command: EditorCommand) -> Result<(), C
                 return Err(CaptureError::InvalidArgument);
             }
             let image = image_mut(state, image_id)?;
+            if !layer.valid_for_image(image.width, image.height) {
+                return Err(CaptureError::InvalidArgument);
+            }
             if image
                 .layers
                 .iter()
@@ -1594,10 +1776,13 @@ fn render_text(
 }
 
 fn draw_thick_line(image: &mut RgbaImage, start: Point, end: Point, color: Rgba<u8>, width: u32) {
+    let radius = (width as i32).max(1) / 2;
+    let Some((start, end)) = clip_line_to_image(image, start, end, radius) else {
+        return;
+    };
     let dx = end.x - start.x;
     let dy = end.y - start.y;
     let steps = dx.abs().max(dy.abs()).ceil().max(1.0) as i32;
-    let radius = (width as i32).max(1) / 2;
     for step in 0..=steps {
         let ratio = step as f64 / steps as f64;
         let x = (start.x + dx * ratio).round() as i32;
@@ -1610,6 +1795,61 @@ fn draw_thick_line(image: &mut RgbaImage, start: Point, end: Point, color: Rgba<
             }
         }
     }
+}
+
+fn clip_line_to_image(
+    image: &RgbaImage,
+    start: Point,
+    end: Point,
+    radius: i32,
+) -> Option<(Point, Point)> {
+    if !valid_point(start) || !valid_point(end) || image.width() == 0 || image.height() == 0 {
+        return None;
+    }
+    let radius = f64::from(radius);
+    let minimum_x = -radius;
+    let minimum_y = -radius;
+    let maximum_x = f64::from(image.width().saturating_sub(1)) + radius;
+    let maximum_y = f64::from(image.height().saturating_sub(1)) + radius;
+    let dx = end.x - start.x;
+    let dy = end.y - start.y;
+    let mut lower = 0.0_f64;
+    let mut upper = 1.0_f64;
+    for (direction, distance) in [
+        (-dx, start.x - minimum_x),
+        (dx, maximum_x - start.x),
+        (-dy, start.y - minimum_y),
+        (dy, maximum_y - start.y),
+    ] {
+        if direction == 0.0 {
+            if distance < 0.0 {
+                return None;
+            }
+            continue;
+        }
+        let ratio = distance / direction;
+        if direction < 0.0 {
+            if ratio > upper {
+                return None;
+            }
+            lower = lower.max(ratio);
+        } else {
+            if ratio < lower {
+                return None;
+            }
+            upper = upper.min(ratio);
+        }
+    }
+    Some((
+        Point {
+            x: start.x + lower * dx,
+            y: start.y + lower * dy,
+        },
+        Point {
+            x: start.x + upper * dx,
+            y: start.y + upper * dy,
+        },
+    ))
 }
 
 fn parse_color(value: &str) -> Result<Rgba<u8>, CaptureError> {
@@ -2162,7 +2402,10 @@ fn native_pointer_position() -> Result<Point, CaptureError> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{
+        Barrier,
+        atomic::{AtomicUsize, Ordering},
+    };
 
     use image::ImageBuffer;
 
@@ -2245,7 +2488,15 @@ mod tests {
         }
 
         fn capture_window(&self, _id: &str) -> Result<RgbaImage, CaptureError> {
-            Ok(ImageBuffer::from_pixel(100, 80, Rgba([12, 34, 56, 255])))
+            Ok(ImageBuffer::from_pixel(
+                100,
+                80,
+                if self.transparent {
+                    Rgba([0, 0, 0, 0])
+                } else {
+                    Rgba([12, 34, 56, 255])
+                },
+            ))
         }
 
         fn shadow_removal_supported(&self) -> bool {
@@ -2376,6 +2627,42 @@ mod tests {
         )
         .unwrap();
         assert_eq!(output.get_pixel(2, 2), &Rgba([0, 0, 0, 255]));
+
+        assert_eq!(
+            apply_command(
+                &mut state,
+                EditorCommand::AddLayer {
+                    image_id,
+                    layer: EditorLayer::Arrow {
+                        id: Uuid::now_v7(),
+                        start: Point { x: 1.0, y: 1.0 },
+                        end: Point {
+                            x: 1_000_000_000.0,
+                            y: 1_000_000_000.0,
+                        },
+                        color: "#ef4444".into(),
+                        width: 4,
+                    },
+                },
+            )
+            .unwrap_err(),
+            CaptureError::InvalidArgument
+        );
+        let mut clipped = ImageBuffer::from_pixel(8, 8, Rgba([255, 255, 255, 255]));
+        draw_thick_line(
+            &mut clipped,
+            Point {
+                x: -1_000_000_000.0,
+                y: 4.0,
+            },
+            Point {
+                x: 1_000_000_000.0,
+                y: 4.0,
+            },
+            Rgba([0, 0, 0, 255]),
+            1,
+        );
+        assert_eq!(clipped.get_pixel(4, 4), &Rgba([0, 0, 0, 255]));
     }
 
     #[test]
@@ -2387,7 +2674,7 @@ mod tests {
             change_topology: false,
             transparent: false,
         };
-        let output = capture_region(
+        let (output, captured_bounds) = capture_region(
             &adapter,
             &adapter.displays,
             Rect {
@@ -2398,9 +2685,40 @@ mod tests {
             },
         )
         .unwrap();
+        assert_eq!(
+            captured_bounds,
+            Rect {
+                x: -50.0,
+                y: 0.0,
+                width: 100.0,
+                height: 50.0,
+            }
+        );
         assert_eq!(output.dimensions(), (200, 100));
         assert_eq!(output.get_pixel(25, 25), &Rgba([255, 0, 0, 255]));
         assert_eq!(output.get_pixel(175, 25), &Rgba([0, 0, 255, 255]));
+
+        let (bounded, bounded_selection) = capture_region(
+            &adapter,
+            &adapter.displays,
+            Rect {
+                x: -1_000_000_000.0,
+                y: -1_000_000_000.0,
+                width: 2_000_000_000.0,
+                height: 2_000_000_000.0,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            bounded_selection,
+            Rect {
+                x: -100.0,
+                y: 0.0,
+                width: 200.0,
+                height: 100.0,
+            }
+        );
+        assert_eq!(bounded.dimensions(), (400, 200));
     }
 
     #[test]
@@ -2453,6 +2771,42 @@ mod tests {
                 None => assert!(result.is_ok()),
             }
         }
+
+        let mut logical_change = displays();
+        logical_change[0].logical_bounds.width -= 1.0;
+        assert_ne!(
+            topology_signature(&displays()),
+            topology_signature(&logical_change)
+        );
+
+        let root = TestDirectory::new();
+        let store = Arc::new(DraftStore::new_test(root.0.clone(), 1024 * 1024, [9; 32]));
+        let service = CaptureService::new(
+            Arc::new(FakeAdapter {
+                displays: displays(),
+                pointer: Point { x: -50.0, y: 20.0 },
+                topology_calls: AtomicUsize::new(0),
+                change_topology: false,
+                transparent: true,
+            }),
+            store,
+        );
+        assert_eq!(
+            service
+                .capture(
+                    CaptureAction::ActiveWindow,
+                    CaptureOptions {
+                        include_pointer: true,
+                        remove_shadow: false,
+                        delay_seconds: 0,
+                        selection: None,
+                        selection_window: false,
+                        append_to_draft_id: None,
+                    },
+                )
+                .unwrap_err(),
+            CaptureError::ProtectedContent
+        );
     }
 
     #[test]
@@ -2521,7 +2875,104 @@ mod tests {
         store
             .create(vec![ImageBuffer::from_pixel(8, 8, Rgba([1, 2, 3, 255]))])
             .unwrap();
+        let unreadable = store
+            .create(vec![ImageBuffer::from_pixel(8, 8, Rgba([4, 5, 6, 255]))])
+            .unwrap();
+        fs::write(
+            root.0.join(unreadable.id.to_string()).join("manifest.bin"),
+            b"corrupt encrypted manifest",
+        )
+        .unwrap();
+        let listed = store.list().unwrap();
+        assert_eq!(listed.unreadable_draft_ids, vec![unreadable.id]);
+        store.delete(unreadable.id).unwrap();
+        assert!(!root.0.join(unreadable.id.to_string()).exists());
         store.purge_all().unwrap();
+        assert!(!root.0.exists());
+    }
+
+    #[test]
+    fn purge_cancels_and_joins_an_in_flight_capture_before_deleting_drafts() {
+        struct BlockingAdapter {
+            entered: Arc<Barrier>,
+            release: Arc<Barrier>,
+        }
+
+        impl CaptureAdapter for BlockingAdapter {
+            fn platform(&self) -> &'static str {
+                "test"
+            }
+
+            fn topology(&self) -> Result<Vec<DisplayDescriptor>, CaptureError> {
+                Ok(displays())
+            }
+
+            fn pointer_position(&self) -> Result<Point, CaptureError> {
+                Ok(Point { x: -50.0, y: 20.0 })
+            }
+
+            fn windows(&self) -> Result<Vec<WindowDescriptor>, CaptureError> {
+                Ok(Vec::new())
+            }
+
+            fn capture_display(&self, _id: &str) -> Result<RgbaImage, CaptureError> {
+                self.entered.wait();
+                self.release.wait();
+                Ok(ImageBuffer::from_pixel(100, 100, Rgba([1, 2, 3, 255])))
+            }
+
+            fn capture_window(&self, _id: &str) -> Result<RgbaImage, CaptureError> {
+                Err(CaptureError::NoWindow)
+            }
+
+            fn shadow_removal_supported(&self) -> bool {
+                false
+            }
+        }
+
+        let root = TestDirectory::new();
+        let store = Arc::new(DraftStore::new_test(root.0.clone(), 1024 * 1024, [23; 32]));
+        store
+            .create(vec![ImageBuffer::from_pixel(8, 8, Rgba([4, 5, 6, 255]))])
+            .unwrap();
+        let entered = Arc::new(Barrier::new(2));
+        let release = Arc::new(Barrier::new(2));
+        let service = Arc::new(CaptureService::new(
+            Arc::new(BlockingAdapter {
+                entered: entered.clone(),
+                release: release.clone(),
+            }),
+            store,
+        ));
+        let capture_service = service.clone();
+        let capture = std::thread::spawn(move || {
+            capture_service.capture(
+                CaptureAction::Display,
+                CaptureOptions {
+                    include_pointer: false,
+                    remove_shadow: false,
+                    delay_seconds: 0,
+                    selection: None,
+                    selection_window: false,
+                    append_to_draft_id: None,
+                },
+            )
+        });
+        entered.wait();
+        let purge_service = service.clone();
+        let purge = std::thread::spawn(move || {
+            let guard = purge_service.begin_purge().unwrap();
+            guard.purge_drafts().unwrap();
+        });
+        while !service.purging.load(Ordering::Acquire) {
+            std::thread::yield_now();
+        }
+        release.wait();
+        assert_eq!(
+            capture.join().unwrap().unwrap_err(),
+            CaptureError::Cancelled
+        );
+        purge.join().unwrap();
         assert!(!root.0.exists());
     }
 

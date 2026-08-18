@@ -30,7 +30,7 @@ function bridgeWith(handler?: (request: NativeBridgeRequestV1) => Promise<Native
   const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
     if (handler) return handler(value);
     if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [{ id: "main", name: "Main", logicalBounds: { x: -100, y: 0, width: 1920, height: 1080 }, pixelWidth: 3840, pixelHeight: 2160, scale: 2, primary: true }] };
-    if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [draft] };
+    if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [draft], unreadableDraftIds: [] };
     if (value.operation === "capture.editor.apply") return { kind: "capture-draft", draft: { ...draft, revision: 4, images: [{ ...draft.images[0], layers: [] }] } };
     if (value.operation === "capture.flatten") return { kind: "capture-flattened", images: [{ imageId: draft.images[0].id, width: 800, height: 600, bytes: 4_096, sha256: "a".repeat(64), assetUrl: "realqa://asset/draft/image/flattened/3", downscaled: false }] };
     throw new Error(`unexpected operation ${value.operation}`);
@@ -67,7 +67,7 @@ describe("RealQA capture and editor", () => {
     let resolveCapture: ((response: NativeBridgeResponseV1) => void) | undefined;
     const { bridge, request } = bridgeWith(async (value) => {
       if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [] };
-      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [], unreadableDraftIds: [] };
       if (value.operation === "capture.start") return new Promise((resolve) => { resolveCapture = resolve; });
       if (value.operation === "capture.cancel") return { kind: "ok" };
       throw new Error(`unexpected operation ${value.operation}`);
@@ -76,7 +76,12 @@ describe("RealQA capture and editor", () => {
 
     fireEvent.click(screen.getByRole("button", { name: messages.en.captureSelection }));
     const dialog = screen.getByRole("dialog");
-    expect(screen.getByRole("radio", { name: messages.en.captureRegionMode })).toHaveProperty("checked", true);
+    const region = screen.getByRole("radio", { name: messages.en.captureRegionMode });
+    expect(region).toHaveProperty("checked", true);
+    fireEvent.keyDown(region, { key: " " });
+    expect(region).toHaveProperty("checked", true);
+    fireEvent.keyDown(screen.getByRole("button", { name: messages.en.captureNow }), { key: " " });
+    expect(region).toHaveProperty("checked", true);
     fireEvent.keyDown(dialog, { key: " " });
     expect(screen.getByRole("radio", { name: messages.en.captureWindowMode })).toHaveProperty("checked", true);
     fireEvent.click(screen.getByRole("button", { name: messages.en.captureNow }));
@@ -100,5 +105,60 @@ describe("RealQA capture and editor", () => {
     fireEvent.pointerUp(picker, { pointerId: 1, clientX: 125, clientY: 70 });
     expect(screen.getByRole("spinbutton", { name: messages.en.captureX })).toHaveProperty("value", "140");
     expect(screen.getByRole("spinbutton", { name: messages.en.captureWidth })).toHaveProperty("value", "960");
+  });
+
+  it("loads saved drafts when capture status is temporarily unavailable", async () => {
+    const { bridge } = bridgeWith(async (value) => {
+      if (value.operation === "capture.status") throw new Error("display adapter unavailable");
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [draft], unreadableDraftIds: [] };
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    render(<RealqaSurface bridge={bridge} copy={messages.en} />);
+
+    expect(await screen.findByRole("button", { name: messages.en.realqaOpenEditor })).toBeTruthy();
+    expect(screen.getByRole("alert").textContent).toContain(messages.en.captureFailed);
+  });
+
+  it("serializes revision-checked editor operations", async () => {
+    let resolveFirst: ((response: NativeBridgeResponseV1) => void) | undefined;
+    const applyRequests: Extract<NativeBridgeRequestV1, { operation: "capture.editor.apply" }>[] = [];
+    const { bridge } = bridgeWith(async (value) => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [draft], unreadableDraftIds: [] };
+      if (value.operation === "capture.editor.apply") {
+        applyRequests.push(value);
+        if (applyRequests.length === 1) return new Promise((resolve) => { resolveFirst = resolve; });
+        return { kind: "capture-draft", draft: { ...draft, revision: 5 } };
+      }
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    render(<RealqaSurface bridge={bridge} copy={messages.en} />);
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.realqaOpenEditor }));
+    const add = screen.getByRole("button", { name: messages.en.editorAdd });
+    fireEvent.click(add);
+    fireEvent.click(add);
+    await waitFor(() => expect(applyRequests).toHaveLength(1));
+    expect(applyRequests[0].expectedRevision).toBe(3);
+    resolveFirst?.({ kind: "capture-draft", draft: { ...draft, revision: 4 } });
+    await waitFor(() => expect(applyRequests).toHaveLength(2));
+    expect(applyRequests[1].expectedRevision).toBe(4);
+  });
+
+  it("offers explicit deletion for an unreadable encrypted draft", async () => {
+    const unreadableId = "019b0000-0000-7000-8000-000000000004";
+    let deleted = false;
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const { bridge, request } = bridgeWith(async (value) => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: false, topology: [] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [], unreadableDraftIds: deleted ? [] : [unreadableId] };
+      if (value.operation === "capture.delete-draft") { deleted = true; return { kind: "ok" }; }
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    render(<RealqaSurface bridge={bridge} copy={messages.en} />);
+
+    expect(await screen.findByText(messages.en.realqaUnreadableDraft)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: messages.en.realqaDeleteDraft }));
+    await waitFor(() => expect(request).toHaveBeenCalledWith({ operation: "capture.delete-draft", draftId: unreadableId }));
+    await waitFor(() => expect(screen.queryByText(messages.en.realqaUnreadableDraft)).toBeNull());
   });
 });

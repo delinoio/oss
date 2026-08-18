@@ -7,6 +7,8 @@ use std::time::Duration;
 
 use serde_json::{Value, json};
 #[cfg(desktop)]
+use tauri::Manager;
+#[cfg(desktop)]
 use uuid::Uuid;
 
 #[cfg(desktop)]
@@ -705,7 +707,7 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
             .and_then(Value::as_str)
             .ok_or("invalid-argument")?;
         if operation.starts_with("capture.") {
-            return handle_capture_request(&request, capture.inner().clone()).await;
+            return handle_capture_request(&request, capture.inner().clone(), &app).await;
         }
         if operation.starts_with("secure.") {
             if operation == "secure.purge" {
@@ -721,8 +723,12 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
                     Some("logout" | "account-deletion")
                 )
             {
-                let draft_result = capture.store().purge_all();
+                let purge = capture
+                    .begin_purge()
+                    .map_err(|error| error.code().to_string())?;
+                let draft_result = purge.purge_drafts();
                 let secure_result = crate::secure_store::handle(&request);
+                drop(purge);
                 return match (draft_result, secure_result) {
                     (Ok(()), Ok(response)) => Ok(response),
                     _ => Err("storage-failure".to_string()),
@@ -750,6 +756,7 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
 async fn handle_capture_request(
     request: &Value,
     capture: std::sync::Arc<crate::capture::CaptureService>,
+    app: &tauri::AppHandle<impl tauri::Runtime>,
 ) -> Result<Value, String> {
     use crate::capture::{CaptureAction, CaptureOptions, EditorCommand};
 
@@ -795,27 +802,64 @@ async fn handle_capture_request(
             let action = request
                 .get("actionId")
                 .and_then(Value::as_str)
-                .ok_or("invalid-argument")
+                .ok_or_else(|| "invalid-argument".to_string())
                 .and_then(|value| CaptureAction::from_action_id(value).map_err(failure))?;
             let options: CaptureOptions = serde_json::from_value(
                 request.get("options").cloned().unwrap_or_else(|| json!({})),
             )
             .map_err(|_| "invalid-argument")?;
-            let epoch = capture.begin_capture();
+            let hide_for_window_target = matches!(action, CaptureAction::ActiveWindow)
+                || (matches!(action, CaptureAction::Selection | CaptureAction::Toolbar)
+                    && options.selection_window);
+            let epoch = capture.begin_capture().map_err(failure)?;
+            let hidden_window = if hide_for_window_target {
+                let window = app
+                    .get_webview_window("main")
+                    .ok_or_else(|| "platform-failure".to_string())?;
+                if window.is_focused().map_err(|_| "platform-failure")? {
+                    window.hide().map_err(|_| "platform-failure")?;
+                    Some(window)
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
             let capture_task = capture.clone();
-            let draft = tauri::async_runtime::spawn_blocking(move || {
+            let waits_for_focus_handoff = hidden_window.is_some();
+            let capture_result = tauri::async_runtime::spawn_blocking(move || {
+                if waits_for_focus_handoff {
+                    std::thread::sleep(Duration::from_millis(100));
+                }
                 capture_task.capture_with_epoch(action, options, epoch)
             })
             .await
-            .map_err(|_| "platform-failure")?
-            .map_err(failure)?;
+            .map_err(|_| "platform-failure".to_string())
+            .and_then(|result| result.map_err(failure));
+            let restore_result = if let Some(window) = hidden_window {
+                window
+                    .show()
+                    .and_then(|()| window.set_focus())
+                    .map_err(|reason| {
+                        tracing::error!(event = "capture_window_restore_failed", %reason);
+                        "platform-failure".to_string()
+                    })
+            } else {
+                Ok(())
+            };
+            let draft = match (capture_result, restore_result) {
+                (Ok(draft), Ok(())) => draft,
+                (Err(error), _) | (_, Err(error)) => return Err(error),
+            };
             Ok(json!({ "kind": "capture-draft", "draft": draft }))
         }
         Some("capture.list-drafts") => {
             exact_keys(request, &["operation"])?;
+            let list = capture.store().list().map_err(failure)?;
             Ok(json!({
                 "kind": "capture-drafts",
-                "drafts": capture.store().list().map_err(failure)?,
+                "drafts": list.drafts,
+                "unreadableDraftIds": list.unreadable_draft_ids,
             }))
         }
         Some("capture.open-draft") => {

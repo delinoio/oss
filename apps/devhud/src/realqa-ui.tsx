@@ -12,6 +12,7 @@ export interface RealqaController { execute(action: CaptureActionId): Promise<vo
 interface RealqaContextValue {
   readonly state: {
     readonly drafts: readonly CaptureDraft[];
+    readonly unreadableDraftIds: readonly string[];
     readonly selected: CaptureDraft | null;
     readonly busy: boolean;
     readonly status: string;
@@ -23,6 +24,7 @@ interface RealqaContextValue {
     readonly open: (draft: CaptureDraft) => void;
     readonly close: () => void;
     readonly remove: (draft: CaptureDraft) => Promise<void>;
+    readonly removeUnreadable: (draftId: string) => Promise<void>;
     readonly updateDraft: (draft: CaptureDraft) => void;
     readonly refresh: () => Promise<void>;
   };
@@ -51,6 +53,7 @@ function errorCopy(copy: Copy, reason: unknown) {
 
 export function RealqaSurface({ ref, bridge, copy, requestedAction }: { readonly ref?: Ref<RealqaController>; readonly bridge: NativeBridgeV1; readonly copy: Copy; readonly requestedAction?: CaptureRequest | null }) {
   const [drafts, setDrafts] = useState<readonly CaptureDraft[]>([]);
+  const [unreadableDraftIds, setUnreadableDraftIds] = useState<readonly string[]>([]);
   const [selected, setSelected] = useState<CaptureDraft | null>(null);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
@@ -63,14 +66,26 @@ export function RealqaSurface({ ref, bridge, copy, requestedAction }: { readonly
 
   const refresh = useCallback(async () => {
     const response = await bridge.request({ operation: "capture.list-drafts" });
-    if (response.kind === "capture-drafts") setDrafts(response.drafts);
+    if (response.kind === "capture-drafts") {
+      setDrafts(response.drafts);
+      setUnreadableDraftIds(response.unreadableDraftIds);
+    }
   }, [bridge]);
 
   useEffect(() => {
-    void Promise.all([bridge.request({ operation: "capture.status" }), bridge.request({ operation: "capture.list-drafts" })]).then(([native, stored]) => {
-      if (native.kind === "capture-status") setCaptureStatus({ topology: native.topology, shadowRemovalSupported: native.shadowRemovalSupported });
-      if (stored.kind === "capture-drafts") setDrafts(stored.drafts);
-    }).catch((reason) => setError(errorCopy(copy, reason)));
+    void Promise.allSettled([bridge.request({ operation: "capture.status" }), bridge.request({ operation: "capture.list-drafts" })]).then(([native, stored]) => {
+      if (native.status === "fulfilled" && native.value.kind === "capture-status") {
+        setCaptureStatus({ topology: native.value.topology, shadowRemovalSupported: native.value.shadowRemovalSupported });
+      } else if (native.status === "rejected") {
+        setError(errorCopy(copy, native.reason));
+      }
+      if (stored.status === "fulfilled" && stored.value.kind === "capture-drafts") {
+        setDrafts(stored.value.drafts);
+        setUnreadableDraftIds(stored.value.unreadableDraftIds);
+      } else if (stored.status === "rejected") {
+        setError(errorCopy(copy, stored.reason));
+      }
+    });
   }, [bridge, copy]);
 
   const completeCapture = useCallback(async (action: CaptureActionId, captureOptions: CaptureOptions = options) => {
@@ -132,13 +147,18 @@ export function RealqaSurface({ ref, bridge, copy, requestedAction }: { readonly
     if (selected?.id === draft.id) setSelected(null);
     await refresh();
   };
+  const removeUnreadable = async (draftId: string) => {
+    if (!confirm(copy.realqaDeleteConfirm)) return;
+    await bridge.request({ operation: "capture.delete-draft", draftId });
+    await refresh();
+  };
   const updateDraft = (draft: CaptureDraft) => {
     setSelected(draft);
     setDrafts((current) => current.map((item) => item.id === draft.id ? draft : item));
   };
   const value: RealqaContextValue = {
-    state: { drafts, selected, busy, status, error, preview },
-    actions: { capture, open: setSelected, close: () => setSelected(null), remove, updateDraft, refresh },
+    state: { drafts, unreadableDraftIds, selected, busy, status, error, preview },
+    actions: { capture, open: setSelected, close: () => setSelected(null), remove, removeUnreadable, updateDraft, refresh },
     meta: { copy, bridge },
   };
 
@@ -168,12 +188,15 @@ function CaptureActions() {
 }
 
 function DraftList() {
-  const { state: { drafts }, actions, meta: { copy } } = useRealqa();
+  const { state: { drafts, unreadableDraftIds }, actions, meta: { copy } } = useRealqa();
   return <section aria-labelledby="realqa-drafts-title"><h3 id="realqa-drafts-title">{copy.realqaDrafts}</h3>
-    {drafts.length === 0 ? <p>{copy.realqaNoDrafts}</p> : <ul className="draft-list">{drafts.map((draft) => <li key={draft.id}>
+    {drafts.length === 0 && unreadableDraftIds.length === 0 ? <p>{copy.realqaNoDrafts}</p> : <ul className="draft-list">{drafts.map((draft) => <li key={draft.id}>
       <button className="draft-preview" onClick={() => actions.open(draft)}><img src={draft.images[0]?.previewUrl} alt="" /><span>{draft.imageCount} {copy.realqaImages}</span></button>
       <time dateTime={new Date(draft.expiresAt * 1000).toISOString()}>{copy.realqaDraftExpiry}: {new Date(draft.expiresAt * 1000).toLocaleString()}</time>
       <div className="actions"><button onClick={() => actions.open(draft)}>{copy.realqaOpenEditor}</button><button className="danger" onClick={() => void actions.remove(draft)}>{copy.realqaDeleteDraft}</button></div>
+    </li>)}{unreadableDraftIds.map((draftId) => <li key={draftId}>
+      <p role="status">{copy.realqaUnreadableDraft}</p>
+      <div className="actions"><button className="danger" onClick={() => void actions.removeUnreadable(draftId)}>{copy.realqaDeleteDraft}</button></div>
     </li>)}</ul>}
   </section>;
 }
@@ -190,7 +213,9 @@ function CaptureDialog({ action, status, options, onOptions, onCapture, onClose 
   const submit = () => void onCapture(submitAction, { ...options, removeShadow: options.removeShadow || optionShadow, selection: rect, selectionWindow: mode === "window" });
   const keyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (event.key === "Alt" && status?.shadowRemovalSupported) setOptionShadow(true);
-    if (event.key === " ") { event.preventDefault(); setMode((current) => current === "region" ? "window" : "region"); }
+    const target = event.target instanceof Element ? event.target : null;
+    const interactive = target?.closest("button,input,select,textarea,a,[contenteditable='true']");
+    if (event.key === " " && !interactive) { event.preventDefault(); setMode((current) => current === "region" ? "window" : "region"); }
     if (event.key === "Escape") { event.stopPropagation(); onClose(); }
     if (event.key !== "Tab") return;
     const focusable = dialog.current?.querySelectorAll<HTMLElement>("button:not([disabled]),input:not([disabled]),select:not([disabled])");
@@ -272,25 +297,47 @@ function CaptureEditor({ draft }: { readonly draft: CaptureDraft }) {
   const [coordinates, setCoordinates] = useState<CaptureRect>({ x: 0, y: 0, width: 100, height: 100 });
   const [message, setMessage] = useState("");
   const [failed, setFailed] = useState(false);
+  const latestDraft = useRef(draft);
+  const revisionQueue = useRef<Promise<void>>(Promise.resolve());
   const active = draft.images.find((image) => image.id === imageId) ?? draft.images[0];
+  useEffect(() => { latestDraft.current = draft; }, [draft]);
   useEffect(() => { if (!active && draft.images[0]) setImageId(draft.images[0].id); }, [active, draft.images]);
 
-  const mutate = async (command: CaptureEditorCommand) => {
+  const enqueueRevisionOperation = (operation: (current: CaptureDraft) => Promise<void>) => {
+    const next = revisionQueue.current.then(() => operation(latestDraft.current));
+    revisionQueue.current = next.catch(() => {});
+    return next;
+  };
+  const installDraft = (next: CaptureDraft) => {
+    latestDraft.current = next;
+    actions.updateDraft(next);
+  };
+  const mutate = (command: CaptureEditorCommand) => {
     setFailed(false);
-    try {
-      const response = await bridge.request({ operation: "capture.editor.apply", draftId: draft.id, expectedRevision: draft.revision, command });
-      if (response.kind === "capture-draft") { actions.updateDraft(response.draft); setMessage(copy.editorSaved); }
-    } catch { setFailed(true); setMessage(copy.editorSaveFailed); }
+    return enqueueRevisionOperation(async (current) => {
+      try {
+        const response = await bridge.request({ operation: "capture.editor.apply", draftId: current.id, expectedRevision: current.revision, command });
+        if (response.kind === "capture-draft") { installDraft(response.draft); setMessage(copy.editorSaved); }
+      } catch { setFailed(true); setMessage(copy.editorSaveFailed); }
+    });
   };
-  const history = async (operation: "capture.editor.undo" | "capture.editor.redo") => {
-    const response = await bridge.request({ operation, draftId: draft.id, expectedRevision: draft.revision });
-    if (response.kind === "capture-draft") actions.updateDraft(response.draft);
+  const history = (operation: "capture.editor.undo" | "capture.editor.redo") => {
+    setFailed(false);
+    return enqueueRevisionOperation(async (current) => {
+      try {
+        const response = await bridge.request({ operation, draftId: current.id, expectedRevision: current.revision });
+        if (response.kind === "capture-draft") installDraft(response.draft);
+      } catch { setFailed(true); setMessage(copy.editorSaveFailed); }
+    });
   };
-  const flatten = async () => {
-    try {
-      const response = await bridge.request({ operation: "capture.flatten", draftId: draft.id, expectedRevision: draft.revision });
-      if (response.kind === "capture-flattened") setMessage(response.images.some((image: FlattenedCaptureImage) => image.downscaled) ? copy.editorDownscaled : copy.editorFlattened);
-    } catch { setFailed(true); setMessage(copy.editorSaveFailed); }
+  const flatten = () => {
+    setFailed(false);
+    return enqueueRevisionOperation(async (current) => {
+      try {
+        const response = await bridge.request({ operation: "capture.flatten", draftId: current.id, expectedRevision: current.revision });
+        if (response.kind === "capture-flattened") setMessage(response.images.some((image: FlattenedCaptureImage) => image.downscaled) ? copy.editorDownscaled : copy.editorFlattened);
+      } catch { setFailed(true); setMessage(copy.editorSaveFailed); }
+    });
   };
   if (!active) return null;
   const point = (event: PointerEvent<HTMLElement>): CapturePoint => {

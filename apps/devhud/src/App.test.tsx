@@ -421,7 +421,7 @@ describe("native App state", () => {
     let receive: ((event: NativeBridgeEventV1) => void) | undefined;
     const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
       if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "windows", shadowRemovalSupported: false, topology: [] };
-      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [], unreadableDraftIds: [] };
       throw new Error(`unexpected operation ${value.operation}`);
     });
     const bridge: NativeBridgeV1 = {
