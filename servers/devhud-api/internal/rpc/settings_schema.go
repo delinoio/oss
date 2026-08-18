@@ -681,6 +681,9 @@ func settingsURLMappingPattern(value any, path string) error {
 		}
 	}
 	pathText := match[4]
+	if strings.Contains(pathText, "\\") {
+		return fmt.Errorf("%s has an invalid path", path)
+	}
 	segments := strings.Split(pathText, "/")[1:]
 	if len(segments) > maximumMappingPathSegments {
 		return fmt.Errorf("%s must contain at most %d path segments", path, maximumMappingPathSegments)

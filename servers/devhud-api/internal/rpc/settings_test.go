@@ -75,6 +75,7 @@ func TestValidateDevHudSettings(t *testing.T) {
 		"invalid punycode host":               strings.Replace(structuredMapping, `"https://example.com./**"`, `"https://xn--/**"`, 1),
 		"wildcard host with mapped separator": strings.Replace(structuredMapping, `"https://example.com./**"`, `"https://*.example。com/**"`, 1),
 		"too many path segments":              strings.Replace(structuredMapping, `"https://example.com./**"`, `"https://example.com/`+strings.Repeat("a/", 32)+`a"`, 1),
+		"backslash-separated path segments":   strings.Replace(structuredMapping, `"https://example.com./**"`, `"https://example.com/`+strings.Repeat(`a\\`, 32)+`a"`, 1),
 		"too many globstar segments":          strings.Replace(structuredMapping, `"https://example.com./**"`, `"https://example.com/`+strings.Repeat("**/", 8)+`**"`, 1),
 	} {
 		t.Run(name, func(t *testing.T) {
