@@ -137,6 +137,9 @@ interface UrlMappingDraftValue {
   readonly priorityDrafts: Record<string, string>;
   readonly setPriorityDrafts: (drafts: Record<string, string> | ((current: Record<string, string>) => Record<string, string>)) => void;
   readonly baseRevision: bigint;
+  readonly credentialOperationPending: boolean;
+  readonly runCredentialOperation: <Value>(operation: () => Promise<Value>) => Promise<Value>;
+  readonly isCurrentScope: () => boolean;
   readonly reset: () => void;
 }
 
@@ -145,29 +148,54 @@ const UrlMappingDraftContext = createContext<UrlMappingDraftValue | null>(null);
 export function UrlMappingDraftProvider({ children }: { readonly children: ReactNode }) {
   const identity = useIdentitySettings();
   const accountId = identity.account?.userId?.value ?? identity.account?.logtoSubject ?? "";
-  const scope = useRef({ status: identity.status, accountId, generation: 0 });
-  const leavesAuthenticatedSession = scope.current.status === "authenticated" && identity.status !== "authenticated";
-  const changesAuthenticatedAccount = identity.status === "authenticated" && scope.current.status === "authenticated" && accountId !== "" && scope.current.accountId !== "" && scope.current.accountId !== accountId;
-  if (leavesAuthenticatedSession || changesAuthenticatedAccount) {
-    scope.current = { status: identity.status, accountId, generation: scope.current.generation + 1 };
+  const scope = useRef({ retainsDraft: identity.status === "authenticated" || identity.status === "blocked", accountId, generation: 0 });
+  const retainsDraft = identity.status === "authenticated" || identity.status === "blocked";
+  const leavesSession = scope.current.retainsDraft && !retainsDraft;
+  const changesAuthenticatedAccount = retainsDraft && scope.current.retainsDraft && accountId !== "" && scope.current.accountId !== "" && scope.current.accountId !== accountId;
+  if (leavesSession || changesAuthenticatedAccount) {
+    scope.current = { retainsDraft, accountId, generation: scope.current.generation + 1 };
   } else {
-    scope.current.status = identity.status;
+    scope.current.retainsDraft = retainsDraft;
     // Account and Settings queries resolve independently; learning this account's ID must not discard an editable draft.
     if (accountId !== "") scope.current.accountId = accountId;
   }
-  return <UrlMappingDraftStateProvider key={scope.current.generation} identity={identity}>{children}</UrlMappingDraftStateProvider>;
+  const generation = scope.current.generation;
+  return <UrlMappingDraftStateProvider key={generation} identity={identity} isCurrentScope={() => scope.current.generation === generation}>{children}</UrlMappingDraftStateProvider>;
 }
 
-function UrlMappingDraftStateProvider({ children, identity }: { readonly children: ReactNode; readonly identity: ReturnType<typeof useIdentitySettings> }) {
+function UrlMappingDraftStateProvider({ children, identity, isCurrentScope }: { readonly children: ReactNode; readonly identity: ReturnType<typeof useIdentitySettings>; readonly isCurrentScope: () => boolean }) {
   const [draft, setDraft] = useState<UrlRepositoryMapping[]>(() => [...identity.settings.urlMappings]);
   const [invalid, setInvalid] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [dirty, setDirty] = useState(false);
+  const [dirty, setDirtyState] = useState(false);
+  const dirtyRef = useRef(false);
+  const setDirty = (next: boolean) => {
+    dirtyRef.current = next;
+    setDirtyState(next);
+  };
   const [saving, setSaving] = useState(false);
   const [priorityDrafts, setPriorityDrafts] = useState<Record<string, string>>({});
   const [baseRevision, setBaseRevision] = useState(identity.revision);
+  const credentialOperationTail = useRef(Promise.resolve());
+  const credentialOperationCount = useRef(0);
+  const [credentialOperationPending, setCredentialOperationPending] = useState(false);
+  const runCredentialOperation = async <Value,>(operation: () => Promise<Value>): Promise<Value> => {
+    credentialOperationCount.current += 1;
+    setCredentialOperationPending(true);
+    const previous = credentialOperationTail.current;
+    let release: () => void = () => {};
+    credentialOperationTail.current = new Promise<void>((resolve) => { release = resolve; });
+    await previous;
+    try {
+      return await operation();
+    } finally {
+      release();
+      credentialOperationCount.current -= 1;
+      if (credentialOperationCount.current === 0) setCredentialOperationPending(false);
+    }
+  };
   useEffect(() => {
-    if (!dirty) {
+    if (!dirtyRef.current) {
       setDraft([...identity.settings.urlMappings]);
       setBaseRevision(identity.revision);
     }
@@ -180,7 +208,7 @@ function UrlMappingDraftStateProvider({ children, identity }: { readonly childre
     setInvalid(false);
     setPriorityDrafts({});
   };
-  return <UrlMappingDraftContext value={{ draft, setDraft, invalid, setInvalid, saved, setSaved, dirty, setDirty, saving, setSaving, priorityDrafts, setPriorityDrafts, baseRevision, reset }}>{children}</UrlMappingDraftContext>;
+  return <UrlMappingDraftContext value={{ draft, setDraft, invalid, setInvalid, saved, setSaved, dirty, setDirty, saving, setSaving, priorityDrafts, setPriorityDrafts, baseRevision, credentialOperationPending, runCredentialOperation, isCurrentScope, reset }}>{children}</UrlMappingDraftContext>;
 }
 
 export function SynchronizedSettingsBoundary(props: { readonly copy: Copy; readonly bridge?: NativeBridgeV1; readonly githubProvider?: GitHubProvider; readonly onOpenExternal?: (target: ExternalLinkTarget) => Promise<void>; readonly showNativeShortcuts?: boolean; readonly shortcutCapabilities?: RuntimeCapabilities }) {
@@ -277,7 +305,7 @@ function SynchronizedSettingsContent({ copy, bridge = nativeBridge, githubProvid
     {identity.conflict && <SnapshotChoice key="conflict" choiceId="conflict" copy={copy} entries={identity.conflict.diff} title={copy.conflictTitle} summary={copy.conflictSummary} primary={copy.reapplyLocal} secondary={copy.adoptServer} onPrimary={() => invoke(async () => { if (await identity.reapplyConflictLocal()) mappingDraft.reset(); })} onSecondary={() => { identity.adoptConflictServer(); mappingDraft.reset(); }} />}
     {(actionError || identity.error?.startsWith("settings-") || identity.settingsError) && <section className="notice" role="alert"><p>{copy.settingsActionFailed}{identity.error?.startsWith("settings-") && <> <code>{identity.error}</code></>}{identity.settingsError && <> <code>{`settings-connect-${identity.settingsError.code}`}</code>{identity.settingsError.correlationId && <> {copy.correlationId}: <code>{identity.settingsError.correlationId}</code></>}</>}</p><button onClick={() => invoke(identity.retrySettings)}>{copy.retry}</button></section>}
     </section>}
-    <GitHubSettings copy={copy} bridge={bridge} provider={githubProvider} openExternal={onOpenExternal} />
+    <GitHubSettings copy={copy} bridge={bridge} provider={githubProvider} openExternal={onOpenExternal} credentialOperationPending={mappingDraft.credentialOperationPending} runCredentialOperation={mappingDraft.runCredentialOperation} />
   </>;
 }
 
@@ -285,7 +313,7 @@ function UrlMappingSettings({ copy, bridge, githubProvider = createGitHubProvide
   const identity = useIdentitySettings();
   const mappingDraft = use(UrlMappingDraftContext);
   if (mappingDraft === null) throw new Error("URL mapping draft provider is required");
-  const { draft, setDraft, invalid, setInvalid, saved, setSaved, dirty, setDirty, saving, setSaving, priorityDrafts, setPriorityDrafts, baseRevision } = mappingDraft;
+  const { draft, setDraft, invalid, setInvalid, saved, setSaved, dirty, setDirty, saving, setSaving, priorityDrafts, setPriorityDrafts, baseRevision, credentialOperationPending, runCredentialOperation, isCurrentScope } = mappingDraft;
   const [validationError, setValidationError] = useState<keyof Copy | null>(null);
   const overlaps = safeOverlaps(draft);
   const change = (id: string, field: keyof UrlRepositoryMapping, value: string | number | null) => {
@@ -315,27 +343,28 @@ function UrlMappingSettings({ copy, bridge, githubProvider = createGitHubProvide
       return;
     }
     setInvalid(false); setValidationError(null); setSaved(false); setSaving(true);
-    try {
-      await validateChangedMappings(mappings, identity.settings.urlMappings, { ...identity.settings, urlMappings: mappings }, bridge, githubProvider, identity.githubPatScopeId);
-    } catch (error) {
-      setValidationError(error instanceof GitHubProviderError ? githubErrorCopy(error.code) : error instanceof NativeBridgeError && error.code === NativeBridgeErrorCode.StorageFailure ? "githubErrorSecureStorage" : "githubSetupFailed");
-      setSaving(false);
-      return;
-    }
+    let validationCompleted = false;
     try {
       let committedMappings = mappings;
-      if (!await identity.replaceSettingsAt((current) => {
-        const next = parseDevHudSettings({ ...current, urlMappings: withUpdatedMappings(draft, priorityDrafts, current.urlMappings) });
-        committedMappings = next.urlMappings.slice();
-        return next;
-      }, baseRevision)) return;
+      const committed = await runCredentialOperation(async () => {
+        await validateChangedMappings(mappings, identity.settings.urlMappings, { ...identity.settings, urlMappings: mappings }, bridge, githubProvider, identity.githubPatScopeId);
+        validationCompleted = true;
+        if (!isCurrentScope()) return false;
+        return identity.replaceSettingsAt((current) => {
+          const next = parseDevHudSettings({ ...current, urlMappings: withUpdatedMappings(draft, priorityDrafts, current.urlMappings) });
+          committedMappings = next.urlMappings.slice();
+          return next;
+        }, baseRevision);
+      });
+      if (!committed || !isCurrentScope()) return;
       setDraft(committedMappings);
       setDirty(false);
       setPriorityDrafts({});
       setSaved(true);
-    } catch {
+    } catch (error) {
+      if (!validationCompleted && isCurrentScope()) setValidationError(error instanceof GitHubProviderError ? githubErrorCopy(error.code) : error instanceof NativeBridgeError && error.code === NativeBridgeErrorCode.StorageFailure ? "githubErrorSecureStorage" : "githubSetupFailed");
       // The synchronized-settings boundary exposes typed transport failures.
-    } finally { setSaving(false); }
+    } finally { if (isCurrentScope()) setSaving(false); }
   };
   return <section className="url-mappings" aria-labelledby="url-mappings-title">
     <h3 id="url-mappings-title">{copy.urlMappingsTitle}</h3><p>{copy.urlMappingsSummary}</p><p id="url-mapping-hint">{copy.mappingPatternHint}</p>
@@ -349,7 +378,7 @@ function UrlMappingSettings({ copy, bridge, githubProvider = createGitHubProvide
       <label>{copy.chromeOrigin}<input value={mapping.chromeOrigin ?? ""} onChange={(event) => change(mapping.id, "chromeOrigin", event.target.value || null)} /></label>
       <button type="button" onClick={() => { setSaved(false); setValidationError(null); setDirty(true); setPriorityDrafts((current) => { const { [mapping.id]: _removed, ...remaining } = current; return remaining; }); setDraft((current) => current.filter((item) => item.id !== mapping.id)); }}>{copy.removeUrlMapping}</button>
     </fieldset>)}
-    <div className="actions"><button type="button" disabled={identity.readOnly || saving || identity.settings.github.profiles.length === 0} onClick={add}>{copy.addUrlMapping}</button><button type="button" disabled={identity.readOnly || saving} onClick={save}>{copy.saveUrlMappings}</button></div>
+    <div className="actions"><button type="button" disabled={identity.readOnly || saving || credentialOperationPending || identity.settings.github.profiles.length === 0} onClick={add}>{copy.addUrlMapping}</button><button type="button" disabled={identity.readOnly || saving || credentialOperationPending} onClick={save}>{copy.saveUrlMappings}</button></div>
     {invalid && <p role="alert">{copy.mappingInvalid}</p>}
     {validationError !== null && <p role="alert">{copy[validationError]}</p>}
     {overlaps.length > 0 && <p role="status">{copy.mappingOverlap}</p>}

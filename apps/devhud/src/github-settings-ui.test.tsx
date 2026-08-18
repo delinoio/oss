@@ -61,6 +61,20 @@ describe("GitHub settings", () => {
     await waitFor(() => expect(input.value).toBe(""));
   });
 
+  it("runs PAT replacement through the supplied credential operation", async () => {
+    const credentialOperationCalls = vi.fn();
+    const runCredentialOperation = async <Value,>(operation: () => Promise<Value>): Promise<Value> => {
+      credentialOperationCalls();
+      return operation();
+    };
+    render(<GitHubSettings copy={messages.en} bridge={bridgeWith(async () => ({ kind: "ok" }))} provider={providerWithValidation()} runCredentialOperation={runCredentialOperation} />);
+
+    fireEvent.change(screen.getByLabelText(messages.en.githubSetProfileToken), { target: { value: "replacement-pat" } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.githubSaveProfileToken }));
+
+    await waitFor(() => expect(credentialOperationCalls).toHaveBeenCalledOnce());
+  });
+
   it("disables PAT replacement while settings are read-only", () => {
     identity = identityWith({ readOnly: true });
     render(<GitHubSettings copy={messages.en} bridge={bridgeWith(async () => ({ kind: "ok" }))} provider={providerWithValidation()} />);

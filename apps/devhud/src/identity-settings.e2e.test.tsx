@@ -1818,7 +1818,7 @@ describe("generated Connect identity/settings fixture", () => {
     await screen.findByRole("button", { name: messages.en.addUrlMapping });
     await waitFor(() => expect((screen.getByRole("button", { name: messages.en.addUrlMapping }) as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(screen.getByRole("button", { name: messages.en.addUrlMapping }));
-    const profile = screen.getByLabelText(messages.en.credentialProfile) as HTMLSelectElement;
+    const profile = await screen.findByLabelText(messages.en.credentialProfile) as HTMLSelectElement;
     expect(profile.value).toBe("");
     fireEvent.click(screen.getByRole("button", { name: messages.en.saveUrlMappings }));
     expect((await screen.findByRole("alert")).textContent).toContain(messages.en.mappingInvalid);
@@ -1827,6 +1827,30 @@ describe("generated Connect identity/settings fixture", () => {
     fireEvent.click(screen.getByRole("button", { name: messages.en.saveUrlMappings }));
     expect((await screen.findByRole("alert")).textContent).toContain(messages.en.githubSetupFailed);
     expect(replacements).toBe(0);
+  });
+
+  it("preserves an unsaved URL mapping draft when the account becomes blocked", async () => {
+    const mapping = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", pattern: "https://server.example/**", repository: { owner: "delinoio", name: "oss" }, credentialProfileRef: mappingProfile.id, priority: 0, chromeOrigin: null, updatedAt: "2026-08-17T00:00:00.000Z" };
+    const server = withMappingProfile([mapping]);
+    let blocked = false;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: { ...fixture.account, administrativeBlockState: blocked ? "ADMINISTRATIVE_BLOCK_STATE_BLOCKED" : "ADMINISTRATIVE_BLOCK_STATE_UNSPECIFIED" } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "1", canonicalJson: encodedSettings(server) } });
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    render(<DevHudServiceBoundary apiOrigin="https://devhud.api.delino.io" active online callbackUrl={null} platform={RuntimePlatform.Desktop} bridge={authenticatedBridge()} onCallbackConsumed={() => {}} onContinueLocally={() => {}} onLoggedOut={() => {}}><IdentityStateProbe /><SynchronizedSettingsBoundary copy={messages.en} /></DevHudServiceBoundary>);
+
+    const pattern = await screen.findByLabelText(messages.en.urlPattern) as HTMLInputElement;
+    fireEvent.change(pattern, { target: { value: "https://draft.example/**" } });
+    blocked = true;
+    fireEvent.click(screen.getByRole("button", { name: "refetch probe queries" }));
+
+    await waitFor(() => expect(screen.getByTestId("identity-state").dataset.status).toBe("blocked"));
+    expect((screen.getByLabelText(messages.en.urlPattern) as HTMLInputElement).value).toBe("https://draft.example/**");
+    await waitFor(() => expect((screen.getByLabelText(messages.en.urlPattern) as HTMLInputElement).matches(":disabled")).toBe(true));
   });
 
   it("clears unsaved URL mapping drafts when the authenticated account changes", async () => {
@@ -1850,6 +1874,44 @@ describe("generated Connect identity/settings fixture", () => {
     fireEvent.click(screen.getByRole("button", { name: "refetch probe queries" }));
 
     await waitFor(() => expect((screen.getByLabelText(messages.en.urlPattern) as HTMLInputElement).value).toBe("https://second.example/**"));
+  });
+
+  it("does not commit a mapping save after its identity scope changes during validation", async () => {
+    const mapping = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", pattern: "https://first.example/**", repository: { owner: "delinoio", name: "oss" }, credentialProfileRef: mappingProfile.id, priority: 0, chromeOrigin: null, updatedAt: "2026-08-17T00:00:00.000Z" };
+    const first = withMappingProfile([mapping]);
+    const second = withMappingProfile([{ ...mapping, pattern: "https://second.example/**" }]);
+    let useSecondAccount = false;
+    let releaseValidation!: () => void;
+    const validation = new Promise<void>((resolve) => { releaseValidation = resolve; });
+    const githubProvider = { id: "github.com", validateRepository: vi.fn(async () => validation) } as unknown as GitHubProvider;
+    const baseBridge = authenticatedBridge();
+    const bridge: NativeBridgeV1 = { ...baseBridge, async request(request) {
+      if (request.operation === "secure.read" && request.setting.kind === "github-pat") return { kind: "secure-value", value: "fixture-github-token" };
+      return baseBridge.request(request);
+    } };
+    let replacements = 0;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: { ...fixture.account, logtoSubject: useSecondAccount ? "second-account" : "first-account" } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "1", canonicalJson: encodedSettings(useSecondAccount ? second : first) } });
+      if (url.endsWith("/devhud.v1.SettingsService/ReplaceSettings")) { replacements += 1; return connectResponse({ snapshot: { schemaVersion: 3, revision: "2", canonicalJson: encodedSettings(first) } }); }
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    render(<DevHudServiceBoundary apiOrigin="https://devhud.api.delino.io" active online callbackUrl={null} platform={RuntimePlatform.Desktop} bridge={bridge} onCallbackConsumed={() => {}} onContinueLocally={() => {}} onLoggedOut={() => {}}><IdentityStateProbe /><SynchronizedSettingsBoundary copy={messages.en} bridge={bridge} githubProvider={githubProvider} /></DevHudServiceBoundary>);
+
+    const repositoryName = await screen.findByLabelText(messages.en.repositoryName) as HTMLInputElement;
+    fireEvent.change(repositoryName, { target: { value: "reviewed" } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.saveUrlMappings }));
+    await waitFor(() => expect(githubProvider.validateRepository).toHaveBeenCalledOnce());
+    useSecondAccount = true;
+    fireEvent.click(screen.getByRole("button", { name: "refetch probe queries" }));
+    await waitFor(() => expect((screen.getByLabelText(messages.en.urlPattern) as HTMLInputElement).value).toBe("https://second.example/**"));
+    releaseValidation();
+    await act(async () => {});
+
+    expect(replacements).toBe(0);
   });
 
   it.each([
