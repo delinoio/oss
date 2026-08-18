@@ -6,6 +6,8 @@ use std::sync::{
 use std::time::Duration;
 
 use serde_json::{Value, json};
+#[cfg(desktop)]
+use uuid::Uuid;
 
 #[cfg(desktop)]
 use crate::shortcuts::{NativeKeyEvent, ShortcutAction};
@@ -263,7 +265,7 @@ impl NativeBridgeState {
             "'self'"
         };
         format!(
-            "default-src 'self'; script-src 'self'; style-src {style}; img-src 'self' data:; \
+            "default-src 'self'; script-src 'self'; style-src {style}; img-src 'self' data: realqa: http://realqa.localhost; \
              font-src 'self'; connect-src {}; object-src 'none'; base-uri 'none'; form-action \
              'none'; frame-src 'none'; worker-src 'none'",
             connect.join(" ")
@@ -541,7 +543,8 @@ fn runtime_snapshot() -> Value {
                 "secureSettings": true,
                 "notifications": mobile,
                 "storeUpdates": mobile,
-                "widgets": false
+                "widgets": false,
+                "capture": !mobile
             }
         }
     })
@@ -667,6 +670,7 @@ pub fn handle_native_bridge_request(
 pub async fn native_bridge_v1<R: tauri::Runtime>(
     request: Value,
     state: tauri::State<'_, NativeBridgeState>,
+    #[cfg(desktop)] capture: tauri::State<'_, std::sync::Arc<crate::capture::CaptureService>>,
     app: tauri::AppHandle<R>,
 ) -> Result<Value, String> {
     #[cfg(mobile)]
@@ -700,6 +704,9 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
             .get("operation")
             .and_then(Value::as_str)
             .ok_or("invalid-argument")?;
+        if operation.starts_with("capture.") {
+            return handle_capture_request(&request, capture.inner().clone()).await;
+        }
         if operation.starts_with("secure.") {
             if operation == "secure.purge" {
                 validate_purge_request(&request)?;
@@ -707,6 +714,19 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
                 validate_github_pat_reconciliation(&request)?;
             } else {
                 validate_secure_request(&request)?;
+            }
+            if operation == "secure.purge"
+                && matches!(
+                    request.get("scope").and_then(Value::as_str),
+                    Some("logout" | "account-deletion")
+                )
+            {
+                let draft_result = capture.store().purge_all();
+                let secure_result = crate::secure_store::handle(&request);
+                return match (draft_result, secure_result) {
+                    (Ok(()), Ok(response)) => Ok(response),
+                    _ => Err("storage-failure".to_string()),
+                };
             }
             return crate::secure_store::handle(&request);
         }
@@ -724,6 +744,136 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
         let _ = app;
     }
     handle_native_bridge_request(&request, &state)
+}
+
+#[cfg(desktop)]
+async fn handle_capture_request(
+    request: &Value,
+    capture: std::sync::Arc<crate::capture::CaptureService>,
+) -> Result<Value, String> {
+    use crate::capture::{CaptureAction, CaptureOptions, EditorCommand};
+
+    fn capture_id(request: &Value, key: &str) -> Result<Uuid, String> {
+        request
+            .get(key)
+            .and_then(Value::as_str)
+            .and_then(|value| Uuid::parse_str(value).ok())
+            .ok_or_else(|| "invalid-argument".to_string())
+    }
+    fn revision(request: &Value) -> Result<u64, String> {
+        request
+            .get("expectedRevision")
+            .and_then(Value::as_u64)
+            .ok_or_else(|| "invalid-argument".to_string())
+    }
+    fn failure(error: crate::capture::CaptureError) -> String {
+        error.code().to_string()
+    }
+    fn exact_keys(request: &Value, allowed: &[&str]) -> Result<(), String> {
+        let object = request.as_object().ok_or("invalid-argument")?;
+        if object.keys().all(|key| allowed.contains(&key.as_str())) {
+            Ok(())
+        } else {
+            Err("invalid-argument".to_string())
+        }
+    }
+
+    match request.get("operation").and_then(Value::as_str) {
+        Some("capture.status") => {
+            exact_keys(request, &["operation"])?;
+            let topology = capture.topology().map_err(failure)?;
+            Ok(json!({
+                "kind": "capture-status",
+                "available": true,
+                "platform": capture.adapter_platform(),
+                "shadowRemovalSupported": capture.shadow_removal_supported(),
+                "topology": topology,
+            }))
+        }
+        Some("capture.start") => {
+            exact_keys(request, &["operation", "actionId", "options"])?;
+            let action = request
+                .get("actionId")
+                .and_then(Value::as_str)
+                .ok_or("invalid-argument")
+                .and_then(|value| CaptureAction::from_action_id(value).map_err(failure))?;
+            let options: CaptureOptions = serde_json::from_value(
+                request.get("options").cloned().unwrap_or_else(|| json!({})),
+            )
+            .map_err(|_| "invalid-argument")?;
+            let epoch = capture.begin_capture();
+            let capture_task = capture.clone();
+            let draft = tauri::async_runtime::spawn_blocking(move || {
+                capture_task.capture_with_epoch(action, options, epoch)
+            })
+            .await
+            .map_err(|_| "platform-failure")?
+            .map_err(failure)?;
+            Ok(json!({ "kind": "capture-draft", "draft": draft }))
+        }
+        Some("capture.list-drafts") => {
+            exact_keys(request, &["operation"])?;
+            Ok(json!({
+                "kind": "capture-drafts",
+                "drafts": capture.store().list().map_err(failure)?,
+            }))
+        }
+        Some("capture.open-draft") => {
+            exact_keys(request, &["operation", "draftId"])?;
+            Ok(json!({
+                "kind": "capture-draft",
+                "draft": capture.store().open(capture_id(request, "draftId")?).map_err(failure)?,
+            }))
+        }
+        Some("capture.editor.apply") => {
+            exact_keys(
+                request,
+                &["operation", "draftId", "expectedRevision", "command"],
+            )?;
+            let command: EditorCommand =
+                serde_json::from_value(request.get("command").cloned().ok_or("invalid-argument")?)
+                    .map_err(|_| "invalid-argument")?;
+            Ok(json!({
+                "kind": "capture-draft",
+                "draft": capture.store().apply(capture_id(request, "draftId")?, revision(request)?, command).map_err(failure)?,
+            }))
+        }
+        Some("capture.editor.undo") => {
+            exact_keys(request, &["operation", "draftId", "expectedRevision"])?;
+            Ok(json!({
+                "kind": "capture-draft",
+                "draft": capture.store().undo(capture_id(request, "draftId")?, revision(request)?).map_err(failure)?,
+            }))
+        }
+        Some("capture.editor.redo") => {
+            exact_keys(request, &["operation", "draftId", "expectedRevision"])?;
+            Ok(json!({
+                "kind": "capture-draft",
+                "draft": capture.store().redo(capture_id(request, "draftId")?, revision(request)?).map_err(failure)?,
+            }))
+        }
+        Some("capture.flatten") => {
+            exact_keys(request, &["operation", "draftId", "expectedRevision"])?;
+            Ok(json!({
+                "kind": "capture-flattened",
+                "images": capture.store().flatten(capture_id(request, "draftId")?, revision(request)?).map_err(failure)?,
+            }))
+        }
+        Some("capture.delete-draft" | "capture.confirm-issue-created") => {
+            exact_keys(request, &["operation", "draftId"])?;
+            capture
+                .store()
+                .delete(capture_id(request, "draftId")?)
+                .map_err(failure)?;
+            Ok(json!({ "kind": "ok" }))
+        }
+        Some("capture.cancel") => {
+            exact_keys(request, &["operation"])?;
+            capture.cancel();
+            Ok(json!({ "kind": "ok" }))
+        }
+        _ => Err("invalid-argument".to_string()),
+    }
 }
 
 #[cfg(test)]

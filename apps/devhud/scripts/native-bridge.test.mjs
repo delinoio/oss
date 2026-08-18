@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { NativeBridgeError, NativeBridgeErrorCode, SecureSettingKind, isAuthCallback, nativeBridge, validateAuthenticationBrowserRequest, validateExternalRequest, validateGitHubPatReconciliation, validateSecretValue, validateSecureSettingRef } from "../src/native-bridge.ts";
+import { NativeBridgeError, NativeBridgeErrorCode, SecureSettingKind, isAuthCallback, nativeBridge, validateAuthenticationBrowserRequest, validateCaptureRequest, validateExternalRequest, validateGitHubPatReconciliation, validateSecretValue, validateSecureSettingRef } from "../src/native-bridge.ts";
 import { ShortcutActionId, ShortcutKey, ShortcutModifier, ShortcutValidationCode, defaultDesktopShortcutBindings, parseDesktopShortcutBindings } from "../src/shortcuts.ts";
 
 const fixtures = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../fixtures/deep-links.json"), "utf8"));
@@ -16,6 +16,7 @@ const desktopSecureStore = readFileSync(join(dirname(fileURLToPath(import.meta.u
 const desktopHost = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/main.rs"), "utf8");
 const nativeBridgeHost = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/bridge.rs"), "utf8");
 const nativeShortcuts = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/shortcuts.rs"), "utf8");
+const nativeCapture = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/capture.rs"), "utf8");
 const androidBridgeHost = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/mobile/android/src/main/java/io/delino/devhud/bridge/DevhudNativePlugin.kt"), "utf8");
 const iosBridgeHost = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/mobile/ios/Sources/DevhudNativePlugin.swift"), "utf8");
 
@@ -133,6 +134,17 @@ test("native shortcut boundary is physical-key-only and redacts unrelated input"
   assert.match(nativeShortcuts, /_\s*=> None/u);
   assert.match(nativeShortcuts, /never exposes raw input/u);
   assert.doesNotMatch(nativeShortcuts, /println!|info!|debug!|warn!/u);
+});
+
+test("RealQA requests are bounded and capture data stays out of logs and recording APIs", () => {
+  assert.doesNotThrow(() => validateCaptureRequest({ operation: "capture.start", actionId: ShortcutActionId.CaptureSelection, options: { delaySeconds: 5, selection: { x: -100, y: 0, width: 200, height: 100 } } }));
+  assert.throws(() => validateCaptureRequest({ operation: "capture.start", actionId: ShortcutActionId.CommandPalette }), NativeBridgeError);
+  assert.throws(() => validateCaptureRequest({ operation: "capture.open-draft", draftId: "../escape" }), NativeBridgeError);
+  assert.match(nativeCapture, /Aes256Gcm/u);
+  assert.match(nativeCapture, /MAX_IMAGES: usize = 10/u);
+  assert.match(nativeCapture, /MAX_PNG_BYTES: usize = 50 \* 1024 \* 1024/u);
+  assert.doesNotMatch(nativeCapture, /\.video_recorder\(|println!|debug!\(|info!\(/u);
+  assert.match(tauriConfig.app.security.csp, /realqa:/u);
 });
 
 function structuredShortcuts() {

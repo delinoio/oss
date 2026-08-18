@@ -415,4 +415,25 @@ describe("native App state", () => {
     await waitFor(() => expect(screen.queryByText(messages.en.storeOpenFailed)).toBeNull());
     expect(openAttempts).toBe(2);
   });
+
+  it("dispatches a registered desktop capture shortcut into the RealQA selection mode", async () => {
+    const runtime: RuntimeSnapshot = { ...desktopRuntime, capabilities: { ...desktopRuntime.capabilities, capture: true } };
+    let receive: ((event: NativeBridgeEventV1) => void) | undefined;
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "windows", shadowRemovalSupported: false, topology: [] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [] };
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    const bridge: NativeBridgeV1 = {
+      request,
+      async listen(listener) { receive = listener; return () => {}; },
+    };
+
+    render(<App bridge={bridge} initialRuntime={runtime} />);
+    await waitFor(() => expect(receive).toBeTypeOf("function"));
+    await act(async () => receive?.({ version: 1, kind: "shortcut-triggered", action: "realqa.capture.selection" }));
+
+    expect(await screen.findByRole("dialog", { name: messages.en.captureSelection })).toBeTruthy();
+    expect(request).toHaveBeenCalledWith({ operation: "capture.status" });
+  });
 });
