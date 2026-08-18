@@ -7,9 +7,10 @@ use std::time::Duration;
 
 use serde_json::{Value, json};
 
+#[cfg(desktop)]
+use crate::shortcuts::{NativeKeyEvent, ShortcutAction};
 use crate::shortcuts::{
-    NativeKeyEvent, PlatformShortcutBackend, ShortcutAction, ShortcutBindings, ShortcutFailure,
-    ShortcutService,
+    PlatformShortcutBackend, ShortcutBindings, ShortcutFailure, ShortcutService,
 };
 
 const PROFILE_ID_LIMIT: usize = 128;
@@ -170,7 +171,6 @@ impl NativeBridgeState {
         self.shortcut_listener_failed.store(false, Ordering::SeqCst);
     }
 
-    #[cfg(desktop)]
     pub fn clear_shortcut_pressed_keys(&self) {
         self.shortcuts
             .lock()
