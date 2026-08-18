@@ -560,7 +560,10 @@ fn reserved(binding: &ShortcutBinding, platform: ShortcutPlatform) -> bool {
             (has_primary && has_alt && binding.key == ShortcutKey::Delete)
                 || (has_alt && binding.key == ShortcutKey::Tab)
         }
-        ShortcutPlatform::X11 => has_primary && has_alt && binding.key == ShortcutKey::Backspace,
+        ShortcutPlatform::X11 => {
+            (has_primary && has_alt && binding.key == ShortcutKey::Backspace)
+                || (has_alt && binding.key == ShortcutKey::Tab)
+        }
         ShortcutPlatform::Unsupported => false,
     }
 }
@@ -1212,6 +1215,10 @@ mod tests {
         palette.key = ShortcutKey::Tab;
         assert_eq!(
             validate_bindings(&bindings, ShortcutPlatform::Windows),
+            Err(ShortcutFailure::Reserved)
+        );
+        assert_eq!(
+            validate_bindings(&bindings, ShortcutPlatform::X11),
             Err(ShortcutFailure::Reserved)
         );
     }

@@ -92,6 +92,12 @@ fn shortcut_bindings(request: &Value) -> Result<ShortcutBindings, String> {
 
 fn stage_shortcuts(request: &Value, state: &NativeBridgeState) -> Result<Value, String> {
     let bindings = shortcut_bindings(request)?;
+    if state.shortcut_listener_failed.load(Ordering::SeqCst) {
+        return Ok(shortcut_status(
+            state,
+            Some(ShortcutFailure::RegistrationFailed),
+        ));
+    }
     let mut shortcuts = state
         .shortcuts
         .lock()
@@ -865,6 +871,30 @@ mod tests {
                 .shortcut_listener_failed
                 .load(std::sync::atomic::Ordering::SeqCst)
         );
+    }
+
+    #[cfg(desktop)]
+    #[test]
+    fn staging_rejects_bindings_while_the_shortcut_listener_has_failed() {
+        let state = NativeBridgeState::default();
+        state.mark_shortcut_listener_failed();
+        let mut bindings = crate::shortcuts::default_bindings();
+        bindings
+            .get_mut(&crate::shortcuts::ShortcutAction::ShellCommandPalette)
+            .expect("palette binding")
+            .key = crate::shortcuts::ShortcutKey::KeyQ;
+        let request = json!({ "operation": "shortcuts.stage", "bindings": bindings });
+
+        let staged = handle_native_bridge_request(&request, &state).expect("stage response");
+        assert_eq!(staged["error"], "registration-failed");
+
+        state.clear_shortcut_listener_failure();
+        let committed = handle_native_bridge_request(
+            &json!({ "operation": "shortcuts.commit", "bindings": request["bindings"] }),
+            &state,
+        )
+        .expect("commit response");
+        assert_eq!(committed["error"], "malformed");
     }
 
     #[test]
