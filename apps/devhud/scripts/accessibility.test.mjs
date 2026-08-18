@@ -68,6 +68,14 @@ test("error messages meet WCAG AA contrast in light and dark themes", () => {
   assert.match(styles, /\.native-setting-error\s*\{[^}]*color:var\(--error\)/u);
 });
 
+test("RealQA panels use the defined themed surface color", () => {
+  assert.doesNotMatch(styles, /var\(--panel\)/u);
+  assert.match(styles, /\.draft-list>li\{[^}]*background:var\(--surface\)/u);
+  assert.match(styles, /\.floating-capture-preview\{[^}]*background:var\(--surface\)/u);
+  assert.match(styles, /\.capture-dialog\{[^}]*background:var\(--surface\)/u);
+  assert.match(styles, /\.editor-controls\{[^}]*background:var\(--surface\)/u);
+});
+
 test("form-control boundaries meet non-text contrast in light and dark themes", () => {
   for (const block of themeBlocks) {
     const line = customColor(block, "--line");

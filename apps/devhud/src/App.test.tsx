@@ -435,5 +435,10 @@ describe("native App state", () => {
 
     expect(await screen.findByRole("dialog", { name: messages.en.captureSelection })).toBeTruthy();
     expect(request).toHaveBeenCalledWith({ operation: "capture.status" });
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.home }));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.realqa }));
+    await screen.findByRole("heading", { name: messages.en.realqaDrafts });
+    expect(screen.queryByRole("dialog", { name: messages.en.captureSelection })).toBeNull();
   });
 });

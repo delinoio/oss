@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { messages } from "./localization";
@@ -24,6 +24,24 @@ const draft: CaptureDraft = {
   }],
   canUndo: true,
   canRedo: false,
+};
+
+const secondDraft: CaptureDraft = {
+  ...draft,
+  id: "019b0000-0000-7000-8000-000000000010",
+  revision: 7,
+  imageCount: 2,
+  images: [{
+    ...draft.images[0],
+    id: "019b0000-0000-7000-8000-000000000011",
+    previewUrl: "realqa://asset/draft/image/second-source/7",
+    layers: [],
+  }, {
+    ...draft.images[0],
+    id: "019b0000-0000-7000-8000-000000000012",
+    previewUrl: "realqa://asset/draft/image/second-extra/7",
+    layers: [],
+  }],
 };
 
 function bridgeWith(handler?: (request: NativeBridgeRequestV1) => Promise<NativeBridgeResponseV1>) {
@@ -92,6 +110,20 @@ describe("RealQA capture and editor", () => {
     resolveCapture?.({ kind: "capture-draft", draft });
   });
 
+  it("resets toolbar-only modes when the capture action changes to selection", async () => {
+    const { bridge } = bridgeWith();
+    render(<RealqaSurface bridge={bridge} copy={messages.en} />);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.captureToolbar }));
+    fireEvent.click(screen.getByRole("radio", { name: messages.en.captureDisplay }));
+    expect(screen.getByRole("radio", { name: messages.en.captureDisplay })).toHaveProperty("checked", true);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.captureSelection }));
+    expect(screen.getByRole("dialog", { name: messages.en.captureSelection })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: messages.en.captureRegionMode })).toHaveProperty("checked", true);
+    expect(screen.queryByRole("radio", { name: messages.en.captureDisplay })).toBeNull();
+  });
+
   it("maps pointer drag selection across signed desktop coordinates", async () => {
     Object.defineProperty(window, "PointerEvent", { configurable: true, value: MouseEvent });
     const { bridge } = bridgeWith();
@@ -142,6 +174,66 @@ describe("RealQA capture and editor", () => {
     resolveFirst?.({ kind: "capture-draft", draft: { ...draft, revision: 4 } });
     await waitFor(() => expect(applyRequests).toHaveLength(2));
     expect(applyRequests[1].expectedRevision).toBe(4);
+  });
+
+  it("ignores pending and queued editor work after another draft is opened", async () => {
+    let resolveFirst: ((response: NativeBridgeResponseV1) => void) | undefined;
+    const applyRequests: Extract<NativeBridgeRequestV1, { operation: "capture.editor.apply" }>[] = [];
+    const { bridge } = bridgeWith(async (value) => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [draft, secondDraft], unreadableDraftIds: [] };
+      if (value.operation === "capture.editor.apply") {
+        applyRequests.push(value);
+        return new Promise((resolve) => { resolveFirst = resolve; });
+      }
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    render(<RealqaSurface bridge={bridge} copy={messages.en} />);
+
+    fireEvent.click((await screen.findAllByRole("button", { name: messages.en.realqaOpenEditor }))[0]);
+    const add = screen.getByRole("button", { name: messages.en.editorAdd });
+    fireEvent.click(add);
+    fireEvent.click(add);
+    await waitFor(() => expect(applyRequests).toHaveLength(1));
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.close }));
+    fireEvent.click(screen.getAllByRole("button", { name: messages.en.realqaOpenEditor })[1]);
+    expect(screen.getByRole("button", { name: `${messages.en.editorImage} 2` })).toBeTruthy();
+
+    await act(async () => { resolveFirst?.({ kind: "capture-draft", draft: { ...draft, revision: 4 } }); });
+    expect(applyRequests).toHaveLength(1);
+    expect(screen.getByRole("button", { name: `${messages.en.editorImage} 2` })).toBeTruthy();
+  });
+
+  it.each([
+    ["readable", "delete"],
+    ["readable", "refresh"],
+    ["unreadable", "delete"],
+    ["unreadable", "refresh"],
+  ] as const)("reports %s draft %s failures", async (draftKind, failure) => {
+    const unreadableId = "019b0000-0000-7000-8000-000000000004";
+    let deleted = false;
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const { bridge } = bridgeWith(async (value) => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: false, topology: [] };
+      if (value.operation === "capture.list-drafts") {
+        if (deleted && failure === "refresh") throw new Error("refresh failed");
+        return draftKind === "readable"
+          ? { kind: "capture-drafts", drafts: [draft], unreadableDraftIds: [] }
+          : { kind: "capture-drafts", drafts: [], unreadableDraftIds: [unreadableId] };
+      }
+      if (value.operation === "capture.delete-draft") {
+        if (failure === "delete") throw new Error("delete failed");
+        deleted = true;
+        return { kind: "ok" };
+      }
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    render(<RealqaSurface bridge={bridge} copy={messages.en} />);
+
+    await screen.findByRole("button", { name: messages.en.realqaDeleteDraft });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.realqaDeleteDraft }));
+    expect((await screen.findByRole("alert")).textContent).toBe(messages.en.realqaDeleteFailed);
   });
 
   it("offers explicit deletion for an unreadable encrypted draft", async () => {
