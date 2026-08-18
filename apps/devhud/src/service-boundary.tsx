@@ -432,8 +432,8 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       if (!settingsReady) {
         const cached = readAuthenticatedSettingsCache(storage, apiOrigin);
         if (cached) { applySettings(cached.settings); applyRevision(cached.revision); }
+        setShortcutSettingsReady((ready) => ready || settingsReady || cached !== null);
       }
-      setShortcutSettingsReady(true);
       return;
     }
     if (status !== "authenticated") return;

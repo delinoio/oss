@@ -100,6 +100,7 @@ function appendSanitizedNode(parent: DocumentFragment | HTMLElement, node: Node)
     return;
   }
   if (!(node instanceof Element) || !allowedElements.has(node.localName)) return;
+  if (node.hasAttribute("hidden")) return;
   const sanitized = document.createElement(node.localName);
   for (const attribute of Array.from(node.attributes)) if (allowedAttributes.has(attribute.name.toLowerCase())) sanitized.setAttribute(attribute.name.toLowerCase(), attribute.value);
   for (const child of Array.from(node.childNodes)) appendSanitizedNode(sanitized, child);

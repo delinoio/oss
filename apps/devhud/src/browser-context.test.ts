@@ -39,9 +39,10 @@ describe("Chrome browser context privacy", () => {
     const result = sanitizeChromeContext({
       ...input,
       accessibility: { "aria-label": "safe", onclick: "steal()", "data-token": "secret" },
-      outerHtml: '<main aria-label="safe" onclick="steal()"><a href="https://example.com/?token=secret">safe</a><input value="secret"><script>steal()</script></main>',
+      outerHtml: '<main aria-label="safe" onclick="steal()"><a href="https://example.com/?token=secret">safe</a><div hidden>reset token</div><input value="secret"><script>steal()</script></main>',
     });
     expect(result).toMatchObject({ kind: "sanitized", context: { accessibility: { "aria-label": "safe" }, outerHtml: '<main aria-label="safe"><a>safe</a></main>' } });
+    expect(JSON.stringify(result)).not.toContain("reset token");
     expect(sanitizeChromeContext({ ...input, outerHtml: `<main>${"x".repeat((128 * 1024) + 1)}</main>` })).toMatchObject({ kind: "sanitized", context: { outerHtml: "" } });
   });
   it("permits a warning only for an explicitly permitted non-Chrome source", () => {

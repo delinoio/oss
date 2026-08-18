@@ -11,7 +11,7 @@ import { App } from "./App";
 import type { GitHubProvider } from "./github-provider";
 import * as identityClient from "./identity-client";
 import type { IdentitySession } from "./identity-client";
-import { SynchronizedSettingsBoundary } from "./identity-ui";
+import { SynchronizedSettingsBoundary, SynchronizedShortcutBoundary } from "./identity-ui";
 import { messages } from "./localization";
 import { hasGuestSettings, readAuthenticatedSettingsCache, readGuestSettings, writeAuthenticatedSettingsCache, writeCachedIdentityBootstrap, writeGuestSettings } from "./local-data";
 import { canonicalDevHudSettings, defaultDevHudSettings, parseDevHudSettings } from "./settings-contract";
@@ -589,6 +589,42 @@ describe("generated Connect identity/settings fixture", () => {
 
     fireEvent.click(screen.getByRole("button", { name: messages.en.home }));
     expect(await screen.findByRole("heading", { name: messages.en.welcome })).toBeTruthy();
+  });
+
+  it("keeps shortcuts suspended while blocked settings hydration has no cache", async () => {
+    const shortcutOperations: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: { ...fixture.account, administrativeBlockState: "ADMINISTRATIVE_BLOCK_STATE_BLOCKED" } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return await new Promise<Response>(() => {});
+      throw new Error(`unexpected fixture request ${url}`);
+    }));
+    const accessTokenMap = JSON.stringify({ "@https://api.example/api": { token: "blocked-token", scope: "", expiresAt: 4_102_444_800 } });
+    const secureSession = JSON.stringify({ idToken: "blocked-id-token", accessToken: accessTokenMap });
+    const bridge: NativeBridgeV1 = {
+      async request(request) {
+        if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
+        if (request.operation === "secure.read") return { kind: "secure-value", value: request.setting.kind === "logto-session" ? secureSession : null };
+        if (request.operation === "auth.take-pending-callback") return { kind: "auth-callback", url: null };
+        if (request.operation === "shortcuts.suspend") {
+          shortcutOperations.push(request.operation);
+          return { kind: "shortcut-status", platform: "macos", permission: "available", bindings: defaultDevHudSettings.shortcuts.desktop, error: null };
+        }
+        if (request.operation === "shortcuts.apply") {
+          shortcutOperations.push(request.operation);
+          return { kind: "shortcut-status", platform: "macos", permission: "available", bindings: request.bindings, error: null };
+        }
+        throw new Error(`unexpected bridge operation ${request.operation}`);
+      },
+      async listen() { return () => {}; },
+    };
+
+    render(<DevHudServiceBoundary apiOrigin="https://devhud.api.delino.io" active online callbackUrl={null} platform={RuntimePlatform.Desktop} bridge={bridge} onCallbackConsumed={() => {}} onContinueLocally={() => {}} onLoggedOut={() => {}}><IdentityStateProbe /><SynchronizedShortcutBoundary bridge={bridge} /></DevHudServiceBoundary>);
+
+    await waitFor(() => expect(screen.getByTestId("identity-state").dataset.status).toBe("blocked"));
+    await waitFor(() => expect(shortcutOperations).toContain("shortcuts.suspend"));
+    expect(shortcutOperations).not.toContain("shortcuts.apply");
   });
 
   it("purges secure credentials when pending-deletion Web Storage enumeration fails", async () => {
