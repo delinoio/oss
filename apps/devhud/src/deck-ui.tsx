@@ -1,5 +1,5 @@
 import { createContext, use, useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type PropsWithChildren } from "react";
-import { applyDeckBuilder, classifyDeckFailure, clearDeckCache, DeckLimit, deckTransitionKeys, nextDeckRefresh, parseDeckBuilder, readDeckCache, updateDeckBuilder, validateDeckQuery, writeDeckCache, type DeckCache, type DeckFailure } from "./deck.ts";
+import { applyDeckBuilder, classifyDeckFailure, clearDeckCache, DeckLimit, deckTransitionKeys, nextDeckRefresh, parseDeckBuilder, readDeckCache, validateDeckQuery, writeDeckCache, type DeckCache, type DeckFailure } from "./deck.ts";
 import { createGitHubProvider, GitHubErrorCode, GitHubOperation, GitHubProviderError, readGitHubCredential, type GitHubCredential, type GitHubDeckPullRequest, type GitHubProvider } from "./github-provider.ts";
 import type { Copy } from "./localization.ts";
 import { DeckNotificationKind, type NativeBridgeV1 } from "./native-bridge.ts";
@@ -9,7 +9,7 @@ import { getLocalStorage } from "./shell.ts";
 import { EmptyState, OfflineState } from "./surface-state.tsx";
 
 type Deck = DevHudSettingsV1["decks"][number];
-interface DeckPollingConfiguration { readonly signature: string; readonly refreshMinutes: Deck["refreshMinutes"]; }
+interface DeckPollingConfiguration { readonly signature: string; readonly refreshMinutes: Deck["refreshMinutes"]; readonly profileRef: Deck["profileRef"]; }
 
 interface DeckRefreshState { readonly cache: DeckCache | null; readonly loading: boolean; readonly failure: DeckFailure | null; }
 interface DeckPollingContextValue {
@@ -84,13 +84,16 @@ export function DeckPollingBoundary({ bridge, active, online, provider: supplied
     setStates((current) => ({ ...current, [deckId]: update(current[deckId] ?? emptyDeckRefreshState) }));
   }, []);
 
-  const validateRepositories = useCallback(async (credential: GitHubCredential, repositories: ReturnType<typeof deckRepositories>, force = false) => {
+  const validateRepositories = useCallback(async (credential: GitHubCredential, repositories: ReturnType<typeof deckRepositories>, force = false, canContinue?: () => boolean) => {
     if (repositories === null || repositories.length === 0) throw new GitHubProviderError(GitHubErrorCode.InvalidQuery, GitHubOperation.SearchPullRequests);
     const validateRepository = async (repository: NonNullable<typeof repositories>[number]) => {
       const key = `${credential.profileId}\u0000${repository.owner}/${repository.name}`.toLowerCase();
       const existing = validatedRepositories.current.get(key);
       if (!force && existing?.token === credential.token) return existing.validation;
-      const validation = repositoryValidationQueue(() => provider.validateRepository(credential, repository).then(() => {}));
+      const validation = repositoryValidationQueue(async () => {
+        if (canContinue !== undefined && !canContinue()) return;
+        await provider.validateRepository(credential, repository);
+      });
       validatedRepositories.current.set(key, { token: credential.token, validation });
       try { await validation; } catch (error) { if (validatedRepositories.current.get(key)?.validation === validation) validatedRepositories.current.delete(key); throw error; }
     };
@@ -114,6 +117,7 @@ export function DeckPollingBoundary({ bridge, active, online, provider: supplied
     if (!manual && currentCache?.nextRefreshAt !== null && currentCache?.nextRefreshAt !== undefined && Date.parse(currentCache.nextRefreshAt) > Date.now()) return;
     const signature = `${currentDeck.name}\u0000${currentDeck.profileRef}\u0000${currentDeck.query}\u0000${currentDeck.refreshMinutes}\u0000${currentDeck.notifications.join(",")}`;
     const isCurrentDeck = () => deckAccessAllowed.current && decks.current.some((deck) => deck.id === deckId && `${deck.name}\u0000${deck.profileRef}\u0000${deck.query}\u0000${deck.refreshMinutes}\u0000${deck.notifications.join(",")}` === signature);
+    const canContinue = () => isCurrentDeck() && activeRef.current && onlineRef.current;
     loading.current.add(deckId);
     setDeckState(deckId, (current) => ({ ...current, loading: true, failure: null }));
     try {
@@ -122,11 +126,15 @@ export function DeckPollingBoundary({ bridge, active, online, provider: supplied
       const repositories = deckRepositories(currentDeck.query);
       const scopeId = await identity.githubPatScopeId;
       const credential = await readGitHubCredential(bridge, profile, scopeId);
-      await validateRepositories(credential, repositories);
+      if (!canContinue()) return;
+      await validateRepositories(credential, repositories, false, canContinue);
+      if (!canContinue()) return;
       const search = await provider.searchPullRequests(credential, currentDeck.query, { etag: currentCache?.queryEtag ?? undefined });
+      if (!canContinue()) return;
       const resultNodeIds = search.notModified ? currentCache?.results.map((item) => item.nodeId) ?? [] : search.items.slice(0, 100).map((item) => item.nodeId);
       const missingNodeIds = currentCache !== null && currentDeck.notifications.length > 0 && !search.notModified ? currentCache.results.map((item) => item.nodeId).filter((nodeId) => !resultNodeIds.includes(nodeId)) : [];
-      const enriched = await enrichPullRequestBatches(provider, credential, [...resultNodeIds, ...missingNodeIds]);
+      const enriched = await enrichPullRequestBatches(provider, credential, [...resultNodeIds, ...missingNodeIds], canContinue);
+      if (!canContinue()) return;
       const results = enriched.filter((item) => resultNodeIds.includes(item.nodeId));
       const reconciled = enriched.filter((item) => missingNodeIds.includes(item.nodeId));
       let transitionKeys = currentCache?.transitionKeys ?? [];
@@ -138,7 +146,7 @@ export function DeckPollingBoundary({ bridge, active, online, provider: supplied
           transitionKeys = [...transitionKeys, transition.key];
         }
       }
-      if (!isCurrentDeck()) return;
+      if (!canContinue()) return;
       const next: DeckCache = { version: 2, deckId: currentDeck.id, query: currentDeck.query, queryEtag: search.metadata.etag ?? currentCache?.queryEtag ?? null, results, lastSuccessfulAt: new Date().toISOString(), rate: search.metadata.rate, failures: 0, nextRefreshAt: null, transitionKeys };
       writeDeckCache(storage, `${scopeId}.${currentDeck.profileRef}`, next);
       if (isCurrentDeck()) {
@@ -146,16 +154,15 @@ export function DeckPollingBoundary({ bridge, active, online, provider: supplied
         setDeckState(deckId, (current) => ({ ...current, cache: next, failure: null }));
       }
     } catch (error) {
-      if (!isCurrentDeck()) return;
+      if (!canContinue()) return;
       const failures = (currentCache?.failures ?? 0) + 1;
       const rate = error instanceof GitHubProviderError ? error.rate : currentCache?.rate ?? null;
       const scopeId = await identity.githubPatScopeId;
+      if (!canContinue()) return;
       const next: DeckCache = { version: 2, deckId: currentDeck.id, query: currentDeck.query, queryEtag: currentCache?.queryEtag ?? null, results: currentCache?.results ?? [], lastSuccessfulAt: currentCache?.lastSuccessfulAt ?? null, rate, failures, nextRefreshAt: nextDeckRefresh(Date.now(), currentDeck.refreshMinutes, failures, rate), transitionKeys: currentCache?.transitionKeys ?? [] };
       writeDeckCache(storage, `${scopeId}.${currentDeck.profileRef}`, next);
-      if (isCurrentDeck()) {
-        caches.current.set(deckId, next);
-        setDeckState(deckId, (current) => ({ ...current, cache: next, failure: classifyDeckFailure(error) }));
-      }
+      caches.current.set(deckId, next);
+      setDeckState(deckId, (current) => ({ ...current, cache: next, failure: classifyDeckFailure(error) }));
     } finally {
       loading.current.delete(deckId);
       if (isCurrentDeck()) setDeckState(deckId, (current) => ({ ...current, loading: false }));
@@ -195,7 +202,8 @@ export function DeckPollingBoundary({ bridge, active, online, provider: supplied
       return () => { cancelled = true; };
     }
     const configuredIds = new Set(configuredDecks.map((deck) => deck.id));
-    const removedDeckIds = new Set([...caches.current.keys(), ...configurations.current.keys()].filter((deckId) => !configuredIds.has(deckId)));
+    const removedConfigurations = [...configurations.current.entries()].filter(([deckId]) => !configuredIds.has(deckId));
+    const removedDeckIds = new Set([...caches.current.keys(), ...removedConfigurations.map(([deckId]) => deckId)]);
     for (const deckId of removedDeckIds) void cancelDeckNotifications(deckId);
     for (const deckId of [...caches.current.keys()]) {
       if (!configuredIds.has(deckId)) {
@@ -208,6 +216,7 @@ export function DeckPollingBoundary({ bridge, active, online, provider: supplied
     setStates((current) => Object.fromEntries(Object.entries(current).filter(([deckId]) => configuredIds.has(deckId))));
     void identity.githubPatScopeId.then((scopeId) => {
       if (cancelled) return;
+      for (const [deckId, configuration] of removedConfigurations) clearDeckCache(storage, `${scopeId}.${configuration.profileRef}`, deckId);
       for (const deck of configuredDecks) {
         const signature = `${deck.name}\u0000${deck.profileRef}\u0000${deck.query}\u0000${deck.refreshMinutes}\u0000${deck.notifications.join(",")}`;
         const previous = configurations.current.get(deck.id);
@@ -217,7 +226,7 @@ export function DeckPollingBoundary({ bridge, active, online, provider: supplied
           cache = { ...cache, nextRefreshAt: nextDeckRefresh(Date.now(), deck.refreshMinutes, cache.failures, cache.rate) };
           writeDeckCache(storage, `${scopeId}.${deck.profileRef}`, cache);
         }
-        configurations.current.set(deck.id, { signature, refreshMinutes: deck.refreshMinutes });
+        configurations.current.set(deck.id, { signature, refreshMinutes: deck.refreshMinutes, profileRef: deck.profileRef });
         caches.current.set(deck.id, cache);
         setDeckState(deck.id, (current) => ({ ...current, cache, failure: null }));
       }
@@ -285,7 +294,7 @@ function DeckEditor({ copy, value, profiles, disabled = false, onSave }: { reado
   const [name, setName] = useState(value?.name ?? ""); const [profileRef, setProfileRef] = useState(value?.profileRef ?? profiles[0]?.id ?? ""); const [query, setQuery] = useState(value?.query ?? "is:pr"); const [builder, setBuilder] = useState<DeckBuilder | null>(value?.builder ?? parseDeckBuilder(value?.query ?? "")); const [refreshMinutes, setRefreshMinutes] = useState<1 | 5 | 15 | 30>(value?.refreshMinutes ?? 5); const [showDrafts, setShowDrafts] = useState(value?.display.showDrafts ?? true); const [notifications, setNotifications] = useState<readonly DeckNotificationKind[]>(value?.notifications ?? []); const [invalid, setInvalid] = useState<"query" | "repository" | null>(null); const [saveFailure, setSaveFailure] = useState<DeckFailure | null>(null); const [saving, setSaving] = useState(false);
   useEffect(() => { if (value) { setName(value.name); setProfileRef(value.profileRef); setQuery(value.query); setBuilder(value.builder ?? parseDeckBuilder(value.query)); setRefreshMinutes(value.refreshMinutes); setShowDrafts(value.display.showDrafts); setNotifications(value.notifications); } }, [value]);
   const submit = (event: FormEvent) => { event.preventDefault(); if (!validateDeckQuery(query) || !profileRef || !name.trim()) { setInvalid("query"); return; } if (!hasRepositoryQualifier(query) || deckRepositories(query) === null) { setInvalid("repository"); return; } setInvalid(null); setSaveFailure(null); setSaving(true); void onSave({ id: value?.id ?? createUuidV7(), name: name.trim(), profileRef, query, builder, display: { groupBy: value?.display.groupBy ?? "none", showDrafts }, refreshMinutes, notifications }).then((committed) => { if (!committed) setSaveFailure("unknown"); }).catch((error) => setSaveFailure(classifyDeckFailure(error))).finally(() => setSaving(false)); };
-  const setBuilderValue = (field: keyof DeckBuilder, next: string) => { const value = next === "" ? null : next as DeckBuilder[typeof field]; setBuilder((current) => updateDeckBuilder(current, field, value)); setQuery((current) => applyDeckBuilder(current, field, value)); };
+  const setBuilderValue = (field: keyof DeckBuilder, next: string) => { const trimmed = next.trim(); const builderValue = trimmed === "" ? null : trimmed as DeckBuilder[typeof field]; const nextQuery = applyDeckBuilder(query, field, builderValue); setQuery(nextQuery); setBuilder(parseDeckBuilder(nextQuery)); };
   return <form onSubmit={submit} className="deck-editor"><fieldset disabled={disabled || saving}><label>{copy.deckName}<input required value={name} onChange={(event) => setName(event.target.value)} /></label><label>{copy.deckProfile}<select required value={profileRef} onChange={(event) => setProfileRef(event.target.value)}>{profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></label><label>{copy.deckQuery}<input required value={query} onChange={(event) => { setQuery(event.target.value); setBuilder(parseDeckBuilder(event.target.value)); }} /></label><fieldset><legend>{copy.deckBuilder}</legend><label>{copy.deckBuilderRepository}<input value={builder?.repository ?? ""} onChange={(event) => setBuilderValue("repository", event.target.value)} /></label><label>{copy.deckBuilderAuthor}<input value={builder?.author ?? ""} onChange={(event) => setBuilderValue("author", event.target.value)} /></label><label>{copy.deckBuilderLabel}<input value={builder?.label ?? ""} onChange={(event) => setBuilderValue("label", event.target.value)} /></label><label>{copy.deckBuilderReview}<select value={builder?.review ?? ""} onChange={(event) => setBuilderValue("review", event.target.value)}><option value="">{copy.deckAny}</option><option value="approved">{copy.deckApproved}</option><option value="changes-requested">{copy.deckChangesRequested}</option><option value="required">{copy.deckRequired}</option></select></label><label>{copy.deckBuilderState}<select value={builder?.state ?? ""} onChange={(event) => setBuilderValue("state", event.target.value)}><option value="">{copy.deckAny}</option><option value="open">{copy.deckOpen}</option><option value="closed">{copy.deckClosed}</option><option value="merged">{copy.deckMerged}</option></select></label></fieldset><label>{copy.deckRefreshInterval}<select value={refreshMinutes} onChange={(event) => setRefreshMinutes(Number(event.target.value) as 1 | 5 | 15 | 30)}>{[1, 5, 15, 30].map((minutes) => <option key={minutes} value={minutes}>{minutes} {copy.deckMinutes}</option>)}</select></label><label><input type="checkbox" checked={showDrafts} onChange={(event) => setShowDrafts(event.target.checked)} />{copy.deckShowDrafts}</label><label><input type="checkbox" checked={notifications.length > 0} onChange={(event) => setNotifications(event.target.checked ? ["review", "checks", "merged", "closed"] : [])} />{copy.deckNotifications}</label><button type="submit">{copy.saved}</button>{invalid && <p role="alert">{invalid === "repository" ? copy.deckRequireRepository : copy.deckRequirePullRequests}</p>}{saveFailure && <p role="alert">{failureCopy(copy, saveFailure)}</p>}</fieldset></form>;
 }
 
@@ -312,5 +321,5 @@ function checkCopy(copy: Copy, state: string | null): string { return state === 
 function failureCopy(copy: Copy, failure: DeckFailure): string { return failure === "token" ? copy.deckErrorToken : failure === "permission" ? copy.deckErrorPermission : failure === "query" ? copy.deckErrorQuery : failure === "rate-limit" ? copy.deckErrorRate : copy.deckErrorNetwork; }
 function closeBrowserDeckNotifications(notifications: Map<string, Set<Notification>>, deckId?: string): void { const entries = deckId === undefined ? [...notifications] : [[deckId, notifications.get(deckId) ?? new Set<Notification>()] as const]; for (const [id, items] of entries) { for (const notification of items) notification.close(); notifications.delete(id); } }
 async function publishDeckNotification(bridge: NativeBridgeV1, browserNotifications: Map<string, Set<Notification>>, deckId: string, key: string, kind: "review" | "checks" | "merged" | "closed", title: string, body: string): Promise<void> { try { await bridge.request({ operation: "notifications.publish-deck-change", notification: { id: `deck:${deckId}:${key}`, deckId, kind: kind as DeckNotificationKind, title, body } }); } catch { if (typeof Notification !== "undefined" && Notification.permission === "granted") { const notification = new Notification(title, { body, tag: `deck:${deckId}:${key}` }); const items = browserNotifications.get(deckId) ?? new Set<Notification>(); items.add(notification); browserNotifications.set(deckId, items); notification.addEventListener("close", () => items.delete(notification), { once: true }); } } }
-async function enrichPullRequestBatches(provider: GitHubProvider, credential: GitHubCredential, nodeIds: readonly string[]): Promise<readonly GitHubDeckPullRequest[]> { const items: GitHubDeckPullRequest[] = []; for (let index = 0; index < nodeIds.length; index += 100) items.push(...(await provider.enrichPullRequests(credential, nodeIds.slice(index, index + 100))).items); return items; }
+async function enrichPullRequestBatches(provider: GitHubProvider, credential: GitHubCredential, nodeIds: readonly string[], canContinue: () => boolean = () => true): Promise<readonly GitHubDeckPullRequest[]> { const items: GitHubDeckPullRequest[] = []; for (let index = 0; index < nodeIds.length; index += 100) { if (!canContinue()) return items; items.push(...(await provider.enrichPullRequests(credential, nodeIds.slice(index, index + 100))).items); } return items; }
 function createUuidV7(now = Date.now()): string { const bytes = crypto.getRandomValues(new Uint8Array(16)); let timestamp = BigInt(now); for (let index = 5; index >= 0; index -= 1) { bytes[index] = Number(timestamp & 0xffn); timestamp >>= 8n; } bytes[6] = (bytes[6] & 0x0f) | 0x70; bytes[8] = (bytes[8] & 0x3f) | 0x80; const hex = [...bytes].map((value) => value.toString(16).padStart(2, "0")).join(""); return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`; }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canonicalDevHudSettings, decodeDevHudSettings, decodeVersionedDevHudSettings, defaultDevHudSettings, encodeDevHudSettings, parseDevHudSettings, PreviousSettingsSchemaVersion, SettingsContractError, SettingsSchemaVersion } from "./settings-contract";
+import { canonicalDevHudSettings, CollidingSettingsSchemaVersion, decodeDevHudSettings, decodeVersionedDevHudSettings, defaultDevHudSettings, encodeDevHudSettings, parseDevHudSettings, PreviousSettingsSchemaVersion, SettingsContractError, SettingsSchemaVersion } from "./settings-contract";
 import { diffSettings, redactRecursively, RedactedValue } from "./settings-diff";
 import { ShortcutActionId, ShortcutKey, ShortcutModifier, ShortcutValidationCode, defaultDesktopShortcutBindings, parseDesktopShortcutBindings } from "./shortcuts";
 
@@ -39,6 +39,7 @@ describe("DevHud settings boundary", () => {
     expect(decodeDevHudSettings(encoded)).toEqual(defaultDevHudSettings);
     expect(decodeVersionedDevHudSettings(encoded, SettingsSchemaVersion)).toEqual(defaultDevHudSettings);
     expect(() => decodeVersionedDevHudSettings(encoded, 1)).toThrow(/snapshot envelope/u);
+    expect(() => decodeVersionedDevHudSettings(encoded, CollidingSettingsSchemaVersion)).toThrow(/snapshot envelope/u);
     expect(new TextDecoder().decode(encoded)).toBe(canonicalDevHudSettings(defaultDevHudSettings));
   });
 
@@ -181,6 +182,27 @@ describe("DevHud settings boundary", () => {
       }],
     };
     expect(parseDevHudSettings(legacy).decks).toMatchObject([{ query: "is:pr repo:octo/widgets", builder: { repository: "octo/widgets" }, notifications: ["review", "merged"] }]);
+  });
+
+  it("normalizes nonblank legacy Deck titles and rejects blank ones", () => {
+    const profile = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", name: "Work", kind: "fine-grained" as const };
+    const legacy = {
+      ...defaultDevHudSettings,
+      schemaVersion: PreviousSettingsSchemaVersion,
+      github: { ...defaultDevHudSettings.github, profiles: [profile] },
+      decks: [{
+        id: "018f47a2-7b3c-7def-8abc-1234567890ac",
+        title: " Legacy Deck ",
+        query: "is:pr",
+        repository: "octo/widgets",
+        profileRef: profile.id,
+        display: { groupBy: "none", showDrafts: true },
+        refreshMinutes: 5,
+        notifications: [],
+      }],
+    };
+    expect(parseDevHudSettings(legacy).decks[0]?.name).toBe("Legacy Deck");
+    expect(() => parseDevHudSettings({ ...legacy, decks: [{ ...legacy.decks[0], title: "   " }] })).toThrow(/trimmed nonblank/u);
   });
 
   it("retains a v2 Deck repository scope when its query names another repository", () => {

@@ -194,10 +194,7 @@ export function decodeDevHudSettings(value: Uint8Array): DevHudSettingsV1 {
 export function decodeVersionedDevHudSettings(value: Uint8Array, envelopeSchemaVersion: number): DevHudSettingsV1 {
   const decoded = validateCanonicalSettingsJson(value);
   const embeddedSchemaVersion = decoded !== null && typeof decoded === "object" && !Array.isArray(decoded) ? (decoded as Record<string, unknown>).schemaVersion : undefined;
-  // A v3 service can return a v4 canonical body during a rolling client/server upgrade.
-  // The body is fully validated as v4 and the next replacement uses envelope v4.
-  const rollingUpgrade = envelopeSchemaVersion === CollidingSettingsSchemaVersion && embeddedSchemaVersion === SettingsSchemaVersion;
-  if (embeddedSchemaVersion !== undefined && embeddedSchemaVersion !== envelopeSchemaVersion && !rollingUpgrade) {
+  if (embeddedSchemaVersion !== undefined && embeddedSchemaVersion !== envelopeSchemaVersion) {
     throw new SettingsContractError("$.schemaVersion", "must match the snapshot envelope schema version");
   }
   return parseDevHudSettings(decoded);
@@ -242,8 +239,8 @@ function parseDeck(value: unknown, path: string, legacy: boolean, previous: bool
   const notificationValues = array(deck.notifications, `${path}.notifications`).map((item, index) => enumeration(item, `${path}.notifications[${index}]`, NotificationKind));
   if (!legacy && !previous && new Set(notificationValues).size !== notificationValues.length) throw new SettingsContractError(`${path}.notifications`, "must contain unique values");
   const notifications = legacy || previous ? [...new Set(notificationValues)] : notificationValues;
-  const name = previous || legacy ? text(deck.title, `${path}.title`) : text(deck.name, `${path}.name`);
-  if (!legacy && !previous && (name.trim() !== name || name.length === 0)) throw new SettingsContractError(`${path}.name`, "must be a trimmed nonblank string");
+  const name = previous || legacy ? text(deck.title, `${path}.title`).trim() : text(deck.name, `${path}.name`);
+  if (name.trim() !== name || name.length === 0) throw new SettingsContractError(`${path}.name`, "must be a trimmed nonblank string");
   return [{
     id,
     name,

@@ -82,6 +82,19 @@ describe("Deck surface", () => {
     await waitFor(() => expect(request).toHaveBeenCalledWith({ operation: "notifications.cancel-deck", deckId: deck.id }));
   });
 
+  it("removes the profile-scoped cache when synchronized Decks disappear", async () => {
+    const cacheScope = `origin.scope.${profile.id}`;
+    writeDeckCache(localStorage, cacheScope, { version: DeckCacheVersion, deckId: deck.id, query: deck.query, queryEtag: null, results: [], lastSuccessfulAt: null, rate: null, failures: 0, nextRefreshAt: null, transitionKeys: [] });
+    const bridge = bridgeWith(async () => ({ kind: "ok" as const }));
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+    await waitFor(() => expect(localStorage.getItem(deckCacheKey(cacheScope, deck.id))).not.toBeNull());
+
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [] }) });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    await waitFor(() => expect(localStorage.getItem(deckCacheKey(cacheScope, deck.id))).toBeNull());
+  });
+
   it("cancels native notifications when the polling boundary unmounts", async () => {
     const request = vi.fn(async () => ({ kind: "ok" as const }));
     const bridge = bridgeWith(request);
@@ -145,6 +158,45 @@ describe("Deck surface", () => {
     await waitFor(() => expect(validateRepository).toHaveBeenCalledTimes(4));
     releases[2]?.();
     releases[3]?.();
+  });
+
+  it("does not start queued GitHub work after polling is suspended", async () => {
+    const releases: Array<() => void> = [];
+    const validateRepository: ReturnType<typeof provider>["validateRepository"] = vi.fn(() => new Promise((resolve) => { releases.push(() => resolve({ repository: { owner: "octo", name: "widgets" }, private: true, permissions: { metadata: true, pullRequests: true, issues: true, contents: true }, metadata: { etag: null, rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } } })); }));
+    const searchPullRequests = vi.fn();
+    const queuedDeck = { ...deck, query: "repo:octo/one repo:octo/two repo:octo/three is:pr", builder: null };
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [queuedDeck] }) });
+    const bridge = bridgeWith(async (request) => request.operation === "secure.read" ? { kind: "secure-value", value: "token" } : { kind: "ok" });
+    const view = render(<DeckPollingBoundary bridge={bridge} active online provider={{ ...provider(), validateRepository, searchPullRequests }}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+    await waitFor(() => expect(validateRepository).toHaveBeenCalledTimes(2));
+
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={{ ...provider(), validateRepository, searchPullRequests }}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    for (const release of releases) release();
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(validateRepository).toHaveBeenCalledTimes(2);
+    expect(searchPullRequests).not.toHaveBeenCalled();
+  });
+
+  it("normalizes builder values and reprojects repeated qualifiers before saving", async () => {
+    const repeated = { ...deck, query: "repo:octo/widgets is:pr label:one label:two", builder: { ...deck.builder, label: "one" } };
+    const replaceSettings: IdentitySettingsValue["replaceSettings"] = vi.fn(async (update) => {
+      const current = parseDevHudSettings({ ...settings, decks: [repeated] });
+      const next = typeof update === "function" ? update(current) : update;
+      expect(next.decks[0]?.builder).toMatchObject({ author: "octocat", label: "two" });
+      expect(next.decks[0]?.query).toBe("repo:octo/widgets is:pr  label:two author:octocat");
+      return true;
+    });
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [repeated] }), replaceSettings });
+    const bridge = bridgeWith(async (request) => request.operation === "secure.read" ? { kind: "secure-value", value: "token" } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.change(screen.getByLabelText(messages.en.deckBuilderAuthor), { target: { value: " octocat " } });
+    fireEvent.change(screen.getByLabelText(messages.en.deckBuilderLabel), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.saved }));
+
+    await waitFor(() => expect(replaceSettings).toHaveBeenCalledOnce());
   });
 
   it("recomputes a failed Deck cache deadline when its interval changes", async () => {
