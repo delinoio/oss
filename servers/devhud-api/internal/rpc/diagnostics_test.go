@@ -120,6 +120,7 @@ func TestValidateCrashReportRejectsHostileDiagnosticContent(t *testing.T) {
 		"issue":                "issue_body=private",
 		"agent":                "agent_prompt=private",
 		"environment":          "child_env=private",
+		"file URL":             "file:///home/alice/project/app.ts:10",
 		"unix path":            "/home/alice/project/main.ts",
 		"workspace path":       "/workspace/project/main.ts",
 		"root path":            "/root/project/main.ts",

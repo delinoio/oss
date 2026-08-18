@@ -694,6 +694,14 @@ describe("wire validation helpers", () => {
     expect(() => validateCrashReport(fabricated)).toThrow(TypeError);
   });
 
+  it("accepts only the pinned Tauri revision on native reports", () => {
+    expect(() => validateCrashReport({
+      ...safeCrashReport,
+      clientBuild: { ...clientBuild, tauriRevision: "a".repeat(40) },
+    })).toThrow(TypeError);
+    expect(() => validateCrashReport(safeCrashReport)).not.toThrow();
+  });
+
   it("accepts only the pinned CEF revision on desktop reports", () => {
     expect(() => validateCrashReport({
       ...safeCrashReport,

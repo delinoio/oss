@@ -31,6 +31,7 @@ const credentialParameterNamePattern =
 const MIN_PROTOBUF_TIMESTAMP_SECONDS = -62_135_596_800n;
 const MAX_PROTOBUF_TIMESTAMP_SECONDS = 253_402_300_799n;
 const MAX_PROTOBUF_TIMESTAMP_NANOS = 999_999_999;
+const EXACT_TAURI_REVISION = "4af26a3f7f8b692d62cca549bbacd93f5ce90b41";
 const EXACT_CEF_REVISION = "150.0.10+g8042e43+chromium-150.0.7871.101";
 const diagnosticPlatforms: ReadonlySet<DiagnosticPlatform> = new Set([
   DiagnosticPlatform.MACOS,
@@ -213,8 +214,8 @@ export function validateCrashReport(report: SubmitCrashReportRequest): void {
       "clientBuild.tauriRevision must be exact on native hosts and empty in browsers",
     );
   }
-  if (!browser && !/^[0-9a-f]{40}$/u.test(report.clientBuild.tauriRevision)) {
-    throw new TypeError("clientBuild.tauriRevision must be an exact lowercase source revision");
+  if (!browser && report.clientBuild.tauriRevision !== EXACT_TAURI_REVISION) {
+    throw new TypeError("clientBuild.tauriRevision must be the supported native revision");
   }
   const desktop = report.clientBuild.platform === DiagnosticPlatform.MACOS
     || report.clientBuild.platform === DiagnosticPlatform.WINDOWS
