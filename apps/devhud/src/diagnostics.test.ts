@@ -192,6 +192,26 @@ describe("diagnostics privacy boundary", () => {
     }
   });
 
+  it("maps 32-bit ARM browser hints to the browser-safe unknown architecture", async () => {
+    Object.defineProperty(navigator, "userAgentData", {
+      configurable: true,
+      value: { getHighEntropyValues: async () => ({ architecture: "arm", bitness: "32" }) },
+    });
+    try {
+      const response = await nativeBridge.request({ operation: "runtime.snapshot" });
+      if (response.kind !== "runtime") throw new Error("runtime-snapshot-failed");
+      expect(response.snapshot.architecture).toBe("unknown");
+      const event = captureDiagnosticEvent(response.snapshot, {
+        component: DiagnosticComponent.APP,
+        severity: DiagnosticSeverity.ERROR,
+        errorCode: "BROWSER_ARM32_FAILURE",
+      }, Date.parse("2026-08-17T00:00:00.000Z"));
+      expect(prepareDiagnosticsBundle(event, [event]).request.clientBuild?.architecture).toBe(DiagnosticArchitecture.UNSPECIFIED);
+    } finally {
+      Reflect.deleteProperty(navigator, "userAgentData");
+    }
+  });
+
   it("normalizes persisted events to the closed local schema and drops unsafe classifications", () => {
     const now = Date.parse("2026-08-17T00:00:00.000Z");
     const valid = { ...fixtureEvent(now), persistentUserId: "user-123" };
@@ -385,6 +405,30 @@ describe("diagnostics privacy boundary", () => {
 
     expect(await screen.findByText(messages.en.diagnosticsExportInitiated)).toBeTruthy();
     expect(screen.queryByText(messages.en.diagnosticsExportSaved)).toBeNull();
+  });
+
+  it("serializes diagnostics exports until the active request settles", async () => {
+    const now = Date.parse("2026-08-17T00:00:00.000Z");
+    appendDiagnosticEvent(localStorage, fixtureEvent(now), now);
+    mockAuthenticatedIdentity([]);
+    let resolveExport!: (value: { kind: "diagnostics-export"; outcome: "saved" }) => void;
+    const pendingExport = new Promise<{ kind: "diagnostics-export"; outcome: "saved" }>((resolve) => { resolveExport = resolve; });
+    const request = vi.fn(async () => pendingExport);
+    renderDiagnosticsPanel({ request, async listen() { return () => {}; } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.diagnosticsPreview }));
+    const exportButton = screen.getByRole("button", { name: messages.en.diagnosticsExport });
+
+    fireEvent.click(exportButton);
+    fireEvent.click(exportButton);
+
+    expect(request).toHaveBeenCalledOnce();
+    expect((exportButton as HTMLButtonElement).disabled).toBe(true);
+    await act(async () => {
+      resolveExport({ kind: "diagnostics-export", outcome: "saved" });
+      await pendingExport;
+    });
+    expect((exportButton as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.getByText(messages.en.diagnosticsExportSaved)).toBeTruthy();
   });
 
   it("ignores an export completion after replacing the preview", async () => {

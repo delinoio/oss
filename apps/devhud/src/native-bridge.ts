@@ -228,7 +228,8 @@ async function browserArchitecture(): Promise<string> {
     const architecture = hints.architecture?.trim().toLowerCase();
     const bitness = hints.bitness?.trim();
     if (architecture === "arm64" || architecture === "aarch64" || (architecture === "arm" && bitness === "64")) return "arm64";
-    if (architecture === "arm" && bitness === "32") return "arm";
+    // The diagnostics wire contract has no browser-safe ARM32 classification.
+    if (architecture === "arm" && bitness === "32") return "unknown";
     if (architecture === "x86_64" || architecture === "amd64" || (architecture === "x86" && bitness === "64")) return "x86_64";
   } catch { /* Unsupported or denied high-entropy hints leave the browser architecture unknown. */ }
   return "unknown";

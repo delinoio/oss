@@ -5,6 +5,7 @@ import { create, toBinary } from "@bufbuild/protobuf";
 import { canonicalizeSettingsJson, PermissionFailureReason, PermissionFailureSchema, SettingsRevisionConflictSchema, StaticCapability } from "@delinoio/devhud-api-client";
 import { LogtoRequestError } from "@logto/client";
 import { useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import fixture from "../fixtures/identity-settings-e2e.json";
 import { App } from "./App";
@@ -78,6 +79,7 @@ const legacyDevHudSettings = { ...defaultDevHudSettings, schemaVersion: 1, githu
 function IdentityStateProbe({ replacement = defaultDevHudSettings }: { readonly replacement?: typeof defaultDevHudSettings }) {
   const identity = useIdentitySettings();
   const queryClient = useQueryClient();
+  const [actionError, setActionError] = useState(false);
   return <>
     <output
       data-testid="identity-state"
@@ -90,10 +92,11 @@ function IdentityStateProbe({ replacement = defaultDevHudSettings }: { readonly 
       data-account-correlation={identity.accountError?.correlationId ?? ""}
       data-correlation={identity.settingsError?.correlationId ?? ""}
       data-query-data-count={queryClient.getQueryCache().getAll().filter((query) => query.state.data !== undefined).length}
+      data-action-error={String(actionError)}
     />
     <button type="button" onClick={() => void identity.replaceSettings(replacement).catch(() => {})}>replace probe settings</button>
     <button type="button" onClick={() => void queryClient.refetchQueries()}>refetch probe queries</button>
-    <button type="button" onClick={() => void identity.logout().catch(() => {})}>logout probe identity</button>
+    <button type="button" onClick={() => { setActionError(false); void identity.logout().catch(() => setActionError(true)); }}>logout probe identity</button>
     <button type="button" onClick={identity.continueLocally}>continue probe locally</button>
   </>;
 }
@@ -633,6 +636,59 @@ describe("generated Connect identity/settings fixture", () => {
     fireEvent.click(within(cleanupAlert).getByRole("button", { name: messages.en.retry }));
 
     await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    expect(cleanupAttempts).toBe(2);
+    expect(deletionRequests).toBe(1);
+  });
+
+  it("retries incomplete Web Storage cleanup without repeating account deletion", async () => {
+    let deletionRequests = 0;
+    let cleanupAttempts = 0;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 2, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
+      if (url.endsWith("/devhud.v1.AccountService/DeleteAccount")) {
+        deletionRequests += 1;
+        return connectResponse({ account: { ...fixture.account, deletionState: "ACCOUNT_DELETION_STATE_PENDING" } });
+      }
+      throw new Error(`unexpected request ${url}`);
+    }));
+    const accessTokenMap = JSON.stringify({ "@https://api.example/api": { token: "fixture-access-token", scope: "", expiresAt: 4_102_444_800 } });
+    const secureSession = JSON.stringify({ idToken: "fixture-id-token", accessToken: accessTokenMap });
+    const bridge: NativeBridgeV1 = {
+      async request(request) {
+        if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
+        if (request.operation === "secure.read") return { kind: "secure-value", value: request.setting.kind === "logto-session" ? secureSession : null };
+        if (request.operation === "secure.write" || request.operation === "secure.remove") return { kind: "ok" };
+        if (request.operation === "secure.purge" && request.scope === "account-deletion") { cleanupAttempts += 1; return { kind: "ok" }; }
+        throw new Error(`unexpected bridge operation ${request.operation}`);
+      },
+      async listen() { return () => {}; },
+    };
+    const diagnosticsKey = "devhud.diagnostics.v1.events";
+    localStorage.setItem(diagnosticsKey, "[]");
+    const originalRemoveItem = Storage.prototype.removeItem;
+    let rejectDiagnosticsRemoval = true;
+    vi.spyOn(Storage.prototype, "removeItem").mockImplementation(function (this: Storage, key) {
+      if (key === diagnosticsKey && rejectDiagnosticsRemoval) {
+        rejectDiagnosticsRemoval = false;
+        throw new DOMException("denied", "SecurityError");
+      }
+      originalRemoveItem.call(this, key);
+    });
+
+    render(<App bridge={bridge} initialRuntime={runtime} />);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.account }));
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.deleteAccount }));
+    fireEvent.click(within(screen.getByRole("alertdialog", { name: messages.en.deleteAccountConfirmTitle })).getByRole("button", { name: messages.en.deleteAccount }));
+
+    const cleanupAlert = await screen.findByRole("alert");
+    expect(localStorage.getItem(diagnosticsKey)).toBe("[]");
+    fireEvent.click(within(cleanupAlert).getByRole("button", { name: messages.en.retry }));
+
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    expect(localStorage.getItem(diagnosticsKey)).toBeNull();
     expect(cleanupAttempts).toBe(2);
     expect(deletionRequests).toBe(1);
   });
@@ -1302,7 +1358,10 @@ describe("generated Connect identity/settings fixture", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "logout probe identity" }));
 
-    await waitFor(() => expect(screen.getByTestId("identity-state").dataset.status).toBe("signed-out"));
+    await waitFor(() => {
+      expect(screen.getByTestId("identity-state").dataset.status).toBe("signed-out");
+      expect(screen.getByTestId("identity-state").dataset.actionError).toBe("true");
+    });
     expect(localStorage.getItem(cacheKey as string)).not.toBeNull();
     expect(readAuthenticatedSettingsCache(localStorage, apiOrigin)).toBeNull();
   });

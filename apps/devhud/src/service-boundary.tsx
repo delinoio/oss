@@ -230,10 +230,10 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   }
 
   async function cleanPendingDeletion(): Promise<void> {
-    clearAllContractedLocalData(storage);
+    const localCleanupComplete = clearAllContractedLocalData(storage);
     try {
       await bridge.request({ operation: "secure.purge", scope: "account-deletion", profileId: await sessionProfileId(apiOrigin) });
-      setDeletionCleanupFailed(false);
+      setDeletionCleanupFailed(!localCleanupComplete);
     } catch {
       setDeletionCleanupFailed(true);
     }
@@ -714,7 +714,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       sessionRef.current = null;
       setSession(null);
       clearAuthenticatedSettingsCache(storage, apiOrigin);
-      clearAllContractedLocalData(storage);
+      const localCleanupComplete = clearAllContractedLocalData(storage);
       setStatus("signed-out");
       setAccount(null);
       setAccountError(null);
@@ -723,8 +723,9 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       setSettingsReady(false);
       setSettingsError(null);
       await clearIdentityQueryCache();
-      onIdentityReset();
       onLoggedOut();
+      if (!localCleanupComplete) throw new Error("local-data-cleanup-incomplete");
+      onIdentityReset();
     },
     deleteAccount: async () => {
       const response = await deleteMutation.mutateAsync({});

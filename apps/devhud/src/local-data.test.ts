@@ -33,10 +33,10 @@ describe("local identity data lifecycle", () => {
   it("removes identity, guest, draft, cache, pairing, and permission data on logout", () => {
     const storage = new MemoryStorage();
     writeGuestSettings(storage, defaultDevHudSettings);
-    for (const key of ["devhud.deck.v1", "devhud.draft.v1", "devhud.cache.v1", "devhud.pairing.v1", "devhud.permission.v1", "devhud-extension.session"]) storage.setItem(key, "sensitive");
+    for (const key of ["devhud.deck.v1", "devhud.draft.v1", "devhud.cache.v1", "devhud.pairing.v1", "devhud.permission.v1", "devhud.diagnostics.v1.events", "devhud.diagnostics.v1.correlations", "devhud-extension.session"]) storage.setItem(key, "sensitive");
     storage.setItem("devhud.shell.preferences.v1", "local-device-preferences");
 
-    clearAllContractedLocalData(storage);
+    expect(clearAllContractedLocalData(storage)).toBe(true);
 
     expect(hasGuestSettings(storage)).toBe(false);
     expect(storage.length).toBe(1);
@@ -59,8 +59,8 @@ describe("local identity data lifecycle", () => {
       setItem: () => {},
     };
 
-    expect(() => clearAllContractedLocalData(enumerationFailure)).not.toThrow();
-    expect(() => clearAllContractedLocalData(removalFailure)).not.toThrow();
+    expect(clearAllContractedLocalData(enumerationFailure)).toBe(false);
+    expect(clearAllContractedLocalData(removalFailure)).toBe(false);
   });
 
   it("keeps authenticated cache writes best-effort when persistence rejects writes", () => {

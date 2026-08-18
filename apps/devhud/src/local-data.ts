@@ -139,10 +139,10 @@ export function clearAuthenticatedOriginData(storage: MutableStorage, apiOrigin:
   removeMatching(storage, (key) => key.startsWith(originPrefix));
 }
 
-export function clearAllContractedLocalData(storage: MutableStorage): void {
+export function clearAllContractedLocalData(storage: MutableStorage): boolean {
   clearedGuestSettings.add(storage);
   inMemoryGuestSettings.delete(storage);
-  removeMatching(storage, (key) => key.startsWith(prefix) || /^(?:devhud\.(?:deck|draft|clone|cache|permission|pairing|diagnostics)|devhud-extension\.)/u.test(key));
+  return removeMatching(storage, (key) => key.startsWith(prefix) || /^(?:devhud\.(?:deck|draft|clone|cache|permission|pairing|diagnostics)|devhud-extension\.)/u.test(key));
 }
 
 function accountKey(apiOrigin: string, suffix: string): string {
@@ -152,21 +152,25 @@ function accountKey(apiOrigin: string, suffix: string): string {
   return `${accountPrefix}${btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/u, "")}.${suffix}`;
 }
 
-function removeMatching(storage: MutableStorage, predicate: (key: string) => boolean): void {
+function removeMatching(storage: MutableStorage, predicate: (key: string) => boolean): boolean {
   const keys: string[] = [];
+  let complete = true;
   try {
     for (let index = 0; index < storage.length; index += 1) {
       const key = storage.key(index);
       if (key !== null && predicate(key)) keys.push(key);
     }
   } catch {
+    complete = false;
     // Web Storage cleanup is best-effort and must not block native secure-store purges.
   }
   for (const key of keys) {
     try {
       storage.removeItem(key);
     } catch {
+      complete = false;
       // Continue removing independent entries when one Web Storage operation fails.
     }
   }
+  return complete;
 }

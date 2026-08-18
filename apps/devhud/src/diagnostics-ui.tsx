@@ -27,8 +27,10 @@ export function DiagnosticsPanel({ copy, bridge, storage, online }: DiagnosticsP
   const [submitState, setSubmitState] = useState<"idle" | "sent" | "failed">("idle");
   const [submitError, setSubmitError] = useState<DevHudClientError | null>(null);
   const [serverCorrelation, setServerCorrelation] = useState<string | null>(null);
+  const [exportPending, setExportPending] = useState(false);
   const consentAttempt = useRef(0);
   const exportAttempt = useRef(0);
+  const exportPendingRef = useRef(false);
   const authenticated = identity.status === "authenticated";
   const blocked = identity.status === "blocked" || identity.status === "deletion-pending";
   const crashReportsSupported = identity.bootstrap?.capabilities.includes(StaticCapability.CRASH_REPORTS) === true;
@@ -63,7 +65,9 @@ export function DiagnosticsPanel({ copy, bridge, storage, online }: DiagnosticsP
   };
 
   const exportBundle = async () => {
-    if (!bundle) return;
+    if (!bundle || exportPendingRef.current) return;
+    exportPendingRef.current = true;
+    setExportPending(true);
     const attempt = ++exportAttempt.current;
     setExportState("idle");
     try {
@@ -72,6 +76,9 @@ export function DiagnosticsPanel({ copy, bridge, storage, online }: DiagnosticsP
       if (exportAttempt.current === attempt) setExportState(response.outcome);
     } catch {
       if (exportAttempt.current === attempt) setExportState("failed");
+    } finally {
+      exportPendingRef.current = false;
+      setExportPending(false);
     }
   };
 
@@ -111,7 +118,7 @@ export function DiagnosticsPanel({ copy, bridge, storage, online }: DiagnosticsP
       <pre className="diagnostics-preview" data-testid="diagnostics-preview">{bundle.requestJson}</pre>
       <p>{copy.diagnosticsExactExport}</p>
       <pre className="diagnostics-preview" data-testid="diagnostics-export-preview">{bundle.exportJson}</pre>
-      <div className="actions"><button onClick={() => void exportBundle()}>{copy.diagnosticsExport}</button></div>
+      <div className="actions"><button disabled={exportPending} onClick={() => void exportBundle()}>{copy.diagnosticsExport}</button></div>
       {exportState !== "idle" && <p role="status">{copy[`diagnosticsExport${capitalize(exportState)}` as keyof Copy]}</p>}
       {authenticated && !blocked && crashReportsSupported && <>
         <label className="check"><input type="checkbox" checked={consentSelected} onChange={(event) => void chooseConsent(event.target.checked)} />{copy.diagnosticsConsent}</label>
