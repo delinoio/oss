@@ -37,7 +37,7 @@ const (
 var (
 	safeErrorCode           = regexp.MustCompile(`^[A-Z][A-Z0-9_]{0,63}$`)
 	safeSQLState            = regexp.MustCompile(`^[0-9A-Z]{5}$`)
-	diagnosticURL           = regexp.MustCompile(`\b[A-Za-z][A-Za-z0-9+.-]*:[^\s<>"']+`)
+	diagnosticURL           = regexp.MustCompile(`[A-Za-z][A-Za-z0-9+.-]*:[^\s<>"']+`)
 	trailingURLPunctuation  = regexp.MustCompile(`[)\]}>.,;]+$`)
 	credentialParameterName = regexp.MustCompile(`(?i)^(code|password|passwd|pwd|secret|token|client[_.-]?secret|(access|refresh|id)[_.-]?token|api[_.-]?key|private[_.-]?key|authorization|cookie|set-cookie|x-amz-(credential|signature))$`)
 	forbiddenDiagnostic     = []*regexp.Regexp{

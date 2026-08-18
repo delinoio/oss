@@ -572,6 +572,7 @@ describe("wire validation helpers", () => {
       "https://example.com/?context=release%3D2026#component=React%2FNative",
       "wss://user:pass@example.com/socket",
       "devhud://auth/callback?code=secret&state=x",
+      "callback_devhud://auth/callback?code=secret&state=x",
       "https://example.com/#access%2Dtoken=secret",
       "https://example.com/?to%6=secret",
       ...r2SignedCredentialUrls,

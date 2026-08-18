@@ -32,6 +32,7 @@ pub struct NativeBridgeState {
     shortcuts_ready: Arc<AtomicBool>,
     shortcut_listener_failed: Arc<AtomicBool>,
     shortcut_listener_retry: Arc<(Mutex<u64>, Condvar)>,
+    diagnostics_export_generation: Arc<Mutex<u64>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -55,6 +56,7 @@ impl Default for NativeBridgeState {
             shortcuts_ready: Arc::new(AtomicBool::new(false)),
             shortcut_listener_failed,
             shortcut_listener_retry: Arc::new((Mutex::new(0), Condvar::new())),
+            diagnostics_export_generation: Arc::new(Mutex::new(0)),
         }
     }
 }
@@ -218,6 +220,50 @@ impl NativeBridgeState {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         *generation = generation.wrapping_add(1);
         ready.notify_all();
+    }
+
+    #[cfg(desktop)]
+    fn begin_diagnostics_export(&self) -> u64 {
+        *self
+            .diagnostics_export_generation
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    #[cfg(desktop)]
+    fn persist_diagnostics_export(
+        &self,
+        generation: u64,
+        destination: &std::path::Path,
+        contents: &str,
+    ) -> Result<bool, String> {
+        let current_generation = self
+            .diagnostics_export_generation
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if *current_generation != generation {
+            return Ok(false);
+        }
+        let parent = destination.parent().ok_or("storage-failure")?;
+        let mut file = tempfile::NamedTempFile::new_in(parent).map_err(|_| "storage-failure")?;
+        file.write_all(contents.as_bytes())
+            .map_err(|_| "storage-failure")?;
+        file.as_file().sync_all().map_err(|_| "storage-failure")?;
+        file.persist(destination).map_err(|_| "storage-failure")?;
+        Ok(true)
+    }
+
+    #[cfg(desktop)]
+    fn with_invalidated_diagnostics_exports<T>(
+        &self,
+        action: impl FnOnce() -> Result<T, String>,
+    ) -> Result<T, String> {
+        let mut generation = self
+            .diagnostics_export_generation
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        *generation = generation.wrapping_add(1);
+        action()
     }
 
     #[allow(dead_code)]
@@ -623,7 +669,11 @@ fn validate_diagnostics_export(request: &Value) -> Result<(&str, &str), String> 
 }
 
 #[cfg(desktop)]
-fn export_diagnostics(request: &Value) -> Result<Value, String> {
+fn export_diagnostics(
+    request: &Value,
+    state: &NativeBridgeState,
+    generation: u64,
+) -> Result<Value, String> {
     let (suggested_name, contents) = validate_diagnostics_export(request)?;
     let Some(destination) = rfd::FileDialog::new()
         .add_filter("JSON", &["json"])
@@ -632,12 +682,9 @@ fn export_diagnostics(request: &Value) -> Result<Value, String> {
     else {
         return Ok(json!({ "kind": "diagnostics-export", "outcome": "cancelled" }));
     };
-    let parent = destination.parent().ok_or("storage-failure")?;
-    let mut file = tempfile::NamedTempFile::new_in(parent).map_err(|_| "storage-failure")?;
-    file.write_all(contents.as_bytes())
-        .map_err(|_| "storage-failure")?;
-    file.as_file().sync_all().map_err(|_| "storage-failure")?;
-    file.persist(destination).map_err(|_| "storage-failure")?;
+    if !state.persist_diagnostics_export(generation, &destination, contents)? {
+        return Ok(json!({ "kind": "diagnostics-export", "outcome": "cancelled" }));
+    }
     Ok(json!({ "kind": "diagnostics-export", "outcome": "saved" }))
 }
 
@@ -819,9 +866,13 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
     #[cfg(desktop)]
     {
         if operation == "diagnostics.export" {
-            return tauri::async_runtime::spawn_blocking(move || export_diagnostics(&request))
-                .await
-                .map_err(|_| "platform-failure".to_string())?;
+            let export_state = state.inner().clone();
+            let generation = export_state.begin_diagnostics_export();
+            return tauri::async_runtime::spawn_blocking(move || {
+                export_diagnostics(&request, &export_state, generation)
+            })
+            .await
+            .map_err(|_| "platform-failure".to_string())?;
         }
         if operation.starts_with("secure.") {
             if operation == "secure.purge" {
@@ -832,7 +883,10 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
                 validate_secure_request(&request)?;
             }
             if operation == "secure.purge" && purge_clears_diagnostics(&request) {
-                clear_diagnostic_logs()?;
+                return state.with_invalidated_diagnostics_exports(|| {
+                    clear_diagnostic_logs()?;
+                    crate::secure_store::handle(&request)
+                });
             }
             return crate::secure_store::handle(&request);
         }
@@ -907,6 +961,24 @@ mod tests {
         assert!(!purge_clears_diagnostics(
             &json!({ "scope": "api-change", "profileId": "profile" })
         ));
+    }
+
+    #[cfg(desktop)]
+    #[test]
+    fn destructive_purge_invalidation_prevents_a_pending_diagnostics_write() {
+        let state = NativeBridgeState::default();
+        let generation = state.begin_diagnostics_export();
+        state
+            .with_invalidated_diagnostics_exports(|| Ok(()))
+            .expect("diagnostics export invalidation");
+        let temporary = tempfile::tempdir().expect("temporary export directory");
+        let destination = temporary.path().join("diagnostics.json");
+
+        assert_eq!(
+            state.persist_diagnostics_export(generation, &destination, "{}"),
+            Ok(false)
+        );
+        assert!(!destination.exists());
     }
 
     #[test]

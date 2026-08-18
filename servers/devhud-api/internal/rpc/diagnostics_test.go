@@ -149,6 +149,7 @@ func TestSubmitCrashReportRejectsUnlabeledCredentialsBeforePersistence(t *testin
 		"JWT":                     "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiIxMjMifQ.signature",
 		"private key":             "-----BEGIN PRIVATE KEY-----",
 		"OAuth callback URL":      "devhud://auth/callback?code=secret&state=x",
+		"adjacent OAuth callback": "callback_devhud://auth/callback?code=secret&state=x",
 		"encoded OAuth callback":  "devhud://auth/callback?co%64e=secret&state=x",
 		"encoded token fragment":  "devhud://auth/callback#access%2Dtoken=secret",
 		"credential-bearing user": "https://alice:password@example.test/app.js",

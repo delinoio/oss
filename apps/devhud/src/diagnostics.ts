@@ -29,6 +29,7 @@ const exactTauriRevision = "4af26a3f7f8b692d62cca549bbacd93f5ce90b41";
 const exactCefRevision = "150.0.10+g8042e43+chromium-150.0.7871.101";
 const textEncoder = new TextEncoder();
 const inMemoryDiagnosticEvents = new WeakMap<object, LocalDiagnosticEvent[]>();
+const inMemoryDiagnosticCorrelations = new WeakMap<object, DiagnosticCorrelationEvent[]>();
 
 const forbiddenValue = /(?:authorization|bearer\s|github[_-]?pat|access[_-]?token|refresh[_-]?token|r2[_-]?(?:secret|token|key)|signing[_-]?(?:secret|key)|-----BEGIN [A-Z ]*PRIVATE KEY-----|\b(?:ghp|github_pat)_[A-Za-z0-9_]+\b|\beyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b|\bAKIA[0-9A-Z]{16}\b|browser.?dom|innerhtml|outerhtml|screenshot|form.?value|issue.?body|agent.?(?:prompt|output)|child.?env|https?:\/\/\S*|(?:^|[\s(\[{<"'=:])(?:[a-z]:[\\/]\S*|\\\\\S+|~\/\S+|\/[^/\s]\S*)|(?:ctrl|control|cmd|command|meta|alt|option|shift)\s*[+-]\s*[a-z0-9])/iu;
 const safeCode = /^[A-Z][A-Z0-9_]{0,63}$/u;
@@ -242,39 +243,45 @@ export function clearDiagnosticEvents(storage: Pick<Storage, "removeItem">): voi
     storage.removeItem(DiagnosticsStorageKey);
     inMemoryDiagnosticEvents.delete(storage);
   } catch { /* The empty fallback prevents a failed removal from restoring diagnostics this session. */ }
-  try { storage.removeItem(DiagnosticsCorrelationsKey); } catch { /* Native cleanup still proceeds independently. */ }
+  inMemoryDiagnosticCorrelations.set(storage, []);
+  try {
+    storage.removeItem(DiagnosticsCorrelationsKey);
+    inMemoryDiagnosticCorrelations.delete(storage);
+  } catch { /* The empty fallback prevents a failed removal from restoring correlations this session. */ }
 }
 
 export function clearInMemoryDiagnosticEvents(storage: object): void {
   inMemoryDiagnosticEvents.delete(storage);
+  inMemoryDiagnosticCorrelations.delete(storage);
 }
 
 export function appendDiagnosticCorrelation(storage: Storage, correlationId: string | null, procedure: string, durationMilliseconds: number, now = Date.now()): void {
   if (!isUuidV7(correlationId)) return;
   const correlations = readDiagnosticCorrelations(storage, now);
   correlations.push({ source: "connect-response", correlationId, operation: connectOperation(procedure), occurredAt: new Date(now).toISOString(), durationMilliseconds: Math.max(0, Math.min(86_400_000, Math.round(durationMilliseconds))) });
-  try { storage.setItem(DiagnosticsCorrelationsKey, JSON.stringify(correlations.slice(-128))); } catch { /* Correlation breadcrumbs are optional offline data. */ }
+  persistDiagnosticCorrelations(storage, correlations.slice(-128));
 }
 
 export function readDiagnosticCorrelations(storage: Storage, now = Date.now()): DiagnosticCorrelationEvent[] {
+  const fallback = inMemoryDiagnosticCorrelations.get(storage);
+  if (fallback !== undefined) {
+    const correlations = boundedDiagnosticCorrelations(fallback, now);
+    persistDiagnosticCorrelations(storage, correlations);
+    return correlations;
+  }
   try {
     const persisted = storage.getItem(DiagnosticsCorrelationsKey);
     if (persisted === null) return [];
     const value: unknown = JSON.parse(persisted);
     if (!Array.isArray(value)) {
-      removeStorageKey(storage, DiagnosticsCorrelationsKey);
+      persistDiagnosticCorrelations(storage, [], persisted);
       return [];
     }
-    const correlations = value.filter((candidate): candidate is DiagnosticCorrelationEvent => {
-      if (candidate === null || typeof candidate !== "object") return false;
-      const record = candidate as Partial<DiagnosticCorrelationEvent>;
-      return record.source === "connect-response" && isUuidV7(record.correlationId) && Object.values<string>(DiagnosticConnectOperation).includes(record.operation ?? "") && typeof record.occurredAt === "string" && isWithinDiagnosticsRetention(record.occurredAt, now) && Number.isSafeInteger(record.durationMilliseconds) && record.durationMilliseconds! >= 0 && record.durationMilliseconds! <= 86_400_000;
-    }).slice(-128);
-    const serialized = JSON.stringify(correlations);
-    persistPrunedCollection(storage, DiagnosticsCorrelationsKey, persisted, serialized, correlations.length);
+    const correlations = boundedDiagnosticCorrelations(value, now);
+    persistDiagnosticCorrelations(storage, correlations, persisted);
     return correlations;
   } catch {
-    removeStorageKey(storage, DiagnosticsCorrelationsKey);
+    persistDiagnosticCorrelations(storage, []);
     return [];
   }
 }
@@ -345,15 +352,23 @@ function persistDiagnosticEvents(storage: Pick<Storage, "removeItem" | "setItem"
   }
 }
 
-function persistPrunedCollection(storage: Storage, key: string, persisted: string, serialized: string, length: number): void {
+function persistDiagnosticCorrelations(storage: Storage, correlations: DiagnosticCorrelationEvent[], persisted?: string): void {
+  const serialized = JSON.stringify(correlations);
   try {
-    if (length === 0) storage.removeItem(key);
-    else if (serialized !== persisted) storage.setItem(key, serialized);
-  } catch { /* Retention remains enforced in memory when Web Storage is unavailable. */ }
+    if (correlations.length === 0) storage.removeItem(DiagnosticsCorrelationsKey);
+    else if (serialized !== persisted) storage.setItem(DiagnosticsCorrelationsKey, serialized);
+    inMemoryDiagnosticCorrelations.delete(storage);
+  } catch {
+    inMemoryDiagnosticCorrelations.set(storage, correlations);
+  }
 }
 
-function removeStorageKey(storage: Pick<Storage, "removeItem">, key: string): void {
-  try { storage.removeItem(key); } catch { /* Invalid persisted diagnostics are ignored in unavailable storage. */ }
+function boundedDiagnosticCorrelations(value: readonly unknown[], now: number): DiagnosticCorrelationEvent[] {
+  return value.filter((candidate): candidate is DiagnosticCorrelationEvent => {
+    if (candidate === null || typeof candidate !== "object") return false;
+    const record = candidate as Partial<DiagnosticCorrelationEvent>;
+    return record.source === "connect-response" && isUuidV7(record.correlationId) && Object.values<string>(DiagnosticConnectOperation).includes(record.operation ?? "") && typeof record.occurredAt === "string" && isWithinDiagnosticsRetention(record.occurredAt, now) && Number.isSafeInteger(record.durationMilliseconds) && record.durationMilliseconds! >= 0 && record.durationMilliseconds! <= 86_400_000;
+  }).slice(-128);
 }
 
 function isLocalDiagnosticEvent(value: unknown): value is LocalDiagnosticEvent {

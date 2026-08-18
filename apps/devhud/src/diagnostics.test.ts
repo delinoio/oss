@@ -144,14 +144,33 @@ describe("diagnostics privacy boundary", () => {
     expect(JSON.parse(storage.getItem(DiagnosticsStorageKey) ?? "null")).toEqual(recovered);
   });
 
-  it("removes in-memory diagnostic events during contracted local cleanup", () => {
+  it("retains bounded diagnostic correlations in memory until Web Storage recovers", () => {
+    const storage = new RecoverableStorage();
+    const now = Date.parse("2026-08-17T00:00:00.000Z");
+    for (let index = 0; index <= 128; index += 1) {
+      appendDiagnosticCorrelation(storage, uuidV7(now + index, new Uint8Array(10).fill(index % 255)), "/devhud.v1.DiagnosticsService/SubmitCrashReport", index, now);
+    }
+
+    expect(storage.getItem(DiagnosticsCorrelationsKey)).toBeNull();
+    expect(readDiagnosticCorrelations(storage, now)).toHaveLength(128);
+
+    storage.rejectWrites = false;
+    const recovered = readDiagnosticCorrelations(storage, now);
+    expect(recovered).toHaveLength(128);
+    expect(JSON.parse(storage.getItem(DiagnosticsCorrelationsKey) ?? "null")).toEqual(recovered);
+  });
+
+  it("removes in-memory diagnostic events and correlations during contracted local cleanup", () => {
     const storage = new RecoverableStorage();
     const now = Date.parse("2026-08-17T00:00:00.000Z");
     appendDiagnosticEvent(storage, fixtureEvent(now), now);
+    appendDiagnosticCorrelation(storage, fixtureEvent(now).correlationId, "/devhud.v1.DiagnosticsService/SubmitCrashReport", 1, now);
     expect(readDiagnosticEvents(storage, now)).toHaveLength(1);
+    expect(readDiagnosticCorrelations(storage, now)).toHaveLength(1);
 
     expect(clearAllContractedLocalData(storage)).toBe(true);
     expect(readDiagnosticEvents(storage, now)).toEqual([]);
+    expect(readDiagnosticCorrelations(storage, now)).toEqual([]);
   });
 
   it("physically removes expired events and correlations during read maintenance", () => {
