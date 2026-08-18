@@ -52,6 +52,15 @@ func TestValidateDevHudSettings(t *testing.T) {
 	if err := validateDevHudSettings([]byte(strings.Replace(withProfile, `"urlMappings":[]`, `"urlMappings":`+structuredMapping, 1)), 3); err != nil {
 		t.Fatalf("structured mapping validation failed: %v", err)
 	}
+	for _, pattern := range []string{
+		"https://example.com/" + strings.Repeat("a/../", maximumMappingPathSegments+1) + "project",
+		"https://example.com/" + strings.Repeat("a/%2e%2e/", maximumMappingPathSegments+1) + "project",
+	} {
+		mapping := strings.Replace(structuredMapping, `"https://example.com./**"`, `"`+pattern+`"`, 1)
+		if err := validateDevHudSettings([]byte(strings.Replace(withProfile, `"urlMappings":[]`, `"urlMappings":`+mapping, 1)), 3); err != nil {
+			t.Fatalf("dot-segment-normalized mapping validation failed: %v", err)
+		}
+	}
 	legacyMapping := `[{"destinationPrefix":"https://destination.example/path","sourcePrefix":"https://source.example/path"}]`
 	if err := validateDevHudSettings([]byte(strings.Replace(canonicalSettingsV1, `"urlMappings":[]`, `"urlMappings":`+legacyMapping, 1)), 1); err != nil {
 		t.Fatalf("legacy mapping validation failed: %v", err)

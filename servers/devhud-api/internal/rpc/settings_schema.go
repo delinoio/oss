@@ -685,14 +685,17 @@ func settingsURLMappingPattern(value any, path string) error {
 		return fmt.Errorf("%s has an invalid path", path)
 	}
 	segments := strings.Split(pathText, "/")[1:]
+	for _, segment := range segments {
+		if strings.Contains(segment, "*") && segment != "*" && segment != "**" {
+			return fmt.Errorf("%s has invalid path wildcards", path)
+		}
+	}
+	segments = settingsCanonicalMappingPathSegments(segments)
 	if len(segments) > maximumMappingPathSegments {
 		return fmt.Errorf("%s must contain at most %d path segments", path, maximumMappingPathSegments)
 	}
 	globstars := 0
 	for _, segment := range segments {
-		if strings.Contains(segment, "*") && segment != "*" && segment != "**" {
-			return fmt.Errorf("%s has invalid path wildcards", path)
-		}
 		if segment == "**" {
 			globstars++
 		}
@@ -701,6 +704,25 @@ func settingsURLMappingPattern(value any, path string) error {
 		return fmt.Errorf("%s must contain at most %d globstar segments", path, maximumMappingGlobstars)
 	}
 	return nil
+}
+
+// settingsCanonicalMappingPathSegments mirrors WHATWG URL dot-segment removal
+// before applying complexity bounds, including percent-encoded dot segments.
+func settingsCanonicalMappingPathSegments(segments []string) []string {
+	canonical := make([]string, 0, len(segments))
+	for _, segment := range segments {
+		switch strings.ToLower(segment) {
+		case ".", "%2e":
+			continue
+		case "..", ".%2e", "%2e.", "%2e%2e":
+			if len(canonical) > 0 {
+				canonical = canonical[:len(canonical)-1]
+			}
+		default:
+			canonical = append(canonical, segment)
+		}
+	}
+	return canonical
 }
 
 func settingsChromeOrigin(value any, path string) error {
