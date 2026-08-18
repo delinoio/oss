@@ -222,6 +222,48 @@ describe("diagnostics privacy boundary", () => {
     expect(events[0]).not.toHaveProperty("persistentUserId");
   });
 
+  it("drops persisted build metadata that cannot be submitted", () => {
+    const now = Date.parse("2026-08-17T00:00:00.000Z");
+    const event = fixtureEvent(now);
+    const invalidCefRevision = { ...event, build: { ...event.build, cefRevision: "legacy-cef" } };
+    const invalidArmV7 = [
+      DiagnosticPlatform.MACOS,
+      DiagnosticPlatform.WINDOWS,
+      DiagnosticPlatform.LINUX,
+      DiagnosticPlatform.IOS,
+      DiagnosticPlatform.BROWSER,
+    ].map((platform) => {
+      const browser = platform === DiagnosticPlatform.BROWSER;
+      const mobile = platform === DiagnosticPlatform.IOS;
+      return {
+        ...event,
+        build: {
+          ...event.build,
+          platform,
+          architecture: DiagnosticArchitecture.ARMV7,
+          tauriRevision: browser ? "" : event.build.tauriRevision,
+          cefRevision: browser || mobile ? "" : event.build.cefRevision,
+        },
+      };
+    });
+    const androidArmV7 = {
+      ...event,
+      build: {
+        ...event.build,
+        platform: DiagnosticPlatform.ANDROID,
+        architecture: DiagnosticArchitecture.ARMV7,
+        cefRevision: "",
+      },
+    };
+    localStorage.setItem(DiagnosticsStorageKey, JSON.stringify([invalidCefRevision, ...invalidArmV7, androidArmV7]));
+
+    const events = readDiagnosticEvents(localStorage, now);
+
+    expect(events).toEqual([androidArmV7]);
+    expect(JSON.parse(localStorage.getItem(DiagnosticsStorageKey) ?? "null")).toEqual([androidArmV7]);
+    expect(() => prepareDiagnosticsBundle(events[0]!, events)).not.toThrow();
+  });
+
   it("drops persisted events containing unlabeled credential shapes", () => {
     const now = Date.parse("2026-08-17T00:00:00.000Z");
     for (const credential of [
