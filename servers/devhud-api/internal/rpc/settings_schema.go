@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/netip"
 	"net/url"
 	"regexp"
 	"sort"
@@ -718,7 +719,11 @@ func settingsChromeOrigin(value any, path string) error {
 
 func settingsValidURLHost(host string, allowWildcard bool) bool {
 	if strings.HasPrefix(host, "[") {
-		return strings.HasSuffix(host, "]") && net.ParseIP(strings.TrimSuffix(strings.TrimPrefix(host, "["), "]")) != nil
+		if !strings.HasSuffix(host, "]") {
+			return false
+		}
+		address, err := netip.ParseAddr(strings.TrimSuffix(strings.TrimPrefix(host, "["), "]"))
+		return err == nil && address.Is6() && address.Zone() == ""
 	}
 	if net.ParseIP(host) != nil {
 		return true
