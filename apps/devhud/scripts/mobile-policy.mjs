@@ -48,6 +48,7 @@ export function assertAndroidBackupExclusions({ androidManifest, androidBackupRu
 
 export function assertAndroidNativeBridge(androidNativeBridge) {
   const onDestroy = androidNativeBridge.match(/override fun onDestroy\(activity: AppCompatActivity\)[\s\S]*?(?=\n    @Command)/u)?.[0] ?? "";
+  const forgetDiagnosticsCleanup = androidNativeBridge.match(/private fun forgetDiagnosticsCleanup\(\): Boolean[\s\S]*?(?=\n    private fun cleanupPendingDiagnosticsExport)/u)?.[0] ?? "";
   assert(androidNativeBridge.includes("Executors.newSingleThreadExecutor()"), "Android secure-setting persistence must run off the command thread");
   assert(onDestroy.includes("secureSettingsExecutor.shutdown()"), "Android secure-setting executor must stop with the plugin lifecycle");
   assert((androidNativeBridge.match(/\.commit\(\)/gu) ?? []).length === 7, "Android secure-setting and diagnostics-cleanup writes must confirm persistence");
@@ -69,6 +70,8 @@ export function assertAndroidNativeBridge(androidNativeBridge) {
   assert(androidNativeBridge.includes("activity.intent = Intent(activity.intent).setData(null)"), "Android consumed auth callbacks must be removed from the activity intent");
   assert(androidNativeBridge.includes("peekAuthCallback") && androidNativeBridge.includes("pendingAuthCallback"), "Android auth callback inspection must be non-destructive");
   assert(androidNativeBridge.includes("pendingDiagnosticsCleanup") && androidNativeBridge.includes("takePersistableUriPermission"), "Android failed diagnostics cleanup must retain a persistable destination URI");
+  assert(forgetDiagnosticsCleanup.indexOf("releasePersistableUriPermission") >= 0 && forgetDiagnosticsCleanup.indexOf("releasePersistableUriPermission") < forgetDiagnosticsCleanup.indexOf("remove(diagnosticsCleanupUriKey)"), "Android diagnostics cleanup must release its URI grant before clearing retry state");
+  assert(forgetDiagnosticsCleanup.includes("catch (_: Exception) {\n            return false\n        }"), "Android diagnostics cleanup must preserve retry state when URI grant release fails");
   assert(androidNativeBridge.includes("cleanupPendingDiagnosticsExport()") && androidNativeBridge.includes("FileNotFoundException"), "Android diagnostics cleanup must retry and confirm destination absence");
   assert(androidNativeBridge.includes('scope in setOf("logout", "account-deletion") && !cleanupPendingDiagnosticsExport()'), "Android destructive purges must propagate diagnostics cleanup failures");
   assert(androidNativeBridge.includes("storeIntent().resolveActivity(activity.packageManager)"), "Android update status must resolve a market handler");

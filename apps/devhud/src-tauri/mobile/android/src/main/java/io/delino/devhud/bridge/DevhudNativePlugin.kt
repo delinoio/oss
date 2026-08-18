@@ -167,13 +167,15 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
 
     private fun forgetDiagnosticsCleanup(): Boolean {
         val destination = pendingDiagnosticsCleanup ?: return true
+        try {
+            activity.contentResolver.releasePersistableUriPermission(destination, Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        } catch (_: Exception) {
+            return false
+        }
         val removed = activity.getSharedPreferences(diagnosticsCleanupStoreName, Context.MODE_PRIVATE)
             .edit().remove(diagnosticsCleanupUriKey).commit()
         if (!removed) return false
         pendingDiagnosticsCleanup = null
-        try {
-            activity.contentResolver.releasePersistableUriPermission(destination, Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-        } catch (_: Exception) { }
         return true
     }
 

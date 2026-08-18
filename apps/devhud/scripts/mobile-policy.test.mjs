@@ -57,6 +57,8 @@ test("mobile policy requires lifecycle-owned Android persistence and native plat
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace("Intent(activity.intent).setData(null)", "Intent(activity.intent)")), /activity intent/u);
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replaceAll("peekAuthCallback", "missing")), /inspection must be non-destructive/u);
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace("takePersistableUriPermission", "missingPersistablePermission")), /persistable destination URI/u);
+  assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace("releasePersistableUriPermission", "missingPersistablePermission")), /release its URI grant/u);
+  assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace("return false\n        }\n        val removed", "Unit\n        }\n        val removed")), /preserve retry state/u);
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replaceAll("FileNotFoundException", "MissingFileException")), /confirm destination absence/u);
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace('scope in setOf("logout", "account-deletion") && !cleanupPendingDiagnosticsExport()', "false")), /propagate diagnostics cleanup failures/u);
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace("storeIntent().resolveActivity(activity.packageManager)", "true")), /market handler/u);

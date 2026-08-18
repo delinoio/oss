@@ -46,7 +46,7 @@ var (
 		regexp.MustCompile(`(?i)(browser[._ -]?dom|outerhtml|innerhtml|screenshot|form[._ -]?value|issue[._ -]?body|agent[._ -]?(prompt|output)|child[._ -]?env|shortcut[._ -]?(key|keystroke))`),
 		regexp.MustCompile(`(?i)https?://[^[:space:]]*#`),
 		regexp.MustCompile(`(?i)\bfile://[^[:space:]]*`),
-		regexp.MustCompile(`(?i)(^|[[:space:]([{<"'=:])(?:[a-z]:[\\/][^[:space:]]*|\\\\[^[:space:]]+|~/[^[:space:]]+|/[^/[:space:]][^[:space:]]*)`),
+		regexp.MustCompile(`(?i)(^([[:space:]\p{P}])?|[^:][[:space:]\p{P}=]|:[[:space:]]+)([a-z]:[\\/][^[:space:]]*|\\\\[^[:space:]]+|~/[^[:space:]]+|/[^/[:space:]][^[:space:]]*)`),
 		regexp.MustCompile(`(?i)(ctrl|control|cmd|command|meta|alt|option|shift)[[:space:]]*[+-][[:space:]]*[a-z0-9]`),
 	}
 )

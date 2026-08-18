@@ -122,6 +122,8 @@ func TestValidateCrashReportRejectsHostileDiagnosticContent(t *testing.T) {
 		"environment":          "child_env=private",
 		"file URL":             "file:///home/alice/project/app.ts:10",
 		"unix path":            "/home/alice/project/main.ts",
+		"comma path":           "trace,/home/alice/project/main.ts",
+		"semicolon path":       "trace;/home/alice/project/main.ts",
 		"workspace path":       "/workspace/project/main.ts",
 		"root path":            "/root/project/main.ts",
 		"usr path":             "/usr/src/project/main.ts",
