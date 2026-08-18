@@ -4,6 +4,7 @@ import {
   encodeCanonicalSettingsJson,
   validateCanonicalSettingsJson,
 } from "@delinoio/devhud-api-client";
+import { ShortcutContractError, defaultDesktopShortcutBindings, parseDesktopShortcutBindings, type DesktopShortcutBindings } from "./shortcuts";
 import { parseUrlPattern, type UrlRepositoryMapping } from "./url-mapping";
 
 export const LegacySettingsSchemaVersion = 1 as const;
@@ -49,7 +50,7 @@ export interface DevHudSettings {
     readonly issueTracker: { readonly owner: string; readonly repository: string; readonly labels: readonly string[]; readonly profileRef: string | null } | null;
   };
   readonly urlMappings: readonly UrlRepositoryMapping[];
-  readonly shortcuts: Readonly<Record<Platform, Readonly<Record<string, string>>>>;
+  readonly shortcuts: Readonly<{ readonly desktop: DesktopShortcutBindings; readonly ios: Readonly<Record<string, never>>; readonly android: Readonly<Record<string, never>> }>;
   readonly agents: readonly {
     readonly id: string;
     readonly enabled: boolean;
@@ -79,7 +80,7 @@ export const defaultDevHudSettings: DevHudSettingsV1 = Object.freeze<DevHudSetti
   decks: [],
   github: { profiles: [], pendingPatRemovals: [], repositories: [], issueTracker: null },
   urlMappings: [],
-  shortcuts: { desktop: {}, ios: {}, android: {} },
+  shortcuts: { desktop: defaultDesktopShortcutBindings, ios: {}, android: {} },
   agents: [],
   uploads: { provider: "official", r2: null },
 });
@@ -110,6 +111,7 @@ export function parseDevHudSettings(value: unknown): DevHudSettingsV1 {
   const root = object(value, "$", ["schemaVersion", "appearance", "decks", "github", "urlMappings", "shortcuts", "agents", "uploads"]);
   const sourceSchemaVersion = integer(root.schemaVersion, "$.schemaVersion", LegacySettingsSchemaVersion, SettingsSchemaVersion);
   const legacy = sourceSchemaVersion === LegacySettingsSchemaVersion;
+  const legacyShortcuts = sourceSchemaVersion < SettingsSchemaVersion;
 
   const appearance = object(root.appearance, "$.appearance", ["theme", "language"]);
   const decks = array(root.decks, "$.decks");
@@ -149,7 +151,11 @@ export function parseDevHudSettings(value: unknown): DevHudSettingsV1 {
     // Prefix mappings cannot identify a repository or credential. They are deliberately
     // discarded rather than guessed during the approved v1/v2 -> v3 migration.
     urlMappings,
-    shortcuts: Object.fromEntries(Platform.map((platform) => [platform, stringMap(shortcuts[platform], `$.shortcuts.${platform}`)])) as DevHudSettingsV1["shortcuts"],
+    shortcuts: {
+      desktop: desktopShortcutMap(shortcuts.desktop, legacyShortcuts),
+      ios: legacyShortcuts ? legacyShortcutMap(shortcuts.ios, "$.shortcuts.ios") : emptyShortcutMap(shortcuts.ios, "$.shortcuts.ios"),
+      android: legacyShortcuts ? legacyShortcutMap(shortcuts.android, "$.shortcuts.android") : emptyShortcutMap(shortcuts.android, "$.shortcuts.android"),
+    },
     agents: array(root.agents, "$.agents").map((entry, index) => parseAgent(entry, `$.agents[${index}]`)),
     uploads: {
       provider: enumeration(uploads.provider, "$.uploads.provider", UploadProvider),
@@ -365,14 +371,34 @@ function enumeration<const Values extends readonly string[]>(value: unknown, pat
   return value as Values[number];
 }
 
-function stringMap(value: unknown, path: string): Readonly<Record<string, string>> {
+function legacyShortcutMap(value: unknown, path: string): Readonly<Record<string, never>> {
+  validateLegacyShortcutMap(value, path);
+  return {};
+}
+
+function emptyShortcutMap(value: unknown, path: string): Readonly<Record<string, never>> {
+  validateLegacyShortcutMap(value, path);
+  if (Object.keys(value as Record<string, unknown>).length !== 0) throw new SettingsContractError(path, "must be empty");
+  return {};
+}
+
+function validateLegacyShortcutMap(value: unknown, path: string): void {
   if (value === null || typeof value !== "object" || Array.isArray(value)) throw new SettingsContractError(path, "must be an object");
-  const result: Record<string, string> = {};
   for (const [key, item] of Object.entries(value)) {
     if (!safeDynamicKeyPattern.test(key) || sensitiveKeyPattern.test(key) || prototypeSensitiveKeys.has(key)) throw new SettingsContractError(`${path}.${key}`, "is not an allowed shortcut action");
-    result[key] = text(item, `${path}.${key}`);
+    text(item, `${path}.${key}`);
   }
-  return result;
+}
+
+function desktopShortcutMap(value: unknown, legacy: boolean): DesktopShortcutBindings {
+  if (!legacy && value !== null && typeof value === "object" && !Array.isArray(value) && Object.keys(value).length === 0) throw new SettingsContractError("$.shortcuts.desktop", "malformed");
+  try {
+    return parseDesktopShortcutBindings(value);
+  } catch (error) {
+    if (!legacy) throw new SettingsContractError("$.shortcuts.desktop", error instanceof ShortcutContractError ? error.code : "malformed");
+    validateLegacyShortcutMap(value, "$.shortcuts.desktop");
+    return defaultDesktopShortcutBindings;
+  }
 }
 
 function url(value: unknown, path: string, httpsOnly = false): string {
@@ -405,7 +431,8 @@ function rejectSensitiveContent(value: unknown, path: string, seen: WeakSet<obje
   if (seen.has(value)) throw new SettingsContractError(path, "must not contain cycles");
   seen.add(value);
   for (const [key, item] of Object.entries(value)) {
-    if (sensitiveKeyPattern.test(key)) throw new SettingsContractError(`${path}.${key}`, "device-local or secret field is forbidden");
+    const isContractedShortcutAction = path === "$.shortcuts.desktop" && ["shell.command-palette", "realqa.capture.display", "realqa.capture.active-window", "realqa.capture.all-displays", "realqa.capture.selection", "realqa.capture.toolbar"].includes(key);
+    if (!isContractedShortcutAction && sensitiveKeyPattern.test(key)) throw new SettingsContractError(`${path}.${key}`, "device-local or secret field is forbidden");
     rejectSensitiveContent(item, Array.isArray(value) ? `${path}[${key}]` : `${path}.${key}`, seen);
   }
   seen.delete(value);

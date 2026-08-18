@@ -4,9 +4,10 @@ import { GitHubSettings, githubErrorCopy } from "./github-settings-ui.tsx";
 import { createGitHubProvider, GitHubErrorCode, GitHubProviderError, readGitHubCredential, type GitHubProvider } from "./github-provider.ts";
 import { NativeBridgeError, NativeBridgeErrorCode, nativeBridge, type NativeBridgeV1 } from "./native-bridge.ts";
 import { useIdentitySettings } from "./service-boundary";
-import { browserShell, LanguagePreference, normalizeApiOrigin, ThemePreference, type ExternalLinkTarget } from "./shell";
+import { browserShell, LanguagePreference, normalizeApiOrigin, ThemePreference, type ExternalLinkTarget, type RuntimeCapabilities } from "./shell";
 import { parseDevHudSettings, type DevHudSettingsV1 } from "./settings-contract";
 import type { SettingsDiffEntry } from "./settings-diff";
+import { ShortcutActionId, ShortcutKey, ShortcutModifier, defaultDesktopShortcutBindings } from "./shortcuts";
 import { findMappingOverlaps, type UrlRepositoryMapping } from "./url-mapping";
 
 interface ApiEditorProps {
@@ -182,9 +183,26 @@ function UrlMappingDraftStateProvider({ children, identity }: { readonly childre
   return <UrlMappingDraftContext value={{ draft, setDraft, invalid, setInvalid, saved, setSaved, dirty, setDirty, saving, setSaving, priorityDrafts, setPriorityDrafts, baseRevision, reset }}>{children}</UrlMappingDraftContext>;
 }
 
-export function SynchronizedSettingsBoundary(props: { readonly copy: Copy; readonly bridge?: NativeBridgeV1; readonly githubProvider?: GitHubProvider; readonly onOpenExternal?: (target: ExternalLinkTarget) => Promise<void> }) {
+export function SynchronizedSettingsBoundary(props: { readonly copy: Copy; readonly bridge?: NativeBridgeV1; readonly githubProvider?: GitHubProvider; readonly onOpenExternal?: (target: ExternalLinkTarget) => Promise<void>; readonly showNativeShortcuts?: boolean; readonly shortcutCapabilities?: RuntimeCapabilities }) {
   const mappingDraft = use(UrlMappingDraftContext);
   return mappingDraft === null ? <UrlMappingDraftProvider><SynchronizedSettingsContent {...props} /></UrlMappingDraftProvider> : <SynchronizedSettingsContent {...props} />;
+}
+
+// Shortcut registration is coordinated by the native host. The mapping draft
+// provider remains independent so settings edits do not alter active bindings.
+export function SynchronizedShortcutBoundary({ bridge: _bridge = nativeBridge }: { readonly bridge?: NativeBridgeV1 }) {
+  return null;
+}
+
+const shortcutKeyLabels: Record<ShortcutKey, keyof Copy> = {
+  [ShortcutKey.K]: "shortcutKeyK", [ShortcutKey.Digit1]: "shortcutDigit1", [ShortcutKey.Digit2]: "shortcutDigit2", [ShortcutKey.Digit3]: "shortcutDigit3", [ShortcutKey.Digit4]: "shortcutDigit4", [ShortcutKey.Digit5]: "shortcutDigit5", [ShortcutKey.Space]: "shortcutSpace", [ShortcutKey.Tab]: "shortcutTab", [ShortcutKey.Q]: "shortcutKeyQ", [ShortcutKey.Delete]: "shortcutDelete", [ShortcutKey.Backspace]: "shortcutBackspace",
+};
+
+export function ShortcutPaletteTrigger({ copy, isMac, onOpen, triggerRef }: { readonly copy: Copy; readonly isMac: boolean; readonly onOpen: () => void; readonly triggerRef: Ref<HTMLButtonElement> }) {
+  const binding = defaultDesktopShortcutBindings[ShortcutActionId.CommandPalette];
+  const modifiers = binding.modifiers.map((modifier) => modifier === ShortcutModifier.RightPrimary ? isMac ? copy.rightCommandK.replace(/ K$/u, "") : copy.rightControlK.replace(/ K$/u, "") : modifier === ShortcutModifier.Shift ? copy.shortcutShift : copy.shortcutAlt);
+  const label = binding.enabled ? [...modifiers, copy[shortcutKeyLabels[binding.key]]].join(" + ") : copy.shortcutNone;
+  return <button ref={triggerRef} className="palette-trigger" onClick={onOpen} aria-label={copy.openPalette}>{label}</button>;
 }
 
 function SynchronizedSettingsContent({ copy, bridge = nativeBridge, githubProvider, onOpenExternal = (target) => browserShell.openExternal(target, "") }: { readonly copy: Copy; readonly bridge?: NativeBridgeV1; readonly githubProvider?: GitHubProvider; readonly onOpenExternal?: (target: ExternalLinkTarget) => Promise<void> }) {

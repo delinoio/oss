@@ -2,6 +2,8 @@
 mod bridge;
 #[cfg(any(target_os = "android", target_os = "ios"))]
 mod native_plugin;
+#[cfg(any(target_os = "android", target_os = "ios"))]
+mod shortcuts;
 
 #[cfg(any(target_os = "android", target_os = "ios"))]
 #[cfg_attr(

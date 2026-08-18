@@ -18,9 +18,9 @@ import (
 )
 
 func TestReplaceSettingsReturnsTypedConflict(t *testing.T) {
-	current := &domain.Settings{SchemaVersion: 2, Revision: 7, CanonicalJSON: []byte(`{"theme":"dark"}`), UpdatedAt: time.Now()}
+	current := &domain.Settings{SchemaVersion: 3, Revision: 7, CanonicalJSON: []byte(`{"theme":"dark"}`), UpdatedAt: time.Now()}
 	repository := &serviceRepository{replaceSettings: func(_ context.Context, userID string, schemaVersion uint32, body []byte, revision uint64, _ time.Time) (domain.Settings, error) {
-		if userID != "018f7c1e-7b4a-7abc-8def-0123456789ab" || schemaVersion != 2 || string(body) != canonicalSettingsV2 || revision != 6 {
+		if userID != "018f7c1e-7b4a-7abc-8def-0123456789ab" || schemaVersion != 3 || string(body) != canonicalSettingsV3 || revision != 6 {
 			t.Fatalf("unexpected replacement inputs: user=%q schema=%d body=%q revision=%d", userID, schemaVersion, body, revision)
 		}
 		return domain.Settings{}, &domain.RevisionConflict{Expected: revision, Current: current}
@@ -28,7 +28,7 @@ func TestReplaceSettingsReturnsTypedConflict(t *testing.T) {
 	service := NewSettingsService(repository, serviceClock{}, testServiceLogger())
 	ctx := authenticatedContext()
 	_, err := service.ReplaceSettings(ctx, connect.NewRequest(&devhudv1.ReplaceSettingsRequest{
-		SchemaVersion: 2, CanonicalJson: []byte(canonicalSettingsV2), ExpectedRevision: 6,
+		SchemaVersion: 3, CanonicalJson: []byte(canonicalSettingsV3), ExpectedRevision: 6,
 	}))
 	if connect.CodeOf(err) != connect.CodeAborted {
 		t.Fatalf("code = %v, want Aborted", connect.CodeOf(err))
