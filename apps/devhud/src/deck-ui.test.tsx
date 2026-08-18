@@ -55,6 +55,67 @@ describe("Deck surface", () => {
     expect(screen.getByRole("button", { name: messages.en.deckCreate })).toBeTruthy();
   });
 
+  it("clears a consumed deep link when the user manually selects another Deck", () => {
+    const other = { ...deck, id: "018f47a2-7b3c-7def-8abc-1234567890ad", name: "Other Deck" };
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [deck, other] }) });
+    const dismiss = vi.fn();
+    const bridge = bridgeWith(async () => { throw new Error("unexpected request"); });
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} selectedDeckId={deck.id} onDismissMissingLink={dismiss} /></DeckPollingBoundary>);
+
+    fireEvent.click(screen.getByRole("button", { name: other.name }));
+    expect(dismiss).toHaveBeenCalledOnce();
+
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [deck, other] }) });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} selectedDeckId={null} onDismissMissingLink={dismiss} /></DeckPollingBoundary>);
+    expect(screen.getByRole("button", { name: other.name }).className).toContain("active");
+  });
+
+  it("cancels native notifications when synchronized Decks disappear", async () => {
+    const request = vi.fn(async () => ({ kind: "ok" as const }));
+    const bridge = bridgeWith(request);
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [] }) });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    await waitFor(() => expect(request).toHaveBeenCalledWith({ operation: "notifications.cancel-deck", deckId: deck.id }));
+  });
+
+  it("ignores a failed refresh that started before its interval changed", async () => {
+    let rejectSearch: (error: Error) => void = () => {};
+    const searchPullRequests = vi.fn(() => new Promise<never>((_resolve, reject) => { rejectSearch = reject; }));
+    const bridge = bridgeWith(async (request) => request.operation === "secure.read" ? { kind: "secure-value", value: "token" } : { kind: "ok" });
+    const initial = parseDevHudSettings({ ...settings, decks: [{ ...deck, refreshMinutes: 30 }] });
+    identity = identityWith({ settings: initial });
+    const setCache = vi.spyOn(Storage.prototype, "setItem");
+    const view = render(<DeckPollingBoundary bridge={bridge} active online provider={{ ...provider(), searchPullRequests }}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+    await waitFor(() => expect(searchPullRequests).toHaveBeenCalledOnce());
+
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [{ ...deck, refreshMinutes: 1 }] }) });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active online provider={{ ...provider(), searchPullRequests }}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+    rejectSearch(new Error("offline"));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(setCache).not.toHaveBeenCalledWith(expect.stringContaining(deck.id), expect.any(String));
+  });
+
+  it("validates no more than two repositories concurrently", async () => {
+    const releases: Array<() => void> = [];
+    const validateRepository: ReturnType<typeof provider>["validateRepository"] = vi.fn((_credential, repository) => new Promise((resolve) => {
+      releases.push(() => resolve({ repository, private: true, permissions: { metadata: true, pullRequests: true, issues: true, contents: true }, metadata: { etag: null, rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } } }));
+    }));
+    const multiRepositoryDeck = { ...deck, query: "repo:octo/one repo:octo/two repo:octo/three is:pr", builder: null };
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [multiRepositoryDeck] }) });
+    const bridge = bridgeWith(async (request) => request.operation === "secure.read" ? { kind: "secure-value", value: "token" } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active online provider={{ ...provider(), validateRepository }}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    await waitFor(() => expect(validateRepository).toHaveBeenCalledTimes(2));
+    releases[0]?.();
+    await waitFor(() => expect(validateRepository).toHaveBeenCalledTimes(3));
+    for (const release of releases) release();
+  });
+
   it("recomputes a failed Deck cache deadline when its interval changes", async () => {
     const initialSettings = parseDevHudSettings({ ...settings, decks: [{ ...deck, refreshMinutes: 30 }] });
     const oldDeadline = new Date(Date.now() + 60 * 60_000).toISOString();

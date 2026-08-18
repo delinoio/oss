@@ -29,8 +29,10 @@ var (
 		regexp.MustCompile(`(^|[^A-Za-z0-9_-])eyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+([^A-Za-z0-9_-]|$)`),
 		regexp.MustCompile(`-----BEGIN [A-Z ]*PRIVATE KEY-----`),
 	}
-	safeSettingsIdentifier = regexp.MustCompile(`^[a-zA-Z0-9._:-]{1,128}$`)
-	settingsProfileRef     = regexp.MustCompile(`^[a-zA-Z0-9._-]{1,128}$`)
+	safeSettingsIdentifier     = regexp.MustCompile(`^[a-zA-Z0-9._:-]{1,128}$`)
+	settingsProfileRef         = regexp.MustCompile(`^[a-zA-Z0-9._-]{1,128}$`)
+	githubOwnerIdentifier      = regexp.MustCompile(`^[A-Za-z0-9-]{1,39}$`)
+	githubRepositoryIdentifier = regexp.MustCompile(`^[A-Za-z0-9._-]{1,100}$`)
 )
 
 func validateDevHudSettings(value []byte, envelopeSchemaVersion uint32) error {
@@ -214,8 +216,12 @@ func validateSettingsDeck(value any, path string, legacy bool, previous bool) (s
 	if !legacy && !previous {
 		nameField = "name"
 	}
-	if _, err := settingsText(deck[nameField], path+"."+nameField, false); err != nil {
+	name, err := settingsText(deck[nameField], path+"."+nameField, false)
+	if err != nil {
 		return "", err
+	}
+	if !legacy && !previous && strings.TrimSpace(name) != name {
+		return "", fmt.Errorf("%s.name must be a trimmed nonblank string", path)
 	}
 	query, err := settingsText(deck["query"], path+".query", true)
 	if err != nil {
@@ -227,11 +233,6 @@ func validateSettingsDeck(value any, path string, legacy bool, previous bool) (s
 	if !legacy && !previous && !hasRepositoryQualifier(query) {
 		return "", fmt.Errorf("%s.query must contain a repository qualifier when a credential profile is selected", path)
 	}
-	if previous && deck["repository"] != nil {
-		if _, err = settingsText(deck["repository"], path+".repository", false); err != nil {
-			return "", err
-		}
-	}
 	profileRef := ""
 	if !legacy {
 		profileRef, err = settingsNullableProfileRef(deck["profileRef"], path+".profileRef")
@@ -240,6 +241,14 @@ func validateSettingsDeck(value any, path string, legacy bool, previous bool) (s
 		}
 		if !previous && profileRef == "" {
 			return "", fmt.Errorf("%s.profileRef must be selected", path)
+		}
+	}
+	if previous && deck["repository"] == nil && profileRef != "" {
+		return "", fmt.Errorf("%s.repository must be selected when a credential profile is selected", path)
+	}
+	if previous && deck["repository"] != nil {
+		if _, err = settingsText(deck["repository"], path+".repository", false); err != nil {
+			return "", err
 		}
 	}
 	if !legacy && !previous {
@@ -448,18 +457,31 @@ func hasPositivePullRequestQualifier(query string) bool {
 }
 
 func hasRepositoryQualifier(query string) bool {
+	count := 0
 	found := false
 	for _, token := range deckQueryTokens(query) {
 		if len(token) < len("repo:") || !strings.EqualFold(token[:len("repo:")], "repo:") {
 			continue
 		}
 		value := token[len("repo:"):]
-		if strings.Count(value, "/") != 1 || strings.HasPrefix(value, "/") || strings.HasSuffix(value, "/") || strings.TrimSpace(value) != value || strings.ContainsAny(value, "\" \t\n\r") {
+		if strings.Count(value, "/") != 1 || strings.HasPrefix(value, "/") || strings.HasSuffix(value, "/") {
+			return false
+		}
+		parts := strings.SplitN(value, "/", 2)
+		if !validGitHubOwnerIdentifier(parts[0]) || !githubRepositoryIdentifier.MatchString(parts[1]) {
 			return false
 		}
 		found = true
+		count++
+		if count > 10 {
+			return false
+		}
 	}
 	return found
+}
+
+func validGitHubOwnerIdentifier(value string) bool {
+	return githubOwnerIdentifier.MatchString(value) && !strings.HasPrefix(value, "-") && !strings.HasSuffix(value, "-") && !strings.Contains(value, "--")
 }
 
 // deckQueryTokens keeps quoted search phrases from being interpreted as qualifiers.

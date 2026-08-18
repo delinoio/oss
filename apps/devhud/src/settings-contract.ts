@@ -216,6 +216,7 @@ function parseDeck(value: unknown, path: string, legacy: boolean, previous: bool
     if (legacy || previous) return [];
     throw new SettingsContractError(`${path}.profileRef`, "must select a local GitHub credential profile");
   }
+  if (previous && deck.repository === null) throw new SettingsContractError(`${path}.repository`, "must be selected when a credential profile is selected");
   const rawQuery = text(deck.query, `${path}.query`, true);
   const legacyRepository = previous && deck.repository !== null ? text(deck.repository, `${path}.repository`) : null;
   let query = hasPositivePullRequestQualifier(rawQuery) ? rawQuery : appendDeckQualifier(rawQuery, "is:pr");
@@ -229,9 +230,11 @@ function parseDeck(value: unknown, path: string, legacy: boolean, previous: bool
   const notificationValues = array(deck.notifications, `${path}.notifications`).map((item, index) => enumeration(item, `${path}.notifications[${index}]`, NotificationKind));
   if (!legacy && !previous && new Set(notificationValues).size !== notificationValues.length) throw new SettingsContractError(`${path}.notifications`, "must contain unique values");
   const notifications = legacy || previous ? [...new Set(notificationValues)] : notificationValues;
+  const name = previous || legacy ? text(deck.title, `${path}.title`) : text(deck.name, `${path}.name`);
+  if (!legacy && !previous && (name.trim() !== name || name.length === 0)) throw new SettingsContractError(`${path}.name`, "must be a trimmed nonblank string");
   return [{
     id,
-    name: previous || legacy ? text(deck.title, `${path}.title`) : text(deck.name, `${path}.name`),
+    name,
     query,
     builder,
     profileRef,
@@ -283,6 +286,14 @@ function hasExactRepositoryQualifier(query: string, repository: string): boolean
 
 export interface DeckRepositoryRef { readonly owner: string; readonly name: string }
 
+export const DeckRepositoryLimit = 10 as const;
+const githubOwnerIdentifier = /^[A-Za-z0-9-]{1,39}$/u;
+const githubRepositoryIdentifier = /^[A-Za-z0-9._-]{1,100}$/u;
+
+function isGitHubOwnerIdentifier(value: string): boolean {
+  return githubOwnerIdentifier.test(value) && !value.startsWith("-") && !value.endsWith("-") && !value.includes("--");
+}
+
 /** Returns null when a repository qualifier cannot name one GitHub repository. */
 export function deckRepositories(query: string): readonly DeckRepositoryRef[] | null {
   const repositories = new Map<string, DeckRepositoryRef>();
@@ -290,10 +301,12 @@ export function deckRepositories(query: string): readonly DeckRepositoryRef[] | 
     if (token.value.slice(0, "repo:".length).toLowerCase() !== "repo:") continue;
     const value = token.value.slice("repo:".length);
     const separator = value.indexOf("/");
-    if (separator < 1 || separator !== value.lastIndexOf("/") || separator === value.length - 1 || /[\s"]/u.test(value)) return null;
+    if (separator < 1 || separator !== value.lastIndexOf("/") || separator === value.length - 1) return null;
     const repository = { owner: value.slice(0, separator), name: value.slice(separator + 1) };
+    if (!isGitHubOwnerIdentifier(repository.owner) || !githubRepositoryIdentifier.test(repository.name)) return null;
     const key = `${repository.owner}/${repository.name}`.toLowerCase();
     repositories.set(key, repository);
+    if (repositories.size > DeckRepositoryLimit) return null;
   }
   return [...repositories.values()];
 }

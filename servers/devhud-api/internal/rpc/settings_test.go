@@ -73,6 +73,11 @@ func TestValidateDevHudSettingsDeckQualifiers(t *testing.T) {
 		value := strings.Replace(canonicalSettingsV3, `"profiles":[]`, `"profiles":[{"id":"`+profileID+`","kind":"fine-grained","name":"Work"}]`, 1)
 		return strings.Replace(value, `"decks":[]`, `"decks":[`+deck(query, notifications)+`]`, 1)
 	}
+	previousSettings := func(repository string) string {
+		value := strings.Replace(canonicalSettingsV2, `"profiles":[]`, `"profiles":[{"id":"`+profileID+`","kind":"fine-grained","name":"Work"}]`, 1)
+		legacyDeck := `{"display":{"groupBy":"none","showDrafts":true},"id":"018f47a2-7b3c-7def-8abc-1234567890ac","notifications":[],"profileRef":"` + profileID + `","query":"is:pr","refreshMinutes":5,"repository":` + repository + `,"title":"Legacy Deck"}`
+		return strings.Replace(value, `"decks":[]`, `"decks":[`+legacyDeck+`]`, 1)
+	}
 	if err := validateDevHudSettings([]byte(settings("repo:octo/widgets IS:PR", `[]`)), 3); err != nil {
 		t.Fatalf("mixed-case qualifier: %v", err)
 	}
@@ -87,6 +92,12 @@ func TestValidateDevHudSettingsDeckQualifiers(t *testing.T) {
 	for name, value := range map[string]string{
 		"missing repository":      settings("is:pr", `[]`),
 		"malformed repository":    settings("repo:octo is:pr", `[]`),
+		"invalid repository name": settings("repo:octo/\\u0000 is:pr", `[]`),
+		"too many repositories": settings(strings.Join([]string{
+			"repo:octo/repository-0", "repo:octo/repository-1", "repo:octo/repository-2", "repo:octo/repository-3", "repo:octo/repository-4", "repo:octo/repository-5", "repo:octo/repository-6", "repo:octo/repository-7", "repo:octo/repository-8", "repo:octo/repository-9", "repo:octo/repository-10", "is:pr",
+		}, " "), `[]`),
+		"blank Deck name":         strings.Replace(settings("repo:octo/widgets is:pr", `[]`), `"name":"Deck"`, `"name":"   "`, 1),
+		"untrimmed Deck name":     strings.Replace(settings("repo:octo/widgets is:pr", `[]`), `"name":"Deck"`, `"name":" Deck "`, 1),
 		"quoted pull request":     settings(`\"find is:pr here\" repo:octo/widgets`, `[]`),
 		"duplicate notifications": settings("repo:octo/widgets is:pr", `["review","review"]`),
 		"duplicate deck IDs": strings.Replace(
@@ -101,5 +112,8 @@ func TestValidateDevHudSettingsDeckQualifiers(t *testing.T) {
 				t.Fatal("validation succeeded")
 			}
 		})
+	}
+	if err := validateDevHudSettings([]byte(previousSettings("null")), 2); err == nil {
+		t.Fatal("schema-v2 null repository with profile was accepted")
 	}
 }

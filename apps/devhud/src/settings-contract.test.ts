@@ -152,6 +152,7 @@ describe("DevHud settings boundary", () => {
     expect(migrated.decks[0]?.builder).toMatchObject({ repository: "octo/other" });
     expect(() => encodeDevHudSettings(migrated)).not.toThrow();
     expect(parseDevHudSettings({ ...legacy, decks: [{ ...legacy.decks[0], repository: "octo/other" }] }).decks[0]?.query).toBe("repo:octo/other is:pr");
+    expect(() => parseDevHudSettings({ ...legacy, decks: [{ ...legacy.decks[0], repository: null }] })).toThrow(/repository.*selected/u);
   });
 
   it("requires real repository-scoped pull-request qualifiers in v3 Decks", () => {
@@ -170,6 +171,10 @@ describe("DevHud settings boundary", () => {
     expect(parseDevHudSettings(settings).decks).toHaveLength(1);
     expect(() => parseDevHudSettings({ ...settings, decks: [{ ...deck, query: "is:pr" }] })).toThrow(/repository qualifier/u);
     expect(() => parseDevHudSettings({ ...settings, decks: [{ ...deck, query: "repo:octo is:pr" }] })).toThrow(/repository qualifier/u);
+    expect(() => parseDevHudSettings({ ...settings, decks: [{ ...deck, query: "repo:octo/\u0000 is:pr" }] })).toThrow(/repository qualifier/u);
+    expect(() => parseDevHudSettings({ ...settings, decks: [{ ...deck, query: `${Array.from({ length: 11 }, (_, index) => `repo:octo/repository-${index}`).join(" ")} is:pr` }] })).toThrow(/repository qualifier/u);
+    expect(() => parseDevHudSettings({ ...settings, decks: [{ ...deck, name: "   " }] })).toThrow(/trimmed nonblank/u);
+    expect(() => parseDevHudSettings({ ...settings, decks: [{ ...deck, name: " Deck " }] })).toThrow(/trimmed nonblank/u);
     expect(parseDevHudSettings({ ...settings, decks: [{ ...deck, query: '"find is:pr here" repo:octo/widgets' }] }).decks[0]?.query).toBe('"find is:pr here" repo:octo/widgets is:pr');
     expect(() => parseDevHudSettings({ ...settings, decks: [{ ...deck, notifications: ["review", "review"] }] })).toThrow(/unique values/u);
     expect(() => parseDevHudSettings({ ...settings, decks: [deck, deck] })).toThrow(/unique IDs/u);
