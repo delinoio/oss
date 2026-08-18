@@ -47,6 +47,7 @@ private const val notificationChannel = "deck-changes"
 class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
     private var pendingAuthCallback: String? = null
     private var pendingDiagnosticsCleanup: Uri? = null
+    private var diagnosticsExportPickerActive = false
     private val secureSettingsExecutor = Executors.newSingleThreadExecutor()
 
     override fun load(webView: android.webkit.WebView) {
@@ -119,11 +120,22 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
             .addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
             .setType("application/json")
             .putExtra(Intent.EXTRA_TITLE, suggestedName)
-        startActivityForResult(invoke, intent, "diagnosticsExportResult")
+        diagnosticsExportPickerActive = true
+        try {
+            startActivityForResult(invoke, intent, "diagnosticsExportResult")
+        } catch (error: Exception) {
+            diagnosticsExportPickerActive = false
+            throw error
+        }
     }
 
     @ActivityCallback
     private fun diagnosticsExportResult(invoke: Invoke, result: ActivityResult) {
+        if (!diagnosticsExportPickerActive) {
+            invoke.resolve(JSObject().put("kind", "diagnostics-export").put("outcome", "cancelled"))
+            return
+        }
+        diagnosticsExportPickerActive = false
         if (result.resultCode == Activity.RESULT_CANCELED) {
             invoke.resolve(JSObject().put("kind", "diagnostics-export").put("outcome", "cancelled"))
             return
@@ -382,9 +394,12 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
         val scope = args.getString("scope")
         val profileId = if (args.has("profileId")) args.getString("profileId") else null
         if (scope !in setOf("logout", "account-deletion", "api-change") || (scope != "logout" && profileId == null)) throw IllegalArgumentException("scope")
-        if (scope in setOf("logout", "account-deletion") && !cleanupPendingDiagnosticsExport()) {
-            invoke.reject("storage-failure", "storage-failure")
-            return
+        if (scope in setOf("logout", "account-deletion")) {
+            diagnosticsExportPickerActive = false
+            if (!cleanupPendingDiagnosticsExport()) {
+                invoke.reject("storage-failure", "storage-failure")
+                return
+            }
         }
         persistSecure(invoke) {
             val preferences = activity.getSharedPreferences(storeName, Context.MODE_PRIVATE)
