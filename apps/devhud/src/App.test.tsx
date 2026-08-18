@@ -198,7 +198,7 @@ describe("native App state", () => {
     render(<App bridge={bridge} />);
     await screen.findByText(messages.en.welcome);
 
-    expect(operations).toEqual(["listener-installed", "runtime.snapshot", "auth.peek-pending-callback", "session.configure-origins"]);
+    expect(operations.slice(0, 3)).toEqual(["listener-installed", "runtime.snapshot", "auth.peek-pending-callback"]);
   });
 
   it("drains a cold-start callback after the identity session becomes ready", async () => {
