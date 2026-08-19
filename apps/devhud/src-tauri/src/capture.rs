@@ -1,7 +1,7 @@
 use std::{
     collections::HashSet,
     fs,
-    io::Write,
+    io::{Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     sync::{
         Arc, Mutex, MutexGuard, OnceLock,
@@ -27,6 +27,8 @@ pub const DRAFT_RETENTION: Duration = Duration::from_secs(30 * 24 * 60 * 60);
 const MAX_HISTORY_STATES: usize = 100;
 const MAX_OUTPUT_DIMENSION: u32 = 4096;
 const ENCRYPTED_MAGIC: &[u8; 4] = b"RQA1";
+const FLATTENED_BUNDLE_MAGIC: &[u8; 8] = b"RQAFB001";
+const MAX_ENCRYPTED_PNG_BYTES: u64 = MAX_PNG_BYTES as u64 + 32;
 const ANNOTATION_FONT_BYTES: &[u8] =
     include_bytes!("../assets/fonts/noto-sans-kr/NotoSansKR-VF.ttf");
 static ANNOTATION_FONT: OnceLock<Option<fontdue::Font>> = OnceLock::new();
@@ -624,12 +626,21 @@ impl DraftStore {
             for child in fs::read_dir(entry.path()).map_err(|_| CaptureError::StorageFailure)? {
                 let child = child.map_err(|_| CaptureError::StorageFailure)?;
                 let name = child.file_name().to_string_lossy().into_owned();
-                let image_id = name
+                let source_id = name
                     .strip_prefix("source-")
-                    .or_else(|| name.strip_prefix("flattened-"))
                     .and_then(|name| name.strip_suffix(".bin"))
                     .and_then(|name| Uuid::parse_str(name).ok());
-                if image_id.is_some_and(|image_id| !referenced.contains(&image_id)) {
+                let flattened_id = name
+                    .strip_prefix("flattened-")
+                    .and_then(|name| name.strip_suffix(".bin"));
+                let stale_flattened = flattened_id.is_some_and(|name| {
+                    name.parse::<u64>()
+                        .map(|revision| revision != document.revision)
+                        .unwrap_or_else(|_| Uuid::parse_str(name).is_ok())
+                });
+                if source_id.is_some_and(|image_id| !referenced.contains(&image_id))
+                    || stale_flattened
+                {
                     remove_path(child.path())?;
                 }
             }
@@ -861,72 +872,110 @@ impl DraftStore {
         id: Uuid,
         expected_revision: u64,
     ) -> Result<Vec<FlattenedImage>, CaptureError> {
+        self.flatten_with_commit(id, expected_revision, replace_staged_file)
+    }
+
+    fn flatten_with_commit(
+        &self,
+        id: Uuid,
+        expected_revision: u64,
+        commit: impl FnOnce(&Path, &Path) -> Result<(), CaptureError>,
+    ) -> Result<Vec<FlattenedImage>, CaptureError> {
         let _guard = self.lock.lock().map_err(|_| CaptureError::StorageFailure)?;
         let key = self.key()?;
         self.recover_locked(&key)?;
         let document = self.read_locked(id, &key)?;
         ensure_revision(&document, expected_revision)?;
         let directory = self.root.join(id.to_string());
-        let mut pending = Vec::new();
-        for state in document
-            .current
-            .images
-            .iter()
-            .filter(|image| !image.removed)
-        {
-            let encrypted = fs::read(directory.join(format!("source-{}.bin", state.id)))
-                .map_err(|_| CaptureError::StorageFailure)?;
-            let png = decrypt(&key, id, &format!("source:{}", state.id), &encrypted)?;
-            let source = image::load_from_memory_with_format(&png, image::ImageFormat::Png)
-                .map_err(|_| CaptureError::StorageFailure)?
-                .into_rgba8();
-            let rendered = render_editor(source, state)?;
-            let (rendered, mut downscaled) = fit_dimensions(rendered);
-            let mut encoded = encode_srgb_png(&rendered)?;
-            let mut final_image = rendered;
-            while encoded.len() > MAX_PNG_BYTES {
-                downscaled = true;
-                let ratio =
-                    ((MAX_PNG_BYTES as f64 / encoded.len() as f64).sqrt() * 0.98).clamp(0.5, 0.98);
-                let width = ((final_image.width() as f64 * ratio).floor() as u32).max(1);
-                let height = ((final_image.height() as f64 * ratio).floor() as u32).max(1);
-                final_image =
-                    imageops::resize(&final_image, width, height, imageops::FilterType::Lanczos3);
-                encoded = encode_srgb_png(&final_image)?;
-            }
-            let checksum = hex_digest(Sha256::digest(&encoded));
-            let encrypted = encrypt(&key, id, &format!("flattened:{}", state.id), &encoded)?;
-            let path = directory.join(format!("flattened-{}.bin", state.id));
-            let output = FlattenedImage {
-                image_id: state.id,
-                width: final_image.width(),
-                height: final_image.height(),
-                bytes: encoded.len(),
-                sha256: checksum,
-                asset_url: format!(
-                    "realqa://asset/{}/{}/flattened/{}",
-                    id, state.id, document.revision
-                ),
-                downscaled,
-            };
-            pending.push((path, encrypted, output));
-        }
         let current = directory_size(&self.root)?;
-        let replaced = pending
-            .iter()
-            .map(|(path, _, _)| fs::metadata(path).map(|value| value.len()).unwrap_or(0))
-            .sum::<u64>();
-        let added = pending
-            .iter()
-            .map(|(_, encrypted, _)| encrypted.len() as u64)
-            .sum::<u64>();
-        if current.saturating_sub(replaced).saturating_add(added) > self.quota {
-            return Err(CaptureError::QuotaExhausted);
+        let path = directory.join(format!("flattened-{}.bin", document.revision));
+        let temporary = path.with_extension("tmp");
+        if temporary.exists() {
+            remove_path(&temporary)?;
         }
-        for (path, encrypted, _) in &pending {
-            atomic_replace(path, encrypted)?;
+        let result = (|| {
+            let active = document
+                .current
+                .images
+                .iter()
+                .filter(|image| !image.removed)
+                .collect::<Vec<_>>();
+            let mut file = fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&temporary)
+                .map_err(|_| CaptureError::StorageFailure)?;
+            file.write_all(FLATTENED_BUNDLE_MAGIC)
+                .and_then(|()| file.write_all(&(active.len() as u32).to_le_bytes()))
+                .map_err(|_| CaptureError::StorageFailure)?;
+            let mut outputs = Vec::with_capacity(active.len());
+            for state in active {
+                let encrypted = fs::read(directory.join(format!("source-{}.bin", state.id)))
+                    .map_err(|_| CaptureError::StorageFailure)?;
+                let png = decrypt(&key, id, &format!("source:{}", state.id), &encrypted)?;
+                let source = image::load_from_memory_with_format(&png, image::ImageFormat::Png)
+                    .map_err(|_| CaptureError::StorageFailure)?
+                    .into_rgba8();
+                let rendered = render_editor(source, state)?;
+                let (rendered, mut downscaled) = fit_dimensions(rendered);
+                let mut encoded = encode_srgb_png(&rendered)?;
+                let mut final_image = rendered;
+                while encoded.len() > MAX_PNG_BYTES {
+                    downscaled = true;
+                    let ratio = ((MAX_PNG_BYTES as f64 / encoded.len() as f64).sqrt() * 0.98)
+                        .clamp(0.5, 0.98);
+                    let width = ((final_image.width() as f64 * ratio).floor() as u32).max(1);
+                    let height = ((final_image.height() as f64 * ratio).floor() as u32).max(1);
+                    final_image = imageops::resize(
+                        &final_image,
+                        width,
+                        height,
+                        imageops::FilterType::Lanczos3,
+                    );
+                    encoded = encode_srgb_png(&final_image)?;
+                }
+                let checksum = hex_digest(Sha256::digest(&encoded));
+                let encrypted = encrypt(&key, id, &format!("flattened:{}", state.id), &encoded)?;
+                file.write_all(state.id.as_bytes())
+                    .and_then(|()| file.write_all(&(encrypted.len() as u64).to_le_bytes()))
+                    .and_then(|()| file.write_all(&encrypted))
+                    .map_err(|_| CaptureError::StorageFailure)?;
+                outputs.push(FlattenedImage {
+                    image_id: state.id,
+                    width: final_image.width(),
+                    height: final_image.height(),
+                    bytes: encoded.len(),
+                    sha256: checksum,
+                    asset_url: format!(
+                        "realqa://asset/{}/{}/flattened/{}",
+                        id, state.id, document.revision
+                    ),
+                    downscaled,
+                });
+            }
+            file.sync_all().map_err(|_| CaptureError::StorageFailure)?;
+            drop(file);
+            let replaced = fs::metadata(&path).map(|value| value.len()).unwrap_or(0);
+            let added = fs::metadata(&temporary)
+                .map_err(|_| CaptureError::StorageFailure)?
+                .len();
+            if current.saturating_sub(replaced).saturating_add(added) > self.quota {
+                return Err(CaptureError::QuotaExhausted);
+            }
+            commit(&temporary, &path)?;
+            if let Ok(stale_payloads) = flattened_payloads(&directory) {
+                for stale in stale_payloads {
+                    if stale != path {
+                        let _ = remove_path(stale);
+                    }
+                }
+            }
+            Ok(outputs)
+        })();
+        if result.is_err() {
+            let _ = remove_path(temporary);
         }
-        Ok(pending.into_iter().map(|(_, _, output)| output).collect())
+        result
     }
 
     pub fn asset(
@@ -948,14 +997,22 @@ impl DraftStore {
         {
             return Err(CaptureError::NotFound);
         }
-        let role = if flattened { "flattened" } else { "source" };
-        let bytes = fs::read(
-            self.root
+        if flattened {
+            let path = self
+                .root
                 .join(id.to_string())
-                .join(format!("{role}-{image_id}.bin")),
-        )
-        .map_err(|_| CaptureError::NotFound)?;
-        decrypt(&key, id, &format!("{role}:{image_id}"), &bytes)
+                .join(format!("flattened-{revision}.bin"));
+            let encrypted = read_flattened_bundle_entry(&path, image_id)?;
+            decrypt(&key, id, &format!("flattened:{image_id}"), &encrypted)
+        } else {
+            let bytes = fs::read(
+                self.root
+                    .join(id.to_string())
+                    .join(format!("source-{image_id}.bin")),
+            )
+            .map_err(|_| CaptureError::NotFound)?;
+            decrypt(&key, id, &format!("source:{image_id}"), &bytes)
+        }
     }
 
     pub fn delete(&self, id: Uuid) -> Result<(), CaptureError> {
@@ -1000,6 +1057,16 @@ impl DraftStore {
         key: &[u8; 32],
         before_commit: impl FnOnce() -> Result<(), CaptureError>,
     ) -> Result<(), CaptureError> {
+        self.write_document_locked_with_replacer(document, key, before_commit, atomic_replace)
+    }
+
+    fn write_document_locked_with_replacer(
+        &self,
+        document: &mut DraftDocument,
+        key: &[u8; 32],
+        before_commit: impl FnOnce() -> Result<(), CaptureError>,
+        replace_manifest: impl FnOnce(&Path, &[u8]) -> Result<(), CaptureError>,
+    ) -> Result<(), CaptureError> {
         let current = directory_size(&self.root)?;
         let directory = self.root.join(document.id.to_string());
         let manifest = directory.join("manifest.bin");
@@ -1021,10 +1088,11 @@ impl DraftStore {
                 <= self.quota
             {
                 before_commit()?;
+                replace_manifest(&manifest, &encrypted)?;
                 for path in stale_flattened {
-                    remove_path(path)?;
+                    let _ = remove_path(path);
                 }
-                return atomic_replace(&manifest, &encrypted);
+                return Ok(());
             }
             if !discard_farthest_history(document) {
                 return Err(CaptureError::QuotaExhausted);
@@ -2222,6 +2290,10 @@ fn atomic_replace(path: &Path, bytes: &[u8]) -> Result<(), CaptureError> {
         fs::remove_file(&temporary).map_err(|_| CaptureError::StorageFailure)?;
     }
     write_new_file(&temporary, bytes)?;
+    replace_staged_file(&temporary, path)
+}
+
+fn replace_staged_file(temporary: &Path, path: &Path) -> Result<(), CaptureError> {
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::ffi::OsStrExt;
@@ -2259,6 +2331,43 @@ fn atomic_replace(path: &Path, bytes: &[u8]) -> Result<(), CaptureError> {
     }
 }
 
+fn read_flattened_bundle_entry(path: &Path, image_id: Uuid) -> Result<Vec<u8>, CaptureError> {
+    let mut file = fs::File::open(path).map_err(|_| CaptureError::NotFound)?;
+    let mut magic = [0_u8; FLATTENED_BUNDLE_MAGIC.len()];
+    file.read_exact(&mut magic)
+        .map_err(|_| CaptureError::StorageFailure)?;
+    if &magic != FLATTENED_BUNDLE_MAGIC {
+        return Err(CaptureError::StorageFailure);
+    }
+    let mut count = [0_u8; 4];
+    file.read_exact(&mut count)
+        .map_err(|_| CaptureError::StorageFailure)?;
+    let count = u32::from_le_bytes(count) as usize;
+    if count == 0 || count > MAX_IMAGES {
+        return Err(CaptureError::StorageFailure);
+    }
+    for _ in 0..count {
+        let mut id = [0_u8; 16];
+        let mut length = [0_u8; 8];
+        file.read_exact(&mut id)
+            .and_then(|()| file.read_exact(&mut length))
+            .map_err(|_| CaptureError::StorageFailure)?;
+        let length = u64::from_le_bytes(length);
+        if !(32..=MAX_ENCRYPTED_PNG_BYTES).contains(&length) {
+            return Err(CaptureError::StorageFailure);
+        }
+        if Uuid::from_bytes(id) == image_id {
+            let mut encrypted = vec![0_u8; length as usize];
+            file.read_exact(&mut encrypted)
+                .map_err(|_| CaptureError::StorageFailure)?;
+            return Ok(encrypted);
+        }
+        file.seek(SeekFrom::Current(length as i64))
+            .map_err(|_| CaptureError::StorageFailure)?;
+    }
+    Err(CaptureError::NotFound)
+}
+
 fn directory_size(path: &Path) -> Result<u64, CaptureError> {
     if !path.exists() {
         return Ok(0);
@@ -2282,11 +2391,11 @@ fn flattened_payloads(directory: &Path) -> Result<Vec<PathBuf>, CaptureError> {
         let entry = entry.map_err(|_| CaptureError::StorageFailure)?;
         let name = entry.file_name();
         let name = name.to_string_lossy();
-        if name
+        let flattened_id = name
             .strip_prefix("flattened-")
-            .and_then(|name| name.strip_suffix(".bin"))
-            .and_then(|name| Uuid::parse_str(name).ok())
-            .is_some()
+            .and_then(|name| name.strip_suffix(".bin"));
+        if flattened_id
+            .is_some_and(|name| Uuid::parse_str(name).is_ok() || name.parse::<u64>().is_ok())
         {
             payloads.push(entry.path());
         }
@@ -3541,7 +3650,7 @@ mod tests {
         let flattened = root
             .0
             .join(created.id.to_string())
-            .join(format!("flattened-{}.bin", created.images[0].id));
+            .join(format!("flattened-{}.bin", created.revision));
         let used = directory_size(&root.0).unwrap();
         let quota = used - fs::metadata(&flattened).unwrap().len() + 2048;
         assert!(quota < used);
@@ -3574,6 +3683,60 @@ mod tests {
     }
 
     #[test]
+    fn failed_manifest_commit_preserves_the_current_revision_flattened_bundle() {
+        let root = TestDirectory::new();
+        let key = [25; 32];
+        let store = DraftStore::new_test(root.0.clone(), 1024 * 1024, key);
+        let created = store
+            .create(vec![ImageBuffer::from_pixel(
+                16,
+                16,
+                Rgba([11, 22, 33, 255]),
+            )])
+            .unwrap();
+        store.flatten(created.id, created.revision).unwrap();
+        let directory = root.0.join(created.id.to_string());
+        let manifest = directory.join("manifest.bin");
+        let bundle = directory.join(format!("flattened-{}.bin", created.revision));
+        let previous_manifest = fs::read(&manifest).unwrap();
+        let previous_bundle = fs::read(&bundle).unwrap();
+        let previous_asset = store
+            .asset(created.id, created.images[0].id, true, created.revision)
+            .unwrap();
+        let mut document = read_document(&manifest, &key).unwrap();
+        let previous = document.current.clone();
+        document.current.images[0].crop = Some(Rect {
+            x: 1.0,
+            y: 1.0,
+            width: 8.0,
+            height: 8.0,
+        });
+        document.undo.push(previous);
+        document.redo.clear();
+        document.touch(DraftStore::now().unwrap());
+
+        assert_eq!(
+            store
+                .write_document_locked_with_replacer(
+                    &mut document,
+                    &key,
+                    || Ok(()),
+                    |_, _| Err(CaptureError::StorageFailure),
+                )
+                .unwrap_err(),
+            CaptureError::StorageFailure
+        );
+        assert_eq!(fs::read(manifest).unwrap(), previous_manifest);
+        assert_eq!(fs::read(bundle).unwrap(), previous_bundle);
+        assert_eq!(
+            store
+                .asset(created.id, created.images[0].id, true, created.revision,)
+                .unwrap(),
+            previous_asset
+        );
+    }
+
+    #[test]
     fn removed_image_assets_are_reclaimed_after_undo_history_expires() {
         let root = TestDirectory::new();
         let key = [22; 32];
@@ -3596,7 +3759,7 @@ mod tests {
         let removed_image_id = created.images[1].id;
         let draft_path = root.0.join(created.id.to_string());
         let removed_source = draft_path.join(format!("source-{removed_image_id}.bin"));
-        let removed_flattened = draft_path.join(format!("flattened-{removed_image_id}.bin"));
+        let removed_flattened = draft_path.join(format!("flattened-{}.bin", created.revision));
         let mut current = store
             .apply(
                 created.id,
@@ -3826,7 +3989,7 @@ mod tests {
         let output_path = root
             .0
             .join(saved.id.to_string())
-            .join(format!("flattened-{}.bin", saved.images[0].id));
+            .join(format!("flattened-{}.bin", saved.revision));
         let previous = fs::read(&output_path).unwrap();
         let constrained =
             DraftStore::new_test(root.0.clone(), directory_size(&root.0).unwrap() - 1, key);
@@ -3835,6 +3998,52 @@ mod tests {
             CaptureError::QuotaExhausted
         );
         assert_eq!(fs::read(output_path).unwrap(), previous);
+    }
+
+    #[test]
+    fn multi_image_flatten_commit_failure_preserves_the_previous_bundle() {
+        let root = TestDirectory::new();
+        let key = [26; 32];
+        let store = DraftStore::new_test(root.0.clone(), 1024 * 1024, key);
+        let saved = store
+            .create(vec![
+                ImageBuffer::from_pixel(16, 16, Rgba([10, 20, 30, 255])),
+                ImageBuffer::from_pixel(16, 16, Rgba([40, 50, 60, 255])),
+            ])
+            .unwrap();
+        store.flatten(saved.id, saved.revision).unwrap();
+        let output_path = root
+            .0
+            .join(saved.id.to_string())
+            .join(format!("flattened-{}.bin", saved.revision));
+        let previous_bundle = fs::read(&output_path).unwrap();
+        let previous_assets = saved
+            .images
+            .iter()
+            .map(|image| {
+                store
+                    .asset(saved.id, image.id, true, saved.revision)
+                    .unwrap()
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            store
+                .flatten_with_commit(saved.id, saved.revision, |_, _| {
+                    Err(CaptureError::StorageFailure)
+                })
+                .unwrap_err(),
+            CaptureError::StorageFailure
+        );
+        assert_eq!(fs::read(output_path).unwrap(), previous_bundle);
+        for (image, previous) in saved.images.iter().zip(previous_assets) {
+            assert_eq!(
+                store
+                    .asset(saved.id, image.id, true, saved.revision)
+                    .unwrap(),
+                previous
+            );
+        }
     }
 
     fn png_chunks(bytes: &[u8]) -> Vec<&str> {

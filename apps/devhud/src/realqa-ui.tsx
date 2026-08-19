@@ -459,7 +459,10 @@ function CaptureEditor({ draft }: { readonly draft: CaptureDraft }) {
     const bounds = event.currentTarget.getBoundingClientRect();
     const x = (event.clientX - bounds.left) * active.width / bounds.width;
     const y = (event.clientY - bounds.top) * active.height / bounds.height;
-    return { x: Math.min(active.width, Math.max(0, x)), y: Math.min(active.height, Math.max(0, y)) };
+    const bounded = tool === "crop" || tool === "rectangle" || tool === "blur" || tool === "redaction";
+    const maximumX = bounded ? Math.max(0, active.width - 1) : active.width;
+    const maximumY = bounded ? Math.max(0, active.height - 1) : active.height;
+    return { x: Math.min(maximumX, Math.max(0, x)), y: Math.min(maximumY, Math.max(0, y)) };
   };
   const pointerDown = (event: PointerEvent<HTMLElement>) => {
     if (busy) return;
