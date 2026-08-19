@@ -128,6 +128,9 @@ func (s *DiagnosticsService) SubmitCrashReport(ctx context.Context, request *con
 		if errors.Is(err, domain.ErrCorrelationConflict) {
 			return nil, NewError(connect.CodeAlreadyExists, "client_correlation_id already identifies a different payload", CorrelationID(ctx))
 		}
+		if errors.Is(err, domain.ErrCrashReportQuota) {
+			return nil, NewError(connect.CodeResourceExhausted, "crash report quota exhausted", CorrelationID(ctx))
+		}
 		var permission *domain.PermissionError
 		if errors.As(err, &permission) {
 			return nil, permissionError(ctx, permission)
@@ -336,7 +339,9 @@ func containsForbiddenDiagnosticURL(value string) bool {
 }
 
 func containsForbiddenDiagnosticParameters(parameters string) bool {
-	for _, parameter := range strings.Split(parameters, "&") {
+	for _, parameter := range strings.FieldsFunc(parameters, func(separator rune) bool {
+		return separator == '&' || separator == ';'
+	}) {
 		name, value, found := strings.Cut(parameter, "=")
 		if !found {
 			name, value, _ = strings.Cut(parameter, ":")

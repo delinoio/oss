@@ -567,6 +567,7 @@ describe("wire validation helpers", () => {
     for (const credentialUrl of [
       "https://alice:password@example.com/app.js",
       "https://example.com/app.js?v=42&token=secret",
+      "devhud://auth/callback?safe=x;code=secret",
       "https://example.com/app.js#access-token",
       "https://docs.example.com/guide#configuration",
       "https://example.com/?context=release%3D2026#component=React%2FNative",

@@ -109,6 +109,100 @@ func TestCrashReportPersistenceRetentionIdempotencyAndAccountCascade(t *testing.
 	}
 }
 
+func TestCrashReportRetainedQuotaIsAtomicAndPreservesIdempotency(t *testing.T) {
+	now := time.Date(2026, 8, 19, 12, 0, 0, 0, time.UTC)
+	ctx, _, store := newIntegrationStore(t, now)
+	identity := domain.Identity{
+		Issuer: "https://issuer.example", Subject: "diagnostics-quota", DisplayName: "Diagnostics Quota", Email: "diagnostics-quota@example.com",
+		Fingerprint: bytes.Repeat([]byte{10}, 32),
+	}
+	identity.FingerprintCandidates = [][]byte{identity.Fingerprint}
+	user, err := store.ProvisionUser(ctx, identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	newReport := func() domain.CrashReport {
+		requestCorrelation, _ := idgen.UUIDv7{}.New()
+		clientCorrelation, _ := idgen.UUIDv7{}.New()
+		return domain.CrashReport{
+			RequestCorrelationID: requestCorrelation, ClientCorrelationID: clientCorrelation,
+			PayloadSHA256: bytes.Repeat([]byte{7}, 32), ReportSchemaVersion: 1,
+			AppVersion: "1.0.0", BuildID: "2026.08.19.1", Platform: 3, Architecture: 1,
+			OSVersion: "linux", TauriRevision: "4af26a3f7f8b692d62cca549bbacd93f5ce90b41",
+			CEFRevision: "150.0.10+g8042e43+chromium-150.0.7871.101", OccurredAt: now,
+			Component: 1, Severity: 1, ErrorCode: "APP_FAILURE", RedactedSummary: "A classified failure occurred.",
+			RedactedStackTrace: "at render", RelatedCorrelationIDs: []string{}, DurationMilliseconds: 17,
+			AcceptedAt: now, ExpiresAt: now.Add(domain.CrashReportRetention),
+		}
+	}
+	for range domain.CrashReportMaximumRetainedPerUser - 1 {
+		if _, err := store.SubmitCrashReport(ctx, user.ID, newReport()); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	type submission struct {
+		input  domain.CrashReport
+		stored domain.CrashReport
+		err    error
+	}
+	start := make(chan struct{})
+	results := make(chan submission, 2)
+	var wait sync.WaitGroup
+	for range 2 {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			input := newReport()
+			<-start
+			stored, err := store.SubmitCrashReport(ctx, user.ID, input)
+			results <- submission{input: input, stored: stored, err: err}
+		}()
+	}
+	close(start)
+	wait.Wait()
+	close(results)
+
+	var accepted submission
+	var acceptedCount, quotaCount int
+	for result := range results {
+		switch {
+		case result.err == nil:
+			accepted = result
+			acceptedCount++
+		case errors.Is(result.err, domain.ErrCrashReportQuota):
+			quotaCount++
+		default:
+			t.Fatalf("concurrent submission error = %v", result.err)
+		}
+	}
+	if acceptedCount != 1 || quotaCount != 1 {
+		t.Fatalf("concurrent quota results: accepted=%d quota=%d", acceptedCount, quotaCount)
+	}
+
+	retried, err := store.SubmitCrashReport(ctx, user.ID, accepted.input)
+	if err != nil || retried.ID != accepted.stored.ID {
+		t.Fatalf("idempotent retry at quota = %+v, err=%v", retried, err)
+	}
+	conflict := accepted.input
+	conflict.PayloadSHA256 = bytes.Repeat([]byte{8}, 32)
+	if _, err := store.SubmitCrashReport(ctx, user.ID, conflict); !errors.Is(err, domain.ErrCorrelationConflict) {
+		t.Fatalf("correlation conflict at quota = %v", err)
+	}
+	if _, err := store.SubmitCrashReport(ctx, user.ID, newReport()); !errors.Is(err, domain.ErrCrashReportQuota) {
+		t.Fatalf("fresh submission at quota = %v", err)
+	}
+
+	retention, err := store.PruneRetention(ctx, now.Add(domain.CrashReportRetention), domain.CrashReportMaximumRetainedPerUser)
+	if err != nil || retention.CrashReportsDeleted != domain.CrashReportMaximumRetainedPerUser {
+		t.Fatalf("quota retention prune = %+v, err=%v", retention, err)
+	}
+	if _, err := store.SubmitCrashReport(ctx, user.ID, newReport()); err != nil {
+		t.Fatalf("submission after retention prune = %v", err)
+	}
+}
+
 func TestSchemaCurrentUsesConfiguredSearchPath(t *testing.T) {
 	databaseURL := os.Getenv("DEVHUD_TEST_DATABASE_URL")
 	if databaseURL == "" {

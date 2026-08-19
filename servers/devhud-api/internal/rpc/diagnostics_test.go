@@ -64,6 +64,16 @@ func TestSubmitCrashReportRequiresAuthenticationAndMapsBlockedUsers(t *testing.T
 	}
 }
 
+func TestSubmitCrashReportMapsRetainedReportQuota(t *testing.T) {
+	service := NewDiagnosticsService(&serviceRepository{submitCrashReport: func(context.Context, string, domain.CrashReport) (domain.CrashReport, error) {
+		return domain.CrashReport{}, domain.ErrCrashReportQuota
+	}}, serviceClock{}, testServiceLogger())
+	_, err := service.SubmitCrashReport(authenticatedContext(), connect.NewRequest(validCrashReportRequest()))
+	if connect.CodeOf(err) != connect.CodeResourceExhausted {
+		t.Fatalf("quota code = %v", connect.CodeOf(err))
+	}
+}
+
 func TestSubmitCrashReportLogsSanitizedRepositoryCauses(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -145,15 +155,16 @@ func TestValidateCrashReportRejectsHostileDiagnosticContent(t *testing.T) {
 
 func TestSubmitCrashReportRejectsUnlabeledCredentialsBeforePersistence(t *testing.T) {
 	credentials := map[string]string{
-		"AWS access key":          "AKIA0123456789ABCDEF",
-		"JWT":                     "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiIxMjMifQ.signature",
-		"private key":             "-----BEGIN PRIVATE KEY-----",
-		"OAuth callback URL":      "devhud://auth/callback?code=secret&state=x",
-		"adjacent OAuth callback": "callback_devhud://auth/callback?code=secret&state=x",
-		"encoded OAuth callback":  "devhud://auth/callback?co%64e=secret&state=x",
-		"encoded token fragment":  "devhud://auth/callback#access%2Dtoken=secret",
-		"credential-bearing user": "https://alice:password@example.test/app.js",
-		"malformed URL escape":    "https://example.test/?to%6=secret",
+		"AWS access key":           "AKIA0123456789ABCDEF",
+		"JWT":                      "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiIxMjMifQ.signature",
+		"private key":              "-----BEGIN PRIVATE KEY-----",
+		"OAuth callback URL":       "devhud://auth/callback?code=secret&state=x",
+		"semicolon OAuth callback": "devhud://auth/callback?safe=x;code=secret",
+		"adjacent OAuth callback":  "callback_devhud://auth/callback?code=secret&state=x",
+		"encoded OAuth callback":   "devhud://auth/callback?co%64e=secret&state=x",
+		"encoded token fragment":   "devhud://auth/callback#access%2Dtoken=secret",
+		"credential-bearing user":  "https://alice:password@example.test/app.js",
+		"malformed URL escape":     "https://example.test/?to%6=secret",
 	}
 	locations := map[string]func(*devhudv1.SubmitCrashReportRequest, string){
 		"build": func(request *devhudv1.SubmitCrashReportRequest, credential string) {

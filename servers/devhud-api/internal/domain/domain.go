@@ -7,11 +7,12 @@ import (
 )
 
 const (
-	SettingsMaximumBytes = 1_048_576
-	RecoveryWindow       = 30 * 24 * time.Hour
-	RequestLogRetention  = 30 * 24 * time.Hour
-	AuditRetention       = 180 * 24 * time.Hour
-	CrashReportRetention = 30 * 24 * time.Hour
+	SettingsMaximumBytes              = 1_048_576
+	RecoveryWindow                    = 30 * 24 * time.Hour
+	RequestLogRetention               = 30 * 24 * time.Hour
+	AuditRetention                    = 180 * 24 * time.Hour
+	CrashReportRetention              = 30 * 24 * time.Hour
+	CrashReportMaximumRetainedPerUser = 100
 )
 
 type DeletionState int16
@@ -98,6 +99,7 @@ var (
 	ErrIdentityPurged      = errors.New("identity was permanently purged")
 	ErrNotFound            = errors.New("record not found")
 	ErrCorrelationConflict = errors.New("client correlation already identifies a different crash report")
+	ErrCrashReportQuota    = errors.New("crash report quota exhausted")
 )
 
 type Clock interface {

@@ -461,7 +461,7 @@ func (s *Store) SubmitCrashReport(ctx context.Context, userID string, report dom
 	var deletionState domain.DeletionState
 	var blockState domain.AdministrativeBlockState
 	if err := tx.QueryRow(ctx, `SELECT deletion_state, administrative_block_state
-        FROM devhud_users WHERE user_id = $1 FOR SHARE`, userID).Scan(&deletionState, &blockState); err != nil {
+        FROM devhud_users WHERE user_id = $1 FOR UPDATE`, userID).Scan(&deletionState, &blockState); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return domain.CrashReport{}, domain.ErrNotFound
 		}
@@ -472,6 +472,33 @@ func (s *Store) SubmitCrashReport(ctx context.Context, userID string, report dom
 	}
 	if deletionState != domain.DeletionStateActive {
 		return domain.CrashReport{}, &domain.PermissionError{Failure: domain.PermissionFailureDeletionPending}
+	}
+
+	var existingDigest []byte
+	existingErr := tx.QueryRow(ctx, `SELECT crash_report_id::text, payload_sha256, accepted_at, expires_at
+        FROM devhud_crash_reports
+        WHERE owner_user_id = $1 AND client_correlation_id = $2`, userID, report.ClientCorrelationID).
+		Scan(&report.ID, &existingDigest, &report.AcceptedAt, &report.ExpiresAt)
+	if existingErr == nil {
+		if !bytes.Equal(existingDigest, report.PayloadSHA256) {
+			return domain.CrashReport{}, domain.ErrCorrelationConflict
+		}
+		report.OwnerUserID = userID
+		if err := tx.Commit(ctx); err != nil {
+			return domain.CrashReport{}, err
+		}
+		return report, nil
+	}
+	if !errors.Is(existingErr, pgx.ErrNoRows) {
+		return domain.CrashReport{}, existingErr
+	}
+
+	var retainedReports int
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM devhud_crash_reports WHERE owner_user_id = $1`, userID).Scan(&retainedReports); err != nil {
+		return domain.CrashReport{}, err
+	}
+	if retainedReports >= domain.CrashReportMaximumRetainedPerUser {
+		return domain.CrashReport{}, domain.ErrCrashReportQuota
 	}
 
 	reportID, err := s.ids.New()
@@ -498,7 +525,6 @@ func (s *Store) SubmitCrashReport(ctx context.Context, userID string, report dom
 		return domain.CrashReport{}, err
 	}
 	if command.RowsAffected() == 0 {
-		var existingDigest []byte
 		if err := tx.QueryRow(ctx, `SELECT crash_report_id::text, payload_sha256, accepted_at, expires_at
             FROM devhud_crash_reports
             WHERE owner_user_id = $1 AND client_correlation_id = $2`, userID, report.ClientCorrelationID).

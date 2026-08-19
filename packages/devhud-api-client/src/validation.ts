@@ -397,7 +397,7 @@ function containsForbiddenParameterContent(
   parameters: string,
   publicAssetBaseUrl?: URL,
 ): boolean {
-  for (const parameter of parameters.split("&")) {
+  for (const parameter of parameters.split(/[&;]/u)) {
     const separatorIndex = parameter.search(/[=:]/u);
     const encodedName = separatorIndex === -1 ? parameter : parameter.slice(0, separatorIndex);
     const encodedValue = separatorIndex === -1 ? "" : parameter.slice(separatorIndex + 1);
