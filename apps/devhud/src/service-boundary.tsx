@@ -261,9 +261,10 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
 
   async function clearIrrecoverableAccount(): Promise<void> {
     irrecoverableCleanupPendingRef.current = true;
-    setStatus("error");
-    const localCleanupComplete = clearAllContractedLocalData(storage);
+    const releaseDiagnosticWrites = beginDiagnosticWriteSuppression(storage);
     try {
+      setStatus("error");
+      const localCleanupComplete = clearAllContractedLocalData(storage);
       if (!localCleanupComplete) throw new Error("local-data-cleanup-incomplete");
       await bridge.request({ operation: "secure.purge", scope: "logout" });
       sessionRef.current = null;
@@ -283,6 +284,8 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     } catch (reason) {
       setError(safeError(reason));
       throw reason;
+    } finally {
+      releaseDiagnosticWrites();
     }
   }
 
