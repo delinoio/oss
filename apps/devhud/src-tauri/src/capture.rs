@@ -675,6 +675,14 @@ impl DraftStore {
     }
 
     pub fn create(&self, images: Vec<RgbaImage>) -> Result<DraftSummary, CaptureError> {
+        self.create_with_commit_check(images, || Ok(()))
+    }
+
+    fn create_with_commit_check(
+        &self,
+        images: Vec<RgbaImage>,
+        before_commit: impl FnOnce() -> Result<(), CaptureError>,
+    ) -> Result<DraftSummary, CaptureError> {
         if images.is_empty() || images.len() > MAX_IMAGES {
             return Err(CaptureError::ImageLimit);
         }
@@ -723,6 +731,7 @@ impl DraftStore {
             if projected > self.quota {
                 return Err(CaptureError::QuotaExhausted);
             }
+            before_commit()?;
             fs::rename(&transaction, self.root.join(id.to_string()))
                 .map_err(|_| CaptureError::StorageFailure)?;
             Ok(document.summary())
@@ -734,6 +743,15 @@ impl DraftStore {
     }
 
     pub fn append(&self, id: Uuid, images: Vec<RgbaImage>) -> Result<DraftSummary, CaptureError> {
+        self.append_with_commit_check(id, images, || Ok(()))
+    }
+
+    fn append_with_commit_check(
+        &self,
+        id: Uuid,
+        images: Vec<RgbaImage>,
+        before_commit: impl FnOnce() -> Result<(), CaptureError>,
+    ) -> Result<DraftSummary, CaptureError> {
         let _guard = self.lock.lock().map_err(|_| CaptureError::StorageFailure)?;
         let key = self.key()?;
         self.recover_locked(&key)?;
@@ -770,7 +788,7 @@ impl DraftStore {
             document.undo.push(previous);
             document.redo.clear();
             document.touch(Self::now()?);
-            self.write_document_locked(&mut document, &key)?;
+            self.write_document_locked_with_commit_check(&mut document, &key, before_commit)?;
             Ok(document.summary())
         })();
         if result.is_err() {
@@ -971,6 +989,15 @@ impl DraftStore {
         document: &mut DraftDocument,
         key: &[u8; 32],
     ) -> Result<(), CaptureError> {
+        self.write_document_locked_with_commit_check(document, key, || Ok(()))
+    }
+
+    fn write_document_locked_with_commit_check(
+        &self,
+        document: &mut DraftDocument,
+        key: &[u8; 32],
+        before_commit: impl FnOnce() -> Result<(), CaptureError>,
+    ) -> Result<(), CaptureError> {
         let current = directory_size(&self.root)?;
         let manifest = self.root.join(document.id.to_string()).join("manifest.bin");
         let old = fs::metadata(&manifest)
@@ -980,6 +1007,7 @@ impl DraftStore {
         loop {
             let encrypted = encrypt_document(document, key)?;
             if current.saturating_sub(old) + encrypted.len() as u64 <= self.quota {
+                before_commit()?;
                 return atomic_replace(&manifest, &encrypted);
             }
             if !discard_farthest_history(document) {
@@ -1244,8 +1272,12 @@ impl CaptureService {
     ) -> Result<DraftSummary, CaptureError> {
         self.ensure_not_cancelled(epoch)?;
         match options.append_to_draft_id {
-            Some(id) => self.store.append(id, images),
-            None => self.store.create(images),
+            Some(id) => self
+                .store
+                .append_with_commit_check(id, images, || self.ensure_not_cancelled(epoch)),
+            None => self
+                .store
+                .create_with_commit_check(images, || self.ensure_not_cancelled(epoch)),
         }
     }
 
@@ -3514,6 +3546,49 @@ mod tests {
         assert!(protected_window_frame("windows", &opaque_black));
         assert!(!protected_window_frame("x11", &opaque_black));
         assert!(!protected_window_frame("macos", &visible));
+    }
+
+    #[test]
+    fn cancellation_guards_prevent_create_and_append_commits() {
+        let root = TestDirectory::new();
+        let store = DraftStore::new_test(root.0.clone(), 1024 * 1024, [24; 32]);
+        let cancelled = store
+            .create_with_commit_check(
+                vec![ImageBuffer::from_pixel(8, 8, Rgba([1, 2, 3, 255]))],
+                || Err(CaptureError::Cancelled),
+            )
+            .unwrap_err();
+        assert_eq!(cancelled, CaptureError::Cancelled);
+        assert!(store.list().unwrap().drafts.is_empty());
+
+        let created = store
+            .create(vec![ImageBuffer::from_pixel(8, 8, Rgba([4, 5, 6, 255]))])
+            .unwrap();
+        let cancelled = store
+            .append_with_commit_check(
+                created.id,
+                vec![ImageBuffer::from_pixel(8, 8, Rgba([7, 8, 9, 255]))],
+                || Err(CaptureError::Cancelled),
+            )
+            .unwrap_err();
+        assert_eq!(cancelled, CaptureError::Cancelled);
+        assert_eq!(store.open(created.id).unwrap().image_count, 1);
+        let source_count = fs::read_dir(root.0.join(created.id.to_string()))
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_name().to_string_lossy().starts_with("source-"))
+            .count();
+        assert_eq!(source_count, 1);
+        assert_eq!(
+            store
+                .append(
+                    created.id,
+                    vec![ImageBuffer::from_pixel(8, 8, Rgba([10, 11, 12, 255]))],
+                )
+                .unwrap()
+                .image_count,
+            2
+        );
     }
 
     #[test]

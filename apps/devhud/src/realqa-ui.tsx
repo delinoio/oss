@@ -7,7 +7,6 @@ export type CaptureActionId = Exclude<ShortcutActionId, typeof ShortcutActionId.
 type EditorTool = "crop" | "arrow" | "rectangle" | "drawing" | "text" | "blur" | "redaction";
 type CaptureRequest = { readonly action: CaptureActionId; readonly sequence: number };
 type FloatingPreviewRequest = { readonly draft: CaptureDraft; readonly imageId?: string; readonly sequence: number };
-const ANNOTATION_FONT_FAMILY = "DevHud RealQA Noto Sans KR";
 const MAX_ANNOTATION_TEXT_CHARACTERS = 2_048;
 
 export interface RealqaController { execute(action: CaptureActionId): Promise<void> }
@@ -240,7 +239,7 @@ export function RealqaSurface({ ref, bridge, copy, requestedAction, onRequestedA
       setUnreadableDraftIds((current) => current.filter((id) => id !== draftId));
       setSelected((current) => current?.id === draftId ? null : current);
       setPreviewRequest((current) => current?.draft.id === draftId ? null : current);
-      await refresh();
+      try { await refresh(); } catch { /* The successful native deletion is authoritative. */ }
     } catch {
       setError(copy.realqaDeleteFailed);
     }
@@ -390,7 +389,10 @@ function CaptureEditor({ draft }: { readonly draft: CaptureDraft }) {
   const [failed, setFailed] = useState(false);
   const editorActive = useRef(true);
   const active = draft.images.find((image) => image.id === imageId) ?? draft.images[0];
-  useEffect(() => () => { editorActive.current = false; }, []);
+  useEffect(() => {
+    editorActive.current = true;
+    return () => { editorActive.current = false; };
+  }, []);
   useEffect(() => { if (!active && draft.images[0]) setImageId(draft.images[0].id); }, [active, draft.images]);
   useEffect(() => { if (busy) setDrawing([]); }, [busy]);
 
@@ -436,6 +438,8 @@ function CaptureEditor({ draft }: { readonly draft: CaptureDraft }) {
     });
   };
   if (!active) return null;
+  const coordinatesValid = coordinateRectFitsImage(coordinates, active.width, active.height);
+  const coordinateErrorId = `editor-coordinate-error-${draft.id}`;
   const point = (event: PointerEvent<HTMLElement>): CapturePoint => {
     const bounds = event.currentTarget.getBoundingClientRect();
     const x = (event.clientX - bounds.left) * active.width / bounds.width;
@@ -469,7 +473,7 @@ function CaptureEditor({ draft }: { readonly draft: CaptureDraft }) {
     commit(points[0], points[points.length - 1], points);
   };
   const addFromCoordinates = () => {
-    if (busy) return;
+    if (busy || !coordinatesValid) return;
     const start = { x: coordinates.x, y: coordinates.y };
     const end = { x: coordinates.x + coordinates.width, y: coordinates.y + coordinates.height };
     commit(start, end);
@@ -488,7 +492,7 @@ function CaptureEditor({ draft }: { readonly draft: CaptureDraft }) {
     </div></div>
     <aside className="editor-controls" aria-label={copy.editorTools}><div className="editor-tools">{(["crop","arrow","rectangle","drawing","text","blur","redaction"] as const).map((candidate) => <button key={candidate} aria-pressed={tool === candidate} onClick={() => setTool(candidate)}>{copy[candidate === "crop" ? "editorCrop" : candidate === "arrow" ? "editorArrow" : candidate === "rectangle" ? "editorRectangle" : candidate === "drawing" ? "editorDrawing" : candidate === "text" ? "editorText" : candidate === "blur" ? "editorBlur" : "editorRedaction"]}</button>)}</div>
       <label>{copy.editorColor}<input type="color" value={color} onChange={(event) => setColor(event.target.value)} /></label><label>{copy.editorStrokeWidth}<input type="range" min="1" max="32" value={strokeWidth} onChange={(event) => setStrokeWidth(Number(event.target.value))} /></label>{tool === "text" && <label>{copy.editorTextValue}<input autoFocus value={text} onChange={(event) => setText(limitAnnotationText(event.target.value))} /></label>}
-      <fieldset className="editor-coordinate-fields"><legend>{copy.editorCoordinates}</legend>{(["x", "y", "width", "height"] as const).map((key) => <label key={key}>{copy[key === "x" ? "captureX" : key === "y" ? "captureY" : key === "width" ? "captureWidth" : "captureHeight"]}<input type="number" min={key === "width" || key === "height" ? 1 : undefined} value={coordinates[key]} onChange={(event) => setCoordinates((current) => ({ ...current, [key]: Number(event.target.value) }))} /></label>)}<button disabled={busy || (tool === "text" && !text)} onClick={addFromCoordinates}>{copy.editorAdd}</button></fieldset>
+      <fieldset className="editor-coordinate-fields"><legend>{copy.editorCoordinates}</legend>{(["x", "y", "width", "height"] as const).map((key) => <label key={key}>{copy[key === "x" ? "captureX" : key === "y" ? "captureY" : key === "width" ? "captureWidth" : "captureHeight"]}<input type="number" min={key === "width" || key === "height" ? 1 : undefined} value={coordinates[key]} aria-invalid={!coordinatesValid} aria-describedby={!coordinatesValid ? coordinateErrorId : undefined} onChange={(event) => setCoordinates((current) => ({ ...current, [key]: Number(event.target.value) }))} /></label>)}{!coordinatesValid && <p id={coordinateErrorId} className="editor-coordinate-error" role="alert">{copy.editorCoordinatesInvalid}</p>}<button disabled={busy || !coordinatesValid || (tool === "text" && !text)} onClick={addFromCoordinates}>{copy.editorAdd}</button></fieldset>
       <div className="actions"><button disabled={busy || !draft.canUndo} onClick={() => void history("capture.editor.undo")}>{copy.editorUndo}</button><button disabled={busy || !draft.canRedo} onClick={() => void history("capture.editor.redo")}>{copy.editorRedo}</button></div>
       <LayerList image={active} mutate={mutate} copy={copy} disabled={busy} />
       <button className="primary" disabled={busy} onClick={() => void flatten()}>{copy.editorFlatten}</button>
@@ -503,31 +507,33 @@ function AnnotationOverlay({ image, drawing, tool }: { readonly image: CaptureDr
   const precedingStateId = (index: number) => index === 0 ? sourceStateId : stateIds[index - 1];
   return <svg className="annotation-overlay" viewBox={`0 0 ${image.width} ${image.height}`} aria-hidden="true">
     <defs>
-      {image.layers.filter((layer) => layer.tool === "blur").map((layer) => <BlurDefinitions key={layer.id} layer={layer} />)}
+      {image.layers.map((layer, index) => layer.tool === "blur" ? <BlurDefinitions key={layer.id} layer={layer} sourceId={precedingStateId(index)} /> : null)}
       <g id={sourceStateId}><image href={image.previewUrl} x="0" y="0" width={image.width} height={image.height} preserveAspectRatio="none" /></g>
       {image.layers.map((layer, index) => <g key={layer.id} id={stateIds[index]}>
         <use href={`#${precedingStateId(index)}`} />
-        <LayerShape layer={layer} blurSourceId={precedingStateId(index)} showBlurOutline={false} />
+        <LayerShape layer={layer} showBlurOutline={false} />
       </g>)}
     </defs>
     {image.crop && <rect className="crop-outline" {...svgRect(image.crop)} />}
-    {image.layers.map((layer, index) => <LayerShape key={layer.id} layer={layer} blurSourceId={precedingStateId(index)} showBlurOutline />)}
+    {image.layers.map((layer) => <LayerShape key={layer.id} layer={layer} showBlurOutline />)}
     {drawing.length > 1 && <polyline points={drawing.map((point) => `${point.x},${point.y}`).join(" ")} fill="none" stroke={tool === "redaction" ? "#000" : "#ef4444"} strokeWidth="4" />}
   </svg>;
 }
 
-function BlurDefinitions({ layer }: { readonly layer: Extract<CaptureEditorLayer, { tool: "blur" }> }) {
+function BlurDefinitions({ layer, sourceId }: { readonly layer: Extract<CaptureEditorLayer, { tool: "blur" }>; readonly sourceId: string }) {
   const clipId = `realqa-blur-clip-${layer.id}`;
   const filterId = `realqa-blur-filter-${layer.id}`;
+  const sourceRegionId = `realqa-blur-source-${layer.id}`;
   return <>
     <clipPath id={clipId}><rect {...svgRect(layer.bounds)} /></clipPath>
+    <g id={sourceRegionId} clipPath={`url(#${clipId})`}><use href={`#${sourceId}`} /></g>
     <filter id={filterId} x={layer.bounds.x} y={layer.bounds.y} width={layer.bounds.width} height={layer.bounds.height} filterUnits="userSpaceOnUse" colorInterpolationFilters="sRGB">
       <feGaussianBlur in="SourceGraphic" stdDeviation={layer.radius} />
     </filter>
   </>;
 }
 
-function LayerShape({ layer, blurSourceId, showBlurOutline }: { readonly layer: CaptureEditorLayer; readonly blurSourceId: string; readonly showBlurOutline: boolean }) {
+function LayerShape({ layer, showBlurOutline }: { readonly layer: CaptureEditorLayer; readonly showBlurOutline: boolean }) {
   if (layer.tool === "arrow") {
     const [firstHead, secondHead] = arrowHeadPoints(layer.start, layer.end, layer.width);
     const stroke = { stroke: layer.color, strokeWidth: layer.width, strokeLinecap: "round" as const };
@@ -539,12 +545,12 @@ function LayerShape({ layer, blurSourceId, showBlurOutline }: { readonly layer: 
   }
   if (layer.tool === "rectangle") return <rect {...svgRect(layer.bounds)} fill="none" stroke={layer.color} strokeWidth={layer.width} />;
   if (layer.tool === "drawing") return <polyline points={layer.points.map((point) => `${point.x},${point.y}`).join(" ")} fill="none" stroke={layer.color} strokeWidth={layer.width} />;
-  if (layer.tool === "text") return <text x={layer.origin.x} y={layer.origin.y} fill={layer.color} fontSize={layer.size} style={{ fontFamily: ANNOTATION_FONT_FAMILY, fontKerning: "none" }}>{layer.text}</text>;
+  if (layer.tool === "text") return <text className="annotation-text" x={layer.origin.x} y={layer.origin.y} fill={layer.color} fontSize={layer.size}>{layer.text}</text>;
   if (layer.tool === "redaction") return <rect {...svgRect(layer.bounds)} fill="#000" />;
   const clipId = `realqa-blur-clip-${layer.id}`;
   const filterId = `realqa-blur-filter-${layer.id}`;
   return <>
-    <use className={showBlurOutline ? "blur-preview" : undefined} href={`#${blurSourceId}`} clipPath={`url(#${clipId})`} filter={`url(#${filterId})`} />
+    <use className={showBlurOutline ? "blur-preview" : undefined} href={`#realqa-blur-source-${layer.id}`} filter={`url(#${filterId})`} />
     {showBlurOutline && <rect {...svgRect(layer.bounds)} className="blur-outline" />}
   </>;
 }
@@ -565,6 +571,15 @@ function LayerList({ image, mutate, copy, disabled }: { readonly image: CaptureD
 
 function normalizeBounds(start: CapturePoint, end: CapturePoint): CaptureRect { return { x: Math.min(start.x, end.x), y: Math.min(start.y, end.y), width: Math.max(1, Math.abs(end.x - start.x)), height: Math.max(1, Math.abs(end.y - start.y)) }; }
 function svgRect(bounds: CaptureRect) { return { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height }; }
+function coordinateRectFitsImage(bounds: CaptureRect, width: number, height: number) {
+  return Object.values(bounds).every(Number.isFinite)
+    && bounds.x >= 0
+    && bounds.y >= 0
+    && bounds.width > 0
+    && bounds.height > 0
+    && bounds.x + bounds.width <= width
+    && bounds.y + bounds.height <= height;
+}
 function limitAnnotationText(value: string) { return Array.from(value).slice(0, MAX_ANNOTATION_TEXT_CHARACTERS).join(""); }
 
 function uuidV7() {

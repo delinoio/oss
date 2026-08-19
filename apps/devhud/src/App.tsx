@@ -113,6 +113,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
           return;
         }
         if (event.action.startsWith("realqa.capture.")) {
+          setPalette(false);
           setSurface(SurfaceId.Realqa);
           captureSequence.current += 1;
           setRequestedCapture({ action: event.action as CaptureActionId, sequence: captureSequence.current });

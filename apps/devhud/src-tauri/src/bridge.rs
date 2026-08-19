@@ -823,6 +823,14 @@ async fn handle_capture_request(
             let capture_window = app
                 .get_webview_window("main")
                 .ok_or_else(|| "platform-failure".to_string())?;
+            let window_was_visible = capture_window.is_visible().unwrap_or_else(|reason| {
+                tracing::warn!(event = "capture_window_visibility_query_failed", %reason);
+                true
+            });
+            let window_was_minimized = capture_window.is_minimized().unwrap_or_else(|reason| {
+                tracing::warn!(event = "capture_window_minimized_query_failed", %reason);
+                false
+            });
             let window_hidden = Arc::new(AtomicBool::new(false));
             let capture_task = capture.clone();
             let worker_window = capture_window.clone();
@@ -845,10 +853,18 @@ async fn handle_capture_request(
             .await
             .map_err(|_| "platform-failure".to_string())
             .and_then(|result| result.map_err(failure));
-            if window_hidden.load(Ordering::Acquire) {
+            if window_hidden.load(Ordering::Acquire) || !window_was_visible || window_was_minimized
+            {
+                if capture_window.unminimize().is_err() {
+                    tracing::error!(
+                        event = "capture_window_restore_failed",
+                        stage = "unminimize"
+                    );
+                }
                 if capture_window.show().is_err() {
                     tracing::error!(event = "capture_window_restore_failed", stage = "show");
-                } else if capture_window.set_focus().is_err() {
+                }
+                if capture_window.set_focus().is_err() {
                     tracing::error!(event = "capture_window_restore_failed", stage = "focus");
                 }
             }

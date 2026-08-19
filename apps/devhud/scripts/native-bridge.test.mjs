@@ -156,6 +156,19 @@ test("RealQA draft recovery runs only after the primary instance is claimed", ()
   assert(draftRecovery > applicationSetup);
 });
 
+test("direct captures restore hidden or minimized windows only after acquisition", () => {
+  const captureStart = nativeBridgeHost.indexOf('Some("capture.start")');
+  const visibilityCheck = nativeBridgeHost.indexOf("capture_window.is_visible()", captureStart);
+  const minimizedCheck = nativeBridgeHost.indexOf("capture_window.is_minimized()", captureStart);
+  const acquisition = nativeBridgeHost.indexOf("let capture_result =", captureStart);
+  const restoration = nativeBridgeHost.indexOf("capture_window.unminimize()", acquisition);
+  assert(visibilityCheck > captureStart && visibilityCheck < acquisition);
+  assert(minimizedCheck > captureStart && minimizedCheck < acquisition);
+  assert(restoration > acquisition);
+  assert.match(nativeBridgeHost.slice(restoration), /capture_window\.show\(\)/u);
+  assert.match(nativeBridgeHost.slice(restoration), /capture_window\.set_focus\(\)/u);
+});
+
 function structuredShortcuts() {
   return Object.fromEntries(Object.entries(defaultDesktopShortcutBindings).map(([action, binding]) => [action, { ...binding, modifiers: [...binding.modifiers] }]));
 }

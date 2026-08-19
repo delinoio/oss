@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { messages } from "./localization";
@@ -86,15 +87,17 @@ describe("RealQA capture and editor", () => {
     expect(Number(arrowLines[2].getAttribute("x2"))).toBeCloseTo(37.26, 2);
     expect(Number(arrowLines[2].getAttribute("y2"))).toBeCloseTo(10.32, 2);
     const textPreview = document.querySelector(".annotation-overlay text");
-    expect(textPreview?.getAttribute("style")).toContain("font-family: DevHud RealQA Noto Sans KR");
-    expect(textPreview?.getAttribute("style")).toContain("font-kerning: none");
+    expect(textPreview?.classList.contains("annotation-text")).toBe(true);
+    expect(textPreview?.getAttribute("style")).toBeNull();
     const blurPreview = document.querySelector(".annotation-overlay .blur-preview");
     const blurSourceHref = blurPreview?.getAttribute("href");
-    expect(blurSourceHref).toBe(`#realqa-layer-state-${draft.images[0].id}-3`);
+    expect(blurSourceHref).toBe(`#realqa-blur-source-${draft.images[0].layers[3].id}`);
     const blurSource = document.getElementById(blurSourceHref?.slice(1) ?? "");
-    expect(blurSource?.querySelector("text")?.textContent).toBe("한글");
-    expect(blurSource?.querySelector(".blur-outline")).toBeNull();
-    expect(blurPreview?.getAttribute("clip-path")).toContain("realqa-blur-clip-");
+    expect(blurSource?.getAttribute("clip-path")).toContain("realqa-blur-clip-");
+    const accumulatedSourceHref = blurSource?.querySelector("use")?.getAttribute("href");
+    expect(accumulatedSourceHref).toBe(`#realqa-layer-state-${draft.images[0].id}-3`);
+    expect(document.getElementById(accumulatedSourceHref?.slice(1) ?? "")?.querySelector("text")?.textContent).toBe("한글");
+    expect(blurPreview?.getAttribute("clip-path")).toBeNull();
     expect(blurPreview?.getAttribute("filter")).toContain("realqa-blur-filter-");
     expect(document.querySelector(".annotation-overlay feGaussianBlur")?.getAttribute("stdDeviation")).toBe("12");
     fireEvent.click(screen.getAllByRole("button", { name: copy.editorRemove }).at(-1)!);
@@ -102,6 +105,19 @@ describe("RealQA capture and editor", () => {
       operation: "capture.editor.apply",
       expectedRevision: 3,
       command: expect.objectContaining({ kind: "remove-layer" }),
+    })));
+  });
+
+  it("keeps editor operations active through the Strict Mode setup-cleanup cycle", async () => {
+    const { bridge, request } = bridgeWith();
+    render(<StrictMode><RealqaSurface bridge={bridge} copy={messages.en} /></StrictMode>);
+
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.realqaOpenEditor }));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.editorAdd }));
+
+    await waitFor(() => expect(request).toHaveBeenCalledWith(expect.objectContaining({
+      operation: "capture.editor.apply",
+      expectedRevision: draft.revision,
     })));
   });
 
@@ -470,6 +486,33 @@ describe("RealQA capture and editor", () => {
     })));
   });
 
+  it("validates coordinate-entered annotations before native submission", async () => {
+    const { bridge, request } = bridgeWith();
+    render(<RealqaSurface bridge={bridge} copy={messages.en} />);
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.realqaOpenEditor }));
+    const add = screen.getByRole("button", { name: messages.en.editorAdd });
+    const x = screen.getByRole("spinbutton", { name: messages.en.captureX });
+    const width = screen.getByRole("spinbutton", { name: messages.en.captureWidth });
+
+    fireEvent.change(width, { target: { value: "" } });
+    expect(add).toHaveProperty("disabled", true);
+    expect(screen.getByRole("alert").textContent).toBe(messages.en.editorCoordinatesInvalid);
+
+    fireEvent.change(width, { target: { value: "100" } });
+    fireEvent.change(x, { target: { value: "-1" } });
+    expect(add).toHaveProperty("disabled", true);
+
+    fireEvent.change(x, { target: { value: "750" } });
+    expect(add).toHaveProperty("disabled", true);
+    expect(request.mock.calls.some(([value]) => value.operation === "capture.editor.apply")).toBe(false);
+
+    fireEvent.change(x, { target: { value: "700" } });
+    expect(add).toHaveProperty("disabled", false);
+    expect(screen.queryByText(messages.en.editorCoordinatesInvalid)).toBeNull();
+    fireEvent.click(add);
+    await waitFor(() => expect(request).toHaveBeenCalledWith(expect.objectContaining({ operation: "capture.editor.apply" })));
+  });
+
   it.each([
     [draft, 1, true],
     [secondDraft, 2, false],
@@ -566,28 +609,15 @@ describe("RealQA capture and editor", () => {
     expect(applyRequests[1].expectedRevision).toBe(4);
   });
 
-  it.each([
-    ["readable", "delete"],
-    ["readable", "refresh"],
-    ["unreadable", "delete"],
-    ["unreadable", "refresh"],
-  ] as const)("reports %s draft %s failures", async (draftKind, failure) => {
+  it.each(["readable", "unreadable"] as const)("reports %s native draft deletion failures", async (draftKind) => {
     const unreadableId = "019b0000-0000-7000-8000-000000000004";
-    let deleted = false;
     vi.spyOn(window, "confirm").mockReturnValue(true);
     const { bridge } = bridgeWith(async (value) => {
       if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: false, topology: [] };
-      if (value.operation === "capture.list-drafts") {
-        if (deleted && failure === "refresh") throw new Error("refresh failed");
-        return draftKind === "readable"
-          ? { kind: "capture-drafts", drafts: [draft], unreadableDraftIds: [] }
-          : { kind: "capture-drafts", drafts: [], unreadableDraftIds: [unreadableId] };
-      }
-      if (value.operation === "capture.delete-draft") {
-        if (failure === "delete") throw new Error("delete failed");
-        deleted = true;
-        return { kind: "ok" };
-      }
+      if (value.operation === "capture.list-drafts") return draftKind === "readable"
+        ? { kind: "capture-drafts", drafts: [draft], unreadableDraftIds: [] }
+        : { kind: "capture-drafts", drafts: [], unreadableDraftIds: [unreadableId] };
+      if (value.operation === "capture.delete-draft") throw new Error("delete failed");
       throw new Error(`unexpected operation ${value.operation}`);
     });
     render(<RealqaSurface bridge={bridge} copy={messages.en} />);
@@ -595,6 +625,28 @@ describe("RealQA capture and editor", () => {
     await screen.findByRole("button", { name: messages.en.realqaDeleteDraft });
     fireEvent.click(screen.getByRole("button", { name: messages.en.realqaDeleteDraft }));
     expect((await screen.findByRole("alert")).textContent).toBe(messages.en.realqaDeleteFailed);
+  });
+
+  it.each(["readable", "unreadable"] as const)("retains successful %s deletion when refresh fails", async (draftKind) => {
+    const unreadableId = "019b0000-0000-7000-8000-000000000004";
+    let deleted = false;
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const { bridge } = bridgeWith(async (value) => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: false, topology: [] };
+      if (value.operation === "capture.list-drafts") {
+        if (deleted) throw new Error("refresh failed");
+        return draftKind === "readable"
+          ? { kind: "capture-drafts", drafts: [draft], unreadableDraftIds: [] }
+          : { kind: "capture-drafts", drafts: [], unreadableDraftIds: [unreadableId] };
+      }
+      if (value.operation === "capture.delete-draft") { deleted = true; return { kind: "ok" }; }
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    render(<RealqaSurface bridge={bridge} copy={messages.en} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.realqaDeleteDraft }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: messages.en.realqaDeleteDraft })).toBeNull());
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("offers explicit deletion for an unreadable encrypted draft", async () => {

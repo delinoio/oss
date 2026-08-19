@@ -76,6 +76,10 @@ test("RealQA panels use the defined themed surface color", () => {
   assert.match(styles, /\.editor-controls\{[^}]*background:var\(--surface\)/u);
 });
 
+test("RealQA annotation text uses CSP-compatible static font styling", () => {
+  assert.match(styles, /\.annotation-text\{font-family:"DevHud RealQA Noto Sans KR";font-kerning:none\}/u);
+});
+
 test("form-control boundaries meet non-text contrast in light and dark themes", () => {
   for (const block of themeBlocks) {
     const line = customColor(block, "--line");

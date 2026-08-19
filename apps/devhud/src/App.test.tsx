@@ -431,9 +431,12 @@ describe("native App state", () => {
 
     render(<App bridge={bridge} initialRuntime={runtime} />);
     await waitFor(() => expect(receive).toBeTypeOf("function"));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.openPalette }));
+    expect(screen.getByRole("dialog", { name: messages.en.commandPalette })).toBeTruthy();
     await act(async () => receive?.({ version: 1, kind: "shortcut-triggered", action: "realqa.capture.selection" }));
 
     expect(await screen.findByRole("dialog", { name: messages.en.captureSelection })).toBeTruthy();
+    expect(screen.queryByRole("dialog", { name: messages.en.commandPalette })).toBeNull();
     expect(request).toHaveBeenCalledWith({ operation: "capture.status" });
 
     fireEvent.click(screen.getByRole("button", { name: messages.en.home }));
