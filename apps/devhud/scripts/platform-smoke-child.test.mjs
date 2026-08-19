@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { once } from "node:events";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
@@ -50,6 +50,20 @@ function assertProcessIsNotLive(pid) {
     const [state] = stat.slice(stat.lastIndexOf(")") + 1).trim().split(/\s+/u);
     assert.ok(state === "Z" || state === "X");
     return;
+  }
+  if (process.platform === "darwin") {
+    // macOS can retain a group-killed descendant as a zombie until launchd
+    // reaps it. Zombies hold no resources, but kill(pid, 0) still succeeds.
+    let state;
+    try {
+      state = execFileSync("/bin/ps", ["-o", "state=", "-p", String(pid)], {
+        encoding: "utf8",
+      }).trim();
+    } catch (error) {
+      if (error.status === 1) return;
+      throw error;
+    }
+    if (state === "" || state.startsWith("Z")) return;
   }
   assert.fail(`process ${pid} is still live`);
 }
