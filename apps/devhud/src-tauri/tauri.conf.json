@@ -32,12 +32,6 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "externalBin": ["binaries/devhud-native-messaging-host"],
-    "windows": {
-      "nsis": {
-        "installerHooks": "./windows/hooks.nsh"
-      }
-    },
     "macOS": {
       "minimumSystemVersion": "13.0",
       "signingIdentity": "-",

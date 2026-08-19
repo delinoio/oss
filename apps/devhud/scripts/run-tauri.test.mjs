@@ -8,7 +8,10 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 import { spawnDevServer } from "../../../scripts/spawn-dev-server.mjs";
-import { desktopTauriArguments } from "./run-tauri-arguments.mjs";
+import {
+  desktopTauriArguments,
+  desktopTauriConfigPath,
+} from "./run-tauri-arguments.mjs";
 
 const scriptPath = fileURLToPath(new URL("./run-tauri.mjs", import.meta.url));
 const processTreeChildPath = fileURLToPath(new URL("./process-tree-child.mjs", import.meta.url));
@@ -21,10 +24,24 @@ const configOverrides = [
 ];
 
 test("forwards the desktop CEF feature to the pinned Tauri command", () => {
-  assert.deepEqual(desktopTauriArguments("dev", []), ["dev", "--features", "desktop-cef"]);
+  assert.deepEqual(desktopTauriArguments("dev", []), [
+    "dev",
+    "--features",
+    "desktop-cef",
+    "--config",
+    desktopTauriConfigPath,
+  ]);
   assert.deepEqual(
     desktopTauriArguments("build", ["--bundles", "app"]),
-    ["build", "--features", "desktop-cef", "--bundles", "app"],
+    [
+      "build",
+      "--features",
+      "desktop-cef",
+      "--config",
+      desktopTauriConfigPath,
+      "--bundles",
+      "app",
+    ],
   );
 });
 
