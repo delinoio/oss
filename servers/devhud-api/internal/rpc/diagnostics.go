@@ -39,7 +39,10 @@ var (
 	safeSQLState            = regexp.MustCompile(`^[0-9A-Z]{5}$`)
 	diagnosticURL           = regexp.MustCompile(`[A-Za-z][A-Za-z0-9+.-]*:[^\s<>"']+`)
 	trailingURLPunctuation  = regexp.MustCompile(`[)\]}>.,;]+$`)
+	percentEncodedOctets    = regexp.MustCompile(`(?i)(%[0-9a-f]{2})+`)
+	encodedWindowsDrivePath = regexp.MustCompile(`(?i)^[A-Za-z]:(%2f|%5c)`)
 	credentialParameterName = regexp.MustCompile(`(?i)^(code|password|passwd|pwd|secret|token|client[_.-]?secret|(access|refresh|id)[_.-]?token|api[_.-]?key|private[_.-]?key|authorization|cookie|set-cookie|x-amz-(credential|signature))$`)
+	forbiddenLocalPath      = regexp.MustCompile(`(?i)(^([[:space:]\p{P}])?|[^:][[:space:]\p{P}=]|:[[:space:]]+)([a-z]:[\\/][^[:space:]]*|\\\\[^[:space:]]+|~/[^[:space:]]+|/[^/[:space:]][^[:space:]]*)`)
 	forbiddenDiagnostic     = []*regexp.Regexp{
 		regexp.MustCompile(`(?i)\bbearer[[:space:]]+[^[:space:]]+`),
 		regexp.MustCompile(`(?i)\b([[:alnum:]]+_)*(password|passwd|pwd|pat|secret(_access_key)?|token|client[_.-]?secret|(access|refresh|id)[_.-]?token|api[_.-]?key|private[_.-]?key|authorization|cookie|set-cookie|session[_.-]?id|signing[_.-]?(secret|key|value))\b["']?[[:space:]]*[:=][[:space:]]*[^[:space:]]+`),
@@ -47,10 +50,10 @@ var (
 		regexp.MustCompile(`\b(ghp|github_pat)_[A-Za-z0-9_]+\b`),
 		regexp.MustCompile(`\beyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b`),
 		regexp.MustCompile(`\bAKIA[0-9A-Z]{16}\b`),
-		regexp.MustCompile(`(?i)(browser[._ -]?dom|outerhtml|innerhtml|screenshot|form[._ -]?value|issue[._ -]?body|agent[._ -]?(prompt|output)|child[._ -]?env|shortcut[._ -]?(key|keystroke))`),
+		regexp.MustCompile(`(?i)(browser[._ -]?dom|outerhtml|innerhtml|screenshot|form[._ -]?value|issue[._ -]?body|agent[._ -]?(prompt|output)|child[._ -]?env|(request|response)[._ -]?(headers?|bod(y|ies))|shortcut[._ -]?(key|keystroke))`),
 		regexp.MustCompile(`(?i)https?://[^[:space:]]*#`),
 		regexp.MustCompile(`(?i)\bfile://[^[:space:]]*`),
-		regexp.MustCompile(`(?i)(^([[:space:]\p{P}])?|[^:][[:space:]\p{P}=]|:[[:space:]]+)([a-z]:[\\/][^[:space:]]*|\\\\[^[:space:]]+|~/[^[:space:]]+|/[^/[:space:]][^[:space:]]*)`),
+		forbiddenLocalPath,
 		regexp.MustCompile(`(?i)(ctrl|control|cmd|command|meta|alt|option|shift)[[:space:]]*[+-][[:space:]]*[a-z0-9]`),
 	}
 )
@@ -319,7 +322,32 @@ func containsForbiddenDiagnosticContent(value string) bool {
 			return true
 		}
 	}
-	return containsForbiddenDiagnosticURL(value)
+	return containsForbiddenEncodedLocalPath(value) || containsForbiddenDiagnosticURL(value)
+}
+
+func containsForbiddenEncodedLocalPath(value string) bool {
+	previousEnd := 0
+	for _, match := range diagnosticURL.FindAllStringIndex(value, -1) {
+		if containsForbiddenDecodedLocalPath(value[previousEnd:match[0]]) {
+			return true
+		}
+		candidate := value[match[0]:match[1]]
+		if encodedWindowsDrivePath.MatchString(candidate) && containsForbiddenDecodedLocalPath(candidate) {
+			return true
+		}
+		previousEnd = match[1]
+	}
+	return containsForbiddenDecodedLocalPath(value[previousEnd:])
+}
+
+func containsForbiddenDecodedLocalPath(value string) bool {
+	decoded := percentEncodedOctets.ReplaceAllStringFunc(value, func(encoded string) string {
+		if unescaped, err := url.PathUnescape(encoded); err == nil {
+			return unescaped
+		}
+		return encoded
+	})
+	return forbiddenLocalPath.MatchString(decoded)
 }
 
 func containsForbiddenDiagnosticURL(value string) bool {

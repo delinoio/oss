@@ -154,6 +154,10 @@ func TestValidateCrashReportRejectsHostileDiagnosticContent(t *testing.T) {
 		"issue":                "issue_body=private",
 		"agent":                "agent_prompt=private",
 		"environment":          "child_env=private",
+		"request body":         "request_body=email=alice@example.test",
+		"response body":        "response-body=email=alice@example.test",
+		"request headers":      "request_headers=Authorization: redacted",
+		"response headers":     "response headers=Set-Cookie: redacted",
 		"file URL":             "file:///home/alice/project/app.ts:10",
 		"unix path":            "/home/alice/project/main.ts",
 		"comma path":           "trace,/home/alice/project/main.ts",
@@ -165,6 +169,8 @@ func TestValidateCrashReportRejectsHostileDiagnosticContent(t *testing.T) {
 		"windows path":         `C:\\Users\\alice\\project\\main.ts`,
 		"windows slash path":   `C:/Users/alice/project/main.ts`,
 		"unc path":             `\\\\server\\share\\project\\main.ts`,
+		"encoded unix path":    "source=%2Fworkspace%2Fprivate%2Fapp.ts",
+		"encoded windows path": `source=C:%5CUsers%5Calice%5Cproject%5Cmain.ts`,
 		"shortcut":             "Ctrl+Shift+P",
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -276,6 +282,7 @@ func TestValidateCrashReportAcceptsSafeSlashLabelsAndRemoteURLs(t *testing.T) {
 		"React/Native renderer failed.",
 		"iOS/18.6 runtime classification.",
 		"https://example.test/assets/app.js:10:2",
+		"https://example.test/assets%2Fapp.js:10:2",
 		"devhud://auth/callback?state=opaque",
 		"https://example.test/?safe=release%3D2026",
 		"https://example.test/?safe=x%26release%3D2026",
