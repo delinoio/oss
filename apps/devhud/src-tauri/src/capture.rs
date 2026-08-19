@@ -570,9 +570,13 @@ impl DraftStore {
 
     pub fn recover(&self) -> Result<(), CaptureError> {
         let _guard = self.lock.lock().map_err(|_| CaptureError::StorageFailure)?;
+        let key = self.key()?;
+        self.recover_locked(&key)
+    }
+
+    fn recover_locked(&self, key: &[u8; 32]) -> Result<(), CaptureError> {
         fs::create_dir_all(&self.root).map_err(|_| CaptureError::StorageFailure)?;
         let now = Self::now()?;
-        let key = self.key()?;
         for entry in fs::read_dir(&self.root).map_err(|_| CaptureError::StorageFailure)? {
             let entry = entry.map_err(|_| CaptureError::StorageFailure)?;
             let name = entry.file_name();
@@ -595,7 +599,7 @@ impl DraftStore {
                 }
             }
             let manifest = entry.path().join("manifest.bin");
-            let Ok(document) = read_document(&manifest, &key) else {
+            let Ok(document) = read_document(&manifest, key) else {
                 // An unreadable unexpired draft is retained for explicit user
                 // recovery/deletion; startup never guesses that it is safe to evict.
                 continue;
@@ -609,7 +613,13 @@ impl DraftStore {
                 .iter()
                 .chain(std::iter::once(&document.current))
                 .chain(document.redo.iter())
-                .flat_map(|state| state.images.iter().map(|image| image.id))
+                .flat_map(|state| {
+                    state
+                        .images
+                        .iter()
+                        .filter(|image| !image.removed)
+                        .map(|image| image.id)
+                })
                 .collect::<HashSet<_>>();
             for child in fs::read_dir(entry.path()).map_err(|_| CaptureError::StorageFailure)? {
                 let child = child.map_err(|_| CaptureError::StorageFailure)?;
@@ -628,9 +638,9 @@ impl DraftStore {
     }
 
     pub fn list(&self) -> Result<DraftList, CaptureError> {
-        self.recover()?;
         let _guard = self.lock.lock().map_err(|_| CaptureError::StorageFailure)?;
         let key = self.key()?;
+        self.recover_locked(&key)?;
         let mut drafts = Vec::new();
         let mut unreadable_draft_ids = Vec::new();
         for entry in fs::read_dir(&self.root).map_err(|_| CaptureError::StorageFailure)? {
@@ -669,8 +679,8 @@ impl DraftStore {
             return Err(CaptureError::ImageLimit);
         }
         let _guard = self.lock.lock().map_err(|_| CaptureError::StorageFailure)?;
-        fs::create_dir_all(&self.root).map_err(|_| CaptureError::StorageFailure)?;
         let key = self.key()?;
+        self.recover_locked(&key)?;
         let id = Uuid::now_v7();
         let now = Self::now()?;
         let states = images
@@ -726,6 +736,7 @@ impl DraftStore {
     pub fn append(&self, id: Uuid, images: Vec<RgbaImage>) -> Result<DraftSummary, CaptureError> {
         let _guard = self.lock.lock().map_err(|_| CaptureError::StorageFailure)?;
         let key = self.key()?;
+        self.recover_locked(&key)?;
         let mut document = self.read_locked(id, &key)?;
         let active = document
             .current
@@ -831,6 +842,7 @@ impl DraftStore {
     ) -> Result<Vec<FlattenedImage>, CaptureError> {
         let _guard = self.lock.lock().map_err(|_| CaptureError::StorageFailure)?;
         let key = self.key()?;
+        self.recover_locked(&key)?;
         let document = self.read_locked(id, &key)?;
         ensure_revision(&document, expected_revision)?;
         let directory = self.root.join(id.to_string());
@@ -3399,6 +3411,73 @@ mod tests {
             .unwrap();
         assert!(compacted.images[0].layers.is_empty());
         assert!(directory_size(&root.0).unwrap() <= non_manifest_bytes + 2048);
+    }
+
+    #[test]
+    fn removed_image_assets_are_reclaimed_after_undo_history_expires() {
+        let root = TestDirectory::new();
+        let key = [22; 32];
+        let store = DraftStore::new_test(root.0.clone(), 1024 * 1024, key);
+        let created = store
+            .create(vec![
+                ImageBuffer::from_pixel(16, 16, Rgba([1, 2, 3, 255])),
+                ImageBuffer::from_fn(128, 128, |x, y| {
+                    Rgba([
+                        x.wrapping_mul(17) as u8,
+                        y.wrapping_mul(29) as u8,
+                        x.wrapping_mul(y).wrapping_add(31) as u8,
+                        255,
+                    ])
+                }),
+            ])
+            .unwrap();
+        store.flatten(created.id, created.revision).unwrap();
+        let retained_image_id = created.images[0].id;
+        let removed_image_id = created.images[1].id;
+        let draft_path = root.0.join(created.id.to_string());
+        let removed_source = draft_path.join(format!("source-{removed_image_id}.bin"));
+        let removed_flattened = draft_path.join(format!("flattened-{removed_image_id}.bin"));
+        let mut current = store
+            .apply(
+                created.id,
+                created.revision,
+                EditorCommand::RemoveImage {
+                    image_id: removed_image_id,
+                },
+            )
+            .unwrap();
+
+        store.recover().unwrap();
+        assert!(removed_source.exists());
+        assert!(removed_flattened.exists());
+
+        for index in 0..MAX_HISTORY_STATES {
+            current = store
+                .apply(
+                    created.id,
+                    current.revision,
+                    EditorCommand::SetCrop {
+                        image_id: retained_image_id,
+                        crop: Some(Rect {
+                            x: 0.0,
+                            y: 0.0,
+                            width: 8.0 + f64::from((index % 2) as u8),
+                            height: 8.0,
+                        }),
+                    },
+                )
+                .unwrap();
+        }
+
+        let quota = directory_size(&root.0).unwrap();
+        let constrained = DraftStore::new_test(root.0.clone(), quota, key);
+        constrained
+            .create(vec![ImageBuffer::from_pixel(8, 8, Rgba([4, 5, 6, 255]))])
+            .unwrap();
+        assert!(!removed_source.exists());
+        assert!(!removed_flattened.exists());
+        assert_eq!(constrained.open(created.id).unwrap().id, created.id);
+        assert!(directory_size(&root.0).unwrap() <= quota);
     }
 
     #[test]

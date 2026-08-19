@@ -336,6 +336,48 @@ describe("RealQA capture and editor", () => {
     expect(applyRequests[1].expectedRevision).toBe(4);
   });
 
+  it.each([
+    [messages.en.editorCrop, "crop"],
+    [messages.en.editorArrow, "arrow"],
+    [messages.en.editorRectangle, "rectangle"],
+    [messages.en.editorDrawing, "drawing"],
+    [messages.en.editorBlur, "blur"],
+    [messages.en.editorRedaction, "redaction"],
+  ] as const)("clamps boundary-crossing %s gestures to the source image", async (toolLabel, tool) => {
+    Object.defineProperty(window, "PointerEvent", { configurable: true, value: MouseEvent });
+    const { bridge, request } = bridgeWith();
+    render(<RealqaSurface bridge={bridge} copy={messages.en} />);
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.realqaOpenEditor }));
+    fireEvent.click(screen.getByRole("button", { name: toolLabel }));
+    const canvas = document.querySelector<HTMLElement>(".editor-canvas")!;
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({ x: 0, y: 0, left: 0, top: 0, right: 400, bottom: 300, width: 400, height: 300, toJSON: () => ({}) });
+    Object.defineProperty(canvas, "setPointerCapture", { value: vi.fn() });
+
+    fireEvent.pointerDown(canvas, { pointerId: 1, clientX: 100, clientY: 75 });
+    fireEvent.pointerMove(canvas, { pointerId: 1, clientX: 500, clientY: -50 });
+    fireEvent.pointerUp(canvas, { pointerId: 1, clientX: 500, clientY: -50 });
+
+    await waitFor(() => expect(request).toHaveBeenCalledWith(expect.objectContaining({ operation: "capture.editor.apply" })));
+    const applied = request.mock.calls
+      .map(([value]) => value)
+      .find((value) => value.operation === "capture.editor.apply");
+    if (!applied || applied.operation !== "capture.editor.apply") throw new Error("missing editor command");
+    const command = applied.command;
+    if (command.kind === "set-crop") {
+      expect(command.crop).toEqual({ x: 200, y: 0, width: 600, height: 150 });
+    } else if (command.kind === "add-layer" && command.layer.tool === "arrow") {
+      expect(command.layer.start).toEqual({ x: 200, y: 150 });
+      expect(command.layer.end).toEqual({ x: 800, y: 0 });
+    } else if (command.kind === "add-layer" && command.layer.tool === "drawing") {
+      expect(command.layer.points.every((point) => point.x >= 0 && point.x <= 800 && point.y >= 0 && point.y <= 600)).toBe(true);
+      expect(command.layer.points.at(-1)).toEqual({ x: 800, y: 0 });
+    } else if (command.kind === "add-layer" && (command.layer.tool === "rectangle" || command.layer.tool === "blur" || command.layer.tool === "redaction")) {
+      expect(command.layer.bounds).toEqual({ x: 200, y: 0, width: 600, height: 150 });
+    } else {
+      throw new Error(`unexpected ${tool} editor command`);
+    }
+  });
+
   it("reconciles a completed editor mutation after close while skipping queued work", async () => {
     let resolveFirst: ((response: NativeBridgeResponseV1) => void) | undefined;
     const applyRequests: Extract<NativeBridgeRequestV1, { operation: "capture.editor.apply" }>[] = [];

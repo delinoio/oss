@@ -14,7 +14,9 @@ import { waitForChildClose } from "./platform-smoke-child.mjs";
 const processTreeChildPath = fileURLToPath(new URL("./process-tree-child.mjs", import.meta.url));
 const captureSource = readFileSync(fileURLToPath(new URL("../src-tauri/src/capture.rs", import.meta.url)), "utf8");
 const tauriConfig = JSON.parse(readFileSync(fileURLToPath(new URL("../src-tauri/tauri.conf.json", import.meta.url)), "utf8"));
+const macTauriConfig = JSON.parse(readFileSync(fileURLToPath(new URL("../src-tauri/tauri.macos.conf.json", import.meta.url)), "utf8"));
 const macInfoPlist = readFileSync(fileURLToPath(new URL("../src-tauri/Info.desktop.plist", import.meta.url)), "utf8");
+const koreanInfoPlist = readFileSync(fileURLToPath(new URL("../src-tauri/infoplist/ko.lproj/InfoPlist.strings", import.meta.url)), "utf8");
 
 async function waitForStatus(statusPath) {
   const deadline = Date.now() + 10_000;
@@ -75,6 +77,9 @@ test("desktop capture smoke contracts cover each supported native adapter", () =
   assert.match(captureSource, /link\(name = "X11"/u);
   assert.equal(tauriConfig.bundle.macOS.infoPlist, "Info.desktop.plist");
   assert.match(macInfoPlist, /NSScreenCaptureUsageDescription/u);
+  assert.deepEqual(macTauriConfig.bundle.resources, { "infoplist/**": "./" });
+  assert.match(koreanInfoPlist.trim(), /^NSScreenCaptureUsageDescription = ".+";$/u);
+  assert.match(koreanInfoPlist, /화면/u);
 });
 
 test("waits for a timed-out child to close before rejecting", async () => {

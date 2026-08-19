@@ -402,10 +402,16 @@ function CaptureEditor({ draft }: { readonly draft: CaptureDraft }) {
   if (!active) return null;
   const point = (event: PointerEvent<HTMLElement>): CapturePoint => {
     const bounds = event.currentTarget.getBoundingClientRect();
-    return { x: (event.clientX - bounds.left) * active.width / bounds.width, y: (event.clientY - bounds.top) * active.height / bounds.height };
+    const x = (event.clientX - bounds.left) * active.width / bounds.width;
+    const y = (event.clientY - bounds.top) * active.height / bounds.height;
+    return { x: Math.min(active.width, Math.max(0, x)), y: Math.min(active.height, Math.max(0, y)) };
   };
   const pointerDown = (event: PointerEvent<HTMLElement>) => { event.currentTarget.setPointerCapture(event.pointerId); setDrawing([point(event)]); };
-  const pointerMove = (event: PointerEvent<HTMLElement>) => { if (drawing.length) setDrawing((current) => current.length >= 8191 ? current : [...current, point(event)]); };
+  const pointerMove = (event: PointerEvent<HTMLElement>) => {
+    if (!drawing.length) return;
+    const nextPoint = point(event);
+    setDrawing((current) => current.length >= 8191 ? current : [...current, nextPoint]);
+  };
   const commit = (start: CapturePoint, end: CapturePoint, points: readonly CapturePoint[] = [start, end]) => {
     const bounds = normalizeBounds(start, end);
     const id = uuidV7();

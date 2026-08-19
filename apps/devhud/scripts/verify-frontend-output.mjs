@@ -10,11 +10,14 @@ import { hasExecutableRemoteLoad } from "./frontend-output-policy.mjs";
 
 const appRoot = fileURLToPath(new URL("..", import.meta.url));
 const distRoot = join(appRoot, "dist");
+const annotationFont = join(appRoot, "src-tauri/assets/fonts/noto-sans-kr/NotoSansKR-VF.ttf");
+const annotationFontSha256 = createHash("sha256").update(readFileSync(annotationFont)).digest("hex");
 
-function build() {
+function build(platform) {
   const result = spawnSync("pnpm", ["run", "build:frontend"], {
     cwd: appRoot,
     encoding: "utf8",
+    env: { ...process.env, TAURI_ENV_PLATFORM: platform },
     shell: process.platform === "win32",
   });
   if (result.status !== 0) {
@@ -49,9 +52,22 @@ function snapshot() {
   });
 }
 
-build();
+for (const platform of ["android", "ios"]) {
+  build(platform);
+  const mobile = snapshot();
+  if (mobile.some(({ sha256 }) => sha256 === annotationFontSha256)) {
+    console.error(`devhud: desktop-only RealQA font leaked into ${platform} frontend output`);
+    process.exit(1);
+  }
+}
+
+build("linux");
 const first = snapshot();
-build();
+if (!first.some(({ sha256 }) => sha256 === annotationFontSha256)) {
+  console.error("devhud: desktop frontend output is missing the RealQA annotation font");
+  process.exit(1);
+}
+build("linux");
 const second = snapshot();
 
 if (JSON.stringify(first) !== JSON.stringify(second)) {
