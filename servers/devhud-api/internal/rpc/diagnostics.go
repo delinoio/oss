@@ -38,6 +38,7 @@ var (
 	safeErrorCode           = regexp.MustCompile(`^[A-Z][A-Z0-9_]{0,63}$`)
 	safeSQLState            = regexp.MustCompile(`^[0-9A-Z]{5}$`)
 	diagnosticURL           = regexp.MustCompile(`[A-Za-z][A-Za-z0-9+.-]*:[^\s<>"']+`)
+	diagnosticURLParameters = regexp.MustCompile(`[?#][^\s<>"']+`)
 	trailingURLPunctuation  = regexp.MustCompile(`[)\]}>.,;]+$`)
 	percentEncodedOctets    = regexp.MustCompile(`(?i)(%[0-9a-f]{2})+`)
 	encodedWindowsDrivePath = regexp.MustCompile(`(?i)^[A-Za-z]:(%2f|%5c)`)
@@ -354,11 +355,21 @@ func decodePercentEncodedOctets(value string) string {
 }
 
 func containsForbiddenDiagnosticURL(value string) bool {
-	if containsForbiddenParsedDiagnosticURL(value) {
+	if containsForbiddenParsedDiagnosticURL(value) || containsForbiddenRelativeDiagnosticParameters(value) {
 		return true
 	}
 	decoded := decodePercentEncodedOctets(value)
-	return decoded != value && containsForbiddenParsedDiagnosticURL(decoded)
+	return decoded != value && (containsForbiddenParsedDiagnosticURL(decoded) || containsForbiddenRelativeDiagnosticParameters(decoded))
+}
+
+func containsForbiddenRelativeDiagnosticParameters(value string) bool {
+	for _, match := range diagnosticURLParameters.FindAllString(value, -1) {
+		parameters := trailingURLPunctuation.ReplaceAllString(match[1:], "")
+		if containsForbiddenDiagnosticParameters(parameters) {
+			return true
+		}
+	}
+	return false
 }
 
 func containsForbiddenParsedDiagnosticURL(value string) bool {
