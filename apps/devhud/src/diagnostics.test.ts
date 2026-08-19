@@ -100,6 +100,8 @@ describe("diagnostics privacy boundary", () => {
       importedLocation: "/workspace/project/main.ts",
       encodedImportedLocation: "source=%2Fworkspace%2Fprivate%2Fapp.ts",
       doublyEncodedImportedLocation: "source=%252Fworkspace%252Fprivate%252Fapp.ts",
+      request_body: "email=alice@example.test",
+      responseHeaders: "Set-Cookie: session=abc",
       shortcut: "Ctrl+Shift+P",
       urlFragment: "https://example.test/path#private",
       customScheme: "devhud://auth/callback",
@@ -111,7 +113,7 @@ describe("diagnostics privacy boundary", () => {
     const serialized = JSON.stringify(redactDiagnosticValue(hostile));
     expect(serialized).toContain("bounded classification");
     expect(serialized).toContain("React/Native renderer failed");
-    for (const prohibited of ["Bearer", "githubPat", "r2_secret", "signingKey", "nodeType", "screenshot", "issueBody", "agentPrompt", "childEnvironment", "hunter2", "/home/alice", "ghp_", "eyJ", "AKIA", "PRIVATE KEY", "/workspace/", "%2Fworkspace", "%252Fworkspace", "Ctrl+", "#private", "devhud://", "ftp://", "file://"]) {
+    for (const prohibited of ["Bearer", "githubPat", "r2_secret", "signingKey", "nodeType", "screenshot", "issueBody", "agentPrompt", "childEnvironment", "hunter2", "alice@example.test", "session=abc", "/home/alice", "ghp_", "eyJ", "AKIA", "PRIVATE KEY", "/workspace/", "%2Fworkspace", "%252Fworkspace", "Ctrl+", "#private", "devhud://", "ftp://", "file://"]) {
       expect(serialized).not.toContain(prohibited);
     }
   });
@@ -388,6 +390,25 @@ describe("diagnostics privacy boundary", () => {
     ]) {
       localStorage.setItem(DiagnosticsStorageKey, JSON.stringify([{ ...fixtureEvent(now), summary: credential }]));
       expect(readDiagnosticEvents(localStorage, now)).toEqual([]);
+    }
+  });
+
+  it("drops legacy events containing request or response payload labels before export", () => {
+    const now = Date.parse("2026-08-17T00:00:00.000Z");
+    const safe = fixtureEvent(now);
+    for (const payload of [
+      "request_body=email=alice@example.test",
+      "response-body=email=alice@example.test",
+      "request_headers=Authorization: redacted",
+      "response-headers: Set-Cookie: session=abc",
+    ]) {
+      const unsafe = { ...fixtureEvent(now - 1), summary: payload };
+      localStorage.setItem(DiagnosticsStorageKey, JSON.stringify([unsafe, safe]));
+
+      const events = readDiagnosticEvents(localStorage, now);
+      expect(events).toEqual([safe]);
+      expect(JSON.parse(localStorage.getItem(DiagnosticsStorageKey) ?? "null")).toEqual([safe]);
+      expect(prepareDiagnosticsBundle(safe, events).exportJson).not.toContain(payload);
     }
   });
 

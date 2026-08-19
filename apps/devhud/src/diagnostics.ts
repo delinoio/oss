@@ -32,7 +32,7 @@ const textEncoder = new TextEncoder();
 const inMemoryDiagnosticEvents = new WeakMap<object, LocalDiagnosticEvent[]>();
 const inMemoryDiagnosticCorrelations = new WeakMap<object, DiagnosticCorrelationEvent[]>();
 
-const forbiddenValue = /(?:authorization|bearer\s|github[_-]?pat|access[_-]?token|refresh[_-]?token|r2[_-]?(?:secret|token|key)|signing[_-]?(?:secret|key)|-----BEGIN [A-Z ]*PRIVATE KEY-----|\b(?:ghp|github_pat)_[A-Za-z0-9_]+\b|\beyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b|\bAKIA[0-9A-Z]{16}\b|browser.?dom|innerhtml|outerhtml|screenshot|form.?value|issue.?body|agent.?(?:prompt|output)|child.?env|(?:ctrl|control|cmd|command|meta|alt|option|shift)\s*[+-]\s*[a-z0-9])/iu;
+const forbiddenValue = /(?:authorization|bearer\s|github[_-]?pat|access[_-]?token|refresh[_-]?token|r2[_-]?(?:secret|token|key)|signing[_-]?(?:secret|key)|-----BEGIN [A-Z ]*PRIVATE KEY-----|\b(?:ghp|github_pat)_[A-Za-z0-9_]+\b|\beyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b|\bAKIA[0-9A-Z]{16}\b|browser.?dom|innerhtml|outerhtml|screenshot|form.?value|issue.?body|agent.?(?:prompt|output)|child.?env|(?:request|response)[._ -]?(?:headers?|bod(?:y|ies))|(?:ctrl|control|cmd|command|meta|alt|option|shift)\s*[+-]\s*[a-z0-9])/iu;
 const diagnosticURL = /[A-Za-z][A-Za-z0-9+.-]*:[^\s<>"']+/u;
 const diagnosticPath = /(?:^|[\s\p{P}=])(?:[a-z]:[\\/]\S*|\\\\\S+|~\/\S+|\/[^/\s]\S*)/iu;
 const percentEncodedOctets = /(?:%[0-9a-f]{2})+/giu;
@@ -207,7 +207,8 @@ function isForbiddenDiagnosticKey(key: string): boolean {
     "authorization", "bearer", "token", "githubpat", "password", "secret", "cookie", "session",
     "r2", "signing", "browserdom", "innerhtml", "outerhtml", "screenshot", "url", "fragment",
     "formvalue", "formdata", "formfield", "issuebody", "prompt", "agentoutput", "localagent",
-    "environment", "childenv", "path", "shortcut", "keystroke", "keybinding",
+    "environment", "childenv", "requestheader", "requestbody", "requestbodies", "responseheader",
+    "responsebody", "responsebodies", "path", "shortcut", "keystroke", "keybinding",
   ].some((term) => normalized.includes(term));
 }
 

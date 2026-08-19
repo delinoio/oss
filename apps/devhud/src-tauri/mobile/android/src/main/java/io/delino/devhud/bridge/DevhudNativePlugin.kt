@@ -38,6 +38,7 @@ private const val keyAlias = "io.delino.devhud.secure-settings.v1"
 private const val storeName = "devhud-secure-settings-v1"
 private const val diagnosticsCleanupStoreName = "devhud-diagnostics-cleanup-v1"
 private const val diagnosticsCleanupUriKey = "pending-uri"
+private const val diagnosticsCleanupReleaseOnlyKey = "release-only"
 private const val notificationChannel = "deck-changes"
 
 @TauriPlugin(
@@ -48,14 +49,16 @@ private const val notificationChannel = "deck-changes"
 class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
     private var pendingAuthCallback: String? = null
     private var pendingDiagnosticsCleanup: Uri? = null
+    private var diagnosticsCleanupReleaseOnly = false
     private var diagnosticsExportPickerActive = false
     private val diagnosticsPurgesInProgress = AtomicInteger()
     private val secureSettingsExecutor = Executors.newSingleThreadExecutor()
 
     override fun load(webView: android.webkit.WebView) {
         captureAuthCallback(activity.intent)
-        pendingDiagnosticsCleanup = activity.getSharedPreferences(diagnosticsCleanupStoreName, Context.MODE_PRIVATE)
-            .getString(diagnosticsCleanupUriKey, null)?.let(Uri::parse)
+        val diagnosticsCleanup = activity.getSharedPreferences(diagnosticsCleanupStoreName, Context.MODE_PRIVATE)
+        pendingDiagnosticsCleanup = diagnosticsCleanup.getString(diagnosticsCleanupUriKey, null)?.let(Uri::parse)
+        diagnosticsCleanupReleaseOnly = pendingDiagnosticsCleanup != null && diagnosticsCleanup.getBoolean(diagnosticsCleanupReleaseOnlyKey, false)
         cleanupPendingDiagnosticsExport()
     }
 
@@ -187,12 +190,21 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
 
     private fun retainDiagnosticsCleanup(destination: Uri): Boolean {
         pendingDiagnosticsCleanup = destination
+        diagnosticsCleanupReleaseOnly = false
         return activity.getSharedPreferences(diagnosticsCleanupStoreName, Context.MODE_PRIVATE)
-            .edit().putString(diagnosticsCleanupUriKey, destination.toString()).commit()
+            .edit()
+            .putString(diagnosticsCleanupUriKey, destination.toString())
+            .remove(diagnosticsCleanupReleaseOnlyKey)
+            .commit()
     }
 
     private fun forgetDiagnosticsCleanup(): Boolean {
         val destination = pendingDiagnosticsCleanup ?: return true
+        val preferences = activity.getSharedPreferences(diagnosticsCleanupStoreName, Context.MODE_PRIVATE)
+        if (!diagnosticsCleanupReleaseOnly) {
+            if (!preferences.edit().putBoolean(diagnosticsCleanupReleaseOnlyKey, true).commit()) return false
+            diagnosticsCleanupReleaseOnly = true
+        }
         if (hasPersistedDiagnosticsWriteGrant(destination)) {
             try {
                 activity.contentResolver.releasePersistableUriPermission(destination, Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
@@ -200,15 +212,19 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
                 return false
             }
         }
-        val removed = activity.getSharedPreferences(diagnosticsCleanupStoreName, Context.MODE_PRIVATE)
-            .edit().remove(diagnosticsCleanupUriKey).commit()
+        val removed = preferences.edit()
+            .remove(diagnosticsCleanupUriKey)
+            .remove(diagnosticsCleanupReleaseOnlyKey)
+            .commit()
         if (!removed) return false
         pendingDiagnosticsCleanup = null
+        diagnosticsCleanupReleaseOnly = false
         return true
     }
 
     private fun cleanupPendingDiagnosticsExport(): Boolean {
         val destination = pendingDiagnosticsCleanup ?: return true
+        if (diagnosticsCleanupReleaseOnly) return forgetDiagnosticsCleanup()
         if (!hasPersistedDiagnosticsWriteGrant(destination)) return false
         val deleted = try {
             activity.contentResolver.delete(destination, null, null) > 0
