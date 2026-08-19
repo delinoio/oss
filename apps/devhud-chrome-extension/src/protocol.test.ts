@@ -15,6 +15,18 @@ describe("Native Messaging request bounds", () => {
     expect(createBoundedRequest("ping", { value: "x".repeat(MaximumJsonBytes) }).withinLimit).toBe(false);
   });
 
+  it("reserves space for the signed IPC request envelope", () => {
+    const basePayload = { mappingId: "mapping", context: { url: "", outerHtml: "" } };
+    const base = createBoundedRequest("capture", basePayload);
+    const byteLength = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).byteLength;
+    const url = "x".repeat(MaximumJsonBytes - byteLength(base.request));
+
+    const bounded = createBoundedRequest("capture", { mappingId: "mapping", context: { url, outerHtml: "" } });
+
+    expect(byteLength(bounded.request)).toBe(MaximumJsonBytes);
+    expect(bounded.withinLimit).toBe(false);
+  });
+
   it("rejects an oversized redacted path without replacing its structure", () => {
     const url = `https://example.com/${"<redacted>/".repeat(MaximumJsonBytes)}`;
     const bounded = createBoundedRequest("capture", { mappingId: "mapping", context: { url, outerHtml: "optional" } });

@@ -40,6 +40,48 @@ describe("injected capture", () => {
     expect(encoder.encode(result.accessibility["aria-label"]).byteLength).toBeLessThanOrEqual(4 * 1024);
   });
 
+  it.each([
+    ["zero opacity", '<div style="opacity: 0"><p>secret</p></div>'],
+    ["collapsed visibility", '<table><tbody><tr style="visibility: collapse"><td>secret</td></tr></tbody></table>'],
+  ])("excludes descendants hidden by %s", async (_state, hiddenMarkup) => {
+    document.body.innerHTML = `<main>${hiddenMarkup}<p>visible</p></main>`;
+
+    const result = await select(document.querySelector("main")!);
+
+    expect(result?.outerHtml).toContain("visible");
+    expect(result?.outerHtml).not.toContain("secret");
+  });
+
+  it("excludes a selection hidden by an ancestor", async () => {
+    document.body.innerHTML = '<section aria-hidden="true"><main title="secret">hidden</main></section>';
+
+    const result = await select(document.querySelector("main")!);
+
+    expect(result?.selectedBounds).toBeNull();
+    expect(result?.accessibility).toEqual({});
+    expect(result?.outerHtml).toBe("");
+  });
+
+  it("uses the browser visibility check for hidden subtrees", async () => {
+    const descriptor = Object.getOwnPropertyDescriptor(Element.prototype, "checkVisibility");
+    const checkVisibility = vi.fn(function (this: Element) {
+      return !this.matches('[style*="content-visibility: hidden"], [style*="content-visibility: hidden"] *');
+    });
+    Object.defineProperty(Element.prototype, "checkVisibility", { configurable: true, value: checkVisibility });
+    document.body.innerHTML = '<main><div style="content-visibility: hidden"><p>secret</p></div><p>visible</p></main>';
+
+    try {
+      const result = await select(document.querySelector("main")!);
+
+      expect(result?.outerHtml).toContain("visible");
+      expect(result?.outerHtml).not.toContain("secret");
+      expect(checkVisibility).toHaveBeenCalledWith({ checkOpacity: true, checkVisibilityCSS: true, contentVisibilityAuto: true });
+    } finally {
+      if (descriptor) Object.defineProperty(Element.prototype, "checkVisibility", descriptor);
+      else delete (Element.prototype as Partial<Element>).checkVisibility;
+    }
+  });
+
   it("preserves redacted path structure beyond 16 KiB", async () => {
     const segmentCount = 2_000;
     window.history.replaceState(null, "", `/${"segment/".repeat(segmentCount)}`);

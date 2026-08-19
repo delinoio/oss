@@ -41,9 +41,24 @@ export function injectedCapture(selectElement: boolean) {
     return `${origin}${path}`;
   };
   const isAllowedAndVisible = (element: Element) => {
-    if (!allowedElements.has(element.localName) || element.hasAttribute("hidden") || element.getAttribute("aria-hidden")?.toLowerCase() === "true") return false;
-    const computed = getComputedStyle(element);
-    return computed.display !== "none" && computed.visibility !== "hidden";
+    if (!allowedElements.has(element.localName)) return false;
+    const ancestors: Element[] = [];
+    for (let current: Element | null = element; current; current = current.parentElement) {
+      if (current.hasAttribute("hidden") || current.getAttribute("aria-hidden")?.toLowerCase() === "true") return false;
+      ancestors.push(current);
+    }
+    if (typeof element.checkVisibility === "function") {
+      return element.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true, contentVisibilityAuto: true });
+    }
+    return ancestors.every((current) => {
+      const computed = getComputedStyle(current);
+      const contentVisibility = computed.getPropertyValue("content-visibility");
+      return computed.display !== "none"
+        && computed.visibility !== "hidden"
+        && computed.visibility !== "collapse"
+        && Number.parseFloat(computed.opacity) !== 0
+        && (contentVisibility === "" || contentVisibility === "visible");
+    });
   };
   const sanitize = (selected: Element | null) => {
     if (!selected) return "";

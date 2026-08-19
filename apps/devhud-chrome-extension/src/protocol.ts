@@ -2,6 +2,7 @@ export const HostName = "io.delino.devhud.native_messaging";
 export const ProtocolVersion = 1;
 export const SchemaVersion = 1;
 export const MaximumJsonBytes = 256 * 1024;
+const SignedProofLength = 43;
 
 export type NativeMessageType = "pair" | "configure" | "capture" | "ping";
 
@@ -44,14 +45,34 @@ export function createRequest(type: NativeMessageType, payload: unknown, pairing
   };
 }
 
+function byteLength(value: unknown): number {
+  return new TextEncoder().encode(JSON.stringify(value)).byteLength;
+}
+
+function fitsSharedEnvelopes(request: ReturnType<typeof createRequest>): boolean {
+  // The host consumes pairing_nonce during authentication, then adds the
+  // largest safe millisecond timestamp and a 43-byte Base64URL SHA-256 proof.
+  const forwardedRequest = {
+    version: request.version,
+    schema_version: request.schema_version,
+    request_id: request.request_id,
+    type: request.type,
+    issued_at_unix_ms: Number.MAX_SAFE_INTEGER,
+    deadline_unix_ms: request.deadline_unix_ms,
+    nonce: request.nonce,
+    payload: request.payload,
+    proof: "A".repeat(SignedProofLength),
+  };
+  return byteLength(request) <= MaximumJsonBytes && byteLength(forwardedRequest) <= MaximumJsonBytes;
+}
+
 export function createBoundedRequest(type: NativeMessageType, payload: unknown, pairingNonce?: string) {
   let request = createRequest(type, payload, pairingNonce);
-  const byteLength = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).byteLength;
-  if (byteLength(request) > MaximumJsonBytes && type === "capture" && typeof payload === "object" && payload !== null) {
+  if (!fitsSharedEnvelopes(request) && type === "capture" && typeof payload === "object" && payload !== null) {
     const capture = payload as { readonly context?: unknown };
     if (typeof capture.context === "object" && capture.context !== null) request = createRequest(type, { ...payload, context: { ...capture.context, outerHtml: "" } }, pairingNonce);
   }
-  return { request, withinLimit: byteLength(request) <= MaximumJsonBytes } as const;
+  return { request, withinLimit: fitsSharedEnvelopes(request) } as const;
 }
 
 export function isNativeResponse(value: unknown): value is NativeResponse {
