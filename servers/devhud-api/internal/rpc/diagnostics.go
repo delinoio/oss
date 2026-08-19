@@ -341,16 +341,27 @@ func containsForbiddenEncodedLocalPath(value string) bool {
 }
 
 func containsForbiddenDecodedLocalPath(value string) bool {
-	decoded := percentEncodedOctets.ReplaceAllStringFunc(value, func(encoded string) string {
+	return forbiddenLocalPath.MatchString(decodePercentEncodedOctets(value))
+}
+
+func decodePercentEncodedOctets(value string) string {
+	return percentEncodedOctets.ReplaceAllStringFunc(value, func(encoded string) string {
 		if unescaped, err := url.PathUnescape(encoded); err == nil {
 			return unescaped
 		}
 		return encoded
 	})
-	return forbiddenLocalPath.MatchString(decoded)
 }
 
 func containsForbiddenDiagnosticURL(value string) bool {
+	if containsForbiddenParsedDiagnosticURL(value) {
+		return true
+	}
+	decoded := decodePercentEncodedOctets(value)
+	return decoded != value && containsForbiddenParsedDiagnosticURL(decoded)
+}
+
+func containsForbiddenParsedDiagnosticURL(value string) bool {
 	for _, match := range diagnosticURL.FindAllString(value, -1) {
 		candidate := trailingURLPunctuation.ReplaceAllString(match, "")
 		if _, err := url.PathUnescape(candidate); err != nil {
