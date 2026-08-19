@@ -356,7 +356,7 @@ func containsForbiddenDiagnosticParameters(parameters string) bool {
 			return true
 		}
 		if containsForbiddenDiagnosticContent(decodedValue) ||
-			decodedValue != value && strings.ContainsAny(decodedValue, "&;") && containsForbiddenDiagnosticParameters(decodedValue) {
+			decodedValue != value && containsForbiddenDiagnosticParameters(decodedValue) {
 			return true
 		}
 	}

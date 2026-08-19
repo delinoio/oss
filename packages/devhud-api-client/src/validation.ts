@@ -417,9 +417,7 @@ function containsForbiddenParameterContent(
       containsForbiddenLocalPath(value) ||
       forbiddenSensitiveTextPatterns.some((pattern) => pattern.test(value)) ||
       containsForbiddenUrlContent(value, publicAssetBaseUrl) ||
-      (value !== encodedValue &&
-        /[&;]/u.test(value) &&
-        containsForbiddenParameterContent(value, publicAssetBaseUrl))
+      (value !== encodedValue && containsForbiddenParameterContent(value, publicAssetBaseUrl))
     ) {
       return true;
     }

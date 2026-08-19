@@ -57,6 +57,7 @@ const bareJwt = "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiIxMjMifQ.signature";
 const encodedCredentialParameterUrls = [
   "https://example.com/?context=password%3Dhunter2",
   "https://example.com/#context=password%3Dhunter2",
+  "https://example.com/?safe=code%3Dsecret",
   "https://example.com/?safe=x%26code%3Dsecret",
   "https://example.com/#safe=x%3Bcode%3Dsecret",
 ] as const;

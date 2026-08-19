@@ -752,7 +752,6 @@ describe("generated Connect identity/settings fixture", () => {
     let rejectDiagnosticsRemoval = true;
     vi.spyOn(Storage.prototype, "removeItem").mockImplementation(function (this: Storage, key) {
       if (key === diagnosticsKey && rejectDiagnosticsRemoval) {
-        rejectDiagnosticsRemoval = false;
         throw new DOMException("denied", "SecurityError");
       }
       originalRemoveItem.call(this, key);
@@ -766,6 +765,7 @@ describe("generated Connect identity/settings fixture", () => {
 
     const cleanupAlert = await screen.findByRole("alert");
     expect(localStorage.getItem(diagnosticsKey)).toBe("[]");
+    rejectDiagnosticsRemoval = false;
     fireEvent.click(within(cleanupAlert).getByRole("button", { name: messages.en.retry }));
 
     await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());

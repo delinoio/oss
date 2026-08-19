@@ -253,8 +253,9 @@ export function clearDiagnosticEvents(storage: Pick<Storage, "removeItem">): voi
 }
 
 export function clearInMemoryDiagnosticEvents(storage: object): void {
-  inMemoryDiagnosticEvents.delete(storage);
-  inMemoryDiagnosticCorrelations.delete(storage);
+  // Empty fallbacks keep failed physical cleanup from making persisted diagnostics readable again.
+  inMemoryDiagnosticEvents.set(storage, []);
+  inMemoryDiagnosticCorrelations.set(storage, []);
 }
 
 export function appendDiagnosticCorrelation(storage: Storage, correlationId: string | null, procedure: string, durationMilliseconds: number, now = Date.now()): void {

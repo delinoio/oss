@@ -52,13 +52,17 @@ const runtime: RuntimeSnapshot = {
 
 class RecoverableStorage implements Storage {
   readonly #values = new Map<string, string>();
+  rejectRemovals = false;
   rejectWrites = true;
 
   get length() { return this.#values.size; }
   clear() { this.#values.clear(); }
   getItem(key: string) { return this.#values.get(key) ?? null; }
   key(index: number) { return [...this.#values.keys()][index] ?? null; }
-  removeItem(key: string) { this.#values.delete(key); }
+  removeItem(key: string) {
+    if (this.rejectRemovals) throw new DOMException("denied", "SecurityError");
+    this.#values.delete(key);
+  }
   setItem(key: string, value: string) {
     if (this.rejectWrites) throw new DOMException("quota exceeded", "QuotaExceededError");
     this.#values.set(key, value);
@@ -175,6 +179,26 @@ describe("diagnostics privacy boundary", () => {
     expect(clearAllContractedLocalData(storage)).toBe(true);
     expect(readDiagnosticEvents(storage, now)).toEqual([]);
     expect(readDiagnosticCorrelations(storage, now)).toEqual([]);
+  });
+
+  it("keeps failed contracted diagnostic cleanup tombstoned until removal succeeds", () => {
+    const storage = new RecoverableStorage();
+    const now = Date.parse("2026-08-17T00:00:00.000Z");
+    storage.rejectWrites = false;
+    appendDiagnosticEvent(storage, fixtureEvent(now), now);
+    appendDiagnosticCorrelation(storage, fixtureEvent(now).correlationId, "/devhud.v1.DiagnosticsService/SubmitCrashReport", 1, now);
+    storage.rejectRemovals = true;
+
+    expect(clearAllContractedLocalData(storage)).toBe(false);
+    expect(storage.getItem(DiagnosticsStorageKey)).not.toBeNull();
+    expect(storage.getItem(DiagnosticsCorrelationsKey)).not.toBeNull();
+    expect(readDiagnosticEvents(storage, now)).toEqual([]);
+    expect(readDiagnosticCorrelations(storage, now)).toEqual([]);
+
+    storage.rejectRemovals = false;
+    expect(clearAllContractedLocalData(storage)).toBe(true);
+    expect(storage.getItem(DiagnosticsStorageKey)).toBeNull();
+    expect(storage.getItem(DiagnosticsCorrelationsKey)).toBeNull();
   });
 
   it("physically removes expired events and correlations during read maintenance", () => {
