@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
@@ -445,7 +445,7 @@ describe("native App state", () => {
     expect(screen.queryByRole("dialog", { name: messages.en.captureSelection })).toBeNull();
   });
 
-  it("preserves a completed capture and its confirmation across surface navigation", async () => {
+  it("keeps the palette modal while a capture completes and preserves its confirmation across navigation", async () => {
     const runtime: RuntimeSnapshot = { ...desktopRuntime, capabilities: { ...desktopRuntime.capabilities, capture: true } };
     let resolveCapture: ((response: NativeBridgeResponseV1) => void) | undefined;
     const capturedDraft = {
@@ -470,10 +470,16 @@ describe("native App state", () => {
     fireEvent.click(screen.getByRole("button", { name: messages.en.realqa }));
     fireEvent.click(await screen.findByRole("button", { name: messages.en.captureDisplay }));
     await waitFor(() => expect(request.mock.calls.some(([value]) => value.operation === "capture.start")).toBe(true));
-    fireEvent.click(screen.getByRole("button", { name: messages.en.home }));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.openPalette }));
+    const palette = screen.getByRole("dialog", { name: messages.en.commandPalette });
+    expect(palette).toBeTruthy();
 
     await act(async () => { resolveCapture?.({ kind: "capture-draft", draft: capturedDraft }); });
+    expect(screen.queryByRole("complementary", { name: messages.en.floatingPreview })).toBeNull();
+    fireEvent.click(within(palette).getByRole("button", { name: messages.en.close }));
     expect(await screen.findByRole("complementary", { name: messages.en.floatingPreview })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: messages.en.home }));
+    expect(screen.getByRole("complementary", { name: messages.en.floatingPreview })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: messages.en.floatingPreviewOpen }));
     expect(await screen.findByRole("heading", { name: messages.en.editorTitle })).toBeTruthy();
   });

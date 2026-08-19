@@ -4,8 +4,8 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { StrictMode, createRef } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { messages } from "./localization";
-import type { CaptureDraft, NativeBridgeRequestV1, NativeBridgeResponseV1, NativeBridgeV1 } from "./native-bridge";
+import { messages, type Copy } from "./localization";
+import { NativeBridgeError, NativeBridgeErrorCode, type CaptureDraft, type NativeBridgeRequestV1, type NativeBridgeResponseV1, type NativeBridgeV1 } from "./native-bridge";
 import { RealqaSurface, type RealqaController } from "./realqa-ui";
 import { ShortcutActionId } from "./shortcuts";
 
@@ -51,8 +51,12 @@ const secondDraft: CaptureDraft = {
   }],
 };
 
-function bridgeWith(handler?: (request: NativeBridgeRequestV1) => Promise<NativeBridgeResponseV1>) {
+function bridgeWith(handler?: (request: NativeBridgeRequestV1) => Promise<NativeBridgeResponseV1>, openDraft?: (request: Extract<NativeBridgeRequestV1, { operation: "capture.open-draft" }>) => Promise<NativeBridgeResponseV1>) {
   const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+    if (value.operation === "capture.open-draft") {
+      if (openDraft) return openDraft(value);
+      return { kind: "capture-draft", draft: value.draftId === secondDraft.id ? secondDraft : draft };
+    }
     if (handler) return handler(value);
     if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [{ id: "main", name: "Main", logicalBounds: { x: -100, y: 0, width: 1920, height: 1080 }, pixelWidth: 3840, pixelHeight: 2160, scale: 2, primary: true }] };
     if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [draft], unreadableDraftIds: [] };
@@ -62,6 +66,12 @@ function bridgeWith(handler?: (request: NativeBridgeRequestV1) => Promise<Native
   });
   const bridge: NativeBridgeV1 = { request, async listen() { return () => {}; } };
   return { bridge, request };
+}
+
+async function openEditor(copy: Copy = messages.en, index = 0) {
+  const buttons = await screen.findAllByRole("button", { name: copy.realqaOpenEditor });
+  fireEvent.click(buttons[index]);
+  await screen.findByRole("heading", { name: copy.editorTitle });
 }
 
 afterEach(() => {
@@ -74,7 +84,7 @@ describe("RealQA capture and editor", () => {
     const { bridge, request } = bridgeWith();
     render(<RealqaSurface bridge={bridge} copy={copy} />);
 
-    fireEvent.click(await screen.findByRole("button", { name: copy.realqaOpenEditor }));
+    await openEditor(copy);
     expect(screen.getByRole("heading", { name: copy.editorTitle })).toBeTruthy();
     for (const name of [copy.editorCrop, copy.editorArrow, copy.editorRectangle, copy.editorDrawing, copy.editorText, copy.editorBlur, copy.editorRedaction]) {
       expect(screen.getByRole("button", { name })).toBeTruthy();
@@ -108,11 +118,52 @@ describe("RealQA capture and editor", () => {
     })));
   });
 
+  it("revalidates a listed draft before opening the editor", async () => {
+    const openedDraft = { ...draft, revision: 4, images: draft.images.map((image) => ({ ...image, previewUrl: image.previewUrl.replace(/\/3$/, "/4") })) };
+    const { bridge, request } = bridgeWith(undefined, async () => ({ kind: "capture-draft", draft: openedDraft }));
+    render(<RealqaSurface bridge={bridge} copy={messages.en} />);
+
+    await openEditor();
+
+    expect(await screen.findByRole("heading", { name: messages.en.editorTitle })).toBeTruthy();
+    expect(request).toHaveBeenCalledWith({ operation: "capture.open-draft", draftId: draft.id });
+    expect(screen.getByRole("img", { name: messages.en.editorCanvas }).querySelector("img")?.getAttribute("src")).toBe(openedDraft.images[0].previewUrl);
+  });
+
+  it("keeps an expired draft out of the editor and reconciles the cached list", async () => {
+    let listRequests = 0;
+    const { bridge } = bridgeWith(async (value) => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [] };
+      if (value.operation === "capture.list-drafts") {
+        listRequests += 1;
+        return { kind: "capture-drafts", drafts: listRequests === 1 ? [draft] : [], unreadableDraftIds: [] };
+      }
+      throw new Error(`unexpected operation ${value.operation}`);
+    }, async () => { throw new NativeBridgeError(NativeBridgeErrorCode.NotFound); });
+    render(<RealqaSurface bridge={bridge} copy={messages.en} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.realqaOpenEditor }));
+
+    expect(await screen.findByRole("alert")).toHaveProperty("textContent", messages.en.realqaOpenFailed);
+    await waitFor(() => expect(screen.queryByRole("button", { name: messages.en.realqaOpenEditor })).toBeNull());
+    expect(screen.queryByRole("heading", { name: messages.en.editorTitle })).toBeNull();
+  });
+
+  it("lazy-loads full-resolution draft card previews", async () => {
+    const { bridge } = bridgeWith();
+    render(<RealqaSurface bridge={bridge} copy={messages.en} />);
+
+    await screen.findByRole("button", { name: messages.en.realqaOpenEditor });
+    const preview = document.querySelector<HTMLImageElement>(".draft-preview img");
+    expect(preview?.getAttribute("loading")).toBe("lazy");
+    expect(preview?.getAttribute("decoding")).toBe("async");
+  });
+
   it("keeps editor operations active through the Strict Mode setup-cleanup cycle", async () => {
     const { bridge, request } = bridgeWith();
     render(<StrictMode><RealqaSurface bridge={bridge} copy={messages.en} /></StrictMode>);
 
-    fireEvent.click(await screen.findByRole("button", { name: messages.en.realqaOpenEditor }));
+    await openEditor();
     fireEvent.click(screen.getByRole("button", { name: messages.en.editorAdd }));
 
     await waitFor(() => expect(request).toHaveBeenCalledWith(expect.objectContaining({
@@ -266,10 +317,10 @@ describe("RealQA capture and editor", () => {
       throw new Error(`unexpected operation ${value.operation}`);
     });
     render(<RealqaSurface bridge={bridge} copy={messages.en} />);
-    fireEvent.click((await screen.findAllByRole("button", { name: messages.en.realqaOpenEditor }))[0]);
+    await openEditor();
     fireEvent.click(screen.getByRole("button", { name: messages.en.captureDisplay }));
     fireEvent.click(screen.getByRole("button", { name: messages.en.close }));
-    fireEvent.click(screen.getAllByRole("button", { name: messages.en.realqaOpenEditor })[1]);
+    await openEditor(messages.en, 1);
 
     await act(async () => { resolveCapture?.({ kind: "capture-draft", draft: { ...draft, revision: 4 } }); });
     expect(screen.getByRole("button", { name: `${messages.en.editorImage} 2` })).toBeTruthy();
@@ -379,7 +430,7 @@ describe("RealQA capture and editor", () => {
       throw new Error(`unexpected operation ${value.operation}`);
     });
     render(<RealqaSurface bridge={bridge} copy={messages.en} />);
-    fireEvent.click(await screen.findByRole("button", { name: messages.en.realqaOpenEditor }));
+    await openEditor();
     const add = screen.getByRole("button", { name: messages.en.editorAdd });
     fireEvent.click(add);
     fireEvent.click(add);
@@ -408,7 +459,7 @@ describe("RealQA capture and editor", () => {
       throw new Error(`unexpected operation ${value.operation}`);
     });
     const rendered = render(<RealqaSurface bridge={bridge} copy={messages.en} />);
-    fireEvent.click(await screen.findByRole("button", { name: messages.en.realqaOpenEditor }));
+    await openEditor();
 
     rendered.rerender(<RealqaSurface bridge={bridge} copy={messages.ko} />);
     await waitFor(() => expect(listRequests).toBe(2));
@@ -447,7 +498,7 @@ describe("RealQA capture and editor", () => {
       throw new Error(`unexpected operation ${value.operation}`);
     });
     render(<RealqaSurface bridge={bridge} copy={messages.en} />);
-    fireEvent.click(await screen.findByRole("button", { name: messages.en.realqaOpenEditor }));
+    await openEditor();
     const add = screen.getByRole("button", { name: messages.en.editorAdd });
 
     fireEvent.click(add);
@@ -493,7 +544,7 @@ describe("RealQA capture and editor", () => {
       throw new Error(`unexpected operation ${value.operation}`);
     });
     render(<RealqaSurface bridge={bridge} copy={messages.en} />);
-    fireEvent.click(await screen.findByRole("button", { name: messages.en.realqaOpenEditor }));
+    await openEditor();
     fireEvent.click(screen.getByRole("button", { name: messages.en.captureDisplay }));
 
     const preview = await screen.findByRole("complementary", { name: messages.en.floatingPreview });
@@ -525,7 +576,7 @@ describe("RealQA capture and editor", () => {
       throw new Error(`unexpected operation ${value.operation}`);
     });
     render(<RealqaSurface bridge={bridge} copy={messages.en} />);
-    fireEvent.click(await screen.findByRole("button", { name: messages.en.realqaOpenEditor }));
+    await openEditor();
     fireEvent.click(screen.getByRole("button", { name: messages.en.captureDisplay }));
 
     const preview = await screen.findByRole("complementary", { name: messages.en.floatingPreview });
@@ -535,7 +586,7 @@ describe("RealQA capture and editor", () => {
   it("caps text annotations at the native Unicode character limit", async () => {
     const { bridge, request } = bridgeWith();
     render(<RealqaSurface bridge={bridge} copy={messages.en} />);
-    fireEvent.click(await screen.findByRole("button", { name: messages.en.realqaOpenEditor }));
+    await openEditor();
     fireEvent.click(screen.getByRole("button", { name: messages.en.editorText }));
     const input = screen.getByRole("textbox", { name: messages.en.editorTextValue });
     const limited = "😀".repeat(2_048);
@@ -555,7 +606,7 @@ describe("RealQA capture and editor", () => {
   it("validates coordinate-entered annotations before native submission", async () => {
     const { bridge, request } = bridgeWith();
     render(<RealqaSurface bridge={bridge} copy={messages.en} />);
-    fireEvent.click(await screen.findByRole("button", { name: messages.en.realqaOpenEditor }));
+    await openEditor();
     const add = screen.getByRole("button", { name: messages.en.editorAdd });
     const x = screen.getByRole("spinbutton", { name: messages.en.captureX });
     const width = screen.getByRole("spinbutton", { name: messages.en.captureWidth });
@@ -589,7 +640,7 @@ describe("RealQA capture and editor", () => {
       throw new Error(`unexpected operation ${value.operation}`);
     });
     render(<RealqaSurface bridge={bridge} copy={messages.en} />);
-    fireEvent.click(await screen.findByRole("button", { name: messages.en.realqaOpenEditor }));
+    await openEditor();
     const imageOrder = document.querySelector<HTMLElement>(".editor-image-order");
     if (!imageOrder) throw new Error("missing image order controls");
 
@@ -615,7 +666,7 @@ describe("RealQA capture and editor", () => {
       throw new Error(`unexpected operation ${value.operation}`);
     });
     render(<RealqaSurface bridge={bridge} copy={messages.en} />);
-    fireEvent.click(await screen.findByRole("button", { name: messages.en.realqaOpenEditor }));
+    await openEditor();
     const secondImage = screen.getByRole("button", { name: `${messages.en.editorImage} 2` });
     fireEvent.click(secondImage);
     expect(secondImage.getAttribute("aria-pressed")).toBe("true");
@@ -682,7 +733,7 @@ describe("RealQA capture and editor", () => {
       throw new Error(`unexpected operation ${value.operation}`);
     });
     render(<RealqaSurface ref={controller} bridge={bridge} copy={messages.en} />);
-    fireEvent.click(await screen.findByRole("button", { name: messages.en.realqaOpenEditor }));
+    await openEditor();
     fireEvent.click(screen.getByRole("button", { name: messages.en.editorUndo }));
     await waitFor(() => expect(resolveUndo).toBeTypeOf("function"));
 
@@ -705,7 +756,7 @@ describe("RealQA capture and editor", () => {
     Object.defineProperty(window, "PointerEvent", { configurable: true, value: MouseEvent });
     const { bridge, request } = bridgeWith();
     render(<RealqaSurface bridge={bridge} copy={messages.en} />);
-    fireEvent.click(await screen.findByRole("button", { name: messages.en.realqaOpenEditor }));
+    await openEditor();
     fireEvent.click(screen.getByRole("button", { name: toolLabel }));
     const canvas = document.querySelector<HTMLElement>(".editor-canvas")!;
     vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({ x: 0, y: 0, left: 0, top: 0, right: 400, bottom: 300, width: 400, height: 300, toJSON: () => ({}) });
@@ -745,7 +796,7 @@ describe("RealQA capture and editor", () => {
     Object.defineProperty(window, "PointerEvent", { configurable: true, value: MouseEvent });
     const { bridge, request } = bridgeWith();
     render(<RealqaSurface bridge={bridge} copy={messages.en} />);
-    fireEvent.click(await screen.findByRole("button", { name: messages.en.realqaOpenEditor }));
+    await openEditor();
     fireEvent.click(screen.getByRole("button", { name: toolLabel }));
     const canvas = document.querySelector<HTMLElement>(".editor-canvas")!;
     vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({ x: 0, y: 0, left: 0, top: 0, right: 400, bottom: 300, width: 400, height: 300, toJSON: () => ({}) });
@@ -771,6 +822,7 @@ describe("RealQA capture and editor", () => {
 
   it("reconciles a completed editor mutation after close while skipping queued work", async () => {
     let resolveFirst: ((response: NativeBridgeResponseV1) => void) | undefined;
+    let firstDraft = draft;
     const applyRequests: Extract<NativeBridgeRequestV1, { operation: "capture.editor.apply" }>[] = [];
     const { bridge } = bridgeWith(async (value) => {
       if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [] };
@@ -780,25 +832,26 @@ describe("RealQA capture and editor", () => {
         return new Promise((resolve) => { resolveFirst = resolve; });
       }
       throw new Error(`unexpected operation ${value.operation}`);
-    });
+    }, async (value) => ({ kind: "capture-draft", draft: value.draftId === secondDraft.id ? secondDraft : firstDraft }));
     render(<RealqaSurface bridge={bridge} copy={messages.en} />);
 
-    fireEvent.click((await screen.findAllByRole("button", { name: messages.en.realqaOpenEditor }))[0]);
+    await openEditor();
     const add = screen.getByRole("button", { name: messages.en.editorAdd });
     fireEvent.click(add);
     fireEvent.click(add);
     await waitFor(() => expect(applyRequests).toHaveLength(1));
 
     fireEvent.click(screen.getByRole("button", { name: messages.en.close }));
-    fireEvent.click(screen.getAllByRole("button", { name: messages.en.realqaOpenEditor })[1]);
+    await openEditor(messages.en, 1);
     expect(screen.getByRole("button", { name: `${messages.en.editorImage} 2` })).toBeTruthy();
 
-    await act(async () => { resolveFirst?.({ kind: "capture-draft", draft: { ...draft, revision: 4 } }); });
+    firstDraft = { ...draft, revision: 4 };
+    await act(async () => { resolveFirst?.({ kind: "capture-draft", draft: firstDraft }); });
     expect(applyRequests).toHaveLength(1);
     expect(screen.getByRole("button", { name: `${messages.en.editorImage} 2` })).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: messages.en.close }));
-    fireEvent.click(screen.getAllByRole("button", { name: messages.en.realqaOpenEditor })[0]);
+    await openEditor();
     fireEvent.click(screen.getByRole("button", { name: messages.en.editorAdd }));
     await waitFor(() => expect(applyRequests).toHaveLength(2));
     expect(applyRequests[1].expectedRevision).toBe(4);
@@ -817,7 +870,7 @@ describe("RealQA capture and editor", () => {
     });
     render(<RealqaSurface bridge={bridge} copy={messages.en} />);
 
-    fireEvent.click(await screen.findByRole("button", { name: messages.en.realqaOpenEditor }));
+    await openEditor();
     fireEvent.click(screen.getByRole("button", { name: messages.en.editorAdd }));
     await waitFor(() => expect(request.mock.calls.some(([value]) => value.operation === "capture.editor.apply")).toBe(true));
     fireEvent.click(screen.getByRole("button", { name: messages.en.close }));

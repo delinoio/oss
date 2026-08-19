@@ -26,7 +26,7 @@ interface RealqaContextValue {
   };
   readonly actions: {
     readonly capture: (action: CaptureActionId) => Promise<void>;
-    readonly open: (draft: CaptureDraft) => void;
+    readonly open: (draft: CaptureDraft) => Promise<void>;
     readonly close: () => void;
     readonly remove: (draft: CaptureDraft) => Promise<void>;
     readonly removeUnreadable: (draftId: string) => Promise<void>;
@@ -56,7 +56,7 @@ function errorCopy(copy: Copy, reason: unknown) {
   return copy.captureFailed;
 }
 
-export function RealqaSurface({ ref, bridge, copy, active = true, onActivate, requestedAction, onRequestedActionConsumed }: { readonly ref?: Ref<RealqaController>; readonly bridge: NativeBridgeV1; readonly copy: Copy; readonly active?: boolean; readonly onActivate?: () => void; readonly requestedAction?: CaptureRequest | null; readonly onRequestedActionConsumed?: (sequence: number) => void }) {
+export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = false, onActivate, requestedAction, onRequestedActionConsumed }: { readonly ref?: Ref<RealqaController>; readonly bridge: NativeBridgeV1; readonly copy: Copy; readonly active?: boolean; readonly paletteOpen?: boolean; readonly onActivate?: () => void; readonly requestedAction?: CaptureRequest | null; readonly onRequestedActionConsumed?: (sequence: number) => void }) {
   const [drafts, setDrafts] = useState<readonly CaptureDraft[]>([]);
   const [unreadableDraftIds, setUnreadableDraftIds] = useState<readonly string[]>([]);
   const [selected, setSelected] = useState<CaptureDraft | null>(null);
@@ -72,6 +72,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, onActivate, re
   const captureStatusInFlight = useRef(false);
   const captureStatusRequest = useRef(0);
   const draftListRequest = useRef(0);
+  const draftOpenRequest = useRef(0);
   const captureDialogOpener = useRef<HTMLElement | null>(null);
   const previewSequence = useRef(0);
   const resetGeneration = useRef(0);
@@ -94,6 +95,15 @@ export function RealqaSurface({ ref, bridge, copy, active = true, onActivate, re
     setUnreadableDraftIds((current) => current.filter((id) => id !== draft.id));
     setSelected((current) => current?.id === draft.id ? draft : current);
     setPreviewRequest((current) => current?.draft.id === draft.id ? { ...current, draft } : current);
+  }, []);
+
+  const removeDraftLocally = useCallback((draftId: string) => {
+    draftListRequest.current += 1;
+    draftsById.current.delete(draftId);
+    setDrafts((current) => current.filter((draft) => draft.id !== draftId));
+    setUnreadableDraftIds((current) => current.filter((id) => id !== draftId));
+    setSelected((current) => current?.id === draftId ? null : current);
+    setPreviewRequest((current) => current?.draft.id === draftId ? null : current);
   }, []);
 
   const runDraftOperation = useCallback(<Result,>(draftId: string, operation: (draft: CaptureDraft, install: (draft: CaptureDraft) => void) => Promise<Result>) => {
@@ -123,6 +133,26 @@ export function RealqaSurface({ ref, bridge, copy, active = true, onActivate, re
       setUnreadableDraftIds(response.unreadableDraftIds);
     }
   }, [bridge, replaceDrafts]);
+
+  const openDraft = useCallback(async (draft: CaptureDraft) => {
+    const generation = resetGeneration.current;
+    const request = ++draftOpenRequest.current;
+    setError(null);
+    try {
+      const response = await runDraftOperation(draft.id, async (_current, install) => {
+        const opened = await bridge.request({ operation: "capture.open-draft", draftId: draft.id });
+        if (opened.kind === "capture-draft") install(opened.draft);
+        return opened;
+      });
+      if (generation !== resetGeneration.current || request !== draftOpenRequest.current || response.kind !== "capture-draft") return;
+      setSelected(response.draft);
+    } catch (reason) {
+      if (generation !== resetGeneration.current || request !== draftOpenRequest.current) return;
+      if (reason instanceof NativeBridgeError && reason.code === NativeBridgeErrorCode.NotFound) removeDraftLocally(draft.id);
+      setError(copy.realqaOpenFailed);
+      try { await refresh(); } catch { /* Keep the native open failure visible. */ }
+    }
+  }, [bridge, copy.realqaOpenFailed, refresh, removeDraftLocally, runDraftOperation]);
 
   const refreshCaptureStatus = useCallback(async () => {
     const generation = resetGeneration.current;
@@ -165,6 +195,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, onActivate, re
     resetGeneration.current += 1;
     captureStatusRequest.current += 1;
     draftListRequest.current += 1;
+    draftOpenRequest.current += 1;
     lastRequested.current = null;
     captureInFlight.current = false;
     captureStatusInFlight.current = false;
@@ -286,12 +317,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, onActivate, re
         : bridge.request({ operation: "capture.delete-draft", draftId });
       await deletion;
       if (generation !== resetGeneration.current) return;
-      draftListRequest.current += 1;
-      setDrafts((current) => current.filter((draft) => draft.id !== draftId));
-      draftsById.current.delete(draftId);
-      setUnreadableDraftIds((current) => current.filter((id) => id !== draftId));
-      setSelected((current) => current?.id === draftId ? null : current);
-      setPreviewRequest((current) => current?.draft.id === draftId ? null : current);
+      removeDraftLocally(draftId);
       try { await refresh(); } catch { /* The successful native deletion is authoritative. */ }
     } catch {
       if (generation !== resetGeneration.current) return;
@@ -308,7 +334,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, onActivate, re
   };
   const value: RealqaContextValue = {
     state: { drafts, unreadableDraftIds, selected, busy, status, error, preview },
-    actions: { capture, open: setSelected, close: () => setSelected(null), remove, removeUnreadable, runDraftOperation, refresh },
+    actions: { capture, open: openDraft, close: () => setSelected(null), remove, removeUnreadable, runDraftOperation, refresh },
     meta: { copy, bridge },
   };
 
@@ -323,7 +349,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, onActivate, re
       {captureDialog && <CaptureDialog key={captureDialog} action={captureDialog} status={captureStatus} options={options} onOptions={setOptions} onCapture={completeCapture} onClose={cancelCapture} />}
       {selected ? <CaptureEditor key={selected.id} draft={selected} /> : <DraftList />}
     </>}
-    {preview && previewImage && !captureDialog && <aside className="floating-capture-preview" aria-label={copy.floatingPreview}>
+    {preview && previewImage && !captureDialog && !paletteOpen && <aside className="floating-capture-preview" aria-label={copy.floatingPreview}>
       <img src={previewImage.previewUrl} alt="" />
       <button onClick={() => { setSelected(preview); setPreviewRequest(null); onActivate?.(); }}>{copy.floatingPreviewOpen}</button>
     </aside>}
@@ -343,9 +369,9 @@ function DraftList() {
   const { state: { drafts, unreadableDraftIds }, actions, meta: { copy } } = useRealqa();
   return <section aria-labelledby="realqa-drafts-title"><h3 id="realqa-drafts-title">{copy.realqaDrafts}</h3>
     {drafts.length === 0 && unreadableDraftIds.length === 0 ? <p>{copy.realqaNoDrafts}</p> : <ul className="draft-list">{drafts.map((draft) => <li key={draft.id}>
-      <button className="draft-preview" onClick={() => actions.open(draft)}><img src={draft.images[0]?.previewUrl} alt="" /><span>{draft.imageCount} {copy.realqaImages}</span></button>
+      <button className="draft-preview" onClick={() => void actions.open(draft)}><img src={draft.images[0]?.previewUrl} alt="" loading="lazy" decoding="async" /><span>{draft.imageCount} {copy.realqaImages}</span></button>
       <time dateTime={new Date(draft.expiresAt * 1000).toISOString()}>{copy.realqaDraftExpiry}: {new Date(draft.expiresAt * 1000).toLocaleString()}</time>
-      <div className="actions"><button onClick={() => actions.open(draft)}>{copy.realqaOpenEditor}</button><button className="danger" onClick={() => void actions.remove(draft)}>{copy.realqaDeleteDraft}</button></div>
+      <div className="actions"><button onClick={() => void actions.open(draft)}>{copy.realqaOpenEditor}</button><button className="danger" onClick={() => void actions.remove(draft)}>{copy.realqaDeleteDraft}</button></div>
     </li>)}{unreadableDraftIds.map((draftId) => <li key={draftId}>
       <p role="status">{copy.realqaUnreadableDraft}</p>
       <div className="actions"><button className="danger" onClick={() => void actions.removeUnreadable(draftId)}>{copy.realqaDeleteDraft}</button></div>
