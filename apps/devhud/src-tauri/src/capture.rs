@@ -789,6 +789,7 @@ impl DraftStore {
     ) -> Result<DraftSummary, CaptureError> {
         let _guard = self.lock.lock().map_err(|_| CaptureError::StorageFailure)?;
         let key = self.key()?;
+        self.recover_locked(&key)?;
         let mut document = self.read_locked(id, &key)?;
         ensure_revision(&document, expected_revision)?;
         let previous = document.current.clone();
@@ -1353,6 +1354,12 @@ fn topology_signature(
 
 fn protected_frame(image: &RgbaImage) -> bool {
     image.width() == 0 || image.height() == 0 || image.pixels().all(|pixel| pixel.0[3] == 0)
+}
+
+fn protected_window_frame(platform: &str, image: &RgbaImage) -> bool {
+    protected_frame(image)
+        || (matches!(platform, "macos" | "windows")
+            && image.pixels().all(|pixel| pixel.0 == [0, 0, 0, 255]))
 }
 
 fn capture_region(
@@ -2269,7 +2276,12 @@ macro_rules! impl_adapter {
             }
 
             fn capture_window(&self, id: &str) -> Result<RgbaImage, CaptureError> {
-                xcap_capture_window(id)
+                let image = xcap_capture_window(id)?;
+                if protected_window_frame(self.0.platform, &image) {
+                    Err(CaptureError::ProtectedContent)
+                } else {
+                    Ok(image)
+                }
             }
 
             fn shadow_removal_supported(&self) -> bool {
@@ -3469,15 +3481,39 @@ mod tests {
                 .unwrap();
         }
 
-        let quota = directory_size(&root.0).unwrap();
+        let reclaimable = fs::metadata(&removed_source).unwrap().len()
+            + fs::metadata(&removed_flattened).unwrap().len();
+        let quota = directory_size(&root.0).unwrap() - reclaimable + 2048;
         let constrained = DraftStore::new_test(root.0.clone(), quota, key);
         constrained
-            .create(vec![ImageBuffer::from_pixel(8, 8, Rgba([4, 5, 6, 255]))])
+            .apply(
+                current.id,
+                current.revision,
+                EditorCommand::SetCrop {
+                    image_id: retained_image_id,
+                    crop: Some(Rect {
+                        x: 0.0,
+                        y: 0.0,
+                        width: 10.0,
+                        height: 8.0,
+                    }),
+                },
+            )
             .unwrap();
         assert!(!removed_source.exists());
         assert!(!removed_flattened.exists());
         assert_eq!(constrained.open(created.id).unwrap().id, created.id);
         assert!(directory_size(&root.0).unwrap() <= quota);
+    }
+
+    #[test]
+    fn opaque_black_window_frames_are_protected_only_on_affected_platforms() {
+        let opaque_black = ImageBuffer::from_pixel(8, 8, Rgba([0, 0, 0, 255]));
+        let visible = ImageBuffer::from_pixel(8, 8, Rgba([1, 0, 0, 255]));
+        assert!(protected_window_frame("macos", &opaque_black));
+        assert!(protected_window_frame("windows", &opaque_black));
+        assert!(!protected_window_frame("x11", &opaque_black));
+        assert!(!protected_window_frame("macos", &visible));
     }
 
     #[test]

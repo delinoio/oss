@@ -294,6 +294,9 @@ describe("RealQA capture and editor", () => {
     render(<RealqaSurface bridge={bridge} copy={messages.en} />);
     fireEvent.click(screen.getByRole("button", { name: messages.en.captureSelection }));
     const picker = await screen.findByRole("group", { name: messages.en.captureRegionPicker });
+    expect(picker.tagName).toBe("svg");
+    expect(picker.getAttribute("viewBox")).toBe("-100 0 1920 1080");
+    expect(picker.querySelector("[style]")).toBeNull();
     vi.spyOn(picker, "getBoundingClientRect").mockReturnValue({ x: 0, y: 0, left: 0, top: 0, right: 200, bottom: 100, width: 200, height: 100, toJSON: () => ({}) });
     Object.defineProperty(picker, "setPointerCapture", { value: vi.fn() });
     fireEvent.pointerDown(picker, { pointerId: 1, clientX: 25, clientY: 20 });

@@ -342,21 +342,23 @@ function RegionPicker({ displays, value, onChange, label }: { readonly displays:
   const bottom = Math.max(...displays.map((display) => display.logicalBounds.y + display.logicalBounds.height));
   const width = Math.max(1, right - left);
   const height = Math.max(1, bottom - top);
-  const point = (event: PointerEvent<HTMLElement>): CapturePoint => {
+  const point = (event: PointerEvent<SVGSVGElement>): CapturePoint => {
     const bounds = event.currentTarget.getBoundingClientRect();
     return {
       x: left + Math.min(1, Math.max(0, (event.clientX - bounds.left) / bounds.width)) * width,
       y: top + Math.min(1, Math.max(0, (event.clientY - bounds.top) / bounds.height)) * height,
     };
   };
-  const update = (event: PointerEvent<HTMLElement>) => {
+  const update = (event: PointerEvent<SVGSVGElement>) => {
     if (!dragStart.current) return;
     onChange(normalizeBounds(dragStart.current, point(event)));
   };
-  return <div
+  return <svg
     className="region-picker"
     role="group"
     aria-label={label}
+    viewBox={`${left} ${top} ${width} ${height}`}
+    preserveAspectRatio="none"
     onPointerDown={(event) => {
       event.currentTarget.setPointerCapture(event.pointerId);
       const start = point(event);
@@ -366,21 +368,13 @@ function RegionPicker({ displays, value, onChange, label }: { readonly displays:
     onPointerMove={update}
     onPointerUp={(event) => { update(event); dragStart.current = null; }}
     onPointerCancel={() => { dragStart.current = null; }}
-    style={{ aspectRatio: `${width} / ${height}` }}
   >
-    {displays.map((display) => <span key={display.id} className="region-display" style={{
-      left: `${(display.logicalBounds.x - left) / width * 100}%`,
-      top: `${(display.logicalBounds.y - top) / height * 100}%`,
-      width: `${display.logicalBounds.width / width * 100}%`,
-      height: `${display.logicalBounds.height / height * 100}%`,
-    }}>{display.name}</span>)}
-    <span className="region-selection" style={{
-      left: `${(value.x - left) / width * 100}%`,
-      top: `${(value.y - top) / height * 100}%`,
-      width: `${value.width / width * 100}%`,
-      height: `${value.height / height * 100}%`,
-    }} />
-  </div>;
+    {displays.map((display) => <g key={display.id}>
+      <rect className="region-display" x={display.logicalBounds.x} y={display.logicalBounds.y} width={display.logicalBounds.width} height={display.logicalBounds.height} />
+      <text className="region-display-label" x={display.logicalBounds.x + display.logicalBounds.width / 2} y={display.logicalBounds.y + display.logicalBounds.height / 2} fontSize={width / 40}>{display.name}</text>
+    </g>)}
+    <rect className="region-selection" x={value.x} y={value.y} width={value.width} height={value.height} />
+  </svg>;
 }
 
 function CaptureEditor({ draft }: { readonly draft: CaptureDraft }) {
