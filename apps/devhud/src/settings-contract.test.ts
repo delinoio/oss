@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canonicalDevHudSettings, CollidingSettingsSchemaVersion, decodeDevHudSettings, decodeVersionedDevHudSettings, defaultDevHudSettings, encodeDevHudSettings, parseDevHudSettings, PreviousSettingsSchemaVersion, SettingsContractError, SettingsSchemaVersion } from "./settings-contract";
+import { canonicalDevHudSettings, CollidingSettingsSchemaVersion, deckRepositories, decodeDevHudSettings, decodeVersionedDevHudSettings, defaultDevHudSettings, encodeDevHudSettings, parseDevHudSettings, PreviousSettingsSchemaVersion, SettingsContractError, SettingsSchemaVersion } from "./settings-contract";
 import { diffSettings, redactRecursively, RedactedValue } from "./settings-diff";
 import { ShortcutActionId, ShortcutKey, ShortcutModifier, ShortcutValidationCode, defaultDesktopShortcutBindings, parseDesktopShortcutBindings } from "./shortcuts";
 
@@ -253,6 +253,30 @@ describe("DevHud settings boundary", () => {
     expect(parseDevHudSettings({ ...settings, decks: [{ ...deck, query: '"find is:pr here" repo:octo/widgets' }] }).decks[0]?.query).toBe('"find is:pr here" repo:octo/widgets is:pr');
     expect(() => parseDevHudSettings({ ...settings, decks: [{ ...deck, notifications: ["review", "review"] }] })).toThrow(/unique values/u);
     expect(() => parseDevHudSettings({ ...settings, decks: [deck, deck] })).toThrow(/unique IDs/u);
+  });
+
+  it("requires every Boolean Deck query branch to select a validated repository", () => {
+    const profile = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", name: "Work", kind: "fine-grained" as const };
+    const deck = { id: "018f47a2-7b3c-7def-8abc-1234567890ac", name: "Deck", profileRef: profile.id, query: "(repo:octo/widgets is:pr OR (repo:octo/tools is:pr AND author:octocat))", builder: null, display: { groupBy: "none" as const, showDrafts: true }, refreshMinutes: 5 as const, notifications: [] };
+    const settings = { ...defaultDevHudSettings, github: { ...defaultDevHudSettings.github, profiles: [profile] }, decks: [deck] };
+
+    expect(parseDevHudSettings(settings).decks).toHaveLength(1);
+    expect(deckRepositories(deck.query)).toEqual([{ owner: "octo", name: "widgets" }, { owner: "octo", name: "tools" }]);
+    expect(() => parseDevHudSettings({ ...settings, decks: [{ ...deck, query: "repo:octo/widgets is:pr OR author:octocat is:pr" }] })).toThrow(/repository qualifier/u);
+    expect(() => parseDevHudSettings({ ...settings, decks: [{ ...deck, query: "(repo:octo/widgets is:pr OR repo:octo/tools is:pr" }] })).toThrow(/repository qualifier/u);
+    expect(parseDevHudSettings({ ...settings, decks: [{ ...deck, query: "repo:octo/widgets OR repo:octo/tools" }] }).decks[0]?.query).toBe("(repo:octo/widgets OR repo:octo/tools) is:pr");
+  });
+
+  it("groups Boolean v2 queries before restoring the persisted repository scope", () => {
+    const profile = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", name: "Work", kind: "fine-grained" as const };
+    const legacy = {
+      ...defaultDevHudSettings,
+      schemaVersion: PreviousSettingsSchemaVersion,
+      github: { ...defaultDevHudSettings.github, profiles: [profile] },
+      decks: [{ id: "018f47a2-7b3c-7def-8abc-1234567890ac", title: "Legacy Deck", query: "repo:octo/other OR author:octocat", repository: "octo/widgets", profileRef: profile.id, display: { groupBy: "none", showDrafts: true }, refreshMinutes: 5, notifications: [] }],
+    };
+
+    expect(parseDevHudSettings(legacy).decks[0]).toMatchObject({ query: "((repo:octo/other OR author:octocat) is:pr) repo:octo/widgets", builder: null });
   });
 
   it("requires a non-null Deck builder to match the executable query", () => {

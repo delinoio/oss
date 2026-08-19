@@ -160,23 +160,53 @@ describe("native App state", () => {
     expect(request.mock.calls.filter(([value]) => value.operation === "auth.peek-pending-callback")).toHaveLength(1);
   });
 
-  it("consumes a pending Deck link exactly once before navigating", async () => {
+  it("keeps a cold-start Deck link queued across an origin-policy reload", async () => {
     window.__TAURI_INTERNALS__ = { invoke: vi.fn() };
     let deckLink: string | null = "018f47a2-7b3c-7def-8abc-1234567890ab";
+    let originConfigured = false;
+    vi.spyOn(identityClient, "createIdentitySession").mockResolvedValue({
+      getAccessToken: async () => "fixture-access-token",
+      isAuthenticated: async () => false,
+      signIn: async () => {},
+      handleCallback: async () => {},
+      clear: async () => {},
+    } as unknown as IdentitySession);
+    vi.stubGlobal("location", { reload: vi.fn() });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      projectId: "PROJECT_ID_DEVHUD",
+      protocolSchemaVersion: 1,
+      apiVersion: "0.1.0-dev",
+      logtoIssuer: "https://identity.example/oidc",
+      logtoAudience: "https://api.example/api",
+      logtoClients: { desktop: "desktop-client", ios: "ios-client", android: "android-client", admin: "admin-client" },
+      logtoRedirects: { native: "devhud://auth/callback", admin: "https://admin.example/callback" },
+    }), { status: 200, headers: { "Content-Type": "application/json", "Connect-Protocol-Version": "1" } })));
     const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
       if (value.operation === "runtime.snapshot") return { kind: "runtime", snapshot: desktopRuntime };
       if (value.operation === "auth.peek-pending-callback") return { kind: "auth-callback", url: null };
+      if (value.operation === "deck.peek-pending-link") return { kind: "deck-link", deckId: deckLink };
       if (value.operation === "deck.take-pending-link") {
         const deckId = deckLink;
         deckLink = null;
         return { kind: "deck-link", deckId };
       }
-      if (value.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
+      if (value.operation === "session.configure-origins") {
+        if (!value.logtoIssuer && !originConfigured) {
+          originConfigured = true;
+          return { kind: "session-network-policy", changed: true };
+        }
+        return { kind: "session-network-policy", changed: false };
+      }
       throw new Error(`unexpected operation ${value.operation}`);
     });
 
-    render(<App bridge={bridgeWith(request)} />);
+    const first = render(<App bridge={bridgeWith(request)} />);
+    await waitFor(() => expect(originConfigured).toBe(true));
+    expect(deckLink).toBe("018f47a2-7b3c-7def-8abc-1234567890ab");
+    expect(request.mock.calls.filter(([value]) => value.operation === "deck.take-pending-link")).toHaveLength(0);
+    first.unmount();
 
+    render(<App bridge={bridgeWith(request)} />);
     await waitFor(() => expect(request).toHaveBeenCalledWith({ operation: "deck.take-pending-link" }));
     expect(deckLink).toBeNull();
     expect(request.mock.calls.filter(([value]) => value.operation === "deck.take-pending-link")).toHaveLength(1);

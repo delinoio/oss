@@ -92,6 +92,7 @@ interface BoundaryProps extends PropsWithChildren {
   readonly platform: RuntimePlatform;
   readonly bridge: NativeBridgeV1;
   readonly onCallbackConsumed: (url: string) => void;
+  readonly onDeckLinkPolicyReady?: () => void;
   readonly onContinueLocally: () => void;
   readonly onLoggedOut: () => void;
   readonly initialAppearance?: DevHudSettingsV1["appearance"];
@@ -128,7 +129,7 @@ export function DevHudServiceBoundary(props: BoundaryProps) {
   </QueryClientProvider></TransportProvider>;
 }
 
-function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, platform, bridge, onCallbackConsumed, onContinueLocally, onLoggedOut, initialAppearance, children, sessionRef, onIdentityReset }: BoundaryProps & { readonly sessionRef: RefObject<IdentitySession | null>; readonly onIdentityReset: () => void }) {
+function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, platform, bridge, onCallbackConsumed, onDeckLinkPolicyReady, onContinueLocally, onLoggedOut, initialAppearance, children, sessionRef, onIdentityReset }: BoundaryProps & { readonly sessionRef: RefObject<IdentitySession | null>; readonly onIdentityReset: () => void }) {
   const storage = getLocalStorage();
   const queryClient = useQueryClient();
   const transport = useTransport();
@@ -168,6 +169,10 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   const lastReconciledGitHubPatKeyRef = useRef<string | null>(null);
   const settingsWritableRef = useRef(false);
   const replaceSettingsRef = useRef<IdentitySettingsValue["replaceSettings"]>(async () => false);
+
+  useEffect(() => {
+    if (session !== null) onDeckLinkPolicyReady?.();
+  }, [onDeckLinkPolicyReady, session]);
 
   function applySettings(next: DevHudSettingsV1): void {
     settingsRef.current = next;

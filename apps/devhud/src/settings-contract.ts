@@ -282,8 +282,8 @@ function parseDeck(value: unknown, path: string, legacy: boolean, previous: bool
   const legacyRepository = previous && deck.repository !== null ? text(deck.repository, `${path}.repository`) : null;
   let query = hasPositivePullRequestQualifier(rawQuery) ? rawQuery : appendDeckQualifier(rawQuery, "is:pr");
   if (legacyRepository !== null && !hasExactRepositoryQualifier(query, legacyRepository)) query = appendDeckQualifier(query, `repo:${legacyRepository}`);
-  if (!hasPositivePullRequestQualifier(query)) throw new SettingsContractError(`${path}.query`, "must contain a standalone positive is:pr qualifier");
   if (!legacy && !previous && !hasRepositoryQualifier(query)) throw new SettingsContractError(`${path}.query`, "must contain a repository qualifier when a credential profile is selected");
+  if (!hasPositivePullRequestQualifier(query)) throw new SettingsContractError(`${path}.query`, "must contain a standalone positive is:pr qualifier");
   const builder = legacy ? null : previous ? deckBuilderProjection(query) : parseDeckBuilder(deck.builder, `${path}.builder`);
   if (!legacy && !previous && builder !== null && !sameDeckBuilder(builder, deckBuilderProjection(query))) {
     throw new SettingsContractError(`${path}.builder`, "must be the lossless projection of the query");
@@ -332,7 +332,8 @@ function nullableTrimmedText(value: unknown, path: string): string | null {
 }
 
 export function hasPositivePullRequestQualifier(query: string): boolean {
-  return deckQueryTokens(query).some((token) => token.value.toLowerCase() === "is:pr");
+  const branches = deckQueryBranches(query);
+  return branches !== null && branches.every((branch) => branch.hasPullRequestQualifier);
 }
 
 export function hasRepositoryQualifier(query: string): boolean {
@@ -348,6 +349,7 @@ function hasExactRepositoryQualifier(query: string, repository: string): boolean
 export interface DeckRepositoryRef { readonly owner: string; readonly name: string }
 
 export const DeckRepositoryLimit = 10 as const;
+const DeckQueryBranchLimit = 100 as const;
 const githubOwnerIdentifier = /^[A-Za-z0-9-]{1,39}$/u;
 const githubRepositoryIdentifier = /^[A-Za-z0-9._-]{1,100}$/u;
 
@@ -355,19 +357,16 @@ function isGitHubOwnerIdentifier(value: string): boolean {
   return githubOwnerIdentifier.test(value) && !value.startsWith("-") && !value.endsWith("-") && !value.includes("--");
 }
 
-/** Returns null when a repository qualifier cannot name one GitHub repository. */
+/** Returns null unless every Boolean branch is scoped to valid GitHub repositories. */
 export function deckRepositories(query: string): readonly DeckRepositoryRef[] | null {
+  const branches = deckQueryBranches(query);
+  if (branches === null || branches.some((branch) => branch.repositories.size === 0)) return null;
   const repositories = new Map<string, DeckRepositoryRef>();
-  for (const token of deckQueryTokens(query)) {
-    if (token.value.slice(0, "repo:".length).toLowerCase() !== "repo:") continue;
-    const value = token.value.slice("repo:".length);
-    const separator = value.indexOf("/");
-    if (separator < 1 || separator !== value.lastIndexOf("/") || separator === value.length - 1) return null;
-    const repository = { owner: value.slice(0, separator), name: value.slice(separator + 1) };
-    if (!isGitHubOwnerIdentifier(repository.owner) || !githubRepositoryIdentifier.test(repository.name)) return null;
-    const key = `${repository.owner}/${repository.name}`.toLowerCase();
-    repositories.set(key, repository);
-    if (repositories.size > DeckRepositoryLimit) return null;
+  for (const branch of branches) {
+    for (const [key, repository] of branch.repositories) {
+      repositories.set(key, repository);
+      if (repositories.size > DeckRepositoryLimit) return null;
+    }
   }
   return [...repositories.values()];
 }
@@ -376,6 +375,7 @@ export interface DeckQueryToken { readonly value: string; readonly start: number
 
 /** Returns the editable builder fields only when the query contains builder-owned qualifiers. */
 export function deckBuilderProjection(query: string): DeckBuilder | null {
+  if (hasBooleanQuerySyntax(query)) return null;
   const tokens = deckQueryTokens(query);
   const repository = deckBuilderValue(tokens, "repo:");
   const author = deckBuilderValue(tokens, "author:");
@@ -406,7 +406,125 @@ function builderTokenIsSupported(value: string, prefix: "repo:" | "author:" | "r
 function unquoteDeckQualifier(value: string): string { return value.startsWith("\"") && value.endsWith("\"") ? value.slice(1, -1).replaceAll(/\\(.)/gu, "$1") : value; }
 
 function appendDeckQualifier(query: string, qualifier: string): string {
-  return `${query}${query.length === 0 || /\s$/u.test(query) ? "" : " "}${qualifier}`;
+  const source = hasBooleanQuerySyntax(query) ? `(${query})` : query;
+  return `${source}${source.length === 0 || /\s$/u.test(source) ? "" : " "}${qualifier}`;
+}
+
+interface DeckQueryBranch {
+  readonly repositories: ReadonlyMap<string, DeckRepositoryRef>;
+  readonly hasPullRequestQualifier: boolean;
+}
+
+type DeckBooleanToken = { readonly kind: "term"; readonly value: string } | { readonly kind: "open" | "close" };
+
+function hasBooleanQuerySyntax(query: string): boolean {
+  const tokens = deckBooleanTokens(query);
+  return tokens !== null && tokens.some((token) => token.kind !== "term" || token.value.toLowerCase() === "and" || token.value.toLowerCase() === "or");
+}
+
+/** Parses GitHub's Boolean search grammar to prove every reachable branch is repository-scoped. */
+function deckQueryBranches(query: string): readonly DeckQueryBranch[] | null {
+  const tokens = deckBooleanTokens(query);
+  if (tokens === null || tokens.length === 0) return null;
+  let index = 0;
+  const peek = () => tokens[index];
+  const isOperator = (token: DeckBooleanToken | undefined, value: "and" | "or") => token?.kind === "term" && token.value.toLowerCase() === value;
+  const isPrimary = (token: DeckBooleanToken | undefined) => token?.kind === "open" || token?.kind === "term" && !isOperator(token, "and") && !isOperator(token, "or");
+  const combineAnd = (left: readonly DeckQueryBranch[], right: readonly DeckQueryBranch[]): readonly DeckQueryBranch[] | null => {
+    const combined: DeckQueryBranch[] = [];
+    for (const leftBranch of left) for (const rightBranch of right) {
+      const repositories = new Map(leftBranch.repositories);
+      for (const [key, repository] of rightBranch.repositories) repositories.set(key, repository);
+      combined.push({ repositories, hasPullRequestQualifier: leftBranch.hasPullRequestQualifier || rightBranch.hasPullRequestQualifier });
+      if (combined.length > DeckQueryBranchLimit) return null;
+    }
+    return combined;
+  };
+  const parsePrimary = (): readonly DeckQueryBranch[] | null => {
+    const token = peek();
+    if (token?.kind === "open") {
+      index += 1;
+      const nested = parseOr();
+      if (nested === null || peek()?.kind !== "close") return null;
+      index += 1;
+      return nested;
+    }
+    if (token?.kind !== "term" || isOperator(token, "and") || isOperator(token, "or")) return null;
+    index += 1;
+    const repository = deckRepositoryQualifier(token.value);
+    if (repository === undefined) return null;
+    const repositories = new Map<string, DeckRepositoryRef>();
+    if (repository !== null) repositories.set(`${repository.owner}/${repository.name}`.toLowerCase(), repository);
+    return [{ repositories, hasPullRequestQualifier: token.value.toLowerCase() === "is:pr" }];
+  };
+  const parseAnd = (): readonly DeckQueryBranch[] | null => {
+    let result = parsePrimary();
+    if (result === null) return null;
+    while (true) {
+      if (isOperator(peek(), "and")) index += 1;
+      else if (!isPrimary(peek())) break;
+      const next = parsePrimary();
+      if (next === null) return null;
+      result = combineAnd(result, next);
+      if (result === null) return null;
+    }
+    return result;
+  };
+  const parseOr = (): readonly DeckQueryBranch[] | null => {
+    let result = parseAnd();
+    if (result === null) return null;
+    while (isOperator(peek(), "or")) {
+      index += 1;
+      const next = parseAnd();
+      if (next === null || result.length + next.length > DeckQueryBranchLimit) return null;
+      result = [...result, ...next];
+    }
+    return result;
+  };
+  const branches = parseOr();
+  return branches === null || index !== tokens.length ? null : branches;
+}
+
+/** Returns undefined for invalid positive repo qualifiers and null for non-repository terms. */
+function deckRepositoryQualifier(value: string): DeckRepositoryRef | null | undefined {
+  if (value.slice(0, "repo:".length).toLowerCase() !== "repo:") return null;
+  const repositoryValue = value.slice("repo:".length);
+  const separator = repositoryValue.indexOf("/");
+  if (separator < 1 || separator !== repositoryValue.lastIndexOf("/") || separator === repositoryValue.length - 1) return undefined;
+  const repository = { owner: repositoryValue.slice(0, separator), name: repositoryValue.slice(separator + 1) };
+  return isGitHubOwnerIdentifier(repository.owner) && githubRepositoryIdentifier.test(repository.name) ? repository : undefined;
+}
+
+function deckBooleanTokens(query: string): readonly DeckBooleanToken[] | null {
+  const tokens: DeckBooleanToken[] = [];
+  let index = 0;
+  while (index < query.length) {
+    const character = query[index] as string;
+    if (/\s/u.test(character)) { index += 1; continue; }
+    if (character === "(") { tokens.push({ kind: "open" }); index += 1; continue; }
+    if (character === ")") { tokens.push({ kind: "close" }); index += 1; continue; }
+    let value = "";
+    let quoted = false;
+    let escaped = false;
+    while (index < query.length) {
+      const next = query[index] as string;
+      if (escaped) { value += next; escaped = false; index += 1; continue; }
+      if (quoted) {
+        value += next;
+        if (next === "\\") escaped = true;
+        else if (next === "\"") quoted = false;
+        index += 1;
+        continue;
+      }
+      if (next === "\"") { value += next; quoted = true; index += 1; continue; }
+      if (/\s/u.test(next) || next === "(" || next === ")") break;
+      value += next;
+      index += 1;
+    }
+    if (quoted || value.length === 0) return null;
+    tokens.push({ kind: "term", value });
+  }
+  return tokens;
 }
 
 /** Splits GitHub search syntax without treating quoted phrases as qualifiers. */

@@ -59,6 +59,8 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   const [storeOpenFailed, setStoreOpenFailed] = useState(false);
   const [authCallback, setAuthCallback] = useState<string | null>(null);
   const [deckLink, setDeckLink] = useState<string | null>(null);
+  const [deckLinkPending, setDeckLinkPending] = useState(false);
+  const [deckLinkPolicyOrigin, setDeckLinkPolicyOrigin] = useState<string | null>(null);
   const [online, setOnline] = useState(() => navigator.onLine);
   const search = useRef<HTMLInputElement>(null);
   const apiOriginInput = useRef<HTMLInputElement>(null);
@@ -97,12 +99,9 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   useEffect(() => {
     let active = true;
     let unlisten: (() => void) | undefined;
-    const consumePendingDeckLink = () => {
-      void bridge.request({ operation: "deck.take-pending-link" }).then((pendingDeck) => {
-        if (active && pendingDeck.kind === "deck-link" && pendingDeck.deckId) {
-          setDeckLink(pendingDeck.deckId);
-          setSurface(SurfaceId.Deck);
-        }
+    const peekPendingDeckLink = () => {
+      void bridge.request({ operation: "deck.peek-pending-link" }).then((pendingDeck) => {
+        if (active && pendingDeck.kind === "deck-link" && pendingDeck.deckId) setDeckLinkPending(true);
       }).catch(() => {});
     };
     const receive = (event: NativeBridgeEventV1) => {
@@ -111,7 +110,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
       if (event.kind === "auth-callback") {
         setAuthCallback(event.url);
       }
-      if (event.kind === "deck-link") consumePendingDeckLink();
+      if (event.kind === "deck-link") peekPendingDeckLink();
       if (event.kind === "shortcut-triggered") {
         const context = shortcutContext.current;
         if (context.mobile || context.onboarding) return;
@@ -126,7 +125,10 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
     void bridge.listen(receive).then(async (value) => {
       if (!active) { value(); return; }
       unlisten = value;
-      if (initialRuntime) return;
+      if (initialRuntime) {
+        if (initialRuntime.platform === RuntimePlatform.Desktop && window.__TAURI_INTERNALS__) peekPendingDeckLink();
+        return;
+      }
       const response = await bridge.request({ operation: "runtime.snapshot" });
       if (!active || response.kind !== "runtime") return;
       setRuntime(response.snapshot);
@@ -134,7 +136,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
       setRuntimeState(initialContentState);
       const pending = await bridge.request({ operation: "auth.peek-pending-callback" });
       if (active && pending.kind === "auth-callback" && pending.url) setAuthCallback(pending.url);
-      if (window.__TAURI_INTERNALS__) consumePendingDeckLink();
+      if (window.__TAURI_INTERNALS__) peekPendingDeckLink();
     }).catch(() => {
       if (active && !initialRuntime) setRuntimeState({ kind: ContentStateKind.Error, retryable: true });
     });
@@ -143,6 +145,18 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
       unlisten?.();
     };
   }, [bridge, initialContentState, initialRuntime]);
+  useEffect(() => {
+    if (!deckLinkPending || deckLinkPolicyOrigin !== preferences.apiOrigin) return;
+    let active = true;
+    setDeckLinkPending(false);
+    void bridge.request({ operation: "deck.take-pending-link" }).then((pendingDeck) => {
+      if (active && pendingDeck.kind === "deck-link" && pendingDeck.deckId) {
+        setDeckLink(pendingDeck.deckId);
+        setSurface(SurfaceId.Deck);
+      }
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [bridge, deckLinkPending, deckLinkPolicyOrigin, preferences.apiOrigin]);
   useEffect(() => {
     if (!supportsNotifications || lifecycle !== LifecycleState.Active) return;
     if (!runtime?.capabilities.notifications) {
@@ -248,6 +262,9 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   const clearConsumedAuthCallback = useCallback((url: string) => {
     setAuthCallback((current) => current === url ? null : current);
   }, []);
+  const markDeckLinkPolicyReady = useCallback(() => {
+    setDeckLinkPolicyOrigin(preferences.apiOrigin);
+  }, [preferences.apiOrigin]);
   const applyApiOrigin = async (nextOrigin: string) => {
     const normalized = normalizeApiOrigin(nextOrigin);
     if (normalized === null || normalized === normalizeApiOrigin(preferences.apiOrigin)) return;
@@ -287,7 +304,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   const externalMessageText = externalMessage === "invalid-api-origin" ? copy.invalidApiOrigin : externalMessage === "opened" ? copy.externalOpened : copy.externalFailed;
   const externalMessageIsError = externalMessage !== "opened";
 
-  const boundary = (content: ReactNode) => runtime ? <DevHudServiceBoundary key={preferences.apiOrigin} apiOrigin={preferences.apiOrigin} active online={online} callbackUrl={authCallback} platform={runtime.platform} bridge={bridge} onCallbackConsumed={clearConsumedAuthCallback} onContinueLocally={finishOnboarding} onLoggedOut={() => setSurface(SurfaceId.Account)} initialAppearance={{ theme: preferences.theme, language: preferences.language }} identitySessionRef={identitySession}><UrlMappingDraftProvider><DeckPollingBoundary bridge={bridge} active={lifecycle === LifecycleState.Active} online={online}><SynchronizedAppearanceBoundary onAppearance={(appearance) => update({ theme: appearance.theme, language: appearance.language })} />{content}</DeckPollingBoundary></UrlMappingDraftProvider></DevHudServiceBoundary> : content;
+  const boundary = (content: ReactNode) => runtime ? <DevHudServiceBoundary key={preferences.apiOrigin} apiOrigin={preferences.apiOrigin} active online={online} callbackUrl={authCallback} platform={runtime.platform} bridge={bridge} onCallbackConsumed={clearConsumedAuthCallback} onDeckLinkPolicyReady={markDeckLinkPolicyReady} onContinueLocally={finishOnboarding} onLoggedOut={() => setSurface(SurfaceId.Account)} initialAppearance={{ theme: preferences.theme, language: preferences.language }} identitySessionRef={identitySession}><UrlMappingDraftProvider><DeckPollingBoundary bridge={bridge} active={lifecycle === LifecycleState.Active} online={online}><SynchronizedAppearanceBoundary onAppearance={(appearance) => update({ theme: appearance.theme, language: appearance.language })} />{content}</DeckPollingBoundary></UrlMappingDraftProvider></DevHudServiceBoundary> : content;
 
   if (runtimeState.kind !== ContentStateKind.Ready) return <main className="app-shell onboarding" data-devhud-ready="true"><section className="content"><ContentStateView state={runtimeState} copy={copy} onRetry={() => location.reload()} /></section></main>;
 
