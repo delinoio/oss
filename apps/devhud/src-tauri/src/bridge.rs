@@ -639,7 +639,19 @@ fn runtime_os_version() -> String {
     os_info::get().version().to_string()
 }
 
-fn runtime_snapshot() -> Value {
+#[cfg(any(target_os = "ios", test))]
+fn ios_runtime_os_version(response: &Value) -> Result<&str, String> {
+    if response.get("kind").and_then(Value::as_str) != Some("runtime-os-version") {
+        return Err("platform-failure".to_string());
+    }
+    response
+        .get("osVersion")
+        .and_then(Value::as_str)
+        .filter(|version| !version.is_empty())
+        .ok_or_else(|| "platform-failure".to_string())
+}
+
+fn runtime_snapshot(os_version: &str) -> Value {
     let mobile = cfg!(any(target_os = "android", target_os = "ios"));
     json!({
         "kind": "runtime",
@@ -648,7 +660,7 @@ fn runtime_snapshot() -> Value {
             "platform": runtime_platform(),
             "operatingSystem": runtime_operating_system(),
             "architecture": std::env::consts::ARCH,
-            "osVersion": runtime_os_version(),
+            "osVersion": os_version,
             "appVersion": env!("CARGO_PKG_VERSION"),
             "buildId": option_env!("DEVHUD_BUILD_ID").unwrap_or(env!("CARGO_PKG_VERSION")),
             "tauriRevision": TAURI_REVISION,
@@ -762,7 +774,7 @@ pub fn handle_native_bridge_request(
         .and_then(Value::as_str)
         .ok_or("invalid-argument")?;
     match operation {
-        "runtime.snapshot" => Ok(runtime_snapshot()),
+        "runtime.snapshot" => Ok(runtime_snapshot(&runtime_os_version())),
         "shortcuts.status" => Ok(shortcut_status(state, None)),
         "shortcuts.request-permission" => {
             let mut shortcuts = state
@@ -865,6 +877,11 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
         .get("operation")
         .and_then(Value::as_str)
         .ok_or("invalid-argument")?;
+    #[cfg(target_os = "ios")]
+    if operation == "runtime.snapshot" {
+        let response = crate::native_plugin::request(&app, &request)?;
+        return Ok(runtime_snapshot(ios_runtime_os_version(&response)?));
+    }
     if operation == "diagnostics.clear" {
         clear_diagnostic_logs()?;
         return Ok(json!({ "kind": "ok" }));
@@ -946,7 +963,7 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        NativeBridgeState, handle_native_bridge_request, is_auth_callback,
+        NativeBridgeState, handle_native_bridge_request, ios_runtime_os_version, is_auth_callback,
         purge_clears_diagnostics, routes_to_mobile_plugin, runtime_os_version, shortcut_status,
         validate_auth_browser_request, validate_diagnostics_export,
     };
@@ -1049,6 +1066,24 @@ mod tests {
             assert_eq!(
                 snapshot["snapshot"]["cefRevision"],
                 "150.0.10+g8042e43+chromium-150.0.7871.101"
+            );
+        }
+    }
+
+    #[test]
+    fn accepts_only_a_nonempty_ios_native_os_version() {
+        assert_eq!(
+            ios_runtime_os_version(&json!({ "kind": "runtime-os-version", "osVersion": "18.6" })),
+            Ok("18.6")
+        );
+        for invalid in [
+            json!({ "kind": "runtime-os-version", "osVersion": "" }),
+            json!({ "kind": "runtime-os-version" }),
+            json!({ "kind": "runtime", "osVersion": "18.6" }),
+        ] {
+            assert_eq!(
+                ios_runtime_os_version(&invalid),
+                Err("platform-failure".to_string())
             );
         }
     }

@@ -57,6 +57,8 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
     @objc func request(_ invoke: Invoke) throws {
         let args = try invoke.parseArgs(RequestArgs.self)
         switch args.operation {
+        case "runtime.snapshot":
+            invoke.resolve(["kind": "runtime-os-version", "osVersion": UIDevice.current.systemVersion])
         case "lifecycle.open-external": try openExternal(args, invoke)
         case "auth.open-system-browser": try openAuthenticationBrowser(args, invoke)
         case "diagnostics.export": try exportDiagnostics(args, invoke)

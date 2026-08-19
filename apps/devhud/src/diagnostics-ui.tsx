@@ -40,7 +40,7 @@ export function DiagnosticsPanel({ copy, bridge, storage, online }: DiagnosticsP
     : null;
 
   useEffect(() => {
-    if (identity.status !== "deletion-pending") return;
+    if (identity.status !== "deletion-pending" && identity.status !== "signed-out") return;
     consentAttempt.current += 1;
     exportAttempt.current += 1;
     setBundle(null);

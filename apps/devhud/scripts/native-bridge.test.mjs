@@ -101,6 +101,11 @@ test("Tauri rejection codes become typed native bridge errors", async () => {
   }
 });
 
+test("iOS runtime snapshots use the installed native OS version", () => {
+  assert.match(iosBridgeHost, /case "runtime\.snapshot":[\s\S]*UIDevice\.current\.systemVersion/u);
+  assert.match(nativeBridgeHost, /#\[cfg\(target_os = "ios"\)\][\s\S]*operation == "runtime\.snapshot"[\s\S]*native_plugin::request[\s\S]*ios_runtime_os_version/u);
+});
+
 test("desktop shortcuts persist only structured enums and reject unsafe candidates before invoking native code", async () => {
   assert.deepEqual(defaultDesktopShortcutBindings[ShortcutActionId.CommandPalette], {
     enabled: true,

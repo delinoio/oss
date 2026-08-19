@@ -83,6 +83,7 @@ test("mobile policy requires lifecycle-owned Android persistence and native plat
 test("mobile policy keeps native iOS origins aligned with normalized root URLs", () => {
   const iosNativeBridge = readFileSync(join(appRoot, "src-tauri/mobile/ios/Sources/DevhudNativePlugin.swift"), "utf8").replaceAll("\r\n", "\n");
   assert.doesNotThrow(() => assertIosNativeBridge(iosNativeBridge));
+  assert.throws(() => assertIosNativeBridge(iosNativeBridge.replace("UIDevice.current.systemVersion", '"ios"')), /installed native OS version/u);
   assert.throws(() => assertIosNativeBridge(iosNativeBridge.replace('(url.path.isEmpty || url.path == "/")', 'url.path == "/"')), /root API-origin spellings/u);
   assert.throws(() => assertIosNativeBridge(iosNativeBridge.replace("isSecureOrLoopback(issuer)", 'issuer.scheme == "https"')), /configured issuer paths and loopback HTTP/u);
   assert.throws(() => assertIosNativeBridge(iosNativeBridge.replaceAll("legacyAccessGroupKey", "missingLegacyGroup")), /legacy application-group/u);

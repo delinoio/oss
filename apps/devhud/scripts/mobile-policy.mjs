@@ -108,6 +108,7 @@ export function assertIosNativeBridge(iosNativeBridgeInput) {
   const purgeSecure = iosNativeBridge.match(/private func purgeSecure[\s\S]*?(?=\n    private func permissionName)/u)?.[0] ?? "";
   assert(iosNativeBridge.includes('invoke.reject("storage-failure", code: "storage-failure")'), "iOS Keychain failures must use storage-failure");
   assert(iosNativeBridge.includes('invoke.reject("permission-denied", code: "permission-denied")'), "iOS notification publication must honor authorization");
+  assert(iosNativeBridge.includes('case "runtime.snapshot":') && iosNativeBridge.includes("UIDevice.current.systemVersion"), "iOS runtime diagnostics must use the installed native OS version");
   assert(iosNativeBridge.includes("UNUserNotificationCenterDelegate") && iosNativeBridge.includes("willPresent notification"), "iOS foreground Deck notifications must be presented by a delegate");
   assert(iosNativeBridge.includes('(url.path.isEmpty || url.path == "/")'), "iOS native navigation must accept both root API-origin spellings");
   assert(iosNativeBridge.includes("isSecureOrLoopback(issuer)") && iosNativeBridge.includes("destination.scheme == issuer.scheme"), "iOS authentication must accept configured issuer paths and loopback HTTP while preserving same-origin navigation");
