@@ -674,6 +674,7 @@ impl DraftStore {
         Ok(self.read_locked(id, &key)?.summary())
     }
 
+    #[cfg(test)]
     pub fn create(&self, images: Vec<RgbaImage>) -> Result<DraftSummary, CaptureError> {
         self.create_with_commit_check(images, || Ok(()))
     }
@@ -742,6 +743,7 @@ impl DraftStore {
         result
     }
 
+    #[cfg(test)]
     pub fn append(&self, id: Uuid, images: Vec<RgbaImage>) -> Result<DraftSummary, CaptureError> {
         self.append_with_commit_check(id, images, || Ok(()))
     }
