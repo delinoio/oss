@@ -1047,7 +1047,7 @@ impl CaptureService {
         options: CaptureOptions,
     ) -> Result<DraftSummary, CaptureError> {
         let epoch = self.begin_capture()?;
-        self.capture_with_epoch(action, options, epoch)
+        self.capture_with_epoch_after_delay(action, options, epoch, || Ok(()))
     }
 
     pub fn begin_capture(&self) -> Result<u64, CaptureError> {
@@ -1064,15 +1064,6 @@ impl CaptureService {
 
     pub fn cancel(&self) {
         self.cancellation_epoch.fetch_add(1, Ordering::AcqRel);
-    }
-
-    pub fn capture_with_epoch(
-        &self,
-        action: CaptureAction,
-        options: CaptureOptions,
-        epoch: u64,
-    ) -> Result<DraftSummary, CaptureError> {
-        self.capture_with_epoch_after_delay(action, options, epoch, || Ok(()))
     }
 
     pub fn capture_with_epoch_after_delay(
