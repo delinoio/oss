@@ -189,3 +189,8 @@ test("command palette overlay stacks above the mobile sidebar", () => {
   assert.match(styles, /\.overlay\s*\{[^}]*z-index:2/u);
   assert.match(styles, /aside\s*\{[^}]*z-index:1/u);
 });
+
+test("capture dialogs reserve the overlay inset inside the viewport", () => {
+  assert.match(styles, /\.overlay\s*\{[^}]*--overlay-top:14vh;[^}]*padding:var\(--overlay-top\) 1rem 1rem/u);
+  assert.match(styles, /\.capture-dialog\{[^}]*max-height:calc\(100vh - var\(--overlay-top\) - 1rem\);[^}]*overflow:auto/u);
+});

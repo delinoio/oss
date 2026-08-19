@@ -64,6 +64,9 @@ export function RealqaSurface({ ref, bridge, copy, requestedAction, onRequestedA
   const [options, setOptions] = useState<CaptureOptions>({ delaySeconds: 0, includePointer: false, removeShadow: false });
   const lastRequested = useRef<number | null>(null);
   const captureInFlight = useRef(false);
+  const captureStatusInFlight = useRef(false);
+  const captureStatusRequest = useRef(0);
+  const captureDialogOpener = useRef<HTMLElement | null>(null);
 
   const refresh = useCallback(async () => {
     const response = await bridge.request({ operation: "capture.list-drafts" });
@@ -73,11 +76,18 @@ export function RealqaSurface({ ref, bridge, copy, requestedAction, onRequestedA
     }
   }, [bridge]);
 
+  const refreshCaptureStatus = useCallback(async () => {
+    const request = ++captureStatusRequest.current;
+    const response = await bridge.request({ operation: "capture.status" });
+    if (response.kind !== "capture-status") return null;
+    const next = { topology: response.topology, shadowRemovalSupported: response.shadowRemovalSupported };
+    if (request === captureStatusRequest.current) setCaptureStatus(next);
+    return next;
+  }, [bridge]);
+
   useEffect(() => {
-    void Promise.allSettled([bridge.request({ operation: "capture.status" }), bridge.request({ operation: "capture.list-drafts" })]).then(([native, stored]) => {
-      if (native.status === "fulfilled" && native.value.kind === "capture-status") {
-        setCaptureStatus({ topology: native.value.topology, shadowRemovalSupported: native.value.shadowRemovalSupported });
-      } else if (native.status === "rejected") {
+    void Promise.allSettled([refreshCaptureStatus(), bridge.request({ operation: "capture.list-drafts" })]).then(([native, stored]) => {
+      if (native.status === "rejected") {
         setError(errorCopy(copy, native.reason));
       }
       if (stored.status === "fulfilled" && stored.value.kind === "capture-drafts") {
@@ -87,7 +97,15 @@ export function RealqaSurface({ ref, bridge, copy, requestedAction, onRequestedA
         setError(errorCopy(copy, stored.reason));
       }
     });
-  }, [bridge, copy]);
+  }, [bridge, copy, refreshCaptureStatus]);
+
+  const dismissCaptureDialog = useCallback((clearStatus = true) => {
+    setCaptureDialog(null);
+    if (clearStatus) setStatus("");
+    const opener = captureDialogOpener.current;
+    captureDialogOpener.current = null;
+    if (opener) requestAnimationFrame(() => { if (opener.isConnected) opener.focus(); });
+  }, []);
 
   const completeCapture = useCallback(async (action: CaptureActionId, captureOptions: CaptureOptions = options) => {
     if (captureInFlight.current) return;
@@ -104,7 +122,7 @@ export function RealqaSurface({ ref, bridge, copy, requestedAction, onRequestedA
       setSelected((current) => (current?.id ?? null) === originatingDraftId ? response.draft : current);
       setPreview(response.draft);
       setStatus(copy.captureSaved);
-      setCaptureDialog(null);
+      dismissCaptureDialog(false);
       try { await refresh(); } catch { /* The capture response is already authoritative. */ }
     } catch (reason) {
       setStatus("");
@@ -113,21 +131,32 @@ export function RealqaSurface({ ref, bridge, copy, requestedAction, onRequestedA
       captureInFlight.current = false;
       setBusy(false);
     }
-  }, [bridge, copy, options, refresh, selected?.id]);
+  }, [bridge, copy, dismissCaptureDialog, options, refresh, selected?.id]);
 
   const capture = useCallback(async (action: CaptureActionId) => {
-    if (captureInFlight.current) return;
+    if (captureInFlight.current || captureStatusInFlight.current) return;
     if (action === ShortcutActionId.CaptureSelection || action === ShortcutActionId.CaptureToolbar) {
-      setCaptureDialog(action);
+      captureStatusInFlight.current = true;
+      const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      setError(null);
+      try {
+        const freshStatus = await refreshCaptureStatus();
+        if (!freshStatus) return;
+        if (!captureDialog) captureDialogOpener.current = opener;
+        setCaptureDialog(action);
+      } catch (reason) {
+        setError(errorCopy(copy, reason));
+      } finally {
+        captureStatusInFlight.current = false;
+      }
       return;
     }
     await completeCapture(action);
-  }, [completeCapture]);
+  }, [captureDialog, completeCapture, copy, refreshCaptureStatus]);
   const cancelCapture = useCallback(() => {
-    setCaptureDialog(null);
-    setStatus("");
+    dismissCaptureDialog();
     if (busy) void bridge.request({ operation: "capture.cancel" }).catch(() => {});
-  }, [bridge, busy]);
+  }, [bridge, busy, dismissCaptureDialog]);
 
   useImperativeHandle(ref, () => ({ execute: capture }), [capture]);
   useEffect(() => {
@@ -343,8 +372,10 @@ function CaptureEditor({ draft }: { readonly draft: CaptureDraft }) {
     return enqueueRevisionOperation(async (current) => {
       try {
         const response = await bridge.request({ operation: "capture.editor.apply", draftId: current.id, expectedRevision: current.revision, command });
-        if (!editorActive.current) return;
-        if (response.kind === "capture-draft") { installDraft(response.draft); setMessage(copy.editorSaved); }
+        if (response.kind === "capture-draft") {
+          installDraft(response.draft);
+          if (editorActive.current) setMessage(copy.editorSaved);
+        }
       } catch { if (editorActive.current) { setFailed(true); setMessage(copy.editorSaveFailed); } }
     });
   };
@@ -353,7 +384,6 @@ function CaptureEditor({ draft }: { readonly draft: CaptureDraft }) {
     return enqueueRevisionOperation(async (current) => {
       try {
         const response = await bridge.request({ operation, draftId: current.id, expectedRevision: current.revision });
-        if (!editorActive.current) return;
         if (response.kind === "capture-draft") installDraft(response.draft);
       } catch { if (editorActive.current) { setFailed(true); setMessage(copy.editorSaveFailed); } }
     });

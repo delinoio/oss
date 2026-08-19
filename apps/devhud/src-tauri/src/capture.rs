@@ -4,7 +4,7 @@ use std::{
     io::Write,
     path::{Path, PathBuf},
     sync::{
-        Arc, Mutex, MutexGuard,
+        Arc, Mutex, MutexGuard, OnceLock,
         atomic::{AtomicBool, AtomicU64, Ordering},
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -27,6 +27,9 @@ pub const DRAFT_RETENTION: Duration = Duration::from_secs(30 * 24 * 60 * 60);
 const MAX_HISTORY_STATES: usize = 100;
 const MAX_OUTPUT_DIMENSION: u32 = 4096;
 const ENCRYPTED_MAGIC: &[u8; 4] = b"RQA1";
+const ANNOTATION_FONT_BYTES: &[u8] =
+    include_bytes!("../assets/fonts/noto-sans-kr/NotoSansKR-VF.ttf");
+static ANNOTATION_FONT: OnceLock<Option<fontdue::Font>> = OnceLock::new();
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -1804,27 +1807,7 @@ fn render_text(
     color: Rgba<u8>,
     size: u32,
 ) -> Result<(), CaptureError> {
-    let candidates: &[&str] = if cfg!(target_os = "windows") {
-        &[
-            r"C:\Windows\Fonts\malgun.ttf",
-            r"C:\Windows\Fonts\segoeui.ttf",
-        ]
-    } else if cfg!(target_os = "macos") {
-        &[
-            "/System/Library/Fonts/AppleSDGothicNeo.ttc",
-            "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
-        ]
-    } else {
-        &[
-            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        ]
-    };
-    let font = candidates
-        .iter()
-        .filter_map(|path| fs::read(path).ok())
-        .find_map(|bytes| fontdue::Font::from_bytes(bytes, fontdue::FontSettings::default()).ok())
-        .ok_or(CaptureError::PlatformFailure)?;
+    let font = annotation_font()?;
     let mut pen_x = origin.x.round() as i32;
     let baseline = origin.y.round() as i32;
     for character in text.chars() {
@@ -1848,6 +1831,15 @@ fn render_text(
         pen_x += metrics.advance_width.round() as i32;
     }
     Ok(())
+}
+
+fn annotation_font() -> Result<&'static fontdue::Font, CaptureError> {
+    ANNOTATION_FONT
+        .get_or_init(|| {
+            fontdue::Font::from_bytes(ANNOTATION_FONT_BYTES, fontdue::FontSettings::default()).ok()
+        })
+        .as_ref()
+        .ok_or(CaptureError::PlatformFailure)
 }
 
 fn draw_thick_line(image: &mut RgbaImage, start: Point, end: Point, color: Rgba<u8>, width: u32) {
@@ -2485,6 +2477,14 @@ mod tests {
     use image::ImageBuffer;
 
     use super::*;
+
+    #[test]
+    fn bundled_annotation_font_covers_english_and_korean() {
+        let font = annotation_font().unwrap();
+        for character in ['D', '한', '글'] {
+            assert!(font.has_glyph(character));
+        }
+    }
 
     struct TestDirectory(PathBuf);
 
