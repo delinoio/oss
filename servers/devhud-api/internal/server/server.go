@@ -9,6 +9,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/protos/gen/go/devhud/v1/devhudv1connect"
+	"github.com/delinoio/oss/servers/devhud-api/internal/adminassets"
 	"github.com/delinoio/oss/servers/devhud-api/internal/auth"
 	"github.com/delinoio/oss/servers/devhud-api/internal/config"
 	"github.com/delinoio/oss/servers/devhud-api/internal/domain"
@@ -28,11 +29,24 @@ type Dependencies struct {
 	Logger         *slog.Logger
 	MetricsHandler http.Handler
 	Uploads        *uploadmanager.Service
+	Administration domain.AdminRepository
+	CursorKey      []byte
 }
 
 func New(dependencies Dependencies) (*http.Server, error) {
 	mux := http.NewServeMux()
-	authInterceptor := rpc.NewAuthInterceptor(dependencies.Verifier, dependencies.Repository, dependencies.Logger)
+	adminAssets, err := adminassets.Handler(dependencies.Config.LogtoIssuer)
+	if err != nil {
+		return nil, err
+	}
+	mux.Handle("GET /admin/", adminAssets)
+	mux.Handle("HEAD /admin/", adminAssets)
+	adminRedirect := func(response http.ResponseWriter, request *http.Request) {
+		http.Redirect(response, request, "/admin/", http.StatusPermanentRedirect)
+	}
+	mux.HandleFunc("GET /admin", adminRedirect)
+	mux.HandleFunc("HEAD /admin", adminRedirect)
+	authInterceptor := rpc.NewAuthInterceptor(dependencies.Verifier, dependencies.Repository, dependencies.Administration, dependencies.Clock, dependencies.IDs, dependencies.Logger)
 	handlerOptions := []connect.HandlerOption{recoverConnectPanics(dependencies.Logger), connect.WithInterceptors(authInterceptor)}
 
 	bootstrapPath, bootstrapHandler := devhudv1connect.NewBootstrapServiceHandler(rpc.NewBootstrapService(rpc.BootstrapConfig{
@@ -46,6 +60,7 @@ func New(dependencies Dependencies) (*http.Server, error) {
 		AdminRedirectURI:   dependencies.Config.AdminRedirectURI,
 		PublicAssetBaseURL: dependencies.Config.PublicAssetBaseURL,
 		OfficialUploads:    dependencies.Uploads != nil,
+		Administration:     dependencies.Administration != nil,
 	}), handlerOptions...)
 	settingsPath, settingsHandler := devhudv1connect.NewSettingsServiceHandler(rpc.NewSettingsService(dependencies.Repository, dependencies.Clock, dependencies.Logger), handlerOptions...)
 	accountPath, accountHandler := devhudv1connect.NewAccountServiceHandler(rpc.NewAccountService(dependencies.Repository, dependencies.Clock, dependencies.Logger), handlerOptions...)
@@ -57,6 +72,18 @@ func New(dependencies Dependencies) (*http.Server, error) {
 	if dependencies.Uploads != nil {
 		uploadPath, uploadHandler := devhudv1connect.NewUploadServiceHandler(rpc.NewUploadService(dependencies.Uploads, dependencies.Logger), handlerOptions...)
 		mux.Handle(uploadPath, uploadHandler)
+	}
+	if dependencies.Administration != nil {
+		var uploadAdministration domain.UploadAdministration
+		if dependencies.Uploads != nil {
+			uploadAdministration = uploadmanager.NewAdministratorHooks(dependencies.Uploads)
+		}
+		adminService, err := rpc.NewAdminService(dependencies.Administration, uploadAdministration, dependencies.Clock, dependencies.IDs, dependencies.Logger, dependencies.CursorKey, dependencies.Config.PublicAssetBaseURL)
+		if err != nil {
+			return nil, err
+		}
+		adminPath, adminHandler := devhudv1connect.NewAdminServiceHandler(adminService, handlerOptions...)
+		mux.Handle(adminPath, adminHandler)
 	}
 
 	mux.HandleFunc("GET /healthz", func(response http.ResponseWriter, _ *http.Request) {
@@ -86,6 +113,15 @@ func New(dependencies Dependencies) (*http.Server, error) {
 		connectPaths[devhudv1connect.UploadServiceFinalizeUploadProcedure] = struct{}{}
 		connectPaths[devhudv1connect.UploadServiceListUploadsProcedure] = struct{}{}
 		connectPaths[devhudv1connect.UploadServiceDeleteUploadProcedure] = struct{}{}
+	}
+	if dependencies.Administration != nil {
+		connectPaths[devhudv1connect.AdminServiceListUsersProcedure] = struct{}{}
+		connectPaths[devhudv1connect.AdminServiceSetUserBlockedProcedure] = struct{}{}
+		connectPaths[devhudv1connect.AdminServiceGetUserUsageProcedure] = struct{}{}
+		connectPaths[devhudv1connect.AdminServiceListUploadsProcedure] = struct{}{}
+		connectPaths[devhudv1connect.AdminServiceQuarantineUploadProcedure] = struct{}{}
+		connectPaths[devhudv1connect.AdminServiceDeleteUploadProcedure] = struct{}{}
+		connectPaths[devhudv1connect.AdminServiceListAuditEventsProcedure] = struct{}{}
 	}
 	requestMetrics, err := newRequestMetrics()
 	if err != nil {

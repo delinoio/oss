@@ -24,7 +24,7 @@ func TestUploadOperationalErrorsDoNotLogBodiesURLsOrSecrets(t *testing.T) {
 	}
 }
 
-func TestRemovingUploadProtocolStateUsesFinalization(t *testing.T) {
+func TestRemovingUploadProtocolStateUsesPriorVisibleState(t *testing.T) {
 	pendingRemoval := domain.Upload{State: domain.UploadStateRemoving}
 	if got := protocolUploadState(pendingRemoval); got != devhudv1.UploadState_UPLOAD_STATE_PENDING {
 		t.Fatalf("pending removal state = %v", got)
@@ -33,6 +33,11 @@ func TestRemovingUploadProtocolStateUsesFinalization(t *testing.T) {
 	finalizedRemoval := domain.Upload{State: domain.UploadStateRemoving, FinalizedAt: &finalizedAt}
 	if got := protocolUploadState(finalizedRemoval); got != devhudv1.UploadState_UPLOAD_STATE_FINALIZED {
 		t.Fatalf("finalized removal state = %v", got)
+	}
+	removedAt := finalizedAt.Add(time.Minute)
+	quarantinedRemoval := domain.Upload{State: domain.UploadStateRemoving, FinalizedAt: &finalizedAt, RemovedAt: &removedAt}
+	if got := protocolUploadState(quarantinedRemoval); got != devhudv1.UploadState_UPLOAD_STATE_QUARANTINED {
+		t.Fatalf("quarantined removal state = %v", got)
 	}
 }
 

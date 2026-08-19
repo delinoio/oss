@@ -37,6 +37,7 @@ type Identity struct {
 	Email                 string
 	Fingerprint           []byte
 	FingerprintCandidates [][]byte
+	Roles                 []string
 }
 
 type User struct {
@@ -174,6 +175,8 @@ const (
 	AuditActionUploadQuarantined
 	AuditActionUploadDeleted
 	AuditActionUploadAccountPurged
+	AuditActionUserBlocked
+	AuditActionUserUnblocked
 )
 
 type AuditEvent struct {
@@ -185,6 +188,9 @@ type AuditEvent struct {
 	TargetUploadID    *string
 	Reason            string
 	Action            AuditAction
+	CorrelationID     string
+	Outcome           AuditOutcome
+	RejectionReason   AuditRejectionReason
 	CreatedAt         time.Time
 	ExpiresAt         time.Time
 }

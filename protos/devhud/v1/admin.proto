@@ -39,6 +39,9 @@ message SetUserBlockedRequest {
   // reason is required, must be well-formed Unicode, is capped at 4 KiB of
   // UTF-8, and cannot contain credential or local-path patterns.
   string reason = 3;
+  // expected_state provides compare-and-set integrity for concurrent
+  // administrators. It must be UNBLOCKED or BLOCKED.
+  AdministrativeBlockState expected_state = 4;
 }
 
 message SetUserBlockedResponse {
@@ -52,6 +55,9 @@ message UsageCounter {
   uint64 used = 2;
   uint64 limit = 3;
   google.protobuf.Duration window = 4;
+  // submission_id scopes the per-submission image quota. It is absent for
+  // user-wide rolling and stored-byte counters.
+  UuidV7 submission_id = 5;
 }
 
 message GetUserUsageRequest {
@@ -105,6 +111,7 @@ message QuarantineUploadRequest {
   // reason follows the bounded, sensitive-content-safe administrator reason
   // contract and is validated before the mutation is persisted.
   string reason = 2;
+  UploadState expected_state = 3;
 }
 
 message QuarantineUploadResponse {
@@ -118,6 +125,7 @@ message AdminServiceDeleteUploadRequest {
   // reason follows the bounded, sensitive-content-safe administrator reason
   // contract and is validated before the mutation is persisted.
   string reason = 2;
+  UploadState expected_state = 3;
 }
 
 message AdminServiceDeleteUploadResponse {
@@ -132,6 +140,29 @@ enum AuditAction {
   AUDIT_ACTION_USER_UNBLOCKED = 2;
   AUDIT_ACTION_UPLOAD_QUARANTINED = 3;
   AUDIT_ACTION_UPLOAD_DELETED = 4;
+  AUDIT_ACTION_ACCOUNT_DELETION_REQUESTED = 5;
+  AUDIT_ACTION_ACCOUNT_RESTORED = 6;
+  AUDIT_ACTION_ACCOUNT_PURGE_CLAIMED = 7;
+  AUDIT_ACTION_ACCOUNT_PURGED = 8;
+  AUDIT_ACTION_UPLOAD_ACCOUNT_PURGED = 9;
+}
+
+enum AuditOutcome {
+  AUDIT_OUTCOME_UNSPECIFIED = 0;
+  AUDIT_OUTCOME_ACCEPTED = 1;
+  AUDIT_OUTCOME_REJECTED = 2;
+}
+
+enum AuditRejectionReason {
+  AUDIT_REJECTION_REASON_UNSPECIFIED = 0;
+  AUDIT_REJECTION_REASON_UNAUTHENTICATED = 1;
+  AUDIT_REJECTION_REASON_ADMIN_ROLE_REQUIRED = 2;
+  AUDIT_REJECTION_REASON_ACTOR_BLOCKED = 3;
+  AUDIT_REJECTION_REASON_INVALID_ARGUMENT = 4;
+  AUDIT_REJECTION_REASON_TARGET_NOT_FOUND = 5;
+  AUDIT_REJECTION_REASON_CONCURRENT_UPDATE = 6;
+  AUDIT_REJECTION_REASON_FAILED_PRECONDITION = 7;
+  AUDIT_REJECTION_REASON_OPERATION_FAILED = 8;
 }
 
 message AuditEvent {
@@ -143,6 +174,9 @@ message AuditEvent {
   // reason contains only a previously validated administrator mutation reason.
   string reason = 6;
   google.protobuf.Timestamp created_at = 7;
+  UuidV7 correlation_id = 8;
+  AuditOutcome outcome = 9;
+  AuditRejectionReason rejection_reason = 10;
 }
 
 message ListAuditEventsRequest {
@@ -151,6 +185,15 @@ message ListAuditEventsRequest {
   UuidV7 target_user_id = 3;
   UuidV7 target_upload_id = 4;
   repeated AuditAction actions = 5;
+  repeated AuditOutcome outcomes = 6;
+  UuidV7 correlation_id = 7;
+}
+
+message AdminMutationConflict {
+  oneof current {
+    AdminUser user = 1;
+    AdminUpload upload = 2;
+  }
 }
 
 message ListAuditEventsResponse {

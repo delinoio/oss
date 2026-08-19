@@ -139,14 +139,18 @@ func (s *Store) ProvisionUser(ctx context.Context, identity domain.Identity) (do
         INSERT INTO devhud_users (
             user_id, logto_issuer, logto_subject, identity_fingerprint,
             display_name, email, deletion_state, administrative_block_state,
-            created_at, updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, 1, 1, $7, $7)
+            created_at, updated_at, search_display_name, search_email, search_logto_subject
+        ) VALUES ($1, $2, $3, $4, $5, $6, 1, 1, $7, $7, $8, $9, $10)
         ON CONFLICT (logto_issuer, logto_subject) DO UPDATE SET
             identity_fingerprint = EXCLUDED.identity_fingerprint,
             display_name = EXCLUDED.display_name,
             email = EXCLUDED.email,
+            search_display_name = EXCLUDED.search_display_name,
+            search_email = EXCLUDED.search_email,
+            search_logto_subject = EXCLUDED.search_logto_subject,
             updated_at = EXCLUDED.updated_at
-        RETURNING `+userColumns, userID, identity.Issuer, identity.Subject, identity.Fingerprint, identity.DisplayName, identity.Email, now)
+        RETURNING `+userColumns, userID, identity.Issuer, identity.Subject, identity.Fingerprint, identity.DisplayName, identity.Email, now,
+		normalizeSearch(identity.DisplayName), normalizeSearch(identity.Email), normalizeSearch(identity.Subject))
 	user, err := scanUser(row)
 	if err != nil {
 		return domain.User{}, err
@@ -348,10 +352,17 @@ func (s *Store) RecordRequest(ctx context.Context, record domain.RequestLog) err
 }
 
 func (s *Store) RecordAudit(ctx context.Context, event domain.AuditEvent) error {
+	if event.CorrelationID == "" {
+		event.CorrelationID = event.ID
+	}
+	if event.Outcome == 0 {
+		event.Outcome = domain.AuditOutcomeAccepted
+	}
 	_, err := s.pool.Exec(ctx, `INSERT INTO devhud_audit_events
-		(audit_event_id, actor_user_id, target_user_id, actor_fingerprint, target_fingerprint, action, created_at, expires_at, target_upload_id, reason)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULLIF($10, ''))`, event.ID, event.ActorUserID, event.TargetUserID,
-		event.ActorFingerprint, event.TargetFingerprint, event.Action, event.CreatedAt, event.ExpiresAt, event.TargetUploadID, event.Reason)
+		(audit_event_id, actor_user_id, target_user_id, actor_fingerprint, target_fingerprint, action, created_at, expires_at, target_upload_id, reason, correlation_id, outcome, rejection_reason)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULLIF($10, ''), $11, $12, NULLIF($13, 0))`, event.ID, event.ActorUserID, event.TargetUserID,
+		event.ActorFingerprint, event.TargetFingerprint, event.Action, event.CreatedAt, event.ExpiresAt, event.TargetUploadID, event.Reason,
+		event.CorrelationID, event.Outcome, event.RejectionReason)
 	return err
 }
 
@@ -709,7 +720,7 @@ func (s *Store) insertAccountAudit(ctx context.Context, tx pgx.Tx, user domain.U
 		return err
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO devhud_audit_events
-        (audit_event_id, actor_user_id, target_user_id, actor_fingerprint, target_fingerprint, action, created_at, expires_at)
-        VALUES ($1, $2, $2, $3, $3, $4, $5, $6)`, id, user.ID, user.IdentityFingerprint, action, now, now.Add(domain.AuditRetention))
+        (audit_event_id, actor_user_id, target_user_id, actor_fingerprint, target_fingerprint, action, created_at, expires_at, correlation_id, outcome)
+        VALUES ($1, $2, $2, $3, $3, $4, $5, $6, $1, $7)`, id, user.ID, user.IdentityFingerprint, action, now, now.Add(domain.AuditRetention), domain.AuditOutcomeAccepted)
 	return err
 }
