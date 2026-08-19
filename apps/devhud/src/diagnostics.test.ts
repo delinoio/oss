@@ -378,6 +378,21 @@ describe("diagnostics privacy boundary", () => {
     expect(() => prepareDiagnosticsBundle(events[0]!, events)).not.toThrow();
   });
 
+  it("strips unknown persisted diagnostic build fields before preview and export", () => {
+    const now = Date.parse("2026-08-17T00:00:00.000Z");
+    const event = fixtureEvent(now);
+    const imported = { ...event, build: { ...event.build, credential: "hunter2" } };
+    localStorage.setItem(DiagnosticsStorageKey, JSON.stringify([imported]));
+
+    const events = readDiagnosticEvents(localStorage, now);
+
+    expect(events).toHaveLength(1);
+    expect(events[0]?.build).toEqual(event.build);
+    expect(events[0]?.build).not.toHaveProperty("credential");
+    expect(localStorage.getItem(DiagnosticsStorageKey)).not.toContain("hunter2");
+    expect(prepareDiagnosticsBundle(events[0]!, events).exportJson).not.toContain("hunter2");
+  });
+
   it("drops persisted events containing unlabeled credential shapes", () => {
     const now = Date.parse("2026-08-17T00:00:00.000Z");
     for (const credential of [
@@ -515,6 +530,28 @@ describe("diagnostics privacy boundary", () => {
     expect(screen.getByRole("button", { name: messages.en.diagnosticsExport })).toBeTruthy();
     expect(screen.queryByRole("checkbox", { name: messages.en.diagnosticsConsent })).toBeNull();
     expect(screen.queryByRole("button", { name: messages.en.diagnosticsSubmit })).toBeNull();
+  });
+
+  it("invalidates a prepared bundle when the account becomes deletion-pending", async () => {
+    const now = Date.parse("2026-08-17T00:00:00.000Z");
+    appendDiagnosticEvent(localStorage, fixtureEvent(now), now);
+    let status: serviceBoundary.IdentityStatus = "authenticated";
+    vi.spyOn(serviceBoundary, "useIdentitySettings").mockImplementation(() => ({
+      status,
+      bootstrap: { capabilities: [] },
+    } as unknown as ReturnType<typeof serviceBoundary.useIdentitySettings>));
+    const request = vi.fn(async () => ({ kind: "diagnostics-export", outcome: "saved" } as const));
+    const bridge: NativeBridgeV1 = { request, async listen() { return () => {}; } };
+    const view = render(createElement(DiagnosticsPanel, { copy: messages.en, runtime, bridge, storage: localStorage, online: true }));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.diagnosticsPreview }));
+    expect(screen.getByRole("button", { name: messages.en.diagnosticsExport })).toBeTruthy();
+
+    status = "deletion-pending";
+    view.rerender(createElement(DiagnosticsPanel, { copy: messages.en, runtime, bridge, storage: localStorage, online: true }));
+
+    await waitFor(() => expect(screen.queryByRole("button", { name: messages.en.diagnosticsExport })).toBeNull());
+    expect(screen.queryByTestId("diagnostics-export-preview")).toBeNull();
+    expect(request).not.toHaveBeenCalled();
   });
 
   for (const latestAction of ["uncheck", "preview"] as const) {

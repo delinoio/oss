@@ -67,14 +67,14 @@ fn restore_main_window<R: Runtime>(app: &AppHandle<R>) {
         tracing::error!(event = "shortcut_window_restore_missing");
         return;
     };
-    if let Err(reason) = window.unminimize() {
-        tracing::error!(event = "shortcut_window_restore_unminimize_failed", %reason);
+    if window.unminimize().is_err() {
+        tracing::error!(event = "shortcut_window_restore_unminimize_failed");
     }
-    if let Err(reason) = window.show() {
-        tracing::error!(event = "shortcut_window_restore_show_failed", %reason);
+    if window.show().is_err() {
+        tracing::error!(event = "shortcut_window_restore_show_failed");
     }
-    if let Err(reason) = window.set_focus() {
-        tracing::error!(event = "shortcut_window_restore_focus_failed", %reason);
+    if window.set_focus().is_err() {
+        tracing::error!(event = "shortcut_window_restore_focus_failed");
     }
 }
 
@@ -115,7 +115,7 @@ fn install_global_shortcut_listener<R: Runtime>(app: &AppHandle<R>) {
                     serde_json::json!({ "version": 1, "kind": "shortcut-triggered", "action": action }),
                 );
             });
-            let Err(error) = result else {
+            let Err(_) = result else {
                 return;
             };
             let Some(state) = app.try_state::<crate::bridge::NativeBridgeState>() else {
@@ -123,7 +123,7 @@ fn install_global_shortcut_listener<R: Runtime>(app: &AppHandle<R>) {
             };
             state.mark_shortcut_listener_failed();
             emit_shortcut_status(&app, &state);
-            tracing::warn!(event = "shortcut_listener_failed", ?error);
+            tracing::warn!(event = "shortcut_listener_failed");
             let retry_generation = state.shortcut_listener_retry_generation();
             state.wait_for_shortcut_listener_retry(retry_generation, retry_delay);
             state.clear_shortcut_pressed_keys();

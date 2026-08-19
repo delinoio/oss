@@ -1,6 +1,6 @@
 import { DiagnosticsQuery, QuotaKind, StaticCapability, mapDevHudError, type DevHudClientError } from "@delinoio/devhud-api-client";
 import { useMutation } from "@connectrpc/connect-query";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { diagnosticsConsentDigest, prepareDiagnosticsBundle, readDiagnosticEvents, type PreparedDiagnosticsBundle } from "./diagnostics";
 import { useIdentitySettings, type IdentityStatus } from "./service-boundary";
 import type { Copy } from "./localization";
@@ -39,6 +39,20 @@ export function DiagnosticsPanel({ copy, bridge, storage, online }: DiagnosticsP
     ? submitError.detail
     : null;
 
+  useEffect(() => {
+    if (identity.status !== "deletion-pending") return;
+    consentAttempt.current += 1;
+    exportAttempt.current += 1;
+    setBundle(null);
+    setPreviewRequested(false);
+    setConsentSelected(false);
+    setConsentDigest(null);
+    setExportState("idle");
+    setSubmitState("idle");
+    setSubmitError(null);
+    setServerCorrelation(null);
+  }, [identity.status]);
+
   const preview = () => {
     const events = readDiagnosticEvents(storage);
     const latest = events.at(-1);
@@ -68,7 +82,7 @@ export function DiagnosticsPanel({ copy, bridge, storage, online }: DiagnosticsP
   };
 
   const exportBundle = async () => {
-    if (!bundle || exportPendingRef.current) return;
+    if (!bundle || identity.status === "deletion-pending" || exportPendingRef.current) return;
     exportPendingRef.current = true;
     setExportPending(true);
     const attempt = ++exportAttempt.current;
@@ -121,7 +135,7 @@ export function DiagnosticsPanel({ copy, bridge, storage, online }: DiagnosticsP
       <pre className="diagnostics-preview" data-testid="diagnostics-preview">{bundle.requestJson}</pre>
       <p>{copy.diagnosticsExactExport}</p>
       <pre className="diagnostics-preview" data-testid="diagnostics-export-preview">{bundle.exportJson}</pre>
-      <div className="actions"><button disabled={exportPending} onClick={() => void exportBundle()}>{copy.diagnosticsExport}</button></div>
+      <div className="actions"><button disabled={exportPending || identity.status === "deletion-pending"} onClick={() => void exportBundle()}>{copy.diagnosticsExport}</button></div>
       {exportState !== "idle" && <p role="status">{copy[`diagnosticsExport${capitalize(exportState)}` as keyof Copy]}</p>}
       {authenticated && !blocked && crashReportsSupported && <>
         <label className="check"><input type="checkbox" checked={consentSelected} onChange={(event) => void chooseConsent(event.target.checked)} />{copy.diagnosticsConsent}</label>

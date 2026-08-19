@@ -414,7 +414,15 @@ function normalizeLocalDiagnosticEvent(value: unknown): LocalDiagnosticEvent | n
     summary: value.summary,
     stackFrames: [...value.stackFrames],
     relatedCorrelationIds: [...value.relatedCorrelationIds],
-    build: { ...value.build },
+    build: {
+      appVersion: value.build.appVersion,
+      buildId: value.build.buildId,
+      platform: value.build.platform,
+      architecture: value.build.architecture,
+      osVersion: value.build.osVersion,
+      tauriRevision: value.build.tauriRevision,
+      cefRevision: value.build.cefRevision,
+    },
   };
 }
 
