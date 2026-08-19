@@ -16,6 +16,7 @@ import (
 	"time"
 	"unicode"
 	"unicode/utf16"
+	"unicode/utf8"
 
 	googleuuid "github.com/google/uuid"
 	"golang.org/x/net/idna"
@@ -246,10 +247,11 @@ func validateSettingsDeck(value any, path string, legacy bool, previous bool) (s
 	if err != nil {
 		return "", err
 	}
-	if !legacy && !previous && !hasPositivePullRequestQualifier(query) {
+	hasPullRequestQualifier, hasRepositoryQualifier := deckQueryQualifiers(query)
+	if !legacy && !previous && !hasPullRequestQualifier {
 		return "", fmt.Errorf("%s.query must contain a standalone positive is:pr qualifier", path)
 	}
-	if !legacy && !previous && !hasRepositoryQualifier(query) {
+	if !legacy && !previous && !hasRepositoryQualifier {
 		return "", fmt.Errorf("%s.query must contain a repository qualifier when a credential profile is selected", path)
 	}
 	profileRef := ""
@@ -466,37 +468,229 @@ func unquoteSettingsDeckQualifier(value string) string {
 	return value
 }
 
-func hasPositivePullRequestQualifier(query string) bool {
-	for _, token := range deckQueryTokens(query) {
-		if strings.EqualFold(token, "is:pr") {
-			return true
-		}
-	}
-	return false
+const deckQueryBranchLimit = 100
+
+type deckQueryBranch struct {
+	repositories            map[string]struct{}
+	hasPullRequestQualifier bool
 }
 
-func hasRepositoryQualifier(query string) bool {
-	count := 0
-	found := false
-	for _, token := range deckQueryTokens(query) {
-		if len(token) < len("repo:") || !strings.EqualFold(token[:len("repo:")], "repo:") {
-			continue
+type deckBooleanTokenKind uint8
+
+const (
+	deckBooleanTerm deckBooleanTokenKind = iota
+	deckBooleanOpen
+	deckBooleanClose
+)
+
+type deckBooleanToken struct {
+	kind  deckBooleanTokenKind
+	value string
+}
+
+// deckQueryQualifiers proves every executable Boolean query branch is scoped to
+// both a GitHub repository and pull requests, matching the frontend decoder.
+func deckQueryQualifiers(query string) (bool, bool) {
+	branches, valid := deckQueryBranches(query)
+	if !valid {
+		return false, false
+	}
+	repositories := make(map[string]struct{})
+	for _, branch := range branches {
+		if !branch.hasPullRequestQualifier {
+			return false, false
 		}
-		value := token[len("repo:"):]
-		if strings.Count(value, "/") != 1 || strings.HasPrefix(value, "/") || strings.HasSuffix(value, "/") {
-			return false
+		if len(branch.repositories) == 0 {
+			return true, false
 		}
-		parts := strings.SplitN(value, "/", 2)
-		if !validGitHubOwnerIdentifier(parts[0]) || !githubRepositoryIdentifier.MatchString(parts[1]) {
-			return false
-		}
-		found = true
-		count++
-		if count > 10 {
-			return false
+		for repository := range branch.repositories {
+			repositories[repository] = struct{}{}
+			if len(repositories) > 10 {
+				return true, false
+			}
 		}
 	}
-	return found
+	return true, len(repositories) > 0
+}
+
+func deckQueryBranches(query string) ([]deckQueryBranch, bool) {
+	tokens, valid := deckBooleanTokens(query)
+	if !valid || len(tokens) == 0 {
+		return nil, false
+	}
+	index := 0
+	peek := func() *deckBooleanToken {
+		if index >= len(tokens) {
+			return nil
+		}
+		return &tokens[index]
+	}
+	isOperator := func(token *deckBooleanToken, value string) bool {
+		return token != nil && token.kind == deckBooleanTerm && strings.EqualFold(token.value, value)
+	}
+	isPrimary := func(token *deckBooleanToken) bool {
+		return token != nil && (token.kind == deckBooleanOpen || token.kind == deckBooleanTerm && !isOperator(token, "and") && !isOperator(token, "or"))
+	}
+	combineAnd := func(left []deckQueryBranch, right []deckQueryBranch) ([]deckQueryBranch, bool) {
+		combined := make([]deckQueryBranch, 0, len(left)*len(right))
+		for _, leftBranch := range left {
+			for _, rightBranch := range right {
+				repositories := make(map[string]struct{}, len(leftBranch.repositories)+len(rightBranch.repositories))
+				for repository := range leftBranch.repositories {
+					repositories[repository] = struct{}{}
+				}
+				for repository := range rightBranch.repositories {
+					repositories[repository] = struct{}{}
+				}
+				combined = append(combined, deckQueryBranch{repositories: repositories, hasPullRequestQualifier: leftBranch.hasPullRequestQualifier || rightBranch.hasPullRequestQualifier})
+				if len(combined) > deckQueryBranchLimit {
+					return nil, false
+				}
+			}
+		}
+		return combined, true
+	}
+	var parseOr func() ([]deckQueryBranch, bool)
+	var parseAnd func() ([]deckQueryBranch, bool)
+	parsePrimary := func() ([]deckQueryBranch, bool) {
+		token := peek()
+		if token != nil && token.kind == deckBooleanOpen {
+			index++
+			nested, valid := parseOr()
+			if !valid || peek() == nil || peek().kind != deckBooleanClose {
+				return nil, false
+			}
+			index++
+			return nested, true
+		}
+		if token == nil || token.kind != deckBooleanTerm || isOperator(token, "and") || isOperator(token, "or") {
+			return nil, false
+		}
+		index++
+		repository, valid := deckRepositoryQualifier(token.value)
+		if !valid {
+			return nil, false
+		}
+		repositories := make(map[string]struct{})
+		if repository != "" {
+			repositories[repository] = struct{}{}
+		}
+		return []deckQueryBranch{{repositories: repositories, hasPullRequestQualifier: strings.EqualFold(token.value, "is:pr")}}, true
+	}
+	parseAnd = func() ([]deckQueryBranch, bool) {
+		result, valid := parsePrimary()
+		if !valid {
+			return nil, false
+		}
+		for {
+			if isOperator(peek(), "and") {
+				index++
+			} else if !isPrimary(peek()) {
+				break
+			}
+			next, valid := parsePrimary()
+			if !valid {
+				return nil, false
+			}
+			result, valid = combineAnd(result, next)
+			if !valid {
+				return nil, false
+			}
+		}
+		return result, true
+	}
+	parseOr = func() ([]deckQueryBranch, bool) {
+		result, valid := parseAnd()
+		if !valid {
+			return nil, false
+		}
+		for isOperator(peek(), "or") {
+			index++
+			next, valid := parseAnd()
+			if !valid || len(result)+len(next) > deckQueryBranchLimit {
+				return nil, false
+			}
+			result = append(result, next...)
+		}
+		return result, true
+	}
+	branches, valid := parseOr()
+	return branches, valid && index == len(tokens)
+}
+
+// deckRepositoryQualifier returns an empty string for a non-repository term.
+func deckRepositoryQualifier(value string) (string, bool) {
+	if len(value) < len("repo:") || !strings.EqualFold(value[:len("repo:")], "repo:") {
+		return "", true
+	}
+	repository := value[len("repo:"):]
+	if strings.Count(repository, "/") != 1 || strings.HasPrefix(repository, "/") || strings.HasSuffix(repository, "/") {
+		return "", false
+	}
+	parts := strings.SplitN(repository, "/", 2)
+	if !validGitHubOwnerIdentifier(parts[0]) || !githubRepositoryIdentifier.MatchString(parts[1]) {
+		return "", false
+	}
+	return strings.ToLower(repository), true
+}
+
+func deckBooleanTokens(query string) ([]deckBooleanToken, bool) {
+	tokens := make([]deckBooleanToken, 0)
+	for index := 0; index < len(query); {
+		character, width := utf8.DecodeRuneInString(query[index:])
+		if unicode.IsSpace(character) {
+			index += width
+			continue
+		}
+		if character == '(' {
+			tokens = append(tokens, deckBooleanToken{kind: deckBooleanOpen})
+			index += width
+			continue
+		}
+		if character == ')' {
+			tokens = append(tokens, deckBooleanToken{kind: deckBooleanClose})
+			index += width
+			continue
+		}
+		var value strings.Builder
+		quoted := false
+		escaped := false
+		for index < len(query) {
+			next, nextWidth := utf8.DecodeRuneInString(query[index:])
+			if escaped {
+				value.WriteString(query[index : index+nextWidth])
+				escaped = false
+				index += nextWidth
+				continue
+			}
+			if quoted {
+				value.WriteString(query[index : index+nextWidth])
+				if next == '\\' {
+					escaped = true
+				} else if next == '"' {
+					quoted = false
+				}
+				index += nextWidth
+				continue
+			}
+			if next == '"' {
+				value.WriteString(query[index : index+nextWidth])
+				quoted = true
+				index += nextWidth
+				continue
+			}
+			if unicode.IsSpace(next) || next == '(' || next == ')' {
+				break
+			}
+			value.WriteString(query[index : index+nextWidth])
+			index += nextWidth
+		}
+		if quoted || value.Len() == 0 {
+			return nil, false
+		}
+		tokens = append(tokens, deckBooleanToken{kind: deckBooleanTerm, value: value.String()})
+	}
+	return tokens, true
 }
 
 func validGitHubOwnerIdentifier(value string) bool {

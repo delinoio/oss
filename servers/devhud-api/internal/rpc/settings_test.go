@@ -93,6 +93,9 @@ func TestValidateDevHudSettingsDeckQualifiers(t *testing.T) {
 	if err := validateDevHudSettings([]byte(settings("repo:octo/widgets IS:PR", `[]`)), 4); err != nil {
 		t.Fatalf("mixed-case qualifier: %v", err)
 	}
+	if err := validateDevHudSettings([]byte(settings("(repo:octo/widgets is:pr OR (repo:octo/tools is:pr AND author:octocat))", `[]`)), 4); err != nil {
+		t.Fatalf("branch-scoped Boolean qualifiers: %v", err)
+	}
 	matchingBuilder := strings.Replace(settings("repo:octo/widgets is:pr", `[]`), `"builder":null`, `"builder":{"author":null,"label":null,"repository":"octo/widgets","review":null,"state":null}`, 1)
 	if err := validateDevHudSettings([]byte(matchingBuilder), 4); err != nil {
 		t.Fatalf("matching builder: %v", err)
@@ -102,9 +105,11 @@ func TestValidateDevHudSettingsDeckQualifiers(t *testing.T) {
 		t.Fatalf("client-compatible escaped builder: %v", err)
 	}
 	for name, value := range map[string]string{
-		"missing repository":      settings("is:pr", `[]`),
-		"malformed repository":    settings("repo:octo is:pr", `[]`),
-		"invalid repository name": settings("repo:octo/\\u0000 is:pr", `[]`),
+		"missing repository":          settings("is:pr", `[]`),
+		"unscoped repository branch":  settings("repo:octo/widgets is:pr OR author:octocat is:pr", `[]`),
+		"missing pull request branch": settings("repo:octo/widgets is:pr OR repo:octo/tools author:octocat", `[]`),
+		"malformed repository":        settings("repo:octo is:pr", `[]`),
+		"invalid repository name":     settings("repo:octo/\\u0000 is:pr", `[]`),
 		"too many repositories": settings(strings.Join([]string{
 			"repo:octo/repository-0", "repo:octo/repository-1", "repo:octo/repository-2", "repo:octo/repository-3", "repo:octo/repository-4", "repo:octo/repository-5", "repo:octo/repository-6", "repo:octo/repository-7", "repo:octo/repository-8", "repo:octo/repository-9", "repo:octo/repository-10", "is:pr",
 		}, " "), `[]`),
