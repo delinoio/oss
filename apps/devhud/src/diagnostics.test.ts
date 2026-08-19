@@ -98,6 +98,7 @@ describe("diagnostics privacy boundary", () => {
       importedPrivateKey: "-----BEGIN PRIVATE KEY-----",
       importedLocation: "/workspace/project/main.ts",
       encodedImportedLocation: "source=%2Fworkspace%2Fprivate%2Fapp.ts",
+      doublyEncodedImportedLocation: "source=%252Fworkspace%252Fprivate%252Fapp.ts",
       shortcut: "Ctrl+Shift+P",
       urlFragment: "https://example.test/path#private",
       customScheme: "devhud://auth/callback",
@@ -109,19 +110,27 @@ describe("diagnostics privacy boundary", () => {
     const serialized = JSON.stringify(redactDiagnosticValue(hostile));
     expect(serialized).toContain("bounded classification");
     expect(serialized).toContain("React/Native renderer failed");
-    for (const prohibited of ["Bearer", "githubPat", "r2_secret", "signingKey", "nodeType", "screenshot", "issueBody", "agentPrompt", "childEnvironment", "/home/alice", "ghp_", "eyJ", "AKIA", "PRIVATE KEY", "/workspace/", "%2Fworkspace", "Ctrl+", "#private", "devhud://", "ftp://", "file://"]) {
+    for (const prohibited of ["Bearer", "githubPat", "r2_secret", "signingKey", "nodeType", "screenshot", "issueBody", "agentPrompt", "childEnvironment", "/home/alice", "ghp_", "eyJ", "AKIA", "PRIVATE KEY", "/workspace/", "%2Fworkspace", "%252Fworkspace", "Ctrl+", "#private", "devhud://", "ftp://", "file://"]) {
       expect(serialized).not.toContain(prohibited);
     }
   });
 
-  it("drops persisted events containing percent-encoded local paths", () => {
+  it("drops persisted events containing singly or multiply encoded local paths", () => {
     const now = Date.parse("2026-08-17T00:00:00.000Z");
-    const unsafe = { ...fixtureEvent(now - 1), summary: "source=%2Fworkspace%2Fprivate%2Fapp.ts" };
+    const singlyEncoded = { ...fixtureEvent(now - 2), summary: "source=%2Fworkspace%2Fprivate%2Fapp.ts" };
+    const multiplyEncoded = { ...fixtureEvent(now - 1), summary: "source=%252Fworkspace%252Fprivate%252Fapp.ts" };
     const safe = fixtureEvent(now);
-    localStorage.setItem(DiagnosticsStorageKey, JSON.stringify([unsafe, safe]));
+    localStorage.setItem(DiagnosticsStorageKey, JSON.stringify([singlyEncoded, multiplyEncoded, safe]));
 
     expect(readDiagnosticEvents(localStorage, now)).toEqual([safe]);
     expect(JSON.parse(localStorage.getItem(DiagnosticsStorageKey) ?? "null")).toEqual([safe]);
+  });
+
+  it("fails closed when diagnostic percent decoding exceeds its fixed-point bound", () => {
+    let encoded = "/workspace/private/app.ts";
+    for (let index = 0; index < 10; index += 1) encoded = encodeURIComponent(encoded);
+
+    expect(redactDiagnosticValue({ encoded })).toEqual({});
   });
 
   it("generates canonical UUID v7 values and keeps stack metadata path-free", () => {

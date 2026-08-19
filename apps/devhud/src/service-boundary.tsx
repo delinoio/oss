@@ -259,8 +259,8 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     setStatus("error");
     const localCleanupComplete = clearAllContractedLocalData(storage);
     try {
-      await bridge.request({ operation: "secure.purge", scope: "logout" });
       if (!localCleanupComplete) throw new Error("local-data-cleanup-incomplete");
+      await bridge.request({ operation: "secure.purge", scope: "logout" });
       sessionRef.current = null;
       setSession(null);
       setAccount(null);

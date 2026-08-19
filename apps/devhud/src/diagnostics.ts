@@ -25,6 +25,7 @@ const maximumRelatedCorrelations = 32;
 const maximumDepth = 5;
 const maximumCollectionEntries = 64;
 const maximumStringBytes = 512;
+const maximumDiagnosticDecodings = 8;
 const exactTauriRevision = "4af26a3f7f8b692d62cca549bbacd93f5ce90b41";
 const exactCefRevision = "150.0.10+g8042e43+chromium-150.0.7871.101";
 const textEncoder = new TextEncoder();
@@ -454,9 +455,15 @@ function safeDiagnosticString(value: string): string | undefined {
 }
 
 function isForbiddenDiagnosticValue(value: string): boolean {
-  if (containsRawForbiddenDiagnosticValue(value)) return true;
-  const decoded = decodePercentEncodedOctets(value);
-  return decoded !== value && containsRawForbiddenDiagnosticValue(decoded);
+  let decodings = 0;
+  for (;;) {
+    if (containsRawForbiddenDiagnosticValue(value)) return true;
+    const decoded = decodePercentEncodedOctets(value);
+    if (decoded === value) return false;
+    if (decodings === maximumDiagnosticDecodings) return true;
+    value = decoded;
+    decodings += 1;
+  }
 }
 
 function containsRawForbiddenDiagnosticValue(value: string): boolean {

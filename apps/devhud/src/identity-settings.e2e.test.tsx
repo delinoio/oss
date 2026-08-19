@@ -798,8 +798,22 @@ describe("generated Connect identity/settings fixture", () => {
     expect(screen.getByTestId("identity-state").dataset.error).toBe("");
   });
 
-  it("retries incomplete Web Storage cleanup after securely purging an irreversible account", async () => {
+  it("retains purge-claimed recovery across restart until Web Storage cleanup succeeds", async () => {
     const purges: string[] = [];
+    const accessTokenMap = JSON.stringify({ "@https://api.example/api": { token: "fixture-access-token", scope: "", expiresAt: 4_102_444_800 } });
+    const secureSession = JSON.stringify({ idToken: "fixture-id-token", accessToken: accessTokenMap });
+    let authenticated = true;
+    const bridge: NativeBridgeV1 = {
+      async request(request) {
+        if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
+        if (request.operation === "secure.read") return { kind: "secure-value", value: authenticated && request.setting.kind === "logto-session" ? secureSession : null };
+        if (request.operation === "secure.purge") { purges.push(request.scope); authenticated = false; return { kind: "ok" }; }
+        if (request.operation === "secure.write" || request.operation === "secure.remove" || request.operation === "secure.reconcile-github-pats") return { kind: "ok" };
+        if (request.operation === "auth.take-pending-callback") return { kind: "auth-callback", url: null };
+        throw new Error(`unexpected bridge operation ${request.operation}`);
+      },
+      async listen() { return () => {}; },
+    };
     localStorage.setItem("devhud.identity.v1.account.fixture", "sensitive");
     const originalRemoveItem = Storage.prototype.removeItem;
     let rejectRemoval = true;
@@ -818,20 +832,22 @@ describe("generated Connect identity/settings fixture", () => {
       throw new Error(`unexpected fixture request ${url}`);
     }));
 
-    render(<App bridge={authenticatedBridge(purges)} initialRuntime={runtime} />);
+    render(<App bridge={bridge} initialRuntime={runtime} />);
     fireEvent.click(screen.getByRole("button", { name: messages.en.account }));
 
-    await waitFor(() => expect(purges).toEqual(["logout"]));
-    expect(localStorage.getItem("devhud.identity.v1.account.fixture")).toBe("sensitive");
-    const cleanupAlert = screen.getByRole("alert");
+    const cleanupAlert = await screen.findByRole("alert");
     expect(cleanupAlert.textContent).toContain(messages.en.bootstrapFailed);
+    expect(localStorage.getItem("devhud.identity.v1.account.fixture")).toBe("sensitive");
+    expect(purges).toEqual([]);
     expect(screen.queryByRole("button", { name: messages.en.signIn })).toBeNull();
     expect(screen.queryByRole("button", { name: messages.en.restoreAccount })).toBeNull();
 
-    fireEvent.click(within(cleanupAlert).getByRole("button", { name: messages.en.retry }));
+    cleanup();
+    render(<App bridge={bridge} initialRuntime={runtime} />);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.account }));
 
     await waitFor(() => expect(localStorage.getItem("devhud.identity.v1.account.fixture")).toBeNull());
-    await waitFor(() => expect(purges).toEqual(["logout", "logout"]));
+    await waitFor(() => expect(purges).toEqual(["logout"]));
     expect(await screen.findByRole("button", { name: messages.en.signIn })).toBeTruthy();
     expect(screen.queryByRole("button", { name: messages.en.restoreAccount })).toBeNull();
   });
