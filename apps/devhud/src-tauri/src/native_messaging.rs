@@ -3,7 +3,7 @@ use std::{
     io,
     sync::{
         Arc, Mutex, OnceLock,
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
     time::{Duration, Instant},
 };
@@ -73,6 +73,7 @@ pub fn register_packaged_host() -> Result<(), String> {
 
 #[derive(Default)]
 struct NativeMessagingState {
+    authentication_revoked: AtomicBool,
     generation: AtomicU64,
     pending_pairing: Mutex<Option<PendingPairing>>,
     configuration: Mutex<Value>,
@@ -155,6 +156,9 @@ pub fn native_messaging_begin_pairing() -> Result<PairingStatus, String> {
         nonce: nonce.clone(),
         expires_at: Instant::now() + PAIRING_NONCE_TTL,
     });
+    state()
+        .authentication_revoked
+        .store(false, Ordering::SeqCst);
     info!(event = "native_messaging_pairing_started");
     Ok(PairingStatus {
         paired: false,
@@ -165,8 +169,13 @@ pub fn native_messaging_begin_pairing() -> Result<PairingStatus, String> {
 
 #[tauri::command]
 pub fn native_messaging_status() -> Result<PairingStatus, String> {
+    let paired = if state().authentication_revoked.load(Ordering::SeqCst) {
+        false
+    } else {
+        read_pairing_secret()?.is_some() && pairing_is_complete()?
+    };
     Ok(PairingStatus {
-        paired: read_pairing_secret()?.is_some() && pairing_is_complete()?,
+        paired,
         pairing_nonce: None,
         expires_in_seconds: None,
     })
@@ -393,8 +402,7 @@ pub fn native_messaging_take_context() -> Option<Value> {
 }
 
 pub fn invalidate_pairing() -> Result<(), String> {
-    invalidate_in_memory_pairing(state());
-    match delete_pairing_secret() {
+    match invalidate_pairing_with(state(), delete_pairing_secret) {
         Ok(()) => {
             info!(event = "native_messaging_pairing_invalidated");
             Ok(())
@@ -406,7 +414,22 @@ pub fn invalidate_pairing() -> Result<(), String> {
     }
 }
 
+fn invalidate_pairing_with(
+    messaging_state: &NativeMessagingState,
+    delete: impl FnOnce() -> Result<(), String>,
+) -> Result<(), String> {
+    invalidate_in_memory_pairing(messaging_state);
+    delete()?;
+    messaging_state
+        .authentication_revoked
+        .store(false, Ordering::SeqCst);
+    Ok(())
+}
+
 fn invalidate_in_memory_pairing(messaging_state: &NativeMessagingState) {
+    messaging_state
+        .authentication_revoked
+        .store(true, Ordering::SeqCst);
     *messaging_state
         .pending_pairing
         .lock()
@@ -420,17 +443,36 @@ fn invalidate_in_memory_pairing(messaging_state: &NativeMessagingState) {
 }
 
 fn pairing_nonce_is_valid(candidate: Option<&str>) -> bool {
-    let pending = state()
+    pairing_nonce_is_valid_with(state(), candidate, || {
+        pairing_is_complete().unwrap_or(false)
+    })
+}
+
+fn pairing_nonce_is_valid_with(
+    messaging_state: &NativeMessagingState,
+    candidate: Option<&str>,
+    pairing_is_complete: impl FnOnce() -> bool,
+) -> bool {
+    if messaging_state
+        .authentication_revoked
+        .load(Ordering::SeqCst)
+    {
+        return false;
+    }
+    let pending = messaging_state
         .pending_pairing
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let Some(current) = pending.as_ref() else {
-        return candidate.is_none() && pairing_is_complete().unwrap_or(false);
+        return candidate.is_none() && pairing_is_complete();
     };
     current.expires_at >= Instant::now() && candidate == Some(current.nonce.as_str())
 }
 
 fn consume_pairing_nonce(candidate: &str) -> bool {
+    if state().authentication_revoked.load(Ordering::SeqCst) {
+        return false;
+    }
     let mut pending = state()
         .pending_pairing
         .lock()
@@ -492,8 +534,7 @@ pub fn start() -> Result<(), String> {
                             warn!(event = "native_messaging_peer_rejected");
                             continue;
                         }
-                        let _ = stream.set_read_timeout(Some(CONNECTION_TIMEOUT));
-                        let _ = stream.set_write_timeout(Some(CONNECTION_TIMEOUT));
+                        let stream = endpoint::IpcClientStream::from_unix_stream(stream);
                         std::thread::spawn(move || {
                             if let Err(reason) = serve_connection(stream) {
                                 warn!(event = "native_messaging_connection_closed", reason);
@@ -541,27 +582,34 @@ fn start_windows_pipe() -> Result<(), String> {
 }
 
 trait ConnectionStream: io::Read + io::Write {
-    fn reset_io_deadline(&mut self) -> io::Result<()>;
+    fn reset_io_deadline(&mut self, timeout: Duration) -> io::Result<()>;
 }
 
 #[cfg(unix)]
-impl ConnectionStream for std::os::unix::net::UnixStream {
-    fn reset_io_deadline(&mut self) -> io::Result<()> {
-        self.set_read_timeout(Some(CONNECTION_TIMEOUT))?;
-        self.set_write_timeout(Some(CONNECTION_TIMEOUT))
+impl ConnectionStream for endpoint::IpcClientStream {
+    fn reset_io_deadline(&mut self, timeout: Duration) -> io::Result<()> {
+        self.set_io_deadline(timeout);
+        Ok(())
     }
 }
 
 #[cfg(windows)]
 impl ConnectionStream for endpoint::WindowsPipeStream {
-    fn reset_io_deadline(&mut self) -> io::Result<()> {
-        self.set_io_deadline(CONNECTION_TIMEOUT);
+    fn reset_io_deadline(&mut self, timeout: Duration) -> io::Result<()> {
+        self.set_io_deadline(timeout);
         Ok(())
     }
 }
 
 fn read_connection_json<T: DeserializeOwned>(stream: &mut impl ConnectionStream) -> io::Result<T> {
-    stream.reset_io_deadline()?;
+    read_connection_json_with_timeout(stream, CONNECTION_TIMEOUT)
+}
+
+fn read_connection_json_with_timeout<T: DeserializeOwned>(
+    stream: &mut impl ConnectionStream,
+    timeout: Duration,
+) -> io::Result<T> {
+    stream.reset_io_deadline(timeout)?;
     read_json(stream, ByteOrder::LittleEndian)
 }
 
@@ -569,7 +617,7 @@ fn write_connection_json<T: Serialize>(
     stream: &mut impl ConnectionStream,
     value: &T,
 ) -> io::Result<()> {
-    stream.reset_io_deadline()?;
+    stream.reset_io_deadline(CONNECTION_TIMEOUT)?;
     write_json(stream, ByteOrder::LittleEndian, value)
 }
 
@@ -717,6 +765,9 @@ mod tests {
 
     #[test]
     fn pairing_nonce_is_one_time() {
+        state()
+            .authentication_revoked
+            .store(false, Ordering::SeqCst);
         *state().pending_pairing.lock().unwrap() = Some(PendingPairing {
             nonce: "once".into(),
             expires_at: Instant::now() + Duration::from_secs(1),
@@ -816,7 +867,56 @@ mod tests {
 
         assert!(messaging_state.pending_pairing.lock().unwrap().is_none());
         assert!(messaging_state.latest_context.lock().unwrap().is_none());
+        assert!(
+            messaging_state
+                .authentication_revoked
+                .load(Ordering::SeqCst)
+        );
         assert_eq!(messaging_state.generation.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn failed_pairing_deletion_blocks_reauthentication() {
+        let messaging_state = NativeMessagingState::default();
+        let result =
+            invalidate_pairing_with(&messaging_state, || Err("storage-failure".to_string()));
+
+        assert_eq!(result, Err("storage-failure".to_string()));
+        assert!(
+            messaging_state
+                .authentication_revoked
+                .load(Ordering::SeqCst)
+        );
+        assert!(!pairing_nonce_is_valid_with(&messaging_state, None, || {
+            true
+        }));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn partial_unix_app_frame_is_bounded_by_one_absolute_deadline() {
+        use std::{io::Write, os::unix::net::UnixStream, thread};
+
+        let (mut peer, stream) = UnixStream::pair().unwrap();
+        let writer = thread::spawn(move || {
+            for byte in [2, 0, 0, 0, b'{', b'}'] {
+                if peer.write_all(&[byte]).is_err() {
+                    break;
+                }
+                thread::sleep(Duration::from_millis(20));
+            }
+        });
+        let mut stream = endpoint::IpcClientStream::from_unix_stream(stream);
+        let error =
+            read_connection_json_with_timeout::<Value>(&mut stream, Duration::from_millis(50))
+                .unwrap_err();
+
+        assert!(matches!(
+            error.kind(),
+            io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock
+        ));
+        drop(stream);
+        writer.join().unwrap();
     }
 
     #[test]

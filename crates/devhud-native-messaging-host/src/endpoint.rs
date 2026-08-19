@@ -38,6 +38,13 @@ pub struct IpcClientStream {
 
 #[cfg(unix)]
 impl IpcClientStream {
+    pub fn from_unix_stream(stream: UnixStream) -> Self {
+        Self {
+            stream,
+            deadline: None,
+        }
+    }
+
     pub fn set_io_deadline(&mut self, timeout: Duration) {
         self.deadline = Some(Instant::now() + timeout);
     }
@@ -81,10 +88,9 @@ impl io::Write for IpcClientStream {
 
 #[cfg(unix)]
 pub fn connect() -> io::Result<IpcClientStream> {
-    Ok(IpcClientStream {
-        stream: UnixStream::connect(socket_path()?)?,
-        deadline: None,
-    })
+    Ok(IpcClientStream::from_unix_stream(UnixStream::connect(
+        socket_path()?,
+    )?))
 }
 
 #[cfg(unix)]

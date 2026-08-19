@@ -11,9 +11,10 @@ function connectNative(): void {
   if (nativePort) return;
   try {
     const port = chrome.runtime.connectNative(HostName);
-    nativePort = port; reconnectAttempt = 0;
+    nativePort = port;
     port.onMessage.addListener((message: unknown) => {
       if (!isNativeResponse(message)) return;
+      reconnectAttempt = 0;
       const request = pending.get(message.request_id); if (!request) return;
       clearTimeout(request.timer); pending.delete(message.request_id); request.resolve(message);
     });
