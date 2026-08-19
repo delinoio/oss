@@ -489,26 +489,6 @@ fn pairing_nonce_is_valid_with(
     current.expires_at >= Instant::now() && candidate == Some(current.nonce.as_str())
 }
 
-fn consume_pairing_nonce_with(messaging_state: &NativeMessagingState, candidate: &str) -> bool {
-    if messaging_state
-        .authentication_revoked
-        .load(Ordering::SeqCst)
-    {
-        return false;
-    }
-    let mut pending = messaging_state
-        .pending_pairing
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let accepted = pending
-        .as_ref()
-        .is_some_and(|current| current.expires_at >= Instant::now() && current.nonce == candidate);
-    if accepted {
-        *pending = None;
-    }
-    accepted
-}
-
 fn complete_pairing_with(
     messaging_state: &NativeMessagingState,
     generation: u64,
@@ -519,9 +499,22 @@ fn complete_pairing_with(
         .pairing_lifecycle
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    session_generation_is_current(messaging_state, generation)
-        && consume_pairing_nonce_with(messaging_state, candidate)
-        && mark_complete().is_ok()
+    if !session_generation_is_current(messaging_state, generation) {
+        return false;
+    }
+    let mut pending = messaging_state
+        .pending_pairing
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if !pending
+        .as_ref()
+        .is_some_and(|current| current.expires_at >= Instant::now() && current.nonce == candidate)
+        || mark_complete().is_err()
+    {
+        return false;
+    }
+    *pending = None;
+    true
 }
 
 fn session_generation_is_current(messaging_state: &NativeMessagingState, generation: u64) -> bool {
@@ -810,17 +803,48 @@ mod tests {
     }
 
     #[test]
-    fn pairing_nonce_is_one_time() {
-        state()
-            .authentication_revoked
-            .store(false, Ordering::SeqCst);
-        *state().pending_pairing.lock().unwrap() = Some(PendingPairing {
+    fn pairing_nonce_is_consumed_only_after_completion_persists() {
+        let messaging_state = NativeMessagingState::default();
+        let generation = messaging_state.generation.load(Ordering::SeqCst);
+        *messaging_state.pending_pairing.lock().unwrap() = Some(PendingPairing {
             nonce: "once".into(),
             expires_at: Instant::now() + Duration::from_secs(1),
         });
-        assert!(pairing_nonce_is_valid(Some("once")));
-        assert!(consume_pairing_nonce_with(state(), "once"));
-        assert!(!consume_pairing_nonce_with(state(), "once"));
+        let mut completion_attempts = 0;
+
+        assert!(!complete_pairing_with(
+            &messaging_state,
+            generation,
+            "once",
+            || {
+                completion_attempts += 1;
+                Err("storage-failure".to_string())
+            }
+        ));
+        assert!(pairing_nonce_is_valid_with(
+            &messaging_state,
+            Some("once"),
+            || false
+        ));
+        assert!(complete_pairing_with(
+            &messaging_state,
+            generation,
+            "once",
+            || {
+                completion_attempts += 1;
+                Ok(())
+            }
+        ));
+        assert!(!complete_pairing_with(
+            &messaging_state,
+            generation,
+            "once",
+            || {
+                completion_attempts += 1;
+                Ok(())
+            }
+        ));
+        assert_eq!(completion_attempts, 2);
     }
 
     #[test]

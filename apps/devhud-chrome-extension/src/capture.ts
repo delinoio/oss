@@ -140,6 +140,15 @@ export function injectedCapture(selectElement: boolean) {
   const result = (selected: Element | null): InjectedCapturedBrowserContext => {
     const allowedSelection = selected && isAllowedAndVisible(selected) ? selected : null;
     const bounds = allowedSelection?.getBoundingClientRect();
+    const selectedBounds = bounds
+      && Number.isFinite(bounds.x)
+      && Number.isFinite(bounds.y)
+      && Number.isFinite(bounds.width)
+      && Number.isFinite(bounds.height)
+      && bounds.width > 0
+      && bounds.height > 0
+      ? { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height }
+      : null;
     const attributes = allowedSelection ? Array.from(allowedSelection.attributes).map((attribute) => [attribute.name.toLowerCase(), attribute.value] as [string, string]) : [];
     const accessibility = Object.fromEntries(attributes
       .filter(([name, value]) => allowedAttributes.has(name) && !(name === "aria-hidden" && value.toLowerCase() === "true"))
@@ -150,7 +159,7 @@ export function injectedCapture(selectElement: boolean) {
       title: truncateUtf8(document.title, 4 * 1024),
       viewport: { width: innerWidth, height: innerHeight },
       userAgent: truncateUtf8(navigator.userAgent, 4 * 1024),
-      selectedBounds: bounds ? { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height } : null,
+      selectedBounds,
       accessibility,
       outerHtml: sanitize(allowedSelection),
     };

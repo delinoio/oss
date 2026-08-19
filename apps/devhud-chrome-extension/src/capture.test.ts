@@ -2,9 +2,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { injectedCapture } from "./capture.js";
 
-async function select(element: Element) {
+async function select(element: Element, bounds = { x: 1, y: 2, width: 3, height: 4 }) {
   Object.defineProperty(element, "getBoundingClientRect", {
-    value: () => ({ x: 1, y: 2, width: 3, height: 4 }),
+    value: () => bounds,
   });
   const capture = injectedCapture(true);
   element.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
@@ -38,6 +38,21 @@ describe("injected capture", () => {
     const encoder = new TextEncoder();
     expect(encoder.encode(result.title).byteLength).toBeLessThanOrEqual(4 * 1024);
     expect(encoder.encode(result.accessibility["aria-label"]).byteLength).toBeLessThanOrEqual(4 * 1024);
+  });
+
+  it.each([
+    ["zero width", { x: 1, y: 2, width: 0, height: 4 }],
+    ["zero height", { x: 1, y: 2, width: 3, height: 0 }],
+    ["negative width", { x: 1, y: 2, width: -1, height: 4 }],
+    ["non-finite position", { x: Number.NaN, y: 2, width: 3, height: 4 }],
+    ["non-finite dimension", { x: 1, y: 2, width: 3, height: Number.POSITIVE_INFINITY }],
+  ])("omits %s selection bounds", async (_case, bounds) => {
+    document.body.innerHTML = "<main>safe</main>";
+
+    const result = await select(document.body.firstElementChild!, bounds);
+
+    expect(result?.selectedBounds).toBeNull();
+    expect(result?.outerHtml).toBe("<main>safe</main>");
   });
 
   it.each([
