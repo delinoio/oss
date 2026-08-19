@@ -3,7 +3,7 @@ use std::io;
 use std::os::unix::{fs::PermissionsExt, net::UnixStream};
 #[cfg(unix)]
 use std::path::PathBuf;
-#[cfg(windows)]
+#[cfg(any(unix, windows))]
 use std::time::{Duration, Instant};
 
 pub const WINDOWS_PIPE_PATH: &str = r"\\.\pipe\io.delino.devhud.ipc";
@@ -31,8 +31,60 @@ pub fn socket_path() -> io::Result<PathBuf> {
 }
 
 #[cfg(unix)]
-pub fn connect() -> io::Result<UnixStream> {
-    UnixStream::connect(socket_path()?)
+pub struct IpcClientStream {
+    stream: UnixStream,
+    deadline: Option<Instant>,
+}
+
+#[cfg(unix)]
+impl IpcClientStream {
+    pub fn set_io_deadline(&mut self, timeout: Duration) {
+        self.deadline = Some(Instant::now() + timeout);
+    }
+
+    fn remaining(&self) -> io::Result<Duration> {
+        let remaining = self
+            .deadline
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "socket deadline is unset"))?
+            .checked_duration_since(Instant::now())
+            .ok_or_else(|| io::Error::new(io::ErrorKind::TimedOut, "socket operation timed out"))?;
+        if remaining.is_zero() {
+            return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "socket operation timed out",
+            ));
+        }
+        Ok(remaining)
+    }
+}
+
+#[cfg(unix)]
+impl io::Read for IpcClientStream {
+    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        self.stream.set_read_timeout(Some(self.remaining()?))?;
+        self.stream.read(buffer)
+    }
+}
+
+#[cfg(unix)]
+impl io::Write for IpcClientStream {
+    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+        self.stream.set_write_timeout(Some(self.remaining()?))?;
+        self.stream.write(buffer)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.stream.set_write_timeout(Some(self.remaining()?))?;
+        self.stream.flush()
+    }
+}
+
+#[cfg(unix)]
+pub fn connect() -> io::Result<IpcClientStream> {
+    Ok(IpcClientStream {
+        stream: UnixStream::connect(socket_path()?)?,
+        deadline: None,
+    })
 }
 
 #[cfg(unix)]
@@ -110,11 +162,37 @@ pub fn peer_is_current_user(stream: &UnixStream) -> io::Result<bool> {
 }
 
 #[cfg(windows)]
-pub fn connect() -> io::Result<std::fs::File> {
-    std::fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open(WINDOWS_PIPE_PATH)
+pub fn connect() -> io::Result<IpcClientStream> {
+    use std::ptr::{null, null_mut};
+
+    use windows_sys::Win32::{
+        Foundation::INVALID_HANDLE_VALUE,
+        Storage::FileSystem::{
+            CreateFileW, FILE_FLAG_OVERLAPPED, FILE_GENERIC_READ, FILE_GENERIC_WRITE, OPEN_EXISTING,
+        },
+    };
+
+    let pipe_name = wide(WINDOWS_PIPE_PATH);
+    // SAFETY: the pipe name is NUL-terminated, optional pointers are null, and
+    // ownership of a successful handle transfers to WindowsPipeStream.
+    let handle = unsafe {
+        CreateFileW(
+            pipe_name.as_ptr(),
+            FILE_GENERIC_READ | FILE_GENERIC_WRITE,
+            0,
+            null(),
+            OPEN_EXISTING,
+            FILE_FLAG_OVERLAPPED,
+            null_mut(),
+        )
+    };
+    if handle == INVALID_HANDLE_VALUE {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(WindowsPipeStream {
+        handle,
+        deadline: None,
+    })
 }
 
 #[cfg(windows)]
@@ -127,6 +205,9 @@ pub struct WindowsPipeStream {
     handle: windows_sys::Win32::Foundation::HANDLE,
     deadline: Option<Instant>,
 }
+
+#[cfg(windows)]
+pub type IpcClientStream = WindowsPipeStream;
 
 #[cfg(windows)]
 // SAFETY: the stream owns one pipe handle and all access requires `&mut self`.
@@ -561,6 +642,7 @@ mod tests {
                     }
                 })
                 .expect("connect to test pipe");
+            stream.set_io_deadline(Duration::from_secs(1));
             stream.write_all(&[16, 0]).unwrap();
             thread::sleep(Duration::from_millis(250));
         });
@@ -573,6 +655,25 @@ mod tests {
         );
         drop(stream);
         client.join().unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn partial_unix_client_frame_is_bounded_by_one_absolute_deadline() {
+        use std::io::{Read, Write};
+
+        let (mut peer, stream) = UnixStream::pair().unwrap();
+        let mut client = IpcClientStream {
+            stream,
+            deadline: None,
+        };
+        peer.write_all(&[16, 0]).unwrap();
+        client.set_io_deadline(Duration::from_millis(50));
+        let mut prefix = [0_u8; 4];
+        assert!(matches!(
+            client.read_exact(&mut prefix).unwrap_err().kind(),
+            io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock
+        ));
     }
 
     #[cfg(target_os = "linux")]

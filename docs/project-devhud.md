@@ -40,6 +40,8 @@ The desktop host, Chrome extension, Native Messaging host, administrator SPA, pr
 
 ## Cross-Domain Invariants
 
+Native Messaging configuration is accepted only when every concrete Chrome origin is covered by its mapping scheme, host, and normalized port and the configuration fits inside both complete 256 KiB IPC and Chrome response envelopes. Host-side IPC applies one absolute five-second deadline to every complete framed authentication or forwarded read/write. The desktop Tauri wrapper rejects caller `-t`/`--target` overrides before staging its sidecar.
+
 Chrome capture rechecks the exact optional origin permission before injection, chooses a mapping from the post-selection live URL, and cancels abandoned selections after 30 seconds without sending the live URL to the host. Native IPC mutually authenticates the host and app, reauthenticates a closed idle session once while preserving any pending request pairing nonce, skips canonical host registration in development launches, and removes pairing credentials when the host is unregistered. The desktop pairing UI refreshes until extension pairing completes or the native-returned code lifetime expires, then clears the code and stops polling.
 
 - Upload finalization is submission-scoped: the first upload creates a server-owned UUID v7 submission and group, later groups carry that submission ID, and no submission may finalize more than 10 images across its groups. Signed checksums and staging versions are immutable finalization inputs; PNG dimensions are checked before decoding and must be at most 4096×4096 and 16,777,216 total pixels, and promotion is conditional on the recorded version/checksum.

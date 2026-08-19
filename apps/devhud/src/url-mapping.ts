@@ -126,11 +126,20 @@ function canonicalizeLiteralSegment(value: string): string {
 export function mappingMatches(mapping: Pick<UrlRepositoryMapping, "pattern">, value: string): boolean {
   const pattern = parseUrlPattern(mapping.pattern);
   const url = parseLiveUrl(value);
+  return authorityMatches(pattern, url)
+    && pathMatches(pattern.path, url.path);
+}
+
+/** Check whether a concrete Chrome permission origin is covered by a mapping authority. */
+export function mappingAcceptsOrigin(mapping: Pick<UrlRepositoryMapping, "pattern">, origin: string): boolean {
+  return authorityMatches(parseUrlPattern(mapping.pattern), parseLiveUrl(origin));
+}
+
+function authorityMatches(pattern: ParsedUrlPattern, url: ParsedUrlPattern): boolean {
   return componentMatches(pattern.scheme, url.scheme, false)
     && componentMatches(normalizeDefaultPort(url.scheme, pattern.port), url.port, false)
     && pattern.host.length === url.host.length
-    && pattern.host.every((part, index) => hostComponentMatches(part, url.host[index] ?? "", pattern.hostIsIpLiteral, url.hostIsIpLiteral))
-    && pathMatches(pattern.path, url.path);
+    && pattern.host.every((part, index) => hostComponentMatches(part, url.host[index] ?? "", pattern.hostIsIpLiteral, url.hostIsIpLiteral));
 }
 
 export function literalSpecificity(mapping: Pick<UrlRepositoryMapping, "pattern">): number {

@@ -5,7 +5,7 @@ import {
   validateCanonicalSettingsJson,
 } from "@delinoio/devhud-api-client";
 import { ShortcutContractError, defaultDesktopShortcutBindings, parseDesktopShortcutBindings, type DesktopShortcutBindings } from "./shortcuts";
-import { parseUrlPattern, type UrlRepositoryMapping } from "./url-mapping";
+import { mappingAcceptsOrigin, parseUrlPattern, type UrlRepositoryMapping } from "./url-mapping";
 
 export const LegacySettingsSchemaVersion = 1 as const;
 export const PrefixUrlMappingsSettingsSchemaVersion = 2 as const;
@@ -195,13 +195,17 @@ function parseUrlMapping(value: unknown, index: number): UrlRepositoryMapping {
   if (!profileRefPattern.test(credentialProfileRef)) throw new SettingsContractError(`${path}.credentialProfileRef`, "is invalid");
   const updatedAt = text(mapping.updatedAt, `${path}.updatedAt`);
   if (!Number.isFinite(Date.parse(updatedAt)) || new Date(updatedAt).toISOString() !== updatedAt) throw new SettingsContractError(`${path}.updatedAt`, "must be a canonical UTC timestamp");
+  const normalizedChromeOrigin = mapping.chromeOrigin === null ? null : chromeOrigin(mapping.chromeOrigin, `${path}.chromeOrigin`);
+  if (normalizedChromeOrigin !== null && !mappingAcceptsOrigin({ pattern }, normalizedChromeOrigin)) {
+    throw new SettingsContractError(`${path}.chromeOrigin`, "must be covered by the mapping pattern scheme, host, and port");
+  }
   return {
     id,
     pattern,
     repository: { owner: text(repository.owner, `${path}.repository.owner`), name: text(repository.name, `${path}.repository.name`) },
     credentialProfileRef,
     priority: integer(mapping.priority, `${path}.priority`, -1_000_000, 1_000_000),
-    chromeOrigin: mapping.chromeOrigin === null ? null : chromeOrigin(mapping.chromeOrigin, `${path}.chromeOrigin`),
+    chromeOrigin: normalizedChromeOrigin,
     updatedAt,
   };
 }

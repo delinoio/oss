@@ -22,6 +22,15 @@ if (
   process.exit(1);
 }
 
+if (
+  forwardedArgs.some(
+    (argument) => argument.startsWith("-t") || argument === "--target" || argument.startsWith("--target="),
+  )
+) {
+  console.error("devhud: -t/--target cannot override the pinned desktop target");
+  process.exit(1);
+}
+
 try {
   stageNativeMessagingHost({ release: command === "build" });
   const result = await spawnDevServer(
