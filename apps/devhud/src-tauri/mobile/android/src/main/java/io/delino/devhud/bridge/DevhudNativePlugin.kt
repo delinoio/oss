@@ -234,7 +234,7 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
         // A zero-row delete is not proof of removal. Opening for write truncates any surviving
         // partial content, while FileNotFoundException is the only confirmed-absent fallback.
         val cleaned = if (deleted) true else try {
-            requireNotNull(activity.contentResolver.openFileDescriptor(destination, "w")).use { true }
+            requireNotNull(activity.contentResolver.openFileDescriptor(destination, "wt")).use { true }
         } catch (_: FileNotFoundException) {
             true
         } catch (_: Exception) {
