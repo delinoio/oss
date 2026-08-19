@@ -43,7 +43,11 @@ func TestCursorIsEncryptedScopedBoundedAndExpiring(t *testing.T) {
 			}
 		})
 	}
-	tampered := token[:len(token)-1] + "A"
+	tamperedPrefix := "A"
+	if token[0] == tamperedPrefix[0] {
+		tamperedPrefix = "B"
+	}
+	tampered := tamperedPrefix + token[1:]
 	if _, err := codec.Decode(tampered, "owner-a", states, "submission-a", now); err == nil {
 		t.Fatal("tampered token was accepted")
 	}
