@@ -416,7 +416,10 @@ function containsForbiddenParameterContent(
     if (
       containsForbiddenLocalPath(value) ||
       forbiddenSensitiveTextPatterns.some((pattern) => pattern.test(value)) ||
-      containsForbiddenUrlContent(value, publicAssetBaseUrl)
+      containsForbiddenUrlContent(value, publicAssetBaseUrl) ||
+      (value !== encodedValue &&
+        /[&;]/u.test(value) &&
+        containsForbiddenParameterContent(value, publicAssetBaseUrl))
     ) {
       return true;
     }

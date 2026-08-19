@@ -187,6 +187,8 @@ func TestSubmitCrashReportRejectsUnlabeledCredentialsBeforePersistence(t *testin
 		"adjacent OAuth callback":  "callback_devhud://auth/callback?code=secret&state=x",
 		"encoded OAuth callback":   "devhud://auth/callback?co%64e=secret&state=x",
 		"encoded token fragment":   "devhud://auth/callback#access%2Dtoken=secret",
+		"nested OAuth callback":    "https://example.test/?safe=x%26code%3Dsecret",
+		"nested OAuth fragment":    "https://example.test/#safe=x%3Bcode%3Dsecret",
 		"credential-bearing user":  "https://alice:password@example.test/app.js",
 		"malformed URL escape":     "https://example.test/?to%6=secret",
 	}
@@ -274,6 +276,7 @@ func TestValidateCrashReportAcceptsSafeSlashLabelsAndRemoteURLs(t *testing.T) {
 		"iOS/18.6 runtime classification.",
 		"https://example.test/assets/app.js:10:2",
 		"devhud://auth/callback?state=opaque",
+		"https://example.test/?safe=x%26release%3D2026",
 		"Password validation failed because the field was empty.",
 		"Cookie parsing failed after session expiry.",
 		"ERROR_CODE=E_UPLOAD RETRY_COUNT=3 TOKEN_COUNT=2",

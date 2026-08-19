@@ -355,7 +355,8 @@ func containsForbiddenDiagnosticParameters(parameters string) bool {
 		if nameErr != nil || valueErr != nil || credentialParameterName.MatchString(decodedName) {
 			return true
 		}
-		if containsForbiddenDiagnosticContent(decodedValue) {
+		if containsForbiddenDiagnosticContent(decodedValue) ||
+			decodedValue != value && strings.ContainsAny(decodedValue, "&;") && containsForbiddenDiagnosticParameters(decodedValue) {
 			return true
 		}
 	}

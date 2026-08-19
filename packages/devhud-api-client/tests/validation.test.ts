@@ -57,6 +57,8 @@ const bareJwt = "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiIxMjMifQ.signature";
 const encodedCredentialParameterUrls = [
   "https://example.com/?context=password%3Dhunter2",
   "https://example.com/#context=password%3Dhunter2",
+  "https://example.com/?safe=x%26code%3Dsecret",
+  "https://example.com/#safe=x%3Bcode%3Dsecret",
 ] as const;
 const encodedLocalPathParameterUrls = [
   "https://example.com/?source=%2Fworkspace%2Fprivate%2Fapp.ts",
@@ -91,6 +93,9 @@ describe("wire validation helpers", () => {
       validateReason(
         "Reviewed https://example.com/?context=release%3D2026#component=React%2FNative",
       ),
+    ).not.toThrow();
+    expect(() =>
+      validateReason("Reviewed https://example.com/?safe=x%26release%3D2026"),
     ).not.toThrow();
     expect(() =>
       validateReason("Reviewed https://assets.example.com/docs/upload-policy"),
@@ -555,6 +560,7 @@ describe("wire validation helpers", () => {
       "devhud://auth/callback",
       "mailto:user@example.com?subject=secret",
       "https://example.com/?na%6de=release",
+      "https://example.com/?safe=x%26release%3D2026",
       r2UnsignedMetadataUrl,
     ]) {
       const report = create(SubmitCrashReportRequestSchema, {
