@@ -565,6 +565,7 @@ describe("wire validation helpers", () => {
       "mailto:user@example.com?subject=secret",
       "https://example.com/?na%6de=release",
       "https://example.com/?safe=x%26release%3D2026",
+      "callback=https%253A%252F%252Fexample.com%252Fauth%253Fstate%253Dopaque",
       r2UnsignedMetadataUrl,
     ]) {
       const report = create(SubmitCrashReportRequestSchema, {
@@ -630,6 +631,7 @@ describe("wire validation helpers", () => {
       '{"code":"unsafe-value"}',
       "devhud://auth/callback?co%64e=unsafe-value",
       "https://example.com/?to%6ben=unsafe-value",
+      "callback=https%253A%252F%252Fexample.test%252Fauth%253Fcode%253Dsecret",
       ...encodedCredentialParameterUrls,
     ]) {
       const credentialDiagnostics = [
@@ -672,6 +674,17 @@ describe("wire validation helpers", () => {
         validateCrashReport(create(SubmitCrashReportRequestSchema, report)),
       ).toThrow(RangeError);
     }
+  });
+
+  it("bounds fixed-point decoding for crash diagnostic text", () => {
+    let atBound = "%41";
+    for (let decoding = 1; decoding < 8; decoding += 1) {
+      atBound = atBound.replaceAll("%", "%25");
+    }
+    expect(() => validateCrashReport({ ...safeCrashReport, redactedSummary: atBound })).not.toThrow();
+
+    const beyondBound = atBound.replaceAll("%", "%25");
+    expect(() => validateCrashReport({ ...safeCrashReport, redactedSummary: beyondBound })).toThrow(TypeError);
   });
 
   it("keeps narrative filtering off enum error codes", () => {

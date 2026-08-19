@@ -34,6 +34,7 @@ const diagnosticAssignmentPattern =
 const MIN_PROTOBUF_TIMESTAMP_SECONDS = -62_135_596_800n;
 const MAX_PROTOBUF_TIMESTAMP_SECONDS = 253_402_300_799n;
 const MAX_PROTOBUF_TIMESTAMP_NANOS = 999_999_999;
+const MAX_DIAGNOSTIC_DECODINGS = 8;
 const EXACT_TAURI_REVISION = "4af26a3f7f8b692d62cca549bbacd93f5ce90b41";
 const EXACT_CEF_REVISION = "150.0.10+g8042e43+chromium-150.0.7871.101";
 const diagnosticPlatforms: ReadonlySet<DiagnosticPlatform> = new Set([
@@ -253,11 +254,28 @@ export function validateCrashReport(report: SubmitCrashReportRequest): void {
 
 function validateDiagnosticText(value: string, maximum: number, field: string): void {
   validateSensitiveText(value, maximum, field);
-  if (
-    forbiddenDiagnosticContentPatterns.some((pattern) => pattern.test(value)) ||
-    containsForbiddenCredentialAssignment(value)
-  ) {
+  if (containsForbiddenDiagnosticContent(value)) {
     throw new TypeError(`${field} contains prohibited diagnostic content`);
+  }
+}
+
+function containsForbiddenDiagnosticContent(value: string): boolean {
+  let decodings = 0;
+  for (;;) {
+    if (
+      forbiddenDiagnosticContentPatterns.some((pattern) => pattern.test(value)) ||
+      forbiddenSensitiveTextPatterns.some((pattern) => pattern.test(value)) ||
+      containsForbiddenCredentialAssignment(value) ||
+      containsForbiddenLocalPath(value) ||
+      containsForbiddenUrlContent(value)
+    ) {
+      return true;
+    }
+    const decoded = decodePercentEncodedOctets(value);
+    if (decoded === value) return false;
+    if (decodings === MAX_DIAGNOSTIC_DECODINGS) return true;
+    value = decoded;
+    decodings += 1;
   }
 }
 
