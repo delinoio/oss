@@ -11,7 +11,8 @@ use std::{
 use devhud_native_messaging_host::{
     PROTOCOL_VERSION, SCHEMA_VERSION,
     auth::{
-        ReplayGuard, new_challenge, now_unix_millis, random_nonce, verify_handshake, verify_request,
+        ReplayGuard, auth_result_proof, new_challenge, now_unix_millis, random_nonce,
+        verify_handshake, verify_request,
     },
     clear_pairing_complete, configured_extension_id, delete_pairing_secret, endpoint,
     expected_extension_origin,
@@ -141,6 +142,7 @@ fn state() -> &'static Arc<NativeMessagingState> {
 
 #[tauri::command]
 pub fn native_messaging_begin_pairing() -> Result<PairingStatus, String> {
+    invalidate_in_memory_pairing(state());
     clear_pairing_complete()?;
     let secret = generate_pairing_secret();
     write_pairing_secret(&secret)?;
@@ -152,7 +154,6 @@ pub fn native_messaging_begin_pairing() -> Result<PairingStatus, String> {
         nonce: nonce.clone(),
         expires_at: Instant::now() + PAIRING_NONCE_TTL,
     });
-    state().generation.fetch_add(1, Ordering::SeqCst);
     info!(event = "native_messaging_pairing_started");
     Ok(PairingStatus {
         paired: false,
@@ -514,6 +515,7 @@ fn serve_connection(mut stream: impl ConnectionStream) -> Result<(), String> {
             schema_version: SCHEMA_VERSION,
             accepted: false,
             session_id: None,
+            proof: None,
             error: Some("authentication-failed".into()),
         };
         let _ = write_connection_json(&mut stream, &denied);
@@ -528,6 +530,7 @@ fn serve_connection(mut stream: impl ConnectionStream) -> Result<(), String> {
             schema_version: SCHEMA_VERSION,
             accepted: true,
             session_id: Some(session_id.clone()),
+            proof: Some(auth_result_proof(&secret, &challenge, &session_id)),
             error: None,
         },
     )

@@ -10,7 +10,7 @@ use sha2::Sha256;
 
 use crate::{
     PROTOCOL_VERSION, REQUEST_DEADLINE_MILLIS, SCHEMA_VERSION,
-    protocol::{AuthResponse, Challenge, IpcRequest},
+    protocol::{AuthResponse, AuthResult, Challenge, IpcRequest},
 };
 
 type HmacSha256 = Hmac<Sha256>;
@@ -99,6 +99,35 @@ pub fn verify_handshake(secret: &[u8], challenge: &Challenge, response: &AuthRes
     )
     .verify_slice(&proof)
     .is_ok()
+}
+
+fn auth_result_mac(secret: &[u8], challenge: &Challenge, session_id: &str) -> HmacSha256 {
+    let mut mac = HmacSha256::new_from_slice(secret).expect("HMAC accepts any key length");
+    append(&mut mac, b"devhud-native-messaging-app-auth-v1");
+    append(&mut mac, challenge.challenge_id.as_bytes());
+    append(&mut mac, challenge.challenge.as_bytes());
+    append(&mut mac, session_id.as_bytes());
+    mac
+}
+
+pub fn auth_result_proof(secret: &[u8], challenge: &Challenge, session_id: &str) -> String {
+    URL_SAFE_NO_PAD.encode(
+        auth_result_mac(secret, challenge, session_id)
+            .finalize()
+            .into_bytes(),
+    )
+}
+
+pub fn verify_auth_result(secret: &[u8], challenge: &Challenge, result: &AuthResult) -> bool {
+    let (Some(session_id), Some(proof)) = (&result.session_id, &result.proof) else {
+        return false;
+    };
+    let Ok(proof) = URL_SAFE_NO_PAD.decode(proof) else {
+        return false;
+    };
+    auth_result_mac(secret, challenge, session_id)
+        .verify_slice(&proof)
+        .is_ok()
 }
 
 fn request_mac(secret: &[u8], session_id: &str, request: &IpcRequest) -> HmacSha256 {
@@ -204,5 +233,26 @@ mod tests {
         assert!(guard.accept("two".into()));
         assert!(guard.accept("three".into()));
         assert!(guard.accept("one".into()));
+    }
+
+    #[test]
+    fn app_proof_binds_the_challenge_and_session() {
+        let secret = [7_u8; 32];
+        let challenge = new_challenge(10);
+        let session_id = "session";
+        let mut result = AuthResult {
+            version: 1,
+            schema_version: 1,
+            accepted: true,
+            session_id: Some(session_id.into()),
+            proof: Some(auth_result_proof(&secret, &challenge, session_id)),
+            error: None,
+        };
+        assert!(verify_auth_result(&secret, &challenge, &result));
+        let mut other_challenge = challenge.clone();
+        other_challenge.challenge.push('x');
+        assert!(!verify_auth_result(&secret, &other_challenge, &result));
+        result.session_id = Some("other-session".into());
+        assert!(!verify_auth_result(&secret, &challenge, &result));
     }
 }

@@ -48,12 +48,17 @@ async function capture(selectElement: boolean): Promise<NativeResponse> {
   const configurationResponse = await nativeRequest("configure", {});
   if (!configurationResponse.ok) return configurationResponse;
   const configuration = (configurationResponse.payload ?? {}) as ExtensionConfiguration;
-  const mappingId = selectConfiguredMapping(configuration, tab.url);
-  if (!mappingId) return { version: 1, schema_version: 1, request_id: "", ok: false, state: "denied", payload: null };
+  const tabOrigin = new URL(tab.url).origin;
+  if (!configuration.origins?.some((candidate) => candidate.origin === tabOrigin)) return { version: 1, schema_version: 1, request_id: "", ok: false, state: "denied", payload: null };
+  const permitted = await chrome.permissions.contains({ origins: [`${tabOrigin}/*`] }).catch(() => false);
+  if (!permitted) return { version: 1, schema_version: 1, request_id: "", ok: false, state: "denied", payload: null };
   const injection = (await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: injectedCapture, args: [selectElement] }))[0];
   const result = injection?.result;
   if (!result) return { version: 1, schema_version: 1, request_id: "", ok: false, state: "disconnected", payload: null };
-  return nativeRequest("capture", { mappingId, context: result });
+  const { liveUrl, ...context } = result;
+  const mappingId = selectConfiguredMapping(configuration, liveUrl);
+  if (!mappingId) return { version: 1, schema_version: 1, request_id: "", ok: false, state: "denied", payload: null };
+  return nativeRequest("capture", { mappingId, context });
 }
 
 chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) => {

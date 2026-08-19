@@ -109,6 +109,8 @@ pub struct AuthResult {
     pub schema_version: u16,
     pub accepted: bool,
     pub session_id: Option<String>,
+    #[serde(default)]
+    pub proof: Option<String>,
     pub error: Option<String>,
 }
 

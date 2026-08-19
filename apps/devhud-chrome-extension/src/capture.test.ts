@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { injectedCapture } from "./capture.js";
 
 async function select(element: Element) {
@@ -12,6 +12,8 @@ async function select(element: Element) {
 }
 
 describe("injected capture", () => {
+  afterEach(() => vi.useRealTimers());
+
   it.each([
     '<input type="password" title="secret" aria-label="credential">',
     '<div aria-hidden="true" title="secret">hidden</div>',
@@ -32,5 +34,14 @@ describe("injected capture", () => {
     const encoder = new TextEncoder();
     expect(encoder.encode(result.title).byteLength).toBeLessThanOrEqual(4 * 1024);
     expect(encoder.encode(result.accessibility["aria-label"]).byteLength).toBeLessThanOrEqual(4 * 1024);
+  });
+
+  it("cancels an abandoned interactive selection", async () => {
+    vi.useFakeTimers();
+    const capture = injectedCapture(true);
+
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    await expect(capture).resolves.toBeNull();
   });
 });

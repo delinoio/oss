@@ -2,8 +2,8 @@ use std::{io, path::PathBuf};
 
 use devhud_native_messaging_host::{
     PROTOCOL_VERSION, REQUEST_DEADLINE_MILLIS, SCHEMA_VERSION,
-    auth::{handshake_proof, now_unix_millis, random_nonce, sign_request},
-    configured_extension_id, endpoint, expected_extension_origin,
+    auth::{handshake_proof, now_unix_millis, random_nonce, sign_request, verify_auth_result},
+    configured_extension_id, delete_pairing_secret, endpoint, expected_extension_origin,
     framing::{ByteOrder, read_json, write_json},
     protocol::{
         AuthResponse, AuthResult, Challenge, IpcRequest, IpcResponse, NativeRequest,
@@ -97,6 +97,9 @@ fn authenticate(origin: &str, pairing_nonce: Option<String>) -> Result<Session, 
             .error
             .unwrap_or_else(|| "authentication-failed".to_string()));
     }
+    if !verify_auth_result(&secret, &challenge, &result) {
+        return Err("authentication-failed".to_string());
+    }
     Ok(Session {
         stream,
         secret,
@@ -180,7 +183,16 @@ fn run_native(origin: &str) -> io::Result<()> {
                 }
             }
         }
-        let result = forward(session.as_mut().expect("session was established"), &request);
+        let mut result = forward(session.as_mut().expect("session was established"), &request);
+        if result.is_err() {
+            session = None;
+            if let Ok(mut authenticated) = authenticate(origin, None) {
+                result = forward(&mut authenticated, &request);
+                if result.is_ok() {
+                    session = Some(authenticated);
+                }
+            }
+        }
         let (state, payload) = match result {
             Ok(payload)
                 if request.message_type
@@ -242,12 +254,14 @@ fn register(args: &[String]) -> Result<(), String> {
 }
 
 fn unregister(args: &[String]) -> Result<(), String> {
-    let destination = args
+    let manifest_result = args
         .first()
         .map(PathBuf::from)
         .map_or_else(registration::user_manifest_path, Ok)
-        .map_err(|error| error.to_string())?;
-    registration::remove_manifest(&destination).map_err(|error| error.to_string())?;
+        .map_err(|error| error.to_string())
+        .and_then(|destination| {
+            registration::remove_manifest(&destination).map_err(|error| error.to_string())
+        });
     #[cfg(windows)]
     {
         let key = format!(
@@ -258,6 +272,9 @@ fn unregister(args: &[String]) -> Result<(), String> {
             .args(["DELETE", &key, "/f"])
             .status();
     }
+    let pairing_result = delete_pairing_secret();
+    manifest_result?;
+    pairing_result?;
     info!(event = "native_host_unregistered");
     Ok(())
 }

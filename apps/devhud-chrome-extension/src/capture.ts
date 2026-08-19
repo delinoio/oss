@@ -8,6 +8,10 @@ export interface CapturedBrowserContext {
   readonly outerHtml: string;
 }
 
+interface InjectedCapturedBrowserContext extends CapturedBrowserContext {
+  readonly liveUrl: string;
+}
+
 /**
  * This function is serialized by chrome.scripting.executeScript, so every
  * helper and constant it uses must remain inside the function body.
@@ -61,7 +65,7 @@ export function injectedCapture(selectElement: boolean) {
     while (encoder.encode(container.innerHTML).byteLength > 128 * 1024 && container.lastChild) container.lastChild.remove();
     return container.innerHTML;
   };
-  const result = (selected: Element | null): CapturedBrowserContext => {
+  const result = (selected: Element | null): InjectedCapturedBrowserContext => {
     const allowedSelection = selected && isAllowedAndVisible(selected) ? selected : null;
     const bounds = allowedSelection?.getBoundingClientRect();
     const attributes = allowedSelection ? Array.from(allowedSelection.attributes).map((attribute) => [attribute.name.toLowerCase(), attribute.value] as [string, string]) : [];
@@ -69,6 +73,7 @@ export function injectedCapture(selectElement: boolean) {
       .filter(([name, value]) => allowedAttributes.has(name) && !(name === "aria-hidden" && value.toLowerCase() === "true"))
       .map(([name, value]) => [name, truncateUtf8(value, 4 * 1024)]));
     return {
+      liveUrl: location.href,
       url: normalizeUrl(),
       title: truncateUtf8(document.title, 4 * 1024),
       viewport: { width: innerWidth, height: innerHeight },
@@ -79,10 +84,12 @@ export function injectedCapture(selectElement: boolean) {
     };
   };
   if (!selectElement) return Promise.resolve(result(null));
-  return new Promise<CapturedBrowserContext | null>((resolve) => {
-    const cleanup = () => { document.removeEventListener("click", click, true); document.removeEventListener("keydown", key, true); };
+  return new Promise<InjectedCapturedBrowserContext | null>((resolve) => {
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const cleanup = () => { if (timeout) clearTimeout(timeout); document.removeEventListener("click", click, true); document.removeEventListener("keydown", key, true); };
     const click = (event: MouseEvent) => { event.preventDefault(); event.stopPropagation(); cleanup(); resolve(result(event.target instanceof Element ? event.target : null)); };
     const key = (event: KeyboardEvent) => { if (event.key === "Escape") { event.preventDefault(); cleanup(); resolve(null); } };
+    timeout = setTimeout(() => { cleanup(); resolve(null); }, 30_000);
     document.addEventListener("click", click, true);
     document.addEventListener("keydown", key, true);
   });

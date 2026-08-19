@@ -423,7 +423,7 @@ function SynchronizedSettingsContent({ copy, bridge = nativeBridge, githubProvid
   </>;
 }
 
-function NativeMessagingSettings({ copy }: { readonly copy: Copy }) {
+export function NativeMessagingSettings({ copy }: { readonly copy: Copy }) {
   const [paired, setPaired] = useState(false);
   const [pairingNonce, setPairingNonce] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
@@ -432,6 +432,18 @@ function NativeMessagingSettings({ copy }: { readonly copy: Copy }) {
     void nativeMessaging.status().then((status) => { if (current) setPaired(status.paired); }).catch(() => { if (current) setFailed(true); });
     return () => { current = false; };
   }, []);
+  useEffect(() => {
+    if (pairingNonce === null) return;
+    let current = true;
+    const timer = setInterval(() => {
+      void nativeMessaging.status().then((status) => {
+        if (!current) return;
+        setPaired(status.paired);
+        if (status.paired) setPairingNonce(null);
+      }).catch(() => { if (current) setFailed(true); });
+    }, 1_000);
+    return () => { current = false; clearInterval(timer); };
+  }, [pairingNonce]);
   const begin = () => { setFailed(false); void nativeMessaging.beginPairing().then((status) => { setPairingNonce(status.pairingNonce ?? null); setPaired(false); }).catch(() => setFailed(true)); };
   const remove = () => { setFailed(false); void nativeMessaging.unpair().then(() => { setPairingNonce(null); setPaired(false); }).catch(() => setFailed(true)); };
   return <section className="native-setting" aria-labelledby="native-messaging-title">

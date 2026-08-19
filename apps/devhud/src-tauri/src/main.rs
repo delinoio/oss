@@ -703,7 +703,9 @@ fn main() {
     let result = builder
         .setup(move |app| {
             let readiness = frontend_readiness.clone();
-            if let Err(reason) = native_messaging::register_packaged_host() {
+            if cfg!(debug_assertions) {
+                info!(event = "native_messaging_registration_skipped_in_development");
+            } else if let Err(reason) = native_messaging::register_packaged_host() {
                 warn!(event = "native_messaging_registration_unavailable", %reason);
             }
             if let Err(reason) = native_messaging::start() {

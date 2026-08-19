@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { AccountIdentity, ShortcutPaletteTrigger, SynchronizedSettingsBoundary, SynchronizedShortcutBoundary } from "./identity-ui";
+import { AccountIdentity, NativeMessagingSettings, ShortcutPaletteTrigger, SynchronizedSettingsBoundary, SynchronizedShortcutBoundary } from "./identity-ui";
 import { messages } from "./localization";
 import type { NativeBridgeV1 } from "./native-bridge";
 import type { IdentitySettingsValue } from "./service-boundary";
@@ -12,7 +12,15 @@ import { inactiveDesktopShortcutBindings, ShortcutActionId, ShortcutKey, Shortcu
 
 let identity: IdentitySettingsValue;
 
+const nativeMessagingMock = vi.hoisted(() => ({
+  status: vi.fn(),
+  beginPairing: vi.fn(),
+  unpair: vi.fn(),
+  configure: vi.fn(),
+}));
+
 vi.mock("./service-boundary", () => ({ useIdentitySettings: () => identity }));
+vi.mock("./native-messaging", () => ({ nativeMessaging: nativeMessagingMock }));
 
 function identityWith(overrides: Partial<IdentitySettingsValue> = {}): IdentitySettingsValue {
   return {
@@ -22,10 +30,31 @@ function identityWith(overrides: Partial<IdentitySettingsValue> = {}): IdentityS
   };
 }
 
-beforeEach(() => { identity = identityWith(); });
-afterEach(cleanup);
+beforeEach(() => {
+  identity = identityWith();
+  nativeMessagingMock.status.mockReset().mockResolvedValue({ paired: false });
+  nativeMessagingMock.beginPairing.mockReset().mockResolvedValue({ paired: false, pairingNonce: "pair-code" });
+  nativeMessagingMock.unpair.mockReset().mockResolvedValue({ paired: false });
+  nativeMessagingMock.configure.mockReset().mockResolvedValue(undefined);
+});
+afterEach(() => { vi.useRealTimers(); cleanup(); });
 
 describe("identity UI", () => {
+  it("refreshes pairing status until the extension completes pairing", async () => {
+    vi.useFakeTimers();
+    render(<NativeMessagingSettings copy={messages.en} />);
+    await act(async () => {});
+    fireEvent.click(screen.getByRole("button", { name: messages.en.nativeMessagingPair }));
+    await act(async () => {});
+    expect(screen.getByText("pair-code")).toBeTruthy();
+    nativeMessagingMock.status.mockResolvedValue({ paired: true });
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+
+    expect(screen.getByRole("status").textContent).toBe(messages.en.nativeMessagingPaired);
+    expect(screen.queryByText("pair-code")).toBeNull();
+  });
+
   it("keeps local continuation available after Bootstrap fails", () => {
     const continueLocally = vi.fn();
     identity = identityWith({ status: "error", continueLocally });
