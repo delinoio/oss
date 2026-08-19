@@ -649,6 +649,51 @@ describe("RealQA capture and editor", () => {
     expect(screen.getByText(messages.en.realqaNoDrafts)).toBeTruthy();
   });
 
+  it("ignores a capture response that completes after logout reset", async () => {
+    const controller = createRef<RealqaController>();
+    let resolveCapture: ((response: NativeBridgeResponseV1) => void) | undefined;
+    const { bridge } = bridgeWith(async (value) => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [], unreadableDraftIds: [] };
+      if (value.operation === "capture.start") return new Promise((resolve) => { resolveCapture = resolve; });
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    render(<RealqaSurface ref={controller} bridge={bridge} copy={messages.en} />);
+    await screen.findByText(messages.en.realqaNoDrafts);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.captureDisplay }));
+    await waitFor(() => expect(resolveCapture).toBeTypeOf("function"));
+
+    act(() => controller.current?.reset());
+    await act(async () => { resolveCapture?.({ kind: "capture-draft", draft }); });
+
+    expect(screen.queryByRole("button", { name: messages.en.realqaOpenEditor })).toBeNull();
+    expect(screen.queryByRole("complementary", { name: messages.en.floatingPreview })).toBeNull();
+    expect(screen.queryByText(messages.en.captureSaved)).toBeNull();
+    expect(screen.getByText(messages.en.realqaNoDrafts)).toBeTruthy();
+  });
+
+  it("ignores an editor response that completes after logout reset", async () => {
+    const controller = createRef<RealqaController>();
+    let resolveUndo: ((response: NativeBridgeResponseV1) => void) | undefined;
+    const { bridge } = bridgeWith(async (value) => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [draft], unreadableDraftIds: [] };
+      if (value.operation === "capture.editor.undo") return new Promise((resolve) => { resolveUndo = resolve; });
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    render(<RealqaSurface ref={controller} bridge={bridge} copy={messages.en} />);
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.realqaOpenEditor }));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.editorUndo }));
+    await waitFor(() => expect(resolveUndo).toBeTypeOf("function"));
+
+    act(() => controller.current?.reset());
+    await act(async () => { resolveUndo?.({ kind: "capture-draft", draft: { ...draft, revision: 4 } }); });
+
+    expect(screen.queryByRole("button", { name: messages.en.realqaOpenEditor })).toBeNull();
+    expect(screen.queryByRole("heading", { name: messages.en.editorTitle })).toBeNull();
+    expect(screen.getByText(messages.en.realqaNoDrafts)).toBeTruthy();
+  });
+
   it.each([
     [messages.en.editorCrop, "crop"],
     [messages.en.editorArrow, "arrow"],

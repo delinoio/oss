@@ -922,7 +922,9 @@ async fn handle_capture_request(
         }
         Some("capture.list-drafts") => {
             exact_keys(request, &["operation"])?;
-            let list = capture.store().list().map_err(failure)?;
+            let list = capture
+                .with_draft_store(|store| store.list())
+                .map_err(failure)?;
             Ok(json!({
                 "kind": "capture-drafts",
                 "drafts": list.drafts,
@@ -931,9 +933,10 @@ async fn handle_capture_request(
         }
         Some("capture.open-draft") => {
             exact_keys(request, &["operation", "draftId"])?;
+            let draft_id = capture_id(request, "draftId")?;
             Ok(json!({
                 "kind": "capture-draft",
-                "draft": capture.store().open(capture_id(request, "draftId")?).map_err(failure)?,
+                "draft": capture.with_draft_store(|store| store.open(draft_id)).map_err(failure)?,
             }))
         }
         Some("capture.editor.apply") => {
@@ -944,23 +947,29 @@ async fn handle_capture_request(
             let command: EditorCommand =
                 serde_json::from_value(request.get("command").cloned().ok_or("invalid-argument")?)
                     .map_err(|_| "invalid-argument")?;
+            let draft_id = capture_id(request, "draftId")?;
+            let expected_revision = revision(request)?;
             Ok(json!({
                 "kind": "capture-draft",
-                "draft": capture.store().apply(capture_id(request, "draftId")?, revision(request)?, command).map_err(failure)?,
+                "draft": capture.with_draft_store(|store| store.apply(draft_id, expected_revision, command)).map_err(failure)?,
             }))
         }
         Some("capture.editor.undo") => {
             exact_keys(request, &["operation", "draftId", "expectedRevision"])?;
+            let draft_id = capture_id(request, "draftId")?;
+            let expected_revision = revision(request)?;
             Ok(json!({
                 "kind": "capture-draft",
-                "draft": capture.store().undo(capture_id(request, "draftId")?, revision(request)?).map_err(failure)?,
+                "draft": capture.with_draft_store(|store| store.undo(draft_id, expected_revision)).map_err(failure)?,
             }))
         }
         Some("capture.editor.redo") => {
             exact_keys(request, &["operation", "draftId", "expectedRevision"])?;
+            let draft_id = capture_id(request, "draftId")?;
+            let expected_revision = revision(request)?;
             Ok(json!({
                 "kind": "capture-draft",
-                "draft": capture.store().redo(capture_id(request, "draftId")?, revision(request)?).map_err(failure)?,
+                "draft": capture.with_draft_store(|store| store.redo(draft_id, expected_revision)).map_err(failure)?,
             }))
         }
         Some("capture.flatten") => {
@@ -969,7 +978,7 @@ async fn handle_capture_request(
             let expected_revision = revision(request)?;
             let flatten_capture = capture.clone();
             let images = tauri::async_runtime::spawn_blocking(move || {
-                flatten_capture.store().flatten(draft_id, expected_revision)
+                flatten_capture.with_draft_store(|store| store.flatten(draft_id, expected_revision))
             })
             .await
             .map_err(|_| "platform-failure".to_string())?
@@ -981,9 +990,9 @@ async fn handle_capture_request(
         }
         Some("capture.delete-draft" | "capture.confirm-issue-created") => {
             exact_keys(request, &["operation", "draftId"])?;
+            let draft_id = capture_id(request, "draftId")?;
             capture
-                .store()
-                .delete(capture_id(request, "draftId")?)
+                .with_draft_store(|store| store.delete(draft_id))
                 .map_err(failure)?;
             Ok(json!({ "kind": "ok" }))
         }

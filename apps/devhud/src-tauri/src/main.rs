@@ -690,8 +690,9 @@ fn main() {
                 };
                 match (draft_id, image_id, flattened, revision) {
                     (Ok(draft_id), Ok(image_id), Some(flattened), Ok(revision)) => capture_assets
-                        .store()
-                        .asset(draft_id, image_id, flattened, revision),
+                        .with_draft_store(|store| {
+                            store.asset(draft_id, image_id, flattened, revision)
+                        }),
                     _ => Err(capture::CaptureError::InvalidArgument),
                 }
             } else {
@@ -748,7 +749,7 @@ fn main() {
     let result = builder
         .setup(move |app| {
             let readiness = frontend_readiness.clone();
-            if let Err(error) = capture_recovery.store().recover() {
+            if let Err(error) = capture_recovery.with_draft_store(|store| store.recover()) {
                 error!(event = "capture_recovery_failed", code = error.code());
             }
             #[cfg(any(target_os = "linux", all(debug_assertions, target_os = "windows")))]

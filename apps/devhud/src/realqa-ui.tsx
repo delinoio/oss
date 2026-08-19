@@ -30,8 +30,7 @@ interface RealqaContextValue {
     readonly close: () => void;
     readonly remove: (draft: CaptureDraft) => Promise<void>;
     readonly removeUnreadable: (draftId: string) => Promise<void>;
-    readonly updateDraft: (draft: CaptureDraft) => void;
-    readonly runDraftOperation: <Result>(draftId: string, operation: (draft: CaptureDraft) => Promise<Result>) => Promise<Result>;
+    readonly runDraftOperation: <Result>(draftId: string, operation: (draft: CaptureDraft, installDraft: (draft: CaptureDraft) => void) => Promise<Result>) => Promise<Result>;
     readonly refresh: () => Promise<void>;
   };
   readonly meta: { readonly copy: Copy; readonly bridge: NativeBridgeV1 };
@@ -75,6 +74,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, onActivate, re
   const draftListRequest = useRef(0);
   const captureDialogOpener = useRef<HTMLElement | null>(null);
   const previewSequence = useRef(0);
+  const resetGeneration = useRef(0);
   const draftsById = useRef(new Map<string, CaptureDraft>());
   const draftOperationQueues = useRef(new Map<string, Promise<void>>());
   const preview = previewRequest?.draft ?? null;
@@ -96,12 +96,15 @@ export function RealqaSurface({ ref, bridge, copy, active = true, onActivate, re
     setPreviewRequest((current) => current?.draft.id === draft.id ? { ...current, draft } : current);
   }, []);
 
-  const runDraftOperation = useCallback(<Result,>(draftId: string, operation: (draft: CaptureDraft) => Promise<Result>) => {
+  const runDraftOperation = useCallback(<Result,>(draftId: string, operation: (draft: CaptureDraft, install: (draft: CaptureDraft) => void) => Promise<Result>) => {
+    const generation = resetGeneration.current;
     const preceding = draftOperationQueues.current.get(draftId) ?? Promise.resolve();
     const result = preceding.then(() => {
       const current = draftsById.current.get(draftId);
       if (!current) throw new Error("RealQA draft is unavailable");
-      return operation(current);
+      return operation(current, (draft) => {
+        if (generation === resetGeneration.current) installDraft(draft);
+      });
     });
     const continuation = result.then(() => undefined, () => undefined);
     draftOperationQueues.current.set(draftId, continuation);
@@ -112,25 +115,30 @@ export function RealqaSurface({ ref, bridge, copy, active = true, onActivate, re
   }, []);
 
   const refresh = useCallback(async () => {
+    const generation = resetGeneration.current;
     const request = ++draftListRequest.current;
     const response = await bridge.request({ operation: "capture.list-drafts" });
-    if (response.kind === "capture-drafts" && request === draftListRequest.current) {
+    if (response.kind === "capture-drafts" && generation === resetGeneration.current && request === draftListRequest.current) {
       replaceDrafts(response.drafts);
       setUnreadableDraftIds(response.unreadableDraftIds);
     }
   }, [bridge, replaceDrafts]);
 
   const refreshCaptureStatus = useCallback(async () => {
+    const generation = resetGeneration.current;
     const request = ++captureStatusRequest.current;
     const response = await bridge.request({ operation: "capture.status" });
     if (response.kind !== "capture-status") return null;
+    if (generation !== resetGeneration.current || request !== captureStatusRequest.current) return null;
     const next = { topology: response.topology, shadowRemovalSupported: response.shadowRemovalSupported };
-    if (request === captureStatusRequest.current) setCaptureStatus(next);
+    setCaptureStatus(next);
     return next;
   }, [bridge]);
 
   useEffect(() => {
+    const generation = resetGeneration.current;
     void Promise.allSettled([refreshCaptureStatus(), refresh()]).then(([native, stored]) => {
+      if (generation !== resetGeneration.current) return;
       if (native.status === "rejected") {
         setError(errorCopy(copy, native.reason));
       }
@@ -154,6 +162,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, onActivate, re
   }, [active, dismissCaptureDialog]);
 
   const reset = useCallback(() => {
+    resetGeneration.current += 1;
     captureStatusRequest.current += 1;
     draftListRequest.current += 1;
     lastRequested.current = null;
@@ -177,15 +186,16 @@ export function RealqaSurface({ ref, bridge, copy, active = true, onActivate, re
 
   const completeCapture = useCallback(async (action: CaptureActionId, captureOptions: CaptureOptions = options) => {
     if (captureInFlight.current) return;
+    const generation = resetGeneration.current;
     captureInFlight.current = true;
     const originatingDraftId = selected?.id ?? null;
     setBusy(true); setError(null); setStatus(copy.captureSaving);
     try {
       const requestCapture = (appendToDraftId?: string) => bridge.request({ operation: "capture.start", actionId: action, options: { ...captureOptions, appendToDraftId } });
       const captureResult = originatingDraftId
-        ? await runDraftOperation(originatingDraftId, async (current) => {
+        ? await runDraftOperation(originatingDraftId, async (current, install) => {
           const appended = await requestCapture(current.id);
-          if (appended.kind === "capture-draft") installDraft(appended.draft);
+          if (appended.kind === "capture-draft") install(appended.draft);
           return {
             response: appended,
             previewImageId: appended.kind === "capture-draft" ? appended.draft.images[current.images.length]?.id : undefined,
@@ -195,6 +205,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, onActivate, re
           response,
           previewImageId: response.kind === "capture-draft" ? response.draft.images[0]?.id : undefined,
         }));
+      if (generation !== resetGeneration.current) return;
       const { response, previewImageId } = captureResult;
       if (response.kind !== "capture-draft") return;
       if (!originatingDraftId) installDraft(response.draft);
@@ -204,9 +215,11 @@ export function RealqaSurface({ ref, bridge, copy, active = true, onActivate, re
       dismissCaptureDialog(false);
       try { await refresh(); } catch { /* The capture response is already authoritative. */ }
     } catch (reason) {
+      if (generation !== resetGeneration.current) return;
       setStatus("");
       setError(errorCopy(copy, reason));
     } finally {
+      if (generation !== resetGeneration.current) return;
       captureInFlight.current = false;
       setBusy(false);
     }
@@ -215,17 +228,21 @@ export function RealqaSurface({ ref, bridge, copy, active = true, onActivate, re
   const capture = useCallback(async (action: CaptureActionId) => {
     if (captureInFlight.current || captureStatusInFlight.current) return;
     if (action === ShortcutActionId.CaptureSelection || action === ShortcutActionId.CaptureToolbar) {
+      const generation = resetGeneration.current;
       captureStatusInFlight.current = true;
       const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
       setError(null);
       try {
         const freshStatus = await refreshCaptureStatus();
+        if (generation !== resetGeneration.current) return;
         if (!freshStatus) return;
         if (!captureDialog) captureDialogOpener.current = opener;
         setCaptureDialog(action);
       } catch (reason) {
+        if (generation !== resetGeneration.current) return;
         setError(errorCopy(copy, reason));
       } finally {
+        if (generation !== resetGeneration.current) return;
         captureStatusInFlight.current = false;
       }
       return;
@@ -261,12 +278,14 @@ export function RealqaSurface({ ref, bridge, copy, active = true, onActivate, re
   }, [busy, cancelCapture, captureDialog, selected]);
 
   const deleteDraft = async (draftId: string) => {
+    const generation = resetGeneration.current;
     setError(null);
     try {
       const deletion = draftsById.current.has(draftId)
         ? runDraftOperation(draftId, () => bridge.request({ operation: "capture.delete-draft", draftId }))
         : bridge.request({ operation: "capture.delete-draft", draftId });
       await deletion;
+      if (generation !== resetGeneration.current) return;
       draftListRequest.current += 1;
       setDrafts((current) => current.filter((draft) => draft.id !== draftId));
       draftsById.current.delete(draftId);
@@ -275,6 +294,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, onActivate, re
       setPreviewRequest((current) => current?.draft.id === draftId ? null : current);
       try { await refresh(); } catch { /* The successful native deletion is authoritative. */ }
     } catch {
+      if (generation !== resetGeneration.current) return;
       setError(copy.realqaDeleteFailed);
     }
   };
@@ -288,7 +308,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, onActivate, re
   };
   const value: RealqaContextValue = {
     state: { drafts, unreadableDraftIds, selected, busy, status, error, preview },
-    actions: { capture, open: setSelected, close: () => setSelected(null), remove, removeUnreadable, updateDraft: installDraft, runDraftOperation, refresh },
+    actions: { capture, open: setSelected, close: () => setSelected(null), remove, removeUnreadable, runDraftOperation, refresh },
     meta: { copy, bridge },
   };
 
@@ -441,19 +461,16 @@ function CaptureEditor({ draft }: { readonly draft: CaptureDraft }) {
   }, [draft.images, imageId]);
   useEffect(() => { if (busy) setDrawing([]); }, [busy]);
 
-  const enqueueRevisionOperation = (operation: (current: CaptureDraft) => Promise<void>) => {
+  const enqueueRevisionOperation = (operation: (current: CaptureDraft, installDraft: (draft: CaptureDraft) => void) => Promise<void>) => {
     if (busy) return Promise.resolve();
-    return actions.runDraftOperation(draft.id, async (current) => {
+    return actions.runDraftOperation(draft.id, async (current, installDraft) => {
       if (!editorActive.current) return;
-      await operation(current);
+      await operation(current, installDraft);
     });
-  };
-  const installDraft = (next: CaptureDraft) => {
-    actions.updateDraft(next);
   };
   const mutate = (command: CaptureEditorCommand) => {
     setFailed(false);
-    return enqueueRevisionOperation(async (current) => {
+    return enqueueRevisionOperation(async (current, installDraft) => {
       try {
         const response = await bridge.request({ operation: "capture.editor.apply", draftId: current.id, expectedRevision: current.revision, command });
         if (response.kind === "capture-draft") {
@@ -465,7 +482,7 @@ function CaptureEditor({ draft }: { readonly draft: CaptureDraft }) {
   };
   const history = (operation: "capture.editor.undo" | "capture.editor.redo") => {
     setFailed(false);
-    return enqueueRevisionOperation(async (current) => {
+    return enqueueRevisionOperation(async (current, installDraft) => {
       try {
         const response = await bridge.request({ operation, draftId: current.id, expectedRevision: current.revision });
         if (response.kind === "capture-draft") installDraft(response.draft);

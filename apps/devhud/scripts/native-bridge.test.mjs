@@ -150,7 +150,7 @@ test("RealQA requests are bounded and capture data stays out of logs and recordi
 test("RealQA draft recovery runs only after the primary instance is claimed", () => {
   const singleInstance = desktopHost.indexOf("tauri_plugin_single_instance::init");
   const applicationSetup = desktopHost.indexOf(".setup(move |app|");
-  const draftRecovery = desktopHost.indexOf("capture_recovery.store().recover()");
+  const draftRecovery = desktopHost.indexOf("capture_recovery.with_draft_store(|store| store.recover())");
   assert(singleInstance >= 0);
   assert(applicationSetup > singleInstance);
   assert(draftRecovery > applicationSetup);

@@ -1448,8 +1448,20 @@ impl CaptureService {
         }
     }
 
-    pub fn store(&self) -> &DraftStore {
-        &self.store
+    pub fn with_draft_store<Output>(
+        &self,
+        operation: impl FnOnce(&DraftStore) -> Result<Output, CaptureError>,
+    ) -> Result<Output, CaptureError> {
+        let epoch = self.begin_capture()?;
+        let _lifecycle = self
+            .lifecycle
+            .lock()
+            .map_err(|_| CaptureError::StorageFailure)?;
+        if self.purging.load(Ordering::Acquire) {
+            return Err(CaptureError::Cancelled);
+        }
+        self.ensure_not_cancelled(epoch)?;
+        operation(&self.store)
     }
 
     pub fn begin_purge(&self) -> Result<CapturePurgeGuard<'_>, CaptureError> {
@@ -4108,6 +4120,85 @@ mod tests {
         );
         purge.join().unwrap();
         assert!(!root.0.exists());
+    }
+
+    #[test]
+    fn purge_waits_for_an_active_draft_store_operation_before_deleting_drafts() {
+        let root = TestDirectory::new();
+        let store = Arc::new(DraftStore::new_test(root.0.clone(), 1024 * 1024, [29; 32]));
+        store
+            .create(vec![ImageBuffer::from_pixel(8, 8, Rgba([4, 5, 6, 255]))])
+            .unwrap();
+        let service = Arc::new(CaptureService::new(
+            Arc::new(FakeAdapter {
+                displays: displays(),
+                pointer: Point { x: -50.0, y: 20.0 },
+                topology_calls: AtomicUsize::new(0),
+                capture_calls: AtomicUsize::new(0),
+                change_topology: false,
+                fail_first_capture: false,
+                pointer_failure: false,
+                protected_display: None,
+                transparent: false,
+            }),
+            store,
+        ));
+        let entered = Arc::new(Barrier::new(2));
+        let release = Arc::new(Barrier::new(2));
+        let operation_service = service.clone();
+        let operation_entered = entered.clone();
+        let operation_release = release.clone();
+        let operation = std::thread::spawn(move || {
+            operation_service.with_draft_store(|store| {
+                operation_entered.wait();
+                operation_release.wait();
+                store.list()
+            })
+        });
+        entered.wait();
+
+        let purge_service = service.clone();
+        let purge = std::thread::spawn(move || {
+            let guard = purge_service.begin_purge().unwrap();
+            guard.purge_drafts().unwrap();
+        });
+        while !service.purging.load(Ordering::Acquire) {
+            std::thread::yield_now();
+        }
+        assert!(root.0.exists());
+
+        release.wait();
+        assert_eq!(operation.join().unwrap().unwrap().drafts.len(), 1);
+        purge.join().unwrap();
+        assert!(!root.0.exists());
+    }
+
+    #[test]
+    fn draft_store_operations_are_rejected_while_purge_is_active() {
+        let root = TestDirectory::new();
+        let store = Arc::new(DraftStore::new_test(root.0.clone(), 1024 * 1024, [31; 32]));
+        let service = CaptureService::new(
+            Arc::new(FakeAdapter {
+                displays: displays(),
+                pointer: Point { x: -50.0, y: 20.0 },
+                topology_calls: AtomicUsize::new(0),
+                capture_calls: AtomicUsize::new(0),
+                change_topology: false,
+                fail_first_capture: false,
+                pointer_failure: false,
+                protected_display: None,
+                transparent: false,
+            }),
+            store,
+        );
+        let purge = service.begin_purge().unwrap();
+
+        let result = service.with_draft_store(|store| store.list());
+        assert!(matches!(result, Err(CaptureError::Cancelled)));
+
+        purge.purge_drafts().unwrap();
+        drop(purge);
+        assert!(service.with_draft_store(|store| store.list()).is_ok());
     }
 
     #[test]
