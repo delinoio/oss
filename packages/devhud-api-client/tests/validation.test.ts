@@ -624,6 +624,7 @@ describe("wire validation helpers", () => {
 
     for (const credentialValue of [
       bareJwt,
+      "Bearer unsafe-value",
       "password=hunter2",
       "client_secret: unsafe-value",
       "refresh_token=unsafe-value",
@@ -633,6 +634,9 @@ describe("wire validation helpers", () => {
       "AWS_SECRET_ACCESS_KEY=unsafe-value",
       "AWS_SESSION_TOKEN=unsafe-value",
       "GITHUB_TOKEN=unsafe-value",
+      "GITHUB_PAT=unsafe-value",
+      "DEVHUD_SESSION_ID=unsafe-value",
+      "DEVHUD_SIGNING_KEY=unsafe-value",
       "code=unsafe-value",
       "oauth_code: unsafe-value",
       "pat=hunter2",
