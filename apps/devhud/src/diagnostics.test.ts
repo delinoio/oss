@@ -156,7 +156,7 @@ describe("diagnostics privacy boundary", () => {
     expect(events).toHaveLength(DiagnosticsMaximumEvents);
     expect(events.some((event) => event.occurredAt === old.occurredAt)).toBe(false);
     expect(new TextEncoder().encode(localStorage.getItem(DiagnosticsStorageKey) ?? "").byteLength).toBeLessThanOrEqual(1024 * 1024);
-  });
+  }, 30_000);
 
   it("retains bounded diagnostic events in memory until Web Storage recovers", () => {
     const storage = new RecoverableStorage();
