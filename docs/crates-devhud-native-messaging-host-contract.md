@@ -2,11 +2,11 @@
 
 ## Scope
 
-`crates/devhud-native-messaging-host` is the canonical planned Rust workspace path for the signed DevHud Native Messaging host. It is a broker between Chrome and the running desktop app, not a general plugin runtime, and does not exist yet.
+`crates/devhud-native-messaging-host` is the implemented Rust workspace crate for the signed DevHud Native Messaging host. It is a broker between Chrome and the running desktop app, not a general plugin runtime.
 
 ## Runtime and Language
 
-Rust binary packaged with macOS, Windows, and Linux desktop installers. It must remain a planned path until its crate skeleton exists; only then may it be added as an explicit root Cargo workspace member. Use `tracing`-compatible structured logging.
+Rust binary packaged as a Tauri sidecar with macOS, Windows, and Linux desktop installers and registered per user when the app launches. It is an explicit root Cargo workspace member and uses redacted `tracing` diagnostics. Windows NSIS removal invokes the host's idempotent `unregister` command; the same command supports explicit removal on every desktop platform.
 
 ## Users and Operators
 

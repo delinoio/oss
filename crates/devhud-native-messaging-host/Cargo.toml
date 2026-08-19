@@ -1,0 +1,48 @@
+[package]
+name = "devhud-native-messaging-host"
+version = "0.1.0"
+description = "Bounded Chrome Native Messaging broker for DevHUD"
+authors = ["Delino"]
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/delinoio/oss"
+publish = false
+rust-version = "1.90"
+
+[dependencies]
+base64 = "0.22"
+dirs = "6"
+hmac = "0.12"
+keyring = "=4.1.6"
+quick-xml = "0.38"
+rand = "0.9"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+url = "2"
+uuid = { version = "1", features = ["serde", "v7"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_Security",
+  "Win32_Security_Authorization",
+  "Win32_Storage_FileSystem",
+  "Win32_System_Console",
+  "Win32_System_IO",
+  "Win32_System_Pipes",
+  "Win32_System_Threading",
+] }
+
+[lib]
+name = "devhud_native_messaging_host"
+path = "src/lib.rs"
+
+[[bin]]
+name = "devhud-native-messaging-host"
+path = "src/main.rs"

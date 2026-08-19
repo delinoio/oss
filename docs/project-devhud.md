@@ -19,14 +19,14 @@ enum ProjectId {
 ## Domain Ownership Map
 
 - `apps/devhud` — implemented localized React/TypeScript shell and target-isolated Rust/Tauri CEF desktop plus WKWebView/Android System WebView mobile host foundations; service-backed product workflows and native widgets planned.
-- `apps/devhud-chrome-extension` — Chrome Manifest V3 extension (planned).
+- `apps/devhud-chrome-extension` — implemented deterministic bilingual Chrome Manifest V3 context-picker extension.
 - `apps/devhud-admin` — administrator SPA embedded at `/admin` in the API artifact (planned).
 - `servers/devhud-api` — implemented stateless Go Bootstrap/Settings/Upload/Account service and account/upload/retention sweeper; Diagnostics and Admin RPC registration planned, with upload administrator hooks implemented internally.
 - `protos/devhud/v1` — implemented versioned Connect RPC schemas with committed Go bindings.
 - `packages/devhud-api-client` — implemented generated TypeScript messages/services, Connect Query exports, and safe client helpers.
-- `crates/devhud-native-messaging-host` — Rust Native Messaging broker packaged with desktop installers (planned canonical Rust workspace path).
+- `crates/devhud-native-messaging-host` — implemented Rust Native Messaging broker packaged with desktop installers and registered per user.
 
-The desktop host, protocol, client, and server foundation paths above are implemented. Only `apps/devhud/src-tauri` is currently a DevHud Cargo workspace member; remaining planned paths are not implemented runtimes, and the planned Rust host is not a workspace member until its skeleton and contract exist.
+The desktop host, Chrome extension, Native Messaging host, protocol, client, and server foundation paths above are implemented. `apps/devhud/src-tauri` and `crates/devhud-native-messaging-host` are DevHud Cargo workspace members; administrator UI and remaining service/product domains retain their documented planned status.
 
 ## Domain Contract Documents
 
@@ -42,6 +42,8 @@ The desktop host, protocol, client, and server foundation paths above are implem
 
 - Upload finalization is submission-scoped: the first upload creates a server-owned UUID v7 submission and group, later groups carry that submission ID, and no submission may finalize more than 10 images across its groups. Signed checksums and staging versions are immutable finalization inputs; PNG dimensions are checked before decoding and must be at most 4096×4096 and 16,777,216 total pixels, and promotion is conditional on the recorded version/checksum.
 - The iOS widget target is `io.delino.devhud.widget` and shares App Group `group.io.delino.devhud` and Keychain access group `$(AppIdentifierPrefix)io.delino.devhud.shared` with the main app. CEF `connect-src` permits only validated API, GitHub, and signed-upload origins.
+- Chrome integration uses only `activeTab`, `scripting`, `nativeMessaging`, and optional HTTP(S) host permission declarations. An action-popup gesture may request only the exact origin of an app-configured URL mapping; `<all_urls>`, incognito, cookies, storage, debugger, request inspection, console collection, selectors, and page-wide DOM are excluded. The fixed release-configured extension identity is shared by the deterministic extension package, exact one-origin host manifest, and staged installer sidecar.
+- The app owns authenticated IPC `v1`: little-endian length-prefixed JSON over `$XDG_RUNTIME_DIR/devhud.sock` (`0600` and same UID), `~/Library/Application Support/io.delino.devhud/run/devhud.sock` (`0700` parent and `0600` socket), or `\\.\pipe\io.delino.devhud\ipc` (current-user DACL, remote rejection, and client SID verification). Pairing uses a secure-storage secret, fresh challenge, one-time pairing nonce, per-request nonce/proof, five-second deadline, schema/version checks, replay rejection, and logout invalidation. Every layer rejects non-UTF-8 or bodies above 256 KiB before parsing; sanitized selected-element HTML is capped at 128 KiB.
 
 - Fixed loopback development ports are frontend `46305`, administrator `46306`, and API `46307`; every launcher fails with an actionable conflict instead of remapping.
 - Production API serving requires TLS termination at a configured trusted reverse proxy; `DEVHUD_TRUSTED_PROXY_CIDRS` is mandatory, only exactly one forwarded `https` protocol value from a trusted peer is accepted, and the plaintext origin listener supports HTTP/1 plus h2c for native gRPC forwarding.

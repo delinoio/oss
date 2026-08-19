@@ -2,6 +2,7 @@
 
 import { exitLikeChild, spawnDevServer } from "../../../scripts/spawn-dev-server.mjs";
 import { desktopTauriArguments } from "./run-tauri-arguments.mjs";
+import { stageNativeMessagingHost } from "./stage-native-messaging-host.mjs";
 
 const [command, ...rawArgs] = process.argv.slice(2);
 const forwardedArgs = rawArgs[0] === "--" ? rawArgs.slice(1) : rawArgs;
@@ -22,6 +23,7 @@ if (
 }
 
 try {
+  stageNativeMessagingHost({ release: command === "build" });
   const result = await spawnDevServer(
     "cargo",
     [

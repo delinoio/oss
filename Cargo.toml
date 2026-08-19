@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "apps/devhud/src-tauri",
+    "crates/devhud-native-messaging-host",
     "crates/binpm",
     "crates/cargo-mono",
     "crates/nodeup",

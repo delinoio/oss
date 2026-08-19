@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod bridge;
+mod native_messaging;
 mod native_plugin;
 mod platform;
 mod resources;
@@ -663,6 +664,11 @@ fn main() {
         .manage(frontend_readiness.clone())
         .invoke_handler(tauri::generate_handler![
             bridge::native_bridge_v1,
+            native_messaging::native_messaging_begin_pairing,
+            native_messaging::native_messaging_status,
+            native_messaging::native_messaging_unpair,
+            native_messaging::native_messaging_replace_configuration,
+            native_messaging::native_messaging_take_context,
             frontend_ready,
             open_external,
             set_tray_language
@@ -697,6 +703,12 @@ fn main() {
     let result = builder
         .setup(move |app| {
             let readiness = frontend_readiness.clone();
+            if let Err(reason) = native_messaging::register_packaged_host() {
+                warn!(event = "native_messaging_registration_unavailable", %reason);
+            }
+            if let Err(reason) = native_messaging::start() {
+                warn!(event = "native_messaging_listener_unavailable", %reason);
+            }
             #[cfg(any(target_os = "linux", all(debug_assertions, target_os = "windows")))]
             app.deep_link().register_all()?;
             if let Some(urls) = app.deep_link().get_current()? {

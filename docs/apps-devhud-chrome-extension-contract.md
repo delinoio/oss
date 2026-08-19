@@ -2,11 +2,13 @@
 
 ## Scope
 
-`apps/devhud-chrome-extension` is the planned signed Chrome Manifest V3 extension that supplies optional, permission-scoped browser context to desktop RealQA. It is not implemented.
+`apps/devhud-chrome-extension` is the implemented signed Chrome Manifest V3 extension that supplies optional, permission-scoped browser context to desktop RealQA. It is a bounded context picker, not a page observer or general browser automation surface.
 
 ## Runtime and Language
 
 Manifest V3 TypeScript/JavaScript extension with English/Korean user-facing UI and fixed DevHud identifiers. It is distributed through the Chrome Web Store and as a reproducible validation ZIP.
+
+Release builds require `DEVHUD_CHROME_EXTENSION_ID` and `DEVHUD_CHROME_EXTENSION_PUBLIC_KEY`; the build verifies that the public key derives the configured 32-character ID. `DEVHUD_EXTENSION_TEST_BUILD=1` selects the committed deterministic fixture identity for tests only. Sorted inputs, a fixed ZIP timestamp, and pinned dependencies make identical inputs byte-identical.
 
 ## Users and Operators
 

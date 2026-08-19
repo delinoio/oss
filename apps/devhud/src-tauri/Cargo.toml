@@ -24,6 +24,7 @@ tauri-cli = { git = "https://github.com/tauri-apps/tauri", rev = "4af26a3f7f8b69
 url = "2"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+devhud-native-messaging-host = { path = "../../../crates/devhud-native-messaging-host" }
 dirs = "6"
 keyring = "=4.1.6"
 tauri = { git = "https://github.com/tauri-apps/tauri", rev = "4af26a3f7f8b692d62cca549bbacd93f5ce90b41", default-features = false, features = ["cef", "tray-icon", "unstable"] }
@@ -31,6 +32,7 @@ tracing = "0.1"
 tracing-appender = "0.2.5"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
 wait-timeout = "0.2"
+uuid = { version = "1", features = ["v7"] }
 rdev = "0.5.3"
 tauri-plugin-deep-link = "=2.4.9"
 tauri-plugin-single-instance = { version = "=2.4.3", features = ["deep-link"] }

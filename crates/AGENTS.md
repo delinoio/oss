@@ -16,12 +16,12 @@
 - `crates/rustia`: Serde-based LLM JSON runtime crate.
 - `crates/rustia-llm`: aisdk tool adapter crate for rustia-based function-calling input validation.
 - `crates/rustia-macros`: Proc-macro derive companion crate for rustia.
-- `crates/devhud-native-messaging-host`: planned Rust Native Messaging host for DevHud; not yet a workspace member.
+- `crates/devhud-native-messaging-host`: implemented Rust Native Messaging host for DevHud and explicit workspace member.
 
 ### DevHud Native Messaging Host Rules
 
-- Keep the canonical planned path at `crates/devhud-native-messaging-host` and document behavior in `docs/crates-devhud-native-messaging-host-contract.md`.
-- Do not add the path to root `Cargo.toml` until its crate skeleton exists. The host is a bounded Chrome-to-desktop broker, not a plugin SDK or API/GitHub/R2 client.
+- Keep the canonical path at `crates/devhud-native-messaging-host` and document behavior in `docs/crates-devhud-native-messaging-host-contract.md`.
+- The real crate skeleton is an explicit root workspace member. The host is a bounded Chrome-to-desktop broker, not a plugin SDK or API/GitHub/R2 client.
 - Preserve Native Messaging origin/extension-ID/nonce/schema/timeout validation, a shared 256 KiB UTF-8 JSON body ceiling measured before length-prefix framing/parsing, user-scoped IPC, redacted `tracing` diagnostics, and the supported desktop OS/architecture matrix.
 - The host-to-app IPC is an app-owned, versioned v1 length-prefixed JSON protocol over the documented per-user Unix socket or Windows named pipe, authenticated with a platform-secure pairing secret and challenge/response; it is independent of Connect RPC.
 

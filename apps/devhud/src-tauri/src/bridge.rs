@@ -708,7 +708,13 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
             } else {
                 validate_secure_request(&request)?;
             }
-            return crate::secure_store::handle(&request);
+            let result = crate::secure_store::handle(&request)?;
+            if operation == "secure.purge"
+                && request.get("scope").and_then(Value::as_str) == Some("logout")
+            {
+                crate::native_messaging::invalidate_pairing()?;
+            }
+            return Ok(result);
         }
         if operation == "auth.open-system-browser" {
             validate_auth_browser_request(&request, &state)?;

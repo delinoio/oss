@@ -1,0 +1,20 @@
+{
+  "name": "devhud-chrome-extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "prepare:app": "echo 'devhud-chrome-extension: no prepare step'",
+    "build": "tsc -p tsconfig.build.json && node scripts/build.mjs",
+    "build:test": "DEVHUD_EXTENSION_TEST_BUILD=1 pnpm build",
+    "lint": "tsc --noEmit",
+    "test": "pnpm lint && vitest run && node --test scripts/policy.test.mjs && node --test scripts/deterministic-build.test.mjs"
+  },
+  "devDependencies": {
+    "@types/chrome": "0.1.32",
+    "fflate": "0.8.2",
+    "jsdom": "20.0.3",
+    "typescript": "5.9.3",
+    "vitest": "4.1.10"
+  }
+}

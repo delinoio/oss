@@ -3,6 +3,7 @@ import type { Copy } from "./localization";
 import { GitHubSettings, githubErrorCopy } from "./github-settings-ui.tsx";
 import { createGitHubProvider, GitHubErrorCode, GitHubProviderError, readGitHubCredential, type GitHubProvider } from "./github-provider.ts";
 import { NativeBridgeError, NativeBridgeErrorCode, nativeBridge, type NativeBridgeV1, type NativeShortcutPermission, type NativeShortcutPlatform } from "./native-bridge.ts";
+import { nativeMessaging } from "./native-messaging.ts";
 import { useIdentitySettings } from "./service-boundary";
 import { browserShell, LanguagePreference, PlatformCapability, normalizeApiOrigin, ThemePreference, type ExternalLinkTarget, type RuntimeCapabilities } from "./shell";
 import { parseDevHudSettings, type DevHudSettingsV1 } from "./settings-contract";
@@ -395,6 +396,7 @@ function SynchronizedSettingsContent({ copy, bridge = nativeBridge, githubProvid
     <label>{copy.theme}<select value={identity.settings.appearance.theme} disabled={identity.readOnly} onChange={(event) => replaceAppearance({ theme: event.target.value as DevHudSettingsV1["appearance"]["theme"] })}>{Object.values(ThemePreference).map((value) => <option key={value} value={value}>{copy[value]}</option>)}</select></label>
     <label>{copy.language}<select value={identity.settings.appearance.language} disabled={identity.readOnly} onChange={(event) => replaceAppearance({ language: event.target.value as DevHudSettingsV1["appearance"]["language"] })}><option value={LanguagePreference.System}>{copy.system}</option><option value={LanguagePreference.English}>{copy.english}</option><option value={LanguagePreference.Korean}>{copy.korean}</option></select></label>
     {showNativeShortcuts && <ShortcutSettings copy={copy} bridge={bridge} disabled={identity.readOnly} capabilities={shortcutCapabilities} bindings={identity.settings.shortcuts.desktop} onActiveBindings={identity.setActiveShortcutBindings} onPersist={(desktop) => identity.replaceSettings((current) => ({ ...current, shortcuts: { ...current.shortcuts, desktop } }))} />}
+    {showNativeShortcuts && <NativeMessagingSettings copy={copy} settings={identity.settings} />}
     <UrlMappingSettings copy={copy} bridge={bridge} githubProvider={githubProvider} />
     {(identity.status === "guest" || identity.status === "signed-out" || identity.status === "starting") && <p className="notice">{copy.guestSettingsLocal}</p>}
     {identity.status === "blocked" && <p className="notice">{copy.blockedLocalHint}</p>}
@@ -409,6 +411,26 @@ function SynchronizedSettingsContent({ copy, bridge = nativeBridge, githubProvid
     </section>}
     <GitHubSettings copy={copy} bridge={bridge} provider={githubProvider} openExternal={onOpenExternal} credentialOperationPending={mappingDraft.credentialOperationPending} runCredentialOperation={mappingDraft.runCredentialOperation} />
   </>;
+}
+
+function NativeMessagingSettings({ copy, settings }: { readonly copy: Copy; readonly settings: DevHudSettingsV1 }) {
+  const [paired, setPaired] = useState(false);
+  const [pairingNonce, setPairingNonce] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let current = true;
+    void Promise.all([nativeMessaging.configure(settings), nativeMessaging.status()]).then(([, status]) => { if (current) setPaired(status.paired); }).catch(() => { if (current) setFailed(true); });
+    return () => { current = false; };
+  }, [settings]);
+  const begin = () => { setFailed(false); void nativeMessaging.beginPairing().then((status) => { setPairingNonce(status.pairingNonce ?? null); setPaired(false); }).catch(() => setFailed(true)); };
+  const remove = () => { setFailed(false); void nativeMessaging.unpair().then(() => { setPairingNonce(null); setPaired(false); }).catch(() => setFailed(true)); };
+  return <section className="native-setting" aria-labelledby="native-messaging-title">
+    <h3 id="native-messaging-title">{copy.nativeMessagingTitle}</h3><p>{copy.nativeMessagingSummary}</p>
+    <p className={failed ? "native-setting-error" : undefined} role="status">{failed ? copy.nativeMessagingFailed : paired ? copy.nativeMessagingPaired : copy.nativeMessagingNotPaired}</p>
+    {pairingNonce && <p>{copy.nativeMessagingPairingCode}: <code>{pairingNonce}</code></p>}
+    <button className="primary" type="button" onClick={begin}>{copy.nativeMessagingPair}</button>
+    {(paired || pairingNonce) && <button type="button" onClick={remove}>{copy.nativeMessagingRemove}</button>}
+  </section>;
 }
 
 function UrlMappingSettings({ copy, bridge, githubProvider = createGitHubProvider({ fetch: globalThis.fetch }) }: { readonly copy: Copy; readonly bridge: NativeBridgeV1; readonly githubProvider?: GitHubProvider }) {
