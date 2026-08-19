@@ -228,6 +228,7 @@ describe("DevHud settings boundary", () => {
     expect(() => encodeDevHudSettings(migrated)).not.toThrow();
     expect(parseDevHudSettings({ ...legacy, decks: [{ ...legacy.decks[0], repository: "octo/other" }] }).decks[0]?.query).toBe("repo:octo/other is:pr");
     expect(() => parseDevHudSettings({ ...legacy, decks: [{ ...legacy.decks[0], repository: null }] })).toThrow(/repository.*selected/u);
+    expect(() => parseDevHudSettings({ ...legacy, decks: [{ ...legacy.decks[0], repository: "owner repo" }] })).toThrow(/repository qualifier/u);
   });
 
   it("requires real repository-scoped pull-request qualifiers in v4 Decks", () => {

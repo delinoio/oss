@@ -282,7 +282,7 @@ function parseDeck(value: unknown, path: string, legacy: boolean, previous: bool
   const legacyRepository = previous && deck.repository !== null ? text(deck.repository, `${path}.repository`) : null;
   let query = hasPositivePullRequestQualifier(rawQuery) ? rawQuery : appendDeckQualifier(rawQuery, "is:pr");
   if (legacyRepository !== null && !hasExactRepositoryQualifier(query, legacyRepository)) query = appendDeckQualifier(query, `repo:${legacyRepository}`);
-  if (!legacy && !previous && !hasRepositoryQualifier(query)) throw new SettingsContractError(`${path}.query`, "must contain a repository qualifier when a credential profile is selected");
+  if (!legacy && !hasRepositoryQualifier(query)) throw new SettingsContractError(`${path}.query`, "must contain a repository qualifier when a credential profile is selected");
   if (!hasPositivePullRequestQualifier(query)) throw new SettingsContractError(`${path}.query`, "must contain a standalone positive is:pr qualifier");
   const builder = legacy ? null : previous ? deckBuilderProjection(query) : parseDeckBuilder(deck.builder, `${path}.builder`);
   if (!legacy && !previous && builder !== null && !sameDeckBuilder(builder, deckBuilderProjection(query))) {

@@ -183,6 +183,18 @@ describe("GitHub.com provider", () => {
     await expect(provider.getPullRequest(fine, privateRepository, 9)).resolves.toMatchObject({ pullRequest: { author: "octocat", headSha: "0123456789abcdef", labels: ["needs-review"] }, metadata: { etag: '"pull"' } });
   });
 
+  it("skips unsupported requested-reviewer union members while enriching pull requests", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => json({ data: { nodes: [{
+      id: "PR_kwDOFixture", number: 9, title: "Deterministic pull request", url: "https://github.com/octo-private/controls/pull/9", isDraft: false,
+      state: "OPEN", merged: false, mergedAt: null, updatedAt: "2026-08-19T00:00:00Z", mergeable: "MERGEABLE", reviewDecision: null,
+      repository: { owner: { login: "octo-private" }, name: "controls" }, author: { login: "octocat" }, labels: { nodes: [] },
+      reviewRequests: { nodes: [{ requestedReviewer: { login: "octocat" } }, { requestedReviewer: { slug: "maintainers" } }, { requestedReviewer: { __typename: "Bot" } }, { requestedReviewer: { __typename: "Mannequin" } }] },
+      commits: { nodes: [] },
+    }] } }));
+
+    await expect(createGitHubProvider({ fetch }).enrichPullRequests(fine, ["PR_kwDOFixture"])).resolves.toMatchObject({ items: [{ requestedReviewers: ["octocat", "maintainers"] }] });
+  });
+
   it("classifies REST pull-request search validation failures as query errors", async () => {
     const fetch = vi.fn<typeof globalThis.fetch>(async () => json({ message: "Validation Failed" }, 422));
     await expect(createGitHubProvider({ fetch }).searchPullRequests(fine, "repo:octo/widgets is:pr bad:query")).rejects.toMatchObject({ code: GitHubErrorCode.InvalidQuery });

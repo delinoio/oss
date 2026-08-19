@@ -306,7 +306,9 @@ function deckPullRequest(value: Record<string, unknown>): GitHubDeckPullRequest 
     const requested = record(item, operation).requestedReviewer;
     if (requested === null) return [];
     const reviewer = record(requested, operation);
-    return [typeof reviewer.login === "string" ? reviewer.login : string(reviewer.slug, operation)];
+    if (typeof reviewer.login === "string") return [reviewer.login];
+    if (typeof reviewer.slug === "string") return [reviewer.slug];
+    return [];
   });
   const commitNodes = array(record(value.commits, operation).nodes, operation);
   const rollup = commitNodes.length === 0 ? null : record(record(commitNodes[0], operation).commit, operation).statusCheckRollup;
