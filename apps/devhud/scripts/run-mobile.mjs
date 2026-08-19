@@ -87,7 +87,7 @@ export function mobileExecution(rawArguments) {
     return {
       command: "xcodebuild",
       prerequisites: [
-        { command: "pnpm", arguments: ["build:frontend"] },
+        { command: "pnpm", arguments: ["build:frontend"], env: { TAURI_ENV_PLATFORM: "ios" } },
         { command: "cargo", arguments: ["build", "--locked", "--manifest-path", "src-tauri/Cargo.toml", "--features", "cli", "--bin", "devhud-tauri-cli"] },
       ],
       optionsServerArguments: [...rawArguments, "--open"],
@@ -157,7 +157,7 @@ export async function runMobile(rawArguments, { forceCargo = false } = {}) {
     ? { command: "cargo", arguments: mobileCargoArguments(rawArguments) }
     : mobileExecution(rawArguments);
   for (const prerequisite of execution.prerequisites ?? []) {
-    const prerequisiteResult = await spawnDevServer(prerequisite.command, prerequisite.arguments, { cwd: appRoot, stdio: "inherit", shell: false }, { terminateProcessTree: true });
+    const prerequisiteResult = await spawnDevServer(prerequisite.command, prerequisite.arguments, { cwd: appRoot, stdio: "inherit", shell: false, env: { ...process.env, ...(prerequisite.env ?? {}) } }, { terminateProcessTree: true });
     if (prerequisiteResult.code !== 0 || prerequisiteResult.signal) exitLikeChild(prerequisiteResult);
   }
   const result = execution.optionsServerArguments

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { messages } from "./localization";
@@ -420,6 +420,70 @@ describe("RealQA capture and editor", () => {
     fireEvent.click(screen.getByRole("button", { name: messages.en.editorAdd }));
     await waitFor(() => expect(applyRequests).toHaveLength(2));
     expect(applyRequests[1].expectedRevision).toBe(5);
+  });
+
+  it("previews the first image added by an appended capture", async () => {
+    const appendedImage = {
+      ...draft.images[0],
+      id: "019b0000-0000-7000-8000-000000000020",
+      previewUrl: "realqa://asset/draft/image/appended/4",
+      layers: [],
+    };
+    let storedDraft = draft;
+    const { bridge } = bridgeWith(async (value) => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [storedDraft], unreadableDraftIds: [] };
+      if (value.operation === "capture.start") {
+        storedDraft = { ...draft, revision: 4, imageCount: 2, images: [{ ...draft.images[0], previewUrl: "realqa://asset/draft/image/source/4" }, appendedImage] };
+        return { kind: "capture-draft", draft: storedDraft };
+      }
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    render(<RealqaSurface bridge={bridge} copy={messages.en} />);
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.realqaOpenEditor }));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.captureDisplay }));
+
+    const preview = await screen.findByRole("complementary", { name: messages.en.floatingPreview });
+    expect(preview.querySelector("img")?.getAttribute("src")).toBe(appendedImage.previewUrl);
+  });
+
+  it("caps text annotations at the native Unicode character limit", async () => {
+    const { bridge, request } = bridgeWith();
+    render(<RealqaSurface bridge={bridge} copy={messages.en} />);
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.realqaOpenEditor }));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.editorText }));
+    const input = screen.getByRole("textbox", { name: messages.en.editorTextValue });
+    const limited = "😀".repeat(2_048);
+    fireEvent.change(input, { target: { value: `${limited}😀` } });
+    expect(input).toHaveProperty("value", limited);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.editorAdd }));
+
+    await waitFor(() => expect(request).toHaveBeenCalledWith(expect.objectContaining({
+      operation: "capture.editor.apply",
+      command: expect.objectContaining({
+        kind: "add-layer",
+        layer: expect.objectContaining({ tool: "text", text: limited }),
+      }),
+    })));
+  });
+
+  it.each([
+    [draft, 1, true],
+    [secondDraft, 2, false],
+  ] as const)("prevents image removal only when it would empty a %i-image draft", async (listedDraft, _imageCount, disabled) => {
+    const { bridge } = bridgeWith(async (value) => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [listedDraft], unreadableDraftIds: [] };
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    render(<RealqaSurface bridge={bridge} copy={messages.en} />);
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.realqaOpenEditor }));
+    const imageOrder = document.querySelector<HTMLElement>(".editor-image-order");
+    if (!imageOrder) throw new Error("missing image order controls");
+
+    for (const remove of within(imageOrder).getAllByRole("button", { name: messages.en.editorRemove })) {
+      expect(remove).toHaveProperty("disabled", disabled);
+    }
   });
 
   it.each([

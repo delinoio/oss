@@ -23,7 +23,7 @@ test("builds Intel iOS through Xcode while keeping the pinned Tauri options serv
   const execution = mobileExecution(["ios", "build", "--target", "x86_64", "--ci", "--no-sign"]);
   assert.equal(execution.command, "xcodebuild");
   assert.deepEqual(execution.prerequisites, [
-    { command: "pnpm", arguments: ["build:frontend"] },
+    { command: "pnpm", arguments: ["build:frontend"], env: { TAURI_ENV_PLATFORM: "ios" } },
     { command: "cargo", arguments: ["build", "--locked", "--manifest-path", "src-tauri/Cargo.toml", "--features", "cli", "--bin", "devhud-tauri-cli"] },
   ]);
   assert.deepEqual(execution.optionsServerArguments, ["ios", "build", "--target", "x86_64", "--ci", "--no-sign", "--open"]);
