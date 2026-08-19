@@ -23,7 +23,7 @@ import { defaultDevHudSettings, decodeVersionedDevHudSettings, encodeDevHudSetti
 import { diffSettings, type SettingsDiffEntry } from "./settings-diff";
 import { inactiveDesktopShortcutBindings } from "./shortcuts";
 import { getLocalStorage, isValidApiOrigin } from "./shell";
-import { appendDiagnosticCorrelation } from "./diagnostics";
+import { appendDiagnosticCorrelation, beginDiagnosticWriteSuppression } from "./diagnostics";
 
 export type IdentityStatus = "guest" | "starting" | "signed-out" | "authenticated" | "blocked" | "deletion-pending" | "error";
 
@@ -758,25 +758,30 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     },
     reapplyConflictLocal: async () => conflict ? replaceAt(conflict.local, conflict.currentRevision) : false,
     logout: async () => {
-      setLogoutCleanupPending(true);
-      const localCleanupComplete = clearAllContractedLocalData(storage);
-      if (!localCleanupComplete) throw new Error("local-data-cleanup-incomplete");
-      await bridge.request({ operation: "secure.purge", scope: "logout" });
-      await sessionRef.current?.clear();
-      sessionRef.current = null;
-      setSession(null);
-      clearAuthenticatedSettingsCache(storage, apiOrigin);
-      setStatus("signed-out");
-      setAccount(null);
-      setAccountError(null);
-      applySettings(defaultDevHudSettings);
-      applyRevision(0n);
-      setSettingsReady(false);
-      resetDesktopShortcuts();
-      setSettingsError(null);
-      await clearIdentityQueryCache();
-      onLoggedOut();
-      onIdentityReset();
+      const releaseDiagnosticWrites = beginDiagnosticWriteSuppression(storage);
+      try {
+        setLogoutCleanupPending(true);
+        const localCleanupComplete = clearAllContractedLocalData(storage);
+        if (!localCleanupComplete) throw new Error("local-data-cleanup-incomplete");
+        await bridge.request({ operation: "secure.purge", scope: "logout" });
+        await sessionRef.current?.clear();
+        sessionRef.current = null;
+        setSession(null);
+        clearAuthenticatedSettingsCache(storage, apiOrigin);
+        setStatus("signed-out");
+        setAccount(null);
+        setAccountError(null);
+        applySettings(defaultDevHudSettings);
+        applyRevision(0n);
+        setSettingsReady(false);
+        resetDesktopShortcuts();
+        setSettingsError(null);
+        await clearIdentityQueryCache();
+        onLoggedOut();
+        onIdentityReset();
+      } finally {
+        releaseDiagnosticWrites();
+      }
     },
     deleteAccount: async () => {
       const response = await deleteMutation.mutateAsync({});

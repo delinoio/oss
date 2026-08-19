@@ -31,6 +31,7 @@ const exactCefRevision = "150.0.10+g8042e43+chromium-150.0.7871.101";
 const textEncoder = new TextEncoder();
 const inMemoryDiagnosticEvents = new WeakMap<object, LocalDiagnosticEvent[]>();
 const inMemoryDiagnosticCorrelations = new WeakMap<object, DiagnosticCorrelationEvent[]>();
+const diagnosticWriteSuppressions = new WeakMap<object, number>();
 
 const forbiddenValue = /(?:authorization|bearer\s|github[_-]?pat|access[_-]?token|refresh[_-]?token|r2[_-]?(?:secret|token|key)|signing[_-]?(?:secret|key)|-----BEGIN [A-Z ]*PRIVATE KEY-----|\b(?:ghp|github_pat)_[A-Za-z0-9_]+\b|\beyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b|\bAKIA[0-9A-Z]{16}\b|browser.?dom|innerhtml|outerhtml|screenshot|form.?value|issue.?body|agent.?(?:prompt|output)|child.?env|(?:request|response)[._ -]?(?:headers?|bod(?:y|ies))|(?:ctrl|control|cmd|command|meta|alt|option|shift)\s*[+-]\s*[a-z0-9])/iu;
 const diagnosticURL = /[A-Za-z][A-Za-z0-9+.-]*:[^\s<>"']+/u;
@@ -215,6 +216,7 @@ function isForbiddenDiagnosticKey(key: string): boolean {
 }
 
 export function appendDiagnosticEvent(storage: Storage, event: LocalDiagnosticEvent, now = Date.now()): readonly LocalDiagnosticEvent[] {
+  if (diagnosticWritesSuppressed(storage)) return [];
   const normalized = normalizeLocalDiagnosticEvent(event);
   if (!normalized) throw new TypeError("local diagnostic event is invalid");
   const { events, serialized } = boundedDiagnosticEvents([...readDiagnosticEvents(storage, now), normalized], now);
@@ -265,11 +267,28 @@ export function clearInMemoryDiagnosticEvents(storage: object): void {
   inMemoryDiagnosticCorrelations.set(storage, []);
 }
 
+export function beginDiagnosticWriteSuppression(storage: object): () => void {
+  diagnosticWriteSuppressions.set(storage, (diagnosticWriteSuppressions.get(storage) ?? 0) + 1);
+  let active = true;
+  return () => {
+    if (!active) return;
+    active = false;
+    const remaining = (diagnosticWriteSuppressions.get(storage) ?? 1) - 1;
+    if (remaining === 0) diagnosticWriteSuppressions.delete(storage);
+    else diagnosticWriteSuppressions.set(storage, remaining);
+  };
+}
+
 export function appendDiagnosticCorrelation(storage: Storage, correlationId: string | null, procedure: string, durationMilliseconds: number, now = Date.now()): void {
+  if (diagnosticWritesSuppressed(storage)) return;
   if (!isUuidV7(correlationId)) return;
   const correlations = readDiagnosticCorrelations(storage, now);
   correlations.push({ source: "connect-response", correlationId, operation: connectOperation(procedure), occurredAt: new Date(now).toISOString(), durationMilliseconds: Math.max(0, Math.min(86_400_000, Math.round(durationMilliseconds))) });
   persistDiagnosticCorrelations(storage, correlations.slice(-128));
+}
+
+function diagnosticWritesSuppressed(storage: object): boolean {
+  return (diagnosticWriteSuppressions.get(storage) ?? 0) > 0;
 }
 
 export function readDiagnosticCorrelations(storage: Storage, now = Date.now()): DiagnosticCorrelationEvent[] {

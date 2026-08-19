@@ -14,6 +14,7 @@ import {
   DiagnosticsStorageKey,
   appendDiagnosticCorrelation,
   appendDiagnosticEvent,
+  beginDiagnosticWriteSuppression,
   captureDiagnosticEvent,
   prepareDiagnosticsBundle,
   readDiagnosticCorrelations,
@@ -203,6 +204,26 @@ describe("diagnostics privacy boundary", () => {
     expect(clearAllContractedLocalData(storage)).toBe(true);
     expect(readDiagnosticEvents(storage, now)).toEqual([]);
     expect(readDiagnosticCorrelations(storage, now)).toEqual([]);
+  });
+
+  it("suppresses diagnostic writers until every active suppression is released", () => {
+    const now = Date.parse("2026-08-17T00:00:00.000Z");
+    const event = fixtureEvent(now);
+    const releaseFirst = beginDiagnosticWriteSuppression(localStorage);
+    const releaseSecond = beginDiagnosticWriteSuppression(localStorage);
+
+    expect(appendDiagnosticEvent(localStorage, event, now)).toEqual([]);
+    appendDiagnosticCorrelation(localStorage, event.correlationId, "/devhud.v1.DiagnosticsService/SubmitCrashReport", 1, now);
+    expect(localStorage.getItem(DiagnosticsStorageKey)).toBeNull();
+    expect(localStorage.getItem(DiagnosticsCorrelationsKey)).toBeNull();
+
+    releaseFirst();
+    expect(appendDiagnosticEvent(localStorage, event, now)).toEqual([]);
+    releaseSecond();
+    expect(appendDiagnosticEvent(localStorage, event, now)).toEqual([event]);
+    appendDiagnosticCorrelation(localStorage, event.correlationId, "/devhud.v1.DiagnosticsService/SubmitCrashReport", 1, now);
+    expect(localStorage.getItem(DiagnosticsStorageKey)).not.toBeNull();
+    expect(localStorage.getItem(DiagnosticsCorrelationsKey)).not.toBeNull();
   });
 
   it("keeps failed contracted diagnostic cleanup tombstoned until removal succeeds", () => {

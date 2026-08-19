@@ -2,14 +2,14 @@
 
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { create, toBinary } from "@bufbuild/protobuf";
-import { PermissionFailureReason, PermissionFailureSchema, SettingsRevisionConflictSchema, StaticCapability } from "@delinoio/devhud-api-client";
+import { DiagnosticComponent, DiagnosticSeverity, PermissionFailureReason, PermissionFailureSchema, SettingsRevisionConflictSchema, StaticCapability } from "@delinoio/devhud-api-client";
 import { LogtoRequestError } from "@logto/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import fixture from "../fixtures/identity-settings-e2e.json";
 import { App } from "./App";
-import { DiagnosticsStorageKey } from "./diagnostics";
+import { DiagnosticsCorrelationsKey, DiagnosticsStorageKey, appendDiagnosticCorrelation, appendDiagnosticEvent, captureDiagnosticEvent } from "./diagnostics";
 import type { GitHubProvider } from "./github-provider";
 import * as identityClient from "./identity-client";
 import type { IdentitySession } from "./identity-client";
@@ -1423,6 +1423,16 @@ describe("generated Connect identity/settings fixture", () => {
         if (request.operation === "secure.read") return { kind: "secure-value", value: authenticated && request.setting.kind === "logto-session" ? secureSession : null };
         if (request.operation === "secure.purge") {
           expect(localStorage.getItem(DiagnosticsStorageKey)).toBeNull();
+          const event = captureDiagnosticEvent(runtime, {
+            component: DiagnosticComponent.APP,
+            severity: DiagnosticSeverity.ERROR,
+            errorCode: "LOGOUT_FAILURE",
+            error: new Error("logout fixture"),
+          });
+          appendDiagnosticEvent(localStorage, event);
+          appendDiagnosticCorrelation(localStorage, event.correlationId, "/devhud.v1.AccountService/GetAccount", 1);
+          expect(localStorage.getItem(DiagnosticsStorageKey)).toBeNull();
+          expect(localStorage.getItem(DiagnosticsCorrelationsKey)).toBeNull();
           authenticated = false;
           return { kind: "ok" };
         }
@@ -1454,6 +1464,8 @@ describe("generated Connect identity/settings fixture", () => {
       expect(state.dataset.status).toBe("signed-out");
       expect(state.dataset.queryDataCount).toBe("1");
     });
+    expect(localStorage.getItem(DiagnosticsStorageKey)).toBeNull();
+    expect(localStorage.getItem(DiagnosticsCorrelationsKey)).toBeNull();
   });
 
   it("keeps logout available to retry incomplete Web Storage cleanup", async () => {

@@ -28,7 +28,7 @@ No persistence. App callers own local encrypted storage and secure credentials; 
 
 ## Security
 
-Keep authentication transport configuration explicit and caller-owned. Redact errors and diagnostics. Never serialize PATs, R2 secrets, DOM, screenshots, agent output, or local paths into generated models or logs.
+Keep authentication transport configuration explicit and caller-owned. Redact errors and diagnostics. Never serialize PATs, R2 secrets, DOM, screenshots, agent output, or local paths into generated models or logs. Handwritten crash-report validation accepts only parsed HTTP(S) diagnostic URLs so custom schemes cannot hide local paths from the locator checks.
 
 ## Logging
 

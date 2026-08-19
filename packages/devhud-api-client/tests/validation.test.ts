@@ -538,6 +538,10 @@ describe("wire validation helpers", () => {
       "C:%5CUsers%5Calice%5Capp.ts",
       "vscode://file/home/alice/app.ts",
       "vscode-insiders://file/C:/Users/alice/app.ts",
+      "subl://open/home/alice/app.ts",
+      "devhud://auth/callback",
+      "wss://example.com/socket",
+      "mailto:user@example.com?subject=secret",
       ...encodedLocalPathParameterUrls,
     ]) {
       const relativePathDiagnostics = [
@@ -560,9 +564,7 @@ describe("wire validation helpers", () => {
       "https://example.com/assets/app.js:10:2",
       "https://example.com/assets%2Fapp.js:10:2",
       "https://cdn.example.com/app.js?v=42",
-      "wss://example.com/socket",
-      "devhud://auth/callback",
-      "mailto:user@example.com?subject=secret",
+      "http://example.com/assets/app.js:10:2",
       "https://example.com/?na%6de=release",
       "https://example.com/?safe=x%26release%3D2026",
       "callback=https%253A%252F%252Fexample.com%252Fauth%253Fstate%253Dopaque",
