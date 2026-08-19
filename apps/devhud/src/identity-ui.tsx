@@ -270,6 +270,16 @@ export function SynchronizedShortcutBoundary({ bridge = nativeBridge }: { readon
   return null;
 }
 
+export function SynchronizedNativeMessagingBoundary() {
+  const { settings } = useIdentitySettings();
+  useEffect(() => {
+    void nativeMessaging.configure(settings).catch(() => {
+      // Native Messaging availability must not prevent the shared settings boundary from rendering.
+    });
+  }, [settings]);
+  return null;
+}
+
 const shortcutKeyLabels: Record<ShortcutKey, keyof Copy> = {
   [ShortcutKey.K]: "shortcutKeyK", [ShortcutKey.Digit1]: "shortcutDigit1", [ShortcutKey.Digit2]: "shortcutDigit2", [ShortcutKey.Digit3]: "shortcutDigit3", [ShortcutKey.Digit4]: "shortcutDigit4", [ShortcutKey.Digit5]: "shortcutDigit5", [ShortcutKey.Space]: "shortcutSpace", [ShortcutKey.Tab]: "shortcutTab", [ShortcutKey.Q]: "shortcutKeyQ", [ShortcutKey.Delete]: "shortcutDelete", [ShortcutKey.Backspace]: "shortcutBackspace",
 };
@@ -396,7 +406,7 @@ function SynchronizedSettingsContent({ copy, bridge = nativeBridge, githubProvid
     <label>{copy.theme}<select value={identity.settings.appearance.theme} disabled={identity.readOnly} onChange={(event) => replaceAppearance({ theme: event.target.value as DevHudSettingsV1["appearance"]["theme"] })}>{Object.values(ThemePreference).map((value) => <option key={value} value={value}>{copy[value]}</option>)}</select></label>
     <label>{copy.language}<select value={identity.settings.appearance.language} disabled={identity.readOnly} onChange={(event) => replaceAppearance({ language: event.target.value as DevHudSettingsV1["appearance"]["language"] })}><option value={LanguagePreference.System}>{copy.system}</option><option value={LanguagePreference.English}>{copy.english}</option><option value={LanguagePreference.Korean}>{copy.korean}</option></select></label>
     {showNativeShortcuts && <ShortcutSettings copy={copy} bridge={bridge} disabled={identity.readOnly} capabilities={shortcutCapabilities} bindings={identity.settings.shortcuts.desktop} onActiveBindings={identity.setActiveShortcutBindings} onPersist={(desktop) => identity.replaceSettings((current) => ({ ...current, shortcuts: { ...current.shortcuts, desktop } }))} />}
-    {showNativeShortcuts && <NativeMessagingSettings copy={copy} settings={identity.settings} />}
+    {showNativeShortcuts && <NativeMessagingSettings copy={copy} />}
     <UrlMappingSettings copy={copy} bridge={bridge} githubProvider={githubProvider} />
     {(identity.status === "guest" || identity.status === "signed-out" || identity.status === "starting") && <p className="notice">{copy.guestSettingsLocal}</p>}
     {identity.status === "blocked" && <p className="notice">{copy.blockedLocalHint}</p>}
@@ -413,15 +423,15 @@ function SynchronizedSettingsContent({ copy, bridge = nativeBridge, githubProvid
   </>;
 }
 
-function NativeMessagingSettings({ copy, settings }: { readonly copy: Copy; readonly settings: DevHudSettingsV1 }) {
+function NativeMessagingSettings({ copy }: { readonly copy: Copy }) {
   const [paired, setPaired] = useState(false);
   const [pairingNonce, setPairingNonce] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     let current = true;
-    void Promise.all([nativeMessaging.configure(settings), nativeMessaging.status()]).then(([, status]) => { if (current) setPaired(status.paired); }).catch(() => { if (current) setFailed(true); });
+    void nativeMessaging.status().then((status) => { if (current) setPaired(status.paired); }).catch(() => { if (current) setFailed(true); });
     return () => { current = false; };
-  }, [settings]);
+  }, []);
   const begin = () => { setFailed(false); void nativeMessaging.beginPairing().then((status) => { setPairingNonce(status.pairingNonce ?? null); setPaired(false); }).catch(() => setFailed(true)); };
   const remove = () => { setFailed(false); void nativeMessaging.unpair().then(() => { setPairingNonce(null); setPaired(false); }).catch(() => setFailed(true)); };
   return <section className="native-setting" aria-labelledby="native-messaging-title">

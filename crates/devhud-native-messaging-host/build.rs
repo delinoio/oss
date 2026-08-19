@@ -8,7 +8,7 @@ fn main() {
     println!("cargo:rerun-if-env-changed=DEVHUD_CHROME_EXTENSION_ID");
     println!("cargo:rerun-if-env-changed=DEVHUD_EXTENSION_TEST_BUILD");
     let profile = std::env::var("PROFILE").unwrap_or_default();
-    let test_build = std::env::var_os("DEVHUD_EXTENSION_TEST_BUILD").is_some();
+    let test_build = std::env::var("DEVHUD_EXTENSION_TEST_BUILD").as_deref() == Ok("1");
     let extension_id = std::env::var("DEVHUD_CHROME_EXTENSION_ID").unwrap_or_else(|_| {
         assert!(
             profile != "release" || test_build,

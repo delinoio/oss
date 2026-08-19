@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     io,
     sync::{
         Arc, Mutex, OnceLock,
@@ -22,7 +23,7 @@ use devhud_native_messaging_host::{
     },
     read_pairing_secret, write_pairing_secret,
 };
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 use tracing::{error, info, warn};
 
@@ -92,7 +93,24 @@ struct ExtensionConfiguration {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ConfiguredOrigin {
     origin: String,
+    mappings: Vec<ConfiguredMapping>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ConfiguredMapping {
     mapping_id: String,
+    matcher: ConfiguredUrlMatcher,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ConfiguredUrlMatcher {
+    scheme: String,
+    host: Vec<String>,
+    host_is_ip_literal: bool,
+    port: String,
+    path: Vec<String>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -170,24 +188,7 @@ pub fn native_messaging_replace_configuration(configuration: Value) -> Result<()
     }
     let configuration: ExtensionConfiguration =
         serde_json::from_value(configuration).map_err(|_| "invalid-argument")?;
-    if configuration.origins.len() > 100
-        || configuration.origins.iter().any(|mapping| {
-            let Ok(id) = uuid::Uuid::parse_str(&mapping.mapping_id) else {
-                return true;
-            };
-            let Ok(url) = url::Url::parse(&mapping.origin) else {
-                return true;
-            };
-            id.get_version_num() != 7
-                || !matches!(url.scheme(), "http" | "https")
-                || !url.username().is_empty()
-                || url.password().is_some()
-                || url.query().is_some()
-                || url.fragment().is_some()
-                || url.path() != "/"
-                || url.origin().ascii_serialization() != mapping.origin
-        })
-    {
+    if !valid_extension_configuration(&configuration) {
         return Err("invalid-argument".to_string());
     }
     let configuration = serde_json::to_value(configuration).map_err(|_| "invalid-argument")?;
@@ -196,6 +197,83 @@ pub fn native_messaging_replace_configuration(configuration: Value) -> Result<()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner) = configuration;
     Ok(())
+}
+
+fn valid_extension_configuration(configuration: &ExtensionConfiguration) -> bool {
+    let mapping_count = configuration
+        .origins
+        .iter()
+        .map(|origin| origin.mappings.len())
+        .sum::<usize>();
+    let unique_origins = configuration
+        .origins
+        .iter()
+        .map(|origin| origin.origin.as_str())
+        .collect::<HashSet<_>>();
+    let unique_mapping_ids = configuration
+        .origins
+        .iter()
+        .flat_map(|origin| {
+            origin
+                .mappings
+                .iter()
+                .map(|mapping| mapping.mapping_id.as_str())
+        })
+        .collect::<HashSet<_>>();
+    configuration.origins.len() <= 100
+        && mapping_count <= 100
+        && unique_origins.len() == configuration.origins.len()
+        && unique_mapping_ids.len() == mapping_count
+        && configuration.origins.iter().all(|configured| {
+            !configured.mappings.is_empty()
+                && valid_configured_origin(&configured.origin)
+                && configured.mappings.iter().all(|mapping| {
+                    uuid::Uuid::parse_str(&mapping.mapping_id)
+                        .is_ok_and(|id| id.get_version_num() == 7)
+                        && valid_configured_matcher(&mapping.matcher)
+                })
+        })
+}
+
+fn valid_configured_origin(origin: &str) -> bool {
+    let Ok(url) = url::Url::parse(origin) else {
+        return false;
+    };
+    matches!(url.scheme(), "http" | "https")
+        && url.username().is_empty()
+        && url.password().is_none()
+        && url.query().is_none()
+        && url.fragment().is_none()
+        && url.path() == "/"
+        && url.origin().ascii_serialization() == origin
+}
+
+fn valid_configured_matcher(matcher: &ConfiguredUrlMatcher) -> bool {
+    matches!(matcher.scheme.as_str(), "http" | "https" | "*")
+        && !matcher.host.is_empty()
+        && matcher.host.len() <= 128
+        && matcher.host.iter().all(|part| {
+            !part.is_empty()
+                && part.len() <= 255
+                && (part == "*"
+                    || (!part.contains('*') && !part.contains('@') && !part.contains('\\')))
+        })
+        && (!matcher.host_is_ip_literal
+            || (matcher.host.len() == 1 && matcher.host.first().is_some_and(|part| part != "*")))
+        && (matcher.port.is_empty()
+            || matcher.port == "*"
+            || matcher.port.parse::<u16>().is_ok_and(|port| port > 0))
+        && matcher.path.len() <= 32
+        && matcher
+            .path
+            .iter()
+            .filter(|part| part.as_str() == "**")
+            .count()
+            <= 8
+        && matcher
+            .path
+            .iter()
+            .all(|part| part == "*" || part == "**" || !part.contains('*'))
 }
 
 #[tauri::command]
@@ -257,11 +335,13 @@ fn authorize_capture(payload: Value, configuration: &Value) -> Result<Value, &'s
     let context_origin = context_url.origin().ascii_serialization();
     let configuration: ExtensionConfiguration =
         serde_json::from_value(configuration.clone()).map_err(|_| "capture-not-authorized")?;
-    if !configuration
-        .origins
-        .iter()
-        .any(|mapping| mapping.mapping_id == capture.mapping_id && mapping.origin == context_origin)
-    {
+    if !configuration.origins.iter().any(|origin| {
+        origin.origin == context_origin
+            && origin
+                .mappings
+                .iter()
+                .any(|mapping| mapping.mapping_id == capture.mapping_id)
+    }) {
         return Err("capture-not-authorized");
     }
     serde_json::to_value(capture).map_err(|_| "invalid-browser-context")
@@ -342,11 +422,44 @@ fn start_windows_pipe() -> Result<(), String> {
     Ok(())
 }
 
-fn serve_connection(mut stream: impl io::Read + io::Write) -> Result<(), String> {
+trait ConnectionStream: io::Read + io::Write {
+    fn reset_io_deadline(&mut self) -> io::Result<()>;
+}
+
+#[cfg(unix)]
+impl ConnectionStream for std::os::unix::net::UnixStream {
+    fn reset_io_deadline(&mut self) -> io::Result<()> {
+        self.set_read_timeout(Some(CONNECTION_TIMEOUT))?;
+        self.set_write_timeout(Some(CONNECTION_TIMEOUT))
+    }
+}
+
+#[cfg(windows)]
+impl ConnectionStream for endpoint::WindowsPipeStream {
+    fn reset_io_deadline(&mut self) -> io::Result<()> {
+        self.set_io_deadline(CONNECTION_TIMEOUT);
+        Ok(())
+    }
+}
+
+fn read_connection_json<T: DeserializeOwned>(stream: &mut impl ConnectionStream) -> io::Result<T> {
+    stream.reset_io_deadline()?;
+    read_json(stream, ByteOrder::LittleEndian)
+}
+
+fn write_connection_json<T: Serialize>(
+    stream: &mut impl ConnectionStream,
+    value: &T,
+) -> io::Result<()> {
+    stream.reset_io_deadline()?;
+    write_json(stream, ByteOrder::LittleEndian, value)
+}
+
+fn serve_connection(mut stream: impl ConnectionStream) -> Result<(), String> {
     let challenge = new_challenge(now_unix_millis());
-    write_json(&mut stream, ByteOrder::LittleEndian, &challenge).map_err(|_| "write-failed")?;
+    write_connection_json(&mut stream, &challenge).map_err(|_| "write-failed")?;
     let response: AuthResponse =
-        read_json(&mut stream, ByteOrder::LittleEndian).map_err(|_| "authentication-failed")?;
+        read_connection_json(&mut stream).map_err(|_| "authentication-failed")?;
     let secret = read_pairing_secret()?.ok_or("not-paired")?;
     let mut authenticated = validate_version(response.version, response.schema_version).is_ok()
         && response.challenge_id == challenge.challenge_id
@@ -366,14 +479,13 @@ fn serve_connection(mut stream: impl io::Read + io::Write) -> Result<(), String>
             session_id: None,
             error: Some("authentication-failed".into()),
         };
-        let _ = write_json(&mut stream, ByteOrder::LittleEndian, &denied);
+        let _ = write_connection_json(&mut stream, &denied);
         return Err("authentication-failed".to_string());
     }
     let session_id = random_nonce();
     let generation = state().generation.load(Ordering::SeqCst);
-    write_json(
+    write_connection_json(
         &mut stream,
-        ByteOrder::LittleEndian,
         &AuthResult {
             version: PROTOCOL_VERSION,
             schema_version: SCHEMA_VERSION,
@@ -386,8 +498,7 @@ fn serve_connection(mut stream: impl io::Read + io::Write) -> Result<(), String>
     let mut nonces = ReplayGuard::new(REPLAY_LIMIT);
     let mut requests = ReplayGuard::new(REPLAY_LIMIT);
     loop {
-        let request: IpcRequest =
-            read_json(&mut stream, ByteOrder::LittleEndian).map_err(|_| "read-failed")?;
+        let request: IpcRequest = read_connection_json(&mut stream).map_err(|_| "read-failed")?;
         let now = now_unix_millis();
         let mut accepted = state().generation.load(Ordering::SeqCst) == generation
             && validate_version(request.version, request.schema_version).is_ok()
@@ -430,9 +541,8 @@ fn serve_connection(mut stream: impl io::Read + io::Write) -> Result<(), String>
         } else {
             error = Some("request-rejected".to_string());
         }
-        write_json(
+        write_connection_json(
             &mut stream,
-            ByteOrder::LittleEndian,
             &IpcResponse {
                 version: PROTOCOL_VERSION,
                 schema_version: SCHEMA_VERSION,
@@ -453,6 +563,22 @@ fn serve_connection(mut stream: impl io::Read + io::Write) -> Result<(), String>
 mod tests {
     use super::*;
 
+    fn configured_origin(origin: &str) -> Value {
+        json!({
+            "origin": origin,
+            "mappings": [{
+                "mappingId": "01900000-0000-7000-8000-000000000001",
+                "matcher": {
+                    "scheme": "https",
+                    "host": ["example", "com"],
+                    "hostIsIpLiteral": false,
+                    "port": "",
+                    "path": ["**"]
+                }
+            }]
+        })
+    }
+
     #[test]
     fn pairing_nonce_is_one_time() {
         *state().pending_pairing.lock().unwrap() = Some(PendingPairing {
@@ -468,10 +594,7 @@ mod tests {
     fn configuration_is_bounded() {
         assert!(
             native_messaging_replace_configuration(json!({
-                "origins": [{
-                    "origin": "https://example.com",
-                    "mappingId": "01900000-0000-7000-8000-000000000001"
-                }],
+                "origins": [configured_origin("https://example.com")],
                 "language": "en"
             }))
             .is_ok()
@@ -484,10 +607,7 @@ mod tests {
         );
         assert!(
             native_messaging_replace_configuration(json!({
-                "origins": [{
-                    "origin": "https://unconfigured.example/path",
-                    "mappingId": "01900000-0000-7000-8000-000000000001"
-                }],
+                "origins": [configured_origin("https://unconfigured.example/path")],
                 "language": "en"
             }))
             .is_err()
@@ -497,10 +617,7 @@ mod tests {
     #[test]
     fn capture_requires_exact_configured_mapping_and_origin() {
         let configuration = json!({
-            "origins": [{
-                "origin": "https://example.com",
-                "mappingId": "01900000-0000-7000-8000-000000000001"
-            }],
+            "origins": [configured_origin("https://example.com")],
             "language": "en"
         });
         let capture = json!({

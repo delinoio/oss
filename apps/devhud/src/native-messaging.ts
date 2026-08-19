@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { resolveLanguage } from "./shell.ts";
 import type { DevHudSettingsV1 } from "./settings-contract.ts";
+import { compareMappings, parseUrlPattern, type ParsedUrlPattern, type UrlRepositoryMapping } from "./url-mapping.ts";
 
 export interface NativeMessagingPairingStatus {
   readonly paired: boolean;
@@ -8,14 +9,38 @@ export interface NativeMessagingPairingStatus {
   readonly expiresInSeconds?: number | null;
 }
 
+export interface NativeMessagingConfiguredMapping {
+  readonly mappingId: string;
+  readonly matcher: ParsedUrlPattern;
+}
+
+export interface NativeMessagingConfiguredOrigin {
+  readonly origin: string;
+  readonly mappings: readonly NativeMessagingConfiguredMapping[];
+}
+
+export interface NativeMessagingConfiguration {
+  readonly origins: readonly NativeMessagingConfiguredOrigin[];
+  readonly language: "en" | "ko";
+}
+
 export function extensionConfiguration(settings: DevHudSettingsV1) {
+  const grouped = new Map<string, UrlRepositoryMapping[]>();
+  for (const mapping of settings.urlMappings) {
+    if (mapping.chromeOrigin === null) continue;
+    const current = grouped.get(mapping.chromeOrigin);
+    if (current) current.push(mapping);
+    else grouped.set(mapping.chromeOrigin, [mapping]);
+  }
   return {
-    origins: settings.urlMappings
-      .filter((mapping) => mapping.chromeOrigin !== null)
-      .map((mapping) => ({ origin: mapping.chromeOrigin!, mappingId: mapping.id }))
-      .sort((left, right) => left.origin.localeCompare(right.origin) || left.mappingId.localeCompare(right.mappingId)),
+    origins: [...grouped.entries()]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([origin, mappings]) => ({
+        origin,
+        mappings: [...mappings].sort(compareMappings).map((mapping) => ({ mappingId: mapping.id, matcher: parseUrlPattern(mapping.pattern) })),
+      })),
     language: resolveLanguage(settings.appearance.language, navigator.languages),
-  } as const;
+  } satisfies NativeMessagingConfiguration;
 }
 
 async function nativeCommand<Result>(command: string, args?: Record<string, unknown>): Promise<Result> {

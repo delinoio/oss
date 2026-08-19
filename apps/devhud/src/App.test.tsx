@@ -43,6 +43,23 @@ afterEach(() => {
 });
 
 describe("native App state", () => {
+  it("publishes Native Messaging configuration before Settings is opened", async () => {
+    const invoke = vi.fn(async () => undefined);
+    window.__TAURI_INTERNALS__ = { invoke };
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));
+    const bridge = bridgeWith(async (request) => {
+      if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
+      throw new Error(`unexpected operation ${request.operation}`);
+    });
+
+    render(<App bridge={bridge} initialRuntime={desktopRuntime} />);
+
+    expect(screen.getByRole("heading", { name: messages.en.welcome })).toBeTruthy();
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith("native_messaging_replace_configuration", {
+      configuration: { origins: [], language: "en" },
+    }, undefined));
+  });
+
   it.each([["en", messages.en], ["ko", messages.ko]] as const)("renders the accessible %s GitHub setup surface", async (language, copy) => {
     localStorage.setItem("devhud.shell.preferences.v1", JSON.stringify({ version: 1, theme: "system", language, apiOrigin: "https://devhud.api.delino.io", launchAtLogin: false }));
     vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));

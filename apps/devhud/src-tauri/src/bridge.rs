@@ -710,7 +710,7 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
             }
             let result = crate::secure_store::handle(&request)?;
             if operation == "secure.purge"
-                && request.get("scope").and_then(Value::as_str) == Some("logout")
+                && purge_invalidates_native_messaging(request.get("scope").and_then(Value::as_str))
             {
                 crate::native_messaging::invalidate_pairing()?;
             }
@@ -732,6 +732,10 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
     handle_native_bridge_request(&request, &state)
 }
 
+fn purge_invalidates_native_messaging(scope: Option<&str>) -> bool {
+    matches!(scope, Some("logout" | "account-deletion"))
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::atomic::Ordering;
@@ -739,9 +743,18 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        NativeBridgeState, handle_native_bridge_request, is_auth_callback, routes_to_mobile_plugin,
-        shortcut_status, validate_auth_browser_request,
+        NativeBridgeState, handle_native_bridge_request, is_auth_callback,
+        purge_invalidates_native_messaging, routes_to_mobile_plugin, shortcut_status,
+        validate_auth_browser_request,
     };
+
+    #[test]
+    fn account_exit_purges_invalidate_native_messaging() {
+        assert!(purge_invalidates_native_messaging(Some("logout")));
+        assert!(purge_invalidates_native_messaging(Some("account-deletion")));
+        assert!(!purge_invalidates_native_messaging(Some("api-change")));
+        assert!(!purge_invalidates_native_messaging(None));
+    }
 
     #[test]
     fn routes_pending_auth_callbacks_only_to_the_android_plugin() {

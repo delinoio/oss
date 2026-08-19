@@ -1,5 +1,5 @@
 interface Configuration {
-  readonly origins?: readonly { readonly origin: string; readonly mappingId: string }[];
+  readonly origins?: readonly { readonly origin: string; readonly mappings: readonly unknown[] }[];
   readonly language?: "en" | "ko";
 }
 

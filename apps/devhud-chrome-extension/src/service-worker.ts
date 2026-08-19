@@ -1,6 +1,6 @@
 import { HostName, createRequest, isNativeResponse, type NativeResponse } from "./protocol.js";
+import { selectConfiguredMapping, type ExtensionConfiguration } from "./configured-mapping.js";
 
-interface ExtensionConfiguration { readonly origins?: readonly { readonly origin: string; readonly mappingId: string }[]; readonly language?: "en" | "ko" }
 let nativePort: chrome.runtime.Port | null = null;
 let reconnectAttempt = 0;
 let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
@@ -74,8 +74,7 @@ async function capture(selectElement: boolean): Promise<NativeResponse> {
   const configurationResponse = await nativeRequest("configure", {});
   if (!configurationResponse.ok) return configurationResponse;
   const configuration = (configurationResponse.payload ?? {}) as ExtensionConfiguration;
-  const origin = new URL(tab.url).origin;
-  const mappingId = configuration.origins?.find((configured) => configured.origin === origin)?.mappingId;
+  const mappingId = selectConfiguredMapping(configuration, tab.url);
   if (!mappingId) return { version: 1, schema_version: 1, request_id: "", ok: false, state: "denied", payload: null };
   const injection = (await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: injectedCapture, args: [selectElement] }))[0];
   const result = injection?.result;
