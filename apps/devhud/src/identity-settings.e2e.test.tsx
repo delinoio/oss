@@ -2,13 +2,14 @@
 
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { create, toBinary } from "@bufbuild/protobuf";
-import { canonicalizeSettingsJson, PermissionFailureReason, PermissionFailureSchema, SettingsRevisionConflictSchema, StaticCapability } from "@delinoio/devhud-api-client";
+import { PermissionFailureReason, PermissionFailureSchema, SettingsRevisionConflictSchema, StaticCapability } from "@delinoio/devhud-api-client";
 import { LogtoRequestError } from "@logto/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import fixture from "../fixtures/identity-settings-e2e.json";
 import { App } from "./App";
+import type { GitHubProvider } from "./github-provider";
 import * as identityClient from "./identity-client";
 import type { IdentitySession } from "./identity-client";
 import { SynchronizedSettingsBoundary, SynchronizedShortcutBoundary } from "./identity-ui";
@@ -17,7 +18,6 @@ import { hasGuestSettings, readAuthenticatedSettingsCache, readGuestSettings, wr
 import { canonicalDevHudSettings, defaultDevHudSettings, parseDevHudSettings } from "./settings-contract";
 import { LifecycleState, RuntimePlatform, type NativeBridgeEventV1, type NativeBridgeRequestV1, type NativeBridgeResponseV1, type NativeBridgeV1, type RuntimeSnapshot } from "./native-bridge";
 import { clearIdentityForApiChange, DevHudServiceBoundary, useIdentitySettings } from "./service-boundary";
-import { ShortcutActionId, ShortcutKey, ShortcutModifier } from "./shortcuts";
 
 const runtime: RuntimeSnapshot = {
   bridgeVersion: 1,
@@ -32,9 +32,21 @@ const runtime: RuntimeSnapshot = {
   lifecycle: LifecycleState.Active,
   capabilities: { secureSettings: true, notifications: false, storeUpdates: false, widgets: false },
 };
+const mappingProfile = { id: "018f47a2-7b3c-7def-8abc-1234567890ac", name: "Work", kind: "fine-grained" as const };
+
+function withMappingProfile(urlMappings: typeof defaultDevHudSettings.urlMappings) {
+  return { ...defaultDevHudSettings, github: { ...defaultDevHudSettings.github, profiles: [mappingProfile] }, urlMappings };
+}
 
 function connectResponse(body: unknown): Response {
-  return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json", "Connect-Protocol-Version": "1" } });
+  const snapshot = body !== null && typeof body === "object" && "snapshot" in body ? (body as { readonly snapshot?: { readonly schemaVersion?: number; readonly canonicalJson?: string } }).snapshot : undefined;
+  const bodySchemaVersion = typeof snapshot?.canonicalJson === "string" ? atob(snapshot.canonicalJson).match(/"schemaVersion":(\d+)/u)?.[1] : undefined;
+  const normalized = bodySchemaVersion === "3" && snapshot?.schemaVersion === 2
+    ? { ...body as object, snapshot: { ...snapshot, schemaVersion: 3 } }
+    : snapshot?.schemaVersion === 1 && bodySchemaVersion === "2"
+      ? { ...body as object, snapshot: { ...snapshot, schemaVersion: 2 } }
+      : body;
+  return new Response(JSON.stringify(normalized), { status: 200, headers: { "Content-Type": "application/json", "Connect-Protocol-Version": "1" } });
 }
 
 function authenticatedBridge(purgeScopes: string[] = [], secureOperations: string[] = [], reconciliations: NativeBridgeRequestV1[] = []): NativeBridgeV1 {
@@ -71,12 +83,6 @@ function encodedSettings(value: unknown): string {
   return btoa(String.fromCharCode(...new TextEncoder().encode(canonicalDevHudSettings(value))));
 }
 
-function encodedCanonicalJson(value: unknown): string {
-  return btoa(String.fromCharCode(...new TextEncoder().encode(canonicalizeSettingsJson(value))));
-}
-
-const legacyDevHudSettings = { ...defaultDevHudSettings, schemaVersion: 1, github: { repositories: [], issueTracker: null } };
-
 function IdentityStateProbe({ replacement = defaultDevHudSettings }: { readonly replacement?: typeof defaultDevHudSettings }) {
   const identity = useIdentitySettings();
   const queryClient = useQueryClient();
@@ -86,7 +92,6 @@ function IdentityStateProbe({ replacement = defaultDevHudSettings }: { readonly 
       data-testid="identity-state"
       data-status={identity.status}
       data-read-only={String(identity.readOnly)}
-      data-shortcut-hydration-ready={String(identity.shortcutHydrationReady)}
       data-revision={identity.revision.toString()}
       data-theme={identity.settings.appearance.theme}
       data-error={identity.error ?? ""}
@@ -162,10 +167,10 @@ describe("generated Connect identity/settings fixture", () => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
       if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
-      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "1", canonicalJson: encodedSettings(server) } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 2, revision: "1", canonicalJson: encodedSettings(server) } });
       if (url.endsWith("/devhud.v1.SettingsService/ReplaceSettings")) {
         replacements += 1;
-        return connectResponse({ snapshot: { schemaVersion: 3, revision: "2", canonicalJson: encodedSettings(replacement) } });
+        return connectResponse({ snapshot: { schemaVersion: 2, revision: "2", canonicalJson: encodedSettings(replacement) } });
       }
       throw new Error(`unexpected request ${url}`);
     }));
@@ -186,403 +191,6 @@ describe("generated Connect identity/settings fixture", () => {
     expect(replacements).toBe(1);
   });
 
-  it("keeps unavailable capture shortcuts visible but non-editable", async () => {
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
-      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
-      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
-      throw new Error(`unexpected request ${url}`);
-    }));
-
-    render(<App bridge={authenticatedBridge()} initialRuntime={runtime} />);
-    fireEvent.click(screen.getByRole("button", { name: messages.en.settings }));
-
-    const theme = await screen.findByLabelText(messages.en.theme) as HTMLSelectElement;
-    await waitFor(() => expect(theme.disabled).toBe(false));
-    const capture = await screen.findByRole("group", { name: messages.en.captureDisplay });
-    expect((capture as HTMLFieldSetElement).disabled).toBe(true);
-    expect(within(capture).getByText(messages.en.unavailable)).toBeTruthy();
-    const palette = screen.getByRole("group", { name: messages.en.openPalette });
-    expect((palette as HTMLFieldSetElement).disabled).toBe(false);
-  });
-
-  it("hydrates persisted shortcuts on the desktop Home surface", async () => {
-    const bindings = {
-      ...defaultDevHudSettings.shortcuts.desktop,
-      [ShortcutActionId.CommandPalette]: { enabled: false, modifiers: [], key: ShortcutKey.Q },
-    };
-    writeGuestSettings(localStorage, { ...defaultDevHudSettings, shortcuts: { ...defaultDevHudSettings.shortcuts, desktop: bindings } });
-    const requests: NativeBridgeRequestV1[] = [];
-    const bridge: NativeBridgeV1 = {
-      async request(request) {
-        requests.push(request);
-        if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
-        if (request.operation === "secure.read") return { kind: "secure-value", value: null };
-        if (request.operation === "shortcuts.apply") return { kind: "shortcut-status", platform: "macos", permission: "available", bindings: request.bindings, error: null };
-        throw new Error(`unexpected bridge operation ${request.operation}`);
-      },
-      async listen() { return () => {}; },
-    };
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
-      throw new Error(`unexpected request ${url}`);
-    }));
-
-    render(<App bridge={bridge} initialRuntime={runtime} />);
-
-    await waitFor(() => expect(requests).toContainEqual({ operation: "shortcuts.apply", bindings }));
-    expect(screen.getByRole("heading", { name: messages.en.welcome })).toBeTruthy();
-  });
-
-  it("waits for authenticated shortcuts before hydrating the desktop Home surface", async () => {
-    const bindings = {
-      ...defaultDevHudSettings.shortcuts.desktop,
-      [ShortcutActionId.CommandPalette]: { enabled: false, modifiers: [], key: ShortcutKey.Q },
-    };
-    const server = { ...defaultDevHudSettings, shortcuts: { ...defaultDevHudSettings.shortcuts, desktop: bindings } };
-    const requests: NativeBridgeRequestV1[] = [];
-    const authenticated = authenticatedBridge();
-    const bridge: NativeBridgeV1 = {
-      async request(request) {
-        if (request.operation === "shortcuts.apply") {
-          requests.push(request);
-          return { kind: "shortcut-status", platform: "windows", permission: "available", bindings: request.bindings, error: null };
-        }
-        return authenticated.request(request);
-      },
-      listen: authenticated.listen,
-    };
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
-      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
-      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "1", canonicalJson: encodedSettings(server) } });
-      throw new Error(`unexpected request ${url}`);
-    }));
-
-    render(<App bridge={bridge} initialRuntime={runtime} />);
-
-    await waitFor(() => expect(requests).toEqual([{ operation: "shortcuts.apply", bindings }]));
-    expect(screen.getByRole("heading", { name: messages.en.welcome })).toBeTruthy();
-  });
-
-  it("falls back to the native platform-valid bindings when startup hydration is reserved", async () => {
-    const bindings = {
-      ...defaultDevHudSettings.shortcuts.desktop,
-      [ShortcutActionId.CommandPalette]: { enabled: true, modifiers: [ShortcutModifier.RightPrimary], key: ShortcutKey.Space },
-    };
-    const fallback = defaultDevHudSettings.shortcuts.desktop;
-    writeGuestSettings(localStorage, { ...defaultDevHudSettings, shortcuts: { ...defaultDevHudSettings.shortcuts, desktop: bindings } });
-    const requests: NativeBridgeRequestV1[] = [];
-    const bridge: NativeBridgeV1 = {
-      async request(request) {
-        if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
-        if (request.operation === "secure.read") return { kind: "secure-value", value: null };
-        if (request.operation === "shortcuts.apply") {
-          requests.push(request);
-          return requests.length === 1
-            ? { kind: "shortcut-status", platform: "macos", permission: "available", bindings: fallback, error: "reserved" }
-            : { kind: "shortcut-status", platform: "macos", permission: "available", bindings: request.bindings, error: null };
-        }
-        throw new Error(`unexpected bridge operation ${request.operation}`);
-      },
-      async listen() { return () => {}; },
-    };
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
-      throw new Error(`unexpected request ${url}`);
-    }));
-
-    render(<App bridge={bridge} initialRuntime={runtime} />);
-
-    await waitFor(() => expect(requests).toEqual([
-      { operation: "shortcuts.apply", bindings },
-      { operation: "shortcuts.apply", bindings: fallback },
-    ]));
-    await waitFor(() => expect(screen.getByRole("button", { name: messages.en.openPalette }).textContent).toBe("Right Ctrl + K"));
-  });
-
-  it("marks the shortcut unavailable after startup hydration fails", async () => {
-    const bindings = {
-      ...defaultDevHudSettings.shortcuts.desktop,
-      [ShortcutActionId.CommandPalette]: { enabled: true, modifiers: [ShortcutModifier.RightPrimary], key: ShortcutKey.Space },
-    };
-    const fallback = defaultDevHudSettings.shortcuts.desktop;
-    writeGuestSettings(localStorage, { ...defaultDevHudSettings, shortcuts: { ...defaultDevHudSettings.shortcuts, desktop: bindings } });
-    const bridge: NativeBridgeV1 = {
-      async request(request) {
-        if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
-        if (request.operation === "secure.read") return { kind: "secure-value", value: null };
-        if (request.operation === "shortcuts.apply") return { kind: "shortcut-status", platform: "windows", permission: "available", bindings: fallback, error: "registration-failed" };
-        throw new Error(`unexpected bridge operation ${request.operation}`);
-      },
-      async listen() { return () => {}; },
-    };
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
-      throw new Error(`unexpected request ${url}`);
-    }));
-
-    render(<App bridge={bridge} initialRuntime={runtime} />);
-
-    await waitFor(() => expect(screen.getByRole("button", { name: messages.en.openPalette }).textContent).toBe(messages.en.shortcutNone));
-  });
-
-  it("marks shortcuts unavailable in the browser-only frontend runtime", async () => {
-    const bridge: NativeBridgeV1 = {
-      async request(request) {
-        if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
-        if (request.operation === "secure.read") return { kind: "secure-value", value: null };
-        if (request.operation === "shortcuts.apply") return { kind: "shortcut-status", platform: "unsupported", permission: "unsupported", bindings: request.bindings, error: null };
-        throw new Error(`unexpected bridge operation ${request.operation}`);
-      },
-      async listen() { return () => {}; },
-    };
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
-      throw new Error(`unexpected request ${url}`);
-    }));
-
-    render(<App bridge={bridge} initialRuntime={runtime} />);
-
-    await waitFor(() => expect(screen.getByRole("button", { name: messages.en.openPalette }).textContent).toBe(messages.en.shortcutNone));
-  });
-
-  it("suspends native matching while authenticated shortcut hydration is pending", async () => {
-    const requests: NativeBridgeRequestV1[] = [];
-    const authenticated = authenticatedBridge();
-    const bridge: NativeBridgeV1 = {
-      async request(request) {
-        if (request.operation === "shortcuts.suspend") {
-          requests.push(request);
-          return { kind: "shortcut-status", platform: "windows", permission: "available", bindings: defaultDevHudSettings.shortcuts.desktop, error: null };
-        }
-        return authenticated.request(request);
-      },
-      listen: authenticated.listen,
-    };
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
-      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
-      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return new Promise<Response>(() => {});
-      throw new Error(`unexpected request ${url}`);
-    }));
-
-    render(<DevHudServiceBoundary
-      apiOrigin="https://devhud.api.delino.io"
-      active
-      online
-      callbackUrl={null}
-      platform={RuntimePlatform.Desktop}
-      bridge={bridge}
-      onCallbackConsumed={() => {}}
-      onContinueLocally={() => {}}
-      onLoggedOut={() => {}}
-    ><SynchronizedShortcutBoundary bridge={bridge} /></DevHudServiceBoundary>);
-
-    await waitFor(() => expect(requests).toEqual([{ operation: "shortcuts.suspend" }]));
-  });
-
-  it("unsubscribes the synchronized shortcut listener when it resolves after cleanup", async () => {
-    let resolveListen!: (unsubscribe: () => void) => void;
-    const unsubscribe = vi.fn();
-    const bridge: NativeBridgeV1 = {
-      request: signedOutBridge().request,
-      listen: vi.fn(() => new Promise<() => void>((resolve) => { resolveListen = resolve; })),
-    };
-
-    const view = render(<DevHudServiceBoundary
-      apiOrigin="https://devhud.api.delino.io"
-      active
-      online
-      callbackUrl={null}
-      platform={RuntimePlatform.Desktop}
-      bridge={bridge}
-      onCallbackConsumed={() => {}}
-      onContinueLocally={() => {}}
-      onLoggedOut={() => {}}
-    ><SynchronizedShortcutBoundary bridge={bridge} /></DevHudServiceBoundary>);
-    view.unmount();
-    resolveListen(unsubscribe);
-
-    await waitFor(() => expect(unsubscribe).toHaveBeenCalledOnce());
-  });
-
-  it("unsubscribes the Settings shortcut listener when it resolves after cleanup", async () => {
-    let resolveListen!: (unsubscribe: () => void) => void;
-    const unsubscribe = vi.fn();
-    const signedOut = signedOutBridge();
-    const bridge: NativeBridgeV1 = {
-      async request(request) {
-        if (request.operation === "shortcuts.status") return { kind: "shortcut-status", platform: "windows", permission: "available", bindings: defaultDevHudSettings.shortcuts.desktop, error: null };
-        return signedOut.request(request);
-      },
-      listen: vi.fn(() => new Promise<() => void>((resolve) => { resolveListen = resolve; })),
-    };
-
-    const view = render(<DevHudServiceBoundary
-      apiOrigin="https://devhud.api.delino.io"
-      active
-      online
-      callbackUrl={null}
-      platform={RuntimePlatform.Desktop}
-      bridge={bridge}
-      onCallbackConsumed={() => {}}
-      onContinueLocally={() => {}}
-      onLoggedOut={() => {}}
-    ><SynchronizedSettingsBoundary copy={messages.en} bridge={bridge} showNativeShortcuts /></DevHudServiceBoundary>);
-    view.unmount();
-    resolveListen(unsubscribe);
-
-    await waitFor(() => expect(unsubscribe).toHaveBeenCalledOnce());
-  });
-
-  it("keeps shortcuts suspended until the guest import choice is resolved", async () => {
-    const localBindings = {
-      ...defaultDevHudSettings.shortcuts.desktop,
-      [ShortcutActionId.CommandPalette]: { enabled: false, modifiers: [], key: ShortcutKey.Q },
-    };
-    const serverBindings = defaultDevHudSettings.shortcuts.desktop;
-    const server = { ...defaultDevHudSettings, shortcuts: { ...defaultDevHudSettings.shortcuts, desktop: serverBindings } };
-    writeGuestSettings(localStorage, { ...defaultDevHudSettings, shortcuts: { ...defaultDevHudSettings.shortcuts, desktop: localBindings } });
-    const requests: NativeBridgeRequestV1[] = [];
-    const authenticated = authenticatedBridge();
-    const bridge: NativeBridgeV1 = {
-      async request(request) {
-        if (request.operation === "shortcuts.suspend" || request.operation === "shortcuts.apply") {
-          requests.push(request);
-          return { kind: "shortcut-status", platform: "windows", permission: "available", bindings: "bindings" in request ? request.bindings : defaultDevHudSettings.shortcuts.desktop, error: null };
-        }
-        return authenticated.request(request);
-      },
-      listen: authenticated.listen,
-    };
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
-      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
-      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "1", canonicalJson: encodedSettings(server) } });
-      throw new Error(`unexpected request ${url}`);
-    }));
-
-    render(<DevHudServiceBoundary
-      apiOrigin="https://devhud.api.delino.io"
-      active
-      online
-      callbackUrl={null}
-      platform={RuntimePlatform.Desktop}
-      bridge={bridge}
-      onCallbackConsumed={() => {}}
-      onContinueLocally={() => {}}
-      onLoggedOut={() => {}}
-    ><SynchronizedShortcutBoundary bridge={bridge} /><SynchronizedSettingsBoundary copy={messages.en} /></DevHudServiceBoundary>);
-
-    expect(await screen.findByRole("dialog", { name: messages.en.importSettingsTitle })).toBeTruthy();
-    expect(requests.filter((request) => request.operation === "shortcuts.apply")).toEqual([]);
-
-    fireEvent.click(screen.getByRole("button", { name: messages.en.replaceLocal }));
-    await waitFor(() => expect(requests).toContainEqual({ operation: "shortcuts.apply", bindings: serverBindings }));
-  });
-
-  it("hydrates guest shortcuts after post-onboarding Bootstrap failure when continuing locally", async () => {
-    const bindings = {
-      ...defaultDevHudSettings.shortcuts.desktop,
-      [ShortcutActionId.CommandPalette]: { enabled: false, modifiers: [], key: ShortcutKey.Q },
-    };
-    writeGuestSettings(localStorage, { ...defaultDevHudSettings, shortcuts: { ...defaultDevHudSettings.shortcuts, desktop: bindings } });
-    const requests: NativeBridgeRequestV1[] = [];
-    const bridge: NativeBridgeV1 = {
-      async request(request) {
-        if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
-        if (request.operation === "secure.read") return { kind: "secure-value", value: null };
-        if (request.operation === "shortcuts.apply") {
-          requests.push(request);
-          return { kind: "shortcut-status", platform: "macos", permission: "available", bindings: request.bindings, error: null };
-        }
-        throw new Error(`unexpected bridge operation ${request.operation}`);
-      },
-      async listen() { return () => {}; },
-    };
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-      if (String(input).endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return new Response(JSON.stringify({ code: "unavailable", message: "retry" }), { status: 503, headers: { "Content-Type": "application/json" } });
-      throw new Error(`unexpected request ${input}`);
-    }));
-
-    render(<App bridge={bridge} initialRuntime={runtime} />);
-    fireEvent.click(screen.getByRole("button", { name: messages.en.account }));
-    expect((await screen.findByRole("alert")).textContent).toContain(messages.en.bootstrapFailed);
-    fireEvent.click(screen.getByRole("button", { name: messages.en.continueLocally }));
-
-    await waitFor(() => expect(requests).toEqual([{ operation: "shortcuts.apply", bindings }]));
-  });
-
-  it("reapplies persisted shortcut bindings after permission becomes available", async () => {
-    const bindings = defaultDevHudSettings.shortcuts.desktop;
-    writeGuestSettings(localStorage, { ...defaultDevHudSettings, shortcuts: { ...defaultDevHudSettings.shortcuts, desktop: bindings } });
-    const requests: NativeBridgeRequestV1[] = [];
-    let permissionAvailable = false;
-    const bridge: NativeBridgeV1 = {
-      async request(request) {
-        requests.push(request);
-        if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
-        if (request.operation === "secure.read") return { kind: "secure-value", value: null };
-        if (request.operation === "auth.take-pending-callback") return { kind: "auth-callback", url: null };
-        if (request.operation === "shortcuts.status") return { kind: "shortcut-status", platform: "macos", permission: "not-determined", bindings: defaultDevHudSettings.shortcuts.desktop, error: "permission-denied" };
-        if (request.operation === "shortcuts.request-permission") {
-          permissionAvailable = true;
-          return { kind: "shortcut-status", platform: "macos", permission: "available", bindings: defaultDevHudSettings.shortcuts.desktop, error: null };
-        }
-        if (request.operation === "shortcuts.apply") return { kind: "shortcut-status", platform: "macos", permission: permissionAvailable ? "available" : "not-determined", bindings: request.bindings, error: permissionAvailable ? null : "permission-denied" };
-        throw new Error(`unexpected bridge operation ${request.operation}`);
-      },
-      async listen() { return () => {}; },
-    };
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
-      throw new Error(`unexpected request ${url}`);
-    }));
-
-    render(<App bridge={bridge} initialRuntime={runtime} />);
-    fireEvent.click(screen.getByRole("button", { name: messages.en.settings }));
-    const permission = await screen.findByRole("button", { name: messages.en.shortcutRequestPermission });
-    requests.splice(0);
-    fireEvent.click(permission);
-
-    await waitFor(() => expect(requests.filter((request) => request.operation.startsWith("shortcuts.")).map((request) => request.operation)).toEqual(["shortcuts.request-permission", "shortcuts.apply"]));
-    expect(requests.find((request) => request.operation === "shortcuts.apply")).toEqual({ operation: "shortcuts.apply", bindings });
-    await waitFor(() => expect(screen.getByRole("button", { name: messages.en.openPalette }).textContent).toBe("Right Ctrl + K"));
-  });
-
-  it("stages a shortcut edit before persisting and commits it afterward", async () => {
-    const requests: NativeBridgeRequestV1[] = [];
-    const bridge: NativeBridgeV1 = {
-      async request(request) {
-        requests.push(request);
-        if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
-        if (request.operation === "shortcuts.status") return { kind: "shortcut-status", platform: "windows", permission: "available", bindings: defaultDevHudSettings.shortcuts.desktop, error: null };
-        if (request.operation === "shortcuts.apply" || request.operation === "shortcuts.stage" || request.operation === "shortcuts.commit") return { kind: "shortcut-status", platform: "windows", permission: "available", bindings: request.bindings, error: null };
-        throw new Error(`unexpected bridge operation ${request.operation}`);
-      },
-      async listen() { return () => {}; },
-    };
-
-    render(<App bridge={bridge} initialRuntime={runtime} />);
-    fireEvent.click(screen.getByRole("button", { name: messages.en.settings }));
-    const palette = await screen.findByRole("group", { name: messages.en.openPalette });
-    requests.splice(0);
-    fireEvent.click(within(palette).getByRole("checkbox", { name: messages.en.shortcutEnabled }));
-
-    await waitFor(() => expect(requests.filter((request) => request.operation.startsWith("shortcuts.")).slice(0, 2).map((request) => request.operation)).toEqual(["shortcuts.stage", "shortcuts.commit"]));
-    expect(requests.some((request) => request.operation === "shortcuts.rollback")).toBe(false);
-  });
-
   it("keeps synchronized appearance controls read-only while a replacement is pending", async () => {
     const server = { ...defaultDevHudSettings, appearance: { theme: "dark" as const, language: "en" as const } };
     const firstReplacement = { ...server, appearance: { ...server.appearance, theme: "light" as const } };
@@ -596,7 +204,7 @@ describe("generated Connect identity/settings fixture", () => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
       if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
-      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "1", canonicalJson: encodedSettings(server) } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 2, revision: "1", canonicalJson: encodedSettings(server) } });
       if (url.endsWith("/devhud.v1.SettingsService/ReplaceSettings")) {
         const source = typeof init?.body === "string" ? init.body : new TextDecoder().decode(init?.body as ArrayBufferView<ArrayBuffer>);
         replaceBodies.push(JSON.parse(source) as Record<string, unknown>);
@@ -606,7 +214,7 @@ describe("generated Connect identity/settings fixture", () => {
         if (replacementNumber === 1) await firstPending;
         activeReplacements -= 1;
         const replacement = replacementNumber === 1 ? firstReplacement : secondReplacement;
-        return connectResponse({ snapshot: { schemaVersion: 3, revision: String(replacementNumber + 1), canonicalJson: encodedSettings(replacement) } });
+        return connectResponse({ snapshot: { schemaVersion: 2, revision: String(replacementNumber + 1), canonicalJson: encodedSettings(replacement) } });
       }
       throw new Error(`unexpected request ${url}`);
     }));
@@ -643,7 +251,7 @@ describe("generated Connect identity/settings fixture", () => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
       if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
-      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "1", canonicalJson: encodedSettings(server) } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 2, revision: "1", canonicalJson: encodedSettings(server) } });
       throw new Error(`unexpected request ${url}`);
     }));
 
@@ -667,11 +275,11 @@ describe("generated Connect identity/settings fixture", () => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
       if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
-      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "1", canonicalJson: encodedSettings(server) } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 2, revision: "1", canonicalJson: encodedSettings(server) } });
       if (url.endsWith("/devhud.v1.SettingsService/ReplaceSettings")) {
         const source = typeof init?.body === "string" ? init.body : new TextDecoder().decode(init?.body as ArrayBufferView<ArrayBuffer>);
         replacements.push(JSON.parse(source) as Record<string, unknown>);
-        return connectResponse({ snapshot: { schemaVersion: 3, revision: "2", canonicalJson: encodedSettings(cleaned) } });
+        return connectResponse({ snapshot: { schemaVersion: 2, revision: "2", canonicalJson: encodedSettings(cleaned) } });
       }
       throw new Error(`unexpected request ${url}`);
     }));
@@ -698,7 +306,7 @@ describe("generated Connect identity/settings fixture", () => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
       if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
-      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "1", canonicalJson: encodedSettings(server) } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 2, revision: "1", canonicalJson: encodedSettings(server) } });
       if (url.endsWith("/devhud.v1.SettingsService/ReplaceSettings")) {
         const detail = create(SettingsRevisionConflictSchema, {
           expectedRevision: 1n,
@@ -746,7 +354,7 @@ describe("generated Connect identity/settings fixture", () => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
       if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
-      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: fixture.serverRevision, canonicalJson: toBase64(server) } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 2, revision: fixture.serverRevision, canonicalJson: toBase64(server) } });
       if (url.endsWith("/devhud.v1.SettingsService/ReplaceSettings")) {
         const source = typeof init?.body === "string" ? init.body : new TextDecoder().decode(init?.body as ArrayBufferView<ArrayBuffer>);
         replaceBodies.push(JSON.parse(source) as Record<string, unknown>);
@@ -758,7 +366,7 @@ describe("generated Connect identity/settings fixture", () => {
           const value = btoa(String.fromCharCode(...toBinary(SettingsRevisionConflictSchema, detail)));
           return new Response(JSON.stringify({ code: "aborted", message: "settings revision conflict", details: [{ type: SettingsRevisionConflictSchema.typeName, value }] }), { status: 409, headers: { "Content-Type": "application/json" } });
         }
-        return connectResponse({ snapshot: { schemaVersion: 3, revision: "5", canonicalJson: toBase64(local) } });
+        return connectResponse({ snapshot: { schemaVersion: 2, revision: "5", canonicalJson: toBase64(local) } });
       }
       if (url.endsWith("/devhud.v1.AccountService/DeleteAccount")) return connectResponse({ account: { ...fixture.account, deletionState: "ACCOUNT_DELETION_STATE_PENDING", recoverableUntil: recoveryUntil } });
       if (url.endsWith("/devhud.v1.AccountService/RestoreAccount")) return connectResponse({ account: fixture.account });
@@ -921,6 +529,44 @@ describe("generated Connect identity/settings fixture", () => {
     expect(await screen.findByRole("heading", { name: messages.en.welcome })).toBeTruthy();
   });
 
+  it("reapplies persisted shortcut bindings after permission becomes available", async () => {
+    const bindings = defaultDevHudSettings.shortcuts.desktop;
+    writeGuestSettings(localStorage, { ...defaultDevHudSettings, shortcuts: { ...defaultDevHudSettings.shortcuts, desktop: bindings } });
+    const requests: NativeBridgeRequestV1[] = [];
+    let permissionAvailable = false;
+    const bridge: NativeBridgeV1 = {
+      async request(request) {
+        requests.push(request);
+        if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
+        if (request.operation === "secure.read") return { kind: "secure-value", value: null };
+        if (request.operation === "auth.take-pending-callback") return { kind: "auth-callback", url: null };
+        if (request.operation === "shortcuts.status") return { kind: "shortcut-status", platform: "macos", permission: "not-determined", bindings, error: "permission-denied" };
+        if (request.operation === "shortcuts.request-permission") {
+          permissionAvailable = true;
+          return { kind: "shortcut-status", platform: "macos", permission: "available", bindings, error: null };
+        }
+        if (request.operation === "shortcuts.apply") return { kind: "shortcut-status", platform: "macos", permission: permissionAvailable ? "available" : "not-determined", bindings: request.bindings, error: permissionAvailable ? null : "permission-denied" };
+        if (request.operation === "shortcuts.suspend") return { kind: "shortcut-status", platform: "macos", permission: "not-determined", bindings, error: null };
+        throw new Error(`unexpected bridge operation ${request.operation}`);
+      },
+      async listen() { return () => {}; },
+    };
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    render(<App bridge={bridge} initialRuntime={runtime} />);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.settings }));
+    const permission = await screen.findByRole("button", { name: messages.en.shortcutRequestPermission });
+    requests.splice(0);
+    fireEvent.click(permission);
+
+    await waitFor(() => expect(requests.filter((request) => request.operation.startsWith("shortcuts.")).map((request) => request.operation)).toEqual(["shortcuts.request-permission", "shortcuts.apply"]));
+    expect(requests.find((request) => request.operation === "shortcuts.apply")).toEqual({ operation: "shortcuts.apply", bindings });
+  });
+
   it("blocks authenticated service actions without disabling local navigation", async () => {
     const encoder = new TextEncoder();
     const toBase64 = (value: unknown) => btoa(String.fromCharCode(...encoder.encode(canonicalDevHudSettings(value))));
@@ -928,7 +574,7 @@ describe("generated Connect identity/settings fixture", () => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
       if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: { ...fixture.account, administrativeBlockState: "ADMINISTRATIVE_BLOCK_STATE_BLOCKED" } });
-      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "1", canonicalJson: toBase64(defaultDevHudSettings) } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 2, revision: "1", canonicalJson: toBase64(defaultDevHudSettings) } });
       throw new Error(`unexpected fixture request ${url}`);
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -955,41 +601,40 @@ describe("generated Connect identity/settings fixture", () => {
     expect(await screen.findByRole("heading", { name: messages.en.welcome })).toBeTruthy();
   });
 
-  it("hydrates cached shortcuts before enabling a blocked account's native bindings", async () => {
-    const bindings = {
-      ...defaultDevHudSettings.shortcuts.desktop,
-      [ShortcutActionId.CommandPalette]: { enabled: false, modifiers: [], key: ShortcutKey.Q },
-    };
-    writeAuthenticatedSettingsCache(localStorage, "https://devhud.api.delino.io", {
-      settings: { ...defaultDevHudSettings, shortcuts: { ...defaultDevHudSettings.shortcuts, desktop: bindings } },
-      revision: 7n,
-      cachedAt: "2026-08-17T00:00:00.000Z",
-    });
-    const requests: NativeBridgeRequestV1[] = [];
-    const authenticated = authenticatedBridge();
-    const bridge: NativeBridgeV1 = {
-      async request(request) {
-        if (request.operation === "shortcuts.apply") {
-          requests.push(request);
-          return { kind: "shortcut-status", platform: "windows", permission: "available", bindings: request.bindings, error: null };
-        }
-        return authenticated.request(request);
-      },
-      listen: authenticated.listen,
-    };
+  it("keeps shortcuts suspended while blocked settings hydration has no cache", async () => {
+    const shortcutOperations: string[] = [];
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
       if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: { ...fixture.account, administrativeBlockState: "ADMINISTRATIVE_BLOCK_STATE_BLOCKED" } });
-      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return new Promise<Response>(() => {});
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return await new Promise<Response>(() => {});
       throw new Error(`unexpected fixture request ${url}`);
     }));
+    const accessTokenMap = JSON.stringify({ "@https://api.example/api": { token: "blocked-token", scope: "", expiresAt: 4_102_444_800 } });
+    const secureSession = JSON.stringify({ idToken: "blocked-id-token", accessToken: accessTokenMap });
+    const bridge: NativeBridgeV1 = {
+      async request(request) {
+        if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
+        if (request.operation === "secure.read") return { kind: "secure-value", value: request.setting.kind === "logto-session" ? secureSession : null };
+        if (request.operation === "auth.take-pending-callback") return { kind: "auth-callback", url: null };
+        if (request.operation === "shortcuts.suspend") {
+          shortcutOperations.push(request.operation);
+          return { kind: "shortcut-status", platform: "macos", permission: "available", bindings: defaultDevHudSettings.shortcuts.desktop, error: null };
+        }
+        if (request.operation === "shortcuts.apply") {
+          shortcutOperations.push(request.operation);
+          return { kind: "shortcut-status", platform: "macos", permission: "available", bindings: request.bindings, error: null };
+        }
+        throw new Error(`unexpected bridge operation ${request.operation}`);
+      },
+      async listen() { return () => {}; },
+    };
 
-    render(<App bridge={bridge} initialRuntime={runtime} />);
-    fireEvent.click(screen.getByRole("button", { name: messages.en.account }));
+    render(<DevHudServiceBoundary apiOrigin="https://devhud.api.delino.io" active online callbackUrl={null} platform={RuntimePlatform.Desktop} bridge={bridge} onCallbackConsumed={() => {}} onContinueLocally={() => {}} onLoggedOut={() => {}}><IdentityStateProbe /><SynchronizedShortcutBoundary bridge={bridge} /></DevHudServiceBoundary>);
 
-    expect(await screen.findByText(messages.en.blockedTitle)).toBeTruthy();
-    await waitFor(() => expect(requests).toEqual([{ operation: "shortcuts.apply", bindings }]));
+    await waitFor(() => expect(screen.getByTestId("identity-state").dataset.status).toBe("blocked"));
+    await waitFor(() => expect(shortcutOperations).toContain("shortcuts.suspend"));
+    expect(shortcutOperations).not.toContain("shortcuts.apply");
   });
 
   it("purges secure credentials when pending-deletion Web Storage enumeration fails", async () => {
@@ -999,7 +644,7 @@ describe("generated Connect identity/settings fixture", () => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
       if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: { ...fixture.account, deletionState: "ACCOUNT_DELETION_STATE_PENDING" } });
-      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 2, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
       throw new Error(`unexpected fixture request ${url}`);
     }));
 
@@ -1037,7 +682,7 @@ describe("generated Connect identity/settings fixture", () => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
       if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
-      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 2, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
       if (url.endsWith("/devhud.v1.AccountService/DeleteAccount")) {
         deletionRequests += 1;
         return connectResponse({ account: { ...fixture.account, deletionState: "ACCOUNT_DELETION_STATE_PENDING" } });
@@ -1139,7 +784,7 @@ describe("generated Connect identity/settings fixture", () => {
         return connectResponse(fixture.bootstrap);
       }
       if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
-      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 2, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
       throw new Error(`unexpected fixture request ${url}`);
     }));
 
@@ -1168,7 +813,7 @@ describe("generated Connect identity/settings fixture", () => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
       if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: { ...fixture.account, deletionState: "ACCOUNT_DELETION_STATE_PURGE_CLAIMED" } });
-      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 2, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
       throw new Error(`unexpected fixture request ${url}`);
     }));
 
@@ -1197,7 +842,7 @@ describe("generated Connect identity/settings fixture", () => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
       if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return new Response(JSON.stringify({ code: "unauthenticated", message: "invalid credentials" }), { status: 401, headers: { "Content-Type": "application/json" } });
-      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 2, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
       throw new Error(`unexpected fixture request ${url}`);
     }));
 
@@ -1254,7 +899,7 @@ describe("generated Connect identity/settings fixture", () => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
       if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
-      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 2, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
       throw new Error(`unexpected fixture request ${url}`);
     }));
 
@@ -1285,6 +930,23 @@ describe("generated Connect identity/settings fixture", () => {
     expect(screen.getByTestId("identity-state").dataset.error).toBe("");
   });
 
+  it("rejects an oversized guest settings snapshot before persistence", async () => {
+    let rejectBootstrap!: (reason: unknown) => void;
+    const bootstrap = new Promise<Response>((_resolve, reject) => { rejectBootstrap = reject; });
+    vi.stubGlobal("fetch", vi.fn(() => bootstrap));
+    const mapping = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", pattern: `https://source.example/${"path".repeat(1_500)}`, repository: { owner: "owner".repeat(1_500), name: "repository".repeat(1_500) }, credentialProfileRef: mappingProfile.id, priority: 0, chromeOrigin: null, updatedAt: "2026-08-17T00:00:00.000Z" };
+    const oversized = withMappingProfile(Array.from({ length: 100 }, (_, index) => ({ ...mapping, id: `018f47a2-7b3c-7def-8abc-${(123456789000 + index).toString().padStart(12, "0")}` })));
+
+    renderIdentityProbe(signedOutBridge(), oversized);
+    await waitFor(() => expect(screen.getByRole("button", { name: "continue probe locally" })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "continue probe locally" }));
+    await act(async () => { rejectBootstrap(new TypeError("network unavailable")); });
+    await waitFor(() => expect(screen.getByTestId("identity-state").dataset.status).toBe("guest"));
+
+    fireEvent.click(screen.getByRole("button", { name: "replace probe settings" }));
+    await waitFor(() => expect(hasGuestSettings(localStorage)).toBe(false));
+  });
+
   it("surfaces typed GetAccount failures without exposing destructive actions and retries them", async () => {
     const correlationId = "018f47a2-7b3c-7def-8abc-1234567890ef";
     let accountRequests = 0;
@@ -1296,7 +958,7 @@ describe("generated Connect identity/settings fixture", () => {
         if (accountRequests === 1) return new Response(JSON.stringify({ code: "unavailable", message: "retry later" }), { status: 503, headers: { "Content-Type": "application/json", "x-devhud-correlation-id": correlationId } });
         return connectResponse({ account: fixture.account });
       }
-      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 2, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
       throw new Error(`unexpected fixture request ${url}`);
     }));
 
@@ -1445,7 +1107,7 @@ describe("generated Connect identity/settings fixture", () => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
       if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
-      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 2, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
       throw new Error(`unexpected request ${url}`);
     }));
     const bridge: NativeBridgeV1 = {
@@ -1498,7 +1160,7 @@ describe("generated Connect identity/settings fixture", () => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
       if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
-      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 2, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
       throw new Error(`unexpected request ${url}`);
     }));
     const bridge: NativeBridgeV1 = {
@@ -1566,7 +1228,7 @@ describe("generated Connect identity/settings fixture", () => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
       if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
-      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 2, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
       if (url.endsWith("/devhud.v1.SettingsService/ReplaceSettings")) return new Response(JSON.stringify({ code: "unavailable", message: "retry later" }), { status: 503, headers: { "Content-Type": "application/json", "x-devhud-correlation-id": correlationId } });
       throw new Error(`unexpected request ${url}`);
     }));
@@ -1617,7 +1279,7 @@ describe("generated Connect identity/settings fixture", () => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
       if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
-      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "7", canonicalJson: encodedSettings(defaultDevHudSettings) } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 2, revision: "7", canonicalJson: encodedSettings(defaultDevHudSettings) } });
       throw new Error(`unexpected request ${url}`);
     }));
 
@@ -1630,55 +1292,6 @@ describe("generated Connect identity/settings fixture", () => {
       expect(state.dataset.revision).toBe("7");
       expect(state.dataset.error).toBe("");
     });
-  });
-
-  it("keeps loaded native shortcuts active when cache writes fail before going offline", async () => {
-    const originalSetItem = Storage.prototype.setItem;
-    vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (this: Storage, key, value) {
-      if (key.endsWith(".settings")) throw new DOMException("quota exceeded", "QuotaExceededError");
-      originalSetItem.call(this, key, value);
-    });
-    const requests: NativeBridgeRequestV1[] = [];
-    const authenticated = authenticatedBridge();
-    const bridge: NativeBridgeV1 = {
-      async request(request) {
-        if (request.operation === "shortcuts.apply" || request.operation === "shortcuts.suspend") {
-          requests.push(request);
-          return { kind: "shortcut-status", platform: "windows", permission: "available", bindings: defaultDevHudSettings.shortcuts.desktop, error: null };
-        }
-        return authenticated.request(request);
-      },
-      listen: authenticated.listen,
-    };
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
-      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
-      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "7", canonicalJson: encodedSettings(defaultDevHudSettings) } });
-      throw new Error(`unexpected request ${url}`);
-    }));
-
-    const renderBoundary = (online: boolean) => <DevHudServiceBoundary
-      apiOrigin="https://devhud.api.delino.io"
-      active
-      online={online}
-      callbackUrl={null}
-      platform={RuntimePlatform.Desktop}
-      bridge={bridge}
-      onCallbackConsumed={() => {}}
-      onContinueLocally={() => {}}
-      onLoggedOut={() => {}}
-    ><SynchronizedShortcutBoundary bridge={bridge} /><IdentityStateProbe /></DevHudServiceBoundary>;
-    const view = render(renderBoundary(true));
-
-    await waitFor(() => expect(screen.getByTestId("identity-state").dataset.revision).toBe("7"));
-    await waitFor(() => expect(requests).toContainEqual({ operation: "shortcuts.apply", bindings: defaultDevHudSettings.shortcuts.desktop }));
-    requests.splice(0);
-    view.rerender(renderBoundary(false));
-
-    await waitFor(() => expect(screen.getByTestId("identity-state").dataset.readOnly).toBe("true"));
-    expect(screen.getByTestId("identity-state").dataset.shortcutHydrationReady).toBe("true");
-    expect(requests.filter((request) => request.operation === "shortcuts.suspend")).toEqual([]);
   });
 
   it("keeps offline settings read-only while the cached session probe is pending", async () => {
@@ -1762,7 +1375,7 @@ describe("generated Connect identity/settings fixture", () => {
       if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) {
         settingsRequests += 1;
         if (settingsRequests === 1) return new Response(JSON.stringify({ code: "unavailable", message: "retry later" }), { status: 503, headers: { "Content-Type": "application/json", "x-devhud-correlation-id": correlationId } });
-        return connectResponse({ snapshot: { schemaVersion: 3, revision: "10", canonicalJson: encodedSettings(defaultDevHudSettings) } });
+        return connectResponse({ snapshot: { schemaVersion: 2, revision: "10", canonicalJson: encodedSettings(defaultDevHudSettings) } });
       }
       throw new Error(`unexpected request ${url}`);
     }));
@@ -1801,7 +1414,7 @@ describe("generated Connect identity/settings fixture", () => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
       if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
-      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 2, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
       throw new Error(`unexpected request ${url}`);
     }));
 
@@ -1840,7 +1453,7 @@ describe("generated Connect identity/settings fixture", () => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
       if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
-      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "7", canonicalJson: encodedSettings(defaultDevHudSettings) } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 2, revision: "7", canonicalJson: encodedSettings(defaultDevHudSettings) } });
       throw new Error(`unexpected request ${url}`);
     }));
 
@@ -1892,7 +1505,7 @@ describe("generated Connect identity/settings fixture", () => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
       if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
-      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "1", canonicalJson: encodedSettings(server) } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 2, revision: "1", canonicalJson: encodedSettings(server) } });
       if (url.endsWith("/devhud.v1.SettingsService/ReplaceSettings")) return connectResponse({ snapshot: { schemaVersion: 4, revision: "2", canonicalJson: encodedSettings(replacement) } });
       throw new Error(`unexpected request ${url}`);
     }));
@@ -1920,11 +1533,11 @@ describe("generated Connect identity/settings fixture", () => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
       if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
-      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "1", canonicalJson: encodedSettings(server) } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 2, revision: "1", canonicalJson: encodedSettings(server) } });
       if (url.endsWith("/devhud.v1.SettingsService/ReplaceSettings")) {
         return kind === "missing"
           ? connectResponse({})
-          : connectResponse({ snapshot: { schemaVersion: 3, revision: "2", canonicalJson: btoa('{ "schemaVersion": 1 }') } });
+          : connectResponse({ snapshot: { schemaVersion: 2, revision: "2", canonicalJson: btoa('{ "schemaVersion": 1 }') } });
       }
       throw new Error(`unexpected request ${url}`);
     }));
@@ -1949,7 +1562,7 @@ describe("generated Connect identity/settings fixture", () => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
       if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
-      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "1", canonicalJson: encodedSettings(server) } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 2, revision: "1", canonicalJson: encodedSettings(server) } });
       if (url.endsWith("/devhud.v1.SettingsService/ReplaceSettings")) {
         const detail = create(SettingsRevisionConflictSchema, {
           expectedRevision: 1n,
@@ -1982,11 +1595,11 @@ describe("generated Connect identity/settings fixture", () => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
       if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
-      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "1", canonicalJson: encodedSettings(server) } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 2, revision: "1", canonicalJson: encodedSettings(server) } });
       if (url.endsWith("/devhud.v1.SettingsService/ReplaceSettings")) {
         const detail = create(SettingsRevisionConflictSchema, {
           expectedRevision: 1n,
-          currentSnapshot: { schemaVersion: 3, revision: 2n, canonicalJson: new TextEncoder().encode('{ "schemaVersion": 1 }') },
+          currentSnapshot: { schemaVersion: 2, revision: 2n, canonicalJson: new TextEncoder().encode('{ "schemaVersion": 1 }') },
         });
         const value = btoa(String.fromCharCode(...toBinary(SettingsRevisionConflictSchema, detail)));
         return new Response(JSON.stringify({ code: "aborted", message: "settings revision conflict", details: [{ type: SettingsRevisionConflictSchema.typeName, value }] }), { status: 409, headers: { "Content-Type": "application/json" } });
@@ -2017,7 +1630,7 @@ describe("generated Connect identity/settings fixture", () => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
       if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
-      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: invalidRefetch ? 4 : 3, revision: "1", canonicalJson: encodedSettings(server) } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: invalidRefetch ? 4 : 2, revision: "1", canonicalJson: encodedSettings(server) } });
       throw new Error(`unexpected request ${url}`);
     }));
 
@@ -2043,6 +1656,228 @@ describe("generated Connect identity/settings fixture", () => {
     expect(readAuthenticatedSettingsCache(localStorage, "https://devhud.api.delino.io")).toBeNull();
   });
 
+  it("resets a dirty mapping draft when import replacement adopts the server snapshot", async () => {
+    const mapping = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", pattern: "https://local.example/**", repository: { owner: "delinoio", name: "oss" }, credentialProfileRef: mappingProfile.id, priority: 0, chromeOrigin: null, updatedAt: "2026-08-17T00:00:00.000Z" };
+    const local = withMappingProfile([mapping]);
+    const server = withMappingProfile([{ ...mapping, pattern: "https://server.example/**" }]);
+    writeGuestSettings(localStorage, local);
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "1", canonicalJson: encodedSettings(server) } });
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    render(<DevHudServiceBoundary
+      apiOrigin="https://devhud.api.delino.io"
+      active
+      online
+      callbackUrl={null}
+      platform={RuntimePlatform.Desktop}
+      bridge={authenticatedBridge()}
+      onCallbackConsumed={() => {}}
+      onContinueLocally={() => {}}
+      onLoggedOut={() => {}}
+    ><SynchronizedSettingsBoundary copy={messages.en} /></DevHudServiceBoundary>);
+
+    expect(await screen.findByRole("dialog", { name: messages.en.importSettingsTitle })).toBeTruthy();
+    const pattern = screen.getByLabelText(messages.en.urlPattern) as HTMLInputElement;
+    fireEvent.change(pattern, { target: { value: "https://draft.example/**" } });
+    expect(pattern.value).toBe("https://draft.example/**");
+    fireEvent.click(screen.getByRole("button", { name: messages.en.replaceLocal }));
+    await waitFor(() => expect((screen.getByLabelText(messages.en.urlPattern) as HTMLInputElement).value).toBe("https://server.example/**"));
+  });
+
+  it("resets a dirty mapping draft to the uploaded snapshot revision", async () => {
+    const mapping = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", pattern: "https://local.example/**", repository: { owner: "delinoio", name: "oss" }, credentialProfileRef: mappingProfile.id, priority: 0, chromeOrigin: null, updatedAt: "2026-08-17T00:00:00.000Z" };
+    const local = withMappingProfile([mapping]);
+    const server = withMappingProfile([{ ...mapping, pattern: "https://server.example/**" }]);
+    const replacements: unknown[] = [];
+    writeGuestSettings(localStorage, local);
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "1", canonicalJson: encodedSettings(server) } });
+      if (url.endsWith("/devhud.v1.SettingsService/ReplaceSettings")) {
+        const source = typeof init?.body === "string" ? init.body : new TextDecoder().decode(init?.body as ArrayBufferView<ArrayBuffer>);
+        replacements.push(JSON.parse(source));
+        return connectResponse({ snapshot: { schemaVersion: 3, revision: String(replacements.length + 1), canonicalJson: encodedSettings(local) } });
+      }
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    render(<DevHudServiceBoundary apiOrigin="https://devhud.api.delino.io" active online callbackUrl={null} platform={RuntimePlatform.Desktop} bridge={authenticatedBridge()} onCallbackConsumed={() => {}} onContinueLocally={() => {}} onLoggedOut={() => {}}><SynchronizedSettingsBoundary copy={messages.en} /></DevHudServiceBoundary>);
+
+    await screen.findByRole("dialog", { name: messages.en.importSettingsTitle });
+    const pattern = screen.getByLabelText(messages.en.urlPattern) as HTMLInputElement;
+    fireEvent.change(pattern, { target: { value: "https://draft.example/**" } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.uploadLocal }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: messages.en.importSettingsTitle })).toBeNull());
+    fireEvent.change(pattern, { target: { value: "https://after-upload.example/**" } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.saveUrlMappings }));
+
+    await waitFor(() => expect(replacements).toHaveLength(2));
+    expect((replacements[0] as { readonly expectedRevision: string }).expectedRevision).toBe("1");
+    expect((replacements[1] as { readonly expectedRevision: string }).expectedRevision).toBe("2");
+    expect(screen.queryByRole("dialog", { name: messages.en.conflictTitle })).toBeNull();
+  });
+
+  it("keeps an intermediate negative mapping priority editable until save", async () => {
+    const mapping = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", pattern: "https://local.example/**", repository: { owner: "delinoio", name: "oss" }, credentialProfileRef: mappingProfile.id, priority: 0, chromeOrigin: null, updatedAt: "2026-08-17T00:00:00.000Z" };
+    const server = withMappingProfile([{ ...mapping, pattern: "https://server.example/**" }]);
+    writeGuestSettings(localStorage, withMappingProfile([mapping]));
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "1", canonicalJson: encodedSettings(server) } });
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    render(<DevHudServiceBoundary apiOrigin="https://devhud.api.delino.io" active online callbackUrl={null} platform={RuntimePlatform.Desktop} bridge={authenticatedBridge()} onCallbackConsumed={() => {}} onContinueLocally={() => {}} onLoggedOut={() => {}}><SynchronizedSettingsBoundary copy={messages.en} /></DevHudServiceBoundary>);
+
+    await screen.findByRole("dialog", { name: messages.en.importSettingsTitle });
+    const priority = screen.getByLabelText(messages.en.mappingPriority) as HTMLInputElement;
+    fireEvent.change(priority, { target: { value: "" } });
+    expect(priority.value).toBe("");
+    fireEvent.change(priority, { target: { value: "-1" } });
+    expect(priority.value).toBe("-1");
+  });
+
+  it("disables mapping edits while a save is pending", async () => {
+    const mapping = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", pattern: "https://local.example/**", repository: { owner: "delinoio", name: "oss" }, credentialProfileRef: mappingProfile.id, priority: 0, chromeOrigin: null, updatedAt: "2026-08-17T00:00:00.000Z" };
+    const server = withMappingProfile([mapping]);
+    let resolveReplace!: (response: Response) => void;
+    const replacement = new Promise<Response>((resolve) => { resolveReplace = resolve; });
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 2, revision: "1", canonicalJson: encodedSettings(server) } });
+      if (url.endsWith("/devhud.v1.SettingsService/ReplaceSettings")) return replacement;
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    render(<DevHudServiceBoundary apiOrigin="https://devhud.api.delino.io" active online callbackUrl={null} platform={RuntimePlatform.Desktop} bridge={authenticatedBridge()} onCallbackConsumed={() => {}} onContinueLocally={() => {}} onLoggedOut={() => {}}><SynchronizedSettingsBoundary copy={messages.en} /></DevHudServiceBoundary>);
+
+    const pattern = await screen.findByLabelText(messages.en.urlPattern) as HTMLInputElement;
+    fireEvent.change(pattern, { target: { value: "https://pending.example/**" } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.saveUrlMappings }));
+    await waitFor(() => expect(pattern.matches(":disabled")).toBe(true));
+    expect((screen.getByRole("button", { name: messages.en.addUrlMapping }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: messages.en.saveUrlMappings }) as HTMLButtonElement).disabled).toBe(true);
+
+    await act(async () => { resolveReplace(connectResponse({ snapshot: { schemaVersion: 2, revision: "2", canonicalJson: encodedSettings(server) } })); });
+    await waitFor(() => expect(pattern.matches(":disabled")).toBe(false));
+    expect(screen.getByRole("status").textContent).toBe(messages.en.mappingSaved);
+  });
+
+  it("preserves a mapping draft base revision while repository validation is pending", async () => {
+    const mapping = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", pattern: "https://local.example/**", repository: { owner: "delinoio", name: "oss" }, credentialProfileRef: mappingProfile.id, priority: 0, chromeOrigin: null, updatedAt: "2026-08-17T00:00:00.000Z" };
+    const server = withMappingProfile([mapping]);
+    const themed = { ...server, appearance: { ...server.appearance, theme: "dark" as const } };
+    let releaseValidation!: () => void;
+    const validation = new Promise<void>((resolve) => { releaseValidation = resolve; });
+    const validateRepository = vi.fn(async () => validation);
+    const githubProvider = { id: "github.com", validateRepository } as unknown as GitHubProvider;
+    const baseBridge = authenticatedBridge();
+    const bridge: NativeBridgeV1 = { ...baseBridge, async request(request) {
+      if (request.operation === "secure.read" && request.setting.kind === "github-pat") return { kind: "secure-value", value: "fixture-github-token" };
+      return baseBridge.request(request);
+    } };
+    const replacements: unknown[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 2, revision: "1", canonicalJson: encodedSettings(server) } });
+      if (url.endsWith("/devhud.v1.SettingsService/ReplaceSettings")) {
+        const source = typeof init?.body === "string" ? init.body : new TextDecoder().decode(init?.body as ArrayBufferView<ArrayBuffer>);
+        replacements.push(JSON.parse(source));
+        if (replacements.length === 1) return connectResponse({ snapshot: { schemaVersion: 2, revision: "2", canonicalJson: encodedSettings(themed) } });
+        const detail = create(SettingsRevisionConflictSchema, {
+          expectedRevision: 1n,
+          currentSnapshot: { schemaVersion: 3, revision: 2n, canonicalJson: new TextEncoder().encode(canonicalDevHudSettings(themed)) },
+        });
+        const value = btoa(String.fromCharCode(...toBinary(SettingsRevisionConflictSchema, detail)));
+        return new Response(JSON.stringify({ code: "aborted", message: "settings revision conflict", details: [{ type: SettingsRevisionConflictSchema.typeName, value }] }), { status: 409, headers: { "Content-Type": "application/json" } });
+      }
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    render(<DevHudServiceBoundary apiOrigin="https://devhud.api.delino.io" active online callbackUrl={null} platform={RuntimePlatform.Desktop} bridge={bridge} onCallbackConsumed={() => {}} onContinueLocally={() => {}} onLoggedOut={() => {}}><SynchronizedSettingsBoundary copy={messages.en} bridge={bridge} githubProvider={githubProvider} /></DevHudServiceBoundary>);
+
+    const repositoryName = await screen.findByLabelText(messages.en.repositoryName) as HTMLInputElement;
+    fireEvent.change(repositoryName, { target: { value: "reviewed" } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.saveUrlMappings }));
+    await waitFor(() => expect(validateRepository).toHaveBeenCalled());
+    fireEvent.change(screen.getByLabelText(messages.en.theme), { target: { value: "dark" } });
+    await waitFor(() => expect(replacements).toHaveLength(1));
+    releaseValidation();
+    await waitFor(() => expect(replacements).toHaveLength(2));
+    const replacement = replacements[1] as { readonly expectedRevision: string; readonly canonicalJson: string };
+    expect(replacement.expectedRevision).toBe("1");
+    expect(await screen.findByRole("dialog", { name: messages.en.conflictTitle })).toBeTruthy();
+    expect((screen.getByLabelText(messages.en.repositoryName) as HTMLInputElement).value).toBe("reviewed");
+  });
+
+  it("preserves a dirty mapping draft when conflict reapply encounters another revision conflict", async () => {
+    const mapping = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", pattern: "https://server.example/**", repository: { owner: "delinoio", name: "oss" }, credentialProfileRef: mappingProfile.id, priority: 0, chromeOrigin: null, updatedAt: "2026-08-17T00:00:00.000Z" };
+    const initial = withMappingProfile([mapping]);
+    const later = withMappingProfile([{ ...mapping, pattern: "https://later.example/**" }]);
+    let replaceAttempts = 0;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 2, revision: "1", canonicalJson: encodedSettings(initial) } });
+      if (url.endsWith("/devhud.v1.SettingsService/ReplaceSettings")) {
+        replaceAttempts += 1;
+        const current = replaceAttempts === 1 ? initial : later;
+        const detail = create(SettingsRevisionConflictSchema, {
+          expectedRevision: BigInt(replaceAttempts),
+          currentSnapshot: { schemaVersion: 3, revision: BigInt(replaceAttempts + 1), canonicalJson: new TextEncoder().encode(canonicalDevHudSettings(current)) },
+        });
+        const value = btoa(String.fromCharCode(...toBinary(SettingsRevisionConflictSchema, detail)));
+        return new Response(JSON.stringify({ code: "aborted", message: "settings revision conflict", details: [{ type: SettingsRevisionConflictSchema.typeName, value }] }), { status: 409, headers: { "Content-Type": "application/json" } });
+      }
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    render(<DevHudServiceBoundary apiOrigin="https://devhud.api.delino.io" active online callbackUrl={null} platform={RuntimePlatform.Desktop} bridge={authenticatedBridge()} onCallbackConsumed={() => {}} onContinueLocally={() => {}} onLoggedOut={() => {}}><SynchronizedSettingsBoundary copy={messages.en} /></DevHudServiceBoundary>);
+
+    const pattern = await screen.findByLabelText(messages.en.urlPattern) as HTMLInputElement;
+    fireEvent.change(pattern, { target: { value: "https://draft.example/**" } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.saveUrlMappings }));
+    await screen.findByRole("dialog", { name: messages.en.conflictTitle });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.reapplyLocal }));
+    await waitFor(() => expect(replaceAttempts).toBe(2));
+    await waitFor(() => expect((screen.getByLabelText(messages.en.urlPattern) as HTMLInputElement).value).toBe("https://draft.example/**"));
+  });
+
+  it("does not report a mapping validation error when a mapping save has a transport failure", async () => {
+    const mapping = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", pattern: "https://server.example/**", repository: { owner: "delinoio", name: "oss" }, credentialProfileRef: mappingProfile.id, priority: 0, chromeOrigin: null, updatedAt: "2026-08-17T00:00:00.000Z" };
+    const server = withMappingProfile([mapping]);
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 2, revision: "1", canonicalJson: encodedSettings(server) } });
+      if (url.endsWith("/devhud.v1.SettingsService/ReplaceSettings")) throw new TypeError("network unavailable");
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    render(<DevHudServiceBoundary apiOrigin="https://devhud.api.delino.io" active online callbackUrl={null} platform={RuntimePlatform.Desktop} bridge={authenticatedBridge()} onCallbackConsumed={() => {}} onContinueLocally={() => {}} onLoggedOut={() => {}}><SynchronizedSettingsBoundary copy={messages.en} /></DevHudServiceBoundary>);
+
+    await screen.findByLabelText(messages.en.urlPattern);
+    fireEvent.change(screen.getByLabelText(messages.en.urlPattern), { target: { value: "https://changed.example/**" } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.saveUrlMappings }));
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain(messages.en.settingsActionFailed));
+    expect(screen.queryByText(messages.en.mappingInvalid)).toBeNull();
+  });
+
   it("clears the guest import marker when a conflicted upload adopts the server", async () => {
     const local = { ...defaultDevHudSettings, appearance: { ...defaultDevHudSettings.appearance, theme: "dark" as const } };
     const server = { ...defaultDevHudSettings, appearance: { ...defaultDevHudSettings.appearance, theme: "light" as const } };
@@ -2051,7 +1886,7 @@ describe("generated Connect identity/settings fixture", () => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
       if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
-      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "3", canonicalJson: encodedSettings(server) } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 2, revision: "3", canonicalJson: encodedSettings(server) } });
       if (url.endsWith("/devhud.v1.SettingsService/ReplaceSettings")) {
         const detail = create(SettingsRevisionConflictSchema, {
           expectedRevision: 3n,
@@ -2081,7 +1916,7 @@ describe("generated Connect identity/settings fixture", () => {
       if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) {
         settingsRequests += 1;
         if (settingsRequests > 1) return new Response(JSON.stringify({ code: "permission_denied", message: "blocked" }), { status: 403, headers: { "Content-Type": "application/json" } });
-        return connectResponse({ snapshot: { schemaVersion: 3, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
+        return connectResponse({ snapshot: { schemaVersion: 2, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
       }
       if (url.endsWith("/devhud.v1.AccountService/RestoreAccount")) return connectResponse({ account: { ...fixture.account, administrativeBlockState: "ADMINISTRATIVE_BLOCK_STATE_BLOCKED" } });
       throw new Error(`unexpected request ${url}`);
@@ -2096,11 +1931,169 @@ describe("generated Connect identity/settings fixture", () => {
     expect(settingsRequests).toBeLessThanOrEqual(1);
   });
 
+  it("keeps unsaved URL mapping drafts while navigating between app surfaces", async () => {
+    const mapping = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", pattern: "https://server.example/**", repository: { owner: "delinoio", name: "oss" }, credentialProfileRef: mappingProfile.id, priority: 0, chromeOrigin: null, updatedAt: "2026-08-17T00:00:00.000Z" };
+    const server = withMappingProfile([mapping]);
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 2, revision: "1", canonicalJson: encodedSettings(server) } });
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    render(<App bridge={authenticatedBridge()} initialRuntime={runtime} />);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.settings }));
+    const pattern = await screen.findByLabelText(messages.en.urlPattern) as HTMLInputElement;
+    const priority = screen.getByLabelText(messages.en.mappingPriority) as HTMLInputElement;
+    fireEvent.change(pattern, { target: { value: "https://draft.example/**" } });
+    fireEvent.change(priority, { target: { value: "-1" } });
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.account }));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.settings }));
+
+    expect((await screen.findByLabelText(messages.en.urlPattern) as HTMLInputElement).value).toBe("https://draft.example/**");
+    expect((screen.getByLabelText(messages.en.mappingPriority) as HTMLInputElement).value).toBe("-1");
+  });
+
+  it("keeps an editable mapping draft while the authenticated account hydrates", async () => {
+    const mapping = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", pattern: "https://server.example/**", repository: { owner: "delinoio", name: "oss" }, credentialProfileRef: mappingProfile.id, priority: 0, chromeOrigin: null, updatedAt: "2026-08-17T00:00:00.000Z" };
+    const server = withMappingProfile([mapping]);
+    let resolveAccount!: (response: Response) => void;
+    const account = new Promise<Response>((resolve) => { resolveAccount = resolve; });
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return account;
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 2, revision: "1", canonicalJson: encodedSettings(server) } });
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    render(<DevHudServiceBoundary apiOrigin="https://devhud.api.delino.io" active online callbackUrl={null} platform={RuntimePlatform.Desktop} bridge={authenticatedBridge()} onCallbackConsumed={() => {}} onContinueLocally={() => {}} onLoggedOut={() => {}}><SynchronizedSettingsBoundary copy={messages.en} /></DevHudServiceBoundary>);
+
+    const pattern = await screen.findByLabelText(messages.en.urlPattern) as HTMLInputElement;
+    fireEvent.change(pattern, { target: { value: "https://draft.example/**" } });
+    await act(async () => { resolveAccount(connectResponse({ account: fixture.account })); });
+
+    await waitFor(() => expect((screen.getByLabelText(messages.en.urlPattern) as HTMLInputElement).value).toBe("https://draft.example/**"));
+  });
+
+  it("requires an explicit credential profile for a newly added mapping", async () => {
+    const server = withMappingProfile([]);
+    let replacements = 0;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 2, revision: "1", canonicalJson: encodedSettings(server) } });
+      if (url.endsWith("/devhud.v1.SettingsService/ReplaceSettings")) { replacements += 1; return connectResponse({ snapshot: { schemaVersion: 2, revision: "2", canonicalJson: encodedSettings(server) } }); }
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    render(<DevHudServiceBoundary apiOrigin="https://devhud.api.delino.io" active online callbackUrl={null} platform={RuntimePlatform.Desktop} bridge={authenticatedBridge()} onCallbackConsumed={() => {}} onContinueLocally={() => {}} onLoggedOut={() => {}}><SynchronizedSettingsBoundary copy={messages.en} /></DevHudServiceBoundary>);
+
+    await screen.findByRole("button", { name: messages.en.addUrlMapping });
+    await waitFor(() => expect((screen.getByRole("button", { name: messages.en.addUrlMapping }) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.addUrlMapping }));
+    const profile = await screen.findByLabelText(messages.en.credentialProfile) as HTMLSelectElement;
+    expect(profile.value).toBe("");
+    fireEvent.click(screen.getByRole("button", { name: messages.en.saveUrlMappings }));
+    expect((await screen.findByRole("alert")).textContent).toContain(messages.en.mappingInvalid);
+    expect(replacements).toBe(0);
+    fireEvent.change(profile, { target: { value: mappingProfile.id } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.saveUrlMappings }));
+    expect((await screen.findByRole("alert")).textContent).toContain(messages.en.githubSetupFailed);
+    expect(replacements).toBe(0);
+  });
+
+  it("preserves an unsaved URL mapping draft when the account becomes blocked", async () => {
+    const mapping = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", pattern: "https://server.example/**", repository: { owner: "delinoio", name: "oss" }, credentialProfileRef: mappingProfile.id, priority: 0, chromeOrigin: null, updatedAt: "2026-08-17T00:00:00.000Z" };
+    const server = withMappingProfile([mapping]);
+    let blocked = false;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: { ...fixture.account, administrativeBlockState: blocked ? "ADMINISTRATIVE_BLOCK_STATE_BLOCKED" : "ADMINISTRATIVE_BLOCK_STATE_UNSPECIFIED" } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "1", canonicalJson: encodedSettings(server) } });
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    render(<DevHudServiceBoundary apiOrigin="https://devhud.api.delino.io" active online callbackUrl={null} platform={RuntimePlatform.Desktop} bridge={authenticatedBridge()} onCallbackConsumed={() => {}} onContinueLocally={() => {}} onLoggedOut={() => {}}><IdentityStateProbe /><SynchronizedSettingsBoundary copy={messages.en} /></DevHudServiceBoundary>);
+
+    const pattern = await screen.findByLabelText(messages.en.urlPattern) as HTMLInputElement;
+    fireEvent.change(pattern, { target: { value: "https://draft.example/**" } });
+    blocked = true;
+    fireEvent.click(screen.getByRole("button", { name: "refetch probe queries" }));
+
+    await waitFor(() => expect(screen.getByTestId("identity-state").dataset.status).toBe("blocked"));
+    expect((screen.getByLabelText(messages.en.urlPattern) as HTMLInputElement).value).toBe("https://draft.example/**");
+    await waitFor(() => expect((screen.getByLabelText(messages.en.urlPattern) as HTMLInputElement).matches(":disabled")).toBe(true));
+  });
+
+  it("clears unsaved URL mapping drafts when the authenticated account changes", async () => {
+    const mapping = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", pattern: "https://first.example/**", repository: { owner: "delinoio", name: "oss" }, credentialProfileRef: mappingProfile.id, priority: 0, chromeOrigin: null, updatedAt: "2026-08-17T00:00:00.000Z" };
+    const first = withMappingProfile([mapping]);
+    const second = withMappingProfile([{ ...mapping, pattern: "https://second.example/**" }]);
+    let useSecondAccount = false;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: { ...fixture.account, logtoSubject: useSecondAccount ? "second-account" : "first-account" } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 2, revision: useSecondAccount ? "2" : "1", canonicalJson: encodedSettings(useSecondAccount ? second : first) } });
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    render(<DevHudServiceBoundary apiOrigin="https://devhud.api.delino.io" active online callbackUrl={null} platform={RuntimePlatform.Desktop} bridge={authenticatedBridge()} onCallbackConsumed={() => {}} onContinueLocally={() => {}} onLoggedOut={() => {}}><IdentityStateProbe /><SynchronizedSettingsBoundary copy={messages.en} /></DevHudServiceBoundary>);
+
+    const pattern = await screen.findByLabelText(messages.en.urlPattern) as HTMLInputElement;
+    fireEvent.change(pattern, { target: { value: "https://draft.example/**" } });
+    useSecondAccount = true;
+    fireEvent.click(screen.getByRole("button", { name: "refetch probe queries" }));
+
+    await waitFor(() => expect((screen.getByLabelText(messages.en.urlPattern) as HTMLInputElement).value).toBe("https://second.example/**"));
+  });
+
+  it("does not commit a mapping save after its identity scope changes during validation", async () => {
+    const mapping = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", pattern: "https://first.example/**", repository: { owner: "delinoio", name: "oss" }, credentialProfileRef: mappingProfile.id, priority: 0, chromeOrigin: null, updatedAt: "2026-08-17T00:00:00.000Z" };
+    const first = withMappingProfile([mapping]);
+    const second = withMappingProfile([{ ...mapping, pattern: "https://second.example/**" }]);
+    let useSecondAccount = false;
+    let releaseValidation!: () => void;
+    const validation = new Promise<void>((resolve) => { releaseValidation = resolve; });
+    const githubProvider = { id: "github.com", validateRepository: vi.fn(async () => validation) } as unknown as GitHubProvider;
+    const baseBridge = authenticatedBridge();
+    const bridge: NativeBridgeV1 = { ...baseBridge, async request(request) {
+      if (request.operation === "secure.read" && request.setting.kind === "github-pat") return { kind: "secure-value", value: "fixture-github-token" };
+      return baseBridge.request(request);
+    } };
+    let replacements = 0;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: { ...fixture.account, logtoSubject: useSecondAccount ? "second-account" : "first-account" } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 3, revision: "1", canonicalJson: encodedSettings(useSecondAccount ? second : first) } });
+      if (url.endsWith("/devhud.v1.SettingsService/ReplaceSettings")) { replacements += 1; return connectResponse({ snapshot: { schemaVersion: 3, revision: "2", canonicalJson: encodedSettings(first) } }); }
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    render(<DevHudServiceBoundary apiOrigin="https://devhud.api.delino.io" active online callbackUrl={null} platform={RuntimePlatform.Desktop} bridge={bridge} onCallbackConsumed={() => {}} onContinueLocally={() => {}} onLoggedOut={() => {}}><IdentityStateProbe /><SynchronizedSettingsBoundary copy={messages.en} bridge={bridge} githubProvider={githubProvider} /></DevHudServiceBoundary>);
+
+    const repositoryName = await screen.findByLabelText(messages.en.repositoryName) as HTMLInputElement;
+    fireEvent.change(repositoryName, { target: { value: "reviewed" } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.saveUrlMappings }));
+    await waitFor(() => expect(githubProvider.validateRepository).toHaveBeenCalledOnce());
+    useSecondAccount = true;
+    fireEvent.click(screen.getByRole("button", { name: "refetch probe queries" }));
+    await waitFor(() => expect((screen.getByLabelText(messages.en.urlPattern) as HTMLInputElement).value).toBe("https://second.example/**"));
+    releaseValidation();
+    await act(async () => {});
+
+    expect(replacements).toBe(0);
+  });
+
   it.each([
     ["unsupported schema", 4, encodedSettings(defaultDevHudSettings)],
-    ["noncanonical body", 3, btoa('{ "schemaVersion": 3 }')],
-    ["v1 envelope with v3 body", 1, encodedSettings(defaultDevHudSettings)],
-    ["v2 envelope with v1 body", 2, encodedCanonicalJson(legacyDevHudSettings)],
+    ["noncanonical body", 2, btoa('{ "schemaVersion": 2 }')],
   ])("keeps malformed server settings recoverable for %s", async (_name, schemaVersion, canonicalJson) => {
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);

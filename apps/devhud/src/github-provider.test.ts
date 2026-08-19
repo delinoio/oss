@@ -238,6 +238,12 @@ describe("GitHub profile and server isolation", () => {
     expect(validateRepository.mock.calls.every(([credential]) => credential.profileId === fine.profileId)).toBe(true);
   });
 
+  it("includes URL-mapping repositories in the selected profile's validation graph", () => {
+    const mapping = { id: "018f47a2-7b3c-7def-8abc-1234567890ac", pattern: "https://mapping.example/**", repository: { owner: "delinoio", name: "mapping-repository" }, credentialProfileRef: fine.profileId, priority: 0, chromeOrigin: null, updatedAt: "2026-08-17T00:00:00.000Z" };
+    const mappedSettings = parseDevHudSettings({ ...settings, urlMappings: [mapping] });
+    expect(referencedRepositories(mappedSettings, fine.profileId)).toContainEqual(mapping.repository);
+  });
+
   it("synchronizes only stable IDs and sends PATs/GitHub requests to no server", async () => {
     const server = vi.fn();
     const fetch = router();

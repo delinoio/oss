@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canonicalDevHudSettings, decodeDevHudSettings, decodeVersionedDevHudSettings, defaultDevHudSettings, encodeDevHudSettings, parseDevHudSettings, SettingsContractError, SettingsSchemaVersion } from "./settings-contract";
+import { canonicalDevHudSettings, decodeDevHudSettings, decodeVersionedDevHudSettings, defaultDevHudSettings, encodeDevHudSettings, MaximumUrlRepositoryMappings, parseDevHudSettings, SettingsContractError, SettingsSchemaVersion } from "./settings-contract";
 import { diffSettings, redactRecursively, RedactedValue } from "./settings-diff";
 import { ShortcutActionId, ShortcutKey, ShortcutModifier, ShortcutValidationCode, defaultDesktopShortcutBindings, parseDesktopShortcutBindings } from "./shortcuts";
 
@@ -159,17 +159,17 @@ describe("DevHud settings boundary", () => {
     expect(parseDevHudSettings({ ...settings, decks: [{ ...deck, profileRef: null }] }).decks[0]?.profileRef).toBeNull();
   });
 
+  const mappingProfile = { id: "018f47a2-7b3c-7def-8abc-1234567890ac", name: "Work", kind: "fine-grained" as const };
+  const mapping = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", pattern: "https://source.example/path", repository: { owner: "delinoio", name: "oss" }, credentialProfileRef: mappingProfile.id, priority: 0, chromeOrigin: null, updatedAt: "2026-08-17T00:00:00.000Z" };
+  const settingsWithMappingProfile = { ...defaultDevHudSettings, github: { ...defaultDevHudSettings.github, profiles: [mappingProfile] } };
+
   it.each(["?token=plain-secret", "?X-Amz-Signature=plain-secret", "#credential", "?", "#"])("rejects query or fragment delimiters in synchronized URL fields: %s", (suffix) => {
     expect(() => parseDevHudSettings({
-      ...defaultDevHudSettings,
-      urlMappings: [{ sourcePrefix: `https://source.example/path${suffix}`, destinationPrefix: "https://destination.example/path" }],
-    })).toThrow(/without credentials, query, or fragment/u);
+      ...settingsWithMappingProfile,
+      urlMappings: [{ ...mapping, pattern: `https://source.example/path${suffix}` }],
+    })).toThrow(/credentials, query, or fragment/u);
     expect(() => parseDevHudSettings({
-      ...defaultDevHudSettings,
-      urlMappings: [{ sourcePrefix: "https://source.example/path", destinationPrefix: `https://destination.example/path${suffix}` }],
-    })).toThrow(/without credentials, query, or fragment/u);
-    expect(() => parseDevHudSettings({
-      ...defaultDevHudSettings,
+      ...settingsWithMappingProfile,
       uploads: {
         provider: "r2",
         r2: { profileRef: "profile", bucket: "bucket", endpoint: `https://r2.example${suffix}`, region: "auto", publicBaseUrl: null },
@@ -182,6 +182,29 @@ describe("DevHud settings boundary", () => {
         r2: { profileRef: "profile", bucket: "bucket", endpoint: "https://r2.example", region: "auto", publicBaseUrl: `https://cdn.example${suffix}` },
       },
     })).toThrow(/without credentials, query, or fragment/u);
+  });
+
+  it.each(["https://example.com/", "https://EXAMPLE.com", "https://example.com:443"])("normalizes equivalent Chrome origins: %s", (chromeOrigin) => {
+    expect(parseDevHudSettings({ ...settingsWithMappingProfile, urlMappings: [{ ...mapping, chromeOrigin }] }).urlMappings[0]?.chromeOrigin).toBe("https://example.com");
+  });
+
+  it("rejects wildcard Chrome origins and excessive mapping counts", () => {
+    expect(() => parseDevHudSettings({ ...settingsWithMappingProfile, urlMappings: [{ ...mapping, chromeOrigin: "https://*.example.com" }] })).toThrow(/concrete HTTP\(S\) origin/u);
+    expect(() => parseDevHudSettings({ ...settingsWithMappingProfile, urlMappings: Array.from({ length: MaximumUrlRepositoryMappings + 1 }, (_, index) => ({ ...mapping, id: `018f47a2-7b3c-7def-8abc-${(123456789000 + index).toString().padStart(12, "0")}` })) })).toThrow(/at most/u);
+  });
+
+  it("requires each URL mapping to reference a configured GitHub profile", () => {
+    expect(() => parseDevHudSettings({ ...settingsWithMappingProfile, urlMappings: [{ ...mapping, credentialProfileRef: "missing" }] })).toThrow(/urlMappings\[0\].credentialProfileRef.*configured GitHub profile/u);
+  });
+
+  it("drops legacy v1 mapping entries while preserving other settings", () => {
+    const legacy = { ...defaultDevHudSettings, schemaVersion: 1, appearance: { theme: "dark", language: "ko" }, github: { repositories: [], issueTracker: null }, urlMappings: [{ sourcePrefix: "https://source.example/path", destinationPrefix: "https://destination.example/path" }] };
+    expect(parseDevHudSettings(legacy)).toMatchObject({ schemaVersion: 3, appearance: { theme: "dark", language: "ko" }, urlMappings: [] });
+  });
+
+  it("drops prefix mapping entries from schema-v2 snapshots", () => {
+    const legacy = { ...settingsWithMappingProfile, schemaVersion: 2, urlMappings: [{ sourcePrefix: "https://source.example/path", destinationPrefix: "https://destination.example/path" }] };
+    expect(parseDevHudSettings(legacy).urlMappings).toEqual([]);
   });
 
   it("produces a complete recursive, secret-redacted snapshot diff", () => {
