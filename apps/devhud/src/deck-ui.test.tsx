@@ -122,7 +122,7 @@ describe("Deck surface", () => {
     });
   });
 
-  it("retries an undelivered transition without recording its key", async () => {
+  it("caches refreshed results and retries an undelivered transition", async () => {
     const notificationsDeck = { ...deck, notifications: ["review" as const] };
     const cacheScope = `origin.scope.${profile.id}`;
     writeDeckCache(localStorage, cacheScope, { version: DeckCacheVersion, deckId: deck.id, query: deck.query, queryEtag: null, results: [pullRequest], lastSuccessfulAt: "2026-08-17T00:00:00.000Z", rate: null, failures: 0, nextRefreshAt: null, transitionKeys: [] });
@@ -140,11 +140,22 @@ describe("Deck surface", () => {
     render(<DeckPollingBoundary bridge={bridge} active online provider={providerWithTransition}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
 
     await waitFor(() => expect(publicationAttempts).toBe(1));
-    expect(JSON.parse(localStorage.getItem(deckCacheKey(cacheScope, deck.id)) ?? "null").transitionKeys).toEqual([]);
+    await waitFor(() => {
+      const cache = JSON.parse(localStorage.getItem(deckCacheKey(cacheScope, deck.id)) ?? "null") as { results: unknown; failures: number; lastSuccessfulAt: string | null; pendingNotifications: readonly { key: string; kind: string; body: string }[]; transitionKeys: readonly string[] };
+      expect(cache.results).toEqual([updated]);
+      expect(cache.failures).toBe(0);
+      expect(cache.lastSuccessfulAt).not.toBeNull();
+      expect(cache.transitionKeys).toEqual([]);
+      expect(cache.pendingNotifications).toEqual([{ key: `${pullRequest.nodeId}:review:approved:${updated.updatedAt}`, kind: "review", body: updated.title }]);
+    });
 
     fireEvent.click(screen.getByRole("button", { name: messages.en.deckRefresh }));
     await waitFor(() => expect(publicationAttempts).toBe(2));
-    await waitFor(() => expect(JSON.parse(localStorage.getItem(deckCacheKey(cacheScope, deck.id)) ?? "null").transitionKeys).toEqual([`${pullRequest.nodeId}:review:approved:${updated.updatedAt}`]));
+    await waitFor(() => {
+      const cache = JSON.parse(localStorage.getItem(deckCacheKey(cacheScope, deck.id)) ?? "null") as { pendingNotifications: readonly unknown[]; transitionKeys: readonly string[] };
+      expect(cache.transitionKeys).toEqual([`${pullRequest.nodeId}:review:approved:${updated.updatedAt}`]);
+      expect(cache.pendingNotifications).toEqual([]);
+    });
   });
 
   it("renders the secure-storage diagnostic when reading a Deck credential fails", async () => {

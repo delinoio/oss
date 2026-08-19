@@ -6,6 +6,12 @@ export const DeckCacheVersion = 2 as const;
 export const DeckResultLimit = 100 as const;
 export const DeckLimit = 25 as const;
 
+export interface DeckPendingNotification {
+  readonly key: string;
+  readonly kind: "review" | "checks" | "merged" | "closed";
+  readonly body: string;
+}
+
 export interface DeckCache {
   readonly version: typeof DeckCacheVersion;
   readonly deckId: string;
@@ -17,6 +23,8 @@ export interface DeckCache {
   readonly failures: number;
   readonly nextRefreshAt: string | null;
   readonly transitionKeys: readonly string[];
+  /** Omitted by earlier v2 caches, which decode as having no pending delivery. */
+  readonly pendingNotifications?: readonly DeckPendingNotification[];
 }
 
 export type DeckFailure = "token" | "secure-storage" | "permission" | "query" | "network" | "rate-limit" | "unknown";
@@ -28,13 +36,14 @@ export function readDeckCache(storage: Pick<Storage, "getItem">, scope: string, 
     const value: unknown = JSON.parse(storage.getItem(deckCacheKey(scope, deckId)) ?? "null");
     if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
     const item = value as Record<string, unknown>;
-    if (item.version !== DeckCacheVersion || item.deckId !== deckId || item.query !== query || !nullableString(item.queryEtag) || !Array.isArray(item.results) || item.results.length > DeckResultLimit || !item.results.every(isDeckPullRequest) || !nullableTimestamp(item.lastSuccessfulAt) || !nullableRate(item.rate) || !nonNegativeInteger(item.failures) || !nullableTimestamp(item.nextRefreshAt) || !Array.isArray(item.transitionKeys) || item.transitionKeys.length > DeckResultLimit * 4 || !item.transitionKeys.every((key) => typeof key === "string")) return null;
-    return item as unknown as DeckCache;
+    const pendingNotifications = item.pendingNotifications;
+    if (item.version !== DeckCacheVersion || item.deckId !== deckId || item.query !== query || !nullableString(item.queryEtag) || !Array.isArray(item.results) || item.results.length > DeckResultLimit || !item.results.every(isDeckPullRequest) || !nullableTimestamp(item.lastSuccessfulAt) || !nullableRate(item.rate) || !nonNegativeInteger(item.failures) || !nullableTimestamp(item.nextRefreshAt) || !Array.isArray(item.transitionKeys) || item.transitionKeys.length > DeckResultLimit * 4 || !item.transitionKeys.every((key) => typeof key === "string") || pendingNotifications !== undefined && (!Array.isArray(pendingNotifications) || pendingNotifications.length > DeckResultLimit * 4 || !pendingNotifications.every(isDeckPendingNotification))) return null;
+    return { ...item, pendingNotifications: pendingNotifications ?? [] } as unknown as DeckCache;
   } catch { return null; }
 }
 
 export function writeDeckCache(storage: Pick<Storage, "setItem">, scope: string, cache: DeckCache): void {
-  try { storage.setItem(deckCacheKey(scope, cache.deckId), JSON.stringify({ ...cache, results: cache.results.slice(0, DeckResultLimit), transitionKeys: cache.transitionKeys.slice(-DeckResultLimit * 4) })); } catch { /* cache is best effort */ }
+  try { storage.setItem(deckCacheKey(scope, cache.deckId), JSON.stringify({ ...cache, results: cache.results.slice(0, DeckResultLimit), transitionKeys: cache.transitionKeys.slice(-DeckResultLimit * 4), pendingNotifications: (cache.pendingNotifications ?? []).slice(-DeckResultLimit * 4) })); } catch { /* cache is best effort */ }
 }
 
 export function clearDeckCache(storage: Pick<Storage, "removeItem">, scope: string, deckId: string): void { try { storage.removeItem(deckCacheKey(scope, deckId)); } catch { /* cache is best effort */ } }
@@ -85,6 +94,12 @@ export function deckTransitionKeys(previous: readonly GitHubDeckPullRequest[], n
 }
 
 function checkSignature(pullRequest: GitHubDeckPullRequest): string { return JSON.stringify([pullRequest.checkRollup.state, pullRequest.checkRollup.contexts]); }
+
+function isDeckPendingNotification(value: unknown): value is DeckPendingNotification {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  const notification = value as Record<string, unknown>;
+  return typeof notification.key === "string" && ["review", "checks", "merged", "closed"].includes(notification.kind as string) && typeof notification.body === "string";
+}
 
 function isDeckPullRequest(value: unknown): value is GitHubDeckPullRequest {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return false;

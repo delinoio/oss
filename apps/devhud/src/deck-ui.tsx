@@ -1,5 +1,5 @@
 import { createContext, use, useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type PropsWithChildren } from "react";
-import { applyDeckBuilder, classifyDeckFailure, clearDeckCache, DeckLimit, deckTransitionKeys, nextDeckRefresh, parseDeckBuilder, readDeckCache, validateDeckQuery, writeDeckCache, type DeckCache, type DeckFailure } from "./deck.ts";
+import { applyDeckBuilder, classifyDeckFailure, clearDeckCache, DeckLimit, deckTransitionKeys, nextDeckRefresh, parseDeckBuilder, readDeckCache, validateDeckQuery, writeDeckCache, type DeckCache, type DeckFailure, type DeckPendingNotification } from "./deck.ts";
 import { createGitHubProvider, GitHubErrorCode, GitHubOperation, GitHubProviderError, readGitHubCredential, type GitHubCredential, type GitHubDeckPullRequest, type GitHubProvider } from "./github-provider.ts";
 import type { Copy } from "./localization.ts";
 import { DeckNotificationKind, type NativeBridgeV1 } from "./native-bridge.ts";
@@ -144,22 +144,32 @@ export function DeckPollingBoundary({ bridge, active, online, provider: supplied
       const results = enriched.filter((item) => resultNodeIds.includes(item.nodeId));
       const reconciled = enriched.filter((item) => missingNodeIds.includes(item.nodeId));
       let transitionKeys = currentCache?.transitionKeys ?? [];
+      let pendingNotifications = currentCache?.pendingNotifications ?? [];
       if (isCurrentDeck() && activeRef.current && onlineRef.current && currentCache !== null && currentDeck.notifications.length > 0) {
-        const transitions = deckTransitionKeys(currentCache.results, [...results, ...reconciled]).filter((transition) => currentDeck.notifications.includes(transition.kind) && !transitionKeys.includes(transition.key));
+        const transitions: readonly DeckPendingNotification[] = [
+          ...pendingNotifications,
+          ...deckTransitionKeys(currentCache.results, [...results, ...reconciled])
+            .filter((transition) => currentDeck.notifications.includes(transition.kind) && !transitionKeys.includes(transition.key) && !pendingNotifications.some((notification) => notification.key === transition.key))
+            .map((transition) => ({ key: transition.key, kind: transition.kind, body: transition.pullRequest.title })),
+        ];
         for (const transition of transitions) {
           if (!isCurrentDeck() || !activeRef.current || !onlineRef.current) break;
-          if (!await publishDeckNotification(bridge, browserNotifications.current, currentDeck.id, transition.key, transition.kind, currentDeck.name, transition.pullRequest.title)) return;
+          if (!await publishDeckNotification(bridge, browserNotifications.current, currentDeck.id, transition.key, transition.kind, currentDeck.name, transition.body)) {
+            if (!pendingNotifications.some((notification) => notification.key === transition.key)) pendingNotifications = [...pendingNotifications, transition];
+            continue;
+          }
           transitionKeys = [...transitionKeys, transition.key];
+          pendingNotifications = pendingNotifications.filter((notification) => notification.key !== transition.key);
           const retainedCache = caches.current.get(deckId) ?? currentCache;
           if (isCurrentDeck() && retainedCache !== null) {
-            const retained = { ...retainedCache, transitionKeys };
+            const retained = { ...retainedCache, transitionKeys, pendingNotifications };
             writeDeckCache(storage, `${scopeId}.${currentDeck.profileRef}`, retained);
             caches.current.set(deckId, retained);
           }
         }
       }
       if (!canContinue()) return;
-      const next: DeckCache = { version: 2, deckId: currentDeck.id, query: currentDeck.query, queryEtag: search.metadata.etag ?? currentCache?.queryEtag ?? null, results, lastSuccessfulAt: new Date().toISOString(), rate: search.metadata.rate, failures: 0, nextRefreshAt: null, transitionKeys };
+      const next: DeckCache = { version: 2, deckId: currentDeck.id, query: currentDeck.query, queryEtag: search.metadata.etag ?? currentCache?.queryEtag ?? null, results, lastSuccessfulAt: new Date().toISOString(), rate: search.metadata.rate, failures: 0, nextRefreshAt: null, transitionKeys, pendingNotifications };
       writeDeckCache(storage, `${scopeId}.${currentDeck.profileRef}`, next);
       if (isCurrentDeck()) {
         caches.current.set(deckId, next);

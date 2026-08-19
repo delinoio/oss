@@ -43,6 +43,11 @@ describe("Deck query and local transitions", () => {
     const cache = { version: 2, deckId: "deck", query: "repo:octo/widgets is:pr", queryEtag: null, results: [null], lastSuccessfulAt: null, rate: null, failures: 0, nextRefreshAt: null, transitionKeys: [] };
     expect(readDeckCache({ getItem: () => JSON.stringify(cache) }, "origin", "deck", "repo:octo/widgets is:pr")).toBeNull();
   });
+  it("accepts legacy caches without pending notifications and rejects malformed pending notifications", () => {
+    const cache = { version: 2, deckId: "deck", query: "repo:octo/widgets is:pr", queryEtag: null, results: [], lastSuccessfulAt: null, rate: null, failures: 0, nextRefreshAt: null, transitionKeys: [] };
+    expect(readDeckCache({ getItem: () => JSON.stringify(cache) }, "origin", "deck", "repo:octo/widgets is:pr")?.pendingNotifications).toEqual([]);
+    expect(readDeckCache({ getItem: () => JSON.stringify({ ...cache, pendingNotifications: [{ key: "event", kind: "unexpected", body: "PR" }] }) }, "origin", "deck", "repo:octo/widgets is:pr")).toBeNull();
+  });
   it("notifies only changed existing pull requests", () => {
     const base = { nodeId: "pr", number: 1, title: "PR", url: "https://github.com/o/r/pull/1", draft: false, repository: { owner: "o", name: "r" }, author: "a", state: "open" as const, reviewDecision: null, requestedReviewers: [], checkRollup: { state: "PENDING", contexts: [] }, mergeable: "MERGEABLE", labels: [], updatedAt: "2026-01-01T00:00:00Z" };
     expect(deckTransitionKeys([base], [{ ...base, state: "merged", reviewDecision: "approved", checkRollup: { state: "SUCCESS", contexts: [] } }]).map((item) => item.kind)).toEqual(["review", "checks", "merged"]);
