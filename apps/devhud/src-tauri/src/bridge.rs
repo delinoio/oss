@@ -868,7 +868,18 @@ async fn handle_capture_request(
                     tracing::error!(event = "capture_window_restore_failed", stage = "focus");
                 }
             }
-            let draft = capture_result?;
+            let draft = match capture_result {
+                Ok(draft) => draft,
+                Err(error_code) => {
+                    tracing::error!(
+                        event = "capture_failed",
+                        action = action_id,
+                        platform = capture.adapter_platform(),
+                        error_code = %error_code,
+                    );
+                    return Err(error_code);
+                }
+            };
             Ok(json!({ "kind": "capture-draft", "draft": draft }))
         }
         Some("capture.list-drafts") => {

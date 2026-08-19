@@ -169,6 +169,19 @@ test("direct captures restore hidden or minimized windows only after acquisition
   assert.match(nativeBridgeHost.slice(restoration), /capture_window\.set_focus\(\)/u);
 });
 
+test("capture failures emit only structured safe diagnostics", () => {
+  const captureStart = nativeBridgeHost.indexOf('Some("capture.start")');
+  const failureEvent = nativeBridgeHost.indexOf('event = "capture_failed"', captureStart);
+  const failureReturn = nativeBridgeHost.indexOf("return Err(error_code)", failureEvent);
+  assert(failureEvent > captureStart);
+  assert(failureReturn > failureEvent);
+  const diagnostic = nativeBridgeHost.slice(failureEvent, failureReturn);
+  assert.match(diagnostic, /action = action_id/u);
+  assert.match(diagnostic, /platform = capture\.adapter_platform\(\)/u);
+  assert.match(diagnostic, /error_code = %error_code/u);
+  assert.doesNotMatch(diagnostic, /options|image|editor|request/u);
+});
+
 function structuredShortcuts() {
   return Object.fromEntries(Object.entries(defaultDesktopShortcutBindings).map(([action, binding]) => [action, { ...binding, modifiers: [...binding.modifiers] }]));
 }

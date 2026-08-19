@@ -150,6 +150,37 @@ describe("RealQA capture and editor", () => {
     resolveCapture?.({ kind: "capture-draft", draft });
   });
 
+  it("validates capture regions inline and omits them from window capture", async () => {
+    const { bridge, request } = bridgeWith(async (value) => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [{ id: "main", name: "Main", logicalBounds: { x: -100, y: 0, width: 1920, height: 1080 }, pixelWidth: 3840, pixelHeight: 2160, scale: 2, primary: true }] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [], unreadableDraftIds: [] };
+      if (value.operation === "capture.start") return { kind: "capture-draft", draft };
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    render(<RealqaSurface bridge={bridge} copy={messages.en} />);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.captureSelection }));
+    await screen.findByRole("dialog", { name: messages.en.captureSelection });
+    const width = screen.getByRole("spinbutton", { name: messages.en.captureWidth });
+    const captureNow = screen.getByRole("button", { name: messages.en.captureNow });
+    fireEvent.change(width, { target: { value: "" } });
+
+    expect(captureNow).toHaveProperty("disabled", true);
+    expect(width.getAttribute("aria-invalid")).toBe("true");
+    expect(screen.getByRole("alert").textContent).toBe(messages.en.captureRegionInvalid);
+    fireEvent.click(captureNow);
+    expect(request.mock.calls.some(([value]) => value.operation === "capture.start")).toBe(false);
+
+    fireEvent.click(screen.getByRole("radio", { name: messages.en.captureWindowMode }));
+    expect(screen.queryByText(messages.en.captureRegionInvalid)).toBeNull();
+    expect(captureNow).toHaveProperty("disabled", false);
+    fireEvent.click(captureNow);
+    await waitFor(() => expect(request).toHaveBeenCalledWith(expect.objectContaining({
+      operation: "capture.start",
+      options: expect.not.objectContaining({ selection: expect.anything() }),
+    })));
+  });
+
   it("resets toolbar-only modes when the capture action changes to selection", async () => {
     const { bridge } = bridgeWith();
     render(<RealqaSurface bridge={bridge} copy={messages.en} />);
@@ -607,6 +638,32 @@ describe("RealQA capture and editor", () => {
     fireEvent.click(screen.getByRole("button", { name: messages.en.editorAdd }));
     await waitFor(() => expect(applyRequests).toHaveLength(2));
     expect(applyRequests[1].expectedRevision).toBe(4);
+  });
+
+  it("queues readable draft deletion behind an in-flight editor mutation", async () => {
+    let resolveApply: ((response: NativeBridgeResponseV1) => void) | undefined;
+    let deleted = false;
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const { bridge, request } = bridgeWith(async (value) => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: deleted ? [] : [draft], unreadableDraftIds: [] };
+      if (value.operation === "capture.editor.apply") return new Promise((resolve) => { resolveApply = resolve; });
+      if (value.operation === "capture.delete-draft") { deleted = true; return { kind: "ok" }; }
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    render(<RealqaSurface bridge={bridge} copy={messages.en} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.realqaOpenEditor }));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.editorAdd }));
+    await waitFor(() => expect(request.mock.calls.some(([value]) => value.operation === "capture.editor.apply")).toBe(true));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.close }));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.realqaDeleteDraft }));
+    await act(async () => { await Promise.resolve(); });
+    expect(request.mock.calls.some(([value]) => value.operation === "capture.delete-draft")).toBe(false);
+
+    await act(async () => { resolveApply?.({ kind: "capture-draft", draft: { ...draft, revision: 4 } }); });
+    await waitFor(() => expect(request.mock.calls.some(([value]) => value.operation === "capture.delete-draft")).toBe(true));
+    await waitFor(() => expect(screen.queryByRole("button", { name: messages.en.realqaDeleteDraft })).toBeNull());
   });
 
   it.each(["readable", "unreadable"] as const)("reports %s native draft deletion failures", async (draftKind) => {

@@ -1001,15 +1001,29 @@ impl DraftStore {
         before_commit: impl FnOnce() -> Result<(), CaptureError>,
     ) -> Result<(), CaptureError> {
         let current = directory_size(&self.root)?;
-        let manifest = self.root.join(document.id.to_string()).join("manifest.bin");
+        let directory = self.root.join(document.id.to_string());
+        let manifest = directory.join("manifest.bin");
         let old = fs::metadata(&manifest)
             .map(|value| value.len())
             .unwrap_or(0);
+        let stale_flattened = flattened_payloads(&directory)?;
+        let stale_flattened_bytes = stale_flattened
+            .iter()
+            .map(|path| fs::metadata(path).map(|value| value.len()).unwrap_or(0))
+            .sum::<u64>();
         trim_history(document);
         loop {
             let encrypted = encrypt_document(document, key)?;
-            if current.saturating_sub(old) + encrypted.len() as u64 <= self.quota {
+            if current
+                .saturating_sub(old)
+                .saturating_sub(stale_flattened_bytes)
+                .saturating_add(encrypted.len() as u64)
+                <= self.quota
+            {
                 before_commit()?;
+                for path in stale_flattened {
+                    remove_path(path)?;
+                }
                 return atomic_replace(&manifest, &encrypted);
             }
             if !discard_farthest_history(document) {
@@ -1965,9 +1979,18 @@ fn annotation_font() -> Result<&'static fontdue::Font, CaptureError> {
 }
 
 fn draw_thick_line(image: &mut RgbaImage, start: Point, end: Point, color: Rgba<u8>, width: u32) {
-    let radius = (width as i32).max(1) / 2;
+    let diameter = width.max(1) as i32;
+    let radius = diameter / 2;
     let Some((start, end)) = clip_line_to_image(image, start, end, radius) else {
         return;
+    };
+    let first_offset = -radius;
+    let last_offset = first_offset + diameter - 1;
+    let center_offset = if diameter % 2 == 0 { 0.5 } else { 0.0 };
+    let brush_radius = if diameter % 2 == 0 {
+        f64::from(diameter) / 2.0
+    } else {
+        f64::from(radius)
     };
     let dx = end.x - start.x;
     let dy = end.y - start.y;
@@ -1976,9 +1999,11 @@ fn draw_thick_line(image: &mut RgbaImage, start: Point, end: Point, color: Rgba<
         let ratio = step as f64 / steps as f64;
         let x = (start.x + dx * ratio).round() as i32;
         let y = (start.y + dy * ratio).round() as i32;
-        for py in y - radius..=y + radius {
-            for px in x - radius..=x + radius {
-                if (px - x) * (px - x) + (py - y) * (py - y) <= radius * radius {
+        for py in y + first_offset..=y + last_offset {
+            for px in x + first_offset..=x + last_offset {
+                let brush_x = f64::from(px - x) + center_offset;
+                let brush_y = f64::from(py - y) + center_offset;
+                if brush_x * brush_x + brush_y * brush_y <= brush_radius * brush_radius {
                     put_pixel_alpha(image, px, py, color);
                 }
             }
@@ -2249,6 +2274,24 @@ fn directory_size(path: &Path) -> Result<u64, CaptureError> {
         )?);
     }
     Ok(total)
+}
+
+fn flattened_payloads(directory: &Path) -> Result<Vec<PathBuf>, CaptureError> {
+    let mut payloads = Vec::new();
+    for entry in fs::read_dir(directory).map_err(|_| CaptureError::StorageFailure)? {
+        let entry = entry.map_err(|_| CaptureError::StorageFailure)?;
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if name
+            .strip_prefix("flattened-")
+            .and_then(|name| name.strip_suffix(".bin"))
+            .and_then(|name| Uuid::parse_str(name).ok())
+            .is_some()
+        {
+            payloads.push(entry.path());
+        }
+    }
+    Ok(payloads)
 }
 
 fn remove_path(path: impl AsRef<Path>) -> Result<(), CaptureError> {
@@ -2926,6 +2969,26 @@ mod tests {
     }
 
     #[test]
+    fn line_rasterization_preserves_requested_even_and_odd_widths() {
+        let thickness = |width| {
+            let mut image = RgbaImage::new(32, 32);
+            draw_thick_line(
+                &mut image,
+                Point { x: 4.0, y: 16.0 },
+                Point { x: 28.0, y: 16.0 },
+                Rgba([0, 0, 0, 255]),
+                width,
+            );
+            (0..image.height())
+                .filter(|y| image.get_pixel(16, *y).0[3] != 0)
+                .count()
+        };
+
+        assert_eq!(thickness(3), 3);
+        assert_eq!(thickness(4), 4);
+    }
+
+    #[test]
     fn mixed_scale_region_uses_the_highest_density_without_coordinate_gaps() {
         let adapter = FakeAdapter {
             displays: displays(),
@@ -3460,6 +3523,57 @@ mod tests {
     }
 
     #[test]
+    fn revision_change_reclaims_flattened_outputs_before_quota_check() {
+        let root = TestDirectory::new();
+        let key = [23; 32];
+        let initial = DraftStore::new_test(root.0.clone(), 1024 * 1024, key);
+        let created = initial
+            .create(vec![ImageBuffer::from_fn(128, 128, |x, y| {
+                Rgba([
+                    x.wrapping_mul(17) as u8,
+                    y.wrapping_mul(29) as u8,
+                    x.wrapping_mul(y).wrapping_add(31) as u8,
+                    255,
+                ])
+            })])
+            .unwrap();
+        initial.flatten(created.id, created.revision).unwrap();
+        let flattened = root
+            .0
+            .join(created.id.to_string())
+            .join(format!("flattened-{}.bin", created.images[0].id));
+        let used = directory_size(&root.0).unwrap();
+        let quota = used - fs::metadata(&flattened).unwrap().len() + 2048;
+        assert!(quota < used);
+        let constrained = DraftStore::new_test(root.0.clone(), quota, key);
+
+        constrained
+            .apply(
+                created.id,
+                created.revision,
+                EditorCommand::SetCrop {
+                    image_id: created.images[0].id,
+                    crop: Some(Rect {
+                        x: 1.0,
+                        y: 1.0,
+                        width: 64.0,
+                        height: 64.0,
+                    }),
+                },
+            )
+            .unwrap();
+
+        assert!(!flattened.exists());
+        assert!(directory_size(&root.0).unwrap() <= quota);
+        assert_eq!(
+            constrained
+                .asset(created.id, created.images[0].id, true, created.revision,)
+                .unwrap_err(),
+            CaptureError::RevisionConflict
+        );
+    }
+
+    #[test]
     fn removed_image_assets_are_reclaimed_after_undo_history_expires() {
         let root = TestDirectory::new();
         let key = [22; 32];
@@ -3495,7 +3609,7 @@ mod tests {
 
         store.recover().unwrap();
         assert!(removed_source.exists());
-        assert!(removed_flattened.exists());
+        assert!(!removed_flattened.exists());
 
         for index in 0..MAX_HISTORY_STATES {
             current = store
@@ -3515,8 +3629,7 @@ mod tests {
                 .unwrap();
         }
 
-        let reclaimable = fs::metadata(&removed_source).unwrap().len()
-            + fs::metadata(&removed_flattened).unwrap().len();
+        let reclaimable = fs::metadata(&removed_source).unwrap().len();
         let quota = directory_size(&root.0).unwrap() - reclaimable + 2048;
         let constrained = DraftStore::new_test(root.0.clone(), quota, key);
         constrained
