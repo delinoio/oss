@@ -763,7 +763,7 @@ async fn handle_capture_request(
     capture: std::sync::Arc<crate::capture::CaptureService>,
     app: &tauri::AppHandle<impl tauri::Runtime>,
 ) -> Result<Value, String> {
-    use crate::capture::{CaptureAction, CaptureOptions, EditorCommand};
+    use crate::capture::{CaptureAction, CaptureError, CaptureOptions, EditorCommand};
 
     fn capture_id(request: &Value, key: &str) -> Result<Uuid, String> {
         request
@@ -817,45 +817,47 @@ async fn handle_capture_request(
                 || (matches!(action, CaptureAction::Selection | CaptureAction::Toolbar)
                     && options.selection_window);
             let epoch = capture.begin_capture().map_err(failure)?;
-            let hidden_window = if hide_for_window_target {
-                let window = app
-                    .get_webview_window("main")
-                    .ok_or_else(|| "platform-failure".to_string())?;
-                if window.is_focused().map_err(|_| "platform-failure")? {
-                    window.hide().map_err(|_| "platform-failure")?;
-                    Some(window)
-                } else {
-                    None
-                }
+            let capture_window = if hide_for_window_target {
+                Some(
+                    app.get_webview_window("main")
+                        .ok_or_else(|| "platform-failure".to_string())?,
+                )
             } else {
                 None
             };
+            let window_hidden = Arc::new(AtomicBool::new(false));
             let capture_task = capture.clone();
-            let waits_for_focus_handoff = hidden_window.is_some();
+            let worker_window = capture_window.clone();
+            let worker_window_hidden = window_hidden.clone();
             let capture_result = tauri::async_runtime::spawn_blocking(move || {
-                if waits_for_focus_handoff {
-                    std::thread::sleep(Duration::from_millis(100));
-                }
-                capture_task.capture_with_epoch(action, options, epoch)
+                capture_task.capture_with_epoch_after_delay(action, options, epoch, move || {
+                    let Some(window) = worker_window else {
+                        return Ok(());
+                    };
+                    if window
+                        .is_focused()
+                        .map_err(|_| CaptureError::PlatformFailure)?
+                    {
+                        window.hide().map_err(|_| CaptureError::PlatformFailure)?;
+                        worker_window_hidden.store(true, Ordering::Release);
+                        std::thread::sleep(Duration::from_millis(100));
+                    }
+                    Ok(())
+                })
             })
             .await
             .map_err(|_| "platform-failure".to_string())
             .and_then(|result| result.map_err(failure));
-            let restore_result = if let Some(window) = hidden_window {
-                window
-                    .show()
-                    .and_then(|()| window.set_focus())
-                    .map_err(|reason| {
-                        tracing::error!(event = "capture_window_restore_failed", %reason);
-                        "platform-failure".to_string()
-                    })
-            } else {
-                Ok(())
-            };
-            let draft = match (capture_result, restore_result) {
-                (Ok(draft), Ok(())) => draft,
-                (Err(error), _) | (_, Err(error)) => return Err(error),
-            };
+            if window_hidden.load(Ordering::Acquire)
+                && let Some(window) = capture_window
+            {
+                if window.show().is_err() {
+                    tracing::error!(event = "capture_window_restore_failed", stage = "show");
+                } else if window.set_focus().is_err() {
+                    tracing::error!(event = "capture_window_restore_failed", stage = "focus");
+                }
+            }
+            let draft = capture_result?;
             Ok(json!({ "kind": "capture-draft", "draft": draft }))
         }
         Some("capture.list-drafts") => {

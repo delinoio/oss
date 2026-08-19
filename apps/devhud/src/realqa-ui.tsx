@@ -63,6 +63,7 @@ export function RealqaSurface({ ref, bridge, copy, requestedAction, onRequestedA
   const [captureStatus, setCaptureStatus] = useState<{ topology: readonly CaptureDisplay[]; shadowRemovalSupported: boolean } | null>(null);
   const [options, setOptions] = useState<CaptureOptions>({ delaySeconds: 0, includePointer: false, removeShadow: false });
   const lastRequested = useRef<number | null>(null);
+  const captureInFlight = useRef(false);
 
   const refresh = useCallback(async () => {
     const response = await bridge.request({ operation: "capture.list-drafts" });
@@ -89,24 +90,33 @@ export function RealqaSurface({ ref, bridge, copy, requestedAction, onRequestedA
   }, [bridge, copy]);
 
   const completeCapture = useCallback(async (action: CaptureActionId, captureOptions: CaptureOptions = options) => {
+    if (captureInFlight.current) return;
+    captureInFlight.current = true;
+    const originatingDraftId = selected?.id ?? null;
     setBusy(true); setError(null); setStatus(copy.captureSaving);
     try {
-      const response = await bridge.request({ operation: "capture.start", actionId: action, options: { ...captureOptions, appendToDraftId: selected?.id } });
+      const response = await bridge.request({ operation: "capture.start", actionId: action, options: { ...captureOptions, appendToDraftId: originatingDraftId ?? undefined } });
       if (response.kind !== "capture-draft") return;
-      setSelected(response.draft);
+      setDrafts((current) => current.some((draft) => draft.id === response.draft.id)
+        ? current.map((draft) => draft.id === response.draft.id ? response.draft : draft)
+        : [response.draft, ...current]);
+      setUnreadableDraftIds((current) => current.filter((id) => id !== response.draft.id));
+      setSelected((current) => (current?.id ?? null) === originatingDraftId ? response.draft : current);
       setPreview(response.draft);
       setStatus(copy.captureSaved);
       setCaptureDialog(null);
-      await refresh();
+      try { await refresh(); } catch { /* The capture response is already authoritative. */ }
     } catch (reason) {
       setStatus("");
       setError(errorCopy(copy, reason));
     } finally {
+      captureInFlight.current = false;
       setBusy(false);
     }
   }, [bridge, copy, options, refresh, selected?.id]);
 
   const capture = useCallback(async (action: CaptureActionId) => {
+    if (captureInFlight.current) return;
     if (action === ShortcutActionId.CaptureSelection || action === ShortcutActionId.CaptureToolbar) {
       setCaptureDialog(action);
       return;
@@ -149,6 +159,7 @@ export function RealqaSurface({ ref, bridge, copy, requestedAction, onRequestedA
       setDrafts((current) => current.filter((draft) => draft.id !== draftId));
       setUnreadableDraftIds((current) => current.filter((id) => id !== draftId));
       setSelected((current) => current?.id === draftId ? null : current);
+      setPreview((current) => current?.id === draftId ? null : current);
       await refresh();
     } catch {
       setError(copy.realqaDeleteFailed);
@@ -237,7 +248,7 @@ function CaptureDialog({ action, status, options, onOptions, onCapture, onClose 
   return <div className="overlay" role="presentation"><section ref={dialog} className="capture-dialog" role="dialog" aria-modal="true" aria-labelledby="capture-dialog-title" onKeyDown={keyDown} onKeyUp={(event) => { if (event.key === "Alt") setOptionShadow(false); }}>
     <h3 id="capture-dialog-title">{action === ShortcutActionId.CaptureToolbar ? copy.captureToolbar : copy.captureSelection}</h3>
     <p>{copy.captureRegionHelp}</p>
-    <fieldset><legend>{copy.captureMode}</legend><label className="check"><input type="radio" checked={mode === "region"} onChange={() => setMode("region")} />{copy.captureRegionMode}</label><label className="check"><input type="radio" checked={mode === "window"} onChange={() => setMode("window")} />{copy.captureWindowMode}</label>{action === ShortcutActionId.CaptureToolbar && <><label className="check"><input type="radio" checked={mode === "display"} onChange={() => setMode("display")} />{copy.captureDisplay}</label><label className="check"><input type="radio" checked={mode === "active-window"} onChange={() => setMode("active-window")} />{copy.captureWindow}</label><label className="check"><input type="radio" checked={mode === "all-displays"} onChange={() => setMode("all-displays")} />{copy.captureAll}</label></>}</fieldset>
+    <fieldset><legend>{copy.captureMode}</legend><label className="check"><input name="capture-mode" type="radio" checked={mode === "region"} onChange={() => setMode("region")} />{copy.captureRegionMode}</label><label className="check"><input name="capture-mode" type="radio" checked={mode === "window"} onChange={() => setMode("window")} />{copy.captureWindowMode}</label>{action === ShortcutActionId.CaptureToolbar && <><label className="check"><input name="capture-mode" type="radio" checked={mode === "display"} onChange={() => setMode("display")} />{copy.captureDisplay}</label><label className="check"><input name="capture-mode" type="radio" checked={mode === "active-window"} onChange={() => setMode("active-window")} />{copy.captureWindow}</label><label className="check"><input name="capture-mode" type="radio" checked={mode === "all-displays"} onChange={() => setMode("all-displays")} />{copy.captureAll}</label></>}</fieldset>
     {mode === "region" && <><RegionPicker displays={status?.topology ?? []} value={rect} onChange={setRect} label={copy.captureRegionPicker} /><div className="capture-coordinates">{(["x", "y", "width", "height"] as const).map((key) => <label key={key}>{copy[key === "x" ? "captureX" : key === "y" ? "captureY" : key === "width" ? "captureWidth" : "captureHeight"]}<input type="number" value={rect[key]} onChange={(event) => updateRect(key, event.target.value)} /></label>)}</div></>}
     <label>{copy.captureTimer}<select value={options.delaySeconds ?? 0} onChange={(event) => onOptions({ ...options, delaySeconds: Number(event.target.value) as 0 | 5 | 10 })}><option value="0">{copy.captureTimerOff}</option><option value="5">{copy.captureTimerFive}</option><option value="10">{copy.captureTimerTen}</option></select></label>
     <label className="check"><input type="checkbox" checked={options.includePointer ?? false} onChange={(event) => onOptions({ ...options, includePointer: event.target.checked })} />{copy.capturePointer}</label>

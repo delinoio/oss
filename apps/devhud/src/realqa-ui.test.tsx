@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { messages } from "./localization";
 import type { CaptureDraft, NativeBridgeRequestV1, NativeBridgeResponseV1, NativeBridgeV1 } from "./native-bridge";
 import { RealqaSurface } from "./realqa-ui";
+import { ShortcutActionId } from "./shortcuts";
 
 const draft: CaptureDraft = {
   id: "019b0000-0000-7000-8000-000000000001",
@@ -122,6 +123,86 @@ describe("RealQA capture and editor", () => {
     expect(screen.getByRole("dialog", { name: messages.en.captureSelection })).toBeTruthy();
     expect(screen.getByRole("radio", { name: messages.en.captureRegionMode })).toHaveProperty("checked", true);
     expect(screen.queryByRole("radio", { name: messages.en.captureDisplay })).toBeNull();
+    const radios = screen.getAllByRole("radio");
+    expect(new Set(radios.map((radio) => radio.getAttribute("name")))).toEqual(new Set(["capture-mode"]));
+  });
+
+  it("ignores repeated shortcut captures while a request is in flight", async () => {
+    let resolveCapture: ((response: NativeBridgeResponseV1) => void) | undefined;
+    const { bridge, request } = bridgeWith(async (value) => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [], unreadableDraftIds: [] };
+      if (value.operation === "capture.start") return new Promise((resolve) => { resolveCapture = resolve; });
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    const rendered = render(<RealqaSurface bridge={bridge} copy={messages.en} requestedAction={{ action: ShortcutActionId.CaptureDisplay, sequence: 1 }} />);
+    await waitFor(() => expect(request.mock.calls.filter(([value]) => value.operation === "capture.start")).toHaveLength(1));
+
+    rendered.rerender(<RealqaSurface bridge={bridge} copy={messages.en} requestedAction={{ action: ShortcutActionId.CaptureDisplay, sequence: 2 }} />);
+    await act(async () => { await Promise.resolve(); });
+    expect(request.mock.calls.filter(([value]) => value.operation === "capture.start")).toHaveLength(1);
+    await act(async () => { resolveCapture?.({ kind: "capture-draft", draft }); });
+  });
+
+  it("preserves later draft navigation when a capture completes", async () => {
+    let resolveCapture: ((response: NativeBridgeResponseV1) => void) | undefined;
+    const { bridge } = bridgeWith(async (value) => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [draft, secondDraft], unreadableDraftIds: [] };
+      if (value.operation === "capture.start") return new Promise((resolve) => { resolveCapture = resolve; });
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    render(<RealqaSurface bridge={bridge} copy={messages.en} />);
+    fireEvent.click((await screen.findAllByRole("button", { name: messages.en.realqaOpenEditor }))[0]);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.captureDisplay }));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.close }));
+    fireEvent.click(screen.getAllByRole("button", { name: messages.en.realqaOpenEditor })[1]);
+
+    await act(async () => { resolveCapture?.({ kind: "capture-draft", draft: { ...draft, revision: 4 } }); });
+    expect(screen.getByRole("button", { name: `${messages.en.editorImage} 2` })).toBeTruthy();
+  });
+
+  it("keeps a successful capture when the follow-up refresh fails", async () => {
+    let listCalls = 0;
+    const { bridge } = bridgeWith(async (value) => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [] };
+      if (value.operation === "capture.list-drafts") {
+        listCalls += 1;
+        if (listCalls > 1) throw new Error("transient refresh failure");
+        return { kind: "capture-drafts", drafts: [], unreadableDraftIds: [] };
+      }
+      if (value.operation === "capture.start") return { kind: "capture-draft", draft };
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    render(<RealqaSurface bridge={bridge} copy={messages.en} />);
+    await waitFor(() => expect(listCalls).toBe(1));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.captureDisplay }));
+
+    expect(await screen.findByText(messages.en.captureSaved)).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByRole("complementary", { name: messages.en.floatingPreview })).toBeTruthy();
+  });
+
+  it("clears the floating preview when its draft is deleted", async () => {
+    let deleted = false;
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const { bridge } = bridgeWith(async (value) => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: deleted ? [] : [draft], unreadableDraftIds: [] };
+      if (value.operation === "capture.start") return { kind: "capture-draft", draft };
+      if (value.operation === "capture.delete-draft") {
+        deleted = true;
+        return { kind: "ok" };
+      }
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    render(<RealqaSurface bridge={bridge} copy={messages.en} />);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.captureDisplay }));
+    await screen.findByRole("complementary", { name: messages.en.floatingPreview });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.close }));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.realqaDeleteDraft }));
+
+    await waitFor(() => expect(screen.queryByRole("complementary", { name: messages.en.floatingPreview })).toBeNull());
   });
 
   it("maps pointer drag selection across signed desktop coordinates", async () => {

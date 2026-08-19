@@ -662,9 +662,7 @@ fn main() {
             std::process::exit(78);
         },
     ));
-    if let Err(error) = capture_service.store().recover() {
-        error!(event = "capture_recovery_failed", code = error.code());
-    }
+    let capture_recovery = capture_service.clone();
     let capture_assets = capture_service.clone();
 
     let mut builder = tauri::Builder::<tauri::Cef>::default()
@@ -750,6 +748,9 @@ fn main() {
     let result = builder
         .setup(move |app| {
             let readiness = frontend_readiness.clone();
+            if let Err(error) = capture_recovery.store().recover() {
+                error!(event = "capture_recovery_failed", code = error.code());
+            }
             #[cfg(any(target_os = "linux", all(debug_assertions, target_os = "windows")))]
             app.deep_link().register_all()?;
             if let Some(urls) = app.deep_link().get_current()? {

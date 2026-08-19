@@ -24,6 +24,7 @@ pub const MAX_IMAGES: usize = 10;
 pub const MAX_PNG_BYTES: usize = 50 * 1024 * 1024;
 pub const DEFAULT_DRAFT_QUOTA: u64 = 10 * 1024 * 1024 * 1024;
 pub const DRAFT_RETENTION: Duration = Duration::from_secs(30 * 24 * 60 * 60);
+const MAX_HISTORY_STATES: usize = 100;
 const MAX_OUTPUT_DIMENSION: u32 = 4096;
 const ENCRYPTED_MAGIC: &[u8; 4] = b"RQA1";
 
@@ -482,6 +483,25 @@ impl DraftDocument {
     }
 }
 
+fn trim_history(document: &mut DraftDocument) {
+    while document.undo.len() + document.redo.len() > MAX_HISTORY_STATES {
+        discard_farthest_history(document);
+    }
+}
+
+fn discard_farthest_history(document: &mut DraftDocument) -> bool {
+    let history = if document.undo.len() >= document.redo.len() {
+        &mut document.undo
+    } else {
+        &mut document.redo
+    };
+    if history.is_empty() {
+        return false;
+    }
+    history.remove(0);
+    true
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FlattenedImage {
@@ -736,7 +756,7 @@ impl DraftStore {
             document.undo.push(previous);
             document.redo.clear();
             document.touch(Self::now()?);
-            self.write_document_locked(&document, &key)?;
+            self.write_document_locked(&mut document, &key)?;
             Ok(document.summary())
         })();
         if result.is_err() {
@@ -762,7 +782,7 @@ impl DraftStore {
         document.undo.push(previous);
         document.redo.clear();
         document.touch(Self::now()?);
-        self.write_document_locked(&document, &key)?;
+        self.write_document_locked(&mut document, &key)?;
         Ok(document.summary())
     }
 
@@ -797,7 +817,7 @@ impl DraftStore {
             document.undo.push(current);
         }
         document.touch(Self::now()?);
-        self.write_document_locked(&document, &key)?;
+        self.write_document_locked(&mut document, &key)?;
         Ok(document.summary())
     }
 
@@ -932,19 +952,24 @@ impl DraftStore {
 
     fn write_document_locked(
         &self,
-        document: &DraftDocument,
+        document: &mut DraftDocument,
         key: &[u8; 32],
     ) -> Result<(), CaptureError> {
-        let encrypted = encrypt_document(document, key)?;
         let current = directory_size(&self.root)?;
         let manifest = self.root.join(document.id.to_string()).join("manifest.bin");
         let old = fs::metadata(&manifest)
             .map(|value| value.len())
             .unwrap_or(0);
-        if current.saturating_sub(old) + encrypted.len() as u64 > self.quota {
-            return Err(CaptureError::QuotaExhausted);
+        trim_history(document);
+        loop {
+            let encrypted = encrypt_document(document, key)?;
+            if current.saturating_sub(old) + encrypted.len() as u64 <= self.quota {
+                return atomic_replace(&manifest, &encrypted);
+            }
+            if !discard_farthest_history(document) {
+                return Err(CaptureError::QuotaExhausted);
+            }
         }
-        atomic_replace(&manifest, &encrypted)
     }
 }
 
@@ -1047,6 +1072,16 @@ impl CaptureService {
         options: CaptureOptions,
         epoch: u64,
     ) -> Result<DraftSummary, CaptureError> {
+        self.capture_with_epoch_after_delay(action, options, epoch, || Ok(()))
+    }
+
+    pub fn capture_with_epoch_after_delay(
+        &self,
+        action: CaptureAction,
+        options: CaptureOptions,
+        epoch: u64,
+        after_delay: impl FnOnce() -> Result<(), CaptureError>,
+    ) -> Result<DraftSummary, CaptureError> {
         let _lifecycle = self
             .lifecycle
             .lock()
@@ -1060,6 +1095,8 @@ impl CaptureService {
             std::thread::sleep(Duration::from_millis(100));
             self.ensure_not_cancelled(epoch)?;
         }
+        self.ensure_not_cancelled(epoch)?;
+        after_delay()?;
         self.ensure_not_cancelled(epoch)?;
         match self.capture_attempt(action, &options, epoch) {
             Err(CaptureError::TopologyChanged) => {
@@ -1077,84 +1114,126 @@ impl CaptureService {
         epoch: u64,
     ) -> Result<DraftSummary, CaptureError> {
         let before = self.topology()?;
-        let pointer = normalize_native_pointer(&before, self.adapter.pointer_position()?)?;
-        let mut pointer_bounds = None;
-        let mut images = match action {
-            CaptureAction::Display => {
-                let display =
-                    display_for_pointer(&before, pointer).ok_or(CaptureError::NoDisplay)?;
-                vec![self.adapter.capture_display(&display.id)?]
-            }
-            CaptureAction::ActiveWindow => {
-                let window = self
-                    .adapter
-                    .windows()?
-                    .into_iter()
-                    .find(|window| window.focused && !window.minimized)
-                    .ok_or(CaptureError::NoWindow)?;
-                let image = self.capture_window(&window, options.remove_shadow)?;
-                if options.include_pointer && window.bounds.contains(pointer) {
-                    pointer_bounds = Some(window.bounds);
+        let captured = (|| {
+            let pointer_required = matches!(action, CaptureAction::Display)
+                || (matches!(action, CaptureAction::Selection | CaptureAction::Toolbar)
+                    && options.selection_window)
+                || options.include_pointer;
+            let pointer = if pointer_required {
+                Some(normalize_native_pointer(
+                    &before,
+                    self.adapter.pointer_position()?,
+                )?)
+            } else {
+                None
+            };
+            let mut pointer_bounds = None;
+            let images = match action {
+                CaptureAction::Display => {
+                    let display =
+                        display_for_pointer(&before, pointer.ok_or(CaptureError::NoDisplay)?)
+                            .ok_or(CaptureError::NoDisplay)?;
+                    vec![self.adapter.capture_display(&display.id)?]
                 }
-                vec![image]
-            }
-            CaptureAction::AllDisplays => {
-                if before.len() > MAX_IMAGES {
-                    return Err(CaptureError::ImageLimit);
+                CaptureAction::ActiveWindow => {
+                    let window = self
+                        .adapter
+                        .windows()?
+                        .into_iter()
+                        .find(|window| window.focused && !window.minimized)
+                        .ok_or(CaptureError::NoWindow)?;
+                    let image = self.capture_window(&window, options.remove_shadow)?;
+                    if pointer.is_some_and(|pointer| {
+                        options.include_pointer && window.bounds.contains(pointer)
+                    }) {
+                        pointer_bounds = Some(window.bounds);
+                    }
+                    vec![image]
                 }
-                let mut displays = before.clone();
-                displays.sort_by(|a, b| {
-                    a.logical_bounds
-                        .y
-                        .total_cmp(&b.logical_bounds.y)
-                        .then(a.logical_bounds.x.total_cmp(&b.logical_bounds.x))
-                        .then(a.id.cmp(&b.id))
-                });
-                displays
-                    .iter()
-                    .map(|display| self.adapter.capture_display(&display.id))
-                    .collect::<Result<Vec<_>, _>>()?
-            }
-            CaptureAction::Selection | CaptureAction::Toolbar if options.selection_window => {
-                let window = self
-                    .adapter
-                    .windows()?
-                    .into_iter()
-                    // Native adapters preserve front-to-back z-order.
-                    .find(|window| !window.minimized && window.bounds.contains(pointer))
-                    .ok_or(CaptureError::NoWindow)?;
-                let image = self.capture_window(&window, options.remove_shadow)?;
-                if options.include_pointer && window.bounds.contains(pointer) {
-                    pointer_bounds = Some(window.bounds);
+                CaptureAction::AllDisplays => {
+                    if before.len() > MAX_IMAGES {
+                        return Err(CaptureError::ImageLimit);
+                    }
+                    let mut displays = before.clone();
+                    displays.sort_by(|a, b| {
+                        a.logical_bounds
+                            .y
+                            .total_cmp(&b.logical_bounds.y)
+                            .then(a.logical_bounds.x.total_cmp(&b.logical_bounds.x))
+                            .then(a.id.cmp(&b.id))
+                    });
+                    displays
+                        .iter()
+                        .map(|display| self.adapter.capture_display(&display.id))
+                        .collect::<Result<Vec<_>, _>>()?
                 }
-                vec![image]
-            }
-            CaptureAction::Selection | CaptureAction::Toolbar => {
-                let selection = options.selection.ok_or(CaptureError::InvalidArgument)?;
-                let (image, captured_bounds) =
-                    capture_region(self.adapter.as_ref(), &before, selection)?;
-                if options.include_pointer && captured_bounds.contains(pointer) {
-                    pointer_bounds = Some(captured_bounds);
+                CaptureAction::Selection | CaptureAction::Toolbar if options.selection_window => {
+                    let pointer = pointer.ok_or(CaptureError::NoWindow)?;
+                    let window = self
+                        .adapter
+                        .windows()?
+                        .into_iter()
+                        // Native adapters preserve front-to-back z-order.
+                        .find(|window| !window.minimized && window.bounds.contains(pointer))
+                        .ok_or(CaptureError::NoWindow)?;
+                    let image = self.capture_window(&window, options.remove_shadow)?;
+                    if options.include_pointer {
+                        pointer_bounds = Some(window.bounds);
+                    }
+                    vec![image]
                 }
-                vec![image]
-            }
-        };
+                CaptureAction::Selection | CaptureAction::Toolbar => {
+                    let selection = options.selection.ok_or(CaptureError::InvalidArgument)?;
+                    let (image, captured_bounds) =
+                        capture_region(self.adapter.as_ref(), &before, selection)?;
+                    if pointer.is_some_and(|pointer| {
+                        options.include_pointer && captured_bounds.contains(pointer)
+                    }) {
+                        pointer_bounds = Some(captured_bounds);
+                    }
+                    vec![image]
+                }
+            };
+            Ok((images, pointer, pointer_bounds))
+        })();
+        let (mut images, pointer, pointer_bounds) =
+            match captured {
+                Ok(captured) => captured,
+                Err(error) => {
+                    if self.adapter.topology().is_ok_and(|after| {
+                        topology_signature(&before) != topology_signature(&after)
+                    }) {
+                        return Err(CaptureError::TopologyChanged);
+                    }
+                    return Err(error);
+                }
+            };
         let after = self.adapter.topology()?;
         self.ensure_not_cancelled(epoch)?;
         if topology_signature(&before) != topology_signature(&after) {
             return Err(CaptureError::TopologyChanged);
         }
-        if images.iter().any(|image| {
-            image.width() == 0 || image.height() == 0 || image.pixels().all(|pixel| pixel.0[3] == 0)
-        }) {
+        if images.iter().any(protected_frame) {
             return Err(CaptureError::ProtectedContent);
         }
-        if let Some(bounds) = pointer_bounds {
+        if let (Some(bounds), Some(pointer)) = (pointer_bounds, pointer) {
             draw_pointer_in_rect(&mut images[0], pointer, bounds);
         }
-        if options.include_pointer {
+        if options.include_pointer
+            && let Some(pointer) = pointer
+        {
             apply_pointer(&before, pointer, &mut images, action);
         }
+        self.persist_capture(options, images, epoch)
+    }
+
+    fn persist_capture(
+        &self,
+        options: &CaptureOptions,
+        images: Vec<RgbaImage>,
+        epoch: u64,
+    ) -> Result<DraftSummary, CaptureError> {
+        self.ensure_not_cancelled(epoch)?;
         match options.append_to_draft_id {
             Some(id) => self.store.append(id, images),
             None => self.store.create(images),
@@ -1264,6 +1343,10 @@ fn topology_signature(
         .collect()
 }
 
+fn protected_frame(image: &RgbaImage) -> bool {
+    image.width() == 0 || image.height() == 0 || image.pixels().all(|pixel| pixel.0[3] == 0)
+}
+
 fn capture_region(
     adapter: &dyn CaptureAdapter,
     displays: &[DisplayDescriptor],
@@ -1297,6 +1380,9 @@ fn capture_region(
     let mut output = new_transparent_image(width, height)?;
     for (display, intersection) in intersections {
         let source = adapter.capture_display(&display.id)?;
+        if protected_frame(&source) {
+            return Err(CaptureError::ProtectedContent);
+        }
         let scale_x = f64::from(source.width()) / display.logical_bounds.width;
         let scale_y = f64::from(source.height()) / display.logical_bounds.height;
         let source_x = ((intersection.x - display.logical_bounds.x) * scale_x)
@@ -2429,7 +2515,11 @@ mod tests {
         displays: Vec<DisplayDescriptor>,
         pointer: Point,
         topology_calls: AtomicUsize,
+        capture_calls: AtomicUsize,
         change_topology: bool,
+        fail_first_capture: bool,
+        pointer_failure: bool,
+        protected_display: Option<&'static str>,
         transparent: bool,
     }
 
@@ -2448,7 +2538,11 @@ mod tests {
         }
 
         fn pointer_position(&self) -> Result<Point, CaptureError> {
-            Ok(self.pointer)
+            if self.pointer_failure {
+                Err(CaptureError::PlatformFailure)
+            } else {
+                Ok(self.pointer)
+            }
         }
 
         fn windows(&self) -> Result<Vec<WindowDescriptor>, CaptureError> {
@@ -2466,12 +2560,16 @@ mod tests {
         }
 
         fn capture_display(&self, id: &str) -> Result<RgbaImage, CaptureError> {
+            let call = self.capture_calls.fetch_add(1, Ordering::SeqCst);
+            if self.fail_first_capture && call == 0 {
+                return Err(CaptureError::NoDisplay);
+            }
             let display = self
                 .displays
                 .iter()
                 .find(|display| display.id == id)
                 .ok_or(CaptureError::NoDisplay)?;
-            let color = if self.transparent {
+            let color = if self.transparent || self.protected_display == Some(id) {
                 Rgba([0, 0, 0, 0])
             } else if id == "left" {
                 Rgba([255, 0, 0, 255])
@@ -2669,7 +2767,11 @@ mod tests {
             displays: displays(),
             pointer: Point { x: -50.0, y: 20.0 },
             topology_calls: AtomicUsize::new(0),
+            capture_calls: AtomicUsize::new(0),
             change_topology: false,
+            fail_first_capture: false,
+            pointer_failure: false,
+            protected_display: None,
             transparent: false,
         };
         let (output, captured_bounds) = capture_region(
@@ -2749,7 +2851,11 @@ mod tests {
                 displays: displays(),
                 pointer: Point { x: -50.0, y: 20.0 },
                 topology_calls: AtomicUsize::new(0),
+                capture_calls: AtomicUsize::new(0),
                 change_topology,
+                fail_first_capture: false,
+                pointer_failure: false,
+                protected_display: None,
                 transparent,
             });
             let service = CaptureService::new(adapter, store);
@@ -2784,7 +2890,11 @@ mod tests {
                 displays: displays(),
                 pointer: Point { x: -50.0, y: 20.0 },
                 topology_calls: AtomicUsize::new(0),
+                capture_calls: AtomicUsize::new(0),
                 change_topology: false,
+                fail_first_capture: false,
+                pointer_failure: false,
+                protected_display: None,
                 transparent: true,
             }),
             store,
@@ -2805,6 +2915,204 @@ mod tests {
                 .unwrap_err(),
             CaptureError::ProtectedContent
         );
+
+        let root = TestDirectory::new();
+        let adapter = Arc::new(FakeAdapter {
+            displays: displays(),
+            pointer: Point { x: -50.0, y: 20.0 },
+            topology_calls: AtomicUsize::new(0),
+            capture_calls: AtomicUsize::new(0),
+            change_topology: true,
+            fail_first_capture: true,
+            pointer_failure: false,
+            protected_display: None,
+            transparent: false,
+        });
+        let service = CaptureService::new(
+            adapter.clone(),
+            Arc::new(DraftStore::new_test(root.0.clone(), 1024 * 1024, [10; 32])),
+        );
+        assert!(
+            service
+                .capture(
+                    CaptureAction::Display,
+                    CaptureOptions {
+                        include_pointer: false,
+                        remove_shadow: false,
+                        delay_seconds: 0,
+                        selection: None,
+                        selection_window: false,
+                        append_to_draft_id: None,
+                    },
+                )
+                .is_ok()
+        );
+        assert_eq!(adapter.capture_calls.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn pointer_independent_captures_do_not_query_a_failed_pointer_adapter() {
+        for (action, selection) in [
+            (CaptureAction::ActiveWindow, None),
+            (CaptureAction::AllDisplays, None),
+            (
+                CaptureAction::Selection,
+                Some(Rect {
+                    x: -50.0,
+                    y: 0.0,
+                    width: 100.0,
+                    height: 50.0,
+                }),
+            ),
+        ] {
+            let root = TestDirectory::new();
+            let service = CaptureService::new(
+                Arc::new(FakeAdapter {
+                    displays: displays(),
+                    pointer: Point { x: -50.0, y: 20.0 },
+                    topology_calls: AtomicUsize::new(0),
+                    capture_calls: AtomicUsize::new(0),
+                    change_topology: false,
+                    fail_first_capture: false,
+                    pointer_failure: true,
+                    protected_display: None,
+                    transparent: false,
+                }),
+                Arc::new(DraftStore::new_test(root.0.clone(), 1024 * 1024, [12; 32])),
+            );
+            assert!(
+                service
+                    .capture(
+                        action,
+                        CaptureOptions {
+                            include_pointer: false,
+                            remove_shadow: false,
+                            delay_seconds: 0,
+                            selection,
+                            selection_window: false,
+                            append_to_draft_id: None,
+                        },
+                    )
+                    .is_ok()
+            );
+        }
+    }
+
+    #[test]
+    fn region_capture_rejects_each_protected_source_frame() {
+        let adapter = FakeAdapter {
+            displays: displays(),
+            pointer: Point { x: -50.0, y: 20.0 },
+            topology_calls: AtomicUsize::new(0),
+            capture_calls: AtomicUsize::new(0),
+            change_topology: false,
+            fail_first_capture: false,
+            pointer_failure: false,
+            protected_display: Some("left"),
+            transparent: false,
+        };
+        assert_eq!(
+            capture_region(
+                &adapter,
+                &adapter.displays,
+                Rect {
+                    x: -50.0,
+                    y: 0.0,
+                    width: 100.0,
+                    height: 50.0,
+                },
+            )
+            .unwrap_err(),
+            CaptureError::ProtectedContent
+        );
+    }
+
+    #[test]
+    fn delayed_capture_can_cancel_before_the_window_handoff() {
+        let root = TestDirectory::new();
+        let service = Arc::new(CaptureService::new(
+            Arc::new(FakeAdapter {
+                displays: displays(),
+                pointer: Point { x: -50.0, y: 20.0 },
+                topology_calls: AtomicUsize::new(0),
+                capture_calls: AtomicUsize::new(0),
+                change_topology: false,
+                fail_first_capture: false,
+                pointer_failure: false,
+                protected_display: None,
+                transparent: false,
+            }),
+            Arc::new(DraftStore::new_test(root.0.clone(), 1024 * 1024, [14; 32])),
+        ));
+        let epoch = service.begin_capture().unwrap();
+        let handoff_called = Arc::new(AtomicBool::new(false));
+        let capture_service = service.clone();
+        let capture_handoff = handoff_called.clone();
+        let capture = std::thread::spawn(move || {
+            capture_service.capture_with_epoch_after_delay(
+                CaptureAction::ActiveWindow,
+                CaptureOptions {
+                    include_pointer: false,
+                    remove_shadow: false,
+                    delay_seconds: 5,
+                    selection: None,
+                    selection_window: false,
+                    append_to_draft_id: None,
+                },
+                epoch,
+                move || {
+                    capture_handoff.store(true, Ordering::SeqCst);
+                    Ok(())
+                },
+            )
+        });
+        std::thread::sleep(Duration::from_millis(50));
+        service.cancel();
+        assert_eq!(
+            capture.join().unwrap().unwrap_err(),
+            CaptureError::Cancelled
+        );
+        assert!(!handoff_called.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn stale_capture_epoch_is_rejected_immediately_before_persistence() {
+        let root = TestDirectory::new();
+        let store = Arc::new(DraftStore::new_test(root.0.clone(), 1024 * 1024, [15; 32]));
+        let service = CaptureService::new(
+            Arc::new(FakeAdapter {
+                displays: displays(),
+                pointer: Point { x: -50.0, y: 20.0 },
+                topology_calls: AtomicUsize::new(0),
+                capture_calls: AtomicUsize::new(0),
+                change_topology: false,
+                fail_first_capture: false,
+                pointer_failure: false,
+                protected_display: None,
+                transparent: false,
+            }),
+            store.clone(),
+        );
+        let epoch = service.begin_capture().unwrap();
+        service.cancel();
+        assert_eq!(
+            service
+                .persist_capture(
+                    &CaptureOptions {
+                        include_pointer: false,
+                        remove_shadow: false,
+                        delay_seconds: 0,
+                        selection: None,
+                        selection_window: false,
+                        append_to_draft_id: None,
+                    },
+                    vec![ImageBuffer::from_pixel(8, 8, Rgba([1, 2, 3, 255]))],
+                    epoch,
+                )
+                .unwrap_err(),
+            CaptureError::Cancelled
+        );
+        assert!(store.list().unwrap().drafts.is_empty());
     }
 
     #[test]
@@ -2887,6 +3195,90 @@ mod tests {
         assert!(!root.0.join(unreadable.id.to_string()).exists());
         store.purge_all().unwrap();
         assert!(!root.0.exists());
+    }
+
+    #[test]
+    fn persisted_history_is_bounded_to_one_hundred_states() {
+        let root = TestDirectory::new();
+        let key = [19; 32];
+        let store = DraftStore::new_test(root.0.clone(), 1024 * 1024, key);
+        let mut draft = store
+            .create(vec![ImageBuffer::from_pixel(16, 16, Rgba([1, 2, 3, 255]))])
+            .unwrap();
+        for index in 0..MAX_HISTORY_STATES + 5 {
+            draft = store
+                .apply(
+                    draft.id,
+                    draft.revision,
+                    EditorCommand::SetCrop {
+                        image_id: draft.images[0].id,
+                        crop: Some(Rect {
+                            x: (index % 2) as f64,
+                            y: 0.0,
+                            width: 8.0,
+                            height: 8.0,
+                        }),
+                    },
+                )
+                .unwrap();
+        }
+        let document = read_document(
+            &root.0.join(draft.id.to_string()).join("manifest.bin"),
+            &key,
+        )
+        .unwrap();
+        assert_eq!(
+            document.undo.len() + document.redo.len(),
+            MAX_HISTORY_STATES
+        );
+    }
+
+    #[test]
+    fn quota_pressure_prunes_history_so_a_shrinking_edit_can_succeed() {
+        let root = TestDirectory::new();
+        let key = [21; 32];
+        let initial = DraftStore::new_test(root.0.clone(), 1024 * 1024, key);
+        let created = initial
+            .create(vec![ImageBuffer::from_pixel(16, 16, Rgba([1, 2, 3, 255]))])
+            .unwrap();
+        let layer_id = Uuid::now_v7();
+        let points = (0..1024)
+            .map(|index| Point {
+                x: f64::from(index % 16),
+                y: f64::from((index / 16) % 16),
+            })
+            .collect();
+        let expanded = initial
+            .apply(
+                created.id,
+                created.revision,
+                EditorCommand::AddLayer {
+                    image_id: created.images[0].id,
+                    layer: EditorLayer::Drawing {
+                        id: layer_id,
+                        points,
+                        color: "#ef4444".into(),
+                        width: 4,
+                    },
+                },
+            )
+            .unwrap();
+        let manifest = root.0.join(expanded.id.to_string()).join("manifest.bin");
+        let non_manifest_bytes =
+            directory_size(&root.0).unwrap() - fs::metadata(&manifest).unwrap().len();
+        let constrained = DraftStore::new_test(root.0.clone(), non_manifest_bytes + 2048, key);
+        let compacted = constrained
+            .apply(
+                expanded.id,
+                expanded.revision,
+                EditorCommand::RemoveLayer {
+                    image_id: expanded.images[0].id,
+                    layer_id,
+                },
+            )
+            .unwrap();
+        assert!(compacted.images[0].layers.is_empty());
+        assert!(directory_size(&root.0).unwrap() <= non_manifest_bytes + 2048);
     }
 
     #[test]
