@@ -64,7 +64,7 @@ test("mobile policy requires lifecycle-owned Android persistence and native plat
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace("releasePersistableUriPermission", "missingPersistablePermission")), /release its URI grant/u);
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace("if (hasPersistedDiagnosticsWriteGrant(destination))", "if (true)")), /already-released URI grant/u);
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace("return false\n            }\n        }\n        val removed", "Unit\n            }\n        }\n        val removed")), /preserve retry state/u);
-  assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace("if (!hasPersistedDiagnosticsWriteGrant(destination)) return forgetDiagnosticsCleanup()", "if (false) return forgetDiagnosticsCleanup()")), /without inspecting destinations/u);
+  assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace("if (!hasPersistedDiagnosticsWriteGrant(destination)) return false", "if (!hasPersistedDiagnosticsWriteGrant(destination)) return forgetDiagnosticsCleanup()")), /preserve retry state/u);
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replaceAll("FileNotFoundException", "MissingFileException")), /confirm destination absence/u);
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace('if (scope in setOf("logout", "account-deletion"))', "if (false)")), /invalidate active diagnostics pickers/u);
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace("            if (!cleanupPendingDiagnosticsExport())", "            if (cleanupPendingDiagnosticsExport())")), /propagate diagnostics cleanup failures/u);

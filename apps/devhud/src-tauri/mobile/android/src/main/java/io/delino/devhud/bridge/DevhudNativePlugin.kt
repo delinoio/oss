@@ -199,7 +199,7 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
 
     private fun cleanupPendingDiagnosticsExport(): Boolean {
         val destination = pendingDiagnosticsCleanup ?: return true
-        if (!hasPersistedDiagnosticsWriteGrant(destination)) return forgetDiagnosticsCleanup()
+        if (!hasPersistedDiagnosticsWriteGrant(destination)) return false
         val deleted = try {
             activity.contentResolver.delete(destination, null, null) > 0
         } catch (_: Exception) {

@@ -328,9 +328,15 @@ export function validateDiagnosticsExport(request: { readonly suggestedName: str
 async function exportDiagnosticsInBrowser(request: { readonly suggestedName: string; readonly contents: string }): Promise<NativeBridgeResponseV1> {
   const blob = new Blob([request.contents], { type: "application/json" });
   if (window.showSaveFilePicker) {
+    let handle: Awaited<ReturnType<NonNullable<Window["showSaveFilePicker"]>>>;
+    try {
+      handle = await window.showSaveFilePicker({ suggestedName: request.suggestedName, types: [{ description: "Redacted DevHUD diagnostics", accept: { "application/json": [".json"] } }] });
+    } catch (reason) {
+      if (reason instanceof DOMException && reason.name === "AbortError") return { kind: "diagnostics-export", outcome: "cancelled" };
+      throw new NativeBridgeError(NativeBridgeErrorCode.StorageFailure);
+    }
     let writable: DiagnosticsWritableFile | undefined;
     try {
-      const handle = await window.showSaveFilePicker({ suggestedName: request.suggestedName, types: [{ description: "Redacted DevHUD diagnostics", accept: { "application/json": [".json"] } }] });
       writable = await handle.createWritable();
       await writable.write(blob);
       await writable.close();
@@ -340,7 +346,6 @@ async function exportDiagnosticsInBrowser(request: { readonly suggestedName: str
       if (writable) {
         try { await writable.abort(); } catch { /* Preserve the stable export failure classification. */ }
       }
-      if (reason instanceof DOMException && reason.name === "AbortError") return { kind: "diagnostics-export", outcome: "cancelled" };
       throw new NativeBridgeError(NativeBridgeErrorCode.StorageFailure);
     }
   }

@@ -639,6 +639,25 @@ describe("diagnostics privacy boundary", () => {
       .resolves.toEqual({ kind: "diagnostics-export", outcome: "cancelled" });
   });
 
+  for (const phase of ["create", "write", "close"] as const) {
+    it(`maps an aborted browser ${phase} phase to the stable storage classification`, async () => {
+      let aborted = false;
+      window.showSaveFilePicker = async () => ({
+        createWritable: async () => {
+          if (phase === "create") throw new DOMException("aborted", "AbortError");
+          return {
+            write: async () => { if (phase === "write") throw new DOMException("aborted", "AbortError"); },
+            close: async () => { if (phase === "close") throw new DOMException("aborted", "AbortError"); },
+            abort: async () => { aborted = true; },
+          };
+        },
+      });
+      await expect(nativeBridge.request({ operation: "diagnostics.export", suggestedName: "devhud-diagnostics-0198c8b0-77d6-7d4a-a7d9-e4d7b11c4400.json", contents: "{}" }))
+        .rejects.toMatchObject({ code: NativeBridgeErrorCode.StorageFailure });
+      expect(aborted).toBe(phase !== "create");
+    });
+  }
+
   it("reports a fallback browser download as initiated because completion is unobservable", async () => {
     const NativeUrl = URL;
     class StubUrl extends NativeUrl {}
