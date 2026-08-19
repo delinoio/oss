@@ -429,7 +429,7 @@ export function NativeMessagingSettings({ copy }: { readonly copy: Copy }) {
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     let current = true;
-    void nativeMessaging.status().then((status) => { if (current) setPaired(status.paired); }).catch(() => { if (current) setFailed(true); });
+    void nativeMessaging.status().then((status) => { if (current) { setFailed(false); setPaired(status.paired); } }).catch(() => { if (current) setFailed(true); });
     return () => { current = false; };
   }, []);
   useEffect(() => {
@@ -438,6 +438,7 @@ export function NativeMessagingSettings({ copy }: { readonly copy: Copy }) {
     const poll = setInterval(() => {
       void nativeMessaging.status().then((status) => {
         if (!current) return;
+        setFailed(false);
         setPaired(status.paired);
         if (status.paired) setPairing(null);
       }).catch(() => { if (current) setFailed(true); });

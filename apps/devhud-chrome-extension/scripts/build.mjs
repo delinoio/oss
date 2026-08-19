@@ -53,6 +53,6 @@ async function files(directory) {
   return output.sort((left, right) => left.localeCompare(right));
 }
 const entries = {};
-for (const path of await files(dist)) entries[relative(dist, path).replaceAll("\\", "/")] = [new Uint8Array(await readFile(path)), { mtime: new Date("1980-01-01T00:00:00.000Z") }];
+for (const path of await files(dist)) entries[relative(dist, path).replaceAll("\\", "/")] = [new Uint8Array(await readFile(path)), { mtime: new Date(1980, 0, 1) }];
 await writeFile(join(artifacts, "devhud-chrome-extension.zip"), zipSync(entries, { level: 9 }));
 await writeFile(join(artifacts, "release-identity.json"), `${JSON.stringify({ extensionId, origin: `chrome-extension://${extensionId}/`, hostName: "io.delino.devhud.native_messaging" }, null, 2)}\n`);

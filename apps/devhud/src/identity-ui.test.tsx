@@ -55,6 +55,25 @@ describe("identity UI", () => {
     expect(screen.queryByText("pair-code")).toBeNull();
   });
 
+  it("clears a transient pairing status failure after polling recovers", async () => {
+    vi.useFakeTimers();
+    nativeMessagingMock.status
+      .mockResolvedValueOnce({ paired: false })
+      .mockRejectedValueOnce(new Error("temporary status failure"))
+      .mockResolvedValueOnce({ paired: true });
+    render(<NativeMessagingSettings copy={messages.en} />);
+    await act(async () => {});
+    fireEvent.click(screen.getByRole("button", { name: messages.en.nativeMessagingPair }));
+    await act(async () => {});
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+    expect(screen.getByRole("status").textContent).toBe(messages.en.nativeMessagingFailed);
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+    expect(screen.getByRole("status").textContent).toBe(messages.en.nativeMessagingPaired);
+    expect(screen.queryByText("pair-code")).toBeNull();
+  });
+
   it("expires the displayed pairing code and stops polling", async () => {
     vi.useFakeTimers();
     render(<NativeMessagingSettings copy={messages.en} />);

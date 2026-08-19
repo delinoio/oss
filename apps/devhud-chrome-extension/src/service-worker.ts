@@ -60,7 +60,10 @@ async function capture(selectElement: boolean): Promise<NativeResponse> {
   const result = injection?.result;
   if (!result) return { version: 1, schema_version: 1, request_id: "", ok: false, state: "disconnected", payload: null };
   const { liveUrl, ...context } = result;
-  const mappingId = selectConfiguredMapping(configuration, liveUrl);
+  const currentConfigurationResponse = selectElement ? await nativeRequest("configure", {}) : configurationResponse;
+  if (!currentConfigurationResponse.ok) return currentConfigurationResponse;
+  const currentConfiguration = (currentConfigurationResponse.payload ?? {}) as ExtensionConfiguration;
+  const mappingId = selectConfiguredMapping(currentConfiguration, liveUrl);
   if (!mappingId) return { version: 1, schema_version: 1, request_id: "", ok: false, state: "denied", payload: null };
   return nativeRequest("capture", { mappingId, context });
 }

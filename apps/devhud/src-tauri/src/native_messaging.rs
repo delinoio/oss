@@ -75,6 +75,7 @@ pub fn register_packaged_host() -> Result<(), String> {
 struct NativeMessagingState {
     authentication_revoked: AtomicBool,
     generation: AtomicU64,
+    pairing_lifecycle: Mutex<()>,
     pending_pairing: Mutex<Option<PendingPairing>>,
     configuration: Mutex<Value>,
     latest_context: Mutex<Option<Value>>,
@@ -144,6 +145,10 @@ fn state() -> &'static Arc<NativeMessagingState> {
 
 #[tauri::command]
 pub fn native_messaging_begin_pairing() -> Result<PairingStatus, String> {
+    let _lifecycle = state()
+        .pairing_lifecycle
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     invalidate_in_memory_pairing(state());
     clear_pairing_complete()?;
     let secret = generate_pairing_secret();
@@ -169,6 +174,10 @@ pub fn native_messaging_begin_pairing() -> Result<PairingStatus, String> {
 
 #[tauri::command]
 pub fn native_messaging_status() -> Result<PairingStatus, String> {
+    let _lifecycle = state()
+        .pairing_lifecycle
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let paired = if state().authentication_revoked.load(Ordering::SeqCst) {
         false
     } else {
@@ -207,7 +216,14 @@ fn replace_configuration(
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     match validated {
         Ok(configuration) => {
-            *current = configuration;
+            if *current != configuration {
+                let mut latest_context = messaging_state
+                    .latest_context
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                *current = configuration;
+                latest_context.take();
+            }
             Ok(())
         }
         Err(error) => {
@@ -418,6 +434,10 @@ fn invalidate_pairing_with(
     messaging_state: &NativeMessagingState,
     delete: impl FnOnce() -> Result<(), String>,
 ) -> Result<(), String> {
+    let _lifecycle = messaging_state
+        .pairing_lifecycle
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     invalidate_in_memory_pairing(messaging_state);
     delete()?;
     messaging_state
@@ -469,11 +489,14 @@ fn pairing_nonce_is_valid_with(
     current.expires_at >= Instant::now() && candidate == Some(current.nonce.as_str())
 }
 
-fn consume_pairing_nonce(candidate: &str) -> bool {
-    if state().authentication_revoked.load(Ordering::SeqCst) {
+fn consume_pairing_nonce_with(messaging_state: &NativeMessagingState, candidate: &str) -> bool {
+    if messaging_state
+        .authentication_revoked
+        .load(Ordering::SeqCst)
+    {
         return false;
     }
-    let mut pending = state()
+    let mut pending = messaging_state
         .pending_pairing
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -484,6 +507,21 @@ fn consume_pairing_nonce(candidate: &str) -> bool {
         *pending = None;
     }
     accepted
+}
+
+fn complete_pairing_with(
+    messaging_state: &NativeMessagingState,
+    generation: u64,
+    candidate: &str,
+    mark_complete: impl FnOnce() -> Result<(), String>,
+) -> bool {
+    let _lifecycle = messaging_state
+        .pairing_lifecycle
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    session_generation_is_current(messaging_state, generation)
+        && consume_pairing_nonce_with(messaging_state, candidate)
+        && mark_complete().is_ok()
 }
 
 fn session_generation_is_current(messaging_state: &NativeMessagingState, generation: u64) -> bool {
@@ -643,7 +681,8 @@ fn serve_connection(mut stream: impl ConnectionStream) -> Result<(), String> {
         && pairing_nonce_is_valid(response.pairing_nonce.as_deref())
         && verify_handshake(&secret, &challenge, &response);
     if authenticated && let Some(pairing_nonce) = response.pairing_nonce.as_deref() {
-        authenticated = consume_pairing_nonce(pairing_nonce) && mark_pairing_complete().is_ok();
+        authenticated =
+            complete_pairing_with(state(), generation, pairing_nonce, mark_pairing_complete);
     }
     authenticated = authenticated && session_generation_is_current(state(), generation);
     if !authenticated {
@@ -698,8 +737,7 @@ fn serve_connection(mut stream: impl ConnectionStream) -> Result<(), String> {
                     let configuration = state()
                         .configuration
                         .lock()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner)
-                        .clone();
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
                     match authorize_capture(request.payload, &configuration) {
                         Ok(context) => {
                             *state()
@@ -781,8 +819,8 @@ mod tests {
             expires_at: Instant::now() + Duration::from_secs(1),
         });
         assert!(pairing_nonce_is_valid(Some("once")));
-        assert!(consume_pairing_nonce("once"));
-        assert!(!consume_pairing_nonce("once"));
+        assert!(consume_pairing_nonce_with(state(), "once"));
+        assert!(!consume_pairing_nonce_with(state(), "once"));
     }
 
     #[test]
@@ -863,6 +901,43 @@ mod tests {
     }
 
     #[test]
+    fn changed_configuration_clears_prior_context() {
+        let messaging_state = NativeMessagingState::default();
+        let initial = json!({
+            "origins": [configured_origin("https://example.com")],
+            "language": "en"
+        });
+        assert!(replace_configuration(&messaging_state, initial).is_ok());
+        *messaging_state.latest_context.lock().unwrap() = Some(json!({ "prior": true }));
+        let replacement = json!({
+            "origins": [{
+                "origin": "https://example.com",
+                "mappings": [{
+                    "mappingId": "01900000-0000-7000-8000-000000000001",
+                    "matcher": {
+                        "scheme": "https",
+                        "host": ["example", "com"],
+                        "hostIsIpLiteral": false,
+                        "port": "",
+                        "path": ["changed", "**"]
+                    }
+                }]
+            }],
+            "language": "en"
+        });
+
+        assert!(replace_configuration(&messaging_state, replacement.clone()).is_ok());
+        assert!(messaging_state.latest_context.lock().unwrap().is_none());
+
+        *messaging_state.latest_context.lock().unwrap() = Some(json!({ "current": true }));
+        assert!(replace_configuration(&messaging_state, replacement).is_ok());
+        assert_eq!(
+            *messaging_state.latest_context.lock().unwrap(),
+            Some(json!({ "current": true }))
+        );
+    }
+
+    #[test]
     fn in_memory_pairing_is_invalidated_independently_of_storage_cleanup() {
         let messaging_state = NativeMessagingState::default();
         *messaging_state.pending_pairing.lock().unwrap() = Some(PendingPairing {
@@ -916,6 +991,45 @@ mod tests {
             .store(false, Ordering::SeqCst);
         messaging_state.generation.fetch_add(1, Ordering::SeqCst);
         assert!(!session_generation_is_current(&messaging_state, generation));
+    }
+
+    #[test]
+    fn replaced_generation_cannot_write_pairing_completion() {
+        let messaging_state = NativeMessagingState::default();
+        let generation = messaging_state.generation.load(Ordering::SeqCst);
+        *messaging_state.pending_pairing.lock().unwrap() = Some(PendingPairing {
+            nonce: "old".into(),
+            expires_at: Instant::now() + Duration::from_secs(1),
+        });
+        invalidate_in_memory_pairing(&messaging_state);
+        *messaging_state.pending_pairing.lock().unwrap() = Some(PendingPairing {
+            nonce: "replacement".into(),
+            expires_at: Instant::now() + Duration::from_secs(1),
+        });
+        messaging_state
+            .authentication_revoked
+            .store(false, Ordering::SeqCst);
+        let mut completion_written = false;
+
+        assert!(!complete_pairing_with(
+            &messaging_state,
+            generation,
+            "old",
+            || {
+                completion_written = true;
+                Ok(())
+            }
+        ));
+        assert!(!completion_written);
+        assert_eq!(
+            messaging_state
+                .pending_pairing
+                .lock()
+                .unwrap()
+                .as_ref()
+                .map(|pending| pending.nonce.as_str()),
+            Some("replacement")
+        );
     }
 
     #[cfg(unix)]
