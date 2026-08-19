@@ -316,7 +316,10 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
           throw reason;
         }
         if (cancelled) return;
-        if (!authenticated) clearAuthenticatedSettingsCache(storage, apiOrigin);
+        if (!authenticated) {
+          clearAuthenticatedSettingsCache(storage, apiOrigin);
+          clearDeckCaches(storage, await sessionProfileId(apiOrigin));
+        }
         sessionRef.current = session;
         setSession(session);
         setBootstrap(validated);
@@ -358,7 +361,10 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
           throw reason;
         }
         if (cancelled) return;
-        if (!authenticated) clearAuthenticatedSettingsCache(storage, apiOrigin);
+        if (!authenticated) {
+          clearAuthenticatedSettingsCache(storage, apiOrigin);
+          clearDeckCaches(storage, await sessionProfileId(apiOrigin));
+        }
         sessionRef.current = session;
         setSession(session);
         setBootstrap(cached);

@@ -375,7 +375,7 @@ export interface DeckQueryToken { readonly value: string; readonly start: number
 
 /** Returns the editable builder fields only when the query contains builder-owned qualifiers. */
 export function deckBuilderProjection(query: string): DeckBuilder | null {
-  if (hasBooleanQuerySyntax(query)) return null;
+  if (hasDeckBooleanQuerySyntax(query)) return null;
   const tokens = deckQueryTokens(query);
   const repository = deckBuilderValue(tokens, "repo:");
   const author = deckBuilderValue(tokens, "author:");
@@ -406,7 +406,7 @@ function builderTokenIsSupported(value: string, prefix: "repo:" | "author:" | "r
 function unquoteDeckQualifier(value: string): string { return value.startsWith("\"") && value.endsWith("\"") ? value.slice(1, -1).replaceAll(/\\(.)/gu, "$1") : value; }
 
 function appendDeckQualifier(query: string, qualifier: string): string {
-  const source = hasBooleanQuerySyntax(query) ? `(${query})` : query;
+  const source = hasDeckBooleanQuerySyntax(query) ? `(${query})` : query;
   return `${source}${source.length === 0 || /\s$/u.test(source) ? "" : " "}${qualifier}`;
 }
 
@@ -418,7 +418,7 @@ interface DeckQueryBranch {
 type DeckBooleanToken = { readonly kind: "term"; readonly value: string } | { readonly kind: "open" | "close" | "not" };
 const deckQueryWhitespace = /[\u0009-\u000D\u0020\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\uFEFF]/u;
 
-function hasBooleanQuerySyntax(query: string): boolean {
+export function hasDeckBooleanQuerySyntax(query: string): boolean {
   const tokens = deckBooleanTokens(query);
   return tokens !== null && tokens.some((token) => token.kind !== "term" || token.value.toLowerCase() === "and" || token.value.toLowerCase() === "or");
 }

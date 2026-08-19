@@ -141,4 +141,10 @@ func TestValidateDevHudSettingsDeckQualifiers(t *testing.T) {
 	if err := validateDevHudSettings([]byte(previousSettings("null")), 2); err == nil {
 		t.Fatal("schema-v2 null repository with profile was accepted")
 	}
+	if err := validateDevHudSettings([]byte(previousSettings(`"octo/widgets"`)), 2); err != nil {
+		t.Fatalf("schema-v2 valid repository: %v", err)
+	}
+	if err := validateDevHudSettings([]byte(previousSettings(`"owner repo"`)), 2); err == nil {
+		t.Fatal("schema-v2 malformed repository was accepted")
+	}
 }

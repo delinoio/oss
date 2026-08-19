@@ -267,8 +267,22 @@ func validateSettingsDeck(value any, path string, legacy bool, previous bool) (s
 		return "", fmt.Errorf("%s.repository must be selected when a credential profile is selected", path)
 	}
 	if previous && deck["repository"] != nil {
-		if _, err = settingsText(deck["repository"], path+".repository", false); err != nil {
-			return "", err
+		repository, repositoryErr := settingsText(deck["repository"], path+".repository", false)
+		if repositoryErr != nil {
+			return "", repositoryErr
+		}
+		if profileRef != "" {
+			migratedQuery := query
+			if !deckQueryHasPositivePullRequestQualifier(migratedQuery) {
+				migratedQuery = appendSettingsDeckQualifier(migratedQuery, "is:pr")
+			}
+			if !deckQueryHasExactRepositoryQualifier(migratedQuery, repository) {
+				migratedQuery = appendSettingsDeckQualifier(migratedQuery, "repo:"+repository)
+			}
+			hasPullRequestQualifier, hasRepositoryQualifier = deckQueryQualifiers(migratedQuery)
+			if !hasPullRequestQualifier || !hasRepositoryQualifier {
+				return "", fmt.Errorf("%s.repository must produce a valid repository-scoped pull-request query", path)
+			}
 		}
 	}
 	if !legacy && !previous {
@@ -527,6 +541,46 @@ func deckQueryQualifiers(query string) (bool, bool) {
 		}
 	}
 	return true, len(repositories) > 0
+}
+
+func deckQueryHasPositivePullRequestQualifier(query string) bool {
+	branches, valid := deckQueryBranches(query)
+	if !valid || len(branches) == 0 {
+		return false
+	}
+	for _, branch := range branches {
+		if !branch.hasPullRequestQualifier {
+			return false
+		}
+	}
+	return true
+}
+
+func deckQueryHasExactRepositoryQualifier(query string, repository string) bool {
+	branches, valid := deckQueryBranches(query)
+	if !valid {
+		return false
+	}
+	_, valid = deckRepositoryQualifier("repo:" + repository)
+	if !valid {
+		return false
+	}
+	for _, branch := range branches {
+		if _, exists := branch.repositories[strings.ToLower(repository)]; exists {
+			return true
+		}
+	}
+	return false
+}
+
+func appendSettingsDeckQualifier(query string, qualifier string) string {
+	if deckQueryHasBooleanSyntax(query) {
+		query = "(" + query + ")"
+	}
+	if query == "" {
+		return qualifier
+	}
+	return query + " " + qualifier
 }
 
 func deckQueryBranches(query string) ([]deckQueryBranch, bool) {

@@ -73,11 +73,24 @@ describe("Deck surface", () => {
     expect(screen.getByRole("button", { name: messages.en.deckDelete })).not.toHaveProperty("disabled", true);
   });
 
+  it("disables builder controls until a Boolean Deck query is simplified", () => {
+    const booleanDeck = { ...deck, query: "repo:octo/widgets is:pr OR repo:octo/tools is:pr", builder: null };
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [booleanDeck] }) });
+    const bridge = bridgeWith(async () => ({ kind: "ok" as const }));
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    const repository = screen.getByLabelText(messages.en.deckBuilderRepository);
+    expect(repository.closest("fieldset")).toHaveProperty("disabled", true);
+    fireEvent.change(screen.getByLabelText(messages.en.deckQuery), { target: { value: "repo:octo/widgets is:pr" } });
+    expect(repository.closest("fieldset")).toHaveProperty("disabled", false);
+  });
+
   it("retains hydrated cached results when the first refresh fails", async () => {
     let resolveScope: (scopeId: string) => void = () => {};
     const scope = new Promise<string>((resolve) => { resolveScope = resolve; });
     const cacheScope = `origin.scope.${profile.id}`;
-    writeDeckCache(localStorage, cacheScope, { version: DeckCacheVersion, deckId: deck.id, query: deck.query, queryEtag: "cached-etag", results: [pullRequest], lastSuccessfulAt: "2026-08-17T00:00:00.000Z", rate: null, failures: 0, nextRefreshAt: null, transitionKeys: [] });
+    const pendingNotifications = [{ key: "PR_kwDOA:review:approved:2026-08-18T00:01:00.000Z", kind: "review" as const, body: pullRequest.title }];
+    writeDeckCache(localStorage, cacheScope, { version: DeckCacheVersion, deckId: deck.id, query: deck.query, queryEtag: "cached-etag", results: [pullRequest], lastSuccessfulAt: "2026-08-17T00:00:00.000Z", rate: null, failures: 0, nextRefreshAt: null, transitionKeys: [], pendingNotifications });
     identity = identityWith({ githubPatScopeId: scope });
     let rejectSearch: (error: Error) => void = () => {};
     const searchPullRequests = vi.fn(() => new Promise<never>((_resolve, reject) => { rejectSearch = reject; }));
@@ -89,9 +102,10 @@ describe("Deck surface", () => {
     rejectSearch(new Error("offline"));
 
     await waitFor(() => {
-      const cache = JSON.parse(localStorage.getItem(deckCacheKey(cacheScope, deck.id)) ?? "null") as { results: unknown; lastSuccessfulAt: string | null };
+      const cache = JSON.parse(localStorage.getItem(deckCacheKey(cacheScope, deck.id)) ?? "null") as { results: unknown; lastSuccessfulAt: string | null; pendingNotifications: unknown };
       expect(cache.results).toEqual([pullRequest]);
       expect(cache.lastSuccessfulAt).toBe("2026-08-17T00:00:00.000Z");
+      expect(cache.pendingNotifications).toEqual(pendingNotifications);
     });
   });
 

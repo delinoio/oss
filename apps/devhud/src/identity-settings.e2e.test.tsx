@@ -94,11 +94,11 @@ function IdentityStateProbe({ replacement = defaultDevHudSettings }: { readonly 
   </>;
 }
 
-function renderIdentityProbe(bridge: NativeBridgeV1, replacement = defaultDevHudSettings) {
+function renderIdentityProbe(bridge: NativeBridgeV1, replacement = defaultDevHudSettings, online = true) {
   return render(<DevHudServiceBoundary
     apiOrigin="https://devhud.api.delino.io"
     active
-    online
+    online={online}
     callbackUrl={null}
     platform={RuntimePlatform.Desktop}
     bridge={bridge}
@@ -128,6 +128,8 @@ describe("generated Connect identity/settings fixture", () => {
       revision: 9n,
       cachedAt: "2026-08-17T00:00:00.000Z",
     });
+    const deckCache = deckCacheKey(await sessionProfileId("https://devhud.api.delino.io"), "018f47a2-7b3c-7def-8abc-1234567890ac");
+    localStorage.setItem(deckCache, "private Deck data");
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
@@ -138,11 +140,27 @@ describe("generated Connect identity/settings fixture", () => {
     renderIdentityProbe(signedOutBridge(), replacement);
     await waitFor(() => expect(screen.getByTestId("identity-state").dataset.status).toBe("signed-out"));
     expect(readAuthenticatedSettingsCache(localStorage, "https://devhud.api.delino.io")).toBeNull();
+    await waitFor(() => expect(localStorage.getItem(deckCache)).toBeNull());
     fireEvent.click(screen.getByRole("button", { name: "replace probe settings" }));
 
     await waitFor(() => expect(screen.getByTestId("identity-state").dataset.theme).toBe("dark"));
     expect(hasGuestSettings(localStorage)).toBe(true);
     expect(readGuestSettings(localStorage).appearance.theme).toBe("dark");
+  });
+
+  it("clears Deck caches during cached offline signed-out startup", async () => {
+    vi.spyOn(identityClient, "createIdentitySession").mockResolvedValue({
+      client: {}, storage: {}, getAccessToken: async () => { throw new Error("unexpected token request"); }, isAuthenticated: async () => false,
+      signIn: async () => {}, handleCallback: async () => {}, clear: async () => {},
+    } as unknown as IdentitySession);
+    writeCachedIdentityBootstrap(localStorage, "https://devhud.api.delino.io", { issuer: "https://issuer.example.com", audience: "https://api.example.com", clientId: "fixture-client", redirectUri: "devhud://auth/callback" });
+    const deckCache = deckCacheKey(await sessionProfileId("https://devhud.api.delino.io"), "018f47a2-7b3c-7def-8abc-1234567890ac");
+    localStorage.setItem(deckCache, "private Deck data");
+
+    renderIdentityProbe(signedOutBridge(), defaultDevHudSettings, false);
+
+    await waitFor(() => expect(screen.getByTestId("identity-state").dataset.status).toBe("signed-out"));
+    await waitFor(() => expect(localStorage.getItem(deckCache)).toBeNull());
   });
 
   it("applies fetched appearance and persists control edits through ReplaceSettings", async () => {
@@ -880,8 +898,8 @@ describe("generated Connect identity/settings fixture", () => {
 
     render(<App bridge={bridge} initialRuntime={runtime} />);
     if (surface === "account") fireEvent.click(screen.getByRole("button", { name: messages.en.account }));
-    const button = await screen.findByRole("button", { name: messages.en.signIn }) as HTMLButtonElement;
-    await waitFor(() => expect(button.disabled).toBe(false));
+    await waitFor(() => expect((screen.getByRole("button", { name: messages.en.signIn }) as HTMLButtonElement).disabled).toBe(false));
+    const button = screen.getByRole("button", { name: messages.en.signIn }) as HTMLButtonElement;
     fireEvent.click(button);
 
     expect(signIn).toHaveBeenCalledOnce();
