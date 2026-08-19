@@ -44,6 +44,16 @@ export function createRequest(type: NativeMessageType, payload: unknown, pairing
   };
 }
 
+export function createBoundedRequest(type: NativeMessageType, payload: unknown, pairingNonce?: string) {
+  let request = createRequest(type, payload, pairingNonce);
+  const byteLength = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).byteLength;
+  if (byteLength(request) > MaximumJsonBytes && type === "capture" && typeof payload === "object" && payload !== null) {
+    const capture = payload as { readonly context?: unknown };
+    if (typeof capture.context === "object" && capture.context !== null) request = createRequest(type, { ...payload, context: { ...capture.context, outerHtml: "" } }, pairingNonce);
+  }
+  return { request, withinLimit: byteLength(request) <= MaximumJsonBytes } as const;
+}
+
 export function isNativeResponse(value: unknown): value is NativeResponse {
   if (typeof value !== "object" || value === null) return false;
   const response = value as Partial<NativeResponse>;

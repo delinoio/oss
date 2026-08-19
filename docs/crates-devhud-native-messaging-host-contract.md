@@ -18,7 +18,7 @@ Register and connect using the stable Native Messaging host name `io.delino.devh
 
 ## Storage
 
-Pairing data is local device state only and is deleted on logout or account deletion. No screenshots, page DOM, cookies, storage, tokens, PATs, R2 secrets, or Deck results are persisted by the host.
+Pairing data is local device state only and is deleted on logout or account deletion. The app invalidates the in-memory pairing nonce, cached context, and active session generation before secure-storage deletion, so a storage cleanup error cannot preserve a live authenticated session. Rejected replacement configuration clears the prior authorization snapshot and cached context. No screenshots, page DOM, cookies, storage, tokens, PATs, R2 secrets, or Deck results are persisted by the host.
 
 ## Security
 

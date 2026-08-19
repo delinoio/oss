@@ -1,3 +1,5 @@
+import { resolveExtensionLanguage } from "./popup-language.js";
+
 interface Configuration {
   readonly origins?: readonly { readonly origin: string; readonly mappings: readonly unknown[] }[];
   readonly language?: "en" | "ko";
@@ -6,6 +8,7 @@ interface Configuration {
 const status = document.querySelector<HTMLOutputElement>("#status")!;
 const originList = document.querySelector<HTMLUListElement>("#origins")!;
 const pairingInput = document.querySelector<HTMLInputElement>("#pairing-nonce")!;
+document.documentElement.lang = resolveExtensionLanguage(chrome.i18n.getUILanguage());
 
 function text(id: string): string {
   return chrome.i18n.getMessage(id) || id;

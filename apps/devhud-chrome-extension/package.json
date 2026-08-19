@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "prepare:app": "echo 'devhud-chrome-extension: no prepare step'",
-    "build": "tsc -p tsconfig.build.json && node scripts/build.mjs",
-    "build:test": "DEVHUD_EXTENSION_TEST_BUILD=1 pnpm build",
+    "build": "node -e \"require('node:fs').rmSync('build',{recursive:true,force:true})\" && tsc -p tsconfig.build.json && node scripts/build.mjs",
+    "build:test": "node scripts/build-test.mjs",
     "lint": "tsc --noEmit",
     "test": "pnpm lint && vitest run && node --test scripts/policy.test.mjs && node --test scripts/deterministic-build.test.mjs"
   },

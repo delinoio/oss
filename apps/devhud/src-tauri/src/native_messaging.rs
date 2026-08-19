@@ -182,6 +182,37 @@ pub fn native_messaging_unpair() -> Result<PairingStatus, String> {
 
 #[tauri::command]
 pub fn native_messaging_replace_configuration(configuration: Value) -> Result<(), String> {
+    replace_configuration(state(), configuration)
+}
+
+fn replace_configuration(
+    messaging_state: &NativeMessagingState,
+    configuration: Value,
+) -> Result<(), String> {
+    let validated = validate_configuration(configuration);
+    let mut current = messaging_state
+        .configuration
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    match validated {
+        Ok(configuration) => {
+            *current = configuration;
+            Ok(())
+        }
+        Err(error) => {
+            *current = Value::Null;
+            messaging_state
+                .latest_context
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .take();
+            warn!(event = "native_messaging_configuration_rejected");
+            Err(error)
+        }
+    }
+}
+
+fn validate_configuration(configuration: Value) -> Result<Value, String> {
     let encoded = serde_json::to_vec(&configuration).map_err(|_| "invalid-argument")?;
     if encoded.len() > devhud_native_messaging_host::MAX_JSON_BYTES {
         return Err("invalid-argument".to_string());
@@ -191,12 +222,7 @@ pub fn native_messaging_replace_configuration(configuration: Value) -> Result<()
     if !valid_extension_configuration(&configuration) {
         return Err("invalid-argument".to_string());
     }
-    let configuration = serde_json::to_value(configuration).map_err(|_| "invalid-argument")?;
-    *state()
-        .configuration
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner) = configuration;
-    Ok(())
+    serde_json::to_value(configuration).map_err(|_| "invalid-argument".to_string())
 }
 
 fn valid_extension_configuration(configuration: &ExtensionConfiguration) -> bool {
@@ -286,19 +312,30 @@ pub fn native_messaging_take_context() -> Option<Value> {
 }
 
 pub fn invalidate_pairing() -> Result<(), String> {
-    delete_pairing_secret()?;
-    *state()
+    invalidate_in_memory_pairing(state());
+    match delete_pairing_secret() {
+        Ok(()) => {
+            info!(event = "native_messaging_pairing_invalidated");
+            Ok(())
+        }
+        Err(error) => {
+            warn!(event = "native_messaging_pairing_storage_cleanup_failed");
+            Err(error)
+        }
+    }
+}
+
+fn invalidate_in_memory_pairing(messaging_state: &NativeMessagingState) {
+    *messaging_state
         .pending_pairing
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
-    state()
+    messaging_state
         .latest_context
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .take();
-    state().generation.fetch_add(1, Ordering::SeqCst);
-    info!(event = "native_messaging_pairing_invalidated");
-    Ok(())
+    messaging_state.generation.fetch_add(1, Ordering::SeqCst);
 }
 
 fn pairing_nonce_is_valid(candidate: Option<&str>) -> bool {
@@ -612,6 +649,39 @@ mod tests {
             }))
             .is_err()
         );
+    }
+
+    #[test]
+    fn rejected_configuration_clears_prior_authorization_and_context() {
+        let messaging_state = NativeMessagingState::default();
+        *messaging_state.configuration.lock().unwrap() = json!({ "prior": true });
+        *messaging_state.latest_context.lock().unwrap() = Some(json!({ "prior": true }));
+
+        assert!(
+            replace_configuration(
+                &messaging_state,
+                Value::String("x".repeat(devhud_native_messaging_host::MAX_JSON_BYTES + 1)),
+            )
+            .is_err()
+        );
+        assert!(messaging_state.configuration.lock().unwrap().is_null());
+        assert!(messaging_state.latest_context.lock().unwrap().is_none());
+    }
+
+    #[test]
+    fn in_memory_pairing_is_invalidated_independently_of_storage_cleanup() {
+        let messaging_state = NativeMessagingState::default();
+        *messaging_state.pending_pairing.lock().unwrap() = Some(PendingPairing {
+            nonce: "pending".into(),
+            expires_at: Instant::now() + Duration::from_secs(1),
+        });
+        *messaging_state.latest_context.lock().unwrap() = Some(json!({ "prior": true }));
+
+        invalidate_in_memory_pairing(&messaging_state);
+
+        assert!(messaging_state.pending_pairing.lock().unwrap().is_none());
+        assert!(messaging_state.latest_context.lock().unwrap().is_none());
+        assert_eq!(messaging_state.generation.load(Ordering::SeqCst), 1);
     }
 
     #[test]
