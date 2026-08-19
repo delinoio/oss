@@ -1,6 +1,7 @@
 import { injectedCapture } from "./capture.js";
 import { HostName, createBoundedRequest, isNativeResponse, type NativeResponse } from "./protocol.js";
 import { selectConfiguredMapping, type ExtensionConfiguration } from "./configured-mapping.js";
+import { configuredOriginPermissionPattern } from "./origin-permission.js";
 
 let nativePort: chrome.runtime.Port | null = null;
 let reconnectAttempt = 0;
@@ -51,7 +52,9 @@ async function capture(selectElement: boolean): Promise<NativeResponse> {
   const configuration = (configurationResponse.payload ?? {}) as ExtensionConfiguration;
   const tabOrigin = new URL(tab.url).origin;
   if (!configuration.origins?.some((candidate) => candidate.origin === tabOrigin)) return { version: 1, schema_version: 1, request_id: "", ok: false, state: "denied", payload: null };
-  const permitted = await chrome.permissions.contains({ origins: [`${tabOrigin}/*`] }).catch(() => false);
+  const permissionPattern = configuredOriginPermissionPattern(tabOrigin);
+  if (!permissionPattern) return { version: 1, schema_version: 1, request_id: "", ok: false, state: "denied", payload: null };
+  const permitted = await chrome.permissions.contains({ origins: [permissionPattern] }).catch(() => false);
   if (!permitted) return { version: 1, schema_version: 1, request_id: "", ok: false, state: "denied", payload: null };
   const injection = (await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: injectedCapture, args: [selectElement] }))[0];
   const result = injection?.result;

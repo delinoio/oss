@@ -486,6 +486,13 @@ fn consume_pairing_nonce(candidate: &str) -> bool {
     accepted
 }
 
+fn session_generation_is_current(messaging_state: &NativeMessagingState, generation: u64) -> bool {
+    !messaging_state
+        .authentication_revoked
+        .load(Ordering::SeqCst)
+        && messaging_state.generation.load(Ordering::SeqCst) == generation
+}
+
 fn authorize_capture(payload: Value, configuration: &Value) -> Result<Value, &'static str> {
     let capture: CapturePayload =
         serde_json::from_value(payload).map_err(|_| "invalid-browser-context")?;
@@ -626,6 +633,7 @@ fn serve_connection(mut stream: impl ConnectionStream) -> Result<(), String> {
     write_connection_json(&mut stream, &challenge).map_err(|_| "write-failed")?;
     let response: AuthResponse =
         read_connection_json(&mut stream).map_err(|_| "authentication-failed")?;
+    let generation = state().generation.load(Ordering::SeqCst);
     let secret = read_pairing_secret()?.ok_or("not-paired")?;
     let mut authenticated = validate_version(response.version, response.schema_version).is_ok()
         && response.challenge_id == challenge.challenge_id
@@ -637,6 +645,7 @@ fn serve_connection(mut stream: impl ConnectionStream) -> Result<(), String> {
     if authenticated && let Some(pairing_nonce) = response.pairing_nonce.as_deref() {
         authenticated = consume_pairing_nonce(pairing_nonce) && mark_pairing_complete().is_ok();
     }
+    authenticated = authenticated && session_generation_is_current(state(), generation);
     if !authenticated {
         let denied = AuthResult {
             version: PROTOCOL_VERSION,
@@ -650,7 +659,6 @@ fn serve_connection(mut stream: impl ConnectionStream) -> Result<(), String> {
         return Err("authentication-failed".to_string());
     }
     let session_id = random_nonce();
-    let generation = state().generation.load(Ordering::SeqCst);
     write_connection_json(
         &mut stream,
         &AuthResult {
@@ -668,7 +676,7 @@ fn serve_connection(mut stream: impl ConnectionStream) -> Result<(), String> {
     loop {
         let request: IpcRequest = read_connection_json(&mut stream).map_err(|_| "read-failed")?;
         let now = now_unix_millis();
-        let mut accepted = state().generation.load(Ordering::SeqCst) == generation
+        let mut accepted = session_generation_is_current(state(), generation)
             && validate_version(request.version, request.schema_version).is_ok()
             && validate_deadline(request.issued_at_unix_ms, request.deadline_unix_ms, now).is_ok()
             && verify_request(&secret, &session_id, &request)
@@ -721,7 +729,7 @@ fn serve_connection(mut stream: impl ConnectionStream) -> Result<(), String> {
             },
         )
         .map_err(|_| "write-failed")?;
-        if !accepted && state().generation.load(Ordering::SeqCst) != generation {
+        if !accepted && !session_generation_is_current(state(), generation) {
             return Err("pairing-invalidated".to_string());
         }
     }
@@ -890,6 +898,24 @@ mod tests {
         assert!(!pairing_nonce_is_valid_with(&messaging_state, None, || {
             true
         }));
+    }
+
+    #[test]
+    fn revoked_or_replaced_generation_cannot_authenticate_a_session() {
+        let messaging_state = NativeMessagingState::default();
+        let generation = messaging_state.generation.load(Ordering::SeqCst);
+        assert!(session_generation_is_current(&messaging_state, generation));
+
+        messaging_state
+            .authentication_revoked
+            .store(true, Ordering::SeqCst);
+        assert!(!session_generation_is_current(&messaging_state, generation));
+
+        messaging_state
+            .authentication_revoked
+            .store(false, Ordering::SeqCst);
+        messaging_state.generation.fetch_add(1, Ordering::SeqCst);
+        assert!(!session_generation_is_current(&messaging_state, generation));
     }
 
     #[cfg(unix)]

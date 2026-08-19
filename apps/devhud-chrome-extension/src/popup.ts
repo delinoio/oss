@@ -1,4 +1,5 @@
 import { resolveExtensionLanguage } from "./popup-language.js";
+import { configuredOriginPermissionPattern } from "./origin-permission.js";
 
 interface Configuration {
   readonly origins?: readonly { readonly origin: string; readonly mappings: readonly unknown[] }[];
@@ -23,29 +24,23 @@ async function send(message: unknown): Promise<{ ok?: boolean; state?: string; p
   return await chrome.runtime.sendMessage(message) as { ok?: boolean; state?: string; payload?: unknown };
 }
 
-function validConfiguredOrigin(value: string): boolean {
-  try {
-    const url = new URL(value);
-    return (url.protocol === "http:" || url.protocol === "https:") && url.origin === value && !url.username && !url.password;
-  } catch { return false; }
-}
-
 function renderOrigins(configuration: Configuration) {
   originList.replaceChildren();
   for (const configured of configuration.origins ?? []) {
-    if (!validConfiguredOrigin(configured.origin)) continue;
+    const permissionPattern = configuredOriginPermissionPattern(configured.origin);
+    if (!permissionPattern) continue;
     const item = document.createElement("li");
     const label = document.createElement("code");
     label.textContent = configured.origin;
     const button = document.createElement("button");
     button.type = "button";
     button.textContent = text("allowOrigin");
-    button.dataset.origin = configured.origin;
+    button.dataset.permissionPattern = permissionPattern;
     button.addEventListener("click", () => {
-      const origin = button.dataset.origin;
-      if (!origin || !validConfiguredOrigin(origin)) { announce(text("permissionDenied"), true); return; }
+      const origin = button.dataset.permissionPattern;
+      if (!origin) { announce(text("permissionDenied"), true); return; }
       // This call intentionally occurs synchronously inside the button gesture.
-      void chrome.permissions.request({ origins: [`${origin}/*`] }).then((granted) => announce(text(granted ? "permissionGranted" : "permissionDenied"), !granted));
+      void chrome.permissions.request({ origins: [origin] }).then((granted) => announce(text(granted ? "permissionGranted" : "permissionDenied"), !granted));
     });
     item.append(label, button);
     originList.append(item);

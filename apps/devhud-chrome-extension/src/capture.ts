@@ -19,6 +19,7 @@ interface InjectedCapturedBrowserContext extends CapturedBrowserContext {
 export function injectedCapture(selectElement: boolean) {
   const allowedElements = new Set(["a", "article", "aside", "blockquote", "code", "dd", "details", "div", "dl", "dt", "em", "figcaption", "figure", "footer", "h1", "h2", "h3", "h4", "h5", "h6", "header", "hr", "img", "li", "main", "nav", "ol", "p", "pre", "section", "summary", "table", "tbody", "td", "tfoot", "th", "thead", "tr", "ul"]);
   const allowedAttributes = new Set(["alt", "aria-describedby", "aria-hidden", "aria-label", "aria-labelledby", "role", "title"]);
+  const voidElements = new Set(["hr", "img"]);
   const encoder = new TextEncoder();
   const truncateUtf8 = (value: string, maximumBytes: number) => {
     if (encoder.encode(value).byteLength <= maximumBytes) return value;
@@ -37,8 +38,7 @@ export function injectedCapture(selectElement: boolean) {
     if (!/^https?:$/u.test(url.protocol)) throw new TypeError("unsupported URL");
     const origin = `${url.protocol}//${url.hostname.toLowerCase()}${url.port ? `:${url.port}` : ""}`;
     const path = url.pathname.split("/").map((segment) => segment === "" ? "" : "<redacted>").join("/");
-    const normalized = `${origin}${path}`;
-    return encoder.encode(normalized).byteLength <= 16 * 1024 ? normalized : `${origin}${url.pathname === "/" ? "/" : "/<redacted>"}`;
+    return `${origin}${path}`;
   };
   const isAllowedAndVisible = (element: Element) => {
     if (!allowedElements.has(element.localName) || element.hasAttribute("hidden") || element.getAttribute("aria-hidden")?.toLowerCase() === "true") return false;
@@ -47,23 +47,80 @@ export function injectedCapture(selectElement: boolean) {
   };
   const sanitize = (selected: Element | null) => {
     if (!selected) return "";
-    const append = (parent: DocumentFragment | Element, node: Node): void => {
-      if (node.nodeType === Node.TEXT_NODE) { parent.append(document.createTextNode(node.textContent ?? "")); return; }
-      if (!(node instanceof Element) || !isAllowedAndVisible(node)) return;
+    const maximumBytes = 128 * 1024;
+    const fragments: string[] = [];
+    const textProbe = document.createElement("div");
+    let encodedBytes = 0;
+    let exhausted = false;
+    const appendSerializedText = (value: string) => {
+      let chunk = "";
+      const appendChunk = (candidate: string) => {
+        textProbe.textContent = candidate;
+        const serialized = textProbe.innerHTML;
+        const bytes = encoder.encode(serialized).byteLength;
+        if (encodedBytes + bytes > maximumBytes) return false;
+        fragments.push(serialized);
+        encodedBytes += bytes;
+        return true;
+      };
+      for (const character of value) {
+        chunk += character;
+        if (chunk.length < 1024) continue;
+        if (!appendChunk(chunk)) {
+          for (const remainingCharacter of chunk) {
+            if (!appendChunk(remainingCharacter)) return false;
+          }
+        }
+        chunk = "";
+      }
+      if (chunk && !appendChunk(chunk)) {
+        for (const remainingCharacter of chunk) {
+          if (!appendChunk(remainingCharacter)) return false;
+        }
+      }
+      return true;
+    };
+    const stack: Array<{ next: Node | null; includeSiblings: boolean; closingTag: string }> = [
+      { next: selected, includeSiblings: false, closingTag: "" },
+    ];
+    while (stack.length > 0 && !exhausted) {
+      const frame = stack[stack.length - 1]!;
+      const node = frame.next;
+      if (!node) {
+        if (frame.closingTag) fragments.push(frame.closingTag);
+        stack.pop();
+        continue;
+      }
+      frame.next = frame.includeSiblings ? node.nextSibling : null;
+      if (node.nodeType === Node.TEXT_NODE) {
+        exhausted = !appendSerializedText(node.textContent ?? "");
+        continue;
+      }
+      if (!(node instanceof Element) || !isAllowedAndVisible(node)) continue;
       const clean = document.createElement(node.localName);
       for (const attribute of Array.from(node.attributes)) {
         const name = attribute.name.toLowerCase();
         if (allowedAttributes.has(name) && !(name === "aria-hidden" && attribute.value.toLowerCase() === "true")) clean.setAttribute(name, truncateUtf8(attribute.value, 4 * 1024));
       }
-      for (const child of Array.from(node.childNodes)) append(clean, child);
-      parent.append(clean);
-    };
-    const fragment = document.createDocumentFragment();
-    append(fragment, selected);
-    const container = document.createElement("div");
-    container.append(fragment);
-    while (encoder.encode(container.innerHTML).byteLength > 128 * 1024 && container.lastChild) container.lastChild.remove();
-    return container.innerHTML;
+      const closingTag = voidElements.has(node.localName) ? "" : `</${node.localName}>`;
+      const serialized = clean.outerHTML;
+      const openingTag = closingTag ? serialized.slice(0, -closingTag.length) : serialized;
+      const elementBytes = encoder.encode(openingTag).byteLength + encoder.encode(closingTag).byteLength;
+      if (encodedBytes + elementBytes > maximumBytes) {
+        exhausted = true;
+        continue;
+      }
+      fragments.push(openingTag);
+      encodedBytes += elementBytes;
+      if (closingTag) stack.push({ next: node.firstChild, includeSiblings: true, closingTag });
+    }
+    if (exhausted) {
+      for (let index = stack.length - 1; index >= 0; index -= 1) {
+        const closingTag = stack[index]!.closingTag;
+        if (closingTag) fragments.push(closingTag);
+      }
+    }
+    return fragments.join("");
   };
   const result = (selected: Element | null): InjectedCapturedBrowserContext => {
     const allowedSelection = selected && isAllowedAndVisible(selected) ? selected : null;

@@ -14,4 +14,12 @@ describe("Native Messaging request bounds", () => {
   it("rejects an outbound request that still exceeds the shared ceiling", () => {
     expect(createBoundedRequest("ping", { value: "x".repeat(MaximumJsonBytes) }).withinLimit).toBe(false);
   });
+
+  it("rejects an oversized redacted path without replacing its structure", () => {
+    const url = `https://example.com/${"<redacted>/".repeat(MaximumJsonBytes)}`;
+    const bounded = createBoundedRequest("capture", { mappingId: "mapping", context: { url, outerHtml: "optional" } });
+
+    expect(bounded.withinLimit).toBe(false);
+    expect((bounded.request.payload as { context: { url: string; outerHtml: string } }).context).toEqual({ url, outerHtml: "" });
+  });
 });

@@ -25,12 +25,13 @@ describe("popup pairing", () => {
         state: "configured",
         payload: { origins: [{ origin: "https://example.com", mappings: [] }] },
       });
+    const requestPermission = vi.fn().mockResolvedValue(true);
     vi.stubGlobal("chrome", {
       i18n: {
         getUILanguage: () => "en-US",
         getMessage: (id: string) => id,
       },
-      permissions: { request: vi.fn() },
+      permissions: { request: requestPermission },
       runtime: { sendMessage },
     });
 
@@ -47,5 +48,8 @@ describe("popup pairing", () => {
     expect(sendMessage).toHaveBeenNthCalledWith(3, { type: "configuration" });
     expect(document.querySelector("#origins button")?.textContent).toBe("allowOrigin");
     expect(document.querySelector("#status")?.textContent).toBe("paired");
+
+    document.querySelector<HTMLButtonElement>("#origins button")!.click();
+    expect(requestPermission).toHaveBeenCalledWith({ origins: ["https://example.com:443/*"] });
   });
 });

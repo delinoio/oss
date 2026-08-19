@@ -12,7 +12,11 @@ async function select(element: Element) {
 }
 
 describe("injected capture", () => {
-  afterEach(() => vi.useRealTimers());
+  afterEach(() => {
+    vi.useRealTimers();
+    window.history.replaceState(null, "", "/");
+    document.body.replaceChildren();
+  });
 
   it.each([
     '<input type="password" title="secret" aria-label="credential">',
@@ -34,6 +38,55 @@ describe("injected capture", () => {
     const encoder = new TextEncoder();
     expect(encoder.encode(result.title).byteLength).toBeLessThanOrEqual(4 * 1024);
     expect(encoder.encode(result.accessibility["aria-label"]).byteLength).toBeLessThanOrEqual(4 * 1024);
+  });
+
+  it("preserves redacted path structure beyond 16 KiB", async () => {
+    const segmentCount = 2_000;
+    window.history.replaceState(null, "", `/${"segment/".repeat(segmentCount)}`);
+
+    const result = await injectedCapture(false);
+
+    if (!result) throw new Error("capture was unexpectedly cancelled");
+    expect(new TextEncoder().encode(result.url).byteLength).toBeGreaterThan(16 * 1024);
+    expect(result.url.match(/<redacted>/gu)).toHaveLength(segmentCount);
+    expect(result.url.endsWith("/")).toBe(true);
+  });
+
+  it("bounds deeply nested markup during iterative traversal", async () => {
+    const root = document.createElement("main");
+    const elements: Element[] = [root];
+    document.body.append(root);
+    let parent = root;
+    for (let index = 0; index < 1_000; index += 1) {
+      const child = document.createElement("div");
+      child.title = "x".repeat(2 * 1024);
+      parent.append(child);
+      elements.push(child);
+      parent = child;
+    }
+
+    try {
+      const result = await select(root);
+
+      if (!result) throw new Error("capture was unexpectedly cancelled");
+      expect(result.outerHtml).not.toBe("");
+      expect(new TextEncoder().encode(result.outerHtml).byteLength).toBeLessThanOrEqual(128 * 1024);
+      expect(result.outerHtml.match(/<div/gu)?.length).toBeLessThan(1_000);
+      expect(result.outerHtml.match(/<div/gu)?.length).toBe(result.outerHtml.match(/<\/div>/gu)?.length);
+      expect(result.outerHtml.endsWith("</main>")).toBe(true);
+    } finally {
+      for (let index = elements.length - 1; index >= 0; index -= 1) elements[index]!.remove();
+    }
+  });
+
+  it("bounds escaped multibyte text without breaking markup", async () => {
+    document.body.innerHTML = `<main>${"<&한".repeat(128 * 1024)}</main>`;
+
+    const result = await select(document.body.firstElementChild!);
+
+    if (!result) throw new Error("capture was unexpectedly cancelled");
+    expect(new TextEncoder().encode(result.outerHtml).byteLength).toBeLessThanOrEqual(128 * 1024);
+    expect(result.outerHtml.endsWith("</main>")).toBe(true);
   });
 
   it("cancels an abandoned interactive selection", async () => {
