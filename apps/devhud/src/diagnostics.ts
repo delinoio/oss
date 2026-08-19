@@ -36,7 +36,7 @@ const forbiddenValue = /(?:authorization|bearer\s|github[_-]?pat|access[_-]?toke
 const diagnosticURL = /[A-Za-z][A-Za-z0-9+.-]*:[^\s<>"']+/u;
 const diagnosticPath = /(?:^|[\s\p{P}=])(?:[a-z]:[\\/]\S*|\\\\\S+|~\/\S+|\/[^/\s]\S*)/iu;
 const percentEncodedOctets = /(?:%[0-9a-f]{2})+/giu;
-const credentialParameterName = /^(?:code|oauth[_.-]?code|password|passwd|pwd|secret|token|client[_.-]?secret|(?:access|refresh|id)[_.-]?token|api[_.-]?key|private[_.-]?key|authorization|cookie|set-cookie|x-amz-(?:credential|signature))$/iu;
+const credentialParameterName = /^(?:code|oauth[_.-]?code|password|passwd|pwd|pat|secret|token|client[_.-]?secret|(?:access|refresh|id)[_.-]?token|api[_.-]?key|private[_.-]?key|authorization|cookie|set-cookie|session[_.-]?id|signing[_.-]?(?:secret|key|value)|x-amz-(?:credential|signature))$/iu;
 const diagnosticAssignment = /(?:^|\s|[(\[{,;])["']?([A-Za-z][A-Za-z0-9_.-]{0,63})["']?\s*[:=]\s*\S+/gu;
 const safeCode = /^[A-Z][A-Z0-9_]{0,63}$/u;
 const safeFrameName = /(?:^|\s)(?:at\s+)?([A-Za-z_$][A-Za-z0-9_$.<>-]{0,95})/u;
@@ -391,9 +391,9 @@ function isLocalDiagnosticEvent(value: unknown): value is LocalDiagnosticEvent {
     && isDiagnosticComponent(event.component) && isDiagnosticSeverity(event.severity)
     && event.outcome === (event.severity === DiagnosticSeverity.FATAL ? DiagnosticOutcome.Fatal : DiagnosticOutcome.Failed)
     && safeCode.test(event.errorCode ?? "")
-    && typeof event.summary === "string" && textEncoder.encode(event.summary).byteLength <= 4 * 1024 && !isForbiddenDiagnosticValue(event.summary)
+    && isBoundedDiagnosticString(event.summary, 4 * 1024) && !isForbiddenDiagnosticValue(event.summary)
     && Array.isArray(frames) && frames.length <= maximumStackFrames
-    && frames.every((frame) => typeof frame === "string" && textEncoder.encode(frame).byteLength <= maximumStringBytes && !isForbiddenDiagnosticValue(frame))
+    && frames.every((frame) => isBoundedDiagnosticString(frame, maximumStringBytes) && !isForbiddenDiagnosticValue(frame))
     && textEncoder.encode(frames.join("\n")).byteLength <= 32 * 1024
     && Array.isArray(related) && related.length <= maximumRelatedCorrelations
     && related.every(isUuidV7) && new Set(related).size === related.length && !related.includes(event.correlationId)
@@ -430,7 +430,7 @@ function isDiagnosticBuild(value: unknown): value is DiagnosticBuild {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
   const build = value as Partial<DiagnosticBuild>;
   const strings = [build.appVersion, build.buildId, build.osVersion, build.tauriRevision, build.cefRevision];
-  if (!strings.every((item) => typeof item === "string" && textEncoder.encode(item).byteLength <= 256 && !isForbiddenDiagnosticValue(item))) return false;
+  if (!strings.every((item) => isBoundedDiagnosticString(item, 256) && !isForbiddenDiagnosticValue(item))) return false;
   if (!build.appVersion || !build.buildId || !build.osVersion) return false;
   if (!isDiagnosticPlatform(build.platform)) return false;
   const browser = build.platform === DiagnosticPlatform.BROWSER;
@@ -459,10 +459,30 @@ function isDiagnosticSeverity(value: unknown): value is DiagnosticSeverity {
 }
 
 function safeDiagnosticString(value: string): string | undefined {
-  if (value === "" || isForbiddenDiagnosticValue(value)) return undefined;
+  if (value === "" || !isWellFormedDiagnosticString(value) || isForbiddenDiagnosticValue(value)) return undefined;
   const bytes = textEncoder.encode(value);
   if (bytes.byteLength <= maximumStringBytes) return value;
   return new TextDecoder().decode(bytes.slice(0, maximumStringBytes));
+}
+
+function isBoundedDiagnosticString(value: unknown, maximumBytes: number): value is string {
+  return typeof value === "string"
+    && isWellFormedDiagnosticString(value)
+    && textEncoder.encode(value).byteLength <= maximumBytes;
+}
+
+function isWellFormedDiagnosticString(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const codeUnit = value.charCodeAt(index);
+    if (codeUnit >= 0xd800 && codeUnit <= 0xdbff) {
+      const nextCodeUnit = value.charCodeAt(index + 1);
+      if (!(nextCodeUnit >= 0xdc00 && nextCodeUnit <= 0xdfff)) return false;
+      index += 1;
+    } else if (codeUnit >= 0xdc00 && codeUnit <= 0xdfff) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function isForbiddenDiagnosticValue(value: string): boolean {

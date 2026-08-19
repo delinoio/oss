@@ -395,6 +395,7 @@ describe("diagnostics privacy boundary", () => {
 
   it("drops persisted events containing unlabeled credential shapes", () => {
     const now = Date.parse("2026-08-17T00:00:00.000Z");
+    const safe = fixtureEvent(now);
     for (const credential of [
       "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiIxMjMifQ.signature",
       "AKIA0123456789ABCDEF",
@@ -402,10 +403,37 @@ describe("diagnostics privacy boundary", () => {
       "password=hunter2",
       "oauth_code: secret",
       "password%3Dhunter2",
+      "pat=hunter2",
+      "session_id=secret",
+      "signing_value=secret",
     ]) {
-      localStorage.setItem(DiagnosticsStorageKey, JSON.stringify([{ ...fixtureEvent(now), summary: credential }]));
-      expect(readDiagnosticEvents(localStorage, now)).toEqual([]);
+      const unsafe = { ...fixtureEvent(now - 1), summary: credential };
+      localStorage.setItem(DiagnosticsStorageKey, JSON.stringify([unsafe, safe]));
+
+      const events = readDiagnosticEvents(localStorage, now);
+      expect(events).toEqual([safe]);
+      expect(JSON.parse(localStorage.getItem(DiagnosticsStorageKey) ?? "null")).toEqual([safe]);
+      expect(redactDiagnosticValue({ credential })).toEqual({});
+      expect(prepareDiagnosticsBundle(safe, events).exportJson).not.toContain(credential);
     }
+  });
+
+  it("drops ill-formed Unicode from persisted events and recursive redaction", () => {
+    const now = Date.parse("2026-08-17T00:00:00.000Z");
+    const event = fixtureEvent(now);
+    const invalidEvents = [
+      { ...event, summary: "bad\ud800" },
+      { ...event, stackFrames: ["at bad\udc00"] },
+      { ...event, build: { ...event.build, appVersion: "bad\ud800" } },
+      { ...event, build: { ...event.build, buildId: "bad\udc00" } },
+      { ...event, build: { ...event.build, osVersion: "bad\ud800" } },
+    ];
+
+    localStorage.setItem(DiagnosticsStorageKey, JSON.stringify(invalidEvents));
+
+    expect(readDiagnosticEvents(localStorage, now)).toEqual([]);
+    expect(localStorage.getItem(DiagnosticsStorageKey)).toBeNull();
+    expect(redactDiagnosticValue({ invalid: "bad\ud800" })).toEqual({});
   });
 
   it("drops legacy events containing request or response payload labels before export", () => {

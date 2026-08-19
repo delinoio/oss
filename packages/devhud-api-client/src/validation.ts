@@ -64,7 +64,7 @@ const diagnosticSeverities: ReadonlySet<DiagnosticSeverity> = new Set([
 ]);
 const diagnosticErrorCodePattern = /^[A-Z][A-Z0-9_]{0,63}$/u;
 const forbiddenDiagnosticContentPatterns: ReadonlyArray<RegExp> = [
-  /\b(?:browser[._ -]?dom|outerhtml|innerhtml|screenshot|form[._ -]?value|issue[._ -]?body|agent[._ -]?(?:prompt|output)|child[._ -]?env|shortcut[._ -]?(?:key|keystroke))\b/iu,
+  /\b(?:browser[._ -]?dom|outerhtml|innerhtml|screenshot|form[._ -]?value|issue[._ -]?body|agent[._ -]?(?:prompt|output)|child[._ -]?env|(?:request|response)[._ -]?(?:headers?|bod(?:y|ies))|shortcut[._ -]?(?:key|keystroke))\b/iu,
   /https?:\/\/[^\s]*#/iu,
   /\b(?:ctrl|control|cmd|command|meta|alt|option|shift)\s*[+-]\s*[a-z0-9]/iu,
 ];
