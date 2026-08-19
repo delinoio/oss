@@ -67,7 +67,7 @@ Persist tokens, PATs, and R2 keys only in platform secure storage. GitHub PAT pr
 
 Every native GitHub PAT read requires the matching API-origin/profile association. A failed desktop or iOS PAT write restores the prior association state so it cannot introduce an orphan marker that retains or exposes another origin's credential.
 
-Deck result caches are best effort, use the stable API-origin scope, bind to the executable query, and are cleared with that origin on API changes. Desktop uses the browser permission flow when native notifications are unavailable.
+Deck result caches are best effort, use the stable API-origin scope, bind to the executable query, and are cleared with that origin on API changes or terminal session invalidation. Desktop uses the browser permission flow when native notifications are unavailable.
 
 ## Security
 

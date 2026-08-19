@@ -8,8 +8,9 @@ import { useQueryClient } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import fixture from "../fixtures/identity-settings-e2e.json";
 import { App } from "./App";
+import { deckCacheKey } from "./deck";
 import * as identityClient from "./identity-client";
-import type { IdentitySession } from "./identity-client";
+import { sessionProfileId, type IdentitySession } from "./identity-client";
 import { SynchronizedSettingsBoundary } from "./identity-ui";
 import { messages } from "./localization";
 import { hasGuestSettings, readAuthenticatedSettingsCache, readGuestSettings, writeAuthenticatedSettingsCache, writeCachedIdentityBootstrap, writeGuestSettings } from "./local-data";
@@ -709,6 +710,8 @@ describe("generated Connect identity/settings fixture", () => {
       clear,
     } as unknown as IdentitySession);
     writeAuthenticatedSettingsCache(localStorage, "https://devhud.api.delino.io", { settings: defaultDevHudSettings, revision: 9n, cachedAt: "2026-08-17T00:00:00.000Z" });
+    const deckCache = deckCacheKey(await sessionProfileId("https://devhud.api.delino.io"), "018f47a2-7b3c-7def-8abc-1234567890ac");
+    localStorage.setItem(deckCache, "private Deck data");
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
@@ -720,6 +723,7 @@ describe("generated Connect identity/settings fixture", () => {
     await waitFor(() => expect(screen.getByTestId("identity-state").dataset.status).toBe("signed-out"));
     expect(clear).toHaveBeenCalledOnce();
     expect(readAuthenticatedSettingsCache(localStorage, "https://devhud.api.delino.io")).toBeNull();
+    await waitFor(() => expect(localStorage.getItem(deckCache)).toBeNull());
   });
 
   it("retains the Logto session and retries transient token refresh failures", async () => {

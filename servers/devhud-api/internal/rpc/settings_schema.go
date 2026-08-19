@@ -481,6 +481,7 @@ const (
 	deckBooleanTerm deckBooleanTokenKind = iota
 	deckBooleanOpen
 	deckBooleanClose
+	deckBooleanNot
 )
 
 type deckBooleanToken struct {
@@ -529,7 +530,7 @@ func deckQueryBranches(query string) ([]deckQueryBranch, bool) {
 		return token != nil && token.kind == deckBooleanTerm && strings.EqualFold(token.value, value)
 	}
 	isPrimary := func(token *deckBooleanToken) bool {
-		return token != nil && (token.kind == deckBooleanOpen || token.kind == deckBooleanTerm && !isOperator(token, "and") && !isOperator(token, "or"))
+		return token != nil && (token.kind == deckBooleanOpen || token.kind == deckBooleanNot || token.kind == deckBooleanTerm && !isOperator(token, "and") && !isOperator(token, "or"))
 	}
 	combineAnd := func(left []deckQueryBranch, right []deckQueryBranch) ([]deckQueryBranch, bool) {
 		combined := make([]deckQueryBranch, 0, len(left)*len(right))
@@ -552,8 +553,16 @@ func deckQueryBranches(query string) ([]deckQueryBranch, bool) {
 	}
 	var parseOr func() ([]deckQueryBranch, bool)
 	var parseAnd func() ([]deckQueryBranch, bool)
-	parsePrimary := func() ([]deckQueryBranch, bool) {
+	var parsePrimary func() ([]deckQueryBranch, bool)
+	parsePrimary = func() ([]deckQueryBranch, bool) {
 		token := peek()
+		if token != nil && token.kind == deckBooleanNot {
+			index++
+			if _, valid := parsePrimary(); !valid {
+				return nil, false
+			}
+			return []deckQueryBranch{{repositories: map[string]struct{}{}}}, true
+		}
 		if token != nil && token.kind == deckBooleanOpen {
 			index++
 			nested, valid := parseOr()
@@ -688,7 +697,12 @@ func deckBooleanTokens(query string) ([]deckBooleanToken, bool) {
 		if quoted || value.Len() == 0 {
 			return nil, false
 		}
-		tokens = append(tokens, deckBooleanToken{kind: deckBooleanTerm, value: value.String()})
+		term := value.String()
+		if strings.EqualFold(term, "not") {
+			tokens = append(tokens, deckBooleanToken{kind: deckBooleanNot})
+		} else {
+			tokens = append(tokens, deckBooleanToken{kind: deckBooleanTerm, value: term})
+		}
 	}
 	return tokens, true
 }

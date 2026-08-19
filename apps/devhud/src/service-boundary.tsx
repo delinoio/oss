@@ -160,6 +160,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   const [bootstrapAttempt, setBootstrapAttempt] = useState(0);
   const [signInPending, setSignInPending] = useState(false);
   const [identityResetAvailable, setIdentityResetAvailable] = useState(false);
+  const [continuedLocally, setContinuedLocally] = useState(false);
   const [githubPatCleanupPending, setGitHubPatCleanupPending] = useState(false);
   const signInPendingRef = useRef(false);
   const callbackHandled = useRef<string | null>(null);
@@ -171,8 +172,8 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   const replaceSettingsRef = useRef<IdentitySettingsValue["replaceSettings"]>(async () => false);
 
   useEffect(() => {
-    if (session !== null) onDeckLinkPolicyReady?.();
-  }, [onDeckLinkPolicyReady, session]);
+    if (session !== null || continuedLocally && networkReady) onDeckLinkPolicyReady?.();
+  }, [continuedLocally, networkReady, onDeckLinkPolicyReady, session]);
 
   function applySettings(next: DevHudSettingsV1): void {
     settingsRef.current = next;
@@ -225,9 +226,10 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
         setSettingsReady(false);
         resetDesktopShortcuts();
         setSettingsError(null);
+        clearAuthenticatedSettingsCache(storage, apiOrigin);
         setStatus("signed-out");
         setDeckAccessSuspended(false);
-        clearAuthenticatedSettingsCache(storage, apiOrigin);
+        clearDeckCaches(storage, await sessionProfileId(apiOrigin));
         await clearIdentityQueryCache();
         onIdentityReset();
       }
@@ -560,6 +562,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
 
   function retryIdentity(): void {
     continueLocallyRef.current = false;
+    setContinuedLocally(false);
     setStatus("starting");
     setError(null);
     setIdentityResetAvailable(false);
@@ -697,6 +700,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     signIn: async () => {
       if (signInPendingRef.current) return;
       continueLocallyRef.current = false;
+      setContinuedLocally(false);
       const current = sessionRef.current;
       if (current === null) throw new Error("bootstrap-not-ready");
       signInPendingRef.current = true;
@@ -721,6 +725,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     },
     continueLocally: () => {
       continueLocallyRef.current = true;
+      setContinuedLocally(true);
       setDeckAccessSuspended(false);
       setStatus("guest");
       setIdentityReady(true);

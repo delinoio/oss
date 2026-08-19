@@ -415,7 +415,7 @@ interface DeckQueryBranch {
   readonly hasPullRequestQualifier: boolean;
 }
 
-type DeckBooleanToken = { readonly kind: "term"; readonly value: string } | { readonly kind: "open" | "close" };
+type DeckBooleanToken = { readonly kind: "term"; readonly value: string } | { readonly kind: "open" | "close" | "not" };
 
 function hasBooleanQuerySyntax(query: string): boolean {
   const tokens = deckBooleanTokens(query);
@@ -429,7 +429,7 @@ function deckQueryBranches(query: string): readonly DeckQueryBranch[] | null {
   let index = 0;
   const peek = () => tokens[index];
   const isOperator = (token: DeckBooleanToken | undefined, value: "and" | "or") => token?.kind === "term" && token.value.toLowerCase() === value;
-  const isPrimary = (token: DeckBooleanToken | undefined) => token?.kind === "open" || token?.kind === "term" && !isOperator(token, "and") && !isOperator(token, "or");
+  const isPrimary = (token: DeckBooleanToken | undefined) => token?.kind === "open" || token?.kind === "not" || token?.kind === "term" && !isOperator(token, "and") && !isOperator(token, "or");
   const combineAnd = (left: readonly DeckQueryBranch[], right: readonly DeckQueryBranch[]): readonly DeckQueryBranch[] | null => {
     const combined: DeckQueryBranch[] = [];
     for (const leftBranch of left) for (const rightBranch of right) {
@@ -442,6 +442,11 @@ function deckQueryBranches(query: string): readonly DeckQueryBranch[] | null {
   };
   const parsePrimary = (): readonly DeckQueryBranch[] | null => {
     const token = peek();
+    if (token?.kind === "not") {
+      index += 1;
+      if (parsePrimary() === null) return null;
+      return [{ repositories: new Map(), hasPullRequestQualifier: false }];
+    }
     if (token?.kind === "open") {
       index += 1;
       const nested = parseOr();
@@ -522,7 +527,7 @@ function deckBooleanTokens(query: string): readonly DeckBooleanToken[] | null {
       index += 1;
     }
     if (quoted || value.length === 0) return null;
-    tokens.push({ kind: "term", value });
+    tokens.push(value.toLowerCase() === "not" ? { kind: "not" } : { kind: "term", value });
   }
   return tokens;
 }

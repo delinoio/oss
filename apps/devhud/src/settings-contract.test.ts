@@ -263,6 +263,9 @@ describe("DevHud settings boundary", () => {
 
     expect(parseDevHudSettings(settings).decks).toHaveLength(1);
     expect(deckRepositories(deck.query)).toEqual([{ owner: "octo", name: "widgets" }, { owner: "octo", name: "tools" }]);
+    expect(parseDevHudSettings({ ...settings, decks: [{ ...deck, query: "repo:octo/widgets NOT repo:octo/excluded is:pr" }] }).decks).toHaveLength(1);
+    expect(deckRepositories("repo:octo/widgets NOT repo:octo/excluded is:pr")).toEqual([{ owner: "octo", name: "widgets" }]);
+    expect(() => parseDevHudSettings({ ...settings, decks: [{ ...deck, query: "NOT repo:octo/excluded is:pr" }] })).toThrow(/repository qualifier/u);
     expect(() => parseDevHudSettings({ ...settings, decks: [{ ...deck, query: "repo:octo/widgets is:pr OR author:octocat is:pr" }] })).toThrow(/repository qualifier/u);
     expect(() => parseDevHudSettings({ ...settings, decks: [{ ...deck, query: "(repo:octo/widgets is:pr OR repo:octo/tools is:pr" }] })).toThrow(/repository qualifier/u);
     expect(parseDevHudSettings({ ...settings, decks: [{ ...deck, query: "repo:octo/widgets OR repo:octo/tools" }] }).decks[0]?.query).toBe("(repo:octo/widgets OR repo:octo/tools) is:pr");

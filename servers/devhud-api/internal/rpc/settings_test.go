@@ -96,6 +96,9 @@ func TestValidateDevHudSettingsDeckQualifiers(t *testing.T) {
 	if err := validateDevHudSettings([]byte(settings("(repo:octo/widgets is:pr OR (repo:octo/tools is:pr AND author:octocat))", `[]`)), 4); err != nil {
 		t.Fatalf("branch-scoped Boolean qualifiers: %v", err)
 	}
+	if err := validateDevHudSettings([]byte(settings("repo:octo/widgets NOT repo:octo/excluded is:pr", `[]`)), 4); err != nil {
+		t.Fatalf("positive repository with negated exclusion: %v", err)
+	}
 	matchingBuilder := strings.Replace(settings("repo:octo/widgets is:pr", `[]`), `"builder":null`, `"builder":{"author":null,"label":null,"repository":"octo/widgets","review":null,"state":null}`, 1)
 	if err := validateDevHudSettings([]byte(matchingBuilder), 4); err != nil {
 		t.Fatalf("matching builder: %v", err)
@@ -108,6 +111,7 @@ func TestValidateDevHudSettingsDeckQualifiers(t *testing.T) {
 		"missing repository":          settings("is:pr", `[]`),
 		"unscoped repository branch":  settings("repo:octo/widgets is:pr OR author:octocat is:pr", `[]`),
 		"missing pull request branch": settings("repo:octo/widgets is:pr OR repo:octo/tools author:octocat", `[]`),
+		"negated repository only":     settings("NOT repo:octo/excluded is:pr", `[]`),
 		"malformed repository":        settings("repo:octo is:pr", `[]`),
 		"invalid repository name":     settings("repo:octo/\\u0000 is:pr", `[]`),
 		"too many repositories": settings(strings.Join([]string{
