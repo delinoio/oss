@@ -878,6 +878,8 @@ describe("diagnostics privacy boundary", () => {
       .resolves.toEqual({ kind: "diagnostics-export", outcome: "initiated" });
     expect(click).toHaveBeenCalledOnce();
     expect(createObjectURL).toHaveBeenCalledOnce();
+    expect(revokeObjectURL).not.toHaveBeenCalled();
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:diagnostics");
   });
 

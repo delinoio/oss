@@ -245,12 +245,17 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   }
 
   async function cleanPendingDeletion(): Promise<void> {
-    const localCleanupComplete = clearAllContractedLocalData(storage);
+    const releaseDiagnosticWrites = beginDiagnosticWriteSuppression(storage);
     try {
-      await bridge.request({ operation: "secure.purge", scope: "account-deletion", profileId: await sessionProfileId(apiOrigin) });
-      setDeletionCleanupFailed(!localCleanupComplete);
-    } catch {
-      setDeletionCleanupFailed(true);
+      const localCleanupComplete = clearAllContractedLocalData(storage);
+      try {
+        await bridge.request({ operation: "secure.purge", scope: "account-deletion", profileId: await sessionProfileId(apiOrigin) });
+        setDeletionCleanupFailed(!localCleanupComplete);
+      } catch {
+        setDeletionCleanupFailed(true);
+      }
+    } finally {
+      releaseDiagnosticWrites();
     }
   }
 

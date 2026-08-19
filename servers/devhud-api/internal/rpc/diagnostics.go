@@ -24,15 +24,17 @@ import (
 )
 
 const (
-	maximumSummaryBytes        = 4 * 1024
-	maximumStackBytes          = 32 * 1024
-	maximumStackLines          = 64
-	maximumStackLineBytes      = 512
-	maximumRelatedCorrelations = 32
-	maximumCrashDuration       = uint64(24 * 60 * 60 * 1000)
-	maximumDiagnosticDecodings = 8
-	exactTauriRevision         = "4af26a3f7f8b692d62cca549bbacd93f5ce90b41"
-	exactCEFRevision           = "150.0.10+g8042e43+chromium-150.0.7871.101"
+	maximumSummaryBytes             = 4 * 1024
+	maximumStackBytes               = 32 * 1024
+	maximumStackLines               = 64
+	maximumStackLineBytes           = 512
+	maximumRelatedCorrelations      = 32
+	maximumCrashDuration            = uint64(24 * 60 * 60 * 1000)
+	maximumDiagnosticDecodings      = 8
+	maximumDiagnosticParameterScans = 16
+	maximumDiagnosticScanBytes      = 2 * maximumStackBytes
+	exactTauriRevision              = "4af26a3f7f8b692d62cca549bbacd93f5ce90b41"
+	exactCEFRevision                = "150.0.10+g8042e43+chromium-150.0.7871.101"
 )
 
 var (
@@ -73,6 +75,11 @@ const (
 
 type sqlStateError interface {
 	SQLState() string
+}
+
+type diagnosticScanBudget struct {
+	remainingBytes      int
+	remainingParameters int
 }
 
 type DiagnosticsService struct {
@@ -320,9 +327,18 @@ func validateDiagnosticText(name, value string, maximumBytes int, emptyAllowed b
 }
 
 func containsForbiddenDiagnosticContent(value string) bool {
+	budget := diagnosticScanBudget{remainingBytes: maximumDiagnosticScanBytes, remainingParameters: maximumDiagnosticParameterScans}
+	return containsForbiddenDiagnosticContentWithBudget(value, &budget)
+}
+
+func containsForbiddenDiagnosticContentWithBudget(value string, budget *diagnosticScanBudget) bool {
 	decodings := 0
 	for {
-		if containsForbiddenDiagnosticContentAtCurrentEncoding(value) {
+		if len(value) > budget.remainingBytes {
+			return true
+		}
+		budget.remainingBytes -= len(value)
+		if containsForbiddenDiagnosticContentAtCurrentEncoding(value, budget) {
 			return true
 		}
 		decoded := decodePercentEncodedOctets(value)
@@ -337,13 +353,13 @@ func containsForbiddenDiagnosticContent(value string) bool {
 	}
 }
 
-func containsForbiddenDiagnosticContentAtCurrentEncoding(value string) bool {
+func containsForbiddenDiagnosticContentAtCurrentEncoding(value string, budget *diagnosticScanBudget) bool {
 	for _, pattern := range forbiddenDiagnostic {
 		if pattern.MatchString(value) {
 			return true
 		}
 	}
-	return containsForbiddenCredentialAssignment(value) || containsForbiddenEncodedLocalPath(value) || containsForbiddenDiagnosticURL(value)
+	return containsForbiddenCredentialAssignment(value) || containsForbiddenEncodedLocalPath(value) || containsForbiddenDiagnosticURL(value, budget)
 }
 
 func containsForbiddenCredentialAssignment(value string) bool {
@@ -385,25 +401,25 @@ func decodePercentEncodedOctets(value string) string {
 	})
 }
 
-func containsForbiddenDiagnosticURL(value string) bool {
-	if containsForbiddenParsedDiagnosticURL(value) || containsForbiddenRelativeDiagnosticParameters(value) {
+func containsForbiddenDiagnosticURL(value string, budget *diagnosticScanBudget) bool {
+	if containsForbiddenParsedDiagnosticURL(value, budget) || containsForbiddenRelativeDiagnosticParameters(value, budget) {
 		return true
 	}
 	decoded := decodePercentEncodedOctets(value)
-	return decoded != value && (containsForbiddenParsedDiagnosticURL(decoded) || containsForbiddenRelativeDiagnosticParameters(decoded))
+	return decoded != value && (containsForbiddenParsedDiagnosticURL(decoded, budget) || containsForbiddenRelativeDiagnosticParameters(decoded, budget))
 }
 
-func containsForbiddenRelativeDiagnosticParameters(value string) bool {
+func containsForbiddenRelativeDiagnosticParameters(value string, budget *diagnosticScanBudget) bool {
 	for _, match := range diagnosticURLParameters.FindAllString(value, -1) {
 		parameters := trailingURLPunctuation.ReplaceAllString(match[1:], "")
-		if containsForbiddenDiagnosticParameters(parameters) {
+		if containsForbiddenDiagnosticParameters(parameters, budget) {
 			return true
 		}
 	}
 	return false
 }
 
-func containsForbiddenParsedDiagnosticURL(value string) bool {
+func containsForbiddenParsedDiagnosticURL(value string, budget *diagnosticScanBudget) bool {
 	for _, match := range diagnosticURL.FindAllString(value, -1) {
 		candidate := trailingURLPunctuation.ReplaceAllString(match, "")
 		if _, err := url.PathUnescape(candidate); err != nil {
@@ -416,17 +432,25 @@ func containsForbiddenParsedDiagnosticURL(value string) bool {
 		if parsed.User != nil || (!strings.EqualFold(parsed.Scheme, "http") && !strings.EqualFold(parsed.Scheme, "https")) {
 			return true
 		}
-		if containsForbiddenDiagnosticParameters(parsed.RawQuery) || containsForbiddenDiagnosticParameters(parsed.Fragment) {
+		if containsForbiddenDiagnosticParameters(parsed.RawQuery, budget) || containsForbiddenDiagnosticParameters(parsed.Fragment, budget) {
 			return true
 		}
 	}
 	return false
 }
 
-func containsForbiddenDiagnosticParameters(parameters string) bool {
+func containsForbiddenDiagnosticParameters(parameters string, budget *diagnosticScanBudget) bool {
+	if len(parameters) > budget.remainingBytes {
+		return true
+	}
+	budget.remainingBytes -= len(parameters)
 	for _, parameter := range strings.FieldsFunc(parameters, func(separator rune) bool {
 		return separator == '&' || separator == ';'
 	}) {
+		if budget.remainingParameters == 0 {
+			return true
+		}
+		budget.remainingParameters--
 		name, value, found := strings.Cut(parameter, "=")
 		if !found {
 			name, value, _ = strings.Cut(parameter, ":")
@@ -436,8 +460,8 @@ func containsForbiddenDiagnosticParameters(parameters string) bool {
 		if nameErr != nil || valueErr != nil || credentialParameterName.MatchString(decodedName) {
 			return true
 		}
-		if containsForbiddenDiagnosticContent(decodedValue) ||
-			decodedValue != value && containsForbiddenDiagnosticParameters(decodedValue) {
+		if containsForbiddenDiagnosticContentWithBudget(decodedValue, budget) ||
+			decodedValue != value && containsForbiddenDiagnosticParameters(decodedValue, budget) {
 			return true
 		}
 	}

@@ -356,7 +356,8 @@ async function exportDiagnosticsInBrowser(request: { readonly suggestedName: str
     link.download = request.suggestedName;
     link.click();
   } finally {
-    URL.revokeObjectURL(url);
+    // Firefox and Safari may consume anchor download URLs after click() returns.
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
   }
   return { kind: "diagnostics-export", outcome: "initiated" };
 }

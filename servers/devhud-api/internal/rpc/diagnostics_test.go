@@ -340,6 +340,25 @@ func TestValidateCrashReportBoundsDiagnosticEncodingDepth(t *testing.T) {
 	}
 }
 
+func TestValidateCrashReportBoundsNestedDiagnosticParameters(t *testing.T) {
+	request := validCrashReportRequest()
+	request.RedactedSummary = strings.Repeat("?x=", maximumDiagnosticParameterScans) + "safe"
+	if err := validateCrashReport(request); err != nil {
+		t.Fatalf("diagnostic parameters at the scan budget were rejected: %v", err)
+	}
+
+	request.RedactedSummary = strings.Repeat("?x=", maximumDiagnosticParameterScans+1) + "safe"
+	if err := validateCrashReport(request); err == nil {
+		t.Fatal("diagnostic parameters exceeding the scan budget were accepted")
+	}
+
+	request = validCrashReportRequest()
+	request.RedactedStackTrace = strings.Repeat("?x=", (maximumStackBytes-len("safe"))/len("?x=")) + "safe"
+	if err := validateCrashReport(request); err == nil || !strings.Contains(err.Error(), "contains prohibited diagnostic content") {
+		t.Fatalf("maximum-size deeply nested diagnostic parameters were not rejected by the scan budget: %v", err)
+	}
+}
+
 func TestValidateCrashReportRequiresPinnedCEFRevision(t *testing.T) {
 	request := validCrashReportRequest()
 	request.ClientBuild.CefRevision = "x"

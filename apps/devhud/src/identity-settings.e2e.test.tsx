@@ -657,6 +657,67 @@ describe("generated Connect identity/settings fixture", () => {
     expect(screen.getByRole("button", { name: messages.en.restoreAccount })).toBeTruthy();
   });
 
+  it("suppresses diagnostic writers while pending-deletion secure cleanup is in flight", async () => {
+    const accessTokenMap = JSON.stringify({ "@https://api.example/api": { token: "fixture-access-token", scope: "", expiresAt: 4_102_444_800 } });
+    const secureSession = JSON.stringify({ idToken: "fixture-id-token", accessToken: accessTokenMap });
+    const event = captureDiagnosticEvent(runtime, {
+      component: DiagnosticComponent.APP,
+      severity: DiagnosticSeverity.ERROR,
+      errorCode: "DELETION_CLEANUP_FAILURE",
+      error: new Error("pending deletion fixture"),
+    });
+    let finishPurge: (() => void) | undefined;
+    const purgePending = new Promise<void>((resolve) => { finishPurge = resolve; });
+    let purgeStarted = false;
+    let purgeFinished = false;
+    let eventDuringPurge: string | null = "not-observed";
+    let correlationDuringPurge: string | null = "not-observed";
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: { ...fixture.account, deletionState: "ACCOUNT_DELETION_STATE_PENDING" } });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: 2, revision: "1", canonicalJson: encodedSettings(defaultDevHudSettings) } });
+      throw new Error(`unexpected fixture request ${url}`);
+    }));
+    const bridge: NativeBridgeV1 = {
+      async request(request) {
+        if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
+        if (request.operation === "secure.read") return { kind: "secure-value", value: request.setting.kind === "logto-session" ? secureSession : null };
+        if (request.operation === "auth.take-pending-callback") return { kind: "auth-callback", url: null };
+        if (request.operation === "secure.reconcile-github-pats" || request.operation === "secure.write" || request.operation === "secure.remove") return { kind: "ok" };
+        if (request.operation === "secure.purge" && request.scope === "account-deletion") {
+          purgeStarted = true;
+          appendDiagnosticEvent(localStorage, event);
+          appendDiagnosticCorrelation(localStorage, event.correlationId, "/devhud.v1.AccountService/GetAccount", 1);
+          eventDuringPurge = localStorage.getItem(DiagnosticsStorageKey);
+          correlationDuringPurge = localStorage.getItem(DiagnosticsCorrelationsKey);
+          await purgePending;
+          purgeFinished = true;
+          return { kind: "ok" };
+        }
+        throw new Error(`unexpected bridge operation ${request.operation}`);
+      },
+      async listen() { return () => {}; },
+    };
+
+    appendDiagnosticEvent(localStorage, event);
+    appendDiagnosticCorrelation(localStorage, event.correlationId, "/devhud.v1.AccountService/GetAccount", 1);
+    render(<App bridge={bridge} initialRuntime={runtime} />);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.account }));
+
+    expect(await screen.findByText(messages.en.deletionPendingTitle)).toBeTruthy();
+    await waitFor(() => expect(purgeStarted).toBe(true));
+    expect(eventDuringPurge).toBeNull();
+    expect(correlationDuringPurge).toBeNull();
+    await act(async () => {
+      finishPurge?.();
+      await purgePending;
+    });
+    await waitFor(() => expect(purgeFinished).toBe(true));
+    expect(localStorage.getItem(DiagnosticsStorageKey)).toBeNull();
+    expect(localStorage.getItem(DiagnosticsCorrelationsKey)).toBeNull();
+  });
+
   it("runs pending-deletion cleanup when Settings reports the account state", async () => {
     const purges: string[] = [];
     const detail = create(PermissionFailureSchema, { reason: PermissionFailureReason.ACCOUNT_DELETION_PENDING });
