@@ -23,6 +23,7 @@ const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder("utf-8", { fatal: true });
 const unicodeNonWhitespacePattern = /\P{White_Space}/u;
 const urlPattern = /[A-Za-z][A-Za-z0-9+.-]*:[^\s<>"']+/gu;
+const urlParametersPattern = /[?#][^\s<>"']+/gu;
 const localDiagnosticUrlProtocols = new Set(["file:", "vscode:", "vscode-insiders:"]);
 const trailingUrlPunctuationPattern = /[)\]}>.,;]+$/u;
 const percentEncodedOctetsPattern = /(?:%[0-9a-f]{2})+/giu;
@@ -379,6 +380,19 @@ function parsePublicAssetBaseUrl(value: string): URL {
 }
 
 function containsForbiddenUrlContent(value: string, publicAssetBaseUrl?: URL): boolean {
+  for (const match of value.matchAll(urlParametersPattern)) {
+    const matchedParameters = match[0];
+    if (matchedParameters === undefined) {
+      continue;
+    }
+    const parameters = matchedParameters
+      .slice(1)
+      .replace(trailingUrlPunctuationPattern, "");
+    if (containsForbiddenParameterContent(parameters, publicAssetBaseUrl)) {
+      return true;
+    }
+  }
+
   for (const match of value.matchAll(urlPattern)) {
     const matchedUrl = match[0];
     if (matchedUrl === undefined) {
@@ -455,6 +469,7 @@ function containsForbiddenParameterContent(
     if (
       containsForbiddenLocalPath(value) ||
       forbiddenSensitiveTextPatterns.some((pattern) => pattern.test(value)) ||
+      containsForbiddenCredentialAssignment(value) ||
       containsForbiddenUrlContent(value, publicAssetBaseUrl) ||
       (value !== encodedValue && containsForbiddenParameterContent(value, publicAssetBaseUrl))
     ) {

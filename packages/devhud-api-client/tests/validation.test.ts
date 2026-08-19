@@ -566,6 +566,8 @@ describe("wire validation helpers", () => {
       "https://example.com/?na%6de=release",
       "https://example.com/?safe=x%26release%3D2026",
       "callback=https%253A%252F%252Fexample.com%252Fauth%253Fstate%253Dopaque",
+      "callback?state=opaque",
+      "auth/callback#component=React%2FNative",
       r2UnsignedMetadataUrl,
     ]) {
       const report = create(SubmitCrashReportRequestSchema, {
@@ -639,6 +641,14 @@ describe("wire validation helpers", () => {
       "devhud://auth/callback?co%64e=unsafe-value",
       "https://example.com/?to%6ben=unsafe-value",
       "callback=https%253A%252F%252Fexample.test%252Fauth%253Fcode%253Dsecret",
+      "callback?code=secret",
+      "/auth/callback#access_token=secret",
+      "auth/callback#access_token=secret",
+      "callback?co%64e=secret",
+      "auth/callback#access%2Dtoken=secret",
+      "callback?safe=code%3Dsecret",
+      "callback?safe=x%26code%3Dsecret",
+      "callback%3Fcode%3Dsecret",
       ...encodedCredentialParameterUrls,
     ]) {
       const credentialDiagnostics = [

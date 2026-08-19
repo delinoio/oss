@@ -34,6 +34,8 @@ const inMemoryDiagnosticCorrelations = new WeakMap<object, DiagnosticCorrelation
 
 const forbiddenValue = /(?:authorization|bearer\s|github[_-]?pat|access[_-]?token|refresh[_-]?token|r2[_-]?(?:secret|token|key)|signing[_-]?(?:secret|key)|-----BEGIN [A-Z ]*PRIVATE KEY-----|\b(?:ghp|github_pat)_[A-Za-z0-9_]+\b|\beyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b|\bAKIA[0-9A-Z]{16}\b|browser.?dom|innerhtml|outerhtml|screenshot|form.?value|issue.?body|agent.?(?:prompt|output)|child.?env|(?:request|response)[._ -]?(?:headers?|bod(?:y|ies))|(?:ctrl|control|cmd|command|meta|alt|option|shift)\s*[+-]\s*[a-z0-9])/iu;
 const diagnosticURL = /[A-Za-z][A-Za-z0-9+.-]*:[^\s<>"']+/u;
+const diagnosticURLParameters = /[?#][^\s<>"']+/gu;
+const trailingURLPunctuation = /[)\]}>.,;]+$/u;
 const diagnosticPath = /(?:^|[\s\p{P}=])(?:[a-z]:[\\/]\S*|\\\\\S+|~\/\S+|\/[^/\s]\S*)/iu;
 const percentEncodedOctets = /(?:%[0-9a-f]{2})+/giu;
 const credentialParameterName = /^(?:code|oauth[_.-]?code|password|passwd|pwd|pat|secret|token|client[_.-]?secret|(?:access|refresh|id)[_.-]?token|api[_.-]?key|private[_.-]?key|authorization|cookie|set-cookie|session[_.-]?id|signing[_.-]?(?:secret|key|value)|x-amz-(?:credential|signature))$/iu;
@@ -500,6 +502,7 @@ function isForbiddenDiagnosticValue(value: string): boolean {
 function containsRawForbiddenDiagnosticValue(value: string): boolean {
   return forbiddenValue.test(value)
     || containsForbiddenCredentialAssignment(value)
+    || containsForbiddenRelativeDiagnosticParameters(value)
     || (value.includes(":") && diagnosticURL.test(value))
     || ((value.includes("/") || value.includes("\\")) && diagnosticPath.test(value));
 }
@@ -507,6 +510,39 @@ function containsRawForbiddenDiagnosticValue(value: string): boolean {
 function containsForbiddenCredentialAssignment(value: string): boolean {
   for (const match of value.matchAll(diagnosticAssignment)) {
     if (credentialParameterName.test(match[1] ?? "")) return true;
+  }
+  return false;
+}
+
+function containsForbiddenRelativeDiagnosticParameters(value: string): boolean {
+  for (const match of value.matchAll(diagnosticURLParameters)) {
+    const matchedParameters = match[0];
+    if (matchedParameters === undefined) continue;
+    const parameters = matchedParameters.slice(1).replace(trailingURLPunctuation, "");
+    if (containsForbiddenDiagnosticParameters(parameters)) return true;
+  }
+  return false;
+}
+
+function containsForbiddenDiagnosticParameters(parameters: string): boolean {
+  for (const parameter of parameters.split(/[&;]/u)) {
+    const separatorIndex = parameter.search(/[=:]/u);
+    const encodedName = separatorIndex === -1 ? parameter : parameter.slice(0, separatorIndex);
+    const encodedValue = separatorIndex === -1 ? "" : parameter.slice(separatorIndex + 1);
+
+    let name: string;
+    let value: string;
+    try {
+      name = decodeURIComponent(encodedName.replace(/\+/gu, " "));
+      value = decodeURIComponent(encodedValue.replace(/\+/gu, " "));
+    } catch {
+      return true;
+    }
+    if (
+      credentialParameterName.test(name)
+      || isForbiddenDiagnosticValue(value)
+      || (value !== encodedValue && containsForbiddenDiagnosticParameters(value))
+    ) return true;
   }
   return false;
 }

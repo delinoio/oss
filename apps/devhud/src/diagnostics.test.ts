@@ -406,6 +406,14 @@ describe("diagnostics privacy boundary", () => {
       "pat=hunter2",
       "session_id=secret",
       "signing_value=secret",
+      "callback?code=secret",
+      "/auth/callback#access_token=secret",
+      "auth/callback#access_token=secret",
+      "callback?co%64e=secret",
+      "auth/callback#access%2Dtoken=secret",
+      "callback?safe=code%3Dsecret",
+      "callback?safe=x%26code%3Dsecret",
+      "callback%3Fcode%3Dsecret",
     ]) {
       const unsafe = { ...fixtureEvent(now - 1), summary: credential };
       localStorage.setItem(DiagnosticsStorageKey, JSON.stringify([unsafe, safe]));
@@ -416,6 +424,9 @@ describe("diagnostics privacy boundary", () => {
       expect(redactDiagnosticValue({ credential })).toEqual({});
       expect(prepareDiagnosticsBundle(safe, events).exportJson).not.toContain(credential);
     }
+    expect(redactDiagnosticValue({ callback: "callback?state=opaque" })).toEqual({
+      callback: "callback?state=opaque",
+    });
   });
 
   it("drops ill-formed Unicode from persisted events and recursive redaction", () => {
