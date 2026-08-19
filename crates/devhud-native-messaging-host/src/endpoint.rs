@@ -6,7 +6,7 @@ use std::path::PathBuf;
 #[cfg(windows)]
 use std::time::{Duration, Instant};
 
-pub const WINDOWS_PIPE_PATH: &str = r"\\.\pipe\io.delino.devhud\ipc";
+pub const WINDOWS_PIPE_PATH: &str = r"\\.\pipe\io.delino.devhud.ipc";
 
 #[cfg(target_os = "linux")]
 pub fn socket_path() -> io::Result<PathBuf> {
@@ -538,7 +538,7 @@ mod tests {
 
     #[test]
     fn windows_pipe_name_is_exact_and_user_scoped_by_server_acl() {
-        assert_eq!(WINDOWS_PIPE_PATH, r"\\.\pipe\io.delino.devhud\ipc");
+        assert_eq!(WINDOWS_PIPE_PATH, r"\\.\pipe\io.delino.devhud.ipc");
     }
 
     #[cfg(windows)]

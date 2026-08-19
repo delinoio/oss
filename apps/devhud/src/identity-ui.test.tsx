@@ -33,7 +33,7 @@ function identityWith(overrides: Partial<IdentitySettingsValue> = {}): IdentityS
 beforeEach(() => {
   identity = identityWith();
   nativeMessagingMock.status.mockReset().mockResolvedValue({ paired: false });
-  nativeMessagingMock.beginPairing.mockReset().mockResolvedValue({ paired: false, pairingNonce: "pair-code" });
+  nativeMessagingMock.beginPairing.mockReset().mockResolvedValue({ paired: false, pairingNonce: "pair-code", expiresInSeconds: 120 });
   nativeMessagingMock.unpair.mockReset().mockResolvedValue({ paired: false });
   nativeMessagingMock.configure.mockReset().mockResolvedValue(undefined);
 });
@@ -53,6 +53,22 @@ describe("identity UI", () => {
 
     expect(screen.getByRole("status").textContent).toBe(messages.en.nativeMessagingPaired);
     expect(screen.queryByText("pair-code")).toBeNull();
+  });
+
+  it("expires the displayed pairing code and stops polling", async () => {
+    vi.useFakeTimers();
+    render(<NativeMessagingSettings copy={messages.en} />);
+    await act(async () => {});
+    fireEvent.click(screen.getByRole("button", { name: messages.en.nativeMessagingPair }));
+    await act(async () => {});
+    expect(screen.getByText("pair-code")).toBeTruthy();
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(120_000); });
+
+    expect(screen.queryByText("pair-code")).toBeNull();
+    const statusCallsAfterExpiry = nativeMessagingMock.status.mock.calls.length;
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+    expect(nativeMessagingMock.status).toHaveBeenCalledTimes(statusCallsAfterExpiry);
   });
 
   it("keeps local continuation available after Bootstrap fails", () => {

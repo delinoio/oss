@@ -186,7 +186,7 @@ fn run_native(origin: &str) -> io::Result<()> {
         let mut result = forward(session.as_mut().expect("session was established"), &request);
         if result.is_err() {
             session = None;
-            if let Ok(mut authenticated) = authenticate(origin, None) {
+            if let Ok(mut authenticated) = authenticate(origin, request.pairing_nonce.clone()) {
                 result = forward(&mut authenticated, &request);
                 if result.is_ok() {
                     session = Some(authenticated);

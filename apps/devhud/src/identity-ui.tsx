@@ -425,7 +425,7 @@ function SynchronizedSettingsContent({ copy, bridge = nativeBridge, githubProvid
 
 export function NativeMessagingSettings({ copy }: { readonly copy: Copy }) {
   const [paired, setPaired] = useState(false);
-  const [pairingNonce, setPairingNonce] = useState<string | null>(null);
+  const [pairing, setPairing] = useState<{ readonly nonce: string; readonly expiresAt: number } | null>(null);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     let current = true;
@@ -433,25 +433,32 @@ export function NativeMessagingSettings({ copy }: { readonly copy: Copy }) {
     return () => { current = false; };
   }, []);
   useEffect(() => {
-    if (pairingNonce === null) return;
+    if (pairing === null) return;
     let current = true;
-    const timer = setInterval(() => {
+    const poll = setInterval(() => {
       void nativeMessaging.status().then((status) => {
         if (!current) return;
         setPaired(status.paired);
-        if (status.paired) setPairingNonce(null);
+        if (status.paired) setPairing(null);
       }).catch(() => { if (current) setFailed(true); });
     }, 1_000);
-    return () => { current = false; clearInterval(timer); };
-  }, [pairingNonce]);
-  const begin = () => { setFailed(false); void nativeMessaging.beginPairing().then((status) => { setPairingNonce(status.pairingNonce ?? null); setPaired(false); }).catch(() => setFailed(true)); };
-  const remove = () => { setFailed(false); void nativeMessaging.unpair().then(() => { setPairingNonce(null); setPaired(false); }).catch(() => setFailed(true)); };
+    const expiry = setTimeout(() => { if (current) setPairing(null); }, Math.max(0, pairing.expiresAt - Date.now()));
+    return () => { current = false; clearInterval(poll); clearTimeout(expiry); };
+  }, [pairing]);
+  const begin = () => { setFailed(false); void nativeMessaging.beginPairing().then((status) => {
+    const lifetime = status.expiresInSeconds;
+    setPairing(typeof status.pairingNonce === "string" && status.pairingNonce !== "" && typeof lifetime === "number" && Number.isFinite(lifetime) && lifetime > 0
+      ? { nonce: status.pairingNonce, expiresAt: Date.now() + lifetime * 1_000 }
+      : null);
+    setPaired(false);
+  }).catch(() => setFailed(true)); };
+  const remove = () => { setFailed(false); void nativeMessaging.unpair().then(() => { setPairing(null); setPaired(false); }).catch(() => setFailed(true)); };
   return <section className="native-setting" aria-labelledby="native-messaging-title">
     <h3 id="native-messaging-title">{copy.nativeMessagingTitle}</h3><p>{copy.nativeMessagingSummary}</p>
     <p className={failed ? "native-setting-error" : undefined} role="status">{failed ? copy.nativeMessagingFailed : paired ? copy.nativeMessagingPaired : copy.nativeMessagingNotPaired}</p>
-    {pairingNonce && <p>{copy.nativeMessagingPairingCode}: <code>{pairingNonce}</code></p>}
+    {pairing && <p>{copy.nativeMessagingPairingCode}: <code>{pairing.nonce}</code></p>}
     <button className="primary" type="button" onClick={begin}>{copy.nativeMessagingPair}</button>
-    {(paired || pairingNonce) && <button type="button" onClick={remove}>{copy.nativeMessagingRemove}</button>}
+    {(paired || pairing) && <button type="button" onClick={remove}>{copy.nativeMessagingRemove}</button>}
   </section>;
 }
 
