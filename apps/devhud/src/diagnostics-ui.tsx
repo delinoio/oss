@@ -1,4 +1,4 @@
-import { DiagnosticsQuery, StaticCapability, mapDevHudError, type DevHudClientError } from "@delinoio/devhud-api-client";
+import { DiagnosticsQuery, QuotaKind, StaticCapability, mapDevHudError, type DevHudClientError } from "@delinoio/devhud-api-client";
 import { useMutation } from "@connectrpc/connect-query";
 import { useRef, useState } from "react";
 import { diagnosticsConsentDigest, prepareDiagnosticsBundle, readDiagnosticEvents, type PreparedDiagnosticsBundle } from "./diagnostics";
@@ -35,6 +35,9 @@ export function DiagnosticsPanel({ copy, bridge, storage, online }: DiagnosticsP
   const blocked = identity.status === "blocked" || identity.status === "deletion-pending";
   const crashReportsSupported = identity.bootstrap?.capabilities.includes(StaticCapability.CRASH_REPORTS) === true;
   const submissionBlock = diagnosticsSubmissionBlock(identity.status, online, consentDigest !== null, crashReportsSupported);
+  const crashReportQuota = submitError?.kind === "quotaExceeded" && submitError.detail.quota === QuotaKind.CRASH_REPORTS
+    ? submitError.detail
+    : null;
 
   const preview = () => {
     const events = readDiagnosticEvents(storage);
@@ -129,7 +132,11 @@ export function DiagnosticsPanel({ copy, bridge, storage, online }: DiagnosticsP
       {authenticated && !online && <p className="notice">{copy.diagnosticsOffline}</p>}
       {submitState === "sent" && <p role="status">{copy.diagnosticsSent} {serverCorrelation}</p>}
       {submitState === "failed" && <p role="alert">
-        {submitError?.kind === "permissionDenied" || submitError?.kind === "unauthenticated" ? copy.diagnosticsSubmitDenied : copy.diagnosticsSubmitFailed}
+        {crashReportQuota
+          ? <>{copy.diagnosticsSubmitQuotaExceeded} {copy.diagnosticsSubmitQuotaLimit}: <code>{crashReportQuota.limit.toString()}</code></>
+          : submitError?.kind === "permissionDenied" || submitError?.kind === "unauthenticated"
+            ? copy.diagnosticsSubmitDenied
+            : copy.diagnosticsSubmitFailed}
         {submitError && <> <code>{`diagnostics-connect-${submitError.code}`}</code>{submitError.correlationId && <> {copy.correlationId}: <code>{submitError.correlationId}</code></>}</>}
       </p>}
     </>}

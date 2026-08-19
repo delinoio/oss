@@ -3,7 +3,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { Code, ConnectError } from "@connectrpc/connect";
 import { toJsonString } from "@bufbuild/protobuf";
-import { DiagnosticArchitecture, DiagnosticComponent, DiagnosticPlatform, DiagnosticSeverity, ErrorMetadataSchema, PermissionFailureReason, PermissionFailureSchema, StaticCapability, SubmitCrashReportRequestSchema } from "@delinoio/devhud-api-client";
+import { DiagnosticArchitecture, DiagnosticComponent, DiagnosticPlatform, DiagnosticSeverity, ErrorMetadataSchema, PermissionFailureReason, PermissionFailureSchema, QuotaFailureSchema, QuotaKind, StaticCapability, SubmitCrashReportRequestSchema } from "@delinoio/devhud-api-client";
 import { createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -665,6 +665,22 @@ describe("diagnostics privacy boundary", () => {
     expect(alert.textContent).toContain(`diagnostics-connect-${Code.Unavailable}`);
     expect(alert.textContent).toContain(correlationId);
     expect(screen.getByTestId("diagnostics-export-preview")).toBeTruthy();
+  });
+
+  it("renders the retained crash-report quota and limit distinctly from retryable failures", async () => {
+    const correlationId = "0198c8b0-77d6-7d4a-a7d9-e4d7b11c4405";
+    diagnosticsMutation.mutateAsync.mockRejectedValue(new ConnectError("quota exhausted", Code.ResourceExhausted, undefined, [
+      { desc: QuotaFailureSchema, value: { quota: QuotaKind.CRASH_REPORTS, limit: 100n, observed: 101n } },
+      { desc: ErrorMetadataSchema, value: { correlationId: { value: correlationId } } },
+    ]));
+    await renderDiagnosticsPanelAndSubmit();
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain(messages.en.diagnosticsSubmitQuotaExceeded);
+    expect(alert.textContent).toContain(`${messages.en.diagnosticsSubmitQuotaLimit}: 100`);
+    expect(alert.textContent).not.toContain(messages.en.diagnosticsSubmitFailed);
+    expect(alert.textContent).toContain(`diagnostics-connect-${Code.ResourceExhausted}`);
+    expect(alert.textContent).toContain(correlationId);
   });
 
   it("accepts only bounded redacted exports with an app-selected name", () => {
