@@ -39,7 +39,7 @@ test("mobile policy excludes private preferences and System WebView storage from
 });
 
 test("mobile policy requires lifecycle-owned Android persistence and native platform safeguards", () => {
-  const androidNativeBridge = readFileSync(join(appRoot, "src-tauri/mobile/android/src/main/java/io/delino/devhud/bridge/DevhudNativePlugin.kt"), "utf8");
+  const androidNativeBridge = readFileSync(join(appRoot, "src-tauri/mobile/android/src/main/java/io/delino/devhud/bridge/DevhudNativePlugin.kt"), "utf8").replaceAll("\r\n", "\n");
   assert.doesNotThrow(() => assertAndroidNativeBridge(androidNativeBridge));
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace("secureSettingsExecutor.shutdown()", "Unit")), /executor must stop with the plugin lifecycle/u);
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace(".commit()", ".apply()")), /must confirm persistence/u);
@@ -80,7 +80,7 @@ test("mobile policy requires lifecycle-owned Android persistence and native plat
 });
 
 test("mobile policy keeps native iOS origins aligned with normalized root URLs", () => {
-  const iosNativeBridge = readFileSync(join(appRoot, "src-tauri/mobile/ios/Sources/DevhudNativePlugin.swift"), "utf8");
+  const iosNativeBridge = readFileSync(join(appRoot, "src-tauri/mobile/ios/Sources/DevhudNativePlugin.swift"), "utf8").replaceAll("\r\n", "\n");
   assert.doesNotThrow(() => assertIosNativeBridge(iosNativeBridge));
   assert.throws(() => assertIosNativeBridge(iosNativeBridge.replace('(url.path.isEmpty || url.path == "/")', 'url.path == "/"')), /root API-origin spellings/u);
   assert.throws(() => assertIosNativeBridge(iosNativeBridge.replace("isSecureOrLoopback(issuer)", 'issuer.scheme == "https"')), /configured issuer paths and loopback HTTP/u);

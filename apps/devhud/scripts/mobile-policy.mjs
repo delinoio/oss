@@ -46,7 +46,8 @@ export function assertAndroidBackupExclusions({ androidManifest, androidBackupRu
   }
 }
 
-export function assertAndroidNativeBridge(androidNativeBridge) {
+export function assertAndroidNativeBridge(androidNativeBridgeInput) {
+  const androidNativeBridge = androidNativeBridgeInput.replaceAll("\r\n", "\n");
   const onDestroy = androidNativeBridge.match(/override fun onDestroy\(activity: AppCompatActivity\)[\s\S]*?(?=\n    @Command)/u)?.[0] ?? "";
   const exportDiagnostics = androidNativeBridge.match(/private fun exportDiagnostics\(invoke: Invoke\)[\s\S]*?(?=\n    @ActivityCallback)/u)?.[0] ?? "";
   const diagnosticsExportResult = androidNativeBridge.match(/private fun diagnosticsExportResult\(invoke: Invoke, result: ActivityResult\)[\s\S]*?(?=\n    private fun retainDiagnosticsCleanup)/u)?.[0] ?? "";
@@ -97,7 +98,8 @@ export function assertAndroidNativeBridge(androidNativeBridge) {
   assert(androidNativeBridge.includes("storeIntent().resolveActivity(activity.packageManager)"), "Android update status must resolve a market handler");
 }
 
-export function assertIosNativeBridge(iosNativeBridge) {
+export function assertIosNativeBridge(iosNativeBridgeInput) {
+  const iosNativeBridge = iosNativeBridgeInput.replaceAll("\r\n", "\n");
   const exportDiagnostics = iosNativeBridge.match(/private func exportDiagnostics[\s\S]*?(?=\n    @discardableResult\n    private func cleanupDiagnosticsTemporaryDirectory)/u)?.[0] ?? "";
   const cleanupDiagnostics = iosNativeBridge.match(/private func cleanupDiagnosticsTemporaryDirectory[\s\S]*?(?=\n    @discardableResult\n    private func finishDiagnosticsExport)/u)?.[0] ?? "";
   const finishDiagnosticsExport = iosNativeBridge.match(/private func finishDiagnosticsExport[\s\S]*?(?=\n    func documentPicker)/u)?.[0] ?? "";
