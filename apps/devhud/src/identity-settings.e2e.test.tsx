@@ -446,7 +446,7 @@ describe("generated Connect identity/settings fixture", () => {
     const confirmation = screen.getByRole("alertdialog", { name: messages.en.deleteAccountConfirmTitle });
     fireEvent.click(within(confirmation).getByRole("button", { name: messages.en.deleteAccount }));
     expect(await screen.findByText(messages.en.deletionPendingTitle)).toBeTruthy();
-    expect(purgeScopes).toEqual(["account-deletion"]);
+    await waitFor(() => expect(purgeScopes).toEqual(["account-deletion"]));
     expect(screen.getByRole("button", { name: messages.en.restoreAccount })).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: messages.en.restoreAccount }));
