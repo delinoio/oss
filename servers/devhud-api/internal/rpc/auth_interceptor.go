@@ -4,21 +4,29 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"slices"
+	"time"
 
 	"connectrpc.com/connect"
+	devhudv1 "github.com/delinoio/oss/protos/gen/go/devhud/v1"
 	"github.com/delinoio/oss/protos/gen/go/devhud/v1/devhudv1connect"
 	"github.com/delinoio/oss/servers/devhud-api/internal/auth"
 	"github.com/delinoio/oss/servers/devhud-api/internal/domain"
 )
 
+const rejectedAuditTimeout = 5 * time.Second
+
 type AuthInterceptor struct {
 	verifier   auth.Verifier
 	repository domain.Repository
 	logger     *slog.Logger
+	admin      domain.AdminRepository
+	clock      domain.Clock
+	ids        domain.IDGenerator
 }
 
-func NewAuthInterceptor(verifier auth.Verifier, repository domain.Repository, logger *slog.Logger) *AuthInterceptor {
-	return &AuthInterceptor{verifier: verifier, repository: repository, logger: logger}
+func NewAuthInterceptor(verifier auth.Verifier, repository domain.Repository, admin domain.AdminRepository, clock domain.Clock, ids domain.IDGenerator, logger *slog.Logger) *AuthInterceptor {
+	return &AuthInterceptor{verifier: verifier, repository: repository, admin: admin, clock: clock, ids: ids, logger: logger}
 }
 
 func (i *AuthInterceptor) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc {
@@ -29,6 +37,7 @@ func (i *AuthInterceptor) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc {
 		identity, err := i.verifier.Verify(ctx, request.Header().Get("Authorization"))
 		if err != nil {
 			if errors.Is(err, auth.ErrUnauthenticated) {
+				i.recordRejectedAdminMutation(ctx, request, nil, domain.AuditRejectionUnauthenticated)
 				return nil, unauthenticatedError(ctx)
 			}
 			if errors.Is(err, context.Canceled) && !errors.Is(err, auth.ErrVerificationUnavailable) {
@@ -59,8 +68,101 @@ func (i *AuthInterceptor) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc {
 			)
 			return nil, internalError(ctx)
 		}
-		return next(auth.WithUser(ctx, user), request)
+		if isAdminProcedure(request.Spec().Procedure) {
+			if !slices.Contains(identity.Roles, domain.AdminRole) {
+				i.recordRejectedAdminMutation(ctx, request, &user, domain.AuditRejectionAdminRoleRequired)
+				return nil, adminRolePermissionError(ctx)
+			}
+			if user.AdministrativeBlockState == domain.AdministrativeBlockStateBlocked {
+				i.recordRejectedAdminMutation(ctx, request, &user, domain.AuditRejectionActorBlocked)
+				return nil, permissionError(ctx, &domain.PermissionError{Failure: domain.PermissionFailureAdministrativeBlock})
+			}
+			if user.DeletionState != domain.DeletionStateActive {
+				i.recordRejectedAdminMutation(ctx, request, &user, domain.AuditRejectionActorBlocked)
+				return nil, permissionError(ctx, &domain.PermissionError{Failure: domain.PermissionFailureDeletionPending})
+			}
+		}
+		return next(auth.WithPrincipal(ctx, auth.Principal{User: user, Roles: identity.Roles}), request)
 	}
+}
+
+func isAdminProcedure(procedure string) bool {
+	switch procedure {
+	case devhudv1connect.AdminServiceListUsersProcedure,
+		devhudv1connect.AdminServiceSetUserBlockedProcedure,
+		devhudv1connect.AdminServiceGetUserUsageProcedure,
+		devhudv1connect.AdminServiceListUploadsProcedure,
+		devhudv1connect.AdminServiceQuarantineUploadProcedure,
+		devhudv1connect.AdminServiceDeleteUploadProcedure,
+		devhudv1connect.AdminServiceListAuditEventsProcedure:
+		return true
+	default:
+		return false
+	}
+}
+
+func isAdminMutation(procedure string) bool {
+	return procedure == devhudv1connect.AdminServiceSetUserBlockedProcedure ||
+		procedure == devhudv1connect.AdminServiceQuarantineUploadProcedure ||
+		procedure == devhudv1connect.AdminServiceDeleteUploadProcedure
+}
+
+func (i *AuthInterceptor) recordRejectedAdminMutation(ctx context.Context, request connect.AnyRequest, actor *domain.User, reason domain.AuditRejectionReason) {
+	if i.admin == nil || !isAdminMutation(request.Spec().Procedure) {
+		return
+	}
+	event, err := i.rejectedAdminMutationEvent(ctx, reason)
+	if err != nil {
+		return
+	}
+	if actor != nil {
+		event.ActorUserID = &actor.ID
+	}
+	switch message := request.Any().(type) {
+	case *devhudv1.SetUserBlockedRequest:
+		switch message.GetTargetState() {
+		case devhudv1.AdministrativeBlockState_ADMINISTRATIVE_BLOCK_STATE_UNBLOCKED:
+			event.Action = domain.AuditActionUserUnblocked
+		case devhudv1.AdministrativeBlockState_ADMINISTRATIVE_BLOCK_STATE_BLOCKED:
+			event.Action = domain.AuditActionUserBlocked
+		default:
+			event.Action = domain.AuditActionUserBlocked
+		}
+		if value := message.GetUserId().GetValue(); value != "" {
+			event.TargetUserID = &value
+		}
+	case *devhudv1.QuarantineUploadRequest:
+		event.Action = domain.AuditActionUploadQuarantined
+		if value := message.GetUploadId().GetValue(); value != "" {
+			event.TargetUploadID = &value
+		}
+	case *devhudv1.AdminServiceDeleteUploadRequest:
+		event.Action = domain.AuditActionUploadDeleted
+		if value := message.GetUploadId().GetValue(); value != "" {
+			event.TargetUploadID = &value
+		}
+	}
+	auditContext, cancel := detachedAuditContext(ctx)
+	defer cancel()
+	if err := i.admin.RecordAdministratorAudit(auditContext, event); err != nil {
+		i.logger.WarnContext(ctx, "administrator rejection audit failed", "correlation_id", CorrelationID(ctx), "procedure", request.Spec().Procedure, "error_type", "persistence")
+	}
+}
+
+func detachedAuditContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), rejectedAuditTimeout)
+}
+
+func (i *AuthInterceptor) rejectedAdminMutationEvent(ctx context.Context, reason domain.AuditRejectionReason) (domain.AuditEvent, error) {
+	eventID, err := i.ids.New()
+	if err != nil {
+		return domain.AuditEvent{}, err
+	}
+	now := i.clock.Now()
+	return domain.AuditEvent{
+		ID: eventID, CorrelationID: CorrelationID(ctx), Outcome: domain.AuditOutcomeRejected,
+		RejectionReason: reason, CreatedAt: now, ExpiresAt: now.Add(domain.AuditRetention),
+	}, nil
 }
 
 func isAccountProcedure(procedure string) bool {

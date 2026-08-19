@@ -26,11 +26,16 @@ const (
 type AuditAction int32
 
 const (
-	AuditAction_AUDIT_ACTION_UNSPECIFIED        AuditAction = 0
-	AuditAction_AUDIT_ACTION_USER_BLOCKED       AuditAction = 1
-	AuditAction_AUDIT_ACTION_USER_UNBLOCKED     AuditAction = 2
-	AuditAction_AUDIT_ACTION_UPLOAD_QUARANTINED AuditAction = 3
-	AuditAction_AUDIT_ACTION_UPLOAD_DELETED     AuditAction = 4
+	AuditAction_AUDIT_ACTION_UNSPECIFIED                AuditAction = 0
+	AuditAction_AUDIT_ACTION_USER_BLOCKED               AuditAction = 1
+	AuditAction_AUDIT_ACTION_USER_UNBLOCKED             AuditAction = 2
+	AuditAction_AUDIT_ACTION_UPLOAD_QUARANTINED         AuditAction = 3
+	AuditAction_AUDIT_ACTION_UPLOAD_DELETED             AuditAction = 4
+	AuditAction_AUDIT_ACTION_ACCOUNT_DELETION_REQUESTED AuditAction = 5
+	AuditAction_AUDIT_ACTION_ACCOUNT_RESTORED           AuditAction = 6
+	AuditAction_AUDIT_ACTION_ACCOUNT_PURGE_CLAIMED      AuditAction = 7
+	AuditAction_AUDIT_ACTION_ACCOUNT_PURGED             AuditAction = 8
+	AuditAction_AUDIT_ACTION_UPLOAD_ACCOUNT_PURGED      AuditAction = 9
 )
 
 // Enum value maps for AuditAction.
@@ -41,13 +46,23 @@ var (
 		2: "AUDIT_ACTION_USER_UNBLOCKED",
 		3: "AUDIT_ACTION_UPLOAD_QUARANTINED",
 		4: "AUDIT_ACTION_UPLOAD_DELETED",
+		5: "AUDIT_ACTION_ACCOUNT_DELETION_REQUESTED",
+		6: "AUDIT_ACTION_ACCOUNT_RESTORED",
+		7: "AUDIT_ACTION_ACCOUNT_PURGE_CLAIMED",
+		8: "AUDIT_ACTION_ACCOUNT_PURGED",
+		9: "AUDIT_ACTION_UPLOAD_ACCOUNT_PURGED",
 	}
 	AuditAction_value = map[string]int32{
-		"AUDIT_ACTION_UNSPECIFIED":        0,
-		"AUDIT_ACTION_USER_BLOCKED":       1,
-		"AUDIT_ACTION_USER_UNBLOCKED":     2,
-		"AUDIT_ACTION_UPLOAD_QUARANTINED": 3,
-		"AUDIT_ACTION_UPLOAD_DELETED":     4,
+		"AUDIT_ACTION_UNSPECIFIED":                0,
+		"AUDIT_ACTION_USER_BLOCKED":               1,
+		"AUDIT_ACTION_USER_UNBLOCKED":             2,
+		"AUDIT_ACTION_UPLOAD_QUARANTINED":         3,
+		"AUDIT_ACTION_UPLOAD_DELETED":             4,
+		"AUDIT_ACTION_ACCOUNT_DELETION_REQUESTED": 5,
+		"AUDIT_ACTION_ACCOUNT_RESTORED":           6,
+		"AUDIT_ACTION_ACCOUNT_PURGE_CLAIMED":      7,
+		"AUDIT_ACTION_ACCOUNT_PURGED":             8,
+		"AUDIT_ACTION_UPLOAD_ACCOUNT_PURGED":      9,
 	}
 )
 
@@ -76,6 +91,122 @@ func (x AuditAction) Number() protoreflect.EnumNumber {
 // Deprecated: Use AuditAction.Descriptor instead.
 func (AuditAction) EnumDescriptor() ([]byte, []int) {
 	return file_devhud_v1_admin_proto_rawDescGZIP(), []int{0}
+}
+
+type AuditOutcome int32
+
+const (
+	AuditOutcome_AUDIT_OUTCOME_UNSPECIFIED AuditOutcome = 0
+	AuditOutcome_AUDIT_OUTCOME_ACCEPTED    AuditOutcome = 1
+	AuditOutcome_AUDIT_OUTCOME_REJECTED    AuditOutcome = 2
+)
+
+// Enum value maps for AuditOutcome.
+var (
+	AuditOutcome_name = map[int32]string{
+		0: "AUDIT_OUTCOME_UNSPECIFIED",
+		1: "AUDIT_OUTCOME_ACCEPTED",
+		2: "AUDIT_OUTCOME_REJECTED",
+	}
+	AuditOutcome_value = map[string]int32{
+		"AUDIT_OUTCOME_UNSPECIFIED": 0,
+		"AUDIT_OUTCOME_ACCEPTED":    1,
+		"AUDIT_OUTCOME_REJECTED":    2,
+	}
+)
+
+func (x AuditOutcome) Enum() *AuditOutcome {
+	p := new(AuditOutcome)
+	*p = x
+	return p
+}
+
+func (x AuditOutcome) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (AuditOutcome) Descriptor() protoreflect.EnumDescriptor {
+	return file_devhud_v1_admin_proto_enumTypes[1].Descriptor()
+}
+
+func (AuditOutcome) Type() protoreflect.EnumType {
+	return &file_devhud_v1_admin_proto_enumTypes[1]
+}
+
+func (x AuditOutcome) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use AuditOutcome.Descriptor instead.
+func (AuditOutcome) EnumDescriptor() ([]byte, []int) {
+	return file_devhud_v1_admin_proto_rawDescGZIP(), []int{1}
+}
+
+type AuditRejectionReason int32
+
+const (
+	AuditRejectionReason_AUDIT_REJECTION_REASON_UNSPECIFIED         AuditRejectionReason = 0
+	AuditRejectionReason_AUDIT_REJECTION_REASON_UNAUTHENTICATED     AuditRejectionReason = 1
+	AuditRejectionReason_AUDIT_REJECTION_REASON_ADMIN_ROLE_REQUIRED AuditRejectionReason = 2
+	AuditRejectionReason_AUDIT_REJECTION_REASON_ACTOR_BLOCKED       AuditRejectionReason = 3
+	AuditRejectionReason_AUDIT_REJECTION_REASON_INVALID_ARGUMENT    AuditRejectionReason = 4
+	AuditRejectionReason_AUDIT_REJECTION_REASON_TARGET_NOT_FOUND    AuditRejectionReason = 5
+	AuditRejectionReason_AUDIT_REJECTION_REASON_CONCURRENT_UPDATE   AuditRejectionReason = 6
+	AuditRejectionReason_AUDIT_REJECTION_REASON_FAILED_PRECONDITION AuditRejectionReason = 7
+	AuditRejectionReason_AUDIT_REJECTION_REASON_OPERATION_FAILED    AuditRejectionReason = 8
+)
+
+// Enum value maps for AuditRejectionReason.
+var (
+	AuditRejectionReason_name = map[int32]string{
+		0: "AUDIT_REJECTION_REASON_UNSPECIFIED",
+		1: "AUDIT_REJECTION_REASON_UNAUTHENTICATED",
+		2: "AUDIT_REJECTION_REASON_ADMIN_ROLE_REQUIRED",
+		3: "AUDIT_REJECTION_REASON_ACTOR_BLOCKED",
+		4: "AUDIT_REJECTION_REASON_INVALID_ARGUMENT",
+		5: "AUDIT_REJECTION_REASON_TARGET_NOT_FOUND",
+		6: "AUDIT_REJECTION_REASON_CONCURRENT_UPDATE",
+		7: "AUDIT_REJECTION_REASON_FAILED_PRECONDITION",
+		8: "AUDIT_REJECTION_REASON_OPERATION_FAILED",
+	}
+	AuditRejectionReason_value = map[string]int32{
+		"AUDIT_REJECTION_REASON_UNSPECIFIED":         0,
+		"AUDIT_REJECTION_REASON_UNAUTHENTICATED":     1,
+		"AUDIT_REJECTION_REASON_ADMIN_ROLE_REQUIRED": 2,
+		"AUDIT_REJECTION_REASON_ACTOR_BLOCKED":       3,
+		"AUDIT_REJECTION_REASON_INVALID_ARGUMENT":    4,
+		"AUDIT_REJECTION_REASON_TARGET_NOT_FOUND":    5,
+		"AUDIT_REJECTION_REASON_CONCURRENT_UPDATE":   6,
+		"AUDIT_REJECTION_REASON_FAILED_PRECONDITION": 7,
+		"AUDIT_REJECTION_REASON_OPERATION_FAILED":    8,
+	}
+)
+
+func (x AuditRejectionReason) Enum() *AuditRejectionReason {
+	p := new(AuditRejectionReason)
+	*p = x
+	return p
+}
+
+func (x AuditRejectionReason) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (AuditRejectionReason) Descriptor() protoreflect.EnumDescriptor {
+	return file_devhud_v1_admin_proto_enumTypes[2].Descriptor()
+}
+
+func (AuditRejectionReason) Type() protoreflect.EnumType {
+	return &file_devhud_v1_admin_proto_enumTypes[2]
+}
+
+func (x AuditRejectionReason) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use AuditRejectionReason.Descriptor instead.
+func (AuditRejectionReason) EnumDescriptor() ([]byte, []int) {
+	return file_devhud_v1_admin_proto_rawDescGZIP(), []int{2}
 }
 
 type AdminUser struct {
@@ -306,7 +437,10 @@ type SetUserBlockedRequest struct {
 	TargetState AdministrativeBlockState `protobuf:"varint,2,opt,name=target_state,json=targetState,proto3,enum=devhud.v1.AdministrativeBlockState" json:"target_state,omitempty"`
 	// reason is required, must be well-formed Unicode, is capped at 4 KiB of
 	// UTF-8, and cannot contain credential or local-path patterns.
-	Reason        string `protobuf:"bytes,3,opt,name=reason,proto3" json:"reason,omitempty"`
+	Reason string `protobuf:"bytes,3,opt,name=reason,proto3" json:"reason,omitempty"`
+	// expected_state provides compare-and-set integrity for concurrent
+	// administrators. It must be UNBLOCKED or BLOCKED.
+	ExpectedState AdministrativeBlockState `protobuf:"varint,4,opt,name=expected_state,json=expectedState,proto3,enum=devhud.v1.AdministrativeBlockState" json:"expected_state,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -360,6 +494,13 @@ func (x *SetUserBlockedRequest) GetReason() string {
 		return x.Reason
 	}
 	return ""
+}
+
+func (x *SetUserBlockedRequest) GetExpectedState() AdministrativeBlockState {
+	if x != nil {
+		return x.ExpectedState
+	}
+	return AdministrativeBlockState_ADMINISTRATIVE_BLOCK_STATE_UNSPECIFIED
 }
 
 type SetUserBlockedResponse struct {
@@ -423,11 +564,14 @@ func (x *SetUserBlockedResponse) GetAuditEvent() *AuditEvent {
 }
 
 type UsageCounter struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Quota         QuotaKind              `protobuf:"varint,1,opt,name=quota,proto3,enum=devhud.v1.QuotaKind" json:"quota,omitempty"`
-	Used          uint64                 `protobuf:"varint,2,opt,name=used,proto3" json:"used,omitempty"`
-	Limit         uint64                 `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
-	Window        *durationpb.Duration   `protobuf:"bytes,4,opt,name=window,proto3" json:"window,omitempty"`
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Quota  QuotaKind              `protobuf:"varint,1,opt,name=quota,proto3,enum=devhud.v1.QuotaKind" json:"quota,omitempty"`
+	Used   uint64                 `protobuf:"varint,2,opt,name=used,proto3" json:"used,omitempty"`
+	Limit  uint64                 `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
+	Window *durationpb.Duration   `protobuf:"bytes,4,opt,name=window,proto3" json:"window,omitempty"`
+	// submission_id scopes the per-submission image quota. It is absent for
+	// user-wide rolling and stored-byte counters.
+	SubmissionId  *UuidV7 `protobuf:"bytes,5,opt,name=submission_id,json=submissionId,proto3" json:"submission_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -486,6 +630,13 @@ func (x *UsageCounter) GetLimit() uint64 {
 func (x *UsageCounter) GetWindow() *durationpb.Duration {
 	if x != nil {
 		return x.Window
+	}
+	return nil
+}
+
+func (x *UsageCounter) GetSubmissionId() *UuidV7 {
+	if x != nil {
+		return x.SubmissionId
 	}
 	return nil
 }
@@ -885,7 +1036,8 @@ type QuarantineUploadRequest struct {
 	UploadId *UuidV7                `protobuf:"bytes,1,opt,name=upload_id,json=uploadId,proto3" json:"upload_id,omitempty"`
 	// reason follows the bounded, sensitive-content-safe administrator reason
 	// contract and is validated before the mutation is persisted.
-	Reason        string `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"`
+	Reason        string      `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"`
+	ExpectedState UploadState `protobuf:"varint,3,opt,name=expected_state,json=expectedState,proto3,enum=devhud.v1.UploadState" json:"expected_state,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -932,6 +1084,13 @@ func (x *QuarantineUploadRequest) GetReason() string {
 		return x.Reason
 	}
 	return ""
+}
+
+func (x *QuarantineUploadRequest) GetExpectedState() UploadState {
+	if x != nil {
+		return x.ExpectedState
+	}
+	return UploadState_UPLOAD_STATE_UNSPECIFIED
 }
 
 type QuarantineUploadResponse struct {
@@ -999,7 +1158,8 @@ type AdminServiceDeleteUploadRequest struct {
 	UploadId *UuidV7                `protobuf:"bytes,1,opt,name=upload_id,json=uploadId,proto3" json:"upload_id,omitempty"`
 	// reason follows the bounded, sensitive-content-safe administrator reason
 	// contract and is validated before the mutation is persisted.
-	Reason        string `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"`
+	Reason        string      `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"`
+	ExpectedState UploadState `protobuf:"varint,3,opt,name=expected_state,json=expectedState,proto3,enum=devhud.v1.UploadState" json:"expected_state,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1046,6 +1206,13 @@ func (x *AdminServiceDeleteUploadRequest) GetReason() string {
 		return x.Reason
 	}
 	return ""
+}
+
+func (x *AdminServiceDeleteUploadRequest) GetExpectedState() UploadState {
+	if x != nil {
+		return x.ExpectedState
+	}
+	return UploadState_UPLOAD_STATE_UNSPECIFIED
 }
 
 type AdminServiceDeleteUploadResponse struct {
@@ -1116,10 +1283,13 @@ type AuditEvent struct {
 	TargetUploadId *UuidV7                `protobuf:"bytes,4,opt,name=target_upload_id,json=targetUploadId,proto3" json:"target_upload_id,omitempty"`
 	Action         AuditAction            `protobuf:"varint,5,opt,name=action,proto3,enum=devhud.v1.AuditAction" json:"action,omitempty"`
 	// reason contains only a previously validated administrator mutation reason.
-	Reason        string                 `protobuf:"bytes,6,opt,name=reason,proto3" json:"reason,omitempty"`
-	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Reason          string                 `protobuf:"bytes,6,opt,name=reason,proto3" json:"reason,omitempty"`
+	CreatedAt       *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	CorrelationId   *UuidV7                `protobuf:"bytes,8,opt,name=correlation_id,json=correlationId,proto3" json:"correlation_id,omitempty"`
+	Outcome         AuditOutcome           `protobuf:"varint,9,opt,name=outcome,proto3,enum=devhud.v1.AuditOutcome" json:"outcome,omitempty"`
+	RejectionReason AuditRejectionReason   `protobuf:"varint,10,opt,name=rejection_reason,json=rejectionReason,proto3,enum=devhud.v1.AuditRejectionReason" json:"rejection_reason,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *AuditEvent) Reset() {
@@ -1201,6 +1371,27 @@ func (x *AuditEvent) GetCreatedAt() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *AuditEvent) GetCorrelationId() *UuidV7 {
+	if x != nil {
+		return x.CorrelationId
+	}
+	return nil
+}
+
+func (x *AuditEvent) GetOutcome() AuditOutcome {
+	if x != nil {
+		return x.Outcome
+	}
+	return AuditOutcome_AUDIT_OUTCOME_UNSPECIFIED
+}
+
+func (x *AuditEvent) GetRejectionReason() AuditRejectionReason {
+	if x != nil {
+		return x.RejectionReason
+	}
+	return AuditRejectionReason_AUDIT_REJECTION_REASON_UNSPECIFIED
+}
+
 type ListAuditEventsRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	Page           *PageRequest           `protobuf:"bytes,1,opt,name=page,proto3" json:"page,omitempty"`
@@ -1208,6 +1399,8 @@ type ListAuditEventsRequest struct {
 	TargetUserId   *UuidV7                `protobuf:"bytes,3,opt,name=target_user_id,json=targetUserId,proto3" json:"target_user_id,omitempty"`
 	TargetUploadId *UuidV7                `protobuf:"bytes,4,opt,name=target_upload_id,json=targetUploadId,proto3" json:"target_upload_id,omitempty"`
 	Actions        []AuditAction          `protobuf:"varint,5,rep,packed,name=actions,proto3,enum=devhud.v1.AuditAction" json:"actions,omitempty"`
+	Outcomes       []AuditOutcome         `protobuf:"varint,6,rep,packed,name=outcomes,proto3,enum=devhud.v1.AuditOutcome" json:"outcomes,omitempty"`
+	CorrelationId  *UuidV7                `protobuf:"bytes,7,opt,name=correlation_id,json=correlationId,proto3" json:"correlation_id,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -1277,6 +1470,102 @@ func (x *ListAuditEventsRequest) GetActions() []AuditAction {
 	return nil
 }
 
+func (x *ListAuditEventsRequest) GetOutcomes() []AuditOutcome {
+	if x != nil {
+		return x.Outcomes
+	}
+	return nil
+}
+
+func (x *ListAuditEventsRequest) GetCorrelationId() *UuidV7 {
+	if x != nil {
+		return x.CorrelationId
+	}
+	return nil
+}
+
+type AdminMutationConflict struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Current:
+	//
+	//	*AdminMutationConflict_User
+	//	*AdminMutationConflict_Upload
+	Current       isAdminMutationConflict_Current `protobuf_oneof:"current"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AdminMutationConflict) Reset() {
+	*x = AdminMutationConflict{}
+	mi := &file_devhud_v1_admin_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AdminMutationConflict) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AdminMutationConflict) ProtoMessage() {}
+
+func (x *AdminMutationConflict) ProtoReflect() protoreflect.Message {
+	mi := &file_devhud_v1_admin_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AdminMutationConflict.ProtoReflect.Descriptor instead.
+func (*AdminMutationConflict) Descriptor() ([]byte, []int) {
+	return file_devhud_v1_admin_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *AdminMutationConflict) GetCurrent() isAdminMutationConflict_Current {
+	if x != nil {
+		return x.Current
+	}
+	return nil
+}
+
+func (x *AdminMutationConflict) GetUser() *AdminUser {
+	if x != nil {
+		if x, ok := x.Current.(*AdminMutationConflict_User); ok {
+			return x.User
+		}
+	}
+	return nil
+}
+
+func (x *AdminMutationConflict) GetUpload() *AdminUpload {
+	if x != nil {
+		if x, ok := x.Current.(*AdminMutationConflict_Upload); ok {
+			return x.Upload
+		}
+	}
+	return nil
+}
+
+type isAdminMutationConflict_Current interface {
+	isAdminMutationConflict_Current()
+}
+
+type AdminMutationConflict_User struct {
+	User *AdminUser `protobuf:"bytes,1,opt,name=user,proto3,oneof"`
+}
+
+type AdminMutationConflict_Upload struct {
+	Upload *AdminUpload `protobuf:"bytes,2,opt,name=upload,proto3,oneof"`
+}
+
+func (*AdminMutationConflict_User) isAdminMutationConflict_Current() {}
+
+func (*AdminMutationConflict_Upload) isAdminMutationConflict_Current() {}
+
 type ListAuditEventsResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Metadata      *ResponseMetadata      `protobuf:"bytes,1,opt,name=metadata,proto3" json:"metadata,omitempty"`
@@ -1288,7 +1577,7 @@ type ListAuditEventsResponse struct {
 
 func (x *ListAuditEventsResponse) Reset() {
 	*x = ListAuditEventsResponse{}
-	mi := &file_devhud_v1_admin_proto_msgTypes[17]
+	mi := &file_devhud_v1_admin_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1300,7 +1589,7 @@ func (x *ListAuditEventsResponse) String() string {
 func (*ListAuditEventsResponse) ProtoMessage() {}
 
 func (x *ListAuditEventsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_devhud_v1_admin_proto_msgTypes[17]
+	mi := &file_devhud_v1_admin_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1313,7 +1602,7 @@ func (x *ListAuditEventsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAuditEventsResponse.ProtoReflect.Descriptor instead.
 func (*ListAuditEventsResponse) Descriptor() ([]byte, []int) {
-	return file_devhud_v1_admin_proto_rawDescGZIP(), []int{17}
+	return file_devhud_v1_admin_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *ListAuditEventsResponse) GetMetadata() *ResponseMetadata {
@@ -1360,21 +1649,23 @@ const file_devhud_v1_admin_proto_rawDesc = "" +
 	"\x11ListUsersResponse\x127\n" +
 	"\bmetadata\x18\x01 \x01(\v2\x1b.devhud.v1.ResponseMetadataR\bmetadata\x12*\n" +
 	"\x05users\x18\x02 \x03(\v2\x14.devhud.v1.AdminUserR\x05users\x12&\n" +
-	"\x0fnext_page_token\x18\x03 \x01(\tR\rnextPageToken\"\xa3\x01\n" +
+	"\x0fnext_page_token\x18\x03 \x01(\tR\rnextPageToken\"\xef\x01\n" +
 	"\x15SetUserBlockedRequest\x12*\n" +
 	"\auser_id\x18\x01 \x01(\v2\x11.devhud.v1.UuidV7R\x06userId\x12F\n" +
 	"\ftarget_state\x18\x02 \x01(\x0e2#.devhud.v1.AdministrativeBlockStateR\vtargetState\x12\x16\n" +
-	"\x06reason\x18\x03 \x01(\tR\x06reason\"\xb3\x01\n" +
+	"\x06reason\x18\x03 \x01(\tR\x06reason\x12J\n" +
+	"\x0eexpected_state\x18\x04 \x01(\x0e2#.devhud.v1.AdministrativeBlockStateR\rexpectedState\"\xb3\x01\n" +
 	"\x16SetUserBlockedResponse\x127\n" +
 	"\bmetadata\x18\x01 \x01(\v2\x1b.devhud.v1.ResponseMetadataR\bmetadata\x12(\n" +
 	"\x04user\x18\x02 \x01(\v2\x14.devhud.v1.AdminUserR\x04user\x126\n" +
 	"\vaudit_event\x18\x03 \x01(\v2\x15.devhud.v1.AuditEventR\n" +
-	"auditEvent\"\x97\x01\n" +
+	"auditEvent\"\xcf\x01\n" +
 	"\fUsageCounter\x12*\n" +
 	"\x05quota\x18\x01 \x01(\x0e2\x14.devhud.v1.QuotaKindR\x05quota\x12\x12\n" +
 	"\x04used\x18\x02 \x01(\x04R\x04used\x12\x14\n" +
 	"\x05limit\x18\x03 \x01(\x04R\x05limit\x121\n" +
-	"\x06window\x18\x04 \x01(\v2\x19.google.protobuf.DurationR\x06window\"A\n" +
+	"\x06window\x18\x04 \x01(\v2\x19.google.protobuf.DurationR\x06window\x126\n" +
+	"\rsubmission_id\x18\x05 \x01(\v2\x11.devhud.v1.UuidV7R\fsubmissionId\"A\n" +
 	"\x13GetUserUsageRequest\x12*\n" +
 	"\auser_id\x18\x01 \x01(\v2\x11.devhud.v1.UuidV7R\x06userId\"\xb0\x01\n" +
 	"\x14GetUserUsageResponse\x127\n" +
@@ -1409,23 +1700,25 @@ const file_devhud_v1_admin_proto_rawDesc = "" +
 	"\x1fAdminServiceListUploadsResponse\x127\n" +
 	"\bmetadata\x18\x01 \x01(\v2\x1b.devhud.v1.ResponseMetadataR\bmetadata\x120\n" +
 	"\auploads\x18\x02 \x03(\v2\x16.devhud.v1.AdminUploadR\auploads\x12&\n" +
-	"\x0fnext_page_token\x18\x03 \x01(\tR\rnextPageToken\"a\n" +
+	"\x0fnext_page_token\x18\x03 \x01(\tR\rnextPageToken\"\xa0\x01\n" +
 	"\x17QuarantineUploadRequest\x12.\n" +
 	"\tupload_id\x18\x01 \x01(\v2\x11.devhud.v1.UuidV7R\buploadId\x12\x16\n" +
-	"\x06reason\x18\x02 \x01(\tR\x06reason\"\xbb\x01\n" +
+	"\x06reason\x18\x02 \x01(\tR\x06reason\x12=\n" +
+	"\x0eexpected_state\x18\x03 \x01(\x0e2\x16.devhud.v1.UploadStateR\rexpectedState\"\xbb\x01\n" +
 	"\x18QuarantineUploadResponse\x127\n" +
 	"\bmetadata\x18\x01 \x01(\v2\x1b.devhud.v1.ResponseMetadataR\bmetadata\x12.\n" +
 	"\x06upload\x18\x02 \x01(\v2\x16.devhud.v1.AdminUploadR\x06upload\x126\n" +
 	"\vaudit_event\x18\x03 \x01(\v2\x15.devhud.v1.AuditEventR\n" +
-	"auditEvent\"i\n" +
+	"auditEvent\"\xa8\x01\n" +
 	"\x1fAdminServiceDeleteUploadRequest\x12.\n" +
 	"\tupload_id\x18\x01 \x01(\v2\x11.devhud.v1.UuidV7R\buploadId\x12\x16\n" +
-	"\x06reason\x18\x02 \x01(\tR\x06reason\"\xc3\x01\n" +
+	"\x06reason\x18\x02 \x01(\tR\x06reason\x12=\n" +
+	"\x0eexpected_state\x18\x03 \x01(\x0e2\x16.devhud.v1.UploadStateR\rexpectedState\"\xc3\x01\n" +
 	" AdminServiceDeleteUploadResponse\x127\n" +
 	"\bmetadata\x18\x01 \x01(\v2\x1b.devhud.v1.ResponseMetadataR\bmetadata\x12.\n" +
 	"\x06upload\x18\x02 \x01(\v2\x16.devhud.v1.AdminUploadR\x06upload\x126\n" +
 	"\vaudit_event\x18\x03 \x01(\v2\x15.devhud.v1.AuditEventR\n" +
-	"auditEvent\"\xf5\x02\n" +
+	"auditEvent\"\xae\x04\n" +
 	"\n" +
 	"AuditEvent\x127\n" +
 	"\x0eaudit_event_id\x18\x01 \x01(\v2\x11.devhud.v1.UuidV7R\fauditEventId\x125\n" +
@@ -1435,23 +1728,52 @@ const file_devhud_v1_admin_proto_rawDesc = "" +
 	"\x06action\x18\x05 \x01(\x0e2\x16.devhud.v1.AuditActionR\x06action\x12\x16\n" +
 	"\x06reason\x18\x06 \x01(\tR\x06reason\x129\n" +
 	"\n" +
-	"created_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\xa3\x02\n" +
+	"created_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x128\n" +
+	"\x0ecorrelation_id\x18\b \x01(\v2\x11.devhud.v1.UuidV7R\rcorrelationId\x121\n" +
+	"\aoutcome\x18\t \x01(\x0e2\x17.devhud.v1.AuditOutcomeR\aoutcome\x12J\n" +
+	"\x10rejection_reason\x18\n" +
+	" \x01(\x0e2\x1f.devhud.v1.AuditRejectionReasonR\x0frejectionReason\"\x92\x03\n" +
 	"\x16ListAuditEventsRequest\x12*\n" +
 	"\x04page\x18\x01 \x01(\v2\x16.devhud.v1.PageRequestR\x04page\x125\n" +
 	"\ractor_user_id\x18\x02 \x01(\v2\x11.devhud.v1.UuidV7R\vactorUserId\x127\n" +
 	"\x0etarget_user_id\x18\x03 \x01(\v2\x11.devhud.v1.UuidV7R\ftargetUserId\x12;\n" +
 	"\x10target_upload_id\x18\x04 \x01(\v2\x11.devhud.v1.UuidV7R\x0etargetUploadId\x120\n" +
-	"\aactions\x18\x05 \x03(\x0e2\x16.devhud.v1.AuditActionR\aactions\"\xb4\x01\n" +
+	"\aactions\x18\x05 \x03(\x0e2\x16.devhud.v1.AuditActionR\aactions\x123\n" +
+	"\boutcomes\x18\x06 \x03(\x0e2\x17.devhud.v1.AuditOutcomeR\boutcomes\x128\n" +
+	"\x0ecorrelation_id\x18\a \x01(\v2\x11.devhud.v1.UuidV7R\rcorrelationId\"\x80\x01\n" +
+	"\x15AdminMutationConflict\x12*\n" +
+	"\x04user\x18\x01 \x01(\v2\x14.devhud.v1.AdminUserH\x00R\x04user\x120\n" +
+	"\x06upload\x18\x02 \x01(\v2\x16.devhud.v1.AdminUploadH\x00R\x06uploadB\t\n" +
+	"\acurrent\"\xb4\x01\n" +
 	"\x17ListAuditEventsResponse\x127\n" +
 	"\bmetadata\x18\x01 \x01(\v2\x1b.devhud.v1.ResponseMetadataR\bmetadata\x128\n" +
 	"\faudit_events\x18\x02 \x03(\v2\x15.devhud.v1.AuditEventR\vauditEvents\x12&\n" +
-	"\x0fnext_page_token\x18\x03 \x01(\tR\rnextPageToken*\xb1\x01\n" +
+	"\x0fnext_page_token\x18\x03 \x01(\tR\rnextPageToken*\xf2\x02\n" +
 	"\vAuditAction\x12\x1c\n" +
 	"\x18AUDIT_ACTION_UNSPECIFIED\x10\x00\x12\x1d\n" +
 	"\x19AUDIT_ACTION_USER_BLOCKED\x10\x01\x12\x1f\n" +
 	"\x1bAUDIT_ACTION_USER_UNBLOCKED\x10\x02\x12#\n" +
 	"\x1fAUDIT_ACTION_UPLOAD_QUARANTINED\x10\x03\x12\x1f\n" +
-	"\x1bAUDIT_ACTION_UPLOAD_DELETED\x10\x042\x84\x05\n" +
+	"\x1bAUDIT_ACTION_UPLOAD_DELETED\x10\x04\x12+\n" +
+	"'AUDIT_ACTION_ACCOUNT_DELETION_REQUESTED\x10\x05\x12!\n" +
+	"\x1dAUDIT_ACTION_ACCOUNT_RESTORED\x10\x06\x12&\n" +
+	"\"AUDIT_ACTION_ACCOUNT_PURGE_CLAIMED\x10\a\x12\x1f\n" +
+	"\x1bAUDIT_ACTION_ACCOUNT_PURGED\x10\b\x12&\n" +
+	"\"AUDIT_ACTION_UPLOAD_ACCOUNT_PURGED\x10\t*e\n" +
+	"\fAuditOutcome\x12\x1d\n" +
+	"\x19AUDIT_OUTCOME_UNSPECIFIED\x10\x00\x12\x1a\n" +
+	"\x16AUDIT_OUTCOME_ACCEPTED\x10\x01\x12\x1a\n" +
+	"\x16AUDIT_OUTCOME_REJECTED\x10\x02*\xa9\x03\n" +
+	"\x14AuditRejectionReason\x12&\n" +
+	"\"AUDIT_REJECTION_REASON_UNSPECIFIED\x10\x00\x12*\n" +
+	"&AUDIT_REJECTION_REASON_UNAUTHENTICATED\x10\x01\x12.\n" +
+	"*AUDIT_REJECTION_REASON_ADMIN_ROLE_REQUIRED\x10\x02\x12(\n" +
+	"$AUDIT_REJECTION_REASON_ACTOR_BLOCKED\x10\x03\x12+\n" +
+	"'AUDIT_REJECTION_REASON_INVALID_ARGUMENT\x10\x04\x12+\n" +
+	"'AUDIT_REJECTION_REASON_TARGET_NOT_FOUND\x10\x05\x12,\n" +
+	"(AUDIT_REJECTION_REASON_CONCURRENT_UPDATE\x10\x06\x12.\n" +
+	"*AUDIT_REJECTION_REASON_FAILED_PRECONDITION\x10\a\x12+\n" +
+	"'AUDIT_REJECTION_REASON_OPERATION_FAILED\x10\b2\x84\x05\n" +
 	"\fAdminService\x12F\n" +
 	"\tListUsers\x12\x1b.devhud.v1.ListUsersRequest\x1a\x1c.devhud.v1.ListUsersResponse\x12U\n" +
 	"\x0eSetUserBlocked\x12 .devhud.v1.SetUserBlockedRequest\x1a!.devhud.v1.SetUserBlockedResponse\x12O\n" +
@@ -1473,116 +1795,130 @@ func file_devhud_v1_admin_proto_rawDescGZIP() []byte {
 	return file_devhud_v1_admin_proto_rawDescData
 }
 
-var file_devhud_v1_admin_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_devhud_v1_admin_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
+var file_devhud_v1_admin_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
+var file_devhud_v1_admin_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
 var file_devhud_v1_admin_proto_goTypes = []any{
 	(AuditAction)(0),                         // 0: devhud.v1.AuditAction
-	(*AdminUser)(nil),                        // 1: devhud.v1.AdminUser
-	(*ListUsersRequest)(nil),                 // 2: devhud.v1.ListUsersRequest
-	(*ListUsersResponse)(nil),                // 3: devhud.v1.ListUsersResponse
-	(*SetUserBlockedRequest)(nil),            // 4: devhud.v1.SetUserBlockedRequest
-	(*SetUserBlockedResponse)(nil),           // 5: devhud.v1.SetUserBlockedResponse
-	(*UsageCounter)(nil),                     // 6: devhud.v1.UsageCounter
-	(*GetUserUsageRequest)(nil),              // 7: devhud.v1.GetUserUsageRequest
-	(*GetUserUsageResponse)(nil),             // 8: devhud.v1.GetUserUsageResponse
-	(*AdminUpload)(nil),                      // 9: devhud.v1.AdminUpload
-	(*AdminServiceListUploadsRequest)(nil),   // 10: devhud.v1.AdminServiceListUploadsRequest
-	(*AdminServiceListUploadsResponse)(nil),  // 11: devhud.v1.AdminServiceListUploadsResponse
-	(*QuarantineUploadRequest)(nil),          // 12: devhud.v1.QuarantineUploadRequest
-	(*QuarantineUploadResponse)(nil),         // 13: devhud.v1.QuarantineUploadResponse
-	(*AdminServiceDeleteUploadRequest)(nil),  // 14: devhud.v1.AdminServiceDeleteUploadRequest
-	(*AdminServiceDeleteUploadResponse)(nil), // 15: devhud.v1.AdminServiceDeleteUploadResponse
-	(*AuditEvent)(nil),                       // 16: devhud.v1.AuditEvent
-	(*ListAuditEventsRequest)(nil),           // 17: devhud.v1.ListAuditEventsRequest
-	(*ListAuditEventsResponse)(nil),          // 18: devhud.v1.ListAuditEventsResponse
-	(*UuidV7)(nil),                           // 19: devhud.v1.UuidV7
-	(AccountDeletionState)(0),                // 20: devhud.v1.AccountDeletionState
-	(AdministrativeBlockState)(0),            // 21: devhud.v1.AdministrativeBlockState
-	(*timestamppb.Timestamp)(nil),            // 22: google.protobuf.Timestamp
-	(*PageRequest)(nil),                      // 23: devhud.v1.PageRequest
-	(*ResponseMetadata)(nil),                 // 24: devhud.v1.ResponseMetadata
-	(QuotaKind)(0),                           // 25: devhud.v1.QuotaKind
-	(*durationpb.Duration)(nil),              // 26: google.protobuf.Duration
-	(UploadState)(0),                         // 27: devhud.v1.UploadState
-	(UploadContentType)(0),                   // 28: devhud.v1.UploadContentType
+	(AuditOutcome)(0),                        // 1: devhud.v1.AuditOutcome
+	(AuditRejectionReason)(0),                // 2: devhud.v1.AuditRejectionReason
+	(*AdminUser)(nil),                        // 3: devhud.v1.AdminUser
+	(*ListUsersRequest)(nil),                 // 4: devhud.v1.ListUsersRequest
+	(*ListUsersResponse)(nil),                // 5: devhud.v1.ListUsersResponse
+	(*SetUserBlockedRequest)(nil),            // 6: devhud.v1.SetUserBlockedRequest
+	(*SetUserBlockedResponse)(nil),           // 7: devhud.v1.SetUserBlockedResponse
+	(*UsageCounter)(nil),                     // 8: devhud.v1.UsageCounter
+	(*GetUserUsageRequest)(nil),              // 9: devhud.v1.GetUserUsageRequest
+	(*GetUserUsageResponse)(nil),             // 10: devhud.v1.GetUserUsageResponse
+	(*AdminUpload)(nil),                      // 11: devhud.v1.AdminUpload
+	(*AdminServiceListUploadsRequest)(nil),   // 12: devhud.v1.AdminServiceListUploadsRequest
+	(*AdminServiceListUploadsResponse)(nil),  // 13: devhud.v1.AdminServiceListUploadsResponse
+	(*QuarantineUploadRequest)(nil),          // 14: devhud.v1.QuarantineUploadRequest
+	(*QuarantineUploadResponse)(nil),         // 15: devhud.v1.QuarantineUploadResponse
+	(*AdminServiceDeleteUploadRequest)(nil),  // 16: devhud.v1.AdminServiceDeleteUploadRequest
+	(*AdminServiceDeleteUploadResponse)(nil), // 17: devhud.v1.AdminServiceDeleteUploadResponse
+	(*AuditEvent)(nil),                       // 18: devhud.v1.AuditEvent
+	(*ListAuditEventsRequest)(nil),           // 19: devhud.v1.ListAuditEventsRequest
+	(*AdminMutationConflict)(nil),            // 20: devhud.v1.AdminMutationConflict
+	(*ListAuditEventsResponse)(nil),          // 21: devhud.v1.ListAuditEventsResponse
+	(*UuidV7)(nil),                           // 22: devhud.v1.UuidV7
+	(AccountDeletionState)(0),                // 23: devhud.v1.AccountDeletionState
+	(AdministrativeBlockState)(0),            // 24: devhud.v1.AdministrativeBlockState
+	(*timestamppb.Timestamp)(nil),            // 25: google.protobuf.Timestamp
+	(*PageRequest)(nil),                      // 26: devhud.v1.PageRequest
+	(*ResponseMetadata)(nil),                 // 27: devhud.v1.ResponseMetadata
+	(QuotaKind)(0),                           // 28: devhud.v1.QuotaKind
+	(*durationpb.Duration)(nil),              // 29: google.protobuf.Duration
+	(UploadState)(0),                         // 30: devhud.v1.UploadState
+	(UploadContentType)(0),                   // 31: devhud.v1.UploadContentType
 }
 var file_devhud_v1_admin_proto_depIdxs = []int32{
-	19, // 0: devhud.v1.AdminUser.user_id:type_name -> devhud.v1.UuidV7
-	20, // 1: devhud.v1.AdminUser.deletion_state:type_name -> devhud.v1.AccountDeletionState
-	21, // 2: devhud.v1.AdminUser.administrative_block_state:type_name -> devhud.v1.AdministrativeBlockState
-	22, // 3: devhud.v1.AdminUser.created_at:type_name -> google.protobuf.Timestamp
-	22, // 4: devhud.v1.AdminUser.updated_at:type_name -> google.protobuf.Timestamp
-	22, // 5: devhud.v1.AdminUser.recoverable_until:type_name -> google.protobuf.Timestamp
-	23, // 6: devhud.v1.ListUsersRequest.page:type_name -> devhud.v1.PageRequest
-	24, // 7: devhud.v1.ListUsersResponse.metadata:type_name -> devhud.v1.ResponseMetadata
-	1,  // 8: devhud.v1.ListUsersResponse.users:type_name -> devhud.v1.AdminUser
-	19, // 9: devhud.v1.SetUserBlockedRequest.user_id:type_name -> devhud.v1.UuidV7
-	21, // 10: devhud.v1.SetUserBlockedRequest.target_state:type_name -> devhud.v1.AdministrativeBlockState
-	24, // 11: devhud.v1.SetUserBlockedResponse.metadata:type_name -> devhud.v1.ResponseMetadata
-	1,  // 12: devhud.v1.SetUserBlockedResponse.user:type_name -> devhud.v1.AdminUser
-	16, // 13: devhud.v1.SetUserBlockedResponse.audit_event:type_name -> devhud.v1.AuditEvent
-	25, // 14: devhud.v1.UsageCounter.quota:type_name -> devhud.v1.QuotaKind
-	26, // 15: devhud.v1.UsageCounter.window:type_name -> google.protobuf.Duration
-	19, // 16: devhud.v1.GetUserUsageRequest.user_id:type_name -> devhud.v1.UuidV7
-	24, // 17: devhud.v1.GetUserUsageResponse.metadata:type_name -> devhud.v1.ResponseMetadata
-	19, // 18: devhud.v1.GetUserUsageResponse.user_id:type_name -> devhud.v1.UuidV7
-	6,  // 19: devhud.v1.GetUserUsageResponse.counters:type_name -> devhud.v1.UsageCounter
-	19, // 20: devhud.v1.AdminUpload.owner_user_id:type_name -> devhud.v1.UuidV7
-	19, // 21: devhud.v1.AdminUpload.upload_id:type_name -> devhud.v1.UuidV7
-	19, // 22: devhud.v1.AdminUpload.submission_id:type_name -> devhud.v1.UuidV7
-	19, // 23: devhud.v1.AdminUpload.upload_group_id:type_name -> devhud.v1.UuidV7
-	27, // 24: devhud.v1.AdminUpload.state:type_name -> devhud.v1.UploadState
-	28, // 25: devhud.v1.AdminUpload.content_type:type_name -> devhud.v1.UploadContentType
-	22, // 26: devhud.v1.AdminUpload.created_at:type_name -> google.protobuf.Timestamp
-	22, // 27: devhud.v1.AdminUpload.finalized_at:type_name -> google.protobuf.Timestamp
-	22, // 28: devhud.v1.AdminUpload.removed_at:type_name -> google.protobuf.Timestamp
-	23, // 29: devhud.v1.AdminServiceListUploadsRequest.page:type_name -> devhud.v1.PageRequest
-	19, // 30: devhud.v1.AdminServiceListUploadsRequest.owner_user_id:type_name -> devhud.v1.UuidV7
-	19, // 31: devhud.v1.AdminServiceListUploadsRequest.submission_id:type_name -> devhud.v1.UuidV7
-	19, // 32: devhud.v1.AdminServiceListUploadsRequest.upload_group_id:type_name -> devhud.v1.UuidV7
-	27, // 33: devhud.v1.AdminServiceListUploadsRequest.states:type_name -> devhud.v1.UploadState
-	24, // 34: devhud.v1.AdminServiceListUploadsResponse.metadata:type_name -> devhud.v1.ResponseMetadata
-	9,  // 35: devhud.v1.AdminServiceListUploadsResponse.uploads:type_name -> devhud.v1.AdminUpload
-	19, // 36: devhud.v1.QuarantineUploadRequest.upload_id:type_name -> devhud.v1.UuidV7
-	24, // 37: devhud.v1.QuarantineUploadResponse.metadata:type_name -> devhud.v1.ResponseMetadata
-	9,  // 38: devhud.v1.QuarantineUploadResponse.upload:type_name -> devhud.v1.AdminUpload
-	16, // 39: devhud.v1.QuarantineUploadResponse.audit_event:type_name -> devhud.v1.AuditEvent
-	19, // 40: devhud.v1.AdminServiceDeleteUploadRequest.upload_id:type_name -> devhud.v1.UuidV7
-	24, // 41: devhud.v1.AdminServiceDeleteUploadResponse.metadata:type_name -> devhud.v1.ResponseMetadata
-	9,  // 42: devhud.v1.AdminServiceDeleteUploadResponse.upload:type_name -> devhud.v1.AdminUpload
-	16, // 43: devhud.v1.AdminServiceDeleteUploadResponse.audit_event:type_name -> devhud.v1.AuditEvent
-	19, // 44: devhud.v1.AuditEvent.audit_event_id:type_name -> devhud.v1.UuidV7
-	19, // 45: devhud.v1.AuditEvent.actor_user_id:type_name -> devhud.v1.UuidV7
-	19, // 46: devhud.v1.AuditEvent.target_user_id:type_name -> devhud.v1.UuidV7
-	19, // 47: devhud.v1.AuditEvent.target_upload_id:type_name -> devhud.v1.UuidV7
-	0,  // 48: devhud.v1.AuditEvent.action:type_name -> devhud.v1.AuditAction
-	22, // 49: devhud.v1.AuditEvent.created_at:type_name -> google.protobuf.Timestamp
-	23, // 50: devhud.v1.ListAuditEventsRequest.page:type_name -> devhud.v1.PageRequest
-	19, // 51: devhud.v1.ListAuditEventsRequest.actor_user_id:type_name -> devhud.v1.UuidV7
-	19, // 52: devhud.v1.ListAuditEventsRequest.target_user_id:type_name -> devhud.v1.UuidV7
-	19, // 53: devhud.v1.ListAuditEventsRequest.target_upload_id:type_name -> devhud.v1.UuidV7
-	0,  // 54: devhud.v1.ListAuditEventsRequest.actions:type_name -> devhud.v1.AuditAction
-	24, // 55: devhud.v1.ListAuditEventsResponse.metadata:type_name -> devhud.v1.ResponseMetadata
-	16, // 56: devhud.v1.ListAuditEventsResponse.audit_events:type_name -> devhud.v1.AuditEvent
-	2,  // 57: devhud.v1.AdminService.ListUsers:input_type -> devhud.v1.ListUsersRequest
-	4,  // 58: devhud.v1.AdminService.SetUserBlocked:input_type -> devhud.v1.SetUserBlockedRequest
-	7,  // 59: devhud.v1.AdminService.GetUserUsage:input_type -> devhud.v1.GetUserUsageRequest
-	10, // 60: devhud.v1.AdminService.ListUploads:input_type -> devhud.v1.AdminServiceListUploadsRequest
-	12, // 61: devhud.v1.AdminService.QuarantineUpload:input_type -> devhud.v1.QuarantineUploadRequest
-	14, // 62: devhud.v1.AdminService.DeleteUpload:input_type -> devhud.v1.AdminServiceDeleteUploadRequest
-	17, // 63: devhud.v1.AdminService.ListAuditEvents:input_type -> devhud.v1.ListAuditEventsRequest
-	3,  // 64: devhud.v1.AdminService.ListUsers:output_type -> devhud.v1.ListUsersResponse
-	5,  // 65: devhud.v1.AdminService.SetUserBlocked:output_type -> devhud.v1.SetUserBlockedResponse
-	8,  // 66: devhud.v1.AdminService.GetUserUsage:output_type -> devhud.v1.GetUserUsageResponse
-	11, // 67: devhud.v1.AdminService.ListUploads:output_type -> devhud.v1.AdminServiceListUploadsResponse
-	13, // 68: devhud.v1.AdminService.QuarantineUpload:output_type -> devhud.v1.QuarantineUploadResponse
-	15, // 69: devhud.v1.AdminService.DeleteUpload:output_type -> devhud.v1.AdminServiceDeleteUploadResponse
-	18, // 70: devhud.v1.AdminService.ListAuditEvents:output_type -> devhud.v1.ListAuditEventsResponse
-	64, // [64:71] is the sub-list for method output_type
-	57, // [57:64] is the sub-list for method input_type
-	57, // [57:57] is the sub-list for extension type_name
-	57, // [57:57] is the sub-list for extension extendee
-	0,  // [0:57] is the sub-list for field type_name
+	22, // 0: devhud.v1.AdminUser.user_id:type_name -> devhud.v1.UuidV7
+	23, // 1: devhud.v1.AdminUser.deletion_state:type_name -> devhud.v1.AccountDeletionState
+	24, // 2: devhud.v1.AdminUser.administrative_block_state:type_name -> devhud.v1.AdministrativeBlockState
+	25, // 3: devhud.v1.AdminUser.created_at:type_name -> google.protobuf.Timestamp
+	25, // 4: devhud.v1.AdminUser.updated_at:type_name -> google.protobuf.Timestamp
+	25, // 5: devhud.v1.AdminUser.recoverable_until:type_name -> google.protobuf.Timestamp
+	26, // 6: devhud.v1.ListUsersRequest.page:type_name -> devhud.v1.PageRequest
+	27, // 7: devhud.v1.ListUsersResponse.metadata:type_name -> devhud.v1.ResponseMetadata
+	3,  // 8: devhud.v1.ListUsersResponse.users:type_name -> devhud.v1.AdminUser
+	22, // 9: devhud.v1.SetUserBlockedRequest.user_id:type_name -> devhud.v1.UuidV7
+	24, // 10: devhud.v1.SetUserBlockedRequest.target_state:type_name -> devhud.v1.AdministrativeBlockState
+	24, // 11: devhud.v1.SetUserBlockedRequest.expected_state:type_name -> devhud.v1.AdministrativeBlockState
+	27, // 12: devhud.v1.SetUserBlockedResponse.metadata:type_name -> devhud.v1.ResponseMetadata
+	3,  // 13: devhud.v1.SetUserBlockedResponse.user:type_name -> devhud.v1.AdminUser
+	18, // 14: devhud.v1.SetUserBlockedResponse.audit_event:type_name -> devhud.v1.AuditEvent
+	28, // 15: devhud.v1.UsageCounter.quota:type_name -> devhud.v1.QuotaKind
+	29, // 16: devhud.v1.UsageCounter.window:type_name -> google.protobuf.Duration
+	22, // 17: devhud.v1.UsageCounter.submission_id:type_name -> devhud.v1.UuidV7
+	22, // 18: devhud.v1.GetUserUsageRequest.user_id:type_name -> devhud.v1.UuidV7
+	27, // 19: devhud.v1.GetUserUsageResponse.metadata:type_name -> devhud.v1.ResponseMetadata
+	22, // 20: devhud.v1.GetUserUsageResponse.user_id:type_name -> devhud.v1.UuidV7
+	8,  // 21: devhud.v1.GetUserUsageResponse.counters:type_name -> devhud.v1.UsageCounter
+	22, // 22: devhud.v1.AdminUpload.owner_user_id:type_name -> devhud.v1.UuidV7
+	22, // 23: devhud.v1.AdminUpload.upload_id:type_name -> devhud.v1.UuidV7
+	22, // 24: devhud.v1.AdminUpload.submission_id:type_name -> devhud.v1.UuidV7
+	22, // 25: devhud.v1.AdminUpload.upload_group_id:type_name -> devhud.v1.UuidV7
+	30, // 26: devhud.v1.AdminUpload.state:type_name -> devhud.v1.UploadState
+	31, // 27: devhud.v1.AdminUpload.content_type:type_name -> devhud.v1.UploadContentType
+	25, // 28: devhud.v1.AdminUpload.created_at:type_name -> google.protobuf.Timestamp
+	25, // 29: devhud.v1.AdminUpload.finalized_at:type_name -> google.protobuf.Timestamp
+	25, // 30: devhud.v1.AdminUpload.removed_at:type_name -> google.protobuf.Timestamp
+	26, // 31: devhud.v1.AdminServiceListUploadsRequest.page:type_name -> devhud.v1.PageRequest
+	22, // 32: devhud.v1.AdminServiceListUploadsRequest.owner_user_id:type_name -> devhud.v1.UuidV7
+	22, // 33: devhud.v1.AdminServiceListUploadsRequest.submission_id:type_name -> devhud.v1.UuidV7
+	22, // 34: devhud.v1.AdminServiceListUploadsRequest.upload_group_id:type_name -> devhud.v1.UuidV7
+	30, // 35: devhud.v1.AdminServiceListUploadsRequest.states:type_name -> devhud.v1.UploadState
+	27, // 36: devhud.v1.AdminServiceListUploadsResponse.metadata:type_name -> devhud.v1.ResponseMetadata
+	11, // 37: devhud.v1.AdminServiceListUploadsResponse.uploads:type_name -> devhud.v1.AdminUpload
+	22, // 38: devhud.v1.QuarantineUploadRequest.upload_id:type_name -> devhud.v1.UuidV7
+	30, // 39: devhud.v1.QuarantineUploadRequest.expected_state:type_name -> devhud.v1.UploadState
+	27, // 40: devhud.v1.QuarantineUploadResponse.metadata:type_name -> devhud.v1.ResponseMetadata
+	11, // 41: devhud.v1.QuarantineUploadResponse.upload:type_name -> devhud.v1.AdminUpload
+	18, // 42: devhud.v1.QuarantineUploadResponse.audit_event:type_name -> devhud.v1.AuditEvent
+	22, // 43: devhud.v1.AdminServiceDeleteUploadRequest.upload_id:type_name -> devhud.v1.UuidV7
+	30, // 44: devhud.v1.AdminServiceDeleteUploadRequest.expected_state:type_name -> devhud.v1.UploadState
+	27, // 45: devhud.v1.AdminServiceDeleteUploadResponse.metadata:type_name -> devhud.v1.ResponseMetadata
+	11, // 46: devhud.v1.AdminServiceDeleteUploadResponse.upload:type_name -> devhud.v1.AdminUpload
+	18, // 47: devhud.v1.AdminServiceDeleteUploadResponse.audit_event:type_name -> devhud.v1.AuditEvent
+	22, // 48: devhud.v1.AuditEvent.audit_event_id:type_name -> devhud.v1.UuidV7
+	22, // 49: devhud.v1.AuditEvent.actor_user_id:type_name -> devhud.v1.UuidV7
+	22, // 50: devhud.v1.AuditEvent.target_user_id:type_name -> devhud.v1.UuidV7
+	22, // 51: devhud.v1.AuditEvent.target_upload_id:type_name -> devhud.v1.UuidV7
+	0,  // 52: devhud.v1.AuditEvent.action:type_name -> devhud.v1.AuditAction
+	25, // 53: devhud.v1.AuditEvent.created_at:type_name -> google.protobuf.Timestamp
+	22, // 54: devhud.v1.AuditEvent.correlation_id:type_name -> devhud.v1.UuidV7
+	1,  // 55: devhud.v1.AuditEvent.outcome:type_name -> devhud.v1.AuditOutcome
+	2,  // 56: devhud.v1.AuditEvent.rejection_reason:type_name -> devhud.v1.AuditRejectionReason
+	26, // 57: devhud.v1.ListAuditEventsRequest.page:type_name -> devhud.v1.PageRequest
+	22, // 58: devhud.v1.ListAuditEventsRequest.actor_user_id:type_name -> devhud.v1.UuidV7
+	22, // 59: devhud.v1.ListAuditEventsRequest.target_user_id:type_name -> devhud.v1.UuidV7
+	22, // 60: devhud.v1.ListAuditEventsRequest.target_upload_id:type_name -> devhud.v1.UuidV7
+	0,  // 61: devhud.v1.ListAuditEventsRequest.actions:type_name -> devhud.v1.AuditAction
+	1,  // 62: devhud.v1.ListAuditEventsRequest.outcomes:type_name -> devhud.v1.AuditOutcome
+	22, // 63: devhud.v1.ListAuditEventsRequest.correlation_id:type_name -> devhud.v1.UuidV7
+	3,  // 64: devhud.v1.AdminMutationConflict.user:type_name -> devhud.v1.AdminUser
+	11, // 65: devhud.v1.AdminMutationConflict.upload:type_name -> devhud.v1.AdminUpload
+	27, // 66: devhud.v1.ListAuditEventsResponse.metadata:type_name -> devhud.v1.ResponseMetadata
+	18, // 67: devhud.v1.ListAuditEventsResponse.audit_events:type_name -> devhud.v1.AuditEvent
+	4,  // 68: devhud.v1.AdminService.ListUsers:input_type -> devhud.v1.ListUsersRequest
+	6,  // 69: devhud.v1.AdminService.SetUserBlocked:input_type -> devhud.v1.SetUserBlockedRequest
+	9,  // 70: devhud.v1.AdminService.GetUserUsage:input_type -> devhud.v1.GetUserUsageRequest
+	12, // 71: devhud.v1.AdminService.ListUploads:input_type -> devhud.v1.AdminServiceListUploadsRequest
+	14, // 72: devhud.v1.AdminService.QuarantineUpload:input_type -> devhud.v1.QuarantineUploadRequest
+	16, // 73: devhud.v1.AdminService.DeleteUpload:input_type -> devhud.v1.AdminServiceDeleteUploadRequest
+	19, // 74: devhud.v1.AdminService.ListAuditEvents:input_type -> devhud.v1.ListAuditEventsRequest
+	5,  // 75: devhud.v1.AdminService.ListUsers:output_type -> devhud.v1.ListUsersResponse
+	7,  // 76: devhud.v1.AdminService.SetUserBlocked:output_type -> devhud.v1.SetUserBlockedResponse
+	10, // 77: devhud.v1.AdminService.GetUserUsage:output_type -> devhud.v1.GetUserUsageResponse
+	13, // 78: devhud.v1.AdminService.ListUploads:output_type -> devhud.v1.AdminServiceListUploadsResponse
+	15, // 79: devhud.v1.AdminService.QuarantineUpload:output_type -> devhud.v1.QuarantineUploadResponse
+	17, // 80: devhud.v1.AdminService.DeleteUpload:output_type -> devhud.v1.AdminServiceDeleteUploadResponse
+	21, // 81: devhud.v1.AdminService.ListAuditEvents:output_type -> devhud.v1.ListAuditEventsResponse
+	75, // [75:82] is the sub-list for method output_type
+	68, // [68:75] is the sub-list for method input_type
+	68, // [68:68] is the sub-list for extension type_name
+	68, // [68:68] is the sub-list for extension extendee
+	0,  // [0:68] is the sub-list for field type_name
 }
 
 func init() { file_devhud_v1_admin_proto_init() }
@@ -1591,13 +1927,17 @@ func file_devhud_v1_admin_proto_init() {
 		return
 	}
 	file_devhud_v1_common_proto_init()
+	file_devhud_v1_admin_proto_msgTypes[17].OneofWrappers = []any{
+		(*AdminMutationConflict_User)(nil),
+		(*AdminMutationConflict_Upload)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_devhud_v1_admin_proto_rawDesc), len(file_devhud_v1_admin_proto_rawDesc)),
-			NumEnums:      1,
-			NumMessages:   18,
+			NumEnums:      3,
+			NumMessages:   19,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

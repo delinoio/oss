@@ -126,6 +126,7 @@ func sweep(ctx context.Context, worker sweepRunner, logger *slog.Logger) error {
 		"request_logs_deleted", result.RequestLogsDeleted,
 		"audit_events_deleted", result.AuditEventsDeleted,
 		"staging_objects_deleted", result.StagingObjectsDeleted,
+		"upload_removals_completed", result.UploadRemovalsCompleted,
 	)
 	return nil
 }
