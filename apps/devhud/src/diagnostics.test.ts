@@ -96,6 +96,7 @@ describe("diagnostics privacy boundary", () => {
       importedJwt: "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiIxMjMifQ.signature",
       importedAwsKey: "AKIA0123456789ABCDEF",
       importedPrivateKey: "-----BEGIN PRIVATE KEY-----",
+      importedAssignment: "password=hunter2",
       importedLocation: "/workspace/project/main.ts",
       encodedImportedLocation: "source=%2Fworkspace%2Fprivate%2Fapp.ts",
       doublyEncodedImportedLocation: "source=%252Fworkspace%252Fprivate%252Fapp.ts",
@@ -110,7 +111,7 @@ describe("diagnostics privacy boundary", () => {
     const serialized = JSON.stringify(redactDiagnosticValue(hostile));
     expect(serialized).toContain("bounded classification");
     expect(serialized).toContain("React/Native renderer failed");
-    for (const prohibited of ["Bearer", "githubPat", "r2_secret", "signingKey", "nodeType", "screenshot", "issueBody", "agentPrompt", "childEnvironment", "/home/alice", "ghp_", "eyJ", "AKIA", "PRIVATE KEY", "/workspace/", "%2Fworkspace", "%252Fworkspace", "Ctrl+", "#private", "devhud://", "ftp://", "file://"]) {
+    for (const prohibited of ["Bearer", "githubPat", "r2_secret", "signingKey", "nodeType", "screenshot", "issueBody", "agentPrompt", "childEnvironment", "hunter2", "/home/alice", "ghp_", "eyJ", "AKIA", "PRIVATE KEY", "/workspace/", "%2Fworkspace", "%252Fworkspace", "Ctrl+", "#private", "devhud://", "ftp://", "file://"]) {
       expect(serialized).not.toContain(prohibited);
     }
   });
@@ -381,6 +382,9 @@ describe("diagnostics privacy boundary", () => {
       "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiIxMjMifQ.signature",
       "AKIA0123456789ABCDEF",
       "-----BEGIN PRIVATE KEY-----",
+      "password=hunter2",
+      "oauth_code: secret",
+      "password%3Dhunter2",
     ]) {
       localStorage.setItem(DiagnosticsStorageKey, JSON.stringify([{ ...fixtureEvent(now), summary: credential }]));
       expect(readDiagnosticEvents(localStorage, now)).toEqual([]);
@@ -401,7 +405,8 @@ describe("diagnostics privacy boundary", () => {
   });
 
   it("binds export preview and sent request to byte-identical protobuf JSON", () => {
-    const event = fixtureEvent(Date.parse("2026-08-17T00:00:00.000Z"));
+    const eventTime = Date.parse("2026-08-17T00:00:00.000Z");
+    const event = fixtureEvent(eventTime);
     const imported = {
       ...event,
       summary: "ghp_0123456789abcdefghijklmnopqrstuvwxyz",
@@ -412,7 +417,8 @@ describe("diagnostics privacy boundary", () => {
         "-----BEGIN PRIVATE KEY-----",
       ],
     };
-    const prepared = prepareDiagnosticsBundle(event, [imported, event]);
+    const assigned = { ...event, correlationId: uuidV7(eventTime - 1), summary: "password=hunter2" };
+    const prepared = prepareDiagnosticsBundle(event, [imported, assigned, event]);
     expect(toJsonString(SubmitCrashReportRequestSchema, prepared.request, { prettySpaces: 2 })).toBe(prepared.requestJson);
     const exported = JSON.parse(prepared.exportJson);
     expect(exported.crashReport).toEqual(JSON.parse(prepared.requestJson));
@@ -421,6 +427,7 @@ describe("diagnostics privacy boundary", () => {
     expect(prepared.exportJson).not.toContain("eyJ");
     expect(prepared.exportJson).not.toContain("AKIA");
     expect(prepared.exportJson).not.toContain("PRIVATE KEY");
+    expect(prepared.exportJson).not.toContain("hunter2");
     expect(prepared.exportJson).not.toContain("/workspace/");
     expect(prepared.request.clientCorrelationId?.value).toBe(event.correlationId);
   });

@@ -36,6 +36,8 @@ const forbiddenValue = /(?:authorization|bearer\s|github[_-]?pat|access[_-]?toke
 const diagnosticURL = /[A-Za-z][A-Za-z0-9+.-]*:[^\s<>"']+/u;
 const diagnosticPath = /(?:^|[\s\p{P}=])(?:[a-z]:[\\/]\S*|\\\\\S+|~\/\S+|\/[^/\s]\S*)/iu;
 const percentEncodedOctets = /(?:%[0-9a-f]{2})+/giu;
+const credentialParameterName = /^(?:code|oauth[_.-]?code|password|passwd|pwd|secret|token|client[_.-]?secret|(?:access|refresh|id)[_.-]?token|api[_.-]?key|private[_.-]?key|authorization|cookie|set-cookie|x-amz-(?:credential|signature))$/iu;
+const diagnosticAssignment = /(?:^|\s|[(\[{,;])["']?([A-Za-z][A-Za-z0-9_.-]{0,63})["']?\s*[:=]\s*\S+/gu;
 const safeCode = /^[A-Z][A-Z0-9_]{0,63}$/u;
 const safeFrameName = /(?:^|\s)(?:at\s+)?([A-Za-z_$][A-Za-z0-9_$.<>-]{0,95})/u;
 
@@ -468,8 +470,16 @@ function isForbiddenDiagnosticValue(value: string): boolean {
 
 function containsRawForbiddenDiagnosticValue(value: string): boolean {
   return forbiddenValue.test(value)
+    || containsForbiddenCredentialAssignment(value)
     || (value.includes(":") && diagnosticURL.test(value))
     || ((value.includes("/") || value.includes("\\")) && diagnosticPath.test(value));
+}
+
+function containsForbiddenCredentialAssignment(value: string): boolean {
+  for (const match of value.matchAll(diagnosticAssignment)) {
+    if (credentialParameterName.test(match[1] ?? "")) return true;
+  }
+  return false;
 }
 
 function decodePercentEncodedOctets(value: string): string {

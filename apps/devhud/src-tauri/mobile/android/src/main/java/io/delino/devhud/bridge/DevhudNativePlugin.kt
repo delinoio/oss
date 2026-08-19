@@ -26,6 +26,7 @@ import java.io.FileNotFoundException
 import java.security.KeyStore
 import java.util.Base64
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
 import javax.crypto.Cipher
 import javax.crypto.AEADBadTagException
 import javax.crypto.KeyGenerator
@@ -48,6 +49,7 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
     private var pendingAuthCallback: String? = null
     private var pendingDiagnosticsCleanup: Uri? = null
     private var diagnosticsExportPickerActive = false
+    private val diagnosticsPurgesInProgress = AtomicInteger()
     private val secureSettingsExecutor = Executors.newSingleThreadExecutor()
 
     override fun load(webView: android.webkit.WebView) {
@@ -106,6 +108,10 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
     }
 
     private fun exportDiagnostics(invoke: Invoke) {
+        if (diagnosticsPurgesInProgress.get() > 0) {
+            invoke.reject("platform-failure", "platform-failure")
+            return
+        }
         if (!cleanupPendingDiagnosticsExport()) {
             invoke.reject("storage-failure", "storage-failure")
             return
@@ -410,14 +416,24 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
         val scope = args.getString("scope")
         val profileId = if (args.has("profileId")) args.getString("profileId") else null
         if (scope !in setOf("logout", "account-deletion", "api-change") || (scope != "logout" && profileId == null)) throw IllegalArgumentException("scope")
-        if (scope in setOf("logout", "account-deletion")) {
-            diagnosticsExportPickerActive = false
-            if (!cleanupPendingDiagnosticsExport()) {
-                invoke.reject("storage-failure", "storage-failure")
-                return
+        val destructivePurge = scope in setOf("logout", "account-deletion")
+        if (destructivePurge) {
+            diagnosticsPurgesInProgress.incrementAndGet()
+            try {
+                diagnosticsExportPickerActive = false
+                if (!cleanupPendingDiagnosticsExport()) {
+                    diagnosticsPurgesInProgress.decrementAndGet()
+                    invoke.reject("storage-failure", "storage-failure")
+                    return
+                }
+            } catch (error: Exception) {
+                diagnosticsPurgesInProgress.decrementAndGet()
+                throw error
             }
         }
-        persistSecure(invoke) {
+        persistSecure(invoke, onComplete = {
+            if (destructivePurge) diagnosticsPurgesInProgress.decrementAndGet()
+        }) {
             val preferences = activity.getSharedPreferences(storeName, Context.MODE_PRIVATE)
             val editor = preferences.edit()
             preferences.all.keys.filter { key ->
@@ -429,14 +445,21 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
         }
     }
 
-    private fun persistSecure(invoke: Invoke, operation: () -> Boolean) {
-        secureSettingsExecutor.execute {
-            try {
-                if (operation()) invoke.resolve(JSObject().put("kind", "ok"))
-                else invoke.reject("storage-failure", "storage-failure")
-            } catch (error: Exception) {
-                invoke.reject("storage-failure", "storage-failure", error)
+    private fun persistSecure(invoke: Invoke, onComplete: () -> Unit = {}, operation: () -> Boolean) {
+        try {
+            secureSettingsExecutor.execute {
+                try {
+                    if (operation()) invoke.resolve(JSObject().put("kind", "ok"))
+                    else invoke.reject("storage-failure", "storage-failure")
+                } catch (error: Exception) {
+                    invoke.reject("storage-failure", "storage-failure", error)
+                } finally {
+                    onComplete()
+                }
             }
+        } catch (error: Exception) {
+            onComplete()
+            throw error
         }
     }
 

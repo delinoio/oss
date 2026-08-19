@@ -53,6 +53,7 @@ export function assertAndroidNativeBridge(androidNativeBridge) {
   const forgetDiagnosticsCleanup = androidNativeBridge.match(/private fun forgetDiagnosticsCleanup\(\): Boolean[\s\S]*?(?=\n    private fun cleanupPendingDiagnosticsExport)/u)?.[0] ?? "";
   const cleanupPendingDiagnosticsExport = androidNativeBridge.match(/private fun cleanupPendingDiagnosticsExport\(\): Boolean[\s\S]*?(?=\n    private fun hasPersistedDiagnosticsWriteGrant)/u)?.[0] ?? "";
   const purgeSecure = androidNativeBridge.match(/private fun purgeSecure\(invoke: Invoke\)[\s\S]*?(?=\n    private fun persistSecure)/u)?.[0] ?? "";
+  const persistSecure = androidNativeBridge.match(/private fun persistSecure\(invoke: Invoke[\s\S]*?(?=\n    private fun permissionValue)/u)?.[0] ?? "";
   assert(androidNativeBridge.includes("Executors.newSingleThreadExecutor()"), "Android secure-setting persistence must run off the command thread");
   assert(onDestroy.includes("secureSettingsExecutor.shutdown()"), "Android secure-setting executor must stop with the plugin lifecycle");
   assert((androidNativeBridge.match(/\.commit\(\)/gu) ?? []).length === 7, "Android secure-setting and diagnostics-cleanup writes must confirm persistence");
@@ -74,6 +75,7 @@ export function assertAndroidNativeBridge(androidNativeBridge) {
   assert(androidNativeBridge.includes("activity.intent = Intent(activity.intent).setData(null)"), "Android consumed auth callbacks must be removed from the activity intent");
   assert(androidNativeBridge.includes("peekAuthCallback") && androidNativeBridge.includes("pendingAuthCallback"), "Android auth callback inspection must be non-destructive");
   assert(exportDiagnostics.includes("if (diagnosticsExportPickerActive)") && exportDiagnostics.indexOf("if (diagnosticsExportPickerActive)") < exportDiagnostics.indexOf("diagnosticsExportPickerActive = true"), "Android diagnostics exports must reject a concurrent picker before reserving another one");
+  assert(exportDiagnostics.includes("if (diagnosticsPurgesInProgress.get() > 0)"), "Android diagnostics exports must remain blocked until destructive secure purges finish");
   assert(exportDiagnostics.indexOf("diagnosticsExportPickerActive = true") >= 0 && exportDiagnostics.indexOf("diagnosticsExportPickerActive = true") < exportDiagnostics.indexOf("startActivityForResult"), "Android diagnostics exports must record the active picker before launch");
   assert(diagnosticsExportResult.includes("if (!diagnosticsExportPickerActive)") && diagnosticsExportResult.indexOf("if (!diagnosticsExportPickerActive)") < diagnosticsExportResult.indexOf("val destination"), "Android invalidated diagnostics picker callbacks must stop before destination access");
   assert(androidNativeBridge.includes("pendingDiagnosticsCleanup") && androidNativeBridge.includes("takePersistableUriPermission"), "Android failed diagnostics cleanup must retain a persistable destination URI");
@@ -86,7 +88,9 @@ export function assertAndroidNativeBridge(androidNativeBridge) {
   assert(cleanupPendingDiagnosticsExport.includes("if (!hasPersistedDiagnosticsWriteGrant(destination)) return false") && cleanupPendingDiagnosticsExport.indexOf("hasPersistedDiagnosticsWriteGrant(destination)") < cleanupPendingDiagnosticsExport.indexOf("contentResolver.delete"), "Android diagnostics cleanup must preserve retry state when its destination grant is missing");
   assert(cleanupPendingDiagnosticsExport.includes('requireNotNull(activity.contentResolver.openFileDescriptor(destination, "w")).use { true }'), "Android diagnostics cleanup must treat successful destination truncation as complete");
   assert(androidNativeBridge.includes("cleanupPendingDiagnosticsExport()") && androidNativeBridge.includes("FileNotFoundException"), "Android diagnostics cleanup must retry and confirm destination absence");
-  assert(purgeSecure.includes('if (scope in setOf("logout", "account-deletion"))') && purgeSecure.indexOf("diagnosticsExportPickerActive = false") < purgeSecure.indexOf("cleanupPendingDiagnosticsExport()"), "Android destructive purges must invalidate active diagnostics pickers before cleanup");
+  assert(purgeSecure.includes('val destructivePurge = scope in setOf("logout", "account-deletion")') && purgeSecure.indexOf("diagnosticsPurgesInProgress.incrementAndGet()") < purgeSecure.indexOf("diagnosticsExportPickerActive = false") && purgeSecure.indexOf("diagnosticsExportPickerActive = false") < purgeSecure.indexOf("cleanupPendingDiagnosticsExport()"), "Android destructive purges must reserve invalidation before invalidating active diagnostics pickers and cleanup");
+  assert(purgeSecure.includes("diagnosticsPurgesInProgress.incrementAndGet()") && (purgeSecure.match(/diagnosticsPurgesInProgress\.decrementAndGet\(\)/gu) ?? []).length === 3, "Android destructive purges must retain and release export invalidation across queued persistence and failures");
+  assert(persistSecure.includes("finally") && persistSecure.includes("onComplete()"), "Android secure persistence must release purge state after executor completion");
   assert(purgeSecure.includes("if (!cleanupPendingDiagnosticsExport())"), "Android destructive purges must propagate diagnostics cleanup failures");
   assert(androidNativeBridge.includes("storeIntent().resolveActivity(activity.packageManager)"), "Android update status must resolve a market handler");
 }

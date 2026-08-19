@@ -159,6 +159,8 @@ func TestValidateCrashReportRejectsHostileDiagnosticContent(t *testing.T) {
 		"request headers":      "request_headers=Authorization: redacted",
 		"response headers":     "response headers=Set-Cookie: redacted",
 		"file URL":             "file:///home/alice/project/app.ts:10",
+		"VS Code file URL":     "vscode://file/home/alice/project/app.ts:10",
+		"VS Code Insiders URL": "vscode-insiders://file/C:/Users/alice/project/app.ts:10",
 		"unix path":            "/home/alice/project/main.ts",
 		"comma path":           "trace,/home/alice/project/main.ts",
 		"semicolon path":       "trace;/home/alice/project/main.ts",

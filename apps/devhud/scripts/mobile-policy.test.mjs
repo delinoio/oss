@@ -57,6 +57,7 @@ test("mobile policy requires lifecycle-owned Android persistence and native plat
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace("Intent(activity.intent).setData(null)", "Intent(activity.intent)")), /activity intent/u);
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replaceAll("peekAuthCallback", "missing")), /inspection must be non-destructive/u);
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace("if (diagnosticsExportPickerActive)", "if (false)")), /reject a concurrent picker/u);
+  assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace("if (diagnosticsPurgesInProgress.get() > 0)", "if (false)")), /remain blocked until destructive secure purges finish/u);
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace("diagnosticsExportPickerActive = true", "diagnosticsExportPickerActive = false")), /concurrent picker|record the active picker/u);
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace("if (!diagnosticsExportPickerActive)", "if (false)")), /picker callbacks/u);
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace('            invoke.reject("storage-failure", "storage-failure")\n            return\n        }\n        try {\n            // Retain cleanup ownership', '            invoke.reject("storage-failure", "storage-failure")\n        }\n        try {\n            // Retain cleanup ownership')), /reject failed URI grants/u);
@@ -68,7 +69,10 @@ test("mobile policy requires lifecycle-owned Android persistence and native plat
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace("if (!hasPersistedDiagnosticsWriteGrant(destination)) return false", "if (!hasPersistedDiagnosticsWriteGrant(destination)) return forgetDiagnosticsCleanup()")), /preserve retry state/u);
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace('requireNotNull(activity.contentResolver.openFileDescriptor(destination, "w")).use { true }', 'requireNotNull(activity.contentResolver.openFileDescriptor(destination, "w")).use { false }')), /successful destination truncation/u);
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replaceAll("FileNotFoundException", "MissingFileException")), /confirm destination absence/u);
-  assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace('if (scope in setOf("logout", "account-deletion"))', "if (false)")), /invalidate active diagnostics pickers/u);
+  assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace('val destructivePurge = scope in setOf("logout", "account-deletion")', "val destructivePurge = false")), /reserve invalidation before invalidating active diagnostics pickers/u);
+  assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace("diagnosticsPurgesInProgress.incrementAndGet()", "Unit")), /retain and release export invalidation/u);
+  assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace("            } catch (error: Exception) {\n                diagnosticsPurgesInProgress.decrementAndGet()\n                throw error\n            }", "            }")), /across queued persistence and failures/u);
+  assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace("                } finally {\n                    onComplete()\n                }", "                }")), /release purge state after executor completion/u);
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace("            if (!cleanupPendingDiagnosticsExport())", "            if (cleanupPendingDiagnosticsExport())")), /propagate diagnostics cleanup failures/u);
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace("storeIntent().resolveActivity(activity.packageManager)", "true")), /market handler/u);
 });

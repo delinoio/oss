@@ -23,6 +23,7 @@ const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder("utf-8", { fatal: true });
 const unicodeNonWhitespacePattern = /\P{White_Space}/u;
 const urlPattern = /[A-Za-z][A-Za-z0-9+.-]*:[^\s<>"']+/gu;
+const localDiagnosticUrlProtocols = new Set(["file:", "vscode:", "vscode-insiders:"]);
 const trailingUrlPunctuationPattern = /[)\]}>.,;]+$/u;
 const percentEncodedOctetsPattern = /(?:%[0-9a-f]{2})+/giu;
 const encodedWindowsDrivePathPattern = /^[A-Za-z]:(?:%2f|%5c)/iu;
@@ -382,7 +383,7 @@ function containsForbiddenUrlContent(value: string, publicAssetBaseUrl?: URL): b
       continue;
     }
 
-    if (url.protocol === "file:") {
+    if (localDiagnosticUrlProtocols.has(url.protocol)) {
       return true;
     }
     if (publicAssetBaseUrl !== undefined && isPublicAssetLocator(url, publicAssetBaseUrl)) {

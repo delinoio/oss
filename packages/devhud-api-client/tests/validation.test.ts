@@ -536,6 +536,8 @@ describe("wire validation helpers", () => {
       "frame:src\\private\\app.ts:10",
       "source=%2Fworkspace%2Fprivate%2Fapp.ts",
       "C:%5CUsers%5Calice%5Capp.ts",
+      "vscode://file/home/alice/app.ts",
+      "vscode-insiders://file/C:/Users/alice/app.ts",
       ...encodedLocalPathParameterUrls,
     ]) {
       const relativePathDiagnostics = [
