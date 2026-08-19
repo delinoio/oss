@@ -26,6 +26,8 @@ const maximumDepth = 5;
 const maximumCollectionEntries = 64;
 const maximumStringBytes = 512;
 const maximumDiagnosticDecodings = 8;
+const maximumDiagnosticParameterScans = 16;
+const maximumDiagnosticScanBytes = 64 * 1024;
 const exactTauriRevision = "4af26a3f7f8b692d62cca549bbacd93f5ce90b41";
 const exactCefRevision = "150.0.10+g8042e43+chromium-150.0.7871.101";
 const textEncoder = new TextEncoder();
@@ -506,10 +508,26 @@ function isWellFormedDiagnosticString(value: string): boolean {
   return true;
 }
 
+interface DiagnosticScanBudget {
+  remainingBytes: number;
+  remainingParameters: number;
+}
+
 function isForbiddenDiagnosticValue(value: string): boolean {
+  const budget: DiagnosticScanBudget = {
+    remainingBytes: maximumDiagnosticScanBytes,
+    remainingParameters: maximumDiagnosticParameterScans,
+  };
+  return isForbiddenDiagnosticValueWithBudget(value, budget);
+}
+
+function isForbiddenDiagnosticValueWithBudget(value: string, budget: DiagnosticScanBudget): boolean {
   let decodings = 0;
   for (;;) {
-    if (containsRawForbiddenDiagnosticValue(value)) return true;
+    const valueBytes = textEncoder.encode(value).byteLength;
+    if (valueBytes > budget.remainingBytes) return true;
+    budget.remainingBytes -= valueBytes;
+    if (containsRawForbiddenDiagnosticValue(value, budget)) return true;
     const decoded = decodePercentEncodedOctets(value);
     if (decoded === value) return false;
     if (decodings === maximumDiagnosticDecodings) return true;
@@ -518,10 +536,10 @@ function isForbiddenDiagnosticValue(value: string): boolean {
   }
 }
 
-function containsRawForbiddenDiagnosticValue(value: string): boolean {
+function containsRawForbiddenDiagnosticValue(value: string, budget: DiagnosticScanBudget): boolean {
   return forbiddenValue.test(value)
     || containsForbiddenCredentialAssignment(value)
-    || containsForbiddenRelativeDiagnosticParameters(value)
+    || containsForbiddenRelativeDiagnosticParameters(value, budget)
     || (value.includes(":") && diagnosticURL.test(value))
     || ((value.includes("/") || value.includes("\\")) && diagnosticPath.test(value));
 }
@@ -533,18 +551,24 @@ function containsForbiddenCredentialAssignment(value: string): boolean {
   return false;
 }
 
-function containsForbiddenRelativeDiagnosticParameters(value: string): boolean {
+function containsForbiddenRelativeDiagnosticParameters(value: string, budget: DiagnosticScanBudget): boolean {
   for (const match of value.matchAll(diagnosticURLParameters)) {
     const matchedParameters = match[0];
     if (matchedParameters === undefined) continue;
     const parameters = matchedParameters.slice(1).replace(trailingURLPunctuation, "");
-    if (containsForbiddenDiagnosticParameters(parameters)) return true;
+    if (containsForbiddenDiagnosticParameters(parameters, budget)) return true;
   }
   return false;
 }
 
-function containsForbiddenDiagnosticParameters(parameters: string): boolean {
+function containsForbiddenDiagnosticParameters(parameters: string, budget: DiagnosticScanBudget): boolean {
+  const parameterBytes = textEncoder.encode(parameters).byteLength;
+  if (parameterBytes > budget.remainingBytes) return true;
+  budget.remainingBytes -= parameterBytes;
   for (const parameter of parameters.split(/[&;]/u)) {
+    if (parameter === "") continue;
+    if (budget.remainingParameters === 0) return true;
+    budget.remainingParameters -= 1;
     const separatorIndex = parameter.search(/[=:]/u);
     const encodedName = separatorIndex === -1 ? parameter : parameter.slice(0, separatorIndex);
     const encodedValue = separatorIndex === -1 ? "" : parameter.slice(separatorIndex + 1);
@@ -559,8 +583,8 @@ function containsForbiddenDiagnosticParameters(parameters: string): boolean {
     }
     if (
       credentialParameterName.test(name)
-      || isForbiddenDiagnosticValue(value)
-      || (value !== encodedValue && containsForbiddenDiagnosticParameters(value))
+      || isForbiddenDiagnosticValueWithBudget(value, budget)
+      || (value !== encodedValue && containsForbiddenDiagnosticParameters(value, budget))
     ) return true;
   }
   return false;

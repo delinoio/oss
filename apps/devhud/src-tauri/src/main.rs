@@ -101,9 +101,8 @@ impl DiagnosticLogController {
         let mut sink = sink.lock().map_err(|_| "storage-failure")?;
         sink.appender.take();
         let removal = remove_diagnostic_log_files(&sink.directory);
-        if let Ok(appender) = build_appender(&sink.directory) {
-            sink.appender = Some(appender);
-        }
+        let appender = build_appender(&sink.directory).map_err(|_| "storage-failure")?;
+        sink.appender = Some(appender);
         removal
     }
 }
@@ -1297,31 +1296,40 @@ mod tests {
     }
 
     #[test]
-    fn diagnostic_log_reset_succeeds_when_cleanup_completes_without_reopening() {
+    fn diagnostic_log_reset_reports_reopen_failure_and_recovers_on_retry() {
         let temporary = tempfile::tempdir().expect("temporary diagnostics directory");
-        let retained = temporary.path().join("devhud.2026-08-17.jsonl");
-        std::fs::write(&retained, "retained diagnostic\n").expect("retained diagnostic fixture");
-        let controller = DiagnosticLogController::cleanup_only(temporary.path().to_path_buf());
-
-        controller
-            .reset_with_appender(|_| Err(()))
-            .expect("completed cleanup must not depend on reopening");
-
-        assert!(!retained.exists());
+        let controller = DiagnosticLogController::new(temporary.path().to_path_buf())
+            .expect("diagnostic log controller");
         let mut writer = controller.clone();
         writer
-            .write_all(b"stderr-only diagnostic\n")
-            .expect("stderr-only controller write");
-        writer.flush().expect("stderr-only controller flush");
-        assert!(
-            std::fs::read_dir(temporary.path())
-                .expect("diagnostic directory")
-                .flatten()
-                .all(|entry| !entry
+            .write_all(b"before failed reopen\n")
+            .expect("initial diagnostic");
+        writer.flush().expect("flush initial diagnostic");
+
+        assert_eq!(
+            controller.reset_with_appender(|_| Err(())),
+            Err("storage-failure".to_string())
+        );
+
+        controller.reset().expect("retry diagnostic log reset");
+        writer
+            .write_all(b"after successful retry\n")
+            .expect("diagnostic after retry");
+        writer.flush().expect("flush diagnostic after retry");
+
+        let diagnostic = std::fs::read_dir(temporary.path())
+            .expect("diagnostic directory")
+            .flatten()
+            .find(|entry| {
+                entry
                     .file_name()
                     .to_str()
-                    .is_some_and(is_diagnostic_log_name))
-        );
+                    .is_some_and(is_diagnostic_log_name)
+            })
+            .expect("reopened diagnostic log");
+        let contents = std::fs::read_to_string(diagnostic.path()).expect("diagnostic contents");
+        assert!(!contents.contains("before failed reopen"));
+        assert!(contents.contains("after successful retry"));
     }
 
     #[test]

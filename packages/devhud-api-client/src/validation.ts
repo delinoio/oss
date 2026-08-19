@@ -416,16 +416,18 @@ interface UrlScanPolicy {
 }
 
 function containsForbiddenUrlContent(value: string, policy: UrlScanPolicy = {}): boolean {
-  for (const match of value.matchAll(urlParametersPattern)) {
-    const matchedParameters = match[0];
-    if (matchedParameters === undefined) {
-      continue;
-    }
-    const parameters = matchedParameters
-      .slice(1)
-      .replace(trailingUrlPunctuationPattern, "");
-    if (containsForbiddenParameterContent(parameters, policy)) {
-      return true;
+  if (policy.diagnosticBudget !== undefined) {
+    for (const match of value.matchAll(urlParametersPattern)) {
+      const matchedParameters = match[0];
+      if (matchedParameters === undefined) {
+        continue;
+      }
+      const parameters = matchedParameters
+        .slice(1)
+        .replace(trailingUrlPunctuationPattern, "");
+      if (containsForbiddenParameterContent(parameters, policy)) {
+        return true;
+      }
     }
   }
 

@@ -131,6 +131,25 @@ describe("diagnostics privacy boundary", () => {
     expect(JSON.parse(localStorage.getItem(DiagnosticsStorageKey) ?? "null")).toEqual([safe]);
   });
 
+  it("bounds nested local diagnostic parameter scanning without dropping safe events", () => {
+    const now = Date.parse("2026-08-17T00:00:00.000Z");
+    const bounded = { ...fixtureEvent(now - 3), summary: `${"?x=".repeat(16)}safe` };
+    const excessive = { ...fixtureEvent(now - 2), summary: `${"?x=".repeat(17)}safe` };
+    const pathological = { ...fixtureEvent(now - 1), summary: `${"?x=".repeat(1300)}safe` };
+    const safe = fixtureEvent(now);
+    localStorage.setItem(
+      DiagnosticsStorageKey,
+      JSON.stringify([bounded, excessive, pathological, safe]),
+    );
+
+    expect(readDiagnosticEvents(localStorage, now)).toEqual([bounded, safe]);
+    expect(JSON.parse(localStorage.getItem(DiagnosticsStorageKey) ?? "null")).toEqual([
+      bounded,
+      safe,
+    ]);
+    expect(redactDiagnosticValue({ pathological: pathological.summary })).toEqual({});
+  });
+
   it("fails closed when diagnostic percent decoding exceeds its fixed-point bound", () => {
     let encoded = "/workspace/private/app.ts";
     for (let index = 0; index < 10; index += 1) encoded = encodeURIComponent(encoded);

@@ -83,6 +83,7 @@ describe("wire validation helpers", () => {
     expect(() => validateReason("Expected yes / no")).not.toThrow();
     expect(() => validateReason("Reviewed incident from 2026/08/15.")).not.toThrow();
     expect(() => validateReason("Rolled back release 1/2/3.")).not.toThrow();
+    expect(() => validateReason("Reviewed callback?code=review")).not.toThrow();
     expect(() => validateReason("\u0085Reviewed policy breach")).not.toThrow();
     expect(() => validateReason("é".repeat(MAX_ADMIN_REASON_BYTES / 2))).not.toThrow();
     expect(() =>
