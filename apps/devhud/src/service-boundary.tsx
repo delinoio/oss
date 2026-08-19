@@ -784,6 +784,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
         await clearIdentityQueryCache();
         onLoggedOut();
         onIdentityReset();
+        setLogoutCleanupPending(false);
       } finally {
         releaseDiagnosticWrites();
       }

@@ -1581,8 +1581,10 @@ describe("generated Connect identity/settings fixture", () => {
     fireEvent.click(screen.getByRole("button", { name: "logout probe identity" }));
 
     await waitFor(() => {
-      expect(screen.getByTestId("identity-state").dataset.status).toBe("authenticated");
-      expect(screen.getByTestId("identity-state").dataset.actionError).toBe("true");
+      const state = screen.getByTestId("identity-state");
+      expect(state.dataset.status).toBe("authenticated");
+      expect(state.dataset.readOnly).toBe("true");
+      expect(state.dataset.actionError).toBe("true");
     });
     expect(localStorage.getItem(cacheKey as string)).not.toBeNull();
     expect(readAuthenticatedSettingsCache(localStorage, apiOrigin)?.revision).toBe(7n);
@@ -1591,8 +1593,10 @@ describe("generated Connect identity/settings fixture", () => {
     fireEvent.click(screen.getByRole("button", { name: "logout probe identity" }));
 
     await waitFor(() => {
-      expect(screen.getByTestId("identity-state").dataset.status).toBe("authenticated");
-      expect(screen.getByTestId("identity-state").dataset.actionError).toBe("true");
+      const state = screen.getByTestId("identity-state");
+      expect(state.dataset.status).toBe("authenticated");
+      expect(state.dataset.readOnly).toBe("true");
+      expect(state.dataset.actionError).toBe("true");
     });
     expect(localStorage.getItem(cacheKey as string)).not.toBeNull();
     expect(purges).toEqual([]);
@@ -1600,8 +1604,10 @@ describe("generated Connect identity/settings fixture", () => {
     fireEvent.click(screen.getByRole("button", { name: "logout probe identity" }));
 
     await waitFor(() => {
-      expect(screen.getByTestId("identity-state").dataset.status).toBe("signed-out");
-      expect(screen.getByTestId("identity-state").dataset.actionError).toBe("false");
+      const state = screen.getByTestId("identity-state");
+      expect(state.dataset.status).toBe("signed-out");
+      expect(state.dataset.readOnly).toBe("false");
+      expect(state.dataset.actionError).toBe("false");
     });
     expect(localStorage.getItem(cacheKey as string)).toBeNull();
     expect(purges).toEqual(["logout"]);
