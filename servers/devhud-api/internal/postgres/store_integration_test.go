@@ -194,11 +194,22 @@ func TestCrashReportRetainedQuotaIsAtomicAndPreservesIdempotency(t *testing.T) {
 		t.Fatalf("fresh submission at quota = %v", err)
 	}
 
-	retention, err := store.PruneRetention(ctx, now.Add(domain.CrashReportRetention), domain.CrashReportMaximumRetainedPerUser)
+	expiryBoundary := now.Add(domain.CrashReportRetention)
+	postExpiryReport := newReport()
+	postExpiryReport.AcceptedAt = expiryBoundary
+	postExpiryReport.ExpiresAt = expiryBoundary.Add(domain.CrashReportRetention)
+	if _, err := store.SubmitCrashReport(ctx, user.ID, postExpiryReport); err != nil {
+		t.Fatalf("submission after quota expiry without pruning = %v", err)
+	}
+
+	retention, err := store.PruneRetention(ctx, expiryBoundary, domain.CrashReportMaximumRetainedPerUser)
 	if err != nil || retention.CrashReportsDeleted != domain.CrashReportMaximumRetainedPerUser {
 		t.Fatalf("quota retention prune = %+v, err=%v", retention, err)
 	}
-	if _, err := store.SubmitCrashReport(ctx, user.ID, newReport()); err != nil {
+	afterPruneReport := newReport()
+	afterPruneReport.AcceptedAt = expiryBoundary
+	afterPruneReport.ExpiresAt = expiryBoundary.Add(domain.CrashReportRetention)
+	if _, err := store.SubmitCrashReport(ctx, user.ID, afterPruneReport); err != nil {
 		t.Fatalf("submission after retention prune = %v", err)
 	}
 }

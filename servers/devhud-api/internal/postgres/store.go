@@ -494,7 +494,8 @@ func (s *Store) SubmitCrashReport(ctx context.Context, userID string, report dom
 	}
 
 	var retainedReports int
-	if err := tx.QueryRow(ctx, `SELECT count(*) FROM devhud_crash_reports WHERE owner_user_id = $1`, userID).Scan(&retainedReports); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM devhud_crash_reports
+        WHERE owner_user_id = $1 AND expires_at > $2`, userID, report.AcceptedAt).Scan(&retainedReports); err != nil {
 		return domain.CrashReport{}, err
 	}
 	if retainedReports >= domain.CrashReportMaximumRetainedPerUser {

@@ -115,6 +115,10 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
         val contents = args.getString("contents")
         require(suggestedName.matches(Regex("devhud-diagnostics-[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\\.json")))
         require(contents.toByteArray(Charsets.UTF_8).size <= 1024 * 1024)
+        if (diagnosticsExportPickerActive) {
+            invoke.reject("platform-failure", "platform-failure")
+            return
+        }
         val intent = Intent(Intent.ACTION_CREATE_DOCUMENT)
             .addCategory(Intent.CATEGORY_OPENABLE)
             .addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
