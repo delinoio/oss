@@ -526,6 +526,15 @@ fn deletes_capture_drafts_for_purge_scope(scope: Option<&str>) -> bool {
     matches!(scope, Some("logout"))
 }
 
+#[cfg(desktop)]
+fn purge_capture_drafts_before_secure_store<T>(
+    purge_drafts: impl FnOnce() -> Result<(), crate::capture::CaptureError>,
+    purge_secure_store: impl FnOnce() -> Result<T, String>,
+) -> Result<T, String> {
+    purge_drafts().map_err(|_| "storage-failure".to_string())?;
+    purge_secure_store().map_err(|_| "storage-failure".to_string())
+}
+
 fn runtime_platform() -> &'static str {
     if cfg!(target_os = "ios") {
         "ios"
@@ -734,17 +743,16 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
             let purge = capture
                 .begin_purge()
                 .map_err(|error| error.code().to_string())?;
-            let draft_result = if deletes_capture_drafts_for_purge_scope(purge_scope) {
-                purge.purge_drafts()
+            let purge_result = if deletes_capture_drafts_for_purge_scope(purge_scope) {
+                purge_capture_drafts_before_secure_store(
+                    || purge.purge_drafts(),
+                    || crate::secure_store::handle(&request),
+                )
             } else {
-                Ok(())
+                crate::secure_store::handle(&request).map_err(|_| "storage-failure".to_string())
             };
-            let secure_result = crate::secure_store::handle(&request);
             drop(purge);
-            return match (draft_result, secure_result) {
-                (Ok(()), Ok(response)) => Ok(response),
-                _ => Err("storage-failure".to_string()),
-            };
+            return purge_result;
         }
         return crate::secure_store::handle(&request);
     }
@@ -927,9 +935,18 @@ async fn handle_capture_request(
         }
         Some("capture.flatten") => {
             exact_keys(request, &["operation", "draftId", "expectedRevision"])?;
+            let draft_id = capture_id(request, "draftId")?;
+            let expected_revision = revision(request)?;
+            let flatten_capture = capture.clone();
+            let images = tauri::async_runtime::spawn_blocking(move || {
+                flatten_capture.store().flatten(draft_id, expected_revision)
+            })
+            .await
+            .map_err(|_| "platform-failure".to_string())?
+            .map_err(failure)?;
             Ok(json!({
                 "kind": "capture-flattened",
-                "images": capture.store().flatten(capture_id(request, "draftId")?, revision(request)?).map_err(failure)?,
+                "images": images,
             }))
         }
         Some("capture.delete-draft" | "capture.confirm-issue-created") => {
@@ -951,16 +968,16 @@ async fn handle_capture_request(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::Ordering;
+    use std::sync::atomic::{AtomicBool, Ordering};
 
-    use serde_json::json;
+    use serde_json::{Value, json};
 
-    #[cfg(desktop)]
-    use super::deletes_capture_drafts_for_purge_scope;
     use super::{
         NativeBridgeState, handle_native_bridge_request, is_auth_callback, routes_to_mobile_plugin,
         shortcut_status, validate_auth_browser_request,
     };
+    #[cfg(desktop)]
+    use super::{deletes_capture_drafts_for_purge_scope, purge_capture_drafts_before_secure_store};
 
     #[cfg(desktop)]
     #[test]
@@ -970,6 +987,22 @@ mod tests {
             "account-deletion"
         )));
         assert!(!deletes_capture_drafts_for_purge_scope(Some("api-change")));
+    }
+
+    #[cfg(desktop)]
+    #[test]
+    fn failed_capture_draft_purge_skips_secure_store_purge() {
+        let secure_store_called = AtomicBool::new(false);
+        let result = purge_capture_drafts_before_secure_store::<Value>(
+            || Err(crate::capture::CaptureError::StorageFailure),
+            || {
+                secure_store_called.store(true, Ordering::SeqCst);
+                Ok(json!({ "kind": "ok" }))
+            },
+        );
+
+        assert_eq!(result.unwrap_err(), "storage-failure");
+        assert!(!secure_store_called.load(Ordering::SeqCst));
     }
 
     #[test]

@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { StrictMode } from "react";
+import { StrictMode, createRef } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { messages } from "./localization";
 import type { CaptureDraft, NativeBridgeRequestV1, NativeBridgeResponseV1, NativeBridgeV1 } from "./native-bridge";
-import { RealqaSurface } from "./realqa-ui";
+import { RealqaSurface, type RealqaController } from "./realqa-ui";
 import { ShortcutActionId } from "./shortcuts";
 
 const draft: CaptureDraft = {
@@ -561,6 +561,57 @@ describe("RealQA capture and editor", () => {
     for (const remove of within(imageOrder).getAllByRole("button", { name: messages.en.editorRemove })) {
       expect(remove).toHaveProperty("disabled", disabled);
     }
+  });
+
+  it("selects the fallback image after removing the active image", async () => {
+    const remainingDraft: CaptureDraft = {
+      ...secondDraft,
+      revision: secondDraft.revision + 1,
+      imageCount: 1,
+      images: [secondDraft.images[0]],
+    };
+    const { bridge } = bridgeWith(async (value) => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [secondDraft], unreadableDraftIds: [] };
+      if (value.operation === "capture.editor.apply" && value.command.kind === "remove-image") {
+        expect(value.command.imageId).toBe(secondDraft.images[1].id);
+        return { kind: "capture-draft", draft: remainingDraft };
+      }
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    render(<RealqaSurface bridge={bridge} copy={messages.en} />);
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.realqaOpenEditor }));
+    const secondImage = screen.getByRole("button", { name: `${messages.en.editorImage} 2` });
+    fireEvent.click(secondImage);
+    expect(secondImage.getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(within(secondImage.parentElement!).getByRole("button", { name: messages.en.editorRemove }));
+
+    const firstImage = await screen.findByRole("button", { name: `${messages.en.editorImage} 1` });
+    await waitFor(() => expect(firstImage.getAttribute("aria-pressed")).toBe("true"));
+    expect(screen.getByRole("img", { name: messages.en.editorCanvas }).querySelector("img")?.getAttribute("src")).toBe(remainingDraft.images[0].previewUrl);
+  });
+
+  it("clears mounted draft state through the logout controller reset", async () => {
+    const controller = createRef<RealqaController>();
+    const unreadableId = "019b0000-0000-7000-8000-000000000099";
+    const { bridge } = bridgeWith(async (value) => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [draft], unreadableDraftIds: [unreadableId] };
+      if (value.operation === "capture.start") return { kind: "capture-draft", draft };
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    render(<RealqaSurface ref={controller} bridge={bridge} copy={messages.en} />);
+    await screen.findByRole("button", { name: messages.en.realqaOpenEditor });
+    expect(screen.getByText(messages.en.realqaUnreadableDraft)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: messages.en.captureDisplay }));
+    await screen.findByRole("complementary", { name: messages.en.floatingPreview });
+
+    act(() => controller.current?.reset());
+
+    expect(screen.queryByRole("button", { name: messages.en.realqaOpenEditor })).toBeNull();
+    expect(screen.queryByText(messages.en.realqaUnreadableDraft)).toBeNull();
+    expect(screen.queryByRole("complementary", { name: messages.en.floatingPreview })).toBeNull();
+    expect(screen.getByText(messages.en.realqaNoDrafts)).toBeTruthy();
   });
 
   it.each([

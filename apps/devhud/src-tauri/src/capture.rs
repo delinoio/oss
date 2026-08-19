@@ -26,6 +26,7 @@ pub const DEFAULT_DRAFT_QUOTA: u64 = 10 * 1024 * 1024 * 1024;
 pub const DRAFT_RETENTION: Duration = Duration::from_secs(30 * 24 * 60 * 60);
 const MAX_HISTORY_STATES: usize = 100;
 const MAX_OUTPUT_DIMENSION: u32 = 4096;
+const WINDOW_TARGETING_GRACE_TICKS: u64 = 20;
 const ENCRYPTED_MAGIC: &[u8; 4] = b"RQA1";
 const FLATTENED_BUNDLE_MAGIC: &[u8; 8] = b"RQAFB001";
 const MAX_ENCRYPTED_PNG_BYTES: u64 = MAX_PNG_BYTES as u64 + 32;
@@ -935,7 +936,12 @@ impl DraftStore {
                     encoded = encode_srgb_png(&final_image)?;
                 }
                 let checksum = hex_digest(Sha256::digest(&encoded));
-                let encrypted = encrypt(&key, id, &format!("flattened:{}", state.id), &encoded)?;
+                let encrypted = encrypt(
+                    &key,
+                    id,
+                    &format!("flattened:{}:{}", document.revision, state.id),
+                    &encoded,
+                )?;
                 file.write_all(state.id.as_bytes())
                     .and_then(|()| file.write_all(&(encrypted.len() as u64).to_le_bytes()))
                     .and_then(|()| file.write_all(&encrypted))
@@ -1003,7 +1009,12 @@ impl DraftStore {
                 .join(id.to_string())
                 .join(format!("flattened-{revision}.bin"));
             let encrypted = read_flattened_bundle_entry(&path, image_id)?;
-            decrypt(&key, id, &format!("flattened:{image_id}"), &encrypted)
+            decrypt(
+                &key,
+                id,
+                &format!("flattened:{revision}:{image_id}"),
+                &encrypted,
+            )
         } else {
             let bytes = fs::read(
                 self.root
@@ -1210,13 +1221,15 @@ impl CaptureService {
         }
         self.ensure_not_cancelled(epoch)?;
         options.validate()?;
-        for _ in 0..u64::from(options.delay_seconds) * 10 {
-            std::thread::sleep(Duration::from_millis(100));
-            self.ensure_not_cancelled(epoch)?;
-        }
+        self.wait_cancellable(epoch, u64::from(options.delay_seconds) * 10)?;
         self.ensure_not_cancelled(epoch)?;
         after_delay()?;
         self.ensure_not_cancelled(epoch)?;
+        if matches!(action, CaptureAction::Selection | CaptureAction::Toolbar)
+            && options.selection_window
+        {
+            self.wait_cancellable(epoch, WINDOW_TARGETING_GRACE_TICKS)?;
+        }
         match self.capture_attempt(action, &options, epoch) {
             Err(CaptureError::TopologyChanged) => {
                 self.ensure_not_cancelled(epoch)?;
@@ -1371,6 +1384,14 @@ impl CaptureService {
         } else {
             Err(CaptureError::Cancelled)
         }
+    }
+
+    fn wait_cancellable(&self, epoch: u64, ticks: u64) -> Result<(), CaptureError> {
+        for _ in 0..ticks {
+            std::thread::sleep(Duration::from_millis(100));
+            self.ensure_not_cancelled(epoch)?;
+        }
+        Ok(())
     }
 
     fn capture_window(
@@ -2757,6 +2778,7 @@ mod tests {
     use std::sync::{
         Barrier,
         atomic::{AtomicUsize, Ordering},
+        mpsc,
     };
 
     use image::ImageBuffer;
@@ -3426,6 +3448,52 @@ mod tests {
     }
 
     #[test]
+    fn window_targeting_grace_is_cancellable_after_the_window_handoff() {
+        let root = TestDirectory::new();
+        let adapter = Arc::new(FakeAdapter {
+            displays: displays(),
+            pointer: Point { x: -50.0, y: 20.0 },
+            topology_calls: AtomicUsize::new(0),
+            capture_calls: AtomicUsize::new(0),
+            change_topology: false,
+            fail_first_capture: false,
+            pointer_failure: false,
+            protected_display: None,
+            transparent: false,
+        });
+        let service = Arc::new(CaptureService::new(
+            adapter.clone(),
+            Arc::new(DraftStore::new_test(root.0.clone(), 1024 * 1024, [27; 32])),
+        ));
+        let epoch = service.begin_capture().unwrap();
+        let (handoff, handed_off) = mpsc::channel();
+        let capture_service = service.clone();
+        let capture = std::thread::spawn(move || {
+            capture_service.capture_with_epoch_after_delay(
+                CaptureAction::Selection,
+                CaptureOptions {
+                    include_pointer: false,
+                    remove_shadow: false,
+                    delay_seconds: 0,
+                    selection: None,
+                    selection_window: true,
+                    append_to_draft_id: None,
+                },
+                epoch,
+                move || handoff.send(()).map_err(|_| CaptureError::PlatformFailure),
+            )
+        });
+
+        handed_off.recv_timeout(Duration::from_secs(1)).unwrap();
+        service.cancel();
+        assert_eq!(
+            capture.join().unwrap().unwrap_err(),
+            CaptureError::Cancelled
+        );
+        assert_eq!(adapter.capture_calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
     fn stale_capture_epoch_is_rejected_immediately_before_persistence() {
         let root = TestDirectory::new();
         let store = Arc::new(DraftStore::new_test(root.0.clone(), 1024 * 1024, [15; 32]));
@@ -3679,6 +3747,52 @@ mod tests {
                 .asset(created.id, created.images[0].id, true, created.revision,)
                 .unwrap_err(),
             CaptureError::RevisionConflict
+        );
+    }
+
+    #[test]
+    fn flattened_bundle_entries_are_bound_to_the_draft_revision() {
+        let root = TestDirectory::new();
+        let key = [28; 32];
+        let store = DraftStore::new_test(root.0.clone(), 1024 * 1024, key);
+        let created = store
+            .create(vec![ImageBuffer::from_pixel(
+                16,
+                16,
+                Rgba([11, 22, 33, 255]),
+            )])
+            .unwrap();
+        store.flatten(created.id, created.revision).unwrap();
+        let directory = root.0.join(created.id.to_string());
+        let previous_bundle =
+            fs::read(directory.join(format!("flattened-{}.bin", created.revision))).unwrap();
+        let edited = store
+            .apply(
+                created.id,
+                created.revision,
+                EditorCommand::SetCrop {
+                    image_id: created.images[0].id,
+                    crop: Some(Rect {
+                        x: 1.0,
+                        y: 1.0,
+                        width: 8.0,
+                        height: 8.0,
+                    }),
+                },
+            )
+            .unwrap();
+        store.flatten(edited.id, edited.revision).unwrap();
+        fs::write(
+            directory.join(format!("flattened-{}.bin", edited.revision)),
+            previous_bundle,
+        )
+        .unwrap();
+
+        assert_eq!(
+            store
+                .asset(edited.id, edited.images[0].id, true, edited.revision)
+                .unwrap_err(),
+            CaptureError::StorageFailure
         );
     }
 

@@ -9,7 +9,10 @@ type CaptureRequest = { readonly action: CaptureActionId; readonly sequence: num
 type FloatingPreviewRequest = { readonly draft: CaptureDraft; readonly imageId?: string; readonly sequence: number };
 const MAX_ANNOTATION_TEXT_CHARACTERS = 2_048;
 
-export interface RealqaController { execute(action: CaptureActionId): Promise<void> }
+export interface RealqaController {
+  execute(action: CaptureActionId): Promise<void>;
+  reset(): void;
+}
 
 interface RealqaContextValue {
   readonly state: {
@@ -150,6 +153,27 @@ export function RealqaSurface({ ref, bridge, copy, active = true, onActivate, re
     if (!captureInFlight.current) dismissCaptureDialog();
   }, [active, dismissCaptureDialog]);
 
+  const reset = useCallback(() => {
+    captureStatusRequest.current += 1;
+    lastRequested.current = null;
+    captureInFlight.current = false;
+    captureStatusInFlight.current = false;
+    captureDialogOpener.current = null;
+    previewSequence.current += 1;
+    draftsById.current.clear();
+    draftOperationQueues.current.clear();
+    setDrafts([]);
+    setUnreadableDraftIds([]);
+    setSelected(null);
+    setBusy(false);
+    setStatus("");
+    setError(null);
+    setPreviewRequest(null);
+    setCaptureDialog(null);
+    setCaptureStatus(null);
+    setOptions({ delaySeconds: 0, includePointer: false, removeShadow: false });
+  }, []);
+
   const completeCapture = useCallback(async (action: CaptureActionId, captureOptions: CaptureOptions = options) => {
     if (captureInFlight.current) return;
     captureInFlight.current = true;
@@ -212,7 +236,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, onActivate, re
     if (busy) void bridge.request({ operation: "capture.cancel" }).catch(() => {});
   }, [bridge, busy, dismissCaptureDialog]);
 
-  useImperativeHandle(ref, () => ({ execute: capture }), [capture]);
+  useImperativeHandle(ref, () => ({ execute: capture, reset }), [capture, reset]);
   useEffect(() => {
     if (!requestedAction || requestedAction.sequence === lastRequested.current) return;
     lastRequested.current = requestedAction.sequence;
@@ -408,7 +432,11 @@ function CaptureEditor({ draft }: { readonly draft: CaptureDraft }) {
     editorActive.current = true;
     return () => { editorActive.current = false; };
   }, []);
-  useEffect(() => { if (!active && draft.images[0]) setImageId(draft.images[0].id); }, [active, draft.images]);
+  useEffect(() => {
+    if (!draft.images.some((image) => image.id === imageId)) {
+      setImageId(draft.images[0]?.id ?? "");
+    }
+  }, [draft.images, imageId]);
   useEffect(() => { if (busy) setDrawing([]); }, [busy]);
 
   const enqueueRevisionOperation = (operation: (current: CaptureDraft) => Promise<void>) => {
