@@ -246,6 +246,7 @@ export function DeckPollingBoundary({ bridge, active, online, provider: supplied
         const signature = `${deck.name}\u0000${deck.profileRef}\u0000${deck.query}\u0000${deck.refreshMinutes}\u0000${deck.notifications.join(",")}`;
         const previous = configurations.current.get(deck.id);
         if (previous?.signature === signature) continue;
+        if (previous !== undefined && previous.profileRef !== deck.profileRef) clearDeckCache(storage, `${scopeId}.${previous.profileRef}`, deck.id);
         let cache = readDeckCache(storage, `${scopeId}.${deck.profileRef}`, deck.id, deck.query);
         if (previous !== undefined && previous.refreshMinutes !== deck.refreshMinutes && cache !== null && cache.failures > 0 && cache.nextRefreshAt !== null) {
           cache = { ...cache, nextRefreshAt: nextDeckRefresh(Date.now(), deck.refreshMinutes, cache.failures, cache.rate) };

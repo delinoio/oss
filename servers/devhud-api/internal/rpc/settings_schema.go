@@ -239,7 +239,8 @@ func validateSettingsDeck(value any, path string, legacy bool, previous bool) (s
 	if err != nil {
 		return "", err
 	}
-	if !legacy && !previous && strings.TrimSpace(name) != name {
+	normalizedName := strings.TrimSpace(name)
+	if normalizedName == "" || (!legacy && !previous && normalizedName != name) {
 		return "", fmt.Errorf("%s.name must be a trimmed nonblank string", path)
 	}
 	query, err := settingsText(deck["query"], path+".query", true)

@@ -147,4 +147,17 @@ func TestValidateDevHudSettingsDeckQualifiers(t *testing.T) {
 	if err := validateDevHudSettings([]byte(previousSettings(`"owner repo"`)), 2); err == nil {
 		t.Fatal("schema-v2 malformed repository was accepted")
 	}
+	for name, test := range map[string]struct {
+		version uint32
+		value   string
+	}{
+		"schema-v2":               {2, previousSettings(`"   "`)},
+		"legacy-shaped schema-v3": {3, strings.Replace(previousSettings(`"   "`), `"schemaVersion":2`, `"schemaVersion":3`, 1)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := validateDevHudSettings([]byte(test.value), test.version); err == nil {
+				t.Fatal("whitespace-only legacy Deck title was accepted")
+			}
+		})
+	}
 }

@@ -235,6 +235,20 @@ describe("Deck surface", () => {
     await waitFor(() => expect(localStorage.getItem(deckCacheKey(cacheScope, deck.id))).toBeNull());
   });
 
+  it("removes the previous profile-scoped cache when a synchronized Deck changes profile", async () => {
+    const nextProfile = { id: "018f47a2-7b3c-7def-8abc-1234567890ad", name: "Personal", kind: "fine-grained" as const };
+    const previousScope = `origin.scope.${profile.id}`;
+    writeDeckCache(localStorage, previousScope, { version: DeckCacheVersion, deckId: deck.id, query: deck.query, queryEtag: null, results: [], lastSuccessfulAt: null, rate: null, failures: 0, nextRefreshAt: null, transitionKeys: [] });
+    const bridge = bridgeWith(async () => ({ kind: "ok" as const }));
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+    await waitFor(() => expect(localStorage.getItem(deckCacheKey(previousScope, deck.id))).not.toBeNull());
+
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, github: { ...settings.github, profiles: [profile, nextProfile] }, decks: [{ ...deck, profileRef: nextProfile.id }] }) });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    await waitFor(() => expect(localStorage.getItem(deckCacheKey(previousScope, deck.id))).toBeNull());
+  });
+
   it("cancels native notifications when the polling boundary unmounts", async () => {
     const request = vi.fn(async () => ({ kind: "ok" as const }));
     const bridge = bridgeWith(request);
