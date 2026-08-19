@@ -6,7 +6,7 @@
 
 ## Runtime and Language
 
-Manifest V3 TypeScript/JavaScript extension with English/Korean user-facing UI and fixed DevHud identifiers. The popup marks the document with the resolved Chrome UI language so assistive technology uses the matching pronunciation rules. It is distributed through the Chrome Web Store and as a reproducible validation ZIP.
+Manifest V3 TypeScript/JavaScript extension with English/Korean user-facing UI and fixed DevHud identifiers. The popup marks the document with the resolved Chrome UI language so assistive technology uses the matching pronunciation rules. After successful pairing, it immediately refreshes configured origins so their permission actions are available without reopening the popup. It is distributed through the Chrome Web Store and as a reproducible validation ZIP.
 
 Release builds require `DEVHUD_CHROME_EXTENSION_ID` and `DEVHUD_CHROME_EXTENSION_PUBLIC_KEY`; the build verifies that the public key derives the configured 32-character ID. `DEVHUD_EXTENSION_TEST_BUILD=1` selects the committed deterministic fixture identity for tests only through a platform-neutral Node launcher. Every build removes prior TypeScript output before compilation. Sorted inputs, a fixed ZIP timestamp, and pinned dependencies make identical inputs byte-identical without retaining deleted or renamed modules from a reused workspace.
 

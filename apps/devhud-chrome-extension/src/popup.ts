@@ -55,17 +55,29 @@ function renderOrigins(configuration: Configuration) {
   }
 }
 
+async function refreshOrigins() {
+  try {
+    const response = await send({ type: "configuration" });
+    renderOrigins((response.payload ?? {}) as Configuration);
+  } catch {
+    renderOrigins({});
+  }
+}
+
 for (const element of document.querySelectorAll<HTMLElement>("[data-i18n]")) element.textContent = text(element.dataset.i18n!);
 
 document.querySelector<HTMLButtonElement>("#pair")!.addEventListener("click", () => {
   const pairingNonce = pairingInput.value.trim();
   if (!pairingNonce) { announce(text("pairingRequired"), true); pairingInput.focus(); return; }
-  void send({ type: "pair", pairingNonce }).then((response) => announce(text(response.ok ? "paired" : "pairingFailed"), !response.ok));
+  void send({ type: "pair", pairingNonce }).then((response) => {
+    announce(text(response.ok ? "paired" : "pairingFailed"), !response.ok);
+    if (response.ok) void refreshOrigins();
+  });
 });
 
 for (const [id, selectElement] of [["capture", false], ["select", true]] as const) document.querySelector<HTMLButtonElement>(`#${id}`)!.addEventListener("click", () => {
   void send({ type: "capture", selectElement }).then((response) => announce(text(response.ok ? "captureSent" : "manualSelection"), !response.ok));
 });
 
-void send({ type: "configuration" }).then((response) => renderOrigins((response.payload ?? {}) as Configuration)).catch(() => renderOrigins({}));
+void refreshOrigins();
 pairingInput.focus();
