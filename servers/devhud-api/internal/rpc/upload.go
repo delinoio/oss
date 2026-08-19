@@ -264,6 +264,9 @@ func protocolUploadState(upload domain.Upload) devhudv1.UploadState {
 	case domain.UploadStateFinalized:
 		return devhudv1.UploadState_UPLOAD_STATE_FINALIZED
 	case domain.UploadStateRemoving:
+		if upload.RemovedAt != nil {
+			return devhudv1.UploadState_UPLOAD_STATE_QUARANTINED
+		}
 		if upload.FinalizedAt == nil {
 			return devhudv1.UploadState_UPLOAD_STATE_PENDING
 		}

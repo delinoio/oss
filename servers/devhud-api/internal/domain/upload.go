@@ -94,9 +94,10 @@ type UploadError struct{ Failure UploadFailure }
 func (e *UploadError) Error() string { return "upload cannot be finalized" }
 
 var (
-	ErrOperationLeaseLost = errors.New("upload operation lease lost")
-	ErrObjectNotFound     = errors.New("upload object not found")
-	ErrObjectPrecondition = errors.New("upload object precondition failed")
+	ErrOperationLeaseLost             = errors.New("upload operation lease lost")
+	ErrUploadRemovalPendingCompletion = errors.New("upload removal is pending completion")
+	ErrObjectNotFound                 = errors.New("upload object not found")
+	ErrObjectPrecondition             = errors.New("upload object precondition failed")
 )
 
 type UploadTarget struct {
@@ -165,6 +166,7 @@ type Upload struct {
 	RemovedAt       *time.Time
 	RemovalReason   RemovalReason
 	OperationToken  string
+	RemovalAudit    *AdministratorUploadAudit
 }
 
 type UploadCursor struct {
@@ -177,21 +179,32 @@ type UploadList struct {
 	Next    *UploadCursor
 }
 
+type AdminUploadFilters struct {
+	OwnerUserID   string
+	SubmissionID  string
+	UploadGroupID string
+	States        []UploadState
+}
+
 type UploadUsage struct {
 	SignedURLsRollingHour uint64
 	UploadBytesRollingDay uint64
 	StoredBytes           uint64
 	FinalizedImages       uint64
+	SubmissionImages      map[string]uint64
 }
 
 type AdministratorUploadAudit struct {
-	ActorUserID string
-	Rationale   string
+	ActorUserID      string
+	ActorFingerprint []byte
+	Rationale        string
+	Event            AuditEvent
 }
 
 type StagingSweepResult struct {
-	Claimed int
-	Deleted int
+	Claimed           int
+	Deleted           int
+	RemovalsCompleted int
 }
 
 type UploadObject struct {
@@ -230,11 +243,12 @@ type UploadRepository interface {
 	ReleaseUploadPromotion(context.Context, string, string) error
 	RejectUpload(context.Context, string, UploadBinding, UploadFailure, time.Time) error
 	ListUploads(context.Context, string, []UploadState, string, *UploadCursor, uint32) (UploadList, error)
-	ListUploadsForAdministrator(context.Context, string, []UploadState, *UploadCursor, uint32) (UploadList, error)
-	ClaimUploadRemoval(context.Context, string, string, RemovalReason, string, time.Time) (Upload, error)
+	ListUploadsForAdministrator(context.Context, AdminUploadFilters, *UploadCursor, uint32) (UploadList, error)
+	ClaimUploadRemoval(context.Context, string, string, RemovalReason, UploadState, *AdministratorUploadAudit, string, time.Time) (Upload, error)
 	RecordUploadReplacement(context.Context, string, string, string) (Upload, error)
-	CompleteUploadRemoval(context.Context, string, string, time.Time, *AdministratorUploadAudit) (Upload, error)
+	CompleteUploadRemoval(context.Context, string, string, time.Time) (Upload, error)
 	ReleaseUploadRemoval(context.Context, string, string) error
+	ListExpiredUploadRemovals(context.Context, time.Time, int) ([]Upload, error)
 	ClaimExpiredUploads(context.Context, time.Time, int) ([]Upload, error)
 	CompleteExpiredUpload(context.Context, string, time.Time) error
 	ListAccountUploadsForPurge(context.Context, string, int) ([]Upload, error)
@@ -249,9 +263,9 @@ type UploadStagingSweeper interface {
 // UploadAdministration is deliberately an internal hook. AdminService wiring
 // is owned by the administrator milestone and must not expose object bytes.
 type UploadAdministration interface {
-	ListUploads(context.Context, string, []UploadState, string, uint32) (UploadList, string, error)
+	ListUploads(context.Context, string, AdminUploadFilters, string, uint32) (UploadList, string, error)
 	GetUsage(context.Context, string) (UploadUsage, error)
-	RemoveUpload(context.Context, string, string, RemovalReason, string) (Upload, error)
+	RemoveUpload(context.Context, string, string, RemovalReason, UploadState, string, AuditEvent) (Upload, error)
 }
 
 func formatGeneration(value uint64) string {

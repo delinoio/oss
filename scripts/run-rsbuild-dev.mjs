@@ -4,7 +4,6 @@ import { exitLikeChild, spawnDevServer } from "./spawn-dev-server.mjs";
 
 const [appName, portText, ...rawRsbuildArgs] = process.argv.slice(2);
 const port = Number(portText);
-const host = "127.0.0.1";
 const rsbuildArgs =
   rawRsbuildArgs[0] === "--" ? rawRsbuildArgs.slice(1) : rawRsbuildArgs;
 
@@ -25,7 +24,7 @@ const addressOverride = rsbuildArgs.find(
 
 if (addressOverride) {
   console.error(
-    `${appName}: ${addressOverride.split("=")[0]} cannot override the fixed development address ${host}:${port}.`,
+    `${appName}: ${addressOverride.split("=")[0]} cannot override the app-owned fixed development address on port ${port}.`,
   );
   process.exit(1);
 }
@@ -36,8 +35,6 @@ try {
     [
       "dev",
       ...rsbuildArgs,
-      "--host",
-      host,
       "--port",
       String(port),
       "--strict-port",
