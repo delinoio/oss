@@ -1271,6 +1271,77 @@ jobs:
           pnpm --filter @delinoio/devhud-api-client test
           pnpm --filter @delinoio/devhud-api-client build
 
+  devhud-admin:
+    name: DevHud Admin
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Filter changed paths
+        id: filter
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            devhud_admin:
+              - .github/workflows/CI.yml
+              - package.json
+              - pnpm-lock.yaml
+              - pnpm-workspace.yaml
+              - scripts/run-rsbuild-dev.mjs
+              - scripts/spawn-dev-server.mjs
+              - apps/devhud-admin/**
+              - packages/devhud-api-client/**
+              - protos/**
+              - servers/devhud-api/internal/adminassets/**
+
+      - name: Determine whether to run
+        id: gate
+        shell: bash
+        env:
+          ADMIN_CHANGED: ${{ steps.filter.outputs.devhud_admin }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          run=false
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ] || [ "${ADMIN_CHANGED}" = "true" ]; then
+            run=true
+          fi
+          echo "run=${run}" >> "${GITHUB_OUTPUT}"
+
+      - name: Skip (DevHud Admin unaffected)
+        if: ${{ steps.gate.outputs.run != 'true' }}
+        run: |
+          echo "Skipping DevHud Admin checks: paths unaffected"
+
+      - name: Setup pnpm
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.26.2
+
+      - name: Setup Node.js
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: pnpm install --frozen-lockfile
+
+      - name: Build client, test administrator SPA, and verify embedded assets
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: |
+          pnpm --filter @delinoio/devhud-api-client build
+          pnpm --filter devhud-admin test
+          git status --short --untracked-files=all -- servers/devhud-api/internal/adminassets/dist
+          git diff --exit-code -- servers/devhud-api/internal/adminassets/dist
+          test -z "$(git ls-files --others --exclude-standard -- servers/devhud-api/internal/adminassets/dist)"
+
   devhud-api:
     name: DevHud API Integration
     runs-on: ubuntu-latest
@@ -1367,6 +1438,7 @@ jobs:
       - devhud-ios-simulator
       - devhud-android-emulator
       - devhud-protocol
+      - devhud-admin
       - devhud-api
     steps:
       - run: exit 1

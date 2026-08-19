@@ -23,12 +23,13 @@ type Sweeper struct {
 }
 
 type Result struct {
-	LockAcquired          bool
-	AccountsClaimed       int
-	AccountsPurged        int
-	RequestLogsDeleted    int64
-	AuditEventsDeleted    int64
-	StagingObjectsDeleted int
+	LockAcquired            bool
+	AccountsClaimed         int
+	AccountsPurged          int
+	RequestLogsDeleted      int64
+	AuditEventsDeleted      int64
+	StagingObjectsDeleted   int
+	UploadRemovalsCompleted int
 }
 
 type Option func(*Sweeper)
@@ -73,6 +74,7 @@ func (s *Sweeper) RunOnce(ctx context.Context) (result Result, returnErr error) 
 				return result, fmt.Errorf("sweep expired staging: %w", err)
 			}
 			result.StagingObjectsDeleted += staging.Deleted
+			result.UploadRemovalsCompleted += staging.RemovalsCompleted
 			if staging.Claimed < s.batchSize {
 				break
 			}

@@ -104,6 +104,9 @@ export function validateAdminReason(reason: string, publicAssetBaseUrl: string):
   if (!unicodeNonWhitespacePattern.test(reason)) {
     throw new TypeError("reason must contain at least one non-whitespace character");
   }
+  if (reason.includes("\0")) {
+    throw new TypeError("reason must not contain NUL characters");
+  }
   validateSensitiveText(
     reason,
     MAX_ADMIN_REASON_BYTES,
