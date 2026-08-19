@@ -508,6 +508,38 @@ fn discard_farthest_history(document: &mut DraftDocument) -> bool {
     true
 }
 
+fn unreferenced_source_payloads(
+    directory: &Path,
+    document: &DraftDocument,
+) -> Result<Vec<PathBuf>, CaptureError> {
+    let referenced = document
+        .undo
+        .iter()
+        .chain(std::iter::once(&document.current))
+        .chain(document.redo.iter())
+        .flat_map(|state| {
+            state
+                .images
+                .iter()
+                .filter(|image| !image.removed)
+                .map(|image| image.id)
+        })
+        .collect::<HashSet<_>>();
+    let mut unreferenced = Vec::new();
+    for child in fs::read_dir(directory).map_err(|_| CaptureError::StorageFailure)? {
+        let child = child.map_err(|_| CaptureError::StorageFailure)?;
+        let name = child.file_name().to_string_lossy().into_owned();
+        let source_id = name
+            .strip_prefix("source-")
+            .and_then(|name| name.strip_suffix(".bin"))
+            .and_then(|name| Uuid::parse_str(name).ok());
+        if source_id.is_some_and(|image_id| !referenced.contains(&image_id)) {
+            unreferenced.push(child.path());
+        }
+    }
+    Ok(unreferenced)
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FlattenedImage {
@@ -1092,15 +1124,24 @@ impl DraftStore {
         trim_history(document);
         loop {
             let encrypted = encrypt_document(document, key)?;
+            let stale_sources = unreferenced_source_payloads(&directory, document)?;
+            let stale_source_bytes = stale_sources
+                .iter()
+                .map(|path| fs::metadata(path).map(|value| value.len()).unwrap_or(0))
+                .sum::<u64>();
             if current
                 .saturating_sub(old)
                 .saturating_sub(stale_flattened_bytes)
+                .saturating_sub(stale_source_bytes)
                 .saturating_add(encrypted.len() as u64)
                 <= self.quota
             {
                 before_commit()?;
                 replace_manifest(&manifest, &encrypted)?;
                 for path in stale_flattened {
+                    let _ = remove_path(path);
+                }
+                for path in stale_sources {
                     let _ = remove_path(path);
                 }
                 return Ok(());
@@ -3888,7 +3929,7 @@ mod tests {
         assert!(removed_source.exists());
         assert!(!removed_flattened.exists());
 
-        for index in 0..MAX_HISTORY_STATES {
+        for index in 0..MAX_HISTORY_STATES - 1 {
             current = store
                 .apply(
                     created.id,
@@ -3906,6 +3947,7 @@ mod tests {
                 .unwrap();
         }
 
+        assert!(removed_source.exists());
         let reclaimable = fs::metadata(&removed_source).unwrap().len();
         let quota = directory_size(&root.0).unwrap() - reclaimable + 2048;
         let constrained = DraftStore::new_test(root.0.clone(), quota, key);

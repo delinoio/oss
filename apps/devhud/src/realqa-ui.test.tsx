@@ -390,6 +390,41 @@ describe("RealQA capture and editor", () => {
     expect(applyRequests[1].expectedRevision).toBe(4);
   });
 
+  it("ignores a stale draft list after an editor revision is installed", async () => {
+    let listRequests = 0;
+    let resolveStaleList: ((response: NativeBridgeResponseV1) => void) | undefined;
+    const applyRequests: Extract<NativeBridgeRequestV1, { operation: "capture.editor.apply" }>[] = [];
+    const { bridge } = bridgeWith(async (value) => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [] };
+      if (value.operation === "capture.list-drafts") {
+        listRequests += 1;
+        if (listRequests === 1) return { kind: "capture-drafts", drafts: [draft], unreadableDraftIds: [] };
+        return new Promise((resolve) => { resolveStaleList = resolve; });
+      }
+      if (value.operation === "capture.editor.apply") {
+        applyRequests.push(value);
+        return { kind: "capture-draft", draft: { ...draft, revision: value.expectedRevision + 1 } };
+      }
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    const rendered = render(<RealqaSurface bridge={bridge} copy={messages.en} />);
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.realqaOpenEditor }));
+
+    rendered.rerender(<RealqaSurface bridge={bridge} copy={messages.ko} />);
+    await waitFor(() => expect(listRequests).toBe(2));
+    const add = screen.getByRole("button", { name: messages.ko.editorAdd });
+    fireEvent.click(add);
+    await waitFor(() => expect(screen.getByRole("status").textContent).toContain(messages.ko.editorSaved));
+    expect(applyRequests[0].expectedRevision).toBe(3);
+
+    await act(async () => {
+      resolveStaleList?.({ kind: "capture-drafts", drafts: [draft], unreadableDraftIds: [] });
+    });
+    fireEvent.click(add);
+    await waitFor(() => expect(applyRequests).toHaveLength(2));
+    expect(applyRequests[1].expectedRevision).toBe(4);
+  });
+
   it("serializes an appended capture with editor revisions", async () => {
     let storedDraft = draft;
     let resolveEditor: ((response: NativeBridgeResponseV1) => void) | undefined;

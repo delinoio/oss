@@ -72,6 +72,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, onActivate, re
   const captureInFlight = useRef(false);
   const captureStatusInFlight = useRef(false);
   const captureStatusRequest = useRef(0);
+  const draftListRequest = useRef(0);
   const captureDialogOpener = useRef<HTMLElement | null>(null);
   const previewSequence = useRef(0);
   const draftsById = useRef(new Map<string, CaptureDraft>());
@@ -85,6 +86,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, onActivate, re
   }, []);
 
   const installDraft = useCallback((draft: CaptureDraft) => {
+    draftListRequest.current += 1;
     draftsById.current.set(draft.id, draft);
     setDrafts((current) => current.some((item) => item.id === draft.id)
       ? current.map((item) => item.id === draft.id ? draft : item)
@@ -110,8 +112,9 @@ export function RealqaSurface({ ref, bridge, copy, active = true, onActivate, re
   }, []);
 
   const refresh = useCallback(async () => {
+    const request = ++draftListRequest.current;
     const response = await bridge.request({ operation: "capture.list-drafts" });
-    if (response.kind === "capture-drafts") {
+    if (response.kind === "capture-drafts" && request === draftListRequest.current) {
       replaceDrafts(response.drafts);
       setUnreadableDraftIds(response.unreadableDraftIds);
     }
@@ -127,18 +130,15 @@ export function RealqaSurface({ ref, bridge, copy, active = true, onActivate, re
   }, [bridge]);
 
   useEffect(() => {
-    void Promise.allSettled([refreshCaptureStatus(), bridge.request({ operation: "capture.list-drafts" })]).then(([native, stored]) => {
+    void Promise.allSettled([refreshCaptureStatus(), refresh()]).then(([native, stored]) => {
       if (native.status === "rejected") {
         setError(errorCopy(copy, native.reason));
       }
-      if (stored.status === "fulfilled" && stored.value.kind === "capture-drafts") {
-        replaceDrafts(stored.value.drafts);
-        setUnreadableDraftIds(stored.value.unreadableDraftIds);
-      } else if (stored.status === "rejected") {
+      if (stored.status === "rejected") {
         setError(errorCopy(copy, stored.reason));
       }
     });
-  }, [bridge, copy, refreshCaptureStatus, replaceDrafts]);
+  }, [copy, refresh, refreshCaptureStatus]);
 
   const dismissCaptureDialog = useCallback((clearStatus = true) => {
     setCaptureDialog(null);
@@ -155,6 +155,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, onActivate, re
 
   const reset = useCallback(() => {
     captureStatusRequest.current += 1;
+    draftListRequest.current += 1;
     lastRequested.current = null;
     captureInFlight.current = false;
     captureStatusInFlight.current = false;
@@ -266,6 +267,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, onActivate, re
         ? runDraftOperation(draftId, () => bridge.request({ operation: "capture.delete-draft", draftId }))
         : bridge.request({ operation: "capture.delete-draft", draftId });
       await deletion;
+      draftListRequest.current += 1;
       setDrafts((current) => current.filter((draft) => draft.id !== draftId));
       draftsById.current.delete(draftId);
       setUnreadableDraftIds((current) => current.filter((id) => id !== draftId));

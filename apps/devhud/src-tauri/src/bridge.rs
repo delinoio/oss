@@ -772,6 +772,15 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
 }
 
 #[cfg(desktop)]
+fn should_restore_capture_window(
+    window_hidden: bool,
+    window_was_visible: Option<bool>,
+    window_was_minimized: Option<bool>,
+) -> bool {
+    window_hidden || window_was_visible != Some(true) || window_was_minimized != Some(false)
+}
+
+#[cfg(desktop)]
 async fn handle_capture_request(
     request: &Value,
     capture: std::sync::Arc<crate::capture::CaptureService>,
@@ -831,14 +840,32 @@ async fn handle_capture_request(
             let capture_window = app
                 .get_webview_window("main")
                 .ok_or_else(|| "platform-failure".to_string())?;
-            let window_was_visible = capture_window.is_visible().unwrap_or_else(|reason| {
-                tracing::warn!(event = "capture_window_visibility_query_failed", %reason);
-                true
-            });
-            let window_was_minimized = capture_window.is_minimized().unwrap_or_else(|reason| {
-                tracing::warn!(event = "capture_window_minimized_query_failed", %reason);
-                false
-            });
+            let window_was_visible = match capture_window.is_visible() {
+                Ok(visible) => Some(visible),
+                Err(_) => {
+                    tracing::warn!(
+                        event = "capture_window_state_query_failed",
+                        action = action_id,
+                        platform = capture.adapter_platform(),
+                        stage = "visibility",
+                        error_code = CaptureError::PlatformFailure.code(),
+                    );
+                    None
+                }
+            };
+            let window_was_minimized = match capture_window.is_minimized() {
+                Ok(minimized) => Some(minimized),
+                Err(_) => {
+                    tracing::warn!(
+                        event = "capture_window_state_query_failed",
+                        action = action_id,
+                        platform = capture.adapter_platform(),
+                        stage = "minimized",
+                        error_code = CaptureError::PlatformFailure.code(),
+                    );
+                    None
+                }
+            };
             let window_hidden = Arc::new(AtomicBool::new(false));
             let capture_task = capture.clone();
             let worker_window = capture_window.clone();
@@ -861,8 +888,11 @@ async fn handle_capture_request(
             .await
             .map_err(|_| "platform-failure".to_string())
             .and_then(|result| result.map_err(failure));
-            if window_hidden.load(Ordering::Acquire) || !window_was_visible || window_was_minimized
-            {
+            if should_restore_capture_window(
+                window_hidden.load(Ordering::Acquire),
+                window_was_visible,
+                window_was_minimized,
+            ) {
                 if capture_window.unminimize().is_err() {
                     tracing::error!(
                         event = "capture_window_restore_failed",
@@ -977,7 +1007,10 @@ mod tests {
         shortcut_status, validate_auth_browser_request,
     };
     #[cfg(desktop)]
-    use super::{deletes_capture_drafts_for_purge_scope, purge_capture_drafts_before_secure_store};
+    use super::{
+        deletes_capture_drafts_for_purge_scope, purge_capture_drafts_before_secure_store,
+        should_restore_capture_window,
+    };
 
     #[cfg(desktop)]
     #[test]
@@ -1037,6 +1070,25 @@ mod tests {
         ] {
             assert!(!is_auth_callback(rejected), "accepted {rejected}");
         }
+    }
+
+    #[cfg(desktop)]
+    #[test]
+    fn capture_window_restore_treats_unknown_state_as_not_safely_visible() {
+        assert!(!should_restore_capture_window(
+            false,
+            Some(true),
+            Some(false)
+        ));
+        assert!(should_restore_capture_window(true, Some(true), Some(false)));
+        assert!(should_restore_capture_window(
+            false,
+            Some(false),
+            Some(false)
+        ));
+        assert!(should_restore_capture_window(false, Some(true), Some(true)));
+        assert!(should_restore_capture_window(false, None, Some(false)));
+        assert!(should_restore_capture_window(false, Some(true), None));
     }
 
     #[test]
