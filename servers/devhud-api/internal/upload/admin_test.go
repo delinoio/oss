@@ -3,6 +3,7 @@ package upload
 import (
 	"context"
 	"crypto/sha256"
+	"net/url"
 	"testing"
 	"time"
 
@@ -15,6 +16,7 @@ func TestAdministratorReasonValidation(t *testing.T) {
 		"Expected yes / no",
 		"Reviewed incident from 2026/08/15.",
 		"Reviewed https://docs.example.com/policy?v=42#quarantine",
+		"Upload exceeded quota by 95%.",
 	} {
 		if err := validateAdministratorReason(reason); err != nil {
 			t.Fatalf("safe reason %q rejected: %v", reason, err)
@@ -30,11 +32,39 @@ func TestAdministratorReasonValidation(t *testing.T) {
 		"source:src/private/app.ts:10",
 		"frame:C:\\Users\\alice\\app.ts:10",
 		"source=%2Fworkspace%2Fprivate%2Fapp.ts",
+		"source=%252Fworkspace%252Fprivate%252Fapp.ts",
 		"https://example.com/audit?to%6ben=unsafe-value",
 		"file:///Users/example/private/incident.txt",
+		"Reviewed policy\x00violation",
 	} {
 		if err := validateAdministratorReason(reason); err == nil {
 			t.Fatalf("sensitive reason %q was accepted", reason)
+		}
+	}
+}
+
+func TestAdministratorReasonValidationRejectsPublicAssetLocators(t *testing.T) {
+	publicAssetBaseURL, err := url.Parse("https://assets.example.com/uploads/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, reason := range []string{
+		"Reviewed https://assets.example.com/uploads/image.png",
+		"Reviewed https://assets.example.com/%75ploads/image.png",
+		"Reviewed https%3A%2F%2Fassets.example.com%2Fuploads%2Fimage.png",
+		"Reviewed https%253A%252F%252Fassets.example.com%252Fuploads%252Fimage.png",
+		"Reviewed https://example.com/?asset=https%3A%2F%2Fassets.example.com%2Fuploads%2Fimage.png",
+	} {
+		if err := ValidateAdministratorReason(reason, publicAssetBaseURL); err == nil {
+			t.Fatalf("public asset reason %q was accepted", reason)
+		}
+	}
+	for _, reason := range []string{
+		"Reviewed https://assets.example.com/docs/upload-policy",
+		"Reviewed https://assets.example.com/uploads-archive/image-policy",
+	} {
+		if err := ValidateAdministratorReason(reason, publicAssetBaseURL); err != nil {
+			t.Fatalf("safe reason %q rejected: %v", reason, err)
 		}
 	}
 }
@@ -44,14 +74,14 @@ func TestAdministratorUnfilteredCursorCannotBeReusedWithOwnerFilter(t *testing.T
 	next := domain.UploadCursor{CreatedAt: testNow.Add(-time.Minute), UploadID: "0198b123-4567-7abc-8def-012345678901"}
 	repository := &fakeRepository{events: &events, administratorList: domain.UploadList{Next: &next}}
 	hooks := NewAdministratorHooks(newTestService(t, repository, &fakeStorage{events: &events}, &fakeCache{events: &events}))
-	_, token, err := hooks.ListUploads(context.Background(), "", nil, "", 1)
+	_, token, err := hooks.ListUploads(context.Background(), "actor", domain.AdminUploadFilters{}, "", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if repository.administratorListOwner != "" || token == "" {
 		t.Fatalf("owner = %q, token = %q", repository.administratorListOwner, token)
 	}
-	if _, _, err := hooks.ListUploads(context.Background(), "0198b123-4567-7abc-8def-012345678999", nil, token, 1); err == nil {
+	if _, _, err := hooks.ListUploads(context.Background(), "different-actor", domain.AdminUploadFilters{}, token, 1); err == nil {
 		t.Fatal("unfiltered cursor was accepted with an owner filter")
 	}
 }
@@ -61,7 +91,7 @@ func TestAdministratorRemovalCarriesAuditIntoCompletion(t *testing.T) {
 	checksum := sha256.Sum256([]byte("image"))
 	repository := &fakeRepository{events: &events, upload: testUpload(checksum)}
 	hooks := NewAdministratorHooks(newTestService(t, repository, &fakeStorage{events: &events}, &fakeCache{events: &events}))
-	if _, err := hooks.RemoveUpload(context.Background(), "actor", repository.upload.UploadID, domain.RemovalReasonAdministratorDeleted, "Reviewed policy violation."); err != nil {
+	if _, err := hooks.RemoveUpload(context.Background(), "actor", repository.upload.UploadID, domain.RemovalReasonAdministratorDeleted, repository.upload.State, "Reviewed policy violation.", domain.AuditEvent{}); err != nil {
 		t.Fatal(err)
 	}
 	if repository.completedAudit == nil || repository.completedAudit.ActorUserID != "actor" || repository.completedAudit.Rationale != "Reviewed policy violation." {
@@ -70,13 +100,15 @@ func TestAdministratorRemovalCarriesAuditIntoCompletion(t *testing.T) {
 }
 
 func TestAdministratorReasonIsRejectedBeforeRemoval(t *testing.T) {
-	events := []string{}
-	repository := &fakeRepository{events: &events}
-	hooks := NewAdministratorHooks(newTestService(t, repository, &fakeStorage{events: &events}, &fakeCache{events: &events}))
-	if _, err := hooks.RemoveUpload(context.Background(), "actor", "upload", domain.RemovalReasonAdministratorDeleted, "token=unsafe-value"); err == nil {
-		t.Fatal("sensitive administrator reason was accepted")
-	}
-	if len(events) != 0 {
-		t.Fatalf("invalid reason triggered side effects: %v", events)
+	for _, rationale := range []string{"token=unsafe-value", "Reviewed policy\x00violation"} {
+		events := []string{}
+		repository := &fakeRepository{events: &events}
+		hooks := NewAdministratorHooks(newTestService(t, repository, &fakeStorage{events: &events}, &fakeCache{events: &events}))
+		if _, err := hooks.RemoveUpload(context.Background(), "actor", "upload", domain.RemovalReasonAdministratorDeleted, domain.UploadStateFinalized, rationale, domain.AuditEvent{}); err == nil {
+			t.Fatalf("invalid administrator reason %q was accepted", rationale)
+		}
+		if len(events) != 0 {
+			t.Fatalf("invalid reason %q triggered side effects: %v", rationale, events)
+		}
 	}
 }

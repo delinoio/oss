@@ -80,8 +80,9 @@ func (v *LogtoVerifier) Verify(ctx context.Context, authorization string) (domai
 		return domain.Identity{}, ErrUnauthenticated
 	}
 	var claims struct {
-		Name  string `json:"name"`
-		Email string `json:"email"`
+		Name  string   `json:"name"`
+		Email string   `json:"email"`
+		Roles []string `json:"roles"`
 	}
 	if err := token.Claims(&claims); err != nil {
 		return domain.Identity{}, ErrUnauthenticated
@@ -91,6 +92,7 @@ func (v *LogtoVerifier) Verify(ctx context.Context, authorization string) (domai
 		Subject:               token.Subject,
 		DisplayName:           claims.Name,
 		Email:                 claims.Email,
+		Roles:                 claims.Roles,
 		Fingerprint:           config.IdentityFingerprint(v.keys, token.Issuer, token.Subject),
 		FingerprintCandidates: config.IdentityFingerprintCandidates(v.keys, token.Issuer, token.Subject),
 	}, nil

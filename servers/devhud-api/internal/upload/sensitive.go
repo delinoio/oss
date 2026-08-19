@@ -12,6 +12,7 @@ const maximumAdministratorReasonBytes = 4096
 
 var (
 	credentialParameterNamePattern = regexp.MustCompile(`(?i)^(code|password|passwd|pwd|secret|token|client[_.-]?secret|(access|refresh|id)[_.-]?token|api[_.-]?key|private[_.-]?key|authorization|cookie|set-cookie|x-amz-(credential|signature))$`)
+	percentEncodedOctetsPattern    = regexp.MustCompile(`(?i)(?:%[0-9a-f]{2})+`)
 	urlPattern                     = regexp.MustCompile(`\b[A-Za-z][A-Za-z0-9+.-]*:[^\s<>"']+`)
 	trailingURLPunctuationPattern  = regexp.MustCompile(`[)\]}>.,;]+$`)
 	absoluteLocalPathPattern       = regexp.MustCompile(`(^|[\s([{<"'=:])([A-Za-z]:[\\/][^\s]*|\\\\[^\s]+|~/[^\s]+|/[^/\s][^\s]*)`)
@@ -31,13 +32,27 @@ var (
 )
 
 func validateAdministratorReason(reason string) error {
+	return validateAdministratorReasonForPublicAssets(reason, nil)
+}
+
+func validateAdministratorReasonForPublicAssets(reason string, publicAssetBaseURL *url.URL) error {
 	if reason == "" || len(reason) > maximumAdministratorReasonBytes || !utf8.ValidString(reason) {
 		return errors.New("administrator reason must contain 1 to 4096 bytes of well-formed UTF-8")
 	}
-	if containsSensitiveText(reason) || containsLocalPath(reason) || containsSensitiveURL(reason) {
+	if strings.ContainsRune(reason, '\x00') {
+		return errors.New("administrator reason must not contain NUL characters")
+	}
+	if containsSensitiveText(reason) || containsLocalPath(reason) || containsSensitiveURL(reason, publicAssetBaseURL) {
+		if publicAssetBaseURL != nil {
+			return errors.New("administrator reason contains credential, public asset locator, or local-path content")
+		}
 		return errors.New("administrator reason contains credential or local-path content")
 	}
 	return nil
+}
+
+func ValidateAdministratorReason(reason string, publicAssetBaseURL *url.URL) error {
+	return validateAdministratorReasonForPublicAssets(strings.TrimSpace(reason), publicAssetBaseURL)
 }
 
 func containsSensitiveText(value string) bool {
@@ -50,11 +65,16 @@ func containsSensitiveText(value string) bool {
 }
 
 func containsLocalPath(value string) bool {
-	if matchesLocalPath(value) {
-		return true
+	for {
+		if matchesLocalPath(value) {
+			return true
+		}
+		decoded := decodePercentEncodedOctets(value)
+		if decoded == value {
+			return false
+		}
+		value = decoded
 	}
-	decoded, err := url.PathUnescape(value)
-	return err == nil && decoded != value && matchesLocalPath(decoded)
 }
 
 func matchesLocalPath(value string) bool {
@@ -65,7 +85,30 @@ func matchesLocalPath(value string) bool {
 		fileLinePattern.MatchString(value)
 }
 
-func containsSensitiveURL(value string) bool {
+func containsSensitiveURL(value string, publicAssetBaseURL *url.URL) bool {
+	for {
+		if matchesSensitiveURL(value, publicAssetBaseURL) {
+			return true
+		}
+		decoded := decodePercentEncodedOctets(value)
+		if decoded == value {
+			return false
+		}
+		value = decoded
+	}
+}
+
+func decodePercentEncodedOctets(value string) string {
+	return percentEncodedOctetsPattern.ReplaceAllStringFunc(value, func(encoded string) string {
+		decoded, err := url.PathUnescape(encoded)
+		if err != nil {
+			return encoded
+		}
+		return decoded
+	})
+}
+
+func matchesSensitiveURL(value string, publicAssetBaseURL *url.URL) bool {
 	for _, match := range urlPattern.FindAllString(value, -1) {
 		candidate := trailingURLPunctuationPattern.ReplaceAllString(match, "")
 		if _, err := url.PathUnescape(candidate); err != nil {
@@ -78,14 +121,46 @@ func containsSensitiveURL(value string) bool {
 		if strings.EqualFold(parsed.Scheme, "file") || parsed.User != nil {
 			return true
 		}
-		if containsSensitiveParameters(parsed.RawQuery) || containsSensitiveParameters(parsed.Fragment) {
+		if publicAssetBaseURL != nil && isPublicAssetLocator(parsed, publicAssetBaseURL) {
+			return true
+		}
+		if containsSensitiveParameters(parsed.RawQuery, publicAssetBaseURL) || containsSensitiveParameters(parsed.Fragment, publicAssetBaseURL) {
 			return true
 		}
 	}
 	return false
 }
 
-func containsSensitiveParameters(parameters string) bool {
+func isPublicAssetLocator(candidate, publicAssetBaseURL *url.URL) bool {
+	if !strings.EqualFold(candidate.Scheme, publicAssetBaseURL.Scheme) ||
+		!strings.EqualFold(candidate.Hostname(), publicAssetBaseURL.Hostname()) ||
+		effectivePort(candidate) != effectivePort(publicAssetBaseURL) {
+		return false
+	}
+	basePath, baseErr := url.PathUnescape(publicAssetBaseURL.EscapedPath())
+	candidatePath, candidateErr := url.PathUnescape(candidate.EscapedPath())
+	if baseErr != nil || candidateErr != nil {
+		return true
+	}
+	basePath = strings.TrimRight(basePath, "/")
+	return basePath == "" || candidatePath == basePath || strings.HasPrefix(candidatePath, basePath+"/")
+}
+
+func effectivePort(value *url.URL) string {
+	if port := value.Port(); port != "" {
+		return port
+	}
+	switch strings.ToLower(value.Scheme) {
+	case "http":
+		return "80"
+	case "https":
+		return "443"
+	default:
+		return ""
+	}
+}
+
+func containsSensitiveParameters(parameters string, publicAssetBaseURL *url.URL) bool {
 	for _, parameter := range strings.Split(parameters, "&") {
 		name, value, found := strings.Cut(parameter, "=")
 		if !found {
@@ -96,7 +171,7 @@ func containsSensitiveParameters(parameters string) bool {
 		if nameErr != nil || valueErr != nil || credentialParameterNamePattern.MatchString(decodedName) {
 			return true
 		}
-		if containsSensitiveText(decodedValue) || containsLocalPath(decodedValue) {
+		if containsSensitiveText(decodedValue) || containsLocalPath(decodedValue) || containsSensitiveURL(decodedValue, publicAssetBaseURL) {
 			return true
 		}
 	}
