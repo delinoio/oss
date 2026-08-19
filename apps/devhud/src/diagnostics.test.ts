@@ -95,12 +95,16 @@ describe("diagnostics privacy boundary", () => {
       importedLocation: "/workspace/project/main.ts",
       shortcut: "Ctrl+Shift+P",
       urlFragment: "https://example.test/path#private",
+      customScheme: "devhud://auth/callback",
+      ftpLocation: "ftp://private.example/repo",
+      localFileLocation: "file:///home/alice/app.ts",
+      punctuationDelimitedPath: "renderer,/home/alice/project/main.ts",
       safeSlashLabel: "React/Native renderer failed",
     };
     const serialized = JSON.stringify(redactDiagnosticValue(hostile));
     expect(serialized).toContain("bounded classification");
     expect(serialized).toContain("React/Native renderer failed");
-    for (const prohibited of ["Bearer", "githubPat", "r2_secret", "signingKey", "nodeType", "screenshot", "issueBody", "agentPrompt", "childEnvironment", "/home/alice", "ghp_", "eyJ", "AKIA", "PRIVATE KEY", "/workspace/", "Ctrl+", "#private"]) {
+    for (const prohibited of ["Bearer", "githubPat", "r2_secret", "signingKey", "nodeType", "screenshot", "issueBody", "agentPrompt", "childEnvironment", "/home/alice", "ghp_", "eyJ", "AKIA", "PRIVATE KEY", "/workspace/", "Ctrl+", "#private", "devhud://", "ftp://", "file://"]) {
       expect(serialized).not.toContain(prohibited);
     }
   });
@@ -335,6 +339,19 @@ describe("diagnostics privacy boundary", () => {
       "-----BEGIN PRIVATE KEY-----",
     ]) {
       localStorage.setItem(DiagnosticsStorageKey, JSON.stringify([{ ...fixtureEvent(now), summary: credential }]));
+      expect(readDiagnosticEvents(localStorage, now)).toEqual([]);
+    }
+  });
+
+  it("drops persisted events containing scheme-shaped URLs or punctuation-delimited paths", () => {
+    const now = Date.parse("2026-08-17T00:00:00.000Z");
+    for (const locator of [
+      "devhud://auth/callback",
+      "ftp://private.example/repo",
+      "file:///home/alice/app.ts",
+      "renderer,/home/alice/project/main.ts",
+    ]) {
+      localStorage.setItem(DiagnosticsStorageKey, JSON.stringify([{ ...fixtureEvent(now), summary: locator }]));
       expect(readDiagnosticEvents(localStorage, now)).toEqual([]);
     }
   });

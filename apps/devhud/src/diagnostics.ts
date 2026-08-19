@@ -31,7 +31,9 @@ const textEncoder = new TextEncoder();
 const inMemoryDiagnosticEvents = new WeakMap<object, LocalDiagnosticEvent[]>();
 const inMemoryDiagnosticCorrelations = new WeakMap<object, DiagnosticCorrelationEvent[]>();
 
-const forbiddenValue = /(?:authorization|bearer\s|github[_-]?pat|access[_-]?token|refresh[_-]?token|r2[_-]?(?:secret|token|key)|signing[_-]?(?:secret|key)|-----BEGIN [A-Z ]*PRIVATE KEY-----|\b(?:ghp|github_pat)_[A-Za-z0-9_]+\b|\beyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b|\bAKIA[0-9A-Z]{16}\b|browser.?dom|innerhtml|outerhtml|screenshot|form.?value|issue.?body|agent.?(?:prompt|output)|child.?env|https?:\/\/\S*|(?:^|[\s(\[{<"'=:])(?:[a-z]:[\\/]\S*|\\\\\S+|~\/\S+|\/[^/\s]\S*)|(?:ctrl|control|cmd|command|meta|alt|option|shift)\s*[+-]\s*[a-z0-9])/iu;
+const forbiddenValue = /(?:authorization|bearer\s|github[_-]?pat|access[_-]?token|refresh[_-]?token|r2[_-]?(?:secret|token|key)|signing[_-]?(?:secret|key)|-----BEGIN [A-Z ]*PRIVATE KEY-----|\b(?:ghp|github_pat)_[A-Za-z0-9_]+\b|\beyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b|\bAKIA[0-9A-Z]{16}\b|browser.?dom|innerhtml|outerhtml|screenshot|form.?value|issue.?body|agent.?(?:prompt|output)|child.?env|(?:ctrl|control|cmd|command|meta|alt|option|shift)\s*[+-]\s*[a-z0-9])/iu;
+const diagnosticURL = /[A-Za-z][A-Za-z0-9+.-]*:[^\s<>"']+/u;
+const diagnosticPath = /(?:^|[\s\p{P}=])(?:[a-z]:[\\/]\S*|\\\\\S+|~\/\S+|\/[^/\s]\S*)/iu;
 const safeCode = /^[A-Z][A-Z0-9_]{0,63}$/u;
 const safeFrameName = /(?:^|\s)(?:at\s+)?([A-Za-z_$][A-Za-z0-9_$.<>-]{0,95})/u;
 
@@ -161,7 +163,7 @@ export function redactedStackFrames(error: unknown): string[] {
     const match = safeFrameName.exec(line.trim());
     if (!match?.[1]) continue;
     const frame = `at ${match[1]}`;
-    if (forbiddenValue.test(frame)) continue;
+    if (isForbiddenDiagnosticValue(frame)) continue;
     frames.push(frame);
     if (frames.length === maximumStackFrames) break;
   }
@@ -383,9 +385,9 @@ function isLocalDiagnosticEvent(value: unknown): value is LocalDiagnosticEvent {
     && isDiagnosticComponent(event.component) && isDiagnosticSeverity(event.severity)
     && event.outcome === (event.severity === DiagnosticSeverity.FATAL ? DiagnosticOutcome.Fatal : DiagnosticOutcome.Failed)
     && safeCode.test(event.errorCode ?? "")
-    && typeof event.summary === "string" && textEncoder.encode(event.summary).byteLength <= 4 * 1024 && !forbiddenValue.test(event.summary)
+    && typeof event.summary === "string" && textEncoder.encode(event.summary).byteLength <= 4 * 1024 && !isForbiddenDiagnosticValue(event.summary)
     && Array.isArray(frames) && frames.length <= maximumStackFrames
-    && frames.every((frame) => typeof frame === "string" && textEncoder.encode(frame).byteLength <= maximumStringBytes && !forbiddenValue.test(frame))
+    && frames.every((frame) => typeof frame === "string" && textEncoder.encode(frame).byteLength <= maximumStringBytes && !isForbiddenDiagnosticValue(frame))
     && textEncoder.encode(frames.join("\n")).byteLength <= 32 * 1024
     && Array.isArray(related) && related.length <= maximumRelatedCorrelations
     && related.every(isUuidV7) && new Set(related).size === related.length && !related.includes(event.correlationId)
@@ -414,7 +416,7 @@ function isDiagnosticBuild(value: unknown): value is DiagnosticBuild {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
   const build = value as Partial<DiagnosticBuild>;
   const strings = [build.appVersion, build.buildId, build.osVersion, build.tauriRevision, build.cefRevision];
-  if (!strings.every((item) => typeof item === "string" && textEncoder.encode(item).byteLength <= 256 && !forbiddenValue.test(item))) return false;
+  if (!strings.every((item) => typeof item === "string" && textEncoder.encode(item).byteLength <= 256 && !isForbiddenDiagnosticValue(item))) return false;
   if (!build.appVersion || !build.buildId || !build.osVersion) return false;
   if (!isDiagnosticPlatform(build.platform)) return false;
   const browser = build.platform === DiagnosticPlatform.BROWSER;
@@ -443,10 +445,16 @@ function isDiagnosticSeverity(value: unknown): value is DiagnosticSeverity {
 }
 
 function safeDiagnosticString(value: string): string | undefined {
-  if (value === "" || forbiddenValue.test(value)) return undefined;
+  if (value === "" || isForbiddenDiagnosticValue(value)) return undefined;
   const bytes = textEncoder.encode(value);
   if (bytes.byteLength <= maximumStringBytes) return value;
   return new TextDecoder().decode(bytes.slice(0, maximumStringBytes));
+}
+
+function isForbiddenDiagnosticValue(value: string): boolean {
+  return forbiddenValue.test(value)
+    || (value.includes(":") && diagnosticURL.test(value))
+    || ((value.includes("/") || value.includes("\\")) && diagnosticPath.test(value));
 }
 
 function boundedSafeText(value: string, fallback: string): string {

@@ -129,7 +129,11 @@ func (s *DiagnosticsService) SubmitCrashReport(ctx context.Context, request *con
 			return nil, NewError(connect.CodeAlreadyExists, "client_correlation_id already identifies a different payload", CorrelationID(ctx))
 		}
 		if errors.Is(err, domain.ErrCrashReportQuota) {
-			return nil, NewError(connect.CodeResourceExhausted, "crash report quota exhausted", CorrelationID(ctx))
+			return nil, NewError(connect.CodeResourceExhausted, "crash report quota exhausted", CorrelationID(ctx), &devhudv1.QuotaFailure{
+				Quota:    devhudv1.QuotaKind_QUOTA_KIND_CRASH_REPORTS,
+				Limit:    domain.CrashReportMaximumRetainedPerUser,
+				Observed: domain.CrashReportMaximumRetainedPerUser + 1,
+			})
 		}
 		var permission *domain.PermissionError
 		if errors.As(err, &permission) {

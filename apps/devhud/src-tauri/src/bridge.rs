@@ -32,7 +32,52 @@ pub struct NativeBridgeState {
     shortcuts_ready: Arc<AtomicBool>,
     shortcut_listener_failed: Arc<AtomicBool>,
     shortcut_listener_retry: Arc<(Mutex<u64>, Condvar)>,
-    diagnostics_export_generation: Arc<Mutex<u64>>,
+    diagnostics_export: Arc<Mutex<DiagnosticsExportState>>,
+}
+
+#[derive(Default)]
+struct DiagnosticsExportState {
+    generation: u64,
+    active: bool,
+}
+
+#[cfg(desktop)]
+struct DiagnosticsExportReservation {
+    state: Arc<Mutex<DiagnosticsExportState>>,
+    generation: u64,
+}
+
+#[cfg(desktop)]
+impl DiagnosticsExportReservation {
+    fn persist(&self, destination: &std::path::Path, contents: &str) -> Result<bool, String> {
+        let state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if state.generation != self.generation {
+            return Ok(false);
+        }
+        let parent = destination.parent().ok_or("storage-failure")?;
+        let mut file = tempfile::NamedTempFile::new_in(parent).map_err(|_| "storage-failure")?;
+        file.write_all(contents.as_bytes())
+            .map_err(|_| "storage-failure")?;
+        file.as_file().sync_all().map_err(|_| "storage-failure")?;
+        file.persist(destination).map_err(|_| "storage-failure")?;
+        Ok(true)
+    }
+}
+
+#[cfg(desktop)]
+impl Drop for DiagnosticsExportReservation {
+    fn drop(&mut self) {
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if state.generation == self.generation {
+            state.active = false;
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -56,7 +101,7 @@ impl Default for NativeBridgeState {
             shortcuts_ready: Arc::new(AtomicBool::new(false)),
             shortcut_listener_failed,
             shortcut_listener_retry: Arc::new((Mutex::new(0), Condvar::new())),
-            diagnostics_export_generation: Arc::new(Mutex::new(0)),
+            diagnostics_export: Arc::new(Mutex::new(DiagnosticsExportState::default())),
         }
     }
 }
@@ -223,34 +268,22 @@ impl NativeBridgeState {
     }
 
     #[cfg(desktop)]
-    fn begin_diagnostics_export(&self) -> u64 {
-        *self
-            .diagnostics_export_generation
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-    }
-
-    #[cfg(desktop)]
-    fn persist_diagnostics_export(
-        &self,
-        generation: u64,
-        destination: &std::path::Path,
-        contents: &str,
-    ) -> Result<bool, String> {
-        let current_generation = self
-            .diagnostics_export_generation
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if *current_generation != generation {
-            return Ok(false);
-        }
-        let parent = destination.parent().ok_or("storage-failure")?;
-        let mut file = tempfile::NamedTempFile::new_in(parent).map_err(|_| "storage-failure")?;
-        file.write_all(contents.as_bytes())
-            .map_err(|_| "storage-failure")?;
-        file.as_file().sync_all().map_err(|_| "storage-failure")?;
-        file.persist(destination).map_err(|_| "storage-failure")?;
-        Ok(true)
+    fn begin_diagnostics_export(&self) -> Result<DiagnosticsExportReservation, String> {
+        let generation = {
+            let mut state = self
+                .diagnostics_export
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if state.active {
+                return Err("platform-failure".to_string());
+            }
+            state.active = true;
+            state.generation
+        };
+        Ok(DiagnosticsExportReservation {
+            state: Arc::clone(&self.diagnostics_export),
+            generation,
+        })
     }
 
     #[cfg(desktop)]
@@ -258,11 +291,12 @@ impl NativeBridgeState {
         &self,
         action: impl FnOnce() -> Result<T, String>,
     ) -> Result<T, String> {
-        let mut generation = self
-            .diagnostics_export_generation
+        let mut state = self
+            .diagnostics_export
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        *generation = generation.wrapping_add(1);
+        state.generation = state.generation.wrapping_add(1);
+        state.active = false;
         action()
     }
 
@@ -671,8 +705,7 @@ fn validate_diagnostics_export(request: &Value) -> Result<(&str, &str), String> 
 #[cfg(desktop)]
 fn export_diagnostics(
     request: &Value,
-    state: &NativeBridgeState,
-    generation: u64,
+    reservation: &DiagnosticsExportReservation,
 ) -> Result<Value, String> {
     let (suggested_name, contents) = validate_diagnostics_export(request)?;
     let Some(destination) = rfd::FileDialog::new()
@@ -682,7 +715,7 @@ fn export_diagnostics(
     else {
         return Ok(json!({ "kind": "diagnostics-export", "outcome": "cancelled" }));
     };
-    if !state.persist_diagnostics_export(generation, &destination, contents)? {
+    if !reservation.persist(&destination, contents)? {
         return Ok(json!({ "kind": "diagnostics-export", "outcome": "cancelled" }));
     }
     Ok(json!({ "kind": "diagnostics-export", "outcome": "saved" }))
@@ -867,9 +900,9 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
     {
         if operation == "diagnostics.export" {
             let export_state = state.inner().clone();
-            let generation = export_state.begin_diagnostics_export();
+            let reservation = export_state.begin_diagnostics_export()?;
             return tauri::async_runtime::spawn_blocking(move || {
-                export_diagnostics(&request, &export_state, generation)
+                export_diagnostics(&request, &reservation)
             })
             .await
             .map_err(|_| "platform-failure".to_string())?;
@@ -965,19 +998,35 @@ mod tests {
 
     #[cfg(desktop)]
     #[test]
+    fn diagnostics_export_rejects_concurrent_reservations() {
+        let state = NativeBridgeState::default();
+        let reservation = state
+            .begin_diagnostics_export()
+            .expect("first diagnostics export reservation");
+
+        assert!(matches!(
+            state.begin_diagnostics_export(),
+            Err(error) if error == "platform-failure"
+        ));
+
+        drop(reservation);
+        assert!(state.begin_diagnostics_export().is_ok());
+    }
+
+    #[cfg(desktop)]
+    #[test]
     fn destructive_purge_invalidation_prevents_a_pending_diagnostics_write() {
         let state = NativeBridgeState::default();
-        let generation = state.begin_diagnostics_export();
+        let reservation = state
+            .begin_diagnostics_export()
+            .expect("diagnostics export reservation");
         state
             .with_invalidated_diagnostics_exports(|| Ok(()))
             .expect("diagnostics export invalidation");
         let temporary = tempfile::tempdir().expect("temporary export directory");
         let destination = temporary.path().join("diagnostics.json");
 
-        assert_eq!(
-            state.persist_diagnostics_export(generation, &destination, "{}"),
-            Ok(false)
-        );
+        assert_eq!(reservation.persist(&destination, "{}"), Ok(false));
         assert!(!destination.exists());
     }
 

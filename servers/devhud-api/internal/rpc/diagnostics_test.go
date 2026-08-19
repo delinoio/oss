@@ -3,6 +3,7 @@ package rpc
 import (
 	"bytes"
 	"context"
+	"errors"
 	"log/slog"
 	"strings"
 	"testing"
@@ -71,6 +72,29 @@ func TestSubmitCrashReportMapsRetainedReportQuota(t *testing.T) {
 	_, err := service.SubmitCrashReport(authenticatedContext(), connect.NewRequest(validCrashReportRequest()))
 	if connect.CodeOf(err) != connect.CodeResourceExhausted {
 		t.Fatalf("quota code = %v", connect.CodeOf(err))
+	}
+	connectError := new(connect.Error)
+	if !errors.As(err, &connectError) {
+		t.Fatalf("error = %v", err)
+	}
+	var foundMetadata, foundQuota bool
+	for _, detail := range connectError.Details() {
+		value, valueErr := detail.Value()
+		if valueErr != nil {
+			t.Fatal(valueErr)
+		}
+		switch typed := value.(type) {
+		case *devhudv1.ErrorMetadata:
+			foundMetadata = typed.GetCorrelationId().GetValue() == testCorrelationID
+		case *devhudv1.QuotaFailure:
+			foundQuota = typed.GetQuota() == devhudv1.QuotaKind_QUOTA_KIND_CRASH_REPORTS &&
+				typed.GetLimit() == domain.CrashReportMaximumRetainedPerUser &&
+				typed.GetObserved() == domain.CrashReportMaximumRetainedPerUser+1 &&
+				typed.GetRetryAt() == nil
+		}
+	}
+	if !foundMetadata || !foundQuota {
+		t.Fatalf("missing typed details: metadata=%v quota=%v", foundMetadata, foundQuota)
 	}
 }
 
