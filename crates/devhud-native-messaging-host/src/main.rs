@@ -1,4 +1,4 @@
-use std::{io, path::PathBuf};
+use std::{io, path::PathBuf, time::Duration};
 
 use devhud_native_messaging_host::{
     PROTOCOL_VERSION, REQUEST_DEADLINE_MILLIS, SCHEMA_VERSION,
@@ -13,10 +13,9 @@ use devhud_native_messaging_host::{
 };
 use tracing::{error, info, warn};
 
-#[cfg(unix)]
-type PlatformStream = std::os::unix::net::UnixStream;
-#[cfg(windows)]
-type PlatformStream = std::fs::File;
+type PlatformStream = endpoint::IpcClientStream;
+
+const IPC_IO_TIMEOUT: Duration = Duration::from_secs(5);
 
 struct Session {
     stream: PlatformStream,
@@ -60,8 +59,8 @@ fn validate_native_request(request: &NativeRequest, now: i64) -> Result<(), &'st
 
 fn authenticate(origin: &str, pairing_nonce: Option<String>) -> Result<Session, String> {
     let mut stream = endpoint::connect().map_err(|_| "disconnected".to_string())?;
-    let challenge: Challenge = read_json(&mut stream, ByteOrder::LittleEndian)
-        .map_err(|_| "authentication-failed".to_string())?;
+    let challenge: Challenge =
+        read_ipc_json(&mut stream).map_err(|_| "authentication-failed".to_string())?;
     validate_version(challenge.version, challenge.schema_version).map_err(str::to_string)?;
     if challenge.deadline_unix_ms < now_unix_millis() {
         return Err("expired-request".to_string());
@@ -87,10 +86,9 @@ fn authenticate(origin: &str, pairing_nonce: Option<String>) -> Result<Session, 
         client_nonce,
         pairing_nonce,
     };
-    write_json(&mut stream, ByteOrder::LittleEndian, &response)
-        .map_err(|_| "authentication-failed".to_string())?;
-    let result: AuthResult = read_json(&mut stream, ByteOrder::LittleEndian)
-        .map_err(|_| "authentication-failed".to_string())?;
+    write_ipc_json(&mut stream, &response).map_err(|_| "authentication-failed".to_string())?;
+    let result: AuthResult =
+        read_ipc_json(&mut stream).map_err(|_| "authentication-failed".to_string())?;
     validate_version(result.version, result.schema_version).map_err(str::to_string)?;
     if !result.accepted {
         return Err(result
@@ -109,6 +107,16 @@ fn authenticate(origin: &str, pairing_nonce: Option<String>) -> Result<Session, 
     })
 }
 
+fn read_ipc_json<T: serde::de::DeserializeOwned>(stream: &mut PlatformStream) -> io::Result<T> {
+    stream.set_io_deadline(IPC_IO_TIMEOUT);
+    read_json(stream, ByteOrder::LittleEndian)
+}
+
+fn write_ipc_json<T: serde::Serialize>(stream: &mut PlatformStream, value: &T) -> io::Result<()> {
+    stream.set_io_deadline(IPC_IO_TIMEOUT);
+    write_json(stream, ByteOrder::LittleEndian, value)
+}
+
 fn forward(session: &mut Session, request: &NativeRequest) -> Result<serde_json::Value, String> {
     let issued_at = now_unix_millis();
     let mut ipc = IpcRequest {
@@ -125,10 +133,9 @@ fn forward(session: &mut Session, request: &NativeRequest) -> Result<serde_json:
         proof: String::new(),
     };
     sign_request(&session.secret, &session.session_id, &mut ipc);
-    write_json(&mut session.stream, ByteOrder::LittleEndian, &ipc)
-        .map_err(|_| "disconnected".to_string())?;
-    let result: IpcResponse = read_json(&mut session.stream, ByteOrder::LittleEndian)
-        .map_err(|_| "disconnected".to_string())?;
+    write_ipc_json(&mut session.stream, &ipc).map_err(|_| "disconnected".to_string())?;
+    let result: IpcResponse =
+        read_ipc_json(&mut session.stream).map_err(|_| "disconnected".to_string())?;
     validate_version(result.version, result.schema_version).map_err(str::to_string)?;
     if result.request_id != request.request_id || !result.accepted {
         return Err(result.error.unwrap_or_else(|| "denied".to_string()));

@@ -20,7 +20,8 @@ use devhud_native_messaging_host::{
     generate_pairing_secret, mark_pairing_complete, pairing_is_complete,
     protocol::{
         AuthResponse, AuthResult, BrowserContext, IpcRequest, IpcResponse, NativeMessageType,
-        validate_browser_context, validate_deadline, validate_version,
+        NativeResponse, NativeResponseState, validate_browser_context, validate_deadline,
+        validate_version,
     },
     read_pairing_secret, write_pairing_secret,
 };
@@ -223,7 +224,39 @@ fn validate_configuration(configuration: Value) -> Result<Value, String> {
     if !valid_extension_configuration(&configuration) {
         return Err("invalid-argument".to_string());
     }
-    serde_json::to_value(configuration).map_err(|_| "invalid-argument".to_string())
+    let configuration =
+        serde_json::to_value(configuration).map_err(|_| "invalid-argument".to_string())?;
+    if !configuration_response_envelopes_fit(&configuration) {
+        return Err("invalid-argument".to_string());
+    }
+    Ok(configuration)
+}
+
+fn configuration_response_envelopes_fit(configuration: &Value) -> bool {
+    const REQUEST_ID: &str = "01900000-0000-7000-8000-000000000000";
+    let ipc = IpcResponse {
+        version: PROTOCOL_VERSION,
+        schema_version: SCHEMA_VERSION,
+        request_id: REQUEST_ID.to_string(),
+        accepted: true,
+        error: None,
+        payload: configuration.clone(),
+    };
+    let native = NativeResponse {
+        version: PROTOCOL_VERSION,
+        schema_version: SCHEMA_VERSION,
+        request_id: REQUEST_ID.to_string(),
+        ok: true,
+        state: NativeResponseState::Accepted,
+        payload: configuration.clone(),
+    };
+    [serde_json::to_vec(&ipc), serde_json::to_vec(&native)]
+        .into_iter()
+        .all(|encoded| {
+            encoded
+                .as_ref()
+                .is_ok_and(|body| body.len() <= devhud_native_messaging_host::MAX_JSON_BYTES)
+        })
 }
 
 fn valid_extension_configuration(configuration: &ExtensionConfiguration) -> bool {
@@ -258,8 +291,55 @@ fn valid_extension_configuration(configuration: &ExtensionConfiguration) -> bool
                     uuid::Uuid::parse_str(&mapping.mapping_id)
                         .is_ok_and(|id| id.get_version_num() == 7)
                         && valid_configured_matcher(&mapping.matcher)
+                        && configured_origin_matches(&configured.origin, &mapping.matcher)
                 })
         })
+}
+
+fn configured_origin_matches(origin: &str, matcher: &ConfiguredUrlMatcher) -> bool {
+    let Ok(url) = url::Url::parse(origin) else {
+        return false;
+    };
+    if matcher.scheme != "*" && matcher.scheme != url.scheme() {
+        return false;
+    }
+    let origin_port = url.port().map(|port| port.to_string()).unwrap_or_default();
+    let matcher_port = match (url.scheme(), matcher.port.as_str()) {
+        ("http", "80") | ("https", "443") => "",
+        (_, port) => port,
+    };
+    if matcher_port != "*" && matcher_port != origin_port {
+        return false;
+    }
+    let Some(host) = url.host() else {
+        return false;
+    };
+    let (origin_host, origin_is_ip_literal) = match host {
+        url::Host::Domain(domain) => {
+            let mut labels = domain.split('.').collect::<Vec<_>>();
+            if labels.len() > 1 && labels.last() == Some(&"") {
+                labels.pop();
+            }
+            (labels.into_iter().map(str::to_string).collect(), false)
+        }
+        url::Host::Ipv4(address) => (
+            address.to_string().split('.').map(str::to_string).collect(),
+            true,
+        ),
+        url::Host::Ipv6(address) => (vec![format!("[{address}]")], true),
+    };
+    matcher.host.len() == origin_host.len()
+        && matcher
+            .host
+            .iter()
+            .zip(origin_host)
+            .all(|(pattern, value)| {
+                if pattern == "*" {
+                    !matcher.host_is_ip_literal && !origin_is_ip_literal
+                } else {
+                    pattern.eq_ignore_ascii_case(&value)
+                }
+            })
 }
 
 fn valid_configured_origin(origin: &str) -> bool {
@@ -619,6 +699,22 @@ mod tests {
         })
     }
 
+    fn response_oversized_configuration() -> Value {
+        let mut configuration = json!({
+            "origins": [configured_origin("https://example.com")],
+            "language": "en"
+        });
+        let initial_length = serde_json::to_vec(&configuration).unwrap().len();
+        let filler_length = devhud_native_messaging_host::MAX_JSON_BYTES - initial_length + 1;
+        configuration["origins"][0]["mappings"][0]["matcher"]["path"][0] =
+            Value::String("x".repeat(filler_length));
+        assert_eq!(
+            serde_json::to_vec(&configuration).unwrap().len(),
+            devhud_native_messaging_host::MAX_JSON_BYTES - 1
+        );
+        configuration
+    }
+
     #[test]
     fn pairing_nonce_is_one_time() {
         *state().pending_pairing.lock().unwrap() = Some(PendingPairing {
@@ -646,12 +742,52 @@ mod tests {
             .is_err()
         );
         assert!(
+            native_messaging_replace_configuration(response_oversized_configuration()).is_err()
+        );
+        assert!(
             native_messaging_replace_configuration(json!({
                 "origins": [configured_origin("https://unconfigured.example/path")],
                 "language": "en"
             }))
             .is_err()
         );
+        assert!(
+            native_messaging_replace_configuration(json!({
+                "origins": [configured_origin("https://other.example")],
+                "language": "en"
+            }))
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn configured_origin_must_match_the_mapping_authority() {
+        let wildcard = ConfiguredUrlMatcher {
+            scheme: "*".into(),
+            host: vec!["*".into(), "example".into()],
+            host_is_ip_literal: false,
+            port: "*".into(),
+            path: vec!["private".into(), "**".into()],
+        };
+        assert!(configured_origin_matches(
+            "https://app.example:8443",
+            &wildcard
+        ));
+        assert!(!configured_origin_matches(
+            "https://app.other:8443",
+            &wildcard
+        ));
+        let fixed_port = ConfiguredUrlMatcher {
+            scheme: "https".into(),
+            host: vec!["app".into(), "example".into()],
+            host_is_ip_literal: false,
+            port: "8443".into(),
+            path: vec![],
+        };
+        assert!(!configured_origin_matches(
+            "https://app.example:9443",
+            &fixed_port
+        ));
     }
 
     #[test]
@@ -661,11 +797,7 @@ mod tests {
         *messaging_state.latest_context.lock().unwrap() = Some(json!({ "prior": true }));
 
         assert!(
-            replace_configuration(
-                &messaging_state,
-                Value::String("x".repeat(devhud_native_messaging_host::MAX_JSON_BYTES + 1)),
-            )
-            .is_err()
+            replace_configuration(&messaging_state, response_oversized_configuration(),).is_err()
         );
         assert!(messaging_state.configuration.lock().unwrap().is_null());
         assert!(messaging_state.latest_context.lock().unwrap().is_none());

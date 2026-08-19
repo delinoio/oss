@@ -184,8 +184,22 @@ describe("DevHud settings boundary", () => {
     })).toThrow(/without credentials, query, or fragment/u);
   });
 
-  it.each(["https://example.com/", "https://EXAMPLE.com", "https://example.com:443"])("normalizes equivalent Chrome origins: %s", (chromeOrigin) => {
-    expect(parseDevHudSettings({ ...settingsWithMappingProfile, urlMappings: [{ ...mapping, chromeOrigin }] }).urlMappings[0]?.chromeOrigin).toBe("https://example.com");
+  it.each(["https://source.example/", "https://SOURCE.example", "https://source.example:443"])("normalizes equivalent Chrome origins: %s", (chromeOrigin) => {
+    expect(parseDevHudSettings({ ...settingsWithMappingProfile, urlMappings: [{ ...mapping, chromeOrigin }] }).urlMappings[0]?.chromeOrigin).toBe("https://source.example");
+  });
+
+  it("requires a Chrome origin to be covered by the mapping authority", () => {
+    for (const [pattern, chromeOrigin] of [
+      ["http://source.example/**", "https://source.example"],
+      ["https://source.example/**", "https://other.example"],
+      ["https://source.example:8443/**", "https://source.example:9443"],
+    ]) {
+      expect(() => parseDevHudSettings({ ...settingsWithMappingProfile, urlMappings: [{ ...mapping, pattern, chromeOrigin }] })).toThrow(/chromeOrigin.*scheme, host, and port/u);
+    }
+    expect(parseDevHudSettings({
+      ...settingsWithMappingProfile,
+      urlMappings: [{ ...mapping, pattern: "*://*.example:*", chromeOrigin: "https://source.example:8443" }],
+    }).urlMappings[0]?.chromeOrigin).toBe("https://source.example:8443");
   });
 
   it("rejects wildcard Chrome origins and excessive mapping counts", () => {
