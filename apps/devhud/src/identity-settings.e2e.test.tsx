@@ -9,6 +9,7 @@ import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import fixture from "../fixtures/identity-settings-e2e.json";
 import { App } from "./App";
+import { DiagnosticsStorageKey } from "./diagnostics";
 import type { GitHubProvider } from "./github-provider";
 import * as identityClient from "./identity-client";
 import type { IdentitySession } from "./identity-client";
@@ -1404,7 +1405,12 @@ describe("generated Connect identity/settings fixture", () => {
       async request(request) {
         if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
         if (request.operation === "secure.read") return { kind: "secure-value", value: authenticated && request.setting.kind === "logto-session" ? secureSession : null };
-        if (request.operation === "secure.purge" || request.operation === "secure.remove") { authenticated = false; return { kind: "ok" }; }
+        if (request.operation === "secure.purge") {
+          expect(localStorage.getItem(DiagnosticsStorageKey)).toBeNull();
+          authenticated = false;
+          return { kind: "ok" };
+        }
+        if (request.operation === "secure.remove") { authenticated = false; return { kind: "ok" }; }
         if (request.operation === "secure.write") return { kind: "ok" };
         throw new Error(`unexpected bridge operation ${request.operation}`);
       },
@@ -1418,6 +1424,7 @@ describe("generated Connect identity/settings fixture", () => {
       throw new Error(`unexpected request ${url}`);
     }));
 
+    localStorage.setItem(DiagnosticsStorageKey, "[]");
     renderIdentityProbe(bridge);
     await waitFor(() => {
       const state = screen.getByTestId("identity-state");
@@ -1439,11 +1446,13 @@ describe("generated Connect identity/settings fixture", () => {
     const accessTokenMap = JSON.stringify({ "@https://api.example/api": { token: "fixture-access-token", scope: "", expiresAt: 4_102_444_800 } });
     const secureSession = JSON.stringify({ idToken: "fixture-id-token", accessToken: accessTokenMap });
     let authenticated = true;
+    const purges: string[] = [];
     const bridge: NativeBridgeV1 = {
       async request(request) {
         if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
         if (request.operation === "secure.read") return { kind: "secure-value", value: authenticated && request.setting.kind === "logto-session" ? secureSession : null };
-        if (request.operation === "secure.purge" || request.operation === "secure.remove") { authenticated = false; return { kind: "ok" }; }
+        if (request.operation === "secure.purge") { purges.push(request.scope); authenticated = false; return { kind: "ok" }; }
+        if (request.operation === "secure.remove") { authenticated = false; return { kind: "ok" }; }
         if (request.operation === "secure.write") return { kind: "ok" };
         throw new Error(`unexpected bridge operation ${request.operation}`);
       },
@@ -1487,7 +1496,17 @@ describe("generated Connect identity/settings fixture", () => {
       expect(screen.getByTestId("identity-state").dataset.actionError).toBe("true");
     });
     expect(localStorage.getItem(cacheKey as string)).not.toBeNull();
-    expect(readAuthenticatedSettingsCache(localStorage, apiOrigin)).toBeNull();
+    expect(readAuthenticatedSettingsCache(localStorage, apiOrigin)?.revision).toBe(7n);
+    expect(purges).toEqual([]);
+
+    fireEvent.click(screen.getByRole("button", { name: "logout probe identity" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("identity-state").dataset.status).toBe("authenticated");
+      expect(screen.getByTestId("identity-state").dataset.actionError).toBe("true");
+    });
+    expect(localStorage.getItem(cacheKey as string)).not.toBeNull();
+    expect(purges).toEqual([]);
 
     fireEvent.click(screen.getByRole("button", { name: "logout probe identity" }));
 
@@ -1496,6 +1515,7 @@ describe("generated Connect identity/settings fixture", () => {
       expect(screen.getByTestId("identity-state").dataset.actionError).toBe("false");
     });
     expect(localStorage.getItem(cacheKey as string)).toBeNull();
+    expect(purges).toEqual(["logout"]);
   });
 
   it("rejects an unsupported ReplaceSettings envelope without changing or caching it", async () => {

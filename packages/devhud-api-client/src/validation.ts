@@ -27,7 +27,9 @@ const trailingUrlPunctuationPattern = /[)\]}>.,;]+$/u;
 const percentEncodedOctetsPattern = /(?:%[0-9a-f]{2})+/giu;
 const encodedWindowsDrivePathPattern = /^[A-Za-z]:(?:%2f|%5c)/iu;
 const credentialParameterNamePattern =
-  /^(?:code|password|passwd|pwd|secret|token|client[_.-]?secret|(?:access|refresh|id)[_.-]?token|api[_.-]?key|private[_.-]?key|authorization|cookie|set-cookie|x-amz-(?:credential|signature))$/iu;
+  /^(?:code|oauth[_.-]?code|password|passwd|pwd|secret|token|client[_.-]?secret|(?:access|refresh|id)[_.-]?token|api[_.-]?key|private[_.-]?key|authorization|cookie|set-cookie|x-amz-(?:credential|signature))$/iu;
+const diagnosticAssignmentPattern =
+  /(?:^|\s|[(\[{,;])["']?([A-Za-z][A-Za-z0-9_.-]{0,63})["']?\s*[:=]\s*\S+/gu;
 const MIN_PROTOBUF_TIMESTAMP_SECONDS = -62_135_596_800n;
 const MAX_PROTOBUF_TIMESTAMP_SECONDS = 253_402_300_799n;
 const MAX_PROTOBUF_TIMESTAMP_NANOS = 999_999_999;
@@ -247,9 +249,24 @@ export function validateCrashReport(report: SubmitCrashReportRequest): void {
 
 function validateDiagnosticText(value: string, maximum: number, field: string): void {
   validateSensitiveText(value, maximum, field);
-  if (forbiddenDiagnosticContentPatterns.some((pattern) => pattern.test(value))) {
+  if (
+    forbiddenDiagnosticContentPatterns.some((pattern) => pattern.test(value)) ||
+    containsForbiddenCredentialAssignment(value)
+  ) {
     throw new TypeError(`${field} contains prohibited diagnostic content`);
   }
+}
+
+function containsForbiddenCredentialAssignment(value: string): boolean {
+  const decoded = decodePercentEncodedOctets(value);
+  for (const candidate of decoded === value ? [value] : [value, decoded]) {
+    for (const match of candidate.matchAll(diagnosticAssignmentPattern)) {
+      if (credentialParameterNamePattern.test(match[1] ?? "")) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 function validateSensitiveText(

@@ -759,13 +759,13 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     reapplyConflictLocal: async () => conflict ? replaceAt(conflict.local, conflict.currentRevision) : false,
     logout: async () => {
       setLogoutCleanupPending(true);
+      const localCleanupComplete = clearAllContractedLocalData(storage);
+      if (!localCleanupComplete) throw new Error("local-data-cleanup-incomplete");
       await bridge.request({ operation: "secure.purge", scope: "logout" });
       await sessionRef.current?.clear();
       sessionRef.current = null;
       setSession(null);
       clearAuthenticatedSettingsCache(storage, apiOrigin);
-      const localCleanupComplete = clearAllContractedLocalData(storage);
-      if (!localCleanupComplete) throw new Error("local-data-cleanup-incomplete");
       setStatus("signed-out");
       setAccount(null);
       setAccountError(null);

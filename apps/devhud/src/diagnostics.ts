@@ -34,6 +34,7 @@ const inMemoryDiagnosticCorrelations = new WeakMap<object, DiagnosticCorrelation
 const forbiddenValue = /(?:authorization|bearer\s|github[_-]?pat|access[_-]?token|refresh[_-]?token|r2[_-]?(?:secret|token|key)|signing[_-]?(?:secret|key)|-----BEGIN [A-Z ]*PRIVATE KEY-----|\b(?:ghp|github_pat)_[A-Za-z0-9_]+\b|\beyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b|\bAKIA[0-9A-Z]{16}\b|browser.?dom|innerhtml|outerhtml|screenshot|form.?value|issue.?body|agent.?(?:prompt|output)|child.?env|(?:ctrl|control|cmd|command|meta|alt|option|shift)\s*[+-]\s*[a-z0-9])/iu;
 const diagnosticURL = /[A-Za-z][A-Za-z0-9+.-]*:[^\s<>"']+/u;
 const diagnosticPath = /(?:^|[\s\p{P}=])(?:[a-z]:[\\/]\S*|\\\\\S+|~\/\S+|\/[^/\s]\S*)/iu;
+const percentEncodedOctets = /(?:%[0-9a-f]{2})+/giu;
 const safeCode = /^[A-Z][A-Z0-9_]{0,63}$/u;
 const safeFrameName = /(?:^|\s)(?:at\s+)?([A-Za-z_$][A-Za-z0-9_$.<>-]{0,95})/u;
 
@@ -453,9 +454,25 @@ function safeDiagnosticString(value: string): string | undefined {
 }
 
 function isForbiddenDiagnosticValue(value: string): boolean {
+  if (containsRawForbiddenDiagnosticValue(value)) return true;
+  const decoded = decodePercentEncodedOctets(value);
+  return decoded !== value && containsRawForbiddenDiagnosticValue(decoded);
+}
+
+function containsRawForbiddenDiagnosticValue(value: string): boolean {
   return forbiddenValue.test(value)
     || (value.includes(":") && diagnosticURL.test(value))
     || ((value.includes("/") || value.includes("\\")) && diagnosticPath.test(value));
+}
+
+function decodePercentEncodedOctets(value: string): string {
+  return value.replace(percentEncodedOctets, (encoded) => {
+    try {
+      return decodeURIComponent(encoded);
+    } catch {
+      return encoded;
+    }
+  });
 }
 
 function boundedSafeText(value: string, fallback: string): string {

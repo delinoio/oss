@@ -97,6 +97,7 @@ describe("diagnostics privacy boundary", () => {
       importedAwsKey: "AKIA0123456789ABCDEF",
       importedPrivateKey: "-----BEGIN PRIVATE KEY-----",
       importedLocation: "/workspace/project/main.ts",
+      encodedImportedLocation: "source=%2Fworkspace%2Fprivate%2Fapp.ts",
       shortcut: "Ctrl+Shift+P",
       urlFragment: "https://example.test/path#private",
       customScheme: "devhud://auth/callback",
@@ -108,9 +109,19 @@ describe("diagnostics privacy boundary", () => {
     const serialized = JSON.stringify(redactDiagnosticValue(hostile));
     expect(serialized).toContain("bounded classification");
     expect(serialized).toContain("React/Native renderer failed");
-    for (const prohibited of ["Bearer", "githubPat", "r2_secret", "signingKey", "nodeType", "screenshot", "issueBody", "agentPrompt", "childEnvironment", "/home/alice", "ghp_", "eyJ", "AKIA", "PRIVATE KEY", "/workspace/", "Ctrl+", "#private", "devhud://", "ftp://", "file://"]) {
+    for (const prohibited of ["Bearer", "githubPat", "r2_secret", "signingKey", "nodeType", "screenshot", "issueBody", "agentPrompt", "childEnvironment", "/home/alice", "ghp_", "eyJ", "AKIA", "PRIVATE KEY", "/workspace/", "%2Fworkspace", "Ctrl+", "#private", "devhud://", "ftp://", "file://"]) {
       expect(serialized).not.toContain(prohibited);
     }
+  });
+
+  it("drops persisted events containing percent-encoded local paths", () => {
+    const now = Date.parse("2026-08-17T00:00:00.000Z");
+    const unsafe = { ...fixtureEvent(now - 1), summary: "source=%2Fworkspace%2Fprivate%2Fapp.ts" };
+    const safe = fixtureEvent(now);
+    localStorage.setItem(DiagnosticsStorageKey, JSON.stringify([unsafe, safe]));
+
+    expect(readDiagnosticEvents(localStorage, now)).toEqual([safe]);
+    expect(JSON.parse(localStorage.getItem(DiagnosticsStorageKey) ?? "null")).toEqual([safe]);
   });
 
   it("generates canonical UUID v7 values and keeps stack metadata path-free", () => {

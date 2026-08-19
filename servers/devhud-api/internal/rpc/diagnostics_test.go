@@ -204,6 +204,9 @@ func TestSubmitCrashReportRejectsUnlabeledCredentialsBeforePersistence(t *testin
 		"encoded relative URL":     "callback%3Fcode%3Dsecret",
 		"nested OAuth callback":    "https://example.test/?safe=x%26code%3Dsecret",
 		"nested OAuth fragment":    "https://example.test/#safe=x%3Bcode%3Dsecret",
+		"standalone OAuth code":    "code=secret",
+		"standalone OAuth label":   "oauth_code: secret",
+		"JSON OAuth code":          `{"code":"secret"}`,
 		"credential-bearing user":  "https://alice:password@example.test/app.js",
 		"malformed URL escape":     "https://example.test/?to%6=secret",
 	}

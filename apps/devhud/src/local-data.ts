@@ -164,7 +164,7 @@ function removeMatching(storage: MutableStorage, predicate: (key: string) => boo
     }
   } catch {
     complete = false;
-    // Web Storage cleanup is best-effort and must not block native secure-store purges.
+    // Callers decide whether incomplete Web Storage cleanup defers their native purge.
   }
   for (const key of keys) {
     try {

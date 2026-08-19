@@ -42,7 +42,8 @@ var (
 	trailingURLPunctuation  = regexp.MustCompile(`[)\]}>.,;]+$`)
 	percentEncodedOctets    = regexp.MustCompile(`(?i)(%[0-9a-f]{2})+`)
 	encodedWindowsDrivePath = regexp.MustCompile(`(?i)^[A-Za-z]:(%2f|%5c)`)
-	credentialParameterName = regexp.MustCompile(`(?i)^(code|password|passwd|pwd|secret|token|client[_.-]?secret|(access|refresh|id)[_.-]?token|api[_.-]?key|private[_.-]?key|authorization|cookie|set-cookie|x-amz-(credential|signature))$`)
+	credentialParameterName = regexp.MustCompile(`(?i)^(code|oauth[_.-]?code|password|passwd|pwd|secret|token|client[_.-]?secret|(access|refresh|id)[_.-]?token|api[_.-]?key|private[_.-]?key|authorization|cookie|set-cookie|x-amz-(credential|signature))$`)
+	diagnosticAssignment    = regexp.MustCompile(`(?i)(^|[[:space:]]|[(\[{,;])["']?([A-Za-z][A-Za-z0-9_.-]{0,63})["']?[[:space:]]*[:=][[:space:]]*[^[:space:]]+`)
 	forbiddenLocalPath      = regexp.MustCompile(`(?i)(^([[:space:]\p{P}])?|[^:][[:space:]\p{P}=]|:[[:space:]]+)([a-z]:[\\/][^[:space:]]*|\\\\[^[:space:]]+|~/[^[:space:]]+|/[^/[:space:]][^[:space:]]*)`)
 	forbiddenDiagnostic     = []*regexp.Regexp{
 		regexp.MustCompile(`(?i)\bbearer[[:space:]]+[^[:space:]]+`),
@@ -323,7 +324,18 @@ func containsForbiddenDiagnosticContent(value string) bool {
 			return true
 		}
 	}
-	return containsForbiddenEncodedLocalPath(value) || containsForbiddenDiagnosticURL(value)
+	return containsForbiddenCredentialAssignment(value) || containsForbiddenEncodedLocalPath(value) || containsForbiddenDiagnosticURL(value)
+}
+
+func containsForbiddenCredentialAssignment(value string) bool {
+	for _, candidate := range []string{value, decodePercentEncodedOctets(value)} {
+		for _, match := range diagnosticAssignment.FindAllStringSubmatch(candidate, -1) {
+			if credentialParameterName.MatchString(match[2]) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func containsForbiddenEncodedLocalPath(value string) bool {
