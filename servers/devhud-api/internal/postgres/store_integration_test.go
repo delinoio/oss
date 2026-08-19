@@ -109,6 +109,58 @@ func TestCrashReportPersistenceRetentionIdempotencyAndAccountCascade(t *testing.
 	}
 }
 
+func TestCrashReportExpiredCorrelationCanBeReusedBeforePruning(t *testing.T) {
+	now := time.Date(2026, 8, 19, 12, 0, 0, 0, time.UTC)
+	ctx, pool, store := newIntegrationStore(t, now)
+	identity := domain.Identity{
+		Issuer: "https://issuer.example", Subject: "diagnostics-expired-correlation",
+		DisplayName: "Diagnostics Expired Correlation", Email: "diagnostics-expired@example.com",
+		Fingerprint: bytes.Repeat([]byte{11}, 32),
+	}
+	identity.FingerprintCandidates = [][]byte{identity.Fingerprint}
+	user, err := store.ProvisionUser(ctx, identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	requestCorrelation, _ := idgen.UUIDv7{}.New()
+	clientCorrelation, _ := idgen.UUIDv7{}.New()
+	report := domain.CrashReport{
+		RequestCorrelationID: requestCorrelation, ClientCorrelationID: clientCorrelation,
+		PayloadSHA256: bytes.Repeat([]byte{7}, 32), ReportSchemaVersion: 1,
+		AppVersion: "1.0.0", BuildID: "2026.08.19.1", Platform: 3, Architecture: 1,
+		OSVersion: "linux", TauriRevision: "4af26a3f7f8b692d62cca549bbacd93f5ce90b41",
+		CEFRevision: "150.0.10+g8042e43+chromium-150.0.7871.101", OccurredAt: now,
+		Component: 1, Severity: 1, ErrorCode: "APP_FAILURE", RedactedSummary: "A classified failure occurred.",
+		RedactedStackTrace: "at render", RelatedCorrelationIDs: []string{}, DurationMilliseconds: 17,
+		AcceptedAt: now, ExpiresAt: now.Add(domain.CrashReportRetention),
+	}
+	stored, err := store.SubmitCrashReport(ctx, user.ID, report)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	renewed := report
+	renewed.RequestCorrelationID, _ = idgen.UUIDv7{}.New()
+	renewed.AcceptedAt = report.ExpiresAt
+	renewed.ExpiresAt = renewed.AcceptedAt.Add(domain.CrashReportRetention)
+	restored, err := store.SubmitCrashReport(ctx, user.ID, renewed)
+	if err != nil {
+		t.Fatalf("reuse expired correlation before pruning: %v", err)
+	}
+	if restored.ID == stored.ID || !restored.AcceptedAt.Equal(renewed.AcceptedAt) || !restored.ExpiresAt.Equal(renewed.ExpiresAt) {
+		t.Fatalf("renewed crash report = %+v, previous = %+v", restored, stored)
+	}
+	var retained int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM devhud_crash_reports
+        WHERE owner_user_id = $1 AND client_correlation_id = $2`, user.ID, report.ClientCorrelationID).Scan(&retained); err != nil {
+		t.Fatal(err)
+	}
+	if retained != 1 {
+		t.Fatalf("retained rows for reused correlation = %d, want 1", retained)
+	}
+}
+
 func TestCrashReportRetainedQuotaIsAtomicAndPreservesIdempotency(t *testing.T) {
 	now := time.Date(2026, 8, 19, 12, 0, 0, 0, time.UTC)
 	ctx, _, store := newIntegrationStore(t, now)

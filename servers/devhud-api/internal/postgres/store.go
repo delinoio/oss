@@ -484,6 +484,11 @@ func (s *Store) SubmitCrashReport(ctx context.Context, userID string, report dom
 	if deletionState != domain.DeletionStateActive {
 		return domain.CrashReport{}, &domain.PermissionError{Failure: domain.PermissionFailureDeletionPending}
 	}
+	if _, err := tx.Exec(ctx, `DELETE FROM devhud_crash_reports
+        WHERE owner_user_id = $1 AND client_correlation_id = $2 AND expires_at <= $3`,
+		userID, report.ClientCorrelationID, report.AcceptedAt); err != nil {
+		return domain.CrashReport{}, err
+	}
 
 	var existingDigest []byte
 	existingErr := tx.QueryRow(ctx, `SELECT crash_report_id::text, payload_sha256, accepted_at, expires_at
