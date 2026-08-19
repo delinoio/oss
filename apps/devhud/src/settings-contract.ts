@@ -5,12 +5,14 @@ import {
   validateCanonicalSettingsJson,
 } from "@delinoio/devhud-api-client";
 import { ShortcutContractError, defaultDesktopShortcutBindings, parseDesktopShortcutBindings, type DesktopShortcutBindings } from "./shortcuts";
+import { parseUrlPattern, type UrlRepositoryMapping } from "./url-mapping";
 
 export const LegacySettingsSchemaVersion = 1 as const;
 export const PreviousSettingsSchemaVersion = 2 as const;
 /** Version 3 was released independently by the Deck and shortcut branches. */
 export const CollidingSettingsSchemaVersion = 3 as const;
 export const SettingsSchemaVersion = 4 as const;
+export const MaximumUrlRepositoryMappings = 100;
 
 const Theme = ["system", "light", "dark"] as const;
 const Language = ["system", "en", "ko"] as const;
@@ -59,7 +61,7 @@ export interface DevHudSettings {
     readonly repositories: readonly { readonly owner: string; readonly name: string; readonly profileRef: string | null }[];
     readonly issueTracker: { readonly owner: string; readonly repository: string; readonly labels: readonly string[]; readonly profileRef: string | null } | null;
   };
-  readonly urlMappings: readonly { readonly sourcePrefix: string; readonly destinationPrefix: string }[];
+  readonly urlMappings: readonly UrlRepositoryMapping[];
   readonly shortcuts: Readonly<{ readonly desktop: DesktopShortcutBindings; readonly ios: Readonly<Record<string, never>>; readonly android: Readonly<Record<string, never>> }>;
   readonly agents: readonly {
     readonly id: string;
@@ -119,14 +121,14 @@ export class SettingsContractError extends TypeError {
 export function parseDevHudSettings(value: unknown): DevHudSettingsV1 {
   rejectSensitiveContent(value, "$", new WeakSet());
   const root = object(value, "$", ["schemaVersion", "appearance", "decks", "github", "urlMappings", "shortcuts", "agents", "uploads"]);
-  const schemaVersion = integer(root.schemaVersion, "$.schemaVersion", LegacySettingsSchemaVersion, SettingsSchemaVersion);
-  const legacy = schemaVersion === LegacySettingsSchemaVersion;
+  const sourceSchemaVersion = integer(root.schemaVersion, "$.schemaVersion", LegacySettingsSchemaVersion, SettingsSchemaVersion);
+  const legacy = sourceSchemaVersion === LegacySettingsSchemaVersion;
 
   const appearance = object(root.appearance, "$.appearance", ["theme", "language"]);
   const decks = array(root.decks, "$.decks");
   if (decks.length > 25) throw new SettingsContractError("$.decks", "must contain at most 25 entries");
-  const previous = schemaVersion === PreviousSettingsSchemaVersion || schemaVersion === CollidingSettingsSchemaVersion && !hasCurrentDeckShape(decks[0]);
-  const legacyShortcuts = schemaVersion < SettingsSchemaVersion;
+  const previous = sourceSchemaVersion === PreviousSettingsSchemaVersion || sourceSchemaVersion === CollidingSettingsSchemaVersion && !hasCurrentDeckShape(decks[0]);
+  const legacyShortcuts = sourceSchemaVersion < SettingsSchemaVersion;
   const github = object(root.github, "$.github", legacy ? ["repositories", "issueTracker"] : ["profiles", "pendingPatRemovals", "repositories", "issueTracker"]);
   const githubProfiles = legacy ? [] : array(github.profiles, "$.github.profiles").map((entry, index) => parseGitHubProfile(entry, `$.github.profiles[${index}]`));
   if (githubProfiles.length > 25) throw new SettingsContractError("$.github.profiles", "must contain at most 25 entries");
@@ -140,6 +142,10 @@ export function parseDevHudSettings(value: unknown): DevHudSettingsV1 {
   const uploads = object(root.uploads, "$.uploads", ["provider", "r2"]);
   const parsedDecks = decks.flatMap((entry, index) => parseDeck(entry, `$.decks[${index}]`, legacy, previous));
   if (new Set(parsedDecks.map((deck) => deck.id)).size !== parsedDecks.length) throw new SettingsContractError("$.decks", "must contain unique IDs");
+  const structuredMappings = sourceSchemaVersion === SettingsSchemaVersion || sourceSchemaVersion === CollidingSettingsSchemaVersion && hasStructuredURLMappingShape(root.urlMappings);
+  const urlMappings = structuredMappings ? parseStructuredMappings(root.urlMappings) : parseLegacyMappings(root.urlMappings);
+  if (urlMappings.length > MaximumUrlRepositoryMappings) throw new SettingsContractError("$.urlMappings", `must contain at most ${MaximumUrlRepositoryMappings} entries`);
+  if (new Set(urlMappings.map((mapping) => mapping.id)).size !== urlMappings.length) throw new SettingsContractError("$.urlMappings", "must not contain duplicate mapping IDs");
 
   const parsed: DevHudSettingsV1 = {
     schemaVersion: SettingsSchemaVersion,
@@ -158,14 +164,9 @@ export function parseDevHudSettings(value: unknown): DevHudSettingsV1 {
       }),
       issueTracker: github.issueTracker === null ? null : parseIssueTracker(github.issueTracker, legacy),
     },
-    urlMappings: array(root.urlMappings, "$.urlMappings").map((entry, index) => {
-      const path = `$.urlMappings[${index}]`;
-      const mapping = object(entry, path, ["sourcePrefix", "destinationPrefix"]);
-      return {
-        sourcePrefix: url(mapping.sourcePrefix, `${path}.sourcePrefix`),
-        destinationPrefix: url(mapping.destinationPrefix, `${path}.destinationPrefix`),
-      };
-    }),
+    // Prefix mappings cannot identify a repository or credential. They are deliberately
+    // discarded rather than guessed during the approved v1/v2 -> v3 migration.
+    urlMappings,
     shortcuts: {
       desktop: desktopShortcutMap(shortcuts.desktop, legacyShortcuts),
       ios: legacyShortcuts ? legacyShortcutMap(shortcuts.ios, "$.shortcuts.ios") : emptyShortcutMap(shortcuts.ios, "$.shortcuts.ios"),
@@ -180,7 +181,45 @@ export function parseDevHudSettings(value: unknown): DevHudSettingsV1 {
   for (const [index, repository] of parsed.github.repositories.entries()) validateGitHubProfileRef(repository.profileRef, `$.github.repositories[${index}].profileRef`, githubProfileIds);
   validateGitHubProfileRef(parsed.github.issueTracker?.profileRef ?? null, "$.github.issueTracker.profileRef", githubProfileIds);
   for (const [index, deck] of parsed.decks.entries()) validateGitHubProfileRef(deck.profileRef, `$.decks[${index}].profileRef`, githubProfileIds);
+  for (const [index, mapping] of parsed.urlMappings.entries()) validateGitHubProfileRef(mapping.credentialProfileRef, `$.urlMappings[${index}].credentialProfileRef`, githubProfileIds);
   return parsed;
+}
+
+function parseLegacyMappings(value: unknown): readonly [] {
+  for (const [index, entry] of array(value, "$.urlMappings").entries()) {
+    const path = `$.urlMappings[${index}]`;
+    const mapping = object(entry, path, ["sourcePrefix", "destinationPrefix"]);
+    url(mapping.sourcePrefix, `${path}.sourcePrefix`);
+    url(mapping.destinationPrefix, `${path}.destinationPrefix`);
+  }
+  return [];
+}
+
+function parseStructuredMappings(value: unknown): readonly UrlRepositoryMapping[] {
+  return array(value, "$.urlMappings").map(parseUrlMapping);
+}
+
+function parseUrlMapping(value: unknown, index: number): UrlRepositoryMapping {
+  const path = `$.urlMappings[${index}]`;
+  const mapping = object(value, path, ["id", "pattern", "repository", "credentialProfileRef", "priority", "chromeOrigin", "updatedAt"]);
+  const id = text(mapping.id, `${path}.id`);
+  try { assertUuidV7(id); } catch { throw new SettingsContractError(`${path}.id`, "must be a canonical lowercase RFC 9562 UUID v7"); }
+  const pattern = text(mapping.pattern, `${path}.pattern`);
+  try { parseUrlPattern(pattern); } catch (error) { throw new SettingsContractError(`${path}.pattern`, error instanceof Error ? error.message : "is invalid"); }
+  const repository = object(mapping.repository, `${path}.repository`, ["owner", "name"]);
+  const credentialProfileRef = text(mapping.credentialProfileRef, `${path}.credentialProfileRef`);
+  if (!profileRefPattern.test(credentialProfileRef)) throw new SettingsContractError(`${path}.credentialProfileRef`, "is invalid");
+  const updatedAt = text(mapping.updatedAt, `${path}.updatedAt`);
+  if (!Number.isFinite(Date.parse(updatedAt)) || new Date(updatedAt).toISOString() !== updatedAt) throw new SettingsContractError(`${path}.updatedAt`, "must be a canonical UTC timestamp");
+  return {
+    id,
+    pattern,
+    repository: { owner: text(repository.owner, `${path}.repository.owner`), name: text(repository.name, `${path}.repository.name`) },
+    credentialProfileRef,
+    priority: integer(mapping.priority, `${path}.priority`, -1_000_000, 1_000_000),
+    chromeOrigin: mapping.chromeOrigin === null ? null : chromeOrigin(mapping.chromeOrigin, `${path}.chromeOrigin`),
+    updatedAt,
+  };
 }
 
 export function encodeDevHudSettings(value: unknown): Uint8Array {
@@ -188,7 +227,15 @@ export function encodeDevHudSettings(value: unknown): Uint8Array {
 }
 
 export function decodeDevHudSettings(value: Uint8Array): DevHudSettingsV1 {
-  return parseDevHudSettings(validateCanonicalSettingsJson(value));
+  return decodeDevHudSettingsSnapshot(value).settings;
+}
+
+export function decodeDevHudSettingsSnapshot(value: Uint8Array): { readonly sourceSchemaVersion: 1 | 2 | 3 | 4; readonly settings: DevHudSettingsV1 } {
+  const canonical = validateCanonicalSettingsJson(value);
+  const settings = parseDevHudSettings(canonical);
+  const sourceSchemaVersion = (canonical as { readonly schemaVersion: unknown }).schemaVersion;
+  if (sourceSchemaVersion !== LegacySettingsSchemaVersion && sourceSchemaVersion !== PreviousSettingsSchemaVersion && sourceSchemaVersion !== CollidingSettingsSchemaVersion && sourceSchemaVersion !== SettingsSchemaVersion) throw new SettingsContractError("$.schemaVersion", "is unsupported");
+  return { sourceSchemaVersion, settings };
 }
 
 export function decodeVersionedDevHudSettings(value: Uint8Array, envelopeSchemaVersion: number): DevHudSettingsV1 {
@@ -206,6 +253,11 @@ export function canonicalDevHudSettings(value: unknown): string {
 
 function hasCurrentDeckShape(value: unknown): boolean {
   return value !== null && typeof value === "object" && !Array.isArray(value) && "name" in value;
+}
+
+function hasStructuredURLMappingShape(value: unknown): boolean {
+  const mappings = array(value, "$.urlMappings");
+  return mappings.some((mapping) => mapping !== null && typeof mapping === "object" && !Array.isArray(mapping) && "id" in mapping);
 }
 
 function parseDeck(value: unknown, path: string, legacy: boolean, previous: boolean): readonly DevHudSettingsV1["decks"][number][] {
@@ -523,9 +575,7 @@ function validateLegacyShortcutMap(value: unknown, path: string): void {
 }
 
 function desktopShortcutMap(value: unknown, legacy: boolean): DesktopShortcutBindings {
-  if (!legacy && value !== null && typeof value === "object" && !Array.isArray(value) && Object.keys(value).length === 0) {
-    throw new SettingsContractError("$.shortcuts.desktop", "malformed");
-  }
+  if (!legacy && value !== null && typeof value === "object" && !Array.isArray(value) && Object.keys(value).length === 0) throw new SettingsContractError("$.shortcuts.desktop", "malformed");
   try {
     return parseDesktopShortcutBindings(value);
   } catch (error) {
@@ -554,6 +604,16 @@ function url(value: unknown, path: string, httpsOnly = false): string {
   }
 }
 
+function chromeOrigin(value: unknown, path: string): string {
+  const parsed = text(value, path);
+  try {
+    const candidate = new URL(parsed);
+    if (candidate.protocol !== "http:" && candidate.protocol !== "https:") throw new Error();
+    if (candidate.username || candidate.password || candidate.search || candidate.hash || candidate.pathname !== "/" || candidate.hostname.includes("*")) throw new Error();
+    return candidate.origin;
+  } catch { throw new SettingsContractError(path, "must be a concrete HTTP(S) origin without credentials, path, query, or fragment"); }
+}
+
 function rejectSensitiveContent(value: unknown, path: string, seen: WeakSet<object>): void {
   if (typeof value === "string") {
     if (sensitiveValuePatterns.some((pattern) => pattern.test(value))) throw new SettingsContractError(path, "contains secret material");
@@ -563,14 +623,7 @@ function rejectSensitiveContent(value: unknown, path: string, seen: WeakSet<obje
   if (seen.has(value)) throw new SettingsContractError(path, "must not contain cycles");
   seen.add(value);
   for (const [key, item] of Object.entries(value)) {
-    const isContractedShortcutAction = path === "$.shortcuts.desktop" && [
-      "shell.command-palette",
-      "realqa.capture.display",
-      "realqa.capture.active-window",
-      "realqa.capture.all-displays",
-      "realqa.capture.selection",
-      "realqa.capture.toolbar",
-    ].includes(key);
+    const isContractedShortcutAction = path === "$.shortcuts.desktop" && ["shell.command-palette", "realqa.capture.display", "realqa.capture.active-window", "realqa.capture.all-displays", "realqa.capture.selection", "realqa.capture.toolbar"].includes(key);
     if (!isContractedShortcutAction && sensitiveKeyPattern.test(key)) throw new SettingsContractError(`${path}.${key}`, "device-local or secret field is forbidden");
     rejectSensitiveContent(item, Array.isArray(value) ? `${path}[${key}]` : `${path}.${key}`, seen);
   }

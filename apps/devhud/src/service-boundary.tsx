@@ -22,6 +22,7 @@ import { SecureSettingKind, type NativeBridgeV1, type RuntimePlatform } from "./
 import { profileRequiresSetup } from "./profile-secrets";
 import { CollidingSettingsSchemaVersion, defaultDevHudSettings, decodeVersionedDevHudSettings, encodeDevHudSettings, LegacySettingsSchemaVersion, parseDevHudSettings, PreviousSettingsSchemaVersion, SettingsSchemaVersion, type DevHudSettingsV1 } from "./settings-contract";
 import { diffSettings, type SettingsDiffEntry } from "./settings-diff";
+import { inactiveDesktopShortcutBindings } from "./shortcuts";
 import { getLocalStorage, isValidApiOrigin } from "./shell";
 
 export type IdentityStatus = "guest" | "starting" | "signed-out" | "authenticated" | "blocked" | "deletion-pending" | "error";
@@ -62,11 +63,12 @@ export interface IdentitySettingsValue {
   readonly retryAccount: () => Promise<void>;
   readonly retrySettings: () => Promise<void>;
   readonly continueLocally: () => void;
-  readonly uploadLocal: () => Promise<void>;
-  readonly replaceLocal: () => void;
+  readonly uploadLocal: () => Promise<boolean>;
+  readonly replaceLocal: () => boolean;
   readonly replaceSettings: (settings: DevHudSettingsV1 | ((current: DevHudSettingsV1) => DevHudSettingsV1)) => Promise<boolean>;
+  readonly replaceSettingsAt: (settings: DevHudSettingsV1 | ((current: DevHudSettingsV1) => DevHudSettingsV1), expectedRevision: bigint) => Promise<boolean>;
   readonly adoptConflictServer: () => void;
-  readonly reapplyConflictLocal: () => Promise<void>;
+  readonly reapplyConflictLocal: () => Promise<boolean>;
   readonly logout: () => Promise<void>;
   readonly deleteAccount: () => Promise<void>;
   readonly restoreAccount: () => Promise<void>;
@@ -196,6 +198,11 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     queryClient.removeQueries({ queryKey: settingsQueryKey });
   }
 
+  function resetDesktopShortcuts() {
+    setShortcutSettingsReady(false);
+    setActiveShortcutBindings(inactiveDesktopShortcutBindings);
+  }
+
   function clearInvalidSession(): Promise<void> {
     if (invalidSessionCleanupRef.current !== null) return invalidSessionCleanupRef.current;
     const current = sessionRef.current;
@@ -211,6 +218,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
         applySettings(defaultDevHudSettings);
         applyRevision(0n);
         setSettingsReady(false);
+        resetDesktopShortcuts();
         setSettingsError(null);
         setStatus("signed-out");
         setDeckAccessSuspended(false);
@@ -253,6 +261,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       applySettings(defaultDevHudSettings);
       applyRevision(0n);
       setSettingsReady(false);
+      resetDesktopShortcuts();
       setSettingsError(null);
       setStatus("signed-out");
       setDeckAccessSuspended(false);
@@ -430,14 +439,14 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       if (!settingsReady) {
         const cached = readAuthenticatedSettingsCache(storage, apiOrigin);
         if (cached) { applySettings(cached.settings); applyRevision(cached.revision); }
+        setShortcutSettingsReady((ready) => ready || settingsReady || cached !== null);
       }
-      setShortcutSettingsReady(true);
       return;
     }
     if (status !== "authenticated") return;
     if (!online) {
-      const cached = readAuthenticatedSettingsCache(storage, apiOrigin);
       setSettingsReady(false);
+      const cached = readAuthenticatedSettingsCache(storage, apiOrigin);
       setShortcutSettingsReady((ready) => ready || settingsReady || cached !== null);
       if (cached) { applySettings(cached.settings); applyRevision(cached.revision); }
       return;
@@ -584,19 +593,26 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   const localSettingsWritable = identityReady && (status === "guest" || status === "signed-out");
   const settingsReadOnly = replaceMutation.isPending || (!localSettingsWritable
     && (status !== "authenticated" || !online || !settingsReady || importDiff !== null || conflict !== null));
-  const shortcutHydrationReady = identityReady && ((status !== "authenticated" && status !== "blocked") || (shortcutSettingsReady && importDiff === null));
+  const shortcutHydrationReady = identityReady && (status === "guest" || ((status === "authenticated" || status === "blocked") && shortcutSettingsReady && importDiff === null));
   const githubPatSettingsReady = identityReady && !settingsReadOnly && conflict === null;
 
   const replaceSettings: IdentitySettingsValue["replaceSettings"] = async (update) => {
     const next = typeof update === "function" ? update(settingsRef.current) : update;
     if (status === "guest" || status === "signed-out") {
       const parsed = parseDevHudSettings(next);
+      encodeDevHudSettings(parsed);
       writeGuestSettings(storage, parsed);
       applySettings(parsed);
       return true;
     }
     if (settingsReadOnly) throw new Error("settings-read-only");
     return replaceAt(next, revisionRef.current);
+  };
+  const replaceSettingsAt: IdentitySettingsValue["replaceSettingsAt"] = async (update, expectedRevision) => {
+    const next = typeof update === "function" ? update(settingsRef.current) : update;
+    if (status === "guest" || status === "signed-out") return replaceSettings(next);
+    if (settingsReadOnly) throw new Error("settings-read-only");
+    return replaceAt(next, expectedRevision);
   };
   settingsWritableRef.current = githubPatSettingsReady;
   replaceSettingsRef.current = replaceSettings;
@@ -706,22 +722,24 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       setError(null);
       onContinueLocally();
     },
-    uploadLocal: async () => { await replaceAt(settings, revision); },
+    uploadLocal: () => replaceAt(settings, revision),
     replaceLocal: () => {
       let validated: ValidatedSettingsSnapshot;
       try {
         validated = validatedSettingsSnapshot(settingsQuery.data?.snapshot);
       } catch {
         markSettingsContractInvalid();
-        return;
+        return false;
       }
       applySettings(validated.settings);
       applyRevision(validated.revision);
       setImportDiff(null);
       clearGuestImportMarker(storage);
       writeAuthenticatedSettingsCache(storage, apiOrigin, { settings: validated.settings, revision: validated.revision, cachedAt: new Date().toISOString() });
+      return true;
     },
     replaceSettings,
+    replaceSettingsAt,
     adoptConflictServer: () => {
       if (!conflict) return;
       lastReconciledGitHubPatKeyRef.current = null;
@@ -731,7 +749,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       clearGuestImportMarker(storage);
       writeAuthenticatedSettingsCache(storage, apiOrigin, { settings: conflict.server, revision: conflict.currentRevision, cachedAt: new Date().toISOString() });
     },
-    reapplyConflictLocal: async () => { if (conflict) await replaceAt(conflict.local, conflict.currentRevision); },
+    reapplyConflictLocal: async () => conflict ? replaceAt(conflict.local, conflict.currentRevision) : false,
     logout: async () => {
       await bridge.request({ operation: "secure.purge", scope: "logout" });
       await sessionRef.current?.clear();
@@ -745,6 +763,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       applySettings(defaultDevHudSettings);
       applyRevision(0n);
       setSettingsReady(false);
+      resetDesktopShortcuts();
       setSettingsError(null);
       setDeckAccessSuspended(false);
       await clearIdentityQueryCache();

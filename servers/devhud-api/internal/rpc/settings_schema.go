@@ -6,14 +6,19 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
+	"net/netip"
 	"net/url"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf16"
 
 	googleuuid "github.com/google/uuid"
+	"golang.org/x/net/idna"
 )
 
 const (
@@ -21,6 +26,8 @@ const (
 	previousSettingsSchemaVersion  = 2
 	collidingSettingsSchemaVersion = 3
 	settingsSchemaVersion          = 4
+	maximumMappingPathSegments     = 32
+	maximumMappingGlobstars        = 8
 )
 
 var (
@@ -35,6 +42,11 @@ var (
 	settingsProfileRef         = regexp.MustCompile(`^[a-zA-Z0-9._-]{1,128}$`)
 	githubOwnerIdentifier      = regexp.MustCompile(`^[A-Za-z0-9-]{1,39}$`)
 	githubRepositoryIdentifier = regexp.MustCompile(`^[A-Za-z0-9._-]{1,100}$`)
+	settingsMappingPattern     = regexp.MustCompile(`^(https?|\*)://(\[[^\]]+\]|[^/:]+)(?::([^/]*))?(/.*)?$`)
+	settingsMappingPort        = regexp.MustCompile(`^[1-9]\d{0,4}$`)
+	settingsTimestamp          = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$`)
+	// Browser URL parsing permits non-STD3 labels, while the profile retains IDNA label validation.
+	settingsIDNAProfile = idna.New(idna.MapForLookup(), idna.StrictDomainName(false))
 )
 
 func validateDevHudSettings(value []byte, envelopeSchemaVersion uint32) error {
@@ -177,14 +189,15 @@ func validateDevHudSettings(value []byte, envelopeSchemaVersion uint32) error {
 	if err != nil {
 		return err
 	}
-	for _, profileRef := range append(githubProfileRefs, deckProfileRefs...) {
+	prefixMappings := bodyVersion <= previousSettingsSchemaVersion || bodyVersion == collidingSettingsSchemaVersion && !hasStructuredURLMappingShape(root["urlMappings"])
+	mappingProfileRefs, err := validateSettingsURLMappings(root["urlMappings"], prefixMappings)
+	if err != nil {
+		return err
+	}
+	for _, profileRef := range append(append(githubProfileRefs, deckProfileRefs...), mappingProfileRefs...) {
 		if _, exists := profileIDs[profileRef]; !exists {
 			return errors.New("GitHub profile reference must reference a configured GitHub profile")
 		}
-	}
-
-	if err := validateSettingsURLMappings(root["urlMappings"]); err != nil {
-		return err
 	}
 	structuredShortcuts := bodyVersion == settingsSchemaVersion || bodyVersion == collidingSettingsSchemaVersion && hasStructuredDesktopShortcutShape(root["shortcuts"])
 	if err := validateSettingsShortcuts(root["shortcuts"], structuredShortcuts); err != nil {
@@ -598,24 +611,92 @@ func validateSettingsGitHub(github map[string]any, legacy bool) ([]string, error
 	return profileRefs, nil
 }
 
-func validateSettingsURLMappings(value any) error {
+func validateSettingsURLMappings(value any, prefixMappings bool) ([]string, error) {
 	mappings, err := settingsArray(value, "$.urlMappings")
 	if err != nil {
-		return err
+		return nil, err
 	}
-	for index, entry := range mappings {
-		path := fmt.Sprintf("$.urlMappings[%d]", index)
-		mapping, err := settingsObject(entry, path, "sourcePrefix", "destinationPrefix")
-		if err != nil {
-			return err
-		}
-		for _, field := range []string{"sourcePrefix", "destinationPrefix"} {
-			if err := settingsURL(mapping[field], path+"."+field, false); err != nil {
-				return err
+	if len(mappings) > 100 {
+		return nil, errors.New("$.urlMappings must contain at most 100 entries")
+	}
+	if prefixMappings {
+		for index, entry := range mappings {
+			path := fmt.Sprintf("$.urlMappings[%d]", index)
+			mapping, err := settingsObject(entry, path, "sourcePrefix", "destinationPrefix")
+			if err != nil {
+				return nil, err
+			}
+			for _, field := range []string{"sourcePrefix", "destinationPrefix"} {
+				if err := settingsURL(mapping[field], path+"."+field, false); err != nil {
+					return nil, err
+				}
 			}
 		}
+		return nil, nil
 	}
-	return nil
+	ids := make(map[string]struct{}, len(mappings))
+	profileRefs := make([]string, 0, len(mappings))
+	for index, entry := range mappings {
+		path := fmt.Sprintf("$.urlMappings[%d]", index)
+		mapping, err := settingsObject(entry, path, "id", "pattern", "repository", "credentialProfileRef", "priority", "chromeOrigin", "updatedAt")
+		if err != nil {
+			return nil, err
+		}
+		id, err := settingsUUIDv7(mapping["id"], path+".id")
+		if err != nil {
+			return nil, err
+		}
+		if _, exists := ids[id]; exists {
+			return nil, errors.New("$.urlMappings must not contain duplicate mapping IDs")
+		}
+		ids[id] = struct{}{}
+		if err := settingsURLMappingPattern(mapping["pattern"], path+".pattern"); err != nil {
+			return nil, err
+		}
+		repository, err := settingsObject(mapping["repository"], path+".repository", "owner", "name")
+		if err != nil {
+			return nil, err
+		}
+		for _, field := range []string{"owner", "name"} {
+			if _, err := settingsText(repository[field], path+".repository."+field, false); err != nil {
+				return nil, err
+			}
+		}
+		profileRef, err := settingsText(mapping["credentialProfileRef"], path+".credentialProfileRef", false)
+		if err != nil || !settingsProfileRef.MatchString(profileRef) {
+			return nil, fmt.Errorf("%s.credentialProfileRef is invalid", path)
+		}
+		profileRefs = append(profileRefs, profileRef)
+		if _, err := settingsInteger(mapping["priority"], path+".priority", -1_000_000, 1_000_000); err != nil {
+			return nil, err
+		}
+		if mapping["chromeOrigin"] != nil {
+			if err := settingsChromeOrigin(mapping["chromeOrigin"], path+".chromeOrigin"); err != nil {
+				return nil, err
+			}
+		}
+		if err := settingsCanonicalTimestamp(mapping["updatedAt"], path+".updatedAt"); err != nil {
+			return nil, err
+		}
+	}
+	return profileRefs, nil
+}
+
+func hasStructuredURLMappingShape(value any) bool {
+	mappings, err := settingsArray(value, "$.urlMappings")
+	if err != nil {
+		return false
+	}
+	for _, entry := range mappings {
+		mapping, ok := entry.(map[string]any)
+		if !ok {
+			continue
+		}
+		if _, exists := mapping["id"]; exists {
+			return true
+		}
+	}
+	return false
 }
 
 func hasCurrentDeckShape(value any) bool {
@@ -907,6 +988,204 @@ func settingsNullableProfileRef(value any, path string) (string, error) {
 		return "", fmt.Errorf("%s is invalid", path)
 	}
 	return profileRef, nil
+}
+
+func settingsURLMappingPattern(value any, path string) error {
+	pattern, err := settingsText(value, path, false)
+	if err != nil || pattern != strings.TrimSpace(pattern) || strings.ContainsAny(pattern, "?#") {
+		return fmt.Errorf("%s must be a URL pattern without credentials, query, or fragment", path)
+	}
+	match := settingsMappingPattern.FindStringSubmatch(pattern)
+	if match == nil || strings.ContainsAny(match[2], "@\\") {
+		return fmt.Errorf("%s must be a URL pattern without credentials, query, or fragment", path)
+	}
+	if !settingsValidURLHost(match[2], true) {
+		return fmt.Errorf("%s has an invalid host", path)
+	}
+	port := match[3]
+	if port != "" && port != "*" {
+		if !settingsMappingPort.MatchString(port) {
+			return fmt.Errorf("%s has an invalid port", path)
+		}
+		parsed, err := strconv.ParseUint(port, 10, 16)
+		if err != nil || parsed == 0 || parsed > 65535 {
+			return fmt.Errorf("%s has an invalid port", path)
+		}
+	}
+	pathText := match[4]
+	if strings.Contains(pathText, "\\") {
+		return fmt.Errorf("%s has an invalid path", path)
+	}
+	segments := strings.Split(pathText, "/")[1:]
+	for _, segment := range segments {
+		if strings.Contains(segment, "*") && segment != "*" && segment != "**" {
+			return fmt.Errorf("%s has invalid path wildcards", path)
+		}
+	}
+	segments = settingsCanonicalMappingPathSegments(segments)
+	if len(segments) > maximumMappingPathSegments {
+		return fmt.Errorf("%s must contain at most %d path segments", path, maximumMappingPathSegments)
+	}
+	globstars := 0
+	for _, segment := range segments {
+		if segment == "**" {
+			globstars++
+		}
+	}
+	if globstars > maximumMappingGlobstars {
+		return fmt.Errorf("%s must contain at most %d globstar segments", path, maximumMappingGlobstars)
+	}
+	return nil
+}
+
+// settingsCanonicalMappingPathSegments mirrors WHATWG URL dot-segment removal
+// before applying complexity bounds, including percent-encoded dot segments.
+func settingsCanonicalMappingPathSegments(segments []string) []string {
+	canonical := make([]string, 0, len(segments))
+	for index, segment := range segments {
+		switch strings.ToLower(segment) {
+		case ".", "%2e":
+			if len(canonical) > 0 && index == len(segments)-1 {
+				canonical = append(canonical, "")
+			}
+			continue
+		case "..", ".%2e", "%2e.", "%2e%2e":
+			if len(canonical) > 0 {
+				canonical = canonical[:len(canonical)-1]
+				if index == len(segments)-1 && len(canonical) > 0 {
+					canonical = append(canonical, "")
+				}
+			}
+		default:
+			canonical = append(canonical, segment)
+		}
+	}
+	return canonical
+}
+
+func settingsChromeOrigin(value any, path string) error {
+	text, err := settingsText(value, path, false)
+	if err != nil {
+		return err
+	}
+	parsed, err := url.Parse(text)
+	port := ""
+	if err == nil {
+		port = parsed.Port()
+	}
+	parsedPort, portErr := strconv.ParseUint(port, 10, 16)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" || !settingsValidURLHost(parsed.Hostname(), false) || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || (parsed.Path != "" && parsed.Path != "/") || strings.Contains(parsed.Hostname(), "*") || (port != "" && (portErr != nil || parsedPort > 65535)) {
+		return fmt.Errorf("%s must be a concrete HTTP(S) origin without credentials, path, query, or fragment", path)
+	}
+	return nil
+}
+
+func settingsValidURLHost(host string, allowWildcard bool) bool {
+	if strings.HasPrefix(host, "[") {
+		if !strings.HasSuffix(host, "]") {
+			return false
+		}
+		address, err := netip.ParseAddr(strings.TrimSuffix(strings.TrimPrefix(host, "["), "]"))
+		return err == nil && address.Is6() && address.Zone() == ""
+	}
+	if net.ParseIP(host) != nil {
+		return true
+	}
+	labels := strings.Split(strings.TrimSuffix(host, "."), ".")
+	if len(labels) == 0 || strings.TrimSuffix(host, ".") == "" {
+		return false
+	}
+	for index, label := range labels {
+		if label == "" || (strings.Contains(label, "*") && (!allowWildcard || label != "*")) {
+			return false
+		}
+		if label == "*" {
+			labels[index] = fmt.Sprintf("devhud-wildcard-%d", index)
+		}
+	}
+	concreteHost := strings.Join(labels, ".")
+	if numeric, valid := settingsWhatwgIPv4(concreteHost); numeric {
+		return valid
+	}
+	asciiHost, err := settingsIDNAProfile.ToASCII(concreteHost)
+	if err != nil {
+		return false
+	}
+	// IDNA maps several Unicode full-stop variants to '.'. Wildcards are
+	// label-based, so accepting a mapping that gains labels during that
+	// canonicalization would make the synchronized pattern unparsable by the
+	// browser client.
+	if len(strings.Split(strings.TrimSuffix(asciiHost, "."), ".")) != len(labels) {
+		return false
+	}
+	for _, label := range labels {
+		if strings.HasPrefix(strings.ToLower(label), "xn--") {
+			decoded, err := settingsIDNAProfile.ToUnicode(label)
+			if err != nil || decoded == "" {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// settingsWhatwgIPv4 preserves the numeric IPv4 forms accepted by new URL while
+// rejecting out-of-range abbreviated forms before they can reach a browser client.
+func settingsWhatwgIPv4(host string) (numeric bool, valid bool) {
+	parts := strings.Split(strings.TrimSuffix(host, "."), ".")
+	if len(parts) == 0 {
+		return false, false
+	}
+	if _, ok := settingsWhatwgIPv4Number(parts[len(parts)-1]); !ok {
+		return false, false
+	}
+	if len(parts) > 4 {
+		return true, false
+	}
+	numbers := make([]uint64, len(parts))
+	for index, part := range parts {
+		number, ok := settingsWhatwgIPv4Number(part)
+		if !ok {
+			return true, false
+		}
+		numbers[index] = number
+	}
+	for _, number := range numbers[:len(numbers)-1] {
+		if number > 255 {
+			return true, false
+		}
+	}
+	return true, numbers[len(numbers)-1] < uint64(1)<<(8*(5-len(numbers)))
+}
+
+func settingsWhatwgIPv4Number(value string) (uint64, bool) {
+	if value == "" {
+		return 0, false
+	}
+	base := 10
+	digits := value
+	lower := strings.ToLower(value)
+	if strings.HasPrefix(lower, "0x") {
+		base, digits = 16, value[2:]
+	} else if len(value) > 1 && value[0] == '0' {
+		base, digits = 8, value[1:]
+	}
+	if digits == "" {
+		return 0, true
+	}
+	number, err := strconv.ParseUint(digits, base, 32)
+	return number, err == nil
+}
+
+func settingsCanonicalTimestamp(value any, path string) error {
+	timestamp, err := settingsText(value, path, false)
+	if err != nil || !settingsTimestamp.MatchString(timestamp) {
+		return fmt.Errorf("%s must be a canonical UTC timestamp", path)
+	}
+	if _, err := time.Parse(time.RFC3339Nano, timestamp); err != nil {
+		return fmt.Errorf("%s must be a canonical UTC timestamp", path)
+	}
+	return nil
 }
 
 func settingsURL(value any, path string, httpsOnly bool) error {

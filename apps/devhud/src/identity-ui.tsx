@@ -1,13 +1,14 @@
-import { useEffect, useEffectEvent, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type Ref } from "react";
+import { createContext, use, useEffect, useEffectEvent, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type Ref } from "react";
 import type { Copy } from "./localization";
-import { GitHubSettings } from "./github-settings-ui.tsx";
-import type { GitHubProvider } from "./github-provider.ts";
-import { NativeBridgeError, nativeBridge, type NativeBridgeV1, type NativeShortcutPermission, type NativeShortcutPlatform } from "./native-bridge";
+import { GitHubSettings, githubErrorCopy } from "./github-settings-ui.tsx";
+import { createGitHubProvider, GitHubErrorCode, GitHubProviderError, readGitHubCredential, type GitHubProvider } from "./github-provider.ts";
+import { NativeBridgeError, NativeBridgeErrorCode, nativeBridge, type NativeBridgeV1, type NativeShortcutPermission, type NativeShortcutPlatform } from "./native-bridge.ts";
 import { useIdentitySettings } from "./service-boundary";
 import { browserShell, LanguagePreference, PlatformCapability, normalizeApiOrigin, ThemePreference, type ExternalLinkTarget, type RuntimeCapabilities } from "./shell";
-import type { DevHudSettingsV1 } from "./settings-contract";
+import { parseDevHudSettings, type DevHudSettingsV1 } from "./settings-contract";
 import type { SettingsDiffEntry } from "./settings-diff";
 import { inactiveDesktopShortcutBindings, ShortcutActionId, ShortcutContractError, ShortcutKey, ShortcutModifier, ShortcutValidationCode, availableShortcutActions, parseDesktopShortcutBindings, type ShortcutBinding } from "./shortcuts";
+import { findMappingOverlaps, type UrlRepositoryMapping } from "./url-mapping";
 
 interface ApiEditorProps {
   readonly copy: Copy;
@@ -122,6 +123,100 @@ export function SynchronizedAppearanceBoundary({ onAppearance }: { readonly onAp
   return null;
 }
 
+interface UrlMappingDraftValue {
+  readonly draft: UrlRepositoryMapping[];
+  readonly setDraft: (draft: UrlRepositoryMapping[] | ((current: UrlRepositoryMapping[]) => UrlRepositoryMapping[])) => void;
+  readonly setBaselineMappings: (mappings: UrlRepositoryMapping[]) => void;
+  readonly markDraftDirty: () => void;
+  readonly invalid: boolean;
+  readonly setInvalid: (invalid: boolean) => void;
+  readonly saved: boolean;
+  readonly setSaved: (saved: boolean) => void;
+  readonly dirty: boolean;
+  readonly saving: boolean;
+  readonly setSaving: (saving: boolean) => void;
+  readonly priorityDrafts: Record<string, string>;
+  readonly setPriorityDrafts: (drafts: Record<string, string> | ((current: Record<string, string>) => Record<string, string>)) => void;
+  readonly baseRevision: bigint;
+  readonly credentialOperationPending: boolean;
+  readonly runCredentialOperation: <Value>(operation: () => Promise<Value>) => Promise<Value>;
+  readonly isCurrentScope: () => boolean;
+  readonly reset: () => void;
+}
+
+const UrlMappingDraftContext = createContext<UrlMappingDraftValue | null>(null);
+
+export function UrlMappingDraftProvider({ children }: { readonly children: ReactNode }) {
+  const identity = useIdentitySettings();
+  const accountId = identity.account?.userId?.value ?? identity.account?.logtoSubject ?? "";
+  const scope = useRef({ retainsDraft: identity.status === "authenticated" || identity.status === "blocked", accountId, generation: 0 });
+  const retainsDraft = identity.status === "authenticated" || identity.status === "blocked";
+  const leavesSession = scope.current.retainsDraft && !retainsDraft;
+  const changesAuthenticatedAccount = retainsDraft && scope.current.retainsDraft && accountId !== "" && scope.current.accountId !== "" && scope.current.accountId !== accountId;
+  if (leavesSession || changesAuthenticatedAccount) {
+    scope.current = { retainsDraft, accountId, generation: scope.current.generation + 1 };
+  } else {
+    scope.current.retainsDraft = retainsDraft;
+    // Account and Settings queries resolve independently; learning this account's ID must not discard an editable draft.
+    if (accountId !== "") scope.current.accountId = accountId;
+  }
+  const generation = scope.current.generation;
+  return <UrlMappingDraftStateProvider key={generation} identity={identity} isCurrentScope={() => scope.current.generation === generation}>{children}</UrlMappingDraftStateProvider>;
+}
+
+function UrlMappingDraftStateProvider({ children, identity, isCurrentScope }: { readonly children: ReactNode; readonly identity: ReturnType<typeof useIdentitySettings>; readonly isCurrentScope: () => boolean }) {
+  const [draft, setDraft] = useState<UrlRepositoryMapping[]>(() => [...identity.settings.urlMappings]);
+  const [baselineMappings, setBaselineMappings] = useState<UrlRepositoryMapping[]>(() => [...identity.settings.urlMappings]);
+  const [invalid, setInvalid] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [priorityDrafts, setPriorityDrafts] = useState<Record<string, string>>({});
+  const dirty = !mappingDraftMatchesBaseline(draft, priorityDrafts, baselineMappings);
+  const dirtyRef = useRef(dirty);
+  dirtyRef.current = dirty;
+  const markDraftDirty = () => { dirtyRef.current = true; };
+  const [baseRevision, setBaseRevision] = useState(identity.revision);
+  const credentialOperationTail = useRef(Promise.resolve());
+  const credentialOperationCount = useRef(0);
+  const [credentialOperationPending, setCredentialOperationPending] = useState(false);
+  const runCredentialOperation = async <Value,>(operation: () => Promise<Value>): Promise<Value> => {
+    credentialOperationCount.current += 1;
+    setCredentialOperationPending(true);
+    const previous = credentialOperationTail.current;
+    let release: () => void = () => {};
+    credentialOperationTail.current = new Promise<void>((resolve) => { release = resolve; });
+    await previous;
+    try {
+      return await operation();
+    } finally {
+      release();
+      credentialOperationCount.current -= 1;
+      if (credentialOperationCount.current === 0) setCredentialOperationPending(false);
+    }
+  };
+  useEffect(() => {
+    if (!dirtyRef.current) {
+      setDraft([...identity.settings.urlMappings]);
+      setBaselineMappings([...identity.settings.urlMappings]);
+      setBaseRevision(identity.revision);
+    }
+  }, [dirty, identity.revision, identity.settings.urlMappings]);
+  const reset = () => {
+    setDraft([...identity.settings.urlMappings]);
+    setBaselineMappings([...identity.settings.urlMappings]);
+    setBaseRevision(identity.revision);
+    setSaved(false);
+    setInvalid(false);
+    setPriorityDrafts({});
+  };
+  return <UrlMappingDraftContext value={{ draft, setDraft, setBaselineMappings, markDraftDirty, invalid, setInvalid, saved, setSaved, dirty, saving, setSaving, priorityDrafts, setPriorityDrafts, baseRevision, credentialOperationPending, runCredentialOperation, isCurrentScope, reset }}>{children}</UrlMappingDraftContext>;
+}
+
+export function SynchronizedSettingsBoundary(props: { readonly copy: Copy; readonly bridge?: NativeBridgeV1; readonly githubProvider?: GitHubProvider; readonly onOpenExternal?: (target: ExternalLinkTarget) => Promise<void>; readonly showNativeShortcuts?: boolean; readonly shortcutCapabilities?: RuntimeCapabilities }) {
+  const mappingDraft = use(UrlMappingDraftContext);
+  return mappingDraft === null ? <UrlMappingDraftProvider><SynchronizedSettingsContent {...props} /></UrlMappingDraftProvider> : <SynchronizedSettingsContent {...props} />;
+}
+
 function nativeShortcutsAreActive(status: { readonly error: ShortcutValidationCode | null; readonly permission: NativeShortcutPermission }) {
   return status.error === null && status.permission === "available";
 }
@@ -139,12 +234,9 @@ export function SynchronizedShortcutBoundary({ bridge = nativeBridge }: { readon
       if (!active) { value(); return; }
       unlisten = value;
     }).catch(() => {
-      // Status requests in Settings remain the fallback for hosts without events.
+      // Status requests remain the fallback for hosts that do not emit events.
     });
-    return () => {
-      active = false;
-      unlisten?.();
-    };
+    return () => { active = false; unlisten?.(); };
   }, [bridge, identity.setActiveShortcutBindings, identity.shortcutHydrationReady]);
   useEffect(() => {
     let active = true;
@@ -152,8 +244,7 @@ export function SynchronizedShortcutBoundary({ bridge = nativeBridge }: { readon
       void bridge.request({ operation: "shortcuts.suspend" }).then((response) => {
         if (active && response.kind === "shortcut-status") identity.setActiveShortcutBindings(inactiveDesktopShortcutBindings);
       }).catch(() => {
-        // A pre-bridge host cannot suspend matching. Its status remains visible
-        // in Settings while the renderer waits for authenticated hydration.
+        // A pre-bridge host cannot suspend matching while hydration is pending.
       });
       return () => { active = false; };
     }
@@ -167,47 +258,20 @@ export function SynchronizedShortcutBoundary({ bridge = nativeBridge }: { readon
         identity.setActiveShortcutBindings(inactiveDesktopShortcutBindings);
         return;
       }
-      // Synchronized bindings can be valid on their source desktop platform but
-      // reserved here. Keep the native backend's last known platform-valid map
-      // active without overwriting the shared settings snapshot.
       identity.setActiveShortcutBindings(response.bindings);
       const fallback = await bridge.request({ operation: "shortcuts.apply", bindings: response.bindings });
       if (active && fallback.kind === "shortcut-status" && nativeShortcutsAreActive(fallback)) identity.setActiveShortcutBindings(fallback.bindings);
     }).catch(() => {
-      // Shortcut status remains available in Settings; startup hydration must
-      // not turn the shell into an error state when native access is pending.
+      // Native shortcut readiness must not make the shell itself fail to render.
     });
     return () => { active = false; };
   }, [bindings, bridge, identity.setActiveShortcutBindings, identity.shortcutHydrationReady]);
   return null;
 }
 
-export function SynchronizedSettingsBoundary({ copy, bridge = nativeBridge, githubProvider, onOpenExternal = (target) => browserShell.openExternal(target, ""), showNativeShortcuts = false, shortcutCapabilities = { available: new Set<PlatformCapability>() } }: { readonly copy: Copy; readonly bridge?: NativeBridgeV1; readonly githubProvider?: GitHubProvider; readonly onOpenExternal?: (target: ExternalLinkTarget) => Promise<void>; readonly showNativeShortcuts?: boolean; readonly shortcutCapabilities?: RuntimeCapabilities }) {
-  const identity = useIdentitySettings();
-  const [actionError, setActionError] = useState(false);
-  const invoke = (action: () => Promise<unknown>) => { setActionError(false); void action().catch(() => setActionError(true)); };
-  const replaceAppearance = (appearance: Partial<DevHudSettingsV1["appearance"]>) => invoke(() => identity.replaceSettings((current) => ({
-    ...current,
-    appearance: { ...current.appearance, ...appearance },
-  })));
-  return <>
-    <label>{copy.theme}<select value={identity.settings.appearance.theme} disabled={identity.readOnly} onChange={(event) => replaceAppearance({ theme: event.target.value as DevHudSettingsV1["appearance"]["theme"] })}>{Object.values(ThemePreference).map((value) => <option key={value} value={value}>{copy[value]}</option>)}</select></label>
-    <label>{copy.language}<select value={identity.settings.appearance.language} disabled={identity.readOnly} onChange={(event) => replaceAppearance({ language: event.target.value as DevHudSettingsV1["appearance"]["language"] })}><option value={LanguagePreference.System}>{copy.system}</option><option value={LanguagePreference.English}>{copy.english}</option><option value={LanguagePreference.Korean}>{copy.korean}</option></select></label>
-    {showNativeShortcuts && <ShortcutSettings copy={copy} bridge={bridge} disabled={identity.readOnly} capabilities={shortcutCapabilities} bindings={identity.settings.shortcuts.desktop} onActiveBindings={identity.setActiveShortcutBindings} onPersist={(desktop) => identity.replaceSettings((current) => ({ ...current, shortcuts: { ...current.shortcuts, desktop } }))} />}
-    {(identity.status === "guest" || identity.status === "signed-out" || identity.status === "starting") && <p className="notice">{copy.guestSettingsLocal}</p>}
-    {identity.status === "blocked" && <p className="notice">{copy.blockedLocalHint}</p>}
-    {identity.status === "deletion-pending" && <p className="notice">{copy.deletionPendingSummary}</p>}
-    {identity.status === "authenticated" && <section className="synchronized-settings" aria-label={copy.synchronizedSettings}>
-      <h3>{copy.synchronizedSettings}</h3>
-      {identity.offline && <p className="notice" role="status">{copy.offlineSettingsReadOnly}</p>}
-      {!identity.offline && <p>{copy.settingsRevision}: {identity.revision.toString()}</p>}
-    {identity.importDiff && <SnapshotChoice key="import" choiceId="import" copy={copy} entries={identity.importDiff} title={copy.importSettingsTitle} summary={copy.importSettingsSummary} primary={copy.uploadLocal} secondary={copy.replaceLocal} onPrimary={() => invoke(identity.uploadLocal)} onSecondary={identity.replaceLocal} />}
-    {identity.conflict && <SnapshotChoice key="conflict" choiceId="conflict" copy={copy} entries={identity.conflict.diff} title={copy.conflictTitle} summary={copy.conflictSummary} primary={copy.reapplyLocal} secondary={copy.adoptServer} onPrimary={() => invoke(identity.reapplyConflictLocal)} onSecondary={identity.adoptConflictServer} />}
-    {(actionError || identity.error?.startsWith("settings-") || identity.settingsError) && <section className="notice" role="alert"><p>{copy.settingsActionFailed}{identity.error?.startsWith("settings-") && <> <code>{identity.error}</code></>}{identity.settingsError && <> <code>{`settings-connect-${identity.settingsError.code}`}</code>{identity.settingsError.correlationId && <> {copy.correlationId}: <code>{identity.settingsError.correlationId}</code></>}</>}</p><button onClick={() => invoke(identity.retrySettings)}>{copy.retry}</button></section>}
-    </section>}
-    <GitHubSettings copy={copy} bridge={bridge} provider={githubProvider} openExternal={onOpenExternal} />
-  </>;
-}
+const shortcutKeyLabels: Record<ShortcutKey, keyof Copy> = {
+  [ShortcutKey.K]: "shortcutKeyK", [ShortcutKey.Digit1]: "shortcutDigit1", [ShortcutKey.Digit2]: "shortcutDigit2", [ShortcutKey.Digit3]: "shortcutDigit3", [ShortcutKey.Digit4]: "shortcutDigit4", [ShortcutKey.Digit5]: "shortcutDigit5", [ShortcutKey.Space]: "shortcutSpace", [ShortcutKey.Tab]: "shortcutTab", [ShortcutKey.Q]: "shortcutKeyQ", [ShortcutKey.Delete]: "shortcutDelete", [ShortcutKey.Backspace]: "shortcutBackspace",
+};
 
 const shortcutLabels: Record<ShortcutActionId, keyof Copy> = {
   [ShortcutActionId.CommandPalette]: "openPalette",
@@ -219,26 +283,12 @@ const shortcutLabels: Record<ShortcutActionId, keyof Copy> = {
 };
 
 export function ShortcutPaletteTrigger({ copy, isMac, onOpen, triggerRef }: { readonly copy: Copy; readonly isMac: boolean; readonly onOpen: () => void; readonly triggerRef: Ref<HTMLButtonElement> }) {
-  const identity = useIdentitySettings();
-  const binding = identity.activeShortcutBindings[ShortcutActionId.CommandPalette];
+  const { activeShortcutBindings } = useIdentitySettings();
+  const binding = activeShortcutBindings[ShortcutActionId.CommandPalette];
   const modifiers = binding.modifiers.map((modifier) => modifier === ShortcutModifier.RightPrimary ? isMac ? copy.rightCommandK.replace(/ K$/u, "") : copy.rightControlK.replace(/ K$/u, "") : modifier === ShortcutModifier.Shift ? copy.shortcutShift : copy.shortcutAlt);
   const label = binding.enabled ? [...modifiers, copy[shortcutKeyLabels[binding.key]]].join(" + ") : copy.shortcutNone;
   return <button ref={triggerRef} className="palette-trigger" onClick={onOpen} aria-label={copy.openPalette}>{label}</button>;
 }
-
-const shortcutKeyLabels: Record<ShortcutKey, keyof Copy> = {
-  [ShortcutKey.K]: "shortcutKeyK",
-  [ShortcutKey.Digit1]: "shortcutDigit1",
-  [ShortcutKey.Digit2]: "shortcutDigit2",
-  [ShortcutKey.Digit3]: "shortcutDigit3",
-  [ShortcutKey.Digit4]: "shortcutDigit4",
-  [ShortcutKey.Digit5]: "shortcutDigit5",
-  [ShortcutKey.Space]: "shortcutSpace",
-  [ShortcutKey.Tab]: "shortcutTab",
-  [ShortcutKey.Q]: "shortcutKeyQ",
-  [ShortcutKey.Delete]: "shortcutDelete",
-  [ShortcutKey.Backspace]: "shortcutBackspace",
-};
 
 function ShortcutSettings({ copy, bridge, disabled, capabilities, bindings, onActiveBindings, onPersist }: { readonly copy: Copy; readonly bridge: NativeBridgeV1; readonly disabled: boolean; readonly capabilities: RuntimeCapabilities; readonly bindings: DevHudSettingsV1["shortcuts"]["desktop"]; readonly onActiveBindings: (bindings: DevHudSettingsV1["shortcuts"]["desktop"]) => void; readonly onPersist: (bindings: DevHudSettingsV1["shortcuts"]["desktop"]) => Promise<boolean> }) {
   const [status, setStatus] = useState<{ platform: NativeShortcutPlatform; permission: NativeShortcutPermission; error: ShortcutValidationCode | null } | null>(null);
@@ -248,8 +298,7 @@ function ShortcutSettings({ copy, bridge, disabled, capabilities, bindings, onAc
     void bridge.request({ operation: "shortcuts.status" }).then((response) => {
       if (active && response.kind === "shortcut-status") setStatus(response);
     }).catch(() => {
-      // A settings refresh must not turn an otherwise usable shell into a
-      // shortcut error state; explicit user edits still surface their result.
+      // A settings refresh must not turn an otherwise usable shell into a shortcut error state.
     });
     return () => { active = false; };
   }, [bindings, bridge]);
@@ -262,10 +311,7 @@ function ShortcutSettings({ copy, bridge, disabled, capabilities, bindings, onAc
       if (!active) { value(); return; }
       unlisten = value;
     }).catch(() => {});
-    return () => {
-      active = false;
-      unlisten?.();
-    };
+    return () => { active = false; unlisten?.(); };
   }, [bridge]);
   const commit = async (action: ShortcutActionId, update: Partial<ShortcutBinding>) => {
     if (saving) return;
@@ -301,16 +347,8 @@ function ShortcutSettings({ copy, bridge, disabled, capabilities, bindings, onAc
       const result = await bridge.request({ operation: "shortcuts.apply", bindings });
       if (result.kind !== "shortcut-status") return;
       setStatus(result);
-      if (nativeShortcutsAreActive(result)) {
-        onActiveBindings(result.bindings);
-        return;
-      }
-      if (result.error !== ShortcutValidationCode.Reserved) {
-        onActiveBindings(inactiveDesktopShortcutBindings);
-        return;
-      }
-      // A synchronized binding can be reserved on this platform. Restore the
-      // platform-valid native map instead of overwriting the shared snapshot.
+      if (nativeShortcutsAreActive(result)) { onActiveBindings(result.bindings); return; }
+      if (result.error !== ShortcutValidationCode.Reserved) { onActiveBindings(inactiveDesktopShortcutBindings); return; }
       onActiveBindings(result.bindings);
       const fallback = await bridge.request({ operation: "shortcuts.apply", bindings: result.bindings });
       if (fallback.kind === "shortcut-status") {
@@ -341,6 +379,184 @@ function ShortcutSettings({ copy, bridge, disabled, capabilities, bindings, onAc
     {status?.permission === "unsupported" && <p className="notice">{copy.shortcutUnsupported}</p>}
     {errorCopy && <p className="native-setting-error" role="alert">{errorCopy}</p>}
   </section>;
+}
+
+function SynchronizedSettingsContent({ copy, bridge = nativeBridge, githubProvider, onOpenExternal = (target) => browserShell.openExternal(target, ""), showNativeShortcuts = false, shortcutCapabilities = { available: new Set<PlatformCapability>() } }: { readonly copy: Copy; readonly bridge?: NativeBridgeV1; readonly githubProvider?: GitHubProvider; readonly onOpenExternal?: (target: ExternalLinkTarget) => Promise<void>; readonly showNativeShortcuts?: boolean; readonly shortcutCapabilities?: RuntimeCapabilities }) {
+  const identity = useIdentitySettings();
+  const mappingDraft = use(UrlMappingDraftContext);
+  if (mappingDraft === null) throw new Error("URL mapping draft provider is required");
+  const [actionError, setActionError] = useState(false);
+  const invoke = (action: () => Promise<unknown>) => { setActionError(false); void action().catch(() => setActionError(true)); };
+  const replaceAppearance = (appearance: Partial<DevHudSettingsV1["appearance"]>) => invoke(() => identity.replaceSettings((current) => ({
+    ...current,
+    appearance: { ...current.appearance, ...appearance },
+  })));
+  return <>
+    <label>{copy.theme}<select value={identity.settings.appearance.theme} disabled={identity.readOnly} onChange={(event) => replaceAppearance({ theme: event.target.value as DevHudSettingsV1["appearance"]["theme"] })}>{Object.values(ThemePreference).map((value) => <option key={value} value={value}>{copy[value]}</option>)}</select></label>
+    <label>{copy.language}<select value={identity.settings.appearance.language} disabled={identity.readOnly} onChange={(event) => replaceAppearance({ language: event.target.value as DevHudSettingsV1["appearance"]["language"] })}><option value={LanguagePreference.System}>{copy.system}</option><option value={LanguagePreference.English}>{copy.english}</option><option value={LanguagePreference.Korean}>{copy.korean}</option></select></label>
+    {showNativeShortcuts && <ShortcutSettings copy={copy} bridge={bridge} disabled={identity.readOnly} capabilities={shortcutCapabilities} bindings={identity.settings.shortcuts.desktop} onActiveBindings={identity.setActiveShortcutBindings} onPersist={(desktop) => identity.replaceSettings((current) => ({ ...current, shortcuts: { ...current.shortcuts, desktop } }))} />}
+    <UrlMappingSettings copy={copy} bridge={bridge} githubProvider={githubProvider} />
+    {(identity.status === "guest" || identity.status === "signed-out" || identity.status === "starting") && <p className="notice">{copy.guestSettingsLocal}</p>}
+    {identity.status === "blocked" && <p className="notice">{copy.blockedLocalHint}</p>}
+    {identity.status === "deletion-pending" && <p className="notice">{copy.deletionPendingSummary}</p>}
+    {identity.status === "authenticated" && <section className="synchronized-settings" aria-label={copy.synchronizedSettings}>
+      <h3>{copy.synchronizedSettings}</h3>
+      {identity.offline && <p className="notice" role="status">{copy.offlineSettingsReadOnly}</p>}
+      {!identity.offline && <p>{copy.settingsRevision}: {identity.revision.toString()}</p>}
+    {identity.importDiff && <SnapshotChoice key="import" choiceId="import" copy={copy} entries={identity.importDiff} title={copy.importSettingsTitle} summary={copy.importSettingsSummary} primary={copy.uploadLocal} secondary={copy.replaceLocal} onPrimary={() => invoke(async () => { if (await identity.uploadLocal()) mappingDraft.reset(); })} onSecondary={() => { if (identity.replaceLocal()) mappingDraft.reset(); }} />}
+    {identity.conflict && <SnapshotChoice key="conflict" choiceId="conflict" copy={copy} entries={identity.conflict.diff} title={copy.conflictTitle} summary={copy.conflictSummary} primary={copy.reapplyLocal} secondary={copy.adoptServer} onPrimary={() => invoke(async () => { if (await identity.reapplyConflictLocal()) mappingDraft.reset(); })} onSecondary={() => { identity.adoptConflictServer(); mappingDraft.reset(); }} />}
+    {(actionError || identity.error?.startsWith("settings-") || identity.settingsError) && <section className="notice" role="alert"><p>{copy.settingsActionFailed}{identity.error?.startsWith("settings-") && <> <code>{identity.error}</code></>}{identity.settingsError && <> <code>{`settings-connect-${identity.settingsError.code}`}</code>{identity.settingsError.correlationId && <> {copy.correlationId}: <code>{identity.settingsError.correlationId}</code></>}</>}</p><button onClick={() => invoke(identity.retrySettings)}>{copy.retry}</button></section>}
+    </section>}
+    <GitHubSettings copy={copy} bridge={bridge} provider={githubProvider} openExternal={onOpenExternal} credentialOperationPending={mappingDraft.credentialOperationPending} runCredentialOperation={mappingDraft.runCredentialOperation} />
+  </>;
+}
+
+function UrlMappingSettings({ copy, bridge, githubProvider = createGitHubProvider({ fetch: globalThis.fetch }) }: { readonly copy: Copy; readonly bridge: NativeBridgeV1; readonly githubProvider?: GitHubProvider }) {
+  const identity = useIdentitySettings();
+  const mappingDraft = use(UrlMappingDraftContext);
+  if (mappingDraft === null) throw new Error("URL mapping draft provider is required");
+  const { draft, setDraft, setBaselineMappings, markDraftDirty, invalid, setInvalid, saved, setSaved, dirty, saving, setSaving, priorityDrafts, setPriorityDrafts, baseRevision, credentialOperationPending, runCredentialOperation, isCurrentScope } = mappingDraft;
+  const [validationError, setValidationError] = useState<keyof Copy | null>(null);
+  const overlaps = safeOverlaps(draft);
+  const change = (id: string, field: keyof UrlRepositoryMapping, value: string | number | null) => {
+    markDraftDirty(); setSaved(false); setInvalid(false); setValidationError(null);
+    setDraft((current) => current.map((mapping) => mapping.id === id ? { ...mapping, [field]: value } : mapping));
+  };
+  const changeRepository = (id: string, field: "owner" | "name", value: string) => {
+    markDraftDirty(); setSaved(false); setInvalid(false); setValidationError(null);
+    setDraft((current) => current.map((mapping) => mapping.id === id ? { ...mapping, repository: { ...mapping.repository, [field]: value } } : mapping));
+  };
+  const changePriority = (id: string, value: string) => {
+    markDraftDirty(); setSaved(false); setInvalid(false); setValidationError(null);
+    setPriorityDrafts((current) => ({ ...current, [id]: value }));
+  };
+  const add = () => {
+    const timestamp = new Date().toISOString();
+    markDraftDirty(); setSaved(false); setInvalid(false); setValidationError(null);
+    setDraft((current) => [...current, { id: uuidV7(), pattern: "https://example.com/**", repository: { owner: "owner", name: "repository" }, credentialProfileRef: "", priority: 0, chromeOrigin: null, updatedAt: timestamp }]);
+  };
+  const save = async () => {
+    if (!dirty) return;
+    let mappings: UrlRepositoryMapping[];
+    try {
+      if (Object.values(priorityDrafts).some((value) => value === "" || !Number.isInteger(Number(value)))) throw new TypeError("priority must be an integer");
+      mappings = parseDevHudSettings({ ...identity.settings, urlMappings: withUpdatedMappings(draft, priorityDrafts, identity.settings.urlMappings) }).urlMappings.slice();
+    } catch {
+      setInvalid(true);
+      return;
+    }
+    setInvalid(false); setValidationError(null); setSaved(false); setSaving(true);
+    let validationCompleted = false;
+    try {
+      let committedMappings = mappings;
+      const committed = await runCredentialOperation(async () => {
+        await validateChangedMappings(mappings, identity.settings.urlMappings, { ...identity.settings, urlMappings: mappings }, bridge, githubProvider, identity.githubPatScopeId);
+        validationCompleted = true;
+        if (!isCurrentScope()) return false;
+        return identity.replaceSettingsAt((current) => {
+          let next: DevHudSettingsV1;
+          try {
+            next = parseDevHudSettings({ ...current, urlMappings: withUpdatedMappings(draft, priorityDrafts, current.urlMappings) });
+          } catch (reason) {
+            throw new UrlMappingSaveRebaseError(reason);
+          }
+          committedMappings = next.urlMappings.slice();
+          return next;
+        }, baseRevision);
+      });
+      if (!committed || !isCurrentScope()) return;
+      setDraft(committedMappings);
+      setBaselineMappings(committedMappings);
+      setPriorityDrafts({});
+      setSaved(true);
+    } catch (error) {
+      if (isCurrentScope() && (error instanceof UrlMappingSaveRebaseError || error instanceof Error && error.message === "settings-read-only")) setValidationError("githubSetupFailed");
+      else if (!validationCompleted && isCurrentScope()) setValidationError(error instanceof GitHubProviderError ? githubErrorCopy(error.code) : error instanceof NativeBridgeError && error.code === NativeBridgeErrorCode.StorageFailure ? "githubErrorSecureStorage" : "githubSetupFailed");
+      // The synchronized-settings boundary exposes typed transport failures.
+    } finally { if (isCurrentScope()) setSaving(false); }
+  };
+  return <section className="url-mappings" aria-labelledby="url-mappings-title">
+    <h3 id="url-mappings-title">{copy.urlMappingsTitle}</h3><p>{copy.urlMappingsSummary}</p><p id="url-mapping-hint">{copy.mappingPatternHint}</p>
+    {draft.map((mapping, index) => <fieldset key={mapping.id} disabled={identity.readOnly || saving} aria-label={`${copy.urlMappingsTitle} ${index + 1}`}>
+      <legend>{`${mapping.repository.owner}/${mapping.repository.name}`}</legend>
+      <label>{copy.urlPattern}<input value={mapping.pattern} aria-describedby="url-mapping-hint" onChange={(event) => change(mapping.id, "pattern", event.target.value)} /></label>
+      <label>{copy.repositoryOwner}<input value={mapping.repository.owner} onChange={(event) => changeRepository(mapping.id, "owner", event.target.value)} /></label>
+      <label>{copy.repositoryName}<input value={mapping.repository.name} onChange={(event) => changeRepository(mapping.id, "name", event.target.value)} /></label>
+      <label>{copy.credentialProfile}<select value={mapping.credentialProfileRef} onChange={(event) => change(mapping.id, "credentialProfileRef", event.target.value)}><option value="">{copy.githubSelectProfile}</option>{identity.settings.github.profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></label>
+      <label>{copy.mappingPriority}<input type="number" value={priorityDrafts[mapping.id] ?? String(mapping.priority)} onChange={(event) => changePriority(mapping.id, event.target.value)} /></label>
+      <label>{copy.chromeOrigin}<input value={mapping.chromeOrigin ?? ""} onChange={(event) => change(mapping.id, "chromeOrigin", event.target.value || null)} /></label>
+      <button type="button" onClick={() => { markDraftDirty(); setSaved(false); setValidationError(null); setPriorityDrafts((current) => { const { [mapping.id]: _removed, ...remaining } = current; return remaining; }); setDraft((current) => current.filter((item) => item.id !== mapping.id)); }}>{copy.removeUrlMapping}</button>
+    </fieldset>)}
+    <div className="actions"><button type="button" disabled={identity.readOnly || saving || credentialOperationPending || identity.settings.github.profiles.length === 0} onClick={add}>{copy.addUrlMapping}</button><button type="button" disabled={identity.readOnly || saving || credentialOperationPending || !dirty} onClick={save}>{copy.saveUrlMappings}</button></div>
+    {invalid && <p role="alert">{copy.mappingInvalid}</p>}
+    {validationError !== null && <p role="alert">{copy[validationError]}</p>}
+    {overlaps.length > 0 && <p role="status">{copy.mappingOverlap}</p>}
+    {saved && <p role="status">{copy.mappingSaved}</p>}
+  </section>;
+}
+
+function mappingDraftMatchesBaseline(draft: readonly UrlRepositoryMapping[], priorityDrafts: Readonly<Record<string, string>>, baseline: readonly UrlRepositoryMapping[]): boolean {
+  if (draft.length !== baseline.length) return false;
+  return draft.every((mapping, index) => {
+    const priorityDraft = priorityDrafts[mapping.id];
+    if (priorityDraft !== undefined && (priorityDraft === "" || !Number.isInteger(Number(priorityDraft)))) return false;
+    const effective = priorityDraft === undefined ? mapping : { ...mapping, priority: Number(priorityDraft) };
+    const existing = baseline[index];
+    return existing !== undefined && existing.id === effective.id && JSON.stringify({ ...existing, updatedAt: "" }) === JSON.stringify({ ...effective, updatedAt: "" });
+  });
+}
+
+class UrlMappingSaveRebaseError extends Error {
+  constructor(reason: unknown) {
+    super("URL mapping settings changed during validation");
+    this.cause = reason;
+  }
+}
+
+function withUpdatedMappings(draft: readonly UrlRepositoryMapping[], priorityDrafts: Readonly<Record<string, string>>, previousMappings: readonly UrlRepositoryMapping[]): UrlRepositoryMapping[] {
+  const previous = new Map(previousMappings.map((mapping) => [mapping.id, mapping]));
+  const now = new Date().toISOString();
+  return draft.map((mapping) => {
+    const withPriority = priorityDrafts[mapping.id] === undefined ? mapping : { ...mapping, priority: Number(priorityDrafts[mapping.id]) };
+    const existing = previous.get(withPriority.id);
+    const unchanged = existing !== undefined && JSON.stringify({ ...existing, updatedAt: "" }) === JSON.stringify({ ...withPriority, updatedAt: "" });
+    return unchanged ? withPriority : { ...withPriority, updatedAt: now };
+  });
+}
+
+async function validateChangedMappings(mappings: readonly UrlRepositoryMapping[], previousMappings: readonly UrlRepositoryMapping[], settings: DevHudSettingsV1, bridge: NativeBridgeV1, provider: GitHubProvider, scopeId: Promise<string>): Promise<void> {
+  const previous = new Map(previousMappings.map((mapping) => [mapping.id, mapping]));
+  const assignments = new Map<string, UrlRepositoryMapping>();
+  for (const mapping of mappings) {
+    const existing = previous.get(mapping.id);
+    if (existing !== undefined && existing.credentialProfileRef === mapping.credentialProfileRef && existing.repository.owner === mapping.repository.owner && existing.repository.name === mapping.repository.name) continue;
+    assignments.set(`${mapping.credentialProfileRef}:${mapping.repository.owner.toLowerCase()}/${mapping.repository.name.toLowerCase()}`, mapping);
+  }
+  if (assignments.size === 0) return;
+  const resolvedScopeId = await scopeId;
+  const credentials = new Map<string, ReturnType<typeof readGitHubCredential>>();
+  await Promise.all([...assignments.values()].map(async (mapping) => {
+    const profile = settings.github.profiles.find((candidate) => candidate.id === mapping.credentialProfileRef);
+    if (profile === undefined) throw new GitHubProviderError(GitHubErrorCode.MissingToken, "validate-repository");
+    let credential = credentials.get(profile.id);
+    if (credential === undefined) {
+      credential = readGitHubCredential(bridge, profile, resolvedScopeId);
+      credentials.set(profile.id, credential);
+    }
+    await provider.validateRepository(await credential, mapping.repository);
+  }));
+}
+
+function safeOverlaps(mappings: readonly UrlRepositoryMapping[]) {
+  try { return findMappingOverlaps(mappings); } catch { return []; }
+}
+
+function uuidV7(): string {
+  const random = new Uint8Array(10); crypto.getRandomValues(random);
+  const time = Date.now().toString(16).padStart(12, "0");
+  const tail = Array.from(random, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  const variant = (8 + (random[0]! & 3)).toString(16);
+  return `${time.slice(0, 8)}-${time.slice(8)}-7${tail.slice(0, 3)}-${variant}${tail.slice(3, 6)}-${tail.slice(6, 18)}`;
 }
 
 function SnapshotChoice({ choiceId, copy, entries, title, summary, primary, secondary, onPrimary, onSecondary }: { readonly choiceId: string; readonly copy: Copy; readonly entries: readonly SettingsDiffEntry[]; readonly title: string; readonly summary: string; readonly primary: string; readonly secondary: string; readonly onPrimary: () => void; readonly onSecondary: () => void }) {

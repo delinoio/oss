@@ -6,11 +6,18 @@ import { useIdentitySettings } from "./service-boundary.tsx";
 import { deckRepositories, GitHubCredentialKind, type DevHudSettingsV1 } from "./settings-contract.ts";
 import { browserShell, ExternalLinkTarget, type ExternalLinkTarget as ExternalLinkTargetValue } from "./shell.ts";
 
-interface GitHubSettingsProps { readonly copy: Copy; readonly bridge: NativeBridgeV1; readonly provider?: GitHubProvider; readonly openExternal?: (target: ExternalLinkTargetValue) => Promise<void> }
+interface GitHubSettingsProps {
+  readonly copy: Copy;
+  readonly bridge: NativeBridgeV1;
+  readonly provider?: GitHubProvider;
+  readonly openExternal?: (target: ExternalLinkTargetValue) => Promise<void>;
+  readonly credentialOperationPending?: boolean;
+  readonly runCredentialOperation?: <Value>(operation: () => Promise<Value>) => Promise<Value>;
+}
 
 const GitHubRepositoryValidationConcurrency = 2;
 
-export function GitHubSettings({ copy, bridge, provider = createGitHubProvider({ fetch: globalThis.fetch }), openExternal = (target) => browserShell.openExternal(target, "") }: GitHubSettingsProps) {
+export function GitHubSettings({ copy, bridge, provider = createGitHubProvider({ fetch: globalThis.fetch }), openExternal = (target) => browserShell.openExternal(target, ""), credentialOperationPending = false, runCredentialOperation = async <Value,>(operation: () => Promise<Value>) => operation() }: GitHubSettingsProps) {
   const identity = useIdentitySettings();
   const [name, setName] = useState("");
   const [kind, setKind] = useState<(typeof GitHubCredentialKind)[number]>("fine-grained");
@@ -68,13 +75,13 @@ export function GitHubSettings({ copy, bridge, provider = createGitHubProvider({
     await validateGitHubProfile(identity.settings, profile.id, bridge, provider, await identity.githubPatScopeId);
     setStatus(copy.githubValidationPassed);
   });
-  const saveProfileToken = (profile: DevHudSettingsV1["github"]["profiles"][number], nextToken: string) => invoke(async () => {
+  const saveProfileToken = (profile: DevHudSettingsV1["github"]["profiles"][number], nextToken: string) => invoke(() => runCredentialOperation(async () => {
     const credential = { profileId: profile.id, kind: profile.kind, token: nextToken };
     await provider.validateCredential(credential);
     await validateRepositories(provider, credential, referencedRepositories(identity.settings, profile.id));
     await bridge.request({ operation: "secure.write", setting: { kind: SecureSettingKind.GithubPat, profileId: profile.id, scopeId: await identity.githubPatScopeId }, value: nextToken });
     setStatus(copy.githubProfileSaved);
-  });
+  }));
 
   const removeProfile = (profile: DevHudSettingsV1["github"]["profiles"][number]) => invoke(async () => {
     if (referencedRepositories(identity.settings, profile.id).length > 0) {
@@ -131,7 +138,7 @@ export function GitHubSettings({ copy, bridge, provider = createGitHubProvider({
       </fieldset>
     </form>
     {(identity.settings.github.pendingPatRemovals.length > 0 || identity.githubPatCleanupPending || localCleanupPending) && <section className="notice" role="status"><p>{copy.githubProfileCleanupPending}</p><button type="button" disabled={pending || identity.readOnly} onClick={() => void runPatCleanup()}>{copy.retry}</button></section>}
-    {identity.settings.github.profiles.length === 0 ? <p>{copy.githubNoProfiles}</p> : <ul className="github-profiles">{identity.settings.github.profiles.map((profile) => <GitHubProfileItem key={profile.id} copy={copy} profile={profile} disabled={pending} readOnly={identity.readOnly} onSaveToken={saveProfileToken} onValidate={validateProfile} onRemove={removeProfile} />)}</ul>}
+    {identity.settings.github.profiles.length === 0 ? <p>{copy.githubNoProfiles}</p> : <ul className="github-profiles">{identity.settings.github.profiles.map((profile) => <GitHubProfileItem key={profile.id} copy={copy} profile={profile} disabled={pending || credentialOperationPending} readOnly={identity.readOnly} onSaveToken={saveProfileToken} onValidate={validateProfile} onRemove={removeProfile} />)}</ul>}
     <h4>{copy.githubAssignments}</h4>
     {identity.settings.github.repositories.map((repository, index) => <ProfileAssignment key={`repository:${repository.owner}/${repository.name}`} copy={copy} id={`github-repository-${index}`} label={`${repository.owner}/${repository.name}`} value={repository.profileRef} profiles={identity.settings.github.profiles} disabled={pending || identity.readOnly} onChange={(value) => void assignRepository(index, value)} />)}
     {identity.settings.github.issueTracker !== null && <ProfileAssignment copy={copy} id="github-issue-tracker" label={`${copy.githubIssueTracker}: ${identity.settings.github.issueTracker.owner}/${identity.settings.github.issueTracker.repository}`} value={identity.settings.github.issueTracker.profileRef} profiles={identity.settings.github.profiles} disabled={pending || identity.readOnly} onChange={(value) => void assignTracker(value)} />}
@@ -183,10 +190,11 @@ export function referencedRepositories(settings: DevHudSettingsV1, profileId: st
     if (deck.profileRef !== profileId) continue;
     for (const repository of deckRepositories(deck.query) ?? []) add(repository);
   }
+  for (const mapping of settings.urlMappings) if (mapping.credentialProfileRef === profileId) add(mapping.repository);
   return [...unique.values()];
 }
 
-function githubErrorCopy(code: GitHubErrorCode): keyof Copy {
+export function githubErrorCopy(code: GitHubErrorCode): keyof Copy {
   switch (code) {
     case GitHubErrorCode.MissingToken: return "githubErrorMissingToken";
     case GitHubErrorCode.InvalidToken: return "githubErrorInvalidToken";

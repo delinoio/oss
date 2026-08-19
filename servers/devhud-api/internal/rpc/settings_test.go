@@ -53,6 +53,11 @@ func TestValidateDevHudSettings(t *testing.T) {
 	}
 
 	profileID := "018f47a2-7b3c-7def-8abc-1234567890ab"
+	structuredMapping := `[{"chromeOrigin":null,"credentialProfileRef":"` + profileID + `","id":"018f47a2-7b3c-7def-8abc-1234567890ac","pattern":"https://example.com/**","priority":0,"repository":{"name":"oss","owner":"delinoio"},"updatedAt":"2026-08-17T00:00:00.000Z"}]`
+	withProfile := strings.Replace(canonicalSettingsV4, `"profiles":[]`, `"profiles":[{"id":"`+profileID+`","kind":"fine-grained","name":"Work"}]`, 1)
+	if err := validateDevHudSettings([]byte(strings.Replace(withProfile, `"urlMappings":[]`, `"urlMappings":`+structuredMapping, 1)), 4); err != nil {
+		t.Fatalf("schema-v4 structured mapping validation failed: %v", err)
+	}
 	for name, test := range map[string]struct {
 		version uint32
 		value   string

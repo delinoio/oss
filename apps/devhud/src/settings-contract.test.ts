@@ -263,15 +263,15 @@ describe("DevHud settings boundary", () => {
     expect(() => parseDevHudSettings({ ...settings, decks: [{ ...deck, builder: { ...deck.builder, repository: "other/repository" } }] })).toThrow(/lossless projection/u);
   });
 
+  const mappingProfile = { id: "018f47a2-7b3c-7def-8abc-1234567890ac", name: "Work", kind: "fine-grained" as const };
+  const mapping = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", pattern: "https://source.example/path", repository: { owner: "delinoio", name: "oss" }, credentialProfileRef: mappingProfile.id, priority: 0, chromeOrigin: null, updatedAt: "2026-08-17T00:00:00.000Z" };
+  const settingsWithMappingProfile = { ...defaultDevHudSettings, github: { ...defaultDevHudSettings.github, profiles: [mappingProfile] } };
+
   it.each(["?token=plain-secret", "?X-Amz-Signature=plain-secret", "#credential", "?", "#"])("rejects query or fragment delimiters in synchronized URL fields: %s", (suffix) => {
     expect(() => parseDevHudSettings({
-      ...defaultDevHudSettings,
-      urlMappings: [{ sourcePrefix: `https://source.example/path${suffix}`, destinationPrefix: "https://destination.example/path" }],
-    })).toThrow(/without credentials, query, or fragment/u);
-    expect(() => parseDevHudSettings({
-      ...defaultDevHudSettings,
-      urlMappings: [{ sourcePrefix: "https://source.example/path", destinationPrefix: `https://destination.example/path${suffix}` }],
-    })).toThrow(/without credentials, query, or fragment/u);
+      ...settingsWithMappingProfile,
+      urlMappings: [{ ...mapping, pattern: `https://source.example/path${suffix}` }],
+    })).toThrow(/credentials, query, or fragment/u);
     expect(() => parseDevHudSettings({
       ...defaultDevHudSettings,
       uploads: {
