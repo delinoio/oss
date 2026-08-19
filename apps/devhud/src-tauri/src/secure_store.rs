@@ -97,7 +97,7 @@ pub fn handle(request: &Value) -> Result<Value, String> {
 /// Returns the device-local RealQA draft key, creating it inside the platform
 /// credential store when capture is used for the first time. The key is never
 /// exposed through the frontend bridge and is indexed so the existing logout
-/// purge remains authoritative.
+/// purge remains authoritative while recoverable account deletion preserves it.
 pub fn realqa_draft_key() -> Result<[u8; 32], String> {
     let backend = KeyringBackend;
     let setting = setting(REALQA_DRAFT_KEY_KIND, REALQA_DRAFT_KEY_PROFILE);
@@ -409,7 +409,8 @@ fn should_remove(setting: &SettingRef, scope: &str, profile: Option<&str>) -> bo
     match scope {
         "logout" => true,
         "account-deletion" => {
-            setting.kind != "logto-session" || profile != Some(setting.profile_id.as_str())
+            setting.kind != REALQA_DRAFT_KEY_KIND
+                && (setting.kind != "logto-session" || profile != Some(setting.profile_id.as_str()))
         }
         "api-change" => {
             setting.kind == "logto-session" && profile == Some(setting.profile_id.as_str())
@@ -662,10 +663,10 @@ mod tests {
     use std::{cell::RefCell, collections::BTreeMap};
 
     use super::{
-        CHUNK_MANIFEST_PREFIX, ChunkManifest, CredentialBackend, INDEX_ACCOUNT, SettingRef,
-        chunk_account, delete_value, handle_with_backend, read_index, read_value,
-        reconcile_github_pats, should_remove, split_chunks, write_index, write_setting,
-        write_value,
+        CHUNK_MANIFEST_PREFIX, ChunkManifest, CredentialBackend, INDEX_ACCOUNT,
+        REALQA_DRAFT_KEY_KIND, REALQA_DRAFT_KEY_PROFILE, SettingRef, chunk_account, delete_value,
+        handle_with_backend, read_index, read_value, reconcile_github_pats, should_remove,
+        split_chunks, write_index, write_setting, write_value,
     };
 
     #[derive(Clone, Debug, Eq, PartialEq)]
@@ -735,7 +736,7 @@ mod tests {
     }
 
     #[test]
-    fn account_deletion_retains_only_the_current_recovery_session() {
+    fn account_deletion_retains_the_recovery_session_and_realqa_key() {
         assert!(!should_remove(
             &setting("logto-session", "current"),
             "account-deletion",
@@ -753,6 +754,11 @@ mod tests {
         ));
         assert!(should_remove(
             &setting("r2-secret-access-key", "current"),
+            "account-deletion",
+            Some("current")
+        ));
+        assert!(!should_remove(
+            &setting(REALQA_DRAFT_KEY_KIND, REALQA_DRAFT_KEY_PROFILE),
             "account-deletion",
             Some("current")
         ));

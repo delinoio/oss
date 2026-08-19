@@ -1136,11 +1136,12 @@ impl CaptureService {
                         .into_iter()
                         .find(|window| window.focused && !window.minimized)
                         .ok_or(CaptureError::NoWindow)?;
-                    let image = self.capture_window(&window, options.remove_shadow)?;
+                    let (image, captured_bounds) =
+                        self.capture_window(&window, options.remove_shadow)?;
                     if pointer.is_some_and(|pointer| {
-                        options.include_pointer && window.bounds.contains(pointer)
+                        options.include_pointer && captured_bounds.contains(pointer)
                     }) {
-                        pointer_bounds = Some(window.bounds);
+                        pointer_bounds = Some(captured_bounds);
                     }
                     vec![image]
                 }
@@ -1170,9 +1171,10 @@ impl CaptureService {
                         // Native adapters preserve front-to-back z-order.
                         .find(|window| !window.minimized && window.bounds.contains(pointer))
                         .ok_or(CaptureError::NoWindow)?;
-                    let image = self.capture_window(&window, options.remove_shadow)?;
-                    if options.include_pointer {
-                        pointer_bounds = Some(window.bounds);
+                    let (image, captured_bounds) =
+                        self.capture_window(&window, options.remove_shadow)?;
+                    if options.include_pointer && captured_bounds.contains(pointer) {
+                        pointer_bounds = Some(captured_bounds);
                     }
                     vec![image]
                 }
@@ -1246,12 +1248,12 @@ impl CaptureService {
         &self,
         window: &WindowDescriptor,
         remove_shadow: bool,
-    ) -> Result<RgbaImage, CaptureError> {
+    ) -> Result<(RgbaImage, Rect), CaptureError> {
         let image = self.adapter.capture_window(&window.id)?;
         if remove_shadow && self.adapter.shadow_removal_supported() {
-            Ok(trim_transparent_border(image))
+            Ok(trim_transparent_border(image, window.bounds))
         } else {
-            Ok(image)
+            Ok((image, window.bounds))
         }
     }
 
@@ -1600,7 +1602,7 @@ fn draw_pointer_in_rect(image: &mut RgbaImage, pointer: Point, bounds: Rect) {
     draw_pointer(image, x, y);
 }
 
-fn trim_transparent_border(image: RgbaImage) -> RgbaImage {
+fn trim_transparent_border(image: RgbaImage, bounds: Rect) -> (RgbaImage, Rect) {
     let mut left = image.width();
     let mut top = image.height();
     let mut right = 0;
@@ -1614,9 +1616,20 @@ fn trim_transparent_border(image: RgbaImage) -> RgbaImage {
         }
     }
     if right <= left || bottom <= top {
-        image
+        (image, bounds)
     } else {
-        imageops::crop_imm(&image, left, top, right - left, bottom - top).to_image()
+        let pixel_width = f64::from(image.width());
+        let pixel_height = f64::from(image.height());
+        let adjusted_bounds = Rect {
+            x: bounds.x + f64::from(left) * bounds.width / pixel_width,
+            y: bounds.y + f64::from(top) * bounds.height / pixel_height,
+            width: f64::from(right - left) * bounds.width / pixel_width,
+            height: f64::from(bottom - top) * bounds.height / pixel_height,
+        };
+        (
+            imageops::crop_imm(&image, left, top, right - left, bottom - top).to_image(),
+            adjusted_bounds,
+        )
     }
 }
 
@@ -2546,6 +2559,38 @@ mod tests {
             available_capture_targets([Ok(1), Err(CaptureError::PlatformFailure), Ok(2),]),
             vec![1, 2]
         );
+    }
+
+    #[test]
+    fn shadow_trim_adjusts_bounds_before_pointer_compositing() {
+        let mut image = ImageBuffer::from_pixel(10, 10, Rgba([0, 0, 0, 0]));
+        for y in 1..9 {
+            for x in 2..8 {
+                image.put_pixel(x, y, Rgba([12, 34, 56, 255]));
+            }
+        }
+        let (mut image, bounds) = trim_transparent_border(
+            image,
+            Rect {
+                x: 100.0,
+                y: 200.0,
+                width: 20.0,
+                height: 40.0,
+            },
+        );
+
+        assert_eq!(image.dimensions(), (6, 8));
+        assert_eq!(
+            bounds,
+            Rect {
+                x: 104.0,
+                y: 204.0,
+                width: 12.0,
+                height: 32.0,
+            }
+        );
+        draw_pointer_in_rect(&mut image, Point { x: 106.0, y: 208.0 }, bounds);
+        assert_eq!(image.get_pixel(1, 1), &Rgba([0, 0, 0, 255]));
     }
 
     #[test]

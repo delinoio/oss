@@ -6,6 +6,7 @@ import { ShortcutActionId } from "./shortcuts";
 export type CaptureActionId = Exclude<ShortcutActionId, typeof ShortcutActionId.CommandPalette>;
 type EditorTool = "crop" | "arrow" | "rectangle" | "drawing" | "text" | "blur" | "redaction";
 type CaptureRequest = { readonly action: CaptureActionId; readonly sequence: number };
+const ANNOTATION_FONT_FAMILY = "DevHud RealQA Noto Sans KR";
 
 export interface RealqaController { execute(action: CaptureActionId): Promise<void> }
 
@@ -221,7 +222,7 @@ export function RealqaSurface({ ref, bridge, copy, requestedAction, onRequestedA
     {error && <p role="alert" className="native-setting-error">{error}</p>}
     {captureDialog && <CaptureDialog key={captureDialog} action={captureDialog} status={captureStatus} options={options} onOptions={setOptions} onCapture={completeCapture} onClose={cancelCapture} />}
     {selected ? <CaptureEditor key={selected.id} draft={selected} /> : <DraftList />}
-    {preview && <aside className="floating-capture-preview" aria-label={copy.floatingPreview}>
+    {preview && !captureDialog && <aside className="floating-capture-preview" aria-label={copy.floatingPreview}>
       <img src={preview.images[0]?.previewUrl} alt="" />
       <button onClick={() => { setSelected(preview); setPreview(null); }}>{copy.floatingPreviewOpen}</button>
     </aside>}
@@ -449,10 +450,10 @@ function CaptureEditor({ draft }: { readonly draft: CaptureDraft }) {
 }
 
 function AnnotationOverlay({ image, drawing, tool }: { readonly image: CaptureDraftImage; readonly drawing: readonly CapturePoint[]; readonly tool: EditorTool }) {
-  return <svg className="annotation-overlay" viewBox={`0 0 ${image.width} ${image.height}`} aria-hidden="true">{image.crop && <rect className="crop-outline" {...svgRect(image.crop)} />}{image.layers.map((layer) => <LayerShape key={layer.id} layer={layer} />)}{drawing.length > 1 && <polyline points={drawing.map((point) => `${point.x},${point.y}`).join(" ")} fill="none" stroke={tool === "redaction" ? "#000" : "#ef4444"} strokeWidth="4" />}</svg>;
+  return <svg className="annotation-overlay" viewBox={`0 0 ${image.width} ${image.height}`} aria-hidden="true">{image.crop && <rect className="crop-outline" {...svgRect(image.crop)} />}{image.layers.map((layer) => <LayerShape key={layer.id} layer={layer} image={image} />)}{drawing.length > 1 && <polyline points={drawing.map((point) => `${point.x},${point.y}`).join(" ")} fill="none" stroke={tool === "redaction" ? "#000" : "#ef4444"} strokeWidth="4" />}</svg>;
 }
 
-function LayerShape({ layer }: { readonly layer: CaptureEditorLayer }) {
+function LayerShape({ layer, image }: { readonly layer: CaptureEditorLayer; readonly image: CaptureDraftImage }) {
   if (layer.tool === "arrow") {
     const [firstHead, secondHead] = arrowHeadPoints(layer.start, layer.end, layer.width);
     const stroke = { stroke: layer.color, strokeWidth: layer.width, strokeLinecap: "round" as const };
@@ -464,9 +465,20 @@ function LayerShape({ layer }: { readonly layer: CaptureEditorLayer }) {
   }
   if (layer.tool === "rectangle") return <rect {...svgRect(layer.bounds)} fill="none" stroke={layer.color} strokeWidth={layer.width} />;
   if (layer.tool === "drawing") return <polyline points={layer.points.map((point) => `${point.x},${point.y}`).join(" ")} fill="none" stroke={layer.color} strokeWidth={layer.width} />;
-  if (layer.tool === "text") return <text x={layer.origin.x} y={layer.origin.y} fill={layer.color} fontSize={layer.size}>{layer.text}</text>;
+  if (layer.tool === "text") return <text x={layer.origin.x} y={layer.origin.y} fill={layer.color} fontSize={layer.size} style={{ fontFamily: ANNOTATION_FONT_FAMILY, fontKerning: "none" }}>{layer.text}</text>;
   if (layer.tool === "redaction") return <rect {...svgRect(layer.bounds)} fill="#000" />;
-  return <rect {...svgRect(layer.bounds)} className="blur-outline" />;
+  const clipId = `realqa-blur-clip-${layer.id}`;
+  const filterId = `realqa-blur-filter-${layer.id}`;
+  return <g>
+    <defs>
+      <clipPath id={clipId}><rect {...svgRect(layer.bounds)} /></clipPath>
+      <filter id={filterId} x={layer.bounds.x} y={layer.bounds.y} width={layer.bounds.width} height={layer.bounds.height} filterUnits="userSpaceOnUse" colorInterpolationFilters="sRGB">
+        <feGaussianBlur in="SourceGraphic" stdDeviation={layer.radius} />
+      </filter>
+    </defs>
+    <image className="blur-preview" href={image.previewUrl} x="0" y="0" width={image.width} height={image.height} preserveAspectRatio="none" clipPath={`url(#${clipId})`} filter={`url(#${filterId})`} />
+    <rect {...svgRect(layer.bounds)} className="blur-outline" />
+  </g>;
 }
 
 function arrowHeadPoints(start: CapturePoint, end: CapturePoint, width: number): readonly [CapturePoint, CapturePoint] {

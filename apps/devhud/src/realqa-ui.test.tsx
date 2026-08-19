@@ -24,6 +24,8 @@ const draft: CaptureDraft = {
     layers: [
       { tool: "arrow", id: "019b0000-0000-7000-8000-000000000003", start: { x: 10, y: 20 }, end: { x: 50, y: 20 }, color: "#ef4444", width: 4 },
       { tool: "redaction", id: "019b0000-0000-7000-8000-000000000004", bounds: { x: 10, y: 20, width: 30, height: 40 } },
+      { tool: "text", id: "019b0000-0000-7000-8000-000000000005", origin: { x: 60, y: 80 }, text: "한글", color: "#ffffff", size: 24 },
+      { tool: "blur", id: "019b0000-0000-7000-8000-000000000006", bounds: { x: 100, y: 120, width: 80, height: 60 }, radius: 12 },
     ],
   }],
   canUndo: true,
@@ -83,6 +85,14 @@ describe("RealQA capture and editor", () => {
     expect(Number(arrowLines[1].getAttribute("y2"))).toBeCloseTo(29.68, 2);
     expect(Number(arrowLines[2].getAttribute("x2"))).toBeCloseTo(37.26, 2);
     expect(Number(arrowLines[2].getAttribute("y2"))).toBeCloseTo(10.32, 2);
+    const textPreview = document.querySelector(".annotation-overlay text");
+    expect(textPreview?.getAttribute("style")).toContain("font-family: DevHud RealQA Noto Sans KR");
+    expect(textPreview?.getAttribute("style")).toContain("font-kerning: none");
+    const blurPreview = document.querySelector(".annotation-overlay .blur-preview");
+    expect(blurPreview?.getAttribute("href")).toBe(draft.images[0].previewUrl);
+    expect(blurPreview?.getAttribute("clip-path")).toContain("realqa-blur-clip-");
+    expect(blurPreview?.getAttribute("filter")).toContain("realqa-blur-filter-");
+    expect(document.querySelector(".annotation-overlay feGaussianBlur")?.getAttribute("stdDeviation")).toBe("12");
     fireEvent.click(screen.getAllByRole("button", { name: copy.editorRemove }).at(-1)!);
     await waitFor(() => expect(request).toHaveBeenCalledWith(expect.objectContaining({
       operation: "capture.editor.apply",
@@ -233,6 +243,23 @@ describe("RealQA capture and editor", () => {
     expect(await screen.findByText(messages.en.captureSaved)).toBeTruthy();
     expect(screen.queryByRole("alert")).toBeNull();
     expect(screen.getByRole("complementary", { name: messages.en.floatingPreview })).toBeTruthy();
+  });
+
+  it("hides the floating preview while a capture dialog is open", async () => {
+    const { bridge } = bridgeWith(async (value) => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [], unreadableDraftIds: [] };
+      if (value.operation === "capture.start") return { kind: "capture-draft", draft };
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    render(<RealqaSurface bridge={bridge} copy={messages.en} />);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.captureDisplay }));
+    await screen.findByRole("complementary", { name: messages.en.floatingPreview });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.captureSelection }));
+
+    expect(await screen.findByRole("dialog")).toBeTruthy();
+    expect(screen.queryByRole("complementary", { name: messages.en.floatingPreview })).toBeNull();
   });
 
   it("clears the floating preview when its draft is deleted", async () => {
