@@ -195,6 +195,7 @@ func TestSubmitCrashReportRejectsUnlabeledCredentialsBeforePersistence(t *testin
 		"encoded token fragment":   "devhud://auth/callback#access%2Dtoken=secret",
 		"encoded OAuth assignment": "https://example.test/?safe=code%3Dsecret",
 		"fully encoded OAuth URL":  "callback=https%3A%2F%2Fexample.test%2Fauth%3Fcode%3Dsecret",
+		"doubly encoded OAuth URL": "callback=https%253A%252F%252Fexample.test%252Fauth%253Fcode%253Dsecret",
 		"relative OAuth callback":  "callback?code=secret",
 		"relative token fragment":  "/auth/callback#access_token=secret",
 		"path relative fragment":   "auth/callback#access_token=secret",
@@ -301,6 +302,7 @@ func TestValidateCrashReportAcceptsSafeSlashLabelsAndRemoteURLs(t *testing.T) {
 		"https://example.test/?safe=release%3D2026",
 		"https://example.test/?safe=x%26release%3D2026",
 		"callback=https%3A%2F%2Fexample.test%2Fauth%3Fstate%3Dopaque",
+		"callback=https%253A%252F%252Fexample.test%252Fauth%253Fstate%253Dopaque",
 		"Password validation failed because the field was empty.",
 		"Cookie parsing failed after session expiry.",
 		"ERROR_CODE=E_UPLOAD RETRY_COUNT=3 TOKEN_COUNT=2",
@@ -315,6 +317,23 @@ func TestValidateCrashReportAcceptsSafeSlashLabelsAndRemoteURLs(t *testing.T) {
 	request.RedactedStackTrace = "at PasswordValidator.parse"
 	if err := validateCrashReport(request); err != nil {
 		t.Fatalf("safe credential-related identifier was rejected: %v", err)
+	}
+}
+
+func TestValidateCrashReportBoundsDiagnosticEncodingDepth(t *testing.T) {
+	value := "%41"
+	for decoding := 1; decoding < maximumDiagnosticDecodings; decoding++ {
+		value = strings.ReplaceAll(value, "%", "%25")
+	}
+	request := validCrashReportRequest()
+	request.RedactedSummary = value
+	if err := validateCrashReport(request); err != nil {
+		t.Fatalf("diagnostic content at the decoding bound was rejected: %v", err)
+	}
+
+	request.RedactedSummary = strings.ReplaceAll(value, "%", "%25")
+	if err := validateCrashReport(request); err == nil {
+		t.Fatal("diagnostic content exceeding the decoding bound was accepted")
 	}
 }
 

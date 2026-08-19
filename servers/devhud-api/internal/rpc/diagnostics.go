@@ -30,6 +30,7 @@ const (
 	maximumStackLineBytes      = 512
 	maximumRelatedCorrelations = 32
 	maximumCrashDuration       = uint64(24 * 60 * 60 * 1000)
+	maximumDiagnosticDecodings = 8
 	exactTauriRevision         = "4af26a3f7f8b692d62cca549bbacd93f5ce90b41"
 	exactCEFRevision           = "150.0.10+g8042e43+chromium-150.0.7871.101"
 )
@@ -319,6 +320,24 @@ func validateDiagnosticText(name, value string, maximumBytes int, emptyAllowed b
 }
 
 func containsForbiddenDiagnosticContent(value string) bool {
+	decodings := 0
+	for {
+		if containsForbiddenDiagnosticContentAtCurrentEncoding(value) {
+			return true
+		}
+		decoded := decodePercentEncodedOctets(value)
+		if decoded == value {
+			return false
+		}
+		if decodings == maximumDiagnosticDecodings {
+			return true
+		}
+		value = decoded
+		decodings++
+	}
+}
+
+func containsForbiddenDiagnosticContentAtCurrentEncoding(value string) bool {
 	for _, pattern := range forbiddenDiagnostic {
 		if pattern.MatchString(value) {
 			return true
