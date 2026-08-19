@@ -51,6 +51,16 @@ describe("Deck surface", () => {
     expect(screen.queryByText(messages.en.empty)).toBeNull();
   });
 
+  it("renders loading instead of empty results during an uncached initial refresh", async () => {
+    const searchPullRequests = vi.fn(() => new Promise<never>(() => {}));
+    const bridge = bridgeWith(async (request) => request.operation === "secure.read" ? { kind: "secure-value", value: "token" } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active online provider={{ ...provider(), searchPullRequests }}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    await waitFor(() => expect(searchPullRequests).toHaveBeenCalledOnce());
+    expect(screen.getByRole("heading", { name: messages.en.loadingTitle })).toBeTruthy();
+    expect(screen.queryByText(messages.en.empty)).toBeNull();
+  });
+
   it("surfaces a failed Deck deletion and leaves its action available for retry", async () => {
     const replaceSettings: IdentitySettingsValue["replaceSettings"] = vi.fn(async () => { throw new Error("offline"); });
     identity = identityWith({ replaceSettings });
@@ -304,6 +314,25 @@ describe("Deck surface", () => {
 
     fireEvent.change(screen.getByLabelText(messages.en.deckBuilderAuthor), { target: { value: " octocat " } });
     fireEvent.change(screen.getByLabelText(messages.en.deckBuilderLabel), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.saved }));
+
+    await waitFor(() => expect(replaceSettings).toHaveBeenCalledOnce());
+  });
+
+  it("persists the selected result grouping for a newly created Deck", async () => {
+    const replaceSettings: IdentitySettingsValue["replaceSettings"] = vi.fn(async (update) => {
+      const next = typeof update === "function" ? update(settings) : update;
+      expect(next.decks.at(-1)).toMatchObject({ name: "Grouped Deck", display: { groupBy: "author", showDrafts: true } });
+      return true;
+    });
+    identity = identityWith({ replaceSettings });
+    const bridge = bridgeWith(async (request) => request.operation === "secure.read" ? { kind: "secure-value", value: "token" } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckCreate }));
+    fireEvent.change(screen.getByLabelText(messages.en.deckName), { target: { value: "Grouped Deck" } });
+    fireEvent.change(screen.getByLabelText(messages.en.deckQuery), { target: { value: "repo:octo/widgets is:pr" } });
+    fireEvent.change(screen.getByLabelText(messages.en.deckGroupBy), { target: { value: "author" } });
     fireEvent.click(screen.getByRole("button", { name: messages.en.saved }));
 
     await waitFor(() => expect(replaceSettings).toHaveBeenCalledOnce());
