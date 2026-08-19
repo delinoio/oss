@@ -453,12 +453,30 @@ function AnnotationOverlay({ image, drawing, tool }: { readonly image: CaptureDr
 }
 
 function LayerShape({ layer }: { readonly layer: CaptureEditorLayer }) {
-  if (layer.tool === "arrow") return <line x1={layer.start.x} y1={layer.start.y} x2={layer.end.x} y2={layer.end.y} stroke={layer.color} strokeWidth={layer.width} />;
+  if (layer.tool === "arrow") {
+    const [firstHead, secondHead] = arrowHeadPoints(layer.start, layer.end, layer.width);
+    const stroke = { stroke: layer.color, strokeWidth: layer.width, strokeLinecap: "round" as const };
+    return <g>
+      <line x1={layer.start.x} y1={layer.start.y} x2={layer.end.x} y2={layer.end.y} {...stroke} />
+      <line x1={layer.end.x} y1={layer.end.y} x2={firstHead.x} y2={firstHead.y} {...stroke} />
+      <line x1={layer.end.x} y1={layer.end.y} x2={secondHead.x} y2={secondHead.y} {...stroke} />
+    </g>;
+  }
   if (layer.tool === "rectangle") return <rect {...svgRect(layer.bounds)} fill="none" stroke={layer.color} strokeWidth={layer.width} />;
   if (layer.tool === "drawing") return <polyline points={layer.points.map((point) => `${point.x},${point.y}`).join(" ")} fill="none" stroke={layer.color} strokeWidth={layer.width} />;
   if (layer.tool === "text") return <text x={layer.origin.x} y={layer.origin.y} fill={layer.color} fontSize={layer.size}>{layer.text}</text>;
   if (layer.tool === "redaction") return <rect {...svgRect(layer.bounds)} fill="#000" />;
   return <rect {...svgRect(layer.bounds)} className="blur-outline" />;
+}
+
+function arrowHeadPoints(start: CapturePoint, end: CapturePoint, width: number): readonly [CapturePoint, CapturePoint] {
+  const angle = Math.atan2(end.y - start.y, end.x - start.x);
+  const length = Math.max(width * 4, 12);
+  const point = (offset: number): CapturePoint => ({
+    x: end.x - length * Math.cos(angle + offset),
+    y: end.y - length * Math.sin(angle + offset),
+  });
+  return [point(-0.65), point(0.65)];
 }
 
 function LayerList({ image, mutate, copy }: { readonly image: CaptureDraftImage; readonly mutate: (command: CaptureEditorCommand) => Promise<void>; readonly copy: Copy }) {

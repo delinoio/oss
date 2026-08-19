@@ -21,7 +21,10 @@ const draft: CaptureDraft = {
     height: 600,
     previewUrl: "realqa://asset/draft/image/source/3",
     crop: null,
-    layers: [{ tool: "redaction", id: "019b0000-0000-7000-8000-000000000003", bounds: { x: 10, y: 20, width: 30, height: 40 } }],
+    layers: [
+      { tool: "arrow", id: "019b0000-0000-7000-8000-000000000003", start: { x: 10, y: 20 }, end: { x: 50, y: 20 }, color: "#ef4444", width: 4 },
+      { tool: "redaction", id: "019b0000-0000-7000-8000-000000000004", bounds: { x: 10, y: 20, width: 30, height: 40 } },
+    ],
   }],
   canUndo: true,
   canRedo: false,
@@ -74,6 +77,12 @@ describe("RealQA capture and editor", () => {
       expect(screen.getByRole("button", { name })).toBeTruthy();
     }
     expect(screen.getByRole("img", { name: copy.editorCanvas })).toBeTruthy();
+    const arrowLines = document.querySelectorAll(".annotation-overlay line");
+    expect(arrowLines).toHaveLength(3);
+    expect(Number(arrowLines[1].getAttribute("x2"))).toBeCloseTo(37.26, 2);
+    expect(Number(arrowLines[1].getAttribute("y2"))).toBeCloseTo(29.68, 2);
+    expect(Number(arrowLines[2].getAttribute("x2"))).toBeCloseTo(37.26, 2);
+    expect(Number(arrowLines[2].getAttribute("y2"))).toBeCloseTo(10.32, 2);
     fireEvent.click(screen.getAllByRole("button", { name: copy.editorRemove }).at(-1)!);
     await waitFor(() => expect(request).toHaveBeenCalledWith(expect.objectContaining({
       operation: "capture.editor.apply",

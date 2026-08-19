@@ -1379,23 +1379,62 @@ fn capture_region(
         }
         let scale_x = f64::from(source.width()) / display.logical_bounds.width;
         let scale_y = f64::from(source.height()) / display.logical_bounds.height;
-        let source_x = ((intersection.x - display.logical_bounds.x) * scale_x)
-            .round()
-            .max(0.0) as u32;
-        let source_y = ((intersection.y - display.logical_bounds.y) * scale_y)
-            .round()
-            .max(0.0) as u32;
-        let source_width = (intersection.width * scale_x).round().max(1.0) as u32;
-        let source_height = (intersection.height * scale_y).round().max(1.0) as u32;
-        let source_width = source_width.min(source.width().saturating_sub(source_x));
-        let source_height = source_height.min(source.height().saturating_sub(source_y));
-        if source_width == 0 || source_height == 0 {
+        let source_x = rounded_pixel_edge(
+            (intersection.x - display.logical_bounds.x) * scale_x,
+            source.width(),
+        );
+        let source_y = rounded_pixel_edge(
+            (intersection.y - display.logical_bounds.y) * scale_y,
+            source.height(),
+        );
+        let source_right = rounded_pixel_edge(
+            (intersection.right() - display.logical_bounds.x) * scale_x,
+            source.width(),
+        );
+        let source_bottom = rounded_pixel_edge(
+            (intersection.bottom() - display.logical_bounds.y) * scale_y,
+            source.height(),
+        );
+        let Some((source_x, source_right)) =
+            non_empty_pixel_span(source_x, source_right, source.width())
+        else {
             continue;
-        }
-        let piece =
-            imageops::crop_imm(&source, source_x, source_y, source_width, source_height).to_image();
-        let target_width = (intersection.width * scale).round().max(1.0) as u32;
-        let target_height = (intersection.height * scale).round().max(1.0) as u32;
+        };
+        let Some((source_y, source_bottom)) =
+            non_empty_pixel_span(source_y, source_bottom, source.height())
+        else {
+            continue;
+        };
+        let piece = imageops::crop_imm(
+            &source,
+            source_x,
+            source_y,
+            source_right - source_x,
+            source_bottom - source_y,
+        )
+        .to_image();
+        let target_x = rounded_pixel_edge((intersection.x - selection.x) * scale, width);
+        let target_y = rounded_pixel_edge((intersection.y - selection.y) * scale, height);
+        let target_right = if intersection.right() >= selection.right() {
+            width
+        } else {
+            rounded_pixel_edge((intersection.right() - selection.x) * scale, width)
+        };
+        let target_bottom = if intersection.bottom() >= selection.bottom() {
+            height
+        } else {
+            rounded_pixel_edge((intersection.bottom() - selection.y) * scale, height)
+        };
+        let Some((target_x, target_right)) = non_empty_pixel_span(target_x, target_right, width)
+        else {
+            continue;
+        };
+        let Some((target_y, target_bottom)) = non_empty_pixel_span(target_y, target_bottom, height)
+        else {
+            continue;
+        };
+        let target_width = target_right - target_x;
+        let target_height = target_bottom - target_y;
         let piece = if piece.width() == target_width && piece.height() == target_height {
             piece
         } else {
@@ -1406,11 +1445,28 @@ fn capture_region(
                 imageops::FilterType::Lanczos3,
             )
         };
-        let target_x = ((intersection.x - selection.x) * scale).round() as i64;
-        let target_y = ((intersection.y - selection.y) * scale).round() as i64;
-        imageops::overlay(&mut output, &piece, target_x, target_y);
+        imageops::overlay(&mut output, &piece, target_x.into(), target_y.into());
     }
     Ok((output, selection))
+}
+
+fn rounded_pixel_edge(value: f64, limit: u32) -> u32 {
+    value.round().clamp(0.0, f64::from(limit)) as u32
+}
+
+fn non_empty_pixel_span(mut start: u32, mut end: u32, limit: u32) -> Option<(u32, u32)> {
+    if limit == 0 {
+        return None;
+    }
+    if end <= start {
+        if start < limit {
+            end = start + 1;
+        } else {
+            start = limit - 1;
+            end = limit;
+        }
+    }
+    Some((start, end))
 }
 
 fn virtual_desktop_bounds(displays: &[DisplayDescriptor]) -> Result<Rect, CaptureError> {
@@ -2297,7 +2353,7 @@ fn xcap_topology() -> Result<Vec<DisplayDescriptor>, CaptureError> {
 }
 
 fn xcap_windows() -> Result<Vec<WindowDescriptor>, CaptureError> {
-    xcap::Window::all()
+    let candidates = xcap::Window::all()
         .map_err(map_xcap_error)?
         .into_iter()
         .map(|window| {
@@ -2317,8 +2373,14 @@ fn xcap_windows() -> Result<Vec<WindowDescriptor>, CaptureError> {
                 focused: window.is_focused().map_err(map_xcap_error)?,
                 minimized: window.is_minimized().map_err(map_xcap_error)?,
             })
-        })
-        .collect()
+        });
+    Ok(available_capture_targets(candidates))
+}
+
+fn available_capture_targets<T>(
+    candidates: impl IntoIterator<Item = Result<T, CaptureError>>,
+) -> Vec<T> {
+    candidates.into_iter().filter_map(Result::ok).collect()
 }
 
 fn xcap_capture_display(id: &str) -> Result<RgbaImage, CaptureError> {
@@ -2477,6 +2539,14 @@ mod tests {
     use image::ImageBuffer;
 
     use super::*;
+
+    #[test]
+    fn window_enumeration_skips_entries_that_disappear() {
+        assert_eq!(
+            available_capture_targets([Ok(1), Err(CaptureError::PlatformFailure), Ok(2),]),
+            vec![1, 2]
+        );
+    }
 
     #[test]
     fn bundled_annotation_font_covers_english_and_korean() {
@@ -2810,6 +2880,20 @@ mod tests {
             }
         );
         assert_eq!(bounded.dimensions(), (400, 200));
+
+        let (fractional, _) = capture_region(
+            &adapter,
+            &adapter.displays,
+            Rect {
+                x: 10.25,
+                y: 5.25,
+                width: 10.2,
+                height: 10.2,
+            },
+        )
+        .unwrap();
+        assert_eq!(fractional.dimensions(), (21, 21));
+        assert_eq!(fractional.get_pixel(20, 20), &Rgba([0, 0, 255, 255]));
     }
 
     #[test]

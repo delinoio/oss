@@ -521,6 +521,11 @@ fn validate_purge_request(request: &Value) -> Result<(), String> {
     }
 }
 
+#[cfg(desktop)]
+fn deletes_capture_drafts_for_purge_scope(scope: Option<&str>) -> bool {
+    matches!(scope, Some("logout"))
+}
+
 fn runtime_platform() -> &'static str {
     if cfg!(target_os = "ios") {
         "ios"
@@ -723,16 +728,17 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
         } else {
             validate_secure_request(&request)?;
         }
-        if operation == "secure.purge"
-            && matches!(
-                request.get("scope").and_then(Value::as_str),
-                Some("logout" | "account-deletion")
-            )
+        let purge_scope = request.get("scope").and_then(Value::as_str);
+        if operation == "secure.purge" && matches!(purge_scope, Some("logout" | "account-deletion"))
         {
             let purge = capture
                 .begin_purge()
                 .map_err(|error| error.code().to_string())?;
-            let draft_result = purge.purge_drafts();
+            let draft_result = if deletes_capture_drafts_for_purge_scope(purge_scope) {
+                purge.purge_drafts()
+            } else {
+                Ok(())
+            };
             let secure_result = crate::secure_store::handle(&request);
             drop(purge);
             return match (draft_result, secure_result) {
@@ -813,32 +819,23 @@ async fn handle_capture_request(
                 request.get("options").cloned().unwrap_or_else(|| json!({})),
             )
             .map_err(|_| "invalid-argument")?;
-            let hide_for_window_target = matches!(action, CaptureAction::ActiveWindow)
-                || (matches!(action, CaptureAction::Selection | CaptureAction::Toolbar)
-                    && options.selection_window);
             let epoch = capture.begin_capture().map_err(failure)?;
-            let capture_window = if hide_for_window_target {
-                Some(
-                    app.get_webview_window("main")
-                        .ok_or_else(|| "platform-failure".to_string())?,
-                )
-            } else {
-                None
-            };
+            let capture_window = app
+                .get_webview_window("main")
+                .ok_or_else(|| "platform-failure".to_string())?;
             let window_hidden = Arc::new(AtomicBool::new(false));
             let capture_task = capture.clone();
             let worker_window = capture_window.clone();
             let worker_window_hidden = window_hidden.clone();
             let capture_result = tauri::async_runtime::spawn_blocking(move || {
                 capture_task.capture_with_epoch_after_delay(action, options, epoch, move || {
-                    let Some(window) = worker_window else {
-                        return Ok(());
-                    };
-                    if window
+                    if worker_window
                         .is_focused()
                         .map_err(|_| CaptureError::PlatformFailure)?
                     {
-                        window.hide().map_err(|_| CaptureError::PlatformFailure)?;
+                        worker_window
+                            .hide()
+                            .map_err(|_| CaptureError::PlatformFailure)?;
                         worker_window_hidden.store(true, Ordering::Release);
                         std::thread::sleep(Duration::from_millis(100));
                     }
@@ -848,12 +845,10 @@ async fn handle_capture_request(
             .await
             .map_err(|_| "platform-failure".to_string())
             .and_then(|result| result.map_err(failure));
-            if window_hidden.load(Ordering::Acquire)
-                && let Some(window) = capture_window
-            {
-                if window.show().is_err() {
+            if window_hidden.load(Ordering::Acquire) {
+                if capture_window.show().is_err() {
                     tracing::error!(event = "capture_window_restore_failed", stage = "show");
-                } else if window.set_focus().is_err() {
+                } else if capture_window.set_focus().is_err() {
                     tracing::error!(event = "capture_window_restore_failed", stage = "focus");
                 }
             }
@@ -933,10 +928,22 @@ mod tests {
 
     use serde_json::json;
 
+    #[cfg(desktop)]
+    use super::deletes_capture_drafts_for_purge_scope;
     use super::{
         NativeBridgeState, handle_native_bridge_request, is_auth_callback, routes_to_mobile_plugin,
         shortcut_status, validate_auth_browser_request,
     };
+
+    #[cfg(desktop)]
+    #[test]
+    fn only_logout_deletes_capture_drafts_during_secure_purge() {
+        assert!(deletes_capture_drafts_for_purge_scope(Some("logout")));
+        assert!(!deletes_capture_drafts_for_purge_scope(Some(
+            "account-deletion"
+        )));
+        assert!(!deletes_capture_drafts_for_purge_scope(Some("api-change")));
+    }
 
     #[test]
     fn routes_pending_auth_callbacks_only_to_the_android_plugin() {
