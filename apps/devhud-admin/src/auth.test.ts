@@ -73,6 +73,24 @@ describe("AdminAuth", () => {
     );
   });
 
+  it("does not start sign-in when the nonce cannot be stored", async () => {
+    const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("Storage is unavailable", "SecurityError");
+    });
+    const auth = new AdminAuth(
+      "https://identity.example",
+      "https://api.example",
+      "admin-public-client",
+      "http://localhost:46306/auth/callback",
+    );
+    try {
+      await expect(auth.begin()).rejects.toThrow("Storage is unavailable");
+      expect(methods.signIn).not.toHaveBeenCalled();
+    } finally {
+      setItem.mockRestore();
+    }
+  });
+
   it("rejects an ID token nonce mismatch after SDK state and PKCE validation", async () => {
     sessionStorage.setItem(authStorage.nonceKey, "expected");
     methods.getIdTokenClaims.mockResolvedValue({ nonce: "different" });

@@ -44,6 +44,8 @@ The server issues 256-bit base64url public/staging identifiers and returns the e
 
 Retain request logs and crash reports 30 days; retain pseudonymized security/admin audit events at most 180 days. Account deletion blocks immediately, permits 30-day recovery, then uses the same marker-replacement/cache-revalidation path for every public upload, deletes remaining staging, and removes upload ownership/keys/checksums/timestamps before the user row is purged. Retained administrator audits keep pseudonymized actor/target fingerprints only. The sweeper performs recovery-complete account purge, staging expiry, deferred staging cleanup, and retention under its multi-instance advisory lock.
 
+Expired upload-removal leases are reconciled by the sweeper before staging cleanup. It retries uncertain marker replacement, CDN purge/revalidation, and atomic completion; unconfirmed lease release remains pending. Administrator removal claims retain the actor's pseudonymized fingerprint so delayed completion remains auditable after that actor is purged.
+
 ## Security
 
 Upload hardening: the first upload request creates a server-owned UUID v7 submission with its first group; later groups and finalizations carry both IDs and the submission owns the maximum of 10 finalized images across all groups. Signed URLs bind the expected 32-byte SHA-256 checksum and versioned staging object. Finalization checks PNG IHDR dimensions before decoding, rejecting width or height above 4096 or total pixels above 16,777,216, and promotes only the recorded version with conditional ETag/checksum validation.

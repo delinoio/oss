@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -277,6 +278,33 @@ func TestAdministratorSearchBackfillUsesBoundedKeysetBatches(t *testing.T) {
 			email != normalizeSearch(fmt.Sprintf("USER-%03d@EXAMPLE.COM", wantIndex)) || storedSubject != subject {
 			t.Fatalf("backfill for %q = %q, %q, %q", subject, displayName, email, storedSubject)
 		}
+	}
+}
+
+func TestAdministratorSearchIndexesBoundLongIdentityEntries(t *testing.T) {
+	ctx, pool, store := newIntegrationStore(t, time.Date(2026, 8, 17, 0, 0, 0, 0, time.UTC))
+	var value strings.Builder
+	for index := range 256 {
+		digest := sha256.Sum256([]byte(fmt.Sprintf("search-identity-%d", index)))
+		_, _ = fmt.Fprintf(&value, "%x", digest)
+	}
+	longValue := value.String()
+	fingerprint := sha256.Sum256([]byte("long-search-identity"))
+	user, err := store.ProvisionUser(ctx, domain.Identity{
+		Issuer: "https://issuer.example", Subject: "long-search-subject",
+		DisplayName: longValue, Email: longValue + "@example.com",
+		Fingerprint: fingerprint[:], FingerprintCandidates: [][]byte{fingerprint[:]},
+	})
+	if err != nil {
+		t.Fatalf("provision user with long searchable identity: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE devhud_users SET search_logto_subject = $2 WHERE user_id = $1`, user.ID, longValue); err != nil {
+		t.Fatalf("persist long Logto search projection: %v", err)
+	}
+	query := normalizeSearch(longValue[:128])
+	users, err := store.ListUsers(ctx, query, nil, 50)
+	if err != nil || len(users.Users) != 1 || users.Users[0].ID != user.ID {
+		t.Fatalf("long identity search = %+v, err=%v", users, err)
 	}
 }
 

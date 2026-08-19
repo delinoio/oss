@@ -101,6 +101,7 @@ export function App() {
   const [locale, setLocale] = useState<Locale>(localeInitial);
   const [phase, setPhase] = useState<Phase>({ kind: "loading" });
   const [initializationAttempt, setInitializationAttempt] = useState(0);
+  const [signInState, setSignInState] = useState<"idle" | "pending" | "error">("idle");
   const copy = text(locale);
 
   useEffect(() => {
@@ -129,8 +130,21 @@ export function App() {
 
   const toggleLocale = () => {
     const next = locale === "en" ? "ko" : "en";
-    localStorage.setItem("devhud.admin.locale", next);
+    try {
+      localStorage.setItem("devhud.admin.locale", next);
+    } catch {
+      // The in-memory preference remains usable when browser policy blocks persistence.
+    }
     setLocale(next);
+  };
+
+  const beginSignIn = async (auth: AdminAuth) => {
+    setSignInState("pending");
+    try {
+      await auth.begin();
+    } catch {
+      setSignInState("error");
+    }
   };
 
   if (phase.kind === "loading") {
@@ -158,7 +172,14 @@ export function App() {
         <section className="auth-card">
           <Brand title={copy.app} subtitle={copy.subtitle} />
           <p>{copy.permission}</p>
-          <button className="primary" onClick={() => void phase.auth.begin()}>
+          {signInState === "error" && (
+            <p className="inline-error" role="alert">{copy.signInError}</p>
+          )}
+          <button
+            className="primary"
+            disabled={signInState === "pending"}
+            onClick={() => void beginSignIn(phase.auth)}
+          >
             {copy.signIn}
           </button>
           <button className="text-button" onClick={toggleLocale}>

@@ -195,14 +195,16 @@ type UploadUsage struct {
 }
 
 type AdministratorUploadAudit struct {
-	ActorUserID string
-	Rationale   string
-	Event       AuditEvent
+	ActorUserID      string
+	ActorFingerprint []byte
+	Rationale        string
+	Event            AuditEvent
 }
 
 type StagingSweepResult struct {
-	Claimed int
-	Deleted int
+	Claimed           int
+	Deleted           int
+	RemovalsCompleted int
 }
 
 type UploadObject struct {
@@ -246,6 +248,7 @@ type UploadRepository interface {
 	RecordUploadReplacement(context.Context, string, string, string) (Upload, error)
 	CompleteUploadRemoval(context.Context, string, string, time.Time) (Upload, error)
 	ReleaseUploadRemoval(context.Context, string, string) error
+	ListExpiredUploadRemovals(context.Context, time.Time, int) ([]Upload, error)
 	ClaimExpiredUploads(context.Context, time.Time, int) ([]Upload, error)
 	CompleteExpiredUpload(context.Context, string, time.Time) error
 	ListAccountUploadsForPurge(context.Context, string, int) ([]Upload, error)

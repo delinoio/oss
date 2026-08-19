@@ -6,11 +6,11 @@ ALTER TABLE devhud_users
 CREATE INDEX devhud_users_admin_list_idx
     ON devhud_users (created_at DESC, user_id DESC);
 CREATE INDEX devhud_users_search_display_name_idx
-    ON devhud_users (search_display_name text_pattern_ops);
+    ON devhud_users ((left(search_display_name, 512)) text_pattern_ops);
 CREATE INDEX devhud_users_search_email_idx
-    ON devhud_users (search_email text_pattern_ops);
+    ON devhud_users ((left(search_email, 512)) text_pattern_ops);
 CREATE INDEX devhud_users_search_logto_subject_idx
-    ON devhud_users (search_logto_subject text_pattern_ops);
+    ON devhud_users ((left(search_logto_subject, 512)) text_pattern_ops);
 
 ALTER TABLE devhud_audit_events
     ADD COLUMN correlation_id uuid,
@@ -39,6 +39,7 @@ CREATE INDEX devhud_audit_events_correlation_idx
 ALTER TABLE devhud_uploads
     ADD COLUMN removal_audit_event_id uuid,
     ADD COLUMN removal_audit_actor_user_id uuid,
+    ADD COLUMN removal_audit_actor_fingerprint bytea,
     ADD COLUMN removal_audit_reason text,
     ADD COLUMN removal_audit_created_at timestamptz,
     ADD COLUMN removal_audit_expires_at timestamptz,
@@ -46,6 +47,7 @@ ALTER TABLE devhud_uploads
     ADD CONSTRAINT devhud_uploads_removal_audit_complete CHECK (
         (removal_audit_event_id IS NULL
             AND removal_audit_actor_user_id IS NULL
+            AND removal_audit_actor_fingerprint IS NULL
             AND removal_audit_reason IS NULL
             AND removal_audit_created_at IS NULL
             AND removal_audit_expires_at IS NULL
@@ -53,6 +55,8 @@ ALTER TABLE devhud_uploads
         OR
         (removal_audit_event_id IS NOT NULL
             AND removal_audit_actor_user_id IS NOT NULL
+            AND removal_audit_actor_fingerprint IS NOT NULL
+            AND octet_length(removal_audit_actor_fingerprint) = 32
             AND removal_audit_reason IS NOT NULL
             AND removal_audit_created_at IS NOT NULL
             AND removal_audit_expires_at IS NOT NULL

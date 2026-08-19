@@ -111,6 +111,36 @@ describe("administrator console review regressions", () => {
     }
   });
 
+  it("switches locale in memory when Web Storage writes are unavailable", async () => {
+    const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("Storage is unavailable", "SecurityError");
+    });
+    try {
+      render(<App />);
+      await screen.findByText("Identity");
+      fireEvent.click(screen.getByRole("button", { name: "한국어" }));
+      expect(document.documentElement.lang).toBe("ko");
+      expect(screen.getByText("신원")).toBeTruthy();
+    } finally {
+      setItem.mockRestore();
+    }
+  });
+
+  it("surfaces a retryable sign-in start failure", async () => {
+    runtime.auth.isAuthenticated.mockResolvedValue(false);
+    runtime.auth.begin.mockRejectedValueOnce(new DOMException("Storage is unavailable", "SecurityError"));
+    render(<App />);
+    const signIn = await screen.findByRole("button", { name: "Sign in with Logto" });
+    fireEvent.click(signIn);
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Sign-in could not start. Allow browser session storage, then try again.",
+    );
+    runtime.auth.begin.mockResolvedValueOnce(undefined);
+    fireEvent.click(signIn);
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    expect(runtime.auth.begin).toHaveBeenCalledTimes(2);
+  });
+
   it("offers a fresh sign-in after an unusable callback is discarded", async () => {
     runtime.auth.isAuthenticated.mockResolvedValue(false);
     render(<App />);

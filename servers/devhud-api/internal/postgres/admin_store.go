@@ -22,7 +22,7 @@ func (s *Store) ListUsers(ctx context.Context, query string, cursor *domain.User
 		cursorTime, cursorID = &cursor.CreatedAt, &cursor.UserID
 	}
 	rows, err := s.pool.Query(ctx, `SELECT `+userColumns+` FROM devhud_users
-		WHERE ($1 = '%' OR search_display_name LIKE $1 ESCAPE '\' OR search_email LIKE $1 ESCAPE '\' OR search_logto_subject LIKE $1 ESCAPE '\')
+		WHERE ($1 = '%' OR left(search_display_name, 512) LIKE $1 ESCAPE '\' OR left(search_email, 512) LIKE $1 ESCAPE '\' OR left(search_logto_subject, 512) LIKE $1 ESCAPE '\')
 		AND ($2::timestamptz IS NULL OR (created_at, user_id) < ($2, $3::uuid))
 		ORDER BY created_at DESC, user_id DESC LIMIT $4`, pattern, cursorTime, cursorID, int(limit)+1)
 	if err != nil {
@@ -146,20 +146,28 @@ func lockAdminMutationUsers(ctx context.Context, tx pgx.Tx, actorID, targetID st
 	return users, nil
 }
 
-func ensureAdminActor(ctx context.Context, tx pgx.Tx, actorID string) error {
+func adminActorFingerprint(ctx context.Context, tx pgx.Tx, actorID string) ([]byte, error) {
 	var deletion domain.DeletionState
 	var blocked domain.AdministrativeBlockState
-	err := tx.QueryRow(ctx, `SELECT deletion_state, administrative_block_state FROM devhud_users WHERE user_id = $1 FOR SHARE`, actorID).Scan(&deletion, &blocked)
+	var fingerprint []byte
+	err := tx.QueryRow(ctx, `SELECT deletion_state, administrative_block_state, identity_fingerprint
+		FROM devhud_users WHERE user_id = $1 FOR SHARE`, actorID).Scan(&deletion, &blocked, &fingerprint)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return domain.ErrNotFound
+		return nil, domain.ErrNotFound
 	}
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if deletion != domain.DeletionStateActive || blocked == domain.AdministrativeBlockStateBlocked {
-		return &domain.PermissionError{Failure: domain.PermissionFailureAdministrativeBlock}
+	if blocked == domain.AdministrativeBlockStateBlocked {
+		return nil, &domain.PermissionError{Failure: domain.PermissionFailureAdministrativeBlock}
 	}
-	return nil
+	if deletion != domain.DeletionStateActive {
+		return nil, &domain.PermissionError{Failure: domain.PermissionFailureDeletionPending}
+	}
+	if len(fingerprint) != 32 {
+		return nil, errors.New("invalid administrator identity fingerprint")
+	}
+	return append([]byte(nil), fingerprint...), nil
 }
 
 func (s *Store) RecordAdministratorAudit(ctx context.Context, event domain.AuditEvent) error {

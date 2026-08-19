@@ -223,6 +223,43 @@ func TestAdministratorRemovalCompletionFailurePreservesAcceptedAudit(t *testing.
 	}
 }
 
+func TestAdministratorRemovalKeepsLeaseWhenReplacementOutcomeIsUncertain(t *testing.T) {
+	checksum := sha256.Sum256([]byte("image"))
+	events := []string{}
+	upload := testUpload(checksum)
+	finalized := testNow
+	upload.State, upload.FinalizedAt = domain.UploadStateFinalized, &finalized
+	repository := &fakeRepository{upload: upload, events: &events}
+	storage := &fakeStorage{events: &events, replaceError: errors.New("R2 response was lost")}
+	service := newTestService(t, repository, storage, &fakeCache{events: &events})
+	_, err := service.RemoveAsAdministrator(context.Background(), "actor", upload.UploadID,
+		domain.RemovalReasonAdministratorDeleted, upload.State, "Reviewed policy violation.", domain.AuditEvent{})
+	if !errors.Is(err, domain.ErrUploadRemovalPendingCompletion) {
+		t.Fatalf("error = %v, want pending completion", err)
+	}
+	if slices.Contains(events, "release-remove") {
+		t.Fatalf("uncertain replacement released the removal lease: %v", events)
+	}
+}
+
+func TestPendingRemovalReportsPendingWhenLeaseReleaseFails(t *testing.T) {
+	checksum := sha256.Sum256([]byte("image"))
+	events := []string{}
+	repository := &fakeRepository{
+		upload: testUpload(checksum), events: &events,
+		releaseRemovalError: errors.New("database unavailable"),
+	}
+	storage := &fakeStorage{events: &events, deleteErrors: []error{errors.New("R2 delete failed")}}
+	service := newTestService(t, repository, storage, &fakeCache{events: &events})
+	_, err := service.Delete(context.Background(), "owner", repository.upload.UploadID)
+	if !errors.Is(err, domain.ErrUploadRemovalPendingCompletion) {
+		t.Fatalf("error = %v, want pending completion", err)
+	}
+	if want := []string{"claim-remove", "delete-staging", "release-remove"}; !slices.Equal(events, want) {
+		t.Fatalf("events = %v, want %v", events, want)
+	}
+}
+
 func TestPendingDeletionNeverCreatesPublicObject(t *testing.T) {
 	checksum := sha256.Sum256([]byte("image"))
 	events := []string{}
@@ -293,6 +330,30 @@ func TestSweepExpiredUploadsKeepsPublishingWhenReconciliationFails(t *testing.T)
 	}
 }
 
+func TestSweepExpiredUploadsReconcilesExpiredRemovalBeforeStaging(t *testing.T) {
+	checksum := sha256.Sum256([]byte("image"))
+	events := []string{}
+	removing := testUpload(checksum)
+	finalized := testNow.Add(-time.Hour)
+	removing.State = domain.UploadStateRemoving
+	removing.FinalizedAt = &finalized
+	removing.RemovalReason = domain.RemovalReasonAdministratorDeleted
+	removing.ReplacementETag = `"marker"`
+	repository := &fakeRepository{upload: removing, expiredRemovals: []domain.Upload{removing}, events: &events}
+	service := newTestService(t, repository, &fakeStorage{events: &events}, &fakeCache{events: &events})
+	result, err := service.SweepExpiredUploads(context.Background(), testNow, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Claimed != 1 || result.RemovalsCompleted != 1 || result.Deleted != 0 {
+		t.Fatalf("sweep result = %+v", result)
+	}
+	want := []string{"claim-remove", "purge-revalidate", "complete-remove"}
+	if !slices.Equal(events, want) {
+		t.Fatalf("events = %v, want %v", events, want)
+	}
+}
+
 func newTestService(t *testing.T, repository *fakeRepository, storage *fakeStorage, cache *fakeCache) *Service {
 	t.Helper()
 	codec, err := NewCursorCodec([]byte("01234567890123456789012345678901"))
@@ -343,6 +404,7 @@ type fakeStorage struct {
 	deleteErrors []error
 	deleteCalls  int
 	promoteError error
+	replaceError error
 }
 
 func (s *fakeStorage) event(value string) { *s.events = append(*s.events, value) }
@@ -372,7 +434,7 @@ func (s *fakeStorage) DeleteStaging(context.Context, domain.UploadReservation) e
 }
 func (s *fakeStorage) ReplacePublic(context.Context, domain.Upload, []byte) (string, error) {
 	s.event("replace-public")
-	return `"marker"`, nil
+	return `"marker"`, s.replaceError
 }
 
 type fakeCache struct{ events *[]string }
@@ -385,6 +447,7 @@ func (c *fakeCache) PurgeAndRevalidate(context.Context, string, []byte) error {
 type fakeRepository struct {
 	upload                 domain.Upload
 	expired                []domain.Upload
+	expiredRemovals        []domain.Upload
 	administratorList      domain.UploadList
 	administratorListOwner string
 	completedAudit         *domain.AdministratorUploadAudit
@@ -393,6 +456,7 @@ type fakeRepository struct {
 	claimError             error
 	rejectError            error
 	completeRemovalError   error
+	releaseRemovalError    error
 }
 
 func (r *fakeRepository) event(value string) { *r.events = append(*r.events, value) }
@@ -464,7 +528,13 @@ func (r *fakeRepository) CompleteUploadRemoval(_ context.Context, _ string, _ st
 }
 func (r *fakeRepository) ReleaseUploadRemoval(context.Context, string, string) error {
 	r.event("release-remove")
-	return nil
+	return r.releaseRemovalError
+}
+func (r *fakeRepository) ListExpiredUploadRemovals(_ context.Context, _ time.Time, limit int) ([]domain.Upload, error) {
+	if limit > len(r.expiredRemovals) {
+		limit = len(r.expiredRemovals)
+	}
+	return append([]domain.Upload(nil), r.expiredRemovals[:limit]...), nil
 }
 func (r *fakeRepository) ClaimExpiredUploads(_ context.Context, _ time.Time, limit int) ([]domain.Upload, error) {
 	if limit > len(r.expired) {

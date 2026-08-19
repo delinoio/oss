@@ -21,7 +21,8 @@ SELECT u.upload_id::text, u.owner_user_id::text, u.submission_id::text,
        r.signed_url_expires_at, r.staging_expires_at, u.finalized_at,
        u.removed_at, COALESCE(u.removal_reason, 0),
        COALESCE(u.operation_token, ''), COALESCE(u.removal_audit_event_id::text, ''),
-       COALESCE(u.removal_audit_actor_user_id::text, ''), COALESCE(u.removal_audit_reason, ''),
+       COALESCE(u.removal_audit_actor_user_id::text, ''), COALESCE(u.removal_audit_actor_fingerprint, ''),
+       COALESCE(u.removal_audit_reason, ''),
        u.removal_audit_created_at, u.removal_audit_expires_at,
        COALESCE(u.removal_audit_correlation_id::text, '')
 FROM devhud_uploads u
@@ -432,9 +433,13 @@ func (s *Store) ClaimUploadRemoval(ctx context.Context, ownerID, uploadID string
 	if audit != nil {
 		// The committed removal lease is the authorization boundary because
 		// object replacement and cache invalidation happen after this transaction.
-		if err := ensureAdminActor(ctx, tx, audit.ActorUserID); err != nil {
+		fingerprint, err := adminActorFingerprint(ctx, tx, audit.ActorUserID)
+		if err != nil {
 			return domain.Upload{}, err
 		}
+		copyAudit := *audit
+		copyAudit.ActorFingerprint = fingerprint
+		audit = &copyAudit
 	}
 	query := uploadSelect + ` WHERE u.upload_id = $1 FOR UPDATE OF u`
 	upload, err := scanUpload(tx.QueryRow(ctx, query, uploadID))
@@ -468,8 +473,9 @@ func (s *Store) ClaimUploadRemoval(ctx context.Context, ownerID, uploadID string
 		upload, err = scanUpload(tx.QueryRow(ctx, `UPDATE devhud_uploads SET state = 4,
 			operation_token = $2, operation_expires_at = $3, removal_reason = $4,
 			removal_audit_event_id = $5, removal_audit_actor_user_id = $6,
-			removal_audit_reason = $7, removal_audit_created_at = $8,
-			removal_audit_expires_at = $9, removal_audit_correlation_id = $10
+			removal_audit_actor_fingerprint = $7, removal_audit_reason = $8,
+			removal_audit_created_at = $9, removal_audit_expires_at = $10,
+			removal_audit_correlation_id = $11
 			WHERE upload_id = $1 RETURNING `+uploadSelectColumns(), arguments...))
 		if err != nil {
 			return domain.Upload{}, err
@@ -511,8 +517,9 @@ func (s *Store) ClaimUploadRemoval(ctx context.Context, ownerID, uploadID string
 	upload, err = scanUpload(tx.QueryRow(ctx, `UPDATE devhud_uploads SET state = 4,
 		operation_token = $2, operation_expires_at = $3, removal_reason = $4,
 		removal_audit_event_id = $5, removal_audit_actor_user_id = $6,
-		removal_audit_reason = $7, removal_audit_created_at = $8,
-		removal_audit_expires_at = $9, removal_audit_correlation_id = $10
+		removal_audit_actor_fingerprint = $7, removal_audit_reason = $8,
+		removal_audit_created_at = $9, removal_audit_expires_at = $10,
+		removal_audit_correlation_id = $11
 		WHERE upload_id = $1 RETURNING `+uploadSelectColumns(), arguments...))
 	if err != nil {
 		return domain.Upload{}, err
@@ -560,14 +567,38 @@ func (s *Store) CompleteUploadRemoval(ctx context.Context, uploadID, token strin
 }
 
 func (s *Store) ReleaseUploadRemoval(ctx context.Context, uploadID, token string) error {
-	_, err := s.pool.Exec(ctx, `UPDATE devhud_uploads SET state = CASE
+	command, err := s.pool.Exec(ctx, `UPDATE devhud_uploads SET state = CASE
 		WHEN removed_at IS NOT NULL THEN 5 WHEN finalized_at IS NULL THEN 1 ELSE 3 END,
 		operation_token = NULL, operation_expires_at = NULL, removal_reason = NULL,
 		removal_audit_event_id = NULL, removal_audit_actor_user_id = NULL,
-		removal_audit_reason = NULL, removal_audit_created_at = NULL,
+		removal_audit_actor_fingerprint = NULL, removal_audit_reason = NULL, removal_audit_created_at = NULL,
 		removal_audit_expires_at = NULL, removal_audit_correlation_id = NULL
 		WHERE upload_id = $1 AND state = 4 AND operation_token = $2 AND replacement_etag IS NULL`, uploadID, token)
-	return err
+	if err != nil {
+		return err
+	}
+	if command.RowsAffected() != 1 {
+		return domain.ErrOperationLeaseLost
+	}
+	return nil
+}
+
+func (s *Store) ListExpiredUploadRemovals(ctx context.Context, now time.Time, limit int) ([]domain.Upload, error) {
+	rows, err := s.pool.Query(ctx, uploadSelect+` WHERE u.state = 4 AND u.operation_expires_at <= $1
+		ORDER BY u.operation_expires_at, u.upload_id LIMIT $2`, now, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	uploads := make([]domain.Upload, 0, limit)
+	for rows.Next() {
+		upload, err := scanUpload(rows)
+		if err != nil {
+			return nil, err
+		}
+		uploads = append(uploads, upload)
+	}
+	return uploads, rows.Err()
 }
 
 func (s *Store) ClaimExpiredUploads(ctx context.Context, now time.Time, limit int) ([]domain.Upload, error) {
@@ -578,7 +609,7 @@ func (s *Store) ClaimExpiredUploads(ctx context.Context, now time.Time, limit in
 	defer func() { _ = tx.Rollback(ctx) }()
 	rows, err := tx.Query(ctx, `WITH candidates AS (
 		SELECT u.upload_id FROM devhud_uploads u JOIN devhud_upload_reservations r USING (reservation_id)
-		WHERE (u.state IN (1, 3, 5, 6, 7, 8) OR (u.state IN (2, 4) AND u.operation_expires_at <= $1))
+		WHERE (u.state IN (1, 3, 5, 6, 7, 8) OR (u.state = 2 AND u.operation_expires_at <= $1))
 		AND u.staging_deleted_at IS NULL AND r.staging_expires_at <= $1
 		AND (u.staging_cleanup_retry_at IS NULL OR u.staging_cleanup_retry_at <= $1)
 		ORDER BY r.staging_expires_at, u.upload_id FOR UPDATE OF u SKIP LOCKED LIMIT $2
@@ -719,11 +750,12 @@ func (s *Store) insertAdministratorUploadAudit(ctx context.Context, tx pgx.Tx, u
 	command, err := tx.Exec(ctx, `INSERT INTO devhud_audit_events
 		(audit_event_id, actor_user_id, target_user_id, actor_fingerprint, target_fingerprint,
 		 action, created_at, expires_at, target_upload_id, reason, correlation_id, outcome)
-		SELECT $1, actor.user_id, target.user_id, actor.identity_fingerprint,
-		 target.identity_fingerprint, $4, $5, $6, u.upload_id, $7, $8, $9
-		FROM devhud_users actor, devhud_uploads u
+		SELECT $1, (SELECT user_id FROM devhud_users WHERE user_id = $2), target.user_id, $4,
+		 target.identity_fingerprint, $5, $6, $7, u.upload_id, $8, $9, $10
+		FROM devhud_uploads u
 		JOIN devhud_users target ON target.user_id = u.owner_user_id
-		WHERE actor.user_id = $2 AND u.upload_id = $3`, event.ID, audit.ActorUserID, upload.UploadID, action, event.CreatedAt, event.ExpiresAt, audit.Rationale, event.CorrelationID, domain.AuditOutcomeAccepted)
+		WHERE u.upload_id = $3`, event.ID, audit.ActorUserID, upload.UploadID, audit.ActorFingerprint,
+		action, event.CreatedAt, event.ExpiresAt, audit.Rationale, event.CorrelationID, domain.AuditOutcomeAccepted)
 	if err != nil {
 		return err
 	}
@@ -780,12 +812,13 @@ func scanUpload(row scanner) (domain.Upload, error) {
 	var width, height int32
 	var reason int16
 	var auditEventID, auditActorID, auditReason, auditCorrelationID string
+	var auditActorFingerprint []byte
 	var auditCreatedAt, auditExpiresAt *time.Time
 	err := row.Scan(&upload.UploadID, &upload.OwnerUserID, &upload.SubmissionID, &upload.UploadGroupID,
 		&upload.ReservationID, &upload.PublicID, &upload.StagingID, &generation, &size, &checksum,
 		&state, &upload.StagingETag, &upload.PublicETag, &upload.ReplacementETag, &width, &height,
 		&upload.CreatedAt, &upload.SignedURLExpiresAt, &upload.StagingExpiresAt, &upload.FinalizedAt,
-		&upload.RemovedAt, &reason, &upload.OperationToken, &auditEventID, &auditActorID, &auditReason,
+		&upload.RemovedAt, &reason, &upload.OperationToken, &auditEventID, &auditActorID, &auditActorFingerprint, &auditReason,
 		&auditCreatedAt, &auditExpiresAt, &auditCorrelationID)
 	if err != nil {
 		return domain.Upload{}, err
@@ -800,7 +833,7 @@ func scanUpload(row scanner) (domain.Upload, error) {
 	upload.Width, upload.Height = uint32(width), uint32(height)
 	upload.RemovalReason = domain.RemovalReason(reason)
 	if auditEventID != "" {
-		if auditActorID == "" || auditReason == "" || auditCreatedAt == nil || auditExpiresAt == nil || auditCorrelationID == "" {
+		if auditActorID == "" || len(auditActorFingerprint) != 32 || auditReason == "" || auditCreatedAt == nil || auditExpiresAt == nil || auditCorrelationID == "" {
 			return domain.Upload{}, errors.New("invalid persisted upload removal audit")
 		}
 		action := domain.AuditActionUploadDeleted
@@ -809,8 +842,9 @@ func scanUpload(row scanner) (domain.Upload, error) {
 		}
 		targetUserID, targetUploadID := upload.OwnerUserID, upload.UploadID
 		upload.RemovalAudit = &domain.AdministratorUploadAudit{
-			ActorUserID: auditActorID,
-			Rationale:   auditReason,
+			ActorUserID:      auditActorID,
+			ActorFingerprint: append([]byte(nil), auditActorFingerprint...),
+			Rationale:        auditReason,
 			Event: domain.AuditEvent{
 				ID: auditEventID, ActorUserID: &auditActorID, TargetUserID: &targetUserID,
 				TargetUploadID: &targetUploadID, Reason: auditReason, Action: action,
@@ -831,7 +865,8 @@ func uploadSelectColumns() string {
 		(SELECT staging_expires_at FROM devhud_upload_reservations WHERE reservation_id = devhud_uploads.reservation_id),
 		finalized_at, removed_at, COALESCE(removal_reason, 0), COALESCE(operation_token, ''),
 		COALESCE(removal_audit_event_id::text, ''), COALESCE(removal_audit_actor_user_id::text, ''),
-		COALESCE(removal_audit_reason, ''), removal_audit_created_at, removal_audit_expires_at,
+		COALESCE(removal_audit_actor_fingerprint, ''), COALESCE(removal_audit_reason, ''),
+		removal_audit_created_at, removal_audit_expires_at,
 		COALESCE(removal_audit_correlation_id::text, '')`
 }
 
@@ -843,15 +878,16 @@ func uploadSelectColumnsWithAliases() string {
 		r.signed_url_expires_at, r.staging_expires_at, u.finalized_at, u.removed_at,
 		COALESCE(u.removal_reason, 0), COALESCE(u.operation_token, ''),
 		COALESCE(u.removal_audit_event_id::text, ''), COALESCE(u.removal_audit_actor_user_id::text, ''),
-		COALESCE(u.removal_audit_reason, ''), u.removal_audit_created_at, u.removal_audit_expires_at,
+		COALESCE(u.removal_audit_actor_fingerprint, ''), COALESCE(u.removal_audit_reason, ''),
+		u.removal_audit_created_at, u.removal_audit_expires_at,
 		COALESCE(u.removal_audit_correlation_id::text, '')`
 }
 
 func removalAuditArguments(audit *domain.AdministratorUploadAudit) []any {
 	if audit == nil {
-		return []any{nil, nil, nil, nil, nil, nil}
+		return []any{nil, nil, nil, nil, nil, nil, nil}
 	}
-	return []any{audit.Event.ID, audit.ActorUserID, audit.Rationale, audit.Event.CreatedAt, audit.Event.ExpiresAt, audit.Event.CorrelationID}
+	return []any{audit.Event.ID, audit.ActorUserID, audit.ActorFingerprint, audit.Rationale, audit.Event.CreatedAt, audit.Event.ExpiresAt, audit.Event.CorrelationID}
 }
 
 func nullableUUID(value string) any {
