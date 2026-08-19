@@ -79,7 +79,7 @@ describe("RealQA capture and editor", () => {
       expect(screen.getByRole("button", { name })).toBeTruthy();
     }
     expect(screen.getByRole("img", { name: copy.editorCanvas })).toBeTruthy();
-    const arrowLines = document.querySelectorAll(".annotation-overlay line");
+    const arrowLines = document.querySelectorAll(".annotation-overlay > g > line");
     expect(arrowLines).toHaveLength(3);
     expect(Number(arrowLines[1].getAttribute("x2"))).toBeCloseTo(37.26, 2);
     expect(Number(arrowLines[1].getAttribute("y2"))).toBeCloseTo(29.68, 2);
@@ -89,7 +89,11 @@ describe("RealQA capture and editor", () => {
     expect(textPreview?.getAttribute("style")).toContain("font-family: DevHud RealQA Noto Sans KR");
     expect(textPreview?.getAttribute("style")).toContain("font-kerning: none");
     const blurPreview = document.querySelector(".annotation-overlay .blur-preview");
-    expect(blurPreview?.getAttribute("href")).toBe(draft.images[0].previewUrl);
+    const blurSourceHref = blurPreview?.getAttribute("href");
+    expect(blurSourceHref).toBe(`#realqa-layer-state-${draft.images[0].id}-3`);
+    const blurSource = document.getElementById(blurSourceHref?.slice(1) ?? "");
+    expect(blurSource?.querySelector("text")?.textContent).toBe("한글");
+    expect(blurSource?.querySelector(".blur-outline")).toBeNull();
     expect(blurPreview?.getAttribute("clip-path")).toContain("realqa-blur-clip-");
     expect(blurPreview?.getAttribute("filter")).toContain("realqa-blur-filter-");
     expect(document.querySelector(".annotation-overlay feGaussianBlur")?.getAttribute("stdDeviation")).toBe("12");
@@ -334,6 +338,88 @@ describe("RealQA capture and editor", () => {
     resolveFirst?.({ kind: "capture-draft", draft: { ...draft, revision: 4 } });
     await waitFor(() => expect(applyRequests).toHaveLength(2));
     expect(applyRequests[1].expectedRevision).toBe(4);
+  });
+
+  it("serializes an appended capture with editor revisions", async () => {
+    let storedDraft = draft;
+    let resolveEditor: ((response: NativeBridgeResponseV1) => void) | undefined;
+    let resolveCapture: ((response: NativeBridgeResponseV1) => void) | undefined;
+    const applyRequests: Extract<NativeBridgeRequestV1, { operation: "capture.editor.apply" }>[] = [];
+    const captureRequests: Extract<NativeBridgeRequestV1, { operation: "capture.start" }>[] = [];
+    const { bridge } = bridgeWith(async (value) => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [storedDraft], unreadableDraftIds: [] };
+      if (value.operation === "capture.editor.apply") {
+        applyRequests.push(value);
+        if (applyRequests.length === 1) return new Promise((resolve) => { resolveEditor = resolve; });
+        storedDraft = { ...storedDraft, revision: 6, images: storedDraft.images.map((image) => ({ ...image, previewUrl: image.previewUrl.replace(/\/\d+$/, "/6") })) };
+        return { kind: "capture-draft", draft: storedDraft };
+      }
+      if (value.operation === "capture.start") {
+        captureRequests.push(value);
+        return new Promise((resolve) => { resolveCapture = resolve; });
+      }
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    render(<RealqaSurface bridge={bridge} copy={messages.en} />);
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.realqaOpenEditor }));
+    const add = screen.getByRole("button", { name: messages.en.editorAdd });
+
+    fireEvent.click(add);
+    await waitFor(() => expect(applyRequests).toHaveLength(1));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.captureDisplay }));
+    expect(add).toHaveProperty("disabled", true);
+    expect(captureRequests).toHaveLength(0);
+
+    storedDraft = { ...draft, revision: 4, images: draft.images.map((image) => ({ ...image, previewUrl: image.previewUrl.replace(/\/\d+$/, "/4") })) };
+    await act(async () => { resolveEditor?.({ kind: "capture-draft", draft: storedDraft }); });
+    await waitFor(() => expect(captureRequests).toHaveLength(1));
+    expect(captureRequests[0]?.options?.appendToDraftId).toBe(draft.id);
+    expect(applyRequests).toHaveLength(1);
+
+    storedDraft = { ...storedDraft, revision: 5, images: storedDraft.images.map((image) => ({ ...image, previewUrl: image.previewUrl.replace(/\/\d+$/, "/5") })) };
+    await act(async () => { resolveCapture?.({ kind: "capture-draft", draft: storedDraft }); });
+    await waitFor(() => expect(add).toHaveProperty("disabled", false));
+    fireEvent.click(add);
+    await waitFor(() => expect(applyRequests).toHaveLength(2));
+    expect(applyRequests[1].expectedRevision).toBe(5);
+  });
+
+  it("keeps a floating preview on the latest editor revision", async () => {
+    let storedDraft = draft;
+    const applyRequests: Extract<NativeBridgeRequestV1, { operation: "capture.editor.apply" }>[] = [];
+    const atRevision = (revision: number): CaptureDraft => ({
+      ...storedDraft,
+      revision,
+      images: storedDraft.images.map((image) => ({ ...image, previewUrl: image.previewUrl.replace(/\/\d+$/, `/${revision}`) })),
+    });
+    const { bridge } = bridgeWith(async (value) => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [storedDraft], unreadableDraftIds: [] };
+      if (value.operation === "capture.start") {
+        storedDraft = atRevision(4);
+        return { kind: "capture-draft", draft: storedDraft };
+      }
+      if (value.operation === "capture.editor.apply") {
+        applyRequests.push(value);
+        storedDraft = atRevision(storedDraft.revision + 1);
+        return { kind: "capture-draft", draft: storedDraft };
+      }
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    render(<RealqaSurface bridge={bridge} copy={messages.en} />);
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.realqaOpenEditor }));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.captureDisplay }));
+
+    const preview = await screen.findByRole("complementary", { name: messages.en.floatingPreview });
+    await waitFor(() => expect(preview.querySelector("img")?.getAttribute("src")).toContain("/4"));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.editorAdd }));
+    await waitFor(() => expect(preview.querySelector("img")?.getAttribute("src")).toContain("/5"));
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.floatingPreviewOpen }));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.editorAdd }));
+    await waitFor(() => expect(applyRequests).toHaveLength(2));
+    expect(applyRequests[1].expectedRevision).toBe(5);
   });
 
   it.each([

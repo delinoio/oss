@@ -6,6 +6,7 @@ import { ShortcutActionId } from "./shortcuts";
 export type CaptureActionId = Exclude<ShortcutActionId, typeof ShortcutActionId.CommandPalette>;
 type EditorTool = "crop" | "arrow" | "rectangle" | "drawing" | "text" | "blur" | "redaction";
 type CaptureRequest = { readonly action: CaptureActionId; readonly sequence: number };
+type FloatingPreviewRequest = { readonly draft: CaptureDraft; readonly sequence: number };
 const ANNOTATION_FONT_FAMILY = "DevHud RealQA Noto Sans KR";
 
 export interface RealqaController { execute(action: CaptureActionId): Promise<void> }
@@ -27,6 +28,7 @@ interface RealqaContextValue {
     readonly remove: (draft: CaptureDraft) => Promise<void>;
     readonly removeUnreadable: (draftId: string) => Promise<void>;
     readonly updateDraft: (draft: CaptureDraft) => void;
+    readonly runDraftOperation: <Result>(draftId: string, operation: (draft: CaptureDraft) => Promise<Result>) => Promise<Result>;
     readonly refresh: () => Promise<void>;
   };
   readonly meta: { readonly copy: Copy; readonly bridge: NativeBridgeV1 };
@@ -59,7 +61,7 @@ export function RealqaSurface({ ref, bridge, copy, requestedAction, onRequestedA
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [preview, setPreview] = useState<CaptureDraft | null>(null);
+  const [previewRequest, setPreviewRequest] = useState<FloatingPreviewRequest | null>(null);
   const [captureDialog, setCaptureDialog] = useState<CaptureActionId | null>(null);
   const [captureStatus, setCaptureStatus] = useState<{ topology: readonly CaptureDisplay[]; shadowRemovalSupported: boolean } | null>(null);
   const [options, setOptions] = useState<CaptureOptions>({ delaySeconds: 0, includePointer: false, removeShadow: false });
@@ -68,14 +70,48 @@ export function RealqaSurface({ ref, bridge, copy, requestedAction, onRequestedA
   const captureStatusInFlight = useRef(false);
   const captureStatusRequest = useRef(0);
   const captureDialogOpener = useRef<HTMLElement | null>(null);
+  const previewSequence = useRef(0);
+  const draftsById = useRef(new Map<string, CaptureDraft>());
+  const draftOperationQueues = useRef(new Map<string, Promise<void>>());
+  const preview = previewRequest?.draft ?? null;
+
+  const replaceDrafts = useCallback((next: readonly CaptureDraft[]) => {
+    draftsById.current = new Map(next.map((draft) => [draft.id, draft]));
+    setDrafts(next);
+  }, []);
+
+  const installDraft = useCallback((draft: CaptureDraft) => {
+    draftsById.current.set(draft.id, draft);
+    setDrafts((current) => current.some((item) => item.id === draft.id)
+      ? current.map((item) => item.id === draft.id ? draft : item)
+      : [draft, ...current]);
+    setUnreadableDraftIds((current) => current.filter((id) => id !== draft.id));
+    setSelected((current) => current?.id === draft.id ? draft : current);
+    setPreviewRequest((current) => current?.draft.id === draft.id ? { ...current, draft } : current);
+  }, []);
+
+  const runDraftOperation = useCallback(<Result,>(draftId: string, operation: (draft: CaptureDraft) => Promise<Result>) => {
+    const preceding = draftOperationQueues.current.get(draftId) ?? Promise.resolve();
+    const result = preceding.then(() => {
+      const current = draftsById.current.get(draftId);
+      if (!current) throw new Error("RealQA draft is unavailable");
+      return operation(current);
+    });
+    const continuation = result.then(() => undefined, () => undefined);
+    draftOperationQueues.current.set(draftId, continuation);
+    void continuation.then(() => {
+      if (draftOperationQueues.current.get(draftId) === continuation) draftOperationQueues.current.delete(draftId);
+    });
+    return result;
+  }, []);
 
   const refresh = useCallback(async () => {
     const response = await bridge.request({ operation: "capture.list-drafts" });
     if (response.kind === "capture-drafts") {
-      setDrafts(response.drafts);
+      replaceDrafts(response.drafts);
       setUnreadableDraftIds(response.unreadableDraftIds);
     }
-  }, [bridge]);
+  }, [bridge, replaceDrafts]);
 
   const refreshCaptureStatus = useCallback(async () => {
     const request = ++captureStatusRequest.current;
@@ -92,13 +128,13 @@ export function RealqaSurface({ ref, bridge, copy, requestedAction, onRequestedA
         setError(errorCopy(copy, native.reason));
       }
       if (stored.status === "fulfilled" && stored.value.kind === "capture-drafts") {
-        setDrafts(stored.value.drafts);
+        replaceDrafts(stored.value.drafts);
         setUnreadableDraftIds(stored.value.unreadableDraftIds);
       } else if (stored.status === "rejected") {
         setError(errorCopy(copy, stored.reason));
       }
     });
-  }, [bridge, copy, refreshCaptureStatus]);
+  }, [bridge, copy, refreshCaptureStatus, replaceDrafts]);
 
   const dismissCaptureDialog = useCallback((clearStatus = true) => {
     setCaptureDialog(null);
@@ -114,14 +150,18 @@ export function RealqaSurface({ ref, bridge, copy, requestedAction, onRequestedA
     const originatingDraftId = selected?.id ?? null;
     setBusy(true); setError(null); setStatus(copy.captureSaving);
     try {
-      const response = await bridge.request({ operation: "capture.start", actionId: action, options: { ...captureOptions, appendToDraftId: originatingDraftId ?? undefined } });
+      const requestCapture = (appendToDraftId?: string) => bridge.request({ operation: "capture.start", actionId: action, options: { ...captureOptions, appendToDraftId } });
+      const response = originatingDraftId
+        ? await runDraftOperation(originatingDraftId, async (current) => {
+          const appended = await requestCapture(current.id);
+          if (appended.kind === "capture-draft") installDraft(appended.draft);
+          return appended;
+        })
+        : await requestCapture();
       if (response.kind !== "capture-draft") return;
-      setDrafts((current) => current.some((draft) => draft.id === response.draft.id)
-        ? current.map((draft) => draft.id === response.draft.id ? response.draft : draft)
-        : [response.draft, ...current]);
-      setUnreadableDraftIds((current) => current.filter((id) => id !== response.draft.id));
+      if (!originatingDraftId) installDraft(response.draft);
       setSelected((current) => (current?.id ?? null) === originatingDraftId ? response.draft : current);
-      setPreview(response.draft);
+      setPreviewRequest({ draft: response.draft, sequence: ++previewSequence.current });
       setStatus(copy.captureSaved);
       dismissCaptureDialog(false);
       try { await refresh(); } catch { /* The capture response is already authoritative. */ }
@@ -132,7 +172,7 @@ export function RealqaSurface({ ref, bridge, copy, requestedAction, onRequestedA
       captureInFlight.current = false;
       setBusy(false);
     }
-  }, [bridge, copy, dismissCaptureDialog, options, refresh, selected?.id]);
+  }, [bridge, copy, dismissCaptureDialog, installDraft, options, refresh, runDraftOperation, selected?.id]);
 
   const capture = useCallback(async (action: CaptureActionId) => {
     if (captureInFlight.current || captureStatusInFlight.current) return;
@@ -167,10 +207,10 @@ export function RealqaSurface({ ref, bridge, copy, requestedAction, onRequestedA
     void capture(requestedAction.action);
   }, [capture, onRequestedActionConsumed, requestedAction]);
   useEffect(() => {
-    if (!preview) return;
-    const timer = window.setTimeout(() => setPreview(null), 5_000);
+    if (!previewRequest) return;
+    const timer = window.setTimeout(() => setPreviewRequest(null), 5_000);
     return () => window.clearTimeout(timer);
-  }, [preview]);
+  }, [previewRequest?.sequence]);
   useEffect(() => {
     const key = (event: globalThis.KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -187,9 +227,10 @@ export function RealqaSurface({ ref, bridge, copy, requestedAction, onRequestedA
     try {
       await bridge.request({ operation: "capture.delete-draft", draftId });
       setDrafts((current) => current.filter((draft) => draft.id !== draftId));
+      draftsById.current.delete(draftId);
       setUnreadableDraftIds((current) => current.filter((id) => id !== draftId));
       setSelected((current) => current?.id === draftId ? null : current);
-      setPreview((current) => current?.id === draftId ? null : current);
+      setPreviewRequest((current) => current?.draft.id === draftId ? null : current);
       await refresh();
     } catch {
       setError(copy.realqaDeleteFailed);
@@ -203,13 +244,9 @@ export function RealqaSurface({ ref, bridge, copy, requestedAction, onRequestedA
     if (!confirm(copy.realqaDeleteConfirm)) return;
     await deleteDraft(draftId);
   };
-  const updateDraft = (draft: CaptureDraft) => {
-    setSelected((current) => current?.id === draft.id ? draft : current);
-    setDrafts((current) => current.map((item) => item.id === draft.id ? draft : item));
-  };
   const value: RealqaContextValue = {
     state: { drafts, unreadableDraftIds, selected, busy, status, error, preview },
-    actions: { capture, open: setSelected, close: () => setSelected(null), remove, removeUnreadable, updateDraft, refresh },
+    actions: { capture, open: setSelected, close: () => setSelected(null), remove, removeUnreadable, updateDraft: installDraft, runDraftOperation, refresh },
     meta: { copy, bridge },
   };
 
@@ -224,7 +261,7 @@ export function RealqaSurface({ ref, bridge, copy, requestedAction, onRequestedA
     {selected ? <CaptureEditor key={selected.id} draft={selected} /> : <DraftList />}
     {preview && !captureDialog && <aside className="floating-capture-preview" aria-label={copy.floatingPreview}>
       <img src={preview.images[0]?.previewUrl} alt="" />
-      <button onClick={() => { setSelected(preview); setPreview(null); }}>{copy.floatingPreviewOpen}</button>
+      <button onClick={() => { setSelected(preview); setPreviewRequest(null); }}>{copy.floatingPreviewOpen}</button>
     </aside>}
   </RealqaContext>;
 }
@@ -338,7 +375,7 @@ function RegionPicker({ displays, value, onChange, label }: { readonly displays:
 }
 
 function CaptureEditor({ draft }: { readonly draft: CaptureDraft }) {
-  const { actions, meta: { bridge, copy } } = useRealqa();
+  const { state: { busy }, actions, meta: { bridge, copy } } = useRealqa();
   const [imageId, setImageId] = useState(draft.images[0]?.id ?? "");
   const [tool, setTool] = useState<EditorTool>("arrow");
   const [color, setColor] = useState("#ef4444");
@@ -348,24 +385,20 @@ function CaptureEditor({ draft }: { readonly draft: CaptureDraft }) {
   const [coordinates, setCoordinates] = useState<CaptureRect>({ x: 0, y: 0, width: 100, height: 100 });
   const [message, setMessage] = useState("");
   const [failed, setFailed] = useState(false);
-  const latestDraft = useRef(draft);
-  const revisionQueue = useRef<Promise<void>>(Promise.resolve());
   const editorActive = useRef(true);
   const active = draft.images.find((image) => image.id === imageId) ?? draft.images[0];
-  useEffect(() => { latestDraft.current = draft; }, [draft]);
   useEffect(() => () => { editorActive.current = false; }, []);
   useEffect(() => { if (!active && draft.images[0]) setImageId(draft.images[0].id); }, [active, draft.images]);
+  useEffect(() => { if (busy) setDrawing([]); }, [busy]);
 
   const enqueueRevisionOperation = (operation: (current: CaptureDraft) => Promise<void>) => {
-    const next = revisionQueue.current.then(async () => {
+    if (busy) return Promise.resolve();
+    return actions.runDraftOperation(draft.id, async (current) => {
       if (!editorActive.current) return;
-      await operation(latestDraft.current);
+      await operation(current);
     });
-    revisionQueue.current = next.catch(() => {});
-    return next;
   };
   const installDraft = (next: CaptureDraft) => {
-    latestDraft.current = next;
     actions.updateDraft(next);
   };
   const mutate = (command: CaptureEditorCommand) => {
@@ -406,9 +439,13 @@ function CaptureEditor({ draft }: { readonly draft: CaptureDraft }) {
     const y = (event.clientY - bounds.top) * active.height / bounds.height;
     return { x: Math.min(active.width, Math.max(0, x)), y: Math.min(active.height, Math.max(0, y)) };
   };
-  const pointerDown = (event: PointerEvent<HTMLElement>) => { event.currentTarget.setPointerCapture(event.pointerId); setDrawing([point(event)]); };
+  const pointerDown = (event: PointerEvent<HTMLElement>) => {
+    if (busy) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setDrawing([point(event)]);
+  };
   const pointerMove = (event: PointerEvent<HTMLElement>) => {
-    if (!drawing.length) return;
+    if (busy || !drawing.length) return;
     const nextPoint = point(event);
     setDrawing((current) => current.length >= 8191 ? current : [...current, nextPoint]);
   };
@@ -424,42 +461,70 @@ function CaptureEditor({ draft }: { readonly draft: CaptureDraft }) {
     else if (tool === "redaction") void mutate({ kind: "add-layer", imageId: active.id, layer: { tool, id, bounds } });
   };
   const pointerUp = (event: PointerEvent<HTMLElement>) => {
-    if (!drawing.length) return;
+    if (busy || !drawing.length) return;
     const points = [...drawing, point(event)]; setDrawing([]);
     commit(points[0], points[points.length - 1], points);
   };
   const addFromCoordinates = () => {
+    if (busy) return;
     const start = { x: coordinates.x, y: coordinates.y };
     const end = { x: coordinates.x + coordinates.width, y: coordinates.y + coordinates.height };
     commit(start, end);
   };
   const moveImage = (index: number, offset: number) => {
+    if (busy) return;
     const target = index + offset;
     if (target >= 0 && target < draft.images.length) void mutate({ kind: "move-image", imageId: draft.images[index].id, toIndex: target });
   };
   return <section className="capture-editor" aria-labelledby="capture-editor-title">
     <div className="editor-heading"><div><h3 id="capture-editor-title">{copy.editorTitle}</h3><p>{copy.editorCloseHint}</p></div><button onClick={actions.close}>{copy.close}</button></div>
-    <div className="editor-image-order" aria-label={copy.realqaImages}>{draft.images.map((image, index) => <div key={image.id}><button aria-pressed={image.id === active.id} onClick={() => setImageId(image.id)}>{copy.editorImage} {index + 1}</button><button disabled={index === 0} aria-label={copy.editorMoveEarlier} onClick={() => moveImage(index, -1)}>←</button><button disabled={index === draft.images.length - 1} aria-label={copy.editorMoveLater} onClick={() => moveImage(index, 1)}>→</button><button aria-label={copy.editorRemove} onClick={() => void mutate({ kind: "remove-image", imageId: image.id })}>×</button></div>)}</div>
+    <div className="editor-image-order" aria-label={copy.realqaImages}>{draft.images.map((image, index) => <div key={image.id}><button aria-pressed={image.id === active.id} onClick={() => setImageId(image.id)}>{copy.editorImage} {index + 1}</button><button disabled={busy || index === 0} aria-label={copy.editorMoveEarlier} onClick={() => moveImage(index, -1)}>←</button><button disabled={busy || index === draft.images.length - 1} aria-label={copy.editorMoveLater} onClick={() => moveImage(index, 1)}>→</button><button disabled={busy} aria-label={copy.editorRemove} onClick={() => void mutate({ kind: "remove-image", imageId: image.id })}>×</button></div>)}</div>
     <div className="editor-layout"><div className="editor-workspace"><div className="editor-canvas" role="img" aria-label={copy.editorCanvas} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp}>
       <img draggable={false} src={active.previewUrl} alt="" />
       <AnnotationOverlay image={active} drawing={drawing} tool={tool} />
     </div></div>
     <aside className="editor-controls" aria-label={copy.editorTools}><div className="editor-tools">{(["crop","arrow","rectangle","drawing","text","blur","redaction"] as const).map((candidate) => <button key={candidate} aria-pressed={tool === candidate} onClick={() => setTool(candidate)}>{copy[candidate === "crop" ? "editorCrop" : candidate === "arrow" ? "editorArrow" : candidate === "rectangle" ? "editorRectangle" : candidate === "drawing" ? "editorDrawing" : candidate === "text" ? "editorText" : candidate === "blur" ? "editorBlur" : "editorRedaction"]}</button>)}</div>
       <label>{copy.editorColor}<input type="color" value={color} onChange={(event) => setColor(event.target.value)} /></label><label>{copy.editorStrokeWidth}<input type="range" min="1" max="32" value={strokeWidth} onChange={(event) => setStrokeWidth(Number(event.target.value))} /></label>{tool === "text" && <label>{copy.editorTextValue}<input autoFocus value={text} onChange={(event) => setText(event.target.value)} /></label>}
-      <fieldset className="editor-coordinate-fields"><legend>{copy.editorCoordinates}</legend>{(["x", "y", "width", "height"] as const).map((key) => <label key={key}>{copy[key === "x" ? "captureX" : key === "y" ? "captureY" : key === "width" ? "captureWidth" : "captureHeight"]}<input type="number" min={key === "width" || key === "height" ? 1 : undefined} value={coordinates[key]} onChange={(event) => setCoordinates((current) => ({ ...current, [key]: Number(event.target.value) }))} /></label>)}<button disabled={tool === "text" && !text} onClick={addFromCoordinates}>{copy.editorAdd}</button></fieldset>
-      <div className="actions"><button disabled={!draft.canUndo} onClick={() => void history("capture.editor.undo")}>{copy.editorUndo}</button><button disabled={!draft.canRedo} onClick={() => void history("capture.editor.redo")}>{copy.editorRedo}</button></div>
-      <LayerList image={active} mutate={mutate} copy={copy} />
-      <button className="primary" onClick={() => void flatten()}>{copy.editorFlatten}</button>
+      <fieldset className="editor-coordinate-fields"><legend>{copy.editorCoordinates}</legend>{(["x", "y", "width", "height"] as const).map((key) => <label key={key}>{copy[key === "x" ? "captureX" : key === "y" ? "captureY" : key === "width" ? "captureWidth" : "captureHeight"]}<input type="number" min={key === "width" || key === "height" ? 1 : undefined} value={coordinates[key]} onChange={(event) => setCoordinates((current) => ({ ...current, [key]: Number(event.target.value) }))} /></label>)}<button disabled={busy || (tool === "text" && !text)} onClick={addFromCoordinates}>{copy.editorAdd}</button></fieldset>
+      <div className="actions"><button disabled={busy || !draft.canUndo} onClick={() => void history("capture.editor.undo")}>{copy.editorUndo}</button><button disabled={busy || !draft.canRedo} onClick={() => void history("capture.editor.redo")}>{copy.editorRedo}</button></div>
+      <LayerList image={active} mutate={mutate} copy={copy} disabled={busy} />
+      <button className="primary" disabled={busy} onClick={() => void flatten()}>{copy.editorFlatten}</button>
       {message && <p role={failed ? "alert" : "status"}>{message}</p>}
     </aside></div>
   </section>;
 }
 
 function AnnotationOverlay({ image, drawing, tool }: { readonly image: CaptureDraftImage; readonly drawing: readonly CapturePoint[]; readonly tool: EditorTool }) {
-  return <svg className="annotation-overlay" viewBox={`0 0 ${image.width} ${image.height}`} aria-hidden="true">{image.crop && <rect className="crop-outline" {...svgRect(image.crop)} />}{image.layers.map((layer) => <LayerShape key={layer.id} layer={layer} image={image} />)}{drawing.length > 1 && <polyline points={drawing.map((point) => `${point.x},${point.y}`).join(" ")} fill="none" stroke={tool === "redaction" ? "#000" : "#ef4444"} strokeWidth="4" />}</svg>;
+  const stateIds = image.layers.map((_, index) => `realqa-layer-state-${image.id}-${index + 1}`);
+  const sourceStateId = `realqa-layer-state-${image.id}-0`;
+  const precedingStateId = (index: number) => index === 0 ? sourceStateId : stateIds[index - 1];
+  return <svg className="annotation-overlay" viewBox={`0 0 ${image.width} ${image.height}`} aria-hidden="true">
+    <defs>
+      {image.layers.filter((layer) => layer.tool === "blur").map((layer) => <BlurDefinitions key={layer.id} layer={layer} />)}
+      <g id={sourceStateId}><image href={image.previewUrl} x="0" y="0" width={image.width} height={image.height} preserveAspectRatio="none" /></g>
+      {image.layers.map((layer, index) => <g key={layer.id} id={stateIds[index]}>
+        <use href={`#${precedingStateId(index)}`} />
+        <LayerShape layer={layer} blurSourceId={precedingStateId(index)} showBlurOutline={false} />
+      </g>)}
+    </defs>
+    {image.crop && <rect className="crop-outline" {...svgRect(image.crop)} />}
+    {image.layers.map((layer, index) => <LayerShape key={layer.id} layer={layer} blurSourceId={precedingStateId(index)} showBlurOutline />)}
+    {drawing.length > 1 && <polyline points={drawing.map((point) => `${point.x},${point.y}`).join(" ")} fill="none" stroke={tool === "redaction" ? "#000" : "#ef4444"} strokeWidth="4" />}
+  </svg>;
 }
 
-function LayerShape({ layer, image }: { readonly layer: CaptureEditorLayer; readonly image: CaptureDraftImage }) {
+function BlurDefinitions({ layer }: { readonly layer: Extract<CaptureEditorLayer, { tool: "blur" }> }) {
+  const clipId = `realqa-blur-clip-${layer.id}`;
+  const filterId = `realqa-blur-filter-${layer.id}`;
+  return <>
+    <clipPath id={clipId}><rect {...svgRect(layer.bounds)} /></clipPath>
+    <filter id={filterId} x={layer.bounds.x} y={layer.bounds.y} width={layer.bounds.width} height={layer.bounds.height} filterUnits="userSpaceOnUse" colorInterpolationFilters="sRGB">
+      <feGaussianBlur in="SourceGraphic" stdDeviation={layer.radius} />
+    </filter>
+  </>;
+}
+
+function LayerShape({ layer, blurSourceId, showBlurOutline }: { readonly layer: CaptureEditorLayer; readonly blurSourceId: string; readonly showBlurOutline: boolean }) {
   if (layer.tool === "arrow") {
     const [firstHead, secondHead] = arrowHeadPoints(layer.start, layer.end, layer.width);
     const stroke = { stroke: layer.color, strokeWidth: layer.width, strokeLinecap: "round" as const };
@@ -475,16 +540,10 @@ function LayerShape({ layer, image }: { readonly layer: CaptureEditorLayer; read
   if (layer.tool === "redaction") return <rect {...svgRect(layer.bounds)} fill="#000" />;
   const clipId = `realqa-blur-clip-${layer.id}`;
   const filterId = `realqa-blur-filter-${layer.id}`;
-  return <g>
-    <defs>
-      <clipPath id={clipId}><rect {...svgRect(layer.bounds)} /></clipPath>
-      <filter id={filterId} x={layer.bounds.x} y={layer.bounds.y} width={layer.bounds.width} height={layer.bounds.height} filterUnits="userSpaceOnUse" colorInterpolationFilters="sRGB">
-        <feGaussianBlur in="SourceGraphic" stdDeviation={layer.radius} />
-      </filter>
-    </defs>
-    <image className="blur-preview" href={image.previewUrl} x="0" y="0" width={image.width} height={image.height} preserveAspectRatio="none" clipPath={`url(#${clipId})`} filter={`url(#${filterId})`} />
-    <rect {...svgRect(layer.bounds)} className="blur-outline" />
-  </g>;
+  return <>
+    <use className={showBlurOutline ? "blur-preview" : undefined} href={`#${blurSourceId}`} clipPath={`url(#${clipId})`} filter={`url(#${filterId})`} />
+    {showBlurOutline && <rect {...svgRect(layer.bounds)} className="blur-outline" />}
+  </>;
 }
 
 function arrowHeadPoints(start: CapturePoint, end: CapturePoint, width: number): readonly [CapturePoint, CapturePoint] {
@@ -497,8 +556,8 @@ function arrowHeadPoints(start: CapturePoint, end: CapturePoint, width: number):
   return [point(-0.65), point(0.65)];
 }
 
-function LayerList({ image, mutate, copy }: { readonly image: CaptureDraftImage; readonly mutate: (command: CaptureEditorCommand) => Promise<void>; readonly copy: Copy }) {
-  return <section aria-labelledby="editor-layers-title"><h4 id="editor-layers-title">{copy.editorLayers}</h4>{image.layers.length === 0 ? <p>{copy.editorNoLayers}</p> : <ol className="layer-list">{image.layers.map((layer, index) => <li key={layer.id}><span>{copy[layer.tool === "arrow" ? "editorArrow" : layer.tool === "rectangle" ? "editorRectangle" : layer.tool === "drawing" ? "editorDrawing" : layer.tool === "text" ? "editorText" : layer.tool === "blur" ? "editorBlur" : "editorRedaction"]}</span><button disabled={index === 0} aria-label={copy.editorMoveEarlier} onClick={() => void mutate({ kind: "move-layer", imageId: image.id, layerId: layer.id, toIndex: index - 1 })}>↑</button><button disabled={index === image.layers.length - 1} aria-label={copy.editorMoveLater} onClick={() => void mutate({ kind: "move-layer", imageId: image.id, layerId: layer.id, toIndex: index + 1 })}>↓</button><button aria-label={copy.editorRemove} onClick={() => void mutate({ kind: "remove-layer", imageId: image.id, layerId: layer.id })}>×</button></li>)}</ol>}</section>;
+function LayerList({ image, mutate, copy, disabled }: { readonly image: CaptureDraftImage; readonly mutate: (command: CaptureEditorCommand) => Promise<void>; readonly copy: Copy; readonly disabled: boolean }) {
+  return <section aria-labelledby="editor-layers-title"><h4 id="editor-layers-title">{copy.editorLayers}</h4>{image.layers.length === 0 ? <p>{copy.editorNoLayers}</p> : <ol className="layer-list">{image.layers.map((layer, index) => <li key={layer.id}><span>{copy[layer.tool === "arrow" ? "editorArrow" : layer.tool === "rectangle" ? "editorRectangle" : layer.tool === "drawing" ? "editorDrawing" : layer.tool === "text" ? "editorText" : layer.tool === "blur" ? "editorBlur" : "editorRedaction"]}</span><button disabled={disabled || index === 0} aria-label={copy.editorMoveEarlier} onClick={() => void mutate({ kind: "move-layer", imageId: image.id, layerId: layer.id, toIndex: index - 1 })}>↑</button><button disabled={disabled || index === image.layers.length - 1} aria-label={copy.editorMoveLater} onClick={() => void mutate({ kind: "move-layer", imageId: image.id, layerId: layer.id, toIndex: index + 1 })}>↓</button><button disabled={disabled} aria-label={copy.editorRemove} onClick={() => void mutate({ kind: "remove-layer", imageId: image.id, layerId: layer.id })}>×</button></li>)}</ol>}</section>;
 }
 
 function normalizeBounds(start: CapturePoint, end: CapturePoint): CaptureRect { return { x: Math.min(start.x, end.x), y: Math.min(start.y, end.y), width: Math.max(1, Math.abs(end.x - start.x)), height: Math.max(1, Math.abs(end.y - start.y)) }; }
