@@ -413,7 +413,7 @@ func containsForbiddenParsedDiagnosticURL(value string) bool {
 		if err != nil {
 			continue
 		}
-		if strings.EqualFold(parsed.Scheme, "file") || strings.EqualFold(parsed.Scheme, "vscode") || strings.EqualFold(parsed.Scheme, "vscode-insiders") || parsed.User != nil {
+		if parsed.User != nil || (!strings.EqualFold(parsed.Scheme, "http") && !strings.EqualFold(parsed.Scheme, "https")) {
 			return true
 		}
 		if containsForbiddenDiagnosticParameters(parsed.RawQuery) || containsForbiddenDiagnosticParameters(parsed.Fragment) {

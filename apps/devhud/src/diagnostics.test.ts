@@ -105,6 +105,7 @@ describe("diagnostics privacy boundary", () => {
       shortcut: "Ctrl+Shift+P",
       urlFragment: "https://example.test/path#private",
       customScheme: "devhud://auth/callback",
+      customEditorScheme: "subl://open/home/alice/app.ts",
       ftpLocation: "ftp://private.example/repo",
       localFileLocation: "file:///home/alice/app.ts",
       punctuationDelimitedPath: "renderer,/home/alice/project/main.ts",
@@ -113,7 +114,7 @@ describe("diagnostics privacy boundary", () => {
     const serialized = JSON.stringify(redactDiagnosticValue(hostile));
     expect(serialized).toContain("bounded classification");
     expect(serialized).toContain("React/Native renderer failed");
-    for (const prohibited of ["Bearer", "githubPat", "r2_secret", "signingKey", "nodeType", "screenshot", "issueBody", "agentPrompt", "childEnvironment", "hunter2", "alice@example.test", "session=abc", "/home/alice", "ghp_", "eyJ", "AKIA", "PRIVATE KEY", "/workspace/", "%2Fworkspace", "%252Fworkspace", "Ctrl+", "#private", "devhud://", "ftp://", "file://"]) {
+    for (const prohibited of ["Bearer", "githubPat", "r2_secret", "signingKey", "nodeType", "screenshot", "issueBody", "agentPrompt", "childEnvironment", "hunter2", "alice@example.test", "session=abc", "/home/alice", "ghp_", "eyJ", "AKIA", "PRIVATE KEY", "/workspace/", "%2Fworkspace", "%252Fworkspace", "Ctrl+", "#private", "devhud://", "subl://", "ftp://", "file://"]) {
       expect(serialized).not.toContain(prohibited);
     }
   });
@@ -470,6 +471,7 @@ describe("diagnostics privacy boundary", () => {
     const now = Date.parse("2026-08-17T00:00:00.000Z");
     for (const locator of [
       "devhud://auth/callback",
+      "subl://open/home/alice/app.ts",
       "ftp://private.example/repo",
       "file:///home/alice/app.ts",
       "renderer,/home/alice/project/main.ts",
