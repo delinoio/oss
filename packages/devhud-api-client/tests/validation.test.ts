@@ -13,6 +13,7 @@ import {
 import {
   MAX_ADMIN_REASON_BYTES,
   MAX_CRASH_IDENTIFIER_BYTES,
+  MAX_CRASH_STACK_BYTES,
   assertSha256,
   assertUuidV7,
   canonicalizeSettingsJson,
@@ -87,6 +88,8 @@ describe("wire validation helpers", () => {
     expect(() =>
       validateReason("Reviewed https://docs.example.com/policy?v=42#quarantine"),
     ).not.toThrow();
+    expect(() => validateReason("Escalated to mailto:ops@example.com")).not.toThrow();
+    expect(() => validateReason("Observed via wss://monitor.example.test/events")).not.toThrow();
     expect(() =>
       validateReason("Reviewed https://example.com/?na%6de=release"),
     ).not.toThrow();
@@ -704,6 +707,40 @@ describe("wire validation helpers", () => {
 
     const beyondBound = atBound.replaceAll("%", "%25");
     expect(() => validateCrashReport({ ...safeCrashReport, redactedSummary: beyondBound })).toThrow(TypeError);
+  });
+
+  it("bounds nested crash diagnostic parameter scanning", () => {
+    const safeNestedParameters = `${"?x=".repeat(16)}safe`;
+    expect(() =>
+      validateCrashReport(
+        create(SubmitCrashReportRequestSchema, {
+          ...safeCrashReport,
+          redactedSummary: safeNestedParameters,
+        }),
+      ),
+    ).not.toThrow();
+
+    const excessiveNestedParameters = `${"?x=".repeat(17)}safe`;
+    expect(() =>
+      validateCrashReport(
+        create(SubmitCrashReportRequestSchema, {
+          ...safeCrashReport,
+          redactedSummary: excessiveNestedParameters,
+        }),
+      ),
+    ).toThrow(TypeError);
+
+    const maximumSizeNestedParameters = `${"?x=".repeat(
+      Math.floor((MAX_CRASH_STACK_BYTES - "safe".length) / "?x=".length),
+    )}safe`;
+    expect(() =>
+      validateCrashReport(
+        create(SubmitCrashReportRequestSchema, {
+          ...safeCrashReport,
+          redactedStackTrace: maximumSizeNestedParameters,
+        }),
+      ),
+    ).toThrow(TypeError);
   });
 
   it("keeps narrative filtering off enum error codes", () => {

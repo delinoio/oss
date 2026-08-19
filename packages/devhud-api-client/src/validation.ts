@@ -36,6 +36,8 @@ const MIN_PROTOBUF_TIMESTAMP_SECONDS = -62_135_596_800n;
 const MAX_PROTOBUF_TIMESTAMP_SECONDS = 253_402_300_799n;
 const MAX_PROTOBUF_TIMESTAMP_NANOS = 999_999_999;
 const MAX_DIAGNOSTIC_DECODINGS = 8;
+const MAX_DIAGNOSTIC_PARAMETER_SCANS = 16;
+const MAX_DIAGNOSTIC_SCAN_BYTES = 2 * MAX_CRASH_STACK_BYTES;
 const EXACT_TAURI_REVISION = "4af26a3f7f8b692d62cca549bbacd93f5ce90b41";
 const EXACT_CEF_REVISION = "150.0.10+g8042e43+chromium-150.0.7871.101";
 const diagnosticPlatforms: ReadonlySet<DiagnosticPlatform> = new Set([
@@ -254,21 +256,38 @@ export function validateCrashReport(report: SubmitCrashReportRequest): void {
 }
 
 function validateDiagnosticText(value: string, maximum: number, field: string): void {
-  validateSensitiveText(value, maximum, field);
+  validateTextShape(value, maximum, field);
   if (containsForbiddenDiagnosticContent(value)) {
     throw new TypeError(`${field} contains prohibited diagnostic content`);
   }
 }
 
 function containsForbiddenDiagnosticContent(value: string): boolean {
+  const budget: DiagnosticScanBudget = {
+    remainingBytes: MAX_DIAGNOSTIC_SCAN_BYTES,
+    remainingParameters: MAX_DIAGNOSTIC_PARAMETER_SCANS,
+  };
+  return containsForbiddenDiagnosticContentWithBudget(value, budget);
+}
+
+function containsForbiddenDiagnosticContentWithBudget(
+  value: string,
+  budget: DiagnosticScanBudget,
+): boolean {
   let decodings = 0;
   for (;;) {
+    const valueBytes = textEncoder.encode(value).byteLength;
+    if (valueBytes > budget.remainingBytes) return true;
+    budget.remainingBytes -= valueBytes;
     if (
       forbiddenDiagnosticContentPatterns.some((pattern) => pattern.test(value)) ||
       forbiddenSensitiveTextPatterns.some((pattern) => pattern.test(value)) ||
       containsForbiddenCredentialAssignment(value) ||
       containsForbiddenLocalPath(value) ||
-      containsForbiddenUrlContent(value)
+      containsForbiddenUrlContent(value, {
+        allowedProtocols: webDiagnosticUrlProtocols,
+        diagnosticBudget: budget,
+      })
     ) {
       return true;
     }
@@ -298,13 +317,7 @@ function validateSensitiveText(
   field: string,
   publicAssetBaseUrl?: URL,
 ): void {
-  assertWellFormedUnicode(value, field);
-  if (value.includes("\0")) {
-    throw new TypeError(`${field} must not contain NUL bytes`);
-  }
-  if (textEncoder.encode(value).byteLength > maximum) {
-    throw new RangeError(`${field} must not exceed ${maximum} UTF-8 bytes`);
-  }
+  validateTextShape(value, maximum, field);
   const forbiddenContent =
     publicAssetBaseUrl === undefined
       ? "sensitive or local-path"
@@ -317,8 +330,19 @@ function validateSensitiveText(
       throw new TypeError(`${field} contains forbidden ${forbiddenContent} content`);
     }
   }
-  if (containsForbiddenUrlContent(value, publicAssetBaseUrl)) {
+  const urlPolicy = publicAssetBaseUrl === undefined ? {} : { publicAssetBaseUrl };
+  if (containsForbiddenUrlContent(value, urlPolicy)) {
     throw new TypeError(`${field} contains forbidden ${forbiddenContent} content`);
+  }
+}
+
+function validateTextShape(value: string, maximum: number, field: string): void {
+  assertWellFormedUnicode(value, field);
+  if (value.includes("\0")) {
+    throw new TypeError(`${field} must not contain NUL bytes`);
+  }
+  if (textEncoder.encode(value).byteLength > maximum) {
+    throw new RangeError(`${field} must not exceed ${maximum} UTF-8 bytes`);
   }
 }
 
@@ -379,7 +403,18 @@ function parsePublicAssetBaseUrl(value: string): URL {
   }
 }
 
-function containsForbiddenUrlContent(value: string, publicAssetBaseUrl?: URL): boolean {
+interface DiagnosticScanBudget {
+  remainingBytes: number;
+  remainingParameters: number;
+}
+
+interface UrlScanPolicy {
+  readonly publicAssetBaseUrl?: URL;
+  readonly allowedProtocols?: ReadonlySet<string>;
+  readonly diagnosticBudget?: DiagnosticScanBudget;
+}
+
+function containsForbiddenUrlContent(value: string, policy: UrlScanPolicy = {}): boolean {
   for (const match of value.matchAll(urlParametersPattern)) {
     const matchedParameters = match[0];
     if (matchedParameters === undefined) {
@@ -388,7 +423,7 @@ function containsForbiddenUrlContent(value: string, publicAssetBaseUrl?: URL): b
     const parameters = matchedParameters
       .slice(1)
       .replace(trailingUrlPunctuationPattern, "");
-    if (containsForbiddenParameterContent(parameters, publicAssetBaseUrl)) {
+    if (containsForbiddenParameterContent(parameters, policy)) {
       return true;
     }
   }
@@ -415,18 +450,24 @@ function containsForbiddenUrlContent(value: string, publicAssetBaseUrl?: URL): b
       continue;
     }
 
-    if (!webDiagnosticUrlProtocols.has(url.protocol)) {
+    if (
+      url.protocol === "file:" ||
+      (policy.allowedProtocols !== undefined && !policy.allowedProtocols.has(url.protocol))
+    ) {
       return true;
     }
-    if (publicAssetBaseUrl !== undefined && isPublicAssetLocator(url, publicAssetBaseUrl)) {
+    if (
+      policy.publicAssetBaseUrl !== undefined &&
+      isPublicAssetLocator(url, policy.publicAssetBaseUrl)
+    ) {
       return true;
     }
     if (url.username !== "" || url.password !== "") {
       return true;
     }
     if (
-      containsForbiddenParameterContent(url.search.slice(1), publicAssetBaseUrl) ||
-      containsForbiddenParameterContent(url.hash.slice(1), publicAssetBaseUrl)
+      containsForbiddenParameterContent(url.search.slice(1), policy) ||
+      containsForbiddenParameterContent(url.hash.slice(1), policy)
     ) {
       return true;
     }
@@ -448,9 +489,19 @@ function isPublicAssetLocator(url: URL, publicAssetBaseUrl: URL): boolean {
 
 function containsForbiddenParameterContent(
   parameters: string,
-  publicAssetBaseUrl?: URL,
+  policy: UrlScanPolicy,
 ): boolean {
+  if (policy.diagnosticBudget !== undefined) {
+    const parameterBytes = textEncoder.encode(parameters).byteLength;
+    if (parameterBytes > policy.diagnosticBudget.remainingBytes) return true;
+    policy.diagnosticBudget.remainingBytes -= parameterBytes;
+  }
   for (const parameter of parameters.split(/[&;]/u)) {
+    if (parameter === "") continue;
+    if (policy.diagnosticBudget !== undefined) {
+      if (policy.diagnosticBudget.remainingParameters === 0) return true;
+      policy.diagnosticBudget.remainingParameters -= 1;
+    }
     const separatorIndex = parameter.search(/[=:]/u);
     const encodedName = separatorIndex === -1 ? parameter : parameter.slice(0, separatorIndex);
     const encodedValue = separatorIndex === -1 ? "" : parameter.slice(separatorIndex + 1);
@@ -466,14 +517,23 @@ function containsForbiddenParameterContent(
     if (credentialParameterNamePattern.test(name)) {
       return true;
     }
-    if (
-      containsForbiddenLocalPath(value) ||
-      forbiddenSensitiveTextPatterns.some((pattern) => pattern.test(value)) ||
-      containsForbiddenCredentialAssignment(value) ||
-      containsForbiddenUrlContent(value, publicAssetBaseUrl) ||
-      (value !== encodedValue && containsForbiddenParameterContent(value, publicAssetBaseUrl))
-    ) {
-      return true;
+    if (policy.diagnosticBudget !== undefined) {
+      if (
+        containsForbiddenDiagnosticContentWithBudget(value, policy.diagnosticBudget) ||
+        (value !== encodedValue && containsForbiddenParameterContent(value, policy))
+      ) {
+        return true;
+      }
+    } else {
+      if (
+        containsForbiddenLocalPath(value) ||
+        forbiddenSensitiveTextPatterns.some((pattern) => pattern.test(value)) ||
+        containsForbiddenCredentialAssignment(value) ||
+        containsForbiddenUrlContent(value, policy) ||
+        (value !== encodedValue && containsForbiddenParameterContent(value, policy))
+      ) {
+        return true;
+      }
     }
   }
   return false;
