@@ -201,6 +201,9 @@ export function DeckPollingBoundary({ bridge, active, online, provider: supplied
 
   const configuredDecks = identity.deckAccessSuspended ? noDecks : identity.settings.decks;
   const scheduleKey = configuredDecks.map((deck) => `${deck.id}\u0000${deck.name}\u0000${deck.profileRef}\u0000${deck.query}\u0000${deck.refreshMinutes}\u0000${deck.notifications.join(",")}`).join("\u0001");
+  const scheduledDecks = useMemo(() => configuredDecks, [identity.deckAccessSuspended, scheduleKey]);
+  const refreshRef = useRef(refresh);
+  refreshRef.current = refresh;
   useEffect(() => {
     let cancelled = false;
     validatedRepositories.current.clear();
@@ -213,7 +216,7 @@ export function DeckPollingBoundary({ bridge, active, online, provider: supplied
       setStates({});
       return () => { cancelled = true; };
     }
-    const configuredIds = new Set(configuredDecks.map((deck) => deck.id));
+    const configuredIds = new Set(scheduledDecks.map((deck) => deck.id));
     const removedConfigurations = [...configurations.current.entries()].filter(([deckId]) => !configuredIds.has(deckId));
     const removedDeckIds = new Set([...caches.current.keys(), ...removedConfigurations.map(([deckId]) => deckId)]);
     for (const deckId of removedDeckIds) void cancelDeckNotifications(deckId);
@@ -229,7 +232,7 @@ export function DeckPollingBoundary({ bridge, active, online, provider: supplied
     void identity.githubPatScopeId.then((scopeId) => {
       if (cancelled) return;
       for (const [deckId, configuration] of removedConfigurations) clearDeckCache(storage, `${scopeId}.${configuration.profileRef}`, deckId);
-      for (const deck of configuredDecks) {
+      for (const deck of scheduledDecks) {
         const signature = `${deck.name}\u0000${deck.profileRef}\u0000${deck.query}\u0000${deck.refreshMinutes}\u0000${deck.notifications.join(",")}`;
         const previous = configurations.current.get(deck.id);
         if (previous?.signature === signature) continue;
@@ -244,7 +247,7 @@ export function DeckPollingBoundary({ bridge, active, online, provider: supplied
       }
     }).catch(() => {});
     return () => { cancelled = true; };
-  }, [cancelDeckNotifications, configuredDecks, identity.deckAccessSuspended, identity.githubPatScopeId, scheduleKey, setDeckState, storage]);
+  }, [cancelDeckNotifications, identity.deckAccessSuspended, identity.githubPatScopeId, scheduledDecks, setDeckState, storage]);
   useEffect(() => () => {
     const deckIds = new Set([...decks.current.map((deck) => deck.id), ...caches.current.keys(), ...configurations.current.keys()]);
     deckAccessAllowed.current = false;
@@ -261,13 +264,13 @@ export function DeckPollingBoundary({ bridge, active, online, provider: supplied
   }, [cancelDeckNotifications]);
   useEffect(() => {
     if (!active || !online || identity.deckAccessSuspended) return;
-    const timers = configuredDecks.map((deck) => {
-      const timeout = setTimeout(() => void refresh(deck.id), 0);
-      const interval = setInterval(() => void refresh(deck.id), deck.refreshMinutes * 60_000);
+    const timers = scheduledDecks.map((deck) => {
+      const timeout = setTimeout(() => void refreshRef.current(deck.id), 0);
+      const interval = setInterval(() => void refreshRef.current(deck.id), deck.refreshMinutes * 60_000);
       return { timeout, interval };
     });
     return () => { for (const timer of timers) { clearTimeout(timer.timeout); clearInterval(timer.interval); } };
-  }, [active, configuredDecks, identity.deckAccessSuspended, online, refresh, scheduleKey]);
+  }, [active, identity.deckAccessSuspended, online, scheduledDecks]);
 
   const value = useMemo<DeckPollingContextValue>(() => ({ states, canPoll: active && online && !identity.deckAccessSuspended, online, refresh, validate, clear }), [active, clear, identity.deckAccessSuspended, online, refresh, states, validate]);
   return <DeckPollingContext value={value}>{children}</DeckPollingContext>;

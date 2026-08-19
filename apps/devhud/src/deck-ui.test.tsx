@@ -255,6 +255,26 @@ describe("Deck surface", () => {
     expect(setCache).not.toHaveBeenCalledWith(expect.stringContaining(deck.id), expect.any(String));
   });
 
+  it("keeps the Deck schedule when unrelated settings change", async () => {
+    const scope = Promise.resolve("origin.scope");
+    const validateRepository = provider().validateRepository;
+    const searchPullRequests = vi.fn(async () => ({ items: [], nextPage: null, notModified: false, metadata: { etag: null, rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } } }));
+    const bridge = bridgeWith(async (request) => request.operation === "secure.read" ? { kind: "secure-value", value: "token" } : { kind: "ok" });
+    identity = identityWith({ githubPatScopeId: scope });
+    const suppliedProvider = { ...provider(), validateRepository, searchPullRequests };
+    const view = render(<DeckPollingBoundary bridge={bridge} active online provider={suppliedProvider}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    await waitFor(() => expect(searchPullRequests).toHaveBeenCalledOnce());
+    expect(validateRepository).toHaveBeenCalledOnce();
+
+    identity = identityWith({ githubPatScopeId: scope, settings: parseDevHudSettings({ ...settings, appearance: { ...settings.appearance, theme: "dark" } }) });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active online provider={suppliedProvider}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(validateRepository).toHaveBeenCalledOnce();
+    expect(searchPullRequests).toHaveBeenCalledOnce();
+  });
+
   it("shares the two-repository validation limit across scheduled Decks", async () => {
     const releases: Array<() => void> = [];
     const validateRepository: ReturnType<typeof provider>["validateRepository"] = vi.fn((_credential, repository) => new Promise((resolve) => {

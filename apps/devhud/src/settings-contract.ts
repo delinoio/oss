@@ -416,6 +416,7 @@ interface DeckQueryBranch {
 }
 
 type DeckBooleanToken = { readonly kind: "term"; readonly value: string } | { readonly kind: "open" | "close" | "not" };
+const deckQueryWhitespace = /[\u0009-\u000D\u0020\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\uFEFF]/u;
 
 function hasBooleanQuerySyntax(query: string): boolean {
   const tokens = deckBooleanTokens(query);
@@ -505,7 +506,7 @@ function deckBooleanTokens(query: string): readonly DeckBooleanToken[] | null {
   let index = 0;
   while (index < query.length) {
     const character = query[index] as string;
-    if (/\s/u.test(character)) { index += 1; continue; }
+    if (deckQueryWhitespace.test(character)) { index += 1; continue; }
     if (character === "(") { tokens.push({ kind: "open" }); index += 1; continue; }
     if (character === ")") { tokens.push({ kind: "close" }); index += 1; continue; }
     let value = "";
@@ -522,7 +523,7 @@ function deckBooleanTokens(query: string): readonly DeckBooleanToken[] | null {
         continue;
       }
       if (next === "\"") { value += next; quoted = true; index += 1; continue; }
-      if (/\s/u.test(next) || next === "(" || next === ")") break;
+      if (deckQueryWhitespace.test(next) || next === "(" || next === ")") break;
       value += next;
       index += 1;
     }
@@ -545,7 +546,7 @@ function deckQueryTokens(query: string): readonly DeckQueryToken[] {
   };
   for (let index = 0; index < query.length; index += 1) {
     const character = query[index] as string;
-    if (token.length === 0 && !quoted && !/\s/u.test(character)) start = index;
+    if (token.length === 0 && !quoted && !deckQueryWhitespace.test(character)) start = index;
     if (escaped) {
       token += character;
       escaped = false;
@@ -560,7 +561,7 @@ function deckQueryTokens(query: string): readonly DeckQueryToken[] {
     if (character === "\"") {
       token += character;
       quoted = true;
-    } else if (/\s/u.test(character)) {
+    } else if (deckQueryWhitespace.test(character)) {
       flush();
     } else {
       token += character;

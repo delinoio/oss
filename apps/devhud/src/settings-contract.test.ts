@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canonicalDevHudSettings, CollidingSettingsSchemaVersion, deckRepositories, decodeDevHudSettings, decodeVersionedDevHudSettings, defaultDevHudSettings, encodeDevHudSettings, parseDevHudSettings, PreviousSettingsSchemaVersion, SettingsContractError, SettingsSchemaVersion } from "./settings-contract";
+import { canonicalDevHudSettings, CollidingSettingsSchemaVersion, deckBuilderProjection, deckRepositories, decodeDevHudSettings, decodeVersionedDevHudSettings, defaultDevHudSettings, encodeDevHudSettings, parseDevHudSettings, PreviousSettingsSchemaVersion, SettingsContractError, SettingsSchemaVersion } from "./settings-contract";
 import { diffSettings, redactRecursively, RedactedValue } from "./settings-diff";
 import { ShortcutActionId, ShortcutKey, ShortcutModifier, ShortcutValidationCode, defaultDesktopShortcutBindings, parseDesktopShortcutBindings } from "./shortcuts";
 
@@ -245,6 +245,7 @@ describe("DevHud settings boundary", () => {
     };
     const settings = { ...defaultDevHudSettings, github: { ...defaultDevHudSettings.github, profiles: [profile] }, decks: [deck] };
     expect(parseDevHudSettings(settings).decks).toHaveLength(1);
+    expect(parseDevHudSettings({ ...settings, decks: [{ ...deck, query: "repo:octo/widgets\uFEFFis:pr" }] }).decks).toHaveLength(1);
     expect(() => parseDevHudSettings({ ...settings, decks: [{ ...deck, query: "is:pr" }] })).toThrow(/repository qualifier/u);
     expect(() => parseDevHudSettings({ ...settings, decks: [{ ...deck, query: "repo:octo is:pr" }] })).toThrow(/repository qualifier/u);
     expect(() => parseDevHudSettings({ ...settings, decks: [{ ...deck, query: "repo:octo/\u0000 is:pr" }] })).toThrow(/repository qualifier/u);
@@ -262,6 +263,7 @@ describe("DevHud settings boundary", () => {
     const settings = { ...defaultDevHudSettings, github: { ...defaultDevHudSettings.github, profiles: [profile] }, decks: [deck] };
 
     expect(parseDevHudSettings(settings).decks).toHaveLength(1);
+    expect(deckBuilderProjection(deck.query)).toBeNull();
     expect(deckRepositories(deck.query)).toEqual([{ owner: "octo", name: "widgets" }, { owner: "octo", name: "tools" }]);
     expect(parseDevHudSettings({ ...settings, decks: [{ ...deck, query: "repo:octo/widgets NOT repo:octo/excluded is:pr" }] }).decks).toHaveLength(1);
     expect(deckRepositories("repo:octo/widgets NOT repo:octo/excluded is:pr")).toEqual([{ owner: "octo", name: "widgets" }]);
@@ -269,6 +271,7 @@ describe("DevHud settings boundary", () => {
     expect(() => parseDevHudSettings({ ...settings, decks: [{ ...deck, query: "repo:octo/widgets is:pr OR author:octocat is:pr" }] })).toThrow(/repository qualifier/u);
     expect(() => parseDevHudSettings({ ...settings, decks: [{ ...deck, query: "(repo:octo/widgets is:pr OR repo:octo/tools is:pr" }] })).toThrow(/repository qualifier/u);
     expect(parseDevHudSettings({ ...settings, decks: [{ ...deck, query: "repo:octo/widgets OR repo:octo/tools" }] }).decks[0]?.query).toBe("(repo:octo/widgets OR repo:octo/tools) is:pr");
+    expect(() => parseDevHudSettings({ ...settings, decks: [{ ...deck, builder: { repository: "octo/widgets", author: null, review: null, label: null, state: null } }] })).toThrow(/lossless projection/u);
   });
 
   it("groups Boolean v2 queries before restoring the persisted repository scope", () => {

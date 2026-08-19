@@ -93,6 +93,9 @@ func TestValidateDevHudSettingsDeckQualifiers(t *testing.T) {
 	if err := validateDevHudSettings([]byte(settings("repo:octo/widgets IS:PR", `[]`)), 4); err != nil {
 		t.Fatalf("mixed-case qualifier: %v", err)
 	}
+	if err := validateDevHudSettings([]byte(settings("repo:octo/widgets\ufeffis:pr", `[]`)), 4); err != nil {
+		t.Fatalf("BOM-separated qualifier: %v", err)
+	}
 	if err := validateDevHudSettings([]byte(settings("(repo:octo/widgets is:pr OR (repo:octo/tools is:pr AND author:octocat))", `[]`)), 4); err != nil {
 		t.Fatalf("branch-scoped Boolean qualifiers: %v", err)
 	}
@@ -127,6 +130,7 @@ func TestValidateDevHudSettingsDeckQualifiers(t *testing.T) {
 		),
 		"untrimmed builder field": strings.Replace(settings("repo:octo/widgets is:pr", `[]`), `"builder":null`, `"builder":{"author":null,"label":null,"repository":" octo/widgets","review":null,"state":null}`, 1),
 		"mismatched builder":      strings.Replace(settings("repo:octo/widgets is:pr", `[]`), `"builder":null`, `"builder":{"author":null,"label":null,"repository":"octo/other","review":null,"state":null}`, 1),
+		"Boolean query builder":   strings.Replace(settings("repo:octo/widgets is:pr OR repo:octo/tools is:pr", `[]`), `"builder":null`, `"builder":{"author":null,"label":null,"repository":"octo/widgets","review":null,"state":null}`, 1),
 	} {
 		t.Run(name, func(t *testing.T) {
 			if err := validateDevHudSettings([]byte(value), 4); err == nil {

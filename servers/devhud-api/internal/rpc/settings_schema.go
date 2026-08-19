@@ -14,7 +14,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode"
 	"unicode/utf16"
 	"unicode/utf8"
 
@@ -381,6 +380,9 @@ func settingsDeckBuilderValueEqual(left *string, right *string) bool {
 }
 
 func settingsDeckBuilderProjection(query string) settingsDeckBuilder {
+	if deckQueryHasBooleanSyntax(query) {
+		return settingsDeckBuilder{}
+	}
 	projection := settingsDeckBuilder{}
 	for _, token := range deckQueryTokens(query) {
 		for _, qualifier := range []struct {
@@ -441,6 +443,19 @@ func settingsDeckBuilderProjection(query string) settingsDeckBuilder {
 		}
 	}
 	return projection
+}
+
+func deckQueryHasBooleanSyntax(query string) bool {
+	tokens, valid := deckBooleanTokens(query)
+	if !valid {
+		return false
+	}
+	for _, token := range tokens {
+		if token.kind != deckBooleanTerm || strings.EqualFold(token.value, "and") || strings.EqualFold(token.value, "or") {
+			return true
+		}
+	}
+	return false
 }
 
 func unquoteSettingsDeckQualifier(value string) string {
@@ -647,7 +662,7 @@ func deckBooleanTokens(query string) ([]deckBooleanToken, bool) {
 	tokens := make([]deckBooleanToken, 0)
 	for index := 0; index < len(query); {
 		character, width := utf8.DecodeRuneInString(query[index:])
-		if unicode.IsSpace(character) {
+		if deckQueryWhitespace(character) {
 			index += width
 			continue
 		}
@@ -688,7 +703,7 @@ func deckBooleanTokens(query string) ([]deckBooleanToken, bool) {
 				index += nextWidth
 				continue
 			}
-			if unicode.IsSpace(next) || next == '(' || next == ')' {
+			if deckQueryWhitespace(next) || next == '(' || next == ')' {
 				break
 			}
 			value.WriteString(query[index : index+nextWidth])
@@ -705,6 +720,15 @@ func deckBooleanTokens(query string) ([]deckBooleanToken, bool) {
 		}
 	}
 	return tokens, true
+}
+
+// deckQueryWhitespace matches ECMAScript's explicit Deck query whitespace set.
+func deckQueryWhitespace(character rune) bool {
+	switch character {
+	case '\t', '\n', '\v', '\f', '\r', ' ', '\u00a0', '\u1680', '\u2028', '\u2029', '\u202f', '\u205f', '\u3000', '\ufeff':
+		return true
+	}
+	return character >= '\u2000' && character <= '\u200a'
 }
 
 func validGitHubOwnerIdentifier(value string) bool {
@@ -741,7 +765,7 @@ func deckQueryTokens(query string) []string {
 		if character == '"' {
 			token.WriteRune(character)
 			quoted = true
-		} else if unicode.IsSpace(character) {
+		} else if deckQueryWhitespace(character) {
 			flush()
 		} else {
 			token.WriteRune(character)
