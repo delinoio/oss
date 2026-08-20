@@ -34,6 +34,13 @@ impl ShortcutAction {
         Self::RealqaCaptureSelection,
         Self::RealqaCaptureToolbar,
     ];
+
+    pub const fn requires_visible_window(self) -> bool {
+        matches!(
+            self,
+            Self::ShellCommandPalette | Self::RealqaCaptureSelection | Self::RealqaCaptureToolbar
+        )
+    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
@@ -697,6 +704,25 @@ fn macos_accessibility_permission(prompt: bool) -> ShortcutPermission {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn restores_the_window_only_for_shortcuts_that_open_renderer_ui() {
+        for action in [
+            ShortcutAction::ShellCommandPalette,
+            ShortcutAction::RealqaCaptureSelection,
+            ShortcutAction::RealqaCaptureToolbar,
+        ] {
+            assert!(action.requires_visible_window());
+        }
+        for action in [
+            ShortcutAction::RealqaCaptureDisplay,
+            ShortcutAction::RealqaCaptureActiveWindow,
+            ShortcutAction::RealqaCaptureAllDisplays,
+        ] {
+            assert!(!action.requires_visible_window());
+        }
+    }
+
     struct Fake {
         permission: ShortcutPermission,
         refreshed_permission: Option<ShortcutPermission>,
