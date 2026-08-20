@@ -1146,8 +1146,9 @@ impl<'a> PlatformInstaller<'a> {
                 .file_name()
                 .ok_or(DiagnosticCode::RestartFailed)?,
         );
-        replace_macos_bundle_transactionally(&destination, &apps[0], || self.restart(&relaunch))?;
-        Ok(RestartDisposition::Relaunched)
+        replace_macos_bundle_transactionally(&destination, &apps[0], &relaunch, || {
+            self.restart(&relaunch)
+        })
     }
 }
 
@@ -1195,8 +1196,9 @@ fn atomic_exchange(left: &Path, right: &Path) -> Result<(), DiagnosticCode> {
 fn replace_macos_bundle_transactionally(
     destination: &Path,
     replacement: &Path,
+    restart_executable: &Path,
     relaunch: impl FnOnce() -> Result<(), DiagnosticCode>,
-) -> Result<(), DiagnosticCode> {
+) -> Result<RestartDisposition, DiagnosticCode> {
     let parent = destination
         .parent()
         .ok_or(DiagnosticCode::InstallationFailed)?;
@@ -1218,10 +1220,19 @@ fn replace_macos_bundle_transactionally(
         return Err(DiagnosticCode::InstallationFailed);
     }
     if let Err(error) = relaunch() {
-        if atomic_exchange(destination, replacement).is_err()
-            || fs::File::open(parent)
-                .and_then(|directory| directory.sync_all())
-                .is_err()
+        if atomic_exchange(destination, replacement).is_err() {
+            tracing::error!(
+                event = "updater_install_rollback_failed",
+                package = "macos-app"
+            );
+            return Ok(RestartDisposition::RestartRequired {
+                executable: restart_executable.to_path_buf(),
+                diagnostic: DiagnosticCode::RestartFailed,
+            });
+        }
+        if fs::File::open(parent)
+            .and_then(|directory| directory.sync_all())
+            .is_err()
         {
             tracing::error!(
                 event = "updater_install_rollback_failed",
@@ -1230,7 +1241,7 @@ fn replace_macos_bundle_transactionally(
         }
         return Err(error);
     }
-    Ok(())
+    Ok(RestartDisposition::Relaunched)
 }
 
 fn wait_for_health(
@@ -2531,19 +2542,65 @@ mod tests {
         fs::write(destination.join("version"), b"installed-version").unwrap();
         fs::write(replacement.join("version"), b"candidate-version").unwrap();
 
-        let result = replace_macos_bundle_transactionally(&destination, &replacement, || {
-            assert!(destination.is_dir());
-            assert_eq!(
-                fs::read(destination.join("version")).unwrap(),
-                b"candidate-version"
-            );
-            Err(DiagnosticCode::RestartFailed)
-        });
+        let restart_executable = destination.join("Contents/MacOS/devhud");
+        let result = replace_macos_bundle_transactionally(
+            &destination,
+            &replacement,
+            &restart_executable,
+            || {
+                assert!(destination.is_dir());
+                assert_eq!(
+                    fs::read(destination.join("version")).unwrap(),
+                    b"candidate-version"
+                );
+                Err(DiagnosticCode::RestartFailed)
+            },
+        );
 
         assert_eq!(result, Err(DiagnosticCode::RestartFailed));
         assert!(destination.is_dir());
         assert_eq!(
             fs::read(destination.join("version")).unwrap(),
+            b"installed-version"
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn failed_macos_rollback_retains_restart_only_recovery() {
+        let directory = tempfile::tempdir().unwrap();
+        let destination = directory.path().join("DevHUD.app");
+        let replacement = directory.path().join("Candidate.app");
+        let previous = directory.path().join("Previous.app");
+        let restart_executable = destination.join("Contents/MacOS/devhud");
+        fs::create_dir(&destination).unwrap();
+        fs::create_dir(&replacement).unwrap();
+        fs::write(destination.join("version"), b"installed-version").unwrap();
+        fs::write(replacement.join("version"), b"candidate-version").unwrap();
+
+        let result = replace_macos_bundle_transactionally(
+            &destination,
+            &replacement,
+            &restart_executable,
+            || {
+                fs::rename(&replacement, &previous).unwrap();
+                Err(DiagnosticCode::RestartFailed)
+            },
+        );
+
+        assert_eq!(
+            result,
+            Ok(RestartDisposition::RestartRequired {
+                executable: restart_executable,
+                diagnostic: DiagnosticCode::RestartFailed,
+            })
+        );
+        assert_eq!(
+            fs::read(destination.join("version")).unwrap(),
+            b"candidate-version"
+        );
+        assert_eq!(
+            fs::read(previous.join("version")).unwrap(),
             b"installed-version"
         );
     }

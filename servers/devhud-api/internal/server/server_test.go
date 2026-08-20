@@ -571,7 +571,12 @@ func TestUpdaterRouteIsUnavailableToBrowserOrigins(t *testing.T) {
 	request.Header.Set("X-DevHud-Package", "linux-deb")
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
-	if response.Code != http.StatusForbidden || response.Header().Get("Access-Control-Allow-Origin") != "" {
+	vary := strings.Join(response.Header().Values("Vary"), ",")
+	if response.Code != http.StatusForbidden ||
+		response.Header().Get("Access-Control-Allow-Origin") != "" ||
+		response.Header().Get("Cache-Control") != "no-store" ||
+		!strings.Contains(vary, "Origin") ||
+		!strings.Contains(vary, "X-DevHud-Package") {
 		t.Fatalf("status=%d headers=%v", response.Code, response.Header())
 	}
 }
