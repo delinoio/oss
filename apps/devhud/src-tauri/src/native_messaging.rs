@@ -35,9 +35,9 @@ use crate::capture::{CaptureService, DraftBrowserContext, DraftSummary};
 const PAIRING_NONCE_TTL: Duration = Duration::from_secs(120);
 const CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
 const REPLAY_LIMIT: usize = 4_096;
-#[cfg(any(windows, test))]
+#[cfg(any(unix, windows, test))]
 const ACCEPT_RETRY_INITIAL_DELAY: Duration = Duration::from_millis(250);
-#[cfg(any(windows, test))]
+#[cfg(any(unix, windows, test))]
 const ACCEPT_RETRY_MAXIMUM_DELAY: Duration = Duration::from_secs(5);
 
 static STATE: OnceLock<Arc<NativeMessagingState>> = OnceLock::new();
@@ -456,7 +456,7 @@ fn valid_ip_literal_host(host: &[String]) -> bool {
     }
 }
 
-#[cfg(any(windows, test))]
+#[cfg(any(unix, windows, test))]
 fn updated_accept_retry_delay(current: Duration, accepted: bool) -> Duration {
     if accepted {
         ACCEPT_RETRY_INITIAL_DELAY
@@ -722,9 +722,11 @@ pub fn start() -> Result<(), String> {
     std::thread::Builder::new()
         .name("devhud-native-messaging-ipc".into())
         .spawn(move || {
-            for accepted in listener.incoming() {
-                match accepted {
-                    Ok(stream) => {
+            let mut retry_delay = ACCEPT_RETRY_INITIAL_DELAY;
+            loop {
+                match listener.accept() {
+                    Ok((stream, _)) => {
+                        retry_delay = updated_accept_retry_delay(retry_delay, true);
                         if !endpoint::peer_is_current_user(&stream).unwrap_or(false) {
                             warn!(event = "native_messaging_peer_rejected");
                             continue;
@@ -736,7 +738,11 @@ pub fn start() -> Result<(), String> {
                             }
                         });
                     }
-                    Err(reason) => error!(event = "native_messaging_accept_failed", %reason),
+                    Err(reason) => {
+                        error!(event = "native_messaging_accept_failed", %reason);
+                        std::thread::sleep(retry_delay);
+                        retry_delay = updated_accept_retry_delay(retry_delay, false);
+                    }
                 }
             }
         })

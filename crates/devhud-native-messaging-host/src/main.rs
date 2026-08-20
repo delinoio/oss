@@ -1,4 +1,8 @@
-use std::{io, path::PathBuf, time::Duration};
+use std::{
+    io,
+    path::PathBuf,
+    time::{Duration, Instant},
+};
 
 use devhud_native_messaging_host::{
     PROTOCOL_VERSION, REQUEST_DEADLINE_MILLIS, SCHEMA_VERSION,
@@ -95,7 +99,6 @@ fn authenticate_stream(
     pairing_nonce: Option<String>,
     purpose: AuthPurpose,
 ) -> Result<Session, String> {
-    set_ipc_exchange_deadline(&mut stream, IPC_IO_TIMEOUT);
     let challenge: Challenge =
         read_ipc_json(&mut stream).map_err(|_| "authentication-failed".to_string())?;
     validate_version(challenge.version, challenge.schema_version).map_err(str::to_string)?;
@@ -147,7 +150,8 @@ fn authenticate_stream(
 }
 
 fn authenticate(origin: &str, pairing_nonce: Option<String>) -> Result<Session, String> {
-    let stream = endpoint::connect().map_err(|_| "disconnected".to_string())?;
+    let stream = endpoint::connect(Instant::now() + IPC_IO_TIMEOUT)
+        .map_err(|_| "disconnected".to_string())?;
     authenticate_stream(stream, origin, pairing_nonce, AuthPurpose::BrowserSession)
 }
 
@@ -310,8 +314,8 @@ fn run_native(origin: &str) -> io::Result<()> {
     }
 }
 
-fn connect_to_running_app() -> Result<Option<PlatformStream>, String> {
-    match endpoint::connect() {
+fn connect_to_running_app(deadline: Instant) -> Result<Option<PlatformStream>, String> {
+    match endpoint::connect(deadline) {
         Ok(stream) => Ok(Some(stream)),
         Err(error)
             if matches!(
@@ -329,7 +333,8 @@ fn revoke_running_app_pairing() -> Result<bool, String> {
     if read_pairing_secret()?.is_none() {
         return Ok(false);
     }
-    let Some(stream) = connect_to_running_app()? else {
+    let deadline = Instant::now() + IPC_IO_TIMEOUT;
+    let Some(stream) = connect_to_running_app(deadline)? else {
         return Ok(false);
     };
     let mut session = authenticate_stream(

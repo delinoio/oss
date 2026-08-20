@@ -8,6 +8,20 @@ use std::time::{Duration, Instant};
 
 pub const WINDOWS_PIPE_PATH: &str = r"\\.\pipe\io.delino.devhud.ipc";
 
+#[cfg(any(unix, windows))]
+fn remaining_until(deadline: Instant) -> io::Result<Duration> {
+    let remaining = deadline
+        .checked_duration_since(Instant::now())
+        .ok_or_else(|| io::Error::new(io::ErrorKind::TimedOut, "IPC operation timed out"))?;
+    if remaining.is_zero() {
+        return Err(io::Error::new(
+            io::ErrorKind::TimedOut,
+            "IPC operation timed out",
+        ));
+    }
+    Ok(remaining)
+}
+
 #[cfg(target_os = "linux")]
 pub fn socket_path() -> io::Result<PathBuf> {
     let runtime = std::env::var_os("XDG_RUNTIME_DIR")
@@ -50,18 +64,9 @@ impl IpcClientStream {
     }
 
     fn remaining(&self) -> io::Result<Duration> {
-        let remaining = self
-            .deadline
-            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "socket deadline is unset"))?
-            .checked_duration_since(Instant::now())
-            .ok_or_else(|| io::Error::new(io::ErrorKind::TimedOut, "socket operation timed out"))?;
-        if remaining.is_zero() {
-            return Err(io::Error::new(
-                io::ErrorKind::TimedOut,
-                "socket operation timed out",
-            ));
-        }
-        Ok(remaining)
+        remaining_until(self.deadline.ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidInput, "socket deadline is unset")
+        })?)
     }
 }
 
@@ -87,10 +92,24 @@ impl io::Write for IpcClientStream {
 }
 
 #[cfg(unix)]
-pub fn connect() -> io::Result<IpcClientStream> {
-    Ok(IpcClientStream::from_unix_stream(UnixStream::connect(
-        socket_path()?,
-    )?))
+pub fn connect(deadline: Instant) -> io::Result<IpcClientStream> {
+    let path = socket_path()?;
+    connect_unix(&path, deadline)
+}
+
+#[cfg(unix)]
+fn connect_unix(path: &std::path::Path, deadline: Instant) -> io::Result<IpcClientStream> {
+    use std::os::fd::OwnedFd;
+
+    use socket2::{Domain, SockAddr, Socket, Type};
+
+    let socket = Socket::new(Domain::UNIX, Type::STREAM, None)?;
+    socket.connect_timeout(&SockAddr::unix(path)?, remaining_until(deadline)?)?;
+    let descriptor: OwnedFd = socket.into();
+    Ok(IpcClientStream {
+        stream: descriptor.into(),
+        deadline: Some(deadline),
+    })
 }
 
 #[cfg(unix)]
@@ -168,7 +187,7 @@ pub fn peer_is_current_user(stream: &UnixStream) -> io::Result<bool> {
 }
 
 #[cfg(windows)]
-pub fn connect() -> io::Result<IpcClientStream> {
+pub fn connect(deadline: Instant) -> io::Result<IpcClientStream> {
     use std::ptr::{null, null_mut};
 
     use windows_sys::Win32::{
@@ -178,6 +197,7 @@ pub fn connect() -> io::Result<IpcClientStream> {
         },
     };
 
+    remaining_until(deadline)?;
     let pipe_name = wide(WINDOWS_PIPE_PATH);
     // SAFETY: the pipe name is NUL-terminated, optional pointers are null, and
     // ownership of a successful handle transfers to WindowsPipeStream.
@@ -197,7 +217,7 @@ pub fn connect() -> io::Result<IpcClientStream> {
     }
     Ok(WindowsPipeStream {
         handle,
-        deadline: None,
+        deadline: Some(deadline),
     })
 }
 
@@ -226,11 +246,9 @@ impl WindowsPipeStream {
     }
 
     fn remaining_millis(&self) -> io::Result<u32> {
-        let remaining = self
-            .deadline
-            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "pipe deadline is unset"))?
-            .checked_duration_since(Instant::now())
-            .ok_or_else(|| io::Error::new(io::ErrorKind::TimedOut, "pipe operation timed out"))?;
+        let remaining = remaining_until(self.deadline.ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidInput, "pipe deadline is unset")
+        })?)?;
         Ok(u32::try_from(remaining.as_millis().clamp(1, u128::from(u32::MAX))).unwrap_or(u32::MAX))
     }
 
@@ -640,7 +658,7 @@ mod tests {
         let listener = WindowsPipeListener::new().unwrap();
         let client = thread::spawn(|| {
             let mut stream = (0..100)
-                .find_map(|_| match connect() {
+                .find_map(|_| match connect(Instant::now() + Duration::from_secs(1)) {
                     Ok(stream) => Some(stream),
                     Err(_) => {
                         thread::sleep(Duration::from_millis(10));
@@ -680,6 +698,36 @@ mod tests {
             client.read_exact(&mut prefix).unwrap_err().kind(),
             io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock
         ));
+    }
+
+    #[test]
+    fn expired_connection_deadline_is_rejected() {
+        assert_eq!(
+            remaining_until(Instant::now() - Duration::from_millis(1))
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::TimedOut
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unix_connect_carries_its_absolute_deadline() {
+        use std::os::unix::net::UnixListener;
+
+        let root = std::env::temp_dir().join(format!("devhud-ipc-connect-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("devhud.sock");
+        let listener = UnixListener::bind(&path).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(1);
+
+        let client = connect_unix(&path, deadline).unwrap();
+        let (server, _) = listener.accept().unwrap();
+
+        assert_eq!(client.deadline, Some(deadline));
+        drop((client, server, listener));
+        std::fs::remove_file(path).unwrap();
+        std::fs::remove_dir(root).unwrap();
     }
 
     #[cfg(target_os = "linux")]
