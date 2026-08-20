@@ -9,6 +9,8 @@ const SERVICE: &str = "io.delino.devhud.secure-settings.v1";
 const INDEX_ACCOUNT: &str = "__index__";
 const GITHUB_PAT_KIND: &str = "github-pat";
 const GITHUB_PAT_SCOPE_KIND: &str = "github-pat-scope";
+const REALQA_DRAFT_KEY_KIND: &str = "realqa-draft-key";
+const REALQA_DRAFT_KEY_PROFILE: &str = "device-v1";
 const CHUNK_MANIFEST_PREFIX: &str = "devhud-credential-chunks-v1:";
 const CHUNK_MANIFEST_VERSION: u8 = 2;
 const WINDOWS_CREDENTIAL_CHUNK_BYTES: usize = 1024;
@@ -90,6 +92,49 @@ impl CredentialBackend for KeyringBackend {
 
 pub fn handle(request: &Value) -> Result<Value, String> {
     handle_with_backend(request, &KeyringBackend, cfg!(target_os = "windows"))
+}
+
+/// Returns the device-local RealQA draft key, creating it inside the platform
+/// credential store when capture is used for the first time. The key is never
+/// exposed through the frontend bridge and is indexed so the existing logout
+/// purge remains authoritative while recoverable account deletion preserves it.
+pub fn realqa_draft_key() -> Result<[u8; 32], String> {
+    let backend = KeyringBackend;
+    let setting = setting(REALQA_DRAFT_KEY_KIND, REALQA_DRAFT_KEY_PROFILE);
+    if let Some(encoded) = read_value(&backend, &setting, cfg!(target_os = "windows"))? {
+        return decode_draft_key(&encoded);
+    }
+    let key = rand::random::<[u8; 32]>();
+    write_setting(
+        &backend,
+        &setting,
+        &encode_draft_key(&key),
+        cfg!(target_os = "windows"),
+    )?;
+    Ok(key)
+}
+
+fn encode_draft_key(key: &[u8; 32]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut encoded = String::with_capacity(64);
+    for byte in key {
+        encoded.push(HEX[(byte >> 4) as usize] as char);
+        encoded.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    encoded
+}
+
+fn decode_draft_key(encoded: &str) -> Result<[u8; 32], String> {
+    if encoded.len() != 64 || !encoded.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err("storage-failure".to_string());
+    }
+    let mut key = [0_u8; 32];
+    for (index, target) in key.iter_mut().enumerate() {
+        let start = index * 2;
+        *target = u8::from_str_radix(&encoded[start..start + 2], 16)
+            .map_err(|_| "storage-failure".to_string())?;
+    }
+    Ok(key)
 }
 
 fn handle_with_backend<B: CredentialBackend>(
@@ -364,7 +409,8 @@ fn should_remove(setting: &SettingRef, scope: &str, profile: Option<&str>) -> bo
     match scope {
         "logout" => true,
         "account-deletion" => {
-            setting.kind != "logto-session" || profile != Some(setting.profile_id.as_str())
+            setting.kind != REALQA_DRAFT_KEY_KIND
+                && (setting.kind != "logto-session" || profile != Some(setting.profile_id.as_str()))
         }
         "api-change" => {
             setting.kind == "logto-session" && profile == Some(setting.profile_id.as_str())
@@ -617,10 +663,10 @@ mod tests {
     use std::{cell::RefCell, collections::BTreeMap};
 
     use super::{
-        CHUNK_MANIFEST_PREFIX, ChunkManifest, CredentialBackend, INDEX_ACCOUNT, SettingRef,
-        chunk_account, delete_value, handle_with_backend, read_index, read_value,
-        reconcile_github_pats, should_remove, split_chunks, write_index, write_setting,
-        write_value,
+        CHUNK_MANIFEST_PREFIX, ChunkManifest, CredentialBackend, INDEX_ACCOUNT,
+        REALQA_DRAFT_KEY_KIND, REALQA_DRAFT_KEY_PROFILE, SettingRef, chunk_account, delete_value,
+        handle_with_backend, read_index, read_value, reconcile_github_pats, should_remove,
+        split_chunks, write_index, write_setting, write_value,
     };
 
     #[derive(Clone, Debug, Eq, PartialEq)]
@@ -690,7 +736,7 @@ mod tests {
     }
 
     #[test]
-    fn account_deletion_retains_only_the_current_recovery_session() {
+    fn account_deletion_retains_the_recovery_session_and_realqa_key() {
         assert!(!should_remove(
             &setting("logto-session", "current"),
             "account-deletion",
@@ -708,6 +754,11 @@ mod tests {
         ));
         assert!(should_remove(
             &setting("r2-secret-access-key", "current"),
+            "account-deletion",
+            Some("current")
+        ));
+        assert!(!should_remove(
+            &setting(REALQA_DRAFT_KEY_KIND, REALQA_DRAFT_KEY_PROFILE),
             "account-deletion",
             Some("current")
         ));

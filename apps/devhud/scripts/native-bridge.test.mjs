@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { NativeBridgeError, NativeBridgeErrorCode, SecureSettingKind, isAuthCallback, nativeBridge, validateAuthenticationBrowserRequest, validateExternalRequest, validateGitHubPatReconciliation, validateSecretValue, validateSecureSettingRef } from "../src/native-bridge.ts";
+import { NativeBridgeError, NativeBridgeErrorCode, SecureSettingKind, isAuthCallback, nativeBridge, validateAuthenticationBrowserRequest, validateCaptureRequest, validateExternalRequest, validateGitHubPatReconciliation, validateSecretValue, validateSecureSettingRef } from "../src/native-bridge.ts";
 import { ShortcutActionId, ShortcutKey, ShortcutModifier, ShortcutValidationCode, defaultDesktopShortcutBindings, parseDesktopShortcutBindings } from "../src/shortcuts.ts";
 
 const fixtures = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../fixtures/deep-links.json"), "utf8"));
@@ -16,6 +16,7 @@ const desktopSecureStore = readFileSync(join(dirname(fileURLToPath(import.meta.u
 const desktopHost = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/main.rs"), "utf8");
 const nativeBridgeHost = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/bridge.rs"), "utf8");
 const nativeShortcuts = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/shortcuts.rs"), "utf8");
+const nativeCapture = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/capture.rs"), "utf8");
 const androidBridgeHost = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/mobile/android/src/main/java/io/delino/devhud/bridge/DevhudNativePlugin.kt"), "utf8");
 const iosBridgeHost = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/mobile/ios/Sources/DevhudNativePlugin.swift"), "utf8");
 
@@ -133,6 +134,52 @@ test("native shortcut boundary is physical-key-only and redacts unrelated input"
   assert.match(nativeShortcuts, /_\s*=> None/u);
   assert.match(nativeShortcuts, /never exposes raw input/u);
   assert.doesNotMatch(nativeShortcuts, /println!|info!|debug!|warn!/u);
+});
+
+test("RealQA requests are bounded and capture data stays out of logs and recording APIs", () => {
+  assert.doesNotThrow(() => validateCaptureRequest({ operation: "capture.start", actionId: ShortcutActionId.CaptureSelection, options: { delaySeconds: 5, selection: { x: -100, y: 0, width: 200, height: 100 } } }));
+  assert.throws(() => validateCaptureRequest({ operation: "capture.start", actionId: ShortcutActionId.CommandPalette }), NativeBridgeError);
+  assert.throws(() => validateCaptureRequest({ operation: "capture.open-draft", draftId: "../escape" }), NativeBridgeError);
+  assert.match(nativeCapture, /Aes256Gcm/u);
+  assert.match(nativeCapture, /MAX_IMAGES: usize = 10/u);
+  assert.match(nativeCapture, /MAX_PNG_BYTES: usize = 50 \* 1024 \* 1024/u);
+  assert.doesNotMatch(nativeCapture, /\.video_recorder\(|println!|debug!\(|info!\(/u);
+  assert.match(tauriConfig.app.security.csp, /realqa:/u);
+});
+
+test("RealQA draft recovery runs only after the primary instance is claimed", () => {
+  const singleInstance = desktopHost.indexOf("tauri_plugin_single_instance::init");
+  const applicationSetup = desktopHost.indexOf(".setup(move |app|");
+  const draftRecovery = desktopHost.indexOf("capture_recovery.with_draft_store(|store| store.recover())");
+  assert(singleInstance >= 0);
+  assert(applicationSetup > singleInstance);
+  assert(draftRecovery > applicationSetup);
+});
+
+test("direct captures restore hidden or minimized windows only after acquisition", () => {
+  const captureStart = nativeBridgeHost.indexOf('Some("capture.start")');
+  const visibilityCheck = nativeBridgeHost.indexOf("capture_window.is_visible()", captureStart);
+  const minimizedCheck = nativeBridgeHost.indexOf("capture_window.is_minimized()", captureStart);
+  const acquisition = nativeBridgeHost.indexOf("let capture_result =", captureStart);
+  const restoration = nativeBridgeHost.indexOf("capture_window.unminimize()", acquisition);
+  assert(visibilityCheck > captureStart && visibilityCheck < acquisition);
+  assert(minimizedCheck > captureStart && minimizedCheck < acquisition);
+  assert(restoration > acquisition);
+  assert.match(nativeBridgeHost.slice(restoration), /capture_window\.show\(\)/u);
+  assert.match(nativeBridgeHost.slice(restoration), /capture_window\.set_focus\(\)/u);
+});
+
+test("capture failures emit only structured safe diagnostics", () => {
+  const captureStart = nativeBridgeHost.indexOf('Some("capture.start")');
+  const failureEvent = nativeBridgeHost.indexOf('event = "capture_failed"', captureStart);
+  const failureReturn = nativeBridgeHost.indexOf("return Err(error_code)", failureEvent);
+  assert(failureEvent > captureStart);
+  assert(failureReturn > failureEvent);
+  const diagnostic = nativeBridgeHost.slice(failureEvent, failureReturn);
+  assert.match(diagnostic, /action = action_id/u);
+  assert.match(diagnostic, /platform = capture\.adapter_platform\(\)/u);
+  assert.match(diagnostic, /error_code = %error_code/u);
+  assert.doesNotMatch(diagnostic, /options|image|editor|request/u);
 });
 
 function structuredShortcuts() {
