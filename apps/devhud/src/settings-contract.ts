@@ -8,8 +8,10 @@ import { ShortcutContractError, defaultDesktopShortcutBindings, parseDesktopShor
 import { parseUrlPattern, type UrlRepositoryMapping } from "./url-mapping";
 
 export const LegacySettingsSchemaVersion = 1 as const;
-export const PrefixUrlMappingsSettingsSchemaVersion = 2 as const;
-export const SettingsSchemaVersion = 3 as const;
+export const PreviousSettingsSchemaVersion = 2 as const;
+/** Version 3 was released independently by the Deck and shortcut branches. */
+export const CollidingSettingsSchemaVersion = 3 as const;
+export const SettingsSchemaVersion = 4 as const;
 export const MaximumUrlRepositoryMappings = 100;
 
 const Theme = ["system", "light", "dark"] as const;
@@ -29,16 +31,26 @@ type UploadProvider = (typeof UploadProvider)[number];
 type NotificationKind = (typeof NotificationKind)[number];
 type Platform = (typeof Platform)[number];
 export type GitHubCredentialKind = (typeof GitHubCredentialKind)[number];
+export type DeckReviewFilter = "approved" | "changes-requested" | "required";
+export type DeckPullRequestState = "open" | "closed" | "merged";
+
+export interface DeckBuilder {
+  readonly repository: string | null;
+  readonly author: string | null;
+  readonly review: DeckReviewFilter | null;
+  readonly label: string | null;
+  readonly state: DeckPullRequestState | null;
+}
 
 export interface DevHudSettings {
   readonly schemaVersion: typeof SettingsSchemaVersion;
   readonly appearance: { readonly theme: Theme; readonly language: Language };
   readonly decks: readonly {
     readonly id: string;
-    readonly title: string;
+    readonly name: string;
     readonly query: string;
-    readonly repository: string | null;
-    readonly profileRef: string | null;
+    readonly builder: DeckBuilder | null;
+    readonly profileRef: string;
     readonly display: { readonly groupBy: "none" | "repository" | "author"; readonly showDrafts: boolean };
     readonly refreshMinutes: 1 | 5 | 15 | 30;
     readonly notifications: readonly NotificationKind[];
@@ -71,7 +83,7 @@ export interface DevHudSettings {
   };
 }
 
-/** Compatibility alias retained for callers written before the schema-v3 migration. */
+/** Compatibility alias for callers written before the synchronized schema v4 migration. */
 export type DevHudSettingsV1 = DevHudSettings;
 
 export const defaultDevHudSettings: DevHudSettingsV1 = Object.freeze<DevHudSettingsV1>({
@@ -111,11 +123,12 @@ export function parseDevHudSettings(value: unknown): DevHudSettingsV1 {
   const root = object(value, "$", ["schemaVersion", "appearance", "decks", "github", "urlMappings", "shortcuts", "agents", "uploads"]);
   const sourceSchemaVersion = integer(root.schemaVersion, "$.schemaVersion", LegacySettingsSchemaVersion, SettingsSchemaVersion);
   const legacy = sourceSchemaVersion === LegacySettingsSchemaVersion;
-  const legacyShortcuts = sourceSchemaVersion < SettingsSchemaVersion;
 
   const appearance = object(root.appearance, "$.appearance", ["theme", "language"]);
   const decks = array(root.decks, "$.decks");
   if (decks.length > 25) throw new SettingsContractError("$.decks", "must contain at most 25 entries");
+  const previous = sourceSchemaVersion === PreviousSettingsSchemaVersion || sourceSchemaVersion === CollidingSettingsSchemaVersion && !hasCurrentDeckShape(decks[0]);
+  const legacyShortcuts = sourceSchemaVersion < SettingsSchemaVersion;
   const github = object(root.github, "$.github", legacy ? ["repositories", "issueTracker"] : ["profiles", "pendingPatRemovals", "repositories", "issueTracker"]);
   const githubProfiles = legacy ? [] : array(github.profiles, "$.github.profiles").map((entry, index) => parseGitHubProfile(entry, `$.github.profiles[${index}]`));
   if (githubProfiles.length > 25) throw new SettingsContractError("$.github.profiles", "must contain at most 25 entries");
@@ -127,7 +140,10 @@ export function parseDevHudSettings(value: unknown): DevHudSettingsV1 {
   if (pendingPatRemovals.some((profileId) => githubProfileIds.has(profileId))) throw new SettingsContractError("$.github.pendingPatRemovals", "must not reference an active GitHub profile");
   const shortcuts = object(root.shortcuts, "$.shortcuts", [...Platform]);
   const uploads = object(root.uploads, "$.uploads", ["provider", "r2"]);
-  const urlMappings = sourceSchemaVersion < SettingsSchemaVersion ? parseLegacyMappings(root.urlMappings) : parseStructuredMappings(root.urlMappings);
+  const parsedDecks = decks.flatMap((entry, index) => parseDeck(entry, `$.decks[${index}]`, legacy, previous));
+  if (new Set(parsedDecks.map((deck) => deck.id)).size !== parsedDecks.length) throw new SettingsContractError("$.decks", "must contain unique IDs");
+  const structuredMappings = sourceSchemaVersion === SettingsSchemaVersion || sourceSchemaVersion === CollidingSettingsSchemaVersion && hasStructuredURLMappingShape(root.urlMappings);
+  const urlMappings = structuredMappings ? parseStructuredMappings(root.urlMappings) : parseLegacyMappings(root.urlMappings);
   if (urlMappings.length > MaximumUrlRepositoryMappings) throw new SettingsContractError("$.urlMappings", `must contain at most ${MaximumUrlRepositoryMappings} entries`);
   if (new Set(urlMappings.map((mapping) => mapping.id)).size !== urlMappings.length) throw new SettingsContractError("$.urlMappings", "must not contain duplicate mapping IDs");
 
@@ -137,7 +153,7 @@ export function parseDevHudSettings(value: unknown): DevHudSettingsV1 {
       theme: enumeration(appearance.theme, "$.appearance.theme", Theme),
       language: enumeration(appearance.language, "$.appearance.language", Language),
     },
-    decks: decks.map((entry, index) => parseDeck(entry, `$.decks[${index}]`, legacy)),
+    decks: parsedDecks,
     github: {
       profiles: githubProfiles,
       pendingPatRemovals,
@@ -214,17 +230,18 @@ export function decodeDevHudSettings(value: Uint8Array): DevHudSettingsV1 {
   return decodeDevHudSettingsSnapshot(value).settings;
 }
 
-export function decodeDevHudSettingsSnapshot(value: Uint8Array): { readonly sourceSchemaVersion: 1 | typeof PrefixUrlMappingsSettingsSchemaVersion | typeof SettingsSchemaVersion; readonly settings: DevHudSettingsV1 } {
+export function decodeDevHudSettingsSnapshot(value: Uint8Array): { readonly sourceSchemaVersion: 1 | 2 | 3 | 4; readonly settings: DevHudSettingsV1 } {
   const canonical = validateCanonicalSettingsJson(value);
   const settings = parseDevHudSettings(canonical);
   const sourceSchemaVersion = (canonical as { readonly schemaVersion: unknown }).schemaVersion;
-  if (sourceSchemaVersion !== LegacySettingsSchemaVersion && sourceSchemaVersion !== PrefixUrlMappingsSettingsSchemaVersion && sourceSchemaVersion !== SettingsSchemaVersion) throw new SettingsContractError("$.schemaVersion", "is unsupported");
+  if (sourceSchemaVersion !== LegacySettingsSchemaVersion && sourceSchemaVersion !== PreviousSettingsSchemaVersion && sourceSchemaVersion !== CollidingSettingsSchemaVersion && sourceSchemaVersion !== SettingsSchemaVersion) throw new SettingsContractError("$.schemaVersion", "is unsupported");
   return { sourceSchemaVersion, settings };
 }
 
 export function decodeVersionedDevHudSettings(value: Uint8Array, envelopeSchemaVersion: number): DevHudSettingsV1 {
   const decoded = validateCanonicalSettingsJson(value);
-  if (decoded !== null && typeof decoded === "object" && !Array.isArray(decoded) && (decoded as Record<string, unknown>).schemaVersion !== envelopeSchemaVersion) {
+  const embeddedSchemaVersion = decoded !== null && typeof decoded === "object" && !Array.isArray(decoded) ? (decoded as Record<string, unknown>).schemaVersion : undefined;
+  if (embeddedSchemaVersion !== undefined && embeddedSchemaVersion !== envelopeSchemaVersion) {
     throw new SettingsContractError("$.schemaVersion", "must match the snapshot envelope schema version");
   }
   return parseDevHudSettings(decoded);
@@ -234,8 +251,17 @@ export function canonicalDevHudSettings(value: unknown): string {
   return canonicalizeSettingsJson(parseDevHudSettings(value));
 }
 
-function parseDeck(value: unknown, path: string, legacy: boolean): DevHudSettingsV1["decks"][number] {
-  const deck = object(value, path, legacy ? ["id", "title", "query", "repository", "display", "refreshMinutes", "notifications"] : ["id", "title", "query", "repository", "profileRef", "display", "refreshMinutes", "notifications"]);
+function hasCurrentDeckShape(value: unknown): boolean {
+  return value !== null && typeof value === "object" && !Array.isArray(value) && "name" in value;
+}
+
+function hasStructuredURLMappingShape(value: unknown): boolean {
+  const mappings = array(value, "$.urlMappings");
+  return mappings.some((mapping) => mapping !== null && typeof mapping === "object" && !Array.isArray(mapping) && "id" in mapping);
+}
+
+function parseDeck(value: unknown, path: string, legacy: boolean, previous: boolean): readonly DevHudSettingsV1["decks"][number][] {
+  const deck = object(value, path, legacy ? ["id", "title", "query", "repository", "display", "refreshMinutes", "notifications"] : previous ? ["id", "title", "query", "repository", "profileRef", "display", "refreshMinutes", "notifications"] : ["id", "name", "query", "builder", "profileRef", "display", "refreshMinutes", "notifications"]);
   const display = object(deck.display, `${path}.display`, ["groupBy", "showDrafts"]);
   const refresh = integer(deck.refreshMinutes, `${path}.refreshMinutes`, 1, 30);
   if (![1, 5, 15, 30].includes(refresh)) throw new SettingsContractError(`${path}.refreshMinutes`, "must be 1, 5, 15, or 30");
@@ -245,22 +271,328 @@ function parseDeck(value: unknown, path: string, legacy: boolean): DevHudSetting
   } catch {
     throw new SettingsContractError(`${path}.id`, "must be a canonical lowercase RFC 9562 UUID v7");
   }
-  const repository = deck.repository === null ? null : text(deck.repository, `${path}.repository`);
   const profileRef = legacy ? null : parseProfileRef(deck.profileRef, `${path}.profileRef`);
-  if (repository === null && profileRef !== null) throw new SettingsContractError(`${path}.profileRef`, "must be null when repository is null");
-  return {
+  // v1/v2 entries without a local credential are deliberately removed during migration.
+  if (profileRef === null) {
+    if (legacy || previous) return [];
+    throw new SettingsContractError(`${path}.profileRef`, "must select a local GitHub credential profile");
+  }
+  if (previous && deck.repository === null) throw new SettingsContractError(`${path}.repository`, "must be selected when a credential profile is selected");
+  const rawQuery = text(deck.query, `${path}.query`, true);
+  const legacyRepository = previous && deck.repository !== null ? text(deck.repository, `${path}.repository`) : null;
+  let query = hasPositivePullRequestQualifier(rawQuery) ? rawQuery : appendDeckQualifier(rawQuery, "is:pr");
+  if (legacyRepository !== null && !hasExactRepositoryQualifier(query, legacyRepository)) query = appendDeckQualifier(query, `repo:${legacyRepository}`);
+  if (!legacy && !hasRepositoryQualifier(query)) throw new SettingsContractError(`${path}.query`, "must contain a repository qualifier when a credential profile is selected");
+  if (!hasPositivePullRequestQualifier(query)) throw new SettingsContractError(`${path}.query`, "must contain a standalone positive is:pr qualifier");
+  const builder = legacy ? null : previous ? deckBuilderProjection(query) : parseDeckBuilder(deck.builder, `${path}.builder`);
+  if (!legacy && !previous && builder !== null && !sameDeckBuilder(builder, deckBuilderProjection(query))) {
+    throw new SettingsContractError(`${path}.builder`, "must be the lossless projection of the query");
+  }
+  const notificationValues = array(deck.notifications, `${path}.notifications`).map((item, index) => enumeration(item, `${path}.notifications[${index}]`, NotificationKind));
+  if (!legacy && !previous && new Set(notificationValues).size !== notificationValues.length) throw new SettingsContractError(`${path}.notifications`, "must contain unique values");
+  const notifications = legacy || previous ? [...new Set(notificationValues)] : notificationValues;
+  const name = previous || legacy ? text(deck.title, `${path}.title`).trim() : text(deck.name, `${path}.name`);
+  if (name.trim() !== name || name.length === 0) throw new SettingsContractError(`${path}.name`, "must be a trimmed nonblank string");
+  return [{
     id,
-    title: text(deck.title, `${path}.title`),
-    query: text(deck.query, `${path}.query`, true),
-    repository,
+    name,
+    query,
+    builder,
     profileRef,
     display: {
       groupBy: enumeration(display.groupBy, `${path}.display.groupBy`, ["none", "repository", "author"] as const),
       showDrafts: boolean(display.showDrafts, `${path}.display.showDrafts`),
     },
     refreshMinutes: refresh as 1 | 5 | 15 | 30,
-    notifications: array(deck.notifications, `${path}.notifications`).map((item, index) => enumeration(item, `${path}.notifications[${index}]`, NotificationKind)),
+    notifications,
+  }];
+}
+
+function parseDeckBuilder(value: unknown, path: string): DeckBuilder | null {
+  if (value === null) return null;
+  const builder = object(value, path, ["repository", "author", "review", "label", "state"]);
+  return {
+    repository: nullableTrimmedText(builder.repository, `${path}.repository`),
+    author: nullableTrimmedText(builder.author, `${path}.author`),
+    review: builder.review === null ? null : enumeration(builder.review, `${path}.review`, ["approved", "changes-requested", "required"] as const),
+    label: nullableTrimmedText(builder.label, `${path}.label`),
+    state: builder.state === null ? null : enumeration(builder.state, `${path}.state`, ["open", "closed", "merged"] as const),
   };
+}
+
+function sameDeckBuilder(left: DeckBuilder, right: DeckBuilder | null): boolean {
+  return right !== null && left.repository === right.repository && left.author === right.author && left.review === right.review && left.label === right.label && left.state === right.state;
+}
+
+function nullableTrimmedText(value: unknown, path: string): string | null {
+  if (value === null) return null;
+  const result = text(value, path);
+  if (result.trim() !== result) throw new SettingsContractError(path, "must be trimmed");
+  return result;
+}
+
+export function hasPositivePullRequestQualifier(query: string): boolean {
+  const branches = deckQueryBranches(query);
+  return branches !== null && branches.every((branch) => branch.hasPullRequestQualifier);
+}
+
+export function hasRepositoryQualifier(query: string): boolean {
+  const repositories = deckRepositories(query);
+  return repositories !== null && repositories.length > 0;
+}
+
+function hasExactRepositoryQualifier(query: string, repository: string): boolean {
+  const repositories = deckRepositories(query);
+  return repositories !== null && repositories.some((item) => `${item.owner}/${item.name}`.toLowerCase() === repository.toLowerCase());
+}
+
+export interface DeckRepositoryRef { readonly owner: string; readonly name: string }
+
+export const DeckRepositoryLimit = 10 as const;
+export const GitHubSearchQueryTextLimit = 256 as const;
+export const GitHubSearchQueryOperatorLimit = 5 as const;
+const DeckQueryBranchLimit = 100 as const;
+const githubOwnerIdentifier = /^[A-Za-z0-9-]{1,39}$/u;
+const githubRepositoryIdentifier = /^[A-Za-z0-9._-]{1,100}$/u;
+
+function isGitHubOwnerIdentifier(value: string): boolean {
+  return githubOwnerIdentifier.test(value) && !value.startsWith("-") && !value.endsWith("-") && !value.includes("--");
+}
+
+/** Returns null unless every Boolean branch is scoped to valid GitHub repositories. */
+export function deckRepositories(query: string): readonly DeckRepositoryRef[] | null {
+  const branches = deckQueryBranches(query);
+  if (branches === null || branches.some((branch) => branch.repositories.size === 0)) return null;
+  const repositories = new Map<string, DeckRepositoryRef>();
+  for (const branch of branches) {
+    for (const [key, repository] of branch.repositories) {
+      repositories.set(key, repository);
+      if (repositories.size > DeckRepositoryLimit) return null;
+    }
+  }
+  return [...repositories.values()];
+}
+
+export interface DeckQueryToken { readonly value: string; readonly start: number; readonly end: number; }
+
+/** Returns the editable builder fields only when the query contains builder-owned qualifiers. */
+export function deckBuilderProjection(query: string): DeckBuilder | null {
+  if (hasDeckBooleanQuerySyntax(query)) return null;
+  const tokens = deckQueryTokens(query);
+  const repository = deckBuilderValue(tokens, "repo:");
+  const author = deckBuilderValue(tokens, "author:");
+  const label = deckBuilderValue(tokens, "label:");
+  const review = deckBuilderValue(tokens, "review:");
+  const state = deckBuilderValue(tokens, "is:");
+  const normalizedReview: DeckReviewFilter | null = review?.toLowerCase() === "changes_requested" ? "changes-requested" : review?.toLowerCase() === "approved" || review?.toLowerCase() === "required" ? review.toLowerCase() as DeckReviewFilter : null;
+  const normalizedState: DeckPullRequestState | null = state?.toLowerCase() === "open" || state?.toLowerCase() === "closed" || state?.toLowerCase() === "merged" ? state.toLowerCase() as DeckPullRequestState : null;
+  if ([repository, author, label, normalizedReview, normalizedState].every((value) => value === null)) return null;
+  return { repository, author, label, review: normalizedReview, state: normalizedState };
+}
+
+export function deckBuilderToken(query: string, prefix: "repo:" | "author:" | "review:" | "label:" | "is:"): DeckQueryToken | null {
+  return deckQueryTokens(query).find((token) => token.value.slice(0, prefix.length).toLowerCase() === prefix && builderTokenIsSupported(token.value, prefix)) ?? null;
+}
+
+function deckBuilderValue(tokens: readonly DeckQueryToken[], prefix: "repo:" | "author:" | "review:" | "label:" | "is:"): string | null {
+  const token = tokens.find((item) => item.value.slice(0, prefix.length).toLowerCase() === prefix && builderTokenIsSupported(item.value, prefix));
+  return token === undefined ? null : unquoteDeckQualifier(token.value.slice(prefix.length));
+}
+
+function builderTokenIsSupported(value: string, prefix: "repo:" | "author:" | "review:" | "label:" | "is:"): boolean {
+  const token = value.slice(prefix.length);
+  const normalized = token.toLowerCase();
+  return prefix === "review:" ? normalized === "approved" || normalized === "changes_requested" || normalized === "required" : prefix === "is:" ? normalized === "open" || normalized === "closed" || normalized === "merged" : token.length > 0;
+}
+
+function unquoteDeckQualifier(value: string): string { return value.startsWith("\"") && value.endsWith("\"") ? value.slice(1, -1).replaceAll(/\\(.)/gu, "$1") : value; }
+
+function appendDeckQualifier(query: string, qualifier: string): string {
+  const source = hasDeckBooleanQuerySyntax(query) ? `(${query})` : query;
+  return `${source}${source.length === 0 || /\s$/u.test(source) ? "" : " "}${qualifier}`;
+}
+
+interface DeckQueryBranch {
+  readonly repositories: ReadonlyMap<string, DeckRepositoryRef>;
+  readonly hasPullRequestQualifier: boolean;
+}
+
+type DeckBooleanToken = { readonly kind: "term"; readonly value: string } | { readonly kind: "open" | "close" | "not" };
+const deckQueryWhitespace = /[\u0009-\u000D\u0020\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\uFEFF]/u;
+
+export function hasDeckBooleanQuerySyntax(query: string): boolean {
+  const tokens = deckBooleanTokens(query);
+  return tokens !== null && tokens.some((token) => token.kind !== "term" || token.value.toLowerCase() === "and" || token.value.toLowerCase() === "or");
+}
+
+/** Matches GitHub Search's text and Boolean-operator limits without charging qualifiers. */
+export function hasGitHubSearchQueryLimits(query: string): boolean {
+  let operators = 0;
+  let excludedLength = 0;
+  for (const token of deckQueryTokens(query)) {
+    const normalized = token.value.toLowerCase();
+    if (normalized === "and" || normalized === "or" || normalized === "not") {
+      operators += 1;
+      excludedLength += token.end - token.start;
+    } else if (isGitHubSearchQualifier(token.value)) {
+      excludedLength += token.end - token.start;
+    }
+  }
+  return operators <= GitHubSearchQueryOperatorLimit && query.length - excludedLength <= GitHubSearchQueryTextLimit;
+}
+
+function isGitHubSearchQualifier(value: string): boolean {
+  const source = value.startsWith("-") ? value.slice(1) : value;
+  const separator = source.indexOf(":");
+  return separator > 0 && /^[A-Za-z][A-Za-z0-9-]*$/u.test(source.slice(0, separator));
+}
+
+/** Parses GitHub's Boolean search grammar to prove every reachable branch is repository-scoped. */
+function deckQueryBranches(query: string): readonly DeckQueryBranch[] | null {
+  const tokens = deckBooleanTokens(query);
+  if (tokens === null || tokens.length === 0) return null;
+  let index = 0;
+  const peek = () => tokens[index];
+  const isOperator = (token: DeckBooleanToken | undefined, value: "and" | "or") => token?.kind === "term" && token.value.toLowerCase() === value;
+  const isPrimary = (token: DeckBooleanToken | undefined) => token?.kind === "open" || token?.kind === "not" || token?.kind === "term" && !isOperator(token, "and") && !isOperator(token, "or");
+  const combineAnd = (left: readonly DeckQueryBranch[], right: readonly DeckQueryBranch[]): readonly DeckQueryBranch[] | null => {
+    const combined: DeckQueryBranch[] = [];
+    for (const leftBranch of left) for (const rightBranch of right) {
+      const repositories = new Map(leftBranch.repositories);
+      for (const [key, repository] of rightBranch.repositories) repositories.set(key, repository);
+      combined.push({ repositories, hasPullRequestQualifier: leftBranch.hasPullRequestQualifier || rightBranch.hasPullRequestQualifier });
+      if (combined.length > DeckQueryBranchLimit) return null;
+    }
+    return combined;
+  };
+  const parsePrimary = (): readonly DeckQueryBranch[] | null => {
+    const token = peek();
+    if (token?.kind === "not") {
+      index += 1;
+      if (parsePrimary() === null) return null;
+      return [{ repositories: new Map(), hasPullRequestQualifier: false }];
+    }
+    if (token?.kind === "open") {
+      index += 1;
+      const nested = parseOr();
+      if (nested === null || peek()?.kind !== "close") return null;
+      index += 1;
+      return nested;
+    }
+    if (token?.kind !== "term" || isOperator(token, "and") || isOperator(token, "or")) return null;
+    index += 1;
+    const repository = deckRepositoryQualifier(token.value);
+    if (repository === undefined) return null;
+    const repositories = new Map<string, DeckRepositoryRef>();
+    if (repository !== null) repositories.set(`${repository.owner}/${repository.name}`.toLowerCase(), repository);
+    return [{ repositories, hasPullRequestQualifier: token.value.toLowerCase() === "is:pr" }];
+  };
+  const parseAnd = (): readonly DeckQueryBranch[] | null => {
+    let result = parsePrimary();
+    if (result === null) return null;
+    while (true) {
+      if (isOperator(peek(), "and")) index += 1;
+      else if (!isPrimary(peek())) break;
+      const next = parsePrimary();
+      if (next === null) return null;
+      result = combineAnd(result, next);
+      if (result === null) return null;
+    }
+    return result;
+  };
+  const parseOr = (): readonly DeckQueryBranch[] | null => {
+    let result = parseAnd();
+    if (result === null) return null;
+    while (isOperator(peek(), "or")) {
+      index += 1;
+      const next = parseAnd();
+      if (next === null || result.length + next.length > DeckQueryBranchLimit) return null;
+      result = [...result, ...next];
+    }
+    return result;
+  };
+  const branches = parseOr();
+  return branches === null || index !== tokens.length ? null : branches;
+}
+
+/** Returns undefined for invalid positive repo qualifiers and null for non-repository terms. */
+function deckRepositoryQualifier(value: string): DeckRepositoryRef | null | undefined {
+  if (value.slice(0, "repo:".length).toLowerCase() !== "repo:") return null;
+  const repositoryValue = value.slice("repo:".length);
+  const separator = repositoryValue.indexOf("/");
+  if (separator < 1 || separator !== repositoryValue.lastIndexOf("/") || separator === repositoryValue.length - 1) return undefined;
+  const repository = { owner: repositoryValue.slice(0, separator), name: repositoryValue.slice(separator + 1) };
+  return isGitHubOwnerIdentifier(repository.owner) && githubRepositoryIdentifier.test(repository.name) ? repository : undefined;
+}
+
+function deckBooleanTokens(query: string): readonly DeckBooleanToken[] | null {
+  const tokens: DeckBooleanToken[] = [];
+  let index = 0;
+  while (index < query.length) {
+    const character = query[index] as string;
+    if (deckQueryWhitespace.test(character)) { index += 1; continue; }
+    if (character === "(") { tokens.push({ kind: "open" }); index += 1; continue; }
+    if (character === ")") { tokens.push({ kind: "close" }); index += 1; continue; }
+    let value = "";
+    let quoted = false;
+    let escaped = false;
+    while (index < query.length) {
+      const next = query[index] as string;
+      if (escaped) { value += next; escaped = false; index += 1; continue; }
+      if (quoted) {
+        value += next;
+        if (next === "\\") escaped = true;
+        else if (next === "\"") quoted = false;
+        index += 1;
+        continue;
+      }
+      if (next === "\"") { value += next; quoted = true; index += 1; continue; }
+      if (deckQueryWhitespace.test(next) || next === "(" || next === ")") break;
+      value += next;
+      index += 1;
+    }
+    if (quoted || value.length === 0) return null;
+    tokens.push(value.toLowerCase() === "not" ? { kind: "not" } : { kind: "term", value });
+  }
+  return tokens;
+}
+
+/** Splits GitHub search syntax without treating quoted phrases as qualifiers. */
+function deckQueryTokens(query: string): readonly DeckQueryToken[] {
+  const tokens: DeckQueryToken[] = [];
+  let token = "";
+  let start = 0;
+  let quoted = false;
+  let escaped = false;
+  const flush = () => {
+    if (token.length > 0) tokens.push({ value: token, start, end: start + token.length });
+    token = "";
+  };
+  for (let index = 0; index < query.length; index += 1) {
+    const character = query[index] as string;
+    if (token.length === 0 && !quoted && !deckQueryWhitespace.test(character)) start = index;
+    if (escaped) {
+      token += character;
+      escaped = false;
+      continue;
+    }
+    if (quoted) {
+      token += character;
+      if (character === "\\") escaped = true;
+      else if (character === "\"") quoted = false;
+      continue;
+    }
+    if (character === "\"") {
+      token += character;
+      quoted = true;
+    } else if (deckQueryWhitespace.test(character)) {
+      flush();
+    } else {
+      token += character;
+    }
+  }
+  flush();
+  return tokens;
 }
 
 function parseIssueTracker(value: unknown, legacy: boolean): NonNullable<DevHudSettingsV1["github"]["issueTracker"]> {
@@ -395,9 +727,17 @@ function desktopShortcutMap(value: unknown, legacy: boolean): DesktopShortcutBin
   try {
     return parseDesktopShortcutBindings(value);
   } catch (error) {
-    if (!legacy) throw new SettingsContractError("$.shortcuts.desktop", error instanceof ShortcutContractError ? error.code : "malformed");
-    validateLegacyShortcutMap(value, "$.shortcuts.desktop");
-    return defaultDesktopShortcutBindings;
+    if (!legacy) {
+      const detail = error instanceof ShortcutContractError ? error.code : "malformed";
+      throw new SettingsContractError("$.shortcuts.desktop", detail);
+    }
+    try {
+      validateLegacyShortcutMap(value, "$.shortcuts.desktop");
+      return defaultDesktopShortcutBindings;
+    } catch {
+      const detail = error instanceof ShortcutContractError ? error.code : "malformed";
+      throw new SettingsContractError("$.shortcuts.desktop", detail);
+    }
   }
 }
 

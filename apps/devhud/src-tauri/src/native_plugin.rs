@@ -192,6 +192,20 @@ pub fn offer_auth_callback<R: Runtime>(app: &AppHandle<R>, candidate: &str) {
     );
 }
 
+pub fn offer_deck_link<R: Runtime>(app: &AppHandle<R>, candidate: &str) -> bool {
+    let Some(deck_id) = crate::bridge::deck_id_from_deep_link(candidate) else {
+        return false;
+    };
+    if let Some(state) = app.try_state::<crate::bridge::NativeBridgeState>() {
+        state.offer_deck_link(candidate);
+    }
+    let _ = app.emit(
+        "devhud:native-event:v1",
+        serde_json::json!({ "version": 1, "kind": "deck-link", "deckId": deck_id }),
+    );
+    true
+}
+
 #[cfg(mobile)]
 pub fn request<R: Runtime>(app: &AppHandle<R>, value: &Value) -> Result<Value, String> {
     app.state::<NativePlatformBridge<R>>().request(value)

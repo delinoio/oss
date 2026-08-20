@@ -31,6 +31,7 @@ const DEFAULT_API_ORIGIN: &str = "https://devhud.api.delino.io";
 #[derive(Clone)]
 pub struct NativeBridgeState {
     pending_auth_callback: Arc<Mutex<Option<String>>>,
+    pending_deck_link: Arc<Mutex<Option<String>>>,
     session_origins: Arc<Mutex<SessionOrigins>>,
     shortcuts: Arc<Mutex<ShortcutService<PlatformShortcutBackend>>>,
     shortcuts_ready: Arc<AtomicBool>,
@@ -112,6 +113,7 @@ impl Default for NativeBridgeState {
         let shortcut_listener_failed = Arc::new(AtomicBool::new(false));
         Self {
             pending_auth_callback: Arc::new(Mutex::new(None)),
+            pending_deck_link: Arc::new(Mutex::new(None)),
             session_origins: Arc::new(Mutex::new(SessionOrigins {
                 api_origin: DEFAULT_API_ORIGIN.to_string(),
                 logto_issuer: None,
@@ -334,6 +336,31 @@ impl NativeBridgeState {
         true
     }
 
+    pub fn offer_deck_link(&self, candidate: &str) -> bool {
+        let Some(deck_id) = deck_id_from_deep_link(candidate) else {
+            return false;
+        };
+        *self
+            .pending_deck_link
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(deck_id);
+        true
+    }
+
+    fn take_deck_link(&self) -> Option<String> {
+        self.pending_deck_link
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
+    }
+
+    fn peek_deck_link(&self) -> Option<String> {
+        self.pending_deck_link
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
     fn take_auth_callback(&self) -> Option<String> {
         self.pending_auth_callback
             .lock()
@@ -480,6 +507,33 @@ pub fn is_auth_callback(value: &str) -> bool {
         && url.username().is_empty()
         && url.password().is_none()
         && url.fragment().is_none()
+}
+
+pub fn deck_id_from_deep_link(value: &str) -> Option<String> {
+    if value.trim() != value || !value.starts_with("devhud://") {
+        return None;
+    }
+    let url = url::Url::parse(value).ok()?;
+    let id = url.path().strip_prefix('/')?;
+    let bytes = id.as_bytes();
+    let valid_id = bytes.len() == 36
+        && [8, 13, 18, 23]
+            .into_iter()
+            .all(|index| bytes[index] == b'-')
+        && bytes[14] == b'7'
+        && matches!(bytes[19], b'8' | b'9' | b'a' | b'b')
+        && bytes.iter().enumerate().all(|(index, byte)| {
+            [8, 13, 18, 23].contains(&index) || byte.is_ascii_digit() || matches!(byte, b'a'..=b'f')
+        });
+    (url.scheme() == "devhud"
+        && url.host_str() == Some("deck")
+        && valid_id
+        && url.port().is_none()
+        && url.username().is_empty()
+        && url.password().is_none()
+        && url.query().is_none()
+        && url.fragment().is_none())
+    .then_some(id.to_string())
 }
 
 fn validate_secure_request(request: &Value) -> Result<(), String> {
@@ -850,6 +904,12 @@ pub fn handle_native_bridge_request(
         }
         "auth.take-pending-callback" => {
             Ok(json!({ "kind": "auth-callback", "url": state.take_auth_callback() }))
+        }
+        "deck.peek-pending-link" => {
+            Ok(json!({ "kind": "deck-link", "deckId": state.peek_deck_link() }))
+        }
+        "deck.take-pending-link" => {
+            Ok(json!({ "kind": "deck-link", "deckId": state.take_deck_link() }))
         }
         "secure.read" | "secure.write" | "secure.remove" => {
             validate_secure_request(request)?;

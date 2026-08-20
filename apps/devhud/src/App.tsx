@@ -7,7 +7,8 @@ import type { IdentitySession } from "./identity-client";
 import { AccountIdentity, FirstRunIdentity, ShortcutPaletteTrigger, SynchronizedAppearanceBoundary, SynchronizedSettingsBoundary, SynchronizedShortcutBoundary, UrlMappingDraftProvider } from "./identity-ui";
 import { LifecycleState, NativeBridgeError, NotificationPermission, RuntimePlatform, nativeBridge, type NativeBridgeEventV1, type NativeBridgeV1, type RuntimeSnapshot } from "./native-bridge";
 import { clearIdentityForApiChange, DevHudServiceBoundary } from "./service-boundary";
-import { ContentStateKind, ContentStateView, EmptyState, OfflineState, type ContentState } from "./surface-state";
+import { ContentStateKind, ContentStateView, type ContentState } from "./surface-state";
+import { DeckPollingBoundary, DeckSurface } from "./deck-ui.tsx";
 import { ActionId, ExternalLinkTarget, LanguagePreference, PlatformCapability, SurfaceId, actionRegistry, availableActions, browserShell, completeOnboarding, getLocalStorage, hasCompletedOnboarding, isValidApiOrigin, markFrontendReady, normalizeApiOrigin, readPreferences, resolveLanguage, setTrayLanguage, synchronizeDocumentPreferences, writePreferences, type Preferences, type RuntimeCapabilities } from "./shell";
 import { ShortcutActionId } from "./shortcuts";
 import { RealqaSurface, type CaptureActionId, type RealqaController } from "./realqa-ui";
@@ -42,6 +43,9 @@ function capabilitiesFor(runtime: RuntimeSnapshot): RuntimeCapabilities {
   return { available };
 }
 
+function browserNotificationsSupported(): boolean { return typeof Notification !== "undefined"; }
+function browserNotificationPermission(): NotificationPermission { return !browserNotificationsSupported() || Notification.permission === "default" ? NotificationPermission.NotDetermined : Notification.permission === "granted" ? NotificationPermission.Authorized : NotificationPermission.Denied; }
+
 export function App({ bridge = nativeBridge, initialRuntime, initialContentState = defaultContentState }: AppProps) {
   const storage = getLocalStorage();
   const [preferences, setPreferences] = useState<Preferences>(() => readPreferences(storage));
@@ -59,6 +63,9 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   const [storeConfigured, setStoreConfigured] = useState(false);
   const [storeOpenFailed, setStoreOpenFailed] = useState(false);
   const [authCallback, setAuthCallback] = useState<string | null>(null);
+  const [deckLink, setDeckLink] = useState<string | null>(null);
+  const [deckLinkPending, setDeckLinkPending] = useState(false);
+  const [deckLinkPolicyOrigin, setDeckLinkPolicyOrigin] = useState<string | null>(null);
   const [online, setOnline] = useState(() => navigator.onLine);
   const [requestedCapture, setRequestedCapture] = useState<{ action: CaptureActionId; sequence: number } | null>(null);
   const search = useRef<HTMLInputElement>(null);
@@ -73,6 +80,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   const runtimeCapabilities = runtime ? capabilitiesFor(runtime) : { available: new Set<PlatformCapability>() };
   const mobile = runtime?.platform === RuntimePlatform.Ios || runtime?.platform === RuntimePlatform.Android;
   const isMac = runtime?.platform === RuntimePlatform.Ios || /Mac/u.test(navigator.userAgent);
+  const supportsNotifications = runtime?.capabilities.notifications === true || runtime?.platform === RuntimePlatform.Desktop && browserNotificationsSupported();
   const shortcutContext = useRef({ mobile, onboarding, capabilities: runtimeCapabilities });
   const realqaController = useRef<RealqaController | null>(null);
   shortcutContext.current = { mobile, onboarding, capabilities: runtimeCapabilities };
@@ -106,12 +114,18 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   useEffect(() => {
     let active = true;
     let unlisten: (() => void) | undefined;
+    const peekPendingDeckLink = () => {
+      void bridge.request({ operation: "deck.peek-pending-link" }).then((pendingDeck) => {
+        if (active && pendingDeck.kind === "deck-link" && pendingDeck.deckId) setDeckLinkPending(true);
+      }).catch(() => {});
+    };
     const receive = (event: NativeBridgeEventV1) => {
       if (event.version !== 1) return;
       if (event.kind === "lifecycle") setLifecycle(event.state);
       if (event.kind === "auth-callback") {
         setAuthCallback(event.url);
       }
+      if (event.kind === "deck-link") peekPendingDeckLink();
       if (event.kind === "shortcut-triggered") {
         const context = shortcutContext.current;
         if (context.mobile || context.onboarding) return;
@@ -133,7 +147,10 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
     void bridge.listen(receive).then(async (value) => {
       if (!active) { value(); return; }
       unlisten = value;
-      if (initialRuntime) return;
+      if (initialRuntime) {
+        if (initialRuntime.platform === RuntimePlatform.Desktop && window.__TAURI_INTERNALS__) peekPendingDeckLink();
+        return;
+      }
       const response = await bridge.request({ operation: "runtime.snapshot" });
       if (!active || response.kind !== "runtime") return;
       setRuntime(response.snapshot);
@@ -141,6 +158,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
       setRuntimeState(initialContentState);
       const pending = await bridge.request({ operation: "auth.peek-pending-callback" });
       if (active && pending.kind === "auth-callback" && pending.url) setAuthCallback(pending.url);
+      if (window.__TAURI_INTERNALS__) peekPendingDeckLink();
     }).catch(() => {
       if (active && !initialRuntime) setRuntimeState({ kind: ContentStateKind.Error, retryable: true });
     });
@@ -149,6 +167,18 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
       unlisten?.();
     };
   }, [bridge, initialContentState, initialRuntime]);
+  useEffect(() => {
+    if (onboarding || !deckLinkPending || deckLinkPolicyOrigin !== preferences.apiOrigin) return;
+    let active = true;
+    setDeckLinkPending(false);
+    void bridge.request({ operation: "deck.take-pending-link" }).then((pendingDeck) => {
+      if (active && pendingDeck.kind === "deck-link" && pendingDeck.deckId) {
+        setDeckLink(pendingDeck.deckId);
+        setSurface(SurfaceId.Deck);
+      }
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [bridge, deckLinkPending, deckLinkPolicyOrigin, onboarding, preferences.apiOrigin]);
   useEffect(() => {
     if (!runtime) return;
     const captureError = (event: ErrorEvent) => {
@@ -165,13 +195,17 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
     };
   }, [runtime, storage]);
   useEffect(() => {
-    if (!runtime?.capabilities.notifications || lifecycle !== LifecycleState.Active) return;
+    if (!supportsNotifications || lifecycle !== LifecycleState.Active) return;
+    if (!runtime?.capabilities.notifications) {
+      setNotificationPermission(browserNotificationPermission());
+      return;
+    }
     let active = true;
     void bridge.request({ operation: "notifications.permission" }).then((response) => {
       if (active && response.kind === "notification-permission") setNotificationPermission(response.permission);
     }).catch(() => {});
     return () => { active = false; };
-  }, [bridge, lifecycle, runtime?.capabilities.notifications]);
+  }, [bridge, lifecycle, runtime?.capabilities.notifications, supportsNotifications]);
   useEffect(() => {
     if (!runtime?.capabilities.storeUpdates) return;
     let active = true;
@@ -269,6 +303,9 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   const clearConsumedAuthCallback = useCallback((url: string) => {
     setAuthCallback((current) => current === url ? null : current);
   }, []);
+  const markDeckLinkPolicyReady = useCallback(() => {
+    setDeckLinkPolicyOrigin(preferences.apiOrigin);
+  }, [preferences.apiOrigin]);
   const applyApiOrigin = async (nextOrigin: string) => {
     const normalized = normalizeApiOrigin(nextOrigin);
     if (normalized === null || normalized === normalizeApiOrigin(preferences.apiOrigin)) return;
@@ -283,10 +320,16 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   const requestNotifications = async () => {
     setNotificationRequestFailed(false);
     try {
+      if (!runtime?.capabilities.notifications) {
+        if (!browserNotificationsSupported()) throw new Error("browser-notifications-unsupported");
+        const permission = Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
+        setNotificationPermission(permission === "granted" ? NotificationPermission.Authorized : permission === "denied" ? NotificationPermission.Denied : NotificationPermission.NotDetermined);
+        return;
+      }
       const response = await bridge.request({ operation: "notifications.request-permission" });
       if (response.kind === "notification-permission") setNotificationPermission(response.permission);
     } catch (error) {
-      if (error instanceof NativeBridgeError) setNotificationRequestFailed(true);
+      if (error instanceof NativeBridgeError || !runtime?.capabilities.notifications) setNotificationRequestFailed(true);
       else setRuntimeState({ kind: ContentStateKind.Error, retryable: true });
     }
   };
@@ -302,7 +345,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   const externalMessageText = externalMessage === "invalid-api-origin" ? copy.invalidApiOrigin : externalMessage === "opened" ? copy.externalOpened : copy.externalFailed;
   const externalMessageIsError = externalMessage !== "opened";
 
-  const boundary = (content: ReactNode) => runtime ? <DevHudServiceBoundary key={preferences.apiOrigin} apiOrigin={preferences.apiOrigin} active online={online} callbackUrl={authCallback} platform={runtime.platform} bridge={bridge} onCallbackConsumed={clearConsumedAuthCallback} onContinueLocally={finishOnboarding} onLoggedOut={() => { realqaController.current?.reset(); setRequestedCapture(null); setSurface(SurfaceId.Account); }} initialAppearance={{ theme: preferences.theme, language: preferences.language }} identitySessionRef={identitySession}><UrlMappingDraftProvider><SynchronizedAppearanceBoundary onAppearance={(appearance) => update({ theme: appearance.theme, language: appearance.language })} />{content}</UrlMappingDraftProvider></DevHudServiceBoundary> : content;
+  const boundary = (content: ReactNode) => runtime ? <DevHudServiceBoundary key={preferences.apiOrigin} apiOrigin={preferences.apiOrigin} active online={online} callbackUrl={authCallback} platform={runtime.platform} bridge={bridge} onCallbackConsumed={clearConsumedAuthCallback} onDeckLinkPolicyReady={markDeckLinkPolicyReady} onContinueLocally={finishOnboarding} onLoggedOut={() => { realqaController.current?.reset(); setRequestedCapture(null); setSurface(SurfaceId.Account); }} initialAppearance={{ theme: preferences.theme, language: preferences.language }} identitySessionRef={identitySession}><UrlMappingDraftProvider><DeckPollingBoundary bridge={bridge} active={lifecycle === LifecycleState.Active} online={online}><SynchronizedAppearanceBoundary onAppearance={(appearance) => update({ theme: appearance.theme, language: appearance.language })} />{content}</DeckPollingBoundary></UrlMappingDraftProvider></DevHudServiceBoundary> : content;
 
   if (runtimeState.kind !== ContentStateKind.Ready) return <main className="app-shell onboarding" data-devhud-ready="true"><section className="content"><ContentStateView state={runtimeState} copy={copy} onRetry={() => location.reload()} /></section></main>;
 
@@ -320,8 +363,8 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
       {surface === SurfaceId.Realqa && mobile && <><p className="eyebrow">{copy.desktopOnly}</p><h2>{copy.realqaMobileTitle}</h2><p>{copy.realqaMobileSummary}</p><p className="notice">{copy.unavailable}</p></>}
       {!mobile && runtimeCapabilities.available.has(PlatformCapability.Capture) && <RealqaSurface ref={realqaController} bridge={bridge} copy={copy} active={surface === SurfaceId.Realqa} paletteOpen={palette} onActivate={() => setSurface(SurfaceId.Realqa)} requestedAction={requestedCapture} onRequestedActionConsumed={consumeRequestedCapture} />}
       {surface === SurfaceId.Realqa && !mobile && !runtimeCapabilities.available.has(PlatformCapability.Capture) && <><p className="eyebrow">{copy.realqa}</p><h2>{copy.realqaTitle}</h2><p>{copy.realqaSummary}</p><div className="disabled-actions">{unavailableCaptureActions.map((action) => <button disabled key={action.id}>{copy[action.title]}</button>)}</div><p className="notice">{copy.unavailable}</p></>}
-      {surface === SurfaceId.Deck && <><p className="eyebrow">{copy.deck}</p><h2>{copy.deckTitle}</h2><p>{copy.deckSummary}</p>{online ? <EmptyState copy={copy} /> : <OfflineState copy={copy} />}</>}
-      {surface === SurfaceId.Settings && <><p className="eyebrow">{copy.settings}</p><h2>{copy.settingsTitle}</h2><p>{copy.settingsSummary}</p><SynchronizedSettingsBoundary copy={copy} bridge={bridge} onOpenExternal={openExternal} showNativeShortcuts={runtime?.platform === RuntimePlatform.Desktop} shortcutCapabilities={runtimeCapabilities} />{supportsLaunchAtLogin && <><label className="check"><input type="checkbox" checked={preferences.launchAtLogin} onChange={(event) => { update({ launchAtLogin: event.target.checked }); void browserShell.setLaunchAtLogin(event.target.checked); }} />{copy.launchAtLogin}</label><p>{copy.launchAtLoginHint}</p></>}{runtime?.capabilities.notifications && <div className="native-setting"><button className="primary" onClick={() => void requestNotifications()}>{copy.notificationPermission}</button><output aria-live="polite">{copy[notificationPermissionLabels[notificationPermission]]}</output>{notificationRequestFailed && <p className="native-setting-error" role="alert">{copy.notificationPermissionFailed}</p>}</div>}{runtime?.capabilities.storeUpdates && <div className="native-setting"><p>{copy.updatePolicy}</p>{storeConfigured && <button className="primary" onClick={() => void openStore()}>{copy.updatePolicy}</button>}{storeOpenFailed && <p className="native-setting-error" role="alert">{copy.storeOpenFailed}</p>}</div>}</>}
+      {surface === SurfaceId.Deck && <DeckSurface copy={copy} bridge={bridge} selectedDeckId={deckLink} onDismissMissingLink={() => setDeckLink(null)} />}
+      {surface === SurfaceId.Settings && <><p className="eyebrow">{copy.settings}</p><h2>{copy.settingsTitle}</h2><p>{copy.settingsSummary}</p><SynchronizedSettingsBoundary copy={copy} bridge={bridge} onOpenExternal={openExternal} showNativeShortcuts={runtime?.platform === RuntimePlatform.Desktop} shortcutCapabilities={runtimeCapabilities} />{supportsLaunchAtLogin && <><label className="check"><input type="checkbox" checked={preferences.launchAtLogin} onChange={(event) => { update({ launchAtLogin: event.target.checked }); void browserShell.setLaunchAtLogin(event.target.checked); }} />{copy.launchAtLogin}</label><p>{copy.launchAtLoginHint}</p></>}{supportsNotifications && <div className="native-setting"><button className="primary" onClick={() => void requestNotifications()}>{copy.notificationPermission}</button><output aria-live="polite">{copy[notificationPermissionLabels[notificationPermission]]}</output>{notificationRequestFailed && <p className="native-setting-error" role="alert">{copy.notificationPermissionFailed}</p>}</div>}{runtime?.capabilities.storeUpdates && <div className="native-setting"><p>{copy.updatePolicy}</p>{storeConfigured && <button className="primary" onClick={() => void openStore()}>{copy.updatePolicy}</button>}{storeOpenFailed && <p className="native-setting-error" role="alert">{copy.storeOpenFailed}</p>}</div>}</>}
       {surface === SurfaceId.Account && <><AccountIdentity copy={copy} apiOrigin={preferences.apiOrigin} inputRef={apiOriginInput} onApiOrigin={applyApiOrigin} /><div className="actions"><button onClick={() => void external(ExternalLinkTarget.Pat)}>{copy.githubCreateFinePat}</button><button onClick={() => void external(ExternalLinkTarget.ClassicPat)}>{copy.githubCreateClassicPat}</button>{!mobile && <button onClick={() => void external(ExternalLinkTarget.Issue)}>{copy.issue}</button>}</div>{externalMessage && <p className="external-message" role={externalMessageIsError ? "alert" : "status"}>{externalMessageText}</p>}</>}
       {surface === SurfaceId.Diagnostics && <><p className="eyebrow">{copy.diagnostics}</p><h2>{copy.diagnosticsTitle}</h2><p>{copy.diagnosticsSummary}</p>{runtime && <><dl className="runtime-diagnostics"><dt>{copy.diagnosticPlatform}</dt><dd>{runtime.operatingSystem}</dd><dt>{copy.diagnosticArchitecture}</dt><dd>{runtime.architecture}</dd><dt>{copy.diagnosticBridge}</dt><dd>v{runtime.bridgeVersion}</dd></dl><DiagnosticsPanel copy={copy} runtime={runtime} bridge={bridge} storage={storage} online={online} /></>}</>}
     </section>
