@@ -1,11 +1,37 @@
 package updates
 
 import (
+	"bytes"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"testing/fstest"
 )
+
+type countingFS struct {
+	inner     fs.FS
+	bytesRead int
+}
+
+func (filesystem *countingFS) Open(name string) (fs.File, error) {
+	file, err := filesystem.inner.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	return &countingFile{File: file, bytesRead: &filesystem.bytesRead}, nil
+}
+
+type countingFile struct {
+	fs.File
+	bytesRead *int
+}
+
+func (file *countingFile) Read(buffer []byte) (int, error) {
+	read, err := file.File.Read(buffer)
+	*file.bytesRead += read
+	return read, err
+}
 
 func TestServesOnlyExactStableTargetsAndInstalledPackage(t *testing.T) {
 	manifest := []byte(`{"schemaVersion":1}`)
@@ -66,5 +92,28 @@ func TestRejectsUnsupportedMissingAndMalformedRequests(t *testing.T) {
 				t.Fatalf("status = %d, want %d", response.Code, testCase.expected)
 			}
 		})
+	}
+}
+
+func TestRejectsOversizedManifestAfterBoundedRead(t *testing.T) {
+	manifestPath := "stable/linux/x86_64/linux-appimage.json"
+	manifests := &countingFS{inner: fstest.MapFS{
+		manifestPath: {Data: bytes.Repeat([]byte("x"), maxManifestBytes*2)},
+	}}
+	handler := NewHandler(manifests)
+	request := httptest.NewRequest(http.MethodGet, "/updates/stable/linux/x86_64.json", nil)
+	request.SetPathValue("channel", "stable")
+	request.SetPathValue("platform", "linux")
+	request.SetPathValue("artifact", "x86_64.json")
+	request.Header.Set("X-DevHud-Package", "linux-appimage")
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusServiceUnavailable)
+	}
+	if manifests.bytesRead != maxManifestBytes+1 {
+		t.Fatalf("read %d manifest bytes, want %d", manifests.bytesRead, maxManifestBytes+1)
 	}
 }

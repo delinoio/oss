@@ -54,6 +54,7 @@ export function DesktopUpdaterPanel({ bridge, language }: { readonly bridge: Nat
   const copy = updaterCopy[language];
   const [status, setStatus] = useState<DesktopUpdaterStatus | null>(null);
   const [approval, setApproval] = useState<Approval | null>(null);
+  const statusRevision = useRef(0);
   const confirmButton = useRef<HTMLButtonElement>(null);
   const confirmationDialog = useRef<HTMLElement>(null);
   const approvalOpener = useRef<HTMLElement | null>(null);
@@ -61,11 +62,18 @@ export function DesktopUpdaterPanel({ bridge, language }: { readonly bridge: Nat
   useEffect(() => {
     let active = true;
     let unsubscribe: (() => void) | undefined;
+    const requestedAtRevision = statusRevision.current;
     void bridge.request({ operation: "updates.status" }).then((response) => {
-      if (active && response.kind === "desktop-update-status") setStatus(response.status);
+      if (active && response.kind === "desktop-update-status" && statusRevision.current === requestedAtRevision) {
+        statusRevision.current += 1;
+        setStatus(response.status);
+      }
     }).catch(() => {});
     void bridge.listen((event) => {
-      if (active && event.kind === "desktop-update-status") setStatus(event.status);
+      if (active && event.kind === "desktop-update-status") {
+        statusRevision.current += 1;
+        setStatus(event.status);
+      }
     }).then((unlisten) => { if (active) unsubscribe = unlisten; else unlisten(); }).catch(() => {});
     return () => { active = false; unsubscribe?.(); };
   }, [bridge]);
@@ -73,8 +81,12 @@ export function DesktopUpdaterPanel({ bridge, language }: { readonly bridge: Nat
   useEffect(() => { if (approval) confirmButton.current?.focus(); }, [approval]);
 
   const request = async (operation: "updates.check" | "updates.approve-download" | "updates.cancel" | "updates.approve-installation" | "updates.approve-restart") => {
+    const requestedAtRevision = statusRevision.current;
     const response: NativeBridgeResponseV1 = await bridge.request({ operation });
-    if (response.kind === "desktop-update-status") setStatus(response.status);
+    if (response.kind === "desktop-update-status" && statusRevision.current === requestedAtRevision) {
+      statusRevision.current += 1;
+      setStatus(response.status);
+    }
   };
   const openApproval = (next: Approval, opener: HTMLElement) => {
     approvalOpener.current = opener;

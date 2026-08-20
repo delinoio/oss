@@ -38,6 +38,7 @@ reqwest = { version = "=0.12.28", default-features = false, features = ["blockin
 semver = { version = "=1.0.27", features = ["serde"] }
 tempfile = "=3.25.0"
 time = { version = "=0.3.55", features = ["parsing"] }
+tokio = { version = "=1.49.0", features = ["macros", "time"] }
 png = "=0.17.16"
 rand = "=0.9.4"
 sha2 = "=0.10.9"

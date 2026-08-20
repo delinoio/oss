@@ -96,6 +96,7 @@ export function parseNativeTrustRoot(source) {
 
 export function validateUpdaterRelease(root, updaterRust) {
   const publicKey = Buffer.from(root.publicKey, "base64");
+  if (publicKey.toString("base64") !== root.publicKey) throw new Error("DevHud updater trust root public key must use canonical Base64");
   const fingerprint = createHash("sha256").update(publicKey).digest("hex");
   if (root.schemaVersion !== 1 || root.keyId !== "devhud-release-root-v1" || root.algorithm !== "ed25519") throw new Error("unsupported DevHud updater trust root");
   if (publicKey.length !== 32 || root.fingerprint !== fingerprint) throw new Error("DevHud updater trust root fingerprint mismatch");

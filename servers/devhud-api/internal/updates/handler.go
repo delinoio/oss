@@ -3,6 +3,7 @@ package updates
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"io/fs"
 	"net/http"
 	"path"
@@ -58,12 +59,18 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		http.Error(response, "unsupported updater target", http.StatusBadRequest)
 		return
 	}
-	manifest, err := fs.ReadFile(handler.manifests, manifestPath)
+	manifestFile, err := handler.manifests.Open(manifestPath)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			http.NotFound(response, request)
 			return
 		}
+		http.Error(response, "manifest unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	defer func() { _ = manifestFile.Close() }()
+	manifest, err := io.ReadAll(io.LimitReader(manifestFile, int64(maxManifestBytes)+1))
+	if err != nil {
 		http.Error(response, "manifest unavailable", http.StatusServiceUnavailable)
 		return
 	}

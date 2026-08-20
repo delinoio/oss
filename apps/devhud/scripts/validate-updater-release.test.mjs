@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 
-import { parseNativeTrustRoot } from "./validate-updater-release.mjs";
+import { parseNativeTrustRoot, validateUpdaterRelease } from "./validate-updater-release.mjs";
 
 const declarations = `
 pub const ROOT_KEY_ID: &str = "devhud-release-root-v1";
@@ -39,4 +40,25 @@ test("rejects duplicate, missing, and commented-out native declarations", () => 
   assert.throws(() => parseNativeTrustRoot(`${declarations}\npub const ROOT_PRODUCTION_READY: bool = true;`), /exactly one active native ROOT_PRODUCTION_READY/u);
   assert.throws(() => parseNativeTrustRoot(declarations.replace(/pub const ROOT_FINGERPRINT[^;]+;/u, "")), /exactly one active native ROOT_FINGERPRINT/u);
   assert.throws(() => parseNativeTrustRoot(declarations.replace("pub const ROOT_PRODUCTION_READY: bool = true;", "/* pub const ROOT_PRODUCTION_READY: bool = true; */")), /exactly one active native ROOT_PRODUCTION_READY/u);
+});
+
+test("rejects non-canonical Base64 public keys", () => {
+  const canonical = Buffer.alloc(32, 7).toString("base64");
+  for (const publicKey of [canonical.replace(/=$/u, ""), `${canonical.slice(0, 8)} ${canonical.slice(8)}`, `${canonical.slice(0, 8)}!${canonical.slice(8)}`]) {
+    const decoded = Buffer.from(publicKey, "base64");
+    const fingerprint = createHash("sha256").update(decoded).digest("hex");
+    const root = {
+      schemaVersion: 1,
+      keyId: "devhud-release-root-v1",
+      algorithm: "ed25519",
+      publicKey,
+      fingerprint,
+      productionReady: true,
+    };
+    const native = declarations
+      .replace("native-key", publicKey)
+      .replace("native-fingerprint", fingerprint);
+
+    assert.throws(() => validateUpdaterRelease(root, native), /canonical Base64/u);
+  }
 });

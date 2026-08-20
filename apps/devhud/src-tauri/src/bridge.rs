@@ -1243,10 +1243,15 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
         let worker_cancellation = canceled.clone();
         let updater_state = state.inner().clone();
         let updater_app = app.clone();
-        std::mem::drop(tauri::async_runtime::spawn_blocking(move || {
-            let artifact = crate::updater::UpdaterTransport::new().and_then(|transport| {
-                transport.download(&candidate, package, &worker_cancellation)
-            });
+        std::mem::drop(tauri::async_runtime::spawn(async move {
+            let artifact = match crate::updater::UpdaterTransport::new() {
+                Ok(transport) => {
+                    transport
+                        .download(&candidate, package, &worker_cancellation)
+                        .await
+                }
+                Err(error) => Err(error),
+            };
             let snapshot = {
                 let mut updater = updater_state
                     .updater

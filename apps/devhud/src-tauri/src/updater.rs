@@ -7,6 +7,7 @@
 use std::{
     collections::HashSet,
     fs,
+    future::Future,
     io::{Read, Write},
     path::{Path, PathBuf},
     process::{Child, Command},
@@ -20,8 +21,8 @@ use std::{
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use ed25519_dalek::{Signature, StreamVerifier, Verifier, VerifyingKey};
 use reqwest::{
-    StatusCode,
-    blocking::{Client, Response},
+    Client as AsyncClient, Response as AsyncResponse, StatusCode,
+    blocking::{Client as BlockingClient, Response as BlockingResponse},
     header::{ACCEPT, CONTENT_LENGTH, LOCATION, RETRY_AFTER, USER_AGENT},
     redirect::Policy,
 };
@@ -44,6 +45,7 @@ pub const ROOT_KEY_ID: &str = "devhud-release-root-v1";
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const DISCOVERY_TIMEOUT: Duration = Duration::from_secs(30);
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(2 * 60 * 60);
+const CANCELLATION_POLL_INTERVAL: Duration = Duration::from_millis(100);
 const ARTIFACT_SIGNATURE_DOMAIN: &[u8] = b"devhud-update-artifact-v1\0";
 
 // This is a syntactically valid, public RFC 8032 test-vector key. Publication
@@ -568,19 +570,19 @@ fn validate_redirect(value: &str) -> Result<Url, UpdaterError> {
 }
 
 pub struct UpdaterTransport {
-    discovery_client: Client,
-    download_client: Client,
+    discovery_client: BlockingClient,
+    download_client: AsyncClient,
 }
 
 impl UpdaterTransport {
     pub fn new() -> Result<Self, UpdaterError> {
-        let discovery_client = Client::builder()
+        let discovery_client = BlockingClient::builder()
             .redirect(Policy::none())
             .connect_timeout(CONNECT_TIMEOUT)
             .timeout(DISCOVERY_TIMEOUT)
             .build()
             .map_err(|_| UpdaterError::new(DiagnosticCode::Offline, UpdatePhase::Discovery))?;
-        let download_client = Client::builder()
+        let download_client = AsyncClient::builder()
             .redirect(Policy::none())
             .connect_timeout(CONNECT_TIMEOUT)
             .timeout(DOWNLOAD_TIMEOUT)
@@ -611,57 +613,74 @@ impl UpdaterTransport {
         read_manifest_response(response)
     }
 
-    pub fn download(
+    pub async fn download(
         &self,
         candidate: &VerifiedCandidate,
         package_kind: PackageKind,
         canceled: &AtomicBool,
     ) -> Result<VerifiedArtifact, UpdaterError> {
-        let mut url = validate_artifact_url(
-            &candidate.payload.artifact.url,
-            &candidate.payload.version,
-            package_kind,
-        )?;
-        for redirect_count in 0..=MAX_REDIRECTS {
-            if canceled.load(Ordering::Acquire) {
-                return Err(UpdaterError::new(
-                    DiagnosticCode::Canceled,
-                    UpdatePhase::Download,
-                ));
-            }
-            let response = self
-                .download_client
-                .get(url.clone())
-                .header(ACCEPT, "application/octet-stream")
-                .header(USER_AGENT, "DevHud-Updater/1")
-                .send()
-                .map_err(|_| {
-                    UpdaterError::new(DiagnosticCode::DownloadFailed, UpdatePhase::Download)
-                })?;
-            if response.status().is_redirection() {
-                if redirect_count == MAX_REDIRECTS {
-                    return Err(UpdaterError::new(
-                        DiagnosticCode::Unsupported,
-                        UpdatePhase::Download,
-                    ));
-                }
-                let location = response
-                    .headers()
-                    .get(LOCATION)
-                    .and_then(|value| value.to_str().ok())
-                    .ok_or_else(|| {
-                        UpdaterError::new(DiagnosticCode::Malformed, UpdatePhase::Download)
+        cancelable_download(canceled, async {
+            let mut url = validate_artifact_url(
+                &candidate.payload.artifact.url,
+                &candidate.payload.version,
+                package_kind,
+            )?;
+            for redirect_count in 0..=MAX_REDIRECTS {
+                let response = self
+                    .download_client
+                    .get(url.clone())
+                    .header(ACCEPT, "application/octet-stream")
+                    .header(USER_AGENT, "DevHud-Updater/1")
+                    .send()
+                    .await
+                    .map_err(|_| {
+                        UpdaterError::new(DiagnosticCode::DownloadFailed, UpdatePhase::Download)
                     })?;
-                url = validate_redirect(location)?;
-                continue;
+                if response.status().is_redirection() {
+                    if redirect_count == MAX_REDIRECTS {
+                        return Err(UpdaterError::new(
+                            DiagnosticCode::Unsupported,
+                            UpdatePhase::Download,
+                        ));
+                    }
+                    let location = response
+                        .headers()
+                        .get(LOCATION)
+                        .and_then(|value| value.to_str().ok())
+                        .ok_or_else(|| {
+                            UpdaterError::new(DiagnosticCode::Malformed, UpdatePhase::Download)
+                        })?;
+                    url = validate_redirect(location)?;
+                    continue;
+                }
+                return read_artifact_response(response, candidate).await;
             }
-            return read_artifact_response(response, candidate, canceled);
-        }
-        unreachable!("redirect loop is bounded")
+            unreachable!("redirect loop is bounded")
+        })
+        .await
     }
 }
 
-fn read_manifest_response(response: Response) -> Result<Vec<u8>, UpdaterError> {
+async fn wait_for_cancellation(canceled: &AtomicBool) {
+    while !canceled.load(Ordering::Acquire) {
+        tokio::time::sleep(CANCELLATION_POLL_INTERVAL).await;
+    }
+}
+
+async fn cancelable_download<T>(
+    canceled: &AtomicBool,
+    download: impl Future<Output = Result<T, UpdaterError>>,
+) -> Result<T, UpdaterError> {
+    tokio::select! {
+        result = download => result,
+        () = wait_for_cancellation(canceled) => Err(UpdaterError::new(
+            DiagnosticCode::Canceled,
+            UpdatePhase::Download,
+        )),
+    }
+}
+
+fn read_manifest_response(response: BlockingResponse) -> Result<Vec<u8>, UpdaterError> {
     let status = response.status();
     if status == StatusCode::TOO_MANY_REQUESTS {
         let retry_after_seconds = response
@@ -716,10 +735,9 @@ fn read_manifest_response(response: Response) -> Result<Vec<u8>, UpdaterError> {
     Ok(bytes)
 }
 
-fn read_artifact_response(
-    mut response: Response,
+async fn read_artifact_response(
+    mut response: AsyncResponse,
     candidate: &VerifiedCandidate,
-    canceled: &AtomicBool,
 ) -> Result<VerifiedArtifact, UpdaterError> {
     if !response.status().is_success()
         || response
@@ -737,34 +755,19 @@ fn read_artifact_response(
     let mut bytes =
         Vec::with_capacity(candidate.payload.artifact.size.min(16 * 1024 * 1024) as usize);
     let mut verifier = ArtifactVerifier::new(candidate)?;
-    let mut buffer = [0_u8; 64 * 1024];
-    loop {
-        if canceled.load(Ordering::Acquire) {
-            return Err(UpdaterError::new(
-                DiagnosticCode::Canceled,
-                UpdatePhase::Download,
-            ));
-        }
-        let read = response.read(&mut buffer).map_err(|_| {
-            UpdaterError::new(DiagnosticCode::DownloadFailed, UpdatePhase::Download)
-        })?;
-        if read == 0 {
-            break;
-        }
-        if bytes.len().saturating_add(read) as u64 > candidate.payload.artifact.size {
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|_| UpdaterError::new(DiagnosticCode::DownloadFailed, UpdatePhase::Download))?
+    {
+        if bytes.len().saturating_add(chunk.len()) as u64 > candidate.payload.artifact.size {
             return Err(UpdaterError::new(
                 DiagnosticCode::VerificationFailed,
                 UpdatePhase::Verification,
             ));
         }
-        verifier.update(&buffer[..read]);
-        bytes.extend_from_slice(&buffer[..read]);
-    }
-    if canceled.load(Ordering::Acquire) {
-        return Err(UpdaterError::new(
-            DiagnosticCode::Canceled,
-            UpdatePhase::Download,
-        ));
+        verifier.update(&chunk);
+        bytes.extend_from_slice(&chunk);
     }
     verifier.finish(bytes)
 }
@@ -1328,13 +1331,35 @@ fn sibling_backup_path(destination: &Path) -> Result<PathBuf, DiagnosticCode> {
 }
 
 #[cfg(target_os = "linux")]
+fn copy_appimage_backup(
+    destination: &Path,
+    backup: &Path,
+    copy: impl FnOnce(&Path, &Path) -> std::io::Result<u64>,
+) -> Result<(), DiagnosticCode> {
+    if copy(destination, backup).is_ok() {
+        return Ok(());
+    }
+    if let Err(error) = fs::remove_file(backup)
+        && error.kind() != std::io::ErrorKind::NotFound
+    {
+        tracing::error!(
+            event = "updater_install_backup_cleanup_failed",
+            package = "linux-appimage"
+        );
+    }
+    Err(DiagnosticCode::InstallationFailed)
+}
+
+#[cfg(target_os = "linux")]
 fn replace_file_transactionally(
     destination: &Path,
     replacement: tempfile::NamedTempFile,
     relaunch: impl FnOnce(&Path) -> Result<(), DiagnosticCode>,
 ) -> Result<(), DiagnosticCode> {
     let backup = sibling_backup_path(destination)?;
-    fs::copy(destination, &backup).map_err(|_| DiagnosticCode::InstallationFailed)?;
+    copy_appimage_backup(destination, &backup, |source, backup| {
+        fs::copy(source, backup)
+    })?;
     if replacement.persist(destination).is_err() {
         let _ = fs::remove_file(&backup);
         return Err(DiagnosticCode::InstallationFailed);
@@ -2033,6 +2058,30 @@ mod tests {
     }
 
     #[test]
+    fn cancellation_interrupts_a_stalled_download() {
+        let canceled = Arc::new(AtomicBool::new(false));
+        let worker_cancellation = canceled.clone();
+        let canceler = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(20));
+            worker_cancellation.store(true, Ordering::Release);
+        });
+        let result = tauri::async_runtime::block_on(async {
+            tokio::time::timeout(
+                Duration::from_secs(1),
+                cancelable_download(
+                    &canceled,
+                    std::future::pending::<Result<(), UpdaterError>>(),
+                ),
+            )
+            .await
+            .expect("cancellation must bound a stalled download")
+        });
+        canceler.join().unwrap();
+
+        assert_eq!(result.unwrap_err().code, DiagnosticCode::Canceled);
+    }
+
+    #[test]
     fn package_install_restart_failure_is_retried_without_reinstalling() {
         let root = SigningKey::from_bytes(&RFC_ROOT_SEED);
         let signed = fixture("0.2.0", &root, vec![], None);
@@ -2150,6 +2199,24 @@ mod tests {
             Err(DiagnosticCode::RestartFailed)
         });
         assert_eq!(result, Err(DiagnosticCode::RestartFailed));
+        assert_eq!(fs::read(destination).unwrap(), b"installed-version");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn failed_appimage_backup_copy_removes_partial_backup() {
+        let directory = tempfile::tempdir().unwrap();
+        let destination = directory.path().join("DevHud.AppImage");
+        fs::write(&destination, b"installed-version").unwrap();
+        let backup = sibling_backup_path(&destination).unwrap();
+
+        let result = copy_appimage_backup(&destination, &backup, |_, backup| {
+            fs::write(backup, b"partial-backup")?;
+            Err(std::io::Error::other("simulated copy failure"))
+        });
+
+        assert_eq!(result, Err(DiagnosticCode::InstallationFailed));
+        assert!(!backup.exists());
         assert_eq!(fs::read(destination).unwrap(), b"installed-version");
     }
 

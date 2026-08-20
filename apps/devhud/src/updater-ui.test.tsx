@@ -69,6 +69,34 @@ describe("desktop updater approvals", () => {
     ]));
   });
 
+  it("does not let a stale command response replace a newer updater event", async () => {
+    let listener: ((event: NativeBridgeEventV1) => void) | undefined;
+    let resolveDownload: ((response: NativeBridgeResponseV1) => void) | undefined;
+    const request = vi.fn((value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      if (value.operation === "updates.status") return Promise.resolve({ kind: "desktop-update-status", status: available });
+      if (value.operation === "updates.approve-download") {
+        return new Promise((resolve) => { resolveDownload = resolve; });
+      }
+      return Promise.resolve({ kind: "desktop-update-status", status: available });
+    });
+    const bridge: NativeBridgeV1 = {
+      request,
+      async listen(next) { listener = next; return () => {}; },
+    };
+    render(<DesktopUpdaterPanel bridge={bridge} language="en" />);
+    await screen.findByRole("button", { name: "Approve download" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Approve download" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    await waitFor(() => expect(resolveDownload).toBeTypeOf("function"));
+    listener?.({ version: 1, kind: "desktop-update-status", status: { ...available, kind: "downloaded" } });
+    expect(await screen.findByRole("button", { name: "Approve installation" })).toBeTruthy();
+
+    resolveDownload?.({ kind: "desktop-update-status", status: { ...available, kind: "downloading" } });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Approve installation" })).toBeTruthy());
+    expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
+  });
+
   it("cancels a confirmation with Escape without invoking a native action", async () => {
     const { bridge, operations } = bridgeWithStatus(available);
     render(<DesktopUpdaterPanel bridge={bridge} language="en" />);
