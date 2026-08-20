@@ -1030,8 +1030,8 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
                     .take()
                     .expect("account exit purge must invalidate pairing")
                     .commit();
-                let secure_store_result = purge_secure_store()
-                    .map_err(|_| "storage-failure".to_string());
+                let secure_store_result =
+                    purge_secure_store().map_err(|_| "storage-failure".to_string());
                 pairing_result?;
                 secure_store_result
             };
