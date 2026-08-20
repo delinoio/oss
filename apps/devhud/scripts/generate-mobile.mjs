@@ -84,6 +84,8 @@ export function configureIosWidgetProject(projectPath = join(generatedRoot, "app
     sources: [
       { path: "DevHudWidget", excludes: ["Info.plist", "DevHudWidget.entitlements"] },
       { path: "DevHudWidgetShared/SelectDeck.intentdefinition" },
+      { path: "DevHudWidgetShared/en.lproj" },
+      { path: "DevHudWidgetShared/ko.lproj" },
     ],
     settings: { base: { PRODUCT_BUNDLE_IDENTIFIER: "io.delino.devhud.widget", PRODUCT_NAME: "DevHUD Deck", CURRENT_PROJECT_VERSION: "1", MARKETING_VERSION: "0.1.0", SKIP_INSTALL: "YES", SWIFT_VERSION: "5.9", TARGETED_DEVICE_FAMILY: "1,2", INFOPLIST_FILE: "DevHudWidget/Info.plist", CODE_SIGN_ENTITLEMENTS: "DevHudWidget/DevHudWidget.entitlements" } },
   };
@@ -94,6 +96,8 @@ export function configureIosWidgetProject(projectPath = join(generatedRoot, "app
     sources: [
       { path: "DevHudWidgetIntent", excludes: ["Info.plist", "DevHudWidgetIntent.entitlements"] },
       { path: "DevHudWidgetShared/SelectDeck.intentdefinition" },
+      { path: "DevHudWidgetShared/en.lproj" },
+      { path: "DevHudWidgetShared/ko.lproj" },
     ],
     settings: { base: { PRODUCT_BUNDLE_IDENTIFIER: "io.delino.devhud.widget.intent", PRODUCT_NAME: "DevHUD Deck Selection", CURRENT_PROJECT_VERSION: "1", MARKETING_VERSION: "0.1.0", SKIP_INSTALL: "YES", SWIFT_VERSION: "5.9", TARGETED_DEVICE_FAMILY: "1,2", INFOPLIST_FILE: "DevHudWidgetIntent/Info.plist", CODE_SIGN_ENTITLEMENTS: "DevHudWidgetIntent/DevHudWidgetIntent.entitlements" } },
   };

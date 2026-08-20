@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="devhud_widget_name">DevHUD 덱</string>
     <string name="devhud_widget_description">선택한 DevHUD Deck 하나</string><string name="devhud_widget_choose_deck">Deck 하나 선택</string><string name="devhud_widget_select_deck">%1$s 선택</string>
     <string name="devhud_widget_privacy_warning">위젯 콘텐츠에는 비공개 저장소 및 풀 리퀘스트 제목이 포함될 수 있습니다. 런처, 스크린샷, 백업, 알림 및 주변 사람이 이를 볼 수 있습니다.</string>
     <string name="devhud_widget_setup">DevHUD를 열고 위젯에서 사용할 Deck을 설정하세요</string><string name="devhud_widget_counts">전체 %1$d · 열림 %2$d · 초안 %3$d · 병합 %4$d · 닫힘 %5$d</string><string name="devhud_widget_first_hundred"> · 상태 개수: 처음 100개</string><string name="devhud_widget_no_results">풀 리퀘스트 없음</string>

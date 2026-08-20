@@ -1,4 +1,4 @@
-import { createContext, use, useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type PropsWithChildren } from "react";
+import { createContext, use, useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type PropsWithChildren } from "react";
 import { applyDeckBuilder, classifyDeckFailure, clearDeckCache, DeckLimit, deckTransitionKeys, nextDeckRefresh, parseDeckBuilder, readDeckCache, validateDeckQuery, writeDeckCache, type DeckCache, type DeckFailure, type DeckPendingNotification } from "./deck.ts";
 import { createGitHubProvider, GitHubErrorCode, GitHubOperation, GitHubProviderError, readGitHubCredential, type GitHubCredential, type GitHubDeckPullRequest, type GitHubProvider } from "./github-provider.ts";
 import type { Copy } from "./localization.ts";
@@ -148,8 +148,9 @@ export function DeckPollingBoundary({ bridge, active, online, provider: supplied
       if (!canContinue()) return;
       await validateRepositories(credential, repositories, false, canContinue);
       if (!canContinue()) return;
-      const search = await provider.searchPullRequests(credential, currentDeck.query, { etag: currentCache?.queryEtag ?? undefined });
+      const search = await provider.searchPullRequests(credential, currentDeck.query, { etag: currentCache?.totalCount === undefined ? undefined : currentCache.queryEtag ?? undefined });
       if (!canContinue()) return;
+      if (search.notModified && currentCache?.totalCount === undefined) throw new GitHubProviderError(GitHubErrorCode.InvalidResponse, GitHubOperation.SearchPullRequests);
       if (search.incompleteResults) {
         const failures = (currentCache?.failures ?? 0) + 1;
         const next: DeckCache = { version: 2, deckId: currentDeck.id, query: currentDeck.query, queryEtag: currentCache?.queryEtag ?? null, totalCount: currentCache?.totalCount ?? 0, results: currentCache?.results ?? [], lastSuccessfulAt: currentCache?.lastSuccessfulAt ?? null, rate: search.metadata.rate, failures, nextRefreshAt: nextDeckRefresh(Date.now(), currentDeck.refreshMinutes, failures, search.metadata.rate), transitionKeys: currentCache?.transitionKeys ?? [], pendingNotifications: currentCache?.pendingNotifications ?? [] };
@@ -288,14 +289,26 @@ export function DeckPollingBoundary({ bridge, active, online, provider: supplied
   }, [cancelDeckNotifications, identity.deckAccessSuspended, identity.githubPatScopeId, scheduledDecks, setDeckState, storage]);
   useEffect(() => {
     let cancelled = false;
+    let retry: ReturnType<typeof setTimeout> | undefined;
     const configuredIds = new Set(scheduledDecks.map((deck) => deck.id));
-    void bridge.request({ operation: "widgets.status" }).then(async (response) => {
-      if (cancelled || response.kind !== "widget-status") return;
-      for (const deckId of response.enabledDeckIds) {
-        if (!configuredIds.has(deckId)) await bridge.request({ operation: "widgets.disable-deck", deckId });
-      }
-    }).catch(() => {});
-    return () => { cancelled = true; };
+    const reconcile = async () => {
+      let failed = false;
+      try {
+        const response = await bridge.request({ operation: "widgets.status" });
+        if (cancelled || response.kind !== "widget-status") return;
+        for (const deckId of response.enabledDeckIds) {
+          if (configuredIds.has(deckId)) continue;
+          try { await bridge.request({ operation: "widgets.disable-deck", deckId }); }
+          catch { failed = true; }
+        }
+      } catch { failed = true; }
+      if (!cancelled && failed) retry = setTimeout(() => void reconcile(), 5_000);
+    };
+    void reconcile();
+    return () => {
+      cancelled = true;
+      if (retry !== undefined) clearTimeout(retry);
+    };
   }, [bridge, scheduledDecks]);
   useEffect(() => () => {
     const deckIds = new Set([...decks.current.map((deck) => deck.id), ...caches.current.keys(), ...configurations.current.keys()]);
@@ -346,12 +359,9 @@ export function DeckSurface({ copy, bridge, language = "en", selectedDeckId = nu
   const deleteDeck = async (value: Deck) => {
     setDeleteFailed(false);
     try {
-      const status = await bridge.request({ operation: "widgets.status" });
-      if (status.kind === "widget-status" && status.enabledDeckIds.includes(value.id)) {
-        await bridge.request({ operation: "widgets.disable-deck", deckId: value.id });
-      }
       const committed = await identity.replaceSettings((current) => ({ ...current, decks: current.decks.filter((item) => item.id !== value.id) }));
       if (!committed) { setDeleteFailed(true); return; }
+      void bridge.request({ operation: "widgets.disable-deck", deckId: value.id }).catch(() => undefined);
       void polling.clear(value).catch(() => undefined);
     } catch { setDeleteFailed(true); }
   };
@@ -362,7 +372,7 @@ export function DeckSurface({ copy, bridge, language = "en", selectedDeckId = nu
     <div className="deck-layout"><nav aria-label={copy.deck}><ul>{identity.settings.decks.map((item) => <li key={item.id}><button className={deck?.id === item.id ? "active" : ""} onClick={() => { onDismissMissingLink?.(); setSelected(item.id); setCreating(false); }}>{item.name}</button></li>)}</ul></nav>
       {deck === null ? <DeckEditor key="create" copy={copy} disabled={creationDisabled} onSave={async (next) => { await polling.validate(next); const committed = await identity.replaceSettings((current) => ({ ...current, decks: [...current.decks, next] })); if (committed) { setSelected(next.id); setCreating(false); } return committed; }} profiles={identity.settings.github.profiles} /> : <div><DeckEditor key={deck.id} copy={copy} value={deck} profiles={identity.settings.github.profiles} disabled={identity.readOnly} onSave={async (next) => { await polling.validate(next); return identity.replaceSettings((current) => ({ ...current, decks: current.decks.map((item) => item.id === deck.id ? next : item) })); }} />
         <div className="actions"><button type="button" disabled={refreshState.loading || !polling.canPoll} onClick={() => void polling.refresh(deck.id, true)}>{copy.deckRefresh}</button><button type="button" disabled={identity.readOnly} onClick={() => void deleteDeck(deck)}>{copy.deckDelete}</button></div>
-        <WidgetAccess bridge={bridge} cache={refreshState.cache} copy={copy} deck={deck} failure={refreshState.failure} language={language} />
+        <WidgetAccess key={deck.id} bridge={bridge} cache={refreshState.cache} copy={copy} deck={deck} failure={refreshState.failure} language={language} />
         {refreshState.cache?.lastSuccessfulAt && <p>{copy.lastSuccessfulRefresh}: <time dateTime={refreshState.cache.lastSuccessfulAt}>{refreshState.cache.lastSuccessfulAt}</time></p>}{refreshState.cache?.rate?.resetAt && <p>{copy.deckRateReset}: <time dateTime={refreshState.cache.rate.resetAt}>{refreshState.cache.rate.resetAt}</time></p>}{!polling.canPoll && refreshState.cache && <p className="notice">{copy.deckStale}</p>}{refreshState.failure && <p role="alert">{failureCopy(copy, refreshState.failure)}</p>}
         {deleteFailed && <p role="alert">{copy.deckDeleteFailed}</p>}{!polling.online && refreshState.cache === null ? <OfflineState copy={copy} /> : refreshState.loading && refreshState.cache === null ? <LoadingState copy={copy} /> : <DeckResults copy={copy} groupBy={deck.display.groupBy} results={deck.display.showDrafts ? refreshState.cache?.results ?? [] : (refreshState.cache?.results ?? []).filter((pullRequest) => !pullRequest.draft)} />}
       </div>}</div></section>;
@@ -375,6 +385,12 @@ function WidgetAccess({ bridge, cache, copy, deck, failure, language }: { readon
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
+  const enableTrigger = useRef<HTMLButtonElement>(null);
+  const disableButton = useRef<HTMLButtonElement>(null);
+  const dialog = useRef<HTMLElement>(null);
+  const cancelButton = useRef<HTMLButtonElement>(null);
+  const configurationSync = useRef<Promise<void>>(Promise.resolve());
+  const configurationGeneration = useRef(0);
   const profile = identity.settings.github.profiles.find((item) => item.id === deck.profileRef);
 
   const configuration = useCallback(async (): Promise<WidgetDeckConfiguration | null> => {
@@ -394,14 +410,50 @@ function WidgetAccess({ bridge, cache, copy, deck, failure, language }: { readon
 
   useEffect(() => {
     if (!enabled) return;
-    void configuration().then((value) => value === null ? undefined : bridge.request({ operation: "widgets.enable-deck", configuration: value })).catch(() => { setEnabled(false); setFailed(true); });
+    const generation = configurationGeneration.current + 1;
+    configurationGeneration.current = generation;
+    const sync = configuration().then(async (value) => {
+      if (value !== null) await bridge.request({ operation: "widgets.enable-deck", configuration: value });
+    });
+    configurationSync.current = sync;
+    void sync.catch(() => {
+      if (configurationGeneration.current !== generation) return;
+      setEnabled(false);
+      setFailed(true);
+    });
   }, [bridge, configuration, enabled]);
 
   useEffect(() => {
-    if (!enabled || cache === null) return;
+    if (!enabled || cache === null || cache.query !== deck.query) return;
+    const generation = configurationGeneration.current;
     const snapshot = widgetSnapshot(deck, cache, failure);
-    void bridge.request({ operation: "widgets.replace-deck-snapshot", snapshot }).catch(() => setFailed(true));
+    void configurationSync.current.then(async () => {
+      if (configurationGeneration.current === generation) await bridge.request({ operation: "widgets.replace-deck-snapshot", snapshot });
+    }).catch(() => {
+      if (configurationGeneration.current === generation) setFailed(true);
+    });
   }, [bridge, cache, deck, enabled, failure]);
+
+  const closeConfirmation = useCallback(() => {
+    setConfirming(false);
+    requestAnimationFrame(() => enableTrigger.current?.focus());
+  }, []);
+  useEffect(() => {
+    if (!confirming) return;
+    cancelButton.current?.focus();
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape" && !busy) closeConfirmation(); };
+    addEventListener("keydown", closeOnEscape);
+    return () => removeEventListener("keydown", closeOnEscape);
+  }, [busy, closeConfirmation, confirming]);
+  const trapDialogFocus = (event: ReactKeyboardEvent<HTMLElement>) => {
+    if (event.key !== "Tab") return;
+    const focusable = dialog.current?.querySelectorAll<HTMLElement>("button:not([disabled]), input:not([disabled]), select:not([disabled]), [href]");
+    if (!focusable?.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+  };
 
   const enable = async () => {
     setBusy(true);
@@ -410,9 +462,10 @@ function WidgetAccess({ bridge, cache, copy, deck, failure, language }: { readon
       const value = await configuration();
       if (value === null) throw new Error("missing-profile");
       await bridge.request({ operation: "widgets.enable-deck", configuration: value });
-      if (cache !== null) await bridge.request({ operation: "widgets.replace-deck-snapshot", snapshot: widgetSnapshot(deck, cache, failure) });
+      if (cache !== null && cache.query === deck.query) await bridge.request({ operation: "widgets.replace-deck-snapshot", snapshot: widgetSnapshot(deck, cache, failure) });
       setEnabled(true);
       setConfirming(false);
+      requestAnimationFrame(() => disableButton.current?.focus());
     } catch { setFailed(true); }
     finally { setBusy(false); }
   };
@@ -426,8 +479,8 @@ function WidgetAccess({ bridge, cache, copy, deck, failure, language }: { readon
 
   if (!supported) return null;
   return <section className="widget-access" aria-labelledby={`widget-title-${deck.id}`}><h3 id={`widget-title-${deck.id}`}>{copy.widgetTitle}</h3>
-    {enabled ? <><p role="status">{copy.widgetEnabled}</p><button type="button" disabled={busy} onClick={() => void disable()}>{copy.widgetDisable}</button></> : <button type="button" disabled={busy || profile === undefined} onClick={() => setConfirming(true)}>{copy.widgetEnable}</button>}
-    {confirming && <section className="widget-privacy" role="alertdialog" aria-modal="true" aria-labelledby={`widget-privacy-title-${deck.id}`} aria-describedby={`widget-privacy-warning-${deck.id}`}><h4 id={`widget-privacy-title-${deck.id}`}>{copy.widgetPrivacyTitle}</h4><p id={`widget-privacy-warning-${deck.id}`}>{copy.widgetPrivacyWarning}</p><div className="actions"><button type="button" disabled={busy} onClick={() => void enable()}>{copy.widgetPrivacyConfirm}</button><button type="button" disabled={busy} onClick={() => setConfirming(false)}>{copy.widgetPrivacyCancel}</button></div></section>}
+    {enabled ? <><p role="status">{copy.widgetEnabled}</p><button ref={disableButton} type="button" disabled={busy} onClick={() => void disable()}>{copy.widgetDisable}</button></> : <button ref={enableTrigger} type="button" disabled={busy || profile === undefined} onClick={() => setConfirming(true)}>{copy.widgetEnable}</button>}
+    {confirming && <section ref={dialog} className="widget-privacy" role="alertdialog" aria-modal="true" aria-labelledby={`widget-privacy-title-${deck.id}`} aria-describedby={`widget-privacy-warning-${deck.id}`} onKeyDown={trapDialogFocus}><h4 id={`widget-privacy-title-${deck.id}`}>{copy.widgetPrivacyTitle}</h4><p id={`widget-privacy-warning-${deck.id}`}>{copy.widgetPrivacyWarning}</p><div className="actions"><button type="button" disabled={busy} onClick={() => void enable()}>{copy.widgetPrivacyConfirm}</button><button ref={cancelButton} type="button" disabled={busy} onClick={closeConfirmation}>{copy.widgetPrivacyCancel}</button></div></section>}
     {failed && <p role="alert">{copy.widgetActionFailed}</p>}
   </section>;
 }

@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="devhud_widget_name">DevHUD Deck</string>
     <string name="devhud_widget_description">One selected DevHUD Deck</string>
     <string name="devhud_widget_choose_deck">Choose one Deck</string>
     <string name="devhud_widget_select_deck">Select %1$s</string>

@@ -29,9 +29,12 @@ internal class DevHudWidgetStore(private val context: Context) {
 
     fun enable(configuration: JSONObject, token: String): Boolean {
         val deckId = configuration.getString("deckId")
+        val previous = configuration(deckId)
         val encrypted = encrypt(token, deckId)
         if (!secrets.edit().putString(deckId, encrypted).commit()) return false
-        if (state.edit().putString(configurationPrefix + deckId, configuration.toString()).commit()) return true
+        val editor = state.edit().putString(configurationPrefix + deckId, configuration.toString())
+        if (previous != null && selectionChanged(previous, configuration)) editor.remove(snapshotPrefix + deckId)
+        if (editor.commit()) return true
         secrets.edit().remove(deckId).commit()
         return false
     }
@@ -43,12 +46,24 @@ internal class DevHudWidgetStore(private val context: Context) {
         return state.edit().putString(snapshotPrefix + deckId, snapshot.toString()).commit()
     }
 
+    fun replaceProfileToken(profileId: String, scopeId: String, token: String): Boolean {
+        val configurations = state.all.entries
+            .filter { it.key.startsWith(configurationPrefix) }
+            .mapNotNull { (key, value) -> json(value as? String)?.let { key.removePrefix(configurationPrefix) to it } }
+            .filter { (_, configuration) ->
+                configuration.optString("profileId") == profileId && configuration.optString("scopeId") == scopeId
+            }
+        if (configurations.isEmpty()) return true
+        val editor = secrets.edit()
+        configurations.forEach { (deckId, _) -> editor.putString(deckId, encrypt(token, deckId)) }
+        return editor.commit()
+    }
+
     fun disable(deckId: String): Boolean {
+        if (!secrets.edit().remove(deckId).commit()) return false
         val editor = state.edit().remove(configurationPrefix + deckId).remove(snapshotPrefix + deckId)
         state.all.entries.filter { it.key.startsWith(selectionPrefix) && it.value == deckId }.forEach { editor.remove(it.key) }
-        val stateCleared = editor.commit()
-        val secretCleared = secrets.edit().remove(deckId).commit()
-        return stateCleared && secretCleared
+        return editor.commit()
     }
 
     fun clear(): Boolean {
@@ -70,6 +85,9 @@ internal class DevHudWidgetStore(private val context: Context) {
 
     fun selectedDeckId(appWidgetId: Int): String? = state.getString(selectionPrefix + appWidgetId, null)
     fun removeSelection(appWidgetId: Int) { state.edit().remove(selectionPrefix + appWidgetId).apply() }
+
+    private fun selectionChanged(left: JSONObject, right: JSONObject): Boolean =
+        listOf("query", "profileId", "profileKind", "scopeId").any { left.optString(it) != right.optString(it) }
 
     private fun json(value: String?): JSONObject? = try { value?.let(::JSONObject) } catch (_: Exception) { null }
 

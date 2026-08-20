@@ -89,7 +89,7 @@ test("mobile policy keeps native iOS origins aligned with normalized root URLs",
   assert.throws(() => assertIosNativeBridge(iosNativeBridge.replaceAll("legacyAccessGroupKey", "missingLegacyGroup")), /legacy application-group/u);
   assert.throws(() => assertIosNativeBridge(iosNativeBridge.replace("guard markerStatus == errSecSuccess", "guard true")), /matching API-origin scope marker/u);
   assert.throws(() => assertIosNativeBridge(iosNativeBridge.replace("rollbackCreatedGitHubPatScope(createdMarker)", "missingRollback(createdMarker)")), /roll back newly created scope markers/u);
-  assert.throws(() => assertIosNativeBridge(iosNativeBridge.replace("rollbackGitHubPatWrite(setting, previousData: previousGitHubPatData)", "true")), /restore or remove the shared GitHub PAT/u);
+  assert.throws(() => assertIosNativeBridge(iosNativeBridge.replaceAll("rollbackGitHubPatWrite(setting, previousData: previousGitHubPatData)", "true")), /restore or remove the shared GitHub PAT/u);
   assert.throws(() => assertIosNativeBridge(iosNativeBridge.replace("pendingDiagnosticsCleanup = target", "pendingDiagnosticsCleanup = nil")), /cleanup must remain pending/u);
   assert.throws(() => assertIosNativeBridge(iosNativeBridge.replace("if failed || !cleanupSucceeded", "if failed")), /fail closed/u);
   assert.throws(() => assertIosNativeBridge(iosNativeBridge.replace('if scope == "logout" || scope == "account-deletion"', "if true")), /preserve pending diagnostics exports/u);
@@ -107,15 +107,26 @@ test("mobile open URL handling accepts only authentication callbacks and validat
 });
 
 test("widget targets preserve secure isolation, bilingual privacy warnings, and bounded previews", () => {
+  const androidNativeBridge = readFileSync(join(appRoot, "src-tauri/mobile/android/src/main/java/io/delino/devhud/bridge/DevhudNativePlugin.kt"), "utf8");
   const androidStore = readFileSync(join(appRoot, "src-tauri/mobile/android/src/main/java/io/delino/devhud/widget/DevHudWidgetStore.kt"), "utf8");
   const androidProvider = readFileSync(join(appRoot, "src-tauri/mobile/android/src/main/java/io/delino/devhud/widget/DevHudWidgetProvider.kt"), "utf8");
+  const androidManifest = readFileSync(join(appRoot, "mobile/overrides/android/app/src/main/AndroidManifest.xml"), "utf8");
   const androidEnglish = readFileSync(join(appRoot, "src-tauri/mobile/android/src/main/res/values/widget_strings.xml"), "utf8");
   const androidKorean = readFileSync(join(appRoot, "src-tauri/mobile/android/src/main/res/values-ko/widget_strings.xml"), "utf8");
+  const iosNativeBridge = readFileSync(join(appRoot, "src-tauri/mobile/ios/Sources/DevhudNativePlugin.swift"), "utf8");
   const iosWidget = readFileSync(join(appRoot, "mobile/overrides/ios/DevHudWidget/DevHudWidget.swift"), "utf8");
   const iosIntent = readFileSync(join(appRoot, "mobile/overrides/ios/DevHudWidgetShared/SelectDeck.intentdefinition"), "utf8");
+  const iosIntentEnglish = readFileSync(join(appRoot, "mobile/overrides/ios/DevHudWidgetShared/en.lproj/SelectDeck.strings"), "utf8");
+  const iosIntentKorean = readFileSync(join(appRoot, "mobile/overrides/ios/DevHudWidgetShared/ko.lproj/SelectDeck.strings"), "utf8");
   const iosIntentHandler = readFileSync(join(appRoot, "mobile/overrides/ios/DevHudWidgetIntent/IntentHandler.swift"), "utf8");
   const iosEntitlements = readFileSync(join(appRoot, "mobile/overrides/ios/DevHudWidget/DevHudWidget.entitlements"), "utf8");
   assert.match(androidStore, /widgetKeyAlias = "io\.delino\.devhud\.widget-credential\.v1"/u);
+  assert.match(androidStore, /replaceProfileToken[\s\S]*profileId[\s\S]*scopeId/u);
+  assert.match(androidNativeBridge, /replaceProfileToken\(profileId, scopeId, value\)/u);
+  assert.match(androidProvider, /JobService[\s\S]*setRequiredNetworkType/u);
+  assert.match(androidProvider, /ScrollView/u);
+  assert.match(androidProvider, /incomplete_results/u);
+  assert.match(androidManifest, /DevHudWidgetProvider"\s+android:exported="false"\s+android:label="@string\/devhud_widget_name"/u);
   assert.match(androidProvider, /results.*prefix|prefix\(3\)|minOf\(results\?\.length\(\) \?: 0, 3\)/su);
   assert.match(androidProvider, /devhud:\/\/deck\//u);
   assert.match(iosWidget, /IntentConfiguration/u);
@@ -123,10 +134,16 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   assert.match(iosIntentHandler, /SelectDeckIntentHandling[\s\S]*provideDeckOptionsCollection/u);
   assert.match(iosIntentHandler, /defaultDeck[\s\S]*nil/u);
   assert.match(iosWidget, /\.prefix\(3\)/u);
+  assert.match(iosWidget, /sameSelection[\s\S]*store\.save/u);
+  assert.match(iosWidget, /staleDate[\s\S]*entries\.append/u);
+  assert.match(iosWidget, /incomplete_results/u);
+  assert.match(iosNativeBridge, /replaceWidgetCredentials\(profileId: setting\.profileId/u);
   assert.match(iosWidget, /devhud:\/\/deck\//u);
   assert.match(iosEntitlements, /group\.io\.delino\.devhud/u);
   assert.match(iosEntitlements, /\$\(AppIdentifierPrefix\)io\.delino\.devhud\.shared/u);
   for (const warning of [androidEnglish, androidKorean]) assert.match(warning, /launchers|런처/iu);
+  assert.match(iosIntentEnglish, /Select Deck|Choose one Deck/u);
+  assert.match(iosIntentKorean, /덱/u);
   for (const source of [androidStore, androidProvider, iosWidget]) assert.doesNotMatch(source, /devhud-api|println|print\(/iu);
 });
 

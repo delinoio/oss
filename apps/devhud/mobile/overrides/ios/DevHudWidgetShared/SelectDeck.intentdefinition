@@ -24,7 +24,7 @@
       <key>INIntentParameterName</key><string>deck</string>
       <key>INIntentParameterObjectType</key><string>DeckSelection</string>
       <key>INIntentParameterObjectTypeNamespace</key><string>DevHudWidget</string>
-      <key>INIntentParameterPromptDialogs</key><array><dict><key>INIntentParameterPromptDialogCustom</key><true/><key>INIntentParameterPromptDialogType</key><string>Configuration</string></dict></array>
+      <key>INIntentParameterPromptDialogs</key><array><dict><key>INIntentParameterPromptDialog</key><string>Choose one Deck.</string><key>INIntentParameterPromptDialogID</key><string>deckPrompt</string><key>INIntentParameterPromptDialogCustom</key><true/><key>INIntentParameterPromptDialogType</key><string>Configuration</string></dict></array>
       <key>INIntentParameterSupportsDynamicEnumeration</key><true/>
       <key>INIntentParameterTag</key><integer>1</integer>
       <key>INIntentParameterType</key><string>Object</string>

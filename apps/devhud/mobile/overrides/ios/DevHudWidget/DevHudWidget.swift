@@ -38,9 +38,10 @@ private struct WidgetStore {
         guard let data = defaults?.data(forKey: snapshotPrefix + deckId) else { return nil }
         return try? JSONDecoder().decode(DeckSnapshot.self, from: data)
     }
-    func save(_ snapshot: DeckSnapshot) {
-        guard let data = try? JSONEncoder().encode(snapshot) else { return }
+    func save(_ snapshot: DeckSnapshot) -> Bool {
+        guard let data = try? JSONEncoder().encode(snapshot), defaults != nil else { return false }
         defaults?.set(data, forKey: snapshotPrefix + snapshot.deckId)
+        return true
     }
     func token(_ deckId: String) -> String? {
         var query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: credentialService,
@@ -76,9 +77,28 @@ private struct DeckTimelineProvider: IntentTimelineProvider {
         }
         Task {
             let snapshot = await refresh(deck: deck, previous: store.snapshot(deck.deckId), token: store.token(deck.deckId))
-            store.save(snapshot)
-            completion(Timeline(entries: [DeckEntry(date: Date(), configuration: deck, snapshot: snapshot)], policy: .after(Date().addingTimeInterval(30 * 60))))
+            guard let current = store.configuration(deck.deckId), sameSelection(current, deck) else {
+                let current = store.configuration(deck.deckId)
+                completion(timeline(deck: current, snapshot: current.flatMap { store.snapshot($0.deckId) }))
+                return
+            }
+            let stored = store.save(snapshot)
+            completion(timeline(deck: current, snapshot: stored ? snapshot : store.snapshot(current.deckId)))
         }
+    }
+
+    private func timeline(deck: DeckConfiguration?, snapshot: DeckSnapshot?) -> Timeline<DeckEntry> {
+        let now = Date()
+        var entries = [DeckEntry(date: now, configuration: deck, snapshot: snapshot)]
+        if let value = snapshot?.lastSuccessfulAt, let lastSuccess = ISO8601DateFormatter().date(from: value) {
+            let staleDate = lastSuccess.addingTimeInterval(staleAfter)
+            if staleDate > now { entries.append(DeckEntry(date: staleDate, configuration: deck, snapshot: snapshot)) }
+        }
+        return Timeline(entries: entries, policy: .after(now.addingTimeInterval(30 * 60)))
+    }
+
+    private func sameSelection(_ left: DeckConfiguration, _ right: DeckConfiguration) -> Bool {
+        left.deckId == right.deckId && left.query == right.query && left.profileId == right.profileId && left.profileKind == right.profileKind && left.scopeId == right.scopeId
     }
 
     private func refresh(deck: DeckConfiguration, previous: DeckSnapshot?, token: String?) async -> DeckSnapshot {
@@ -94,11 +114,13 @@ private struct DeckTimelineProvider: IntentTimelineProvider {
             let (data, response) = try await URLSession.shared.data(for: request)
             guard let http = response as? HTTPURLResponse else { return failure(deck: deck, previous: previous, state: "error", attempted: attempted, rate: nil) }
             let rate = responseRate(http)
-            if http.statusCode == 401 || (http.statusCode == 403 && rate.remaining != 0) { return failure(deck: deck, previous: previous, state: "missing-token", attempted: attempted, rate: rate) }
-            if http.statusCode == 429 || (http.statusCode == 403 && rate.remaining == 0) { return failure(deck: deck, previous: previous, state: "rate-limit", attempted: attempted, rate: rate) }
+            let rateLimited = http.statusCode == 429 || (http.statusCode == 403 && (rate.remaining == 0 || rate.retryAfterSeconds != nil))
+            if rateLimited { return failure(deck: deck, previous: previous, state: "rate-limit", attempted: attempted, rate: rate) }
+            if http.statusCode == 401 || http.statusCode == 403 { return failure(deck: deck, previous: previous, state: "missing-token", attempted: attempted, rate: rate) }
             guard (200...299).contains(http.statusCode), let root = try JSONSerialization.jsonObject(with: data) as? [String: Any], let items = root["items"] as? [[String: Any]], let total = root["total_count"] as? Int else {
                 return failure(deck: deck, previous: previous, state: "error", attempted: attempted, rate: rate)
             }
+            if root["incomplete_results"] as? Bool == true { return failure(deck: deck, previous: previous, state: "error", attempted: attempted, rate: rate) }
             var open = 0, draft = 0, merged = 0, closed = 0
             let results: [DeckPullRequest] = items.prefix(100).compactMap { item in
                 guard let nodeId = item["node_id"] as? String, let number = item["number"] as? Int, let title = item["title"] as? String, let repositoryURL = item["repository_url"] as? String else { return nil }
@@ -114,7 +136,12 @@ private struct DeckTimelineProvider: IntentTimelineProvider {
     }
 
     private func failure(deck: DeckConfiguration, previous: DeckSnapshot?, state: String, attempted: String, rate: DeckRate?) -> DeckSnapshot {
-        var retained = previous ?? DeckSnapshot(version: 1, deckId: deck.deckId, query: deck.query, counts: DeckCounts(total: 0, open: 0, draft: 0, merged: 0, closed: 0, bounded: false), results: [], state: state, lastSuccessfulAt: nil, lastAttemptedAt: attempted, rate: rate)
+        var retained: DeckSnapshot
+        if let previous, previous.query == deck.query {
+            retained = previous
+        } else {
+            retained = DeckSnapshot(version: 1, deckId: deck.deckId, query: deck.query, counts: DeckCounts(total: 0, open: 0, draft: 0, merged: 0, closed: 0, bounded: false), results: [], state: state, lastSuccessfulAt: nil, lastAttemptedAt: attempted, rate: rate)
+        }
         retained.state = state; retained.lastAttemptedAt = attempted; retained.rate = rate ?? retained.rate
         return retained
     }
@@ -130,10 +157,10 @@ private struct DeckWidgetView: View {
     private var korean: Bool { entry.configuration?.language == "ko" }
     private var state: String {
         guard let snapshot = entry.snapshot else { return "missing-token" }
-        if snapshot.state == "fresh", let value = snapshot.lastSuccessfulAt, let date = ISO8601DateFormatter().date(from: value), Date().timeIntervalSince(date) >= staleAfter { return "stale" }
+        if snapshot.state == "fresh", let value = snapshot.lastSuccessfulAt, let date = ISO8601DateFormatter().date(from: value), entry.date.timeIntervalSince(date) >= staleAfter { return "stale" }
         return snapshot.state
     }
-    private var stale: Bool { guard let value = entry.snapshot?.lastSuccessfulAt, let date = ISO8601DateFormatter().date(from: value) else { return false }; return Date().timeIntervalSince(date) >= staleAfter }
+    private var stale: Bool { guard let value = entry.snapshot?.lastSuccessfulAt, let date = ISO8601DateFormatter().date(from: value) else { return false }; return entry.date.timeIntervalSince(date) >= staleAfter }
     private func text(_ en: String, _ ko: String) -> String { korean ? ko : en }
     private var status: String {
         let primary: String = switch state { case "stale": text("Stale", "오래됨"); case "missing-token": text("Setup required", "설정 필요"); case "rate-limit": text("Rate limited", "요청 제한됨"); case "error": text("Refresh failed", "새로 고침 실패"); default: text("Current", "최신") }
@@ -162,8 +189,8 @@ private struct DevHudDeckWidget: Widget {
     let kind = "io.delino.devhud.widget.deck"
     var body: some WidgetConfiguration {
         IntentConfiguration(kind: kind, intent: SelectDeckIntent.self, provider: DeckTimelineProvider()) { entry in DeckWidgetView(entry: entry) }
-            .configurationDisplayName("DevHUD Deck")
-            .description("One explicitly selected Deck. Private titles may be visible.")
+            .configurationDisplayName(LocalizedStringKey("widget_display_name"))
+            .description(LocalizedStringKey("widget_description"))
             .supportedFamilies([.systemMedium, .systemLarge])
     }
 }

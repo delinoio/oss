@@ -52,6 +52,11 @@ describe("Deck surface", () => {
     await screen.findByRole("button", { name: messages.en.widgetEnable });
     fireEvent.click(screen.getByRole("button", { name: messages.en.widgetEnable }));
     expect(screen.getByRole("alertdialog").textContent).toContain(messages.en.widgetPrivacyWarning);
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: messages.en.widgetPrivacyCancel })));
+    fireEvent.keyDown(window, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: messages.en.widgetEnable })));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.widgetEnable }));
     fireEvent.click(screen.getByRole("button", { name: messages.en.widgetPrivacyConfirm }));
 
     await waitFor(() => expect(request).toHaveBeenCalledWith({
@@ -82,16 +87,18 @@ describe("Deck surface", () => {
   it("surfaces a failed Deck deletion and leaves its action available for retry", async () => {
     const replaceSettings: IdentitySettingsValue["replaceSettings"] = vi.fn(async () => { throw new Error("offline"); });
     identity = identityWith({ replaceSettings });
-    const bridge = bridgeWith(async () => ({ kind: "ok" as const }));
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => value.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [deck.id] } : { kind: "ok" });
+    const bridge = bridgeWith(request);
     render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
 
     fireEvent.click(screen.getByRole("button", { name: messages.en.deckDelete }));
 
     await waitFor(() => expect(screen.getByRole("alert").textContent).toBe(messages.en.deckDeleteFailed));
     expect(screen.getByRole("button", { name: messages.en.deckDelete })).not.toHaveProperty("disabled", true);
+    expect(request).not.toHaveBeenCalledWith({ operation: "widgets.disable-deck", deckId: deck.id });
   });
 
-  it("clears selected widget state before completing Deck deletion", async () => {
+  it("commits Deck deletion before clearing selected widget state", async () => {
     const operations: string[] = [];
     const replaceSettings: IdentitySettingsValue["replaceSettings"] = vi.fn(async () => { operations.push("delete-settings"); return true; });
     identity = identityWith({ replaceSettings });
@@ -106,7 +113,7 @@ describe("Deck surface", () => {
     fireEvent.click(screen.getByRole("button", { name: messages.en.deckDelete }));
 
     await waitFor(() => expect(replaceSettings).toHaveBeenCalledOnce());
-    expect(operations.slice(-2)).toEqual(["clear-widget", "delete-settings"]);
+    await waitFor(() => expect(operations.slice(-2)).toEqual(["delete-settings", "clear-widget"]));
   });
 
   it("disables builder controls until a Boolean Deck query is simplified", () => {
@@ -126,7 +133,7 @@ describe("Deck surface", () => {
     const scope = new Promise<string>((resolve) => { resolveScope = resolve; });
     const cacheScope = `origin.scope.${profile.id}`;
     const pendingNotifications = [{ key: "PR_kwDOA:review:approved:2026-08-18T00:01:00.000Z", kind: "review" as const, body: pullRequest.title }];
-    writeDeckCache(localStorage, cacheScope, { version: DeckCacheVersion, deckId: deck.id, query: deck.query, queryEtag: "cached-etag", results: [pullRequest], lastSuccessfulAt: "2026-08-17T00:00:00.000Z", rate: null, failures: 0, nextRefreshAt: null, transitionKeys: [], pendingNotifications });
+    writeDeckCache(localStorage, cacheScope, { version: DeckCacheVersion, deckId: deck.id, query: deck.query, queryEtag: "cached-etag", totalCount: 1, results: [pullRequest], lastSuccessfulAt: "2026-08-17T00:00:00.000Z", rate: null, failures: 0, nextRefreshAt: null, transitionKeys: [], pendingNotifications });
     identity = identityWith({ githubPatScopeId: scope, settings: parseDevHudSettings({ ...settings, decks: [{ ...deck, notifications: ["review" as const] }] }) });
     let rejectSearch: (error: Error) => void = () => {};
     const searchPullRequests = vi.fn(() => new Promise<never>((_resolve, reject) => { rejectSearch = reject; }));
@@ -143,6 +150,16 @@ describe("Deck surface", () => {
       expect(cache.lastSuccessfulAt).toBe("2026-08-17T00:00:00.000Z");
       expect(cache.pendingNotifications).toEqual(pendingNotifications);
     });
+  });
+
+  it("does not send an ETag for a legacy cache without a total count", async () => {
+    const cacheScope = `origin.scope.${profile.id}`;
+    writeDeckCache(localStorage, cacheScope, { version: DeckCacheVersion, deckId: deck.id, query: deck.query, queryEtag: "legacy-etag", results: [pullRequest], lastSuccessfulAt: "2026-08-17T00:00:00.000Z", rate: null, failures: 0, nextRefreshAt: null, transitionKeys: [] });
+    const searchPullRequests = vi.fn(async () => ({ items: [], nextPage: null, notModified: false, totalCount: 0, incompleteResults: false, metadata: { etag: "fresh-etag", rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } } }));
+    const bridge = bridgeWith(async (request) => request.operation === "secure.read" ? { kind: "secure-value", value: "token" } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active online provider={{ ...provider(), searchPullRequests }}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    await waitFor(() => expect(searchPullRequests).toHaveBeenCalledWith(expect.anything(), deck.query, { etag: undefined }));
   });
 
   it("retains the complete cache and retries when GitHub search is incomplete", async () => {

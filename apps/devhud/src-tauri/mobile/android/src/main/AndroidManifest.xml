@@ -2,10 +2,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <application>
-        <receiver android:name="io.delino.devhud.widget.DevHudWidgetProvider" android:exported="true" android:label="DevHUD Deck">
+        <receiver android:name="io.delino.devhud.widget.DevHudWidgetProvider" android:exported="false" android:label="@string/devhud_widget_name">
             <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/devhud_widget_info" />
         </receiver>
+        <service android:name="io.delino.devhud.widget.DevHudWidgetRefreshService" android:exported="false" android:permission="android.permission.BIND_JOB_SERVICE" />
         <activity android:name="io.delino.devhud.widget.DevHudWidgetConfigureActivity" android:exported="true" android:theme="@style/Theme.devhud" />
     </application>
 </manifest>

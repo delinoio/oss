@@ -2,8 +2,13 @@ package io.delino.devhud.widget
 
 import android.app.Activity
 import android.app.PendingIntent
+import android.app.job.JobInfo
+import android.app.job.JobParameters
+import android.app.job.JobScheduler
+import android.app.job.JobService
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
@@ -13,6 +18,7 @@ import android.view.Gravity
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.RemoteViews
+import android.widget.ScrollView
 import android.widget.TextView
 import io.delino.devhud.R
 import org.json.JSONArray
@@ -21,18 +27,17 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.time.Instant
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 
 private const val resultLimit = 100
 private const val staleAfterMillis = 60 * 60 * 1000L
+private const val widgetRefreshJobId = 0x444857
 private val widgetExecutor = Executors.newSingleThreadExecutor()
 
 class DevHudWidgetProvider : AppWidgetProvider() {
     override fun onUpdate(context: Context, manager: AppWidgetManager, appWidgetIds: IntArray) {
-        val pending = goAsync()
-        widgetExecutor.execute {
-            try { appWidgetIds.forEach { refresh(context, manager, it) } }
-            finally { pending.finish() }
-        }
+        appWidgetIds.forEach { renderStored(context, manager, it) }
+        scheduleRefresh(context)
     }
 
     override fun onDeleted(context: Context, appWidgetIds: IntArray) {
@@ -41,27 +46,49 @@ class DevHudWidgetProvider : AppWidgetProvider() {
     }
 
     companion object {
-        fun refresh(context: Context, manager: AppWidgetManager, appWidgetId: Int) {
+        fun scheduleRefresh(context: Context) {
+            val scheduler = context.getSystemService(JobScheduler::class.java)
+            scheduler.schedule(JobInfo.Builder(widgetRefreshJobId, ComponentName(context, DevHudWidgetRefreshService::class.java))
+                .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
+                .build())
+        }
+
+        fun renderStored(context: Context, manager: AppWidgetManager, appWidgetId: Int) {
+            val store = DevHudWidgetStore(context)
+            val deckId = store.selectedDeckId(appWidgetId)
+            val configuration = deckId?.let(store::configuration)
+            val snapshot = deckId?.let(store::snapshot)
+            manager.updateAppWidget(appWidgetId, render(context, configuration, snapshot, snapshot?.optString("state", "missing-token") ?: "missing-token"))
+        }
+
+        fun refresh(context: Context, manager: AppWidgetManager, appWidgetId: Int): Boolean {
             val store = DevHudWidgetStore(context)
             val deckId = store.selectedDeckId(appWidgetId)
             if (deckId == null) {
                 manager.updateAppWidget(appWidgetId, render(context, null, null, "missing-token"))
-                return
+                return true
             }
             val configuration = store.configuration(deckId)
             if (configuration == null) {
                 manager.updateAppWidget(appWidgetId, render(context, null, store.snapshot(deckId), "missing-token"))
-                return
+                return true
             }
             val token = store.token(deckId)
             if (token == null) {
                 manager.updateAppWidget(appWidgetId, render(context, configuration, store.snapshot(deckId), "missing-token"))
-                return
+                return true
             }
             val previous = store.snapshot(deckId)
             val snapshot = refreshGitHub(configuration, token, previous)
-            store.replaceSnapshot(snapshot)
-            manager.updateAppWidget(appWidgetId, render(context, configuration, snapshot, snapshot.getString("state")))
+            val current = store.configuration(deckId)
+            if (store.selectedDeckId(appWidgetId) != deckId || current == null || !sameSelection(configuration, current)) {
+                renderStored(context, manager, appWidgetId)
+                return true
+            }
+            val stored = store.replaceSnapshot(snapshot)
+            val rendered = if (stored) snapshot else store.snapshot(deckId)
+            manager.updateAppWidget(appWidgetId, render(context, current, rendered, rendered?.optString("state", "error") ?: "error"))
+            return stored
         }
 
         private fun refreshGitHub(configuration: JSONObject, token: String, previous: JSONObject?): JSONObject {
@@ -75,10 +102,12 @@ class DevHudWidgetProvider : AppWidgetProvider() {
                 connection.setRequestProperty("Authorization", "Bearer $token")
                 connection.setRequestProperty("X-GitHub-Api-Version", "2026-03-10")
                 val status = connection.responseCode
-                if (status == 401 || status == 403 && connection.getHeaderField("X-RateLimit-Remaining") != "0") return failure(configuration, previous, "missing-token", attemptedAt, connection)
-                if (status == 429 || status == 403 && connection.getHeaderField("X-RateLimit-Remaining") == "0") return failure(configuration, previous, "rate-limit", attemptedAt, connection)
+                val rateLimited = status == 429 || status == 403 && (connection.getHeaderField("X-RateLimit-Remaining") == "0" || connection.getHeaderField("Retry-After") != null)
+                if (rateLimited) return failure(configuration, previous, "rate-limit", attemptedAt, connection)
+                if (status == 401 || status == 403) return failure(configuration, previous, "missing-token", attemptedAt, connection)
                 if (status !in 200..299) return failure(configuration, previous, "error", attemptedAt, connection)
                 val payload = connection.inputStream.bufferedReader().use { JSONObject(it.readText()) }
+                if (payload.optBoolean("incomplete_results", false)) return failure(configuration, previous, "error", attemptedAt, connection)
                 val items = payload.getJSONArray("items")
                 val results = JSONArray()
                 var open = 0; var draft = 0; var merged = 0; var closed = 0
@@ -104,7 +133,7 @@ class DevHudWidgetProvider : AppWidgetProvider() {
         }
 
         private fun failure(configuration: JSONObject, previous: JSONObject?, state: String, attemptedAt: String, connection: HttpURLConnection?): JSONObject {
-            val retained = previous ?: JSONObject().put("version", 1).put("deckId", configuration.getString("deckId")).put("query", configuration.getString("query"))
+            val retained = previous?.takeIf { it.optString("query") == configuration.getString("query") } ?: JSONObject().put("version", 1).put("deckId", configuration.getString("deckId")).put("query", configuration.getString("query"))
                 .put("counts", JSONObject().put("total", 0).put("open", 0).put("draft", 0).put("merged", 0).put("closed", 0).put("bounded", false))
                 .put("results", JSONArray()).put("lastSuccessfulAt", JSONObject.NULL)
             retained.put("state", state).put("lastAttemptedAt", attemptedAt)
@@ -121,6 +150,9 @@ class DevHudWidgetProvider : AppWidgetProvider() {
             .put("retryAfterSeconds", connection.getHeaderField("Retry-After")?.toIntOrNull() ?: JSONObject.NULL)
 
         private fun repositoryName(url: String): String = url.substringAfter("/repos/", url)
+
+        private fun sameSelection(left: JSONObject, right: JSONObject): Boolean =
+            listOf("deckId", "query", "profileId", "profileKind", "scopeId").all { left.optString(it) == right.optString(it) }
 
         private fun render(context: Context, configuration: JSONObject?, snapshot: JSONObject?, forcedState: String): RemoteViews {
             val views = RemoteViews(context.packageName, R.layout.devhud_widget)
@@ -161,6 +193,32 @@ class DevHudWidgetProvider : AppWidgetProvider() {
     }
 }
 
+class DevHudWidgetRefreshService : JobService() {
+    private val stopped = AtomicBoolean(false)
+
+    override fun onStartJob(parameters: JobParameters): Boolean {
+        stopped.set(false)
+        widgetExecutor.execute {
+            var retry = false
+            try {
+                val manager = AppWidgetManager.getInstance(applicationContext)
+                val component = ComponentName(applicationContext, DevHudWidgetProvider::class.java)
+                for (appWidgetId in manager.getAppWidgetIds(component)) {
+                    if (stopped.get()) { retry = true; break }
+                    if (!DevHudWidgetProvider.refresh(applicationContext, manager, appWidgetId)) retry = true
+                }
+            } catch (_: Exception) { retry = true }
+            if (!stopped.get()) jobFinished(parameters, retry)
+        }
+        return true
+    }
+
+    override fun onStopJob(parameters: JobParameters): Boolean {
+        stopped.set(true)
+        return true
+    }
+}
+
 class DevHudWidgetConfigureActivity : Activity() {
     private var appWidgetId = AppWidgetManager.INVALID_APPWIDGET_ID
 
@@ -183,12 +241,13 @@ class DevHudWidgetConfigureActivity : Activity() {
                 setOnClickListener {
                     if (!store.select(appWidgetId, deckId)) return@setOnClickListener
                     val context = applicationContext
-                    widgetExecutor.execute { DevHudWidgetProvider.refresh(context, AppWidgetManager.getInstance(context), appWidgetId) }
+                    DevHudWidgetProvider.renderStored(context, AppWidgetManager.getInstance(context), appWidgetId)
+                    DevHudWidgetProvider.scheduleRefresh(context)
                     setResult(RESULT_OK, Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId))
                     finish()
                 }
             })
         }
-        setContentView(root)
+        setContentView(ScrollView(this).apply { addView(root) })
     }
 }

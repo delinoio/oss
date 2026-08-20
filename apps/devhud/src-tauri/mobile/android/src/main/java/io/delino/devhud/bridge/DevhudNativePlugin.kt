@@ -365,13 +365,29 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
         val key = settingKey(args)
         val value = args.getString("value")
         persistSecure(invoke) {
-            val editor = activity.getSharedPreferences(storeName, Context.MODE_PRIVATE).edit()
-            if (key.startsWith("github-pat:")) {
-                val setting = args.getJSObject("setting") ?: throw IllegalArgumentException("setting")
-                val marker = githubPatScopeKey(setting.getString("scopeId"), setting.getString("profileId"))
-                editor.putString(marker, encryptSecure("1", marker))
+            val preferences = activity.getSharedPreferences(storeName, Context.MODE_PRIVATE)
+            if (!key.startsWith("github-pat:")) return@persistSecure preferences.edit().putString(key, encryptSecure(value, key)).commit()
+
+            val setting = args.getJSObject("setting") ?: throw IllegalArgumentException("setting")
+            val profileId = setting.getString("profileId")
+            val scopeId = setting.getString("scopeId")
+            val marker = githubPatScopeKey(scopeId, profileId)
+            val previousValue = preferences.getString(key, null)
+            val previousMarker = preferences.getString(marker, null)
+            if (!preferences.edit()
+                    .putString(marker, encryptSecure("1", marker))
+                    .putString(key, encryptSecure(value, key))
+                    .commit()) return@persistSecure false
+            if (DevHudWidgetStore(activity.applicationContext).replaceProfileToken(profileId, scopeId, value)) {
+                refreshWidgets()
+                return@persistSecure true
             }
-            editor.putString(key, encryptSecure(value, key)).commit()
+
+            val rollback = preferences.edit()
+            if (previousValue == null) rollback.remove(key) else rollback.putString(key, previousValue)
+            if (previousMarker == null) rollback.remove(marker) else rollback.putString(marker, previousMarker)
+            rollback.commit()
+            false
         }
     }
 

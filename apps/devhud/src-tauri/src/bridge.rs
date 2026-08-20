@@ -604,6 +604,10 @@ fn exact_keys(value: &serde_json::Map<String, Value>, expected: &[&str]) -> bool
     value.len() == expected.len() && expected.iter().all(|key| value.contains_key(*key))
 }
 
+fn javascript_string_len(value: &str) -> usize {
+    value.encode_utf16().count()
+}
+
 fn validate_widget_request(request: &Value) -> Result<(), String> {
     let operation = request
         .get("operation")
@@ -661,11 +665,13 @@ fn validate_widget_request(request: &Value) -> Result<(), String> {
             && value
                 .get("name")
                 .and_then(Value::as_str)
-                .is_some_and(|name| !name.trim().is_empty() && name.len() <= 128)
+                .is_some_and(|name| !name.trim().is_empty() && javascript_string_len(name) <= 128)
             && value
                 .get("query")
                 .and_then(Value::as_str)
-                .is_some_and(|query| !query.trim().is_empty() && query.len() <= 1024);
+                .is_some_and(|query| {
+                    !query.trim().is_empty() && javascript_string_len(query) <= 1024
+                });
         return valid
             .then_some(())
             .ok_or_else(|| "invalid-argument".to_string());
@@ -727,7 +733,7 @@ fn validate_widget_request(request: &Value) -> Result<(), String> {
         && value
             .get("query")
             .and_then(Value::as_str)
-            .is_some_and(|query| query.len() <= 1024)
+            .is_some_and(|query| javascript_string_len(query) <= 1024)
         && ["total", "open", "draft", "merged", "closed"]
             .into_iter()
             .all(valid_count)
@@ -750,7 +756,9 @@ fn validate_widget_request(request: &Value) -> Result<(), String> {
                 ) && item
                     .get("nodeId")
                     .and_then(Value::as_str)
-                    .is_some_and(|node_id| !node_id.is_empty() && node_id.len() <= 128)
+                    .is_some_and(|node_id| {
+                        !node_id.is_empty() && javascript_string_len(node_id) <= 128
+                    })
                     && item
                         .get("number")
                         .and_then(Value::as_u64)
@@ -758,11 +766,11 @@ fn validate_widget_request(request: &Value) -> Result<(), String> {
                     && item
                         .get("title")
                         .and_then(Value::as_str)
-                        .is_some_and(|title| title.len() <= 512)
+                        .is_some_and(|title| javascript_string_len(title) <= 512)
                     && item
                         .get("repository")
                         .and_then(Value::as_str)
-                        .is_some_and(|repository| repository.len() <= 256)
+                        .is_some_and(|repository| javascript_string_len(repository) <= 256)
                     && item
                         .get("state")
                         .and_then(Value::as_str)
@@ -1527,7 +1535,7 @@ mod tests {
     use super::{
         NativeBridgeState, handle_native_bridge_request, ios_runtime_os_version, is_auth_callback,
         purge_clears_diagnostics, routes_to_mobile_plugin, runtime_os_version, shortcut_status,
-        validate_auth_browser_request, validate_diagnostics_export,
+        validate_auth_browser_request, validate_diagnostics_export, validate_widget_request,
     };
     #[cfg(desktop)]
     use super::{
@@ -2051,6 +2059,70 @@ mod tests {
                 &json!({ "operation": "widgets.disable-deck", "deckId": "deck" }),
                 &NativeBridgeState::default()
             ),
+            Err("invalid-argument".to_string())
+        );
+    }
+
+    #[test]
+    fn widget_string_bounds_match_javascript_utf16_lengths() {
+        let deck_id = "018f47a2-7b3c-7def-8abc-1234567890ac";
+        let configuration = json!({
+            "version": 1,
+            "deckId": deck_id,
+            "name": "가".repeat(128),
+            "query": "😀".repeat(512),
+            "profileId": "work",
+            "profileKind": "fine-grained",
+            "scopeId": "origin.scope",
+            "language": "ko"
+        });
+        assert_eq!(
+            validate_widget_request(&json!({
+                "operation": "widgets.enable-deck",
+                "configuration": configuration
+            })),
+            Ok(())
+        );
+        let snapshot = json!({
+            "version": 1,
+            "deckId": deck_id,
+            "query": "😀".repeat(512),
+            "counts": { "total": 1, "open": 1, "draft": 0, "merged": 0, "closed": 0, "bounded": false },
+            "results": [{
+                "nodeId": "가".repeat(128),
+                "number": 1,
+                "title": "😀".repeat(256),
+                "repository": "저".repeat(256),
+                "state": "open",
+                "draft": false
+            }],
+            "state": "fresh",
+            "lastSuccessfulAt": "2026-08-20T00:00:00.000Z",
+            "lastAttemptedAt": "2026-08-20T00:00:00.000Z",
+            "rate": null
+        });
+        assert_eq!(
+            validate_widget_request(&json!({
+                "operation": "widgets.replace-deck-snapshot",
+                "snapshot": snapshot
+            })),
+            Ok(())
+        );
+        let oversized = json!({
+            "version": 1,
+            "deckId": deck_id,
+            "name": "Deck",
+            "query": "😀".repeat(513),
+            "profileId": "work",
+            "profileKind": "fine-grained",
+            "scopeId": "origin.scope",
+            "language": "en"
+        });
+        assert_eq!(
+            validate_widget_request(&json!({
+                "operation": "widgets.enable-deck",
+                "configuration": oversized
+            })),
             Err("invalid-argument".to_string())
         );
     }
