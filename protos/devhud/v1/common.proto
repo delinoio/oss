@@ -83,6 +83,7 @@ enum QuotaKind {
   QUOTA_KIND_UPLOAD_BYTES_ROLLING_DAY = 3;
   QUOTA_KIND_STORED_BYTES = 4;
   QUOTA_KIND_OBJECT_BYTES = 5;
+  QUOTA_KIND_CRASH_REPORTS = 6;
 }
 
 enum PermissionFailureReason {

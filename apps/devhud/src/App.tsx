@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { messages } from "./localization";
+import { appendDiagnosticEvent, captureDiagnosticEvent, readDiagnosticCorrelations, readDiagnosticEvents, recentDiagnosticCorrelationIds } from "./diagnostics";
+import { DiagnosticsPanel } from "./diagnostics-ui";
+import { DiagnosticComponent, DiagnosticSeverity } from "@delinoio/devhud-api-client";
 import type { IdentitySession } from "./identity-client";
 import { AccountIdentity, FirstRunIdentity, ShortcutPaletteTrigger, SynchronizedAppearanceBoundary, SynchronizedSettingsBoundary, SynchronizedShortcutBoundary, UrlMappingDraftProvider } from "./identity-ui";
 import { LifecycleState, NativeBridgeError, NotificationPermission, RuntimePlatform, nativeBridge, type NativeBridgeEventV1, type NativeBridgeV1, type RuntimeSnapshot } from "./native-bridge";
@@ -30,7 +33,7 @@ function capabilitiesFor(runtime: RuntimeSnapshot): RuntimeCapabilities {
   if (runtime.platform === RuntimePlatform.Desktop) {
     available.add(PlatformCapability.Desktop);
     available.add(PlatformCapability.Tray);
-  } else {
+  } else if (runtime.platform === RuntimePlatform.Ios || runtime.platform === RuntimePlatform.Android) {
     available.add(PlatformCapability.Mobile);
   }
   if (runtime.capabilities.notifications) available.add(PlatformCapability.Notifications);
@@ -97,6 +100,10 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
     void markFrontendReady()?.catch(() => {});
   }, []);
   useEffect(() => {
+    readDiagnosticEvents(storage);
+    readDiagnosticCorrelations(storage);
+  }, [storage]);
+  useEffect(() => {
     let active = true;
     let unlisten: (() => void) | undefined;
     const receive = (event: NativeBridgeEventV1) => {
@@ -142,6 +149,21 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
       unlisten?.();
     };
   }, [bridge, initialContentState, initialRuntime]);
+  useEffect(() => {
+    if (!runtime) return;
+    const captureError = (event: ErrorEvent) => {
+      appendDiagnosticEvent(storage, captureDiagnosticEvent(runtime, { component: DiagnosticComponent.APP, severity: DiagnosticSeverity.ERROR, errorCode: "APP_UNHANDLED_ERROR", error: event.error, relatedCorrelationIds: recentDiagnosticCorrelationIds(storage) }));
+    };
+    const captureRejection = (event: PromiseRejectionEvent) => {
+      appendDiagnosticEvent(storage, captureDiagnosticEvent(runtime, { component: DiagnosticComponent.APP, severity: DiagnosticSeverity.ERROR, errorCode: "APP_UNHANDLED_REJECTION", error: event.reason, relatedCorrelationIds: recentDiagnosticCorrelationIds(storage) }));
+    };
+    addEventListener("error", captureError);
+    addEventListener("unhandledrejection", captureRejection);
+    return () => {
+      removeEventListener("error", captureError);
+      removeEventListener("unhandledrejection", captureRejection);
+    };
+  }, [runtime, storage]);
   useEffect(() => {
     if (!runtime?.capabilities.notifications || lifecycle !== LifecycleState.Active) return;
     let active = true;
@@ -301,7 +323,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
       {surface === SurfaceId.Deck && <><p className="eyebrow">{copy.deck}</p><h2>{copy.deckTitle}</h2><p>{copy.deckSummary}</p>{online ? <EmptyState copy={copy} /> : <OfflineState copy={copy} />}</>}
       {surface === SurfaceId.Settings && <><p className="eyebrow">{copy.settings}</p><h2>{copy.settingsTitle}</h2><p>{copy.settingsSummary}</p><SynchronizedSettingsBoundary copy={copy} bridge={bridge} onOpenExternal={openExternal} showNativeShortcuts={runtime?.platform === RuntimePlatform.Desktop} shortcutCapabilities={runtimeCapabilities} />{supportsLaunchAtLogin && <><label className="check"><input type="checkbox" checked={preferences.launchAtLogin} onChange={(event) => { update({ launchAtLogin: event.target.checked }); void browserShell.setLaunchAtLogin(event.target.checked); }} />{copy.launchAtLogin}</label><p>{copy.launchAtLoginHint}</p></>}{runtime?.capabilities.notifications && <div className="native-setting"><button className="primary" onClick={() => void requestNotifications()}>{copy.notificationPermission}</button><output aria-live="polite">{copy[notificationPermissionLabels[notificationPermission]]}</output>{notificationRequestFailed && <p className="native-setting-error" role="alert">{copy.notificationPermissionFailed}</p>}</div>}{runtime?.capabilities.storeUpdates && <div className="native-setting"><p>{copy.updatePolicy}</p>{storeConfigured && <button className="primary" onClick={() => void openStore()}>{copy.updatePolicy}</button>}{storeOpenFailed && <p className="native-setting-error" role="alert">{copy.storeOpenFailed}</p>}</div>}</>}
       {surface === SurfaceId.Account && <><AccountIdentity copy={copy} apiOrigin={preferences.apiOrigin} inputRef={apiOriginInput} onApiOrigin={applyApiOrigin} /><div className="actions"><button onClick={() => void external(ExternalLinkTarget.Pat)}>{copy.githubCreateFinePat}</button><button onClick={() => void external(ExternalLinkTarget.ClassicPat)}>{copy.githubCreateClassicPat}</button>{!mobile && <button onClick={() => void external(ExternalLinkTarget.Issue)}>{copy.issue}</button>}</div>{externalMessage && <p className="external-message" role={externalMessageIsError ? "alert" : "status"}>{externalMessageText}</p>}</>}
-      {surface === SurfaceId.Diagnostics && <><p className="eyebrow">{copy.diagnostics}</p><h2>{copy.diagnosticsTitle}</h2><p>{copy.diagnosticsSummary}</p><p className="notice">{copy.diagnosticsUnavailable}</p>{runtime && <dl className="runtime-diagnostics"><dt>{copy.diagnosticPlatform}</dt><dd>{runtime.platform}</dd><dt>{copy.diagnosticArchitecture}</dt><dd>{runtime.architecture}</dd><dt>{copy.diagnosticBridge}</dt><dd>v{runtime.bridgeVersion}</dd></dl>}</>}
+      {surface === SurfaceId.Diagnostics && <><p className="eyebrow">{copy.diagnostics}</p><h2>{copy.diagnosticsTitle}</h2><p>{copy.diagnosticsSummary}</p>{runtime && <><dl className="runtime-diagnostics"><dt>{copy.diagnosticPlatform}</dt><dd>{runtime.operatingSystem}</dd><dt>{copy.diagnosticArchitecture}</dt><dd>{runtime.architecture}</dd><dt>{copy.diagnosticBridge}</dt><dd>v{runtime.bridgeVersion}</dd></dl><DiagnosticsPanel copy={copy} runtime={runtime} bridge={bridge} storage={storage} online={online} /></>}</>}
     </section>
     {palette && <div className="overlay" role="presentation"><section ref={paletteRef} className="palette" role="dialog" aria-modal="true" aria-label={copy.commandPalette} onKeyDown={trapPaletteFocus}><input ref={search} value={query} onChange={(event) => setQuery(event.target.value)} placeholder={copy.searchCommands} aria-label={copy.searchCommands} /><div className="commands">{actions.length === 0 ? <p role="status">{copy.noCommands}</p> : actions.map((action) => <button key={action.id} onClick={() => execute(action.id)}>{copy[action.title]}</button>)}</div><button onClick={() => closePalette()}>{copy.close}</button></section></div>}
   </main>);

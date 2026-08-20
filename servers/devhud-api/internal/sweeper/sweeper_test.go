@@ -16,8 +16,8 @@ func TestRunOnceIsBoundedCoordinatedAndRetryable(t *testing.T) {
 	repository := &fakeRepository{
 		accounts: []domain.User{{ID: "one"}, {ID: "two"}},
 		retentionBatches: []domain.RetentionResult{
-			{RequestLogsDeleted: 2, AuditEventsDeleted: 2},
-			{RequestLogsDeleted: 1, AuditEventsDeleted: 2},
+			{RequestLogsDeleted: 2, AuditEventsDeleted: 2, CrashReportsDeleted: 2},
+			{RequestLogsDeleted: 1, AuditEventsDeleted: 2, CrashReportsDeleted: 1},
 			{},
 		},
 	}
@@ -31,7 +31,7 @@ func TestRunOnceIsBoundedCoordinatedAndRetryable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.AccountsClaimed != 2 || result.AccountsPurged != 1 || result.RequestLogsDeleted != 3 || result.AuditEventsDeleted != 4 {
+	if result.AccountsClaimed != 2 || result.AccountsPurged != 1 || result.RequestLogsDeleted != 3 || result.AuditEventsDeleted != 4 || result.CrashReportsDeleted != 3 {
 		t.Fatalf("unexpected result: %+v", result)
 	}
 	if repository.limit != 2 || repository.retentionLimit != 2 || repository.retentionCalls != 3 || coordinator.unlocks != 1 {
@@ -184,6 +184,9 @@ func (*fakeRepository) DeleteAccount(context.Context, string, time.Time) (domain
 }
 func (*fakeRepository) RestoreAccount(context.Context, string, time.Time) (domain.User, error) {
 	return domain.User{}, nil
+}
+func (*fakeRepository) SubmitCrashReport(context.Context, string, domain.CrashReport) (domain.CrashReport, error) {
+	return domain.CrashReport{}, nil
 }
 func (*fakeRepository) RecordRequest(context.Context, domain.RequestLog) error { return nil }
 func (*fakeRepository) RecordAudit(context.Context, domain.AuditEvent) error   { return nil }

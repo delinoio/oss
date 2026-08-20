@@ -96,6 +96,7 @@ const copy = {
       [QuotaKind.UPLOAD_BYTES_ROLLING_DAY]: "Upload bytes (rolling day)",
       [QuotaKind.STORED_BYTES]: "Stored bytes",
       [QuotaKind.OBJECT_BYTES]: "Object bytes",
+      [QuotaKind.CRASH_REPORTS]: "Crash reports",
     } satisfies Record<QuotaKind, string>,
     auditActions: {
       [AuditAction.UNSPECIFIED]: "Unknown action",
@@ -211,6 +212,7 @@ const copy = {
       [QuotaKind.UPLOAD_BYTES_ROLLING_DAY]: "업로드 바이트(최근 1일)",
       [QuotaKind.STORED_BYTES]: "저장된 바이트",
       [QuotaKind.OBJECT_BYTES]: "객체 바이트",
+      [QuotaKind.CRASH_REPORTS]: "크래시 보고서",
     } satisfies Record<QuotaKind, string>,
     auditActions: {
       [AuditAction.UNSPECIFIED]: "알 수 없는 작업",

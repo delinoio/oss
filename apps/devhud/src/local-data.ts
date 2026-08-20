@@ -1,3 +1,5 @@
+import type { StaticCapability } from "@delinoio/devhud-api-client";
+import { clearInMemoryDiagnosticEvents } from "./diagnostics";
 import { canonicalDevHudSettings, defaultDevHudSettings, parseDevHudSettings, type DevHudSettingsV1 } from "./settings-contract";
 import { isValidLogtoAudience, normalizeLogtoIssuer } from "./identity-contract.ts";
 
@@ -71,6 +73,7 @@ export interface CachedIdentityBootstrap {
   readonly audience: string;
   readonly clientId: string;
   readonly redirectUri: "devhud://auth/callback";
+  readonly capabilities: readonly StaticCapability[];
 }
 
 export function readCachedIdentityBootstrap(storage: ReadStorage, apiOrigin: string): CachedIdentityBootstrap | null {
@@ -81,7 +84,9 @@ export function readCachedIdentityBootstrap(storage: ReadStorage, apiOrigin: str
     if (record.redirectUri !== "devhud://auth/callback" || typeof record.clientId !== "string" || !/^[\x21-\x7e]{1,256}$/u.test(record.clientId)) return null;
     const issuer = normalizeLogtoIssuer(record.issuer);
     if (issuer === null || !isValidLogtoAudience(record.audience)) return null;
-    return { issuer, audience: record.audience, clientId: record.clientId, redirectUri: record.redirectUri };
+    const capabilities = record.capabilities === undefined ? [] : record.capabilities;
+    if (!Array.isArray(capabilities) || capabilities.some((capability) => !Number.isInteger(capability))) return null;
+    return { issuer, audience: record.audience, clientId: record.clientId, redirectUri: record.redirectUri, capabilities: Object.freeze([...new Set(capabilities as StaticCapability[])]) };
   } catch {
     return null;
   }
@@ -135,10 +140,11 @@ export function clearAuthenticatedOriginData(storage: MutableStorage, apiOrigin:
   removeMatching(storage, (key) => key.startsWith(originPrefix));
 }
 
-export function clearAllContractedLocalData(storage: MutableStorage): void {
+export function clearAllContractedLocalData(storage: MutableStorage): boolean {
   clearedGuestSettings.add(storage);
   inMemoryGuestSettings.delete(storage);
-  removeMatching(storage, (key) => key.startsWith(prefix) || /^(?:devhud\.(?:deck|draft|clone|cache|permission|pairing)|devhud-extension\.)/u.test(key));
+  clearInMemoryDiagnosticEvents(storage);
+  return removeMatching(storage, (key) => key.startsWith(prefix) || /^(?:devhud\.(?:deck|draft|clone|cache|permission|pairing|diagnostics)|devhud-extension\.)/u.test(key));
 }
 
 function accountKey(apiOrigin: string, suffix: string): string {
@@ -148,21 +154,25 @@ function accountKey(apiOrigin: string, suffix: string): string {
   return `${accountPrefix}${btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/u, "")}.${suffix}`;
 }
 
-function removeMatching(storage: MutableStorage, predicate: (key: string) => boolean): void {
+function removeMatching(storage: MutableStorage, predicate: (key: string) => boolean): boolean {
   const keys: string[] = [];
+  let complete = true;
   try {
     for (let index = 0; index < storage.length; index += 1) {
       const key = storage.key(index);
       if (key !== null && predicate(key)) keys.push(key);
     }
   } catch {
-    // Web Storage cleanup is best-effort and must not block native secure-store purges.
+    complete = false;
+    // Callers decide whether incomplete Web Storage cleanup defers their native purge.
   }
   for (const key of keys) {
     try {
       storage.removeItem(key);
     } catch {
+      complete = false;
       // Continue removing independent entries when one Web Storage operation fails.
     }
   }
+  return complete;
 }

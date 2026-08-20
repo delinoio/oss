@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
@@ -461,6 +462,105 @@ func (s *Store) CompleteAccountPurge(ctx context.Context, user domain.User, now 
 	return tx.Commit(ctx)
 }
 
+func (s *Store) SubmitCrashReport(ctx context.Context, userID string, report domain.CrashReport) (domain.CrashReport, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return domain.CrashReport{}, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var deletionState domain.DeletionState
+	var blockState domain.AdministrativeBlockState
+	if err := tx.QueryRow(ctx, `SELECT deletion_state, administrative_block_state
+        FROM devhud_users WHERE user_id = $1 FOR UPDATE`, userID).Scan(&deletionState, &blockState); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domain.CrashReport{}, domain.ErrNotFound
+		}
+		return domain.CrashReport{}, err
+	}
+	if blockState == domain.AdministrativeBlockStateBlocked {
+		return domain.CrashReport{}, &domain.PermissionError{Failure: domain.PermissionFailureAdministrativeBlock}
+	}
+	if deletionState != domain.DeletionStateActive {
+		return domain.CrashReport{}, &domain.PermissionError{Failure: domain.PermissionFailureDeletionPending}
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM devhud_crash_reports
+        WHERE owner_user_id = $1 AND client_correlation_id = $2 AND expires_at <= $3`,
+		userID, report.ClientCorrelationID, report.AcceptedAt); err != nil {
+		return domain.CrashReport{}, err
+	}
+
+	var existingDigest []byte
+	existingErr := tx.QueryRow(ctx, `SELECT crash_report_id::text, payload_sha256, accepted_at, expires_at
+        FROM devhud_crash_reports
+        WHERE owner_user_id = $1 AND client_correlation_id = $2`, userID, report.ClientCorrelationID).
+		Scan(&report.ID, &existingDigest, &report.AcceptedAt, &report.ExpiresAt)
+	if existingErr == nil {
+		if !bytes.Equal(existingDigest, report.PayloadSHA256) {
+			return domain.CrashReport{}, domain.ErrCorrelationConflict
+		}
+		report.OwnerUserID = userID
+		if err := tx.Commit(ctx); err != nil {
+			return domain.CrashReport{}, err
+		}
+		return report, nil
+	}
+	if !errors.Is(existingErr, pgx.ErrNoRows) {
+		return domain.CrashReport{}, existingErr
+	}
+
+	var retainedReports int
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM devhud_crash_reports
+        WHERE owner_user_id = $1 AND expires_at > $2`, userID, report.AcceptedAt).Scan(&retainedReports); err != nil {
+		return domain.CrashReport{}, err
+	}
+	if retainedReports >= domain.CrashReportMaximumRetainedPerUser {
+		return domain.CrashReport{}, domain.ErrCrashReportQuota
+	}
+
+	reportID, err := s.ids.New()
+	if err != nil {
+		return domain.CrashReport{}, err
+	}
+	command, err := tx.Exec(ctx, `INSERT INTO devhud_crash_reports (
+        crash_report_id, owner_user_id, request_correlation_id, client_correlation_id,
+        payload_sha256, report_schema_version, app_version, build_id, platform,
+        architecture, os_version, tauri_revision, cef_revision, occurred_at,
+        component, severity, error_code, redacted_summary, redacted_stack_trace,
+        related_correlation_ids, duration_milliseconds, accepted_at, expires_at
+    ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
+        $15, $16, $17, $18, $19, $20::uuid[], $21, $22, $23
+    ) ON CONFLICT (owner_user_id, client_correlation_id) DO NOTHING`,
+		reportID, userID, report.RequestCorrelationID, report.ClientCorrelationID,
+		report.PayloadSHA256, report.ReportSchemaVersion, report.AppVersion, report.BuildID,
+		report.Platform, report.Architecture, report.OSVersion, report.TauriRevision,
+		report.CEFRevision, report.OccurredAt, report.Component, report.Severity,
+		report.ErrorCode, report.RedactedSummary, report.RedactedStackTrace,
+		report.RelatedCorrelationIDs, report.DurationMilliseconds, report.AcceptedAt, report.ExpiresAt)
+	if err != nil {
+		return domain.CrashReport{}, err
+	}
+	if command.RowsAffected() == 0 {
+		if err := tx.QueryRow(ctx, `SELECT crash_report_id::text, payload_sha256, accepted_at, expires_at
+            FROM devhud_crash_reports
+            WHERE owner_user_id = $1 AND client_correlation_id = $2`, userID, report.ClientCorrelationID).
+			Scan(&report.ID, &existingDigest, &report.AcceptedAt, &report.ExpiresAt); err != nil {
+			return domain.CrashReport{}, err
+		}
+		if !bytes.Equal(existingDigest, report.PayloadSHA256) {
+			return domain.CrashReport{}, domain.ErrCorrelationConflict
+		}
+	} else {
+		report.ID = reportID
+	}
+	report.OwnerUserID = userID
+	if err := tx.Commit(ctx); err != nil {
+		return domain.CrashReport{}, err
+	}
+	return report, nil
+}
+
 func (s *Store) PruneRetention(ctx context.Context, now time.Time, limit int) (domain.RetentionResult, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -489,10 +589,25 @@ func (s *Store) PruneRetention(ctx context.Context, now time.Time, limit int) (d
 	if err != nil {
 		return domain.RetentionResult{}, err
 	}
+	crashResult, err := tx.Exec(ctx, `WITH expired AS (
+		SELECT crash_report_id FROM devhud_crash_reports
+		WHERE expires_at <= $1
+		ORDER BY expires_at, crash_report_id
+		LIMIT $2
+	)
+	DELETE FROM devhud_crash_reports reports
+	USING expired WHERE reports.crash_report_id = expired.crash_report_id`, now, limit)
+	if err != nil {
+		return domain.RetentionResult{}, err
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return domain.RetentionResult{}, err
 	}
-	return domain.RetentionResult{RequestLogsDeleted: requestResult.RowsAffected(), AuditEventsDeleted: auditResult.RowsAffected()}, nil
+	return domain.RetentionResult{
+		RequestLogsDeleted:  requestResult.RowsAffected(),
+		AuditEventsDeleted:  auditResult.RowsAffected(),
+		CrashReportsDeleted: crashResult.RowsAffected(),
+	}, nil
 }
 
 func (s *Store) TryLock(ctx context.Context) (func(context.Context) error, bool, error) {

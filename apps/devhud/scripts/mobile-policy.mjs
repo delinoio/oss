@@ -26,20 +26,38 @@ export function assertMobileTargets(actualTargets) {
 }
 
 export function assertAndroidBackupExclusions({ androidManifest, androidBackupRules, androidDataExtractionRules }) {
-  const securePreferenceExclusion = '<exclude domain="sharedpref" path="devhud-secure-settings-v1.xml" />';
+  const privatePreferenceExclusions = [
+    '<exclude domain="sharedpref" path="devhud-secure-settings-v1.xml" />',
+    '<exclude domain="sharedpref" path="devhud-diagnostics-cleanup-v1.xml" />',
+  ];
+  const webViewExclusion = '<exclude domain="root" path="app_webview/" />';
   assert(androidManifest.includes('android:fullBackupContent="@xml/backup_rules"'), "Android full-backup policy is missing");
   assert(androidManifest.includes('android:dataExtractionRules="@xml/data_extraction_rules"'), "Android data-extraction policy is missing");
-  assert((androidBackupRules.match(/<exclude domain="sharedpref" path="devhud-secure-settings-v1\.xml" \/>/gu) ?? []).length === 1, "Android full-backup secure-setting exclusion changed");
+  for (const exclusion of privatePreferenceExclusions) {
+    assert(androidBackupRules.includes(exclusion), `Android full-backup exclusion changed: ${exclusion}`);
+  }
+  assert(androidBackupRules.includes(webViewExclusion), "Android full-backup WebView exclusion changed");
   for (const section of ["cloud-backup", "device-transfer"]) {
     const content = androidDataExtractionRules.match(new RegExp(`<${section}>([\\s\\S]*?)<\\/${section}>`, "u"))?.[1] ?? "";
-    assert(content.includes(securePreferenceExclusion), `Android ${section} secure-setting exclusion changed`);
+    for (const exclusion of privatePreferenceExclusions) {
+      assert(content.includes(exclusion), `Android ${section} exclusion changed: ${exclusion}`);
+    }
+    assert(content.includes(webViewExclusion), `Android ${section} WebView exclusion changed`);
   }
 }
 
-export function assertAndroidNativeBridge(androidNativeBridge) {
+export function assertAndroidNativeBridge(androidNativeBridgeInput) {
+  const androidNativeBridge = androidNativeBridgeInput.replaceAll("\r\n", "\n");
+  const onDestroy = androidNativeBridge.match(/override fun onDestroy\(activity: AppCompatActivity\)[\s\S]*?(?=\n    @Command)/u)?.[0] ?? "";
+  const exportDiagnostics = androidNativeBridge.match(/private fun exportDiagnostics\(invoke: Invoke\)[\s\S]*?(?=\n    @ActivityCallback)/u)?.[0] ?? "";
+  const diagnosticsExportResult = androidNativeBridge.match(/private fun diagnosticsExportResult\(invoke: Invoke, result: ActivityResult\)[\s\S]*?(?=\n    private fun retainDiagnosticsCleanup)/u)?.[0] ?? "";
+  const forgetDiagnosticsCleanup = androidNativeBridge.match(/private fun forgetDiagnosticsCleanup\(\): Boolean[\s\S]*?(?=\n    private fun cleanupPendingDiagnosticsExport)/u)?.[0] ?? "";
+  const cleanupPendingDiagnosticsExport = androidNativeBridge.match(/private fun cleanupPendingDiagnosticsExport\(\): Boolean[\s\S]*?(?=\n    private fun hasPersistedDiagnosticsWriteGrant)/u)?.[0] ?? "";
+  const purgeSecure = androidNativeBridge.match(/private fun purgeSecure\(invoke: Invoke\)[\s\S]*?(?=\n    private fun persistSecure)/u)?.[0] ?? "";
+  const persistSecure = androidNativeBridge.match(/private fun persistSecure\(invoke: Invoke[\s\S]*?(?=\n    private fun permissionValue)/u)?.[0] ?? "";
   assert(androidNativeBridge.includes("Executors.newSingleThreadExecutor()"), "Android secure-setting persistence must run off the command thread");
-  assert(/override fun onDestroy\(activity: AppCompatActivity\) \{\s+secureSettingsExecutor\.shutdown\(\)\s+\}/u.test(androidNativeBridge), "Android secure-setting executor must stop with the plugin lifecycle");
-  assert((androidNativeBridge.match(/\.commit\(\)/gu) ?? []).length === 5, "Android secure-setting writes, migrations, removals, reconciliation, and purges must confirm persistence");
+  assert(onDestroy.includes("secureSettingsExecutor.shutdown()"), "Android secure-setting executor must stop with the plugin lifecycle");
+  assert((androidNativeBridge.match(/\.commit\(\)/gu) ?? []).length === 8, "Android secure-setting and diagnostics-cleanup writes must confirm persistence");
   assert((androidNativeBridge.match(/updateAAD\(/gu) ?? []).length === 2, "Android secure values must authenticate their setting key as AES-GCM AAD");
   assert(androidNativeBridge.includes("AEADBadTagException") && androidNativeBridge.includes("authenticateKey = false") && androidNativeBridge.includes("encryptSecure(legacy, key)"), "Android must migrate authenticated legacy ciphertext before requiring key-bound AAD");
   assert(androidNativeBridge.includes('invoke.reject("storage-failure", "storage-failure"'), "Android secure-setting persistence failures must use storage-failure");
@@ -57,14 +75,40 @@ export function assertAndroidNativeBridge(androidNativeBridge) {
   assert(androidNativeBridge.includes("manager.activeNotifications") && androidNativeBridge.includes("it.notification.group == deckId"), "Android Deck cancellation must remove every associated notification");
   assert(androidNativeBridge.includes("activity.intent = Intent(activity.intent).setData(null)"), "Android consumed auth callbacks must be removed from the activity intent");
   assert(androidNativeBridge.includes("peekAuthCallback") && androidNativeBridge.includes("pendingAuthCallback"), "Android auth callback inspection must be non-destructive");
+  assert(exportDiagnostics.includes("if (diagnosticsExportPickerActive)") && exportDiagnostics.indexOf("if (diagnosticsExportPickerActive)") < exportDiagnostics.indexOf("diagnosticsExportPickerActive = true"), "Android diagnostics exports must reject a concurrent picker before reserving another one");
+  assert(exportDiagnostics.includes("if (diagnosticsPurgesInProgress.get() > 0)"), "Android diagnostics exports must remain blocked until destructive secure purges finish");
+  assert(exportDiagnostics.indexOf("diagnosticsExportPickerActive = true") >= 0 && exportDiagnostics.indexOf("diagnosticsExportPickerActive = true") < exportDiagnostics.indexOf("startActivityForResult"), "Android diagnostics exports must record the active picker before launch");
+  assert(diagnosticsExportResult.includes("if (!diagnosticsExportPickerActive)") && diagnosticsExportResult.indexOf("if (!diagnosticsExportPickerActive)") < diagnosticsExportResult.indexOf("val destination"), "Android invalidated diagnostics picker callbacks must stop before destination access");
+  assert(androidNativeBridge.includes("pendingDiagnosticsCleanup") && androidNativeBridge.includes("takePersistableUriPermission"), "Android failed diagnostics cleanup must retain a persistable destination URI");
+  const grantFailureBoundary = diagnosticsExportResult.slice(diagnosticsExportResult.indexOf("takePersistableUriPermission"), diagnosticsExportResult.indexOf("retainDiagnosticsCleanup"));
+  assert(grantFailureBoundary.includes('invoke.reject("storage-failure", "storage-failure")') && grantFailureBoundary.includes("return"), "Android diagnostics exports must reject failed URI grants before retaining cleanup state");
+  assert(!diagnosticsExportResult.includes("if (pendingDiagnosticsCleanup == null) retainDiagnosticsCleanup(destination)"), "Android diagnostics exports must not retain cleanup state for a URI grant that was not acquired");
+  assert(forgetDiagnosticsCleanup.includes("putBoolean(diagnosticsCleanupReleaseOnlyKey, true).commit()") && forgetDiagnosticsCleanup.indexOf("putBoolean(diagnosticsCleanupReleaseOnlyKey, true).commit()") < forgetDiagnosticsCleanup.indexOf("releasePersistableUriPermission"), "Android diagnostics cleanup must persist its release-only transition before releasing the URI grant");
+  assert(forgetDiagnosticsCleanup.indexOf("releasePersistableUriPermission") >= 0 && forgetDiagnosticsCleanup.indexOf("releasePersistableUriPermission") < forgetDiagnosticsCleanup.indexOf("remove(diagnosticsCleanupUriKey)"), "Android diagnostics cleanup must clear its retry state after releasing the URI grant");
+  assert(forgetDiagnosticsCleanup.includes("if (hasPersistedDiagnosticsWriteGrant(destination))") && forgetDiagnosticsCleanup.indexOf("hasPersistedDiagnosticsWriteGrant(destination)") < forgetDiagnosticsCleanup.indexOf("releasePersistableUriPermission"), "Android diagnostics cleanup must not release an already-released URI grant");
+  assert(forgetDiagnosticsCleanup.includes("catch (_: Exception) {\n                return false\n            }"), "Android diagnostics cleanup must preserve retry state when URI grant release fails");
+  assert(cleanupPendingDiagnosticsExport.includes("if (diagnosticsCleanupReleaseOnly) return forgetDiagnosticsCleanup()") && cleanupPendingDiagnosticsExport.indexOf("diagnosticsCleanupReleaseOnly") < cleanupPendingDiagnosticsExport.indexOf("hasPersistedDiagnosticsWriteGrant(destination)"), "Android release-only cleanup must not require an already-released URI grant");
+  assert(cleanupPendingDiagnosticsExport.includes("if (!hasPersistedDiagnosticsWriteGrant(destination)) return false") && cleanupPendingDiagnosticsExport.indexOf("hasPersistedDiagnosticsWriteGrant(destination)") < cleanupPendingDiagnosticsExport.indexOf("contentResolver.delete"), "Android byte cleanup must preserve retry state when its destination grant is missing");
+  assert(cleanupPendingDiagnosticsExport.includes('requireNotNull(activity.contentResolver.openFileDescriptor(destination, "wt")).use { true }'), "Android diagnostics cleanup must explicitly truncate the destination and treat success as complete");
+  assert(androidNativeBridge.includes("cleanupPendingDiagnosticsExport()") && androidNativeBridge.includes("FileNotFoundException"), "Android diagnostics cleanup must retry and confirm destination absence");
+  assert(purgeSecure.includes('val destructivePurge = scope in setOf("logout", "account-deletion")') && purgeSecure.indexOf("diagnosticsPurgesInProgress.incrementAndGet()") < purgeSecure.indexOf("diagnosticsExportPickerActive = false") && purgeSecure.indexOf("diagnosticsExportPickerActive = false") < purgeSecure.indexOf("cleanupPendingDiagnosticsExport()"), "Android destructive purges must reserve invalidation before invalidating active diagnostics pickers and cleanup");
+  assert(purgeSecure.includes("diagnosticsPurgesInProgress.incrementAndGet()") && (purgeSecure.match(/diagnosticsPurgesInProgress\.decrementAndGet\(\)/gu) ?? []).length === 3, "Android destructive purges must retain and release export invalidation across queued persistence and failures");
+  assert(persistSecure.includes("finally") && persistSecure.includes("onComplete()"), "Android secure persistence must release purge state after executor completion");
+  assert(purgeSecure.includes("if (!cleanupPendingDiagnosticsExport())"), "Android destructive purges must propagate diagnostics cleanup failures");
   assert(androidNativeBridge.includes("storeIntent().resolveActivity(activity.packageManager)"), "Android update status must resolve a market handler");
 }
 
-export function assertIosNativeBridge(iosNativeBridge) {
+export function assertIosNativeBridge(iosNativeBridgeInput) {
+  const iosNativeBridge = iosNativeBridgeInput.replaceAll("\r\n", "\n");
+  const exportDiagnostics = iosNativeBridge.match(/private func exportDiagnostics[\s\S]*?(?=\n    @discardableResult\n    private func cleanupDiagnosticsTemporaryDirectory)/u)?.[0] ?? "";
+  const cleanupDiagnostics = iosNativeBridge.match(/private func cleanupDiagnosticsTemporaryDirectory[\s\S]*?(?=\n    @discardableResult\n    private func finishDiagnosticsExport)/u)?.[0] ?? "";
+  const finishDiagnosticsExport = iosNativeBridge.match(/private func finishDiagnosticsExport[\s\S]*?(?=\n    func documentPicker)/u)?.[0] ?? "";
   const readSecure = iosNativeBridge.match(/private func readSecure[\s\S]*?(?=\n    private func writeSecure)/u)?.[0] ?? "";
   const writeSecure = iosNativeBridge.match(/private func writeSecure[\s\S]*?(?=\n    private func removeSecure)/u)?.[0] ?? "";
+  const purgeSecure = iosNativeBridge.match(/private func purgeSecure[\s\S]*?(?=\n    private func permissionName)/u)?.[0] ?? "";
   assert(iosNativeBridge.includes('invoke.reject("storage-failure", code: "storage-failure")'), "iOS Keychain failures must use storage-failure");
   assert(iosNativeBridge.includes('invoke.reject("permission-denied", code: "permission-denied")'), "iOS notification publication must honor authorization");
+  assert(iosNativeBridge.includes('case "runtime.snapshot":') && iosNativeBridge.includes("UIDevice.current.systemVersion"), "iOS runtime diagnostics must use the installed native OS version");
   assert(iosNativeBridge.includes("UNUserNotificationCenterDelegate") && iosNativeBridge.includes("willPresent notification"), "iOS foreground Deck notifications must be presented by a delegate");
   assert(iosNativeBridge.includes('(url.path.isEmpty || url.path == "/")'), "iOS native navigation must accept both root API-origin spellings");
   assert(iosNativeBridge.includes("isSecureOrLoopback(issuer)") && iosNativeBridge.includes("destination.scheme == issuer.scheme"), "iOS authentication must accept configured issuer paths and loopback HTTP while preserving same-origin navigation");
@@ -74,6 +118,10 @@ export function assertIosNativeBridge(iosNativeBridge) {
   assert(readSecure.includes("markerStatus == errSecItemNotFound") && readSecure.includes("guard markerStatus == errSecSuccess"), "iOS GitHub PAT reads must require the matching API-origin scope marker");
   assert((iosNativeBridge.match(/rollbackCreatedGitHubPatScope\(createdMarker\)/gu) ?? []).length === 2 && iosNativeBridge.includes("github_pat_scope_rollback_failed"), "iOS failed PAT writes must roll back newly created scope markers");
   assert(writeSecure.includes("previousGitHubPatData = previousData") && writeSecure.includes("rollbackGitHubPatWrite(setting, previousData: previousGitHubPatData)") && writeSecure.includes("github_pat_write_rollback_failed"), "iOS failed legacy cleanup must restore or remove the shared GitHub PAT");
+  assert(cleanupDiagnostics.includes("pendingDiagnosticsCleanup = target") && cleanupDiagnostics.includes("error.code == .fileNoSuchFile"), "iOS failed diagnostics cleanup must remain pending while missing files count as clean");
+  assert(exportDiagnostics.includes("guard cleanupDiagnosticsTemporaryDirectory()") && finishDiagnosticsExport.includes("if failed || !cleanupSucceeded"), "iOS diagnostics exports must fail closed when temporary cleanup fails");
+  assert(purgeSecure.includes('if scope == "logout" || scope == "account-deletion"'), "iOS API-origin changes must preserve pending diagnostics exports");
+  assert(purgeSecure.includes("guard diagnosticsCleanupSucceeded else"), "iOS destructive purges must propagate diagnostics cleanup failures");
   assert(iosNativeBridge.includes('UserDefaults(suiteName: appGroup)'), "iOS must bind the contracted App Group");
 }
 
@@ -128,6 +176,12 @@ export function assertAndroidArtifactEntries(entries, abi, format) {
   assert(entries.includes(format === "aab" ? "base/manifest/AndroidManifest.xml" : "AndroidManifest.xml"), "Android artifact manifest is missing");
   if (format === "aab") assert(entries.includes("BundleConfig.pb"), "Android App Bundle configuration is missing");
   assert(!entries.some((entry) => /cef|chromium|chrome-extension|browser-extension/iu.test(entry)), "CEF or browser-extension file leaked into the Android artifact");
+}
+
+export function assertAndroidNativeLibrary(nativeLibrary) {
+  // The shared frontend embeds the pinned desktop Chromium revision for validation;
+  // native CEF exports, rather than that inert metadata, identify a leaked runtime.
+  assert(!/libcef|cef_initialize/iu.test(nativeLibrary), "CEF symbols leaked into the Android native library");
 }
 
 function workflowJob(workflow, name) {

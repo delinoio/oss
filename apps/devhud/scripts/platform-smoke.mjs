@@ -278,7 +278,7 @@ await runScenario(
   executable,
   "missing-resource",
   78,
-  ["cef_fatal_initialization", "resources.pak"],
+  ["cef_fatal_initialization", "resource-pack"],
   { rustLog: "off" },
 );
 console.log(`devhud: platform smoke passed for ${target.id} (${target.minimum})`);
