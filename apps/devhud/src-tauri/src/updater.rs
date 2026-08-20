@@ -58,6 +58,8 @@ pub const ROOT_PRODUCTION_READY: bool = false;
 const HEALTH_FILE_PREFIX: &str = "devhud-update-health-v1-";
 const HEALTH_ARGUMENT: &str = "--devhud-update-health-v1=";
 const HEALTH_TOKEN_ARGUMENT: &str = "--devhud-update-health-token-v1=";
+#[cfg(any(test, target_os = "windows"))]
+const WINDOWS_INSTALLER_REBOOT_REQUIRED_EXIT_CODE: i32 = 3010;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -872,10 +874,10 @@ pub struct UpdaterSnapshot {
     pub diagnostic: Option<UpdateDiagnostic>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RestartDisposition {
     Relaunched,
-    RestartRequired,
+    RestartRequired { executable: PathBuf },
 }
 
 pub trait Installer: Send + Sync {
@@ -883,7 +885,7 @@ pub trait Installer: Send + Sync {
         &self,
         verified_artifact: &[u8],
     ) -> Result<RestartDisposition, DiagnosticCode>;
-    fn retry_restart(&self) -> Result<(), DiagnosticCode>;
+    fn retry_restart(&self, executable: &Path) -> Result<(), DiagnosticCode>;
 }
 
 pub trait RestartHandoff: Send + Sync {
@@ -948,11 +950,6 @@ impl<'a> PlatformInstaller<'a> {
         result
     }
 
-    fn restart_current(&self) -> Result<(), DiagnosticCode> {
-        let executable = std::env::current_exe().map_err(|_| DiagnosticCode::RestartFailed)?;
-        self.restart(&executable)
-    }
-
     #[cfg(target_os = "linux")]
     fn install_linux(&self, bytes: &[u8]) -> Result<RestartDisposition, DiagnosticCode> {
         match self.package_kind {
@@ -963,6 +960,11 @@ impl<'a> PlatformInstaller<'a> {
                 if !bytes.starts_with(b"!<arch>\n") {
                     return Err(DiagnosticCode::InstallationFailed);
                 }
+                // Resolve the installed path before dpkg replaces the running
+                // executable. Afterwards current_exe may point at a deleted
+                // inode and cannot be used for restart-only recovery.
+                let executable =
+                    std::env::current_exe().map_err(|_| DiagnosticCode::InstallationFailed)?;
                 let package = self.stage(bytes, ".deb")?;
                 let status = Command::new("pkexec")
                     .args(["dpkg", "--install"])
@@ -972,9 +974,9 @@ impl<'a> PlatformInstaller<'a> {
                 if !status.success() {
                     return Err(DiagnosticCode::InstallationFailed);
                 }
-                Ok(match self.restart_current() {
+                Ok(match self.restart(&executable) {
                     Ok(()) => RestartDisposition::Relaunched,
-                    Err(_) => RestartDisposition::RestartRequired,
+                    Err(_) => RestartDisposition::RestartRequired { executable },
                 })
             }
             _ => Err(DiagnosticCode::InstallationFailed),
@@ -1025,6 +1027,8 @@ impl<'a> PlatformInstaller<'a> {
             }
             _ => return Err(DiagnosticCode::InstallationFailed),
         };
+        let restart_executable =
+            std::env::current_exe().map_err(|_| DiagnosticCode::InstallationFailed)?;
         let package = self.stage(bytes, suffix)?;
         let status = if executable.is_empty() {
             Command::new(package.path()).args(arguments).status()
@@ -1037,12 +1041,19 @@ impl<'a> PlatformInstaller<'a> {
             command.status()
         }
         .map_err(|_| DiagnosticCode::InstallationFailed)?;
-        if !status.success() {
-            return Err(DiagnosticCode::InstallationFailed);
+        match classify_windows_installer_exit(self.package_kind, status.success(), status.code())? {
+            WindowsInstallerExit::Installed => {}
+            WindowsInstallerExit::RestartRequired => {
+                return Ok(RestartDisposition::RestartRequired {
+                    executable: restart_executable,
+                });
+            }
         }
-        Ok(match self.restart_current() {
+        Ok(match self.restart(&restart_executable) {
             Ok(()) => RestartDisposition::Relaunched,
-            Err(_) => RestartDisposition::RestartRequired,
+            Err(_) => RestartDisposition::RestartRequired {
+                executable: restart_executable,
+            },
         })
     }
 
@@ -1285,8 +1296,8 @@ impl Installer for PlatformInstaller<'_> {
         let result = self.install_windows(verified_artifact);
         #[cfg(target_os = "macos")]
         let result = self.install_macos(verified_artifact);
-        match result {
-            Ok(RestartDisposition::RestartRequired) => tracing::warn!(
+        match &result {
+            Ok(RestartDisposition::RestartRequired { .. }) => tracing::warn!(
                 event = "updater_restart_required",
                 package = self.package_kind.header_value()
             ),
@@ -1300,12 +1311,12 @@ impl Installer for PlatformInstaller<'_> {
         result
     }
 
-    fn retry_restart(&self) -> Result<(), DiagnosticCode> {
+    fn retry_restart(&self, executable: &Path) -> Result<(), DiagnosticCode> {
         tracing::info!(
             event = "updater_restart_retry_started",
             package = self.package_kind.header_value()
         );
-        let result = self.restart_current();
+        let result = self.restart(executable);
         if let Err(code) = result {
             tracing::warn!(
                 event = "updater_restart_retry_failed",
@@ -1315,6 +1326,29 @@ impl Installer for PlatformInstaller<'_> {
         }
         result
     }
+}
+
+#[cfg(any(test, target_os = "windows"))]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum WindowsInstallerExit {
+    Installed,
+    RestartRequired,
+}
+
+#[cfg(any(test, target_os = "windows"))]
+fn classify_windows_installer_exit(
+    package_kind: PackageKind,
+    succeeded: bool,
+    exit_code: Option<i32>,
+) -> Result<WindowsInstallerExit, DiagnosticCode> {
+    if package_kind == PackageKind::WindowsMsi
+        && exit_code == Some(WINDOWS_INSTALLER_REBOOT_REQUIRED_EXIT_CODE)
+    {
+        return Ok(WindowsInstallerExit::RestartRequired);
+    }
+    succeeded
+        .then_some(WindowsInstallerExit::Installed)
+        .ok_or(DiagnosticCode::InstallationFailed)
 }
 
 #[cfg(target_os = "linux")]
@@ -1384,6 +1418,7 @@ pub struct UpdaterController {
     snapshot: UpdaterSnapshot,
     candidate: Option<VerifiedCandidate>,
     artifact: Option<VerifiedArtifact>,
+    restart_executable: Option<PathBuf>,
     canceled: Arc<AtomicBool>,
 }
 
@@ -1413,6 +1448,7 @@ impl UpdaterController {
             package_kind,
             candidate: None,
             artifact: None,
+            restart_executable: None,
             canceled: Arc::new(AtomicBool::new(false)),
         })
     }
@@ -1439,6 +1475,7 @@ impl UpdaterController {
         self.canceled = Arc::new(AtomicBool::new(false));
         self.candidate = None;
         self.artifact = None;
+        self.restart_executable = None;
         self.snapshot.candidate = None;
         self.snapshot.kind = UpdaterStateKind::Checking;
         self.snapshot.diagnostic = None;
@@ -1548,8 +1585,11 @@ impl UpdaterController {
                 })?;
                 installer.install_and_restart(&artifact.0)
             }
-            UpdaterStateKind::RestartRequired => installer
-                .retry_restart()
+            UpdaterStateKind::RestartRequired => self
+                .restart_executable
+                .as_deref()
+                .ok_or(DiagnosticCode::RestartFailed)
+                .and_then(|executable| installer.retry_restart(executable))
                 .map(|()| RestartDisposition::Relaunched),
             _ => {
                 return Err(UpdaterError::new(
@@ -1563,13 +1603,14 @@ impl UpdaterController {
                 // The old process continues to report its running version until
                 // the health-checked replacement has started successfully.
                 self.artifact = None;
+                self.restart_executable = None;
                 self.snapshot.kind = UpdaterStateKind::Restarting;
                 self.snapshot.diagnostic = None;
                 Ok(RestartDisposition::Relaunched)
             }
-            Ok(RestartDisposition::RestartRequired) => {
-                self.require_restart();
-                Ok(RestartDisposition::RestartRequired)
+            Ok(RestartDisposition::RestartRequired { executable }) => {
+                self.require_restart(executable.clone());
+                Ok(RestartDisposition::RestartRequired { executable })
             }
             Err(code) => {
                 let phase = if code == DiagnosticCode::RestartFailed {
@@ -1579,7 +1620,7 @@ impl UpdaterController {
                 };
                 let error = UpdaterError::new(code, phase);
                 if retrying {
-                    self.require_restart();
+                    self.mark_restart_required();
                 } else {
                     self.fail(error.clone());
                 }
@@ -1588,7 +1629,12 @@ impl UpdaterController {
         }
     }
 
-    fn require_restart(&mut self) {
+    fn require_restart(&mut self, executable: PathBuf) {
+        self.restart_executable = Some(executable);
+        self.mark_restart_required();
+    }
+
+    fn mark_restart_required(&mut self) {
         self.artifact = None;
         self.snapshot.kind = UpdaterStateKind::RestartRequired;
         self.snapshot.diagnostic = Some(self.diagnostic(UpdaterError::new(
@@ -1599,6 +1645,7 @@ impl UpdaterController {
 
     fn fail(&mut self, error: UpdaterError) {
         self.artifact = None;
+        self.restart_executable = None;
         self.snapshot.kind = if error.code == DiagnosticCode::Canceled {
             UpdaterStateKind::Canceled
         } else {
@@ -1651,7 +1698,7 @@ impl CheckSchedule {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::AtomicUsize;
+    use std::sync::{Mutex, atomic::AtomicUsize};
 
     use ed25519_dalek::{Signer, SigningKey};
     use serde_json::json;
@@ -1931,7 +1978,7 @@ mod tests {
             Err(self.0)
         }
 
-        fn retry_restart(&self) -> Result<(), DiagnosticCode> {
+        fn retry_restart(&self, _executable: &Path) -> Result<(), DiagnosticCode> {
             Err(self.0)
         }
     }
@@ -1939,6 +1986,8 @@ mod tests {
     struct RestartRequiredInstaller {
         installs: AtomicUsize,
         retries: AtomicUsize,
+        restart_executable: PathBuf,
+        retried_executables: Mutex<Vec<PathBuf>>,
     }
 
     struct TrackingHandoff {
@@ -1964,13 +2013,50 @@ mod tests {
             _artifact: &[u8],
         ) -> Result<RestartDisposition, DiagnosticCode> {
             self.installs.fetch_add(1, Ordering::SeqCst);
-            Ok(RestartDisposition::RestartRequired)
+            Ok(RestartDisposition::RestartRequired {
+                executable: self.restart_executable.clone(),
+            })
         }
 
-        fn retry_restart(&self) -> Result<(), DiagnosticCode> {
-            self.retries.fetch_add(1, Ordering::SeqCst);
-            Ok(())
+        fn retry_restart(&self, executable: &Path) -> Result<(), DiagnosticCode> {
+            self.retried_executables
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .push(executable.to_path_buf());
+            if self.retries.fetch_add(1, Ordering::SeqCst) == 0 {
+                Err(DiagnosticCode::RestartFailed)
+            } else {
+                Ok(())
+            }
         }
+    }
+
+    #[test]
+    fn windows_installer_exit_codes_distinguish_committed_msi_reboots() {
+        assert_eq!(
+            classify_windows_installer_exit(PackageKind::WindowsMsi, true, Some(0)),
+            Ok(WindowsInstallerExit::Installed)
+        );
+        assert_eq!(
+            classify_windows_installer_exit(
+                PackageKind::WindowsMsi,
+                false,
+                Some(WINDOWS_INSTALLER_REBOOT_REQUIRED_EXIT_CODE),
+            ),
+            Ok(WindowsInstallerExit::RestartRequired)
+        );
+        assert_eq!(
+            classify_windows_installer_exit(
+                PackageKind::WindowsNsis,
+                false,
+                Some(WINDOWS_INSTALLER_REBOOT_REQUIRED_EXIT_CODE),
+            ),
+            Err(DiagnosticCode::InstallationFailed)
+        );
+        assert_eq!(
+            classify_windows_installer_exit(PackageKind::WindowsMsi, false, Some(1603)),
+            Err(DiagnosticCode::InstallationFailed)
+        );
     }
 
     #[test]
@@ -2100,14 +2186,19 @@ mod tests {
             )
             .unwrap();
         controller.approve_installation().unwrap();
+        let restart_executable = PathBuf::from("cached-devhud-restart-target");
         let installer = RestartRequiredInstaller {
             installs: AtomicUsize::new(0),
             retries: AtomicUsize::new(0),
+            restart_executable: restart_executable.clone(),
+            retried_executables: Mutex::new(Vec::new()),
         };
 
         assert_eq!(
             controller.approve_restart(&installer).unwrap(),
-            RestartDisposition::RestartRequired
+            RestartDisposition::RestartRequired {
+                executable: restart_executable.clone(),
+            }
         );
         assert_eq!(
             controller.snapshot().kind,
@@ -2118,12 +2209,27 @@ mod tests {
             DiagnosticCode::RestartFailed
         );
         assert_eq!(
+            controller.approve_restart(&installer).unwrap_err().code,
+            DiagnosticCode::RestartFailed
+        );
+        assert_eq!(
+            controller.snapshot().kind,
+            UpdaterStateKind::RestartRequired
+        );
+        assert_eq!(
             controller.approve_restart(&installer).unwrap(),
             RestartDisposition::Relaunched
         );
         assert_eq!(controller.snapshot().kind, UpdaterStateKind::Restarting);
         assert_eq!(installer.installs.load(Ordering::SeqCst), 1);
-        assert_eq!(installer.retries.load(Ordering::SeqCst), 1);
+        assert_eq!(installer.retries.load(Ordering::SeqCst), 2);
+        assert_eq!(
+            *installer
+                .retried_executables
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+            vec![restart_executable.clone(), restart_executable]
+        );
     }
 
     #[test]
