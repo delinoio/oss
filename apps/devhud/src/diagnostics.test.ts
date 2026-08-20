@@ -131,6 +131,32 @@ describe("diagnostics privacy boundary", () => {
     expect(JSON.parse(localStorage.getItem(DiagnosticsStorageKey) ?? "null")).toEqual([safe]);
   });
 
+  it("drops persisted events containing structural relative paths before export", () => {
+    const now = Date.parse("2026-08-17T00:00:00.000Z");
+    const safe = fixtureEvent(now);
+    for (const relativePath of [
+      "at render (src/private/customer/app.ts:10:2)",
+      "at render (src/private/customer/app.ts)",
+      "config/.env",
+      "config/Dockerfile",
+      "src/private/module:10",
+      "./src/private/app.ts",
+    ]) {
+      const unsafe = { ...fixtureEvent(now - 1), summary: relativePath };
+      localStorage.setItem(DiagnosticsStorageKey, JSON.stringify([unsafe, safe]));
+
+      const events = readDiagnosticEvents(localStorage, now);
+      expect(events, relativePath).toEqual([safe]);
+      expect(JSON.parse(localStorage.getItem(DiagnosticsStorageKey) ?? "null")).toEqual([safe]);
+      expect(redactDiagnosticValue({ relativePath })).toEqual({});
+      expect(prepareDiagnosticsBundle(safe, events).exportJson).not.toContain(relativePath);
+    }
+
+    expect(redactDiagnosticValue({ label: "React/Native iOS/18.6 build 1.0.0/42" })).toEqual({
+      label: "React/Native iOS/18.6 build 1.0.0/42",
+    });
+  });
+
   it("bounds nested local diagnostic parameter scanning without dropping safe events", () => {
     const now = Date.parse("2026-08-17T00:00:00.000Z");
     const bounded = { ...fixtureEvent(now - 3), summary: `${"?x=".repeat(16)}safe` };

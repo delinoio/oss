@@ -187,6 +187,51 @@ func TestValidateCrashReportRejectsHostileDiagnosticContent(t *testing.T) {
 	}
 }
 
+func TestSubmitCrashReportRejectsRelativeLocalPathsBeforePersistence(t *testing.T) {
+	paths := map[string]string{
+		"nested file":        "src/private/customer/app.ts",
+		"nested dotfile":     "config/.env",
+		"special filename":   "config/Dockerfile",
+		"line-numbered path": "src/private/module:10",
+		"explicit relative":  "./src/private/app.ts",
+	}
+	locations := map[string]func(*devhudv1.SubmitCrashReportRequest, string){
+		"build": func(request *devhudv1.SubmitCrashReportRequest, path string) {
+			request.ClientBuild.OsVersion = path
+		},
+		"stack": func(request *devhudv1.SubmitCrashReportRequest, path string) {
+			request.RedactedStackTrace = path
+		},
+		"summary": func(request *devhudv1.SubmitCrashReportRequest, path string) {
+			request.RedactedSummary = path
+		},
+	}
+
+	for pathName, path := range paths {
+		for locationName, mutate := range locations {
+			t.Run(pathName+"/"+locationName, func(t *testing.T) {
+				repositoryCalled := false
+				repository := &serviceRepository{submitCrashReport: func(context.Context, string, domain.CrashReport) (domain.CrashReport, error) {
+					repositoryCalled = true
+					return domain.CrashReport{}, nil
+				}}
+				request := validCrashReportRequest()
+				mutate(request, path)
+
+				_, err := NewDiagnosticsService(repository, serviceClock{}, testServiceLogger()).SubmitCrashReport(
+					authenticatedContext(), connect.NewRequest(request),
+				)
+				if connect.CodeOf(err) != connect.CodeInvalidArgument {
+					t.Fatalf("relative-path diagnostic code = %v", connect.CodeOf(err))
+				}
+				if repositoryCalled {
+					t.Fatal("repository was called for a diagnostic containing a relative local path")
+				}
+			})
+		}
+	}
+}
+
 func TestValidateCrashReportRejectsWebURLsWithoutAuthorities(t *testing.T) {
 	for _, hostile := range []string{
 		"http:/home/alice/project/app.ts",
@@ -319,6 +364,7 @@ func TestValidateCrashReportAcceptsSafeSlashLabelsAndRemoteURLs(t *testing.T) {
 	for _, safe := range []string{
 		"React/Native renderer failed.",
 		"iOS/18.6 runtime classification.",
+		"Build 1.0.0/42 completed.",
 		"https://example.test/assets/app.js:10:2",
 		"https://example.test/assets%2Fapp.js:10:2",
 		"https://example.test/?a=1&b=2&c=3&d=4&e=5&f=6&g=7&h=8&i=9",

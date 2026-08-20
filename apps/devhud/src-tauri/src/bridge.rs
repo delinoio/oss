@@ -54,6 +54,15 @@ struct DiagnosticsExportReservation {
 #[cfg(desktop)]
 impl DiagnosticsExportReservation {
     fn persist(&self, destination: &std::path::Path, contents: &str) -> Result<bool, String> {
+        let file = stage_diagnostics_export(destination, contents)?;
+        self.commit(destination, file)
+    }
+
+    fn commit(
+        &self,
+        destination: &std::path::Path,
+        file: tempfile::NamedTempFile,
+    ) -> Result<bool, String> {
         let state = self
             .state
             .lock()
@@ -61,14 +70,22 @@ impl DiagnosticsExportReservation {
         if state.generation != self.generation {
             return Ok(false);
         }
-        let parent = destination.parent().ok_or("storage-failure")?;
-        let mut file = tempfile::NamedTempFile::new_in(parent).map_err(|_| "storage-failure")?;
-        file.write_all(contents.as_bytes())
-            .map_err(|_| "storage-failure")?;
-        file.as_file().sync_all().map_err(|_| "storage-failure")?;
         file.persist(destination).map_err(|_| "storage-failure")?;
         Ok(true)
     }
+}
+
+#[cfg(desktop)]
+fn stage_diagnostics_export(
+    destination: &std::path::Path,
+    contents: &str,
+) -> Result<tempfile::NamedTempFile, String> {
+    let parent = destination.parent().ok_or("storage-failure")?;
+    let mut file = tempfile::NamedTempFile::new_in(parent).map_err(|_| "storage-failure")?;
+    file.write_all(contents.as_bytes())
+        .map_err(|_| "storage-failure")?;
+    file.as_file().sync_all().map_err(|_| "storage-failure")?;
+    Ok(file)
 }
 
 #[cfg(desktop)]
@@ -1261,7 +1278,7 @@ mod tests {
     #[cfg(desktop)]
     use super::{
         deletes_capture_drafts_for_purge_scope, purge_capture_drafts_before_secure_store,
-        should_restore_capture_window,
+        should_restore_capture_window, stage_diagnostics_export,
     };
 
     #[cfg(desktop)]
@@ -1354,18 +1371,20 @@ mod tests {
 
     #[cfg(desktop)]
     #[test]
-    fn destructive_purge_invalidation_prevents_a_pending_diagnostics_write() {
+    fn destructive_purge_invalidation_prevents_a_staged_diagnostics_write() {
         let state = NativeBridgeState::default();
         let reservation = state
             .begin_diagnostics_export()
             .expect("diagnostics export reservation");
+        let temporary = tempfile::tempdir().expect("temporary export directory");
+        let destination = temporary.path().join("diagnostics.json");
+        let staged =
+            stage_diagnostics_export(&destination, "{}").expect("staged diagnostics export");
         state
             .with_invalidated_diagnostics_exports(|| Ok(()))
             .expect("diagnostics export invalidation");
-        let temporary = tempfile::tempdir().expect("temporary export directory");
-        let destination = temporary.path().join("diagnostics.json");
 
-        assert_eq!(reservation.persist(&destination, "{}"), Ok(false));
+        assert_eq!(reservation.commit(&destination, staged), Ok(false));
         assert!(!destination.exists());
     }
 

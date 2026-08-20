@@ -48,7 +48,14 @@ var (
 	credentialParameterName = regexp.MustCompile(`(?i)^(code|oauth[_.-]?code|credentials?|password|passwd|pwd|secret|token|client[_.-]?secret|(access|refresh|id)[_.-]?token|(r2[_.-]?)?access[_.-]?key[_.-]?id|api[_.-]?key|private[_.-]?key|authorization|cookie|set-cookie|x-amz-(credential|signature))$`)
 	diagnosticAssignment    = regexp.MustCompile(`(?i)(^|[[:space:]]|[(\[{,;&])["']?([A-Za-z][A-Za-z0-9_.-]{0,63})["']?[[:space:]]*[:=][[:space:]]*[^[:space:]&;]+`)
 	forbiddenLocalPath      = regexp.MustCompile(`(?i)(^([[:space:]\p{P}])?|[^:][[:space:]\p{P}=]|:[[:space:]]+)([a-z]:[\\/][^[:space:]]*|\\\\[^[:space:]]+|~/[^[:space:]]+|/[^/[:space:]][^[:space:]]*)`)
-	forbiddenDiagnostic     = []*regexp.Regexp{
+	forbiddenRelativePaths  = []*regexp.Regexp{
+		// Keep this structural evidence aligned with the public crash-report validator.
+		regexp.MustCompile(`(^|[[:space:]([{<"'=:])\.{1,2}[\\/]([\p{L}\p{N}_@.-]+[\\/])*[\p{L}\p{N}_@.-]+(:[0-9]+){0,2}($|[[:space:]\p{P}])`),
+		regexp.MustCompile(`(^|[[:space:]([{<"'=:])([\p{L}\p{N}_@.-]+[\\/])+(\.[\p{L}\p{N}_@.-]+|[\p{L}\p{N}_@.-]+\.[\p{L}][\p{L}\p{N}]*|Dockerfile|Makefile)(:[0-9]+){0,2}($|[[:space:]\p{P}])`),
+		regexp.MustCompile(`(^|[[:space:]([{<"'=:])([\p{L}\p{N}_@.-]+[\\/])+[\p{L}\p{N}_@.-]+:[0-9]+(:[0-9]+)?($|[[:space:]\p{P}])`),
+		regexp.MustCompile(`(^|[[:space:]([{<"'=:])[\p{L}\p{N}_@.-]+\.[\p{L}][\p{L}\p{N}]*:[0-9]+(:[0-9]+)?($|[[:space:]\p{P}])`),
+	}
+	forbiddenDiagnostic = []*regexp.Regexp{
 		regexp.MustCompile(`(?i)\bbearer[[:space:]]+[^[:space:]]+`),
 		regexp.MustCompile(`(?i)\b([[:alnum:]]+_)*(password|passwd|pwd|pat|secret(_access_key)?|token|client[_.-]?secret|(access|refresh|id)[_.-]?token|access[_.-]?key[_.-]?id|api[_.-]?key|private[_.-]?key|authorization|cookie|set-cookie|session[_.-]?id|signing[_.-]?(secret|key|value))\b["']?[[:space:]]*[:=][[:space:]]*[^[:space:]]+`),
 		regexp.MustCompile(`-----BEGIN [A-Z ]*PRIVATE KEY-----`),
@@ -389,7 +396,16 @@ func containsForbiddenEncodedLocalPath(value string) bool {
 }
 
 func containsForbiddenDecodedLocalPath(value string) bool {
-	return forbiddenLocalPath.MatchString(decodePercentEncodedOctets(value))
+	decoded := decodePercentEncodedOctets(value)
+	if forbiddenLocalPath.MatchString(decoded) {
+		return true
+	}
+	for _, pattern := range forbiddenRelativePaths {
+		if pattern.MatchString(decoded) {
+			return true
+		}
+	}
+	return false
 }
 
 func decodePercentEncodedOctets(value string) string {

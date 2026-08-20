@@ -39,7 +39,14 @@ const forbiddenValue = /(?:authorization|bearer\s|github[_-]?pat|access[_-]?toke
 const diagnosticURL = /[A-Za-z][A-Za-z0-9+.-]*:[^\s<>"']+/u;
 const diagnosticURLParameters = /[?#][^\s<>"']+/gu;
 const trailingURLPunctuation = /[)\]}>.,;]+$/u;
-const diagnosticPath = /(?:^|[\s\p{P}=])(?:[a-z]:[\\/]\S*|\\\\\S+|~\/\S+|\/[^/\s]\S*)/iu;
+const diagnosticPaths: ReadonlyArray<RegExp> = [
+  /(?:^|[\s\p{P}=])(?:[a-z]:[\\/]\S*|\\\\\S+|~\/\S+|\/[^/\s]\S*)/iu,
+  // Keep the relative-path evidence aligned with the public crash-report validator.
+  /(?:^|[\s([{<"'=:])\.{1,2}[\\/](?:[\p{L}\p{N}_@.-]+[\\/])*[\p{L}\p{N}_@.-]+(?::\d+){0,2}(?=$|[\s\p{P}])/u,
+  /(?:^|[\s([{<"'=:])(?:[\p{L}\p{N}_@.-]+[\\/])+(?:\.[\p{L}\p{N}_@.-]+|[\p{L}\p{N}_@.-]+\.[\p{L}][\p{L}\p{N}]*|Dockerfile|Makefile)(?::\d+){0,2}(?=$|[\s\p{P}])/u,
+  /(?:^|[\s([{<"'=:])(?:[\p{L}\p{N}_@.-]+[\\/])+[\p{L}\p{N}_@.-]+:\d+(?::\d+)?(?=$|[\s\p{P}])/u,
+  /(?:^|[\s([{<"'=:])[\p{L}\p{N}_@.-]+\.[\p{L}][\p{L}\p{N}]*:\d+(?::\d+)?(?=$|[\s\p{P}])/u,
+];
 const percentEncodedOctets = /(?:%[0-9a-f]{2})+/giu;
 const credentialParameterName = /^(?:code|oauth[_.-]?code|credentials?|password|passwd|pwd|pat|secret|token|client[_.-]?secret|(?:access|refresh|id)[_.-]?token|(?:r2[_.-]?)?access[_.-]?key[_.-]?id|api[_.-]?key|private[_.-]?key|authorization|cookie|set-cookie|session[_.-]?id|signing[_.-]?(?:secret|key|value)|x-amz-(?:credential|signature))$/iu;
 const diagnosticAssignment = /(?:^|\s|[(\[{,;&])["']?([A-Za-z][A-Za-z0-9_.-]{0,63})["']?\s*[:=]\s*[^\s&;]+/gu;
@@ -541,7 +548,8 @@ function containsRawForbiddenDiagnosticValue(value: string, budget: DiagnosticSc
     || containsForbiddenCredentialAssignment(value)
     || containsForbiddenRelativeDiagnosticParameters(value, budget)
     || (value.includes(":") && diagnosticURL.test(value))
-    || ((value.includes("/") || value.includes("\\")) && diagnosticPath.test(value));
+    || ((value.includes("/") || value.includes("\\"))
+      && diagnosticPaths.some((pattern) => pattern.test(value)));
 }
 
 function containsForbiddenCredentialAssignment(value: string): boolean {
