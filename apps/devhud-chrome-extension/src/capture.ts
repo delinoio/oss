@@ -273,14 +273,13 @@ export function injectedCapture(selectElement: boolean, language: "en" | "ko" = 
     panel.append(instructions, status);
     overlayDocument.body.append(highlight, panel);
     const selector = Array.from(allowedElements).join(",");
-    // Keep candidate discovery linear. Visibility is checked only for the active
-    // candidate so deeply nested pages do not turn picker startup into an O(n²)
-    // ancestor walk.
+    // Keep DOM candidate discovery linear, then stop the initial visibility scan
+    // as soon as the first eligible candidate is found.
     const candidates = Array.from(document.querySelectorAll(selector));
     let initialCandidate: Element | null = previousFocus;
     while (initialCandidate && !isAllowedAndVisible(initialCandidate)) initialCandidate = initialCandidate.parentElement;
     let candidateIndex = initialCandidate ? candidates.indexOf(initialCandidate) : -1;
-    if (candidateIndex < 0 && candidates.length > 0) candidateIndex = 0;
+    if (candidateIndex < 0) candidateIndex = candidates.findIndex((candidate) => candidate.isConnected && isAllowedAndVisible(candidate));
     const currentCandidate = () => {
       const candidate = candidates[candidateIndex];
       return candidate?.isConnected && isAllowedAndVisible(candidate) ? candidate : null;

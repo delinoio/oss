@@ -276,6 +276,17 @@ describe("injected capture", () => {
     await expect(capture).resolves.toMatchObject({ outerHtml: '<article aria-label="second">second</article>' });
   });
 
+  it("starts on the first visible candidate when the first DOM candidate is hidden", async () => {
+    document.body.innerHTML = "<main hidden>hidden</main><article>visible</article>";
+    const capture = injectedCapture(true);
+    const overlayWindow = document.querySelector("iframe")?.contentWindow;
+    if (!overlayWindow) throw new Error("selection overlay was not created");
+
+    overlayWindow.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+
+    await expect(capture).resolves.toMatchObject({ outerHtml: "<article>visible</article>" });
+  });
+
   it("skips keyboard candidates clipped by a zero-area overflow ancestor", async () => {
     document.body.innerHTML = '<div style="width: 0; height: 0; overflow: hidden"><main>hidden</main></div><article>visible</article>';
     Object.defineProperty(document.querySelector("div"), "getBoundingClientRect", {
