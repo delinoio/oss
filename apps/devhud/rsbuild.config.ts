@@ -1,4 +1,4 @@
-import { defineConfig } from "@rsbuild/core";
+import { defineConfig, loadEnv } from "@rsbuild/core";
 import { pluginReact } from "@rsbuild/plugin-react";
 
 export const DEVHUD_DEVELOPMENT_CSP = [
@@ -15,9 +15,13 @@ export const DEVHUD_DEVELOPMENT_CSP = [
   "worker-src 'none'",
 ].join("; ");
 
+const { rawPublicVars } = loadEnv({ prefixes: ["TAURI_"] });
+const mobileFrontend = new Set(["android", "ios"]).has(rawPublicVars.TAURI_ENV_PLATFORM ?? "");
+
 export default defineConfig({
   plugins: [pluginReact()],
   source: {
+    preEntry: mobileFrontend ? undefined : "./src/realqa-font.css",
     entry: {
       index: "./src/main.tsx",
     },

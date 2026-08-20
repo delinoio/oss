@@ -75,7 +75,7 @@ Each project must have one project index document and one or more domain contrac
 - `docs/cmds-ttl-language-contract.md`
 
 ### devhud
-The deterministic bilingual frontend, target-isolated Tauri desktop CEF plus iOS/Android system-webview hosts, synchronized Settings boundary, direct-client GitHub.com provider/setup foundation, least-privilege Chrome context picker, authenticated Native Messaging broker, administrator SPA, and Admin API are implemented; full RealQA capture/product-result surfaces, native widgets, and the remaining DevHUD domains are planned.
+The deterministic bilingual frontend, target-isolated Tauri desktop CEF plus iOS/Android system-webview hosts, synchronized Settings boundary, direct-client GitHub.com provider/setup foundation, desktop RealQA capture/editor/encrypted drafts, least-privilege Chrome context picker, authenticated Native Messaging broker, administrator SPA, and Admin API are implemented; issue submission, other product-result surfaces, native widgets, and the remaining DevHUD domains are planned.
 
 - `docs/project-devhud.md`
 - `docs/apps-devhud-foundation.md`

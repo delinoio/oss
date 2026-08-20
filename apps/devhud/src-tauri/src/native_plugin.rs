@@ -104,7 +104,7 @@ fn install_global_shortcut_listener<R: Runtime>(app: &AppHandle<R>) {
                 let Some(action) = state.process_shortcut_event(event) else {
                     return;
                 };
-                if action == crate::shortcuts::ShortcutAction::ShellCommandPalette {
+                if action.requires_visible_window() {
                     restore_main_window(&callback_app);
                 }
                 let Ok(action) = serde_json::to_value(action) else {
