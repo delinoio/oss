@@ -25,6 +25,7 @@ const unicodeNonWhitespacePattern = /\P{White_Space}/u;
 const urlPattern = /[A-Za-z][A-Za-z0-9+.-]*:[^\s<>"']+/gu;
 const urlParametersPattern = /[?#][^\s<>"']+/gu;
 const webDiagnosticUrlProtocols = new Set(["http:", "https:"]);
+const webDiagnosticUrlAuthorityPattern = /^https?:\/\/[^/?#]+/iu;
 const trailingUrlPunctuationPattern = /[)\]}>.,;]+$/u;
 const percentEncodedOctetsPattern = /(?:%[0-9a-f]{2})+/giu;
 const encodedWindowsDrivePathPattern = /^[A-Za-z]:(?:%2f|%5c)/iu;
@@ -416,26 +417,19 @@ interface UrlScanPolicy {
 }
 
 function containsForbiddenUrlContent(value: string, policy: UrlScanPolicy = {}): boolean {
-  if (policy.diagnosticBudget !== undefined) {
-    for (const match of value.matchAll(urlParametersPattern)) {
-      const matchedParameters = match[0];
-      if (matchedParameters === undefined) {
-        continue;
-      }
-      const parameters = matchedParameters
-        .slice(1)
-        .replace(trailingUrlPunctuationPattern, "");
-      if (containsForbiddenParameterContent(parameters, policy)) {
-        return true;
-      }
-    }
-  }
-
+  let previousEnd = 0;
   for (const match of value.matchAll(urlPattern)) {
     const matchedUrl = match[0];
-    if (matchedUrl === undefined) {
+    if (matchedUrl === undefined || match.index === undefined) {
       continue;
     }
+    if (
+      policy.diagnosticBudget !== undefined &&
+      containsForbiddenRelativeUrlContent(value.slice(previousEnd, match.index), policy)
+    ) {
+      return true;
+    }
+    previousEnd = match.index + matchedUrl.length;
     const candidate = matchedUrl.replace(trailingUrlPunctuationPattern, "");
 
     // URL and URLSearchParams tolerate malformed percent escapes, so validate the complete
@@ -450,12 +444,16 @@ function containsForbiddenUrlContent(value: string, policy: UrlScanPolicy = {}):
     try {
       url = new URL(candidate);
     } catch {
+      if (policy.allowedProtocols !== undefined) return true;
       continue;
     }
 
     if (
       url.protocol === "file:" ||
-      (policy.allowedProtocols !== undefined && !policy.allowedProtocols.has(url.protocol))
+      (policy.allowedProtocols !== undefined &&
+        (!policy.allowedProtocols.has(url.protocol) ||
+          !webDiagnosticUrlAuthorityPattern.test(candidate) ||
+          url.hostname === ""))
     ) {
       return true;
     }
@@ -472,6 +470,23 @@ function containsForbiddenUrlContent(value: string, policy: UrlScanPolicy = {}):
       containsForbiddenParameterContent(url.search.slice(1), policy) ||
       containsForbiddenParameterContent(url.hash.slice(1), policy)
     ) {
+      return true;
+    }
+  }
+  return (
+    policy.diagnosticBudget !== undefined &&
+    containsForbiddenRelativeUrlContent(value.slice(previousEnd), policy)
+  );
+}
+
+function containsForbiddenRelativeUrlContent(value: string, policy: UrlScanPolicy): boolean {
+  for (const match of value.matchAll(urlParametersPattern)) {
+    const matchedParameters = match[0];
+    if (matchedParameters === undefined) {
+      continue;
+    }
+    const parameters = matchedParameters.slice(1).replace(trailingUrlPunctuationPattern, "");
+    if (containsForbiddenParameterContent(parameters, policy)) {
       return true;
     }
   }

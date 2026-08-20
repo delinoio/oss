@@ -187,6 +187,20 @@ func TestValidateCrashReportRejectsHostileDiagnosticContent(t *testing.T) {
 	}
 }
 
+func TestValidateCrashReportRejectsWebURLsWithoutAuthorities(t *testing.T) {
+	for _, hostile := range []string{
+		"http:/home/alice/project/app.ts",
+		"https:C:/Users/alice/project/app.ts",
+		"http:///home/alice/project/app.ts",
+	} {
+		request := validCrashReportRequest()
+		request.RedactedSummary = hostile
+		if err := validateCrashReport(request); err == nil {
+			t.Fatalf("authority-less diagnostic URL %q was accepted", hostile)
+		}
+	}
+}
+
 func TestSubmitCrashReportRejectsUnlabeledCredentialsBeforePersistence(t *testing.T) {
 	credentials := map[string]string{
 		"AWS access key":           "AKIA0123456789ABCDEF",
@@ -299,6 +313,7 @@ func TestValidateCrashReportAcceptsSafeSlashLabelsAndRemoteURLs(t *testing.T) {
 		"iOS/18.6 runtime classification.",
 		"https://example.test/assets/app.js:10:2",
 		"https://example.test/assets%2Fapp.js:10:2",
+		"https://example.test/?a=1&b=2&c=3&d=4&e=5&f=6&g=7&h=8&i=9",
 		"callback?state=opaque",
 		"auth/callback#state=opaque",
 		"callback%3Fstate%3Dopaque",

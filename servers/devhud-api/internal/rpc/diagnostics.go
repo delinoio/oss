@@ -402,11 +402,23 @@ func decodePercentEncodedOctets(value string) string {
 }
 
 func containsForbiddenDiagnosticURL(value string, budget *diagnosticScanBudget) bool {
-	if containsForbiddenParsedDiagnosticURL(value, budget) || containsForbiddenRelativeDiagnosticParameters(value, budget) {
+	if containsForbiddenDiagnosticURLAtCurrentEncoding(value, budget) {
 		return true
 	}
 	decoded := decodePercentEncodedOctets(value)
-	return decoded != value && (containsForbiddenParsedDiagnosticURL(decoded, budget) || containsForbiddenRelativeDiagnosticParameters(decoded, budget))
+	return decoded != value && containsForbiddenDiagnosticURLAtCurrentEncoding(decoded, budget)
+}
+
+func containsForbiddenDiagnosticURLAtCurrentEncoding(value string, budget *diagnosticScanBudget) bool {
+	previousEnd := 0
+	for _, match := range diagnosticURL.FindAllStringIndex(value, -1) {
+		if containsForbiddenRelativeDiagnosticParameters(value[previousEnd:match[0]], budget) ||
+			containsForbiddenParsedDiagnosticURL(value[match[0]:match[1]], budget) {
+			return true
+		}
+		previousEnd = match[1]
+	}
+	return containsForbiddenRelativeDiagnosticParameters(value[previousEnd:], budget)
 }
 
 func containsForbiddenRelativeDiagnosticParameters(value string, budget *diagnosticScanBudget) bool {
@@ -420,23 +432,21 @@ func containsForbiddenRelativeDiagnosticParameters(value string, budget *diagnos
 }
 
 func containsForbiddenParsedDiagnosticURL(value string, budget *diagnosticScanBudget) bool {
-	for _, match := range diagnosticURL.FindAllString(value, -1) {
-		candidate := trailingURLPunctuation.ReplaceAllString(match, "")
-		if _, err := url.PathUnescape(candidate); err != nil {
-			return true
-		}
-		parsed, err := url.Parse(candidate)
-		if err != nil {
-			continue
-		}
-		if parsed.User != nil || (!strings.EqualFold(parsed.Scheme, "http") && !strings.EqualFold(parsed.Scheme, "https")) {
-			return true
-		}
-		if containsForbiddenDiagnosticParameters(parsed.RawQuery, budget) || containsForbiddenDiagnosticParameters(parsed.Fragment, budget) {
-			return true
-		}
+	candidate := trailingURLPunctuation.ReplaceAllString(value, "")
+	if _, err := url.PathUnescape(candidate); err != nil {
+		return true
 	}
-	return false
+	parsed, err := url.Parse(candidate)
+	if err != nil {
+		return true
+	}
+	lowerCandidate := strings.ToLower(candidate)
+	if parsed.User != nil || parsed.Host == "" || parsed.Opaque != "" ||
+		(!strings.EqualFold(parsed.Scheme, "http") && !strings.EqualFold(parsed.Scheme, "https")) ||
+		(!strings.HasPrefix(lowerCandidate, "http://") && !strings.HasPrefix(lowerCandidate, "https://")) {
+		return true
+	}
+	return containsForbiddenDiagnosticParameters(parsed.RawQuery, budget) || containsForbiddenDiagnosticParameters(parsed.Fragment, budget)
 }
 
 func containsForbiddenDiagnosticParameters(parameters string, budget *diagnosticScanBudget) bool {
