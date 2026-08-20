@@ -274,6 +274,19 @@ describe("injected capture", () => {
     }
   }, 15_000);
 
+  it("degrades to context-free capture when sanitizer traversal exceeds its node bound", async () => {
+    const root = document.createElement("main");
+    const fragment = document.createDocumentFragment();
+    for (let index = 0; index < 10_001; index += 1) fragment.append(document.createTextNode(""));
+    root.append(fragment);
+    document.body.append(root);
+
+    const result = await select(root);
+
+    expect(result).toBeNull();
+    expect(Range.prototype.getClientRects).toHaveBeenCalledTimes(9_999);
+  }, 15_000);
+
   it("bounds escaped multibyte text without breaking markup", async () => {
     document.body.innerHTML = `<main>${"<&한".repeat(128 * 1024)}</main>`;
 

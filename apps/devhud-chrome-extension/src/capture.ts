@@ -23,6 +23,7 @@ export function injectedCapture(selectElement: boolean, expectedOrigin: string, 
   const clippingOverflow = new Set(["auto", "clip", "hidden", "scroll"]);
   const voidElements = new Set(["hr", "img"]);
   const maximumPickerElements = 10_000;
+  const maximumSanitizerNodes = 10_000;
   const encoder = new TextEncoder();
   const truncateUtf8 = (value: string, maximumBytes: number) => {
     let output = "";
@@ -124,6 +125,7 @@ export function injectedCapture(selectElement: boolean, expectedOrigin: string, 
     const textProbe = document.createElement("div");
     let encodedBytes = 0;
     let exhausted = false;
+    let traversedNodes = 0;
     const appendSerializedText = (value: string) => {
       let chunk = "";
       const appendChunk = (candidate: string) => {
@@ -163,6 +165,8 @@ export function injectedCapture(selectElement: boolean, expectedOrigin: string, 
         stack.pop();
         continue;
       }
+      traversedNodes += 1;
+      if (traversedNodes > maximumSanitizerNodes) return null;
       frame.next = frame.includeSiblings ? node.nextSibling : null;
       if (node.nodeType === Node.TEXT_NODE) {
         if (node instanceof Text && isTextVisible(node)) exhausted = !appendSerializedText(node.textContent ?? "");
@@ -194,8 +198,10 @@ export function injectedCapture(selectElement: boolean, expectedOrigin: string, 
     }
     return fragments.join("");
   };
-  const result = (selected: Element | null): InjectedCapturedBrowserContext => {
+  const result = (selected: Element | null): InjectedCapturedBrowserContext | null => {
     const allowedSelection = selected && isAllowedAndVisible(selected) ? selected : null;
+    const outerHtml = sanitize(allowedSelection);
+    if (outerHtml === null) return null;
     const bounds = allowedSelection?.getBoundingClientRect();
     const selectedBounds = bounds
       && Number.isFinite(bounds.x)
@@ -218,7 +224,7 @@ export function injectedCapture(selectElement: boolean, expectedOrigin: string, 
       userAgent: truncateUtf8(navigator.userAgent, 4 * 1024),
       selectedBounds,
       accessibility,
-      outerHtml: sanitize(allowedSelection),
+      outerHtml,
     };
   };
   if (!selectElement) return Promise.resolve(result(null));

@@ -203,16 +203,18 @@ describe("capture configuration freshness", () => {
     });
 
     await import("./service-worker.js");
-    const requestConfiguration = () => new Promise<void>((resolve) => {
-      runtimeListener!({ type: "configuration" }, {} as chrome.runtime.MessageSender, () => resolve());
+    const requestConfiguration = () => new Promise<{ ok: boolean; state: string; payload: unknown }>((resolve) => {
+      runtimeListener!({ type: "configuration" }, {} as chrome.runtime.MessageSender, (value) => resolve(value as { ok: boolean; state: string; payload: unknown }));
     });
     const firstRequest = requestConfiguration();
     await vi.waitFor(() => expect(getAllPermissions).toHaveBeenCalledTimes(1));
     const secondRequest = requestConfiguration();
-    await secondRequest;
+    const secondResponse = await secondRequest;
     releaseFirstGetAll({ origins: ["https://old.example/*", "https://new.example/*"] });
-    await firstRequest;
+    const firstResponse = await firstRequest;
 
+    expect(firstResponse).toMatchObject({ ok: false, state: "disconnected", payload: null });
+    expect(secondResponse).toMatchObject({ ok: true, state: "accepted", payload: configurations[1] });
     expect(removePermissions).toHaveBeenCalledOnce();
     expect(removePermissions).toHaveBeenCalledWith({ origins: ["https://old.example/*"] });
   });

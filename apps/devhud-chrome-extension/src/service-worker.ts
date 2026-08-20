@@ -91,6 +91,7 @@ async function configurationRequest(): Promise<NativeResponse> {
   if (!response.ok) return response;
   if (!isAuthoritativeConfiguration(response.payload)) return { ...response, ok: false, state: "malformed", payload: null };
   await removeStaleOriginPermissions(response.payload, generation).catch(() => undefined);
+  if (generation !== configurationRequestGeneration) return { ...response, ok: false, state: "disconnected", payload: null };
   return response;
 }
 
