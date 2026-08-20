@@ -9,7 +9,7 @@ const updaterCopy = {
     installed: "Installed version", running: "Running version", check: "Check for updates", checking: "Checking for a signed update…", current: "DevHUD is up to date.",
     available: "Signed update available", releaseNotes: "Release notes", download: "Approve download", downloading: "Downloading and verifying…", cancel: "Cancel",
     downloaded: "The update is downloaded and verified.", approveInstall: "Approve installation", prepared: "Installation is approved. DevHUD will not change files or restart until you approve the final step.",
-    restart: "Install and restart", retryRestart: "Retry restart", restartRequired: "The update is installed, but DevHUD is still running the previous version. Retry the restart to finish.", confirmDownload: "Download this signed update?", confirmInstall: "Approve this verified update for installation?", confirmRestart: "Install the verified update and restart DevHUD now?", confirmRetryRestart: "Restart DevHUD again without reinstalling the update?",
+    restart: "Install and restart", retryRestart: "Retry restart", recoverRestart: "Restart DevHUD", restartRequired: "The update is installed, but DevHUD is still running the previous version. Retry the restart to finish.", installationUncertain: "The package installer reported a failure after files may have changed. Restart DevHUD without reinstalling to recover.", confirmDownload: "Download this signed update?", confirmInstall: "Approve this verified update for installation?", confirmRestart: "Install the verified update and restart DevHUD now?", confirmRetryRestart: "Restart DevHUD again without reinstalling the update?", confirmRecoveryRestart: "Restart DevHUD without reinstalling the update?",
     confirm: "Confirm", close: "Go back", failed: "The update did not complete. Your installed version was preserved.", canceled: "The update was canceled. Your installed version was preserved.",
   },
   ko: {
@@ -17,7 +17,7 @@ const updaterCopy = {
     installed: "설치된 버전", running: "실행 중인 버전", check: "업데이트 확인", checking: "서명된 업데이트를 확인하는 중…", current: "DevHUD가 최신 버전입니다.",
     available: "서명된 업데이트 사용 가능", releaseNotes: "릴리스 노트", download: "다운로드 승인", downloading: "다운로드 및 검증 중…", cancel: "취소",
     downloaded: "업데이트를 다운로드하고 검증했습니다.", approveInstall: "설치 승인", prepared: "설치가 승인되었습니다. 마지막 단계를 승인하기 전에는 파일을 변경하거나 다시 시작하지 않습니다.",
-    restart: "설치 후 다시 시작", retryRestart: "다시 시작 재시도", restartRequired: "업데이트가 설치되었지만 DevHUD는 아직 이전 버전으로 실행 중입니다. 완료하려면 다시 시작을 재시도하세요.", confirmDownload: "이 서명된 업데이트를 다운로드할까요?", confirmInstall: "이 검증된 업데이트의 설치를 승인할까요?", confirmRestart: "검증된 업데이트를 설치하고 지금 DevHUD를 다시 시작할까요?", confirmRetryRestart: "업데이트를 다시 설치하지 않고 DevHUD를 다시 시작할까요?",
+    restart: "설치 후 다시 시작", retryRestart: "다시 시작 재시도", recoverRestart: "DevHUD 다시 시작", restartRequired: "업데이트가 설치되었지만 DevHUD는 아직 이전 버전으로 실행 중입니다. 완료하려면 다시 시작을 재시도하세요.", installationUncertain: "파일이 변경된 후 패키지 설치 프로그램에서 실패를 보고했습니다. 복구하려면 업데이트를 다시 설치하지 않고 DevHUD를 다시 시작하세요.", confirmDownload: "이 서명된 업데이트를 다운로드할까요?", confirmInstall: "이 검증된 업데이트의 설치를 승인할까요?", confirmRestart: "검증된 업데이트를 설치하고 지금 DevHUD를 다시 시작할까요?", confirmRetryRestart: "업데이트를 다시 설치하지 않고 DevHUD를 다시 시작할까요?", confirmRecoveryRestart: "업데이트를 다시 설치하지 않고 DevHUD를 다시 시작할까요?",
     confirm: "확인", close: "돌아가기", failed: "업데이트를 완료하지 못했습니다. 설치된 버전은 보존되었습니다.", canceled: "업데이트를 취소했습니다. 설치된 버전은 보존되었습니다.",
   },
 } as const;
@@ -39,6 +39,7 @@ function downloadCandidateIdentity(status: DesktopUpdaterStatus | null) {
 }
 
 function updaterStatusText(status: DesktopUpdaterStatus, language: SupportedLanguage, copy: (typeof updaterCopy)[SupportedLanguage]) {
+  if (status.kind === "restart-required" && status.diagnostic?.code === "installation-failed") return copy.installationUncertain;
   if (status.kind === "restart-required") return copy.restartRequired;
   if (status.diagnostic) return updaterDiagnosticCopy[language][status.diagnostic.code];
   switch (status.kind) {
@@ -64,13 +65,23 @@ export function DesktopUpdaterPanel({ bridge, language }: { readonly bridge: Nat
   const confirmButton = useRef<HTMLButtonElement>(null);
   const confirmationDialog = useRef<HTMLElement>(null);
   const approvalOpener = useRef<HTMLElement | null>(null);
+  const updaterPanel = useRef<HTMLElement>(null);
+
+  function restoreApprovalFocus() {
+    const opener = approvalOpener.current;
+    approvalOpener.current = null;
+    requestAnimationFrame(() => {
+      const target = opener?.isConnected ? opener : updaterPanel.current;
+      target?.focus();
+    });
+  }
 
   const applyStatus = (nextStatus: DesktopUpdaterStatus) => {
     statusRevision.current += 1;
     if (approvedDownloadCandidate.current !== null && approvedDownloadCandidate.current !== downloadCandidateIdentity(nextStatus)) {
       approvedDownloadCandidate.current = null;
-      approvalOpener.current = null;
       setApproval((current) => current === "download" ? null : current);
+      restoreApprovalFocus();
     }
     setStatus(nextStatus);
   };
@@ -117,9 +128,7 @@ export function DesktopUpdaterPanel({ bridge, language }: { readonly bridge: Nat
   const closeApproval = () => {
     approvedDownloadCandidate.current = null;
     setApproval(null);
-    const opener = approvalOpener.current;
-    approvalOpener.current = null;
-    requestAnimationFrame(() => { if (opener?.isConnected) opener.focus(); });
+    restoreApprovalFocus();
   };
   const handleConfirmationKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (event.key === "Escape") {
@@ -143,9 +152,10 @@ export function DesktopUpdaterPanel({ bridge, language }: { readonly bridge: Nat
     closeApproval();
     await request(operation);
   };
-  const confirmationText = approval === "download" ? copy.confirmDownload : approval === "installation" ? copy.confirmInstall : status?.kind === "restart-required" ? copy.confirmRetryRestart : copy.confirmRestart;
+  const installationUncertain = status?.kind === "restart-required" && status.diagnostic?.code === "installation-failed";
+  const confirmationText = approval === "download" ? copy.confirmDownload : approval === "installation" ? copy.confirmInstall : installationUncertain ? copy.confirmRecoveryRestart : status?.kind === "restart-required" ? copy.confirmRetryRestart : copy.confirmRestart;
 
-  return <section className="desktop-updater" aria-labelledby="desktop-updater-title">
+  return <section ref={updaterPanel} className="desktop-updater" aria-labelledby="desktop-updater-title" tabIndex={-1}>
     <h3 id="desktop-updater-title">{copy.title}</h3>
     <p>{copy.summary}</p>
     <dl><dt>{status?.kind === "restart-required" ? copy.running : copy.installed}</dt><dd>{status?.installedVersion ?? "—"}</dd></dl>
@@ -157,7 +167,7 @@ export function DesktopUpdaterPanel({ bridge, language }: { readonly bridge: Nat
       {status?.kind === "downloading" && <button onClick={() => void request("updates.cancel")}>{copy.cancel}</button>}
       {status?.kind === "downloaded" && <button className="primary" onClick={(event) => openApproval("installation", event.currentTarget)}>{copy.approveInstall}</button>}
       {status?.kind === "installation-approved" && <button className="primary" onClick={(event) => openApproval("restart", event.currentTarget)}>{copy.restart}</button>}
-      {status?.kind === "restart-required" && <button className="primary" onClick={(event) => openApproval("restart", event.currentTarget)}>{copy.retryRestart}</button>}
+      {status?.kind === "restart-required" && <button className="primary" onClick={(event) => openApproval("restart", event.currentTarget)}>{installationUncertain ? copy.recoverRestart : copy.retryRestart}</button>}
     </div>
     {approval && <div className="updater-confirmation-backdrop" role="presentation"><section ref={confirmationDialog} className="updater-confirmation" role="dialog" aria-modal="true" aria-labelledby="updater-confirmation-title" onKeyDown={handleConfirmationKeyDown}><h4 id="updater-confirmation-title">{confirmationText}</h4><div className="actions"><button ref={confirmButton} className="primary" onClick={() => void approve()}>{copy.confirm}</button><button onClick={closeApproval}>{copy.close}</button></div></section></div>}
   </section>;

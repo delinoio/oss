@@ -143,6 +143,7 @@ describe("desktop updater approvals", () => {
 
     listener?.({ version: 1, kind: "desktop-update-status", status: { ...available, kind: "checking", candidate: null } });
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(screen.getByRole("region", { name: "Desktop updates" })).toBe(document.activeElement));
 
     listener?.({
       version: 1,
@@ -201,6 +202,24 @@ describe("desktop updater approvals", () => {
     expect((await screen.findByRole("alert")).textContent).toContain("The update is installed");
     expect(screen.getByText("Running version")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Retry restart" }));
+    expect(screen.getByRole("dialog").textContent).toContain("without reinstalling");
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    await waitFor(() => expect(operations).toEqual(["updates.status", "updates.approve-restart"]));
+  });
+
+  it("offers truthful restart-only recovery after an uncertain Debian install", async () => {
+    const restartRequired: DesktopUpdaterStatus = {
+      ...available,
+      kind: "restart-required",
+      packageKind: "linux-deb",
+      diagnostic: { code: "installation-failed", phase: "installation", target: "linux-x86_64", packageKind: "linux-deb", installedVersion: "0.1.0", candidateVersion: "0.2.0" },
+    };
+    const { bridge, operations } = bridgeWithStatus(restartRequired);
+    render(<DesktopUpdaterPanel bridge={bridge} language="en" />);
+
+    expect((await screen.findByRole("alert")).textContent).toContain("files may have changed");
+    expect(screen.getByText("Running version")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Restart DevHUD" }));
     expect(screen.getByRole("dialog").textContent).toContain("without reinstalling");
     fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
     await waitFor(() => expect(operations).toEqual(["updates.status", "updates.approve-restart"]));

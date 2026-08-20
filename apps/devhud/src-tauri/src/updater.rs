@@ -877,7 +877,10 @@ pub struct UpdaterSnapshot {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RestartDisposition {
     Relaunched,
-    RestartRequired { executable: PathBuf },
+    RestartRequired {
+        executable: PathBuf,
+        diagnostic: DiagnosticCode,
+    },
 }
 
 pub trait Installer: Send + Sync {
@@ -971,12 +974,24 @@ impl<'a> PlatformInstaller<'a> {
                     .arg(package.path())
                     .status()
                     .map_err(|_| DiagnosticCode::InstallationFailed)?;
-                if !status.success() {
-                    return Err(DiagnosticCode::InstallationFailed);
+                if classify_debian_installer_exit(status.success())
+                    == DebianInstallerExit::CommitUncertain
+                {
+                    // dpkg can return failure after unpacking replaced files.
+                    // Keep only the pre-install executable path for an explicit
+                    // restart recovery instead of claiming the old install was
+                    // preserved or attempting the package installation again.
+                    return Ok(RestartDisposition::RestartRequired {
+                        executable,
+                        diagnostic: DiagnosticCode::InstallationFailed,
+                    });
                 }
                 Ok(match self.restart(&executable) {
                     Ok(()) => RestartDisposition::Relaunched,
-                    Err(_) => RestartDisposition::RestartRequired { executable },
+                    Err(_) => RestartDisposition::RestartRequired {
+                        executable,
+                        diagnostic: DiagnosticCode::RestartFailed,
+                    },
                 })
             }
             _ => Err(DiagnosticCode::InstallationFailed),
@@ -1046,6 +1061,7 @@ impl<'a> PlatformInstaller<'a> {
             WindowsInstallerExit::RestartRequired => {
                 return Ok(RestartDisposition::RestartRequired {
                     executable: restart_executable,
+                    diagnostic: DiagnosticCode::RestartFailed,
                 });
             }
         }
@@ -1053,6 +1069,7 @@ impl<'a> PlatformInstaller<'a> {
             Ok(()) => RestartDisposition::Relaunched,
             Err(_) => RestartDisposition::RestartRequired {
                 executable: restart_executable,
+                diagnostic: DiagnosticCode::RestartFailed,
             },
         })
     }
@@ -1297,9 +1314,10 @@ impl Installer for PlatformInstaller<'_> {
         #[cfg(target_os = "macos")]
         let result = self.install_macos(verified_artifact);
         match &result {
-            Ok(RestartDisposition::RestartRequired { .. }) => tracing::warn!(
+            Ok(RestartDisposition::RestartRequired { diagnostic, .. }) => tracing::warn!(
                 event = "updater_restart_required",
-                package = self.package_kind.header_value()
+                package = self.package_kind.header_value(),
+                code = ?diagnostic
             ),
             Err(code) => tracing::warn!(
                 event = "updater_install_failed",
@@ -1325,6 +1343,22 @@ impl Installer for PlatformInstaller<'_> {
             );
         }
         result
+    }
+}
+
+#[cfg(any(test, target_os = "linux"))]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum DebianInstallerExit {
+    Installed,
+    CommitUncertain,
+}
+
+#[cfg(any(test, target_os = "linux"))]
+fn classify_debian_installer_exit(succeeded: bool) -> DebianInstallerExit {
+    if succeeded {
+        DebianInstallerExit::Installed
+    } else {
+        DebianInstallerExit::CommitUncertain
     }
 }
 
@@ -1608,9 +1642,15 @@ impl UpdaterController {
                 self.snapshot.diagnostic = None;
                 Ok(RestartDisposition::Relaunched)
             }
-            Ok(RestartDisposition::RestartRequired { executable }) => {
-                self.require_restart(executable.clone());
-                Ok(RestartDisposition::RestartRequired { executable })
+            Ok(RestartDisposition::RestartRequired {
+                executable,
+                diagnostic,
+            }) => {
+                self.require_restart(executable.clone(), diagnostic);
+                Ok(RestartDisposition::RestartRequired {
+                    executable,
+                    diagnostic,
+                })
             }
             Err(code) => {
                 let phase = if code == DiagnosticCode::RestartFailed {
@@ -1620,7 +1660,7 @@ impl UpdaterController {
                 };
                 let error = UpdaterError::new(code, phase);
                 if retrying {
-                    self.mark_restart_required();
+                    self.mark_restart_required(DiagnosticCode::RestartFailed);
                 } else {
                     self.fail(error.clone());
                 }
@@ -1629,17 +1669,21 @@ impl UpdaterController {
         }
     }
 
-    fn require_restart(&mut self, executable: PathBuf) {
+    fn require_restart(&mut self, executable: PathBuf, diagnostic: DiagnosticCode) {
         self.restart_executable = Some(executable);
-        self.mark_restart_required();
+        self.mark_restart_required(diagnostic);
     }
 
-    fn mark_restart_required(&mut self) {
+    fn mark_restart_required(&mut self, diagnostic: DiagnosticCode) {
         self.artifact = None;
         self.snapshot.kind = UpdaterStateKind::RestartRequired;
         self.snapshot.diagnostic = Some(self.diagnostic(UpdaterError::new(
-            DiagnosticCode::RestartFailed,
-            UpdatePhase::Restart,
+            diagnostic,
+            if diagnostic == DiagnosticCode::RestartFailed {
+                UpdatePhase::Restart
+            } else {
+                UpdatePhase::Installation
+            },
         )));
     }
 
@@ -1987,6 +2031,7 @@ mod tests {
         installs: AtomicUsize,
         retries: AtomicUsize,
         restart_executable: PathBuf,
+        diagnostic: DiagnosticCode,
         retried_executables: Mutex<Vec<PathBuf>>,
     }
 
@@ -2015,6 +2060,7 @@ mod tests {
             self.installs.fetch_add(1, Ordering::SeqCst);
             Ok(RestartDisposition::RestartRequired {
                 executable: self.restart_executable.clone(),
+                diagnostic: self.diagnostic,
             })
         }
 
@@ -2029,6 +2075,18 @@ mod tests {
                 Ok(())
             }
         }
+    }
+
+    #[test]
+    fn debian_installer_failures_preserve_potential_commit_recovery() {
+        assert_eq!(
+            classify_debian_installer_exit(true),
+            DebianInstallerExit::Installed
+        );
+        assert_eq!(
+            classify_debian_installer_exit(false),
+            DebianInstallerExit::CommitUncertain
+        );
     }
 
     #[test]
@@ -2191,6 +2249,7 @@ mod tests {
             installs: AtomicUsize::new(0),
             retries: AtomicUsize::new(0),
             restart_executable: restart_executable.clone(),
+            diagnostic: DiagnosticCode::RestartFailed,
             retried_executables: Mutex::new(Vec::new()),
         };
 
@@ -2198,6 +2257,7 @@ mod tests {
             controller.approve_restart(&installer).unwrap(),
             RestartDisposition::RestartRequired {
                 executable: restart_executable.clone(),
+                diagnostic: DiagnosticCode::RestartFailed,
             }
         );
         assert_eq!(
@@ -2229,6 +2289,65 @@ mod tests {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner),
             vec![restart_executable.clone(), restart_executable]
+        );
+    }
+
+    #[test]
+    fn uncertain_debian_install_retries_restart_without_reinstalling() {
+        let root = SigningKey::from_bytes(&RFC_ROOT_SEED);
+        let signed = fixture("0.2.0", &root, vec![], None);
+        let candidate =
+            verify_manifest(&signed, &Version::new(0, 1, 0), target(), package(), now()).unwrap();
+        let mut controller =
+            UpdaterController::new(Version::new(0, 1, 0), target(), package()).unwrap();
+        controller.check_bytes(&signed, now());
+        controller.begin_download().unwrap();
+        controller
+            .complete_download(
+                verify_artifact(&candidate, b"deterministic updater artifact".to_vec()).unwrap(),
+            )
+            .unwrap();
+        controller.approve_installation().unwrap();
+        let restart_executable = PathBuf::from("cached-devhud-restart-target");
+        let installer = RestartRequiredInstaller {
+            installs: AtomicUsize::new(0),
+            retries: AtomicUsize::new(0),
+            restart_executable: restart_executable.clone(),
+            diagnostic: DiagnosticCode::InstallationFailed,
+            retried_executables: Mutex::new(Vec::new()),
+        };
+
+        assert_eq!(
+            controller.approve_restart(&installer).unwrap(),
+            RestartDisposition::RestartRequired {
+                executable: restart_executable.clone(),
+                diagnostic: DiagnosticCode::InstallationFailed,
+            }
+        );
+        let snapshot = controller.snapshot();
+        assert_eq!(snapshot.kind, UpdaterStateKind::RestartRequired);
+        assert_eq!(snapshot.installed_version, "0.1.0");
+        assert_eq!(
+            snapshot.diagnostic.unwrap(),
+            controller.diagnostic(UpdaterError::new(
+                DiagnosticCode::InstallationFailed,
+                UpdatePhase::Installation,
+            ))
+        );
+        assert!(controller.artifact.is_none());
+
+        assert_eq!(
+            controller.approve_restart(&installer).unwrap_err().code,
+            DiagnosticCode::RestartFailed
+        );
+        assert_eq!(installer.installs.load(Ordering::SeqCst), 1);
+        assert_eq!(installer.retries.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            *installer
+                .retried_executables
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+            vec![restart_executable]
         );
     }
 
