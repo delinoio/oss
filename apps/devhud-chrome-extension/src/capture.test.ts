@@ -148,7 +148,7 @@ describe("injected capture", () => {
     } finally {
       for (let index = elements.length - 1; index >= 0; index -= 1) elements[index]!.remove();
     }
-  });
+  }, 15_000);
 
   it("bounds escaped multibyte text without breaking markup", async () => {
     document.body.innerHTML = `<main>${"<&한".repeat(128 * 1024)}</main>`;

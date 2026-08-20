@@ -7,7 +7,12 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 function build(timezone) {
-  const result = spawnSync("pnpm", ["build:test"], { cwd: root, env: { ...process.env, TZ: timezone }, encoding: "utf8" });
+  const result = spawnSync(process.execPath, [join(root, "scripts/build-test.mjs")], {
+    cwd: root,
+    env: { ...process.env, TZ: timezone },
+    encoding: "utf8",
+  });
+  if (result.error) throw result.error;
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
 }
 test("identical inputs produce byte-identical extension ZIPs across time zones", async () => {

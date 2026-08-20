@@ -831,6 +831,7 @@ jobs:
 
       - name: Verify frontend and immutable pins
         if: ${{ steps.gate.outputs.run == 'true' }}
+        shell: bash
         run: |
           pnpm --filter devhud-chrome-extension test
           pnpm --filter devhud test
