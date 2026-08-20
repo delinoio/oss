@@ -6,18 +6,18 @@ import type { DesktopUpdaterStatus, NativeBridgeResponseV1, NativeBridgeV1 } fro
 const updaterCopy = {
   en: {
     title: "Desktop updates", summary: "DevHUD checks 30 seconds after startup and every 24 active hours. Checks never download or install automatically.",
-    installed: "Installed version", check: "Check for updates", checking: "Checking for a signed update…", current: "DevHUD is up to date.",
+    installed: "Installed version", running: "Running version", check: "Check for updates", checking: "Checking for a signed update…", current: "DevHUD is up to date.",
     available: "Signed update available", releaseNotes: "Release notes", download: "Approve download", downloading: "Downloading and verifying…", cancel: "Cancel",
     downloaded: "The update is downloaded and verified.", approveInstall: "Approve installation", prepared: "Installation is approved. DevHUD will not change files or restart until you approve the final step.",
-    restart: "Install and restart", confirmDownload: "Download this signed update?", confirmInstall: "Approve this verified update for installation?", confirmRestart: "Install the verified update and restart DevHUD now?",
+    restart: "Install and restart", retryRestart: "Retry restart", restartRequired: "The update is installed, but DevHUD is still running the previous version. Retry the restart to finish.", confirmDownload: "Download this signed update?", confirmInstall: "Approve this verified update for installation?", confirmRestart: "Install the verified update and restart DevHUD now?", confirmRetryRestart: "Restart DevHUD again without reinstalling the update?",
     confirm: "Confirm", close: "Go back", failed: "The update did not complete. Your installed version was preserved.", canceled: "The update was canceled. Your installed version was preserved.",
   },
   ko: {
     title: "데스크톱 업데이트", summary: "DevHUD는 시작 30초 후와 활성 실행 시간 24시간마다 확인합니다. 자동으로 다운로드하거나 설치하지 않습니다.",
-    installed: "설치된 버전", check: "업데이트 확인", checking: "서명된 업데이트를 확인하는 중…", current: "DevHUD가 최신 버전입니다.",
+    installed: "설치된 버전", running: "실행 중인 버전", check: "업데이트 확인", checking: "서명된 업데이트를 확인하는 중…", current: "DevHUD가 최신 버전입니다.",
     available: "서명된 업데이트 사용 가능", releaseNotes: "릴리스 노트", download: "다운로드 승인", downloading: "다운로드 및 검증 중…", cancel: "취소",
     downloaded: "업데이트를 다운로드하고 검증했습니다.", approveInstall: "설치 승인", prepared: "설치가 승인되었습니다. 마지막 단계를 승인하기 전에는 파일을 변경하거나 다시 시작하지 않습니다.",
-    restart: "설치 후 다시 시작", confirmDownload: "이 서명된 업데이트를 다운로드할까요?", confirmInstall: "이 검증된 업데이트의 설치를 승인할까요?", confirmRestart: "검증된 업데이트를 설치하고 지금 DevHUD를 다시 시작할까요?",
+    restart: "설치 후 다시 시작", retryRestart: "다시 시작 재시도", restartRequired: "업데이트가 설치되었지만 DevHUD는 아직 이전 버전으로 실행 중입니다. 완료하려면 다시 시작을 재시도하세요.", confirmDownload: "이 서명된 업데이트를 다운로드할까요?", confirmInstall: "이 검증된 업데이트의 설치를 승인할까요?", confirmRestart: "검증된 업데이트를 설치하고 지금 DevHUD를 다시 시작할까요?", confirmRetryRestart: "업데이트를 다시 설치하지 않고 DevHUD를 다시 시작할까요?",
     confirm: "확인", close: "돌아가기", failed: "업데이트를 완료하지 못했습니다. 설치된 버전은 보존되었습니다.", canceled: "업데이트를 취소했습니다. 설치된 버전은 보존되었습니다.",
   },
 } as const;
@@ -34,6 +34,7 @@ const updaterDiagnosticCopy = {
 type Approval = "download" | "installation" | "restart";
 
 function updaterStatusText(status: DesktopUpdaterStatus, language: SupportedLanguage, copy: (typeof updaterCopy)[SupportedLanguage]) {
+  if (status.kind === "restart-required") return copy.restartRequired;
   if (status.diagnostic) return updaterDiagnosticCopy[language][status.diagnostic.code];
   switch (status.kind) {
     case "checking": return copy.checking;
@@ -78,13 +79,13 @@ export function DesktopUpdaterPanel({ bridge, language }: { readonly bridge: Nat
     setApproval(null);
     await request(operation);
   };
-  const confirmationText = approval === "download" ? copy.confirmDownload : approval === "installation" ? copy.confirmInstall : copy.confirmRestart;
+  const confirmationText = approval === "download" ? copy.confirmDownload : approval === "installation" ? copy.confirmInstall : status?.kind === "restart-required" ? copy.confirmRetryRestart : copy.confirmRestart;
 
   return <section className="desktop-updater" aria-labelledby="desktop-updater-title">
     <h3 id="desktop-updater-title">{copy.title}</h3>
     <p>{copy.summary}</p>
-    <dl><dt>{copy.installed}</dt><dd>{status?.installedVersion ?? "—"}</dd></dl>
-    <p className="updater-status" role={status?.kind === "failed" ? "alert" : "status"} aria-live="polite">{status ? updaterStatusText(status, language, copy) : ""}</p>
+    <dl><dt>{status?.kind === "restart-required" ? copy.running : copy.installed}</dt><dd>{status?.installedVersion ?? "—"}</dd></dl>
+    <p className="updater-status" role={status && ["failed", "restart-required"].includes(status.kind) ? "alert" : "status"} aria-live="polite">{status ? updaterStatusText(status, language, copy) : ""}</p>
     {status?.candidate && <section className="release-notes" aria-labelledby="release-notes-title"><h4 id="release-notes-title">{copy.releaseNotes} · {status.candidate.version}</h4><p>{status.candidate.releaseNotes[language]}</p></section>}
     <div className="actions">
       {(!status || ["idle", "up-to-date", "failed", "canceled"].includes(status.kind)) && <button onClick={() => void request("updates.check")}>{copy.check}</button>}
@@ -92,6 +93,7 @@ export function DesktopUpdaterPanel({ bridge, language }: { readonly bridge: Nat
       {status?.kind === "downloading" && <button onClick={() => void request("updates.cancel")}>{copy.cancel}</button>}
       {status?.kind === "downloaded" && <button className="primary" onClick={() => setApproval("installation")}>{copy.approveInstall}</button>}
       {status?.kind === "installation-approved" && <button className="primary" onClick={() => setApproval("restart")}>{copy.restart}</button>}
+      {status?.kind === "restart-required" && <button className="primary" onClick={() => setApproval("restart")}>{copy.retryRestart}</button>}
     </div>
     {approval && <div className="updater-confirmation-backdrop" role="presentation"><section className="updater-confirmation" role="dialog" aria-modal="true" aria-labelledby="updater-confirmation-title" onKeyDown={(event) => { if (event.key === "Escape") setApproval(null); }}><h4 id="updater-confirmation-title">{confirmationText}</h4><div className="actions"><button ref={confirmButton} className="primary" onClick={() => void approve()}>{copy.confirm}</button><button onClick={() => setApproval(null)}>{copy.close}</button></div></section></div>}
   </section>;

@@ -125,7 +125,7 @@ export interface WidgetDeckSnapshot {
   readonly pullRequests: readonly { readonly title: string; readonly url: string }[];
 }
 
-export type DesktopUpdaterStateKind = "idle" | "checking" | "up-to-date" | "available" | "downloading" | "downloaded" | "installation-approved" | "restarting" | "failed" | "canceled";
+export type DesktopUpdaterStateKind = "idle" | "checking" | "up-to-date" | "available" | "downloading" | "downloaded" | "installation-approved" | "restart-required" | "restarting" | "failed" | "canceled";
 export type DesktopUpdaterDiagnosticCode = "offline" | "malformed" | "rate-limited" | "missing" | "unsupported" | "canceled" | "invalid-signature" | "rollback-denied" | "download-failed" | "verification-failed" | "installation-failed" | "restart-failed";
 export type DesktopUpdaterTarget = "darwin-x86_64" | "darwin-aarch64" | "windows-x86_64" | "windows-aarch64" | "linux-x86_64" | "linux-aarch64";
 export type DesktopUpdaterPackageKind = "macos-app" | "windows-nsis" | "windows-msi" | "linux-appimage" | "linux-deb";

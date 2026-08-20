@@ -18,7 +18,7 @@ use std::{
 };
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
-use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+use ed25519_dalek::{Signature, StreamVerifier, Verifier, VerifyingKey};
 use reqwest::{
     StatusCode,
     blocking::{Client, Response},
@@ -41,6 +41,10 @@ pub const MAX_MANIFEST_BYTES: usize = 256 * 1024;
 pub const MAX_ARTIFACT_BYTES: u64 = 512 * 1024 * 1024;
 pub const MAX_REDIRECTS: usize = 3;
 pub const ROOT_KEY_ID: &str = "devhud-release-root-v1";
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+const DISCOVERY_TIMEOUT: Duration = Duration::from_secs(30);
+const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(2 * 60 * 60);
+const ARTIFACT_SIGNATURE_DOMAIN: &[u8] = b"devhud-update-artifact-v1\0";
 
 // This is a syntactically valid, public RFC 8032 test-vector key. Publication
 // remains fail-closed until release engineering replaces it and flips the
@@ -564,18 +568,28 @@ fn validate_redirect(value: &str) -> Result<Url, UpdaterError> {
 }
 
 pub struct UpdaterTransport {
-    client: Client,
+    discovery_client: Client,
+    download_client: Client,
 }
 
 impl UpdaterTransport {
     pub fn new() -> Result<Self, UpdaterError> {
-        Client::builder()
+        let discovery_client = Client::builder()
             .redirect(Policy::none())
-            .connect_timeout(Duration::from_secs(10))
-            .timeout(Duration::from_secs(30))
+            .connect_timeout(CONNECT_TIMEOUT)
+            .timeout(DISCOVERY_TIMEOUT)
             .build()
-            .map(|client| Self { client })
-            .map_err(|_| UpdaterError::new(DiagnosticCode::Offline, UpdatePhase::Discovery))
+            .map_err(|_| UpdaterError::new(DiagnosticCode::Offline, UpdatePhase::Discovery))?;
+        let download_client = Client::builder()
+            .redirect(Policy::none())
+            .connect_timeout(CONNECT_TIMEOUT)
+            .timeout(DOWNLOAD_TIMEOUT)
+            .build()
+            .map_err(|_| UpdaterError::new(DiagnosticCode::Offline, UpdatePhase::Discovery))?;
+        Ok(Self {
+            discovery_client,
+            download_client,
+        })
     }
 
     pub fn discover(
@@ -584,7 +598,7 @@ impl UpdaterTransport {
         package_kind: PackageKind,
     ) -> Result<Vec<u8>, UpdaterError> {
         let response = self
-            .client
+            .discovery_client
             .get(endpoint(target))
             .header(
                 ACCEPT,
@@ -602,7 +616,7 @@ impl UpdaterTransport {
         candidate: &VerifiedCandidate,
         package_kind: PackageKind,
         canceled: &AtomicBool,
-    ) -> Result<Vec<u8>, UpdaterError> {
+    ) -> Result<VerifiedArtifact, UpdaterError> {
         let mut url = validate_artifact_url(
             &candidate.payload.artifact.url,
             &candidate.payload.version,
@@ -616,7 +630,7 @@ impl UpdaterTransport {
                 ));
             }
             let response = self
-                .client
+                .download_client
                 .get(url.clone())
                 .header(ACCEPT, "application/octet-stream")
                 .header(USER_AGENT, "DevHud-Updater/1")
@@ -706,7 +720,7 @@ fn read_artifact_response(
     mut response: Response,
     candidate: &VerifiedCandidate,
     canceled: &AtomicBool,
-) -> Result<Vec<u8>, UpdaterError> {
+) -> Result<VerifiedArtifact, UpdaterError> {
     if !response.status().is_success()
         || response
             .headers()
@@ -722,6 +736,7 @@ fn read_artifact_response(
     }
     let mut bytes =
         Vec::with_capacity(candidate.payload.artifact.size.min(16 * 1024 * 1024) as usize);
+    let mut verifier = ArtifactVerifier::new(candidate)?;
     let mut buffer = [0_u8; 64 * 1024];
     loop {
         if canceled.load(Ordering::Acquire) {
@@ -736,13 +751,14 @@ fn read_artifact_response(
         if read == 0 {
             break;
         }
-        bytes.extend_from_slice(&buffer[..read]);
-        if bytes.len() as u64 > candidate.payload.artifact.size {
+        if bytes.len().saturating_add(read) as u64 > candidate.payload.artifact.size {
             return Err(UpdaterError::new(
                 DiagnosticCode::VerificationFailed,
                 UpdatePhase::Verification,
             ));
         }
+        verifier.update(&buffer[..read]);
+        bytes.extend_from_slice(&buffer[..read]);
     }
     if canceled.load(Ordering::Acquire) {
         return Err(UpdaterError::new(
@@ -750,28 +766,73 @@ fn read_artifact_response(
             UpdatePhase::Download,
         ));
     }
-    verify_artifact(candidate, &bytes)?;
-    Ok(bytes)
+    verifier.finish(bytes)
 }
 
-pub fn verify_artifact(candidate: &VerifiedCandidate, artifact: &[u8]) -> Result<(), UpdaterError> {
-    if artifact.len() as u64 != candidate.payload.artifact.size
-        || fingerprint_bytes(artifact) != candidate.payload.artifact.sha256
-    {
-        return Err(UpdaterError::new(
-            DiagnosticCode::VerificationFailed,
-            UpdatePhase::Verification,
-        ));
+#[derive(Debug)]
+pub struct VerifiedArtifact(Vec<u8>);
+
+struct ArtifactVerifier<'a> {
+    candidate: &'a VerifiedCandidate,
+    digest: Sha256,
+    signature: StreamVerifier,
+    received: u64,
+}
+
+impl<'a> ArtifactVerifier<'a> {
+    fn new(candidate: &'a VerifiedCandidate) -> Result<Self, UpdaterError> {
+        let signature = decode_signature(&candidate.payload.artifact.signature)?;
+        let mut verifier = candidate
+            .terminal_key
+            .verify_stream(&signature)
+            .map_err(|_| {
+                UpdaterError::new(DiagnosticCode::InvalidSignature, UpdatePhase::Verification)
+            })?;
+        verifier.update(ARTIFACT_SIGNATURE_DOMAIN);
+        Ok(Self {
+            candidate,
+            digest: Sha256::new(),
+            signature: verifier,
+            received: 0,
+        })
     }
-    let mut message = b"devhud-update-artifact-v1\0".to_vec();
-    message.extend_from_slice(artifact);
-    candidate
-        .terminal_key
-        .verify(
-            &message,
-            &decode_signature(&candidate.payload.artifact.signature)?,
-        )
-        .map_err(|_| UpdaterError::new(DiagnosticCode::InvalidSignature, UpdatePhase::Verification))
+
+    fn update(&mut self, bytes: &[u8]) {
+        self.received = self.received.saturating_add(bytes.len() as u64);
+        self.digest.update(bytes);
+        self.signature.update(bytes);
+    }
+
+    fn finish(self, bytes: Vec<u8>) -> Result<VerifiedArtifact, UpdaterError> {
+        let digest = self
+            .digest
+            .finalize()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        if self.received != self.candidate.payload.artifact.size
+            || digest != self.candidate.payload.artifact.sha256
+        {
+            return Err(UpdaterError::new(
+                DiagnosticCode::VerificationFailed,
+                UpdatePhase::Verification,
+            ));
+        }
+        self.signature.finalize_and_verify().map_err(|_| {
+            UpdaterError::new(DiagnosticCode::InvalidSignature, UpdatePhase::Verification)
+        })?;
+        Ok(VerifiedArtifact(bytes))
+    }
+}
+
+#[cfg(test)]
+fn verify_artifact(
+    candidate: &VerifiedCandidate,
+    artifact: Vec<u8>,
+) -> Result<VerifiedArtifact, UpdaterError> {
+    let mut verifier = ArtifactVerifier::new(candidate)?;
+    verifier.update(&artifact);
+    verifier.finish(artifact)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -784,6 +845,7 @@ pub enum UpdaterStateKind {
     Downloading,
     Downloaded,
     InstallationApproved,
+    RestartRequired,
     Restarting,
     Failed,
     Canceled,
@@ -807,8 +869,18 @@ pub struct UpdaterSnapshot {
     pub diagnostic: Option<UpdateDiagnostic>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RestartDisposition {
+    Relaunched,
+    RestartRequired,
+}
+
 pub trait Installer: Send + Sync {
-    fn install_and_restart(&self, verified_artifact: &[u8]) -> Result<(), DiagnosticCode>;
+    fn install_and_restart(
+        &self,
+        verified_artifact: &[u8],
+    ) -> Result<RestartDisposition, DiagnosticCode>;
+    fn retry_restart(&self) -> Result<(), DiagnosticCode>;
 }
 
 /// Native-only package handoff. The frontend cannot select an executable,
@@ -856,10 +928,17 @@ impl PlatformInstaller {
         wait_for_health(&mut child, health_file.path(), token.as_bytes())
     }
 
+    fn restart_current() -> Result<(), DiagnosticCode> {
+        let executable = std::env::current_exe().map_err(|_| DiagnosticCode::RestartFailed)?;
+        Self::restart(&executable)
+    }
+
     #[cfg(target_os = "linux")]
-    fn install_linux(&self, bytes: &[u8]) -> Result<(), DiagnosticCode> {
+    fn install_linux(&self, bytes: &[u8]) -> Result<RestartDisposition, DiagnosticCode> {
         match self.package_kind {
-            PackageKind::LinuxAppimage => self.install_appimage(bytes),
+            PackageKind::LinuxAppimage => self
+                .install_appimage(bytes)
+                .map(|()| RestartDisposition::Relaunched),
             PackageKind::LinuxDeb => {
                 if !bytes.starts_with(b"!<arch>\n") {
                     return Err(DiagnosticCode::InstallationFailed);
@@ -873,9 +952,10 @@ impl PlatformInstaller {
                 if !status.success() {
                     return Err(DiagnosticCode::InstallationFailed);
                 }
-                let executable =
-                    std::env::current_exe().map_err(|_| DiagnosticCode::RestartFailed)?;
-                Self::restart(&executable)
+                Ok(match Self::restart_current() {
+                    Ok(()) => RestartDisposition::Relaunched,
+                    Err(_) => RestartDisposition::RestartRequired,
+                })
             }
             _ => Err(DiagnosticCode::InstallationFailed),
         }
@@ -915,7 +995,7 @@ impl PlatformInstaller {
     }
 
     #[cfg(target_os = "windows")]
-    fn install_windows(&self, bytes: &[u8]) -> Result<(), DiagnosticCode> {
+    fn install_windows(&self, bytes: &[u8]) -> Result<RestartDisposition, DiagnosticCode> {
         let (suffix, executable, arguments): (&str, &str, &[&str]) = match self.package_kind {
             PackageKind::WindowsNsis if bytes.starts_with(b"MZ") => {
                 (".exe", "", &["/S", "/UPDATE"])
@@ -940,12 +1020,14 @@ impl PlatformInstaller {
         if !status.success() {
             return Err(DiagnosticCode::InstallationFailed);
         }
-        let executable = std::env::current_exe().map_err(|_| DiagnosticCode::RestartFailed)?;
-        Self::restart(&executable)
+        Ok(match Self::restart_current() {
+            Ok(()) => RestartDisposition::Relaunched,
+            Err(_) => RestartDisposition::RestartRequired,
+        })
     }
 
     #[cfg(target_os = "macos")]
-    fn install_macos(&self, bytes: &[u8]) -> Result<(), DiagnosticCode> {
+    fn install_macos(&self, bytes: &[u8]) -> Result<RestartDisposition, DiagnosticCode> {
         use std::path::Component;
 
         if self.package_kind != PackageKind::MacosApp || !bytes.starts_with(&[0x1f, 0x8b]) {
@@ -1039,7 +1121,7 @@ impl PlatformInstaller {
             return Err(DiagnosticCode::RestartFailed);
         }
         let _ = fs::remove_dir_all(backup);
-        Ok(())
+        Ok(RestartDisposition::Relaunched)
     }
 }
 
@@ -1107,7 +1189,10 @@ fn parse_health_probe(arguments: impl IntoIterator<Item = String>) -> Option<Upd
 }
 
 impl Installer for PlatformInstaller {
-    fn install_and_restart(&self, verified_artifact: &[u8]) -> Result<(), DiagnosticCode> {
+    fn install_and_restart(
+        &self,
+        verified_artifact: &[u8],
+    ) -> Result<RestartDisposition, DiagnosticCode> {
         tracing::info!(
             event = "updater_install_started",
             package = self.package_kind.header_value()
@@ -1118,9 +1203,30 @@ impl Installer for PlatformInstaller {
         let result = self.install_windows(verified_artifact);
         #[cfg(target_os = "macos")]
         let result = self.install_macos(verified_artifact);
+        match result {
+            Ok(RestartDisposition::RestartRequired) => tracing::warn!(
+                event = "updater_restart_required",
+                package = self.package_kind.header_value()
+            ),
+            Err(code) => tracing::warn!(
+                event = "updater_install_failed",
+                package = self.package_kind.header_value(),
+                code = ?code
+            ),
+            Ok(RestartDisposition::Relaunched) => {}
+        }
+        result
+    }
+
+    fn retry_restart(&self) -> Result<(), DiagnosticCode> {
+        tracing::info!(
+            event = "updater_restart_retry_started",
+            package = self.package_kind.header_value()
+        );
+        let result = Self::restart_current();
         if let Err(code) = result {
             tracing::warn!(
-                event = "updater_install_failed",
+                event = "updater_restart_retry_failed",
                 package = self.package_kind.header_value(),
                 code = ?code
             );
@@ -1167,14 +1273,13 @@ fn replace_file_transactionally(
     Ok(())
 }
 
-#[derive(Clone)]
 pub struct UpdaterController {
     installed_version: Version,
     target: DesktopTarget,
     package_kind: PackageKind,
     snapshot: UpdaterSnapshot,
     candidate: Option<VerifiedCandidate>,
-    artifact: Option<Vec<u8>>,
+    artifact: Option<VerifiedArtifact>,
     canceled: Arc<AtomicBool>,
 }
 
@@ -1284,7 +1389,7 @@ impl UpdaterController {
         self.canceled.clone()
     }
 
-    pub fn complete_download(&mut self, bytes: Vec<u8>) -> Result<(), UpdaterError> {
+    pub fn complete_download(&mut self, artifact: VerifiedArtifact) -> Result<(), UpdaterError> {
         if self.snapshot.kind != UpdaterStateKind::Downloading
             || self.canceled.load(Ordering::Acquire)
         {
@@ -1293,12 +1398,7 @@ impl UpdaterController {
                 UpdatePhase::Download,
             ));
         }
-        let candidate = self
-            .candidate
-            .as_ref()
-            .ok_or_else(|| UpdaterError::new(DiagnosticCode::Unsupported, UpdatePhase::Download))?;
-        verify_artifact(candidate, &bytes)?;
-        self.artifact = Some(bytes);
+        self.artifact = Some(artifact);
         self.snapshot.kind = UpdaterStateKind::Downloaded;
         Ok(())
     }
@@ -1324,25 +1424,43 @@ impl UpdaterController {
         Ok(())
     }
 
-    pub fn approve_restart(&mut self, installer: &dyn Installer) -> Result<(), UpdaterError> {
-        if self.snapshot.kind != UpdaterStateKind::InstallationApproved {
-            return Err(UpdaterError::new(
-                DiagnosticCode::Unsupported,
-                UpdatePhase::Restart,
-            ));
-        }
-        let artifact = self.artifact.as_deref().ok_or_else(|| {
-            UpdaterError::new(
-                DiagnosticCode::InstallationFailed,
-                UpdatePhase::Installation,
-            )
-        })?;
-        match installer.install_and_restart(artifact) {
-            Ok(()) => {
-                // The running process continues to report the actually installed
-                // version. The new version is observed only after relaunch.
+    pub fn approve_restart(
+        &mut self,
+        installer: &dyn Installer,
+    ) -> Result<RestartDisposition, UpdaterError> {
+        let retrying = self.snapshot.kind == UpdaterStateKind::RestartRequired;
+        let result = match self.snapshot.kind {
+            UpdaterStateKind::InstallationApproved => {
+                let artifact = self.artifact.as_ref().ok_or_else(|| {
+                    UpdaterError::new(
+                        DiagnosticCode::InstallationFailed,
+                        UpdatePhase::Installation,
+                    )
+                })?;
+                installer.install_and_restart(&artifact.0)
+            }
+            UpdaterStateKind::RestartRequired => installer
+                .retry_restart()
+                .map(|()| RestartDisposition::Relaunched),
+            _ => {
+                return Err(UpdaterError::new(
+                    DiagnosticCode::Unsupported,
+                    UpdatePhase::Restart,
+                ));
+            }
+        };
+        match result {
+            Ok(RestartDisposition::Relaunched) => {
+                // The old process continues to report its running version until
+                // the health-checked replacement has started successfully.
+                self.artifact = None;
                 self.snapshot.kind = UpdaterStateKind::Restarting;
-                Ok(())
+                self.snapshot.diagnostic = None;
+                Ok(RestartDisposition::Relaunched)
+            }
+            Ok(RestartDisposition::RestartRequired) => {
+                self.require_restart();
+                Ok(RestartDisposition::RestartRequired)
             }
             Err(code) => {
                 let phase = if code == DiagnosticCode::RestartFailed {
@@ -1351,10 +1469,23 @@ impl UpdaterController {
                     UpdatePhase::Installation
                 };
                 let error = UpdaterError::new(code, phase);
-                self.fail(error.clone());
+                if retrying {
+                    self.require_restart();
+                } else {
+                    self.fail(error.clone());
+                }
                 Err(error)
             }
         }
+    }
+
+    fn require_restart(&mut self) {
+        self.artifact = None;
+        self.snapshot.kind = UpdaterStateKind::RestartRequired;
+        self.snapshot.diagnostic = Some(self.diagnostic(UpdaterError::new(
+            DiagnosticCode::RestartFailed,
+            UpdatePhase::Restart,
+        )));
     }
 
     fn fail(&mut self, error: UpdaterError) {
@@ -1410,6 +1541,8 @@ impl CheckSchedule {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::AtomicUsize;
+
     use ed25519_dalek::{Signer, SigningKey};
     use serde_json::json;
 
@@ -1681,8 +1814,35 @@ mod tests {
 
     struct FailingInstaller(DiagnosticCode);
     impl Installer for FailingInstaller {
-        fn install_and_restart(&self, _artifact: &[u8]) -> Result<(), DiagnosticCode> {
+        fn install_and_restart(
+            &self,
+            _artifact: &[u8],
+        ) -> Result<RestartDisposition, DiagnosticCode> {
             Err(self.0)
+        }
+
+        fn retry_restart(&self) -> Result<(), DiagnosticCode> {
+            Err(self.0)
+        }
+    }
+
+    struct RestartRequiredInstaller {
+        installs: AtomicUsize,
+        retries: AtomicUsize,
+    }
+
+    impl Installer for RestartRequiredInstaller {
+        fn install_and_restart(
+            &self,
+            _artifact: &[u8],
+        ) -> Result<RestartDisposition, DiagnosticCode> {
+            self.installs.fetch_add(1, Ordering::SeqCst);
+            Ok(RestartDisposition::RestartRequired)
+        }
+
+        fn retry_restart(&self) -> Result<(), DiagnosticCode> {
+            self.retries.fetch_add(1, Ordering::SeqCst);
+            Ok(())
         }
     }
 
@@ -1701,7 +1861,9 @@ mod tests {
                 UpdaterController::new(Version::new(0, 1, 0), target(), package()).unwrap();
             controller.check_bytes(&signed, now());
             controller.begin_download().unwrap();
-            controller.complete_download(artifact.clone()).unwrap();
+            controller
+                .complete_download(verify_artifact(&candidate, artifact.clone()).unwrap())
+                .unwrap();
             controller.approve_installation().unwrap();
             assert!(controller.approve_restart(&FailingInstaller(code)).is_err());
             assert_eq!(controller.snapshot().installed_version, "0.1.0");
@@ -1712,9 +1874,13 @@ mod tests {
         controller.check_bytes(&signed, now());
         controller.begin_download().unwrap();
         let canceled_worker = controller.cancellation_token();
+        let verified_artifact = verify_artifact(&candidate, artifact).unwrap();
         controller.cancel();
         assert_eq!(
-            controller.complete_download(artifact).unwrap_err().code,
+            controller
+                .complete_download(verified_artifact)
+                .unwrap_err()
+                .code,
             DiagnosticCode::Canceled
         );
         assert_eq!(controller.snapshot().installed_version, "0.1.0");
@@ -1723,6 +1889,70 @@ mod tests {
         controller.begin_download().unwrap();
         assert!(canceled_worker.load(Ordering::Acquire));
         assert!(!controller.cancellation_token().load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn artifact_verification_streams_and_hands_off_verified_bytes_once() {
+        let root = SigningKey::from_bytes(&RFC_ROOT_SEED);
+        let signed = fixture("0.2.0", &root, vec![], None);
+        let candidate =
+            verify_manifest(&signed, &Version::new(0, 1, 0), target(), package(), now()).unwrap();
+        let artifact = b"deterministic updater artifact".to_vec();
+        let split = artifact.len() / 2;
+        let mut verifier = ArtifactVerifier::new(&candidate).unwrap();
+        verifier.update(&artifact[..split]);
+        verifier.update(&artifact[split..]);
+        let verified = verifier.finish(artifact.clone()).unwrap();
+        assert_eq!(verified.0, artifact);
+
+        let mut tampered = b"deterministic updater artifact".to_vec();
+        tampered[0] ^= 1;
+        assert_eq!(
+            verify_artifact(&candidate, tampered).unwrap_err().code,
+            DiagnosticCode::VerificationFailed
+        );
+    }
+
+    #[test]
+    fn package_install_restart_failure_is_retried_without_reinstalling() {
+        let root = SigningKey::from_bytes(&RFC_ROOT_SEED);
+        let signed = fixture("0.2.0", &root, vec![], None);
+        let candidate =
+            verify_manifest(&signed, &Version::new(0, 1, 0), target(), package(), now()).unwrap();
+        let mut controller =
+            UpdaterController::new(Version::new(0, 1, 0), target(), package()).unwrap();
+        controller.check_bytes(&signed, now());
+        controller.begin_download().unwrap();
+        controller
+            .complete_download(
+                verify_artifact(&candidate, b"deterministic updater artifact".to_vec()).unwrap(),
+            )
+            .unwrap();
+        controller.approve_installation().unwrap();
+        let installer = RestartRequiredInstaller {
+            installs: AtomicUsize::new(0),
+            retries: AtomicUsize::new(0),
+        };
+
+        assert_eq!(
+            controller.approve_restart(&installer).unwrap(),
+            RestartDisposition::RestartRequired
+        );
+        assert_eq!(
+            controller.snapshot().kind,
+            UpdaterStateKind::RestartRequired
+        );
+        assert_eq!(
+            controller.snapshot().diagnostic.unwrap().code,
+            DiagnosticCode::RestartFailed
+        );
+        assert_eq!(
+            controller.approve_restart(&installer).unwrap(),
+            RestartDisposition::Relaunched
+        );
+        assert_eq!(controller.snapshot().kind, UpdaterStateKind::Restarting);
+        assert_eq!(installer.installs.load(Ordering::SeqCst), 1);
+        assert_eq!(installer.retries.load(Ordering::SeqCst), 1);
     }
 
     #[test]

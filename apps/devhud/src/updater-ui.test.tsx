@@ -79,6 +79,24 @@ describe("desktop updater approvals", () => {
     expect(operations).toEqual(["updates.status"]);
   });
 
+  it("retries only restart after a package-manager install has completed", async () => {
+    const restartRequired: DesktopUpdaterStatus = {
+      ...available,
+      kind: "restart-required",
+      packageKind: "linux-deb",
+      diagnostic: { code: "restart-failed", phase: "restart", target: "linux-x86_64", packageKind: "linux-deb", installedVersion: "0.1.0", candidateVersion: "0.2.0" },
+    };
+    const { bridge, operations } = bridgeWithStatus(restartRequired);
+    render(<DesktopUpdaterPanel bridge={bridge} language="en" />);
+
+    expect((await screen.findByRole("alert")).textContent).toContain("The update is installed");
+    expect(screen.getByText("Running version")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Retry restart" }));
+    expect(screen.getByRole("dialog").textContent).toContain("without reinstalling");
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    await waitFor(() => expect(operations).toEqual(["updates.status", "updates.approve-restart"]));
+  });
+
   it("renders a localized typed diagnostic without transport details", async () => {
     const failed: DesktopUpdaterStatus = {
       ...available,

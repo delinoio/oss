@@ -245,8 +245,7 @@ pub fn start_update_scheduler<R: tauri::Runtime>(
                 Err(code) => tracing::warn!(event = "updater_check_failed", error_code = code),
             }
             schedule.mark_checked(active_runtime_seconds);
-            wall_deadline =
-                std::time::SystemTime::now() + Duration::from_secs(schedule.next_due_seconds());
+            wall_deadline = std::time::SystemTime::now() + crate::updater::CHECK_INTERVAL;
         }
     });
 }
@@ -1241,7 +1240,7 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
             let response = json!({ "kind": "desktop-update-status", "status": updater.snapshot() });
             (restart, response)
         };
-        if restart.is_ok() {
+        if matches!(restart, Ok(crate::updater::RestartDisposition::Relaunched)) {
             app.exit(0);
         }
         return Ok(response);
