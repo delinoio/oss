@@ -19,9 +19,9 @@ use devhud_native_messaging_host::{
     framing::{ByteOrder, read_json, write_json},
     generate_pairing_secret, mark_pairing_complete, pairing_is_complete,
     protocol::{
-        AuthResponse, AuthResult, BrowserContext, IpcMessageType, IpcRequest, IpcResponse,
-        NativeResponse, NativeResponseState, SESSION_INVALIDATED_ERROR, validate_browser_context,
-        validate_deadline, validate_version,
+        AuthPurpose, AuthResponse, AuthResult, BrowserContext, IpcMessageType, IpcRequest,
+        IpcResponse, NativeResponse, NativeResponseState, SESSION_INVALIDATED_ERROR,
+        validate_browser_context, validate_deadline, validate_version,
     },
     read_pairing_secret, write_pairing_secret,
 };
@@ -595,12 +595,6 @@ fn invalidate_in_memory_pairing(messaging_state: &NativeMessagingState) {
     messaging_state.generation.fetch_add(1, Ordering::SeqCst);
 }
 
-fn pairing_nonce_is_valid(candidate: Option<&str>) -> bool {
-    pairing_nonce_is_valid_with(state(), candidate, || {
-        pairing_is_complete().unwrap_or(false)
-    })
-}
-
 fn pairing_nonce_is_valid_with(
     messaging_state: &NativeMessagingState,
     candidate: Option<&str>,
@@ -620,6 +614,35 @@ fn pairing_nonce_is_valid_with(
         return candidate.is_none() && pairing_is_complete();
     };
     current.expires_at >= Instant::now() && candidate == Some(current.nonce.as_str())
+}
+
+fn authentication_purpose_is_valid_with(
+    messaging_state: &NativeMessagingState,
+    purpose: AuthPurpose,
+    pairing_nonce: Option<&str>,
+    pairing_is_complete: impl FnOnce() -> bool,
+) -> bool {
+    match purpose {
+        AuthPurpose::BrowserSession => {
+            pairing_nonce_is_valid_with(messaging_state, pairing_nonce, pairing_is_complete)
+        }
+        AuthPurpose::PairingRevocation => {
+            pairing_nonce.is_none()
+                && !messaging_state
+                    .authentication_revoked
+                    .load(Ordering::SeqCst)
+        }
+    }
+}
+
+fn authentication_purpose_allows_message(
+    purpose: AuthPurpose,
+    message_type: IpcMessageType,
+) -> bool {
+    match purpose {
+        AuthPurpose::BrowserSession => message_type != IpcMessageType::RevokePairing,
+        AuthPurpose::PairingRevocation => message_type == IpcMessageType::RevokePairing,
+    }
 }
 
 fn complete_pairing_with(
@@ -818,9 +841,17 @@ fn serve_connection(mut stream: impl ConnectionStream) -> Result<(), String> {
         && response.extension_id == configured_extension_id()
         && response.origin == expected_extension_origin()
         && challenge.deadline_unix_ms >= now_unix_millis()
-        && pairing_nonce_is_valid(response.pairing_nonce.as_deref())
+        && authentication_purpose_is_valid_with(
+            state(),
+            response.purpose,
+            response.pairing_nonce.as_deref(),
+            || pairing_is_complete().unwrap_or(false),
+        )
         && verify_handshake(&secret, &challenge, &response);
-    if authenticated && let Some(pairing_nonce) = response.pairing_nonce.as_deref() {
+    if authenticated
+        && response.purpose == AuthPurpose::BrowserSession
+        && let Some(pairing_nonce) = response.pairing_nonce.as_deref()
+    {
         authenticated =
             complete_pairing_with(state(), generation, pairing_nonce, mark_pairing_complete);
     }
@@ -858,6 +889,7 @@ fn serve_connection(mut stream: impl ConnectionStream) -> Result<(), String> {
         let mut accepted = session_generation_is_current(state(), generation)
             && validate_version(request.version, request.schema_version).is_ok()
             && validate_deadline(request.issued_at_unix_ms, request.deadline_unix_ms, now).is_ok()
+            && authentication_purpose_allows_message(response.purpose, request.message_type)
             && verify_request(&secret, &session_id, &request)
             && nonces.accept(request.nonce.clone())
             && requests.accept(request.request_id.clone());
@@ -1071,6 +1103,46 @@ mod tests {
             }
         ));
         assert_eq!(completion_attempts, 2);
+    }
+
+    #[test]
+    fn pending_pairing_allows_only_secret_authenticated_revocation_without_a_nonce() {
+        let messaging_state = NativeMessagingState::default();
+        *messaging_state.pending_pairing.lock().unwrap() = Some(PendingPairing {
+            nonce: "pending".into(),
+            expires_at: Instant::now() + Duration::from_secs(1),
+        });
+
+        assert!(!authentication_purpose_is_valid_with(
+            &messaging_state,
+            AuthPurpose::BrowserSession,
+            None,
+            || false,
+        ));
+        assert!(authentication_purpose_is_valid_with(
+            &messaging_state,
+            AuthPurpose::PairingRevocation,
+            None,
+            || false,
+        ));
+        assert!(!authentication_purpose_is_valid_with(
+            &messaging_state,
+            AuthPurpose::PairingRevocation,
+            Some("pending"),
+            || false,
+        ));
+        assert!(authentication_purpose_allows_message(
+            AuthPurpose::PairingRevocation,
+            IpcMessageType::RevokePairing,
+        ));
+        assert!(!authentication_purpose_allows_message(
+            AuthPurpose::PairingRevocation,
+            IpcMessageType::Configure,
+        ));
+        assert!(!authentication_purpose_allows_message(
+            AuthPurpose::BrowserSession,
+            IpcMessageType::RevokePairing,
+        ));
     }
 
     #[test]
@@ -1459,6 +1531,13 @@ mod tests {
         wrong_origin["context"]["url"] = json!("https://other.example/%3Credacted%3E");
         assert_eq!(
             authorize_capture(wrong_origin, &configuration),
+            Err("capture-not-authorized")
+        );
+
+        let mut wrong_port = capture.clone();
+        wrong_port["context"]["url"] = json!("https://example.com:8443/%3Credacted%3E");
+        assert_eq!(
+            authorize_capture(wrong_port, &configuration),
             Err("capture-not-authorized")
         );
 

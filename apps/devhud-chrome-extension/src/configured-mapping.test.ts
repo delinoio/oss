@@ -34,4 +34,17 @@ describe("configured URL mapping selection", () => {
     expect(matcherMatches({ ...matcher(["**"]), host: ["*", "example", "com"] }, "https://api.example.com/path")).toBe(true);
     expect(matcherMatches({ ...matcher(["**"]), host: ["*", "example", "com"] }, "https://127.0.0.1/path")).toBe(false);
   });
+
+  it("keeps configured custom ports exact after host permission is granted", () => {
+    const configuration: ExtensionConfiguration = {
+      origins: [{
+        origin: "https://example.com:8443",
+        mappings: [{ mappingId: "custom-port", matcher: { ...matcher(["**"]), port: "8443" } }],
+      }],
+      language: "en",
+    };
+
+    expect(selectConfiguredMapping(configuration, "https://example.com:8443/page")).toBe("custom-port");
+    expect(selectConfiguredMapping(configuration, "https://example.com:9443/page")).toBeNull();
+  });
 });

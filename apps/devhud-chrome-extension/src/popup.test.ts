@@ -53,7 +53,7 @@ describe("popup pairing", () => {
     expect(document.querySelector("#status")?.textContent).toBe("paired");
 
     document.querySelector<HTMLButtonElement>("#origins button")!.click();
-    expect(requestPermission).toHaveBeenCalledWith({ origins: ["https://example.com:443/*"] });
+    expect(requestPermission).toHaveBeenCalledWith({ origins: ["https://example.com/*"] });
   });
 
   it("includes each configured origin in its permission button name", async () => {

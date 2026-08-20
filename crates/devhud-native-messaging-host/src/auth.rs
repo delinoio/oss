@@ -10,7 +10,7 @@ use sha2::Sha256;
 
 use crate::{
     PROTOCOL_VERSION, REQUEST_DEADLINE_MILLIS, SCHEMA_VERSION,
-    protocol::{AuthResponse, AuthResult, Challenge, IpcRequest},
+    protocol::{AuthPurpose, AuthResponse, AuthResult, Challenge, IpcRequest},
 };
 
 type HmacSha256 = Hmac<Sha256>;
@@ -51,6 +51,7 @@ pub fn handshake_proof(
     origin: &str,
     client_nonce: &str,
     pairing_nonce: Option<&str>,
+    purpose: AuthPurpose,
 ) -> String {
     URL_SAFE_NO_PAD.encode(
         handshake_mac(
@@ -60,6 +61,7 @@ pub fn handshake_proof(
             origin,
             client_nonce,
             pairing_nonce,
+            purpose,
         )
         .finalize()
         .into_bytes(),
@@ -73,6 +75,7 @@ fn handshake_mac(
     origin: &str,
     client_nonce: &str,
     pairing_nonce: Option<&str>,
+    purpose: AuthPurpose,
 ) -> HmacSha256 {
     let mut mac = HmacSha256::new_from_slice(secret).expect("HMAC accepts any key length");
     append(&mut mac, b"devhud-native-messaging-auth-v1");
@@ -82,6 +85,13 @@ fn handshake_mac(
     append(&mut mac, origin.as_bytes());
     append(&mut mac, client_nonce.as_bytes());
     append(&mut mac, pairing_nonce.unwrap_or("").as_bytes());
+    append(
+        &mut mac,
+        match purpose {
+            AuthPurpose::BrowserSession => b"browser-session",
+            AuthPurpose::PairingRevocation => b"pairing-revocation",
+        },
+    );
     mac
 }
 
@@ -96,6 +106,7 @@ pub fn verify_handshake(secret: &[u8], challenge: &Challenge, response: &AuthRes
         &response.origin,
         &response.client_nonce,
         response.pairing_nonce.as_deref(),
+        response.purpose,
     )
     .verify_slice(&proof)
     .is_ok()
@@ -209,6 +220,7 @@ mod tests {
             "chrome-extension://abcdefghijklmnopabcdefghijklmnop/",
             "client",
             Some("pair"),
+            AuthPurpose::BrowserSession,
         );
         let mut response = AuthResponse {
             version: 1,
@@ -218,9 +230,13 @@ mod tests {
             origin: "chrome-extension://abcdefghijklmnopabcdefghijklmnop/".into(),
             client_nonce: "client".into(),
             pairing_nonce: Some("pair".into()),
+            purpose: AuthPurpose::BrowserSession,
             proof,
         };
         assert!(verify_handshake(&secret, &challenge, &response));
+        response.purpose = AuthPurpose::PairingRevocation;
+        assert!(!verify_handshake(&secret, &challenge, &response));
+        response.purpose = AuthPurpose::BrowserSession;
         response.client_nonce.push('x');
         assert!(!verify_handshake(&secret, &challenge, &response));
     }

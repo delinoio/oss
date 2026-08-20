@@ -120,8 +120,8 @@ describe("capture configuration freshness", () => {
       }));
     });
     const getAllPermissions = vi.fn()
-      .mockResolvedValueOnce({ origins: ["https://example.com:443/*", "https://stale.example:443/*"] })
-      .mockResolvedValueOnce({ origins: ["https://example.com:443/*"] });
+      .mockResolvedValueOnce({ origins: ["https://example.com/*", "https://stale.example/*"] })
+      .mockResolvedValueOnce({ origins: ["https://example.com/*"] });
     const removePermissions = vi.fn().mockResolvedValue(true);
     let runtimeListener: ((message: unknown, sender: chrome.runtime.MessageSender, sendResponse: (response: unknown) => void) => boolean) | undefined;
     vi.stubGlobal("chrome", {
@@ -155,7 +155,7 @@ describe("capture configuration freshness", () => {
     expect(requestTypes).toEqual(["configure", "configure"]);
     expect(getAllPermissions).toHaveBeenCalledTimes(2);
     expect(removePermissions).toHaveBeenCalledOnce();
-    expect(removePermissions).toHaveBeenCalledWith({ origins: ["https://stale.example:443/*"] });
+    expect(removePermissions).toHaveBeenCalledWith({ origins: ["https://stale.example/*"] });
     expect(chrome.scripting.executeScript).toHaveBeenCalledWith(expect.objectContaining({ args: [true, "en"] }));
     expect(response.state).toBe("denied");
   });

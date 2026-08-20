@@ -112,6 +112,13 @@ pub struct Challenge {
     pub deadline_unix_ms: i64,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum AuthPurpose {
+    BrowserSession,
+    PairingRevocation,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct AuthResponse {
@@ -122,6 +129,7 @@ pub struct AuthResponse {
     pub origin: String,
     pub client_nonce: String,
     pub pairing_nonce: Option<String>,
+    pub purpose: AuthPurpose,
     pub proof: String,
 }
 

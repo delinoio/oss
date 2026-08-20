@@ -5,9 +5,8 @@ use devhud_native_messaging_host::{
     auth::{handshake_proof, now_unix_millis, random_nonce, sign_request, verify_auth_result},
     configured_extension_id, delete_pairing_secret, endpoint, expected_extension_origin,
     framing::{ByteOrder, read_json, write_json},
-    pairing_is_complete,
     protocol::{
-        AuthResponse, AuthResult, Challenge, IpcMessageType, IpcRequest, IpcResponse,
+        AuthPurpose, AuthResponse, AuthResult, Challenge, IpcMessageType, IpcRequest, IpcResponse,
         NativeRequest, NativeResponse, NativeResponseState, SESSION_INVALIDATED_ERROR,
         validate_deadline, validate_version,
     },
@@ -94,6 +93,7 @@ fn authenticate_stream(
     mut stream: PlatformStream,
     origin: &str,
     pairing_nonce: Option<String>,
+    purpose: AuthPurpose,
 ) -> Result<Session, String> {
     set_ipc_exchange_deadline(&mut stream, IPC_IO_TIMEOUT);
     let challenge: Challenge =
@@ -119,9 +119,11 @@ fn authenticate_stream(
             origin,
             &client_nonce,
             pairing_nonce.as_deref(),
+            purpose,
         ),
         client_nonce,
         pairing_nonce,
+        purpose,
     };
     write_ipc_json(&mut stream, &response).map_err(|_| "authentication-failed".to_string())?;
     let result: AuthResult =
@@ -146,7 +148,7 @@ fn authenticate_stream(
 
 fn authenticate(origin: &str, pairing_nonce: Option<String>) -> Result<Session, String> {
     let stream = endpoint::connect().map_err(|_| "disconnected".to_string())?;
-    authenticate_stream(stream, origin, pairing_nonce)
+    authenticate_stream(stream, origin, pairing_nonce, AuthPurpose::BrowserSession)
 }
 
 fn pairing_nonce_for_authentication(
@@ -324,13 +326,18 @@ fn connect_to_running_app() -> Result<Option<PlatformStream>, String> {
 }
 
 fn revoke_running_app_pairing() -> Result<bool, String> {
-    if !pairing_is_complete()? {
+    if read_pairing_secret()?.is_none() {
         return Ok(false);
     }
     let Some(stream) = connect_to_running_app()? else {
         return Ok(false);
     };
-    let mut session = authenticate_stream(stream, &expected_extension_origin(), None)?;
+    let mut session = authenticate_stream(
+        stream,
+        &expected_extension_origin(),
+        None,
+        AuthPurpose::PairingRevocation,
+    )?;
     let issued_at = now_unix_millis();
     let request_id = uuid::Uuid::now_v7().to_string();
     let mut request = IpcRequest {
