@@ -8,6 +8,30 @@ let reconnectAttempt = 0;
 let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
 const pending = new Map<string, { resolve: (response: NativeResponse) => void; timer: ReturnType<typeof setTimeout> }>();
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isStringArray(value: unknown): value is readonly string[] {
+  return Array.isArray(value) && value.every((entry) => typeof entry === "string");
+}
+
+function isAuthoritativeConfiguration(value: unknown): value is ExtensionConfiguration {
+  if (!isRecord(value) || !Array.isArray(value.origins) || (value.language !== "en" && value.language !== "ko")) return false;
+  return value.origins.every((configured) => isRecord(configured)
+    && typeof configured.origin === "string"
+    && Array.isArray(configured.mappings)
+    && configured.mappings.every((mapping) => {
+      if (!isRecord(mapping) || typeof mapping.mappingId !== "string" || !isRecord(mapping.matcher)) return false;
+      const matcher = mapping.matcher;
+      return typeof matcher.scheme === "string"
+        && isStringArray(matcher.host)
+        && typeof matcher.hostIsIpLiteral === "boolean"
+        && typeof matcher.port === "string"
+        && isStringArray(matcher.path);
+    }));
+}
+
 function connectNative(): void {
   if (nativePort) return;
   try {
@@ -60,10 +84,9 @@ async function removeStaleOriginPermissions(configuration: ExtensionConfiguratio
 
 async function configurationRequest(): Promise<NativeResponse> {
   const response = await nativeRequest("configure", {});
-  if (response.ok) {
-    const configuration = (response.payload ?? {}) as ExtensionConfiguration;
-    await removeStaleOriginPermissions(configuration).catch(() => undefined);
-  }
+  if (!response.ok) return response;
+  if (!isAuthoritativeConfiguration(response.payload)) return { ...response, ok: false, state: "malformed", payload: null };
+  await removeStaleOriginPermissions(response.payload).catch(() => undefined);
   return response;
 }
 

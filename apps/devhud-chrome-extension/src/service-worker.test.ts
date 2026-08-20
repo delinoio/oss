@@ -198,4 +198,40 @@ describe("capture configuration freshness", () => {
     expect(getAllPermissions).not.toHaveBeenCalled();
     expect(removePermissions).not.toHaveBeenCalled();
   });
+
+  it("preserves grants while native configuration is uninitialized", async () => {
+    const port = fakePort();
+    port.postMessage = vi.fn((request: { request_id: string }) => {
+      queueMicrotask(() => port.messageListeners[0]!({
+        version: 1,
+        schema_version: 1,
+        request_id: request.request_id,
+        ok: true,
+        state: "accepted",
+        payload: null,
+      }));
+    });
+    const getAllPermissions = vi.fn();
+    const removePermissions = vi.fn();
+    let runtimeListener: ((message: unknown, sender: chrome.runtime.MessageSender, sendResponse: (response: unknown) => void) => boolean) | undefined;
+    vi.stubGlobal("chrome", {
+      runtime: {
+        connectNative: vi.fn(() => port),
+        onMessage: { addListener: vi.fn((listener) => { runtimeListener = listener; }) },
+      },
+      permissions: {
+        getAll: getAllPermissions,
+        remove: removePermissions,
+      },
+    });
+
+    await import("./service-worker.js");
+    const response = await new Promise<{ ok: boolean; state: string }>((resolve) => {
+      runtimeListener!({ type: "configuration" }, {} as chrome.runtime.MessageSender, (value) => resolve(value as { ok: boolean; state: string }));
+    });
+
+    expect(response).toMatchObject({ ok: false, state: "malformed" });
+    expect(getAllPermissions).not.toHaveBeenCalled();
+    expect(removePermissions).not.toHaveBeenCalled();
+  });
 });
