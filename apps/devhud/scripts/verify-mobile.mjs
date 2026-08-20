@@ -6,7 +6,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { assertGeneratedOverlays } from "./generate-mobile.mjs";
-import { assertAndroidArtifactEntries, assertMobileContracts, assertMobileDependencyClosures, assertMobileDependencyResolution, mobileCargoTreeDigest } from "./mobile-policy.mjs";
+import { assertAndroidArtifactEntries, assertAndroidNativeLibrary, assertMobileContracts, assertMobileDependencyClosures, assertMobileDependencyResolution, mobileCargoTreeDigest } from "./mobile-policy.mjs";
 
 const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = resolve(appRoot, "../..");
@@ -51,7 +51,7 @@ function assertAndroidArtifact(artifact, abi) {
   const dex = commandOutput("unzip", ["-p", artifact, dexEntry], null).toString("latin1");
   if (!dex.includes("Lio/delino/devhud/bridge/DevhudNativePlugin;") || !dex.includes("Landroid/webkit/WebView;")) throw new Error("Android native bridge or System WebView host is missing from the artifact");
   const nativeLibrary = commandOutput("unzip", ["-p", artifact, expectedLibrary], null).toString("latin1");
-  if (/libcef|cef_initialize|chromium/iu.test(nativeLibrary)) throw new Error("CEF symbols leaked into the Android native library");
+  assertAndroidNativeLibrary(nativeLibrary);
 
   if (format === "aab") return;
 

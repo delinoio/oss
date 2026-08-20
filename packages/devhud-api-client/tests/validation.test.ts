@@ -13,6 +13,7 @@ import {
 import {
   MAX_ADMIN_REASON_BYTES,
   MAX_CRASH_IDENTIFIER_BYTES,
+  MAX_CRASH_STACK_BYTES,
   assertSha256,
   assertUuidV7,
   canonicalizeSettingsJson,
@@ -23,12 +24,15 @@ import {
 } from "../src/validation.js";
 
 const uuid = "018f47a2-7b3c-7def-8abc-1234567890ab";
+const relatedUuid = "018f47a2-7b3c-7def-9abc-1234567890ab";
 const clientBuild = create(ClientBuildSchema, {
   appVersion: "1.0.0",
   buildId: "devhud-20260815.1",
   platform: DiagnosticPlatform.MACOS,
   architecture: DiagnosticArchitecture.ARM64,
   osVersion: "macOS 15.0",
+  tauriRevision: "4af26a3f7f8b692d62cca549bbacd93f5ce90b41",
+  cefRevision: "150.0.10+g8042e43+chromium-150.0.7871.101",
 });
 const safeCrashReport = create(SubmitCrashReportRequestSchema, {
   reportSchemaVersion: 1,
@@ -39,7 +43,9 @@ const safeCrashReport = create(SubmitCrashReportRequestSchema, {
   errorCode: "UPLOAD_FINALIZE_FAILED",
   redactedSummary: "Upload finalization failed after a checksum mismatch.",
   redactedStackTrace: "UploadBoundary > Finalize > VerifyChecksum",
-  relatedCorrelationIds: [{ value: uuid }],
+  relatedCorrelationIds: [{ value: relatedUuid }],
+  clientCorrelationId: { value: uuid },
+  durationMilliseconds: 1200n,
 });
 const r2SignedCredentialUrls = [
   "https://account.r2.cloudflarestorage.com/bucket/report?X-Amz-Credential=R2ACCESSKEY%2F20260815%2Fauto%2Fs3%2Faws4_request",
@@ -52,6 +58,9 @@ const bareJwt = "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiIxMjMifQ.signature";
 const encodedCredentialParameterUrls = [
   "https://example.com/?context=password%3Dhunter2",
   "https://example.com/#context=password%3Dhunter2",
+  "https://example.com/?safe=code%3Dsecret",
+  "https://example.com/?safe=x%26code%3Dsecret",
+  "https://example.com/#safe=x%3Bcode%3Dsecret",
 ] as const;
 const encodedLocalPathParameterUrls = [
   "https://example.com/?source=%2Fworkspace%2Fprivate%2Fapp.ts",
@@ -74,11 +83,14 @@ describe("wire validation helpers", () => {
     expect(() => validateReason("Expected yes / no")).not.toThrow();
     expect(() => validateReason("Reviewed incident from 2026/08/15.")).not.toThrow();
     expect(() => validateReason("Rolled back release 1/2/3.")).not.toThrow();
+    expect(() => validateReason("Reviewed callback?code=review")).not.toThrow();
     expect(() => validateReason("\u0085Reviewed policy breach")).not.toThrow();
     expect(() => validateReason("é".repeat(MAX_ADMIN_REASON_BYTES / 2))).not.toThrow();
     expect(() =>
       validateReason("Reviewed https://docs.example.com/policy?v=42#quarantine"),
     ).not.toThrow();
+    expect(() => validateReason("Escalated to mailto:ops@example.com")).not.toThrow();
+    expect(() => validateReason("Observed via wss://monitor.example.test/events")).not.toThrow();
     expect(() =>
       validateReason("Reviewed https://example.com/?na%6de=release"),
     ).not.toThrow();
@@ -86,6 +98,9 @@ describe("wire validation helpers", () => {
       validateReason(
         "Reviewed https://example.com/?context=release%3D2026#component=React%2FNative",
       ),
+    ).not.toThrow();
+    expect(() =>
+      validateReason("Reviewed https://example.com/?safe=x%26release%3D2026"),
     ).not.toThrow();
     expect(() =>
       validateReason("Reviewed https://assets.example.com/docs/upload-policy"),
@@ -186,15 +201,14 @@ describe("wire validation helpers", () => {
 
   it("rejects incomplete crash report envelopes", () => {
     expect(() => validateCrashReport(safeCrashReport)).not.toThrow();
-    expect(() =>
-      validateCrashReport({ ...safeCrashReport, reportSchemaVersion: 0xffff_ffff }),
-    ).not.toThrow();
     for (const reportSchemaVersion of [
       -1,
       0,
+      2,
       1.5,
       Number.NaN,
       Number.POSITIVE_INFINITY,
+      0xffff_ffff,
       0x1_0000_0000,
     ]) {
       expect(() =>
@@ -203,6 +217,9 @@ describe("wire validation helpers", () => {
     }
     expect(() =>
       validateCrashReport(create(SubmitCrashReportRequestSchema, {})),
+    ).toThrow(RangeError);
+    expect(() =>
+      validateCrashReport({ ...safeCrashReport, durationMilliseconds: -1n }),
     ).toThrow(RangeError);
     expect(() =>
       validateCrashReport(
@@ -263,6 +280,12 @@ describe("wire validation helpers", () => {
         }),
       ),
     ).toThrow(TypeError);
+    for (const field of ["appVersion", "buildId", "osVersion"] as const) {
+      expect(() => validateCrashReport(create(SubmitCrashReportRequestSchema, {
+        ...safeCrashReport,
+        clientBuild: { ...clientBuild, [field]: "" },
+      }))).toThrow(TypeError);
+    }
   });
 
   it("validates the occurredAt protobuf timestamp range", () => {
@@ -319,6 +342,54 @@ describe("wire validation helpers", () => {
     }
   });
 
+  it("allows unknown architecture only for browser reports", () => {
+    const browserBuild = {
+      ...clientBuild,
+      platform: DiagnosticPlatform.BROWSER,
+      architecture: DiagnosticArchitecture.UNSPECIFIED,
+      osVersion: "browser",
+      tauriRevision: "",
+      cefRevision: "",
+    };
+    expect(() => validateCrashReport({ ...safeCrashReport, clientBuild: browserBuild })).not.toThrow();
+    expect(() => validateCrashReport({
+      ...safeCrashReport,
+      clientBuild: { ...clientBuild, architecture: DiagnosticArchitecture.UNSPECIFIED },
+    })).toThrow(TypeError);
+  });
+
+  it("allows ARMv7 only for Android reports", () => {
+    for (const platform of [
+      DiagnosticPlatform.MACOS,
+      DiagnosticPlatform.WINDOWS,
+      DiagnosticPlatform.LINUX,
+      DiagnosticPlatform.IOS,
+      DiagnosticPlatform.BROWSER,
+    ]) {
+      const browser = platform === DiagnosticPlatform.BROWSER;
+      const mobile = platform === DiagnosticPlatform.IOS;
+      expect(() => validateCrashReport({
+        ...safeCrashReport,
+        clientBuild: {
+          ...clientBuild,
+          platform,
+          architecture: DiagnosticArchitecture.ARMV7,
+          tauriRevision: browser ? "" : clientBuild.tauriRevision,
+          cefRevision: browser || mobile ? "" : clientBuild.cefRevision,
+        },
+      })).toThrow(TypeError);
+    }
+    expect(() => validateCrashReport({
+      ...safeCrashReport,
+      clientBuild: {
+        ...clientBuild,
+        platform: DiagnosticPlatform.ANDROID,
+        architecture: DiagnosticArchitecture.ARMV7,
+        cefRevision: "",
+      },
+    })).not.toThrow();
+  });
+
   it("rejects lone surrogates in every crash diagnostic string", () => {
     const loneSurrogate = "\ud800";
     const invalidDiagnostics = [
@@ -367,7 +438,6 @@ describe("wire validation helpers", () => {
 
     for (const diagnostic of ["2026/08/15", "1/2/3"]) {
       const reports = [
-        { ...safeCrashReport, errorCode: diagnostic },
         { ...safeCrashReport, clientBuild: { ...clientBuild, appVersion: diagnostic } },
         { ...safeCrashReport, clientBuild: { ...clientBuild, buildId: diagnostic } },
         { ...safeCrashReport, clientBuild: { ...clientBuild, osVersion: diagnostic } },
@@ -382,6 +452,7 @@ describe("wire validation helpers", () => {
         ).not.toThrow();
       }
     }
+    expect(() => validateCrashReport({ ...safeCrashReport, errorCode: "2026/08/15" })).toThrow(TypeError);
   });
 
   it("rejects local paths and credential-shaped crash diagnostics", () => {
@@ -469,6 +540,15 @@ describe("wire validation helpers", () => {
       "frame:src\\private\\app.ts:10",
       "source=%2Fworkspace%2Fprivate%2Fapp.ts",
       "C:%5CUsers%5Calice%5Capp.ts",
+      "vscode://file/home/alice/app.ts",
+      "vscode-insiders://file/C:/Users/alice/app.ts",
+      "subl://open/home/alice/app.ts",
+      "devhud://auth/callback",
+      "wss://example.com/socket",
+      "mailto:user@example.com?subject=secret",
+      "http:/home/alice/app.ts",
+      "https:C:/Users/alice/file.txt",
+      "http:///home/alice/app.ts",
       ...encodedLocalPathParameterUrls,
     ]) {
       const relativePathDiagnostics = [
@@ -491,12 +571,13 @@ describe("wire validation helpers", () => {
       "https://example.com/assets/app.js:10:2",
       "https://example.com/assets%2Fapp.js:10:2",
       "https://cdn.example.com/app.js?v=42",
-      "https://docs.example.com/guide#configuration",
-      "wss://example.com/socket",
-      "devhud://auth/callback",
-      "mailto:user@example.com?subject=secret",
+      "https://example.com/?a=1&b=2&c=3&d=4&e=5&f=6&g=7&h=8&i=9",
+      "http://example.com/assets/app.js:10:2",
       "https://example.com/?na%6de=release",
-      "https://example.com/?context=release%3D2026#component=React%2FNative",
+      "https://example.com/?safe=x%26release%3D2026",
+      "callback=https%253A%252F%252Fexample.com%252Fauth%253Fstate%253Dopaque",
+      "callback?state=opaque",
+      "auth/callback#component=React%2FNative",
       r2UnsignedMetadataUrl,
     ]) {
       const report = create(SubmitCrashReportRequestSchema, {
@@ -509,9 +590,13 @@ describe("wire validation helpers", () => {
     for (const credentialUrl of [
       "https://alice:password@example.com/app.js",
       "https://example.com/app.js?v=42&token=secret",
+      "devhud://auth/callback?safe=x;code=secret",
       "https://example.com/app.js#access-token",
+      "https://docs.example.com/guide#configuration",
+      "https://example.com/?context=release%3D2026#component=React%2FNative",
       "wss://user:pass@example.com/socket",
       "devhud://auth/callback?code=secret&state=x",
+      "callback_devhud://auth/callback?code=secret&state=x",
       "https://example.com/#access%2Dtoken=secret",
       "https://example.com/?to%6=secret",
       ...r2SignedCredentialUrls,
@@ -544,6 +629,7 @@ describe("wire validation helpers", () => {
 
     for (const credentialValue of [
       bareJwt,
+      "Bearer unsafe-value",
       "password=hunter2",
       "client_secret: unsafe-value",
       "refresh_token=unsafe-value",
@@ -553,8 +639,38 @@ describe("wire validation helpers", () => {
       "AWS_SECRET_ACCESS_KEY=unsafe-value",
       "AWS_SESSION_TOKEN=unsafe-value",
       "GITHUB_TOKEN=unsafe-value",
+      "GITHUB_PAT=unsafe-value",
+      "DEVHUD_SESSION_ID=unsafe-value",
+      "DEVHUD_SIGNING_KEY=unsafe-value",
+      "code=unsafe-value",
+      "oauth_code: unsafe-value",
+      "credential=hunter2",
+      "credentials: hunter2",
+      "pat=hunter2",
+      "session_id=secret",
+      "signing_value=secret",
+      "r2_access_key_id=0123456789abcdef",
+      "DEVHUD_R2_ACCESS_KEY_ID=0123456789abcdef",
+      "r2.access-key-id=0123456789abcdef",
+      "callback?r2.access-key-id=0123456789abcdef",
+      '{"code":"unsafe-value"}',
+      "request_body=email=alice@example.test",
+      "response-body=email=alice@example.test",
+      "request_headers=Authorization: redacted",
+      "response-headers: Set-Cookie: session=abc",
       "devhud://auth/callback?co%64e=unsafe-value",
       "https://example.com/?to%6ben=unsafe-value",
+      "callback=https%253A%252F%252Fexample.test%252Fauth%253Fcode%253Dsecret",
+      "callback?code=secret",
+      "/auth/callback#access_token=secret",
+      "auth/callback#access_token=secret",
+      "callback?co%64e=secret",
+      "auth/callback#access%2Dtoken=secret",
+      "callback?safe=code%3Dsecret",
+      "callback?safe=x%26code%3Dsecret",
+      "callback%3Fcode%3Dsecret",
+      "state=ok&code=abc123",
+      "state=ok;code=abc123",
       ...encodedCredentialParameterUrls,
     ]) {
       const credentialDiagnostics = [
@@ -576,6 +692,8 @@ describe("wire validation helpers", () => {
       "Password validation failed because the field was empty.",
       "Cookie parsing failed after session expiry.",
       "ERROR_CODE=E_UPLOAD RETRY_COUNT=3 TOKEN_COUNT=2",
+      "state=opaque&component=renderer",
+      "state=opaque;component=renderer",
       "service.component.error",
     ]) {
       expect(() =>
@@ -586,8 +704,8 @@ describe("wire validation helpers", () => {
     }
 
     const oversizedValue = "a".repeat(MAX_CRASH_IDENTIFIER_BYTES + 1);
+    expect(() => validateCrashReport({ ...safe, errorCode: oversizedValue })).toThrow(TypeError);
     const oversizedIdentifiers = [
-      { ...safe, errorCode: oversizedValue },
       { ...safe, clientBuild: { ...clientBuild, appVersion: oversizedValue } },
       { ...safe, clientBuild: { ...clientBuild, buildId: oversizedValue } },
       { ...safe, clientBuild: { ...clientBuild, osVersion: oversizedValue } },
@@ -597,5 +715,107 @@ describe("wire validation helpers", () => {
         validateCrashReport(create(SubmitCrashReportRequestSchema, report)),
       ).toThrow(RangeError);
     }
+  });
+
+  it("bounds fixed-point decoding for crash diagnostic text", () => {
+    let atBound = "%41";
+    for (let decoding = 1; decoding < 8; decoding += 1) {
+      atBound = atBound.replaceAll("%", "%25");
+    }
+    expect(() => validateCrashReport({ ...safeCrashReport, redactedSummary: atBound })).not.toThrow();
+
+    const beyondBound = atBound.replaceAll("%", "%25");
+    expect(() => validateCrashReport({ ...safeCrashReport, redactedSummary: beyondBound })).toThrow(TypeError);
+  });
+
+  it("bounds nested crash diagnostic parameter scanning", () => {
+    const safeNestedParameters = `${"?x=".repeat(16)}safe`;
+    expect(() =>
+      validateCrashReport(
+        create(SubmitCrashReportRequestSchema, {
+          ...safeCrashReport,
+          redactedSummary: safeNestedParameters,
+        }),
+      ),
+    ).not.toThrow();
+
+    const excessiveNestedParameters = `${"?x=".repeat(17)}safe`;
+    expect(() =>
+      validateCrashReport(
+        create(SubmitCrashReportRequestSchema, {
+          ...safeCrashReport,
+          redactedSummary: excessiveNestedParameters,
+        }),
+      ),
+    ).toThrow(TypeError);
+
+    const maximumSizeNestedParameters = `${"?x=".repeat(
+      Math.floor((MAX_CRASH_STACK_BYTES - "safe".length) / "?x=".length),
+    )}safe`;
+    expect(() =>
+      validateCrashReport(
+        create(SubmitCrashReportRequestSchema, {
+          ...safeCrashReport,
+          redactedStackTrace: maximumSizeNestedParameters,
+        }),
+      ),
+    ).toThrow(TypeError);
+  });
+
+  it("keeps narrative filtering off enum error codes", () => {
+    for (const errorCode of ["SCREENSHOT_CAPTURE_FAILED", "BROWSER_DOM_REDACTED"]) {
+      expect(() => validateCrashReport({ ...safeCrashReport, errorCode })).not.toThrow();
+    }
+  });
+
+  it("rejects NUL bytes in every persisted crash text group", () => {
+    const invalidDiagnostics = [
+      { ...safeCrashReport, clientBuild: { ...clientBuild, osVersion: "macOS\u000015.0" } },
+      { ...safeCrashReport, redactedSummary: "classified\0summary" },
+      { ...safeCrashReport, redactedStackTrace: "render\0frame" },
+    ];
+
+    for (const report of invalidDiagnostics) {
+      expect(() => validateCrashReport(create(SubmitCrashReportRequestSchema, report))).toThrow(TypeError);
+    }
+  });
+
+  it("accepts browser reports only without fabricated native revisions", () => {
+    const browser = create(SubmitCrashReportRequestSchema, {
+      ...safeCrashReport,
+      clientBuild: {
+        ...clientBuild,
+        platform: DiagnosticPlatform.BROWSER,
+        osVersion: "browser",
+        tauriRevision: "",
+        cefRevision: "",
+      },
+    });
+    expect(() => validateCrashReport(browser)).not.toThrow();
+
+    const fabricated = create(SubmitCrashReportRequestSchema, {
+      ...browser,
+      clientBuild: {
+        ...browser.clientBuild!,
+        tauriRevision: clientBuild.tauriRevision,
+      },
+    });
+    expect(() => validateCrashReport(fabricated)).toThrow(TypeError);
+  });
+
+  it("accepts only the pinned Tauri revision on native reports", () => {
+    expect(() => validateCrashReport({
+      ...safeCrashReport,
+      clientBuild: { ...clientBuild, tauriRevision: "a".repeat(40) },
+    })).toThrow(TypeError);
+    expect(() => validateCrashReport(safeCrashReport)).not.toThrow();
+  });
+
+  it("accepts only the pinned CEF revision on desktop reports", () => {
+    expect(() => validateCrashReport({
+      ...safeCrashReport,
+      clientBuild: { ...clientBuild, cefRevision: "x" },
+    })).toThrow(TypeError);
+    expect(() => validateCrashReport(safeCrashReport)).not.toThrow();
   });
 });

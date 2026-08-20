@@ -9,6 +9,7 @@ export const RuntimePlatform = {
   Desktop: "desktop",
   Ios: "ios",
   Android: "android",
+  Browser: "browser",
 } as const;
 export type RuntimePlatform = (typeof RuntimePlatform)[keyof typeof RuntimePlatform];
 
@@ -56,8 +57,13 @@ export type NativeBridgeErrorCode = (typeof NativeBridgeErrorCode)[keyof typeof 
 export interface RuntimeSnapshot {
   readonly bridgeVersion: typeof NativeBridgeVersion;
   readonly platform: RuntimePlatform;
+  readonly operatingSystem: "macos" | "windows" | "linux" | "ios" | "android" | "browser";
   readonly architecture: string;
   readonly osVersion: string;
+  readonly appVersion: string;
+  readonly buildId: string;
+  readonly tauriRevision: string;
+  readonly cefRevision: string;
   readonly lifecycle: LifecycleState;
   readonly capabilities: {
     readonly secureSettings: boolean;
@@ -133,6 +139,8 @@ type NativeBridgeRequestV1Base =
   | { readonly operation: "secure.remove"; readonly setting: SecureSettingRef }
   | { readonly operation: "secure.reconcile-github-pats"; readonly scopeId: string; readonly profileIds: readonly string[] }
   | { readonly operation: "secure.purge"; readonly scope: "logout" | "account-deletion" | "api-change"; readonly profileId?: string }
+  | { readonly operation: "diagnostics.export"; readonly suggestedName: string; readonly contents: string }
+  | { readonly operation: "diagnostics.clear" }
   | { readonly operation: "notifications.permission" }
   | { readonly operation: "notifications.request-permission" }
   | { readonly operation: "notifications.publish-deck-change"; readonly notification: DeckNotification }
@@ -176,6 +184,7 @@ export type NativeBridgeResponseV1 =
   | { readonly kind: "capture-draft"; readonly draft: CaptureDraft }
   | { readonly kind: "capture-flattened"; readonly images: readonly FlattenedCaptureImage[] }
   | { readonly kind: "unsupported"; readonly feature: "widgets" }
+  | { readonly kind: "diagnostics-export"; readonly outcome: "saved" | "cancelled" | "initiated" }
   | { readonly kind: "ok" };
 
 export type NativeBridgeEventV1 =
@@ -188,15 +197,24 @@ interface TauriInternals {
   invoke(command: string, args?: Record<string, unknown>): Promise<unknown>;
 }
 
+interface DiagnosticsWritableFile {
+  write(data: Blob): Promise<void>;
+  close(): Promise<void>;
+  abort(): Promise<void>;
+}
+
 declare global {
   interface Window {
     __TAURI_INTERNALS__?: TauriInternals;
+    showSaveFilePicker?: (options: { suggestedName: string; types: readonly { description: string; accept: Record<string, readonly string[]> }[] }) => Promise<{ createWritable(): Promise<DiagnosticsWritableFile> }>;
   }
 }
 
 const profilePattern = /^[a-zA-Z0-9._-]{1,128}$/u;
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const secretLimit = 64 * 1024;
+const diagnosticsExportLimit = 1024 * 1024;
+const diagnosticsFileName = /^devhud-diagnostics-[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.json$/u;
 const nativeBridgeErrorCodes = new Set<string>(Object.values(NativeBridgeErrorCode));
 
 export class NativeBridgeError extends Error {
@@ -287,12 +305,36 @@ export function isAuthCallback(value: string) {
   }
 }
 
-function desktopSnapshot(): RuntimeSnapshot {
+interface NavigatorUserAgentData {
+  getHighEntropyValues(hints: readonly string[]): Promise<{ readonly architecture?: string; readonly bitness?: string }>;
+}
+
+async function browserArchitecture(): Promise<string> {
+  const userAgentData = (navigator as Navigator & { readonly userAgentData?: NavigatorUserAgentData }).userAgentData;
+  if (!userAgentData) return "unknown";
+  try {
+    const hints = await userAgentData.getHighEntropyValues(["architecture", "bitness"]);
+    const architecture = hints.architecture?.trim().toLowerCase();
+    const bitness = hints.bitness?.trim();
+    if (architecture === "arm64" || architecture === "aarch64" || (architecture === "arm" && bitness === "64")) return "arm64";
+    // The diagnostics wire contract has no browser-safe ARM32 classification.
+    if (architecture === "arm" && bitness === "32") return "unknown";
+    if (architecture === "x86_64" || architecture === "amd64" || (architecture === "x86" && bitness === "64")) return "x86_64";
+  } catch { /* Unsupported or denied high-entropy hints leave the browser architecture unknown. */ }
+  return "unknown";
+}
+
+async function browserSnapshot(): Promise<RuntimeSnapshot> {
   return {
     bridgeVersion: NativeBridgeVersion,
-    platform: RuntimePlatform.Desktop,
-    architecture: "native",
-    osVersion: "native",
+    platform: RuntimePlatform.Browser,
+    operatingSystem: "browser",
+    architecture: await browserArchitecture(),
+    osVersion: "browser",
+    appVersion: "0.1.0",
+    buildId: "browser-development",
+    tauriRevision: "",
+    cefRevision: "",
     lifecycle: document.visibilityState === "hidden" ? LifecycleState.Background : LifecycleState.Active,
     capabilities: { secureSettings: false, notifications: false, storeUpdates: false, widgets: false, capture: false },
   };
@@ -310,14 +352,17 @@ export const nativeBridge: NativeBridgeV1 = {
     if (request.operation === "secure.reconcile-github-pats") validateGitHubPatReconciliation(request.scopeId, request.profileIds);
     if (request.operation === "lifecycle.open-external") validateExternalRequest(request);
     if (request.operation === "auth.open-system-browser") validateAuthenticationBrowserRequest(request);
+    if (request.operation === "diagnostics.export") validateDiagnosticsExport(request);
     if (request.operation === "shortcuts.apply" || request.operation === "shortcuts.stage" || request.operation === "shortcuts.commit") parseDesktopShortcutBindings(request.bindings);
     if (request.operation.startsWith("capture.")) validateCaptureRequest(request as Extract<NativeBridgeRequestV1, { readonly operation: `capture.${string}` }>);
     if (!window.__TAURI_INTERNALS__) {
-      if (request.operation === "runtime.snapshot") return { kind: "runtime", snapshot: desktopSnapshot() };
+      if (request.operation === "runtime.snapshot") return { kind: "runtime", snapshot: await browserSnapshot() };
       if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
       if (request.operation === "auth.peek-pending-callback") return { kind: "auth-callback", url: null };
       if (request.operation === "auth.take-pending-callback") return { kind: "auth-callback", url: null };
       if (request.operation === "auth.open-system-browser") { window.open(request.url, "_blank", "noopener,noreferrer"); return { kind: "ok" }; }
+      if (request.operation === "diagnostics.export") return exportDiagnosticsInBrowser(request);
+      if (request.operation === "diagnostics.clear") return { kind: "ok" };
       if (request.operation === "shortcuts.status" || request.operation === "shortcuts.request-permission" || request.operation === "shortcuts.apply" || request.operation === "shortcuts.stage" || request.operation === "shortcuts.commit" || request.operation === "shortcuts.rollback" || request.operation === "shortcuts.suspend") {
         return { kind: "shortcut-status", platform: "unsupported", permission: "unsupported", bindings: "bindings" in request ? request.bindings : defaultDesktopShortcutBindings, error: null };
       }
@@ -344,5 +389,52 @@ export const nativeBridge: NativeBridgeV1 = {
     return () => document.removeEventListener("visibilitychange", visibility);
   },
 };
+
+export function validateDiagnosticsExport(request: { readonly suggestedName: string; readonly contents: string }): void {
+  if (!diagnosticsFileName.test(request.suggestedName) || new TextEncoder().encode(request.contents).byteLength > diagnosticsExportLimit) throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument);
+  try {
+    const parsed: unknown = JSON.parse(request.contents);
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error();
+  } catch {
+    throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument);
+  }
+}
+
+async function exportDiagnosticsInBrowser(request: { readonly suggestedName: string; readonly contents: string }): Promise<NativeBridgeResponseV1> {
+  const blob = new Blob([request.contents], { type: "application/json" });
+  if (window.showSaveFilePicker) {
+    let handle: Awaited<ReturnType<NonNullable<Window["showSaveFilePicker"]>>>;
+    try {
+      handle = await window.showSaveFilePicker({ suggestedName: request.suggestedName, types: [{ description: "Redacted DevHUD diagnostics", accept: { "application/json": [".json"] } }] });
+    } catch (reason) {
+      if (reason instanceof DOMException && reason.name === "AbortError") return { kind: "diagnostics-export", outcome: "cancelled" };
+      throw new NativeBridgeError(NativeBridgeErrorCode.StorageFailure);
+    }
+    let writable: DiagnosticsWritableFile | undefined;
+    try {
+      writable = await handle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      writable = undefined;
+      return { kind: "diagnostics-export", outcome: "saved" };
+    } catch (reason) {
+      if (writable) {
+        try { await writable.abort(); } catch { /* Preserve the stable export failure classification. */ }
+      }
+      throw new NativeBridgeError(NativeBridgeErrorCode.StorageFailure);
+    }
+  }
+  const link = document.createElement("a");
+  const url = URL.createObjectURL(blob);
+  try {
+    link.href = url;
+    link.download = request.suggestedName;
+    link.click();
+  } finally {
+    // Firefox and Safari may consume anchor download URLs after click() returns.
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+  return { kind: "diagnostics-export", outcome: "initiated" };
+}
 import { invoke as invokeTauri } from "@tauri-apps/api/core";
 import { listen as listenTauri } from "@tauri-apps/api/event";

@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <full-backup-content>
     <exclude domain="sharedpref" path="devhud-secure-settings-v1.xml" />
+    <exclude domain="sharedpref" path="devhud-diagnostics-cleanup-v1.xml" />
+    <exclude domain="root" path="app_webview/" />
 </full-backup-content>

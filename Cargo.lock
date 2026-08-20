@@ -2449,10 +2449,12 @@ dependencies = [
  "gtk",
  "image",
  "keyring",
+ "os_info",
  "plist",
  "png 0.17.16",
  "rand 0.9.4",
  "rdev",
+ "rfd",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -2462,6 +2464,7 @@ dependencies = [
  "tauri-plugin",
  "tauri-plugin-deep-link",
  "tauri-plugin-single-instance",
+ "tempfile",
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
@@ -8327,6 +8330,30 @@ checksum = "f8dd2a808d456c4a54e300a23e9f5a67e122c3024119acbfd73e3bf664491cb2"
 dependencies = [
  "hmac",
  "subtle",
+]
+
+[[package]]
+name = "rfd"
+version = "0.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a15ad77d9e70a92437d8f74c35d99b4e4691128df018833e99f90bcd36152672"
+dependencies = [
+ "block2",
+ "dispatch2 0.3.1",
+ "glib-sys",
+ "gobject-sys",
+ "gtk-sys",
+ "js-sys",
+ "log",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-core-foundation",
+ "objc2-foundation",
+ "raw-window-handle",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]

@@ -7,4 +7,4 @@ import "embed"
 //go:embed *.sql
 var Files embed.FS
 
-const LatestVersion = "00005_administration.sql"
+const LatestVersion = "00006_diagnostics.sql"

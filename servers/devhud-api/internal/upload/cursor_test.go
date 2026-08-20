@@ -1,6 +1,7 @@
 package upload
 
 import (
+	"encoding/base64"
 	"testing"
 	"time"
 
@@ -43,11 +44,12 @@ func TestCursorIsEncryptedScopedBoundedAndExpiring(t *testing.T) {
 			}
 		})
 	}
-	tamperedPrefix := "A"
-	if token[0] == tamperedPrefix[0] {
-		tamperedPrefix = "B"
+	sealed, err := base64.RawURLEncoding.DecodeString(token)
+	if err != nil {
+		t.Fatal(err)
 	}
-	tampered := tamperedPrefix + token[1:]
+	sealed[len(sealed)-1] ^= 1
+	tampered := base64.RawURLEncoding.EncodeToString(sealed)
 	if _, err := codec.Decode(tampered, "owner-a", states, "submission-a", now); err == nil {
 		t.Fatal("tampered token was accepted")
 	}
