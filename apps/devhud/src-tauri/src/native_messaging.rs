@@ -35,6 +35,10 @@ use crate::capture::{CaptureService, DraftBrowserContext, DraftSummary};
 const PAIRING_NONCE_TTL: Duration = Duration::from_secs(120);
 const CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
 const REPLAY_LIMIT: usize = 4_096;
+#[cfg(any(windows, test))]
+const ACCEPT_RETRY_INITIAL_DELAY: Duration = Duration::from_millis(250);
+#[cfg(any(windows, test))]
+const ACCEPT_RETRY_MAXIMUM_DELAY: Duration = Duration::from_secs(5);
 
 static STATE: OnceLock<Arc<NativeMessagingState>> = OnceLock::new();
 
@@ -420,8 +424,7 @@ fn valid_configured_matcher(matcher: &ConfiguredUrlMatcher) -> bool {
                 && (part == "*"
                     || (!part.contains('*') && !part.contains('@') && !part.contains('\\')))
         })
-        && (!matcher.host_is_ip_literal
-            || (matcher.host.len() == 1 && matcher.host.first().is_some_and(|part| part != "*")))
+        && (!matcher.host_is_ip_literal || valid_ip_literal_host(&matcher.host))
         && (matcher.port.is_empty()
             || matcher.port == "*"
             || matcher.port.parse::<u16>().is_ok_and(|port| port > 0))
@@ -436,6 +439,29 @@ fn valid_configured_matcher(matcher: &ConfiguredUrlMatcher) -> bool {
             .path
             .iter()
             .all(|part| part == "*" || part == "**" || !part.contains('*'))
+}
+
+fn valid_ip_literal_host(host: &[String]) -> bool {
+    match host {
+        [address] => address
+            .strip_prefix('[')
+            .and_then(|value| value.strip_suffix(']'))
+            .is_some_and(|value| value.parse::<std::net::Ipv6Addr>().is_ok()),
+        [first, second, third, fourth] => [first, second, third, fourth].into_iter().all(|part| {
+            part.parse::<u8>()
+                .is_ok_and(|octet| octet.to_string() == part.as_str())
+        }),
+        _ => false,
+    }
+}
+
+#[cfg(any(windows, test))]
+fn updated_accept_retry_delay(current: Duration, accepted: bool) -> Duration {
+    if accepted {
+        ACCEPT_RETRY_INITIAL_DELAY
+    } else {
+        current.saturating_mul(2).min(ACCEPT_RETRY_MAXIMUM_DELAY)
+    }
 }
 
 #[tauri::command]
@@ -708,16 +734,22 @@ fn start_windows_pipe() -> Result<(), String> {
     std::thread::Builder::new()
         .name("devhud-native-messaging-ipc".into())
         .spawn(move || {
+            let mut retry_delay = ACCEPT_RETRY_INITIAL_DELAY;
             loop {
                 match listener.accept() {
                     Ok(stream) => {
+                        retry_delay = updated_accept_retry_delay(retry_delay, true);
                         std::thread::spawn(move || {
                             if let Err(reason) = serve_connection(stream) {
                                 warn!(event = "native_messaging_connection_closed", reason);
                             }
                         });
                     }
-                    Err(reason) => error!(event = "native_messaging_accept_failed", %reason),
+                    Err(reason) => {
+                        error!(event = "native_messaging_accept_failed", %reason);
+                        std::thread::sleep(retry_delay);
+                        retry_delay = updated_accept_retry_delay(retry_delay, false);
+                    }
                 }
             }
         })
@@ -1117,6 +1149,45 @@ mod tests {
             "https://app.example:9443",
             &fixed_port
         ));
+    }
+
+    #[test]
+    fn canonical_ip_literal_matchers_are_valid() {
+        let ipv4 = ConfiguredUrlMatcher {
+            scheme: "http".into(),
+            host: ["127", "0", "0", "1"].map(str::to_string).into(),
+            host_is_ip_literal: true,
+            port: "".into(),
+            path: vec!["**".into()],
+        };
+        assert!(valid_configured_matcher(&ipv4));
+        assert!(configured_origin_matches("http://127.0.0.1", &ipv4));
+
+        let ipv6 = ConfiguredUrlMatcher {
+            scheme: "http".into(),
+            host: vec!["[::1]".into()],
+            host_is_ip_literal: true,
+            port: "".into(),
+            path: vec!["**".into()],
+        };
+        assert!(valid_configured_matcher(&ipv6));
+        assert!(configured_origin_matches("http://[::1]", &ipv6));
+    }
+
+    #[test]
+    fn accept_retry_delay_is_capped_and_resets_after_success() {
+        assert_eq!(
+            updated_accept_retry_delay(ACCEPT_RETRY_INITIAL_DELAY, false),
+            Duration::from_millis(500)
+        );
+        assert_eq!(
+            updated_accept_retry_delay(ACCEPT_RETRY_MAXIMUM_DELAY, false),
+            ACCEPT_RETRY_MAXIMUM_DELAY
+        );
+        assert_eq!(
+            updated_accept_retry_delay(ACCEPT_RETRY_MAXIMUM_DELAY, true),
+            ACCEPT_RETRY_INITIAL_DELAY
+        );
     }
 
     #[test]
