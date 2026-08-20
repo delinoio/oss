@@ -62,6 +62,9 @@ tracing = "0.1"
 gtk = "0.18"
 xcb = { version = "=1.6.0", features = ["randr"] }
 
+[target.'cfg(target_os = "macos")'.dependencies]
+libc = "=0.2.182"
+
 [features]
 default = []
 cli = ["dep:tauri-cli"]

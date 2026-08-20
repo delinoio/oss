@@ -168,33 +168,100 @@ fn updater_response(state: &NativeBridgeState) -> Result<Value, String> {
 }
 
 #[cfg(desktop)]
-fn perform_update_check(state: &NativeBridgeState) -> Result<Value, String> {
-    let (target, package) = {
+struct TauriRestartHandoff<R: tauri::Runtime>(tauri::AppHandle<R>);
+
+#[cfg(desktop)]
+impl<R: tauri::Runtime> crate::updater::RestartHandoff for TauriRestartHandoff<R> {
+    fn release(&self) -> Result<(), crate::updater::DiagnosticCode> {
+        crate::release_single_instance(&self.0);
+        Ok(())
+    }
+
+    fn restore(&self) -> Result<(), crate::updater::DiagnosticCode> {
+        crate::restore_single_instance(&self.0)
+            .map_err(|_| crate::updater::DiagnosticCode::RestartFailed)
+    }
+}
+
+#[cfg(desktop)]
+fn emit_update_status<R: tauri::Runtime>(app: &tauri::AppHandle<R>, response: &Value) {
+    if app
+        .emit(
+            "devhud:native-event:v1",
+            json!({ "version": 1, "kind": "desktop-update-status", "status": response["status"] }),
+        )
+        .is_err()
+    {
+        tracing::warn!(event = "updater_status_emit_failed");
+    }
+}
+
+#[cfg(desktop)]
+fn start_update_check<R: tauri::Runtime>(
+    state: NativeBridgeState,
+    app: tauri::AppHandle<R>,
+) -> Result<(Value, bool), String> {
+    let (target, package, generation, checking) = {
         let mut updater = state
             .updater
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let updater = updater.as_mut().ok_or("unsupported")?;
         if !updater.begin_check() {
-            return Ok(json!({ "kind": "desktop-update-status", "status": updater.snapshot() }));
+            return Ok((
+                json!({ "kind": "desktop-update-status", "status": updater.snapshot() }),
+                false,
+            ));
         }
         (
             crate::platform::DesktopTarget::current(),
             updater.snapshot().package_kind,
+            updater.cancellation_token(),
+            json!({ "kind": "desktop-update-status", "status": updater.snapshot() }),
         )
     };
-    let result = crate::updater::UpdaterTransport::new()
-        .and_then(|transport| transport.discover(target, package));
-    let mut updater = state
-        .updater
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let updater = updater.as_mut().ok_or("unsupported")?;
-    match result {
-        Ok(manifest) => updater.check_bytes(&manifest, time::OffsetDateTime::now_utc()),
-        Err(error) => updater.record_error(error),
-    }
-    Ok(json!({ "kind": "desktop-update-status", "status": updater.snapshot() }))
+    std::mem::drop(tauri::async_runtime::spawn_blocking(move || {
+        let result = crate::updater::UpdaterTransport::new()
+            .and_then(|transport| transport.discover(target, package));
+        let snapshot = {
+            let mut updater = state
+                .updater
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let Some(updater) = updater.as_mut() else {
+                return;
+            };
+            if !Arc::ptr_eq(&generation, &updater.cancellation_token())
+                || updater.snapshot().kind != crate::updater::UpdaterStateKind::Checking
+            {
+                return;
+            }
+            match result {
+                Ok(manifest) => updater.check_bytes(&manifest, time::OffsetDateTime::now_utc()),
+                Err(error) => {
+                    tracing::warn!(
+                        event = "updater_check_failed",
+                        code = ?error.code,
+                        phase = ?error.phase,
+                        target = target.update_target_id(),
+                        package = package.header_value(),
+                        http_status_class = ?error.status_class,
+                        retry_after_seconds = ?error.retry_after_seconds
+                    );
+                    updater.record_error(error);
+                }
+            }
+            updater.snapshot()
+        };
+        let response = json!({ "kind": "desktop-update-status", "status": snapshot });
+        emit_update_status(&app, &response);
+    }));
+    Ok((checking, true))
+}
+
+#[cfg(desktop)]
+const fn updater_window_is_active(visible: bool, minimized: bool, focused: bool) -> bool {
+    visible && !minimized && focused
 }
 
 #[cfg(desktop)]
@@ -214,11 +281,17 @@ pub fn start_update_scheduler<R: tauri::Runtime>(
         loop {
             std::thread::sleep(Duration::from_secs(1));
             let now = std::time::Instant::now();
-            let visible = app
+            let active = app
                 .get_webview_window("main")
-                .and_then(|window| window.is_visible().ok())
+                .map(|window| {
+                    updater_window_is_active(
+                        window.is_visible().unwrap_or(false),
+                        window.is_minimized().unwrap_or(true),
+                        window.is_focused().unwrap_or(false),
+                    )
+                })
                 .unwrap_or(false);
-            if !visible {
+            if !active {
                 last_tick = now;
                 continue;
             }
@@ -229,20 +302,21 @@ pub fn start_update_scheduler<R: tauri::Runtime>(
             if !schedule.is_due(active_runtime_seconds) && !overdue_after_resume {
                 continue;
             }
-            let response = perform_update_check(&state);
-            match response {
-                Ok(response) => {
-                    if app
-                        .emit(
-                            "devhud:native-event:v1",
-                            json!({ "version": 1, "kind": "desktop-update-status", "status": response["status"] }),
-                        )
-                        .is_err()
-                    {
-                        tracing::warn!(event = "updater_status_emit_failed");
+            let response = start_update_check(state.clone(), app.clone());
+            let started = match response {
+                Ok((response, started)) => {
+                    if started {
+                        emit_update_status(&app, &response);
                     }
+                    started
                 }
-                Err(code) => tracing::warn!(event = "updater_check_failed", error_code = code),
+                Err(code) => {
+                    tracing::warn!(event = "updater_check_failed", error_code = code);
+                    false
+                }
+            };
+            if !started {
+                continue;
             }
             schedule.mark_checked(active_runtime_seconds);
             wall_deadline = std::time::SystemTime::now() + crate::updater::CHECK_INTERVAL;
@@ -1149,10 +1223,8 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
         .and_then(Value::as_str)
         .ok_or("invalid-argument")?;
     if operation == "updates.check" {
-        let updater_state = state.inner().clone();
-        return tauri::async_runtime::spawn_blocking(move || perform_update_check(&updater_state))
-            .await
-            .map_err(|_| "platform-failure".to_string())?;
+        return start_update_check(state.inner().clone(), app.clone())
+            .map(|(response, _)| response);
     }
     if operation == "updates.approve-download" {
         let (candidate, package, canceled) = {
@@ -1235,7 +1307,9 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             let updater = updater.as_mut().ok_or("unsupported")?;
-            let installer = crate::updater::PlatformInstaller::new(updater.snapshot().package_kind);
+            let handoff = TauriRestartHandoff(app.clone());
+            let installer =
+                crate::updater::PlatformInstaller::new(updater.snapshot().package_kind, &handoff);
             let restart = updater.approve_restart(&installer);
             let response = json!({ "kind": "desktop-update-status", "status": updater.snapshot() });
             (restart, response)
@@ -1561,8 +1635,17 @@ mod tests {
     #[cfg(desktop)]
     use super::{
         deletes_capture_drafts_for_purge_scope, purge_capture_drafts_before_secure_store,
-        should_restore_capture_window, stage_diagnostics_export,
+        should_restore_capture_window, stage_diagnostics_export, updater_window_is_active,
     };
+
+    #[cfg(desktop)]
+    #[test]
+    fn updater_runtime_advances_only_for_an_active_main_window() {
+        assert!(updater_window_is_active(true, false, true));
+        assert!(!updater_window_is_active(false, false, true));
+        assert!(!updater_window_is_active(true, true, true));
+        assert!(!updater_window_is_active(true, false, false));
+    }
 
     #[cfg(desktop)]
     #[test]

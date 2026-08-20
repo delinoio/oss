@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 
 import type { SupportedLanguage } from "./localization";
 import type { DesktopUpdaterStatus, NativeBridgeResponseV1, NativeBridgeV1 } from "./native-bridge";
@@ -55,6 +55,8 @@ export function DesktopUpdaterPanel({ bridge, language }: { readonly bridge: Nat
   const [status, setStatus] = useState<DesktopUpdaterStatus | null>(null);
   const [approval, setApproval] = useState<Approval | null>(null);
   const confirmButton = useRef<HTMLButtonElement>(null);
+  const confirmationDialog = useRef<HTMLElement>(null);
+  const approvalOpener = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -74,9 +76,32 @@ export function DesktopUpdaterPanel({ bridge, language }: { readonly bridge: Nat
     const response: NativeBridgeResponseV1 = await bridge.request({ operation });
     if (response.kind === "desktop-update-status") setStatus(response.status);
   };
+  const openApproval = (next: Approval, opener: HTMLElement) => {
+    approvalOpener.current = opener;
+    setApproval(next);
+  };
+  const closeApproval = () => {
+    setApproval(null);
+    const opener = approvalOpener.current;
+    approvalOpener.current = null;
+    requestAnimationFrame(() => { if (opener?.isConnected) opener.focus(); });
+  };
+  const handleConfirmationKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key === "Escape") {
+      event.stopPropagation();
+      closeApproval();
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const focusable = confirmationDialog.current?.querySelectorAll<HTMLElement>("button:not([disabled]), input:not([disabled]), select:not([disabled]), [href]");
+    if (!focusable?.length) return;
+    const first = focusable[0], last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+  };
   const approve = async () => {
     const operation = approval === "download" ? "updates.approve-download" : approval === "installation" ? "updates.approve-installation" : "updates.approve-restart";
-    setApproval(null);
+    closeApproval();
     await request(operation);
   };
   const confirmationText = approval === "download" ? copy.confirmDownload : approval === "installation" ? copy.confirmInstall : status?.kind === "restart-required" ? copy.confirmRetryRestart : copy.confirmRestart;
@@ -89,12 +114,12 @@ export function DesktopUpdaterPanel({ bridge, language }: { readonly bridge: Nat
     {status?.candidate && <section className="release-notes" aria-labelledby="release-notes-title"><h4 id="release-notes-title">{copy.releaseNotes} · {status.candidate.version}</h4><p>{status.candidate.releaseNotes[language]}</p></section>}
     <div className="actions">
       {(!status || ["idle", "up-to-date", "failed", "canceled"].includes(status.kind)) && <button onClick={() => void request("updates.check")}>{copy.check}</button>}
-      {status?.kind === "available" && <button className="primary" onClick={() => setApproval("download")}>{copy.download}</button>}
+      {status?.kind === "available" && <button className="primary" onClick={(event) => openApproval("download", event.currentTarget)}>{copy.download}</button>}
       {status?.kind === "downloading" && <button onClick={() => void request("updates.cancel")}>{copy.cancel}</button>}
-      {status?.kind === "downloaded" && <button className="primary" onClick={() => setApproval("installation")}>{copy.approveInstall}</button>}
-      {status?.kind === "installation-approved" && <button className="primary" onClick={() => setApproval("restart")}>{copy.restart}</button>}
-      {status?.kind === "restart-required" && <button className="primary" onClick={() => setApproval("restart")}>{copy.retryRestart}</button>}
+      {status?.kind === "downloaded" && <button className="primary" onClick={(event) => openApproval("installation", event.currentTarget)}>{copy.approveInstall}</button>}
+      {status?.kind === "installation-approved" && <button className="primary" onClick={(event) => openApproval("restart", event.currentTarget)}>{copy.restart}</button>}
+      {status?.kind === "restart-required" && <button className="primary" onClick={(event) => openApproval("restart", event.currentTarget)}>{copy.retryRestart}</button>}
     </div>
-    {approval && <div className="updater-confirmation-backdrop" role="presentation"><section className="updater-confirmation" role="dialog" aria-modal="true" aria-labelledby="updater-confirmation-title" onKeyDown={(event) => { if (event.key === "Escape") setApproval(null); }}><h4 id="updater-confirmation-title">{confirmationText}</h4><div className="actions"><button ref={confirmButton} className="primary" onClick={() => void approve()}>{copy.confirm}</button><button onClick={() => setApproval(null)}>{copy.close}</button></div></section></div>}
+    {approval && <div className="updater-confirmation-backdrop" role="presentation"><section ref={confirmationDialog} className="updater-confirmation" role="dialog" aria-modal="true" aria-labelledby="updater-confirmation-title" onKeyDown={handleConfirmationKeyDown}><h4 id="updater-confirmation-title">{confirmationText}</h4><div className="actions"><button ref={confirmButton} className="primary" onClick={() => void approve()}>{copy.confirm}</button><button onClick={closeApproval}>{copy.close}</button></div></section></div>}
   </section>;
 }

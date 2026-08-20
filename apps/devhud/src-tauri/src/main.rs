@@ -414,7 +414,7 @@ async fn open_system_browser(destination: String) -> Result<(), String> {
         })?
 }
 
-fn restore_main_window(app: &tauri::AppHandle<tauri::Cef>) {
+fn restore_main_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
     let Some(window) = app.get_webview_window("main") else {
         error!(event = "tray_window_restore_missing");
         return;
@@ -428,6 +428,28 @@ fn restore_main_window(app: &tauri::AppHandle<tauri::Cef>) {
     if window.set_focus().is_err() {
         error!(event = "tray_window_restore_focus_failed");
     }
+}
+
+fn single_instance_plugin<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
+    tauri_plugin_single_instance::init(|app, arguments, _| {
+        for argument in arguments {
+            native_plugin::offer_auth_callback(app, &argument);
+            if native_plugin::offer_deck_link(app, &argument) {
+                restore_main_window(app);
+            }
+        }
+    })
+}
+
+pub(crate) fn release_single_instance<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    tauri_plugin_single_instance::destroy(app);
+    app.remove_plugin("single-instance");
+}
+
+pub(crate) fn restore_single_instance<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+) -> tauri::Result<()> {
+    app.plugin(single_instance_plugin())
 }
 
 fn create_tray(app: &tauri::AppHandle<tauri::Cef>) -> tauri::Result<()> {
@@ -866,18 +888,11 @@ fn main() {
     let capture_recovery = capture_service.clone();
     let capture_assets = capture_service.clone();
 
-    let mut builder = tauri::Builder::<tauri::Cef>::default();
-    if update_health_probe.is_none() {
-        builder = builder.plugin(tauri_plugin_single_instance::init(|app, arguments, _| {
-            for argument in arguments {
-                native_plugin::offer_auth_callback(app, &argument);
-                if native_plugin::offer_deck_link(app, &argument) {
-                    restore_main_window(app);
-                }
-            }
-        }));
-    }
-    let mut builder = builder
+    // The installing process releases ownership immediately before spawning a
+    // health-checked replacement, so that replacement must claim the normal
+    // single-instance guard just like every other primary process.
+    let mut builder = tauri::Builder::<tauri::Cef>::default()
+        .plugin(single_instance_plugin())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(native_plugin::init())
         .manage(bridge_state)

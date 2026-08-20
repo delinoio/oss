@@ -101,6 +101,24 @@ test("desktop updater networking is native-only, fixed, and credential-free", ()
   }
 });
 
+test("desktop updater checks are generation-guarded, asynchronous, and safely diagnosed", () => {
+  assert.match(nativeBridgeHost, /spawn_blocking/u);
+  assert.match(nativeBridgeHost, /Arc::ptr_eq\(&generation, &updater\.cancellation_token\(\)\)/u);
+  assert.match(nativeBridgeHost, /emit_update_status\(&app, &response\)/u);
+  for (const field of ["code", "phase", "target", "package", "http_status_class", "retry_after_seconds"]) {
+    assert.match(nativeBridgeHost, new RegExp(`${field} =`, "u"));
+  }
+  assert.match(nativeBridgeHost, /window\.is_minimized\(\)/u);
+  assert.match(nativeBridgeHost, /window\.is_focused\(\)/u);
+});
+
+test("desktop updater replacement processes retain single-instance ownership", () => {
+  assert.match(desktopHost, /\.plugin\(single_instance_plugin\(\)\)/u);
+  assert.doesNotMatch(desktopHost, /if update_health_probe\.is_none\(\)/u);
+  assert.match(nativeUpdater, /self\.handoff\.release\(\)\?/u);
+  assert.match(nativeUpdater, /self\.handoff\.restore\(\)/u);
+});
+
 test("Tauri rejection codes become typed native bridge errors", async () => {
   const previousWindow = globalThis.window;
   globalThis.window = { __TAURI_INTERNALS__: { invoke: async () => { throw NativeBridgeErrorCode.NotConfigured; } } };

@@ -883,18 +883,27 @@ pub trait Installer: Send + Sync {
     fn retry_restart(&self) -> Result<(), DiagnosticCode>;
 }
 
+pub trait RestartHandoff: Send + Sync {
+    fn release(&self) -> Result<(), DiagnosticCode>;
+    fn restore(&self) -> Result<(), DiagnosticCode>;
+}
+
 /// Native-only package handoff. The frontend cannot select an executable,
 /// arguments, destination, or package type. Release publication remains
 /// blocked until the production trust root is provisioned, but this path is
 /// still fail-closed so development builds cannot turn arbitrary bytes into a
 /// general-purpose process launcher.
-pub struct PlatformInstaller {
+pub struct PlatformInstaller<'a> {
     package_kind: PackageKind,
+    handoff: &'a dyn RestartHandoff,
 }
 
-impl PlatformInstaller {
-    pub const fn new(package_kind: PackageKind) -> Self {
-        Self { package_kind }
+impl<'a> PlatformInstaller<'a> {
+    pub const fn new(package_kind: PackageKind, handoff: &'a dyn RestartHandoff) -> Self {
+        Self {
+            package_kind,
+            handoff,
+        }
     }
 
     fn stage(&self, bytes: &[u8], suffix: &str) -> Result<tempfile::NamedTempFile, DiagnosticCode> {
@@ -909,7 +918,7 @@ impl PlatformInstaller {
         Ok(file)
     }
 
-    fn restart(executable: &Path) -> Result<(), DiagnosticCode> {
+    fn restart(&self, executable: &Path) -> Result<(), DiagnosticCode> {
         let health_file = tempfile::Builder::new()
             .prefix(HEALTH_FILE_PREFIX)
             .tempfile()
@@ -920,17 +929,25 @@ impl PlatformInstaller {
             .and_then(|value| value.to_str())
             .ok_or(DiagnosticCode::RestartFailed)?;
         let token = uuid::Uuid::now_v7().to_string();
-        let mut child = Command::new(executable)
+        self.handoff.release()?;
+        let child = Command::new(executable)
             .arg(format!("{HEALTH_ARGUMENT}{file_name}"))
             .arg(format!("{HEALTH_TOKEN_ARGUMENT}{token}"))
-            .spawn()
-            .map_err(|_| DiagnosticCode::RestartFailed)?;
-        wait_for_health(&mut child, health_file.path(), token.as_bytes())
+            .spawn();
+        let result = child
+            .map_err(|_| DiagnosticCode::RestartFailed)
+            .and_then(|mut child| {
+                wait_for_health(&mut child, health_file.path(), token.as_bytes())
+            });
+        if result.is_err() && self.handoff.restore().is_err() {
+            tracing::error!(event = "updater_single_instance_restore_failed");
+        }
+        result
     }
 
-    fn restart_current() -> Result<(), DiagnosticCode> {
+    fn restart_current(&self) -> Result<(), DiagnosticCode> {
         let executable = std::env::current_exe().map_err(|_| DiagnosticCode::RestartFailed)?;
-        Self::restart(&executable)
+        self.restart(&executable)
     }
 
     #[cfg(target_os = "linux")]
@@ -952,7 +969,7 @@ impl PlatformInstaller {
                 if !status.success() {
                     return Err(DiagnosticCode::InstallationFailed);
                 }
-                Ok(match Self::restart_current() {
+                Ok(match self.restart_current() {
                     Ok(()) => RestartDisposition::Relaunched,
                     Err(_) => RestartDisposition::RestartRequired,
                 })
@@ -991,7 +1008,7 @@ impl PlatformInstaller {
                 )
             })
             .map_err(|_| DiagnosticCode::InstallationFailed)?;
-        replace_file_transactionally(&destination, replacement, Self::restart)
+        replace_file_transactionally(&destination, replacement, |path| self.restart(path))
     }
 
     #[cfg(target_os = "windows")]
@@ -1020,7 +1037,7 @@ impl PlatformInstaller {
         if !status.success() {
             return Err(DiagnosticCode::InstallationFailed);
         }
-        Ok(match Self::restart_current() {
+        Ok(match self.restart_current() {
             Ok(()) => RestartDisposition::Relaunched,
             Err(_) => RestartDisposition::RestartRequired,
         })
@@ -1033,9 +1050,21 @@ impl PlatformInstaller {
         if self.package_kind != PackageKind::MacosApp || !bytes.starts_with(&[0x1f, 0x8b]) {
             return Err(DiagnosticCode::InstallationFailed);
         }
+        let executable = std::env::current_exe().map_err(|_| DiagnosticCode::InstallationFailed)?;
+        let destination = executable
+            .ancestors()
+            .find(|path| path.extension().is_some_and(|extension| extension == "app"))
+            .map(Path::to_path_buf)
+            .ok_or(DiagnosticCode::InstallationFailed)?;
+        let parent = destination
+            .parent()
+            .ok_or(DiagnosticCode::InstallationFailed)?;
+        // The staged and installed bundles must share a filesystem so macOS can
+        // atomically exchange their directory entries without ever removing the
+        // canonical application path.
         let extraction = tempfile::Builder::new()
-            .prefix("devhud-update-v1-")
-            .tempdir()
+            .prefix(".devhud-update-v1-")
+            .tempdir_in(parent)
             .map_err(|_| DiagnosticCode::InstallationFailed)?;
         let mut archive = tar::Archive::new(flate2::read::GzDecoder::new(bytes));
         for entry in archive
@@ -1084,45 +1113,96 @@ impl PlatformInstaller {
         if apps.len() != 1 {
             return Err(DiagnosticCode::InstallationFailed);
         }
-        let executable = std::env::current_exe().map_err(|_| DiagnosticCode::InstallationFailed)?;
-        let destination = executable
-            .ancestors()
-            .find(|path| path.extension().is_some_and(|extension| extension == "app"))
-            .map(Path::to_path_buf)
-            .ok_or(DiagnosticCode::InstallationFailed)?;
-        let parent = destination
-            .parent()
-            .ok_or(DiagnosticCode::InstallationFailed)?;
-        let name = destination
-            .file_name()
-            .ok_or(DiagnosticCode::InstallationFailed)?;
-        let backup = parent.join(format!(".{}.devhud-backup-v1", name.to_string_lossy()));
-        if backup.exists() {
-            return Err(DiagnosticCode::InstallationFailed);
-        }
-        fs::rename(&destination, &backup).map_err(|_| DiagnosticCode::InstallationFailed)?;
-        if fs::rename(&apps[0], &destination).is_err() {
-            let _ = fs::rename(&backup, &destination);
-            return Err(DiagnosticCode::InstallationFailed);
-        }
         let relaunch = destination.join("Contents/MacOS").join(
             executable
                 .file_name()
                 .ok_or(DiagnosticCode::RestartFailed)?,
         );
-        if Self::restart(&relaunch).is_err() {
-            let _ = fs::remove_dir_all(&destination);
-            if fs::rename(&backup, &destination).is_err() {
-                tracing::error!(
-                    event = "updater_install_rollback_failed",
-                    package = "macos-app"
-                );
-            }
-            return Err(DiagnosticCode::RestartFailed);
-        }
-        let _ = fs::remove_dir_all(backup);
+        replace_macos_bundle_transactionally(&destination, &apps[0], || self.restart(&relaunch))?;
         Ok(RestartDisposition::Relaunched)
     }
+}
+
+#[cfg(target_os = "macos")]
+fn sync_tree(path: &Path) -> std::io::Result<()> {
+    let metadata = fs::symlink_metadata(path)?;
+    if metadata.file_type().is_symlink() {
+        return Ok(());
+    }
+    if metadata.is_file() {
+        return fs::File::open(path)?.sync_all();
+    }
+    for entry in fs::read_dir(path)? {
+        sync_tree(&entry?.path())?;
+    }
+    fs::File::open(path)?.sync_all()
+}
+
+#[cfg(target_os = "macos")]
+fn atomic_exchange(left: &Path, right: &Path) -> Result<(), DiagnosticCode> {
+    use std::{ffi::CString, os::unix::ffi::OsStrExt};
+
+    let left = CString::new(left.as_os_str().as_bytes())
+        .map_err(|_| DiagnosticCode::InstallationFailed)?;
+    let right = CString::new(right.as_os_str().as_bytes())
+        .map_err(|_| DiagnosticCode::InstallationFailed)?;
+    // SAFETY: both C strings are NUL-terminated, remain alive for the call, and
+    // name sibling paths on the same filesystem. RENAME_SWAP changes both
+    // directory entries atomically.
+    let result = unsafe {
+        libc::renameatx_np(
+            libc::AT_FDCWD,
+            left.as_ptr(),
+            libc::AT_FDCWD,
+            right.as_ptr(),
+            libc::RENAME_SWAP,
+        )
+    };
+    (result == 0)
+        .then_some(())
+        .ok_or(DiagnosticCode::InstallationFailed)
+}
+
+#[cfg(target_os = "macos")]
+fn replace_macos_bundle_transactionally(
+    destination: &Path,
+    replacement: &Path,
+    relaunch: impl FnOnce() -> Result<(), DiagnosticCode>,
+) -> Result<(), DiagnosticCode> {
+    let parent = destination
+        .parent()
+        .ok_or(DiagnosticCode::InstallationFailed)?;
+    sync_tree(replacement).map_err(|_| DiagnosticCode::InstallationFailed)?;
+    fs::File::open(parent)
+        .and_then(|directory| directory.sync_all())
+        .map_err(|_| DiagnosticCode::InstallationFailed)?;
+    atomic_exchange(destination, replacement)?;
+    if fs::File::open(parent)
+        .and_then(|directory| directory.sync_all())
+        .is_err()
+    {
+        if atomic_exchange(destination, replacement).is_err() {
+            tracing::error!(
+                event = "updater_install_rollback_failed",
+                package = "macos-app"
+            );
+        }
+        return Err(DiagnosticCode::InstallationFailed);
+    }
+    if let Err(error) = relaunch() {
+        if atomic_exchange(destination, replacement).is_err()
+            || fs::File::open(parent)
+                .and_then(|directory| directory.sync_all())
+                .is_err()
+        {
+            tracing::error!(
+                event = "updater_install_rollback_failed",
+                package = "macos-app"
+            );
+        }
+        return Err(error);
+    }
+    Ok(())
 }
 
 fn wait_for_health(
@@ -1188,7 +1268,7 @@ fn parse_health_probe(arguments: impl IntoIterator<Item = String>) -> Option<Upd
     Some(UpdateHealthProbe { file_name, token })
 }
 
-impl Installer for PlatformInstaller {
+impl Installer for PlatformInstaller<'_> {
     fn install_and_restart(
         &self,
         verified_artifact: &[u8],
@@ -1223,7 +1303,7 @@ impl Installer for PlatformInstaller {
             event = "updater_restart_retry_started",
             package = self.package_kind.header_value()
         );
-        let result = Self::restart_current();
+        let result = self.restart_current();
         if let Err(code) = result {
             tracing::warn!(
                 event = "updater_restart_retry_failed",
@@ -1328,6 +1408,11 @@ impl UpdaterController {
         ) {
             return false;
         }
+        // Rotate the worker generation before clearing the canceled state. A
+        // canceled download may still be returning on another thread, and its
+        // result must not be allowed to overwrite this newer check.
+        self.canceled.store(true, Ordering::Release);
+        self.canceled = Arc::new(AtomicBool::new(false));
         self.candidate = None;
         self.artifact = None;
         self.snapshot.candidate = None;
@@ -1831,6 +1916,23 @@ mod tests {
         retries: AtomicUsize,
     }
 
+    struct TrackingHandoff {
+        releases: AtomicUsize,
+        restores: AtomicUsize,
+    }
+
+    impl RestartHandoff for TrackingHandoff {
+        fn release(&self) -> Result<(), DiagnosticCode> {
+            self.releases.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+
+        fn restore(&self) -> Result<(), DiagnosticCode> {
+            self.restores.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+    }
+
     impl Installer for RestartRequiredInstaller {
         fn install_and_restart(
             &self,
@@ -1889,6 +1991,24 @@ mod tests {
         controller.begin_download().unwrap();
         assert!(canceled_worker.load(Ordering::Acquire));
         assert!(!controller.cancellation_token().load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn check_after_cancellation_invalidates_the_old_worker_generation() {
+        let root = SigningKey::from_bytes(&RFC_ROOT_SEED);
+        let mut controller =
+            UpdaterController::new(Version::new(0, 1, 0), target(), package()).unwrap();
+        controller.check_bytes(&fixture("0.2.0", &root, vec![], None), now());
+        controller.begin_download().unwrap();
+        let canceled_worker = controller.cancellation_token();
+        controller.cancel();
+
+        assert!(controller.begin_check());
+        let check_worker = controller.cancellation_token();
+        assert!(canceled_worker.load(Ordering::Acquire));
+        assert!(!Arc::ptr_eq(&canceled_worker, &check_worker));
+        assert!(!check_worker.load(Ordering::Acquire));
+        assert_eq!(controller.snapshot().kind, UpdaterStateKind::Checking);
     }
 
     #[test]
@@ -1956,6 +2076,26 @@ mod tests {
     }
 
     #[test]
+    fn failed_relaunch_restores_single_instance_ownership() {
+        let handoff = TrackingHandoff {
+            releases: AtomicUsize::new(0),
+            restores: AtomicUsize::new(0),
+        };
+        let installer = PlatformInstaller::new(package(), &handoff);
+        let missing = std::env::temp_dir().join(format!(
+            "devhud-missing-restart-target-{}",
+            uuid::Uuid::now_v7()
+        ));
+
+        assert_eq!(
+            installer.restart(&missing),
+            Err(DiagnosticCode::RestartFailed)
+        );
+        assert_eq!(handoff.releases.load(Ordering::SeqCst), 1);
+        assert_eq!(handoff.restores.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
     fn schedule_is_stable_and_resume_checks_overdue_work() {
         let mut schedule = CheckSchedule::after_frontend_ready();
         assert!(!schedule.is_due(29));
@@ -2012,5 +2152,33 @@ mod tests {
         });
         assert_eq!(result, Err(DiagnosticCode::RestartFailed));
         assert_eq!(fs::read(destination).unwrap(), b"installed-version");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn failed_relaunch_atomically_restores_the_installed_bundle() {
+        let directory = tempfile::tempdir().unwrap();
+        let destination = directory.path().join("DevHUD.app");
+        let replacement = directory.path().join("Candidate.app");
+        fs::create_dir(&destination).unwrap();
+        fs::create_dir(&replacement).unwrap();
+        fs::write(destination.join("version"), b"installed-version").unwrap();
+        fs::write(replacement.join("version"), b"candidate-version").unwrap();
+
+        let result = replace_macos_bundle_transactionally(&destination, &replacement, || {
+            assert!(destination.is_dir());
+            assert_eq!(
+                fs::read(destination.join("version")).unwrap(),
+                b"candidate-version"
+            );
+            Err(DiagnosticCode::RestartFailed)
+        });
+
+        assert_eq!(result, Err(DiagnosticCode::RestartFailed));
+        assert!(destination.is_dir());
+        assert_eq!(
+            fs::read(destination.join("version")).unwrap(),
+            b"installed-version"
+        );
     }
 }

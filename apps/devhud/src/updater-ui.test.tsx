@@ -73,10 +73,34 @@ describe("desktop updater approvals", () => {
     const { bridge, operations } = bridgeWithStatus(available);
     render(<DesktopUpdaterPanel bridge={bridge} language="en" />);
     await screen.findByText("English signed notes");
-    fireEvent.click(screen.getByRole("button", { name: "Approve download" }));
+    const opener = screen.getByRole("button", { name: "Approve download" });
+    opener.focus();
+    fireEvent.click(opener);
     fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(operations).toEqual(["updates.status"]);
+    await waitFor(() => expect(opener).toBe(document.activeElement));
+  });
+
+  it("contains confirmation focus and restores the opener after going back", async () => {
+    const { bridge } = bridgeWithStatus(available);
+    render(<DesktopUpdaterPanel bridge={bridge} language="en" />);
+    await screen.findByText("English signed notes");
+    const opener = screen.getByRole("button", { name: "Approve download" });
+    opener.focus();
+    fireEvent.click(opener);
+
+    const confirm = screen.getByRole("button", { name: "Confirm" });
+    const back = screen.getByRole("button", { name: "Go back" });
+    expect(confirm).toBe(document.activeElement);
+    confirm.focus();
+    fireEvent.keyDown(confirm, { key: "Tab", shiftKey: true });
+    expect(back).toBe(document.activeElement);
+    fireEvent.keyDown(back, { key: "Tab" });
+    expect(confirm).toBe(document.activeElement);
+
+    fireEvent.click(back);
+    await waitFor(() => expect(opener).toBe(document.activeElement));
   });
 
   it("retries only restart after a package-manager install has completed", async () => {

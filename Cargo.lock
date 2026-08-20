@@ -2451,6 +2451,7 @@ dependencies = [
  "gtk",
  "image",
  "keyring",
+ "libc",
  "os_info",
  "plist",
  "png 0.17.16",
