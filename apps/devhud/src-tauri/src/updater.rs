@@ -1081,7 +1081,6 @@ impl<'a> PlatformInstaller<'a> {
                 entry
                     .link_name()
                     .map_err(|_| DiagnosticCode::InstallationFailed)?
-                    .flatten()
                     .is_some_and(|target| {
                         !target.is_absolute()
                             && target
