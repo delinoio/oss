@@ -92,6 +92,21 @@ describe("injected capture", () => {
     expect(encoder.encode(result.accessibility["aria-label"]).byteLength).toBeLessThanOrEqual(4 * 1024);
   });
 
+  it("reads only allowlisted attributes without enumerating the selected element", async () => {
+    document.body.innerHTML = '<main aria-label="safe" data-secret="excluded">visible</main>';
+    const selected = document.body.firstElementChild!;
+    const attributes = vi.fn(() => {
+      throw new Error("attributes must not be enumerated");
+    });
+    Object.defineProperty(selected, "attributes", { configurable: true, get: attributes });
+
+    const result = await select(selected);
+
+    expect(result?.accessibility).toEqual({ "aria-label": "safe" });
+    expect(result?.outerHtml).toBe('<main aria-label="safe">visible</main>');
+    expect(attributes).not.toHaveBeenCalled();
+  });
+
   it("does not encode an oversized untrusted string in full", async () => {
     document.title = "x".repeat(1024 * 1024);
     const encode = vi.spyOn(TextEncoder.prototype, "encode");

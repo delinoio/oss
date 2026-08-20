@@ -36,6 +36,17 @@ export function injectedCapture(selectElement: boolean, expectedOrigin: string, 
     }
     return output;
   };
+  const isAriaHidden = (value: string | null) => value?.length === 4 && value.toLowerCase() === "true";
+  const capturedAttributes = (element: Element) => {
+    const attributes: Array<[string, string]> = [];
+    for (const name of allowedAttributes) {
+      const value = element.getAttribute(name);
+      if (value !== null && !(name === "aria-hidden" && isAriaHidden(value))) {
+        attributes.push([name, truncateUtf8(value, 4 * 1024)]);
+      }
+    }
+    return attributes;
+  };
   const normalizeUrl = () => {
     const url = new URL(location.href);
     if (!/^https?:$/u.test(url.protocol)) throw new TypeError("unsupported URL");
@@ -84,7 +95,7 @@ export function injectedCapture(selectElement: boolean, expectedOrigin: string, 
     if (!allowedElements.has(element.localName)) return false;
     const ancestors: Element[] = [];
     for (let current: Element | null = element; current; current = current.parentElement) {
-      if (current.hasAttribute("hidden") || current.getAttribute("aria-hidden")?.toLowerCase() === "true") return false;
+      if (current.hasAttribute("hidden") || isAriaHidden(current.getAttribute("aria-hidden"))) return false;
       ancestors.push(current);
     }
     const cssVisible = typeof element.checkVisibility === "function"
@@ -174,10 +185,7 @@ export function injectedCapture(selectElement: boolean, expectedOrigin: string, 
       }
       if (!(node instanceof Element) || !isAllowedAndVisible(node)) continue;
       const clean = document.createElement(node.localName);
-      for (const attribute of Array.from(node.attributes)) {
-        const name = attribute.name.toLowerCase();
-        if (allowedAttributes.has(name) && !(name === "aria-hidden" && attribute.value.toLowerCase() === "true")) clean.setAttribute(name, truncateUtf8(attribute.value, 4 * 1024));
-      }
+      for (const [name, value] of capturedAttributes(node)) clean.setAttribute(name, value);
       const closingTag = voidElements.has(node.localName) ? "" : `</${node.localName}>`;
       const serialized = clean.outerHTML;
       const openingTag = closingTag ? serialized.slice(0, -closingTag.length) : serialized;
@@ -212,10 +220,7 @@ export function injectedCapture(selectElement: boolean, expectedOrigin: string, 
       && bounds.height > 0
       ? { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height }
       : null;
-    const attributes = allowedSelection ? Array.from(allowedSelection.attributes).map((attribute) => [attribute.name.toLowerCase(), attribute.value] as [string, string]) : [];
-    const accessibility = Object.fromEntries(attributes
-      .filter(([name, value]) => allowedAttributes.has(name) && !(name === "aria-hidden" && value.toLowerCase() === "true"))
-      .map(([name, value]) => [name, truncateUtf8(value, 4 * 1024)]));
+    const accessibility = Object.fromEntries(allowedSelection ? capturedAttributes(allowedSelection) : []);
     return {
       liveUrl: location.href,
       url: normalizeUrl(),

@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 
 const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = resolve(appRoot, "../..");
+const nativeHostTarget = "devhud-native-messaging-host";
 
 export function rustHostTriple(versionOutput) {
   const host = versionOutput.match(/^host: (\S+)$/mu)?.[1];
@@ -28,14 +29,44 @@ function run(command, args, options = {}) {
   return result.stdout ?? "";
 }
 
+export function nativeMessagingHostExecutable(buildOutput) {
+  const executables = new Set();
+  for (const line of buildOutput.split(/\r?\n/u)) {
+    if (!line.trimStart().startsWith("{")) continue;
+    let message;
+    try {
+      message = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (
+      message.reason === "compiler-artifact"
+      && message.target?.name === nativeHostTarget
+      && message.target.kind?.includes("bin")
+      && typeof message.executable === "string"
+      && message.executable !== ""
+    ) {
+      executables.add(message.executable);
+    }
+  }
+  if (executables.size !== 1) {
+    throw new Error("unable to determine the Native Messaging host artifact");
+  }
+  return executables.values().next().value;
+}
+
 export function stageNativeMessagingHost({ release }) {
   const triple = rustHostTriple(run("rustc", ["-vV"], { capture: true }));
-  const cargoArgs = ["build", "--locked", "-p", "devhud-native-messaging-host"];
+  const cargoArgs = [
+    "build",
+    "--locked",
+    "-p",
+    nativeHostTarget,
+    "--message-format=json-render-diagnostics",
+  ];
   if (release) cargoArgs.push("--release");
-  run("cargo", cargoArgs);
+  const source = nativeMessagingHostExecutable(run("cargo", cargoArgs, { capture: true }));
   const executableSuffix = process.platform === "win32" ? ".exe" : "";
-  const profile = release ? "release" : "debug";
-  const source = join(repoRoot, "target", profile, `devhud-native-messaging-host${executableSuffix}`);
   const destination = join(
     appRoot,
     "src-tauri",

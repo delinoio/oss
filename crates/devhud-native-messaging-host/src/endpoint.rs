@@ -22,6 +22,12 @@ fn remaining_until(deadline: Instant) -> io::Result<Duration> {
     Ok(remaining)
 }
 
+#[cfg(windows)]
+fn remaining_millis(deadline: Instant) -> io::Result<u32> {
+    let remaining = remaining_until(deadline)?;
+    Ok(u32::try_from(remaining.as_millis().clamp(1, u128::from(u32::MAX))).unwrap_or(u32::MAX))
+}
+
 #[cfg(target_os = "linux")]
 pub fn socket_path() -> io::Result<PathBuf> {
     let runtime = std::env::var_os("XDG_RUNTIME_DIR")
@@ -191,34 +197,55 @@ pub fn connect(deadline: Instant) -> io::Result<IpcClientStream> {
     use std::ptr::{null, null_mut};
 
     use windows_sys::Win32::{
-        Foundation::INVALID_HANDLE_VALUE,
+        Foundation::{ERROR_PIPE_BUSY, ERROR_SEM_TIMEOUT, INVALID_HANDLE_VALUE},
         Storage::FileSystem::{
             CreateFileW, FILE_FLAG_OVERLAPPED, FILE_GENERIC_READ, FILE_GENERIC_WRITE, OPEN_EXISTING,
         },
+        System::Pipes::WaitNamedPipeW,
     };
 
-    remaining_until(deadline)?;
     let pipe_name = wide(WINDOWS_PIPE_PATH);
-    // SAFETY: the pipe name is NUL-terminated, optional pointers are null, and
-    // ownership of a successful handle transfers to WindowsPipeStream.
-    let handle = unsafe {
-        CreateFileW(
-            pipe_name.as_ptr(),
-            FILE_GENERIC_READ | FILE_GENERIC_WRITE,
-            0,
-            null(),
-            OPEN_EXISTING,
-            FILE_FLAG_OVERLAPPED,
-            null_mut(),
-        )
-    };
-    if handle == INVALID_HANDLE_VALUE {
-        return Err(io::Error::last_os_error());
+    loop {
+        remaining_until(deadline)?;
+        // SAFETY: the pipe name is NUL-terminated, optional pointers are null,
+        // and ownership of a successful handle transfers to WindowsPipeStream.
+        let handle = unsafe {
+            CreateFileW(
+                pipe_name.as_ptr(),
+                FILE_GENERIC_READ | FILE_GENERIC_WRITE,
+                0,
+                null(),
+                OPEN_EXISTING,
+                FILE_FLAG_OVERLAPPED,
+                null_mut(),
+            )
+        };
+        if handle != INVALID_HANDLE_VALUE {
+            return Ok(WindowsPipeStream {
+                handle,
+                deadline: Some(deadline),
+            });
+        }
+        let error = io::Error::last_os_error();
+        if error.raw_os_error().map(|code| code as u32) != Some(ERROR_PIPE_BUSY) {
+            return Err(error);
+        }
+        // A successful wait is only a hint: another client can claim the
+        // available instance before CreateFileW, so retry against the same
+        // absolute deadline.
+        // SAFETY: the pipe name is NUL-terminated and remains live for the call.
+        if unsafe { WaitNamedPipeW(pipe_name.as_ptr(), remaining_millis(deadline)?) } == 0 {
+            let error = io::Error::last_os_error();
+            return if error.raw_os_error().map(|code| code as u32) == Some(ERROR_SEM_TIMEOUT) {
+                Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "pipe connection timed out",
+                ))
+            } else {
+                Err(error)
+            };
+        }
     }
-    Ok(WindowsPipeStream {
-        handle,
-        deadline: Some(deadline),
-    })
 }
 
 #[cfg(windows)]
@@ -246,10 +273,11 @@ impl WindowsPipeStream {
     }
 
     fn remaining_millis(&self) -> io::Result<u32> {
-        let remaining = remaining_until(self.deadline.ok_or_else(|| {
-            io::Error::new(io::ErrorKind::InvalidInput, "pipe deadline is unset")
-        })?)?;
-        Ok(u32::try_from(remaining.as_millis().clamp(1, u128::from(u32::MAX))).unwrap_or(u32::MAX))
+        remaining_millis(
+            self.deadline.ok_or_else(|| {
+                io::Error::new(io::ErrorKind::InvalidInput, "pipe deadline is unset")
+            })?,
+        )
     }
 
     fn overlapped_io(&mut self, buffer: *mut u8, length: u32, write: bool) -> io::Result<usize> {
@@ -641,6 +669,9 @@ fn token_user_sid(token: windows_sys::Win32::Foundation::HANDLE) -> io::Result<S
 mod tests {
     use super::*;
 
+    #[cfg(windows)]
+    static WINDOWS_PIPE_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn windows_pipe_name_is_exact_and_user_scoped_by_server_acl() {
         assert_eq!(WINDOWS_PIPE_PATH, r"\\.\pipe\io.delino.devhud.ipc");
@@ -655,6 +686,7 @@ mod tests {
             time::Duration,
         };
 
+        let _guard = WINDOWS_PIPE_TEST_LOCK.lock().unwrap();
         let listener = WindowsPipeListener::new().unwrap();
         let client = thread::spawn(|| {
             let mut stream = (0..100)
@@ -679,6 +711,38 @@ mod tests {
         );
         drop(stream);
         client.join().unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn busy_windows_pipe_waits_for_the_next_instance() {
+        use std::{thread, time::Duration};
+
+        let _guard = WINDOWS_PIPE_TEST_LOCK.lock().unwrap();
+        let listener = WindowsPipeListener::new().unwrap();
+        let first_client = thread::spawn(|| {
+            (0..100)
+                .find_map(|_| match connect(Instant::now() + Duration::from_secs(1)) {
+                    Ok(stream) => Some(stream),
+                    Err(_) => {
+                        thread::sleep(Duration::from_millis(10));
+                        None
+                    }
+                })
+                .expect("connect to first test pipe instance")
+        });
+        let first_server = listener.accept().unwrap();
+        let first_client = first_client.join().unwrap();
+        let deadline = Instant::now() + Duration::from_secs(1);
+        let second_client = thread::spawn(move || connect(deadline));
+
+        thread::sleep(Duration::from_millis(50));
+        assert!(!second_client.is_finished());
+        let second_server = listener.accept().unwrap();
+        let second_client = second_client.join().unwrap().unwrap();
+
+        assert_eq!(second_client.deadline, Some(deadline));
+        drop((first_client, first_server, second_client, second_server));
     }
 
     #[cfg(unix)]
