@@ -85,6 +85,7 @@ struct NativeMessagingState {
     pairing_lifecycle: Mutex<()>,
     pending_pairing: Mutex<Option<PendingPairing>>,
     configuration_scope: Mutex<Option<Uuid>>,
+    configuration_revision: Mutex<Option<Uuid>>,
     configuration: Mutex<Value>,
     latest_context: Mutex<Option<Value>>,
 }
@@ -133,6 +134,7 @@ struct ConfiguredUrlMatcher {
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct CapturePayload {
+    configuration_revision: String,
     mapping_id: String,
     context: BrowserContext,
 }
@@ -243,6 +245,10 @@ fn replace_configuration(
         .configuration_scope
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut current_revision = messaging_state
+        .configuration_revision
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let scope_changed = current_scope.as_ref() != Some(&parsed_scope_id);
     if scope_changed {
         *current_scope = Some(parsed_scope_id);
@@ -251,6 +257,7 @@ fn replace_configuration(
         Ok(configuration) => {
             if scope_changed || *current != configuration {
                 messaging_state.generation.fetch_add(1, Ordering::SeqCst);
+                *current_revision = Some(Uuid::now_v7());
                 let mut latest_context = messaging_state
                     .latest_context
                     .lock()
@@ -262,6 +269,7 @@ fn replace_configuration(
         }
         Err(error) => {
             messaging_state.generation.fetch_add(1, Ordering::SeqCst);
+            *current_revision = Some(Uuid::now_v7());
             *current = Value::Null;
             messaging_state
                 .latest_context
@@ -294,13 +302,17 @@ fn validate_configuration(configuration: Value) -> Result<Value, String> {
 
 fn configuration_response_envelopes_fit(configuration: &Value) -> bool {
     const REQUEST_ID: &str = "01900000-0000-7000-8000-000000000000";
+    let payload = configuration_response_payload(
+        configuration.clone(),
+        Some(Uuid::parse_str(REQUEST_ID).expect("fixture UUID is valid")),
+    );
     let ipc = IpcResponse {
         version: PROTOCOL_VERSION,
         schema_version: SCHEMA_VERSION,
         request_id: REQUEST_ID.to_string(),
         accepted: true,
         error: None,
-        payload: configuration.clone(),
+        payload: payload.clone(),
     };
     let native = NativeResponse {
         version: PROTOCOL_VERSION,
@@ -308,7 +320,7 @@ fn configuration_response_envelopes_fit(configuration: &Value) -> bool {
         request_id: REQUEST_ID.to_string(),
         ok: true,
         state: NativeResponseState::Accepted,
-        payload: configuration.clone(),
+        payload,
     };
     [serde_json::to_vec(&ipc), serde_json::to_vec(&native)]
         .into_iter()
@@ -317,6 +329,31 @@ fn configuration_response_envelopes_fit(configuration: &Value) -> bool {
                 .as_ref()
                 .is_ok_and(|body| body.len() <= devhud_native_messaging_host::MAX_JSON_BYTES)
         })
+}
+
+fn configuration_response_payload(configuration: Value, revision: Option<Uuid>) -> Value {
+    json!({
+        "configuration": configuration,
+        "configurationRevision": revision.map(|value| value.to_string()),
+    })
+}
+
+fn configuration_snapshot(messaging_state: &NativeMessagingState) -> (Value, Option<Uuid>) {
+    let _lifecycle = messaging_state
+        .pairing_lifecycle
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let configuration = messaging_state
+        .configuration
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
+    let revision = messaging_state
+        .configuration_revision
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .to_owned();
+    (configuration, revision)
 }
 
 fn valid_extension_configuration(configuration: &ExtensionConfiguration) -> bool {
@@ -681,9 +718,20 @@ fn session_generation_is_current(messaging_state: &NativeMessagingState, generat
         && messaging_state.generation.load(Ordering::SeqCst) == generation
 }
 
-fn authorize_capture(payload: Value, configuration: &Value) -> Result<Value, &'static str> {
+fn authorize_capture(
+    payload: Value,
+    configuration: &Value,
+    configuration_revision: Option<&Uuid>,
+) -> Result<Value, &'static str> {
     let capture: CapturePayload =
         serde_json::from_value(payload).map_err(|_| "invalid-browser-context")?;
+    let capture_revision =
+        Uuid::parse_str(&capture.configuration_revision).map_err(|_| "invalid-browser-context")?;
+    if capture_revision.to_string() != capture.configuration_revision
+        || configuration_revision != Some(&capture_revision)
+    {
+        return Err("capture-not-authorized");
+    }
     validate_browser_context(&capture.context)?;
     let context_url =
         url::Url::parse(&capture.context.url).map_err(|_| "invalid-browser-context")?;
@@ -906,7 +954,11 @@ fn serve_connection(mut stream: impl ConnectionStream) -> Result<(), String> {
         if accepted {
             match request.message_type {
                 IpcMessageType::Pair => payload = json!({ "paired": true }),
-                IpcMessageType::Configure | IpcMessageType::Ping => {
+                IpcMessageType::Configure => {
+                    let (configuration, revision) = configuration_snapshot(state());
+                    payload = configuration_response_payload(configuration, revision);
+                }
+                IpcMessageType::Ping => {
                     payload = state()
                         .configuration
                         .lock()
@@ -914,14 +966,8 @@ fn serve_connection(mut stream: impl ConnectionStream) -> Result<(), String> {
                         .clone();
                 }
                 IpcMessageType::Capture => {
-                    let configuration = {
-                        state()
-                            .configuration
-                            .lock()
-                            .unwrap_or_else(std::sync::PoisonError::into_inner)
-                            .clone()
-                    };
-                    match authorize_capture(request.payload, &configuration) {
+                    let (configuration, revision) = configuration_snapshot(state());
+                    match authorize_capture(request.payload, &configuration, revision.as_ref()) {
                         Ok(context) => {
                             if !commit_latest_context_if_current(state(), generation, context) {
                                 accepted = false;
@@ -1300,6 +1346,7 @@ mod tests {
         );
         *messaging_state.latest_context.lock().unwrap() = Some(json!({ "prior": true }));
         let generation = messaging_state.generation.load(Ordering::SeqCst);
+        let revision = *messaging_state.configuration_revision.lock().unwrap();
 
         assert!(
             replace_configuration(
@@ -1314,6 +1361,10 @@ mod tests {
         assert_eq!(
             messaging_state.generation.load(Ordering::SeqCst),
             generation + 1
+        );
+        assert_ne!(
+            *messaging_state.configuration_revision.lock().unwrap(),
+            revision
         );
         assert!(!commit_latest_context_if_current(
             &messaging_state,
@@ -1331,6 +1382,7 @@ mod tests {
         });
         let scope_id = Uuid::now_v7().to_string();
         assert!(replace_configuration(&messaging_state, initial, &scope_id).is_ok());
+        let initial_revision = *messaging_state.configuration_revision.lock().unwrap();
         *messaging_state.latest_context.lock().unwrap() = Some(json!({ "prior": true }));
         let replacement = json!({
             "origins": [{
@@ -1356,6 +1408,8 @@ mod tests {
             messaging_state.generation.load(Ordering::SeqCst),
             generation + 1
         );
+        let replacement_revision = *messaging_state.configuration_revision.lock().unwrap();
+        assert_ne!(replacement_revision, initial_revision);
         assert!(!commit_latest_context_if_current(
             &messaging_state,
             generation,
@@ -1372,6 +1426,10 @@ mod tests {
         assert_eq!(
             messaging_state.generation.load(Ordering::SeqCst),
             generation
+        );
+        assert_eq!(
+            *messaging_state.configuration_revision.lock().unwrap(),
+            replacement_revision
         );
     }
 
@@ -1564,12 +1622,14 @@ mod tests {
     }
 
     #[test]
-    fn capture_requires_exact_configured_mapping_and_origin() {
+    fn capture_requires_current_configuration_revision_and_exact_mapping_origin() {
         let configuration = json!({
             "origins": [configured_origin("https://example.com")],
             "language": "en"
         });
+        let configuration_revision = Uuid::now_v7();
         let capture = json!({
+            "configurationRevision": configuration_revision.to_string(),
             "mappingId": "01900000-0000-7000-8000-000000000001",
             "context": {
                 "url": "https://example.com/%3Credacted%3E",
@@ -1581,27 +1641,36 @@ mod tests {
                 "outerHtml": "<main role=\"button\">Safe</main>"
             }
         });
-        let authorized = authorize_capture(capture.clone(), &configuration);
+        let authorized = authorize_capture(
+            capture.clone(),
+            &configuration,
+            Some(&configuration_revision),
+        );
         assert!(authorized.is_ok(), "{authorized:?}");
+
+        assert_eq!(
+            authorize_capture(capture.clone(), &configuration, Some(&Uuid::now_v7())),
+            Err("capture-not-authorized")
+        );
 
         let mut wrong_origin = capture.clone();
         wrong_origin["context"]["url"] = json!("https://other.example/%3Credacted%3E");
         assert_eq!(
-            authorize_capture(wrong_origin, &configuration),
+            authorize_capture(wrong_origin, &configuration, Some(&configuration_revision)),
             Err("capture-not-authorized")
         );
 
         let mut wrong_port = capture.clone();
         wrong_port["context"]["url"] = json!("https://example.com:8443/%3Credacted%3E");
         assert_eq!(
-            authorize_capture(wrong_port, &configuration),
+            authorize_capture(wrong_port, &configuration, Some(&configuration_revision)),
             Err("capture-not-authorized")
         );
 
         let mut unknown_field = capture;
         unknown_field["cookies"] = json!("forbidden");
         assert_eq!(
-            authorize_capture(unknown_field, &configuration),
+            authorize_capture(unknown_field, &configuration, Some(&configuration_revision)),
             Err("invalid-browser-context")
         );
     }

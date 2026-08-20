@@ -25,14 +25,15 @@ export function injectedCapture(selectElement: boolean, expectedOrigin: string, 
   const maximumPickerElements = 10_000;
   const maximumSanitizerNodes = 10_000;
   const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
   const truncateUtf8 = (value: string, maximumBytes: number) => {
     let output = "";
     let bytes = 0;
     for (const character of value) {
-      const characterBytes = encoder.encode(character).byteLength;
-      if (bytes + characterBytes > maximumBytes) break;
-      output += character;
-      bytes += characterBytes;
+      const encoded = encoder.encode(character);
+      if (bytes + encoded.byteLength > maximumBytes) break;
+      output += decoder.decode(encoded);
+      bytes += encoded.byteLength;
     }
     return output;
   };
@@ -140,7 +141,7 @@ export function injectedCapture(selectElement: boolean, expectedOrigin: string, 
     const appendSerializedText = (value: string) => {
       let chunk = "";
       const appendChunk = (candidate: string) => {
-        textProbe.textContent = candidate;
+        textProbe.textContent = decoder.decode(encoder.encode(candidate));
         const serialized = textProbe.innerHTML;
         const bytes = encoder.encode(serialized).byteLength;
         if (encodedBytes + bytes > maximumBytes) return false;
@@ -395,7 +396,7 @@ export function injectedCapture(selectElement: boolean, expectedOrigin: string, 
     let timeout: ReturnType<typeof setTimeout> | undefined;
     let pointerCompletionTimer: ReturnType<typeof setTimeout> | undefined;
     let capturedSelection: InjectedCapturedBrowserContext | null | undefined;
-    const pointerEvents = ["pointerdown", "pointerup", "mousedown", "mouseup", "touchstart", "touchend", "contextmenu", "dblclick"];
+    const suppressedPointerEvents = ["pointerdown", "pointercancel", "mousedown", "mouseup", "touchstart", "touchcancel", "contextmenu", "dblclick"];
     const schedulePointerCompletion = () => {
       if (pointerCompletionTimer) clearTimeout(pointerCompletionTimer);
       pointerCompletionTimer = setTimeout(() => {
@@ -412,7 +413,9 @@ export function injectedCapture(selectElement: boolean, expectedOrigin: string, 
     const cleanup = () => {
       if (timeout) clearTimeout(timeout);
       if (pointerCompletionTimer) clearTimeout(pointerCompletionTimer);
-      for (const eventName of pointerEvents) overlayWindow.removeEventListener(eventName, suppress, true);
+      for (const eventName of suppressedPointerEvents) overlayWindow.removeEventListener(eventName, suppress, true);
+      overlayWindow.removeEventListener("pointerup", pointerUp, true);
+      overlayWindow.removeEventListener("touchend", touchEnd, true);
       overlayWindow.removeEventListener("click", click, true);
       overlayWindow.removeEventListener("keydown", key, true);
       document.removeEventListener("keydown", key, true);
@@ -421,27 +424,35 @@ export function injectedCapture(selectElement: boolean, expectedOrigin: string, 
       shield.remove();
       if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true });
     };
-    const click = (event: MouseEvent) => {
-      suppress(event);
-      if (capturedSelection !== undefined) return;
+    const completeAtPoint = (event: Event, clientX: number, clientY: number) => {
+      if (capturedSelection !== undefined) { suppress(event); return; }
       shield.close();
       overlay.style.setProperty("pointer-events", "none", "important");
-      const selected = document.elementFromPoint(event.clientX, event.clientY);
-      capturedSelection = result(selected);
+      const selected = document.elementFromPoint(clientX, clientY);
       overlay.style.removeProperty("pointer-events");
       try {
         shield.showModal();
       } catch {
+        suppress(event);
         cleanup();
         resolve(null);
         return;
       }
+      suppress(event);
+      capturedSelection = result(selected);
       if (timeout) clearTimeout(timeout);
       timeout = undefined;
       // Keep the top-layer shield until the browser's possible second click and
       // dblclick events have completed, so neither can activate page content.
       schedulePointerCompletion();
     };
+    const pointerUp = (event: PointerEvent) => completeAtPoint(event, event.clientX, event.clientY);
+    const touchEnd = (event: TouchEvent) => {
+      const touch = event.changedTouches.item(0);
+      if (!touch) { suppress(event); return; }
+      completeAtPoint(event, touch.clientX, touch.clientY);
+    };
+    const click = (event: MouseEvent) => completeAtPoint(event, event.clientX, event.clientY);
     const key = (event: KeyboardEvent) => {
       if (event.key === "Escape") { suppress(event); cleanup(); resolve(null); return; }
       if (event.key === "Tab") { suppress(event); moveCandidate(event.shiftKey ? -1 : 1); return; }
@@ -460,7 +471,9 @@ export function injectedCapture(selectElement: boolean, expectedOrigin: string, 
       resolve(null);
     };
     timeout = setTimeout(() => { cleanup(); resolve(null); }, 30_000);
-    for (const eventName of pointerEvents) overlayWindow.addEventListener(eventName, suppress, { capture: true, passive: false });
+    for (const eventName of suppressedPointerEvents) overlayWindow.addEventListener(eventName, suppress, { capture: true, passive: false });
+    overlayWindow.addEventListener("pointerup", pointerUp, { capture: true, passive: false });
+    overlayWindow.addEventListener("touchend", touchEnd, { capture: true, passive: false });
     overlayWindow.addEventListener("click", click, true);
     overlayWindow.addEventListener("keydown", key, true);
     document.addEventListener("keydown", key, true);

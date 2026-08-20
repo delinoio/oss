@@ -5,6 +5,15 @@ interface FakePort {
   readonly disconnectListeners: Array<() => void>;
 }
 
+const configurationRevisions = [
+  "01900000-0000-7000-8000-000000000010",
+  "01900000-0000-7000-8000-000000000011",
+] as const;
+
+function configurationSnapshot(configuration: unknown, revision: string = configurationRevisions[0]) {
+  return { configuration, configurationRevision: revision };
+}
+
 function fakePort(): FakePort & chrome.runtime.Port {
   const messageListeners: Array<(message: unknown) => void> = [];
   const disconnectListeners: Array<() => void> = [];
@@ -112,7 +121,8 @@ describe("capture configuration freshness", () => {
     let configurationIndex = 0;
     port.postMessage = vi.fn((request: { request_id: string; type: string }) => {
       requestTypes.push(request.type);
-      const payload = request.type === "configure" ? configurations[configurationIndex++] : null;
+      const index = configurationIndex++;
+      const payload = request.type === "configure" ? configurationSnapshot(configurations[index], configurationRevisions[index]!) : null;
       queueMicrotask(() => port.messageListeners[0]!({
         version: 1,
         schema_version: 1,
@@ -163,6 +173,71 @@ describe("capture configuration freshness", () => {
     expect(response.state).toBe("denied");
   });
 
+  it("binds capture to the post-injection configuration revision", async () => {
+    const port = fakePort();
+    const configuration = {
+      origins: [{
+        origin: "https://example.com",
+        mappings: [{
+          mappingId: "01900000-0000-7000-8000-000000000001",
+          matcher: { scheme: "https", host: ["example", "com"], hostIsIpLiteral: false, port: "", path: ["page"] },
+        }],
+      }],
+      language: "en",
+    };
+    let configurationIndex = 0;
+    port.postMessage = vi.fn((request: { request_id: string; type: string }) => {
+      const payload = request.type === "configure"
+        ? configurationSnapshot(configuration, configurationRevisions[configurationIndex++]!)
+        : null;
+      queueMicrotask(() => port.messageListeners[0]!({
+        version: 1,
+        schema_version: 1,
+        request_id: request.request_id,
+        ok: true,
+        state: "accepted",
+        payload,
+      }));
+    });
+    let runtimeListener: ((message: unknown, sender: chrome.runtime.MessageSender, sendResponse: (response: unknown) => void) => boolean) | undefined;
+    vi.stubGlobal("chrome", {
+      runtime: {
+        connectNative: vi.fn(() => port),
+        onMessage: { addListener: vi.fn((listener) => { runtimeListener = listener; }) },
+      },
+      tabs: { query: vi.fn(async () => [{ id: 7, url: "https://example.com/page", incognito: false }]) },
+      permissions: {
+        contains: vi.fn(async () => true),
+        getAll: vi.fn(async () => ({ origins: ["https://example.com/*"] })),
+        remove: vi.fn(),
+      },
+      scripting: { executeScript: vi.fn(async () => [{ result: {
+        liveUrl: "https://example.com/page",
+        url: "https://example.com/%3Credacted%3E",
+        title: "Example",
+        viewport: { width: 1280, height: 720 },
+        userAgent: "test",
+        selectedBounds: null,
+        accessibility: {},
+        outerHtml: "",
+      } }]) },
+    });
+
+    await import("./service-worker.js");
+    const response = await new Promise<{ ok: boolean }>((resolve) => {
+      runtimeListener!({ type: "capture", selectElement: false }, {} as chrome.runtime.MessageSender, (value) => resolve(value as { ok: boolean }));
+    });
+
+    expect(response.ok).toBe(true);
+    const captureRequest = vi.mocked(port.postMessage).mock.calls
+      .map(([request]) => request as { type: string; payload: unknown })
+      .find((request) => request.type === "capture");
+    expect(captureRequest?.payload).toMatchObject({
+      configurationRevision: configurationRevisions[1],
+      mappingId: "01900000-0000-7000-8000-000000000001",
+    });
+  });
+
   it("discards stale permission reconciliation after a newer request starts", async () => {
     const port = fakePort();
     const configurations = ["old", "new"].map((host) => ({
@@ -177,7 +252,8 @@ describe("capture configuration freshness", () => {
     }));
     let configurationIndex = 0;
     port.postMessage = vi.fn((request: { request_id: string }) => {
-      const payload = configurations[configurationIndex++]!;
+      const index = configurationIndex++;
+      const payload = configurationSnapshot(configurations[index]!, configurationRevisions[index]!);
       queueMicrotask(() => port.messageListeners[0]!({
         version: 1,
         schema_version: 1,
@@ -237,7 +313,8 @@ describe("capture configuration freshness", () => {
     }));
     let configurationIndex = 0;
     port.postMessage = vi.fn((request: { request_id: string }) => {
-      const payload = configurations[configurationIndex++]!;
+      const index = configurationIndex++;
+      const payload = configurationSnapshot(configurations[index]!, configurationRevisions[index]!);
       queueMicrotask(() => port.messageListeners[0]!({
         version: 1,
         schema_version: 1,

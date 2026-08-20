@@ -9,6 +9,12 @@ let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
 let configurationRequestGeneration = 0;
 let permissionReconciliation = Promise.resolve();
 const pending = new Map<string, { resolve: (response: NativeResponse) => void; timer: ReturnType<typeof setTimeout> }>();
+const configurationRevisionPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+
+interface ConfigurationSnapshot {
+  readonly configuration: ExtensionConfiguration;
+  readonly configurationRevision: string;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -32,6 +38,13 @@ function isAuthoritativeConfiguration(value: unknown): value is ExtensionConfigu
         && typeof matcher.port === "string"
         && isStringArray(matcher.path);
     }));
+}
+
+function isConfigurationSnapshot(value: unknown): value is ConfigurationSnapshot {
+  return isRecord(value)
+    && isAuthoritativeConfiguration(value.configuration)
+    && typeof value.configurationRevision === "string"
+    && configurationRevisionPattern.test(value.configurationRevision);
 }
 
 function connectNative(): void {
@@ -92,22 +105,27 @@ function serializePermissionReconciliation(configuration: ExtensionConfiguration
   return reconciliation;
 }
 
-async function configurationRequest(): Promise<NativeResponse> {
+async function configurationRequest(): Promise<{ readonly response: NativeResponse; readonly snapshot: ConfigurationSnapshot | null }> {
   const generation = ++configurationRequestGeneration;
   const response = await nativeRequest("configure", {});
-  if (!response.ok) return response;
-  if (!isAuthoritativeConfiguration(response.payload)) return { ...response, ok: false, state: "malformed", payload: null };
-  await serializePermissionReconciliation(response.payload, generation).catch(() => undefined);
-  if (generation !== configurationRequestGeneration) return { ...response, ok: false, state: "disconnected", payload: null };
-  return response;
+  if (!response.ok) return { response, snapshot: null };
+  if (!isConfigurationSnapshot(response.payload)) {
+    return { response: { ...response, ok: false, state: "malformed", payload: null }, snapshot: null };
+  }
+  const snapshot = response.payload;
+  await serializePermissionReconciliation(snapshot.configuration, generation).catch(() => undefined);
+  if (generation !== configurationRequestGeneration) {
+    return { response: { ...response, ok: false, state: "disconnected", payload: null }, snapshot: null };
+  }
+  return { response: { ...response, payload: snapshot.configuration }, snapshot };
 }
 
 async function capture(selectElement: boolean): Promise<NativeResponse> {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab?.id || tab.incognito || !tab.url?.match(/^https?:\/\//u)) return { version: 1, schema_version: 1, request_id: "", ok: false, state: tab?.incognito ? "denied" : "disconnected", payload: null };
-  const configurationResponse = await configurationRequest();
-  if (!configurationResponse.ok) return configurationResponse;
-  const configuration = (configurationResponse.payload ?? {}) as ExtensionConfiguration;
+  const initialConfiguration = await configurationRequest();
+  if (!initialConfiguration.response.ok || !initialConfiguration.snapshot) return initialConfiguration.response;
+  const configuration = initialConfiguration.snapshot.configuration;
   const tabOrigin = new URL(tab.url).origin;
   if (!configuration.origins?.some((candidate) => candidate.origin === tabOrigin)) return { version: 1, schema_version: 1, request_id: "", ok: false, state: "denied", payload: null };
   const permissionPattern = configuredOriginPermissionPattern(tabOrigin);
@@ -119,17 +137,17 @@ async function capture(selectElement: boolean): Promise<NativeResponse> {
   if (!result) return { version: 1, schema_version: 1, request_id: "", ok: false, state: "disconnected", payload: null };
   const { liveUrl, ...context } = result;
   const currentConfigurationResponse = await configurationRequest();
-  if (!currentConfigurationResponse.ok) return currentConfigurationResponse;
-  const currentConfiguration = (currentConfigurationResponse.payload ?? {}) as ExtensionConfiguration;
+  if (!currentConfigurationResponse.response.ok || !currentConfigurationResponse.snapshot) return currentConfigurationResponse.response;
+  const currentConfiguration = currentConfigurationResponse.snapshot.configuration;
   const mappingId = selectConfiguredMapping(currentConfiguration, liveUrl);
   if (!mappingId) return { version: 1, schema_version: 1, request_id: "", ok: false, state: "denied", payload: null };
-  return nativeRequest("capture", { mappingId, context });
+  return nativeRequest("capture", { configurationRevision: currentConfigurationResponse.snapshot.configurationRevision, mappingId, context });
 }
 
 chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) => {
   if (typeof message !== "object" || message === null) return false;
   const request = message as { type?: string; pairingNonce?: string; selectElement?: boolean };
-  const work = request.type === "configuration" ? configurationRequest() : request.type === "pair" && typeof request.pairingNonce === "string" ? nativeRequest("pair", {}, request.pairingNonce) : request.type === "capture" ? capture(request.selectElement === true) : null;
+  const work = request.type === "configuration" ? configurationRequest().then(({ response }) => response) : request.type === "pair" && typeof request.pairingNonce === "string" ? nativeRequest("pair", {}, request.pairingNonce) : request.type === "capture" ? capture(request.selectElement === true) : null;
   if (!work) return false; void work.then(sendResponse).catch(() => sendResponse({ ok: false, state: "disconnected", payload: null })); return true;
 });
 connectNative();

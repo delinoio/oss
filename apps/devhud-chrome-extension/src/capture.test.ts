@@ -92,6 +92,21 @@ describe("injected capture", () => {
     expect(encoder.encode(result.accessibility["aria-label"]).byteLength).toBeLessThanOrEqual(4 * 1024);
   });
 
+  it("normalizes lone surrogates before returning captured strings", async () => {
+    document.title = "title\ud800";
+    document.body.innerHTML = "<main>visible</main>";
+    const selected = document.body.firstElementChild!;
+    selected.setAttribute("aria-label", "label\udc00");
+    selected.firstChild!.textContent = "text\ud800";
+
+    const result = await select(selected);
+
+    expect(result?.title).toBe("title\ufffd");
+    expect(result?.accessibility["aria-label"]).toBe("label\ufffd");
+    expect(result?.outerHtml).toBe('<main aria-label="label\ufffd">text\ufffd</main>');
+    expect(JSON.stringify(result)).not.toMatch(/\\ud[89a-f][0-9a-f]{2}/iu);
+  });
+
   it("reads only allowlisted attributes without enumerating the selected element", async () => {
     document.body.innerHTML = '<main aria-label="safe" data-secret="excluded">visible</main>';
     const selected = document.body.firstElementChild!;
@@ -335,6 +350,29 @@ describe("injected capture", () => {
       for (const eventName of ["pointerdown", "mousedown", "mouseup", "click"]) {
         document.removeEventListener(eventName, pagePointerHandler);
       }
+    }
+  });
+
+  it("completes touch selection without waiting for a synthetic click", async () => {
+    document.body.innerHTML = "<main>safe</main>";
+    const pageClickHandler = vi.fn();
+    document.addEventListener("click", pageClickHandler);
+
+    try {
+      const result = await select(document.body.firstElementChild!, undefined, (overlayWindow) => {
+        overlayWindow.dispatchEvent(new Event("touchstart", { bubbles: true, cancelable: true }));
+        const touchEnd = new Event("touchend", { bubbles: true, cancelable: true });
+        Object.defineProperty(touchEnd, "changedTouches", {
+          value: { item: (index: number) => index === 0 ? { clientX: 1, clientY: 2 } : null },
+        });
+        overlayWindow.dispatchEvent(touchEnd);
+      });
+
+      expect(result?.outerHtml).toBe("<main>safe</main>");
+      expect(pageClickHandler).not.toHaveBeenCalled();
+      expect(document.querySelector("iframe")).toBeNull();
+    } finally {
+      document.removeEventListener("click", pageClickHandler);
     }
   });
 
