@@ -96,14 +96,38 @@ test("mobile policy keeps native iOS origins aligned with normalized root URLs",
   assert.throws(() => assertIosNativeBridge(iosNativeBridge.replace("guard diagnosticsCleanupSucceeded else", "guard true else")), /propagate diagnostics cleanup failures/u);
 });
 
-test("mobile open URL handling accepts authentication callbacks only", () => {
+test("mobile open URL handling accepts only authentication callbacks and validated Deck links", () => {
   const nativePlugin = readFileSync(join(appRoot, "src-tauri/src/native_plugin.rs"), "utf8");
   const start = nativePlugin.indexOf("#[cfg(mobile)]\n            if let tauri::RunEvent::Opened");
   const end = nativePlugin.indexOf("\n            }\n        })", start);
   const openedHandler = nativePlugin.slice(start, end);
   assert.ok(start >= 0 && end > start, "mobile opened handler must exist");
   assert.match(openedHandler, /offer_auth_callback/u);
-  assert.doesNotMatch(openedHandler, /offer_deck_link/u);
+  assert.match(openedHandler, /offer_deck_link/u);
+});
+
+test("widget targets preserve secure isolation, bilingual privacy warnings, and bounded previews", () => {
+  const androidStore = readFileSync(join(appRoot, "src-tauri/mobile/android/src/main/java/io/delino/devhud/widget/DevHudWidgetStore.kt"), "utf8");
+  const androidProvider = readFileSync(join(appRoot, "src-tauri/mobile/android/src/main/java/io/delino/devhud/widget/DevHudWidgetProvider.kt"), "utf8");
+  const androidEnglish = readFileSync(join(appRoot, "src-tauri/mobile/android/src/main/res/values/widget_strings.xml"), "utf8");
+  const androidKorean = readFileSync(join(appRoot, "src-tauri/mobile/android/src/main/res/values-ko/widget_strings.xml"), "utf8");
+  const iosWidget = readFileSync(join(appRoot, "mobile/overrides/ios/DevHudWidget/DevHudWidget.swift"), "utf8");
+  const iosIntent = readFileSync(join(appRoot, "mobile/overrides/ios/DevHudWidgetShared/SelectDeck.intentdefinition"), "utf8");
+  const iosIntentHandler = readFileSync(join(appRoot, "mobile/overrides/ios/DevHudWidgetIntent/IntentHandler.swift"), "utf8");
+  const iosEntitlements = readFileSync(join(appRoot, "mobile/overrides/ios/DevHudWidget/DevHudWidget.entitlements"), "utf8");
+  assert.match(androidStore, /widgetKeyAlias = "io\.delino\.devhud\.widget-credential\.v1"/u);
+  assert.match(androidProvider, /results.*prefix|prefix\(3\)|minOf\(results\?\.length\(\) \?: 0, 3\)/su);
+  assert.match(androidProvider, /devhud:\/\/deck\//u);
+  assert.match(iosWidget, /IntentConfiguration/u);
+  assert.match(iosIntent, /INIntentEligibleForWidgets[\s\S]*INIntentParameterSupportsDynamicEnumeration/u);
+  assert.match(iosIntentHandler, /SelectDeckIntentHandling[\s\S]*provideDeckOptionsCollection/u);
+  assert.match(iosIntentHandler, /defaultDeck[\s\S]*nil/u);
+  assert.match(iosWidget, /\.prefix\(3\)/u);
+  assert.match(iosWidget, /devhud:\/\/deck\//u);
+  assert.match(iosEntitlements, /group\.io\.delino\.devhud/u);
+  assert.match(iosEntitlements, /\$\(AppIdentifierPrefix\)io\.delino\.devhud\.shared/u);
+  for (const warning of [androidEnglish, androidKorean]) assert.match(warning, /launchers|런처/iu);
+  for (const source of [androidStore, androidProvider, iosWidget]) assert.doesNotMatch(source, /devhud-api|println|print\(/iu);
 });
 
 test("Android release permissions enable System WebView networking", () => {
@@ -169,7 +193,7 @@ test("mobile policy requires production and simulator iOS builds", () => {
 
 test("mobile policy rejects CEF leakage", () => {
   const base = {
-    platforms: { schemaVersion: 1, identity: "io.delino.devhud", deepLinkScheme: "devhud", authCallback: "devhud://auth/callback", frontendDist: "../dist", minimumVersions: { ios: "16.0", androidApi: 29 }, targets: mobileTargets },
+    platforms: { schemaVersion: 1, identity: "io.delino.devhud", deepLinkScheme: "devhud", authCallback: "devhud://auth/callback", frontendDist: "../dist", minimumVersions: { ios: "16.0", androidApi: 29 }, widgets: mobilePlatforms.widgets, targets: mobileTargets },
     tauri: { identifier: "io.delino.devhud", build: { frontendDist: "../dist" } },
     ios: { bundle: { iOS: { minimumSystemVersion: "16.0" } } },
     android: { bundle: { android: { minSdkVersion: 29 } } }, cargo: "", androidManifest: "android.permission.INTERNET", androidPluginManifest: "", androidNativeBridge: "", iosPlist: "", packageJson: { scripts: {} }, nativeBridge: "", app: "", workflow: "",

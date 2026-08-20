@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { NativeBridgeError, NativeBridgeErrorCode, SecureSettingKind, isAuthCallback, nativeBridge, validateAuthenticationBrowserRequest, validateCaptureRequest, validateExternalRequest, validateGitHubPatReconciliation, validateSecretValue, validateSecureSettingRef } from "../src/native-bridge.ts";
+import { NativeBridgeError, NativeBridgeErrorCode, SecureSettingKind, isAuthCallback, nativeBridge, validateAuthenticationBrowserRequest, validateCaptureRequest, validateExternalRequest, validateGitHubPatReconciliation, validateSecretValue, validateSecureSettingRef, validateWidgetRequest } from "../src/native-bridge.ts";
 import { ShortcutActionId, ShortcutKey, ShortcutModifier, ShortcutValidationCode, defaultDesktopShortcutBindings, parseDesktopShortcutBindings } from "../src/shortcuts.ts";
 
 const fixtures = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../fixtures/deep-links.json"), "utf8"));
@@ -40,6 +40,16 @@ test("secure setting references and values are bounded before native invocation"
   assert.doesNotThrow(() => validateGitHubPatReconciliation("origin.scope", ["work-profile"]));
   assert.throws(() => validateGitHubPatReconciliation("origin.scope", ["work-profile", "work-profile"]), NativeBridgeError);
   assert.throws(() => validateGitHubPatReconciliation("origin.scope", ["../escape"]), NativeBridgeError);
+});
+
+test("widget bridge accepts only selected bounded Deck data and never accepts a credential payload", () => {
+  const configuration = { version: 1, deckId: "018f47a2-7b3c-7def-8abc-1234567890ac", name: "Private", query: "repo:octo/private is:pr", profileId: "work", profileKind: "fine-grained", scopeId: "origin.scope", language: "en" };
+  assert.doesNotThrow(() => validateWidgetRequest({ operation: "widgets.enable-deck", configuration }));
+  assert.throws(() => validateWidgetRequest({ operation: "widgets.enable-deck", configuration: { ...configuration, deckId: "../escape" } }), NativeBridgeError);
+  assert.throws(() => validateWidgetRequest({ operation: "widgets.enable-deck", configuration: Object.assign({}, configuration, { token: "must-not-cross" }) }), NativeBridgeError);
+  const snapshot = { version: 1, deckId: configuration.deckId, query: configuration.query, counts: { total: 1, open: 1, draft: 0, merged: 0, closed: 0, bounded: false }, results: [{ nodeId: "PR_private", number: 1, title: "Private title", repository: "octo/private", state: "open", draft: false }], state: "fresh", lastSuccessfulAt: "2026-08-20T00:00:00.000Z", lastAttemptedAt: "2026-08-20T00:00:00.000Z", rate: null };
+  assert.doesNotThrow(() => validateWidgetRequest({ operation: "widgets.replace-deck-snapshot", snapshot }));
+  assert.throws(() => validateWidgetRequest({ operation: "widgets.replace-deck-snapshot", snapshot: Object.assign({}, snapshot, { credential: "must-not-cross" }) }), NativeBridgeError);
 });
 
 test("desktop secure storage resolves Keychain, Credential Manager, and Secret Service without plaintext fallback", () => {

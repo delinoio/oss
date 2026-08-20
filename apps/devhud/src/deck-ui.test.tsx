@@ -44,6 +44,23 @@ beforeEach(() => { localStorage.clear(); identity = identityWith(); });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 describe("Deck surface", () => {
+  it("requires explicit privacy consent before copying only the selected Deck into widget storage", async () => {
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => value.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    const bridge = bridgeWith(request);
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} language="en" /></DeckPollingBoundary>);
+
+    await screen.findByRole("button", { name: messages.en.widgetEnable });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.widgetEnable }));
+    expect(screen.getByRole("alertdialog").textContent).toContain(messages.en.widgetPrivacyWarning);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.widgetPrivacyConfirm }));
+
+    await waitFor(() => expect(request).toHaveBeenCalledWith({
+      operation: "widgets.enable-deck",
+      configuration: { version: 1, deckId: deck.id, name: deck.name, query: deck.query, profileId: profile.id, profileKind: profile.kind, scopeId: "origin.scope", language: "en" },
+    }));
+    expect(JSON.stringify(request.mock.calls)).not.toMatch(/github[_-]?pat|Bearer|token-value/iu);
+  });
+
   it("renders an unavailable state instead of empty results when an uncached Deck is offline", () => {
     const bridge = bridgeWith(async () => { throw new Error("unexpected request"); });
     render(<DeckPollingBoundary bridge={bridge} active={false} online={false} provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
@@ -72,6 +89,24 @@ describe("Deck surface", () => {
 
     await waitFor(() => expect(screen.getByRole("alert").textContent).toBe(messages.en.deckDeleteFailed));
     expect(screen.getByRole("button", { name: messages.en.deckDelete })).not.toHaveProperty("disabled", true);
+  });
+
+  it("clears selected widget state before completing Deck deletion", async () => {
+    const operations: string[] = [];
+    const replaceSettings: IdentitySettingsValue["replaceSettings"] = vi.fn(async () => { operations.push("delete-settings"); return true; });
+    identity = identityWith({ replaceSettings });
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      if (value.operation === "widgets.status") return { kind: "widget-status", enabledDeckIds: [deck.id] };
+      if (value.operation === "widgets.disable-deck") operations.push("clear-widget");
+      return { kind: "ok" };
+    });
+    const bridge = bridgeWith(request);
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckDelete }));
+
+    await waitFor(() => expect(replaceSettings).toHaveBeenCalledOnce());
+    expect(operations.slice(-2)).toEqual(["clear-widget", "delete-settings"]);
   });
 
   it("disables builder controls until a Boolean Deck query is simplified", () => {
@@ -113,7 +148,7 @@ describe("Deck surface", () => {
   it("retains the complete cache and retries when GitHub search is incomplete", async () => {
     const cacheScope = `origin.scope.${profile.id}`;
     writeDeckCache(localStorage, cacheScope, { version: DeckCacheVersion, deckId: deck.id, query: deck.query, queryEtag: "cached-etag", results: [pullRequest], lastSuccessfulAt: "2026-08-17T00:00:00.000Z", rate: null, failures: 0, nextRefreshAt: null, transitionKeys: [], pendingNotifications: [] });
-    const searchPullRequests = vi.fn(async () => ({ items: [], nextPage: null, notModified: false, incompleteResults: true, metadata: { etag: "partial-etag", rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } } }));
+    const searchPullRequests = vi.fn(async () => ({ items: [], nextPage: null, notModified: false, totalCount: 0, incompleteResults: true, metadata: { etag: "partial-etag", rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } } }));
     const enrichPullRequests = vi.fn();
     const bridge = bridgeWith(async (request) => request.operation === "secure.read" ? { kind: "secure-value", value: "token" } : { kind: "ok" });
     render(<DeckPollingBoundary bridge={bridge} active online provider={{ ...provider(), searchPullRequests, enrichPullRequests }}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
@@ -144,7 +179,7 @@ describe("Deck surface", () => {
     });
     const bridge = bridgeWith(request);
     const updated = { ...pullRequest, reviewDecision: "approved" as const, updatedAt: "2026-08-18T00:01:00.000Z" };
-    const providerWithTransition = { ...provider(), searchPullRequests: vi.fn(async () => ({ items: [{ nodeId: pullRequest.nodeId, number: pullRequest.number, title: pullRequest.title, url: pullRequest.url, draft: pullRequest.draft, repository: pullRequest.repository }], nextPage: null, notModified: false, incompleteResults: false, metadata: { etag: null, rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } } })), enrichPullRequests: vi.fn(async () => ({ items: [updated], metadata: { etag: null, rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } } })) };
+    const providerWithTransition = { ...provider(), searchPullRequests: vi.fn(async () => ({ items: [{ nodeId: pullRequest.nodeId, number: pullRequest.number, title: pullRequest.title, url: pullRequest.url, draft: pullRequest.draft, repository: pullRequest.repository }], nextPage: null, notModified: false, totalCount: 1, incompleteResults: false, metadata: { etag: null, rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } } })), enrichPullRequests: vi.fn(async () => ({ items: [updated], metadata: { etag: null, rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } } })) };
     const view = render(<DeckPollingBoundary bridge={bridge} active online provider={providerWithTransition}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
     await waitFor(() => expect(request).toHaveBeenCalledWith(expect.objectContaining({ operation: "notifications.publish-deck-change" })));
 
@@ -172,7 +207,7 @@ describe("Deck surface", () => {
     });
     const bridge = bridgeWith(request);
     const updated = { ...pullRequest, reviewDecision: "approved" as const, updatedAt: "2026-08-18T00:01:00.000Z" };
-    const providerWithTransition = { ...provider(), searchPullRequests: vi.fn(async () => ({ items: [{ nodeId: pullRequest.nodeId, number: pullRequest.number, title: pullRequest.title, url: pullRequest.url, draft: pullRequest.draft, repository: pullRequest.repository }], nextPage: null, notModified: false, incompleteResults: false, metadata: { etag: null, rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } } })), enrichPullRequests: vi.fn(async () => ({ items: [updated], metadata: { etag: null, rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } } })) };
+    const providerWithTransition = { ...provider(), searchPullRequests: vi.fn(async () => ({ items: [{ nodeId: pullRequest.nodeId, number: pullRequest.number, title: pullRequest.title, url: pullRequest.url, draft: pullRequest.draft, repository: pullRequest.repository }], nextPage: null, notModified: false, totalCount: 1, incompleteResults: false, metadata: { etag: null, rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } } })), enrichPullRequests: vi.fn(async () => ({ items: [updated], metadata: { etag: null, rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } } })) };
     render(<DeckPollingBoundary bridge={bridge} active online provider={providerWithTransition}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
 
     await waitFor(() => expect(publicationAttempts).toBe(1));
@@ -351,7 +386,7 @@ describe("Deck surface", () => {
   it("keeps the Deck schedule when unrelated settings change", async () => {
     const scope = Promise.resolve("origin.scope");
     const validateRepository = provider().validateRepository;
-    const searchPullRequests = vi.fn(async () => ({ items: [], nextPage: null, notModified: false, incompleteResults: false, metadata: { etag: null, rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } } }));
+    const searchPullRequests = vi.fn(async () => ({ items: [], nextPage: null, notModified: false, totalCount: 0, incompleteResults: false, metadata: { etag: null, rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } } }));
     const bridge = bridgeWith(async (request) => request.operation === "secure.read" ? { kind: "secure-value", value: "token" } : { kind: "ok" });
     identity = identityWith({ githubPatScopeId: scope });
     const suppliedProvider = { ...provider(), validateRepository, searchPullRequests };

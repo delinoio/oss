@@ -60,7 +60,7 @@ function assertAndroidArtifact(artifact, abi) {
   if (!badging.includes("package: name='io.delino.devhud'") || !badging.includes("sdkVersion:'29'")) throw new Error("Android artifact identity or minimum SDK changed");
   if (!badging.includes("uses-permission: name='android.permission.INTERNET'") || !badging.includes("uses-permission: name='android.permission.POST_NOTIFICATIONS'")) throw new Error("Android artifact is missing required System WebView networking or notification permissions");
   const manifest = commandOutput(aapt, ["dump", "xmltree", artifact, "AndroidManifest.xml"]);
-  for (const value of ['="devhud"', '="auth"', '="/callback"']) if (!manifest.includes(value)) throw new Error("Android artifact auth callback registration changed");
+  for (const value of ['="devhud"', '="auth"', '="/callback"', '="deck"', "DevHudWidgetProvider"]) if (!manifest.includes(value)) throw new Error("Android artifact auth callback or widget registration changed");
 }
 
 const platforms = json("mobile-platforms.json");
@@ -102,8 +102,11 @@ if (artifactIndex !== -1) assertAndroidArtifact(resolve(process.argv[artifactInd
 const forbiddenMobileText = [
   text("src-tauri/mobile/android/build.gradle.kts"),
   text("src-tauri/mobile/android/src/main/java/io/delino/devhud/bridge/DevhudNativePlugin.kt"),
+  text("src-tauri/mobile/android/src/main/java/io/delino/devhud/widget/DevHudWidgetStore.kt"),
+  text("src-tauri/mobile/android/src/main/java/io/delino/devhud/widget/DevHudWidgetProvider.kt"),
   text("src-tauri/mobile/ios/Package.swift"),
   text("src-tauri/mobile/ios/Sources/DevhudNativePlugin.swift"),
+  text("mobile/overrides/ios/DevHudWidget/DevHudWidget.swift"),
 ].join("\n");
 if (/cef|chromium|chrome-extension|browser-extension|global-hook|desktop-hook|okhttp|retrofit/iu.test(forbiddenMobileText)) throw new Error("forbidden mobile dependency or desktop hook detected");
 

@@ -3,11 +3,15 @@
     <cloud-backup>
         <exclude domain="sharedpref" path="devhud-secure-settings-v1.xml" />
         <exclude domain="sharedpref" path="devhud-diagnostics-cleanup-v1.xml" />
+        <exclude domain="sharedpref" path="devhud-widget-state-v1.xml" />
+        <exclude domain="sharedpref" path="devhud-widget-secret-v1.xml" />
         <exclude domain="root" path="app_webview/" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="sharedpref" path="devhud-secure-settings-v1.xml" />
         <exclude domain="sharedpref" path="devhud-diagnostics-cleanup-v1.xml" />
+        <exclude domain="sharedpref" path="devhud-widget-state-v1.xml" />
+        <exclude domain="sharedpref" path="devhud-widget-secret-v1.xml" />
         <exclude domain="root" path="app_webview/" />
     </device-transfer>
 </data-extraction-rules>

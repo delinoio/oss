@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { assertOverlayCopies } from "./generate-mobile.mjs";
+import { assertOverlayCopies, configureIosWidgetProject } from "./generate-mobile.mjs";
 
 test("materialized mobile projects require every expected overlay", () => {
   const root = mkdtempSync(join(tmpdir(), "devhud-mobile-overlays-"));
@@ -22,4 +22,19 @@ test("materialized mobile projects require every expected overlay", () => {
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("generated iOS projects embed the production widget extension", () => {
+  const root = mkdtempSync(join(tmpdir(), "devhud-ios-widget-"));
+  const project = join(root, "project.yml");
+  writeFileSync(project, "name: DevHUD\ntargets:\n  DevHUD_iOS:\n    type: application\n    platform: iOS\n");
+  try {
+    configureIosWidgetProject(project);
+    const generated = readFileSync(project, "utf8");
+    assert.match(generated, /PRODUCT_BUNDLE_IDENTIFIER: io\.delino\.devhud\.widget/u);
+    assert.match(generated, /PRODUCT_BUNDLE_IDENTIFIER: io\.delino\.devhud\.widget\.intent/u);
+    assert.match(generated, /target: DevHudWidget[\s\S]*embed: true/u);
+    assert.match(generated, /target: DevHudWidgetIntent[\s\S]*embed: true/u);
+    assert.match(generated, /deploymentTarget: '16\.0'/u);
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });

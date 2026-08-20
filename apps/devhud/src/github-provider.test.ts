@@ -47,7 +47,7 @@ function router() {
       const marker = issueMarker(fixture.submissionId);
       return json({ items: markerSearches === 1 ? [{ ...fixture.issue, body: `Body\n${marker}` }] : [] }, 200, { etag: '"search"' });
     }
-    if (url.pathname === "/search/issues") return json({ items: [fixture.pullRequest] }, 200, { link: `<${GitHubApiOrigin}/search/issues?page=2>; rel="next"` });
+    if (url.pathname === "/search/issues") return json({ total_count: 1, incomplete_results: false, items: [fixture.pullRequest] }, 200, { link: `<${GitHubApiOrigin}/search/issues?page=2>; rel="next"` });
     if (url.pathname.endsWith("/pulls/9")) return json(fixture.pullRequest, 200, { etag: '"pull"' });
     return json({ message: "fixture route missing" }, 500);
   });
@@ -177,14 +177,14 @@ describe("GitHub.com provider", () => {
   it("searches and enriches pull requests with pagination", async () => {
     const fetch = router();
     const provider = createGitHubProvider({ fetch });
-    await expect(provider.searchPullRequests(fine, "repo:octo-private/controls")).resolves.toMatchObject({ nextPage: 2, items: [{ number: 9, repository: privateRepository }] });
+    await expect(provider.searchPullRequests(fine, "repo:octo-private/controls")).resolves.toMatchObject({ totalCount: 1, nextPage: 2, items: [{ number: 9, repository: privateRepository }] });
     const search = fetch.mock.calls.find(([input]) => new URL(String(input)).pathname === "/search/issues");
     expect(new URL(String(search?.[0])).searchParams.get("q")).toBe("repo:octo-private/controls is:pr");
     await expect(provider.getPullRequest(fine, privateRepository, 9)).resolves.toMatchObject({ pullRequest: { author: "octocat", headSha: "0123456789abcdef", labels: ["needs-review"] }, metadata: { etag: '"pull"' } });
   });
 
   it("propagates incomplete pull-request search results", async () => {
-    const fetch = vi.fn<typeof globalThis.fetch>(async () => json({ incomplete_results: true, items: [] }));
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => json({ total_count: 0, incomplete_results: true, items: [] }));
     await expect(createGitHubProvider({ fetch }).searchPullRequests(fine, "repo:octo/widgets is:pr")).resolves.toMatchObject({ incompleteResults: true, items: [] });
   });
 

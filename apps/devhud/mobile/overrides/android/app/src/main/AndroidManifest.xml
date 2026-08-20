@@ -33,6 +33,25 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="devhud" android:host="auth" android:path="/callback" />
             </intent-filter>
+            <intent-filter android:autoVerify="false">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="devhud" android:host="deck" android:pathPattern="/.*" />
+            </intent-filter>
         </activity>
+        <receiver
+            android:name="io.delino.devhud.widget.DevHudWidgetProvider"
+            android:exported="true"
+            android:label="DevHUD Deck">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/devhud_widget_info" />
+        </receiver>
+        <activity
+            android:name="io.delino.devhud.widget.DevHudWidgetConfigureActivity"
+            android:exported="true"
+            android:theme="@style/Theme.devhud" />
     </application>
 </manifest>

@@ -596,6 +596,192 @@ fn validate_github_pat_reconciliation(request: &Value) -> Result<(), String> {
     Ok(())
 }
 
+fn valid_deck_id(value: &str) -> bool {
+    deck_id_from_deep_link(&format!("devhud://deck/{value}")).is_some()
+}
+
+fn exact_keys(value: &serde_json::Map<String, Value>, expected: &[&str]) -> bool {
+    value.len() == expected.len() && expected.iter().all(|key| value.contains_key(*key))
+}
+
+fn validate_widget_request(request: &Value) -> Result<(), String> {
+    let operation = request
+        .get("operation")
+        .and_then(Value::as_str)
+        .ok_or("invalid-argument")?;
+    if operation == "widgets.status" {
+        return Ok(());
+    }
+    if operation == "widgets.disable-deck" {
+        return request
+            .get("deckId")
+            .and_then(Value::as_str)
+            .filter(|value| valid_deck_id(value))
+            .map(|_| ())
+            .ok_or_else(|| "invalid-argument".to_string());
+    }
+    if operation == "widgets.enable-deck" {
+        let value = request
+            .get("configuration")
+            .and_then(Value::as_object)
+            .ok_or("invalid-argument")?;
+        let valid = exact_keys(
+            value,
+            &[
+                "version",
+                "deckId",
+                "name",
+                "query",
+                "profileId",
+                "profileKind",
+                "scopeId",
+                "language",
+            ],
+        ) && value.get("version").and_then(Value::as_u64) == Some(1)
+            && value
+                .get("deckId")
+                .and_then(Value::as_str)
+                .is_some_and(valid_deck_id)
+            && value
+                .get("profileId")
+                .and_then(Value::as_str)
+                .is_some_and(is_profile_id)
+            && value
+                .get("scopeId")
+                .and_then(Value::as_str)
+                .is_some_and(is_profile_id)
+            && value
+                .get("profileKind")
+                .and_then(Value::as_str)
+                .is_some_and(|kind| matches!(kind, "fine-grained" | "classic"))
+            && value
+                .get("language")
+                .and_then(Value::as_str)
+                .is_some_and(|language| matches!(language, "en" | "ko"))
+            && value
+                .get("name")
+                .and_then(Value::as_str)
+                .is_some_and(|name| !name.trim().is_empty() && name.len() <= 128)
+            && value
+                .get("query")
+                .and_then(Value::as_str)
+                .is_some_and(|query| !query.trim().is_empty() && query.len() <= 1024);
+        return valid
+            .then_some(())
+            .ok_or_else(|| "invalid-argument".to_string());
+    }
+    if operation != "widgets.replace-deck-snapshot" {
+        return Err("invalid-argument".to_string());
+    }
+    let value = request
+        .get("snapshot")
+        .and_then(Value::as_object)
+        .ok_or("invalid-argument")?;
+    let counts = value
+        .get("counts")
+        .and_then(Value::as_object)
+        .ok_or("invalid-argument")?;
+    let results = value
+        .get("results")
+        .and_then(Value::as_array)
+        .ok_or("invalid-argument")?;
+    let valid_count = |key: &str| counts.get(key).and_then(Value::as_u64).is_some();
+    let valid_rate = value.get("rate").is_some_and(|rate| {
+        rate.is_null()
+            || rate.as_object().is_some_and(|rate| {
+                exact_keys(
+                    rate,
+                    &[
+                        "limit",
+                        "remaining",
+                        "used",
+                        "resetAt",
+                        "resource",
+                        "retryAfterSeconds",
+                    ],
+                )
+            })
+    });
+    let valid = exact_keys(
+        value,
+        &[
+            "version",
+            "deckId",
+            "query",
+            "counts",
+            "results",
+            "state",
+            "lastSuccessfulAt",
+            "lastAttemptedAt",
+            "rate",
+        ],
+    ) && exact_keys(
+        counts,
+        &["total", "open", "draft", "merged", "closed", "bounded"],
+    ) && counts.get("bounded").and_then(Value::as_bool).is_some()
+        && value.get("version").and_then(Value::as_u64) == Some(1)
+        && value
+            .get("deckId")
+            .and_then(Value::as_str)
+            .is_some_and(valid_deck_id)
+        && value
+            .get("query")
+            .and_then(Value::as_str)
+            .is_some_and(|query| query.len() <= 1024)
+        && ["total", "open", "draft", "merged", "closed"]
+            .into_iter()
+            .all(valid_count)
+        && value
+            .get("state")
+            .and_then(Value::as_str)
+            .is_some_and(|state| {
+                matches!(
+                    state,
+                    "fresh" | "stale" | "missing-token" | "rate-limit" | "error"
+                )
+            })
+        && valid_rate
+        && results.len() <= 100
+        && results.iter().all(|item| {
+            item.as_object().is_some_and(|item| {
+                exact_keys(
+                    item,
+                    &["nodeId", "number", "title", "repository", "state", "draft"],
+                ) && item
+                    .get("nodeId")
+                    .and_then(Value::as_str)
+                    .is_some_and(|node_id| !node_id.is_empty() && node_id.len() <= 128)
+                    && item
+                        .get("number")
+                        .and_then(Value::as_u64)
+                        .is_some_and(|number| number > 0)
+                    && item
+                        .get("title")
+                        .and_then(Value::as_str)
+                        .is_some_and(|title| title.len() <= 512)
+                    && item
+                        .get("repository")
+                        .and_then(Value::as_str)
+                        .is_some_and(|repository| repository.len() <= 256)
+                    && item
+                        .get("state")
+                        .and_then(Value::as_str)
+                        .is_some_and(|state| matches!(state, "open" | "closed" | "merged"))
+                    && item.get("draft").and_then(Value::as_bool).is_some()
+            })
+        })
+        && value
+            .get("lastAttemptedAt")
+            .and_then(Value::as_str)
+            .is_some_and(|date| !date.is_empty())
+        && value.get("lastSuccessfulAt").is_some_and(|date| {
+            date.is_null() || date.as_str().is_some_and(|date| !date.is_empty())
+        });
+    valid
+        .then_some(())
+        .ok_or_else(|| "invalid-argument".to_string())
+}
+
 fn validate_external_request(request: &Value) -> Result<(), String> {
     let target = request
         .get("target")
@@ -759,7 +945,7 @@ fn runtime_snapshot(os_version: &str) -> Value {
                 "secureSettings": true,
                 "notifications": mobile,
                 "storeUpdates": mobile,
-                "widgets": false,
+                "widgets": mobile,
                 "capture": !mobile
             }
         }
@@ -848,6 +1034,7 @@ fn routes_to_mobile_plugin(operation: &str, android: bool) -> bool {
         || operation == "auth.open-system-browser"
         || operation.starts_with("notifications.")
         || operation.starts_with("updates.")
+        || operation.starts_with("widgets.")
         || (android
             && matches!(
                 operation,
@@ -956,7 +1143,11 @@ pub fn handle_native_bridge_request(
             "kind": "update-status", "store": "play-store", "installedVersion": env!("CARGO_PKG_VERSION"), "configured": true
         })),
         "updates.status" | "updates.open-store" => Err("unsupported".to_string()),
-        "widgets.replace-deck-snapshot" | "widgets.clear-deck-snapshot" => {
+        "widgets.status"
+        | "widgets.enable-deck"
+        | "widgets.replace-deck-snapshot"
+        | "widgets.disable-deck" => {
+            validate_widget_request(request)?;
             Ok(json!({ "kind": "unsupported", "feature": "widgets" }))
         }
         _ => Err("invalid-argument".to_string()),
@@ -994,6 +1185,9 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
         } else {
             validate_secure_request(&request)?;
         }
+    }
+    if operation.starts_with("widgets.") {
+        validate_widget_request(&request)?;
     }
     if operation == "lifecycle.open-external" {
         validate_external_request(&request)?;
@@ -1845,12 +2039,19 @@ mod tests {
     }
 
     #[test]
-    fn future_widgets_are_explicitly_unsupported() {
+    fn desktop_widgets_are_explicitly_unsupported_after_validation() {
         let response = handle_native_bridge_request(
-            &json!({ "operation": "widgets.clear-deck-snapshot", "deckId": "deck" }),
+            &json!({ "operation": "widgets.status" }),
             &NativeBridgeState::default(),
         )
         .expect("typed unsupported response");
         assert_eq!(response["kind"], "unsupported");
+        assert_eq!(
+            handle_native_bridge_request(
+                &json!({ "operation": "widgets.disable-deck", "deckId": "deck" }),
+                &NativeBridgeState::default()
+            ),
+            Err("invalid-argument".to_string())
+        );
     }
 }

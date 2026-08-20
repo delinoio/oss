@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="devhud_widget_description">One selected DevHUD Deck</string>
+    <string name="devhud_widget_choose_deck">Choose one Deck</string>
+    <string name="devhud_widget_select_deck">Select %1$s</string>
+    <string name="devhud_widget_privacy_warning">Widget content may include private repository and pull request titles. Launchers, screenshots, backups, notifications, and nearby viewers may expose them.</string>
+    <string name="devhud_widget_setup">Open DevHUD and enable one Deck for widgets</string>
+    <string name="devhud_widget_counts">Total %1$d · Open %2$d · Draft %3$d · Merged %4$d · Closed %5$d</string>
+    <string name="devhud_widget_first_hundred"> · state counts: first 100</string>
+    <string name="devhud_widget_no_results">No pull requests</string>
+    <string name="devhud_widget_status">%1$s · Last success %2$s</string>
+    <string name="devhud_widget_fresh">Current</string><string name="devhud_widget_stale">Stale</string><string name="devhud_widget_missing_token">Setup required</string><string name="devhud_widget_rate_limit">Rate limited</string><string name="devhud_widget_error">Refresh failed</string><string name="devhud_widget_never">Never</string>
+</resources>

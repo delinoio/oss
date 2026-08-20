@@ -5,11 +5,16 @@ import Tauri
 import UIKit
 import UserNotifications
 import WebKit
+import WidgetKit
 
 private let keychainService = "io.delino.devhud.secure-settings.v1"
+private let widgetKeychainService = "io.delino.devhud.widget-credential.v1"
 private let appGroup = "group.io.delino.devhud"
 private let sharedAccessGroupKey = "DevHudKeychainAccessGroup"
 private let legacyAccessGroupKey = "DevHudLegacyKeychainAccessGroup"
+private let widgetAccessGroupKey = "DevHudWidgetKeychainAccessGroup"
+private let widgetConfigurationPrefix = "widget.configuration."
+private let widgetSnapshotPrefix = "widget.snapshot."
 private let secureStoreLogger = Logger(subsystem: "io.delino.devhud", category: "secure-store")
 
 private struct SecureSetting: Decodable {
@@ -24,6 +29,32 @@ private struct DeckNotification: Decodable {
     let deckId: String
     let title: String
     let body: String
+}
+
+private struct WidgetDeckConfiguration: Codable {
+    let version: Int
+    let deckId: String
+    let name: String
+    let query: String
+    let profileId: String
+    let profileKind: String
+    let scopeId: String
+    let language: String
+}
+
+private struct WidgetDeckCounts: Codable { let total: Int; let open: Int; let draft: Int; let merged: Int; let closed: Int; let bounded: Bool }
+private struct WidgetPullRequest: Codable { let nodeId: String; let number: Int; let title: String; let repository: String; let state: String; let draft: Bool }
+private struct WidgetRate: Codable { let limit: Int?; let remaining: Int?; let used: Int?; let resetAt: String?; let resource: String?; let retryAfterSeconds: Int? }
+private struct WidgetDeckSnapshot: Codable {
+    let version: Int
+    let deckId: String
+    let query: String
+    let counts: WidgetDeckCounts
+    let results: [WidgetPullRequest]
+    let state: String
+    let lastSuccessfulAt: String?
+    let lastAttemptedAt: String
+    let rate: WidgetRate?
 }
 
 private struct RequestArgs: Decodable {
@@ -42,6 +73,8 @@ private struct RequestArgs: Decodable {
     let profileIds: [String]?
     let notification: DeckNotification?
     let deckId: String?
+    let configuration: WidgetDeckConfiguration?
+    let snapshot: WidgetDeckSnapshot?
 }
 
 final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocumentPickerDelegate {
@@ -50,6 +83,9 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
 
     @objc public override func load(webview: WKWebView) {
         cleanupDiagnosticsTemporaryDirectory()
+        if !migrateLegacySecureStore() {
+            secureStoreLogger.error("event=legacy_secure_store_migration_failed")
+        }
         guard UserDefaults(suiteName: appGroup) != nil else { return }
         UNUserNotificationCenter.current().delegate = self
     }
@@ -75,6 +111,10 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
             let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
             invoke.resolve(["kind": "update-status", "store": "app-store", "installedVersion": version, "configured": false])
         case "updates.open-store": invoke.reject("not-configured", code: "not-configured")
+        case "widgets.status": widgetStatus(invoke)
+        case "widgets.enable-deck": try enableWidgetDeck(args, invoke)
+        case "widgets.replace-deck-snapshot": try replaceWidgetSnapshot(args, invoke)
+        case "widgets.disable-deck": try disableWidgetDeck(args, invoke)
         default: invoke.reject("invalid-argument", code: "invalid-argument")
         }
     }
@@ -229,6 +269,49 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
         SecItemDelete(query(setting, accessGroupKey: accessGroupKey) as CFDictionary)
     }
 
+    private func migrateLegacySecureStore() -> Bool {
+        var all: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+                                  kSecAttrService as String: keychainService,
+                                  kSecReturnAttributes as String: true,
+                                  kSecReturnData as String: true,
+                                  kSecMatchLimit as String: kSecMatchLimitAll]
+        if let accessGroup = Bundle.main.object(forInfoDictionaryKey: legacyAccessGroupKey) as? String {
+            all[kSecAttrAccessGroup as String] = accessGroup
+        }
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(all as CFDictionary, &result)
+        if status == errSecItemNotFound { return true }
+        guard status == errSecSuccess, let items = result as? [[String: Any]] else { return false }
+        for item in items {
+            guard let account = item[kSecAttrAccount as String] as? String,
+                  let separator = account.firstIndex(of: ":"),
+                  let data = item[kSecValueData as String] as? Data else { return false }
+            let kind = String(account[..<separator])
+            let profileId = String(account[account.index(after: separator)...])
+            let setting = SecureSetting(kind: kind, profileId: profileId, scopeId: nil)
+            let primary = readData(setting, accessGroupKey: sharedAccessGroupKey)
+            guard primary.0 == errSecSuccess || primary.0 == errSecItemNotFound else { return false }
+            if primary.0 == errSecItemNotFound,
+               storeData(data, setting: setting, accessGroupKey: sharedAccessGroupKey) != errSecSuccess { return false }
+            let deletion = deleteData(setting, accessGroupKey: legacyAccessGroupKey)
+            guard deletion == errSecSuccess || deletion == errSecItemNotFound else { return false }
+        }
+        return true
+    }
+
+    private func readDataMigratingLegacy(_ setting: SecureSetting) -> (OSStatus, Data?) {
+        let primary = readData(setting, accessGroupKey: sharedAccessGroupKey)
+        if primary.0 != errSecItemNotFound { return primary }
+
+        let legacy = readData(setting, accessGroupKey: legacyAccessGroupKey)
+        guard legacy.0 == errSecSuccess, let data = legacy.1 else { return legacy }
+        let stored = storeData(data, setting: setting, accessGroupKey: sharedAccessGroupKey)
+        guard stored == errSecSuccess else { return (stored, nil) }
+        let deleted = deleteData(setting, accessGroupKey: legacyAccessGroupKey)
+        guard deleted == errSecSuccess || deleted == errSecItemNotFound else { return (deleted, nil) }
+        return (errSecSuccess, data)
+    }
+
     private func rejectStorageFailure(_ invoke: Invoke) {
         invoke.reject("storage-failure", code: "storage-failure")
     }
@@ -237,7 +320,7 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
         guard let setting = args.setting else { throw NativeError.invalidArgument }
         if setting.kind == "github-pat" {
             guard let scopeId = setting.scopeId else { throw NativeError.invalidArgument }
-            let (markerStatus, _) = readData(githubPatScope(scopeId, setting.profileId), accessGroupKey: sharedAccessGroupKey)
+            let (markerStatus, _) = readDataMigratingLegacy(githubPatScope(scopeId, setting.profileId))
             if markerStatus == errSecItemNotFound {
                 invoke.resolve(["kind": "secure-value", "value": NSNull()])
                 return
@@ -247,28 +330,16 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
                 return
             }
         }
-        let (sharedStatus, sharedData) = readData(setting, accessGroupKey: sharedAccessGroupKey)
-        if sharedStatus == errSecSuccess, let data = sharedData, let value = String(data: data, encoding: .utf8) {
+        let (status, storedData) = readDataMigratingLegacy(setting)
+        if status == errSecSuccess, let data = storedData, let value = String(data: data, encoding: .utf8) {
             invoke.resolve(["kind": "secure-value", "value": value])
             return
         }
-        guard sharedStatus == errSecItemNotFound else {
+        if status == errSecItemNotFound {
+            invoke.resolve(["kind": "secure-value", "value": NSNull()])
+        } else {
             rejectStorageFailure(invoke)
-            return
         }
-        let (legacyStatus, legacyData) = readData(setting, accessGroupKey: legacyAccessGroupKey)
-        if legacyStatus == errSecItemNotFound { invoke.resolve(["kind": "secure-value", "value": NSNull()]); return }
-        guard legacyStatus == errSecSuccess, let data = legacyData, let value = String(data: data, encoding: .utf8),
-              storeData(data, setting: setting, accessGroupKey: sharedAccessGroupKey) == errSecSuccess else {
-            rejectStorageFailure(invoke)
-            return
-        }
-        let deletion = deleteData(setting, accessGroupKey: legacyAccessGroupKey)
-        guard deletion == errSecSuccess || deletion == errSecItemNotFound else {
-            rejectStorageFailure(invoke)
-            return
-        }
-        invoke.resolve(["kind": "secure-value", "value": value])
     }
 
     private func writeSecure(_ args: RequestArgs, _ invoke: Invoke) throws {
@@ -370,7 +441,9 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
     }
 
     private func removeGitHubPatScope(_ scopeId: String, _ profileId: String) -> Bool {
-        guard let accounts = secureAccounts(accessGroupKey: sharedAccessGroupKey) else { return false }
+        guard let primaryAccounts = secureAccounts(accessGroupKey: sharedAccessGroupKey),
+              let legacyAccounts = secureAccounts(accessGroupKey: legacyAccessGroupKey) else { return false }
+        let accounts = Set(primaryAccounts + legacyAccounts)
         let marker = githubPatScope(scopeId, profileId)
         let markerSuffix = ":\(profileId)"
         let retainedElsewhere = accounts.contains { account in
@@ -383,13 +456,17 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
                 if deletion != errSecSuccess && deletion != errSecItemNotFound { return false }
             }
         }
-        let markerDeletion = deleteData(marker, accessGroupKey: sharedAccessGroupKey)
-        return markerDeletion == errSecSuccess || markerDeletion == errSecItemNotFound
+        for accessGroupKey in [sharedAccessGroupKey, legacyAccessGroupKey] {
+            let deletion = deleteData(marker, accessGroupKey: accessGroupKey)
+            if deletion != errSecSuccess && deletion != errSecItemNotFound { return false }
+        }
+        return true
     }
 
     private func reconcileGitHubPats(_ args: RequestArgs, _ invoke: Invoke) throws {
         guard let scopeId = args.scopeId, let profileIds = args.profileIds, profileIds.count <= 25,
               Set(profileIds).count == profileIds.count else { throw NativeError.invalidArgument }
+        guard migrateLegacySecureStore() else { rejectStorageFailure(invoke); return }
         guard let sharedAccounts = secureAccounts(accessGroupKey: sharedAccessGroupKey),
               let legacyAccounts = secureAccounts(accessGroupKey: legacyAccessGroupKey) else {
             rejectStorageFailure(invoke)
@@ -406,7 +483,7 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
             }
         }
         let prefix = "github-pat-scope:\(scopeId):"
-        for account in sharedAccounts where account.hasPrefix(prefix) {
+        for account in Set(sharedAccounts + legacyAccounts) where account.hasPrefix(prefix) {
             let profileId = String(account.dropFirst(prefix.count))
             if retained.contains(profileId) { continue }
             guard removeGitHubPatScope(scopeId, profileId) else {
@@ -462,7 +539,106 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
         for accessGroupKey in [sharedAccessGroupKey, legacyAccessGroupKey] {
             guard purgeSecureGroup(args, accessGroupKey: accessGroupKey) else { rejectStorageFailure(invoke); return }
         }
+        guard clearWidgetState() else { rejectStorageFailure(invoke); return }
         invoke.resolve(["kind": "ok"])
+    }
+
+    private func widgetCredentialQuery(_ deckId: String) -> [String: Any] {
+        var query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+                                    kSecAttrService as String: widgetKeychainService,
+                                    kSecAttrAccount as String: deckId,
+                                    kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+                                    kSecAttrSynchronizable as String: false]
+        if let accessGroup = Bundle.main.object(forInfoDictionaryKey: widgetAccessGroupKey) as? String {
+            query[kSecAttrAccessGroup as String] = accessGroup
+        }
+        return query
+    }
+
+    private func storeWidgetCredential(_ data: Data, deckId: String) -> OSStatus {
+        let query = widgetCredentialQuery(deckId)
+        let status = SecItemUpdate(query as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+        if status != errSecItemNotFound { return status }
+        var item = query
+        item[kSecValueData as String] = data
+        return SecItemAdd(item as CFDictionary, nil)
+    }
+
+    private func removeWidgetCredential(_ deckId: String) -> Bool {
+        let status = SecItemDelete(widgetCredentialQuery(deckId) as CFDictionary)
+        return status == errSecSuccess || status == errSecItemNotFound
+    }
+
+    private func removeAllWidgetCredentials() -> Bool {
+        var query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+                                    kSecAttrService as String: widgetKeychainService,
+                                    kSecAttrSynchronizable as String: false]
+        if let accessGroup = Bundle.main.object(forInfoDictionaryKey: widgetAccessGroupKey) as? String {
+            query[kSecAttrAccessGroup as String] = accessGroup
+        }
+        let status = SecItemDelete(query as CFDictionary)
+        return status == errSecSuccess || status == errSecItemNotFound
+    }
+
+    private func widgetStatus(_ invoke: Invoke) {
+        guard let defaults = UserDefaults(suiteName: appGroup) else { rejectStorageFailure(invoke); return }
+        let enabled = defaults.dictionaryRepresentation().keys.filter { $0.hasPrefix(widgetConfigurationPrefix) }.map { String($0.dropFirst(widgetConfigurationPrefix.count)) }.sorted()
+        invoke.resolve(["kind": "widget-status", "enabledDeckIds": enabled])
+    }
+
+    private func enableWidgetDeck(_ args: RequestArgs, _ invoke: Invoke) throws {
+        guard let configuration = args.configuration, let defaults = UserDefaults(suiteName: appGroup) else { throw NativeError.invalidArgument }
+        let setting = SecureSetting(kind: "github-pat", profileId: configuration.profileId, scopeId: configuration.scopeId)
+        let marker = githubPatScope(configuration.scopeId, configuration.profileId)
+        let (markerStatus, _) = readDataMigratingLegacy(marker)
+        let (patStatus, patData) = readDataMigratingLegacy(setting)
+        guard markerStatus == errSecSuccess, patStatus == errSecSuccess, let patData else {
+            defaults.removeObject(forKey: widgetConfigurationPrefix + configuration.deckId)
+            defaults.removeObject(forKey: widgetSnapshotPrefix + configuration.deckId)
+            _ = removeWidgetCredential(configuration.deckId)
+            WidgetCenter.shared.reloadAllTimelines()
+            if markerStatus == errSecItemNotFound || patStatus == errSecItemNotFound { invoke.reject("not-configured", code: "not-configured") }
+            else { rejectStorageFailure(invoke) }
+            return
+        }
+        guard storeWidgetCredential(patData, deckId: configuration.deckId) == errSecSuccess else { rejectStorageFailure(invoke); return }
+        do {
+            defaults.set(try JSONEncoder().encode(configuration), forKey: widgetConfigurationPrefix + configuration.deckId)
+            WidgetCenter.shared.reloadAllTimelines()
+            invoke.resolve(["kind": "ok"])
+        } catch {
+            _ = removeWidgetCredential(configuration.deckId)
+            rejectStorageFailure(invoke)
+        }
+    }
+
+    private func replaceWidgetSnapshot(_ args: RequestArgs, _ invoke: Invoke) throws {
+        guard let snapshot = args.snapshot, let defaults = UserDefaults(suiteName: appGroup),
+              let configurationData = defaults.data(forKey: widgetConfigurationPrefix + snapshot.deckId),
+              let configuration = try? JSONDecoder().decode(WidgetDeckConfiguration.self, from: configurationData),
+              configuration.query == snapshot.query else { throw NativeError.invalidArgument }
+        defaults.set(try JSONEncoder().encode(snapshot), forKey: widgetSnapshotPrefix + snapshot.deckId)
+        WidgetCenter.shared.reloadAllTimelines()
+        invoke.resolve(["kind": "ok"])
+    }
+
+    private func disableWidgetDeck(_ args: RequestArgs, _ invoke: Invoke) throws {
+        guard let deckId = args.deckId, let defaults = UserDefaults(suiteName: appGroup) else { throw NativeError.invalidArgument }
+        guard removeWidgetCredential(deckId) else { rejectStorageFailure(invoke); return }
+        defaults.removeObject(forKey: widgetConfigurationPrefix + deckId)
+        defaults.removeObject(forKey: widgetSnapshotPrefix + deckId)
+        WidgetCenter.shared.reloadAllTimelines()
+        invoke.resolve(["kind": "ok"])
+    }
+
+    private func clearWidgetState() -> Bool {
+        guard let defaults = UserDefaults(suiteName: appGroup) else { return false }
+        for key in defaults.dictionaryRepresentation().keys where key.hasPrefix(widgetConfigurationPrefix) || key.hasPrefix(widgetSnapshotPrefix) {
+            defaults.removeObject(forKey: key)
+        }
+        guard removeAllWidgetCredentials() else { return false }
+        WidgetCenter.shared.reloadAllTimelines()
+        return true
     }
 
     private func permissionName(_ status: UNAuthorizationStatus) -> String {

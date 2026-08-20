@@ -17,6 +17,7 @@ export interface DeckCache {
   readonly deckId: string;
   readonly query: string;
   readonly queryEtag: string | null;
+  readonly totalCount?: number;
   readonly results: readonly GitHubDeckPullRequest[];
   readonly lastSuccessfulAt: string | null;
   readonly rate: GitHubRate | null;
@@ -37,7 +38,7 @@ export function readDeckCache(storage: Pick<Storage, "getItem">, scope: string, 
     if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
     const item = value as Record<string, unknown>;
     const pendingNotifications = item.pendingNotifications;
-    if (item.version !== DeckCacheVersion || item.deckId !== deckId || item.query !== query || !nullableString(item.queryEtag) || !Array.isArray(item.results) || item.results.length > DeckResultLimit || !item.results.every(isDeckPullRequest) || !nullableTimestamp(item.lastSuccessfulAt) || !nullableRate(item.rate) || !nonNegativeInteger(item.failures) || !nullableTimestamp(item.nextRefreshAt) || !Array.isArray(item.transitionKeys) || item.transitionKeys.length > DeckResultLimit * 4 || !item.transitionKeys.every((key) => typeof key === "string") || pendingNotifications !== undefined && (!Array.isArray(pendingNotifications) || pendingNotifications.length > DeckResultLimit * 4 || !pendingNotifications.every(isDeckPendingNotification))) return null;
+    if (item.version !== DeckCacheVersion || item.deckId !== deckId || item.query !== query || !nullableString(item.queryEtag) || item.totalCount !== undefined && !nonNegativeInteger(item.totalCount) || !Array.isArray(item.results) || item.results.length > DeckResultLimit || !item.results.every(isDeckPullRequest) || !nullableTimestamp(item.lastSuccessfulAt) || !nullableRate(item.rate) || !nonNegativeInteger(item.failures) || !nullableTimestamp(item.nextRefreshAt) || !Array.isArray(item.transitionKeys) || item.transitionKeys.length > DeckResultLimit * 4 || !item.transitionKeys.every((key) => typeof key === "string") || pendingNotifications !== undefined && (!Array.isArray(pendingNotifications) || pendingNotifications.length > DeckResultLimit * 4 || !pendingNotifications.every(isDeckPendingNotification))) return null;
     return { ...item, pendingNotifications: pendingNotifications ?? [] } as unknown as DeckCache;
   } catch { return null; }
 }

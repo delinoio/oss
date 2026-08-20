@@ -2,10 +2,12 @@ package io.delino.devhud.bridge
 
 import android.Manifest
 import android.app.Activity
+import android.appwidget.AppWidgetManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
+import android.content.ComponentName
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -22,6 +24,8 @@ import app.tauri.annotation.TauriPlugin
 import app.tauri.plugin.Invoke
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
+import io.delino.devhud.widget.DevHudWidgetProvider
+import io.delino.devhud.widget.DevHudWidgetStore
 import java.io.FileNotFoundException
 import java.security.KeyStore
 import java.util.Base64
@@ -91,6 +95,10 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
                 "notifications.cancel-deck" -> cancelNotification(invoke)
                 "updates.status" -> resolveUpdateStatus(invoke)
                 "updates.open-store" -> openStore(invoke)
+                "widgets.status" -> widgetStatus(invoke)
+                "widgets.enable-deck" -> enableWidgetDeck(invoke)
+                "widgets.replace-deck-snapshot" -> replaceWidgetSnapshot(invoke)
+                "widgets.disable-deck" -> disableWidgetDeck(invoke)
                 else -> invoke.reject("invalid-argument", "invalid-argument")
             }
         } catch (error: Exception) {
@@ -457,8 +465,64 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
                     (scope == "account-deletion" && key != "logto-session:$profileId") ||
                     (scope == "api-change" && key == "logto-session:$profileId")
             }.forEach(editor::remove)
-            editor.commit()
+            val secureCleared = editor.commit()
+            val widgetCleared = DevHudWidgetStore(activity.applicationContext).clear()
+            secureCleared && widgetCleared
         }
+    }
+
+    private fun widgetStatus(invoke: Invoke) {
+        val enabled = DevHudWidgetStore(activity.applicationContext).enabledDeckIds()
+        invoke.resolve(JSObject().put("kind", "widget-status").put("enabledDeckIds", org.json.JSONArray(enabled)))
+    }
+
+    private fun enableWidgetDeck(invoke: Invoke) {
+        val configuration = invoke.getArgs().getJSObject("configuration") ?: throw IllegalArgumentException("configuration")
+        val deckId = configuration.getString("deckId")
+        val profileId = configuration.getString("profileId")
+        val scopeId = configuration.getString("scopeId")
+        persistSecure(invoke) {
+            val preferences = activity.getSharedPreferences(storeName, Context.MODE_PRIVATE)
+            val marker = githubPatScopeKey(scopeId, profileId)
+            val encoded = preferences.getString("github-pat:$profileId", null)
+            val widgetStore = DevHudWidgetStore(activity.applicationContext)
+            if (!preferences.contains(marker) || encoded == null) {
+                widgetStore.disable(deckId)
+                refreshWidgets()
+                throw IllegalStateException("missing selected widget credential")
+            }
+            val token = try { decryptSecure(encoded, "github-pat:$profileId", authenticateKey = true) }
+                catch (error: Exception) { widgetStore.disable(deckId); refreshWidgets(); throw error }
+            val stored = widgetStore.enable(configuration, token)
+            if (stored) refreshWidgets()
+            stored
+        }
+    }
+
+    private fun replaceWidgetSnapshot(invoke: Invoke) {
+        val snapshot = invoke.getArgs().getJSObject("snapshot") ?: throw IllegalArgumentException("snapshot")
+        persistSecure(invoke) {
+            val stored = DevHudWidgetStore(activity.applicationContext).replaceSnapshot(snapshot)
+            if (stored) refreshWidgets()
+            stored
+        }
+    }
+
+    private fun disableWidgetDeck(invoke: Invoke) {
+        val deckId = invoke.getArgs().getString("deckId")
+        persistSecure(invoke) {
+            val cleared = DevHudWidgetStore(activity.applicationContext).disable(deckId)
+            if (cleared) refreshWidgets()
+            cleared
+        }
+    }
+
+    private fun refreshWidgets() {
+        val context = activity.applicationContext
+        val manager = AppWidgetManager.getInstance(context)
+        val component = ComponentName(context, DevHudWidgetProvider::class.java)
+        val ids = manager.getAppWidgetIds(component)
+        if (ids.isNotEmpty()) context.sendBroadcast(Intent(AppWidgetManager.ACTION_APPWIDGET_UPDATE).setComponent(component).putExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS, ids))
     }
 
     private fun persistSecure(invoke: Invoke, onComplete: () -> Unit = {}, operation: () -> Boolean) {

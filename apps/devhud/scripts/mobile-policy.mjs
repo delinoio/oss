@@ -29,6 +29,8 @@ export function assertAndroidBackupExclusions({ androidManifest, androidBackupRu
   const privatePreferenceExclusions = [
     '<exclude domain="sharedpref" path="devhud-secure-settings-v1.xml" />',
     '<exclude domain="sharedpref" path="devhud-diagnostics-cleanup-v1.xml" />',
+    '<exclude domain="sharedpref" path="devhud-widget-state-v1.xml" />',
+    '<exclude domain="sharedpref" path="devhud-widget-secret-v1.xml" />',
   ];
   const webViewExclusion = '<exclude domain="root" path="app_webview/" />';
   assert(androidManifest.includes('android:fullBackupContent="@xml/backup_rules"'), "Android full-backup policy is missing");
@@ -123,6 +125,8 @@ export function assertIosNativeBridge(iosNativeBridgeInput) {
   assert(purgeSecure.includes('if scope == "logout" || scope == "account-deletion"'), "iOS API-origin changes must preserve pending diagnostics exports");
   assert(purgeSecure.includes("guard diagnosticsCleanupSucceeded else"), "iOS destructive purges must propagate diagnostics cleanup failures");
   assert(iosNativeBridge.includes('UserDefaults(suiteName: appGroup)'), "iOS must bind the contracted App Group");
+  assert(iosNativeBridge.includes('widgetKeychainService = "io.delino.devhud.widget-credential.v1"') && iosNativeBridge.includes("widgetAccessGroupKey"), "iOS widget credentials must use a distinct selected-only Keychain service");
+  assert(purgeSecure.includes("clearWidgetState()"), "iOS destructive secure purges must clear widget credentials and state");
 }
 
 export function assertMobileDependencyResolution(verifier) {
@@ -218,6 +222,9 @@ export function assertMobileContracts({ platforms, tauri, ios, android, cargo, a
   assert(platforms.frontendDist === "../dist" && tauri.build.frontendDist === platforms.frontendDist, "mobile frontend is not shared");
   assert(platforms.minimumVersions.ios === "16.0" && ios.bundle.iOS.minimumSystemVersion === "16.0", "iOS minimum must be 16.0");
   assert(platforms.minimumVersions.androidApi === 29 && android.bundle.android.minSdkVersion === 29, "Android minimum must be API 29");
+  assert(platforms.widgets?.iosBundle === "io.delino.devhud.widget" && platforms.widgets?.iosAppGroup === "group.io.delino.devhud" && platforms.widgets?.iosKeychainGroup === "$(AppIdentifierPrefix)io.delino.devhud.shared", "iOS widget identity or secure groups changed");
+  assert(platforms.widgets?.androidProvider === "io.delino.devhud.widget.DevHudWidgetProvider" && platforms.widgets?.deepLinkTemplate === "devhud://deck/<deck-id>", "Android widget provider or Deck deep link changed");
+  assert(platforms.widgets?.refreshMinutes === 30 && platforms.widgets?.staleMinutes === 60 && platforms.widgets?.resultLimit === 100 && platforms.widgets?.previewLimit === 3, "widget refresh or result bounds changed");
 
   assertMobileTargets(platforms.targets);
 
@@ -229,20 +236,22 @@ export function assertMobileContracts({ platforms, tauri, ios, android, cargo, a
   assertAndroidPermissions(androidManifest, androidDebugManifest);
   assert(androidManifest.includes('android:scheme="market"'), "Android market handler visibility is missing");
   assert(!androidManifest.includes("LEANBACK") && !androidManifest.includes("FileProvider"), "unneeded Android surface was generated");
-  assert((androidManifest.match(/android:scheme="devhud"/gu) ?? []).length === 1, "Android must register only one devhud scheme");
+  assert((androidManifest.match(/android:scheme="devhud"/gu) ?? []).length === 2, "Android must register only the auth and Deck devhud routes");
   assert(androidManifest.includes('android:host="auth" android:path="/callback"'), "Android auth callback filter changed");
+  assert(androidManifest.includes('android:host="deck" android:pathPattern="/.*"'), "Android Deck widget deep-link filter is missing");
   assertAndroidBackupExclusions({ androidManifest, androidBackupRules, androidDataExtractionRules });
   assertAndroidNativeBridge(androidNativeBridge);
   assert(androidChannelEnglish.includes("Deck changes") && androidChannelKorean.includes("Deck 변경사항"), "Android notification channel names must be bilingual");
   assert((androidPluginManifest.match(/<uses-permission/gu) ?? []).length === 1 && androidPluginManifest.includes("android.permission.POST_NOTIFICATIONS"), "Android native bridge permissions are not least-privileged");
+  assert(androidPluginManifest.includes("DevHudWidgetProvider") && androidPluginManifest.includes("DevHudWidgetConfigureActivity"), "Android AppWidgetProvider and one-Deck configuration activity are missing");
   assert((iosPlist.match(/<string>devhud<\/string>/gu) ?? []).length === 1, "iOS must register only one devhud scheme");
-  assert(iosPlist.includes("DevHudLegacyKeychainAccessGroup") && iosPlist.includes("$(AppIdentifierPrefix)io.delino.devhud"), "iOS legacy Keychain migration group changed");
+  assert(iosPlist.includes("DevHudLegacyKeychainAccessGroup") && iosPlist.includes("DevHudWidgetKeychainAccessGroup") && iosPlist.includes("$(AppIdentifierPrefix)io.delino.devhud.shared"), "iOS widget and migration Keychain groups changed");
   assert(!/com\.apple\.developer\.|NSExtension/iu.test(iosPlist), "uncontracted iOS entitlement or extension detected");
   assertIosNativeBridge(iosNativeBridge);
 
   assert(packageJson.scripts["build:ios"] && packageJson.scripts["build:android"] && packageJson.scripts["mobile:generate"], "package-local mobile commands are incomplete");
   for (const operation of ["runtime.snapshot", "lifecycle.open-external", "auth.peek-pending-callback", "auth.take-pending-callback", "secure.read", "secure.write", "notifications.request-permission", "updates.status", "widgets.replace-deck-snapshot"]) assert(nativeBridge.includes(`\"${operation}\"`), `typed bridge operation missing: ${operation}`);
-  assert(nativeBridge.includes("readonly widgets: false"), "widget scope must remain bridge-only");
+  assert(nativeBridge.includes("readonly widgets: boolean"), "runtime widget capability must be platform-reported");
   assert(app.includes("mobile &&") && app.includes("copy.realqaMobileTitle"), "mobile RealQA unavailable state is missing");
   assert(app.includes("!mobile") && app.includes("ExternalLinkTarget.Issue"), "issue creation is not explicitly desktop-only");
   assert(workflow.includes("devhud-mobile-contracts") && workflow.includes("devhud-android-emulator"), "mobile CI validation jobs are incomplete");

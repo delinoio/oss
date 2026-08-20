@@ -1,6 +1,7 @@
 import { normalizeLogtoIssuer } from "./identity-contract.ts";
 import { ClassicPatCreationUrl, FineGrainedPatCreationUrl } from "./github-links.ts";
 import { defaultDesktopShortcutBindings, parseDesktopShortcutBindings, type DesktopShortcutBindings, type ShortcutActionId, type ShortcutValidationCode } from "./shortcuts.ts";
+import { WidgetContractVersion, WidgetResultLimit, type WidgetDeckConfiguration, type WidgetDeckSnapshot } from "./widget-contract.ts";
 
 export const NativeBridgeVersion = 1 as const;
 
@@ -68,7 +69,7 @@ export interface RuntimeSnapshot {
     readonly secureSettings: boolean;
     readonly notifications: boolean;
     readonly storeUpdates: boolean;
-    readonly widgets: false;
+    readonly widgets: boolean;
     readonly capture?: boolean;
   };
 }
@@ -118,13 +119,6 @@ export interface DeckNotification {
   readonly body: string;
 }
 
-export interface WidgetDeckSnapshot {
-  readonly deckId: string;
-  readonly updatedAt: string;
-  readonly title: string;
-  readonly pullRequests: readonly { readonly title: string; readonly url: string }[];
-}
-
 type NativeBridgeRequestV1Base =
   | { readonly operation: "runtime.snapshot" }
   | { readonly operation: "session.configure-origins"; readonly apiOrigin: string; readonly logtoIssuer?: string }
@@ -147,8 +141,10 @@ type NativeBridgeRequestV1Base =
   | { readonly operation: "notifications.cancel-deck"; readonly deckId: string }
   | { readonly operation: "updates.status" }
   | { readonly operation: "updates.open-store" }
+  | { readonly operation: "widgets.status" }
+  | { readonly operation: "widgets.enable-deck"; readonly configuration: WidgetDeckConfiguration }
   | { readonly operation: "widgets.replace-deck-snapshot"; readonly snapshot: WidgetDeckSnapshot }
-  | { readonly operation: "widgets.clear-deck-snapshot"; readonly deckId: string };
+  | { readonly operation: "widgets.disable-deck"; readonly deckId: string };
 
 export type NativeShortcutPermission = "available" | "not-determined" | "denied" | "x11-unavailable" | "unsupported";
 export type NativeShortcutPlatform = "macos" | "windows" | "x11" | "unsupported";
@@ -183,6 +179,7 @@ export type NativeBridgeResponseV1 =
   | { readonly kind: "capture-drafts"; readonly drafts: readonly CaptureDraft[]; readonly unreadableDraftIds: readonly string[] }
   | { readonly kind: "capture-draft"; readonly draft: CaptureDraft }
   | { readonly kind: "capture-flattened"; readonly images: readonly FlattenedCaptureImage[] }
+  | { readonly kind: "widget-status"; readonly enabledDeckIds: readonly string[] }
   | { readonly kind: "unsupported"; readonly feature: "widgets" }
   | { readonly kind: "diagnostics-export"; readonly outcome: "saved" | "cancelled" | "initiated" }
   | { readonly kind: "ok" };
@@ -245,6 +242,36 @@ export function validateGitHubPatReconciliation(scopeId: string, profileIds: rea
   if (!profilePattern.test(scopeId) || profileIds.length > 25 || new Set(profileIds).size !== profileIds.length || profileIds.some((profileId) => !profilePattern.test(profileId))) {
     throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument);
   }
+}
+
+function hasExactKeys(value: object, keys: readonly string[]): boolean {
+  const actual = Object.keys(value);
+  return actual.length === keys.length && keys.every((key) => Object.hasOwn(value, key));
+}
+
+export function validateWidgetRequest(request: Extract<NativeBridgeRequestV1, { readonly operation: `widgets.${string}` }>) {
+  if (request.operation === "widgets.status") return;
+  if (request.operation === "widgets.disable-deck") {
+    if (!uuidPattern.test(request.deckId)) throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument);
+    return;
+  }
+  if (request.operation === "widgets.enable-deck") {
+    const value = request.configuration;
+    if (!hasExactKeys(value, ["version", "deckId", "name", "query", "profileId", "profileKind", "scopeId", "language"])
+      || value.version !== WidgetContractVersion || !uuidPattern.test(value.deckId) || !profilePattern.test(value.profileId) || !profilePattern.test(value.scopeId)
+      || !["fine-grained", "classic"].includes(value.profileKind) || !["en", "ko"].includes(value.language)
+      || value.name.trim().length === 0 || value.name.length > 128 || value.query.trim().length === 0 || value.query.length > 1024) throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument);
+    return;
+  }
+  const value = request.snapshot;
+  if (!hasExactKeys(value, ["version", "deckId", "query", "counts", "results", "state", "lastSuccessfulAt", "lastAttemptedAt", "rate"])
+    || !hasExactKeys(value.counts, ["total", "open", "draft", "merged", "closed", "bounded"])
+    || value.rate !== null && !hasExactKeys(value.rate, ["limit", "remaining", "used", "resetAt", "resource", "retryAfterSeconds"])
+    || value.version !== WidgetContractVersion || !uuidPattern.test(value.deckId) || value.query.length > 1024 || value.results.length > WidgetResultLimit
+    || !Number.isSafeInteger(value.counts.total) || value.counts.total < 0 || [value.counts.open, value.counts.draft, value.counts.merged, value.counts.closed].some((count) => !Number.isSafeInteger(count) || count < 0)
+    || value.results.some((pullRequest) => !hasExactKeys(pullRequest, ["nodeId", "number", "title", "repository", "state", "draft"])
+      || pullRequest.nodeId.length === 0 || pullRequest.nodeId.length > 128 || pullRequest.title.length > 512 || pullRequest.repository.length > 256 || !Number.isSafeInteger(pullRequest.number) || pullRequest.number < 1)
+    || !Number.isFinite(Date.parse(value.lastAttemptedAt)) || value.lastSuccessfulAt !== null && !Number.isFinite(Date.parse(value.lastSuccessfulAt))) throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument);
 }
 
 function validCaptureRect(rect: CaptureRect) {
@@ -365,6 +392,7 @@ export const nativeBridge: NativeBridgeV1 = {
     if (request.operation === "diagnostics.export") validateDiagnosticsExport(request);
     if (request.operation === "shortcuts.apply" || request.operation === "shortcuts.stage" || request.operation === "shortcuts.commit") parseDesktopShortcutBindings(request.bindings);
     if (request.operation.startsWith("capture.")) validateCaptureRequest(request as Extract<NativeBridgeRequestV1, { readonly operation: `capture.${string}` }>);
+    if (request.operation.startsWith("widgets.")) validateWidgetRequest(request as Extract<NativeBridgeRequestV1, { readonly operation: `widgets.${string}` }>);
     if (!window.__TAURI_INTERNALS__) {
       if (request.operation === "runtime.snapshot") return { kind: "runtime", snapshot: await browserSnapshot() };
       if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
