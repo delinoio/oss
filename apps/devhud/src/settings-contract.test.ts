@@ -342,6 +342,28 @@ describe("DevHud settings boundary", () => {
     expect(() => parseDevHudSettings({ ...settingsWithMappingProfile, urlMappings: Array.from({ length: MaximumUrlRepositoryMappings + 1 }, (_, index) => ({ ...mapping, id: `018f47a2-7b3c-7def-8abc-${(123456789000 + index).toString().padStart(12, "0")}` })) })).toThrow(/at most/u);
   });
 
+  it("accepts the maximum mapping count when its Native Messaging envelopes fit", () => {
+    const urlMappings = Array.from({ length: MaximumUrlRepositoryMappings }, (_, index) => ({
+      ...mapping,
+      id: `018f47a2-7b3c-7def-8abc-${(123456789000 + index).toString().padStart(12, "0")}`,
+      chromeOrigin: "https://source.example",
+    }));
+    expect(parseDevHudSettings({ ...settingsWithMappingProfile, urlMappings }).urlMappings).toHaveLength(MaximumUrlRepositoryMappings);
+  });
+
+  it("rejects settings whose projected Native Messaging response envelope is oversized", () => {
+    const path = Array.from({ length: 32 }, (_, index) => `${index.toString().padStart(2, "0")}${"x".repeat(116)}`).join("/");
+    const urlMappings = Array.from({ length: MaximumUrlRepositoryMappings }, (_, index) => ({
+      ...mapping,
+      id: `018f47a2-7b3c-7def-8abc-${(123456789000 + index).toString().padStart(12, "0")}`,
+      pattern: `https://source.example/${path}`,
+      chromeOrigin: "https://source.example",
+    }));
+    const settings = { ...settingsWithMappingProfile, urlMappings };
+    expect(new TextEncoder().encode(JSON.stringify(settings)).byteLength).toBeLessThan(1024 * 1024);
+    expect(() => parseDevHudSettings(settings)).toThrow(/urlMappings.*256 KiB response envelope/u);
+  });
+
   it("requires each URL mapping to reference a configured GitHub profile", () => {
     expect(() => parseDevHudSettings({ ...settingsWithMappingProfile, urlMappings: [{ ...mapping, credentialProfileRef: "missing" }] })).toThrow(/urlMappings\[0\].credentialProfileRef.*configured GitHub profile/u);
   });

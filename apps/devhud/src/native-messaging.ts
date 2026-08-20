@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { CaptureDraft } from "./native-bridge.ts";
 import { resolveLanguage } from "./shell.ts";
 import type { DevHudSettingsV1 } from "./settings-contract.ts";
-import { compareMappings, parseUrlPattern, type ParsedUrlPattern, type UrlRepositoryMapping } from "./url-mapping.ts";
+import { configuredChromeOrigins, type ParsedUrlPattern } from "./url-mapping.ts";
 
 export interface NativeMessagingPairingStatus {
   readonly paired: boolean;
@@ -26,20 +26,8 @@ export interface NativeMessagingConfiguration {
 }
 
 export function extensionConfiguration(settings: DevHudSettingsV1) {
-  const grouped = new Map<string, UrlRepositoryMapping[]>();
-  for (const mapping of settings.urlMappings) {
-    if (mapping.chromeOrigin === null) continue;
-    const current = grouped.get(mapping.chromeOrigin);
-    if (current) current.push(mapping);
-    else grouped.set(mapping.chromeOrigin, [mapping]);
-  }
   return {
-    origins: [...grouped.entries()]
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([origin, mappings]) => ({
-        origin,
-        mappings: [...mappings].sort(compareMappings).map((mapping) => ({ mappingId: mapping.id, matcher: parseUrlPattern(mapping.pattern) })),
-      })),
+    origins: configuredChromeOrigins(settings.urlMappings),
     language: resolveLanguage(settings.appearance.language, navigator.languages),
   } satisfies NativeMessagingConfiguration;
 }

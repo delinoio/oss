@@ -16,6 +16,22 @@ export interface ParsedUrlPattern {
   readonly path: readonly string[];
 }
 
+export function configuredChromeOrigins(mappings: readonly UrlRepositoryMapping[]) {
+  const grouped = new Map<string, UrlRepositoryMapping[]>();
+  for (const mapping of mappings) {
+    if (mapping.chromeOrigin === null) continue;
+    const current = grouped.get(mapping.chromeOrigin);
+    if (current) current.push(mapping);
+    else grouped.set(mapping.chromeOrigin, [mapping]);
+  }
+  return [...grouped.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([origin, configuredMappings]) => ({
+      origin,
+      mappings: [...configuredMappings].sort(compareMappings).map((mapping) => ({ mappingId: mapping.id, matcher: parseUrlPattern(mapping.pattern) })),
+    }));
+}
+
 /** Bound synchronous Settings overlap analysis for every accepted mapping set. */
 export const MaximumUrlMappingPathSegments = 32;
 export const MaximumUrlMappingGlobstarSegments = 8;

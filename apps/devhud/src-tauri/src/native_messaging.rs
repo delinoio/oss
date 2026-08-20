@@ -348,9 +348,9 @@ fn valid_extension_configuration(configuration: &ExtensionConfiguration) -> bool
             !configured.mappings.is_empty()
                 && valid_configured_origin(&configured.origin)
                 && configured.mappings.iter().all(|mapping| {
-                    uuid::Uuid::parse_str(&mapping.mapping_id)
-                        .is_ok_and(|id| id.get_version_num() == 7)
-                        && valid_configured_matcher(&mapping.matcher)
+                    uuid::Uuid::parse_str(&mapping.mapping_id).is_ok_and(|id| {
+                        id.get_version_num() == 7 && id.to_string() == mapping.mapping_id
+                    }) && valid_configured_matcher(&mapping.matcher)
                         && configured_origin_matches(&configured.origin, &mapping.matcher)
                 })
         })
@@ -1198,6 +1198,20 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn configuration_mapping_ids_must_be_canonical_uuid_v7() {
+        let mut configuration = json!({
+            "origins": [configured_origin("https://example.com")],
+            "language": "en"
+        });
+        let uppercase = "018F47A2-7B3C-7DEF-8ABC-1234567890AB";
+        assert!(Uuid::parse_str(uppercase).is_ok_and(|id| id.get_version_num() == 7));
+        configuration["origins"][0]["mappings"][0]["mappingId"] =
+            Value::String(uppercase.to_string());
+
+        assert!(validate_configuration(configuration).is_err());
     }
 
     #[test]
