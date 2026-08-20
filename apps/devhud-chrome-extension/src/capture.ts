@@ -16,7 +16,7 @@ interface InjectedCapturedBrowserContext extends CapturedBrowserContext {
  * This function is serialized by chrome.scripting.executeScript, so every
  * helper and constant it uses must remain inside the function body.
  */
-export function injectedCapture(selectElement: boolean) {
+export function injectedCapture(selectElement: boolean, language: "en" | "ko" = "en") {
   const allowedElements = new Set(["a", "article", "aside", "blockquote", "code", "dd", "details", "div", "dl", "dt", "em", "figcaption", "figure", "footer", "h1", "h2", "h3", "h4", "h5", "h6", "header", "hr", "img", "li", "main", "nav", "ol", "p", "pre", "section", "summary", "table", "tbody", "td", "tfoot", "th", "thead", "tr", "ul"]);
   const allowedAttributes = new Set(["alt", "aria-describedby", "aria-hidden", "aria-label", "aria-labelledby", "role", "title"]);
   const voidElements = new Set(["hr", "img"]);
@@ -166,11 +166,23 @@ export function injectedCapture(selectElement: boolean) {
   };
   if (!selectElement) return Promise.resolve(result(null));
   return new Promise<InjectedCapturedBrowserContext | null>((resolve) => {
+    const selectionText = language === "ko"
+      ? {
+          title: "DevHUD 요소 선택",
+          instructions: "Tab 또는 Shift+Tab으로 요소를 이동하고 Enter 또는 스페이스바로 선택하세요. Esc를 누르면 취소됩니다.",
+          current: (position: number, count: number, name: string) => `${count}개 중 ${position}번째: ${name}`,
+          empty: "선택할 수 있는 요소가 없습니다. Esc를 눌러 취소하세요.",
+        }
+      : {
+          title: "DevHUD element selection",
+          instructions: "Press Tab or Shift+Tab to move between elements, Enter or Space to select, or Escape to cancel.",
+          current: (position: number, count: number, name: string) => `${position} of ${count}: ${name}`,
+          empty: "No selectable elements are available. Press Escape to cancel.",
+        };
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const overlay = document.createElement("iframe");
-    overlay.title = "DevHUD element selection";
-    overlay.tabIndex = -1;
-    overlay.setAttribute("aria-hidden", "true");
+    overlay.title = selectionText.title;
+    overlay.tabIndex = 0;
     for (const [property, value] of Object.entries({
       position: "fixed",
       inset: "0",
@@ -192,9 +204,96 @@ export function injectedCapture(selectElement: boolean) {
     }
     overlayDocument.documentElement.style.setProperty("cursor", "crosshair", "important");
     overlayDocument.documentElement.style.setProperty("min-height", "100%", "important");
+    overlayDocument.documentElement.lang = language;
+    overlayDocument.body.tabIndex = -1;
+    overlayDocument.body.setAttribute("role", "dialog");
+    overlayDocument.body.setAttribute("aria-modal", "true");
+    overlayDocument.body.setAttribute("aria-label", selectionText.title);
     overlayDocument.body.style.setProperty("min-height", "100vh", "important");
     overlayDocument.body.style.setProperty("margin", "0", "important");
     overlayDocument.body.style.setProperty("background", "transparent", "important");
+    const panel = overlayDocument.createElement("div");
+    for (const [property, value] of Object.entries({
+      position: "fixed",
+      inset: "16px auto auto 16px",
+      maxWidth: "min(520px, calc(100vw - 32px))",
+      padding: "12px 16px",
+      borderRadius: "8px",
+      color: "white",
+      background: "rgba(17, 24, 39, 0.94)",
+      font: "14px/1.5 system-ui, sans-serif",
+      pointerEvents: "none",
+      zIndex: "2",
+    })) panel.style.setProperty(property.replace(/[A-Z]/gu, (character) => `-${character.toLowerCase()}`), value, "important");
+    const instructions = overlayDocument.createElement("p");
+    instructions.textContent = selectionText.instructions;
+    instructions.style.setProperty("margin", "0", "important");
+    const status = overlayDocument.createElement("p");
+    status.setAttribute("aria-live", "polite");
+    status.style.setProperty("margin", "8px 0 0", "important");
+    const highlight = overlayDocument.createElement("div");
+    for (const [property, value] of Object.entries({
+      position: "fixed",
+      display: "none",
+      boxSizing: "border-box",
+      border: "3px solid #2563eb",
+      background: "rgba(37, 99, 235, 0.16)",
+      pointerEvents: "none",
+      zIndex: "1",
+    })) highlight.style.setProperty(property.replace(/[A-Z]/gu, (character) => `-${character.toLowerCase()}`), value, "important");
+    panel.append(instructions, status);
+    overlayDocument.body.append(highlight, panel);
+    const selector = Array.from(allowedElements).join(",");
+    // Keep candidate discovery linear. Visibility is checked only for the active
+    // candidate so deeply nested pages do not turn picker startup into an O(n²)
+    // ancestor walk.
+    const candidates = Array.from(document.querySelectorAll(selector));
+    let initialCandidate: Element | null = previousFocus;
+    while (initialCandidate && !isAllowedAndVisible(initialCandidate)) initialCandidate = initialCandidate.parentElement;
+    let candidateIndex = initialCandidate ? candidates.indexOf(initialCandidate) : -1;
+    if (candidateIndex < 0 && candidates.length > 0) candidateIndex = 0;
+    const currentCandidate = () => {
+      const candidate = candidates[candidateIndex];
+      return candidate?.isConnected && isAllowedAndVisible(candidate) ? candidate : null;
+    };
+    const describeCandidate = (candidate: Element) => {
+      const label = ["aria-label", "title", "alt"]
+        .map((name) => candidate.getAttribute(name)?.trim())
+        .find((value) => value);
+      return label ? `${candidate.localName}: ${truncateUtf8(label, 256)}` : candidate.localName;
+    };
+    const updateCandidate = () => {
+      const candidate = currentCandidate();
+      if (!candidate) {
+        highlight.style.setProperty("display", "none", "important");
+        status.textContent = selectionText.empty;
+        return;
+      }
+      const bounds = candidate.getBoundingClientRect();
+      const hasBounds = [bounds.x, bounds.y, bounds.width, bounds.height].every(Number.isFinite)
+        && bounds.width > 0
+        && bounds.height > 0;
+      if (hasBounds) {
+        for (const [property, value] of Object.entries({
+          display: "block",
+          left: `${bounds.x}px`,
+          top: `${bounds.y}px`,
+          width: `${bounds.width}px`,
+          height: `${bounds.height}px`,
+        })) highlight.style.setProperty(property, value, "important");
+      } else {
+        highlight.style.setProperty("display", "none", "important");
+      }
+      status.textContent = selectionText.current(candidateIndex + 1, candidates.length, describeCandidate(candidate));
+    };
+    const moveCandidate = (direction: 1 | -1) => {
+      if (candidates.length === 0) return;
+      for (let attempt = 0; attempt < candidates.length; attempt += 1) {
+        candidateIndex = (candidateIndex + direction + candidates.length) % candidates.length;
+        if (currentCandidate()) break;
+      }
+      updateCandidate();
+    };
     let timeout: ReturnType<typeof setTimeout> | undefined;
     const pointerEvents = ["pointerdown", "pointerup", "mousedown", "mouseup", "touchstart", "touchend", "contextmenu"];
     const suppress = (event: Event) => { event.preventDefault(); event.stopImmediatePropagation(); };
@@ -216,13 +315,23 @@ export function injectedCapture(selectElement: boolean) {
       resolve(captured);
     };
     const key = (event: KeyboardEvent) => {
-      if (event.key === "Escape") { suppress(event); cleanup(); resolve(null); }
+      if (event.key === "Escape") { suppress(event); cleanup(); resolve(null); return; }
+      if (event.key === "Tab") { suppress(event); moveCandidate(event.shiftKey ? -1 : 1); return; }
+      if (event.key === "Enter" || event.key === " ") {
+        suppress(event);
+        const candidate = currentCandidate();
+        if (!candidate) return;
+        const captured = result(candidate);
+        cleanup();
+        resolve(captured);
+      }
     };
     timeout = setTimeout(() => { cleanup(); resolve(null); }, 30_000);
     for (const eventName of pointerEvents) overlayWindow.addEventListener(eventName, suppress, { capture: true, passive: false });
     overlayWindow.addEventListener("click", click, true);
     overlayWindow.addEventListener("keydown", key, true);
     document.addEventListener("keydown", key, true);
-    overlay.focus({ preventScroll: true });
+    updateCandidate();
+    overlayDocument.body.focus({ preventScroll: true });
   });
 }

@@ -195,6 +195,80 @@ describe("injected capture", () => {
     expect(document.querySelector("iframe")).toBeNull();
   });
 
+  it("exposes a localized focusable selection dialog", async () => {
+    const capture = injectedCapture(true, "ko");
+    const overlay = document.querySelector("iframe");
+    const overlayDocument = overlay?.contentDocument;
+    if (!overlay || !overlayDocument) throw new Error("selection overlay was not created");
+
+    expect(overlay.tabIndex).toBe(0);
+    expect(overlay.hasAttribute("aria-hidden")).toBe(false);
+    expect(overlay.title).toBe("DevHUD 요소 선택");
+    expect(overlayDocument.documentElement.lang).toBe("ko");
+    expect(overlayDocument.body.getAttribute("role")).toBe("dialog");
+    expect(overlayDocument.body.getAttribute("aria-modal")).toBe("true");
+    expect(overlayDocument.body.textContent).toContain("Shift+Tab");
+
+    overlay.contentWindow!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+    await expect(capture).resolves.toBeNull();
+  });
+
+  it("cycles eligible elements with Tab and confirms with Enter", async () => {
+    document.body.innerHTML = '<main aria-label="first">first</main><article aria-label="second">second</article>';
+    for (const [index, element] of Array.from(document.body.children).entries()) {
+      Object.defineProperty(element, "getBoundingClientRect", {
+        value: () => ({ x: index * 10, y: index * 10, width: 10, height: 10 }),
+      });
+    }
+    const capture = injectedCapture(true);
+    const overlayWindow = document.querySelector("iframe")?.contentWindow;
+    if (!overlayWindow) throw new Error("selection overlay was not created");
+
+    overlayWindow.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true }));
+    overlayWindow.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+
+    await expect(capture).resolves.toMatchObject({ outerHtml: '<article aria-label="second">second</article>' });
+  });
+
+  it("starts on the previously focused eligible element", async () => {
+    document.body.innerHTML = '<a href="#first">first</a><a href="#second">second</a>';
+    const focused = document.querySelectorAll("a")[1]!;
+    focused.focus();
+    const capture = injectedCapture(true);
+    const overlayWindow = document.querySelector("iframe")?.contentWindow;
+    if (!overlayWindow) throw new Error("selection overlay was not created");
+
+    overlayWindow.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+
+    await expect(capture).resolves.toMatchObject({ outerHtml: '<a>second</a>' });
+  });
+
+  it("wraps backward with Shift+Tab and confirms with Space", async () => {
+    document.body.innerHTML = "<main>first</main><article>second</article>";
+    const capture = injectedCapture(true);
+    const overlayWindow = document.querySelector("iframe")?.contentWindow;
+    if (!overlayWindow) throw new Error("selection overlay was not created");
+
+    overlayWindow.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", shiftKey: true, bubbles: true, cancelable: true }));
+    overlayWindow.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true, cancelable: true }));
+
+    await expect(capture).resolves.toMatchObject({ outerHtml: "<article>second</article>" });
+  });
+
+  it("restores page focus after keyboard cancellation", async () => {
+    document.body.innerHTML = '<a href="#target">target</a>';
+    const trigger = document.querySelector("a") as HTMLAnchorElement;
+    trigger.focus();
+    const capture = injectedCapture(true);
+    const overlayWindow = document.querySelector("iframe")?.contentWindow;
+    if (!overlayWindow) throw new Error("selection overlay was not created");
+
+    overlayWindow.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+
+    await expect(capture).resolves.toBeNull();
+    expect(document.activeElement).toBe(trigger);
+  });
+
   it("cancels an abandoned interactive selection", async () => {
     vi.useFakeTimers();
     const capture = injectedCapture(true);

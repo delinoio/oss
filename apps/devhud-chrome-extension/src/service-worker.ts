@@ -56,7 +56,7 @@ async function capture(selectElement: boolean): Promise<NativeResponse> {
   if (!permissionPattern) return { version: 1, schema_version: 1, request_id: "", ok: false, state: "denied", payload: null };
   const permitted = await chrome.permissions.contains({ origins: [permissionPattern] }).catch(() => false);
   if (!permitted) return { version: 1, schema_version: 1, request_id: "", ok: false, state: "denied", payload: null };
-  const injection = (await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: injectedCapture, args: [selectElement] }))[0];
+  const injection = (await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: injectedCapture, args: [selectElement, configuration.language ?? "en"] }))[0];
   const result = injection?.result;
   if (!result) return { version: 1, schema_version: 1, request_id: "", ok: false, state: "disconnected", payload: null };
   const { liveUrl, ...context } = result;

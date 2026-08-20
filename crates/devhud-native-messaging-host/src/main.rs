@@ -5,9 +5,10 @@ use devhud_native_messaging_host::{
     auth::{handshake_proof, now_unix_millis, random_nonce, sign_request, verify_auth_result},
     configured_extension_id, delete_pairing_secret, endpoint, expected_extension_origin,
     framing::{ByteOrder, read_json, write_json},
+    pairing_is_complete,
     protocol::{
-        AuthResponse, AuthResult, Challenge, IpcRequest, IpcResponse, NativeRequest,
-        NativeResponse, NativeResponseState, validate_deadline, validate_version,
+        AuthResponse, AuthResult, Challenge, IpcMessageType, IpcRequest, IpcResponse,
+        NativeRequest, NativeResponse, NativeResponseState, validate_deadline, validate_version,
     },
     read_pairing_secret, registration,
 };
@@ -82,8 +83,11 @@ fn validate_native_request(request: &NativeRequest, now: i64) -> Result<(), &'st
     validate_deadline(now, request.deadline_unix_ms, now)
 }
 
-fn authenticate(origin: &str, pairing_nonce: Option<String>) -> Result<Session, String> {
-    let mut stream = endpoint::connect().map_err(|_| "disconnected".to_string())?;
+fn authenticate_stream(
+    mut stream: PlatformStream,
+    origin: &str,
+    pairing_nonce: Option<String>,
+) -> Result<Session, String> {
     let challenge: Challenge =
         read_ipc_json(&mut stream).map_err(|_| "authentication-failed".to_string())?;
     validate_version(challenge.version, challenge.schema_version).map_err(str::to_string)?;
@@ -132,6 +136,22 @@ fn authenticate(origin: &str, pairing_nonce: Option<String>) -> Result<Session, 
     })
 }
 
+fn authenticate(origin: &str, pairing_nonce: Option<String>) -> Result<Session, String> {
+    let stream = endpoint::connect().map_err(|_| "disconnected".to_string())?;
+    authenticate_stream(stream, origin, pairing_nonce)
+}
+
+fn pairing_nonce_for_authentication(
+    request: &NativeRequest,
+    retry_after_authenticated_session: bool,
+) -> Option<String> {
+    if retry_after_authenticated_session {
+        None
+    } else {
+        request.pairing_nonce.clone()
+    }
+}
+
 fn read_ipc_json<T: serde::de::DeserializeOwned>(stream: &mut PlatformStream) -> io::Result<T> {
     stream.set_io_deadline(IPC_IO_TIMEOUT);
     read_json(stream, ByteOrder::LittleEndian)
@@ -171,7 +191,7 @@ fn forward(
         version: PROTOCOL_VERSION,
         schema_version: SCHEMA_VERSION,
         request_id: request.request_id.clone(),
-        message_type: request.message_type,
+        message_type: request.message_type.into(),
         issued_at_unix_ms: issued_at,
         deadline_unix_ms: request
             .deadline_unix_ms
@@ -217,7 +237,7 @@ fn run_native(origin: &str) -> io::Result<()> {
             continue;
         }
         if session.is_none() {
-            match authenticate(origin, request.pairing_nonce.clone()) {
+            match authenticate(origin, pairing_nonce_for_authentication(&request, false)) {
                 Ok(authenticated) => session = Some(authenticated),
                 Err(reason) => {
                     warn!(event = "app_connection_unavailable", reason);
@@ -237,7 +257,9 @@ fn run_native(origin: &str) -> io::Result<()> {
         let mut result = forward(session.as_mut().expect("session was established"), &request);
         if result == Err(ForwardFailure::Disconnected) {
             session = None;
-            if let Ok(mut authenticated) = authenticate(origin, request.pairing_nonce.clone()) {
+            if let Ok(mut authenticated) =
+                authenticate(origin, pairing_nonce_for_authentication(&request, true))
+            {
                 result = forward(&mut authenticated, &request);
                 if result != Err(ForwardFailure::Disconnected) {
                     session = Some(authenticated);
@@ -266,6 +288,54 @@ fn run_native(origin: &str) -> io::Result<()> {
             &response(&request, state, payload),
         )?;
     }
+}
+
+fn connect_to_running_app() -> Result<Option<PlatformStream>, String> {
+    match endpoint::connect() {
+        Ok(stream) => Ok(Some(stream)),
+        Err(error)
+            if matches!(
+                error.kind(),
+                io::ErrorKind::NotFound | io::ErrorKind::ConnectionRefused
+            ) =>
+        {
+            Ok(None)
+        }
+        Err(_) => Err("unable to confirm DevHUD IPC availability".to_string()),
+    }
+}
+
+fn revoke_running_app_pairing() -> Result<bool, String> {
+    if !pairing_is_complete()? {
+        return Ok(false);
+    }
+    let Some(stream) = connect_to_running_app()? else {
+        return Ok(false);
+    };
+    let mut session = authenticate_stream(stream, &expected_extension_origin(), None)?;
+    let issued_at = now_unix_millis();
+    let request_id = uuid::Uuid::now_v7().to_string();
+    let mut request = IpcRequest {
+        version: PROTOCOL_VERSION,
+        schema_version: SCHEMA_VERSION,
+        request_id: request_id.clone(),
+        message_type: IpcMessageType::RevokePairing,
+        issued_at_unix_ms: issued_at,
+        deadline_unix_ms: issued_at + REQUEST_DEADLINE_MILLIS,
+        nonce: random_nonce(),
+        payload: serde_json::Value::Null,
+        proof: String::new(),
+    };
+    sign_request(&session.secret, &session.session_id, &mut request);
+    write_ipc_json(&mut session.stream, &request)
+        .map_err(|_| "unable to revoke live Native Messaging sessions".to_string())?;
+    let response: IpcResponse = read_ipc_json(&mut session.stream)
+        .map_err(|_| "unable to confirm Native Messaging session revocation".to_string())?;
+    validate_version(response.version, response.schema_version).map_err(str::to_string)?;
+    if response.request_id != request_id || !response.accepted {
+        return Err("DevHUD rejected Native Messaging session revocation".to_string());
+    }
+    Ok(true)
 }
 
 fn register(args: &[String]) -> Result<(), String> {
@@ -307,6 +377,7 @@ fn register(args: &[String]) -> Result<(), String> {
 }
 
 fn unregister(args: &[String]) -> Result<(), String> {
+    let pairing_was_revoked_by_app = revoke_running_app_pairing()?;
     let manifest_result = args
         .first()
         .map(PathBuf::from)
@@ -325,7 +396,11 @@ fn unregister(args: &[String]) -> Result<(), String> {
             .args(["DELETE", &key, "/f"])
             .status();
     }
-    let pairing_result = delete_pairing_secret();
+    let pairing_result = if pairing_was_revoked_by_app {
+        Ok(())
+    } else {
+        delete_pairing_secret()
+    };
     manifest_result?;
     pairing_result?;
     info!(event = "native_host_unregistered");
@@ -373,6 +448,26 @@ mod tests {
             payload: serde_json::Value::Null,
         };
         assert_eq!(validate_native_request(&request, now), Ok(()));
+    }
+
+    #[test]
+    fn retry_after_successful_authentication_omits_the_consumed_pairing_nonce() {
+        let request = NativeRequest {
+            version: PROTOCOL_VERSION,
+            schema_version: SCHEMA_VERSION,
+            request_id: uuid::Uuid::now_v7().to_string(),
+            message_type: devhud_native_messaging_host::protocol::NativeMessageType::Pair,
+            deadline_unix_ms: now_unix_millis() + REQUEST_DEADLINE_MILLIS,
+            nonce: random_nonce(),
+            pairing_nonce: Some("consumed".to_string()),
+            payload: serde_json::Value::Null,
+        };
+
+        assert_eq!(
+            pairing_nonce_for_authentication(&request, false).as_deref(),
+            Some("consumed")
+        );
+        assert_eq!(pairing_nonce_for_authentication(&request, true), None);
     }
 
     fn ipc_response(accepted: bool, error: Option<&str>) -> IpcResponse {

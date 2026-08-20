@@ -12,6 +12,27 @@ pub enum NativeMessageType {
     Ping,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum IpcMessageType {
+    Pair,
+    Configure,
+    Capture,
+    Ping,
+    RevokePairing,
+}
+
+impl From<NativeMessageType> for IpcMessageType {
+    fn from(value: NativeMessageType) -> Self {
+        match value {
+            NativeMessageType::Pair => Self::Pair,
+            NativeMessageType::Configure => Self::Configure,
+            NativeMessageType::Capture => Self::Capture,
+            NativeMessageType::Ping => Self::Ping,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct NativeRequest {
@@ -121,7 +142,7 @@ pub struct IpcRequest {
     pub schema_version: u16,
     pub request_id: String,
     #[serde(rename = "type")]
-    pub message_type: NativeMessageType,
+    pub message_type: IpcMessageType,
     pub issued_at_unix_ms: i64,
     pub deadline_unix_ms: i64,
     pub nonce: String,
@@ -244,6 +265,43 @@ fn allowed_element(name: &[u8]) -> bool {
             | b"tr"
             | b"ul"
     )
+}
+
+#[cfg(test)]
+mod message_type_tests {
+    use super::*;
+
+    #[test]
+    fn pairing_revocation_is_available_only_on_the_app_ipc_envelope() {
+        let native = serde_json::json!({
+            "version": 1,
+            "schema_version": 1,
+            "request_id": "01900000-0000-7000-8000-000000000000",
+            "type": "revoke-pairing",
+            "deadline_unix_ms": 1,
+            "nonce": "nonce",
+            "payload": null
+        });
+        assert!(serde_json::from_value::<NativeRequest>(native).is_err());
+
+        let ipc = serde_json::json!({
+            "version": 1,
+            "schema_version": 1,
+            "request_id": "01900000-0000-7000-8000-000000000000",
+            "type": "revoke-pairing",
+            "issued_at_unix_ms": 0,
+            "deadline_unix_ms": 1,
+            "nonce": "nonce",
+            "payload": null,
+            "proof": "proof"
+        });
+        assert_eq!(
+            serde_json::from_value::<IpcRequest>(ipc)
+                .expect("IPC revocation request")
+                .message_type,
+            IpcMessageType::RevokePairing
+        );
+    }
 }
 
 fn allowed_attribute(name: &[u8]) -> bool {

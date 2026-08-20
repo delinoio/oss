@@ -145,6 +145,7 @@ describe("capture configuration freshness", () => {
     });
 
     expect(requestTypes).toEqual(["configure", "configure"]);
+    expect(chrome.scripting.executeScript).toHaveBeenCalledWith(expect.objectContaining({ args: [true, "en"] }));
     expect(response.state).toBe("denied");
   });
 });

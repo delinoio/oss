@@ -19,7 +19,7 @@ use devhud_native_messaging_host::{
     framing::{ByteOrder, read_json, write_json},
     generate_pairing_secret, mark_pairing_complete, pairing_is_complete,
     protocol::{
-        AuthResponse, AuthResult, BrowserContext, IpcRequest, IpcResponse, NativeMessageType,
+        AuthResponse, AuthResult, BrowserContext, IpcMessageType, IpcRequest, IpcResponse,
         NativeResponse, NativeResponseState, validate_browser_context, validate_deadline,
         validate_version,
     },
@@ -823,17 +823,18 @@ fn serve_connection(mut stream: impl ConnectionStream) -> Result<(), String> {
             && requests.accept(request.request_id.clone());
         let mut payload = Value::Null;
         let mut error = None;
+        let mut close_after_response = false;
         if accepted {
             match request.message_type {
-                NativeMessageType::Pair => payload = json!({ "paired": true }),
-                NativeMessageType::Configure | NativeMessageType::Ping => {
+                IpcMessageType::Pair => payload = json!({ "paired": true }),
+                IpcMessageType::Configure | IpcMessageType::Ping => {
                     payload = state()
                         .configuration
                         .lock()
                         .unwrap_or_else(std::sync::PoisonError::into_inner)
                         .clone();
                 }
-                NativeMessageType::Capture => {
+                IpcMessageType::Capture => {
                     let configuration = {
                         state()
                             .configuration
@@ -854,6 +855,16 @@ fn serve_connection(mut stream: impl ConnectionStream) -> Result<(), String> {
                         }
                     }
                 }
+                IpcMessageType::RevokePairing => {
+                    close_after_response = true;
+                    match invalidate_pairing() {
+                        Ok(()) => payload = json!({ "revoked": true }),
+                        Err(_) => {
+                            accepted = false;
+                            error = Some("storage-failure".to_string());
+                        }
+                    }
+                }
             }
         } else {
             error = Some("request-rejected".to_string());
@@ -870,6 +881,13 @@ fn serve_connection(mut stream: impl ConnectionStream) -> Result<(), String> {
             },
         )
         .map_err(|_| "write-failed")?;
+        if close_after_response {
+            return if accepted {
+                Ok(())
+            } else {
+                Err("pairing-invalidation-failed".to_string())
+            };
+        }
         if !accepted && !session_generation_is_current(state(), generation) {
             return Err("pairing-invalidated".to_string());
         }
