@@ -4,6 +4,7 @@ import { injectedCapture } from "./capture.js";
 
 const originalShowModal = Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, "showModal");
 const originalClose = Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, "close");
+const originalRangeClientRects = Object.getOwnPropertyDescriptor(Range.prototype, "getClientRects");
 
 async function select(
   element: Element,
@@ -39,6 +40,10 @@ describe("injected capture", () => {
       configurable: true,
       value: vi.fn(function (this: HTMLDialogElement) { this.removeAttribute("open"); }),
     });
+    Object.defineProperty(Range.prototype, "getClientRects", {
+      configurable: true,
+      value: vi.fn(() => [{ x: 1, y: 2, width: 100, height: 20 }]),
+    });
   });
 
   afterEach(() => {
@@ -50,6 +55,8 @@ describe("injected capture", () => {
     else delete (HTMLDialogElement.prototype as Partial<HTMLDialogElement>).showModal;
     if (originalClose) Object.defineProperty(HTMLDialogElement.prototype, "close", originalClose);
     else delete (HTMLDialogElement.prototype as Partial<HTMLDialogElement>).close;
+    if (originalRangeClientRects) Object.defineProperty(Range.prototype, "getClientRects", originalRangeClientRects);
+    else delete (Range.prototype as Partial<Range>).getClientRects;
   });
 
   it.each([
@@ -170,6 +177,53 @@ describe("injected capture", () => {
       if (descriptor) Object.defineProperty(Element.prototype, "checkVisibility", descriptor);
       else delete (Element.prototype as Partial<Element>).checkVisibility;
     }
+  });
+
+  it("excludes text without a positive rendered range", async () => {
+    document.body.innerHTML = "<main><p>secret</p><p>visible</p></main>";
+    vi.mocked(Range.prototype.getClientRects).mockImplementation(function (this: Range) {
+      return (this.startContainer.textContent === "secret" ? [] : [{ x: 1, y: 2, width: 100, height: 20 }]) as unknown as DOMRectList;
+    });
+
+    const result = await select(document.querySelector("main")!);
+
+    expect(result?.outerHtml).toContain("visible");
+    expect(result?.outerHtml).not.toContain("secret");
+  });
+
+  it("excludes fully transparent text", async () => {
+    document.body.innerHTML = '<main><p style="color: transparent">secret</p><p>visible</p></main>';
+
+    const result = await select(document.querySelector("main")!);
+
+    expect(result?.outerHtml).toContain("visible");
+    expect(result?.outerHtml).not.toContain("secret");
+  });
+
+  it("excludes text fully clipped by its own container", async () => {
+    document.body.innerHTML = '<main><p style="overflow: hidden">secret</p><p>visible</p></main>';
+    vi.mocked(Range.prototype.getClientRects).mockImplementation(function (this: Range) {
+      return [this.startContainer.textContent === "secret"
+        ? { x: 200, y: 2, width: 100, height: 20 }
+        : { x: 1, y: 2, width: 100, height: 20 }] as unknown as DOMRectList;
+    });
+
+    const result = await select(document.querySelector("main")!);
+
+    expect(result?.outerHtml).toContain("visible");
+    expect(result?.outerHtml).not.toContain("secret");
+  });
+
+  it("preserves text when any rendered range intersects the visible area", async () => {
+    document.body.innerHTML = "<main>visible</main>";
+    vi.mocked(Range.prototype.getClientRects).mockReturnValue([
+      { x: innerWidth + 1, y: 2, width: 100, height: 20 },
+      { x: -10, y: 2, width: 20, height: 20 },
+    ] as unknown as DOMRectList);
+
+    const result = await select(document.querySelector("main")!);
+
+    expect(result?.outerHtml).toBe("<main>visible</main>");
   });
 
   it("preserves redacted path structure beyond 16 KiB", async () => {
