@@ -8,6 +8,10 @@ use std::sync::{
 use std::time::Duration;
 
 use serde_json::{Value, json};
+#[cfg(desktop)]
+use tauri::Manager;
+#[cfg(desktop)]
+use uuid::Uuid;
 
 #[cfg(desktop)]
 use crate::shortcuts::{NativeKeyEvent, ShortcutAction};
@@ -349,7 +353,7 @@ impl NativeBridgeState {
             "'self'"
         };
         format!(
-            "default-src 'self'; script-src 'self'; style-src {style}; img-src 'self' data:; \
+            "default-src 'self'; script-src 'self'; style-src {style}; img-src 'self' data: realqa: http://realqa.localhost; \
              font-src 'self'; connect-src {}; object-src 'none'; base-uri 'none'; form-action \
              'none'; frame-src 'none'; worker-src 'none'",
             connect.join(" ")
@@ -603,6 +607,20 @@ fn validate_purge_request(request: &Value) -> Result<(), String> {
     }
 }
 
+#[cfg(desktop)]
+fn deletes_capture_drafts_for_purge_scope(scope: Option<&str>) -> bool {
+    matches!(scope, Some("logout"))
+}
+
+#[cfg(desktop)]
+fn purge_capture_drafts_before_secure_store<T>(
+    purge_drafts: impl FnOnce() -> Result<(), crate::capture::CaptureError>,
+    purge_secure_store: impl FnOnce() -> Result<T, String>,
+) -> Result<T, String> {
+    purge_drafts().map_err(|_| "storage-failure".to_string())?;
+    purge_secure_store().map_err(|_| "storage-failure".to_string())
+}
+
 fn runtime_platform() -> &'static str {
     if cfg!(target_os = "ios") {
         "ios"
@@ -670,7 +688,8 @@ fn runtime_snapshot(os_version: &str) -> Value {
                 "secureSettings": true,
                 "notifications": mobile,
                 "storeUpdates": mobile,
-                "widgets": false
+                "widgets": false,
+                "capture": !mobile
             }
         }
     })
@@ -867,6 +886,7 @@ pub fn handle_native_bridge_request(
     }
 }
 
+#[cfg(mobile)]
 #[tauri::command]
 pub async fn native_bridge_v1<R: tauri::Runtime>(
     request: Value,
@@ -886,87 +906,389 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
         clear_diagnostic_logs()?;
         return Ok(json!({ "kind": "ok" }));
     }
-    #[cfg(mobile)]
-    {
-        if operation == "diagnostics.export" {
-            validate_diagnostics_export(&request)?;
-        }
-        if operation.starts_with("secure.") {
-            if operation == "secure.purge" {
-                validate_purge_request(&request)?;
-            } else if operation == "secure.reconcile-github-pats" {
-                validate_github_pat_reconciliation(&request)?;
-            } else {
-                validate_secure_request(&request)?;
-            }
-        }
-        if operation == "lifecycle.open-external" {
-            validate_external_request(&request)?;
-        }
-        if operation == "auth.open-system-browser" {
-            validate_auth_browser_request(&request, &state)?;
-        }
-        if routes_to_mobile_plugin(operation, cfg!(target_os = "android")) {
-            if operation == "secure.purge" && purge_clears_diagnostics(&request) {
-                clear_diagnostic_logs()?;
-            }
-            return crate::native_plugin::request(&app, &request);
+    if operation == "diagnostics.export" {
+        validate_diagnostics_export(&request)?;
+    }
+    if operation.starts_with("secure.") {
+        if operation == "secure.purge" {
+            validate_purge_request(&request)?;
+        } else if operation == "secure.reconcile-github-pats" {
+            validate_github_pat_reconciliation(&request)?;
+        } else {
+            validate_secure_request(&request)?;
         }
     }
-    #[cfg(desktop)]
-    {
-        if operation == "diagnostics.export" {
-            let export_state = state.inner().clone();
-            let reservation = export_state.begin_diagnostics_export()?;
-            return tauri::async_runtime::spawn_blocking(move || {
-                export_diagnostics(&request, &reservation)
-            })
-            .await
-            .map_err(|_| "platform-failure".to_string())?;
+    if operation == "lifecycle.open-external" {
+        validate_external_request(&request)?;
+    }
+    if operation == "auth.open-system-browser" {
+        validate_auth_browser_request(&request, &state)?;
+    }
+    if routes_to_mobile_plugin(operation, cfg!(target_os = "android")) {
+        if operation == "secure.purge" && purge_clears_diagnostics(&request) {
+            clear_diagnostic_logs()?;
         }
-        if operation.starts_with("secure.") {
-            if operation == "secure.purge" {
-                validate_purge_request(&request)?;
-            } else if operation == "secure.reconcile-github-pats" {
-                validate_github_pat_reconciliation(&request)?;
-            } else {
-                validate_secure_request(&request)?;
-            }
-            if operation == "secure.purge" && purge_clears_diagnostics(&request) {
-                return state.with_invalidated_diagnostics_exports(|| {
-                    clear_diagnostic_logs()?;
-                    crate::secure_store::handle(&request)
-                });
-            }
-            return crate::secure_store::handle(&request);
-        }
-        if operation == "auth.open-system-browser" {
-            validate_auth_browser_request(&request, &state)?;
-            let destination = request
-                .get("url")
-                .and_then(Value::as_str)
-                .ok_or("invalid-argument")?;
-            crate::open_system_browser(destination.to_string())
-                .await
-                .map_err(|_| "platform-failure")?;
-            return Ok(json!({ "kind": "ok" }));
-        }
-        let _ = app;
+        return crate::native_plugin::request(&app, &request);
     }
     handle_native_bridge_request(&request, &state)
 }
 
+#[cfg(desktop)]
+#[tauri::command]
+pub async fn native_bridge_v1<R: tauri::Runtime>(
+    request: Value,
+    state: tauri::State<'_, NativeBridgeState>,
+    capture: tauri::State<'_, std::sync::Arc<crate::capture::CaptureService>>,
+    app: tauri::AppHandle<R>,
+) -> Result<Value, String> {
+    let operation = request
+        .get("operation")
+        .and_then(Value::as_str)
+        .ok_or("invalid-argument")?;
+    if operation.starts_with("capture.") {
+        return handle_capture_request(&request, capture.inner().clone(), &app).await;
+    }
+    if operation == "diagnostics.clear" {
+        clear_diagnostic_logs()?;
+        return Ok(json!({ "kind": "ok" }));
+    }
+    if operation == "diagnostics.export" {
+        let export_state = state.inner().clone();
+        let reservation = export_state.begin_diagnostics_export()?;
+        return tauri::async_runtime::spawn_blocking(move || {
+            export_diagnostics(&request, &reservation)
+        })
+        .await
+        .map_err(|_| "platform-failure".to_string())?;
+    }
+    if operation.starts_with("secure.") {
+        if operation == "secure.purge" {
+            validate_purge_request(&request)?;
+        } else if operation == "secure.reconcile-github-pats" {
+            validate_github_pat_reconciliation(&request)?;
+        } else {
+            validate_secure_request(&request)?;
+        }
+        let purge_scope = request.get("scope").and_then(Value::as_str);
+        let purge_secure_store = || {
+            if operation == "secure.purge" && purge_clears_diagnostics(&request) {
+                state.with_invalidated_diagnostics_exports(|| {
+                    clear_diagnostic_logs()?;
+                    crate::secure_store::handle(&request)
+                })
+            } else {
+                crate::secure_store::handle(&request)
+            }
+        };
+        if operation == "secure.purge" && matches!(purge_scope, Some("logout" | "account-deletion"))
+        {
+            let purge = capture
+                .begin_purge()
+                .map_err(|error| error.code().to_string())?;
+            let purge_result = if deletes_capture_drafts_for_purge_scope(purge_scope) {
+                purge_capture_drafts_before_secure_store(
+                    || purge.purge_drafts(),
+                    purge_secure_store,
+                )
+            } else {
+                purge_secure_store().map_err(|_| "storage-failure".to_string())
+            };
+            drop(purge);
+            return purge_result;
+        }
+        return purge_secure_store();
+    }
+    if operation == "auth.open-system-browser" {
+        validate_auth_browser_request(&request, &state)?;
+        let destination = request
+            .get("url")
+            .and_then(Value::as_str)
+            .ok_or("invalid-argument")?;
+        crate::open_system_browser(destination.to_string())
+            .await
+            .map_err(|_| "platform-failure")?;
+        return Ok(json!({ "kind": "ok" }));
+    }
+    let _ = app;
+    handle_native_bridge_request(&request, &state)
+}
+
+#[cfg(desktop)]
+fn should_restore_capture_window(
+    window_hidden: bool,
+    window_was_visible: Option<bool>,
+    window_was_minimized: Option<bool>,
+) -> bool {
+    window_hidden || window_was_visible != Some(true) || window_was_minimized != Some(false)
+}
+
+#[cfg(desktop)]
+async fn handle_capture_request(
+    request: &Value,
+    capture: std::sync::Arc<crate::capture::CaptureService>,
+    app: &tauri::AppHandle<impl tauri::Runtime>,
+) -> Result<Value, String> {
+    use crate::capture::{CaptureAction, CaptureError, CaptureOptions, EditorCommand};
+
+    fn capture_id(request: &Value, key: &str) -> Result<Uuid, String> {
+        request
+            .get(key)
+            .and_then(Value::as_str)
+            .and_then(|value| Uuid::parse_str(value).ok())
+            .ok_or_else(|| "invalid-argument".to_string())
+    }
+    fn revision(request: &Value) -> Result<u64, String> {
+        request
+            .get("expectedRevision")
+            .and_then(Value::as_u64)
+            .ok_or_else(|| "invalid-argument".to_string())
+    }
+    fn failure(error: crate::capture::CaptureError) -> String {
+        error.code().to_string()
+    }
+    fn exact_keys(request: &Value, allowed: &[&str]) -> Result<(), String> {
+        let object = request.as_object().ok_or("invalid-argument")?;
+        if object.keys().all(|key| allowed.contains(&key.as_str())) {
+            Ok(())
+        } else {
+            Err("invalid-argument".to_string())
+        }
+    }
+
+    match request.get("operation").and_then(Value::as_str) {
+        Some("capture.status") => {
+            exact_keys(request, &["operation"])?;
+            let topology = capture.topology().map_err(failure)?;
+            Ok(json!({
+                "kind": "capture-status",
+                "available": true,
+                "platform": capture.adapter_platform(),
+                "shadowRemovalSupported": capture.shadow_removal_supported(),
+                "topology": topology,
+            }))
+        }
+        Some("capture.start") => {
+            exact_keys(request, &["operation", "actionId", "options"])?;
+            let action_id = request
+                .get("actionId")
+                .and_then(Value::as_str)
+                .ok_or("invalid-argument")?;
+            let action = CaptureAction::from_action_id(action_id).map_err(failure)?;
+            let options: CaptureOptions = serde_json::from_value(
+                request.get("options").cloned().unwrap_or_else(|| json!({})),
+            )
+            .map_err(|_| "invalid-argument")?;
+            let epoch = capture.begin_capture().map_err(failure)?;
+            let capture_window = app
+                .get_webview_window("main")
+                .ok_or_else(|| "platform-failure".to_string())?;
+            let window_was_visible = match capture_window.is_visible() {
+                Ok(visible) => Some(visible),
+                Err(_) => {
+                    tracing::warn!(
+                        event = "capture_window_state_query_failed",
+                        action = action_id,
+                        platform = capture.adapter_platform(),
+                        stage = "visibility",
+                        error_code = CaptureError::PlatformFailure.code(),
+                    );
+                    None
+                }
+            };
+            let window_was_minimized = match capture_window.is_minimized() {
+                Ok(minimized) => Some(minimized),
+                Err(_) => {
+                    tracing::warn!(
+                        event = "capture_window_state_query_failed",
+                        action = action_id,
+                        platform = capture.adapter_platform(),
+                        stage = "minimized",
+                        error_code = CaptureError::PlatformFailure.code(),
+                    );
+                    None
+                }
+            };
+            let window_hidden = Arc::new(AtomicBool::new(false));
+            let capture_task = capture.clone();
+            let worker_window = capture_window.clone();
+            let worker_window_hidden = window_hidden.clone();
+            let capture_result = tauri::async_runtime::spawn_blocking(move || {
+                capture_task.capture_with_epoch_after_delay(action, options, epoch, move || {
+                    if worker_window
+                        .is_focused()
+                        .map_err(|_| CaptureError::PlatformFailure)?
+                    {
+                        worker_window
+                            .hide()
+                            .map_err(|_| CaptureError::PlatformFailure)?;
+                        worker_window_hidden.store(true, Ordering::Release);
+                        std::thread::sleep(Duration::from_millis(100));
+                    }
+                    Ok(())
+                })
+            })
+            .await
+            .map_err(|_| "platform-failure".to_string())
+            .and_then(|result| result.map_err(failure));
+            if should_restore_capture_window(
+                window_hidden.load(Ordering::Acquire),
+                window_was_visible,
+                window_was_minimized,
+            ) {
+                if capture_window.unminimize().is_err() {
+                    tracing::error!(
+                        event = "capture_window_restore_failed",
+                        stage = "unminimize"
+                    );
+                }
+                if capture_window.show().is_err() {
+                    tracing::error!(event = "capture_window_restore_failed", stage = "show");
+                }
+                if capture_window.set_focus().is_err() {
+                    tracing::error!(event = "capture_window_restore_failed", stage = "focus");
+                }
+            }
+            let draft = match capture_result {
+                Ok(draft) => draft,
+                Err(error_code) => {
+                    tracing::error!(
+                        event = "capture_failed",
+                        action = action_id,
+                        platform = capture.adapter_platform(),
+                        error_code = %error_code,
+                    );
+                    return Err(error_code);
+                }
+            };
+            Ok(json!({ "kind": "capture-draft", "draft": draft }))
+        }
+        Some("capture.list-drafts") => {
+            exact_keys(request, &["operation"])?;
+            let list = capture
+                .with_draft_store(|store| store.list())
+                .map_err(failure)?;
+            Ok(json!({
+                "kind": "capture-drafts",
+                "drafts": list.drafts,
+                "unreadableDraftIds": list.unreadable_draft_ids,
+            }))
+        }
+        Some("capture.open-draft") => {
+            exact_keys(request, &["operation", "draftId"])?;
+            let draft_id = capture_id(request, "draftId")?;
+            Ok(json!({
+                "kind": "capture-draft",
+                "draft": capture.with_draft_store(|store| store.open(draft_id)).map_err(failure)?,
+            }))
+        }
+        Some("capture.editor.apply") => {
+            exact_keys(
+                request,
+                &["operation", "draftId", "expectedRevision", "command"],
+            )?;
+            let command: EditorCommand =
+                serde_json::from_value(request.get("command").cloned().ok_or("invalid-argument")?)
+                    .map_err(|_| "invalid-argument")?;
+            let draft_id = capture_id(request, "draftId")?;
+            let expected_revision = revision(request)?;
+            Ok(json!({
+                "kind": "capture-draft",
+                "draft": capture.with_draft_store(|store| store.apply(draft_id, expected_revision, command)).map_err(failure)?,
+            }))
+        }
+        Some("capture.editor.undo") => {
+            exact_keys(request, &["operation", "draftId", "expectedRevision"])?;
+            let draft_id = capture_id(request, "draftId")?;
+            let expected_revision = revision(request)?;
+            Ok(json!({
+                "kind": "capture-draft",
+                "draft": capture.with_draft_store(|store| store.undo(draft_id, expected_revision)).map_err(failure)?,
+            }))
+        }
+        Some("capture.editor.redo") => {
+            exact_keys(request, &["operation", "draftId", "expectedRevision"])?;
+            let draft_id = capture_id(request, "draftId")?;
+            let expected_revision = revision(request)?;
+            Ok(json!({
+                "kind": "capture-draft",
+                "draft": capture.with_draft_store(|store| store.redo(draft_id, expected_revision)).map_err(failure)?,
+            }))
+        }
+        Some("capture.flatten") => {
+            exact_keys(request, &["operation", "draftId", "expectedRevision"])?;
+            let draft_id = capture_id(request, "draftId")?;
+            let expected_revision = revision(request)?;
+            let flatten_capture = capture.clone();
+            let images = tauri::async_runtime::spawn_blocking(move || {
+                flatten_capture.with_draft_store(|store| store.flatten(draft_id, expected_revision))
+            })
+            .await
+            .map_err(|_| "platform-failure".to_string())?
+            .map_err(failure)?;
+            Ok(json!({
+                "kind": "capture-flattened",
+                "images": images,
+            }))
+        }
+        Some("capture.delete-draft" | "capture.confirm-issue-created") => {
+            exact_keys(request, &["operation", "draftId"])?;
+            let draft_id = capture_id(request, "draftId")?;
+            capture
+                .with_draft_store(|store| store.delete(draft_id))
+                .map_err(failure)?;
+            Ok(json!({ "kind": "ok" }))
+        }
+        Some("capture.cancel") => {
+            exact_keys(request, &["operation"])?;
+            capture.cancel();
+            Ok(json!({ "kind": "ok" }))
+        }
+        _ => Err("invalid-argument".to_string()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::Ordering;
+    use std::sync::atomic::{AtomicBool, Ordering};
 
-    use serde_json::json;
+    use serde_json::{Value, json};
 
     use super::{
         NativeBridgeState, handle_native_bridge_request, ios_runtime_os_version, is_auth_callback,
         purge_clears_diagnostics, routes_to_mobile_plugin, runtime_os_version, shortcut_status,
         validate_auth_browser_request, validate_diagnostics_export,
     };
+    #[cfg(desktop)]
+    use super::{
+        deletes_capture_drafts_for_purge_scope, purge_capture_drafts_before_secure_store,
+        should_restore_capture_window,
+    };
+
+    #[cfg(desktop)]
+    #[test]
+    fn only_logout_deletes_capture_drafts_during_secure_purge() {
+        assert!(deletes_capture_drafts_for_purge_scope(Some("logout")));
+        assert!(!deletes_capture_drafts_for_purge_scope(Some(
+            "account-deletion"
+        )));
+        assert!(!deletes_capture_drafts_for_purge_scope(Some("api-change")));
+    }
+
+    #[cfg(desktop)]
+    #[test]
+    fn failed_capture_draft_purge_skips_secure_store_purge() {
+        let secure_store_called = AtomicBool::new(false);
+        let result = purge_capture_drafts_before_secure_store::<Value>(
+            || Err(crate::capture::CaptureError::StorageFailure),
+            || {
+                secure_store_called.store(true, Ordering::SeqCst);
+                Ok(json!({ "kind": "ok" }))
+            },
+        );
+
+        assert_eq!(result.unwrap_err(), "storage-failure");
+        assert!(!secure_store_called.load(Ordering::SeqCst));
+    }
 
     #[test]
     fn routes_pending_auth_callbacks_only_to_the_android_plugin() {
@@ -1104,6 +1426,25 @@ mod tests {
         ] {
             assert!(!is_auth_callback(rejected), "accepted {rejected}");
         }
+    }
+
+    #[cfg(desktop)]
+    #[test]
+    fn capture_window_restore_treats_unknown_state_as_not_safely_visible() {
+        assert!(!should_restore_capture_window(
+            false,
+            Some(true),
+            Some(false)
+        ));
+        assert!(should_restore_capture_window(true, Some(true), Some(false)));
+        assert!(should_restore_capture_window(
+            false,
+            Some(false),
+            Some(false)
+        ));
+        assert!(should_restore_capture_window(false, Some(true), Some(true)));
+        assert!(should_restore_capture_window(false, None, Some(false)));
+        assert!(should_restore_capture_window(false, Some(true), None));
     }
 
     #[test]

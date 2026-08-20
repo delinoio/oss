@@ -60,6 +60,11 @@ test("localizes recoverable app-store opening failures", () => {
   assert.match(messages.ko.storeOpenFailed, /앱 스토어/u);
 });
 
+test("localizes recoverable encrypted-draft deletion failures", () => {
+  assert.match(messages.en.realqaDeleteFailed, /draft deletion/u);
+  assert.match(messages.ko.realqaDeleteFailed, /초안 삭제/u);
+});
+
 test("uses the first supported platform language", () => {
   assert.equal(selectSupportedLanguage(["fr-FR", "ko-KR", "en-US"]), "ko");
   assert.equal(selectSupportedLanguage(["fr-FR", "en-US", "ko-KR"]), "en");

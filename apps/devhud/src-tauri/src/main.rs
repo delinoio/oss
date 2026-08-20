@@ -1,6 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod bridge;
+#[cfg(desktop)]
+mod capture;
 mod native_plugin;
 mod platform;
 mod resources;
@@ -843,13 +845,63 @@ fn main() {
     };
     let bridge_state = bridge::NativeBridgeState::default();
     let session_network_policy = bridge_state.clone();
+    let capture_service = Arc::new(capture::CaptureService::platform_default().unwrap_or_else(
+        |error| {
+            error!(event = "capture_initialization_failed", code = error.code());
+            std::process::exit(78);
+        },
+    ));
+    let capture_recovery = capture_service.clone();
+    let capture_assets = capture_service.clone();
 
     let mut builder = tauri::Builder::<tauri::Cef>::default()
         .plugin(tauri_plugin_single_instance::init(|_, _, _| {}))
         .plugin(tauri_plugin_deep_link::init())
         .plugin(native_plugin::init())
         .manage(bridge_state)
+        .manage(capture_service)
         .manage(frontend_readiness.clone())
+        .register_uri_scheme_protocol("realqa", move |_context, request| {
+            let parts = request
+                .uri()
+                .path()
+                .split('/')
+                .filter(|part| !part.is_empty())
+                .collect::<Vec<_>>();
+            let response = if parts.len() == 4 {
+                let draft_id = uuid::Uuid::parse_str(parts[0]);
+                let image_id = uuid::Uuid::parse_str(parts[1]);
+                let revision = parts[3].parse::<u64>();
+                let flattened = match parts[2] {
+                    "source" => Some(false),
+                    "flattened" => Some(true),
+                    _ => None,
+                };
+                match (draft_id, image_id, flattened, revision) {
+                    (Ok(draft_id), Ok(image_id), Some(flattened), Ok(revision)) => capture_assets
+                        .with_draft_store(|store| {
+                            store.asset(draft_id, image_id, flattened, revision)
+                        }),
+                    _ => Err(capture::CaptureError::InvalidArgument),
+                }
+            } else {
+                Err(capture::CaptureError::InvalidArgument)
+            };
+            match response {
+                Ok(bytes) => tauri::http::Response::builder()
+                    .status(200)
+                    .header("Content-Type", "image/png")
+                    .header("Cache-Control", "no-store")
+                    .header("X-Content-Type-Options", "nosniff")
+                    .body(bytes)
+                    .expect("valid RealQA asset response"),
+                Err(_) => tauri::http::Response::builder()
+                    .status(404)
+                    .header("Cache-Control", "no-store")
+                    .body(Vec::new())
+                    .expect("valid RealQA asset error response"),
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             bridge::native_bridge_v1,
             frontend_ready,
@@ -886,6 +938,9 @@ fn main() {
     let result = builder
         .setup(move |app| {
             let readiness = frontend_readiness.clone();
+            if let Err(error) = capture_recovery.with_draft_store(|store| store.recover()) {
+                error!(event = "capture_recovery_failed", code = error.code());
+            }
             #[cfg(any(target_os = "linux", all(debug_assertions, target_os = "windows")))]
             app.deep_link().register_all()?;
             if let Some(urls) = app.deep_link().get_current()? {

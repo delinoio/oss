@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { DiagnosticArchitecture, DiagnosticComponent, DiagnosticPlatform, DiagnosticSeverity } from "@delinoio/devhud-api-client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -466,5 +466,73 @@ describe("native App state", () => {
     fireEvent.click(screen.getByRole("button", { name: messages.en.updatePolicy }));
     await waitFor(() => expect(screen.queryByText(messages.en.storeOpenFailed)).toBeNull());
     expect(openAttempts).toBe(2);
+  });
+
+  it("dispatches a registered desktop capture shortcut into the RealQA selection mode", async () => {
+    const runtime: RuntimeSnapshot = { ...desktopRuntime, capabilities: { ...desktopRuntime.capabilities, capture: true } };
+    let receive: ((event: NativeBridgeEventV1) => void) | undefined;
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "windows", shadowRemovalSupported: false, topology: [] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [], unreadableDraftIds: [] };
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    const bridge: NativeBridgeV1 = {
+      request,
+      async listen(listener) { receive = listener; return () => {}; },
+    };
+
+    render(<App bridge={bridge} initialRuntime={runtime} />);
+    await waitFor(() => expect(receive).toBeTypeOf("function"));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.openPalette }));
+    expect(screen.getByRole("dialog", { name: messages.en.commandPalette })).toBeTruthy();
+    await act(async () => receive?.({ version: 1, kind: "shortcut-triggered", action: "realqa.capture.selection" }));
+
+    expect(await screen.findByRole("dialog", { name: messages.en.captureSelection })).toBeTruthy();
+    expect(screen.queryByRole("dialog", { name: messages.en.commandPalette })).toBeNull();
+    expect(request).toHaveBeenCalledWith({ operation: "capture.status" });
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.home }));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.realqa }));
+    await screen.findByRole("heading", { name: messages.en.realqaDrafts });
+    expect(screen.queryByRole("dialog", { name: messages.en.captureSelection })).toBeNull();
+  });
+
+  it("keeps the palette modal while a capture completes and preserves its confirmation across navigation", async () => {
+    const runtime: RuntimeSnapshot = { ...desktopRuntime, capabilities: { ...desktopRuntime.capabilities, capture: true } };
+    let resolveCapture: ((response: NativeBridgeResponseV1) => void) | undefined;
+    const capturedDraft = {
+      id: "019b0000-0000-7000-8000-000000000001",
+      revision: 1,
+      createdAt: 1_700_000_000,
+      updatedAt: 1_700_000_000,
+      expiresAt: 1_702_592_000,
+      imageCount: 1,
+      images: [{ id: "019b0000-0000-7000-8000-000000000002", width: 800, height: 600, previewUrl: "realqa://asset/draft/image/source/1", crop: null, layers: [] }],
+      canUndo: false,
+      canRedo: false,
+    };
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "windows", shadowRemovalSupported: false, topology: [] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [], unreadableDraftIds: [] };
+      if (value.operation === "capture.start") return new Promise((resolve) => { resolveCapture = resolve; });
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+
+    render(<App bridge={bridgeWith(request)} initialRuntime={runtime} />);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.realqa }));
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.captureDisplay }));
+    await waitFor(() => expect(request.mock.calls.some(([value]) => value.operation === "capture.start")).toBe(true));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.openPalette }));
+    const palette = screen.getByRole("dialog", { name: messages.en.commandPalette });
+    expect(palette).toBeTruthy();
+
+    await act(async () => { resolveCapture?.({ kind: "capture-draft", draft: capturedDraft }); });
+    expect(screen.queryByRole("complementary", { name: messages.en.floatingPreview })).toBeNull();
+    fireEvent.click(within(palette).getByRole("button", { name: messages.en.close }));
+    expect(await screen.findByRole("complementary", { name: messages.en.floatingPreview })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: messages.en.home }));
+    expect(screen.getByRole("complementary", { name: messages.en.floatingPreview })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: messages.en.floatingPreviewOpen }));
+    expect(await screen.findByRole("heading", { name: messages.en.editorTitle })).toBeTruthy();
   });
 });

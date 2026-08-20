@@ -41,6 +41,15 @@ export const NativeBridgeErrorCode = {
   Unsupported: "unsupported",
   StorageFailure: "storage-failure",
   PlatformFailure: "platform-failure",
+  ProtectedContent: "protected-content",
+  TopologyChanged: "topology-changed",
+  NoDisplay: "no-display",
+  NoWindow: "no-window",
+  Cancelled: "cancelled",
+  QuotaExhausted: "quota-exhausted",
+  ImageLimit: "image-limit",
+  NotFound: "not-found",
+  RevisionConflict: "revision-conflict",
 } as const;
 export type NativeBridgeErrorCode = (typeof NativeBridgeErrorCode)[keyof typeof NativeBridgeErrorCode];
 
@@ -60,8 +69,34 @@ export interface RuntimeSnapshot {
     readonly notifications: boolean;
     readonly storeUpdates: boolean;
     readonly widgets: false;
+    readonly capture?: boolean;
   };
 }
+
+export interface CaptureRect { readonly x: number; readonly y: number; readonly width: number; readonly height: number }
+export interface CapturePoint { readonly x: number; readonly y: number }
+export interface CaptureDisplay { readonly id: string; readonly name: string; readonly logicalBounds: CaptureRect; readonly pixelWidth: number; readonly pixelHeight: number; readonly scale: number; readonly primary: boolean }
+export interface CaptureOptions { readonly includePointer?: boolean; readonly removeShadow?: boolean; readonly delaySeconds?: 0 | 5 | 10; readonly selection?: CaptureRect; readonly selectionWindow?: boolean; readonly appendToDraftId?: string }
+
+export type CaptureEditorLayer =
+  | { readonly tool: "arrow"; readonly id: string; readonly start: CapturePoint; readonly end: CapturePoint; readonly color: string; readonly width: number }
+  | { readonly tool: "rectangle"; readonly id: string; readonly bounds: CaptureRect; readonly color: string; readonly width: number }
+  | { readonly tool: "drawing"; readonly id: string; readonly points: readonly CapturePoint[]; readonly color: string; readonly width: number }
+  | { readonly tool: "text"; readonly id: string; readonly origin: CapturePoint; readonly text: string; readonly color: string; readonly size: number }
+  | { readonly tool: "blur"; readonly id: string; readonly bounds: CaptureRect; readonly radius: number }
+  | { readonly tool: "redaction"; readonly id: string; readonly bounds: CaptureRect };
+
+export type CaptureEditorCommand =
+  | { readonly kind: "set-crop"; readonly imageId: string; readonly crop: CaptureRect | null }
+  | { readonly kind: "add-layer"; readonly imageId: string; readonly layer: CaptureEditorLayer }
+  | { readonly kind: "remove-layer"; readonly imageId: string; readonly layerId: string }
+  | { readonly kind: "move-layer"; readonly imageId: string; readonly layerId: string; readonly toIndex: number }
+  | { readonly kind: "remove-image"; readonly imageId: string }
+  | { readonly kind: "move-image"; readonly imageId: string; readonly toIndex: number };
+
+export interface CaptureDraftImage { readonly id: string; readonly width: number; readonly height: number; readonly previewUrl: string; readonly layers: readonly CaptureEditorLayer[]; readonly crop: CaptureRect | null }
+export interface CaptureDraft { readonly id: string; readonly revision: number; readonly createdAt: number; readonly updatedAt: number; readonly expiresAt: number; readonly imageCount: number; readonly images: readonly CaptureDraftImage[]; readonly canUndo: boolean; readonly canRedo: boolean }
+export interface FlattenedCaptureImage { readonly imageId: string; readonly width: number; readonly height: number; readonly bytes: number; readonly sha256: string; readonly assetUrl: string; readonly downscaled: boolean }
 
 export type SecureSettingRef =
   | { readonly kind: typeof SecureSettingKind.GithubPat; readonly profileId: string; readonly scopeId: string }
@@ -123,7 +158,15 @@ export type NativeBridgeRequestV1 = NativeBridgeRequestV1Base
   | { readonly operation: "shortcuts.stage"; readonly bindings: DesktopShortcutBindings }
   | { readonly operation: "shortcuts.commit"; readonly bindings: DesktopShortcutBindings }
   | { readonly operation: "shortcuts.rollback" }
-  | { readonly operation: "shortcuts.suspend" };
+  | { readonly operation: "shortcuts.suspend" }
+  | { readonly operation: "capture.status" }
+  | { readonly operation: "capture.start"; readonly actionId: ShortcutActionId; readonly options?: CaptureOptions }
+  | { readonly operation: "capture.cancel" }
+  | { readonly operation: "capture.list-drafts" }
+  | { readonly operation: "capture.open-draft"; readonly draftId: string }
+  | { readonly operation: "capture.editor.apply"; readonly draftId: string; readonly expectedRevision: number; readonly command: CaptureEditorCommand }
+  | { readonly operation: "capture.editor.undo" | "capture.editor.redo" | "capture.flatten"; readonly draftId: string; readonly expectedRevision: number }
+  | { readonly operation: "capture.delete-draft" | "capture.confirm-issue-created"; readonly draftId: string };
 
 export type NativeBridgeResponseV1 =
   | { readonly kind: "runtime"; readonly snapshot: RuntimeSnapshot }
@@ -133,6 +176,10 @@ export type NativeBridgeResponseV1 =
   | { readonly kind: "notification-permission"; readonly permission: NotificationPermission }
   | { readonly kind: "update-status"; readonly store: "app-store" | "play-store"; readonly installedVersion: string; readonly configured: boolean }
   | { readonly kind: "shortcut-status"; readonly platform: NativeShortcutPlatform; readonly permission: NativeShortcutPermission; readonly bindings: DesktopShortcutBindings; readonly error: ShortcutValidationCode | null }
+  | { readonly kind: "capture-status"; readonly available: boolean; readonly platform: "macos" | "windows" | "x11" | "unsupported"; readonly shadowRemovalSupported: boolean; readonly topology: readonly CaptureDisplay[] }
+  | { readonly kind: "capture-drafts"; readonly drafts: readonly CaptureDraft[]; readonly unreadableDraftIds: readonly string[] }
+  | { readonly kind: "capture-draft"; readonly draft: CaptureDraft }
+  | { readonly kind: "capture-flattened"; readonly images: readonly FlattenedCaptureImage[] }
   | { readonly kind: "unsupported"; readonly feature: "widgets" }
   | { readonly kind: "diagnostics-export"; readonly outcome: "saved" | "cancelled" | "initiated" }
   | { readonly kind: "ok" };
@@ -161,6 +208,7 @@ declare global {
 }
 
 const profilePattern = /^[a-zA-Z0-9._-]{1,128}$/u;
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const secretLimit = 64 * 1024;
 const diagnosticsExportLimit = 1024 * 1024;
 const diagnosticsFileName = /^devhud-diagnostics-[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.json$/u;
@@ -191,6 +239,28 @@ export function validateSecretValue(value: string) {
 
 export function validateGitHubPatReconciliation(scopeId: string, profileIds: readonly string[]) {
   if (!profilePattern.test(scopeId) || profileIds.length > 25 || new Set(profileIds).size !== profileIds.length || profileIds.some((profileId) => !profilePattern.test(profileId))) {
+    throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument);
+  }
+}
+
+function validCaptureRect(rect: CaptureRect) {
+  return [rect.x, rect.y, rect.width, rect.height].every(Number.isFinite) && rect.width > 0 && rect.height > 0;
+}
+
+export function validateCaptureRequest(request: Extract<NativeBridgeRequestV1, { readonly operation: `capture.${string}` }>) {
+  if ("draftId" in request && !uuidPattern.test(request.draftId)) throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument);
+  if ("expectedRevision" in request && (!Number.isSafeInteger(request.expectedRevision) || request.expectedRevision < 0)) throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument);
+  if (request.operation === "capture.start") {
+    const actions: readonly ShortcutActionId[] = ["realqa.capture.display", "realqa.capture.active-window", "realqa.capture.all-displays", "realqa.capture.selection", "realqa.capture.toolbar"];
+    const options = request.options;
+    if (!actions.includes(request.actionId)
+      || (options?.delaySeconds !== undefined && !([0, 5, 10] as const).includes(options.delaySeconds))
+      || (options?.selection !== undefined && !validCaptureRect(options.selection))
+      || (options?.appendToDraftId !== undefined && !uuidPattern.test(options.appendToDraftId))) {
+      throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument);
+    }
+  }
+  if (request.operation === "capture.editor.apply" && new TextEncoder().encode(JSON.stringify(request.command)).byteLength > 1024 * 1024) {
     throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument);
   }
 }
@@ -263,7 +333,7 @@ async function browserSnapshot(): Promise<RuntimeSnapshot> {
     tauriRevision: "",
     cefRevision: "",
     lifecycle: document.visibilityState === "hidden" ? LifecycleState.Background : LifecycleState.Active,
-    capabilities: { secureSettings: false, notifications: false, storeUpdates: false, widgets: false },
+    capabilities: { secureSettings: false, notifications: false, storeUpdates: false, widgets: false, capture: false },
   };
 }
 
@@ -281,6 +351,7 @@ export const nativeBridge: NativeBridgeV1 = {
     if (request.operation === "auth.open-system-browser") validateAuthenticationBrowserRequest(request);
     if (request.operation === "diagnostics.export") validateDiagnosticsExport(request);
     if (request.operation === "shortcuts.apply" || request.operation === "shortcuts.stage" || request.operation === "shortcuts.commit") parseDesktopShortcutBindings(request.bindings);
+    if (request.operation.startsWith("capture.")) validateCaptureRequest(request as Extract<NativeBridgeRequestV1, { readonly operation: `capture.${string}` }>);
     if (!window.__TAURI_INTERNALS__) {
       if (request.operation === "runtime.snapshot") return { kind: "runtime", snapshot: await browserSnapshot() };
       if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
@@ -292,6 +363,7 @@ export const nativeBridge: NativeBridgeV1 = {
       if (request.operation === "shortcuts.status" || request.operation === "shortcuts.request-permission" || request.operation === "shortcuts.apply" || request.operation === "shortcuts.stage" || request.operation === "shortcuts.commit" || request.operation === "shortcuts.rollback" || request.operation === "shortcuts.suspend") {
         return { kind: "shortcut-status", platform: "unsupported", permission: "unsupported", bindings: "bindings" in request ? request.bindings : defaultDesktopShortcutBindings, error: null };
       }
+      if (request.operation === "capture.status") return { kind: "capture-status", available: false, platform: "unsupported", shadowRemovalSupported: false, topology: [] };
       if (request.operation === "lifecycle.open-external" && request.target !== "authentication") { window.open(request.target === "fine-grained-pat" ? FineGrainedPatCreationUrl : ClassicPatCreationUrl, "_blank", "noopener,noreferrer"); return { kind: "ok" }; }
       if (request.operation.startsWith("widgets.")) return { kind: "unsupported", feature: "widgets" };
       throw new NativeBridgeError(NativeBridgeErrorCode.Unsupported);

@@ -68,6 +68,18 @@ test("error messages meet WCAG AA contrast in light and dark themes", () => {
   assert.match(styles, /\.native-setting-error\s*\{[^}]*color:var\(--error\)/u);
 });
 
+test("RealQA panels use the defined themed surface color", () => {
+  assert.doesNotMatch(styles, /var\(--panel\)/u);
+  assert.match(styles, /\.draft-list>li\{[^}]*background:var\(--surface\)/u);
+  assert.match(styles, /\.floating-capture-preview\{[^}]*background:var\(--surface\)/u);
+  assert.match(styles, /\.capture-dialog\{[^}]*background:var\(--surface\)/u);
+  assert.match(styles, /\.editor-controls\{[^}]*background:var\(--surface\)/u);
+});
+
+test("RealQA annotation text uses CSP-compatible static font styling", () => {
+  assert.match(styles, /\.annotation-text\{font-family:"DevHud RealQA Noto Sans KR";font-kerning:none\}/u);
+});
+
 test("form-control boundaries meet non-text contrast in light and dark themes", () => {
   for (const block of themeBlocks) {
     const line = customColor(block, "--line");
@@ -180,4 +192,9 @@ test("Linux external links use bounded GIO dispatch rather than browser lifetime
 test("command palette overlay stacks above the mobile sidebar", () => {
   assert.match(styles, /\.overlay\s*\{[^}]*z-index:2/u);
   assert.match(styles, /aside\s*\{[^}]*z-index:1/u);
+});
+
+test("capture dialogs reserve the overlay inset inside the viewport", () => {
+  assert.match(styles, /\.overlay\s*\{[^}]*--overlay-top:14vh;[^}]*padding:var\(--overlay-top\) 1rem 1rem/u);
+  assert.match(styles, /\.capture-dialog\{[^}]*max-height:calc\(100vh - var\(--overlay-top\) - 1rem\);[^}]*overflow:auto/u);
 });
