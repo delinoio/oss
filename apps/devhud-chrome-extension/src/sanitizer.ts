@@ -6,8 +6,12 @@ export const AllowedAccessibilityAttributes = new Set(["alt", "aria-describedby"
 export function normalizeCapturedUrl(input: string): string {
   const url = new URL(input);
   if (url.protocol !== "http:" && url.protocol !== "https:") throw new TypeError("unsupported URL");
-  const path = url.pathname.split("/").map((segment) => segment === "" ? "" : "<redacted>").join("/");
-  return `${url.protocol}//${url.hostname.toLowerCase()}${url.port ? `:${url.port}` : ""}${path}`;
+  url.username = "";
+  url.password = "";
+  url.search = "";
+  url.hash = "";
+  url.pathname = url.pathname.split("/").map((segment) => segment === "" ? "" : "<redacted>").join("/");
+  return url.href;
 }
 
 function isHidden(element: Element): boolean {

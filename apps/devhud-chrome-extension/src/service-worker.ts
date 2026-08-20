@@ -6,6 +6,7 @@ import { configuredOriginPermissionPattern } from "./origin-permission.js";
 let nativePort: chrome.runtime.Port | null = null;
 let reconnectAttempt = 0;
 let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+let configurationRequestGeneration = 0;
 const pending = new Map<string, { resolve: (response: NativeResponse) => void; timer: ReturnType<typeof setTimeout> }>();
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -75,18 +76,21 @@ function configuredPermissionPatterns(configuration: ExtensionConfiguration): Se
   }));
 }
 
-async function removeStaleOriginPermissions(configuration: ExtensionConfiguration): Promise<void> {
+async function removeStaleOriginPermissions(configuration: ExtensionConfiguration, generation: number): Promise<void> {
+  if (generation !== configurationRequestGeneration) return;
   const configured = configuredPermissionPatterns(configuration);
   const granted = await chrome.permissions.getAll();
+  if (generation !== configurationRequestGeneration) return;
   const stale = (granted.origins ?? []).filter((origin) => /^https?:\/\//u.test(origin) && !configured.has(origin));
   if (stale.length > 0) await chrome.permissions.remove({ origins: stale });
 }
 
 async function configurationRequest(): Promise<NativeResponse> {
+  const generation = ++configurationRequestGeneration;
   const response = await nativeRequest("configure", {});
   if (!response.ok) return response;
   if (!isAuthoritativeConfiguration(response.payload)) return { ...response, ok: false, state: "malformed", payload: null };
-  await removeStaleOriginPermissions(response.payload).catch(() => undefined);
+  await removeStaleOriginPermissions(response.payload, generation).catch(() => undefined);
   return response;
 }
 
@@ -102,7 +106,7 @@ async function capture(selectElement: boolean): Promise<NativeResponse> {
   if (!permissionPattern) return { version: 1, schema_version: 1, request_id: "", ok: false, state: "denied", payload: null };
   const permitted = await chrome.permissions.contains({ origins: [permissionPattern] }).catch(() => false);
   if (!permitted) return { version: 1, schema_version: 1, request_id: "", ok: false, state: "denied", payload: null };
-  const injection = (await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: injectedCapture, args: [selectElement, configuration.language ?? "en"] }))[0];
+  const injection = (await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: injectedCapture, args: [selectElement, tabOrigin, configuration.language ?? "en"] }))[0];
   const result = injection?.result;
   if (!result) return { version: 1, schema_version: 1, request_id: "", ok: false, state: "disconnected", payload: null };
   const { liveUrl, ...context } = result;

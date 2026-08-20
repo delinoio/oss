@@ -16,7 +16,8 @@ interface InjectedCapturedBrowserContext extends CapturedBrowserContext {
  * This function is serialized by chrome.scripting.executeScript, so every
  * helper and constant it uses must remain inside the function body.
  */
-export function injectedCapture(selectElement: boolean, language: "en" | "ko" = "en") {
+export function injectedCapture(selectElement: boolean, expectedOrigin: string, language: "en" | "ko" = "en") {
+  if (location.origin !== expectedOrigin) return Promise.resolve(null);
   const allowedElements = new Set(["a", "article", "aside", "blockquote", "code", "dd", "details", "div", "dl", "dt", "em", "figcaption", "figure", "footer", "h1", "h2", "h3", "h4", "h5", "h6", "header", "hr", "img", "li", "main", "nav", "ol", "p", "pre", "section", "summary", "table", "tbody", "td", "tfoot", "th", "thead", "tr", "ul"]);
   const allowedAttributes = new Set(["alt", "aria-describedby", "aria-hidden", "aria-label", "aria-labelledby", "role", "title"]);
   const clippingOverflow = new Set(["auto", "clip", "hidden", "scroll"]);
@@ -37,37 +38,25 @@ export function injectedCapture(selectElement: boolean, language: "en" | "ko" = 
   const normalizeUrl = () => {
     const url = new URL(location.href);
     if (!/^https?:$/u.test(url.protocol)) throw new TypeError("unsupported URL");
-    const origin = `${url.protocol}//${url.hostname.toLowerCase()}${url.port ? `:${url.port}` : ""}`;
-    const path = url.pathname.split("/").map((segment) => segment === "" ? "" : "<redacted>").join("/");
-    return `${origin}${path}`;
+    url.username = "";
+    url.password = "";
+    url.search = "";
+    url.hash = "";
+    url.pathname = url.pathname.split("/").map((segment) => segment === "" ? "" : "<redacted>").join("/");
+    return url.href;
   };
-  const isAllowedAndVisible = (element: Element) => {
-    if (!allowedElements.has(element.localName)) return false;
-    const ancestors: Element[] = [];
-    for (let current: Element | null = element; current; current = current.parentElement) {
-      if (current.hasAttribute("hidden") || current.getAttribute("aria-hidden")?.toLowerCase() === "true") return false;
-      ancestors.push(current);
-    }
-    const cssVisible = typeof element.checkVisibility === "function"
-      ? element.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true, contentVisibilityAuto: true })
-      : ancestors.every((current) => {
-          const computed = getComputedStyle(current);
-          const contentVisibility = computed.getPropertyValue("content-visibility");
-          return computed.display !== "none"
-            && computed.visibility !== "hidden"
-            && computed.visibility !== "collapse"
-            && Number.parseFloat(computed.opacity) !== 0
-            && (contentVisibility === "" || contentVisibility === "visible");
-        });
-    if (!cssVisible || !Number.isFinite(innerWidth) || !Number.isFinite(innerHeight) || innerWidth <= 0 || innerHeight <= 0) return false;
-    const bounds = element.getBoundingClientRect();
+  const hasVisibleIntersection = (
+    bounds: Pick<DOMRect, "x" | "y" | "width" | "height">,
+    clippingAncestors: readonly Element[],
+  ) => {
+    if (!Number.isFinite(innerWidth) || !Number.isFinite(innerHeight) || innerWidth <= 0 || innerHeight <= 0) return false;
     if (![bounds.x, bounds.y, bounds.width, bounds.height].every(Number.isFinite) || bounds.width <= 0 || bounds.height <= 0) return false;
     let left = Math.max(0, bounds.x);
     let top = Math.max(0, bounds.y);
     let right = Math.min(innerWidth, bounds.x + bounds.width);
     let bottom = Math.min(innerHeight, bounds.y + bounds.height);
     if (right <= left || bottom <= top) return false;
-    for (const ancestor of ancestors.slice(1)) {
+    for (const ancestor of clippingAncestors) {
       const computed = getComputedStyle(ancestor);
       const overflow = computed.overflow.trim().split(/\s+/u).filter(Boolean);
       const overflowX = computed.overflowX || overflow[0] || "visible";
@@ -89,6 +78,44 @@ export function injectedCapture(selectElement: boolean, language: "en" | "ko" = 
       if (right <= left || bottom <= top) return false;
     }
     return true;
+  };
+  const isAllowedAndVisible = (element: Element) => {
+    if (!allowedElements.has(element.localName)) return false;
+    const ancestors: Element[] = [];
+    for (let current: Element | null = element; current; current = current.parentElement) {
+      if (current.hasAttribute("hidden") || current.getAttribute("aria-hidden")?.toLowerCase() === "true") return false;
+      ancestors.push(current);
+    }
+    const cssVisible = typeof element.checkVisibility === "function"
+      ? element.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true, contentVisibilityAuto: true })
+      : ancestors.every((current) => {
+          const computed = getComputedStyle(current);
+          const contentVisibility = computed.getPropertyValue("content-visibility");
+          return computed.display !== "none"
+            && computed.visibility !== "hidden"
+            && computed.visibility !== "collapse"
+            && Number.parseFloat(computed.opacity) !== 0
+            && (contentVisibility === "" || contentVisibility === "visible");
+        });
+    return cssVisible && hasVisibleIntersection(element.getBoundingClientRect(), ancestors.slice(1));
+  };
+  const isFullyTransparentColor = (value: string) => {
+    const normalized = value.trim().toLowerCase();
+    return normalized === "transparent"
+      || /^(?:rgba|hsla)\([^)]*,\s*0(?:\.0+)?%?\s*\)$/u.test(normalized)
+      || /\/\s*0(?:\.0+)?%?\s*\)$/u.test(normalized);
+  };
+  const isTextVisible = (node: Text) => {
+    const parent = node.parentElement;
+    if (!parent) return false;
+    const computed = getComputedStyle(parent);
+    const textFillColor = computed.getPropertyValue("-webkit-text-fill-color").trim();
+    if (isFullyTransparentColor(textFillColor && textFillColor !== "currentcolor" ? textFillColor : computed.color)) return false;
+    const clippingAncestors: Element[] = [];
+    for (let current: Element | null = parent; current; current = current.parentElement) clippingAncestors.push(current);
+    const range = document.createRange();
+    range.selectNodeContents(node);
+    return Array.from(range.getClientRects()).some((bounds) => hasVisibleIntersection(bounds, clippingAncestors));
   };
   const sanitize = (selected: Element | null) => {
     if (!selected) return "";
@@ -138,7 +165,7 @@ export function injectedCapture(selectElement: boolean, language: "en" | "ko" = 
       }
       frame.next = frame.includeSiblings ? node.nextSibling : null;
       if (node.nodeType === Node.TEXT_NODE) {
-        exhausted = !appendSerializedText(node.textContent ?? "");
+        if (node instanceof Text && isTextVisible(node)) exhausted = !appendSerializedText(node.textContent ?? "");
         continue;
       }
       if (!(node instanceof Element) || !isAllowedAndVisible(node)) continue;
