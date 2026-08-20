@@ -96,6 +96,16 @@ test("mobile policy keeps native iOS origins aligned with normalized root URLs",
   assert.throws(() => assertIosNativeBridge(iosNativeBridge.replace("guard diagnosticsCleanupSucceeded else", "guard true else")), /propagate diagnostics cleanup failures/u);
 });
 
+test("mobile open URL handling accepts authentication callbacks only", () => {
+  const nativePlugin = readFileSync(join(appRoot, "src-tauri/src/native_plugin.rs"), "utf8");
+  const start = nativePlugin.indexOf("#[cfg(mobile)]\n            if let tauri::RunEvent::Opened");
+  const end = nativePlugin.indexOf("\n            }\n        })", start);
+  const openedHandler = nativePlugin.slice(start, end);
+  assert.ok(start >= 0 && end > start, "mobile opened handler must exist");
+  assert.match(openedHandler, /offer_auth_callback/u);
+  assert.doesNotMatch(openedHandler, /offer_deck_link/u);
+});
+
 test("Android release permissions enable System WebView networking", () => {
   const release = readFileSync(join(appRoot, "mobile/overrides/android/app/src/main/AndroidManifest.xml"), "utf8");
   const debug = readFileSync(join(appRoot, "mobile/overrides/android/app/src/debug/AndroidManifest.xml"), "utf8");

@@ -15,17 +15,19 @@ import (
 	"strings"
 	"time"
 	"unicode/utf16"
+	"unicode/utf8"
 
 	googleuuid "github.com/google/uuid"
 	"golang.org/x/net/idna"
 )
 
 const (
-	legacySettingsSchemaVersion = 1
-	prefixMappingsSchemaVersion = 2
-	settingsSchemaVersion       = 3
-	maximumMappingPathSegments  = 32
-	maximumMappingGlobstars     = 8
+	legacySettingsSchemaVersion    = 1
+	previousSettingsSchemaVersion  = 2
+	collidingSettingsSchemaVersion = 3
+	settingsSchemaVersion          = 4
+	maximumMappingPathSegments     = 32
+	maximumMappingGlobstars        = 8
 )
 
 var (
@@ -36,11 +38,13 @@ var (
 		regexp.MustCompile(`(^|[^A-Za-z0-9_-])eyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+([^A-Za-z0-9_-]|$)`),
 		regexp.MustCompile(`-----BEGIN [A-Z ]*PRIVATE KEY-----`),
 	}
-	safeSettingsIdentifier = regexp.MustCompile(`^[a-zA-Z0-9._:-]{1,128}$`)
-	settingsProfileRef     = regexp.MustCompile(`^[a-zA-Z0-9._-]{1,128}$`)
-	settingsMappingPattern = regexp.MustCompile(`^(https?|\*)://(\[[^\]]+\]|[^/:]+)(?::([^/]*))?(/.*)?$`)
-	settingsMappingPort    = regexp.MustCompile(`^[1-9]\d{0,4}$`)
-	settingsTimestamp      = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$`)
+	safeSettingsIdentifier     = regexp.MustCompile(`^[a-zA-Z0-9._:-]{1,128}$`)
+	settingsProfileRef         = regexp.MustCompile(`^[a-zA-Z0-9._-]{1,128}$`)
+	githubOwnerIdentifier      = regexp.MustCompile(`^[A-Za-z0-9-]{1,39}$`)
+	githubRepositoryIdentifier = regexp.MustCompile(`^[A-Za-z0-9._-]{1,100}$`)
+	settingsMappingPattern     = regexp.MustCompile(`^(https?|\*)://(\[[^\]]+\]|[^/:]+)(?::([^/]*))?(/.*)?$`)
+	settingsMappingPort        = regexp.MustCompile(`^[1-9]\d{0,4}$`)
+	settingsTimestamp          = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$`)
 	// Browser URL parsing permits non-STD3 labels, while the profile retains IDNA label validation.
 	settingsIDNAProfile = idna.New(idna.MapForLookup(), idna.StrictDomainName(false))
 )
@@ -70,6 +74,7 @@ func validateDevHudSettings(value []byte, envelopeSchemaVersion uint32) error {
 		return errors.New("$.schemaVersion must match the snapshot envelope schema version")
 	}
 	legacy := bodyVersion == legacySettingsSchemaVersion
+	previous := bodyVersion == previousSettingsSchemaVersion
 
 	appearance, err := settingsObject(root["appearance"], "$.appearance", "theme", "language")
 	if err != nil {
@@ -89,9 +94,26 @@ func validateDevHudSettings(value []byte, envelopeSchemaVersion uint32) error {
 	if len(decks) > 25 {
 		return errors.New("$.decks must contain at most 25 entries")
 	}
+	if bodyVersion == collidingSettingsSchemaVersion && (len(decks) == 0 || !hasCurrentDeckShape(decks[0])) {
+		previous = true
+	}
 	deckProfileRefs := make([]string, 0, len(decks))
+	deckIDs := make(map[string]struct{}, len(decks))
 	for index, entry := range decks {
-		profileRef, err := validateSettingsDeck(entry, fmt.Sprintf("$.decks[%d]", index), legacy)
+		path := fmt.Sprintf("$.decks[%d]", index)
+		deck, ok := entry.(map[string]any)
+		if !ok {
+			return fmt.Errorf("%s must be an object", path)
+		}
+		deckID, err := settingsUUIDv7(deck["id"], path+".id")
+		if err != nil {
+			return err
+		}
+		if _, exists := deckIDs[deckID]; exists {
+			return errors.New("$.decks must contain unique IDs")
+		}
+		deckIDs[deckID] = struct{}{}
+		profileRef, err := validateSettingsDeck(entry, path, legacy, previous)
 		if err != nil {
 			return err
 		}
@@ -167,7 +189,8 @@ func validateDevHudSettings(value []byte, envelopeSchemaVersion uint32) error {
 	if err != nil {
 		return err
 	}
-	mappingProfileRefs, err := validateSettingsURLMappings(root["urlMappings"], bodyVersion <= prefixMappingsSchemaVersion)
+	prefixMappings := bodyVersion <= previousSettingsSchemaVersion || bodyVersion == collidingSettingsSchemaVersion && !hasStructuredURLMappingShape(root["urlMappings"])
+	mappingProfileRefs, err := validateSettingsURLMappings(root["urlMappings"], prefixMappings)
 	if err != nil {
 		return err
 	}
@@ -176,7 +199,8 @@ func validateDevHudSettings(value []byte, envelopeSchemaVersion uint32) error {
 			return errors.New("GitHub profile reference must reference a configured GitHub profile")
 		}
 	}
-	if err := validateSettingsShortcuts(root["shortcuts"], bodyVersion == settingsSchemaVersion); err != nil {
+	structuredShortcuts := bodyVersion == settingsSchemaVersion || bodyVersion == collidingSettingsSchemaVersion && hasStructuredDesktopShortcutShape(root["shortcuts"])
+	if err := validateSettingsShortcuts(root["shortcuts"], structuredShortcuts); err != nil {
 		return err
 	}
 	if err := validateSettingsAgents(root["agents"]); err != nil {
@@ -193,10 +217,12 @@ func ensureJSONEnd(decoder *json.Decoder) error {
 	return errors.New("canonical_json must contain exactly one settings snapshot")
 }
 
-func validateSettingsDeck(value any, path string, legacy bool) (string, error) {
+func validateSettingsDeck(value any, path string, legacy bool, previous bool) (string, error) {
 	fields := []string{"id", "title", "query", "repository", "display", "refreshMinutes", "notifications"}
-	if !legacy {
+	if previous {
 		fields = []string{"id", "title", "query", "repository", "profileRef", "display", "refreshMinutes", "notifications"}
+	} else if !legacy {
+		fields = []string{"id", "name", "query", "builder", "profileRef", "display", "refreshMinutes", "notifications"}
 	}
 	deck, err := settingsObject(value, path, fields...)
 	if err != nil {
@@ -205,18 +231,31 @@ func validateSettingsDeck(value any, path string, legacy bool) (string, error) {
 	if _, err := settingsUUIDv7(deck["id"], path+".id"); err != nil {
 		return "", err
 	}
-	if _, err := settingsText(deck["title"], path+".title", false); err != nil {
+	nameField := "title"
+	if !legacy && !previous {
+		nameField = "name"
+	}
+	name, err := settingsText(deck[nameField], path+"."+nameField, false)
+	if err != nil {
 		return "", err
 	}
-	if _, err := settingsText(deck["query"], path+".query", true); err != nil {
+	normalizedName := strings.TrimFunc(name, deckQueryWhitespace)
+	if normalizedName == "" || (!legacy && !previous && normalizedName != name) {
+		return "", fmt.Errorf("%s.name must be a trimmed nonblank string", path)
+	}
+	query, err := settingsText(deck["query"], path+".query", true)
+	if err != nil {
 		return "", err
 	}
-	repository := ""
-	if deck["repository"] != nil {
-		repository, err = settingsText(deck["repository"], path+".repository", false)
-		if err != nil {
-			return "", err
-		}
+	hasPullRequestQualifier, hasRepositoryQualifier := deckQueryQualifiers(query)
+	if !legacy && !previous && !hasPullRequestQualifier {
+		return "", fmt.Errorf("%s.query must contain a standalone positive is:pr qualifier", path)
+	}
+	if !legacy && !previous && !hasRepositoryQualifier {
+		return "", fmt.Errorf("%s.query must contain a repository qualifier when a credential profile is selected", path)
+	}
+	if !legacy && !previous && !deckQueryWithinGitHubSearchLimits(query) {
+		return "", fmt.Errorf("%s.query exceeds GitHub Search limits", path)
 	}
 	profileRef := ""
 	if !legacy {
@@ -224,8 +263,69 @@ func validateSettingsDeck(value any, path string, legacy bool) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		if repository == "" && profileRef != "" {
-			return "", fmt.Errorf("%s.profileRef must be null when repository is null", path)
+		if !previous && profileRef == "" {
+			return "", fmt.Errorf("%s.profileRef must be selected", path)
+		}
+	}
+	if previous && deck["repository"] == nil && profileRef != "" {
+		return "", fmt.Errorf("%s.repository must be selected when a credential profile is selected", path)
+	}
+	if previous && deck["repository"] != nil {
+		repository, repositoryErr := settingsText(deck["repository"], path+".repository", false)
+		if repositoryErr != nil {
+			return "", repositoryErr
+		}
+		if profileRef != "" {
+			migratedQuery := query
+			if !deckQueryHasPositivePullRequestQualifier(migratedQuery) {
+				migratedQuery = appendSettingsDeckQualifier(migratedQuery, "is:pr")
+			}
+			if !deckQueryHasExactRepositoryQualifier(migratedQuery, repository) {
+				migratedQuery = appendSettingsDeckQualifier(migratedQuery, "repo:"+repository)
+			}
+			hasPullRequestQualifier, hasRepositoryQualifier = deckQueryQualifiers(migratedQuery)
+			if !hasPullRequestQualifier || !hasRepositoryQualifier {
+				return "", fmt.Errorf("%s.repository must produce a valid repository-scoped pull-request query", path)
+			}
+			if !deckQueryWithinGitHubSearchLimits(migratedQuery) {
+				return "", fmt.Errorf("%s.query exceeds GitHub Search limits", path)
+			}
+		}
+	}
+	if !legacy && !previous {
+		builder, err := settingsObjectOrNull(deck["builder"], path+".builder", "repository", "author", "review", "label", "state")
+		if err != nil {
+			return "", err
+		}
+		if builder != nil {
+			actual := settingsDeckBuilder{}
+			for _, field := range []string{"repository", "author", "label"} {
+				if builder[field] != nil {
+					value, err := settingsText(builder[field], path+".builder."+field, false)
+					if err != nil {
+						return "", err
+					}
+					if strings.TrimFunc(value, deckQueryWhitespace) != value {
+						return "", fmt.Errorf("%s.builder.%s must be trimmed", path, field)
+					}
+					actual.set(field, value)
+				}
+			}
+			if builder["review"] != nil {
+				if err := settingsEnum(builder["review"], path+".builder.review", "approved", "changes-requested", "required"); err != nil {
+					return "", err
+				}
+				actual.set("review", builder["review"].(string))
+			}
+			if builder["state"] != nil {
+				if err := settingsEnum(builder["state"], path+".builder.state", "open", "closed", "merged"); err != nil {
+					return "", err
+				}
+				actual.set("state", builder["state"].(string))
+			}
+			if !actual.equal(settingsDeckBuilderProjection(query)) {
+				return "", fmt.Errorf("%s.builder must be the lossless projection of the query", path)
+			}
 		}
 	}
 	display, err := settingsObject(deck["display"], path+".display", "groupBy", "showDrafts")
@@ -249,12 +349,520 @@ func validateSettingsDeck(value any, path string, legacy bool) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	seenNotifications := make(map[string]struct{}, len(notifications))
 	for index, notification := range notifications {
 		if err := settingsEnum(notification, fmt.Sprintf("%s.notifications[%d]", path, index), "review", "checks", "merged", "closed"); err != nil {
 			return "", err
 		}
+		if !legacy && !previous {
+			value := notification.(string)
+			if _, exists := seenNotifications[value]; exists {
+				return "", fmt.Errorf("%s.notifications must contain unique values", path)
+			}
+			seenNotifications[value] = struct{}{}
+		}
 	}
 	return profileRef, nil
+}
+
+type settingsDeckBuilder struct {
+	repository *string
+	author     *string
+	review     *string
+	label      *string
+	state      *string
+}
+
+func (builder *settingsDeckBuilder) set(field string, value string) {
+	switch field {
+	case "repository":
+		builder.repository = &value
+	case "author":
+		builder.author = &value
+	case "review":
+		builder.review = &value
+	case "label":
+		builder.label = &value
+	case "state":
+		builder.state = &value
+	}
+}
+
+func (builder settingsDeckBuilder) equal(other settingsDeckBuilder) bool {
+	return settingsDeckBuilderValueEqual(builder.repository, other.repository) &&
+		settingsDeckBuilderValueEqual(builder.author, other.author) &&
+		settingsDeckBuilderValueEqual(builder.review, other.review) &&
+		settingsDeckBuilderValueEqual(builder.label, other.label) &&
+		settingsDeckBuilderValueEqual(builder.state, other.state)
+}
+
+func settingsDeckBuilderValueEqual(left *string, right *string) bool {
+	return left == nil && right == nil || left != nil && right != nil && *left == *right
+}
+
+func settingsDeckBuilderProjection(query string) settingsDeckBuilder {
+	if deckQueryHasBooleanSyntax(query) {
+		return settingsDeckBuilder{}
+	}
+	projection := settingsDeckBuilder{}
+	for _, token := range deckQueryTokens(query) {
+		for _, qualifier := range []struct {
+			prefix string
+			field  string
+		}{
+			{"repo:", "repository"},
+			{"author:", "author"},
+			{"review:", "review"},
+			{"label:", "label"},
+			{"is:", "state"},
+		} {
+			if len(token) < len(qualifier.prefix) || !strings.EqualFold(token[:len(qualifier.prefix)], qualifier.prefix) {
+				continue
+			}
+			value := token[len(qualifier.prefix):]
+			if qualifier.field == "review" {
+				value = strings.ToLower(value)
+				if value == "changes_requested" {
+					value = "changes-requested"
+				} else if value != "approved" && value != "required" {
+					continue
+				}
+			} else if qualifier.field == "state" {
+				value = strings.ToLower(value)
+				if value != "open" && value != "closed" && value != "merged" {
+					continue
+				}
+			} else {
+				if value == "" {
+					continue
+				}
+				value = unquoteSettingsDeckQualifier(value)
+			}
+			switch qualifier.field {
+			case "repository":
+				if projection.repository != nil {
+					continue
+				}
+			case "author":
+				if projection.author != nil {
+					continue
+				}
+			case "review":
+				if projection.review != nil {
+					continue
+				}
+			case "label":
+				if projection.label != nil {
+					continue
+				}
+			case "state":
+				if projection.state != nil {
+					continue
+				}
+			}
+			projection.set(qualifier.field, value)
+		}
+	}
+	return projection
+}
+
+func deckQueryHasBooleanSyntax(query string) bool {
+	tokens, valid := deckBooleanTokens(query)
+	if !valid {
+		return false
+	}
+	for _, token := range tokens {
+		if token.kind != deckBooleanTerm || strings.EqualFold(token.value, "and") || strings.EqualFold(token.value, "or") {
+			return true
+		}
+	}
+	return false
+}
+
+func deckQueryWithinGitHubSearchLimits(query string) bool {
+	operators := 0
+	excludedLength := 0
+	for _, token := range deckQueryTokens(query) {
+		if strings.EqualFold(token, "and") || strings.EqualFold(token, "or") || strings.EqualFold(token, "not") {
+			operators++
+			excludedLength += settingsTextLength(token)
+		} else if deckQueryGitHubSearchQualifier(token) {
+			excludedLength += settingsTextLength(token)
+		}
+	}
+	return operators <= 5 && settingsTextLength(query)-excludedLength <= 256
+}
+
+func deckQueryGitHubSearchQualifier(value string) bool {
+	value = strings.TrimPrefix(value, "-")
+	separator := strings.IndexByte(value, ':')
+	if separator < 1 {
+		return false
+	}
+	for _, character := range value[:separator] {
+		if !(character >= 'a' && character <= 'z' || character >= 'A' && character <= 'Z' || character >= '0' && character <= '9' || character == '-') {
+			return false
+		}
+	}
+	first := value[0]
+	return first >= 'a' && first <= 'z' || first >= 'A' && first <= 'Z'
+}
+
+func unquoteSettingsDeckQualifier(value string) string {
+	if len(value) >= 2 && value[0] == '"' && value[len(value)-1] == '"' {
+		var unquoted strings.Builder
+		unquoted.Grow(len(value) - 2)
+		escaped := false
+		for _, character := range value[1 : len(value)-1] {
+			if escaped {
+				unquoted.WriteRune(character)
+				escaped = false
+				continue
+			}
+			if character == '\\' {
+				escaped = true
+				continue
+			}
+			unquoted.WriteRune(character)
+		}
+		if escaped {
+			unquoted.WriteByte('\\')
+		}
+		return unquoted.String()
+	}
+	return value
+}
+
+const deckQueryBranchLimit = 100
+
+type deckQueryBranch struct {
+	repositories            map[string]struct{}
+	hasPullRequestQualifier bool
+}
+
+type deckBooleanTokenKind uint8
+
+const (
+	deckBooleanTerm deckBooleanTokenKind = iota
+	deckBooleanOpen
+	deckBooleanClose
+	deckBooleanNot
+)
+
+type deckBooleanToken struct {
+	kind  deckBooleanTokenKind
+	value string
+}
+
+// deckQueryQualifiers proves every executable Boolean query branch is scoped to
+// both a GitHub repository and pull requests, matching the frontend decoder.
+func deckQueryQualifiers(query string) (bool, bool) {
+	branches, valid := deckQueryBranches(query)
+	if !valid {
+		return false, false
+	}
+	repositories := make(map[string]struct{})
+	for _, branch := range branches {
+		if !branch.hasPullRequestQualifier {
+			return false, false
+		}
+		if len(branch.repositories) == 0 {
+			return true, false
+		}
+		for repository := range branch.repositories {
+			repositories[repository] = struct{}{}
+			if len(repositories) > 10 {
+				return true, false
+			}
+		}
+	}
+	return true, len(repositories) > 0
+}
+
+func deckQueryHasPositivePullRequestQualifier(query string) bool {
+	branches, valid := deckQueryBranches(query)
+	if !valid || len(branches) == 0 {
+		return false
+	}
+	for _, branch := range branches {
+		if !branch.hasPullRequestQualifier {
+			return false
+		}
+	}
+	return true
+}
+
+func deckQueryHasExactRepositoryQualifier(query string, repository string) bool {
+	branches, valid := deckQueryBranches(query)
+	if !valid {
+		return false
+	}
+	_, valid = deckRepositoryQualifier("repo:" + repository)
+	if !valid {
+		return false
+	}
+	for _, branch := range branches {
+		if _, exists := branch.repositories[strings.ToLower(repository)]; exists {
+			return true
+		}
+	}
+	return false
+}
+
+func appendSettingsDeckQualifier(query string, qualifier string) string {
+	if deckQueryHasBooleanSyntax(query) {
+		query = "(" + query + ")"
+	}
+	if query == "" {
+		return qualifier
+	}
+	return query + " " + qualifier
+}
+
+func deckQueryBranches(query string) ([]deckQueryBranch, bool) {
+	tokens, valid := deckBooleanTokens(query)
+	if !valid || len(tokens) == 0 {
+		return nil, false
+	}
+	index := 0
+	peek := func() *deckBooleanToken {
+		if index >= len(tokens) {
+			return nil
+		}
+		return &tokens[index]
+	}
+	isOperator := func(token *deckBooleanToken, value string) bool {
+		return token != nil && token.kind == deckBooleanTerm && strings.EqualFold(token.value, value)
+	}
+	isPrimary := func(token *deckBooleanToken) bool {
+		return token != nil && (token.kind == deckBooleanOpen || token.kind == deckBooleanNot || token.kind == deckBooleanTerm && !isOperator(token, "and") && !isOperator(token, "or"))
+	}
+	combineAnd := func(left []deckQueryBranch, right []deckQueryBranch) ([]deckQueryBranch, bool) {
+		combined := make([]deckQueryBranch, 0, len(left)*len(right))
+		for _, leftBranch := range left {
+			for _, rightBranch := range right {
+				repositories := make(map[string]struct{}, len(leftBranch.repositories)+len(rightBranch.repositories))
+				for repository := range leftBranch.repositories {
+					repositories[repository] = struct{}{}
+				}
+				for repository := range rightBranch.repositories {
+					repositories[repository] = struct{}{}
+				}
+				combined = append(combined, deckQueryBranch{repositories: repositories, hasPullRequestQualifier: leftBranch.hasPullRequestQualifier || rightBranch.hasPullRequestQualifier})
+				if len(combined) > deckQueryBranchLimit {
+					return nil, false
+				}
+			}
+		}
+		return combined, true
+	}
+	var parseOr func() ([]deckQueryBranch, bool)
+	var parseAnd func() ([]deckQueryBranch, bool)
+	var parsePrimary func() ([]deckQueryBranch, bool)
+	parsePrimary = func() ([]deckQueryBranch, bool) {
+		token := peek()
+		if token != nil && token.kind == deckBooleanNot {
+			index++
+			if _, valid := parsePrimary(); !valid {
+				return nil, false
+			}
+			return []deckQueryBranch{{repositories: map[string]struct{}{}}}, true
+		}
+		if token != nil && token.kind == deckBooleanOpen {
+			index++
+			nested, valid := parseOr()
+			if !valid || peek() == nil || peek().kind != deckBooleanClose {
+				return nil, false
+			}
+			index++
+			return nested, true
+		}
+		if token == nil || token.kind != deckBooleanTerm || isOperator(token, "and") || isOperator(token, "or") {
+			return nil, false
+		}
+		index++
+		repository, valid := deckRepositoryQualifier(token.value)
+		if !valid {
+			return nil, false
+		}
+		repositories := make(map[string]struct{})
+		if repository != "" {
+			repositories[repository] = struct{}{}
+		}
+		return []deckQueryBranch{{repositories: repositories, hasPullRequestQualifier: strings.EqualFold(token.value, "is:pr")}}, true
+	}
+	parseAnd = func() ([]deckQueryBranch, bool) {
+		result, valid := parsePrimary()
+		if !valid {
+			return nil, false
+		}
+		for {
+			if isOperator(peek(), "and") {
+				index++
+			} else if !isPrimary(peek()) {
+				break
+			}
+			next, valid := parsePrimary()
+			if !valid {
+				return nil, false
+			}
+			result, valid = combineAnd(result, next)
+			if !valid {
+				return nil, false
+			}
+		}
+		return result, true
+	}
+	parseOr = func() ([]deckQueryBranch, bool) {
+		result, valid := parseAnd()
+		if !valid {
+			return nil, false
+		}
+		for isOperator(peek(), "or") {
+			index++
+			next, valid := parseAnd()
+			if !valid || len(result)+len(next) > deckQueryBranchLimit {
+				return nil, false
+			}
+			result = append(result, next...)
+		}
+		return result, true
+	}
+	branches, valid := parseOr()
+	return branches, valid && index == len(tokens)
+}
+
+// deckRepositoryQualifier returns an empty string for a non-repository term.
+func deckRepositoryQualifier(value string) (string, bool) {
+	if len(value) < len("repo:") || !strings.EqualFold(value[:len("repo:")], "repo:") {
+		return "", true
+	}
+	repository := value[len("repo:"):]
+	if strings.Count(repository, "/") != 1 || strings.HasPrefix(repository, "/") || strings.HasSuffix(repository, "/") {
+		return "", false
+	}
+	parts := strings.SplitN(repository, "/", 2)
+	if !validGitHubOwnerIdentifier(parts[0]) || !githubRepositoryIdentifier.MatchString(parts[1]) {
+		return "", false
+	}
+	return strings.ToLower(repository), true
+}
+
+func deckBooleanTokens(query string) ([]deckBooleanToken, bool) {
+	tokens := make([]deckBooleanToken, 0)
+	for index := 0; index < len(query); {
+		character, width := utf8.DecodeRuneInString(query[index:])
+		if deckQueryWhitespace(character) {
+			index += width
+			continue
+		}
+		if character == '(' {
+			tokens = append(tokens, deckBooleanToken{kind: deckBooleanOpen})
+			index += width
+			continue
+		}
+		if character == ')' {
+			tokens = append(tokens, deckBooleanToken{kind: deckBooleanClose})
+			index += width
+			continue
+		}
+		var value strings.Builder
+		quoted := false
+		escaped := false
+		for index < len(query) {
+			next, nextWidth := utf8.DecodeRuneInString(query[index:])
+			if escaped {
+				value.WriteString(query[index : index+nextWidth])
+				escaped = false
+				index += nextWidth
+				continue
+			}
+			if quoted {
+				value.WriteString(query[index : index+nextWidth])
+				if next == '\\' {
+					escaped = true
+				} else if next == '"' {
+					quoted = false
+				}
+				index += nextWidth
+				continue
+			}
+			if next == '"' {
+				value.WriteString(query[index : index+nextWidth])
+				quoted = true
+				index += nextWidth
+				continue
+			}
+			if deckQueryWhitespace(next) || next == '(' || next == ')' {
+				break
+			}
+			value.WriteString(query[index : index+nextWidth])
+			index += nextWidth
+		}
+		if quoted || value.Len() == 0 {
+			return nil, false
+		}
+		term := value.String()
+		if strings.EqualFold(term, "not") {
+			tokens = append(tokens, deckBooleanToken{kind: deckBooleanNot})
+		} else {
+			tokens = append(tokens, deckBooleanToken{kind: deckBooleanTerm, value: term})
+		}
+	}
+	return tokens, true
+}
+
+// deckQueryWhitespace matches ECMAScript's explicit Deck query whitespace set.
+func deckQueryWhitespace(character rune) bool {
+	switch character {
+	case '\t', '\n', '\v', '\f', '\r', ' ', '\u00a0', '\u1680', '\u2028', '\u2029', '\u202f', '\u205f', '\u3000', '\ufeff':
+		return true
+	}
+	return character >= '\u2000' && character <= '\u200a'
+}
+
+func validGitHubOwnerIdentifier(value string) bool {
+	return githubOwnerIdentifier.MatchString(value) && !strings.HasPrefix(value, "-") && !strings.HasSuffix(value, "-") && !strings.Contains(value, "--")
+}
+
+// deckQueryTokens keeps quoted search phrases from being interpreted as qualifiers.
+func deckQueryTokens(query string) []string {
+	tokens := make([]string, 0)
+	var token strings.Builder
+	quoted := false
+	escaped := false
+	flush := func() {
+		if token.Len() > 0 {
+			tokens = append(tokens, token.String())
+			token.Reset()
+		}
+	}
+	for _, character := range query {
+		if escaped {
+			token.WriteRune(character)
+			escaped = false
+			continue
+		}
+		if quoted {
+			token.WriteRune(character)
+			if character == '\\' {
+				escaped = true
+			} else if character == '"' {
+				quoted = false
+			}
+			continue
+		}
+		if character == '"' {
+			token.WriteRune(character)
+			quoted = true
+		} else if deckQueryWhitespace(character) {
+			flush()
+		} else {
+			token.WriteRune(character)
+		}
+	}
+	flush()
+	return tokens
 }
 
 func validateSettingsGitHub(github map[string]any, legacy bool) ([]string, error) {
@@ -394,6 +1002,45 @@ func validateSettingsURLMappings(value any, prefixMappings bool) ([]string, erro
 		}
 	}
 	return profileRefs, nil
+}
+
+func hasStructuredURLMappingShape(value any) bool {
+	mappings, err := settingsArray(value, "$.urlMappings")
+	if err != nil {
+		return false
+	}
+	for _, entry := range mappings {
+		mapping, ok := entry.(map[string]any)
+		if !ok {
+			continue
+		}
+		if _, exists := mapping["id"]; exists {
+			return true
+		}
+	}
+	return false
+}
+
+func hasCurrentDeckShape(value any) bool {
+	deck, ok := value.(map[string]any)
+	if !ok {
+		return false
+	}
+	_, ok = deck["name"]
+	return ok
+}
+
+func hasStructuredDesktopShortcutShape(value any) bool {
+	shortcuts, ok := value.(map[string]any)
+	if !ok {
+		return false
+	}
+	desktop, ok := shortcuts["desktop"].(map[string]any)
+	if !ok {
+		return false
+	}
+	_, ok = desktop["shell.command-palette"].(map[string]any)
+	return ok
 }
 
 func validateSettingsShortcuts(value any, structured bool) error {
@@ -584,6 +1231,13 @@ func settingsObject(value any, path string, allowed ...string) (map[string]any, 
 		}
 	}
 	return record, nil
+}
+
+func settingsObjectOrNull(value any, path string, allowed ...string) (map[string]any, error) {
+	if value == nil {
+		return nil, nil
+	}
+	return settingsObject(value, path, allowed...)
 }
 
 func settingsArray(value any, path string) ([]any, error) {
@@ -882,7 +1536,7 @@ func rejectSensitiveSettings(value any, path string) error {
 		}
 	case map[string]any:
 		for key, item := range typed {
-			if sensitiveSettingsKey.MatchString(key) && !contractedDesktopShortcutAction(path, key) {
+			if sensitiveSettingsKey.MatchString(key) && !isContractedShortcutAction(path, key) {
 				return fmt.Errorf("%s.%s is a device-local or secret field", path, key)
 			}
 			if err := rejectSensitiveSettings(item, path+"."+key); err != nil {
@@ -899,7 +1553,7 @@ func rejectSensitiveSettings(value any, path string) error {
 	return nil
 }
 
-func contractedDesktopShortcutAction(path, key string) bool {
+func isContractedShortcutAction(path string, key string) bool {
 	if path != "$.shortcuts.desktop" {
 		return false
 	}

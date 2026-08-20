@@ -11,6 +11,8 @@ import type { IdentitySession } from "./identity-client";
 import { messages } from "./localization";
 import { LifecycleState, NativeBridgeError, NativeBridgeErrorCode, NotificationPermission, RuntimePlatform, type NativeBridgeEventV1, type NativeBridgeRequestV1, type NativeBridgeResponseV1, type NativeBridgeV1, type RuntimeSnapshot } from "./native-bridge";
 import { desktopNativeMessagingIntegration } from "./native-messaging-ui";
+import { saveGuestSettings } from "./service-boundary";
+import { defaultDevHudSettings } from "./settings-contract";
 
 const mobileRuntime: RuntimeSnapshot = {
   bridgeVersion: 1,
@@ -184,6 +186,115 @@ describe("native App state", () => {
     expect(request.mock.calls.filter(([value]) => value.operation === "auth.peek-pending-callback")).toHaveLength(1);
   });
 
+  it("keeps a cold-start Deck link queued across an origin-policy reload", async () => {
+    window.__TAURI_INTERNALS__ = { invoke: vi.fn() };
+    let deckLink: string | null = "018f47a2-7b3c-7def-8abc-1234567890ab";
+    let originConfigured = false;
+    vi.spyOn(identityClient, "createIdentitySession").mockResolvedValue({
+      getAccessToken: async () => "fixture-access-token",
+      isAuthenticated: async () => false,
+      signIn: async () => {},
+      handleCallback: async () => {},
+      clear: async () => {},
+    } as unknown as IdentitySession);
+    vi.stubGlobal("location", { reload: vi.fn() });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      projectId: "PROJECT_ID_DEVHUD",
+      protocolSchemaVersion: 1,
+      apiVersion: "0.1.0-dev",
+      logtoIssuer: "https://identity.example/oidc",
+      logtoAudience: "https://api.example/api",
+      logtoClients: { desktop: "desktop-client", ios: "ios-client", android: "android-client", admin: "admin-client" },
+      logtoRedirects: { native: "devhud://auth/callback", admin: "https://admin.example/callback" },
+    }), { status: 200, headers: { "Content-Type": "application/json", "Connect-Protocol-Version": "1" } })));
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      if (value.operation === "runtime.snapshot") return { kind: "runtime", snapshot: desktopRuntime };
+      if (value.operation === "auth.peek-pending-callback") return { kind: "auth-callback", url: null };
+      if (value.operation === "deck.peek-pending-link") return { kind: "deck-link", deckId: deckLink };
+      if (value.operation === "deck.take-pending-link") {
+        const deckId = deckLink;
+        deckLink = null;
+        return { kind: "deck-link", deckId };
+      }
+      if (value.operation === "session.configure-origins") {
+        if (!value.logtoIssuer && !originConfigured) {
+          originConfigured = true;
+          return { kind: "session-network-policy", changed: true };
+        }
+        return { kind: "session-network-policy", changed: false };
+      }
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+
+    const first = render(<App bridge={bridgeWith(request)} />);
+    await waitFor(() => expect(originConfigured).toBe(true));
+    expect(deckLink).toBe("018f47a2-7b3c-7def-8abc-1234567890ab");
+    expect(request.mock.calls.filter(([value]) => value.operation === "deck.take-pending-link")).toHaveLength(0);
+    first.unmount();
+
+    render(<App bridge={bridgeWith(request)} />);
+    await waitFor(() => expect(request).toHaveBeenCalledWith({ operation: "deck.take-pending-link" }));
+    expect(deckLink).toBeNull();
+    expect(request.mock.calls.filter(([value]) => value.operation === "deck.take-pending-link")).toHaveLength(1);
+  });
+
+  it("consumes a pending Deck link after Continue locally and origin configuration", async () => {
+    localStorage.removeItem("devhud.shell.onboarding.v1");
+    window.__TAURI_INTERNALS__ = { invoke: vi.fn() };
+    let deckLink: string | null = "018f47a2-7b3c-7def-8abc-1234567890ab";
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      if (value.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
+      if (value.operation === "deck.peek-pending-link") return { kind: "deck-link", deckId: deckLink };
+      if (value.operation === "deck.take-pending-link") {
+        const deckId = deckLink;
+        deckLink = null;
+        return { kind: "deck-link", deckId };
+      }
+      throw new Error("unexpected operation");
+    });
+
+    render(<App bridge={bridgeWith(request)} initialRuntime={desktopRuntime} />);
+    await waitFor(() => expect(request).toHaveBeenCalledWith({ operation: "deck.peek-pending-link" }));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.continueLocally }));
+
+    await waitFor(() => expect(request).toHaveBeenCalledWith({ operation: "deck.take-pending-link" }));
+    expect(deckLink).toBeNull();
+  });
+
+  it("keeps a Deck link queued through successful first-run bootstrap", async () => {
+    localStorage.removeItem("devhud.shell.onboarding.v1");
+    window.__TAURI_INTERNALS__ = { invoke: vi.fn() };
+    let deckLink: string | null = "018f47a2-7b3c-7def-8abc-1234567890ab";
+    vi.spyOn(identityClient, "createIdentitySession").mockResolvedValue({
+      getAccessToken: async () => "fixture-access-token",
+      isAuthenticated: async () => false,
+      signIn: async () => {},
+      handleCallback: async () => {},
+      clear: async () => {},
+    } as unknown as IdentitySession);
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      projectId: "PROJECT_ID_DEVHUD", protocolSchemaVersion: 1, apiVersion: "0.1.0-dev", logtoIssuer: "https://identity.example/oidc", logtoAudience: "https://api.example/api",
+      logtoClients: { desktop: "desktop-client", ios: "ios-client", android: "android-client", admin: "admin-client" }, logtoRedirects: { native: "devhud://auth/callback", admin: "https://admin.example/callback" },
+    }), { status: 200, headers: { "Content-Type": "application/json", "Connect-Protocol-Version": "1" } })));
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      if (value.operation === "deck.peek-pending-link") return { kind: "deck-link", deckId: deckLink };
+      if (value.operation === "deck.take-pending-link") { const deckId = deckLink; deckLink = null; return { kind: "deck-link", deckId }; }
+      if (value.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+
+    render(<App bridge={bridgeWith(request)} initialRuntime={desktopRuntime} />);
+    await screen.findByRole("button", { name: messages.en.continueLocally });
+    await waitFor(() => expect(request).toHaveBeenCalledWith({ operation: "deck.peek-pending-link" }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(request.mock.calls.filter(([value]) => value.operation === "deck.take-pending-link")).toHaveLength(0);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.continueLocally }));
+    await waitFor(() => expect(request).toHaveBeenCalledWith({ operation: "deck.take-pending-link" }));
+    expect(deckLink).toBeNull();
+  });
+
   it("prunes expired diagnostics during startup without opening Diagnostics", async () => {
     const correlationId = "0198c8b0-77d6-7d4a-a7d9-e4d7b11c4400";
     const occurredAt = "2000-01-01T00:00:00.000Z";
@@ -245,7 +356,7 @@ describe("native App state", () => {
     render(<App bridge={bridge} />);
     await screen.findByText(messages.en.welcome);
 
-    expect(operations).toEqual(["listener-installed", "runtime.snapshot", "auth.peek-pending-callback", "session.configure-origins"]);
+    expect(operations.slice(0, 3)).toEqual(["listener-installed", "runtime.snapshot", "auth.peek-pending-callback"]);
   });
 
   it("drains a cold-start callback after the identity session becomes ready", async () => {
@@ -390,6 +501,33 @@ describe("native App state", () => {
     expect(screen.getByText(messages.ko.diagnosticBridge)).toBeTruthy();
   });
 
+  it("requests browser notification permission on desktop when native notifications are unavailable", async () => {
+    const requestPermission = vi.fn(async () => "granted" as NotificationPermission);
+    vi.stubGlobal("Notification", { permission: "default", requestPermission });
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => { throw new Error(`unexpected operation ${value.operation}`); });
+
+    render(<App bridge={bridgeWith(request)} initialRuntime={desktopRuntime} />);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.settings }));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.notificationPermission }));
+
+    await waitFor(() => expect(requestPermission).toHaveBeenCalledOnce());
+    expect(await screen.findByText(messages.en.notificationAuthorized)).toBeTruthy();
+    expect(request.mock.calls.filter(([value]) => value.operation === "notifications.request-permission")).toHaveLength(0);
+  });
+
+  it("preserves an undetermined browser notification permission when its prompt is dismissed", async () => {
+    const requestPermission = vi.fn(async () => "default" as NotificationPermission);
+    vi.stubGlobal("Notification", { permission: "default", requestPermission });
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => { throw new Error(`unexpected operation ${value.operation}`); });
+
+    render(<App bridge={bridgeWith(request)} initialRuntime={desktopRuntime} />);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.settings }));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.notificationPermission }));
+
+    await waitFor(() => expect(requestPermission).toHaveBeenCalledOnce());
+    expect(await screen.findByText(messages.en.notificationNotDetermined)).toBeTruthy();
+  });
+
   it("refreshes notification permission when the app returns to the active lifecycle", async () => {
     let receive!: (event: NativeBridgeEventV1) => void;
     let permission: NotificationPermission = NotificationPermission.Authorized;
@@ -460,6 +598,27 @@ describe("native App state", () => {
     online = true;
     fireEvent(window, new Event("online"));
     expect(screen.getByText(messages.en.emptyTitle)).toBeTruthy();
+  });
+
+  it("polls every configured Deck while Home is selected", async () => {
+    const profile = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", name: "Work", kind: "fine-grained" as const };
+    const deck = (id: string, repository: string) => ({ id, name: repository, profileRef: profile.id, query: `repo:${repository} is:pr`, builder: null, display: { groupBy: "none" as const, showDrafts: true }, refreshMinutes: 5 as const, notifications: [] });
+    saveGuestSettings(localStorage, {
+      ...defaultDevHudSettings,
+      github: { ...defaultDevHudSettings.github, profiles: [profile] },
+      decks: [deck("018f47a2-7b3c-7def-8abc-1234567890ac", "octo/first"), deck("018f47a2-7b3c-7def-8abc-1234567890ad", "octo/second")],
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      if (value.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
+      if (value.operation === "secure.read") return { kind: "secure-value", value: "github_pat_fixture" };
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+
+    render(<App bridge={bridgeWith(request)} initialRuntime={mobileRuntime} />);
+
+    await waitFor(() => expect(request.mock.calls.filter(([value]) => value.operation === "secure.read")).toHaveLength(2));
+    expect(screen.getByText(messages.en.welcome)).toBeTruthy();
   });
 
   it("surfaces expected native update errors inline and clears them after retry", async () => {

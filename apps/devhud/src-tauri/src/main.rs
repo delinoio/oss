@@ -856,7 +856,14 @@ fn main() {
     let capture_assets = capture_service.clone();
 
     let mut builder = tauri::Builder::<tauri::Cef>::default()
-        .plugin(tauri_plugin_single_instance::init(|_, _, _| {}))
+        .plugin(tauri_plugin_single_instance::init(|app, arguments, _| {
+            for argument in arguments {
+                native_plugin::offer_auth_callback(app, &argument);
+                if native_plugin::offer_deck_link(app, &argument) {
+                    restore_main_window(app);
+                }
+            }
+        }))
         .plugin(tauri_plugin_deep_link::init())
         .plugin(native_plugin::init())
         .manage(bridge_state)
@@ -960,12 +967,16 @@ fn main() {
             if let Some(urls) = app.deep_link().get_current()? {
                 for url in urls {
                     native_plugin::offer_auth_callback(app.handle(), url.as_str());
+                    native_plugin::offer_deck_link(app.handle(), url.as_str());
                 }
             }
             let callback_app = app.handle().clone();
             app.deep_link().on_open_url(move |event| {
                 for url in event.urls() {
                     native_plugin::offer_auth_callback(&callback_app, url.as_str());
+                    if native_plugin::offer_deck_link(&callback_app, url.as_str()) {
+                        restore_main_window(&callback_app);
+                    }
                 }
             });
             create_tray(&app.handle().clone())?;
