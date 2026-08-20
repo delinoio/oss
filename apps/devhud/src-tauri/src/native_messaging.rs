@@ -245,12 +245,12 @@ fn replace_configuration(
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let scope_changed = current_scope.as_ref() != Some(&parsed_scope_id);
     if scope_changed {
-        messaging_state.generation.fetch_add(1, Ordering::SeqCst);
         *current_scope = Some(parsed_scope_id);
     }
     match validated {
         Ok(configuration) => {
             if scope_changed || *current != configuration {
+                messaging_state.generation.fetch_add(1, Ordering::SeqCst);
                 let mut latest_context = messaging_state
                     .latest_context
                     .lock()
@@ -261,6 +261,7 @@ fn replace_configuration(
             Ok(())
         }
         Err(error) => {
+            messaging_state.generation.fetch_add(1, Ordering::SeqCst);
             *current = Value::Null;
             messaging_state
                 .latest_context
@@ -1265,19 +1266,40 @@ mod tests {
     #[test]
     fn rejected_configuration_clears_prior_authorization_and_context() {
         let messaging_state = NativeMessagingState::default();
-        *messaging_state.configuration.lock().unwrap() = json!({ "prior": true });
+        let scope_id = Uuid::now_v7().to_string();
+        assert!(
+            replace_configuration(
+                &messaging_state,
+                json!({
+                    "origins": [configured_origin("https://example.com")],
+                    "language": "en"
+                }),
+                &scope_id,
+            )
+            .is_ok()
+        );
         *messaging_state.latest_context.lock().unwrap() = Some(json!({ "prior": true }));
+        let generation = messaging_state.generation.load(Ordering::SeqCst);
 
         assert!(
             replace_configuration(
                 &messaging_state,
                 response_oversized_configuration(),
-                &Uuid::now_v7().to_string(),
+                &scope_id,
             )
             .is_err()
         );
         assert!(messaging_state.configuration.lock().unwrap().is_null());
         assert!(messaging_state.latest_context.lock().unwrap().is_none());
+        assert_eq!(
+            messaging_state.generation.load(Ordering::SeqCst),
+            generation + 1
+        );
+        assert!(!commit_latest_context_if_current(
+            &messaging_state,
+            generation,
+            json!({ "stale": true }),
+        ));
     }
 
     #[test]
@@ -1306,15 +1328,30 @@ mod tests {
             }],
             "language": "en"
         });
+        let generation = messaging_state.generation.load(Ordering::SeqCst);
 
         assert!(replace_configuration(&messaging_state, replacement.clone(), &scope_id).is_ok());
         assert!(messaging_state.latest_context.lock().unwrap().is_none());
+        assert_eq!(
+            messaging_state.generation.load(Ordering::SeqCst),
+            generation + 1
+        );
+        assert!(!commit_latest_context_if_current(
+            &messaging_state,
+            generation,
+            json!({ "stale": true }),
+        ));
 
         *messaging_state.latest_context.lock().unwrap() = Some(json!({ "current": true }));
+        let generation = messaging_state.generation.load(Ordering::SeqCst);
         assert!(replace_configuration(&messaging_state, replacement, &scope_id).is_ok());
         assert_eq!(
             *messaging_state.latest_context.lock().unwrap(),
             Some(json!({ "current": true }))
+        );
+        assert_eq!(
+            messaging_state.generation.load(Ordering::SeqCst),
+            generation
         );
     }
 
