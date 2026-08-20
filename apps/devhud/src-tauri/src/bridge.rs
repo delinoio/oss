@@ -265,6 +265,16 @@ const fn updater_window_is_active(visible: bool, minimized: bool, focused: bool)
 }
 
 #[cfg(desktop)]
+const fn updater_check_is_due(
+    schedule: crate::updater::CheckSchedule,
+    active_runtime_seconds: u64,
+    resumed: bool,
+    wall_deadline_reached: bool,
+) -> bool {
+    schedule.is_due(active_runtime_seconds) || (resumed && wall_deadline_reached)
+}
+
+#[cfg(desktop)]
 pub fn start_update_scheduler<R: tauri::Runtime>(
     state: NativeBridgeState,
     app: tauri::AppHandle<R>,
@@ -276,6 +286,7 @@ pub fn start_update_scheduler<R: tauri::Runtime>(
         let mut schedule = crate::updater::CheckSchedule::after_frontend_ready();
         let mut active_runtime = Duration::ZERO;
         let mut last_tick = std::time::Instant::now();
+        let mut was_active = None;
         let mut wall_deadline =
             std::time::SystemTime::now() + Duration::from_secs(schedule.next_due_seconds());
         loop {
@@ -291,6 +302,8 @@ pub fn start_update_scheduler<R: tauri::Runtime>(
                     )
                 })
                 .unwrap_or(false);
+            let resumed = matches!(was_active, Some(false));
+            was_active = Some(active);
             if !active {
                 last_tick = now;
                 continue;
@@ -298,8 +311,13 @@ pub fn start_update_scheduler<R: tauri::Runtime>(
             active_runtime = active_runtime.saturating_add(now.duration_since(last_tick));
             last_tick = now;
             let active_runtime_seconds = active_runtime.as_secs();
-            let overdue_after_resume = std::time::SystemTime::now() >= wall_deadline;
-            if !schedule.is_due(active_runtime_seconds) && !overdue_after_resume {
+            let wall_deadline_reached = std::time::SystemTime::now() >= wall_deadline;
+            if !updater_check_is_due(
+                schedule,
+                active_runtime_seconds,
+                resumed,
+                wall_deadline_reached,
+            ) {
                 continue;
             }
             let response = start_update_check(state.clone(), app.clone());
@@ -1640,7 +1658,8 @@ mod tests {
     #[cfg(desktop)]
     use super::{
         deletes_capture_drafts_for_purge_scope, purge_capture_drafts_before_secure_store,
-        should_restore_capture_window, stage_diagnostics_export, updater_window_is_active,
+        should_restore_capture_window, stage_diagnostics_export, updater_check_is_due,
+        updater_window_is_active,
     };
 
     #[cfg(desktop)]
@@ -1650,6 +1669,39 @@ mod tests {
         assert!(!updater_window_is_active(false, false, true));
         assert!(!updater_window_is_active(true, true, true));
         assert!(!updater_window_is_active(true, false, false));
+    }
+
+    #[cfg(desktop)]
+    #[test]
+    fn updater_wall_clock_catch_up_requires_an_overdue_resume() {
+        let mut schedule = crate::updater::CheckSchedule::after_frontend_ready();
+        schedule.mark_checked(30);
+        let twenty_three_active_hours = 30 + 23 * 60 * 60;
+
+        assert!(!updater_check_is_due(
+            schedule,
+            twenty_three_active_hours,
+            false,
+            true,
+        ));
+        assert!(!updater_check_is_due(
+            schedule,
+            twenty_three_active_hours,
+            true,
+            false,
+        ));
+        assert!(updater_check_is_due(
+            schedule,
+            twenty_three_active_hours,
+            true,
+            true,
+        ));
+        assert!(updater_check_is_due(
+            schedule,
+            30 + 24 * 60 * 60,
+            false,
+            false,
+        ));
     }
 
     #[cfg(desktop)]

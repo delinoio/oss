@@ -956,9 +956,7 @@ impl<'a> PlatformInstaller<'a> {
     #[cfg(target_os = "linux")]
     fn install_linux(&self, bytes: &[u8]) -> Result<RestartDisposition, DiagnosticCode> {
         match self.package_kind {
-            PackageKind::LinuxAppimage => self
-                .install_appimage(bytes)
-                .map(|()| RestartDisposition::Relaunched),
+            PackageKind::LinuxAppimage => self.install_appimage(bytes),
             PackageKind::LinuxDeb => {
                 if !bytes.starts_with(b"!<arch>\n") {
                     return Err(DiagnosticCode::InstallationFailed);
@@ -999,7 +997,7 @@ impl<'a> PlatformInstaller<'a> {
     }
 
     #[cfg(target_os = "linux")]
-    fn install_appimage(&self, bytes: &[u8]) -> Result<(), DiagnosticCode> {
+    fn install_appimage(&self, bytes: &[u8]) -> Result<RestartDisposition, DiagnosticCode> {
         use std::os::unix::fs::PermissionsExt;
 
         if !bytes.starts_with(b"\x7fELF") {
@@ -1240,7 +1238,23 @@ fn wait_for_health(
     health_file: &Path,
     expected: &[u8],
 ) -> Result<(), DiagnosticCode> {
-    for _ in 0..300 {
+    wait_for_health_with_limit(
+        child,
+        health_file,
+        expected,
+        300,
+        Duration::from_millis(100),
+    )
+}
+
+fn wait_for_health_with_limit(
+    child: &mut Child,
+    health_file: &Path,
+    expected: &[u8],
+    attempts: usize,
+    poll_interval: Duration,
+) -> Result<(), DiagnosticCode> {
+    for _ in 0..attempts {
         if fs::read(health_file).is_ok_and(|value| value == expected) {
             return Ok(());
         }
@@ -1251,9 +1265,10 @@ fn wait_for_health(
         {
             return Err(DiagnosticCode::RestartFailed);
         }
-        std::thread::sleep(Duration::from_millis(100));
+        std::thread::sleep(poll_interval);
     }
     let _ = child.kill();
+    let _ = child.wait();
     Err(DiagnosticCode::RestartFailed)
 }
 
@@ -1423,7 +1438,7 @@ fn replace_file_transactionally(
     destination: &Path,
     replacement: tempfile::NamedTempFile,
     relaunch: impl FnOnce(&Path) -> Result<(), DiagnosticCode>,
-) -> Result<(), DiagnosticCode> {
+) -> Result<RestartDisposition, DiagnosticCode> {
     let backup = sibling_backup_path(destination)?;
     copy_appimage_backup(destination, &backup, |source, backup| {
         fs::copy(source, backup)
@@ -1438,11 +1453,15 @@ fn replace_file_transactionally(
                 event = "updater_install_rollback_failed",
                 package = "linux-appimage"
             );
+            return Ok(RestartDisposition::RestartRequired {
+                executable: destination.to_path_buf(),
+                diagnostic: DiagnosticCode::RestartFailed,
+            });
         }
         return Err(error);
     }
     let _ = fs::remove_file(backup);
-    Ok(())
+    Ok(RestartDisposition::Relaunched)
 }
 
 pub struct UpdaterController {
@@ -2118,7 +2137,7 @@ mod tests {
     }
 
     #[test]
-    fn every_failure_and_cancellation_preserves_the_installed_version() {
+    fn terminal_failures_and_cancellation_preserve_the_running_version() {
         let root = SigningKey::from_bytes(&RFC_ROOT_SEED);
         let signed = fixture("0.2.0", &root, vec![], None);
         let candidate =
@@ -2372,6 +2391,34 @@ mod tests {
     }
 
     #[test]
+    fn health_timeout_reaps_the_replacement_process() {
+        let mut child = Command::new(std::env::current_exe().unwrap())
+            .args(["--ignored", "restart_health_timeout_fixture"])
+            .spawn()
+            .unwrap();
+        assert!(child.try_wait().unwrap().is_none());
+        let health_file = tempfile::NamedTempFile::new().unwrap();
+
+        assert_eq!(
+            wait_for_health_with_limit(
+                &mut child,
+                health_file.path(),
+                b"unacknowledged",
+                1,
+                Duration::ZERO,
+            ),
+            Err(DiagnosticCode::RestartFailed)
+        );
+        assert!(child.try_wait().unwrap().is_some());
+    }
+
+    #[test]
+    #[ignore = "spawned only by health_timeout_reaps_the_replacement_process"]
+    fn restart_health_timeout_fixture() {
+        std::thread::sleep(Duration::from_secs(60));
+    }
+
+    #[test]
     fn schedule_is_stable_and_resume_checks_overdue_work() {
         let mut schedule = CheckSchedule::after_frontend_ready();
         assert!(!schedule.is_due(29));
@@ -2428,6 +2475,31 @@ mod tests {
         });
         assert_eq!(result, Err(DiagnosticCode::RestartFailed));
         assert_eq!(fs::read(destination).unwrap(), b"installed-version");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn failed_appimage_rollback_retains_restart_only_recovery() {
+        let directory = tempfile::tempdir().unwrap();
+        let destination = directory.path().join("DevHud.AppImage");
+        let backup = sibling_backup_path(&destination).unwrap();
+        fs::write(&destination, b"installed-version").unwrap();
+        let mut replacement = tempfile::NamedTempFile::new_in(directory.path()).unwrap();
+        replacement.write_all(b"candidate-version").unwrap();
+
+        let result = replace_file_transactionally(&destination, replacement, |_| {
+            fs::remove_file(&backup).unwrap();
+            Err(DiagnosticCode::RestartFailed)
+        });
+
+        assert_eq!(
+            result,
+            Ok(RestartDisposition::RestartRequired {
+                executable: destination.clone(),
+                diagnostic: DiagnosticCode::RestartFailed,
+            })
+        );
+        assert_eq!(fs::read(destination).unwrap(), b"candidate-version");
     }
 
     #[cfg(target_os = "linux")]
