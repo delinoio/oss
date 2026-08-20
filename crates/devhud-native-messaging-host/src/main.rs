@@ -88,6 +88,7 @@ fn authenticate_stream(
     origin: &str,
     pairing_nonce: Option<String>,
 ) -> Result<Session, String> {
+    set_ipc_exchange_deadline(&mut stream, IPC_IO_TIMEOUT);
     let challenge: Challenge =
         read_ipc_json(&mut stream).map_err(|_| "authentication-failed".to_string())?;
     validate_version(challenge.version, challenge.schema_version).map_err(str::to_string)?;
@@ -152,13 +153,15 @@ fn pairing_nonce_for_authentication(
     }
 }
 
+fn set_ipc_exchange_deadline(stream: &mut PlatformStream, timeout: Duration) {
+    stream.set_io_deadline(timeout);
+}
+
 fn read_ipc_json<T: serde::de::DeserializeOwned>(stream: &mut PlatformStream) -> io::Result<T> {
-    stream.set_io_deadline(IPC_IO_TIMEOUT);
     read_json(stream, ByteOrder::LittleEndian)
 }
 
 fn write_ipc_json<T: serde::Serialize>(stream: &mut PlatformStream, value: &T) -> io::Result<()> {
-    stream.set_io_deadline(IPC_IO_TIMEOUT);
     write_json(stream, ByteOrder::LittleEndian, value)
 }
 
@@ -186,6 +189,7 @@ fn forward(
     session: &mut Session,
     request: &NativeRequest,
 ) -> Result<serde_json::Value, ForwardFailure> {
+    set_ipc_exchange_deadline(&mut session.stream, IPC_IO_TIMEOUT);
     let issued_at = now_unix_millis();
     let mut ipc = IpcRequest {
         version: PROTOCOL_VERSION,
@@ -327,6 +331,7 @@ fn revoke_running_app_pairing() -> Result<bool, String> {
         proof: String::new(),
     };
     sign_request(&session.secret, &session.session_id, &mut request);
+    set_ipc_exchange_deadline(&mut session.stream, IPC_IO_TIMEOUT);
     write_ipc_json(&mut session.stream, &request)
         .map_err(|_| "unable to revoke live Native Messaging sessions".to_string())?;
     let response: IpcResponse = read_ipc_json(&mut session.stream)
@@ -376,6 +381,41 @@ fn register(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(windows)]
+fn classify_windows_registry_delete_status(status: u32) -> Result<(), String> {
+    use windows_sys::Win32::Foundation::{
+        ERROR_FILE_NOT_FOUND, ERROR_PATH_NOT_FOUND, ERROR_SUCCESS,
+    };
+
+    if matches!(
+        status,
+        ERROR_SUCCESS | ERROR_FILE_NOT_FOUND | ERROR_PATH_NOT_FOUND
+    ) {
+        Ok(())
+    } else {
+        Err(format!(
+            "unable to unregister Native Messaging host registry key (Windows error {status})"
+        ))
+    }
+}
+
+#[cfg(windows)]
+fn remove_windows_registration() -> Result<(), String> {
+    use windows_sys::Win32::System::Registry::{HKEY_CURRENT_USER, RegDeleteTreeW};
+
+    let key = format!(
+        r"Software\Google\Chrome\NativeMessagingHosts\{}",
+        devhud_native_messaging_host::HOST_NAME
+    )
+    .encode_utf16()
+    .chain(std::iter::once(0))
+    .collect::<Vec<_>>();
+    // SAFETY: HKEY_CURRENT_USER is a predefined registry handle and `key` is a
+    // live NUL-terminated UTF-16 subkey name for the duration of the call.
+    let status = unsafe { RegDeleteTreeW(HKEY_CURRENT_USER, key.as_ptr()) };
+    classify_windows_registry_delete_status(status)
+}
+
 fn unregister(args: &[String]) -> Result<(), String> {
     let pairing_was_revoked_by_app = revoke_running_app_pairing()?;
     let manifest_result = args
@@ -387,21 +427,16 @@ fn unregister(args: &[String]) -> Result<(), String> {
             registration::remove_manifest(&destination).map_err(|error| error.to_string())
         });
     #[cfg(windows)]
-    {
-        let key = format!(
-            r"HKCU\Software\Google\Chrome\NativeMessagingHosts\{}",
-            devhud_native_messaging_host::HOST_NAME
-        );
-        let _ = std::process::Command::new("reg.exe")
-            .args(["DELETE", &key, "/f"])
-            .status();
-    }
+    let registry_result = remove_windows_registration();
+    #[cfg(not(windows))]
+    let registry_result: Result<(), String> = Ok(());
     let pairing_result = if pairing_was_revoked_by_app {
         Ok(())
     } else {
         delete_pairing_secret()
     };
     manifest_result?;
+    registry_result?;
     pairing_result?;
     info!(event = "native_host_unregistered");
     Ok(())
@@ -433,6 +468,60 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn framed_ipc_operations_share_one_absolute_deadline() {
+        use std::{os::unix::net::UnixStream, thread};
+
+        let (mut peer, stream) = UnixStream::pair().unwrap();
+        write_json(
+            &mut peer,
+            ByteOrder::LittleEndian,
+            &serde_json::json!({ "message": 1 }),
+        )
+        .unwrap();
+        write_json(
+            &mut peer,
+            ByteOrder::LittleEndian,
+            &serde_json::json!({ "message": 2 }),
+        )
+        .unwrap();
+        let mut stream = endpoint::IpcClientStream::from_unix_stream(stream);
+        set_ipc_exchange_deadline(&mut stream, Duration::from_millis(20));
+
+        let first: serde_json::Value = read_ipc_json(&mut stream).unwrap();
+        assert_eq!(first, serde_json::json!({ "message": 1 }));
+        thread::sleep(Duration::from_millis(30));
+        assert!(matches!(
+            read_ipc_json::<serde_json::Value>(&mut stream)
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock
+        ));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_registry_deletion_is_idempotent_but_propagates_other_failures() {
+        use windows_sys::Win32::Foundation::{
+            ERROR_ACCESS_DENIED, ERROR_FILE_NOT_FOUND, ERROR_PATH_NOT_FOUND, ERROR_SUCCESS,
+        };
+
+        assert_eq!(
+            classify_windows_registry_delete_status(ERROR_SUCCESS),
+            Ok(())
+        );
+        assert_eq!(
+            classify_windows_registry_delete_status(ERROR_FILE_NOT_FOUND),
+            Ok(())
+        );
+        assert_eq!(
+            classify_windows_registry_delete_status(ERROR_PATH_NOT_FOUND),
+            Ok(())
+        );
+        assert!(classify_windows_registry_delete_status(ERROR_ACCESS_DENIED).is_err());
+    }
 
     #[test]
     fn native_request_requires_v7_nonce_and_five_second_deadline() {

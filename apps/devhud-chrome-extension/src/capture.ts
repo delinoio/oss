@@ -19,6 +19,7 @@ interface InjectedCapturedBrowserContext extends CapturedBrowserContext {
 export function injectedCapture(selectElement: boolean, language: "en" | "ko" = "en") {
   const allowedElements = new Set(["a", "article", "aside", "blockquote", "code", "dd", "details", "div", "dl", "dt", "em", "figcaption", "figure", "footer", "h1", "h2", "h3", "h4", "h5", "h6", "header", "hr", "img", "li", "main", "nav", "ol", "p", "pre", "section", "summary", "table", "tbody", "td", "tfoot", "th", "thead", "tr", "ul"]);
   const allowedAttributes = new Set(["alt", "aria-describedby", "aria-hidden", "aria-label", "aria-labelledby", "role", "title"]);
+  const clippingOverflow = new Set(["auto", "clip", "hidden", "scroll"]);
   const voidElements = new Set(["hr", "img"]);
   const encoder = new TextEncoder();
   const truncateUtf8 = (value: string, maximumBytes: number) => {
@@ -46,18 +47,47 @@ export function injectedCapture(selectElement: boolean, language: "en" | "ko" = 
       if (current.hasAttribute("hidden") || current.getAttribute("aria-hidden")?.toLowerCase() === "true") return false;
       ancestors.push(current);
     }
-    if (typeof element.checkVisibility === "function") {
-      return element.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true, contentVisibilityAuto: true });
+    const cssVisible = typeof element.checkVisibility === "function"
+      ? element.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true, contentVisibilityAuto: true })
+      : ancestors.every((current) => {
+          const computed = getComputedStyle(current);
+          const contentVisibility = computed.getPropertyValue("content-visibility");
+          return computed.display !== "none"
+            && computed.visibility !== "hidden"
+            && computed.visibility !== "collapse"
+            && Number.parseFloat(computed.opacity) !== 0
+            && (contentVisibility === "" || contentVisibility === "visible");
+        });
+    if (!cssVisible || !Number.isFinite(innerWidth) || !Number.isFinite(innerHeight) || innerWidth <= 0 || innerHeight <= 0) return false;
+    const bounds = element.getBoundingClientRect();
+    if (![bounds.x, bounds.y, bounds.width, bounds.height].every(Number.isFinite) || bounds.width <= 0 || bounds.height <= 0) return false;
+    let left = Math.max(0, bounds.x);
+    let top = Math.max(0, bounds.y);
+    let right = Math.min(innerWidth, bounds.x + bounds.width);
+    let bottom = Math.min(innerHeight, bounds.y + bounds.height);
+    if (right <= left || bottom <= top) return false;
+    for (const ancestor of ancestors.slice(1)) {
+      const computed = getComputedStyle(ancestor);
+      const overflow = computed.overflow.trim().split(/\s+/u).filter(Boolean);
+      const overflowX = computed.overflowX || overflow[0] || "visible";
+      const overflowY = computed.overflowY || overflow[1] || overflow[0] || "visible";
+      const clipX = clippingOverflow.has(overflowX);
+      const clipY = clippingOverflow.has(overflowY);
+      if (!clipX && !clipY) continue;
+      const ancestorBounds = ancestor.getBoundingClientRect();
+      if (clipX) {
+        if (![ancestorBounds.x, ancestorBounds.width].every(Number.isFinite) || ancestorBounds.width <= 0) return false;
+        left = Math.max(left, ancestorBounds.x);
+        right = Math.min(right, ancestorBounds.x + ancestorBounds.width);
+      }
+      if (clipY) {
+        if (![ancestorBounds.y, ancestorBounds.height].every(Number.isFinite) || ancestorBounds.height <= 0) return false;
+        top = Math.max(top, ancestorBounds.y);
+        bottom = Math.min(bottom, ancestorBounds.y + ancestorBounds.height);
+      }
+      if (right <= left || bottom <= top) return false;
     }
-    return ancestors.every((current) => {
-      const computed = getComputedStyle(current);
-      const contentVisibility = computed.getPropertyValue("content-visibility");
-      return computed.display !== "none"
-        && computed.visibility !== "hidden"
-        && computed.visibility !== "collapse"
-        && Number.parseFloat(computed.opacity) !== 0
-        && (contentVisibility === "" || contentVisibility === "visible");
-    });
+    return true;
   };
   const sanitize = (selected: Element | null) => {
     if (!selected) return "";

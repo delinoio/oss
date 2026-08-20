@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { injectedCapture } from "./capture.js";
 
 async function select(
@@ -26,7 +26,12 @@ async function select(
 }
 
 describe("injected capture", () => {
+  beforeEach(() => {
+    vi.spyOn(Element.prototype, "getBoundingClientRect").mockReturnValue({ x: 1, y: 2, width: 100, height: 20 } as DOMRect);
+  });
+
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.useRealTimers();
     window.history.replaceState(null, "", "/");
     document.body.replaceChildren();
@@ -74,13 +79,40 @@ describe("injected capture", () => {
     ["negative width", { x: 1, y: 2, width: -1, height: 4 }],
     ["non-finite position", { x: Number.NaN, y: 2, width: 3, height: 4 }],
     ["non-finite dimension", { x: 1, y: 2, width: 3, height: Number.POSITIVE_INFINITY }],
-  ])("omits %s selection bounds", async (_case, bounds) => {
-    document.body.innerHTML = "<main>safe</main>";
+    ["offscreen layout box", { x: innerWidth + 1, y: 2, width: 3, height: 4 }],
+  ])("excludes a selection with a %s", async (_case, bounds) => {
+    document.body.innerHTML = '<main aria-label="safe">safe</main>';
 
     const result = await select(document.body.firstElementChild!, bounds);
 
     expect(result?.selectedBounds).toBeNull();
-    expect(result?.outerHtml).toBe("<main>safe</main>");
+    expect(result?.accessibility).toEqual({});
+    expect(result?.outerHtml).toBe("");
+  });
+
+  it("excludes a selection clipped by a zero-area overflow ancestor", async () => {
+    document.body.innerHTML = '<div style="width: 0; height: 0; overflow: hidden"><main aria-label="secret">hidden</main></div>';
+    Object.defineProperty(document.querySelector("div"), "getBoundingClientRect", {
+      value: () => ({ x: 1, y: 2, width: 0, height: 0 }),
+    });
+
+    const result = await select(document.querySelector("main")!);
+
+    expect(result?.selectedBounds).toBeNull();
+    expect(result?.accessibility).toEqual({});
+    expect(result?.outerHtml).toBe("");
+  });
+
+  it("does not traverse a fully clipped subtree", async () => {
+    document.body.innerHTML = '<main><div style="overflow: hidden"><p>secret</p></div><p>visible</p></main>';
+    Object.defineProperty(document.querySelector("div"), "getBoundingClientRect", {
+      value: () => ({ x: 1, y: 2, width: 0, height: 0 }),
+    });
+
+    const result = await select(document.querySelector("main")!);
+
+    expect(result?.outerHtml).toContain("visible");
+    expect(result?.outerHtml).not.toContain("secret");
   });
 
   it.each([
@@ -242,6 +274,21 @@ describe("injected capture", () => {
     overlayWindow.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
 
     await expect(capture).resolves.toMatchObject({ outerHtml: '<article aria-label="second">second</article>' });
+  });
+
+  it("skips keyboard candidates clipped by a zero-area overflow ancestor", async () => {
+    document.body.innerHTML = '<div style="width: 0; height: 0; overflow: hidden"><main>hidden</main></div><article>visible</article>';
+    Object.defineProperty(document.querySelector("div"), "getBoundingClientRect", {
+      value: () => ({ x: 1, y: 2, width: 0, height: 0 }),
+    });
+    const capture = injectedCapture(true);
+    const overlayWindow = document.querySelector("iframe")?.contentWindow;
+    if (!overlayWindow) throw new Error("selection overlay was not created");
+
+    overlayWindow.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true }));
+    overlayWindow.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+
+    await expect(capture).resolves.toMatchObject({ outerHtml: "<article>visible</article>" });
   });
 
   it("starts on the previously focused eligible element", async () => {
