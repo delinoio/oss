@@ -125,6 +125,7 @@ func sweep(ctx context.Context, worker sweepRunner, logger *slog.Logger) error {
 		"accounts_purged", result.AccountsPurged,
 		"request_logs_deleted", result.RequestLogsDeleted,
 		"audit_events_deleted", result.AuditEventsDeleted,
+		"crash_reports_deleted", result.CrashReportsDeleted,
 		"staging_objects_deleted", result.StagingObjectsDeleted,
 		"upload_removals_completed", result.UploadRemovalsCompleted,
 	)

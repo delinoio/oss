@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
 
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { DiagnosticArchitecture, DiagnosticComponent, DiagnosticPlatform, DiagnosticSeverity } from "@delinoio/devhud-api-client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
+import { DiagnosticsCorrelationsKey, DiagnosticsStorageKey } from "./diagnostics";
 import * as identityClient from "./identity-client";
 import type { IdentitySession } from "./identity-client";
 import { messages } from "./localization";
@@ -14,8 +16,13 @@ import { defaultDevHudSettings } from "./settings-contract";
 const mobileRuntime: RuntimeSnapshot = {
   bridgeVersion: 1,
   platform: RuntimePlatform.Ios,
+  operatingSystem: "ios",
   architecture: "arm64",
   osVersion: "16.0",
+  appVersion: "0.1.0",
+  buildId: "test",
+  tauriRevision: "4af26a3f7f8b692d62cca549bbacd93f5ce90b41",
+  cefRevision: "",
   lifecycle: LifecycleState.Active,
   capabilities: { secureSettings: true, notifications: false, storeUpdates: false, widgets: false },
 };
@@ -267,6 +274,51 @@ describe("native App state", () => {
     fireEvent.click(screen.getByRole("button", { name: messages.en.continueLocally }));
     await waitFor(() => expect(request).toHaveBeenCalledWith({ operation: "deck.take-pending-link" }));
     expect(deckLink).toBeNull();
+  });
+
+  it("prunes expired diagnostics during startup without opening Diagnostics", async () => {
+    const correlationId = "0198c8b0-77d6-7d4a-a7d9-e4d7b11c4400";
+    const occurredAt = "2000-01-01T00:00:00.000Z";
+    localStorage.setItem(DiagnosticsStorageKey, JSON.stringify([{
+      schemaVersion: 1,
+      correlationId,
+      occurredAt,
+      durationMilliseconds: 0,
+      component: DiagnosticComponent.APP,
+      severity: DiagnosticSeverity.ERROR,
+      outcome: "failed",
+      errorCode: "APP_FAILURE",
+      summary: "A classified application failure was captured.",
+      stackFrames: [],
+      relatedCorrelationIds: [],
+      build: {
+        appVersion: mobileRuntime.appVersion,
+        buildId: mobileRuntime.buildId,
+        platform: DiagnosticPlatform.IOS,
+        architecture: DiagnosticArchitecture.ARM64,
+        osVersion: mobileRuntime.osVersion,
+        tauriRevision: mobileRuntime.tauriRevision,
+        cefRevision: "",
+      },
+    }]));
+    localStorage.setItem(DiagnosticsCorrelationsKey, JSON.stringify([{
+      source: "connect-response",
+      correlationId,
+      operation: "diagnostics",
+      occurredAt,
+      durationMilliseconds: 1,
+    }]));
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));
+    const bridge = bridgeWith(async (request) => {
+      if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
+      throw new Error(`unexpected operation ${request.operation}`);
+    });
+
+    render(<App bridge={bridge} initialRuntime={mobileRuntime} />);
+
+    await waitFor(() => expect(localStorage.getItem(DiagnosticsStorageKey)).toBeNull());
+    expect(localStorage.getItem(DiagnosticsCorrelationsKey)).toBeNull();
+    expect(screen.queryByText(messages.en.diagnosticsNoEvents)).toBeNull();
   });
 
   it("peeks for a callback only after the native listener is installed", async () => {

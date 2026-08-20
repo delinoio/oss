@@ -32,6 +32,8 @@ private struct RequestArgs: Decodable {
     let apiOrigin: String?
     let url: String?
     let issuer: String?
+    let suggestedName: String?
+    let contents: String?
     let setting: SecureSetting?
     let value: String?
     let scope: String?
@@ -42,8 +44,12 @@ private struct RequestArgs: Decodable {
     let deckId: String?
 }
 
-final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate {
+final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocumentPickerDelegate {
+    private var pendingDiagnosticsExport: (Invoke, URL)?
+    private var pendingDiagnosticsCleanup: URL?
+
     @objc public override func load(webview: WKWebView) {
+        cleanupDiagnosticsTemporaryDirectory()
         guard UserDefaults(suiteName: appGroup) != nil else { return }
         UNUserNotificationCenter.current().delegate = self
     }
@@ -51,8 +57,11 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate {
     @objc func request(_ invoke: Invoke) throws {
         let args = try invoke.parseArgs(RequestArgs.self)
         switch args.operation {
+        case "runtime.snapshot":
+            invoke.resolve(["kind": "runtime-os-version", "osVersion": UIDevice.current.systemVersion])
         case "lifecycle.open-external": try openExternal(args, invoke)
         case "auth.open-system-browser": try openAuthenticationBrowser(args, invoke)
+        case "diagnostics.export": try exportDiagnostics(args, invoke)
         case "secure.read": try readSecure(args, invoke)
         case "secure.write": try writeSecure(args, invoke)
         case "secure.remove": try removeSecure(args, invoke)
@@ -81,6 +90,83 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate {
             if opened { invoke.resolve(["kind": "ok"]) }
             else { invoke.reject("platform-failure", code: "platform-failure") }
         }
+    }
+
+    private func exportDiagnostics(_ args: RequestArgs, _ invoke: Invoke) throws {
+        guard pendingDiagnosticsExport == nil,
+              let suggestedName = args.suggestedName,
+              let contents = args.contents,
+              contents.lengthOfBytes(using: .utf8) <= 1024 * 1024,
+              suggestedName.range(
+                of: #"^devhud-diagnostics-[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.json$"#,
+                options: .regularExpression
+              ) != nil,
+              let data = contents.data(using: .utf8),
+              (try JSONSerialization.jsonObject(with: data)) is [String: Any]
+        else { throw NativeError.invalidArgument }
+
+        let fileManager = FileManager.default
+        let directory = diagnosticsTemporaryDirectory()
+        guard cleanupDiagnosticsTemporaryDirectory() else {
+            invoke.reject("storage-failure", code: "storage-failure")
+            return
+        }
+        do {
+            try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+            let source = directory.appendingPathComponent(suggestedName, isDirectory: false)
+            try data.write(to: source, options: .atomic)
+            pendingDiagnosticsExport = (invoke, source)
+            DispatchQueue.main.async {
+                guard let viewController = self.manager.viewController else {
+                    self.finishDiagnosticsExport(saved: false, failed: true)
+                    return
+                }
+                let picker = UIDocumentPickerViewController(url: source, in: .exportToService)
+                picker.delegate = self
+                picker.modalPresentationStyle = .fullScreen
+                viewController.present(picker, animated: true)
+            }
+        } catch {
+            cleanupDiagnosticsTemporaryDirectory(at: directory)
+            invoke.reject("storage-failure", code: "storage-failure")
+        }
+    }
+
+    @discardableResult
+    private func cleanupDiagnosticsTemporaryDirectory(at directory: URL? = nil) -> Bool {
+        let target = directory ?? pendingDiagnosticsCleanup ?? diagnosticsTemporaryDirectory()
+        do {
+            try FileManager.default.removeItem(at: target)
+            pendingDiagnosticsCleanup = nil
+            return true
+        } catch let error as CocoaError where error.code == .fileNoSuchFile {
+            pendingDiagnosticsCleanup = nil
+            return true
+        } catch {
+            pendingDiagnosticsCleanup = target
+            return false
+        }
+    }
+
+    @discardableResult
+    private func finishDiagnosticsExport(saved: Bool, failed: Bool = false) -> Bool {
+        guard let (invoke, source) = pendingDiagnosticsExport else { return true }
+        pendingDiagnosticsExport = nil
+        let cleanupSucceeded = cleanupDiagnosticsTemporaryDirectory(at: source.deletingLastPathComponent())
+        if failed || !cleanupSucceeded {
+            invoke.reject("storage-failure", code: "storage-failure")
+        } else {
+            invoke.resolve(["kind": "diagnostics-export", "outcome": saved ? "saved" : "cancelled"])
+        }
+        return cleanupSucceeded
+    }
+
+    func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+        finishDiagnosticsExport(saved: !urls.isEmpty)
+    }
+
+    func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+        finishDiagnosticsExport(saved: false)
     }
 
     private func isSecureOrLoopback(_ url: URL) -> Bool {
@@ -364,6 +450,15 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate {
     private func purgeSecure(_ args: RequestArgs, _ invoke: Invoke) throws {
         guard let scope = args.scope, ["logout", "account-deletion", "api-change"].contains(scope),
               scope == "logout" || args.profileId != nil else { throw NativeError.invalidArgument }
+        if scope == "logout" || scope == "account-deletion" {
+            let diagnosticsCleanupSucceeded: Bool
+            if pendingDiagnosticsExport != nil {
+                diagnosticsCleanupSucceeded = finishDiagnosticsExport(saved: false)
+            } else {
+                diagnosticsCleanupSucceeded = cleanupDiagnosticsTemporaryDirectory()
+            }
+            guard diagnosticsCleanupSucceeded else { rejectStorageFailure(invoke); return }
+        }
         for accessGroupKey in [sharedAccessGroupKey, legacyAccessGroupKey] {
             guard purgeSecureGroup(args, accessGroupKey: accessGroupKey) else { rejectStorageFailure(invoke); return }
         }
@@ -434,6 +529,10 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate {
             }
         }
     }
+}
+
+private func diagnosticsTemporaryDirectory() -> URL {
+    FileManager.default.temporaryDirectory.appendingPathComponent("devhud-diagnostics-v1", isDirectory: true)
 }
 
 private enum NativeError: Error { case invalidArgument }

@@ -7,10 +7,12 @@ import (
 )
 
 const (
-	SettingsMaximumBytes = 1_048_576
-	RecoveryWindow       = 30 * 24 * time.Hour
-	RequestLogRetention  = 30 * 24 * time.Hour
-	AuditRetention       = 180 * 24 * time.Hour
+	SettingsMaximumBytes              = 1_048_576
+	RecoveryWindow                    = 30 * 24 * time.Hour
+	RequestLogRetention               = 30 * 24 * time.Hour
+	AuditRetention                    = 180 * 24 * time.Hour
+	CrashReportRetention              = 30 * 24 * time.Hour
+	CrashReportMaximumRetainedPerUser = 100
 )
 
 type DeletionState int16
@@ -95,8 +97,10 @@ func (e *PermissionError) Error() string { return "account is blocked" }
 func (e *AccountStateError) Error() string { return "account state does not allow the operation" }
 
 var (
-	ErrIdentityPurged = errors.New("identity was permanently purged")
-	ErrNotFound       = errors.New("record not found")
+	ErrIdentityPurged      = errors.New("identity was permanently purged")
+	ErrNotFound            = errors.New("record not found")
+	ErrCorrelationConflict = errors.New("client correlation already identifies a different crash report")
+	ErrCrashReportQuota    = errors.New("crash report quota exhausted")
 )
 
 type Clock interface {
@@ -120,6 +124,7 @@ type Repository interface {
 	GetAccount(context.Context, string) (User, error)
 	DeleteAccount(context.Context, string, time.Time) (User, error)
 	RestoreAccount(context.Context, string, time.Time) (User, error)
+	SubmitCrashReport(context.Context, string, CrashReport) (CrashReport, error)
 	RecordRequest(context.Context, RequestLog) error
 	RecordAudit(context.Context, AuditEvent) error
 	ClaimPurgeBatch(context.Context, time.Time, int) ([]User, error)
@@ -191,8 +196,38 @@ type AuditEvent struct {
 }
 
 type RetentionResult struct {
-	RequestLogsDeleted int64
-	AuditEventsDeleted int64
+	RequestLogsDeleted  int64
+	AuditEventsDeleted  int64
+	CrashReportsDeleted int64
+}
+
+// CrashReport contains only the bounded, user-previewed diagnostic fields
+// accepted by the public contract. OwnerUserID exists solely for authorization
+// and account-deletion cascading; it must never be emitted as telemetry.
+type CrashReport struct {
+	ID                    string
+	OwnerUserID           string
+	RequestCorrelationID  string
+	ClientCorrelationID   string
+	PayloadSHA256         []byte
+	ReportSchemaVersion   uint32
+	AppVersion            string
+	BuildID               string
+	Platform              int16
+	Architecture          int16
+	OSVersion             string
+	TauriRevision         string
+	CEFRevision           string
+	OccurredAt            time.Time
+	Component             int16
+	Severity              int16
+	ErrorCode             string
+	RedactedSummary       string
+	RedactedStackTrace    string
+	RelatedCorrelationIDs []string
+	DurationMilliseconds  uint64
+	AcceptedAt            time.Time
+	ExpiresAt             time.Time
 }
 
 type SweepCoordinator interface {

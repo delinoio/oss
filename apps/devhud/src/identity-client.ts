@@ -1,4 +1,4 @@
-import { ProjectId, type GetBootstrapResponse } from "@delinoio/devhud-api-client";
+import { ProjectId, type GetBootstrapResponse, type StaticCapability } from "@delinoio/devhud-api-client";
 import LogtoClient, { createRequester, isLogtoRequestError, LogtoClientError, type ClientAdapter, type Storage as LogtoStorage } from "@logto/client";
 import { isValidLogtoAudience, normalizeLogtoIssuer } from "./identity-contract.ts";
 import { nativeBridge, RuntimePlatform, SecureSettingKind, type NativeBridgeV1, type RuntimePlatform as RuntimePlatformType } from "./native-bridge";
@@ -11,6 +11,7 @@ export interface ValidatedBootstrap {
   readonly audience: string;
   readonly clientId: string;
   readonly redirectUri: typeof NativeAuthCallback;
+  readonly capabilities: readonly StaticCapability[];
 }
 
 export class BootstrapContractError extends TypeError {
@@ -30,7 +31,8 @@ export function validateBootstrap(response: GetBootstrapResponse, platform: Runt
   if (response.logtoRedirects?.native !== NativeAuthCallback) throw new BootstrapContractError("native redirect URI does not match the application contract");
   const clientId = platform === RuntimePlatform.Ios ? response.logtoClients?.ios : platform === RuntimePlatform.Android ? response.logtoClients?.android : response.logtoClients?.desktop;
   if (clientId === undefined || !/^[\x21-\x7e]{1,256}$/u.test(clientId)) throw new BootstrapContractError("platform Logto client ID is missing or invalid");
-  return { issuer, audience, clientId, redirectUri: NativeAuthCallback };
+  const capabilities = Object.freeze([...new Set(response.capabilities ?? [])]);
+  return { issuer, audience, clientId, redirectUri: NativeAuthCallback, capabilities };
 }
 
 export function isTerminalAccessTokenError(reason: unknown): boolean {

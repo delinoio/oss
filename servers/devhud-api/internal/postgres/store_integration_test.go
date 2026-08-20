@@ -3,6 +3,7 @@
 package postgres
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os"
@@ -15,6 +16,255 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+func TestCrashReportPersistenceRetentionIdempotencyAndAccountCascade(t *testing.T) {
+	databaseURL := os.Getenv("DEVHUD_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("DEVHUD_TEST_DATABASE_URL is not set")
+	}
+	ctx := context.Background()
+	configuration, err := pgxpool.ParseConfig(databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	configuration.ConnConfig.RuntimeParams["timezone"] = "America/New_York"
+	pool, err := pgxpool.NewWithConfig(ctx, configuration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	if err := pool.Ping(ctx); err != nil {
+		t.Fatal(err)
+	}
+	dropFoundation(t, ctx, pool)
+	defer dropFoundation(t, ctx, pool)
+	if err := Migrate(ctx, pool); err != nil {
+		t.Fatal(err)
+	}
+	store := New(pool, idgen.UUIDv7{}, domain.RealClock{})
+	identity := domain.Identity{
+		Issuer: "https://issuer.example", Subject: "diagnostics", DisplayName: "Diagnostics", Email: "diagnostics@example.com",
+		Fingerprint: bytes.Repeat([]byte{9}, 32),
+	}
+	identity.FingerprintCandidates = [][]byte{identity.Fingerprint}
+	user, err := store.ProvisionUser(ctx, identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// This retention window crosses the New York DST fallback. The database
+	// constraint must still match Go's exact 720-hour duration.
+	now := time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC)
+	requestCorrelation, _ := idgen.UUIDv7{}.New()
+	clientCorrelation, _ := idgen.UUIDv7{}.New()
+	relatedCorrelation, _ := idgen.UUIDv7{}.New()
+	report := domain.CrashReport{
+		RequestCorrelationID: requestCorrelation, ClientCorrelationID: clientCorrelation,
+		PayloadSHA256: bytes.Repeat([]byte{7}, 32), ReportSchemaVersion: 1,
+		AppVersion: "1.0.0", BuildID: "2026.08.17.1", Platform: 3, Architecture: 1,
+		OSVersion: "linux", TauriRevision: "4af26a3f7f8b692d62cca549bbacd93f5ce90b41",
+		CEFRevision: "150.0.10+g8042e43+chromium-150.0.7871.101", OccurredAt: now,
+		Component: 1, Severity: 1, ErrorCode: "APP_FAILURE", RedactedSummary: "A classified failure occurred.",
+		RedactedStackTrace: "at render", RelatedCorrelationIDs: []string{relatedCorrelation}, DurationMilliseconds: 17,
+		AcceptedAt: now, ExpiresAt: now.Add(domain.CrashReportRetention),
+	}
+	stored, err := store.SubmitCrashReport(ctx, user.ID, report)
+	if err != nil || stored.ID == "" || stored.OwnerUserID != user.ID || stored.ExpiresAt.Sub(stored.AcceptedAt) != domain.CrashReportRetention {
+		t.Fatalf("stored crash report = %+v, err=%v", stored, err)
+	}
+	retried, err := store.SubmitCrashReport(ctx, user.ID, report)
+	if err != nil || retried.ID != stored.ID || !retried.AcceptedAt.Equal(stored.AcceptedAt) {
+		t.Fatalf("idempotent retry = %+v, err=%v", retried, err)
+	}
+	conflict := report
+	conflict.PayloadSHA256 = bytes.Repeat([]byte{8}, 32)
+	if _, err := store.SubmitCrashReport(ctx, user.ID, conflict); !errors.Is(err, domain.ErrCorrelationConflict) {
+		t.Fatalf("correlation conflict error = %v", err)
+	}
+	retention, err := store.PruneRetention(ctx, now.Add(domain.CrashReportRetention-time.Nanosecond), 10)
+	if err != nil || retention.CrashReportsDeleted != 0 {
+		t.Fatalf("early crash retention = %+v, err=%v", retention, err)
+	}
+	retention, err = store.PruneRetention(ctx, now.Add(domain.CrashReportRetention), 10)
+	if err != nil || retention.CrashReportsDeleted != 1 {
+		t.Fatalf("boundary crash retention = %+v, err=%v", retention, err)
+	}
+
+	report.ClientCorrelationID, _ = idgen.UUIDv7{}.New()
+	report.AcceptedAt = now.Add(time.Hour)
+	report.ExpiresAt = report.AcceptedAt.Add(domain.CrashReportRetention)
+	report.Platform = 6
+	report.Architecture = 0
+	report.OSVersion = "browser"
+	report.TauriRevision = ""
+	report.CEFRevision = ""
+	if _, err := store.SubmitCrashReport(ctx, user.ID, report); err != nil {
+		t.Fatalf("persist browser crash report: %v", err)
+	}
+	if _, err := pool.Exec(ctx, "DELETE FROM devhud_users WHERE user_id = $1", user.ID); err != nil {
+		t.Fatal(err)
+	}
+	var reports int
+	if err := pool.QueryRow(ctx, "SELECT count(*) FROM devhud_crash_reports").Scan(&reports); err != nil || reports != 0 {
+		t.Fatalf("crash reports after account cascade = %d, err=%v", reports, err)
+	}
+}
+
+func TestCrashReportExpiredCorrelationCanBeReusedBeforePruning(t *testing.T) {
+	now := time.Date(2026, 8, 19, 12, 0, 0, 0, time.UTC)
+	ctx, pool, store := newIntegrationStore(t, now)
+	identity := domain.Identity{
+		Issuer: "https://issuer.example", Subject: "diagnostics-expired-correlation",
+		DisplayName: "Diagnostics Expired Correlation", Email: "diagnostics-expired@example.com",
+		Fingerprint: bytes.Repeat([]byte{11}, 32),
+	}
+	identity.FingerprintCandidates = [][]byte{identity.Fingerprint}
+	user, err := store.ProvisionUser(ctx, identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	requestCorrelation, _ := idgen.UUIDv7{}.New()
+	clientCorrelation, _ := idgen.UUIDv7{}.New()
+	report := domain.CrashReport{
+		RequestCorrelationID: requestCorrelation, ClientCorrelationID: clientCorrelation,
+		PayloadSHA256: bytes.Repeat([]byte{7}, 32), ReportSchemaVersion: 1,
+		AppVersion: "1.0.0", BuildID: "2026.08.19.1", Platform: 3, Architecture: 1,
+		OSVersion: "linux", TauriRevision: "4af26a3f7f8b692d62cca549bbacd93f5ce90b41",
+		CEFRevision: "150.0.10+g8042e43+chromium-150.0.7871.101", OccurredAt: now,
+		Component: 1, Severity: 1, ErrorCode: "APP_FAILURE", RedactedSummary: "A classified failure occurred.",
+		RedactedStackTrace: "at render", RelatedCorrelationIDs: []string{}, DurationMilliseconds: 17,
+		AcceptedAt: now, ExpiresAt: now.Add(domain.CrashReportRetention),
+	}
+	stored, err := store.SubmitCrashReport(ctx, user.ID, report)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	renewed := report
+	renewed.RequestCorrelationID, _ = idgen.UUIDv7{}.New()
+	renewed.AcceptedAt = report.ExpiresAt
+	renewed.ExpiresAt = renewed.AcceptedAt.Add(domain.CrashReportRetention)
+	restored, err := store.SubmitCrashReport(ctx, user.ID, renewed)
+	if err != nil {
+		t.Fatalf("reuse expired correlation before pruning: %v", err)
+	}
+	if restored.ID == stored.ID || !restored.AcceptedAt.Equal(renewed.AcceptedAt) || !restored.ExpiresAt.Equal(renewed.ExpiresAt) {
+		t.Fatalf("renewed crash report = %+v, previous = %+v", restored, stored)
+	}
+	var retained int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM devhud_crash_reports
+        WHERE owner_user_id = $1 AND client_correlation_id = $2`, user.ID, report.ClientCorrelationID).Scan(&retained); err != nil {
+		t.Fatal(err)
+	}
+	if retained != 1 {
+		t.Fatalf("retained rows for reused correlation = %d, want 1", retained)
+	}
+}
+
+func TestCrashReportRetainedQuotaIsAtomicAndPreservesIdempotency(t *testing.T) {
+	now := time.Date(2026, 8, 19, 12, 0, 0, 0, time.UTC)
+	ctx, _, store := newIntegrationStore(t, now)
+	identity := domain.Identity{
+		Issuer: "https://issuer.example", Subject: "diagnostics-quota", DisplayName: "Diagnostics Quota", Email: "diagnostics-quota@example.com",
+		Fingerprint: bytes.Repeat([]byte{10}, 32),
+	}
+	identity.FingerprintCandidates = [][]byte{identity.Fingerprint}
+	user, err := store.ProvisionUser(ctx, identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	newReport := func() domain.CrashReport {
+		requestCorrelation, _ := idgen.UUIDv7{}.New()
+		clientCorrelation, _ := idgen.UUIDv7{}.New()
+		return domain.CrashReport{
+			RequestCorrelationID: requestCorrelation, ClientCorrelationID: clientCorrelation,
+			PayloadSHA256: bytes.Repeat([]byte{7}, 32), ReportSchemaVersion: 1,
+			AppVersion: "1.0.0", BuildID: "2026.08.19.1", Platform: 3, Architecture: 1,
+			OSVersion: "linux", TauriRevision: "4af26a3f7f8b692d62cca549bbacd93f5ce90b41",
+			CEFRevision: "150.0.10+g8042e43+chromium-150.0.7871.101", OccurredAt: now,
+			Component: 1, Severity: 1, ErrorCode: "APP_FAILURE", RedactedSummary: "A classified failure occurred.",
+			RedactedStackTrace: "at render", RelatedCorrelationIDs: []string{}, DurationMilliseconds: 17,
+			AcceptedAt: now, ExpiresAt: now.Add(domain.CrashReportRetention),
+		}
+	}
+	for range domain.CrashReportMaximumRetainedPerUser - 1 {
+		if _, err := store.SubmitCrashReport(ctx, user.ID, newReport()); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	type submission struct {
+		input  domain.CrashReport
+		stored domain.CrashReport
+		err    error
+	}
+	start := make(chan struct{})
+	results := make(chan submission, 2)
+	var wait sync.WaitGroup
+	for range 2 {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			input := newReport()
+			<-start
+			stored, err := store.SubmitCrashReport(ctx, user.ID, input)
+			results <- submission{input: input, stored: stored, err: err}
+		}()
+	}
+	close(start)
+	wait.Wait()
+	close(results)
+
+	var accepted submission
+	var acceptedCount, quotaCount int
+	for result := range results {
+		switch {
+		case result.err == nil:
+			accepted = result
+			acceptedCount++
+		case errors.Is(result.err, domain.ErrCrashReportQuota):
+			quotaCount++
+		default:
+			t.Fatalf("concurrent submission error = %v", result.err)
+		}
+	}
+	if acceptedCount != 1 || quotaCount != 1 {
+		t.Fatalf("concurrent quota results: accepted=%d quota=%d", acceptedCount, quotaCount)
+	}
+
+	retried, err := store.SubmitCrashReport(ctx, user.ID, accepted.input)
+	if err != nil || retried.ID != accepted.stored.ID {
+		t.Fatalf("idempotent retry at quota = %+v, err=%v", retried, err)
+	}
+	conflict := accepted.input
+	conflict.PayloadSHA256 = bytes.Repeat([]byte{8}, 32)
+	if _, err := store.SubmitCrashReport(ctx, user.ID, conflict); !errors.Is(err, domain.ErrCorrelationConflict) {
+		t.Fatalf("correlation conflict at quota = %v", err)
+	}
+	if _, err := store.SubmitCrashReport(ctx, user.ID, newReport()); !errors.Is(err, domain.ErrCrashReportQuota) {
+		t.Fatalf("fresh submission at quota = %v", err)
+	}
+
+	expiryBoundary := now.Add(domain.CrashReportRetention)
+	postExpiryReport := newReport()
+	postExpiryReport.AcceptedAt = expiryBoundary
+	postExpiryReport.ExpiresAt = expiryBoundary.Add(domain.CrashReportRetention)
+	if _, err := store.SubmitCrashReport(ctx, user.ID, postExpiryReport); err != nil {
+		t.Fatalf("submission after quota expiry without pruning = %v", err)
+	}
+
+	retention, err := store.PruneRetention(ctx, expiryBoundary, domain.CrashReportMaximumRetainedPerUser)
+	if err != nil || retention.CrashReportsDeleted != domain.CrashReportMaximumRetainedPerUser {
+		t.Fatalf("quota retention prune = %+v, err=%v", retention, err)
+	}
+	afterPruneReport := newReport()
+	afterPruneReport.AcceptedAt = expiryBoundary
+	afterPruneReport.ExpiresAt = expiryBoundary.Add(domain.CrashReportRetention)
+	if _, err := store.SubmitCrashReport(ctx, user.ID, afterPruneReport); err != nil {
+		t.Fatalf("submission after retention prune = %v", err)
+	}
+}
 
 func TestSchemaCurrentUsesConfiguredSearchPath(t *testing.T) {
 	databaseURL := os.Getenv("DEVHUD_TEST_DATABASE_URL")
@@ -692,7 +942,7 @@ func (clock *mutableClock) Set(now time.Time) {
 func dropFoundation(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
 	t.Helper()
 	// This helper is intentionally scoped to the explicitly configured disposable test database.
-	_, err := pool.Exec(ctx, `DROP TABLE IF EXISTS devhud_audit_events, devhud_uploads,
+	_, err := pool.Exec(ctx, `DROP TABLE IF EXISTS devhud_crash_reports, devhud_audit_events, devhud_uploads,
 		devhud_upload_reservations, devhud_upload_groups, devhud_submissions,
 		devhud_request_logs, devhud_settings, devhud_purged_identities,
 		devhud_users, devhud_schema_migrations CASCADE`)

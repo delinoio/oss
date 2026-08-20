@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -56,11 +58,23 @@ func TestSweepPreservesEarlierParentDeadline(t *testing.T) {
 	}
 }
 
+func TestSweepLogsCrashReportPruningCount(t *testing.T) {
+	var logs bytes.Buffer
+	runner := &recordingSweepRunner{result: sweeper.Result{CrashReportsDeleted: 7}}
+	if err := sweep(context.Background(), runner, slog.New(slog.NewJSONHandler(&logs, nil))); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(logs.String(), `"crash_reports_deleted":7`) {
+		t.Fatalf("crash-report pruning count missing from completion log: %s", logs.String())
+	}
+}
+
 type recordingSweepRunner struct {
 	deadline time.Time
+	result   sweeper.Result
 }
 
 func (runner *recordingSweepRunner) RunOnce(ctx context.Context) (sweeper.Result, error) {
 	runner.deadline, _ = ctx.Deadline()
-	return sweeper.Result{}, nil
+	return runner.result, nil
 }

@@ -1,3 +1,5 @@
+#[cfg(desktop)]
+use std::io::Write;
 use std::sync::{
     Arc, Condvar, Mutex,
     atomic::{AtomicBool, Ordering},
@@ -19,6 +21,10 @@ use crate::shortcuts::{
 
 const PROFILE_ID_LIMIT: usize = 128;
 const SECRET_LIMIT: usize = 64 * 1024;
+const DIAGNOSTICS_EXPORT_LIMIT: usize = 1024 * 1024;
+const TAURI_REVISION: &str = "4af26a3f7f8b692d62cca549bbacd93f5ce90b41";
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+const CEF_REVISION: &str = "150.0.10+g8042e43+chromium-150.0.7871.101";
 
 const DEFAULT_API_ORIGIN: &str = "https://devhud.api.delino.io";
 
@@ -31,6 +37,69 @@ pub struct NativeBridgeState {
     shortcuts_ready: Arc<AtomicBool>,
     shortcut_listener_failed: Arc<AtomicBool>,
     shortcut_listener_retry: Arc<(Mutex<u64>, Condvar)>,
+    diagnostics_export: Arc<Mutex<DiagnosticsExportState>>,
+}
+
+#[derive(Default)]
+struct DiagnosticsExportState {
+    generation: u64,
+    active: bool,
+}
+
+#[cfg(desktop)]
+struct DiagnosticsExportReservation {
+    state: Arc<Mutex<DiagnosticsExportState>>,
+    generation: u64,
+}
+
+#[cfg(desktop)]
+impl DiagnosticsExportReservation {
+    fn persist(&self, destination: &std::path::Path, contents: &str) -> Result<bool, String> {
+        let file = stage_diagnostics_export(destination, contents)?;
+        self.commit(destination, file)
+    }
+
+    fn commit(
+        &self,
+        destination: &std::path::Path,
+        file: tempfile::NamedTempFile,
+    ) -> Result<bool, String> {
+        let state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if state.generation != self.generation {
+            return Ok(false);
+        }
+        file.persist(destination).map_err(|_| "storage-failure")?;
+        Ok(true)
+    }
+}
+
+#[cfg(desktop)]
+fn stage_diagnostics_export(
+    destination: &std::path::Path,
+    contents: &str,
+) -> Result<tempfile::NamedTempFile, String> {
+    let parent = destination.parent().ok_or("storage-failure")?;
+    let mut file = tempfile::NamedTempFile::new_in(parent).map_err(|_| "storage-failure")?;
+    file.write_all(contents.as_bytes())
+        .map_err(|_| "storage-failure")?;
+    file.as_file().sync_all().map_err(|_| "storage-failure")?;
+    Ok(file)
+}
+
+#[cfg(desktop)]
+impl Drop for DiagnosticsExportReservation {
+    fn drop(&mut self) {
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if state.generation == self.generation {
+            state.active = false;
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -55,6 +124,7 @@ impl Default for NativeBridgeState {
             shortcuts_ready: Arc::new(AtomicBool::new(false)),
             shortcut_listener_failed,
             shortcut_listener_retry: Arc::new((Mutex::new(0), Condvar::new())),
+            diagnostics_export: Arc::new(Mutex::new(DiagnosticsExportState::default())),
         }
     }
 }
@@ -218,6 +288,39 @@ impl NativeBridgeState {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         *generation = generation.wrapping_add(1);
         ready.notify_all();
+    }
+
+    #[cfg(desktop)]
+    fn begin_diagnostics_export(&self) -> Result<DiagnosticsExportReservation, String> {
+        let generation = {
+            let mut state = self
+                .diagnostics_export
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if state.active {
+                return Err("platform-failure".to_string());
+            }
+            state.active = true;
+            state.generation
+        };
+        Ok(DiagnosticsExportReservation {
+            state: Arc::clone(&self.diagnostics_export),
+            generation,
+        })
+    }
+
+    #[cfg(desktop)]
+    fn with_invalidated_diagnostics_exports<T>(
+        &self,
+        action: impl FnOnce() -> Result<T, String>,
+    ) -> Result<T, String> {
+        let mut state = self
+            .diagnostics_export
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        state.generation = state.generation.wrapping_add(1);
+        state.active = false;
+        action()
     }
 
     #[allow(dead_code)]
@@ -599,15 +702,58 @@ fn runtime_platform() -> &'static str {
     }
 }
 
-fn runtime_snapshot() -> Value {
+fn runtime_operating_system() -> &'static str {
+    if cfg!(target_os = "ios") {
+        "ios"
+    } else if cfg!(target_os = "android") {
+        "android"
+    } else if cfg!(target_os = "macos") {
+        "macos"
+    } else if cfg!(target_os = "windows") {
+        "windows"
+    } else {
+        "linux"
+    }
+}
+
+fn runtime_cef_revision() -> &'static str {
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    return "";
+
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    CEF_REVISION
+}
+
+fn runtime_os_version() -> String {
+    os_info::get().version().to_string()
+}
+
+#[cfg(any(target_os = "ios", test))]
+fn ios_runtime_os_version(response: &Value) -> Result<&str, String> {
+    if response.get("kind").and_then(Value::as_str) != Some("runtime-os-version") {
+        return Err("platform-failure".to_string());
+    }
+    response
+        .get("osVersion")
+        .and_then(Value::as_str)
+        .filter(|version| !version.is_empty())
+        .ok_or_else(|| "platform-failure".to_string())
+}
+
+fn runtime_snapshot(os_version: &str) -> Value {
     let mobile = cfg!(any(target_os = "android", target_os = "ios"));
     json!({
         "kind": "runtime",
         "snapshot": {
             "bridgeVersion": 1,
             "platform": runtime_platform(),
+            "operatingSystem": runtime_operating_system(),
             "architecture": std::env::consts::ARCH,
-            "osVersion": "system",
+            "osVersion": os_version,
+            "appVersion": env!("CARGO_PKG_VERSION"),
+            "buildId": option_env!("DEVHUD_BUILD_ID").unwrap_or(env!("CARGO_PKG_VERSION")),
+            "tauriRevision": TAURI_REVISION,
+            "cefRevision": runtime_cef_revision(),
             "lifecycle": "active",
             "capabilities": {
                 "secureSettings": true,
@@ -620,9 +766,84 @@ fn runtime_snapshot() -> Value {
     })
 }
 
+fn validate_diagnostics_export(request: &Value) -> Result<(&str, &str), String> {
+    let suggested_name = request
+        .get("suggestedName")
+        .and_then(Value::as_str)
+        .ok_or("invalid-argument")?;
+    let contents = request
+        .get("contents")
+        .and_then(Value::as_str)
+        .ok_or("invalid-argument")?;
+    let correlation = suggested_name
+        .strip_prefix("devhud-diagnostics-")
+        .and_then(|value| value.strip_suffix(".json"))
+        .ok_or("invalid-argument")?;
+    let canonical_uuid = correlation.len() == 36
+        && correlation.bytes().enumerate().all(|(index, byte)| {
+            if matches!(index, 8 | 13 | 18 | 23) {
+                byte == b'-'
+            } else {
+                byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)
+            }
+        })
+        && correlation.as_bytes().get(14) == Some(&b'7')
+        && correlation
+            .as_bytes()
+            .get(19)
+            .is_some_and(|byte| matches!(byte, b'8' | b'9' | b'a' | b'b'));
+    if !canonical_uuid
+        || contents.len() > DIAGNOSTICS_EXPORT_LIMIT
+        || !matches!(
+            serde_json::from_str::<Value>(contents),
+            Ok(Value::Object(_))
+        )
+    {
+        return Err("invalid-argument".to_string());
+    }
+    Ok((suggested_name, contents))
+}
+
+#[cfg(desktop)]
+fn export_diagnostics(
+    request: &Value,
+    reservation: &DiagnosticsExportReservation,
+) -> Result<Value, String> {
+    let (suggested_name, contents) = validate_diagnostics_export(request)?;
+    let Some(destination) = rfd::FileDialog::new()
+        .add_filter("JSON", &["json"])
+        .set_file_name(suggested_name)
+        .save_file()
+    else {
+        return Ok(json!({ "kind": "diagnostics-export", "outcome": "cancelled" }));
+    };
+    if !reservation.persist(&destination, contents)? {
+        return Ok(json!({ "kind": "diagnostics-export", "outcome": "cancelled" }));
+    }
+    Ok(json!({ "kind": "diagnostics-export", "outcome": "saved" }))
+}
+
+#[cfg(desktop)]
+fn clear_diagnostic_logs() -> Result<(), String> {
+    crate::reset_diagnostic_logs()
+}
+
+fn purge_clears_diagnostics(request: &Value) -> bool {
+    matches!(
+        request.get("scope").and_then(Value::as_str),
+        Some("logout" | "account-deletion")
+    )
+}
+
+#[cfg(mobile)]
+fn clear_diagnostic_logs() -> Result<(), String> {
+    Ok(())
+}
+
 #[cfg(any(mobile, test))]
 fn routes_to_mobile_plugin(operation: &str, android: bool) -> bool {
-    operation.starts_with("lifecycle.")
+    operation == "diagnostics.export"
+        || operation.starts_with("lifecycle.")
         || operation.starts_with("secure.")
         || operation == "auth.open-system-browser"
         || operation.starts_with("notifications.")
@@ -643,7 +864,7 @@ pub fn handle_native_bridge_request(
         .and_then(Value::as_str)
         .ok_or("invalid-argument")?;
     match operation {
-        "runtime.snapshot" => Ok(runtime_snapshot()),
+        "runtime.snapshot" => Ok(runtime_snapshot(&runtime_os_version())),
         "shortcuts.status" => Ok(shortcut_status(state, None)),
         "shortcuts.request-permission" => {
             let mut shortcuts = state
@@ -753,6 +974,18 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
         .get("operation")
         .and_then(Value::as_str)
         .ok_or("invalid-argument")?;
+    #[cfg(target_os = "ios")]
+    if operation == "runtime.snapshot" {
+        let response = crate::native_plugin::request(&app, &request)?;
+        return Ok(runtime_snapshot(ios_runtime_os_version(&response)?));
+    }
+    if operation == "diagnostics.clear" {
+        clear_diagnostic_logs()?;
+        return Ok(json!({ "kind": "ok" }));
+    }
+    if operation == "diagnostics.export" {
+        validate_diagnostics_export(&request)?;
+    }
     if operation.starts_with("secure.") {
         if operation == "secure.purge" {
             validate_purge_request(&request)?;
@@ -769,6 +1002,9 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
         validate_auth_browser_request(&request, &state)?;
     }
     if routes_to_mobile_plugin(operation, cfg!(target_os = "android")) {
+        if operation == "secure.purge" && purge_clears_diagnostics(&request) {
+            clear_diagnostic_logs()?;
+        }
         return crate::native_plugin::request(&app, &request);
     }
     handle_native_bridge_request(&request, &state)
@@ -789,6 +1025,19 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
     if operation.starts_with("capture.") {
         return handle_capture_request(&request, capture.inner().clone(), &app).await;
     }
+    if operation == "diagnostics.clear" {
+        clear_diagnostic_logs()?;
+        return Ok(json!({ "kind": "ok" }));
+    }
+    if operation == "diagnostics.export" {
+        let export_state = state.inner().clone();
+        let reservation = export_state.begin_diagnostics_export()?;
+        return tauri::async_runtime::spawn_blocking(move || {
+            export_diagnostics(&request, &reservation)
+        })
+        .await
+        .map_err(|_| "platform-failure".to_string())?;
+    }
     if operation.starts_with("secure.") {
         if operation == "secure.purge" {
             validate_purge_request(&request)?;
@@ -798,6 +1047,16 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
             validate_secure_request(&request)?;
         }
         let purge_scope = request.get("scope").and_then(Value::as_str);
+        let purge_secure_store = || {
+            if operation == "secure.purge" && purge_clears_diagnostics(&request) {
+                state.with_invalidated_diagnostics_exports(|| {
+                    clear_diagnostic_logs()?;
+                    crate::secure_store::handle(&request)
+                })
+            } else {
+                crate::secure_store::handle(&request)
+            }
+        };
         if operation == "secure.purge" && matches!(purge_scope, Some("logout" | "account-deletion"))
         {
             let purge = capture
@@ -806,15 +1065,15 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
             let purge_result = if deletes_capture_drafts_for_purge_scope(purge_scope) {
                 purge_capture_drafts_before_secure_store(
                     || purge.purge_drafts(),
-                    || crate::secure_store::handle(&request),
+                    purge_secure_store,
                 )
             } else {
-                crate::secure_store::handle(&request).map_err(|_| "storage-failure".to_string())
+                purge_secure_store().map_err(|_| "storage-failure".to_string())
             };
             drop(purge);
             return purge_result;
         }
-        return crate::secure_store::handle(&request);
+        return purge_secure_store();
     }
     if operation == "auth.open-system-browser" {
         validate_auth_browser_request(&request, &state)?;
@@ -1072,13 +1331,14 @@ mod tests {
     use serde_json::{Value, json};
 
     use super::{
-        NativeBridgeState, handle_native_bridge_request, is_auth_callback, routes_to_mobile_plugin,
-        shortcut_status, validate_auth_browser_request,
+        NativeBridgeState, handle_native_bridge_request, ios_runtime_os_version, is_auth_callback,
+        purge_clears_diagnostics, routes_to_mobile_plugin, runtime_os_version, shortcut_status,
+        validate_auth_browser_request, validate_diagnostics_export,
     };
     #[cfg(desktop)]
     use super::{
         deletes_capture_drafts_for_purge_scope, purge_capture_drafts_before_secure_store,
-        should_restore_capture_window,
+        should_restore_capture_window, stage_diagnostics_export,
     };
 
     #[cfg(desktop)]
@@ -1121,6 +1381,112 @@ mod tests {
         ));
         assert!(routes_to_mobile_plugin("notifications.permission", false));
         assert!(!routes_to_mobile_plugin("runtime.snapshot", true));
+    }
+
+    #[test]
+    fn diagnostics_export_accepts_only_bounded_json_and_an_app_selected_name() {
+        let valid = json!({
+            "suggestedName": "devhud-diagnostics-0198c8b0-77d6-7d4a-a7d9-e4d7b11c4400.json",
+            "contents": "{\"schemaVersion\":1}"
+        });
+        assert!(validate_diagnostics_export(&valid).is_ok());
+        for invalid in [
+            json!({ "suggestedName": "../../private.json", "contents": "{}" }),
+            json!({ "suggestedName": "devhud-diagnostics-0198c8b0-77d6-7d4a-a7d9-e4d7b11c4400.json", "contents": "not-json" }),
+        ] {
+            assert_eq!(
+                validate_diagnostics_export(&invalid),
+                Err("invalid-argument".to_string())
+            );
+        }
+    }
+
+    #[test]
+    fn diagnostics_cleanup_is_limited_to_destructive_purge_scopes() {
+        assert!(purge_clears_diagnostics(&json!({ "scope": "logout" })));
+        assert!(purge_clears_diagnostics(
+            &json!({ "scope": "account-deletion", "profileId": "profile" })
+        ));
+        assert!(!purge_clears_diagnostics(
+            &json!({ "scope": "api-change", "profileId": "profile" })
+        ));
+    }
+
+    #[cfg(desktop)]
+    #[test]
+    fn diagnostics_export_rejects_concurrent_reservations() {
+        let state = NativeBridgeState::default();
+        let reservation = state
+            .begin_diagnostics_export()
+            .expect("first diagnostics export reservation");
+
+        assert!(matches!(
+            state.begin_diagnostics_export(),
+            Err(error) if error == "platform-failure"
+        ));
+
+        drop(reservation);
+        assert!(state.begin_diagnostics_export().is_ok());
+    }
+
+    #[cfg(desktop)]
+    #[test]
+    fn destructive_purge_invalidation_prevents_a_staged_diagnostics_write() {
+        let state = NativeBridgeState::default();
+        let reservation = state
+            .begin_diagnostics_export()
+            .expect("diagnostics export reservation");
+        let temporary = tempfile::tempdir().expect("temporary export directory");
+        let destination = temporary.path().join("diagnostics.json");
+        let staged =
+            stage_diagnostics_export(&destination, "{}").expect("staged diagnostics export");
+        state
+            .with_invalidated_diagnostics_exports(|| Ok(()))
+            .expect("diagnostics export invalidation");
+
+        assert_eq!(reservation.commit(&destination, staged), Ok(false));
+        assert!(!destination.exists());
+    }
+
+    #[test]
+    fn runtime_snapshot_has_exact_pinned_runtime_revisions() {
+        let snapshot = handle_native_bridge_request(
+            &json!({ "operation": "runtime.snapshot" }),
+            &NativeBridgeState::default(),
+        )
+        .expect("runtime snapshot");
+        assert_eq!(
+            snapshot["snapshot"]["tauriRevision"],
+            "4af26a3f7f8b692d62cca549bbacd93f5ce90b41"
+        );
+        assert_eq!(snapshot["snapshot"]["osVersion"], runtime_os_version());
+        assert_ne!(snapshot["snapshot"]["osVersion"], std::env::consts::OS);
+        if cfg!(any(target_os = "android", target_os = "ios")) {
+            assert_eq!(snapshot["snapshot"]["cefRevision"], "");
+        } else {
+            assert_eq!(
+                snapshot["snapshot"]["cefRevision"],
+                "150.0.10+g8042e43+chromium-150.0.7871.101"
+            );
+        }
+    }
+
+    #[test]
+    fn accepts_only_a_nonempty_ios_native_os_version() {
+        assert_eq!(
+            ios_runtime_os_version(&json!({ "kind": "runtime-os-version", "osVersion": "18.6" })),
+            Ok("18.6")
+        );
+        for invalid in [
+            json!({ "kind": "runtime-os-version", "osVersion": "" }),
+            json!({ "kind": "runtime-os-version" }),
+            json!({ "kind": "runtime", "osVersion": "18.6" }),
+        ] {
+            assert_eq!(
+                ios_runtime_os_version(&invalid),
+                Err("platform-failure".to_string())
+            );
+        }
     }
 
     #[test]

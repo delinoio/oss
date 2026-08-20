@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file devhud/v1/diagnostics.proto.
  */
 export const file_devhud_v1_diagnostics: GenFile = /*@__PURE__*/
-  fileDesc("ChtkZXZodWQvdjEvZGlhZ25vc3RpY3MucHJvdG8SCWRldmh1ZC52MSKyAQoLQ2xpZW50QnVpbGQSEwoLYXBwX3ZlcnNpb24YASABKAkSEAoIYnVpbGRfaWQYAiABKAkSLwoIcGxhdGZvcm0YAyABKA4yHS5kZXZodWQudjEuRGlhZ25vc3RpY1BsYXRmb3JtEjcKDGFyY2hpdGVjdHVyZRgEIAEoDjIhLmRldmh1ZC52MS5EaWFnbm9zdGljQXJjaGl0ZWN0dXJlEhIKCm9zX3ZlcnNpb24YBSABKAki/AIKGFN1Ym1pdENyYXNoUmVwb3J0UmVxdWVzdBIdChVyZXBvcnRfc2NoZW1hX3ZlcnNpb24YASABKA0SLAoMY2xpZW50X2J1aWxkGAIgASgLMhYuZGV2aHVkLnYxLkNsaWVudEJ1aWxkEi8KC29jY3VycmVkX2F0GAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIxCgljb21wb25lbnQYBCABKA4yHi5kZXZodWQudjEuRGlhZ25vc3RpY0NvbXBvbmVudBIvCghzZXZlcml0eRgFIAEoDjIdLmRldmh1ZC52MS5EaWFnbm9zdGljU2V2ZXJpdHkSEgoKZXJyb3JfY29kZRgGIAEoCRIYChByZWRhY3RlZF9zdW1tYXJ5GAcgASgJEhwKFHJlZGFjdGVkX3N0YWNrX3RyYWNlGAggASgJEjIKF3JlbGF0ZWRfY29ycmVsYXRpb25faWRzGAkgAygLMhEuZGV2aHVkLnYxLlV1aWRWNyLXAQoZU3VibWl0Q3Jhc2hSZXBvcnRSZXNwb25zZRItCghtZXRhZGF0YRgBIAEoCzIbLmRldmh1ZC52MS5SZXNwb25zZU1ldGFkYXRhEioKD2NyYXNoX3JlcG9ydF9pZBgCIAEoCzIRLmRldmh1ZC52MS5VdWlkVjcSLwoLYWNjZXB0ZWRfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCmV4cGlyZXNfYXQYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wKtYBChJEaWFnbm9zdGljUGxhdGZvcm0SIwofRElBR05PU1RJQ19QTEFURk9STV9VTlNQRUNJRklFRBAAEh0KGURJQUdOT1NUSUNfUExBVEZPUk1fTUFDT1MQARIfChtESUFHTk9TVElDX1BMQVRGT1JNX1dJTkRPV1MQAhIdChlESUFHTk9TVElDX1BMQVRGT1JNX0xJTlVYEAMSGwoXRElBR05PU1RJQ19QTEFURk9STV9JT1MQBBIfChtESUFHTk9TVElDX1BMQVRGT1JNX0FORFJPSUQQBSqIAQoWRGlhZ25vc3RpY0FyY2hpdGVjdHVyZRInCiNESUFHTk9TVElDX0FSQ0hJVEVDVFVSRV9VTlNQRUNJRklFRBAAEiIKHkRJQUdOT1NUSUNfQVJDSElURUNUVVJFX1g4Nl82NBABEiEKHURJQUdOT1NUSUNfQVJDSElURUNUVVJFX0FSTTY0EAIqjwIKE0RpYWdub3N0aWNDb21wb25lbnQSJAogRElBR05PU1RJQ19DT01QT05FTlRfVU5TUEVDSUZJRUQQABIcChhESUFHTk9TVElDX0NPTVBPTkVOVF9BUFAQARInCiNESUFHTk9TVElDX0NPTVBPTkVOVF9BVVRIRU5USUNBVElPThACEiEKHURJQUdOT1NUSUNfQ09NUE9ORU5UX1NFVFRJTkdTEAMSHwobRElBR05PU1RJQ19DT01QT05FTlRfVVBMT0FEEAQSIAocRElBR05PU1RJQ19DT01QT05FTlRfQUNDT1VOVBAFEiUKIURJQUdOT1NUSUNfQ09NUE9ORU5UX05BVElWRV9TSEVMTBAGKncKEkRpYWdub3N0aWNTZXZlcml0eRIjCh9ESUFHTk9TVElDX1NFVkVSSVRZX1VOU1BFQ0lGSUVEEAASHQoZRElBR05PU1RJQ19TRVZFUklUWV9FUlJPUhABEh0KGURJQUdOT1NUSUNfU0VWRVJJVFlfRkFUQUwQAjJ0ChJEaWFnbm9zdGljc1NlcnZpY2USXgoRU3VibWl0Q3Jhc2hSZXBvcnQSIy5kZXZodWQudjEuU3VibWl0Q3Jhc2hSZXBvcnRSZXF1ZXN0GiQuZGV2aHVkLnYxLlN1Ym1pdENyYXNoUmVwb3J0UmVzcG9uc2VCOlo4Z2l0aHViLmNvbS9kZWxpbm9pby9vc3MvcHJvdG9zL2dlbi9nby9kZXZodWQvdjE7ZGV2aHVkdjFiBnByb3RvMw", [file_devhud_v1_common, file_google_protobuf_timestamp]);
+  fileDesc("ChtkZXZodWQvdjEvZGlhZ25vc3RpY3MucHJvdG8SCWRldmh1ZC52MSLgAQoLQ2xpZW50QnVpbGQSEwoLYXBwX3ZlcnNpb24YASABKAkSEAoIYnVpbGRfaWQYAiABKAkSLwoIcGxhdGZvcm0YAyABKA4yHS5kZXZodWQudjEuRGlhZ25vc3RpY1BsYXRmb3JtEjcKDGFyY2hpdGVjdHVyZRgEIAEoDjIhLmRldmh1ZC52MS5EaWFnbm9zdGljQXJjaGl0ZWN0dXJlEhIKCm9zX3ZlcnNpb24YBSABKAkSFgoOdGF1cmlfcmV2aXNpb24YBiABKAkSFAoMY2VmX3JldmlzaW9uGAcgASgJIs0DChhTdWJtaXRDcmFzaFJlcG9ydFJlcXVlc3QSHQoVcmVwb3J0X3NjaGVtYV92ZXJzaW9uGAEgASgNEiwKDGNsaWVudF9idWlsZBgCIAEoCzIWLmRldmh1ZC52MS5DbGllbnRCdWlsZBIvCgtvY2N1cnJlZF9hdBgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMQoJY29tcG9uZW50GAQgASgOMh4uZGV2aHVkLnYxLkRpYWdub3N0aWNDb21wb25lbnQSLwoIc2V2ZXJpdHkYBSABKA4yHS5kZXZodWQudjEuRGlhZ25vc3RpY1NldmVyaXR5EhIKCmVycm9yX2NvZGUYBiABKAkSGAoQcmVkYWN0ZWRfc3VtbWFyeRgHIAEoCRIcChRyZWRhY3RlZF9zdGFja190cmFjZRgIIAEoCRIyChdyZWxhdGVkX2NvcnJlbGF0aW9uX2lkcxgJIAMoCzIRLmRldmh1ZC52MS5VdWlkVjcSMAoVY2xpZW50X2NvcnJlbGF0aW9uX2lkGAogASgLMhEuZGV2aHVkLnYxLlV1aWRWNxIdChVkdXJhdGlvbl9taWxsaXNlY29uZHMYCyABKAQi1wEKGVN1Ym1pdENyYXNoUmVwb3J0UmVzcG9uc2USLQoIbWV0YWRhdGEYASABKAsyGy5kZXZodWQudjEuUmVzcG9uc2VNZXRhZGF0YRIqCg9jcmFzaF9yZXBvcnRfaWQYAiABKAsyES5kZXZodWQudjEuVXVpZFY3Ei8KC2FjY2VwdGVkX2F0GAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpleHBpcmVzX2F0GAQgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCr3AQoSRGlhZ25vc3RpY1BsYXRmb3JtEiMKH0RJQUdOT1NUSUNfUExBVEZPUk1fVU5TUEVDSUZJRUQQABIdChlESUFHTk9TVElDX1BMQVRGT1JNX01BQ09TEAESHwobRElBR05PU1RJQ19QTEFURk9STV9XSU5ET1dTEAISHQoZRElBR05PU1RJQ19QTEFURk9STV9MSU5VWBADEhsKF0RJQUdOT1NUSUNfUExBVEZPUk1fSU9TEAQSHwobRElBR05PU1RJQ19QTEFURk9STV9BTkRST0lEEAUSHwobRElBR05PU1RJQ19QTEFURk9STV9CUk9XU0VSEAYqqwEKFkRpYWdub3N0aWNBcmNoaXRlY3R1cmUSJwojRElBR05PU1RJQ19BUkNISVRFQ1RVUkVfVU5TUEVDSUZJRUQQABIiCh5ESUFHTk9TVElDX0FSQ0hJVEVDVFVSRV9YODZfNjQQARIhCh1ESUFHTk9TVElDX0FSQ0hJVEVDVFVSRV9BUk02NBACEiEKHURJQUdOT1NUSUNfQVJDSElURUNUVVJFX0FSTVY3EAMqjwIKE0RpYWdub3N0aWNDb21wb25lbnQSJAogRElBR05PU1RJQ19DT01QT05FTlRfVU5TUEVDSUZJRUQQABIcChhESUFHTk9TVElDX0NPTVBPTkVOVF9BUFAQARInCiNESUFHTk9TVElDX0NPTVBPTkVOVF9BVVRIRU5USUNBVElPThACEiEKHURJQUdOT1NUSUNfQ09NUE9ORU5UX1NFVFRJTkdTEAMSHwobRElBR05PU1RJQ19DT01QT05FTlRfVVBMT0FEEAQSIAocRElBR05PU1RJQ19DT01QT05FTlRfQUNDT1VOVBAFEiUKIURJQUdOT1NUSUNfQ09NUE9ORU5UX05BVElWRV9TSEVMTBAGKncKEkRpYWdub3N0aWNTZXZlcml0eRIjCh9ESUFHTk9TVElDX1NFVkVSSVRZX1VOU1BFQ0lGSUVEEAASHQoZRElBR05PU1RJQ19TRVZFUklUWV9FUlJPUhABEh0KGURJQUdOT1NUSUNfU0VWRVJJVFlfRkFUQUwQAjJ0ChJEaWFnbm9zdGljc1NlcnZpY2USXgoRU3VibWl0Q3Jhc2hSZXBvcnQSIy5kZXZodWQudjEuU3VibWl0Q3Jhc2hSZXBvcnRSZXF1ZXN0GiQuZGV2aHVkLnYxLlN1Ym1pdENyYXNoUmVwb3J0UmVzcG9uc2VCOlo4Z2l0aHViLmNvbS9kZWxpbm9pby9vc3MvcHJvdG9zL2dlbi9nby9kZXZodWQvdjE7ZGV2aHVkdjFiBnByb3RvMw", [file_devhud_v1_common, file_google_protobuf_timestamp]);
 
 /**
  * ClientBuild string fields are each at most 256 UTF-8 bytes and cannot
@@ -47,6 +47,22 @@ export type ClientBuild = Message<"devhud.v1.ClientBuild"> & {
    * @generated from field: string os_version = 5;
    */
   osVersion: string;
+
+  /**
+   * Exact 40-character lowercase Tauri source revision on native hosts; empty
+   * for browser development.
+   *
+   * @generated from field: string tauri_revision = 6;
+   */
+  tauriRevision: string;
+
+  /**
+   * Exact CEF runtime revision on desktop; empty on system-webview mobile and
+   * browser hosts.
+   *
+   * @generated from field: string cef_revision = 7;
+   */
+  cefRevision: string;
 };
 
 /**
@@ -86,8 +102,8 @@ export type SubmitCrashReportRequest = Message<"devhud.v1.SubmitCrashReportReque
   severity: DiagnosticSeverity;
 
   /**
-   * error_code is at most 256 UTF-8 bytes and cannot contain credential or
-   * local-path patterns.
+   * error_code is an uppercase ASCII enum-style classification of 1-64 bytes
+   * and cannot contain credential or local-path patterns.
    *
    * @generated from field: string error_code = 6;
    */
@@ -111,6 +127,21 @@ export type SubmitCrashReportRequest = Message<"devhud.v1.SubmitCrashReportReque
    * @generated from field: repeated devhud.v1.UuidV7 related_correlation_ids = 9;
    */
   relatedCorrelationIds: UuidV7[];
+
+  /**
+   * A client-generated UUID v7 that binds preview, local events, retries, and
+   * the accepted server report without identifying a person or device.
+   *
+   * @generated from field: devhud.v1.UuidV7 client_correlation_id = 10;
+   */
+  clientCorrelationId?: UuidV7 | undefined;
+
+  /**
+   * Duration of the failed operation. Values above 24 hours are invalid.
+   *
+   * @generated from field: uint64 duration_milliseconds = 11;
+   */
+  durationMilliseconds: bigint;
 };
 
 /**
@@ -185,6 +216,11 @@ export enum DiagnosticPlatform {
    * @generated from enum value: DIAGNOSTIC_PLATFORM_ANDROID = 5;
    */
   ANDROID = 5,
+
+  /**
+   * @generated from enum value: DIAGNOSTIC_PLATFORM_BROWSER = 6;
+   */
+  BROWSER = 6,
 }
 
 /**
@@ -211,6 +247,11 @@ export enum DiagnosticArchitecture {
    * @generated from enum value: DIAGNOSTIC_ARCHITECTURE_ARM64 = 2;
    */
   ARM64 = 2,
+
+  /**
+   * @generated from enum value: DIAGNOSTIC_ARCHITECTURE_ARMV7 = 3;
+   */
+  ARMV7 = 3,
 }
 
 /**

@@ -11,8 +11,10 @@ import android.net.Uri
 import android.os.Build
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
+import androidx.activity.result.ActivityResult
 import androidx.appcompat.app.AppCompatActivity
 import app.tauri.PermissionState
+import app.tauri.annotation.ActivityCallback
 import app.tauri.annotation.Command
 import app.tauri.annotation.Permission
 import app.tauri.annotation.PermissionCallback
@@ -20,9 +22,11 @@ import app.tauri.annotation.TauriPlugin
 import app.tauri.plugin.Invoke
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
+import java.io.FileNotFoundException
 import java.security.KeyStore
 import java.util.Base64
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
 import javax.crypto.Cipher
 import javax.crypto.AEADBadTagException
 import javax.crypto.KeyGenerator
@@ -32,6 +36,9 @@ import javax.crypto.spec.GCMParameterSpec
 private const val notificationAlias = "notifications"
 private const val keyAlias = "io.delino.devhud.secure-settings.v1"
 private const val storeName = "devhud-secure-settings-v1"
+private const val diagnosticsCleanupStoreName = "devhud-diagnostics-cleanup-v1"
+private const val diagnosticsCleanupUriKey = "pending-uri"
+private const val diagnosticsCleanupReleaseOnlyKey = "release-only"
 private const val notificationChannel = "deck-changes"
 
 @TauriPlugin(
@@ -41,10 +48,18 @@ private const val notificationChannel = "deck-changes"
 )
 class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
     private var pendingAuthCallback: String? = null
+    private var pendingDiagnosticsCleanup: Uri? = null
+    private var diagnosticsCleanupReleaseOnly = false
+    private var diagnosticsExportPickerActive = false
+    private val diagnosticsPurgesInProgress = AtomicInteger()
     private val secureSettingsExecutor = Executors.newSingleThreadExecutor()
 
     override fun load(webView: android.webkit.WebView) {
         captureAuthCallback(activity.intent)
+        val diagnosticsCleanup = activity.getSharedPreferences(diagnosticsCleanupStoreName, Context.MODE_PRIVATE)
+        pendingDiagnosticsCleanup = diagnosticsCleanup.getString(diagnosticsCleanupUriKey, null)?.let(Uri::parse)
+        diagnosticsCleanupReleaseOnly = pendingDiagnosticsCleanup != null && diagnosticsCleanup.getBoolean(diagnosticsCleanupReleaseOnlyKey, false)
+        cleanupPendingDiagnosticsExport()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -52,6 +67,7 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
     }
 
     override fun onDestroy(activity: AppCompatActivity) {
+        cleanupPendingDiagnosticsExport()
         secureSettingsExecutor.shutdown()
     }
 
@@ -63,6 +79,7 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
                 "auth.take-pending-callback" -> takeAuthCallback(invoke)
                 "auth.open-system-browser" -> openAuthenticationBrowser(invoke)
                 "lifecycle.open-external" -> openExternal(invoke)
+                "diagnostics.export" -> exportDiagnostics(invoke)
                 "secure.read" -> readSecure(invoke)
                 "secure.write" -> writeSecure(invoke)
                 "secure.remove" -> removeSecure(invoke)
@@ -92,6 +109,144 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
         activity.startActivity(Intent(Intent.ACTION_VIEW, destination).addCategory(Intent.CATEGORY_BROWSABLE))
         invoke.resolve(JSObject().put("kind", "ok"))
     }
+
+    private fun exportDiagnostics(invoke: Invoke) {
+        if (diagnosticsPurgesInProgress.get() > 0) {
+            invoke.reject("platform-failure", "platform-failure")
+            return
+        }
+        if (!cleanupPendingDiagnosticsExport()) {
+            invoke.reject("storage-failure", "storage-failure")
+            return
+        }
+        val args = invoke.getArgs()
+        val suggestedName = args.getString("suggestedName")
+        val contents = args.getString("contents")
+        require(suggestedName.matches(Regex("devhud-diagnostics-[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\\.json")))
+        require(contents.toByteArray(Charsets.UTF_8).size <= 1024 * 1024)
+        if (diagnosticsExportPickerActive) {
+            invoke.reject("platform-failure", "platform-failure")
+            return
+        }
+        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT)
+            .addCategory(Intent.CATEGORY_OPENABLE)
+            .addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+            .setType("application/json")
+            .putExtra(Intent.EXTRA_TITLE, suggestedName)
+        diagnosticsExportPickerActive = true
+        try {
+            startActivityForResult(invoke, intent, "diagnosticsExportResult")
+        } catch (error: Exception) {
+            diagnosticsExportPickerActive = false
+            throw error
+        }
+    }
+
+    @ActivityCallback
+    private fun diagnosticsExportResult(invoke: Invoke, result: ActivityResult) {
+        if (!diagnosticsExportPickerActive) {
+            invoke.resolve(JSObject().put("kind", "diagnostics-export").put("outcome", "cancelled"))
+            return
+        }
+        diagnosticsExportPickerActive = false
+        if (result.resultCode == Activity.RESULT_CANCELED) {
+            invoke.resolve(JSObject().put("kind", "diagnostics-export").put("outcome", "cancelled"))
+            return
+        }
+        if (result.resultCode != Activity.RESULT_OK || result.data?.data == null) {
+            invoke.reject("storage-failure", "storage-failure")
+            return
+        }
+        val destination = result.data!!.data!!
+        try {
+            activity.contentResolver.takePersistableUriPermission(destination, Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        } catch (_: Exception) {
+            invoke.reject("storage-failure", "storage-failure")
+            return
+        }
+        try {
+            // Retain cleanup ownership before writing so process death cannot orphan diagnostic bytes.
+            if (!retainDiagnosticsCleanup(destination)) {
+                cleanupPendingDiagnosticsExport()
+                invoke.reject("storage-failure", "storage-failure")
+                return
+            }
+            val contents = invoke.getArgs().getString("contents")
+            activity.contentResolver.openOutputStream(destination, "wt").use { stream ->
+                requireNotNull(stream).write(contents.toByteArray(Charsets.UTF_8))
+                stream.flush()
+            }
+            if (!forgetDiagnosticsCleanup()) {
+                cleanupPendingDiagnosticsExport()
+                invoke.reject("storage-failure", "storage-failure")
+                return
+            }
+            invoke.resolve(JSObject().put("kind", "diagnostics-export").put("outcome", "saved"))
+        } catch (_: Exception) {
+            cleanupPendingDiagnosticsExport()
+            invoke.reject("storage-failure", "storage-failure")
+        }
+    }
+
+    private fun retainDiagnosticsCleanup(destination: Uri): Boolean {
+        pendingDiagnosticsCleanup = destination
+        diagnosticsCleanupReleaseOnly = false
+        return activity.getSharedPreferences(diagnosticsCleanupStoreName, Context.MODE_PRIVATE)
+            .edit()
+            .putString(diagnosticsCleanupUriKey, destination.toString())
+            .remove(diagnosticsCleanupReleaseOnlyKey)
+            .commit()
+    }
+
+    private fun forgetDiagnosticsCleanup(): Boolean {
+        val destination = pendingDiagnosticsCleanup ?: return true
+        val preferences = activity.getSharedPreferences(diagnosticsCleanupStoreName, Context.MODE_PRIVATE)
+        if (!diagnosticsCleanupReleaseOnly) {
+            if (!preferences.edit().putBoolean(diagnosticsCleanupReleaseOnlyKey, true).commit()) return false
+            diagnosticsCleanupReleaseOnly = true
+        }
+        if (hasPersistedDiagnosticsWriteGrant(destination)) {
+            try {
+                activity.contentResolver.releasePersistableUriPermission(destination, Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            } catch (_: Exception) {
+                return false
+            }
+        }
+        val removed = preferences.edit()
+            .remove(diagnosticsCleanupUriKey)
+            .remove(diagnosticsCleanupReleaseOnlyKey)
+            .commit()
+        if (!removed) return false
+        pendingDiagnosticsCleanup = null
+        diagnosticsCleanupReleaseOnly = false
+        return true
+    }
+
+    private fun cleanupPendingDiagnosticsExport(): Boolean {
+        val destination = pendingDiagnosticsCleanup ?: return true
+        if (diagnosticsCleanupReleaseOnly) return forgetDiagnosticsCleanup()
+        if (!hasPersistedDiagnosticsWriteGrant(destination)) return false
+        val deleted = try {
+            activity.contentResolver.delete(destination, null, null) > 0
+        } catch (_: Exception) {
+            false
+        }
+        // A zero-row delete is not proof of removal. Opening for write truncates any surviving
+        // partial content, while FileNotFoundException is the only confirmed-absent fallback.
+        val cleaned = if (deleted) true else try {
+            requireNotNull(activity.contentResolver.openFileDescriptor(destination, "wt")).use { true }
+        } catch (_: FileNotFoundException) {
+            true
+        } catch (_: Exception) {
+            false
+        }
+        return cleaned && forgetDiagnosticsCleanup()
+    }
+
+    private fun hasPersistedDiagnosticsWriteGrant(destination: Uri) =
+        activity.contentResolver.persistedUriPermissions.any { permission ->
+            permission.uri == destination && permission.isWritePermission
+        }
 
     private fun captureAuthCallback(intent: Intent?) {
         val candidate = intent?.dataString ?: return
@@ -277,7 +432,24 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
         val scope = args.getString("scope")
         val profileId = if (args.has("profileId")) args.getString("profileId") else null
         if (scope !in setOf("logout", "account-deletion", "api-change") || (scope != "logout" && profileId == null)) throw IllegalArgumentException("scope")
-        persistSecure(invoke) {
+        val destructivePurge = scope in setOf("logout", "account-deletion")
+        if (destructivePurge) {
+            diagnosticsPurgesInProgress.incrementAndGet()
+            try {
+                diagnosticsExportPickerActive = false
+                if (!cleanupPendingDiagnosticsExport()) {
+                    diagnosticsPurgesInProgress.decrementAndGet()
+                    invoke.reject("storage-failure", "storage-failure")
+                    return
+                }
+            } catch (error: Exception) {
+                diagnosticsPurgesInProgress.decrementAndGet()
+                throw error
+            }
+        }
+        persistSecure(invoke, onComplete = {
+            if (destructivePurge) diagnosticsPurgesInProgress.decrementAndGet()
+        }) {
             val preferences = activity.getSharedPreferences(storeName, Context.MODE_PRIVATE)
             val editor = preferences.edit()
             preferences.all.keys.filter { key ->
@@ -289,14 +461,21 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
         }
     }
 
-    private fun persistSecure(invoke: Invoke, operation: () -> Boolean) {
-        secureSettingsExecutor.execute {
-            try {
-                if (operation()) invoke.resolve(JSObject().put("kind", "ok"))
-                else invoke.reject("storage-failure", "storage-failure")
-            } catch (error: Exception) {
-                invoke.reject("storage-failure", "storage-failure", error)
+    private fun persistSecure(invoke: Invoke, onComplete: () -> Unit = {}, operation: () -> Boolean) {
+        try {
+            secureSettingsExecutor.execute {
+                try {
+                    if (operation()) invoke.resolve(JSObject().put("kind", "ok"))
+                    else invoke.reject("storage-failure", "storage-failure")
+                } catch (error: Exception) {
+                    invoke.reject("storage-failure", "storage-failure", error)
+                } finally {
+                    onComplete()
+                }
             }
+        } catch (error: Exception) {
+            onComplete()
+            throw error
         }
     }
 

@@ -25,6 +25,7 @@ import { CollidingSettingsSchemaVersion, defaultDevHudSettings, decodeVersionedD
 import { diffSettings, type SettingsDiffEntry } from "./settings-diff";
 import { inactiveDesktopShortcutBindings } from "./shortcuts";
 import { getLocalStorage, isValidApiOrigin } from "./shell";
+import { appendDiagnosticCorrelation, beginDiagnosticWriteSuppression } from "./diagnostics";
 
 export type IdentityStatus = "guest" | "starting" | "signed-out" | "authenticated" | "blocked" | "deletion-pending" | "error";
 
@@ -117,7 +118,15 @@ export function DevHudServiceBoundary(props: BoundaryProps) {
           throw reason;
         }
       }
-      return next(request);
+      const startedAt = performance.now();
+      try {
+        const response = await next(request);
+        appendDiagnosticCorrelation(getLocalStorage(), response.header.get("x-devhud-correlation-id"), request.url, performance.now() - startedAt);
+        return response;
+      } catch (reason) {
+        appendDiagnosticCorrelation(getLocalStorage(), reason instanceof ConnectError ? reason.metadata.get("x-devhud-correlation-id") : null, request.url, performance.now() - startedAt);
+        throw reason;
+      }
     }],
   }), [props.apiOrigin]);
 
@@ -163,9 +172,11 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   const [identityResetAvailable, setIdentityResetAvailable] = useState(false);
   const [continuedLocally, setContinuedLocally] = useState(false);
   const [githubPatCleanupPending, setGitHubPatCleanupPending] = useState(false);
+  const [logoutCleanupPending, setLogoutCleanupPending] = useState(false);
   const signInPendingRef = useRef(false);
   const callbackHandled = useRef<string | null>(null);
   const invalidSessionCleanupRef = useRef<Promise<void> | null>(null);
+  const irrecoverableCleanupPendingRef = useRef(false);
   const continueLocallyRef = useRef(false);
   const githubPatReconciliationRef = useRef<Promise<boolean> | null>(null);
   const lastReconciledGitHubPatKeyRef = useRef<string | null>(null);
@@ -190,8 +201,8 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   const settingsQueryKey = useMemo(() => createConnectQueryKey({ schema: SettingsQuery.getSettings, transport, input: {}, cardinality: "finite" }), [transport]);
 
   const bootstrapQuery = useQuery(BootstrapQuery.getBootstrap, {}, { enabled: active && online && networkReady && isValidApiOrigin(apiOrigin) });
-  const accountQuery = useQuery(AccountQuery.getAccount, {}, { enabled: status === "authenticated" && online });
-  const settingsQuery = useQuery(SettingsQuery.getSettings, {}, { enabled: status === "authenticated" && online });
+  const accountQuery = useQuery(AccountQuery.getAccount, {}, { enabled: status === "authenticated" && online && !logoutCleanupPending });
+  const settingsQuery = useQuery(SettingsQuery.getSettings, {}, { enabled: status === "authenticated" && online && !logoutCleanupPending });
   const replaceMutation = useMutation(SettingsQuery.replaceSettings);
   const deleteMutation = useMutation(AccountQuery.deleteAccount);
   const restoreMutation = useMutation(AccountQuery.restoreAccount);
@@ -249,21 +260,29 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   async function cleanPendingDeletion(): Promise<void> {
     invalidateDeckPolling();
     setDeckAccessSuspended(true);
-    clearAllContractedLocalData(storage);
+    const releaseDiagnosticWrites = beginDiagnosticWriteSuppression(storage);
     try {
-      await bridge.request({ operation: "secure.purge", scope: "account-deletion", profileId: await sessionProfileId(apiOrigin) });
-      setDeletionCleanupFailed(false);
-    } catch {
-      setDeletionCleanupFailed(true);
+      const localCleanupComplete = clearAllContractedLocalData(storage);
+      try {
+        await bridge.request({ operation: "secure.purge", scope: "account-deletion", profileId: await sessionProfileId(apiOrigin) });
+        setDeletionCleanupFailed(!localCleanupComplete);
+      } catch {
+        setDeletionCleanupFailed(true);
+      }
+    } finally {
+      releaseDiagnosticWrites();
     }
   }
 
   async function clearIrrecoverableAccount(): Promise<void> {
     invalidateDeckPolling();
     setDeckAccessSuspended(true);
-    setStatus("error");
-    clearAllContractedLocalData(storage);
+    irrecoverableCleanupPendingRef.current = true;
+    const releaseDiagnosticWrites = beginDiagnosticWriteSuppression(storage);
     try {
+      setStatus("error");
+      const localCleanupComplete = clearAllContractedLocalData(storage);
+      if (!localCleanupComplete) throw new Error("local-data-cleanup-incomplete");
       await bridge.request({ operation: "secure.purge", scope: "logout" });
       sessionRef.current = null;
       setSession(null);
@@ -277,11 +296,14 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       setStatus("signed-out");
       setDeckAccessSuspended(false);
       setError(null);
+      irrecoverableCleanupPendingRef.current = false;
       await clearIdentityQueryCache();
       onIdentityReset();
     } catch (reason) {
       setError(safeError(reason));
       throw reason;
+    } finally {
+      releaseDiagnosticWrites();
     }
   }
 
@@ -452,6 +474,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   }, [accountQuery.error]);
 
   useEffect(() => {
+    if (logoutCleanupPending) return;
     if (status === "blocked") {
       if (!settingsReady) {
         const cached = readAuthenticatedSettingsCache(storage, apiOrigin);
@@ -490,10 +513,10 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       applySettings(server);
       writeAuthenticatedSettingsCache(storage, apiOrigin, { settings: server, revision: currentRevision, cachedAt: new Date().toISOString() });
     }
-  }, [apiOrigin, online, settingsQuery.data, settingsReady, status, storage]);
+  }, [apiOrigin, logoutCleanupPending, online, settingsQuery.data, settingsReady, status, storage]);
 
   useEffect(() => {
-    if (status !== "authenticated" || !online || !settingsQuery.error) return;
+    if (status !== "authenticated" || logoutCleanupPending || !online || !settingsQuery.error) return;
     const mapped = mapDevHudError(settingsQuery.error);
     setSettingsReady(false);
     setSettingsError(mapped);
@@ -512,7 +535,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       }
       if (mapped.detail.reason === PermissionFailureReason.USER_BLOCKED) setStatus("blocked");
     }
-  }, [apiOrigin, online, settingsQuery.error, status, storage]);
+  }, [apiOrigin, logoutCleanupPending, online, settingsQuery.error, status, storage]);
 
   useEffect(() => {
     if (status !== "authenticated" && status !== "blocked") setShortcutSettingsReady(false);
@@ -571,6 +594,11 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   }
 
   function retryIdentity(): void {
+    if (irrecoverableCleanupPendingRef.current) {
+      setError(null);
+      void clearIrrecoverableAccount().catch(() => {});
+      return;
+    }
     continueLocallyRef.current = false;
     setContinuedLocally(false);
     setStatus("starting");
@@ -609,7 +637,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   }
 
   const localSettingsWritable = identityReady && (status === "guest" || status === "signed-out");
-  const settingsReadOnly = replaceMutation.isPending || (!localSettingsWritable
+  const settingsReadOnly = logoutCleanupPending || replaceMutation.isPending || (!localSettingsWritable
     && (status !== "authenticated" || !online || !settingsReady || importDiff !== null || conflict !== null));
   const shortcutHydrationReady = identityReady && (status === "guest" || ((status === "authenticated" || status === "blocked") && shortcutSettingsReady && importDiff === null));
   const githubPatSettingsReady = identityReady && !settingsReadOnly && conflict === null;
@@ -773,24 +801,32 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     logout: async () => {
       invalidateDeckPolling();
       setDeckAccessSuspended(true);
-      await bridge.request({ operation: "secure.purge", scope: "logout" });
-      await sessionRef.current?.clear();
-      sessionRef.current = null;
-      setSession(null);
-      clearAuthenticatedSettingsCache(storage, apiOrigin);
-      clearAllContractedLocalData(storage);
-      setStatus("signed-out");
-      setAccount(null);
-      setAccountError(null);
-      applySettings(defaultDevHudSettings);
-      applyRevision(0n);
-      setSettingsReady(false);
-      resetDesktopShortcuts();
-      setSettingsError(null);
-      setDeckAccessSuspended(false);
-      await clearIdentityQueryCache();
-      onIdentityReset();
-      onLoggedOut();
+      const releaseDiagnosticWrites = beginDiagnosticWriteSuppression(storage);
+      try {
+        setLogoutCleanupPending(true);
+        const localCleanupComplete = clearAllContractedLocalData(storage);
+        if (!localCleanupComplete) throw new Error("local-data-cleanup-incomplete");
+        await bridge.request({ operation: "secure.purge", scope: "logout" });
+        await sessionRef.current?.clear();
+        sessionRef.current = null;
+        setSession(null);
+        clearAuthenticatedSettingsCache(storage, apiOrigin);
+        setStatus("signed-out");
+        setAccount(null);
+        setAccountError(null);
+        applySettings(defaultDevHudSettings);
+        applyRevision(0n);
+        setSettingsReady(false);
+        resetDesktopShortcuts();
+        setSettingsError(null);
+        setDeckAccessSuspended(false);
+        await clearIdentityQueryCache();
+        onLoggedOut();
+        onIdentityReset();
+        setLogoutCleanupPending(false);
+      } finally {
+        releaseDiagnosticWrites();
+      }
     },
     deleteAccount: async () => {
       const response = await deleteMutation.mutateAsync({});

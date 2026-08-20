@@ -404,6 +404,7 @@ func safeProcedure(path string) string {
 		"/devhud.v1.AccountService/GetAccount",
 		"/devhud.v1.AccountService/DeleteAccount",
 		"/devhud.v1.AccountService/RestoreAccount",
+		"/devhud.v1.DiagnosticsService/SubmitCrashReport",
 		"/healthz", "/readyz", "/metrics":
 		return path
 	default:

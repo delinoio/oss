@@ -31,6 +31,7 @@ const (
 	DiagnosticPlatform_DIAGNOSTIC_PLATFORM_LINUX       DiagnosticPlatform = 3
 	DiagnosticPlatform_DIAGNOSTIC_PLATFORM_IOS         DiagnosticPlatform = 4
 	DiagnosticPlatform_DIAGNOSTIC_PLATFORM_ANDROID     DiagnosticPlatform = 5
+	DiagnosticPlatform_DIAGNOSTIC_PLATFORM_BROWSER     DiagnosticPlatform = 6
 )
 
 // Enum value maps for DiagnosticPlatform.
@@ -42,6 +43,7 @@ var (
 		3: "DIAGNOSTIC_PLATFORM_LINUX",
 		4: "DIAGNOSTIC_PLATFORM_IOS",
 		5: "DIAGNOSTIC_PLATFORM_ANDROID",
+		6: "DIAGNOSTIC_PLATFORM_BROWSER",
 	}
 	DiagnosticPlatform_value = map[string]int32{
 		"DIAGNOSTIC_PLATFORM_UNSPECIFIED": 0,
@@ -50,6 +52,7 @@ var (
 		"DIAGNOSTIC_PLATFORM_LINUX":       3,
 		"DIAGNOSTIC_PLATFORM_IOS":         4,
 		"DIAGNOSTIC_PLATFORM_ANDROID":     5,
+		"DIAGNOSTIC_PLATFORM_BROWSER":     6,
 	}
 )
 
@@ -86,6 +89,7 @@ const (
 	DiagnosticArchitecture_DIAGNOSTIC_ARCHITECTURE_UNSPECIFIED DiagnosticArchitecture = 0
 	DiagnosticArchitecture_DIAGNOSTIC_ARCHITECTURE_X86_64      DiagnosticArchitecture = 1
 	DiagnosticArchitecture_DIAGNOSTIC_ARCHITECTURE_ARM64       DiagnosticArchitecture = 2
+	DiagnosticArchitecture_DIAGNOSTIC_ARCHITECTURE_ARMV7       DiagnosticArchitecture = 3
 )
 
 // Enum value maps for DiagnosticArchitecture.
@@ -94,11 +98,13 @@ var (
 		0: "DIAGNOSTIC_ARCHITECTURE_UNSPECIFIED",
 		1: "DIAGNOSTIC_ARCHITECTURE_X86_64",
 		2: "DIAGNOSTIC_ARCHITECTURE_ARM64",
+		3: "DIAGNOSTIC_ARCHITECTURE_ARMV7",
 	}
 	DiagnosticArchitecture_value = map[string]int32{
 		"DIAGNOSTIC_ARCHITECTURE_UNSPECIFIED": 0,
 		"DIAGNOSTIC_ARCHITECTURE_X86_64":      1,
 		"DIAGNOSTIC_ARCHITECTURE_ARM64":       2,
+		"DIAGNOSTIC_ARCHITECTURE_ARMV7":       3,
 	}
 )
 
@@ -242,12 +248,18 @@ func (DiagnosticSeverity) EnumDescriptor() ([]byte, []int) {
 // ClientBuild string fields are each at most 256 UTF-8 bytes and cannot
 // contain credential or local-path patterns.
 type ClientBuild struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	AppVersion    string                 `protobuf:"bytes,1,opt,name=app_version,json=appVersion,proto3" json:"app_version,omitempty"`
-	BuildId       string                 `protobuf:"bytes,2,opt,name=build_id,json=buildId,proto3" json:"build_id,omitempty"`
-	Platform      DiagnosticPlatform     `protobuf:"varint,3,opt,name=platform,proto3,enum=devhud.v1.DiagnosticPlatform" json:"platform,omitempty"`
-	Architecture  DiagnosticArchitecture `protobuf:"varint,4,opt,name=architecture,proto3,enum=devhud.v1.DiagnosticArchitecture" json:"architecture,omitempty"`
-	OsVersion     string                 `protobuf:"bytes,5,opt,name=os_version,json=osVersion,proto3" json:"os_version,omitempty"`
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	AppVersion   string                 `protobuf:"bytes,1,opt,name=app_version,json=appVersion,proto3" json:"app_version,omitempty"`
+	BuildId      string                 `protobuf:"bytes,2,opt,name=build_id,json=buildId,proto3" json:"build_id,omitempty"`
+	Platform     DiagnosticPlatform     `protobuf:"varint,3,opt,name=platform,proto3,enum=devhud.v1.DiagnosticPlatform" json:"platform,omitempty"`
+	Architecture DiagnosticArchitecture `protobuf:"varint,4,opt,name=architecture,proto3,enum=devhud.v1.DiagnosticArchitecture" json:"architecture,omitempty"`
+	OsVersion    string                 `protobuf:"bytes,5,opt,name=os_version,json=osVersion,proto3" json:"os_version,omitempty"`
+	// Exact 40-character lowercase Tauri source revision on native hosts; empty
+	// for browser development.
+	TauriRevision string `protobuf:"bytes,6,opt,name=tauri_revision,json=tauriRevision,proto3" json:"tauri_revision,omitempty"`
+	// Exact CEF runtime revision on desktop; empty on system-webview mobile and
+	// browser hosts.
+	CefRevision   string `protobuf:"bytes,7,opt,name=cef_revision,json=cefRevision,proto3" json:"cef_revision,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -317,6 +329,20 @@ func (x *ClientBuild) GetOsVersion() string {
 	return ""
 }
 
+func (x *ClientBuild) GetTauriRevision() string {
+	if x != nil {
+		return x.TauriRevision
+	}
+	return ""
+}
+
+func (x *ClientBuild) GetCefRevision() string {
+	if x != nil {
+		return x.CefRevision
+	}
+	return ""
+}
+
 type SubmitCrashReportRequest struct {
 	state               protoimpl.MessageState `protogen:"open.v1"`
 	ReportSchemaVersion uint32                 `protobuf:"varint,1,opt,name=report_schema_version,json=reportSchemaVersion,proto3" json:"report_schema_version,omitempty"`
@@ -324,16 +350,21 @@ type SubmitCrashReportRequest struct {
 	OccurredAt          *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=occurred_at,json=occurredAt,proto3" json:"occurred_at,omitempty"`
 	Component           DiagnosticComponent    `protobuf:"varint,4,opt,name=component,proto3,enum=devhud.v1.DiagnosticComponent" json:"component,omitempty"`
 	Severity            DiagnosticSeverity     `protobuf:"varint,5,opt,name=severity,proto3,enum=devhud.v1.DiagnosticSeverity" json:"severity,omitempty"`
-	// error_code is at most 256 UTF-8 bytes and cannot contain credential or
-	// local-path patterns.
+	// error_code is an uppercase ASCII enum-style classification of 1-64 bytes
+	// and cannot contain credential or local-path patterns.
 	ErrorCode string `protobuf:"bytes,6,opt,name=error_code,json=errorCode,proto3" json:"error_code,omitempty"`
 	// redacted_summary is user-previewed UTF-8 text, at most 4 KiB.
 	RedactedSummary string `protobuf:"bytes,7,opt,name=redacted_summary,json=redactedSummary,proto3" json:"redacted_summary,omitempty"`
 	// redacted_stack_trace is user-previewed UTF-8 text, at most 32 KiB.
 	RedactedStackTrace    string    `protobuf:"bytes,8,opt,name=redacted_stack_trace,json=redactedStackTrace,proto3" json:"redacted_stack_trace,omitempty"`
 	RelatedCorrelationIds []*UuidV7 `protobuf:"bytes,9,rep,name=related_correlation_ids,json=relatedCorrelationIds,proto3" json:"related_correlation_ids,omitempty"`
-	unknownFields         protoimpl.UnknownFields
-	sizeCache             protoimpl.SizeCache
+	// A client-generated UUID v7 that binds preview, local events, retries, and
+	// the accepted server report without identifying a person or device.
+	ClientCorrelationId *UuidV7 `protobuf:"bytes,10,opt,name=client_correlation_id,json=clientCorrelationId,proto3" json:"client_correlation_id,omitempty"`
+	// Duration of the failed operation. Values above 24 hours are invalid.
+	DurationMilliseconds uint64 `protobuf:"varint,11,opt,name=duration_milliseconds,json=durationMilliseconds,proto3" json:"duration_milliseconds,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *SubmitCrashReportRequest) Reset() {
@@ -429,6 +460,20 @@ func (x *SubmitCrashReportRequest) GetRelatedCorrelationIds() []*UuidV7 {
 	return nil
 }
 
+func (x *SubmitCrashReportRequest) GetClientCorrelationId() *UuidV7 {
+	if x != nil {
+		return x.ClientCorrelationId
+	}
+	return nil
+}
+
+func (x *SubmitCrashReportRequest) GetDurationMilliseconds() uint64 {
+	if x != nil {
+		return x.DurationMilliseconds
+	}
+	return 0
+}
+
 type SubmitCrashReportResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Metadata      *ResponseMetadata      `protobuf:"bytes,1,opt,name=metadata,proto3" json:"metadata,omitempty"`
@@ -501,7 +546,7 @@ var File_devhud_v1_diagnostics_proto protoreflect.FileDescriptor
 
 const file_devhud_v1_diagnostics_proto_rawDesc = "" +
 	"\n" +
-	"\x1bdevhud/v1/diagnostics.proto\x12\tdevhud.v1\x1a\x16devhud/v1/common.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xea\x01\n" +
+	"\x1bdevhud/v1/diagnostics.proto\x12\tdevhud.v1\x1a\x16devhud/v1/common.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xb4\x02\n" +
 	"\vClientBuild\x12\x1f\n" +
 	"\vapp_version\x18\x01 \x01(\tR\n" +
 	"appVersion\x12\x19\n" +
@@ -509,7 +554,9 @@ const file_devhud_v1_diagnostics_proto_rawDesc = "" +
 	"\bplatform\x18\x03 \x01(\x0e2\x1d.devhud.v1.DiagnosticPlatformR\bplatform\x12E\n" +
 	"\farchitecture\x18\x04 \x01(\x0e2!.devhud.v1.DiagnosticArchitectureR\farchitecture\x12\x1d\n" +
 	"\n" +
-	"os_version\x18\x05 \x01(\tR\tosVersion\"\x86\x04\n" +
+	"os_version\x18\x05 \x01(\tR\tosVersion\x12%\n" +
+	"\x0etauri_revision\x18\x06 \x01(\tR\rtauriRevision\x12!\n" +
+	"\fcef_revision\x18\a \x01(\tR\vcefRevision\"\x82\x05\n" +
 	"\x18SubmitCrashReportRequest\x122\n" +
 	"\x15report_schema_version\x18\x01 \x01(\rR\x13reportSchemaVersion\x129\n" +
 	"\fclient_build\x18\x02 \x01(\v2\x16.devhud.v1.ClientBuildR\vclientBuild\x12;\n" +
@@ -521,25 +568,30 @@ const file_devhud_v1_diagnostics_proto_rawDesc = "" +
 	"error_code\x18\x06 \x01(\tR\terrorCode\x12)\n" +
 	"\x10redacted_summary\x18\a \x01(\tR\x0fredactedSummary\x120\n" +
 	"\x14redacted_stack_trace\x18\b \x01(\tR\x12redactedStackTrace\x12I\n" +
-	"\x17related_correlation_ids\x18\t \x03(\v2\x11.devhud.v1.UuidV7R\x15relatedCorrelationIds\"\x87\x02\n" +
+	"\x17related_correlation_ids\x18\t \x03(\v2\x11.devhud.v1.UuidV7R\x15relatedCorrelationIds\x12E\n" +
+	"\x15client_correlation_id\x18\n" +
+	" \x01(\v2\x11.devhud.v1.UuidV7R\x13clientCorrelationId\x123\n" +
+	"\x15duration_milliseconds\x18\v \x01(\x04R\x14durationMilliseconds\"\x87\x02\n" +
 	"\x19SubmitCrashReportResponse\x127\n" +
 	"\bmetadata\x18\x01 \x01(\v2\x1b.devhud.v1.ResponseMetadataR\bmetadata\x129\n" +
 	"\x0fcrash_report_id\x18\x02 \x01(\v2\x11.devhud.v1.UuidV7R\rcrashReportId\x12;\n" +
 	"\vaccepted_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"acceptedAt\x129\n" +
 	"\n" +
-	"expires_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt*\xd6\x01\n" +
+	"expires_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt*\xf7\x01\n" +
 	"\x12DiagnosticPlatform\x12#\n" +
 	"\x1fDIAGNOSTIC_PLATFORM_UNSPECIFIED\x10\x00\x12\x1d\n" +
 	"\x19DIAGNOSTIC_PLATFORM_MACOS\x10\x01\x12\x1f\n" +
 	"\x1bDIAGNOSTIC_PLATFORM_WINDOWS\x10\x02\x12\x1d\n" +
 	"\x19DIAGNOSTIC_PLATFORM_LINUX\x10\x03\x12\x1b\n" +
 	"\x17DIAGNOSTIC_PLATFORM_IOS\x10\x04\x12\x1f\n" +
-	"\x1bDIAGNOSTIC_PLATFORM_ANDROID\x10\x05*\x88\x01\n" +
+	"\x1bDIAGNOSTIC_PLATFORM_ANDROID\x10\x05\x12\x1f\n" +
+	"\x1bDIAGNOSTIC_PLATFORM_BROWSER\x10\x06*\xab\x01\n" +
 	"\x16DiagnosticArchitecture\x12'\n" +
 	"#DIAGNOSTIC_ARCHITECTURE_UNSPECIFIED\x10\x00\x12\"\n" +
 	"\x1eDIAGNOSTIC_ARCHITECTURE_X86_64\x10\x01\x12!\n" +
-	"\x1dDIAGNOSTIC_ARCHITECTURE_ARM64\x10\x02*\x8f\x02\n" +
+	"\x1dDIAGNOSTIC_ARCHITECTURE_ARM64\x10\x02\x12!\n" +
+	"\x1dDIAGNOSTIC_ARCHITECTURE_ARMV7\x10\x03*\x8f\x02\n" +
 	"\x13DiagnosticComponent\x12$\n" +
 	" DIAGNOSTIC_COMPONENT_UNSPECIFIED\x10\x00\x12\x1c\n" +
 	"\x18DIAGNOSTIC_COMPONENT_APP\x10\x01\x12'\n" +
@@ -589,17 +641,18 @@ var file_devhud_v1_diagnostics_proto_depIdxs = []int32{
 	2,  // 4: devhud.v1.SubmitCrashReportRequest.component:type_name -> devhud.v1.DiagnosticComponent
 	3,  // 5: devhud.v1.SubmitCrashReportRequest.severity:type_name -> devhud.v1.DiagnosticSeverity
 	8,  // 6: devhud.v1.SubmitCrashReportRequest.related_correlation_ids:type_name -> devhud.v1.UuidV7
-	9,  // 7: devhud.v1.SubmitCrashReportResponse.metadata:type_name -> devhud.v1.ResponseMetadata
-	8,  // 8: devhud.v1.SubmitCrashReportResponse.crash_report_id:type_name -> devhud.v1.UuidV7
-	7,  // 9: devhud.v1.SubmitCrashReportResponse.accepted_at:type_name -> google.protobuf.Timestamp
-	7,  // 10: devhud.v1.SubmitCrashReportResponse.expires_at:type_name -> google.protobuf.Timestamp
-	5,  // 11: devhud.v1.DiagnosticsService.SubmitCrashReport:input_type -> devhud.v1.SubmitCrashReportRequest
-	6,  // 12: devhud.v1.DiagnosticsService.SubmitCrashReport:output_type -> devhud.v1.SubmitCrashReportResponse
-	12, // [12:13] is the sub-list for method output_type
-	11, // [11:12] is the sub-list for method input_type
-	11, // [11:11] is the sub-list for extension type_name
-	11, // [11:11] is the sub-list for extension extendee
-	0,  // [0:11] is the sub-list for field type_name
+	8,  // 7: devhud.v1.SubmitCrashReportRequest.client_correlation_id:type_name -> devhud.v1.UuidV7
+	9,  // 8: devhud.v1.SubmitCrashReportResponse.metadata:type_name -> devhud.v1.ResponseMetadata
+	8,  // 9: devhud.v1.SubmitCrashReportResponse.crash_report_id:type_name -> devhud.v1.UuidV7
+	7,  // 10: devhud.v1.SubmitCrashReportResponse.accepted_at:type_name -> google.protobuf.Timestamp
+	7,  // 11: devhud.v1.SubmitCrashReportResponse.expires_at:type_name -> google.protobuf.Timestamp
+	5,  // 12: devhud.v1.DiagnosticsService.SubmitCrashReport:input_type -> devhud.v1.SubmitCrashReportRequest
+	6,  // 13: devhud.v1.DiagnosticsService.SubmitCrashReport:output_type -> devhud.v1.SubmitCrashReportResponse
+	13, // [13:14] is the sub-list for method output_type
+	12, // [12:13] is the sub-list for method input_type
+	12, // [12:12] is the sub-list for extension type_name
+	12, // [12:12] is the sub-list for extension extendee
+	0,  // [0:12] is the sub-list for field type_name
 }
 
 func init() { file_devhud_v1_diagnostics_proto_init() }
