@@ -769,6 +769,8 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     },
     reapplyConflictLocal: async () => conflict ? replaceAt(conflict.local, conflict.currentRevision) : false,
     logout: async () => {
+      invalidateDeckPolling();
+      setDeckAccessSuspended(true);
       await bridge.request({ operation: "secure.purge", scope: "logout" });
       await sessionRef.current?.clear();
       sessionRef.current = null;

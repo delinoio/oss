@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import fixture from "../fixtures/identity-settings-e2e.json";
 import { App } from "./App";
 import { deckCacheKey } from "./deck";
+import { deckPollingCancellationGeneration } from "./deck-polling-cancellation";
 import * as identityClient from "./identity-client";
 import { sessionProfileId, type IdentitySession } from "./identity-client";
 import { SynchronizedSettingsBoundary } from "./identity-ui";
@@ -1245,12 +1246,18 @@ describe("generated Connect identity/settings fixture", () => {
   it("removes identity-scoped React Query data on logout", async () => {
     const accessTokenMap = JSON.stringify({ "@https://api.example/api": { token: "fixture-access-token", scope: "", expiresAt: 4_102_444_800 } });
     const secureSession = JSON.stringify({ idToken: "fixture-id-token", accessToken: accessTokenMap });
+    const cancellationGeneration = deckPollingCancellationGeneration();
     let authenticated = true;
     const bridge: NativeBridgeV1 = {
       async request(request) {
         if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
         if (request.operation === "secure.read") return { kind: "secure-value", value: authenticated && request.setting.kind === "logto-session" ? secureSession : null };
-        if (request.operation === "secure.purge" || request.operation === "secure.remove") { authenticated = false; return { kind: "ok" }; }
+        if (request.operation === "secure.purge") {
+          expect(deckPollingCancellationGeneration()).toBeGreaterThan(cancellationGeneration);
+          authenticated = false;
+          return { kind: "ok" };
+        }
+        if (request.operation === "secure.remove") { authenticated = false; return { kind: "ok" }; }
         if (request.operation === "secure.write") return { kind: "ok" };
         throw new Error(`unexpected bridge operation ${request.operation}`);
       },

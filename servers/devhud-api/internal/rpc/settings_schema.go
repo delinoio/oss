@@ -287,6 +287,9 @@ func validateSettingsDeck(value any, path string, legacy bool, previous bool) (s
 			if !hasPullRequestQualifier || !hasRepositoryQualifier {
 				return "", fmt.Errorf("%s.repository must produce a valid repository-scoped pull-request query", path)
 			}
+			if !deckQueryWithinGitHubSearchLimits(migratedQuery) {
+				return "", fmt.Errorf("%s.query exceeds GitHub Search limits", path)
+			}
 		}
 	}
 	if !legacy && !previous {

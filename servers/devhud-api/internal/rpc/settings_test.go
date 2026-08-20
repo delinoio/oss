@@ -85,9 +85,9 @@ func TestValidateDevHudSettingsDeckQualifiers(t *testing.T) {
 		value := strings.Replace(canonicalSettingsV4, `"profiles":[]`, `"profiles":[{"id":"`+profileID+`","kind":"fine-grained","name":"Work"}]`, 1)
 		return strings.Replace(value, `"decks":[]`, `"decks":[`+deck(query, notifications)+`]`, 1)
 	}
-	previousSettings := func(repository string) string {
+	previousSettings := func(repository, query string) string {
 		value := strings.Replace(canonicalSettingsV2, `"profiles":[]`, `"profiles":[{"id":"`+profileID+`","kind":"fine-grained","name":"Work"}]`, 1)
-		legacyDeck := `{"display":{"groupBy":"none","showDrafts":true},"id":"018f47a2-7b3c-7def-8abc-1234567890ac","notifications":[],"profileRef":"` + profileID + `","query":"is:pr","refreshMinutes":5,"repository":` + repository + `,"title":"Legacy Deck"}`
+		legacyDeck := `{"display":{"groupBy":"none","showDrafts":true},"id":"018f47a2-7b3c-7def-8abc-1234567890ac","notifications":[],"profileRef":"` + profileID + `","query":"` + query + `","refreshMinutes":5,"repository":` + repository + `,"title":"Legacy Deck"}`
 		return strings.Replace(value, `"decks":[]`, `"decks":[`+legacyDeck+`]`, 1)
 	}
 	if err := validateDevHudSettings([]byte(settings("repo:octo/widgets IS:PR", `[]`)), 4); err != nil {
@@ -151,21 +151,36 @@ func TestValidateDevHudSettingsDeckQualifiers(t *testing.T) {
 			}
 		})
 	}
-	if err := validateDevHudSettings([]byte(previousSettings("null")), 2); err == nil {
+	if err := validateDevHudSettings([]byte(previousSettings("null", "is:pr")), 2); err == nil {
 		t.Fatal("schema-v2 null repository with profile was accepted")
 	}
-	if err := validateDevHudSettings([]byte(previousSettings(`"octo/widgets"`)), 2); err != nil {
+	if err := validateDevHudSettings([]byte(previousSettings(`"octo/widgets"`, "is:pr")), 2); err != nil {
 		t.Fatalf("schema-v2 valid repository: %v", err)
 	}
-	if err := validateDevHudSettings([]byte(previousSettings(`"owner repo"`)), 2); err == nil {
+	if err := validateDevHudSettings([]byte(previousSettings(`"owner repo"`, "is:pr")), 2); err == nil {
 		t.Fatal("schema-v2 malformed repository was accepted")
+	}
+	for name, test := range map[string]struct {
+		query string
+	}{
+		"overlong search text":  {strings.Repeat("x", 257)},
+		"six Boolean operators": {strings.Join([]string{"repo:octo/widgets is:pr", "repo:octo/widgets is:pr", "repo:octo/widgets is:pr", "repo:octo/widgets is:pr", "repo:octo/widgets is:pr", "repo:octo/widgets is:pr", "repo:octo/widgets is:pr"}, " OR ")},
+	} {
+		for version, value := range map[uint32]string{
+			2: previousSettings(`"octo/widgets"`, test.query),
+			3: strings.Replace(previousSettings(`"octo/widgets"`, test.query), `"schemaVersion":2`, `"schemaVersion":3`, 1),
+		} {
+			if err := validateDevHudSettings([]byte(value), version); err == nil {
+				t.Fatalf("%s schema-v%d query was accepted", name, version)
+			}
+		}
 	}
 	for name, test := range map[string]struct {
 		version uint32
 		value   string
 	}{
-		"schema-v2":               {2, previousSettings(`"   "`)},
-		"legacy-shaped schema-v3": {3, strings.Replace(previousSettings(`"   "`), `"schemaVersion":2`, `"schemaVersion":3`, 1)},
+		"schema-v2":               {2, previousSettings(`"   "`, "is:pr")},
+		"legacy-shaped schema-v3": {3, strings.Replace(previousSettings(`"   "`, "is:pr"), `"schemaVersion":2`, `"schemaVersion":3`, 1)},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if err := validateDevHudSettings([]byte(test.value), test.version); err == nil {
