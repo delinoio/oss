@@ -16,7 +16,8 @@ interface InjectedCapturedBrowserContext extends CapturedBrowserContext {
  * This function is serialized by chrome.scripting.executeScript, so every
  * helper and constant it uses must remain inside the function body.
  */
-export function injectedCapture(selectElement: boolean, language: "en" | "ko" = "en") {
+export function injectedCapture(selectElement: boolean, expectedOrigin: string, language: "en" | "ko" = "en") {
+  if (location.origin !== expectedOrigin) return Promise.resolve(null);
   const allowedElements = new Set(["a", "article", "aside", "blockquote", "code", "dd", "details", "div", "dl", "dt", "em", "figcaption", "figure", "footer", "h1", "h2", "h3", "h4", "h5", "h6", "header", "hr", "img", "li", "main", "nav", "ol", "p", "pre", "section", "summary", "table", "tbody", "td", "tfoot", "th", "thead", "tr", "ul"]);
   const allowedAttributes = new Set(["alt", "aria-describedby", "aria-hidden", "aria-label", "aria-labelledby", "role", "title"]);
   const clippingOverflow = new Set(["auto", "clip", "hidden", "scroll"]);
@@ -37,9 +38,12 @@ export function injectedCapture(selectElement: boolean, language: "en" | "ko" = 
   const normalizeUrl = () => {
     const url = new URL(location.href);
     if (!/^https?:$/u.test(url.protocol)) throw new TypeError("unsupported URL");
-    const origin = `${url.protocol}//${url.hostname.toLowerCase()}${url.port ? `:${url.port}` : ""}`;
-    const path = url.pathname.split("/").map((segment) => segment === "" ? "" : "<redacted>").join("/");
-    return `${origin}${path}`;
+    url.username = "";
+    url.password = "";
+    url.search = "";
+    url.hash = "";
+    url.pathname = url.pathname.split("/").map((segment) => segment === "" ? "" : "<redacted>").join("/");
+    return url.href;
   };
   const hasVisibleIntersection = (
     bounds: Pick<DOMRect, "x" | "y" | "width" | "height">,

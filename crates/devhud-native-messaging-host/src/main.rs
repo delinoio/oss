@@ -9,10 +9,11 @@ use devhud_native_messaging_host::{
     auth::{handshake_proof, now_unix_millis, random_nonce, sign_request, verify_auth_result},
     configured_extension_id, delete_pairing_secret, endpoint, expected_extension_origin,
     framing::{ByteOrder, read_json, write_json},
+    pairing_is_complete,
     protocol::{
         AuthPurpose, AuthResponse, AuthResult, Challenge, IpcMessageType, IpcRequest, IpcResponse,
-        NativeRequest, NativeResponse, NativeResponseState, SESSION_INVALIDATED_ERROR,
-        validate_deadline, validate_version,
+        NativeMessageType, NativeRequest, NativeResponse, NativeResponseState,
+        SESSION_INVALIDATED_ERROR, validate_deadline, validate_version,
     },
     read_pairing_secret, registration,
 };
@@ -155,6 +156,34 @@ fn authenticate(origin: &str, pairing_nonce: Option<String>) -> Result<Session, 
     authenticate_stream(stream, origin, pairing_nonce, AuthPurpose::BrowserSession)
 }
 
+fn authenticate_initial_session_with<T>(
+    request: &NativeRequest,
+    mut authenticate: impl FnMut(Option<String>) -> Result<T, String>,
+    pairing_is_complete: impl FnOnce() -> Result<bool, String>,
+) -> Result<T, String> {
+    match authenticate(pairing_nonce_for_authentication(request, false)) {
+        Err(initial_error)
+            if request.message_type == NativeMessageType::Pair
+                && request.pairing_nonce.is_some() =>
+        {
+            if pairing_is_complete()? {
+                authenticate(pairing_nonce_for_authentication(request, true))
+            } else {
+                Err(initial_error)
+            }
+        }
+        result => result,
+    }
+}
+
+fn authenticate_initial_session(origin: &str, request: &NativeRequest) -> Result<Session, String> {
+    authenticate_initial_session_with(
+        request,
+        |pairing_nonce| authenticate(origin, pairing_nonce),
+        pairing_is_complete,
+    )
+}
+
 fn pairing_nonce_for_authentication(
     request: &NativeRequest,
     retry_after_authenticated_session: bool,
@@ -255,7 +284,7 @@ fn run_native(origin: &str) -> io::Result<()> {
             continue;
         }
         if session.is_none() {
-            match authenticate(origin, pairing_nonce_for_authentication(&request, false)) {
+            match authenticate_initial_session(origin, &request) {
                 Ok(authenticated) => session = Some(authenticated),
                 Err(reason) => {
                     warn!(event = "app_connection_unavailable", reason);
@@ -291,10 +320,7 @@ fn run_native(origin: &str) -> io::Result<()> {
             }
         }
         let (state, payload) = match result {
-            Ok(payload)
-                if request.message_type
-                    == devhud_native_messaging_host::protocol::NativeMessageType::Pair =>
-            {
+            Ok(payload) if request.message_type == NativeMessageType::Pair => {
                 (NativeResponseState::Paired, payload)
             }
             Ok(payload) => (NativeResponseState::Accepted, payload),
@@ -583,6 +609,64 @@ mod tests {
             Some("consumed")
         );
         assert_eq!(pairing_nonce_for_authentication(&request, true), None);
+    }
+
+    #[test]
+    fn completed_pairing_recovers_when_the_initial_authentication_result_is_lost() {
+        let request = NativeRequest {
+            version: PROTOCOL_VERSION,
+            schema_version: SCHEMA_VERSION,
+            request_id: uuid::Uuid::now_v7().to_string(),
+            message_type: NativeMessageType::Pair,
+            deadline_unix_ms: now_unix_millis() + REQUEST_DEADLINE_MILLIS,
+            nonce: random_nonce(),
+            pairing_nonce: Some("consumed".to_string()),
+            payload: serde_json::Value::Null,
+        };
+        let mut attempts = Vec::new();
+
+        let result = authenticate_initial_session_with(
+            &request,
+            |pairing_nonce| {
+                attempts.push(pairing_nonce);
+                if attempts.len() == 1 {
+                    Err("authentication-failed".to_string())
+                } else {
+                    Ok("authenticated")
+                }
+            },
+            || Ok(true),
+        );
+
+        assert_eq!(result.as_deref(), Ok("authenticated"));
+        assert_eq!(attempts, vec![Some("consumed".to_string()), None]);
+    }
+
+    #[test]
+    fn incomplete_pairing_does_not_retry_initial_authentication_without_the_nonce() {
+        let request = NativeRequest {
+            version: PROTOCOL_VERSION,
+            schema_version: SCHEMA_VERSION,
+            request_id: uuid::Uuid::now_v7().to_string(),
+            message_type: NativeMessageType::Pair,
+            deadline_unix_ms: now_unix_millis() + REQUEST_DEADLINE_MILLIS,
+            nonce: random_nonce(),
+            pairing_nonce: Some("pending".to_string()),
+            payload: serde_json::Value::Null,
+        };
+        let mut attempts = Vec::new();
+
+        let result: Result<(), String> = authenticate_initial_session_with(
+            &request,
+            |pairing_nonce| {
+                attempts.push(pairing_nonce);
+                Err("authentication-failed".to_string())
+            },
+            || Ok(false),
+        );
+
+        assert_eq!(result, Err("authentication-failed".to_string()));
+        assert_eq!(attempts, vec![Some("pending".to_string())]);
     }
 
     fn ipc_response(accepted: bool, error: Option<&str>) -> IpcResponse {

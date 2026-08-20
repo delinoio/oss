@@ -4,7 +4,7 @@ import { MaximumOuterHtmlBytes, normalizeCapturedUrl, sanitizeOuterHtml } from "
 
 describe("browser-context sanitizer", () => {
   it("redacts credentials, query, fragment, and every path segment", () => {
-    expect(normalizeCapturedUrl("https://user:password@Example.com:444/reset/token/?secret=x#fragment")).toBe("https://example.com:444/<redacted>/<redacted>/");
+    expect(normalizeCapturedUrl("https://user:password@Example.com:444/reset/token/?secret=x#fragment")).toBe("https://example.com:444/%3Credacted%3E/%3Credacted%3E/");
     expect(() => normalizeCapturedUrl("file:///credential")).toThrow();
   });
   it("keeps only allowlisted elements and accessibility attributes", () => {

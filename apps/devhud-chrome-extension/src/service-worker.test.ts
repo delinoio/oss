@@ -156,8 +156,65 @@ describe("capture configuration freshness", () => {
     expect(getAllPermissions).toHaveBeenCalledTimes(2);
     expect(removePermissions).toHaveBeenCalledOnce();
     expect(removePermissions).toHaveBeenCalledWith({ origins: ["https://stale.example/*"] });
-    expect(chrome.scripting.executeScript).toHaveBeenCalledWith(expect.objectContaining({ args: [true, "en"] }));
+    expect(chrome.scripting.executeScript).toHaveBeenCalledWith(expect.objectContaining({ args: [true, "https://example.com", "en"] }));
     expect(response.state).toBe("denied");
+  });
+
+  it("discards stale permission reconciliation after a newer request starts", async () => {
+    const port = fakePort();
+    const configurations = ["old", "new"].map((host) => ({
+      origins: [{
+        origin: `https://${host}.example`,
+        mappings: [{
+          mappingId: `01900000-0000-7000-8000-00000000000${host === "old" ? "1" : "2"}`,
+          matcher: { scheme: "https", host: [host, "example"], hostIsIpLiteral: false, port: "", path: ["**"] },
+        }],
+      }],
+      language: "en",
+    }));
+    let configurationIndex = 0;
+    port.postMessage = vi.fn((request: { request_id: string }) => {
+      const payload = configurations[configurationIndex++]!;
+      queueMicrotask(() => port.messageListeners[0]!({
+        version: 1,
+        schema_version: 1,
+        request_id: request.request_id,
+        ok: true,
+        state: "accepted",
+        payload,
+      }));
+    });
+    let releaseFirstGetAll!: (permissions: { origins: string[] }) => void;
+    const firstGetAll = new Promise<{ origins: string[] }>((resolve) => { releaseFirstGetAll = resolve; });
+    const getAllPermissions = vi.fn()
+      .mockImplementationOnce(() => firstGetAll)
+      .mockResolvedValueOnce({ origins: ["https://old.example/*", "https://new.example/*"] });
+    const removePermissions = vi.fn().mockResolvedValue(true);
+    let runtimeListener: ((message: unknown, sender: chrome.runtime.MessageSender, sendResponse: (response: unknown) => void) => boolean) | undefined;
+    vi.stubGlobal("chrome", {
+      runtime: {
+        connectNative: vi.fn(() => port),
+        onMessage: { addListener: vi.fn((listener) => { runtimeListener = listener; }) },
+      },
+      permissions: {
+        getAll: getAllPermissions,
+        remove: removePermissions,
+      },
+    });
+
+    await import("./service-worker.js");
+    const requestConfiguration = () => new Promise<void>((resolve) => {
+      runtimeListener!({ type: "configuration" }, {} as chrome.runtime.MessageSender, () => resolve());
+    });
+    const firstRequest = requestConfiguration();
+    await vi.waitFor(() => expect(getAllPermissions).toHaveBeenCalledTimes(1));
+    const secondRequest = requestConfiguration();
+    await secondRequest;
+    releaseFirstGetAll({ origins: ["https://old.example/*", "https://new.example/*"] });
+    await firstRequest;
+
+    expect(removePermissions).toHaveBeenCalledOnce();
+    expect(removePermissions).toHaveBeenCalledWith({ origins: ["https://old.example/*"] });
   });
 
   it("preserves grants when a configuration refresh fails", async () => {

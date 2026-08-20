@@ -212,7 +212,8 @@ pub fn validate_browser_context(context: &BrowserContext) -> Result<(), &'static
         return Err("invalid-browser-context");
     }
     let url = url::Url::parse(&context.url).map_err(|_| "invalid-browser-context")?;
-    if !matches!(url.scheme(), "http" | "https")
+    if context.url.as_str() != url.as_str()
+        || !matches!(url.scheme(), "http" | "https")
         || !url.username().is_empty()
         || url.password().is_some()
         || url.query().is_some()
@@ -418,6 +419,15 @@ mod tests {
             "https://example.com/private",
         );
         let context: BrowserContext = serde_json::from_str(&raw_path).unwrap();
+        assert_eq!(
+            validate_browser_context(&context),
+            Err("invalid-browser-context")
+        );
+        let dot_path = invalid.replace(
+            "https://example.com/?token=x",
+            "https://example.com/private/../%3Credacted%3E",
+        );
+        let context: BrowserContext = serde_json::from_str(&dot_path).unwrap();
         assert_eq!(
             validate_browser_context(&context),
             Err("invalid-browser-context")

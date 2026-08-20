@@ -16,7 +16,7 @@ async function select(
   });
   const elementFromPoint = Object.getOwnPropertyDescriptor(document, "elementFromPoint");
   Object.defineProperty(document, "elementFromPoint", { configurable: true, value: () => element });
-  const capture = injectedCapture(true);
+  const capture = injectedCapture(true, location.origin);
   const overlayWindow = document.querySelector("iframe")?.contentWindow;
   if (!overlayWindow) throw new Error("selection overlay was not created");
   if (dispatchSelection) dispatchSelection(overlayWindow);
@@ -59,6 +59,15 @@ describe("injected capture", () => {
     else delete (Range.prototype as Partial<Range>).getClientRects;
   });
 
+  it("rejects a changed live origin before collecting page context", async () => {
+    document.title = "secret";
+    document.body.innerHTML = "<main>secret</main>";
+
+    await expect(injectedCapture(false, "https://different.example")).resolves.toBeNull();
+
+    expect(document.querySelector("iframe")).toBeNull();
+  });
+
   it.each([
     '<input type="password" title="secret" aria-label="credential">',
     '<div aria-hidden="true" title="secret">hidden</div>',
@@ -85,7 +94,7 @@ describe("injected capture", () => {
     document.title = "x".repeat(1024 * 1024);
     const encode = vi.spyOn(TextEncoder.prototype, "encode");
     try {
-      const result = await injectedCapture(false);
+      const result = await injectedCapture(false, location.origin);
 
       if (!result) throw new Error("capture was unexpectedly cancelled");
       expect(result.title).toHaveLength(4 * 1024);
@@ -230,11 +239,11 @@ describe("injected capture", () => {
     const segmentCount = 2_000;
     window.history.replaceState(null, "", `/${"segment/".repeat(segmentCount)}`);
 
-    const result = await injectedCapture(false);
+    const result = await injectedCapture(false, location.origin);
 
     if (!result) throw new Error("capture was unexpectedly cancelled");
     expect(new TextEncoder().encode(result.url).byteLength).toBeGreaterThan(16 * 1024);
-    expect(result.url.match(/<redacted>/gu)).toHaveLength(segmentCount);
+    expect(result.url.match(/%3Credacted%3E/gu)).toHaveLength(segmentCount);
     expect(result.url.endsWith("/")).toBe(true);
   });
 
@@ -302,7 +311,7 @@ describe("injected capture", () => {
   it("places the selection shield in a modal top-layer dialog", async () => {
     document.body.innerHTML = "<dialog open>page modal</dialog><main>safe</main>";
 
-    const capture = injectedCapture(true);
+    const capture = injectedCapture(true, location.origin);
     const overlay = document.querySelector("iframe");
     const shield = overlay?.parentElement;
     if (!(shield instanceof HTMLDialogElement) || !overlay?.contentWindow) throw new Error("selection shield was not created");
@@ -319,7 +328,7 @@ describe("injected capture", () => {
     document.body.innerHTML = "<main>safe</main>";
     const selected = document.querySelector("main")!;
     const elementFromPoint = Object.getOwnPropertyDescriptor(document, "elementFromPoint");
-    const capture = injectedCapture(true);
+    const capture = injectedCapture(true, location.origin);
     const overlay = document.querySelector("iframe");
     const shield = overlay?.parentElement;
     if (!(shield instanceof HTMLDialogElement) || !overlay?.contentWindow) throw new Error("selection shield was not created");
@@ -343,7 +352,7 @@ describe("injected capture", () => {
   it("degrades to manual selection when the top-layer shield cannot open", async () => {
     vi.mocked(HTMLDialogElement.prototype.showModal).mockImplementationOnce(() => { throw new DOMException("blocked"); });
 
-    await expect(injectedCapture(true)).resolves.toBeNull();
+    await expect(injectedCapture(true, location.origin)).resolves.toBeNull();
     expect(document.querySelector("iframe")).toBeNull();
   });
 
@@ -352,13 +361,13 @@ describe("injected capture", () => {
     for (let index = 0; index < 10_000; index += 1) fragment.append(document.createElement("div"));
     document.body.append(fragment);
 
-    await expect(injectedCapture(true)).resolves.toBeNull();
+    await expect(injectedCapture(true, location.origin)).resolves.toBeNull();
     expect(document.querySelector("iframe")).toBeNull();
     expect(HTMLDialogElement.prototype.showModal).not.toHaveBeenCalled();
   });
 
   it("cancels selection with Escape and removes the overlay", async () => {
-    const capture = injectedCapture(true);
+    const capture = injectedCapture(true, location.origin);
     const overlayWindow = document.querySelector("iframe")?.contentWindow;
     if (!overlayWindow) throw new Error("selection overlay was not created");
 
@@ -369,7 +378,7 @@ describe("injected capture", () => {
   });
 
   it("exposes a localized focusable selection dialog", async () => {
-    const capture = injectedCapture(true, "ko");
+    const capture = injectedCapture(true, location.origin, "ko");
     const overlay = document.querySelector("iframe");
     const overlayDocument = overlay?.contentDocument;
     if (!overlay || !overlayDocument) throw new Error("selection overlay was not created");
@@ -393,7 +402,7 @@ describe("injected capture", () => {
         value: () => ({ x: index * 10, y: index * 10, width: 10, height: 10 }),
       });
     }
-    const capture = injectedCapture(true);
+    const capture = injectedCapture(true, location.origin);
     const overlayWindow = document.querySelector("iframe")?.contentWindow;
     if (!overlayWindow) throw new Error("selection overlay was not created");
 
@@ -405,7 +414,7 @@ describe("injected capture", () => {
 
   it("starts on the first visible candidate when the first DOM candidate is hidden", async () => {
     document.body.innerHTML = "<main hidden>hidden</main><article>visible</article>";
-    const capture = injectedCapture(true);
+    const capture = injectedCapture(true, location.origin);
     const overlayWindow = document.querySelector("iframe")?.contentWindow;
     if (!overlayWindow) throw new Error("selection overlay was not created");
 
@@ -419,7 +428,7 @@ describe("injected capture", () => {
     Object.defineProperty(document.querySelector("div"), "getBoundingClientRect", {
       value: () => ({ x: 1, y: 2, width: 0, height: 0 }),
     });
-    const capture = injectedCapture(true);
+    const capture = injectedCapture(true, location.origin);
     const overlayWindow = document.querySelector("iframe")?.contentWindow;
     if (!overlayWindow) throw new Error("selection overlay was not created");
 
@@ -433,7 +442,7 @@ describe("injected capture", () => {
     document.body.innerHTML = '<a href="#first">first</a><a href="#second">second</a>';
     const focused = document.querySelectorAll("a")[1]!;
     focused.focus();
-    const capture = injectedCapture(true);
+    const capture = injectedCapture(true, location.origin);
     const overlayWindow = document.querySelector("iframe")?.contentWindow;
     if (!overlayWindow) throw new Error("selection overlay was not created");
 
@@ -444,7 +453,7 @@ describe("injected capture", () => {
 
   it("wraps backward with Shift+Tab and confirms with Space", async () => {
     document.body.innerHTML = "<main>first</main><article>second</article>";
-    const capture = injectedCapture(true);
+    const capture = injectedCapture(true, location.origin);
     const overlayWindow = document.querySelector("iframe")?.contentWindow;
     if (!overlayWindow) throw new Error("selection overlay was not created");
 
@@ -458,7 +467,7 @@ describe("injected capture", () => {
     document.body.innerHTML = '<a href="#target">target</a>';
     const trigger = document.querySelector("a") as HTMLAnchorElement;
     trigger.focus();
-    const capture = injectedCapture(true);
+    const capture = injectedCapture(true, location.origin);
     const overlayWindow = document.querySelector("iframe")?.contentWindow;
     if (!overlayWindow) throw new Error("selection overlay was not created");
 
@@ -470,7 +479,7 @@ describe("injected capture", () => {
 
   it("cancels an abandoned interactive selection", async () => {
     vi.useFakeTimers();
-    const capture = injectedCapture(true);
+    const capture = injectedCapture(true, location.origin);
 
     await vi.advanceTimersByTimeAsync(30_000);
 
