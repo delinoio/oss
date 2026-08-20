@@ -97,6 +97,35 @@ describe("desktop updater approvals", () => {
     expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
   });
 
+  it("closes download approval when a scheduled check replaces the displayed candidate", async () => {
+    let listener: ((event: NativeBridgeEventV1) => void) | undefined;
+    const operations: string[] = [];
+    const bridge: NativeBridgeV1 = {
+      async request(value) {
+        operations.push(value.operation);
+        return { kind: "desktop-update-status", status: available };
+      },
+      async listen(next) { listener = next; return () => {}; },
+    };
+    render(<DesktopUpdaterPanel bridge={bridge} language="en" />);
+    await screen.findByText("English signed notes");
+
+    fireEvent.click(screen.getByRole("button", { name: "Approve download" }));
+    expect(screen.getByRole("dialog")).toBeTruthy();
+
+    listener?.({ version: 1, kind: "desktop-update-status", status: { ...available, kind: "checking", candidate: null } });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    listener?.({
+      version: 1,
+      kind: "desktop-update-status",
+      status: { ...available, candidate: { version: "0.3.0", releaseNotes: { en: "Replacement signed notes", ko: "교체된 서명 노트" } } },
+    });
+    expect(await screen.findByText("Replacement signed notes")).toBeTruthy();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(operations).toEqual(["updates.status"]);
+  });
+
   it("cancels a confirmation with Escape without invoking a native action", async () => {
     const { bridge, operations } = bridgeWithStatus(available);
     render(<DesktopUpdaterPanel bridge={bridge} language="en" />);

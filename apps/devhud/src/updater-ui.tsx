@@ -33,6 +33,11 @@ const updaterDiagnosticCopy = {
 
 type Approval = "download" | "installation" | "restart";
 
+function downloadCandidateIdentity(status: DesktopUpdaterStatus | null) {
+  if (status?.kind !== "available" || !status.candidate) return null;
+  return JSON.stringify([status.candidate.version, status.candidate.releaseNotes.en, status.candidate.releaseNotes.ko]);
+}
+
 function updaterStatusText(status: DesktopUpdaterStatus, language: SupportedLanguage, copy: (typeof updaterCopy)[SupportedLanguage]) {
   if (status.kind === "restart-required") return copy.restartRequired;
   if (status.diagnostic) return updaterDiagnosticCopy[language][status.diagnostic.code];
@@ -55,9 +60,20 @@ export function DesktopUpdaterPanel({ bridge, language }: { readonly bridge: Nat
   const [status, setStatus] = useState<DesktopUpdaterStatus | null>(null);
   const [approval, setApproval] = useState<Approval | null>(null);
   const statusRevision = useRef(0);
+  const approvedDownloadCandidate = useRef<string | null>(null);
   const confirmButton = useRef<HTMLButtonElement>(null);
   const confirmationDialog = useRef<HTMLElement>(null);
   const approvalOpener = useRef<HTMLElement | null>(null);
+
+  const applyStatus = (nextStatus: DesktopUpdaterStatus) => {
+    statusRevision.current += 1;
+    if (approvedDownloadCandidate.current !== null && approvedDownloadCandidate.current !== downloadCandidateIdentity(nextStatus)) {
+      approvedDownloadCandidate.current = null;
+      approvalOpener.current = null;
+      setApproval((current) => current === "download" ? null : current);
+    }
+    setStatus(nextStatus);
+  };
 
   useEffect(() => {
     let active = true;
@@ -65,14 +81,12 @@ export function DesktopUpdaterPanel({ bridge, language }: { readonly bridge: Nat
     const requestedAtRevision = statusRevision.current;
     void bridge.request({ operation: "updates.status" }).then((response) => {
       if (active && response.kind === "desktop-update-status" && statusRevision.current === requestedAtRevision) {
-        statusRevision.current += 1;
-        setStatus(response.status);
+        applyStatus(response.status);
       }
     }).catch(() => {});
     void bridge.listen((event) => {
       if (active && event.kind === "desktop-update-status") {
-        statusRevision.current += 1;
-        setStatus(event.status);
+        applyStatus(event.status);
       }
     }).then((unlisten) => { if (active) unsubscribe = unlisten; else unlisten(); }).catch(() => {});
     return () => { active = false; unsubscribe?.(); };
@@ -84,15 +98,18 @@ export function DesktopUpdaterPanel({ bridge, language }: { readonly bridge: Nat
     const requestedAtRevision = statusRevision.current;
     const response: NativeBridgeResponseV1 = await bridge.request({ operation });
     if (response.kind === "desktop-update-status" && statusRevision.current === requestedAtRevision) {
-      statusRevision.current += 1;
-      setStatus(response.status);
+      applyStatus(response.status);
     }
   };
   const openApproval = (next: Approval, opener: HTMLElement) => {
+    const candidateIdentity = next === "download" ? downloadCandidateIdentity(status) : null;
+    if (next === "download" && candidateIdentity === null) return;
+    approvedDownloadCandidate.current = candidateIdentity;
     approvalOpener.current = opener;
     setApproval(next);
   };
   const closeApproval = () => {
+    approvedDownloadCandidate.current = null;
     setApproval(null);
     const opener = approvalOpener.current;
     approvalOpener.current = null;
@@ -112,6 +129,10 @@ export function DesktopUpdaterPanel({ bridge, language }: { readonly bridge: Nat
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
   };
   const approve = async () => {
+    if (approval === "download" && approvedDownloadCandidate.current !== downloadCandidateIdentity(status)) {
+      closeApproval();
+      return;
+    }
     const operation = approval === "download" ? "updates.approve-download" : approval === "installation" ? "updates.approve-installation" : "updates.approve-restart";
     closeApproval();
     await request(operation);

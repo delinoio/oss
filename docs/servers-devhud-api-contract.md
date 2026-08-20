@@ -2,7 +2,7 @@
 
 ## Scope
 
-`servers/devhud-api` is an implemented stateless Go service backed by PostgreSQL, Cloudflare R2/CDN controls, and external Logto. It registers `BootstrapService`, `SettingsService`, `UploadService`, `AccountService`, `AdminService`, and `DiagnosticsService`, and embeds the administrator SPA at `/admin`; updater serving remains planned. Its fixed development port is `46307`. The separate `devhud-api-sweeper` owns bounded post-recovery account/upload purge, R2 staging expiry, upload-removal reconciliation, and request/audit/crash-report retention cleanup.
+`servers/devhud-api` is an implemented stateless Go service backed by PostgreSQL, Cloudflare R2/CDN controls, and external Logto. It registers `BootstrapService`, `SettingsService`, `UploadService`, `AccountService`, `AdminService`, and `DiagnosticsService`, embeds the administrator SPA at `/admin`, and serves signed updater manifests at `/updates/{channel}/{platform}/{architecture}.json`. Its fixed development port is `46307`. The separate `devhud-api-sweeper` owns bounded post-recovery account/upload purge, R2 staging expiry, upload-removal reconciliation, and request/audit/crash-report retention cleanup.
 
 ## Runtime and Language
 

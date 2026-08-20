@@ -1598,6 +1598,7 @@ impl UpdaterController {
     }
 
     fn fail(&mut self, error: UpdaterError) {
+        self.artifact = None;
         self.snapshot.kind = if error.code == DiagnosticCode::Canceled {
             UpdaterStateKind::Canceled
         } else {
@@ -1991,7 +1992,9 @@ mod tests {
                 .complete_download(verify_artifact(&candidate, artifact.clone()).unwrap())
                 .unwrap();
             controller.approve_installation().unwrap();
+            assert!(controller.artifact.is_some());
             assert!(controller.approve_restart(&FailingInstaller(code)).is_err());
+            assert!(controller.artifact.is_none());
             assert_eq!(controller.snapshot().installed_version, "0.1.0");
             assert_eq!(controller.candidate().unwrap().version, candidate.version);
         }
