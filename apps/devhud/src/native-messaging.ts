@@ -49,10 +49,19 @@ async function nativeCommand<Result>(command: string, args?: Record<string, unkn
   return await invoke<Result>(command, args);
 }
 
+let configurationQueue = Promise.resolve();
+
+function configure(settings: DevHudSettingsV1, scopeId: string): Promise<void> {
+  const configuration = extensionConfiguration(settings);
+  const pending = configurationQueue.then(() => nativeCommand<void>("native_messaging_replace_configuration", { configuration, scopeId }));
+  configurationQueue = pending.catch(() => undefined);
+  return pending;
+}
+
 export const nativeMessaging = {
   status: () => nativeCommand<NativeMessagingPairingStatus>("native_messaging_status"),
   beginPairing: () => nativeCommand<NativeMessagingPairingStatus>("native_messaging_begin_pairing"),
   unpair: () => nativeCommand<NativeMessagingPairingStatus>("native_messaging_unpair"),
-  configure: (settings: DevHudSettingsV1, scopeId: string) => nativeCommand<void>("native_messaging_replace_configuration", { configuration: extensionConfiguration(settings), scopeId }),
+  configure,
   takeContext: (draftId: string, expectedRevision: number) => nativeCommand<CaptureDraft | null>("native_messaging_take_context", { draftId, expectedRevision }),
 };

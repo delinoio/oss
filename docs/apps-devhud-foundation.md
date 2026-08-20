@@ -37,7 +37,7 @@ XWayland is best effort. Native Wayland is unsupported and rejected before CEF i
 
 ## Interfaces and Contracts
 
-Every concrete Chrome origin must be covered by its URL mapping scheme, host, and normalized port before the synchronized setting is accepted or published. Native Messaging configuration sizing includes the complete IPC and Chrome response envelopes; every changed valid replacement clears cached context, while envelope overflow rejects the replacement and also clears prior native authorization.
+Every concrete Chrome origin must be covered by its URL mapping scheme, host, and normalized port before the synchronized setting is accepted or published. Native Messaging configuration sizing includes the complete IPC and Chrome response envelopes; renderer publications serialize in invocation order so an older replacement cannot finish after newer settings, every changed valid replacement clears cached context, and envelope overflow rejects the replacement and also clears prior native authorization.
 
 Release desktop launches register the packaged Chrome host; development launches never replace the installed canonical registration. The pairing UI refreshes status while a pairing code is active, clears transient status failures after a successful poll, then clears the code and stops polling when its native-returned lifetime expires. IPC uses distinct host and app HMAC proofs, with the app proof bound to the challenge and session ID; a host whose authenticated connection has gone idle reauthenticates and retries the pending request once while preserving that request's pairing nonce.
 

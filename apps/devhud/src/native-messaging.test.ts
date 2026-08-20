@@ -53,4 +53,39 @@ describe("Native Messaging extension configuration", () => {
       scopeId,
     });
   });
+
+  it("serializes configuration replacements in publication order", async () => {
+    window.__TAURI_INTERNALS__ = { invoke: vi.fn() };
+    vi.stubGlobal("navigator", { languages: ["en"] });
+    let resolveFirst: (() => void) | undefined;
+    vi.mocked(invoke)
+      .mockImplementationOnce(() => new Promise<void>((resolve) => { resolveFirst = resolve; }))
+      .mockResolvedValueOnce(undefined);
+    const firstScope = "01900000-0000-7000-8000-000000000001";
+    const secondScope = "01900000-0000-7000-8000-000000000002";
+
+    const first = nativeMessaging.configure(defaultDevHudSettings, firstScope);
+    const second = nativeMessaging.configure(defaultDevHudSettings, secondScope);
+    await vi.waitFor(() => expect(invoke).toHaveBeenCalledTimes(1));
+    expect(invoke).toHaveBeenNthCalledWith(1, "native_messaging_replace_configuration", expect.objectContaining({ scopeId: firstScope }));
+
+    resolveFirst?.();
+    await expect(Promise.all([first, second])).resolves.toEqual([undefined, undefined]);
+    expect(invoke).toHaveBeenNthCalledWith(2, "native_messaging_replace_configuration", expect.objectContaining({ scopeId: secondScope }));
+  });
+
+  it("continues configuration publication after a failed replacement", async () => {
+    window.__TAURI_INTERNALS__ = { invoke: vi.fn() };
+    vi.stubGlobal("navigator", { languages: ["en"] });
+    vi.mocked(invoke)
+      .mockRejectedValueOnce(new Error("unavailable"))
+      .mockResolvedValueOnce(undefined);
+
+    const failed = nativeMessaging.configure(defaultDevHudSettings, "01900000-0000-7000-8000-000000000001");
+    const current = nativeMessaging.configure(defaultDevHudSettings, "01900000-0000-7000-8000-000000000002");
+
+    await expect(failed).rejects.toThrow("unavailable");
+    await expect(current).resolves.toBeUndefined();
+    expect(invoke).toHaveBeenCalledTimes(2);
+  });
 });
