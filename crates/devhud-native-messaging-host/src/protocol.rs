@@ -4,6 +4,7 @@ use serde_json::Value;
 use crate::{MAX_OUTER_HTML_BYTES, PROTOCOL_VERSION, REQUEST_DEADLINE_MILLIS, SCHEMA_VERSION};
 
 pub const SESSION_INVALIDATED_ERROR: &str = "session-invalidated";
+const MAX_BROWSER_CONTEXT_TEXT_BYTES: usize = 4 * 1024;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -188,6 +189,12 @@ pub fn validate_deadline(issued_at: i64, deadline: i64, now: i64) -> Result<(), 
 
 pub fn validate_browser_context(context: &BrowserContext) -> Result<(), &'static str> {
     if context.outer_html.len() > MAX_OUTER_HTML_BYTES
+        || context.title.len() > MAX_BROWSER_CONTEXT_TEXT_BYTES
+        || context.user_agent.len() > MAX_BROWSER_CONTEXT_TEXT_BYTES
+        || context
+            .accessibility
+            .values()
+            .any(|value| value.len() > MAX_BROWSER_CONTEXT_TEXT_BYTES)
         || validate_outer_html(&context.outer_html).is_err()
         || !context.viewport.width.is_finite()
         || !context.viewport.height.is_finite()
@@ -436,5 +443,44 @@ mod tests {
         let value = r#"{"url":"https://example.com/%3Credacted%3E","title":"safe","viewport":{"width":1280,"height":720},"userAgent":"browser","selectedBounds":{"x":0,"y":0,"width":10,"height":10},"accessibility":{"aria-label":"safe"},"outerHtml":"<main aria-label='safe'><p>A &amp; B</p><img alt='safe'></main>"}"#;
         let context: BrowserContext = serde_json::from_str(value).unwrap();
         assert_eq!(validate_browser_context(&context), Ok(()));
+    }
+
+    #[test]
+    fn browser_context_enforces_text_field_utf8_byte_limits() {
+        let value = r#"{"url":"https://example.com/%3Credacted%3E","title":"safe","viewport":{"width":1280,"height":720},"userAgent":"browser","selectedBounds":null,"accessibility":{"aria-label":"safe"},"outerHtml":""}"#;
+        let context: BrowserContext = serde_json::from_str(value).unwrap();
+        let boundary = "é".repeat(MAX_BROWSER_CONTEXT_TEXT_BYTES / 2);
+        let oversized = format!("{boundary}x");
+
+        let mut bounded = context.clone();
+        bounded.title = boundary.clone();
+        bounded.user_agent = boundary.clone();
+        bounded
+            .accessibility
+            .insert("aria-label".to_string(), boundary);
+        assert_eq!(validate_browser_context(&bounded), Ok(()));
+
+        let mut oversized_title = context.clone();
+        oversized_title.title = oversized.clone();
+        assert_eq!(
+            validate_browser_context(&oversized_title),
+            Err("invalid-browser-context")
+        );
+
+        let mut oversized_user_agent = context.clone();
+        oversized_user_agent.user_agent = oversized.clone();
+        assert_eq!(
+            validate_browser_context(&oversized_user_agent),
+            Err("invalid-browser-context")
+        );
+
+        let mut oversized_accessibility = context;
+        oversized_accessibility
+            .accessibility
+            .insert("aria-label".to_string(), oversized);
+        assert_eq!(
+            validate_browser_context(&oversized_accessibility),
+            Err("invalid-browser-context")
+        );
     }
 }
