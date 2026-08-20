@@ -4,14 +4,30 @@ import type { Copy } from "./localization";
 import { nativeMessaging } from "./native-messaging";
 import { useIdentitySettings } from "./service-boundary";
 
+const configurationRetryBaseMilliseconds = 250;
+const configurationRetryMaximumMilliseconds = 30_000;
+
 export function SynchronizedNativeMessagingBoundary() {
   const { account, settings, status } = useIdentitySettings();
   const identityScope = account?.userId?.value ?? account?.logtoSubject ?? status;
   const scopeId = useMemo(() => crypto.randomUUID(), [identityScope]);
   useEffect(() => {
-    void nativeMessaging.configure(settings, scopeId).catch(() => {
-      // Native Messaging availability must not prevent the shared settings boundary from rendering.
-    });
+    let cancelled = false;
+    let retryAttempt = 0;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    const publish = () => {
+      void nativeMessaging.configure(settings, scopeId).catch(() => {
+        if (cancelled) return;
+        const delay = Math.min(configurationRetryMaximumMilliseconds, configurationRetryBaseMilliseconds * (2 ** retryAttempt));
+        retryAttempt = Math.min(retryAttempt + 1, 7);
+        retryTimer = setTimeout(publish, delay);
+      });
+    };
+    publish();
+    return () => {
+      cancelled = true;
+      if (retryTimer !== undefined) clearTimeout(retryTimer);
+    };
   }, [scopeId, settings]);
   return null;
 }

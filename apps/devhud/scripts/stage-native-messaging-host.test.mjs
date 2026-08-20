@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  cargoTargetDirectory,
+  nativeMessagingHostArtifactTarget,
   nativeMessagingHostExecutable,
   rustHostTriple,
 } from "./stage-native-messaging-host.mjs";
@@ -37,4 +39,33 @@ test("uses Cargo's emitted Native Messaging host artifact", () => {
     })}`),
     /determine/u,
   );
+});
+
+test("names the sidecar for Cargo's effective artifact target", () => {
+  assert.equal(cargoTargetDirectory(JSON.stringify({ target_directory: "/custom/cargo-target" })), "/custom/cargo-target");
+  assert.throws(() => cargoTargetDirectory("{}"), /target directory/u);
+  assert.deepEqual(nativeMessagingHostArtifactTarget({
+    executable: "/custom/cargo-target/release/devhud-native-messaging-host",
+    targetDirectory: "/custom/cargo-target",
+    hostTriple: "x86_64-unknown-linux-gnu",
+    profile: "release",
+  }), { triple: "x86_64-unknown-linux-gnu", executableSuffix: "" });
+  assert.deepEqual(nativeMessagingHostArtifactTarget({
+    executable: "/custom/cargo-target/aarch64-apple-darwin/release/devhud-native-messaging-host",
+    targetDirectory: "/custom/cargo-target",
+    hostTriple: "x86_64-apple-darwin",
+    profile: "release",
+  }), { triple: "aarch64-apple-darwin", executableSuffix: "" });
+  assert.deepEqual(nativeMessagingHostArtifactTarget({
+    executable: "/custom/cargo-target/aarch64-pc-windows-msvc/debug/devhud-native-messaging-host.exe",
+    targetDirectory: "/custom/cargo-target",
+    hostTriple: "x86_64-pc-windows-msvc",
+    profile: "debug",
+  }), { triple: "aarch64-pc-windows-msvc", executableSuffix: ".exe" });
+  assert.throws(() => nativeMessagingHostArtifactTarget({
+    executable: "/other/release/devhud-native-messaging-host",
+    targetDirectory: "/custom/cargo-target",
+    hostTriple: "x86_64-unknown-linux-gnu",
+    profile: "release",
+  }), /artifact target/u);
 });

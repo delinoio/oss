@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AccountIdentity, ShortcutPaletteTrigger, SynchronizedSettingsBoundary, SynchronizedShortcutBoundary } from "./identity-ui";
 import { messages } from "./localization";
-import { NativeMessagingSettings } from "./native-messaging-ui";
+import { NativeMessagingSettings, SynchronizedNativeMessagingBoundary } from "./native-messaging-ui";
 import type { NativeBridgeV1 } from "./native-bridge";
 import type { IdentitySettingsValue } from "./service-boundary";
 import { defaultDevHudSettings } from "./settings-contract";
@@ -41,6 +41,36 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers(); cleanup(); });
 
 describe("identity UI", () => {
+  it("retries a failed Native Messaging configuration publication", async () => {
+    vi.useFakeTimers();
+    nativeMessagingMock.configure.mockRejectedValueOnce(new Error("temporary bridge failure")).mockResolvedValue(undefined);
+    render(<SynchronizedNativeMessagingBoundary />);
+    await act(async () => {});
+
+    expect(nativeMessagingMock.configure).toHaveBeenCalledTimes(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(249); });
+    expect(nativeMessagingMock.configure).toHaveBeenCalledTimes(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(nativeMessagingMock.configure).toHaveBeenCalledTimes(2);
+  });
+
+  it("cancels a stale Native Messaging retry when settings change", async () => {
+    vi.useFakeTimers();
+    nativeMessagingMock.configure.mockRejectedValueOnce(new Error("temporary bridge failure")).mockResolvedValue(undefined);
+    const view = render(<SynchronizedNativeMessagingBoundary />);
+    await act(async () => {});
+    const updatedSettings = { ...defaultDevHudSettings, appearance: { ...defaultDevHudSettings.appearance, language: "ko" as const } };
+    identity = identityWith({ settings: updatedSettings });
+
+    view.rerender(<SynchronizedNativeMessagingBoundary />);
+    await act(async () => {});
+
+    expect(nativeMessagingMock.configure).toHaveBeenCalledTimes(2);
+    expect(nativeMessagingMock.configure).toHaveBeenLastCalledWith(updatedSettings, expect.any(String));
+    await act(async () => { await vi.advanceTimersByTimeAsync(250); });
+    expect(nativeMessagingMock.configure).toHaveBeenCalledTimes(2);
+  });
+
   it("refreshes pairing status until the extension completes pairing", async () => {
     vi.useFakeTimers();
     render(<NativeMessagingSettings copy={messages.en} />);

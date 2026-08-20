@@ -2,7 +2,7 @@
 
 import { spawnSync } from "node:child_process";
 import { copyFileSync, mkdirSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -55,8 +55,44 @@ export function nativeMessagingHostExecutable(buildOutput) {
   return executables.values().next().value;
 }
 
+export function cargoTargetDirectory(metadataOutput) {
+  let metadata;
+  try {
+    metadata = JSON.parse(metadataOutput);
+  } catch {
+    throw new Error("unable to determine Cargo's target directory");
+  }
+  if (typeof metadata.target_directory !== "string" || metadata.target_directory === "") {
+    throw new Error("unable to determine Cargo's target directory");
+  }
+  return metadata.target_directory;
+}
+
+export function nativeMessagingHostArtifactTarget({ executable, targetDirectory, hostTriple, profile }) {
+  const executableName = basename(executable);
+  const executableSuffix = executableName === `${nativeHostTarget}.exe`
+    ? ".exe"
+    : executableName === nativeHostTarget
+      ? ""
+      : null;
+  const artifactPath = relative(resolve(targetDirectory), resolve(executable));
+  if (executableSuffix === null || artifactPath === "" || isAbsolute(artifactPath) || artifactPath === ".." || artifactPath.startsWith(`..${sep}`)) {
+    throw new Error("unable to determine the Native Messaging host artifact target");
+  }
+  const components = artifactPath.split(sep);
+  if (components.length === 2 && components[0] === profile) {
+    return { triple: hostTriple, executableSuffix };
+  }
+  const triple = components.length === 3 && components[1] === profile ? components[0] : null;
+  if (!triple || !/^[a-z0-9_.-]+$/u.test(triple)) {
+    throw new Error("unable to determine the Native Messaging host artifact target");
+  }
+  return { triple, executableSuffix };
+}
+
 export function stageNativeMessagingHost({ release }) {
-  const triple = rustHostTriple(run("rustc", ["-vV"], { capture: true }));
+  const hostTriple = rustHostTriple(run("rustc", ["-vV"], { capture: true }));
+  const targetDirectory = cargoTargetDirectory(run("cargo", ["metadata", "--format-version=1", "--no-deps", "--locked"], { capture: true }));
   const cargoArgs = [
     "build",
     "--locked",
@@ -66,7 +102,8 @@ export function stageNativeMessagingHost({ release }) {
   ];
   if (release) cargoArgs.push("--release");
   const source = nativeMessagingHostExecutable(run("cargo", cargoArgs, { capture: true }));
-  const executableSuffix = process.platform === "win32" ? ".exe" : "";
+  const profile = release ? "release" : "debug";
+  const { triple, executableSuffix } = nativeMessagingHostArtifactTarget({ executable: source, targetDirectory, hostTriple, profile });
   const destination = join(
     appRoot,
     "src-tauri",

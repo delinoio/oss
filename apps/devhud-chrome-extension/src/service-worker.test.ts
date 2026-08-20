@@ -81,7 +81,10 @@ describe("capture configuration freshness", () => {
     vi.resetModules();
   });
 
-  it("refreshes configuration after interactive selection", async () => {
+  it.each([
+    { label: "toolbar capture", selectElement: false },
+    { label: "interactive selection", selectElement: true },
+  ])("refreshes configuration after $label", async ({ selectElement }) => {
     const port = fakePort();
     const requestTypes: string[] = [];
     const configurations = [
@@ -149,14 +152,14 @@ describe("capture configuration freshness", () => {
 
     await import("./service-worker.js");
     const response = await new Promise<{ state: string }>((resolve) => {
-      runtimeListener!({ type: "capture", selectElement: true }, {} as chrome.runtime.MessageSender, (value) => resolve(value as { state: string }));
+      runtimeListener!({ type: "capture", selectElement }, {} as chrome.runtime.MessageSender, (value) => resolve(value as { state: string }));
     });
 
     expect(requestTypes).toEqual(["configure", "configure"]);
     expect(getAllPermissions).toHaveBeenCalledTimes(2);
     expect(removePermissions).toHaveBeenCalledOnce();
     expect(removePermissions).toHaveBeenCalledWith({ origins: ["https://stale.example/*"] });
-    expect(chrome.scripting.executeScript).toHaveBeenCalledWith(expect.objectContaining({ args: [true, "https://example.com", "en"] }));
+    expect(chrome.scripting.executeScript).toHaveBeenCalledWith(expect.objectContaining({ args: [selectElement, "https://example.com", "en"] }));
     expect(response.state).toBe("denied");
   });
 
