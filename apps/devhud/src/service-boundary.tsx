@@ -17,6 +17,7 @@ import {
 import { createContext, use, useEffect, useMemo, useRef, useState, type PropsWithChildren, type RefObject } from "react";
 import { createIdentitySession, isTerminalAccessTokenError, sessionProfileId, validateBootstrap, type IdentitySession, type ValidatedBootstrap } from "./identity-client";
 import { clearDeckCaches } from "./deck.ts";
+import { invalidateDeckPolling } from "./deck-polling-cancellation.ts";
 import { clearAllContractedLocalData, clearAuthenticatedOriginData, clearAuthenticatedSettingsCache, clearGuestImportMarker, hasGuestSettings, readAuthenticatedSettingsCache, readCachedIdentityBootstrap, readGuestSettings, writeAuthenticatedSettingsCache, writeCachedIdentityBootstrap, writeGuestSettings } from "./local-data";
 import { SecureSettingKind, type NativeBridgeV1, type RuntimePlatform } from "./native-bridge";
 import { profileRequiresSetup } from "./profile-secrets";
@@ -245,6 +246,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   }
 
   async function cleanPendingDeletion(): Promise<void> {
+    invalidateDeckPolling();
     setDeckAccessSuspended(true);
     clearAllContractedLocalData(storage);
     try {

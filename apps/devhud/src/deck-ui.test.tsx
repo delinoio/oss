@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DeckPollingBoundary, DeckSurface } from "./deck-ui.tsx";
 import { DeckCacheVersion, deckCacheKey, writeDeckCache } from "./deck.ts";
+import { invalidateDeckPolling } from "./deck-polling-cancellation.ts";
 import { createGitHubProvider } from "./github-provider.ts";
 import { messages } from "./localization.ts";
 import { NativeBridgeError, NativeBridgeErrorCode, type NativeBridgeRequestV1, type NativeBridgeResponseV1, type NativeBridgeV1 } from "./native-bridge.ts";
@@ -91,7 +92,7 @@ describe("Deck surface", () => {
     const cacheScope = `origin.scope.${profile.id}`;
     const pendingNotifications = [{ key: "PR_kwDOA:review:approved:2026-08-18T00:01:00.000Z", kind: "review" as const, body: pullRequest.title }];
     writeDeckCache(localStorage, cacheScope, { version: DeckCacheVersion, deckId: deck.id, query: deck.query, queryEtag: "cached-etag", results: [pullRequest], lastSuccessfulAt: "2026-08-17T00:00:00.000Z", rate: null, failures: 0, nextRefreshAt: null, transitionKeys: [], pendingNotifications });
-    identity = identityWith({ githubPatScopeId: scope });
+    identity = identityWith({ githubPatScopeId: scope, settings: parseDevHudSettings({ ...settings, decks: [{ ...deck, notifications: ["review" as const] }] }) });
     let rejectSearch: (error: Error) => void = () => {};
     const searchPullRequests = vi.fn(() => new Promise<never>((_resolve, reject) => { rejectSearch = reject; }));
     const bridge = bridgeWith(async (request) => request.operation === "secure.read" ? { kind: "secure-value", value: "token" } : { kind: "ok" });
@@ -295,6 +296,38 @@ describe("Deck surface", () => {
     await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(setCache).not.toHaveBeenCalledWith(expect.stringContaining(deck.id), expect.any(String));
+  });
+
+  it("prevents an in-flight refresh from writing after synchronous account-deletion cancellation", async () => {
+    let rejectSearch: (error: Error) => void = () => {};
+    const searchPullRequests = vi.fn(() => new Promise<never>((_resolve, reject) => { rejectSearch = reject; }));
+    const bridge = bridgeWith(async (request) => request.operation === "secure.read" ? { kind: "secure-value", value: "token" } : { kind: "ok" });
+    const setCache = vi.spyOn(Storage.prototype, "setItem");
+    render(<DeckPollingBoundary bridge={bridge} active online provider={{ ...provider(), searchPullRequests }}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+    await waitFor(() => expect(searchPullRequests).toHaveBeenCalledOnce());
+
+    invalidateDeckPolling();
+    rejectSearch(new Error("offline"));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(setCache).not.toHaveBeenCalledWith(expect.stringContaining(deck.id), expect.any(String));
+  });
+
+  it("removes queued notifications disabled by updated Deck preferences", async () => {
+    const cacheScope = `origin.scope.${profile.id}`;
+    const pendingNotifications = [{ key: "PR_kwDOA:review:approved:2026-08-18T00:01:00.000Z", kind: "review" as const, body: pullRequest.title }];
+    writeDeckCache(localStorage, cacheScope, { version: DeckCacheVersion, deckId: deck.id, query: deck.query, queryEtag: null, results: [pullRequest], lastSuccessfulAt: "2026-08-17T00:00:00.000Z", rate: null, failures: 0, nextRefreshAt: null, transitionKeys: [], pendingNotifications });
+    const bridge = bridgeWith(async () => ({ kind: "ok" as const }));
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+    await waitFor(() => expect(localStorage.getItem(deckCacheKey(cacheScope, deck.id))).not.toBeNull());
+
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [{ ...deck, notifications: ["merged" as const] }] }) });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    await waitFor(() => {
+      const cache = JSON.parse(localStorage.getItem(deckCacheKey(cacheScope, deck.id)) ?? "null") as { pendingNotifications: readonly unknown[] };
+      expect(cache.pendingNotifications).toEqual([]);
+    });
   });
 
   it("ignores a failed refresh that started before its interval changed", async () => {

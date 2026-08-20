@@ -117,6 +117,10 @@ func TestValidateDevHudSettingsDeckQualifiers(t *testing.T) {
 	if err := validateDevHudSettings([]byte(escapedBuilder), 4); err != nil {
 		t.Fatalf("client-compatible escaped builder: %v", err)
 	}
+	bomBuilder := strings.Replace(settings(`repo:octo/widgets is:pr label:\"\ufeffbug\"`, `[]`), `"builder":null`, `"builder":{"author":null,"label":"\ufeffbug","repository":"octo/widgets","review":null,"state":null}`, 1)
+	if err := validateDevHudSettings([]byte(bomBuilder), 4); err == nil {
+		t.Fatal("BOM-padded builder field was accepted")
+	}
 	for name, value := range map[string]string{
 		"missing repository":          settings("is:pr", `[]`),
 		"unscoped repository branch":  settings("repo:octo/widgets is:pr OR author:octocat is:pr", `[]`),

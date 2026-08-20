@@ -3,6 +3,7 @@ import { applyDeckBuilder, classifyDeckFailure, clearDeckCache, DeckLimit, deckT
 import { createGitHubProvider, GitHubErrorCode, GitHubOperation, GitHubProviderError, readGitHubCredential, type GitHubCredential, type GitHubDeckPullRequest, type GitHubProvider } from "./github-provider.ts";
 import type { Copy } from "./localization.ts";
 import { DeckNotificationKind, type NativeBridgeV1 } from "./native-bridge.ts";
+import { deckPollingCancellationGeneration } from "./deck-polling-cancellation.ts";
 import { useIdentitySettings } from "./service-boundary.tsx";
 import { deckRepositories, hasDeckBooleanQuerySyntax, hasRepositoryQualifier, type DeckBuilder, type DevHudSettingsV1 } from "./settings-contract.ts";
 import { getLocalStorage } from "./shell.ts";
@@ -48,6 +49,10 @@ function createRepositoryValidationQueue(limit: number): <Value>(operation: () =
       else pending.push(task);
     });
   };
+}
+
+function retainedPendingNotifications(cache: DeckCache | null, notifications: readonly DeckNotificationKind[]): readonly DeckPendingNotification[] {
+  return cache?.pendingNotifications?.filter((notification) => notifications.includes(notification.kind)) ?? [];
 }
 
 function useDeckPolling(): DeckPollingContextValue {
@@ -115,8 +120,9 @@ export function DeckPollingBoundary({ bridge, active, online, provider: supplied
     const currentDeck = decks.current.find((deck) => deck.id === deckId);
     if (currentDeck === undefined || !deckAccessAllowed.current || !onlineRef.current || !activeRef.current) return;
     if (loading.current.has(deckId)) { queued.current.add(deckId); return; }
+    const cancellationGeneration = deckPollingCancellationGeneration();
     const signature = `${currentDeck.name}\u0000${currentDeck.profileRef}\u0000${currentDeck.query}\u0000${currentDeck.refreshMinutes}\u0000${currentDeck.notifications.join(",")}`;
-    const isCurrentDeck = () => deckAccessAllowed.current && decks.current.some((deck) => deck.id === deckId && `${deck.name}\u0000${deck.profileRef}\u0000${deck.query}\u0000${deck.refreshMinutes}\u0000${deck.notifications.join(",")}` === signature);
+    const isCurrentDeck = () => cancellationGeneration === deckPollingCancellationGeneration() && deckAccessAllowed.current && decks.current.some((deck) => deck.id === deckId && `${deck.name}\u0000${deck.profileRef}\u0000${deck.query}\u0000${deck.refreshMinutes}\u0000${deck.notifications.join(",")}` === signature);
     const canContinue = () => isCurrentDeck() && activeRef.current && onlineRef.current;
     loading.current.add(deckId);
     setDeckState(deckId, (current) => ({ ...current, loading: true, failure: null }));
@@ -130,6 +136,12 @@ export function DeckPollingBoundary({ bridge, active, online, provider: supplied
       if (!canContinue()) return;
       const hydratedCache = caches.current.get(deckId);
       currentCache = hydratedCache?.query === currentDeck.query ? hydratedCache : readDeckCache(storage, `${scopeId}.${currentDeck.profileRef}`, deckId, currentDeck.query);
+      const retainedNotifications = retainedPendingNotifications(currentCache, currentDeck.notifications);
+      if (currentCache !== null && retainedNotifications.length !== (currentCache.pendingNotifications?.length ?? 0)) {
+        currentCache = { ...currentCache, pendingNotifications: retainedNotifications };
+        writeDeckCache(storage, `${scopeId}.${currentDeck.profileRef}`, currentCache);
+        caches.current.set(deckId, currentCache);
+      }
       if (!manual && currentCache?.nextRefreshAt !== null && currentCache?.nextRefreshAt !== undefined && Date.parse(currentCache.nextRefreshAt) > Date.now()) return;
       const credential = await readGitHubCredential(bridge, profile, scopeId);
       if (!canContinue()) return;
@@ -152,7 +164,7 @@ export function DeckPollingBoundary({ bridge, active, online, provider: supplied
       const results = enriched.filter((item) => resultNodeIds.includes(item.nodeId));
       const reconciled = enriched.filter((item) => missingNodeIds.includes(item.nodeId));
       let transitionKeys = currentCache?.transitionKeys ?? [];
-      let pendingNotifications = currentCache?.pendingNotifications ?? [];
+      let pendingNotifications = retainedPendingNotifications(currentCache, currentDeck.notifications);
       if (isCurrentDeck() && activeRef.current && onlineRef.current && currentCache !== null && currentDeck.notifications.length > 0) {
         const transitions: readonly DeckPendingNotification[] = [
           ...pendingNotifications,
@@ -256,6 +268,11 @@ export function DeckPollingBoundary({ bridge, active, online, provider: supplied
         if (previous?.signature === signature) continue;
         if (previous !== undefined && previous.profileRef !== deck.profileRef) clearDeckCache(storage, `${scopeId}.${previous.profileRef}`, deck.id);
         let cache = readDeckCache(storage, `${scopeId}.${deck.profileRef}`, deck.id, deck.query);
+        const retainedNotifications = retainedPendingNotifications(cache, deck.notifications);
+        if (cache !== null && retainedNotifications.length !== (cache.pendingNotifications?.length ?? 0)) {
+          cache = { ...cache, pendingNotifications: retainedNotifications };
+          writeDeckCache(storage, `${scopeId}.${deck.profileRef}`, cache);
+        }
         if (previous !== undefined && previous.refreshMinutes !== deck.refreshMinutes && cache !== null && cache.failures > 0 && cache.nextRefreshAt !== null) {
           cache = { ...cache, nextRefreshAt: nextDeckRefresh(Date.now(), deck.refreshMinutes, cache.failures, cache.rate) };
           writeDeckCache(storage, `${scopeId}.${deck.profileRef}`, cache);

@@ -302,7 +302,7 @@ func validateSettingsDeck(value any, path string, legacy bool, previous bool) (s
 					if err != nil {
 						return "", err
 					}
-					if strings.TrimSpace(value) != value {
+					if strings.TrimFunc(value, deckQueryWhitespace) != value {
 						return "", fmt.Errorf("%s.builder.%s must be trimmed", path, field)
 					}
 					actual.set(field, value)
