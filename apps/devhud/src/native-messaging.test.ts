@@ -39,4 +39,18 @@ describe("Native Messaging extension configuration", () => {
       expectedRevision: 4,
     });
   });
+
+  it("publishes configuration with the current identity scope", async () => {
+    window.__TAURI_INTERNALS__ = { invoke: vi.fn() };
+    vi.stubGlobal("navigator", { languages: ["en"] });
+    vi.mocked(invoke).mockResolvedValue(undefined);
+    const scopeId = "01900000-0000-7000-8000-000000000001";
+
+    await nativeMessaging.configure(defaultDevHudSettings, scopeId);
+
+    expect(invoke).toHaveBeenCalledWith("native_messaging_replace_configuration", {
+      configuration: { origins: [], language: "en" },
+      scopeId,
+    });
+  });
 });

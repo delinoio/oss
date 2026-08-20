@@ -23,6 +23,31 @@ struct Session {
     session_id: String,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ForwardFailure {
+    Disconnected,
+    Denied,
+    Malformed,
+}
+
+impl ForwardFailure {
+    fn response_state(self) -> NativeResponseState {
+        match self {
+            Self::Disconnected => NativeResponseState::Disconnected,
+            Self::Denied => NativeResponseState::Denied,
+            Self::Malformed => NativeResponseState::Malformed,
+        }
+    }
+
+    fn reason(self) -> &'static str {
+        match self {
+            Self::Disconnected => "disconnected",
+            Self::Denied => "denied",
+            Self::Malformed => "malformed",
+        }
+    }
+}
+
 fn response(
     request: &NativeRequest,
     state: NativeResponseState,
@@ -117,7 +142,30 @@ fn write_ipc_json<T: serde::Serialize>(stream: &mut PlatformStream, value: &T) -
     write_json(stream, ByteOrder::LittleEndian, value)
 }
 
-fn forward(session: &mut Session, request: &NativeRequest) -> Result<serde_json::Value, String> {
+fn classify_ipc_response(
+    result: IpcResponse,
+    request_id: &str,
+) -> Result<serde_json::Value, ForwardFailure> {
+    validate_version(result.version, result.schema_version)
+        .map_err(|_| ForwardFailure::Malformed)?;
+    if result.request_id != request_id {
+        return Err(ForwardFailure::Malformed);
+    }
+    if !result.accepted {
+        return Err(match result.error.as_deref() {
+            Some("invalid-browser-context" | "invalid-request" | "unsupported-version") => {
+                ForwardFailure::Malformed
+            }
+            _ => ForwardFailure::Denied,
+        });
+    }
+    Ok(result.payload)
+}
+
+fn forward(
+    session: &mut Session,
+    request: &NativeRequest,
+) -> Result<serde_json::Value, ForwardFailure> {
     let issued_at = now_unix_millis();
     let mut ipc = IpcRequest {
         version: PROTOCOL_VERSION,
@@ -133,14 +181,10 @@ fn forward(session: &mut Session, request: &NativeRequest) -> Result<serde_json:
         proof: String::new(),
     };
     sign_request(&session.secret, &session.session_id, &mut ipc);
-    write_ipc_json(&mut session.stream, &ipc).map_err(|_| "disconnected".to_string())?;
+    write_ipc_json(&mut session.stream, &ipc).map_err(|_| ForwardFailure::Disconnected)?;
     let result: IpcResponse =
-        read_ipc_json(&mut session.stream).map_err(|_| "disconnected".to_string())?;
-    validate_version(result.version, result.schema_version).map_err(str::to_string)?;
-    if result.request_id != request.request_id || !result.accepted {
-        return Err(result.error.unwrap_or_else(|| "denied".to_string()));
-    }
-    Ok(result.payload)
+        read_ipc_json(&mut session.stream).map_err(|_| ForwardFailure::Disconnected)?;
+    classify_ipc_response(result, &request.request_id)
 }
 
 fn run_native(origin: &str) -> io::Result<()> {
@@ -191,11 +235,11 @@ fn run_native(origin: &str) -> io::Result<()> {
             }
         }
         let mut result = forward(session.as_mut().expect("session was established"), &request);
-        if result.is_err() {
+        if result == Err(ForwardFailure::Disconnected) {
             session = None;
             if let Ok(mut authenticated) = authenticate(origin, request.pairing_nonce.clone()) {
                 result = forward(&mut authenticated, &request);
-                if result.is_ok() {
+                if result != Err(ForwardFailure::Disconnected) {
                     session = Some(authenticated);
                 }
             }
@@ -208,10 +252,12 @@ fn run_native(origin: &str) -> io::Result<()> {
                 (NativeResponseState::Paired, payload)
             }
             Ok(payload) => (NativeResponseState::Accepted, payload),
-            Err(reason) => {
-                warn!(event = "ipc_request_rejected", reason);
-                session = None;
-                (NativeResponseState::Disconnected, serde_json::Value::Null)
+            Err(failure) => {
+                warn!(event = "ipc_request_rejected", reason = failure.reason());
+                if failure == ForwardFailure::Disconnected {
+                    session = None;
+                }
+                (failure.response_state(), serde_json::Value::Null)
             }
         };
         write_json(
@@ -327,5 +373,54 @@ mod tests {
             payload: serde_json::Value::Null,
         };
         assert_eq!(validate_native_request(&request, now), Ok(()));
+    }
+
+    fn ipc_response(accepted: bool, error: Option<&str>) -> IpcResponse {
+        IpcResponse {
+            version: PROTOCOL_VERSION,
+            schema_version: SCHEMA_VERSION,
+            request_id: "request".to_string(),
+            accepted,
+            error: error.map(str::to_string),
+            payload: serde_json::json!({ "accepted": true }),
+        }
+    }
+
+    #[test]
+    fn logical_app_rejections_preserve_typed_native_states() {
+        assert_eq!(
+            classify_ipc_response(
+                ipc_response(false, Some("capture-not-authorized")),
+                "request"
+            ),
+            Err(ForwardFailure::Denied)
+        );
+        assert_eq!(
+            classify_ipc_response(
+                ipc_response(false, Some("invalid-browser-context")),
+                "request"
+            ),
+            Err(ForwardFailure::Malformed)
+        );
+        assert_eq!(
+            classify_ipc_response(ipc_response(false, None), "request"),
+            Err(ForwardFailure::Denied)
+        );
+    }
+
+    #[test]
+    fn malformed_app_envelopes_are_not_reported_as_disconnects() {
+        let mut mismatched = ipc_response(true, None);
+        mismatched.request_id = "other".to_string();
+        assert_eq!(
+            classify_ipc_response(mismatched, "request"),
+            Err(ForwardFailure::Malformed)
+        );
+        let mut unsupported = ipc_response(true, None);
+        unsupported.version += 1;
+        assert_eq!(
+            classify_ipc_response(unsupported, "request"),
+            Err(ForwardFailure::Malformed)
+        );
     }
 }

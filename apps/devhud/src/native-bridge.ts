@@ -159,6 +159,7 @@ export type NativeBridgeRequestV1 = NativeBridgeRequestV1Base
   | { readonly operation: "capture.list-drafts" }
   | { readonly operation: "capture.open-draft"; readonly draftId: string }
   | { readonly operation: "capture.editor.apply"; readonly draftId: string; readonly expectedRevision: number; readonly command: CaptureEditorCommand }
+  | { readonly operation: "capture.remove-browser-context"; readonly draftId: string; readonly expectedRevision: number }
   | { readonly operation: "capture.editor.undo" | "capture.editor.redo" | "capture.flatten"; readonly draftId: string; readonly expectedRevision: number }
   | { readonly operation: "capture.delete-draft" | "capture.confirm-issue-created"; readonly draftId: string };
 

@@ -902,6 +902,25 @@ impl DraftStore {
         Ok(document.summary())
     }
 
+    pub fn remove_browser_context(
+        &self,
+        id: Uuid,
+        expected_revision: u64,
+    ) -> Result<DraftSummary, CaptureError> {
+        let _guard = self.lock.lock().map_err(|_| CaptureError::StorageFailure)?;
+        let key = self.key()?;
+        self.recover_locked(&key)?;
+        let mut document = self.read_locked(id, &key)?;
+        ensure_revision(&document, expected_revision)?;
+        document
+            .browser_context
+            .take()
+            .ok_or(CaptureError::NotFound)?;
+        document.touch(Self::now()?);
+        self.write_document_locked(&mut document, &key)?;
+        Ok(document.summary())
+    }
+
     pub fn apply(
         &self,
         id: Uuid,
@@ -3805,6 +3824,41 @@ mod tests {
                 )
                 .unwrap_err(),
             CaptureError::RevisionConflict
+        );
+    }
+
+    #[test]
+    fn browser_context_removal_is_revision_checked() {
+        let root = TestDirectory::new();
+        let store = DraftStore::new_test(root.0.clone(), 1024 * 1024, [30; 32]);
+        let created = store
+            .create(vec![ImageBuffer::from_pixel(8, 8, Rgba([1, 2, 3, 255]))])
+            .unwrap();
+        let attached = store
+            .attach_browser_context(
+                created.id,
+                created.revision,
+                draft_browser_context("Captured page"),
+            )
+            .unwrap();
+
+        assert_eq!(
+            store
+                .remove_browser_context(created.id, created.revision)
+                .unwrap_err(),
+            CaptureError::RevisionConflict
+        );
+        let removed = store
+            .remove_browser_context(created.id, attached.revision)
+            .unwrap();
+        assert_eq!(removed.revision, attached.revision + 1);
+        assert!(!removed.has_browser_context);
+        assert!(removed.browser_context.is_none());
+        assert_eq!(
+            store
+                .remove_browser_context(created.id, removed.revision)
+                .unwrap_err(),
+            CaptureError::NotFound
         );
     }
 

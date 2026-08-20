@@ -980,6 +980,15 @@ async fn handle_capture_request(
                 "draft": capture.with_draft_store(|store| store.apply(draft_id, expected_revision, command)).map_err(failure)?,
             }))
         }
+        Some("capture.remove-browser-context") => {
+            exact_keys(request, &["operation", "draftId", "expectedRevision"])?;
+            let draft_id = capture_id(request, "draftId")?;
+            let expected_revision = revision(request)?;
+            Ok(json!({
+                "kind": "capture-draft",
+                "draft": capture.with_draft_store(|store| store.remove_browser_context(draft_id, expected_revision)).map_err(failure)?,
+            }))
+        }
         Some("capture.editor.undo") => {
             exact_keys(request, &["operation", "draftId", "expectedRevision"])?;
             let draft_id = capture_id(request, "draftId")?;

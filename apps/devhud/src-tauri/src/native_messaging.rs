@@ -80,6 +80,7 @@ struct NativeMessagingState {
     generation: AtomicU64,
     pairing_lifecycle: Mutex<()>,
     pending_pairing: Mutex<Option<PendingPairing>>,
+    configuration_scope: Mutex<Option<Uuid>>,
     configuration: Mutex<Value>,
     latest_context: Mutex<Option<Value>>,
 }
@@ -209,22 +210,43 @@ pub fn native_messaging_unpair() -> Result<PairingStatus, String> {
 }
 
 #[tauri::command]
-pub fn native_messaging_replace_configuration(configuration: Value) -> Result<(), String> {
-    replace_configuration(state(), configuration)
+pub fn native_messaging_replace_configuration(
+    configuration: Value,
+    scope_id: String,
+) -> Result<(), String> {
+    replace_configuration(state(), configuration, &scope_id)
 }
 
 fn replace_configuration(
     messaging_state: &NativeMessagingState,
     configuration: Value,
+    scope_id: &str,
 ) -> Result<(), String> {
+    let parsed_scope_id = Uuid::parse_str(scope_id).map_err(|_| "invalid-argument")?;
+    if parsed_scope_id.to_string() != scope_id {
+        return Err("invalid-argument".to_string());
+    }
     let validated = validate_configuration(configuration);
+    let _lifecycle = messaging_state
+        .pairing_lifecycle
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let mut current = messaging_state
         .configuration
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut current_scope = messaging_state
+        .configuration_scope
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let scope_changed = current_scope.as_ref() != Some(&parsed_scope_id);
+    if scope_changed {
+        messaging_state.generation.fetch_add(1, Ordering::SeqCst);
+        *current_scope = Some(parsed_scope_id);
+    }
     match validated {
         Ok(configuration) => {
-            if *current != configuration {
+            if scope_changed || *current != configuration {
                 let mut latest_context = messaging_state
                     .latest_context
                     .lock()
@@ -812,10 +834,13 @@ fn serve_connection(mut stream: impl ConnectionStream) -> Result<(), String> {
                         .clone();
                 }
                 NativeMessageType::Capture => {
-                    let configuration = state()
-                        .configuration
-                        .lock()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    let configuration = {
+                        state()
+                            .configuration
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner)
+                            .clone()
+                    };
                     match authorize_capture(request.payload, &configuration) {
                         Ok(context) => {
                             if !commit_latest_context_if_current(state(), generation, context) {
@@ -968,33 +993,47 @@ mod tests {
     #[test]
     fn configuration_is_bounded() {
         assert!(
-            native_messaging_replace_configuration(json!({
-                "origins": [configured_origin("https://example.com")],
-                "language": "en"
-            }))
+            native_messaging_replace_configuration(
+                json!({
+                    "origins": [configured_origin("https://example.com")],
+                    "language": "en"
+                }),
+                Uuid::now_v7().to_string()
+            )
             .is_ok()
         );
         assert!(
-            native_messaging_replace_configuration(Value::String(
-                "x".repeat(devhud_native_messaging_host::MAX_JSON_BYTES + 1)
-            ))
+            native_messaging_replace_configuration(
+                Value::String("x".repeat(devhud_native_messaging_host::MAX_JSON_BYTES + 1)),
+                Uuid::now_v7().to_string()
+            )
             .is_err()
         );
         assert!(
-            native_messaging_replace_configuration(response_oversized_configuration()).is_err()
-        );
-        assert!(
-            native_messaging_replace_configuration(json!({
-                "origins": [configured_origin("https://unconfigured.example/path")],
-                "language": "en"
-            }))
+            native_messaging_replace_configuration(
+                response_oversized_configuration(),
+                Uuid::now_v7().to_string()
+            )
             .is_err()
         );
         assert!(
-            native_messaging_replace_configuration(json!({
-                "origins": [configured_origin("https://other.example")],
-                "language": "en"
-            }))
+            native_messaging_replace_configuration(
+                json!({
+                    "origins": [configured_origin("https://unconfigured.example/path")],
+                    "language": "en"
+                }),
+                Uuid::now_v7().to_string()
+            )
+            .is_err()
+        );
+        assert!(
+            native_messaging_replace_configuration(
+                json!({
+                    "origins": [configured_origin("https://other.example")],
+                    "language": "en"
+                }),
+                Uuid::now_v7().to_string()
+            )
             .is_err()
         );
     }
@@ -1036,7 +1075,12 @@ mod tests {
         *messaging_state.latest_context.lock().unwrap() = Some(json!({ "prior": true }));
 
         assert!(
-            replace_configuration(&messaging_state, response_oversized_configuration(),).is_err()
+            replace_configuration(
+                &messaging_state,
+                response_oversized_configuration(),
+                &Uuid::now_v7().to_string(),
+            )
+            .is_err()
         );
         assert!(messaging_state.configuration.lock().unwrap().is_null());
         assert!(messaging_state.latest_context.lock().unwrap().is_none());
@@ -1049,7 +1093,8 @@ mod tests {
             "origins": [configured_origin("https://example.com")],
             "language": "en"
         });
-        assert!(replace_configuration(&messaging_state, initial).is_ok());
+        let scope_id = Uuid::now_v7().to_string();
+        assert!(replace_configuration(&messaging_state, initial, &scope_id).is_ok());
         *messaging_state.latest_context.lock().unwrap() = Some(json!({ "prior": true }));
         let replacement = json!({
             "origins": [{
@@ -1068,14 +1113,38 @@ mod tests {
             "language": "en"
         });
 
-        assert!(replace_configuration(&messaging_state, replacement.clone()).is_ok());
+        assert!(replace_configuration(&messaging_state, replacement.clone(), &scope_id).is_ok());
         assert!(messaging_state.latest_context.lock().unwrap().is_none());
 
         *messaging_state.latest_context.lock().unwrap() = Some(json!({ "current": true }));
-        assert!(replace_configuration(&messaging_state, replacement).is_ok());
+        assert!(replace_configuration(&messaging_state, replacement, &scope_id).is_ok());
         assert_eq!(
             *messaging_state.latest_context.lock().unwrap(),
             Some(json!({ "current": true }))
+        );
+    }
+
+    #[test]
+    fn changed_identity_scope_clears_context_for_identical_configuration() {
+        let messaging_state = NativeMessagingState::default();
+        let configuration = json!({
+            "origins": [configured_origin("https://example.com")],
+            "language": "en"
+        });
+        let first_scope = Uuid::now_v7().to_string();
+        let second_scope = Uuid::now_v7().to_string();
+        assert!(
+            replace_configuration(&messaging_state, configuration.clone(), &first_scope).is_ok()
+        );
+        *messaging_state.latest_context.lock().unwrap() = Some(json!({ "prior": true }));
+        let first_generation = messaging_state.generation.load(Ordering::SeqCst);
+
+        assert!(replace_configuration(&messaging_state, configuration, &second_scope).is_ok());
+
+        assert!(messaging_state.latest_context.lock().unwrap().is_none());
+        assert_eq!(
+            messaging_state.generation.load(Ordering::SeqCst),
+            first_generation + 1
         );
     }
 

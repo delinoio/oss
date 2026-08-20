@@ -537,6 +537,19 @@ function CaptureEditor({ draft }: { readonly draft: CaptureDraft }) {
       } catch { if (editorActive.current) { setFailed(true); setMessage(copy.editorSaveFailed); } }
     });
   };
+  const removeBrowserContext = () => {
+    if (!window.confirm(copy.browserContextRemoveConfirm)) return;
+    setFailed(false);
+    void enqueueRevisionOperation(async (current, installDraft) => {
+      try {
+        const response = await bridge.request({ operation: "capture.remove-browser-context", draftId: current.id, expectedRevision: current.revision });
+        if (response.kind === "capture-draft") {
+          installDraft(response.draft);
+          if (editorActive.current) setMessage(copy.browserContextRemoved);
+        }
+      } catch { if (editorActive.current) { setFailed(true); setMessage(copy.browserContextRemoveFailed); } }
+    });
+  };
   if (!active) return null;
   const coordinatesValid = coordinateRectFitsImage(coordinates, active.width, active.height);
   const coordinateErrorId = `editor-coordinate-error-${draft.id}`;
@@ -588,7 +601,7 @@ function CaptureEditor({ draft }: { readonly draft: CaptureDraft }) {
   };
   return <section className="capture-editor" aria-labelledby="capture-editor-title">
     <div className="editor-heading"><div><h3 id="capture-editor-title">{copy.editorTitle}</h3><p>{copy.editorCloseHint}</p></div><button onClick={actions.close}>{copy.close}</button></div>
-    {draft.browserContext && <section aria-labelledby="browser-context-title"><h4 id="browser-context-title">{copy.browserContextAttached}</h4><dl className="runtime-diagnostics"><dt>{copy.browserContextPageTitle}</dt><dd>{draft.browserContext.context.title || "—"}</dd><dt>{copy.browserContextRedactedUrl}</dt><dd>{draft.browserContext.context.url}</dd></dl></section>}
+    {draft.browserContext && <section aria-labelledby="browser-context-title"><h4 id="browser-context-title">{copy.browserContextAttached}</h4><dl className="runtime-diagnostics"><dt>{copy.browserContextPageTitle}</dt><dd>{draft.browserContext.context.title || "—"}</dd><dt>{copy.browserContextRedactedUrl}</dt><dd>{draft.browserContext.context.url}</dd></dl><details><summary>{copy.browserContextDetails}</summary><dl className="runtime-diagnostics"><dt>{copy.browserContextViewport}</dt><dd>{draft.browserContext.context.viewport.width} × {draft.browserContext.context.viewport.height}</dd><dt>{copy.browserContextUserAgent}</dt><dd>{draft.browserContext.context.userAgent}</dd><dt>{copy.browserContextSelectedBounds}</dt><dd>{draft.browserContext.context.selectedBounds ? `x ${draft.browserContext.context.selectedBounds.x}, y ${draft.browserContext.context.selectedBounds.y}, width ${draft.browserContext.context.selectedBounds.width}, height ${draft.browserContext.context.selectedBounds.height}` : copy.browserContextNone}</dd><dt>{copy.browserContextAccessibility}</dt><dd>{Object.entries(draft.browserContext.context.accessibility).length ? <dl>{Object.entries(draft.browserContext.context.accessibility).map(([key, value]) => <div key={key}><dt>{key}</dt><dd>{value}</dd></div>)}</dl> : copy.browserContextNone}</dd><dt>{copy.browserContextMarkup}</dt><dd><pre>{draft.browserContext.context.outerHtml || copy.browserContextNone}</pre></dd></dl></details><button className="danger" disabled={busy} onClick={removeBrowserContext}>{copy.browserContextRemove}</button></section>}
     <div className="editor-image-order" aria-label={copy.realqaImages}>{draft.images.map((image, index) => <div key={image.id}><button aria-pressed={image.id === active.id} onClick={() => setImageId(image.id)}>{copy.editorImage} {index + 1}</button><button disabled={busy || index === 0} aria-label={copy.editorMoveEarlier} onClick={() => moveImage(index, -1)}>←</button><button disabled={busy || index === draft.images.length - 1} aria-label={copy.editorMoveLater} onClick={() => moveImage(index, 1)}>→</button><button disabled={busy || draft.images.length === 1} aria-label={copy.editorRemove} onClick={() => void mutate({ kind: "remove-image", imageId: image.id })}>×</button></div>)}</div>
     <div className="editor-layout"><div className="editor-workspace"><div className="editor-canvas" role="img" aria-label={copy.editorCanvas} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp}>
       <img draggable={false} src={active.previewUrl} alt="" />

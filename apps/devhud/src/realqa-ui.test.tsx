@@ -233,7 +233,66 @@ describe("RealQA capture and editor", () => {
     })));
   });
 
-  it("attaches and displays Chrome context after a successful capture", async () => {
+  it("attaches, inspects, and removes Chrome context after a successful capture", async () => {
+    const attachedDraft: CaptureDraft = {
+      ...draft,
+      revision: 4,
+      hasBrowserContext: true,
+      browserContext: {
+        mappingId: "01900000-0000-7000-8000-000000000001",
+        context: {
+          url: "https://example.com/%3Credacted%3E",
+          title: "Captured page",
+          viewport: { width: 1280, height: 720 },
+          userAgent: "DevHUD test",
+          selectedBounds: { x: 10, y: 20, width: 300, height: 200 },
+          accessibility: { "aria-label": "Captured content" },
+          outerHtml: "<main>Captured page</main>",
+        },
+      },
+    };
+    const removedDraft: CaptureDraft = {
+      ...attachedDraft,
+      revision: 5,
+      hasBrowserContext: false,
+      browserContext: undefined,
+    };
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const takeBrowserContext = vi.fn(async () => attachedDraft);
+    let captured = false;
+    const { bridge, request } = bridgeWith(async (value) => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: captured ? [attachedDraft] : [], unreadableDraftIds: [] };
+      if (value.operation === "capture.start") { captured = true; return { kind: "capture-draft", draft }; }
+      if (value.operation === "capture.remove-browser-context") return { kind: "capture-draft", draft: removedDraft };
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    render(<RealqaSurface bridge={bridge} copy={messages.en} takeBrowserContext={takeBrowserContext} />);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.captureDisplay }));
+
+    await waitFor(() => expect(takeBrowserContext).toHaveBeenCalledWith(draft.id, draft.revision));
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.floatingPreviewOpen }));
+    expect(screen.getByRole("heading", { name: messages.en.browserContextAttached })).toBeTruthy();
+    expect(screen.getByText("Captured page")).toBeTruthy();
+    expect(screen.getByText("https://example.com/%3Credacted%3E")).toBeTruthy();
+    fireEvent.click(screen.getByText(messages.en.browserContextDetails));
+    expect(screen.getByText("DevHUD test")).toBeTruthy();
+    expect(screen.getByText("Captured content")).toBeTruthy();
+    expect(screen.getByText("<main>Captured page</main>")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.browserContextRemove }));
+
+    await waitFor(() => expect(request).toHaveBeenCalledWith({
+      operation: "capture.remove-browser-context",
+      draftId: attachedDraft.id,
+      expectedRevision: attachedDraft.revision,
+    }));
+    expect(screen.queryByRole("heading", { name: messages.en.browserContextAttached })).toBeNull();
+    expect(screen.getByText(messages.en.browserContextRemoved).getAttribute("role")).toBe("status");
+  });
+
+  it("keeps attached context visible when revision-checked removal fails", async () => {
     const attachedDraft: CaptureDraft = {
       ...draft,
       revision: 4,
@@ -251,22 +310,21 @@ describe("RealQA capture and editor", () => {
         },
       },
     };
-    const takeBrowserContext = vi.fn(async () => attachedDraft);
+    const listedDraft = { ...attachedDraft, browserContext: undefined };
+    vi.spyOn(window, "confirm").mockReturnValue(true);
     const { bridge } = bridgeWith(async (value) => {
       if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [] };
-      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [], unreadableDraftIds: [] };
-      if (value.operation === "capture.start") return { kind: "capture-draft", draft };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [listedDraft], unreadableDraftIds: [] };
+      if (value.operation === "capture.remove-browser-context") throw new NativeBridgeError(NativeBridgeErrorCode.RevisionConflict);
       throw new Error(`unexpected operation ${value.operation}`);
-    });
-    render(<RealqaSurface bridge={bridge} copy={messages.en} takeBrowserContext={takeBrowserContext} />);
+    }, async () => ({ kind: "capture-draft", draft: attachedDraft }));
+    render(<RealqaSurface bridge={bridge} copy={messages.en} />);
 
-    fireEvent.click(screen.getByRole("button", { name: messages.en.captureDisplay }));
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.realqaOpenEditor }));
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.browserContextRemove }));
 
-    await waitFor(() => expect(takeBrowserContext).toHaveBeenCalledWith(draft.id, draft.revision));
-    fireEvent.click(await screen.findByRole("button", { name: messages.en.floatingPreviewOpen }));
+    expect(await screen.findByRole("alert")).toHaveProperty("textContent", messages.en.browserContextRemoveFailed);
     expect(screen.getByRole("heading", { name: messages.en.browserContextAttached })).toBeTruthy();
-    expect(screen.getByText("Captured page")).toBeTruthy();
-    expect(screen.getByText("https://example.com/%3Credacted%3E")).toBeTruthy();
   });
 
   it("keeps a saved capture when Chrome context attachment fails", async () => {

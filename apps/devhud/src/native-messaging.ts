@@ -53,6 +53,6 @@ export const nativeMessaging = {
   status: () => nativeCommand<NativeMessagingPairingStatus>("native_messaging_status"),
   beginPairing: () => nativeCommand<NativeMessagingPairingStatus>("native_messaging_begin_pairing"),
   unpair: () => nativeCommand<NativeMessagingPairingStatus>("native_messaging_unpair"),
-  configure: (settings: DevHudSettingsV1) => nativeCommand<void>("native_messaging_replace_configuration", { configuration: extensionConfiguration(settings) }),
+  configure: (settings: DevHudSettingsV1, scopeId: string) => nativeCommand<void>("native_messaging_replace_configuration", { configuration: extensionConfiguration(settings), scopeId }),
   takeContext: (draftId: string, expectedRevision: number) => nativeCommand<CaptureDraft | null>("native_messaging_take_context", { draftId, expectedRevision }),
 };

@@ -1,9 +1,8 @@
-import { createContext, use, useEffect, useEffectEvent, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type Ref } from "react";
+import { createContext, use, useEffect, useEffectEvent, useRef, useState, type ComponentType, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type Ref } from "react";
 import type { Copy } from "./localization";
 import { GitHubSettings, githubErrorCopy } from "./github-settings-ui.tsx";
 import { createGitHubProvider, GitHubErrorCode, GitHubProviderError, readGitHubCredential, type GitHubProvider } from "./github-provider.ts";
 import { NativeBridgeError, NativeBridgeErrorCode, nativeBridge, type NativeBridgeV1, type NativeShortcutPermission, type NativeShortcutPlatform } from "./native-bridge.ts";
-import { nativeMessaging } from "./native-messaging.ts";
 import { useIdentitySettings } from "./service-boundary";
 import { browserShell, LanguagePreference, PlatformCapability, normalizeApiOrigin, ThemePreference, type ExternalLinkTarget, type RuntimeCapabilities } from "./shell";
 import { parseDevHudSettings, type DevHudSettingsV1 } from "./settings-contract";
@@ -213,7 +212,7 @@ function UrlMappingDraftStateProvider({ children, identity, isCurrentScope }: { 
   return <UrlMappingDraftContext value={{ draft, setDraft, setBaselineMappings, markDraftDirty, invalid, setInvalid, saved, setSaved, dirty, saving, setSaving, priorityDrafts, setPriorityDrafts, baseRevision, credentialOperationPending, runCredentialOperation, isCurrentScope, reset }}>{children}</UrlMappingDraftContext>;
 }
 
-export function SynchronizedSettingsBoundary(props: { readonly copy: Copy; readonly bridge?: NativeBridgeV1; readonly githubProvider?: GitHubProvider; readonly onOpenExternal?: (target: ExternalLinkTarget) => Promise<void>; readonly showNativeShortcuts?: boolean; readonly shortcutCapabilities?: RuntimeCapabilities }) {
+export function SynchronizedSettingsBoundary(props: { readonly copy: Copy; readonly bridge?: NativeBridgeV1; readonly githubProvider?: GitHubProvider; readonly onOpenExternal?: (target: ExternalLinkTarget) => Promise<void>; readonly showNativeShortcuts?: boolean; readonly shortcutCapabilities?: RuntimeCapabilities; readonly NativeMessagingSettings?: ComponentType<{ readonly copy: Copy }> }) {
   const mappingDraft = use(UrlMappingDraftContext);
   return mappingDraft === null ? <UrlMappingDraftProvider><SynchronizedSettingsContent {...props} /></UrlMappingDraftProvider> : <SynchronizedSettingsContent {...props} />;
 }
@@ -267,16 +266,6 @@ export function SynchronizedShortcutBoundary({ bridge = nativeBridge }: { readon
     });
     return () => { active = false; };
   }, [bindings, bridge, identity.setActiveShortcutBindings, identity.shortcutHydrationReady]);
-  return null;
-}
-
-export function SynchronizedNativeMessagingBoundary() {
-  const { settings } = useIdentitySettings();
-  useEffect(() => {
-    void nativeMessaging.configure(settings).catch(() => {
-      // Native Messaging availability must not prevent the shared settings boundary from rendering.
-    });
-  }, [settings]);
   return null;
 }
 
@@ -392,7 +381,7 @@ function ShortcutSettings({ copy, bridge, disabled, capabilities, bindings, onAc
   </section>;
 }
 
-function SynchronizedSettingsContent({ copy, bridge = nativeBridge, githubProvider, onOpenExternal = (target) => browserShell.openExternal(target, ""), showNativeShortcuts = false, shortcutCapabilities = { available: new Set<PlatformCapability>() } }: { readonly copy: Copy; readonly bridge?: NativeBridgeV1; readonly githubProvider?: GitHubProvider; readonly onOpenExternal?: (target: ExternalLinkTarget) => Promise<void>; readonly showNativeShortcuts?: boolean; readonly shortcutCapabilities?: RuntimeCapabilities }) {
+function SynchronizedSettingsContent({ copy, bridge = nativeBridge, githubProvider, onOpenExternal = (target) => browserShell.openExternal(target, ""), showNativeShortcuts = false, shortcutCapabilities = { available: new Set<PlatformCapability>() }, NativeMessagingSettings }: { readonly copy: Copy; readonly bridge?: NativeBridgeV1; readonly githubProvider?: GitHubProvider; readonly onOpenExternal?: (target: ExternalLinkTarget) => Promise<void>; readonly showNativeShortcuts?: boolean; readonly shortcutCapabilities?: RuntimeCapabilities; readonly NativeMessagingSettings?: ComponentType<{ readonly copy: Copy }> }) {
   const identity = useIdentitySettings();
   const mappingDraft = use(UrlMappingDraftContext);
   if (mappingDraft === null) throw new Error("URL mapping draft provider is required");
@@ -406,7 +395,7 @@ function SynchronizedSettingsContent({ copy, bridge = nativeBridge, githubProvid
     <label>{copy.theme}<select value={identity.settings.appearance.theme} disabled={identity.readOnly} onChange={(event) => replaceAppearance({ theme: event.target.value as DevHudSettingsV1["appearance"]["theme"] })}>{Object.values(ThemePreference).map((value) => <option key={value} value={value}>{copy[value]}</option>)}</select></label>
     <label>{copy.language}<select value={identity.settings.appearance.language} disabled={identity.readOnly} onChange={(event) => replaceAppearance({ language: event.target.value as DevHudSettingsV1["appearance"]["language"] })}><option value={LanguagePreference.System}>{copy.system}</option><option value={LanguagePreference.English}>{copy.english}</option><option value={LanguagePreference.Korean}>{copy.korean}</option></select></label>
     {showNativeShortcuts && <ShortcutSettings copy={copy} bridge={bridge} disabled={identity.readOnly} capabilities={shortcutCapabilities} bindings={identity.settings.shortcuts.desktop} onActiveBindings={identity.setActiveShortcutBindings} onPersist={(desktop) => identity.replaceSettings((current) => ({ ...current, shortcuts: { ...current.shortcuts, desktop } }))} />}
-    {showNativeShortcuts && <NativeMessagingSettings copy={copy} />}
+    {NativeMessagingSettings && <NativeMessagingSettings copy={copy} />}
     <UrlMappingSettings copy={copy} bridge={bridge} githubProvider={githubProvider} />
     {(identity.status === "guest" || identity.status === "signed-out" || identity.status === "starting") && <p className="notice">{copy.guestSettingsLocal}</p>}
     {identity.status === "blocked" && <p className="notice">{copy.blockedLocalHint}</p>}
@@ -421,46 +410,6 @@ function SynchronizedSettingsContent({ copy, bridge = nativeBridge, githubProvid
     </section>}
     <GitHubSettings copy={copy} bridge={bridge} provider={githubProvider} openExternal={onOpenExternal} credentialOperationPending={mappingDraft.credentialOperationPending} runCredentialOperation={mappingDraft.runCredentialOperation} />
   </>;
-}
-
-export function NativeMessagingSettings({ copy }: { readonly copy: Copy }) {
-  const [paired, setPaired] = useState(false);
-  const [pairing, setPairing] = useState<{ readonly nonce: string; readonly expiresAt: number } | null>(null);
-  const [failed, setFailed] = useState(false);
-  useEffect(() => {
-    let current = true;
-    void nativeMessaging.status().then((status) => { if (current) { setFailed(false); setPaired(status.paired); } }).catch(() => { if (current) setFailed(true); });
-    return () => { current = false; };
-  }, []);
-  useEffect(() => {
-    if (pairing === null) return;
-    let current = true;
-    const poll = setInterval(() => {
-      void nativeMessaging.status().then((status) => {
-        if (!current) return;
-        setFailed(false);
-        setPaired(status.paired);
-        if (status.paired) setPairing(null);
-      }).catch(() => { if (current) setFailed(true); });
-    }, 1_000);
-    const expiry = setTimeout(() => { if (current) setPairing(null); }, Math.max(0, pairing.expiresAt - Date.now()));
-    return () => { current = false; clearInterval(poll); clearTimeout(expiry); };
-  }, [pairing]);
-  const begin = () => { setFailed(false); void nativeMessaging.beginPairing().then((status) => {
-    const lifetime = status.expiresInSeconds;
-    setPairing(typeof status.pairingNonce === "string" && status.pairingNonce !== "" && typeof lifetime === "number" && Number.isFinite(lifetime) && lifetime > 0
-      ? { nonce: status.pairingNonce, expiresAt: Date.now() + lifetime * 1_000 }
-      : null);
-    setPaired(false);
-  }).catch(() => setFailed(true)); };
-  const remove = () => { setFailed(false); void nativeMessaging.unpair().then(() => { setPairing(null); setPaired(false); }).catch(() => setFailed(true)); };
-  return <section className="native-setting" aria-labelledby="native-messaging-title">
-    <h3 id="native-messaging-title">{copy.nativeMessagingTitle}</h3><p>{copy.nativeMessagingSummary}</p>
-    <p className={failed ? "native-setting-error" : undefined} role="status">{failed ? copy.nativeMessagingFailed : paired ? copy.nativeMessagingPaired : copy.nativeMessagingNotPaired}</p>
-    {pairing && <p>{copy.nativeMessagingPairingCode}: <code>{pairing.nonce}</code></p>}
-    <button className="primary" type="button" onClick={begin}>{copy.nativeMessagingPair}</button>
-    {(paired || pairing) && <button type="button" onClick={remove}>{copy.nativeMessagingRemove}</button>}
-  </section>;
 }
 
 function UrlMappingSettings({ copy, bridge, githubProvider = createGitHubProvider({ fetch: globalThis.fetch }) }: { readonly copy: Copy; readonly bridge: NativeBridgeV1; readonly githubProvider?: GitHubProvider }) {

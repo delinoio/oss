@@ -8,6 +8,7 @@ import * as identityClient from "./identity-client";
 import type { IdentitySession } from "./identity-client";
 import { messages } from "./localization";
 import { LifecycleState, NativeBridgeError, NativeBridgeErrorCode, NotificationPermission, RuntimePlatform, type NativeBridgeEventV1, type NativeBridgeRequestV1, type NativeBridgeResponseV1, type NativeBridgeV1, type RuntimeSnapshot } from "./native-bridge";
+import { desktopNativeMessagingIntegration } from "./native-messaging-ui";
 
 const mobileRuntime: RuntimeSnapshot = {
   bridgeVersion: 1,
@@ -52,11 +53,12 @@ describe("native App state", () => {
       throw new Error(`unexpected operation ${request.operation}`);
     });
 
-    render(<App bridge={bridge} initialRuntime={desktopRuntime} />);
+    render(<App bridge={bridge} initialRuntime={desktopRuntime} nativeMessaging={desktopNativeMessagingIntegration} />);
 
     expect(screen.getByRole("heading", { name: messages.en.welcome })).toBeTruthy();
     await waitFor(() => expect(invoke).toHaveBeenCalledWith("native_messaging_replace_configuration", {
       configuration: { origins: [], language: "en" },
+      scopeId: expect.stringMatching(/^[0-9a-f-]{36}$/u),
     }, undefined));
   });
 
