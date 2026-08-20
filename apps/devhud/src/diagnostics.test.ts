@@ -459,6 +459,8 @@ describe("diagnostics privacy boundary", () => {
       "callback?safe=code%3Dsecret",
       "callback?safe=x%26code%3Dsecret",
       "callback%3Fcode%3Dsecret",
+      "state=ok&code=abc123",
+      "state=ok;code=abc123",
     ]) {
       const unsafe = { ...fixtureEvent(now - 1), summary: credential };
       localStorage.setItem(DiagnosticsStorageKey, JSON.stringify([unsafe, safe]));
@@ -471,6 +473,12 @@ describe("diagnostics privacy boundary", () => {
     }
     expect(redactDiagnosticValue({ callback: "callback?state=opaque" })).toEqual({
       callback: "callback?state=opaque",
+    });
+    expect(redactDiagnosticValue({ parameters: "state=opaque&component=renderer" })).toEqual({
+      parameters: "state=opaque&component=renderer",
+    });
+    expect(redactDiagnosticValue({ parameters: "state=opaque;component=renderer" })).toEqual({
+      parameters: "state=opaque;component=renderer",
     });
   });
 

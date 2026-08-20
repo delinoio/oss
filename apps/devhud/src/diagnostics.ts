@@ -42,7 +42,7 @@ const trailingURLPunctuation = /[)\]}>.,;]+$/u;
 const diagnosticPath = /(?:^|[\s\p{P}=])(?:[a-z]:[\\/]\S*|\\\\\S+|~\/\S+|\/[^/\s]\S*)/iu;
 const percentEncodedOctets = /(?:%[0-9a-f]{2})+/giu;
 const credentialParameterName = /^(?:code|oauth[_.-]?code|password|passwd|pwd|pat|secret|token|client[_.-]?secret|(?:access|refresh|id)[_.-]?token|(?:r2[_.-]?)?access[_.-]?key[_.-]?id|api[_.-]?key|private[_.-]?key|authorization|cookie|set-cookie|session[_.-]?id|signing[_.-]?(?:secret|key|value)|x-amz-(?:credential|signature))$/iu;
-const diagnosticAssignment = /(?:^|\s|[(\[{,;])["']?([A-Za-z][A-Za-z0-9_.-]{0,63})["']?\s*[:=]\s*\S+/gu;
+const diagnosticAssignment = /(?:^|\s|[(\[{,;&])["']?([A-Za-z][A-Za-z0-9_.-]{0,63})["']?\s*[:=]\s*[^\s&;]+/gu;
 const safeCode = /^[A-Z][A-Z0-9_]{0,63}$/u;
 const safeFrameName = /(?:^|\s)(?:at\s+)?([A-Za-z_$][A-Za-z0-9_$.<>-]{0,95})/u;
 

@@ -32,7 +32,7 @@ const encodedWindowsDrivePathPattern = /^[A-Za-z]:(?:%2f|%5c)/iu;
 const credentialParameterNamePattern =
   /^(?:code|oauth[_.-]?code|password|passwd|pwd|pat|secret|token|client[_.-]?secret|(?:access|refresh|id)[_.-]?token|(?:r2[_.-]?)?access[_.-]?key[_.-]?id|api[_.-]?key|private[_.-]?key|authorization|cookie|set-cookie|session[_.-]?id|signing[_.-]?(?:secret|key|value)|x-amz-(?:credential|signature))$/iu;
 const diagnosticAssignmentPattern =
-  /(?:^|\s|[(\[{,;])["']?([A-Za-z][A-Za-z0-9_.-]{0,63})["']?\s*[:=]\s*\S+/gu;
+  /(?:^|\s|[(\[{,;&])["']?([A-Za-z][A-Za-z0-9_.-]{0,63})["']?\s*[:=]\s*[^\s&;]+/gu;
 const MIN_PROTOBUF_TIMESTAMP_SECONDS = -62_135_596_800n;
 const MAX_PROTOBUF_TIMESTAMP_SECONDS = 253_402_300_799n;
 const MAX_PROTOBUF_TIMESTAMP_NANOS = 999_999_999;

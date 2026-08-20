@@ -667,6 +667,8 @@ describe("wire validation helpers", () => {
       "callback?safe=code%3Dsecret",
       "callback?safe=x%26code%3Dsecret",
       "callback%3Fcode%3Dsecret",
+      "state=ok&code=abc123",
+      "state=ok;code=abc123",
       ...encodedCredentialParameterUrls,
     ]) {
       const credentialDiagnostics = [
@@ -688,6 +690,8 @@ describe("wire validation helpers", () => {
       "Password validation failed because the field was empty.",
       "Cookie parsing failed after session expiry.",
       "ERROR_CODE=E_UPLOAD RETRY_COUNT=3 TOKEN_COUNT=2",
+      "state=opaque&component=renderer",
+      "state=opaque;component=renderer",
       "service.component.error",
     ]) {
       expect(() =>
