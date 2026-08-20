@@ -226,6 +226,10 @@ func TestSubmitCrashReportRejectsUnlabeledCredentialsBeforePersistence(t *testin
 		"standalone OAuth code":    "code=secret",
 		"standalone OAuth label":   "oauth_code: secret",
 		"JSON OAuth code":          `{"code":"secret"}`,
+		"R2 access key identifier": "r2_access_key_id=0123456789abcdef",
+		"configured R2 access key": "DEVHUD_R2_ACCESS_KEY_ID=0123456789abcdef",
+		"R2 dotted access key":     "r2.access-key-id=0123456789abcdef",
+		"R2 access key parameter":  "callback?r2.access-key-id=0123456789abcdef",
 		"credential-bearing user":  "https://alice:password@example.test/app.js",
 		"malformed URL escape":     "https://example.test/?to%6=secret",
 	}
