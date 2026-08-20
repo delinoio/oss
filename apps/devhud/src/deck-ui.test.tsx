@@ -66,6 +66,28 @@ describe("Deck surface", () => {
     expect(JSON.stringify(request.mock.calls)).not.toMatch(/github[_-]?pat|Bearer|token-value/iu);
   });
 
+  it("keeps an enabled Deck available for disablement when configuration resynchronization fails", async () => {
+    let failConfigurationSync = false;
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      if (value.operation === "widgets.status") return { kind: "widget-status", enabledDeckIds: [deck.id] };
+      if (value.operation === "widgets.enable-deck" && failConfigurationSync) throw new Error("storage-failure");
+      return { kind: "ok" };
+    });
+    const bridge = bridgeWith(request);
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} language="en" /></DeckPollingBoundary>);
+
+    await screen.findByRole("button", { name: messages.en.widgetDisable });
+    await waitFor(() => expect(request).toHaveBeenCalledWith(expect.objectContaining({ operation: "widgets.enable-deck" })));
+    failConfigurationSync = true;
+    const editedDeck = { ...deck, name: "Edited Deck" };
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [editedDeck] }) });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} language="en" /></DeckPollingBoundary>);
+
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toBe(messages.en.widgetActionFailed));
+    expect(screen.getByRole("button", { name: messages.en.widgetDisable })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: messages.en.widgetEnable })).toBeNull();
+  });
+
   it("renders an unavailable state instead of empty results when an uncached Deck is offline", () => {
     const bridge = bridgeWith(async () => { throw new Error("unexpected request"); });
     render(<DeckPollingBoundary bridge={bridge} active={false} online={false} provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);

@@ -61,34 +61,42 @@ class DevHudWidgetProvider : AppWidgetProvider() {
             manager.updateAppWidget(appWidgetId, render(context, configuration, snapshot, snapshot?.optString("state", "missing-token") ?: "missing-token"))
         }
 
-        fun refresh(context: Context, manager: AppWidgetManager, appWidgetId: Int): Boolean {
+        fun refresh(context: Context, manager: AppWidgetManager, deckId: String?, appWidgetIds: List<Int>): Boolean {
             val store = DevHudWidgetStore(context)
-            val deckId = store.selectedDeckId(appWidgetId)
             if (deckId == null) {
-                manager.updateAppWidget(appWidgetId, render(context, null, null, "missing-token"))
+                appWidgetIds.forEach { renderStored(context, manager, it) }
                 return true
             }
             val configuration = store.configuration(deckId)
             if (configuration == null) {
-                manager.updateAppWidget(appWidgetId, render(context, null, store.snapshot(deckId), "missing-token"))
-                return true
-            }
-            val token = store.token(deckId)
-            if (token == null) {
-                manager.updateAppWidget(appWidgetId, render(context, configuration, store.snapshot(deckId), "missing-token"))
+                appWidgetIds.forEach { renderStored(context, manager, it) }
                 return true
             }
             val previous = store.snapshot(deckId)
+            val token = store.token(deckId)
+            if (token == null) {
+                val snapshot = failure(configuration, previous, "missing-token", Instant.now().toString(), null)
+                val stored = store.replaceSnapshot(snapshot)
+                renderSelected(context, manager, store, deckId, configuration, snapshot, "missing-token", appWidgetIds)
+                return stored
+            }
             val snapshot = refreshGitHub(configuration, token, previous)
             val current = store.configuration(deckId)
-            if (store.selectedDeckId(appWidgetId) != deckId || current == null || !sameSelection(configuration, current)) {
-                renderStored(context, manager, appWidgetId)
+            if (current == null || !sameSelection(configuration, current)) {
+                appWidgetIds.forEach { renderStored(context, manager, it) }
                 return true
             }
             val stored = store.replaceSnapshot(snapshot)
             val rendered = if (stored) snapshot else store.snapshot(deckId)
-            manager.updateAppWidget(appWidgetId, render(context, current, rendered, rendered?.optString("state", "error") ?: "error"))
+            renderSelected(context, manager, store, deckId, current, rendered, rendered?.optString("state", "error") ?: "error", appWidgetIds)
             return stored
+        }
+
+        private fun renderSelected(context: Context, manager: AppWidgetManager, store: DevHudWidgetStore, deckId: String, configuration: JSONObject, snapshot: JSONObject?, forcedState: String, appWidgetIds: List<Int>) {
+            appWidgetIds.forEach { appWidgetId ->
+                if (store.selectedDeckId(appWidgetId) == deckId) manager.updateAppWidget(appWidgetId, render(context, configuration, snapshot, forcedState))
+                else renderStored(context, manager, appWidgetId)
+            }
         }
 
         private fun refreshGitHub(configuration: JSONObject, token: String, previous: JSONObject?): JSONObject {
@@ -203,9 +211,10 @@ class DevHudWidgetRefreshService : JobService() {
             try {
                 val manager = AppWidgetManager.getInstance(applicationContext)
                 val component = ComponentName(applicationContext, DevHudWidgetProvider::class.java)
-                for (appWidgetId in manager.getAppWidgetIds(component)) {
+                val store = DevHudWidgetStore(applicationContext)
+                for ((deckId, appWidgetIds) in manager.getAppWidgetIds(component).groupBy { store.selectedDeckId(it) }) {
                     if (stopped.get()) { retry = true; break }
-                    if (!DevHudWidgetProvider.refresh(applicationContext, manager, appWidgetId)) retry = true
+                    if (!DevHudWidgetProvider.refresh(applicationContext, manager, deckId, appWidgetIds)) retry = true
                 }
             } catch (_: Exception) { retry = true }
             if (!stopped.get()) jobFinished(parameters, retry)

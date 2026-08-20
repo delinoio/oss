@@ -30,12 +30,15 @@ internal class DevHudWidgetStore(private val context: Context) {
     fun enable(configuration: JSONObject, token: String): Boolean {
         val deckId = configuration.getString("deckId")
         val previous = configuration(deckId)
+        val previousSecret = secrets.getString(deckId, null)
         val encrypted = encrypt(token, deckId)
         if (!secrets.edit().putString(deckId, encrypted).commit()) return false
         val editor = state.edit().putString(configurationPrefix + deckId, configuration.toString())
         if (previous != null && selectionChanged(previous, configuration)) editor.remove(snapshotPrefix + deckId)
         if (editor.commit()) return true
-        secrets.edit().remove(deckId).commit()
+        val rollback = secrets.edit()
+        if (previousSecret == null) rollback.remove(deckId) else rollback.putString(deckId, previousSecret)
+        rollback.commit()
         return false
     }
 

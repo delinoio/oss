@@ -418,7 +418,6 @@ function WidgetAccess({ bridge, cache, copy, deck, failure, language }: { readon
     configurationSync.current = sync;
     void sync.catch(() => {
       if (configurationGeneration.current !== generation) return;
-      setEnabled(false);
       setFailed(true);
     });
   }, [bridge, configuration, enabled]);

@@ -122,8 +122,11 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   const iosEntitlements = readFileSync(join(appRoot, "mobile/overrides/ios/DevHudWidget/DevHudWidget.entitlements"), "utf8");
   assert.match(androidStore, /widgetKeyAlias = "io\.delino\.devhud\.widget-credential\.v1"/u);
   assert.match(androidStore, /replaceProfileToken[\s\S]*profileId[\s\S]*scopeId/u);
+  assert.match(androidStore, /previousSecret[\s\S]*rollback\.putString\(deckId, previousSecret\)/u);
   assert.match(androidNativeBridge, /replaceProfileToken\(profileId, scopeId, value\)/u);
   assert.match(androidProvider, /JobService[\s\S]*setRequiredNetworkType/u);
+  assert.match(androidProvider, /failure\(configuration, previous, "missing-token"[\s\S]*replaceSnapshot\(snapshot\)/u);
+  assert.match(androidProvider, /groupBy \{ store\.selectedDeckId\(it\) \}[\s\S]*refresh\(applicationContext, manager, deckId, appWidgetIds\)/u);
   assert.match(androidProvider, /ScrollView/u);
   assert.match(androidProvider, /incomplete_results/u);
   assert.match(androidManifest, /DevHudWidgetProvider"\s+android:exported="false"\s+android:label="@string\/devhud_widget_name"/u);
