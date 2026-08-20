@@ -11,8 +11,8 @@ const originList = document.querySelector<HTMLUListElement>("#origins")!;
 const pairingInput = document.querySelector<HTMLInputElement>("#pairing-nonce")!;
 document.documentElement.lang = resolveExtensionLanguage(chrome.i18n.getUILanguage());
 
-function text(id: string): string {
-  return chrome.i18n.getMessage(id) || id;
+function text(id: string, substitutions?: string | string[]): string {
+  return chrome.i18n.getMessage(id, substitutions) || id;
 }
 
 function announce(message: string, error = false) {
@@ -35,6 +35,7 @@ function renderOrigins(configuration: Configuration) {
     const button = document.createElement("button");
     button.type = "button";
     button.textContent = text("allowOrigin");
+    button.setAttribute("aria-label", text("allowOriginFor", configured.origin));
     button.dataset.permissionPattern = permissionPattern;
     button.addEventListener("click", () => {
       const origin = button.dataset.permissionPattern;
@@ -50,26 +51,11 @@ function renderOrigins(configuration: Configuration) {
   }
 }
 
-function configuredPermissionPatterns(configuration: Configuration): Set<string> {
-  return new Set((configuration.origins ?? []).flatMap((configured) => {
-    const pattern = configuredOriginPermissionPattern(configured.origin);
-    return pattern ? [pattern] : [];
-  }));
-}
-
-async function removeStaleOriginPermissions(configuration: Configuration) {
-  const configured = configuredPermissionPatterns(configuration);
-  const granted = await chrome.permissions.getAll();
-  const stale = (granted.origins ?? []).filter((origin) => /^https?:\/\//u.test(origin) && !configured.has(origin));
-  if (stale.length > 0) await chrome.permissions.remove({ origins: stale });
-}
-
 async function refreshOrigins() {
   try {
     const response = await send({ type: "configuration" });
     if (!response.ok) { renderOrigins({}); return; }
     const configuration = (response.payload ?? {}) as Configuration;
-    await removeStaleOriginPermissions(configuration).catch(() => undefined);
     renderOrigins(configuration);
   } catch {
     renderOrigins({});

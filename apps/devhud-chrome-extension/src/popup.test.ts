@@ -26,18 +26,12 @@ describe("popup pairing", () => {
         payload: { origins: [{ origin: "https://example.com", mappings: [] }] },
     });
     const requestPermission = vi.fn().mockResolvedValue(true);
-    const getAllPermissions = vi.fn().mockResolvedValue({
-      origins: ["https://example.com:443/*", "https://stale.example:443/*"],
-    });
-    const removePermissions = vi.fn().mockResolvedValue(true);
     vi.stubGlobal("chrome", {
       i18n: {
         getUILanguage: () => "en-US",
-        getMessage: (id: string) => id,
+        getMessage: (id: string, substitutions?: string | string[]) => id === "allowOriginFor" ? `${id} ${String(substitutions)}` : id,
       },
       permissions: {
-        getAll: getAllPermissions,
-        remove: removePermissions,
         request: requestPermission,
       },
       runtime: { sendMessage },
@@ -54,16 +48,15 @@ describe("popup pairing", () => {
     expect(sendMessage).toHaveBeenNthCalledWith(1, { type: "configuration" });
     expect(sendMessage).toHaveBeenNthCalledWith(2, { type: "pair", pairingNonce: "pairing-nonce" });
     expect(sendMessage).toHaveBeenNthCalledWith(3, { type: "configuration" });
-    expect(getAllPermissions).toHaveBeenCalledOnce();
-    expect(removePermissions).toHaveBeenCalledWith({ origins: ["https://stale.example:443/*"] });
     expect(document.querySelector("#origins button")?.textContent).toBe("allowOrigin");
+    expect(document.querySelector("#origins button")?.getAttribute("aria-label")).toBe("allowOriginFor https://example.com");
     expect(document.querySelector("#status")?.textContent).toBe("paired");
 
     document.querySelector<HTMLButtonElement>("#origins button")!.click();
     expect(requestPermission).toHaveBeenCalledWith({ origins: ["https://example.com:443/*"] });
   });
 
-  it("removes all HTTP origin grants after a successful empty configuration", async () => {
+  it("includes each configured origin in its permission button name", async () => {
     document.body.innerHTML = `
       <input id="pairing-nonce">
       <button id="pair" type="button"></button>
@@ -72,24 +65,30 @@ describe("popup pairing", () => {
       <ul id="origins"></ul>
       <output id="status"></output>
     `;
-    const removePermissions = vi.fn().mockResolvedValue(true);
     vi.stubGlobal("chrome", {
       i18n: {
         getUILanguage: () => "en-US",
-        getMessage: (id: string) => id,
+        getMessage: (id: string, substitutions?: string | string[]) => id === "allowOriginFor" ? `Allow access to ${String(substitutions)}` : id,
       },
       permissions: {
-        getAll: vi.fn().mockResolvedValue({ origins: ["http://old.example:80/*", "https://old.example:443/*"] }),
-        remove: removePermissions,
         request: vi.fn().mockResolvedValue(true),
       },
-      runtime: { sendMessage: vi.fn().mockResolvedValue({ ok: true, state: "configured", payload: { origins: [] } }) },
+      runtime: { sendMessage: vi.fn().mockResolvedValue({
+        ok: true,
+        state: "configured",
+        payload: { origins: [
+          { origin: "https://first.example", mappings: [] },
+          { origin: "https://second.example", mappings: [] },
+        ] },
+      }) },
     });
 
     await import("./popup.js");
 
-    await vi.waitFor(() => expect(removePermissions).toHaveBeenCalledOnce());
-    expect(removePermissions).toHaveBeenCalledWith({ origins: ["http://old.example:80/*", "https://old.example:443/*"] });
-    expect(document.querySelector("#origins")?.textContent).toBe("noConfiguredOrigins");
+    await vi.waitFor(() => expect(document.querySelectorAll("#origins button")).toHaveLength(2));
+    expect([...document.querySelectorAll("#origins button")].map((button) => button.getAttribute("aria-label"))).toEqual([
+      "Allow access to https://first.example",
+      "Allow access to https://second.example",
+    ]);
   });
 });

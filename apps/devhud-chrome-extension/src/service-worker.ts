@@ -44,10 +44,33 @@ function nativeRequest(type: "pair" | "configure" | "capture" | "ping", payload:
   });
 }
 
+function configuredPermissionPatterns(configuration: ExtensionConfiguration): Set<string> {
+  return new Set((configuration.origins ?? []).flatMap((configured) => {
+    const pattern = configuredOriginPermissionPattern(configured.origin);
+    return pattern ? [pattern] : [];
+  }));
+}
+
+async function removeStaleOriginPermissions(configuration: ExtensionConfiguration): Promise<void> {
+  const configured = configuredPermissionPatterns(configuration);
+  const granted = await chrome.permissions.getAll();
+  const stale = (granted.origins ?? []).filter((origin) => /^https?:\/\//u.test(origin) && !configured.has(origin));
+  if (stale.length > 0) await chrome.permissions.remove({ origins: stale });
+}
+
+async function configurationRequest(): Promise<NativeResponse> {
+  const response = await nativeRequest("configure", {});
+  if (response.ok) {
+    const configuration = (response.payload ?? {}) as ExtensionConfiguration;
+    await removeStaleOriginPermissions(configuration).catch(() => undefined);
+  }
+  return response;
+}
+
 async function capture(selectElement: boolean): Promise<NativeResponse> {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab?.id || tab.incognito || !tab.url?.match(/^https?:\/\//u)) return { version: 1, schema_version: 1, request_id: "", ok: false, state: tab?.incognito ? "denied" : "disconnected", payload: null };
-  const configurationResponse = await nativeRequest("configure", {});
+  const configurationResponse = await configurationRequest();
   if (!configurationResponse.ok) return configurationResponse;
   const configuration = (configurationResponse.payload ?? {}) as ExtensionConfiguration;
   const tabOrigin = new URL(tab.url).origin;
@@ -60,7 +83,7 @@ async function capture(selectElement: boolean): Promise<NativeResponse> {
   const result = injection?.result;
   if (!result) return { version: 1, schema_version: 1, request_id: "", ok: false, state: "disconnected", payload: null };
   const { liveUrl, ...context } = result;
-  const currentConfigurationResponse = selectElement ? await nativeRequest("configure", {}) : configurationResponse;
+  const currentConfigurationResponse = selectElement ? await configurationRequest() : configurationResponse;
   if (!currentConfigurationResponse.ok) return currentConfigurationResponse;
   const currentConfiguration = (currentConfigurationResponse.payload ?? {}) as ExtensionConfiguration;
   const mappingId = selectConfiguredMapping(currentConfiguration, liveUrl);
@@ -71,7 +94,7 @@ async function capture(selectElement: boolean): Promise<NativeResponse> {
 chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) => {
   if (typeof message !== "object" || message === null) return false;
   const request = message as { type?: string; pairingNonce?: string; selectElement?: boolean };
-  const work = request.type === "configuration" ? nativeRequest("configure", {}) : request.type === "pair" && typeof request.pairingNonce === "string" ? nativeRequest("pair", {}, request.pairingNonce) : request.type === "capture" ? capture(request.selectElement === true) : null;
+  const work = request.type === "configuration" ? configurationRequest() : request.type === "pair" && typeof request.pairingNonce === "string" ? nativeRequest("pair", {}, request.pairingNonce) : request.type === "capture" ? capture(request.selectElement === true) : null;
   if (!work) return false; void work.then(sendResponse).catch(() => sendResponse({ ok: false, state: "disconnected", payload: null })); return true;
 });
 connectNative();
