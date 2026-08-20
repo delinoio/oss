@@ -21,6 +21,7 @@ export function injectedCapture(selectElement: boolean, language: "en" | "ko" = 
   const allowedAttributes = new Set(["alt", "aria-describedby", "aria-hidden", "aria-label", "aria-labelledby", "role", "title"]);
   const clippingOverflow = new Set(["auto", "clip", "hidden", "scroll"]);
   const voidElements = new Set(["hr", "img"]);
+  const maximumPickerElements = 10_000;
   const encoder = new TextEncoder();
   const truncateUtf8 = (value: string, maximumBytes: number) => {
     let output = "";
@@ -209,6 +210,32 @@ export function injectedCapture(selectElement: boolean, language: "en" | "ko" = 
           empty: "No selectable elements are available. Press Escape to cancel.",
         };
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const candidates: Element[] = [];
+    const walker = document.createTreeWalker(document.documentElement, NodeFilter.SHOW_ELEMENT);
+    let scannedElements = 0;
+    for (let node: Node | null = walker.currentNode; node; node = walker.nextNode()) {
+      scannedElements += 1;
+      if (scannedElements > maximumPickerElements) {
+        resolve(null);
+        return;
+      }
+      if (node instanceof Element && allowedElements.has(node.localName)) candidates.push(node);
+    }
+    const shield = document.createElement("dialog");
+    shield.setAttribute("aria-label", selectionText.title);
+    for (const [property, value] of Object.entries({
+      position: "fixed",
+      inset: "0",
+      width: "100vw",
+      height: "100vh",
+      maxWidth: "none",
+      maxHeight: "none",
+      margin: "0",
+      padding: "0",
+      border: "0",
+      overflow: "hidden",
+      background: "transparent",
+    })) shield.style.setProperty(property.replace(/[A-Z]/gu, (character) => `-${character.toLowerCase()}`), value, "important");
     const overlay = document.createElement("iframe");
     overlay.title = selectionText.title;
     overlay.tabIndex = 0;
@@ -223,11 +250,20 @@ export function injectedCapture(selectElement: boolean, language: "en" | "ko" = 
       background: "transparent",
       zIndex: "2147483647",
     })) overlay.style.setProperty(property.replace(/[A-Z]/gu, (character) => `-${character.toLowerCase()}`), value, "important");
-    document.documentElement.append(overlay);
+    shield.append(overlay);
+    document.documentElement.append(shield);
+    try {
+      shield.showModal();
+    } catch {
+      shield.remove();
+      resolve(null);
+      return;
+    }
     const overlayWindow = overlay.contentWindow;
     const overlayDocument = overlay.contentDocument;
     if (!overlayWindow || !overlayDocument) {
-      overlay.remove();
+      shield.close();
+      shield.remove();
       resolve(null);
       return;
     }
@@ -272,10 +308,6 @@ export function injectedCapture(selectElement: boolean, language: "en" | "ko" = 
     })) highlight.style.setProperty(property.replace(/[A-Z]/gu, (character) => `-${character.toLowerCase()}`), value, "important");
     panel.append(instructions, status);
     overlayDocument.body.append(highlight, panel);
-    const selector = Array.from(allowedElements).join(",");
-    // Keep DOM candidate discovery linear, then stop the initial visibility scan
-    // as soon as the first eligible candidate is found.
-    const candidates = Array.from(document.querySelectorAll(selector));
     let initialCandidate: Element | null = previousFocus;
     while (initialCandidate && !isAllowedAndVisible(initialCandidate)) initialCandidate = initialCandidate.parentElement;
     let candidateIndex = initialCandidate ? candidates.indexOf(initialCandidate) : -1;
@@ -331,11 +363,14 @@ export function injectedCapture(selectElement: boolean, language: "en" | "ko" = 
       overlayWindow.removeEventListener("click", click, true);
       overlayWindow.removeEventListener("keydown", key, true);
       document.removeEventListener("keydown", key, true);
-      overlay.remove();
+      shield.removeEventListener("cancel", cancel);
+      if (shield.open) shield.close();
+      shield.remove();
       if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true });
     };
     const click = (event: MouseEvent) => {
       suppress(event);
+      shield.close();
       overlay.style.setProperty("pointer-events", "none", "important");
       const selected = document.elementFromPoint(event.clientX, event.clientY);
       const captured = result(selected);
@@ -354,11 +389,17 @@ export function injectedCapture(selectElement: boolean, language: "en" | "ko" = 
         resolve(captured);
       }
     };
+    const cancel = (event: Event) => {
+      suppress(event);
+      cleanup();
+      resolve(null);
+    };
     timeout = setTimeout(() => { cleanup(); resolve(null); }, 30_000);
     for (const eventName of pointerEvents) overlayWindow.addEventListener(eventName, suppress, { capture: true, passive: false });
     overlayWindow.addEventListener("click", click, true);
     overlayWindow.addEventListener("keydown", key, true);
     document.addEventListener("keydown", key, true);
+    shield.addEventListener("cancel", cancel);
     updateCandidate();
     overlayDocument.body.focus({ preventScroll: true });
   });

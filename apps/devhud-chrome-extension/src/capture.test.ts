@@ -2,6 +2,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { injectedCapture } from "./capture.js";
 
+const originalShowModal = Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, "showModal");
+const originalClose = Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, "close");
+
 async function select(
   element: Element,
   bounds = { x: 1, y: 2, width: 3, height: 4 },
@@ -28,6 +31,14 @@ async function select(
 describe("injected capture", () => {
   beforeEach(() => {
     vi.spyOn(Element.prototype, "getBoundingClientRect").mockReturnValue({ x: 1, y: 2, width: 100, height: 20 } as DOMRect);
+    Object.defineProperty(HTMLDialogElement.prototype, "showModal", {
+      configurable: true,
+      value: vi.fn(function (this: HTMLDialogElement) { this.setAttribute("open", ""); }),
+    });
+    Object.defineProperty(HTMLDialogElement.prototype, "close", {
+      configurable: true,
+      value: vi.fn(function (this: HTMLDialogElement) { this.removeAttribute("open"); }),
+    });
   });
 
   afterEach(() => {
@@ -35,6 +46,10 @@ describe("injected capture", () => {
     vi.useRealTimers();
     window.history.replaceState(null, "", "/");
     document.body.replaceChildren();
+    if (originalShowModal) Object.defineProperty(HTMLDialogElement.prototype, "showModal", originalShowModal);
+    else delete (HTMLDialogElement.prototype as Partial<HTMLDialogElement>).showModal;
+    if (originalClose) Object.defineProperty(HTMLDialogElement.prototype, "close", originalClose);
+    else delete (HTMLDialogElement.prototype as Partial<HTMLDialogElement>).close;
   });
 
   it.each([
@@ -228,6 +243,64 @@ describe("injected capture", () => {
         document.removeEventListener(eventName, pagePointerHandler);
       }
     }
+  });
+
+  it("places the selection shield in a modal top-layer dialog", async () => {
+    document.body.innerHTML = "<dialog open>page modal</dialog><main>safe</main>";
+
+    const capture = injectedCapture(true);
+    const overlay = document.querySelector("iframe");
+    const shield = overlay?.parentElement;
+    if (!(shield instanceof HTMLDialogElement) || !overlay?.contentWindow) throw new Error("selection shield was not created");
+
+    expect(HTMLDialogElement.prototype.showModal).toHaveBeenCalledOnce();
+    expect(shield.open).toBe(true);
+
+    overlay.contentWindow.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+    await expect(capture).resolves.toBeNull();
+    expect(document.querySelectorAll("dialog")).toHaveLength(1);
+  });
+
+  it("closes the top-layer shield before hit testing the page", async () => {
+    document.body.innerHTML = "<main>safe</main>";
+    const selected = document.querySelector("main")!;
+    const elementFromPoint = Object.getOwnPropertyDescriptor(document, "elementFromPoint");
+    const capture = injectedCapture(true);
+    const overlay = document.querySelector("iframe");
+    const shield = overlay?.parentElement;
+    if (!(shield instanceof HTMLDialogElement) || !overlay?.contentWindow) throw new Error("selection shield was not created");
+    Object.defineProperty(document, "elementFromPoint", {
+      configurable: true,
+      value: vi.fn(() => {
+        expect(shield.open).toBe(false);
+        return selected;
+      }),
+    });
+
+    try {
+      overlay.contentWindow.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, clientX: 1, clientY: 2 }));
+      await expect(capture).resolves.toMatchObject({ outerHtml: "<main>safe</main>" });
+    } finally {
+      if (elementFromPoint) Object.defineProperty(document, "elementFromPoint", elementFromPoint);
+      else delete (document as Partial<Document>).elementFromPoint;
+    }
+  });
+
+  it("degrades to manual selection when the top-layer shield cannot open", async () => {
+    vi.mocked(HTMLDialogElement.prototype.showModal).mockImplementationOnce(() => { throw new DOMException("blocked"); });
+
+    await expect(injectedCapture(true)).resolves.toBeNull();
+    expect(document.querySelector("iframe")).toBeNull();
+  });
+
+  it("degrades to manual selection when the page exceeds the picker scan budget", async () => {
+    const fragment = document.createDocumentFragment();
+    for (let index = 0; index < 10_000; index += 1) fragment.append(document.createElement("div"));
+    document.body.append(fragment);
+
+    await expect(injectedCapture(true)).resolves.toBeNull();
+    expect(document.querySelector("iframe")).toBeNull();
+    expect(HTMLDialogElement.prototype.showModal).not.toHaveBeenCalled();
   });
 
   it("cancels selection with Escape and removes the overlay", async () => {
