@@ -180,10 +180,15 @@ assert(nativeBridgeTypeScript.includes('cefRevision: ""'), "browser runtime diag
 assert(updaterRoot.keyId === "devhud-release-root-v1" && updaterRoot.algorithm === "ed25519", "desktop updater trust-root identity changed");
 assert(updaterRust.includes(updaterRoot.publicKey) && updaterRust.includes(updaterRoot.fingerprint), "native updater trust root drifted from committed metadata");
 assert(updaterRust.includes(`ROOT_PRODUCTION_READY: bool = ${String(updaterRoot.productionReady)}`), "native updater readiness gate drifted from committed metadata");
-assert(updaterRust.includes("!ROOT_PRODUCTION_READY && !cfg!(test)"), "non-test updater builds must fail closed while the root is not production-ready");
+assert(updaterRust.includes("root_ready_for_publication().is_err() && !cfg!(test)"), "non-test updater builds must fail closed while the root is not production-ready");
 assert(updaterRust.includes("https://devhud.api.delino.io"), "native updater endpoint is not fixed");
+assert(!updaterRust.toLowerCase().includes("bootstrap"), "bootstrap must not participate in desktop updater discovery");
 assert(!tauriConfig.app.security.csp.includes("devhud.api.delino.io"), "frontend CSP must not receive updater network access");
 assert(!updaterRust.includes("AUTHORIZATION") && !updaterRust.includes("COOKIE"), "desktop updater must not ship credential headers");
+for (const [id, packageKind] of Object.entries({ "macos-x64": "macos-app", "macos-arm64": "macos-app", "windows-x64": "windows-nsis", "windows-arm64": "windows-nsis", "ubuntu-x64": "linux-deb", "ubuntu-arm64": "linux-deb" })) {
+  assert(new RegExp(`- id: ${id}[\\s\\S]{0,180}package: ${packageKind}`, "u").test(ciWorkflow), `${id} updater package kind is not fixed`);
+}
+assert(ciWorkflow.includes("DEVHUD_PACKAGE_KIND: ${{ matrix.package }}"), "desktop package builds do not compile the installed package kind");
 
 assert(appCargo.includes('tauri-plugin-deep-link = "=2.4.9"'), "desktop deep-link plugin version changed");
 assert(appCargo.includes('tauri-plugin-single-instance = { version = "=2.4.3", features = ["deep-link"] }'), "desktop single-instance deep-link integration changed");

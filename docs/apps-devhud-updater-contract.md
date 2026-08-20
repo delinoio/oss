@@ -23,7 +23,7 @@ The manifest response is limited to 256 KiB and is never redirected. Artifacts a
 
 ## Signed Manifest and Version Policy
 
-The schema-one envelope contains a base64-encoded canonical payload, its Ed25519 signature, an optional successor chain, and optional rollback authorization. Unknown JSON fields, malformed sizes/times/versions, mismatched channel/target/package, empty English or Korean release notes, prerelease candidates on stable, and unapproved artifact URLs fail closed.
+The schema-one envelope contains a base64-encoded canonical payload, its Ed25519 signature, an optional successor chain, and optional rollback authorization. Unknown JSON fields, malformed sizes/times/versions, mismatched channel/target/package, empty English or Korean release notes, prerelease or build-qualified candidates on stable, and unapproved artifact URLs fail closed.
 
 The application pins the SHA-256 fingerprint and 32-byte public key for `devhud-release-root-v1`. A manifest signed by another key is accepted only when every ordered successor record:
 

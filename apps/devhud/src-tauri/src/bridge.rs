@@ -168,11 +168,14 @@ fn updater_response(state: &NativeBridgeState) -> Result<Value, String> {
 #[cfg(desktop)]
 fn perform_update_check(state: &NativeBridgeState) -> Result<Value, String> {
     let (target, package) = {
-        let updater = state
+        let mut updater = state
             .updater
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let updater = updater.as_ref().ok_or("unsupported")?;
+        let updater = updater.as_mut().ok_or("unsupported")?;
+        if !updater.begin_check() {
+            return Ok(json!({ "kind": "desktop-update-status", "status": updater.snapshot() }));
+        }
         (
             crate::platform::DesktopTarget::current(),
             updater.snapshot().package_kind,
@@ -202,9 +205,10 @@ pub fn start_update_scheduler<R: tauri::Runtime>(
     }
     std::thread::spawn(move || {
         let mut schedule = crate::updater::CheckSchedule::after_frontend_ready();
-        let mut active_runtime_seconds = 0_u64;
+        let mut active_runtime = Duration::ZERO;
         let mut last_tick = std::time::Instant::now();
-        let mut wall_deadline = std::time::SystemTime::now() + crate::updater::FIRST_CHECK_DELAY;
+        let mut wall_deadline =
+            std::time::SystemTime::now() + Duration::from_secs(schedule.next_due_seconds());
         loop {
             std::thread::sleep(Duration::from_secs(1));
             let now = std::time::Instant::now();
@@ -216,9 +220,9 @@ pub fn start_update_scheduler<R: tauri::Runtime>(
                 last_tick = now;
                 continue;
             }
-            active_runtime_seconds =
-                active_runtime_seconds.saturating_add(now.duration_since(last_tick).as_secs());
+            active_runtime = active_runtime.saturating_add(now.duration_since(last_tick));
             last_tick = now;
+            let active_runtime_seconds = active_runtime.as_secs();
             let overdue_after_resume = std::time::SystemTime::now() >= wall_deadline;
             if !schedule.is_due(active_runtime_seconds) && !overdue_after_resume {
                 continue;
@@ -239,7 +243,8 @@ pub fn start_update_scheduler<R: tauri::Runtime>(
                 Err(code) => tracing::warn!(event = "updater_check_failed", error_code = code),
             }
             schedule.mark_checked(active_runtime_seconds);
-            wall_deadline = std::time::SystemTime::now() + crate::updater::CHECK_INTERVAL;
+            wall_deadline =
+                std::time::SystemTime::now() + Duration::from_secs(schedule.next_due_seconds());
         }
     });
 }
@@ -1104,26 +1109,45 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
                 updater.cancellation_token(),
             )
         };
-        let artifact = tauri::async_runtime::spawn_blocking(move || {
-            crate::updater::UpdaterTransport::new()
-                .and_then(|transport| transport.download(&candidate, package, &canceled))
-        })
-        .await
-        .map_err(|_| "platform-failure".to_string())?;
-        let mut updater = state
-            .updater
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let updater = updater.as_mut().ok_or("unsupported")?;
-        match artifact {
-            Ok(artifact) => {
-                if let Err(error) = updater.complete_download(artifact) {
-                    updater.record_error(error);
+        let worker_cancellation = canceled.clone();
+        let updater_state = state.inner().clone();
+        let updater_app = app.clone();
+        std::mem::drop(tauri::async_runtime::spawn_blocking(move || {
+            let artifact = crate::updater::UpdaterTransport::new().and_then(|transport| {
+                transport.download(&candidate, package, &worker_cancellation)
+            });
+            let snapshot = {
+                let mut updater = updater_state
+                    .updater
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                let Some(updater) = updater.as_mut() else {
+                    return;
+                };
+                if !Arc::ptr_eq(&canceled, &updater.cancellation_token()) {
+                    return;
                 }
+                match artifact {
+                    Ok(artifact) => {
+                        if let Err(error) = updater.complete_download(artifact) {
+                            updater.record_error(error);
+                        }
+                    }
+                    Err(error) => updater.record_error(error),
+                }
+                updater.snapshot()
+            };
+            if updater_app
+                .emit(
+                    "devhud:native-event:v1",
+                    json!({ "version": 1, "kind": "desktop-update-status", "status": snapshot }),
+                )
+                .is_err()
+            {
+                tracing::warn!(event = "updater_status_emit_failed");
             }
-            Err(error) => updater.record_error(error),
-        }
-        return Ok(json!({ "kind": "desktop-update-status", "status": updater.snapshot() }));
+        }));
+        return updater_response(&state);
     }
     if operation == "updates.cancel" {
         let mut updater = state

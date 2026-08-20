@@ -341,7 +341,7 @@ pub fn verify_manifest(
     package_kind: PackageKind,
     now: OffsetDateTime,
 ) -> Result<VerifiedCandidate, UpdaterError> {
-    if !ROOT_PRODUCTION_READY && !cfg!(test) {
+    if root_ready_for_publication().is_err() && !cfg!(test) {
         return Err(UpdaterError::new(
             DiagnosticCode::InvalidSignature,
             UpdatePhase::Verification,
@@ -419,7 +419,7 @@ pub fn verify_manifest(
     validate_payload(&payload, target, package_kind, &trusted_fingerprint)?;
     let version = Version::parse(&payload.version)
         .map_err(|_| UpdaterError::new(DiagnosticCode::Malformed, UpdatePhase::Verification))?;
-    if !version.pre.is_empty() {
+    if !version.pre.is_empty() || !version.build.is_empty() {
         return Err(UpdaterError::new(
             DiagnosticCode::Unsupported,
             UpdatePhase::Verification,
@@ -1079,7 +1079,7 @@ impl UpdateHealthProbe {
 }
 
 pub fn health_probe_from_args() -> Option<UpdateHealthProbe> {
-    parse_health_probe(std::env::args())
+    parse_health_probe(std::env::args_os().filter_map(|argument| argument.into_string().ok()))
 }
 
 fn parse_health_probe(arguments: impl IntoIterator<Item = String>) -> Option<UpdateHealthProbe> {
@@ -1212,6 +1212,25 @@ impl UpdaterController {
         self.snapshot.clone()
     }
 
+    pub fn begin_check(&mut self) -> bool {
+        if !matches!(
+            self.snapshot.kind,
+            UpdaterStateKind::Idle
+                | UpdaterStateKind::UpToDate
+                | UpdaterStateKind::Available
+                | UpdaterStateKind::Failed
+                | UpdaterStateKind::Canceled
+        ) {
+            return false;
+        }
+        self.candidate = None;
+        self.artifact = None;
+        self.snapshot.candidate = None;
+        self.snapshot.kind = UpdaterStateKind::Checking;
+        self.snapshot.diagnostic = None;
+        true
+    }
+
     pub fn check_bytes(&mut self, manifest: &[u8], now: OffsetDateTime) {
         self.snapshot.kind = UpdaterStateKind::Checking;
         self.snapshot.diagnostic = None;
@@ -1250,7 +1269,9 @@ impl UpdaterController {
                 UpdatePhase::Download,
             ));
         }
-        self.canceled.store(false, Ordering::Release);
+        // A new download receives a new token so an older canceled worker can
+        // never be revived by a later retry.
+        self.canceled = Arc::new(AtomicBool::new(false));
         self.snapshot.kind = UpdaterStateKind::Downloading;
         Ok(())
     }
@@ -1551,11 +1572,28 @@ mod tests {
         let same = fixture("0.1.0", &root, vec![], None);
         let mut controller =
             UpdaterController::new(Version::new(0, 1, 0), target(), package()).unwrap();
+        assert!(controller.begin_check());
+        assert!(!controller.begin_check());
+        assert!(controller.begin_download().is_err());
         controller.check_bytes(&same, now());
         assert_eq!(controller.snapshot().kind, UpdaterStateKind::UpToDate);
         controller.check_bytes(&signed, now());
         assert_eq!(controller.snapshot().kind, UpdaterStateKind::Available);
         assert_eq!(controller.snapshot().candidate.unwrap().version, "0.2.0");
+        for unstable_version in ["0.3.0-rc.1", "0.3.0+rebuilt"] {
+            assert_eq!(
+                verify_manifest(
+                    &fixture(unstable_version, &root, vec![], None),
+                    &Version::new(0, 1, 0),
+                    target(),
+                    package(),
+                    now()
+                )
+                .unwrap_err()
+                .code,
+                DiagnosticCode::Unsupported
+            );
+        }
     }
 
     #[test]
@@ -1673,6 +1711,7 @@ mod tests {
             UpdaterController::new(Version::new(0, 1, 0), target(), package()).unwrap();
         controller.check_bytes(&signed, now());
         controller.begin_download().unwrap();
+        let canceled_worker = controller.cancellation_token();
         controller.cancel();
         assert_eq!(
             controller.complete_download(artifact).unwrap_err().code,
@@ -1680,6 +1719,10 @@ mod tests {
         );
         assert_eq!(controller.snapshot().installed_version, "0.1.0");
         assert_eq!(controller.snapshot().kind, UpdaterStateKind::Canceled);
+        controller.check_bytes(&signed, now());
+        controller.begin_download().unwrap();
+        assert!(canceled_worker.load(Ordering::Acquire));
+        assert!(!controller.cancellation_token().load(Ordering::Acquire));
     }
 
     #[test]

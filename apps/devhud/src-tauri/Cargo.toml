@@ -30,14 +30,14 @@ base64 = "=0.22.1"
 dirs = "6"
 ed25519-dalek = "=2.2.0"
 fontdue = "=0.9.3"
-flate2 = "=1.1.5"
+flate2 = "=1.1.9"
 image = { version = "=0.25.10", default-features = false, features = ["png"] }
 keyring = "=4.1.6"
 rfd = { version = "=0.16.0", default-features = false, features = ["gtk3"] }
 reqwest = { version = "=0.12.28", default-features = false, features = ["blocking", "rustls-tls"] }
 semver = { version = "=1.0.27", features = ["serde"] }
 tempfile = "=3.25.0"
-time = { version = "=0.3.47", features = ["parsing"] }
+time = { version = "=0.3.55", features = ["parsing"] }
 png = "=0.17.16"
 rand = "=0.9.4"
 sha2 = "=0.10.9"
@@ -50,7 +50,7 @@ wait-timeout = "0.2"
 rdev = "0.5.3"
 tauri-plugin-deep-link = "=2.4.9"
 tauri-plugin-single-instance = { version = "=2.4.3", features = ["deep-link"] }
-tar = "=0.4.44"
+tar = "=0.4.46"
 xcap = { version = "=0.4.0", default-features = false }
 zeroize = { version = "=1.8.2", features = ["derive"] }
 
