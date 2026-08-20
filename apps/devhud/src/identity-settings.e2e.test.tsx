@@ -675,10 +675,14 @@ describe("generated Connect identity/settings fixture", () => {
 
   it("purges an irreversible account when Web Storage removal fails", async () => {
     const purges: string[] = [];
+    const cancellationGeneration = deckPollingCancellationGeneration();
     localStorage.setItem("devhud.identity.v1.account.fixture", "sensitive");
     const originalRemoveItem = Storage.prototype.removeItem;
     vi.spyOn(Storage.prototype, "removeItem").mockImplementation(function (this: Storage, key) {
-      if (key.startsWith("devhud.identity.v1.")) throw new DOMException("denied", "SecurityError");
+      if (key.startsWith("devhud.identity.v1.")) {
+        expect(deckPollingCancellationGeneration()).toBeGreaterThan(cancellationGeneration);
+        throw new DOMException("denied", "SecurityError");
+      }
       originalRemoveItem.call(this, key);
     });
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
@@ -717,6 +721,7 @@ describe("generated Connect identity/settings fixture", () => {
   });
 
   it("clears a terminal Logto refresh failure before any service request", async () => {
+    const cancellationGeneration = deckPollingCancellationGeneration();
     let authenticated = true;
     const clear = vi.fn(async () => { authenticated = false; });
     vi.spyOn(identityClient, "createIdentitySession").mockResolvedValue({
@@ -731,6 +736,11 @@ describe("generated Connect identity/settings fixture", () => {
     writeAuthenticatedSettingsCache(localStorage, "https://devhud.api.delino.io", { settings: defaultDevHudSettings, revision: 9n, cachedAt: "2026-08-17T00:00:00.000Z" });
     const deckCache = deckCacheKey(await sessionProfileId("https://devhud.api.delino.io"), "018f47a2-7b3c-7def-8abc-1234567890ac");
     localStorage.setItem(deckCache, "private Deck data");
+    const originalRemoveItem = Storage.prototype.removeItem;
+    vi.spyOn(Storage.prototype, "removeItem").mockImplementation(function (this: Storage, key) {
+      if (key === deckCache) expect(deckPollingCancellationGeneration()).toBeGreaterThan(cancellationGeneration);
+      originalRemoveItem.call(this, key);
+    });
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);

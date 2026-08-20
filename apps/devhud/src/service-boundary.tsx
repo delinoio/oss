@@ -212,6 +212,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
 
   function clearInvalidSession(): Promise<void> {
     if (invalidSessionCleanupRef.current !== null) return invalidSessionCleanupRef.current;
+    invalidateDeckPolling();
     const current = sessionRef.current;
     sessionRef.current = null;
     setSession(null);
@@ -258,6 +259,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   }
 
   async function clearIrrecoverableAccount(): Promise<void> {
+    invalidateDeckPolling();
     setDeckAccessSuspended(true);
     setStatus("error");
     clearAllContractedLocalData(storage);
