@@ -45,7 +45,7 @@ var (
 	trailingURLPunctuation  = regexp.MustCompile(`[)\]}>.,;]+$`)
 	percentEncodedOctets    = regexp.MustCompile(`(?i)(%[0-9a-f]{2})+`)
 	encodedWindowsDrivePath = regexp.MustCompile(`(?i)^[A-Za-z]:(%2f|%5c)`)
-	credentialParameterName = regexp.MustCompile(`(?i)^(code|oauth[_.-]?code|password|passwd|pwd|secret|token|client[_.-]?secret|(access|refresh|id)[_.-]?token|(r2[_.-]?)?access[_.-]?key[_.-]?id|api[_.-]?key|private[_.-]?key|authorization|cookie|set-cookie|x-amz-(credential|signature))$`)
+	credentialParameterName = regexp.MustCompile(`(?i)^(code|oauth[_.-]?code|credentials?|password|passwd|pwd|secret|token|client[_.-]?secret|(access|refresh|id)[_.-]?token|(r2[_.-]?)?access[_.-]?key[_.-]?id|api[_.-]?key|private[_.-]?key|authorization|cookie|set-cookie|x-amz-(credential|signature))$`)
 	diagnosticAssignment    = regexp.MustCompile(`(?i)(^|[[:space:]]|[(\[{,;&])["']?([A-Za-z][A-Za-z0-9_.-]{0,63})["']?[[:space:]]*[:=][[:space:]]*[^[:space:]&;]+`)
 	forbiddenLocalPath      = regexp.MustCompile(`(?i)(^([[:space:]\p{P}])?|[^:][[:space:]\p{P}=]|:[[:space:]]+)([a-z]:[\\/][^[:space:]]*|\\\\[^[:space:]]+|~/[^[:space:]]+|/[^/[:space:]][^[:space:]]*)`)
 	forbiddenDiagnostic     = []*regexp.Regexp{

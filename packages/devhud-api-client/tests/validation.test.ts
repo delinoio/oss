@@ -644,6 +644,8 @@ describe("wire validation helpers", () => {
       "DEVHUD_SIGNING_KEY=unsafe-value",
       "code=unsafe-value",
       "oauth_code: unsafe-value",
+      "credential=hunter2",
+      "credentials: hunter2",
       "pat=hunter2",
       "session_id=secret",
       "signing_value=secret",

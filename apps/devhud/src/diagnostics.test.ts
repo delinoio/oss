@@ -443,6 +443,8 @@ describe("diagnostics privacy boundary", () => {
       "-----BEGIN PRIVATE KEY-----",
       "password=hunter2",
       "oauth_code: secret",
+      "credential=hunter2",
+      "credentials: hunter2",
       "password%3Dhunter2",
       "pat=hunter2",
       "session_id=secret",
@@ -480,6 +482,25 @@ describe("diagnostics privacy boundary", () => {
     expect(redactDiagnosticValue({ parameters: "state=opaque;component=renderer" })).toEqual({
       parameters: "state=opaque;component=renderer",
     });
+  });
+
+  it("drops persisted events containing shortcut labels", () => {
+    const now = Date.parse("2026-08-17T00:00:00.000Z");
+    const safe = fixtureEvent(now);
+    for (const shortcut of [
+      "shortcut_key=Digit1",
+      "shortcut-keystroke: KeyK",
+      "shortcut key = Digit2",
+    ]) {
+      const unsafe = { ...fixtureEvent(now - 1), summary: shortcut };
+      localStorage.setItem(DiagnosticsStorageKey, JSON.stringify([unsafe, safe]));
+
+      const events = readDiagnosticEvents(localStorage, now);
+      expect(events).toEqual([safe]);
+      expect(JSON.parse(localStorage.getItem(DiagnosticsStorageKey) ?? "null")).toEqual([safe]);
+      expect(redactDiagnosticValue({ detail: shortcut })).toEqual({});
+      expect(prepareDiagnosticsBundle(safe, events).exportJson).not.toContain(shortcut);
+    }
   });
 
   it("drops ill-formed Unicode from persisted events and recursive redaction", () => {

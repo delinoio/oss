@@ -227,6 +227,8 @@ func TestSubmitCrashReportRejectsUnlabeledCredentialsBeforePersistence(t *testin
 		"semicolon parameters":     "state=ok;code=abc123",
 		"standalone OAuth code":    "code=secret",
 		"standalone OAuth label":   "oauth_code: secret",
+		"generic credential":       "credential=hunter2",
+		"generic credentials":      "credentials: hunter2",
 		"JSON OAuth code":          `{"code":"secret"}`,
 		"R2 access key identifier": "r2_access_key_id=0123456789abcdef",
 		"configured R2 access key": "DEVHUD_R2_ACCESS_KEY_ID=0123456789abcdef",
