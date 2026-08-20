@@ -86,8 +86,7 @@ export function configureIosWidgetProject(projectPath = join(generatedRoot, "app
       { path: "DevHudWidgetShared/SelectDeck.intentdefinition" },
     ],
     info: { path: "DevHudWidget/Info.plist" },
-    entitlements: { path: "DevHudWidget/DevHudWidget.entitlements" },
-    settings: { base: { PRODUCT_BUNDLE_IDENTIFIER: "io.delino.devhud.widget", PRODUCT_NAME: "DevHUD Deck", CURRENT_PROJECT_VERSION: "1", MARKETING_VERSION: "0.1.0", SKIP_INSTALL: "YES", SWIFT_VERSION: "5.9", TARGETED_DEVICE_FAMILY: "1,2" } },
+    settings: { base: { PRODUCT_BUNDLE_IDENTIFIER: "io.delino.devhud.widget", PRODUCT_NAME: "DevHUD Deck", CURRENT_PROJECT_VERSION: "1", MARKETING_VERSION: "0.1.0", SKIP_INSTALL: "YES", SWIFT_VERSION: "5.9", TARGETED_DEVICE_FAMILY: "1,2", CODE_SIGN_ENTITLEMENTS: "DevHudWidget/DevHudWidget.entitlements" } },
   };
   project.targets.DevHudWidgetIntent = {
     type: "app-extension",
@@ -98,8 +97,7 @@ export function configureIosWidgetProject(projectPath = join(generatedRoot, "app
       { path: "DevHudWidgetShared/SelectDeck.intentdefinition" },
     ],
     info: { path: "DevHudWidgetIntent/Info.plist" },
-    entitlements: { path: "DevHudWidgetIntent/DevHudWidgetIntent.entitlements" },
-    settings: { base: { PRODUCT_BUNDLE_IDENTIFIER: "io.delino.devhud.widget.intent", PRODUCT_NAME: "DevHUD Deck Selection", CURRENT_PROJECT_VERSION: "1", MARKETING_VERSION: "0.1.0", SKIP_INSTALL: "YES", SWIFT_VERSION: "5.9", TARGETED_DEVICE_FAMILY: "1,2" } },
+    settings: { base: { PRODUCT_BUNDLE_IDENTIFIER: "io.delino.devhud.widget.intent", PRODUCT_NAME: "DevHUD Deck Selection", CURRENT_PROJECT_VERSION: "1", MARKETING_VERSION: "0.1.0", SKIP_INSTALL: "YES", SWIFT_VERSION: "5.9", TARGETED_DEVICE_FAMILY: "1,2", CODE_SIGN_ENTITLEMENTS: "DevHudWidgetIntent/DevHudWidgetIntent.entitlements" } },
   };
   const [applicationName, applicationTarget] = application;
   applicationTarget.dependencies = [...(applicationTarget.dependencies ?? []).filter((dependency) => !["DevHudWidget", "DevHudWidgetIntent"].includes(dependency?.target)), { target: "DevHudWidget", embed: true }, { target: "DevHudWidgetIntent", embed: true }];

@@ -36,5 +36,8 @@ test("generated iOS projects embed the production widget extension", () => {
     assert.match(generated, /target: DevHudWidget[\s\S]*embed: true/u);
     assert.match(generated, /target: DevHudWidgetIntent[\s\S]*embed: true/u);
     assert.match(generated, /deploymentTarget: '16\.0'/u);
+    assert.match(generated, /CODE_SIGN_ENTITLEMENTS: DevHudWidget\/DevHudWidget\.entitlements/u);
+    assert.match(generated, /CODE_SIGN_ENTITLEMENTS: DevHudWidgetIntent\/DevHudWidgetIntent\.entitlements/u);
+    assert.doesNotMatch(generated, /^\s+entitlements:/mu);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
