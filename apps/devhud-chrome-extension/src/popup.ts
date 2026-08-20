@@ -50,10 +50,27 @@ function renderOrigins(configuration: Configuration) {
   }
 }
 
+function configuredPermissionPatterns(configuration: Configuration): Set<string> {
+  return new Set((configuration.origins ?? []).flatMap((configured) => {
+    const pattern = configuredOriginPermissionPattern(configured.origin);
+    return pattern ? [pattern] : [];
+  }));
+}
+
+async function removeStaleOriginPermissions(configuration: Configuration) {
+  const configured = configuredPermissionPatterns(configuration);
+  const granted = await chrome.permissions.getAll();
+  const stale = (granted.origins ?? []).filter((origin) => /^https?:\/\//u.test(origin) && !configured.has(origin));
+  if (stale.length > 0) await chrome.permissions.remove({ origins: stale });
+}
+
 async function refreshOrigins() {
   try {
     const response = await send({ type: "configuration" });
-    renderOrigins((response.payload ?? {}) as Configuration);
+    if (!response.ok) { renderOrigins({}); return; }
+    const configuration = (response.payload ?? {}) as Configuration;
+    await removeStaleOriginPermissions(configuration).catch(() => undefined);
+    renderOrigins(configuration);
   } catch {
     renderOrigins({});
   }

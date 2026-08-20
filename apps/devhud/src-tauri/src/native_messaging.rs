@@ -2,7 +2,7 @@ use std::{
     collections::HashSet,
     io,
     sync::{
-        Arc, Mutex, OnceLock,
+        Arc, Mutex, MutexGuard, OnceLock,
         atomic::{AtomicBool, AtomicU64, Ordering},
     },
     time::{Duration, Instant},
@@ -79,6 +79,11 @@ struct NativeMessagingState {
     pending_pairing: Mutex<Option<PendingPairing>>,
     configuration: Mutex<Value>,
     latest_context: Mutex<Option<Value>>,
+}
+
+pub(crate) struct PairingInvalidation<'a> {
+    messaging_state: &'a NativeMessagingState,
+    _lifecycle: MutexGuard<'a, ()>,
 }
 
 struct PendingPairing {
@@ -418,32 +423,67 @@ pub fn native_messaging_take_context() -> Option<Value> {
 }
 
 pub fn invalidate_pairing() -> Result<(), String> {
-    match invalidate_pairing_with(state(), delete_pairing_secret) {
-        Ok(()) => {
-            info!(event = "native_messaging_pairing_invalidated");
-            Ok(())
-        }
-        Err(error) => {
-            warn!(event = "native_messaging_pairing_storage_cleanup_failed");
-            Err(error)
-        }
-    }
+    begin_pairing_invalidation().commit()
 }
 
-fn invalidate_pairing_with(
+pub(crate) fn begin_pairing_invalidation() -> PairingInvalidation<'static> {
+    begin_pairing_invalidation_with(state())
+}
+
+fn begin_pairing_invalidation_with(
     messaging_state: &NativeMessagingState,
-    delete: impl FnOnce() -> Result<(), String>,
-) -> Result<(), String> {
-    let _lifecycle = messaging_state
+) -> PairingInvalidation<'_> {
+    let lifecycle = messaging_state
         .pairing_lifecycle
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     invalidate_in_memory_pairing(messaging_state);
-    delete()?;
-    messaging_state
-        .authentication_revoked
-        .store(false, Ordering::SeqCst);
-    Ok(())
+    PairingInvalidation {
+        messaging_state,
+        _lifecycle: lifecycle,
+    }
+}
+
+impl PairingInvalidation<'_> {
+    pub(crate) fn commit(self) -> Result<(), String> {
+        match self.commit_with(delete_pairing_secret) {
+            Ok(()) => {
+                info!(event = "native_messaging_pairing_invalidated");
+                Ok(())
+            }
+            Err(error) => {
+                warn!(event = "native_messaging_pairing_storage_cleanup_failed");
+                Err(error)
+            }
+        }
+    }
+
+    fn commit_with(self, delete: impl FnOnce() -> Result<(), String>) -> Result<(), String> {
+        delete()?;
+        self.messaging_state
+            .authentication_revoked
+            .store(false, Ordering::SeqCst);
+        Ok(())
+    }
+}
+
+fn commit_latest_context_if_current(
+    messaging_state: &NativeMessagingState,
+    generation: u64,
+    context: Value,
+) -> bool {
+    let _lifecycle = messaging_state
+        .pairing_lifecycle
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if !session_generation_is_current(messaging_state, generation) {
+        return false;
+    }
+    *messaging_state
+        .latest_context
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(context);
+    true
 }
 
 fn invalidate_in_memory_pairing(messaging_state: &NativeMessagingState) {
@@ -733,10 +773,10 @@ fn serve_connection(mut stream: impl ConnectionStream) -> Result<(), String> {
                         .unwrap_or_else(std::sync::PoisonError::into_inner);
                     match authorize_capture(request.payload, &configuration) {
                         Ok(context) => {
-                            *state()
-                                .latest_context
-                                .lock()
-                                .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(context);
+                            if !commit_latest_context_if_current(state(), generation, context) {
+                                accepted = false;
+                                error = Some("request-rejected".to_string());
+                            }
                         }
                         Err(reason) => {
                             accepted = false;
@@ -983,10 +1023,52 @@ mod tests {
     }
 
     #[test]
+    fn pairing_credentials_are_not_deleted_until_invalidation_is_committed() {
+        let messaging_state = NativeMessagingState::default();
+        let deletion_called = AtomicBool::new(false);
+
+        let invalidation = begin_pairing_invalidation_with(&messaging_state);
+
+        assert!(
+            messaging_state
+                .authentication_revoked
+                .load(Ordering::SeqCst)
+        );
+        assert!(!deletion_called.load(Ordering::SeqCst));
+        invalidation
+            .commit_with(|| {
+                deletion_called.store(true, Ordering::SeqCst);
+                Ok(())
+            })
+            .unwrap();
+        assert!(deletion_called.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn revoked_generation_cannot_commit_captured_context() {
+        let messaging_state = NativeMessagingState::default();
+        let generation = messaging_state.generation.load(Ordering::SeqCst);
+        assert!(commit_latest_context_if_current(
+            &messaging_state,
+            generation,
+            json!({ "current": true }),
+        ));
+
+        drop(begin_pairing_invalidation_with(&messaging_state));
+
+        assert!(!commit_latest_context_if_current(
+            &messaging_state,
+            generation,
+            json!({ "stale": true }),
+        ));
+        assert!(messaging_state.latest_context.lock().unwrap().is_none());
+    }
+
+    #[test]
     fn failed_pairing_deletion_blocks_reauthentication() {
         let messaging_state = NativeMessagingState::default();
-        let result =
-            invalidate_pairing_with(&messaging_state, || Err("storage-failure".to_string()));
+        let result = begin_pairing_invalidation_with(&messaging_state)
+            .commit_with(|| Err("storage-failure".to_string()));
 
         assert_eq!(result, Err("storage-failure".to_string()));
         assert!(

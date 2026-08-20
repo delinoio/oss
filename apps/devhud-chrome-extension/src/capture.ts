@@ -166,12 +166,63 @@ export function injectedCapture(selectElement: boolean) {
   };
   if (!selectElement) return Promise.resolve(result(null));
   return new Promise<InjectedCapturedBrowserContext | null>((resolve) => {
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const overlay = document.createElement("iframe");
+    overlay.title = "DevHUD element selection";
+    overlay.tabIndex = -1;
+    overlay.setAttribute("aria-hidden", "true");
+    for (const [property, value] of Object.entries({
+      position: "fixed",
+      inset: "0",
+      width: "100vw",
+      height: "100vh",
+      border: "0",
+      margin: "0",
+      padding: "0",
+      background: "transparent",
+      zIndex: "2147483647",
+    })) overlay.style.setProperty(property.replace(/[A-Z]/gu, (character) => `-${character.toLowerCase()}`), value, "important");
+    document.documentElement.append(overlay);
+    const overlayWindow = overlay.contentWindow;
+    const overlayDocument = overlay.contentDocument;
+    if (!overlayWindow || !overlayDocument) {
+      overlay.remove();
+      resolve(null);
+      return;
+    }
+    overlayDocument.documentElement.style.setProperty("cursor", "crosshair", "important");
+    overlayDocument.documentElement.style.setProperty("min-height", "100%", "important");
+    overlayDocument.body.style.setProperty("min-height", "100vh", "important");
+    overlayDocument.body.style.setProperty("margin", "0", "important");
+    overlayDocument.body.style.setProperty("background", "transparent", "important");
     let timeout: ReturnType<typeof setTimeout> | undefined;
-    const cleanup = () => { if (timeout) clearTimeout(timeout); document.removeEventListener("click", click, true); document.removeEventListener("keydown", key, true); };
-    const click = (event: MouseEvent) => { event.preventDefault(); event.stopPropagation(); cleanup(); resolve(result(event.target instanceof Element ? event.target : null)); };
-    const key = (event: KeyboardEvent) => { if (event.key === "Escape") { event.preventDefault(); cleanup(); resolve(null); } };
+    const pointerEvents = ["pointerdown", "pointerup", "mousedown", "mouseup", "touchstart", "touchend", "contextmenu"];
+    const suppress = (event: Event) => { event.preventDefault(); event.stopImmediatePropagation(); };
+    const cleanup = () => {
+      if (timeout) clearTimeout(timeout);
+      for (const eventName of pointerEvents) overlayWindow.removeEventListener(eventName, suppress, true);
+      overlayWindow.removeEventListener("click", click, true);
+      overlayWindow.removeEventListener("keydown", key, true);
+      document.removeEventListener("keydown", key, true);
+      overlay.remove();
+      if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true });
+    };
+    const click = (event: MouseEvent) => {
+      suppress(event);
+      overlay.style.setProperty("pointer-events", "none", "important");
+      const selected = document.elementFromPoint(event.clientX, event.clientY);
+      const captured = result(selected);
+      cleanup();
+      resolve(captured);
+    };
+    const key = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { suppress(event); cleanup(); resolve(null); }
+    };
     timeout = setTimeout(() => { cleanup(); resolve(null); }, 30_000);
-    document.addEventListener("click", click, true);
+    for (const eventName of pointerEvents) overlayWindow.addEventListener(eventName, suppress, { capture: true, passive: false });
+    overlayWindow.addEventListener("click", click, true);
+    overlayWindow.addEventListener("keydown", key, true);
     document.addEventListener("keydown", key, true);
+    overlay.focus({ preventScroll: true });
   });
 }

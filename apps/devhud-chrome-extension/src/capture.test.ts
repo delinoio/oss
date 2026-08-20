@@ -2,13 +2,27 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { injectedCapture } from "./capture.js";
 
-async function select(element: Element, bounds = { x: 1, y: 2, width: 3, height: 4 }) {
+async function select(
+  element: Element,
+  bounds = { x: 1, y: 2, width: 3, height: 4 },
+  dispatchSelection?: (overlayWindow: Window) => void,
+) {
   Object.defineProperty(element, "getBoundingClientRect", {
     value: () => bounds,
   });
+  const elementFromPoint = Object.getOwnPropertyDescriptor(document, "elementFromPoint");
+  Object.defineProperty(document, "elementFromPoint", { configurable: true, value: () => element });
   const capture = injectedCapture(true);
-  element.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
-  return await capture;
+  const overlayWindow = document.querySelector("iframe")?.contentWindow;
+  if (!overlayWindow) throw new Error("selection overlay was not created");
+  if (dispatchSelection) dispatchSelection(overlayWindow);
+  else overlayWindow.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, clientX: bounds.x, clientY: bounds.y }));
+  try {
+    return await capture;
+  } finally {
+    if (elementFromPoint) Object.defineProperty(document, "elementFromPoint", elementFromPoint);
+    else delete (document as Partial<Document>).elementFromPoint;
+  }
 }
 
 describe("injected capture", () => {
@@ -146,6 +160,41 @@ describe("injected capture", () => {
     expect(result.outerHtml.endsWith("</main>")).toBe(true);
   });
 
+  it("isolates the complete pointer sequence from the selected page", async () => {
+    document.body.innerHTML = "<main>safe</main>";
+    const pagePointerHandler = vi.fn();
+    for (const eventName of ["pointerdown", "mousedown", "mouseup", "click"]) {
+      document.addEventListener(eventName, pagePointerHandler);
+    }
+
+    try {
+      const result = await select(document.body.firstElementChild!, undefined, (overlayWindow) => {
+        for (const eventName of ["pointerdown", "mousedown", "mouseup", "click"]) {
+          overlayWindow.dispatchEvent(new MouseEvent(eventName, { bubbles: true, cancelable: true, clientX: 1, clientY: 2 }));
+        }
+      });
+
+      expect(result?.outerHtml).toBe("<main>safe</main>");
+      expect(pagePointerHandler).not.toHaveBeenCalled();
+      expect(document.querySelector("iframe")).toBeNull();
+    } finally {
+      for (const eventName of ["pointerdown", "mousedown", "mouseup", "click"]) {
+        document.removeEventListener(eventName, pagePointerHandler);
+      }
+    }
+  });
+
+  it("cancels selection with Escape and removes the overlay", async () => {
+    const capture = injectedCapture(true);
+    const overlayWindow = document.querySelector("iframe")?.contentWindow;
+    if (!overlayWindow) throw new Error("selection overlay was not created");
+
+    overlayWindow.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+
+    await expect(capture).resolves.toBeNull();
+    expect(document.querySelector("iframe")).toBeNull();
+  });
+
   it("cancels an abandoned interactive selection", async () => {
     vi.useFakeTimers();
     const capture = injectedCapture(true);
@@ -153,5 +202,6 @@ describe("injected capture", () => {
     await vi.advanceTimersByTimeAsync(30_000);
 
     await expect(capture).resolves.toBeNull();
+    expect(document.querySelector("iframe")).toBeNull();
   });
 });

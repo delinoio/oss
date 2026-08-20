@@ -529,10 +529,14 @@ fn deletes_capture_drafts_for_purge_scope(scope: Option<&str>) -> bool {
 #[cfg(desktop)]
 fn purge_capture_drafts_before_secure_store<T>(
     purge_drafts: impl FnOnce() -> Result<(), crate::capture::CaptureError>,
+    purge_pairing: impl FnOnce() -> Result<(), String>,
     purge_secure_store: impl FnOnce() -> Result<T, String>,
 ) -> Result<T, String> {
     purge_drafts().map_err(|_| "storage-failure".to_string())?;
-    purge_secure_store().map_err(|_| "storage-failure".to_string())
+    let pairing_result = purge_pairing();
+    let secure_store_result = purge_secure_store().map_err(|_| "storage-failure".to_string());
+    pairing_result?;
+    secure_store_result
 }
 
 fn runtime_platform() -> &'static str {
@@ -742,31 +746,40 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
             validate_secure_request(&request)?;
         }
         let purge_scope = request.get("scope").and_then(Value::as_str);
-        let invalidation =
-            if operation == "secure.purge" && purge_invalidates_native_messaging(purge_scope) {
-                crate::native_messaging::invalidate_pairing()
-            } else {
-                Ok(())
-            };
+        let pairing_invalidation = (operation == "secure.purge"
+            && purge_invalidates_native_messaging(purge_scope))
+        .then(crate::native_messaging::begin_pairing_invalidation);
         if operation == "secure.purge" && matches!(purge_scope, Some("logout" | "account-deletion"))
         {
             let purge = capture
                 .begin_purge()
                 .map_err(|error| error.code().to_string())?;
+            let mut pairing_invalidation = pairing_invalidation;
             let purge_result = if deletes_capture_drafts_for_purge_scope(purge_scope) {
                 purge_capture_drafts_before_secure_store(
                     || purge.purge_drafts(),
+                    || {
+                        pairing_invalidation
+                            .take()
+                            .expect("account exit purge must invalidate pairing")
+                            .commit()
+                    },
                     || crate::secure_store::handle(&request),
                 )
             } else {
-                crate::secure_store::handle(&request).map_err(|_| "storage-failure".to_string())
+                let pairing_result = pairing_invalidation
+                    .take()
+                    .expect("account exit purge must invalidate pairing")
+                    .commit();
+                let secure_store_result = crate::secure_store::handle(&request)
+                    .map_err(|_| "storage-failure".to_string());
+                pairing_result?;
+                secure_store_result
             };
             drop(purge);
-            invalidation?;
             return purge_result;
         }
         let secure_result = crate::secure_store::handle(&request);
-        invalidation?;
         return secure_result;
     }
     if operation == "auth.open-system-browser" {
@@ -1020,6 +1033,8 @@ async fn handle_capture_request(
 
 #[cfg(test)]
 mod tests {
+    #[cfg(desktop)]
+    use std::cell::RefCell;
     use std::sync::atomic::{AtomicBool, Ordering};
 
     use serde_json::{Value, json};
@@ -1048,9 +1063,14 @@ mod tests {
     #[cfg(desktop)]
     #[test]
     fn failed_capture_draft_purge_skips_secure_store_purge() {
+        let pairing_purge_called = AtomicBool::new(false);
         let secure_store_called = AtomicBool::new(false);
         let result = purge_capture_drafts_before_secure_store::<Value>(
             || Err(crate::capture::CaptureError::StorageFailure),
+            || {
+                pairing_purge_called.store(true, Ordering::SeqCst);
+                Ok(())
+            },
             || {
                 secure_store_called.store(true, Ordering::SeqCst);
                 Ok(json!({ "kind": "ok" }))
@@ -1058,7 +1078,31 @@ mod tests {
         );
 
         assert_eq!(result.unwrap_err(), "storage-failure");
+        assert!(!pairing_purge_called.load(Ordering::SeqCst));
         assert!(!secure_store_called.load(Ordering::SeqCst));
+    }
+
+    #[cfg(desktop)]
+    #[test]
+    fn successful_draft_purge_deletes_pairing_before_secure_store() {
+        let calls = RefCell::new(Vec::new());
+        let result = purge_capture_drafts_before_secure_store(
+            || {
+                calls.borrow_mut().push("drafts");
+                Ok(())
+            },
+            || {
+                calls.borrow_mut().push("pairing");
+                Ok(())
+            },
+            || {
+                calls.borrow_mut().push("secure-store");
+                Ok(json!({ "kind": "ok" }))
+            },
+        );
+
+        assert!(result.is_ok());
+        assert_eq!(*calls.borrow(), ["drafts", "pairing", "secure-store"]);
     }
 
     #[test]

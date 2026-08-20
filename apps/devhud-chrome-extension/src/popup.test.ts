@@ -24,14 +24,22 @@ describe("popup pairing", () => {
         ok: true,
         state: "configured",
         payload: { origins: [{ origin: "https://example.com", mappings: [] }] },
-      });
+    });
     const requestPermission = vi.fn().mockResolvedValue(true);
+    const getAllPermissions = vi.fn().mockResolvedValue({
+      origins: ["https://example.com:443/*", "https://stale.example:443/*"],
+    });
+    const removePermissions = vi.fn().mockResolvedValue(true);
     vi.stubGlobal("chrome", {
       i18n: {
         getUILanguage: () => "en-US",
         getMessage: (id: string) => id,
       },
-      permissions: { request: requestPermission },
+      permissions: {
+        getAll: getAllPermissions,
+        remove: removePermissions,
+        request: requestPermission,
+      },
       runtime: { sendMessage },
     });
 
@@ -46,10 +54,42 @@ describe("popup pairing", () => {
     expect(sendMessage).toHaveBeenNthCalledWith(1, { type: "configuration" });
     expect(sendMessage).toHaveBeenNthCalledWith(2, { type: "pair", pairingNonce: "pairing-nonce" });
     expect(sendMessage).toHaveBeenNthCalledWith(3, { type: "configuration" });
+    expect(getAllPermissions).toHaveBeenCalledOnce();
+    expect(removePermissions).toHaveBeenCalledWith({ origins: ["https://stale.example:443/*"] });
     expect(document.querySelector("#origins button")?.textContent).toBe("allowOrigin");
     expect(document.querySelector("#status")?.textContent).toBe("paired");
 
     document.querySelector<HTMLButtonElement>("#origins button")!.click();
     expect(requestPermission).toHaveBeenCalledWith({ origins: ["https://example.com:443/*"] });
+  });
+
+  it("removes all HTTP origin grants after a successful empty configuration", async () => {
+    document.body.innerHTML = `
+      <input id="pairing-nonce">
+      <button id="pair" type="button"></button>
+      <button id="capture" type="button"></button>
+      <button id="select" type="button"></button>
+      <ul id="origins"></ul>
+      <output id="status"></output>
+    `;
+    const removePermissions = vi.fn().mockResolvedValue(true);
+    vi.stubGlobal("chrome", {
+      i18n: {
+        getUILanguage: () => "en-US",
+        getMessage: (id: string) => id,
+      },
+      permissions: {
+        getAll: vi.fn().mockResolvedValue({ origins: ["http://old.example:80/*", "https://old.example:443/*"] }),
+        remove: removePermissions,
+        request: vi.fn().mockResolvedValue(true),
+      },
+      runtime: { sendMessage: vi.fn().mockResolvedValue({ ok: true, state: "configured", payload: { origins: [] } }) },
+    });
+
+    await import("./popup.js");
+
+    await vi.waitFor(() => expect(removePermissions).toHaveBeenCalledOnce());
+    expect(removePermissions).toHaveBeenCalledWith({ origins: ["http://old.example:80/*", "https://old.example:443/*"] });
+    expect(document.querySelector("#origins")?.textContent).toBe("noConfiguredOrigins");
   });
 });

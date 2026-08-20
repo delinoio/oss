@@ -12,6 +12,8 @@ test("manifest and source preserve the least-privilege collection boundary", asy
   const popup = await readFile(join(root, "src/popup.ts"), "utf8");
   assert.match(worker, /connectNative\(HostName\)/u);
   assert.match(popup, /permissions\.request/u);
+  assert.match(popup, /permissions\.getAll/u);
+  assert.match(popup, /permissions\.remove/u);
   assert.match(popup, /synchronously inside the button gesture/u);
   assert.ok(worker.indexOf('nativeRequest("configure", {})') < worker.indexOf("chrome.scripting.executeScript"));
   assert.doesNotMatch(`${worker}\n${popup}`, /chrome\.(?:cookies|webRequest|debugger|storage)|localStorage|sessionStorage|console\./u);
