@@ -109,6 +109,27 @@ describe("Deck surface", () => {
     });
   });
 
+  it("retains the complete cache and retries when GitHub search is incomplete", async () => {
+    const cacheScope = `origin.scope.${profile.id}`;
+    writeDeckCache(localStorage, cacheScope, { version: DeckCacheVersion, deckId: deck.id, query: deck.query, queryEtag: "cached-etag", results: [pullRequest], lastSuccessfulAt: "2026-08-17T00:00:00.000Z", rate: null, failures: 0, nextRefreshAt: null, transitionKeys: [], pendingNotifications: [] });
+    const searchPullRequests = vi.fn(async () => ({ items: [], nextPage: null, notModified: false, incompleteResults: true, metadata: { etag: "partial-etag", rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } } }));
+    const enrichPullRequests = vi.fn();
+    const bridge = bridgeWith(async (request) => request.operation === "secure.read" ? { kind: "secure-value", value: "token" } : { kind: "ok" });
+    render(<DeckPollingBoundary bridge={bridge} active online provider={{ ...provider(), searchPullRequests, enrichPullRequests }}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    await waitFor(() => expect(searchPullRequests).toHaveBeenCalledOnce());
+    await waitFor(() => {
+      const cache = JSON.parse(localStorage.getItem(deckCacheKey(cacheScope, deck.id)) ?? "null") as { queryEtag: string | null; results: unknown; lastSuccessfulAt: string | null; failures: number; nextRefreshAt: string | null };
+      expect(cache.queryEtag).toBe("cached-etag");
+      expect(cache.results).toEqual([pullRequest]);
+      expect(cache.lastSuccessfulAt).toBe("2026-08-17T00:00:00.000Z");
+      expect(cache.failures).toBe(1);
+      expect(cache.nextRefreshAt).not.toBeNull();
+    });
+    expect(enrichPullRequests).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert").textContent).toBe(messages.en.deckErrorIncomplete);
+  });
+
   it("persists a delivered transition key after polling is suspended", async () => {
     const notificationsDeck = { ...deck, notifications: ["review" as const] };
     const cacheScope = `origin.scope.${profile.id}`;
@@ -122,7 +143,7 @@ describe("Deck surface", () => {
     });
     const bridge = bridgeWith(request);
     const updated = { ...pullRequest, reviewDecision: "approved" as const, updatedAt: "2026-08-18T00:01:00.000Z" };
-    const providerWithTransition = { ...provider(), searchPullRequests: vi.fn(async () => ({ items: [{ nodeId: pullRequest.nodeId, number: pullRequest.number, title: pullRequest.title, url: pullRequest.url, draft: pullRequest.draft, repository: pullRequest.repository }], nextPage: null, notModified: false, metadata: { etag: null, rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } } })), enrichPullRequests: vi.fn(async () => ({ items: [updated], metadata: { etag: null, rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } } })) };
+    const providerWithTransition = { ...provider(), searchPullRequests: vi.fn(async () => ({ items: [{ nodeId: pullRequest.nodeId, number: pullRequest.number, title: pullRequest.title, url: pullRequest.url, draft: pullRequest.draft, repository: pullRequest.repository }], nextPage: null, notModified: false, incompleteResults: false, metadata: { etag: null, rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } } })), enrichPullRequests: vi.fn(async () => ({ items: [updated], metadata: { etag: null, rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } } })) };
     const view = render(<DeckPollingBoundary bridge={bridge} active online provider={providerWithTransition}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
     await waitFor(() => expect(request).toHaveBeenCalledWith(expect.objectContaining({ operation: "notifications.publish-deck-change" })));
 
@@ -150,7 +171,7 @@ describe("Deck surface", () => {
     });
     const bridge = bridgeWith(request);
     const updated = { ...pullRequest, reviewDecision: "approved" as const, updatedAt: "2026-08-18T00:01:00.000Z" };
-    const providerWithTransition = { ...provider(), searchPullRequests: vi.fn(async () => ({ items: [{ nodeId: pullRequest.nodeId, number: pullRequest.number, title: pullRequest.title, url: pullRequest.url, draft: pullRequest.draft, repository: pullRequest.repository }], nextPage: null, notModified: false, metadata: { etag: null, rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } } })), enrichPullRequests: vi.fn(async () => ({ items: [updated], metadata: { etag: null, rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } } })) };
+    const providerWithTransition = { ...provider(), searchPullRequests: vi.fn(async () => ({ items: [{ nodeId: pullRequest.nodeId, number: pullRequest.number, title: pullRequest.title, url: pullRequest.url, draft: pullRequest.draft, repository: pullRequest.repository }], nextPage: null, notModified: false, incompleteResults: false, metadata: { etag: null, rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } } })), enrichPullRequests: vi.fn(async () => ({ items: [updated], metadata: { etag: null, rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } } })) };
     render(<DeckPollingBoundary bridge={bridge} active online provider={providerWithTransition}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
 
     await waitFor(() => expect(publicationAttempts).toBe(1));
@@ -297,7 +318,7 @@ describe("Deck surface", () => {
   it("keeps the Deck schedule when unrelated settings change", async () => {
     const scope = Promise.resolve("origin.scope");
     const validateRepository = provider().validateRepository;
-    const searchPullRequests = vi.fn(async () => ({ items: [], nextPage: null, notModified: false, metadata: { etag: null, rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } } }));
+    const searchPullRequests = vi.fn(async () => ({ items: [], nextPage: null, notModified: false, incompleteResults: false, metadata: { etag: null, rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } } }));
     const bridge = bridgeWith(async (request) => request.operation === "secure.read" ? { kind: "secure-value", value: "token" } : { kind: "ok" });
     identity = identityWith({ githubPatScopeId: scope });
     const suppliedProvider = { ...provider(), validateRepository, searchPullRequests };

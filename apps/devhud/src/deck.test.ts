@@ -20,6 +20,12 @@ describe("Deck query and local transitions", () => {
     expect(parseDeckBuilder(raw)).toMatchObject({ repository: "real/project" });
     expect(applyDeckBuilder(raw, "repository", "next/project")).toBe('"find repo:foo/bar" repo:next/project is:pr');
   });
+  it("enforces GitHub Search text and Boolean-operator limits", () => {
+    expect(validateDeckQuery(`${"x".repeat(257)} repo:octo/widgets is:pr`)).toBe(false);
+    const branch = (index: number) => `repo:octo/widgets-${index} is:pr`;
+    expect(validateDeckQuery(Array.from({ length: 6 }, (_, index) => branch(index)).join(" OR "))).toBe(true);
+    expect(validateDeckQuery(Array.from({ length: 7 }, (_, index) => branch(index)).join(" OR "))).toBe(false);
+  });
   it("normalizes an emptied builder back to null", () => {
     expect(updateDeckBuilder({ repository: null, author: null, review: null, label: "needs review", state: null }, "label", null)).toBeNull();
   });

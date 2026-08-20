@@ -183,6 +183,11 @@ describe("GitHub.com provider", () => {
     await expect(provider.getPullRequest(fine, privateRepository, 9)).resolves.toMatchObject({ pullRequest: { author: "octocat", headSha: "0123456789abcdef", labels: ["needs-review"] }, metadata: { etag: '"pull"' } });
   });
 
+  it("propagates incomplete pull-request search results", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => json({ incomplete_results: true, items: [] }));
+    await expect(createGitHubProvider({ fetch }).searchPullRequests(fine, "repo:octo/widgets is:pr")).resolves.toMatchObject({ incompleteResults: true, items: [] });
+  });
+
   it("skips unsupported requested-reviewer union members while enriching pull requests", async () => {
     const fetch = vi.fn<typeof globalThis.fetch>(async () => json({ data: { nodes: [{
       id: "PR_kwDOFixture", number: 9, title: "Deterministic pull request", url: "https://github.com/octo-private/controls/pull/9", isDraft: false,

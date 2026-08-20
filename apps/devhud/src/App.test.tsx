@@ -236,6 +236,39 @@ describe("native App state", () => {
     expect(deckLink).toBeNull();
   });
 
+  it("keeps a Deck link queued through successful first-run bootstrap", async () => {
+    localStorage.removeItem("devhud.shell.onboarding.v1");
+    window.__TAURI_INTERNALS__ = { invoke: vi.fn() };
+    let deckLink: string | null = "018f47a2-7b3c-7def-8abc-1234567890ab";
+    vi.spyOn(identityClient, "createIdentitySession").mockResolvedValue({
+      getAccessToken: async () => "fixture-access-token",
+      isAuthenticated: async () => false,
+      signIn: async () => {},
+      handleCallback: async () => {},
+      clear: async () => {},
+    } as unknown as IdentitySession);
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      projectId: "PROJECT_ID_DEVHUD", protocolSchemaVersion: 1, apiVersion: "0.1.0-dev", logtoIssuer: "https://identity.example/oidc", logtoAudience: "https://api.example/api",
+      logtoClients: { desktop: "desktop-client", ios: "ios-client", android: "android-client", admin: "admin-client" }, logtoRedirects: { native: "devhud://auth/callback", admin: "https://admin.example/callback" },
+    }), { status: 200, headers: { "Content-Type": "application/json", "Connect-Protocol-Version": "1" } })));
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      if (value.operation === "deck.peek-pending-link") return { kind: "deck-link", deckId: deckLink };
+      if (value.operation === "deck.take-pending-link") { const deckId = deckLink; deckLink = null; return { kind: "deck-link", deckId }; }
+      if (value.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+
+    render(<App bridge={bridgeWith(request)} initialRuntime={desktopRuntime} />);
+    await screen.findByRole("button", { name: messages.en.continueLocally });
+    await waitFor(() => expect(request).toHaveBeenCalledWith({ operation: "deck.peek-pending-link" }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(request.mock.calls.filter(([value]) => value.operation === "deck.take-pending-link")).toHaveLength(0);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.continueLocally }));
+    await waitFor(() => expect(request).toHaveBeenCalledWith({ operation: "deck.take-pending-link" }));
+    expect(deckLink).toBeNull();
+  });
+
   it("peeks for a callback only after the native listener is installed", async () => {
     const operations: string[] = [];
     const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {

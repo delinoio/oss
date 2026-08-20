@@ -239,7 +239,7 @@ func validateSettingsDeck(value any, path string, legacy bool, previous bool) (s
 	if err != nil {
 		return "", err
 	}
-	normalizedName := strings.TrimSpace(name)
+	normalizedName := strings.TrimFunc(name, deckQueryWhitespace)
 	if normalizedName == "" || (!legacy && !previous && normalizedName != name) {
 		return "", fmt.Errorf("%s.name must be a trimmed nonblank string", path)
 	}
@@ -253,6 +253,9 @@ func validateSettingsDeck(value any, path string, legacy bool, previous bool) (s
 	}
 	if !legacy && !previous && !hasRepositoryQualifier {
 		return "", fmt.Errorf("%s.query must contain a repository qualifier when a credential profile is selected", path)
+	}
+	if !legacy && !previous && !deckQueryWithinGitHubSearchLimits(query) {
+		return "", fmt.Errorf("%s.query exceeds GitHub Search limits", path)
 	}
 	profileRef := ""
 	if !legacy {
@@ -471,6 +474,35 @@ func deckQueryHasBooleanSyntax(query string) bool {
 		}
 	}
 	return false
+}
+
+func deckQueryWithinGitHubSearchLimits(query string) bool {
+	operators := 0
+	excludedLength := 0
+	for _, token := range deckQueryTokens(query) {
+		if strings.EqualFold(token, "and") || strings.EqualFold(token, "or") || strings.EqualFold(token, "not") {
+			operators++
+			excludedLength += settingsTextLength(token)
+		} else if deckQueryGitHubSearchQualifier(token) {
+			excludedLength += settingsTextLength(token)
+		}
+	}
+	return operators <= 5 && settingsTextLength(query)-excludedLength <= 256
+}
+
+func deckQueryGitHubSearchQualifier(value string) bool {
+	value = strings.TrimPrefix(value, "-")
+	separator := strings.IndexByte(value, ':')
+	if separator < 1 {
+		return false
+	}
+	for _, character := range value[:separator] {
+		if !(character >= 'a' && character <= 'z' || character >= 'A' && character <= 'Z' || character >= '0' && character <= '9' || character == '-') {
+			return false
+		}
+	}
+	first := value[0]
+	return first >= 'a' && first <= 'z' || first >= 'A' && first <= 'Z'
 }
 
 func unquoteSettingsDeckQualifier(value string) string {

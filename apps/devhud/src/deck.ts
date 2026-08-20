@@ -1,6 +1,6 @@
 import { GitHubErrorCode, GitHubProviderError, type GitHubDeckPullRequest, type GitHubRate } from "./github-provider.ts";
 import { NativeBridgeError, NativeBridgeErrorCode } from "./native-bridge.ts";
-import { deckBuilderProjection, deckBuilderToken, hasPositivePullRequestQualifier, type DeckBuilder, type DevHudSettingsV1 } from "./settings-contract.ts";
+import { deckBuilderProjection, deckBuilderToken, hasGitHubSearchQueryLimits, hasPositivePullRequestQualifier, type DeckBuilder, type DevHudSettingsV1 } from "./settings-contract.ts";
 
 export const DeckCacheVersion = 2 as const;
 export const DeckResultLimit = 100 as const;
@@ -27,7 +27,7 @@ export interface DeckCache {
   readonly pendingNotifications?: readonly DeckPendingNotification[];
 }
 
-export type DeckFailure = "token" | "secure-storage" | "permission" | "query" | "network" | "rate-limit" | "unknown";
+export type DeckFailure = "token" | "secure-storage" | "permission" | "query" | "network" | "rate-limit" | "incomplete-results" | "unknown";
 
 export function deckCacheKey(scope: string, deckId: string): string { return `devhud.deck.v${DeckCacheVersion}.${scope}.${deckId}`; }
 
@@ -161,5 +161,5 @@ export function parseDeckBuilder(query: string): DeckBuilder | null {
   return deckBuilderProjection(query);
 }
 
-export function validateDeckQuery(query: string): boolean { return query.trim().length > 0 && hasPositivePullRequestQualifier(query); }
+export function validateDeckQuery(query: string): boolean { return query.trim().length > 0 && hasPositivePullRequestQualifier(query) && hasGitHubSearchQueryLimits(query); }
 function quoteQualifier(value: string): string { return /[\s"\\]/u.test(value) ? `"${value.replaceAll("\\", "\\\\").replaceAll("\"", "\\\"")}"` : value; }

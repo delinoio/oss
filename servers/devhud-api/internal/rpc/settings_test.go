@@ -96,6 +96,13 @@ func TestValidateDevHudSettingsDeckQualifiers(t *testing.T) {
 	if err := validateDevHudSettings([]byte(settings("repo:octo/widgets\ufeffis:pr", `[]`)), 4); err != nil {
 		t.Fatalf("BOM-separated qualifier: %v", err)
 	}
+	if err := validateDevHudSettings([]byte(settings(strings.Join([]string{"repo:octo/widgets is:pr", strings.Repeat("x", 257)}, " "), `[]`)), 4); err == nil {
+		t.Fatal("overlong search text was accepted")
+	}
+	fiveOperators := strings.Join([]string{"repo:octo/widgets-0 is:pr", "repo:octo/widgets-1 is:pr", "repo:octo/widgets-2 is:pr", "repo:octo/widgets-3 is:pr", "repo:octo/widgets-4 is:pr", "repo:octo/widgets-5 is:pr"}, " OR ")
+	if err := validateDevHudSettings([]byte(settings(fiveOperators, `[]`)), 4); err != nil {
+		t.Fatalf("five Boolean operators: %v", err)
+	}
 	if err := validateDevHudSettings([]byte(settings("(repo:octo/widgets is:pr OR (repo:octo/tools is:pr AND author:octocat))", `[]`)), 4); err != nil {
 		t.Fatalf("branch-scoped Boolean qualifiers: %v", err)
 	}
@@ -122,6 +129,8 @@ func TestValidateDevHudSettingsDeckQualifiers(t *testing.T) {
 		}, " "), `[]`),
 		"blank Deck name":         strings.Replace(settings("repo:octo/widgets is:pr", `[]`), `"name":"Deck"`, `"name":"   "`, 1),
 		"untrimmed Deck name":     strings.Replace(settings("repo:octo/widgets is:pr", `[]`), `"name":"Deck"`, `"name":" Deck "`, 1),
+		"BOM-padded Deck name":    strings.Replace(settings("repo:octo/widgets is:pr", `[]`), `"name":"Deck"`, `"name":"\ufeffDeck"`, 1),
+		"six Boolean operators":   settings(strings.Join([]string{"repo:octo/widgets-0 is:pr", "repo:octo/widgets-1 is:pr", "repo:octo/widgets-2 is:pr", "repo:octo/widgets-3 is:pr", "repo:octo/widgets-4 is:pr", "repo:octo/widgets-5 is:pr", "repo:octo/widgets-6 is:pr"}, " OR "), `[]`),
 		"quoted pull request":     settings(`\"find is:pr here\" repo:octo/widgets`, `[]`),
 		"duplicate notifications": settings("repo:octo/widgets is:pr", `["review","review"]`),
 		"duplicate deck IDs": strings.Replace(

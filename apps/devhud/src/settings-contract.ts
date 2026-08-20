@@ -349,6 +349,8 @@ function hasExactRepositoryQualifier(query: string, repository: string): boolean
 export interface DeckRepositoryRef { readonly owner: string; readonly name: string }
 
 export const DeckRepositoryLimit = 10 as const;
+export const GitHubSearchQueryTextLimit = 256 as const;
+export const GitHubSearchQueryOperatorLimit = 5 as const;
 const DeckQueryBranchLimit = 100 as const;
 const githubOwnerIdentifier = /^[A-Za-z0-9-]{1,39}$/u;
 const githubRepositoryIdentifier = /^[A-Za-z0-9._-]{1,100}$/u;
@@ -421,6 +423,28 @@ const deckQueryWhitespace = /[\u0009-\u000D\u0020\u00A0\u1680\u2000-\u200A\u2028
 export function hasDeckBooleanQuerySyntax(query: string): boolean {
   const tokens = deckBooleanTokens(query);
   return tokens !== null && tokens.some((token) => token.kind !== "term" || token.value.toLowerCase() === "and" || token.value.toLowerCase() === "or");
+}
+
+/** Matches GitHub Search's text and Boolean-operator limits without charging qualifiers. */
+export function hasGitHubSearchQueryLimits(query: string): boolean {
+  let operators = 0;
+  let excludedLength = 0;
+  for (const token of deckQueryTokens(query)) {
+    const normalized = token.value.toLowerCase();
+    if (normalized === "and" || normalized === "or" || normalized === "not") {
+      operators += 1;
+      excludedLength += token.end - token.start;
+    } else if (isGitHubSearchQualifier(token.value)) {
+      excludedLength += token.end - token.start;
+    }
+  }
+  return operators <= GitHubSearchQueryOperatorLimit && query.length - excludedLength <= GitHubSearchQueryTextLimit;
+}
+
+function isGitHubSearchQualifier(value: string): boolean {
+  const source = value.startsWith("-") ? value.slice(1) : value;
+  const separator = source.indexOf(":");
+  return separator > 0 && /^[A-Za-z][A-Za-z0-9-]*$/u.test(source.slice(0, separator));
 }
 
 /** Parses GitHub's Boolean search grammar to prove every reachable branch is repository-scoped. */
