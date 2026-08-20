@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { DesktopUpdaterStatus, NativeBridgeEventV1, NativeBridgeRequestV1, NativeBridgeResponseV1, NativeBridgeV1 } from "./native-bridge";
@@ -67,6 +67,34 @@ describe("desktop updater approvals", () => {
     await waitFor(() => expect(operations).toEqual([
       "updates.status", "updates.approve-download", "updates.approve-installation", "updates.approve-restart",
     ]));
+  });
+
+  it("registers the updater listener before reading the current status", async () => {
+    let finishListening: (() => void) | undefined;
+    let nativeStatus: DesktopUpdaterStatus = { ...available, kind: "checking", candidate: null };
+    const request = vi.fn(async (_value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => ({
+      kind: "desktop-update-status",
+      status: nativeStatus,
+    }));
+    const bridge: NativeBridgeV1 = {
+      request,
+      listen(_listener) {
+        return new Promise((resolve) => {
+          finishListening = () => resolve(() => {});
+        });
+      },
+    };
+
+    render(<DesktopUpdaterPanel bridge={bridge} language="en" />);
+    expect(finishListening).toBeTypeOf("function");
+    expect(request).not.toHaveBeenCalled();
+
+    nativeStatus = { ...available, kind: "downloaded" };
+    await act(async () => { finishListening?.(); });
+
+    expect(await screen.findByRole("button", { name: "Approve installation" })).toBeTruthy();
+    expect(request).toHaveBeenCalledOnce();
+    expect(request).toHaveBeenCalledWith({ operation: "updates.status" });
   });
 
   it("does not let a stale command response replace a newer updater event", async () => {

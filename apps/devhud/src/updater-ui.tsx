@@ -78,17 +78,23 @@ export function DesktopUpdaterPanel({ bridge, language }: { readonly bridge: Nat
   useEffect(() => {
     let active = true;
     let unsubscribe: (() => void) | undefined;
-    const requestedAtRevision = statusRevision.current;
-    void bridge.request({ operation: "updates.status" }).then((response) => {
-      if (active && response.kind === "desktop-update-status" && statusRevision.current === requestedAtRevision) {
-        applyStatus(response.status);
-      }
-    }).catch(() => {});
     void bridge.listen((event) => {
       if (active && event.kind === "desktop-update-status") {
         applyStatus(event.status);
       }
-    }).then((unlisten) => { if (active) unsubscribe = unlisten; else unlisten(); }).catch(() => {});
+    }).then((unlisten) => {
+      if (!active) {
+        unlisten();
+        return;
+      }
+      unsubscribe = unlisten;
+      const requestedAtRevision = statusRevision.current;
+      return bridge.request({ operation: "updates.status" }).then((response) => {
+        if (active && response.kind === "desktop-update-status" && statusRevision.current === requestedAtRevision) {
+          applyStatus(response.status);
+        }
+      });
+    }).catch(() => {});
     return () => { active = false; unsubscribe?.(); };
   }, [bridge]);
 
