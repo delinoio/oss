@@ -1199,28 +1199,50 @@ fn replace_macos_bundle_transactionally(
     restart_executable: &Path,
     relaunch: impl FnOnce() -> Result<(), DiagnosticCode>,
 ) -> Result<RestartDisposition, DiagnosticCode> {
+    sync_tree(replacement).map_err(|_| DiagnosticCode::InstallationFailed)?;
+    replace_macos_bundle_transactionally_with_operations(
+        destination,
+        replacement,
+        restart_executable,
+        |parent| {
+            fs::File::open(parent)
+                .and_then(|directory| directory.sync_all())
+                .map_err(|_| DiagnosticCode::InstallationFailed)
+        },
+        atomic_exchange,
+        relaunch,
+    )
+}
+
+#[cfg(any(test, target_os = "macos"))]
+fn replace_macos_bundle_transactionally_with_operations(
+    destination: &Path,
+    replacement: &Path,
+    restart_executable: &Path,
+    mut sync_parent: impl FnMut(&Path) -> Result<(), DiagnosticCode>,
+    mut exchange: impl FnMut(&Path, &Path) -> Result<(), DiagnosticCode>,
+    relaunch: impl FnOnce() -> Result<(), DiagnosticCode>,
+) -> Result<RestartDisposition, DiagnosticCode> {
     let parent = destination
         .parent()
         .ok_or(DiagnosticCode::InstallationFailed)?;
-    sync_tree(replacement).map_err(|_| DiagnosticCode::InstallationFailed)?;
-    fs::File::open(parent)
-        .and_then(|directory| directory.sync_all())
-        .map_err(|_| DiagnosticCode::InstallationFailed)?;
-    atomic_exchange(destination, replacement)?;
-    if fs::File::open(parent)
-        .and_then(|directory| directory.sync_all())
-        .is_err()
-    {
-        if atomic_exchange(destination, replacement).is_err() {
+    sync_parent(parent)?;
+    exchange(destination, replacement)?;
+    if sync_parent(parent).is_err() {
+        if exchange(destination, replacement).is_err() {
             tracing::error!(
                 event = "updater_install_rollback_failed",
                 package = "macos-app"
             );
+            return Ok(RestartDisposition::RestartRequired {
+                executable: restart_executable.to_path_buf(),
+                diagnostic: DiagnosticCode::InstallationFailed,
+            });
         }
         return Err(DiagnosticCode::InstallationFailed);
     }
     if let Err(error) = relaunch() {
-        if atomic_exchange(destination, replacement).is_err() {
+        if exchange(destination, replacement).is_err() {
             tracing::error!(
                 event = "updater_install_rollback_failed",
                 package = "macos-app"
@@ -1230,10 +1252,7 @@ fn replace_macos_bundle_transactionally(
                 diagnostic: DiagnosticCode::RestartFailed,
             });
         }
-        if fs::File::open(parent)
-            .and_then(|directory| directory.sync_all())
-            .is_err()
-        {
+        if sync_parent(parent).is_err() {
             tracing::error!(
                 event = "updater_install_rollback_failed",
                 package = "macos-app"
@@ -2529,6 +2548,60 @@ mod tests {
         assert_eq!(result, Err(DiagnosticCode::InstallationFailed));
         assert!(!backup.exists());
         assert_eq!(fs::read(destination).unwrap(), b"installed-version");
+    }
+
+    #[test]
+    fn failed_post_swap_macos_rollback_retains_restart_only_recovery() {
+        let directory = tempfile::tempdir().unwrap();
+        let destination = directory.path().join("DevHUD.app");
+        let replacement = directory.path().join("Candidate.app");
+        let restart_executable = destination.join("Contents/MacOS/devhud");
+        fs::create_dir(&destination).unwrap();
+        fs::create_dir(&replacement).unwrap();
+        fs::write(destination.join("version"), b"installed-version").unwrap();
+        fs::write(replacement.join("version"), b"candidate-version").unwrap();
+        let sync_attempts = AtomicUsize::new(0);
+        let exchange_attempts = AtomicUsize::new(0);
+
+        let result = replace_macos_bundle_transactionally_with_operations(
+            &destination,
+            &replacement,
+            &restart_executable,
+            |_| {
+                if sync_attempts.fetch_add(1, Ordering::Relaxed) == 0 {
+                    Ok(())
+                } else {
+                    Err(DiagnosticCode::InstallationFailed)
+                }
+            },
+            |installed, candidate| {
+                if exchange_attempts.fetch_add(1, Ordering::Relaxed) != 0 {
+                    return Err(DiagnosticCode::InstallationFailed);
+                }
+                let installed_version = fs::read(installed.join("version")).unwrap();
+                let candidate_version = fs::read(candidate.join("version")).unwrap();
+                fs::write(installed.join("version"), candidate_version).unwrap();
+                fs::write(candidate.join("version"), installed_version).unwrap();
+                Ok(())
+            },
+            || panic!("relaunch must not run after the post-swap sync fails"),
+        );
+
+        assert_eq!(
+            result,
+            Ok(RestartDisposition::RestartRequired {
+                executable: restart_executable,
+                diagnostic: DiagnosticCode::InstallationFailed,
+            })
+        );
+        assert_eq!(
+            fs::read(destination.join("version")).unwrap(),
+            b"candidate-version"
+        );
+        assert_eq!(
+            fs::read(replacement.join("version")).unwrap(),
+            b"installed-version"
+        );
     }
 
     #[cfg(target_os = "macos")]
