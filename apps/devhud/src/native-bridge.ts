@@ -125,6 +125,19 @@ export interface WidgetDeckSnapshot {
   readonly pullRequests: readonly { readonly title: string; readonly url: string }[];
 }
 
+export type DesktopUpdaterStateKind = "idle" | "checking" | "up-to-date" | "available" | "downloading" | "downloaded" | "installation-approved" | "restarting" | "failed" | "canceled";
+export type DesktopUpdaterDiagnosticCode = "offline" | "malformed" | "rate-limited" | "missing" | "unsupported" | "canceled" | "invalid-signature" | "rollback-denied" | "download-failed" | "verification-failed" | "installation-failed" | "restart-failed";
+export type DesktopUpdaterTarget = "darwin-x86_64" | "darwin-aarch64" | "windows-x86_64" | "windows-aarch64" | "linux-x86_64" | "linux-aarch64";
+export type DesktopUpdaterPackageKind = "macos-app" | "windows-nsis" | "windows-msi" | "linux-appimage" | "linux-deb";
+export interface DesktopUpdaterStatus {
+  readonly kind: DesktopUpdaterStateKind;
+  readonly installedVersion: string;
+  readonly target: DesktopUpdaterTarget;
+  readonly packageKind: DesktopUpdaterPackageKind;
+  readonly candidate: { readonly version: string; readonly releaseNotes: { readonly en: string; readonly ko: string } } | null;
+  readonly diagnostic: { readonly code: DesktopUpdaterDiagnosticCode; readonly phase: "discovery" | "target" | "download" | "verification" | "installation" | "restart"; readonly target: DesktopUpdaterTarget; readonly packageKind: DesktopUpdaterPackageKind; readonly installedVersion: string; readonly candidateVersion?: string; readonly httpStatusClass?: number; readonly retryAfterSeconds?: number } | null;
+}
+
 type NativeBridgeRequestV1Base =
   | { readonly operation: "runtime.snapshot" }
   | { readonly operation: "session.configure-origins"; readonly apiOrigin: string; readonly logtoIssuer?: string }
@@ -145,6 +158,7 @@ type NativeBridgeRequestV1Base =
   | { readonly operation: "notifications.cancel-deck"; readonly deckId: string }
   | { readonly operation: "updates.status" }
   | { readonly operation: "updates.open-store" }
+  | { readonly operation: "updates.check" | "updates.approve-download" | "updates.cancel" | "updates.approve-installation" | "updates.approve-restart" }
   | { readonly operation: "widgets.replace-deck-snapshot"; readonly snapshot: WidgetDeckSnapshot }
   | { readonly operation: "widgets.clear-deck-snapshot"; readonly deckId: string };
 
@@ -175,6 +189,7 @@ export type NativeBridgeResponseV1 =
   | { readonly kind: "secure-value"; readonly value: string | null }
   | { readonly kind: "notification-permission"; readonly permission: NotificationPermission }
   | { readonly kind: "update-status"; readonly store: "app-store" | "play-store"; readonly installedVersion: string; readonly configured: boolean }
+  | { readonly kind: "desktop-update-status"; readonly status: DesktopUpdaterStatus }
   | { readonly kind: "shortcut-status"; readonly platform: NativeShortcutPlatform; readonly permission: NativeShortcutPermission; readonly bindings: DesktopShortcutBindings; readonly error: ShortcutValidationCode | null }
   | { readonly kind: "capture-status"; readonly available: boolean; readonly platform: "macos" | "windows" | "x11" | "unsupported"; readonly shadowRemovalSupported: boolean; readonly topology: readonly CaptureDisplay[] }
   | { readonly kind: "capture-drafts"; readonly drafts: readonly CaptureDraft[]; readonly unreadableDraftIds: readonly string[] }
@@ -188,7 +203,8 @@ export type NativeBridgeEventV1 =
   | { readonly version: typeof NativeBridgeVersion; readonly kind: "lifecycle"; readonly state: LifecycleState }
   | { readonly version: typeof NativeBridgeVersion; readonly kind: "auth-callback"; readonly url: string }
   | { readonly version: typeof NativeBridgeVersion; readonly kind: "shortcut-triggered"; readonly action: ShortcutActionId }
-  | { readonly version: typeof NativeBridgeVersion; readonly kind: "shortcut-status"; readonly platform: NativeShortcutPlatform; readonly permission: NativeShortcutPermission; readonly bindings: DesktopShortcutBindings; readonly error: ShortcutValidationCode | null };
+  | { readonly version: typeof NativeBridgeVersion; readonly kind: "shortcut-status"; readonly platform: NativeShortcutPlatform; readonly permission: NativeShortcutPermission; readonly bindings: DesktopShortcutBindings; readonly error: ShortcutValidationCode | null }
+  | { readonly version: typeof NativeBridgeVersion; readonly kind: "desktop-update-status"; readonly status: DesktopUpdaterStatus };
 
 interface TauriInternals {
   invoke(command: string, args?: Record<string, unknown>): Promise<unknown>;

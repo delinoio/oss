@@ -9,6 +9,8 @@ mod resources;
 #[cfg(desktop)]
 mod secure_store;
 mod shortcuts;
+#[cfg(desktop)]
+mod updater;
 
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 use std::process::{Child, Command};
@@ -777,6 +779,13 @@ fn handle_frontend_ready(
     renderer_crash_listener_ready: Arc<AtomicBool>,
 ) {
     info!(event = "frontend_ready", origin);
+    bridge::start_update_scheduler(
+        app_handle
+            .state::<bridge::NativeBridgeState>()
+            .inner()
+            .clone(),
+        app_handle.clone(),
+    );
     match smoke_mode {
         Some(SmokeMode::Normal) => {
             let app_handle = app_handle.clone();
@@ -821,6 +830,9 @@ fn handle_frontend_ready(
 fn main() {
     let smoke_mode = SmokeMode::from_environment();
     let subprocess = is_cef_subprocess();
+    let update_health_probe = (!subprocess)
+        .then(updater::health_probe_from_args)
+        .flatten();
     init_logging(smoke_mode, subprocess);
     if !subprocess && let Err(failure) = validate_host(smoke_mode) {
         error!(
@@ -854,8 +866,11 @@ fn main() {
     let capture_recovery = capture_service.clone();
     let capture_assets = capture_service.clone();
 
-    let mut builder = tauri::Builder::<tauri::Cef>::default()
-        .plugin(tauri_plugin_single_instance::init(|_, _, _| {}))
+    let mut builder = tauri::Builder::<tauri::Cef>::default();
+    if update_health_probe.is_none() {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|_, _, _| {}));
+    }
+    let mut builder = builder
         .plugin(tauri_plugin_deep_link::init())
         .plugin(native_plugin::init())
         .manage(bridge_state)
@@ -1022,6 +1037,13 @@ fn main() {
 
             #[cfg(target_os = "macos")]
             drop(webview);
+
+            if let Some(probe) = &update_health_probe
+                && !probe.acknowledge()
+            {
+                error!(event = "updater_restart_health_ack_failed");
+                app.handle().exit(79);
+            }
 
             Ok(())
         })

@@ -1,0 +1,57 @@
+# DevHud Desktop Updater Contract
+
+## Status and Scope
+
+The desktop updater is implemented in the native `apps/devhud` host. Mobile updates remain store-managed. Release publication is intentionally blocked until release engineering replaces the committed, valid Ed25519 placeholder public key with the production `devhud-release-root-v1` key and records the matching SHA-256 fingerprint. Non-test native builds also reject every manifest while that readiness flag is false, so the deterministic fixture key cannot authorize a development or accidentally packaged update. No private production signing key or update token belongs in an application artifact, repository fixture, manifest server, diagnostic, or log.
+
+## Discovery and Target Selection
+
+Discovery is fixed to `https://devhud.api.delino.io/updates/stable/{platform}/{architecture}.json`. Bootstrap, synchronized settings, environment variables, frontend input, redirects, and remote configuration cannot replace that origin, channel, target, or path. Native target selection has exactly these mappings:
+
+| Native target | Manifest target |
+| --- | --- |
+| macOS x64 | `darwin/x86_64` |
+| macOS arm64 | `darwin/aarch64` |
+| Windows x64 | `windows/x86_64` |
+| Windows arm64 | `windows/aarch64` |
+| Linux x64 | `linux/x86_64` |
+| Linux arm64 | `linux/aarch64` |
+
+The request carries only `Accept`, the fixed path-free updater user agent, and `X-DevHud-Package`. The package value is a closed native enum and must match the installed package type: `macos-app`, `windows-nsis`, `windows-msi`, `linux-appimage`, or `linux-deb`. Production CI compiles this value into each package. The frontend cannot issue this request directly because its production CSP remains `connect-src 'none'`, the updater origin is not added to session CSP, and the API rejects updater requests containing a browser `Origin` header.
+
+The manifest response is limited to 256 KiB and is never redirected. Artifacts are limited to 512 MiB and begin at an exact HTTPS `github.com/delinoio/oss/releases/download/devhud@v{version}/...` URL whose path identifies the installed package kind. At most three redirects are accepted, only to HTTPS `release-assets.githubusercontent.com` without credentials. No Authorization, Cookie, referrer, query, or caller-provided header is sent.
+
+## Signed Manifest and Version Policy
+
+The schema-one envelope contains a base64-encoded canonical payload, its Ed25519 signature, an optional successor chain, and optional rollback authorization. Unknown JSON fields, malformed sizes/times/versions, mismatched channel/target/package, empty English or Korean release notes, prerelease candidates on stable, and unapproved artifact URLs fail closed.
+
+The application pins the SHA-256 fingerprint and 32-byte public key for `devhud-release-root-v1`. A manifest signed by another key is accepted only when every ordered successor record:
+
+- binds predecessor and successor fingerprints, successor public key, and validity bounds;
+- is signed by the immediately preceding trusted key;
+- is currently valid and does not repeat or cycle; and
+- forms a chain of at most four successors from the pinned root to the manifest signer.
+
+The verified manifest also binds artifact length, SHA-256, and a domain-separated artifact signature by the terminal trusted key. A lower candidate version is rejected unless the offline root key signs a domain-separated authorization binding the exact installed and candidate versions, channel, target, package kind, manifest payload digest, and expiry. Key rotation alone cannot authorize rollback.
+
+## User Flow and Scheduling
+
+Startup and frontend readiness never wait for networking. The first automatic check becomes due after 30 seconds. Later checks become due after 24 hours of active runtime. The native scheduler polls only while the main window is active; when a device or window resumes after the wall-clock deadline, one overdue check runs immediately and the stable 24-hour interval begins again. Manual checks do not weaken verification.
+
+Discovery never downloads. The Settings surface shows the installed version and accessible signed release notes in the selected English or Korean locale. Download, installation, and restart each have separate confirmation dialogs with initial focus, keyboard operation, and Escape cancellation. Installation starts only after both the installation approval and final install-and-restart approval have been recorded. A successful relaunch is the only point at which the next process reports the new installed version.
+
+## Failure and Diagnostics
+
+The state machine retains the running process's actual installed version across discovery, network, target selection, download, verification, installation, cancellation, and restart failures. AppImage and macOS application replacement use a sibling backup and restore it when replacement or relaunch fails; Windows MSI/NSIS and Debian updates use their fixed platform installer only after artifact verification and approvals. A replacement process bypasses the single-instance guard only when launched with a native-generated, path-confined UUID-v7 health capability; the old process waits up to 30 seconds for post-window-setup acknowledgement and treats early exit, timeout, or malformed capability as restart failure. Package bytes cannot select an executable or arguments.
+
+Diagnostics expose only the typed code, phase, closed target/package enum, installed and candidate semantic versions, HTTP status class, and bounded numeric `Retry-After`. Stable codes are `offline`, `malformed`, `rate-limited`, `missing`, `unsupported`, `canceled`, `invalid-signature`, `rollback-denied`, `download-failed`, `verification-failed`, `installation-failed`, and `restart-failed`. They never expose URLs, redirects, headers, response bodies, signatures, keys, filesystem paths, or raw transport errors.
+
+## Manifest Service and Release Gate
+
+`devhud-api` serves GET/HEAD only at `/updates/{channel}/{platform}/{architecture}.json` from the operator-provided `DEVHUD_UPDATE_MANIFEST_DIR`. Stored files use `{channel}/{platform}/{architecture}/{package-kind}.json`. The handler accepts only stable and the six target pairs, checks the package header against the platform, bounds and validates JSON before serving it, and returns no-store/nosniff responses. Missing manifests return 404; unsupported requests return 400; invalid stored data returns 503. It does not sign manifests and does not receive a signing key.
+
+`pnpm --filter devhud release:validate-updater` is a release-blocking gate. It recomputes the committed public-key fingerprint and fails while `productionReady` is false. Setting that flag is permitted only after the production public key and its fingerprint replace the placeholder in both native code and `updater-trust-root.json`. Release automation must additionally create deterministic schema-one manifests and signatures offline, publish all selected package manifests before exposing a release, and retain prior packages needed for an authorized rollback.
+
+## Validation
+
+Native tests cover all six target mappings, valid and tampered signatures, valid and invalid rotation, signed and unsigned rollback, stable scheduling, redirect closure, cancellation races, installation/restart failure, and installed-version preservation. Frontend tests cover bilingual accessible notes and all three approvals. API tests cover exact routing, package selection, HEAD, malformed/missing targets, and browser-origin denial. `verify:pins`, mobile closure checks, Rust tests/clippy, frontend tests, Go tests/vet, and the release gate are required at their respective CI or release boundary.

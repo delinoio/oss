@@ -9,6 +9,8 @@ use std::time::Duration;
 
 use serde_json::{Value, json};
 #[cfg(desktop)]
+use tauri::Emitter;
+#[cfg(desktop)]
 use tauri::Manager;
 #[cfg(desktop)]
 use uuid::Uuid;
@@ -37,6 +39,10 @@ pub struct NativeBridgeState {
     shortcut_listener_failed: Arc<AtomicBool>,
     shortcut_listener_retry: Arc<(Mutex<u64>, Condvar)>,
     diagnostics_export: Arc<Mutex<DiagnosticsExportState>>,
+    #[cfg(desktop)]
+    updater: Arc<Mutex<Option<crate::updater::UpdaterController>>>,
+    #[cfg(desktop)]
+    updater_schedule_started: Arc<AtomicBool>,
 }
 
 #[derive(Default)]
@@ -110,6 +116,24 @@ struct SessionOrigins {
 impl Default for NativeBridgeState {
     fn default() -> Self {
         let shortcut_listener_failed = Arc::new(AtomicBool::new(false));
+        #[cfg(desktop)]
+        let updater = {
+            let target = crate::platform::DesktopTarget::current();
+            crate::updater::PackageKind::current(target)
+                .and_then(|package| {
+                    semver::Version::parse(env!("CARGO_PKG_VERSION"))
+                        .map_err(|_| crate::updater::UpdaterError {
+                            code: crate::updater::DiagnosticCode::Malformed,
+                            phase: crate::updater::UpdatePhase::Target,
+                            status_class: None,
+                            retry_after_seconds: None,
+                        })
+                        .and_then(|version| {
+                            crate::updater::UpdaterController::new(version, target, package)
+                        })
+                })
+                .ok()
+        };
         Self {
             pending_auth_callback: Arc::new(Mutex::new(None)),
             session_origins: Arc::new(Mutex::new(SessionOrigins {
@@ -123,8 +147,101 @@ impl Default for NativeBridgeState {
             shortcut_listener_failed,
             shortcut_listener_retry: Arc::new((Mutex::new(0), Condvar::new())),
             diagnostics_export: Arc::new(Mutex::new(DiagnosticsExportState::default())),
+            #[cfg(desktop)]
+            updater: Arc::new(Mutex::new(updater)),
+            #[cfg(desktop)]
+            updater_schedule_started: Arc::new(AtomicBool::new(false)),
         }
     }
+}
+
+#[cfg(desktop)]
+fn updater_response(state: &NativeBridgeState) -> Result<Value, String> {
+    let updater = state
+        .updater
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let snapshot = updater.as_ref().ok_or("unsupported")?.snapshot();
+    Ok(json!({ "kind": "desktop-update-status", "status": snapshot }))
+}
+
+#[cfg(desktop)]
+fn perform_update_check(state: &NativeBridgeState) -> Result<Value, String> {
+    let (target, package) = {
+        let updater = state
+            .updater
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let updater = updater.as_ref().ok_or("unsupported")?;
+        (
+            crate::platform::DesktopTarget::current(),
+            updater.snapshot().package_kind,
+        )
+    };
+    let result = crate::updater::UpdaterTransport::new()
+        .and_then(|transport| transport.discover(target, package));
+    let mut updater = state
+        .updater
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let updater = updater.as_mut().ok_or("unsupported")?;
+    match result {
+        Ok(manifest) => updater.check_bytes(&manifest, time::OffsetDateTime::now_utc()),
+        Err(error) => updater.record_error(error),
+    }
+    Ok(json!({ "kind": "desktop-update-status", "status": updater.snapshot() }))
+}
+
+#[cfg(desktop)]
+pub fn start_update_scheduler<R: tauri::Runtime>(
+    state: NativeBridgeState,
+    app: tauri::AppHandle<R>,
+) {
+    if state.updater_schedule_started.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    std::thread::spawn(move || {
+        let mut schedule = crate::updater::CheckSchedule::after_frontend_ready();
+        let mut active_runtime_seconds = 0_u64;
+        let mut last_tick = std::time::Instant::now();
+        let mut wall_deadline = std::time::SystemTime::now() + crate::updater::FIRST_CHECK_DELAY;
+        loop {
+            std::thread::sleep(Duration::from_secs(1));
+            let now = std::time::Instant::now();
+            let visible = app
+                .get_webview_window("main")
+                .and_then(|window| window.is_visible().ok())
+                .unwrap_or(false);
+            if !visible {
+                last_tick = now;
+                continue;
+            }
+            active_runtime_seconds =
+                active_runtime_seconds.saturating_add(now.duration_since(last_tick).as_secs());
+            last_tick = now;
+            let overdue_after_resume = std::time::SystemTime::now() >= wall_deadline;
+            if !schedule.is_due(active_runtime_seconds) && !overdue_after_resume {
+                continue;
+            }
+            let response = perform_update_check(&state);
+            match response {
+                Ok(response) => {
+                    if app
+                        .emit(
+                            "devhud:native-event:v1",
+                            json!({ "version": 1, "kind": "desktop-update-status", "status": response["status"] }),
+                        )
+                        .is_err()
+                    {
+                        tracing::warn!(event = "updater_status_emit_failed");
+                    }
+                }
+                Err(code) => tracing::warn!(event = "updater_check_failed", error_code = code),
+            }
+            schedule.mark_checked(active_runtime_seconds);
+            wall_deadline = std::time::SystemTime::now() + crate::updater::CHECK_INTERVAL;
+        }
+    });
 }
 
 pub(crate) fn shortcut_status(state: &NativeBridgeState, error: Option<ShortcutFailure>) -> Value {
@@ -895,6 +1012,11 @@ pub fn handle_native_bridge_request(
         "updates.status" if cfg!(target_os = "android") => Ok(json!({
             "kind": "update-status", "store": "play-store", "installedVersion": env!("CARGO_PKG_VERSION"), "configured": true
         })),
+        #[cfg(desktop)]
+        "updates.status" => updater_response(state),
+        #[cfg(desktop)]
+        "updates.open-store" => Err("unsupported".to_string()),
+        #[cfg(mobile)]
         "updates.status" | "updates.open-store" => Err("unsupported".to_string()),
         "widgets.replace-deck-snapshot" | "widgets.clear-deck-snapshot" => {
             Ok(json!({ "kind": "unsupported", "feature": "widgets" }))
@@ -962,6 +1084,84 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
         .get("operation")
         .and_then(Value::as_str)
         .ok_or("invalid-argument")?;
+    if operation == "updates.check" {
+        let updater_state = state.inner().clone();
+        return tauri::async_runtime::spawn_blocking(move || perform_update_check(&updater_state))
+            .await
+            .map_err(|_| "platform-failure".to_string())?;
+    }
+    if operation == "updates.approve-download" {
+        let (candidate, package, canceled) = {
+            let mut updater = state
+                .updater
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let updater = updater.as_mut().ok_or("unsupported")?;
+            updater.begin_download().map_err(|_| "invalid-argument")?;
+            (
+                updater.candidate().cloned().ok_or("invalid-argument")?,
+                updater.snapshot().package_kind,
+                updater.cancellation_token(),
+            )
+        };
+        let artifact = tauri::async_runtime::spawn_blocking(move || {
+            crate::updater::UpdaterTransport::new()
+                .and_then(|transport| transport.download(&candidate, package, &canceled))
+        })
+        .await
+        .map_err(|_| "platform-failure".to_string())?;
+        let mut updater = state
+            .updater
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let updater = updater.as_mut().ok_or("unsupported")?;
+        match artifact {
+            Ok(artifact) => {
+                if let Err(error) = updater.complete_download(artifact) {
+                    updater.record_error(error);
+                }
+            }
+            Err(error) => updater.record_error(error),
+        }
+        return Ok(json!({ "kind": "desktop-update-status", "status": updater.snapshot() }));
+    }
+    if operation == "updates.cancel" {
+        let mut updater = state
+            .updater
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let updater = updater.as_mut().ok_or("unsupported")?;
+        updater.cancel();
+        return Ok(json!({ "kind": "desktop-update-status", "status": updater.snapshot() }));
+    }
+    if operation == "updates.approve-installation" {
+        let mut updater = state
+            .updater
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let updater = updater.as_mut().ok_or("unsupported")?;
+        updater
+            .approve_installation()
+            .map_err(|_| "invalid-argument")?;
+        return Ok(json!({ "kind": "desktop-update-status", "status": updater.snapshot() }));
+    }
+    if operation == "updates.approve-restart" {
+        let (restart, response) = {
+            let mut updater = state
+                .updater
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let updater = updater.as_mut().ok_or("unsupported")?;
+            let installer = crate::updater::PlatformInstaller::new(updater.snapshot().package_kind);
+            let restart = updater.approve_restart(&installer);
+            let response = json!({ "kind": "desktop-update-status", "status": updater.snapshot() });
+            (restart, response)
+        };
+        if restart.is_ok() {
+            app.exit(0);
+        }
+        return Ok(response);
+    }
     if operation.starts_with("capture.") {
         return handle_capture_request(&request, capture.inner().clone(), &app).await;
     }

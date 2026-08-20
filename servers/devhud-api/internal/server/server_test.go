@@ -563,6 +563,19 @@ func TestExactCORSPreflightContract(t *testing.T) {
 	}
 }
 
+func TestUpdaterRouteIsUnavailableToBrowserOrigins(t *testing.T) {
+	handler, _ := testHandler(t)
+	request := httptest.NewRequest(http.MethodGet, "/updates/stable/linux/x86_64.json", nil)
+	request.RemoteAddr = "127.0.0.1:12345"
+	request.Header.Set("Origin", "http://tauri.localhost")
+	request.Header.Set("X-DevHud-Package", "linux-deb")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden || response.Header().Get("Access-Control-Allow-Origin") != "" {
+		t.Fatalf("status=%d headers=%v", response.Code, response.Header())
+	}
+}
+
 func TestHTTPSRequiredForNonLoopback(t *testing.T) {
 	handler, _ := testHandler(t)
 	request := httptest.NewRequest(http.MethodGet, "/healthz", nil)

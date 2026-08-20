@@ -17,6 +17,7 @@ const desktopHost = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "
 const nativeBridgeHost = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/bridge.rs"), "utf8");
 const nativeShortcuts = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/shortcuts.rs"), "utf8");
 const nativeCapture = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/capture.rs"), "utf8");
+const nativeUpdater = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/updater.rs"), "utf8");
 const androidBridgeHost = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/mobile/android/src/main/java/io/delino/devhud/bridge/DevhudNativePlugin.kt"), "utf8");
 const iosBridgeHost = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/mobile/ios/Sources/DevhudNativePlugin.swift"), "utf8");
 
@@ -87,6 +88,17 @@ test("desktop secure writes preserve credentials across bounded Windows storage 
   assert.match(desktopSecureStore, /let previous = read_value/u);
   assert.match(desktopSecureStore, /Some\(previous\) => write_value/u);
   assert.match(desktopSecureStore, /secure_store_write_rollback_failed/u);
+});
+
+test("desktop updater networking is native-only, fixed, and credential-free", () => {
+  assert.match(nativeUpdater, /https:\/\/devhud\.api\.delino\.io/u);
+  assert.match(nativeUpdater, /Policy::none\(\)/u);
+  assert.match(nativeUpdater, /release-assets\.githubusercontent\.com/u);
+  assert.doesNotMatch(nativeUpdater, /AUTHORIZATION|COOKIE|Bearer|token=/u);
+  assert.doesNotMatch(tauriConfig.app.security.csp, /devhud\.api\.delino\.io/u);
+  for (const operation of ["updates.check", "updates.approve-download", "updates.approve-installation", "updates.approve-restart", "updates.cancel"]) {
+    assert.match(nativeBridgeHost, new RegExp(operation.replace(".", "\\."), "u"));
+  }
 });
 
 test("Tauri rejection codes become typed native bridge errors", async () => {
