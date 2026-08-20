@@ -186,9 +186,9 @@ fn authenticate_initial_session(origin: &str, request: &NativeRequest) -> Result
 
 fn pairing_nonce_for_authentication(
     request: &NativeRequest,
-    retry_after_authenticated_session: bool,
+    pairing_nonce_consumed: bool,
 ) -> Option<String> {
-    if retry_after_authenticated_session {
+    if pairing_nonce_consumed {
         None
     } else {
         request.pairing_nonce.clone()
@@ -283,9 +283,14 @@ fn run_native(origin: &str) -> io::Result<()> {
             )?;
             continue;
         }
+        let mut pairing_nonce_consumed = false;
         if session.is_none() {
             match authenticate_initial_session(origin, &request) {
-                Ok(authenticated) => session = Some(authenticated),
+                Ok(authenticated) => {
+                    pairing_nonce_consumed = request.message_type == NativeMessageType::Pair
+                        && request.pairing_nonce.is_some();
+                    session = Some(authenticated);
+                }
                 Err(reason) => {
                     warn!(event = "app_connection_unavailable", reason);
                     write_json(
@@ -307,9 +312,10 @@ fn run_native(origin: &str) -> io::Result<()> {
             .is_err_and(|failure| failure.requires_reauthentication())
         {
             session = None;
-            if let Ok(mut authenticated) =
-                authenticate(origin, pairing_nonce_for_authentication(&request, true))
-            {
+            if let Ok(mut authenticated) = authenticate(
+                origin,
+                pairing_nonce_for_authentication(&request, pairing_nonce_consumed),
+            ) {
                 result = forward(&mut authenticated, &request);
                 if !result
                     .as_ref()
@@ -592,7 +598,7 @@ mod tests {
     }
 
     #[test]
-    fn retry_after_successful_authentication_omits_the_consumed_pairing_nonce() {
+    fn reauthentication_omits_only_a_consumed_pairing_nonce() {
         let request = NativeRequest {
             version: PROTOCOL_VERSION,
             schema_version: SCHEMA_VERSION,

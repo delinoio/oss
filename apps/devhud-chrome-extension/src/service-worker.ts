@@ -7,6 +7,7 @@ let nativePort: chrome.runtime.Port | null = null;
 let reconnectAttempt = 0;
 let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
 let configurationRequestGeneration = 0;
+let permissionReconciliation = Promise.resolve();
 const pending = new Map<string, { resolve: (response: NativeResponse) => void; timer: ReturnType<typeof setTimeout> }>();
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -85,12 +86,18 @@ async function removeStaleOriginPermissions(configuration: ExtensionConfiguratio
   if (stale.length > 0) await chrome.permissions.remove({ origins: stale });
 }
 
+function serializePermissionReconciliation(configuration: ExtensionConfiguration, generation: number): Promise<void> {
+  const reconciliation = permissionReconciliation.then(() => removeStaleOriginPermissions(configuration, generation));
+  permissionReconciliation = reconciliation.catch(() => undefined);
+  return reconciliation;
+}
+
 async function configurationRequest(): Promise<NativeResponse> {
   const generation = ++configurationRequestGeneration;
   const response = await nativeRequest("configure", {});
   if (!response.ok) return response;
   if (!isAuthoritativeConfiguration(response.payload)) return { ...response, ok: false, state: "malformed", payload: null };
-  await removeStaleOriginPermissions(response.payload, generation).catch(() => undefined);
+  await serializePermissionReconciliation(response.payload, generation).catch(() => undefined);
   if (generation !== configurationRequestGeneration) return { ...response, ok: false, state: "disconnected", payload: null };
   return response;
 }

@@ -11,6 +11,7 @@ async function select(
   bounds = { x: 1, y: 2, width: 3, height: 4 },
   dispatchSelection?: (overlayWindow: Window) => void,
 ) {
+  vi.useFakeTimers();
   Object.defineProperty(element, "getBoundingClientRect", {
     value: () => bounds,
   });
@@ -22,6 +23,7 @@ async function select(
   if (dispatchSelection) dispatchSelection(overlayWindow);
   else overlayWindow.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, clientX: bounds.x, clientY: bounds.y }));
   try {
+    await vi.advanceTimersByTimeAsync(1_000);
     return await capture;
   } finally {
     if (elementFromPoint) Object.defineProperty(document, "elementFromPoint", elementFromPoint);
@@ -321,6 +323,47 @@ describe("injected capture", () => {
     }
   });
 
+  it("keeps the selection shield through double-click completion", async () => {
+    vi.useFakeTimers();
+    document.body.innerHTML = '<a href="#activated">safe</a>';
+    const selected = document.querySelector("a")!;
+    const pagePointerHandler = vi.fn();
+    for (const eventName of ["pointerdown", "mousedown", "mouseup", "click", "dblclick"]) {
+      document.addEventListener(eventName, pagePointerHandler);
+    }
+    const elementFromPoint = Object.getOwnPropertyDescriptor(document, "elementFromPoint");
+    Object.defineProperty(document, "elementFromPoint", { configurable: true, value: () => selected });
+
+    try {
+      const capture = injectedCapture(true, location.origin);
+      const overlay = document.querySelector("iframe");
+      const overlayWindow = overlay?.contentWindow;
+      if (!overlay || !overlayWindow) throw new Error("selection overlay was not created");
+
+      for (const detail of [1, 2]) {
+        for (const eventName of ["pointerdown", "mousedown", "mouseup", "click"]) {
+          overlayWindow.dispatchEvent(new MouseEvent(eventName, { bubbles: true, cancelable: true, clientX: 1, clientY: 2, detail }));
+        }
+      }
+      overlayWindow.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true, clientX: 1, clientY: 2, detail: 2 }));
+
+      expect(pagePointerHandler).not.toHaveBeenCalled();
+      expect(document.querySelector("iframe")).toBe(overlay);
+      await vi.advanceTimersByTimeAsync(999);
+      expect(document.querySelector("iframe")).toBe(overlay);
+      await vi.advanceTimersByTimeAsync(1);
+      await expect(capture).resolves.toMatchObject({ outerHtml: "<a>safe</a>" });
+      expect(document.querySelector("iframe")).toBeNull();
+      expect(location.hash).toBe("");
+    } finally {
+      if (elementFromPoint) Object.defineProperty(document, "elementFromPoint", elementFromPoint);
+      else delete (document as Partial<Document>).elementFromPoint;
+      for (const eventName of ["pointerdown", "mousedown", "mouseup", "click", "dblclick"]) {
+        document.removeEventListener(eventName, pagePointerHandler);
+      }
+    }
+  });
+
   it("places the selection shield in a modal top-layer dialog", async () => {
     document.body.innerHTML = "<dialog open>page modal</dialog><main>safe</main>";
 
@@ -338,6 +381,7 @@ describe("injected capture", () => {
   });
 
   it("closes the top-layer shield before hit testing the page", async () => {
+    vi.useFakeTimers();
     document.body.innerHTML = "<main>safe</main>";
     const selected = document.querySelector("main")!;
     const elementFromPoint = Object.getOwnPropertyDescriptor(document, "elementFromPoint");
@@ -355,6 +399,7 @@ describe("injected capture", () => {
 
     try {
       overlay.contentWindow.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, clientX: 1, clientY: 2 }));
+      await vi.advanceTimersByTimeAsync(1_000);
       await expect(capture).resolves.toMatchObject({ outerHtml: "<main>safe</main>" });
     } finally {
       if (elementFromPoint) Object.defineProperty(document, "elementFromPoint", elementFromPoint);

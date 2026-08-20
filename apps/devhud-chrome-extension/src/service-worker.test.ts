@@ -209,14 +209,80 @@ describe("capture configuration freshness", () => {
     const firstRequest = requestConfiguration();
     await vi.waitFor(() => expect(getAllPermissions).toHaveBeenCalledTimes(1));
     const secondRequest = requestConfiguration();
-    const secondResponse = await secondRequest;
+    expect(getAllPermissions).toHaveBeenCalledTimes(1);
     releaseFirstGetAll({ origins: ["https://old.example/*", "https://new.example/*"] });
+    const secondResponse = await secondRequest;
     const firstResponse = await firstRequest;
 
     expect(firstResponse).toMatchObject({ ok: false, state: "disconnected", payload: null });
     expect(secondResponse).toMatchObject({ ok: true, state: "accepted", payload: configurations[1] });
     expect(removePermissions).toHaveBeenCalledOnce();
     expect(removePermissions).toHaveBeenCalledWith({ origins: ["https://old.example/*"] });
+  });
+
+  it("serializes permission reconciliation while an earlier removal is pending", async () => {
+    const port = fakePort();
+    const configurations = ["old", "new"].map((host) => ({
+      origins: [{
+        origin: `https://${host}.example`,
+        mappings: [{
+          mappingId: `01900000-0000-7000-8000-00000000000${host === "old" ? "1" : "2"}`,
+          matcher: { scheme: "https", host: [host, "example"], hostIsIpLiteral: false, port: "", path: ["**"] },
+        }],
+      }],
+      language: "en",
+    }));
+    let configurationIndex = 0;
+    port.postMessage = vi.fn((request: { request_id: string }) => {
+      const payload = configurations[configurationIndex++]!;
+      queueMicrotask(() => port.messageListeners[0]!({
+        version: 1,
+        schema_version: 1,
+        request_id: request.request_id,
+        ok: true,
+        state: "accepted",
+        payload,
+      }));
+    });
+    const getAllPermissions = vi.fn()
+      .mockResolvedValueOnce({ origins: ["https://old.example/*", "https://new.example/*"] })
+      .mockResolvedValueOnce({ origins: ["https://old.example/*", "https://new.example/*"] });
+    let releaseFirstRemove!: (removed: boolean) => void;
+    const firstRemove = new Promise<boolean>((resolve) => { releaseFirstRemove = resolve; });
+    const removePermissions = vi.fn()
+      .mockImplementationOnce(() => firstRemove)
+      .mockResolvedValueOnce(true);
+    let runtimeListener: ((message: unknown, sender: chrome.runtime.MessageSender, sendResponse: (response: unknown) => void) => boolean) | undefined;
+    vi.stubGlobal("chrome", {
+      runtime: {
+        connectNative: vi.fn(() => port),
+        onMessage: { addListener: vi.fn((listener) => { runtimeListener = listener; }) },
+      },
+      permissions: {
+        getAll: getAllPermissions,
+        remove: removePermissions,
+      },
+    });
+
+    await import("./service-worker.js");
+    const requestConfiguration = () => new Promise<{ ok: boolean; state: string; payload: unknown }>((resolve) => {
+      runtimeListener!({ type: "configuration" }, {} as chrome.runtime.MessageSender, (value) => resolve(value as { ok: boolean; state: string; payload: unknown }));
+    });
+    const firstRequest = requestConfiguration();
+    await vi.waitFor(() => expect(removePermissions).toHaveBeenCalledTimes(1));
+    const secondRequest = requestConfiguration();
+    await vi.waitFor(() => expect(port.postMessage).toHaveBeenCalledTimes(2));
+
+    expect(getAllPermissions).toHaveBeenCalledTimes(1);
+    expect(removePermissions).toHaveBeenCalledTimes(1);
+    releaseFirstRemove(true);
+    const [firstResponse, secondResponse] = await Promise.all([firstRequest, secondRequest]);
+
+    expect(firstResponse).toMatchObject({ ok: false, state: "disconnected", payload: null });
+    expect(secondResponse).toMatchObject({ ok: true, state: "accepted", payload: configurations[1] });
+    expect(getAllPermissions).toHaveBeenCalledTimes(2);
+    expect(removePermissions).toHaveBeenNthCalledWith(1, { origins: ["https://new.example/*"] });
+    expect(removePermissions).toHaveBeenNthCalledWith(2, { origins: ["https://old.example/*"] });
   });
 
   it("preserves grants when a configuration refresh fails", async () => {

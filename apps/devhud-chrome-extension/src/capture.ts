@@ -388,10 +388,25 @@ export function injectedCapture(selectElement: boolean, expectedOrigin: string, 
       updateCandidate();
     };
     let timeout: ReturnType<typeof setTimeout> | undefined;
-    const pointerEvents = ["pointerdown", "pointerup", "mousedown", "mouseup", "touchstart", "touchend", "contextmenu"];
-    const suppress = (event: Event) => { event.preventDefault(); event.stopImmediatePropagation(); };
+    let pointerCompletionTimer: ReturnType<typeof setTimeout> | undefined;
+    let capturedSelection: InjectedCapturedBrowserContext | null | undefined;
+    const pointerEvents = ["pointerdown", "pointerup", "mousedown", "mouseup", "touchstart", "touchend", "contextmenu", "dblclick"];
+    const schedulePointerCompletion = () => {
+      if (pointerCompletionTimer) clearTimeout(pointerCompletionTimer);
+      pointerCompletionTimer = setTimeout(() => {
+        const captured = capturedSelection ?? null;
+        cleanup();
+        resolve(captured);
+      }, 1_000);
+    };
+    const suppress = (event: Event) => {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (capturedSelection !== undefined) schedulePointerCompletion();
+    };
     const cleanup = () => {
       if (timeout) clearTimeout(timeout);
+      if (pointerCompletionTimer) clearTimeout(pointerCompletionTimer);
       for (const eventName of pointerEvents) overlayWindow.removeEventListener(eventName, suppress, true);
       overlayWindow.removeEventListener("click", click, true);
       overlayWindow.removeEventListener("keydown", key, true);
@@ -403,12 +418,24 @@ export function injectedCapture(selectElement: boolean, expectedOrigin: string, 
     };
     const click = (event: MouseEvent) => {
       suppress(event);
+      if (capturedSelection !== undefined) return;
       shield.close();
       overlay.style.setProperty("pointer-events", "none", "important");
       const selected = document.elementFromPoint(event.clientX, event.clientY);
-      const captured = result(selected);
-      cleanup();
-      resolve(captured);
+      capturedSelection = result(selected);
+      overlay.style.removeProperty("pointer-events");
+      try {
+        shield.showModal();
+      } catch {
+        cleanup();
+        resolve(null);
+        return;
+      }
+      if (timeout) clearTimeout(timeout);
+      timeout = undefined;
+      // Keep the top-layer shield until the browser's possible second click and
+      // dblclick events have completed, so neither can activate page content.
+      schedulePointerCompletion();
     };
     const key = (event: KeyboardEvent) => {
       if (event.key === "Escape") { suppress(event); cleanup(); resolve(null); return; }
