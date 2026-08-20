@@ -16,10 +16,12 @@ import {
 } from "@delinoio/devhud-api-client";
 import { createContext, use, useEffect, useMemo, useRef, useState, type PropsWithChildren, type RefObject } from "react";
 import { createIdentitySession, isTerminalAccessTokenError, sessionProfileId, validateBootstrap, type IdentitySession, type ValidatedBootstrap } from "./identity-client";
+import { clearDeckCaches } from "./deck.ts";
+import { invalidateDeckPolling } from "./deck-polling-cancellation.ts";
 import { clearAllContractedLocalData, clearAuthenticatedOriginData, clearAuthenticatedSettingsCache, clearGuestImportMarker, hasGuestSettings, readAuthenticatedSettingsCache, readCachedIdentityBootstrap, readGuestSettings, writeAuthenticatedSettingsCache, writeCachedIdentityBootstrap, writeGuestSettings } from "./local-data";
 import { SecureSettingKind, type NativeBridgeV1, type RuntimePlatform } from "./native-bridge";
 import { profileRequiresSetup } from "./profile-secrets";
-import { defaultDevHudSettings, decodeVersionedDevHudSettings, encodeDevHudSettings, LegacySettingsSchemaVersion, parseDevHudSettings, PrefixUrlMappingsSettingsSchemaVersion, SettingsSchemaVersion, type DevHudSettingsV1 } from "./settings-contract";
+import { CollidingSettingsSchemaVersion, defaultDevHudSettings, decodeVersionedDevHudSettings, encodeDevHudSettings, LegacySettingsSchemaVersion, parseDevHudSettings, PreviousSettingsSchemaVersion, SettingsSchemaVersion, type DevHudSettingsV1 } from "./settings-contract";
 import { diffSettings, type SettingsDiffEntry } from "./settings-diff";
 import { inactiveDesktopShortcutBindings } from "./shortcuts";
 import { getLocalStorage, isValidApiOrigin } from "./shell";
@@ -49,6 +51,7 @@ export interface IdentitySettingsValue {
   readonly accountError: DevHudClientError | null;
   readonly settingsError: DevHudClientError | null;
   readonly deletionCleanupFailed: boolean;
+  readonly deckAccessSuspended: boolean;
   readonly importDiff: readonly SettingsDiffEntry[] | null;
   readonly conflict: SettingsConflict | null;
   readonly signInPending: boolean;
@@ -91,6 +94,7 @@ interface BoundaryProps extends PropsWithChildren {
   readonly platform: RuntimePlatform;
   readonly bridge: NativeBridgeV1;
   readonly onCallbackConsumed: (url: string) => void;
+  readonly onDeckLinkPolicyReady?: () => void;
   readonly onContinueLocally: () => void;
   readonly onLoggedOut: () => void;
   readonly initialAppearance?: DevHudSettingsV1["appearance"];
@@ -135,7 +139,7 @@ export function DevHudServiceBoundary(props: BoundaryProps) {
   </QueryClientProvider></TransportProvider>;
 }
 
-function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, platform, bridge, onCallbackConsumed, onContinueLocally, onLoggedOut, initialAppearance, children, sessionRef, onIdentityReset }: BoundaryProps & { readonly sessionRef: RefObject<IdentitySession | null>; readonly onIdentityReset: () => void }) {
+function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, platform, bridge, onCallbackConsumed, onDeckLinkPolicyReady, onContinueLocally, onLoggedOut, initialAppearance, children, sessionRef, onIdentityReset }: BoundaryProps & { readonly sessionRef: RefObject<IdentitySession | null>; readonly onIdentityReset: () => void }) {
   const storage = getLocalStorage();
   const queryClient = useQueryClient();
   const transport = useTransport();
@@ -154,6 +158,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   const [accountError, setAccountError] = useState<DevHudClientError | null>(null);
   const [settingsError, setSettingsError] = useState<DevHudClientError | null>(null);
   const [deletionCleanupFailed, setDeletionCleanupFailed] = useState(false);
+  const [deckAccessSuspended, setDeckAccessSuspended] = useState(false);
   const [importDiff, setImportDiff] = useState<readonly SettingsDiffEntry[] | null>(null);
   const [conflict, setConflict] = useState<SettingsConflict | null>(null);
   const [account, setAccount] = useState<Account | null>(null);
@@ -165,6 +170,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   const [bootstrapAttempt, setBootstrapAttempt] = useState(0);
   const [signInPending, setSignInPending] = useState(false);
   const [identityResetAvailable, setIdentityResetAvailable] = useState(false);
+  const [continuedLocally, setContinuedLocally] = useState(false);
   const [githubPatCleanupPending, setGitHubPatCleanupPending] = useState(false);
   const [logoutCleanupPending, setLogoutCleanupPending] = useState(false);
   const signInPendingRef = useRef(false);
@@ -176,6 +182,10 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   const lastReconciledGitHubPatKeyRef = useRef<string | null>(null);
   const settingsWritableRef = useRef(false);
   const replaceSettingsRef = useRef<IdentitySettingsValue["replaceSettings"]>(async () => false);
+
+  useEffect(() => {
+    if (session !== null || continuedLocally && networkReady) onDeckLinkPolicyReady?.();
+  }, [continuedLocally, networkReady, onDeckLinkPolicyReady, session]);
 
   function applySettings(next: DevHudSettingsV1): void {
     settingsRef.current = next;
@@ -213,6 +223,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
 
   function clearInvalidSession(): Promise<void> {
     if (invalidSessionCleanupRef.current !== null) return invalidSessionCleanupRef.current;
+    invalidateDeckPolling();
     const current = sessionRef.current;
     sessionRef.current = null;
     setSession(null);
@@ -228,8 +239,10 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
         setSettingsReady(false);
         resetDesktopShortcuts();
         setSettingsError(null);
-        setStatus("signed-out");
         clearAuthenticatedSettingsCache(storage, apiOrigin);
+        setStatus("signed-out");
+        setDeckAccessSuspended(false);
+        clearDeckCaches(storage, await sessionProfileId(apiOrigin));
         await clearIdentityQueryCache();
         onIdentityReset();
       }
@@ -245,6 +258,8 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   }
 
   async function cleanPendingDeletion(): Promise<void> {
+    invalidateDeckPolling();
+    setDeckAccessSuspended(true);
     const releaseDiagnosticWrites = beginDiagnosticWriteSuppression(storage);
     try {
       const localCleanupComplete = clearAllContractedLocalData(storage);
@@ -260,6 +275,8 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   }
 
   async function clearIrrecoverableAccount(): Promise<void> {
+    invalidateDeckPolling();
+    setDeckAccessSuspended(true);
     irrecoverableCleanupPendingRef.current = true;
     const releaseDiagnosticWrites = beginDiagnosticWriteSuppression(storage);
     try {
@@ -277,6 +294,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       resetDesktopShortcuts();
       setSettingsError(null);
       setStatus("signed-out");
+      setDeckAccessSuspended(false);
       setError(null);
       irrecoverableCleanupPendingRef.current = false;
       await clearIdentityQueryCache();
@@ -324,7 +342,10 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
           throw reason;
         }
         if (cancelled) return;
-        if (!authenticated) clearAuthenticatedSettingsCache(storage, apiOrigin);
+        if (!authenticated) {
+          clearAuthenticatedSettingsCache(storage, apiOrigin);
+          clearDeckCaches(storage, await sessionProfileId(apiOrigin));
+        }
         sessionRef.current = session;
         setSession(session);
         setBootstrap(validated);
@@ -366,7 +387,10 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
           throw reason;
         }
         if (cancelled) return;
-        if (!authenticated) clearAuthenticatedSettingsCache(storage, apiOrigin);
+        if (!authenticated) {
+          clearAuthenticatedSettingsCache(storage, apiOrigin);
+          clearDeckCaches(storage, await sessionProfileId(apiOrigin));
+        }
         sessionRef.current = session;
         setSession(session);
         setBootstrap(cached);
@@ -513,6 +537,10 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     }
   }, [apiOrigin, logoutCleanupPending, online, settingsQuery.error, status, storage]);
 
+  useEffect(() => {
+    if (status !== "authenticated" && status !== "blocked") setShortcutSettingsReady(false);
+  }, [status]);
+
   async function replaceAt(local: DevHudSettingsV1, expectedRevision: bigint): Promise<boolean> {
     if (!online) throw new Error("offline-read-only");
     setSettingsError(null);
@@ -572,6 +600,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       return;
     }
     continueLocallyRef.current = false;
+    setContinuedLocally(false);
     setStatus("starting");
     setError(null);
     setIdentityResetAvailable(false);
@@ -698,6 +727,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     accountError,
     settingsError,
     deletionCleanupFailed,
+    deckAccessSuspended,
     importDiff,
     conflict,
     signInPending,
@@ -708,6 +738,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     signIn: async () => {
       if (signInPendingRef.current) return;
       continueLocallyRef.current = false;
+      setContinuedLocally(false);
       const current = sessionRef.current;
       if (current === null) throw new Error("bootstrap-not-ready");
       signInPendingRef.current = true;
@@ -732,6 +763,8 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     },
     continueLocally: () => {
       continueLocallyRef.current = true;
+      setContinuedLocally(true);
+      setDeckAccessSuspended(false);
       setStatus("guest");
       setIdentityReady(true);
       setError(null);
@@ -766,6 +799,8 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     },
     reapplyConflictLocal: async () => conflict ? replaceAt(conflict.local, conflict.currentRevision) : false,
     logout: async () => {
+      invalidateDeckPolling();
+      setDeckAccessSuspended(true);
       const releaseDiagnosticWrites = beginDiagnosticWriteSuppression(storage);
       try {
         setLogoutCleanupPending(true);
@@ -784,6 +819,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
         setSettingsReady(false);
         resetDesktopShortcuts();
         setSettingsError(null);
+        setDeckAccessSuspended(false);
         await clearIdentityQueryCache();
         onLoggedOut();
         onIdentityReset();
@@ -803,6 +839,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
         const response = await restoreMutation.mutateAsync({});
         setAccount(response.account ?? null);
         setDeletionCleanupFailed(false);
+        setDeckAccessSuspended(false);
         const blocked = response.account?.administrativeBlockState === AdministrativeBlockState.BLOCKED;
         setStatus(blocked ? "blocked" : "authenticated");
         if (!blocked) await settingsQuery.refetch();
@@ -839,7 +876,7 @@ class SettingsSnapshotError extends TypeError {}
 
 function validatedSettingsSnapshot(snapshot: { readonly schemaVersion: number; readonly canonicalJson: Uint8Array; readonly revision: bigint } | undefined): ValidatedSettingsSnapshot {
   if (!snapshot) return { settings: defaultDevHudSettings, revision: 0n };
-  if (snapshot.schemaVersion !== LegacySettingsSchemaVersion && snapshot.schemaVersion !== PrefixUrlMappingsSettingsSchemaVersion && snapshot.schemaVersion !== SettingsSchemaVersion) throw new SettingsSnapshotError("unsupported settings schema version");
+  if (snapshot.schemaVersion !== LegacySettingsSchemaVersion && snapshot.schemaVersion !== PreviousSettingsSchemaVersion && snapshot.schemaVersion !== CollidingSettingsSchemaVersion && snapshot.schemaVersion !== SettingsSchemaVersion) throw new SettingsSnapshotError("unsupported settings schema version");
   try {
     return { settings: decodeVersionedDevHudSettings(snapshot.canonicalJson, snapshot.schemaVersion), revision: snapshot.revision };
   } catch (reason) {
@@ -858,8 +895,10 @@ export async function clearIdentityForApiChange(
   const discardedCallback = await bridge.request({ operation: "auth.take-pending-callback" });
   if (discardedCallback.kind !== "auth-callback") throw new Error("auth-callback-discard-failed");
   await session?.clear();
-  await bridge.request({ operation: "secure.purge", scope: "api-change", profileId: await sessionProfileId(oldApiOrigin) });
+  const scopeId = await sessionProfileId(oldApiOrigin);
+  await bridge.request({ operation: "secure.purge", scope: "api-change", profileId: scopeId });
   clearAuthenticatedOriginData(storage, oldApiOrigin);
+  clearDeckCaches(storage, scopeId);
 }
 
 export function saveGuestSettings(storage: Storage, settings: DevHudSettingsV1): void {

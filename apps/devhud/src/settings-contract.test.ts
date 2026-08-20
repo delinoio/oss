@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { canonicalDevHudSettings, decodeDevHudSettings, decodeVersionedDevHudSettings, defaultDevHudSettings, encodeDevHudSettings, MaximumUrlRepositoryMappings, parseDevHudSettings, SettingsContractError, SettingsSchemaVersion } from "./settings-contract";
+import { canonicalDevHudSettings, CollidingSettingsSchemaVersion, deckBuilderProjection, deckRepositories, decodeDevHudSettings, decodeVersionedDevHudSettings, defaultDevHudSettings, encodeDevHudSettings, parseDevHudSettings, PreviousSettingsSchemaVersion, SettingsContractError, SettingsSchemaVersion } from "./settings-contract";
 import { diffSettings, redactRecursively, RedactedValue } from "./settings-diff";
 import { ShortcutActionId, ShortcutKey, ShortcutModifier, ShortcutValidationCode, defaultDesktopShortcutBindings, parseDesktopShortcutBindings } from "./shortcuts";
 
 describe("DevHud settings boundary", () => {
-  it("migrates schema v1 to v3 with explicit unselected GitHub profiles", () => {
+  it("migrates schema v1 to v4 with explicit unselected GitHub profiles", () => {
     const legacy = {
       ...defaultDevHudSettings,
       schemaVersion: 1,
@@ -12,7 +12,7 @@ describe("DevHud settings boundary", () => {
       decks: [],
     };
     const parsed = parseDevHudSettings(legacy);
-    expect(parsed.schemaVersion).toBe(3);
+    expect(parsed.schemaVersion).toBe(SettingsSchemaVersion);
     expect(parsed.github).toEqual({ profiles: [], pendingPatRemovals: [], repositories: [{ owner: "octo", name: "private", profileRef: null }], issueTracker: { owner: "octo", repository: "private", labels: ["bug"], profileRef: null } });
   });
 
@@ -39,6 +39,7 @@ describe("DevHud settings boundary", () => {
     expect(decodeDevHudSettings(encoded)).toEqual(defaultDevHudSettings);
     expect(decodeVersionedDevHudSettings(encoded, SettingsSchemaVersion)).toEqual(defaultDevHudSettings);
     expect(() => decodeVersionedDevHudSettings(encoded, 1)).toThrow(/snapshot envelope/u);
+    expect(() => decodeVersionedDevHudSettings(encoded, CollidingSettingsSchemaVersion)).toThrow(/snapshot envelope/u);
     expect(new TextDecoder().decode(encoded)).toBe(canonicalDevHudSettings(defaultDevHudSettings));
   });
 
@@ -112,51 +113,185 @@ describe("DevHud settings boundary", () => {
   });
 
   it("rejects settings snapshots containing more than 25 Decks", () => {
-    const deck = {
-      id: "deck",
-      title: "Deck",
-      query: "is:pr",
-      repository: null,
-      profileRef: null,
-      display: { groupBy: "none", showDrafts: true },
-      refreshMinutes: 15,
-      notifications: [],
-    };
-    expect(() => parseDevHudSettings({ ...defaultDevHudSettings, decks: Array.from({ length: 26 }, (_, index) => ({ ...deck, id: `deck-${index}` })) })).toThrow(/at most 25/u);
-  });
-
-  it("accepts only canonical UUID-v7 Deck IDs", () => {
-    const deck = {
-      id: "018f47a2-7b3c-7def-8abc-1234567890ab",
-      title: "Deck",
-      query: "is:pr",
-      repository: null,
-      profileRef: null,
-      display: { groupBy: "none", showDrafts: true },
-      refreshMinutes: 15,
-      notifications: [],
-    };
-
-    expect(parseDevHudSettings({ ...defaultDevHudSettings, decks: [deck] }).decks[0]?.id).toBe(deck.id);
-    expect(() => parseDevHudSettings({ ...defaultDevHudSettings, decks: [{ ...deck, id: "deck" }] })).toThrow(/UUID v7/u);
-    expect(() => parseDevHudSettings({ ...defaultDevHudSettings, decks: [{ ...deck, id: deck.id.toUpperCase() }] })).toThrow(/UUID v7/u);
-  });
-
-  it("rejects a GitHub profile reference when a Deck has no repository", () => {
     const profile = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", name: "Work", kind: "fine-grained" as const };
     const deck = {
       id: "018f47a2-7b3c-7def-8abc-1234567890ac",
-      title: "Deck",
-      query: "is:pr",
-      repository: null,
+      name: "Deck",
+      query: "repo:octo/widgets is:pr",
+      builder: null,
+      profileRef: profile.id,
+      display: { groupBy: "none", showDrafts: true },
+      refreshMinutes: 15,
+      notifications: [],
+    };
+    expect(() => parseDevHudSettings({ ...defaultDevHudSettings, github: { ...defaultDevHudSettings.github, profiles: [profile] }, decks: Array.from({ length: 26 }, (_, index) => ({ ...deck, id: `018f47a2-7b3c-7def-8abc-${String(index).padStart(12, "0")}` })) })).toThrow(/at most 25/u);
+  });
+
+  it("accepts only canonical UUID-v7 Deck IDs", () => {
+    const profile = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", name: "Work", kind: "fine-grained" as const };
+    const deck = {
+      id: "018f47a2-7b3c-7def-8abc-1234567890ab",
+      name: "Deck",
+      query: "repo:octo/widgets is:pr",
+      builder: null,
+      profileRef: profile.id,
+      display: { groupBy: "none", showDrafts: true },
+      refreshMinutes: 15,
+      notifications: [],
+    };
+
+    const settings = { ...defaultDevHudSettings, github: { ...defaultDevHudSettings.github, profiles: [profile] } };
+    expect(parseDevHudSettings({ ...settings, decks: [deck] }).decks[0]?.id).toBe(deck.id);
+    expect(() => parseDevHudSettings({ ...settings, decks: [{ ...deck, id: "deck" }] })).toThrow(/UUID v7/u);
+    expect(() => parseDevHudSettings({ ...settings, decks: [{ ...deck, id: deck.id.toUpperCase() }] })).toThrow(/UUID v7/u);
+  });
+
+  it("requires an explicit configured GitHub profile for every Deck", () => {
+    const profile = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", name: "Work", kind: "fine-grained" as const };
+    const deck = {
+      id: "018f47a2-7b3c-7def-8abc-1234567890ac",
+      name: "Deck",
+      query: "repo:octo/private is:pr",
+      builder: null,
       profileRef: profile.id,
       display: { groupBy: "none", showDrafts: true },
       refreshMinutes: 15,
       notifications: [],
     };
     const settings = { ...defaultDevHudSettings, github: { ...defaultDevHudSettings.github, profiles: [profile] }, decks: [deck] };
-    expect(() => parseDevHudSettings(settings)).toThrow(/profileRef.*repository is null/u);
-    expect(parseDevHudSettings({ ...settings, decks: [{ ...deck, profileRef: null }] }).decks[0]?.profileRef).toBeNull();
+    expect(parseDevHudSettings(settings).decks[0]?.profileRef).toBe(profile.id);
+    expect(() => parseDevHudSettings({ ...settings, decks: [{ ...deck, profileRef: "missing" }] })).toThrow(/configured GitHub profile/u);
+    expect(() => parseDevHudSettings({ ...settings, decks: [{ ...deck, profileRef: null }] })).toThrow(/must select a local GitHub credential profile/u);
+  });
+
+  it("migrates v2 Deck repository scopes and duplicate notifications", () => {
+    const profile = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", name: "Work", kind: "fine-grained" as const };
+    const legacy = {
+      ...defaultDevHudSettings,
+      schemaVersion: PreviousSettingsSchemaVersion,
+      github: { ...defaultDevHudSettings.github, profiles: [profile] },
+      decks: [{
+        id: "018f47a2-7b3c-7def-8abc-1234567890ac",
+        title: "Legacy Deck",
+        query: "is:pr",
+        repository: "octo/widgets",
+        profileRef: profile.id,
+        display: { groupBy: "none", showDrafts: true },
+        refreshMinutes: 5,
+        notifications: ["review", "review", "merged"],
+      }],
+    };
+    expect(parseDevHudSettings(legacy).decks).toMatchObject([{ query: "is:pr repo:octo/widgets", builder: { repository: "octo/widgets" }, notifications: ["review", "merged"] }]);
+  });
+
+  it("normalizes nonblank legacy Deck titles and rejects blank ones", () => {
+    const profile = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", name: "Work", kind: "fine-grained" as const };
+    const legacy = {
+      ...defaultDevHudSettings,
+      schemaVersion: PreviousSettingsSchemaVersion,
+      github: { ...defaultDevHudSettings.github, profiles: [profile] },
+      decks: [{
+        id: "018f47a2-7b3c-7def-8abc-1234567890ac",
+        title: " Legacy Deck ",
+        query: "is:pr",
+        repository: "octo/widgets",
+        profileRef: profile.id,
+        display: { groupBy: "none", showDrafts: true },
+        refreshMinutes: 5,
+        notifications: [],
+      }],
+    };
+    expect(parseDevHudSettings(legacy).decks[0]?.name).toBe("Legacy Deck");
+    expect(() => parseDevHudSettings({ ...legacy, decks: [{ ...legacy.decks[0], title: "   " }] })).toThrow(/trimmed nonblank/u);
+  });
+
+  it("retains a v2 Deck repository scope when its query names another repository", () => {
+    const profile = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", name: "Work", kind: "fine-grained" as const };
+    const legacy = {
+      ...defaultDevHudSettings,
+      schemaVersion: PreviousSettingsSchemaVersion,
+      github: { ...defaultDevHudSettings.github, profiles: [profile] },
+      decks: [{
+        id: "018f47a2-7b3c-7def-8abc-1234567890ac",
+        title: "Legacy Deck",
+        query: "repo:octo/other is:pr",
+        repository: "octo/widgets",
+        profileRef: profile.id,
+        display: { groupBy: "none", showDrafts: true },
+        refreshMinutes: 5,
+        notifications: [],
+      }],
+    };
+    const migrated = parseDevHudSettings(legacy);
+    expect(migrated.decks[0]?.query).toBe("repo:octo/other is:pr repo:octo/widgets");
+    expect(migrated.decks[0]?.builder).toMatchObject({ repository: "octo/other" });
+    expect(() => encodeDevHudSettings(migrated)).not.toThrow();
+    expect(parseDevHudSettings({ ...legacy, decks: [{ ...legacy.decks[0], repository: "octo/other" }] }).decks[0]?.query).toBe("repo:octo/other is:pr");
+    expect(() => parseDevHudSettings({ ...legacy, decks: [{ ...legacy.decks[0], repository: null }] })).toThrow(/repository.*selected/u);
+    expect(() => parseDevHudSettings({ ...legacy, decks: [{ ...legacy.decks[0], repository: "owner repo" }] })).toThrow(/repository qualifier/u);
+  });
+
+  it("requires real repository-scoped pull-request qualifiers in v4 Decks", () => {
+    const profile = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", name: "Work", kind: "fine-grained" as const };
+    const deck = {
+      id: "018f47a2-7b3c-7def-8abc-1234567890ac",
+      name: "Deck",
+      query: "repo:octo/widgets IS:PR",
+      builder: null,
+      profileRef: profile.id,
+      display: { groupBy: "none", showDrafts: true },
+      refreshMinutes: 5,
+      notifications: [],
+    };
+    const settings = { ...defaultDevHudSettings, github: { ...defaultDevHudSettings.github, profiles: [profile] }, decks: [deck] };
+    expect(parseDevHudSettings(settings).decks).toHaveLength(1);
+    expect(parseDevHudSettings({ ...settings, decks: [{ ...deck, query: "repo:octo/widgets\uFEFFis:pr" }] }).decks).toHaveLength(1);
+    expect(() => parseDevHudSettings({ ...settings, decks: [{ ...deck, query: "is:pr" }] })).toThrow(/repository qualifier/u);
+    expect(() => parseDevHudSettings({ ...settings, decks: [{ ...deck, query: "repo:octo is:pr" }] })).toThrow(/repository qualifier/u);
+    expect(() => parseDevHudSettings({ ...settings, decks: [{ ...deck, query: "repo:octo/\u0000 is:pr" }] })).toThrow(/repository qualifier/u);
+    expect(() => parseDevHudSettings({ ...settings, decks: [{ ...deck, query: `${Array.from({ length: 11 }, (_, index) => `repo:octo/repository-${index}`).join(" ")} is:pr` }] })).toThrow(/repository qualifier/u);
+    expect(() => parseDevHudSettings({ ...settings, decks: [{ ...deck, name: "   " }] })).toThrow(/trimmed nonblank/u);
+    expect(() => parseDevHudSettings({ ...settings, decks: [{ ...deck, name: " Deck " }] })).toThrow(/trimmed nonblank/u);
+    expect(parseDevHudSettings({ ...settings, decks: [{ ...deck, query: '"find is:pr here" repo:octo/widgets' }] }).decks[0]?.query).toBe('"find is:pr here" repo:octo/widgets is:pr');
+    expect(() => parseDevHudSettings({ ...settings, decks: [{ ...deck, notifications: ["review", "review"] }] })).toThrow(/unique values/u);
+    expect(() => parseDevHudSettings({ ...settings, decks: [deck, deck] })).toThrow(/unique IDs/u);
+  });
+
+  it("requires every Boolean Deck query branch to select a validated repository", () => {
+    const profile = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", name: "Work", kind: "fine-grained" as const };
+    const deck = { id: "018f47a2-7b3c-7def-8abc-1234567890ac", name: "Deck", profileRef: profile.id, query: "(repo:octo/widgets is:pr OR (repo:octo/tools is:pr AND author:octocat))", builder: null, display: { groupBy: "none" as const, showDrafts: true }, refreshMinutes: 5 as const, notifications: [] };
+    const settings = { ...defaultDevHudSettings, github: { ...defaultDevHudSettings.github, profiles: [profile] }, decks: [deck] };
+
+    expect(parseDevHudSettings(settings).decks).toHaveLength(1);
+    expect(deckBuilderProjection(deck.query)).toBeNull();
+    expect(deckRepositories(deck.query)).toEqual([{ owner: "octo", name: "widgets" }, { owner: "octo", name: "tools" }]);
+    expect(parseDevHudSettings({ ...settings, decks: [{ ...deck, query: "repo:octo/widgets NOT repo:octo/excluded is:pr" }] }).decks).toHaveLength(1);
+    expect(deckRepositories("repo:octo/widgets NOT repo:octo/excluded is:pr")).toEqual([{ owner: "octo", name: "widgets" }]);
+    expect(() => parseDevHudSettings({ ...settings, decks: [{ ...deck, query: "NOT repo:octo/excluded is:pr" }] })).toThrow(/repository qualifier/u);
+    expect(() => parseDevHudSettings({ ...settings, decks: [{ ...deck, query: "repo:octo/widgets is:pr OR author:octocat is:pr" }] })).toThrow(/repository qualifier/u);
+    expect(() => parseDevHudSettings({ ...settings, decks: [{ ...deck, query: "(repo:octo/widgets is:pr OR repo:octo/tools is:pr" }] })).toThrow(/repository qualifier/u);
+    expect(parseDevHudSettings({ ...settings, decks: [{ ...deck, query: "repo:octo/widgets OR repo:octo/tools" }] }).decks[0]?.query).toBe("(repo:octo/widgets OR repo:octo/tools) is:pr");
+    expect(() => parseDevHudSettings({ ...settings, decks: [{ ...deck, builder: { repository: "octo/widgets", author: null, review: null, label: null, state: null } }] })).toThrow(/lossless projection/u);
+  });
+
+  it("groups Boolean v2 queries before restoring the persisted repository scope", () => {
+    const profile = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", name: "Work", kind: "fine-grained" as const };
+    const legacy = {
+      ...defaultDevHudSettings,
+      schemaVersion: PreviousSettingsSchemaVersion,
+      github: { ...defaultDevHudSettings.github, profiles: [profile] },
+      decks: [{ id: "018f47a2-7b3c-7def-8abc-1234567890ac", title: "Legacy Deck", query: "repo:octo/other OR author:octocat", repository: "octo/widgets", profileRef: profile.id, display: { groupBy: "none", showDrafts: true }, refreshMinutes: 5, notifications: [] }],
+    };
+
+    expect(parseDevHudSettings(legacy).decks[0]).toMatchObject({ query: "((repo:octo/other OR author:octocat) is:pr) repo:octo/widgets", builder: null });
+  });
+
+  it("requires a non-null Deck builder to match the executable query", () => {
+    const profile = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", name: "Work", kind: "fine-grained" as const };
+    const deck = { id: "018f47a2-7b3c-7def-8abc-1234567890ac", name: "Deck", profileRef: profile.id, query: "repo:octo/widgets is:pr", builder: { repository: "octo/widgets", author: null, review: null, label: null, state: null }, display: { groupBy: "none" as const, showDrafts: true }, refreshMinutes: 5 as const, notifications: [] };
+    const settings = { ...defaultDevHudSettings, github: { ...defaultDevHudSettings.github, profiles: [profile] }, decks: [deck] };
+    expect(parseDevHudSettings(settings).decks).toHaveLength(1);
+    expect(() => parseDevHudSettings({ ...settings, decks: [{ ...deck, builder: { ...deck.builder, repository: "other/repository" } }] })).toThrow(/lossless projection/u);
   });
 
   const mappingProfile = { id: "018f47a2-7b3c-7def-8abc-1234567890ac", name: "Work", kind: "fine-grained" as const };
@@ -169,7 +304,7 @@ describe("DevHud settings boundary", () => {
       urlMappings: [{ ...mapping, pattern: `https://source.example/path${suffix}` }],
     })).toThrow(/credentials, query, or fragment/u);
     expect(() => parseDevHudSettings({
-      ...settingsWithMappingProfile,
+      ...defaultDevHudSettings,
       uploads: {
         provider: "r2",
         r2: { profileRef: "profile", bucket: "bucket", endpoint: `https://r2.example${suffix}`, region: "auto", publicBaseUrl: null },
@@ -182,29 +317,6 @@ describe("DevHud settings boundary", () => {
         r2: { profileRef: "profile", bucket: "bucket", endpoint: "https://r2.example", region: "auto", publicBaseUrl: `https://cdn.example${suffix}` },
       },
     })).toThrow(/without credentials, query, or fragment/u);
-  });
-
-  it.each(["https://example.com/", "https://EXAMPLE.com", "https://example.com:443"])("normalizes equivalent Chrome origins: %s", (chromeOrigin) => {
-    expect(parseDevHudSettings({ ...settingsWithMappingProfile, urlMappings: [{ ...mapping, chromeOrigin }] }).urlMappings[0]?.chromeOrigin).toBe("https://example.com");
-  });
-
-  it("rejects wildcard Chrome origins and excessive mapping counts", () => {
-    expect(() => parseDevHudSettings({ ...settingsWithMappingProfile, urlMappings: [{ ...mapping, chromeOrigin: "https://*.example.com" }] })).toThrow(/concrete HTTP\(S\) origin/u);
-    expect(() => parseDevHudSettings({ ...settingsWithMappingProfile, urlMappings: Array.from({ length: MaximumUrlRepositoryMappings + 1 }, (_, index) => ({ ...mapping, id: `018f47a2-7b3c-7def-8abc-${(123456789000 + index).toString().padStart(12, "0")}` })) })).toThrow(/at most/u);
-  });
-
-  it("requires each URL mapping to reference a configured GitHub profile", () => {
-    expect(() => parseDevHudSettings({ ...settingsWithMappingProfile, urlMappings: [{ ...mapping, credentialProfileRef: "missing" }] })).toThrow(/urlMappings\[0\].credentialProfileRef.*configured GitHub profile/u);
-  });
-
-  it("drops legacy v1 mapping entries while preserving other settings", () => {
-    const legacy = { ...defaultDevHudSettings, schemaVersion: 1, appearance: { theme: "dark", language: "ko" }, github: { repositories: [], issueTracker: null }, urlMappings: [{ sourcePrefix: "https://source.example/path", destinationPrefix: "https://destination.example/path" }] };
-    expect(parseDevHudSettings(legacy)).toMatchObject({ schemaVersion: 3, appearance: { theme: "dark", language: "ko" }, urlMappings: [] });
-  });
-
-  it("drops prefix mapping entries from schema-v2 snapshots", () => {
-    const legacy = { ...settingsWithMappingProfile, schemaVersion: 2, urlMappings: [{ sourcePrefix: "https://source.example/path", destinationPrefix: "https://destination.example/path" }] };
-    expect(parseDevHudSettings(legacy).urlMappings).toEqual([]);
   });
 
   it("produces a complete recursive, secret-redacted snapshot diff", () => {

@@ -1,9 +1,9 @@
 import { useCallback, useState, type FormEvent } from "react";
-import { createGitHubProvider, GitHubErrorCode, GitHubProviderError, readGitHubCredential, type GitHubProvider, type GitHubRepositoryRef } from "./github-provider.ts";
+import { createGitHubProvider, GitHubErrorCode, GitHubProviderError, readGitHubCredential, type GitHubCredential, type GitHubProvider, type GitHubRepositoryRef } from "./github-provider.ts";
 import type { Copy } from "./localization.ts";
 import { NativeBridgeError, NativeBridgeErrorCode, SecureSettingKind, type NativeBridgeV1 } from "./native-bridge.ts";
 import { useIdentitySettings } from "./service-boundary.tsx";
-import { GitHubCredentialKind, type DevHudSettingsV1 } from "./settings-contract.ts";
+import { deckRepositories, GitHubCredentialKind, type DevHudSettingsV1 } from "./settings-contract.ts";
 import { browserShell, ExternalLinkTarget, type ExternalLinkTarget as ExternalLinkTargetValue } from "./shell.ts";
 
 interface GitHubSettingsProps {
@@ -14,6 +14,8 @@ interface GitHubSettingsProps {
   readonly credentialOperationPending?: boolean;
   readonly runCredentialOperation?: <Value>(operation: () => Promise<Value>) => Promise<Value>;
 }
+
+const GitHubRepositoryValidationConcurrency = 2;
 
 export function GitHubSettings({ copy, bridge, provider = createGitHubProvider({ fetch: globalThis.fetch }), openExternal = (target) => browserShell.openExternal(target, ""), credentialOperationPending = false, runCredentialOperation = async <Value,>(operation: () => Promise<Value>) => operation() }: GitHubSettingsProps) {
   const identity = useIdentitySettings();
@@ -76,7 +78,7 @@ export function GitHubSettings({ copy, bridge, provider = createGitHubProvider({
   const saveProfileToken = (profile: DevHudSettingsV1["github"]["profiles"][number], nextToken: string) => invoke(() => runCredentialOperation(async () => {
     const credential = { profileId: profile.id, kind: profile.kind, token: nextToken };
     await provider.validateCredential(credential);
-    await Promise.all(referencedRepositories(identity.settings, profile.id).map((repository) => provider.validateRepository(credential, repository)));
+    await validateRepositories(provider, credential, referencedRepositories(identity.settings, profile.id));
     await bridge.request({ operation: "secure.write", setting: { kind: SecureSettingKind.GithubPat, profileId: profile.id, scopeId: await identity.githubPatScopeId }, value: nextToken });
     setStatus(copy.githubProfileSaved);
   }));
@@ -115,14 +117,6 @@ export function GitHubSettings({ copy, bridge, provider = createGitHubProvider({
     await validateAssignment(profileRef, { owner: tracker.owner, name: tracker.repository });
     await identity.replaceSettings((current) => ({ ...current, github: { ...current.github, issueTracker: current.github.issueTracker === null ? null : { ...current.github.issueTracker, profileRef } } }));
   });
-  const assignDeck = (index: number, profileRef: string | null) => invoke(async () => {
-    const deck = identity.settings.decks[index];
-    if (deck.repository === null) return;
-    const match = /^([^/]+)\/([^/]+)$/u.exec(deck.repository);
-    if (match === null) throw new GitHubProviderError(GitHubErrorCode.InvalidResponse, "validate-repository");
-    await validateAssignment(profileRef, { owner: match[1], name: match[2] });
-    await identity.replaceSettings((current) => ({ ...current, decks: current.decks.map((item, currentIndex) => currentIndex === index ? { ...item, profileRef } : item) }));
-  });
 
   return <section className="github-settings" aria-labelledby="github-settings-title">
     <h3 id="github-settings-title">{copy.githubSetupTitle}</h3>
@@ -148,7 +142,6 @@ export function GitHubSettings({ copy, bridge, provider = createGitHubProvider({
     <h4>{copy.githubAssignments}</h4>
     {identity.settings.github.repositories.map((repository, index) => <ProfileAssignment key={`repository:${repository.owner}/${repository.name}`} copy={copy} id={`github-repository-${index}`} label={`${repository.owner}/${repository.name}`} value={repository.profileRef} profiles={identity.settings.github.profiles} disabled={pending || identity.readOnly} onChange={(value) => void assignRepository(index, value)} />)}
     {identity.settings.github.issueTracker !== null && <ProfileAssignment copy={copy} id="github-issue-tracker" label={`${copy.githubIssueTracker}: ${identity.settings.github.issueTracker.owner}/${identity.settings.github.issueTracker.repository}`} value={identity.settings.github.issueTracker.profileRef} profiles={identity.settings.github.profiles} disabled={pending || identity.readOnly} onChange={(value) => void assignTracker(value)} />}
-    {identity.settings.decks.map((deck, index) => deck.repository === null ? null : <ProfileAssignment key={deck.id} copy={copy} id={`github-deck-${deck.id}`} label={`${copy.githubDeck}: ${deck.title} — ${deck.repository}`} value={deck.profileRef} profiles={identity.settings.github.profiles} disabled={pending || identity.readOnly} onChange={(value) => void assignDeck(index, value)} />)}
     {status !== null && <p role={statusError ? "alert" : "status"} aria-live={statusError ? "assertive" : "polite"}>{status}</p>}
   </section>;
 }
@@ -172,7 +165,19 @@ export async function validateGitHubProfile(settings: DevHudSettingsV1, profileI
   if (profile === undefined) throw new GitHubProviderError(GitHubErrorCode.MissingToken, "validate-credential");
   const credential = await readGitHubCredential(bridge, profile, scopeId);
   await provider.validateCredential(credential);
-  await Promise.all(referencedRepositories(settings, profileId).map((repository) => provider.validateRepository(credential, repository)));
+  await validateRepositories(provider, credential, referencedRepositories(settings, profileId));
+}
+
+async function validateRepositories(provider: GitHubProvider, credential: GitHubCredential, repositories: readonly GitHubRepositoryRef[]): Promise<void> {
+  let nextIndex = 0;
+  const worker = async () => {
+    while (true) {
+      const repository = repositories[nextIndex++];
+      if (repository === undefined) return;
+      await provider.validateRepository(credential, repository);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(GitHubRepositoryValidationConcurrency, repositories.length) }, worker));
 }
 
 export function referencedRepositories(settings: DevHudSettingsV1, profileId: string): readonly GitHubRepositoryRef[] {
@@ -182,9 +187,8 @@ export function referencedRepositories(settings: DevHudSettingsV1, profileId: st
   const tracker = settings.github.issueTracker;
   if (tracker?.profileRef === profileId) add({ owner: tracker.owner, name: tracker.repository });
   for (const deck of settings.decks) {
-    if (deck.profileRef !== profileId || deck.repository === null) continue;
-    const match = /^([^/]+)\/([^/]+)$/u.exec(deck.repository);
-    if (match !== null) add({ owner: match[1], name: match[2] });
+    if (deck.profileRef !== profileId) continue;
+    for (const repository of deckRepositories(deck.query) ?? []) add(repository);
   }
   for (const mapping of settings.urlMappings) if (mapping.credentialProfileRef === profileId) add(mapping.repository);
   return [...unique.values()];

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import fixture from "../fixtures/github-provider.json";
-import { ClassicPatCreationUrl, createGitHubProvider, FineGrainedPatCreationUrl, githubDiagnostic, GitHubApiOrigin, GitHubErrorCode, GitHubProviderError, InternalProviderRegistryV1, InternalProviderRegistryVersion, issueMarker, ownsCanonicalUrl, readGitHubCredential, type GitHubCredential, type GitHubRepositoryRef } from "./github-provider.ts";
+import { ClassicPatCreationUrl, createGitHubProvider, FineGrainedPatCreationUrl, githubDiagnostic, GitHubApiOrigin, GitHubErrorCode, GitHubProviderError, InternalProviderRegistryV1, InternalProviderRegistryVersion, issueMarker, ownsCanonicalUrl, readGitHubCredential, type GitHubCredential, type GitHubProvider, type GitHubRepositoryRef, type GitHubValidation } from "./github-provider.ts";
 import { referencedRepositories, validateGitHubProfile } from "./github-settings-ui.tsx";
 import { NativeBridgeError, NativeBridgeErrorCode, type NativeBridgeV1 } from "./native-bridge.ts";
 import { canonicalDevHudSettings, defaultDevHudSettings, parseDevHudSettings } from "./settings-contract.ts";
@@ -183,6 +183,28 @@ describe("GitHub.com provider", () => {
     await expect(provider.getPullRequest(fine, privateRepository, 9)).resolves.toMatchObject({ pullRequest: { author: "octocat", headSha: "0123456789abcdef", labels: ["needs-review"] }, metadata: { etag: '"pull"' } });
   });
 
+  it("propagates incomplete pull-request search results", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => json({ incomplete_results: true, items: [] }));
+    await expect(createGitHubProvider({ fetch }).searchPullRequests(fine, "repo:octo/widgets is:pr")).resolves.toMatchObject({ incompleteResults: true, items: [] });
+  });
+
+  it("skips unsupported requested-reviewer union members while enriching pull requests", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => json({ data: { nodes: [{
+      id: "PR_kwDOFixture", number: 9, title: "Deterministic pull request", url: "https://github.com/octo-private/controls/pull/9", isDraft: false,
+      state: "OPEN", merged: false, mergedAt: null, updatedAt: "2026-08-19T00:00:00Z", mergeable: "MERGEABLE", reviewDecision: null,
+      repository: { owner: { login: "octo-private" }, name: "controls" }, author: { login: "octocat" }, labels: { nodes: [] },
+      reviewRequests: { nodes: [{ requestedReviewer: { login: "octocat" } }, { requestedReviewer: { slug: "maintainers" } }, { requestedReviewer: { __typename: "Bot" } }, { requestedReviewer: { __typename: "Mannequin" } }] },
+      commits: { nodes: [] },
+    }] } }));
+
+    await expect(createGitHubProvider({ fetch }).enrichPullRequests(fine, ["PR_kwDOFixture"])).resolves.toMatchObject({ items: [{ requestedReviewers: ["octocat", "maintainers"] }] });
+  });
+
+  it("classifies REST pull-request search validation failures as query errors", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => json({ message: "Validation Failed" }, 422));
+    await expect(createGitHubProvider({ fetch }).searchPullRequests(fine, "repo:octo/widgets is:pr bad:query")).rejects.toMatchObject({ code: GitHubErrorCode.InvalidQuery });
+  });
+
   it.each([
     ["repo:octo-private/controls is:pr", "repo:octo-private/controls is:pr"],
     ["repo:octo-private/controls IS:PR", "repo:octo-private/controls IS:PR"],
@@ -238,10 +260,22 @@ describe("GitHub profile and server isolation", () => {
     expect(validateRepository.mock.calls.every(([credential]) => credential.profileId === fine.profileId)).toBe(true);
   });
 
-  it("includes URL-mapping repositories in the selected profile's validation graph", () => {
-    const mapping = { id: "018f47a2-7b3c-7def-8abc-1234567890ac", pattern: "https://mapping.example/**", repository: { owner: "delinoio", name: "mapping-repository" }, credentialProfileRef: fine.profileId, priority: 0, chromeOrigin: null, updatedAt: "2026-08-17T00:00:00.000Z" };
-    const mappedSettings = parseDevHudSettings({ ...settings, urlMappings: [mapping] });
-    expect(referencedRepositories(mappedSettings, fine.profileId)).toContainEqual(mapping.repository);
+  it("bounds profile validation for multi-repository Decks", async () => {
+    const releases: Array<() => void> = [];
+    const validateRepository: GitHubProvider["validateRepository"] = vi.fn((_credential: GitHubCredential, repository: GitHubRepositoryRef) => new Promise<GitHubValidation>((resolve) => {
+      releases.push(() => resolve({ repository, private: false, permissions: { metadata: true, pullRequests: true, issues: true, contents: true }, metadata: { etag: null, rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } } }));
+    }));
+    const provider = { ...createGitHubProvider({ fetch: router() }), validateCredential: vi.fn(async () => ({ etag: null, rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } })), validateRepository };
+    const multiRepositoryDeck = { id: "018f47a2-7b3c-7def-8abc-1234567890ac", name: "Deck", profileRef: fine.profileId, query: "repo:octo/one repo:octo/two repo:octo/three is:pr", builder: null, display: { groupBy: "none" as const, showDrafts: true }, refreshMinutes: 5 as const, notifications: [] };
+    const deckSettings = parseDevHudSettings({ ...settings, github: { ...settings.github, repositories: [], issueTracker: null }, decks: [multiRepositoryDeck] });
+    const validation = validateGitHubProfile(deckSettings, fine.profileId, bridgeWithValue(fine.token), provider, scopeId);
+
+    await vi.waitFor(() => expect(validateRepository).toHaveBeenCalledTimes(2));
+    releases[0]?.();
+    await vi.waitFor(() => expect(validateRepository).toHaveBeenCalledTimes(3));
+    releases[1]?.();
+    releases[2]?.();
+    await validation;
   });
 
   it("synchronizes only stable IDs and sends PATs/GitHub requests to no server", async () => {

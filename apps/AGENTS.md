@@ -19,7 +19,7 @@
 - `apps/binpm-docs`: Rspress static documentation app for `binpm`.
 - `apps/nodeup-docs`: Rspress static documentation app for `nodeup`.
 - `apps/public-docs`: Rspress static public documentation app.
-- `apps/devhud`: implemented deterministic bilingual React/TypeScript shell, complete guest/Logto identity, synchronized Settings and opt-in diagnostics boundaries, direct-client GitHub.com provider/setup foundation, desktop RealQA capture/editor/encrypted drafts, and target-isolated Rust/Tauri desktop CEF plus iOS/Android system-webview hosts; issue submission, other populated product surfaces, and native widgets remain planned.
+- `apps/devhud`: implemented deterministic bilingual React/TypeScript shell, complete guest/Logto identity, synchronized Settings and opt-in diagnostics boundaries, direct-client GitHub.com provider/setup foundation, desktop RealQA capture/editor/encrypted drafts, populated Deck surface, and target-isolated Rust/Tauri desktop CEF plus iOS/Android system-webview hosts; issue submission, other populated product surfaces, and native widgets remain planned.
 - `apps/devhud-chrome-extension`: planned Chrome Manifest V3 DevHud extension.
 - `apps/devhud-admin`: implemented React/TypeScript Rsbuild administrator SPA embedded at `/admin`.
 

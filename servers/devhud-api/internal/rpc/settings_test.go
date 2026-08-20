@@ -7,8 +7,8 @@ import (
 
 const canonicalSettingsV1 = `{"agents":[],"appearance":{"language":"system","theme":"system"},"decks":[],"github":{"issueTracker":null,"repositories":[]},"schemaVersion":1,"shortcuts":{"android":{},"desktop":{},"ios":{}},"uploads":{"provider":"official","r2":null},"urlMappings":[]}`
 const canonicalSettingsV2 = `{"agents":[],"appearance":{"language":"system","theme":"system"},"decks":[],"github":{"issueTracker":null,"pendingPatRemovals":[],"profiles":[],"repositories":[]},"schemaVersion":2,"shortcuts":{"android":{},"desktop":{},"ios":{}},"uploads":{"provider":"official","r2":null},"urlMappings":[]}`
-const canonicalStructuredDesktopShortcuts = `{"realqa.capture.active-window":{"enabled":true,"key":"digit-2","modifiers":[]},"realqa.capture.all-displays":{"enabled":true,"key":"digit-3","modifiers":[]},"realqa.capture.display":{"enabled":true,"key":"digit-1","modifiers":[]},"realqa.capture.selection":{"enabled":true,"key":"digit-4","modifiers":[]},"realqa.capture.toolbar":{"enabled":true,"key":"digit-5","modifiers":[]},"shell.command-palette":{"enabled":true,"key":"key-k","modifiers":["right-primary"]}}`
-const canonicalSettingsV3 = `{"agents":[],"appearance":{"language":"system","theme":"system"},"decks":[],"github":{"issueTracker":null,"pendingPatRemovals":[],"profiles":[],"repositories":[]},"schemaVersion":3,"shortcuts":{"android":{},"desktop":` + canonicalStructuredDesktopShortcuts + `,"ios":{}},"uploads":{"provider":"official","r2":null},"urlMappings":[]}`
+const canonicalSettingsV3 = `{"agents":[],"appearance":{"language":"system","theme":"system"},"decks":[],"github":{"issueTracker":null,"pendingPatRemovals":[],"profiles":[],"repositories":[]},"schemaVersion":3,"shortcuts":{"android":{},"desktop":{},"ios":{}},"uploads":{"provider":"official","r2":null},"urlMappings":[]}`
+const canonicalSettingsV4 = `{"agents":[],"appearance":{"language":"system","theme":"system"},"decks":[],"github":{"issueTracker":null,"pendingPatRemovals":[],"profiles":[],"repositories":[]},"schemaVersion":4,"shortcuts":{"android":{},"desktop":{"realqa.capture.active-window":{"enabled":true,"key":"digit-2","modifiers":[]},"realqa.capture.all-displays":{"enabled":true,"key":"digit-3","modifiers":[]},"realqa.capture.display":{"enabled":true,"key":"digit-1","modifiers":[]},"realqa.capture.selection":{"enabled":true,"key":"digit-4","modifiers":[]},"realqa.capture.toolbar":{"enabled":true,"key":"digit-5","modifiers":[]},"shell.command-palette":{"enabled":true,"key":"key-k","modifiers":["right-primary"]}},"ios":{}},"uploads":{"provider":"official","r2":null},"urlMappings":[]}`
 
 func TestValidateCanonicalJSON(t *testing.T) {
 	for _, value := range [][]byte{
@@ -40,102 +40,151 @@ func TestValidateDevHudSettings(t *testing.T) {
 		1: canonicalSettingsV1,
 		2: canonicalSettingsV2,
 		3: canonicalSettingsV3,
+		4: canonicalSettingsV4,
 	} {
 		if err := validateDevHudSettings([]byte(value), version); err != nil {
 			t.Errorf("validateDevHudSettings(version %d): %v", version, err)
 		}
 	}
 
+	legacyV3Shortcuts := strings.Replace(canonicalSettingsV3, `"desktop":{}`, `"desktop":{"shell.command-palette":"CommandOrControl+K"}`, 1)
+	if err := validateDevHudSettings([]byte(legacyV3Shortcuts), 3); err != nil {
+		t.Errorf("validateDevHudSettings(legacy schema v3 shortcuts): %v", err)
+	}
+
 	profileID := "018f47a2-7b3c-7def-8abc-1234567890ab"
-	withProfile := strings.Replace(canonicalSettingsV3, `"profiles":[]`, `"profiles":[{"id":"`+profileID+`","kind":"fine-grained","name":"Work"}]`, 1)
-	structuredMapping := `[{"chromeOrigin":null,"credentialProfileRef":"` + profileID + `","id":"018f47a2-7b3c-7def-8abc-1234567890ac","pattern":"https://example.com./**","priority":0,"repository":{"name":"oss","owner":"delinoio"},"updatedAt":"2026-08-17T00:00:00.000Z"}]`
-	if err := validateDevHudSettings([]byte(strings.Replace(withProfile, `"urlMappings":[]`, `"urlMappings":`+structuredMapping, 1)), 3); err != nil {
-		t.Fatalf("structured mapping validation failed: %v", err)
-	}
-	for _, pattern := range []string{
-		"https://example.com/" + strings.Repeat("a/../", maximumMappingPathSegments+1) + "project",
-		"https://example.com/" + strings.Repeat("a/%2e%2e/", maximumMappingPathSegments+1) + "project",
-	} {
-		mapping := strings.Replace(structuredMapping, `"https://example.com./**"`, `"`+pattern+`"`, 1)
-		if err := validateDevHudSettings([]byte(strings.Replace(withProfile, `"urlMappings":[]`, `"urlMappings":`+mapping, 1)), 3); err != nil {
-			t.Fatalf("dot-segment-normalized mapping validation failed: %v", err)
-		}
-	}
-	for _, suffix := range []string{"b/..", "b/%2e%2e"} {
-		pattern := "https://example.com/" + strings.Repeat("a/", maximumMappingPathSegments) + suffix
-		mapping := strings.Replace(structuredMapping, `"https://example.com./**"`, `"`+pattern+`"`, 1)
-		if err := validateDevHudSettings([]byte(strings.Replace(withProfile, `"urlMappings":[]`, `"urlMappings":`+mapping, 1)), 3); err == nil {
-			t.Fatalf("terminal dot-segment mapping %q passed validation", suffix)
-		}
-	}
-	legacyMapping := `[{"destinationPrefix":"https://destination.example/path","sourcePrefix":"https://source.example/path"}]`
-	if err := validateDevHudSettings([]byte(strings.Replace(canonicalSettingsV1, `"urlMappings":[]`, `"urlMappings":`+legacyMapping, 1)), 1); err != nil {
-		t.Fatalf("legacy mapping validation failed: %v", err)
-	}
-	if err := validateDevHudSettings([]byte(strings.Replace(canonicalSettingsV2, `"urlMappings":[]`, `"urlMappings":`+legacyMapping, 1)), 2); err != nil {
-		t.Fatalf("schema-v2 legacy mapping validation failed: %v", err)
-	}
-	if err := validateDevHudSettings([]byte(strings.Replace(canonicalSettingsV3, `"urlMappings":[]`, `"urlMappings":`+legacyMapping, 1)), 3); err == nil {
-		t.Fatal("schema-v3 prefix mapping validation succeeded")
-	}
-	for name, mapping := range map[string]string{
-		"partial host wildcard":               strings.Replace(structuredMapping, `"https://example.com./**"`, `"https://api*.example.com/**"`, 1),
-		"partial path wildcard":               strings.Replace(structuredMapping, `"https://example.com./**"`, `"https://example.com/foo*bar"`, 1),
-		"invalid numeric IPv4 pattern":        strings.Replace(structuredMapping, `"https://example.com./**"`, `"https://999.999.999.999/**"`, 1),
-		"bracketed IPv4 pattern":              strings.Replace(structuredMapping, `"https://example.com./**"`, `"https://[127.0.0.1]/**"`, 1),
-		"invalid Chrome origin":               strings.Replace(structuredMapping, `"chromeOrigin":null`, `"chromeOrigin":"https://example.com/path"`, 1),
-		"Chrome origin port above 65535":      strings.Replace(structuredMapping, `"chromeOrigin":null`, `"chromeOrigin":"https://example.com:65536"`, 1),
-		"invalid numeric IPv4 Chrome origin":  strings.Replace(structuredMapping, `"chromeOrigin":null`, `"chromeOrigin":"http://999.999.999.999"`, 1),
-		"bracketed IPv4 Chrome origin":        strings.Replace(structuredMapping, `"chromeOrigin":null`, `"chromeOrigin":"http://[127.0.0.1]"`, 1),
-		"abbreviated invalid numeric host":    strings.Replace(structuredMapping, `"https://example.com./**"`, `"https://999.1/**"`, 1),
-		"invalid punycode host":               strings.Replace(structuredMapping, `"https://example.com./**"`, `"https://xn--/**"`, 1),
-		"wildcard host with mapped separator": strings.Replace(structuredMapping, `"https://example.com./**"`, `"https://*.example。com/**"`, 1),
-		"too many path segments":              strings.Replace(structuredMapping, `"https://example.com./**"`, `"https://example.com/`+strings.Repeat("a/", 32)+`a"`, 1),
-		"backslash-separated path segments":   strings.Replace(structuredMapping, `"https://example.com./**"`, `"https://example.com/`+strings.Repeat(`a\\`, 32)+`a"`, 1),
-		"too many globstar segments":          strings.Replace(structuredMapping, `"https://example.com./**"`, `"https://example.com/`+strings.Repeat("**/", 8)+`**"`, 1),
-	} {
-		t.Run(name, func(t *testing.T) {
-			if err := validateDevHudSettings([]byte(strings.Replace(withProfile, `"urlMappings":[]`, `"urlMappings":`+mapping, 1)), 3); err == nil {
-				t.Fatal("validation succeeded")
-			}
-		})
-	}
-	httpChromeOrigin := strings.Replace(structuredMapping, `"chromeOrigin":null`, `"chromeOrigin":"http://localhost:3000"`, 1)
-	if err := validateDevHudSettings([]byte(strings.Replace(withProfile, `"urlMappings":[]`, `"urlMappings":`+httpChromeOrigin, 1)), 3); err != nil {
-		t.Fatalf("HTTP Chrome origin validation failed: %v", err)
-	}
-	ipv6ChromeOrigin := strings.Replace(structuredMapping, `"chromeOrigin":null`, `"chromeOrigin":"http://[::1]:3000"`, 1)
-	if err := validateDevHudSettings([]byte(strings.Replace(withProfile, `"urlMappings":[]`, `"urlMappings":`+ipv6ChromeOrigin, 1)), 3); err != nil {
-		t.Fatalf("IPv6 Chrome origin validation failed: %v", err)
-	}
-	underscoreHostMapping := strings.Replace(structuredMapping, `https://example.com./**`, `https://foo_bar.example/**`, 1)
-	if err := validateDevHudSettings([]byte(strings.Replace(withProfile, `"urlMappings":[]`, `"urlMappings":`+underscoreHostMapping, 1)), 3); err != nil {
-		t.Fatalf("browser-valid underscore mapping host failed validation: %v", err)
-	}
-	underscoreChromeOrigin := strings.Replace(structuredMapping, `"chromeOrigin":null`, `"chromeOrigin":"https://foo_bar.example"`, 1)
-	if err := validateDevHudSettings([]byte(strings.Replace(withProfile, `"urlMappings":[]`, `"urlMappings":`+underscoreChromeOrigin, 1)), 3); err != nil {
-		t.Fatalf("browser-valid underscore Chrome origin failed validation: %v", err)
-	}
-	if err := validateDevHudSettings([]byte(strings.Replace(canonicalSettingsV3, `"desktop":`+canonicalStructuredDesktopShortcuts, `"desktop":{}`, 1)), 3); err == nil {
-		t.Fatal("schema-v3 empty desktop shortcut map validation succeeded")
-	}
-	if err := validateDevHudSettings([]byte(strings.Replace(canonicalSettingsV3, `"desktop":`+canonicalStructuredDesktopShortcuts, `"desktop":{"shell.command-palette":"ControlRight+KeyK"}`, 1)), 3); err == nil {
-		t.Fatal("schema-v3 legacy shortcut action validation succeeded")
+	structuredMapping := `[{"chromeOrigin":null,"credentialProfileRef":"` + profileID + `","id":"018f47a2-7b3c-7def-8abc-1234567890ac","pattern":"https://example.com/**","priority":0,"repository":{"name":"oss","owner":"delinoio"},"updatedAt":"2026-08-17T00:00:00.000Z"}]`
+	withProfile := strings.Replace(canonicalSettingsV4, `"profiles":[]`, `"profiles":[{"id":"`+profileID+`","kind":"fine-grained","name":"Work"}]`, 1)
+	if err := validateDevHudSettings([]byte(strings.Replace(withProfile, `"urlMappings":[]`, `"urlMappings":`+structuredMapping, 1)), 4); err != nil {
+		t.Fatalf("schema-v4 structured mapping validation failed: %v", err)
 	}
 	for name, test := range map[string]struct {
 		version uint32
 		value   string
 	}{
-		"envelope mismatch":                  {1, canonicalSettingsV2},
-		"secret field":                       {2, strings.Replace(canonicalSettingsV2, `"profiles":[]`, `"profiles":[{"id":"`+profileID+`","kind":"fine-grained","name":"Work","token":"plain"}]`, 1)},
-		"secret value":                       {2, strings.Replace(canonicalSettingsV2, `"repositories":[]`, `"repositories":[{"name":"oss","owner":"github_pat_secret","profileRef":null}]`, 1)},
-		"unknown field":                      {2, strings.Replace(canonicalSettingsV2, `"schemaVersion":2`, `"other":true,"schemaVersion":2`, 1)},
-		"dangling profile reference":         {2, strings.Replace(canonicalSettingsV2, `"repositories":[]`, `"repositories":[{"name":"oss","owner":"delinoio","profileRef":"`+profileID+`"}]`, 1)},
-		"dangling mapping profile reference": {2, strings.Replace(canonicalSettingsV2, `"urlMappings":[]`, `"urlMappings":`+structuredMapping, 1)},
+		"envelope mismatch":          {1, canonicalSettingsV2},
+		"secret field":               {2, strings.Replace(canonicalSettingsV2, `"profiles":[]`, `"profiles":[{"id":"`+profileID+`","kind":"fine-grained","name":"Work","token":"plain"}]`, 1)},
+		"secret value":               {2, strings.Replace(canonicalSettingsV2, `"repositories":[]`, `"repositories":[{"name":"oss","owner":"github_pat_secret","profileRef":null}]`, 1)},
+		"unknown field":              {2, strings.Replace(canonicalSettingsV2, `"schemaVersion":2`, `"other":true,"schemaVersion":2`, 1)},
+		"dangling profile reference": {2, strings.Replace(canonicalSettingsV2, `"repositories":[]`, `"repositories":[{"name":"oss","owner":"delinoio","profileRef":"`+profileID+`"}]`, 1)},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if err := validateDevHudSettings([]byte(test.value), test.version); err == nil {
 				t.Fatal("validation succeeded")
+			}
+		})
+	}
+}
+
+func TestValidateDevHudSettingsDeckQualifiers(t *testing.T) {
+	profileID := "018f47a2-7b3c-7def-8abc-1234567890ab"
+	deck := func(query string, notifications string) string {
+		return `{"builder":null,"display":{"groupBy":"none","showDrafts":true},"id":"018f47a2-7b3c-7def-8abc-1234567890ac","name":"Deck","notifications":` + notifications + `,"profileRef":"` + profileID + `","query":"` + query + `","refreshMinutes":5}`
+	}
+	settings := func(query string, notifications string) string {
+		value := strings.Replace(canonicalSettingsV4, `"profiles":[]`, `"profiles":[{"id":"`+profileID+`","kind":"fine-grained","name":"Work"}]`, 1)
+		return strings.Replace(value, `"decks":[]`, `"decks":[`+deck(query, notifications)+`]`, 1)
+	}
+	previousSettings := func(repository, query string) string {
+		value := strings.Replace(canonicalSettingsV2, `"profiles":[]`, `"profiles":[{"id":"`+profileID+`","kind":"fine-grained","name":"Work"}]`, 1)
+		legacyDeck := `{"display":{"groupBy":"none","showDrafts":true},"id":"018f47a2-7b3c-7def-8abc-1234567890ac","notifications":[],"profileRef":"` + profileID + `","query":"` + query + `","refreshMinutes":5,"repository":` + repository + `,"title":"Legacy Deck"}`
+		return strings.Replace(value, `"decks":[]`, `"decks":[`+legacyDeck+`]`, 1)
+	}
+	if err := validateDevHudSettings([]byte(settings("repo:octo/widgets IS:PR", `[]`)), 4); err != nil {
+		t.Fatalf("mixed-case qualifier: %v", err)
+	}
+	if err := validateDevHudSettings([]byte(settings("repo:octo/widgets\ufeffis:pr", `[]`)), 4); err != nil {
+		t.Fatalf("BOM-separated qualifier: %v", err)
+	}
+	if err := validateDevHudSettings([]byte(settings(strings.Join([]string{"repo:octo/widgets is:pr", strings.Repeat("x", 257)}, " "), `[]`)), 4); err == nil {
+		t.Fatal("overlong search text was accepted")
+	}
+	fiveOperators := strings.Join([]string{"repo:octo/widgets-0 is:pr", "repo:octo/widgets-1 is:pr", "repo:octo/widgets-2 is:pr", "repo:octo/widgets-3 is:pr", "repo:octo/widgets-4 is:pr", "repo:octo/widgets-5 is:pr"}, " OR ")
+	if err := validateDevHudSettings([]byte(settings(fiveOperators, `[]`)), 4); err != nil {
+		t.Fatalf("five Boolean operators: %v", err)
+	}
+	if err := validateDevHudSettings([]byte(settings("(repo:octo/widgets is:pr OR (repo:octo/tools is:pr AND author:octocat))", `[]`)), 4); err != nil {
+		t.Fatalf("branch-scoped Boolean qualifiers: %v", err)
+	}
+	if err := validateDevHudSettings([]byte(settings("repo:octo/widgets NOT repo:octo/excluded is:pr", `[]`)), 4); err != nil {
+		t.Fatalf("positive repository with negated exclusion: %v", err)
+	}
+	matchingBuilder := strings.Replace(settings("repo:octo/widgets is:pr", `[]`), `"builder":null`, `"builder":{"author":null,"label":null,"repository":"octo/widgets","review":null,"state":null}`, 1)
+	if err := validateDevHudSettings([]byte(matchingBuilder), 4); err != nil {
+		t.Fatalf("matching builder: %v", err)
+	}
+	escapedBuilder := strings.Replace(settings(`repo:octo/widgets is:pr label:\"a \\q\"`, `[]`), `"builder":null`, `"builder":{"author":null,"label":"a q","repository":"octo/widgets","review":null,"state":null}`, 1)
+	if err := validateDevHudSettings([]byte(escapedBuilder), 4); err != nil {
+		t.Fatalf("client-compatible escaped builder: %v", err)
+	}
+	bomBuilder := strings.Replace(settings(`repo:octo/widgets is:pr label:\"\ufeffbug\"`, `[]`), `"builder":null`, `"builder":{"author":null,"label":"\ufeffbug","repository":"octo/widgets","review":null,"state":null}`, 1)
+	if err := validateDevHudSettings([]byte(bomBuilder), 4); err == nil {
+		t.Fatal("BOM-padded builder field was accepted")
+	}
+	for name, value := range map[string]string{
+		"missing repository":          settings("is:pr", `[]`),
+		"unscoped repository branch":  settings("repo:octo/widgets is:pr OR author:octocat is:pr", `[]`),
+		"missing pull request branch": settings("repo:octo/widgets is:pr OR repo:octo/tools author:octocat", `[]`),
+		"negated repository only":     settings("NOT repo:octo/excluded is:pr", `[]`),
+		"malformed repository":        settings("repo:octo is:pr", `[]`),
+		"invalid repository name":     settings("repo:octo/\\u0000 is:pr", `[]`),
+		"too many repositories": settings(strings.Join([]string{
+			"repo:octo/repository-0", "repo:octo/repository-1", "repo:octo/repository-2", "repo:octo/repository-3", "repo:octo/repository-4", "repo:octo/repository-5", "repo:octo/repository-6", "repo:octo/repository-7", "repo:octo/repository-8", "repo:octo/repository-9", "repo:octo/repository-10", "is:pr",
+		}, " "), `[]`),
+		"blank Deck name":         strings.Replace(settings("repo:octo/widgets is:pr", `[]`), `"name":"Deck"`, `"name":"   "`, 1),
+		"untrimmed Deck name":     strings.Replace(settings("repo:octo/widgets is:pr", `[]`), `"name":"Deck"`, `"name":" Deck "`, 1),
+		"BOM-padded Deck name":    strings.Replace(settings("repo:octo/widgets is:pr", `[]`), `"name":"Deck"`, `"name":"\ufeffDeck"`, 1),
+		"six Boolean operators":   settings(strings.Join([]string{"repo:octo/widgets-0 is:pr", "repo:octo/widgets-1 is:pr", "repo:octo/widgets-2 is:pr", "repo:octo/widgets-3 is:pr", "repo:octo/widgets-4 is:pr", "repo:octo/widgets-5 is:pr", "repo:octo/widgets-6 is:pr"}, " OR "), `[]`),
+		"quoted pull request":     settings(`\"find is:pr here\" repo:octo/widgets`, `[]`),
+		"duplicate notifications": settings("repo:octo/widgets is:pr", `["review","review"]`),
+		"duplicate deck IDs": strings.Replace(
+			strings.Replace(canonicalSettingsV4, `"profiles":[]`, `"profiles":[{"id":"`+profileID+`","kind":"fine-grained","name":"Work"}]`, 1),
+			`"decks":[]`, `"decks":[`+deck("repo:octo/widgets is:pr", `[]`)+`,`+deck("repo:octo/widgets is:pr", `[]`)+`]`, 1,
+		),
+		"untrimmed builder field": strings.Replace(settings("repo:octo/widgets is:pr", `[]`), `"builder":null`, `"builder":{"author":null,"label":null,"repository":" octo/widgets","review":null,"state":null}`, 1),
+		"mismatched builder":      strings.Replace(settings("repo:octo/widgets is:pr", `[]`), `"builder":null`, `"builder":{"author":null,"label":null,"repository":"octo/other","review":null,"state":null}`, 1),
+		"Boolean query builder":   strings.Replace(settings("repo:octo/widgets is:pr OR repo:octo/tools is:pr", `[]`), `"builder":null`, `"builder":{"author":null,"label":null,"repository":"octo/widgets","review":null,"state":null}`, 1),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := validateDevHudSettings([]byte(value), 4); err == nil {
+				t.Fatal("validation succeeded")
+			}
+		})
+	}
+	if err := validateDevHudSettings([]byte(previousSettings("null", "is:pr")), 2); err == nil {
+		t.Fatal("schema-v2 null repository with profile was accepted")
+	}
+	if err := validateDevHudSettings([]byte(previousSettings(`"octo/widgets"`, "is:pr")), 2); err != nil {
+		t.Fatalf("schema-v2 valid repository: %v", err)
+	}
+	if err := validateDevHudSettings([]byte(previousSettings(`"owner repo"`, "is:pr")), 2); err == nil {
+		t.Fatal("schema-v2 malformed repository was accepted")
+	}
+	for name, test := range map[string]struct {
+		query string
+	}{
+		"overlong search text":  {strings.Repeat("x", 257)},
+		"six Boolean operators": {strings.Join([]string{"repo:octo/widgets is:pr", "repo:octo/widgets is:pr", "repo:octo/widgets is:pr", "repo:octo/widgets is:pr", "repo:octo/widgets is:pr", "repo:octo/widgets is:pr", "repo:octo/widgets is:pr"}, " OR ")},
+	} {
+		for version, value := range map[uint32]string{
+			2: previousSettings(`"octo/widgets"`, test.query),
+			3: strings.Replace(previousSettings(`"octo/widgets"`, test.query), `"schemaVersion":2`, `"schemaVersion":3`, 1),
+		} {
+			if err := validateDevHudSettings([]byte(value), version); err == nil {
+				t.Fatalf("%s schema-v%d query was accepted", name, version)
+			}
+		}
+	}
+	for name, test := range map[string]struct {
+		version uint32
+		value   string
+	}{
+		"schema-v2":               {2, previousSettings(`"   "`, "is:pr")},
+		"legacy-shaped schema-v3": {3, strings.Replace(previousSettings(`"   "`, "is:pr"), `"schemaVersion":2`, `"schemaVersion":3`, 1)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := validateDevHudSettings([]byte(test.value), test.version); err == nil {
+				t.Fatal("whitespace-only legacy Deck title was accepted")
 			}
 		})
 	}
