@@ -8,6 +8,7 @@ type EditorTool = "crop" | "arrow" | "rectangle" | "drawing" | "text" | "blur" |
 type CaptureRequest = { readonly action: CaptureActionId; readonly sequence: number };
 type FloatingPreviewRequest = { readonly draft: CaptureDraft; readonly imageId?: string; readonly sequence: number };
 const MAX_ANNOTATION_TEXT_CHARACTERS = 2_048;
+const noBrowserContext = async () => null;
 
 export interface RealqaController {
   execute(action: CaptureActionId): Promise<void>;
@@ -56,7 +57,7 @@ function errorCopy(copy: Copy, reason: unknown) {
   return copy.captureFailed;
 }
 
-export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = false, onActivate, requestedAction, onRequestedActionConsumed }: { readonly ref?: Ref<RealqaController>; readonly bridge: NativeBridgeV1; readonly copy: Copy; readonly active?: boolean; readonly paletteOpen?: boolean; readonly onActivate?: () => void; readonly requestedAction?: CaptureRequest | null; readonly onRequestedActionConsumed?: (sequence: number) => void }) {
+export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = false, onActivate, requestedAction, onRequestedActionConsumed, takeBrowserContext = noBrowserContext }: { readonly ref?: Ref<RealqaController>; readonly bridge: NativeBridgeV1; readonly copy: Copy; readonly active?: boolean; readonly paletteOpen?: boolean; readonly onActivate?: () => void; readonly requestedAction?: CaptureRequest | null; readonly onRequestedActionConsumed?: (sequence: number) => void; readonly takeBrowserContext?: (draftId: string, expectedRevision: number) => Promise<CaptureDraft | null> }) {
   const [drafts, setDrafts] = useState<readonly CaptureDraft[]>([]);
   const [unreadableDraftIds, setUnreadableDraftIds] = useState<readonly string[]>([]);
   const [selected, setSelected] = useState<CaptureDraft | null>(null);
@@ -222,27 +223,37 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
     const originatingDraftId = selected?.id ?? null;
     setBusy(true); setError(null); setStatus(copy.captureSaving);
     try {
-      const requestCapture = (appendToDraftId?: string) => bridge.request({ operation: "capture.start", actionId: action, options: { ...captureOptions, appendToDraftId } });
+      const requestCapture = async (appendToDraftId?: string) => {
+        const response = await bridge.request({ operation: "capture.start", actionId: action, options: { ...captureOptions, appendToDraftId } });
+        if (response.kind !== "capture-draft") return { response, contextAttachmentFailed: false };
+        try {
+          const attached = await takeBrowserContext(response.draft.id, response.draft.revision);
+          return { response: attached ? { kind: "capture-draft" as const, draft: attached } : response, contextAttachmentFailed: false };
+        } catch {
+          return { response, contextAttachmentFailed: true };
+        }
+      };
       const captureResult = originatingDraftId
         ? await runDraftOperation(originatingDraftId, async (current, install) => {
           const appended = await requestCapture(current.id);
-          if (appended.kind === "capture-draft") install(appended.draft);
+          if (appended.response.kind === "capture-draft") install(appended.response.draft);
           return {
-            response: appended,
-            previewImageId: appended.kind === "capture-draft" ? appended.draft.images[current.images.length]?.id : undefined,
+            ...appended,
+            previewImageId: appended.response.kind === "capture-draft" ? appended.response.draft.images[current.images.length]?.id : undefined,
           };
         })
-        : await requestCapture().then((response) => ({
-          response,
-          previewImageId: response.kind === "capture-draft" ? response.draft.images[0]?.id : undefined,
+        : await requestCapture().then((captured) => ({
+          ...captured,
+          previewImageId: captured.response.kind === "capture-draft" ? captured.response.draft.images[0]?.id : undefined,
         }));
       if (generation !== resetGeneration.current) return;
-      const { response, previewImageId } = captureResult;
+      const { response, previewImageId, contextAttachmentFailed } = captureResult;
       if (response.kind !== "capture-draft") return;
       if (!originatingDraftId) installDraft(response.draft);
       setSelected((current) => (current?.id ?? null) === originatingDraftId ? response.draft : current);
       setPreviewRequest({ draft: response.draft, imageId: previewImageId, sequence: ++previewSequence.current });
       setStatus(copy.captureSaved);
+      if (contextAttachmentFailed) setError(copy.nativeMessagingFailed);
       dismissCaptureDialog(false);
       try { await refresh(); } catch { /* The capture response is already authoritative. */ }
     } catch (reason) {
@@ -254,7 +265,7 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
       captureInFlight.current = false;
       setBusy(false);
     }
-  }, [bridge, copy, dismissCaptureDialog, installDraft, options, refresh, runDraftOperation, selected?.id]);
+  }, [bridge, copy, dismissCaptureDialog, installDraft, options, refresh, runDraftOperation, selected?.id, takeBrowserContext]);
 
   const capture = useCallback(async (action: CaptureActionId) => {
     if (captureInFlight.current || captureStatusInFlight.current) return;
@@ -370,6 +381,7 @@ function DraftList() {
   return <section aria-labelledby="realqa-drafts-title"><h3 id="realqa-drafts-title">{copy.realqaDrafts}</h3>
     {drafts.length === 0 && unreadableDraftIds.length === 0 ? <p>{copy.realqaNoDrafts}</p> : <ul className="draft-list">{drafts.map((draft) => <li key={draft.id}>
       <button className="draft-preview" onClick={() => void actions.open(draft)}><img src={draft.images[0]?.previewUrl} alt="" loading="lazy" decoding="async" /><span>{draft.imageCount} {copy.realqaImages}</span></button>
+      {draft.hasBrowserContext && <span>{copy.browserContextAttached}</span>}
       <time dateTime={new Date(draft.expiresAt * 1000).toISOString()}>{copy.realqaDraftExpiry}: {new Date(draft.expiresAt * 1000).toLocaleString()}</time>
       <div className="actions"><button onClick={() => void actions.open(draft)}>{copy.realqaOpenEditor}</button><button className="danger" onClick={() => void actions.remove(draft)}>{copy.realqaDeleteDraft}</button></div>
     </li>)}{unreadableDraftIds.map((draftId) => <li key={draftId}>
@@ -576,6 +588,7 @@ function CaptureEditor({ draft }: { readonly draft: CaptureDraft }) {
   };
   return <section className="capture-editor" aria-labelledby="capture-editor-title">
     <div className="editor-heading"><div><h3 id="capture-editor-title">{copy.editorTitle}</h3><p>{copy.editorCloseHint}</p></div><button onClick={actions.close}>{copy.close}</button></div>
+    {draft.browserContext && <section aria-labelledby="browser-context-title"><h4 id="browser-context-title">{copy.browserContextAttached}</h4><dl className="runtime-diagnostics"><dt>{copy.browserContextPageTitle}</dt><dd>{draft.browserContext.context.title || "—"}</dd><dt>{copy.browserContextRedactedUrl}</dt><dd>{draft.browserContext.context.url}</dd></dl></section>}
     <div className="editor-image-order" aria-label={copy.realqaImages}>{draft.images.map((image, index) => <div key={image.id}><button aria-pressed={image.id === active.id} onClick={() => setImageId(image.id)}>{copy.editorImage} {index + 1}</button><button disabled={busy || index === 0} aria-label={copy.editorMoveEarlier} onClick={() => moveImage(index, -1)}>←</button><button disabled={busy || index === draft.images.length - 1} aria-label={copy.editorMoveLater} onClick={() => moveImage(index, 1)}>→</button><button disabled={busy || draft.images.length === 1} aria-label={copy.editorRemove} onClick={() => void mutate({ kind: "remove-image", imageId: image.id })}>×</button></div>)}</div>
     <div className="editor-layout"><div className="editor-workspace"><div className="editor-canvas" role="img" aria-label={copy.editorCanvas} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp}>
       <img draggable={false} src={active.previewUrl} alt="" />

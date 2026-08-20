@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { CaptureDraft } from "./native-bridge.ts";
 import { resolveLanguage } from "./shell.ts";
 import type { DevHudSettingsV1 } from "./settings-contract.ts";
 import { compareMappings, parseUrlPattern, type ParsedUrlPattern, type UrlRepositoryMapping } from "./url-mapping.ts";
@@ -53,4 +54,5 @@ export const nativeMessaging = {
   beginPairing: () => nativeCommand<NativeMessagingPairingStatus>("native_messaging_begin_pairing"),
   unpair: () => nativeCommand<NativeMessagingPairingStatus>("native_messaging_unpair"),
   configure: (settings: DevHudSettingsV1) => nativeCommand<void>("native_messaging_replace_configuration", { configuration: extensionConfiguration(settings) }),
+  takeContext: (draftId: string, expectedRevision: number) => nativeCommand<CaptureDraft | null>("native_messaging_take_context", { draftId, expectedRevision }),
 };

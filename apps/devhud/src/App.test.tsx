@@ -471,6 +471,7 @@ describe("native App state", () => {
       createdAt: 1_700_000_000,
       updatedAt: 1_700_000_000,
       expiresAt: 1_702_592_000,
+      hasBrowserContext: false,
       imageCount: 1,
       images: [{ id: "019b0000-0000-7000-8000-000000000002", width: 800, height: 600, previewUrl: "realqa://asset/draft/image/source/1", crop: null, layers: [] }],
       canUndo: false,

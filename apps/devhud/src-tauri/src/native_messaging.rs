@@ -28,6 +28,9 @@ use devhud_native_messaging_host::{
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 use tracing::{error, info, warn};
+use uuid::Uuid;
+
+use crate::capture::{CaptureService, DraftBrowserContext, DraftSummary};
 
 const PAIRING_NONCE_TTL: Duration = Duration::from_secs(120);
 const CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
@@ -414,12 +417,54 @@ fn valid_configured_matcher(matcher: &ConfiguredUrlMatcher) -> bool {
 }
 
 #[tauri::command]
-pub fn native_messaging_take_context() -> Option<Value> {
-    state()
+pub fn native_messaging_take_context(
+    draft_id: String,
+    expected_revision: u64,
+    capture: tauri::State<'_, Arc<CaptureService>>,
+) -> Result<Option<DraftSummary>, String> {
+    let draft_id = Uuid::parse_str(&draft_id).map_err(|_| "invalid-argument".to_string())?;
+    let result = take_latest_context_with(state(), |value| {
+        let captured: CapturePayload =
+            serde_json::from_value(value).map_err(|_| "invalid-argument".to_string())?;
+        capture
+            .with_draft_store(|store| {
+                store.attach_browser_context(
+                    draft_id,
+                    expected_revision,
+                    DraftBrowserContext {
+                        mapping_id: captured.mapping_id,
+                        context: captured.context,
+                    },
+                )
+            })
+            .map_err(|error| error.code().to_string())
+    });
+    match &result {
+        Ok(Some(_)) => info!(event = "native_messaging_context_attached", %draft_id),
+        Ok(None) => {}
+        Err(error_code) => warn!(
+            event = "native_messaging_context_attachment_failed",
+            %draft_id,
+            %error_code,
+        ),
+    }
+    result
+}
+
+fn take_latest_context_with<Output>(
+    messaging_state: &NativeMessagingState,
+    attach: impl FnOnce(Value) -> Result<Output, String>,
+) -> Result<Option<Output>, String> {
+    let _lifecycle = messaging_state
+        .pairing_lifecycle
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let context = messaging_state
         .latest_context
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .take()
+        .take();
+    context.map(attach).transpose()
 }
 
 pub fn invalidate_pairing() -> Result<(), String> {
@@ -840,6 +885,39 @@ mod tests {
             devhud_native_messaging_host::MAX_JSON_BYTES - 1
         );
         configuration
+    }
+
+    #[test]
+    fn latest_context_is_consumed_once_by_the_draft_attachment() {
+        let messaging_state = NativeMessagingState::default();
+        *messaging_state.latest_context.lock().unwrap() = Some(json!({ "captured": true }));
+
+        let attached = take_latest_context_with(&messaging_state, |value| {
+            assert_eq!(value, json!({ "captured": true }));
+            Ok("attached")
+        })
+        .unwrap();
+
+        assert_eq!(attached, Some("attached"));
+        assert!(messaging_state.latest_context.lock().unwrap().is_none());
+        assert_eq!(
+            take_latest_context_with(&messaging_state, |_| Ok("unexpected")).unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn failed_draft_attachment_drops_context_instead_of_reusing_it() {
+        let messaging_state = NativeMessagingState::default();
+        *messaging_state.latest_context.lock().unwrap() = Some(json!({ "captured": true }));
+
+        assert_eq!(
+            take_latest_context_with::<()>(&messaging_state, |_| {
+                Err("storage-failure".to_string())
+            }),
+            Err("storage-failure".to_string())
+        );
+        assert!(messaging_state.latest_context.lock().unwrap().is_none());
     }
 
     #[test]

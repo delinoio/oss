@@ -15,6 +15,7 @@ const draft: CaptureDraft = {
   createdAt: 1_700_000_000,
   updatedAt: 1_700_000_100,
   expiresAt: 1_702_592_100,
+  hasBrowserContext: false,
   imageCount: 1,
   images: [{
     id: "019b0000-0000-7000-8000-000000000002",
@@ -230,6 +231,59 @@ describe("RealQA capture and editor", () => {
       operation: "capture.start",
       options: expect.not.objectContaining({ selection: expect.anything() }),
     })));
+  });
+
+  it("attaches and displays Chrome context after a successful capture", async () => {
+    const attachedDraft: CaptureDraft = {
+      ...draft,
+      revision: 4,
+      hasBrowserContext: true,
+      browserContext: {
+        mappingId: "01900000-0000-7000-8000-000000000001",
+        context: {
+          url: "https://example.com/%3Credacted%3E",
+          title: "Captured page",
+          viewport: { width: 1280, height: 720 },
+          userAgent: "DevHUD test",
+          selectedBounds: null,
+          accessibility: {},
+          outerHtml: "<main>Captured page</main>",
+        },
+      },
+    };
+    const takeBrowserContext = vi.fn(async () => attachedDraft);
+    const { bridge } = bridgeWith(async (value) => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [], unreadableDraftIds: [] };
+      if (value.operation === "capture.start") return { kind: "capture-draft", draft };
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    render(<RealqaSurface bridge={bridge} copy={messages.en} takeBrowserContext={takeBrowserContext} />);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.captureDisplay }));
+
+    await waitFor(() => expect(takeBrowserContext).toHaveBeenCalledWith(draft.id, draft.revision));
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.floatingPreviewOpen }));
+    expect(screen.getByRole("heading", { name: messages.en.browserContextAttached })).toBeTruthy();
+    expect(screen.getByText("Captured page")).toBeTruthy();
+    expect(screen.getByText("https://example.com/%3Credacted%3E")).toBeTruthy();
+  });
+
+  it("keeps a saved capture when Chrome context attachment fails", async () => {
+    const takeBrowserContext = vi.fn(async () => { throw new Error("unavailable"); });
+    const { bridge } = bridgeWith(async (value) => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [] };
+      if (value.operation === "capture.list-drafts") return { kind: "capture-drafts", drafts: [], unreadableDraftIds: [] };
+      if (value.operation === "capture.start") return { kind: "capture-draft", draft };
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    render(<RealqaSurface bridge={bridge} copy={messages.en} takeBrowserContext={takeBrowserContext} />);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.captureDisplay }));
+
+    expect(await screen.findByRole("status")).toHaveProperty("textContent", messages.en.captureSaved);
+    expect(screen.getByRole("alert")).toHaveProperty("textContent", messages.en.nativeMessagingFailed);
+    expect(screen.getByRole("complementary", { name: messages.en.floatingPreview })).toBeTruthy();
   });
 
   it("resets toolbar-only modes when the capture action changes to selection", async () => {
