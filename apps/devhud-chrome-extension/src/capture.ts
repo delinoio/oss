@@ -22,7 +22,6 @@ export function injectedCapture(selectElement: boolean, language: "en" | "ko" = 
   const voidElements = new Set(["hr", "img"]);
   const encoder = new TextEncoder();
   const truncateUtf8 = (value: string, maximumBytes: number) => {
-    if (encoder.encode(value).byteLength <= maximumBytes) return value;
     let output = "";
     let bytes = 0;
     for (const character of value) {

@@ -54,6 +54,20 @@ describe("injected capture", () => {
     expect(encoder.encode(result.accessibility["aria-label"]).byteLength).toBeLessThanOrEqual(4 * 1024);
   });
 
+  it("does not encode an oversized untrusted string in full", async () => {
+    document.title = "x".repeat(1024 * 1024);
+    const encode = vi.spyOn(TextEncoder.prototype, "encode");
+    try {
+      const result = await injectedCapture(false);
+
+      if (!result) throw new Error("capture was unexpectedly cancelled");
+      expect(result.title).toHaveLength(4 * 1024);
+      expect(encode.mock.calls.every(([value]) => (value ?? "").length <= 4 * 1024)).toBe(true);
+    } finally {
+      encode.mockRestore();
+    }
+  });
+
   it.each([
     ["zero width", { x: 1, y: 2, width: 0, height: 4 }],
     ["zero height", { x: 1, y: 2, width: 3, height: 0 }],

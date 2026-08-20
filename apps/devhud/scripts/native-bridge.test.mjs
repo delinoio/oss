@@ -17,6 +17,7 @@ const desktopHost = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "
 const nativeBridgeHost = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/bridge.rs"), "utf8");
 const nativeShortcuts = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/shortcuts.rs"), "utf8");
 const nativeCapture = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/capture.rs"), "utf8");
+const windowsInstallerHooks = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/windows/hooks.nsh"), "utf8");
 const androidBridgeHost = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/mobile/android/src/main/java/io/delino/devhud/bridge/DevhudNativePlugin.kt"), "utf8");
 const iosBridgeHost = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/mobile/ios/Sources/DevhudNativePlugin.swift"), "utf8");
 
@@ -80,6 +81,19 @@ test("desktop authentication uses the diagnosed bounded system opener", () => {
   assert.match(desktopHost, /async fn open_system_browser/u);
   assert.match(nativeBridgeHost, /crate::open_system_browser\(destination\.to_string\(\)\)\s+\.await/u);
   assert.doesNotMatch(nativeBridgeHost, /open::that_detached/u);
+});
+
+test("Windows uninstall stops before file removal when Native Messaging cleanup fails", () => {
+  const presence = windowsInstallerHooks.indexOf('IfFileExists "$INSTDIR\\devhud-native-messaging-host.exe" 0 devhud_native_messaging_unregister_done');
+  const unregister = windowsInstallerHooks.indexOf("nsExec::ExecToLog");
+  const status = windowsInstallerHooks.indexOf("Pop $0", unregister);
+  const success = windowsInstallerHooks.indexOf('StrCmp $0 "0" devhud_native_messaging_unregister_done', status);
+  const failure = windowsInstallerHooks.indexOf("Abort", success);
+  assert(presence >= 0);
+  assert(unregister > presence);
+  assert(status > unregister);
+  assert(success > status);
+  assert(failure > success);
 });
 
 test("desktop secure writes preserve credentials across bounded Windows storage and index failures", () => {
