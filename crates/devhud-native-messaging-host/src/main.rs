@@ -8,7 +8,8 @@ use devhud_native_messaging_host::{
     pairing_is_complete,
     protocol::{
         AuthResponse, AuthResult, Challenge, IpcMessageType, IpcRequest, IpcResponse,
-        NativeRequest, NativeResponse, NativeResponseState, validate_deadline, validate_version,
+        NativeRequest, NativeResponse, NativeResponseState, SESSION_INVALIDATED_ERROR,
+        validate_deadline, validate_version,
     },
     read_pairing_secret, registration,
 };
@@ -27,6 +28,7 @@ struct Session {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ForwardFailure {
     Disconnected,
+    SessionInvalidated,
     Denied,
     Malformed,
 }
@@ -34,7 +36,7 @@ enum ForwardFailure {
 impl ForwardFailure {
     fn response_state(self) -> NativeResponseState {
         match self {
-            Self::Disconnected => NativeResponseState::Disconnected,
+            Self::Disconnected | Self::SessionInvalidated => NativeResponseState::Disconnected,
             Self::Denied => NativeResponseState::Denied,
             Self::Malformed => NativeResponseState::Malformed,
         }
@@ -43,9 +45,14 @@ impl ForwardFailure {
     fn reason(self) -> &'static str {
         match self {
             Self::Disconnected => "disconnected",
+            Self::SessionInvalidated => SESSION_INVALIDATED_ERROR,
             Self::Denied => "denied",
             Self::Malformed => "malformed",
         }
+    }
+
+    fn requires_reauthentication(self) -> bool {
+        matches!(self, Self::Disconnected | Self::SessionInvalidated)
     }
 }
 
@@ -176,6 +183,7 @@ fn classify_ipc_response(
     }
     if !result.accepted {
         return Err(match result.error.as_deref() {
+            Some(SESSION_INVALIDATED_ERROR) => ForwardFailure::SessionInvalidated,
             Some("invalid-browser-context" | "invalid-request" | "unsupported-version") => {
                 ForwardFailure::Malformed
             }
@@ -259,13 +267,19 @@ fn run_native(origin: &str) -> io::Result<()> {
             }
         }
         let mut result = forward(session.as_mut().expect("session was established"), &request);
-        if result == Err(ForwardFailure::Disconnected) {
+        if result
+            .as_ref()
+            .is_err_and(|failure| failure.requires_reauthentication())
+        {
             session = None;
             if let Ok(mut authenticated) =
                 authenticate(origin, pairing_nonce_for_authentication(&request, true))
             {
                 result = forward(&mut authenticated, &request);
-                if result != Err(ForwardFailure::Disconnected) {
+                if !result
+                    .as_ref()
+                    .is_err_and(|failure| failure.requires_reauthentication())
+                {
                     session = Some(authenticated);
                 }
             }
@@ -280,7 +294,7 @@ fn run_native(origin: &str) -> io::Result<()> {
             Ok(payload) => (NativeResponseState::Accepted, payload),
             Err(failure) => {
                 warn!(event = "ipc_request_rejected", reason = failure.reason());
-                if failure == ForwardFailure::Disconnected {
+                if failure.requires_reauthentication() {
                     session = None;
                 }
                 (failure.response_state(), serde_json::Value::Null)
@@ -587,9 +601,28 @@ mod tests {
             Err(ForwardFailure::Malformed)
         );
         assert_eq!(
+            classify_ipc_response(ipc_response(false, Some("request-rejected")), "request"),
+            Err(ForwardFailure::Denied)
+        );
+        assert_eq!(
             classify_ipc_response(ipc_response(false, None), "request"),
             Err(ForwardFailure::Denied)
         );
+    }
+
+    #[test]
+    fn generation_invalidations_require_reauthentication() {
+        let failure = classify_ipc_response(
+            ipc_response(false, Some(SESSION_INVALIDATED_ERROR)),
+            "request",
+        )
+        .unwrap_err();
+
+        assert_eq!(failure, ForwardFailure::SessionInvalidated);
+        assert!(failure.requires_reauthentication());
+        assert!(ForwardFailure::Disconnected.requires_reauthentication());
+        assert!(!ForwardFailure::Denied.requires_reauthentication());
+        assert!(!ForwardFailure::Malformed.requires_reauthentication());
     }
 
     #[test]

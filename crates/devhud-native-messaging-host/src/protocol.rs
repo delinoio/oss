@@ -3,6 +3,8 @@ use serde_json::Value;
 
 use crate::{MAX_OUTER_HTML_BYTES, PROTOCOL_VERSION, REQUEST_DEADLINE_MILLIS, SCHEMA_VERSION};
 
+pub const SESSION_INVALIDATED_ERROR: &str = "session-invalidated";
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum NativeMessageType {

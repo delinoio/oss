@@ -20,8 +20,8 @@ use devhud_native_messaging_host::{
     generate_pairing_secret, mark_pairing_complete, pairing_is_complete,
     protocol::{
         AuthResponse, AuthResult, BrowserContext, IpcMessageType, IpcRequest, IpcResponse,
-        NativeResponse, NativeResponseState, validate_browser_context, validate_deadline,
-        validate_version,
+        NativeResponse, NativeResponseState, SESSION_INVALIDATED_ERROR, validate_browser_context,
+        validate_deadline, validate_version,
     },
     read_pairing_secret, write_pairing_secret,
 };
@@ -766,6 +766,14 @@ fn write_connection_json<T: Serialize>(
     write_json(stream, ByteOrder::LittleEndian, value)
 }
 
+fn request_rejection_reason(generation_is_current: bool, reason: &str) -> &str {
+    if generation_is_current {
+        reason
+    } else {
+        SESSION_INVALIDATED_ERROR
+    }
+}
+
 fn serve_connection(mut stream: impl ConnectionStream) -> Result<(), String> {
     let challenge = new_challenge(now_unix_millis());
     write_connection_json(&mut stream, &challenge).map_err(|_| "write-failed")?;
@@ -869,6 +877,15 @@ fn serve_connection(mut stream: impl ConnectionStream) -> Result<(), String> {
         } else {
             error = Some("request-rejected".to_string());
         }
+        if !accepted && !close_after_response {
+            error = Some(
+                request_rejection_reason(
+                    session_generation_is_current(state(), generation),
+                    error.as_deref().unwrap_or("request-rejected"),
+                )
+                .to_string(),
+            );
+        }
         write_connection_json(
             &mut stream,
             &IpcResponse {
@@ -897,6 +914,22 @@ fn serve_connection(mut stream: impl ConnectionStream) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn stale_session_rejections_have_a_retryable_reason() {
+        assert_eq!(
+            request_rejection_reason(false, "request-rejected"),
+            SESSION_INVALIDATED_ERROR
+        );
+        assert_eq!(
+            request_rejection_reason(false, "invalid-browser-context"),
+            SESSION_INVALIDATED_ERROR
+        );
+        assert_eq!(
+            request_rejection_reason(true, "invalid-browser-context"),
+            "invalid-browser-context"
+        );
+    }
 
     fn configured_origin(origin: &str) -> Value {
         json!({

@@ -84,16 +84,22 @@ test("desktop authentication uses the diagnosed bounded system opener", () => {
 });
 
 test("Windows uninstall stops before file removal when Native Messaging cleanup fails", () => {
-  const presence = windowsInstallerHooks.indexOf('IfFileExists "$INSTDIR\\devhud-native-messaging-host.exe" 0 devhud_native_messaging_unregister_done');
+  const presence = windowsInstallerHooks.indexOf('IfFileExists "$INSTDIR\\devhud-native-messaging-host.exe" devhud_native_messaging_unregister devhud_native_messaging_unregister_missing');
   const unregister = windowsInstallerHooks.indexOf("nsExec::ExecToLog");
   const status = windowsInstallerHooks.indexOf("Pop $0", unregister);
   const success = windowsInstallerHooks.indexOf('StrCmp $0 "0" devhud_native_messaging_unregister_done', status);
   const failure = windowsInstallerHooks.indexOf("Abort", success);
+  const missing = windowsInstallerHooks.indexOf("devhud_native_messaging_unregister_missing:", failure);
+  const missingFailure = windowsInstallerHooks.indexOf("Abort", missing);
+  const done = windowsInstallerHooks.indexOf("devhud_native_messaging_unregister_done:", missingFailure);
   assert(presence >= 0);
   assert(unregister > presence);
   assert(status > unregister);
   assert(success > status);
   assert(failure > success);
+  assert(missing > failure);
+  assert(missingFailure > missing);
+  assert(done > missingFailure);
 });
 
 test("desktop secure writes preserve credentials across bounded Windows storage and index failures", () => {
