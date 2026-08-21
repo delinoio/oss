@@ -22,6 +22,10 @@ struct DeckSnapshot: Codable {
     let version: Int; let deckId: String; let query: String; let counts: DeckCounts; let results: [DeckPullRequest]; var state: String; let lastSuccessfulAt: String?; var lastAttemptedAt: String; var rate: DeckRate?
 }
 
+private func sameSelection(_ left: DeckConfiguration, _ right: DeckConfiguration) -> Bool {
+    left.deckId == right.deckId && left.query == right.query && left.profileId == right.profileId && left.profileKind == right.profileKind && left.scopeId == right.scopeId
+}
+
 private struct WidgetStore {
     let defaults = UserDefaults(suiteName: appGroup)
 
@@ -39,9 +43,14 @@ private struct WidgetStore {
         guard let data = defaults?.data(forKey: snapshotPrefix + deckId) else { return nil }
         return try? JSONDecoder().decode(DeckSnapshot.self, from: data)
     }
-    func save(_ snapshot: DeckSnapshot) -> Bool {
-        guard let data = try? JSONEncoder().encode(snapshot), defaults != nil else { return false }
-        defaults?.set(data, forKey: snapshotPrefix + snapshot.deckId)
+    func save(_ snapshot: DeckSnapshot, whileEnabled configuration: DeckConfiguration) -> Bool {
+        guard let data = try? JSONEncoder().encode(snapshot), let defaults else { return false }
+        let key = snapshotPrefix + snapshot.deckId
+        defaults.set(data, forKey: key)
+        guard let current = self.configuration(snapshot.deckId), sameSelection(current, configuration) else {
+            defaults.removeObject(forKey: key)
+            return false
+        }
         return true
     }
     func token(_ deckId: String) -> String? {
@@ -83,7 +92,7 @@ private struct DeckTimelineProvider: IntentTimelineProvider {
                 completion(timeline(deck: current, snapshot: current.flatMap { store.snapshot($0.deckId) }))
                 return
             }
-            let stored = store.save(snapshot)
+            let stored = store.save(snapshot, whileEnabled: current)
             completion(timeline(deck: current, snapshot: stored ? snapshot : store.snapshot(current.deckId)))
         }
     }
@@ -96,10 +105,6 @@ private struct DeckTimelineProvider: IntentTimelineProvider {
             if staleDate > now { entries.append(DeckEntry(date: staleDate, configuration: deck, snapshot: snapshot)) }
         }
         return Timeline(entries: entries, policy: .after(now.addingTimeInterval(30 * 60)))
-    }
-
-    private func sameSelection(_ left: DeckConfiguration, _ right: DeckConfiguration) -> Bool {
-        left.deckId == right.deckId && left.query == right.query && left.profileId == right.profileId && left.profileKind == right.profileKind && left.scopeId == right.scopeId
     }
 
     private func refresh(deck: DeckConfiguration, previous: DeckSnapshot?, token: String?) async -> DeckSnapshot {

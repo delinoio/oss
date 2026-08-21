@@ -140,7 +140,8 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   assert.match(iosIntentHandler, /SelectDeckIntentHandling[\s\S]*provideDeckOptionsCollection/u);
   assert.match(iosIntentHandler, /defaultDeck[\s\S]*nil/u);
   assert.match(iosWidget, /\.prefix\(3\)/u);
-  assert.match(iosWidget, /sameSelection[\s\S]*store\.save/u);
+  assert.match(iosWidget, /func save\(_ snapshot: DeckSnapshot, whileEnabled configuration: DeckConfiguration\)[\s\S]*defaults\.set[\s\S]*guard let current = self\.configuration\(snapshot\.deckId\), sameSelection\(current, configuration\)[\s\S]*defaults\.removeObject/u);
+  assert.match(iosWidget, /store\.save\(snapshot, whileEnabled: current\)/u);
   assert.match(iosWidget, /staleDate[\s\S]*entries\.append/u);
   assert.match(iosWidget, /incomplete_results/u);
   assert.ok(iosWidget.indexOf("validateRepositories(deck: deck, token: token)") < iosWidget.indexOf('URLComponents(string: "https://api.github.com/search/issues")'));
@@ -148,6 +149,7 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   assert.match(iosWidget, /statusCode == 401[\s\S]*"missing-token"[\s\S]*statusCode == 403 \|\| .*statusCode == 404[\s\S]*"permission"/u);
   assert.match(iosWidget, /foregroundStyle\(\.white\)[\s\S]*background\(Color\(red: 0\.11/u);
   assert.match(iosNativeBridge, /replaceWidgetCredentials\(profileId: setting\.profileId/u);
+  assert.match(iosNativeBridge, /for key in keys where key\.hasPrefix\(widgetConfigurationPrefix\)[\s\S]*for key in keys where key\.hasPrefix\(widgetSnapshotPrefix\)/u);
   assert.match(iosWidget, /devhud:\/\/deck\//u);
   assert.match(iosEntitlements, /group\.io\.delino\.devhud/u);
   assert.match(iosEntitlements, /\$\(AppIdentifierPrefix\)io\.delino\.devhud\.shared/u);

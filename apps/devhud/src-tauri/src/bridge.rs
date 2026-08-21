@@ -789,7 +789,7 @@ fn validate_widget_request(request: &Value) -> Result<(), String> {
             .is_some_and(|state| {
                 matches!(
                     state,
-                    "fresh" | "stale" | "missing-token" | "rate-limit" | "error"
+                    "fresh" | "stale" | "missing-token" | "rate-limit" | "permission" | "error"
                 )
             })
         && valid_rate
@@ -2204,7 +2204,7 @@ mod tests {
             })),
             Ok(())
         );
-        let snapshot = json!({
+        let mut snapshot = json!({
             "version": 1,
             "deckId": deck_id,
             "query": "😀".repeat(512),
@@ -2222,6 +2222,14 @@ mod tests {
             "lastAttemptedAt": "2026-08-20T00:00:00.000Z",
             "rate": null
         });
+        assert_eq!(
+            validate_widget_request(&json!({
+                "operation": "widgets.replace-deck-snapshot",
+                "snapshot": snapshot.clone()
+            })),
+            Ok(())
+        );
+        snapshot["state"] = json!("permission");
         assert_eq!(
             validate_widget_request(&json!({
                 "operation": "widgets.replace-deck-snapshot",
