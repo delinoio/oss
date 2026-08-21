@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AccountIdentity, ShortcutPaletteTrigger, SynchronizedSettingsBoundary, SynchronizedShortcutBoundary } from "./identity-ui";
 import { messages } from "./localization";
+import { NativeMessagingSettings, SynchronizedNativeMessagingBoundary } from "./native-messaging-ui";
 import type { NativeBridgeV1 } from "./native-bridge";
 import type { IdentitySettingsValue } from "./service-boundary";
 import { defaultDevHudSettings } from "./settings-contract";
@@ -12,7 +13,15 @@ import { inactiveDesktopShortcutBindings, ShortcutActionId, ShortcutKey, Shortcu
 
 let identity: IdentitySettingsValue;
 
+const nativeMessagingMock = vi.hoisted(() => ({
+  status: vi.fn(),
+  beginPairing: vi.fn(),
+  unpair: vi.fn(),
+  configure: vi.fn(),
+}));
+
 vi.mock("./service-boundary", () => ({ useIdentitySettings: () => identity }));
+vi.mock("./native-messaging", () => ({ nativeMessaging: nativeMessagingMock }));
 
 function identityWith(overrides: Partial<IdentitySettingsValue> = {}): IdentitySettingsValue {
   return {
@@ -22,10 +31,96 @@ function identityWith(overrides: Partial<IdentitySettingsValue> = {}): IdentityS
   };
 }
 
-beforeEach(() => { identity = identityWith(); });
-afterEach(cleanup);
+beforeEach(() => {
+  identity = identityWith();
+  nativeMessagingMock.status.mockReset().mockResolvedValue({ paired: false });
+  nativeMessagingMock.beginPairing.mockReset().mockResolvedValue({ paired: false, pairingNonce: "pair-code", expiresInSeconds: 120 });
+  nativeMessagingMock.unpair.mockReset().mockResolvedValue({ paired: false });
+  nativeMessagingMock.configure.mockReset().mockResolvedValue(undefined);
+});
+afterEach(() => { vi.useRealTimers(); cleanup(); });
 
 describe("identity UI", () => {
+  it("retries a failed Native Messaging configuration publication", async () => {
+    vi.useFakeTimers();
+    nativeMessagingMock.configure.mockRejectedValueOnce(new Error("temporary bridge failure")).mockResolvedValue(undefined);
+    render(<SynchronizedNativeMessagingBoundary />);
+    await act(async () => {});
+
+    expect(nativeMessagingMock.configure).toHaveBeenCalledTimes(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(249); });
+    expect(nativeMessagingMock.configure).toHaveBeenCalledTimes(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(nativeMessagingMock.configure).toHaveBeenCalledTimes(2);
+  });
+
+  it("cancels a stale Native Messaging retry when settings change", async () => {
+    vi.useFakeTimers();
+    nativeMessagingMock.configure.mockRejectedValueOnce(new Error("temporary bridge failure")).mockResolvedValue(undefined);
+    const view = render(<SynchronizedNativeMessagingBoundary />);
+    await act(async () => {});
+    const updatedSettings = { ...defaultDevHudSettings, appearance: { ...defaultDevHudSettings.appearance, language: "ko" as const } };
+    identity = identityWith({ settings: updatedSettings });
+
+    view.rerender(<SynchronizedNativeMessagingBoundary />);
+    await act(async () => {});
+
+    expect(nativeMessagingMock.configure).toHaveBeenCalledTimes(2);
+    expect(nativeMessagingMock.configure).toHaveBeenLastCalledWith(updatedSettings, expect.any(String));
+    await act(async () => { await vi.advanceTimersByTimeAsync(250); });
+    expect(nativeMessagingMock.configure).toHaveBeenCalledTimes(2);
+  });
+
+  it("refreshes pairing status until the extension completes pairing", async () => {
+    vi.useFakeTimers();
+    render(<NativeMessagingSettings copy={messages.en} />);
+    await act(async () => {});
+    fireEvent.click(screen.getByRole("button", { name: messages.en.nativeMessagingPair }));
+    await act(async () => {});
+    expect(screen.getByText("pair-code")).toBeTruthy();
+    nativeMessagingMock.status.mockResolvedValue({ paired: true });
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+
+    expect(screen.getByRole("status").textContent).toBe(messages.en.nativeMessagingPaired);
+    expect(screen.queryByText("pair-code")).toBeNull();
+  });
+
+  it("clears a transient pairing status failure after polling recovers", async () => {
+    vi.useFakeTimers();
+    nativeMessagingMock.status
+      .mockResolvedValueOnce({ paired: false })
+      .mockRejectedValueOnce(new Error("temporary status failure"))
+      .mockResolvedValueOnce({ paired: true });
+    render(<NativeMessagingSettings copy={messages.en} />);
+    await act(async () => {});
+    fireEvent.click(screen.getByRole("button", { name: messages.en.nativeMessagingPair }));
+    await act(async () => {});
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+    expect(screen.getByRole("status").textContent).toBe(messages.en.nativeMessagingFailed);
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+    expect(screen.getByRole("status").textContent).toBe(messages.en.nativeMessagingPaired);
+    expect(screen.queryByText("pair-code")).toBeNull();
+  });
+
+  it("expires the displayed pairing code and stops polling", async () => {
+    vi.useFakeTimers();
+    render(<NativeMessagingSettings copy={messages.en} />);
+    await act(async () => {});
+    fireEvent.click(screen.getByRole("button", { name: messages.en.nativeMessagingPair }));
+    await act(async () => {});
+    expect(screen.getByText("pair-code")).toBeTruthy();
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(120_000); });
+
+    expect(screen.queryByText("pair-code")).toBeNull();
+    const statusCallsAfterExpiry = nativeMessagingMock.status.mock.calls.length;
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+    expect(nativeMessagingMock.status).toHaveBeenCalledTimes(statusCallsAfterExpiry);
+  });
+
   it("keeps local continuation available after Bootstrap fails", () => {
     const continueLocally = vi.fn();
     identity = identityWith({ status: "error", continueLocally });

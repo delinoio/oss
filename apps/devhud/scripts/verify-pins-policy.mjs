@@ -28,7 +28,12 @@ export function resolvedPackageClosure(metadata, rootPackageId) {
   return { nodesById, packageIds, packagesById };
 }
 
-export function validateResolvedDependencySources(metadata, rootPackageId, allowedSources) {
+export function validateResolvedDependencySources(
+  metadata,
+  rootPackageId,
+  allowedSources,
+  allowedLocalPackageIds = new Set(),
+) {
   const closure = resolvedPackageClosure(metadata, rootPackageId);
 
   for (const packageId of closure.packageIds) {
@@ -37,6 +42,9 @@ export function validateResolvedDependencySources(metadata, rootPackageId, allow
     }
 
     const pkg = closure.packagesById.get(packageId);
+    if (pkg.source === null && allowedLocalPackageIds.has(packageId)) {
+      continue;
+    }
     assert(
       allowedSources.has(pkg.source),
       `forbidden source in the DevHUD dependency graph: ${pkg.name} ${pkg.version} (${pkg.source ?? "local path"})`,

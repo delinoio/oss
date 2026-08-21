@@ -52,11 +52,19 @@ function snapshot() {
   });
 }
 
+function outputContains(value) {
+  return filesUnder(distRoot).some((path) => readFileSync(path, "utf8").includes(value));
+}
+
 for (const platform of ["android", "ios"]) {
   build(platform);
   const mobile = snapshot();
   if (mobile.some(({ sha256 }) => sha256 === annotationFontSha256)) {
     console.error(`devhud: desktop-only RealQA font leaked into ${platform} frontend output`);
+    process.exit(1);
+  }
+  if (outputContains("native_messaging_")) {
+    console.error(`devhud: Native Messaging command paths leaked into ${platform} frontend output`);
     process.exit(1);
   }
 }
@@ -65,6 +73,10 @@ build("linux");
 const first = snapshot();
 if (!first.some(({ sha256 }) => sha256 === annotationFontSha256)) {
   console.error("devhud: desktop frontend output is missing the RealQA annotation font");
+  process.exit(1);
+}
+if (!outputContains("native_messaging_")) {
+  console.error("devhud: desktop frontend output is missing Native Messaging command paths");
   process.exit(1);
 }
 build("linux");

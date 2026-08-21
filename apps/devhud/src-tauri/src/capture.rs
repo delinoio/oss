@@ -14,6 +14,7 @@ use aes_gcm::{
     Aes256Gcm, Nonce,
     aead::{Aead, KeyInit, Payload},
 };
+use devhud_native_messaging_host::protocol::{BrowserContext, validate_browser_context};
 use image::{Rgba, RgbaImage, imageops};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -406,6 +407,24 @@ struct DraftState {
     images: Vec<DraftImageState>,
 }
 
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DraftBrowserContext {
+    pub mapping_id: String,
+    pub context: BrowserContext,
+}
+
+impl DraftBrowserContext {
+    pub fn validate(&self) -> Result<(), CaptureError> {
+        let mapping_id =
+            Uuid::parse_str(&self.mapping_id).map_err(|_| CaptureError::InvalidArgument)?;
+        if mapping_id.get_version_num() != 7 || mapping_id.to_string() != self.mapping_id {
+            return Err(CaptureError::InvalidArgument);
+        }
+        validate_browser_context(&self.context).map_err(|_| CaptureError::InvalidArgument)
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct DraftDocument {
@@ -415,6 +434,8 @@ struct DraftDocument {
     created_at: u64,
     updated_at: u64,
     expires_at: u64,
+    #[serde(default)]
+    browser_context: Option<DraftBrowserContext>,
     current: DraftState,
     undo: Vec<DraftState>,
     redo: Vec<DraftState>,
@@ -428,6 +449,9 @@ pub struct DraftSummary {
     pub created_at: u64,
     pub updated_at: u64,
     pub expires_at: u64,
+    pub has_browser_context: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub browser_context: Option<DraftBrowserContext>,
     pub image_count: usize,
     pub images: Vec<DraftImageSummary>,
     pub can_undo: bool,
@@ -452,6 +476,14 @@ pub struct DraftList {
 
 impl DraftDocument {
     fn summary(&self) -> DraftSummary {
+        self.summary_with_context(true)
+    }
+
+    fn list_summary(&self) -> DraftSummary {
+        self.summary_with_context(false)
+    }
+
+    fn summary_with_context(&self, include_context: bool) -> DraftSummary {
         let images = self
             .current
             .images
@@ -475,6 +507,12 @@ impl DraftDocument {
             created_at: self.created_at,
             updated_at: self.updated_at,
             expires_at: self.expires_at,
+            has_browser_context: self.browser_context.is_some(),
+            browser_context: if include_context {
+                self.browser_context.clone()
+            } else {
+                None
+            },
             image_count: images.len(),
             images,
             can_undo: !self.undo.is_empty(),
@@ -700,7 +738,7 @@ impl DraftStore {
                 continue;
             };
             match read_document(&entry.path().join("manifest.bin"), &key) {
-                Ok(document) => drafts.push(document.summary()),
+                Ok(document) => drafts.push(document.list_summary()),
                 Err(_) => unreadable_draft_ids.push(id),
             }
         }
@@ -754,6 +792,7 @@ impl DraftStore {
             created_at: now,
             updated_at: now,
             expires_at: now + DRAFT_RETENTION.as_secs(),
+            browser_context: None,
             current: DraftState { images: states },
             undo: Vec::new(),
             redo: Vec::new(),
@@ -843,6 +882,43 @@ impl DraftStore {
             }
         }
         result
+    }
+
+    pub fn attach_browser_context(
+        &self,
+        id: Uuid,
+        expected_revision: u64,
+        browser_context: DraftBrowserContext,
+    ) -> Result<DraftSummary, CaptureError> {
+        browser_context.validate()?;
+        let _guard = self.lock.lock().map_err(|_| CaptureError::StorageFailure)?;
+        let key = self.key()?;
+        self.recover_locked(&key)?;
+        let mut document = self.read_locked(id, &key)?;
+        ensure_revision(&document, expected_revision)?;
+        document.browser_context = Some(browser_context);
+        document.touch(Self::now()?);
+        self.write_document_locked(&mut document, &key)?;
+        Ok(document.summary())
+    }
+
+    pub fn remove_browser_context(
+        &self,
+        id: Uuid,
+        expected_revision: u64,
+    ) -> Result<DraftSummary, CaptureError> {
+        let _guard = self.lock.lock().map_err(|_| CaptureError::StorageFailure)?;
+        let key = self.key()?;
+        self.recover_locked(&key)?;
+        let mut document = self.read_locked(id, &key)?;
+        ensure_revision(&document, expected_revision)?;
+        document
+            .browser_context
+            .take()
+            .ok_or(CaptureError::NotFound)?;
+        document.touch(Self::now()?);
+        self.write_document_locked(&mut document, &key)?;
+        Ok(document.summary())
     }
 
     pub fn apply(
@@ -2838,6 +2914,24 @@ mod tests {
 
     use super::*;
 
+    fn draft_browser_context(title: &str) -> DraftBrowserContext {
+        DraftBrowserContext {
+            mapping_id: "01900000-0000-7000-8000-000000000001".to_string(),
+            context: BrowserContext {
+                url: "https://example.com/%3Credacted%3E".to_string(),
+                title: title.to_string(),
+                viewport: devhud_native_messaging_host::protocol::Viewport {
+                    width: 1280.0,
+                    height: 720.0,
+                },
+                user_agent: "DevHUD capture test".to_string(),
+                selected_bounds: None,
+                accessibility: std::collections::BTreeMap::new(),
+                outer_html: format!("<main>{title}</main>"),
+            },
+        }
+    }
+
     #[test]
     fn window_enumeration_skips_entries_that_disappear() {
         assert_eq!(
@@ -3666,6 +3760,130 @@ mod tests {
         assert!(!root.0.join(unreadable.id.to_string()).exists());
         store.purge_all().unwrap();
         assert!(!root.0.exists());
+    }
+
+    #[test]
+    fn browser_context_is_encrypted_revision_checked_and_omitted_from_lists() {
+        let root = TestDirectory::new();
+        let key = [29; 32];
+        let store = DraftStore::new_test(root.0.clone(), 1024 * 1024, key);
+        let created = store
+            .create(vec![ImageBuffer::from_pixel(8, 8, Rgba([1, 2, 3, 255]))])
+            .unwrap();
+        let attached = store
+            .attach_browser_context(
+                created.id,
+                created.revision,
+                draft_browser_context("Captured page"),
+            )
+            .unwrap();
+        assert_eq!(attached.revision, created.revision + 1);
+        assert!(attached.has_browser_context);
+        assert_eq!(
+            attached.browser_context.as_ref().unwrap().context.title,
+            "Captured page"
+        );
+        let listed = store.list().unwrap().drafts.pop().unwrap();
+        assert!(listed.has_browser_context);
+        assert!(listed.browser_context.is_none());
+
+        let manifest = fs::read(root.0.join(created.id.to_string()).join("manifest.bin")).unwrap();
+        assert!(
+            !manifest
+                .windows("Captured page".len())
+                .any(|window| window == b"Captured page")
+        );
+
+        let appended = store
+            .append(
+                created.id,
+                vec![ImageBuffer::from_pixel(8, 8, Rgba([4, 5, 6, 255]))],
+            )
+            .unwrap();
+        assert_eq!(
+            appended.browser_context.as_ref().unwrap().context.title,
+            "Captured page"
+        );
+        let replaced = store
+            .attach_browser_context(
+                created.id,
+                appended.revision,
+                draft_browser_context("Newer page"),
+            )
+            .unwrap();
+        assert_eq!(
+            replaced.browser_context.as_ref().unwrap().context.title,
+            "Newer page"
+        );
+        assert_eq!(
+            store
+                .attach_browser_context(
+                    created.id,
+                    appended.revision,
+                    draft_browser_context("Stale page"),
+                )
+                .unwrap_err(),
+            CaptureError::RevisionConflict
+        );
+    }
+
+    #[test]
+    fn browser_context_removal_is_revision_checked() {
+        let root = TestDirectory::new();
+        let store = DraftStore::new_test(root.0.clone(), 1024 * 1024, [30; 32]);
+        let created = store
+            .create(vec![ImageBuffer::from_pixel(8, 8, Rgba([1, 2, 3, 255]))])
+            .unwrap();
+        let attached = store
+            .attach_browser_context(
+                created.id,
+                created.revision,
+                draft_browser_context("Captured page"),
+            )
+            .unwrap();
+
+        assert_eq!(
+            store
+                .remove_browser_context(created.id, created.revision)
+                .unwrap_err(),
+            CaptureError::RevisionConflict
+        );
+        let removed = store
+            .remove_browser_context(created.id, attached.revision)
+            .unwrap();
+        assert_eq!(removed.revision, attached.revision + 1);
+        assert!(!removed.has_browser_context);
+        assert!(removed.browser_context.is_none());
+        assert_eq!(
+            store
+                .remove_browser_context(created.id, removed.revision)
+                .unwrap_err(),
+            CaptureError::NotFound
+        );
+    }
+
+    #[test]
+    fn schema_one_drafts_without_browser_context_remain_readable() {
+        let root = TestDirectory::new();
+        let key = [31; 32];
+        let store = DraftStore::new_test(root.0.clone(), 1024 * 1024, key);
+        let created = store
+            .create(vec![ImageBuffer::from_pixel(8, 8, Rgba([1, 2, 3, 255]))])
+            .unwrap();
+        let manifest = root.0.join(created.id.to_string()).join("manifest.bin");
+        let document = read_document(&manifest, &key).unwrap();
+        let mut value = serde_json::to_value(document).unwrap();
+        value.as_object_mut().unwrap().remove("browserContext");
+        let legacy = serde_json::to_vec(&value).unwrap();
+        atomic_replace(
+            &manifest,
+            &encrypt(&key, created.id, "manifest", &legacy).unwrap(),
+        )
+        .unwrap();
+
+        let opened = store.open(created.id).unwrap();
+        assert!(!opened.has_browser_context);
+        assert!(opened.browser_context.is_none());
     }
 
     #[test]

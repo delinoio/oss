@@ -23,7 +23,7 @@ export default defineConfig({
   source: {
     preEntry: mobileFrontend ? undefined : "./src/realqa-font.css",
     entry: {
-      index: "./src/main.tsx",
+      index: mobileFrontend ? "./src/main.mobile.tsx" : "./src/main.desktop.tsx",
     },
   },
   html: {

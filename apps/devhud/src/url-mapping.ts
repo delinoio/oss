@@ -16,6 +16,22 @@ export interface ParsedUrlPattern {
   readonly path: readonly string[];
 }
 
+export function configuredChromeOrigins(mappings: readonly UrlRepositoryMapping[]) {
+  const grouped = new Map<string, UrlRepositoryMapping[]>();
+  for (const mapping of mappings) {
+    if (mapping.chromeOrigin === null) continue;
+    const current = grouped.get(mapping.chromeOrigin);
+    if (current) current.push(mapping);
+    else grouped.set(mapping.chromeOrigin, [mapping]);
+  }
+  return [...grouped.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([origin, configuredMappings]) => ({
+      origin,
+      mappings: [...configuredMappings].sort(compareMappings).map((mapping) => ({ mappingId: mapping.id, matcher: parseUrlPattern(mapping.pattern) })),
+    }));
+}
+
 /** Bound synchronous Settings overlap analysis for every accepted mapping set. */
 export const MaximumUrlMappingPathSegments = 32;
 export const MaximumUrlMappingGlobstarSegments = 8;
@@ -126,11 +142,20 @@ function canonicalizeLiteralSegment(value: string): string {
 export function mappingMatches(mapping: Pick<UrlRepositoryMapping, "pattern">, value: string): boolean {
   const pattern = parseUrlPattern(mapping.pattern);
   const url = parseLiveUrl(value);
+  return authorityMatches(pattern, url)
+    && pathMatches(pattern.path, url.path);
+}
+
+/** Check whether a concrete Chrome permission origin is covered by a mapping authority. */
+export function mappingAcceptsOrigin(mapping: Pick<UrlRepositoryMapping, "pattern">, origin: string): boolean {
+  return authorityMatches(parseUrlPattern(mapping.pattern), parseLiveUrl(origin));
+}
+
+function authorityMatches(pattern: ParsedUrlPattern, url: ParsedUrlPattern): boolean {
   return componentMatches(pattern.scheme, url.scheme, false)
     && componentMatches(normalizeDefaultPort(url.scheme, pattern.port), url.port, false)
     && pattern.host.length === url.host.length
-    && pattern.host.every((part, index) => hostComponentMatches(part, url.host[index] ?? "", pattern.hostIsIpLiteral, url.hostIsIpLiteral))
-    && pathMatches(pattern.path, url.path);
+    && pattern.host.every((part, index) => hostComponentMatches(part, url.host[index] ?? "", pattern.hostIsIpLiteral, url.hostIsIpLiteral));
 }
 
 export function literalSpecificity(mapping: Pick<UrlRepositoryMapping, "pattern">): number {

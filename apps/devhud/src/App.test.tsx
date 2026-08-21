@@ -10,6 +10,7 @@ import * as identityClient from "./identity-client";
 import type { IdentitySession } from "./identity-client";
 import { messages } from "./localization";
 import { LifecycleState, NativeBridgeError, NativeBridgeErrorCode, NotificationPermission, RuntimePlatform, type NativeBridgeEventV1, type NativeBridgeRequestV1, type NativeBridgeResponseV1, type NativeBridgeV1, type RuntimeSnapshot } from "./native-bridge";
+import { desktopNativeMessagingIntegration } from "./native-messaging-ui";
 import { saveGuestSettings } from "./service-boundary";
 import { defaultDevHudSettings } from "./settings-contract";
 
@@ -52,6 +53,24 @@ afterEach(() => {
 });
 
 describe("native App state", () => {
+  it("publishes Native Messaging configuration before Settings is opened", async () => {
+    const invoke = vi.fn(async () => undefined);
+    window.__TAURI_INTERNALS__ = { invoke };
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));
+    const bridge = bridgeWith(async (request) => {
+      if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
+      throw new Error(`unexpected operation ${request.operation}`);
+    });
+
+    render(<App bridge={bridge} initialRuntime={desktopRuntime} nativeMessaging={desktopNativeMessagingIntegration} />);
+
+    expect(screen.getByRole("heading", { name: messages.en.welcome })).toBeTruthy();
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith("native_messaging_replace_configuration", {
+      configuration: { origins: [], language: "en" },
+      scopeId: expect.stringMatching(/^[0-9a-f-]{36}$/u),
+    }, undefined));
+  });
+
   it.each([["en", messages.en], ["ko", messages.ko]] as const)("renders the accessible %s GitHub setup surface", async (language, copy) => {
     localStorage.setItem("devhud.shell.preferences.v1", JSON.stringify({ version: 1, theme: "system", language, apiOrigin: "https://devhud.api.delino.io", launchAtLogin: false }));
     vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));
@@ -665,6 +684,7 @@ describe("native App state", () => {
       createdAt: 1_700_000_000,
       updatedAt: 1_700_000_000,
       expiresAt: 1_702_592_000,
+      hasBrowserContext: false,
       imageCount: 1,
       images: [{ id: "019b0000-0000-7000-8000-000000000002", width: 800, height: 600, previewUrl: "realqa://asset/draft/image/source/1", crop: null, layers: [] }],
       canUndo: false,
