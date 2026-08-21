@@ -210,8 +210,12 @@ export function createGitHubProvider({ fetch: fetchImpl }: ProviderOptions): Git
       } catch (error) {
         const ambiguous = error instanceof GitHubProviderError && (error.code === GitHubErrorCode.NetworkFailure || (error.code === GitHubErrorCode.InvalidResponse && error.status !== null && (error.status >= 500 || (error.status >= 200 && error.status < 300))));
         if (!ambiguous) throw error;
-        const reconciled = await reconcileIssueMarker(credential, repository, marker);
-        if (reconciled.issue !== null) return { issue: reconciled.issue, metadata: reconciled.metadata };
+        try {
+          const reconciled = await reconcileIssueMarker(credential, repository, marker);
+          if (reconciled.issue !== null) return { issue: reconciled.issue, metadata: reconciled.metadata };
+        } catch {
+          // The POST outcome remains ambiguous when its read-after-write reconciliation also fails.
+        }
         throw new GitHubProviderError(GitHubErrorCode.AmbiguousWrite, GitHubOperation.CreateIssue);
       }
       return { issue: issueValue(record(result.json, GitHubOperation.CreateIssue), marker, false, repository), metadata: result.metadata };

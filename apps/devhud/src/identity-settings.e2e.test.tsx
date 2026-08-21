@@ -18,7 +18,7 @@ import { sessionProfileId, type IdentitySession } from "./identity-client";
 import { SynchronizedSettingsBoundary } from "./identity-ui";
 import { messages } from "./localization";
 import { hasGuestSettings, readAuthenticatedSettingsCache, readGuestSettings, writeAuthenticatedSettingsCache, writeCachedIdentityBootstrap, writeGuestSettings } from "./local-data";
-import { canonicalDevHudSettings, defaultDevHudSettings, parseDevHudSettings, SettingsSchemaVersion } from "./settings-contract";
+import { canonicalDevHudSettings, defaultDevHudSettings, parseDevHudSettings, SettingsSchemaVersion, StructuredSettingsSchemaVersion } from "./settings-contract";
 import { LifecycleState, RuntimePlatform, type NativeBridgeEventV1, type NativeBridgeRequestV1, type NativeBridgeResponseV1, type NativeBridgeV1, type RuntimeSnapshot } from "./native-bridge";
 import { clearIdentityForApiChange, DevHudServiceBoundary, useIdentitySettings } from "./service-boundary";
 
@@ -204,6 +204,21 @@ describe("generated Connect identity/settings fixture", () => {
 
     await waitFor(() => expect(document.documentElement.dataset.theme).toBe("light"));
     expect(replacements).toBe(1);
+  });
+
+  it("admits and migrates an authenticated schema-v4 snapshot", async () => {
+    const server = { ...defaultDevHudSettings, schemaVersion: StructuredSettingsSchemaVersion, appearance: { theme: "dark" as const, language: "en" as const } };
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: StructuredSettingsSchemaVersion, revision: "4", canonicalJson: encodedCanonicalJson(server) } });
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    renderIdentityProbe(authenticatedBridge());
+
+    await waitFor(() => expect(screen.getByTestId("identity-state").dataset).toMatchObject({ status: "authenticated", revision: "4", theme: "dark", error: "" }));
   });
 
   it("keeps synchronized appearance controls read-only while a replacement is pending", async () => {

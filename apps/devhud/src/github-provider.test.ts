@@ -190,6 +190,25 @@ describe("GitHub.com provider", () => {
     expect({ searches, lists, posts }).toEqual({ searches: 3, lists: 3, posts: 1 });
   });
 
+  it("preserves an ambiguous write when follow-up reconciliation also fails", async () => {
+    let searches = 0;
+    let posts = 0;
+    const fetch = vi.fn<typeof globalThis.fetch>(async (input, init) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/search/issues") {
+        searches += 1;
+        if (searches > 1) throw new TypeError("reconciliation unavailable");
+        return json({ items: [] });
+      }
+      if (url.pathname.endsWith("/issues") && init?.method !== "POST") return json([]);
+      if (init?.method === "POST") { posts += 1; throw new TypeError("connection ended after write"); }
+      return json({ message: "unexpected" }, 500);
+    });
+
+    await expect(createGitHubProvider({ fetch }).createIssue(fine, privateRepository, { title: "Issue", body: "Body", labels: [], submissionId: fixture.submissionId })).rejects.toMatchObject({ code: GitHubErrorCode.AmbiguousWrite });
+    expect(posts).toBe(1);
+  });
+
   it("rejects duplicate submission markers without creating another issue", async () => {
     const marker = issueMarker(fixture.submissionId);
     const fetch = vi.fn<typeof globalThis.fetch>(async (input) => new URL(String(input)).pathname === "/search/issues"

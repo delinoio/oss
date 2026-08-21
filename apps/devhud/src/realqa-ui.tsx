@@ -32,6 +32,7 @@ interface RealqaContextValue {
     readonly close: () => void;
     readonly remove: (draft: CaptureDraft) => Promise<void>;
     readonly removeUnreadable: (draftId: string) => Promise<void>;
+    readonly confirmIssueCreated: (draftId: string) => Promise<void>;
     readonly runDraftOperation: <Result>(draftId: string, operation: (draft: CaptureDraft, installDraft: (draft: CaptureDraft) => void) => Promise<Result>) => Promise<Result>;
     readonly refresh: () => Promise<void>;
   };
@@ -344,9 +345,16 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
     if (!confirm(copy.realqaDeleteConfirm)) return;
     await deleteDraft(draftId);
   };
+  const confirmIssueCreated = async (draftId: string) => {
+    const generation = resetGeneration.current;
+    await runDraftOperation(draftId, () => bridge.request({ operation: "capture.confirm-issue-created", draftId }));
+    if (generation !== resetGeneration.current) return;
+    removeDraftLocally(draftId);
+    try { await refresh(); } catch { /* The successful native confirmation is authoritative. */ }
+  };
   const value: RealqaContextValue = {
     state: { drafts, unreadableDraftIds, selected, busy, status, error, preview },
-    actions: { capture, open: openDraft, close: () => setSelected(null), remove, removeUnreadable, runDraftOperation, refresh },
+    actions: { capture, open: openDraft, close: () => setSelected(null), remove, removeUnreadable, confirmIssueCreated, runDraftOperation, refresh },
     meta: { copy, bridge },
   };
 
@@ -607,8 +615,7 @@ function CaptureEditor({ draft }: { readonly draft: CaptureDraft }) {
     requestAnimationFrame(() => submissionTrigger.current?.focus());
   };
   const confirmCreated = async () => {
-    await bridge.request({ operation: "capture.confirm-issue-created", draftId: draft.id });
-    await actions.refresh();
+    await actions.confirmIssueCreated(draft.id);
   };
   return <section className="capture-editor" aria-labelledby="capture-editor-title">
     <div className="editor-heading"><div><h3 id="capture-editor-title">{copy.editorTitle}</h3><p>{copy.editorCloseHint}</p></div><button onClick={actions.close}>{copy.close}</button></div>

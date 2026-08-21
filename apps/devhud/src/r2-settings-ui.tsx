@@ -36,7 +36,9 @@ export function R2Settings({ copy, bridge }: { readonly copy: Copy; readonly bri
       if (accessKeyId !== "") writes.push(bridge.request({ operation: "secure.write", setting: settingId, value: accessKeyId }));
       if (secretAccessKey !== "") writes.push(bridge.request({ operation: "secure.write", setting: settingSecret, value: secretAccessKey }));
       try {
-        await Promise.all(writes);
+        const writeResults = await Promise.allSettled(writes);
+        const failedWrite = writeResults.find((result): result is PromiseRejectedResult => result.status === "rejected");
+        if (failedWrite) throw failedWrite.reason;
         if (!await identity.replaceSettings(next)) throw new Error("settings-write-failed");
       } catch (reason) {
         await Promise.allSettled([

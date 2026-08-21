@@ -52,4 +52,29 @@ describe("BYO R2 settings", () => {
     expect(request).toHaveBeenCalledWith(expect.objectContaining({ operation: "secure.write", value: "access-id" }));
     expect(request).toHaveBeenCalledWith(expect.objectContaining({ operation: "secure.write", value: "device-secret" }));
   });
+
+  it("waits for every attempted key write before restoring prior credentials", async () => {
+    let finishSecretWrite!: () => void;
+    const secretWrite = new Promise<void>((resolve) => { finishSecretWrite = resolve; });
+    const request = vi.fn(async (value: NativeBridgeRequestV1) => {
+      if (value.operation === "secure.read") return { kind: "secure-value" as const, value: "prior-value" };
+      if (value.operation === "secure.write" && value.setting.kind === "r2-access-key-id" && value.value === "new-access") throw new Error("access-write-failed");
+      if (value.operation === "secure.write" && value.setting.kind === "r2-secret-access-key" && value.value === "new-secret") { await secretWrite; return { kind: "ok" as const }; }
+      return { kind: "ok" as const };
+    });
+    render(<R2Settings copy={messages.en} bridge={{ request, listen: vi.fn(async () => () => undefined) } as NativeBridgeV1} />);
+    for (const [label, value] of [
+      [messages.en.r2Endpoint, "https://r2.example/storage"], [messages.en.r2AccountId, "account.example"],
+      [messages.en.r2Bucket, "screenshots"], [messages.en.r2PublicBase, "https://images.example/public"],
+      [messages.en.r2AccessKeyId, "new-access"], [messages.en.r2SecretAccessKey, "new-secret"],
+    ] as const) fireEvent.change(screen.getByLabelText(label), { target: { value } });
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.r2Save }));
+    await waitFor(() => expect(request).toHaveBeenCalledWith(expect.objectContaining({ operation: "secure.write", value: "new-access" })));
+    expect(request).not.toHaveBeenCalledWith(expect.objectContaining({ operation: "secure.write", value: "prior-value" }));
+
+    finishSecretWrite();
+    await waitFor(() => expect(request.mock.calls.filter(([value]) => value.operation === "secure.write" && value.value === "prior-value")).toHaveLength(2));
+    expect(identity.replaceSettings).not.toHaveBeenCalled();
+  });
 });

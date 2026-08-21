@@ -9,6 +9,10 @@ import { NativeBridgeError, NativeBridgeErrorCode, type CaptureDraft, type Nativ
 import { RealqaSurface, type RealqaController } from "./realqa-ui";
 import { ShortcutActionId } from "./shortcuts";
 
+vi.mock("./realqa-submission-ui.tsx", () => ({
+  RealqaSubmissionModal: ({ onConfirmed }: { readonly onConfirmed: () => Promise<void> }) => <button onClick={() => void onConfirmed()}>confirm fixture issue</button>,
+}));
+
 const draft: CaptureDraft = {
   id: "019b0000-0000-7000-8000-000000000001",
   revision: 3,
@@ -457,6 +461,28 @@ describe("RealQA capture and editor", () => {
     expect(await screen.findByText(messages.en.captureSaved)).toBeTruthy();
     expect(screen.queryByRole("alert")).toBeNull();
     expect(screen.getByRole("complementary", { name: messages.en.floatingPreview })).toBeTruthy();
+  });
+
+  it("keeps confirmed draft deletion authoritative when refresh fails", async () => {
+    let listCalls = 0;
+    const { bridge, request } = bridgeWith(async (value) => {
+      if (value.operation === "capture.status") return { kind: "capture-status", available: true, platform: "macos", shadowRemovalSupported: true, topology: [] };
+      if (value.operation === "capture.list-drafts") {
+        listCalls += 1;
+        if (listCalls > 1) throw new Error("transient refresh failure");
+        return { kind: "capture-drafts", drafts: [draft], unreadableDraftIds: [] };
+      }
+      if (value.operation === "capture.confirm-issue-created") return { kind: "ok" };
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    render(<RealqaSurface bridge={bridge} copy={messages.en} />);
+    await openEditor();
+    fireEvent.click(screen.getByRole("button", { name: messages.en.issueSubmit }));
+    fireEvent.click(await screen.findByRole("button", { name: "confirm fixture issue" }));
+
+    await waitFor(() => expect(request).toHaveBeenCalledWith({ operation: "capture.confirm-issue-created", draftId: draft.id }));
+    await waitFor(() => expect(screen.queryByRole("heading", { name: messages.en.editorTitle })).toBeNull());
+    expect(screen.queryByRole("button", { name: messages.en.realqaOpenEditor })).toBeNull();
   });
 
   it("hides the floating preview while a capture dialog is open", async () => {

@@ -33,20 +33,26 @@ export function RealqaSubmissionModal({ draft, bridge, copy, onClose, onConfirme
   const [diagnostics, setDiagnostics] = useState<string | null>(() => draft.browserContext ? editableBrowserDiagnostics(draft.browserContext.context) : null);
   const [labels, setLabels] = useState<readonly string[]>([]);
   const [selectedLabels, setSelectedLabels] = useState<ReadonlySet<string>>(new Set());
-  const [uploadProvider, setUploadProvider] = useState<"official" | "r2">(identity.settings.uploads.provider);
+  const [uploadProvider, setUploadProvider] = useState<"official" | "r2">(() => identity.status === "authenticated" ? identity.settings.uploads.provider : "r2");
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [createdUrl, setCreatedUrl] = useState<string | null>(null);
   const [cleanupPending, setCleanupPending] = useState(false);
+  const [pendingUploadCleanupIds, setPendingUploadCleanupIds] = useState<readonly string[]>([]);
   const dialog = useRef<HTMLElement>(null);
   const titleInput = useRef<HTMLInputElement>(null);
   const selectedRepository = repositories.find((entry) => repositoryKeyFor(entry) === repositoryKey) ?? null;
   const selectedProfile = identity.settings.github.profiles.find((entry) => entry.id === profileRef) ?? null;
   const r2 = identity.settings.uploads.r2;
   const selectedImageCount = selectedImages.size;
+  const officialUploadsAvailable = identity.status === "authenticated";
+  const uploadCleanupPending = pendingUploadCleanupIds.length > 0;
 
   useEffect(() => { titleInput.current?.focus(); }, []);
+  useEffect(() => {
+    if (!officialUploadsAvailable && uploadProvider === "official") setUploadProvider("r2");
+  }, [officialUploadsAvailable, uploadProvider]);
   useEffect(() => {
     let cancelled = false;
     setLabels([]);
@@ -69,7 +75,7 @@ export function RealqaSubmissionModal({ draft, bridge, copy, onClose, onConfirme
     return () => { cancelled = true; };
   }, [bridge, copy.issueLabelsFailed, identity.githubPatScopeId, identity.settings.github.issueTracker, provider, repositoryKey, profileRef]);
 
-  const close = () => { if (!busy) onClose(); };
+  const close = () => { if (!busy && !uploadCleanupPending) onClose(); };
   const keyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close(); return; }
     if (event.key !== "Tab") return;
@@ -87,9 +93,10 @@ export function RealqaSubmissionModal({ draft, bridge, copy, onClose, onConfirme
   });
 
   const submit = async () => {
-    if (busy || createdUrl || !selectedRepository || !selectedProfile || title.trim() === "") return;
+    if (busy || createdUrl || uploadCleanupPending || !selectedRepository || !selectedProfile || title.trim() === "") return;
     if (!repositories.some((entry) => repositoryKeyFor(entry) === repositoryKey && entry.profileRef === profileRef)) { setError(copy.issueRepositoryCredentialMismatch); return; }
-    if (uploadProvider === "r2" && (!r2 || !r2.accountId || !r2.publicBaseUrl)) { setError(copy.issueR2SetupRequired); return; }
+    if (selectedImageCount > 0 && uploadProvider === "official" && !officialUploadsAvailable) { setError(copy.issueOfficialSignInRequired); return; }
+    if (selectedImageCount > 0 && uploadProvider === "r2" && (!r2 || !r2.accountId || !r2.publicBaseUrl)) { setError(copy.issueR2SetupRequired); return; }
     let parsedDiagnostics = null;
     try { parsedDiagnostics = diagnostics === null ? null : parseEditableBrowserDiagnostics(diagnostics); }
     catch { setError(copy.issueDiagnosticsInvalid); return; }
@@ -157,10 +164,21 @@ export function RealqaSubmissionModal({ draft, bridge, copy, onClose, onConfirme
       try { await onConfirmed(); } catch { setCleanupPending(true); setError(copy.issueDraftCleanupFailed); }
     } catch (reason) {
       const ambiguous = reason instanceof GitHubProviderError && reason.code === GitHubErrorCode.AmbiguousWrite;
-      if (!githubAttempted || !ambiguous) await Promise.allSettled(finalizedUploadIds.map((uploadId) => deleteUpload.mutateAsync({ uploadId: uuid(uploadId) })));
-      setError(ambiguous ? copy.issueAmbiguous : copy.issueSubmissionFailed);
+      const remainingCleanupIds = !githubAttempted || !ambiguous ? await deleteFinalizedUploads(finalizedUploadIds, (input) => deleteUpload.mutateAsync(input)) : [];
+      setPendingUploadCleanupIds(remainingCleanupIds);
+      setError(remainingCleanupIds.length > 0 ? copy.issueUploadCleanupFailed : ambiguous ? copy.issueAmbiguous : copy.issueSubmissionFailed);
       setStatus("");
     } finally { setBusy(false); }
+  };
+
+  const retryUploadCleanup = async () => {
+    if (busy || pendingUploadCleanupIds.length === 0) return;
+    setBusy(true); setError(null); setStatus(copy.issueCleaningUploads);
+    const remainingCleanupIds = await deleteFinalizedUploads(pendingUploadCleanupIds, (input) => deleteUpload.mutateAsync(input));
+    setPendingUploadCleanupIds(remainingCleanupIds);
+    setStatus("");
+    setError(remainingCleanupIds.length > 0 ? copy.issueUploadCleanupFailed : copy.issueSubmissionFailed);
+    setBusy(false);
   };
 
   const retryCleanup = async () => {
@@ -172,19 +190,20 @@ export function RealqaSubmissionModal({ draft, bridge, copy, onClose, onConfirme
 
   return <div className="overlay" role="presentation"><section ref={dialog} className="issue-dialog" role="dialog" aria-modal="true" aria-labelledby="issue-dialog-title" onKeyDown={keyDown}>
     <h3 id="issue-dialog-title">{copy.issueModalTitle}</h3>
-    <label>{copy.issueRepository}<select value={repositoryKey} disabled={busy || !!createdUrl} onChange={(event) => { const repository = repositories.find((entry) => repositoryKeyFor(entry) === event.target.value); setRepositoryKey(event.target.value); if (repository) setProfileRef(repository.profileRef); }}><option value="">{copy.issueSelectRepository}</option>{repositories.map((repository) => <option key={repositoryKeyFor(repository)} value={repositoryKeyFor(repository)}>{repository.owner}/{repository.name}</option>)}</select></label>
-    <label>{copy.issueCredential}<select value={profileRef} disabled={busy || !!createdUrl} onChange={(event) => setProfileRef(event.target.value)}><option value="">{copy.githubSelectProfile}</option>{identity.settings.github.profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></label>
-    <label>{copy.issueTitle}<input ref={titleInput} autoFocus value={title} disabled={busy || !!createdUrl} onChange={(event) => setTitle(event.target.value)} /></label>
-    <label>{copy.issueBody}<textarea value={body} disabled={busy || !!createdUrl} onChange={(event) => setBody(event.target.value)} /></label>
-    <fieldset><legend>{copy.issueImages}</legend>{draft.images.map((image, index) => <label className="check" key={image.id}><input type="checkbox" checked={selectedImages.has(image.id)} disabled={busy || !!createdUrl} onChange={() => toggleImage(image.id)} /><img src={image.previewUrl} alt="" />{copy.editorImage} {index + 1}</label>)}</fieldset>
-    {diagnostics !== null && <div className="issue-diagnostics"><label>{copy.issueBrowserDiagnostics}<textarea value={diagnostics} disabled={busy || !!createdUrl} onChange={(event) => setDiagnostics(event.target.value)} /></label><button type="button" disabled={busy || !!createdUrl} onClick={() => setDiagnostics(null)}>{copy.issueRemoveDiagnostics}</button></div>}
-    <fieldset><legend>{copy.issueLabels}</legend>{labels.length === 0 ? <p>{copy.issueNoLabels}</p> : labels.map((label) => <label className="check" key={label}><input type="checkbox" checked={selectedLabels.has(label)} disabled={busy || !!createdUrl} onChange={() => toggleLabel(label)} />{label}</label>)}</fieldset>
-    <label>{copy.issueUploadProvider}<select value={uploadProvider} disabled={busy || !!createdUrl} onChange={(event) => setUploadProvider(event.target.value as "official" | "r2")}><option value="official">{copy.issueUploadOfficial}</option><option value="r2">{copy.issueUploadR2}</option></select></label>
+    <label>{copy.issueRepository}<select value={repositoryKey} disabled={busy || !!createdUrl || uploadCleanupPending} onChange={(event) => { const repository = repositories.find((entry) => repositoryKeyFor(entry) === event.target.value); setRepositoryKey(event.target.value); if (repository) setProfileRef(repository.profileRef); }}><option value="">{copy.issueSelectRepository}</option>{repositories.map((repository) => <option key={repositoryKeyFor(repository)} value={repositoryKeyFor(repository)}>{repository.owner}/{repository.name}</option>)}</select></label>
+    <label>{copy.issueCredential}<select value={profileRef} disabled={busy || !!createdUrl || uploadCleanupPending} onChange={(event) => setProfileRef(event.target.value)}><option value="">{copy.githubSelectProfile}</option>{identity.settings.github.profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></label>
+    <label>{copy.issueTitle}<input ref={titleInput} autoFocus value={title} disabled={busy || !!createdUrl || uploadCleanupPending} onChange={(event) => setTitle(event.target.value)} /></label>
+    <label>{copy.issueBody}<textarea value={body} disabled={busy || !!createdUrl || uploadCleanupPending} onChange={(event) => setBody(event.target.value)} /></label>
+    <fieldset><legend>{copy.issueImages}</legend>{draft.images.map((image, index) => <label className="check" key={image.id}><input type="checkbox" checked={selectedImages.has(image.id)} disabled={busy || !!createdUrl || uploadCleanupPending} onChange={() => toggleImage(image.id)} /><img src={image.previewUrl} alt="" />{copy.editorImage} {index + 1}</label>)}</fieldset>
+    {diagnostics !== null && <div className="issue-diagnostics"><label>{copy.issueBrowserDiagnostics}<textarea value={diagnostics} disabled={busy || !!createdUrl || uploadCleanupPending} onChange={(event) => setDiagnostics(event.target.value)} /></label><button type="button" disabled={busy || !!createdUrl || uploadCleanupPending} onClick={() => setDiagnostics(null)}>{copy.issueRemoveDiagnostics}</button></div>}
+    <fieldset><legend>{copy.issueLabels}</legend>{labels.length === 0 ? <p>{copy.issueNoLabels}</p> : labels.map((label) => <label className="check" key={label}><input type="checkbox" checked={selectedLabels.has(label)} disabled={busy || !!createdUrl || uploadCleanupPending} onChange={() => toggleLabel(label)} />{label}</label>)}</fieldset>
+    <label>{copy.issueUploadProvider}<select value={uploadProvider} disabled={busy || !!createdUrl || uploadCleanupPending} onChange={(event) => setUploadProvider(event.target.value as "official" | "r2")}><option value="official" disabled={!officialUploadsAvailable}>{copy.issueUploadOfficial}</option><option value="r2">{copy.issueUploadR2}</option></select></label>
     <dl><dt>{copy.issueSubmissionPath}</dt><dd>{copy.issueSubmissionPathDirect}</dd></dl>
+    {selectedImageCount > 0 && !officialUploadsAvailable && <p className="notice">{copy.issueOfficialSignInRequired}</p>}
     {selectedImageCount > 0 && <p className="notice">{copy.issuePublicImageWarning}</p>}
     {status && <p role="status" aria-live="polite">{status}</p>}{error && <p role="alert" className="native-setting-error">{error}</p>}
     {createdUrl && <p><a href={createdUrl} target="_blank" rel="noreferrer">{createdUrl}</a></p>}
-    <div className="actions">{cleanupPending ? <button className="primary" disabled={busy} onClick={() => void retryCleanup()}>{copy.issueRetryDraftCleanup}</button> : <button className="primary" disabled={busy || !!createdUrl || !selectedRepository || !selectedProfile || title.trim() === ""} onClick={() => void submit()}>{copy.issueSubmit}</button>}<button disabled={busy} onClick={close}>{copy.close}</button></div>
+    <div className="actions">{uploadCleanupPending ? <button className="primary" disabled={busy} onClick={() => void retryUploadCleanup()}>{copy.issueRetryUploadCleanup}</button> : cleanupPending ? <button className="primary" disabled={busy} onClick={() => void retryCleanup()}>{copy.issueRetryDraftCleanup}</button> : <button className="primary" disabled={busy || !!createdUrl || !selectedRepository || !selectedProfile || title.trim() === ""} onClick={() => void submit()}>{copy.issueSubmit}</button>}<button disabled={busy || uploadCleanupPending} onClick={close}>{copy.close}</button></div>
   </section></div>;
 }
 
@@ -197,3 +216,8 @@ function submissionRepositories(settings: ReturnType<typeof useIdentitySettings>
 }
 function repositoryKeyFor(repository: GitHubRepositoryRef): string { return `${repository.owner.toLowerCase()}/${repository.name.toLowerCase()}`; }
 function uuid(value: string): { readonly value: string } { return { value }; }
+
+async function deleteFinalizedUploads(uploadIds: readonly string[], remove: (input: { readonly uploadId: { readonly value: string } }) => Promise<unknown>): Promise<readonly string[]> {
+  const results = await Promise.allSettled(uploadIds.map((uploadId) => remove({ uploadId: uuid(uploadId) })));
+  return uploadIds.filter((_uploadId, index) => results[index]?.status === "rejected");
+}
