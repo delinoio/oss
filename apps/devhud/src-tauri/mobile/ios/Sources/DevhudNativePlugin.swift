@@ -791,6 +791,7 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
         for key in keys where key.hasPrefix(widgetTransactionPrefix) {
             defaults.removeObject(forKey: key)
         }
+        guard defaults.synchronize() else { return false }
         guard removeAllWidgetCredentials() else { return false }
         WidgetCenter.shared.reloadAllTimelines()
         return true

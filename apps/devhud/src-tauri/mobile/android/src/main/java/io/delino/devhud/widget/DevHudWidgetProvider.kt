@@ -28,13 +28,74 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.time.Instant
 import java.util.Locale
+import java.util.concurrent.CancellationException
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ExecutorCompletionService
 import java.util.concurrent.Executors
+import java.util.concurrent.Future
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 private const val resultLimit = 100
 private const val staleAfterMillis = 60 * 60 * 1000L
 private const val widgetRefreshJobId = 0x444857
+private const val repositoryValidationConcurrency = 3
+private const val refreshDeadlineMillis = 20_000L
 private val widgetExecutor = Executors.newSingleThreadExecutor()
+private val repositoryValidationExecutor = Executors.newFixedThreadPool(repositoryValidationConcurrency)
+
+internal enum class WidgetRefreshCancellation { DEADLINE, STOPPED, VALIDATION_FAILED }
+
+private class WidgetRefreshCancelled : CancellationException()
+
+internal class WidgetRefreshSession {
+    private val deadlineNanos = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(refreshDeadlineMillis)
+    private val cancellation = AtomicReference<WidgetRefreshCancellation?>(null)
+    private val connections = ConcurrentHashMap.newKeySet<HttpURLConnection>()
+
+    fun remainingMillis(): Int {
+        cancellation.get()?.let { throw WidgetRefreshCancelled() }
+        val remainingNanos = deadlineNanos - System.nanoTime()
+        if (remainingNanos <= 0) {
+            cancel(WidgetRefreshCancellation.DEADLINE)
+            throw WidgetRefreshCancelled()
+        }
+        return TimeUnit.NANOSECONDS.toMillis(remainingNanos).coerceAtLeast(1).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+    }
+
+    fun track(connection: HttpURLConnection) {
+        connections.add(connection)
+        if (cancellation.get() != null) {
+            connections.remove(connection)
+            connection.disconnect()
+            throw WidgetRefreshCancelled()
+        }
+    }
+
+    fun release(connection: HttpURLConnection) {
+        connections.remove(connection)
+        connection.disconnect()
+    }
+
+    fun cancel(reason: WidgetRefreshCancellation) {
+        while (true) {
+            val current = cancellation.get()
+            val next = if (reason == WidgetRefreshCancellation.STOPPED) reason else current ?: reason
+            if (current == next || cancellation.compareAndSet(current, next)) break
+        }
+        connections.forEach { it.disconnect() }
+    }
+
+    fun wasStopped(): Boolean = cancellation.get() == WidgetRefreshCancellation.STOPPED
+
+    fun close() {
+        connections.forEach { it.disconnect() }
+        connections.clear()
+    }
+}
+
+private data class RepositoryValidationFailure(val state: String, val rate: JSONObject?)
 
 class DevHudWidgetProvider : AppWidgetProvider() {
     override fun onUpdate(context: Context, manager: AppWidgetManager, appWidgetIds: IntArray) {
@@ -63,7 +124,7 @@ class DevHudWidgetProvider : AppWidgetProvider() {
             manager.updateAppWidget(appWidgetId, render(context, configuration, snapshot, snapshot?.optString("state", "missing-token") ?: "missing-token"))
         }
 
-        fun refresh(context: Context, manager: AppWidgetManager, deckId: String?, appWidgetIds: List<Int>): Boolean {
+        internal fun refresh(context: Context, manager: AppWidgetManager, deckId: String?, appWidgetIds: List<Int>, session: WidgetRefreshSession): Boolean {
             val store = DevHudWidgetStore(context)
             if (deckId == null) {
                 appWidgetIds.forEach { renderStored(context, manager, it) }
@@ -82,7 +143,8 @@ class DevHudWidgetProvider : AppWidgetProvider() {
                 renderSelected(context, manager, store, deckId, configuration, snapshot, "missing-token", appWidgetIds)
                 return stored
             }
-            val snapshot = refreshGitHub(configuration, token, previous)
+            val snapshot = refreshGitHub(configuration, token, previous, session)
+            if (session.wasStopped()) return false
             val current = store.configuration(deckId)
             if (current == null || !sameSelection(configuration, current)) {
                 appWidgetIds.forEach { renderStored(context, manager, it) }
@@ -101,101 +163,142 @@ class DevHudWidgetProvider : AppWidgetProvider() {
             }
         }
 
-        private fun refreshGitHub(configuration: JSONObject, token: String, previous: JSONObject?): JSONObject {
+        private fun refreshGitHub(configuration: JSONObject, token: String, previous: JSONObject?, session: WidgetRefreshSession): JSONObject {
             val attemptedAt = Instant.now().toString()
             return try {
-                validateRepositories(configuration, token)?.let { validation ->
-                    return failure(configuration, previous, validation.first, attemptedAt, validation.second)
+                validateRepositories(configuration, token, session)?.let { validation ->
+                    return failure(configuration, previous, validation.state, attemptedAt, validation.rate)
                 }
-                val connection = URL("https://api.github.com/search/issues?q=" + Uri.encode(configuration.getString("query")) + "&per_page=100&page=1")
-                    .openConnection() as HttpURLConnection
-                connection.connectTimeout = 15_000
-                connection.readTimeout = 20_000
-                connection.setRequestProperty("Accept", "application/vnd.github+json")
-                connection.setRequestProperty("Authorization", "Bearer $token")
-                connection.setRequestProperty("X-GitHub-Api-Version", "2026-03-10")
-                val status = connection.responseCode
-                val rateLimited = status == 429 || status == 403 && (connection.getHeaderField("X-RateLimit-Remaining") == "0" || connection.getHeaderField("Retry-After") != null)
-                if (rateLimited) return failure(configuration, previous, "rate-limit", attemptedAt, connection)
-                if (status == 401) return failure(configuration, previous, "missing-token", attemptedAt, connection)
-                if (status == 403 || status == 404) return failure(configuration, previous, "permission", attemptedAt, connection)
-                if (status !in 200..299) return failure(configuration, previous, "error", attemptedAt, connection)
-                val payload = connection.inputStream.bufferedReader().use { JSONObject(it.readText()) }
-                if (payload.optBoolean("incomplete_results", false)) return failure(configuration, previous, "error", attemptedAt, connection)
-                val items = payload.getJSONArray("items")
-                val results = JSONArray()
-                var open = 0; var draft = 0; var merged = 0; var closed = 0
-                for (index in 0 until minOf(items.length(), resultLimit)) {
-                    val item = items.getJSONObject(index)
-                    val isDraft = item.optBoolean("draft", false)
-                    val isMerged = !item.optJSONObject("pull_request")?.optString("merged_at").isNullOrEmpty()
-                    when { isDraft -> draft += 1; isMerged -> merged += 1; item.optString("state") == "closed" -> closed += 1; else -> open += 1 }
-                    results.put(JSONObject()
-                        .put("nodeId", item.optString("node_id"))
-                        .put("number", item.getInt("number"))
-                        .put("title", item.getString("title"))
-                        .put("repository", repositoryName(item.getString("repository_url")))
-                        .put("state", if (isMerged) "merged" else item.optString("state", "open"))
-                        .put("draft", isDraft))
+                github("/search/issues?q=" + Uri.encode(configuration.getString("query")) + "&per_page=100&page=1", token, session) { connection ->
+                    val status = connection.responseCode
+                    val responseRate = rate(connection)
+                    val rateLimited = status == 429 || status == 403 && (connection.getHeaderField("X-RateLimit-Remaining") == "0" || connection.getHeaderField("Retry-After") != null)
+                    if (rateLimited) return@github failure(configuration, previous, "rate-limit", attemptedAt, responseRate)
+                    if (status == 401) return@github failure(configuration, previous, "missing-token", attemptedAt, responseRate)
+                    if (status == 403 || status == 404) return@github failure(configuration, previous, "permission", attemptedAt, responseRate)
+                    if (status !in 200..299) return@github failure(configuration, previous, "error", attemptedAt, responseRate)
+                    val payload = connection.inputStream.bufferedReader().use { JSONObject(it.readText()) }
+                    if (payload.optBoolean("incomplete_results", false)) return@github failure(configuration, previous, "error", attemptedAt, responseRate)
+                    val items = payload.getJSONArray("items")
+                    val results = JSONArray()
+                    var open = 0; var draft = 0; var merged = 0; var closed = 0
+                    for (index in 0 until minOf(items.length(), resultLimit)) {
+                        val item = items.getJSONObject(index)
+                        val isDraft = item.optBoolean("draft", false)
+                        val isMerged = !item.optJSONObject("pull_request")?.optString("merged_at").isNullOrEmpty()
+                        when { isDraft -> draft += 1; isMerged -> merged += 1; item.optString("state") == "closed" -> closed += 1; else -> open += 1 }
+                        results.put(JSONObject()
+                            .put("nodeId", item.optString("node_id"))
+                            .put("number", item.getInt("number"))
+                            .put("title", item.getString("title"))
+                            .put("repository", repositoryName(item.getString("repository_url")))
+                            .put("state", if (isMerged) "merged" else item.optString("state", "open"))
+                            .put("draft", isDraft))
+                    }
+                    JSONObject()
+                        .put("version", 1).put("deckId", configuration.getString("deckId")).put("query", configuration.getString("query"))
+                        .put("counts", JSONObject().put("total", payload.getInt("total_count")).put("open", open).put("draft", draft).put("merged", merged).put("closed", closed).put("bounded", payload.getInt("total_count") > resultLimit))
+                        .put("results", results).put("state", "fresh").put("lastSuccessfulAt", attemptedAt).put("lastAttemptedAt", attemptedAt)
+                        .put("rate", responseRate)
                 }
-                JSONObject()
-                    .put("version", 1).put("deckId", configuration.getString("deckId")).put("query", configuration.getString("query"))
-                    .put("counts", JSONObject().put("total", payload.getInt("total_count")).put("open", open).put("draft", draft).put("merged", merged).put("closed", closed).put("bounded", payload.getInt("total_count") > resultLimit))
-                    .put("results", results).put("state", "fresh").put("lastSuccessfulAt", attemptedAt).put("lastAttemptedAt", attemptedAt)
-                    .put("rate", rate(connection))
             } catch (_: Exception) { failure(configuration, previous, "error", attemptedAt, null) }
         }
 
-        private fun validateRepositories(configuration: JSONObject, token: String): Pair<String, HttpURLConnection?>? {
-            return try {
-                val repositories = configuration.getJSONArray("repositories")
-                for (index in 0 until repositories.length()) {
-                    val repository = repositories.getJSONObject(index)
-                    val path = "/repos/${repository.getString("owner")}/${repository.getString("name")}"
-                    val metadata = github(path, token)
-                    responseFailure(metadata)?.let { return it to metadata }
-                    if (configuration.getString("profileKind") == "classic") {
-                        val scopes = metadata.getHeaderField("X-OAuth-Scopes").orEmpty().split(",").map { it.trim() }.toSet()
-                        if ("repo" !in scopes) return "permission" to metadata
-                    }
-                    val metadataPayload = metadata.inputStream.bufferedReader().use { JSONObject(it.readText()) }
-                    val neverPushed = metadataPayload.isNull("pushed_at")
-                    for (suffix in listOf("/pulls?state=open&per_page=1", "/issues?state=open&per_page=1")) {
-                        val access = github(path + suffix, token)
-                        responseFailure(access)?.let { return it to access }
-                        access.inputStream.close()
-                    }
-                    val contents = github(path + "/contents", token)
-                    if (contents.responseCode != 404 || !neverPushed) responseFailure(contents)?.let { return it to contents }
-                    if (contents.responseCode in 200..299) contents.inputStream.close() else contents.errorStream?.close()
-                    if (configuration.getString("profileKind") == "fine-grained") {
-                        val probe = github(path + "/issues", token, "POST", "{}")
-                        if (probe.responseCode != 422) {
-                            responseFailure(probe)?.let { return it to probe }
-                            return "error" to probe
-                        }
-                        probe.errorStream?.close()
-                    }
+        private fun validateRepositories(configuration: JSONObject, token: String, session: WidgetRefreshSession): RepositoryValidationFailure? {
+            val repositories = configuration.getJSONArray("repositories")
+            val completion = ExecutorCompletionService<RepositoryValidationFailure?>(repositoryValidationExecutor)
+            val pending = mutableListOf<Future<RepositoryValidationFailure?>>()
+            var nextIndex = 0
+            var completed = 0
+            fun submitNext() {
+                val repository = repositories.getJSONObject(nextIndex++)
+                pending += completion.submit {
+                    validateRepository(repository, configuration.getString("profileKind"), token, session)
                 }
-                null
-            } catch (_: Exception) { "error" to null }
+            }
+            repeat(minOf(repositoryValidationConcurrency, repositories.length())) { submitNext() }
+            try {
+                while (completed < repositories.length()) {
+                    val completedFuture = completion.poll(session.remainingMillis().toLong(), TimeUnit.MILLISECONDS)
+                        ?: run {
+                            session.cancel(WidgetRefreshCancellation.DEADLINE)
+                            return RepositoryValidationFailure("error", null)
+                        }
+                    pending.remove(completedFuture)
+                    completed += 1
+                    val validation = try { completedFuture.get() } catch (_: Exception) { RepositoryValidationFailure("error", null) }
+                    if (validation != null) {
+                        session.cancel(WidgetRefreshCancellation.VALIDATION_FAILED)
+                        return validation
+                    }
+                    if (nextIndex < repositories.length()) submitNext()
+                }
+                return null
+            } catch (_: WidgetRefreshCancelled) {
+                return RepositoryValidationFailure("error", null)
+            } finally {
+                pending.forEach { it.cancel(true) }
+            }
         }
 
-        private fun github(path: String, token: String, method: String = "GET", body: String? = null): HttpURLConnection {
+        private fun validateRepository(repository: JSONObject, profileKind: String, token: String, session: WidgetRefreshSession): RepositoryValidationFailure? {
+            return try {
+                val path = "/repos/${repository.getString("owner")}/${repository.getString("name")}"
+                var neverPushed = false
+                val metadataFailure = github(path, token, session) { metadata ->
+                    responseFailure(metadata)?.let { return@github RepositoryValidationFailure(it, rate(metadata)) }
+                    if (profileKind == "classic") {
+                        val scopes = metadata.getHeaderField("X-OAuth-Scopes").orEmpty().split(",").map { it.trim() }.toSet()
+                        if ("repo" !in scopes) return@github RepositoryValidationFailure("permission", rate(metadata))
+                    }
+                    val metadataPayload = metadata.inputStream.bufferedReader().use { JSONObject(it.readText()) }
+                    neverPushed = metadataPayload.isNull("pushed_at")
+                    null
+                }
+                if (metadataFailure != null) return metadataFailure
+                for (suffix in listOf("/pulls?state=open&per_page=1", "/issues?state=open&per_page=1")) {
+                    val accessFailure = github(path + suffix, token, session) { access ->
+                        responseFailure(access)?.let { RepositoryValidationFailure(it, rate(access)) }
+                            ?: run { access.inputStream.close(); null }
+                    }
+                    if (accessFailure != null) return accessFailure
+                }
+                val contentsFailure = github(path + "/contents", token, session) { contents ->
+                    val validation = if (contents.responseCode != 404 || !neverPushed) responseFailure(contents) else null
+                    if (validation != null) RepositoryValidationFailure(validation, rate(contents))
+                    else { if (contents.responseCode in 200..299) contents.inputStream.close() else contents.errorStream?.close(); null }
+                }
+                if (contentsFailure != null) return contentsFailure
+                if (profileKind == "fine-grained") {
+                    val probeFailure = github(path + "/issues", token, session, "POST", "{}") { probe ->
+                        if (probe.responseCode == 422) { probe.errorStream?.close(); null }
+                        else responseFailure(probe)?.let { RepositoryValidationFailure(it, rate(probe)) }
+                            ?: RepositoryValidationFailure("error", rate(probe))
+                    }
+                    if (probeFailure != null) return probeFailure
+                }
+                null
+            } catch (_: Exception) { RepositoryValidationFailure("error", null) }
+        }
+
+        private inline fun <T> github(path: String, token: String, session: WidgetRefreshSession, method: String = "GET", body: String? = null, consume: (HttpURLConnection) -> T): T {
             val connection = URL("https://api.github.com$path").openConnection() as HttpURLConnection
-            connection.connectTimeout = 15_000
-            connection.readTimeout = 20_000
-            connection.requestMethod = method
-            connection.setRequestProperty("Accept", "application/vnd.github+json")
-            connection.setRequestProperty("Authorization", "Bearer $token")
-            connection.setRequestProperty("X-GitHub-Api-Version", "2026-03-10")
-            if (body != null) {
-                connection.doOutput = true
-                connection.setRequestProperty("Content-Type", "application/json")
-                connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
-            }
-            connection.responseCode
-            return connection
+            session.track(connection)
+            return try {
+                connection.connectTimeout = minOf(15_000, session.remainingMillis())
+                connection.readTimeout = minOf(20_000, session.remainingMillis())
+                connection.requestMethod = method
+                connection.setRequestProperty("Accept", "application/vnd.github+json")
+                connection.setRequestProperty("Authorization", "Bearer $token")
+                connection.setRequestProperty("X-GitHub-Api-Version", "2026-03-10")
+                if (body != null) {
+                    connection.doOutput = true
+                    connection.setRequestProperty("Content-Type", "application/json")
+                    connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+                }
+                connection.responseCode
+                consume(connection)
+            } finally { session.release(connection) }
         }
 
         private fun responseFailure(connection: HttpURLConnection): String? {
@@ -207,12 +310,12 @@ class DevHudWidgetProvider : AppWidgetProvider() {
             return "error"
         }
 
-        private fun failure(configuration: JSONObject, previous: JSONObject?, state: String, attemptedAt: String, connection: HttpURLConnection?): JSONObject {
+        private fun failure(configuration: JSONObject, previous: JSONObject?, state: String, attemptedAt: String, responseRate: JSONObject?): JSONObject {
             val retained = previous?.takeIf { it.optString("query") == configuration.getString("query") } ?: JSONObject().put("version", 1).put("deckId", configuration.getString("deckId")).put("query", configuration.getString("query"))
                 .put("counts", JSONObject().put("total", 0).put("open", 0).put("draft", 0).put("merged", 0).put("closed", 0).put("bounded", false))
                 .put("results", JSONArray()).put("lastSuccessfulAt", JSONObject.NULL)
             retained.put("state", state).put("lastAttemptedAt", attemptedAt)
-            if (connection != null) retained.put("rate", rate(connection))
+            if (responseRate != null) retained.put("rate", responseRate)
             return retained
         }
 
@@ -282,6 +385,7 @@ class DevHudWidgetProvider : AppWidgetProvider() {
 
 class DevHudWidgetRefreshService : JobService() {
     private val stopped = AtomicBoolean(false)
+    private val activeSession = AtomicReference<WidgetRefreshSession?>(null)
 
     override fun onStartJob(parameters: JobParameters): Boolean {
         stopped.set(false)
@@ -293,7 +397,15 @@ class DevHudWidgetRefreshService : JobService() {
                 val store = DevHudWidgetStore(applicationContext)
                 for ((deckId, appWidgetIds) in manager.getAppWidgetIds(component).groupBy { store.selectedDeckId(it) }) {
                     if (stopped.get()) { retry = true; break }
-                    if (!DevHudWidgetProvider.refresh(applicationContext, manager, deckId, appWidgetIds)) retry = true
+                    val session = WidgetRefreshSession()
+                    activeSession.set(session)
+                    if (stopped.get()) session.cancel(WidgetRefreshCancellation.STOPPED)
+                    try {
+                        if (!DevHudWidgetProvider.refresh(applicationContext, manager, deckId, appWidgetIds, session)) retry = true
+                    } finally {
+                        activeSession.compareAndSet(session, null)
+                        session.close()
+                    }
                 }
             } catch (_: Exception) { retry = true }
             if (!stopped.get()) jobFinished(parameters, retry)
@@ -303,6 +415,7 @@ class DevHudWidgetRefreshService : JobService() {
 
     override fun onStopJob(parameters: JobParameters): Boolean {
         stopped.set(true)
+        activeSession.get()?.cancel(WidgetRefreshCancellation.STOPPED)
         return true
     }
 }

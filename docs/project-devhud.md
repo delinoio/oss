@@ -99,6 +99,8 @@ Chrome capture rechecks the configured origin's Chrome-valid scheme-and-host opt
 
 - Native GitHub PAT reads require the matching API-origin/profile association, and failed desktop or iOS PAT persistence restores any newly created association state before returning failure.
 
+- Native widget refreshes validate at most three repositories concurrently under one cancellable 20-second per-Deck deadline; Android job cancellation disconnects active requests and avoids publishing late results. Destructive iOS cleanup persists shared App Group widget deletion before removing widget Keychain credentials or reporting success.
+
 ## Change Policy
 
 Update this index, affected domain contracts, `docs/README.md`, and applicable root/domain `AGENTS.md` files together when ownership, identifiers, interfaces, platform support, persistence, security, release, or exclusions change. Do not add runtime code before the documentation-first contracts are updated.

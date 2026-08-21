@@ -129,10 +129,16 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   assert.match(androidNativeBridge, /replaceProfileToken\(profileId, scopeId, value\)/u);
   assert.match(androidProvider, /JobService[\s\S]*setRequiredNetworkType/u);
   assert.match(androidProvider, /failure\(configuration, previous, "missing-token"[\s\S]*replaceSnapshot\(snapshot\)/u);
-  assert.match(androidProvider, /groupBy \{ store\.selectedDeckId\(it\) \}[\s\S]*refresh\(applicationContext, manager, deckId, appWidgetIds\)/u);
+  assert.match(androidProvider, /groupBy \{ store\.selectedDeckId\(it\) \}[\s\S]*refresh\(applicationContext, manager, deckId, appWidgetIds, session\)/u);
+  assert.match(androidProvider, /repositoryValidationConcurrency = 3/u);
+  assert.match(androidProvider, /refreshDeadlineMillis = 20_000L/u);
+  assert.match(androidProvider, /ExecutorCompletionService[\s\S]*repeat\(minOf\(repositoryValidationConcurrency, repositories\.length\(\)\)\)[\s\S]*completion\.poll\(session\.remainingMillis\(\)/u);
+  assert.match(androidProvider, /connectTimeout = minOf\(15_000, session\.remainingMillis\(\)\)[\s\S]*readTimeout = minOf\(20_000, session\.remainingMillis\(\)\)/u);
+  assert.match(androidProvider, /onStopJob[\s\S]*activeSession\.get\(\)\?\.cancel\(WidgetRefreshCancellation\.STOPPED\)/u);
+  assert.match(androidProvider, /fun cancel[\s\S]*connections\.forEach \{ it\.disconnect\(\) \}/u);
   assert.match(androidProvider, /ScrollView/u);
   assert.match(androidProvider, /incomplete_results/u);
-  assert.ok(androidProvider.indexOf("validateRepositories(configuration, token)") < androidProvider.indexOf('URL("https://api.github.com/search/issues'));
+  assert.ok(androidProvider.indexOf("validateRepositories(configuration, token, session)") < androidProvider.indexOf('github("/search/issues'));
   assert.match(androidProvider, /\/pulls\?state=open&per_page=1[\s\S]*\/issues\?state=open&per_page=1[\s\S]*\/contents/u);
   assert.match(androidProvider, /status == 401[\s\S]*"missing-token"[\s\S]*status == 403 \|\| status == 404[\s\S]*"permission"/u);
   assert.match(androidManifest, /DevHudWidgetProvider"\s+android:exported="false"\s+android:label="@string\/devhud_widget_name"/u);
@@ -162,6 +168,7 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   assert.match(iosWidget, /foregroundStyle\(\.white\)[\s\S]*background\(Color\(red: 0\.11/u);
   assert.match(iosNativeBridge, /replaceWidgetCredentials\(profileId: setting\.profileId/u);
   assert.match(iosNativeBridge, /for key in keys where key\.hasPrefix\(widgetConfigurationPrefix\)[\s\S]*for key in keys where key\.hasPrefix\(widgetSnapshotPrefix\)/u);
+  assert.match(iosNativeBridge, /private func clearWidgetState\(\)[\s\S]*widgetTransactionPrefix[\s\S]*guard defaults\.synchronize\(\) else \{ return false \}[\s\S]*guard removeAllWidgetCredentials\(\) else \{ return false \}[\s\S]*reloadAllTimelines/u);
   assert.match(iosNativeBridge, /pendingDeckIds[\s\S]*removeWidgetCredential\(deckId\)[\s\S]*widgetCredentialDeckIds\(\)/u);
   assert.match(iosWidget, /guard defaults\?\.bool\(forKey: transactionPrefix \+ deckId\) != true else \{ return nil \}/u);
   assert.match(iosWidget, /devhud:\/\/deck\//u);
