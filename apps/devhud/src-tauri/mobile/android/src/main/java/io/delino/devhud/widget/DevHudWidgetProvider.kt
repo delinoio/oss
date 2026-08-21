@@ -174,15 +174,25 @@ class DevHudWidgetProvider : AppWidgetProvider() {
             if (credential is WidgetCredential.Missing) {
                 val snapshot = failure(configuration, previous, "missing-token", Instant.now().toString(), null)
                 val stored = session.commitIfPublishable { store.replaceSnapshot(snapshot, null) } ?: return false
-                val rendered = store.snapshot(deckId)
-                renderSelected(context, manager, store, deckId, configuration, rendered, rendered?.optString("state", "missing-token") ?: "missing-token", appWidgetIds)
+                val renderConfiguration = store.configuration(deckId)
+                if (renderConfiguration == null) {
+                    appWidgetIds.forEach { renderStored(context, manager, it) }
+                } else {
+                    val rendered = store.snapshot(deckId)
+                    renderSelected(context, manager, store, deckId, renderConfiguration, rendered, rendered?.optString("state", "missing-token") ?: "missing-token", appWidgetIds)
+                }
                 return stored
             }
             if (credential is WidgetCredential.Unreadable) {
                 val snapshot = failure(configuration, previous, "error", Instant.now().toString(), null)
                 val stored = session.commitIfPublishable { store.replaceSnapshot(snapshot, credential.revision) } ?: return false
-                val rendered = store.snapshot(deckId)
-                renderSelected(context, manager, store, deckId, configuration, rendered, rendered?.optString("state", "error") ?: "error", appWidgetIds)
+                val renderConfiguration = store.configuration(deckId)
+                if (renderConfiguration == null) {
+                    appWidgetIds.forEach { renderStored(context, manager, it) }
+                } else {
+                    val rendered = store.snapshot(deckId)
+                    renderSelected(context, manager, store, deckId, renderConfiguration, rendered, rendered?.optString("state", "error") ?: "error", appWidgetIds)
+                }
                 return stored
             }
             check(credential is WidgetCredential.Readable)

@@ -109,13 +109,15 @@ private struct WidgetStore {
     }
     func save(_ snapshot: DeckSnapshot, whileEnabled configuration: DeckConfiguration, credentialRevision: Data?) -> Bool {
         guard let current = self.configuration(snapshot.deckId), sameSelection(current, configuration), credentialMatches(deckId: snapshot.deckId, revision: credentialRevision) else { return false }
+        var previousSnapshotData: Data?
         var data: Data?
         guard stateStore.updateDeckState(snapshot.deckId, { state in
             guard state?.transactionPending == false,
                   let configurationData = state?.configuration,
                   let latest = try? JSONDecoder().decode(DeckConfiguration.self, from: configurationData),
                   sameSelection(latest, configuration) else { return false }
-            let previous = state?.snapshot.flatMap { try? JSONDecoder().decode(DeckSnapshot.self, from: $0) }
+            previousSnapshotData = state?.snapshot
+            let previous = previousSnapshotData.flatMap { try? JSONDecoder().decode(DeckSnapshot.self, from: $0) }
             guard let encoded = try? JSONEncoder().encode(mergeDeckSnapshot(current: previous, incoming: snapshot)) else { return false }
             state?.snapshot = encoded
             data = encoded
@@ -123,7 +125,7 @@ private struct WidgetStore {
         }), let data else { return false }
         guard let current = self.configuration(snapshot.deckId), sameSelection(current, configuration), credentialMatches(deckId: snapshot.deckId, revision: credentialRevision) else {
             _ = stateStore.updateDeckState(snapshot.deckId) { state in
-                if state?.snapshot == data { state?.snapshot = nil }
+                if state?.snapshot == data { state?.snapshot = previousSnapshotData }
                 return true
             }
             return false

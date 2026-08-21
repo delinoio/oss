@@ -168,6 +168,8 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   const androidReconcileCredentialReplacement = androidStore.slice(androidStore.indexOf("private fun reconcileProfileTokenReplacement"), androidStore.indexOf("private fun applyProfileTokenReplacement"));
   const androidRefreshService = androidProvider.slice(androidProvider.indexOf("class DevHudWidgetRefreshService"), androidProvider.indexOf("class DevHudWidgetConfigureActivity"));
   const androidRefreshSession = androidProvider.slice(androidProvider.indexOf("internal class WidgetRefreshSession"), androidProvider.indexOf("private data class RepositoryValidationFailure"));
+  const androidMissingCredentialRefresh = androidProvider.slice(androidProvider.indexOf("if (credential is WidgetCredential.Missing)"), androidProvider.indexOf("if (credential is WidgetCredential.Unreadable)"));
+  const androidUnreadableCredentialRefresh = androidProvider.slice(androidProvider.indexOf("if (credential is WidgetCredential.Unreadable)"), androidProvider.indexOf("check(credential is WidgetCredential.Readable)"));
   const androidConfigureActivity = androidProvider.slice(androidProvider.indexOf("class DevHudWidgetConfigureActivity"));
   const androidManifest = readFileSync(join(appRoot, "mobile/overrides/android/app/src/main/AndroidManifest.xml"), "utf8");
   const androidEnglish = readFileSync(join(appRoot, "src-tauri/mobile/android/src/main/res/values/widget_strings.xml"), "utf8");
@@ -181,6 +183,7 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   const iosIntentEnglish = readFileSync(join(appRoot, "mobile/overrides/ios/DevHudWidgetShared/en.lproj/SelectDeck.strings"), "utf8");
   const iosIntentKorean = readFileSync(join(appRoot, "mobile/overrides/ios/DevHudWidgetShared/ko.lproj/SelectDeck.strings"), "utf8");
   const iosIntentHandler = readFileSync(join(appRoot, "mobile/overrides/ios/DevHudWidgetIntent/IntentHandler.swift"), "utf8");
+  const iosWidgetSave = iosWidget.slice(iosWidget.indexOf("func save(_ snapshot:"), iosWidget.indexOf("func shouldRenderForegroundSnapshot"));
   const iosApplicationEntitlements = readFileSync(join(appRoot, "mobile/overrides/ios/DevHud.entitlements"), "utf8");
   const iosEntitlements = readFileSync(join(appRoot, "mobile/overrides/ios/DevHudWidget/DevHudWidget.entitlements"), "utf8");
   assert.doesNotThrow(() => assertNativeWidgetPullRequestMetadata(androidProvider, iosWidget));
@@ -231,6 +234,9 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   assert.match(androidProvider, /JobService[\s\S]*setRequiredNetworkType/u);
   assert.match(androidProvider, /credential is WidgetCredential\.Missing[\s\S]*failure\(configuration, previous, "missing-token"[\s\S]*replaceSnapshot\(snapshot, null\)/u);
   assert.match(androidProvider, /credential is WidgetCredential\.Unreadable[\s\S]*failure\(configuration, previous, "error"[\s\S]*replaceSnapshot\(snapshot, credential\.revision\)/u);
+  for (const credentialFailureRefresh of [androidMissingCredentialRefresh, androidUnreadableCredentialRefresh]) {
+    assert.match(credentialFailureRefresh, /replaceSnapshot\(snapshot,[^\n]+\)[\s\S]*val renderConfiguration = store\.configuration\(deckId\)[\s\S]*if \(renderConfiguration == null\)[\s\S]*renderStored\(context, manager, it\)[\s\S]*renderSelected\(context, manager, store, deckId, renderConfiguration/u);
+  }
   assert.equal((androidProvider.match(/replaceSnapshot\(snapshot, credential\.revision\)/gu) ?? []).length, 2);
   assert.match(androidProvider, /groupBy \{ store\.selectedDeckId\(it\) \}[\s\S]*refresh\(applicationContext, manager, deckId, appWidgetIds, session\)/u);
   assert.match(androidProvider, /repositoryValidationConcurrency = 3/u);
@@ -302,7 +308,7 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   assert.doesNotMatch(iosWidget, /URLSession\.shared/u);
   assert.match(iosWidget, /staleDate[\s\S]*entries\.append/u);
   assert.match(iosWidget, /mergeDeckSnapshot\(current: previous, incoming: snapshot\)/u);
-  assert.match(iosWidget, /if state\?\.snapshot == data \{ state\?\.snapshot = nil \}/u);
+  assert.match(iosWidgetSave, /previousSnapshotData = state\?\.snapshot[\s\S]*state\?\.snapshot = encoded[\s\S]*if state\?\.snapshot == data \{ state\?\.snapshot = previousSnapshotData \}/u);
   assert.ok(iosWidget.indexOf("if store.shouldRenderForegroundSnapshot(deck.deckId)") < iosWidget.indexOf("guard let credential = store.credential"));
   assert.ok(iosWidget.indexOf("if store.shouldRenderForegroundSnapshot(deck.deckId)") < iosWidget.indexOf("Self.refreshWithDeadline"));
   assert.match(iosWidget, /state\?\.foregroundReloadDeadline = nil/u);
