@@ -46,6 +46,7 @@ test("generated iOS projects embed the production widget extension", () => {
     assert.match(generated, /path: DevHudWidgetShared\/en\.lproj/u);
     assert.match(generated, /path: DevHudWidgetShared\/ko\.lproj/u);
     for (const target of ["DevHudWidget", "DevHudWidgetIntent"]) {
+      assert.ok(parsed.targets[target].sources.some((source) => source.path === "DevHudWidgetShared/WidgetStateStore.swift"));
       assert.equal(parsed.targets[target].info, undefined);
       assert.equal(parsed.targets[target].entitlements, undefined);
       assert.equal(parsed.targets[target].settings.base.CURRENT_PROJECT_VERSION, 42);

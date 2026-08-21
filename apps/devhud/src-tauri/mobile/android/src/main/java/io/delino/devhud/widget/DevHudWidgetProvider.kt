@@ -1,5 +1,6 @@
 package io.delino.devhud.widget
 
+import android.Manifest
 import android.app.Activity
 import android.app.PendingIntent
 import android.app.job.JobInfo
@@ -11,6 +12,7 @@ import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Color
 import android.net.Uri
@@ -521,9 +523,10 @@ class DevHudWidgetConfigureActivity : Activity() {
         super.onCreate(savedInstanceState)
         setResult(RESULT_CANCELED)
         appWidgetId = intent?.extras?.getInt(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID) ?: AppWidgetManager.INVALID_APPWIDGET_ID
-        if (appWidgetId == AppWidgetManager.INVALID_APPWIDGET_ID) { finish(); return }
+        if (!isTrustedConfigurationRequest()) { finish(); return }
         val store = DevHudWidgetStore(this)
-        val configurations = store.enabledDeckIds().mapNotNull(store::configuration)
+        val enabledDeckIds = store.enabledDeckIds() ?: run { finish(); return }
+        val configurations = enabledDeckIds.mapNotNull(store::configuration)
         val copyContext = localizedContext(this, configurations.firstOrNull())
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL; setPadding(48, 48, 48, 48); setBackgroundColor(Color.rgb(29, 37, 48)) }
         root.addView(TextView(this).apply { text = copyContext.getString(R.string.devhud_widget_choose_deck); textSize = 22f; setTextColor(Color.WHITE) })
@@ -545,5 +548,21 @@ class DevHudWidgetConfigureActivity : Activity() {
             })
         }
         setContentView(ScrollView(this).apply { addView(root) })
+    }
+
+    private fun isTrustedConfigurationRequest(): Boolean {
+        if (intent?.action != AppWidgetManager.ACTION_APPWIDGET_CONFIGURE || appWidgetId == AppWidgetManager.INVALID_APPWIDGET_ID) return false
+        val caller = callingActivity?.packageName ?: callingPackage ?: return false
+        val home = packageManager.resolveActivity(
+            Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME),
+            PackageManager.MATCH_DEFAULT_ONLY,
+        )?.activityInfo?.packageName
+        val trustedHost = caller == home || packageManager.checkPermission(Manifest.permission.BIND_APPWIDGET, caller) == PackageManager.PERMISSION_GRANTED
+        if (!trustedHost) return false
+        val manager = AppWidgetManager.getInstance(this)
+        val provider = ComponentName(this, DevHudWidgetProvider::class.java)
+        val configurationActivity = ComponentName(this, DevHudWidgetConfigureActivity::class.java)
+        val info = manager.getAppWidgetInfo(appWidgetId) ?: return false
+        return manager.getAppWidgetIds(provider).contains(appWidgetId) && info.provider == provider && info.configure == configurationActivity
     }
 }

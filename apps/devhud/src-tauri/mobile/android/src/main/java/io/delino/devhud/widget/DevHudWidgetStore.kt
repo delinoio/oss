@@ -39,14 +39,16 @@ internal class DevHudWidgetStore(private val context: Context) {
 
     private val state get() = context.getSharedPreferences(widgetStateStore, Context.MODE_PRIVATE)
     private val secrets get() = context.getSharedPreferences(widgetSecretStore, Context.MODE_PRIVATE)
+    private var reconciliationSucceeded = false
 
     init {
-        reconcile()
+        reconciliationSucceeded = reconcile()
     }
 
-    fun enabledDeckIds(): List<String> {
+    fun enabledDeckIds(): List<String>? = synchronized(widgetStoreMutationLock) {
+        if (!ensureReconciled()) return@synchronized null
         val entries = state.all
-        return entries.keys
+        entries.keys
             .filter { it.startsWith(configurationPrefix) }
             .map { it.removePrefix(configurationPrefix) }
             .filterNot { entries.containsKey(disableTransactionPrefix + it) }
@@ -54,6 +56,7 @@ internal class DevHudWidgetStore(private val context: Context) {
     }
 
     fun enable(configuration: JSONObject, token: String): Boolean = synchronized(widgetStoreMutationLock) {
+        if (!ensureReconciled()) return@synchronized false
         val deckId = configuration.getString("deckId")
         if (state.contains(disableTransactionPrefix + deckId)) return@synchronized false
         val previous = configuration(deckId)
@@ -92,6 +95,7 @@ internal class DevHudWidgetStore(private val context: Context) {
         replaceSnapshot(snapshot, credentialRevision, true)
 
     private fun replaceSnapshot(snapshot: JSONObject, credentialRevision: String?, verifyCredential: Boolean): Boolean = synchronized(widgetStoreMutationLock) {
+        if (!ensureReconciled()) return@synchronized false
         val deckId = snapshot.getString("deckId")
         val configuration = configuration(deckId) ?: return@synchronized false
         if (snapshot.getString("query") != configuration.getString("query")) return@synchronized false
@@ -135,7 +139,7 @@ internal class DevHudWidgetStore(private val context: Context) {
     }
 
     fun beginProfileTokenReplacement(profileId: String, scopeId: String): Boolean = synchronized(widgetStoreMutationLock) {
-        if (!reconcile()) return@synchronized false
+        if (!ensureReconciled()) return@synchronized false
         val deckIds = state.all.entries
             .filter { it.key.startsWith(configurationPrefix) }
             .mapNotNull { (key, value) -> json(value as? String)?.let { key.removePrefix(configurationPrefix) to it } }
@@ -164,6 +168,7 @@ internal class DevHudWidgetStore(private val context: Context) {
     }
 
     fun disable(deckId: String): Boolean = synchronized(widgetStoreMutationLock) {
+        if (!ensureReconciled()) return@synchronized false
         val transactionKey = disableTransactionPrefix + deckId
         if (!state.edit().putBoolean(transactionKey, true).commit()) {
             state.edit().remove(transactionKey).commit()
@@ -184,7 +189,8 @@ internal class DevHudWidgetStore(private val context: Context) {
         // widget credential behind during logout or completed deletion.
         val stateCleared = state.edit().clear().commit()
         val secretsCleared = secrets.edit().clear().commit()
-        stateCleared && secretsCleared
+        reconciliationSucceeded = stateCleared && secretsCleared
+        reconciliationSucceeded
     }
 
     fun configuration(deckId: String): JSONObject? {
@@ -202,9 +208,10 @@ internal class DevHudWidgetStore(private val context: Context) {
         return WidgetCredential.Readable(token, revision)
     }
 
-    fun select(appWidgetId: Int, deckId: String): Boolean {
-        if (!state.contains(configurationPrefix + deckId)) return false
-        return state.edit().putString(selectionPrefix + appWidgetId, deckId).commit()
+    fun select(appWidgetId: Int, deckId: String): Boolean = synchronized(widgetStoreMutationLock) {
+        if (!ensureReconciled()) return@synchronized false
+        if (!state.contains(configurationPrefix + deckId)) return@synchronized false
+        state.edit().putString(selectionPrefix + appWidgetId, deckId).commit()
     }
 
     fun selectedDeckId(appWidgetId: Int): String? = state.getString(selectionPrefix + appWidgetId, null)
@@ -263,6 +270,12 @@ internal class DevHudWidgetStore(private val context: Context) {
         entries.filter { entry -> entry.key.startsWith(selectionPrefix) && pendingDisableDeckIds.any { entry.value == it } }
             .forEach { editor.remove(it.key) }
         editor.commit()
+    }
+
+    private fun ensureReconciled(): Boolean {
+        if (reconciliationSucceeded) return true
+        reconciliationSucceeded = reconcile()
+        return reconciliationSucceeded
     }
 
     private fun reconcileProfileTokenReplacement(): Boolean {

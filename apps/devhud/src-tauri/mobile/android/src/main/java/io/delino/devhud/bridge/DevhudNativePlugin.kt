@@ -506,6 +506,10 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
 
     private fun widgetStatus(invoke: Invoke) {
         val enabled = DevHudWidgetStore(activity.applicationContext).enabledDeckIds()
+        if (enabled == null) {
+            invoke.reject("storage-failure", "storage-failure")
+            return
+        }
         invoke.resolve(JSObject().put("kind", "widget-status").put("enabledDeckIds", org.json.JSONArray(enabled)))
     }
 

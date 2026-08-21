@@ -6,11 +6,6 @@ import WidgetKit
 
 private let appGroup = "group.io.delino.devhud"
 private let credentialService = "io.delino.devhud.widget-credential.v1"
-private let configurationPrefix = "widget.configuration."
-private let snapshotPrefix = "widget.snapshot."
-private let transactionPrefix = "widget.transaction."
-private let credentialReplacementKey = "widget.credential-replacement.v1"
-private let foregroundReloadDeadlinePrefix = "widget.foreground-reload-deadline.v1."
 private let staleAfter: TimeInterval = 60 * 60
 private let repositoryValidationConcurrency = 3
 private let refreshDeadlineNanoseconds: UInt64 = 20 * 1_000_000_000
@@ -96,44 +91,57 @@ private func legacyWidgetToken(_ data: Data) -> String? {
 }
 
 private struct WidgetStore {
-    let defaults = UserDefaults(suiteName: appGroup)
+    let stateStore = WidgetStateStore(appGroup: appGroup)
 
     func configurations() -> [DeckConfiguration] {
-        guard let defaults else { return [] }
-        return defaults.dictionaryRepresentation().keys.filter { $0.hasPrefix(configurationPrefix) }.compactMap { key in
-            defaults.data(forKey: key).flatMap { try? JSONDecoder().decode(DeckConfiguration.self, from: $0) }
+        guard case .success(let states) = stateStore.allDeckStates() else { return [] }
+        return states.compactMap { state in
+            state.configuration.flatMap { try? JSONDecoder().decode(DeckConfiguration.self, from: $0) }
         }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
     func configuration(_ deckId: String?) -> DeckConfiguration? {
-        guard let deckId, let data = defaults?.data(forKey: configurationPrefix + deckId) else { return nil }
+        guard let deckId, case .success(let state) = stateStore.deckState(deckId), let data = state?.configuration else { return nil }
         return try? JSONDecoder().decode(DeckConfiguration.self, from: data)
     }
     func snapshot(_ deckId: String) -> DeckSnapshot? {
-        guard let data = defaults?.data(forKey: snapshotPrefix + deckId) else { return nil }
+        guard case .success(let state) = stateStore.deckState(deckId), let data = state?.snapshot else { return nil }
         return try? JSONDecoder().decode(DeckSnapshot.self, from: data)
     }
     func save(_ snapshot: DeckSnapshot, whileEnabled configuration: DeckConfiguration, credentialRevision: Data?) -> Bool {
-        guard let defaults else { return false }
-        let key = snapshotPrefix + snapshot.deckId
         guard let current = self.configuration(snapshot.deckId), sameSelection(current, configuration), credentialMatches(deckId: snapshot.deckId, revision: credentialRevision) else { return false }
-        let merged = mergeDeckSnapshot(current: self.snapshot(snapshot.deckId), incoming: snapshot)
-        guard let data = try? JSONEncoder().encode(merged) else { return false }
-        defaults.set(data, forKey: key)
+        var data: Data?
+        guard stateStore.updateDeckState(snapshot.deckId, { state in
+            guard state?.transactionPending == false,
+                  let configurationData = state?.configuration,
+                  let latest = try? JSONDecoder().decode(DeckConfiguration.self, from: configurationData),
+                  sameSelection(latest, configuration) else { return false }
+            let previous = state?.snapshot.flatMap { try? JSONDecoder().decode(DeckSnapshot.self, from: $0) }
+            guard let encoded = try? JSONEncoder().encode(mergeDeckSnapshot(current: previous, incoming: snapshot)) else { return false }
+            state?.snapshot = encoded
+            data = encoded
+            return true
+        }), let data else { return false }
         guard let current = self.configuration(snapshot.deckId), sameSelection(current, configuration), credentialMatches(deckId: snapshot.deckId, revision: credentialRevision) else {
-            if defaults.data(forKey: key) == data { defaults.removeObject(forKey: key) }
+            _ = stateStore.updateDeckState(snapshot.deckId) { state in
+                if state?.snapshot == data { state?.snapshot = nil }
+                return true
+            }
             return false
         }
         return true
     }
     func shouldRenderForegroundSnapshot(_ deckId: String) -> Bool {
-        let key = foregroundReloadDeadlinePrefix + deckId
-        guard let defaults, let deadline = defaults.object(forKey: key) as? Date else { return false }
-        if deadline > Date() { return true }
-        defaults.removeObject(forKey: key)
-        return false
+        var render = false
+        guard stateStore.updateDeckState(deckId, { state in
+            guard let deadline = state?.foregroundReloadDeadline else { return false }
+            render = deadline > Date()
+            if !render { state?.foregroundReloadDeadline = nil }
+            return true
+        }) else { return false }
+        return render
     }
     func credential(_ deckId: String) -> WidgetCredential? {
-        guard defaults?.bool(forKey: transactionPrefix + deckId) != true, !credentialReplacementBlocks(deckId) else { return nil }
+        guard case .success(let state) = stateStore.deckState(deckId), state?.transactionPending != true, !credentialReplacementBlocks(deckId) else { return nil }
         let result = credentialData(deckId)
         if result.status == errSecItemNotFound { return .missing }
         guard result.status == errSecSuccess, let data = result.data else { return .unavailable }
@@ -145,13 +153,14 @@ private struct WidgetStore {
         return .readable(token: token, revision: data)
     }
     private func credentialMatches(deckId: String, revision: Data?) -> Bool {
-        guard defaults?.bool(forKey: transactionPrefix + deckId) != true, !credentialReplacementBlocks(deckId) else { return false }
+        guard case .success(let state) = stateStore.deckState(deckId), state?.transactionPending != true, !credentialReplacementBlocks(deckId) else { return false }
         let current = credentialData(deckId)
         if current.status == errSecItemNotFound { return revision == nil }
         return current.status == errSecSuccess && current.data == revision
     }
     private func credentialReplacementBlocks(_ deckId: String) -> Bool {
-        guard let data = defaults?.data(forKey: credentialReplacementKey) else { return false }
+        guard case .success(let metadata) = stateStore.metadata() else { return true }
+        guard let data = metadata.credentialReplacement else { return false }
         guard let transaction = try? JSONDecoder().decode(WidgetCredentialReplacement.self, from: data), transaction.version == 1 else { return true }
         return transaction.deckIds.contains(deckId)
     }

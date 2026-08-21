@@ -23,9 +23,12 @@ const nativeHostFiles = {
       destination: join(generatedRoot, "android/app/src/main/res", relative(join(appRoot, "src-tauri/mobile/android/src/main/res"), source)),
     })),
   ],
-  // build.rs compiles the iOS Swift package; copying it into the app target
-  // would compile the plugin twice without the package's Tauri dependency.
-  ios: () => [],
+  // build.rs compiles the iOS Swift package. Only its Foundation-only widget
+  // state store is also compiled into the two extensions that share it.
+  ios: () => [{
+    source: join(appRoot, "src-tauri/mobile/ios/Sources/WidgetStateStore.swift"),
+    destination: join(generatedRoot, "apple/DevHudWidgetShared/WidgetStateStore.swift"),
+  }],
 };
 
 function filesBelow(root) {
@@ -89,6 +92,7 @@ export function configureIosWidgetProject(projectPath = join(generatedRoot, "app
     deploymentTarget: "16.0",
     sources: [
       { path: "DevHudWidget", excludes: ["Info.plist", "DevHudWidget.entitlements"] },
+      { path: "DevHudWidgetShared/WidgetStateStore.swift" },
       { path: "DevHudWidgetShared/SelectDeck.intentdefinition" },
       { path: "DevHudWidgetShared/en.lproj" },
       { path: "DevHudWidgetShared/ko.lproj" },
@@ -101,6 +105,7 @@ export function configureIosWidgetProject(projectPath = join(generatedRoot, "app
     deploymentTarget: "16.0",
     sources: [
       { path: "DevHudWidgetIntent", excludes: ["Info.plist", "DevHudWidgetIntent.entitlements"] },
+      { path: "DevHudWidgetShared/WidgetStateStore.swift" },
       { path: "DevHudWidgetShared/SelectDeck.intentdefinition" },
       { path: "DevHudWidgetShared/en.lproj" },
       { path: "DevHudWidgetShared/ko.lproj" },
