@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canonicalDevHudSettings, CollidingSettingsSchemaVersion, deckBuilderProjection, deckRepositories, decodeDevHudSettings, decodeVersionedDevHudSettings, defaultDevHudSettings, encodeDevHudSettings, parseDevHudSettings, PreviousSettingsSchemaVersion, SettingsContractError, SettingsSchemaVersion } from "./settings-contract";
+import { canonicalDevHudSettings, CollidingSettingsSchemaVersion, deckBuilderProjection, deckRepositories, decodeDevHudSettings, decodeVersionedDevHudSettings, defaultDevHudSettings, encodeDevHudSettings, MaximumUrlRepositoryMappings, parseDevHudSettings, PreviousSettingsSchemaVersion, SettingsContractError, SettingsSchemaVersion } from "./settings-contract";
 import { diffSettings, redactRecursively, RedactedValue } from "./settings-diff";
 import { ShortcutActionId, ShortcutKey, ShortcutModifier, ShortcutValidationCode, defaultDesktopShortcutBindings, parseDesktopShortcutBindings } from "./shortcuts";
 
@@ -317,6 +317,65 @@ describe("DevHud settings boundary", () => {
         r2: { profileRef: "profile", bucket: "bucket", endpoint: "https://r2.example", region: "auto", publicBaseUrl: `https://cdn.example${suffix}` },
       },
     })).toThrow(/without credentials, query, or fragment/u);
+  });
+
+  it.each(["https://source.example/", "https://SOURCE.example", "https://source.example:443"])("normalizes equivalent Chrome origins: %s", (chromeOrigin) => {
+    expect(parseDevHudSettings({ ...settingsWithMappingProfile, urlMappings: [{ ...mapping, chromeOrigin }] }).urlMappings[0]?.chromeOrigin).toBe("https://source.example");
+  });
+
+  it("requires a Chrome origin to be covered by the mapping authority", () => {
+    for (const [pattern, chromeOrigin] of [
+      ["http://source.example/**", "https://source.example"],
+      ["https://source.example/**", "https://other.example"],
+      ["https://source.example:8443/**", "https://source.example:9443"],
+    ]) {
+      expect(() => parseDevHudSettings({ ...settingsWithMappingProfile, urlMappings: [{ ...mapping, pattern, chromeOrigin }] })).toThrow(/chromeOrigin.*scheme, host, and port/u);
+    }
+    expect(parseDevHudSettings({
+      ...settingsWithMappingProfile,
+      urlMappings: [{ ...mapping, pattern: "*://*.example:*", chromeOrigin: "https://source.example:8443" }],
+    }).urlMappings[0]?.chromeOrigin).toBe("https://source.example:8443");
+  });
+
+  it("rejects wildcard Chrome origins and excessive mapping counts", () => {
+    expect(() => parseDevHudSettings({ ...settingsWithMappingProfile, urlMappings: [{ ...mapping, chromeOrigin: "https://*.example.com" }] })).toThrow(/concrete HTTP\(S\) origin/u);
+    expect(() => parseDevHudSettings({ ...settingsWithMappingProfile, urlMappings: Array.from({ length: MaximumUrlRepositoryMappings + 1 }, (_, index) => ({ ...mapping, id: `018f47a2-7b3c-7def-8abc-${(123456789000 + index).toString().padStart(12, "0")}` })) })).toThrow(/at most/u);
+  });
+
+  it("accepts the maximum mapping count when its Native Messaging envelopes fit", () => {
+    const urlMappings = Array.from({ length: MaximumUrlRepositoryMappings }, (_, index) => ({
+      ...mapping,
+      id: `018f47a2-7b3c-7def-8abc-${(123456789000 + index).toString().padStart(12, "0")}`,
+      chromeOrigin: "https://source.example",
+    }));
+    expect(parseDevHudSettings({ ...settingsWithMappingProfile, urlMappings }).urlMappings).toHaveLength(MaximumUrlRepositoryMappings);
+  });
+
+  it("rejects settings whose projected Native Messaging response envelope is oversized", () => {
+    const path = Array.from({ length: 32 }, (_, index) => `${index.toString().padStart(2, "0")}${"x".repeat(116)}`).join("/");
+    const urlMappings = Array.from({ length: MaximumUrlRepositoryMappings }, (_, index) => ({
+      ...mapping,
+      id: `018f47a2-7b3c-7def-8abc-${(123456789000 + index).toString().padStart(12, "0")}`,
+      pattern: `https://source.example/${path}`,
+      chromeOrigin: "https://source.example",
+    }));
+    const settings = { ...settingsWithMappingProfile, urlMappings };
+    expect(new TextEncoder().encode(JSON.stringify(settings)).byteLength).toBeLessThan(1024 * 1024);
+    expect(() => parseDevHudSettings(settings)).toThrow(/urlMappings.*256 KiB response envelope/u);
+  });
+
+  it("requires each URL mapping to reference a configured GitHub profile", () => {
+    expect(() => parseDevHudSettings({ ...settingsWithMappingProfile, urlMappings: [{ ...mapping, credentialProfileRef: "missing" }] })).toThrow(/urlMappings\[0\].credentialProfileRef.*configured GitHub profile/u);
+  });
+
+  it("drops legacy v1 mapping entries while preserving other settings", () => {
+    const legacy = { ...defaultDevHudSettings, schemaVersion: 1, appearance: { theme: "dark", language: "ko" }, github: { repositories: [], issueTracker: null }, urlMappings: [{ sourcePrefix: "https://source.example/path", destinationPrefix: "https://destination.example/path" }] };
+    expect(parseDevHudSettings(legacy)).toMatchObject({ schemaVersion: SettingsSchemaVersion, appearance: { theme: "dark", language: "ko" }, urlMappings: [] });
+  });
+
+  it("drops prefix mapping entries from schema-v2 snapshots", () => {
+    const legacy = { ...settingsWithMappingProfile, schemaVersion: 2, urlMappings: [{ sourcePrefix: "https://source.example/path", destinationPrefix: "https://destination.example/path" }] };
+    expect(parseDevHudSettings(legacy).urlMappings).toEqual([]);
   });
 
   it("produces a complete recursive, secret-redacted snapshot diff", () => {

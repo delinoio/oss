@@ -5,7 +5,7 @@ import {
   validateCanonicalSettingsJson,
 } from "@delinoio/devhud-api-client";
 import { ShortcutContractError, defaultDesktopShortcutBindings, parseDesktopShortcutBindings, type DesktopShortcutBindings } from "./shortcuts";
-import { parseUrlPattern, type UrlRepositoryMapping } from "./url-mapping";
+import { configuredChromeOrigins, mappingAcceptsOrigin, parseUrlPattern, type UrlRepositoryMapping } from "./url-mapping";
 
 export const LegacySettingsSchemaVersion = 1 as const;
 export const PreviousSettingsSchemaVersion = 2 as const;
@@ -107,6 +107,8 @@ const sensitiveValuePatterns = [
 const safeDynamicKeyPattern = /^[a-zA-Z0-9._:-]{1,128}$/u;
 const profileRefPattern = /^[a-zA-Z0-9._-]{1,128}$/u;
 const prototypeSensitiveKeys = new Set(["__proto__", "constructor", "prototype"]);
+const MaximumNativeMessagingJsonBytes = 256 * 1024;
+const NativeMessagingEnvelopeRequestId = "01900000-0000-7000-8000-000000000000";
 
 export class SettingsContractError extends TypeError {
   readonly path: string;
@@ -182,7 +184,19 @@ export function parseDevHudSettings(value: unknown): DevHudSettingsV1 {
   validateGitHubProfileRef(parsed.github.issueTracker?.profileRef ?? null, "$.github.issueTracker.profileRef", githubProfileIds);
   for (const [index, deck] of parsed.decks.entries()) validateGitHubProfileRef(deck.profileRef, `$.decks[${index}].profileRef`, githubProfileIds);
   for (const [index, mapping] of parsed.urlMappings.entries()) validateGitHubProfileRef(mapping.credentialProfileRef, `$.urlMappings[${index}].credentialProfileRef`, githubProfileIds);
+  if (!nativeMessagingConfigurationEnvelopesFit(parsed.urlMappings)) {
+    throw new SettingsContractError("$.urlMappings", "projected Native Messaging configuration must fit the 256 KiB response envelope");
+  }
   return parsed;
+}
+
+function nativeMessagingConfigurationEnvelopesFit(mappings: readonly UrlRepositoryMapping[]): boolean {
+  const configuration = { origins: configuredChromeOrigins(mappings), language: "en" };
+  const envelopes = [
+    { version: 1, schema_version: 1, request_id: NativeMessagingEnvelopeRequestId, accepted: true, error: null, payload: configuration },
+    { version: 1, schema_version: 1, request_id: NativeMessagingEnvelopeRequestId, ok: true, state: "accepted", payload: configuration },
+  ];
+  return envelopes.every((envelope) => new TextEncoder().encode(JSON.stringify(envelope)).byteLength <= MaximumNativeMessagingJsonBytes);
 }
 
 function parseLegacyMappings(value: unknown): readonly [] {
@@ -211,13 +225,17 @@ function parseUrlMapping(value: unknown, index: number): UrlRepositoryMapping {
   if (!profileRefPattern.test(credentialProfileRef)) throw new SettingsContractError(`${path}.credentialProfileRef`, "is invalid");
   const updatedAt = text(mapping.updatedAt, `${path}.updatedAt`);
   if (!Number.isFinite(Date.parse(updatedAt)) || new Date(updatedAt).toISOString() !== updatedAt) throw new SettingsContractError(`${path}.updatedAt`, "must be a canonical UTC timestamp");
+  const normalizedChromeOrigin = mapping.chromeOrigin === null ? null : chromeOrigin(mapping.chromeOrigin, `${path}.chromeOrigin`);
+  if (normalizedChromeOrigin !== null && !mappingAcceptsOrigin({ pattern }, normalizedChromeOrigin)) {
+    throw new SettingsContractError(`${path}.chromeOrigin`, "must be covered by the mapping pattern scheme, host, and port");
+  }
   return {
     id,
     pattern,
     repository: { owner: text(repository.owner, `${path}.repository.owner`), name: text(repository.name, `${path}.repository.name`) },
     credentialProfileRef,
     priority: integer(mapping.priority, `${path}.priority`, -1_000_000, 1_000_000),
-    chromeOrigin: mapping.chromeOrigin === null ? null : chromeOrigin(mapping.chromeOrigin, `${path}.chromeOrigin`),
+    chromeOrigin: normalizedChromeOrigin,
     updatedAt,
   };
 }

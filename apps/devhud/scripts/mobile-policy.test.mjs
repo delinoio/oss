@@ -97,7 +97,7 @@ test("mobile policy keeps native iOS origins aligned with normalized root URLs",
 });
 
 test("mobile open URL handling accepts authentication callbacks only", () => {
-  const nativePlugin = readFileSync(join(appRoot, "src-tauri/src/native_plugin.rs"), "utf8");
+  const nativePlugin = readFileSync(join(appRoot, "src-tauri/src/native_plugin.rs"), "utf8").replace(/\r\n?/gu, "\n");
   const start = nativePlugin.indexOf("#[cfg(mobile)]\n            if let tauri::RunEvent::Opened");
   const end = nativePlugin.indexOf("\n            }\n        })", start);
   const openedHandler = nativePlugin.slice(start, end);
