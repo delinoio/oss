@@ -49,6 +49,7 @@ type Config struct {
 	CloudflareAPIToken   string
 	CloudflareZoneID     string
 	CloudflareRateRuleID string
+	UpdateManifestDir    string
 }
 
 type SweeperConfig struct {
@@ -110,6 +111,7 @@ func Load(apiVersion string) (Config, error) {
 		CloudflareAPIToken:   os.Getenv("DEVHUD_CLOUDFLARE_API_TOKEN"),
 		CloudflareZoneID:     os.Getenv("DEVHUD_CLOUDFLARE_ZONE_ID"),
 		CloudflareRateRuleID: os.Getenv("DEVHUD_CLOUDFLARE_RATE_LIMIT_RULE_ID"),
+		UpdateManifestDir:    os.Getenv("DEVHUD_UPDATE_MANIFEST_DIR"),
 	}
 
 	configuration.IdentityHMACKeys, err = parseHMACKeys(os.Getenv("DEVHUD_IDENTITY_HMAC_KEYS"))

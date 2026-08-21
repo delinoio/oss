@@ -1,12 +1,11 @@
 #!/usr/bin/env node
 
 import { exitLikeChild, spawnDevServer } from "../../../scripts/spawn-dev-server.mjs";
-import { desktopTauriArguments } from "./run-tauri-arguments.mjs";
+import { desktopTauriArguments, desktopTauriEnvironment } from "./run-tauri-arguments.mjs";
 import { stageNativeMessagingHost } from "./stage-native-messaging-host.mjs";
 
 const [command, ...rawArgs] = process.argv.slice(2);
 const forwardedArgs = rawArgs[0] === "--" ? rawArgs.slice(1) : rawArgs;
-const args = desktopTauriArguments(command, forwardedArgs);
 
 if (!command || !["dev", "build"].includes(command)) {
   console.error("Usage: run-tauri.mjs <dev|build> [tauri arguments...]");
@@ -32,6 +31,8 @@ if (
 }
 
 try {
+  const args = desktopTauriArguments(command, forwardedArgs);
+  const environment = desktopTauriEnvironment(command, forwardedArgs);
   stageNativeMessagingHost({ release: command === "build" });
   const result = await spawnDevServer(
     "cargo",
@@ -48,6 +49,7 @@ try {
       ...args,
     ],
     {
+      env: environment,
       stdio: "inherit",
       shell: false,
     },

@@ -727,26 +727,32 @@ jobs:
             runner: macos-15-intel
             os: macos
             bundle: app
+            package: macos-app
           - id: macos-arm64
             runner: macos-15
             os: macos
             bundle: app
+            package: macos-app
           - id: windows-x64
             runner: windows-2022
             os: windows
             bundle: nsis
+            package: windows-nsis
           - id: windows-arm64
             runner: windows-11-arm
             os: windows
             bundle: nsis
+            package: windows-nsis
           - id: ubuntu-x64
             runner: ubuntu-22.04
             os: linux
             bundle: deb
+            package: linux-deb
           - id: ubuntu-arm64
             runner: ubuntu-22.04-arm
             os: linux
             bundle: deb
+            package: linux-deb
 
     env:
       MACOSX_DEPLOYMENT_TARGET: "13.0"
@@ -839,6 +845,8 @@ jobs:
 
       - name: Build native production package
         if: ${{ steps.gate.outputs.run == 'true' }}
+        env:
+          DEVHUD_PACKAGE_KIND: ${{ matrix.package }}
         run: pnpm --filter devhud build -- --bundles ${{ matrix.bundle }}
 
       - name: Prepare Windows installed layout

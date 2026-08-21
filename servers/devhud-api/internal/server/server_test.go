@@ -67,6 +67,35 @@ func TestDiagnosticsProcedureIsSafeForLogsAndMetrics(t *testing.T) {
 	}
 }
 
+func TestUpdaterProcedureUsesAStableObservabilityLabel(t *testing.T) {
+	for _, path := range []string{
+		"/updates/stable/linux/x86_64.json",
+		"/updates/stable/windows/aarch64.json",
+	} {
+		if got := safeProcedure(path); got != updaterManifestProcedure {
+			t.Fatalf("safe updater procedure for %q = %q", path, got)
+		}
+	}
+	for _, path := range []string{
+		"/updates/stable/linux",
+		"/updates/stable/linux/x86_64.json/extra",
+		"/updates//linux/x86_64.json",
+	} {
+		if got := safeProcedure(path); got != "unmatched" {
+			t.Fatalf("safe malformed updater procedure for %q = %q", path, got)
+		}
+	}
+
+	handler, repository := testHandler(t)
+	request := httptest.NewRequest(http.MethodGet, "/updates/stable/linux/x86_64.json", nil)
+	request.Header.Set("X-DevHud-Package", "linux-deb")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if got := repository.lastRequest(t).Procedure; got != updaterManifestProcedure {
+		t.Fatalf("persisted updater procedure = %q", got)
+	}
+}
+
 func TestBootstrapGRPCProtocolsPreserveSuccessResponses(t *testing.T) {
 	handler, _ := testHandler(t)
 	testServer := httptest.NewServer(handler)
@@ -560,6 +589,24 @@ func TestExactCORSPreflightContract(t *testing.T) {
 				t.Fatalf("status = %d", response.Code)
 			}
 		})
+	}
+}
+
+func TestUpdaterRouteIsUnavailableToBrowserOrigins(t *testing.T) {
+	handler, _ := testHandler(t)
+	request := httptest.NewRequest(http.MethodGet, "/updates/stable/linux/x86_64.json", nil)
+	request.RemoteAddr = "127.0.0.1:12345"
+	request.Header.Set("Origin", "http://tauri.localhost")
+	request.Header.Set("X-DevHud-Package", "linux-deb")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	vary := strings.Join(response.Header().Values("Vary"), ",")
+	if response.Code != http.StatusForbidden ||
+		response.Header().Get("Access-Control-Allow-Origin") != "" ||
+		response.Header().Get("Cache-Control") != "no-store" ||
+		!strings.Contains(vary, "Origin") ||
+		!strings.Contains(vary, "X-DevHud-Package") {
+		t.Fatalf("status=%d headers=%v", response.Code, response.Header())
 	}
 }
 

@@ -42,6 +42,16 @@ const ACCEPT_RETRY_MAXIMUM_DELAY: Duration = Duration::from_secs(5);
 
 static STATE: OnceLock<Arc<NativeMessagingState>> = OnceLock::new();
 
+#[cfg(unix)]
+static UNIX_LISTENER: OnceLock<Mutex<Option<UnixListenerHandle>>> = OnceLock::new();
+
+#[cfg(unix)]
+struct UnixListenerHandle {
+    path: std::path::PathBuf,
+    stopping: Arc<AtomicBool>,
+    thread: std::thread::JoinHandle<()>,
+}
+
 pub fn register_packaged_host() -> Result<(), String> {
     use std::process::Command;
 
@@ -752,8 +762,23 @@ fn authorize_capture(
 
 #[cfg(unix)]
 pub fn start() -> Result<(), String> {
-    use std::os::unix::{fs::FileTypeExt, net::UnixListener};
+    let mut active = UNIX_LISTENER
+        .get_or_init(|| Mutex::new(None))
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if active.is_some() {
+        return Ok(());
+    }
     let path = endpoint::socket_path().map_err(|error| error.to_string())?;
+    *active = Some(start_unix_listener(path)?);
+    info!(event = "native_messaging_listener_started");
+    Ok(())
+}
+
+#[cfg(unix)]
+fn start_unix_listener(path: std::path::PathBuf) -> Result<UnixListenerHandle, String> {
+    use std::os::unix::{fs::FileTypeExt, net::UnixListener};
+
     endpoint::prepare_unix_parent(&path).map_err(|error| error.to_string())?;
     if path.exists() {
         let metadata = std::fs::symlink_metadata(&path).map_err(|error| error.to_string())?;
@@ -766,14 +791,26 @@ pub fn start() -> Result<(), String> {
         std::fs::remove_file(&path).map_err(|error| error.to_string())?;
     }
     let listener = UnixListener::bind(&path).map_err(|error| error.to_string())?;
-    endpoint::set_socket_permissions(&path).map_err(|error| error.to_string())?;
-    std::thread::Builder::new()
+    if let Err(error) = endpoint::set_socket_permissions(&path) {
+        let _ = std::fs::remove_file(&path);
+        return Err(error.to_string());
+    }
+    if let Err(error) = listener.set_nonblocking(true) {
+        let _ = std::fs::remove_file(&path);
+        return Err(error.to_string());
+    }
+    let stopping = Arc::new(AtomicBool::new(false));
+    let thread_stopping = stopping.clone();
+    let thread = match std::thread::Builder::new()
         .name("devhud-native-messaging-ipc".into())
         .spawn(move || {
             let mut retry_delay = ACCEPT_RETRY_INITIAL_DELAY;
-            loop {
+            while !thread_stopping.load(Ordering::SeqCst) {
                 match listener.accept() {
                     Ok((stream, _)) => {
+                        if thread_stopping.load(Ordering::SeqCst) {
+                            break;
+                        }
                         retry_delay = updated_accept_retry_delay(retry_delay, true);
                         if !endpoint::peer_is_current_user(&stream).unwrap_or(false) {
                             warn!(event = "native_messaging_peer_rejected");
@@ -786,17 +823,59 @@ pub fn start() -> Result<(), String> {
                             }
                         });
                     }
+                    Err(reason) if reason.kind() == io::ErrorKind::WouldBlock => {
+                        std::thread::park_timeout(ACCEPT_RETRY_INITIAL_DELAY);
+                    }
                     Err(reason) => {
                         error!(event = "native_messaging_accept_failed", %reason);
-                        std::thread::sleep(retry_delay);
+                        std::thread::park_timeout(retry_delay);
                         retry_delay = updated_accept_retry_delay(retry_delay, false);
                     }
                 }
             }
-        })
-        .map_err(|error| error.to_string())?;
-    info!(event = "native_messaging_listener_started");
+        }) {
+        Ok(thread) => thread,
+        Err(error) => {
+            let _ = std::fs::remove_file(&path);
+            return Err(error.to_string());
+        }
+    };
+    Ok(UnixListenerHandle {
+        path,
+        stopping,
+        thread,
+    })
+}
+
+#[cfg(unix)]
+pub fn stop() -> Result<(), String> {
+    let handle = UNIX_LISTENER
+        .get_or_init(|| Mutex::new(None))
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .take();
+    let Some(handle) = handle else {
+        return Ok(());
+    };
+    handle.stop()?;
+    info!(event = "native_messaging_listener_stopped");
     Ok(())
+}
+
+#[cfg(unix)]
+impl UnixListenerHandle {
+    fn stop(self) -> Result<(), String> {
+        self.stopping.store(true, Ordering::SeqCst);
+        self.thread.thread().unpark();
+        self.thread
+            .join()
+            .map_err(|_| "Native Messaging listener shutdown failed".to_string())?;
+        match std::fs::remove_file(&self.path) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error.to_string()),
+        }
+    }
 }
 
 #[cfg(windows)]
@@ -1327,6 +1406,36 @@ mod tests {
             updated_accept_retry_delay(ACCEPT_RETRY_MAXIMUM_DELAY, true),
             ACCEPT_RETRY_INITIAL_DELAY
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unix_listener_can_relinquish_and_reclaim_its_socket() {
+        use std::os::unix::fs::{FileTypeExt, PermissionsExt};
+
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::set_permissions(directory.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+        let path = directory.path().join("devhud.sock");
+
+        let listener = start_unix_listener(path.clone()).unwrap();
+        assert!(
+            std::fs::symlink_metadata(&path)
+                .unwrap()
+                .file_type()
+                .is_socket()
+        );
+        listener.stop().unwrap();
+        assert!(!path.exists());
+
+        let replacement = start_unix_listener(path.clone()).unwrap();
+        assert!(
+            std::fs::symlink_metadata(&path)
+                .unwrap()
+                .file_type()
+                .is_socket()
+        );
+        replacement.stop().unwrap();
+        assert!(!path.exists());
     }
 
     #[test]

@@ -9,6 +9,8 @@ use std::time::Duration;
 
 use serde_json::{Value, json};
 #[cfg(desktop)]
+use tauri::Emitter;
+#[cfg(desktop)]
 use tauri::Manager;
 #[cfg(desktop)]
 use uuid::Uuid;
@@ -27,6 +29,10 @@ const TAURI_REVISION: &str = "4af26a3f7f8b692d62cca549bbacd93f5ce90b41";
 const CEF_REVISION: &str = "150.0.10+g8042e43+chromium-150.0.7871.101";
 
 const DEFAULT_API_ORIGIN: &str = "https://devhud.api.delino.io";
+#[cfg(desktop)]
+const UPDATE_SCHEDULER_POLL_INTERVAL: Duration = Duration::from_secs(1);
+#[cfg(desktop)]
+const UPDATE_SCHEDULER_RESUME_GAP: Duration = Duration::from_secs(2);
 
 #[derive(Clone)]
 pub struct NativeBridgeState {
@@ -38,6 +44,10 @@ pub struct NativeBridgeState {
     shortcut_listener_failed: Arc<AtomicBool>,
     shortcut_listener_retry: Arc<(Mutex<u64>, Condvar)>,
     diagnostics_export: Arc<Mutex<DiagnosticsExportState>>,
+    #[cfg(desktop)]
+    updater: Arc<Mutex<Option<crate::updater::UpdaterController>>>,
+    #[cfg(desktop)]
+    updater_schedule_started: Arc<AtomicBool>,
 }
 
 #[derive(Default)]
@@ -111,6 +121,24 @@ struct SessionOrigins {
 impl Default for NativeBridgeState {
     fn default() -> Self {
         let shortcut_listener_failed = Arc::new(AtomicBool::new(false));
+        #[cfg(desktop)]
+        let updater = {
+            let target = crate::platform::DesktopTarget::current();
+            crate::updater::PackageKind::current(target)
+                .and_then(|package| {
+                    semver::Version::parse(env!("CARGO_PKG_VERSION"))
+                        .map_err(|_| crate::updater::UpdaterError {
+                            code: crate::updater::DiagnosticCode::Malformed,
+                            phase: crate::updater::UpdatePhase::Target,
+                            status_class: None,
+                            retry_after_seconds: None,
+                        })
+                        .and_then(|version| {
+                            crate::updater::UpdaterController::new(version, target, package)
+                        })
+                })
+                .ok()
+        };
         Self {
             pending_auth_callback: Arc::new(Mutex::new(None)),
             pending_deck_link: Arc::new(Mutex::new(None)),
@@ -125,8 +153,305 @@ impl Default for NativeBridgeState {
             shortcut_listener_failed,
             shortcut_listener_retry: Arc::new((Mutex::new(0), Condvar::new())),
             diagnostics_export: Arc::new(Mutex::new(DiagnosticsExportState::default())),
+            #[cfg(desktop)]
+            updater: Arc::new(Mutex::new(updater)),
+            #[cfg(desktop)]
+            updater_schedule_started: Arc::new(AtomicBool::new(false)),
         }
     }
+}
+
+#[cfg(desktop)]
+fn updater_response(state: &NativeBridgeState) -> Result<Value, String> {
+    let updater = state
+        .updater
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let snapshot = updater.as_ref().ok_or("unsupported")?.snapshot();
+    Ok(json!({ "kind": "desktop-update-status", "status": snapshot }))
+}
+
+#[cfg(desktop)]
+struct TauriRestartHandoff<R: tauri::Runtime>(tauri::AppHandle<R>);
+
+#[cfg(desktop)]
+impl<R: tauri::Runtime> crate::updater::RestartHandoff for TauriRestartHandoff<R> {
+    fn release(&self) -> Result<(), crate::updater::DiagnosticCode> {
+        #[cfg(unix)]
+        if crate::native_messaging::stop().is_err() {
+            tracing::error!(event = "updater_native_messaging_release_failed");
+            let _ = crate::native_messaging::start();
+            return Err(crate::updater::DiagnosticCode::RestartFailed);
+        }
+        crate::release_single_instance(&self.0);
+        Ok(())
+    }
+
+    fn restore(&self) -> Result<(), crate::updater::DiagnosticCode> {
+        crate::restore_single_instance(&self.0)
+            .map_err(|_| crate::updater::DiagnosticCode::RestartFailed)?;
+        #[cfg(unix)]
+        crate::native_messaging::start().map_err(|_| {
+            tracing::error!(event = "updater_native_messaging_restore_failed");
+            crate::updater::DiagnosticCode::RestartFailed
+        })?;
+        Ok(())
+    }
+
+    fn terminate(&self) {
+        self.0.exit(0);
+    }
+}
+
+#[cfg(desktop)]
+fn emit_update_status<R: tauri::Runtime>(app: &tauri::AppHandle<R>, response: &Value) {
+    if app
+        .emit(
+            "devhud:native-event:v1",
+            json!({ "version": 1, "kind": "desktop-update-status", "status": response["status"] }),
+        )
+        .is_err()
+    {
+        tracing::warn!(event = "updater_status_emit_failed");
+    }
+}
+
+#[cfg(desktop)]
+fn log_updater_failure(
+    event_name: &'static str,
+    diagnostic: Option<&crate::updater::UpdateDiagnostic>,
+) {
+    let Some(diagnostic) = diagnostic else {
+        return;
+    };
+    if diagnostic.code == crate::updater::DiagnosticCode::Canceled {
+        return;
+    }
+    tracing::warn!(
+        event = event_name,
+        code = ?diagnostic.code,
+        phase = ?diagnostic.phase,
+        target = diagnostic.target,
+        package = diagnostic.package_kind.header_value(),
+        http_status_class = ?diagnostic.http_status_class,
+        retry_after_seconds = ?diagnostic.retry_after_seconds
+    );
+}
+
+#[cfg(desktop)]
+fn finish_update_check(
+    updater: &mut crate::updater::UpdaterController,
+    result: Result<Vec<u8>, crate::updater::UpdaterError>,
+    now: time::OffsetDateTime,
+) -> crate::updater::UpdaterSnapshot {
+    match result {
+        Ok(manifest) => updater.check_bytes(&manifest, now),
+        Err(error) => updater.record_error(error),
+    }
+    let snapshot = updater.snapshot();
+    log_updater_failure("updater_check_failed", snapshot.diagnostic.as_ref());
+    snapshot
+}
+
+#[cfg(desktop)]
+fn finish_update_download(
+    updater: &mut crate::updater::UpdaterController,
+    artifact: Result<crate::updater::VerifiedArtifact, crate::updater::UpdaterError>,
+) -> crate::updater::UpdaterSnapshot {
+    match artifact {
+        Ok(artifact) => {
+            if let Err(error) = updater.complete_download(artifact) {
+                updater.record_error(error);
+            }
+        }
+        Err(error) => updater.record_error(error),
+    }
+    let snapshot = updater.snapshot();
+    log_updater_failure("updater_download_failed", snapshot.diagnostic.as_ref());
+    snapshot
+}
+
+#[cfg(desktop)]
+fn update_download_worker_is_current(
+    updater: &crate::updater::UpdaterController,
+    generation: &Arc<AtomicBool>,
+) -> bool {
+    Arc::ptr_eq(generation, &updater.cancellation_token())
+        && !generation.load(Ordering::Acquire)
+        && updater.snapshot().kind == crate::updater::UpdaterStateKind::Downloading
+}
+
+#[cfg(desktop)]
+enum UpdateCheckDisposition {
+    Started(Value),
+    Busy(Value),
+}
+
+#[cfg(desktop)]
+impl UpdateCheckDisposition {
+    fn response(self) -> Value {
+        match self {
+            Self::Started(response) | Self::Busy(response) => response,
+        }
+    }
+}
+
+#[cfg(desktop)]
+fn updater_check_attempt_consumes_due(result: &Result<UpdateCheckDisposition, String>) -> bool {
+    result.is_ok()
+}
+
+#[cfg(desktop)]
+fn updater_scheduler_is_supported(state: &NativeBridgeState) -> bool {
+    state
+        .updater
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .is_some()
+}
+
+#[cfg(desktop)]
+fn updater_poll_gap_indicates_resume(elapsed: Option<Duration>) -> bool {
+    elapsed.is_some_and(|elapsed| elapsed > UPDATE_SCHEDULER_RESUME_GAP)
+}
+
+#[cfg(desktop)]
+fn start_update_check<R: tauri::Runtime>(
+    state: NativeBridgeState,
+    app: tauri::AppHandle<R>,
+) -> Result<UpdateCheckDisposition, String> {
+    let (target, package, generation, checking) = {
+        let mut updater = state
+            .updater
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let updater = updater.as_mut().ok_or("unsupported")?;
+        if !updater.begin_check() {
+            return Ok(UpdateCheckDisposition::Busy(
+                json!({ "kind": "desktop-update-status", "status": updater.snapshot() }),
+            ));
+        }
+        (
+            crate::platform::DesktopTarget::current(),
+            updater.snapshot().package_kind,
+            updater.cancellation_token(),
+            json!({ "kind": "desktop-update-status", "status": updater.snapshot() }),
+        )
+    };
+    emit_update_status(&app, &checking);
+    std::mem::drop(tauri::async_runtime::spawn_blocking(move || {
+        let result = crate::updater::UpdaterDiscoveryTransport::new()
+            .and_then(|transport| transport.discover(target, package));
+        let snapshot = {
+            let mut updater = state
+                .updater
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let Some(updater) = updater.as_mut() else {
+                return;
+            };
+            if !Arc::ptr_eq(&generation, &updater.cancellation_token())
+                || updater.snapshot().kind != crate::updater::UpdaterStateKind::Checking
+            {
+                return;
+            }
+            finish_update_check(updater, result, time::OffsetDateTime::now_utc())
+        };
+        let response = json!({ "kind": "desktop-update-status", "status": snapshot });
+        emit_update_status(&app, &response);
+    }));
+    Ok(UpdateCheckDisposition::Started(checking))
+}
+
+#[cfg(desktop)]
+const fn updater_window_is_active(visible: bool, minimized: bool, focused: bool) -> bool {
+    visible && !minimized && focused
+}
+
+#[cfg(desktop)]
+const fn updater_check_is_due(
+    schedule: crate::updater::CheckSchedule,
+    active_runtime_seconds: u64,
+    resumed: bool,
+    wall_deadline_reached: bool,
+) -> bool {
+    schedule.is_due(active_runtime_seconds) || (resumed && wall_deadline_reached)
+}
+
+#[cfg(desktop)]
+pub fn start_update_scheduler<R: tauri::Runtime>(
+    state: NativeBridgeState,
+    app: tauri::AppHandle<R>,
+) {
+    if !updater_scheduler_is_supported(&state) {
+        return;
+    }
+    if state.updater_schedule_started.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    std::thread::spawn(move || {
+        let mut schedule = crate::updater::CheckSchedule::after_frontend_ready();
+        let mut active_runtime = Duration::ZERO;
+        let mut last_tick = std::time::Instant::now();
+        let mut last_wall_tick = std::time::SystemTime::now();
+        let mut was_active = None;
+        let mut wall_deadline = last_wall_tick + Duration::from_secs(schedule.next_due_seconds());
+        loop {
+            std::thread::sleep(UPDATE_SCHEDULER_POLL_INTERVAL);
+            let now = std::time::Instant::now();
+            let wall_now = std::time::SystemTime::now();
+            let device_resumed =
+                updater_poll_gap_indicates_resume(wall_now.duration_since(last_wall_tick).ok());
+            last_wall_tick = wall_now;
+            let active = app
+                .get_webview_window("main")
+                .map(|window| {
+                    updater_window_is_active(
+                        window.is_visible().unwrap_or(false),
+                        window.is_minimized().unwrap_or(true),
+                        window.is_focused().unwrap_or(false),
+                    )
+                })
+                .unwrap_or(false);
+            let resumed = matches!(was_active, Some(false)) || device_resumed;
+            was_active = Some(active);
+            if !active {
+                last_tick = now;
+                continue;
+            }
+            if !device_resumed {
+                active_runtime = active_runtime.saturating_add(now.duration_since(last_tick));
+            }
+            last_tick = now;
+            let active_runtime_seconds = active_runtime.as_secs();
+            let wall_deadline_reached = wall_now >= wall_deadline;
+            if !updater_check_is_due(
+                schedule,
+                active_runtime_seconds,
+                resumed,
+                wall_deadline_reached,
+            ) {
+                continue;
+            }
+            let response = start_update_check(state.clone(), app.clone());
+            let consumes_due_attempt = updater_check_attempt_consumes_due(&response);
+            match response {
+                Ok(UpdateCheckDisposition::Started(_)) => {}
+                Ok(UpdateCheckDisposition::Busy(_)) => {
+                    // The active flow owns the controller. Consume this attempt
+                    // so a later cancellation or failure remains visible.
+                }
+                Err(code) => {
+                    tracing::warn!(event = "updater_check_failed", error_code = code);
+                }
+            }
+            if !consumes_due_attempt {
+                continue;
+            }
+            schedule.mark_checked(active_runtime_seconds);
+            wall_deadline = wall_now + crate::updater::CHECK_INTERVAL;
+        }
+    });
 }
 
 pub(crate) fn shortcut_status(state: &NativeBridgeState, error: Option<ShortcutFailure>) -> Value {
@@ -959,6 +1284,11 @@ pub fn handle_native_bridge_request(
         "updates.status" if cfg!(target_os = "android") => Ok(json!({
             "kind": "update-status", "store": "play-store", "installedVersion": env!("CARGO_PKG_VERSION"), "configured": true
         })),
+        #[cfg(desktop)]
+        "updates.status" => updater_response(state),
+        #[cfg(desktop)]
+        "updates.open-store" => Err("unsupported".to_string()),
+        #[cfg(mobile)]
         "updates.status" | "updates.open-store" => Err("unsupported".to_string()),
         "widgets.replace-deck-snapshot" | "widgets.clear-deck-snapshot" => {
             Ok(json!({ "kind": "unsupported", "feature": "widgets" }))
@@ -1030,6 +1360,123 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
         .get("operation")
         .and_then(Value::as_str)
         .ok_or("invalid-argument")?;
+    if operation == "updates.check" {
+        return start_update_check(state.inner().clone(), app.clone())
+            .map(UpdateCheckDisposition::response);
+    }
+    if operation == "updates.approve-download" {
+        let (candidate, package, canceled) = {
+            let mut updater = state
+                .updater
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let updater = updater.as_mut().ok_or("unsupported")?;
+            updater.begin_download().map_err(|_| "invalid-argument")?;
+            (
+                updater.candidate().cloned().ok_or("invalid-argument")?,
+                updater.snapshot().package_kind,
+                updater.cancellation_token(),
+            )
+        };
+        let worker_cancellation = canceled.clone();
+        let updater_state = state.inner().clone();
+        let updater_app = app.clone();
+        std::mem::drop(tauri::async_runtime::spawn(async move {
+            let artifact = match crate::updater::UpdaterDownloadTransport::new() {
+                Ok(transport) => {
+                    transport
+                        .download(&candidate, package, &worker_cancellation)
+                        .await
+                }
+                Err(error) => Err(error),
+            };
+            let snapshot = {
+                let mut updater = updater_state
+                    .updater
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                let Some(updater) = updater.as_mut() else {
+                    return;
+                };
+                if !update_download_worker_is_current(updater, &canceled) {
+                    return;
+                }
+                finish_update_download(updater, artifact)
+            };
+            if updater_app
+                .emit(
+                    "devhud:native-event:v1",
+                    json!({ "version": 1, "kind": "desktop-update-status", "status": snapshot }),
+                )
+                .is_err()
+            {
+                tracing::warn!(event = "updater_status_emit_failed");
+            }
+        }));
+        return updater_response(&state);
+    }
+    if operation == "updates.cancel" {
+        let mut updater = state
+            .updater
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let updater = updater.as_mut().ok_or("unsupported")?;
+        updater.cancel().map_err(|_| "invalid-argument")?;
+        return Ok(json!({ "kind": "desktop-update-status", "status": updater.snapshot() }));
+    }
+    if operation == "updates.approve-installation" {
+        let mut updater = state
+            .updater
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let updater = updater.as_mut().ok_or("unsupported")?;
+        updater
+            .approve_installation()
+            .map_err(|_| "invalid-argument")?;
+        return Ok(json!({ "kind": "desktop-update-status", "status": updater.snapshot() }));
+    }
+    if operation == "updates.approve-restart" {
+        let (attempt, package, restarting) = {
+            let mut updater = state
+                .updater
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let updater = updater.as_mut().ok_or("unsupported")?;
+            let package = updater.snapshot().package_kind;
+            let attempt = updater.begin_restart().map_err(|_| "invalid-argument")?;
+            let restarting =
+                json!({ "kind": "desktop-update-status", "status": updater.snapshot() });
+            (attempt, package, restarting)
+        };
+        emit_update_status(&app, &restarting);
+        let join_failure = attempt.join_failure();
+        let installer_app = app.clone();
+        let attempt = tauri::async_runtime::spawn_blocking(move || {
+            let handoff = TauriRestartHandoff(installer_app);
+            let installer = crate::updater::PlatformInstaller::new(package, &handoff);
+            attempt.run(&installer)
+        })
+        .await
+        .unwrap_or(join_failure);
+        let (restart, response) = {
+            let mut updater = state
+                .updater
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let updater = updater.as_mut().ok_or("unsupported")?;
+            let restart = updater.finish_restart(attempt);
+            let response = json!({ "kind": "desktop-update-status", "status": updater.snapshot() });
+            (restart, response)
+        };
+        emit_update_status(&app, &response);
+        if matches!(
+            restart,
+            Some(Ok(crate::updater::RestartDisposition::Relaunched))
+        ) {
+            app.exit(0);
+        }
+        return Ok(response);
+    }
     if operation.starts_with("capture.") {
         return handle_capture_request(&request, capture.inner().clone(), &app).await;
     }
@@ -1397,10 +1844,22 @@ async fn handle_capture_request(
 mod tests {
     #[cfg(desktop)]
     use std::cell::RefCell;
-    use std::sync::atomic::{AtomicBool, Ordering};
+    #[cfg(desktop)]
+    use std::io::{self, Write};
+    #[cfg(desktop)]
+    use std::sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    };
+    #[cfg(desktop)]
+    use std::time::Duration;
 
     use serde_json::{Value, json};
+    #[cfg(desktop)]
+    use tracing_subscriber::layer::SubscriberExt;
 
+    #[cfg(desktop)]
+    use super::update_download_worker_is_current;
     use super::{
         NativeBridgeState, handle_native_bridge_request, ios_runtime_os_version, is_auth_callback,
         purge_clears_diagnostics, purge_invalidates_native_messaging, routes_to_mobile_plugin,
@@ -1409,9 +1868,222 @@ mod tests {
     };
     #[cfg(desktop)]
     use super::{
-        deletes_capture_drafts_for_purge_scope, purge_capture_drafts_before_secure_store,
+        UpdateCheckDisposition, deletes_capture_drafts_for_purge_scope, finish_update_check,
+        finish_update_download, purge_capture_drafts_before_secure_store,
         should_restore_capture_window, stage_diagnostics_export,
+        updater_check_attempt_consumes_due, updater_check_is_due,
+        updater_poll_gap_indicates_resume, updater_scheduler_is_supported,
+        updater_window_is_active,
     };
+
+    #[cfg(desktop)]
+    #[test]
+    fn updater_runtime_advances_only_for_an_active_main_window() {
+        assert!(updater_window_is_active(true, false, true));
+        assert!(!updater_window_is_active(false, false, true));
+        assert!(!updater_window_is_active(true, true, true));
+        assert!(!updater_window_is_active(true, false, false));
+    }
+
+    #[cfg(desktop)]
+    #[test]
+    fn updater_wall_clock_catch_up_requires_an_overdue_resume() {
+        let mut schedule = crate::updater::CheckSchedule::after_frontend_ready();
+        schedule.mark_checked(30);
+        let twenty_three_active_hours = 30 + 23 * 60 * 60;
+
+        assert!(!updater_check_is_due(
+            schedule,
+            twenty_three_active_hours,
+            false,
+            true,
+        ));
+        assert!(!updater_check_is_due(
+            schedule,
+            twenty_three_active_hours,
+            true,
+            false,
+        ));
+        assert!(updater_check_is_due(
+            schedule,
+            twenty_three_active_hours,
+            true,
+            true,
+        ));
+        assert!(updater_check_is_due(
+            schedule,
+            30 + 24 * 60 * 60,
+            false,
+            false,
+        ));
+    }
+
+    #[cfg(desktop)]
+    #[test]
+    fn updater_poll_gap_detects_resume_independently_of_window_focus() {
+        assert!(!updater_poll_gap_indicates_resume(Some(
+            Duration::from_secs(2)
+        )));
+        assert!(updater_poll_gap_indicates_resume(Some(
+            Duration::from_secs(3)
+        )));
+        assert!(!updater_poll_gap_indicates_resume(None));
+    }
+
+    #[cfg(desktop)]
+    #[test]
+    fn updater_scheduler_does_not_start_without_a_controller() {
+        let state = NativeBridgeState::default();
+        *state
+            .updater
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+
+        assert!(!updater_scheduler_is_supported(&state));
+    }
+
+    #[cfg(desktop)]
+    #[test]
+    fn updater_busy_attempt_consumes_the_due_schedule() {
+        assert!(updater_check_attempt_consumes_due(&Ok(
+            UpdateCheckDisposition::Busy(json!({ "kind": "desktop-update-status" }))
+        )));
+        assert!(!updater_check_attempt_consumes_due(&Err(
+            "unsupported".to_string()
+        )));
+    }
+
+    #[cfg(desktop)]
+    #[test]
+    fn updater_workers_log_typed_failures_but_not_cancellation() {
+        let mut check = updater_controller();
+        assert!(check.begin_check());
+        let check_output = capture_updater_log(|| {
+            finish_update_check(
+                &mut check,
+                Ok(include_bytes!("../fixtures/updater/invalid-signature.json").to_vec()),
+                time::OffsetDateTime::now_utc(),
+            );
+        });
+        assert!(check_output.contains("updater_check_failed"));
+        assert!(check_output.contains("InvalidSignature"));
+        assert!(check_output.contains("linux-x86_64"));
+        assert!(!check_output.contains("signedPayload"));
+
+        let mut download = available_updater_controller();
+        assert!(download.begin_download().is_ok());
+        let download_output = capture_updater_log(|| {
+            finish_update_download(
+                &mut download,
+                Err(crate::updater::UpdaterError {
+                    code: crate::updater::DiagnosticCode::VerificationFailed,
+                    phase: crate::updater::UpdatePhase::Verification,
+                    status_class: Some(5),
+                    retry_after_seconds: Some(60),
+                }),
+            );
+        });
+        assert!(download_output.contains("updater_download_failed"));
+        assert!(download_output.contains("VerificationFailed"));
+        assert!(download_output.contains("http_status_class=Some(5)"));
+        assert!(download_output.contains("retry_after_seconds=Some(60)"));
+
+        let mut canceled = available_updater_controller();
+        assert!(canceled.begin_download().is_ok());
+        let canceled_output = capture_updater_log(|| {
+            finish_update_download(
+                &mut canceled,
+                Err(crate::updater::UpdaterError {
+                    code: crate::updater::DiagnosticCode::Canceled,
+                    phase: crate::updater::UpdatePhase::Download,
+                    status_class: None,
+                    retry_after_seconds: None,
+                }),
+            );
+        });
+        assert!(canceled_output.is_empty());
+    }
+
+    #[cfg(desktop)]
+    #[test]
+    fn canceled_download_workers_cannot_commit_late_results() {
+        let mut updater = available_updater_controller();
+        updater.begin_download().unwrap();
+        let generation = updater.cancellation_token();
+        assert!(update_download_worker_is_current(&updater, &generation));
+
+        updater.cancel().unwrap();
+
+        assert!(!update_download_worker_is_current(&updater, &generation));
+        assert_eq!(
+            updater.snapshot().kind,
+            crate::updater::UpdaterStateKind::Canceled
+        );
+        assert_eq!(
+            updater.snapshot().diagnostic.unwrap().code,
+            crate::updater::DiagnosticCode::Canceled
+        );
+    }
+
+    #[cfg(desktop)]
+    fn updater_controller() -> crate::updater::UpdaterController {
+        crate::updater::UpdaterController::new(
+            semver::Version::new(0, 1, 0),
+            crate::platform::DesktopTarget::LinuxX64,
+            crate::updater::PackageKind::LinuxAppimage,
+        )
+        .expect("create updater controller")
+    }
+
+    #[cfg(desktop)]
+    fn available_updater_controller() -> crate::updater::UpdaterController {
+        let mut controller = updater_controller();
+        assert!(controller.begin_check());
+        controller.check_bytes(
+            include_bytes!("../fixtures/updater/signed.json"),
+            time::OffsetDateTime::now_utc(),
+        );
+        assert_eq!(
+            controller.snapshot().kind,
+            crate::updater::UpdaterStateKind::Available
+        );
+        controller
+    }
+
+    #[cfg(desktop)]
+    fn capture_updater_log(callback: impl FnOnce()) -> String {
+        let buffer = Arc::new(Mutex::new(Vec::new()));
+        let writer = SharedWriter(buffer.clone());
+        let layer = tracing_subscriber::fmt::layer()
+            .with_ansi(false)
+            .with_target(false)
+            .with_level(false)
+            .without_time()
+            .with_writer(move || writer.clone());
+        let subscriber = tracing_subscriber::registry().with(layer);
+        tracing::subscriber::with_default(subscriber, callback);
+        let output = buffer.lock().expect("lock updater log buffer").clone();
+        String::from_utf8(output).expect("utf8 updater log output")
+    }
+
+    #[cfg(desktop)]
+    #[derive(Clone)]
+    struct SharedWriter(Arc<Mutex<Vec<u8>>>);
+
+    #[cfg(desktop)]
+    impl Write for SharedWriter {
+        fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+            self.0
+                .lock()
+                .expect("lock updater log buffer")
+                .extend_from_slice(buffer);
+            Ok(buffer.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
 
     #[cfg(desktop)]
     #[test]
