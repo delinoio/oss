@@ -48,6 +48,15 @@ export function assertAndroidBackupExclusions({ androidManifest, androidBackupRu
   }
 }
 
+export function assertAndroidWidgetStore(androidWidgetStoreInput) {
+  const androidWidgetStore = androidWidgetStoreInput.replaceAll("\r\n", "\n");
+  const disable = androidWidgetStore.match(/fun disable\(deckId: String\)[\s\S]*?(?=\n    fun clear\(\))/u)?.[0] ?? "";
+  assert(disable.includes("val blockCommitted = state.edit().putBoolean(transactionKey, true).commit()"), "Android widget cleanup must retain the disable marker result");
+  assert(disable.indexOf("val blockCommitted") < disable.indexOf("secrets.edit().remove(deckId).commit()"), "Android widget cleanup must attempt credential removal after blocking");
+  assert(disable.includes("val stateRemoved = editor.commit()") && disable.includes("blockCommitted && stateRemoved"), "Android widget cleanup must propagate marker and state persistence failures");
+  assert(!disable.includes("state.edit().remove(transactionKey).commit()"), "Android widget cleanup must not unblock a failed disable transaction before credential removal");
+}
+
 export function assertAndroidNativeBridge(androidNativeBridgeInput) {
   const androidNativeBridge = androidNativeBridgeInput.replaceAll("\r\n", "\n");
   const onDestroy = androidNativeBridge.match(/override fun onDestroy\(activity: AppCompatActivity\)[\s\S]*?(?=\n    @Command)/u)?.[0] ?? "";
@@ -105,6 +114,7 @@ export function assertAndroidNativeBridge(androidNativeBridgeInput) {
   assert(persistSecure.includes("finally") && persistSecure.includes("onComplete()"), "Android secure persistence must release purge state after executor completion");
   assert(enableWidgetDeck.includes("val disabled = widgetStore.disable(deckId)") && enableWidgetDeck.indexOf("widgetStore.disable(deckId)") < enableWidgetDeck.indexOf("renderWidgets()") && enableWidgetDeck.indexOf("renderWidgets()") < enableWidgetDeck.indexOf("throw MissingWidgetCredentialException()"), "Android missing widget PAT rejection must follow widget cleanup and rendering");
   assert(enableWidgetDeck.includes('if (!disabled) throw IllegalStateException("widget cleanup failed")'), "Android missing widget PAT cleanup failures must remain storage failures");
+  assert(enableWidgetDeck.includes('if (!disabled) throw IllegalStateException("widget cleanup failed", error)'), "Android unreadable widget PAT cleanup failures must remain storage failures");
   assert(widgetStatus.includes("if (enabled == null)") && widgetStatus.includes('invoke.reject("storage-failure", "storage-failure")') && widgetStatus.indexOf("if (enabled == null)") < widgetStatus.indexOf("invoke.resolve"), "Android widget status must fail closed when reconciliation cannot recover");
   assert(persistSecure.includes("catch (_: MissingWidgetCredentialException)") && persistSecure.includes('invoke.reject("not-configured", "not-configured")') && persistSecure.indexOf("catch (_: MissingWidgetCredentialException)") < persistSecure.indexOf("catch (error: Exception)"), "Android missing widget PATs must use not-configured before generic storage-failure mapping");
   assert(purgeSecure.includes("if (!cleanupPendingDiagnosticsExport())"), "Android destructive purges must propagate diagnostics cleanup failures");
@@ -295,7 +305,7 @@ export function assertMobileCi(workflow) {
   assert(androidJob.includes("if: ${{ steps.gate.outputs.run == 'true' && matrix.production }}") && androidJob.includes('--android-artifact "${aab_artifacts[0]}"'), "Android production CI must inspect the generated App Bundle");
 }
 
-export function assertMobileContracts({ platforms, tauri, ios, android, cargo, androidManifest, androidDebugManifest, androidBackupRules, androidDataExtractionRules, androidPluginManifest, androidNativeBridge, androidChannelEnglish, androidChannelKorean, iosAppEntitlements, iosNativeBridge, iosWidgetStateStore, iosPlist, packageJson, nativeBridge, app, workflow }) {
+export function assertMobileContracts({ platforms, tauri, ios, android, cargo, androidManifest, androidDebugManifest, androidBackupRules, androidDataExtractionRules, androidPluginManifest, androidNativeBridge, androidWidgetStore, androidChannelEnglish, androidChannelKorean, iosAppEntitlements, iosNativeBridge, iosWidgetStateStore, iosPlist, packageJson, nativeBridge, app, workflow }) {
   assert(platforms.schemaVersion === 1, "unsupported mobile platform schema");
   assert(platforms.identity === "io.delino.devhud" && tauri.identifier === platforms.identity, "mobile identity changed");
   assert(platforms.deepLinkScheme === "devhud", "deep-link scheme changed");
@@ -324,6 +334,7 @@ export function assertMobileContracts({ platforms, tauri, ios, android, cargo, a
   assertAndroidBackupExclusions({ androidManifest, androidBackupRules, androidDataExtractionRules });
   assertAndroidWidgetJobService({ androidManifest, androidPluginManifest });
   assertAndroidNativeBridge(androidNativeBridge);
+  assertAndroidWidgetStore(androidWidgetStore);
   assert(androidChannelEnglish.includes("Deck changes") && androidChannelKorean.includes("Deck 변경사항"), "Android notification channel names must be bilingual");
   assert((androidPluginManifest.match(/<uses-permission/gu) ?? []).length === 1 && androidPluginManifest.includes("android.permission.POST_NOTIFICATIONS"), "Android native bridge permissions are not least-privileged");
   assert(androidPluginManifest.includes("DevHudWidgetProvider") && androidPluginManifest.includes("DevHudWidgetConfigureActivity"), "Android AppWidgetProvider and one-Deck configuration activity are missing");

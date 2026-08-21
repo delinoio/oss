@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { assertAndroidArtifactEntries, assertAndroidBackupExclusions, assertAndroidNativeBridge, assertAndroidNativeLibrary, assertAndroidPermissions, assertAndroidWidgetJobService, assertIosNativeBridge, assertMobileCi, assertMobileContracts, assertMobileDependencyClosures, assertMobileDependencyResolution, assertMobileTargets, assertNativeWidgetPullRequestMetadata, mobileCargoTreeDigest } from "./mobile-policy.mjs";
+import { assertAndroidArtifactEntries, assertAndroidBackupExclusions, assertAndroidNativeBridge, assertAndroidNativeLibrary, assertAndroidPermissions, assertAndroidWidgetJobService, assertAndroidWidgetStore, assertIosNativeBridge, assertMobileCi, assertMobileContracts, assertMobileDependencyClosures, assertMobileDependencyResolution, assertMobileTargets, assertNativeWidgetPullRequestMetadata, mobileCargoTreeDigest } from "./mobile-policy.mjs";
 
 const appRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const mobileTargets = JSON.parse(readFileSync(join(appRoot, "mobile-platforms.json"), "utf8")).targets;
@@ -101,6 +101,7 @@ test("mobile policy requires lifecycle-owned Android persistence and native plat
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace("            if (!cleanupPendingDiagnosticsExport())", "            if (cleanupPendingDiagnosticsExport())")), /propagate diagnostics cleanup failures/u);
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace('invoke.reject("not-configured", "not-configured")', 'invoke.reject("storage-failure", "storage-failure")')), /missing widget PATs must use not-configured/u);
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace('if (!disabled) throw IllegalStateException("widget cleanup failed")', "if (false) Unit")), /cleanup failures must remain storage failures/u);
+  assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace('if (!disabled) throw IllegalStateException("widget cleanup failed", error)', "if (false) Unit")), /unreadable widget PAT cleanup failures/u);
   const widgetCleanupAfterSecurePurge = androidNativeBridge
     .replace("            if (!DevHudWidgetStore(activity.applicationContext).clear()) return@persistSecure false\n", "")
     .replace("            editor.commit()\n        }\n    }\n\n    private fun widgetStatus", "            val secureCleared = editor.commit()\n            if (!DevHudWidgetStore(activity.applicationContext).clear()) return@persistSecure false\n            secureCleared\n        }\n    }\n\n    private fun widgetStatus");
@@ -160,6 +161,9 @@ test("mobile open URL handling accepts only authentication callbacks and validat
 test("widget targets preserve secure isolation, bilingual privacy warnings, and bounded previews", () => {
   const androidNativeBridge = readFileSync(join(appRoot, "src-tauri/mobile/android/src/main/java/io/delino/devhud/bridge/DevhudNativePlugin.kt"), "utf8");
   const androidStore = readFileSync(join(appRoot, "src-tauri/mobile/android/src/main/java/io/delino/devhud/widget/DevHudWidgetStore.kt"), "utf8");
+  assert.doesNotThrow(() => assertAndroidWidgetStore(androidStore));
+  assert.throws(() => assertAndroidWidgetStore(androidStore.replace("val blockCommitted = state.edit().putBoolean(transactionKey, true).commit()", "if (!state.edit().putBoolean(transactionKey, true).commit()) return@synchronized false\n        val blockCommitted = true")), /retain the disable marker result/u);
+  assert.throws(() => assertAndroidWidgetStore(androidStore.replace("blockCommitted && stateRemoved", "stateRemoved")), /propagate marker and state persistence failures/u);
   const androidProvider = readFileSync(join(appRoot, "src-tauri/mobile/android/src/main/java/io/delino/devhud/widget/DevHudWidgetProvider.kt"), "utf8");
   const androidWriteSecure = androidNativeBridge.slice(androidNativeBridge.indexOf("private fun writeSecure"), androidNativeBridge.indexOf("private fun encryptSecure"));
   const androidDisable = androidStore.slice(androidStore.indexOf("fun disable(deckId"), androidStore.indexOf("fun clear()"));

@@ -530,7 +530,12 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
                 throw MissingWidgetCredentialException()
             }
             val token = try { decryptSecure(encoded, "github-pat:$profileId", authenticateKey = true) }
-                catch (error: Exception) { widgetStore.disable(deckId); renderWidgets(); throw error }
+                catch (error: Exception) {
+                    val disabled = widgetStore.disable(deckId)
+                    renderWidgets()
+                    if (!disabled) throw IllegalStateException("widget cleanup failed", error)
+                    throw error
+                }
             val stored = widgetStore.enable(configuration, token)
             if (stored) renderWidgets()
             stored

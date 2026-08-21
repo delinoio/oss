@@ -179,10 +179,9 @@ internal class DevHudWidgetStore(private val context: Context) {
     fun disable(deckId: String): Boolean = synchronized(widgetStoreMutationLock) {
         if (!ensureReconciled()) return@synchronized false
         val transactionKey = disableTransactionPrefix + deckId
-        if (!state.edit().putBoolean(transactionKey, true).commit()) {
-            state.edit().remove(transactionKey).commit()
-            return@synchronized false
-        }
+        val blockCommitted = state.edit().putBoolean(transactionKey, true).commit()
+        // Keep the in-memory block and still remove the copied credential when
+        // marker persistence fails so a later refresh cannot use stale access.
         if (!secrets.edit().remove(deckId).commit()) return@synchronized false
         val editor = state.edit()
             .remove(configurationPrefix + deckId)
@@ -190,7 +189,8 @@ internal class DevHudWidgetStore(private val context: Context) {
             .remove(transactionPrefix + deckId)
             .remove(transactionKey)
         state.all.entries.filter { it.key.startsWith(selectionPrefix) && it.value == deckId }.forEach { editor.remove(it.key) }
-        editor.commit()
+        val stateRemoved = editor.commit()
+        blockCommitted && stateRemoved
     }
 
     fun clear(): Boolean = synchronized(widgetStoreMutationLock) {

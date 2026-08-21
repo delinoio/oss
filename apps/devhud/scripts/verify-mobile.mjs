@@ -78,6 +78,7 @@ assertMobileContracts({
   androidDataExtractionRules: text("mobile/overrides/android/app/src/main/res/xml/data_extraction_rules.xml"),
   androidPluginManifest: text("src-tauri/mobile/android/src/main/AndroidManifest.xml"),
   androidNativeBridge: text("src-tauri/mobile/android/src/main/java/io/delino/devhud/bridge/DevhudNativePlugin.kt"),
+  androidWidgetStore: text("src-tauri/mobile/android/src/main/java/io/delino/devhud/widget/DevHudWidgetStore.kt"),
   androidChannelEnglish: text("mobile/overrides/android/app/src/main/res/values/devhud_strings.xml"),
   androidChannelKorean: text("mobile/overrides/android/app/src/main/res/values-ko/devhud_strings.xml"),
   iosAppEntitlements: text("mobile/overrides/ios/DevHud.entitlements"),
