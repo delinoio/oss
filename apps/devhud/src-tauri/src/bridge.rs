@@ -295,7 +295,7 @@ fn start_update_check<R: tauri::Runtime>(
         )
     };
     std::mem::drop(tauri::async_runtime::spawn_blocking(move || {
-        let result = crate::updater::UpdaterTransport::new()
+        let result = crate::updater::UpdaterDiscoveryTransport::new()
             .and_then(|transport| transport.discover(target, package));
         let snapshot = {
             let mut updater = state
@@ -1330,7 +1330,7 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
         let updater_state = state.inner().clone();
         let updater_app = app.clone();
         std::mem::drop(tauri::async_runtime::spawn(async move {
-            let artifact = match crate::updater::UpdaterTransport::new() {
+            let artifact = match crate::updater::UpdaterDownloadTransport::new() {
                 Ok(transport) => {
                     transport
                         .download(&candidate, package, &worker_cancellation)

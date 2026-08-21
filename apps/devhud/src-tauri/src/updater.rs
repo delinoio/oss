@@ -495,7 +495,7 @@ fn validate_payload(
         || payload.release_notes.ko.len() > 32 * 1024
         || payload.artifact.size == 0
         || payload.artifact.size > MAX_ARTIFACT_BYTES
-        || payload.artifact.sha256.len() != 64
+        || !is_canonical_sha256(&payload.artifact.sha256)
         || parse_time(&payload.published_at).is_err()
         || !package_kind.supported_by(target)
         || validate_artifact_url(&payload.artifact.url, &payload.version, package_kind).is_err()
@@ -503,6 +503,13 @@ fn validate_payload(
         return Err(malformed());
     }
     Ok(())
+}
+
+fn is_canonical_sha256(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -591,29 +598,19 @@ fn validate_redirect(value: &str) -> Result<Url, UpdaterError> {
     Ok(url)
 }
 
-pub struct UpdaterTransport {
-    discovery_client: BlockingClient,
-    download_client: AsyncClient,
+pub struct UpdaterDiscoveryTransport {
+    client: BlockingClient,
 }
 
-impl UpdaterTransport {
+impl UpdaterDiscoveryTransport {
     pub fn new() -> Result<Self, UpdaterError> {
-        let discovery_client = BlockingClient::builder()
+        let client = BlockingClient::builder()
             .redirect(Policy::none())
             .connect_timeout(CONNECT_TIMEOUT)
             .timeout(DISCOVERY_TIMEOUT)
             .build()
             .map_err(|_| UpdaterError::new(DiagnosticCode::Offline, UpdatePhase::Discovery))?;
-        let download_client = AsyncClient::builder()
-            .redirect(Policy::none())
-            .connect_timeout(CONNECT_TIMEOUT)
-            .timeout(DOWNLOAD_TIMEOUT)
-            .build()
-            .map_err(|_| UpdaterError::new(DiagnosticCode::Offline, UpdatePhase::Discovery))?;
-        Ok(Self {
-            discovery_client,
-            download_client,
-        })
+        Ok(Self { client })
     }
 
     pub fn discover(
@@ -622,7 +619,7 @@ impl UpdaterTransport {
         package_kind: PackageKind,
     ) -> Result<Vec<u8>, UpdaterError> {
         let response = self
-            .discovery_client
+            .client
             .get(endpoint(target))
             .header(
                 ACCEPT,
@@ -633,6 +630,24 @@ impl UpdaterTransport {
             .send()
             .map_err(|_| UpdaterError::new(DiagnosticCode::Offline, UpdatePhase::Discovery))?;
         read_manifest_response(response)
+    }
+}
+
+pub struct UpdaterDownloadTransport {
+    client: AsyncClient,
+}
+
+impl UpdaterDownloadTransport {
+    pub fn new() -> Result<Self, UpdaterError> {
+        let client = AsyncClient::builder()
+            .redirect(Policy::none())
+            .connect_timeout(CONNECT_TIMEOUT)
+            .timeout(DOWNLOAD_TIMEOUT)
+            .build()
+            .map_err(|_| {
+                UpdaterError::new(DiagnosticCode::DownloadFailed, UpdatePhase::Download)
+            })?;
+        Ok(Self { client })
     }
 
     pub async fn download(
@@ -649,7 +664,7 @@ impl UpdaterTransport {
             )?;
             for redirect_count in 0..=MAX_REDIRECTS {
                 let response = self
-                    .download_client
+                    .client
                     .get(url.clone())
                     .header(ACCEPT, "application/octet-stream")
                     .header(USER_AGENT, "DevHud-Updater/1")
@@ -1483,9 +1498,30 @@ fn sibling_backup_path(destination: &Path) -> Result<PathBuf, DiagnosticCode> {
         .file_name()
         .and_then(|value| value.to_str())
         .ok_or(DiagnosticCode::InstallationFailed)?;
-    let backup = destination.with_file_name(format!(".{file_name}.devhud-backup-v1"));
-    if backup.exists() {
-        return Err(DiagnosticCode::InstallationFailed);
+    Ok(destination.with_file_name(format!(".{file_name}.devhud-backup-v1")))
+}
+
+#[cfg(target_os = "linux")]
+fn prepare_appimage_backup(destination: &Path) -> Result<PathBuf, DiagnosticCode> {
+    let backup = sibling_backup_path(destination)?;
+    match fs::remove_file(&backup) {
+        Ok(()) => {
+            // Reaching a later update from this AppImage proves the installed
+            // destination is executable. A fixed sibling backup left by an
+            // interrupted earlier health wait is therefore stale.
+            tracing::warn!(
+                event = "updater_install_stale_backup_removed",
+                package = "linux-appimage"
+            );
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(_) => {
+            tracing::error!(
+                event = "updater_install_backup_cleanup_failed",
+                package = "linux-appimage"
+            );
+            return Err(DiagnosticCode::InstallationFailed);
+        }
     }
     Ok(backup)
 }
@@ -1516,7 +1552,7 @@ fn replace_file_transactionally(
     replacement: tempfile::NamedTempFile,
     relaunch: impl FnOnce(&Path) -> Result<(), DiagnosticCode>,
 ) -> Result<RestartDisposition, DiagnosticCode> {
-    let backup = sibling_backup_path(destination)?;
+    let backup = prepare_appimage_backup(destination)?;
     copy_appimage_backup(destination, &backup, |source, backup| {
         fs::copy(source, backup)
     })?;
@@ -1756,7 +1792,20 @@ impl UpdaterController {
                 };
                 let error = UpdaterError::new(code, phase);
                 if retrying {
-                    self.mark_restart_required(DiagnosticCode::RestartFailed);
+                    let installation_uncertain =
+                        self.snapshot.diagnostic.as_ref().is_some_and(|diagnostic| {
+                            diagnostic.code == DiagnosticCode::InstallationFailed
+                        });
+                    tracing::warn!(
+                        event = "updater_restart_retry_failed",
+                        code = ?code,
+                        target = self.target.update_target_id(),
+                        package = self.package_kind.header_value(),
+                        installation_uncertain
+                    );
+                    if !installation_uncertain {
+                        self.mark_restart_required(DiagnosticCode::RestartFailed);
+                    }
                 } else {
                     self.fail(error.clone());
                 }
@@ -1889,6 +1938,23 @@ mod tests {
         rollback: Option<RollbackAuthorization>,
     ) -> Vec<u8> {
         let artifact = b"deterministic updater artifact";
+        fixture_with_artifact_sha256(
+            version,
+            signer,
+            chain,
+            rollback,
+            &fingerprint_bytes(artifact),
+        )
+    }
+
+    fn fixture_with_artifact_sha256(
+        version: &str,
+        signer: &SigningKey,
+        chain: Vec<KeySuccessor>,
+        rollback: Option<RollbackAuthorization>,
+        artifact_sha256: &str,
+    ) -> Vec<u8> {
+        let artifact = b"deterministic updater artifact";
         let mut artifact_message = b"devhud-update-artifact-v1\0".to_vec();
         artifact_message.extend_from_slice(artifact);
         let payload = json!({
@@ -1903,7 +1969,7 @@ mod tests {
             "artifact": {
                 "url": format!("https://github.com/delinoio/oss/releases/download/devhud@v{version}/devhud-linux-appimage"),
                 "size": artifact.len(),
-                "sha256": fingerprint_bytes(artifact),
+                "sha256": artifact_sha256,
                 "signature": BASE64.encode(signer.sign(&artifact_message).to_bytes()),
             },
             "signerFingerprint": fingerprint(&signer.verifying_key()),
@@ -2046,6 +2112,19 @@ mod tests {
                 .code,
                 DiagnosticCode::Unsupported
             );
+        }
+    }
+
+    #[test]
+    fn rejects_noncanonical_artifact_sha256_before_download() {
+        let root = SigningKey::from_bytes(&RFC_ROOT_SEED);
+        for digest in ["g".repeat(64), "A".repeat(64)] {
+            let signed = fixture_with_artifact_sha256("0.2.0", &root, vec![], None, &digest);
+            let error =
+                verify_manifest(&signed, &Version::new(0, 1, 0), target(), package(), now())
+                    .unwrap_err();
+            assert_eq!(error.code, DiagnosticCode::Malformed);
+            assert_eq!(error.phase, UpdatePhase::Verification);
         }
     }
 
@@ -2498,6 +2577,15 @@ mod tests {
             controller.approve_restart(&installer).unwrap_err().code,
             DiagnosticCode::RestartFailed
         );
+        let snapshot = controller.snapshot();
+        assert_eq!(snapshot.kind, UpdaterStateKind::RestartRequired);
+        assert_eq!(
+            snapshot.diagnostic.unwrap(),
+            controller.diagnostic(UpdaterError::new(
+                DiagnosticCode::InstallationFailed,
+                UpdatePhase::Installation,
+            ))
+        );
         assert_eq!(installer.installs.load(Ordering::SeqCst), 1);
         assert_eq!(installer.retries.load(Ordering::SeqCst), 1);
         assert_eq!(
@@ -2639,6 +2727,27 @@ mod tests {
             })
         );
         assert_eq!(fs::read(destination).unwrap(), b"candidate-version");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn stale_appimage_backup_does_not_block_a_later_update() {
+        let directory = tempfile::tempdir().unwrap();
+        let destination = directory.path().join("DevHud.AppImage");
+        let backup = sibling_backup_path(&destination).unwrap();
+        fs::write(&destination, b"current-version").unwrap();
+        fs::write(&backup, b"stale-version").unwrap();
+        let mut replacement = tempfile::NamedTempFile::new_in(directory.path()).unwrap();
+        replacement.write_all(b"candidate-version").unwrap();
+
+        let result = replace_file_transactionally(&destination, replacement, |_| {
+            assert_eq!(fs::read(&backup).unwrap(), b"current-version");
+            Ok(())
+        });
+
+        assert_eq!(result, Ok(RestartDisposition::Relaunched));
+        assert_eq!(fs::read(destination).unwrap(), b"candidate-version");
+        assert!(!backup.exists());
     }
 
     #[cfg(target_os = "linux")]
