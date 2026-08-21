@@ -1377,15 +1377,16 @@ fn wait_for_health_with_limit(
     poll_interval: Duration,
 ) -> Result<(), DiagnosticCode> {
     for _ in 0..attempts {
-        if fs::read(health_file).is_ok_and(|value| value == expected) {
-            return Ok(());
-        }
+        let acknowledged = fs::read(health_file).is_ok_and(|value| value == expected);
         if child
             .try_wait()
             .map_err(|_| DiagnosticCode::RestartFailed)?
             .is_some()
         {
             return Err(DiagnosticCode::RestartFailed);
+        }
+        if acknowledged {
+            return Ok(());
         }
         std::thread::sleep(poll_interval);
     }
@@ -2731,6 +2732,32 @@ mod tests {
         );
         assert!(child.try_wait().unwrap().is_some());
     }
+
+    #[test]
+    fn health_acknowledgement_from_an_exited_replacement_is_rejected() {
+        let mut child = Command::new(std::env::current_exe().unwrap())
+            .args(["--ignored", "restart_health_exit_fixture"])
+            .spawn()
+            .unwrap();
+        assert!(child.wait().unwrap().success());
+        let health_file = tempfile::NamedTempFile::new().unwrap();
+        fs::write(health_file.path(), b"acknowledged").unwrap();
+
+        assert_eq!(
+            wait_for_health_with_limit(
+                &mut child,
+                health_file.path(),
+                b"acknowledged",
+                1,
+                Duration::ZERO,
+            ),
+            Err(DiagnosticCode::RestartFailed)
+        );
+    }
+
+    #[test]
+    #[ignore = "spawned only by health_acknowledgement_from_an_exited_replacement_is_rejected"]
+    fn restart_health_exit_fixture() {}
 
     #[test]
     #[ignore = "spawned only by health_timeout_reaps_the_replacement_process"]

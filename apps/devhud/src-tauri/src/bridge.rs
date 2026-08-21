@@ -29,6 +29,10 @@ const TAURI_REVISION: &str = "4af26a3f7f8b692d62cca549bbacd93f5ce90b41";
 const CEF_REVISION: &str = "150.0.10+g8042e43+chromium-150.0.7871.101";
 
 const DEFAULT_API_ORIGIN: &str = "https://devhud.api.delino.io";
+#[cfg(desktop)]
+const UPDATE_SCHEDULER_POLL_INTERVAL: Duration = Duration::from_secs(1);
+#[cfg(desktop)]
+const UPDATE_SCHEDULER_RESUME_GAP: Duration = Duration::from_secs(2);
 
 #[derive(Clone)]
 pub struct NativeBridgeState {
@@ -282,6 +286,20 @@ fn updater_check_attempt_consumes_due(result: &Result<UpdateCheckDisposition, St
 }
 
 #[cfg(desktop)]
+fn updater_scheduler_is_supported(state: &NativeBridgeState) -> bool {
+    state
+        .updater
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .is_some()
+}
+
+#[cfg(desktop)]
+fn updater_poll_gap_indicates_resume(elapsed: Option<Duration>) -> bool {
+    elapsed.is_some_and(|elapsed| elapsed > UPDATE_SCHEDULER_RESUME_GAP)
+}
+
+#[cfg(desktop)]
 fn start_update_check<R: tauri::Runtime>(
     state: NativeBridgeState,
     app: tauri::AppHandle<R>,
@@ -348,6 +366,9 @@ pub fn start_update_scheduler<R: tauri::Runtime>(
     state: NativeBridgeState,
     app: tauri::AppHandle<R>,
 ) {
+    if !updater_scheduler_is_supported(&state) {
+        return;
+    }
     if state.updater_schedule_started.swap(true, Ordering::SeqCst) {
         return;
     }
@@ -355,12 +376,16 @@ pub fn start_update_scheduler<R: tauri::Runtime>(
         let mut schedule = crate::updater::CheckSchedule::after_frontend_ready();
         let mut active_runtime = Duration::ZERO;
         let mut last_tick = std::time::Instant::now();
+        let mut last_wall_tick = std::time::SystemTime::now();
         let mut was_active = None;
-        let mut wall_deadline =
-            std::time::SystemTime::now() + Duration::from_secs(schedule.next_due_seconds());
+        let mut wall_deadline = last_wall_tick + Duration::from_secs(schedule.next_due_seconds());
         loop {
-            std::thread::sleep(Duration::from_secs(1));
+            std::thread::sleep(UPDATE_SCHEDULER_POLL_INTERVAL);
             let now = std::time::Instant::now();
+            let wall_now = std::time::SystemTime::now();
+            let device_resumed =
+                updater_poll_gap_indicates_resume(wall_now.duration_since(last_wall_tick).ok());
+            last_wall_tick = wall_now;
             let active = app
                 .get_webview_window("main")
                 .map(|window| {
@@ -371,16 +396,18 @@ pub fn start_update_scheduler<R: tauri::Runtime>(
                     )
                 })
                 .unwrap_or(false);
-            let resumed = matches!(was_active, Some(false));
+            let resumed = matches!(was_active, Some(false)) || device_resumed;
             was_active = Some(active);
             if !active {
                 last_tick = now;
                 continue;
             }
-            active_runtime = active_runtime.saturating_add(now.duration_since(last_tick));
+            if !device_resumed {
+                active_runtime = active_runtime.saturating_add(now.duration_since(last_tick));
+            }
             last_tick = now;
             let active_runtime_seconds = active_runtime.as_secs();
-            let wall_deadline_reached = std::time::SystemTime::now() >= wall_deadline;
+            let wall_deadline_reached = wall_now >= wall_deadline;
             if !updater_check_is_due(
                 schedule,
                 active_runtime_seconds,
@@ -407,7 +434,7 @@ pub fn start_update_scheduler<R: tauri::Runtime>(
                 continue;
             }
             schedule.mark_checked(active_runtime_seconds);
-            wall_deadline = std::time::SystemTime::now() + crate::updater::CHECK_INTERVAL;
+            wall_deadline = wall_now + crate::updater::CHECK_INTERVAL;
         }
     });
 }
@@ -1751,6 +1778,8 @@ mod tests {
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
     };
+    #[cfg(desktop)]
+    use std::time::Duration;
 
     use serde_json::{Value, json};
     #[cfg(desktop)]
@@ -1769,7 +1798,9 @@ mod tests {
         UpdateCheckDisposition, deletes_capture_drafts_for_purge_scope, finish_update_check,
         finish_update_download, purge_capture_drafts_before_secure_store,
         should_restore_capture_window, stage_diagnostics_export,
-        updater_check_attempt_consumes_due, updater_check_is_due, updater_window_is_active,
+        updater_check_attempt_consumes_due, updater_check_is_due,
+        updater_poll_gap_indicates_resume, updater_scheduler_is_supported,
+        updater_window_is_active,
     };
 
     #[cfg(desktop)]
@@ -1812,6 +1843,30 @@ mod tests {
             false,
             false,
         ));
+    }
+
+    #[cfg(desktop)]
+    #[test]
+    fn updater_poll_gap_detects_resume_independently_of_window_focus() {
+        assert!(!updater_poll_gap_indicates_resume(Some(
+            Duration::from_secs(2)
+        )));
+        assert!(updater_poll_gap_indicates_resume(Some(
+            Duration::from_secs(3)
+        )));
+        assert!(!updater_poll_gap_indicates_resume(None));
+    }
+
+    #[cfg(desktop)]
+    #[test]
+    fn updater_scheduler_does_not_start_without_a_controller() {
+        let state = NativeBridgeState::default();
+        *state
+            .updater
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+
+        assert!(!updater_scheduler_is_supported(&state));
     }
 
     #[cfg(desktop)]
