@@ -1347,7 +1347,7 @@ fn replace_macos_bundle_transactionally_with_operations(
             );
             return Ok(RestartDisposition::RestartRequired {
                 executable: restart_executable.to_path_buf(),
-                diagnostic: error,
+                diagnostic: DiagnosticCode::InstallationFailed,
             });
         }
         return Err(error);
@@ -3054,7 +3054,7 @@ mod tests {
             result,
             Ok(RestartDisposition::RestartRequired {
                 executable: restart_executable,
-                diagnostic: DiagnosticCode::RestartFailed,
+                diagnostic: DiagnosticCode::InstallationFailed,
             })
         );
         assert_eq!(sync_attempts.load(Ordering::Relaxed), 3);
