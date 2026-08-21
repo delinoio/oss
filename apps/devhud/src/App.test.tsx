@@ -9,7 +9,7 @@ import { DiagnosticsCorrelationsKey, DiagnosticsStorageKey } from "./diagnostics
 import * as identityClient from "./identity-client";
 import type { IdentitySession } from "./identity-client";
 import { messages } from "./localization";
-import { LifecycleState, NativeBridgeError, NativeBridgeErrorCode, NotificationPermission, RuntimePlatform, type NativeBridgeEventV1, type NativeBridgeRequestV1, type NativeBridgeResponseV1, type NativeBridgeV1, type RuntimeSnapshot } from "./native-bridge";
+import { LifecycleState, NativeBridgeError, NativeBridgeErrorCode, NotificationPermission, RuntimePlatform, type DesktopUpdaterStatus, type NativeBridgeEventV1, type NativeBridgeRequestV1, type NativeBridgeResponseV1, type NativeBridgeV1, type RuntimeSnapshot } from "./native-bridge";
 import { saveGuestSettings } from "./service-boundary";
 import { defaultDevHudSettings } from "./settings-contract";
 
@@ -654,6 +654,45 @@ describe("native App state", () => {
     fireEvent.click(screen.getByRole("button", { name: messages.en.realqa }));
     await screen.findByRole("heading", { name: messages.en.realqaDrafts });
     expect(screen.queryByRole("dialog", { name: messages.en.captureSelection })).toBeNull();
+  });
+
+  it("suppresses global shortcuts while an updater approval is open", async () => {
+    const updaterStatus: DesktopUpdaterStatus = {
+      kind: "available",
+      installedVersion: "0.1.0",
+      target: "linux-x86_64",
+      packageKind: "linux-appimage",
+      candidate: { version: "0.2.0", releaseNotes: { en: "Signed notes", ko: "서명된 노트" } },
+      diagnostic: null,
+    };
+    const listeners: Array<(event: NativeBridgeEventV1) => void> = [];
+    const bridge: NativeBridgeV1 = {
+      async request(value) {
+        if (value.operation === "updates.status") return { kind: "desktop-update-status", status: updaterStatus };
+        throw new Error(`unexpected operation ${value.operation}`);
+      },
+      async listen(listener) {
+        listeners.push(listener);
+        return () => {};
+      },
+    };
+
+    render(<App bridge={bridge} initialRuntime={desktopRuntime} />);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.settings }));
+    fireEvent.click(await screen.findByRole("button", { name: "Approve download" }));
+    expect(screen.getByRole("dialog", { name: "Download this signed update?" })).toBeTruthy();
+
+    await act(async () => {
+      for (const listener of listeners) listener({ version: 1, kind: "shortcut-triggered", action: "shell.command-palette" });
+    });
+    expect(screen.queryByRole("dialog", { name: messages.en.commandPalette })).toBeNull();
+    expect(screen.getByRole("dialog", { name: "Download this signed update?" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Go back" }));
+    await act(async () => {
+      for (const listener of listeners) listener({ version: 1, kind: "shortcut-triggered", action: "shell.command-palette" });
+    });
+    expect(await screen.findByRole("dialog", { name: messages.en.commandPalette })).toBeTruthy();
   });
 
   it("keeps the palette modal while a capture completes and preserves its confirmation across navigation", async () => {

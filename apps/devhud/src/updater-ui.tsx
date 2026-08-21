@@ -56,7 +56,7 @@ function updaterStatusText(status: DesktopUpdaterStatus, language: SupportedLang
   }
 }
 
-export function DesktopUpdaterPanel({ bridge, language }: { readonly bridge: NativeBridgeV1; readonly language: SupportedLanguage }) {
+export function DesktopUpdaterPanel({ bridge, language, onApprovalOpenChange }: { readonly bridge: NativeBridgeV1; readonly language: SupportedLanguage; readonly onApprovalOpenChange?: (open: boolean) => void }) {
   const copy = updaterCopy[language];
   const [status, setStatus] = useState<DesktopUpdaterStatus | null>(null);
   const [approval, setApproval] = useState<Approval | null>(null);
@@ -80,6 +80,7 @@ export function DesktopUpdaterPanel({ bridge, language }: { readonly bridge: Nat
     statusRevision.current += 1;
     if (approvedDownloadCandidate.current !== null && approvedDownloadCandidate.current !== downloadCandidateIdentity(nextStatus)) {
       approvedDownloadCandidate.current = null;
+      onApprovalOpenChange?.(false);
       setApproval((current) => current === "download" ? null : current);
       restoreApprovalFocus();
     }
@@ -110,6 +111,7 @@ export function DesktopUpdaterPanel({ bridge, language }: { readonly bridge: Nat
   }, [bridge]);
 
   useEffect(() => { if (approval) confirmButton.current?.focus(); }, [approval]);
+  useEffect(() => () => onApprovalOpenChange?.(false), [onApprovalOpenChange]);
 
   const request = async (operation: "updates.check" | "updates.approve-download" | "updates.cancel" | "updates.approve-installation" | "updates.approve-restart") => {
     const requestedAtRevision = statusRevision.current;
@@ -123,10 +125,12 @@ export function DesktopUpdaterPanel({ bridge, language }: { readonly bridge: Nat
     if (next === "download" && candidateIdentity === null) return;
     approvedDownloadCandidate.current = candidateIdentity;
     approvalOpener.current = opener;
+    onApprovalOpenChange?.(true);
     setApproval(next);
   };
   const closeApproval = () => {
     approvedDownloadCandidate.current = null;
+    onApprovalOpenChange?.(false);
     setApproval(null);
     restoreApprovalFocus();
   };
