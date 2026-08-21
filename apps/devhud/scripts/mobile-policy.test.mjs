@@ -77,6 +77,8 @@ test("mobile policy requires lifecycle-owned Android persistence and native plat
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace("            } catch (error: Exception) {\n                diagnosticsPurgesInProgress.decrementAndGet()\n                throw error\n            }", "            }")), /across queued persistence and failures/u);
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace("                } finally {\n                    onComplete()\n                }", "                }")), /release purge state after executor completion/u);
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace("            if (!cleanupPendingDiagnosticsExport())", "            if (cleanupPendingDiagnosticsExport())")), /propagate diagnostics cleanup failures/u);
+  assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace('invoke.reject("not-configured", "not-configured")', 'invoke.reject("storage-failure", "storage-failure")')), /missing widget PATs must use not-configured/u);
+  assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace('if (!disabled) throw IllegalStateException("widget cleanup failed")', "if (false) Unit")), /cleanup failures must remain storage failures/u);
   const widgetCleanupAfterSecurePurge = androidNativeBridge
     .replace("            if (!DevHudWidgetStore(activity.applicationContext).clear()) return@persistSecure false\n", "")
     .replace("            editor.commit()\n        }\n    }\n\n    private fun widgetStatus", "            val secureCleared = editor.commit()\n            if (!DevHudWidgetStore(activity.applicationContext).clear()) return@persistSecure false\n            secureCleared\n        }\n    }\n\n    private fun widgetStatus");
@@ -151,6 +153,13 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   const iosApplicationEntitlements = readFileSync(join(appRoot, "mobile/overrides/ios/DevHud.entitlements"), "utf8");
   const iosEntitlements = readFileSync(join(appRoot, "mobile/overrides/ios/DevHudWidget/DevHudWidget.entitlements"), "utf8");
   assert.doesNotThrow(() => assertNativeWidgetPullRequestMetadata(androidProvider, iosWidget));
+  for (const [exact, coercing] of [
+    ['item.opt("node_id") as? String', 'item.optString("node_id")'],
+    ['item.opt("number") as? Int', 'item.getInt("number")'],
+    ['item.opt("title") as? String', 'item.getString("title")'],
+    ['item.opt("repository_url") as? String', 'item.getString("repository_url")'],
+  ]) assert.throws(() => assertNativeWidgetPullRequestMetadata(androidProvider.replace(exact, coercing), iosWidget), /exact result field types/u);
+  assert.throws(() => assertNativeWidgetPullRequestMetadata(androidProvider.replace('.put("nodeId", nodeId)', '.put("nodeId", item.optString("node_id"))'), iosWidget), /only validated result fields/u);
   assert.throws(() => assertNativeWidgetPullRequestMetadata(androidProvider.replace('item.optJSONObject("pull_request")', "JSONObject()"), iosWidget), /missing or non-object pull_request/u);
   assert.throws(() => assertNativeWidgetPullRequestMetadata(androidProvider.replace("mergedAt !== JSONObject.NULL && mergedAt !is String", "false"), iosWidget), /merged_at to be a string or null/u);
   assert.throws(() => assertNativeWidgetPullRequestMetadata(androidProvider, iosWidget.replace('item["pull_request"] as? [String: Any]', "[String: Any]()")), /missing or non-object pull_request/u);

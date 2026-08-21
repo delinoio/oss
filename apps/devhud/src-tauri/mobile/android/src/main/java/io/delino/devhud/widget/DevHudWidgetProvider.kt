@@ -222,6 +222,14 @@ class DevHudWidgetProvider : AppWidgetProvider() {
                             ?: return@github failure(configuration, previous, "error", attemptedAt, responseRate)
                         val itemState = (item.opt("state") as? String)?.takeIf { it == "open" || it == "closed" }
                             ?: return@github failure(configuration, previous, "error", attemptedAt, responseRate)
+                        val nodeId = item.opt("node_id") as? String
+                            ?: return@github failure(configuration, previous, "error", attemptedAt, responseRate)
+                        val number = item.opt("number") as? Int
+                            ?: return@github failure(configuration, previous, "error", attemptedAt, responseRate)
+                        val title = item.opt("title") as? String
+                            ?: return@github failure(configuration, previous, "error", attemptedAt, responseRate)
+                        val repositoryUrl = item.opt("repository_url") as? String
+                            ?: return@github failure(configuration, previous, "error", attemptedAt, responseRate)
                         val pullRequest = item.optJSONObject("pull_request")
                             ?: return@github failure(configuration, previous, "error", attemptedAt, responseRate)
                         if (!pullRequest.has("merged_at")) return@github failure(configuration, previous, "error", attemptedAt, responseRate)
@@ -230,10 +238,10 @@ class DevHudWidgetProvider : AppWidgetProvider() {
                         val isMerged = mergedAt is String
                         when { isDraft -> draft += 1; isMerged -> merged += 1; itemState == "closed" -> closed += 1; else -> open += 1 }
                         results.put(JSONObject()
-                            .put("nodeId", item.optString("node_id"))
-                            .put("number", item.getInt("number"))
-                            .put("title", item.getString("title"))
-                            .put("repository", repositoryName(item.getString("repository_url")))
+                            .put("nodeId", nodeId)
+                            .put("number", number)
+                            .put("title", title)
+                            .put("repository", repositoryName(repositoryUrl))
                             .put("state", if (isMerged) "merged" else itemState)
                             .put("draft", isDraft))
                     }
