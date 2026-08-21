@@ -417,7 +417,18 @@ class DevHudWidgetProvider : AppWidgetProvider() {
         private fun repositoryName(url: String): String = url.substringAfter("/repos/", url)
 
         private fun sameSelection(left: JSONObject, right: JSONObject): Boolean =
-            listOf("deckId", "query", "profileId", "profileKind", "scopeId").all { left.optString(it) == right.optString(it) }
+            listOf("deckId", "query", "profileId", "profileKind", "scopeId").all { left.optString(it) == right.optString(it) } &&
+                sameRepositories(left.optJSONArray("repositories"), right.optJSONArray("repositories"))
+
+        private fun sameRepositories(left: JSONArray?, right: JSONArray?): Boolean {
+            if (left == null || right == null || left.length() != right.length()) return false
+            for (index in 0 until left.length()) {
+                val leftRepository = left.optJSONObject(index) ?: return false
+                val rightRepository = right.optJSONObject(index) ?: return false
+                if (listOf("owner", "name").any { leftRepository.optString(it) != rightRepository.optString(it) }) return false
+            }
+            return true
+        }
 
         private fun render(context: Context, configuration: JSONObject?, snapshot: JSONObject?, forcedState: String): RemoteViews {
             val copyContext = localizedContext(context, configuration)

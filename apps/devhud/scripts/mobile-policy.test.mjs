@@ -272,6 +272,7 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   assert.equal((androidProvider.match(/responseIsRateLimited\(connection\)/gu) ?? []).length, 2);
   assert.match(androidProvider, /status == 401[\s\S]*"missing-token"[\s\S]*status == 403 \|\| status == 404[\s\S]*"permission"/u);
   assert.match(androidProvider, /val stored = session\.commitIfPublishable \{ store\.replaceSnapshot\(snapshot, credential\.revision\) \} \?: return false\s+val renderConfiguration = store\.configuration\(deckId\)\s+if \(renderConfiguration == null\)[\s\S]*renderStored\(context, manager, it\)[\s\S]*val rendered = store\.snapshot\(deckId\)[\s\S]*renderSelected\(context, manager, store, deckId, renderConfiguration/u);
+  assert.match(androidProvider, /private fun sameSelection[\s\S]*sameRepositories\(left\.optJSONArray\("repositories"\), right\.optJSONArray\("repositories"\)\)[\s\S]*private fun sameRepositories[\s\S]*left\.length\(\) != right\.length\(\)[\s\S]*listOf\("owner", "name"\)/u);
   assert.match(androidManifest, /DevHudWidgetProvider"\s+android:exported="false"\s+android:label="@string\/devhud_widget_name"/u);
   assert.match(androidProvider, /results.*prefix|prefix\(3\)|minOf\(results\?\.length\(\) \?: 0, 3\)/su);
   assert.match(androidProvider, /devhud:\/\/deck\//u);
@@ -303,6 +304,7 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   assert.match(iosWidget, /repositoryValidationConcurrency = 3/u);
   assert.match(iosWidget, /refreshDeadlineNanoseconds: UInt64 = 20 \* 1_000_000_000/u);
   assert.match(iosWidget, /private actor DeckRefreshCoordinator[\s\S]*private var inFlight: \[String: InFlightRefresh\][\s\S]*while let existing = inFlight\[deck\.deckId\][\s\S]*sameSelection\(existing\.configuration, deck\) && existing\.credentialRevision == credentialRevision[\s\S]*inFlight\[deck\.deckId\]\?\.id == existing\.id[\s\S]*inFlight\[deck\.deckId\] = InFlightRefresh/u);
+  assert.match(iosWidget, /private func sameSelection[\s\S]*left\.repositories == right\.repositories/u);
   assert.match(iosWidget, /private let deckRefreshCoordinator = DeckRefreshCoordinator\(\)/u);
   assert.equal((iosWidget.match(/deckRefreshCoordinator\.refresh\(deck: deck, credentialRevision: credentialRevision\)/gu) ?? []).length, 2);
   assert.match(iosWidget, /refreshWithDeadline[\s\S]*withTaskGroup\(of: DeckSnapshot\.self\)[\s\S]*Task\.sleep\(nanoseconds: refreshDeadlineNanoseconds\)[\s\S]*group\.cancelAll\(\)/u);

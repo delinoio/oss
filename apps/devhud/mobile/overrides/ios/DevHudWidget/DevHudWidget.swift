@@ -65,7 +65,7 @@ struct DeckConfiguration: Codable, Identifiable, Sendable {
     let version: Int; let deckId: String; let name: String; let query: String; let repositories: [DeckRepository]; let profileId: String; let profileKind: String; let scopeId: String; let language: String
     var id: String { deckId }
 }
-struct DeckRepository: Codable, Sendable { let owner: String; let name: String }
+struct DeckRepository: Codable, Sendable, Equatable { let owner: String; let name: String }
 struct DeckCounts: Codable, Sendable { let total: Int; let open: Int; let draft: Int; let merged: Int; let closed: Int; let bounded: Bool }
 struct DeckPullRequest: Codable, Identifiable, Sendable { let nodeId: String; let number: Int; let title: String; let repository: String; let state: String; let draft: Bool; var id: String { nodeId } }
 struct DeckRate: Codable, Sendable { let limit: Int?; let remaining: Int?; let used: Int?; let resetAt: String?; let resource: String?; let retryAfterSeconds: Int? }
@@ -93,7 +93,7 @@ private struct WidgetBackground: ViewModifier {
 }
 
 private func sameSelection(_ left: DeckConfiguration, _ right: DeckConfiguration) -> Bool {
-    left.deckId == right.deckId && left.query == right.query && left.profileId == right.profileId && left.profileKind == right.profileKind && left.scopeId == right.scopeId
+    left.deckId == right.deckId && left.query == right.query && left.repositories == right.repositories && left.profileId == right.profileId && left.profileKind == right.profileKind && left.scopeId == right.scopeId
 }
 
 private func legacyWidgetToken(_ data: Data) -> String? {
