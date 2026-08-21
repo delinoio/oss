@@ -41,6 +41,9 @@ pub const CHECK_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
 pub const MAX_MANIFEST_BYTES: usize = 256 * 1024;
 pub const MAX_ARTIFACT_BYTES: u64 = 512 * 1024 * 1024;
 pub const MAX_REDIRECTS: usize = 3;
+// Release tooling parses this literal declaration even though runtime trust is
+// bound by the public key and fingerprint rather than a manifest key ID.
+#[cfg_attr(not(test), allow(dead_code))]
 pub const ROOT_KEY_ID: &str = "devhud-release-root-v1";
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const DISCOVERY_TIMEOUT: Duration = Duration::from_secs(30);
@@ -51,7 +54,9 @@ const ARTIFACT_SIGNATURE_DOMAIN: &[u8] = b"devhud-update-artifact-v1\0";
 // This is a syntactically valid, public RFC 8032 test-vector key. Publication
 // remains fail-closed until release engineering replaces it and flips the
 // readiness gate. No private production key is present in the repository.
+#[cfg(not(test))]
 pub const ROOT_PUBLIC_KEY_BASE64: &str = "11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo=";
+#[cfg(not(test))]
 pub const ROOT_FINGERPRINT: &str =
     "21fe31dfa154a261626bf854046fd2271b7bed4b6abe45aa58877ef47f9721b9";
 pub const ROOT_PRODUCTION_READY: bool = false;
@@ -337,7 +342,8 @@ pub fn endpoint(target: DesktopTarget) -> String {
     )
 }
 
-pub fn root_ready_for_publication() -> Result<(), &'static str> {
+#[cfg(test)]
+fn root_ready_for_publication() -> Result<(), &'static str> {
     debug_assert_eq!(ROOT_KEY_ID, "devhud-release-root-v1");
     ROOT_PRODUCTION_READY
         .then_some(())
