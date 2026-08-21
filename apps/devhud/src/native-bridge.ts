@@ -1,5 +1,6 @@
 import { normalizeLogtoIssuer } from "./identity-contract.ts";
 import type { SanitizedBrowserContext } from "./browser-context.ts";
+import { SettingsTextLimit } from "./contract-limits.ts";
 import { ClassicPatCreationUrl, FineGrainedPatCreationUrl } from "./github-links.ts";
 import { defaultDesktopShortcutBindings, parseDesktopShortcutBindings, type DesktopShortcutBindings, type ShortcutActionId, type ShortcutValidationCode } from "./shortcuts.ts";
 import { WidgetContractVersion, WidgetQueryLimit, WidgetRepositoryLimit, WidgetResultLimit, type WidgetDeckConfiguration, type WidgetDeckSnapshot } from "./widget-contract.ts";
@@ -280,7 +281,7 @@ export function validateWidgetRequest(request: Extract<NativeBridgeRequestV1, { 
     if (!hasExactKeys(value, ["version", "deckId", "name", "query", "repositories", "profileId", "profileKind", "scopeId", "language"])
       || value.version !== WidgetContractVersion || !uuidPattern.test(value.deckId) || !profilePattern.test(value.profileId) || !profilePattern.test(value.scopeId)
       || !["fine-grained", "classic"].includes(value.profileKind) || !["en", "ko"].includes(value.language)
-      || value.name.trim().length === 0 || value.name.length > 128 || value.query.trim().length === 0 || value.query.length > WidgetQueryLimit
+      || value.name.trim().length === 0 || value.name.length > SettingsTextLimit || value.query.trim().length === 0 || value.query.length > WidgetQueryLimit
       || !Array.isArray(value.repositories) || value.repositories.length === 0 || value.repositories.length > WidgetRepositoryLimit || new Set(repositoryKeys).size !== repositoryKeys.length
       || value.repositories.some((repository) => !hasExactKeys(repository, ["owner", "name"]) || !/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/u.test(repository.owner) || repository.owner.endsWith("-") || repository.owner.includes("--") || !/^[A-Za-z0-9._-]{1,100}$/u.test(repository.name))) throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument);
     return;

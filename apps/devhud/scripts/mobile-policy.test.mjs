@@ -248,6 +248,8 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   assert.match(iosNativeBridge, /pendingDeckIds[\s\S]*removeWidgetCredential\(deckId\)[\s\S]*widgetCredentialDeckIds\(\)/u);
   assert.match(iosNativeBridge, /private func replaceWidgetSnapshot[\s\S]*mergeWidgetSnapshot\(current: previousSnapshot, incoming: snapshot\)[\s\S]*widgetForegroundReloadDeadlinePrefix \+ snapshot\.deckId[\s\S]*defaults\.synchronize\(\)[\s\S]*reloadAllTimelines/u);
   assert.match(iosWidget, /func credential\(_ deckId: String\)[\s\S]*!credentialReplacementBlocks\(deckId\)[\s\S]*StoredWidgetCredential[\s\S]*revision: data/u);
+  assert.match(iosWidget, /guard result\.status == errSecSuccess, let data = result\.data else \{ return \.unavailable \}/u);
+  assert.match(iosWidget, /case \.unavailable:[\s\S]*Self\.failure\(deck: current, previous: store\.snapshot\(current\.deckId\), state: "error"[\s\S]*completion\(timeline\(deck: current, snapshot: snapshot\)\)/u);
   assert.match(iosWidget, /credentialReplacementBlocks[\s\S]*credentialReplacementKey[\s\S]*transaction\.deckIds\.contains\(deckId\)/u);
   assert.match(iosWidget, /devhud:\/\/deck\//u);
   assert.match(iosApplicationEntitlements, /group\.io\.delino\.devhud/u);

@@ -5,6 +5,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { NativeBridgeError, NativeBridgeErrorCode, SecureSettingKind, isAuthCallback, nativeBridge, validateAuthenticationBrowserRequest, validateCaptureRequest, validateExternalRequest, validateGitHubPatReconciliation, validateSecretValue, validateSecureSettingRef, validateWidgetRequest } from "../src/native-bridge.ts";
+import { SettingsTextLimit } from "../src/contract-limits.ts";
 import { ShortcutActionId, ShortcutKey, ShortcutModifier, ShortcutValidationCode, defaultDesktopShortcutBindings, parseDesktopShortcutBindings } from "../src/shortcuts.ts";
 import { WidgetQueryLimit } from "../src/widget-contract.ts";
 
@@ -60,6 +61,10 @@ test("widget bridge accepts only selected bounded Deck data and never accepts a 
   assert.throws(() => validateWidgetRequest({ operation: "widgets.enable-deck", configuration: { ...configuration, repositories: [] } }), NativeBridgeError);
   assert.throws(() => validateWidgetRequest({ operation: "widgets.enable-deck", configuration: { ...configuration, repositories: [{ owner: "octo", name: "private" }, { owner: "OCTO", name: "PRIVATE" }] } }), NativeBridgeError);
   assert.throws(() => validateWidgetRequest({ operation: "widgets.enable-deck", configuration: Object.assign({}, configuration, { token: "must-not-cross" }) }), NativeBridgeError);
+  const maximumName = "\u{1F4BB}".repeat(SettingsTextLimit / 2);
+  assert.equal(maximumName.length, SettingsTextLimit);
+  assert.doesNotThrow(() => validateWidgetRequest({ operation: "widgets.enable-deck", configuration: { ...configuration, name: maximumName } }));
+  assert.throws(() => validateWidgetRequest({ operation: "widgets.enable-deck", configuration: { ...configuration, name: `${maximumName}x` } }), NativeBridgeError);
   assert.doesNotThrow(() => validateWidgetRequest({ operation: "widgets.enable-deck", configuration: { ...configuration, query: longQuery, repositories } }));
   assert.throws(() => validateWidgetRequest({ operation: "widgets.enable-deck", configuration: { ...configuration, query: "x".repeat(WidgetQueryLimit + 1) } }), NativeBridgeError);
   const snapshot = { version: 1, deckId: configuration.deckId, query: configuration.query, counts: { total: 1, open: 1, draft: 0, merged: 0, closed: 0, bounded: false }, results: [{ nodeId: "PR_private", number: 1, title: "Private title", repository: "octo/private", state: "open", draft: false }], state: "fresh", lastSuccessfulAt: "2026-08-20T00:00:00.000Z", lastAttemptedAt: "2026-08-20T00:00:00.000Z", rate: null };

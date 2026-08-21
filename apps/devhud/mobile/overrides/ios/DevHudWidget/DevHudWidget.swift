@@ -57,6 +57,7 @@ private enum WidgetCredential: Sendable {
     case missing
     case readable(token: String, revision: Data)
     case unreadable(revision: Data)
+    case unavailable
 }
 private struct WidgetCredentialReplacement: Codable, Sendable { let version: Int; let profileId: String; let scopeId: String; let deckIds: [String] }
 struct DeckSnapshot: Codable, Sendable {
@@ -129,7 +130,7 @@ private struct WidgetStore {
         guard defaults?.bool(forKey: transactionPrefix + deckId) != true, !credentialReplacementBlocks(deckId) else { return nil }
         let result = credentialData(deckId)
         if result.status == errSecItemNotFound { return .missing }
-        guard result.status == errSecSuccess, let data = result.data else { return nil }
+        guard result.status == errSecSuccess, let data = result.data else { return .unavailable }
         if let stored = try? JSONDecoder().decode(StoredWidgetCredential.self, from: data) {
             guard stored.version == 1, !stored.token.isEmpty else { return .unreadable(revision: data) }
             return .readable(token: stored.token, revision: data)
@@ -202,6 +203,15 @@ private struct DeckTimelineProvider: IntentTimelineProvider {
             case .unreadable(let revision):
                 snapshot = Self.failure(deck: deck, previous: previous, state: "error", attempted: ISO8601DateFormatter().string(from: Date()), rate: nil)
                 credentialRevision = revision
+            case .unavailable:
+                guard let current = store.configuration(deck.deckId), sameSelection(current, deck) else {
+                    let current = store.configuration(deck.deckId)
+                    completion(timeline(deck: current, snapshot: current.flatMap { store.snapshot($0.deckId) }))
+                    return
+                }
+                let snapshot = Self.failure(deck: current, previous: store.snapshot(current.deckId), state: "error", attempted: ISO8601DateFormatter().string(from: Date()), rate: nil)
+                completion(timeline(deck: current, snapshot: snapshot))
+                return
             }
             guard let current = store.configuration(deck.deckId), sameSelection(current, deck) else {
                 let current = store.configuration(deck.deckId)
