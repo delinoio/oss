@@ -307,9 +307,11 @@ impl LocalAgentService {
             &request,
             executable,
             workspace.path(),
-            &schema_path,
-            &last_message_path,
-            &issue_input_path,
+            AdapterFiles {
+                schema: &schema_path,
+                last_message: &last_message_path,
+                issue_input: &issue_input_path,
+            },
             prompt.into_bytes(),
             pat.as_ref().map(|value| value.as_str()),
         )?;
@@ -757,20 +759,25 @@ fn parse_version(kind: AgentKind, output: &str) -> Option<String> {
     .then(|| version.to_string())
 }
 
+struct AdapterFiles<'a> {
+    schema: &'a Path,
+    last_message: &'a Path,
+    issue_input: &'a Path,
+}
+
 fn adapter_spec(
     request: &RunRequest,
     executable: PathBuf,
     workspace: &Path,
-    schema_path: &Path,
-    last_message_path: &Path,
-    issue_input_path: &Path,
+    files: AdapterFiles<'_>,
     prompt: Vec<u8>,
     pat: Option<&str>,
 ) -> Result<CommandSpec, String> {
     let mut environment = agent_environment(request.kind);
     if request.mode == AgentMode::Direct {
         let token = pat.ok_or("not-configured")?;
-        let gh_config = issue_input_path
+        let gh_config = files
+            .issue_input
             .parent()
             .ok_or("storage-failure")?
             .join("gh-config");
@@ -783,7 +790,7 @@ fn adapter_spec(
         );
         environment.insert(
             OsString::from("DEVHUD_ISSUE_INPUT"),
-            issue_input_path.as_os_str().to_os_string(),
+            files.issue_input.as_os_str().to_os_string(),
         );
     }
     let args = match request.kind {
@@ -801,9 +808,9 @@ fn adapter_spec(
                 }),
                 OsString::from("--json"),
                 OsString::from("--output-schema"),
-                schema_path.as_os_str().to_os_string(),
+                files.schema.as_os_str().to_os_string(),
                 OsString::from("--output-last-message"),
-                last_message_path.as_os_str().to_os_string(),
+                files.last_message.as_os_str().to_os_string(),
                 OsString::from("--cd"),
                 workspace.as_os_str().to_os_string(),
             ];
@@ -1120,12 +1127,11 @@ fn opencode_final_text(stdout: &[u8]) -> Result<String, String> {
             .get("text")
             .and_then(Value::as_str)
             .or_else(|| event.pointer("/part/text").and_then(Value::as_str));
-        if event.get("type").and_then(Value::as_str) == Some("text")
-            || event.pointer("/part/type").and_then(Value::as_str) == Some("text")
+        if (event.get("type").and_then(Value::as_str) == Some("text")
+            || event.pointer("/part/type").and_then(Value::as_str) == Some("text"))
+            && let Some(candidate) = candidate
         {
-            if let Some(candidate) = candidate {
-                final_text = Some(candidate.to_string());
-            }
+            final_text = Some(candidate.to_string());
         }
     }
     final_text.ok_or_else(|| "agent-invalid-output".to_string())
@@ -1601,9 +1607,11 @@ mod tests {
                 &request,
                 PathBuf::from("/agent"),
                 root.path(),
-                &schema,
-                &message,
-                &issue,
+                AdapterFiles {
+                    schema: &schema,
+                    last_message: &message,
+                    issue_input: &issue,
+                },
                 b"immutable prompt".to_vec(),
                 None,
             )
@@ -1677,9 +1685,11 @@ mod tests {
                 &request,
                 PathBuf::from("/agent"),
                 root.path(),
-                &directory.join("schema"),
-                &directory.join("message"),
-                &directory.join("issue"),
+                AdapterFiles {
+                    schema: &directory.join("schema"),
+                    last_message: &directory.join("message"),
+                    issue_input: &directory.join("issue"),
+                },
                 Vec::new(),
                 Some(secret),
             )
@@ -1733,9 +1743,11 @@ mod tests {
             &request,
             PathBuf::from("/agent"),
             root.path(),
-            &root.path().join("schema"),
-            &root.path().join("message"),
-            &root.path().join("issue"),
+            AdapterFiles {
+                schema: &root.path().join("schema"),
+                last_message: &root.path().join("message"),
+                issue_input: &root.path().join("issue"),
+            },
             Vec::new(),
             Some(secret),
         )
