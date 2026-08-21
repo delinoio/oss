@@ -18,6 +18,7 @@ private const val configurationPrefix = "configuration:"
 private const val snapshotPrefix = "snapshot:"
 private const val selectionPrefix = "selection:"
 private const val transactionPrefix = "transaction:"
+private const val disableTransactionPrefix = "disable-transaction:"
 
 internal class DevHudWidgetStore(private val context: Context) {
     companion object {
@@ -31,13 +32,18 @@ internal class DevHudWidgetStore(private val context: Context) {
         reconcile()
     }
 
-    fun enabledDeckIds(): List<String> = state.all.keys
-        .filter { it.startsWith(configurationPrefix) }
-        .map { it.removePrefix(configurationPrefix) }
-        .sorted()
+    fun enabledDeckIds(): List<String> {
+        val entries = state.all
+        return entries.keys
+            .filter { it.startsWith(configurationPrefix) }
+            .map { it.removePrefix(configurationPrefix) }
+            .filterNot { entries.containsKey(disableTransactionPrefix + it) }
+            .sorted()
+    }
 
     fun enable(configuration: JSONObject, token: String): Boolean = synchronized(widgetStoreMutationLock) {
         val deckId = configuration.getString("deckId")
+        if (state.contains(disableTransactionPrefix + deckId)) return@synchronized false
         val previous = configuration(deckId)
         val previousSecret = secrets.getString(deckId, null)
         val transactionKey = transactionPrefix + deckId
@@ -85,8 +91,17 @@ internal class DevHudWidgetStore(private val context: Context) {
     }
 
     fun disable(deckId: String): Boolean = synchronized(widgetStoreMutationLock) {
+        val transactionKey = disableTransactionPrefix + deckId
+        if (!state.edit().putBoolean(transactionKey, true).commit()) {
+            state.edit().remove(transactionKey).commit()
+            return@synchronized false
+        }
         if (!secrets.edit().remove(deckId).commit()) return@synchronized false
-        val editor = state.edit().remove(configurationPrefix + deckId).remove(snapshotPrefix + deckId)
+        val editor = state.edit()
+            .remove(configurationPrefix + deckId)
+            .remove(snapshotPrefix + deckId)
+            .remove(transactionPrefix + deckId)
+            .remove(transactionKey)
         state.all.entries.filter { it.key.startsWith(selectionPrefix) && it.value == deckId }.forEach { editor.remove(it.key) }
         editor.commit()
     }
@@ -99,10 +114,16 @@ internal class DevHudWidgetStore(private val context: Context) {
         stateCleared && secretsCleared
     }
 
-    fun configuration(deckId: String): JSONObject? = json(state.getString(configurationPrefix + deckId, null))
-    fun snapshot(deckId: String): JSONObject? = json(state.getString(snapshotPrefix + deckId, null))
+    fun configuration(deckId: String): JSONObject? {
+        if (state.contains(disableTransactionPrefix + deckId)) return null
+        return json(state.getString(configurationPrefix + deckId, null))
+    }
+    fun snapshot(deckId: String): JSONObject? {
+        if (state.contains(disableTransactionPrefix + deckId)) return null
+        return json(state.getString(snapshotPrefix + deckId, null))
+    }
     fun token(deckId: String): String? {
-        if (state.contains(transactionPrefix + deckId)) return null
+        if (state.contains(transactionPrefix + deckId) || state.contains(disableTransactionPrefix + deckId)) return null
         return secrets.getString(deckId, null)?.let { decrypt(it, deckId) }
     }
 
@@ -120,8 +141,11 @@ internal class DevHudWidgetStore(private val context: Context) {
 
     private fun reconcile(): Boolean = synchronized(widgetStoreMutationLock) {
         val entries = state.all.entries
-        val pendingDeckIds = entries.mapNotNull { (key, _) ->
+        val pendingEnableDeckIds = entries.mapNotNull { (key, _) ->
             key.takeIf { it.startsWith(transactionPrefix) }?.removePrefix(transactionPrefix)
+        }.toSet()
+        val pendingDisableDeckIds = entries.mapNotNull { (key, _) ->
+            key.takeIf { it.startsWith(disableTransactionPrefix) }?.removePrefix(disableTransactionPrefix)
         }.toSet()
         val configuredDeckIds = entries.mapNotNull { (key, value) ->
             if (!key.startsWith(configurationPrefix)) return@mapNotNull null
@@ -129,15 +153,23 @@ internal class DevHudWidgetStore(private val context: Context) {
             deckId.takeIf { json(value as? String)?.optString("deckId") == deckId }
         }.toSet()
         val credentialDeckIds = secrets.all.keys
-        val removedDeckIds = pendingDeckIds + credentialDeckIds.filterNot(configuredDeckIds::contains)
+        val removedDeckIds = pendingEnableDeckIds + pendingDisableDeckIds + credentialDeckIds.filterNot(configuredDeckIds::contains)
         if (removedDeckIds.isNotEmpty()) {
             val editor = secrets.edit()
             removedDeckIds.forEach { editor.remove(it) }
             if (!editor.commit()) return@synchronized false
         }
-        if (pendingDeckIds.isEmpty()) return@synchronized true
+        if (pendingEnableDeckIds.isEmpty() && pendingDisableDeckIds.isEmpty()) return@synchronized true
         val editor = state.edit()
-        pendingDeckIds.forEach { editor.remove(transactionPrefix + it) }
+        pendingEnableDeckIds.forEach { editor.remove(transactionPrefix + it) }
+        pendingDisableDeckIds.forEach { deckId ->
+            editor.remove(configurationPrefix + deckId)
+                .remove(snapshotPrefix + deckId)
+                .remove(transactionPrefix + deckId)
+                .remove(disableTransactionPrefix + deckId)
+        }
+        entries.filter { entry -> entry.key.startsWith(selectionPrefix) && pendingDisableDeckIds.any { entry.value == it } }
+            .forEach { editor.remove(it.key) }
         editor.commit()
     }
 

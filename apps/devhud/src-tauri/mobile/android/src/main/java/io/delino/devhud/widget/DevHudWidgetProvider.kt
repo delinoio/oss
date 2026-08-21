@@ -392,11 +392,36 @@ class DevHudWidgetProvider : AppWidgetProvider() {
 }
 
 class DevHudWidgetRefreshService : JobService() {
-    private val stopped = AtomicBoolean(false)
-    private val activeSession = AtomicReference<WidgetRefreshSession?>(null)
+    private class WidgetRefreshRun(val parameters: JobParameters) {
+        private val stopped = AtomicBoolean(false)
+        private val activeSession = AtomicReference<WidgetRefreshSession?>(null)
+
+        fun isStopped(): Boolean = stopped.get()
+
+        fun attach(session: WidgetRefreshSession) {
+            activeSession.set(session)
+            if (stopped.get()) session.cancel(WidgetRefreshCancellation.STOPPED)
+        }
+
+        fun detach(session: WidgetRefreshSession) {
+            activeSession.compareAndSet(session, null)
+        }
+
+        fun stop() {
+            stopped.set(true)
+            activeSession.get()?.cancel(WidgetRefreshCancellation.STOPPED)
+        }
+    }
+
+    private val lifecycleLock = Any()
+    private var activeRun: WidgetRefreshRun? = null
 
     override fun onStartJob(parameters: JobParameters): Boolean {
-        stopped.set(false)
+        val run = WidgetRefreshRun(parameters)
+        synchronized(lifecycleLock) {
+            activeRun?.stop()
+            activeRun = run
+        }
         widgetExecutor.execute {
             var retry = false
             try {
@@ -404,26 +429,32 @@ class DevHudWidgetRefreshService : JobService() {
                 val component = ComponentName(applicationContext, DevHudWidgetProvider::class.java)
                 val store = DevHudWidgetStore(applicationContext)
                 for ((deckId, appWidgetIds) in manager.getAppWidgetIds(component).groupBy { store.selectedDeckId(it) }) {
-                    if (stopped.get()) { retry = true; break }
+                    if (run.isStopped()) { retry = true; break }
                     val session = WidgetRefreshSession()
-                    activeSession.set(session)
-                    if (stopped.get()) session.cancel(WidgetRefreshCancellation.STOPPED)
+                    run.attach(session)
                     try {
                         if (!DevHudWidgetProvider.refresh(applicationContext, manager, deckId, appWidgetIds, session)) retry = true
                     } finally {
-                        activeSession.compareAndSet(session, null)
+                        run.detach(session)
                         session.close()
                     }
                 }
             } catch (_: Exception) { retry = true }
-            if (!stopped.get()) jobFinished(parameters, retry)
+            synchronized(lifecycleLock) {
+                if (!run.isStopped() && activeRun === run) {
+                    activeRun = null
+                    jobFinished(run.parameters, retry)
+                }
+            }
         }
         return true
     }
 
     override fun onStopJob(parameters: JobParameters): Boolean {
-        stopped.set(true)
-        activeSession.get()?.cancel(WidgetRefreshCancellation.STOPPED)
+        synchronized(lifecycleLock) {
+            activeRun?.stop()
+            activeRun = null
+        }
         return true
     }
 }

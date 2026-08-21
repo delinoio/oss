@@ -112,6 +112,8 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   const androidNativeBridge = readFileSync(join(appRoot, "src-tauri/mobile/android/src/main/java/io/delino/devhud/bridge/DevhudNativePlugin.kt"), "utf8");
   const androidStore = readFileSync(join(appRoot, "src-tauri/mobile/android/src/main/java/io/delino/devhud/widget/DevHudWidgetStore.kt"), "utf8");
   const androidProvider = readFileSync(join(appRoot, "src-tauri/mobile/android/src/main/java/io/delino/devhud/widget/DevHudWidgetProvider.kt"), "utf8");
+  const androidDisable = androidStore.slice(androidStore.indexOf("fun disable(deckId"), androidStore.indexOf("fun clear()"));
+  const androidRefreshService = androidProvider.slice(androidProvider.indexOf("class DevHudWidgetRefreshService"), androidProvider.indexOf("class DevHudWidgetConfigureActivity"));
   const androidConfigureActivity = androidProvider.slice(androidProvider.indexOf("class DevHudWidgetConfigureActivity"));
   const androidManifest = readFileSync(join(appRoot, "mobile/overrides/android/app/src/main/AndroidManifest.xml"), "utf8");
   const androidEnglish = readFileSync(join(appRoot, "src-tauri/mobile/android/src/main/res/values/widget_strings.xml"), "utf8");
@@ -128,9 +130,15 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   assert.match(androidStore, /private val widgetStoreMutationLock = Any\(\)/u);
   assert.equal((androidStore.match(/synchronized\(widgetStoreMutationLock\)/gu) ?? []).length, 5);
   assert.match(androidStore, /transactionPrefix = "transaction:"[\s\S]*init \{\s*reconcile\(\)/u);
+  assert.match(androidStore, /disableTransactionPrefix = "disable-transaction:"/u);
   assert.ok(androidStore.indexOf("putBoolean(transactionKey, true).commit()") < androidStore.indexOf("putString(deckId, encrypted).commit()"));
+  assert.ok(androidDisable.indexOf("putBoolean(transactionKey, true).commit()") < androidDisable.indexOf("secrets.edit().remove(deckId).commit()"));
+  assert.ok(androidDisable.indexOf("secrets.edit().remove(deckId).commit()") < androidDisable.indexOf("remove(configurationPrefix + deckId)"));
+  assert.match(androidStore, /enabledDeckIds[\s\S]*filterNot \{ entries\.containsKey\(disableTransactionPrefix \+ it\) \}/u);
+  assert.match(androidStore, /fun configuration\(deckId: String\)[\s\S]*state\.contains\(disableTransactionPrefix \+ deckId\)[\s\S]*return null/u);
+  assert.match(androidStore, /fun snapshot\(deckId: String\)[\s\S]*state\.contains\(disableTransactionPrefix \+ deckId\)[\s\S]*return null/u);
   assert.match(androidStore, /fun token\(deckId: String\)[\s\S]*state\.contains\(transactionPrefix \+ deckId\)[\s\S]*return null/u);
-  assert.match(androidStore, /private fun reconcile\(\)[\s\S]*pendingDeckIds[\s\S]*credentialDeckIds\.filterNot\(configuredDeckIds::contains\)[\s\S]*removedDeckIds\.forEach \{ editor\.remove\(it\) \}[\s\S]*pendingDeckIds\.forEach \{ editor\.remove\(transactionPrefix \+ it\) \}/u);
+  assert.match(androidStore, /private fun reconcile\(\)[\s\S]*pendingEnableDeckIds[\s\S]*pendingDisableDeckIds[\s\S]*credentialDeckIds\.filterNot\(configuredDeckIds::contains\)[\s\S]*removedDeckIds\.forEach \{ editor\.remove\(it\) \}[\s\S]*pendingDisableDeckIds\.forEach[\s\S]*remove\(configurationPrefix \+ deckId\)[\s\S]*remove\(disableTransactionPrefix \+ deckId\)/u);
   assert.match(androidStore, /private fun abortEnable[\s\S]*rollback\.commit\(\)[\s\S]*remove\(transactionPrefix \+ deckId\)\.commit\(\)/u);
   assert.match(androidStore, /replaceProfileToken[\s\S]*profileId[\s\S]*scopeId/u);
   assert.match(androidStore, /previousSecret[\s\S]*rollback\.putString\(deckId, previousSecret\)/u);
@@ -143,7 +151,10 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   assert.match(androidProvider, /ExecutorCompletionService[\s\S]*repeat\(minOf\(repositoryValidationConcurrency, repositories\.length\(\)\)\)[\s\S]*completion\.poll\(session\.remainingMillis\(\)/u);
   assert.match(androidProvider, /connectTimeout = minOf\(15_000, session\.remainingMillis\(\)\)[\s\S]*readTimeout = minOf\(20_000, session\.remainingMillis\(\)\)/u);
   assert.match(androidProvider, /widgetDeadlineExecutor = Executors\.newSingleThreadScheduledExecutor\(\)[\s\S]*deadlineCancellation = widgetDeadlineExecutor\.schedule\([\s\S]*cancel\(WidgetRefreshCancellation\.DEADLINE\)[\s\S]*deadlineCancellation\.cancel\(false\)/u);
-  assert.match(androidProvider, /onStopJob[\s\S]*activeSession\.get\(\)\?\.cancel\(WidgetRefreshCancellation\.STOPPED\)/u);
+  assert.match(androidRefreshService, /private class WidgetRefreshRun[\s\S]*private val stopped = AtomicBoolean\(false\)[\s\S]*private val activeSession = AtomicReference<WidgetRefreshSession\?>\(null\)/u);
+  assert.match(androidRefreshService, /activeRun\?\.stop\(\)[\s\S]*activeRun = run[\s\S]*run\.attach\(session\)[\s\S]*!run\.isStopped\(\) && activeRun === run[\s\S]*jobFinished\(run\.parameters, retry\)/u);
+  assert.match(androidRefreshService, /onStopJob[\s\S]*activeRun\?\.stop\(\)[\s\S]*activeRun = null/u);
+  assert.doesNotMatch(androidRefreshService, /stopped\.set\(false\)/u);
   assert.match(androidProvider, /fun cancel[\s\S]*connections\.forEach \{ it\.disconnect\(\) \}/u);
   assert.match(androidProvider, /ScrollView/u);
   assert.match(androidProvider, /incomplete_results/u);
