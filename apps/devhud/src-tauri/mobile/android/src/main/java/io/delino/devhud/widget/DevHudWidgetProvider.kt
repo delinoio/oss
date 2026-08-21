@@ -59,6 +59,7 @@ private fun localizedContext(context: Context, configuration: JSONObject?): Cont
 }
 
 internal enum class WidgetRefreshCancellation { DEADLINE, STOPPED, VALIDATION_FAILED }
+internal enum class WidgetRefreshPublication { STANDARD, DEADLINE_FAILURE }
 
 private class WidgetRefreshCancelled : CancellationException()
 
@@ -109,12 +110,15 @@ internal class WidgetRefreshSession {
         connections.forEach { it.disconnect() }
     }
 
-    fun <T> commitIfPublishable(commit: () -> T): T? = synchronized(publicationLock) {
+    fun <T> commitIfPublishable(publication: WidgetRefreshPublication = WidgetRefreshPublication.STANDARD, commit: () -> T): T? = synchronized(publicationLock) {
         when (cancellation.get()) {
-            WidgetRefreshCancellation.DEADLINE, WidgetRefreshCancellation.STOPPED -> null
+            WidgetRefreshCancellation.STOPPED -> null
+            WidgetRefreshCancellation.DEADLINE -> if (publication == WidgetRefreshPublication.DEADLINE_FAILURE) commit() else null
             WidgetRefreshCancellation.VALIDATION_FAILED, null -> commit()
         }
     }
+
+    fun reachedDeadline(): Boolean = cancellation.get() == WidgetRefreshCancellation.DEADLINE
 
     fun wasStopped(): Boolean = cancellation.get() == WidgetRefreshCancellation.STOPPED
 
@@ -125,6 +129,7 @@ internal class WidgetRefreshSession {
     }
 }
 
+private data class GitHubRefreshResult(val snapshot: JSONObject, val publication: WidgetRefreshPublication)
 private data class RepositoryValidationFailure(val state: String, val rate: JSONObject?)
 
 class DevHudWidgetProvider : AppWidgetProvider() {
@@ -196,14 +201,14 @@ class DevHudWidgetProvider : AppWidgetProvider() {
                 return stored
             }
             check(credential is WidgetCredential.Readable)
-            val snapshot = refreshGitHub(configuration, credential.token, previous, session)
+            val refreshResult = refreshGitHub(configuration, credential.token, previous, session)
             if (session.wasStopped()) return false
             val current = store.configuration(deckId)
             if (current == null || !sameSelection(configuration, current)) {
                 appWidgetIds.forEach { renderStored(context, manager, it) }
                 return true
             }
-            val stored = session.commitIfPublishable { store.replaceSnapshot(snapshot, credential.revision) } ?: return false
+            val stored = session.commitIfPublishable(refreshResult.publication) { store.replaceSnapshot(refreshResult.snapshot, credential.revision) } ?: return false
             val renderConfiguration = store.configuration(deckId)
             if (renderConfiguration == null) {
                 appWidgetIds.forEach { renderStored(context, manager, it) }
@@ -221,13 +226,14 @@ class DevHudWidgetProvider : AppWidgetProvider() {
             }
         }
 
-        private fun refreshGitHub(configuration: JSONObject, token: String, previous: JSONObject?, session: WidgetRefreshSession): JSONObject {
+        private fun refreshGitHub(configuration: JSONObject, token: String, previous: JSONObject?, session: WidgetRefreshSession): GitHubRefreshResult {
             val attemptedAt = Instant.now().toString()
             return try {
                 validateRepositories(configuration, token, session)?.let { validation ->
-                    return failure(configuration, previous, validation.state, attemptedAt, validation.rate)
+                    val publication = if (validation.state == "error" && session.reachedDeadline()) WidgetRefreshPublication.DEADLINE_FAILURE else WidgetRefreshPublication.STANDARD
+                    return GitHubRefreshResult(failure(configuration, previous, validation.state, attemptedAt, validation.rate), publication)
                 }
-                github("/search/issues?q=" + Uri.encode(configuration.getString("query")) + "&per_page=100&page=1", token, session) { connection ->
+                val snapshot = github("/search/issues?q=" + Uri.encode(configuration.getString("query")) + "&per_page=100&page=1", token, session) { connection ->
                     val status = connection.responseCode
                     val responseRate = rate(connection)
                     if (responseIsRateLimited(connection)) return@github failure(configuration, previous, "rate-limit", attemptedAt, responseRate)
@@ -238,6 +244,8 @@ class DevHudWidgetProvider : AppWidgetProvider() {
                     val incompleteResults = payload.opt("incomplete_results") as? Boolean
                         ?: return@github failure(configuration, previous, "error", attemptedAt, responseRate)
                     if (incompleteResults) return@github failure(configuration, previous, "error", attemptedAt, responseRate)
+                    val totalCount = (payload.opt("total_count") as? Int)?.takeIf { it >= 0 }
+                        ?: return@github failure(configuration, previous, "error", attemptedAt, responseRate)
                     val items = payload.getJSONArray("items")
                     val results = JSONArray()
                     var open = 0; var draft = 0; var merged = 0; var closed = 0
@@ -272,11 +280,15 @@ class DevHudWidgetProvider : AppWidgetProvider() {
                     }
                     JSONObject()
                         .put("version", 1).put("deckId", configuration.getString("deckId")).put("query", configuration.getString("query"))
-                        .put("counts", JSONObject().put("total", payload.getInt("total_count")).put("open", open).put("draft", draft).put("merged", merged).put("closed", closed).put("bounded", payload.getInt("total_count") > resultLimit))
+                        .put("counts", JSONObject().put("total", totalCount).put("open", open).put("draft", draft).put("merged", merged).put("closed", closed).put("bounded", totalCount > resultLimit))
                         .put("results", results).put("state", "fresh").put("lastSuccessfulAt", attemptedAt).put("lastAttemptedAt", attemptedAt)
                         .put("rate", responseRate)
                 }
-            } catch (_: Exception) { failure(configuration, previous, "error", attemptedAt, null) }
+                GitHubRefreshResult(snapshot, WidgetRefreshPublication.STANDARD)
+            } catch (_: Exception) {
+                val publication = if (session.reachedDeadline()) WidgetRefreshPublication.DEADLINE_FAILURE else WidgetRefreshPublication.STANDARD
+                GitHubRefreshResult(failure(configuration, previous, "error", attemptedAt, null), publication)
+            }
         }
 
         private fun validateRepositories(configuration: JSONObject, token: String, session: WidgetRefreshSession): RepositoryValidationFailure? {

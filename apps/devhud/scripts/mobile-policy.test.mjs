@@ -246,7 +246,7 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   for (const credentialFailureRefresh of [androidMissingCredentialRefresh, androidUnreadableCredentialRefresh]) {
     assert.match(credentialFailureRefresh, /replaceSnapshot\(snapshot,[^\n]+\)[\s\S]*val renderConfiguration = store\.configuration\(deckId\)[\s\S]*if \(renderConfiguration == null\)[\s\S]*renderStored\(context, manager, it\)[\s\S]*renderSelected\(context, manager, store, deckId, renderConfiguration/u);
   }
-  assert.equal((androidProvider.match(/replaceSnapshot\(snapshot, credential\.revision\)/gu) ?? []).length, 2);
+  assert.equal((androidProvider.match(/replaceSnapshot\((?:snapshot|refreshResult\.snapshot), credential\.revision\)/gu) ?? []).length, 2);
   assert.match(androidProvider, /groupBy \{ store\.selectedDeckId\(it\) \}[\s\S]*refresh\(applicationContext, manager, deckId, appWidgetIds, session\)/u);
   assert.match(androidProvider, /repositoryValidationConcurrency = 3/u);
   assert.match(androidProvider, /refreshDeadlineMillis = 20_000L/u);
@@ -255,8 +255,10 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   assert.match(androidProvider, /widgetDeadlineExecutor = Executors\.newSingleThreadScheduledExecutor\(\)[\s\S]*deadlineCancellation = widgetDeadlineExecutor\.schedule\([\s\S]*cancel\(WidgetRefreshCancellation\.DEADLINE\)[\s\S]*deadlineCancellation\.cancel\(false\)/u);
   assert.match(androidRefreshSession, /private val publicationLock = Any\(\)[\s\S]*fun cancel[\s\S]*synchronized\(publicationLock\)[\s\S]*fun <T> commitIfPublishable[\s\S]*synchronized\(publicationLock\)/u);
   assert.match(androidRefreshSession, /current == WidgetRefreshCancellation\.STOPPED \|\| reason == WidgetRefreshCancellation\.STOPPED[\s\S]*current == WidgetRefreshCancellation\.DEADLINE \|\| reason == WidgetRefreshCancellation\.DEADLINE/u);
-  assert.match(androidRefreshSession, /WidgetRefreshCancellation\.DEADLINE, WidgetRefreshCancellation\.STOPPED -> null[\s\S]*WidgetRefreshCancellation\.VALIDATION_FAILED, null -> commit\(\)/u);
-  assert.equal((androidProvider.match(/session\.commitIfPublishable \{ store\.replaceSnapshot/gu) ?? []).length, 3);
+  assert.match(androidRefreshSession, /WidgetRefreshCancellation\.STOPPED -> null[\s\S]*WidgetRefreshCancellation\.DEADLINE -> if \(publication == WidgetRefreshPublication\.DEADLINE_FAILURE\) commit\(\) else null[\s\S]*WidgetRefreshCancellation\.VALIDATION_FAILED, null -> commit\(\)/u);
+  assert.equal((androidProvider.match(/session\.commitIfPublishable \{ store\.replaceSnapshot/gu) ?? []).length, 2);
+  assert.match(androidProvider, /val refreshResult = refreshGitHub[\s\S]*session\.commitIfPublishable\(refreshResult\.publication\) \{ store\.replaceSnapshot\(refreshResult\.snapshot, credential\.revision\) \}/u);
+  assert.match(androidProvider, /validation\.state == "error" && session\.reachedDeadline\(\)[\s\S]*WidgetRefreshPublication\.DEADLINE_FAILURE[\s\S]*catch \(_: Exception\)[\s\S]*session\.reachedDeadline\(\)[\s\S]*WidgetRefreshPublication\.DEADLINE_FAILURE/u);
   assert.match(androidRefreshService, /private class WidgetRefreshRun[\s\S]*private val stopped = AtomicBoolean\(false\)[\s\S]*private val activeSession = AtomicReference<WidgetRefreshSession\?>\(null\)/u);
   assert.match(androidRefreshService, /activeRun\?\.stop\(\)[\s\S]*activeRun = run[\s\S]*run\.attach\(session\)[\s\S]*!run\.isStopped\(\) && activeRun === run[\s\S]*jobFinished\(run\.parameters, retry\)/u);
   assert.match(androidRefreshService, /onStopJob[\s\S]*activeRun\?\.stop\(\)[\s\S]*activeRun = null/u);
@@ -264,6 +266,9 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   assert.match(androidProvider, /fun cancel[\s\S]*connections\.forEach \{ it\.disconnect\(\) \}/u);
   assert.match(androidProvider, /ScrollView/u);
   assert.match(androidProvider, /incomplete_results/u);
+  assert.match(androidProvider, /val totalCount = \(payload\.opt\("total_count"\) as\? Int\)\?\.takeIf \{ it >= 0 \}[\s\S]*return@github failure/u);
+  assert.doesNotMatch(androidProvider, /payload\.getInt\("total_count"\)/u);
+  assert.match(androidProvider, /put\("total", totalCount\)[\s\S]*put\("bounded", totalCount > resultLimit\)/u);
   assert.match(androidProvider, /item\.opt\("draft"\) as\? Boolean[\s\S]*item\.opt\("state"\) as\? String[\s\S]*it == "open" \|\| it == "closed"/u);
   assert.ok(androidProvider.indexOf('item.opt("state") as? String') < androidProvider.indexOf("when { isDraft"));
   assert.doesNotMatch(androidProvider, /item\.optBoolean\("draft"|item\.optString\("state"/u);
@@ -275,7 +280,7 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   assert.match(androidProvider, /private fun responseIsRateLimited[\s\S]*status == 429[\s\S]*status != 403[\s\S]*X-RateLimit-Remaining[\s\S]*Retry-After[\s\S]*errorStream[\s\S]*JSONObject\(reader\.readText\(\)\)\.opt\("message"\) as\? String[\s\S]*lowercase\(Locale\.ROOT\)[\s\S]*contains\("rate limit"\)/u);
   assert.equal((androidProvider.match(/responseIsRateLimited\(connection\)/gu) ?? []).length, 2);
   assert.match(androidProvider, /status == 401[\s\S]*"missing-token"[\s\S]*status == 403 \|\| status == 404[\s\S]*"permission"/u);
-  assert.match(androidProvider, /val stored = session\.commitIfPublishable \{ store\.replaceSnapshot\(snapshot, credential\.revision\) \} \?: return false\s+val renderConfiguration = store\.configuration\(deckId\)\s+if \(renderConfiguration == null\)[\s\S]*renderStored\(context, manager, it\)[\s\S]*val rendered = store\.snapshot\(deckId\)[\s\S]*renderSelected\(context, manager, store, deckId, renderConfiguration/u);
+  assert.match(androidProvider, /val stored = session\.commitIfPublishable\(refreshResult\.publication\) \{ store\.replaceSnapshot\(refreshResult\.snapshot, credential\.revision\) \} \?: return false\s+val renderConfiguration = store\.configuration\(deckId\)\s+if \(renderConfiguration == null\)[\s\S]*renderStored\(context, manager, it\)[\s\S]*val rendered = store\.snapshot\(deckId\)[\s\S]*renderSelected\(context, manager, store, deckId, renderConfiguration/u);
   assert.match(androidProvider, /private fun sameSelection[\s\S]*sameRepositories\(left\.optJSONArray\("repositories"\), right\.optJSONArray\("repositories"\)\)[\s\S]*private fun sameRepositories[\s\S]*left\.length\(\) != right\.length\(\)[\s\S]*listOf\("owner", "name"\)/u);
   assert.match(androidManifest, /DevHudWidgetProvider"\s+android:exported="false"\s+android:label="@string\/devhud_widget_name"/u);
   assert.match(androidProvider, /results.*prefix|prefix\(3\)|minOf\(results\?\.length\(\) \?: 0, 3\)/su);
