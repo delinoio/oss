@@ -792,9 +792,10 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
 
     private func disableWidgetDeck(_ args: RequestArgs, _ invoke: Invoke) throws {
         guard let deckId = args.deckId, let defaults = UserDefaults(suiteName: appGroup) else { throw NativeError.invalidArgument }
-        guard removeWidgetCredential(deckId) else { rejectStorageFailure(invoke); return }
         defaults.removeObject(forKey: widgetConfigurationPrefix + deckId)
         defaults.removeObject(forKey: widgetSnapshotPrefix + deckId)
+        guard defaults.synchronize() else { rejectStorageFailure(invoke); return }
+        guard removeWidgetCredential(deckId) else { rejectStorageFailure(invoke); return }
         WidgetCenter.shared.reloadAllTimelines()
         invoke.resolve(["kind": "ok"])
     }

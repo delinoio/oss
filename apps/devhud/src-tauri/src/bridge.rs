@@ -25,6 +25,7 @@ use crate::shortcuts::{
 const PROFILE_ID_LIMIT: usize = 128;
 const SECRET_LIMIT: usize = 64 * 1024;
 const DIAGNOSTICS_EXPORT_LIMIT: usize = 1024 * 1024;
+const WIDGET_QUERY_LIMIT: usize = 4096;
 const TAURI_REVISION: &str = "4af26a3f7f8b692d62cca549bbacd93f5ce90b41";
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 const CEF_REVISION: &str = "150.0.10+g8042e43+chromium-150.0.7871.101";
@@ -720,7 +721,7 @@ fn validate_widget_request(request: &Value) -> Result<(), String> {
                 .get("query")
                 .and_then(Value::as_str)
                 .is_some_and(|query| {
-                    !query.trim().is_empty() && javascript_string_len(query) <= 1024
+                    !query.trim().is_empty() && javascript_string_len(query) <= WIDGET_QUERY_LIMIT
                 })
             && value
                 .get("repositories")
@@ -789,7 +790,7 @@ fn validate_widget_request(request: &Value) -> Result<(), String> {
         && value
             .get("query")
             .and_then(Value::as_str)
-            .is_some_and(|query| javascript_string_len(query) <= 1024)
+            .is_some_and(|query| javascript_string_len(query) <= WIDGET_QUERY_LIMIT)
         && ["total", "open", "draft", "merged", "closed"]
             .into_iter()
             .all(valid_count)
@@ -2218,7 +2219,7 @@ mod tests {
             "version": 1,
             "deckId": deck_id,
             "name": "가".repeat(128),
-            "query": "😀".repeat(512),
+            "query": "😀".repeat(2048),
             "repositories": [{ "owner": "octo", "name": "widgets" }],
             "profileId": "work",
             "profileKind": "fine-grained",
@@ -2243,7 +2244,7 @@ mod tests {
         let mut snapshot = json!({
             "version": 1,
             "deckId": deck_id,
-            "query": "😀".repeat(512),
+            "query": "😀".repeat(2048),
             "counts": { "total": 1, "open": 1, "draft": 0, "merged": 0, "closed": 0, "bounded": false },
             "results": [{
                 "nodeId": "가".repeat(128),
@@ -2285,7 +2286,7 @@ mod tests {
             "version": 1,
             "deckId": deck_id,
             "name": "Deck",
-            "query": "😀".repeat(513),
+            "query": "😀".repeat(2049),
             "repositories": [{ "owner": "octo", "name": "widgets" }],
             "profileId": "work",
             "profileKind": "fine-grained",

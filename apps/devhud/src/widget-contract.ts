@@ -1,10 +1,12 @@
-import type { DeckRepositoryRef, GitHubCredentialKind } from "./settings-contract.ts";
+import { SettingsTextLimit } from "./contract-limits.ts";
 import type { GitHubDeckPullRequest, GitHubRate } from "./github-provider.ts";
+import type { DeckRepositoryRef, GitHubCredentialKind } from "./settings-contract.ts";
 
 export const WidgetContractVersion = 1 as const;
 export const WidgetRepositoryLimit = 10 as const;
 export const WidgetResultLimit = 100 as const;
 export const WidgetPreviewLimit = 3 as const;
+export const WidgetQueryLimit = SettingsTextLimit;
 export const WidgetStaleAfterMilliseconds = 60 * 60 * 1000;
 
 export const WidgetRefreshState = {

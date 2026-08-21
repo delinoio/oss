@@ -175,6 +175,9 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   assert.match(iosWidget, /refreshWithDeadline[\s\S]*withTaskGroup\(of: DeckSnapshot\.self\)[\s\S]*Task\.sleep\(nanoseconds: refreshDeadlineNanoseconds\)[\s\S]*group\.cancelAll\(\)/u);
   assert.match(iosWidget, /validateRepositories[\s\S]*withTaskGroup\(of: RepositoryValidationFailure\?\.self\)[\s\S]*repositories\.prefix\(initialCount\)[\s\S]*group\.cancelAll\(\)/u);
   assert.match(iosWidget, /try Task\.checkCancellation\(\)/u);
+  assert.match(iosWidget, /URLSessionConfiguration\.ephemeral[\s\S]*requestCachePolicy = \.reloadIgnoringLocalCacheData[\s\S]*urlCache = nil[\s\S]*URLSession\(configuration: configuration\)/u);
+  assert.equal((iosWidget.match(/githubSession\.data\(for: request\)/gu) ?? []).length, 2);
+  assert.doesNotMatch(iosWidget, /URLSession\.shared/u);
   assert.match(iosWidget, /staleDate[\s\S]*entries\.append/u);
   assert.match(iosWidget, /parseWidgetTimestamp[\s\S]*withInternetDateTime, \.withFractionalSeconds[\s\S]*fractional\.date\(from: value\) \?\? ISO8601DateFormatter\(\)\.date\(from: value\)/u);
   assert.equal((iosWidget.match(/parseWidgetTimestamp\(value\)/gu) ?? []).length, 3);
@@ -186,6 +189,7 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   assert.match(iosNativeBridge, /replaceWidgetCredentials\(profileId: setting\.profileId/u);
   assert.match(iosNativeBridge, /for key in keys where key\.hasPrefix\(widgetConfigurationPrefix\)[\s\S]*for key in keys where key\.hasPrefix\(widgetSnapshotPrefix\)/u);
   assert.match(iosNativeBridge, /private func clearWidgetState\(\)[\s\S]*widgetTransactionPrefix[\s\S]*guard defaults\.synchronize\(\) else \{ return false \}[\s\S]*guard removeAllWidgetCredentials\(\) else \{ return false \}[\s\S]*reloadAllTimelines/u);
+  assert.match(iosNativeBridge, /private func disableWidgetDeck[\s\S]*removeObject\(forKey: widgetConfigurationPrefix \+ deckId\)[\s\S]*removeObject\(forKey: widgetSnapshotPrefix \+ deckId\)[\s\S]*guard defaults\.synchronize\(\)[\s\S]*guard removeWidgetCredential\(deckId\)[\s\S]*invoke\.resolve/u);
   assert.match(iosNativeBridge, /pendingDeckIds[\s\S]*removeWidgetCredential\(deckId\)[\s\S]*widgetCredentialDeckIds\(\)/u);
   assert.match(iosWidget, /guard defaults\?\.bool\(forKey: transactionPrefix \+ deckId\) != true else \{ return nil \}/u);
   assert.match(iosWidget, /devhud:\/\/deck\//u);

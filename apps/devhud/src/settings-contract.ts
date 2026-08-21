@@ -4,6 +4,7 @@ import {
   encodeCanonicalSettingsJson,
   validateCanonicalSettingsJson,
 } from "@delinoio/devhud-api-client";
+import { SettingsTextLimit } from "./contract-limits.ts";
 import { ShortcutContractError, defaultDesktopShortcutBindings, parseDesktopShortcutBindings, type DesktopShortcutBindings } from "./shortcuts";
 import { configuredChromeOrigins, mappingAcceptsOrigin, parseUrlPattern, type UrlRepositoryMapping } from "./url-mapping";
 
@@ -696,7 +697,7 @@ function array(value: unknown, path: string): readonly unknown[] {
 }
 
 function text(value: unknown, path: string, allowEmpty = false): string {
-  if (typeof value !== "string" || (!allowEmpty && value.length === 0) || value.length > 4096) throw new SettingsContractError(path, "must be a bounded string");
+  if (typeof value !== "string" || (!allowEmpty && value.length === 0) || value.length > SettingsTextLimit) throw new SettingsContractError(path, "must be a bounded string");
   return value;
 }
 

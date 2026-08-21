@@ -12,6 +12,12 @@ private let transactionPrefix = "widget.transaction."
 private let staleAfter: TimeInterval = 60 * 60
 private let repositoryValidationConcurrency = 3
 private let refreshDeadlineNanoseconds: UInt64 = 20 * 1_000_000_000
+private let githubSession: URLSession = {
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+    configuration.urlCache = nil
+    return URLSession(configuration: configuration)
+}()
 
 private func parseWidgetTimestamp(_ value: String) -> Date? {
     let fractional = ISO8601DateFormatter()
@@ -144,7 +150,7 @@ private struct DeckTimelineProvider: IntentTimelineProvider {
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         request.setValue("2026-03-10", forHTTPHeaderField: "X-GitHub-Api-Version")
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await githubSession.data(for: request)
             guard let http = response as? HTTPURLResponse else { return failure(deck: deck, previous: previous, state: "error", attempted: attempted, rate: nil) }
             let rate = responseRate(http)
             let rateLimited = http.statusCode == 429 || (http.statusCode == 403 && (rate.remaining == 0 || rate.retryAfterSeconds != nil))
@@ -230,7 +236,7 @@ private struct DeckTimelineProvider: IntentTimelineProvider {
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         request.setValue("2026-03-10", forHTTPHeaderField: "X-GitHub-Api-Version")
         if body != nil { request.setValue("application/json", forHTTPHeaderField: "Content-Type") }
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await githubSession.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
         return (data, http, responseRate(http))
     }

@@ -2,7 +2,7 @@ import { normalizeLogtoIssuer } from "./identity-contract.ts";
 import type { SanitizedBrowserContext } from "./browser-context.ts";
 import { ClassicPatCreationUrl, FineGrainedPatCreationUrl } from "./github-links.ts";
 import { defaultDesktopShortcutBindings, parseDesktopShortcutBindings, type DesktopShortcutBindings, type ShortcutActionId, type ShortcutValidationCode } from "./shortcuts.ts";
-import { WidgetContractVersion, WidgetRepositoryLimit, WidgetResultLimit, type WidgetDeckConfiguration, type WidgetDeckSnapshot } from "./widget-contract.ts";
+import { WidgetContractVersion, WidgetQueryLimit, WidgetRepositoryLimit, WidgetResultLimit, type WidgetDeckConfiguration, type WidgetDeckSnapshot } from "./widget-contract.ts";
 
 export const NativeBridgeVersion = 1 as const;
 
@@ -268,7 +268,7 @@ export function validateWidgetRequest(request: Extract<NativeBridgeRequestV1, { 
     if (!hasExactKeys(value, ["version", "deckId", "name", "query", "repositories", "profileId", "profileKind", "scopeId", "language"])
       || value.version !== WidgetContractVersion || !uuidPattern.test(value.deckId) || !profilePattern.test(value.profileId) || !profilePattern.test(value.scopeId)
       || !["fine-grained", "classic"].includes(value.profileKind) || !["en", "ko"].includes(value.language)
-      || value.name.trim().length === 0 || value.name.length > 128 || value.query.trim().length === 0 || value.query.length > 1024
+      || value.name.trim().length === 0 || value.name.length > 128 || value.query.trim().length === 0 || value.query.length > WidgetQueryLimit
       || !Array.isArray(value.repositories) || value.repositories.length === 0 || value.repositories.length > WidgetRepositoryLimit || new Set(repositoryKeys).size !== repositoryKeys.length
       || value.repositories.some((repository) => !hasExactKeys(repository, ["owner", "name"]) || !/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/u.test(repository.owner) || repository.owner.endsWith("-") || repository.owner.includes("--") || !/^[A-Za-z0-9._-]{1,100}$/u.test(repository.name))) throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument);
     return;
@@ -280,7 +280,7 @@ export function validateWidgetRequest(request: Extract<NativeBridgeRequestV1, { 
   if (!hasExactKeys(value, ["version", "deckId", "query", "counts", "results", "state", "lastSuccessfulAt", "lastAttemptedAt", "rate"])
     || !hasExactKeys(value.counts, ["total", "open", "draft", "merged", "closed", "bounded"])
     || value.rate !== null && !hasExactKeys(value.rate, ["limit", "remaining", "used", "resetAt", "resource", "retryAfterSeconds"])
-    || value.version !== WidgetContractVersion || !uuidPattern.test(value.deckId) || value.query.length > 1024 || value.results.length > WidgetResultLimit
+    || value.version !== WidgetContractVersion || !uuidPattern.test(value.deckId) || value.query.length > WidgetQueryLimit || value.results.length > WidgetResultLimit
     || !Number.isSafeInteger(value.counts.total) || value.counts.total < 0 || [value.counts.open, value.counts.draft, value.counts.merged, value.counts.closed].some((count) => !Number.isSafeInteger(count) || count < 0)
     || value.results.some((pullRequest) => !hasExactKeys(pullRequest, ["nodeId", "number", "title", "repository", "state", "draft"])
       || pullRequest.nodeId.length === 0 || pullRequest.nodeId.length > 128 || pullRequest.title.length > 512 || pullRequest.repository.length > 256 || !Number.isSafeInteger(pullRequest.number) || pullRequest.number < 1)

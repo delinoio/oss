@@ -99,7 +99,7 @@ Chrome capture rechecks the configured origin's Chrome-valid scheme-and-host opt
 
 - Native GitHub PAT reads require the matching API-origin/profile association, and failed desktop or iOS PAT persistence restores any newly created association state before returning failure.
 
-- Native widget refreshes validate at most three repositories concurrently under one cancellable 20-second per-Deck deadline; Android job cancellation disconnects active requests and avoids publishing late results. Destructive iOS cleanup persists shared App Group widget deletion before removing widget Keychain credentials or reporting success.
+- Native widget configuration and snapshot queries accept the synchronized Settings bound of 4,096 UTF-16 code units. Refreshes validate at most three repositories concurrently under one cancellable 20-second per-Deck deadline; Android job cancellation disconnects active requests and avoids publishing late results. Every authenticated iOS widget GitHub request uses an ephemeral cache-disabled URL session, and destructive iOS cleanup persists shared App Group widget deletion before removing widget Keychain credentials or reporting success.
 
 ## Change Policy
 
