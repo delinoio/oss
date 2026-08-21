@@ -45,6 +45,7 @@ private struct WidgetDeckConfiguration: Codable {
 }
 
 private struct WidgetRepository: Codable { let owner: String; let name: String }
+private struct WidgetCredential: Codable { let version: Int; let revision: String; let token: String }
 
 private struct WidgetDeckCounts: Codable { let total: Int; let open: Int; let draft: Int; let merged: Int; let closed: Int; let bounded: Bool }
 private struct WidgetPullRequest: Codable { let nodeId: String; let number: Int; let title: String; let repository: String; let state: String; let draft: Bool }
@@ -581,6 +582,11 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
         return SecItemAdd(item as CFDictionary, nil)
     }
 
+    private func encodeWidgetCredential(_ data: Data) -> Data? {
+        guard let token = String(data: data, encoding: .utf8) else { return nil }
+        return try? JSONEncoder().encode(WidgetCredential(version: 1, revision: UUID().uuidString.lowercased(), token: token))
+    }
+
     private func readWidgetCredential(_ deckId: String) -> (OSStatus, Data?) {
         var query = widgetCredentialQuery(deckId)
         query[kSecReturnData as String] = true
@@ -598,6 +604,7 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
                   configuration.profileId == profileId, configuration.scopeId == scopeId else { return nil }
             return String(key.dropFirst(widgetConfigurationPrefix.count))
         }
+        guard let replacement = encodeWidgetCredential(data) else { return false }
         var previous: [(deckId: String, data: Data?)] = []
         for deckId in deckIds {
             let (status, stored) = readWidgetCredential(deckId)
@@ -606,7 +613,7 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
         }
         var updated: [(deckId: String, data: Data?)] = []
         for item in previous {
-            if storeWidgetCredential(data, deckId: item.deckId) == errSecSuccess {
+            if storeWidgetCredential(replacement, deckId: item.deckId) == errSecSuccess {
                 updated.append(item)
                 continue
             }
@@ -749,7 +756,8 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
                 rejectStorageFailure(invoke)
                 return
             }
-            guard storeWidgetCredential(patData, deckId: configuration.deckId) == errSecSuccess else {
+            guard let widgetCredential = encodeWidgetCredential(patData),
+                  storeWidgetCredential(widgetCredential, deckId: configuration.deckId) == errSecSuccess else {
                 defaults.removeObject(forKey: transactionKey)
                 _ = defaults.synchronize()
                 rejectStorageFailure(invoke)

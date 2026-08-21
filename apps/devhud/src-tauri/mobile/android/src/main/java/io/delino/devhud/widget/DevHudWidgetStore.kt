@@ -20,6 +20,8 @@ private const val selectionPrefix = "selection:"
 private const val transactionPrefix = "transaction:"
 private const val disableTransactionPrefix = "disable-transaction:"
 
+internal data class WidgetCredential(val token: String?, val revision: String?)
+
 internal class DevHudWidgetStore(private val context: Context) {
     companion object {
         private val widgetStoreMutationLock = Any()
@@ -70,24 +72,33 @@ internal class DevHudWidgetStore(private val context: Context) {
         state.edit().remove(transactionKey).commit()
     }
 
-    fun replaceSnapshot(snapshot: JSONObject): Boolean = synchronized(widgetStoreMutationLock) {
+    fun replaceSnapshot(snapshot: JSONObject): Boolean = replaceSnapshot(snapshot, null, false)
+
+    fun replaceSnapshot(snapshot: JSONObject, credentialRevision: String?): Boolean =
+        replaceSnapshot(snapshot, credentialRevision, true)
+
+    private fun replaceSnapshot(snapshot: JSONObject, credentialRevision: String?, verifyCredential: Boolean): Boolean = synchronized(widgetStoreMutationLock) {
         val deckId = snapshot.getString("deckId")
         val configuration = configuration(deckId) ?: return@synchronized false
         if (snapshot.getString("query") != configuration.getString("query")) return@synchronized false
+        if (verifyCredential) {
+            if (state.contains(transactionPrefix + deckId) || state.contains(disableTransactionPrefix + deckId)) return@synchronized false
+            if (secrets.getString(deckId, null) != credentialRevision) return@synchronized false
+        }
         state.edit().putString(snapshotPrefix + deckId, snapshot.toString()).commit()
     }
 
-    fun replaceProfileToken(profileId: String, scopeId: String, token: String): Boolean {
+    fun replaceProfileToken(profileId: String, scopeId: String, token: String): Boolean = synchronized(widgetStoreMutationLock) {
         val configurations = state.all.entries
             .filter { it.key.startsWith(configurationPrefix) }
             .mapNotNull { (key, value) -> json(value as? String)?.let { key.removePrefix(configurationPrefix) to it } }
             .filter { (_, configuration) ->
                 configuration.optString("profileId") == profileId && configuration.optString("scopeId") == scopeId
             }
-        if (configurations.isEmpty()) return true
+        if (configurations.isEmpty()) return@synchronized true
         val editor = secrets.edit()
         configurations.forEach { (deckId, _) -> editor.putString(deckId, encrypt(token, deckId)) }
-        return editor.commit()
+        editor.commit()
     }
 
     fun disable(deckId: String): Boolean = synchronized(widgetStoreMutationLock) {
@@ -122,9 +133,10 @@ internal class DevHudWidgetStore(private val context: Context) {
         if (state.contains(disableTransactionPrefix + deckId)) return null
         return json(state.getString(snapshotPrefix + deckId, null))
     }
-    fun token(deckId: String): String? {
+    fun credential(deckId: String): WidgetCredential? {
         if (state.contains(transactionPrefix + deckId) || state.contains(disableTransactionPrefix + deckId)) return null
-        return secrets.getString(deckId, null)?.let { decrypt(it, deckId) }
+        val revision = secrets.getString(deckId, null)
+        return WidgetCredential(revision?.let { decrypt(it, deckId) }, revision)
     }
 
     fun select(appWidgetId: Int, deckId: String): Boolean {

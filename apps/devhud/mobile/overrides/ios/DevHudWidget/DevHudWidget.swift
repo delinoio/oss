@@ -33,6 +33,8 @@ struct DeckRepository: Codable, Sendable { let owner: String; let name: String }
 struct DeckCounts: Codable, Sendable { let total: Int; let open: Int; let draft: Int; let merged: Int; let closed: Int; let bounded: Bool }
 struct DeckPullRequest: Codable, Identifiable, Sendable { let nodeId: String; let number: Int; let title: String; let repository: String; let state: String; let draft: Bool; var id: String { nodeId } }
 struct DeckRate: Codable, Sendable { let limit: Int?; let remaining: Int?; let used: Int?; let resetAt: String?; let resource: String?; let retryAfterSeconds: Int? }
+private struct StoredWidgetCredential: Codable, Sendable { let version: Int; let revision: String; let token: String }
+private struct WidgetCredential: Sendable { let token: String?; let revision: Data? }
 struct DeckSnapshot: Codable, Sendable {
     let version: Int; let deckId: String; let query: String; let counts: DeckCounts; let results: [DeckPullRequest]; var state: String; let lastSuccessfulAt: String?; var lastAttemptedAt: String; var rate: DeckRate?
 }
@@ -59,25 +61,39 @@ private struct WidgetStore {
         guard let data = defaults?.data(forKey: snapshotPrefix + deckId) else { return nil }
         return try? JSONDecoder().decode(DeckSnapshot.self, from: data)
     }
-    func save(_ snapshot: DeckSnapshot, whileEnabled configuration: DeckConfiguration) -> Bool {
+    func save(_ snapshot: DeckSnapshot, whileEnabled configuration: DeckConfiguration, credentialRevision: Data?) -> Bool {
         guard let data = try? JSONEncoder().encode(snapshot), let defaults else { return false }
         let key = snapshotPrefix + snapshot.deckId
+        guard let current = self.configuration(snapshot.deckId), sameSelection(current, configuration), credentialMatches(deckId: snapshot.deckId, revision: credentialRevision) else { return false }
         defaults.set(data, forKey: key)
-        guard let current = self.configuration(snapshot.deckId), sameSelection(current, configuration) else {
+        guard let current = self.configuration(snapshot.deckId), sameSelection(current, configuration), credentialMatches(deckId: snapshot.deckId, revision: credentialRevision) else {
             defaults.removeObject(forKey: key)
             return false
         }
         return true
     }
-    func token(_ deckId: String) -> String? {
+    func credential(_ deckId: String) -> WidgetCredential? {
         guard defaults?.bool(forKey: transactionPrefix + deckId) != true else { return nil }
+        let result = credentialData(deckId)
+        if result.status == errSecItemNotFound { return WidgetCredential(token: nil, revision: nil) }
+        guard result.status == errSecSuccess, let data = result.data else { return nil }
+        let token = (try? JSONDecoder().decode(StoredWidgetCredential.self, from: data))?.token ?? String(data: data, encoding: .utf8)
+        return WidgetCredential(token: token, revision: data)
+    }
+    private func credentialMatches(deckId: String, revision: Data?) -> Bool {
+        guard defaults?.bool(forKey: transactionPrefix + deckId) != true else { return false }
+        let current = credentialData(deckId)
+        if current.status == errSecItemNotFound { return revision == nil }
+        return current.status == errSecSuccess && current.data == revision
+    }
+    private func credentialData(_ deckId: String) -> (status: OSStatus, data: Data?) {
         var query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: credentialService,
                                     kSecAttrAccount as String: deckId, kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne,
                                     kSecAttrSynchronizable as String: false]
         if let group = Bundle.main.object(forInfoDictionaryKey: "DevHudWidgetKeychainAccessGroup") as? String { query[kSecAttrAccessGroup as String] = group }
         var item: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess, let data = item as? Data else { return nil }
-        return String(data: data, encoding: .utf8)
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        return (status, item as? Data)
     }
 }
 
@@ -102,14 +118,18 @@ private struct DeckTimelineProvider: IntentTimelineProvider {
             completion(Timeline(entries: [DeckEntry(date: Date(), configuration: nil, snapshot: nil)], policy: .after(Date().addingTimeInterval(30 * 60))))
             return
         }
+        guard let credential = store.credential(deck.deckId) else {
+            completion(timeline(deck: deck, snapshot: store.snapshot(deck.deckId)))
+            return
+        }
         Task {
-            let snapshot = await Self.refreshWithDeadline(deck: deck, previous: store.snapshot(deck.deckId), token: store.token(deck.deckId))
+            let snapshot = await Self.refreshWithDeadline(deck: deck, previous: store.snapshot(deck.deckId), token: credential.token)
             guard let current = store.configuration(deck.deckId), sameSelection(current, deck) else {
                 let current = store.configuration(deck.deckId)
                 completion(timeline(deck: current, snapshot: current.flatMap { store.snapshot($0.deckId) }))
                 return
             }
-            let stored = store.save(snapshot, whileEnabled: current)
+            let stored = store.save(snapshot, whileEnabled: current, credentialRevision: credential.revision)
             completion(timeline(deck: current, snapshot: stored ? snapshot : store.snapshot(current.deckId)))
         }
     }

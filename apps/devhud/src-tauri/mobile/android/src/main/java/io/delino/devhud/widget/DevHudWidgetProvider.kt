@@ -153,21 +153,26 @@ class DevHudWidgetProvider : AppWidgetProvider() {
                 return true
             }
             val previous = store.snapshot(deckId)
-            val token = store.token(deckId)
-            if (token == null) {
+            val credential = store.credential(deckId)
+            if (credential == null) {
+                appWidgetIds.forEach { renderStored(context, manager, it) }
+                return false
+            }
+            if (credential.token == null) {
                 val snapshot = failure(configuration, previous, "missing-token", Instant.now().toString(), null)
-                val stored = store.replaceSnapshot(snapshot)
-                renderSelected(context, manager, store, deckId, configuration, snapshot, "missing-token", appWidgetIds)
+                val stored = store.replaceSnapshot(snapshot, credential.revision)
+                val rendered = if (stored) snapshot else store.snapshot(deckId)
+                renderSelected(context, manager, store, deckId, configuration, rendered, rendered?.optString("state", "missing-token") ?: "missing-token", appWidgetIds)
                 return stored
             }
-            val snapshot = refreshGitHub(configuration, token, previous, session)
+            val snapshot = refreshGitHub(configuration, credential.token, previous, session)
             if (session.wasStopped()) return false
             val current = store.configuration(deckId)
             if (current == null || !sameSelection(configuration, current)) {
                 appWidgetIds.forEach { renderStored(context, manager, it) }
                 return true
             }
-            val stored = store.replaceSnapshot(snapshot)
+            val stored = store.replaceSnapshot(snapshot, credential.revision)
             val rendered = if (stored) snapshot else store.snapshot(deckId)
             renderSelected(context, manager, store, deckId, current, rendered, rendered?.optString("state", "error") ?: "error", appWidgetIds)
             return stored
