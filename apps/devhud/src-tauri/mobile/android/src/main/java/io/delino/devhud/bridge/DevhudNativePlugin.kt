@@ -45,6 +45,8 @@ private const val diagnosticsCleanupUriKey = "pending-uri"
 private const val diagnosticsCleanupReleaseOnlyKey = "release-only"
 private const val notificationChannel = "deck-changes"
 
+private class MissingWidgetCredentialException : Exception()
+
 @TauriPlugin(
     permissions = [
         Permission(strings = [Manifest.permission.POST_NOTIFICATIONS], alias = notificationAlias)
@@ -518,9 +520,10 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
             val encoded = preferences.getString("github-pat:$profileId", null)
             val widgetStore = DevHudWidgetStore(activity.applicationContext)
             if (!preferences.contains(marker) || encoded == null) {
-                widgetStore.disable(deckId)
+                val disabled = widgetStore.disable(deckId)
                 renderWidgets()
-                throw IllegalStateException("missing selected widget credential")
+                if (!disabled) throw IllegalStateException("widget cleanup failed")
+                throw MissingWidgetCredentialException()
             }
             val token = try { decryptSecure(encoded, "github-pat:$profileId", authenticateKey = true) }
                 catch (error: Exception) { widgetStore.disable(deckId); renderWidgets(); throw error }
@@ -562,6 +565,8 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
                 try {
                     if (operation()) invoke.resolve(JSObject().put("kind", "ok"))
                     else invoke.reject("storage-failure", "storage-failure")
+                } catch (_: MissingWidgetCredentialException) {
+                    invoke.reject("not-configured", "not-configured")
                 } catch (error: Exception) {
                     invoke.reject("storage-failure", "storage-failure", error)
                 } finally {

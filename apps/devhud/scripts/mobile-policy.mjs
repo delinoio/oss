@@ -59,6 +59,7 @@ export function assertAndroidNativeBridge(androidNativeBridgeInput) {
   const removeGitHubPatScope = androidNativeBridge.match(/private fun removeGitHubPatScope[\s\S]*?(?=\n    private fun reconcileGitHubPats)/u)?.[0] ?? "";
   const reconcileGitHubPats = androidNativeBridge.match(/private fun reconcileGitHubPats[\s\S]*?(?=\n    private fun purgeSecure)/u)?.[0] ?? "";
   const purgeSecure = androidNativeBridge.match(/private fun purgeSecure\(invoke: Invoke\)[\s\S]*?(?=\n    private fun persistSecure)/u)?.[0] ?? "";
+  const enableWidgetDeck = androidNativeBridge.match(/private fun enableWidgetDeck\(invoke: Invoke\)[\s\S]*?(?=\n    private fun replaceWidgetSnapshot)/u)?.[0] ?? "";
   const persistSecure = androidNativeBridge.match(/private fun persistSecure\(invoke: Invoke[\s\S]*?(?=\n    private fun permissionValue)/u)?.[0] ?? "";
   assert(androidNativeBridge.includes("Executors.newSingleThreadExecutor()"), "Android secure-setting persistence must run off the command thread");
   assert(onDestroy.includes("secureSettingsExecutor.shutdown()"), "Android secure-setting executor must stop with the plugin lifecycle");
@@ -101,6 +102,9 @@ export function assertAndroidNativeBridge(androidNativeBridgeInput) {
   assert(purgeSecure.includes('val destructivePurge = scope in setOf("logout", "account-deletion")') && purgeSecure.indexOf("diagnosticsPurgesInProgress.incrementAndGet()") < purgeSecure.indexOf("diagnosticsExportPickerActive = false") && purgeSecure.indexOf("diagnosticsExportPickerActive = false") < purgeSecure.indexOf("cleanupPendingDiagnosticsExport()"), "Android destructive purges must reserve invalidation before invalidating active diagnostics pickers and cleanup");
   assert(purgeSecure.includes("diagnosticsPurgesInProgress.incrementAndGet()") && (purgeSecure.match(/diagnosticsPurgesInProgress\.decrementAndGet\(\)/gu) ?? []).length === 3, "Android destructive purges must retain and release export invalidation across queued persistence and failures");
   assert(persistSecure.includes("finally") && persistSecure.includes("onComplete()"), "Android secure persistence must release purge state after executor completion");
+  assert(enableWidgetDeck.includes("val disabled = widgetStore.disable(deckId)") && enableWidgetDeck.indexOf("widgetStore.disable(deckId)") < enableWidgetDeck.indexOf("renderWidgets()") && enableWidgetDeck.indexOf("renderWidgets()") < enableWidgetDeck.indexOf("throw MissingWidgetCredentialException()"), "Android missing widget PAT rejection must follow widget cleanup and rendering");
+  assert(enableWidgetDeck.includes('if (!disabled) throw IllegalStateException("widget cleanup failed")'), "Android missing widget PAT cleanup failures must remain storage failures");
+  assert(persistSecure.includes("catch (_: MissingWidgetCredentialException)") && persistSecure.includes('invoke.reject("not-configured", "not-configured")') && persistSecure.indexOf("catch (_: MissingWidgetCredentialException)") < persistSecure.indexOf("catch (error: Exception)"), "Android missing widget PATs must use not-configured before generic storage-failure mapping");
   assert(purgeSecure.includes("if (!cleanupPendingDiagnosticsExport())"), "Android destructive purges must propagate diagnostics cleanup failures");
   assert(purgeSecure.includes("DevHudWidgetStore(activity.applicationContext).clear()") && purgeSecure.indexOf("DevHudWidgetStore(activity.applicationContext).clear()") < purgeSecure.indexOf("editor.commit()"), "Android destructive purges must clear widget state before the authoritative secure store");
   assert(androidNativeBridge.includes("storeIntent().resolveActivity(activity.packageManager)"), "Android update status must resolve a market handler");
@@ -160,6 +164,8 @@ export function assertIosNativeBridge(iosNativeBridgeInput) {
 
 export function assertNativeWidgetPullRequestMetadata(androidProvider, iosWidget) {
   const androidRefresh = androidProvider.match(/private fun refreshGitHub[\s\S]*?(?=\n        private fun validateRepositories)/u)?.[0] ?? "";
+  assert(androidRefresh.includes('val nodeId = item.opt("node_id") as? String') && androidRefresh.includes('val number = item.opt("number") as? Int') && androidRefresh.includes('val title = item.opt("title") as? String') && androidRefresh.includes('val repositoryUrl = item.opt("repository_url") as? String'), "Android widget refresh must require exact result field types");
+  assert(androidRefresh.includes('.put("nodeId", nodeId)') && androidRefresh.includes('.put("number", number)') && androidRefresh.includes('.put("title", title)') && androidRefresh.includes('.put("repository", repositoryName(repositoryUrl))'), "Android widget refresh must publish only validated result fields");
   assert(/item\.optJSONObject\("pull_request"\)[\s\S]*?\?: return@github failure/u.test(androidRefresh), "Android widget refresh must reject a missing or non-object pull_request");
   assert(androidRefresh.includes('!pullRequest.has("merged_at")') && androidRefresh.includes("mergedAt !== JSONObject.NULL && mergedAt !is String"), "Android widget refresh must require merged_at to be a string or null");
   assert(androidRefresh.includes("val isMerged = mergedAt is String"), "Android widget refresh must derive merged state from validated metadata");
