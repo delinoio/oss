@@ -252,6 +252,16 @@ fn finish_update_download(
 }
 
 #[cfg(desktop)]
+fn update_download_worker_is_current(
+    updater: &crate::updater::UpdaterController,
+    generation: &Arc<AtomicBool>,
+) -> bool {
+    Arc::ptr_eq(generation, &updater.cancellation_token())
+        && !generation.load(Ordering::Acquire)
+        && updater.snapshot().kind == crate::updater::UpdaterStateKind::Downloading
+}
+
+#[cfg(desktop)]
 enum UpdateCheckDisposition {
     Started(Value),
     Busy(Value),
@@ -1346,7 +1356,7 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
                 let Some(updater) = updater.as_mut() else {
                     return;
                 };
-                if !Arc::ptr_eq(&canceled, &updater.cancellation_token()) {
+                if !update_download_worker_is_current(updater, &canceled) {
                     return;
                 }
                 finish_update_download(updater, artifact)
@@ -1746,6 +1756,8 @@ mod tests {
     #[cfg(desktop)]
     use tracing_subscriber::layer::SubscriberExt;
 
+    #[cfg(desktop)]
+    use super::update_download_worker_is_current;
     use super::{
         NativeBridgeState, handle_native_bridge_request, ios_runtime_os_version, is_auth_callback,
         purge_clears_diagnostics, purge_invalidates_native_messaging, routes_to_mobile_plugin,
@@ -1862,6 +1874,27 @@ mod tests {
             );
         });
         assert!(canceled_output.is_empty());
+    }
+
+    #[cfg(desktop)]
+    #[test]
+    fn canceled_download_workers_cannot_commit_late_results() {
+        let mut updater = available_updater_controller();
+        updater.begin_download().unwrap();
+        let generation = updater.cancellation_token();
+        assert!(update_download_worker_is_current(&updater, &generation));
+
+        updater.cancel();
+
+        assert!(!update_download_worker_is_current(&updater, &generation));
+        assert_eq!(
+            updater.snapshot().kind,
+            crate::updater::UpdaterStateKind::Canceled
+        );
+        assert_eq!(
+            updater.snapshot().diagnostic.unwrap().code,
+            crate::updater::DiagnosticCode::Canceled
+        );
     }
 
     #[cfg(desktop)]

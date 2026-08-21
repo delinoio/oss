@@ -714,6 +714,67 @@ describe("native App state", () => {
     expect(await screen.findByRole("dialog", { name: messages.en.commandPalette })).toBeTruthy();
   });
 
+  it("defers pending Deck links until an updater approval closes", async () => {
+    const updaterStatus: DesktopUpdaterStatus = {
+      kind: "available",
+      installedVersion: "0.1.0",
+      target: "linux-x86_64",
+      packageKind: "linux-appimage",
+      candidate: { version: "0.2.0", releaseNotes: { en: "Signed notes", ko: "서명된 노트" } },
+      diagnostic: null,
+    };
+    const deckId = "018f47a2-7b3c-7def-8abc-1234567890ab";
+    const listeners: Array<(event: NativeBridgeEventV1) => void> = [];
+    vi.spyOn(identityClient, "createIdentitySession").mockResolvedValue({
+      getAccessToken: async () => null,
+      isAuthenticated: async () => false,
+      signIn: async () => {},
+      handleCallback: async () => {},
+      clear: async () => {},
+    } as unknown as IdentitySession);
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      projectId: "PROJECT_ID_DEVHUD",
+      protocolSchemaVersion: 1,
+      apiVersion: "0.1.0-dev",
+      logtoIssuer: "https://identity.example/oidc",
+      logtoAudience: "https://api.example/api",
+      logtoClients: { desktop: "desktop-client", ios: "ios-client", android: "android-client", admin: "admin-client" },
+      logtoRedirects: { native: "devhud://auth/callback", admin: "https://admin.example/callback" },
+    }), { status: 200, headers: { "Content-Type": "application/json", "Connect-Protocol-Version": "1" } })));
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      if (value.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
+      if (value.operation === "updates.status") return { kind: "desktop-update-status", status: updaterStatus };
+      if (value.operation === "deck.peek-pending-link") return { kind: "deck-link", deckId };
+      if (value.operation === "deck.take-pending-link") return { kind: "deck-link", deckId };
+      throw new Error(`unexpected operation ${value.operation}`);
+    });
+    const bridge: NativeBridgeV1 = {
+      request,
+      async listen(listener) {
+        listeners.push(listener);
+        return () => {};
+      },
+    };
+
+    render(<App bridge={bridge} initialRuntime={desktopRuntime} />);
+    fireEvent.click(screen.getByRole("button", { name: messages.en.settings }));
+    fireEvent.click(await screen.findByRole("button", { name: "Approve download" }));
+    expect(screen.getByRole("dialog", { name: "Download this signed update?" })).toBeTruthy();
+    await waitFor(() => expect(request).toHaveBeenCalledWith({ operation: "session.configure-origins", apiOrigin: "https://devhud.api.delino.io" }));
+
+    await act(async () => {
+      for (const listener of listeners) listener({ version: 1, kind: "deck-link", deckId });
+    });
+    await waitFor(() => expect(request).toHaveBeenCalledWith({ operation: "deck.peek-pending-link" }));
+    expect(request.mock.calls.filter(([value]) => value.operation === "deck.take-pending-link")).toHaveLength(0);
+    expect(screen.getByRole("dialog", { name: "Download this signed update?" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Go back" }));
+
+    await waitFor(() => expect(request).toHaveBeenCalledWith({ operation: "deck.take-pending-link" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: messages.en.deck }).getAttribute("aria-current")).toBe("page"));
+  });
+
   it("keeps the palette modal while a capture completes and preserves its confirmation across navigation", async () => {
     const runtime: RuntimeSnapshot = { ...desktopRuntime, capabilities: { ...desktopRuntime.capabilities, capture: true } };
     let resolveCapture: ((response: NativeBridgeResponseV1) => void) | undefined;

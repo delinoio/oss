@@ -67,6 +67,35 @@ func TestDiagnosticsProcedureIsSafeForLogsAndMetrics(t *testing.T) {
 	}
 }
 
+func TestUpdaterProcedureUsesAStableObservabilityLabel(t *testing.T) {
+	for _, path := range []string{
+		"/updates/stable/linux/x86_64.json",
+		"/updates/stable/windows/aarch64.json",
+	} {
+		if got := safeProcedure(path); got != updaterManifestProcedure {
+			t.Fatalf("safe updater procedure for %q = %q", path, got)
+		}
+	}
+	for _, path := range []string{
+		"/updates/stable/linux",
+		"/updates/stable/linux/x86_64.json/extra",
+		"/updates//linux/x86_64.json",
+	} {
+		if got := safeProcedure(path); got != "unmatched" {
+			t.Fatalf("safe malformed updater procedure for %q = %q", path, got)
+		}
+	}
+
+	handler, repository := testHandler(t)
+	request := httptest.NewRequest(http.MethodGet, "/updates/stable/linux/x86_64.json", nil)
+	request.Header.Set("X-DevHud-Package", "linux-deb")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if got := repository.lastRequest(t).Procedure; got != updaterManifestProcedure {
+		t.Fatalf("persisted updater procedure = %q", got)
+	}
+}
+
 func TestBootstrapGRPCProtocolsPreserveSuccessResponses(t *testing.T) {
 	handler, _ := testHandler(t)
 	testServer := httptest.NewServer(handler)

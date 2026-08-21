@@ -103,11 +103,11 @@ impl PackageKind {
     }
 
     pub fn current(target: DesktopTarget) -> Result<Self, UpdaterError> {
-        Self::from_configuration(
-            target,
-            option_env!("DEVHUD_PACKAGE_KIND"),
-            std::env::var_os("APPIMAGE").is_some(),
-        )
+        #[cfg(target_os = "linux")]
+        let appimage = current_appimage_path().is_some();
+        #[cfg(not(target_os = "linux"))]
+        let appimage = false;
+        Self::from_configuration(target, option_env!("DEVHUD_PACKAGE_KIND"), appimage)
     }
 
     fn from_configuration(
@@ -119,7 +119,13 @@ impl PackageKind {
             Some("macos-app") => Self::MacosApp,
             Some("windows-nsis") => Self::WindowsNsis,
             Some("windows-msi") => Self::WindowsMsi,
-            Some("linux-appimage") => Self::LinuxAppimage,
+            Some("linux-appimage") if appimage => Self::LinuxAppimage,
+            Some("linux-appimage") => {
+                return Err(UpdaterError::new(
+                    DiagnosticCode::Unsupported,
+                    UpdatePhase::Target,
+                ));
+            }
             Some("linux-deb") => Self::LinuxDeb,
             Some(_) => {
                 return Err(UpdaterError::new(
@@ -149,6 +155,32 @@ impl PackageKind {
             .then_some(package)
             .ok_or_else(|| UpdaterError::new(DiagnosticCode::Unsupported, UpdatePhase::Target))
     }
+}
+
+#[cfg(any(test, target_os = "linux"))]
+fn appimage_environment_matches_executable(
+    appimage: Option<&Path>,
+    appdir: Option<&Path>,
+    executable: &Path,
+) -> bool {
+    let (Some(appimage), Some(appdir)) = (appimage, appdir) else {
+        return false;
+    };
+    appimage.is_absolute()
+        && appdir.is_absolute()
+        && executable.is_absolute()
+        && executable
+            .strip_prefix(appdir)
+            .is_ok_and(|relative| !relative.as_os_str().is_empty())
+}
+
+#[cfg(target_os = "linux")]
+fn current_appimage_path() -> Option<PathBuf> {
+    let appimage = std::env::var_os("APPIMAGE").map(PathBuf::from)?;
+    let appdir = std::env::var_os("APPDIR").map(PathBuf::from)?;
+    let executable = std::env::current_exe().ok()?;
+    appimage_environment_matches_executable(Some(&appimage), Some(&appdir), &executable)
+        .then_some(appimage)
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -1045,9 +1077,7 @@ impl<'a> PlatformInstaller<'a> {
         if !bytes.starts_with(b"\x7fELF") {
             return Err(DiagnosticCode::InstallationFailed);
         }
-        let destination = std::env::var_os("APPIMAGE")
-            .map(PathBuf::from)
-            .ok_or(DiagnosticCode::InstallationFailed)?;
+        let destination = current_appimage_path().ok_or(DiagnosticCode::InstallationFailed)?;
         let parent = destination
             .parent()
             .filter(|parent| !parent.as_os_str().is_empty())
@@ -1102,6 +1132,12 @@ impl<'a> PlatformInstaller<'a> {
                 return Ok(RestartDisposition::RestartRequired {
                     executable: restart_executable,
                     diagnostic: DiagnosticCode::RestartFailed,
+                });
+            }
+            WindowsInstallerExit::CommitUncertain => {
+                return Ok(RestartDisposition::RestartRequired {
+                    executable: restart_executable,
+                    diagnostic: DiagnosticCode::InstallationFailed,
                 });
             }
         }
@@ -1474,6 +1510,7 @@ fn classify_debian_installer_exit(succeeded: bool, exit_code: Option<i32>) -> De
 enum WindowsInstallerExit {
     Installed,
     RestartRequired,
+    CommitUncertain,
 }
 
 #[cfg(any(test, target_os = "windows"))]
@@ -1486,6 +1523,9 @@ fn classify_windows_installer_exit(
         && exit_code == Some(WINDOWS_INSTALLER_REBOOT_REQUIRED_EXIT_CODE)
     {
         return Ok(WindowsInstallerExit::RestartRequired);
+    }
+    if package_kind == PackageKind::WindowsNsis && !succeeded {
+        return Ok(WindowsInstallerExit::CommitUncertain);
     }
     succeeded
         .then_some(WindowsInstallerExit::Installed)
@@ -1931,6 +1971,51 @@ mod tests {
         );
     }
 
+    #[test]
+    fn appimage_package_kind_requires_the_running_appdir() {
+        let appimage = Path::new("/opt/DevHUD.AppImage");
+        let appdir = Path::new("/tmp/.mount_DevHUD/usr");
+        let executable = Path::new("/tmp/.mount_DevHUD/usr/bin/devhud");
+        assert!(appimage_environment_matches_executable(
+            Some(appimage),
+            Some(appdir),
+            executable,
+        ));
+        assert!(!appimage_environment_matches_executable(
+            Some(Path::new("/opt/Parent.AppImage")),
+            Some(Path::new("/tmp/.mount_Parent/usr")),
+            Path::new("/usr/bin/devhud"),
+        ));
+        assert!(!appimage_environment_matches_executable(
+            Some(appimage),
+            None,
+            executable,
+        ));
+        assert!(!appimage_environment_matches_executable(
+            Some(Path::new("DevHUD.AppImage")),
+            Some(appdir),
+            executable,
+        ));
+
+        assert!(
+            PackageKind::from_configuration(
+                DesktopTarget::LinuxX64,
+                Some("linux-appimage"),
+                false,
+            )
+            .is_err()
+        );
+        assert_eq!(
+            PackageKind::from_configuration(DesktopTarget::LinuxX64, Some("linux-appimage"), true,)
+                .unwrap(),
+            PackageKind::LinuxAppimage
+        );
+        assert_eq!(
+            PackageKind::from_configuration(DesktopTarget::LinuxX64, None, false).unwrap(),
+            PackageKind::LinuxDeb
+        );
+    }
+
     fn fixture(
         version: &str,
         signer: &SigningKey,
@@ -2324,7 +2409,15 @@ mod tests {
                 false,
                 Some(WINDOWS_INSTALLER_REBOOT_REQUIRED_EXIT_CODE),
             ),
-            Err(DiagnosticCode::InstallationFailed)
+            Ok(WindowsInstallerExit::CommitUncertain)
+        );
+        assert_eq!(
+            classify_windows_installer_exit(PackageKind::WindowsNsis, false, None),
+            Ok(WindowsInstallerExit::CommitUncertain)
+        );
+        assert_eq!(
+            classify_windows_installer_exit(PackageKind::WindowsNsis, true, Some(0)),
+            Ok(WindowsInstallerExit::Installed)
         );
         assert_eq!(
             classify_windows_installer_exit(PackageKind::WindowsMsi, false, Some(1603)),

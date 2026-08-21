@@ -72,6 +72,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   const [deckLink, setDeckLink] = useState<string | null>(null);
   const [deckLinkPending, setDeckLinkPending] = useState(false);
   const [deckLinkPolicyOrigin, setDeckLinkPolicyOrigin] = useState<string | null>(null);
+  const [updaterApprovalOpen, setUpdaterApprovalOpen] = useState(false);
   const [online, setOnline] = useState(() => navigator.onLine);
   const [requestedCapture, setRequestedCapture] = useState<{ action: CaptureActionId; sequence: number } | null>(null);
   const search = useRef<HTMLInputElement>(null);
@@ -81,7 +82,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   const paletteTrigger = useRef<HTMLButtonElement>(null);
   const externalAttempt = useRef(0);
   const identitySession = useRef<IdentitySession | null>(null);
-  const updaterApprovalOpen = useRef(false);
+  const updaterApprovalOpenRef = useRef(false);
   const language = preferences.language === LanguagePreference.System ? systemLanguage : preferences.language;
   const copy = messages[language];
   const runtimeCapabilities = runtime ? capabilitiesFor(runtime) : { available: new Set<PlatformCapability>() };
@@ -95,7 +96,8 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
     setRequestedCapture((current) => current?.sequence === sequence ? null : current);
   }, []);
   const handleUpdaterApprovalOpenChange = useCallback((open: boolean) => {
-    updaterApprovalOpen.current = open;
+    updaterApprovalOpenRef.current = open;
+    setUpdaterApprovalOpen(open);
   }, []);
 
   const update = (next: Partial<Preferences>) => {
@@ -137,7 +139,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
       }
       if (event.kind === "deck-link") peekPendingDeckLink();
       if (event.kind === "shortcut-triggered") {
-        if (updaterApprovalOpen.current) return;
+        if (updaterApprovalOpenRef.current) return;
         const context = shortcutContext.current;
         if (context.mobile || context.onboarding) return;
         if (event.action === ShortcutActionId.CommandPalette) {
@@ -179,17 +181,20 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
     };
   }, [bridge, initialContentState, initialRuntime]);
   useEffect(() => {
-    if (onboarding || !deckLinkPending || deckLinkPolicyOrigin !== preferences.apiOrigin) return;
+    if (onboarding || updaterApprovalOpen || !deckLinkPending || deckLinkPolicyOrigin !== preferences.apiOrigin) return;
     let active = true;
-    setDeckLinkPending(false);
     void bridge.request({ operation: "deck.take-pending-link" }).then((pendingDeck) => {
-      if (active && pendingDeck.kind === "deck-link" && pendingDeck.deckId) {
+      if (!active) return;
+      setDeckLinkPending(false);
+      if (pendingDeck.kind === "deck-link" && pendingDeck.deckId) {
         setDeckLink(pendingDeck.deckId);
         setSurface(SurfaceId.Deck);
       }
-    }).catch(() => {});
+    }).catch(() => {
+      if (active) setDeckLinkPending(false);
+    });
     return () => { active = false; };
-  }, [bridge, deckLinkPending, deckLinkPolicyOrigin, onboarding, preferences.apiOrigin]);
+  }, [bridge, deckLinkPending, deckLinkPolicyOrigin, onboarding, preferences.apiOrigin, updaterApprovalOpen]);
   useEffect(() => {
     if (!runtime) return;
     const captureError = (event: ErrorEvent) => {
