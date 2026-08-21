@@ -110,6 +110,7 @@ test("mobile policy keeps native iOS origins aligned with normalized root URLs",
   );
   assert.throws(() => assertIosNativeBridge(widgetCleanupAfterSecurePurge), /before the authoritative secure store/u);
   assert.throws(() => assertIosNativeBridge(iosNativeBridge.replace("previousCredentialData: previousCredentialData", "previousCredentialData: nil")), /retain prior state for rollback/u);
+  assert.throws(() => assertIosNativeBridge(iosNativeBridge.replace("defaults.removeObject(forKey: snapshotKey)\n                defaults.removeObject(forKey: deadlineKey)", "defaults.removeObject(forKey: snapshotKey)")), /selection changes must invalidate/u);
   assert.throws(() => assertIosNativeBridge(iosNativeBridge.replace("storeWidgetCredential(previousCredentialData", "storeWidgetCredential(Data()")), /restore prior state before clearing/u);
   assert.throws(() => assertIosNativeBridge(iosNativeBridge.replace("previous == configuration", "false")), /unchanged widget enablement/u);
   assert.throws(() => assertIosNativeBridge(iosNativeBridge.replace("widgetForegroundReloadDeadlinePrefix + snapshot.deckId", "legacyWidgetForegroundReloadDeadlineKey")), /Deck-scoped stored-only reload marker/u);

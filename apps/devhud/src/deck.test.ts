@@ -53,8 +53,12 @@ describe("Deck query and local transitions", () => {
     const cache = { version: 2, deckId: "deck", query: "repo:octo/widgets is:pr", queryEtag: null, results: [], lastSuccessfulAt: null, rate: null, failures: 0, nextRefreshAt: null, transitionKeys: [] };
     expect(readDeckCache({ getItem: () => JSON.stringify(cache) }, "origin", "deck", "repo:octo/widgets is:pr")?.pendingNotifications).toEqual([]);
     expect(readDeckCache({ getItem: () => JSON.stringify(cache) }, "origin", "deck", "repo:octo/widgets is:pr")?.lastAttemptedAt).toBe("1970-01-01T00:00:00.000Z");
+    expect(readDeckCache({ getItem: () => JSON.stringify(cache) }, "origin", "deck", "repo:octo/widgets is:pr")?.failure).toBeNull();
+    expect(readDeckCache({ getItem: () => JSON.stringify({ ...cache, failures: 1 }) }, "origin", "deck", "repo:octo/widgets is:pr")?.failure).toBe("unknown");
+    expect(readDeckCache({ getItem: () => JSON.stringify({ ...cache, failures: 1, failure: "rate-limit" }) }, "origin", "deck", "repo:octo/widgets is:pr")?.failure).toBe("rate-limit");
     expect(readDeckCache({ getItem: () => JSON.stringify({ ...cache, lastSuccessfulAt: "2026-08-20T00:00:00.000Z" }) }, "origin", "deck", "repo:octo/widgets is:pr")?.lastAttemptedAt).toBe("2026-08-20T00:00:00.000Z");
     expect(readDeckCache({ getItem: () => JSON.stringify({ ...cache, lastAttemptedAt: "invalid" }) }, "origin", "deck", "repo:octo/widgets is:pr")).toBeNull();
+    expect(readDeckCache({ getItem: () => JSON.stringify({ ...cache, failure: "invalid" }) }, "origin", "deck", "repo:octo/widgets is:pr")).toBeNull();
     expect(readDeckCache({ getItem: () => JSON.stringify({ ...cache, pendingNotifications: [{ key: "event", kind: "unexpected", body: "PR" }] }) }, "origin", "deck", "repo:octo/widgets is:pr")).toBeNull();
   });
   it("notifies only changed existing pull requests", () => {
