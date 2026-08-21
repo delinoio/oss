@@ -906,17 +906,26 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
         guard let current, current.deckId == incoming.deckId, current.query == incoming.query,
               let currentAttempt = widgetTimestamp(current.lastAttemptedAt),
               let incomingAttempt = widgetTimestamp(incoming.lastAttemptedAt) else { return incoming }
-        let attempt = incomingAttempt > currentAttempt ? incoming : current
+        let now = Date()
+        let attempt = incomingWidgetTimestampIsNewer(current: currentAttempt, incoming: incomingAttempt, now: now) ? incoming : current
         let success: WidgetDeckSnapshot
         switch (widgetTimestamp(current.lastSuccessfulAt), widgetTimestamp(incoming.lastSuccessfulAt)) {
         case (_, nil): success = current
         case (nil, _): success = incoming
-        case (let currentSuccess?, let incomingSuccess?): success = incomingSuccess > currentSuccess ? incoming : current
+        case (let currentSuccess?, let incomingSuccess?): success = incomingWidgetTimestampIsNewer(current: currentSuccess, incoming: incomingSuccess, now: now) ? incoming : current
         }
         return WidgetDeckSnapshot(version: incoming.version, deckId: incoming.deckId, query: incoming.query,
                                   counts: success.counts, results: success.results, state: attempt.state,
                                   lastSuccessfulAt: success.lastSuccessfulAt, lastAttemptedAt: attempt.lastAttemptedAt,
                                   rate: attempt.rate)
+    }
+
+    private func incomingWidgetTimestampIsNewer(current: Date, incoming: Date, now: Date) -> Bool {
+        // After a backward clock correction, prefer the post-correction side until both timestamps share the same time basis.
+        let currentIsFuture = current > now
+        let incomingIsFuture = incoming > now
+        if currentIsFuture != incomingIsFuture { return currentIsFuture }
+        return incoming > current
     }
 
     private func widgetTimestamp(_ value: String?) -> Date? {

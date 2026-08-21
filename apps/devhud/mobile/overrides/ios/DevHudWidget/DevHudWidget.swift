@@ -1,4 +1,5 @@
 import Foundation
+import CoreFoundation
 import Intents
 import Security
 import SwiftUI
@@ -28,16 +29,31 @@ private func widgetAttemptTimestamp(_ date: Date = Date()) -> String {
     return fractional.string(from: date)
 }
 
+private func exactWidgetBoolean(_ value: Any?) -> Bool? {
+    guard let number = value as? NSNumber,
+          CFGetTypeID(number) == CFBooleanGetTypeID() else { return nil }
+    return number.boolValue
+}
+
+private func incomingWidgetTimestampIsNewer(current: Date, incoming: Date, now: Date) -> Bool {
+    // After a backward clock correction, prefer the post-correction side until both timestamps share the same time basis.
+    let currentIsFuture = current > now
+    let incomingIsFuture = incoming > now
+    if currentIsFuture != incomingIsFuture { return currentIsFuture }
+    return incoming > current
+}
+
 private func mergeDeckSnapshot(current: DeckSnapshot?, incoming: DeckSnapshot) -> DeckSnapshot {
     guard let current, current.deckId == incoming.deckId, current.query == incoming.query,
           let currentAttempt = parseWidgetTimestamp(current.lastAttemptedAt),
           let incomingAttempt = parseWidgetTimestamp(incoming.lastAttemptedAt) else { return incoming }
-    let attempt = incomingAttempt > currentAttempt ? incoming : current
+    let now = Date()
+    let attempt = incomingWidgetTimestampIsNewer(current: currentAttempt, incoming: incomingAttempt, now: now) ? incoming : current
     let success: DeckSnapshot
     switch (current.lastSuccessfulAt.flatMap(parseWidgetTimestamp), incoming.lastSuccessfulAt.flatMap(parseWidgetTimestamp)) {
     case (_, nil): success = current
     case (nil, _): success = incoming
-    case (let currentSuccess?, let incomingSuccess?): success = incomingSuccess > currentSuccess ? incoming : current
+    case (let currentSuccess?, let incomingSuccess?): success = incomingWidgetTimestampIsNewer(current: currentSuccess, incoming: incomingSuccess, now: now) ? incoming : current
     }
     return DeckSnapshot(version: incoming.version, deckId: incoming.deckId, query: incoming.query,
                         counts: success.counts, results: success.results, state: attempt.state,
@@ -316,10 +332,11 @@ private struct DeckTimelineProvider: IntentTimelineProvider {
             if rateLimited { return failure(deck: deck, previous: previous, state: "rate-limit", attempted: attempted, rate: rate) }
             if http.statusCode == 401 { return failure(deck: deck, previous: previous, state: "missing-token", attempted: attempted, rate: rate) }
             if http.statusCode == 403 || http.statusCode == 404 { return failure(deck: deck, previous: previous, state: "permission", attempted: attempted, rate: rate) }
-            guard (200...299).contains(http.statusCode), let root = try JSONSerialization.jsonObject(with: data) as? [String: Any], let items = root["items"] as? [[String: Any]], let total = root["total_count"] as? Int else {
+            guard (200...299).contains(http.statusCode), let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let items = root["items"] as? [[String: Any]], let total = root["total_count"] as? Int,
+                  exactWidgetBoolean(root["incomplete_results"]) == false else {
                 return failure(deck: deck, previous: previous, state: "error", attempted: attempted, rate: rate)
             }
-            if root["incomplete_results"] as? Bool == true { return failure(deck: deck, previous: previous, state: "error", attempted: attempted, rate: rate) }
             var open = 0, draft = 0, merged = 0, closed = 0
             var results: [DeckPullRequest] = []
             for item in items.prefix(100) {

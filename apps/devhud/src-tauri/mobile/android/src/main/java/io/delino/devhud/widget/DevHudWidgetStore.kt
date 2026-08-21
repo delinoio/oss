@@ -115,12 +115,13 @@ internal class DevHudWidgetStore(private val context: Context) {
         if (current == null || current.optString("deckId") != incoming.optString("deckId") || current.optString("query") != incoming.optString("query")) return MergedSnapshot(incoming, incoming, incoming)
         val currentAttempt = timestamp(current, "lastAttemptedAt") ?: return MergedSnapshot(incoming, incoming, incoming)
         val incomingAttempt = timestamp(incoming, "lastAttemptedAt") ?: return MergedSnapshot(current, current, current)
-        val attempt = if (incomingAttempt.isAfter(currentAttempt)) incoming else current
+        val now = Instant.now()
+        val attempt = if (incomingTimestampIsNewer(currentAttempt, incomingAttempt, now)) incoming else current
         val currentSuccess = timestamp(current, "lastSuccessfulAt")
         val incomingSuccess = timestamp(incoming, "lastSuccessfulAt")
         val success = when {
             incomingSuccess == null -> current
-            currentSuccess == null || incomingSuccess.isAfter(currentSuccess) -> incoming
+            currentSuccess == null || incomingTimestampIsNewer(currentSuccess, incomingSuccess, now) -> incoming
             else -> current
         }
         val merged = JSONObject(incoming.toString())
@@ -131,6 +132,14 @@ internal class DevHudWidgetStore(private val context: Context) {
             .put("lastAttemptedAt", attempt.getString("lastAttemptedAt"))
             .put("rate", attempt.opt("rate") ?: JSONObject.NULL)
         return MergedSnapshot(merged, attempt, success)
+    }
+
+    private fun incomingTimestampIsNewer(current: Instant, incoming: Instant, now: Instant): Boolean {
+        // After a backward clock correction, prefer the post-correction side until both timestamps share the same time basis.
+        val currentIsFuture = current.isAfter(now)
+        val incomingIsFuture = incoming.isAfter(now)
+        if (currentIsFuture != incomingIsFuture) return currentIsFuture
+        return incoming.isAfter(current)
     }
 
     private fun timestamp(snapshot: JSONObject, key: String): Instant? {

@@ -229,8 +229,8 @@ export function createGitHubProvider({ fetch: fetchImpl }: ProviderOptions): Git
       if (result.response.status === 304) return { items: [], nextPage: null, notModified: true, totalCount: 0, incompleteResults: false, metadata: result.metadata };
       const response = record(result.json, GitHubOperation.SearchPullRequests);
       const items = array(response.items, GitHubOperation.SearchPullRequests).map((item) => pullSummary(record(item, GitHubOperation.SearchPullRequests)));
-      const totalCount = Number(response.total_count);
-      if (!Number.isSafeInteger(totalCount) || totalCount < 0) throw new GitHubProviderError(GitHubErrorCode.InvalidResponse, GitHubOperation.SearchPullRequests, result.response.status, result.metadata.rate);
+      const totalCount = response.total_count;
+      if (typeof totalCount !== "number" || !Number.isSafeInteger(totalCount) || totalCount < 0) throw new GitHubProviderError(GitHubErrorCode.InvalidResponse, GitHubOperation.SearchPullRequests, result.response.status, result.metadata.rate);
       return { items, nextPage: nextPage(result.response.headers.get("link")), notModified: false, totalCount, incompleteResults: response.incomplete_results === true, metadata: result.metadata };
     },
     async enrichPullRequests(credential, nodeIds) {

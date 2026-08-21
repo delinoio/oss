@@ -144,6 +144,7 @@ test("mobile policy keeps native iOS origins aligned with normalized root URLs",
   assert.throws(() => assertBridge(iosNativeBridge.replace("previous == configuration", "false")), /unchanged widget enablement/u);
   assert.throws(() => assertBridge(iosNativeBridge.replace("let latestSnapshot = current?.snapshot.flatMap", "let latestSnapshot = state?.snapshot.flatMap")), /latest stored snapshot inside the coordinated write/u);
   assert.throws(() => assertBridge(iosNativeBridge.replace("current?.foregroundReloadDeadline = Date().addingTimeInterval(widgetForegroundReloadWindow)", "")), /Deck-scoped stored-only reload marker/u);
+  assert.throws(() => assertBridge(iosNativeBridge.replaceAll("incomingWidgetTimestampIsNewer", "wallClockTimestampIsNewer")), /backward clock corrections/u);
 });
 
 test("mobile open URL handling accepts only authentication callbacks and validated Deck links", () => {
@@ -198,8 +199,10 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   assert.throws(() => assertNativeWidgetPullRequestMetadata(androidProvider.replace("mergedAt !== JSONObject.NULL && mergedAt !is String", "false"), iosWidget), /merged_at to be a string or null/u);
   assert.throws(() => assertNativeWidgetPullRequestMetadata(androidProvider, iosWidget.replace('item["pull_request"] as? [String: Any]', "[String: Any]()")), /missing or non-object pull_request/u);
   assert.throws(() => assertNativeWidgetPullRequestMetadata(androidProvider, iosWidget.replace("mergedAt is String || mergedAt is NSNull", "mergedAt is String")), /merged_at to be a string or null/u);
+  assert.throws(() => assertNativeWidgetPullRequestMetadata(androidProvider, iosWidget.replace('exactWidgetBoolean(root["incomplete_results"]) == false', 'root["incomplete_results"] as? Bool == false')), /exact false incomplete_results/u);
   assert.match(androidStore, /widgetKeyAlias = "io\.delino\.devhud\.widget-credential\.v1"/u);
   assert.match(androidStore, /private val widgetStoreMutationLock = Any\(\)/u);
+  assert.match(androidStore, /incomingTimestampIsNewer\(currentAttempt, incomingAttempt, now\)[\s\S]*incomingTimestampIsNewer\(currentSuccess, incomingSuccess, now\)[\s\S]*currentIsFuture != incomingIsFuture[\s\S]*return currentIsFuture/u);
   assert.match(androidStore, /private var reconciliationSucceeded = false[\s\S]*init \{\s*reconciliationSucceeded = reconcile\(\)\s*\}/u);
   assert.match(androidStore, /private fun ensureReconciled\(\): Boolean[\s\S]*if \(reconciliationSucceeded\) return true[\s\S]*reconciliationSucceeded = reconcile\(\)/u);
   assert.match(androidStore, /fun enabledDeckIds\(\): List<String>\?[\s\S]*if \(!ensureReconciled\(\)\) return@synchronized null/u);
@@ -313,10 +316,12 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   assert.ok(iosWidget.indexOf("if store.shouldRenderForegroundSnapshot(deck.deckId)") < iosWidget.indexOf("Self.refreshWithDeadline"));
   assert.match(iosWidget, /state\?\.foregroundReloadDeadline = nil/u);
   assert.match(iosWidget, /parseWidgetTimestamp[\s\S]*withInternetDateTime, \.withFractionalSeconds[\s\S]*fractional\.date\(from: value\) \?\? ISO8601DateFormatter\(\)\.date\(from: value\)/u);
+  assert.match(iosWidget, /incomingWidgetTimestampIsNewer[\s\S]*currentIsFuture != incomingIsFuture[\s\S]*return currentIsFuture/u);
+  assert.match(iosWidget, /incomingWidgetTimestampIsNewer\(current: currentAttempt, incoming: incomingAttempt, now: now\)[\s\S]*incomingWidgetTimestampIsNewer\(current: currentSuccess, incoming: incomingSuccess, now: now\)/u);
   assert.equal((iosWidget.match(/parseWidgetTimestamp\(value\)/gu) ?? []).length, 3);
   assert.match(iosWidget, /widgetAttemptTimestamp[\s\S]*withInternetDateTime, \.withFractionalSeconds[\s\S]*fractional\.string\(from: date\)/u);
   assert.equal((iosWidget.match(/widgetAttemptTimestamp\(\)/gu) ?? []).length, 3);
-  assert.match(iosWidget, /incomplete_results/u);
+  assert.match(iosWidget, /exactWidgetBoolean[\s\S]*CFGetTypeID\(number\) == CFBooleanGetTypeID\(\)[\s\S]*exactWidgetBoolean\(root\["incomplete_results"\]\) == false/u);
   assert.doesNotMatch(iosWidget, /items\.prefix\(100\)\.compactMap/u);
   assert.match(iosWidget, /for item in items\.prefix\(100\)[\s\S]*guard let nodeId[\s\S]*return failure\(deck: deck, previous: previous, state: "error", attempted: attempted, rate: rate\)/u);
   assert.match(iosWidget, /item\["draft"\] as\? Bool[\s\S]*item\["state"\] as\? String[\s\S]*itemState == "open" \|\| itemState == "closed"/u);

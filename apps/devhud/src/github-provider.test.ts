@@ -243,6 +243,14 @@ describe("GitHub.com provider", () => {
     await expect(createGitHubProvider({ fetch }).searchPullRequests(fine, "repo:octo/widgets is:pr")).resolves.toMatchObject({ incompleteResults: true, items: [] });
   });
 
+  it.each([
+    ["null", null],
+    ["a numeric string", "1"],
+  ])("rejects %s as a pull-request search total", async (_name, totalCount) => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => json({ total_count: totalCount, incomplete_results: false, items: [fixture.pullRequest] }));
+    await expect(createGitHubProvider({ fetch }).searchPullRequests(fine, "repo:octo/widgets is:pr")).rejects.toMatchObject({ code: GitHubErrorCode.InvalidResponse });
+  });
+
   it("skips unsupported requested-reviewer union members while enriching pull requests", async () => {
     const fetch = vi.fn<typeof globalThis.fetch>(async () => json({ data: { nodes: [{
       id: "PR_kwDOFixture", number: 9, title: "Deterministic pull request", url: "https://github.com/octo-private/controls/pull/9", isDraft: false,
