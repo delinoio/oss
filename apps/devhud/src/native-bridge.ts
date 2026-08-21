@@ -99,6 +99,14 @@ export interface CaptureDraftImage { readonly id: string; readonly width: number
 export interface DraftBrowserContext { readonly mappingId: string; readonly context: SanitizedBrowserContext }
 export interface CaptureDraft { readonly id: string; readonly revision: number; readonly createdAt: number; readonly updatedAt: number; readonly expiresAt: number; readonly hasBrowserContext: boolean; readonly browserContext?: DraftBrowserContext; readonly imageCount: number; readonly images: readonly CaptureDraftImage[]; readonly canUndo: boolean; readonly canRedo: boolean }
 export interface FlattenedCaptureImage { readonly imageId: string; readonly width: number; readonly height: number; readonly bytes: number; readonly sha256: string; readonly assetUrl: string; readonly downscaled: boolean }
+export interface OfficialCaptureUpload {
+  readonly uploadId: string; readonly submissionId: string; readonly uploadGroupId: string; readonly reservationId: string;
+  readonly stagingGeneration: string; readonly signedPutUrl: string;
+  readonly requiredHeaders: { readonly contentType: string; readonly checksumSha256Base64: string; readonly contentLength: string };
+}
+export interface R2CaptureUploadProfile {
+  readonly profileRef: string; readonly endpoint: string; readonly accountId: string; readonly bucket: string; readonly publicBaseUrl: string; readonly prefix: string;
+}
 
 export type SecureSettingRef =
   | { readonly kind: typeof SecureSettingKind.GithubPat; readonly profileId: string; readonly scopeId: string }
@@ -185,7 +193,10 @@ export type NativeBridgeRequestV1 = NativeBridgeRequestV1Base
   | { readonly operation: "capture.editor.apply"; readonly draftId: string; readonly expectedRevision: number; readonly command: CaptureEditorCommand }
   | { readonly operation: "capture.remove-browser-context"; readonly draftId: string; readonly expectedRevision: number }
   | { readonly operation: "capture.editor.undo" | "capture.editor.redo" | "capture.flatten"; readonly draftId: string; readonly expectedRevision: number }
-  | { readonly operation: "capture.delete-draft" | "capture.confirm-issue-created"; readonly draftId: string };
+  | { readonly operation: "capture.upload-official"; readonly draftId: string; readonly expectedRevision: number; readonly imageId: string; readonly expectedBytes: number; readonly expectedSha256: string; readonly upload: OfficialCaptureUpload }
+  | { readonly operation: "capture.upload-r2"; readonly draftId: string; readonly expectedRevision: number; readonly imageId: string; readonly expectedBytes: number; readonly expectedSha256: string; readonly profile: R2CaptureUploadProfile }
+  | { readonly operation: "capture.delete-draft"; readonly draftId: string }
+  | { readonly operation: "capture.confirm-issue-created"; readonly draftId: string; readonly expectedRevision: number };
 
 export type NativeBridgeResponseV1 =
   | { readonly kind: "runtime"; readonly snapshot: RuntimeSnapshot }
@@ -201,6 +212,7 @@ export type NativeBridgeResponseV1 =
   | { readonly kind: "capture-drafts"; readonly drafts: readonly CaptureDraft[]; readonly unreadableDraftIds: readonly string[] }
   | { readonly kind: "capture-draft"; readonly draft: CaptureDraft }
   | { readonly kind: "capture-flattened"; readonly images: readonly FlattenedCaptureImage[] }
+  | { readonly kind: "capture-uploaded"; readonly observedEtag: string; readonly publicUrl: string | null }
   | { readonly kind: "unsupported"; readonly feature: "widgets" }
   | { readonly kind: "diagnostics-export"; readonly outcome: "saved" | "cancelled" | "initiated" }
   | { readonly kind: "ok" };
@@ -272,6 +284,7 @@ function validCaptureRect(rect: CaptureRect) {
 
 export function validateCaptureRequest(request: Extract<NativeBridgeRequestV1, { readonly operation: `capture.${string}` }>) {
   if ("draftId" in request && !uuidPattern.test(request.draftId)) throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument);
+  if (request.operation === "capture.confirm-issue-created" && !("expectedRevision" in request)) throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument);
   if ("expectedRevision" in request && (!Number.isSafeInteger(request.expectedRevision) || request.expectedRevision < 0)) throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument);
   if (request.operation === "capture.start") {
     const actions: readonly ShortcutActionId[] = ["realqa.capture.display", "realqa.capture.active-window", "realqa.capture.all-displays", "realqa.capture.selection", "realqa.capture.toolbar"];
@@ -285,6 +298,24 @@ export function validateCaptureRequest(request: Extract<NativeBridgeRequestV1, {
   }
   if (request.operation === "capture.editor.apply" && new TextEncoder().encode(JSON.stringify(request.command)).byteLength > 1024 * 1024) {
     throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument);
+  }
+  if (request.operation === "capture.upload-official" || request.operation === "capture.upload-r2") {
+    if (!uuidPattern.test(request.imageId) || !Number.isSafeInteger(request.expectedBytes) || request.expectedBytes < 1 || !/^[0-9a-f]{64}$/u.test(request.expectedSha256)) throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument);
+  }
+  if (request.operation === "capture.upload-official") {
+    const upload = request.upload;
+    if (![upload.uploadId, upload.submissionId, upload.uploadGroupId, upload.reservationId].every((value) => uuidPattern.test(value))
+      || !/^\d+$/u.test(upload.stagingGeneration) || upload.requiredHeaders.contentType !== "image/png"
+      || upload.requiredHeaders.contentLength !== String(request.expectedBytes) || !/^[A-Za-z0-9+/]{43}=$/u.test(upload.requiredHeaders.checksumSha256Base64)) throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument);
+    try { const url = new URL(upload.signedPutUrl); if (url.protocol !== "https:" || url.username || url.password || url.hash) throw new Error(); } catch { throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument); }
+  }
+  if (request.operation === "capture.upload-r2") {
+    const profile = request.profile;
+    if (!profilePattern.test(profile.profileRef) || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(profile.accountId) || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(profile.bucket)
+      || new TextEncoder().encode(profile.prefix).byteLength > 512 || profile.prefix.startsWith("/") || profile.prefix.endsWith("/") || profile.prefix.includes("\\") || (profile.prefix !== "" && profile.prefix.split("/").some((segment) => segment === "" || segment === "." || segment === ".."))) throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument);
+    for (const value of [profile.endpoint, profile.publicBaseUrl]) {
+      try { const url = new URL(value); if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash) throw new Error(); } catch { throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument); }
+    }
   }
 }
 

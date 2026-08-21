@@ -2450,6 +2450,7 @@ dependencies = [
  "flate2",
  "fontdue",
  "gtk",
+ "hmac",
  "image",
  "keyring",
  "libc",

@@ -204,6 +204,7 @@ describe("native App state", () => {
       apiVersion: "0.1.0-dev",
       logtoIssuer: "https://identity.example/oidc",
       logtoAudience: "https://api.example/api",
+      publicAssetBaseUrl: "https://images.example/devhud",
       logtoClients: { desktop: "desktop-client", ios: "ios-client", android: "android-client", admin: "admin-client" },
       logtoRedirects: { native: "devhud://auth/callback", admin: "https://admin.example/callback" },
     }), { status: 200, headers: { "Content-Type": "application/json", "Connect-Protocol-Version": "1" } })));
@@ -274,7 +275,7 @@ describe("native App state", () => {
       clear: async () => {},
     } as unknown as IdentitySession);
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
-      projectId: "PROJECT_ID_DEVHUD", protocolSchemaVersion: 1, apiVersion: "0.1.0-dev", logtoIssuer: "https://identity.example/oidc", logtoAudience: "https://api.example/api",
+      projectId: "PROJECT_ID_DEVHUD", protocolSchemaVersion: 1, apiVersion: "0.1.0-dev", logtoIssuer: "https://identity.example/oidc", logtoAudience: "https://api.example/api", publicAssetBaseUrl: "https://images.example/devhud",
       logtoClients: { desktop: "desktop-client", ios: "ios-client", android: "android-client", admin: "admin-client" }, logtoRedirects: { native: "devhud://auth/callback", admin: "https://admin.example/callback" },
     }), { status: 200, headers: { "Content-Type": "application/json", "Connect-Protocol-Version": "1" } })));
     const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
@@ -375,6 +376,7 @@ describe("native App state", () => {
       apiVersion: "0.1.0-dev",
       logtoIssuer: "https://identity.example/oidc",
       logtoAudience: "https://api.example/api",
+      publicAssetBaseUrl: "https://images.example/devhud",
       logtoClients: { desktop: "desktop-client", ios: "ios-client", android: "android-client", admin: "admin-client" },
       logtoRedirects: { native: "devhud://auth/callback", admin: "https://admin.example/callback" },
     }), { status: 200, headers: { "Content-Type": "application/json", "Connect-Protocol-Version": "1" } })));
@@ -412,6 +414,7 @@ describe("native App state", () => {
       apiVersion: "0.1.0-dev",
       logtoIssuer: "https://identity.example/oidc",
       logtoAudience: "https://api.example/api",
+      publicAssetBaseUrl: "https://images.example/devhud",
       logtoClients: { desktop: "desktop-client", ios: "ios-client", android: "android-client", admin: "admin-client" },
       logtoRedirects: { native: "devhud://auth/callback", admin: "https://admin.example/callback" },
     }), { status: 200, headers: { "Content-Type": "application/json", "Connect-Protocol-Version": "1" } })));
@@ -738,6 +741,7 @@ describe("native App state", () => {
       apiVersion: "0.1.0-dev",
       logtoIssuer: "https://identity.example/oidc",
       logtoAudience: "https://api.example/api",
+      publicAssetBaseUrl: "https://images.example/devhud",
       logtoClients: { desktop: "desktop-client", ios: "ios-client", android: "android-client", admin: "admin-client" },
       logtoRedirects: { native: "devhud://auth/callback", admin: "https://admin.example/callback" },
     }), { status: 200, headers: { "Content-Type": "application/json", "Connect-Protocol-Version": "1" } })));
