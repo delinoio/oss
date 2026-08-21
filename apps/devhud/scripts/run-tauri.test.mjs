@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 import { spawnDevServer } from "../../../scripts/spawn-dev-server.mjs";
-import { desktopTauriArguments } from "./run-tauri-arguments.mjs";
+import { desktopTauriArguments, desktopTauriEnvironment } from "./run-tauri-arguments.mjs";
 
 const scriptPath = fileURLToPath(new URL("./run-tauri.mjs", import.meta.url));
 const processTreeChildPath = fileURLToPath(new URL("./process-tree-child.mjs", import.meta.url));
@@ -26,6 +26,42 @@ test("forwards the desktop CEF feature to the pinned Tauri command", () => {
     desktopTauriArguments("build", ["--bundles", "app"]),
     ["build", "--features", "desktop-cef", "--bundles", "app"],
   );
+});
+
+test("derives the compiled package kind from one explicit Windows bundle", () => {
+  assert.deepEqual(
+    desktopTauriEnvironment("build", ["--bundles", "msi"], "win32", { EXISTING: "value" }),
+    { EXISTING: "value", DEVHUD_PACKAGE_KIND: "windows-msi" },
+  );
+  assert.deepEqual(
+    desktopTauriEnvironment("build", ["--bundles=nsis"], "win32", {}),
+    { DEVHUD_PACKAGE_KIND: "windows-nsis" },
+  );
+});
+
+test("rejects ambiguous or conflicting Windows package builds", () => {
+  assert.throws(
+    () => desktopTauriEnvironment("build", [], "win32", {}),
+    /require exactly one --bundles msi or --bundles nsis/u,
+  );
+  assert.throws(
+    () => desktopTauriEnvironment("build", ["--bundles", "all"], "win32", {}),
+    /require exactly one --bundles msi or --bundles nsis/u,
+  );
+  assert.throws(
+    () => desktopTauriEnvironment("build", ["--bundles", "msi", "nsis"], "win32", {}),
+    /require exactly one --bundles msi or --bundles nsis/u,
+  );
+  assert.throws(
+    () => desktopTauriEnvironment("build", ["-b=msi"], "win32", { DEVHUD_PACKAGE_KIND: "windows-nsis" }),
+    /does not match the selected msi bundle/u,
+  );
+});
+
+test("does not require a package kind for development or non-Windows builds", () => {
+  const environment = {};
+  assert.equal(desktopTauriEnvironment("dev", [], "win32", environment), environment);
+  assert.equal(desktopTauriEnvironment("build", [], "linux", environment), environment);
 });
 
 for (const [name, args] of configOverrides) {

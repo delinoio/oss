@@ -103,7 +103,18 @@ impl PackageKind {
     }
 
     pub fn current(target: DesktopTarget) -> Result<Self, UpdaterError> {
-        let configured = option_env!("DEVHUD_PACKAGE_KIND");
+        Self::from_configuration(
+            target,
+            option_env!("DEVHUD_PACKAGE_KIND"),
+            std::env::var_os("APPIMAGE").is_some(),
+        )
+    }
+
+    fn from_configuration(
+        target: DesktopTarget,
+        configured: Option<&str>,
+        appimage: bool,
+    ) -> Result<Self, UpdaterError> {
         let package = match configured {
             Some("macos-app") => Self::MacosApp,
             Some("windows-nsis") => Self::WindowsNsis,
@@ -118,9 +129,14 @@ impl PackageKind {
             }
             None => match target {
                 DesktopTarget::MacOsX64 | DesktopTarget::MacOsArm64 => Self::MacosApp,
-                DesktopTarget::WindowsX64 | DesktopTarget::WindowsArm64 => Self::WindowsNsis,
+                DesktopTarget::WindowsX64 | DesktopTarget::WindowsArm64 => {
+                    return Err(UpdaterError::new(
+                        DiagnosticCode::Unsupported,
+                        UpdatePhase::Target,
+                    ));
+                }
                 DesktopTarget::LinuxX64 | DesktopTarget::LinuxArm64 => {
-                    if std::env::var_os("APPIMAGE").is_some() {
+                    if appimage {
                         Self::LinuxAppimage
                     } else {
                         Self::LinuxDeb
@@ -1275,9 +1291,13 @@ fn replace_macos_bundle_transactionally_with_operations(
         }
         if sync_parent(parent).is_err() {
             tracing::error!(
-                event = "updater_install_rollback_failed",
+                event = "updater_install_rollback_sync_failed",
                 package = "macos-app"
             );
+            return Ok(RestartDisposition::RestartRequired {
+                executable: restart_executable.to_path_buf(),
+                diagnostic: error,
+            });
         }
         return Err(error);
     }
@@ -1839,6 +1859,29 @@ mod tests {
         PackageKind::LinuxAppimage
     }
 
+    #[test]
+    fn windows_package_kind_requires_an_exact_build_configuration() {
+        assert!(PackageKind::from_configuration(DesktopTarget::WindowsX64, None, false).is_err());
+        assert_eq!(
+            PackageKind::from_configuration(DesktopTarget::WindowsX64, Some("windows-msi"), false,)
+                .unwrap(),
+            PackageKind::WindowsMsi
+        );
+        assert_eq!(
+            PackageKind::from_configuration(
+                DesktopTarget::WindowsArm64,
+                Some("windows-nsis"),
+                false,
+            )
+            .unwrap(),
+            PackageKind::WindowsNsis
+        );
+        assert!(
+            PackageKind::from_configuration(DesktopTarget::WindowsX64, Some("linux-deb"), false,)
+                .is_err()
+        );
+    }
+
     fn fixture(
         version: &str,
         signer: &SigningKey,
@@ -2087,6 +2130,11 @@ mod tests {
         );
         assert!(validate_redirect("http://release-assets.githubusercontent.com/file").is_err());
         assert!(validate_redirect("https://github.com/file").is_err());
+        let signed_redirect = validate_redirect(
+            "https://release-assets.githubusercontent.com/github-production-release-asset/file?sv=2026-01-01&sig=opaque",
+        )
+        .unwrap();
+        assert_eq!(signed_redirect.query(), Some("sv=2026-01-01&sig=opaque"));
     }
 
     struct FailingInstaller(DiagnosticCode);
@@ -2762,6 +2810,60 @@ mod tests {
         assert_eq!(
             fs::read(replacement.join("version")).unwrap(),
             b"installed-version"
+        );
+    }
+
+    #[test]
+    fn failed_relaunch_rollback_sync_retains_restart_only_recovery() {
+        let directory = tempfile::tempdir().unwrap();
+        let destination = directory.path().join("DevHUD.app");
+        let replacement = directory.path().join("Candidate.app");
+        let restart_executable = destination.join("Contents/MacOS/devhud");
+        fs::create_dir(&destination).unwrap();
+        fs::create_dir(&replacement).unwrap();
+        fs::write(destination.join("version"), b"installed-version").unwrap();
+        fs::write(replacement.join("version"), b"candidate-version").unwrap();
+        let sync_attempts = AtomicUsize::new(0);
+        let exchange_attempts = AtomicUsize::new(0);
+
+        let result = replace_macos_bundle_transactionally_with_operations(
+            &destination,
+            &replacement,
+            &restart_executable,
+            |_| {
+                if sync_attempts.fetch_add(1, Ordering::Relaxed) < 2 {
+                    Ok(())
+                } else {
+                    Err(DiagnosticCode::InstallationFailed)
+                }
+            },
+            |installed, candidate| {
+                exchange_attempts.fetch_add(1, Ordering::Relaxed);
+                let installed_version = fs::read(installed.join("version")).unwrap();
+                let candidate_version = fs::read(candidate.join("version")).unwrap();
+                fs::write(installed.join("version"), candidate_version).unwrap();
+                fs::write(candidate.join("version"), installed_version).unwrap();
+                Ok(())
+            },
+            || Err(DiagnosticCode::RestartFailed),
+        );
+
+        assert_eq!(
+            result,
+            Ok(RestartDisposition::RestartRequired {
+                executable: restart_executable,
+                diagnostic: DiagnosticCode::RestartFailed,
+            })
+        );
+        assert_eq!(sync_attempts.load(Ordering::Relaxed), 3);
+        assert_eq!(exchange_attempts.load(Ordering::Relaxed), 2);
+        assert_eq!(
+            fs::read(destination.join("version")).unwrap(),
+            b"installed-version"
+        );
+        assert_eq!(
+            fs::read(replacement.join("version")).unwrap(),
+            b"candidate-version"
         );
     }
 
