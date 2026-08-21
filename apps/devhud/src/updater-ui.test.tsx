@@ -3,7 +3,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { DesktopUpdaterStatus, NativeBridgeEventV1, NativeBridgeRequestV1, NativeBridgeResponseV1, NativeBridgeV1 } from "./native-bridge";
+import { NativeBridgeError, NativeBridgeErrorCode, type DesktopUpdaterStatus, type NativeBridgeEventV1, type NativeBridgeRequestV1, type NativeBridgeResponseV1, type NativeBridgeV1 } from "./native-bridge";
 import { DesktopUpdaterPanel } from "./updater-ui";
 
 const available: DesktopUpdaterStatus = {
@@ -33,6 +33,31 @@ function bridgeWithStatus(initial: DesktopUpdaterStatus) {
 afterEach(cleanup);
 
 describe("desktop updater approvals", () => {
+  it("does not expose updater actions while native support is loading", () => {
+    const bridge: NativeBridgeV1 = {
+      request: vi.fn(),
+      listen: () => new Promise(() => {}),
+    };
+
+    render(<DesktopUpdaterPanel bridge={bridge} language="en" />);
+
+    expect(screen.queryByRole("button", { name: "Check for updates" })).toBeNull();
+    expect(bridge.request).not.toHaveBeenCalled();
+  });
+
+  it("shows an unsupported status without an actionable check button", async () => {
+    const bridge: NativeBridgeV1 = {
+      request: vi.fn(async () => { throw new NativeBridgeError(NativeBridgeErrorCode.Unsupported); }),
+      async listen() { return () => {}; },
+    };
+
+    render(<DesktopUpdaterPanel bridge={bridge} language="en" />);
+
+    expect(await screen.findByText("This target or package is unsupported.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Check for updates" })).toBeNull();
+    expect(bridge.request).toHaveBeenCalledWith({ operation: "updates.status" });
+  });
+
   it.each([
     ["en", "English signed notes", "Desktop updates"],
     ["ko", "한국어 서명 노트", "데스크톱 업데이트"],

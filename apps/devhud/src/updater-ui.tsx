@@ -1,7 +1,7 @@
 import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 
 import type { SupportedLanguage } from "./localization";
-import type { DesktopUpdaterStatus, NativeBridgeResponseV1, NativeBridgeV1 } from "./native-bridge";
+import { NativeBridgeError, NativeBridgeErrorCode, type DesktopUpdaterStatus, type NativeBridgeResponseV1, type NativeBridgeV1 } from "./native-bridge";
 
 const updaterCopy = {
   en: {
@@ -32,6 +32,7 @@ const updaterDiagnosticCopy = {
 } as const;
 
 type Approval = "download" | "installation" | "restart";
+type UpdaterAvailability = "loading" | "supported" | "unsupported";
 
 function downloadCandidateIdentity(status: DesktopUpdaterStatus | null) {
   if (status?.kind !== "available" || !status.candidate) return null;
@@ -59,6 +60,7 @@ function updaterStatusText(status: DesktopUpdaterStatus, language: SupportedLang
 export function DesktopUpdaterPanel({ bridge, language, onApprovalOpenChange }: { readonly bridge: NativeBridgeV1; readonly language: SupportedLanguage; readonly onApprovalOpenChange?: (open: boolean) => void }) {
   const copy = updaterCopy[language];
   const [status, setStatus] = useState<DesktopUpdaterStatus | null>(null);
+  const [availability, setAvailability] = useState<UpdaterAvailability>("loading");
   const [approval, setApproval] = useState<Approval | null>(null);
   const statusRevision = useRef(0);
   const approvedDownloadCandidate = useRef<string | null>(null);
@@ -78,6 +80,7 @@ export function DesktopUpdaterPanel({ bridge, language, onApprovalOpenChange }: 
 
   const applyStatus = (nextStatus: DesktopUpdaterStatus) => {
     statusRevision.current += 1;
+    setAvailability("supported");
     if (approvedDownloadCandidate.current !== null && approvedDownloadCandidate.current !== downloadCandidateIdentity(nextStatus)) {
       approvedDownloadCandidate.current = null;
       onApprovalOpenChange?.(false);
@@ -104,6 +107,10 @@ export function DesktopUpdaterPanel({ bridge, language, onApprovalOpenChange }: 
       return bridge.request({ operation: "updates.status" }).then((response) => {
         if (active && response.kind === "desktop-update-status" && statusRevision.current === requestedAtRevision) {
           applyStatus(response.status);
+        }
+      }).catch((error: unknown) => {
+        if (active && statusRevision.current === requestedAtRevision && error instanceof NativeBridgeError && error.code === NativeBridgeErrorCode.Unsupported) {
+          setAvailability("unsupported");
         }
       });
     }).catch(() => {});
@@ -163,10 +170,10 @@ export function DesktopUpdaterPanel({ bridge, language, onApprovalOpenChange }: 
     <h3 id="desktop-updater-title">{copy.title}</h3>
     <p>{copy.summary}</p>
     <dl><dt>{status?.kind === "restart-required" ? copy.running : copy.installed}</dt><dd>{status?.installedVersion ?? "—"}</dd></dl>
-    <p className="updater-status" role={status && ["failed", "restart-required"].includes(status.kind) ? "alert" : "status"} aria-live="polite">{status ? updaterStatusText(status, language, copy) : ""}</p>
+    <p className="updater-status" role={status && ["failed", "restart-required"].includes(status.kind) ? "alert" : "status"} aria-live="polite">{status ? updaterStatusText(status, language, copy) : availability === "unsupported" ? updaterDiagnosticCopy[language].unsupported : ""}</p>
     {status?.candidate && <section className="release-notes" aria-labelledby="release-notes-title"><h4 id="release-notes-title">{copy.releaseNotes} · {status.candidate.version}</h4><p>{status.candidate.releaseNotes[language]}</p></section>}
     <div className="actions">
-      {(!status || ["idle", "up-to-date", "failed", "canceled"].includes(status.kind)) && <button onClick={() => void request("updates.check")}>{copy.check}</button>}
+      {availability === "supported" && status && ["idle", "up-to-date", "failed", "canceled"].includes(status.kind) && <button onClick={() => void request("updates.check")}>{copy.check}</button>}
       {status?.kind === "available" && <button className="primary" onClick={(event) => openApproval("download", event.currentTarget)}>{copy.download}</button>}
       {status?.kind === "downloading" && <button onClick={() => void request("updates.cancel")}>{copy.cancel}</button>}
       {status?.kind === "downloaded" && <button className="primary" onClick={(event) => openApproval("installation", event.currentTarget)}>{copy.approveInstall}</button>}

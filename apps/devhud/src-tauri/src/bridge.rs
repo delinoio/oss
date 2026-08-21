@@ -322,6 +322,7 @@ fn start_update_check<R: tauri::Runtime>(
             json!({ "kind": "desktop-update-status", "status": updater.snapshot() }),
         )
     };
+    emit_update_status(&app, &checking);
     std::mem::drop(tauri::async_runtime::spawn_blocking(move || {
         let result = crate::updater::UpdaterDiscoveryTransport::new()
             .and_then(|transport| transport.discover(target, package));
@@ -419,9 +420,7 @@ pub fn start_update_scheduler<R: tauri::Runtime>(
             let response = start_update_check(state.clone(), app.clone());
             let consumes_due_attempt = updater_check_attempt_consumes_due(&response);
             match response {
-                Ok(UpdateCheckDisposition::Started(response)) => {
-                    emit_update_status(&app, &response);
-                }
+                Ok(UpdateCheckDisposition::Started(_)) => {}
                 Ok(UpdateCheckDisposition::Busy(_)) => {
                     // The active flow owns the controller. Consume this attempt
                     // so a later cancellation or failure remains visible.
@@ -1406,7 +1405,7 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let updater = updater.as_mut().ok_or("unsupported")?;
-        updater.cancel();
+        updater.cancel().map_err(|_| "invalid-argument")?;
         return Ok(json!({ "kind": "desktop-update-status", "status": updater.snapshot() }));
     }
     if operation == "updates.approve-installation" {
@@ -1421,20 +1420,39 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
         return Ok(json!({ "kind": "desktop-update-status", "status": updater.snapshot() }));
     }
     if operation == "updates.approve-restart" {
+        let (attempt, package) = {
+            let mut updater = state
+                .updater
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let updater = updater.as_mut().ok_or("unsupported")?;
+            let package = updater.snapshot().package_kind;
+            let attempt = updater.begin_restart().map_err(|_| "invalid-argument")?;
+            (attempt, package)
+        };
+        let join_failure = attempt.join_failure();
+        let installer_app = app.clone();
+        let attempt = tauri::async_runtime::spawn_blocking(move || {
+            let handoff = TauriRestartHandoff(installer_app);
+            let installer = crate::updater::PlatformInstaller::new(package, &handoff);
+            attempt.run(&installer)
+        })
+        .await
+        .unwrap_or(join_failure);
         let (restart, response) = {
             let mut updater = state
                 .updater
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             let updater = updater.as_mut().ok_or("unsupported")?;
-            let handoff = TauriRestartHandoff(app.clone());
-            let installer =
-                crate::updater::PlatformInstaller::new(updater.snapshot().package_kind, &handoff);
-            let restart = updater.approve_restart(&installer);
+            let restart = updater.finish_restart(attempt);
             let response = json!({ "kind": "desktop-update-status", "status": updater.snapshot() });
             (restart, response)
         };
-        if matches!(restart, Ok(crate::updater::RestartDisposition::Relaunched)) {
+        if matches!(
+            restart,
+            Some(Ok(crate::updater::RestartDisposition::Relaunched))
+        ) {
             app.exit(0);
         }
         return Ok(response);
@@ -1939,7 +1957,7 @@ mod tests {
         let generation = updater.cancellation_token();
         assert!(update_download_worker_is_current(&updater, &generation));
 
-        updater.cancel();
+        updater.cancel().unwrap();
 
         assert!(!update_download_worker_is_current(&updater, &generation));
         assert_eq!(

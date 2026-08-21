@@ -23,7 +23,7 @@ use ed25519_dalek::{Signature, StreamVerifier, Verifier, VerifyingKey};
 use reqwest::{
     Client as AsyncClient, Response as AsyncResponse, StatusCode,
     blocking::{Client as BlockingClient, Response as BlockingResponse},
-    header::{ACCEPT, CONTENT_LENGTH, LOCATION, RETRY_AFTER, USER_AGENT},
+    header::{ACCEPT, CONTENT_LENGTH, HeaderMap, LOCATION, RETRY_AFTER, USER_AGENT},
     redirect::Policy,
 };
 use semver::Version;
@@ -754,35 +754,13 @@ async fn cancelable_download<T>(
 
 fn read_manifest_response(response: BlockingResponse) -> Result<Vec<u8>, UpdaterError> {
     let status = response.status();
-    if status == StatusCode::TOO_MANY_REQUESTS {
-        let retry_after_seconds = response
-            .headers()
-            .get(RETRY_AFTER)
-            .and_then(|value| value.to_str().ok())
-            .and_then(|value| value.parse::<u64>().ok())
-            .map(|value| value.min(24 * 60 * 60));
-        return Err(UpdaterError {
-            code: DiagnosticCode::RateLimited,
-            phase: UpdatePhase::Discovery,
-            status_class: Some(4),
-            retry_after_seconds,
-        });
-    }
-    if status == StatusCode::NOT_FOUND {
-        return Err(UpdaterError::new(
-            DiagnosticCode::Missing,
-            UpdatePhase::Discovery,
-        ));
-    }
-    if status.is_client_error() {
-        let mut error = UpdaterError::new(DiagnosticCode::Unsupported, UpdatePhase::Discovery);
-        error.status_class = Some(4);
-        return Err(error);
-    }
     if !status.is_success() {
-        let mut error = UpdaterError::new(DiagnosticCode::Offline, UpdatePhase::Discovery);
-        error.status_class = Some(status.as_u16() / 100);
-        return Err(error);
+        return Err(http_response_error(
+            status,
+            response.headers(),
+            UpdatePhase::Discovery,
+            DiagnosticCode::Offline,
+        ));
     }
     if response
         .content_length()
@@ -811,13 +789,21 @@ async fn read_artifact_response(
     mut response: AsyncResponse,
     candidate: &VerifiedCandidate,
 ) -> Result<VerifiedArtifact, UpdaterError> {
-    if !response.status().is_success()
-        || response
-            .headers()
-            .get(CONTENT_LENGTH)
-            .and_then(|value| value.to_str().ok())
-            .and_then(|value| value.parse::<u64>().ok())
-            .is_some_and(|length| length != candidate.payload.artifact.size)
+    let status = response.status();
+    if !status.is_success() {
+        return Err(http_response_error(
+            status,
+            response.headers(),
+            UpdatePhase::Download,
+            DiagnosticCode::DownloadFailed,
+        ));
+    }
+    if response
+        .headers()
+        .get(CONTENT_LENGTH)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<u64>().ok())
+        .is_some_and(|length| length != candidate.payload.artifact.size)
     {
         return Err(UpdaterError::new(
             DiagnosticCode::DownloadFailed,
@@ -842,6 +828,34 @@ async fn read_artifact_response(
         bytes.extend_from_slice(&chunk);
     }
     verifier.finish(bytes)
+}
+
+fn http_response_error(
+    status: StatusCode,
+    headers: &HeaderMap,
+    phase: UpdatePhase,
+    fallback: DiagnosticCode,
+) -> UpdaterError {
+    let code = if status == StatusCode::TOO_MANY_REQUESTS {
+        DiagnosticCode::RateLimited
+    } else if status == StatusCode::NOT_FOUND {
+        DiagnosticCode::Missing
+    } else if status.is_client_error() {
+        DiagnosticCode::Unsupported
+    } else {
+        fallback
+    };
+    let retry_after_seconds = headers
+        .get(RETRY_AFTER)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<u64>().ok())
+        .map(|value| value.min(24 * 60 * 60));
+    UpdaterError {
+        code,
+        phase,
+        status_class: Some(status.as_u16() / 100),
+        retry_after_seconds,
+    }
 }
 
 #[derive(Debug)]
@@ -1090,13 +1104,13 @@ impl<'a> PlatformInstaller<'a> {
             .map_err(|_| DiagnosticCode::InstallationFailed)?;
         replacement
             .write_all(bytes)
-            .and_then(|_| replacement.as_file().sync_all())
             .and_then(|_| {
                 fs::set_permissions(
                     replacement.path(),
                     fs::Permissions::from_mode(metadata.permissions().mode()),
                 )
             })
+            .and_then(|_| replacement.as_file().sync_all())
             .map_err(|_| DiagnosticCode::InstallationFailed)?;
         replace_file_transactionally(&destination, replacement, |path| self.restart(path))
     }
@@ -1618,6 +1632,54 @@ fn replace_file_transactionally(
     Ok(RestartDisposition::Relaunched)
 }
 
+enum RestartAttemptAction {
+    Install(VerifiedArtifact),
+    Retry(PathBuf),
+}
+
+#[derive(Clone)]
+struct RestartAttemptId {
+    generation: Arc<AtomicBool>,
+    retrying: bool,
+    prior_diagnostic: Option<UpdateDiagnostic>,
+}
+
+pub struct RestartAttempt {
+    id: RestartAttemptId,
+    action: RestartAttemptAction,
+}
+
+pub struct RestartAttemptResult {
+    id: RestartAttemptId,
+    result: Result<RestartDisposition, DiagnosticCode>,
+}
+
+impl RestartAttempt {
+    pub fn run(self, installer: &dyn Installer) -> RestartAttemptResult {
+        let result = match &self.action {
+            RestartAttemptAction::Install(artifact) => installer.install_and_restart(&artifact.0),
+            RestartAttemptAction::Retry(executable) => installer
+                .retry_restart(executable)
+                .map(|()| RestartDisposition::Relaunched),
+        };
+        RestartAttemptResult {
+            id: self.id,
+            result,
+        }
+    }
+
+    pub fn join_failure(&self) -> RestartAttemptResult {
+        RestartAttemptResult {
+            id: self.id.clone(),
+            result: Err(if self.id.retrying {
+                DiagnosticCode::RestartFailed
+            } else {
+                DiagnosticCode::InstallationFailed
+            }),
+        }
+    }
+}
+
 pub struct UpdaterController {
     installed_version: Version,
     target: DesktopTarget,
@@ -1756,7 +1818,13 @@ impl UpdaterController {
         Ok(())
     }
 
-    pub fn cancel(&mut self) {
+    pub fn cancel(&mut self) -> Result<(), UpdaterError> {
+        if self.snapshot.kind != UpdaterStateKind::Downloading {
+            return Err(UpdaterError::new(
+                DiagnosticCode::Unsupported,
+                UpdatePhase::Download,
+            ));
+        }
         self.canceled.store(true, Ordering::Release);
         self.artifact = None;
         self.snapshot.kind = UpdaterStateKind::Canceled;
@@ -1764,6 +1832,7 @@ impl UpdaterController {
             DiagnosticCode::Canceled,
             UpdatePhase::Download,
         )));
+        Ok(())
     }
 
     pub fn approve_installation(&mut self) -> Result<(), UpdaterError> {
@@ -1777,27 +1846,22 @@ impl UpdaterController {
         Ok(())
     }
 
-    pub fn approve_restart(
-        &mut self,
-        installer: &dyn Installer,
-    ) -> Result<RestartDisposition, UpdaterError> {
+    pub fn begin_restart(&mut self) -> Result<RestartAttempt, UpdaterError> {
         let retrying = self.snapshot.kind == UpdaterStateKind::RestartRequired;
-        let result = match self.snapshot.kind {
+        let action = match self.snapshot.kind {
             UpdaterStateKind::InstallationApproved => {
-                let artifact = self.artifact.as_ref().ok_or_else(|| {
+                RestartAttemptAction::Install(self.artifact.take().ok_or_else(|| {
                     UpdaterError::new(
                         DiagnosticCode::InstallationFailed,
                         UpdatePhase::Installation,
                     )
-                })?;
-                installer.install_and_restart(&artifact.0)
+                })?)
             }
-            UpdaterStateKind::RestartRequired => self
-                .restart_executable
-                .as_deref()
-                .ok_or(DiagnosticCode::RestartFailed)
-                .and_then(|executable| installer.retry_restart(executable))
-                .map(|()| RestartDisposition::Relaunched),
+            UpdaterStateKind::RestartRequired => {
+                RestartAttemptAction::Retry(self.restart_executable.clone().ok_or_else(|| {
+                    UpdaterError::new(DiagnosticCode::RestartFailed, UpdatePhase::Restart)
+                })?)
+            }
             _ => {
                 return Err(UpdaterError::new(
                     DiagnosticCode::Unsupported,
@@ -1805,7 +1869,30 @@ impl UpdaterController {
                 ));
             }
         };
-        match result {
+        self.canceled.store(true, Ordering::Release);
+        self.canceled = Arc::new(AtomicBool::new(false));
+        self.snapshot.kind = UpdaterStateKind::Restarting;
+        Ok(RestartAttempt {
+            id: RestartAttemptId {
+                generation: self.canceled.clone(),
+                retrying,
+                prior_diagnostic: retrying.then(|| self.snapshot.diagnostic.clone()).flatten(),
+            },
+            action,
+        })
+    }
+
+    pub fn finish_restart(
+        &mut self,
+        attempt: RestartAttemptResult,
+    ) -> Option<Result<RestartDisposition, UpdaterError>> {
+        if !Arc::ptr_eq(&attempt.id.generation, &self.canceled)
+            || attempt.id.generation.load(Ordering::Acquire)
+            || self.snapshot.kind != UpdaterStateKind::Restarting
+        {
+            return None;
+        }
+        Some(match attempt.result {
             Ok(RestartDisposition::Relaunched) => {
                 // The old process continues to report its running version until
                 // the health-checked replacement has started successfully.
@@ -1832,11 +1919,15 @@ impl UpdaterController {
                     UpdatePhase::Installation
                 };
                 let error = UpdaterError::new(code, phase);
-                if retrying {
+                if attempt.id.retrying {
                     let installation_uncertain =
-                        self.snapshot.diagnostic.as_ref().is_some_and(|diagnostic| {
-                            diagnostic.code == DiagnosticCode::InstallationFailed
-                        });
+                        attempt
+                            .id
+                            .prior_diagnostic
+                            .as_ref()
+                            .is_some_and(|diagnostic| {
+                                diagnostic.code == DiagnosticCode::InstallationFailed
+                            });
                     tracing::warn!(
                         event = "updater_restart_retry_failed",
                         code = ?code,
@@ -1844,7 +1935,10 @@ impl UpdaterController {
                         package = self.package_kind.header_value(),
                         installation_uncertain
                     );
-                    if !installation_uncertain {
+                    if installation_uncertain {
+                        self.snapshot.kind = UpdaterStateKind::RestartRequired;
+                        self.snapshot.diagnostic = attempt.id.prior_diagnostic;
+                    } else {
                         self.mark_restart_required(DiagnosticCode::RestartFailed);
                     }
                 } else {
@@ -1852,7 +1946,17 @@ impl UpdaterController {
                 }
                 Err(error)
             }
-        }
+        })
+    }
+
+    #[cfg(test)]
+    fn approve_restart(
+        &mut self,
+        installer: &dyn Installer,
+    ) -> Result<RestartDisposition, UpdaterError> {
+        let attempt = self.begin_restart()?;
+        self.finish_restart(attempt.run(installer))
+            .expect("the synchronous test attempt remains current")
     }
 
     fn require_restart(&mut self, executable: PathBuf, diagnostic: DiagnosticCode) {
@@ -2075,6 +2179,43 @@ mod tests {
 
     fn now() -> OffsetDateTime {
         OffsetDateTime::parse("2026-08-20T12:00:00Z", &Rfc3339).unwrap()
+    }
+
+    #[test]
+    fn http_failures_retain_typed_bounded_metadata() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            RETRY_AFTER,
+            reqwest::header::HeaderValue::from_static("999999"),
+        );
+        let rate_limited = http_response_error(
+            StatusCode::TOO_MANY_REQUESTS,
+            &headers,
+            UpdatePhase::Download,
+            DiagnosticCode::DownloadFailed,
+        );
+        assert_eq!(rate_limited.code, DiagnosticCode::RateLimited);
+        assert_eq!(rate_limited.status_class, Some(4));
+        assert_eq!(rate_limited.retry_after_seconds, Some(24 * 60 * 60));
+
+        let missing = http_response_error(
+            StatusCode::NOT_FOUND,
+            &HeaderMap::new(),
+            UpdatePhase::Download,
+            DiagnosticCode::DownloadFailed,
+        );
+        assert_eq!(missing.code, DiagnosticCode::Missing);
+        assert_eq!(missing.status_class, Some(4));
+        assert_eq!(missing.retry_after_seconds, None);
+
+        let unavailable = http_response_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            &HeaderMap::new(),
+            UpdatePhase::Download,
+            DiagnosticCode::DownloadFailed,
+        );
+        assert_eq!(unavailable.code, DiagnosticCode::DownloadFailed);
+        assert_eq!(unavailable.status_class, Some(5));
     }
 
     #[test]
@@ -2366,6 +2507,54 @@ mod tests {
         }
     }
 
+    fn installation_approved_controller() -> UpdaterController {
+        let root = SigningKey::from_bytes(&RFC_ROOT_SEED);
+        let signed = fixture("0.2.0", &root, vec![], None);
+        let candidate =
+            verify_manifest(&signed, &Version::new(0, 1, 0), target(), package(), now()).unwrap();
+        let mut controller =
+            UpdaterController::new(Version::new(0, 1, 0), target(), package()).unwrap();
+        controller.check_bytes(&signed, now());
+        controller.begin_download().unwrap();
+        controller
+            .complete_download(
+                verify_artifact(&candidate, b"deterministic updater artifact".to_vec()).unwrap(),
+            )
+            .unwrap();
+        controller.approve_installation().unwrap();
+        controller
+    }
+
+    #[test]
+    fn restart_attempts_reject_concurrent_actions_and_commit_once() {
+        let mut controller = installation_approved_controller();
+        let attempt = controller.begin_restart().unwrap();
+
+        assert_eq!(controller.snapshot().kind, UpdaterStateKind::Restarting);
+        assert!(controller.begin_restart().is_err());
+        assert!(controller.cancel().is_err());
+
+        let result = controller
+            .finish_restart(attempt.run(&FailingInstaller(DiagnosticCode::InstallationFailed)))
+            .expect("the current restart generation commits");
+        assert_eq!(result.unwrap_err().code, DiagnosticCode::InstallationFailed);
+        assert_eq!(controller.snapshot().kind, UpdaterStateKind::Failed);
+    }
+
+    #[test]
+    fn stale_restart_attempts_cannot_overwrite_a_newer_generation() {
+        let mut controller = installation_approved_controller();
+        let attempt = controller.begin_restart().unwrap();
+        let result = attempt.run(&FailingInstaller(DiagnosticCode::InstallationFailed));
+
+        controller.canceled.store(true, Ordering::Release);
+        controller.canceled = Arc::new(AtomicBool::new(false));
+
+        assert!(controller.finish_restart(result).is_none());
+        assert_eq!(controller.snapshot().kind, UpdaterStateKind::Restarting);
+        assert!(controller.snapshot().diagnostic.is_none());
+    }
+
     #[test]
     fn debian_installer_exit_codes_distinguish_authorization_from_dpkg_failure() {
         assert_eq!(
@@ -2457,7 +2646,7 @@ mod tests {
         controller.begin_download().unwrap();
         let canceled_worker = controller.cancellation_token();
         let verified_artifact = verify_artifact(&candidate, artifact).unwrap();
-        controller.cancel();
+        controller.cancel().unwrap();
         assert_eq!(
             controller
                 .complete_download(verified_artifact)
@@ -2481,7 +2670,7 @@ mod tests {
         controller.check_bytes(&fixture("0.2.0", &root, vec![], None), now());
         controller.begin_download().unwrap();
         let canceled_worker = controller.cancellation_token();
-        controller.cancel();
+        controller.cancel().unwrap();
 
         assert!(controller.begin_check());
         let check_worker = controller.cancellation_token();
