@@ -16,5 +16,17 @@ export function isValidLogtoAudience(value: unknown): value is string {
 
 export function isLoopbackHostname(hostname: string): boolean {
   const octets = hostname.split(".");
-  return hostname === "localhost" || hostname === "[::1]" || hostname === "::1" || (octets.length === 4 && octets[0] === "127" && octets.every((octet) => /^\d+$/u.test(octet) && Number(octet) <= 255));
+  return hostname.replace(/\.$/u, "").toLowerCase() === "localhost" || hostname === "[::1]" || hostname === "::1" || (octets.length === 4 && octets[0] === "127" && octets.every((octet) => /^\d+$/u.test(octet) && Number(octet) <= 255));
+}
+
+export function normalizePublicAssetUrl(value: unknown): string | null {
+  if (typeof value !== "string" || value !== value.trim()) return null;
+  try {
+    const url = new URL(value);
+    if (!url.hostname || url.username || url.password || url.search || url.hash) return null;
+    if (url.protocol !== "https:" && !(url.protocol === "http:" && isLoopbackHostname(url.hostname))) return null;
+    return url.toString().replaceAll("(", "%28").replaceAll(")", "%29");
+  } catch {
+    return null;
+  }
 }

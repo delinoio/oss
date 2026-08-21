@@ -1143,6 +1143,14 @@ impl DraftStore {
         remove_path(path)
     }
 
+    pub fn delete_at_revision(&self, id: Uuid, expected_revision: u64) -> Result<(), CaptureError> {
+        let _guard = self.lock.lock().map_err(|_| CaptureError::StorageFailure)?;
+        let key = self.key()?;
+        let document = self.read_locked(id, &key)?;
+        ensure_revision(&document, expected_revision)?;
+        remove_path(self.root.join(id.to_string()))
+    }
+
     pub fn purge_all(&self) -> Result<(), CaptureError> {
         let _guard = self.lock.lock().map_err(|_| CaptureError::StorageFailure)?;
         if self.root.exists() {
@@ -3825,6 +3833,34 @@ mod tests {
                 .unwrap_err(),
             CaptureError::RevisionConflict
         );
+    }
+
+    #[test]
+    fn confirmed_issue_deletion_rejects_a_newer_draft_revision() {
+        let root = TestDirectory::new();
+        let store = DraftStore::new_test(root.0.clone(), 1024 * 1024, [32; 32]);
+        let created = store
+            .create(vec![ImageBuffer::from_pixel(8, 8, Rgba([1, 2, 3, 255]))])
+            .unwrap();
+        let appended = store
+            .append(
+                created.id,
+                vec![ImageBuffer::from_pixel(8, 8, Rgba([4, 5, 6, 255]))],
+            )
+            .unwrap();
+
+        assert_eq!(
+            store
+                .delete_at_revision(created.id, created.revision)
+                .unwrap_err(),
+            CaptureError::RevisionConflict
+        );
+        assert_eq!(store.open(created.id).unwrap().revision, appended.revision);
+
+        store
+            .delete_at_revision(created.id, appended.revision)
+            .unwrap();
+        assert_eq!(store.open(created.id).unwrap_err(), CaptureError::NotFound);
     }
 
     #[test]
