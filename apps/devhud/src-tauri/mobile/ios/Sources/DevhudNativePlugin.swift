@@ -487,6 +487,12 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
     private func removeGitHubPatScope(_ scopeId: String, _ profileId: String) -> Bool {
         guard let primaryAccounts = secureAccounts(accessGroupKey: sharedAccessGroupKey),
               let legacyAccounts = secureAccounts(accessGroupKey: legacyAccessGroupKey) else { return false }
+        let widgetCredentialReplacement: WidgetCredentialReplacement?
+        switch beginWidgetCredentialReplacement(profileId: profileId, scopeId: scopeId) {
+        case .none: widgetCredentialReplacement = nil
+        case .started(let transaction): widgetCredentialReplacement = transaction
+        case .failure: return false
+        }
         let accounts = Set(primaryAccounts + legacyAccounts)
         let marker = githubPatScope(scopeId, profileId)
         let markerSuffix = ":\(profileId)"
@@ -504,6 +510,8 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
             let deletion = deleteData(marker, accessGroupKey: accessGroupKey)
             if deletion != errSecSuccess && deletion != errSecItemNotFound { return false }
         }
+        guard replaceWidgetCredentials(widgetCredentialReplacement, data: nil) else { return false }
+        WidgetCenter.shared.reloadAllTimelines()
         return true
     }
 
@@ -685,6 +693,9 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
         guard let encoded = defaults.data(forKey: widgetCredentialReplacementKey) else { return true }
         guard let transaction = try? JSONDecoder().decode(WidgetCredentialReplacement.self, from: encoded),
               transaction.version == 1 else { return false }
+        let (markerStatus, _) = readDataMigratingLegacy(githubPatScope(transaction.scopeId, transaction.profileId))
+        if markerStatus == errSecItemNotFound { return replaceWidgetCredentials(transaction, data: nil) }
+        guard markerStatus == errSecSuccess else { return false }
         let setting = SecureSetting(kind: "github-pat", profileId: transaction.profileId, scopeId: transaction.scopeId)
         let (status, data) = readDataMigratingLegacy(setting)
         if status == errSecItemNotFound { return replaceWidgetCredentials(transaction, data: nil) }

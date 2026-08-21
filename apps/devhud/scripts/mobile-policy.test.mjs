@@ -77,6 +77,7 @@ test("mobile policy requires lifecycle-owned Android persistence and native plat
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace("            } catch (error: Exception) {\n                diagnosticsPurgesInProgress.decrementAndGet()\n                throw error\n            }", "            }")), /across queued persistence and failures/u);
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace("                } finally {\n                    onComplete()\n                }", "                }")), /release purge state after executor completion/u);
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace("            if (!cleanupPendingDiagnosticsExport())", "            if (cleanupPendingDiagnosticsExport())")), /propagate diagnostics cleanup failures/u);
+  assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace("replaceProfileToken(profileId, scopeId, null)", "cancelProfileTokenReplacement()")), /profile-scope removal/u);
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace("storeIntent().resolveActivity(activity.packageManager)", "true")), /market handler/u);
 });
 
@@ -92,7 +93,9 @@ test("mobile policy keeps native iOS origins aligned with normalized root URLs",
   assert.throws(() => assertIosNativeBridge(iosNativeBridge.replaceAll("rollbackGitHubPatWrite(setting, previousData: previousGitHubPatData)", "true")), /restore or remove the shared GitHub PAT/u);
   assert.throws(() => assertIosNativeBridge(iosNativeBridge.replace("switch beginWidgetCredentialReplacement", "switch delayedWidgetCredentialReplacement")), /before changing the main PAT/u);
   assert.throws(() => assertIosNativeBridge(iosNativeBridge.replace("for deckId in transaction.deckIds", "for deckId in transaction.deckIds.prefix(1)")), /update every recorded Deck/u);
-  assert.throws(() => assertIosNativeBridge(iosNativeBridge.replace("private func reconcileWidgetCredentialReplacement", "private func skipWidgetCredentialReplacement")), /authoritative main PAT/u);
+  assert.throws(() => assertIosNativeBridge(iosNativeBridge.replace("private func reconcileWidgetCredentialReplacement", "private func skipWidgetCredentialReplacement")), /authoritative profile scope and main PAT/u);
+  assert.throws(() => assertIosNativeBridge(iosNativeBridge.replace("githubPatScope(transaction.scopeId, transaction.profileId)", "githubPatScope(\"other\", transaction.profileId)")), /authoritative profile scope/u);
+  assert.throws(() => assertIosNativeBridge(iosNativeBridge.replace("replaceWidgetCredentials(widgetCredentialReplacement, data: nil)", "true")), /profile-scope removal/u);
   assert.throws(() => assertIosNativeBridge(iosNativeBridge.replace("pendingDiagnosticsCleanup = target", "pendingDiagnosticsCleanup = nil")), /cleanup must remain pending/u);
   assert.throws(() => assertIosNativeBridge(iosNativeBridge.replace("if failed || !cleanupSucceeded", "if failed")), /fail closed/u);
   assert.throws(() => assertIosNativeBridge(iosNativeBridge.replace('if scope == "logout" || scope == "account-deletion"', "if true")), /preserve pending diagnostics exports/u);
@@ -215,7 +218,7 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   assert.ok(iosWidget.indexOf("validateRepositories(deck: deck, token: token)") < iosWidget.indexOf('URLComponents(string: "https://api.github.com/search/issues")'));
   assert.match(iosWidget, /\/pulls\?state=open&per_page=1[\s\S]*\/issues\?state=open&per_page=1[\s\S]*\/contents/u);
   assert.match(iosWidget, /statusCode == 401[\s\S]*"missing-token"[\s\S]*statusCode == 403 \|\| .*statusCode == 404[\s\S]*"permission"/u);
-  assert.match(iosWidget, /foregroundStyle\(\.white\)[\s\S]*background\(Color\(red: 0\.11/u);
+  assert.match(iosWidget, /#available\(iOS 17\.0, \*\)[\s\S]*containerBackground\(for: \.widget\)[\s\S]*else[\s\S]*background\(Color\(red: 0\.11/u);
   assert.ok(iosNativeBridge.indexOf("beginWidgetCredentialReplacement(profileId: setting.profileId") < iosNativeBridge.indexOf("guard storeData(data, setting: setting"));
   assert.match(iosNativeBridge, /WidgetCredential\(version: 1, revision: UUID\(\)\.uuidString\.lowercased\(\), token: token\)/u);
   assert.match(iosNativeBridge, /WidgetCredentialReplacement\(version: 1, profileId: profileId, scopeId: scopeId, deckIds: deckIds\)[\s\S]*defaults\.set\(encoded, forKey: widgetCredentialReplacementKey\)[\s\S]*defaults\.synchronize\(\)/u);

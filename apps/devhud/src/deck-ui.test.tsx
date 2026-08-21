@@ -161,6 +161,57 @@ describe("Deck surface", () => {
     expect(screen.getByRole("button", { name: messages.en.widgetEnable })).toBeTruthy();
   });
 
+  it("drops widget synchronization that is still building configuration when the boundary unmounts", async () => {
+    let resolveScope: (scopeId: string) => void = () => {};
+    const scope = new Promise<string>((resolve) => { resolveScope = resolve; });
+    identity = identityWith({ githubPatScopeId: scope });
+    const widgetOperations: string[] = [];
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      if (value.operation === "widgets.status") return { kind: "widget-status", enabledDeckIds: [deck.id] };
+      if (value.operation.startsWith("widgets.")) widgetOperations.push(value.operation);
+      return { kind: "ok" };
+    });
+    const bridge = bridgeWith(request);
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+    await screen.findByRole("button", { name: messages.en.widgetDisable });
+
+    view.unmount();
+    resolveScope("origin.scope");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(widgetOperations).toEqual([]);
+  });
+
+  it("drops queued widget synchronization when the boundary unmounts", async () => {
+    let releaseFirstEnable: () => void = () => {};
+    const firstEnablePending = new Promise<void>((resolve) => { releaseFirstEnable = resolve; });
+    let statusCalls = 0;
+    let enableCalls = 0;
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      if (value.operation === "widgets.status") {
+        statusCalls += 1;
+        return { kind: "widget-status", enabledDeckIds: [deck.id] };
+      }
+      if (value.operation === "widgets.enable-deck") {
+        enableCalls += 1;
+        if (enableCalls === 1) await firstEnablePending;
+      }
+      return { kind: "ok" };
+    });
+    const bridge = bridgeWith(request);
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+    await waitFor(() => expect(enableCalls).toBe(1));
+
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [{ ...deck, name: "Edited Deck" }] }) });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+    await waitFor(() => expect(statusCalls).toBe(2));
+    view.unmount();
+    releaseFirstEnable();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(enableCalls).toBe(1);
+  });
+
   it("continues reconciling other enabled Decks after one Deck is manually disabled", async () => {
     const otherDeck = { ...deck, id: "018f47a2-7b3c-7def-8abc-1234567890ad", name: "Other Deck", query: "repo:octo/other is:pr", builder: null };
     identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [deck, otherDeck] }) });

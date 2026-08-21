@@ -420,15 +420,26 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
         val key = settingKey(args)
         persistSecure(invoke) {
             val preferences = activity.getSharedPreferences(storeName, Context.MODE_PRIVATE)
-            val editor = preferences.edit()
             if (key.startsWith("github-pat:")) {
                 val setting = args.getJSObject("setting") ?: throw IllegalArgumentException("setting")
-                val marker = githubPatScopeKey(setting.getString("scopeId"), setting.getString("profileId"))
-                if (githubPatScopeKeys(preferences.all.keys, setting.getString("profileId")).none { it != marker }) editor.remove(key)
-                editor.remove(marker)
-            } else editor.remove(key)
-            editor.commit()
+                val removed = removeGitHubPatScope(preferences, DevHudWidgetStore(activity.applicationContext), setting.getString("scopeId"), setting.getString("profileId"))
+                if (removed) renderWidgets()
+                removed
+            } else preferences.edit().remove(key).commit()
         }
+    }
+
+    private fun removeGitHubPatScope(preferences: android.content.SharedPreferences, widgetStore: DevHudWidgetStore, scopeId: String, profileId: String): Boolean {
+        val marker = githubPatScopeKey(scopeId, profileId)
+        if (!widgetStore.beginProfileTokenReplacement(profileId, scopeId)) return false
+        val editor = preferences.edit()
+        if (githubPatScopeKeys(preferences.all.keys, profileId).none { it != marker }) editor.remove("github-pat:$profileId")
+        editor.remove(marker)
+        if (!editor.commit()) {
+            widgetStore.cancelProfileTokenReplacement()
+            return false
+        }
+        return widgetStore.replaceProfileToken(profileId, scopeId, null)
     }
 
     private fun reconcileGitHubPats(invoke: Invoke) {
@@ -445,14 +456,14 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
                 val marker = githubPatScopeKey(scopeId, profileId)
                 if (preferences.contains(pat) && !preferences.contains(marker)) editor.putString(marker, encryptSecure("1", marker))
             }
-            preferences.all.keys.filter { key -> key.startsWith("github-pat-scope:$scopeId:") }
+            val releasedScopes = preferences.all.keys.filter { key -> key.startsWith("github-pat-scope:$scopeId:") }
                 .map { marker -> marker to marker.removePrefix("github-pat-scope:$scopeId:") }
                 .filter { (_, profileId) -> profileId !in profileIds }
-                .forEach { (marker, profileId) ->
-                    if (githubPatScopeKeys(preferences.all.keys, profileId).none { it != marker }) editor.remove("github-pat:$profileId")
-                    editor.remove(marker)
-                }
-            editor.commit()
+            if (!editor.commit()) return@persistSecure false
+            val widgetStore = DevHudWidgetStore(activity.applicationContext)
+            val removed = releasedScopes.all { (_, profileId) -> removeGitHubPatScope(preferences, widgetStore, scopeId, profileId) }
+            if (removed && releasedScopes.isNotEmpty()) renderWidgets()
+            removed
         }
     }
 

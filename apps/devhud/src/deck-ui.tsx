@@ -427,6 +427,7 @@ export function DeckPollingBoundary({ bridge, active, online, language = "en", p
   }, [bridge, disableWidgetDeck, scheduledDecks, synchronizeWidgetDeck]);
   useEffect(() => () => {
     const deckIds = new Set([...decks.current.map((deck) => deck.id), ...caches.current.keys(), ...configurations.current.keys()]);
+    widgetReconciliationGeneration.current += 1;
     deckAccessAllowed.current = false;
     decks.current = [];
     activeRef.current = false;

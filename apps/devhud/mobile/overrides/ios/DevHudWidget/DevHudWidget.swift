@@ -42,6 +42,16 @@ struct DeckSnapshot: Codable, Sendable {
 }
 private struct RepositoryValidationFailure: Sendable { let state: String; let rate: DeckRate? }
 
+private struct WidgetBackground: ViewModifier {
+    @ViewBuilder func body(content: Content) -> some View {
+        if #available(iOS 17.0, *) {
+            content.containerBackground(for: .widget) { Color(red: 0.11, green: 0.15, blue: 0.19) }
+        } else {
+            content.background(Color(red: 0.11, green: 0.15, blue: 0.19))
+        }
+    }
+}
+
 private func sameSelection(_ left: DeckConfiguration, _ right: DeckConfiguration) -> Bool {
     left.deckId == right.deckId && left.query == right.query && left.profileId == right.profileId && left.profileKind == right.profileKind && left.scopeId == right.scopeId
 }
@@ -315,7 +325,7 @@ private struct DeckWidgetView: View {
             Spacer(minLength: 0)
             Text("\(status) · \(text("Last success", "마지막 성공")) \(entry.snapshot?.lastSuccessfulAt ?? text("Never", "없음"))").font(.caption2).foregroundStyle(Color.white.opacity(0.72)).lineLimit(1)
         }
-        .padding().foregroundStyle(.white).background(Color(red: 0.11, green: 0.15, blue: 0.19))
+        .padding().foregroundStyle(.white).modifier(WidgetBackground())
         .widgetURL(entry.configuration.flatMap { URL(string: "devhud://deck/\($0.deckId)") })
         .accessibilityElement(children: .combine)
     }

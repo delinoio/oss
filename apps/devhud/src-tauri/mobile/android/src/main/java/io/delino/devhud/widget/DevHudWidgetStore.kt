@@ -115,7 +115,7 @@ internal class DevHudWidgetStore(private val context: Context) {
         state.edit().putString(credentialReplacementKey, transaction.toString()).commit()
     }
 
-    fun replaceProfileToken(profileId: String, scopeId: String, token: String): Boolean = synchronized(widgetStoreMutationLock) {
+    fun replaceProfileToken(profileId: String, scopeId: String, token: String?): Boolean = synchronized(widgetStoreMutationLock) {
         val transaction = credentialReplacement() ?: return@synchronized !state.contains(credentialReplacementKey)
         if (transaction.optString("profileId") != profileId || transaction.optString("scopeId") != scopeId) return@synchronized false
         applyProfileTokenReplacement(transaction, token)
