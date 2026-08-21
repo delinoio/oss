@@ -78,8 +78,8 @@ export function configureIosWidgetProject(projectPath = join(generatedRoot, "app
   const application = Object.entries(project.targets).find(([, target]) => target?.type === "application" && target?.platform === "iOS");
   if (application === undefined) throw new Error("generated iOS application target is missing");
   const [, applicationTarget] = application;
-  const currentProjectVersion = applicationTarget.settings?.base?.CURRENT_PROJECT_VERSION;
-  const marketingVersion = applicationTarget.settings?.base?.MARKETING_VERSION;
+  const currentProjectVersion = applicationTarget.info?.properties?.CFBundleVersion;
+  const marketingVersion = applicationTarget.info?.properties?.CFBundleShortVersionString;
   if ((typeof currentProjectVersion !== "string" && typeof currentProjectVersion !== "number") || String(currentProjectVersion).trim() === "") throw new Error("generated iOS application target has no current project version");
   if ((typeof marketingVersion !== "string" && typeof marketingVersion !== "number") || String(marketingVersion).trim() === "") throw new Error("generated iOS application target has no marketing version");
   const applicationVersions = { CURRENT_PROJECT_VERSION: currentProjectVersion, MARKETING_VERSION: marketingVersion };
