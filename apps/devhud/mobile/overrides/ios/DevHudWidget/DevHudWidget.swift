@@ -27,6 +27,12 @@ private func parseWidgetTimestamp(_ value: String) -> Date? {
     return fractional.date(from: value) ?? ISO8601DateFormatter().date(from: value)
 }
 
+private func widgetAttemptTimestamp(_ date: Date = Date()) -> String {
+    let fractional = ISO8601DateFormatter()
+    fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return fractional.string(from: date)
+}
+
 private func mergeDeckSnapshot(current: DeckSnapshot?, incoming: DeckSnapshot) -> DeckSnapshot {
     guard let current, current.deckId == incoming.deckId, current.query == incoming.query,
           let currentAttempt = parseWidgetTimestamp(current.lastAttemptedAt),
@@ -201,7 +207,7 @@ private struct DeckTimelineProvider: IntentTimelineProvider {
                 snapshot = await Self.refreshWithDeadline(deck: deck, previous: previous, token: token)
                 credentialRevision = revision
             case .unreadable(let revision):
-                snapshot = Self.failure(deck: deck, previous: previous, state: "error", attempted: ISO8601DateFormatter().string(from: Date()), rate: nil)
+                snapshot = Self.failure(deck: deck, previous: previous, state: "error", attempted: widgetAttemptTimestamp(), rate: nil)
                 credentialRevision = revision
             case .unavailable:
                 guard let current = store.configuration(deck.deckId), sameSelection(current, deck) else {
@@ -209,7 +215,7 @@ private struct DeckTimelineProvider: IntentTimelineProvider {
                     completion(timeline(deck: current, snapshot: current.flatMap { store.snapshot($0.deckId) }))
                     return
                 }
-                let snapshot = Self.failure(deck: current, previous: store.snapshot(current.deckId), state: "error", attempted: ISO8601DateFormatter().string(from: Date()), rate: nil)
+                let snapshot = Self.failure(deck: current, previous: store.snapshot(current.deckId), state: "error", attempted: widgetAttemptTimestamp(), rate: nil)
                 completion(timeline(deck: current, snapshot: snapshot))
                 return
             }
@@ -234,7 +240,7 @@ private struct DeckTimelineProvider: IntentTimelineProvider {
     }
 
     private static func refreshWithDeadline(deck: DeckConfiguration, previous: DeckSnapshot?, token: String?) async -> DeckSnapshot {
-        let attempted = ISO8601DateFormatter().string(from: Date())
+        let attempted = widgetAttemptTimestamp()
         return await withTaskGroup(of: DeckSnapshot.self) { group in
             group.addTask { await refresh(deck: deck, previous: previous, token: token, attempted: attempted) }
             group.addTask {

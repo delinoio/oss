@@ -182,6 +182,9 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   assert.match(androidProvider, /fun cancel[\s\S]*connections\.forEach \{ it\.disconnect\(\) \}/u);
   assert.match(androidProvider, /ScrollView/u);
   assert.match(androidProvider, /incomplete_results/u);
+  assert.match(androidProvider, /item\.opt\("draft"\) as\? Boolean[\s\S]*item\.opt\("state"\) as\? String[\s\S]*it == "open" \|\| it == "closed"/u);
+  assert.ok(androidProvider.indexOf('item.opt("state") as? String') < androidProvider.indexOf("when { isDraft"));
+  assert.doesNotMatch(androidProvider, /item\.optBoolean\("draft"|item\.optString\("state"/u);
   assert.match(androidProvider, /it\.has\("merged_at"\) && !it\.isNull\("merged_at"\)/u);
   assert.ok(androidProvider.indexOf("validateRepositories(configuration, token, session)") < androidProvider.indexOf('github("/search/issues'));
   assert.match(androidProvider, /\/pulls\?state=open&per_page=1[\s\S]*\/issues\?state=open&per_page=1[\s\S]*\/contents/u);
@@ -226,6 +229,8 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   assert.match(iosWidget, /foregroundReloadDeadlinePrefix \+ deckId/u);
   assert.match(iosWidget, /parseWidgetTimestamp[\s\S]*withInternetDateTime, \.withFractionalSeconds[\s\S]*fractional\.date\(from: value\) \?\? ISO8601DateFormatter\(\)\.date\(from: value\)/u);
   assert.equal((iosWidget.match(/parseWidgetTimestamp\(value\)/gu) ?? []).length, 3);
+  assert.match(iosWidget, /widgetAttemptTimestamp[\s\S]*withInternetDateTime, \.withFractionalSeconds[\s\S]*fractional\.string\(from: date\)/u);
+  assert.equal((iosWidget.match(/widgetAttemptTimestamp\(\)/gu) ?? []).length, 3);
   assert.match(iosWidget, /incomplete_results/u);
   assert.doesNotMatch(iosWidget, /items\.prefix\(100\)\.compactMap/u);
   assert.match(iosWidget, /for item in items\.prefix\(100\)[\s\S]*guard let nodeId[\s\S]*return failure\(deck: deck, previous: previous, state: "error", attempted: attempted, rate: rate\)/u);

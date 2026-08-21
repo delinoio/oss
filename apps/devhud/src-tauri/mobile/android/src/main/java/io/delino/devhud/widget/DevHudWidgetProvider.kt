@@ -214,16 +214,19 @@ class DevHudWidgetProvider : AppWidgetProvider() {
                     var open = 0; var draft = 0; var merged = 0; var closed = 0
                     for (index in 0 until minOf(items.length(), resultLimit)) {
                         val item = items.getJSONObject(index)
-                        val isDraft = item.optBoolean("draft", false)
+                        val isDraft = item.opt("draft") as? Boolean
+                            ?: return@github failure(configuration, previous, "error", attemptedAt, responseRate)
+                        val itemState = (item.opt("state") as? String)?.takeIf { it == "open" || it == "closed" }
+                            ?: return@github failure(configuration, previous, "error", attemptedAt, responseRate)
                         val pullRequest = item.optJSONObject("pull_request")
                         val isMerged = pullRequest?.let { it.has("merged_at") && !it.isNull("merged_at") } == true
-                        when { isDraft -> draft += 1; isMerged -> merged += 1; item.optString("state") == "closed" -> closed += 1; else -> open += 1 }
+                        when { isDraft -> draft += 1; isMerged -> merged += 1; itemState == "closed" -> closed += 1; else -> open += 1 }
                         results.put(JSONObject()
                             .put("nodeId", item.optString("node_id"))
                             .put("number", item.getInt("number"))
                             .put("title", item.getString("title"))
                             .put("repository", repositoryName(item.getString("repository_url")))
-                            .put("state", if (isMerged) "merged" else item.optString("state", "open"))
+                            .put("state", if (isMerged) "merged" else itemState)
                             .put("draft", isDraft))
                     }
                     JSONObject()
