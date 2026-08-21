@@ -197,10 +197,85 @@ fn emit_update_status<R: tauri::Runtime>(app: &tauri::AppHandle<R>, response: &V
 }
 
 #[cfg(desktop)]
+fn log_updater_failure(
+    event_name: &'static str,
+    diagnostic: Option<&crate::updater::UpdateDiagnostic>,
+) {
+    let Some(diagnostic) = diagnostic else {
+        return;
+    };
+    if diagnostic.code == crate::updater::DiagnosticCode::Canceled {
+        return;
+    }
+    tracing::warn!(
+        event = event_name,
+        code = ?diagnostic.code,
+        phase = ?diagnostic.phase,
+        target = diagnostic.target,
+        package = diagnostic.package_kind.header_value(),
+        http_status_class = ?diagnostic.http_status_class,
+        retry_after_seconds = ?diagnostic.retry_after_seconds
+    );
+}
+
+#[cfg(desktop)]
+fn finish_update_check(
+    updater: &mut crate::updater::UpdaterController,
+    result: Result<Vec<u8>, crate::updater::UpdaterError>,
+    now: time::OffsetDateTime,
+) -> crate::updater::UpdaterSnapshot {
+    match result {
+        Ok(manifest) => updater.check_bytes(&manifest, now),
+        Err(error) => updater.record_error(error),
+    }
+    let snapshot = updater.snapshot();
+    log_updater_failure("updater_check_failed", snapshot.diagnostic.as_ref());
+    snapshot
+}
+
+#[cfg(desktop)]
+fn finish_update_download(
+    updater: &mut crate::updater::UpdaterController,
+    artifact: Result<crate::updater::VerifiedArtifact, crate::updater::UpdaterError>,
+) -> crate::updater::UpdaterSnapshot {
+    match artifact {
+        Ok(artifact) => {
+            if let Err(error) = updater.complete_download(artifact) {
+                updater.record_error(error);
+            }
+        }
+        Err(error) => updater.record_error(error),
+    }
+    let snapshot = updater.snapshot();
+    log_updater_failure("updater_download_failed", snapshot.diagnostic.as_ref());
+    snapshot
+}
+
+#[cfg(desktop)]
+enum UpdateCheckDisposition {
+    Started(Value),
+    Busy(Value),
+}
+
+#[cfg(desktop)]
+impl UpdateCheckDisposition {
+    fn response(self) -> Value {
+        match self {
+            Self::Started(response) | Self::Busy(response) => response,
+        }
+    }
+}
+
+#[cfg(desktop)]
+fn updater_check_attempt_consumes_due(result: &Result<UpdateCheckDisposition, String>) -> bool {
+    result.is_ok()
+}
+
+#[cfg(desktop)]
 fn start_update_check<R: tauri::Runtime>(
     state: NativeBridgeState,
     app: tauri::AppHandle<R>,
-) -> Result<(Value, bool), String> {
+) -> Result<UpdateCheckDisposition, String> {
     let (target, package, generation, checking) = {
         let mut updater = state
             .updater
@@ -208,9 +283,8 @@ fn start_update_check<R: tauri::Runtime>(
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let updater = updater.as_mut().ok_or("unsupported")?;
         if !updater.begin_check() {
-            return Ok((
+            return Ok(UpdateCheckDisposition::Busy(
                 json!({ "kind": "desktop-update-status", "status": updater.snapshot() }),
-                false,
             ));
         }
         (
@@ -236,27 +310,12 @@ fn start_update_check<R: tauri::Runtime>(
             {
                 return;
             }
-            match result {
-                Ok(manifest) => updater.check_bytes(&manifest, time::OffsetDateTime::now_utc()),
-                Err(error) => {
-                    tracing::warn!(
-                        event = "updater_check_failed",
-                        code = ?error.code,
-                        phase = ?error.phase,
-                        target = target.update_target_id(),
-                        package = package.header_value(),
-                        http_status_class = ?error.status_class,
-                        retry_after_seconds = ?error.retry_after_seconds
-                    );
-                    updater.record_error(error);
-                }
-            }
-            updater.snapshot()
+            finish_update_check(updater, result, time::OffsetDateTime::now_utc())
         };
         let response = json!({ "kind": "desktop-update-status", "status": snapshot });
         emit_update_status(&app, &response);
     }));
-    Ok((checking, true))
+    Ok(UpdateCheckDisposition::Started(checking))
 }
 
 #[cfg(desktop)]
@@ -321,19 +380,20 @@ pub fn start_update_scheduler<R: tauri::Runtime>(
                 continue;
             }
             let response = start_update_check(state.clone(), app.clone());
-            let started = match response {
-                Ok((response, started)) => {
-                    if started {
-                        emit_update_status(&app, &response);
-                    }
-                    started
+            let consumes_due_attempt = updater_check_attempt_consumes_due(&response);
+            match response {
+                Ok(UpdateCheckDisposition::Started(response)) => {
+                    emit_update_status(&app, &response);
+                }
+                Ok(UpdateCheckDisposition::Busy(_)) => {
+                    // The active flow owns the controller. Consume this attempt
+                    // so a later cancellation or failure remains visible.
                 }
                 Err(code) => {
                     tracing::warn!(event = "updater_check_failed", error_code = code);
-                    false
                 }
-            };
-            if !started {
+            }
+            if !consumes_due_attempt {
                 continue;
             }
             schedule.mark_checked(active_runtime_seconds);
@@ -1250,7 +1310,7 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
         .ok_or("invalid-argument")?;
     if operation == "updates.check" {
         return start_update_check(state.inner().clone(), app.clone())
-            .map(|(response, _)| response);
+            .map(UpdateCheckDisposition::response);
     }
     if operation == "updates.approve-download" {
         let (candidate, package, canceled) = {
@@ -1289,15 +1349,7 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
                 if !Arc::ptr_eq(&canceled, &updater.cancellation_token()) {
                     return;
                 }
-                match artifact {
-                    Ok(artifact) => {
-                        if let Err(error) = updater.complete_download(artifact) {
-                            updater.record_error(error);
-                        }
-                    }
-                    Err(error) => updater.record_error(error),
-                }
-                updater.snapshot()
+                finish_update_download(updater, artifact)
             };
             if updater_app
                 .emit(
@@ -1682,9 +1734,17 @@ async fn handle_capture_request(
 mod tests {
     #[cfg(desktop)]
     use std::cell::RefCell;
-    use std::sync::atomic::{AtomicBool, Ordering};
+    #[cfg(desktop)]
+    use std::io::{self, Write};
+    #[cfg(desktop)]
+    use std::sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    };
 
     use serde_json::{Value, json};
+    #[cfg(desktop)]
+    use tracing_subscriber::layer::SubscriberExt;
 
     use super::{
         NativeBridgeState, handle_native_bridge_request, ios_runtime_os_version, is_auth_callback,
@@ -1694,9 +1754,10 @@ mod tests {
     };
     #[cfg(desktop)]
     use super::{
-        deletes_capture_drafts_for_purge_scope, purge_capture_drafts_before_secure_store,
-        should_restore_capture_window, stage_diagnostics_export, updater_check_is_due,
-        updater_window_is_active,
+        UpdateCheckDisposition, deletes_capture_drafts_for_purge_scope, finish_update_check,
+        finish_update_download, purge_capture_drafts_before_secure_store,
+        should_restore_capture_window, stage_diagnostics_export,
+        updater_check_attempt_consumes_due, updater_check_is_due, updater_window_is_active,
     };
 
     #[cfg(desktop)]
@@ -1739,6 +1800,128 @@ mod tests {
             false,
             false,
         ));
+    }
+
+    #[cfg(desktop)]
+    #[test]
+    fn updater_busy_attempt_consumes_the_due_schedule() {
+        assert!(updater_check_attempt_consumes_due(&Ok(
+            UpdateCheckDisposition::Busy(json!({ "kind": "desktop-update-status" }))
+        )));
+        assert!(!updater_check_attempt_consumes_due(&Err(
+            "unsupported".to_string()
+        )));
+    }
+
+    #[cfg(desktop)]
+    #[test]
+    fn updater_workers_log_typed_failures_but_not_cancellation() {
+        let mut check = updater_controller();
+        assert!(check.begin_check());
+        let check_output = capture_updater_log(|| {
+            finish_update_check(
+                &mut check,
+                Ok(include_bytes!("../fixtures/updater/invalid-signature.json").to_vec()),
+                time::OffsetDateTime::now_utc(),
+            );
+        });
+        assert!(check_output.contains("updater_check_failed"));
+        assert!(check_output.contains("InvalidSignature"));
+        assert!(check_output.contains("linux-x86_64"));
+        assert!(!check_output.contains("signedPayload"));
+
+        let mut download = available_updater_controller();
+        assert!(download.begin_download().is_ok());
+        let download_output = capture_updater_log(|| {
+            finish_update_download(
+                &mut download,
+                Err(crate::updater::UpdaterError {
+                    code: crate::updater::DiagnosticCode::VerificationFailed,
+                    phase: crate::updater::UpdatePhase::Verification,
+                    status_class: Some(5),
+                    retry_after_seconds: Some(60),
+                }),
+            );
+        });
+        assert!(download_output.contains("updater_download_failed"));
+        assert!(download_output.contains("VerificationFailed"));
+        assert!(download_output.contains("http_status_class=Some(5)"));
+        assert!(download_output.contains("retry_after_seconds=Some(60)"));
+
+        let mut canceled = available_updater_controller();
+        assert!(canceled.begin_download().is_ok());
+        let canceled_output = capture_updater_log(|| {
+            finish_update_download(
+                &mut canceled,
+                Err(crate::updater::UpdaterError {
+                    code: crate::updater::DiagnosticCode::Canceled,
+                    phase: crate::updater::UpdatePhase::Download,
+                    status_class: None,
+                    retry_after_seconds: None,
+                }),
+            );
+        });
+        assert!(canceled_output.is_empty());
+    }
+
+    #[cfg(desktop)]
+    fn updater_controller() -> crate::updater::UpdaterController {
+        crate::updater::UpdaterController::new(
+            semver::Version::new(0, 1, 0),
+            crate::platform::DesktopTarget::LinuxX64,
+            crate::updater::PackageKind::LinuxAppimage,
+        )
+        .expect("create updater controller")
+    }
+
+    #[cfg(desktop)]
+    fn available_updater_controller() -> crate::updater::UpdaterController {
+        let mut controller = updater_controller();
+        assert!(controller.begin_check());
+        controller.check_bytes(
+            include_bytes!("../fixtures/updater/signed.json"),
+            time::OffsetDateTime::now_utc(),
+        );
+        assert_eq!(
+            controller.snapshot().kind,
+            crate::updater::UpdaterStateKind::Available
+        );
+        controller
+    }
+
+    #[cfg(desktop)]
+    fn capture_updater_log(callback: impl FnOnce()) -> String {
+        let buffer = Arc::new(Mutex::new(Vec::new()));
+        let writer = SharedWriter(buffer.clone());
+        let layer = tracing_subscriber::fmt::layer()
+            .with_ansi(false)
+            .with_target(false)
+            .with_level(false)
+            .without_time()
+            .with_writer(move || writer.clone());
+        let subscriber = tracing_subscriber::registry().with(layer);
+        tracing::subscriber::with_default(subscriber, callback);
+        let output = buffer.lock().expect("lock updater log buffer").clone();
+        String::from_utf8(output).expect("utf8 updater log output")
+    }
+
+    #[cfg(desktop)]
+    #[derive(Clone)]
+    struct SharedWriter(Arc<Mutex<Vec<u8>>>);
+
+    #[cfg(desktop)]
+    impl Write for SharedWriter {
+        fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+            self.0
+                .lock()
+                .expect("lock updater log buffer")
+                .extend_from_slice(buffer);
+            Ok(buffer.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
     }
 
     #[cfg(desktop)]

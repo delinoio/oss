@@ -189,6 +189,22 @@ describe("desktop updater approvals", () => {
     await waitFor(() => expect(opener).toBe(document.activeElement));
   });
 
+  it("reports approval state immediately and clears it on dismissal and unmount", async () => {
+    const { bridge } = bridgeWithStatus(available);
+    const onApprovalOpenChange = vi.fn();
+    const { unmount } = render(<DesktopUpdaterPanel bridge={bridge} language="en" onApprovalOpenChange={onApprovalOpenChange} />);
+    await screen.findByText("English signed notes");
+
+    fireEvent.click(screen.getByRole("button", { name: "Approve download" }));
+    expect(onApprovalOpenChange).toHaveBeenLastCalledWith(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Go back" }));
+    expect(onApprovalOpenChange).toHaveBeenLastCalledWith(false);
+
+    unmount();
+    expect(onApprovalOpenChange).toHaveBeenLastCalledWith(false);
+  });
+
   it("retries only restart after a package-manager install has completed", async () => {
     const restartRequired: DesktopUpdaterStatus = {
       ...available,
