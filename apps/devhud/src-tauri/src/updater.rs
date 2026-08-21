@@ -978,6 +978,7 @@ pub trait Installer: Send + Sync {
 pub trait RestartHandoff: Send + Sync {
     fn release(&self) -> Result<(), DiagnosticCode>;
     fn restore(&self) -> Result<(), DiagnosticCode>;
+    fn terminate(&self);
 }
 
 /// Native-only package handoff. The frontend cannot select an executable,
@@ -1033,6 +1034,7 @@ impl<'a> PlatformInstaller<'a> {
             });
         if result.is_err() && self.handoff.restore().is_err() {
             tracing::error!(event = "updater_single_instance_restore_failed");
+            self.handoff.terminate();
         }
         result
     }
@@ -1551,9 +1553,11 @@ fn classify_windows_installer_exit(
 fn sibling_backup_path(destination: &Path) -> Result<PathBuf, DiagnosticCode> {
     let file_name = destination
         .file_name()
-        .and_then(|value| value.to_str())
         .ok_or(DiagnosticCode::InstallationFailed)?;
-    Ok(destination.with_file_name(format!(".{file_name}.devhud-backup-v1")))
+    let mut backup_name = std::ffi::OsString::from(".");
+    backup_name.push(file_name);
+    backup_name.push(".devhud-backup-v1");
+    Ok(destination.with_file_name(backup_name))
 }
 
 #[cfg(target_os = "linux")]
@@ -2468,6 +2472,8 @@ mod tests {
     struct TrackingHandoff {
         releases: AtomicUsize,
         restores: AtomicUsize,
+        terminations: AtomicUsize,
+        restore_fails: bool,
     }
 
     impl RestartHandoff for TrackingHandoff {
@@ -2478,7 +2484,15 @@ mod tests {
 
         fn restore(&self) -> Result<(), DiagnosticCode> {
             self.restores.fetch_add(1, Ordering::SeqCst);
-            Ok(())
+            if self.restore_fails {
+                Err(DiagnosticCode::RestartFailed)
+            } else {
+                Ok(())
+            }
+        }
+
+        fn terminate(&self) {
+            self.terminations.fetch_add(1, Ordering::SeqCst);
         }
     }
 
@@ -2885,6 +2899,8 @@ mod tests {
         let handoff = TrackingHandoff {
             releases: AtomicUsize::new(0),
             restores: AtomicUsize::new(0),
+            terminations: AtomicUsize::new(0),
+            restore_fails: false,
         };
         let installer = PlatformInstaller::new(package(), &handoff);
         let missing = std::env::temp_dir().join(format!(
@@ -2898,6 +2914,30 @@ mod tests {
         );
         assert_eq!(handoff.releases.load(Ordering::SeqCst), 1);
         assert_eq!(handoff.restores.load(Ordering::SeqCst), 1);
+        assert_eq!(handoff.terminations.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn failed_relaunch_terminates_when_ownership_cannot_be_restored() {
+        let handoff = TrackingHandoff {
+            releases: AtomicUsize::new(0),
+            restores: AtomicUsize::new(0),
+            terminations: AtomicUsize::new(0),
+            restore_fails: true,
+        };
+        let installer = PlatformInstaller::new(package(), &handoff);
+        let missing = std::env::temp_dir().join(format!(
+            "devhud-missing-restart-target-{}",
+            uuid::Uuid::now_v7()
+        ));
+
+        assert_eq!(
+            installer.restart(&missing),
+            Err(DiagnosticCode::RestartFailed)
+        );
+        assert_eq!(handoff.releases.load(Ordering::SeqCst), 1);
+        assert_eq!(handoff.restores.load(Ordering::SeqCst), 1);
+        assert_eq!(handoff.terminations.load(Ordering::SeqCst), 1);
     }
 
     #[test]
@@ -3011,6 +3051,21 @@ mod tests {
         });
         assert_eq!(result, Err(DiagnosticCode::RestartFailed));
         assert_eq!(fs::read(destination).unwrap(), b"installed-version");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn appimage_backup_preserves_non_utf8_file_names() {
+        use std::os::unix::ffi::{OsStrExt, OsStringExt};
+
+        let file_name = std::ffi::OsString::from_vec(b"DevHud-\xff.AppImage".to_vec());
+        let destination = PathBuf::from("/opt").join(file_name);
+        let backup = sibling_backup_path(&destination).unwrap();
+
+        assert_eq!(
+            backup.file_name().unwrap().as_bytes(),
+            b".DevHud-\xff.AppImage.devhud-backup-v1"
+        );
     }
 
     #[cfg(target_os = "linux")]
