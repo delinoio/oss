@@ -53,6 +53,32 @@ impl DesktopTarget {
             Self::LinuxArm64 => "aarch64-unknown-linux-gnu",
         }
     }
+
+    pub const fn update_platform(self) -> &'static str {
+        match self {
+            Self::MacOsX64 | Self::MacOsArm64 => "darwin",
+            Self::WindowsX64 | Self::WindowsArm64 => "windows",
+            Self::LinuxX64 | Self::LinuxArm64 => "linux",
+        }
+    }
+
+    pub const fn update_architecture(self) -> &'static str {
+        match self {
+            Self::MacOsX64 | Self::WindowsX64 | Self::LinuxX64 => "x86_64",
+            Self::MacOsArm64 | Self::WindowsArm64 | Self::LinuxArm64 => "aarch64",
+        }
+    }
+
+    pub const fn update_target_id(self) -> &'static str {
+        match self {
+            Self::MacOsX64 => "darwin-x86_64",
+            Self::MacOsArm64 => "darwin-aarch64",
+            Self::WindowsX64 => "windows-x86_64",
+            Self::WindowsArm64 => "windows-aarch64",
+            Self::LinuxX64 => "linux-x86_64",
+            Self::LinuxArm64 => "linux-aarch64",
+        }
+    }
 }
 
 impl fmt::Display for DesktopTarget {
@@ -128,6 +154,28 @@ mod tests {
     #[test]
     fn target_has_an_explicit_rust_triple() {
         assert!(!DesktopTarget::current().rust_target().is_empty());
+    }
+
+    #[test]
+    fn all_update_target_ids_are_explicit() {
+        assert_eq!(DesktopTarget::MacOsX64.update_target_id(), "darwin-x86_64");
+        assert_eq!(
+            DesktopTarget::MacOsArm64.update_target_id(),
+            "darwin-aarch64"
+        );
+        assert_eq!(
+            DesktopTarget::WindowsX64.update_target_id(),
+            "windows-x86_64"
+        );
+        assert_eq!(
+            DesktopTarget::WindowsArm64.update_target_id(),
+            "windows-aarch64"
+        );
+        assert_eq!(DesktopTarget::LinuxX64.update_target_id(), "linux-x86_64");
+        assert_eq!(
+            DesktopTarget::LinuxArm64.update_target_id(),
+            "linux-aarch64"
+        );
     }
 
     #[test]

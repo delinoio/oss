@@ -19,6 +19,7 @@ const desktopHost = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "
 const nativeBridgeHost = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/bridge.rs"), "utf8");
 const nativeShortcuts = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/shortcuts.rs"), "utf8");
 const nativeCapture = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/capture.rs"), "utf8");
+const nativeUpdater = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/updater.rs"), "utf8");
 const nativeUploads = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/uploads.rs"), "utf8");
 const windowsInstallerHooks = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/windows/hooks.nsh"), "utf8");
 const androidBridgeHost = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/mobile/android/src/main/java/io/delino/devhud/bridge/DevhudNativePlugin.kt"), "utf8");
@@ -139,6 +140,57 @@ test("desktop secure writes preserve credentials across bounded Windows storage 
   assert.match(desktopSecureStore, /let previous = read_value/u);
   assert.match(desktopSecureStore, /Some\(previous\) => write_value/u);
   assert.match(desktopSecureStore, /secure_store_write_rollback_failed/u);
+});
+
+test("desktop updater networking is native-only, fixed, and credential-free", () => {
+  assert.match(nativeUpdater, /https:\/\/devhud\.api\.delino\.io/u);
+  assert.match(nativeUpdater, /Policy::none\(\)/u);
+  assert.match(nativeUpdater, /release-assets\.githubusercontent\.com/u);
+  assert.doesNotMatch(nativeUpdater, /AUTHORIZATION|COOKIE|Bearer|token=/u);
+  assert.doesNotMatch(tauriConfig.app.security.csp, /devhud\.api\.delino\.io/u);
+  for (const operation of ["updates.check", "updates.approve-download", "updates.approve-installation", "updates.approve-restart", "updates.cancel"]) {
+    assert.match(nativeBridgeHost, new RegExp(operation.replace(".", "\\."), "u"));
+  }
+});
+
+test("desktop updater checks are generation-guarded, asynchronous, and safely diagnosed", () => {
+  assert.match(nativeBridgeHost, /spawn_blocking/u);
+  assert.match(nativeBridgeHost, /Arc::ptr_eq\(&generation, &updater\.cancellation_token\(\)\)/u);
+  assert.match(nativeBridgeHost, /emit_update_status\(&app, &response\)/u);
+  for (const field of ["code", "phase", "target", "package", "http_status_class", "retry_after_seconds"]) {
+    assert.match(nativeBridgeHost, new RegExp(`${field} =`, "u"));
+  }
+  assert.match(nativeBridgeHost, /window\.is_minimized\(\)/u);
+  assert.match(nativeBridgeHost, /window\.is_focused\(\)/u);
+});
+
+test("desktop updater publishes restarting before the worker and its terminal status afterward", () => {
+  const restartOperation = nativeBridgeHost.slice(
+    nativeBridgeHost.indexOf('if operation == "updates.approve-restart"'),
+    nativeBridgeHost.indexOf('if operation.starts_with("capture.")'),
+  );
+  const transition = restartOperation.indexOf("begin_restart()");
+  const publication = restartOperation.indexOf("emit_update_status(&app, &restarting)");
+  const worker = restartOperation.indexOf("spawn_blocking");
+  const completion = restartOperation.indexOf("finish_restart(attempt)");
+  const terminalPublication = restartOperation.indexOf("emit_update_status(&app, &response)");
+  const exit = restartOperation.indexOf("app.exit(0)");
+  const response = restartOperation.indexOf("return Ok(response)");
+
+  assert(transition >= 0);
+  assert(publication > transition);
+  assert(worker > publication);
+  assert(completion > worker);
+  assert(terminalPublication > completion);
+  assert(exit > terminalPublication);
+  assert(response > terminalPublication);
+});
+
+test("desktop updater replacement processes retain single-instance ownership", () => {
+  assert.match(desktopHost, /\.plugin\(single_instance_plugin\(\)\)/u);
+  assert.doesNotMatch(desktopHost, /if update_health_probe\.is_none\(\)/u);
+  assert.match(nativeUpdater, /self\.handoff\.release\(\)\?/u);
+  assert.match(nativeUpdater, /self\.handoff\.restore\(\)/u);
 });
 
 test("Tauri rejection codes become typed native bridge errors", async () => {

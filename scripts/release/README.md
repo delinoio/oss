@@ -5,6 +5,8 @@
 
 These scripts are designed for use by release workflows:
 
+- DevHud desktop publication must first run `pnpm --filter devhud release:validate-updater`. The gate recomputes the committed `devhud-release-root-v1` public-key fingerprint and intentionally fails while the explicit placeholder is marked non-production. Signing stays offline; the application and API ship no signing key or token. See `docs/apps-devhud-updater-contract.md`.
+
 - `.github/workflows/release-cargo-mono.yml`
 - `.github/workflows/release-binpm.yml`
 - `.github/workflows/release-nodeup.yml`

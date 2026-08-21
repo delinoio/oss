@@ -29,15 +29,20 @@ devhud-native-messaging-host = { path = "../../../crates/devhud-native-messaging
 aes-gcm = "=0.10.3"
 base64 = "=0.22.1"
 dirs = "6"
+ed25519-dalek = { version = "=2.2.0", features = ["hazmat"] }
 fontdue = "=0.9.3"
+flate2 = "=1.1.9"
 image = { version = "=0.25.10", default-features = false, features = ["png"] }
 hmac = "=0.12.1"
 keyring = "=4.1.6"
 rfd = { version = "=0.16.0", default-features = false, features = ["gtk3"] }
+reqwest = { version = "=0.12.28", default-features = false, features = ["blocking", "rustls-tls"] }
+semver = { version = "=1.0.27", features = ["serde"] }
 tempfile = "=3.25.0"
+time = { version = "=0.3.55", features = ["parsing"] }
+tokio = { version = "=1.49.0", features = ["macros", "time"] }
 png = "=0.17.16"
 rand = "=0.9.4"
-reqwest = { version = "=0.12.28", default-features = false, features = ["rustls-tls"] }
 sha2 = "=0.10.9"
 tauri = { git = "https://github.com/tauri-apps/tauri", rev = "4af26a3f7f8b692d62cca549bbacd93f5ce90b41", default-features = false, features = ["cef", "tray-icon", "unstable"] }
 tracing = "0.1"
@@ -48,6 +53,7 @@ wait-timeout = "0.2"
 rdev = "0.5.3"
 tauri-plugin-deep-link = "=2.4.9"
 tauri-plugin-single-instance = { version = "=2.4.3", features = ["deep-link"] }
+tar = "=0.4.46"
 xcap = { version = "=0.4.0", default-features = false }
 zeroize = { version = "=1.8.2", features = ["derive"] }
 
@@ -58,6 +64,9 @@ tracing = "0.1"
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = "0.18"
 xcb = { version = "=1.6.0", features = ["randr"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+libc = "=0.2.182"
 
 [features]
 default = []

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
@@ -83,6 +84,10 @@ func run(ctx context.Context, arguments []string, logger *slog.Logger) error {
 		}
 	}()
 	var uploads *uploadmanager.Service
+	var updateManifests fs.FS
+	if configuration.UpdateManifestDir != "" {
+		updateManifests = os.DirFS(configuration.UpdateManifestDir)
+	}
 	if configuration.R2Endpoint != "" {
 		objectStore, err := r2.New(startupContext, r2.Config{
 			Endpoint: configuration.R2Endpoint, AccessKeyID: configuration.R2AccessKeyID,
@@ -112,6 +117,7 @@ func run(ctx context.Context, arguments []string, logger *slog.Logger) error {
 		Config: configuration, Repository: repository, Verifier: verifier, Clock: clock,
 		IDs: ids, Logger: logger, MetricsHandler: providers.MetricsHandler, Uploads: uploads,
 		Administration: repository, CursorKey: configuration.IdentityHMACKeys[0],
+		UpdateManifests: updateManifests,
 	})
 	if err != nil {
 		return err

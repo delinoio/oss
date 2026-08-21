@@ -26,6 +26,13 @@ const exposedHeaders = "Grpc-Status,Grpc-Message,Grpc-Status-Details-Bin,X-Devhu
 func cors(next http.Handler, connectPaths map[string]struct{}) http.Handler {
 	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		origin := request.Header.Get("Origin")
+		if strings.HasPrefix(request.URL.Path, "/updates/") && origin != "" {
+			response.Header().Set("Cache-Control", "no-store")
+			appendVary(response.Header(), "Origin")
+			appendVary(response.Header(), "X-DevHud-Package")
+			http.Error(response, "browser origins cannot access updater manifests", http.StatusForbidden)
+			return
+		}
 		if origin == "" {
 			next.ServeHTTP(response, request)
 			return

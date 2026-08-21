@@ -24,7 +24,10 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 )
 
-const correlationHeader = "x-devhud-correlation-id"
+const (
+	correlationHeader        = "x-devhud-correlation-id"
+	updaterManifestProcedure = "/updates/{channel}/{platform}/{artifact}"
+)
 
 const (
 	grpcStatusHeader        = "Grpc-Status"
@@ -397,6 +400,12 @@ func (w *statusWriter) WriteHeader(status int) {
 func (w *statusWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
 func safeProcedure(path string) string {
+	if remainder, ok := strings.CutPrefix(path, "/updates/"); ok {
+		segments := strings.Split(remainder, "/")
+		if len(segments) == 3 && segments[0] != "" && segments[1] != "" && segments[2] != "" {
+			return updaterManifestProcedure
+		}
+	}
 	switch path {
 	case "/devhud.v1.BootstrapService/GetBootstrap",
 		"/devhud.v1.SettingsService/GetSettings",
