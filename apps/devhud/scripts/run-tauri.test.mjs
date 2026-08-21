@@ -11,6 +11,7 @@ import { spawnDevServer } from "../../../scripts/spawn-dev-server.mjs";
 import {
   desktopTauriArguments,
   desktopTauriConfigPath,
+  desktopTauriEnvironment,
 } from "./run-tauri-arguments.mjs";
 
 const scriptPath = fileURLToPath(new URL("./run-tauri.mjs", import.meta.url));
@@ -50,6 +51,73 @@ test("forwards the desktop CEF feature to the pinned Tauri command", () => {
       "app",
     ],
   );
+});
+
+test("derives the compiled package kind from one explicit Windows bundle", () => {
+  assert.deepEqual(
+    desktopTauriEnvironment("build", ["--bundles", "msi"], "win32", { EXISTING: "value" }),
+    { EXISTING: "value", DEVHUD_PACKAGE_KIND: "windows-msi" },
+  );
+  assert.deepEqual(
+    desktopTauriEnvironment("build", ["--bundles=nsis"], "win32", {}),
+    { DEVHUD_PACKAGE_KIND: "windows-nsis" },
+  );
+});
+
+test("derives the compiled package kind from one explicit Linux bundle", () => {
+  assert.deepEqual(
+    desktopTauriEnvironment("build", ["--bundles", "deb"], "linux", { EXISTING: "value" }),
+    { EXISTING: "value", DEVHUD_PACKAGE_KIND: "linux-deb" },
+  );
+  assert.deepEqual(
+    desktopTauriEnvironment("build", ["--bundles=appimage"], "linux", {}),
+    { DEVHUD_PACKAGE_KIND: "linux-appimage" },
+  );
+});
+
+test("rejects ambiguous or conflicting Windows package builds", () => {
+  assert.throws(
+    () => desktopTauriEnvironment("build", [], "win32", {}),
+    /require exactly one --bundles msi or --bundles nsis/u,
+  );
+  assert.throws(
+    () => desktopTauriEnvironment("build", ["--bundles", "all"], "win32", {}),
+    /require exactly one --bundles msi or --bundles nsis/u,
+  );
+  assert.throws(
+    () => desktopTauriEnvironment("build", ["--bundles", "msi", "nsis"], "win32", {}),
+    /require exactly one --bundles msi or --bundles nsis/u,
+  );
+  assert.throws(
+    () => desktopTauriEnvironment("build", ["-b=msi"], "win32", { DEVHUD_PACKAGE_KIND: "windows-nsis" }),
+    /does not match the selected msi bundle/u,
+  );
+});
+
+test("rejects ambiguous or conflicting Linux package builds", () => {
+  assert.throws(
+    () => desktopTauriEnvironment("build", [], "linux", {}),
+    /require exactly one --bundles deb or --bundles appimage/u,
+  );
+  assert.throws(
+    () => desktopTauriEnvironment("build", ["--bundles", "all"], "linux", {}),
+    /require exactly one --bundles deb or --bundles appimage/u,
+  );
+  assert.throws(
+    () => desktopTauriEnvironment("build", ["--bundles", "deb", "appimage"], "linux", {}),
+    /require exactly one --bundles deb or --bundles appimage/u,
+  );
+  assert.throws(
+    () => desktopTauriEnvironment("build", ["-b=deb"], "linux", { DEVHUD_PACKAGE_KIND: "linux-appimage" }),
+    /does not match the selected deb bundle/u,
+  );
+});
+
+test("does not require a package kind for development or macOS builds", () => {
+  const environment = {};
+  assert.equal(desktopTauriEnvironment("dev", [], "win32", environment), environment);
+  assert.equal(desktopTauriEnvironment("dev", [], "linux", environment), environment);
+  assert.equal(desktopTauriEnvironment("build", [], "darwin", environment), environment);
 });
 
 for (const [name, args] of configOverrides) {

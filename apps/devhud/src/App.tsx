@@ -12,6 +12,7 @@ import { DeckPollingBoundary, DeckSurface } from "./deck-ui.tsx";
 import { ActionId, ExternalLinkTarget, LanguagePreference, PlatformCapability, SurfaceId, actionRegistry, availableActions, browserShell, completeOnboarding, getLocalStorage, hasCompletedOnboarding, isValidApiOrigin, markFrontendReady, normalizeApiOrigin, readPreferences, resolveLanguage, setTrayLanguage, synchronizeDocumentPreferences, writePreferences, type Preferences, type RuntimeCapabilities } from "./shell";
 import { ShortcutActionId } from "./shortcuts";
 import { RealqaSurface, type CaptureActionId, type RealqaController } from "./realqa-ui";
+import { DesktopUpdaterPanel } from "./updater-ui";
 
 const surfaces: readonly SurfaceId[] = [SurfaceId.Home, SurfaceId.Realqa, SurfaceId.Deck, SurfaceId.Settings, SurfaceId.Account, SurfaceId.Diagnostics];
 const labels: Record<SurfaceId, keyof typeof messages.en> = { home: "home", realqa: "realqa", deck: "deck", settings: "settings", account: "account", diagnostics: "diagnostics" };
@@ -71,6 +72,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   const [deckLink, setDeckLink] = useState<string | null>(null);
   const [deckLinkPending, setDeckLinkPending] = useState(false);
   const [deckLinkPolicyOrigin, setDeckLinkPolicyOrigin] = useState<string | null>(null);
+  const [updaterApprovalOpen, setUpdaterApprovalOpen] = useState(false);
   const [online, setOnline] = useState(() => navigator.onLine);
   const [requestedCapture, setRequestedCapture] = useState<{ action: CaptureActionId; sequence: number } | null>(null);
   const search = useRef<HTMLInputElement>(null);
@@ -80,6 +82,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   const paletteTrigger = useRef<HTMLButtonElement>(null);
   const externalAttempt = useRef(0);
   const identitySession = useRef<IdentitySession | null>(null);
+  const updaterApprovalOpenRef = useRef(false);
   const language = preferences.language === LanguagePreference.System ? systemLanguage : preferences.language;
   const copy = messages[language];
   const runtimeCapabilities = runtime ? capabilitiesFor(runtime) : { available: new Set<PlatformCapability>() };
@@ -91,6 +94,10 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
   shortcutContext.current = { mobile, onboarding, capabilities: runtimeCapabilities };
   const consumeRequestedCapture = useCallback((sequence: number) => {
     setRequestedCapture((current) => current?.sequence === sequence ? null : current);
+  }, []);
+  const handleUpdaterApprovalOpenChange = useCallback((open: boolean) => {
+    updaterApprovalOpenRef.current = open;
+    setUpdaterApprovalOpen(open);
   }, []);
 
   const update = (next: Partial<Preferences>) => {
@@ -132,6 +139,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
       }
       if (event.kind === "deck-link") peekPendingDeckLink();
       if (event.kind === "shortcut-triggered") {
+        if (updaterApprovalOpenRef.current) return;
         const context = shortcutContext.current;
         if (context.mobile || context.onboarding) return;
         if (event.action === ShortcutActionId.CommandPalette) {
@@ -173,17 +181,20 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
     };
   }, [bridge, initialContentState, initialRuntime]);
   useEffect(() => {
-    if (onboarding || !deckLinkPending || deckLinkPolicyOrigin !== preferences.apiOrigin) return;
+    if (onboarding || updaterApprovalOpen || !deckLinkPending || deckLinkPolicyOrigin !== preferences.apiOrigin) return;
     let active = true;
-    setDeckLinkPending(false);
     void bridge.request({ operation: "deck.take-pending-link" }).then((pendingDeck) => {
-      if (active && pendingDeck.kind === "deck-link" && pendingDeck.deckId) {
+      if (!active) return;
+      setDeckLinkPending(false);
+      if (pendingDeck.kind === "deck-link" && pendingDeck.deckId) {
         setDeckLink(pendingDeck.deckId);
         setSurface(SurfaceId.Deck);
       }
-    }).catch(() => {});
+    }).catch(() => {
+      if (active) setDeckLinkPending(false);
+    });
     return () => { active = false; };
-  }, [bridge, deckLinkPending, deckLinkPolicyOrigin, onboarding, preferences.apiOrigin]);
+  }, [bridge, deckLinkPending, deckLinkPolicyOrigin, onboarding, preferences.apiOrigin, updaterApprovalOpen]);
   useEffect(() => {
     if (!runtime) return;
     const captureError = (event: ErrorEvent) => {
@@ -370,7 +381,7 @@ export function App({ bridge = nativeBridge, initialRuntime, initialContentState
       {!mobile && runtimeCapabilities.available.has(PlatformCapability.Capture) && <RealqaSurface ref={realqaController} bridge={bridge} copy={copy} active={surface === SurfaceId.Realqa} paletteOpen={palette} onActivate={() => setSurface(SurfaceId.Realqa)} requestedAction={requestedCapture} onRequestedActionConsumed={consumeRequestedCapture} takeBrowserContext={nativeMessaging?.takeContext} />}
       {surface === SurfaceId.Realqa && !mobile && !runtimeCapabilities.available.has(PlatformCapability.Capture) && <><p className="eyebrow">{copy.realqa}</p><h2>{copy.realqaTitle}</h2><p>{copy.realqaSummary}</p><div className="disabled-actions">{unavailableCaptureActions.map((action) => <button disabled key={action.id}>{copy[action.title]}</button>)}</div><p className="notice">{copy.unavailable}</p></>}
       {surface === SurfaceId.Deck && <DeckSurface copy={copy} bridge={bridge} selectedDeckId={deckLink} onDismissMissingLink={() => setDeckLink(null)} />}
-      {surface === SurfaceId.Settings && <><p className="eyebrow">{copy.settings}</p><h2>{copy.settingsTitle}</h2><p>{copy.settingsSummary}</p><SynchronizedSettingsBoundary copy={copy} bridge={bridge} onOpenExternal={openExternal} showNativeShortcuts={runtime?.platform === RuntimePlatform.Desktop} shortcutCapabilities={runtimeCapabilities} NativeMessagingSettings={nativeMessaging?.Settings} />{supportsLaunchAtLogin && <><label className="check"><input type="checkbox" checked={preferences.launchAtLogin} onChange={(event) => { update({ launchAtLogin: event.target.checked }); void browserShell.setLaunchAtLogin(event.target.checked); }} />{copy.launchAtLogin}</label><p>{copy.launchAtLoginHint}</p></>}{supportsNotifications && <div className="native-setting"><button className="primary" onClick={() => void requestNotifications()}>{copy.notificationPermission}</button><output aria-live="polite">{copy[notificationPermissionLabels[notificationPermission]]}</output>{notificationRequestFailed && <p className="native-setting-error" role="alert">{copy.notificationPermissionFailed}</p>}</div>}{runtime?.capabilities.storeUpdates && <div className="native-setting"><p>{copy.updatePolicy}</p>{storeConfigured && <button className="primary" onClick={() => void openStore()}>{copy.updatePolicy}</button>}{storeOpenFailed && <p className="native-setting-error" role="alert">{copy.storeOpenFailed}</p>}</div>}</>}
+      {surface === SurfaceId.Settings && <><p className="eyebrow">{copy.settings}</p><h2>{copy.settingsTitle}</h2><p>{copy.settingsSummary}</p><SynchronizedSettingsBoundary copy={copy} bridge={bridge} onOpenExternal={openExternal} showNativeShortcuts={runtime?.platform === RuntimePlatform.Desktop} shortcutCapabilities={runtimeCapabilities} NativeMessagingSettings={nativeMessaging?.Settings} />{supportsLaunchAtLogin && <><label className="check"><input type="checkbox" checked={preferences.launchAtLogin} onChange={(event) => { update({ launchAtLogin: event.target.checked }); void browserShell.setLaunchAtLogin(event.target.checked); }} />{copy.launchAtLogin}</label><p>{copy.launchAtLoginHint}</p></>}{supportsNotifications && <div className="native-setting"><button className="primary" onClick={() => void requestNotifications()}>{copy.notificationPermission}</button><output aria-live="polite">{copy[notificationPermissionLabels[notificationPermission]]}</output>{notificationRequestFailed && <p className="native-setting-error" role="alert">{copy.notificationPermissionFailed}</p>}</div>}{runtime?.capabilities.storeUpdates && <div className="native-setting"><p>{copy.updatePolicy}</p>{storeConfigured && <button className="primary" onClick={() => void openStore()}>{copy.updatePolicy}</button>}{storeOpenFailed && <p className="native-setting-error" role="alert">{copy.storeOpenFailed}</p>}</div>}{runtime?.platform === RuntimePlatform.Desktop && <DesktopUpdaterPanel bridge={bridge} language={language} onApprovalOpenChange={handleUpdaterApprovalOpenChange} />}</>}
       {surface === SurfaceId.Account && <><AccountIdentity copy={copy} apiOrigin={preferences.apiOrigin} inputRef={apiOriginInput} onApiOrigin={applyApiOrigin} /><div className="actions"><button onClick={() => void external(ExternalLinkTarget.Pat)}>{copy.githubCreateFinePat}</button><button onClick={() => void external(ExternalLinkTarget.ClassicPat)}>{copy.githubCreateClassicPat}</button>{!mobile && <button onClick={() => void external(ExternalLinkTarget.Issue)}>{copy.issue}</button>}</div>{externalMessage && <p className="external-message" role={externalMessageIsError ? "alert" : "status"}>{externalMessageText}</p>}</>}
       {surface === SurfaceId.Diagnostics && <><p className="eyebrow">{copy.diagnostics}</p><h2>{copy.diagnosticsTitle}</h2><p>{copy.diagnosticsSummary}</p>{runtime && <><dl className="runtime-diagnostics"><dt>{copy.diagnosticPlatform}</dt><dd>{runtime.operatingSystem}</dd><dt>{copy.diagnosticArchitecture}</dt><dd>{runtime.architecture}</dd><dt>{copy.diagnosticBridge}</dt><dd>v{runtime.bridgeVersion}</dd></dl><DiagnosticsPanel copy={copy} runtime={runtime} bridge={bridge} storage={storage} online={online} /></>}</>}
     </section>

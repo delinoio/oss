@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"github.com/delinoio/oss/servers/devhud-api/internal/config"
 	"github.com/delinoio/oss/servers/devhud-api/internal/domain"
 	"github.com/delinoio/oss/servers/devhud-api/internal/rpc"
+	"github.com/delinoio/oss/servers/devhud-api/internal/updates"
 	uploadmanager "github.com/delinoio/oss/servers/devhud-api/internal/upload"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
@@ -21,20 +23,24 @@ import (
 const handlerExecutionTimeout = 25 * time.Second
 
 type Dependencies struct {
-	Config         config.Config
-	Repository     domain.Repository
-	Verifier       auth.Verifier
-	Clock          domain.Clock
-	IDs            domain.IDGenerator
-	Logger         *slog.Logger
-	MetricsHandler http.Handler
-	Uploads        *uploadmanager.Service
-	Administration domain.AdminRepository
-	CursorKey      []byte
+	Config          config.Config
+	Repository      domain.Repository
+	Verifier        auth.Verifier
+	Clock           domain.Clock
+	IDs             domain.IDGenerator
+	Logger          *slog.Logger
+	MetricsHandler  http.Handler
+	Uploads         *uploadmanager.Service
+	Administration  domain.AdminRepository
+	CursorKey       []byte
+	UpdateManifests fs.FS
 }
 
 func New(dependencies Dependencies) (*http.Server, error) {
 	mux := http.NewServeMux()
+	updateHandler := updates.NewHandler(dependencies.UpdateManifests)
+	mux.Handle("GET /updates/{channel}/{platform}/{artifact}", updateHandler)
+	mux.Handle("HEAD /updates/{channel}/{platform}/{artifact}", updateHandler)
 	adminAssets, err := adminassets.Handler(dependencies.Config.LogtoIssuer)
 	if err != nil {
 		return nil, err
