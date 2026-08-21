@@ -156,10 +156,12 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   const androidProvider = readFileSync(join(appRoot, "src-tauri/mobile/android/src/main/java/io/delino/devhud/widget/DevHudWidgetProvider.kt"), "utf8");
   const androidWriteSecure = androidNativeBridge.slice(androidNativeBridge.indexOf("private fun writeSecure"), androidNativeBridge.indexOf("private fun encryptSecure"));
   const androidDisable = androidStore.slice(androidStore.indexOf("fun disable(deckId"), androidStore.indexOf("fun clear()"));
+  const androidEnable = androidStore.slice(androidStore.indexOf("fun enable(configuration"), androidStore.indexOf("fun replaceSnapshot"));
   const androidBeginCredentialReplacement = androidStore.slice(androidStore.indexOf("fun beginProfileTokenReplacement"), androidStore.indexOf("fun replaceProfileToken"));
   const androidApplyCredentialReplacement = androidStore.slice(androidStore.indexOf("private fun applyProfileTokenReplacement"), androidStore.indexOf("private fun credentialReplacement()"));
   const androidReconcileCredentialReplacement = androidStore.slice(androidStore.indexOf("private fun reconcileProfileTokenReplacement"), androidStore.indexOf("private fun applyProfileTokenReplacement"));
   const androidRefreshService = androidProvider.slice(androidProvider.indexOf("class DevHudWidgetRefreshService"), androidProvider.indexOf("class DevHudWidgetConfigureActivity"));
+  const androidRefreshSession = androidProvider.slice(androidProvider.indexOf("internal class WidgetRefreshSession"), androidProvider.indexOf("private data class RepositoryValidationFailure"));
   const androidConfigureActivity = androidProvider.slice(androidProvider.indexOf("class DevHudWidgetConfigureActivity"));
   const androidManifest = readFileSync(join(appRoot, "mobile/overrides/android/app/src/main/AndroidManifest.xml"), "utf8");
   const androidEnglish = readFileSync(join(appRoot, "src-tauri/mobile/android/src/main/res/values/widget_strings.xml"), "utf8");
@@ -189,6 +191,10 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   assert.match(androidStore, /widgetKeyAlias = "io\.delino\.devhud\.widget-credential\.v1"/u);
   assert.match(androidStore, /private val widgetStoreMutationLock = Any\(\)/u);
   assert.equal((androidStore.match(/synchronized\(widgetStoreMutationLock\)/gu) ?? []).length, 8);
+  assert.match(androidEnable, /val reusableSecret = previousSecret\?\.takeIf \{ decrypt\(it, deckId\) == token \}/u);
+  assert.ok(androidEnable.indexOf("sameConfiguration(previous, configuration)") < androidEnable.indexOf("putBoolean(transactionKey, true).commit()"), "Android unchanged widget enablement must return before starting a transaction");
+  assert.match(androidEnable, /if \(reusableSecret == null\) \{[\s\S]*encrypt\(token, deckId\)[\s\S]*putString\(deckId, encrypted\)\.commit\(\)/u);
+  assert.match(androidStore, /private fun sameConfiguration[\s\S]*sameRepositories/u);
   assert.match(androidStore, /transactionPrefix = "transaction:"[\s\S]*init \{\s*reconcile\(\)/u);
   assert.match(androidStore, /disableTransactionPrefix = "disable-transaction:"/u);
   assert.ok(androidStore.indexOf("putBoolean(transactionKey, true).commit()") < androidStore.indexOf("putString(deckId, encrypted).commit()"));
@@ -221,6 +227,10 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   assert.match(androidProvider, /ExecutorCompletionService[\s\S]*repeat\(minOf\(repositoryValidationConcurrency, repositories\.length\(\)\)\)[\s\S]*completion\.poll\(session\.remainingMillis\(\)/u);
   assert.match(androidProvider, /connectTimeout = minOf\(15_000, session\.remainingMillis\(\)\)[\s\S]*readTimeout = minOf\(20_000, session\.remainingMillis\(\)\)/u);
   assert.match(androidProvider, /widgetDeadlineExecutor = Executors\.newSingleThreadScheduledExecutor\(\)[\s\S]*deadlineCancellation = widgetDeadlineExecutor\.schedule\([\s\S]*cancel\(WidgetRefreshCancellation\.DEADLINE\)[\s\S]*deadlineCancellation\.cancel\(false\)/u);
+  assert.match(androidRefreshSession, /private val publicationLock = Any\(\)[\s\S]*fun cancel[\s\S]*synchronized\(publicationLock\)[\s\S]*fun <T> commitIfPublishable[\s\S]*synchronized\(publicationLock\)/u);
+  assert.match(androidRefreshSession, /current == WidgetRefreshCancellation\.STOPPED \|\| reason == WidgetRefreshCancellation\.STOPPED[\s\S]*current == WidgetRefreshCancellation\.DEADLINE \|\| reason == WidgetRefreshCancellation\.DEADLINE/u);
+  assert.match(androidRefreshSession, /WidgetRefreshCancellation\.DEADLINE, WidgetRefreshCancellation\.STOPPED -> null[\s\S]*WidgetRefreshCancellation\.VALIDATION_FAILED, null -> commit\(\)/u);
+  assert.equal((androidProvider.match(/session\.commitIfPublishable \{ store\.replaceSnapshot/gu) ?? []).length, 3);
   assert.match(androidRefreshService, /private class WidgetRefreshRun[\s\S]*private val stopped = AtomicBoolean\(false\)[\s\S]*private val activeSession = AtomicReference<WidgetRefreshSession\?>\(null\)/u);
   assert.match(androidRefreshService, /activeRun\?\.stop\(\)[\s\S]*activeRun = run[\s\S]*run\.attach\(session\)[\s\S]*!run\.isStopped\(\) && activeRun === run[\s\S]*jobFinished\(run\.parameters, retry\)/u);
   assert.match(androidRefreshService, /onStopJob[\s\S]*activeRun\?\.stop\(\)[\s\S]*activeRun = null/u);
@@ -239,7 +249,7 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   assert.match(androidProvider, /private fun responseIsRateLimited[\s\S]*status == 429[\s\S]*status != 403[\s\S]*X-RateLimit-Remaining[\s\S]*Retry-After[\s\S]*errorStream[\s\S]*JSONObject\(reader\.readText\(\)\)\.opt\("message"\) as\? String[\s\S]*lowercase\(Locale\.ROOT\)[\s\S]*contains\("rate limit"\)/u);
   assert.equal((androidProvider.match(/responseIsRateLimited\(connection\)/gu) ?? []).length, 2);
   assert.match(androidProvider, /status == 401[\s\S]*"missing-token"[\s\S]*status == 403 \|\| status == 404[\s\S]*"permission"/u);
-  assert.match(androidProvider, /val stored = store\.replaceSnapshot\(snapshot, credential\.revision\)\s+val renderConfiguration = store\.configuration\(deckId\)\s+if \(renderConfiguration == null\)[\s\S]*renderStored\(context, manager, it\)[\s\S]*val rendered = store\.snapshot\(deckId\)[\s\S]*renderSelected\(context, manager, store, deckId, renderConfiguration/u);
+  assert.match(androidProvider, /val stored = session\.commitIfPublishable \{ store\.replaceSnapshot\(snapshot, credential\.revision\) \} \?: return false\s+val renderConfiguration = store\.configuration\(deckId\)\s+if \(renderConfiguration == null\)[\s\S]*renderStored\(context, manager, it\)[\s\S]*val rendered = store\.snapshot\(deckId\)[\s\S]*renderSelected\(context, manager, store, deckId, renderConfiguration/u);
   assert.match(androidManifest, /DevHudWidgetProvider"\s+android:exported="false"\s+android:label="@string\/devhud_widget_name"/u);
   assert.match(androidProvider, /results.*prefix|prefix\(3\)|minOf\(results\?\.length\(\) \?: 0, 3\)/su);
   assert.match(androidProvider, /devhud:\/\/deck\//u);

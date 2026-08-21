@@ -3,6 +3,7 @@ package io.delino.devhud.widget
 import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
+import org.json.JSONArray
 import org.json.JSONObject
 import java.security.KeyStore
 import java.time.Instant
@@ -57,20 +58,24 @@ internal class DevHudWidgetStore(private val context: Context) {
         if (state.contains(disableTransactionPrefix + deckId)) return@synchronized false
         val previous = configuration(deckId)
         val previousSecret = secrets.getString(deckId, null)
+        val reusableSecret = previousSecret?.takeIf { decrypt(it, deckId) == token }
+        if (previous != null && reusableSecret != null && sameConfiguration(previous, configuration)) return@synchronized true
         val transactionKey = transactionPrefix + deckId
         if (!state.edit().putBoolean(transactionKey, true).commit()) {
             state.edit().remove(transactionKey).commit()
             return@synchronized false
         }
-        val encrypted = try {
-            encrypt(token, deckId)
-        } catch (error: Exception) {
-            abortEnable(deckId, previousSecret)
-            throw error
-        }
-        if (!secrets.edit().putString(deckId, encrypted).commit()) {
-            abortEnable(deckId, previousSecret)
-            return@synchronized false
+        if (reusableSecret == null) {
+            val encrypted = try {
+                encrypt(token, deckId)
+            } catch (error: Exception) {
+                abortEnable(deckId, previousSecret)
+                throw error
+            }
+            if (!secrets.edit().putString(deckId, encrypted).commit()) {
+                abortEnable(deckId, previousSecret)
+                return@synchronized false
+            }
         }
         val editor = state.edit().putString(configurationPrefix + deckId, configuration.toString())
         if (previous != null && selectionChanged(previous, configuration)) editor.remove(snapshotPrefix + deckId)
@@ -208,6 +213,22 @@ internal class DevHudWidgetStore(private val context: Context) {
     private fun selectionChanged(left: JSONObject, right: JSONObject): Boolean =
         listOf("query", "profileId", "profileKind", "scopeId").any { left.optString(it) != right.optString(it) } ||
             left.optJSONArray("repositories")?.toString() != right.optJSONArray("repositories")?.toString()
+
+    private fun sameConfiguration(left: JSONObject, right: JSONObject): Boolean =
+        left.optInt("version", -1) == right.optInt("version", -1) &&
+            listOf("deckId", "name", "query", "profileId", "profileKind", "scopeId", "language")
+                .all { left.optString(it) == right.optString(it) } &&
+            sameRepositories(left.optJSONArray("repositories"), right.optJSONArray("repositories"))
+
+    private fun sameRepositories(left: JSONArray?, right: JSONArray?): Boolean {
+        if (left == null || right == null || left.length() != right.length()) return false
+        for (index in 0 until left.length()) {
+            val leftRepository = left.optJSONObject(index) ?: return false
+            val rightRepository = right.optJSONObject(index) ?: return false
+            if (listOf("owner", "name").any { leftRepository.optString(it) != rightRepository.optString(it) }) return false
+        }
+        return true
+    }
 
     private fun reconcile(): Boolean = synchronized(widgetStoreMutationLock) {
         if (!reconcileProfileTokenReplacement()) return@synchronized false

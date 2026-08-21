@@ -64,6 +64,7 @@ internal class WidgetRefreshSession {
     private val deadlineNanos = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(refreshDeadlineMillis)
     private val cancellation = AtomicReference<WidgetRefreshCancellation?>(null)
     private val connections = ConcurrentHashMap.newKeySet<HttpURLConnection>()
+    private val publicationLock = Any()
     private val deadlineCancellation = widgetDeadlineExecutor.schedule(
         { cancel(WidgetRefreshCancellation.DEADLINE) },
         (deadlineNanos - System.nanoTime()).coerceAtLeast(0L),
@@ -95,12 +96,22 @@ internal class WidgetRefreshSession {
     }
 
     fun cancel(reason: WidgetRefreshCancellation) {
-        while (true) {
+        synchronized(publicationLock) {
             val current = cancellation.get()
-            val next = if (reason == WidgetRefreshCancellation.STOPPED) reason else current ?: reason
-            if (current == next || cancellation.compareAndSet(current, next)) break
+            cancellation.set(when {
+                current == WidgetRefreshCancellation.STOPPED || reason == WidgetRefreshCancellation.STOPPED -> WidgetRefreshCancellation.STOPPED
+                current == WidgetRefreshCancellation.DEADLINE || reason == WidgetRefreshCancellation.DEADLINE -> WidgetRefreshCancellation.DEADLINE
+                else -> current ?: reason
+            })
         }
         connections.forEach { it.disconnect() }
+    }
+
+    fun <T> commitIfPublishable(commit: () -> T): T? = synchronized(publicationLock) {
+        when (cancellation.get()) {
+            WidgetRefreshCancellation.DEADLINE, WidgetRefreshCancellation.STOPPED -> null
+            WidgetRefreshCancellation.VALIDATION_FAILED, null -> commit()
+        }
     }
 
     fun wasStopped(): Boolean = cancellation.get() == WidgetRefreshCancellation.STOPPED
@@ -160,14 +171,14 @@ class DevHudWidgetProvider : AppWidgetProvider() {
             }
             if (credential is WidgetCredential.Missing) {
                 val snapshot = failure(configuration, previous, "missing-token", Instant.now().toString(), null)
-                val stored = store.replaceSnapshot(snapshot, null)
+                val stored = session.commitIfPublishable { store.replaceSnapshot(snapshot, null) } ?: return false
                 val rendered = store.snapshot(deckId)
                 renderSelected(context, manager, store, deckId, configuration, rendered, rendered?.optString("state", "missing-token") ?: "missing-token", appWidgetIds)
                 return stored
             }
             if (credential is WidgetCredential.Unreadable) {
                 val snapshot = failure(configuration, previous, "error", Instant.now().toString(), null)
-                val stored = store.replaceSnapshot(snapshot, credential.revision)
+                val stored = session.commitIfPublishable { store.replaceSnapshot(snapshot, credential.revision) } ?: return false
                 val rendered = store.snapshot(deckId)
                 renderSelected(context, manager, store, deckId, configuration, rendered, rendered?.optString("state", "error") ?: "error", appWidgetIds)
                 return stored
@@ -180,7 +191,7 @@ class DevHudWidgetProvider : AppWidgetProvider() {
                 appWidgetIds.forEach { renderStored(context, manager, it) }
                 return true
             }
-            val stored = store.replaceSnapshot(snapshot, credential.revision)
+            val stored = session.commitIfPublishable { store.replaceSnapshot(snapshot, credential.revision) } ?: return false
             val renderConfiguration = store.configuration(deckId)
             if (renderConfiguration == null) {
                 appWidgetIds.forEach { renderStored(context, manager, it) }

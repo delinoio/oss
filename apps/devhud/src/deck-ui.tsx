@@ -302,11 +302,11 @@ export function DeckPollingBoundary({ bridge, active, online, language = "en", p
         if (!canSynchronize()) return;
         await bridge.request({ operation: "widgets.enable-deck", configuration });
         if (!canSynchronize()) return;
+        setEnabledWidgetDeckIds((current) => current.has(deck.id) ? current : new Set(current).add(deck.id));
         if (snapshot !== undefined && snapshot.query === configuration.query) await bridge.request({ operation: "widgets.replace-deck-snapshot", snapshot });
         synchronized = canSynchronize();
       });
       if (!synchronized) return;
-      setEnabledWidgetDeckIds((current) => current.has(deck.id) ? current : new Set(current).add(deck.id));
       setWidgetFailure(deck.id, false);
     } catch (error) {
       setWidgetFailure(deck.id, true);

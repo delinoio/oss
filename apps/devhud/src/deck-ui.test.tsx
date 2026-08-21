@@ -139,6 +139,26 @@ describe("Deck surface", () => {
     expect(request.mock.calls.map(([value]) => value.operation)).not.toContain("widgets.replace-deck-snapshot");
   });
 
+  it("retains native enablement when initial snapshot publication fails", async () => {
+    writeDeckCache(localStorage, `origin.scope.${profile.id}`, { version: DeckCacheVersion, deckId: deck.id, query: deck.query, queryEtag: null, totalCount: 1, results: [pullRequest], lastSuccessfulAt: "2026-08-17T00:00:00.000Z", rate: null, failures: 0, nextRefreshAt: null, transitionKeys: [] });
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      if (value.operation === "widgets.status") return { kind: "widget-status", enabledDeckIds: [] };
+      if (value.operation === "widgets.replace-deck-snapshot") throw new Error("storage-failure");
+      return { kind: "ok" };
+    });
+    const bridge = bridgeWith(request);
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    await screen.findByText(new RegExp(pullRequest.title, "u"));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.widgetEnable }));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.widgetPrivacyConfirm }));
+
+    await waitFor(() => expect(request).toHaveBeenCalledWith(expect.objectContaining({ operation: "widgets.replace-deck-snapshot" })));
+    await waitFor(() => expect(screen.getByRole("button", { name: messages.en.widgetDisable })).toBeTruthy());
+    expect(screen.getByRole("alert").textContent).toBe(messages.en.widgetActionFailed);
+    expect(screen.queryByRole("button", { name: messages.en.widgetEnable })).toBeNull();
+  });
+
   it("keeps an enabled Deck available for disablement when configuration resynchronization fails", async () => {
     let failConfigurationSync = false;
     const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
