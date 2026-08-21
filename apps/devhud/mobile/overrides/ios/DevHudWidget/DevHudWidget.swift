@@ -13,6 +13,12 @@ private let staleAfter: TimeInterval = 60 * 60
 private let repositoryValidationConcurrency = 3
 private let refreshDeadlineNanoseconds: UInt64 = 20 * 1_000_000_000
 
+private func parseWidgetTimestamp(_ value: String) -> Date? {
+    let fractional = ISO8601DateFormatter()
+    fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return fractional.date(from: value) ?? ISO8601DateFormatter().date(from: value)
+}
+
 struct DeckConfiguration: Codable, Identifiable, Sendable {
     let version: Int; let deckId: String; let name: String; let query: String; let repositories: [DeckRepository]; let profileId: String; let profileKind: String; let scopeId: String; let language: String
     var id: String { deckId }
@@ -105,7 +111,7 @@ private struct DeckTimelineProvider: IntentTimelineProvider {
     private func timeline(deck: DeckConfiguration?, snapshot: DeckSnapshot?) -> Timeline<DeckEntry> {
         let now = Date()
         var entries = [DeckEntry(date: now, configuration: deck, snapshot: snapshot)]
-        if let value = snapshot?.lastSuccessfulAt, let lastSuccess = ISO8601DateFormatter().date(from: value) {
+        if let value = snapshot?.lastSuccessfulAt, let lastSuccess = parseWidgetTimestamp(value) {
             let staleDate = lastSuccess.addingTimeInterval(staleAfter)
             if staleDate > now { entries.append(DeckEntry(date: staleDate, configuration: deck, snapshot: snapshot)) }
         }
@@ -259,10 +265,10 @@ private struct DeckWidgetView: View {
     private var korean: Bool { entry.configuration?.language == "ko" }
     private var state: String {
         guard let snapshot = entry.snapshot else { return "missing-token" }
-        if snapshot.state == "fresh", let value = snapshot.lastSuccessfulAt, let date = ISO8601DateFormatter().date(from: value), entry.date.timeIntervalSince(date) >= staleAfter { return "stale" }
+        if snapshot.state == "fresh", let value = snapshot.lastSuccessfulAt, let date = parseWidgetTimestamp(value), entry.date.timeIntervalSince(date) >= staleAfter { return "stale" }
         return snapshot.state
     }
-    private var stale: Bool { guard let value = entry.snapshot?.lastSuccessfulAt, let date = ISO8601DateFormatter().date(from: value) else { return false }; return entry.date.timeIntervalSince(date) >= staleAfter }
+    private var stale: Bool { guard let value = entry.snapshot?.lastSuccessfulAt, let date = parseWidgetTimestamp(value) else { return false }; return entry.date.timeIntervalSince(date) >= staleAfter }
     private func text(_ en: String, _ ko: String) -> String { korean ? ko : en }
     private var status: String {
         let primary: String = switch state { case "stale": text("Stale", "오래됨"); case "missing-token": text("Setup required", "설정 필요"); case "rate-limit": text("Rate limited", "요청 제한됨"); case "permission": text("Access denied", "접근 거부됨"); case "error": text("Refresh failed", "새로 고침 실패"); default: text("Current", "최신") }

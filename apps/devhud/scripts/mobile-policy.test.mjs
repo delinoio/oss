@@ -123,7 +123,12 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   const iosEntitlements = readFileSync(join(appRoot, "mobile/overrides/ios/DevHudWidget/DevHudWidget.entitlements"), "utf8");
   assert.match(androidStore, /widgetKeyAlias = "io\.delino\.devhud\.widget-credential\.v1"/u);
   assert.match(androidStore, /private val widgetStoreMutationLock = Any\(\)/u);
-  assert.equal((androidStore.match(/synchronized\(widgetStoreMutationLock\)/gu) ?? []).length, 4);
+  assert.equal((androidStore.match(/synchronized\(widgetStoreMutationLock\)/gu) ?? []).length, 5);
+  assert.match(androidStore, /transactionPrefix = "transaction:"[\s\S]*init \{\s*reconcile\(\)/u);
+  assert.ok(androidStore.indexOf("putBoolean(transactionKey, true).commit()") < androidStore.indexOf("putString(deckId, encrypted).commit()"));
+  assert.match(androidStore, /fun token\(deckId: String\)[\s\S]*state\.contains\(transactionPrefix \+ deckId\)[\s\S]*return null/u);
+  assert.match(androidStore, /private fun reconcile\(\)[\s\S]*pendingDeckIds[\s\S]*credentialDeckIds\.filterNot\(configuredDeckIds::contains\)[\s\S]*removedDeckIds\.forEach \{ editor\.remove\(it\) \}[\s\S]*pendingDeckIds\.forEach \{ editor\.remove\(transactionPrefix \+ it\) \}/u);
+  assert.match(androidStore, /private fun abortEnable[\s\S]*rollback\.commit\(\)[\s\S]*remove\(transactionPrefix \+ deckId\)\.commit\(\)/u);
   assert.match(androidStore, /replaceProfileToken[\s\S]*profileId[\s\S]*scopeId/u);
   assert.match(androidStore, /previousSecret[\s\S]*rollback\.putString\(deckId, previousSecret\)/u);
   assert.match(androidNativeBridge, /replaceProfileToken\(profileId, scopeId, value\)/u);
@@ -138,6 +143,7 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   assert.match(androidProvider, /fun cancel[\s\S]*connections\.forEach \{ it\.disconnect\(\) \}/u);
   assert.match(androidProvider, /ScrollView/u);
   assert.match(androidProvider, /incomplete_results/u);
+  assert.match(androidProvider, /it\.has\("merged_at"\) && !it\.isNull\("merged_at"\)/u);
   assert.ok(androidProvider.indexOf("validateRepositories(configuration, token, session)") < androidProvider.indexOf('github("/search/issues'));
   assert.match(androidProvider, /\/pulls\?state=open&per_page=1[\s\S]*\/issues\?state=open&per_page=1[\s\S]*\/contents/u);
   assert.match(androidProvider, /status == 401[\s\S]*"missing-token"[\s\S]*status == 403 \|\| status == 404[\s\S]*"permission"/u);
@@ -161,6 +167,8 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   assert.match(iosWidget, /validateRepositories[\s\S]*withTaskGroup\(of: RepositoryValidationFailure\?\.self\)[\s\S]*repositories\.prefix\(initialCount\)[\s\S]*group\.cancelAll\(\)/u);
   assert.match(iosWidget, /try Task\.checkCancellation\(\)/u);
   assert.match(iosWidget, /staleDate[\s\S]*entries\.append/u);
+  assert.match(iosWidget, /parseWidgetTimestamp[\s\S]*withInternetDateTime, \.withFractionalSeconds[\s\S]*fractional\.date\(from: value\) \?\? ISO8601DateFormatter\(\)\.date\(from: value\)/u);
+  assert.equal((iosWidget.match(/parseWidgetTimestamp\(value\)/gu) ?? []).length, 3);
   assert.match(iosWidget, /incomplete_results/u);
   assert.ok(iosWidget.indexOf("validateRepositories(deck: deck, token: token)") < iosWidget.indexOf('URLComponents(string: "https://api.github.com/search/issues")'));
   assert.match(iosWidget, /\/pulls\?state=open&per_page=1[\s\S]*\/issues\?state=open&per_page=1[\s\S]*\/contents/u);

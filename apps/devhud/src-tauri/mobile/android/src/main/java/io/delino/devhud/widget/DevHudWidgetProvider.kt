@@ -185,7 +185,8 @@ class DevHudWidgetProvider : AppWidgetProvider() {
                     for (index in 0 until minOf(items.length(), resultLimit)) {
                         val item = items.getJSONObject(index)
                         val isDraft = item.optBoolean("draft", false)
-                        val isMerged = !item.optJSONObject("pull_request")?.optString("merged_at").isNullOrEmpty()
+                        val pullRequest = item.optJSONObject("pull_request")
+                        val isMerged = pullRequest?.let { it.has("merged_at") && !it.isNull("merged_at") } == true
                         when { isDraft -> draft += 1; isMerged -> merged += 1; item.optString("state") == "closed" -> closed += 1; else -> open += 1 }
                         results.put(JSONObject()
                             .put("nodeId", item.optString("node_id"))
