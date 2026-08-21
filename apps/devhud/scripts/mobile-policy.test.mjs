@@ -142,6 +142,7 @@ test("mobile policy keeps native iOS origins aligned with normalized root URLs",
   assert.throws(() => assertBridge(iosNativeBridge.replace("state?.foregroundReloadDeadline = nil", "")), /selection changes must invalidate/u);
   assert.throws(() => assertBridge(iosNativeBridge.replace("storeWidgetCredential(previousCredentialData", "storeWidgetCredential(Data()")), /restore prior credential/u);
   assert.throws(() => assertBridge(iosNativeBridge.replace("previous == configuration", "false")), /unchanged widget enablement/u);
+  assert.throws(() => assertBridge(iosNativeBridge.replace("let latestSnapshot = current?.snapshot.flatMap", "let latestSnapshot = state?.snapshot.flatMap")), /latest stored snapshot inside the coordinated write/u);
   assert.throws(() => assertBridge(iosNativeBridge.replace("current?.foregroundReloadDeadline = Date().addingTimeInterval(widgetForegroundReloadWindow)", "")), /Deck-scoped stored-only reload marker/u);
 });
 
@@ -282,6 +283,7 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   assert.match(iosWidget, /let stateStore = WidgetStateStore\(appGroup: appGroup\)/u);
   assert.match(iosWidget, /func save\(_ snapshot: DeckSnapshot, whileEnabled configuration: DeckConfiguration, credentialRevision: Data\?\)[\s\S]*credentialMatches\(deckId: snapshot\.deckId, revision: credentialRevision\)[\s\S]*stateStore\.updateDeckState/u);
   assert.equal((iosWidget.match(/credentialMatches\(deckId: snapshot\.deckId, revision: credentialRevision\)/gu) ?? []).length, 2);
+  assert.match(iosWidget, /store\.save\(snapshot, whileEnabled: current, credentialRevision: credentialRevision\)[\s\S]*let renderDeck = store\.configuration\(deck\.deckId\)[\s\S]*completion\(timeline\(deck: renderDeck, snapshot: renderDeck\.flatMap/u);
   assert.match(iosWidget, /private enum WidgetCredential[\s\S]*case missing[\s\S]*case readable\(token: String, revision: Data\)[\s\S]*case unreadable\(revision: Data\)/u);
   assert.match(iosWidget, /legacyWidgetToken[\s\S]*\["ghp_", "github_pat_"\][\s\S]*token\.utf8\.count > prefix\.utf8\.count[\s\S]*token\.utf8\.allSatisfy/u);
   assert.match(iosWidget, /func credential\(_ deckId: String\)[\s\S]*stored\.version == 1[\s\S]*legacyWidgetToken\(data\)[\s\S]*\.unreadable\(revision: data\)/u);
@@ -335,7 +337,7 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   assert.ok(iosRemoveWidgetDeck.indexOf("widgetStateStore.updateDeckState") < iosRemoveWidgetDeck.indexOf("removeWidgetCredential(deckId)"));
   assert.ok(iosEnableWidgetDeck.indexOf("removeWidgetDeck(configuration.deckId)") < iosEnableWidgetDeck.indexOf('invoke.reject("not-configured"'));
   assert.match(iosNativeBridge, /pendingDeckIds[\s\S]*removeWidgetCredential\(deckId\)[\s\S]*widgetCredentialDeckIds\(\)/u);
-  assert.match(iosNativeBridge, /private func replaceWidgetSnapshot[\s\S]*mergeWidgetSnapshot\(current: previousSnapshot, incoming: snapshot\)[\s\S]*current\?\.foregroundReloadDeadline = Date\(\)\.addingTimeInterval[\s\S]*reloadAllTimelines/u);
+  assert.match(iosNativeBridge, /private func replaceWidgetSnapshot[\s\S]*widgetStateStore\.updateDeckState\(snapshot\.deckId, \{ current in[\s\S]*current\?\.snapshot\.flatMap[\s\S]*mergeWidgetSnapshot\(current: latestSnapshot, incoming: snapshot\)[\s\S]*current\?\.foregroundReloadDeadline = Date\(\)\.addingTimeInterval[\s\S]*reloadAllTimelines/u);
   assert.match(iosWidget, /func credential\(_ deckId: String\)[\s\S]*!credentialReplacementBlocks\(deckId\)[\s\S]*StoredWidgetCredential[\s\S]*revision: data/u);
   assert.match(iosWidget, /guard result\.status == errSecSuccess, let data = result\.data else \{ return \.unavailable \}/u);
   assert.match(iosWidget, /case \.unavailable:[\s\S]*Self\.failure\(deck: current, previous: store\.snapshot\(current\.deckId\), state: "error"[\s\S]*completion\(timeline\(deck: current, snapshot: snapshot\)\)/u);

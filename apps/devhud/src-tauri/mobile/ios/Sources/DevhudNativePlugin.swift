@@ -886,9 +886,11 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
         let previousSnapshot = state?.snapshot.flatMap { try? JSONDecoder().decode(WidgetDeckSnapshot.self, from: $0) }
         let merged = mergeWidgetSnapshot(current: previousSnapshot, incoming: snapshot)
         if merged == previousSnapshot { invoke.resolve(["kind": "ok"]); return }
-        let encoded = try JSONEncoder().encode(merged)
         guard widgetStateStore.updateDeckState(snapshot.deckId, { current in
             guard current?.configuration == configurationData, current?.transactionPending == false else { return false }
+            let latestSnapshot = current?.snapshot.flatMap { try? JSONDecoder().decode(WidgetDeckSnapshot.self, from: $0) }
+            let latestMerged = mergeWidgetSnapshot(current: latestSnapshot, incoming: snapshot)
+            guard let encoded = try? JSONEncoder().encode(latestMerged) else { return false }
             current?.snapshot = encoded
             current?.foregroundReloadDeadline = Date().addingTimeInterval(widgetForegroundReloadWindow)
             return true

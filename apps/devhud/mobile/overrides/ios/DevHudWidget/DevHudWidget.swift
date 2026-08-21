@@ -265,8 +265,9 @@ private struct DeckTimelineProvider: IntentTimelineProvider {
                 completion(timeline(deck: current, snapshot: current.flatMap { store.snapshot($0.deckId) }))
                 return
             }
-            let stored = store.save(snapshot, whileEnabled: current, credentialRevision: credentialRevision)
-            completion(timeline(deck: current, snapshot: store.snapshot(current.deckId)))
+            _ = store.save(snapshot, whileEnabled: current, credentialRevision: credentialRevision)
+            let renderDeck = store.configuration(deck.deckId)
+            completion(timeline(deck: renderDeck, snapshot: renderDeck.flatMap { store.snapshot($0.deckId) }))
         }
     }
 
