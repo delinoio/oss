@@ -704,7 +704,11 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
 
     private func clearWidgetState() -> Bool {
         guard let defaults = UserDefaults(suiteName: appGroup) else { return false }
-        for key in defaults.dictionaryRepresentation().keys where key.hasPrefix(widgetConfigurationPrefix) || key.hasPrefix(widgetSnapshotPrefix) {
+        let keys = defaults.dictionaryRepresentation().keys
+        for key in keys where key.hasPrefix(widgetConfigurationPrefix) {
+            defaults.removeObject(forKey: key)
+        }
+        for key in keys where key.hasPrefix(widgetSnapshotPrefix) {
             defaults.removeObject(forKey: key)
         }
         guard removeAllWidgetCredentials() else { return false }
