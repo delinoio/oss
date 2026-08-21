@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findMappingOverlaps, literalSpecificity, mappingMatches, MaximumUrlMappingGlobstarSegments, MaximumUrlMappingPathSegments, parseUrlPattern, resolveRepositorySelection, selectUrlMapping, type UrlRepositoryMapping } from "./url-mapping";
+import { findMappingOverlaps, literalSpecificity, mappingAcceptsOrigin, mappingMatches, MaximumUrlMappingGlobstarSegments, MaximumUrlMappingPathSegments, parseUrlPattern, resolveRepositorySelection, selectUrlMapping, type UrlRepositoryMapping } from "./url-mapping";
 
 const mapping = (overrides: Partial<UrlRepositoryMapping> = {}): UrlRepositoryMapping => ({
   id: "018f47a2-7b3c-7def-8abc-1234567890ab", pattern: "https://*.example.com:*/teams/**", repository: { owner: "delinoio", name: "oss" }, credentialProfileRef: "github.default", priority: 0, chromeOrigin: null, updatedAt: "2026-08-17T00:00:00.000Z", ...overrides,
@@ -28,6 +28,13 @@ describe("URL repository matcher", () => {
     expect(mappingMatches(mapping({ pattern: "*://example.com:80/**" }), "http://example.com/a")).toBe(true);
     expect(findMappingOverlaps([mapping({ pattern: "*://example.com:443/**" }), mapping({ id: "018f47a2-7b3c-7def-8abc-1234567890ac", pattern: "https://example.com/**" })])).toHaveLength(1);
     expect(findMappingOverlaps([mapping({ pattern: "*://example.com:80/**" }), mapping({ id: "018f47a2-7b3c-7def-8abc-1234567890ac", pattern: "https://example.com/**" })])).toHaveLength(0);
+  });
+
+  it("matches Chrome origins without applying the path pattern", () => {
+    expect(mappingAcceptsOrigin(mapping({ pattern: "https://*.example.com:*/private/**" }), "https://app.example.com:8443")).toBe(true);
+    expect(mappingAcceptsOrigin(mapping({ pattern: "https://example.com:443/**" }), "https://example.com")).toBe(true);
+    expect(mappingAcceptsOrigin(mapping({ pattern: "http://example.com/**" }), "https://example.com")).toBe(false);
+    expect(mappingAcceptsOrigin(mapping({ pattern: "https://example.com:8443/**" }), "https://example.com")).toBe(false);
   });
 
   it("matches bracketed IPv6 literals as concrete hosts", () => {

@@ -8,7 +8,11 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 import { spawnDevServer } from "../../../scripts/spawn-dev-server.mjs";
-import { desktopTauriArguments, desktopTauriEnvironment } from "./run-tauri-arguments.mjs";
+import {
+  desktopTauriArguments,
+  desktopTauriConfigPath,
+  desktopTauriEnvironment,
+} from "./run-tauri-arguments.mjs";
 
 const scriptPath = fileURLToPath(new URL("./run-tauri.mjs", import.meta.url));
 const processTreeChildPath = fileURLToPath(new URL("./process-tree-child.mjs", import.meta.url));
@@ -19,12 +23,33 @@ const configOverrides = [
   ["separated long option", ["build", "--", "--config", "alternate.json"]],
   ["equals-delimited long option", ["build", "--", "--config=alternate.json"]],
 ];
+const targetOverrides = [
+  ["separated short target option", ["build", "--", "-t", "aarch64-apple-darwin"]],
+  ["equals-delimited short target option", ["build", "--", "-t=aarch64-apple-darwin"]],
+  ["attached short target option", ["build", "--", "-taarch64-apple-darwin"]],
+  ["separated long target option", ["build", "--", "--target", "aarch64-apple-darwin"]],
+  ["equals-delimited long target option", ["build", "--", "--target=aarch64-apple-darwin"]],
+];
 
 test("forwards the desktop CEF feature to the pinned Tauri command", () => {
-  assert.deepEqual(desktopTauriArguments("dev", []), ["dev", "--features", "desktop-cef"]);
+  assert.deepEqual(desktopTauriArguments("dev", []), [
+    "dev",
+    "--features",
+    "desktop-cef",
+    "--config",
+    desktopTauriConfigPath,
+  ]);
   assert.deepEqual(
     desktopTauriArguments("build", ["--bundles", "app"]),
-    ["build", "--features", "desktop-cef", "--bundles", "app"],
+    [
+      "build",
+      "--features",
+      "desktop-cef",
+      "--config",
+      desktopTauriConfigPath,
+      "--bundles",
+      "app",
+    ],
   );
 });
 
@@ -76,6 +101,18 @@ for (const [name, args] of configOverrides) {
       result.stderr,
       /devhud: -c\/--config cannot override the pinned application, CSP, or development origin/,
     );
+  });
+}
+
+for (const [name, args] of targetOverrides) {
+  test(`rejects the ${name}`, () => {
+    const result = spawnSync(process.execPath, [scriptPath, ...args], {
+      encoding: "utf8",
+    });
+
+    assert.equal(result.signal, null);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /devhud: -t\/--target cannot override the pinned desktop target/);
   });
 }
 

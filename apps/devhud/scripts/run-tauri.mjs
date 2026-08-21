@@ -2,6 +2,7 @@
 
 import { exitLikeChild, spawnDevServer } from "../../../scripts/spawn-dev-server.mjs";
 import { desktopTauriArguments, desktopTauriEnvironment } from "./run-tauri-arguments.mjs";
+import { stageNativeMessagingHost } from "./stage-native-messaging-host.mjs";
 
 const [command, ...rawArgs] = process.argv.slice(2);
 const forwardedArgs = rawArgs[0] === "--" ? rawArgs.slice(1) : rawArgs;
@@ -20,9 +21,19 @@ if (
   process.exit(1);
 }
 
+if (
+  forwardedArgs.some(
+    (argument) => argument.startsWith("-t") || argument === "--target" || argument.startsWith("--target="),
+  )
+) {
+  console.error("devhud: -t/--target cannot override the pinned desktop target");
+  process.exit(1);
+}
+
 try {
   const args = desktopTauriArguments(command, forwardedArgs);
   const environment = desktopTauriEnvironment(command, forwardedArgs);
+  stageNativeMessagingHost({ release: command === "build" });
   const result = await spawnDevServer(
     "cargo",
     [

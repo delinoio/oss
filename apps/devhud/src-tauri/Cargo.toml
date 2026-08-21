@@ -25,6 +25,7 @@ tauri-cli = { git = "https://github.com/tauri-apps/tauri", rev = "4af26a3f7f8b69
 url = "2"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+devhud-native-messaging-host = { path = "../../../crates/devhud-native-messaging-host" }
 aes-gcm = "=0.10.3"
 base64 = "=0.22.1"
 dirs = "6"

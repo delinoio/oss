@@ -1,0 +1,10 @@
+{
+  "bundle": {
+    "externalBin": ["binaries/devhud-native-messaging-host"],
+    "windows": {
+      "nsis": {
+        "installerHooks": "./windows/hooks.nsh"
+      }
+    }
+  }
+}

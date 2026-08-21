@@ -1,4 +1,5 @@
 import { normalizeLogtoIssuer } from "./identity-contract.ts";
+import type { SanitizedBrowserContext } from "./browser-context.ts";
 import { ClassicPatCreationUrl, FineGrainedPatCreationUrl } from "./github-links.ts";
 import { defaultDesktopShortcutBindings, parseDesktopShortcutBindings, type DesktopShortcutBindings, type ShortcutActionId, type ShortcutValidationCode } from "./shortcuts.ts";
 
@@ -95,7 +96,8 @@ export type CaptureEditorCommand =
   | { readonly kind: "move-image"; readonly imageId: string; readonly toIndex: number };
 
 export interface CaptureDraftImage { readonly id: string; readonly width: number; readonly height: number; readonly previewUrl: string; readonly layers: readonly CaptureEditorLayer[]; readonly crop: CaptureRect | null }
-export interface CaptureDraft { readonly id: string; readonly revision: number; readonly createdAt: number; readonly updatedAt: number; readonly expiresAt: number; readonly imageCount: number; readonly images: readonly CaptureDraftImage[]; readonly canUndo: boolean; readonly canRedo: boolean }
+export interface DraftBrowserContext { readonly mappingId: string; readonly context: SanitizedBrowserContext }
+export interface CaptureDraft { readonly id: string; readonly revision: number; readonly createdAt: number; readonly updatedAt: number; readonly expiresAt: number; readonly hasBrowserContext: boolean; readonly browserContext?: DraftBrowserContext; readonly imageCount: number; readonly images: readonly CaptureDraftImage[]; readonly canUndo: boolean; readonly canRedo: boolean }
 export interface FlattenedCaptureImage { readonly imageId: string; readonly width: number; readonly height: number; readonly bytes: number; readonly sha256: string; readonly assetUrl: string; readonly downscaled: boolean }
 
 export type SecureSettingRef =
@@ -181,6 +183,7 @@ export type NativeBridgeRequestV1 = NativeBridgeRequestV1Base
   | { readonly operation: "capture.list-drafts" }
   | { readonly operation: "capture.open-draft"; readonly draftId: string }
   | { readonly operation: "capture.editor.apply"; readonly draftId: string; readonly expectedRevision: number; readonly command: CaptureEditorCommand }
+  | { readonly operation: "capture.remove-browser-context"; readonly draftId: string; readonly expectedRevision: number }
   | { readonly operation: "capture.editor.undo" | "capture.editor.redo" | "capture.flatten"; readonly draftId: string; readonly expectedRevision: number }
   | { readonly operation: "capture.delete-draft" | "capture.confirm-issue-created"; readonly draftId: string };
 

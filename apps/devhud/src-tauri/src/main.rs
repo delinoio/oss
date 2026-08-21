@@ -3,6 +3,7 @@
 mod bridge;
 #[cfg(desktop)]
 mod capture;
+mod native_messaging;
 mod native_plugin;
 mod platform;
 mod resources;
@@ -941,6 +942,11 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             bridge::native_bridge_v1,
+            native_messaging::native_messaging_begin_pairing,
+            native_messaging::native_messaging_status,
+            native_messaging::native_messaging_unpair,
+            native_messaging::native_messaging_replace_configuration,
+            native_messaging::native_messaging_take_context,
             frontend_ready,
             open_external,
             set_tray_language
@@ -977,6 +983,14 @@ fn main() {
             let readiness = frontend_readiness.clone();
             if let Err(error) = capture_recovery.with_draft_store(|store| store.recover()) {
                 error!(event = "capture_recovery_failed", code = error.code());
+            }
+            if cfg!(debug_assertions) {
+                info!(event = "native_messaging_registration_skipped_in_development");
+            } else if let Err(reason) = native_messaging::register_packaged_host() {
+                warn!(event = "native_messaging_registration_unavailable", %reason);
+            }
+            if let Err(reason) = native_messaging::start() {
+                warn!(event = "native_messaging_listener_unavailable", %reason);
             }
             #[cfg(any(target_os = "linux", all(debug_assertions, target_os = "windows")))]
             app.deep_link().register_all()?;

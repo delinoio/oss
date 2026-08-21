@@ -1,0 +1,442 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+interface FakePort {
+  readonly messageListeners: Array<(message: unknown) => void>;
+  readonly disconnectListeners: Array<() => void>;
+}
+
+const configurationRevisions = [
+  "01900000-0000-7000-8000-000000000010",
+  "01900000-0000-7000-8000-000000000011",
+] as const;
+
+function configurationSnapshot(configuration: unknown, revision: string = configurationRevisions[0]) {
+  return { configuration, configurationRevision: revision };
+}
+
+function fakePort(): FakePort & chrome.runtime.Port {
+  const messageListeners: Array<(message: unknown) => void> = [];
+  const disconnectListeners: Array<() => void> = [];
+  return {
+    messageListeners,
+    disconnectListeners,
+    name: "test",
+    sender: undefined,
+    onMessage: {
+      addListener: (listener: unknown) => messageListeners.push(listener as (message: unknown) => void),
+    } as unknown as chrome.runtime.Port["onMessage"],
+    onDisconnect: {
+      addListener: (listener: unknown) => disconnectListeners.push(listener as () => void),
+    } as unknown as chrome.runtime.Port["onDisconnect"],
+    disconnect: vi.fn(),
+    postMessage: vi.fn(),
+  };
+}
+
+describe("native host reconnect backoff", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    vi.resetModules();
+  });
+
+  it("resets only after a valid host response", async () => {
+    vi.useFakeTimers();
+    const ports: Array<FakePort & chrome.runtime.Port> = [];
+    const connectNative = vi.fn(() => {
+      const port = fakePort();
+      ports.push(port);
+      return port;
+    });
+    vi.stubGlobal("chrome", {
+      runtime: {
+        connectNative,
+        onMessage: { addListener: vi.fn() },
+      },
+    });
+
+    await import("./service-worker.js");
+    expect(connectNative).toHaveBeenCalledTimes(1);
+
+    ports[0]!.disconnectListeners[0]!();
+    await vi.advanceTimersByTimeAsync(250);
+    expect(connectNative).toHaveBeenCalledTimes(2);
+
+    ports[1]!.disconnectListeners[0]!();
+    await vi.advanceTimersByTimeAsync(499);
+    expect(connectNative).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(connectNative).toHaveBeenCalledTimes(3);
+
+    ports[2]!.messageListeners[0]!({
+      version: 1,
+      schema_version: 1,
+      request_id: "01900000-0000-7000-8000-000000000000",
+      ok: false,
+      state: "disconnected",
+      payload: null,
+    });
+    ports[2]!.disconnectListeners[0]!();
+    await vi.advanceTimersByTimeAsync(249);
+    expect(connectNative).toHaveBeenCalledTimes(3);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(connectNative).toHaveBeenCalledTimes(4);
+  });
+});
+
+describe("capture configuration freshness", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.resetModules();
+  });
+
+  it.each([
+    { label: "toolbar capture", selectElement: false },
+    { label: "interactive selection", selectElement: true },
+  ])("refreshes configuration after $label", async ({ selectElement }) => {
+    const port = fakePort();
+    const requestTypes: string[] = [];
+    const configurations = [
+      {
+        origins: [{
+          origin: "https://example.com",
+          mappings: [{
+            mappingId: "01900000-0000-7000-8000-000000000001",
+            matcher: { scheme: "https", host: ["example", "com"], hostIsIpLiteral: false, port: "", path: ["before", "**"] },
+          }],
+        }],
+        language: "en",
+      },
+      {
+        origins: [{
+          origin: "https://example.com",
+          mappings: [{
+            mappingId: "01900000-0000-7000-8000-000000000001",
+            matcher: { scheme: "https", host: ["example", "com"], hostIsIpLiteral: false, port: "", path: ["after", "**"] },
+          }],
+        }],
+        language: "en",
+      },
+    ];
+    let configurationIndex = 0;
+    port.postMessage = vi.fn((request: { request_id: string; type: string }) => {
+      requestTypes.push(request.type);
+      const index = configurationIndex++;
+      const payload = request.type === "configure" ? configurationSnapshot(configurations[index], configurationRevisions[index]!) : null;
+      queueMicrotask(() => port.messageListeners[0]!({
+        version: 1,
+        schema_version: 1,
+        request_id: request.request_id,
+        ok: true,
+        state: "accepted",
+        payload,
+      }));
+    });
+    const getAllPermissions = vi.fn()
+      .mockResolvedValueOnce({ origins: ["https://example.com/*", "https://stale.example/*"] })
+      .mockResolvedValueOnce({ origins: ["https://example.com/*"] });
+    const removePermissions = vi.fn().mockResolvedValue(true);
+    let runtimeListener: ((message: unknown, sender: chrome.runtime.MessageSender, sendResponse: (response: unknown) => void) => boolean) | undefined;
+    vi.stubGlobal("chrome", {
+      runtime: {
+        connectNative: vi.fn(() => port),
+        onMessage: { addListener: vi.fn((listener) => { runtimeListener = listener; }) },
+      },
+      tabs: { query: vi.fn(async () => [{ id: 7, url: "https://example.com/before/page", incognito: false }]) },
+      permissions: {
+        contains: vi.fn(async () => true),
+        getAll: getAllPermissions,
+        remove: removePermissions,
+      },
+      scripting: { executeScript: vi.fn(async () => [{ result: {
+        liveUrl: "https://example.com/before/page",
+        url: "https://example.com/%3Credacted%3E/%3Credacted%3E",
+        title: "Example",
+        viewport: { width: 1280, height: 720 },
+        userAgent: "test",
+        selectedBounds: null,
+        accessibility: {},
+        outerHtml: "",
+      } }]) },
+    });
+
+    await import("./service-worker.js");
+    const response = await new Promise<{ state: string }>((resolve) => {
+      runtimeListener!({ type: "capture", selectElement }, {} as chrome.runtime.MessageSender, (value) => resolve(value as { state: string }));
+    });
+
+    expect(requestTypes).toEqual(["configure", "configure"]);
+    expect(getAllPermissions).toHaveBeenCalledTimes(2);
+    expect(removePermissions).toHaveBeenCalledOnce();
+    expect(removePermissions).toHaveBeenCalledWith({ origins: ["https://stale.example/*"] });
+    expect(chrome.scripting.executeScript).toHaveBeenCalledWith(expect.objectContaining({ args: [selectElement, "https://example.com", "en"] }));
+    expect(response.state).toBe("denied");
+  });
+
+  it("binds capture to the post-injection configuration revision", async () => {
+    const port = fakePort();
+    const configuration = {
+      origins: [{
+        origin: "https://example.com",
+        mappings: [{
+          mappingId: "01900000-0000-7000-8000-000000000001",
+          matcher: { scheme: "https", host: ["example", "com"], hostIsIpLiteral: false, port: "", path: ["page"] },
+        }],
+      }],
+      language: "en",
+    };
+    let configurationIndex = 0;
+    port.postMessage = vi.fn((request: { request_id: string; type: string }) => {
+      const payload = request.type === "configure"
+        ? configurationSnapshot(configuration, configurationRevisions[configurationIndex++]!)
+        : null;
+      queueMicrotask(() => port.messageListeners[0]!({
+        version: 1,
+        schema_version: 1,
+        request_id: request.request_id,
+        ok: true,
+        state: "accepted",
+        payload,
+      }));
+    });
+    let runtimeListener: ((message: unknown, sender: chrome.runtime.MessageSender, sendResponse: (response: unknown) => void) => boolean) | undefined;
+    vi.stubGlobal("chrome", {
+      runtime: {
+        connectNative: vi.fn(() => port),
+        onMessage: { addListener: vi.fn((listener) => { runtimeListener = listener; }) },
+      },
+      tabs: { query: vi.fn(async () => [{ id: 7, url: "https://example.com/page", incognito: false }]) },
+      permissions: {
+        contains: vi.fn(async () => true),
+        getAll: vi.fn(async () => ({ origins: ["https://example.com/*"] })),
+        remove: vi.fn(),
+      },
+      scripting: { executeScript: vi.fn(async () => [{ result: {
+        liveUrl: "https://example.com/page",
+        url: "https://example.com/%3Credacted%3E",
+        title: "Example",
+        viewport: { width: 1280, height: 720 },
+        userAgent: "test",
+        selectedBounds: null,
+        accessibility: {},
+        outerHtml: "",
+      } }]) },
+    });
+
+    await import("./service-worker.js");
+    const response = await new Promise<{ ok: boolean }>((resolve) => {
+      runtimeListener!({ type: "capture", selectElement: false }, {} as chrome.runtime.MessageSender, (value) => resolve(value as { ok: boolean }));
+    });
+
+    expect(response.ok).toBe(true);
+    const captureRequest = vi.mocked(port.postMessage).mock.calls
+      .map(([request]) => request as { type: string; payload: unknown })
+      .find((request) => request.type === "capture");
+    expect(captureRequest?.payload).toMatchObject({
+      configurationRevision: configurationRevisions[1],
+      mappingId: "01900000-0000-7000-8000-000000000001",
+    });
+  });
+
+  it("discards stale permission reconciliation after a newer request starts", async () => {
+    const port = fakePort();
+    const configurations = ["old", "new"].map((host) => ({
+      origins: [{
+        origin: `https://${host}.example`,
+        mappings: [{
+          mappingId: `01900000-0000-7000-8000-00000000000${host === "old" ? "1" : "2"}`,
+          matcher: { scheme: "https", host: [host, "example"], hostIsIpLiteral: false, port: "", path: ["**"] },
+        }],
+      }],
+      language: "en",
+    }));
+    let configurationIndex = 0;
+    port.postMessage = vi.fn((request: { request_id: string }) => {
+      const index = configurationIndex++;
+      const payload = configurationSnapshot(configurations[index]!, configurationRevisions[index]!);
+      queueMicrotask(() => port.messageListeners[0]!({
+        version: 1,
+        schema_version: 1,
+        request_id: request.request_id,
+        ok: true,
+        state: "accepted",
+        payload,
+      }));
+    });
+    let releaseFirstGetAll!: (permissions: { origins: string[] }) => void;
+    const firstGetAll = new Promise<{ origins: string[] }>((resolve) => { releaseFirstGetAll = resolve; });
+    const getAllPermissions = vi.fn()
+      .mockImplementationOnce(() => firstGetAll)
+      .mockResolvedValueOnce({ origins: ["https://old.example/*", "https://new.example/*"] });
+    const removePermissions = vi.fn().mockResolvedValue(true);
+    let runtimeListener: ((message: unknown, sender: chrome.runtime.MessageSender, sendResponse: (response: unknown) => void) => boolean) | undefined;
+    vi.stubGlobal("chrome", {
+      runtime: {
+        connectNative: vi.fn(() => port),
+        onMessage: { addListener: vi.fn((listener) => { runtimeListener = listener; }) },
+      },
+      permissions: {
+        getAll: getAllPermissions,
+        remove: removePermissions,
+      },
+    });
+
+    await import("./service-worker.js");
+    const requestConfiguration = () => new Promise<{ ok: boolean; state: string; payload: unknown }>((resolve) => {
+      runtimeListener!({ type: "configuration" }, {} as chrome.runtime.MessageSender, (value) => resolve(value as { ok: boolean; state: string; payload: unknown }));
+    });
+    const firstRequest = requestConfiguration();
+    await vi.waitFor(() => expect(getAllPermissions).toHaveBeenCalledTimes(1));
+    const secondRequest = requestConfiguration();
+    expect(getAllPermissions).toHaveBeenCalledTimes(1);
+    releaseFirstGetAll({ origins: ["https://old.example/*", "https://new.example/*"] });
+    const secondResponse = await secondRequest;
+    const firstResponse = await firstRequest;
+
+    expect(firstResponse).toMatchObject({ ok: false, state: "disconnected", payload: null });
+    expect(secondResponse).toMatchObject({ ok: true, state: "accepted", payload: configurations[1] });
+    expect(removePermissions).toHaveBeenCalledOnce();
+    expect(removePermissions).toHaveBeenCalledWith({ origins: ["https://old.example/*"] });
+  });
+
+  it("serializes permission reconciliation while an earlier removal is pending", async () => {
+    const port = fakePort();
+    const configurations = ["old", "new"].map((host) => ({
+      origins: [{
+        origin: `https://${host}.example`,
+        mappings: [{
+          mappingId: `01900000-0000-7000-8000-00000000000${host === "old" ? "1" : "2"}`,
+          matcher: { scheme: "https", host: [host, "example"], hostIsIpLiteral: false, port: "", path: ["**"] },
+        }],
+      }],
+      language: "en",
+    }));
+    let configurationIndex = 0;
+    port.postMessage = vi.fn((request: { request_id: string }) => {
+      const index = configurationIndex++;
+      const payload = configurationSnapshot(configurations[index]!, configurationRevisions[index]!);
+      queueMicrotask(() => port.messageListeners[0]!({
+        version: 1,
+        schema_version: 1,
+        request_id: request.request_id,
+        ok: true,
+        state: "accepted",
+        payload,
+      }));
+    });
+    const getAllPermissions = vi.fn()
+      .mockResolvedValueOnce({ origins: ["https://old.example/*", "https://new.example/*"] })
+      .mockResolvedValueOnce({ origins: ["https://old.example/*", "https://new.example/*"] });
+    let releaseFirstRemove!: (removed: boolean) => void;
+    const firstRemove = new Promise<boolean>((resolve) => { releaseFirstRemove = resolve; });
+    const removePermissions = vi.fn()
+      .mockImplementationOnce(() => firstRemove)
+      .mockResolvedValueOnce(true);
+    let runtimeListener: ((message: unknown, sender: chrome.runtime.MessageSender, sendResponse: (response: unknown) => void) => boolean) | undefined;
+    vi.stubGlobal("chrome", {
+      runtime: {
+        connectNative: vi.fn(() => port),
+        onMessage: { addListener: vi.fn((listener) => { runtimeListener = listener; }) },
+      },
+      permissions: {
+        getAll: getAllPermissions,
+        remove: removePermissions,
+      },
+    });
+
+    await import("./service-worker.js");
+    const requestConfiguration = () => new Promise<{ ok: boolean; state: string; payload: unknown }>((resolve) => {
+      runtimeListener!({ type: "configuration" }, {} as chrome.runtime.MessageSender, (value) => resolve(value as { ok: boolean; state: string; payload: unknown }));
+    });
+    const firstRequest = requestConfiguration();
+    await vi.waitFor(() => expect(removePermissions).toHaveBeenCalledTimes(1));
+    const secondRequest = requestConfiguration();
+    await vi.waitFor(() => expect(port.postMessage).toHaveBeenCalledTimes(2));
+
+    expect(getAllPermissions).toHaveBeenCalledTimes(1);
+    expect(removePermissions).toHaveBeenCalledTimes(1);
+    releaseFirstRemove(true);
+    const [firstResponse, secondResponse] = await Promise.all([firstRequest, secondRequest]);
+
+    expect(firstResponse).toMatchObject({ ok: false, state: "disconnected", payload: null });
+    expect(secondResponse).toMatchObject({ ok: true, state: "accepted", payload: configurations[1] });
+    expect(getAllPermissions).toHaveBeenCalledTimes(2);
+    expect(removePermissions).toHaveBeenNthCalledWith(1, { origins: ["https://new.example/*"] });
+    expect(removePermissions).toHaveBeenNthCalledWith(2, { origins: ["https://old.example/*"] });
+  });
+
+  it("preserves grants when a configuration refresh fails", async () => {
+    const port = fakePort();
+    port.postMessage = vi.fn((request: { request_id: string }) => {
+      queueMicrotask(() => port.messageListeners[0]!({
+        version: 1,
+        schema_version: 1,
+        request_id: request.request_id,
+        ok: false,
+        state: "disconnected",
+        payload: null,
+      }));
+    });
+    const getAllPermissions = vi.fn();
+    const removePermissions = vi.fn();
+    let runtimeListener: ((message: unknown, sender: chrome.runtime.MessageSender, sendResponse: (response: unknown) => void) => boolean) | undefined;
+    vi.stubGlobal("chrome", {
+      runtime: {
+        connectNative: vi.fn(() => port),
+        onMessage: { addListener: vi.fn((listener) => { runtimeListener = listener; }) },
+      },
+      tabs: { query: vi.fn(async () => [{ id: 7, url: "https://example.com/page", incognito: false }]) },
+      permissions: {
+        contains: vi.fn(async () => true),
+        getAll: getAllPermissions,
+        remove: removePermissions,
+      },
+      scripting: { executeScript: vi.fn() },
+    });
+
+    await import("./service-worker.js");
+    const response = await new Promise<{ state: string }>((resolve) => {
+      runtimeListener!({ type: "capture", selectElement: false }, {} as chrome.runtime.MessageSender, (value) => resolve(value as { state: string }));
+    });
+
+    expect(response.state).toBe("disconnected");
+    expect(getAllPermissions).not.toHaveBeenCalled();
+    expect(removePermissions).not.toHaveBeenCalled();
+  });
+
+  it("preserves grants while native configuration is uninitialized", async () => {
+    const port = fakePort();
+    port.postMessage = vi.fn((request: { request_id: string }) => {
+      queueMicrotask(() => port.messageListeners[0]!({
+        version: 1,
+        schema_version: 1,
+        request_id: request.request_id,
+        ok: true,
+        state: "accepted",
+        payload: null,
+      }));
+    });
+    const getAllPermissions = vi.fn();
+    const removePermissions = vi.fn();
+    let runtimeListener: ((message: unknown, sender: chrome.runtime.MessageSender, sendResponse: (response: unknown) => void) => boolean) | undefined;
+    vi.stubGlobal("chrome", {
+      runtime: {
+        connectNative: vi.fn(() => port),
+        onMessage: { addListener: vi.fn((listener) => { runtimeListener = listener; }) },
+      },
+      permissions: {
+        getAll: getAllPermissions,
+        remove: removePermissions,
+      },
+    });
+
+    await import("./service-worker.js");
+    const response = await new Promise<{ ok: boolean; state: string }>((resolve) => {
+      runtimeListener!({ type: "configuration" }, {} as chrome.runtime.MessageSender, (value) => resolve(value as { ok: boolean; state: string }));
+    });
+
+    expect(response).toMatchObject({ ok: false, state: "malformed" });
+    expect(getAllPermissions).not.toHaveBeenCalled();
+    expect(removePermissions).not.toHaveBeenCalled();
+  });
+});

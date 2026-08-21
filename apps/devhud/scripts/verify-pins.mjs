@@ -24,6 +24,9 @@ const ciWorkflow = readFileSync(join(repoRoot, ".github/workflows/CI.yml"), "utf
 const packageJson = JSON.parse(readFileSync(join(appRoot, "package.json"), "utf8"));
 const pnpmLock = readFileSync(join(repoRoot, "pnpm-lock.yaml"), "utf8");
 const tauriConfig = JSON.parse(readFileSync(join(appRoot, "src-tauri/tauri.conf.json"), "utf8"));
+const desktopTauriConfig = JSON.parse(
+  readFileSync(join(appRoot, "src-tauri/tauri.desktop.conf.json"), "utf8"),
+);
 const tauriMain = readFileSync(join(appRoot, "src-tauri/src/main.rs"), "utf8");
 const nativeBridgeRust = readFileSync(join(appRoot, "src-tauri/src/bridge.rs"), "utf8");
 const nativeBridgeTypeScript = readFileSync(join(appRoot, "src/native-bridge.ts"), "utf8");
@@ -126,6 +129,19 @@ assert(
 );
 assert(tauriConfig.build.devUrl === "http://127.0.0.1:46305", "development origin changed");
 assert(tauriConfig.build.frontendDist === "../dist", "bundled frontend path changed");
+assert(
+  tauriConfig.bundle.externalBin === undefined,
+  "shared desktop/mobile Tauri config must not require a desktop sidecar",
+);
+assert(
+  JSON.stringify(desktopTauriConfig.bundle?.externalBin) ===
+    JSON.stringify(["binaries/devhud-native-messaging-host"]),
+  "desktop Native Messaging sidecar configuration changed",
+);
+assert(
+  desktopTauriConfig.bundle?.windows?.nsis?.installerHooks === "./windows/hooks.nsh",
+  "desktop Native Messaging removal hook changed",
+);
 const productionCsp = tauriConfig.app.security.csp;
 assert(
   hasExactCspDirectiveSources(productionCsp, "connect-src", ["'none'"]),
@@ -274,10 +290,23 @@ const devhudPackage = cargoMetadata.packages.find(
   (pkg) => resolve(pkg.manifest_path) === devhudManifestPath,
 );
 assert(devhudPackage, "DevHUD is absent from Cargo metadata");
+const nativeMessagingHostManifestPath = resolve(
+  repoRoot,
+  "crates/devhud-native-messaging-host/Cargo.toml",
+);
+const nativeMessagingHostPackage = cargoMetadata.packages.find(
+  (pkg) => resolve(pkg.manifest_path) === nativeMessagingHostManifestPath,
+);
+assert(nativeMessagingHostPackage, "DevHUD Native Messaging host is absent from Cargo metadata");
+assert(
+  nativeMessagingHostPackage.source === null,
+  "DevHUD Native Messaging host must remain an exact local workspace package",
+);
 const dependencyClosure = validateResolvedDependencySources(
   cargoMetadata,
   devhudPackage.id,
   new Set([CRATES_IO_SOURCE, TAURI_SOURCE]),
+  new Set([nativeMessagingHostPackage.id]),
 );
 for (const feature of pins.runtime.requiredFeatures) {
   const [crate, name] = feature.split("/");

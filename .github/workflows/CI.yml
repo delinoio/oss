@@ -756,6 +756,7 @@ jobs:
 
     env:
       MACOSX_DEPLOYMENT_TARGET: "13.0"
+      DEVHUD_EXTENSION_TEST_BUILD: "1"
 
     steps:
       - name: Checkout
@@ -772,6 +773,8 @@ jobs:
             devhud:
               - .github/workflows/CI.yml
               - apps/devhud/**
+              - apps/devhud-chrome-extension/**
+              - crates/devhud-native-messaging-host/**
               - scripts/run-rsbuild-dev.mjs
               - scripts/spawn-dev-server.mjs
               - .nvmrc
@@ -834,7 +837,9 @@ jobs:
 
       - name: Verify frontend and immutable pins
         if: ${{ steps.gate.outputs.run == 'true' }}
+        shell: bash
         run: |
+          pnpm --filter devhud-chrome-extension test
           pnpm --filter devhud test
           pnpm --filter devhud verify:pins
 

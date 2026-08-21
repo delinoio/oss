@@ -1,0 +1,37 @@
+import { describe, expect, it } from "vitest";
+import { MaximumJsonBytes, createBoundedRequest } from "./protocol.js";
+
+describe("Native Messaging request bounds", () => {
+  it("drops optional sanitized markup before posting an oversized capture", () => {
+    const bounded = createBoundedRequest("capture", {
+      mappingId: "01900000-0000-7000-8000-000000000001",
+      context: { title: "safe", outerHtml: "x".repeat(MaximumJsonBytes) },
+    });
+    expect(bounded.withinLimit).toBe(true);
+    expect((bounded.request.payload as { context: { outerHtml: string } }).context.outerHtml).toBe("");
+  });
+
+  it("rejects an outbound request that still exceeds the shared ceiling", () => {
+    expect(createBoundedRequest("ping", { value: "x".repeat(MaximumJsonBytes) }).withinLimit).toBe(false);
+  });
+
+  it("reserves space for the signed IPC request envelope", () => {
+    const basePayload = { mappingId: "mapping", context: { url: "", outerHtml: "" } };
+    const base = createBoundedRequest("capture", basePayload);
+    const byteLength = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).byteLength;
+    const url = "x".repeat(MaximumJsonBytes - byteLength(base.request));
+
+    const bounded = createBoundedRequest("capture", { mappingId: "mapping", context: { url, outerHtml: "" } });
+
+    expect(byteLength(bounded.request)).toBe(MaximumJsonBytes);
+    expect(bounded.withinLimit).toBe(false);
+  });
+
+  it("rejects an oversized redacted path without replacing its structure", () => {
+    const url = `https://example.com/${"<redacted>/".repeat(MaximumJsonBytes)}`;
+    const bounded = createBoundedRequest("capture", { mappingId: "mapping", context: { url, outerHtml: "optional" } });
+
+    expect(bounded.withinLimit).toBe(false);
+    expect((bounded.request.payload as { context: { url: string; outerHtml: string } }).context).toEqual({ url, outerHtml: "" });
+  });
+});

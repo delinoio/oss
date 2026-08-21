@@ -107,7 +107,7 @@ test("command palette shortcut is unavailable during onboarding", () => {
 });
 
 test("document preferences are synchronized before the first localized render", () => {
-  assert.match(main, /synchronizeDocumentPreferences\(document\.documentElement, preferences, matchMedia\("\(prefers-color-scheme: dark\)"\)\.matches, navigator\.languages\); createRoot\(root\)\.render/u);
+  assert.match(main, /synchronizeDocumentPreferences\(document\.documentElement, preferences, matchMedia\("\(prefers-color-scheme: dark\)"\)\.matches, navigator\.languages\);\s*createRoot\(root\)\.render/u);
 });
 
 test("system language changes synchronize the rendered copy, document language, and tray", () => {
