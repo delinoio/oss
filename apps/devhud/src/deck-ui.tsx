@@ -150,6 +150,7 @@ export function DeckPollingBoundary({ bridge, active, online, language = "en", p
     const canContinue = () => isCurrentDeck() && activeRef.current && onlineRef.current;
     loading.current.add(deckId);
     setDeckState(deckId, (current) => ({ ...current, loading: true, failure: null }));
+    const attemptedAt = new Date().toISOString();
     let scopeId: string | null = null;
     let currentCache: DeckCache | null = null;
     try {
@@ -176,7 +177,7 @@ export function DeckPollingBoundary({ bridge, active, online, language = "en", p
       if (search.notModified && currentCache?.totalCount === undefined) throw new GitHubProviderError(GitHubErrorCode.InvalidResponse, GitHubOperation.SearchPullRequests);
       if (search.incompleteResults) {
         const failures = (currentCache?.failures ?? 0) + 1;
-        const next: DeckCache = { version: 2, deckId: currentDeck.id, query: currentDeck.query, queryEtag: currentCache?.queryEtag ?? null, totalCount: currentCache?.totalCount, results: currentCache?.results ?? [], lastSuccessfulAt: currentCache?.lastSuccessfulAt ?? null, rate: search.metadata.rate, failures, nextRefreshAt: nextDeckRefresh(Date.now(), currentDeck.refreshMinutes, failures, search.metadata.rate), transitionKeys: currentCache?.transitionKeys ?? [], pendingNotifications: currentCache?.pendingNotifications ?? [] };
+        const next: DeckCache = { version: 2, deckId: currentDeck.id, query: currentDeck.query, queryEtag: currentCache?.queryEtag ?? null, totalCount: currentCache?.totalCount, results: currentCache?.results ?? [], lastSuccessfulAt: currentCache?.lastSuccessfulAt ?? null, lastAttemptedAt: attemptedAt, rate: search.metadata.rate, failures, nextRefreshAt: nextDeckRefresh(Date.now(), currentDeck.refreshMinutes, failures, search.metadata.rate), transitionKeys: currentCache?.transitionKeys ?? [], pendingNotifications: currentCache?.pendingNotifications ?? [] };
         writeDeckCache(storage, `${scopeId}.${currentDeck.profileRef}`, next);
         caches.current.set(deckId, next);
         setDeckState(deckId, (current) => ({ ...current, cache: next, failure: "incomplete-results" }));
@@ -215,7 +216,7 @@ export function DeckPollingBoundary({ bridge, active, online, language = "en", p
         }
       }
       if (!canContinue()) return;
-      const next: DeckCache = { version: 2, deckId: currentDeck.id, query: currentDeck.query, queryEtag: search.metadata.etag ?? currentCache?.queryEtag ?? null, totalCount: search.notModified ? currentCache?.totalCount ?? results.length : search.totalCount, results, lastSuccessfulAt: new Date().toISOString(), rate: search.metadata.rate, failures: 0, nextRefreshAt: null, transitionKeys, pendingNotifications };
+      const next: DeckCache = { version: 2, deckId: currentDeck.id, query: currentDeck.query, queryEtag: search.metadata.etag ?? currentCache?.queryEtag ?? null, totalCount: search.notModified ? currentCache?.totalCount ?? results.length : search.totalCount, results, lastSuccessfulAt: attemptedAt, lastAttemptedAt: attemptedAt, rate: search.metadata.rate, failures: 0, nextRefreshAt: null, transitionKeys, pendingNotifications };
       writeDeckCache(storage, `${scopeId}.${currentDeck.profileRef}`, next);
       if (isCurrentDeck()) {
         caches.current.set(deckId, next);
@@ -227,7 +228,7 @@ export function DeckPollingBoundary({ bridge, active, online, language = "en", p
       const rate = error instanceof GitHubProviderError ? error.rate : currentCache?.rate ?? null;
       const cacheScopeId = scopeId ?? await identity.githubPatScopeId;
       if (!canContinue()) return;
-      const next: DeckCache = { version: 2, deckId: currentDeck.id, query: currentDeck.query, queryEtag: currentCache?.queryEtag ?? null, totalCount: currentCache?.totalCount, results: currentCache?.results ?? [], lastSuccessfulAt: currentCache?.lastSuccessfulAt ?? null, rate, failures, nextRefreshAt: nextDeckRefresh(Date.now(), currentDeck.refreshMinutes, failures, rate), transitionKeys: currentCache?.transitionKeys ?? [], pendingNotifications: currentCache?.pendingNotifications ?? [] };
+      const next: DeckCache = { version: 2, deckId: currentDeck.id, query: currentDeck.query, queryEtag: currentCache?.queryEtag ?? null, totalCount: currentCache?.totalCount, results: currentCache?.results ?? [], lastSuccessfulAt: currentCache?.lastSuccessfulAt ?? null, lastAttemptedAt: attemptedAt, rate, failures, nextRefreshAt: nextDeckRefresh(Date.now(), currentDeck.refreshMinutes, failures, rate), transitionKeys: currentCache?.transitionKeys ?? [], pendingNotifications: currentCache?.pendingNotifications ?? [] };
       writeDeckCache(storage, `${cacheScopeId}.${currentDeck.profileRef}`, next);
       caches.current.set(deckId, next);
       setDeckState(deckId, (current) => ({ ...current, cache: next, failure: classifyDeckFailure(error) }));
@@ -569,7 +570,7 @@ function widgetSnapshot(deck: Deck, cache: DeckCache, failure: DeckFailure | nul
     results: widgetPullRequests(cache.results),
     state: widgetRefreshState(cache.lastSuccessfulAt, failure === "token" ? "missing-token" : failure === "rate-limit" ? "rate-limit" : failure === "permission" ? "permission" : failure !== null ? "error" : null),
     lastSuccessfulAt: cache.lastSuccessfulAt,
-    lastAttemptedAt: new Date().toISOString(),
+    lastAttemptedAt: cache.lastAttemptedAt ?? cache.lastSuccessfulAt ?? new Date(0).toISOString(),
     rate: cache.rate,
   };
   return base;

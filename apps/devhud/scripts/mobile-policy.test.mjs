@@ -160,6 +160,7 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   assert.match(androidStore, /fun credential\(deckId: String\)[\s\S]*credentialReplacementBlocks\(deckId\)[\s\S]*return WidgetCredential\.Missing/u);
   assert.match(androidStore, /replaceSnapshot\(snapshot: JSONObject, credentialRevision: String\?, verifyCredential: Boolean\)[\s\S]*credentialReplacementBlocks\(deckId\)/u);
   assert.match(androidStore, /replaceSnapshot\(snapshot: JSONObject, credentialRevision: String\?\)[\s\S]*secrets\.getString\(deckId, null\) != credentialRevision/u);
+  assert.match(androidStore, /mergeSnapshot\(current, snapshot\)[\s\S]*lastAttemptedAt[\s\S]*lastSuccessfulAt[\s\S]*put\("counts", success[\s\S]*put\("state", attempt/u);
   assert.match(androidStore, /previousSecret[\s\S]*rollback\.putString\(deckId, previousSecret\)/u);
   assert.match(androidWriteSecure, /widgetStore\.replaceProfileToken\(profileId, scopeId, value\)/u);
   assert.match(androidProvider, /JobService[\s\S]*setRequiredNetworkType/u);
@@ -212,6 +213,9 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   assert.equal((iosWidget.match(/githubSession\.data\(for: request\)/gu) ?? []).length, 2);
   assert.doesNotMatch(iosWidget, /URLSession\.shared/u);
   assert.match(iosWidget, /staleDate[\s\S]*entries\.append/u);
+  assert.match(iosWidget, /mergeDeckSnapshot\(current: self\.snapshot\(snapshot\.deckId\), incoming: snapshot\)/u);
+  assert.ok(iosWidget.indexOf("if store.shouldRenderForegroundSnapshot()") < iosWidget.indexOf("guard let credential = store.credential"));
+  assert.ok(iosWidget.indexOf("if store.shouldRenderForegroundSnapshot()") < iosWidget.indexOf("Self.refreshWithDeadline"));
   assert.match(iosWidget, /parseWidgetTimestamp[\s\S]*withInternetDateTime, \.withFractionalSeconds[\s\S]*fractional\.date\(from: value\) \?\? ISO8601DateFormatter\(\)\.date\(from: value\)/u);
   assert.equal((iosWidget.match(/parseWidgetTimestamp\(value\)/gu) ?? []).length, 3);
   assert.match(iosWidget, /incomplete_results/u);
@@ -230,6 +234,7 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   assert.ok(iosRemoveWidgetDeck.indexOf("defaults.synchronize()") < iosRemoveWidgetDeck.indexOf("removeWidgetCredential(deckId)"));
   assert.ok(iosEnableWidgetDeck.indexOf("removeWidgetDeck(defaults, deckId: configuration.deckId)") < iosEnableWidgetDeck.indexOf('invoke.reject("not-configured"'));
   assert.match(iosNativeBridge, /pendingDeckIds[\s\S]*removeWidgetCredential\(deckId\)[\s\S]*widgetCredentialDeckIds\(\)/u);
+  assert.match(iosNativeBridge, /private func replaceWidgetSnapshot[\s\S]*mergeWidgetSnapshot\(current: previousSnapshot, incoming: snapshot\)[\s\S]*widgetForegroundReloadDeadlineKey[\s\S]*defaults\.synchronize\(\)[\s\S]*reloadAllTimelines/u);
   assert.match(iosWidget, /func credential\(_ deckId: String\)[\s\S]*!credentialReplacementBlocks\(deckId\)[\s\S]*StoredWidgetCredential[\s\S]*revision: data/u);
   assert.match(iosWidget, /credentialReplacementBlocks[\s\S]*credentialReplacementKey[\s\S]*transaction\.deckIds\.contains\(deckId\)/u);
   assert.match(iosWidget, /devhud:\/\/deck\//u);

@@ -66,6 +66,20 @@ describe("Deck surface", () => {
     expect(JSON.stringify(request.mock.calls)).not.toMatch(/github[_-]?pat|Bearer|token-value/iu);
   });
 
+  it("publishes the cached refresh attempt instead of treating synchronization as a new attempt", async () => {
+    const lastSuccessfulAt = "2026-08-17T00:00:00.000Z";
+    writeDeckCache(localStorage, `origin.scope.${profile.id}`, { version: DeckCacheVersion, deckId: deck.id, query: deck.query, queryEtag: null, totalCount: 1, results: [pullRequest], lastSuccessfulAt, rate: null, failures: 0, nextRefreshAt: null, transitionKeys: [] });
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => value.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [deck.id] } : { kind: "ok" });
+    const bridge = bridgeWith(request);
+
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    await waitFor(() => expect(request).toHaveBeenCalledWith({
+      operation: "widgets.replace-deck-snapshot",
+      snapshot: expect.objectContaining({ deckId: deck.id, lastSuccessfulAt, lastAttemptedAt: lastSuccessfulAt }),
+    }));
+  });
+
   it("keeps an enabled Deck available for disablement when configuration resynchronization fails", async () => {
     let failConfigurationSync = false;
     const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {

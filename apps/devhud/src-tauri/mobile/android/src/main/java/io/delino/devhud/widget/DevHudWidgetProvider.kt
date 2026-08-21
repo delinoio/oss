@@ -161,14 +161,14 @@ class DevHudWidgetProvider : AppWidgetProvider() {
             if (credential is WidgetCredential.Missing) {
                 val snapshot = failure(configuration, previous, "missing-token", Instant.now().toString(), null)
                 val stored = store.replaceSnapshot(snapshot, null)
-                val rendered = if (stored) snapshot else store.snapshot(deckId)
+                val rendered = store.snapshot(deckId)
                 renderSelected(context, manager, store, deckId, configuration, rendered, rendered?.optString("state", "missing-token") ?: "missing-token", appWidgetIds)
                 return stored
             }
             if (credential is WidgetCredential.Unreadable) {
                 val snapshot = failure(configuration, previous, "error", Instant.now().toString(), null)
                 val stored = store.replaceSnapshot(snapshot, credential.revision)
-                val rendered = if (stored) snapshot else store.snapshot(deckId)
+                val rendered = store.snapshot(deckId)
                 renderSelected(context, manager, store, deckId, configuration, rendered, rendered?.optString("state", "error") ?: "error", appWidgetIds)
                 return stored
             }
@@ -181,7 +181,7 @@ class DevHudWidgetProvider : AppWidgetProvider() {
                 return true
             }
             val stored = store.replaceSnapshot(snapshot, credential.revision)
-            val rendered = if (stored) snapshot else store.snapshot(deckId)
+            val rendered = store.snapshot(deckId)
             renderSelected(context, manager, store, deckId, current, rendered, rendered?.optString("state", "error") ?: "error", appWidgetIds)
             return stored
         }

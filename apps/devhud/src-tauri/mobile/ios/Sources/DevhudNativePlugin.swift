@@ -17,6 +17,8 @@ private let widgetConfigurationPrefix = "widget.configuration."
 private let widgetSnapshotPrefix = "widget.snapshot."
 private let widgetTransactionPrefix = "widget.transaction."
 private let widgetCredentialReplacementKey = "widget.credential-replacement.v1"
+private let widgetForegroundReloadDeadlineKey = "widget.foreground-reload-deadline.v1"
+private let widgetForegroundReloadWindow: TimeInterval = 60
 private let secureStoreLogger = Logger(subsystem: "io.delino.devhud", category: "secure-store")
 
 private struct SecureSetting: Decodable {
@@ -59,10 +61,10 @@ private enum WidgetCredentialReplacementStart {
     case failure
 }
 
-private struct WidgetDeckCounts: Codable { let total: Int; let open: Int; let draft: Int; let merged: Int; let closed: Int; let bounded: Bool }
-private struct WidgetPullRequest: Codable { let nodeId: String; let number: Int; let title: String; let repository: String; let state: String; let draft: Bool }
-private struct WidgetRate: Codable { let limit: Int?; let remaining: Int?; let used: Int?; let resetAt: String?; let resource: String?; let retryAfterSeconds: Int? }
-private struct WidgetDeckSnapshot: Codable {
+private struct WidgetDeckCounts: Codable, Equatable { let total: Int; let open: Int; let draft: Int; let merged: Int; let closed: Int; let bounded: Bool }
+private struct WidgetPullRequest: Codable, Equatable { let nodeId: String; let number: Int; let title: String; let repository: String; let state: String; let draft: Bool }
+private struct WidgetRate: Codable, Equatable { let limit: Int?; let remaining: Int?; let used: Int?; let resetAt: String?; let resource: String?; let retryAfterSeconds: Int? }
+private struct WidgetDeckSnapshot: Codable, Equatable {
     let version: Int
     let deckId: String
     let query: String
@@ -863,9 +865,49 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
               let configurationData = defaults.data(forKey: widgetConfigurationPrefix + snapshot.deckId),
               let configuration = try? JSONDecoder().decode(WidgetDeckConfiguration.self, from: configurationData),
               configuration.query == snapshot.query else { throw NativeError.invalidArgument }
-        defaults.set(try JSONEncoder().encode(snapshot), forKey: widgetSnapshotPrefix + snapshot.deckId)
+        let snapshotKey = widgetSnapshotPrefix + snapshot.deckId
+        let previousSnapshotData = defaults.data(forKey: snapshotKey)
+        let previousSnapshot = previousSnapshotData.flatMap { try? JSONDecoder().decode(WidgetDeckSnapshot.self, from: $0) }
+        let merged = mergeWidgetSnapshot(current: previousSnapshot, incoming: snapshot)
+        if merged == previousSnapshot { invoke.resolve(["kind": "ok"]); return }
+        let previousDeadline = defaults.object(forKey: widgetForegroundReloadDeadlineKey)
+        defaults.set(try JSONEncoder().encode(merged), forKey: snapshotKey)
+        defaults.set(Date().addingTimeInterval(widgetForegroundReloadWindow), forKey: widgetForegroundReloadDeadlineKey)
+        guard defaults.synchronize() else {
+            if let previousSnapshotData { defaults.set(previousSnapshotData, forKey: snapshotKey) }
+            else { defaults.removeObject(forKey: snapshotKey) }
+            if let previousDeadline { defaults.set(previousDeadline, forKey: widgetForegroundReloadDeadlineKey) }
+            else { defaults.removeObject(forKey: widgetForegroundReloadDeadlineKey) }
+            _ = defaults.synchronize()
+            rejectStorageFailure(invoke)
+            return
+        }
         WidgetCenter.shared.reloadAllTimelines()
         invoke.resolve(["kind": "ok"])
+    }
+
+    private func mergeWidgetSnapshot(current: WidgetDeckSnapshot?, incoming: WidgetDeckSnapshot) -> WidgetDeckSnapshot {
+        guard let current, current.deckId == incoming.deckId, current.query == incoming.query,
+              let currentAttempt = widgetTimestamp(current.lastAttemptedAt),
+              let incomingAttempt = widgetTimestamp(incoming.lastAttemptedAt) else { return incoming }
+        let attempt = incomingAttempt > currentAttempt ? incoming : current
+        let success: WidgetDeckSnapshot
+        switch (widgetTimestamp(current.lastSuccessfulAt), widgetTimestamp(incoming.lastSuccessfulAt)) {
+        case (_, nil): success = current
+        case (nil, _): success = incoming
+        case (let currentSuccess?, let incomingSuccess?): success = incomingSuccess > currentSuccess ? incoming : current
+        }
+        return WidgetDeckSnapshot(version: incoming.version, deckId: incoming.deckId, query: incoming.query,
+                                  counts: success.counts, results: success.results, state: attempt.state,
+                                  lastSuccessfulAt: success.lastSuccessfulAt, lastAttemptedAt: attempt.lastAttemptedAt,
+                                  rate: attempt.rate)
+    }
+
+    private func widgetTimestamp(_ value: String?) -> Date? {
+        guard let value else { return nil }
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return fractional.date(from: value) ?? ISO8601DateFormatter().date(from: value)
     }
 
     private func disableWidgetDeck(_ args: RequestArgs, _ invoke: Invoke) throws {
@@ -895,6 +937,7 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
             defaults.removeObject(forKey: key)
         }
         defaults.removeObject(forKey: widgetCredentialReplacementKey)
+        defaults.removeObject(forKey: widgetForegroundReloadDeadlineKey)
         guard defaults.synchronize() else { return false }
         guard removeAllWidgetCredentials() else { return false }
         WidgetCenter.shared.reloadAllTimelines()

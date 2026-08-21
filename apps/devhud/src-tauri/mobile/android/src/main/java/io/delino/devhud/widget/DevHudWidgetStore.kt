@@ -5,6 +5,7 @@ import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import org.json.JSONObject
 import java.security.KeyStore
+import java.time.Instant
 import java.util.Base64
 import javax.crypto.AEADBadTagException
 import javax.crypto.Cipher
@@ -93,7 +94,39 @@ internal class DevHudWidgetStore(private val context: Context) {
             if (state.contains(transactionPrefix + deckId) || state.contains(disableTransactionPrefix + deckId) || credentialReplacementBlocks(deckId)) return@synchronized false
             if (secrets.getString(deckId, null) != credentialRevision) return@synchronized false
         }
-        state.edit().putString(snapshotPrefix + deckId, snapshot.toString()).commit()
+        val current = this.snapshot(deckId)
+        val merged = mergeSnapshot(current, snapshot)
+        if (current != null && merged.attempt === current && merged.success === current) return@synchronized true
+        state.edit().putString(snapshotPrefix + deckId, merged.snapshot.toString()).commit()
+    }
+
+    private data class MergedSnapshot(val snapshot: JSONObject, val attempt: JSONObject, val success: JSONObject)
+
+    private fun mergeSnapshot(current: JSONObject?, incoming: JSONObject): MergedSnapshot {
+        if (current == null || current.optString("deckId") != incoming.optString("deckId") || current.optString("query") != incoming.optString("query")) return MergedSnapshot(incoming, incoming, incoming)
+        val currentAttempt = timestamp(current, "lastAttemptedAt") ?: return MergedSnapshot(incoming, incoming, incoming)
+        val incomingAttempt = timestamp(incoming, "lastAttemptedAt") ?: return MergedSnapshot(current, current, current)
+        val attempt = if (incomingAttempt.isAfter(currentAttempt)) incoming else current
+        val currentSuccess = timestamp(current, "lastSuccessfulAt")
+        val incomingSuccess = timestamp(incoming, "lastSuccessfulAt")
+        val success = when {
+            incomingSuccess == null -> current
+            currentSuccess == null || incomingSuccess.isAfter(currentSuccess) -> incoming
+            else -> current
+        }
+        val merged = JSONObject(incoming.toString())
+            .put("counts", success.getJSONObject("counts"))
+            .put("results", success.getJSONArray("results"))
+            .put("lastSuccessfulAt", success.opt("lastSuccessfulAt") ?: JSONObject.NULL)
+            .put("state", attempt.getString("state"))
+            .put("lastAttemptedAt", attempt.getString("lastAttemptedAt"))
+            .put("rate", attempt.opt("rate") ?: JSONObject.NULL)
+        return MergedSnapshot(merged, attempt, success)
+    }
+
+    private fun timestamp(snapshot: JSONObject, key: String): Instant? {
+        val value = snapshot.optString(key).takeIf { it.isNotBlank() && it != "null" } ?: return null
+        return try { Instant.parse(value) } catch (_: Exception) { null }
     }
 
     fun beginProfileTokenReplacement(profileId: String, scopeId: String): Boolean = synchronized(widgetStoreMutationLock) {

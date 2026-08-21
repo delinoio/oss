@@ -10,6 +10,7 @@ private let configurationPrefix = "widget.configuration."
 private let snapshotPrefix = "widget.snapshot."
 private let transactionPrefix = "widget.transaction."
 private let credentialReplacementKey = "widget.credential-replacement.v1"
+private let foregroundReloadDeadlineKey = "widget.foreground-reload-deadline.v1"
 private let staleAfter: TimeInterval = 60 * 60
 private let repositoryValidationConcurrency = 3
 private let refreshDeadlineNanoseconds: UInt64 = 20 * 1_000_000_000
@@ -24,6 +25,23 @@ private func parseWidgetTimestamp(_ value: String) -> Date? {
     let fractional = ISO8601DateFormatter()
     fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     return fractional.date(from: value) ?? ISO8601DateFormatter().date(from: value)
+}
+
+private func mergeDeckSnapshot(current: DeckSnapshot?, incoming: DeckSnapshot) -> DeckSnapshot {
+    guard let current, current.deckId == incoming.deckId, current.query == incoming.query,
+          let currentAttempt = parseWidgetTimestamp(current.lastAttemptedAt),
+          let incomingAttempt = parseWidgetTimestamp(incoming.lastAttemptedAt) else { return incoming }
+    let attempt = incomingAttempt > currentAttempt ? incoming : current
+    let success: DeckSnapshot
+    switch (current.lastSuccessfulAt.flatMap(parseWidgetTimestamp), incoming.lastSuccessfulAt.flatMap(parseWidgetTimestamp)) {
+    case (_, nil): success = current
+    case (nil, _): success = incoming
+    case (let currentSuccess?, let incomingSuccess?): success = incomingSuccess > currentSuccess ? incoming : current
+    }
+    return DeckSnapshot(version: incoming.version, deckId: incoming.deckId, query: incoming.query,
+                        counts: success.counts, results: success.results, state: attempt.state,
+                        lastSuccessfulAt: success.lastSuccessfulAt, lastAttemptedAt: attempt.lastAttemptedAt,
+                        rate: attempt.rate)
 }
 
 struct DeckConfiguration: Codable, Identifiable, Sendable {
@@ -74,15 +92,23 @@ private struct WidgetStore {
         return try? JSONDecoder().decode(DeckSnapshot.self, from: data)
     }
     func save(_ snapshot: DeckSnapshot, whileEnabled configuration: DeckConfiguration, credentialRevision: Data?) -> Bool {
-        guard let data = try? JSONEncoder().encode(snapshot), let defaults else { return false }
+        guard let defaults else { return false }
         let key = snapshotPrefix + snapshot.deckId
         guard let current = self.configuration(snapshot.deckId), sameSelection(current, configuration), credentialMatches(deckId: snapshot.deckId, revision: credentialRevision) else { return false }
+        let merged = mergeDeckSnapshot(current: self.snapshot(snapshot.deckId), incoming: snapshot)
+        guard let data = try? JSONEncoder().encode(merged) else { return false }
         defaults.set(data, forKey: key)
         guard let current = self.configuration(snapshot.deckId), sameSelection(current, configuration), credentialMatches(deckId: snapshot.deckId, revision: credentialRevision) else {
             defaults.removeObject(forKey: key)
             return false
         }
         return true
+    }
+    func shouldRenderForegroundSnapshot() -> Bool {
+        guard let defaults, let deadline = defaults.object(forKey: foregroundReloadDeadlineKey) as? Date else { return false }
+        if deadline > Date() { return true }
+        defaults.removeObject(forKey: foregroundReloadDeadlineKey)
+        return false
     }
     func credential(_ deckId: String) -> WidgetCredential? {
         guard defaults?.bool(forKey: transactionPrefix + deckId) != true, !credentialReplacementBlocks(deckId) else { return nil }
@@ -135,6 +161,10 @@ private struct DeckTimelineProvider: IntentTimelineProvider {
             completion(Timeline(entries: [DeckEntry(date: Date(), configuration: nil, snapshot: nil)], policy: .after(Date().addingTimeInterval(30 * 60))))
             return
         }
+        if store.shouldRenderForegroundSnapshot() {
+            completion(timeline(deck: deck, snapshot: store.snapshot(deck.deckId)))
+            return
+        }
         guard let credential = store.credential(deck.deckId) else {
             completion(timeline(deck: deck, snapshot: store.snapshot(deck.deckId)))
             return
@@ -147,7 +177,7 @@ private struct DeckTimelineProvider: IntentTimelineProvider {
                 return
             }
             let stored = store.save(snapshot, whileEnabled: current, credentialRevision: credential.revision)
-            completion(timeline(deck: current, snapshot: stored ? snapshot : store.snapshot(current.deckId)))
+            completion(timeline(deck: current, snapshot: store.snapshot(current.deckId)))
         }
     }
 
