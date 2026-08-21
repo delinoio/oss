@@ -110,6 +110,7 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   const androidNativeBridge = readFileSync(join(appRoot, "src-tauri/mobile/android/src/main/java/io/delino/devhud/bridge/DevhudNativePlugin.kt"), "utf8");
   const androidStore = readFileSync(join(appRoot, "src-tauri/mobile/android/src/main/java/io/delino/devhud/widget/DevHudWidgetStore.kt"), "utf8");
   const androidProvider = readFileSync(join(appRoot, "src-tauri/mobile/android/src/main/java/io/delino/devhud/widget/DevHudWidgetProvider.kt"), "utf8");
+  const androidConfigureActivity = androidProvider.slice(androidProvider.indexOf("class DevHudWidgetConfigureActivity"));
   const androidManifest = readFileSync(join(appRoot, "mobile/overrides/android/app/src/main/AndroidManifest.xml"), "utf8");
   const androidEnglish = readFileSync(join(appRoot, "src-tauri/mobile/android/src/main/res/values/widget_strings.xml"), "utf8");
   const androidKorean = readFileSync(join(appRoot, "src-tauri/mobile/android/src/main/res/values-ko/widget_strings.xml"), "utf8");
@@ -154,6 +155,11 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   assert.doesNotMatch(androidNativeBridge, /ACTION_APPWIDGET_UPDATE/u);
   assert.match(androidProvider, /localizedContext\(context, configuration\)[\s\S]*copyContext\.getString/u);
   assert.match(androidProvider, /"en" -> Locale\.ENGLISH[\s\S]*"ko" -> Locale\.KOREAN/u);
+  assert.match(androidConfigureActivity, /val configurations = store\.enabledDeckIds\(\)\.mapNotNull\(store::configuration\)[\s\S]*val copyContext = localizedContext\(this, configurations\.firstOrNull\(\)\)/u);
+  assert.match(androidConfigureActivity, /copyContext\.getString\(R\.string\.devhud_widget_choose_deck\)/u);
+  assert.match(androidConfigureActivity, /copyContext\.getString\(R\.string\.devhud_widget_privacy_warning\)/u);
+  assert.match(androidConfigureActivity, /copyContext\.getString\(R\.string\.devhud_widget_setup\)/u);
+  assert.match(androidConfigureActivity, /copyContext\.getString\(R\.string\.devhud_widget_select_deck, text\)/u);
   assert.match(iosWidget, /IntentConfiguration/u);
   assert.match(iosIntent, /INIntentEligibleForWidgets[\s\S]*INIntentParameterSupportsDynamicEnumeration/u);
   assert.match(iosIntentHandler, /SelectDeckIntentHandling[\s\S]*provideDeckOptionsCollection/u);

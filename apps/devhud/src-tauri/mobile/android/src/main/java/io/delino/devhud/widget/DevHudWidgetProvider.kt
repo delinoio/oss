@@ -45,6 +45,16 @@ private const val refreshDeadlineMillis = 20_000L
 private val widgetExecutor = Executors.newSingleThreadExecutor()
 private val repositoryValidationExecutor = Executors.newFixedThreadPool(repositoryValidationConcurrency)
 
+private fun localizedContext(context: Context, configuration: JSONObject?): Context {
+    val locale = when (configuration?.optString("language")) {
+        "en" -> Locale.ENGLISH
+        "ko" -> Locale.KOREAN
+        else -> return context
+    }
+    val resourcesConfiguration = Configuration(context.resources.configuration).apply { setLocale(locale) }
+    return context.createConfigurationContext(resourcesConfiguration)
+}
+
 internal enum class WidgetRefreshCancellation { DEADLINE, STOPPED, VALIDATION_FAILED }
 
 private class WidgetRefreshCancelled : CancellationException()
@@ -371,16 +381,6 @@ class DevHudWidgetProvider : AppWidgetProvider() {
             return views
         }
 
-        private fun localizedContext(context: Context, configuration: JSONObject?): Context {
-            val locale = when (configuration?.optString("language")) {
-                "en" -> Locale.ENGLISH
-                "ko" -> Locale.KOREAN
-                else -> return context
-            }
-            val resourcesConfiguration = Configuration(context.resources.configuration).apply { setLocale(locale) }
-            return context.createConfigurationContext(resourcesConfiguration)
-        }
-
     }
 }
 
@@ -430,16 +430,17 @@ class DevHudWidgetConfigureActivity : Activity() {
         appWidgetId = intent?.extras?.getInt(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID) ?: AppWidgetManager.INVALID_APPWIDGET_ID
         if (appWidgetId == AppWidgetManager.INVALID_APPWIDGET_ID) { finish(); return }
         val store = DevHudWidgetStore(this)
+        val configurations = store.enabledDeckIds().mapNotNull(store::configuration)
+        val copyContext = localizedContext(this, configurations.firstOrNull())
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL; setPadding(48, 48, 48, 48); setBackgroundColor(Color.rgb(29, 37, 48)) }
-        root.addView(TextView(this).apply { text = getString(R.string.devhud_widget_choose_deck); textSize = 22f; setTextColor(Color.WHITE) })
-        root.addView(TextView(this).apply { text = getString(R.string.devhud_widget_privacy_warning); setTextColor(Color.WHITE); setPadding(0, 24, 0, 24) })
-        val ids = store.enabledDeckIds()
-        if (ids.isEmpty()) root.addView(TextView(this).apply { text = getString(R.string.devhud_widget_setup); setTextColor(Color.WHITE) })
-        ids.forEach { deckId ->
-            val configuration = store.configuration(deckId) ?: return@forEach
+        root.addView(TextView(this).apply { text = copyContext.getString(R.string.devhud_widget_choose_deck); textSize = 22f; setTextColor(Color.WHITE) })
+        root.addView(TextView(this).apply { text = copyContext.getString(R.string.devhud_widget_privacy_warning); setTextColor(Color.WHITE); setPadding(0, 24, 0, 24) })
+        if (configurations.isEmpty()) root.addView(TextView(this).apply { text = copyContext.getString(R.string.devhud_widget_setup); setTextColor(Color.WHITE) })
+        configurations.forEach { configuration ->
+            val deckId = configuration.getString("deckId")
             root.addView(Button(this).apply {
                 text = configuration.optString("name", deckId)
-                contentDescription = getString(R.string.devhud_widget_select_deck, text)
+                contentDescription = copyContext.getString(R.string.devhud_widget_select_deck, text)
                 setOnClickListener {
                     if (!store.select(appWidgetId, deckId)) return@setOnClickListener
                     val context = applicationContext
