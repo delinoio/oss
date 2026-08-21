@@ -129,6 +129,22 @@ describe("GitHub.com provider", () => {
     expect(fetch.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false);
   });
 
+  it("creates only a new issue with every explicitly selected label", async () => {
+    let posted: Record<string, unknown> | null = null;
+    const marker = issueMarker(fixture.submissionId);
+    const fetch = vi.fn<typeof globalThis.fetch>(async (input, init) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/search/issues") return json({ items: [] });
+      if (url.pathname.endsWith("/issues") && init?.method !== "POST") return json([]);
+      posted = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return json({ ...fixture.issue, body: `Body\n${marker}` }, 201);
+    });
+    await createGitHubProvider({ fetch }).createIssue(fine, privateRepository, { title: "Issue", body: "Body", labels: ["bug", "qa"], submissionId: fixture.submissionId });
+    expect(posted).toEqual({ title: "Issue", body: `Body\n\n${marker}`, labels: ["bug", "qa"] });
+    expect(posted).not.toHaveProperty("assignees");
+    expect(posted).not.toHaveProperty("milestone");
+  });
+
   it("reconciles an ambiguous issue write from the recent issue list without a second POST", async () => {
     let searches = 0;
     let lists = 0;
@@ -149,7 +165,7 @@ describe("GitHub.com provider", () => {
     });
     const issue = await createGitHubProvider({ fetch }).createIssue(fine, privateRepository, { title: "Issue", body: "Body", labels: ["bug"], submissionId: fixture.submissionId });
     expect(issue.issue).toMatchObject({ number: 41, reconciled: true });
-    expect({ searches, lists, posts }).toEqual({ searches: 1, lists: 2, posts: 1 });
+    expect({ searches, lists, posts }).toEqual({ searches: 2, lists: 2, posts: 1 });
   });
 
   it("does not repost while search indexing lags after an ambiguous write", async () => {
@@ -171,7 +187,27 @@ describe("GitHub.com provider", () => {
     const input = { title: "Issue", body: "Body", labels: ["bug"], submissionId: fixture.submissionId };
     await expect(provider.createIssue(fine, privateRepository, input)).rejects.toMatchObject({ code: GitHubErrorCode.AmbiguousWrite });
     await expect(provider.createIssue(fine, privateRepository, input)).resolves.toMatchObject({ issue: { number: 41, reconciled: true } });
-    expect({ searches, lists, posts }).toEqual({ searches: 2, lists: 3, posts: 1 });
+    expect({ searches, lists, posts }).toEqual({ searches: 3, lists: 3, posts: 1 });
+  });
+
+  it("rejects duplicate submission markers without creating another issue", async () => {
+    const marker = issueMarker(fixture.submissionId);
+    const fetch = vi.fn<typeof globalThis.fetch>(async (input) => new URL(String(input)).pathname === "/search/issues"
+      ? json({ items: [{ ...fixture.issue, body: marker }, { ...fixture.issue, number: 42, html_url: "https://github.com/octo-private/controls/issues/42", body: marker }] })
+      : json([]));
+    await expect(createGitHubProvider({ fetch }).createIssue(fine, privateRepository, { title: "Issue", body: "Body", labels: [], submissionId: fixture.submissionId })).rejects.toMatchObject({ code: GitHubErrorCode.DuplicateIssue });
+    expect(fetch.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false);
+  });
+
+  it("rejects a returned issue URL outside the explicitly selected repository", async () => {
+    const marker = issueMarker(fixture.submissionId);
+    const fetch = vi.fn<typeof globalThis.fetch>(async (input, init) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/search/issues") return json({ items: [] });
+      if (url.pathname.endsWith("/issues") && init?.method !== "POST") return json([]);
+      return json({ ...fixture.issue, html_url: "https://github.com/other/repository/issues/41", body: marker });
+    });
+    await expect(createGitHubProvider({ fetch }).createIssue(fine, privateRepository, { title: "Issue", body: "Body", labels: [], submissionId: fixture.submissionId })).rejects.toMatchObject({ code: GitHubErrorCode.InvalidResponse });
   });
 
   it("searches and enriches pull requests with pagination", async () => {

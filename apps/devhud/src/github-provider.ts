@@ -31,6 +31,7 @@ export const GitHubErrorCode = {
   NetworkFailure: "network-failure",
   InvalidResponse: "invalid-response",
   AmbiguousWrite: "ambiguous-write",
+  DuplicateIssue: "duplicate-issue",
   InvalidQuery: "invalid-query",
 } as const;
 export type GitHubErrorCode = (typeof GitHubErrorCode)[keyof typeof GitHubErrorCode];
@@ -134,12 +135,31 @@ export function createGitHubProvider({ fetch: fetchImpl }: ProviderOptions): Git
 
   async function listRecentIssueMarker(credential: GitHubCredential, repository: GitHubRepositoryRef, marker: string): Promise<{ readonly issue: GitHubIssue | null; readonly metadata: GitHubResponseMetadata }> {
     const result = await request(GitHubOperation.SearchIssueMarker, credential, `${repositoryPath(repository)}/issues?state=all&sort=created&direction=desc&per_page=100`);
+    const matches: GitHubIssue[] = [];
     for (const candidate of array(result.json, GitHubOperation.SearchIssueMarker)) {
       const issue = record(candidate, GitHubOperation.SearchIssueMarker);
       if ("pull_request" in issue || typeof issue.body !== "string" || !issue.body.includes(marker)) continue;
-      return { issue: issueValue(issue, marker, true), metadata: result.metadata };
+      matches.push(issueValue(issue, marker, true, repository));
     }
-    return { issue: null, metadata: result.metadata };
+    return { issue: uniqueMarkerMatch(matches), metadata: result.metadata };
+  }
+
+  async function reconcileIssueMarker(credential: GitHubCredential, repository: GitHubRepositoryRef, marker: string): Promise<{ readonly issue: GitHubIssue | null; readonly metadata: GitHubResponseMetadata }> {
+    const indexed = await searchIssueMarker(credential, repository, marker);
+    const recent = await listRecentIssueMarker(credential, repository, marker);
+    return { issue: uniqueMarkerMatch([indexed.issue, recent.issue].filter((issue): issue is GitHubIssue => issue !== null)), metadata: recent.metadata };
+  }
+
+  async function searchIssueMarker(credential: GitHubCredential, repository: GitHubRepositoryRef, marker: string) {
+    validateMarker(marker);
+    const query = encodeURIComponent(`repo:${repository.owner}/${repository.name} is:issue in:body \"${marker}\"`);
+    const result = await request(GitHubOperation.SearchIssueMarker, credential, `/search/issues?q=${query}&per_page=10`);
+    const root = record(result.json, GitHubOperation.SearchIssueMarker);
+    const matches = array(root.items, GitHubOperation.SearchIssueMarker).flatMap((candidate) => {
+      const issue = record(candidate, GitHubOperation.SearchIssueMarker);
+      return typeof issue.body === "string" && issue.body.includes(marker) ? [issueValue(issue, marker, true, repository)] : [];
+    });
+    return { issue: uniqueMarkerMatch(matches), metadata: result.metadata };
   }
 
   return {
@@ -175,38 +195,26 @@ export function createGitHubProvider({ fetch: fetchImpl }: ProviderOptions): Git
       });
       return { items, nextPage: nextPage(result.response.headers.get("link")), notModified: false, metadata: result.metadata };
     },
-    async searchIssueMarker(credential, repository, marker) {
-      validateMarker(marker);
-      const query = encodeURIComponent(`repo:${repository.owner}/${repository.name} is:issue in:body \"${marker}\"`);
-      const result = await request(GitHubOperation.SearchIssueMarker, credential, `/search/issues?q=${query}&per_page=10`);
-      const root = record(result.json, GitHubOperation.SearchIssueMarker);
-      for (const candidate of array(root.items, GitHubOperation.SearchIssueMarker)) {
-        const issue = record(candidate, GitHubOperation.SearchIssueMarker);
-        if (typeof issue.body === "string" && issue.body.includes(marker)) return { issue: issueValue(issue, marker, true), metadata: result.metadata };
-      }
-      return { issue: null, metadata: result.metadata };
-    },
+    searchIssueMarker,
     async createIssue(credential, repository, input) {
       const marker = issueMarker(input.submissionId);
-      const existing = await this.searchIssueMarker(credential, repository, marker);
+      const existing = await reconcileIssueMarker(credential, repository, marker);
       if (existing.issue !== null) return { issue: existing.issue, metadata: existing.metadata };
-      const recent = await listRecentIssueMarker(credential, repository, marker);
-      if (recent.issue !== null) return { issue: recent.issue, metadata: recent.metadata };
       let result: RequestResult;
       try {
         result = await request(GitHubOperation.CreateIssue, credential, `${repositoryPath(repository)}/issues`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title: input.title, body: `${input.body}\n\n${marker}`, labels: input.labels }),
+          body: JSON.stringify({ title: input.title, body: input.body === "" ? marker : `${input.body}\n\n${marker}`, labels: input.labels }),
         });
       } catch (error) {
         const ambiguous = error instanceof GitHubProviderError && (error.code === GitHubErrorCode.NetworkFailure || (error.code === GitHubErrorCode.InvalidResponse && error.status !== null && (error.status >= 500 || (error.status >= 200 && error.status < 300))));
         if (!ambiguous) throw error;
-        const reconciled = await listRecentIssueMarker(credential, repository, marker);
+        const reconciled = await reconcileIssueMarker(credential, repository, marker);
         if (reconciled.issue !== null) return { issue: reconciled.issue, metadata: reconciled.metadata };
         throw new GitHubProviderError(GitHubErrorCode.AmbiguousWrite, GitHubOperation.CreateIssue);
       }
-      return { issue: issueValue(record(result.json, GitHubOperation.CreateIssue), marker, false), metadata: result.metadata };
+      return { issue: issueValue(record(result.json, GitHubOperation.CreateIssue), marker, false, repository), metadata: result.metadata };
     },
     async searchPullRequests(credential, query, options = {}) {
       const page = positiveInteger(options.page ?? 1);
@@ -284,7 +292,19 @@ function string(value: unknown, operation: GitHubOperation): string { if (typeof
 function nullableString(value: unknown, operation: GitHubOperation): string | null { if (value === null || value === undefined) return null; return string(value, operation); }
 function positiveInteger(value: number, operation: GitHubOperation = GitHubOperation.GetPullRequest): number { if (!Number.isSafeInteger(value) || value < 1) throw new GitHubProviderError(GitHubErrorCode.InvalidResponse, operation); return value; }
 function nextPage(link: string | null): number | null { if (link === null) return null; for (const part of link.split(",")) { if (!/;\s*rel="next"/u.test(part)) continue; const match = /[?&]page=(\d+)/u.exec(part); if (match !== null) return Number(match[1]); } return null; }
-function issueValue(value: Record<string, unknown>, marker: string, reconciled: boolean): GitHubIssue { return { number: positiveInteger(Number(value.number), GitHubOperation.CreateIssue), title: string(value.title, GitHubOperation.CreateIssue), url: canonicalApiHtmlUrl(value.html_url, "issue"), marker, reconciled }; }
+function issueValue(value: Record<string, unknown>, marker: string, reconciled: boolean, repository: GitHubRepositoryRef): GitHubIssue {
+  const url = canonicalApiHtmlUrl(value.html_url, "issue");
+  const owned = ownsCanonicalUrl(url);
+  if (owned === null || owned.kind !== "issue" || owned.repository.owner.toLowerCase() !== repository.owner.toLowerCase() || owned.repository.name.toLowerCase() !== repository.name.toLowerCase()) {
+    throw new GitHubProviderError(GitHubErrorCode.InvalidResponse, GitHubOperation.CreateIssue);
+  }
+  return { number: positiveInteger(Number(value.number), GitHubOperation.CreateIssue), title: string(value.title, GitHubOperation.CreateIssue), url, marker, reconciled };
+}
+function uniqueMarkerMatch(matches: readonly GitHubIssue[]): GitHubIssue | null {
+  const unique = new Map(matches.map((issue) => [issue.url.toLowerCase(), issue]));
+  if (unique.size > 1) throw new GitHubProviderError(GitHubErrorCode.DuplicateIssue, GitHubOperation.SearchIssueMarker);
+  return unique.values().next().value ?? null;
+}
 function pullSummary(value: Record<string, unknown>, fallback?: GitHubRepositoryRef): GitHubPullRequestSummary {
   const url = canonicalApiHtmlUrl(value.html_url, "pull-request");
   const owned = ownsCanonicalUrl(url);

@@ -4,7 +4,7 @@ import { diffSettings, redactRecursively, RedactedValue } from "./settings-diff"
 import { ShortcutActionId, ShortcutKey, ShortcutModifier, ShortcutValidationCode, defaultDesktopShortcutBindings, parseDesktopShortcutBindings } from "./shortcuts";
 
 describe("DevHud settings boundary", () => {
-  it("migrates schema v1 to v4 with explicit unselected GitHub profiles", () => {
+  it("migrates schema v1 to v5 with explicit unselected GitHub profiles", () => {
     const legacy = {
       ...defaultDevHudSettings,
       schemaVersion: 1,
@@ -14,6 +14,21 @@ describe("DevHud settings boundary", () => {
     const parsed = parseDevHudSettings(legacy);
     expect(parsed.schemaVersion).toBe(SettingsSchemaVersion);
     expect(parsed.github).toEqual({ profiles: [], pendingPatRemovals: [], repositories: [{ owner: "octo", name: "private", profileRef: null }], issueTracker: { owner: "octo", repository: "private", labels: ["bug"], profileRef: null } });
+  });
+
+  it("synchronizes only stable non-secret R2 profile metadata", () => {
+    const r2 = { profileRef: "018f47a2-7b3c-7def-8abc-1234567890ab", name: "Screenshots", endpoint: "https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com/", accountId: "0123456789abcdef0123456789abcdef", bucket: "devhud", publicBaseUrl: "https://images.example/", prefix: "issues/devhud" };
+    const parsed = parseDevHudSettings({ ...defaultDevHudSettings, uploads: { provider: "r2", r2 } });
+    expect(parsed.uploads.r2).toEqual(r2);
+    expect(canonicalDevHudSettings(parsed)).not.toMatch(/accessKey|secretAccess|authorization/iu);
+    expect(() => parseDevHudSettings({ ...parsed, uploads: { provider: "r2", r2: { ...r2, endpoint: "http://r2.example" } } })).toThrow(/HTTPS/u);
+    expect(() => parseDevHudSettings({ ...parsed, uploads: { provider: "r2", r2: { ...r2, prefix: "../escape" } } })).toThrow(/normalized/u);
+    expect(() => parseDevHudSettings({ ...parsed, uploads: { provider: "r2", r2: { ...r2, secretAccessKey: "nope" } } })).toThrow(/secret/u);
+  });
+
+  it("migrates schema-v4 R2 metadata without synchronizing legacy region or inventing an account", () => {
+    const legacy = { ...defaultDevHudSettings, schemaVersion: 4, uploads: { provider: "r2", r2: { profileRef: "legacy-profile", bucket: "bucket", endpoint: "https://custom.example/", region: "auto", publicBaseUrl: null } } };
+    expect(parseDevHudSettings(legacy).uploads.r2).toEqual({ profileRef: "legacy-profile", name: "R2", endpoint: "https://custom.example/", accountId: null, bucket: "bucket", publicBaseUrl: null, prefix: "" });
   });
 
   it("accepts non-secret GitHub profile descriptors and rejects secret fields or duplicate IDs", () => {
@@ -307,14 +322,14 @@ describe("DevHud settings boundary", () => {
       ...defaultDevHudSettings,
       uploads: {
         provider: "r2",
-        r2: { profileRef: "profile", bucket: "bucket", endpoint: `https://r2.example${suffix}`, region: "auto", publicBaseUrl: null },
+        r2: { profileRef: "018f47a2-7b3c-7def-8abc-1234567890ab", name: "R2", accountId: "account", bucket: "bucket", endpoint: `https://r2.example${suffix}`, publicBaseUrl: "https://cdn.example", prefix: "devhud" },
       },
     })).toThrow(/without credentials, query, or fragment/u);
     expect(() => parseDevHudSettings({
       ...defaultDevHudSettings,
       uploads: {
         provider: "r2",
-        r2: { profileRef: "profile", bucket: "bucket", endpoint: "https://r2.example", region: "auto", publicBaseUrl: `https://cdn.example${suffix}` },
+        r2: { profileRef: "018f47a2-7b3c-7def-8abc-1234567890ab", name: "R2", accountId: "account", bucket: "bucket", endpoint: "https://r2.example", publicBaseUrl: `https://cdn.example${suffix}`, prefix: "devhud" },
       },
     })).toThrow(/without credentials, query, or fragment/u);
   });

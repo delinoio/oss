@@ -2,6 +2,7 @@ import { createContext, use, useCallback, useEffect, useImperativeHandle, useRef
 import type { Copy } from "./localization";
 import { NativeBridgeError, NativeBridgeErrorCode, type CaptureDisplay, type CaptureDraft, type CaptureDraftImage, type CaptureEditorCommand, type CaptureEditorLayer, type CaptureOptions, type CapturePoint, type CaptureRect, type FlattenedCaptureImage, type NativeBridgeV1 } from "./native-bridge";
 import { ShortcutActionId } from "./shortcuts";
+import { RealqaSubmissionModal } from "./realqa-submission-ui.tsx";
 
 export type CaptureActionId = Exclude<ShortcutActionId, typeof ShortcutActionId.CommandPalette>;
 type EditorTool = "crop" | "arrow" | "rectangle" | "drawing" | "text" | "blur" | "redaction";
@@ -486,6 +487,8 @@ function CaptureEditor({ draft }: { readonly draft: CaptureDraft }) {
   const [coordinates, setCoordinates] = useState<CaptureRect>({ x: 0, y: 0, width: 100, height: 100 });
   const [message, setMessage] = useState("");
   const [failed, setFailed] = useState(false);
+  const [submissionOpen, setSubmissionOpen] = useState(false);
+  const submissionTrigger = useRef<HTMLButtonElement>(null);
   const editorActive = useRef(true);
   const active = draft.images.find((image) => image.id === imageId) ?? draft.images[0];
   useEffect(() => {
@@ -599,6 +602,14 @@ function CaptureEditor({ draft }: { readonly draft: CaptureDraft }) {
     const target = index + offset;
     if (target >= 0 && target < draft.images.length) void mutate({ kind: "move-image", imageId: draft.images[index].id, toIndex: target });
   };
+  const closeSubmission = () => {
+    setSubmissionOpen(false);
+    requestAnimationFrame(() => submissionTrigger.current?.focus());
+  };
+  const confirmCreated = async () => {
+    await bridge.request({ operation: "capture.confirm-issue-created", draftId: draft.id });
+    await actions.refresh();
+  };
   return <section className="capture-editor" aria-labelledby="capture-editor-title">
     <div className="editor-heading"><div><h3 id="capture-editor-title">{copy.editorTitle}</h3><p>{copy.editorCloseHint}</p></div><button onClick={actions.close}>{copy.close}</button></div>
     {draft.browserContext && <section aria-labelledby="browser-context-title"><h4 id="browser-context-title">{copy.browserContextAttached}</h4><dl className="runtime-diagnostics"><dt>{copy.browserContextPageTitle}</dt><dd>{draft.browserContext.context.title || "—"}</dd><dt>{copy.browserContextRedactedUrl}</dt><dd>{draft.browserContext.context.url}</dd></dl><details><summary>{copy.browserContextDetails}</summary><dl className="runtime-diagnostics"><dt>{copy.browserContextViewport}</dt><dd>{draft.browserContext.context.viewport.width} × {draft.browserContext.context.viewport.height}</dd><dt>{copy.browserContextUserAgent}</dt><dd>{draft.browserContext.context.userAgent}</dd><dt>{copy.browserContextSelectedBounds}</dt><dd>{draft.browserContext.context.selectedBounds ? `x ${draft.browserContext.context.selectedBounds.x}, y ${draft.browserContext.context.selectedBounds.y}, width ${draft.browserContext.context.selectedBounds.width}, height ${draft.browserContext.context.selectedBounds.height}` : copy.browserContextNone}</dd><dt>{copy.browserContextAccessibility}</dt><dd>{Object.entries(draft.browserContext.context.accessibility).length ? <dl>{Object.entries(draft.browserContext.context.accessibility).map(([key, value]) => <div key={key}><dt>{key}</dt><dd>{value}</dd></div>)}</dl> : copy.browserContextNone}</dd><dt>{copy.browserContextMarkup}</dt><dd><pre>{draft.browserContext.context.outerHtml || copy.browserContextNone}</pre></dd></dl></details><button className="danger" disabled={busy} onClick={removeBrowserContext}>{copy.browserContextRemove}</button></section>}
@@ -613,8 +624,10 @@ function CaptureEditor({ draft }: { readonly draft: CaptureDraft }) {
       <div className="actions"><button disabled={busy || !draft.canUndo} onClick={() => void history("capture.editor.undo")}>{copy.editorUndo}</button><button disabled={busy || !draft.canRedo} onClick={() => void history("capture.editor.redo")}>{copy.editorRedo}</button></div>
       <LayerList image={active} mutate={mutate} copy={copy} disabled={busy} />
       <button className="primary" disabled={busy} onClick={() => void flatten()}>{copy.editorFlatten}</button>
+      <button ref={submissionTrigger} className="primary" disabled={busy} onClick={() => setSubmissionOpen(true)}>{copy.issueSubmit}</button>
       {message && <p role={failed ? "alert" : "status"}>{message}</p>}
     </aside></div>
+    {submissionOpen && <RealqaSubmissionModal draft={draft} bridge={bridge} copy={copy} onClose={closeSubmission} onConfirmed={confirmCreated} />}
   </section>;
 }
 

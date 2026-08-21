@@ -1341,6 +1341,32 @@ async fn handle_capture_request(
                 "images": images,
             }))
         }
+        Some("capture.upload-official") => {
+            let mut payload = request.clone();
+            payload
+                .as_object_mut()
+                .ok_or("invalid-argument")?
+                .remove("operation");
+            let upload: crate::uploads::OfficialUploadRequest =
+                serde_json::from_value(payload).map_err(|_| "invalid-argument")?;
+            let result = crate::uploads::put_official(&capture, upload).await?;
+            Ok(
+                json!({ "kind": "capture-uploaded", "observedEtag": result.observed_etag, "publicUrl": result.public_url }),
+            )
+        }
+        Some("capture.upload-r2") => {
+            let mut payload = request.clone();
+            payload
+                .as_object_mut()
+                .ok_or("invalid-argument")?
+                .remove("operation");
+            let upload: crate::uploads::R2UploadRequest =
+                serde_json::from_value(payload).map_err(|_| "invalid-argument")?;
+            let result = crate::uploads::put_r2(&capture, upload).await?;
+            Ok(
+                json!({ "kind": "capture-uploaded", "observedEtag": result.observed_etag, "publicUrl": result.public_url }),
+            )
+        }
         Some("capture.delete-draft" | "capture.confirm-issue-created") => {
             exact_keys(request, &["operation", "draftId"])?;
             let draft_id = capture_id(request, "draftId")?;
