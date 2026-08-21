@@ -591,10 +591,10 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
             }
             guard diagnosticsCleanupSucceeded else { rejectStorageFailure(invoke); return }
         }
+        guard clearWidgetState() else { rejectStorageFailure(invoke); return }
         for accessGroupKey in [sharedAccessGroupKey, legacyAccessGroupKey] {
             guard purgeSecureGroup(args, accessGroupKey: accessGroupKey) else { rejectStorageFailure(invoke); return }
         }
-        guard clearWidgetState() else { rejectStorageFailure(invoke); return }
         invoke.resolve(["kind": "ok"])
     }
 

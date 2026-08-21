@@ -219,7 +219,11 @@ class DevHudWidgetProvider : AppWidgetProvider() {
                         val itemState = (item.opt("state") as? String)?.takeIf { it == "open" || it == "closed" }
                             ?: return@github failure(configuration, previous, "error", attemptedAt, responseRate)
                         val pullRequest = item.optJSONObject("pull_request")
-                        val isMerged = pullRequest?.let { it.has("merged_at") && !it.isNull("merged_at") } == true
+                            ?: return@github failure(configuration, previous, "error", attemptedAt, responseRate)
+                        if (!pullRequest.has("merged_at")) return@github failure(configuration, previous, "error", attemptedAt, responseRate)
+                        val mergedAt = pullRequest.opt("merged_at")
+                        if (mergedAt !== JSONObject.NULL && mergedAt !is String) return@github failure(configuration, previous, "error", attemptedAt, responseRate)
+                        val isMerged = mergedAt is String
                         when { isDraft -> draft += 1; isMerged -> merged += 1; itemState == "closed" -> closed += 1; else -> open += 1 }
                         results.put(JSONObject()
                             .put("nodeId", item.optString("node_id"))

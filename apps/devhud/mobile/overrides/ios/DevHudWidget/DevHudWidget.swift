@@ -282,11 +282,12 @@ private struct DeckTimelineProvider: IntentTimelineProvider {
                 guard let nodeId = item["node_id"] as? String, let number = item["number"] as? Int,
                       let title = item["title"] as? String, let repositoryURL = item["repository_url"] as? String,
                       let isDraft = item["draft"] as? Bool, let itemState = item["state"] as? String,
-                      itemState == "open" || itemState == "closed" else {
+                      itemState == "open" || itemState == "closed",
+                      let pull = item["pull_request"] as? [String: Any], let mergedAt = pull["merged_at"],
+                      mergedAt is String || mergedAt is NSNull else {
                     return failure(deck: deck, previous: previous, state: "error", attempted: attempted, rate: rate)
                 }
-                let pull = item["pull_request"] as? [String: Any]
-                let isMerged = pull?["merged_at"] is String
+                let isMerged = mergedAt is String
                 let state = isMerged ? "merged" : itemState
                 if isDraft { draft += 1 } else if isMerged { merged += 1 } else if state == "closed" { closed += 1 } else { open += 1 }
                 results.append(DeckPullRequest(nodeId: nodeId, number: number, title: title, repository: repositoryURL.components(separatedBy: "/repos/").last ?? repositoryURL, state: state, draft: isDraft))

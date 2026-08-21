@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { assertAndroidArtifactEntries, assertAndroidBackupExclusions, assertAndroidNativeBridge, assertAndroidNativeLibrary, assertAndroidPermissions, assertIosNativeBridge, assertMobileCi, assertMobileContracts, assertMobileDependencyClosures, assertMobileDependencyResolution, assertMobileTargets, mobileCargoTreeDigest } from "./mobile-policy.mjs";
+import { assertAndroidArtifactEntries, assertAndroidBackupExclusions, assertAndroidNativeBridge, assertAndroidNativeLibrary, assertAndroidPermissions, assertIosNativeBridge, assertMobileCi, assertMobileContracts, assertMobileDependencyClosures, assertMobileDependencyResolution, assertMobileTargets, assertNativeWidgetPullRequestMetadata, mobileCargoTreeDigest } from "./mobile-policy.mjs";
 
 const appRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const mobileTargets = JSON.parse(readFileSync(join(appRoot, "mobile-platforms.json"), "utf8")).targets;
@@ -77,6 +77,10 @@ test("mobile policy requires lifecycle-owned Android persistence and native plat
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace("            } catch (error: Exception) {\n                diagnosticsPurgesInProgress.decrementAndGet()\n                throw error\n            }", "            }")), /across queued persistence and failures/u);
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace("                } finally {\n                    onComplete()\n                }", "                }")), /release purge state after executor completion/u);
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace("            if (!cleanupPendingDiagnosticsExport())", "            if (cleanupPendingDiagnosticsExport())")), /propagate diagnostics cleanup failures/u);
+  const widgetCleanupAfterSecurePurge = androidNativeBridge
+    .replace("            if (!DevHudWidgetStore(activity.applicationContext).clear()) return@persistSecure false\n", "")
+    .replace("            editor.commit()\n        }\n    }\n\n    private fun widgetStatus", "            val secureCleared = editor.commit()\n            if (!DevHudWidgetStore(activity.applicationContext).clear()) return@persistSecure false\n            secureCleared\n        }\n    }\n\n    private fun widgetStatus");
+  assert.throws(() => assertAndroidNativeBridge(widgetCleanupAfterSecurePurge), /before the authoritative secure store/u);
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace("replaceProfileToken(profileId, scopeId, null)", "cancelProfileTokenReplacement()")), /profile-scope removal/u);
   assert.throws(() => assertAndroidNativeBridge(androidNativeBridge.replace("storeIntent().resolveActivity(activity.packageManager)", "true")), /market handler/u);
 });
@@ -100,6 +104,11 @@ test("mobile policy keeps native iOS origins aligned with normalized root URLs",
   assert.throws(() => assertIosNativeBridge(iosNativeBridge.replace("if failed || !cleanupSucceeded", "if failed")), /fail closed/u);
   assert.throws(() => assertIosNativeBridge(iosNativeBridge.replace('if scope == "logout" || scope == "account-deletion"', "if true")), /preserve pending diagnostics exports/u);
   assert.throws(() => assertIosNativeBridge(iosNativeBridge.replace("guard diagnosticsCleanupSucceeded else", "guard true else")), /propagate diagnostics cleanup failures/u);
+  const widgetCleanupAfterSecurePurge = iosNativeBridge.replace(
+    "        guard clearWidgetState() else { rejectStorageFailure(invoke); return }\n        for accessGroupKey in [sharedAccessGroupKey, legacyAccessGroupKey] {\n            guard purgeSecureGroup(args, accessGroupKey: accessGroupKey) else { rejectStorageFailure(invoke); return }\n        }",
+    "        for accessGroupKey in [sharedAccessGroupKey, legacyAccessGroupKey] {\n            guard purgeSecureGroup(args, accessGroupKey: accessGroupKey) else { rejectStorageFailure(invoke); return }\n        }\n        guard clearWidgetState() else { rejectStorageFailure(invoke); return }",
+  );
+  assert.throws(() => assertIosNativeBridge(widgetCleanupAfterSecurePurge), /before the authoritative secure store/u);
   assert.throws(() => assertIosNativeBridge(iosNativeBridge.replace("previousCredentialData: previousCredentialData", "previousCredentialData: nil")), /retain prior state for rollback/u);
   assert.throws(() => assertIosNativeBridge(iosNativeBridge.replace("storeWidgetCredential(previousCredentialData", "storeWidgetCredential(Data()")), /restore prior state before clearing/u);
   assert.throws(() => assertIosNativeBridge(iosNativeBridge.replace("previous == configuration", "false")), /unchanged widget enablement/u);
@@ -140,6 +149,11 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   const iosIntentHandler = readFileSync(join(appRoot, "mobile/overrides/ios/DevHudWidgetIntent/IntentHandler.swift"), "utf8");
   const iosApplicationEntitlements = readFileSync(join(appRoot, "mobile/overrides/ios/DevHud.entitlements"), "utf8");
   const iosEntitlements = readFileSync(join(appRoot, "mobile/overrides/ios/DevHudWidget/DevHudWidget.entitlements"), "utf8");
+  assert.doesNotThrow(() => assertNativeWidgetPullRequestMetadata(androidProvider, iosWidget));
+  assert.throws(() => assertNativeWidgetPullRequestMetadata(androidProvider.replace('item.optJSONObject("pull_request")', "JSONObject()"), iosWidget), /missing or non-object pull_request/u);
+  assert.throws(() => assertNativeWidgetPullRequestMetadata(androidProvider.replace("mergedAt !== JSONObject.NULL && mergedAt !is String", "false"), iosWidget), /merged_at to be a string or null/u);
+  assert.throws(() => assertNativeWidgetPullRequestMetadata(androidProvider, iosWidget.replace('item["pull_request"] as? [String: Any]', "[String: Any]()")), /missing or non-object pull_request/u);
+  assert.throws(() => assertNativeWidgetPullRequestMetadata(androidProvider, iosWidget.replace("mergedAt is String || mergedAt is NSNull", "mergedAt is String")), /merged_at to be a string or null/u);
   assert.match(androidStore, /widgetKeyAlias = "io\.delino\.devhud\.widget-credential\.v1"/u);
   assert.match(androidStore, /private val widgetStoreMutationLock = Any\(\)/u);
   assert.equal((androidStore.match(/synchronized\(widgetStoreMutationLock\)/gu) ?? []).length, 8);
@@ -185,7 +199,7 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   assert.match(androidProvider, /item\.opt\("draft"\) as\? Boolean[\s\S]*item\.opt\("state"\) as\? String[\s\S]*it == "open" \|\| it == "closed"/u);
   assert.ok(androidProvider.indexOf('item.opt("state") as? String') < androidProvider.indexOf("when { isDraft"));
   assert.doesNotMatch(androidProvider, /item\.optBoolean\("draft"|item\.optString\("state"/u);
-  assert.match(androidProvider, /it\.has\("merged_at"\) && !it\.isNull\("merged_at"\)/u);
+  assert.match(androidProvider, /val isMerged = mergedAt is String/u);
   assert.ok(androidProvider.indexOf("validateRepositories(configuration, token, session)") < androidProvider.indexOf('github("/search/issues'));
   assert.match(androidProvider, /\/pulls\?state=open&per_page=1[\s\S]*\/issues\?state=open&per_page=1[\s\S]*\/contents/u);
   assert.match(androidProvider, /status == 401[\s\S]*"missing-token"[\s\S]*status == 403 \|\| status == 404[\s\S]*"permission"/u);

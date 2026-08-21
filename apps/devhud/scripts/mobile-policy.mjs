@@ -102,6 +102,7 @@ export function assertAndroidNativeBridge(androidNativeBridgeInput) {
   assert(purgeSecure.includes("diagnosticsPurgesInProgress.incrementAndGet()") && (purgeSecure.match(/diagnosticsPurgesInProgress\.decrementAndGet\(\)/gu) ?? []).length === 3, "Android destructive purges must retain and release export invalidation across queued persistence and failures");
   assert(persistSecure.includes("finally") && persistSecure.includes("onComplete()"), "Android secure persistence must release purge state after executor completion");
   assert(purgeSecure.includes("if (!cleanupPendingDiagnosticsExport())"), "Android destructive purges must propagate diagnostics cleanup failures");
+  assert(purgeSecure.includes("DevHudWidgetStore(activity.applicationContext).clear()") && purgeSecure.indexOf("DevHudWidgetStore(activity.applicationContext).clear()") < purgeSecure.indexOf("editor.commit()"), "Android destructive purges must clear widget state before the authoritative secure store");
   assert(androidNativeBridge.includes("storeIntent().resolveActivity(activity.packageManager)"), "Android update status must resolve a market handler");
 }
 
@@ -139,7 +140,7 @@ export function assertIosNativeBridge(iosNativeBridgeInput) {
   assert(purgeSecure.includes("guard diagnosticsCleanupSucceeded else"), "iOS destructive purges must propagate diagnostics cleanup failures");
   assert(iosNativeBridge.includes('UserDefaults(suiteName: appGroup)'), "iOS must bind the contracted App Group");
   assert(iosNativeBridge.includes('widgetKeychainService = "io.delino.devhud.widget-credential.v1"') && iosNativeBridge.includes("widgetAccessGroupKey"), "iOS widget credentials must use a distinct selected-only Keychain service");
-  assert(purgeSecure.includes("clearWidgetState()"), "iOS destructive secure purges must clear widget credentials and state");
+  assert(purgeSecure.includes("clearWidgetState()") && purgeSecure.indexOf("clearWidgetState()") < purgeSecure.indexOf("purgeSecureGroup(args"), "iOS destructive purges must clear widget state before the authoritative secure store");
   assert(iosNativeBridge.includes("reconcileWidgetCredentials()") && iosNativeBridge.includes("widgetCredentialDeckIds()"), "iOS must reconcile interrupted or orphaned widget credentials");
   assert(writeSecure.indexOf("beginWidgetCredentialReplacement") >= 0 && writeSecure.indexOf("beginWidgetCredentialReplacement") < writeSecure.indexOf("guard storeData(data"), "iOS PAT replacement must persist its widget transaction before changing the main PAT");
   assert(beginWidgetCredentialReplacement.includes(".sorted()") && beginWidgetCredentialReplacement.includes("defaults.set(encoded, forKey: widgetCredentialReplacementKey)") && beginWidgetCredentialReplacement.indexOf("defaults.set(encoded, forKey: widgetCredentialReplacementKey)") < beginWidgetCredentialReplacement.indexOf("defaults.synchronize()"), "iOS PAT replacement must durably record the complete ordered Deck set");
@@ -154,6 +155,18 @@ export function assertIosNativeBridge(iosNativeBridgeInput) {
   assert(replaceWidgetSnapshot.includes("mergeWidgetSnapshot(current: previousSnapshot, incoming: snapshot)") && replaceWidgetSnapshot.includes("widgetForegroundReloadDeadlinePrefix + snapshot.deckId") && replaceWidgetSnapshot.indexOf("defaults.synchronize()") < replaceWidgetSnapshot.indexOf("reloadAllTimelines()"), "iOS foreground widget snapshots must merge monotonically and persist a Deck-scoped stored-only reload marker before reloading WidgetKit");
   assert(removeWidgetDeck.includes("widgetForegroundReloadDeadlinePrefix + deckId") && removeWidgetDeck.includes("defaults.synchronize()") && removeWidgetDeck.includes("removeWidgetCredential(deckId)") && removeWidgetDeck.indexOf("defaults.synchronize()") < removeWidgetDeck.indexOf("removeWidgetCredential(deckId)"), "iOS widget cleanup must remove its reload marker and persist App Group deletion before Keychain deletion");
   assert(abortWidgetTransaction.includes("storeWidgetCredential(previousCredentialData") && abortWidgetTransaction.includes("defaults.set(previousConfigurationData") && abortWidgetTransaction.includes("defaults.set(previousSnapshotData") && abortWidgetTransaction.indexOf("defaults.synchronize()") < abortWidgetTransaction.indexOf("defaults.removeObject(forKey: widgetTransactionPrefix"), "iOS widget update rollback must restore prior state before clearing its transaction marker");
+}
+
+export function assertNativeWidgetPullRequestMetadata(androidProvider, iosWidget) {
+  const androidRefresh = androidProvider.match(/private fun refreshGitHub[\s\S]*?(?=\n        private fun validateRepositories)/u)?.[0] ?? "";
+  assert(/item\.optJSONObject\("pull_request"\)[\s\S]*?\?: return@github failure/u.test(androidRefresh), "Android widget refresh must reject a missing or non-object pull_request");
+  assert(androidRefresh.includes('!pullRequest.has("merged_at")') && androidRefresh.includes("mergedAt !== JSONObject.NULL && mergedAt !is String"), "Android widget refresh must require merged_at to be a string or null");
+  assert(androidRefresh.includes("val isMerged = mergedAt is String"), "Android widget refresh must derive merged state from validated metadata");
+
+  const iosRefresh = iosWidget.match(/private static func refresh\(deck:[\s\S]*?(?=\n    private static func validateRepositories)/u)?.[0] ?? "";
+  assert(iosRefresh.includes('item["pull_request"] as? [String: Any]') && iosRefresh.includes('let mergedAt = pull["merged_at"]'), "iOS widget refresh must reject a missing or non-object pull_request");
+  assert(iosRefresh.includes("mergedAt is String || mergedAt is NSNull"), "iOS widget refresh must require merged_at to be a string or null");
+  assert(iosRefresh.includes("let isMerged = mergedAt is String"), "iOS widget refresh must derive merged state from validated metadata");
 }
 
 export function assertMobileDependencyResolution(verifier) {

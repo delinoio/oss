@@ -490,6 +490,7 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
         persistSecure(invoke, onComplete = {
             if (destructivePurge) diagnosticsPurgesInProgress.decrementAndGet()
         }) {
+            if (!DevHudWidgetStore(activity.applicationContext).clear()) return@persistSecure false
             val preferences = activity.getSharedPreferences(storeName, Context.MODE_PRIVATE)
             val editor = preferences.edit()
             preferences.all.keys.filter { key ->
@@ -497,9 +498,7 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
                     (scope == "account-deletion" && key != "logto-session:$profileId") ||
                     (scope == "api-change" && key == "logto-session:$profileId")
             }.forEach(editor::remove)
-            val secureCleared = editor.commit()
-            val widgetCleared = DevHudWidgetStore(activity.applicationContext).clear()
-            secureCleared && widgetCleared
+            editor.commit()
         }
     }
 
