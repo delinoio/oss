@@ -205,6 +205,7 @@ export function assertNativeWidgetPullRequestMetadata(androidProvider, iosWidget
 
   const iosRefresh = iosWidget.match(/private static func refresh\(deck:[\s\S]*?(?=\n    private static func validateRepositories)/u)?.[0] ?? "";
   assert(iosRefresh.includes('exactWidgetBoolean(root["incomplete_results"]) == false'), "iOS widget refresh must require an exact false incomplete_results flag");
+  assert(/let total = root\["total_count"\] as\? Int,[\s\S]*?total >= 0/u.test(iosRefresh), "iOS widget refresh must reject negative total_count values");
   assert(iosRefresh.includes('item["pull_request"] as? [String: Any]') && iosRefresh.includes('let mergedAt = pull["merged_at"]'), "iOS widget refresh must reject a missing or non-object pull_request");
   assert(iosRefresh.includes("mergedAt is String || mergedAt is NSNull"), "iOS widget refresh must require merged_at to be a string or null");
   assert(iosRefresh.includes("let isMerged = mergedAt is String"), "iOS widget refresh must derive merged state from validated metadata");

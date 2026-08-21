@@ -334,6 +334,7 @@ private struct DeckTimelineProvider: IntentTimelineProvider {
             if http.statusCode == 403 || http.statusCode == 404 { return failure(deck: deck, previous: previous, state: "permission", attempted: attempted, rate: rate) }
             guard (200...299).contains(http.statusCode), let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let items = root["items"] as? [[String: Any]], let total = root["total_count"] as? Int,
+                  total >= 0,
                   exactWidgetBoolean(root["incomplete_results"]) == false else {
                 return failure(deck: deck, previous: previous, state: "error", attempted: attempted, rate: rate)
             }

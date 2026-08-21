@@ -206,6 +206,7 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   assert.throws(() => assertNativeWidgetPullRequestMetadata(androidProvider, iosWidget.replace('item["pull_request"] as? [String: Any]', "[String: Any]()")), /missing or non-object pull_request/u);
   assert.throws(() => assertNativeWidgetPullRequestMetadata(androidProvider, iosWidget.replace("mergedAt is String || mergedAt is NSNull", "mergedAt is String")), /merged_at to be a string or null/u);
   assert.throws(() => assertNativeWidgetPullRequestMetadata(androidProvider, iosWidget.replace('exactWidgetBoolean(root["incomplete_results"]) == false', 'root["incomplete_results"] as? Bool == false')), /exact false incomplete_results/u);
+  assert.throws(() => assertNativeWidgetPullRequestMetadata(androidProvider, iosWidget.replace("total >= 0", "true")), /reject negative total_count/u);
   assert.match(androidStore, /widgetKeyAlias = "io\.delino\.devhud\.widget-credential\.v1"/u);
   assert.match(androidStore, /private val widgetStoreMutationLock = Any\(\)/u);
   assert.match(androidStore, /incomingTimestampIsNewer\(currentAttempt, incomingAttempt, now\)[\s\S]*incomingTimestampIsNewer\(currentSuccess, incomingSuccess, now\)[\s\S]*currentIsFuture != incomingIsFuture[\s\S]*return currentIsFuture/u);
