@@ -202,7 +202,10 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   assert.match(androidProvider, /val isMerged = mergedAt is String/u);
   assert.ok(androidProvider.indexOf("validateRepositories(configuration, token, session)") < androidProvider.indexOf('github("/search/issues'));
   assert.match(androidProvider, /\/pulls\?state=open&per_page=1[\s\S]*\/issues\?state=open&per_page=1[\s\S]*\/contents/u);
+  assert.match(androidProvider, /private fun responseIsRateLimited[\s\S]*status == 429[\s\S]*status != 403[\s\S]*X-RateLimit-Remaining[\s\S]*Retry-After[\s\S]*errorStream[\s\S]*JSONObject\(reader\.readText\(\)\)\.opt\("message"\) as\? String[\s\S]*lowercase\(Locale\.ROOT\)[\s\S]*contains\("rate limit"\)/u);
+  assert.equal((androidProvider.match(/responseIsRateLimited\(connection\)/gu) ?? []).length, 2);
   assert.match(androidProvider, /status == 401[\s\S]*"missing-token"[\s\S]*status == 403 \|\| status == 404[\s\S]*"permission"/u);
+  assert.match(androidProvider, /val stored = store\.replaceSnapshot\(snapshot, credential\.revision\)\s+val renderConfiguration = store\.configuration\(deckId\)\s+if \(renderConfiguration == null\)[\s\S]*renderStored\(context, manager, it\)[\s\S]*val rendered = store\.snapshot\(deckId\)[\s\S]*renderSelected\(context, manager, store, deckId, renderConfiguration/u);
   assert.match(androidManifest, /DevHudWidgetProvider"\s+android:exported="false"\s+android:label="@string\/devhud_widget_name"/u);
   assert.match(androidProvider, /results.*prefix|prefix\(3\)|minOf\(results\?\.length\(\) \?: 0, 3\)/su);
   assert.match(androidProvider, /devhud:\/\/deck\//u);

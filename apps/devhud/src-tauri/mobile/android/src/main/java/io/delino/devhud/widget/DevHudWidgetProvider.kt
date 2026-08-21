@@ -181,8 +181,13 @@ class DevHudWidgetProvider : AppWidgetProvider() {
                 return true
             }
             val stored = store.replaceSnapshot(snapshot, credential.revision)
-            val rendered = store.snapshot(deckId)
-            renderSelected(context, manager, store, deckId, current, rendered, rendered?.optString("state", "error") ?: "error", appWidgetIds)
+            val renderConfiguration = store.configuration(deckId)
+            if (renderConfiguration == null) {
+                appWidgetIds.forEach { renderStored(context, manager, it) }
+            } else {
+                val rendered = store.snapshot(deckId)
+                renderSelected(context, manager, store, deckId, renderConfiguration, rendered, rendered?.optString("state", "error") ?: "error", appWidgetIds)
+            }
             return stored
         }
 
@@ -202,8 +207,7 @@ class DevHudWidgetProvider : AppWidgetProvider() {
                 github("/search/issues?q=" + Uri.encode(configuration.getString("query")) + "&per_page=100&page=1", token, session) { connection ->
                     val status = connection.responseCode
                     val responseRate = rate(connection)
-                    val rateLimited = status == 429 || status == 403 && (connection.getHeaderField("X-RateLimit-Remaining") == "0" || connection.getHeaderField("Retry-After") != null)
-                    if (rateLimited) return@github failure(configuration, previous, "rate-limit", attemptedAt, responseRate)
+                    if (responseIsRateLimited(connection)) return@github failure(configuration, previous, "rate-limit", attemptedAt, responseRate)
                     if (status == 401) return@github failure(configuration, previous, "missing-token", attemptedAt, responseRate)
                     if (status == 403 || status == 404) return@github failure(configuration, previous, "permission", attemptedAt, responseRate)
                     if (status !in 200..299) return@github failure(configuration, previous, "error", attemptedAt, responseRate)
@@ -342,10 +346,23 @@ class DevHudWidgetProvider : AppWidgetProvider() {
         private fun responseFailure(connection: HttpURLConnection): String? {
             val status = connection.responseCode
             if (status in 200..299) return null
-            if (status == 429 || status == 403 && (connection.getHeaderField("X-RateLimit-Remaining") == "0" || connection.getHeaderField("Retry-After") != null)) return "rate-limit"
+            if (responseIsRateLimited(connection)) return "rate-limit"
             if (status == 401) return "missing-token"
             if (status == 403 || status == 404) return "permission"
             return "error"
+        }
+
+        private fun responseIsRateLimited(connection: HttpURLConnection): Boolean {
+            val status = connection.responseCode
+            if (status == 429) return true
+            if (status != 403) return false
+            if (connection.getHeaderField("X-RateLimit-Remaining") == "0" || connection.getHeaderField("Retry-After") != null) return true
+            val message = try {
+                connection.errorStream?.bufferedReader()?.use { reader ->
+                    (JSONObject(reader.readText()).opt("message") as? String)?.lowercase(Locale.ROOT)
+                }
+            } catch (_: Exception) { null }
+            return message?.contains("rate limit") == true
         }
 
         private fun failure(configuration: JSONObject, previous: JSONObject?, state: String, attemptedAt: String, responseRate: JSONObject?): JSONObject {
