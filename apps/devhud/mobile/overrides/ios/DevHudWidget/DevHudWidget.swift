@@ -172,6 +172,34 @@ private struct DeckEntry: TimelineEntry {
     let snapshot: DeckSnapshot?
 }
 
+private actor DeckRefreshCoordinator {
+    private struct InFlightRefresh {
+        let id: UUID
+        let configuration: DeckConfiguration
+        let credentialRevision: Data?
+        let task: Task<DeckSnapshot, Never>
+    }
+
+    private var inFlight: [String: InFlightRefresh] = [:]
+
+    func refresh(deck: DeckConfiguration, credentialRevision: Data?, operation: @escaping @Sendable () async -> DeckSnapshot) async -> DeckSnapshot {
+        while let existing = inFlight[deck.deckId] {
+            let sharesRequest = sameSelection(existing.configuration, deck) && existing.credentialRevision == credentialRevision
+            let snapshot = await existing.task.value
+            if inFlight[deck.deckId]?.id == existing.id { inFlight.removeValue(forKey: deck.deckId) }
+            if sharesRequest { return snapshot }
+        }
+        let id = UUID()
+        let task = Task { await operation() }
+        inFlight[deck.deckId] = InFlightRefresh(id: id, configuration: deck, credentialRevision: credentialRevision, task: task)
+        let snapshot = await task.value
+        if inFlight[deck.deckId]?.id == id { inFlight.removeValue(forKey: deck.deckId) }
+        return snapshot
+    }
+}
+
+private let deckRefreshCoordinator = DeckRefreshCoordinator()
+
 private struct DeckTimelineProvider: IntentTimelineProvider {
     typealias Intent = SelectDeckIntent
     typealias Entry = DeckEntry
@@ -201,11 +229,15 @@ private struct DeckTimelineProvider: IntentTimelineProvider {
             let credentialRevision: Data?
             switch credential {
             case .missing:
-                snapshot = await Self.refreshWithDeadline(deck: deck, previous: previous, token: nil)
                 credentialRevision = nil
+                snapshot = await deckRefreshCoordinator.refresh(deck: deck, credentialRevision: credentialRevision) {
+                    await Self.refreshWithDeadline(deck: deck, previous: previous, token: nil)
+                }
             case .readable(let token, let revision):
-                snapshot = await Self.refreshWithDeadline(deck: deck, previous: previous, token: token)
                 credentialRevision = revision
+                snapshot = await deckRefreshCoordinator.refresh(deck: deck, credentialRevision: credentialRevision) {
+                    await Self.refreshWithDeadline(deck: deck, previous: previous, token: token)
+                }
             case .unreadable(let revision):
                 snapshot = Self.failure(deck: deck, previous: previous, state: "error", attempted: widgetAttemptTimestamp(), rate: nil)
                 credentialRevision = revision

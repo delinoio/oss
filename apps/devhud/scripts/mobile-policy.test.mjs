@@ -234,6 +234,9 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   assert.match(iosWidget, /case \.unreadable\(let revision\):[\s\S]*state: "error"[\s\S]*credentialRevision = revision[\s\S]*store\.save\(snapshot, whileEnabled: current, credentialRevision: credentialRevision\)/u);
   assert.match(iosWidget, /repositoryValidationConcurrency = 3/u);
   assert.match(iosWidget, /refreshDeadlineNanoseconds: UInt64 = 20 \* 1_000_000_000/u);
+  assert.match(iosWidget, /private actor DeckRefreshCoordinator[\s\S]*private var inFlight: \[String: InFlightRefresh\][\s\S]*while let existing = inFlight\[deck\.deckId\][\s\S]*sameSelection\(existing\.configuration, deck\) && existing\.credentialRevision == credentialRevision[\s\S]*inFlight\[deck\.deckId\]\?\.id == existing\.id[\s\S]*inFlight\[deck\.deckId\] = InFlightRefresh/u);
+  assert.match(iosWidget, /private let deckRefreshCoordinator = DeckRefreshCoordinator\(\)/u);
+  assert.equal((iosWidget.match(/deckRefreshCoordinator\.refresh\(deck: deck, credentialRevision: credentialRevision\)/gu) ?? []).length, 2);
   assert.match(iosWidget, /refreshWithDeadline[\s\S]*withTaskGroup\(of: DeckSnapshot\.self\)[\s\S]*Task\.sleep\(nanoseconds: refreshDeadlineNanoseconds\)[\s\S]*group\.cancelAll\(\)/u);
   assert.match(iosWidget, /validateRepositories[\s\S]*withTaskGroup\(of: RepositoryValidationFailure\?\.self\)[\s\S]*repositories\.prefix\(initialCount\)[\s\S]*group\.cancelAll\(\)/u);
   assert.match(iosWidget, /try Task\.checkCancellation\(\)/u);
