@@ -9,6 +9,7 @@ const canonicalSettingsV1 = `{"agents":[],"appearance":{"language":"system","the
 const canonicalSettingsV2 = `{"agents":[],"appearance":{"language":"system","theme":"system"},"decks":[],"github":{"issueTracker":null,"pendingPatRemovals":[],"profiles":[],"repositories":[]},"schemaVersion":2,"shortcuts":{"android":{},"desktop":{},"ios":{}},"uploads":{"provider":"official","r2":null},"urlMappings":[]}`
 const canonicalSettingsV3 = `{"agents":[],"appearance":{"language":"system","theme":"system"},"decks":[],"github":{"issueTracker":null,"pendingPatRemovals":[],"profiles":[],"repositories":[]},"schemaVersion":3,"shortcuts":{"android":{},"desktop":{},"ios":{}},"uploads":{"provider":"official","r2":null},"urlMappings":[]}`
 const canonicalSettingsV4 = `{"agents":[],"appearance":{"language":"system","theme":"system"},"decks":[],"github":{"issueTracker":null,"pendingPatRemovals":[],"profiles":[],"repositories":[]},"schemaVersion":4,"shortcuts":{"android":{},"desktop":{"realqa.capture.active-window":{"enabled":true,"key":"digit-2","modifiers":[]},"realqa.capture.all-displays":{"enabled":true,"key":"digit-3","modifiers":[]},"realqa.capture.display":{"enabled":true,"key":"digit-1","modifiers":[]},"realqa.capture.selection":{"enabled":true,"key":"digit-4","modifiers":[]},"realqa.capture.toolbar":{"enabled":true,"key":"digit-5","modifiers":[]},"shell.command-palette":{"enabled":true,"key":"key-k","modifiers":["right-primary"]}},"ios":{}},"uploads":{"provider":"official","r2":null},"urlMappings":[]}`
+const canonicalSettingsV5 = `{"agents":[],"appearance":{"language":"system","theme":"system"},"decks":[],"github":{"issueTracker":null,"pendingPatRemovals":[],"profiles":[],"repositories":[]},"schemaVersion":5,"shortcuts":{"android":{},"desktop":{"realqa.capture.active-window":{"enabled":true,"key":"digit-2","modifiers":[]},"realqa.capture.all-displays":{"enabled":true,"key":"digit-3","modifiers":[]},"realqa.capture.display":{"enabled":true,"key":"digit-1","modifiers":[]},"realqa.capture.selection":{"enabled":true,"key":"digit-4","modifiers":[]},"realqa.capture.toolbar":{"enabled":true,"key":"digit-5","modifiers":[]},"shell.command-palette":{"enabled":true,"key":"key-k","modifiers":["right-primary"]}},"ios":{}},"uploads":{"provider":"official","r2":null},"urlMappings":[]}`
 
 func TestValidateCanonicalJSON(t *testing.T) {
 	for _, value := range [][]byte{
@@ -41,6 +42,7 @@ func TestValidateDevHudSettings(t *testing.T) {
 		2: canonicalSettingsV2,
 		3: canonicalSettingsV3,
 		4: canonicalSettingsV4,
+		5: canonicalSettingsV5,
 	} {
 		if err := validateDevHudSettings([]byte(value), version); err != nil {
 			t.Errorf("validateDevHudSettings(version %d): %v", version, err)
@@ -57,6 +59,17 @@ func TestValidateDevHudSettings(t *testing.T) {
 	withProfile := strings.Replace(canonicalSettingsV4, `"profiles":[]`, `"profiles":[{"id":"`+profileID+`","kind":"fine-grained","name":"Work"}]`, 1)
 	if err := validateDevHudSettings([]byte(strings.Replace(withProfile, `"urlMappings":[]`, `"urlMappings":`+structuredMapping, 1)), 4); err != nil {
 		t.Fatalf("schema-v4 structured mapping validation failed: %v", err)
+	}
+	r2Metadata := `{"provider":"r2","r2":{"accountId":"account.example","bucket":"screenshots","endpoint":"https://r2.example/storage","name":"Team R2","prefix":"devhud/realqa","profileRef":"` + profileID + `","publicBaseUrl":"https://images.example/public"}}`
+	withR2 := strings.Replace(canonicalSettingsV5, `"uploads":{"provider":"official","r2":null}`, `"uploads":`+r2Metadata, 1)
+	if err := validateDevHudSettings([]byte(withR2), 5); err != nil {
+		t.Fatalf("schema-v5 non-secret R2 metadata validation failed: %v", err)
+	}
+	if err := validateDevHudSettings([]byte(strings.Replace(withR2, `"bucket":"screenshots"`, `"accessKeyId":"must-not-sync","bucket":"screenshots"`, 1)), 5); err == nil {
+		t.Fatal("schema-v5 synchronized R2 access key was accepted")
+	}
+	if err := validateDevHudSettings([]byte(strings.Replace(withR2, "https://r2.example/storage", "http://r2.example/storage", 1)), 5); err == nil {
+		t.Fatal("schema-v5 insecure R2 endpoint was accepted")
 	}
 	for name, test := range map[string]struct {
 		version uint32

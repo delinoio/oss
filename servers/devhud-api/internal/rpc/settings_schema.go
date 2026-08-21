@@ -22,12 +22,13 @@ import (
 )
 
 const (
-	legacySettingsSchemaVersion    = 1
-	previousSettingsSchemaVersion  = 2
-	collidingSettingsSchemaVersion = 3
-	settingsSchemaVersion          = 4
-	maximumMappingPathSegments     = 32
-	maximumMappingGlobstars        = 8
+	legacySettingsSchemaVersion     = 1
+	previousSettingsSchemaVersion   = 2
+	collidingSettingsSchemaVersion  = 3
+	structuredSettingsSchemaVersion = 4
+	settingsSchemaVersion           = 5
+	maximumMappingPathSegments      = 32
+	maximumMappingGlobstars         = 8
 )
 
 var (
@@ -199,14 +200,14 @@ func validateDevHudSettings(value []byte, envelopeSchemaVersion uint32) error {
 			return errors.New("GitHub profile reference must reference a configured GitHub profile")
 		}
 	}
-	structuredShortcuts := bodyVersion == settingsSchemaVersion || bodyVersion == collidingSettingsSchemaVersion && hasStructuredDesktopShortcutShape(root["shortcuts"])
+	structuredShortcuts := bodyVersion >= structuredSettingsSchemaVersion || bodyVersion == collidingSettingsSchemaVersion && hasStructuredDesktopShortcutShape(root["shortcuts"])
 	if err := validateSettingsShortcuts(root["shortcuts"], structuredShortcuts); err != nil {
 		return err
 	}
 	if err := validateSettingsAgents(root["agents"]); err != nil {
 		return err
 	}
-	return validateSettingsUploads(root["uploads"])
+	return validateSettingsUploads(root["uploads"], bodyVersion)
 }
 
 func ensureJSONEnd(decoder *json.Decoder) error {
@@ -1180,7 +1181,7 @@ func validateSettingsAgents(value any) error {
 	return nil
 }
 
-func validateSettingsUploads(value any) error {
+func validateSettingsUploads(value any, bodyVersion int64) error {
 	uploads, err := settingsObject(value, "$.uploads", "provider", "r2")
 	if err != nil {
 		return err
@@ -1191,7 +1192,11 @@ func validateSettingsUploads(value any) error {
 	if uploads["r2"] == nil {
 		return nil
 	}
-	r2, err := settingsObject(uploads["r2"], "$.uploads.r2", "profileRef", "bucket", "endpoint", "region", "publicBaseUrl")
+	fields := []string{"profileRef", "bucket", "endpoint", "region", "publicBaseUrl"}
+	if bodyVersion >= settingsSchemaVersion {
+		fields = []string{"profileRef", "name", "endpoint", "accountId", "bucket", "publicBaseUrl", "prefix"}
+	}
+	r2, err := settingsObject(uploads["r2"], "$.uploads.r2", fields...)
 	if err != nil {
 		return err
 	}
@@ -1199,9 +1204,42 @@ func validateSettingsUploads(value any) error {
 	if err != nil || !settingsProfileRef.MatchString(profileRef) {
 		return errors.New("$.uploads.r2.profileRef is invalid")
 	}
-	for _, field := range []string{"bucket", "region"} {
-		if _, err := settingsText(r2[field], "$.uploads.r2."+field, false); err != nil {
+	if bodyVersion >= settingsSchemaVersion {
+		name, err := settingsText(r2["name"], "$.uploads.r2.name", false)
+		if err != nil || strings.TrimSpace(name) != name || settingsTextLength(name) > 80 {
+			return errors.New("$.uploads.r2.name must be a trimmed string of at most 80 characters")
+		}
+	}
+	for _, field := range []string{"bucket"} {
+		value, err := settingsText(r2[field], "$.uploads.r2."+field, false)
+		if err != nil {
 			return err
+		}
+		if !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`).MatchString(value) {
+			return fmt.Errorf("$.uploads.r2.%s is invalid", field)
+		}
+	}
+	if bodyVersion < settingsSchemaVersion {
+		if _, err := settingsText(r2["region"], "$.uploads.r2.region", false); err != nil {
+			return err
+		}
+	} else {
+		if r2["accountId"] != nil {
+			accountID, err := settingsText(r2["accountId"], "$.uploads.r2.accountId", false)
+			if err != nil || !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`).MatchString(accountID) {
+				return errors.New("$.uploads.r2.accountId is invalid")
+			}
+		}
+		prefix, ok := r2["prefix"].(string)
+		if !ok || len(prefix) > 512 || strings.HasPrefix(prefix, "/") || strings.HasSuffix(prefix, "/") || strings.Contains(prefix, `\`) {
+			return errors.New("$.uploads.r2.prefix must be an empty or normalized relative object-key prefix")
+		}
+		if prefix != "" {
+			for _, segment := range strings.Split(prefix, "/") {
+				if segment == "" || segment == "." || segment == ".." {
+					return errors.New("$.uploads.r2.prefix must be an empty or normalized relative object-key prefix")
+				}
+			}
 		}
 	}
 	if err := settingsURL(r2["endpoint"], "$.uploads.r2.endpoint", true); err != nil {

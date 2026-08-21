@@ -18,6 +18,7 @@ const desktopHost = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "
 const nativeBridgeHost = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/bridge.rs"), "utf8");
 const nativeShortcuts = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/shortcuts.rs"), "utf8");
 const nativeCapture = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/capture.rs"), "utf8");
+const nativeUploads = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/uploads.rs"), "utf8");
 const windowsInstallerHooks = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/windows/hooks.nsh"), "utf8");
 const androidBridgeHost = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/mobile/android/src/main/java/io/delino/devhud/bridge/DevhudNativePlugin.kt"), "utf8");
 const iosBridgeHost = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/mobile/ios/Sources/DevhudNativePlugin.swift"), "utf8");
@@ -192,11 +193,32 @@ test("RealQA requests are bounded and capture data stays out of logs and recordi
   assert.throws(() => validateCaptureRequest({ operation: "capture.start", actionId: ShortcutActionId.CommandPalette }), NativeBridgeError);
   assert.throws(() => validateCaptureRequest({ operation: "capture.open-draft", draftId: "../escape" }), NativeBridgeError);
   assert.throws(() => validateCaptureRequest({ operation: "capture.remove-browser-context", draftId: "01900000-0000-7000-8000-000000000001", expectedRevision: -1 }), NativeBridgeError);
+  assert.doesNotThrow(() => validateCaptureRequest({ operation: "capture.confirm-issue-created", draftId: "01900000-0000-7000-8000-000000000001", expectedRevision: 1 }));
+  assert.throws(() => validateCaptureRequest({ operation: "capture.confirm-issue-created", draftId: "01900000-0000-7000-8000-000000000001" }), NativeBridgeError);
+  assert.throws(() => validateCaptureRequest({ operation: "capture.confirm-issue-created", draftId: "01900000-0000-7000-8000-000000000001", expectedRevision: -1 }), NativeBridgeError);
   assert.match(nativeCapture, /Aes256Gcm/u);
   assert.match(nativeCapture, /MAX_IMAGES: usize = 10/u);
   assert.match(nativeCapture, /MAX_PNG_BYTES: usize = 50 \* 1024 \* 1024/u);
   assert.doesNotMatch(nativeCapture, /\.video_recorder\(|println!|debug!\(|info!\(/u);
   assert.match(tauriConfig.app.security.csp, /realqa:/u);
+});
+
+test("RealQA upload requests require immutable HTTPS direct-upload contracts", () => {
+  const base = { draftId: "01900000-0000-7000-8000-000000000001", expectedRevision: 1, imageId: "01900000-0000-7000-8000-000000000002", expectedBytes: 3, expectedSha256: "00".repeat(32) };
+  assert.doesNotThrow(() => validateCaptureRequest({ ...base, operation: "capture.upload-official", upload: { uploadId: "01900000-0000-7000-8000-000000000003", submissionId: "01900000-0000-7000-8000-000000000004", uploadGroupId: "01900000-0000-7000-8000-000000000005", reservationId: "01900000-0000-7000-8000-000000000006", stagingGeneration: "1", signedPutUrl: "https://r2.example/object?signature=value", requiredHeaders: { contentType: "image/png", checksumSha256Base64: "A".repeat(43) + "=", contentLength: "3" } } }));
+  assert.throws(() => validateCaptureRequest({ ...base, operation: "capture.upload-r2", profile: { profileRef: "profile", endpoint: "http://r2.example", accountId: "account", bucket: "bucket", publicBaseUrl: "https://images.example", prefix: "devhud" } }), NativeBridgeError);
+  assert.throws(() => validateCaptureRequest({ ...base, operation: "capture.upload-r2", profile: { profileRef: "profile", endpoint: "https://r2.example", accountId: "account", bucket: "bucket", publicBaseUrl: "https://images.example", prefix: "../escape" } }), NativeBridgeError);
+  assert.match(nativeUploads, /\.put\(url\)|\.put\(upload_url\)/u);
+  assert.match(nativeUploads, /secure_store::r2_credentials/u);
+  assert.match(nativeUploads, /r2_object_key\([\s\S]*request\.expected_revision/u);
+  assert.match(nativeUploads, /\.content_length\(\)/u);
+  assert.match(nativeUploads, /\.chunk\(\)/u);
+  assert.match(nativeUploads, /VerificationBody::new/u);
+  assert.match(nativeUploads, /\.connect_timeout\(CONNECT_TIMEOUT\)/u);
+  assert.match(nativeUploads, /\.timeout\(REQUEST_TIMEOUT\)/u);
+  assert.match(nativeUploads, /event = "realqa_upload_failed"/u);
+  assert.doesNotMatch(nativeUploads, /verification\s*\.bytes\(\)/u);
+  assert.doesNotMatch(nativeUploads, /devhud-api|UploadService/u);
 });
 
 test("RealQA draft recovery runs only after the primary instance is claimed", () => {

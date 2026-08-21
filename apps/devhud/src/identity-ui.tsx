@@ -9,6 +9,7 @@ import { parseDevHudSettings, type DevHudSettingsV1 } from "./settings-contract"
 import type { SettingsDiffEntry } from "./settings-diff";
 import { inactiveDesktopShortcutBindings, ShortcutActionId, ShortcutContractError, ShortcutKey, ShortcutModifier, ShortcutValidationCode, availableShortcutActions, parseDesktopShortcutBindings, type ShortcutBinding } from "./shortcuts";
 import { findMappingOverlaps, type UrlRepositoryMapping } from "./url-mapping";
+import { R2Settings } from "./r2-settings-ui.tsx";
 
 interface ApiEditorProps {
   readonly copy: Copy;
@@ -409,6 +410,7 @@ function SynchronizedSettingsContent({ copy, bridge = nativeBridge, githubProvid
     {(actionError || identity.error?.startsWith("settings-") || identity.settingsError) && <section className="notice" role="alert"><p>{copy.settingsActionFailed}{identity.error?.startsWith("settings-") && <> <code>{identity.error}</code></>}{identity.settingsError && <> <code>{`settings-connect-${identity.settingsError.code}`}</code>{identity.settingsError.correlationId && <> {copy.correlationId}: <code>{identity.settingsError.correlationId}</code></>}</>}</p><button onClick={() => invoke(identity.retrySettings)}>{copy.retry}</button></section>}
     </section>}
     <GitHubSettings copy={copy} bridge={bridge} provider={githubProvider} openExternal={onOpenExternal} credentialOperationPending={mappingDraft.credentialOperationPending} runCredentialOperation={mappingDraft.runCredentialOperation} />
+    <R2Settings copy={copy} bridge={bridge} />
   </>;
 }
 

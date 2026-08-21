@@ -12,7 +12,8 @@ export const LegacySettingsSchemaVersion = 1 as const;
 export const PreviousSettingsSchemaVersion = 2 as const;
 /** Version 3 was released independently by the Deck and shortcut branches. */
 export const CollidingSettingsSchemaVersion = 3 as const;
-export const SettingsSchemaVersion = 4 as const;
+export const StructuredSettingsSchemaVersion = 4 as const;
+export const SettingsSchemaVersion = 5 as const;
 export const MaximumUrlRepositoryMappings = 100;
 
 const Theme = ["system", "light", "dark"] as const;
@@ -76,10 +77,12 @@ export interface DevHudSettings {
     readonly provider: UploadProvider;
     readonly r2: {
       readonly profileRef: string;
-      readonly bucket: string;
+      readonly name: string;
       readonly endpoint: string;
-      readonly region: string;
+      readonly accountId: string | null;
+      readonly bucket: string;
       readonly publicBaseUrl: string | null;
+      readonly prefix: string;
     } | null;
   };
 }
@@ -131,7 +134,7 @@ export function parseDevHudSettings(value: unknown): DevHudSettingsV1 {
   const decks = array(root.decks, "$.decks");
   if (decks.length > 25) throw new SettingsContractError("$.decks", "must contain at most 25 entries");
   const previous = sourceSchemaVersion === PreviousSettingsSchemaVersion || sourceSchemaVersion === CollidingSettingsSchemaVersion && !hasCurrentDeckShape(decks[0]);
-  const legacyShortcuts = sourceSchemaVersion < SettingsSchemaVersion;
+  const legacyShortcuts = sourceSchemaVersion < StructuredSettingsSchemaVersion;
   const github = object(root.github, "$.github", legacy ? ["repositories", "issueTracker"] : ["profiles", "pendingPatRemovals", "repositories", "issueTracker"]);
   const githubProfiles = legacy ? [] : array(github.profiles, "$.github.profiles").map((entry, index) => parseGitHubProfile(entry, `$.github.profiles[${index}]`));
   if (githubProfiles.length > 25) throw new SettingsContractError("$.github.profiles", "must contain at most 25 entries");
@@ -145,7 +148,7 @@ export function parseDevHudSettings(value: unknown): DevHudSettingsV1 {
   const uploads = object(root.uploads, "$.uploads", ["provider", "r2"]);
   const parsedDecks = decks.flatMap((entry, index) => parseDeck(entry, `$.decks[${index}]`, legacy, previous));
   if (new Set(parsedDecks.map((deck) => deck.id)).size !== parsedDecks.length) throw new SettingsContractError("$.decks", "must contain unique IDs");
-  const structuredMappings = sourceSchemaVersion === SettingsSchemaVersion || sourceSchemaVersion === CollidingSettingsSchemaVersion && hasStructuredURLMappingShape(root.urlMappings);
+  const structuredMappings = sourceSchemaVersion >= StructuredSettingsSchemaVersion || sourceSchemaVersion === CollidingSettingsSchemaVersion && hasStructuredURLMappingShape(root.urlMappings);
   const urlMappings = structuredMappings ? parseStructuredMappings(root.urlMappings) : parseLegacyMappings(root.urlMappings);
   if (urlMappings.length > MaximumUrlRepositoryMappings) throw new SettingsContractError("$.urlMappings", `must contain at most ${MaximumUrlRepositoryMappings} entries`);
   if (new Set(urlMappings.map((mapping) => mapping.id)).size !== urlMappings.length) throw new SettingsContractError("$.urlMappings", "must not contain duplicate mapping IDs");
@@ -178,7 +181,7 @@ export function parseDevHudSettings(value: unknown): DevHudSettingsV1 {
     agents: array(root.agents, "$.agents").map((entry, index) => parseAgent(entry, `$.agents[${index}]`)),
     uploads: {
       provider: enumeration(uploads.provider, "$.uploads.provider", UploadProvider),
-      r2: uploads.r2 === null ? null : parseR2(uploads.r2),
+      r2: uploads.r2 === null ? null : parseR2(uploads.r2, sourceSchemaVersion),
     },
   };
   for (const [index, repository] of parsed.github.repositories.entries()) validateGitHubProfileRef(repository.profileRef, `$.github.repositories[${index}].profileRef`, githubProfileIds);
@@ -249,11 +252,11 @@ export function decodeDevHudSettings(value: Uint8Array): DevHudSettingsV1 {
   return decodeDevHudSettingsSnapshot(value).settings;
 }
 
-export function decodeDevHudSettingsSnapshot(value: Uint8Array): { readonly sourceSchemaVersion: 1 | 2 | 3 | 4; readonly settings: DevHudSettingsV1 } {
+export function decodeDevHudSettingsSnapshot(value: Uint8Array): { readonly sourceSchemaVersion: 1 | 2 | 3 | 4 | 5; readonly settings: DevHudSettingsV1 } {
   const canonical = validateCanonicalSettingsJson(value);
   const settings = parseDevHudSettings(canonical);
   const sourceSchemaVersion = (canonical as { readonly schemaVersion: unknown }).schemaVersion;
-  if (sourceSchemaVersion !== LegacySettingsSchemaVersion && sourceSchemaVersion !== PreviousSettingsSchemaVersion && sourceSchemaVersion !== CollidingSettingsSchemaVersion && sourceSchemaVersion !== SettingsSchemaVersion) throw new SettingsContractError("$.schemaVersion", "is unsupported");
+  if (sourceSchemaVersion !== LegacySettingsSchemaVersion && sourceSchemaVersion !== PreviousSettingsSchemaVersion && sourceSchemaVersion !== CollidingSettingsSchemaVersion && sourceSchemaVersion !== StructuredSettingsSchemaVersion && sourceSchemaVersion !== SettingsSchemaVersion) throw new SettingsContractError("$.schemaVersion", "is unsupported");
   return { sourceSchemaVersion, settings };
 }
 
@@ -668,18 +671,59 @@ function parseAgent(value: unknown, path: string): DevHudSettingsV1["agents"][nu
   };
 }
 
-function parseR2(value: unknown): NonNullable<DevHudSettingsV1["uploads"]["r2"]> {
+function parseR2(value: unknown, sourceSchemaVersion: number): NonNullable<DevHudSettingsV1["uploads"]["r2"]> {
   const path = "$.uploads.r2";
-  const r2 = object(value, path, ["profileRef", "bucket", "endpoint", "region", "publicBaseUrl"]);
+  const current = sourceSchemaVersion >= SettingsSchemaVersion;
+  const r2 = object(value, path, current
+    ? ["profileRef", "name", "endpoint", "accountId", "bucket", "publicBaseUrl", "prefix"]
+    : ["profileRef", "bucket", "endpoint", "region", "publicBaseUrl"]);
   const profileRef = text(r2.profileRef, `${path}.profileRef`);
   if (!profileRefPattern.test(profileRef)) throw new SettingsContractError(`${path}.profileRef`, "is invalid");
+  const endpoint = url(r2.endpoint, `${path}.endpoint`, true);
+  const accountId = current ? nullableR2Identifier(r2.accountId, `${path}.accountId`) : accountIdFromEndpoint(endpoint);
+  const bucket = r2Identifier(r2.bucket, `${path}.bucket`);
+  const publicBaseUrl = r2.publicBaseUrl === null ? null : url(r2.publicBaseUrl, `${path}.publicBaseUrl`, true);
+  const prefix = current ? r2Prefix(r2.prefix, `${path}.prefix`) : "";
   return {
     profileRef,
-    bucket: text(r2.bucket, `${path}.bucket`),
-    endpoint: url(r2.endpoint, `${path}.endpoint`, true),
-    region: text(r2.region, `${path}.region`),
-    publicBaseUrl: r2.publicBaseUrl === null ? null : url(r2.publicBaseUrl, `${path}.publicBaseUrl`, true),
+    name: current ? boundedTrimmedText(r2.name, `${path}.name`, 80) : "R2",
+    endpoint,
+    accountId,
+    bucket,
+    publicBaseUrl,
+    prefix,
   };
+}
+
+function boundedTrimmedText(value: unknown, path: string, maximum: number): string {
+  const parsed = text(value, path);
+  if (parsed.trim() !== parsed || parsed.length > maximum) throw new SettingsContractError(path, `must be a trimmed string of at most ${maximum} characters`);
+  return parsed;
+}
+
+function nullableR2Identifier(value: unknown, path: string): string | null {
+  if (value === null) return null;
+  return r2Identifier(value, path);
+}
+
+function r2Identifier(value: unknown, path: string): string {
+  const parsed = text(value, path);
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(parsed)) throw new SettingsContractError(path, "is invalid");
+  return parsed;
+}
+
+function r2Prefix(value: unknown, path: string): string {
+  if (typeof value !== "string" || new TextEncoder().encode(value).byteLength > 512 || value.startsWith("/") || value.endsWith("/") || value.includes("\\") || value.split("/").some((segment) => segment === "" || segment === "." || segment === "..")) {
+    if (value === "") return "";
+    throw new SettingsContractError(path, "must be an empty or normalized relative object-key prefix");
+  }
+  return value;
+}
+
+function accountIdFromEndpoint(endpoint: string): string | null {
+  const hostname = new URL(endpoint).hostname;
+  const match = /^([a-f0-9]{32})\.r2\.cloudflarestorage\.com$/u.exec(hostname);
+  return match?.[1] ?? null;
 }
 
 function object(value: unknown, path: string, allowed: readonly string[]): Record<string, unknown> {

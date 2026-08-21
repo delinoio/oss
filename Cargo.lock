@@ -2443,10 +2443,12 @@ name = "devhud"
 version = "0.1.0"
 dependencies = [
  "aes-gcm",
+ "base64 0.22.1",
  "devhud-native-messaging-host",
  "dirs 6.0.0",
  "fontdue",
  "gtk",
+ "hmac",
  "image",
  "keyring",
  "os_info",
@@ -2454,6 +2456,7 @@ dependencies = [
  "png 0.17.16",
  "rand 0.9.4",
  "rdev",
+ "reqwest 0.12.28",
  "rfd",
  "serde",
  "serde_json",

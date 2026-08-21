@@ -10,6 +10,8 @@ mod resources;
 #[cfg(desktop)]
 mod secure_store;
 mod shortcuts;
+#[cfg(desktop)]
+mod uploads;
 
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 use std::process::{Child, Command};

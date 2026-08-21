@@ -4,6 +4,7 @@ use keyring::{Entry, Error};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tracing::error;
+use zeroize::Zeroizing;
 
 const SERVICE: &str = "io.delino.devhud.secure-settings.v1";
 const INDEX_ACCOUNT: &str = "__index__";
@@ -112,6 +113,33 @@ pub fn realqa_draft_key() -> Result<[u8; 32], String> {
         cfg!(target_os = "windows"),
     )?;
     Ok(key)
+}
+
+pub(crate) struct R2Credentials {
+    pub(crate) access_key_id: Zeroizing<String>,
+    pub(crate) secret_access_key: Zeroizing<String>,
+}
+
+pub(crate) fn r2_credentials(profile_id: &str) -> Result<R2Credentials, String> {
+    let backend = KeyringBackend;
+    let access_key_id = read_value(
+        &backend,
+        &setting("r2-access-key-id", profile_id),
+        cfg!(target_os = "windows"),
+    )?
+    .filter(|value| !value.trim().is_empty())
+    .ok_or_else(|| "not-configured".to_string())?;
+    let secret_access_key = read_value(
+        &backend,
+        &setting("r2-secret-access-key", profile_id),
+        cfg!(target_os = "windows"),
+    )?
+    .filter(|value| !value.is_empty())
+    .ok_or_else(|| "not-configured".to_string())?;
+    Ok(R2Credentials {
+        access_key_id: Zeroizing::new(access_key_id),
+        secret_access_key: Zeroizing::new(secret_access_key),
+    })
 }
 
 fn encode_draft_key(key: &[u8; 32]) -> String {
