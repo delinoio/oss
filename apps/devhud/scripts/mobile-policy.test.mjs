@@ -188,6 +188,8 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   const iosApplicationEntitlements = readFileSync(join(appRoot, "mobile/overrides/ios/DevHud.entitlements"), "utf8");
   const iosEntitlements = readFileSync(join(appRoot, "mobile/overrides/ios/DevHudWidget/DevHudWidget.entitlements"), "utf8");
   assert.doesNotThrow(() => assertNativeWidgetPullRequestMetadata(androidProvider, iosWidget));
+  assert.throws(() => assertNativeWidgetPullRequestMetadata(androidProvider.replace('payload.opt("incomplete_results") as? Boolean', 'payload.optBoolean("incomplete_results", false)'), iosWidget), /exact false incomplete_results/u);
+  assert.throws(() => assertNativeWidgetPullRequestMetadata(androidProvider.replace("if (incompleteResults) return@github failure", "if (false) return@github failure"), iosWidget), /exact false incomplete_results/u);
   for (const [exact, coercing] of [
     ['item.opt("node_id") as? String', 'item.optString("node_id")'],
     ['item.opt("number") as? Int', 'item.getInt("number")'],

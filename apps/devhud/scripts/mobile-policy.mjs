@@ -186,6 +186,7 @@ export function assertIosNativeBridge(iosNativeBridgeInput, iosWidgetStateStoreI
 
 export function assertNativeWidgetPullRequestMetadata(androidProvider, iosWidget) {
   const androidRefresh = androidProvider.match(/private fun refreshGitHub[\s\S]*?(?=\n        private fun validateRepositories)/u)?.[0] ?? "";
+  assert(androidRefresh.includes('val incompleteResults = payload.opt("incomplete_results") as? Boolean') && androidRefresh.includes("if (incompleteResults) return@github failure"), "Android widget refresh must require an exact false incomplete_results flag");
   assert(androidRefresh.includes('val nodeId = item.opt("node_id") as? String') && androidRefresh.includes('val number = item.opt("number") as? Int') && androidRefresh.includes('val title = item.opt("title") as? String') && androidRefresh.includes('val repositoryUrl = item.opt("repository_url") as? String'), "Android widget refresh must require exact result field types");
   assert(androidRefresh.includes('.put("nodeId", nodeId)') && androidRefresh.includes('.put("number", number)') && androidRefresh.includes('.put("title", title)') && androidRefresh.includes('.put("repository", repositoryName(repositoryUrl))'), "Android widget refresh must publish only validated result fields");
   assert(/item\.optJSONObject\("pull_request"\)[\s\S]*?\?: return@github failure/u.test(androidRefresh), "Android widget refresh must reject a missing or non-object pull_request");

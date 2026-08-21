@@ -235,7 +235,9 @@ class DevHudWidgetProvider : AppWidgetProvider() {
                     if (status == 403 || status == 404) return@github failure(configuration, previous, "permission", attemptedAt, responseRate)
                     if (status !in 200..299) return@github failure(configuration, previous, "error", attemptedAt, responseRate)
                     val payload = connection.inputStream.bufferedReader().use { JSONObject(it.readText()) }
-                    if (payload.optBoolean("incomplete_results", false)) return@github failure(configuration, previous, "error", attemptedAt, responseRate)
+                    val incompleteResults = payload.opt("incomplete_results") as? Boolean
+                        ?: return@github failure(configuration, previous, "error", attemptedAt, responseRate)
+                    if (incompleteResults) return@github failure(configuration, previous, "error", attemptedAt, responseRate)
                     val items = payload.getJSONArray("items")
                     val results = JSONArray()
                     var open = 0; var draft = 0; var merged = 0; var closed = 0
