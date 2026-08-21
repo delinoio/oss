@@ -77,6 +77,12 @@ export function configureIosWidgetProject(projectPath = join(generatedRoot, "app
   if (typeof project !== "object" || project === null || typeof project.targets !== "object" || project.targets === null) throw new Error("generated iOS project has no targets");
   const application = Object.entries(project.targets).find(([, target]) => target?.type === "application" && target?.platform === "iOS");
   if (application === undefined) throw new Error("generated iOS application target is missing");
+  const [, applicationTarget] = application;
+  const currentProjectVersion = applicationTarget.settings?.base?.CURRENT_PROJECT_VERSION;
+  const marketingVersion = applicationTarget.settings?.base?.MARKETING_VERSION;
+  if ((typeof currentProjectVersion !== "string" && typeof currentProjectVersion !== "number") || String(currentProjectVersion).trim() === "") throw new Error("generated iOS application target has no current project version");
+  if ((typeof marketingVersion !== "string" && typeof marketingVersion !== "number") || String(marketingVersion).trim() === "") throw new Error("generated iOS application target has no marketing version");
+  const applicationVersions = { CURRENT_PROJECT_VERSION: currentProjectVersion, MARKETING_VERSION: marketingVersion };
   project.targets.DevHudWidget = {
     type: "app-extension",
     platform: "iOS",
@@ -87,7 +93,7 @@ export function configureIosWidgetProject(projectPath = join(generatedRoot, "app
       { path: "DevHudWidgetShared/en.lproj" },
       { path: "DevHudWidgetShared/ko.lproj" },
     ],
-    settings: { base: { PRODUCT_BUNDLE_IDENTIFIER: "io.delino.devhud.widget", PRODUCT_NAME: "DevHUD Deck", CURRENT_PROJECT_VERSION: "1", MARKETING_VERSION: "0.1.0", SKIP_INSTALL: "YES", SWIFT_VERSION: "5.9", TARGETED_DEVICE_FAMILY: "1,2", INFOPLIST_FILE: "DevHudWidget/Info.plist", CODE_SIGN_ENTITLEMENTS: "DevHudWidget/DevHudWidget.entitlements" } },
+    settings: { base: { PRODUCT_BUNDLE_IDENTIFIER: "io.delino.devhud.widget", PRODUCT_NAME: "DevHUD Deck", ...applicationVersions, SKIP_INSTALL: "YES", SWIFT_VERSION: "5.9", TARGETED_DEVICE_FAMILY: "1,2", INFOPLIST_FILE: "DevHudWidget/Info.plist", CODE_SIGN_ENTITLEMENTS: "DevHudWidget/DevHudWidget.entitlements" } },
   };
   project.targets.DevHudWidgetIntent = {
     type: "app-extension",
@@ -99,9 +105,9 @@ export function configureIosWidgetProject(projectPath = join(generatedRoot, "app
       { path: "DevHudWidgetShared/en.lproj" },
       { path: "DevHudWidgetShared/ko.lproj" },
     ],
-    settings: { base: { PRODUCT_BUNDLE_IDENTIFIER: "io.delino.devhud.widget.intent", PRODUCT_NAME: "DevHUD Deck Selection", CURRENT_PROJECT_VERSION: "1", MARKETING_VERSION: "0.1.0", SKIP_INSTALL: "YES", SWIFT_VERSION: "5.9", TARGETED_DEVICE_FAMILY: "1,2", INFOPLIST_FILE: "DevHudWidgetIntent/Info.plist", CODE_SIGN_ENTITLEMENTS: "DevHudWidgetIntent/DevHudWidgetIntent.entitlements" } },
+    settings: { base: { PRODUCT_BUNDLE_IDENTIFIER: "io.delino.devhud.widget.intent", PRODUCT_NAME: "DevHUD Deck Selection", ...applicationVersions, SKIP_INSTALL: "YES", SWIFT_VERSION: "5.9", TARGETED_DEVICE_FAMILY: "1,2", INFOPLIST_FILE: "DevHudWidgetIntent/Info.plist", CODE_SIGN_ENTITLEMENTS: "DevHudWidgetIntent/DevHudWidgetIntent.entitlements" } },
   };
-  const [applicationName, applicationTarget] = application;
+  const [applicationName] = application;
   applicationTarget.dependencies = [...(applicationTarget.dependencies ?? []).filter((dependency) => !["DevHudWidget", "DevHudWidgetIntent"].includes(dependency?.target)), { target: "DevHudWidget", embed: true }, { target: "DevHudWidgetIntent", embed: true }];
   project.targets[applicationName] = applicationTarget;
   writeFileSync(projectPath, dumpYaml(project, { lineWidth: 140, noRefs: true }));

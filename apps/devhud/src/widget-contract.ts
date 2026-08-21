@@ -1,7 +1,8 @@
-import type { GitHubCredentialKind } from "./settings-contract.ts";
+import type { DeckRepositoryRef, GitHubCredentialKind } from "./settings-contract.ts";
 import type { GitHubDeckPullRequest, GitHubRate } from "./github-provider.ts";
 
 export const WidgetContractVersion = 1 as const;
+export const WidgetRepositoryLimit = 10 as const;
 export const WidgetResultLimit = 100 as const;
 export const WidgetPreviewLimit = 3 as const;
 export const WidgetStaleAfterMilliseconds = 60 * 60 * 1000;
@@ -11,6 +12,7 @@ export const WidgetRefreshState = {
   Stale: "stale",
   MissingToken: "missing-token",
   RateLimit: "rate-limit",
+  Permission: "permission",
   Error: "error",
 } as const;
 export type WidgetRefreshState = (typeof WidgetRefreshState)[keyof typeof WidgetRefreshState];
@@ -20,6 +22,7 @@ export interface WidgetDeckConfiguration {
   readonly deckId: string;
   readonly name: string;
   readonly query: string;
+  readonly repositories: readonly DeckRepositoryRef[];
   readonly profileId: string;
   readonly profileKind: GitHubCredentialKind;
   readonly scopeId: string;
@@ -83,9 +86,10 @@ export function widgetSnapshotIsStale(snapshot: WidgetDeckSnapshot, now = Date.n
   return snapshot.lastSuccessfulAt === null || now - Date.parse(snapshot.lastSuccessfulAt) >= WidgetStaleAfterMilliseconds;
 }
 
-export function widgetRefreshState(lastSuccessfulAt: string | null, failure: "missing-token" | "rate-limit" | "error" | null, now = Date.now()): WidgetRefreshState {
+export function widgetRefreshState(lastSuccessfulAt: string | null, failure: "missing-token" | "rate-limit" | "permission" | "error" | null, now = Date.now()): WidgetRefreshState {
   if (failure === "missing-token") return WidgetRefreshState.MissingToken;
   if (failure === "rate-limit") return WidgetRefreshState.RateLimit;
+  if (failure === "permission") return WidgetRefreshState.Permission;
   if (failure === "error") return WidgetRefreshState.Error;
   return lastSuccessfulAt === null || now - Date.parse(lastSuccessfulAt) >= WidgetStaleAfterMilliseconds ? WidgetRefreshState.Stale : WidgetRefreshState.Fresh;
 }

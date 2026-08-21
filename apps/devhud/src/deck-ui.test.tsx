@@ -61,7 +61,7 @@ describe("Deck surface", () => {
 
     await waitFor(() => expect(request).toHaveBeenCalledWith({
       operation: "widgets.enable-deck",
-      configuration: { version: 1, deckId: deck.id, name: deck.name, query: deck.query, profileId: profile.id, profileKind: profile.kind, scopeId: "origin.scope", language: "en" },
+      configuration: { version: 1, deckId: deck.id, name: deck.name, query: deck.query, repositories: [{ owner: "octo", name: "widgets" }], profileId: profile.id, profileKind: profile.kind, scopeId: "origin.scope", language: "en" },
     }));
     expect(JSON.stringify(request.mock.calls)).not.toMatch(/github[_-]?pat|Bearer|token-value/iu);
   });
@@ -86,6 +86,56 @@ describe("Deck surface", () => {
     await waitFor(() => expect(screen.getByRole("alert").textContent).toBe(messages.en.widgetActionFailed));
     expect(screen.getByRole("button", { name: messages.en.widgetDisable })).toBeTruthy();
     expect(screen.queryByRole("button", { name: messages.en.widgetEnable })).toBeNull();
+  });
+
+  it("reconciles an enabled non-visible Deck after synchronized settings change", async () => {
+    const hiddenDeck = { ...deck, id: "018f47a2-7b3c-7def-8abc-1234567890ad", name: "Hidden Deck", query: "repo:octo/hidden is:pr", builder: null };
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [deck, hiddenDeck] }) });
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => value.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [hiddenDeck.id] } : { kind: "ok" });
+    const bridge = bridgeWith(request);
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online language="en" provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    await waitFor(() => expect(request).toHaveBeenCalledWith(expect.objectContaining({ operation: "widgets.enable-deck", configuration: expect.objectContaining({ deckId: hiddenDeck.id, query: hiddenDeck.query }) })));
+    request.mockClear();
+    const editedHiddenDeck = { ...hiddenDeck, query: "repo:octo/renamed is:pr", builder: null };
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [deck, editedHiddenDeck] }) });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online language="ko" provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    await waitFor(() => expect(request).toHaveBeenCalledWith({
+      operation: "widgets.enable-deck",
+      configuration: { version: 1, deckId: hiddenDeck.id, name: hiddenDeck.name, query: editedHiddenDeck.query, repositories: [{ owner: "octo", name: "renamed" }], profileId: profile.id, profileKind: profile.kind, scopeId: "origin.scope", language: "ko" },
+    }));
+  });
+
+  it("keeps manual disablement authoritative over a stale reconciliation", async () => {
+    let statusCalls = 0;
+    let resolveStaleStatus: (value: NativeBridgeResponseV1) => void = () => {};
+    const staleStatus = new Promise<NativeBridgeResponseV1>((resolve) => { resolveStaleStatus = resolve; });
+    const operations: string[] = [];
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      if (value.operation === "widgets.status") {
+        statusCalls += 1;
+        return statusCalls === 1 ? { kind: "widget-status", enabledDeckIds: [deck.id] } : staleStatus;
+      }
+      operations.push(value.operation);
+      return { kind: "ok" };
+    });
+    const bridge = bridgeWith(request);
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+    await screen.findByRole("button", { name: messages.en.widgetDisable });
+    await waitFor(() => expect(operations).toContain("widgets.enable-deck"));
+    operations.length = 0;
+
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [{ ...deck, name: "Edited Deck" }] }) });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+    await waitFor(() => expect(statusCalls).toBe(2));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.widgetDisable }));
+    await waitFor(() => expect(operations.filter((operation) => operation.startsWith("widgets."))).toEqual(["widgets.disable-deck"]));
+    resolveStaleStatus({ kind: "widget-status", enabledDeckIds: [deck.id] });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(operations.filter((operation) => operation.startsWith("widgets."))).toEqual(["widgets.disable-deck"]);
+    expect(screen.getByRole("button", { name: messages.en.widgetEnable })).toBeTruthy();
   });
 
   it("renders an unavailable state instead of empty results when an uncached Deck is offline", () => {

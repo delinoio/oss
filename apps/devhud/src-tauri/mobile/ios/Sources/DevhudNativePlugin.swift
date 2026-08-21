@@ -36,11 +36,14 @@ private struct WidgetDeckConfiguration: Codable {
     let deckId: String
     let name: String
     let query: String
+    let repositories: [WidgetRepository]
     let profileId: String
     let profileKind: String
     let scopeId: String
     let language: String
 }
+
+private struct WidgetRepository: Codable { let owner: String; let name: String }
 
 private struct WidgetDeckCounts: Codable { let total: Int; let open: Int; let draft: Int; let merged: Int; let closed: Int; let bounded: Bool }
 private struct WidgetPullRequest: Codable { let nodeId: String; let number: Int; let title: String; let repository: String; let state: String; let draft: Bool }
@@ -677,7 +680,7 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
     }
 
     private func widgetSelectionChanged(_ left: WidgetDeckConfiguration, _ right: WidgetDeckConfiguration) -> Bool {
-        left.query != right.query || left.profileId != right.profileId || left.profileKind != right.profileKind || left.scopeId != right.scopeId
+        left.query != right.query || left.repositories.map { "\($0.owner.lowercased())/\($0.name.lowercased())" } != right.repositories.map { "\($0.owner.lowercased())/\($0.name.lowercased())" } || left.profileId != right.profileId || left.profileKind != right.profileKind || left.scopeId != right.scopeId
     }
 
     private func replaceWidgetSnapshot(_ args: RequestArgs, _ invoke: Invoke) throws {

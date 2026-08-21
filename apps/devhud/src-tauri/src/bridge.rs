@@ -1,11 +1,14 @@
 #[cfg(desktop)]
 use std::io::Write;
-use std::sync::{
-    Arc, Condvar, Mutex,
-    atomic::{AtomicBool, Ordering},
-};
 #[cfg(desktop)]
 use std::time::Duration;
+use std::{
+    collections::HashSet,
+    sync::{
+        Arc, Condvar, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 
 use serde_json::{Value, json};
 #[cfg(desktop)]
@@ -600,6 +603,45 @@ fn valid_deck_id(value: &str) -> bool {
     deck_id_from_deep_link(&format!("devhud://deck/{value}")).is_some()
 }
 
+fn valid_widget_repositories(value: &Value) -> bool {
+    let Some(repositories) = value.as_array() else {
+        return false;
+    };
+    if repositories.is_empty() || repositories.len() > 10 {
+        return false;
+    }
+    let mut unique = HashSet::with_capacity(repositories.len());
+    repositories.iter().all(|repository| {
+        let Some(repository) = repository.as_object() else {
+            return false;
+        };
+        if !exact_keys(repository, &["owner", "name"]) {
+            return false;
+        }
+        let Some(owner) = repository.get("owner").and_then(Value::as_str) else {
+            return false;
+        };
+        let Some(name) = repository.get("name").and_then(Value::as_str) else {
+            return false;
+        };
+        let owner_valid = (1..=39).contains(&owner.len())
+            && owner
+                .bytes()
+                .all(|character| character.is_ascii_alphanumeric() || character == b'-')
+            && owner
+                .as_bytes()
+                .first()
+                .is_some_and(u8::is_ascii_alphanumeric)
+            && !owner.ends_with('-')
+            && !owner.contains("--");
+        let name_valid = (1..=100).contains(&name.len())
+            && name.bytes().all(|character| {
+                character.is_ascii_alphanumeric() || matches!(character, b'.' | b'_' | b'-')
+            });
+        owner_valid && name_valid && unique.insert(format!("{owner}/{name}").to_ascii_lowercase())
+    })
+}
+
 fn exact_keys(value: &serde_json::Map<String, Value>, expected: &[&str]) -> bool {
     value.len() == expected.len() && expected.iter().all(|key| value.contains_key(*key))
 }
@@ -636,6 +678,7 @@ fn validate_widget_request(request: &Value) -> Result<(), String> {
                 "deckId",
                 "name",
                 "query",
+                "repositories",
                 "profileId",
                 "profileKind",
                 "scopeId",
@@ -671,7 +714,10 @@ fn validate_widget_request(request: &Value) -> Result<(), String> {
                 .and_then(Value::as_str)
                 .is_some_and(|query| {
                     !query.trim().is_empty() && javascript_string_len(query) <= 1024
-                });
+                })
+            && value
+                .get("repositories")
+                .is_some_and(valid_widget_repositories);
         return valid
             .then_some(())
             .ok_or_else(|| "invalid-argument".to_string());
@@ -2071,6 +2117,7 @@ mod tests {
             "deckId": deck_id,
             "name": "가".repeat(128),
             "query": "😀".repeat(512),
+            "repositories": [{ "owner": "octo", "name": "widgets" }],
             "profileId": "work",
             "profileKind": "fine-grained",
             "scopeId": "origin.scope",
@@ -2113,6 +2160,7 @@ mod tests {
             "deckId": deck_id,
             "name": "Deck",
             "query": "😀".repeat(513),
+            "repositories": [{ "owner": "octo", "name": "widgets" }],
             "profileId": "work",
             "profileKind": "fine-grained",
             "scopeId": "origin.scope",

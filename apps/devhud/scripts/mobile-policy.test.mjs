@@ -129,6 +129,9 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   assert.match(androidProvider, /groupBy \{ store\.selectedDeckId\(it\) \}[\s\S]*refresh\(applicationContext, manager, deckId, appWidgetIds\)/u);
   assert.match(androidProvider, /ScrollView/u);
   assert.match(androidProvider, /incomplete_results/u);
+  assert.ok(androidProvider.indexOf("validateRepositories(configuration, token)") < androidProvider.indexOf('URL("https://api.github.com/search/issues'));
+  assert.match(androidProvider, /\/pulls\?state=open&per_page=1[\s\S]*\/issues\?state=open&per_page=1[\s\S]*\/contents/u);
+  assert.match(androidProvider, /status == 401[\s\S]*"missing-token"[\s\S]*status == 403 \|\| status == 404[\s\S]*"permission"/u);
   assert.match(androidManifest, /DevHudWidgetProvider"\s+android:exported="false"\s+android:label="@string\/devhud_widget_name"/u);
   assert.match(androidProvider, /results.*prefix|prefix\(3\)|minOf\(results\?\.length\(\) \?: 0, 3\)/su);
   assert.match(androidProvider, /devhud:\/\/deck\//u);
@@ -140,6 +143,10 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   assert.match(iosWidget, /sameSelection[\s\S]*store\.save/u);
   assert.match(iosWidget, /staleDate[\s\S]*entries\.append/u);
   assert.match(iosWidget, /incomplete_results/u);
+  assert.ok(iosWidget.indexOf("validateRepositories(deck: deck, token: token)") < iosWidget.indexOf('URLComponents(string: "https://api.github.com/search/issues")'));
+  assert.match(iosWidget, /\/pulls\?state=open&per_page=1[\s\S]*\/issues\?state=open&per_page=1[\s\S]*\/contents/u);
+  assert.match(iosWidget, /statusCode == 401[\s\S]*"missing-token"[\s\S]*statusCode == 403 \|\| .*statusCode == 404[\s\S]*"permission"/u);
+  assert.match(iosWidget, /foregroundStyle\(\.white\)[\s\S]*background\(Color\(red: 0\.11/u);
   assert.match(iosNativeBridge, /replaceWidgetCredentials\(profileId: setting\.profileId/u);
   assert.match(iosWidget, /devhud:\/\/deck\//u);
   assert.match(iosEntitlements, /group\.io\.delino\.devhud/u);

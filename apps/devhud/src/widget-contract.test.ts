@@ -37,6 +37,7 @@ describe("widget contract", () => {
     expect(widgetRefreshState("2026-08-20T00:30:00.000Z", null, now)).toBe(WidgetRefreshState.Stale);
     expect(widgetRefreshState(null, "missing-token", now)).toBe(WidgetRefreshState.MissingToken);
     expect(widgetRefreshState("2026-08-20T00:30:00.000Z", "rate-limit", now)).toBe(WidgetRefreshState.RateLimit);
+    expect(widgetRefreshState("2026-08-20T00:30:00.000Z", "permission", now)).toBe(WidgetRefreshState.Permission);
     expect(widgetRefreshState("2026-08-20T00:30:00.000Z", "error", now)).toBe(WidgetRefreshState.Error);
   });
 });

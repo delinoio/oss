@@ -90,7 +90,8 @@ internal class DevHudWidgetStore(private val context: Context) {
     fun removeSelection(appWidgetId: Int) { state.edit().remove(selectionPrefix + appWidgetId).apply() }
 
     private fun selectionChanged(left: JSONObject, right: JSONObject): Boolean =
-        listOf("query", "profileId", "profileKind", "scopeId").any { left.optString(it) != right.optString(it) }
+        listOf("query", "profileId", "profileKind", "scopeId").any { left.optString(it) != right.optString(it) } ||
+            left.optJSONArray("repositories")?.toString() != right.optJSONArray("repositories")?.toString()
 
     private fun json(value: String?): JSONObject? = try { value?.let(::JSONObject) } catch (_: Exception) { null }
 

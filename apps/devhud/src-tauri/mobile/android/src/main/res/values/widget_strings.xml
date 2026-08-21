@@ -10,5 +10,5 @@
     <string name="devhud_widget_first_hundred"> · state counts: first 100</string>
     <string name="devhud_widget_no_results">No pull requests</string>
     <string name="devhud_widget_status">%1$s · Last success %2$s</string>
-    <string name="devhud_widget_fresh">Current</string><string name="devhud_widget_stale">Stale</string><string name="devhud_widget_missing_token">Setup required</string><string name="devhud_widget_rate_limit">Rate limited</string><string name="devhud_widget_error">Refresh failed</string><string name="devhud_widget_never">Never</string>
+    <string name="devhud_widget_fresh">Current</string><string name="devhud_widget_stale">Stale</string><string name="devhud_widget_missing_token">Setup required</string><string name="devhud_widget_rate_limit">Rate limited</string><string name="devhud_widget_permission">Access denied</string><string name="devhud_widget_error">Refresh failed</string><string name="devhud_widget_never">Never</string>
 </resources>

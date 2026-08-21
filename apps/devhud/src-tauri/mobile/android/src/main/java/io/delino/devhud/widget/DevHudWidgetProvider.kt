@@ -102,6 +102,9 @@ class DevHudWidgetProvider : AppWidgetProvider() {
         private fun refreshGitHub(configuration: JSONObject, token: String, previous: JSONObject?): JSONObject {
             val attemptedAt = Instant.now().toString()
             return try {
+                validateRepositories(configuration, token)?.let { validation ->
+                    return failure(configuration, previous, validation.first, attemptedAt, validation.second)
+                }
                 val connection = URL("https://api.github.com/search/issues?q=" + Uri.encode(configuration.getString("query")) + "&per_page=100&page=1")
                     .openConnection() as HttpURLConnection
                 connection.connectTimeout = 15_000
@@ -112,7 +115,8 @@ class DevHudWidgetProvider : AppWidgetProvider() {
                 val status = connection.responseCode
                 val rateLimited = status == 429 || status == 403 && (connection.getHeaderField("X-RateLimit-Remaining") == "0" || connection.getHeaderField("Retry-After") != null)
                 if (rateLimited) return failure(configuration, previous, "rate-limit", attemptedAt, connection)
-                if (status == 401 || status == 403) return failure(configuration, previous, "missing-token", attemptedAt, connection)
+                if (status == 401) return failure(configuration, previous, "missing-token", attemptedAt, connection)
+                if (status == 403 || status == 404) return failure(configuration, previous, "permission", attemptedAt, connection)
                 if (status !in 200..299) return failure(configuration, previous, "error", attemptedAt, connection)
                 val payload = connection.inputStream.bufferedReader().use { JSONObject(it.readText()) }
                 if (payload.optBoolean("incomplete_results", false)) return failure(configuration, previous, "error", attemptedAt, connection)
@@ -138,6 +142,67 @@ class DevHudWidgetProvider : AppWidgetProvider() {
                     .put("results", results).put("state", "fresh").put("lastSuccessfulAt", attemptedAt).put("lastAttemptedAt", attemptedAt)
                     .put("rate", rate(connection))
             } catch (_: Exception) { failure(configuration, previous, "error", attemptedAt, null) }
+        }
+
+        private fun validateRepositories(configuration: JSONObject, token: String): Pair<String, HttpURLConnection?>? {
+            return try {
+                val repositories = configuration.getJSONArray("repositories")
+                for (index in 0 until repositories.length()) {
+                    val repository = repositories.getJSONObject(index)
+                    val path = "/repos/${repository.getString("owner")}/${repository.getString("name")}"
+                    val metadata = github(path, token)
+                    responseFailure(metadata)?.let { return it to metadata }
+                    if (configuration.getString("profileKind") == "classic") {
+                        val scopes = metadata.getHeaderField("X-OAuth-Scopes").orEmpty().split(",").map { it.trim() }.toSet()
+                        if ("repo" !in scopes) return "permission" to metadata
+                    }
+                    val metadataPayload = metadata.inputStream.bufferedReader().use { JSONObject(it.readText()) }
+                    val neverPushed = metadataPayload.isNull("pushed_at")
+                    for (suffix in listOf("/pulls?state=open&per_page=1", "/issues?state=open&per_page=1")) {
+                        val access = github(path + suffix, token)
+                        responseFailure(access)?.let { return it to access }
+                        access.inputStream.close()
+                    }
+                    val contents = github(path + "/contents", token)
+                    if (contents.responseCode != 404 || !neverPushed) responseFailure(contents)?.let { return it to contents }
+                    if (contents.responseCode in 200..299) contents.inputStream.close() else contents.errorStream?.close()
+                    if (configuration.getString("profileKind") == "fine-grained") {
+                        val probe = github(path + "/issues", token, "POST", "{}")
+                        if (probe.responseCode != 422) {
+                            responseFailure(probe)?.let { return it to probe }
+                            return "error" to probe
+                        }
+                        probe.errorStream?.close()
+                    }
+                }
+                null
+            } catch (_: Exception) { "error" to null }
+        }
+
+        private fun github(path: String, token: String, method: String = "GET", body: String? = null): HttpURLConnection {
+            val connection = URL("https://api.github.com$path").openConnection() as HttpURLConnection
+            connection.connectTimeout = 15_000
+            connection.readTimeout = 20_000
+            connection.requestMethod = method
+            connection.setRequestProperty("Accept", "application/vnd.github+json")
+            connection.setRequestProperty("Authorization", "Bearer $token")
+            connection.setRequestProperty("X-GitHub-Api-Version", "2026-03-10")
+            if (body != null) {
+                connection.doOutput = true
+                connection.setRequestProperty("Content-Type", "application/json")
+                connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+            }
+            connection.responseCode
+            return connection
+        }
+
+        private fun responseFailure(connection: HttpURLConnection): String? {
+            val status = connection.responseCode
+            if (status in 200..299) return null
+            if (status == 429 || status == 403 && (connection.getHeaderField("X-RateLimit-Remaining") == "0" || connection.getHeaderField("Retry-After") != null)) return "rate-limit"
+            if (status == 401) return "missing-token"
+            if (status == 403 || status == 404) return "permission"
+            return "error"
         }
 
         private fun failure(configuration: JSONObject, previous: JSONObject?, state: String, attemptedAt: String, connection: HttpURLConnection?): JSONObject {
@@ -183,6 +248,7 @@ class DevHudWidgetProvider : AppWidgetProvider() {
                 "stale" -> R.string.devhud_widget_stale
                 "missing-token" -> R.string.devhud_widget_missing_token
                 "rate-limit" -> R.string.devhud_widget_rate_limit
+                "permission" -> R.string.devhud_widget_permission
                 "error" -> R.string.devhud_widget_error
                 else -> R.string.devhud_widget_fresh
             }

@@ -23,7 +23,17 @@ interface DeckPollingContextValue {
   readonly clear: (deck: Deck) => Promise<void>;
 }
 
+interface WidgetAccessContextValue {
+  readonly supported: boolean;
+  readonly enabledDeckIds: ReadonlySet<string>;
+  readonly failedDeckIds: ReadonlySet<string>;
+  readonly enable: (deck: Deck, snapshot?: WidgetDeckSnapshot) => Promise<void>;
+  readonly disable: (deckId: string) => Promise<void>;
+  readonly synchronizeSnapshot: (deck: Deck, snapshot: WidgetDeckSnapshot) => Promise<void>;
+}
+
 const DeckPollingContext = createContext<DeckPollingContextValue | null>(null);
+const WidgetAccessContext = createContext<WidgetAccessContextValue | null>(null);
 const emptyDeckRefreshState: DeckRefreshState = { cache: null, loading: false, failure: null };
 const noDecks: readonly Deck[] = [];
 const DeckRepositoryValidationConcurrency = 2;
@@ -62,15 +72,27 @@ function useDeckPolling(): DeckPollingContextValue {
   return value;
 }
 
-interface DeckPollingBoundaryProps extends PropsWithChildren { readonly bridge: NativeBridgeV1; readonly active: boolean; readonly online: boolean; readonly provider?: GitHubProvider; }
+function useWidgetAccess(): WidgetAccessContextValue {
+  const value = use(WidgetAccessContext);
+  if (value === null) throw new Error("WidgetAccessBoundary is missing");
+  return value;
+}
+
+interface DeckPollingBoundaryProps extends PropsWithChildren { readonly bridge: NativeBridgeV1; readonly active: boolean; readonly online: boolean; readonly language?: "en" | "ko"; readonly provider?: GitHubProvider; }
 
 /** Keeps every configured Deck current while the client is able to poll, independent of the visible surface. */
-export function DeckPollingBoundary({ bridge, active, online, provider: suppliedProvider, children }: DeckPollingBoundaryProps) {
+export function DeckPollingBoundary({ bridge, active, online, language = "en", provider: suppliedProvider, children }: DeckPollingBoundaryProps) {
   const identity = useIdentitySettings();
   const storage = useMemo(() => getLocalStorage(), []);
   const defaultProvider = useMemo(() => createGitHubProvider({ fetch: globalThis.fetch }), []);
   const provider = suppliedProvider ?? defaultProvider;
   const [states, setStates] = useState<Record<string, DeckRefreshState>>({});
+  const [widgetSupported, setWidgetSupported] = useState(false);
+  const [enabledWidgetDeckIds, setEnabledWidgetDeckIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [failedWidgetDeckIds, setFailedWidgetDeckIds] = useState<ReadonlySet<string>>(() => new Set());
+  const widgetMutationQueues = useRef(new Map<string, Promise<void>>());
+  const widgetReconciliationGeneration = useRef(0);
+  const manuallyDisabledWidgetDeckIds = useRef(new Set<string>());
   const caches = useRef(new Map<string, DeckCache | null>());
   const configurations = useRef(new Map<string, DeckPollingConfiguration>());
   const loading = useRef(new Set<string>());
@@ -232,6 +254,71 @@ export function DeckPollingBoundary({ bridge, active, online, provider: supplied
     });
   }, [cancelDeckNotifications, identity.githubPatScopeId, storage]);
 
+  const setWidgetFailure = useCallback((deckId: string, failed: boolean) => {
+    setFailedWidgetDeckIds((current) => {
+      if (current.has(deckId) === failed) return current;
+      const next = new Set(current);
+      if (failed) next.add(deckId); else next.delete(deckId);
+      return next;
+    });
+  }, []);
+
+  const enqueueWidgetMutation = useCallback((deckId: string, operation: () => Promise<void>) => {
+    const previous = widgetMutationQueues.current.get(deckId) ?? Promise.resolve();
+    const next = previous.catch(() => undefined).then(operation);
+    widgetMutationQueues.current.set(deckId, next);
+    const cleanup = () => { if (widgetMutationQueues.current.get(deckId) === next) widgetMutationQueues.current.delete(deckId); };
+    void next.then(cleanup, cleanup);
+    return next;
+  }, []);
+
+  const widgetConfiguration = useCallback(async (deck: Deck): Promise<WidgetDeckConfiguration | null> => {
+    const profile = identity.settings.github.profiles.find((item) => item.id === deck.profileRef);
+    const repositories = deckRepositories(deck.query);
+    if (profile === undefined || repositories === null || repositories.length === 0) return null;
+    return { version: WidgetContractVersion, deckId: deck.id, name: deck.name, query: deck.query, repositories, profileId: profile.id, profileKind: profile.kind, scopeId: await identity.githubPatScopeId, language };
+  }, [identity.githubPatScopeId, identity.settings.github.profiles, language]);
+
+  const synchronizeWidgetDeck = useCallback(async (deck: Deck, snapshot?: WidgetDeckSnapshot) => {
+    try {
+      const configuration = await widgetConfiguration(deck);
+      if (configuration === null) throw new Error("missing-widget-configuration");
+      await enqueueWidgetMutation(deck.id, async () => {
+        await bridge.request({ operation: "widgets.enable-deck", configuration });
+        if (snapshot !== undefined && snapshot.query === configuration.query) await bridge.request({ operation: "widgets.replace-deck-snapshot", snapshot });
+      });
+      setEnabledWidgetDeckIds((current) => current.has(deck.id) ? current : new Set(current).add(deck.id));
+      setWidgetFailure(deck.id, false);
+    } catch (error) {
+      setWidgetFailure(deck.id, true);
+      throw error;
+    }
+  }, [bridge, enqueueWidgetMutation, setWidgetFailure, widgetConfiguration]);
+
+  const disableWidgetDeck = useCallback(async (deckId: string) => {
+    try {
+      await enqueueWidgetMutation(deckId, async () => { await bridge.request({ operation: "widgets.disable-deck", deckId }); });
+      setEnabledWidgetDeckIds((current) => { if (!current.has(deckId)) return current; const next = new Set(current); next.delete(deckId); return next; });
+      setWidgetFailure(deckId, false);
+    } catch (error) {
+      setWidgetFailure(deckId, true);
+      throw error;
+    }
+  }, [bridge, enqueueWidgetMutation, setWidgetFailure]);
+
+  const enableWidgetDeck = useCallback(async (deck: Deck, snapshot?: WidgetDeckSnapshot) => {
+    manuallyDisabledWidgetDeckIds.current.delete(deck.id);
+    widgetReconciliationGeneration.current += 1;
+    await synchronizeWidgetDeck(deck, snapshot);
+  }, [synchronizeWidgetDeck]);
+
+  const disableWidgetDeckManually = useCallback(async (deckId: string) => {
+    manuallyDisabledWidgetDeckIds.current.add(deckId);
+    widgetReconciliationGeneration.current += 1;
+    try { await disableWidgetDeck(deckId); }
+    catch (error) { manuallyDisabledWidgetDeckIds.current.delete(deckId); throw error; }
+  }, [disableWidgetDeck]);
+
   const configuredDecks = identity.deckAccessSuspended ? noDecks : identity.settings.decks;
   const scheduleKey = configuredDecks.map((deck) => `${deck.id}\u0000${deck.name}\u0000${deck.profileRef}\u0000${deck.query}\u0000${deck.refreshMinutes}\u0000${deck.notifications.join(",")}`).join("\u0001");
   const scheduledDecks = useMemo(() => configuredDecks, [identity.deckAccessSuspended, scheduleKey]);
@@ -290,26 +377,34 @@ export function DeckPollingBoundary({ bridge, active, online, provider: supplied
   useEffect(() => {
     let cancelled = false;
     let retry: ReturnType<typeof setTimeout> | undefined;
-    const configuredIds = new Set(scheduledDecks.map((deck) => deck.id));
+    const generation = widgetReconciliationGeneration.current + 1;
+    widgetReconciliationGeneration.current = generation;
     const reconcile = async () => {
       let failed = false;
       try {
         const response = await bridge.request({ operation: "widgets.status" });
-        if (cancelled || response.kind !== "widget-status") return;
+        if (cancelled || widgetReconciliationGeneration.current !== generation || response.kind !== "widget-status") return;
+        setWidgetSupported(true);
+        setEnabledWidgetDeckIds(new Set(response.enabledDeckIds));
+        for (const deckId of [...manuallyDisabledWidgetDeckIds.current]) if (!response.enabledDeckIds.includes(deckId)) manuallyDisabledWidgetDeckIds.current.delete(deckId);
         for (const deckId of response.enabledDeckIds) {
-          if (configuredIds.has(deckId)) continue;
-          try { await bridge.request({ operation: "widgets.disable-deck", deckId }); }
-          catch { failed = true; }
+          if (cancelled || widgetReconciliationGeneration.current !== generation) return;
+          if (manuallyDisabledWidgetDeckIds.current.has(deckId)) continue;
+          const deck = scheduledDecks.find((item) => item.id === deckId);
+          try {
+            if (deck === undefined) await disableWidgetDeck(deckId);
+            else await synchronizeWidgetDeck(deck);
+          } catch { failed = true; }
         }
       } catch { failed = true; }
-      if (!cancelled && failed) retry = setTimeout(() => void reconcile(), 5_000);
+      if (!cancelled && widgetReconciliationGeneration.current === generation && failed) retry = setTimeout(() => void reconcile(), 5_000);
     };
     void reconcile();
     return () => {
       cancelled = true;
       if (retry !== undefined) clearTimeout(retry);
     };
-  }, [bridge, scheduledDecks]);
+  }, [bridge, disableWidgetDeck, scheduledDecks, synchronizeWidgetDeck]);
   useEffect(() => () => {
     const deckIds = new Set([...decks.current.map((deck) => deck.id), ...caches.current.keys(), ...configurations.current.keys()]);
     deckAccessAllowed.current = false;
@@ -335,12 +430,13 @@ export function DeckPollingBoundary({ bridge, active, online, provider: supplied
   }, [active, identity.deckAccessSuspended, online, scheduledDecks]);
 
   const value = useMemo<DeckPollingContextValue>(() => ({ states, canPoll: active && online && !identity.deckAccessSuspended, online, refresh, validate, clear }), [active, clear, identity.deckAccessSuspended, online, refresh, states, validate]);
-  return <DeckPollingContext value={value}>{children}</DeckPollingContext>;
+  const widgetValue = useMemo<WidgetAccessContextValue>(() => ({ supported: widgetSupported, enabledDeckIds: enabledWidgetDeckIds, failedDeckIds: failedWidgetDeckIds, enable: enableWidgetDeck, disable: disableWidgetDeckManually, synchronizeSnapshot: synchronizeWidgetDeck }), [disableWidgetDeckManually, enableWidgetDeck, enabledWidgetDeckIds, failedWidgetDeckIds, synchronizeWidgetDeck, widgetSupported]);
+  return <DeckPollingContext value={value}><WidgetAccessContext value={widgetValue}>{children}</WidgetAccessContext></DeckPollingContext>;
 }
 
 interface DeckSurfaceProps { readonly copy: Copy; readonly bridge: NativeBridgeV1; readonly language?: "en" | "ko"; readonly selectedDeckId?: string | null; readonly onDismissMissingLink?: () => void; }
 
-export function DeckSurface({ copy, bridge, language = "en", selectedDeckId = null, onDismissMissingLink }: DeckSurfaceProps) {
+export function DeckSurface({ copy, bridge, selectedDeckId = null, onDismissMissingLink }: DeckSurfaceProps) {
   const identity = useIdentitySettings();
   const polling = useDeckPolling();
   const [selected, setSelected] = useState<string | null>(selectedDeckId);
@@ -372,66 +468,30 @@ export function DeckSurface({ copy, bridge, language = "en", selectedDeckId = nu
     <div className="deck-layout"><nav aria-label={copy.deck}><ul>{identity.settings.decks.map((item) => <li key={item.id}><button className={deck?.id === item.id ? "active" : ""} onClick={() => { onDismissMissingLink?.(); setSelected(item.id); setCreating(false); }}>{item.name}</button></li>)}</ul></nav>
       {deck === null ? <DeckEditor key="create" copy={copy} disabled={creationDisabled} onSave={async (next) => { await polling.validate(next); const committed = await identity.replaceSettings((current) => ({ ...current, decks: [...current.decks, next] })); if (committed) { setSelected(next.id); setCreating(false); } return committed; }} profiles={identity.settings.github.profiles} /> : <div><DeckEditor key={deck.id} copy={copy} value={deck} profiles={identity.settings.github.profiles} disabled={identity.readOnly} onSave={async (next) => { await polling.validate(next); return identity.replaceSettings((current) => ({ ...current, decks: current.decks.map((item) => item.id === deck.id ? next : item) })); }} />
         <div className="actions"><button type="button" disabled={refreshState.loading || !polling.canPoll} onClick={() => void polling.refresh(deck.id, true)}>{copy.deckRefresh}</button><button type="button" disabled={identity.readOnly} onClick={() => void deleteDeck(deck)}>{copy.deckDelete}</button></div>
-        <WidgetAccess key={deck.id} bridge={bridge} cache={refreshState.cache} copy={copy} deck={deck} failure={refreshState.failure} language={language} />
+        <WidgetAccess key={deck.id} cache={refreshState.cache} copy={copy} deck={deck} failure={refreshState.failure} />
         {refreshState.cache?.lastSuccessfulAt && <p>{copy.lastSuccessfulRefresh}: <time dateTime={refreshState.cache.lastSuccessfulAt}>{refreshState.cache.lastSuccessfulAt}</time></p>}{refreshState.cache?.rate?.resetAt && <p>{copy.deckRateReset}: <time dateTime={refreshState.cache.rate.resetAt}>{refreshState.cache.rate.resetAt}</time></p>}{!polling.canPoll && refreshState.cache && <p className="notice">{copy.deckStale}</p>}{refreshState.failure && <p role="alert">{failureCopy(copy, refreshState.failure)}</p>}
         {deleteFailed && <p role="alert">{copy.deckDeleteFailed}</p>}{!polling.online && refreshState.cache === null ? <OfflineState copy={copy} /> : refreshState.loading && refreshState.cache === null ? <LoadingState copy={copy} /> : <DeckResults copy={copy} groupBy={deck.display.groupBy} results={deck.display.showDrafts ? refreshState.cache?.results ?? [] : (refreshState.cache?.results ?? []).filter((pullRequest) => !pullRequest.draft)} />}
       </div>}</div></section>;
 }
 
-function WidgetAccess({ bridge, cache, copy, deck, failure, language }: { readonly bridge: NativeBridgeV1; readonly cache: DeckCache | null; readonly copy: Copy; readonly deck: Deck; readonly failure: DeckFailure | null; readonly language: "en" | "ko" }) {
+function WidgetAccess({ cache, copy, deck, failure }: { readonly cache: DeckCache | null; readonly copy: Copy; readonly deck: Deck; readonly failure: DeckFailure | null }) {
   const identity = useIdentitySettings();
-  const [supported, setSupported] = useState(false);
-  const [enabled, setEnabled] = useState(false);
+  const widgetAccess = useWidgetAccess();
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [failed, setFailed] = useState(false);
   const enableTrigger = useRef<HTMLButtonElement>(null);
   const disableButton = useRef<HTMLButtonElement>(null);
   const dialog = useRef<HTMLElement>(null);
   const cancelButton = useRef<HTMLButtonElement>(null);
-  const configurationSync = useRef<Promise<void>>(Promise.resolve());
-  const configurationGeneration = useRef(0);
   const profile = identity.settings.github.profiles.find((item) => item.id === deck.profileRef);
-
-  const configuration = useCallback(async (): Promise<WidgetDeckConfiguration | null> => {
-    if (profile === undefined) return null;
-    return { version: WidgetContractVersion, deckId: deck.id, name: deck.name, query: deck.query, profileId: profile.id, profileKind: profile.kind, scopeId: await identity.githubPatScopeId, language };
-  }, [deck.id, deck.name, deck.query, identity.githubPatScopeId, language, profile]);
-
-  useEffect(() => {
-    let cancelled = false;
-    void bridge.request({ operation: "widgets.status" }).then((response) => {
-      if (cancelled || response.kind !== "widget-status") return;
-      setSupported(true);
-      setEnabled(response.enabledDeckIds.includes(deck.id));
-    }).catch(() => {});
-    return () => { cancelled = true; };
-  }, [bridge, deck.id]);
-
-  useEffect(() => {
-    if (!enabled) return;
-    const generation = configurationGeneration.current + 1;
-    configurationGeneration.current = generation;
-    const sync = configuration().then(async (value) => {
-      if (value !== null) await bridge.request({ operation: "widgets.enable-deck", configuration: value });
-    });
-    configurationSync.current = sync;
-    void sync.catch(() => {
-      if (configurationGeneration.current !== generation) return;
-      setFailed(true);
-    });
-  }, [bridge, configuration, enabled]);
+  const enabled = widgetAccess.enabledDeckIds.has(deck.id);
+  const failed = widgetAccess.failedDeckIds.has(deck.id);
 
   useEffect(() => {
     if (!enabled || cache === null || cache.query !== deck.query) return;
-    const generation = configurationGeneration.current;
     const snapshot = widgetSnapshot(deck, cache, failure);
-    void configurationSync.current.then(async () => {
-      if (configurationGeneration.current === generation) await bridge.request({ operation: "widgets.replace-deck-snapshot", snapshot });
-    }).catch(() => {
-      if (configurationGeneration.current === generation) setFailed(true);
-    });
-  }, [bridge, cache, deck, enabled, failure]);
+    void widgetAccess.synchronizeSnapshot(deck, snapshot).catch(() => undefined);
+  }, [cache, deck, enabled, failure, widgetAccess]);
 
   const closeConfirmation = useCallback(() => {
     setConfirming(false);
@@ -456,27 +516,21 @@ function WidgetAccess({ bridge, cache, copy, deck, failure, language }: { readon
 
   const enable = async () => {
     setBusy(true);
-    setFailed(false);
     try {
-      const value = await configuration();
-      if (value === null) throw new Error("missing-profile");
-      await bridge.request({ operation: "widgets.enable-deck", configuration: value });
-      if (cache !== null && cache.query === deck.query) await bridge.request({ operation: "widgets.replace-deck-snapshot", snapshot: widgetSnapshot(deck, cache, failure) });
-      setEnabled(true);
+      await widgetAccess.enable(deck, cache !== null && cache.query === deck.query ? widgetSnapshot(deck, cache, failure) : undefined);
       setConfirming(false);
       requestAnimationFrame(() => disableButton.current?.focus());
-    } catch { setFailed(true); }
+    } catch {}
     finally { setBusy(false); }
   };
   const disable = async () => {
     setBusy(true);
-    setFailed(false);
-    try { await bridge.request({ operation: "widgets.disable-deck", deckId: deck.id }); setEnabled(false); }
-    catch { setFailed(true); }
+    try { await widgetAccess.disable(deck.id); }
+    catch {}
     finally { setBusy(false); }
   };
 
-  if (!supported) return null;
+  if (!widgetAccess.supported) return null;
   return <section className="widget-access" aria-labelledby={`widget-title-${deck.id}`}><h3 id={`widget-title-${deck.id}`}>{copy.widgetTitle}</h3>
     {enabled ? <><p role="status">{copy.widgetEnabled}</p><button ref={disableButton} type="button" disabled={busy} onClick={() => void disable()}>{copy.widgetDisable}</button></> : <button ref={enableTrigger} type="button" disabled={busy || profile === undefined} onClick={() => setConfirming(true)}>{copy.widgetEnable}</button>}
     {confirming && <section ref={dialog} className="widget-privacy" role="alertdialog" aria-modal="true" aria-labelledby={`widget-privacy-title-${deck.id}`} aria-describedby={`widget-privacy-warning-${deck.id}`} onKeyDown={trapDialogFocus}><h4 id={`widget-privacy-title-${deck.id}`}>{copy.widgetPrivacyTitle}</h4><p id={`widget-privacy-warning-${deck.id}`}>{copy.widgetPrivacyWarning}</p><div className="actions"><button type="button" disabled={busy} onClick={() => void enable()}>{copy.widgetPrivacyConfirm}</button><button ref={cancelButton} type="button" disabled={busy} onClick={closeConfirmation}>{copy.widgetPrivacyCancel}</button></div></section>}
@@ -491,7 +545,7 @@ function widgetSnapshot(deck: Deck, cache: DeckCache, failure: DeckFailure | nul
     query: deck.query,
     counts: widgetDeckCounts(cache.totalCount ?? cache.results.length, cache.results),
     results: widgetPullRequests(cache.results),
-    state: widgetRefreshState(cache.lastSuccessfulAt, failure === "token" ? "missing-token" : failure === "rate-limit" ? "rate-limit" : failure !== null ? "error" : null),
+    state: widgetRefreshState(cache.lastSuccessfulAt, failure === "token" ? "missing-token" : failure === "rate-limit" ? "rate-limit" : failure === "permission" ? "permission" : failure !== null ? "error" : null),
     lastSuccessfulAt: cache.lastSuccessfulAt,
     lastAttemptedAt: new Date().toISOString(),
     rate: cache.rate,

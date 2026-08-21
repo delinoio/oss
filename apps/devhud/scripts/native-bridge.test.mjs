@@ -43,9 +43,11 @@ test("secure setting references and values are bounded before native invocation"
 });
 
 test("widget bridge accepts only selected bounded Deck data and never accepts a credential payload", () => {
-  const configuration = { version: 1, deckId: "018f47a2-7b3c-7def-8abc-1234567890ac", name: "Private", query: "repo:octo/private is:pr", profileId: "work", profileKind: "fine-grained", scopeId: "origin.scope", language: "en" };
+  const configuration = { version: 1, deckId: "018f47a2-7b3c-7def-8abc-1234567890ac", name: "Private", query: "repo:octo/private is:pr", repositories: [{ owner: "octo", name: "private" }], profileId: "work", profileKind: "fine-grained", scopeId: "origin.scope", language: "en" };
   assert.doesNotThrow(() => validateWidgetRequest({ operation: "widgets.enable-deck", configuration }));
   assert.throws(() => validateWidgetRequest({ operation: "widgets.enable-deck", configuration: { ...configuration, deckId: "../escape" } }), NativeBridgeError);
+  assert.throws(() => validateWidgetRequest({ operation: "widgets.enable-deck", configuration: { ...configuration, repositories: [] } }), NativeBridgeError);
+  assert.throws(() => validateWidgetRequest({ operation: "widgets.enable-deck", configuration: { ...configuration, repositories: [{ owner: "octo", name: "private" }, { owner: "OCTO", name: "PRIVATE" }] } }), NativeBridgeError);
   assert.throws(() => validateWidgetRequest({ operation: "widgets.enable-deck", configuration: Object.assign({}, configuration, { token: "must-not-cross" }) }), NativeBridgeError);
   const snapshot = { version: 1, deckId: configuration.deckId, query: configuration.query, counts: { total: 1, open: 1, draft: 0, merged: 0, closed: 0, bounded: false }, results: [{ nodeId: "PR_private", number: 1, title: "Private title", repository: "octo/private", state: "open", draft: false }], state: "fresh", lastSuccessfulAt: "2026-08-20T00:00:00.000Z", lastAttemptedAt: "2026-08-20T00:00:00.000Z", rate: null };
   assert.doesNotThrow(() => validateWidgetRequest({ operation: "widgets.replace-deck-snapshot", snapshot }));
