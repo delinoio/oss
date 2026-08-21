@@ -787,13 +787,16 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
         return true
     }
 
-    private func abortWidgetTransaction(_ defaults: UserDefaults, deckId: String, previousConfigurationData: Data?, previousSnapshotData: Data?, previousCredentialData: Data?) -> Bool {
+    private func abortWidgetTransaction(_ defaults: UserDefaults, deckId: String, previousConfigurationData: Data?, previousSnapshotData: Data?, previousForegroundReloadDeadline: Any?, previousCredentialData: Data?) -> Bool {
         let configurationKey = widgetConfigurationPrefix + deckId
         let snapshotKey = widgetSnapshotPrefix + deckId
+        let deadlineKey = widgetForegroundReloadDeadlinePrefix + deckId
         if let previousConfigurationData { defaults.set(previousConfigurationData, forKey: configurationKey) }
         else { defaults.removeObject(forKey: configurationKey) }
         if let previousSnapshotData { defaults.set(previousSnapshotData, forKey: snapshotKey) }
         else { defaults.removeObject(forKey: snapshotKey) }
+        if let previousForegroundReloadDeadline { defaults.set(previousForegroundReloadDeadline, forKey: deadlineKey) }
+        else { defaults.removeObject(forKey: deadlineKey) }
         let credentialRestored: Bool
         if let previousCredentialData {
             credentialRestored = storeWidgetCredential(previousCredentialData, deckId: deckId) == errSecSuccess
@@ -829,9 +832,11 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
         do {
             let key = widgetConfigurationPrefix + configuration.deckId
             let snapshotKey = widgetSnapshotPrefix + configuration.deckId
+            let deadlineKey = widgetForegroundReloadDeadlinePrefix + configuration.deckId
             let transactionKey = widgetTransactionPrefix + configuration.deckId
             let previousConfigurationData = defaults.data(forKey: key)
             let previousSnapshotData = defaults.data(forKey: snapshotKey)
+            let previousForegroundReloadDeadline = defaults.object(forKey: deadlineKey)
             let previous = previousConfigurationData.flatMap { try? JSONDecoder().decode(WidgetDeckConfiguration.self, from: $0) }
             let (previousCredentialStatus, previousCredentialData) = readWidgetCredential(configuration.deckId)
             guard previousCredentialStatus == errSecSuccess || previousCredentialStatus == errSecItemNotFound else {
@@ -859,9 +864,10 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
             defaults.set(encoded, forKey: key)
             if let previous, widgetSelectionChanged(previous, configuration) {
                 defaults.removeObject(forKey: snapshotKey)
+                defaults.removeObject(forKey: deadlineKey)
             }
             guard defaults.synchronize() else {
-                _ = abortWidgetTransaction(defaults, deckId: configuration.deckId, previousConfigurationData: previousConfigurationData, previousSnapshotData: previousSnapshotData, previousCredentialData: previousCredentialData)
+                _ = abortWidgetTransaction(defaults, deckId: configuration.deckId, previousConfigurationData: previousConfigurationData, previousSnapshotData: previousSnapshotData, previousForegroundReloadDeadline: previousForegroundReloadDeadline, previousCredentialData: previousCredentialData)
                 rejectStorageFailure(invoke)
                 return
             }

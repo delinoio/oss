@@ -80,6 +80,21 @@ describe("Deck surface", () => {
     }));
   });
 
+  it("preserves the cached attempt failure when publishing after restart", async () => {
+    const lastSuccessfulAt = "2026-08-17T00:00:00.000Z";
+    const lastAttemptedAt = "2026-08-17T00:05:00.000Z";
+    writeDeckCache(localStorage, `origin.scope.${profile.id}`, { version: DeckCacheVersion, deckId: deck.id, query: deck.query, queryEtag: null, totalCount: 1, results: [pullRequest], lastSuccessfulAt, lastAttemptedAt, rate: null, failures: 1, failure: "rate-limit", nextRefreshAt: "2026-08-17T00:10:00.000Z", transitionKeys: [] });
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => value.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [deck.id] } : { kind: "ok" });
+    const bridge = bridgeWith(request);
+
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    await waitFor(() => expect(request).toHaveBeenCalledWith({
+      operation: "widgets.replace-deck-snapshot",
+      snapshot: expect.objectContaining({ deckId: deck.id, state: "rate-limit", lastSuccessfulAt, lastAttemptedAt }),
+    }));
+  });
+
   it("does not publish an enabled widget snapshot when a legacy cache has no exact total", async () => {
     writeDeckCache(localStorage, `origin.scope.${profile.id}`, { version: DeckCacheVersion, deckId: deck.id, query: deck.query, queryEtag: "legacy-etag", results: [pullRequest], lastSuccessfulAt: "2026-08-17T00:00:00.000Z", rate: null, failures: 0, nextRefreshAt: null, transitionKeys: [] });
     const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => value.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [deck.id] } : { kind: "ok" });
@@ -480,6 +495,29 @@ describe("Deck surface", () => {
     });
     expect(enrichPullRequests).not.toHaveBeenCalled();
     expect(screen.getByRole("alert").textContent).toBe(messages.en.deckErrorIncomplete);
+  });
+
+  it("retains the complete cache when enrichment omits a searched pull request", async () => {
+    const cacheScope = `origin.scope.${profile.id}`;
+    const lastSuccessfulAt = "2026-08-17T00:00:00.000Z";
+    writeDeckCache(localStorage, cacheScope, { version: DeckCacheVersion, deckId: deck.id, query: deck.query, queryEtag: "cached-etag", totalCount: 1, results: [pullRequest], lastSuccessfulAt, rate: null, failures: 0, nextRefreshAt: null, transitionKeys: [] });
+    const missing = { nodeId: "PR_kwDOB", number: 2, title: "Missing result", url: "https://github.com/octo/widgets/pull/2", draft: false, repository: { owner: "octo", name: "widgets" } };
+    const searchPullRequests = vi.fn(async () => ({ items: [pullRequest, missing], nextPage: null, notModified: false, totalCount: 2, incompleteResults: false, metadata: { etag: "partial-etag", rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } } }));
+    const enrichPullRequests = vi.fn(async () => ({ items: [pullRequest], metadata: { etag: null, rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } } }));
+    const bridge = bridgeWith(async (request) => request.operation === "secure.read" ? { kind: "secure-value", value: "token" } : { kind: "ok" });
+
+    render(<DeckPollingBoundary bridge={bridge} active online provider={{ ...provider(), searchPullRequests, enrichPullRequests }}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    await waitFor(() => expect(enrichPullRequests).toHaveBeenCalledOnce());
+    await waitFor(() => {
+      const cache = JSON.parse(localStorage.getItem(deckCacheKey(cacheScope, deck.id)) ?? "null") as { queryEtag: string | null; totalCount: number; results: unknown; lastSuccessfulAt: string | null; failures: number; failure: string | null };
+      expect(cache.queryEtag).toBe("cached-etag");
+      expect(cache.totalCount).toBe(1);
+      expect(cache.results).toEqual([pullRequest]);
+      expect(cache.lastSuccessfulAt).toBe(lastSuccessfulAt);
+      expect(cache.failures).toBe(1);
+      expect(cache.failure).toBe("unknown");
+    });
   });
 
   it("persists a delivered transition key after polling is suspended", async () => {

@@ -184,7 +184,7 @@ export function DeckPollingBoundary({ bridge, active, online, language = "en", p
       if (search.notModified && currentCache?.totalCount === undefined) throw new GitHubProviderError(GitHubErrorCode.InvalidResponse, GitHubOperation.SearchPullRequests);
       if (search.incompleteResults) {
         const failures = (currentCache?.failures ?? 0) + 1;
-        const next: DeckCache = { version: 2, deckId: currentDeck.id, query: currentDeck.query, queryEtag: currentCache?.queryEtag ?? null, totalCount: currentCache?.totalCount, results: currentCache?.results ?? [], lastSuccessfulAt: currentCache?.lastSuccessfulAt ?? null, lastAttemptedAt: attemptedAt, rate: search.metadata.rate, failures, nextRefreshAt: nextDeckRefresh(Date.now(), currentDeck.refreshMinutes, failures, search.metadata.rate), transitionKeys: currentCache?.transitionKeys ?? [], pendingNotifications: currentCache?.pendingNotifications ?? [] };
+        const next: DeckCache = { version: 2, deckId: currentDeck.id, query: currentDeck.query, queryEtag: currentCache?.queryEtag ?? null, totalCount: currentCache?.totalCount, results: currentCache?.results ?? [], lastSuccessfulAt: currentCache?.lastSuccessfulAt ?? null, lastAttemptedAt: attemptedAt, rate: search.metadata.rate, failures, failure: "incomplete-results", nextRefreshAt: nextDeckRefresh(Date.now(), currentDeck.refreshMinutes, failures, search.metadata.rate), transitionKeys: currentCache?.transitionKeys ?? [], pendingNotifications: currentCache?.pendingNotifications ?? [] };
         writeDeckCache(storage, `${scopeId}.${currentDeck.profileRef}`, next);
         caches.current.set(deckId, next);
         setDeckState(deckId, (current) => ({ ...current, cache: next, failure: "incomplete-results" }));
@@ -195,6 +195,7 @@ export function DeckPollingBoundary({ bridge, active, online, language = "en", p
       const enriched = await enrichPullRequestBatches(provider, credential, [...resultNodeIds, ...missingNodeIds], canContinue);
       if (!canContinue()) return;
       const enrichedById = new Map(enriched.map((item) => [item.nodeId, item]));
+      if (resultNodeIds.some((nodeId) => !enrichedById.has(nodeId))) throw new GitHubProviderError(GitHubErrorCode.InvalidResponse, GitHubOperation.EnrichPullRequests);
       const results = resultNodeIds.flatMap((nodeId) => enrichedById.get(nodeId) ?? []);
       const reconciled = missingNodeIds.flatMap((nodeId) => enrichedById.get(nodeId) ?? []);
       let transitionKeys = currentCache?.transitionKeys ?? [];
@@ -223,7 +224,7 @@ export function DeckPollingBoundary({ bridge, active, online, language = "en", p
         }
       }
       if (!canContinue()) return;
-      const next: DeckCache = { version: 2, deckId: currentDeck.id, query: currentDeck.query, queryEtag: search.metadata.etag ?? currentCache?.queryEtag ?? null, totalCount: search.notModified ? currentCache?.totalCount ?? results.length : search.totalCount, results, lastSuccessfulAt: attemptedAt, lastAttemptedAt: attemptedAt, rate: search.metadata.rate, failures: 0, nextRefreshAt: null, transitionKeys, pendingNotifications };
+      const next: DeckCache = { version: 2, deckId: currentDeck.id, query: currentDeck.query, queryEtag: search.metadata.etag ?? currentCache?.queryEtag ?? null, totalCount: search.notModified ? currentCache?.totalCount ?? results.length : search.totalCount, results, lastSuccessfulAt: attemptedAt, lastAttemptedAt: attemptedAt, rate: search.metadata.rate, failures: 0, failure: null, nextRefreshAt: null, transitionKeys, pendingNotifications };
       writeDeckCache(storage, `${scopeId}.${currentDeck.profileRef}`, next);
       if (isCurrentDeck()) {
         caches.current.set(deckId, next);
@@ -233,12 +234,13 @@ export function DeckPollingBoundary({ bridge, active, online, language = "en", p
       if (error instanceof DeckPollingCancelledError || !canContinue()) return;
       const failures = (currentCache?.failures ?? 0) + 1;
       const rate = error instanceof GitHubProviderError ? error.rate : null;
+      const failure = classifyDeckFailure(error);
       const cacheScopeId = scopeId ?? await identity.githubPatScopeId;
       if (!canContinue()) return;
-      const next: DeckCache = { version: 2, deckId: currentDeck.id, query: currentDeck.query, queryEtag: currentCache?.queryEtag ?? null, totalCount: currentCache?.totalCount, results: currentCache?.results ?? [], lastSuccessfulAt: currentCache?.lastSuccessfulAt ?? null, lastAttemptedAt: attemptedAt, rate, failures, nextRefreshAt: nextDeckRefresh(Date.now(), currentDeck.refreshMinutes, failures, rate), transitionKeys: currentCache?.transitionKeys ?? [], pendingNotifications: currentCache?.pendingNotifications ?? [] };
+      const next: DeckCache = { version: 2, deckId: currentDeck.id, query: currentDeck.query, queryEtag: currentCache?.queryEtag ?? null, totalCount: currentCache?.totalCount, results: currentCache?.results ?? [], lastSuccessfulAt: currentCache?.lastSuccessfulAt ?? null, lastAttemptedAt: attemptedAt, rate, failures, failure, nextRefreshAt: nextDeckRefresh(Date.now(), currentDeck.refreshMinutes, failures, rate), transitionKeys: currentCache?.transitionKeys ?? [], pendingNotifications: currentCache?.pendingNotifications ?? [] };
       writeDeckCache(storage, `${cacheScopeId}.${currentDeck.profileRef}`, next);
       caches.current.set(deckId, next);
-      setDeckState(deckId, (current) => ({ ...current, cache: next, failure: classifyDeckFailure(error) }));
+      setDeckState(deckId, (current) => ({ ...current, cache: next, failure }));
     } finally {
       loading.current.delete(deckId);
       if (isCurrentDeck()) setDeckState(deckId, (current) => ({ ...current, loading: false }));
@@ -386,7 +388,7 @@ export function DeckPollingBoundary({ bridge, active, online, language = "en", p
         }
         configurations.current.set(deck.id, { signature, refreshMinutes: deck.refreshMinutes, profileRef: deck.profileRef });
         caches.current.set(deck.id, cache);
-        setDeckState(deck.id, (current) => ({ ...current, cache, failure: null }));
+        setDeckState(deck.id, (current) => ({ ...current, cache, failure: cache?.failure ?? (cache !== null && cache.failures > 0 ? "unknown" : null) }));
       }
     }).catch(() => {});
     return () => { cancelled = true; };
