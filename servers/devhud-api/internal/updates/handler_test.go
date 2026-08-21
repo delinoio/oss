@@ -71,6 +71,13 @@ func TestHeadHasMetadataWithoutManifestBody(t *testing.T) {
 	}
 }
 
+func TestAcceptsExactNativeManifestEnvelopeFields(t *testing.T) {
+	manifest := []byte(`{"schemaVersion":1,"signedPayload":"e30=","manifestSignature":"c2lnbmF0dXJl","keyChain":[],"rollbackAuthorization":null}`)
+	if !validManifestEnvelope(manifest) {
+		t.Fatal("manifest with exact native envelope fields was rejected")
+	}
+}
+
 func TestRejectsStructurallyInvalidStoredManifests(t *testing.T) {
 	for _, testCase := range []struct {
 		name     string
@@ -83,6 +90,9 @@ func TestRejectsStructurallyInvalidStoredManifests(t *testing.T) {
 		{"empty payload", `{"schemaVersion":1,"signedPayload":"","manifestSignature":"c2lnbmF0dXJl"}`},
 		{"missing signature", `{"schemaVersion":1,"signedPayload":"e30="}`},
 		{"empty signature", `{"schemaVersion":1,"signedPayload":"e30=","manifestSignature":""}`},
+		{"case-variant required field", `{"SchemaVersion":1,"signedPayload":"e30=","manifestSignature":"c2lnbmF0dXJl"}`},
+		{"case-variant optional field", `{"schemaVersion":1,"signedPayload":"e30=","manifestSignature":"c2lnbmF0dXJl","KeyChain":[]}`},
+		{"unknown field", `{"schemaVersion":1,"signedPayload":"e30=","manifestSignature":"c2lnbmF0dXJl","futureField":true}`},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			handler := NewHandler(fstest.MapFS{

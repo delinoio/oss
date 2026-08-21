@@ -92,6 +92,18 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 }
 
 func validManifestEnvelope(manifest []byte) bool {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(manifest, &fields); err != nil {
+		return false
+	}
+	for field := range fields {
+		switch field {
+		case "schemaVersion", "signedPayload", "manifestSignature", "keyChain", "rollbackAuthorization":
+		default:
+			return false
+		}
+	}
+
 	var envelope manifestEnvelope
 	if err := json.Unmarshal(manifest, &envelope); err != nil {
 		return false
