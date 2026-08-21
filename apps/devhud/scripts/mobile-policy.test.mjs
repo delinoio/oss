@@ -203,7 +203,11 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   assert.match(iosWidget, /\.prefix\(3\)/u);
   assert.match(iosWidget, /func save\(_ snapshot: DeckSnapshot, whileEnabled configuration: DeckConfiguration, credentialRevision: Data\?\)[\s\S]*credentialMatches\(deckId: snapshot\.deckId, revision: credentialRevision\)[\s\S]*defaults\.set/u);
   assert.equal((iosWidget.match(/credentialMatches\(deckId: snapshot\.deckId, revision: credentialRevision\)/gu) ?? []).length, 2);
-  assert.match(iosWidget, /store\.save\(snapshot, whileEnabled: current, credentialRevision: credential\.revision\)/u);
+  assert.match(iosWidget, /private enum WidgetCredential[\s\S]*case missing[\s\S]*case readable\(token: String, revision: Data\)[\s\S]*case unreadable\(revision: Data\)/u);
+  assert.match(iosWidget, /legacyWidgetToken[\s\S]*\["ghp_", "github_pat_"\][\s\S]*token\.utf8\.count > prefix\.utf8\.count[\s\S]*token\.utf8\.allSatisfy/u);
+  assert.match(iosWidget, /func credential\(_ deckId: String\)[\s\S]*stored\.version == 1[\s\S]*legacyWidgetToken\(data\)[\s\S]*\.unreadable\(revision: data\)/u);
+  assert.doesNotMatch(iosWidget, /decode\(StoredWidgetCredential\.self, from: data\)\)\?\.token \?\? String/u);
+  assert.match(iosWidget, /case \.unreadable\(let revision\):[\s\S]*state: "error"[\s\S]*credentialRevision = revision[\s\S]*store\.save\(snapshot, whileEnabled: current, credentialRevision: credentialRevision\)/u);
   assert.match(iosWidget, /repositoryValidationConcurrency = 3/u);
   assert.match(iosWidget, /refreshDeadlineNanoseconds: UInt64 = 20 \* 1_000_000_000/u);
   assert.match(iosWidget, /refreshWithDeadline[\s\S]*withTaskGroup\(of: DeckSnapshot\.self\)[\s\S]*Task\.sleep\(nanoseconds: refreshDeadlineNanoseconds\)[\s\S]*group\.cancelAll\(\)/u);

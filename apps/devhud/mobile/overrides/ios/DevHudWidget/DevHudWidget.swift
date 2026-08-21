@@ -53,7 +53,11 @@ struct DeckCounts: Codable, Sendable { let total: Int; let open: Int; let draft:
 struct DeckPullRequest: Codable, Identifiable, Sendable { let nodeId: String; let number: Int; let title: String; let repository: String; let state: String; let draft: Bool; var id: String { nodeId } }
 struct DeckRate: Codable, Sendable { let limit: Int?; let remaining: Int?; let used: Int?; let resetAt: String?; let resource: String?; let retryAfterSeconds: Int? }
 private struct StoredWidgetCredential: Codable, Sendable { let version: Int; let revision: String; let token: String }
-private struct WidgetCredential: Sendable { let token: String?; let revision: Data? }
+private enum WidgetCredential: Sendable {
+    case missing
+    case readable(token: String, revision: Data)
+    case unreadable(revision: Data)
+}
 private struct WidgetCredentialReplacement: Codable, Sendable { let version: Int; let profileId: String; let scopeId: String; let deckIds: [String] }
 struct DeckSnapshot: Codable, Sendable {
     let version: Int; let deckId: String; let query: String; let counts: DeckCounts; let results: [DeckPullRequest]; var state: String; let lastSuccessfulAt: String?; var lastAttemptedAt: String; var rate: DeckRate?
@@ -72,6 +76,16 @@ private struct WidgetBackground: ViewModifier {
 
 private func sameSelection(_ left: DeckConfiguration, _ right: DeckConfiguration) -> Bool {
     left.deckId == right.deckId && left.query == right.query && left.profileId == right.profileId && left.profileKind == right.profileKind && left.scopeId == right.scopeId
+}
+
+private func legacyWidgetToken(_ data: Data) -> String? {
+    guard let token = String(data: data, encoding: .utf8),
+          let prefix = ["ghp_", "github_pat_"].first(where: token.hasPrefix),
+          token.utf8.count > prefix.utf8.count,
+          token.utf8.allSatisfy({ byte in
+              byte == 95 || (48...57).contains(byte) || (65...90).contains(byte) || (97...122).contains(byte)
+          }) else { return nil }
+    return token
 }
 
 private struct WidgetStore {
@@ -113,10 +127,14 @@ private struct WidgetStore {
     func credential(_ deckId: String) -> WidgetCredential? {
         guard defaults?.bool(forKey: transactionPrefix + deckId) != true, !credentialReplacementBlocks(deckId) else { return nil }
         let result = credentialData(deckId)
-        if result.status == errSecItemNotFound { return WidgetCredential(token: nil, revision: nil) }
+        if result.status == errSecItemNotFound { return .missing }
         guard result.status == errSecSuccess, let data = result.data else { return nil }
-        let token = (try? JSONDecoder().decode(StoredWidgetCredential.self, from: data))?.token ?? String(data: data, encoding: .utf8)
-        return WidgetCredential(token: token, revision: data)
+        if let stored = try? JSONDecoder().decode(StoredWidgetCredential.self, from: data) {
+            guard stored.version == 1, !stored.token.isEmpty else { return .unreadable(revision: data) }
+            return .readable(token: stored.token, revision: data)
+        }
+        guard let token = legacyWidgetToken(data) else { return .unreadable(revision: data) }
+        return .readable(token: token, revision: data)
     }
     private func credentialMatches(deckId: String, revision: Data?) -> Bool {
         guard defaults?.bool(forKey: transactionPrefix + deckId) != true, !credentialReplacementBlocks(deckId) else { return false }
@@ -170,13 +188,26 @@ private struct DeckTimelineProvider: IntentTimelineProvider {
             return
         }
         Task {
-            let snapshot = await Self.refreshWithDeadline(deck: deck, previous: store.snapshot(deck.deckId), token: credential.token)
+            let previous = store.snapshot(deck.deckId)
+            let snapshot: DeckSnapshot
+            let credentialRevision: Data?
+            switch credential {
+            case .missing:
+                snapshot = await Self.refreshWithDeadline(deck: deck, previous: previous, token: nil)
+                credentialRevision = nil
+            case .readable(let token, let revision):
+                snapshot = await Self.refreshWithDeadline(deck: deck, previous: previous, token: token)
+                credentialRevision = revision
+            case .unreadable(let revision):
+                snapshot = Self.failure(deck: deck, previous: previous, state: "error", attempted: ISO8601DateFormatter().string(from: Date()), rate: nil)
+                credentialRevision = revision
+            }
             guard let current = store.configuration(deck.deckId), sameSelection(current, deck) else {
                 let current = store.configuration(deck.deckId)
                 completion(timeline(deck: current, snapshot: current.flatMap { store.snapshot($0.deckId) }))
                 return
             }
-            let stored = store.save(snapshot, whileEnabled: current, credentialRevision: credential.revision)
+            let stored = store.save(snapshot, whileEnabled: current, credentialRevision: credentialRevision)
             completion(timeline(deck: current, snapshot: store.snapshot(current.deckId)))
         }
     }
