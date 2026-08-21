@@ -121,6 +121,8 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   const iosIntentHandler = readFileSync(join(appRoot, "mobile/overrides/ios/DevHudWidgetIntent/IntentHandler.swift"), "utf8");
   const iosEntitlements = readFileSync(join(appRoot, "mobile/overrides/ios/DevHudWidget/DevHudWidget.entitlements"), "utf8");
   assert.match(androidStore, /widgetKeyAlias = "io\.delino\.devhud\.widget-credential\.v1"/u);
+  assert.match(androidStore, /private val widgetStoreMutationLock = Any\(\)/u);
+  assert.equal((androidStore.match(/synchronized\(widgetStoreMutationLock\)/gu) ?? []).length, 4);
   assert.match(androidStore, /replaceProfileToken[\s\S]*profileId[\s\S]*scopeId/u);
   assert.match(androidStore, /previousSecret[\s\S]*rollback\.putString\(deckId, previousSecret\)/u);
   assert.match(androidNativeBridge, /replaceProfileToken\(profileId, scopeId, value\)/u);
@@ -142,6 +144,11 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   assert.match(iosWidget, /\.prefix\(3\)/u);
   assert.match(iosWidget, /func save\(_ snapshot: DeckSnapshot, whileEnabled configuration: DeckConfiguration\)[\s\S]*defaults\.set[\s\S]*guard let current = self\.configuration\(snapshot\.deckId\), sameSelection\(current, configuration\)[\s\S]*defaults\.removeObject/u);
   assert.match(iosWidget, /store\.save\(snapshot, whileEnabled: current\)/u);
+  assert.match(iosWidget, /repositoryValidationConcurrency = 3/u);
+  assert.match(iosWidget, /refreshDeadlineNanoseconds: UInt64 = 20 \* 1_000_000_000/u);
+  assert.match(iosWidget, /refreshWithDeadline[\s\S]*withTaskGroup\(of: DeckSnapshot\.self\)[\s\S]*Task\.sleep\(nanoseconds: refreshDeadlineNanoseconds\)[\s\S]*group\.cancelAll\(\)/u);
+  assert.match(iosWidget, /validateRepositories[\s\S]*withTaskGroup\(of: RepositoryValidationFailure\?\.self\)[\s\S]*repositories\.prefix\(initialCount\)[\s\S]*group\.cancelAll\(\)/u);
+  assert.match(iosWidget, /try Task\.checkCancellation\(\)/u);
   assert.match(iosWidget, /staleDate[\s\S]*entries\.append/u);
   assert.match(iosWidget, /incomplete_results/u);
   assert.ok(iosWidget.indexOf("validateRepositories(deck: deck, token: token)") < iosWidget.indexOf('URLComponents(string: "https://api.github.com/search/issues")'));

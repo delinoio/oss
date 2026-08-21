@@ -651,22 +651,29 @@ fn javascript_string_len(value: &str) -> usize {
 }
 
 fn validate_widget_request(request: &Value) -> Result<(), String> {
+    let request = request.as_object().ok_or("invalid-argument")?;
     let operation = request
         .get("operation")
         .and_then(Value::as_str)
         .ok_or("invalid-argument")?;
     if operation == "widgets.status" {
-        return Ok(());
-    }
-    if operation == "widgets.disable-deck" {
-        return request
-            .get("deckId")
-            .and_then(Value::as_str)
-            .filter(|value| valid_deck_id(value))
-            .map(|_| ())
+        return exact_keys(request, &["operation"])
+            .then_some(())
             .ok_or_else(|| "invalid-argument".to_string());
     }
+    if operation == "widgets.disable-deck" {
+        return (exact_keys(request, &["operation", "deckId"])
+            && request
+                .get("deckId")
+                .and_then(Value::as_str)
+                .is_some_and(valid_deck_id))
+        .then_some(())
+        .ok_or_else(|| "invalid-argument".to_string());
+    }
     if operation == "widgets.enable-deck" {
+        if !exact_keys(request, &["operation", "configuration"]) {
+            return Err("invalid-argument".to_string());
+        }
         let value = request
             .get("configuration")
             .and_then(Value::as_object)
@@ -723,6 +730,9 @@ fn validate_widget_request(request: &Value) -> Result<(), String> {
             .ok_or_else(|| "invalid-argument".to_string());
     }
     if operation != "widgets.replace-deck-snapshot" {
+        return Err("invalid-argument".to_string());
+    }
+    if !exact_keys(request, &["operation", "snapshot"]) {
         return Err("invalid-argument".to_string());
     }
     let value = request
@@ -2186,6 +2196,24 @@ mod tests {
     #[test]
     fn widget_string_bounds_match_javascript_utf16_lengths() {
         let deck_id = "018f47a2-7b3c-7def-8abc-1234567890ac";
+        assert_eq!(
+            validate_widget_request(
+                &json!({ "operation": "widgets.status", "token": "must-not-cross" })
+            ),
+            Err("invalid-argument".to_string())
+        );
+        assert_eq!(
+            validate_widget_request(
+                &json!({ "operation": "widgets.disable-deck", "deckId": deck_id })
+            ),
+            Ok(())
+        );
+        assert_eq!(
+            validate_widget_request(
+                &json!({ "operation": "widgets.disable-deck", "deckId": deck_id, "token": "must-not-cross" })
+            ),
+            Err("invalid-argument".to_string())
+        );
         let configuration = json!({
             "version": 1,
             "deckId": deck_id,
@@ -2200,9 +2228,17 @@ mod tests {
         assert_eq!(
             validate_widget_request(&json!({
                 "operation": "widgets.enable-deck",
-                "configuration": configuration
+                "configuration": configuration.clone()
             })),
             Ok(())
+        );
+        assert_eq!(
+            validate_widget_request(&json!({
+                "operation": "widgets.enable-deck",
+                "configuration": configuration,
+                "token": "must-not-cross"
+            })),
+            Err("invalid-argument".to_string())
         );
         let mut snapshot = json!({
             "version": 1,
@@ -2228,6 +2264,14 @@ mod tests {
                 "snapshot": snapshot.clone()
             })),
             Ok(())
+        );
+        assert_eq!(
+            validate_widget_request(&json!({
+                "operation": "widgets.replace-deck-snapshot",
+                "snapshot": snapshot.clone(),
+                "token": "must-not-cross"
+            })),
+            Err("invalid-argument".to_string())
         );
         snapshot["state"] = json!("permission");
         assert_eq!(

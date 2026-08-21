@@ -253,12 +253,16 @@ function hasExactKeys(value: object, keys: readonly string[]): boolean {
 }
 
 export function validateWidgetRequest(request: Extract<NativeBridgeRequestV1, { readonly operation: `widgets.${string}` }>) {
-  if (request.operation === "widgets.status") return;
+  if (request.operation === "widgets.status") {
+    if (!hasExactKeys(request, ["operation"])) throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument);
+    return;
+  }
   if (request.operation === "widgets.disable-deck") {
-    if (!uuidPattern.test(request.deckId)) throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument);
+    if (!hasExactKeys(request, ["operation", "deckId"]) || !uuidPattern.test(request.deckId)) throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument);
     return;
   }
   if (request.operation === "widgets.enable-deck") {
+    if (!hasExactKeys(request, ["operation", "configuration"])) throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument);
     const value = request.configuration;
     const repositoryKeys = Array.isArray(value.repositories) ? value.repositories.map((repository) => `${repository.owner}/${repository.name}`.toLowerCase()) : [];
     if (!hasExactKeys(value, ["version", "deckId", "name", "query", "repositories", "profileId", "profileKind", "scopeId", "language"])
@@ -268,6 +272,9 @@ export function validateWidgetRequest(request: Extract<NativeBridgeRequestV1, { 
       || !Array.isArray(value.repositories) || value.repositories.length === 0 || value.repositories.length > WidgetRepositoryLimit || new Set(repositoryKeys).size !== repositoryKeys.length
       || value.repositories.some((repository) => !hasExactKeys(repository, ["owner", "name"]) || !/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/u.test(repository.owner) || repository.owner.endsWith("-") || repository.owner.includes("--") || !/^[A-Za-z0-9._-]{1,100}$/u.test(repository.name))) throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument);
     return;
+  }
+  if (request.operation !== "widgets.replace-deck-snapshot" || !hasExactKeys(request, ["operation", "snapshot"])) {
+    throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument);
   }
   const value = request.snapshot;
   if (!hasExactKeys(value, ["version", "deckId", "query", "counts", "results", "state", "lastSuccessfulAt", "lastAttemptedAt", "rate"])

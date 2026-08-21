@@ -9,18 +9,21 @@ private let credentialService = "io.delino.devhud.widget-credential.v1"
 private let configurationPrefix = "widget.configuration."
 private let snapshotPrefix = "widget.snapshot."
 private let staleAfter: TimeInterval = 60 * 60
+private let repositoryValidationConcurrency = 3
+private let refreshDeadlineNanoseconds: UInt64 = 20 * 1_000_000_000
 
-struct DeckConfiguration: Codable, Identifiable {
+struct DeckConfiguration: Codable, Identifiable, Sendable {
     let version: Int; let deckId: String; let name: String; let query: String; let repositories: [DeckRepository]; let profileId: String; let profileKind: String; let scopeId: String; let language: String
     var id: String { deckId }
 }
-struct DeckRepository: Codable { let owner: String; let name: String }
-struct DeckCounts: Codable { let total: Int; let open: Int; let draft: Int; let merged: Int; let closed: Int; let bounded: Bool }
-struct DeckPullRequest: Codable, Identifiable { let nodeId: String; let number: Int; let title: String; let repository: String; let state: String; let draft: Bool; var id: String { nodeId } }
-struct DeckRate: Codable { let limit: Int?; let remaining: Int?; let used: Int?; let resetAt: String?; let resource: String?; let retryAfterSeconds: Int? }
-struct DeckSnapshot: Codable {
+struct DeckRepository: Codable, Sendable { let owner: String; let name: String }
+struct DeckCounts: Codable, Sendable { let total: Int; let open: Int; let draft: Int; let merged: Int; let closed: Int; let bounded: Bool }
+struct DeckPullRequest: Codable, Identifiable, Sendable { let nodeId: String; let number: Int; let title: String; let repository: String; let state: String; let draft: Bool; var id: String { nodeId } }
+struct DeckRate: Codable, Sendable { let limit: Int?; let remaining: Int?; let used: Int?; let resetAt: String?; let resource: String?; let retryAfterSeconds: Int? }
+struct DeckSnapshot: Codable, Sendable {
     let version: Int; let deckId: String; let query: String; let counts: DeckCounts; let results: [DeckPullRequest]; var state: String; let lastSuccessfulAt: String?; var lastAttemptedAt: String; var rate: DeckRate?
 }
+private struct RepositoryValidationFailure: Sendable { let state: String; let rate: DeckRate? }
 
 private func sameSelection(_ left: DeckConfiguration, _ right: DeckConfiguration) -> Bool {
     left.deckId == right.deckId && left.query == right.query && left.profileId == right.profileId && left.profileKind == right.profileKind && left.scopeId == right.scopeId
@@ -86,7 +89,7 @@ private struct DeckTimelineProvider: IntentTimelineProvider {
             return
         }
         Task {
-            let snapshot = await refresh(deck: deck, previous: store.snapshot(deck.deckId), token: store.token(deck.deckId))
+            let snapshot = await Self.refreshWithDeadline(deck: deck, previous: store.snapshot(deck.deckId), token: store.token(deck.deckId))
             guard let current = store.configuration(deck.deckId), sameSelection(current, deck) else {
                 let current = store.configuration(deck.deckId)
                 completion(timeline(deck: current, snapshot: current.flatMap { store.snapshot($0.deckId) }))
@@ -107,8 +110,21 @@ private struct DeckTimelineProvider: IntentTimelineProvider {
         return Timeline(entries: entries, policy: .after(now.addingTimeInterval(30 * 60)))
     }
 
-    private func refresh(deck: DeckConfiguration, previous: DeckSnapshot?, token: String?) async -> DeckSnapshot {
+    private static func refreshWithDeadline(deck: DeckConfiguration, previous: DeckSnapshot?, token: String?) async -> DeckSnapshot {
         let attempted = ISO8601DateFormatter().string(from: Date())
+        return await withTaskGroup(of: DeckSnapshot.self) { group in
+            group.addTask { await refresh(deck: deck, previous: previous, token: token, attempted: attempted) }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: refreshDeadlineNanoseconds)
+                return failure(deck: deck, previous: previous, state: "error", attempted: attempted, rate: nil)
+            }
+            let snapshot = await group.next() ?? failure(deck: deck, previous: previous, state: "error", attempted: attempted, rate: nil)
+            group.cancelAll()
+            return snapshot
+        }
+    }
+
+    private static func refresh(deck: DeckConfiguration, previous: DeckSnapshot?, token: String?, attempted: String) async -> DeckSnapshot {
         guard let token else { return failure(deck: deck, previous: previous, state: "missing-token", attempted: attempted, rate: nil) }
         if let validation = await validateRepositories(deck: deck, token: token) {
             return failure(deck: deck, previous: previous, state: validation.state, attempted: attempted, rate: validation.rate)
@@ -145,39 +161,60 @@ private struct DeckTimelineProvider: IntentTimelineProvider {
         } catch { return failure(deck: deck, previous: previous, state: "error", attempted: attempted, rate: nil) }
     }
 
-    private func validateRepositories(deck: DeckConfiguration, token: String) async -> (state: String, rate: DeckRate?)? {
-        do {
-            for repository in deck.repositories {
-                let path = "/repos/\(repository.owner)/\(repository.name)"
-                let metadata = try await github(path: path, token: token)
-                if let state = responseFailure(metadata.response, rate: metadata.rate) { return (state, metadata.rate) }
-                if deck.profileKind == "classic" {
-                    let scopes = Set((metadata.response.value(forHTTPHeaderField: "X-OAuth-Scopes") ?? "").split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) })
-                    if !scopes.contains("repo") { return ("permission", metadata.rate) }
+    private static func validateRepositories(deck: DeckConfiguration, token: String) async -> RepositoryValidationFailure? {
+        await withTaskGroup(of: RepositoryValidationFailure?.self) { group in
+            let initialCount = min(repositoryValidationConcurrency, deck.repositories.count)
+            for repository in deck.repositories.prefix(initialCount) {
+                group.addTask { await validateRepository(repository, profileKind: deck.profileKind, token: token) }
+            }
+            var nextIndex = initialCount
+            while let result = await group.next() {
+                if let result {
+                    group.cancelAll()
+                    return result
                 }
-                guard let root = try JSONSerialization.jsonObject(with: metadata.data) as? [String: Any] else { return ("error", metadata.rate) }
-                let neverPushed = root["pushed_at"] is NSNull
-                for suffix in ["/pulls?state=open&per_page=1", "/issues?state=open&per_page=1"] {
-                    let access = try await github(path: path + suffix, token: token)
-                    if let state = responseFailure(access.response, rate: access.rate) { return (state, access.rate) }
-                }
-                let contents = try await github(path: path + "/contents", token: token)
-                if contents.response.statusCode != 404 || !neverPushed {
-                    if let state = responseFailure(contents.response, rate: contents.rate) { return (state, contents.rate) }
-                }
-                if deck.profileKind == "fine-grained" {
-                    let probe = try await github(path: path + "/issues", token: token, method: "POST", body: Data("{}".utf8))
-                    if probe.response.statusCode != 422 {
-                        if let state = responseFailure(probe.response, rate: probe.rate) { return (state, probe.rate) }
-                        return ("error", probe.rate)
-                    }
+                if nextIndex < deck.repositories.count {
+                    let repository = deck.repositories[nextIndex]
+                    nextIndex += 1
+                    group.addTask { await validateRepository(repository, profileKind: deck.profileKind, token: token) }
                 }
             }
             return nil
-        } catch { return ("error", nil) }
+        }
     }
 
-    private func github(path: String, token: String, method: String = "GET", body: Data? = nil) async throws -> (data: Data, response: HTTPURLResponse, rate: DeckRate) {
+    private static func validateRepository(_ repository: DeckRepository, profileKind: String, token: String) async -> RepositoryValidationFailure? {
+        do {
+            let path = "/repos/\(repository.owner)/\(repository.name)"
+            let metadata = try await github(path: path, token: token)
+            if let state = responseFailure(metadata.response, rate: metadata.rate) { return RepositoryValidationFailure(state: state, rate: metadata.rate) }
+            if profileKind == "classic" {
+                let scopes = Set((metadata.response.value(forHTTPHeaderField: "X-OAuth-Scopes") ?? "").split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) })
+                if !scopes.contains("repo") { return RepositoryValidationFailure(state: "permission", rate: metadata.rate) }
+            }
+            guard let root = try JSONSerialization.jsonObject(with: metadata.data) as? [String: Any] else { return RepositoryValidationFailure(state: "error", rate: metadata.rate) }
+            let neverPushed = root["pushed_at"] is NSNull
+            for suffix in ["/pulls?state=open&per_page=1", "/issues?state=open&per_page=1"] {
+                let access = try await github(path: path + suffix, token: token)
+                if let state = responseFailure(access.response, rate: access.rate) { return RepositoryValidationFailure(state: state, rate: access.rate) }
+            }
+            let contents = try await github(path: path + "/contents", token: token)
+            if contents.response.statusCode != 404 || !neverPushed {
+                if let state = responseFailure(contents.response, rate: contents.rate) { return RepositoryValidationFailure(state: state, rate: contents.rate) }
+            }
+            if profileKind == "fine-grained" {
+                let probe = try await github(path: path + "/issues", token: token, method: "POST", body: Data("{}".utf8))
+                if probe.response.statusCode != 422 {
+                    if let state = responseFailure(probe.response, rate: probe.rate) { return RepositoryValidationFailure(state: state, rate: probe.rate) }
+                    return RepositoryValidationFailure(state: "error", rate: probe.rate)
+                }
+            }
+            return nil
+        } catch { return RepositoryValidationFailure(state: "error", rate: nil) }
+    }
+
+    private static func github(path: String, token: String, method: String = "GET", body: Data? = nil) async throws -> (data: Data, response: HTTPURLResponse, rate: DeckRate) {
+        try Task.checkCancellation()
         var request = URLRequest(url: URL(string: "https://api.github.com" + path)!, timeoutInterval: 20)
         request.httpMethod = method
         request.httpBody = body
@@ -190,7 +227,7 @@ private struct DeckTimelineProvider: IntentTimelineProvider {
         return (data, http, responseRate(http))
     }
 
-    private func responseFailure(_ response: HTTPURLResponse, rate: DeckRate) -> String? {
+    private static func responseFailure(_ response: HTTPURLResponse, rate: DeckRate) -> String? {
         if (200...299).contains(response.statusCode) { return nil }
         if response.statusCode == 429 || (response.statusCode == 403 && (rate.remaining == 0 || rate.retryAfterSeconds != nil)) { return "rate-limit" }
         if response.statusCode == 401 { return "missing-token" }
@@ -198,7 +235,7 @@ private struct DeckTimelineProvider: IntentTimelineProvider {
         return "error"
     }
 
-    private func failure(deck: DeckConfiguration, previous: DeckSnapshot?, state: String, attempted: String, rate: DeckRate?) -> DeckSnapshot {
+    private static func failure(deck: DeckConfiguration, previous: DeckSnapshot?, state: String, attempted: String, rate: DeckRate?) -> DeckSnapshot {
         var retained: DeckSnapshot
         if let previous, previous.query == deck.query {
             retained = previous
@@ -208,7 +245,7 @@ private struct DeckTimelineProvider: IntentTimelineProvider {
         retained.state = state; retained.lastAttemptedAt = attempted; retained.rate = rate ?? retained.rate
         return retained
     }
-    private func responseRate(_ response: HTTPURLResponse) -> DeckRate {
+    private static func responseRate(_ response: HTTPURLResponse) -> DeckRate {
         func int(_ key: String) -> Int? { response.value(forHTTPHeaderField: key).flatMap(Int.init) }
         let reset = int("X-RateLimit-Reset").map { ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: TimeInterval($0))) }
         return DeckRate(limit: int("X-RateLimit-Limit"), remaining: int("X-RateLimit-Remaining"), used: int("X-RateLimit-Used"), resetAt: reset, resource: response.value(forHTTPHeaderField: "X-RateLimit-Resource"), retryAfterSeconds: int("Retry-After"))

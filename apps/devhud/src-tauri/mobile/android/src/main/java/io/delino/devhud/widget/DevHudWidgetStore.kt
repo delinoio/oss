@@ -19,6 +19,10 @@ private const val snapshotPrefix = "snapshot:"
 private const val selectionPrefix = "selection:"
 
 internal class DevHudWidgetStore(private val context: Context) {
+    companion object {
+        private val widgetStoreMutationLock = Any()
+    }
+
     private val state get() = context.getSharedPreferences(widgetStateStore, Context.MODE_PRIVATE)
     private val secrets get() = context.getSharedPreferences(widgetSecretStore, Context.MODE_PRIVATE)
 
@@ -27,26 +31,26 @@ internal class DevHudWidgetStore(private val context: Context) {
         .map { it.removePrefix(configurationPrefix) }
         .sorted()
 
-    fun enable(configuration: JSONObject, token: String): Boolean {
+    fun enable(configuration: JSONObject, token: String): Boolean = synchronized(widgetStoreMutationLock) {
         val deckId = configuration.getString("deckId")
         val previous = configuration(deckId)
         val previousSecret = secrets.getString(deckId, null)
         val encrypted = encrypt(token, deckId)
-        if (!secrets.edit().putString(deckId, encrypted).commit()) return false
+        if (!secrets.edit().putString(deckId, encrypted).commit()) return@synchronized false
         val editor = state.edit().putString(configurationPrefix + deckId, configuration.toString())
         if (previous != null && selectionChanged(previous, configuration)) editor.remove(snapshotPrefix + deckId)
-        if (editor.commit()) return true
+        if (editor.commit()) return@synchronized true
         val rollback = secrets.edit()
         if (previousSecret == null) rollback.remove(deckId) else rollback.putString(deckId, previousSecret)
         rollback.commit()
-        return false
+        false
     }
 
-    fun replaceSnapshot(snapshot: JSONObject): Boolean {
+    fun replaceSnapshot(snapshot: JSONObject): Boolean = synchronized(widgetStoreMutationLock) {
         val deckId = snapshot.getString("deckId")
-        val configuration = configuration(deckId) ?: return false
-        if (snapshot.getString("query") != configuration.getString("query")) return false
-        return state.edit().putString(snapshotPrefix + deckId, snapshot.toString()).commit()
+        val configuration = configuration(deckId) ?: return@synchronized false
+        if (snapshot.getString("query") != configuration.getString("query")) return@synchronized false
+        state.edit().putString(snapshotPrefix + deckId, snapshot.toString()).commit()
     }
 
     fun replaceProfileToken(profileId: String, scopeId: String, token: String): Boolean {
@@ -62,19 +66,19 @@ internal class DevHudWidgetStore(private val context: Context) {
         return editor.commit()
     }
 
-    fun disable(deckId: String): Boolean {
-        if (!secrets.edit().remove(deckId).commit()) return false
+    fun disable(deckId: String): Boolean = synchronized(widgetStoreMutationLock) {
+        if (!secrets.edit().remove(deckId).commit()) return@synchronized false
         val editor = state.edit().remove(configurationPrefix + deckId).remove(snapshotPrefix + deckId)
         state.all.entries.filter { it.key.startsWith(selectionPrefix) && it.value == deckId }.forEach { editor.remove(it.key) }
-        return editor.commit()
+        editor.commit()
     }
 
-    fun clear(): Boolean {
+    fun clear(): Boolean = synchronized(widgetStoreMutationLock) {
         // Always attempt both stores so a state-storage failure cannot leave a
         // widget credential behind during logout or completed deletion.
         val stateCleared = state.edit().clear().commit()
         val secretsCleared = secrets.edit().clear().commit()
-        return stateCleared && secretsCleared
+        stateCleared && secretsCleared
     }
 
     fun configuration(deckId: String): JSONObject? = json(state.getString(configurationPrefix + deckId, null))
