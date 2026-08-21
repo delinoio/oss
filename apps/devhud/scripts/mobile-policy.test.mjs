@@ -119,6 +119,7 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   const iosIntentEnglish = readFileSync(join(appRoot, "mobile/overrides/ios/DevHudWidgetShared/en.lproj/SelectDeck.strings"), "utf8");
   const iosIntentKorean = readFileSync(join(appRoot, "mobile/overrides/ios/DevHudWidgetShared/ko.lproj/SelectDeck.strings"), "utf8");
   const iosIntentHandler = readFileSync(join(appRoot, "mobile/overrides/ios/DevHudWidgetIntent/IntentHandler.swift"), "utf8");
+  const iosApplicationEntitlements = readFileSync(join(appRoot, "mobile/overrides/ios/DevHud.entitlements"), "utf8");
   const iosEntitlements = readFileSync(join(appRoot, "mobile/overrides/ios/DevHudWidget/DevHudWidget.entitlements"), "utf8");
   assert.match(androidStore, /widgetKeyAlias = "io\.delino\.devhud\.widget-credential\.v1"/u);
   assert.match(androidStore, /private val widgetStoreMutationLock = Any\(\)/u);
@@ -137,6 +138,10 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   assert.match(androidManifest, /DevHudWidgetProvider"\s+android:exported="false"\s+android:label="@string\/devhud_widget_name"/u);
   assert.match(androidProvider, /results.*prefix|prefix\(3\)|minOf\(results\?\.length\(\) \?: 0, 3\)/su);
   assert.match(androidProvider, /devhud:\/\/deck\//u);
+  assert.match(androidNativeBridge, /private fun renderWidgets\(\)[\s\S]*ids\.forEach \{ DevHudWidgetProvider\.renderStored/u);
+  assert.doesNotMatch(androidNativeBridge, /ACTION_APPWIDGET_UPDATE/u);
+  assert.match(androidProvider, /localizedContext\(context, configuration\)[\s\S]*copyContext\.getString/u);
+  assert.match(androidProvider, /"en" -> Locale\.ENGLISH[\s\S]*"ko" -> Locale\.KOREAN/u);
   assert.match(iosWidget, /IntentConfiguration/u);
   assert.match(iosIntent, /INIntentEligibleForWidgets[\s\S]*INIntentParameterSupportsDynamicEnumeration/u);
   assert.match(iosIntentHandler, /SelectDeckIntentHandling[\s\S]*provideDeckOptionsCollection/u);
@@ -157,7 +162,11 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   assert.match(iosWidget, /foregroundStyle\(\.white\)[\s\S]*background\(Color\(red: 0\.11/u);
   assert.match(iosNativeBridge, /replaceWidgetCredentials\(profileId: setting\.profileId/u);
   assert.match(iosNativeBridge, /for key in keys where key\.hasPrefix\(widgetConfigurationPrefix\)[\s\S]*for key in keys where key\.hasPrefix\(widgetSnapshotPrefix\)/u);
+  assert.match(iosNativeBridge, /pendingDeckIds[\s\S]*removeWidgetCredential\(deckId\)[\s\S]*widgetCredentialDeckIds\(\)/u);
+  assert.match(iosWidget, /guard defaults\?\.bool\(forKey: transactionPrefix \+ deckId\) != true else \{ return nil \}/u);
   assert.match(iosWidget, /devhud:\/\/deck\//u);
+  assert.match(iosApplicationEntitlements, /group\.io\.delino\.devhud/u);
+  assert.match(iosApplicationEntitlements, /\$\(AppIdentifierPrefix\)io\.delino\.devhud<\/string>[\s\S]*\$\(AppIdentifierPrefix\)io\.delino\.devhud\.shared/u);
   assert.match(iosEntitlements, /group\.io\.delino\.devhud/u);
   assert.match(iosEntitlements, /\$\(AppIdentifierPrefix\)io\.delino\.devhud\.shared/u);
   for (const warning of [androidEnglish, androidKorean]) assert.match(warning, /launchers|런처/iu);

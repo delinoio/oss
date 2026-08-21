@@ -11,6 +11,7 @@ import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
@@ -26,6 +27,7 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 import java.time.Instant
+import java.util.Locale
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -228,19 +230,20 @@ class DevHudWidgetProvider : AppWidgetProvider() {
             listOf("deckId", "query", "profileId", "profileKind", "scopeId").all { left.optString(it) == right.optString(it) }
 
         private fun render(context: Context, configuration: JSONObject?, snapshot: JSONObject?, forcedState: String): RemoteViews {
+            val copyContext = localizedContext(context, configuration)
             val views = RemoteViews(context.packageName, R.layout.devhud_widget)
-            val deckName = configuration?.optString("name")?.takeIf(String::isNotBlank) ?: context.getString(R.string.devhud_widget_setup)
+            val deckName = configuration?.optString("name")?.takeIf(String::isNotBlank) ?: copyContext.getString(R.string.devhud_widget_setup)
             views.setTextViewText(R.id.widget_deck_name, deckName)
             val counts = snapshot?.optJSONObject("counts")
-            val countsText = if (counts == null) context.getString(R.string.devhud_widget_no_results) else context.getString(R.string.devhud_widget_counts,
-                counts.optInt("total"), counts.optInt("open"), counts.optInt("draft"), counts.optInt("merged"), counts.optInt("closed")) + if (counts.optBoolean("bounded")) context.getString(R.string.devhud_widget_first_hundred) else ""
+            val countsText = if (counts == null) copyContext.getString(R.string.devhud_widget_no_results) else copyContext.getString(R.string.devhud_widget_counts,
+                counts.optInt("total"), counts.optInt("open"), counts.optInt("draft"), counts.optInt("merged"), counts.optInt("closed")) + if (counts.optBoolean("bounded")) copyContext.getString(R.string.devhud_widget_first_hundred) else ""
             views.setTextViewText(R.id.widget_counts, countsText)
             val results = snapshot?.optJSONArray("results")
             val previews = (0 until minOf(results?.length() ?: 0, 3)).joinToString("\n") { index ->
                 val item = results!!.getJSONObject(index)
                 "${item.optString("repository")}#${item.optInt("number")} · ${item.optString("title")}"
             }
-            views.setTextViewText(R.id.widget_results, previews.ifEmpty { context.getString(R.string.devhud_widget_no_results) })
+            views.setTextViewText(R.id.widget_results, previews.ifEmpty { copyContext.getString(R.string.devhud_widget_no_results) })
             val lastSuccess = snapshot?.optString("lastSuccessfulAt")?.takeIf { it.isNotBlank() && it != "null" }
             val stale = lastSuccess != null && System.currentTimeMillis() - runCatching { Instant.parse(lastSuccess).toEpochMilli() }.getOrDefault(0) >= staleAfterMillis
             val state = if (forcedState == "fresh" && stale) "stale" else forcedState
@@ -252,8 +255,8 @@ class DevHudWidgetProvider : AppWidgetProvider() {
                 "error" -> R.string.devhud_widget_error
                 else -> R.string.devhud_widget_fresh
             }
-            val stateText = context.getString(stateLabel) + if (stale && state != "stale") " · ${context.getString(R.string.devhud_widget_stale)}" else ""
-            views.setTextViewText(R.id.widget_status, context.getString(R.string.devhud_widget_status, stateText, lastSuccess ?: context.getString(R.string.devhud_widget_never)))
+            val stateText = copyContext.getString(stateLabel) + if (stale && state != "stale") " · ${copyContext.getString(R.string.devhud_widget_stale)}" else ""
+            views.setTextViewText(R.id.widget_status, copyContext.getString(R.string.devhud_widget_status, stateText, lastSuccess ?: copyContext.getString(R.string.devhud_widget_never)))
             val description = "$deckName. ${listOf(countsText, previews.ifEmpty { null }, stateText, lastSuccess).filterNotNull().joinToString(". ")}"
             views.setContentDescription(R.id.widget_root, description)
             if (configuration != null) {
@@ -262,6 +265,16 @@ class DevHudWidgetProvider : AppWidgetProvider() {
                 views.setOnClickPendingIntent(R.id.widget_root, PendingIntent.getActivity(context, deckId.hashCode(), intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))
             }
             return views
+        }
+
+        private fun localizedContext(context: Context, configuration: JSONObject?): Context {
+            val locale = when (configuration?.optString("language")) {
+                "en" -> Locale.ENGLISH
+                "ko" -> Locale.KOREAN
+                else -> return context
+            }
+            val resourcesConfiguration = Configuration(context.resources.configuration).apply { setLocale(locale) }
+            return context.createConfigurationContext(resourcesConfiguration)
         }
 
     }

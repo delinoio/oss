@@ -280,13 +280,20 @@ export function DeckPollingBoundary({ bridge, active, online, language = "en", p
   }, [identity.githubPatScopeId, identity.settings.github.profiles, language]);
 
   const synchronizeWidgetDeck = useCallback(async (deck: Deck, snapshot?: WidgetDeckSnapshot) => {
+    const generation = widgetReconciliationGeneration.current;
+    const canSynchronize = () => generation === widgetReconciliationGeneration.current && !manuallyDisabledWidgetDeckIds.current.has(deck.id);
     try {
       const configuration = await widgetConfiguration(deck);
       if (configuration === null) throw new Error("missing-widget-configuration");
+      let synchronized = false;
       await enqueueWidgetMutation(deck.id, async () => {
+        if (!canSynchronize()) return;
         await bridge.request({ operation: "widgets.enable-deck", configuration });
+        if (!canSynchronize()) return;
         if (snapshot !== undefined && snapshot.query === configuration.query) await bridge.request({ operation: "widgets.replace-deck-snapshot", snapshot });
+        synchronized = canSynchronize();
       });
+      if (!synchronized) return;
       setEnabledWidgetDeckIds((current) => current.has(deck.id) ? current : new Set(current).add(deck.id));
       setWidgetFailure(deck.id, false);
     } catch (error) {

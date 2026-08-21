@@ -108,6 +108,10 @@ export function configureIosWidgetProject(projectPath = join(generatedRoot, "app
     settings: { base: { PRODUCT_BUNDLE_IDENTIFIER: "io.delino.devhud.widget.intent", PRODUCT_NAME: "DevHUD Deck Selection", ...applicationVersions, SKIP_INSTALL: "YES", SWIFT_VERSION: "5.9", TARGETED_DEVICE_FAMILY: "1,2", INFOPLIST_FILE: "DevHudWidgetIntent/Info.plist", CODE_SIGN_ENTITLEMENTS: "DevHudWidgetIntent/DevHudWidgetIntent.entitlements" } },
   };
   const [applicationName] = application;
+  applicationTarget.settings = {
+    ...(applicationTarget.settings ?? {}),
+    base: { ...(applicationTarget.settings?.base ?? {}), CODE_SIGN_ENTITLEMENTS: "DevHud.entitlements" },
+  };
   applicationTarget.dependencies = [...(applicationTarget.dependencies ?? []).filter((dependency) => !["DevHudWidget", "DevHudWidgetIntent"].includes(dependency?.target)), { target: "DevHudWidget", embed: true }, { target: "DevHudWidgetIntent", embed: true }];
   project.targets[applicationName] = applicationTarget;
   writeFileSync(projectPath, dumpYaml(project, { lineWidth: 140, noRefs: true }));

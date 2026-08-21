@@ -8,6 +8,7 @@ private let appGroup = "group.io.delino.devhud"
 private let credentialService = "io.delino.devhud.widget-credential.v1"
 private let configurationPrefix = "widget.configuration."
 private let snapshotPrefix = "widget.snapshot."
+private let transactionPrefix = "widget.transaction."
 private let staleAfter: TimeInterval = 60 * 60
 private let repositoryValidationConcurrency = 3
 private let refreshDeadlineNanoseconds: UInt64 = 20 * 1_000_000_000
@@ -57,6 +58,7 @@ private struct WidgetStore {
         return true
     }
     func token(_ deckId: String) -> String? {
+        guard defaults?.bool(forKey: transactionPrefix + deckId) != true else { return nil }
         var query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: credentialService,
                                     kSecAttrAccount as String: deckId, kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne,
                                     kSecAttrSynchronizable as String: false]

@@ -138,6 +138,29 @@ describe("Deck surface", () => {
     expect(screen.getByRole("button", { name: messages.en.widgetEnable })).toBeTruthy();
   });
 
+  it("drops widget synchronization that was still building configuration when manually disabled", async () => {
+    let resolveScope: (scopeId: string) => void = () => {};
+    const scope = new Promise<string>((resolve) => { resolveScope = resolve; });
+    identity = identityWith({ githubPatScopeId: scope });
+    const operations: string[] = [];
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      if (value.operation === "widgets.status") return { kind: "widget-status", enabledDeckIds: [deck.id] };
+      operations.push(value.operation);
+      return { kind: "ok" };
+    });
+    const bridge = bridgeWith(request);
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+    await screen.findByRole("button", { name: messages.en.widgetDisable });
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.widgetDisable }));
+    await waitFor(() => expect(operations).toEqual(["widgets.disable-deck"]));
+    resolveScope("origin.scope");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(operations).toEqual(["widgets.disable-deck"]);
+    expect(screen.getByRole("button", { name: messages.en.widgetEnable })).toBeTruthy();
+  });
+
   it("renders an unavailable state instead of empty results when an uncached Deck is offline", () => {
     const bridge = bridgeWith(async () => { throw new Error("unexpected request"); });
     render(<DeckPollingBoundary bridge={bridge} active={false} online={false} provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);

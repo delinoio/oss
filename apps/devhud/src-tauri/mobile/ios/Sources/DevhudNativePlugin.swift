@@ -15,6 +15,7 @@ private let legacyAccessGroupKey = "DevHudLegacyKeychainAccessGroup"
 private let widgetAccessGroupKey = "DevHudWidgetKeychainAccessGroup"
 private let widgetConfigurationPrefix = "widget.configuration."
 private let widgetSnapshotPrefix = "widget.snapshot."
+private let widgetTransactionPrefix = "widget.transaction."
 private let secureStoreLogger = Logger(subsystem: "io.delino.devhud", category: "secure-store")
 
 private struct SecureSetting: Decodable {
@@ -90,6 +91,9 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
             secureStoreLogger.error("event=legacy_secure_store_migration_failed")
         }
         guard UserDefaults(suiteName: appGroup) != nil else { return }
+        if !reconcileWidgetCredentials() {
+            secureStoreLogger.error("event=widget_credential_reconciliation_failed")
+        }
         UNUserNotificationCenter.current().delegate = self
     }
 
@@ -638,8 +642,63 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
         return status == errSecSuccess || status == errSecItemNotFound
     }
 
+    private func widgetCredentialDeckIds() -> (OSStatus, Set<String>) {
+        var query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+                                    kSecAttrService as String: widgetKeychainService,
+                                    kSecAttrSynchronizable as String: false,
+                                    kSecReturnAttributes as String: true,
+                                    kSecMatchLimit as String: kSecMatchLimitAll]
+        if let accessGroup = Bundle.main.object(forInfoDictionaryKey: widgetAccessGroupKey) as? String {
+            query[kSecAttrAccessGroup as String] = accessGroup
+        }
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        if status == errSecItemNotFound { return (status, []) }
+        guard status == errSecSuccess else { return (status, []) }
+        let items: [[String: Any]]
+        if let values = result as? [[String: Any]] { items = values }
+        else if let value = result as? [String: Any] { items = [value] }
+        else { return (errSecDecode, []) }
+        return (status, Set(items.compactMap { $0[kSecAttrAccount as String] as? String }))
+    }
+
+    private func reconcileWidgetCredentials() -> Bool {
+        guard let defaults = UserDefaults(suiteName: appGroup) else { return false }
+        let keys = defaults.dictionaryRepresentation().keys
+        let pendingDeckIds = Set(keys.filter { $0.hasPrefix(widgetTransactionPrefix) }.map { String($0.dropFirst(widgetTransactionPrefix.count)) })
+        var changed = false
+        for deckId in pendingDeckIds {
+            guard removeWidgetCredential(deckId) else { return false }
+            defaults.removeObject(forKey: widgetTransactionPrefix + deckId)
+            changed = true
+        }
+        let configuredDeckIds = Set(defaults.dictionaryRepresentation().compactMap { key, value -> String? in
+            guard key.hasPrefix(widgetConfigurationPrefix), let encoded = value as? Data,
+                  let configuration = try? JSONDecoder().decode(WidgetDeckConfiguration.self, from: encoded) else { return nil }
+            let deckId = String(key.dropFirst(widgetConfigurationPrefix.count))
+            return configuration.deckId == deckId ? deckId : nil
+        })
+        let (status, credentialDeckIds) = widgetCredentialDeckIds()
+        guard status == errSecSuccess || status == errSecItemNotFound else { return false }
+        for deckId in credentialDeckIds where !configuredDeckIds.contains(deckId) {
+            guard removeWidgetCredential(deckId) else { return false }
+            changed = true
+        }
+        guard defaults.synchronize() else { return false }
+        if changed { WidgetCenter.shared.reloadAllTimelines() }
+        return true
+    }
+
+    private func abortWidgetTransaction(_ defaults: UserDefaults, deckId: String) -> Bool {
+        // Leave the marker in place when Keychain cleanup fails so the widget
+        // cannot consume a credential whose matching configuration is unknown.
+        guard removeWidgetCredential(deckId) else { return false }
+        defaults.removeObject(forKey: widgetTransactionPrefix + deckId)
+        return defaults.synchronize()
+    }
+
     private func widgetStatus(_ invoke: Invoke) {
-        guard let defaults = UserDefaults(suiteName: appGroup) else { rejectStorageFailure(invoke); return }
+        guard let defaults = UserDefaults(suiteName: appGroup), reconcileWidgetCredentials() else { rejectStorageFailure(invoke); return }
         let enabled = defaults.dictionaryRepresentation().keys.filter { $0.hasPrefix(widgetConfigurationPrefix) }.map { String($0.dropFirst(widgetConfigurationPrefix.count)) }.sorted()
         invoke.resolve(["kind": "widget-status", "enabledDeckIds": enabled])
     }
@@ -661,9 +720,18 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
         }
         do {
             let key = widgetConfigurationPrefix + configuration.deckId
+            let transactionKey = widgetTransactionPrefix + configuration.deckId
             let previous = defaults.data(forKey: key).flatMap { try? JSONDecoder().decode(WidgetDeckConfiguration.self, from: $0) }
             let encoded = try JSONEncoder().encode(configuration)
+            defaults.set(true, forKey: transactionKey)
+            guard defaults.synchronize() else {
+                defaults.removeObject(forKey: transactionKey)
+                rejectStorageFailure(invoke)
+                return
+            }
             guard storeWidgetCredential(patData, deckId: configuration.deckId) == errSecSuccess else {
+                defaults.removeObject(forKey: transactionKey)
+                _ = defaults.synchronize()
                 rejectStorageFailure(invoke)
                 return
             }
@@ -671,10 +739,19 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
             if let previous, widgetSelectionChanged(previous, configuration) {
                 defaults.removeObject(forKey: widgetSnapshotPrefix + configuration.deckId)
             }
+            guard defaults.synchronize() else {
+                _ = abortWidgetTransaction(defaults, deckId: configuration.deckId)
+                rejectStorageFailure(invoke)
+                return
+            }
+            defaults.removeObject(forKey: transactionKey)
+            guard defaults.synchronize() else {
+                rejectStorageFailure(invoke)
+                return
+            }
             WidgetCenter.shared.reloadAllTimelines()
             invoke.resolve(["kind": "ok"])
         } catch {
-            _ = removeWidgetCredential(configuration.deckId)
             rejectStorageFailure(invoke)
         }
     }
@@ -709,6 +786,9 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
             defaults.removeObject(forKey: key)
         }
         for key in keys where key.hasPrefix(widgetSnapshotPrefix) {
+            defaults.removeObject(forKey: key)
+        }
+        for key in keys where key.hasPrefix(widgetTransactionPrefix) {
             defaults.removeObject(forKey: key)
         }
         guard removeAllWidgetCredentials() else { return false }

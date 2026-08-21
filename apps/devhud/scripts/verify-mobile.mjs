@@ -80,6 +80,7 @@ assertMobileContracts({
   androidNativeBridge: text("src-tauri/mobile/android/src/main/java/io/delino/devhud/bridge/DevhudNativePlugin.kt"),
   androidChannelEnglish: text("mobile/overrides/android/app/src/main/res/values/devhud_strings.xml"),
   androidChannelKorean: text("mobile/overrides/android/app/src/main/res/values-ko/devhud_strings.xml"),
+  iosAppEntitlements: text("mobile/overrides/ios/DevHud.entitlements"),
   iosNativeBridge: text("src-tauri/mobile/ios/Sources/DevhudNativePlugin.swift"),
   iosPlist: text("src-tauri/Info.ios.plist"),
   packageJson: json("package.json"),

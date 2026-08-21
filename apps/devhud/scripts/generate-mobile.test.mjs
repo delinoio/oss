@@ -42,6 +42,7 @@ test("generated iOS projects embed the production widget extension", () => {
     assert.match(generated, /INFOPLIST_FILE: DevHudWidgetIntent\/Info\.plist/u);
     assert.match(generated, /CODE_SIGN_ENTITLEMENTS: DevHudWidget\/DevHudWidget\.entitlements/u);
     assert.match(generated, /CODE_SIGN_ENTITLEMENTS: DevHudWidgetIntent\/DevHudWidgetIntent\.entitlements/u);
+    assert.equal(parsed.targets.DevHUD_iOS.settings.base.CODE_SIGN_ENTITLEMENTS, "DevHud.entitlements");
     assert.match(generated, /path: DevHudWidgetShared\/en\.lproj/u);
     assert.match(generated, /path: DevHudWidgetShared\/ko\.lproj/u);
     for (const target of ["DevHudWidget", "DevHudWidgetIntent"]) {

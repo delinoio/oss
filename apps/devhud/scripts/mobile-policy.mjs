@@ -127,6 +127,8 @@ export function assertIosNativeBridge(iosNativeBridgeInput) {
   assert(iosNativeBridge.includes('UserDefaults(suiteName: appGroup)'), "iOS must bind the contracted App Group");
   assert(iosNativeBridge.includes('widgetKeychainService = "io.delino.devhud.widget-credential.v1"') && iosNativeBridge.includes("widgetAccessGroupKey"), "iOS widget credentials must use a distinct selected-only Keychain service");
   assert(purgeSecure.includes("clearWidgetState()"), "iOS destructive secure purges must clear widget credentials and state");
+  assert(iosNativeBridge.includes("reconcileWidgetCredentials()") && iosNativeBridge.includes("widgetCredentialDeckIds()"), "iOS must reconcile interrupted or orphaned widget credentials");
+  assert(iosNativeBridge.includes("defaults.set(true, forKey: transactionKey)") && iosNativeBridge.indexOf("defaults.set(true, forKey: transactionKey)") < iosNativeBridge.indexOf("storeWidgetCredential(patData"), "iOS widget enablement must persist its transaction marker before Keychain mutation");
 }
 
 export function assertMobileDependencyResolution(verifier) {
@@ -214,7 +216,7 @@ export function assertMobileCi(workflow) {
   assert(androidJob.includes("if: ${{ steps.gate.outputs.run == 'true' && matrix.production }}") && androidJob.includes('--android-artifact "${aab_artifacts[0]}"'), "Android production CI must inspect the generated App Bundle");
 }
 
-export function assertMobileContracts({ platforms, tauri, ios, android, cargo, androidManifest, androidDebugManifest, androidBackupRules, androidDataExtractionRules, androidPluginManifest, androidNativeBridge, androidChannelEnglish, androidChannelKorean, iosNativeBridge, iosPlist, packageJson, nativeBridge, app, workflow }) {
+export function assertMobileContracts({ platforms, tauri, ios, android, cargo, androidManifest, androidDebugManifest, androidBackupRules, androidDataExtractionRules, androidPluginManifest, androidNativeBridge, androidChannelEnglish, androidChannelKorean, iosAppEntitlements, iosNativeBridge, iosPlist, packageJson, nativeBridge, app, workflow }) {
   assert(platforms.schemaVersion === 1, "unsupported mobile platform schema");
   assert(platforms.identity === "io.delino.devhud" && tauri.identifier === platforms.identity, "mobile identity changed");
   assert(platforms.deepLinkScheme === "devhud", "deep-link scheme changed");
@@ -246,6 +248,7 @@ export function assertMobileContracts({ platforms, tauri, ios, android, cargo, a
   assert(androidPluginManifest.includes("DevHudWidgetProvider") && androidPluginManifest.includes("DevHudWidgetConfigureActivity"), "Android AppWidgetProvider and one-Deck configuration activity are missing");
   assert((iosPlist.match(/<string>devhud<\/string>/gu) ?? []).length === 1, "iOS must register only one devhud scheme");
   assert(iosPlist.includes("DevHudLegacyKeychainAccessGroup") && iosPlist.includes("DevHudWidgetKeychainAccessGroup") && iosPlist.includes("$(AppIdentifierPrefix)io.delino.devhud.shared"), "iOS widget and migration Keychain groups changed");
+  assert(iosAppEntitlements.includes("group.io.delino.devhud") && iosAppEntitlements.includes("$(AppIdentifierPrefix)io.delino.devhud") && iosAppEntitlements.includes("$(AppIdentifierPrefix)io.delino.devhud.shared"), "iOS application widget-sharing entitlements changed");
   assert(!/com\.apple\.developer\.|NSExtension/iu.test(iosPlist), "uncontracted iOS entitlement or extension detected");
   assertIosNativeBridge(iosNativeBridge);
 

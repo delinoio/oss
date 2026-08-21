@@ -379,7 +379,7 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
                     .putString(key, encryptSecure(value, key))
                     .commit()) return@persistSecure false
             if (DevHudWidgetStore(activity.applicationContext).replaceProfileToken(profileId, scopeId, value)) {
-                refreshWidgets()
+                renderWidgets()
                 return@persistSecure true
             }
 
@@ -504,13 +504,13 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
             val widgetStore = DevHudWidgetStore(activity.applicationContext)
             if (!preferences.contains(marker) || encoded == null) {
                 widgetStore.disable(deckId)
-                refreshWidgets()
+                renderWidgets()
                 throw IllegalStateException("missing selected widget credential")
             }
             val token = try { decryptSecure(encoded, "github-pat:$profileId", authenticateKey = true) }
-                catch (error: Exception) { widgetStore.disable(deckId); refreshWidgets(); throw error }
+                catch (error: Exception) { widgetStore.disable(deckId); renderWidgets(); throw error }
             val stored = widgetStore.enable(configuration, token)
-            if (stored) refreshWidgets()
+            if (stored) renderWidgets()
             stored
         }
     }
@@ -519,7 +519,7 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
         val snapshot = invoke.getArgs().getJSObject("snapshot") ?: throw IllegalArgumentException("snapshot")
         persistSecure(invoke) {
             val stored = DevHudWidgetStore(activity.applicationContext).replaceSnapshot(snapshot)
-            if (stored) refreshWidgets()
+            if (stored) renderWidgets()
             stored
         }
     }
@@ -528,17 +528,17 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
         val deckId = invoke.getArgs().getString("deckId")
         persistSecure(invoke) {
             val cleared = DevHudWidgetStore(activity.applicationContext).disable(deckId)
-            if (cleared) refreshWidgets()
+            if (cleared) renderWidgets()
             cleared
         }
     }
 
-    private fun refreshWidgets() {
+    private fun renderWidgets() {
         val context = activity.applicationContext
         val manager = AppWidgetManager.getInstance(context)
         val component = ComponentName(context, DevHudWidgetProvider::class.java)
         val ids = manager.getAppWidgetIds(component)
-        if (ids.isNotEmpty()) context.sendBroadcast(Intent(AppWidgetManager.ACTION_APPWIDGET_UPDATE).setComponent(component).putExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS, ids))
+        ids.forEach { DevHudWidgetProvider.renderStored(context, manager, it) }
     }
 
     private fun persistSecure(invoke: Invoke, onComplete: () -> Unit = {}, operation: () -> Boolean) {
