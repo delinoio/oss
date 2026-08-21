@@ -145,7 +145,10 @@ impl PackageKind {
                     if appimage {
                         Self::LinuxAppimage
                     } else {
-                        Self::LinuxDeb
+                        return Err(UpdaterError::new(
+                            DiagnosticCode::Unsupported,
+                            UpdatePhase::Target,
+                        ));
                     }
                 }
             },
@@ -2081,7 +2084,7 @@ mod tests {
     }
 
     #[test]
-    fn appimage_package_kind_requires_the_running_appdir() {
+    fn linux_package_kind_requires_a_build_marker_and_running_appdir() {
         let appimage = Path::new("/opt/DevHUD.AppImage");
         let appdir = Path::new("/tmp/.mount_DevHUD/usr");
         let executable = Path::new("/tmp/.mount_DevHUD/usr/bin/devhud");
@@ -2120,9 +2123,15 @@ mod tests {
             PackageKind::LinuxAppimage
         );
         assert_eq!(
-            PackageKind::from_configuration(DesktopTarget::LinuxX64, None, false).unwrap(),
+            PackageKind::from_configuration(DesktopTarget::LinuxX64, Some("linux-deb"), false,)
+                .unwrap(),
             PackageKind::LinuxDeb
         );
+        assert_eq!(
+            PackageKind::from_configuration(DesktopTarget::LinuxX64, None, true).unwrap(),
+            PackageKind::LinuxAppimage
+        );
+        assert!(PackageKind::from_configuration(DesktopTarget::LinuxX64, None, false).is_err());
     }
 
     fn fixture(
