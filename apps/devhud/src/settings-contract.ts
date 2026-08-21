@@ -12,7 +12,8 @@ export const PreviousSettingsSchemaVersion = 2 as const;
 /** Version 3 was released independently by the Deck and shortcut branches. */
 export const CollidingSettingsSchemaVersion = 3 as const;
 export const StructuredSettingsSchemaVersion = 4 as const;
-export const SettingsSchemaVersion = 5 as const;
+export const R2SettingsSchemaVersion = 5 as const;
+export const SettingsSchemaVersion = 6 as const;
 export const MaximumUrlRepositoryMappings = 100;
 
 const Theme = ["system", "light", "dark"] as const;
@@ -69,7 +70,10 @@ export interface DevHudSettings {
     readonly enabled: boolean;
     readonly kind: AgentKind;
     readonly mode: AgentMode;
-    readonly repositoryPrompts: boolean;
+    readonly repositoryPrompts: readonly {
+      readonly repository: { readonly owner: string; readonly name: string };
+      readonly body: string;
+    }[];
     readonly profileRef: string | null;
   }[];
   readonly uploads: {
@@ -177,7 +181,7 @@ export function parseDevHudSettings(value: unknown): DevHudSettingsV1 {
       ios: legacyShortcuts ? legacyShortcutMap(shortcuts.ios, "$.shortcuts.ios") : emptyShortcutMap(shortcuts.ios, "$.shortcuts.ios"),
       android: legacyShortcuts ? legacyShortcutMap(shortcuts.android, "$.shortcuts.android") : emptyShortcutMap(shortcuts.android, "$.shortcuts.android"),
     },
-    agents: array(root.agents, "$.agents").map((entry, index) => parseAgent(entry, `$.agents[${index}]`)),
+    agents: array(root.agents, "$.agents").map((entry, index) => parseAgent(entry, `$.agents[${index}]`, sourceSchemaVersion)),
     uploads: {
       provider: enumeration(uploads.provider, "$.uploads.provider", UploadProvider),
       r2: uploads.r2 === null ? null : parseR2(uploads.r2, sourceSchemaVersion),
@@ -187,6 +191,9 @@ export function parseDevHudSettings(value: unknown): DevHudSettingsV1 {
   validateGitHubProfileRef(parsed.github.issueTracker?.profileRef ?? null, "$.github.issueTracker.profileRef", githubProfileIds);
   for (const [index, deck] of parsed.decks.entries()) validateGitHubProfileRef(deck.profileRef, `$.decks[${index}].profileRef`, githubProfileIds);
   for (const [index, mapping] of parsed.urlMappings.entries()) validateGitHubProfileRef(mapping.credentialProfileRef, `$.urlMappings[${index}].credentialProfileRef`, githubProfileIds);
+  if (parsed.agents.length > 25) throw new SettingsContractError("$.agents", "must contain at most 25 entries");
+  if (new Set(parsed.agents.map((agent) => agent.id)).size !== parsed.agents.length) throw new SettingsContractError("$.agents", "must contain unique IDs");
+  for (const [index, agent] of parsed.agents.entries()) validateGitHubProfileRef(agent.profileRef, `$.agents[${index}].profileRef`, githubProfileIds);
   if (!nativeMessagingConfigurationEnvelopesFit(parsed.urlMappings)) {
     throw new SettingsContractError("$.urlMappings", "projected Native Messaging configuration must fit the 256 KiB response envelope");
   }
@@ -251,11 +258,11 @@ export function decodeDevHudSettings(value: Uint8Array): DevHudSettingsV1 {
   return decodeDevHudSettingsSnapshot(value).settings;
 }
 
-export function decodeDevHudSettingsSnapshot(value: Uint8Array): { readonly sourceSchemaVersion: 1 | 2 | 3 | 4 | 5; readonly settings: DevHudSettingsV1 } {
+export function decodeDevHudSettingsSnapshot(value: Uint8Array): { readonly sourceSchemaVersion: 1 | 2 | 3 | 4 | 5 | 6; readonly settings: DevHudSettingsV1 } {
   const canonical = validateCanonicalSettingsJson(value);
   const settings = parseDevHudSettings(canonical);
   const sourceSchemaVersion = (canonical as { readonly schemaVersion: unknown }).schemaVersion;
-  if (sourceSchemaVersion !== LegacySettingsSchemaVersion && sourceSchemaVersion !== PreviousSettingsSchemaVersion && sourceSchemaVersion !== CollidingSettingsSchemaVersion && sourceSchemaVersion !== StructuredSettingsSchemaVersion && sourceSchemaVersion !== SettingsSchemaVersion) throw new SettingsContractError("$.schemaVersion", "is unsupported");
+  if (sourceSchemaVersion !== LegacySettingsSchemaVersion && sourceSchemaVersion !== PreviousSettingsSchemaVersion && sourceSchemaVersion !== CollidingSettingsSchemaVersion && sourceSchemaVersion !== StructuredSettingsSchemaVersion && sourceSchemaVersion !== R2SettingsSchemaVersion && sourceSchemaVersion !== SettingsSchemaVersion) throw new SettingsContractError("$.schemaVersion", "is unsupported");
   return { sourceSchemaVersion, settings };
 }
 
@@ -656,23 +663,44 @@ function validateGitHubProfileRef(value: string | null, path: string, profileIds
   if (value !== null && !profileIds.has(value)) throw new SettingsContractError(path, "must reference a configured GitHub profile");
 }
 
-function parseAgent(value: unknown, path: string): DevHudSettingsV1["agents"][number] {
+function parseAgent(value: unknown, path: string, sourceSchemaVersion: number): DevHudSettingsV1["agents"][number] {
   const agent = object(value, path, ["id", "enabled", "kind", "mode", "repositoryPrompts", "profileRef"]);
   const profileRef = agent.profileRef === null ? null : text(agent.profileRef, `${path}.profileRef`);
   if (profileRef !== null && !profileRefPattern.test(profileRef)) throw new SettingsContractError(`${path}.profileRef`, "is invalid");
+  let repositoryPrompts: DevHudSettingsV1["agents"][number]["repositoryPrompts"];
+  if (sourceSchemaVersion < SettingsSchemaVersion) {
+    boolean(agent.repositoryPrompts, `${path}.repositoryPrompts`);
+    repositoryPrompts = [];
+  } else {
+    repositoryPrompts = array(agent.repositoryPrompts, `${path}.repositoryPrompts`).map((entry, index) => {
+      const promptPath = `${path}.repositoryPrompts[${index}]`;
+      const prompt = object(entry, promptPath, ["repository", "body"]);
+      const repository = object(prompt.repository, `${promptPath}.repository`, ["owner", "name"]);
+      const owner = text(repository.owner, `${promptPath}.repository.owner`);
+      const name = text(repository.name, `${promptPath}.repository.name`);
+      if (typeof prompt.body !== "string") throw new SettingsContractError(`${promptPath}.body`, "must be a string");
+      const body = prompt.body;
+      if (!/^(?!-)(?!.*--)[A-Za-z0-9-]{1,39}(?<!-)$/u.test(owner)) throw new SettingsContractError(`${promptPath}.repository.owner`, "is invalid");
+      if (!/^(?!\.\.?$)[A-Za-z0-9._-]{1,100}$/u.test(name)) throw new SettingsContractError(`${promptPath}.repository.name`, "is invalid");
+      if (new TextEncoder().encode(body).byteLength > 32 * 1024) throw new SettingsContractError(`${promptPath}.body`, "must contain at most 32 KiB of UTF-8 text");
+      return { repository: { owner, name }, body };
+    });
+  }
+  if (repositoryPrompts.length > 100) throw new SettingsContractError(`${path}.repositoryPrompts`, "must contain at most 100 entries");
+  if (new Set(repositoryPrompts.map((prompt) => `${prompt.repository.owner.toLowerCase()}/${prompt.repository.name.toLowerCase()}`)).size !== repositoryPrompts.length) throw new SettingsContractError(`${path}.repositoryPrompts`, "must contain unique repositories");
   return {
     id: identifier(agent.id, `${path}.id`),
     enabled: boolean(agent.enabled, `${path}.enabled`),
     kind: enumeration(agent.kind, `${path}.kind`, AgentKind),
     mode: enumeration(agent.mode, `${path}.mode`, AgentMode),
-    repositoryPrompts: boolean(agent.repositoryPrompts, `${path}.repositoryPrompts`),
+    repositoryPrompts,
     profileRef,
   };
 }
 
 function parseR2(value: unknown, sourceSchemaVersion: number): NonNullable<DevHudSettingsV1["uploads"]["r2"]> {
   const path = "$.uploads.r2";
-  const current = sourceSchemaVersion >= SettingsSchemaVersion;
+  const current = sourceSchemaVersion >= R2SettingsSchemaVersion;
   const r2 = object(value, path, current
     ? ["profileRef", "name", "endpoint", "accountId", "bucket", "publicBaseUrl", "prefix"]
     : ["profileRef", "bucket", "endpoint", "region", "publicBaseUrl"]);

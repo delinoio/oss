@@ -51,6 +51,15 @@ export const NativeBridgeErrorCode = {
   ImageLimit: "image-limit",
   NotFound: "not-found",
   RevisionConflict: "revision-conflict",
+  InvalidExecutablePath: "invalid-executable-path",
+  AgentNotFound: "agent-not-found",
+  AgentVersionUnsupported: "agent-version-unsupported",
+  AgentUnavailable: "agent-unavailable",
+  AgentInvalidOutput: "agent-invalid-output",
+  AgentFailed: "agent-failed",
+  AgentTimeout: "agent-timeout",
+  CloneFailure: "clone-failure",
+  CacheQuotaExhausted: "cache-quota-exhausted",
 } as const;
 export type NativeBridgeErrorCode = (typeof NativeBridgeErrorCode)[keyof typeof NativeBridgeErrorCode];
 
@@ -71,6 +80,7 @@ export interface RuntimeSnapshot {
     readonly storeUpdates: boolean;
     readonly widgets: false;
     readonly capture?: boolean;
+    readonly localAgents?: boolean;
   };
 }
 
@@ -135,6 +145,30 @@ export interface WidgetDeckSnapshot {
   readonly pullRequests: readonly { readonly title: string; readonly url: string }[];
 }
 
+export const LocalAgentKind = { Codex: "codex", ClaudeCode: "claude-code", Opencode: "opencode" } as const;
+export type LocalAgentKind = (typeof LocalAgentKind)[keyof typeof LocalAgentKind];
+export const LocalAgentMode = { Draft: "draft", Direct: "direct" } as const;
+export type LocalAgentMode = (typeof LocalAgentMode)[keyof typeof LocalAgentMode];
+export type LocalAgentHealth = "ready" | "agent-not-found" | "invalid-executable-path" | "version-unreadable" | "unsupported-version";
+export interface LocalAgentRepository { readonly owner: string; readonly name: string }
+export interface LocalAgentRunInput {
+  readonly runId: string;
+  readonly kind: LocalAgentKind;
+  readonly mode: LocalAgentMode;
+  readonly executablePath?: string;
+  readonly repository: LocalAgentRepository;
+  readonly private: boolean;
+  readonly profileId: string;
+  readonly scopeId: string;
+  readonly title: string;
+  readonly body: string;
+  readonly labels: readonly string[];
+  readonly diagnostics: string | null;
+  readonly imageUrls: readonly string[];
+  readonly marker: string;
+  readonly repositoryPrompt: string;
+}
+
 type NativeBridgeRequestV1Base =
   | { readonly operation: "runtime.snapshot" }
   | { readonly operation: "session.configure-origins"; readonly apiOrigin: string; readonly logtoIssuer?: string }
@@ -182,7 +216,11 @@ export type NativeBridgeRequestV1 = NativeBridgeRequestV1Base
   | { readonly operation: "capture.upload-official"; readonly draftId: string; readonly expectedRevision: number; readonly imageId: string; readonly expectedBytes: number; readonly expectedSha256: string; readonly upload: OfficialCaptureUpload }
   | { readonly operation: "capture.upload-r2"; readonly draftId: string; readonly expectedRevision: number; readonly imageId: string; readonly expectedBytes: number; readonly expectedSha256: string; readonly profile: R2CaptureUploadProfile }
   | { readonly operation: "capture.delete-draft"; readonly draftId: string }
-  | { readonly operation: "capture.confirm-issue-created"; readonly draftId: string; readonly expectedRevision: number };
+  | { readonly operation: "capture.confirm-issue-created"; readonly draftId: string; readonly expectedRevision: number }
+  | { readonly operation: "agent.detect"; readonly kind: LocalAgentKind; readonly executablePath?: string }
+  | ({ readonly operation: "agent.run" } & LocalAgentRunInput)
+  | { readonly operation: "agent.cancel"; readonly runId: string }
+  | { readonly operation: "agent.purge-cache" };
 
 export type NativeBridgeResponseV1 =
   | { readonly kind: "runtime"; readonly snapshot: RuntimeSnapshot }
@@ -198,6 +236,9 @@ export type NativeBridgeResponseV1 =
   | { readonly kind: "capture-draft"; readonly draft: CaptureDraft }
   | { readonly kind: "capture-flattened"; readonly images: readonly FlattenedCaptureImage[] }
   | { readonly kind: "capture-uploaded"; readonly observedEtag: string; readonly publicUrl: string | null }
+  | { readonly kind: "agent-status"; readonly agent: LocalAgentKind; readonly health: LocalAgentHealth; readonly path: string | null; readonly pathSource: "path" | "override"; readonly version: string | null; readonly pinnedVersion: string }
+  | { readonly kind: "agent-draft"; readonly title: string; readonly body: string }
+  | { readonly kind: "agent-direct"; readonly issueUrl: string; readonly marker: string }
   | { readonly kind: "unsupported"; readonly feature: "widgets" }
   | { readonly kind: "diagnostics-export"; readonly outcome: "saved" | "cancelled" | "initiated" }
   | { readonly kind: "ok" };
@@ -228,6 +269,10 @@ declare global {
 
 const profilePattern = /^[a-zA-Z0-9._-]{1,128}$/u;
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+const uuidV7Pattern = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+const repositoryOwnerPattern = /^(?!-)(?!.*--)[A-Za-z0-9-]{1,39}(?<!-)$/u;
+const repositoryNamePattern = /^(?!\.\.?$)[A-Za-z0-9._-]{1,100}$/u;
+const submissionMarkerPattern = /^<!-- devhud-submission:[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12} -->$/u;
 const secretLimit = 64 * 1024;
 const diagnosticsExportLimit = 1024 * 1024;
 const diagnosticsFileName = /^devhud-diagnostics-[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.json$/u;
@@ -300,6 +345,52 @@ export function validateCaptureRequest(request: Extract<NativeBridgeRequestV1, {
     for (const value of [profile.endpoint, profile.publicBaseUrl]) {
       try { const url = new URL(value); if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash) throw new Error(); } catch { throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument); }
     }
+  }
+}
+
+function validLocalAgentUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && url.username === "" && url.password === "" && url.hash === "";
+  } catch {
+    return false;
+  }
+}
+
+export function validateLocalAgentRequest(request: Extract<NativeBridgeRequestV1, { readonly operation: `agent.${string}` }>) {
+  if (request.operation === "agent.purge-cache") return;
+  if (request.operation === "agent.cancel") {
+    if (!uuidV7Pattern.test(request.runId)) throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument);
+    return;
+  }
+  if (request.operation === "agent.detect") {
+    if (!Object.values(LocalAgentKind).includes(request.kind)
+      || (request.executablePath !== undefined && (request.executablePath.trim() === "" || request.executablePath.includes("\0") || request.executablePath.length > 4096))) {
+      throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument);
+    }
+    return;
+  }
+  const encoded = new TextEncoder();
+  if (!uuidV7Pattern.test(request.runId)
+    || !Object.values(LocalAgentKind).includes(request.kind)
+    || !Object.values(LocalAgentMode).includes(request.mode)
+    || !repositoryOwnerPattern.test(request.repository.owner)
+    || !repositoryNamePattern.test(request.repository.name)
+    || !profilePattern.test(request.profileId)
+    || !profilePattern.test(request.scopeId)
+    || (request.executablePath !== undefined && (request.executablePath.trim() === "" || request.executablePath.includes("\0") || request.executablePath.length > 4096))
+    || request.title.length > 256
+    || encoded.encode(request.body).byteLength > 65_536
+    || encoded.encode(request.repositoryPrompt).byteLength > 32 * 1024
+    || request.labels.length > 100
+    || new Set(request.labels).size !== request.labels.length
+    || request.labels.some((label) => label.trim() === "" || encoded.encode(label).byteLength > 100)
+    || request.imageUrls.length > 10
+    || request.imageUrls.some((url) => url.length > 2048 || !validLocalAgentUrl(url))
+    || (request.diagnostics !== null && encoded.encode(request.diagnostics).byteLength > 32 * 1024)
+    || !submissionMarkerPattern.test(request.marker)
+    || (request.mode === LocalAgentMode.Direct && (request.title.trim() === "" || !request.body.endsWith(request.marker) || request.body.split("<!-- devhud-submission:").length !== 2))) {
+    throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument);
   }
 }
 
@@ -380,7 +471,7 @@ async function browserSnapshot(): Promise<RuntimeSnapshot> {
     tauriRevision: "",
     cefRevision: "",
     lifecycle: document.visibilityState === "hidden" ? LifecycleState.Background : LifecycleState.Active,
-    capabilities: { secureSettings: false, notifications: false, storeUpdates: false, widgets: false, capture: false },
+    capabilities: { secureSettings: false, notifications: false, storeUpdates: false, widgets: false, capture: false, localAgents: false },
   };
 }
 
@@ -399,6 +490,7 @@ export const nativeBridge: NativeBridgeV1 = {
     if (request.operation === "diagnostics.export") validateDiagnosticsExport(request);
     if (request.operation === "shortcuts.apply" || request.operation === "shortcuts.stage" || request.operation === "shortcuts.commit") parseDesktopShortcutBindings(request.bindings);
     if (request.operation.startsWith("capture.")) validateCaptureRequest(request as Extract<NativeBridgeRequestV1, { readonly operation: `capture.${string}` }>);
+    if (request.operation.startsWith("agent.")) validateLocalAgentRequest(request as Extract<NativeBridgeRequestV1, { readonly operation: `agent.${string}` }>);
     if (!window.__TAURI_INTERNALS__) {
       if (request.operation === "runtime.snapshot") return { kind: "runtime", snapshot: await browserSnapshot() };
       if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };
@@ -412,6 +504,7 @@ export const nativeBridge: NativeBridgeV1 = {
         return { kind: "shortcut-status", platform: "unsupported", permission: "unsupported", bindings: "bindings" in request ? request.bindings : defaultDesktopShortcutBindings, error: null };
       }
       if (request.operation === "capture.status") return { kind: "capture-status", available: false, platform: "unsupported", shadowRemovalSupported: false, topology: [] };
+      if (request.operation.startsWith("agent.")) throw new NativeBridgeError(NativeBridgeErrorCode.Unsupported);
       if (request.operation === "lifecycle.open-external" && request.target !== "authentication") { window.open(request.target === "fine-grained-pat" ? FineGrainedPatCreationUrl : ClassicPatCreationUrl, "_blank", "noopener,noreferrer"); return { kind: "ok" }; }
       if (request.operation.startsWith("widgets.")) return { kind: "unsupported", feature: "widgets" };
       throw new NativeBridgeError(NativeBridgeErrorCode.Unsupported);

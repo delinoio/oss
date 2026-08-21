@@ -10,6 +10,7 @@ import type { SettingsDiffEntry } from "./settings-diff";
 import { inactiveDesktopShortcutBindings, ShortcutActionId, ShortcutContractError, ShortcutKey, ShortcutModifier, ShortcutValidationCode, availableShortcutActions, parseDesktopShortcutBindings, type ShortcutBinding } from "./shortcuts";
 import { findMappingOverlaps, type UrlRepositoryMapping } from "./url-mapping";
 import { R2Settings } from "./r2-settings-ui.tsx";
+import { LocalAgentSettings } from "./local-agent-settings-ui.tsx";
 
 interface ApiEditorProps {
   readonly copy: Copy;
@@ -213,7 +214,7 @@ function UrlMappingDraftStateProvider({ children, identity, isCurrentScope }: { 
   return <UrlMappingDraftContext value={{ draft, setDraft, setBaselineMappings, markDraftDirty, invalid, setInvalid, saved, setSaved, dirty, saving, setSaving, priorityDrafts, setPriorityDrafts, baseRevision, credentialOperationPending, runCredentialOperation, isCurrentScope, reset }}>{children}</UrlMappingDraftContext>;
 }
 
-export function SynchronizedSettingsBoundary(props: { readonly copy: Copy; readonly bridge?: NativeBridgeV1; readonly githubProvider?: GitHubProvider; readonly onOpenExternal?: (target: ExternalLinkTarget) => Promise<void>; readonly showNativeShortcuts?: boolean; readonly shortcutCapabilities?: RuntimeCapabilities; readonly NativeMessagingSettings?: ComponentType<{ readonly copy: Copy }> }) {
+export function SynchronizedSettingsBoundary(props: { readonly copy: Copy; readonly bridge?: NativeBridgeV1; readonly githubProvider?: GitHubProvider; readonly onOpenExternal?: (target: ExternalLinkTarget) => Promise<void>; readonly showNativeShortcuts?: boolean; readonly showLocalAgents?: boolean; readonly shortcutCapabilities?: RuntimeCapabilities; readonly NativeMessagingSettings?: ComponentType<{ readonly copy: Copy }> }) {
   const mappingDraft = use(UrlMappingDraftContext);
   return mappingDraft === null ? <UrlMappingDraftProvider><SynchronizedSettingsContent {...props} /></UrlMappingDraftProvider> : <SynchronizedSettingsContent {...props} />;
 }
@@ -382,7 +383,7 @@ function ShortcutSettings({ copy, bridge, disabled, capabilities, bindings, onAc
   </section>;
 }
 
-function SynchronizedSettingsContent({ copy, bridge = nativeBridge, githubProvider, onOpenExternal = (target) => browserShell.openExternal(target, ""), showNativeShortcuts = false, shortcutCapabilities = { available: new Set<PlatformCapability>() }, NativeMessagingSettings }: { readonly copy: Copy; readonly bridge?: NativeBridgeV1; readonly githubProvider?: GitHubProvider; readonly onOpenExternal?: (target: ExternalLinkTarget) => Promise<void>; readonly showNativeShortcuts?: boolean; readonly shortcutCapabilities?: RuntimeCapabilities; readonly NativeMessagingSettings?: ComponentType<{ readonly copy: Copy }> }) {
+function SynchronizedSettingsContent({ copy, bridge = nativeBridge, githubProvider, onOpenExternal = (target) => browserShell.openExternal(target, ""), showNativeShortcuts = false, showLocalAgents = showNativeShortcuts, shortcutCapabilities = { available: new Set<PlatformCapability>() }, NativeMessagingSettings }: { readonly copy: Copy; readonly bridge?: NativeBridgeV1; readonly githubProvider?: GitHubProvider; readonly onOpenExternal?: (target: ExternalLinkTarget) => Promise<void>; readonly showNativeShortcuts?: boolean; readonly showLocalAgents?: boolean; readonly shortcutCapabilities?: RuntimeCapabilities; readonly NativeMessagingSettings?: ComponentType<{ readonly copy: Copy }> }) {
   const identity = useIdentitySettings();
   const mappingDraft = use(UrlMappingDraftContext);
   if (mappingDraft === null) throw new Error("URL mapping draft provider is required");
@@ -396,6 +397,7 @@ function SynchronizedSettingsContent({ copy, bridge = nativeBridge, githubProvid
     <label>{copy.theme}<select value={identity.settings.appearance.theme} disabled={identity.readOnly} onChange={(event) => replaceAppearance({ theme: event.target.value as DevHudSettingsV1["appearance"]["theme"] })}>{Object.values(ThemePreference).map((value) => <option key={value} value={value}>{copy[value]}</option>)}</select></label>
     <label>{copy.language}<select value={identity.settings.appearance.language} disabled={identity.readOnly} onChange={(event) => replaceAppearance({ language: event.target.value as DevHudSettingsV1["appearance"]["language"] })}><option value={LanguagePreference.System}>{copy.system}</option><option value={LanguagePreference.English}>{copy.english}</option><option value={LanguagePreference.Korean}>{copy.korean}</option></select></label>
     {showNativeShortcuts && <ShortcutSettings copy={copy} bridge={bridge} disabled={identity.readOnly} capabilities={shortcutCapabilities} bindings={identity.settings.shortcuts.desktop} onActiveBindings={identity.setActiveShortcutBindings} onPersist={(desktop) => identity.replaceSettings((current) => ({ ...current, shortcuts: { ...current.shortcuts, desktop } }))} />}
+    {showLocalAgents && <LocalAgentSettings copy={copy} bridge={bridge} />}
     {NativeMessagingSettings && <NativeMessagingSettings copy={copy} />}
     <UrlMappingSettings copy={copy} bridge={bridge} githubProvider={githubProvider} />
     {(identity.status === "guest" || identity.status === "signed-out" || identity.status === "starting") && <p className="notice">{copy.guestSettingsLocal}</p>}
