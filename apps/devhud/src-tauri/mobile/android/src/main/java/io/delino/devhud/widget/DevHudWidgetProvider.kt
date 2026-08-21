@@ -44,6 +44,7 @@ private const val repositoryValidationConcurrency = 3
 private const val refreshDeadlineMillis = 20_000L
 private val widgetExecutor = Executors.newSingleThreadExecutor()
 private val repositoryValidationExecutor = Executors.newFixedThreadPool(repositoryValidationConcurrency)
+private val widgetDeadlineExecutor = Executors.newSingleThreadScheduledExecutor()
 
 private fun localizedContext(context: Context, configuration: JSONObject?): Context {
     val locale = when (configuration?.optString("language")) {
@@ -63,6 +64,11 @@ internal class WidgetRefreshSession {
     private val deadlineNanos = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(refreshDeadlineMillis)
     private val cancellation = AtomicReference<WidgetRefreshCancellation?>(null)
     private val connections = ConcurrentHashMap.newKeySet<HttpURLConnection>()
+    private val deadlineCancellation = widgetDeadlineExecutor.schedule(
+        { cancel(WidgetRefreshCancellation.DEADLINE) },
+        (deadlineNanos - System.nanoTime()).coerceAtLeast(0L),
+        TimeUnit.NANOSECONDS,
+    )
 
     fun remainingMillis(): Int {
         cancellation.get()?.let { throw WidgetRefreshCancelled() }
@@ -100,6 +106,7 @@ internal class WidgetRefreshSession {
     fun wasStopped(): Boolean = cancellation.get() == WidgetRefreshCancellation.STOPPED
 
     fun close() {
+        deadlineCancellation.cancel(false)
         connections.forEach { it.disconnect() }
         connections.clear()
     }

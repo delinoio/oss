@@ -92,6 +92,7 @@ export function DeckPollingBoundary({ bridge, active, online, language = "en", p
   const [failedWidgetDeckIds, setFailedWidgetDeckIds] = useState<ReadonlySet<string>>(() => new Set());
   const widgetMutationQueues = useRef(new Map<string, Promise<void>>());
   const widgetReconciliationGeneration = useRef(0);
+  const widgetSynchronizationGenerations = useRef(new Map<string, number>());
   const manuallyDisabledWidgetDeckIds = useRef(new Set<string>());
   const caches = useRef(new Map<string, DeckCache | null>());
   const configurations = useRef(new Map<string, DeckPollingConfiguration>());
@@ -175,7 +176,7 @@ export function DeckPollingBoundary({ bridge, active, online, language = "en", p
       if (search.notModified && currentCache?.totalCount === undefined) throw new GitHubProviderError(GitHubErrorCode.InvalidResponse, GitHubOperation.SearchPullRequests);
       if (search.incompleteResults) {
         const failures = (currentCache?.failures ?? 0) + 1;
-        const next: DeckCache = { version: 2, deckId: currentDeck.id, query: currentDeck.query, queryEtag: currentCache?.queryEtag ?? null, totalCount: currentCache?.totalCount ?? 0, results: currentCache?.results ?? [], lastSuccessfulAt: currentCache?.lastSuccessfulAt ?? null, rate: search.metadata.rate, failures, nextRefreshAt: nextDeckRefresh(Date.now(), currentDeck.refreshMinutes, failures, search.metadata.rate), transitionKeys: currentCache?.transitionKeys ?? [], pendingNotifications: currentCache?.pendingNotifications ?? [] };
+        const next: DeckCache = { version: 2, deckId: currentDeck.id, query: currentDeck.query, queryEtag: currentCache?.queryEtag ?? null, totalCount: currentCache?.totalCount, results: currentCache?.results ?? [], lastSuccessfulAt: currentCache?.lastSuccessfulAt ?? null, rate: search.metadata.rate, failures, nextRefreshAt: nextDeckRefresh(Date.now(), currentDeck.refreshMinutes, failures, search.metadata.rate), transitionKeys: currentCache?.transitionKeys ?? [], pendingNotifications: currentCache?.pendingNotifications ?? [] };
         writeDeckCache(storage, `${scopeId}.${currentDeck.profileRef}`, next);
         caches.current.set(deckId, next);
         setDeckState(deckId, (current) => ({ ...current, cache: next, failure: "incomplete-results" }));
@@ -226,7 +227,7 @@ export function DeckPollingBoundary({ bridge, active, online, language = "en", p
       const rate = error instanceof GitHubProviderError ? error.rate : currentCache?.rate ?? null;
       const cacheScopeId = scopeId ?? await identity.githubPatScopeId;
       if (!canContinue()) return;
-      const next: DeckCache = { version: 2, deckId: currentDeck.id, query: currentDeck.query, queryEtag: currentCache?.queryEtag ?? null, totalCount: currentCache?.totalCount ?? 0, results: currentCache?.results ?? [], lastSuccessfulAt: currentCache?.lastSuccessfulAt ?? null, rate, failures, nextRefreshAt: nextDeckRefresh(Date.now(), currentDeck.refreshMinutes, failures, rate), transitionKeys: currentCache?.transitionKeys ?? [], pendingNotifications: currentCache?.pendingNotifications ?? [] };
+      const next: DeckCache = { version: 2, deckId: currentDeck.id, query: currentDeck.query, queryEtag: currentCache?.queryEtag ?? null, totalCount: currentCache?.totalCount, results: currentCache?.results ?? [], lastSuccessfulAt: currentCache?.lastSuccessfulAt ?? null, rate, failures, nextRefreshAt: nextDeckRefresh(Date.now(), currentDeck.refreshMinutes, failures, rate), transitionKeys: currentCache?.transitionKeys ?? [], pendingNotifications: currentCache?.pendingNotifications ?? [] };
       writeDeckCache(storage, `${cacheScopeId}.${currentDeck.profileRef}`, next);
       caches.current.set(deckId, next);
       setDeckState(deckId, (current) => ({ ...current, cache: next, failure: classifyDeckFailure(error) }));
@@ -281,7 +282,8 @@ export function DeckPollingBoundary({ bridge, active, online, language = "en", p
 
   const synchronizeWidgetDeck = useCallback(async (deck: Deck, snapshot?: WidgetDeckSnapshot) => {
     const generation = widgetReconciliationGeneration.current;
-    const canSynchronize = () => generation === widgetReconciliationGeneration.current && !manuallyDisabledWidgetDeckIds.current.has(deck.id);
+    const synchronizationGeneration = widgetSynchronizationGenerations.current.get(deck.id) ?? 0;
+    const canSynchronize = () => generation === widgetReconciliationGeneration.current && synchronizationGeneration === (widgetSynchronizationGenerations.current.get(deck.id) ?? 0) && !manuallyDisabledWidgetDeckIds.current.has(deck.id);
     try {
       const configuration = await widgetConfiguration(deck);
       if (configuration === null) throw new Error("missing-widget-configuration");
@@ -315,13 +317,13 @@ export function DeckPollingBoundary({ bridge, active, online, language = "en", p
 
   const enableWidgetDeck = useCallback(async (deck: Deck, snapshot?: WidgetDeckSnapshot) => {
     manuallyDisabledWidgetDeckIds.current.delete(deck.id);
-    widgetReconciliationGeneration.current += 1;
+    widgetSynchronizationGenerations.current.set(deck.id, (widgetSynchronizationGenerations.current.get(deck.id) ?? 0) + 1);
     await synchronizeWidgetDeck(deck, snapshot);
   }, [synchronizeWidgetDeck]);
 
   const disableWidgetDeckManually = useCallback(async (deckId: string) => {
     manuallyDisabledWidgetDeckIds.current.add(deckId);
-    widgetReconciliationGeneration.current += 1;
+    widgetSynchronizationGenerations.current.set(deckId, (widgetSynchronizationGenerations.current.get(deckId) ?? 0) + 1);
     try { await disableWidgetDeck(deckId); }
     catch (error) { manuallyDisabledWidgetDeckIds.current.delete(deckId); throw error; }
   }, [disableWidgetDeck]);
@@ -389,14 +391,25 @@ export function DeckPollingBoundary({ bridge, active, online, language = "en", p
     const reconcile = async () => {
       let failed = false;
       try {
+        const synchronizationGenerations = new Map(widgetSynchronizationGenerations.current);
+        const wasInvalidated = (deckId: string) => (synchronizationGenerations.get(deckId) ?? 0) !== (widgetSynchronizationGenerations.current.get(deckId) ?? 0);
         const response = await bridge.request({ operation: "widgets.status" });
         if (cancelled || widgetReconciliationGeneration.current !== generation || response.kind !== "widget-status") return;
         setWidgetSupported(true);
-        setEnabledWidgetDeckIds(new Set(response.enabledDeckIds));
-        for (const deckId of [...manuallyDisabledWidgetDeckIds.current]) if (!response.enabledDeckIds.includes(deckId)) manuallyDisabledWidgetDeckIds.current.delete(deckId);
+        const reportedEnabledDeckIds = new Set(response.enabledDeckIds);
+        setEnabledWidgetDeckIds((current) => {
+          const next = new Set(current);
+          for (const deckId of new Set([...current, ...reportedEnabledDeckIds])) {
+            if (wasInvalidated(deckId)) continue;
+            if (reportedEnabledDeckIds.has(deckId) && !manuallyDisabledWidgetDeckIds.current.has(deckId)) next.add(deckId);
+            else next.delete(deckId);
+          }
+          return next;
+        });
+        for (const deckId of [...manuallyDisabledWidgetDeckIds.current]) if (!wasInvalidated(deckId) && !reportedEnabledDeckIds.has(deckId)) manuallyDisabledWidgetDeckIds.current.delete(deckId);
         for (const deckId of response.enabledDeckIds) {
           if (cancelled || widgetReconciliationGeneration.current !== generation) return;
-          if (manuallyDisabledWidgetDeckIds.current.has(deckId)) continue;
+          if (wasInvalidated(deckId) || manuallyDisabledWidgetDeckIds.current.has(deckId)) continue;
           const deck = scheduledDecks.find((item) => item.id === deckId);
           try {
             if (deck === undefined) await disableWidgetDeck(deckId);

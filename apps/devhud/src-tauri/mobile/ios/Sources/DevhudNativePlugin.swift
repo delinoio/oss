@@ -689,10 +689,22 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
         return true
     }
 
-    private func abortWidgetTransaction(_ defaults: UserDefaults, deckId: String) -> Bool {
-        // Leave the marker in place when Keychain cleanup fails so the widget
+    private func abortWidgetTransaction(_ defaults: UserDefaults, deckId: String, previousConfigurationData: Data?, previousSnapshotData: Data?, previousCredentialData: Data?) -> Bool {
+        let configurationKey = widgetConfigurationPrefix + deckId
+        let snapshotKey = widgetSnapshotPrefix + deckId
+        if let previousConfigurationData { defaults.set(previousConfigurationData, forKey: configurationKey) }
+        else { defaults.removeObject(forKey: configurationKey) }
+        if let previousSnapshotData { defaults.set(previousSnapshotData, forKey: snapshotKey) }
+        else { defaults.removeObject(forKey: snapshotKey) }
+        let credentialRestored: Bool
+        if let previousCredentialData {
+            credentialRestored = storeWidgetCredential(previousCredentialData, deckId: deckId) == errSecSuccess
+        } else {
+            credentialRestored = removeWidgetCredential(deckId)
+        }
+        // Keep the marker when either store cannot be restored so the widget
         // cannot consume a credential whose matching configuration is unknown.
-        guard removeWidgetCredential(deckId) else { return false }
+        guard credentialRestored, defaults.synchronize() else { return false }
         defaults.removeObject(forKey: widgetTransactionPrefix + deckId)
         return defaults.synchronize()
     }
@@ -720,8 +732,16 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
         }
         do {
             let key = widgetConfigurationPrefix + configuration.deckId
+            let snapshotKey = widgetSnapshotPrefix + configuration.deckId
             let transactionKey = widgetTransactionPrefix + configuration.deckId
-            let previous = defaults.data(forKey: key).flatMap { try? JSONDecoder().decode(WidgetDeckConfiguration.self, from: $0) }
+            let previousConfigurationData = defaults.data(forKey: key)
+            let previousSnapshotData = defaults.data(forKey: snapshotKey)
+            let previous = previousConfigurationData.flatMap { try? JSONDecoder().decode(WidgetDeckConfiguration.self, from: $0) }
+            let (previousCredentialStatus, previousCredentialData) = readWidgetCredential(configuration.deckId)
+            guard previousCredentialStatus == errSecSuccess || previousCredentialStatus == errSecItemNotFound else {
+                rejectStorageFailure(invoke)
+                return
+            }
             let encoded = try JSONEncoder().encode(configuration)
             defaults.set(true, forKey: transactionKey)
             guard defaults.synchronize() else {
@@ -737,10 +757,10 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
             }
             defaults.set(encoded, forKey: key)
             if let previous, widgetSelectionChanged(previous, configuration) {
-                defaults.removeObject(forKey: widgetSnapshotPrefix + configuration.deckId)
+                defaults.removeObject(forKey: snapshotKey)
             }
             guard defaults.synchronize() else {
-                _ = abortWidgetTransaction(defaults, deckId: configuration.deckId)
+                _ = abortWidgetTransaction(defaults, deckId: configuration.deckId, previousConfigurationData: previousConfigurationData, previousSnapshotData: previousSnapshotData, previousCredentialData: previousCredentialData)
                 rejectStorageFailure(invoke)
                 return
             }

@@ -161,6 +161,36 @@ describe("Deck surface", () => {
     expect(screen.getByRole("button", { name: messages.en.widgetEnable })).toBeTruthy();
   });
 
+  it("continues reconciling other enabled Decks after one Deck is manually disabled", async () => {
+    const otherDeck = { ...deck, id: "018f47a2-7b3c-7def-8abc-1234567890ad", name: "Other Deck", query: "repo:octo/other is:pr", builder: null };
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [deck, otherDeck] }) });
+    let blockEditedDeck = false;
+    let releaseEditedDeck: () => void = () => {};
+    const editedDeckPending = new Promise<void>((resolve) => { releaseEditedDeck = resolve; });
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      if (value.operation === "widgets.status") return { kind: "widget-status", enabledDeckIds: [deck.id, otherDeck.id] };
+      if (value.operation === "widgets.enable-deck" && value.configuration.deckId === deck.id && blockEditedDeck) await editedDeckPending;
+      return { kind: "ok" };
+    });
+    const bridge = bridgeWith(request);
+    const view = render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+    await waitFor(() => expect(request).toHaveBeenCalledWith(expect.objectContaining({ operation: "widgets.enable-deck", configuration: expect.objectContaining({ deckId: otherDeck.id }) })));
+
+    request.mockClear();
+    blockEditedDeck = true;
+    const editedDeck = { ...deck, name: "Edited Deck" };
+    const editedOtherDeck = { ...otherDeck, name: "Edited Other Deck" };
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [editedDeck, editedOtherDeck] }) });
+    view.rerender(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+    await waitFor(() => expect(request).toHaveBeenCalledWith(expect.objectContaining({ operation: "widgets.enable-deck", configuration: expect.objectContaining({ deckId: deck.id, name: editedDeck.name }) })));
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.widgetDisable }));
+    releaseEditedDeck();
+
+    await waitFor(() => expect(request).toHaveBeenCalledWith({ operation: "widgets.disable-deck", deckId: deck.id }));
+    await waitFor(() => expect(request).toHaveBeenCalledWith(expect.objectContaining({ operation: "widgets.enable-deck", configuration: expect.objectContaining({ deckId: otherDeck.id, name: editedOtherDeck.name }) })));
+  });
+
   it("renders an unavailable state instead of empty results when an uncached Deck is offline", () => {
     const bridge = bridgeWith(async () => { throw new Error("unexpected request"); });
     render(<DeckPollingBoundary bridge={bridge} active={false} online={false} provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
@@ -247,14 +277,25 @@ describe("Deck surface", () => {
     });
   });
 
-  it("does not send an ETag for a legacy cache without a total count", async () => {
+  it("keeps a legacy total absent across failure and retries without an ETag", async () => {
     const cacheScope = `origin.scope.${profile.id}`;
     writeDeckCache(localStorage, cacheScope, { version: DeckCacheVersion, deckId: deck.id, query: deck.query, queryEtag: "legacy-etag", results: [pullRequest], lastSuccessfulAt: "2026-08-17T00:00:00.000Z", rate: null, failures: 0, nextRefreshAt: null, transitionKeys: [] });
-    const searchPullRequests = vi.fn(async () => ({ items: [], nextPage: null, notModified: false, totalCount: 0, incompleteResults: false, metadata: { etag: "fresh-etag", rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } } }));
+    const searchPullRequests = vi.fn()
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce({ items: [], nextPage: null, notModified: false, totalCount: 0, incompleteResults: false, metadata: { etag: "fresh-etag", rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } } });
     const bridge = bridgeWith(async (request) => request.operation === "secure.read" ? { kind: "secure-value", value: "token" } : { kind: "ok" });
     render(<DeckPollingBoundary bridge={bridge} active online provider={{ ...provider(), searchPullRequests }}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
 
     await waitFor(() => expect(searchPullRequests).toHaveBeenCalledWith(expect.anything(), deck.query, { etag: undefined }));
+    await waitFor(() => {
+      const cache = JSON.parse(localStorage.getItem(deckCacheKey(cacheScope, deck.id)) ?? "null") as Record<string, unknown>;
+      expect(cache).not.toHaveProperty("totalCount");
+      expect(cache.results).toEqual([pullRequest]);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckRefresh }));
+    await waitFor(() => expect(searchPullRequests).toHaveBeenCalledTimes(2));
+    expect(searchPullRequests).toHaveBeenNthCalledWith(2, expect.anything(), deck.query, { etag: undefined });
   });
 
   it("retains the complete cache and retries when GitHub search is incomplete", async () => {
@@ -268,6 +309,7 @@ describe("Deck surface", () => {
     await waitFor(() => expect(searchPullRequests).toHaveBeenCalledOnce());
     await waitFor(() => {
       const cache = JSON.parse(localStorage.getItem(deckCacheKey(cacheScope, deck.id)) ?? "null") as { queryEtag: string | null; results: unknown; lastSuccessfulAt: string | null; failures: number; nextRefreshAt: string | null };
+      expect(cache).not.toHaveProperty("totalCount");
       expect(cache.queryEtag).toBe("cached-etag");
       expect(cache.results).toEqual([pullRequest]);
       expect(cache.lastSuccessfulAt).toBe("2026-08-17T00:00:00.000Z");

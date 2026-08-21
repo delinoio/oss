@@ -108,6 +108,8 @@ export function assertIosNativeBridge(iosNativeBridgeInput) {
   const readSecure = iosNativeBridge.match(/private func readSecure[\s\S]*?(?=\n    private func writeSecure)/u)?.[0] ?? "";
   const writeSecure = iosNativeBridge.match(/private func writeSecure[\s\S]*?(?=\n    private func removeSecure)/u)?.[0] ?? "";
   const purgeSecure = iosNativeBridge.match(/private func purgeSecure[\s\S]*?(?=\n    private func permissionName)/u)?.[0] ?? "";
+  const abortWidgetTransaction = iosNativeBridge.match(/private func abortWidgetTransaction[\s\S]*?(?=\n    private func widgetStatus)/u)?.[0] ?? "";
+  const enableWidgetDeck = iosNativeBridge.match(/private func enableWidgetDeck[\s\S]*?(?=\n    private func widgetSelectionChanged)/u)?.[0] ?? "";
   assert(iosNativeBridge.includes('invoke.reject("storage-failure", code: "storage-failure")'), "iOS Keychain failures must use storage-failure");
   assert(iosNativeBridge.includes('invoke.reject("permission-denied", code: "permission-denied")'), "iOS notification publication must honor authorization");
   assert(iosNativeBridge.includes('case "runtime.snapshot":') && iosNativeBridge.includes("UIDevice.current.systemVersion"), "iOS runtime diagnostics must use the installed native OS version");
@@ -129,6 +131,8 @@ export function assertIosNativeBridge(iosNativeBridgeInput) {
   assert(purgeSecure.includes("clearWidgetState()"), "iOS destructive secure purges must clear widget credentials and state");
   assert(iosNativeBridge.includes("reconcileWidgetCredentials()") && iosNativeBridge.includes("widgetCredentialDeckIds()"), "iOS must reconcile interrupted or orphaned widget credentials");
   assert(iosNativeBridge.includes("defaults.set(true, forKey: transactionKey)") && iosNativeBridge.indexOf("defaults.set(true, forKey: transactionKey)") < iosNativeBridge.indexOf("storeWidgetCredential(patData"), "iOS widget enablement must persist its transaction marker before Keychain mutation");
+  assert(enableWidgetDeck.includes("previousConfigurationData: previousConfigurationData") && enableWidgetDeck.includes("previousSnapshotData: previousSnapshotData") && enableWidgetDeck.includes("previousCredentialData: previousCredentialData"), "iOS widget updates must retain prior state for rollback");
+  assert(abortWidgetTransaction.includes("storeWidgetCredential(previousCredentialData") && abortWidgetTransaction.includes("defaults.set(previousConfigurationData") && abortWidgetTransaction.includes("defaults.set(previousSnapshotData") && abortWidgetTransaction.indexOf("defaults.synchronize()") < abortWidgetTransaction.indexOf("defaults.removeObject(forKey: widgetTransactionPrefix"), "iOS widget update rollback must restore prior state before clearing its transaction marker");
 }
 
 export function assertMobileDependencyResolution(verifier) {

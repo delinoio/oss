@@ -94,6 +94,8 @@ test("mobile policy keeps native iOS origins aligned with normalized root URLs",
   assert.throws(() => assertIosNativeBridge(iosNativeBridge.replace("if failed || !cleanupSucceeded", "if failed")), /fail closed/u);
   assert.throws(() => assertIosNativeBridge(iosNativeBridge.replace('if scope == "logout" || scope == "account-deletion"', "if true")), /preserve pending diagnostics exports/u);
   assert.throws(() => assertIosNativeBridge(iosNativeBridge.replace("guard diagnosticsCleanupSucceeded else", "guard true else")), /propagate diagnostics cleanup failures/u);
+  assert.throws(() => assertIosNativeBridge(iosNativeBridge.replace("previousCredentialData: previousCredentialData", "previousCredentialData: nil")), /retain prior state for rollback/u);
+  assert.throws(() => assertIosNativeBridge(iosNativeBridge.replace("storeWidgetCredential(previousCredentialData", "storeWidgetCredential(Data()")), /restore prior state before clearing/u);
 });
 
 test("mobile open URL handling accepts only authentication callbacks and validated Deck links", () => {
@@ -140,6 +142,7 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   assert.match(androidProvider, /refreshDeadlineMillis = 20_000L/u);
   assert.match(androidProvider, /ExecutorCompletionService[\s\S]*repeat\(minOf\(repositoryValidationConcurrency, repositories\.length\(\)\)\)[\s\S]*completion\.poll\(session\.remainingMillis\(\)/u);
   assert.match(androidProvider, /connectTimeout = minOf\(15_000, session\.remainingMillis\(\)\)[\s\S]*readTimeout = minOf\(20_000, session\.remainingMillis\(\)\)/u);
+  assert.match(androidProvider, /widgetDeadlineExecutor = Executors\.newSingleThreadScheduledExecutor\(\)[\s\S]*deadlineCancellation = widgetDeadlineExecutor\.schedule\([\s\S]*cancel\(WidgetRefreshCancellation\.DEADLINE\)[\s\S]*deadlineCancellation\.cancel\(false\)/u);
   assert.match(androidProvider, /onStopJob[\s\S]*activeSession\.get\(\)\?\.cancel\(WidgetRefreshCancellation\.STOPPED\)/u);
   assert.match(androidProvider, /fun cancel[\s\S]*connections\.forEach \{ it\.disconnect\(\) \}/u);
   assert.match(androidProvider, /ScrollView/u);
