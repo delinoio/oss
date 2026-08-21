@@ -6,6 +6,7 @@ import android.security.keystore.KeyProperties
 import org.json.JSONObject
 import java.security.KeyStore
 import java.util.Base64
+import javax.crypto.AEADBadTagException
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -14,11 +15,14 @@ import javax.crypto.spec.GCMParameterSpec
 internal const val widgetStateStore = "devhud-widget-state-v1"
 private const val widgetSecretStore = "devhud-widget-secret-v1"
 private const val widgetKeyAlias = "io.delino.devhud.widget-credential.v1"
+private const val mainSecretStore = "devhud-secure-settings-v1"
+private const val mainKeyAlias = "io.delino.devhud.secure-settings.v1"
 private const val configurationPrefix = "configuration:"
 private const val snapshotPrefix = "snapshot:"
 private const val selectionPrefix = "selection:"
 private const val transactionPrefix = "transaction:"
 private const val disableTransactionPrefix = "disable-transaction:"
+private const val credentialReplacementKey = "credential-replacement:v1"
 
 internal sealed class WidgetCredential {
     object Missing : WidgetCredential()
@@ -86,23 +90,39 @@ internal class DevHudWidgetStore(private val context: Context) {
         val configuration = configuration(deckId) ?: return@synchronized false
         if (snapshot.getString("query") != configuration.getString("query")) return@synchronized false
         if (verifyCredential) {
-            if (state.contains(transactionPrefix + deckId) || state.contains(disableTransactionPrefix + deckId)) return@synchronized false
+            if (state.contains(transactionPrefix + deckId) || state.contains(disableTransactionPrefix + deckId) || credentialReplacementBlocks(deckId)) return@synchronized false
             if (secrets.getString(deckId, null) != credentialRevision) return@synchronized false
         }
         state.edit().putString(snapshotPrefix + deckId, snapshot.toString()).commit()
     }
 
-    fun replaceProfileToken(profileId: String, scopeId: String, token: String): Boolean = synchronized(widgetStoreMutationLock) {
-        val configurations = state.all.entries
+    fun beginProfileTokenReplacement(profileId: String, scopeId: String): Boolean = synchronized(widgetStoreMutationLock) {
+        if (!reconcile()) return@synchronized false
+        val deckIds = state.all.entries
             .filter { it.key.startsWith(configurationPrefix) }
             .mapNotNull { (key, value) -> json(value as? String)?.let { key.removePrefix(configurationPrefix) to it } }
             .filter { (_, configuration) ->
                 configuration.optString("profileId") == profileId && configuration.optString("scopeId") == scopeId
             }
-        if (configurations.isEmpty()) return@synchronized true
-        val editor = secrets.edit()
-        configurations.forEach { (deckId, _) -> editor.putString(deckId, encrypt(token, deckId)) }
-        editor.commit()
+            .map { (deckId, _) -> deckId }
+            .sorted()
+        if (deckIds.isEmpty()) return@synchronized true
+        val transaction = JSONObject()
+            .put("version", 1)
+            .put("profileId", profileId)
+            .put("scopeId", scopeId)
+            .put("deckIds", org.json.JSONArray(deckIds))
+        state.edit().putString(credentialReplacementKey, transaction.toString()).commit()
+    }
+
+    fun replaceProfileToken(profileId: String, scopeId: String, token: String): Boolean = synchronized(widgetStoreMutationLock) {
+        val transaction = credentialReplacement() ?: return@synchronized !state.contains(credentialReplacementKey)
+        if (transaction.optString("profileId") != profileId || transaction.optString("scopeId") != scopeId) return@synchronized false
+        applyProfileTokenReplacement(transaction, token)
+    }
+
+    fun cancelProfileTokenReplacement(): Boolean = synchronized(widgetStoreMutationLock) {
+        state.edit().remove(credentialReplacementKey).commit()
     }
 
     fun disable(deckId: String): Boolean = synchronized(widgetStoreMutationLock) {
@@ -138,7 +158,7 @@ internal class DevHudWidgetStore(private val context: Context) {
         return json(state.getString(snapshotPrefix + deckId, null))
     }
     fun credential(deckId: String): WidgetCredential? {
-        if (state.contains(transactionPrefix + deckId) || state.contains(disableTransactionPrefix + deckId)) return null
+        if (state.contains(transactionPrefix + deckId) || state.contains(disableTransactionPrefix + deckId) || credentialReplacementBlocks(deckId)) return null
         val revision = secrets.getString(deckId, null) ?: return WidgetCredential.Missing
         val token = decrypt(revision, deckId) ?: return WidgetCredential.Unreadable(revision)
         return WidgetCredential.Readable(token, revision)
@@ -157,6 +177,7 @@ internal class DevHudWidgetStore(private val context: Context) {
             left.optJSONArray("repositories")?.toString() != right.optJSONArray("repositories")?.toString()
 
     private fun reconcile(): Boolean = synchronized(widgetStoreMutationLock) {
+        if (!reconcileProfileTokenReplacement()) return@synchronized false
         val entries = state.all.entries
         val pendingEnableDeckIds = entries.mapNotNull { (key, _) ->
             key.takeIf { it.startsWith(transactionPrefix) }?.removePrefix(transactionPrefix)
@@ -190,6 +211,60 @@ internal class DevHudWidgetStore(private val context: Context) {
         editor.commit()
     }
 
+    private fun reconcileProfileTokenReplacement(): Boolean {
+        if (!state.contains(credentialReplacementKey)) return true
+        val transaction = credentialReplacement() ?: return false
+        val profileId = transaction.optString("profileId")
+        val scopeId = transaction.optString("scopeId")
+        if (profileId.isBlank() || scopeId.isBlank()) return false
+        val preferences = context.getSharedPreferences(mainSecretStore, Context.MODE_PRIVATE)
+        val marker = "github-pat-scope:$scopeId:$profileId"
+        val encoded = preferences.getString("github-pat:$profileId", null)
+        val token = if (!preferences.contains(marker) || encoded == null) null else {
+            val mainKey = (try { mainSecretKey() } catch (_: Exception) { return false }) ?: return false
+            try {
+                decryptMainSecure(encoded, "github-pat:$profileId", mainKey, authenticateKey = true)
+            } catch (_: AEADBadTagException) {
+                try {
+                    decryptMainSecure(encoded, "github-pat:$profileId", mainKey, authenticateKey = false)
+                } catch (_: Exception) {
+                    return false
+                }
+            } catch (_: Exception) {
+                return false
+            }
+        }
+        return applyProfileTokenReplacement(transaction, token)
+    }
+
+    private fun applyProfileTokenReplacement(transaction: JSONObject, token: String?): Boolean {
+        if (transaction.optInt("version") != 1) return false
+        val profileId = transaction.optString("profileId")
+        val scopeId = transaction.optString("scopeId")
+        val deckIds = transaction.optJSONArray("deckIds") ?: return false
+        val editor = secrets.edit()
+        for (index in 0 until deckIds.length()) {
+            val deckId = deckIds.optString(index)
+            if (deckId.isBlank()) return false
+            val configuration = configuration(deckId) ?: continue
+            if (configuration.optString("profileId") != profileId || configuration.optString("scopeId") != scopeId) continue
+            if (token == null) editor.remove(deckId) else {
+                val encrypted = try { encrypt(token, deckId) } catch (_: Exception) { return false }
+                editor.putString(deckId, encrypted)
+            }
+        }
+        if (!editor.commit()) return false
+        return state.edit().remove(credentialReplacementKey).commit()
+    }
+
+    private fun credentialReplacement(): JSONObject? = json(state.getString(credentialReplacementKey, null))
+
+    private fun credentialReplacementBlocks(deckId: String): Boolean {
+        if (!state.contains(credentialReplacementKey)) return false
+        val deckIds = credentialReplacement()?.takeIf { it.optInt("version") == 1 }?.optJSONArray("deckIds") ?: return true
+        return (0 until deckIds.length()).any { deckIds.optString(it) == deckId }
+    }
+
     private fun abortEnable(deckId: String, previousSecret: String?): Boolean {
         val rollback = secrets.edit()
         if (previousSecret == null) rollback.remove(deckId) else rollback.putString(deckId, previousSecret)
@@ -198,6 +273,20 @@ internal class DevHudWidgetStore(private val context: Context) {
     }
 
     private fun json(value: String?): JSONObject? = try { value?.let(::JSONObject) } catch (_: Exception) { null }
+
+    private fun mainSecretKey(): SecretKey? {
+        val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        return keyStore.getKey(mainKeyAlias, null) as? SecretKey
+    }
+
+    private fun decryptMainSecure(encoded: String, key: String, secretKey: SecretKey, authenticateKey: Boolean): String {
+        val payload = Base64.getDecoder().decode(encoded)
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply {
+            init(Cipher.DECRYPT_MODE, secretKey, GCMParameterSpec(128, payload.copyOfRange(0, 12)))
+            if (authenticateKey) updateAAD(key.toByteArray(Charsets.UTF_8))
+        }
+        return String(cipher.doFinal(payload.copyOfRange(12, payload.size)), Charsets.UTF_8)
+    }
 
     private fun secretKey(): SecretKey {
         val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }

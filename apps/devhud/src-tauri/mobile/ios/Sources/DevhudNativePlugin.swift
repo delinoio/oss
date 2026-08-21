@@ -790,9 +790,7 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
         let (markerStatus, _) = readDataMigratingLegacy(marker)
         let (patStatus, patData) = readDataMigratingLegacy(setting)
         guard markerStatus == errSecSuccess, patStatus == errSecSuccess, let patData else {
-            defaults.removeObject(forKey: widgetConfigurationPrefix + configuration.deckId)
-            defaults.removeObject(forKey: widgetSnapshotPrefix + configuration.deckId)
-            _ = removeWidgetCredential(configuration.deckId)
+            guard removeWidgetDeck(defaults, deckId: configuration.deckId) else { rejectStorageFailure(invoke); return }
             WidgetCenter.shared.reloadAllTimelines()
             if markerStatus == errSecItemNotFound || patStatus == errSecItemNotFound { invoke.reject("not-configured", code: "not-configured") }
             else { rejectStorageFailure(invoke) }
@@ -861,12 +859,16 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
 
     private func disableWidgetDeck(_ args: RequestArgs, _ invoke: Invoke) throws {
         guard let deckId = args.deckId, let defaults = UserDefaults(suiteName: appGroup) else { throw NativeError.invalidArgument }
-        defaults.removeObject(forKey: widgetConfigurationPrefix + deckId)
-        defaults.removeObject(forKey: widgetSnapshotPrefix + deckId)
-        guard defaults.synchronize() else { rejectStorageFailure(invoke); return }
-        guard removeWidgetCredential(deckId) else { rejectStorageFailure(invoke); return }
+        guard removeWidgetDeck(defaults, deckId: deckId) else { rejectStorageFailure(invoke); return }
         WidgetCenter.shared.reloadAllTimelines()
         invoke.resolve(["kind": "ok"])
+    }
+
+    private func removeWidgetDeck(_ defaults: UserDefaults, deckId: String) -> Bool {
+        defaults.removeObject(forKey: widgetConfigurationPrefix + deckId)
+        defaults.removeObject(forKey: widgetSnapshotPrefix + deckId)
+        guard defaults.synchronize() else { return false }
+        return removeWidgetCredential(deckId)
     }
 
     private func clearWidgetState() -> Bool {

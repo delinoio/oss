@@ -374,11 +374,16 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
             val marker = githubPatScopeKey(scopeId, profileId)
             val previousValue = preferences.getString(key, null)
             val previousMarker = preferences.getString(marker, null)
+            val widgetStore = DevHudWidgetStore(activity.applicationContext)
+            if (!widgetStore.beginProfileTokenReplacement(profileId, scopeId)) return@persistSecure false
             if (!preferences.edit()
                     .putString(marker, encryptSecure("1", marker))
                     .putString(key, encryptSecure(value, key))
-                    .commit()) return@persistSecure false
-            if (DevHudWidgetStore(activity.applicationContext).replaceProfileToken(profileId, scopeId, value)) {
+                    .commit()) {
+                widgetStore.cancelProfileTokenReplacement()
+                return@persistSecure false
+            }
+            if (widgetStore.replaceProfileToken(profileId, scopeId, value)) {
                 renderWidgets()
                 return@persistSecure true
             }
