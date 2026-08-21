@@ -241,6 +241,30 @@ describe("Deck surface", () => {
     await waitFor(() => expect(operations.slice(-2)).toEqual(["delete-settings", "clear-widget"]));
   });
 
+  it("keeps Deck deletion authoritative over widget synchronization still building configuration", async () => {
+    let resolveScope: (scopeId: string) => void = () => {};
+    const scope = new Promise<string>((resolve) => { resolveScope = resolve; });
+    const replaceSettings: IdentitySettingsValue["replaceSettings"] = vi.fn(async () => true);
+    identity = identityWith({ githubPatScopeId: scope, replaceSettings });
+    const widgetOperations: string[] = [];
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      if (value.operation === "widgets.status") return { kind: "widget-status", enabledDeckIds: [deck.id] };
+      if (value.operation.startsWith("widgets.")) widgetOperations.push(value.operation);
+      return { kind: "ok" };
+    });
+    const bridge = bridgeWith(request);
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+    await screen.findByRole("button", { name: messages.en.widgetDisable });
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.deckDelete }));
+    await waitFor(() => expect(replaceSettings).toHaveBeenCalledOnce());
+    await waitFor(() => expect(widgetOperations).toEqual(["widgets.disable-deck"]));
+    resolveScope("origin.scope");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(widgetOperations).toEqual(["widgets.disable-deck"]);
+  });
+
   it("disables builder controls until a Boolean Deck query is simplified", () => {
     const booleanDeck = { ...deck, query: "repo:octo/widgets is:pr OR repo:octo/tools is:pr", builder: null };
     identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [booleanDeck] }) });

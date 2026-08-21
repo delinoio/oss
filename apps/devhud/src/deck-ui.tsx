@@ -456,9 +456,10 @@ export function DeckPollingBoundary({ bridge, active, online, language = "en", p
 
 interface DeckSurfaceProps { readonly copy: Copy; readonly bridge: NativeBridgeV1; readonly language?: "en" | "ko"; readonly selectedDeckId?: string | null; readonly onDismissMissingLink?: () => void; }
 
-export function DeckSurface({ copy, bridge, selectedDeckId = null, onDismissMissingLink }: DeckSurfaceProps) {
+export function DeckSurface({ copy, selectedDeckId = null, onDismissMissingLink }: DeckSurfaceProps) {
   const identity = useIdentitySettings();
   const polling = useDeckPolling();
+  const widgetAccess = useWidgetAccess();
   const [selected, setSelected] = useState<string | null>(selectedDeckId);
   const [creating, setCreating] = useState(false);
   const [deleteFailed, setDeleteFailed] = useState(false);
@@ -477,7 +478,7 @@ export function DeckSurface({ copy, bridge, selectedDeckId = null, onDismissMiss
     try {
       const committed = await identity.replaceSettings((current) => ({ ...current, decks: current.decks.filter((item) => item.id !== value.id) }));
       if (!committed) { setDeleteFailed(true); return; }
-      void bridge.request({ operation: "widgets.disable-deck", deckId: value.id }).catch(() => undefined);
+      void widgetAccess.disable(value.id).catch(() => undefined);
       void polling.clear(value).catch(() => undefined);
     } catch { setDeleteFailed(true); }
   };
