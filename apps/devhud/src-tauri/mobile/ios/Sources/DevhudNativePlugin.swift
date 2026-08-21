@@ -17,7 +17,8 @@ private let widgetConfigurationPrefix = "widget.configuration."
 private let widgetSnapshotPrefix = "widget.snapshot."
 private let widgetTransactionPrefix = "widget.transaction."
 private let widgetCredentialReplacementKey = "widget.credential-replacement.v1"
-private let widgetForegroundReloadDeadlineKey = "widget.foreground-reload-deadline.v1"
+private let legacyWidgetForegroundReloadDeadlineKey = "widget.foreground-reload-deadline.v1"
+private let widgetForegroundReloadDeadlinePrefix = "widget.foreground-reload-deadline.v1."
 private let widgetForegroundReloadWindow: TimeInterval = 60
 private let secureStoreLogger = Logger(subsystem: "io.delino.devhud", category: "secure-store")
 
@@ -35,7 +36,7 @@ private struct DeckNotification: Decodable {
     let body: String
 }
 
-private struct WidgetDeckConfiguration: Codable {
+private struct WidgetDeckConfiguration: Codable, Equatable {
     let version: Int
     let deckId: String
     let name: String
@@ -47,7 +48,7 @@ private struct WidgetDeckConfiguration: Codable {
     let language: String
 }
 
-private struct WidgetRepository: Codable { let owner: String; let name: String }
+private struct WidgetRepository: Codable, Equatable { let owner: String; let name: String }
 private struct WidgetCredential: Codable { let version: Int; let revision: String; let token: String }
 private struct WidgetCredentialReplacement: Codable {
     let version: Int
@@ -623,6 +624,22 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
         return try? JSONEncoder().encode(WidgetCredential(version: 1, revision: UUID().uuidString.lowercased(), token: token))
     }
 
+    private func widgetCredentialMatchesAuthoritative(_ stored: Data?, authoritative: Data) -> Bool {
+        guard let stored else { return false }
+        if stored == authoritative {
+            guard let token = String(data: stored, encoding: .utf8),
+                  let prefix = ["ghp_", "github_pat_"].first(where: token.hasPrefix),
+                  token.utf8.count > prefix.utf8.count else { return false }
+            return token.utf8.allSatisfy { byte in
+                byte == 95 || (48...57).contains(byte) || (65...90).contains(byte) || (97...122).contains(byte)
+            }
+        }
+        guard let token = String(data: authoritative, encoding: .utf8),
+              let credential = try? JSONDecoder().decode(WidgetCredential.self, from: stored),
+              credential.version == 1 else { return false }
+        return credential.token == token
+    }
+
     private func readWidgetCredential(_ deckId: String) -> (OSStatus, Data?) {
         var query = widgetCredentialQuery(deckId)
         query[kSecReturnData as String] = true
@@ -822,6 +839,10 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
                 return
             }
             let encoded = try JSONEncoder().encode(configuration)
+            if previous == configuration && widgetCredentialMatchesAuthoritative(previousCredentialData, authoritative: patData) {
+                invoke.resolve(["kind": "ok"])
+                return
+            }
             defaults.set(true, forKey: transactionKey)
             guard defaults.synchronize() else {
                 defaults.removeObject(forKey: transactionKey)
@@ -870,14 +891,15 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
         let previousSnapshot = previousSnapshotData.flatMap { try? JSONDecoder().decode(WidgetDeckSnapshot.self, from: $0) }
         let merged = mergeWidgetSnapshot(current: previousSnapshot, incoming: snapshot)
         if merged == previousSnapshot { invoke.resolve(["kind": "ok"]); return }
-        let previousDeadline = defaults.object(forKey: widgetForegroundReloadDeadlineKey)
+        let deadlineKey = widgetForegroundReloadDeadlinePrefix + snapshot.deckId
+        let previousDeadline = defaults.object(forKey: deadlineKey)
         defaults.set(try JSONEncoder().encode(merged), forKey: snapshotKey)
-        defaults.set(Date().addingTimeInterval(widgetForegroundReloadWindow), forKey: widgetForegroundReloadDeadlineKey)
+        defaults.set(Date().addingTimeInterval(widgetForegroundReloadWindow), forKey: deadlineKey)
         guard defaults.synchronize() else {
             if let previousSnapshotData { defaults.set(previousSnapshotData, forKey: snapshotKey) }
             else { defaults.removeObject(forKey: snapshotKey) }
-            if let previousDeadline { defaults.set(previousDeadline, forKey: widgetForegroundReloadDeadlineKey) }
-            else { defaults.removeObject(forKey: widgetForegroundReloadDeadlineKey) }
+            if let previousDeadline { defaults.set(previousDeadline, forKey: deadlineKey) }
+            else { defaults.removeObject(forKey: deadlineKey) }
             _ = defaults.synchronize()
             rejectStorageFailure(invoke)
             return
@@ -920,6 +942,7 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
     private func removeWidgetDeck(_ defaults: UserDefaults, deckId: String) -> Bool {
         defaults.removeObject(forKey: widgetConfigurationPrefix + deckId)
         defaults.removeObject(forKey: widgetSnapshotPrefix + deckId)
+        defaults.removeObject(forKey: widgetForegroundReloadDeadlinePrefix + deckId)
         guard defaults.synchronize() else { return false }
         return removeWidgetCredential(deckId)
     }
@@ -936,8 +959,11 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
         for key in keys where key.hasPrefix(widgetTransactionPrefix) {
             defaults.removeObject(forKey: key)
         }
+        for key in keys where key.hasPrefix(widgetForegroundReloadDeadlinePrefix) {
+            defaults.removeObject(forKey: key)
+        }
         defaults.removeObject(forKey: widgetCredentialReplacementKey)
-        defaults.removeObject(forKey: widgetForegroundReloadDeadlineKey)
+        defaults.removeObject(forKey: legacyWidgetForegroundReloadDeadlineKey)
         guard defaults.synchronize() else { return false }
         guard removeAllWidgetCredentials() else { return false }
         WidgetCenter.shared.reloadAllTimelines()

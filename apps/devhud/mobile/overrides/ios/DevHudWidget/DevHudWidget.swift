@@ -10,7 +10,7 @@ private let configurationPrefix = "widget.configuration."
 private let snapshotPrefix = "widget.snapshot."
 private let transactionPrefix = "widget.transaction."
 private let credentialReplacementKey = "widget.credential-replacement.v1"
-private let foregroundReloadDeadlineKey = "widget.foreground-reload-deadline.v1"
+private let foregroundReloadDeadlinePrefix = "widget.foreground-reload-deadline.v1."
 private let staleAfter: TimeInterval = 60 * 60
 private let repositoryValidationConcurrency = 3
 private let refreshDeadlineNanoseconds: UInt64 = 20 * 1_000_000_000
@@ -113,15 +113,16 @@ private struct WidgetStore {
         guard let data = try? JSONEncoder().encode(merged) else { return false }
         defaults.set(data, forKey: key)
         guard let current = self.configuration(snapshot.deckId), sameSelection(current, configuration), credentialMatches(deckId: snapshot.deckId, revision: credentialRevision) else {
-            defaults.removeObject(forKey: key)
+            if defaults.data(forKey: key) == data { defaults.removeObject(forKey: key) }
             return false
         }
         return true
     }
-    func shouldRenderForegroundSnapshot() -> Bool {
-        guard let defaults, let deadline = defaults.object(forKey: foregroundReloadDeadlineKey) as? Date else { return false }
+    func shouldRenderForegroundSnapshot(_ deckId: String) -> Bool {
+        let key = foregroundReloadDeadlinePrefix + deckId
+        guard let defaults, let deadline = defaults.object(forKey: key) as? Date else { return false }
         if deadline > Date() { return true }
-        defaults.removeObject(forKey: foregroundReloadDeadlineKey)
+        defaults.removeObject(forKey: key)
         return false
     }
     func credential(_ deckId: String) -> WidgetCredential? {
@@ -179,7 +180,7 @@ private struct DeckTimelineProvider: IntentTimelineProvider {
             completion(Timeline(entries: [DeckEntry(date: Date(), configuration: nil, snapshot: nil)], policy: .after(Date().addingTimeInterval(30 * 60))))
             return
         }
-        if store.shouldRenderForegroundSnapshot() {
+        if store.shouldRenderForegroundSnapshot(deck.deckId) {
             completion(timeline(deck: deck, snapshot: store.snapshot(deck.deckId)))
             return
         }
@@ -260,14 +261,18 @@ private struct DeckTimelineProvider: IntentTimelineProvider {
             }
             if root["incomplete_results"] as? Bool == true { return failure(deck: deck, previous: previous, state: "error", attempted: attempted, rate: rate) }
             var open = 0, draft = 0, merged = 0, closed = 0
-            let results: [DeckPullRequest] = items.prefix(100).compactMap { item in
-                guard let nodeId = item["node_id"] as? String, let number = item["number"] as? Int, let title = item["title"] as? String, let repositoryURL = item["repository_url"] as? String else { return nil }
+            var results: [DeckPullRequest] = []
+            for item in items.prefix(100) {
+                guard let nodeId = item["node_id"] as? String, let number = item["number"] as? Int,
+                      let title = item["title"] as? String, let repositoryURL = item["repository_url"] as? String else {
+                    return failure(deck: deck, previous: previous, state: "error", attempted: attempted, rate: rate)
+                }
                 let isDraft = item["draft"] as? Bool ?? false
                 let pull = item["pull_request"] as? [String: Any]
                 let isMerged = pull?["merged_at"] is String
                 let state = isMerged ? "merged" : item["state"] as? String ?? "open"
                 if isDraft { draft += 1 } else if isMerged { merged += 1 } else if state == "closed" { closed += 1 } else { open += 1 }
-                return DeckPullRequest(nodeId: nodeId, number: number, title: title, repository: repositoryURL.components(separatedBy: "/repos/").last ?? repositoryURL, state: state, draft: isDraft)
+                results.append(DeckPullRequest(nodeId: nodeId, number: number, title: title, repository: repositoryURL.components(separatedBy: "/repos/").last ?? repositoryURL, state: state, draft: isDraft))
             }
             return DeckSnapshot(version: 1, deckId: deck.deckId, query: deck.query, counts: DeckCounts(total: total, open: open, draft: draft, merged: merged, closed: closed, bounded: total > 100), results: results, state: "fresh", lastSuccessfulAt: attempted, lastAttemptedAt: attempted, rate: rate)
         } catch { return failure(deck: deck, previous: previous, state: "error", attempted: attempted, rate: nil) }
@@ -354,7 +359,7 @@ private struct DeckTimelineProvider: IntentTimelineProvider {
         } else {
             retained = DeckSnapshot(version: 1, deckId: deck.deckId, query: deck.query, counts: DeckCounts(total: 0, open: 0, draft: 0, merged: 0, closed: 0, bounded: false), results: [], state: state, lastSuccessfulAt: nil, lastAttemptedAt: attempted, rate: rate)
         }
-        retained.state = state; retained.lastAttemptedAt = attempted; retained.rate = rate ?? retained.rate
+        retained.state = state; retained.lastAttemptedAt = attempted; retained.rate = rate
         return retained
     }
     private static func responseRate(_ response: HTTPURLResponse) -> DeckRate {

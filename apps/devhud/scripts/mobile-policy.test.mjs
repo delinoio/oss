@@ -102,6 +102,8 @@ test("mobile policy keeps native iOS origins aligned with normalized root URLs",
   assert.throws(() => assertIosNativeBridge(iosNativeBridge.replace("guard diagnosticsCleanupSucceeded else", "guard true else")), /propagate diagnostics cleanup failures/u);
   assert.throws(() => assertIosNativeBridge(iosNativeBridge.replace("previousCredentialData: previousCredentialData", "previousCredentialData: nil")), /retain prior state for rollback/u);
   assert.throws(() => assertIosNativeBridge(iosNativeBridge.replace("storeWidgetCredential(previousCredentialData", "storeWidgetCredential(Data()")), /restore prior state before clearing/u);
+  assert.throws(() => assertIosNativeBridge(iosNativeBridge.replace("previous == configuration", "false")), /unchanged widget enablement/u);
+  assert.throws(() => assertIosNativeBridge(iosNativeBridge.replace("widgetForegroundReloadDeadlinePrefix + snapshot.deckId", "legacyWidgetForegroundReloadDeadlineKey")), /Deck-scoped stored-only reload marker/u);
 });
 
 test("mobile open URL handling accepts only authentication callbacks and validated Deck links", () => {
@@ -218,11 +220,17 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   assert.doesNotMatch(iosWidget, /URLSession\.shared/u);
   assert.match(iosWidget, /staleDate[\s\S]*entries\.append/u);
   assert.match(iosWidget, /mergeDeckSnapshot\(current: self\.snapshot\(snapshot\.deckId\), incoming: snapshot\)/u);
-  assert.ok(iosWidget.indexOf("if store.shouldRenderForegroundSnapshot()") < iosWidget.indexOf("guard let credential = store.credential"));
-  assert.ok(iosWidget.indexOf("if store.shouldRenderForegroundSnapshot()") < iosWidget.indexOf("Self.refreshWithDeadline"));
+  assert.match(iosWidget, /defaults\.data\(forKey: key\) == data \{ defaults\.removeObject\(forKey: key\) \}/u);
+  assert.ok(iosWidget.indexOf("if store.shouldRenderForegroundSnapshot(deck.deckId)") < iosWidget.indexOf("guard let credential = store.credential"));
+  assert.ok(iosWidget.indexOf("if store.shouldRenderForegroundSnapshot(deck.deckId)") < iosWidget.indexOf("Self.refreshWithDeadline"));
+  assert.match(iosWidget, /foregroundReloadDeadlinePrefix \+ deckId/u);
   assert.match(iosWidget, /parseWidgetTimestamp[\s\S]*withInternetDateTime, \.withFractionalSeconds[\s\S]*fractional\.date\(from: value\) \?\? ISO8601DateFormatter\(\)\.date\(from: value\)/u);
   assert.equal((iosWidget.match(/parseWidgetTimestamp\(value\)/gu) ?? []).length, 3);
   assert.match(iosWidget, /incomplete_results/u);
+  assert.doesNotMatch(iosWidget, /items\.prefix\(100\)\.compactMap/u);
+  assert.match(iosWidget, /for item in items\.prefix\(100\)[\s\S]*guard let nodeId[\s\S]*return failure\(deck: deck, previous: previous, state: "error", attempted: attempted, rate: rate\)/u);
+  assert.match(iosWidget, /retained\.rate = rate/u);
+  assert.match(androidProvider, /put\("rate", responseRate \?: JSONObject\.NULL\)/u);
   assert.ok(iosWidget.indexOf("validateRepositories(deck: deck, token: token)") < iosWidget.indexOf('URLComponents(string: "https://api.github.com/search/issues")'));
   assert.match(iosWidget, /\/pulls\?state=open&per_page=1[\s\S]*\/issues\?state=open&per_page=1[\s\S]*\/contents/u);
   assert.match(iosWidget, /statusCode == 401[\s\S]*"missing-token"[\s\S]*statusCode == 403 \|\| .*statusCode == 404[\s\S]*"permission"/u);
@@ -238,7 +246,7 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   assert.ok(iosRemoveWidgetDeck.indexOf("defaults.synchronize()") < iosRemoveWidgetDeck.indexOf("removeWidgetCredential(deckId)"));
   assert.ok(iosEnableWidgetDeck.indexOf("removeWidgetDeck(defaults, deckId: configuration.deckId)") < iosEnableWidgetDeck.indexOf('invoke.reject("not-configured"'));
   assert.match(iosNativeBridge, /pendingDeckIds[\s\S]*removeWidgetCredential\(deckId\)[\s\S]*widgetCredentialDeckIds\(\)/u);
-  assert.match(iosNativeBridge, /private func replaceWidgetSnapshot[\s\S]*mergeWidgetSnapshot\(current: previousSnapshot, incoming: snapshot\)[\s\S]*widgetForegroundReloadDeadlineKey[\s\S]*defaults\.synchronize\(\)[\s\S]*reloadAllTimelines/u);
+  assert.match(iosNativeBridge, /private func replaceWidgetSnapshot[\s\S]*mergeWidgetSnapshot\(current: previousSnapshot, incoming: snapshot\)[\s\S]*widgetForegroundReloadDeadlinePrefix \+ snapshot\.deckId[\s\S]*defaults\.synchronize\(\)[\s\S]*reloadAllTimelines/u);
   assert.match(iosWidget, /func credential\(_ deckId: String\)[\s\S]*!credentialReplacementBlocks\(deckId\)[\s\S]*StoredWidgetCredential[\s\S]*revision: data/u);
   assert.match(iosWidget, /credentialReplacementBlocks[\s\S]*credentialReplacementKey[\s\S]*transaction\.deckIds\.contains\(deckId\)/u);
   assert.match(iosWidget, /devhud:\/\/deck\//u);

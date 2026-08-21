@@ -345,8 +345,7 @@ class DevHudWidgetProvider : AppWidgetProvider() {
             val retained = previous?.takeIf { it.optString("query") == configuration.getString("query") } ?: JSONObject().put("version", 1).put("deckId", configuration.getString("deckId")).put("query", configuration.getString("query"))
                 .put("counts", JSONObject().put("total", 0).put("open", 0).put("draft", 0).put("merged", 0).put("closed", 0).put("bounded", false))
                 .put("results", JSONArray()).put("lastSuccessfulAt", JSONObject.NULL)
-            retained.put("state", state).put("lastAttemptedAt", attemptedAt)
-            if (responseRate != null) retained.put("rate", responseRate)
+            retained.put("state", state).put("lastAttemptedAt", attemptedAt).put("rate", responseRate ?: JSONObject.NULL)
             return retained
         }
 
