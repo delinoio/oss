@@ -30,6 +30,28 @@ describe("local identity data lifecycle", () => {
     expect(readAuthenticatedSettingsCache(storage, apiOrigin)).toBeNull();
   });
 
+  it("preserves legacy bootstrap caches for offline identity restoration", () => {
+    const storage = new MemoryStorage();
+    const apiOrigin = "http://127.0.0.1:46307";
+    const legacy = {
+      issuer: "http://127.0.0.1:46307/oidc",
+      audience: "devhud-api",
+      clientId: "desktop-client",
+      redirectUri: "devhud://auth/callback" as const,
+      capabilities: [StaticCapability.SETTINGS_SYNC],
+    };
+    writeCachedIdentityBootstrap(storage, apiOrigin, { ...legacy, publicAssetBaseUrl: "http://127.0.0.1:9000" });
+    const cacheKey = storage.key(0);
+    if (cacheKey === null) throw new Error("bootstrap cache key was not written");
+    storage.setItem(cacheKey, JSON.stringify(legacy));
+
+    expect(readCachedIdentityBootstrap(storage, apiOrigin)).toMatchObject({
+      issuer: "http://127.0.0.1:46307/oidc",
+      publicAssetBaseUrl: null,
+      capabilities: [StaticCapability.SETTINGS_SYNC],
+    });
+  });
+
   it("removes identity, guest, draft, cache, pairing, and permission data on logout", () => {
     const storage = new MemoryStorage();
     writeGuestSettings(storage, defaultDevHudSettings);

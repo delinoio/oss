@@ -7,7 +7,7 @@ use reqwest::header::{
 };
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
-use url::Url;
+use url::{Host, Url};
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
@@ -102,7 +102,7 @@ pub(crate) async fn put_official(
     {
         return Err("invalid-argument".to_string());
     }
-    let url = https_url(&upload.signed_put_url, true)?;
+    let url = signed_upload_url(&upload.signed_put_url)?;
     let response = direct_client("official")?
         .put(url)
         .header(CONTENT_TYPE, upload.required_headers.content_type)
@@ -410,9 +410,22 @@ fn validate_profile(profile: &R2Profile) -> Result<(), String> {
 }
 
 fn https_url(value: &str, allow_query: bool) -> Result<Url, String> {
+    validated_url(value, allow_query, false)
+}
+
+fn signed_upload_url(value: &str) -> Result<Url, String> {
+    validated_url(value, true, true)
+}
+
+fn validated_url(value: &str, allow_query: bool, allow_loopback_http: bool) -> Result<Url, String> {
     let url = Url::parse(value).map_err(|_| "invalid-argument".to_string())?;
+    let loopback = url.host().is_some_and(|host| match host {
+        Host::Domain(host) => host.trim_end_matches('.').eq_ignore_ascii_case("localhost"),
+        Host::Ipv4(address) => address.is_loopback(),
+        Host::Ipv6(address) => address.is_loopback(),
+    });
     if value.trim() != value
-        || url.scheme() != "https"
+        || (url.scheme() != "https" && !(allow_loopback_http && url.scheme() == "http" && loopback))
         || !url.username().is_empty()
         || url.password().is_some()
         || url.fragment().is_some()
@@ -543,7 +556,7 @@ mod tests {
 
     use super::{
         R2Profile, VerificationBody, hex, https_url, r2_object_key, signed_headers,
-        timestamp_from_unix, validate_profile,
+        signed_upload_url, timestamp_from_unix, validate_profile,
     };
 
     fn profile() -> R2Profile {
@@ -576,7 +589,10 @@ mod tests {
 
     #[test]
     fn official_signed_urls_allow_queries_but_public_urls_do_not() {
-        assert!(https_url("https://r2.example/object?signature=value", true).is_ok());
+        assert!(signed_upload_url("https://r2.example/object?signature=value").is_ok());
+        assert!(signed_upload_url("http://127.0.0.1:9000/object?signature=value").is_ok());
+        assert!(signed_upload_url("http://[::1]:9000/object?signature=value").is_ok());
+        assert!(signed_upload_url("http://r2.example/object?signature=value").is_err());
         assert!(https_url("https://images.example/object?secret=value", false).is_err());
         assert!(https_url("https://user@example.com/object", true).is_err());
     }

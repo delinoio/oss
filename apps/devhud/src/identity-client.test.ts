@@ -44,6 +44,8 @@ describe("identity client boundary", () => {
     expect(validateBootstrap(bootstrap, RuntimePlatform.Desktop).publicAssetBaseUrl).toBe("https://images.example/devhud");
     expect(validateBootstrap({ ...bootstrap, apiVersion: "2026.08.17" } as GetBootstrapResponse, RuntimePlatform.Desktop).audience).toBe("https://api.example/api");
     expect(validateBootstrap({ ...bootstrap, logtoIssuer: "http://127.0.0.1:46307/oidc" } as GetBootstrapResponse, RuntimePlatform.Desktop).issuer).toBe("http://127.0.0.1:46307/oidc");
+    expect(validateBootstrap({ ...bootstrap, publicAssetBaseUrl: "http://127.0.0.1:9000" } as GetBootstrapResponse, RuntimePlatform.Desktop).publicAssetBaseUrl).toBe("http://127.0.0.1:9000/");
+    expect(validateBootstrap({ ...bootstrap, publicAssetBaseUrl: "http://[::1]:9000" } as GetBootstrapResponse, RuntimePlatform.Desktop).publicAssetBaseUrl).toBe("http://[::1]:9000/");
     expect(validateBootstrap(bootstrap, RuntimePlatform.Desktop).capabilities).toEqual([StaticCapability.SETTINGS_SYNC, StaticCapability.CRASH_REPORTS]);
   });
 

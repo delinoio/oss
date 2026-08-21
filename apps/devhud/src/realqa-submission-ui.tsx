@@ -2,10 +2,10 @@ import { UploadContentType, UploadQuery } from "@delinoio/devhud-api-client";
 import { useMutation } from "@connectrpc/connect-query";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import type { Copy } from "./localization.ts";
-import { createGitHubProvider, GitHubErrorCode, GitHubProviderError, readGitHubCredential, type GitHubProvider, type GitHubRepositoryRef } from "./github-provider.ts";
+import { createGitHubProvider, GitHubErrorCode, GitHubProviderError, issueMarker, readGitHubCredential, type GitHubProvider, type GitHubRepositoryRef } from "./github-provider.ts";
 import type { CaptureDraft, NativeBridgeV1 } from "./native-bridge.ts";
 import { useIdentitySettings } from "./service-boundary.tsx";
-import { composeIssueBody, decodeSha256Hex, editableBrowserDiagnostics, IssueBodyTooLargeError, parseEditableBrowserDiagnostics, stripFinalSubmissionMarker } from "./realqa-submission.ts";
+import { composeIssueBody, decodeSha256Hex, editableBrowserDiagnostics, IssueBodyTooLargeError, IssueTitleInvalidError, parseEditableBrowserDiagnostics, sanitizeIssueTitle, stripFinalSubmissionMarker } from "./realqa-submission.ts";
 import { projectedOfficialImageUrls, projectedR2ImageUrls, uploadOfficialImages, uploadR2Images } from "./realqa-upload.ts";
 
 interface SubmissionModalProps {
@@ -23,10 +23,12 @@ export function RealqaSubmissionModal({ draft, bridge, copy, onClose, onConfirme
   const finalizeUpload = useMutation(UploadQuery.finalizeUpload);
   const deleteUpload = useMutation(UploadQuery.deleteUpload);
   const provider = useMemo(() => injectedProvider ?? createGitHubProvider({ fetch: globalThis.fetch }), [injectedProvider]);
-  const repositories = useMemo(() => submissionRepositories(identity.settings), [identity.settings]);
+  const repositoryAssociations = useMemo(() => submissionRepositories(identity.settings), [identity.settings]);
+  const repositories = useMemo(() => uniqueSubmissionRepositories(repositoryAssociations), [repositoryAssociations]);
   const initialRepository = repositories.find((entry) => entry.owner.toLowerCase() === identity.settings.github.issueTracker?.owner.toLowerCase() && entry.name.toLowerCase() === identity.settings.github.issueTracker?.repository.toLowerCase()) ?? repositories[0];
   const [repositoryKey, setRepositoryKey] = useState(initialRepository ? repositoryKeyFor(initialRepository) : "");
-  const [profileRef, setProfileRef] = useState(initialRepository?.profileRef ?? identity.settings.github.profiles[0]?.id ?? "");
+  const initialAssociation = repositoryAssociations.find((entry) => initialRepository !== undefined && repositoryKeyFor(entry) === repositoryKeyFor(initialRepository));
+  const [profileRef, setProfileRef] = useState(initialAssociation?.profileRef ?? identity.settings.github.profiles[0]?.id ?? "");
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [selectedImages, setSelectedImages] = useState<ReadonlySet<string>>(() => new Set(draft.images.map((image) => image.id)));
@@ -50,7 +52,7 @@ export function RealqaSubmissionModal({ draft, bridge, copy, onClose, onConfirme
     ? { profileRef: r2.profileRef, endpoint: r2.endpoint, accountId: r2.accountId, bucket: r2.bucket, publicBaseUrl: r2.publicBaseUrl, prefix: r2.prefix }
     : null;
   const selectedImageCount = selectedImages.size;
-  const officialUploadsAvailable = identity.status === "authenticated" && identity.bootstrap !== null;
+  const officialUploadsAvailable = identity.status === "authenticated" && identity.bootstrap?.publicAssetBaseUrl != null;
   const uploadCleanupPending = pendingUploadCleanupIds.length > 0;
 
   useEffect(() => { titleInput.current?.focus(); }, []);
@@ -98,19 +100,25 @@ export function RealqaSubmissionModal({ draft, bridge, copy, onClose, onConfirme
 
   const submit = async () => {
     if (busy || createdUrl || uploadCleanupPending || !selectedRepository || !selectedProfile || title.trim() === "") return;
-    if (!repositories.some((entry) => repositoryKeyFor(entry) === repositoryKey && entry.profileRef === profileRef)) { setError(copy.issueRepositoryCredentialMismatch); return; }
+    if (!repositoryAssociations.some((entry) => repositoryKeyFor(entry) === repositoryKey && entry.profileRef === profileRef)) { setError(copy.issueRepositoryCredentialMismatch); return; }
     if (selectedImageCount > 0 && uploadProvider === "official" && !officialUploadsAvailable) { setError(copy.issueOfficialSignInRequired); return; }
     if (selectedImageCount > 0 && uploadProvider === "r2" && nativeR2Profile === null) { setError(copy.issueR2SetupRequired); return; }
     let parsedDiagnostics = null;
-    try { parsedDiagnostics = diagnostics === null ? null : parseEditableBrowserDiagnostics(diagnostics); }
-    catch { setError(copy.issueDiagnosticsInvalid); return; }
+    let issueTitle: string;
+    try {
+      issueTitle = sanitizeIssueTitle(title);
+      parsedDiagnostics = diagnostics === null ? null : parseEditableBrowserDiagnostics(diagnostics);
+    } catch (reason) {
+      setError(reason instanceof IssueTitleInvalidError ? copy.issueTitleInvalid : copy.issueDiagnosticsInvalid);
+      return;
+    }
     const submissionRevision = draft.revision;
     const selectedDraftImages = draft.images.filter((image) => selectedImages.has(image.id));
     try {
       const projectedImageUrls = selectedImageCount === 0
         ? []
         : uploadProvider === "official"
-          ? projectedOfficialImageUrls(identity.bootstrap!.publicAssetBaseUrl, selectedImageCount)
+          ? projectedOfficialImageUrls(identity.bootstrap!.publicAssetBaseUrl!, selectedImageCount)
           : projectedR2ImageUrls(nativeR2Profile!, draft.id, submissionRevision, selectedDraftImages.map((image) => image.id));
       composeIssueBody({ userBody: body, diagnostics: parsedDiagnostics, imageUrls: projectedImageUrls, submissionId: draft.id, diagnosticsSummary: copy.issueBrowserDiagnostics });
     } catch (reason) {
@@ -123,6 +131,13 @@ export function RealqaSubmissionModal({ draft, bridge, copy, onClose, onConfirme
     let githubAttempted = false;
     try {
       const credential = await readGitHubCredential(bridge, selectedProfile, await identity.githubPatScopeId);
+      const existing = await provider.searchIssueMarker(credential, selectedRepository, issueMarker(draft.id));
+      if (existing.issue !== null) {
+        setCreatedUrl(existing.issue.url);
+        setStatus(copy.issueCreated);
+        try { await onConfirmed(submissionRevision); } catch { setCleanupPending(true); setError(copy.issueDraftCleanupFailed); }
+        return;
+      }
       let imageUrls: readonly string[] = [];
       if (selectedImageCount > 0) {
         const flattenedResponse = await bridge.request({ operation: "capture.flatten", draftId: draft.id, expectedRevision: submissionRevision });
@@ -175,7 +190,7 @@ export function RealqaSubmissionModal({ draft, bridge, copy, onClose, onConfirme
       }
       const issueBody = composeIssueBody({ userBody: body, diagnostics: parsedDiagnostics, imageUrls, submissionId: draft.id, diagnosticsSummary: copy.issueBrowserDiagnostics });
       githubAttempted = true;
-      const result = await provider.createIssue(credential, selectedRepository, { title: title.trim(), body: stripFinalSubmissionMarker(issueBody, draft.id), labels: [...selectedLabels], submissionId: draft.id });
+      const result = await provider.createIssue(credential, selectedRepository, { title: issueTitle, body: stripFinalSubmissionMarker(issueBody, draft.id), labels: [...selectedLabels], submissionId: draft.id });
       setCreatedUrl(result.issue.url);
       setStatus(copy.issueCreated);
       try { await onConfirmed(submissionRevision); } catch { setCleanupPending(true); setError(copy.issueDraftCleanupFailed); }
@@ -210,7 +225,7 @@ export function RealqaSubmissionModal({ draft, bridge, copy, onClose, onConfirme
 
   return <div className="overlay" role="presentation"><section ref={dialog} className="issue-dialog" role="dialog" aria-modal="true" aria-labelledby="issue-dialog-title" onKeyDown={keyDown}>
     <h3 id="issue-dialog-title">{copy.issueModalTitle}</h3>
-    <label>{copy.issueRepository}<select value={repositoryKey} disabled={busy || !!createdUrl || uploadCleanupPending} onChange={(event) => { const repository = repositories.find((entry) => repositoryKeyFor(entry) === event.target.value); setRepositoryKey(event.target.value); if (repository) setProfileRef(repository.profileRef); }}><option value="">{copy.issueSelectRepository}</option>{repositories.map((repository) => <option key={repositoryKeyFor(repository)} value={repositoryKeyFor(repository)}>{repository.owner}/{repository.name}</option>)}</select></label>
+    <label>{copy.issueRepository}<select value={repositoryKey} disabled={busy || !!createdUrl || uploadCleanupPending} onChange={(event) => { const association = repositoryAssociations.find((entry) => repositoryKeyFor(entry) === event.target.value); setRepositoryKey(event.target.value); if (association) setProfileRef(association.profileRef); }}><option value="">{copy.issueSelectRepository}</option>{repositories.map((repository) => <option key={repositoryKeyFor(repository)} value={repositoryKeyFor(repository)}>{repository.owner}/{repository.name}</option>)}</select></label>
     <label>{copy.issueCredential}<select value={profileRef} disabled={busy || !!createdUrl || uploadCleanupPending} onChange={(event) => setProfileRef(event.target.value)}><option value="">{copy.githubSelectProfile}</option>{identity.settings.github.profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></label>
     <label>{copy.issueTitle}<input ref={titleInput} autoFocus value={title} disabled={busy || !!createdUrl || uploadCleanupPending} onChange={(event) => setTitle(event.target.value)} /></label>
     <label>{copy.issueBody}<textarea value={body} disabled={busy || !!createdUrl || uploadCleanupPending} onChange={(event) => setBody(event.target.value)} /></label>
@@ -232,8 +247,9 @@ function submissionRepositories(settings: ReturnType<typeof useIdentitySettings>
   const entries: SubmissionRepository[] = settings.github.repositories.flatMap((entry) => entry.profileRef ? [{ owner: entry.owner, name: entry.name, profileRef: entry.profileRef }] : []);
   const tracker = settings.github.issueTracker;
   if (tracker?.profileRef) entries.unshift({ owner: tracker.owner, name: tracker.repository, profileRef: tracker.profileRef });
-  return [...new Map(entries.map((entry) => [repositoryKeyFor(entry), entry])).values()];
+  return [...new Map(entries.map((entry) => [`${repositoryKeyFor(entry)}\0${entry.profileRef}`, entry])).values()];
 }
+function uniqueSubmissionRepositories(associations: readonly SubmissionRepository[]): readonly GitHubRepositoryRef[] { return [...new Map(associations.map((entry) => [repositoryKeyFor(entry), { owner: entry.owner, name: entry.name }])).values()]; }
 function repositoryKeyFor(repository: GitHubRepositoryRef): string { return `${repository.owner.toLowerCase()}/${repository.name.toLowerCase()}`; }
 function uuid(value: string): { readonly value: string } { return { value }; }
 

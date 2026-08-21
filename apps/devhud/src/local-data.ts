@@ -1,7 +1,7 @@
 import type { StaticCapability } from "@delinoio/devhud-api-client";
 import { clearInMemoryDiagnosticEvents } from "./diagnostics";
 import { canonicalDevHudSettings, defaultDevHudSettings, parseDevHudSettings, type DevHudSettingsV1 } from "./settings-contract";
-import { isValidLogtoAudience, normalizeLogtoIssuer } from "./identity-contract.ts";
+import { isValidLogtoAudience, normalizeLogtoIssuer, normalizePublicAssetUrl } from "./identity-contract.ts";
 
 const prefix = "devhud.identity.v1.";
 const guestSettingsKey = `${prefix}guest-settings`;
@@ -73,7 +73,7 @@ export interface CachedIdentityBootstrap {
   readonly audience: string;
   readonly clientId: string;
   readonly redirectUri: "devhud://auth/callback";
-  readonly publicAssetBaseUrl: string;
+  readonly publicAssetBaseUrl: string | null;
   readonly capabilities: readonly StaticCapability[];
 }
 
@@ -85,22 +85,11 @@ export function readCachedIdentityBootstrap(storage: ReadStorage, apiOrigin: str
     if (record.redirectUri !== "devhud://auth/callback" || typeof record.clientId !== "string" || !/^[\x21-\x7e]{1,256}$/u.test(record.clientId)) return null;
     const issuer = normalizeLogtoIssuer(record.issuer);
     if (issuer === null || !isValidLogtoAudience(record.audience)) return null;
-    const publicAssetBaseUrl = normalizedPublicAssetBaseUrl(record.publicAssetBaseUrl);
-    if (publicAssetBaseUrl === null) return null;
+    const publicAssetBaseUrl = record.publicAssetBaseUrl === undefined ? null : normalizePublicAssetUrl(record.publicAssetBaseUrl);
+    if (record.publicAssetBaseUrl !== undefined && publicAssetBaseUrl === null) return null;
     const capabilities = record.capabilities === undefined ? [] : record.capabilities;
     if (!Array.isArray(capabilities) || capabilities.some((capability) => !Number.isInteger(capability))) return null;
     return { issuer, audience: record.audience, clientId: record.clientId, redirectUri: record.redirectUri, publicAssetBaseUrl, capabilities: Object.freeze([...new Set(capabilities as StaticCapability[])]) };
-  } catch {
-    return null;
-  }
-}
-
-function normalizedPublicAssetBaseUrl(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  try {
-    const candidate = new URL(value);
-    if (candidate.protocol !== "https:" || candidate.username || candidate.password || candidate.search || candidate.hash) return null;
-    return candidate.toString();
   } catch {
     return null;
   }

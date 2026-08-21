@@ -145,13 +145,15 @@ export function createGitHubProvider({ fetch: fetchImpl }: ProviderOptions): Git
   }
 
   async function reconcileIssueMarker(credential: GitHubCredential, repository: GitHubRepositoryRef, marker: string): Promise<{ readonly issue: GitHubIssue | null; readonly metadata: GitHubResponseMetadata }> {
-    const indexed = await searchIssueMarker(credential, repository, marker);
-    const recent = await listRecentIssueMarker(credential, repository, marker);
+    validateMarker(marker);
+    const [indexed, recent] = await Promise.all([
+      searchIndexedIssueMarker(credential, repository, marker),
+      listRecentIssueMarker(credential, repository, marker),
+    ]);
     return { issue: uniqueMarkerMatch([indexed.issue, recent.issue].filter((issue): issue is GitHubIssue => issue !== null)), metadata: recent.metadata };
   }
 
-  async function searchIssueMarker(credential: GitHubCredential, repository: GitHubRepositoryRef, marker: string) {
-    validateMarker(marker);
+  async function searchIndexedIssueMarker(credential: GitHubCredential, repository: GitHubRepositoryRef, marker: string) {
     const query = encodeURIComponent(`repo:${repository.owner}/${repository.name} is:issue in:body \"${marker}\"`);
     const result = await request(GitHubOperation.SearchIssueMarker, credential, `/search/issues?q=${query}&per_page=10`);
     const root = record(result.json, GitHubOperation.SearchIssueMarker);
@@ -195,7 +197,7 @@ export function createGitHubProvider({ fetch: fetchImpl }: ProviderOptions): Git
       });
       return { items, nextPage: nextPage(result.response.headers.get("link")), notModified: false, metadata: result.metadata };
     },
-    searchIssueMarker,
+    searchIssueMarker: reconcileIssueMarker,
     async createIssue(credential, repository, input) {
       const marker = issueMarker(input.submissionId);
       const existing = await reconcileIssueMarker(credential, repository, marker);

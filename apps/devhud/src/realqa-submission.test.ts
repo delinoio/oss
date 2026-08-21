@@ -2,7 +2,7 @@
 
 import { describe, expect, it, vi } from "vitest";
 import { messages } from "./localization.ts";
-import { composeIssueBody, editableBrowserDiagnostics, GitHubIssueBodyMaximumCharacters, IssueBodyTooLargeError, parseEditableBrowserDiagnostics, PublicImageWarning, stripFinalSubmissionMarker } from "./realqa-submission.ts";
+import { composeIssueBody, editableBrowserDiagnostics, GitHubIssueBodyMaximumCharacters, GitHubIssueTitleMaximumCharacters, IssueBodyTooLargeError, IssueTitleInvalidError, parseEditableBrowserDiagnostics, PublicImageWarning, sanitizeIssueTitle, stripFinalSubmissionMarker } from "./realqa-submission.ts";
 import { projectedOfficialImageUrls, projectedR2ImageUrls, uploadOfficialImages, uploadR2Images, type OfficialReservation } from "./realqa-upload.ts";
 
 const submissionId = "018f47a2-7b3c-7def-8abc-1234567890ab";
@@ -44,6 +44,14 @@ describe("RealQA direct submission contracts", () => {
     expect(body.match(/\[redacted\] remains/gu)).toHaveLength(2);
   });
 
+  it("redacts and bounds the complete issue title", () => {
+    expect(sanitizeIssueTitle("  Authorization: Bearer opaque-secret remains  ")).toBe("[redacted] remains");
+    expect(sanitizeIssueTitle("password=hunter2 report")).toBe("[redacted] report");
+    expect(sanitizeIssueTitle("😀".repeat(GitHubIssueTitleMaximumCharacters))).toHaveLength(GitHubIssueTitleMaximumCharacters * 2);
+    expect(() => sanitizeIssueTitle("x".repeat(GitHubIssueTitleMaximumCharacters + 1))).toThrow(IssueTitleInvalidError);
+    expect(() => sanitizeIssueTitle("\0  ")).toThrow(IssueTitleInvalidError);
+  });
+
   it("accepts the exact GitHub body limit and rejects one additional character", () => {
     const marker = `<!-- devhud-submission:${submissionId} -->`;
     const exactUserBody = "x".repeat(GitHubIssueBodyMaximumCharacters - marker.length - 2);
@@ -54,13 +62,15 @@ describe("RealQA direct submission contracts", () => {
   });
 
   it("projects complete official and BYO image URLs before upload", () => {
-    const profile = { profileRef: submissionId, endpoint: "https://account.r2.cloudflarestorage.com", accountId: "account", bucket: "bucket", publicBaseUrl: "https://cdn.example/base/", prefix: "team report/#realqa" };
+    const profile = { profileRef: submissionId, endpoint: "https://account.r2.cloudflarestorage.com", accountId: "account", bucket: "bucket", publicBaseUrl: "https://cdn.example/base)/", prefix: "team report/qa)images" };
 
     expect(projectedOfficialImageUrls("https://images.example/assets/", 2)).toEqual([
       `https://images.example/assets/${"A".repeat(43)}.png`,
       `https://images.example/assets/${"A".repeat(43)}.png`,
     ]);
-    expect(projectedR2ImageUrls(profile, submissionId, 7, images.map((item) => item.imageId))).toEqual(images.map((item) => `https://cdn.example/base/team%20report/%23realqa/${submissionId}/7/${item.imageId}.png`));
+    expect(projectedR2ImageUrls(profile, submissionId, 7, images.map((item) => item.imageId))).toEqual(images.map((item) => `https://cdn.example/base%29/team%20report/qa%29images/${submissionId}/7/${item.imageId}.png`));
+    const body = composeIssueBody({ userBody: "", diagnostics: null, imageUrls: projectedR2ImageUrls(profile, submissionId, 7, [images[0].imageId]), submissionId, diagnosticsSummary: "Diagnostics" });
+    expect(body).toContain(`](https://cdn.example/base%29/team%20report/qa%29images/${submissionId}/7/${images[0].imageId}.png)`);
   });
 
   it("preserves official ordering and immutable group bindings", async () => {

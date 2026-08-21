@@ -1,5 +1,6 @@
 import { assertUuidV7 } from "@delinoio/devhud-api-client";
 import { sanitizeChromeContext, type SanitizedBrowserContext } from "./browser-context.ts";
+import { normalizePublicAssetUrl } from "./identity-contract.ts";
 
 export const PublicImageWarning = Object.freeze({
   en: "Anyone who knows the image URL can view it. The image remains public until you delete it, an administrator removes it, or your account deletion completes.",
@@ -7,11 +8,19 @@ export const PublicImageWarning = Object.freeze({
 });
 
 export const GitHubIssueBodyMaximumCharacters = 65_536;
+export const GitHubIssueTitleMaximumCharacters = 256;
 
 export class IssueBodyTooLargeError extends TypeError {
   constructor() {
     super("GitHub issue body exceeds its character limit");
     this.name = "IssueBodyTooLargeError";
+  }
+}
+
+export class IssueTitleInvalidError extends TypeError {
+  constructor() {
+    super("GitHub issue title must contain 1 to 256 characters after redaction");
+    this.name = "IssueTitleInvalidError";
   }
 }
 
@@ -64,6 +73,12 @@ export function composeIssueBody(input: IssueBodyInput): string {
   return value;
 }
 
+export function sanitizeIssueTitle(value: string): string {
+  const title = redactText(value).trim();
+  if (title === "" || [...title].length > GitHubIssueTitleMaximumCharacters) throw new IssueTitleInvalidError();
+  return title;
+}
+
 /** The GitHub provider owns the final marker write and reconciliation contract. */
 export function stripFinalSubmissionMarker(value: string, submissionId: string): string {
   assertUuidV7(submissionId);
@@ -75,11 +90,9 @@ export function stripFinalSubmissionMarker(value: string, submissionId: string):
 }
 
 export function canonicalPublicImageUrl(value: string): string {
-  try {
-    const parsed = new URL(value);
-    if (parsed.protocol !== "https:" || parsed.username || parsed.password || parsed.search || parsed.hash) throw new Error();
-    return parsed.toString();
-  } catch { throw new TypeError("Public image URL must be HTTPS without credentials, query, or fragment"); }
+  const normalized = normalizePublicAssetUrl(value);
+  if (normalized === null) throw new TypeError("Public image URL must be HTTPS or loopback HTTP without credentials, query, or fragment");
+  return normalized;
 }
 
 export function decodeSha256Hex(value: string): Uint8Array {

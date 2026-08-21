@@ -56,7 +56,7 @@ function bridge(): NativeBridgeV1 {
 }
 
 function provider(overrides: Partial<GitHubProvider> = {}): GitHubProvider {
-  return { ...createGitHubProvider({ fetch: vi.fn() }), listLabels: vi.fn(async () => ({ items: [{ name: "bug", color: "fff", description: null }, { name: "qa", color: "000", description: null }], nextPage: null, notModified: false, metadata: { etag: null, rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } } })), ...overrides };
+  return { ...createGitHubProvider({ fetch: vi.fn() }), listLabels: vi.fn(async () => ({ items: [{ name: "bug", color: "fff", description: null }, { name: "qa", color: "000", description: null }], nextPage: null, notModified: false, metadata: { etag: null, rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } } })), searchIssueMarker: vi.fn(async () => ({ issue: null, metadata: { etag: null, rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } } })), ...overrides };
 }
 
 beforeEach(() => {
@@ -129,6 +129,74 @@ describe("RealQA image-free submission", () => {
 });
 
 describe("RealQA upload eligibility and cleanup", () => {
+  it("sanitizes titles and rejects an over-limit title before credentials or uploads", async () => {
+    identity = { ...identityValue(), status: "authenticated" };
+    const native = bridge();
+    const createIssue = vi.fn(async () => ({ issue: { number: 1, title: "Issue", url: "https://github.com/delinoio/oss/issues/1", marker: "marker", reconciled: false }, metadata: { etag: null, rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } } }));
+    const view = render(<RealqaSubmissionModal draft={draft} bridge={native} copy={messages.en} onClose={vi.fn()} onConfirmed={vi.fn()} provider={provider({ createIssue })} />);
+    await screen.findByLabelText("bug");
+    vi.mocked(native.request).mockClear();
+    fireEvent.change(screen.getByLabelText(messages.en.issueTitle), { target: { value: "x".repeat(257) } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.issueSubmit }));
+
+    expect(await screen.findByRole("alert")).toHaveProperty("textContent", messages.en.issueTitleInvalid);
+    expect(native.request).not.toHaveBeenCalled();
+    expect(mutationFunctions.createUpload).not.toHaveBeenCalled();
+
+    view.unmount();
+    const imageFreeNative = bridge();
+    render(<RealqaSubmissionModal draft={draft} bridge={imageFreeNative} copy={messages.en} onClose={vi.fn()} onConfirmed={vi.fn()} provider={provider({ createIssue })} />);
+    fireEvent.click(screen.getByLabelText(`${messages.en.editorImage} 1`));
+    fireEvent.change(screen.getByLabelText(messages.en.issueTitle), { target: { value: "Authorization: Bearer private-token report" } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.issueSubmit }));
+
+    await waitFor(() => expect(createIssue).toHaveBeenCalledWith(expect.anything(), expect.anything(), expect.objectContaining({ title: "[redacted] report" })));
+  });
+
+  it("reconciles an existing issue before flattening or uploading images", async () => {
+    identity = { ...identityValue(), status: "authenticated" };
+    const native = bridge();
+    const onConfirmed = vi.fn(async () => undefined);
+    const searchIssueMarker = vi.fn(async () => ({ issue: { number: 1, title: "Existing", url: "https://github.com/delinoio/oss/issues/1", marker: "marker", reconciled: true }, metadata: { etag: null, rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } } }));
+    const createIssue = vi.fn();
+    render(<RealqaSubmissionModal draft={draft} bridge={native} copy={messages.en} onClose={vi.fn()} onConfirmed={onConfirmed} provider={provider({ searchIssueMarker, createIssue })} />);
+    fireEvent.change(screen.getByLabelText(messages.en.issueTitle), { target: { value: "Retry issue" } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.issueSubmit }));
+
+    await waitFor(() => expect(onConfirmed).toHaveBeenCalledWith(draft.revision));
+    expect(searchIssueMarker).toHaveBeenCalledOnce();
+    expect(native.request).not.toHaveBeenCalledWith(expect.objectContaining({ operation: "capture.flatten" }));
+    expect(mutationFunctions.createUpload).not.toHaveBeenCalled();
+    expect(createIssue).not.toHaveBeenCalled();
+  });
+
+  it("retains every explicit repository and credential association", async () => {
+    const secondProfile = { id: "018f47a2-7b3c-7def-8abc-1234567890ae", name: "Alternate", kind: "classic" as const };
+    const associatedSettings = parseDevHudSettings({
+      ...settings,
+      github: {
+        ...settings.github,
+        profiles: [profile, secondProfile],
+        repositories: [
+          { owner: "delinoio", name: "oss", profileRef: profile.id },
+          { owner: "DELINOIO", name: "OSS", profileRef: secondProfile.id },
+        ],
+      },
+    });
+    identity = { ...identityValue(), settings: associatedSettings };
+    const native = bridge();
+    const createIssue = vi.fn(async () => ({ issue: { number: 1, title: "Issue", url: "https://github.com/delinoio/oss/issues/1", marker: "marker", reconciled: false }, metadata: { etag: null, rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } } }));
+    render(<RealqaSubmissionModal draft={draft} bridge={native} copy={messages.en} onClose={vi.fn()} onConfirmed={vi.fn()} provider={provider({ createIssue })} />);
+    fireEvent.click(screen.getByLabelText(`${messages.en.editorImage} 1`));
+    fireEvent.change(screen.getByLabelText(messages.en.issueCredential), { target: { value: secondProfile.id } });
+    fireEvent.change(screen.getByLabelText(messages.en.issueTitle), { target: { value: "Alternate credential" } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.issueSubmit }));
+
+    await waitFor(() => expect(createIssue).toHaveBeenCalledOnce());
+    expect(native.request).toHaveBeenCalledWith(expect.objectContaining({ operation: "secure.read", setting: expect.objectContaining({ profileId: secondProfile.id }) }));
+    expect(screen.queryByText(messages.en.issueRepositoryCredentialMismatch)).toBeNull();
+  });
+
   it("requires authentication for official images while retaining image-free guest submission", async () => {
     const native = bridge();
     const createUpload = mutationFunctions.createUpload;
