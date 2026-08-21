@@ -232,7 +232,7 @@ export function DeckPollingBoundary({ bridge, active, online, language = "en", p
     } catch (error) {
       if (error instanceof DeckPollingCancelledError || !canContinue()) return;
       const failures = (currentCache?.failures ?? 0) + 1;
-      const rate = error instanceof GitHubProviderError ? error.rate : currentCache?.rate ?? null;
+      const rate = error instanceof GitHubProviderError ? error.rate : null;
       const cacheScopeId = scopeId ?? await identity.githubPatScopeId;
       if (!canContinue()) return;
       const next: DeckCache = { version: 2, deckId: currentDeck.id, query: currentDeck.query, queryEtag: currentCache?.queryEtag ?? null, totalCount: currentCache?.totalCount, results: currentCache?.results ?? [], lastSuccessfulAt: currentCache?.lastSuccessfulAt ?? null, lastAttemptedAt: attemptedAt, rate, failures, nextRefreshAt: nextDeckRefresh(Date.now(), currentDeck.refreshMinutes, failures, rate), transitionKeys: currentCache?.transitionKeys ?? [], pendingNotifications: currentCache?.pendingNotifications ?? [] };
@@ -562,12 +562,13 @@ function WidgetAccess({ cache, copy, deck, failure }: { readonly cache: DeckCach
   </section>;
 }
 
-function widgetSnapshot(deck: Deck, cache: DeckCache, failure: DeckFailure | null): WidgetDeckSnapshot {
+function widgetSnapshot(deck: Deck, cache: DeckCache, failure: DeckFailure | null): WidgetDeckSnapshot | undefined {
+  if (cache.totalCount === undefined) return undefined;
   const base: WidgetDeckSnapshot = {
     version: WidgetContractVersion,
     deckId: deck.id,
     query: deck.query,
-    counts: widgetDeckCounts(cache.totalCount ?? cache.results.length, cache.results),
+    counts: widgetDeckCounts(cache.totalCount, cache.results),
     results: widgetPullRequests(cache.results),
     state: widgetRefreshState(cache.lastSuccessfulAt, failure === "token" ? "missing-token" : failure === "rate-limit" ? "rate-limit" : failure === "permission" ? "permission" : failure !== null ? "error" : null),
     lastSuccessfulAt: cache.lastSuccessfulAt,

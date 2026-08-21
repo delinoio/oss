@@ -268,7 +268,7 @@ private struct DeckTimelineProvider: IntentTimelineProvider {
             let (data, response) = try await githubSession.data(for: request)
             guard let http = response as? HTTPURLResponse else { return failure(deck: deck, previous: previous, state: "error", attempted: attempted, rate: nil) }
             let rate = responseRate(http)
-            let rateLimited = http.statusCode == 429 || (http.statusCode == 403 && (rate.remaining == 0 || rate.retryAfterSeconds != nil))
+            let rateLimited = responseIsRateLimited(http, data: data, rate: rate)
             if rateLimited { return failure(deck: deck, previous: previous, state: "rate-limit", attempted: attempted, rate: rate) }
             if http.statusCode == 401 { return failure(deck: deck, previous: previous, state: "missing-token", attempted: attempted, rate: rate) }
             if http.statusCode == 403 || http.statusCode == 404 { return failure(deck: deck, previous: previous, state: "permission", attempted: attempted, rate: rate) }
@@ -322,7 +322,7 @@ private struct DeckTimelineProvider: IntentTimelineProvider {
         do {
             let path = "/repos/\(repository.owner)/\(repository.name)"
             let metadata = try await github(path: path, token: token)
-            if let state = responseFailure(metadata.response, rate: metadata.rate) { return RepositoryValidationFailure(state: state, rate: metadata.rate) }
+            if let state = responseFailure(metadata.response, data: metadata.data, rate: metadata.rate) { return RepositoryValidationFailure(state: state, rate: metadata.rate) }
             if profileKind == "classic" {
                 let scopes = Set((metadata.response.value(forHTTPHeaderField: "X-OAuth-Scopes") ?? "").split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) })
                 if !scopes.contains("repo") { return RepositoryValidationFailure(state: "permission", rate: metadata.rate) }
@@ -331,16 +331,16 @@ private struct DeckTimelineProvider: IntentTimelineProvider {
             let neverPushed = root["pushed_at"] is NSNull
             for suffix in ["/pulls?state=open&per_page=1", "/issues?state=open&per_page=1"] {
                 let access = try await github(path: path + suffix, token: token)
-                if let state = responseFailure(access.response, rate: access.rate) { return RepositoryValidationFailure(state: state, rate: access.rate) }
+                if let state = responseFailure(access.response, data: access.data, rate: access.rate) { return RepositoryValidationFailure(state: state, rate: access.rate) }
             }
             let contents = try await github(path: path + "/contents", token: token)
             if contents.response.statusCode != 404 || !neverPushed {
-                if let state = responseFailure(contents.response, rate: contents.rate) { return RepositoryValidationFailure(state: state, rate: contents.rate) }
+                if let state = responseFailure(contents.response, data: contents.data, rate: contents.rate) { return RepositoryValidationFailure(state: state, rate: contents.rate) }
             }
             if profileKind == "fine-grained" {
                 let probe = try await github(path: path + "/issues", token: token, method: "POST", body: Data("{}".utf8))
                 if probe.response.statusCode != 422 {
-                    if let state = responseFailure(probe.response, rate: probe.rate) { return RepositoryValidationFailure(state: state, rate: probe.rate) }
+                    if let state = responseFailure(probe.response, data: probe.data, rate: probe.rate) { return RepositoryValidationFailure(state: state, rate: probe.rate) }
                     return RepositoryValidationFailure(state: "error", rate: probe.rate)
                 }
             }
@@ -362,9 +362,17 @@ private struct DeckTimelineProvider: IntentTimelineProvider {
         return (data, http, responseRate(http))
     }
 
-    private static func responseFailure(_ response: HTTPURLResponse, rate: DeckRate) -> String? {
+    private static func responseIsRateLimited(_ response: HTTPURLResponse, data: Data, rate: DeckRate) -> Bool {
+        if response.statusCode == 429 { return true }
+        guard response.statusCode == 403 else { return false }
+        if rate.remaining == 0 || rate.retryAfterSeconds != nil { return true }
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let message = root["message"] as? String else { return false }
+        return message.lowercased().contains("rate limit")
+    }
+
+    private static func responseFailure(_ response: HTTPURLResponse, data: Data, rate: DeckRate) -> String? {
         if (200...299).contains(response.statusCode) { return nil }
-        if response.statusCode == 429 || (response.statusCode == 403 && (rate.remaining == 0 || rate.retryAfterSeconds != nil)) { return "rate-limit" }
+        if responseIsRateLimited(response, data: data, rate: rate) { return "rate-limit" }
         if response.statusCode == 401 { return "missing-token" }
         if response.statusCode == 403 || response.statusCode == 404 { return "permission" }
         return "error"

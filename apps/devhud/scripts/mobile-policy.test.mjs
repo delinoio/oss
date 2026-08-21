@@ -255,6 +255,10 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   assert.match(androidProvider, /put\("rate", responseRate \?: JSONObject\.NULL\)/u);
   assert.ok(iosWidget.indexOf("validateRepositories(deck: deck, token: token)") < iosWidget.indexOf('URLComponents(string: "https://api.github.com/search/issues")'));
   assert.match(iosWidget, /\/pulls\?state=open&per_page=1[\s\S]*\/issues\?state=open&per_page=1[\s\S]*\/contents/u);
+  assert.match(iosWidget, /private static func responseIsRateLimited[\s\S]*root\["message"\] as\? String[\s\S]*message\.lowercased\(\)\.contains\("rate limit"\)/u);
+  assert.match(iosWidget, /let rateLimited = responseIsRateLimited\(http, data: data, rate: rate\)/u);
+  assert.match(iosWidget, /private static func responseFailure[\s\S]*responseIsRateLimited\(response, data: data, rate: rate\)[\s\S]*return "rate-limit"/u);
+  assert.equal((iosWidget.match(/if let state = responseFailure\([^\n]+data: [^\n]+rate:/gu) ?? []).length, 4);
   assert.match(iosWidget, /statusCode == 401[\s\S]*"missing-token"[\s\S]*statusCode == 403 \|\| .*statusCode == 404[\s\S]*"permission"/u);
   assert.match(iosWidget, /#available\(iOS 17\.0, \*\)[\s\S]*containerBackground\(for: \.widget\)[\s\S]*else[\s\S]*background\(Color\(red: 0\.11/u);
   assert.ok(iosNativeBridge.indexOf("beginWidgetCredentialReplacement(profileId: setting.profileId") < iosNativeBridge.indexOf("guard storeData(data, setting: setting"));

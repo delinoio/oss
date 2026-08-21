@@ -80,6 +80,33 @@ describe("Deck surface", () => {
     }));
   });
 
+  it("does not publish an enabled widget snapshot when a legacy cache has no exact total", async () => {
+    writeDeckCache(localStorage, `origin.scope.${profile.id}`, { version: DeckCacheVersion, deckId: deck.id, query: deck.query, queryEtag: "legacy-etag", results: [pullRequest], lastSuccessfulAt: "2026-08-17T00:00:00.000Z", rate: null, failures: 0, nextRefreshAt: null, transitionKeys: [] });
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => value.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [deck.id] } : { kind: "ok" });
+    const bridge = bridgeWith(request);
+
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    await waitFor(() => expect(request).toHaveBeenCalledWith(expect.objectContaining({ operation: "widgets.enable-deck" })));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(request.mock.calls.map(([value]) => value.operation)).not.toContain("widgets.replace-deck-snapshot");
+  });
+
+  it("enables a widget without publishing a legacy cache whose exact total is unknown", async () => {
+    writeDeckCache(localStorage, `origin.scope.${profile.id}`, { version: DeckCacheVersion, deckId: deck.id, query: deck.query, queryEtag: "legacy-etag", results: [pullRequest], lastSuccessfulAt: "2026-08-17T00:00:00.000Z", rate: null, failures: 0, nextRefreshAt: null, transitionKeys: [] });
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => value.operation === "widgets.status" ? { kind: "widget-status", enabledDeckIds: [] } : { kind: "ok" });
+    const bridge = bridgeWith(request);
+    render(<DeckPollingBoundary bridge={bridge} active={false} online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    await screen.findByRole("button", { name: messages.en.widgetEnable });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.widgetEnable }));
+    fireEvent.click(screen.getByRole("button", { name: messages.en.widgetPrivacyConfirm }));
+
+    await waitFor(() => expect(request).toHaveBeenCalledWith(expect.objectContaining({ operation: "widgets.enable-deck" })));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(request.mock.calls.map(([value]) => value.operation)).not.toContain("widgets.replace-deck-snapshot");
+  });
+
   it("keeps an enabled Deck available for disablement when configuration resynchronization fails", async () => {
     let failConfigurationSync = false;
     const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
@@ -388,6 +415,28 @@ describe("Deck surface", () => {
       expect(cache.lastSuccessfulAt).toBe("2026-08-17T00:00:00.000Z");
       expect(cache.pendingNotifications).toEqual(pendingNotifications);
     });
+  });
+
+  it("clears obsolete rate metadata when a newer foreground attempt fails before a response", async () => {
+    const cacheScope = `origin.scope.${profile.id}`;
+    const oldRate = { limit: 30, remaining: 0, used: 30, resetAt: "2026-08-17T01:00:00.000Z", resource: "search", retryAfterSeconds: 3_600 };
+    writeDeckCache(localStorage, cacheScope, { version: DeckCacheVersion, deckId: deck.id, query: deck.query, queryEtag: null, totalCount: 1, results: [pullRequest], lastSuccessfulAt: "2026-08-17T00:00:00.000Z", rate: oldRate, failures: 0, nextRefreshAt: null, transitionKeys: [] });
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      if (value.operation === "widgets.status") return { kind: "widget-status", enabledDeckIds: [deck.id] };
+      if (value.operation === "secure.read") throw new NativeBridgeError(NativeBridgeErrorCode.StorageFailure);
+      return { kind: "ok" };
+    });
+    const bridge = bridgeWith(request);
+
+    render(<DeckPollingBoundary bridge={bridge} active online provider={provider()}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toBe(messages.en.githubErrorSecureStorage));
+    await waitFor(() => {
+      const cache = JSON.parse(localStorage.getItem(deckCacheKey(cacheScope, deck.id)) ?? "null") as { rate: unknown; results: unknown };
+      expect(cache.rate).toBeNull();
+      expect(cache.results).toEqual([pullRequest]);
+    });
+    await waitFor(() => expect(request).toHaveBeenCalledWith({ operation: "widgets.replace-deck-snapshot", snapshot: expect.objectContaining({ deckId: deck.id, rate: null }) }));
   });
 
   it("keeps a legacy total absent across failure and retries without an ETag", async () => {
