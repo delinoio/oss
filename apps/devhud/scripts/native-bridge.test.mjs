@@ -181,7 +181,14 @@ test("RealQA upload requests require immutable HTTPS direct-upload contracts", (
   assert.throws(() => validateCaptureRequest({ ...base, operation: "capture.upload-r2", profile: { profileRef: "profile", endpoint: "https://r2.example", accountId: "account", bucket: "bucket", publicBaseUrl: "https://images.example", prefix: "../escape" } }), NativeBridgeError);
   assert.match(nativeUploads, /\.put\(url\)|\.put\(upload_url\)/u);
   assert.match(nativeUploads, /secure_store::r2_credentials/u);
-  assert.match(nativeUploads, /Sha256::digest\(&verified\)/u);
+  assert.match(nativeUploads, /r2_object_key\([\s\S]*request\.expected_revision/u);
+  assert.match(nativeUploads, /\.content_length\(\)/u);
+  assert.match(nativeUploads, /\.chunk\(\)/u);
+  assert.match(nativeUploads, /VerificationBody::new/u);
+  assert.match(nativeUploads, /\.connect_timeout\(CONNECT_TIMEOUT\)/u);
+  assert.match(nativeUploads, /\.timeout\(REQUEST_TIMEOUT\)/u);
+  assert.match(nativeUploads, /event = "realqa_upload_failed"/u);
+  assert.doesNotMatch(nativeUploads, /verification\s*\.bytes\(\)/u);
   assert.doesNotMatch(nativeUploads, /devhud-api|UploadService/u);
 });
 
