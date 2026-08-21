@@ -202,6 +202,8 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   assert.match(androidProvider, /val isMerged = mergedAt is String/u);
   assert.ok(androidProvider.indexOf("validateRepositories(configuration, token, session)") < androidProvider.indexOf('github("/search/issues'));
   assert.match(androidProvider, /\/pulls\?state=open&per_page=1[\s\S]*\/issues\?state=open&per_page=1[\s\S]*\/contents/u);
+  assert.match(androidProvider, /metadataPayload\.has\("pushed_at"\) && metadataPayload\.opt\("pushed_at"\) === JSONObject\.NULL/u);
+  assert.doesNotMatch(androidProvider, /metadataPayload\.isNull\("pushed_at"\)/u);
   assert.match(androidProvider, /private fun responseIsRateLimited[\s\S]*status == 429[\s\S]*status != 403[\s\S]*X-RateLimit-Remaining[\s\S]*Retry-After[\s\S]*errorStream[\s\S]*JSONObject\(reader\.readText\(\)\)\.opt\("message"\) as\? String[\s\S]*lowercase\(Locale\.ROOT\)[\s\S]*contains\("rate limit"\)/u);
   assert.equal((androidProvider.match(/responseIsRateLimited\(connection\)/gu) ?? []).length, 2);
   assert.match(androidProvider, /status == 401[\s\S]*"missing-token"[\s\S]*status == 403 \|\| status == 404[\s\S]*"permission"/u);

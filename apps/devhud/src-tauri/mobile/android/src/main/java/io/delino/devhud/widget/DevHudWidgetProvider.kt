@@ -294,7 +294,7 @@ class DevHudWidgetProvider : AppWidgetProvider() {
                         if ("repo" !in scopes) return@github RepositoryValidationFailure("permission", rate(metadata))
                     }
                     val metadataPayload = metadata.inputStream.bufferedReader().use { JSONObject(it.readText()) }
-                    neverPushed = metadataPayload.isNull("pushed_at")
+                    neverPushed = metadataPayload.has("pushed_at") && metadataPayload.opt("pushed_at") === JSONObject.NULL
                     null
                 }
                 if (metadataFailure != null) return metadataFailure
