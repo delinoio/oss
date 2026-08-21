@@ -59,9 +59,9 @@ const HEALTH_FILE_PREFIX: &str = "devhud-update-health-v1-";
 const HEALTH_ARGUMENT: &str = "--devhud-update-health-v1=";
 const HEALTH_TOKEN_ARGUMENT: &str = "--devhud-update-health-token-v1=";
 #[cfg(any(test, target_os = "linux"))]
-const PKEXEC_AUTHORIZATION_DISMISSED_EXIT_CODE: i32 = 126;
+const PKEXEC_ELEVATION_DISMISSED_EXIT_CODE: i32 = 126;
 #[cfg(any(test, target_os = "linux"))]
-const PKEXEC_AUTHORIZATION_UNAVAILABLE_EXIT_CODE: i32 = 127;
+const PKEXEC_ELEVATION_UNAVAILABLE_EXIT_CODE: i32 = 127;
 #[cfg(any(test, target_os = "windows"))]
 const WINDOWS_INSTALLER_REBOOT_REQUIRED_EXIT_CODE: i32 = 3010;
 
@@ -1446,7 +1446,7 @@ fn classify_debian_installer_exit(succeeded: bool, exit_code: Option<i32>) -> De
         DebianInstallerExit::Installed
     } else if matches!(
         exit_code,
-        Some(PKEXEC_AUTHORIZATION_DISMISSED_EXIT_CODE | PKEXEC_AUTHORIZATION_UNAVAILABLE_EXIT_CODE)
+        Some(PKEXEC_ELEVATION_DISMISSED_EXIT_CODE | PKEXEC_ELEVATION_UNAVAILABLE_EXIT_CODE)
     ) {
         DebianInstallerExit::AuthorizationDenied
     } else {
@@ -2208,11 +2208,11 @@ mod tests {
             DebianInstallerExit::Installed
         );
         assert_eq!(
-            classify_debian_installer_exit(false, Some(PKEXEC_AUTHORIZATION_DISMISSED_EXIT_CODE)),
+            classify_debian_installer_exit(false, Some(PKEXEC_ELEVATION_DISMISSED_EXIT_CODE)),
             DebianInstallerExit::AuthorizationDenied
         );
         assert_eq!(
-            classify_debian_installer_exit(false, Some(PKEXEC_AUTHORIZATION_UNAVAILABLE_EXIT_CODE)),
+            classify_debian_installer_exit(false, Some(PKEXEC_ELEVATION_UNAVAILABLE_EXIT_CODE)),
             DebianInstallerExit::AuthorizationDenied
         );
         assert_eq!(
