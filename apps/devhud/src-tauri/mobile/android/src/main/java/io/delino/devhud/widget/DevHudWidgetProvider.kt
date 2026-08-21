@@ -158,13 +158,21 @@ class DevHudWidgetProvider : AppWidgetProvider() {
                 appWidgetIds.forEach { renderStored(context, manager, it) }
                 return false
             }
-            if (credential.token == null) {
+            if (credential is WidgetCredential.Missing) {
                 val snapshot = failure(configuration, previous, "missing-token", Instant.now().toString(), null)
-                val stored = store.replaceSnapshot(snapshot, credential.revision)
+                val stored = store.replaceSnapshot(snapshot, null)
                 val rendered = if (stored) snapshot else store.snapshot(deckId)
                 renderSelected(context, manager, store, deckId, configuration, rendered, rendered?.optString("state", "missing-token") ?: "missing-token", appWidgetIds)
                 return stored
             }
+            if (credential is WidgetCredential.Unreadable) {
+                val snapshot = failure(configuration, previous, "error", Instant.now().toString(), null)
+                val stored = store.replaceSnapshot(snapshot, credential.revision)
+                val rendered = if (stored) snapshot else store.snapshot(deckId)
+                renderSelected(context, manager, store, deckId, configuration, rendered, rendered?.optString("state", "error") ?: "error", appWidgetIds)
+                return stored
+            }
+            check(credential is WidgetCredential.Readable)
             val snapshot = refreshGitHub(configuration, credential.token, previous, session)
             if (session.wasStopped()) return false
             val current = store.configuration(deckId)

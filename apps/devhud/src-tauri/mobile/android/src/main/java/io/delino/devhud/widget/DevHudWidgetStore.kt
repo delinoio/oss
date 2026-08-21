@@ -20,7 +20,11 @@ private const val selectionPrefix = "selection:"
 private const val transactionPrefix = "transaction:"
 private const val disableTransactionPrefix = "disable-transaction:"
 
-internal data class WidgetCredential(val token: String?, val revision: String?)
+internal sealed class WidgetCredential {
+    object Missing : WidgetCredential()
+    data class Readable(val token: String, val revision: String) : WidgetCredential()
+    data class Unreadable(val revision: String) : WidgetCredential()
+}
 
 internal class DevHudWidgetStore(private val context: Context) {
     companion object {
@@ -135,8 +139,9 @@ internal class DevHudWidgetStore(private val context: Context) {
     }
     fun credential(deckId: String): WidgetCredential? {
         if (state.contains(transactionPrefix + deckId) || state.contains(disableTransactionPrefix + deckId)) return null
-        val revision = secrets.getString(deckId, null)
-        return WidgetCredential(revision?.let { decrypt(it, deckId) }, revision)
+        val revision = secrets.getString(deckId, null) ?: return WidgetCredential.Missing
+        val token = decrypt(revision, deckId) ?: return WidgetCredential.Unreadable(revision)
+        return WidgetCredential.Readable(token, revision)
     }
 
     fun select(appWidgetId: Int, deckId: String): Boolean {

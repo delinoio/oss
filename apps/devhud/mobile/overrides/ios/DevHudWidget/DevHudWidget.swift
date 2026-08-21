@@ -9,6 +9,7 @@ private let credentialService = "io.delino.devhud.widget-credential.v1"
 private let configurationPrefix = "widget.configuration."
 private let snapshotPrefix = "widget.snapshot."
 private let transactionPrefix = "widget.transaction."
+private let credentialReplacementKey = "widget.credential-replacement.v1"
 private let staleAfter: TimeInterval = 60 * 60
 private let repositoryValidationConcurrency = 3
 private let refreshDeadlineNanoseconds: UInt64 = 20 * 1_000_000_000
@@ -35,6 +36,7 @@ struct DeckPullRequest: Codable, Identifiable, Sendable { let nodeId: String; le
 struct DeckRate: Codable, Sendable { let limit: Int?; let remaining: Int?; let used: Int?; let resetAt: String?; let resource: String?; let retryAfterSeconds: Int? }
 private struct StoredWidgetCredential: Codable, Sendable { let version: Int; let revision: String; let token: String }
 private struct WidgetCredential: Sendable { let token: String?; let revision: Data? }
+private struct WidgetCredentialReplacement: Codable, Sendable { let version: Int; let profileId: String; let scopeId: String; let deckIds: [String] }
 struct DeckSnapshot: Codable, Sendable {
     let version: Int; let deckId: String; let query: String; let counts: DeckCounts; let results: [DeckPullRequest]; var state: String; let lastSuccessfulAt: String?; var lastAttemptedAt: String; var rate: DeckRate?
 }
@@ -73,7 +75,7 @@ private struct WidgetStore {
         return true
     }
     func credential(_ deckId: String) -> WidgetCredential? {
-        guard defaults?.bool(forKey: transactionPrefix + deckId) != true else { return nil }
+        guard defaults?.bool(forKey: transactionPrefix + deckId) != true, !credentialReplacementBlocks(deckId) else { return nil }
         let result = credentialData(deckId)
         if result.status == errSecItemNotFound { return WidgetCredential(token: nil, revision: nil) }
         guard result.status == errSecSuccess, let data = result.data else { return nil }
@@ -81,10 +83,15 @@ private struct WidgetStore {
         return WidgetCredential(token: token, revision: data)
     }
     private func credentialMatches(deckId: String, revision: Data?) -> Bool {
-        guard defaults?.bool(forKey: transactionPrefix + deckId) != true else { return false }
+        guard defaults?.bool(forKey: transactionPrefix + deckId) != true, !credentialReplacementBlocks(deckId) else { return false }
         let current = credentialData(deckId)
         if current.status == errSecItemNotFound { return revision == nil }
         return current.status == errSecSuccess && current.data == revision
+    }
+    private func credentialReplacementBlocks(_ deckId: String) -> Bool {
+        guard let data = defaults?.data(forKey: credentialReplacementKey) else { return false }
+        guard let transaction = try? JSONDecoder().decode(WidgetCredentialReplacement.self, from: data), transaction.version == 1 else { return true }
+        return transaction.deckIds.contains(deckId)
     }
     private func credentialData(_ deckId: String) -> (status: OSStatus, data: Data?) {
         var query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: credentialService,

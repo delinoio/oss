@@ -16,6 +16,7 @@ private let widgetAccessGroupKey = "DevHudWidgetKeychainAccessGroup"
 private let widgetConfigurationPrefix = "widget.configuration."
 private let widgetSnapshotPrefix = "widget.snapshot."
 private let widgetTransactionPrefix = "widget.transaction."
+private let widgetCredentialReplacementKey = "widget.credential-replacement.v1"
 private let secureStoreLogger = Logger(subsystem: "io.delino.devhud", category: "secure-store")
 
 private struct SecureSetting: Decodable {
@@ -46,6 +47,17 @@ private struct WidgetDeckConfiguration: Codable {
 
 private struct WidgetRepository: Codable { let owner: String; let name: String }
 private struct WidgetCredential: Codable { let version: Int; let revision: String; let token: String }
+private struct WidgetCredentialReplacement: Codable {
+    let version: Int
+    let profileId: String
+    let scopeId: String
+    let deckIds: [String]
+}
+private enum WidgetCredentialReplacementStart {
+    case none
+    case started(WidgetCredentialReplacement)
+    case failure
+}
 
 private struct WidgetDeckCounts: Codable { let total: Int; let open: Int; let draft: Int; let merged: Int; let closed: Int; let bounded: Bool }
 private struct WidgetPullRequest: Codable { let nodeId: String; let number: Int; let title: String; let repository: String; let state: String; let draft: Bool }
@@ -354,6 +366,7 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
         guard let setting = args.setting, let value = args.value, let data = value.data(using: .utf8) else { throw NativeError.invalidArgument }
         var createdMarker: SecureSetting?
         var previousGitHubPatData: Data?
+        var widgetCredentialReplacement: WidgetCredentialReplacement?
         if setting.kind == "github-pat" {
             guard let scopeId = setting.scopeId, let markerData = "1".data(using: .utf8) else { throw NativeError.invalidArgument }
             let (previousStatus, previousData) = readDataMigratingLegacy(setting)
@@ -375,25 +388,38 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
                 }
                 createdMarker = marker
             }
+            switch beginWidgetCredentialReplacement(profileId: setting.profileId, scopeId: scopeId) {
+            case .none: break
+            case .started(let transaction): widgetCredentialReplacement = transaction
+            case .failure:
+                rollbackCreatedGitHubPatScope(createdMarker)
+                rejectStorageFailure(invoke)
+                return
+            }
         }
         guard storeData(data, setting: setting, accessGroupKey: sharedAccessGroupKey) == errSecSuccess else {
+            _ = cancelWidgetCredentialReplacement(widgetCredentialReplacement)
             rollbackCreatedGitHubPatScope(createdMarker)
             rejectStorageFailure(invoke)
             return
         }
         let legacyDeletion = deleteData(setting, accessGroupKey: legacyAccessGroupKey)
         guard legacyDeletion == errSecSuccess || legacyDeletion == errSecItemNotFound else {
-            if setting.kind != "github-pat" || rollbackGitHubPatWrite(setting, previousData: previousGitHubPatData) {
+            if setting.kind != "github-pat" {
+                rollbackCreatedGitHubPatScope(createdMarker)
+            } else if rollbackGitHubPatWrite(setting, previousData: previousGitHubPatData) {
+                _ = cancelWidgetCredentialReplacement(widgetCredentialReplacement)
                 rollbackCreatedGitHubPatScope(createdMarker)
             }
             rejectStorageFailure(invoke)
             return
         }
         if setting.kind == "github-pat" {
-            guard let scopeId = setting.scopeId,
-                  replaceWidgetCredentials(profileId: setting.profileId, scopeId: scopeId, data: data) else {
-                _ = rollbackGitHubPatWrite(setting, previousData: previousGitHubPatData)
-                rollbackCreatedGitHubPatScope(createdMarker)
+            guard replaceWidgetCredentials(widgetCredentialReplacement, data: data) else {
+                if rollbackGitHubPatWrite(setting, previousData: previousGitHubPatData) {
+                    _ = replaceWidgetCredentials(widgetCredentialReplacement, data: previousGitHubPatData)
+                    rollbackCreatedGitHubPatScope(createdMarker)
+                }
                 rejectStorageFailure(invoke)
                 return
             }
@@ -596,41 +622,74 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
         return (status, result as? Data)
     }
 
-    private func replaceWidgetCredentials(profileId: String, scopeId: String, data: Data) -> Bool {
-        guard let defaults = UserDefaults(suiteName: appGroup) else { return false }
+    private func beginWidgetCredentialReplacement(profileId: String, scopeId: String) -> WidgetCredentialReplacementStart {
+        guard let defaults = UserDefaults(suiteName: appGroup), reconcileWidgetCredentialReplacement(defaults) else { return .failure }
         let deckIds = defaults.dictionaryRepresentation().compactMap { key, value -> String? in
             guard key.hasPrefix(widgetConfigurationPrefix), let encoded = value as? Data,
                   let configuration = try? JSONDecoder().decode(WidgetDeckConfiguration.self, from: encoded),
                   configuration.profileId == profileId, configuration.scopeId == scopeId else { return nil }
             return String(key.dropFirst(widgetConfigurationPrefix.count))
+        }.sorted()
+        if deckIds.isEmpty { return .none }
+        let transaction = WidgetCredentialReplacement(version: 1, profileId: profileId, scopeId: scopeId, deckIds: deckIds)
+        guard let encoded = try? JSONEncoder().encode(transaction) else { return .failure }
+        defaults.set(encoded, forKey: widgetCredentialReplacementKey)
+        guard defaults.synchronize() else {
+            defaults.removeObject(forKey: widgetCredentialReplacementKey)
+            return .failure
         }
-        guard let replacement = encodeWidgetCredential(data) else { return false }
-        var previous: [(deckId: String, data: Data?)] = []
-        for deckId in deckIds {
-            let (status, stored) = readWidgetCredential(deckId)
-            guard status == errSecSuccess || status == errSecItemNotFound else { return false }
-            previous.append((deckId, stored))
+        return .started(transaction)
+    }
+
+    private func replaceWidgetCredentials(_ transaction: WidgetCredentialReplacement?, data: Data?) -> Bool {
+        guard let transaction else { return true }
+        guard let defaults = UserDefaults(suiteName: appGroup),
+              let transactionData = try? JSONEncoder().encode(transaction) else { return false }
+        let replacement: Data?
+        if let data {
+            guard let encoded = encodeWidgetCredential(data) else { return false }
+            replacement = encoded
+        } else {
+            replacement = nil
         }
-        var updated: [(deckId: String, data: Data?)] = []
-        for item in previous {
-            if storeWidgetCredential(replacement, deckId: item.deckId) == errSecSuccess {
-                updated.append(item)
-                continue
-            }
-            for rollbackItem in updated {
-                let rollbackSucceeded: Bool
-                if let stored = rollbackItem.data {
-                    rollbackSucceeded = storeWidgetCredential(stored, deckId: rollbackItem.deckId) == errSecSuccess
-                } else {
-                    rollbackSucceeded = removeWidgetCredential(rollbackItem.deckId)
-                }
-                if !rollbackSucceeded {
-                    secureStoreLogger.error("event=widget_credential_write_rollback_failed")
-                }
-            }
+        for deckId in transaction.deckIds {
+            guard let configurationData = defaults.data(forKey: widgetConfigurationPrefix + deckId),
+                  let configuration = try? JSONDecoder().decode(WidgetDeckConfiguration.self, from: configurationData),
+                  configuration.profileId == transaction.profileId, configuration.scopeId == transaction.scopeId else { continue }
+            let succeeded = replacement.map { storeWidgetCredential($0, deckId: deckId) == errSecSuccess } ?? removeWidgetCredential(deckId)
+            if !succeeded { return false }
+        }
+        defaults.removeObject(forKey: widgetCredentialReplacementKey)
+        guard defaults.synchronize() else {
+            defaults.set(transactionData, forKey: widgetCredentialReplacementKey)
+            _ = defaults.synchronize()
             return false
         }
         return true
+    }
+
+    private func cancelWidgetCredentialReplacement(_ transaction: WidgetCredentialReplacement?) -> Bool {
+        guard let transaction else { return true }
+        guard let defaults = UserDefaults(suiteName: appGroup),
+              let transactionData = try? JSONEncoder().encode(transaction) else { return false }
+        defaults.removeObject(forKey: widgetCredentialReplacementKey)
+        guard defaults.synchronize() else {
+            defaults.set(transactionData, forKey: widgetCredentialReplacementKey)
+            _ = defaults.synchronize()
+            return false
+        }
+        return true
+    }
+
+    private func reconcileWidgetCredentialReplacement(_ defaults: UserDefaults) -> Bool {
+        guard let encoded = defaults.data(forKey: widgetCredentialReplacementKey) else { return true }
+        guard let transaction = try? JSONDecoder().decode(WidgetCredentialReplacement.self, from: encoded),
+              transaction.version == 1 else { return false }
+        let setting = SecureSetting(kind: "github-pat", profileId: transaction.profileId, scopeId: transaction.scopeId)
+        let (status, data) = readDataMigratingLegacy(setting)
+        if status == errSecItemNotFound { return replaceWidgetCredentials(transaction, data: nil) }
+        guard status == errSecSuccess, let data else { return false }
+        return replaceWidgetCredentials(transaction, data: data)
     }
 
     private func removeWidgetCredential(_ deckId: String) -> Bool {
@@ -671,9 +730,11 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
 
     private func reconcileWidgetCredentials() -> Bool {
         guard let defaults = UserDefaults(suiteName: appGroup) else { return false }
+        let replacementPending = defaults.data(forKey: widgetCredentialReplacementKey) != nil
+        guard reconcileWidgetCredentialReplacement(defaults) else { return false }
         let keys = defaults.dictionaryRepresentation().keys
         let pendingDeckIds = Set(keys.filter { $0.hasPrefix(widgetTransactionPrefix) }.map { String($0.dropFirst(widgetTransactionPrefix.count)) })
-        var changed = false
+        var changed = replacementPending
         for deckId in pendingDeckIds {
             guard removeWidgetCredential(deckId) else { return false }
             defaults.removeObject(forKey: widgetTransactionPrefix + deckId)
@@ -820,6 +881,7 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
         for key in keys where key.hasPrefix(widgetTransactionPrefix) {
             defaults.removeObject(forKey: key)
         }
+        defaults.removeObject(forKey: widgetCredentialReplacementKey)
         guard defaults.synchronize() else { return false }
         guard removeAllWidgetCredentials() else { return false }
         WidgetCenter.shared.reloadAllTimelines()
