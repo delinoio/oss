@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use hmac::{Hmac, Mac};
 use reqwest::header::{
@@ -12,6 +14,9 @@ use zeroize::Zeroizing;
 use crate::{capture::CaptureService, secure_store};
 
 type HmacSha256 = Hmac<Sha256>;
+
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -98,7 +103,7 @@ pub(crate) async fn put_official(
         return Err("invalid-argument".to_string());
     }
     let url = https_url(&upload.signed_put_url, true)?;
-    let response = direct_client()?
+    let response = direct_client("official")?
         .put(url)
         .header(CONTENT_TYPE, upload.required_headers.content_type)
         .header(CONTENT_LENGTH, upload.required_headers.content_length)
@@ -109,16 +114,22 @@ pub(crate) async fn put_official(
         .body(bytes)
         .send()
         .await
-        .map_err(|_| "platform-failure".to_string())?;
+        .map_err(|error| transport_failure("official", "put", &error))?;
     if !response.status().is_success() {
-        return Err("platform-failure".to_string());
+        return Err(upload_failure(
+            "official",
+            "put",
+            "http-status",
+            Some(response.status().as_u16()),
+        ));
     }
+    let response_status = response.status().as_u16();
     let observed_etag = response
         .headers()
         .get(ETAG)
         .and_then(|value| value.to_str().ok())
         .filter(|value| !value.is_empty())
-        .ok_or_else(|| "platform-failure".to_string())?
+        .ok_or_else(|| upload_failure("official", "put", "missing-etag", Some(response_status)))?
         .to_string();
     Ok(UploadResult {
         observed_etag,
@@ -140,15 +151,12 @@ pub(crate) async fn put_r2(
         &request.expected_sha256,
     )?;
     let credentials = secure_store::r2_credentials(&request.profile.profile_ref)?;
-    let key = [
-        request.profile.prefix.as_str(),
-        &request.draft_id.to_string(),
-        &format!("{}.png", request.image_id),
-    ]
-    .into_iter()
-    .filter(|part| !part.is_empty())
-    .collect::<Vec<_>>()
-    .join("/");
+    let key = r2_object_key(
+        &request.profile.prefix,
+        request.draft_id,
+        request.expected_revision,
+        request.image_id,
+    );
     let mut upload_url = https_url(&request.profile.endpoint, false)?;
     {
         let mut segments = upload_url
@@ -169,16 +177,21 @@ pub(crate) async fn put_r2(
         &credentials.access_key_id,
         &credentials.secret_access_key,
     )?;
-    let client = direct_client()?;
+    let client = direct_client("r2")?;
     let response = client
         .put(upload_url)
         .headers(headers)
         .body(bytes.clone())
         .send()
         .await
-        .map_err(|_| "platform-failure".to_string())?;
+        .map_err(|error| transport_failure("r2", "put", &error))?;
     if !response.status().is_success() {
-        return Err("platform-failure".to_string());
+        return Err(upload_failure(
+            "r2",
+            "put",
+            "http-status",
+            Some(response.status().as_u16()),
+        ));
     }
     let observed_etag = response
         .headers()
@@ -196,22 +209,53 @@ pub(crate) async fn put_r2(
             segments.push(segment);
         }
     }
-    let verification = client
+    let mut verification = client
         .get(public_url.clone())
         .send()
         .await
-        .map_err(|_| "platform-failure".to_string())?;
+        .map_err(|error| transport_failure("r2", "verify", &error))?;
+    let verification_status = verification.status().as_u16();
     if !verification.status().is_success() {
-        return Err("platform-failure".to_string());
+        return Err(upload_failure(
+            "r2",
+            "verify",
+            "http-status",
+            Some(verification_status),
+        ));
     }
-    let verified = verification
-        .bytes()
-        .await
-        .map_err(|_| "platform-failure".to_string())?;
-    if verified.len() != request.expected_bytes
-        || hex(&Sha256::digest(&verified)) != request.expected_sha256
+    if verification
+        .content_length()
+        .is_some_and(|length| length > request.expected_bytes as u64)
     {
-        return Err("platform-failure".to_string());
+        return Err(upload_failure(
+            "r2",
+            "verify",
+            "content-length-too-large",
+            Some(verification_status),
+        ));
+    }
+    let mut verified = VerificationBody::new(request.expected_bytes);
+    while let Some(chunk) = verification
+        .chunk()
+        .await
+        .map_err(|error| transport_failure("r2", "verify-body", &error))?
+    {
+        if let Err(error_code) = verified.push(&chunk) {
+            return Err(upload_failure(
+                "r2",
+                "verify",
+                error_code,
+                Some(verification_status),
+            ));
+        }
+    }
+    if let Err(error_code) = verified.finish(&request.expected_sha256) {
+        return Err(upload_failure(
+            "r2",
+            "verify",
+            error_code,
+            Some(verification_status),
+        ));
     }
     Ok(UploadResult {
         observed_etag,
@@ -243,11 +287,98 @@ fn checked_asset(
     Ok(bytes)
 }
 
-fn direct_client() -> Result<reqwest::Client, String> {
+fn direct_client(provider: &'static str) -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
+        .connect_timeout(CONNECT_TIMEOUT)
+        .timeout(REQUEST_TIMEOUT)
         .build()
-        .map_err(|_| "platform-failure".to_string())
+        .map_err(|_| upload_failure(provider, "client", "client-build", None))
+}
+
+fn transport_failure(
+    provider: &'static str,
+    stage: &'static str,
+    error: &reqwest::Error,
+) -> String {
+    let error_code = if error.is_timeout() {
+        "timeout"
+    } else if error.is_connect() {
+        "connect"
+    } else if error.is_body() {
+        "body"
+    } else {
+        "transport"
+    };
+    upload_failure(provider, stage, error_code, None)
+}
+
+fn upload_failure(
+    provider: &'static str,
+    stage: &'static str,
+    error_code: &'static str,
+    status: Option<u16>,
+) -> String {
+    tracing::error!(
+        event = "realqa_upload_failed",
+        action = "capture-upload",
+        provider,
+        stage,
+        status = status.unwrap_or(0),
+        error_code
+    );
+    "platform-failure".to_string()
+}
+
+fn r2_object_key(prefix: &str, draft_id: Uuid, revision: u64, image_id: Uuid) -> String {
+    [
+        prefix,
+        &draft_id.to_string(),
+        &revision.to_string(),
+        &format!("{image_id}.png"),
+    ]
+    .into_iter()
+    .filter(|part| !part.is_empty())
+    .collect::<Vec<_>>()
+    .join("/")
+}
+
+struct VerificationBody {
+    expected_bytes: usize,
+    received_bytes: usize,
+    digest: Sha256,
+}
+
+impl VerificationBody {
+    fn new(expected_bytes: usize) -> Self {
+        Self {
+            expected_bytes,
+            received_bytes: 0,
+            digest: Sha256::new(),
+        }
+    }
+
+    fn push(&mut self, bytes: &[u8]) -> Result<(), &'static str> {
+        self.received_bytes = self
+            .received_bytes
+            .checked_add(bytes.len())
+            .ok_or("response-too-large")?;
+        if self.received_bytes > self.expected_bytes {
+            return Err("response-too-large");
+        }
+        self.digest.update(bytes);
+        Ok(())
+    }
+
+    fn finish(self, expected_sha256: &str) -> Result<(), &'static str> {
+        if self.received_bytes != self.expected_bytes {
+            return Err("size-mismatch");
+        }
+        if hex(&self.digest.finalize()) != expected_sha256 {
+            return Err("checksum-mismatch");
+        }
+        Ok(())
+    }
 }
 
 fn validate_profile(profile: &R2Profile) -> Result<(), String> {
@@ -406,9 +537,14 @@ fn hex(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use reqwest::header::{AUTHORIZATION, CONTENT_LENGTH, CONTENT_TYPE};
+    use sha2::{Digest, Sha256};
     use url::Url;
+    use uuid::Uuid;
 
-    use super::{R2Profile, https_url, signed_headers, timestamp_from_unix, validate_profile};
+    use super::{
+        R2Profile, VerificationBody, hex, https_url, r2_object_key, signed_headers,
+        timestamp_from_unix, validate_profile,
+    };
 
     fn profile() -> R2Profile {
         R2Profile {
@@ -470,5 +606,30 @@ mod tests {
             timestamp_from_unix(86_400),
             Ok("19700102T000000Z".to_string())
         );
+    }
+
+    #[test]
+    fn byo_object_key_is_immutable_per_flattened_revision() {
+        let draft_id = Uuid::parse_str("018f47a2-7b3c-7def-8abc-1234567890ac").unwrap();
+        let image_id = Uuid::parse_str("018f47a2-7b3c-7def-8abc-1234567890ad").unwrap();
+        assert_eq!(
+            r2_object_key("team/realqa", draft_id, 7, image_id),
+            format!("team/realqa/{draft_id}/7/{image_id}.png")
+        );
+        assert_ne!(
+            r2_object_key("team/realqa", draft_id, 7, image_id),
+            r2_object_key("team/realqa", draft_id, 8, image_id)
+        );
+    }
+
+    #[test]
+    fn public_verification_hashes_incrementally_and_rejects_oversize_bodies() {
+        let mut exact = VerificationBody::new(6);
+        exact.push(b"abc").unwrap();
+        exact.push(b"def").unwrap();
+        assert_eq!(exact.finish(&hex(&Sha256::digest(b"abcdef"))), Ok(()));
+
+        let mut oversized = VerificationBody::new(5);
+        assert_eq!(oversized.push(b"abcdef"), Err("response-too-large"));
     }
 }
