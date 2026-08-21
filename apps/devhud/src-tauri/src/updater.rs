@@ -58,6 +58,10 @@ pub const ROOT_PRODUCTION_READY: bool = false;
 const HEALTH_FILE_PREFIX: &str = "devhud-update-health-v1-";
 const HEALTH_ARGUMENT: &str = "--devhud-update-health-v1=";
 const HEALTH_TOKEN_ARGUMENT: &str = "--devhud-update-health-token-v1=";
+#[cfg(any(test, target_os = "linux"))]
+const PKEXEC_AUTHORIZATION_DISMISSED_EXIT_CODE: i32 = 126;
+#[cfg(any(test, target_os = "linux"))]
+const PKEXEC_AUTHORIZATION_UNAVAILABLE_EXIT_CODE: i32 = 127;
 #[cfg(any(test, target_os = "windows"))]
 const WINDOWS_INSTALLER_REBOOT_REQUIRED_EXIT_CODE: i32 = 3010;
 
@@ -621,7 +625,7 @@ impl UpdaterTransport {
         package_kind: PackageKind,
         canceled: &AtomicBool,
     ) -> Result<VerifiedArtifact, UpdaterError> {
-        cancelable_download(canceled, async {
+        cancelable_download(canceled, DOWNLOAD_TIMEOUT, async {
             let mut url = validate_artifact_url(
                 &candidate.payload.artifact.url,
                 &candidate.payload.version,
@@ -671,10 +675,13 @@ async fn wait_for_cancellation(canceled: &AtomicBool) {
 
 async fn cancelable_download<T>(
     canceled: &AtomicBool,
+    timeout: Duration,
     download: impl Future<Output = Result<T, UpdaterError>>,
 ) -> Result<T, UpdaterError> {
     tokio::select! {
-        result = download => result,
+        result = tokio::time::timeout(timeout, download) => result.unwrap_or_else(|_| Err(
+            UpdaterError::new(DiagnosticCode::DownloadFailed, UpdatePhase::Download),
+        )),
         () = wait_for_cancellation(canceled) => Err(UpdaterError::new(
             DiagnosticCode::Canceled,
             UpdatePhase::Download,
@@ -972,17 +979,21 @@ impl<'a> PlatformInstaller<'a> {
                     .arg(package.path())
                     .status()
                     .map_err(|_| DiagnosticCode::InstallationFailed)?;
-                if classify_debian_installer_exit(status.success())
-                    == DebianInstallerExit::CommitUncertain
-                {
-                    // dpkg can return failure after unpacking replaced files.
-                    // Keep only the pre-install executable path for an explicit
-                    // restart recovery instead of claiming the old install was
-                    // preserved or attempting the package installation again.
-                    return Ok(RestartDisposition::RestartRequired {
-                        executable,
-                        diagnostic: DiagnosticCode::InstallationFailed,
-                    });
+                match classify_debian_installer_exit(status.success(), status.code()) {
+                    DebianInstallerExit::AuthorizationDenied => {
+                        return Err(DiagnosticCode::InstallationFailed);
+                    }
+                    DebianInstallerExit::CommitUncertain => {
+                        // dpkg can return failure after unpacking replaced files.
+                        // Keep only the pre-install executable path for an explicit
+                        // restart recovery instead of claiming the old install was
+                        // preserved or attempting the package installation again.
+                        return Ok(RestartDisposition::RestartRequired {
+                            executable,
+                            diagnostic: DiagnosticCode::InstallationFailed,
+                        });
+                    }
+                    DebianInstallerExit::Installed => {}
                 }
                 Ok(match self.restart(&executable) {
                     Ok(()) => RestartDisposition::Relaunched,
@@ -1239,6 +1250,16 @@ fn replace_macos_bundle_transactionally_with_operations(
                 diagnostic: DiagnosticCode::InstallationFailed,
             });
         }
+        if sync_parent(parent).is_err() {
+            tracing::error!(
+                event = "updater_install_rollback_sync_failed",
+                package = "macos-app"
+            );
+            return Ok(RestartDisposition::RestartRequired {
+                executable: restart_executable.to_path_buf(),
+                diagnostic: DiagnosticCode::InstallationFailed,
+            });
+        }
         return Err(DiagnosticCode::InstallationFailed);
     }
     if let Err(error) = relaunch() {
@@ -1395,13 +1416,19 @@ impl Installer for PlatformInstaller<'_> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum DebianInstallerExit {
     Installed,
+    AuthorizationDenied,
     CommitUncertain,
 }
 
 #[cfg(any(test, target_os = "linux"))]
-fn classify_debian_installer_exit(succeeded: bool) -> DebianInstallerExit {
+fn classify_debian_installer_exit(succeeded: bool, exit_code: Option<i32>) -> DebianInstallerExit {
     if succeeded {
         DebianInstallerExit::Installed
+    } else if matches!(
+        exit_code,
+        Some(PKEXEC_AUTHORIZATION_DISMISSED_EXIT_CODE | PKEXEC_AUTHORIZATION_UNAVAILABLE_EXIT_CODE)
+    ) {
+        DebianInstallerExit::AuthorizationDenied
     } else {
         DebianInstallerExit::CommitUncertain
     }
@@ -2127,13 +2154,25 @@ mod tests {
     }
 
     #[test]
-    fn debian_installer_failures_preserve_potential_commit_recovery() {
+    fn debian_installer_exit_codes_distinguish_authorization_from_dpkg_failure() {
         assert_eq!(
-            classify_debian_installer_exit(true),
+            classify_debian_installer_exit(true, Some(0)),
             DebianInstallerExit::Installed
         );
         assert_eq!(
-            classify_debian_installer_exit(false),
+            classify_debian_installer_exit(false, Some(PKEXEC_AUTHORIZATION_DISMISSED_EXIT_CODE)),
+            DebianInstallerExit::AuthorizationDenied
+        );
+        assert_eq!(
+            classify_debian_installer_exit(false, Some(PKEXEC_AUTHORIZATION_UNAVAILABLE_EXIT_CODE)),
+            DebianInstallerExit::AuthorizationDenied
+        );
+        assert_eq!(
+            classify_debian_installer_exit(false, Some(1)),
+            DebianInstallerExit::CommitUncertain
+        );
+        assert_eq!(
+            classify_debian_installer_exit(false, None),
             DebianInstallerExit::CommitUncertain
         );
     }
@@ -2266,6 +2305,7 @@ mod tests {
                 Duration::from_secs(1),
                 cancelable_download(
                     &canceled,
+                    Duration::from_secs(1),
                     std::future::pending::<Result<(), UpdaterError>>(),
                 ),
             )
@@ -2275,6 +2315,27 @@ mod tests {
         canceler.join().unwrap();
 
         assert_eq!(result.unwrap_err().code, DiagnosticCode::Canceled);
+    }
+
+    #[test]
+    fn total_deadline_interrupts_a_stalled_download() {
+        let canceled = AtomicBool::new(false);
+        let result = tauri::async_runtime::block_on(async {
+            tokio::time::timeout(
+                Duration::from_secs(1),
+                cancelable_download(
+                    &canceled,
+                    Duration::from_millis(20),
+                    std::future::pending::<Result<(), UpdaterError>>(),
+                ),
+            )
+            .await
+            .expect("the updater deadline must bound the complete download")
+        });
+
+        let error = result.unwrap_err();
+        assert_eq!(error.code, DiagnosticCode::DownloadFailed);
+        assert_eq!(error.phase, UpdatePhase::Download);
     }
 
     #[test]
@@ -2551,7 +2612,107 @@ mod tests {
     }
 
     #[test]
-    fn failed_post_swap_macos_rollback_retains_restart_only_recovery() {
+    fn durable_post_swap_macos_rollback_preserves_the_installed_bundle() {
+        let directory = tempfile::tempdir().unwrap();
+        let destination = directory.path().join("DevHUD.app");
+        let replacement = directory.path().join("Candidate.app");
+        let restart_executable = destination.join("Contents/MacOS/devhud");
+        fs::create_dir(&destination).unwrap();
+        fs::create_dir(&replacement).unwrap();
+        fs::write(destination.join("version"), b"installed-version").unwrap();
+        fs::write(replacement.join("version"), b"candidate-version").unwrap();
+        let sync_attempts = AtomicUsize::new(0);
+        let exchange_attempts = AtomicUsize::new(0);
+
+        let result = replace_macos_bundle_transactionally_with_operations(
+            &destination,
+            &replacement,
+            &restart_executable,
+            |_| match sync_attempts.fetch_add(1, Ordering::Relaxed) {
+                0 | 2 => Ok(()),
+                1 => Err(DiagnosticCode::InstallationFailed),
+                attempt => panic!("unexpected sync attempt {attempt}"),
+            },
+            |installed, candidate| {
+                exchange_attempts.fetch_add(1, Ordering::Relaxed);
+                let installed_version = fs::read(installed.join("version")).unwrap();
+                let candidate_version = fs::read(candidate.join("version")).unwrap();
+                fs::write(installed.join("version"), candidate_version).unwrap();
+                fs::write(candidate.join("version"), installed_version).unwrap();
+                Ok(())
+            },
+            || panic!("relaunch must not run after the post-swap sync fails"),
+        );
+
+        assert_eq!(result, Err(DiagnosticCode::InstallationFailed));
+        assert_eq!(sync_attempts.load(Ordering::Relaxed), 3);
+        assert_eq!(exchange_attempts.load(Ordering::Relaxed), 2);
+        assert_eq!(
+            fs::read(destination.join("version")).unwrap(),
+            b"installed-version"
+        );
+        assert_eq!(
+            fs::read(replacement.join("version")).unwrap(),
+            b"candidate-version"
+        );
+    }
+
+    #[test]
+    fn failed_post_swap_macos_rollback_sync_retains_restart_only_recovery() {
+        let directory = tempfile::tempdir().unwrap();
+        let destination = directory.path().join("DevHUD.app");
+        let replacement = directory.path().join("Candidate.app");
+        let restart_executable = destination.join("Contents/MacOS/devhud");
+        fs::create_dir(&destination).unwrap();
+        fs::create_dir(&replacement).unwrap();
+        fs::write(destination.join("version"), b"installed-version").unwrap();
+        fs::write(replacement.join("version"), b"candidate-version").unwrap();
+        let sync_attempts = AtomicUsize::new(0);
+        let exchange_attempts = AtomicUsize::new(0);
+
+        let result = replace_macos_bundle_transactionally_with_operations(
+            &destination,
+            &replacement,
+            &restart_executable,
+            |_| {
+                if sync_attempts.fetch_add(1, Ordering::Relaxed) == 0 {
+                    Ok(())
+                } else {
+                    Err(DiagnosticCode::InstallationFailed)
+                }
+            },
+            |installed, candidate| {
+                exchange_attempts.fetch_add(1, Ordering::Relaxed);
+                let installed_version = fs::read(installed.join("version")).unwrap();
+                let candidate_version = fs::read(candidate.join("version")).unwrap();
+                fs::write(installed.join("version"), candidate_version).unwrap();
+                fs::write(candidate.join("version"), installed_version).unwrap();
+                Ok(())
+            },
+            || panic!("relaunch must not run after the post-swap sync fails"),
+        );
+
+        assert_eq!(
+            result,
+            Ok(RestartDisposition::RestartRequired {
+                executable: restart_executable,
+                diagnostic: DiagnosticCode::InstallationFailed,
+            })
+        );
+        assert_eq!(sync_attempts.load(Ordering::Relaxed), 3);
+        assert_eq!(exchange_attempts.load(Ordering::Relaxed), 2);
+        assert_eq!(
+            fs::read(destination.join("version")).unwrap(),
+            b"installed-version"
+        );
+        assert_eq!(
+            fs::read(replacement.join("version")).unwrap(),
+            b"candidate-version"
+        );
+    }
+
+    #[test]
+    fn failed_post_swap_macos_exchange_rollback_retains_restart_only_recovery() {
         let directory = tempfile::tempdir().unwrap();
         let destination = directory.path().join("DevHUD.app");
         let replacement = directory.path().join("Candidate.app");
