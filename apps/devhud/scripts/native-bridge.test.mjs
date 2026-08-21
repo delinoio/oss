@@ -133,7 +133,7 @@ test("desktop updater checks are generation-guarded, asynchronous, and safely di
   assert.match(nativeBridgeHost, /window\.is_focused\(\)/u);
 });
 
-test("desktop updater publishes restarting before awaiting the installer worker", () => {
+test("desktop updater publishes restarting before the worker and its terminal status afterward", () => {
   const restartOperation = nativeBridgeHost.slice(
     nativeBridgeHost.indexOf('if operation == "updates.approve-restart"'),
     nativeBridgeHost.indexOf('if operation.starts_with("capture.")'),
@@ -141,10 +141,18 @@ test("desktop updater publishes restarting before awaiting the installer worker"
   const transition = restartOperation.indexOf("begin_restart()");
   const publication = restartOperation.indexOf("emit_update_status(&app, &restarting)");
   const worker = restartOperation.indexOf("spawn_blocking");
+  const completion = restartOperation.indexOf("finish_restart(attempt)");
+  const terminalPublication = restartOperation.indexOf("emit_update_status(&app, &response)");
+  const exit = restartOperation.indexOf("app.exit(0)");
+  const response = restartOperation.indexOf("return Ok(response)");
 
   assert(transition >= 0);
   assert(publication > transition);
   assert(worker > publication);
+  assert(completion > worker);
+  assert(terminalPublication > completion);
+  assert(exit > terminalPublication);
+  assert(response > terminalPublication);
 });
 
 test("desktop updater replacement processes retain single-instance ownership", () => {

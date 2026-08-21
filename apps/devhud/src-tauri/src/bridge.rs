@@ -1468,6 +1468,7 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
             let response = json!({ "kind": "desktop-update-status", "status": updater.snapshot() });
             (restart, response)
         };
+        emit_update_status(&app, &response);
         if matches!(
             restart,
             Some(Ok(crate::updater::RestartDisposition::Relaunched))
