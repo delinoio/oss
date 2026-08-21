@@ -989,9 +989,13 @@ fn main() {
             } else if let Err(reason) = native_messaging::register_packaged_host() {
                 warn!(event = "native_messaging_registration_unavailable", %reason);
             }
-            if let Err(reason) = native_messaging::start() {
-                warn!(event = "native_messaging_listener_unavailable", %reason);
-            }
+            let native_messaging_listener_ready = match native_messaging::start() {
+                Ok(()) => true,
+                Err(reason) => {
+                    warn!(event = "native_messaging_listener_unavailable", %reason);
+                    false
+                }
+            };
             #[cfg(any(target_os = "linux", all(debug_assertions, target_os = "windows")))]
             app.deep_link().register_all()?;
             if let Some(urls) = app.deep_link().get_current()? {
@@ -1078,11 +1082,14 @@ fn main() {
             #[cfg(target_os = "macos")]
             drop(webview);
 
-            if let Some(probe) = &update_health_probe
-                && !probe.acknowledge()
-            {
-                error!(event = "updater_restart_health_ack_failed");
-                app.handle().exit(79);
+            if let Some(probe) = &update_health_probe {
+                if !native_messaging_listener_ready {
+                    error!(event = "updater_restart_native_messaging_unavailable");
+                    app.handle().exit(79);
+                } else if !probe.acknowledge() {
+                    error!(event = "updater_restart_health_ack_failed");
+                    app.handle().exit(79);
+                }
             }
 
             Ok(())

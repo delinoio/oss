@@ -9,6 +9,8 @@ import (
 	"testing/fstest"
 )
 
+const validManifest = `{"schemaVersion":1,"signedPayload":"e30=","manifestSignature":"c2lnbmF0dXJl"}`
+
 type countingFS struct {
 	inner     fs.FS
 	bytesRead int
@@ -34,7 +36,7 @@ func (file *countingFile) Read(buffer []byte) (int, error) {
 }
 
 func TestServesOnlyExactStableTargetsAndInstalledPackage(t *testing.T) {
-	manifest := []byte(`{"schemaVersion":1}`)
+	manifest := []byte(validManifest)
 	handler := NewHandler(fstest.MapFS{"stable/linux/x86_64/linux-appimage.json": {Data: manifest}})
 	request := httptest.NewRequest(http.MethodGet, "/updates/stable/linux/x86_64.json", nil)
 	request.SetPathValue("channel", "stable")
@@ -56,7 +58,7 @@ func TestServesOnlyExactStableTargetsAndInstalledPackage(t *testing.T) {
 }
 
 func TestHeadHasMetadataWithoutManifestBody(t *testing.T) {
-	handler := NewHandler(fstest.MapFS{"stable/windows/aarch64/windows-msi.json": {Data: []byte(`{"schemaVersion":1}`)}})
+	handler := NewHandler(fstest.MapFS{"stable/windows/aarch64/windows-msi.json": {Data: []byte(validManifest)}})
 	request := httptest.NewRequest(http.MethodHead, "/updates/stable/windows/aarch64.json", nil)
 	request.SetPathValue("channel", "stable")
 	request.SetPathValue("platform", "windows")
@@ -66,6 +68,39 @@ func TestHeadHasMetadataWithoutManifestBody(t *testing.T) {
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusOK || response.Body.Len() != 0 || response.Header().Get("Content-Length") == "" {
 		t.Fatalf("HEAD response = %d body=%q headers=%v", response.Code, response.Body.String(), response.Header())
+	}
+}
+
+func TestRejectsStructurallyInvalidStoredManifests(t *testing.T) {
+	for _, testCase := range []struct {
+		name     string
+		manifest string
+	}{
+		{"null", `null`},
+		{"empty object", `{}`},
+		{"wrong schema", `{"schemaVersion":2,"signedPayload":"e30=","manifestSignature":"c2lnbmF0dXJl"}`},
+		{"missing payload", `{"schemaVersion":1,"manifestSignature":"c2lnbmF0dXJl"}`},
+		{"empty payload", `{"schemaVersion":1,"signedPayload":"","manifestSignature":"c2lnbmF0dXJl"}`},
+		{"missing signature", `{"schemaVersion":1,"signedPayload":"e30="}`},
+		{"empty signature", `{"schemaVersion":1,"signedPayload":"e30=","manifestSignature":""}`},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			handler := NewHandler(fstest.MapFS{
+				"stable/linux/x86_64/linux-appimage.json": {Data: []byte(testCase.manifest)},
+			})
+			request := httptest.NewRequest(http.MethodGet, "/updates/stable/linux/x86_64.json", nil)
+			request.SetPathValue("channel", "stable")
+			request.SetPathValue("platform", "linux")
+			request.SetPathValue("artifact", "x86_64.json")
+			request.Header.Set("X-DevHud-Package", "linux-appimage")
+			response := httptest.NewRecorder()
+
+			handler.ServeHTTP(response, request)
+
+			if response.Code != http.StatusServiceUnavailable {
+				t.Fatalf("status = %d, want %d", response.Code, http.StatusServiceUnavailable)
+			}
+		})
 	}
 }
 

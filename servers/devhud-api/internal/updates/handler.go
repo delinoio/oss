@@ -28,6 +28,12 @@ type Handler struct {
 	manifests fs.FS
 }
 
+type manifestEnvelope struct {
+	SchemaVersion     uint32 `json:"schemaVersion"`
+	SignedPayload     string `json:"signedPayload"`
+	ManifestSignature string `json:"manifestSignature"`
+}
+
 func NewHandler(manifests fs.FS) *Handler {
 	return &Handler{manifests: manifests}
 }
@@ -74,7 +80,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		http.Error(response, "manifest unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	if len(manifest) == 0 || len(manifest) > maxManifestBytes || !json.Valid(manifest) {
+	if len(manifest) == 0 || len(manifest) > maxManifestBytes || !validManifestEnvelope(manifest) {
 		http.Error(response, "manifest unavailable", http.StatusServiceUnavailable)
 		return
 	}
@@ -83,6 +89,14 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 	if request.Method == http.MethodGet {
 		_, _ = response.Write(manifest)
 	}
+}
+
+func validManifestEnvelope(manifest []byte) bool {
+	var envelope manifestEnvelope
+	if err := json.Unmarshal(manifest, &envelope); err != nil {
+		return false
+	}
+	return envelope.SchemaVersion == 1 && envelope.SignedPayload != "" && envelope.ManifestSignature != ""
 }
 
 func targetSupported(platform, architecture string) bool {

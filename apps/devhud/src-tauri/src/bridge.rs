@@ -177,13 +177,29 @@ struct TauriRestartHandoff<R: tauri::Runtime>(tauri::AppHandle<R>);
 #[cfg(desktop)]
 impl<R: tauri::Runtime> crate::updater::RestartHandoff for TauriRestartHandoff<R> {
     fn release(&self) -> Result<(), crate::updater::DiagnosticCode> {
+        #[cfg(unix)]
+        if crate::native_messaging::stop().is_err() {
+            tracing::error!(event = "updater_native_messaging_release_failed");
+            let _ = crate::native_messaging::start();
+            return Err(crate::updater::DiagnosticCode::RestartFailed);
+        }
         crate::release_single_instance(&self.0);
         Ok(())
     }
 
     fn restore(&self) -> Result<(), crate::updater::DiagnosticCode> {
         crate::restore_single_instance(&self.0)
-            .map_err(|_| crate::updater::DiagnosticCode::RestartFailed)
+            .map_err(|_| crate::updater::DiagnosticCode::RestartFailed)?;
+        #[cfg(unix)]
+        crate::native_messaging::start().map_err(|_| {
+            tracing::error!(event = "updater_native_messaging_restore_failed");
+            crate::updater::DiagnosticCode::RestartFailed
+        })?;
+        Ok(())
+    }
+
+    fn terminate(&self) {
+        self.0.exit(0);
     }
 }
 
