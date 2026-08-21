@@ -51,7 +51,7 @@
         </receiver>
         <service
             android:name="io.delino.devhud.widget.DevHudWidgetRefreshService"
-            android:exported="false"
+            android:exported="true"
             android:permission="android.permission.BIND_JOB_SERVICE" />
         <activity
             android:name="io.delino.devhud.widget.DevHudWidgetConfigureActivity"

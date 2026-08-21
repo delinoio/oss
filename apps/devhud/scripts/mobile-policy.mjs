@@ -185,6 +185,16 @@ export function assertAndroidPermissions(androidManifest, androidDebugManifest) 
   assert((androidManifest.match(/<uses-permission/gu) ?? []).length === 2 && androidManifest.includes("android.permission.INTERNET") && androidManifest.includes("android.permission.POST_NOTIFICATIONS"), "release Android must grant only System WebView networking and notifications");
 }
 
+export function assertAndroidWidgetJobService({ androidManifest, androidPluginManifest }) {
+  for (const [source, manifest] of [["app override", androidManifest], ["plugin", androidPluginManifest]]) {
+    const declarations = (manifest.match(/<service\b[^>]*>/gu) ?? [])
+      .filter((declaration) => declaration.includes('android:name="io.delino.devhud.widget.DevHudWidgetRefreshService"'));
+    assert(declarations.length === 1, `Android ${source} manifest must declare exactly one widget refresh JobService`);
+    assert(declarations[0].includes('android:exported="true"'), `Android ${source} widget refresh JobService must be exported`);
+    assert(declarations[0].includes('android:permission="android.permission.BIND_JOB_SERVICE"'), `Android ${source} widget refresh JobService must require BIND_JOB_SERVICE`);
+  }
+}
+
 export function mobileCargoTreeDigest(cargoTree, workspaceRoot) {
   const normalizedCargoTree = cargoTree.replaceAll("\\", "/");
   const normalizedRoot = workspaceRoot.replaceAll("\\", "/");
@@ -287,6 +297,7 @@ export function assertMobileContracts({ platforms, tauri, ios, android, cargo, a
   assert(androidManifest.includes('android:host="auth" android:path="/callback"'), "Android auth callback filter changed");
   assert(androidManifest.includes('android:host="deck" android:pathPattern="/.*"'), "Android Deck widget deep-link filter is missing");
   assertAndroidBackupExclusions({ androidManifest, androidBackupRules, androidDataExtractionRules });
+  assertAndroidWidgetJobService({ androidManifest, androidPluginManifest });
   assertAndroidNativeBridge(androidNativeBridge);
   assert(androidChannelEnglish.includes("Deck changes") && androidChannelKorean.includes("Deck 변경사항"), "Android notification channel names must be bilingual");
   assert((androidPluginManifest.match(/<uses-permission/gu) ?? []).length === 1 && androidPluginManifest.includes("android.permission.POST_NOTIFICATIONS"), "Android native bridge permissions are not least-privileged");

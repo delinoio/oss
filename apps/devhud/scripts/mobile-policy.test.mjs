@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { assertAndroidArtifactEntries, assertAndroidBackupExclusions, assertAndroidNativeBridge, assertAndroidNativeLibrary, assertAndroidPermissions, assertIosNativeBridge, assertMobileCi, assertMobileContracts, assertMobileDependencyClosures, assertMobileDependencyResolution, assertMobileTargets, assertNativeWidgetPullRequestMetadata, mobileCargoTreeDigest } from "./mobile-policy.mjs";
+import { assertAndroidArtifactEntries, assertAndroidBackupExclusions, assertAndroidNativeBridge, assertAndroidNativeLibrary, assertAndroidPermissions, assertAndroidWidgetJobService, assertIosNativeBridge, assertMobileCi, assertMobileContracts, assertMobileDependencyClosures, assertMobileDependencyResolution, assertMobileTargets, assertNativeWidgetPullRequestMetadata, mobileCargoTreeDigest } from "./mobile-policy.mjs";
 
 const appRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const mobileTargets = JSON.parse(readFileSync(join(appRoot, "mobile-platforms.json"), "utf8")).targets;
@@ -36,6 +36,28 @@ test("mobile policy excludes private preferences and System WebView storage from
   assert.throws(() => assertAndroidBackupExclusions({ ...policies, androidBackupRules: policies.androidBackupRules.replace('path="app_webview/"', 'path="other/"') }), /full-backup WebView exclusion/u);
   assert.throws(() => assertAndroidBackupExclusions({ ...policies, androidDataExtractionRules: policies.androidDataExtractionRules.replace('path="app_webview/"', 'path="other/"') }), /cloud-backup WebView exclusion/u);
   assert.throws(() => assertAndroidBackupExclusions({ ...policies, androidDataExtractionRules: policies.androidDataExtractionRules.replace(/(<device-transfer>[\s\S]*?)path="app_webview\/"/u, '$1path="other/"') }), /device-transfer WebView exclusion/u);
+});
+
+test("mobile policy exports the permission-protected Android widget refresh JobService", () => {
+  const manifests = {
+    androidManifest: readFileSync(join(appRoot, "mobile/overrides/android/app/src/main/AndroidManifest.xml"), "utf8"),
+    androidPluginManifest: readFileSync(join(appRoot, "src-tauri/mobile/android/src/main/AndroidManifest.xml"), "utf8"),
+  };
+  assert.doesNotThrow(() => assertAndroidWidgetJobService(manifests));
+  for (const key of Object.keys(manifests)) {
+    const manifest = manifests[key];
+    const declaration = (manifest.match(/<service\b[^>]*>/gu) ?? [])
+      .find((candidate) => candidate.includes('android:name="io.delino.devhud.widget.DevHudWidgetRefreshService"'));
+    assert.ok(declaration);
+    assert.throws(
+      () => assertAndroidWidgetJobService({ ...manifests, [key]: manifest.replace(declaration, declaration.replace('android:exported="true"', 'android:exported="false"')) }),
+      /must be exported/u,
+    );
+    assert.throws(
+      () => assertAndroidWidgetJobService({ ...manifests, [key]: manifest.replace(declaration, declaration.replace("android.permission.BIND_JOB_SERVICE", "android.permission.BIND_NOT_JOB_SERVICE")) }),
+      /must require BIND_JOB_SERVICE/u,
+    );
+  }
 });
 
 test("mobile policy requires lifecycle-owned Android persistence and native platform safeguards", () => {
