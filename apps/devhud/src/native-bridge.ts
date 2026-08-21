@@ -181,7 +181,8 @@ export type NativeBridgeRequestV1 = NativeBridgeRequestV1Base
   | { readonly operation: "capture.editor.undo" | "capture.editor.redo" | "capture.flatten"; readonly draftId: string; readonly expectedRevision: number }
   | { readonly operation: "capture.upload-official"; readonly draftId: string; readonly expectedRevision: number; readonly imageId: string; readonly expectedBytes: number; readonly expectedSha256: string; readonly upload: OfficialCaptureUpload }
   | { readonly operation: "capture.upload-r2"; readonly draftId: string; readonly expectedRevision: number; readonly imageId: string; readonly expectedBytes: number; readonly expectedSha256: string; readonly profile: R2CaptureUploadProfile }
-  | { readonly operation: "capture.delete-draft" | "capture.confirm-issue-created"; readonly draftId: string };
+  | { readonly operation: "capture.delete-draft"; readonly draftId: string }
+  | { readonly operation: "capture.confirm-issue-created"; readonly draftId: string; readonly expectedRevision: number };
 
 export type NativeBridgeResponseV1 =
   | { readonly kind: "runtime"; readonly snapshot: RuntimeSnapshot }
@@ -267,6 +268,7 @@ function validCaptureRect(rect: CaptureRect) {
 
 export function validateCaptureRequest(request: Extract<NativeBridgeRequestV1, { readonly operation: `capture.${string}` }>) {
   if ("draftId" in request && !uuidPattern.test(request.draftId)) throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument);
+  if (request.operation === "capture.confirm-issue-created" && !("expectedRevision" in request)) throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument);
   if ("expectedRevision" in request && (!Number.isSafeInteger(request.expectedRevision) || request.expectedRevision < 0)) throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument);
   if (request.operation === "capture.start") {
     const actions: readonly ShortcutActionId[] = ["realqa.capture.display", "realqa.capture.active-window", "realqa.capture.all-displays", "realqa.capture.selection", "realqa.capture.toolbar"];

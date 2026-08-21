@@ -5,15 +5,15 @@ import type { Copy } from "./localization.ts";
 import { createGitHubProvider, GitHubErrorCode, GitHubProviderError, readGitHubCredential, type GitHubProvider, type GitHubRepositoryRef } from "./github-provider.ts";
 import type { CaptureDraft, NativeBridgeV1 } from "./native-bridge.ts";
 import { useIdentitySettings } from "./service-boundary.tsx";
-import { composeIssueBody, decodeSha256Hex, editableBrowserDiagnostics, parseEditableBrowserDiagnostics, stripFinalSubmissionMarker } from "./realqa-submission.ts";
-import { uploadOfficialImages, uploadR2Images } from "./realqa-upload.ts";
+import { composeIssueBody, decodeSha256Hex, editableBrowserDiagnostics, IssueBodyTooLargeError, parseEditableBrowserDiagnostics, stripFinalSubmissionMarker } from "./realqa-submission.ts";
+import { projectedOfficialImageUrls, projectedR2ImageUrls, uploadOfficialImages, uploadR2Images } from "./realqa-upload.ts";
 
 interface SubmissionModalProps {
   readonly draft: CaptureDraft;
   readonly bridge: NativeBridgeV1;
   readonly copy: Copy;
   readonly onClose: () => void;
-  readonly onConfirmed: () => Promise<void>;
+  readonly onConfirmed: (expectedRevision: number) => Promise<void>;
   readonly provider?: GitHubProvider;
 }
 
@@ -42,11 +42,15 @@ export function RealqaSubmissionModal({ draft, bridge, copy, onClose, onConfirme
   const [pendingUploadCleanupIds, setPendingUploadCleanupIds] = useState<readonly string[]>([]);
   const dialog = useRef<HTMLElement>(null);
   const titleInput = useRef<HTMLInputElement>(null);
+  const submittedRevision = useRef<number | null>(null);
   const selectedRepository = repositories.find((entry) => repositoryKeyFor(entry) === repositoryKey) ?? null;
   const selectedProfile = identity.settings.github.profiles.find((entry) => entry.id === profileRef) ?? null;
   const r2 = identity.settings.uploads.r2;
+  const nativeR2Profile = r2?.accountId && r2.publicBaseUrl
+    ? { profileRef: r2.profileRef, endpoint: r2.endpoint, accountId: r2.accountId, bucket: r2.bucket, publicBaseUrl: r2.publicBaseUrl, prefix: r2.prefix }
+    : null;
   const selectedImageCount = selectedImages.size;
-  const officialUploadsAvailable = identity.status === "authenticated";
+  const officialUploadsAvailable = identity.status === "authenticated" && identity.bootstrap !== null;
   const uploadCleanupPending = pendingUploadCleanupIds.length > 0;
 
   useEffect(() => { titleInput.current?.focus(); }, []);
@@ -96,17 +100,32 @@ export function RealqaSubmissionModal({ draft, bridge, copy, onClose, onConfirme
     if (busy || createdUrl || uploadCleanupPending || !selectedRepository || !selectedProfile || title.trim() === "") return;
     if (!repositories.some((entry) => repositoryKeyFor(entry) === repositoryKey && entry.profileRef === profileRef)) { setError(copy.issueRepositoryCredentialMismatch); return; }
     if (selectedImageCount > 0 && uploadProvider === "official" && !officialUploadsAvailable) { setError(copy.issueOfficialSignInRequired); return; }
-    if (selectedImageCount > 0 && uploadProvider === "r2" && (!r2 || !r2.accountId || !r2.publicBaseUrl)) { setError(copy.issueR2SetupRequired); return; }
+    if (selectedImageCount > 0 && uploadProvider === "r2" && nativeR2Profile === null) { setError(copy.issueR2SetupRequired); return; }
     let parsedDiagnostics = null;
     try { parsedDiagnostics = diagnostics === null ? null : parseEditableBrowserDiagnostics(diagnostics); }
     catch { setError(copy.issueDiagnosticsInvalid); return; }
+    const submissionRevision = draft.revision;
+    const selectedDraftImages = draft.images.filter((image) => selectedImages.has(image.id));
+    try {
+      const projectedImageUrls = selectedImageCount === 0
+        ? []
+        : uploadProvider === "official"
+          ? projectedOfficialImageUrls(identity.bootstrap!.publicAssetBaseUrl, selectedImageCount)
+          : projectedR2ImageUrls(nativeR2Profile!, draft.id, submissionRevision, selectedDraftImages.map((image) => image.id));
+      composeIssueBody({ userBody: body, diagnostics: parsedDiagnostics, imageUrls: projectedImageUrls, submissionId: draft.id, diagnosticsSummary: copy.issueBrowserDiagnostics });
+    } catch (reason) {
+      setError(reason instanceof IssueBodyTooLargeError ? copy.issueBodyTooLarge : copy.issueSubmissionFailed);
+      return;
+    }
+    submittedRevision.current = submissionRevision;
     setBusy(true); setError(null); setStatus(copy.issueSubmitting);
     const finalizedUploadIds: string[] = [];
     let githubAttempted = false;
     try {
+      const credential = await readGitHubCredential(bridge, selectedProfile, await identity.githubPatScopeId);
       let imageUrls: readonly string[] = [];
       if (selectedImageCount > 0) {
-        const flattenedResponse = await bridge.request({ operation: "capture.flatten", draftId: draft.id, expectedRevision: draft.revision });
+        const flattenedResponse = await bridge.request({ operation: "capture.flatten", draftId: draft.id, expectedRevision: submissionRevision });
         if (flattenedResponse.kind !== "capture-flattened") throw new Error("flatten-response");
         const flattened = draft.images.flatMap((image) => selectedImages.has(image.id) ? flattenedResponse.images.filter((item) => item.imageId === image.id) : []);
         if (flattened.length !== selectedImageCount) throw new Error("flatten-count");
@@ -131,7 +150,7 @@ export function RealqaSubmissionModal({ draft, bridge, copy, onClose, onConfirme
             },
             put: async (image, reservation) => {
             const uploaded = await bridge.request({
-              operation: "capture.upload-official", draftId: draft.id, expectedRevision: draft.revision, imageId: image.imageId, expectedBytes: image.bytes, expectedSha256: image.sha256,
+              operation: "capture.upload-official", draftId: draft.id, expectedRevision: submissionRevision, imageId: image.imageId, expectedBytes: image.bytes, expectedSha256: image.sha256,
               upload: reservation,
             });
             if (uploaded.kind !== "capture-uploaded" || uploaded.observedEtag === "") throw new Error("upload-response");
@@ -146,22 +165,20 @@ export function RealqaSubmissionModal({ draft, bridge, copy, onClose, onConfirme
           });
           imageUrls = uploaded.urls;
         } else {
-          const profile = r2!;
-          const nativeProfile = { profileRef: profile.profileRef, endpoint: profile.endpoint, accountId: profile.accountId!, bucket: profile.bucket, publicBaseUrl: profile.publicBaseUrl!, prefix: profile.prefix };
-          imageUrls = await uploadR2Images(flattened, nativeProfile, async (image) => {
-            const uploaded = await bridge.request({ operation: "capture.upload-r2", draftId: draft.id, expectedRevision: draft.revision, imageId: image.imageId, expectedBytes: image.bytes, expectedSha256: image.sha256, profile: { profileRef: profile.profileRef, endpoint: profile.endpoint, accountId: profile.accountId!, bucket: profile.bucket, publicBaseUrl: profile.publicBaseUrl!, prefix: profile.prefix } });
+          const profile = nativeR2Profile!;
+          imageUrls = await uploadR2Images(flattened, profile, async (image) => {
+            const uploaded = await bridge.request({ operation: "capture.upload-r2", draftId: draft.id, expectedRevision: submissionRevision, imageId: image.imageId, expectedBytes: image.bytes, expectedSha256: image.sha256, profile });
             if (uploaded.kind !== "capture-uploaded" || uploaded.publicUrl === null) throw new Error("r2-upload-response");
             return uploaded.publicUrl;
           });
         }
       }
       const issueBody = composeIssueBody({ userBody: body, diagnostics: parsedDiagnostics, imageUrls, submissionId: draft.id, diagnosticsSummary: copy.issueBrowserDiagnostics });
-      const credential = await readGitHubCredential(bridge, selectedProfile, await identity.githubPatScopeId);
       githubAttempted = true;
       const result = await provider.createIssue(credential, selectedRepository, { title: title.trim(), body: stripFinalSubmissionMarker(issueBody, draft.id), labels: [...selectedLabels], submissionId: draft.id });
       setCreatedUrl(result.issue.url);
       setStatus(copy.issueCreated);
-      try { await onConfirmed(); } catch { setCleanupPending(true); setError(copy.issueDraftCleanupFailed); }
+      try { await onConfirmed(submissionRevision); } catch { setCleanupPending(true); setError(copy.issueDraftCleanupFailed); }
     } catch (reason) {
       const ambiguous = reason instanceof GitHubProviderError && reason.code === GitHubErrorCode.AmbiguousWrite;
       const remainingCleanupIds = !githubAttempted || !ambiguous ? await deleteFinalizedUploads(finalizedUploadIds, (input) => deleteUpload.mutateAsync(input)) : [];
@@ -183,7 +200,10 @@ export function RealqaSubmissionModal({ draft, bridge, copy, onClose, onConfirme
 
   const retryCleanup = async () => {
     setBusy(true); setError(null);
-    try { await onConfirmed(); setCleanupPending(false); onClose(); }
+    try {
+      if (submittedRevision.current === null) throw new Error("submission-revision");
+      await onConfirmed(submittedRevision.current); setCleanupPending(false); onClose();
+    }
     catch { setError(copy.issueDraftCleanupFailed); }
     finally { setBusy(false); }
   };

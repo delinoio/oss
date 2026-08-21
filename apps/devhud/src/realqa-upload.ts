@@ -1,6 +1,8 @@
 import { canonicalPublicImageUrl } from "./realqa-submission.ts";
 import type { FlattenedCaptureImage, R2CaptureUploadProfile } from "./native-bridge.ts";
 
+const OfficialPublicObjectIdentifier = "A".repeat(43);
+
 export interface OfficialReservation {
   readonly uploadId: string;
   readonly submissionId: string;
@@ -42,4 +44,20 @@ export async function uploadR2Images(images: readonly FlattenedCaptureImage[], p
   const urls: string[] = [];
   for (const image of images) urls.push(canonicalPublicImageUrl(await put(image, profile)));
   return urls;
+}
+
+export function projectedOfficialImageUrls(publicAssetBaseUrl: string, count: number): readonly string[] {
+  const projected = appendPublicPath(publicAssetBaseUrl, [`${OfficialPublicObjectIdentifier}.png`]);
+  return Array.from({ length: count }, () => projected);
+}
+
+export function projectedR2ImageUrls(profile: R2CaptureUploadProfile, draftId: string, revision: number, imageIds: readonly string[]): readonly string[] {
+  const prefix = profile.prefix === "" ? [] : profile.prefix.split("/");
+  return imageIds.map((imageId) => appendPublicPath(profile.publicBaseUrl, [...prefix, draftId, String(revision), `${imageId}.png`]));
+}
+
+function appendPublicPath(baseUrl: string, segments: readonly string[]): string {
+  const projected = new URL(canonicalPublicImageUrl(baseUrl));
+  projected.pathname = `${projected.pathname.replace(/\/$/u, "")}/${segments.map((segment) => encodeURIComponent(segment)).join("/")}`;
+  return canonicalPublicImageUrl(projected.toString());
 }

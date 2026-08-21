@@ -2,8 +2,8 @@
 
 import { describe, expect, it, vi } from "vitest";
 import { messages } from "./localization.ts";
-import { composeIssueBody, editableBrowserDiagnostics, parseEditableBrowserDiagnostics, PublicImageWarning, stripFinalSubmissionMarker } from "./realqa-submission.ts";
-import { uploadOfficialImages, uploadR2Images, type OfficialReservation } from "./realqa-upload.ts";
+import { composeIssueBody, editableBrowserDiagnostics, GitHubIssueBodyMaximumCharacters, IssueBodyTooLargeError, parseEditableBrowserDiagnostics, PublicImageWarning, stripFinalSubmissionMarker } from "./realqa-submission.ts";
+import { projectedOfficialImageUrls, projectedR2ImageUrls, uploadOfficialImages, uploadR2Images, type OfficialReservation } from "./realqa-upload.ts";
 
 const submissionId = "018f47a2-7b3c-7def-8abc-1234567890ab";
 const image = (id: string) => ({ imageId: id, width: 10, height: 10, bytes: 100, sha256: "00".repeat(32), assetUrl: `realqa://asset/${id}`, downscaled: false });
@@ -33,6 +33,34 @@ describe("RealQA direct submission contracts", () => {
     expect(textOnly).toBe(`Only text\n\n<!-- devhud-submission:${submissionId} -->`);
     expect(stripFinalSubmissionMarker(textOnly, submissionId)).toBe("Only text");
     expect(stripFinalSubmissionMarker(composeIssueBody({ userBody: "", diagnostics: null, imageUrls: [], submissionId, diagnosticsSummary: "Diagnostics" }), submissionId)).toBe("");
+  });
+
+  it("redacts an authorization scheme and its opaque credential together", () => {
+    const diagnostics = parseEditableBrowserDiagnostics(editableBrowserDiagnostics({ url: "https://example.com/redacted", title: "Authorization: Basic diagnostic-secret remains", viewport: { width: 800, height: 600 }, userAgent: "Fixture", selectedBounds: null, accessibility: {}, outerHtml: "" }));
+    const body = composeIssueBody({ userBody: "Authorization: Bearer opaque-secret remains", diagnostics, imageUrls: [], submissionId, diagnosticsSummary: "Diagnostics" });
+
+    expect(body).not.toContain("opaque-secret");
+    expect(body).not.toContain("diagnostic-secret");
+    expect(body.match(/\[redacted\] remains/gu)).toHaveLength(2);
+  });
+
+  it("accepts the exact GitHub body limit and rejects one additional character", () => {
+    const marker = `<!-- devhud-submission:${submissionId} -->`;
+    const exactUserBody = "x".repeat(GitHubIssueBodyMaximumCharacters - marker.length - 2);
+    const exact = composeIssueBody({ userBody: exactUserBody, diagnostics: null, imageUrls: [], submissionId, diagnosticsSummary: "Diagnostics" });
+
+    expect(exact).toHaveLength(GitHubIssueBodyMaximumCharacters);
+    expect(() => composeIssueBody({ userBody: `${exactUserBody}x`, diagnostics: null, imageUrls: [], submissionId, diagnosticsSummary: "Diagnostics" })).toThrow(IssueBodyTooLargeError);
+  });
+
+  it("projects complete official and BYO image URLs before upload", () => {
+    const profile = { profileRef: submissionId, endpoint: "https://account.r2.cloudflarestorage.com", accountId: "account", bucket: "bucket", publicBaseUrl: "https://cdn.example/base/", prefix: "team report/#realqa" };
+
+    expect(projectedOfficialImageUrls("https://images.example/assets/", 2)).toEqual([
+      `https://images.example/assets/${"A".repeat(43)}.png`,
+      `https://images.example/assets/${"A".repeat(43)}.png`,
+    ]);
+    expect(projectedR2ImageUrls(profile, submissionId, 7, images.map((item) => item.imageId))).toEqual(images.map((item) => `https://cdn.example/base/team%20report/%23realqa/${submissionId}/7/${item.imageId}.png`));
   });
 
   it("preserves official ordering and immutable group bindings", async () => {

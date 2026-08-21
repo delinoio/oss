@@ -10,7 +10,7 @@ import { RealqaSurface, type RealqaController } from "./realqa-ui";
 import { ShortcutActionId } from "./shortcuts";
 
 vi.mock("./realqa-submission-ui.tsx", () => ({
-  RealqaSubmissionModal: ({ onConfirmed }: { readonly onConfirmed: () => Promise<void> }) => <button onClick={() => void onConfirmed()}>confirm fixture issue</button>,
+  RealqaSubmissionModal: ({ draft, onConfirmed }: { readonly draft: CaptureDraft; readonly onConfirmed: (expectedRevision: number) => Promise<void> }) => <button onClick={() => void onConfirmed(draft.revision)}>confirm fixture issue</button>,
 }));
 
 const draft: CaptureDraft = {
@@ -480,7 +480,7 @@ describe("RealQA capture and editor", () => {
     fireEvent.click(screen.getByRole("button", { name: messages.en.issueSubmit }));
     fireEvent.click(await screen.findByRole("button", { name: "confirm fixture issue" }));
 
-    await waitFor(() => expect(request).toHaveBeenCalledWith({ operation: "capture.confirm-issue-created", draftId: draft.id }));
+    await waitFor(() => expect(request).toHaveBeenCalledWith({ operation: "capture.confirm-issue-created", draftId: draft.id, expectedRevision: draft.revision }));
     await waitFor(() => expect(screen.queryByRole("heading", { name: messages.en.editorTitle })).toBeNull());
     expect(screen.queryByRole("button", { name: messages.en.realqaOpenEditor })).toBeNull();
   });

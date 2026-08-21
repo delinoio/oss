@@ -5,6 +5,7 @@
     "apiVersion": "0.1.0-dev",
     "logtoIssuer": "https://identity.example/oidc",
     "logtoAudience": "https://api.example/api",
+    "publicAssetBaseUrl": "https://images.example/devhud",
     "logtoClients": {
       "desktop": "desktop-client",
       "ios": "ios-client",

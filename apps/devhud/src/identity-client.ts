@@ -11,6 +11,7 @@ export interface ValidatedBootstrap {
   readonly audience: string;
   readonly clientId: string;
   readonly redirectUri: typeof NativeAuthCallback;
+  readonly publicAssetBaseUrl: string;
   readonly capabilities: readonly StaticCapability[];
 }
 
@@ -31,8 +32,19 @@ export function validateBootstrap(response: GetBootstrapResponse, platform: Runt
   if (response.logtoRedirects?.native !== NativeAuthCallback) throw new BootstrapContractError("native redirect URI does not match the application contract");
   const clientId = platform === RuntimePlatform.Ios ? response.logtoClients?.ios : platform === RuntimePlatform.Android ? response.logtoClients?.android : response.logtoClients?.desktop;
   if (clientId === undefined || !/^[\x21-\x7e]{1,256}$/u.test(clientId)) throw new BootstrapContractError("platform Logto client ID is missing or invalid");
+  const publicAssetBaseUrl = normalizedPublicAssetBaseUrl(response.publicAssetBaseUrl);
   const capabilities = Object.freeze([...new Set(response.capabilities ?? [])]);
-  return { issuer, audience, clientId, redirectUri: NativeAuthCallback, capabilities };
+  return { issuer, audience, clientId, redirectUri: NativeAuthCallback, publicAssetBaseUrl, capabilities };
+}
+
+function normalizedPublicAssetBaseUrl(value: string): string {
+  try {
+    const candidate = new URL(value);
+    if (candidate.protocol !== "https:" || candidate.username || candidate.password || candidate.search || candidate.hash) throw new Error();
+    return candidate.toString();
+  } catch {
+    throw new BootstrapContractError("public asset base URL must be HTTPS without credentials, query, or fragment");
+  }
 }
 
 export function isTerminalAccessTokenError(reason: unknown): boolean {

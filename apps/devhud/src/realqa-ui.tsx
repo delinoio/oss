@@ -32,7 +32,7 @@ interface RealqaContextValue {
     readonly close: () => void;
     readonly remove: (draft: CaptureDraft) => Promise<void>;
     readonly removeUnreadable: (draftId: string) => Promise<void>;
-    readonly confirmIssueCreated: (draftId: string) => Promise<void>;
+    readonly confirmIssueCreated: (draftId: string, expectedRevision: number) => Promise<void>;
     readonly runDraftOperation: <Result>(draftId: string, operation: (draft: CaptureDraft, installDraft: (draft: CaptureDraft) => void) => Promise<Result>) => Promise<Result>;
     readonly refresh: () => Promise<void>;
   };
@@ -345,9 +345,9 @@ export function RealqaSurface({ ref, bridge, copy, active = true, paletteOpen = 
     if (!confirm(copy.realqaDeleteConfirm)) return;
     await deleteDraft(draftId);
   };
-  const confirmIssueCreated = async (draftId: string) => {
+  const confirmIssueCreated = async (draftId: string, expectedRevision: number) => {
     const generation = resetGeneration.current;
-    await runDraftOperation(draftId, () => bridge.request({ operation: "capture.confirm-issue-created", draftId }));
+    await runDraftOperation(draftId, () => bridge.request({ operation: "capture.confirm-issue-created", draftId, expectedRevision }));
     if (generation !== resetGeneration.current) return;
     removeDraftLocally(draftId);
     try { await refresh(); } catch { /* The successful native confirmation is authoritative. */ }
@@ -614,8 +614,8 @@ function CaptureEditor({ draft }: { readonly draft: CaptureDraft }) {
     setSubmissionOpen(false);
     requestAnimationFrame(() => submissionTrigger.current?.focus());
   };
-  const confirmCreated = async () => {
-    await actions.confirmIssueCreated(draft.id);
+  const confirmCreated = async (expectedRevision: number) => {
+    await actions.confirmIssueCreated(draft.id, expectedRevision);
   };
   return <section className="capture-editor" aria-labelledby="capture-editor-title">
     <div className="editor-heading"><div><h3 id="capture-editor-title">{copy.editorTitle}</h3><p>{copy.editorCloseHint}</p></div><button onClick={actions.close}>{copy.close}</button></div>

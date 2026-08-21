@@ -6,13 +6,23 @@ export const PublicImageWarning = Object.freeze({
   ko: "이미지 URL을 아는 사람은 누구나 이미지를 볼 수 있습니다. 이미지는 사용자가 삭제하거나, 관리자가 제거하거나, 계정 삭제가 완료될 때까지 공개 상태로 유지됩니다.",
 });
 
+export const GitHubIssueBodyMaximumCharacters = 65_536;
+
+export class IssueBodyTooLargeError extends TypeError {
+  constructor() {
+    super("GitHub issue body exceeds its character limit");
+    this.name = "IssueBodyTooLargeError";
+  }
+}
+
 const markerPattern = /<!--\s*devhud-submission:[^>]*-->/giu;
 const secretPatterns = [
   /\b(?:ghp|github_pat)_[A-Za-z0-9_]+\b/gu,
   /\bAKIA[0-9A-Z]{16}\b/gu,
   /\beyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/gu,
   /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/gu,
-  /\b(?:authorization|cookie|password|passwd|secret|token|access[_ -]?key(?:[_ -]?id)?)\s*[:=]\s*[^\s,;]+/giu,
+  /\bauthorization\s*[:=]\s*(?:[A-Za-z][A-Za-z0-9+.-]*\s+[^\s,;]+|[^\s,;]+)/giu,
+  /\b(?:cookie|password|passwd|secret|token|access[_ -]?key(?:[_ -]?id)?)\s*[:=]\s*[^\s,;]+/giu,
 ] as const;
 
 export interface IssueBodyInput {
@@ -49,7 +59,9 @@ export function composeIssueBody(input: IssueBodyInput): string {
     sections.push(`![RealQA image ${index + 1}](${canonicalPublicImageUrl(imageUrl)})`);
   }
   sections.push(`<!-- devhud-submission:${input.submissionId} -->`);
-  return sections.join("\n\n");
+  const value = sections.join("\n\n");
+  if (value.length > GitHubIssueBodyMaximumCharacters) throw new IssueBodyTooLargeError();
+  return value;
 }
 
 /** The GitHub provider owns the final marker write and reconciliation contract. */

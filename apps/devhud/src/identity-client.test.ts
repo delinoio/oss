@@ -32,6 +32,7 @@ const bootstrap = {
   logtoAudience: "https://api.example/api",
   logtoClients: { desktop: "desktop-client", ios: "ios-client", android: "android-client", admin: "admin-client" },
   logtoRedirects: { native: "devhud://auth/callback", admin: "https://admin.example/callback" },
+  publicAssetBaseUrl: "https://images.example/devhud",
   capabilities: [StaticCapability.SETTINGS_SYNC, StaticCapability.CRASH_REPORTS],
 } as GetBootstrapResponse;
 
@@ -40,6 +41,7 @@ describe("identity client boundary", () => {
     expect(validateBootstrap(bootstrap, RuntimePlatform.Desktop).clientId).toBe("desktop-client");
     expect(validateBootstrap(bootstrap, RuntimePlatform.Ios).clientId).toBe("ios-client");
     expect(validateBootstrap(bootstrap, RuntimePlatform.Android).redirectUri).toBe("devhud://auth/callback");
+    expect(validateBootstrap(bootstrap, RuntimePlatform.Desktop).publicAssetBaseUrl).toBe("https://images.example/devhud");
     expect(validateBootstrap({ ...bootstrap, apiVersion: "2026.08.17" } as GetBootstrapResponse, RuntimePlatform.Desktop).audience).toBe("https://api.example/api");
     expect(validateBootstrap({ ...bootstrap, logtoIssuer: "http://127.0.0.1:46307/oidc" } as GetBootstrapResponse, RuntimePlatform.Desktop).issuer).toBe("http://127.0.0.1:46307/oidc");
     expect(validateBootstrap(bootstrap, RuntimePlatform.Desktop).capabilities).toEqual([StaticCapability.SETTINGS_SYNC, StaticCapability.CRASH_REPORTS]);
@@ -49,6 +51,7 @@ describe("identity client boundary", () => {
     expect(() => validateBootstrap({ ...bootstrap, logtoIssuer: "http://identity.example/" } as GetBootstrapResponse, RuntimePlatform.Desktop)).toThrow(BootstrapContractError);
     expect(() => validateBootstrap({ ...bootstrap, logtoAudience: "  " } as GetBootstrapResponse, RuntimePlatform.Desktop)).toThrow(BootstrapContractError);
     expect(() => validateBootstrap({ ...bootstrap, logtoRedirects: { ...bootstrap.logtoRedirects!, native: "https://attacker.example" } } as GetBootstrapResponse, RuntimePlatform.Desktop)).toThrow(BootstrapContractError);
+    expect(() => validateBootstrap({ ...bootstrap, publicAssetBaseUrl: "http://images.example" } as GetBootstrapResponse, RuntimePlatform.Desktop)).toThrow(BootstrapContractError);
   });
 
   it("rejects Bootstrap discovery for another project", () => {

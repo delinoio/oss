@@ -18,6 +18,7 @@ vi.mock("@connectrpc/connect-query", () => ({
 }));
 
 const profile = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", name: "Work", kind: "fine-grained" as const };
+const bootstrap = { issuer: "https://identity.example/", audience: "https://api.example", clientId: "desktop", redirectUri: "devhud://auth/callback" as const, publicAssetBaseUrl: "https://images.example/assets/", capabilities: [] };
 const settings = parseDevHudSettings({
   ...defaultDevHudSettings,
   github: {
@@ -43,7 +44,7 @@ const draft: CaptureDraft = {
 
 function identityValue(): IdentitySettingsValue {
   return {
-    status: "guest", bootstrap: null, account: null, settings, revision: 0n, readOnly: false, shortcutHydrationReady: true, activeShortcutBindings: settings.shortcuts.desktop, setActiveShortcutBindings: vi.fn(), offline: false, error: null, accountError: null, settingsError: null, deletionCleanupFailed: false, deckAccessSuspended: false, importDiff: null, conflict: null, signInPending: false, identityResetAvailable: false, githubPatScopeId: Promise.resolve("origin.scope"), githubPatCleanupPending: false, reconcileGitHubPats: vi.fn(async () => true), signIn: vi.fn(), retryIdentity: vi.fn(), resetIdentity: vi.fn(), retryAccount: vi.fn(), retrySettings: vi.fn(), continueLocally: vi.fn(), uploadLocal: vi.fn(), replaceLocal: vi.fn(), replaceSettings: vi.fn(async () => true), replaceSettingsAt: vi.fn(async () => true), adoptConflictServer: vi.fn(), reapplyConflictLocal: vi.fn(), logout: vi.fn(), deleteAccount: vi.fn(), restoreAccount: vi.fn(), retryDeletionCleanup: vi.fn(), profileRequiresSetup: vi.fn(),
+    status: "guest", bootstrap, account: null, settings, revision: 0n, readOnly: false, shortcutHydrationReady: true, activeShortcutBindings: settings.shortcuts.desktop, setActiveShortcutBindings: vi.fn(), offline: false, error: null, accountError: null, settingsError: null, deletionCleanupFailed: false, deckAccessSuspended: false, importDiff: null, conflict: null, signInPending: false, identityResetAvailable: false, githubPatScopeId: Promise.resolve("origin.scope"), githubPatCleanupPending: false, reconcileGitHubPats: vi.fn(async () => true), signIn: vi.fn(), retryIdentity: vi.fn(), resetIdentity: vi.fn(), retryAccount: vi.fn(), retrySettings: vi.fn(), continueLocally: vi.fn(), uploadLocal: vi.fn(), replaceLocal: vi.fn(), replaceSettings: vi.fn(async () => true), replaceSettingsAt: vi.fn(async () => true), adoptConflictServer: vi.fn(), reapplyConflictLocal: vi.fn(), logout: vi.fn(), deleteAccount: vi.fn(), restoreAccount: vi.fn(), retryDeletionCleanup: vi.fn(), profileRequiresSetup: vi.fn(),
   };
 }
 
@@ -106,7 +107,24 @@ describe("RealQA image-free submission", () => {
 
     await waitFor(() => expect(createIssue).toHaveBeenCalledOnce());
     expect(native.request).not.toHaveBeenCalledWith(expect.objectContaining({ operation: "capture.flatten" }));
-    await waitFor(() => expect(onConfirmed).toHaveBeenCalledOnce());
+    await waitFor(() => expect(onConfirmed).toHaveBeenCalledWith(draft.revision));
+  });
+
+  it("reuses the submitted revision when draft cleanup is retried", async () => {
+    const createIssue = vi.fn(async () => ({ issue: { number: 1, title: "Issue", url: "https://github.com/delinoio/oss/issues/1", marker: "marker", reconciled: false }, metadata: { etag: null, rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } } }));
+    const onConfirmed = vi.fn(async () => { throw new Error("revision changed"); });
+    const props = { bridge: bridge(), copy: messages.en, onClose: vi.fn(), onConfirmed, provider: provider({ createIssue }) };
+    const view = render(<RealqaSubmissionModal draft={draft} {...props} />);
+    fireEvent.click(screen.getByLabelText(`${messages.en.editorImage} 1`));
+    fireEvent.change(screen.getByLabelText(messages.en.issueTitle), { target: { value: "Image-free issue" } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.issueSubmit }));
+
+    await waitFor(() => expect(onConfirmed).toHaveBeenCalledWith(draft.revision));
+    view.rerender(<RealqaSubmissionModal draft={{ ...draft, revision: draft.revision + 1 }} {...props} />);
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.issueRetryDraftCleanup }));
+
+    await waitFor(() => expect(onConfirmed).toHaveBeenCalledTimes(2));
+    expect(onConfirmed.mock.calls).toEqual([[draft.revision], [draft.revision]]);
   });
 });
 
@@ -126,6 +144,36 @@ describe("RealQA upload eligibility and cleanup", () => {
     expect(await screen.findByRole("alert")).toHaveProperty("textContent", messages.en.issueR2SetupRequired);
     expect(createUpload).not.toHaveBeenCalled();
     expect(native.request).not.toHaveBeenCalledWith(expect.objectContaining({ operation: "capture.flatten" }));
+  });
+
+  it("resolves the selected credential before starting an official image upload", async () => {
+    identity = { ...identityValue(), status: "authenticated" };
+    const native = bridge();
+    vi.mocked(native.request).mockImplementation(async (request) => request.operation === "secure.read" ? { kind: "secure-value", value: null } : { kind: "ok" });
+    const createIssue = vi.fn();
+    render(<RealqaSubmissionModal draft={draft} bridge={native} copy={messages.en} onClose={vi.fn()} onConfirmed={vi.fn()} provider={provider({ createIssue })} />);
+    fireEvent.change(screen.getByLabelText(messages.en.issueTitle), { target: { value: "Issue with image" } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.issueSubmit }));
+
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveProperty("textContent", messages.en.issueSubmissionFailed));
+    expect(native.request).not.toHaveBeenCalledWith(expect.objectContaining({ operation: "capture.flatten" }));
+    expect(mutationFunctions.createUpload).not.toHaveBeenCalled();
+    expect(createIssue).not.toHaveBeenCalled();
+  });
+
+  it("rejects an oversized complete body before credentials or uploads", async () => {
+    identity = { ...identityValue(), status: "authenticated" };
+    const native = bridge();
+    render(<RealqaSubmissionModal draft={draft} bridge={native} copy={messages.en} onClose={vi.fn()} onConfirmed={vi.fn()} provider={provider()} />);
+    await screen.findByLabelText("bug");
+    vi.mocked(native.request).mockClear();
+    fireEvent.change(screen.getByLabelText(messages.en.issueTitle), { target: { value: "Oversized issue" } });
+    fireEvent.change(screen.getByLabelText(messages.en.issueBody), { target: { value: "x".repeat(65_536) } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.issueSubmit }));
+
+    expect(await screen.findByRole("alert")).toHaveProperty("textContent", messages.en.issueBodyTooLarge);
+    expect(native.request).not.toHaveBeenCalled();
+    expect(mutationFunctions.createUpload).not.toHaveBeenCalled();
   });
 
   it("retains failed finalized-image cleanup for explicit retry", async () => {

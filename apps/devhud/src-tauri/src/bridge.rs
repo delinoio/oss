@@ -1367,11 +1367,20 @@ async fn handle_capture_request(
                 json!({ "kind": "capture-uploaded", "observedEtag": result.observed_etag, "publicUrl": result.public_url }),
             )
         }
-        Some("capture.delete-draft" | "capture.confirm-issue-created") => {
+        Some("capture.delete-draft") => {
             exact_keys(request, &["operation", "draftId"])?;
             let draft_id = capture_id(request, "draftId")?;
             capture
                 .with_draft_store(|store| store.delete(draft_id))
+                .map_err(failure)?;
+            Ok(json!({ "kind": "ok" }))
+        }
+        Some("capture.confirm-issue-created") => {
+            exact_keys(request, &["operation", "draftId", "expectedRevision"])?;
+            let draft_id = capture_id(request, "draftId")?;
+            let expected_revision = revision(request)?;
+            capture
+                .with_draft_store(|store| store.delete_at_revision(draft_id, expected_revision))
                 .map_err(failure)?;
             Ok(json!({ "kind": "ok" }))
         }

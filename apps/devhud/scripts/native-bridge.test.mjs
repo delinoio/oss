@@ -167,6 +167,9 @@ test("RealQA requests are bounded and capture data stays out of logs and recordi
   assert.throws(() => validateCaptureRequest({ operation: "capture.start", actionId: ShortcutActionId.CommandPalette }), NativeBridgeError);
   assert.throws(() => validateCaptureRequest({ operation: "capture.open-draft", draftId: "../escape" }), NativeBridgeError);
   assert.throws(() => validateCaptureRequest({ operation: "capture.remove-browser-context", draftId: "01900000-0000-7000-8000-000000000001", expectedRevision: -1 }), NativeBridgeError);
+  assert.doesNotThrow(() => validateCaptureRequest({ operation: "capture.confirm-issue-created", draftId: "01900000-0000-7000-8000-000000000001", expectedRevision: 1 }));
+  assert.throws(() => validateCaptureRequest({ operation: "capture.confirm-issue-created", draftId: "01900000-0000-7000-8000-000000000001" }), NativeBridgeError);
+  assert.throws(() => validateCaptureRequest({ operation: "capture.confirm-issue-created", draftId: "01900000-0000-7000-8000-000000000001", expectedRevision: -1 }), NativeBridgeError);
   assert.match(nativeCapture, /Aes256Gcm/u);
   assert.match(nativeCapture, /MAX_IMAGES: usize = 10/u);
   assert.match(nativeCapture, /MAX_PNG_BYTES: usize = 50 \* 1024 \* 1024/u);

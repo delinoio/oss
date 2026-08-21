@@ -164,7 +164,7 @@ describe("generated Connect identity/settings fixture", () => {
       client: {}, storage: {}, getAccessToken: async () => { throw new Error("unexpected token request"); }, isAuthenticated: async () => false,
       signIn: async () => {}, handleCallback: async () => {}, clear: async () => {},
     } as unknown as IdentitySession);
-    writeCachedIdentityBootstrap(localStorage, "https://devhud.api.delino.io", { issuer: "https://issuer.example.com", audience: "https://api.example.com", clientId: "fixture-client", redirectUri: "devhud://auth/callback", capabilities: [] });
+    writeCachedIdentityBootstrap(localStorage, "https://devhud.api.delino.io", { issuer: "https://issuer.example.com", audience: "https://api.example.com", clientId: "fixture-client", redirectUri: "devhud://auth/callback", publicAssetBaseUrl: "https://images.example/", capabilities: [] });
     const deckCache = deckCacheKey(await sessionProfileId("https://devhud.api.delino.io"), "018f47a2-7b3c-7def-8abc-1234567890ac");
     localStorage.setItem(deckCache, "private Deck data");
 
@@ -495,6 +495,7 @@ describe("generated Connect identity/settings fixture", () => {
       audience: "https://api.example",
       clientId: "desktop-client",
       redirectUri: "devhud://auth/callback",
+      publicAssetBaseUrl: "https://images.example/",
       capabilities: [StaticCapability.CRASH_REPORTS],
     });
     writeAuthenticatedSettingsCache(localStorage, apiOrigin, {
@@ -529,6 +530,7 @@ describe("generated Connect identity/settings fixture", () => {
       audience: "https://api.example",
       clientId: "desktop-client",
       redirectUri: "devhud://auth/callback",
+      publicAssetBaseUrl: "https://images.example/",
       capabilities: [StaticCapability.CRASH_REPORTS],
     });
     writeAuthenticatedSettingsCache(localStorage, apiOrigin, {
@@ -1385,6 +1387,7 @@ describe("generated Connect identity/settings fixture", () => {
       audience: fixture.bootstrap.logtoAudience,
       clientId: fixture.bootstrap.logtoClients.desktop,
       redirectUri: "devhud://auth/callback",
+      publicAssetBaseUrl: fixture.bootstrap.publicAssetBaseUrl,
       capabilities: [StaticCapability.CRASH_REPORTS],
     });
     writeAuthenticatedSettingsCache(localStorage, "https://devhud.api.delino.io", { settings: defaultDevHudSettings, revision: 3n, cachedAt: "2026-08-17T00:00:00.000Z" });
