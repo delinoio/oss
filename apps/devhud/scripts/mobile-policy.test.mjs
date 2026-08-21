@@ -234,6 +234,9 @@ test("widget targets preserve secure isolation, bilingual privacy warnings, and 
   assert.match(iosWidget, /incomplete_results/u);
   assert.doesNotMatch(iosWidget, /items\.prefix\(100\)\.compactMap/u);
   assert.match(iosWidget, /for item in items\.prefix\(100\)[\s\S]*guard let nodeId[\s\S]*return failure\(deck: deck, previous: previous, state: "error", attempted: attempted, rate: rate\)/u);
+  assert.match(iosWidget, /item\["draft"\] as\? Bool[\s\S]*item\["state"\] as\? String[\s\S]*itemState == "open" \|\| itemState == "closed"/u);
+  assert.ok(iosWidget.indexOf('item["state"] as? String') < iosWidget.indexOf("if isDraft"));
+  assert.doesNotMatch(iosWidget, /item\["draft"\] as\? Bool \?\?|item\["state"\] as\? String \?\?/u);
   assert.match(iosWidget, /retained\.rate = rate/u);
   assert.match(androidProvider, /put\("rate", responseRate \?: JSONObject\.NULL\)/u);
   assert.ok(iosWidget.indexOf("validateRepositories(deck: deck, token: token)") < iosWidget.indexOf('URLComponents(string: "https://api.github.com/search/issues")'));

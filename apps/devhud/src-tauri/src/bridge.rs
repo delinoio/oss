@@ -25,7 +25,7 @@ use crate::shortcuts::{
 const PROFILE_ID_LIMIT: usize = 128;
 const SECRET_LIMIT: usize = 64 * 1024;
 const DIAGNOSTICS_EXPORT_LIMIT: usize = 1024 * 1024;
-const WIDGET_QUERY_LIMIT: usize = 4096;
+const WIDGET_TEXT_LIMIT: usize = 4096;
 const TAURI_REVISION: &str = "4af26a3f7f8b692d62cca549bbacd93f5ce90b41";
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 const CEF_REVISION: &str = "150.0.10+g8042e43+chromium-150.0.7871.101";
@@ -716,12 +716,14 @@ fn validate_widget_request(request: &Value) -> Result<(), String> {
             && value
                 .get("name")
                 .and_then(Value::as_str)
-                .is_some_and(|name| !name.trim().is_empty() && javascript_string_len(name) <= 128)
+                .is_some_and(|name| {
+                    !name.trim().is_empty() && javascript_string_len(name) <= WIDGET_TEXT_LIMIT
+                })
             && value
                 .get("query")
                 .and_then(Value::as_str)
                 .is_some_and(|query| {
-                    !query.trim().is_empty() && javascript_string_len(query) <= WIDGET_QUERY_LIMIT
+                    !query.trim().is_empty() && javascript_string_len(query) <= WIDGET_TEXT_LIMIT
                 })
             && value
                 .get("repositories")
@@ -790,7 +792,7 @@ fn validate_widget_request(request: &Value) -> Result<(), String> {
         && value
             .get("query")
             .and_then(Value::as_str)
-            .is_some_and(|query| javascript_string_len(query) <= WIDGET_QUERY_LIMIT)
+            .is_some_and(|query| javascript_string_len(query) <= WIDGET_TEXT_LIMIT)
         && ["total", "open", "draft", "merged", "closed"]
             .into_iter()
             .all(valid_count)
@@ -1661,10 +1663,10 @@ mod tests {
     use serde_json::{Value, json};
 
     use super::{
-        NativeBridgeState, handle_native_bridge_request, ios_runtime_os_version, is_auth_callback,
-        purge_clears_diagnostics, purge_invalidates_native_messaging, routes_to_mobile_plugin,
-        runtime_os_version, shortcut_status, validate_auth_browser_request,
-        validate_diagnostics_export, validate_widget_request,
+        NativeBridgeState, WIDGET_TEXT_LIMIT, handle_native_bridge_request, ios_runtime_os_version,
+        is_auth_callback, purge_clears_diagnostics, purge_invalidates_native_messaging,
+        routes_to_mobile_plugin, runtime_os_version, shortcut_status,
+        validate_auth_browser_request, validate_diagnostics_export, validate_widget_request,
     };
     #[cfg(desktop)]
     use super::{
@@ -2253,7 +2255,7 @@ mod tests {
         let configuration = json!({
             "version": 1,
             "deckId": deck_id,
-            "name": "가".repeat(128),
+            "name": "😀".repeat(WIDGET_TEXT_LIMIT / 2),
             "query": "😀".repeat(2048),
             "repositories": [{ "owner": "octo", "name": "widgets" }],
             "profileId": "work",
@@ -2267,6 +2269,15 @@ mod tests {
                 "configuration": configuration.clone()
             })),
             Ok(())
+        );
+        let mut oversized_name = configuration.clone();
+        oversized_name["name"] = json!(format!("{}x", "😀".repeat(WIDGET_TEXT_LIMIT / 2)));
+        assert_eq!(
+            validate_widget_request(&json!({
+                "operation": "widgets.enable-deck",
+                "configuration": oversized_name
+            })),
+            Err("invalid-argument".to_string())
         );
         assert_eq!(
             validate_widget_request(&json!({

@@ -121,6 +121,30 @@ describe("Deck surface", () => {
     }));
   });
 
+  it("publishes foreground refreshes for enabled non-visible Decks", async () => {
+    const hiddenDeck = { ...deck, id: "018f47a2-7b3c-7def-8abc-1234567890ad", name: "Hidden Deck", query: "repo:octo/hidden is:pr", builder: null };
+    const hiddenPullRequest = { ...pullRequest, nodeId: "PR_kwDOB", repository: { owner: "octo", name: "hidden" } };
+    identity = identityWith({ settings: parseDevHudSettings({ ...settings, decks: [deck, hiddenDeck] }) });
+    const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      if (value.operation === "widgets.status") return { kind: "widget-status", enabledDeckIds: [hiddenDeck.id] };
+      if (value.operation === "secure.read") return { kind: "secure-value", value: "token" };
+      return { kind: "ok" };
+    });
+    const bridge = bridgeWith(request);
+    const providerWithResult = {
+      ...provider(),
+      searchPullRequests: vi.fn(async () => ({ items: [{ nodeId: hiddenPullRequest.nodeId, number: hiddenPullRequest.number, title: hiddenPullRequest.title, url: hiddenPullRequest.url, draft: hiddenPullRequest.draft, repository: hiddenPullRequest.repository }], nextPage: null, notModified: false, totalCount: 1, incompleteResults: false, metadata: { etag: null, rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } } })),
+      enrichPullRequests: vi.fn(async () => ({ items: [hiddenPullRequest], metadata: { etag: null, rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } } })),
+    };
+
+    render(<DeckPollingBoundary bridge={bridge} active online provider={providerWithResult}><DeckSurface copy={messages.en} bridge={bridge} /></DeckPollingBoundary>);
+
+    await waitFor(() => expect(request).toHaveBeenCalledWith({
+      operation: "widgets.replace-deck-snapshot",
+      snapshot: expect.objectContaining({ deckId: hiddenDeck.id, query: hiddenDeck.query, results: [expect.objectContaining({ nodeId: hiddenPullRequest.nodeId })] }),
+    }));
+  });
+
   it("keeps manual disablement authoritative over a stale reconciliation", async () => {
     let statusCalls = 0;
     let resolveStaleStatus: (value: NativeBridgeResponseV1) => void = () => {};

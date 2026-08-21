@@ -29,7 +29,6 @@ interface WidgetAccessContextValue {
   readonly failedDeckIds: ReadonlySet<string>;
   readonly enable: (deck: Deck, snapshot?: WidgetDeckSnapshot) => Promise<void>;
   readonly disable: (deckId: string) => Promise<void>;
-  readonly synchronizeSnapshot: (deck: Deck, snapshot: WidgetDeckSnapshot) => Promise<void>;
 }
 
 const DeckPollingContext = createContext<DeckPollingContextValue | null>(null);
@@ -76,6 +75,14 @@ function useWidgetAccess(): WidgetAccessContextValue {
   const value = use(WidgetAccessContext);
   if (value === null) throw new Error("WidgetAccessBoundary is missing");
   return value;
+}
+
+function WidgetSnapshotSynchronization({ deck, enabled, state, synchronize }: { readonly deck: Deck; readonly enabled: boolean; readonly state: DeckRefreshState; readonly synchronize: (deck: Deck, snapshot?: WidgetDeckSnapshot) => Promise<void> }) {
+  useEffect(() => {
+    if (!enabled || state.cache === null || state.cache.query !== deck.query) return;
+    void synchronize(deck, widgetSnapshot(deck, state.cache, state.failure)).catch(() => undefined);
+  }, [deck, enabled, state.cache, state.failure, synchronize]);
+  return null;
 }
 
 interface DeckPollingBoundaryProps extends PropsWithChildren { readonly bridge: NativeBridgeV1; readonly active: boolean; readonly online: boolean; readonly language?: "en" | "ko"; readonly provider?: GitHubProvider; }
@@ -452,8 +459,8 @@ export function DeckPollingBoundary({ bridge, active, online, language = "en", p
   }, [active, identity.deckAccessSuspended, online, scheduledDecks]);
 
   const value = useMemo<DeckPollingContextValue>(() => ({ states, canPoll: active && online && !identity.deckAccessSuspended, online, refresh, validate, clear }), [active, clear, identity.deckAccessSuspended, online, refresh, states, validate]);
-  const widgetValue = useMemo<WidgetAccessContextValue>(() => ({ supported: widgetSupported, enabledDeckIds: enabledWidgetDeckIds, failedDeckIds: failedWidgetDeckIds, enable: enableWidgetDeck, disable: disableWidgetDeckManually, synchronizeSnapshot: synchronizeWidgetDeck }), [disableWidgetDeckManually, enableWidgetDeck, enabledWidgetDeckIds, failedWidgetDeckIds, synchronizeWidgetDeck, widgetSupported]);
-  return <DeckPollingContext value={value}><WidgetAccessContext value={widgetValue}>{children}</WidgetAccessContext></DeckPollingContext>;
+  const widgetValue = useMemo<WidgetAccessContextValue>(() => ({ supported: widgetSupported, enabledDeckIds: enabledWidgetDeckIds, failedDeckIds: failedWidgetDeckIds, enable: enableWidgetDeck, disable: disableWidgetDeckManually }), [disableWidgetDeckManually, enableWidgetDeck, enabledWidgetDeckIds, failedWidgetDeckIds, widgetSupported]);
+  return <DeckPollingContext value={value}><WidgetAccessContext value={widgetValue}>{scheduledDecks.map((deck) => <WidgetSnapshotSynchronization key={deck.id} deck={deck} enabled={enabledWidgetDeckIds.has(deck.id)} state={states[deck.id] ?? emptyDeckRefreshState} synchronize={synchronizeWidgetDeck} />)}{children}</WidgetAccessContext></DeckPollingContext>;
 }
 
 interface DeckSurfaceProps { readonly copy: Copy; readonly bridge: NativeBridgeV1; readonly language?: "en" | "ko"; readonly selectedDeckId?: string | null; readonly onDismissMissingLink?: () => void; }
@@ -509,12 +516,6 @@ function WidgetAccess({ cache, copy, deck, failure }: { readonly cache: DeckCach
   const profile = identity.settings.github.profiles.find((item) => item.id === deck.profileRef);
   const enabled = widgetAccess.enabledDeckIds.has(deck.id);
   const failed = widgetAccess.failedDeckIds.has(deck.id);
-
-  useEffect(() => {
-    if (!enabled || cache === null || cache.query !== deck.query) return;
-    const snapshot = widgetSnapshot(deck, cache, failure);
-    void widgetAccess.synchronizeSnapshot(deck, snapshot).catch(() => undefined);
-  }, [cache, deck, enabled, failure, widgetAccess]);
 
   const closeConfirmation = useCallback(() => {
     setConfirming(false);
