@@ -196,7 +196,10 @@ assert(nativeBridgeTypeScript.includes('cefRevision: ""'), "browser runtime diag
 assert(updaterRoot.keyId === "devhud-release-root-v1" && updaterRoot.algorithm === "ed25519", "desktop updater trust-root identity changed");
 assert(updaterRust.includes(updaterRoot.publicKey) && updaterRust.includes(updaterRoot.fingerprint), "native updater trust root drifted from committed metadata");
 assert(updaterRust.includes(`ROOT_PRODUCTION_READY: bool = ${String(updaterRoot.productionReady)}`), "native updater readiness gate drifted from committed metadata");
-assert(updaterRust.includes("root_ready_for_publication().is_err() && !cfg!(test)"), "non-test updater builds must fail closed while the root is not production-ready");
+assert(/#\[cfg\(not\(test\)\)\][\s\S]{0,320}manifest_trust_root[\s\S]{0,320}ROOT_PUBLIC_KEY_BASE64[\s\S]{0,160}ROOT_FINGERPRINT[\s\S]{0,160}ROOT_PRODUCTION_READY/u.test(updaterRust), "non-test updater verification must inject the production trust root and readiness gate");
+assert(/#\[cfg\(test\)\][\s\S]{0,320}manifest_trust_root[\s\S]{0,320}TEST_ROOT_PUBLIC_KEY_BASE64[\s\S]{0,160}TEST_ROOT_FINGERPRINT[\s\S]{0,160}ready: true/u.test(updaterRust), "native updater tests must inject a dedicated ready fixture root");
+assert(updaterRust.includes("if !trust_root.ready"), "manifest verification must fail closed when its injected trust root is not ready");
+assert(!updaterRust.includes("cfg!(test)"), "test builds must not bypass production trust-root readiness inline");
 assert(updaterRust.includes("https://devhud.api.delino.io"), "native updater endpoint is not fixed");
 assert(!updaterRust.toLowerCase().includes("bootstrap"), "bootstrap must not participate in desktop updater discovery");
 assert(!tauriConfig.app.security.csp.includes("devhud.api.delino.io"), "frontend CSP must not receive updater network access");

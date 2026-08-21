@@ -64,6 +64,17 @@ test("derives the compiled package kind from one explicit Windows bundle", () =>
   );
 });
 
+test("derives the compiled package kind from one explicit Linux bundle", () => {
+  assert.deepEqual(
+    desktopTauriEnvironment("build", ["--bundles", "deb"], "linux", { EXISTING: "value" }),
+    { EXISTING: "value", DEVHUD_PACKAGE_KIND: "linux-deb" },
+  );
+  assert.deepEqual(
+    desktopTauriEnvironment("build", ["--bundles=appimage"], "linux", {}),
+    { DEVHUD_PACKAGE_KIND: "linux-appimage" },
+  );
+});
+
 test("rejects ambiguous or conflicting Windows package builds", () => {
   assert.throws(
     () => desktopTauriEnvironment("build", [], "win32", {}),
@@ -83,10 +94,30 @@ test("rejects ambiguous or conflicting Windows package builds", () => {
   );
 });
 
-test("does not require a package kind for development or non-Windows builds", () => {
+test("rejects ambiguous or conflicting Linux package builds", () => {
+  assert.throws(
+    () => desktopTauriEnvironment("build", [], "linux", {}),
+    /require exactly one --bundles deb or --bundles appimage/u,
+  );
+  assert.throws(
+    () => desktopTauriEnvironment("build", ["--bundles", "all"], "linux", {}),
+    /require exactly one --bundles deb or --bundles appimage/u,
+  );
+  assert.throws(
+    () => desktopTauriEnvironment("build", ["--bundles", "deb", "appimage"], "linux", {}),
+    /require exactly one --bundles deb or --bundles appimage/u,
+  );
+  assert.throws(
+    () => desktopTauriEnvironment("build", ["-b=deb"], "linux", { DEVHUD_PACKAGE_KIND: "linux-appimage" }),
+    /does not match the selected deb bundle/u,
+  );
+});
+
+test("does not require a package kind for development or macOS builds", () => {
   const environment = {};
   assert.equal(desktopTauriEnvironment("dev", [], "win32", environment), environment);
-  assert.equal(desktopTauriEnvironment("build", [], "linux", environment), environment);
+  assert.equal(desktopTauriEnvironment("dev", [], "linux", environment), environment);
+  assert.equal(desktopTauriEnvironment("build", [], "darwin", environment), environment);
 });
 
 for (const [name, args] of configOverrides) {

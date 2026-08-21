@@ -5,7 +5,7 @@ export const desktopTauriConfigPath = fileURLToPath(
   new URL("../src-tauri/tauri.desktop.conf.json", import.meta.url),
 );
 
-function requestedWindowsBundle(forwardedArguments) {
+function requestedPackageBundle(forwardedArguments, platformName, packageKinds) {
   const bundles = [];
   for (let index = 0; index < forwardedArguments.length; index += 1) {
     const argument = forwardedArguments[index];
@@ -24,11 +24,23 @@ function requestedWindowsBundle(forwardedArguments) {
   }
 
   const selected = [...new Set(bundles.filter(Boolean))];
-  if (selected.length !== 1 || !["msi", "nsis"].includes(selected[0])) {
-    throw new Error("Windows package builds require exactly one --bundles msi or --bundles nsis selection");
+  if (selected.length !== 1 || !Object.hasOwn(packageKinds, selected[0])) {
+    const choices = Object.keys(packageKinds).map((bundle) => `--bundles ${bundle}`).join(" or ");
+    throw new Error(`${platformName} package builds require exactly one ${choices} selection`);
   }
   return selected[0];
 }
+
+const packageKindsByPlatform = {
+  win32: {
+    name: "Windows",
+    bundles: { msi: "windows-msi", nsis: "windows-nsis" },
+  },
+  linux: {
+    name: "Linux",
+    bundles: { deb: "linux-deb", appimage: "linux-appimage" },
+  },
+};
 
 export function desktopTauriArguments(command, forwardedArguments) {
   // The pinned CLI resolves bundle features through app-owned Cargo features;
@@ -44,10 +56,15 @@ export function desktopTauriEnvironment(
   platform = process.platform,
   environment = process.env,
 ) {
-  if (command !== "build" || platform !== "win32") return environment;
+  const packageConfiguration = packageKindsByPlatform[platform];
+  if (command !== "build" || !packageConfiguration) return environment;
 
-  const bundle = requestedWindowsBundle(forwardedArguments);
-  const packageKind = `windows-${bundle}`;
+  const bundle = requestedPackageBundle(
+    forwardedArguments,
+    packageConfiguration.name,
+    packageConfiguration.bundles,
+  );
+  const packageKind = packageConfiguration.bundles[bundle];
   if (environment.DEVHUD_PACKAGE_KIND && environment.DEVHUD_PACKAGE_KIND !== packageKind) {
     throw new Error(
       `DEVHUD_PACKAGE_KIND ${environment.DEVHUD_PACKAGE_KIND} does not match the selected ${bundle} bundle`,

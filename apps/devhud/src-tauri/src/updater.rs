@@ -55,6 +55,11 @@ pub const ROOT_PUBLIC_KEY_BASE64: &str = "11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaP
 pub const ROOT_FINGERPRINT: &str =
     "21fe31dfa154a261626bf854046fd2271b7bed4b6abe45aa58877ef47f9721b9";
 pub const ROOT_PRODUCTION_READY: bool = false;
+#[cfg(test)]
+const TEST_ROOT_PUBLIC_KEY_BASE64: &str = "11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo=";
+#[cfg(test)]
+const TEST_ROOT_FINGERPRINT: &str =
+    "21fe31dfa154a261626bf854046fd2271b7bed4b6abe45aa58877ef47f9721b9";
 const HEALTH_FILE_PREFIX: &str = "devhud-update-health-v1-";
 const HEALTH_ARGUMENT: &str = "--devhud-update-health-v1=";
 const HEALTH_TOKEN_ARGUMENT: &str = "--devhud-update-health-token-v1=";
@@ -339,6 +344,31 @@ pub fn root_ready_for_publication() -> Result<(), &'static str> {
         .ok_or("devhud-release-root-v1-placeholder")
 }
 
+#[derive(Clone, Copy)]
+struct TrustRoot {
+    public_key_base64: &'static str,
+    fingerprint: &'static str,
+    ready: bool,
+}
+
+#[cfg(not(test))]
+const fn manifest_trust_root() -> TrustRoot {
+    TrustRoot {
+        public_key_base64: ROOT_PUBLIC_KEY_BASE64,
+        fingerprint: ROOT_FINGERPRINT,
+        ready: ROOT_PRODUCTION_READY,
+    }
+}
+
+#[cfg(test)]
+const fn manifest_trust_root() -> TrustRoot {
+    TrustRoot {
+        public_key_base64: TEST_ROOT_PUBLIC_KEY_BASE64,
+        fingerprint: TEST_ROOT_FINGERPRINT,
+        ready: true,
+    }
+}
+
 fn decode_key(encoded: &str) -> Result<VerifyingKey, UpdaterError> {
     let bytes = BASE64
         .decode(encoded)
@@ -404,7 +434,25 @@ pub fn verify_manifest(
     package_kind: PackageKind,
     now: OffsetDateTime,
 ) -> Result<VerifiedCandidate, UpdaterError> {
-    if root_ready_for_publication().is_err() && !cfg!(test) {
+    verify_manifest_with_trust_root(
+        bytes,
+        installed_version,
+        target,
+        package_kind,
+        now,
+        manifest_trust_root(),
+    )
+}
+
+fn verify_manifest_with_trust_root(
+    bytes: &[u8],
+    installed_version: &Version,
+    target: DesktopTarget,
+    package_kind: PackageKind,
+    now: OffsetDateTime,
+    trust_root: TrustRoot,
+) -> Result<VerifiedCandidate, UpdaterError> {
+    if !trust_root.ready {
         return Err(UpdaterError::new(
             DiagnosticCode::InvalidSignature,
             UpdatePhase::Verification,
@@ -425,15 +473,15 @@ pub fn verify_manifest(
         ));
     }
 
-    let root = decode_key(ROOT_PUBLIC_KEY_BASE64)?;
-    if fingerprint(&root) != ROOT_FINGERPRINT {
+    let root = decode_key(trust_root.public_key_base64)?;
+    if fingerprint(&root) != trust_root.fingerprint {
         return Err(UpdaterError::new(
             DiagnosticCode::InvalidSignature,
             UpdatePhase::Verification,
         ));
     }
     let mut trusted = root;
-    let mut trusted_fingerprint = ROOT_FINGERPRINT.to_string();
+    let mut trusted_fingerprint = trust_root.fingerprint.to_string();
     let mut seen = HashSet::from([trusted_fingerprint.clone()]);
     for successor in &envelope.key_chain {
         if successor.predecessor_fingerprint != trusted_fingerprint {
@@ -1564,10 +1612,30 @@ fn sibling_backup_path(destination: &Path) -> Result<PathBuf, DiagnosticCode> {
 }
 
 #[cfg(target_os = "linux")]
+fn sync_parent_directory(path: &Path) -> std::io::Result<()> {
+    let parent = path.parent().ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::InvalidInput, "path has no parent")
+    })?;
+    fs::File::open(parent)?.sync_all()
+}
+
+#[cfg(target_os = "linux")]
+fn remove_file_durably(path: &Path) -> std::io::Result<bool> {
+    match fs::remove_file(path) {
+        Ok(()) => {
+            sync_parent_directory(path)?;
+            Ok(true)
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(error),
+    }
+}
+
+#[cfg(target_os = "linux")]
 fn prepare_appimage_backup(destination: &Path) -> Result<PathBuf, DiagnosticCode> {
     let backup = sibling_backup_path(destination)?;
-    match fs::remove_file(&backup) {
-        Ok(()) => {
+    match remove_file_durably(&backup) {
+        Ok(true) => {
             // Reaching a later update from this AppImage proves the installed
             // destination is executable. A fixed sibling backup left by an
             // interrupted earlier health wait is therefore stale.
@@ -1576,7 +1644,7 @@ fn prepare_appimage_backup(destination: &Path) -> Result<PathBuf, DiagnosticCode
                 package = "linux-appimage"
             );
         }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Ok(false) => {}
         Err(_) => {
             tracing::error!(
                 event = "updater_install_backup_cleanup_failed",
@@ -1594,12 +1662,14 @@ fn copy_appimage_backup(
     backup: &Path,
     copy: impl FnOnce(&Path, &Path) -> std::io::Result<u64>,
 ) -> Result<(), DiagnosticCode> {
-    if copy(destination, backup).is_ok() {
+    if copy(destination, backup)
+        .and_then(|_| fs::File::open(backup)?.sync_all())
+        .and_then(|_| sync_parent_directory(backup))
+        .is_ok()
+    {
         return Ok(());
     }
-    if let Err(error) = fs::remove_file(backup)
-        && error.kind() != std::io::ErrorKind::NotFound
-    {
+    if remove_file_durably(backup).is_err() {
         tracing::error!(
             event = "updater_install_backup_cleanup_failed",
             package = "linux-appimage"
@@ -1619,7 +1689,21 @@ fn replace_file_transactionally(
         fs::copy(source, backup)
     })?;
     if replacement.persist(destination).is_err() {
-        let _ = fs::remove_file(&backup);
+        let _ = remove_file_durably(&backup);
+        return Err(DiagnosticCode::InstallationFailed);
+    }
+    if sync_parent_directory(destination).is_err() {
+        if fs::rename(&backup, destination).is_err() || sync_parent_directory(destination).is_err()
+        {
+            tracing::error!(
+                event = "updater_install_rollback_sync_failed",
+                package = "linux-appimage"
+            );
+            return Ok(RestartDisposition::RestartRequired {
+                executable: destination.to_path_buf(),
+                diagnostic: DiagnosticCode::InstallationFailed,
+            });
+        }
         return Err(DiagnosticCode::InstallationFailed);
     }
     if let Err(error) = relaunch(destination) {
@@ -1633,9 +1717,27 @@ fn replace_file_transactionally(
                 diagnostic: DiagnosticCode::RestartFailed,
             });
         }
+        if sync_parent_directory(destination).is_err() {
+            tracing::error!(
+                event = "updater_install_rollback_sync_failed",
+                package = "linux-appimage"
+            );
+            return Ok(RestartDisposition::RestartRequired {
+                executable: destination.to_path_buf(),
+                diagnostic: DiagnosticCode::InstallationFailed,
+            });
+        }
         return Err(error);
     }
-    let _ = fs::remove_file(backup);
+    if remove_file_durably(&backup).is_err() {
+        // The candidate rename was already made durable and the replacement
+        // acknowledged health. A cleanup failure can only leave the fixed
+        // stale backup, which the next update removes before taking a new one.
+        tracing::warn!(
+            event = "updater_install_backup_cleanup_failed",
+            package = "linux-appimage"
+        );
+    }
     Ok(RestartDisposition::Relaunched)
 }
 
@@ -2254,6 +2356,41 @@ mod tests {
         );
     }
 
+    #[test]
+    fn fixture_verification_uses_an_explicit_ready_test_root() {
+        let signed = include_bytes!("../fixtures/updater/signed.json");
+        let unavailable = TrustRoot {
+            public_key_base64: TEST_ROOT_PUBLIC_KEY_BASE64,
+            fingerprint: TEST_ROOT_FINGERPRINT,
+            ready: false,
+        };
+
+        assert!(
+            verify_manifest_with_trust_root(
+                signed,
+                &Version::new(0, 1, 0),
+                target(),
+                package(),
+                now(),
+                manifest_trust_root(),
+            )
+            .is_ok()
+        );
+        assert_eq!(
+            verify_manifest_with_trust_root(
+                signed,
+                &Version::new(0, 1, 0),
+                target(),
+                package(),
+                now(),
+                unavailable,
+            )
+            .unwrap_err()
+            .code,
+            DiagnosticCode::InvalidSignature
+        );
+    }
+
     fn successor(root: &SigningKey, next: &SigningKey) -> KeySuccessor {
         let mut certificate = KeySuccessor {
             predecessor_fingerprint: fingerprint(&root.verifying_key()),
@@ -2378,7 +2515,7 @@ mod tests {
             verify_manifest(&signed, &Version::new(0, 1, 0), target(), package(), now()).is_ok()
         );
         let mut invalid = certificate;
-        invalid.successor_fingerprint = ROOT_FINGERPRINT.into();
+        invalid.successor_fingerprint = TEST_ROOT_FINGERPRINT.into();
         assert_eq!(
             verify_manifest(
                 &fixture("0.2.0", &next, vec![invalid], None),

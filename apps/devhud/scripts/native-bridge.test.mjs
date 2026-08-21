@@ -133,6 +133,20 @@ test("desktop updater checks are generation-guarded, asynchronous, and safely di
   assert.match(nativeBridgeHost, /window\.is_focused\(\)/u);
 });
 
+test("desktop updater publishes restarting before awaiting the installer worker", () => {
+  const restartOperation = nativeBridgeHost.slice(
+    nativeBridgeHost.indexOf('if operation == "updates.approve-restart"'),
+    nativeBridgeHost.indexOf('if operation.starts_with("capture.")'),
+  );
+  const transition = restartOperation.indexOf("begin_restart()");
+  const publication = restartOperation.indexOf("emit_update_status(&app, &restarting)");
+  const worker = restartOperation.indexOf("spawn_blocking");
+
+  assert(transition >= 0);
+  assert(publication > transition);
+  assert(worker > publication);
+});
+
 test("desktop updater replacement processes retain single-instance ownership", () => {
   assert.match(desktopHost, /\.plugin\(single_instance_plugin\(\)\)/u);
   assert.doesNotMatch(desktopHost, /if update_health_probe\.is_none\(\)/u);

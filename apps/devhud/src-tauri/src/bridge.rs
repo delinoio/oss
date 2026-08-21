@@ -1436,7 +1436,7 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
         return Ok(json!({ "kind": "desktop-update-status", "status": updater.snapshot() }));
     }
     if operation == "updates.approve-restart" {
-        let (attempt, package) = {
+        let (attempt, package, restarting) = {
             let mut updater = state
                 .updater
                 .lock()
@@ -1444,8 +1444,11 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
             let updater = updater.as_mut().ok_or("unsupported")?;
             let package = updater.snapshot().package_kind;
             let attempt = updater.begin_restart().map_err(|_| "invalid-argument")?;
-            (attempt, package)
+            let restarting =
+                json!({ "kind": "desktop-update-status", "status": updater.snapshot() });
+            (attempt, package, restarting)
         };
+        emit_update_status(&app, &restarting);
         let join_failure = attempt.join_failure();
         let installer_app = app.clone();
         let attempt = tauri::async_runtime::spawn_blocking(move || {
