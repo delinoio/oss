@@ -41,7 +41,7 @@ export interface GitHubCredential { readonly profileId: string; readonly kind: G
 export interface GitHubRate { readonly limit: number | null; readonly remaining: number | null; readonly used: number | null; readonly resetAt: string | null; readonly resource: string | null; readonly retryAfterSeconds: number | null }
 export interface GitHubResponseMetadata { readonly etag: string | null; readonly rate: GitHubRate }
 export interface GitHubPage<T> { readonly items: readonly T[]; readonly nextPage: number | null; readonly notModified: boolean; readonly metadata: GitHubResponseMetadata }
-export interface GitHubSearchPage<T> extends GitHubPage<T> { readonly incompleteResults: boolean }
+export interface GitHubSearchPage<T> extends GitHubPage<T> { readonly totalCount: number; readonly incompleteResults: boolean }
 export interface GitHubLabel { readonly name: string; readonly color: string; readonly description: string | null }
 export interface GitHubIssue { readonly number: number; readonly title: string; readonly url: string; readonly marker: string; readonly reconciled: boolean }
 export interface GitHubPullRequestSummary { readonly nodeId: string; readonly number: number; readonly title: string; readonly url: string; readonly draft: boolean; readonly repository: GitHubRepositoryRef }
@@ -226,10 +226,12 @@ export function createGitHubProvider({ fetch: fetchImpl }: ProviderOptions): Git
       const page = positiveInteger(options.page ?? 1);
       const normalized = hasPositivePullRequestQualifier(query) ? query : `${query} is:pr`;
       const result = await request(GitHubOperation.SearchPullRequests, credential, `/search/issues?q=${encodeURIComponent(normalized)}&per_page=100&page=${page}`, options.etag ? { headers: { "If-None-Match": options.etag } } : {});
-      if (result.response.status === 304) return { items: [], nextPage: null, notModified: true, incompleteResults: false, metadata: result.metadata };
+      if (result.response.status === 304) return { items: [], nextPage: null, notModified: true, totalCount: 0, incompleteResults: false, metadata: result.metadata };
       const response = record(result.json, GitHubOperation.SearchPullRequests);
       const items = array(response.items, GitHubOperation.SearchPullRequests).map((item) => pullSummary(record(item, GitHubOperation.SearchPullRequests)));
-      return { items, nextPage: nextPage(result.response.headers.get("link")), notModified: false, incompleteResults: response.incomplete_results === true, metadata: result.metadata };
+      const totalCount = response.total_count;
+      if (typeof totalCount !== "number" || !Number.isSafeInteger(totalCount) || totalCount < 0) throw new GitHubProviderError(GitHubErrorCode.InvalidResponse, GitHubOperation.SearchPullRequests, result.response.status, result.metadata.rate);
+      return { items, nextPage: nextPage(result.response.headers.get("link")), notModified: false, totalCount, incompleteResults: response.incomplete_results === true, metadata: result.metadata };
     },
     async enrichPullRequests(credential, nodeIds) {
       if (nodeIds.length === 0) return { items: [], metadata: { etag: null, rate: emptyRate() } };
