@@ -3,9 +3,11 @@
 <plist version="1.0">
 <dict>
   <key>DevHudKeychainAccessGroup</key>
-  <string>$(AppIdentifierPrefix)io.delino.devhud.shared</string>
-  <key>DevHudLegacyKeychainAccessGroup</key>
   <string>$(AppIdentifierPrefix)io.delino.devhud</string>
+  <key>DevHudLegacyKeychainAccessGroup</key>
+  <string>$(AppIdentifierPrefix)io.delino.devhud.shared</string>
+  <key>DevHudWidgetKeychainAccessGroup</key>
+  <string>$(AppIdentifierPrefix)io.delino.devhud.shared</string>
   <key>CFBundleURLTypes</key>
   <array>
     <dict>

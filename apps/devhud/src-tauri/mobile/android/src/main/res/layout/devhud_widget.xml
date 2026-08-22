@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#F21D2530"
+    android:orientation="vertical"
+    android:padding="14dp">
+    <TextView android:id="@+id/widget_deck_name" android:layout_width="match_parent" android:layout_height="wrap_content" android:ellipsize="end" android:maxLines="1" android:textColor="#FFFFFFFF" android:textSize="17sp" android:textStyle="bold" />
+    <TextView android:id="@+id/widget_counts" android:layout_width="match_parent" android:layout_height="wrap_content" android:paddingTop="5dp" android:textColor="#FFD7E0EA" android:textSize="12sp" />
+    <TextView android:id="@+id/widget_results" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:ellipsize="end" android:maxLines="6" android:paddingTop="8dp" android:textColor="#FFFFFFFF" android:textSize="13sp" />
+    <TextView android:id="@+id/widget_status" android:layout_width="match_parent" android:layout_height="wrap_content" android:ellipsize="end" android:maxLines="1" android:textColor="#FFB5C1CE" android:textSize="11sp" />
+</LinearLayout>

@@ -2,10 +2,12 @@ package io.delino.devhud.bridge
 
 import android.Manifest
 import android.app.Activity
+import android.appwidget.AppWidgetManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
+import android.content.ComponentName
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -22,6 +24,8 @@ import app.tauri.annotation.TauriPlugin
 import app.tauri.plugin.Invoke
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
+import io.delino.devhud.widget.DevHudWidgetProvider
+import io.delino.devhud.widget.DevHudWidgetStore
 import java.io.FileNotFoundException
 import java.security.KeyStore
 import java.util.Base64
@@ -40,6 +44,8 @@ private const val diagnosticsCleanupStoreName = "devhud-diagnostics-cleanup-v1"
 private const val diagnosticsCleanupUriKey = "pending-uri"
 private const val diagnosticsCleanupReleaseOnlyKey = "release-only"
 private const val notificationChannel = "deck-changes"
+
+private class MissingWidgetCredentialException : Exception()
 
 @TauriPlugin(
     permissions = [
@@ -91,6 +97,10 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
                 "notifications.cancel-deck" -> cancelNotification(invoke)
                 "updates.status" -> resolveUpdateStatus(invoke)
                 "updates.open-store" -> openStore(invoke)
+                "widgets.status" -> widgetStatus(invoke)
+                "widgets.enable-deck" -> enableWidgetDeck(invoke)
+                "widgets.replace-deck-snapshot" -> replaceWidgetSnapshot(invoke)
+                "widgets.disable-deck" -> disableWidgetDeck(invoke)
                 else -> invoke.reject("invalid-argument", "invalid-argument")
             }
         } catch (error: Exception) {
@@ -357,13 +367,34 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
         val key = settingKey(args)
         val value = args.getString("value")
         persistSecure(invoke) {
-            val editor = activity.getSharedPreferences(storeName, Context.MODE_PRIVATE).edit()
-            if (key.startsWith("github-pat:")) {
-                val setting = args.getJSObject("setting") ?: throw IllegalArgumentException("setting")
-                val marker = githubPatScopeKey(setting.getString("scopeId"), setting.getString("profileId"))
-                editor.putString(marker, encryptSecure("1", marker))
+            val preferences = activity.getSharedPreferences(storeName, Context.MODE_PRIVATE)
+            if (!key.startsWith("github-pat:")) return@persistSecure preferences.edit().putString(key, encryptSecure(value, key)).commit()
+
+            val setting = args.getJSObject("setting") ?: throw IllegalArgumentException("setting")
+            val profileId = setting.getString("profileId")
+            val scopeId = setting.getString("scopeId")
+            val marker = githubPatScopeKey(scopeId, profileId)
+            val previousValue = preferences.getString(key, null)
+            val previousMarker = preferences.getString(marker, null)
+            val widgetStore = DevHudWidgetStore(activity.applicationContext)
+            if (!widgetStore.beginProfileTokenReplacement(profileId, scopeId)) return@persistSecure false
+            if (!preferences.edit()
+                    .putString(marker, encryptSecure("1", marker))
+                    .putString(key, encryptSecure(value, key))
+                    .commit()) {
+                widgetStore.cancelProfileTokenReplacement()
+                return@persistSecure false
             }
-            editor.putString(key, encryptSecure(value, key)).commit()
+            if (widgetStore.replaceProfileToken(profileId, scopeId, value)) {
+                renderWidgets()
+                return@persistSecure true
+            }
+
+            val rollback = preferences.edit()
+            if (previousValue == null) rollback.remove(key) else rollback.putString(key, previousValue)
+            if (previousMarker == null) rollback.remove(marker) else rollback.putString(marker, previousMarker)
+            rollback.commit()
+            false
         }
     }
 
@@ -391,15 +422,26 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
         val key = settingKey(args)
         persistSecure(invoke) {
             val preferences = activity.getSharedPreferences(storeName, Context.MODE_PRIVATE)
-            val editor = preferences.edit()
             if (key.startsWith("github-pat:")) {
                 val setting = args.getJSObject("setting") ?: throw IllegalArgumentException("setting")
-                val marker = githubPatScopeKey(setting.getString("scopeId"), setting.getString("profileId"))
-                if (githubPatScopeKeys(preferences.all.keys, setting.getString("profileId")).none { it != marker }) editor.remove(key)
-                editor.remove(marker)
-            } else editor.remove(key)
-            editor.commit()
+                val removed = removeGitHubPatScope(preferences, DevHudWidgetStore(activity.applicationContext), setting.getString("scopeId"), setting.getString("profileId"))
+                if (removed) renderWidgets()
+                removed
+            } else preferences.edit().remove(key).commit()
         }
+    }
+
+    private fun removeGitHubPatScope(preferences: android.content.SharedPreferences, widgetStore: DevHudWidgetStore, scopeId: String, profileId: String): Boolean {
+        val marker = githubPatScopeKey(scopeId, profileId)
+        if (!widgetStore.beginProfileTokenReplacement(profileId, scopeId)) return false
+        val editor = preferences.edit()
+        if (githubPatScopeKeys(preferences.all.keys, profileId).none { it != marker }) editor.remove("github-pat:$profileId")
+        editor.remove(marker)
+        if (!editor.commit()) {
+            widgetStore.cancelProfileTokenReplacement()
+            return false
+        }
+        return widgetStore.replaceProfileToken(profileId, scopeId, null)
     }
 
     private fun reconcileGitHubPats(invoke: Invoke) {
@@ -416,14 +458,14 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
                 val marker = githubPatScopeKey(scopeId, profileId)
                 if (preferences.contains(pat) && !preferences.contains(marker)) editor.putString(marker, encryptSecure("1", marker))
             }
-            preferences.all.keys.filter { key -> key.startsWith("github-pat-scope:$scopeId:") }
+            val releasedScopes = preferences.all.keys.filter { key -> key.startsWith("github-pat-scope:$scopeId:") }
                 .map { marker -> marker to marker.removePrefix("github-pat-scope:$scopeId:") }
                 .filter { (_, profileId) -> profileId !in profileIds }
-                .forEach { (marker, profileId) ->
-                    if (githubPatScopeKeys(preferences.all.keys, profileId).none { it != marker }) editor.remove("github-pat:$profileId")
-                    editor.remove(marker)
-                }
-            editor.commit()
+            if (!editor.commit()) return@persistSecure false
+            val widgetStore = DevHudWidgetStore(activity.applicationContext)
+            val removed = releasedScopes.all { (_, profileId) -> removeGitHubPatScope(preferences, widgetStore, scopeId, profileId) }
+            if (removed && releasedScopes.isNotEmpty()) renderWidgets()
+            removed
         }
     }
 
@@ -450,6 +492,7 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
         persistSecure(invoke, onComplete = {
             if (destructivePurge) diagnosticsPurgesInProgress.decrementAndGet()
         }) {
+            if (!DevHudWidgetStore(activity.applicationContext).clear()) return@persistSecure false
             val preferences = activity.getSharedPreferences(storeName, Context.MODE_PRIVATE)
             val editor = preferences.edit()
             preferences.all.keys.filter { key ->
@@ -461,12 +504,78 @@ class DevhudNativePlugin(private val activity: Activity) : Plugin(activity) {
         }
     }
 
+    private fun widgetStatus(invoke: Invoke) {
+        val enabled = DevHudWidgetStore(activity.applicationContext).enabledDeckIds()
+        if (enabled == null) {
+            invoke.reject("storage-failure", "storage-failure")
+            return
+        }
+        invoke.resolve(JSObject().put("kind", "widget-status").put("enabledDeckIds", org.json.JSONArray(enabled)))
+    }
+
+    private fun enableWidgetDeck(invoke: Invoke) {
+        val configuration = invoke.getArgs().getJSObject("configuration") ?: throw IllegalArgumentException("configuration")
+        val deckId = configuration.getString("deckId")
+        val profileId = configuration.getString("profileId")
+        val scopeId = configuration.getString("scopeId")
+        persistSecure(invoke) {
+            val preferences = activity.getSharedPreferences(storeName, Context.MODE_PRIVATE)
+            val marker = githubPatScopeKey(scopeId, profileId)
+            val encoded = preferences.getString("github-pat:$profileId", null)
+            val widgetStore = DevHudWidgetStore(activity.applicationContext)
+            if (!preferences.contains(marker) || encoded == null) {
+                val disabled = widgetStore.disable(deckId)
+                renderWidgets()
+                if (!disabled) throw IllegalStateException("widget cleanup failed")
+                throw MissingWidgetCredentialException()
+            }
+            val token = try { decryptSecure(encoded, "github-pat:$profileId", authenticateKey = true) }
+                catch (error: Exception) {
+                    val disabled = widgetStore.disable(deckId)
+                    renderWidgets()
+                    if (!disabled) throw IllegalStateException("widget cleanup failed", error)
+                    throw error
+                }
+            val stored = widgetStore.enable(configuration, token)
+            if (stored) renderWidgets()
+            stored
+        }
+    }
+
+    private fun replaceWidgetSnapshot(invoke: Invoke) {
+        val snapshot = invoke.getArgs().getJSObject("snapshot") ?: throw IllegalArgumentException("snapshot")
+        persistSecure(invoke) {
+            val stored = DevHudWidgetStore(activity.applicationContext).replaceSnapshot(snapshot)
+            if (stored) renderWidgets()
+            stored
+        }
+    }
+
+    private fun disableWidgetDeck(invoke: Invoke) {
+        val deckId = invoke.getArgs().getString("deckId")
+        persistSecure(invoke) {
+            val cleared = DevHudWidgetStore(activity.applicationContext).disable(deckId)
+            if (cleared) renderWidgets()
+            cleared
+        }
+    }
+
+    private fun renderWidgets() {
+        val context = activity.applicationContext
+        val manager = AppWidgetManager.getInstance(context)
+        val component = ComponentName(context, DevHudWidgetProvider::class.java)
+        val ids = manager.getAppWidgetIds(component)
+        ids.forEach { DevHudWidgetProvider.renderStored(context, manager, it) }
+    }
+
     private fun persistSecure(invoke: Invoke, onComplete: () -> Unit = {}, operation: () -> Boolean) {
         try {
             secureSettingsExecutor.execute {
                 try {
                     if (operation()) invoke.resolve(JSObject().put("kind", "ok"))
                     else invoke.reject("storage-failure", "storage-failure")
+                } catch (_: MissingWidgetCredentialException) {
+                    invoke.reject("not-configured", "not-configured")
                 } catch (error: Exception) {
                     invoke.reject("storage-failure", "storage-failure", error)
                 } finally {

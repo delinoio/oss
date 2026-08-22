@@ -8,6 +8,17 @@
     "ios": "16.0",
     "androidApi": 29
   },
+  "widgets": {
+    "iosBundle": "io.delino.devhud.widget",
+    "iosAppGroup": "group.io.delino.devhud",
+    "iosKeychainGroup": "$(AppIdentifierPrefix)io.delino.devhud.shared",
+    "androidProvider": "io.delino.devhud.widget.DevHudWidgetProvider",
+    "deepLinkTemplate": "devhud://deck/<deck-id>",
+    "refreshMinutes": 30,
+    "staleMinutes": 60,
+    "resultLimit": 100,
+    "previewLimit": 3
+  },
   "dependencyClosures": {
     "aarch64-apple-ios": "sha256-1267055c40b837bd27b9da805339775fd6eb82ecd391b827120180b2d40d86d2",
     "aarch64-apple-ios-sim": "sha256-1267055c40b837bd27b9da805339775fd6eb82ecd391b827120180b2d40d86d2",

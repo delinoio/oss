@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>INEnums</key><array/>
+  <key>INIntentDefinitionModelVersion</key><string>1.2</string>
+  <key>INIntentDefinitionNamespace</key><string>DevHudWidget</string>
+  <key>INIntentDefinitionSystemVersion</key><string>22A400</string>
+  <key>INIntentDefinitionToolsBuildVersion</key><string>14A309</string>
+  <key>INIntentDefinitionToolsVersion</key><string>14.0</string>
+  <key>INIntents</key><array><dict>
+    <key>INIntentCategory</key><string>information</string>
+    <key>INIntentDescription</key><string>Choose exactly one explicitly enabled DevHUD Deck.</string>
+    <key>INIntentDescriptionID</key><string>selectDeckDescription</string>
+    <key>INIntentEligibleForWidgets</key><true/>
+    <key>INIntentIneligibleForSuggestions</key><true/>
+    <key>INIntentKeyParameter</key><string>deck</string>
+    <key>INIntentLastParameterTag</key><integer>1</integer>
+    <key>INIntentName</key><string>SelectDeck</string>
+    <key>INIntentParameters</key><array><dict>
+      <key>INIntentParameterConfigurable</key><true/>
+      <key>INIntentParameterDisplayName</key><string>Deck</string>
+      <key>INIntentParameterDisplayNameID</key><string>deckDisplayName</string>
+      <key>INIntentParameterDisplayPriority</key><integer>1</integer>
+      <key>INIntentParameterName</key><string>deck</string>
+      <key>INIntentParameterObjectType</key><string>DeckSelection</string>
+      <key>INIntentParameterObjectTypeNamespace</key><string>DevHudWidget</string>
+      <key>INIntentParameterPromptDialogs</key><array><dict><key>INIntentParameterPromptDialog</key><string>Choose one Deck.</string><key>INIntentParameterPromptDialogID</key><string>deckPrompt</string><key>INIntentParameterPromptDialogCustom</key><true/><key>INIntentParameterPromptDialogType</key><string>Configuration</string></dict></array>
+      <key>INIntentParameterSupportsDynamicEnumeration</key><true/>
+      <key>INIntentParameterTag</key><integer>1</integer>
+      <key>INIntentParameterType</key><string>Object</string>
+    </dict></array>
+    <key>INIntentResponse</key><dict><key>INIntentResponseCodes</key><array><dict><key>INIntentResponseCodeName</key><string>success</string><key>INIntentResponseCodeSuccess</key><true/></dict><dict><key>INIntentResponseCodeName</key><string>failure</string></dict></array></dict>
+    <key>INIntentTitle</key><string>Select Deck</string>
+    <key>INIntentTitleID</key><string>selectDeckTitle</string>
+    <key>INIntentType</key><string>Custom</string>
+    <key>INIntentVerb</key><string>View</string>
+  </dict></array>
+  <key>INTypes</key><array><dict>
+    <key>INTypeDisplayName</key><string>Deck</string>
+    <key>INTypeDisplayNameID</key><string>deckTypeDisplayName</string>
+    <key>INTypeName</key><string>DeckSelection</string>
+    <key>INTypeProperties</key><array><dict><key>INTypePropertyDisplayName</key><string>Name</string><key>INTypePropertyDisplayNameID</key><string>deckName</string><key>INTypePropertyName</key><string>name</string><key>INTypePropertyTag</key><integer>1</integer><key>INTypePropertyType</key><string>String</string></dict></array>
+  </dict></array>
+</dict></plist>

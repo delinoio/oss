@@ -4,8 +4,10 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { NativeBridgeError, NativeBridgeErrorCode, SecureSettingKind, isAuthCallback, nativeBridge, validateAuthenticationBrowserRequest, validateCaptureRequest, validateExternalRequest, validateGitHubPatReconciliation, validateSecretValue, validateSecureSettingRef } from "../src/native-bridge.ts";
+import { NativeBridgeError, NativeBridgeErrorCode, SecureSettingKind, isAuthCallback, nativeBridge, validateAuthenticationBrowserRequest, validateCaptureRequest, validateExternalRequest, validateGitHubPatReconciliation, validateSecretValue, validateSecureSettingRef, validateWidgetRequest } from "../src/native-bridge.ts";
+import { SettingsTextLimit } from "../src/contract-limits.ts";
 import { ShortcutActionId, ShortcutKey, ShortcutModifier, ShortcutValidationCode, defaultDesktopShortcutBindings, parseDesktopShortcutBindings } from "../src/shortcuts.ts";
+import { WidgetQueryLimit } from "../src/widget-contract.ts";
 
 const fixtures = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../fixtures/deep-links.json"), "utf8"));
 const tauriConfig = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/tauri.conf.json"), "utf8"));
@@ -43,6 +45,35 @@ test("secure setting references and values are bounded before native invocation"
   assert.doesNotThrow(() => validateGitHubPatReconciliation("origin.scope", ["work-profile"]));
   assert.throws(() => validateGitHubPatReconciliation("origin.scope", ["work-profile", "work-profile"]), NativeBridgeError);
   assert.throws(() => validateGitHubPatReconciliation("origin.scope", ["../escape"]), NativeBridgeError);
+});
+
+test("widget bridge accepts only selected bounded Deck data and never accepts a credential payload", () => {
+  const configuration = { version: 1, deckId: "018f47a2-7b3c-7def-8abc-1234567890ac", name: "Private", query: "repo:octo/private is:pr", repositories: [{ owner: "octo", name: "private" }], profileId: "work", profileKind: "fine-grained", scopeId: "origin.scope", language: "en" };
+  const repositories = Array.from({ length: 10 }, (_, index) => ({ owner: `owner${index}${"o".repeat(33)}`, name: `repository${index}${"r".repeat(89)}` }));
+  const longQuery = `${repositories.map((repository) => `repo:${repository.owner}/${repository.name}`).join(" ")} ${"search".repeat(40)} is:pr`;
+  assert(longQuery.length > 1024 && longQuery.length <= WidgetQueryLimit);
+  assert.doesNotThrow(() => validateWidgetRequest({ operation: "widgets.status" }));
+  assert.throws(() => validateWidgetRequest({ operation: "widgets.status", token: "must-not-cross" }), NativeBridgeError);
+  assert.doesNotThrow(() => validateWidgetRequest({ operation: "widgets.disable-deck", deckId: configuration.deckId }));
+  assert.throws(() => validateWidgetRequest({ operation: "widgets.disable-deck", deckId: configuration.deckId, token: "must-not-cross" }), NativeBridgeError);
+  assert.doesNotThrow(() => validateWidgetRequest({ operation: "widgets.enable-deck", configuration }));
+  assert.throws(() => validateWidgetRequest({ operation: "widgets.enable-deck", configuration, token: "must-not-cross" }), NativeBridgeError);
+  assert.throws(() => validateWidgetRequest({ operation: "widgets.enable-deck", configuration: { ...configuration, deckId: "../escape" } }), NativeBridgeError);
+  assert.throws(() => validateWidgetRequest({ operation: "widgets.enable-deck", configuration: { ...configuration, repositories: [] } }), NativeBridgeError);
+  assert.throws(() => validateWidgetRequest({ operation: "widgets.enable-deck", configuration: { ...configuration, repositories: [{ owner: "octo", name: "private" }, { owner: "OCTO", name: "PRIVATE" }] } }), NativeBridgeError);
+  assert.throws(() => validateWidgetRequest({ operation: "widgets.enable-deck", configuration: Object.assign({}, configuration, { token: "must-not-cross" }) }), NativeBridgeError);
+  const maximumName = "\u{1F4BB}".repeat(SettingsTextLimit / 2);
+  assert.equal(maximumName.length, SettingsTextLimit);
+  assert.doesNotThrow(() => validateWidgetRequest({ operation: "widgets.enable-deck", configuration: { ...configuration, name: maximumName } }));
+  assert.throws(() => validateWidgetRequest({ operation: "widgets.enable-deck", configuration: { ...configuration, name: `${maximumName}x` } }), NativeBridgeError);
+  assert.doesNotThrow(() => validateWidgetRequest({ operation: "widgets.enable-deck", configuration: { ...configuration, query: longQuery, repositories } }));
+  assert.throws(() => validateWidgetRequest({ operation: "widgets.enable-deck", configuration: { ...configuration, query: "x".repeat(WidgetQueryLimit + 1) } }), NativeBridgeError);
+  const snapshot = { version: 1, deckId: configuration.deckId, query: configuration.query, counts: { total: 1, open: 1, draft: 0, merged: 0, closed: 0, bounded: false }, results: [{ nodeId: "PR_private", number: 1, title: "Private title", repository: "octo/private", state: "open", draft: false }], state: "fresh", lastSuccessfulAt: "2026-08-20T00:00:00.000Z", lastAttemptedAt: "2026-08-20T00:00:00.000Z", rate: null };
+  assert.doesNotThrow(() => validateWidgetRequest({ operation: "widgets.replace-deck-snapshot", snapshot }));
+  assert.doesNotThrow(() => validateWidgetRequest({ operation: "widgets.replace-deck-snapshot", snapshot: { ...snapshot, query: longQuery } }));
+  assert.throws(() => validateWidgetRequest({ operation: "widgets.replace-deck-snapshot", snapshot: { ...snapshot, query: "x".repeat(WidgetQueryLimit + 1) } }), NativeBridgeError);
+  assert.throws(() => validateWidgetRequest({ operation: "widgets.replace-deck-snapshot", snapshot, token: "must-not-cross" }), NativeBridgeError);
+  assert.throws(() => validateWidgetRequest({ operation: "widgets.replace-deck-snapshot", snapshot: Object.assign({}, snapshot, { credential: "must-not-cross" }) }), NativeBridgeError);
 });
 
 test("desktop secure storage resolves Keychain, Credential Manager, and Secret Service without plaintext fallback", () => {

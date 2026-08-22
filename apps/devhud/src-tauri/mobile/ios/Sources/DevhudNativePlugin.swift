@@ -5,11 +5,15 @@ import Tauri
 import UIKit
 import UserNotifications
 import WebKit
+import WidgetKit
 
 private let keychainService = "io.delino.devhud.secure-settings.v1"
+private let widgetKeychainService = "io.delino.devhud.widget-credential.v1"
 private let appGroup = "group.io.delino.devhud"
 private let sharedAccessGroupKey = "DevHudKeychainAccessGroup"
 private let legacyAccessGroupKey = "DevHudLegacyKeychainAccessGroup"
+private let widgetAccessGroupKey = "DevHudWidgetKeychainAccessGroup"
+private let widgetForegroundReloadWindow: TimeInterval = 60
 private let secureStoreLogger = Logger(subsystem: "io.delino.devhud", category: "secure-store")
 
 private struct SecureSetting: Decodable {
@@ -24,6 +28,47 @@ private struct DeckNotification: Decodable {
     let deckId: String
     let title: String
     let body: String
+}
+
+private struct WidgetDeckConfiguration: Codable, Equatable {
+    let version: Int
+    let deckId: String
+    let name: String
+    let query: String
+    let repositories: [WidgetRepository]
+    let profileId: String
+    let profileKind: String
+    let scopeId: String
+    let language: String
+}
+
+private struct WidgetRepository: Codable, Equatable { let owner: String; let name: String }
+private struct WidgetCredential: Codable { let version: Int; let revision: String; let token: String }
+private struct WidgetCredentialReplacement: Codable, Equatable {
+    let version: Int
+    let profileId: String
+    let scopeId: String
+    let deckIds: [String]
+}
+private enum WidgetCredentialReplacementStart {
+    case none
+    case started(WidgetCredentialReplacement)
+    case failure
+}
+
+private struct WidgetDeckCounts: Codable, Equatable { let total: Int; let open: Int; let draft: Int; let merged: Int; let closed: Int; let bounded: Bool }
+private struct WidgetPullRequest: Codable, Equatable { let nodeId: String; let number: Int; let title: String; let repository: String; let state: String; let draft: Bool }
+private struct WidgetRate: Codable, Equatable { let limit: Int?; let remaining: Int?; let used: Int?; let resetAt: String?; let resource: String?; let retryAfterSeconds: Int? }
+private struct WidgetDeckSnapshot: Codable, Equatable {
+    let version: Int
+    let deckId: String
+    let query: String
+    let counts: WidgetDeckCounts
+    let results: [WidgetPullRequest]
+    let state: String
+    let lastSuccessfulAt: String?
+    let lastAttemptedAt: String
+    let rate: WidgetRate?
 }
 
 private struct RequestArgs: Decodable {
@@ -42,15 +87,23 @@ private struct RequestArgs: Decodable {
     let profileIds: [String]?
     let notification: DeckNotification?
     let deckId: String?
+    let configuration: WidgetDeckConfiguration?
+    let snapshot: WidgetDeckSnapshot?
 }
 
 final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocumentPickerDelegate {
     private var pendingDiagnosticsExport: (Invoke, URL)?
     private var pendingDiagnosticsCleanup: URL?
+    private let widgetStateStore = WidgetStateStore(appGroup: appGroup)
 
     @objc public override func load(webview: WKWebView) {
         cleanupDiagnosticsTemporaryDirectory()
-        guard UserDefaults(suiteName: appGroup) != nil else { return }
+        if !migrateLegacySecureStore() {
+            secureStoreLogger.error("event=legacy_secure_store_migration_failed")
+        }
+        if !reconcileWidgetCredentials() {
+            secureStoreLogger.error("event=widget_credential_reconciliation_failed")
+        }
         UNUserNotificationCenter.current().delegate = self
     }
 
@@ -75,6 +128,10 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
             let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
             invoke.resolve(["kind": "update-status", "store": "app-store", "installedVersion": version, "configured": false])
         case "updates.open-store": invoke.reject("not-configured", code: "not-configured")
+        case "widgets.status": widgetStatus(invoke)
+        case "widgets.enable-deck": try enableWidgetDeck(args, invoke)
+        case "widgets.replace-deck-snapshot": try replaceWidgetSnapshot(args, invoke)
+        case "widgets.disable-deck": try disableWidgetDeck(args, invoke)
         default: invoke.reject("invalid-argument", code: "invalid-argument")
         }
     }
@@ -229,6 +286,49 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
         SecItemDelete(query(setting, accessGroupKey: accessGroupKey) as CFDictionary)
     }
 
+    private func migrateLegacySecureStore() -> Bool {
+        var all: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+                                  kSecAttrService as String: keychainService,
+                                  kSecReturnAttributes as String: true,
+                                  kSecReturnData as String: true,
+                                  kSecMatchLimit as String: kSecMatchLimitAll]
+        if let accessGroup = Bundle.main.object(forInfoDictionaryKey: legacyAccessGroupKey) as? String {
+            all[kSecAttrAccessGroup as String] = accessGroup
+        }
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(all as CFDictionary, &result)
+        if status == errSecItemNotFound { return true }
+        guard status == errSecSuccess, let items = result as? [[String: Any]] else { return false }
+        for item in items {
+            guard let account = item[kSecAttrAccount as String] as? String,
+                  let separator = account.firstIndex(of: ":"),
+                  let data = item[kSecValueData as String] as? Data else { return false }
+            let kind = String(account[..<separator])
+            let profileId = String(account[account.index(after: separator)...])
+            let setting = SecureSetting(kind: kind, profileId: profileId, scopeId: nil)
+            let primary = readData(setting, accessGroupKey: sharedAccessGroupKey)
+            guard primary.0 == errSecSuccess || primary.0 == errSecItemNotFound else { return false }
+            if primary.0 == errSecItemNotFound,
+               storeData(data, setting: setting, accessGroupKey: sharedAccessGroupKey) != errSecSuccess { return false }
+            let deletion = deleteData(setting, accessGroupKey: legacyAccessGroupKey)
+            guard deletion == errSecSuccess || deletion == errSecItemNotFound else { return false }
+        }
+        return true
+    }
+
+    private func readDataMigratingLegacy(_ setting: SecureSetting) -> (OSStatus, Data?) {
+        let primary = readData(setting, accessGroupKey: sharedAccessGroupKey)
+        if primary.0 != errSecItemNotFound { return primary }
+
+        let legacy = readData(setting, accessGroupKey: legacyAccessGroupKey)
+        guard legacy.0 == errSecSuccess, let data = legacy.1 else { return legacy }
+        let stored = storeData(data, setting: setting, accessGroupKey: sharedAccessGroupKey)
+        guard stored == errSecSuccess else { return (stored, nil) }
+        let deleted = deleteData(setting, accessGroupKey: legacyAccessGroupKey)
+        guard deleted == errSecSuccess || deleted == errSecItemNotFound else { return (deleted, nil) }
+        return (errSecSuccess, data)
+    }
+
     private func rejectStorageFailure(_ invoke: Invoke) {
         invoke.reject("storage-failure", code: "storage-failure")
     }
@@ -237,7 +337,7 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
         guard let setting = args.setting else { throw NativeError.invalidArgument }
         if setting.kind == "github-pat" {
             guard let scopeId = setting.scopeId else { throw NativeError.invalidArgument }
-            let (markerStatus, _) = readData(githubPatScope(scopeId, setting.profileId), accessGroupKey: sharedAccessGroupKey)
+            let (markerStatus, _) = readDataMigratingLegacy(githubPatScope(scopeId, setting.profileId))
             if markerStatus == errSecItemNotFound {
                 invoke.resolve(["kind": "secure-value", "value": NSNull()])
                 return
@@ -247,44 +347,33 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
                 return
             }
         }
-        let (sharedStatus, sharedData) = readData(setting, accessGroupKey: sharedAccessGroupKey)
-        if sharedStatus == errSecSuccess, let data = sharedData, let value = String(data: data, encoding: .utf8) {
+        let (status, storedData) = readDataMigratingLegacy(setting)
+        if status == errSecSuccess, let data = storedData, let value = String(data: data, encoding: .utf8) {
             invoke.resolve(["kind": "secure-value", "value": value])
             return
         }
-        guard sharedStatus == errSecItemNotFound else {
+        if status == errSecItemNotFound {
+            invoke.resolve(["kind": "secure-value", "value": NSNull()])
+        } else {
             rejectStorageFailure(invoke)
-            return
         }
-        let (legacyStatus, legacyData) = readData(setting, accessGroupKey: legacyAccessGroupKey)
-        if legacyStatus == errSecItemNotFound { invoke.resolve(["kind": "secure-value", "value": NSNull()]); return }
-        guard legacyStatus == errSecSuccess, let data = legacyData, let value = String(data: data, encoding: .utf8),
-              storeData(data, setting: setting, accessGroupKey: sharedAccessGroupKey) == errSecSuccess else {
-            rejectStorageFailure(invoke)
-            return
-        }
-        let deletion = deleteData(setting, accessGroupKey: legacyAccessGroupKey)
-        guard deletion == errSecSuccess || deletion == errSecItemNotFound else {
-            rejectStorageFailure(invoke)
-            return
-        }
-        invoke.resolve(["kind": "secure-value", "value": value])
     }
 
     private func writeSecure(_ args: RequestArgs, _ invoke: Invoke) throws {
         guard let setting = args.setting, let value = args.value, let data = value.data(using: .utf8) else { throw NativeError.invalidArgument }
         var createdMarker: SecureSetting?
         var previousGitHubPatData: Data?
+        var widgetCredentialReplacement: WidgetCredentialReplacement?
         if setting.kind == "github-pat" {
             guard let scopeId = setting.scopeId, let markerData = "1".data(using: .utf8) else { throw NativeError.invalidArgument }
-            let (previousStatus, previousData) = readData(setting, accessGroupKey: sharedAccessGroupKey)
+            let (previousStatus, previousData) = readDataMigratingLegacy(setting)
             guard previousStatus == errSecItemNotFound || (previousStatus == errSecSuccess && previousData != nil) else {
                 rejectStorageFailure(invoke)
                 return
             }
             previousGitHubPatData = previousData
             let marker = githubPatScope(scopeId, setting.profileId)
-            let (markerStatus, _) = readData(marker, accessGroupKey: sharedAccessGroupKey)
+            let (markerStatus, _) = readDataMigratingLegacy(marker)
             guard markerStatus == errSecSuccess || markerStatus == errSecItemNotFound else {
                 rejectStorageFailure(invoke)
                 return
@@ -296,19 +385,42 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
                 }
                 createdMarker = marker
             }
+            switch beginWidgetCredentialReplacement(profileId: setting.profileId, scopeId: scopeId) {
+            case .none: break
+            case .started(let transaction): widgetCredentialReplacement = transaction
+            case .failure:
+                rollbackCreatedGitHubPatScope(createdMarker)
+                rejectStorageFailure(invoke)
+                return
+            }
         }
         guard storeData(data, setting: setting, accessGroupKey: sharedAccessGroupKey) == errSecSuccess else {
+            _ = cancelWidgetCredentialReplacement(widgetCredentialReplacement)
             rollbackCreatedGitHubPatScope(createdMarker)
             rejectStorageFailure(invoke)
             return
         }
         let legacyDeletion = deleteData(setting, accessGroupKey: legacyAccessGroupKey)
         guard legacyDeletion == errSecSuccess || legacyDeletion == errSecItemNotFound else {
-            if setting.kind != "github-pat" || rollbackGitHubPatWrite(setting, previousData: previousGitHubPatData) {
+            if setting.kind != "github-pat" {
+                rollbackCreatedGitHubPatScope(createdMarker)
+            } else if rollbackGitHubPatWrite(setting, previousData: previousGitHubPatData) {
+                _ = cancelWidgetCredentialReplacement(widgetCredentialReplacement)
                 rollbackCreatedGitHubPatScope(createdMarker)
             }
             rejectStorageFailure(invoke)
             return
+        }
+        if setting.kind == "github-pat" {
+            guard replaceWidgetCredentials(widgetCredentialReplacement, data: data) else {
+                if rollbackGitHubPatWrite(setting, previousData: previousGitHubPatData) {
+                    _ = replaceWidgetCredentials(widgetCredentialReplacement, data: previousGitHubPatData)
+                    rollbackCreatedGitHubPatScope(createdMarker)
+                }
+                rejectStorageFailure(invoke)
+                return
+            }
+            WidgetCenter.shared.reloadAllTimelines()
         }
         invoke.resolve(["kind": "ok"])
     }
@@ -370,7 +482,15 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
     }
 
     private func removeGitHubPatScope(_ scopeId: String, _ profileId: String) -> Bool {
-        guard let accounts = secureAccounts(accessGroupKey: sharedAccessGroupKey) else { return false }
+        guard let primaryAccounts = secureAccounts(accessGroupKey: sharedAccessGroupKey),
+              let legacyAccounts = secureAccounts(accessGroupKey: legacyAccessGroupKey) else { return false }
+        let widgetCredentialReplacement: WidgetCredentialReplacement?
+        switch beginWidgetCredentialReplacement(profileId: profileId, scopeId: scopeId) {
+        case .none: widgetCredentialReplacement = nil
+        case .started(let transaction): widgetCredentialReplacement = transaction
+        case .failure: return false
+        }
+        let accounts = Set(primaryAccounts + legacyAccounts)
         let marker = githubPatScope(scopeId, profileId)
         let markerSuffix = ":\(profileId)"
         let retainedElsewhere = accounts.contains { account in
@@ -383,13 +503,19 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
                 if deletion != errSecSuccess && deletion != errSecItemNotFound { return false }
             }
         }
-        let markerDeletion = deleteData(marker, accessGroupKey: sharedAccessGroupKey)
-        return markerDeletion == errSecSuccess || markerDeletion == errSecItemNotFound
+        for accessGroupKey in [sharedAccessGroupKey, legacyAccessGroupKey] {
+            let deletion = deleteData(marker, accessGroupKey: accessGroupKey)
+            if deletion != errSecSuccess && deletion != errSecItemNotFound { return false }
+        }
+        guard replaceWidgetCredentials(widgetCredentialReplacement, data: nil) else { return false }
+        WidgetCenter.shared.reloadAllTimelines()
+        return true
     }
 
     private func reconcileGitHubPats(_ args: RequestArgs, _ invoke: Invoke) throws {
         guard let scopeId = args.scopeId, let profileIds = args.profileIds, profileIds.count <= 25,
               Set(profileIds).count == profileIds.count else { throw NativeError.invalidArgument }
+        guard migrateLegacySecureStore() else { rejectStorageFailure(invoke); return }
         guard let sharedAccounts = secureAccounts(accessGroupKey: sharedAccessGroupKey),
               let legacyAccounts = secureAccounts(accessGroupKey: legacyAccessGroupKey) else {
             rejectStorageFailure(invoke)
@@ -406,7 +532,7 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
             }
         }
         let prefix = "github-pat-scope:\(scopeId):"
-        for account in sharedAccounts where account.hasPrefix(prefix) {
+        for account in Set(sharedAccounts + legacyAccounts) where account.hasPrefix(prefix) {
             let profileId = String(account.dropFirst(prefix.count))
             if retained.contains(profileId) { continue }
             guard removeGitHubPatScope(scopeId, profileId) else {
@@ -459,10 +585,373 @@ final class DevhudNativePlugin: Plugin, UNUserNotificationCenterDelegate, UIDocu
             }
             guard diagnosticsCleanupSucceeded else { rejectStorageFailure(invoke); return }
         }
+        guard clearWidgetState() else { rejectStorageFailure(invoke); return }
         for accessGroupKey in [sharedAccessGroupKey, legacyAccessGroupKey] {
             guard purgeSecureGroup(args, accessGroupKey: accessGroupKey) else { rejectStorageFailure(invoke); return }
         }
         invoke.resolve(["kind": "ok"])
+    }
+
+    private func widgetCredentialQuery(_ deckId: String) -> [String: Any] {
+        var query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+                                    kSecAttrService as String: widgetKeychainService,
+                                    kSecAttrAccount as String: deckId,
+                                    kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+                                    kSecAttrSynchronizable as String: false]
+        if let accessGroup = Bundle.main.object(forInfoDictionaryKey: widgetAccessGroupKey) as? String {
+            query[kSecAttrAccessGroup as String] = accessGroup
+        }
+        return query
+    }
+
+    private func storeWidgetCredential(_ data: Data, deckId: String) -> OSStatus {
+        let query = widgetCredentialQuery(deckId)
+        let status = SecItemUpdate(query as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+        if status != errSecItemNotFound { return status }
+        var item = query
+        item[kSecValueData as String] = data
+        return SecItemAdd(item as CFDictionary, nil)
+    }
+
+    private func encodeWidgetCredential(_ data: Data) -> Data? {
+        guard let token = String(data: data, encoding: .utf8) else { return nil }
+        return try? JSONEncoder().encode(WidgetCredential(version: 1, revision: UUID().uuidString.lowercased(), token: token))
+    }
+
+    private func widgetCredentialMatchesAuthoritative(_ stored: Data?, authoritative: Data) -> Bool {
+        guard let stored else { return false }
+        if stored == authoritative {
+            guard let token = String(data: stored, encoding: .utf8),
+                  let prefix = ["ghp_", "github_pat_"].first(where: token.hasPrefix),
+                  token.utf8.count > prefix.utf8.count else { return false }
+            return token.utf8.allSatisfy { byte in
+                byte == 95 || (48...57).contains(byte) || (65...90).contains(byte) || (97...122).contains(byte)
+            }
+        }
+        guard let token = String(data: authoritative, encoding: .utf8),
+              let credential = try? JSONDecoder().decode(WidgetCredential.self, from: stored),
+              credential.version == 1 else { return false }
+        return credential.token == token
+    }
+
+    private func readWidgetCredential(_ deckId: String) -> (OSStatus, Data?) {
+        var query = widgetCredentialQuery(deckId)
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        return (status, result as? Data)
+    }
+
+    private func beginWidgetCredentialReplacement(profileId: String, scopeId: String) -> WidgetCredentialReplacementStart {
+        guard reconcileWidgetCredentialReplacement() else { return .failure }
+        guard case .success(let states) = widgetStateStore.allDeckStates() else { return .failure }
+        let deckIds = states.compactMap { state -> String? in
+            guard let encoded = state.configuration,
+                  let configuration = try? JSONDecoder().decode(WidgetDeckConfiguration.self, from: encoded),
+                  configuration.profileId == profileId, configuration.scopeId == scopeId else { return nil }
+            return configuration.deckId == state.deckId ? state.deckId : nil
+        }.sorted()
+        if deckIds.isEmpty { return .none }
+        let transaction = WidgetCredentialReplacement(version: 1, profileId: profileId, scopeId: scopeId, deckIds: deckIds)
+        guard let encoded = try? JSONEncoder().encode(transaction) else { return .failure }
+        guard widgetStateStore.updateMetadata({ metadata in metadata.credentialReplacement = encoded; return true }) else { return .failure }
+        return .started(transaction)
+    }
+
+    private func replaceWidgetCredentials(_ transaction: WidgetCredentialReplacement?, data: Data?) -> Bool {
+        guard let transaction else { return true }
+        let replacement: Data?
+        if let data {
+            guard let encoded = encodeWidgetCredential(data) else { return false }
+            replacement = encoded
+        } else {
+            replacement = nil
+        }
+        for deckId in transaction.deckIds {
+            let state: StoredWidgetDeckState
+            switch widgetStateStore.deckState(deckId) {
+            case .failure: return false
+            case .success(let value):
+                guard let value else { continue }
+                state = value
+            }
+            guard let configurationData = state.configuration,
+                  let configuration = try? JSONDecoder().decode(WidgetDeckConfiguration.self, from: configurationData),
+                  configuration.profileId == transaction.profileId, configuration.scopeId == transaction.scopeId else { continue }
+            let succeeded = replacement.map { storeWidgetCredential($0, deckId: deckId) == errSecSuccess } ?? removeWidgetCredential(deckId)
+            if !succeeded { return false }
+        }
+        return widgetStateStore.updateMetadata { metadata in
+            guard let currentData = metadata.credentialReplacement,
+                  let current = try? JSONDecoder().decode(WidgetCredentialReplacement.self, from: currentData),
+                  current == transaction else { return false }
+            metadata.credentialReplacement = nil
+            return true
+        }
+    }
+
+    private func cancelWidgetCredentialReplacement(_ transaction: WidgetCredentialReplacement?) -> Bool {
+        guard let transaction else { return true }
+        return widgetStateStore.updateMetadata { metadata in
+            guard let currentData = metadata.credentialReplacement,
+                  let current = try? JSONDecoder().decode(WidgetCredentialReplacement.self, from: currentData),
+                  current == transaction else { return false }
+            metadata.credentialReplacement = nil
+            return true
+        }
+    }
+
+    private func reconcileWidgetCredentialReplacement() -> Bool {
+        guard case .success(let metadata) = widgetStateStore.metadata() else { return false }
+        guard let encoded = metadata.credentialReplacement else { return true }
+        guard let transaction = try? JSONDecoder().decode(WidgetCredentialReplacement.self, from: encoded),
+              transaction.version == 1 else { return false }
+        let (markerStatus, _) = readDataMigratingLegacy(githubPatScope(transaction.scopeId, transaction.profileId))
+        if markerStatus == errSecItemNotFound { return replaceWidgetCredentials(transaction, data: nil) }
+        guard markerStatus == errSecSuccess else { return false }
+        let setting = SecureSetting(kind: "github-pat", profileId: transaction.profileId, scopeId: transaction.scopeId)
+        let (status, data) = readDataMigratingLegacy(setting)
+        if status == errSecItemNotFound { return replaceWidgetCredentials(transaction, data: nil) }
+        guard status == errSecSuccess, let data else { return false }
+        return replaceWidgetCredentials(transaction, data: data)
+    }
+
+    private func removeWidgetCredential(_ deckId: String) -> Bool {
+        let status = SecItemDelete(widgetCredentialQuery(deckId) as CFDictionary)
+        return status == errSecSuccess || status == errSecItemNotFound
+    }
+
+    private func removeAllWidgetCredentials() -> Bool {
+        var query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+                                    kSecAttrService as String: widgetKeychainService,
+                                    kSecAttrSynchronizable as String: false]
+        if let accessGroup = Bundle.main.object(forInfoDictionaryKey: widgetAccessGroupKey) as? String {
+            query[kSecAttrAccessGroup as String] = accessGroup
+        }
+        let status = SecItemDelete(query as CFDictionary)
+        return status == errSecSuccess || status == errSecItemNotFound
+    }
+
+    private func widgetCredentialDeckIds() -> (OSStatus, Set<String>) {
+        var query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+                                    kSecAttrService as String: widgetKeychainService,
+                                    kSecAttrSynchronizable as String: false,
+                                    kSecReturnAttributes as String: true,
+                                    kSecMatchLimit as String: kSecMatchLimitAll]
+        if let accessGroup = Bundle.main.object(forInfoDictionaryKey: widgetAccessGroupKey) as? String {
+            query[kSecAttrAccessGroup as String] = accessGroup
+        }
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        if status == errSecItemNotFound { return (status, []) }
+        guard status == errSecSuccess else { return (status, []) }
+        let items: [[String: Any]]
+        if let values = result as? [[String: Any]] { items = values }
+        else if let value = result as? [String: Any] { items = [value] }
+        else { return (errSecDecode, []) }
+        return (status, Set(items.compactMap { $0[kSecAttrAccount as String] as? String }))
+    }
+
+    private func reconcileWidgetCredentials() -> Bool {
+        guard case .success(let initialMetadata) = widgetStateStore.metadata() else { return false }
+        let replacementPending = initialMetadata.credentialReplacement != nil
+        guard reconcileWidgetCredentialReplacement(), case .success(let states) = widgetStateStore.allDeckStates() else { return false }
+        let pendingDeckIds = Set(states.filter(\.transactionPending).map(\.deckId))
+        var changed = replacementPending
+        for deckId in pendingDeckIds {
+            guard removeWidgetCredential(deckId) else { return false }
+            guard widgetStateStore.updateDeckState(deckId, { state in
+                guard state != nil else { return false }
+                state?.transactionPending = false
+                return true
+            }) else { return false }
+            changed = true
+        }
+        guard case .success(let reconciledStates) = widgetStateStore.allDeckStates() else { return false }
+        let configuredDeckIds = Set(reconciledStates.compactMap { state -> String? in
+            guard let encoded = state.configuration,
+                  let configuration = try? JSONDecoder().decode(WidgetDeckConfiguration.self, from: encoded) else { return nil }
+            return configuration.deckId == state.deckId ? state.deckId : nil
+        })
+        let (status, credentialDeckIds) = widgetCredentialDeckIds()
+        guard status == errSecSuccess || status == errSecItemNotFound else { return false }
+        for deckId in credentialDeckIds where !configuredDeckIds.contains(deckId) {
+            guard removeWidgetCredential(deckId) else { return false }
+            changed = true
+        }
+        if changed { WidgetCenter.shared.reloadAllTimelines() }
+        return true
+    }
+
+    private func abortWidgetTransaction(deckId: String, previousState: StoredWidgetDeckState?, previousCredentialData: Data?) -> Bool {
+        let credentialRestored: Bool
+        if let previousCredentialData {
+            credentialRestored = storeWidgetCredential(previousCredentialData, deckId: deckId) == errSecSuccess
+        } else {
+            credentialRestored = removeWidgetCredential(deckId)
+        }
+        // Keep the marker when either store cannot be restored so the widget
+        // cannot consume a credential whose matching configuration is unknown.
+        guard credentialRestored else { return false }
+        return widgetStateStore.updateDeckState(deckId) { state in state = previousState; return true }
+    }
+
+    private func widgetStatus(_ invoke: Invoke) {
+        guard reconcileWidgetCredentials(), case .success(let states) = widgetStateStore.allDeckStates() else { rejectStorageFailure(invoke); return }
+        let enabled = states.compactMap { state -> String? in
+            guard !state.transactionPending, let data = state.configuration,
+                  let configuration = try? JSONDecoder().decode(WidgetDeckConfiguration.self, from: data),
+                  configuration.deckId == state.deckId else { return nil }
+            return state.deckId
+        }.sorted()
+        invoke.resolve(["kind": "widget-status", "enabledDeckIds": enabled])
+    }
+
+    private func enableWidgetDeck(_ args: RequestArgs, _ invoke: Invoke) throws {
+        guard let configuration = args.configuration else { throw NativeError.invalidArgument }
+        let setting = SecureSetting(kind: "github-pat", profileId: configuration.profileId, scopeId: configuration.scopeId)
+        let marker = githubPatScope(configuration.scopeId, configuration.profileId)
+        let (markerStatus, _) = readDataMigratingLegacy(marker)
+        let (patStatus, patData) = readDataMigratingLegacy(setting)
+        guard markerStatus == errSecSuccess, patStatus == errSecSuccess, let patData else {
+            guard removeWidgetDeck(configuration.deckId) else { rejectStorageFailure(invoke); return }
+            WidgetCenter.shared.reloadAllTimelines()
+            if markerStatus == errSecItemNotFound || patStatus == errSecItemNotFound { invoke.reject("not-configured", code: "not-configured") }
+            else { rejectStorageFailure(invoke) }
+            return
+        }
+        do {
+            guard case .success(let previousState) = widgetStateStore.deckState(configuration.deckId) else { rejectStorageFailure(invoke); return }
+            let previous = previousState?.configuration.flatMap { try? JSONDecoder().decode(WidgetDeckConfiguration.self, from: $0) }
+            let (previousCredentialStatus, previousCredentialData) = readWidgetCredential(configuration.deckId)
+            guard previousCredentialStatus == errSecSuccess || previousCredentialStatus == errSecItemNotFound else {
+                rejectStorageFailure(invoke)
+                return
+            }
+            let encoded = try JSONEncoder().encode(configuration)
+            if previous == configuration && widgetCredentialMatchesAuthoritative(previousCredentialData, authoritative: patData) {
+                invoke.resolve(["kind": "ok"])
+                return
+            }
+            guard widgetStateStore.updateDeckState(configuration.deckId, { state in
+                if state == nil { state = StoredWidgetDeckState(deckId: configuration.deckId) }
+                state?.transactionPending = true
+                return true
+            }) else { rejectStorageFailure(invoke); return }
+            guard let widgetCredential = encodeWidgetCredential(patData),
+                  storeWidgetCredential(widgetCredential, deckId: configuration.deckId) == errSecSuccess else {
+                _ = abortWidgetTransaction(deckId: configuration.deckId, previousState: previousState, previousCredentialData: previousCredentialData)
+                rejectStorageFailure(invoke)
+                return
+            }
+            guard widgetStateStore.updateDeckState(configuration.deckId, { state in
+                guard state?.transactionPending == true else { return false }
+                state?.configuration = encoded
+                if let previous, widgetSelectionChanged(previous, configuration) {
+                    state?.snapshot = nil
+                    state?.foregroundReloadDeadline = nil
+                }
+                return true
+            }) else {
+                _ = abortWidgetTransaction(deckId: configuration.deckId, previousState: previousState, previousCredentialData: previousCredentialData)
+                rejectStorageFailure(invoke)
+                return
+            }
+            guard widgetStateStore.updateDeckState(configuration.deckId, { state in
+                guard state?.configuration == encoded else { return false }
+                state?.transactionPending = false
+                return true
+            }) else {
+                rejectStorageFailure(invoke)
+                return
+            }
+            WidgetCenter.shared.reloadAllTimelines()
+            invoke.resolve(["kind": "ok"])
+        } catch {
+            rejectStorageFailure(invoke)
+        }
+    }
+
+    private func widgetSelectionChanged(_ left: WidgetDeckConfiguration, _ right: WidgetDeckConfiguration) -> Bool {
+        left.query != right.query || left.repositories.map { "\($0.owner.lowercased())/\($0.name.lowercased())" } != right.repositories.map { "\($0.owner.lowercased())/\($0.name.lowercased())" } || left.profileId != right.profileId || left.profileKind != right.profileKind || left.scopeId != right.scopeId
+    }
+
+    private func replaceWidgetSnapshot(_ args: RequestArgs, _ invoke: Invoke) throws {
+        guard let snapshot = args.snapshot else { throw NativeError.invalidArgument }
+        guard case .success(let state) = widgetStateStore.deckState(snapshot.deckId) else { rejectStorageFailure(invoke); return }
+        guard let configurationData = state?.configuration,
+              let configuration = try? JSONDecoder().decode(WidgetDeckConfiguration.self, from: configurationData),
+              configuration.query == snapshot.query else { throw NativeError.invalidArgument }
+        let previousSnapshot = state?.snapshot.flatMap { try? JSONDecoder().decode(WidgetDeckSnapshot.self, from: $0) }
+        let merged = mergeWidgetSnapshot(current: previousSnapshot, incoming: snapshot)
+        if merged == previousSnapshot { invoke.resolve(["kind": "ok"]); return }
+        guard widgetStateStore.updateDeckState(snapshot.deckId, { current in
+            guard current?.configuration == configurationData, current?.transactionPending == false else { return false }
+            let latestSnapshot = current?.snapshot.flatMap { try? JSONDecoder().decode(WidgetDeckSnapshot.self, from: $0) }
+            let latestMerged = mergeWidgetSnapshot(current: latestSnapshot, incoming: snapshot)
+            guard let encoded = try? JSONEncoder().encode(latestMerged) else { return false }
+            current?.snapshot = encoded
+            current?.foregroundReloadDeadline = Date().addingTimeInterval(widgetForegroundReloadWindow)
+            return true
+        }) else {
+            rejectStorageFailure(invoke)
+            return
+        }
+        WidgetCenter.shared.reloadAllTimelines()
+        invoke.resolve(["kind": "ok"])
+    }
+
+    private func mergeWidgetSnapshot(current: WidgetDeckSnapshot?, incoming: WidgetDeckSnapshot) -> WidgetDeckSnapshot {
+        guard let current, current.deckId == incoming.deckId, current.query == incoming.query,
+              let currentAttempt = widgetTimestamp(current.lastAttemptedAt),
+              let incomingAttempt = widgetTimestamp(incoming.lastAttemptedAt) else { return incoming }
+        let now = Date()
+        let attempt = incomingWidgetTimestampIsNewer(current: currentAttempt, incoming: incomingAttempt, now: now) ? incoming : current
+        let success: WidgetDeckSnapshot
+        switch (widgetTimestamp(current.lastSuccessfulAt), widgetTimestamp(incoming.lastSuccessfulAt)) {
+        case (_, nil): success = current
+        case (nil, _): success = incoming
+        case (let currentSuccess?, let incomingSuccess?): success = incomingWidgetTimestampIsNewer(current: currentSuccess, incoming: incomingSuccess, now: now) ? incoming : current
+        }
+        return WidgetDeckSnapshot(version: incoming.version, deckId: incoming.deckId, query: incoming.query,
+                                  counts: success.counts, results: success.results, state: attempt.state,
+                                  lastSuccessfulAt: success.lastSuccessfulAt, lastAttemptedAt: attempt.lastAttemptedAt,
+                                  rate: attempt.rate)
+    }
+
+    private func incomingWidgetTimestampIsNewer(current: Date, incoming: Date, now: Date) -> Bool {
+        // After a backward clock correction, prefer the post-correction side until both timestamps share the same time basis.
+        let currentIsFuture = current > now
+        let incomingIsFuture = incoming > now
+        if currentIsFuture != incomingIsFuture { return currentIsFuture }
+        return incoming > current
+    }
+
+    private func widgetTimestamp(_ value: String?) -> Date? {
+        guard let value else { return nil }
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return fractional.date(from: value) ?? ISO8601DateFormatter().date(from: value)
+    }
+
+    private func disableWidgetDeck(_ args: RequestArgs, _ invoke: Invoke) throws {
+        guard let deckId = args.deckId else { throw NativeError.invalidArgument }
+        guard removeWidgetDeck(deckId) else { rejectStorageFailure(invoke); return }
+        WidgetCenter.shared.reloadAllTimelines()
+        invoke.resolve(["kind": "ok"])
+    }
+
+    private func removeWidgetDeck(_ deckId: String) -> Bool {
+        guard widgetStateStore.updateDeckState(deckId, { state in state = nil; return true }) else { return false }
+        return removeWidgetCredential(deckId)
+    }
+
+    private func clearWidgetState() -> Bool {
+        guard widgetStateStore.clear() else { return false }
+        guard removeAllWidgetCredentials() else { return false }
+        WidgetCenter.shared.reloadAllTimelines()
+        return true
     }
 
     private func permissionName(_ status: UNAuthorizationStatus) -> String {

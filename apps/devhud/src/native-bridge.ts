@@ -1,7 +1,9 @@
 import { normalizeLogtoIssuer } from "./identity-contract.ts";
 import type { SanitizedBrowserContext } from "./browser-context.ts";
+import { SettingsTextLimit } from "./contract-limits.ts";
 import { ClassicPatCreationUrl, FineGrainedPatCreationUrl } from "./github-links.ts";
 import { defaultDesktopShortcutBindings, parseDesktopShortcutBindings, type DesktopShortcutBindings, type ShortcutActionId, type ShortcutValidationCode } from "./shortcuts.ts";
+import { WidgetContractVersion, WidgetQueryLimit, WidgetRepositoryLimit, WidgetResultLimit, type WidgetDeckConfiguration, type WidgetDeckSnapshot } from "./widget-contract.ts";
 
 export const NativeBridgeVersion = 1 as const;
 
@@ -78,7 +80,7 @@ export interface RuntimeSnapshot {
     readonly secureSettings: boolean;
     readonly notifications: boolean;
     readonly storeUpdates: boolean;
-    readonly widgets: false;
+    readonly widgets: boolean;
     readonly capture?: boolean;
     readonly localAgents?: boolean;
   };
@@ -136,13 +138,6 @@ export interface DeckNotification {
   readonly kind: DeckNotificationKind;
   readonly title: string;
   readonly body: string;
-}
-
-export interface WidgetDeckSnapshot {
-  readonly deckId: string;
-  readonly updatedAt: string;
-  readonly title: string;
-  readonly pullRequests: readonly { readonly title: string; readonly url: string }[];
 }
 
 export type DesktopUpdaterStateKind = "idle" | "checking" | "up-to-date" | "available" | "downloading" | "downloaded" | "installation-approved" | "restart-required" | "restarting" | "failed" | "canceled";
@@ -205,8 +200,10 @@ type NativeBridgeRequestV1Base =
   | { readonly operation: "updates.status" }
   | { readonly operation: "updates.open-store" }
   | { readonly operation: "updates.check" | "updates.approve-download" | "updates.cancel" | "updates.approve-installation" | "updates.approve-restart" }
+  | { readonly operation: "widgets.status" }
+  | { readonly operation: "widgets.enable-deck"; readonly configuration: WidgetDeckConfiguration }
   | { readonly operation: "widgets.replace-deck-snapshot"; readonly snapshot: WidgetDeckSnapshot }
-  | { readonly operation: "widgets.clear-deck-snapshot"; readonly deckId: string };
+  | { readonly operation: "widgets.disable-deck"; readonly deckId: string };
 
 export type NativeShortcutPermission = "available" | "not-determined" | "denied" | "x11-unavailable" | "unsupported";
 export type NativeShortcutPlatform = "macos" | "windows" | "x11" | "unsupported";
@@ -250,6 +247,7 @@ export type NativeBridgeResponseV1 =
   | { readonly kind: "capture-drafts"; readonly drafts: readonly CaptureDraft[]; readonly unreadableDraftIds: readonly string[] }
   | { readonly kind: "capture-draft"; readonly draft: CaptureDraft }
   | { readonly kind: "capture-flattened"; readonly images: readonly FlattenedCaptureImage[] }
+  | { readonly kind: "widget-status"; readonly enabledDeckIds: readonly string[] }
   | { readonly kind: "capture-uploaded"; readonly observedEtag: string; readonly publicUrl: string | null }
   | { readonly kind: "agent-status"; readonly agent: LocalAgentKind; readonly health: LocalAgentHealth; readonly path: string | null; readonly pathSource: "path" | "override"; readonly version: string | null; readonly pinnedVersion: string }
   | { readonly kind: "agent-draft"; readonly title: string; readonly body: string }
@@ -321,6 +319,46 @@ export function validateGitHubPatReconciliation(scopeId: string, profileIds: rea
   if (!profilePattern.test(scopeId) || profileIds.length > 25 || new Set(profileIds).size !== profileIds.length || profileIds.some((profileId) => !profilePattern.test(profileId))) {
     throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument);
   }
+}
+
+function hasExactKeys(value: object, keys: readonly string[]): boolean {
+  const actual = Object.keys(value);
+  return actual.length === keys.length && keys.every((key) => Object.hasOwn(value, key));
+}
+
+export function validateWidgetRequest(request: Extract<NativeBridgeRequestV1, { readonly operation: `widgets.${string}` }>) {
+  if (request.operation === "widgets.status") {
+    if (!hasExactKeys(request, ["operation"])) throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument);
+    return;
+  }
+  if (request.operation === "widgets.disable-deck") {
+    if (!hasExactKeys(request, ["operation", "deckId"]) || !uuidPattern.test(request.deckId)) throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument);
+    return;
+  }
+  if (request.operation === "widgets.enable-deck") {
+    if (!hasExactKeys(request, ["operation", "configuration"])) throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument);
+    const value = request.configuration;
+    const repositoryKeys = Array.isArray(value.repositories) ? value.repositories.map((repository) => `${repository.owner}/${repository.name}`.toLowerCase()) : [];
+    if (!hasExactKeys(value, ["version", "deckId", "name", "query", "repositories", "profileId", "profileKind", "scopeId", "language"])
+      || value.version !== WidgetContractVersion || !uuidPattern.test(value.deckId) || !profilePattern.test(value.profileId) || !profilePattern.test(value.scopeId)
+      || !["fine-grained", "classic"].includes(value.profileKind) || !["en", "ko"].includes(value.language)
+      || value.name.trim().length === 0 || value.name.length > SettingsTextLimit || value.query.trim().length === 0 || value.query.length > WidgetQueryLimit
+      || !Array.isArray(value.repositories) || value.repositories.length === 0 || value.repositories.length > WidgetRepositoryLimit || new Set(repositoryKeys).size !== repositoryKeys.length
+      || value.repositories.some((repository) => !hasExactKeys(repository, ["owner", "name"]) || !/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/u.test(repository.owner) || repository.owner.endsWith("-") || repository.owner.includes("--") || !/^[A-Za-z0-9._-]{1,100}$/u.test(repository.name))) throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument);
+    return;
+  }
+  if (request.operation !== "widgets.replace-deck-snapshot" || !hasExactKeys(request, ["operation", "snapshot"])) {
+    throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument);
+  }
+  const value = request.snapshot;
+  if (!hasExactKeys(value, ["version", "deckId", "query", "counts", "results", "state", "lastSuccessfulAt", "lastAttemptedAt", "rate"])
+    || !hasExactKeys(value.counts, ["total", "open", "draft", "merged", "closed", "bounded"])
+    || value.rate !== null && !hasExactKeys(value.rate, ["limit", "remaining", "used", "resetAt", "resource", "retryAfterSeconds"])
+    || value.version !== WidgetContractVersion || !uuidPattern.test(value.deckId) || value.query.length > WidgetQueryLimit || value.results.length > WidgetResultLimit
+    || !Number.isSafeInteger(value.counts.total) || value.counts.total < 0 || [value.counts.open, value.counts.draft, value.counts.merged, value.counts.closed].some((count) => !Number.isSafeInteger(count) || count < 0)
+    || value.results.some((pullRequest) => !hasExactKeys(pullRequest, ["nodeId", "number", "title", "repository", "state", "draft"])
+      || pullRequest.nodeId.length === 0 || pullRequest.nodeId.length > 128 || pullRequest.title.length > 512 || pullRequest.repository.length > 256 || !Number.isSafeInteger(pullRequest.number) || pullRequest.number < 1)
+    || !Number.isFinite(Date.parse(value.lastAttemptedAt)) || value.lastSuccessfulAt !== null && !Number.isFinite(Date.parse(value.lastSuccessfulAt))) throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument);
 }
 
 function validCaptureRect(rect: CaptureRect) {
@@ -507,6 +545,7 @@ export const nativeBridge: NativeBridgeV1 = {
     if (request.operation === "shortcuts.apply" || request.operation === "shortcuts.stage" || request.operation === "shortcuts.commit") parseDesktopShortcutBindings(request.bindings);
     if (request.operation.startsWith("capture.")) validateCaptureRequest(request as Extract<NativeBridgeRequestV1, { readonly operation: `capture.${string}` }>);
     if (request.operation.startsWith("agent.")) validateLocalAgentRequest(request as Extract<NativeBridgeRequestV1, { readonly operation: `agent.${string}` }>);
+    if (request.operation.startsWith("widgets.")) validateWidgetRequest(request as Extract<NativeBridgeRequestV1, { readonly operation: `widgets.${string}` }>);
     if (!window.__TAURI_INTERNALS__) {
       if (request.operation === "runtime.snapshot") return { kind: "runtime", snapshot: await browserSnapshot() };
       if (request.operation === "session.configure-origins") return { kind: "session-network-policy", changed: false };

@@ -1,0 +1,4 @@
+"widget_privacy_warning" = "위젯 콘텐츠에는 비공개 저장소 및 풀 리퀘스트 제목이 포함될 수 있습니다. 런처, 스크린샷, 백업, 알림 및 주변 사람이 이를 볼 수 있습니다.";
+"widget_choose_deck" = "Deck 하나만 선택";
+"widget_display_name" = "DevHUD 덱";
+"widget_description" = "명시적으로 선택한 덱 하나를 표시합니다. 비공개 제목이 보일 수 있습니다.";
