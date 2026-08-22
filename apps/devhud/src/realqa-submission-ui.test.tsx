@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createGitHubProvider, type GitHubProvider } from "./github-provider.ts";
 import { messages } from "./localization.ts";
-import type { CaptureDraft, NativeBridgeV1 } from "./native-bridge.ts";
+import { LocalAgentKind, LocalAgentMode, type CaptureDraft, type NativeBridgeV1 } from "./native-bridge.ts";
 import { RealqaSubmissionModal } from "./realqa-submission-ui.tsx";
 import type { IdentitySettingsValue } from "./service-boundary.tsx";
 import { defaultDevHudSettings, parseDevHudSettings } from "./settings-contract.ts";
@@ -60,6 +60,7 @@ function provider(overrides: Partial<GitHubProvider> = {}): GitHubProvider {
 }
 
 beforeEach(() => {
+  localStorage.clear();
   identity = identityValue();
   mutationFunctions = {
     createUpload: vi.fn(),
@@ -67,7 +68,29 @@ beforeEach(() => {
     finalizeUpload: vi.fn(),
   };
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
+
+function enableLocalAgent(mode: LocalAgentMode) {
+  identity = {
+    ...identityValue(),
+    settings: parseDevHudSettings({
+      ...settings,
+      agents: [{ id: "codex", enabled: true, kind: LocalAgentKind.Codex, mode, repositoryPrompts: [], profileRef: profile.id }],
+    }),
+  };
+  localStorage.setItem("devhud.local-agent-consent.v1", JSON.stringify({ codex: { enabled: true, direct: true } }));
+}
+
+function validatedRepository() {
+  return {
+    repository: { owner: "delinoio", name: "oss" }, private: false,
+    permissions: { metadata: true, pullRequests: true, issues: true, contents: true },
+    metadata: { etag: null, rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } },
+  } as const;
+}
 
 describe.each([["English", messages.en], ["Korean", messages.ko]] as const)("RealQA submission modal in %s", (_language, copy) => {
   it("is accessible, autofocuses title, supports optional images, and Esc preserves the draft", async () => {
@@ -125,6 +148,59 @@ describe("RealQA image-free submission", () => {
 
     await waitFor(() => expect(onConfirmed).toHaveBeenCalledTimes(2));
     expect(onConfirmed.mock.calls).toEqual([[draft.revision], [draft.revision]]);
+  });
+});
+
+describe("RealQA local-agent submission", () => {
+  it("reviews a schema draft before DevHUD performs the GitHub write", async () => {
+    enableLocalAgent(LocalAgentMode.Draft);
+    const native = bridge();
+    vi.mocked(native.request).mockImplementation(async (request) => {
+      if (request.operation === "secure.read") return { kind: "secure-value", value: "github_pat_fixture" };
+      if (request.operation === "agent.run") return { kind: "agent-draft", title: "Agent title", body: "Agent body" };
+      return { kind: "ok" };
+    });
+    const createIssue = vi.fn(async () => ({ issue: { number: 1, title: "Agent title", url: "https://github.com/delinoio/oss/issues/1", marker: "marker", reconciled: false }, metadata: validatedRepository().metadata }));
+    render(<RealqaSubmissionModal draft={draft} bridge={native} copy={messages.en} onClose={vi.fn()} onConfirmed={vi.fn()} provider={provider({ validateRepository: vi.fn(async () => validatedRepository()), createIssue })} />);
+    fireEvent.click(screen.getByLabelText(`${messages.en.editorImage} 1`));
+    fireEvent.change(screen.getByLabelText(messages.en.localAgentSubmission), { target: { value: "codex" } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.localAgentPrepareDraft }));
+
+    await waitFor(() => expect(screen.getByLabelText(messages.en.issueTitle)).toHaveProperty("value", "Agent title"));
+    expect(screen.getByLabelText(messages.en.issueBody)).toHaveProperty("value", "Agent body");
+    expect(native.request).toHaveBeenCalledWith(expect.objectContaining({ operation: "agent.run", mode: LocalAgentMode.Draft, diagnostics: expect.stringContaining("<redacted>") }));
+    expect(createIssue).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.issueSubmit }));
+    await waitFor(() => expect(createIssue).toHaveBeenCalledOnce());
+    expect(vi.mocked(native.request).mock.calls.filter(([request]) => request.operation === "agent.run")).toHaveLength(1);
+  });
+
+  it("requires confirmation and never falls back automatically after a Direct failure", async () => {
+    enableLocalAgent(LocalAgentMode.Direct);
+    const confirmation = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const native = bridge();
+    vi.mocked(native.request).mockImplementation(async (request) => {
+      if (request.operation === "secure.read") return { kind: "secure-value", value: "github_pat_fixture" };
+      if (request.operation === "agent.run") throw new Error("agent failed after an ambiguous boundary");
+      return { kind: "ok" };
+    });
+    const createIssue = vi.fn(async () => ({ issue: { number: 1, title: "Direct title", url: "https://github.com/delinoio/oss/issues/1", marker: "marker", reconciled: false }, metadata: validatedRepository().metadata }));
+    render(<RealqaSubmissionModal draft={draft} bridge={native} copy={messages.en} onClose={vi.fn()} onConfirmed={vi.fn()} provider={provider({ validateRepository: vi.fn(async () => validatedRepository()), createIssue })} />);
+    fireEvent.click(screen.getByLabelText(`${messages.en.editorImage} 1`));
+    fireEvent.change(screen.getByLabelText(messages.en.localAgentSubmission), { target: { value: "codex" } });
+    fireEvent.change(screen.getByLabelText(messages.en.issueTitle), { target: { value: "Direct title" } });
+    fireEvent.change(screen.getByLabelText(messages.en.issueBody), { target: { value: "Keep this draft" } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.issueSubmit }));
+
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveProperty("textContent", messages.en.issueAmbiguous));
+    expect(confirmation).toHaveBeenCalledWith(messages.en.localAgentDirectConfirm);
+    expect(createIssue).not.toHaveBeenCalled();
+    expect(screen.getByLabelText(messages.en.issueBody)).toHaveProperty("value", "Keep this draft");
+
+    fireEvent.change(screen.getByLabelText(messages.en.localAgentSubmission), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.issueSubmit }));
+    await waitFor(() => expect(createIssue).toHaveBeenCalledOnce());
   });
 });
 

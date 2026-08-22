@@ -3,6 +3,8 @@
 mod bridge;
 #[cfg(desktop)]
 mod capture;
+#[cfg(desktop)]
+mod local_agents;
 mod native_messaging;
 mod native_plugin;
 mod platform;
@@ -853,6 +855,10 @@ fn handle_frontend_ready(
 
 #[tauri::cef_entry_point]
 fn main() {
+    #[cfg(desktop)]
+    if local_agents::serve_git_askpass() {
+        return;
+    }
     let smoke_mode = SmokeMode::from_environment();
     let subprocess = is_cef_subprocess();
     let update_health_probe = (!subprocess)

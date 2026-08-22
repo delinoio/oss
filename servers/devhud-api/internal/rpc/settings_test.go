@@ -10,6 +10,7 @@ const canonicalSettingsV2 = `{"agents":[],"appearance":{"language":"system","the
 const canonicalSettingsV3 = `{"agents":[],"appearance":{"language":"system","theme":"system"},"decks":[],"github":{"issueTracker":null,"pendingPatRemovals":[],"profiles":[],"repositories":[]},"schemaVersion":3,"shortcuts":{"android":{},"desktop":{},"ios":{}},"uploads":{"provider":"official","r2":null},"urlMappings":[]}`
 const canonicalSettingsV4 = `{"agents":[],"appearance":{"language":"system","theme":"system"},"decks":[],"github":{"issueTracker":null,"pendingPatRemovals":[],"profiles":[],"repositories":[]},"schemaVersion":4,"shortcuts":{"android":{},"desktop":{"realqa.capture.active-window":{"enabled":true,"key":"digit-2","modifiers":[]},"realqa.capture.all-displays":{"enabled":true,"key":"digit-3","modifiers":[]},"realqa.capture.display":{"enabled":true,"key":"digit-1","modifiers":[]},"realqa.capture.selection":{"enabled":true,"key":"digit-4","modifiers":[]},"realqa.capture.toolbar":{"enabled":true,"key":"digit-5","modifiers":[]},"shell.command-palette":{"enabled":true,"key":"key-k","modifiers":["right-primary"]}},"ios":{}},"uploads":{"provider":"official","r2":null},"urlMappings":[]}`
 const canonicalSettingsV5 = `{"agents":[],"appearance":{"language":"system","theme":"system"},"decks":[],"github":{"issueTracker":null,"pendingPatRemovals":[],"profiles":[],"repositories":[]},"schemaVersion":5,"shortcuts":{"android":{},"desktop":{"realqa.capture.active-window":{"enabled":true,"key":"digit-2","modifiers":[]},"realqa.capture.all-displays":{"enabled":true,"key":"digit-3","modifiers":[]},"realqa.capture.display":{"enabled":true,"key":"digit-1","modifiers":[]},"realqa.capture.selection":{"enabled":true,"key":"digit-4","modifiers":[]},"realqa.capture.toolbar":{"enabled":true,"key":"digit-5","modifiers":[]},"shell.command-palette":{"enabled":true,"key":"key-k","modifiers":["right-primary"]}},"ios":{}},"uploads":{"provider":"official","r2":null},"urlMappings":[]}`
+const canonicalSettingsV6 = `{"agents":[],"appearance":{"language":"system","theme":"system"},"decks":[],"github":{"issueTracker":null,"pendingPatRemovals":[],"profiles":[],"repositories":[]},"schemaVersion":6,"shortcuts":{"android":{},"desktop":{"realqa.capture.active-window":{"enabled":true,"key":"digit-2","modifiers":[]},"realqa.capture.all-displays":{"enabled":true,"key":"digit-3","modifiers":[]},"realqa.capture.display":{"enabled":true,"key":"digit-1","modifiers":[]},"realqa.capture.selection":{"enabled":true,"key":"digit-4","modifiers":[]},"realqa.capture.toolbar":{"enabled":true,"key":"digit-5","modifiers":[]},"shell.command-palette":{"enabled":true,"key":"key-k","modifiers":["right-primary"]}},"ios":{}},"uploads":{"provider":"official","r2":null},"urlMappings":[]}`
 
 func TestValidateCanonicalJSON(t *testing.T) {
 	for _, value := range [][]byte{
@@ -43,6 +44,7 @@ func TestValidateDevHudSettings(t *testing.T) {
 		3: canonicalSettingsV3,
 		4: canonicalSettingsV4,
 		5: canonicalSettingsV5,
+		6: canonicalSettingsV6,
 	} {
 		if err := validateDevHudSettings([]byte(value), version); err != nil {
 			t.Errorf("validateDevHudSettings(version %d): %v", version, err)
@@ -70,6 +72,19 @@ func TestValidateDevHudSettings(t *testing.T) {
 	}
 	if err := validateDevHudSettings([]byte(strings.Replace(withR2, "https://r2.example/storage", "http://r2.example/storage", 1)), 5); err == nil {
 		t.Fatal("schema-v5 insecure R2 endpoint was accepted")
+	}
+	withAgentProfile := strings.Replace(canonicalSettingsV6, `"profiles":[]`, `"profiles":[{"id":"`+profileID+`","kind":"fine-grained","name":"Work"}]`, 1)
+	agent := `{"enabled":false,"id":"codex","kind":"codex","mode":"draft","profileRef":"` + profileID + `","repositoryPrompts":[{"body":"Follow the issue template.","repository":{"name":"oss","owner":"delinoio"}}]}`
+	withAgent := strings.Replace(withAgentProfile, `"agents":[]`, `"agents":[`+agent+`]`, 1)
+	if err := validateDevHudSettings([]byte(withAgent), 6); err != nil {
+		t.Fatalf("schema-v6 local-agent metadata validation failed: %v", err)
+	}
+	if err := validateDevHudSettings([]byte(strings.Replace(withAgent, `"Follow the issue template."`, `"github_pat_secret"`, 1)), 6); err == nil {
+		t.Fatal("schema-v6 secret repository prompt was accepted")
+	}
+	duplicateAgent := strings.Replace(withAgentProfile, `"agents":[]`, `"agents":[`+agent+`,`+agent+`]`, 1)
+	if err := validateDevHudSettings([]byte(duplicateAgent), 6); err == nil {
+		t.Fatal("schema-v6 duplicate local-agent ID was accepted")
 	}
 	for name, test := range map[string]struct {
 		version uint32

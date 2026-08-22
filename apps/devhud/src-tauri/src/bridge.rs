@@ -49,6 +49,8 @@ pub struct NativeBridgeState {
     shortcut_listener_retry: Arc<(Mutex<u64>, Condvar)>,
     diagnostics_export: Arc<Mutex<DiagnosticsExportState>>,
     #[cfg(desktop)]
+    local_agents: Arc<crate::local_agents::LocalAgentService>,
+    #[cfg(desktop)]
     updater: Arc<Mutex<Option<crate::updater::UpdaterController>>>,
     #[cfg(desktop)]
     updater_schedule_started: Arc<AtomicBool>,
@@ -157,6 +159,8 @@ impl Default for NativeBridgeState {
             shortcut_listener_failed,
             shortcut_listener_retry: Arc::new((Mutex::new(0), Condvar::new())),
             diagnostics_export: Arc::new(Mutex::new(DiagnosticsExportState::default())),
+            #[cfg(desktop)]
+            local_agents: Arc::new(crate::local_agents::LocalAgentService::default()),
             #[cfg(desktop)]
             updater: Arc::new(Mutex::new(updater)),
             #[cfg(desktop)]
@@ -1342,7 +1346,8 @@ fn runtime_snapshot(os_version: &str) -> Value {
                 "notifications": mobile,
                 "storeUpdates": mobile,
                 "widgets": mobile,
-                "capture": !mobile
+                "capture": !mobile,
+                "localAgents": !mobile,
             }
         }
     })
@@ -1551,6 +1556,9 @@ pub fn handle_native_bridge_request(
             validate_widget_request(request)?;
             Ok(json!({ "kind": "unsupported", "feature": "widgets" }))
         }
+        "agent.detect" | "agent.run" | "agent.cancel" | "agent.purge-cache" => {
+            Err("unsupported".to_string())
+        }
         _ => Err("invalid-argument".to_string()),
     }
 }
@@ -1741,6 +1749,27 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
     if operation.starts_with("capture.") {
         return handle_capture_request(&request, capture.inner().clone(), &app).await;
     }
+    if operation.starts_with("agent.") {
+        let local_agents = Arc::clone(&state.local_agents);
+        return match operation {
+            "agent.detect" => {
+                tauri::async_runtime::spawn_blocking(move || local_agents.detect(&request))
+                    .await
+                    .map_err(|_| "platform-failure".to_string())?
+            }
+            "agent.run" => tauri::async_runtime::spawn_blocking(move || local_agents.run(&request))
+                .await
+                .map_err(|_| "platform-failure".to_string())?,
+            "agent.cancel" => local_agents.cancel(&request),
+            "agent.purge-cache" => tauri::async_runtime::spawn_blocking(move || {
+                local_agents.purge()?;
+                Ok(json!({ "kind": "ok" }))
+            })
+            .await
+            .map_err(|_| "platform-failure".to_string())?,
+            _ => Err("invalid-argument".to_string()),
+        };
+    }
     if operation == "diagnostics.clear" {
         clear_diagnostic_logs()?;
         return Ok(json!({ "kind": "ok" }));
@@ -1763,6 +1792,13 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
             validate_secure_request(&request)?;
         }
         let purge_scope = request.get("scope").and_then(Value::as_str);
+        if operation == "secure.purge" && matches!(purge_scope, Some("logout" | "account-deletion"))
+        {
+            let local_agents = Arc::clone(&state.local_agents);
+            tauri::async_runtime::spawn_blocking(move || local_agents.purge())
+                .await
+                .map_err(|_| "platform-failure".to_string())??;
+        }
         let pairing_invalidation = (operation == "secure.purge"
             && purge_invalidates_native_messaging(purge_scope))
         .then(crate::native_messaging::begin_pairing_invalidation);
