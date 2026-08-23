@@ -127,12 +127,18 @@ export function LocalAgentSettings({ copy, bridge }: { readonly copy: Copy; read
   const [error, setError] = useState(false);
   const configuredRepositories = localAgentPromptRepositories(identity.settings);
 
-  const persist = async (kind: LocalAgentKind, update: (agent: AgentSetting) => AgentSetting) => {
+  const persist = async (target: AgentSetting, update: (agent: AgentSetting) => AgentSetting) => {
     setError(false);
     try {
       const succeeded = await identity.replaceSettings((current) => {
-        const existing = current.agents.find((agent) => agent.kind === kind) ?? defaultAgent(kind);
-        return { ...current, agents: [...current.agents.filter((agent) => agent.kind !== kind), update(existing)] };
+        const existing = current.agents.find((agent) => agent.id === target.id);
+        const updated = update(existing ?? target);
+        return {
+          ...current,
+          agents: existing
+            ? current.agents.map((agent) => agent.id === target.id ? updated : agent)
+            : [...current.agents, updated],
+        };
       });
       if (!succeeded) setError(true);
       return succeeded;
@@ -190,25 +196,25 @@ export function LocalAgentSettings({ copy, bridge }: { readonly copy: Copy; read
           const enabled = event.target.checked;
           if (enabled && !window.confirm(copy.localAgentEnableConsent)) return;
           if (enabled && agent.mode === LocalAgentMode.Direct && !window.confirm(copy.localAgentDirectEnableConsent)) return;
-          void persist(kind, (current) => ({ ...current, enabled })).then((saved) => {
+          void persist(agent, (current) => ({ ...current, enabled })).then((saved) => {
             if (saved) rememberConsent(kind, { enabled, direct: enabled && agent.mode === LocalAgentMode.Direct });
           });
         }} />{copy.localAgentEnabled}</label>
         <label>{copy.localAgentMode}<select value={agent.mode} disabled={identity.readOnly} onChange={(event) => {
           const mode = event.target.value as LocalAgentMode;
           if (mode === LocalAgentMode.Direct && !window.confirm(copy.localAgentDirectEnableConsent)) return;
-          void persist(kind, (current) => ({ ...current, mode })).then((saved) => {
+          void persist(agent, (current) => ({ ...current, mode })).then((saved) => {
             if (saved && mode === LocalAgentMode.Direct) rememberConsent(kind, { enabled: consents[kind]?.enabled === true, direct: true });
           });
         }}><option value={LocalAgentMode.Draft}>{copy.localAgentDraftMode}</option><option value={LocalAgentMode.Direct}>{copy.localAgentDirectMode}</option></select></label>
-        <label>{copy.localAgentCredential}<select value={agent.profileRef ?? ""} disabled={identity.readOnly} onChange={(event) => void persist(kind, (current) => ({ ...current, profileRef: event.target.value || null }))}><option value="">{copy.githubSelectProfile}</option>{identity.settings.github.profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></label>
+        <label>{copy.localAgentCredential}<select value={agent.profileRef ?? ""} disabled={identity.readOnly} onChange={(event) => void persist(agent, (current) => ({ ...current, profileRef: event.target.value || null }))}><option value="">{copy.githubSelectProfile}</option>{identity.settings.github.profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></label>
         <label>{copy.localAgentExecutable}<input value={paths[kind] ?? ""} placeholder={copy.localAgentPathPlaceholder} onChange={(event) => setPath(kind, event.target.value)} /></label>
         <button type="button" disabled={pending !== null} onClick={() => void detect(kind)}>{copy.localAgentCheck}</button>
         {status && <output aria-live="polite">{healthCopy(copy, status.health)}{status.version ? ` (${status.version})` : ""}</output>}
         {configuredRepositories.map((repository) => {
           const key = repositoryKey(repository);
           const body = agent.repositoryPrompts.find((prompt) => repositoryKey(prompt.repository) === key)?.body ?? "";
-          return <RepositoryPromptEditor key={key} copy={copy} repository={repository} value={body} disabled={identity.readOnly} onSave={(nextBody) => persist(kind, (current) => ({ ...current, repositoryPrompts: nextBody === "" ? current.repositoryPrompts.filter((prompt) => repositoryKey(prompt.repository) !== key) : [...current.repositoryPrompts.filter((prompt) => repositoryKey(prompt.repository) !== key), { repository, body: nextBody }] }))} />;
+          return <RepositoryPromptEditor key={key} copy={copy} repository={repository} value={body} disabled={identity.readOnly} onSave={(nextBody) => persist(agent, (current) => ({ ...current, repositoryPrompts: nextBody === "" ? current.repositoryPrompts.filter((prompt) => repositoryKey(prompt.repository) !== key) : [...current.repositoryPrompts.filter((prompt) => repositoryKey(prompt.repository) !== key), { repository, body: nextBody }] }))} />;
         })}
       </fieldset>;
     })}

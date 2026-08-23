@@ -86,6 +86,26 @@ func TestValidateDevHudSettings(t *testing.T) {
 	if err := validateDevHudSettings([]byte(duplicateAgent), 6); err == nil {
 		t.Fatal("schema-v6 duplicate local-agent ID was accepted")
 	}
+	legacyAgent := `{"enabled":false,"id":"codex","kind":"codex","mode":"draft","profileRef":"` + profileID + `","repositoryPrompts":true}`
+	for _, legacy := range []struct {
+		version uint32
+		value   string
+	}{
+		{1, canonicalSettingsV1},
+		{2, canonicalSettingsV2},
+		{3, canonicalSettingsV3},
+		{4, canonicalSettingsV4},
+		{5, canonicalSettingsV5},
+	} {
+		value := strings.Replace(legacy.value, `"agents":[]`, `"agents":[`+legacyAgent+`]`, 1)
+		if err := validateDevHudSettings([]byte(value), legacy.version); err != nil {
+			t.Errorf("schema-v%d dangling legacy local-agent profile reference was rejected: %v", legacy.version, err)
+		}
+	}
+	danglingV6Agent := strings.Replace(canonicalSettingsV6, `"agents":[]`, `"agents":[`+agent+`]`, 1)
+	if err := validateDevHudSettings([]byte(danglingV6Agent), 6); err == nil {
+		t.Fatal("schema-v6 dangling local-agent profile reference was accepted")
+	}
 	for name, test := range map[string]struct {
 		version uint32
 		value   string

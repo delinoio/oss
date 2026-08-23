@@ -1226,7 +1226,7 @@ func validateSettingsAgents(value any, bodyVersion int64, profileIDs map[string]
 		if err != nil {
 			return err
 		}
-		if profileRef != "" {
+		if bodyVersion >= settingsSchemaVersion && profileRef != "" {
 			if _, exists := profileIDs[profileRef]; !exists {
 				return fmt.Errorf("%s.profileRef must reference a configured GitHub profile", path)
 			}

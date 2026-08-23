@@ -171,15 +171,20 @@ describe("identity UI", () => {
 
   it("keeps local-agent prompt edits local until explicitly saved and includes the issue tracker", async () => {
     const profile = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", name: "Work", kind: "fine-grained" as const };
+    const secondaryProfile = { id: "018f47a2-7b3c-7def-8abc-1234567890ad", name: "Secondary", kind: "classic" as const };
+    const secondaryAgent = { id: "codex-secondary", enabled: true, kind: LocalAgentKind.Codex, mode: LocalAgentMode.Direct, repositoryPrompts: [], profileRef: secondaryProfile.id };
     const settings = parseDevHudSettings({
       ...defaultDevHudSettings,
       github: {
         ...defaultDevHudSettings.github,
-        profiles: [profile],
+        profiles: [profile, secondaryProfile],
         repositories: [{ owner: "octo", name: "application", profileRef: profile.id }],
         issueTracker: { owner: "octo", repository: "issues", labels: [], profileRef: profile.id },
       },
-      agents: [{ id: "codex", enabled: false, kind: LocalAgentKind.Codex, mode: LocalAgentMode.Draft, repositoryPrompts: [], profileRef: profile.id }],
+      agents: [
+        { id: "codex", enabled: false, kind: LocalAgentKind.Codex, mode: LocalAgentMode.Draft, repositoryPrompts: [], profileRef: profile.id },
+        secondaryAgent,
+      ],
     });
     const replaceSettings = vi.fn<IdentitySettingsValue["replaceSettings"]>(async () => true);
     identity = identityWith({ settings, replaceSettings });
@@ -198,6 +203,8 @@ describe("identity UI", () => {
     const update = replaceSettings.mock.calls[0]?.[0];
     const updated = typeof update === "function" ? update(settings) : update;
     expect(updated?.agents[0]?.repositoryPrompts).toEqual([{ repository: { owner: "octo", name: "issues" }, body: "Use the issue template." }]);
+    expect(updated?.agents).toHaveLength(2);
+    expect(updated?.agents[1]).toEqual(secondaryAgent);
   });
 
   it("deduplicates issue trackers already present in local-agent prompt repositories", () => {
