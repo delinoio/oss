@@ -854,6 +854,7 @@ fn executable_candidates(name: &str) -> Vec<OsString> {
     }
 }
 
+#[cfg(any(windows, test))]
 fn windows_executable_candidates(name: &str, pathext: Option<&OsStr>) -> Vec<OsString> {
     const DEFAULT_PATHEXT: &str = ".COM;.EXE;.BAT;.CMD";
     let pathext = pathext
