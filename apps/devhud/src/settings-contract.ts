@@ -156,6 +156,10 @@ export function parseDevHudSettings(value: unknown): DevHudSettingsV1 {
   const urlMappings = structuredMappings ? parseStructuredMappings(root.urlMappings) : parseLegacyMappings(root.urlMappings);
   if (urlMappings.length > MaximumUrlRepositoryMappings) throw new SettingsContractError("$.urlMappings", `must contain at most ${MaximumUrlRepositoryMappings} entries`);
   if (new Set(urlMappings.map((mapping) => mapping.id)).size !== urlMappings.length) throw new SettingsContractError("$.urlMappings", "must not contain duplicate mapping IDs");
+  const agents = array(root.agents, "$.agents").map((entry, index) => parseAgent(entry, `$.agents[${index}]`, sourceSchemaVersion));
+  const migratedAgents = sourceSchemaVersion < SettingsSchemaVersion
+    ? agents.map((agent) => agent.profileRef !== null && !githubProfileIds.has(agent.profileRef) ? { ...agent, profileRef: null } : agent)
+    : agents;
 
   const parsed: DevHudSettingsV1 = {
     schemaVersion: SettingsSchemaVersion,
@@ -182,7 +186,7 @@ export function parseDevHudSettings(value: unknown): DevHudSettingsV1 {
       ios: legacyShortcuts ? legacyShortcutMap(shortcuts.ios, "$.shortcuts.ios") : emptyShortcutMap(shortcuts.ios, "$.shortcuts.ios"),
       android: legacyShortcuts ? legacyShortcutMap(shortcuts.android, "$.shortcuts.android") : emptyShortcutMap(shortcuts.android, "$.shortcuts.android"),
     },
-    agents: array(root.agents, "$.agents").map((entry, index) => parseAgent(entry, `$.agents[${index}]`, sourceSchemaVersion)),
+    agents: migratedAgents,
     uploads: {
       provider: enumeration(uploads.provider, "$.uploads.provider", UploadProvider),
       r2: uploads.r2 === null ? null : parseR2(uploads.r2, sourceSchemaVersion),

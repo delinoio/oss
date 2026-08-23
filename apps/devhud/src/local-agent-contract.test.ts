@@ -31,4 +31,17 @@ describe("local agent bridge contract", () => {
     expect(() => validateLocalAgentRequest({ operation: "agent.detect", kind: LocalAgentKind.ClaudeCode, executablePath: "\0claude" })).toThrow(NativeBridgeError);
     expect(() => validateLocalAgentRequest({ operation: "agent.cancel", runId })).not.toThrow();
   });
+
+  it("counts multibyte issue bodies by characters", () => {
+    expect(() => validateLocalAgentRequest({ ...directRequest(), body: `${"한".repeat(30_000)}\n\n${marker}` })).not.toThrow();
+    expect(() => validateLocalAgentRequest({ ...directRequest(), body: `${"😀".repeat(40_000)}\n\n${marker}` })).not.toThrow();
+  });
+
+  it("allows only HTTPS or loopback HTTP image URLs without credentials, queries, or fragments", () => {
+    expect(() => validateLocalAgentRequest({ ...directRequest(), imageUrls: ["http://localhost:46307/assets/image.png"] })).not.toThrow();
+    expect(() => validateLocalAgentRequest({ ...directRequest(), imageUrls: ["http://127.0.0.1:46307/assets/image.png"] })).not.toThrow();
+    for (const imageUrl of ["http://images.example/image.png", "https://images.example/image.png?token=value", "https://images.example/image.png#fragment"]) {
+      expect(() => validateLocalAgentRequest({ ...directRequest(), imageUrls: [imageUrl] })).toThrow(NativeBridgeError);
+    }
+  });
 });

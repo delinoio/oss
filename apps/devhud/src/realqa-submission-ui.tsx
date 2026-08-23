@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react"
 import { uuidV7 } from "./diagnostics.ts";
 import type { Copy } from "./localization.ts";
 import { createGitHubProvider, GitHubErrorCode, GitHubProviderError, issueMarker, readGitHubCredential, type GitHubProvider, type GitHubRepositoryRef } from "./github-provider.ts";
-import { LocalAgentMode, type CaptureDraft, type NativeBridgeV1 } from "./native-bridge.ts";
+import { LocalAgentMode, NativeBridgeError, NativeBridgeErrorCode, type CaptureDraft, type NativeBridgeV1 } from "./native-bridge.ts";
 import { localAgentExecutablePath, localAgentHasConsent } from "./local-agent-settings-ui.tsx";
 import { useIdentitySettings } from "./service-boundary.tsx";
 import { composeIssueBody, decodeSha256Hex, editableBrowserDiagnostics, IssueBodyTooLargeError, IssueTitleInvalidError, parseEditableBrowserDiagnostics, sanitizeIssueTitle, stripFinalSubmissionMarker } from "./realqa-submission.ts";
@@ -180,7 +180,7 @@ export function RealqaSubmissionModal({ draft, bridge, copy, onClose, onConfirme
     submittedRevision.current = submissionRevision;
     setBusy(true); setError(null); setStatus(copy.issueSubmitting);
     const finalizedUploadIds: string[] = [];
-    let githubAttempted = false;
+    let directWriteCompleted = false;
     try {
       const scopeId = await identity.githubPatScopeId;
       const credential = await readGitHubCredential(bridge, selectedProfile, scopeId);
@@ -242,7 +242,6 @@ export function RealqaSubmissionModal({ draft, bridge, copy, onClose, onConfirme
         }
       }
       const issueBody = composeIssueBody({ userBody: body, diagnostics: parsedDiagnostics, imageUrls, submissionId: draft.id, diagnosticsSummary: copy.issueBrowserDiagnostics });
-      githubAttempted = true;
       let issueUrl: string;
       if (selectedAgent?.mode === LocalAgentMode.Direct) {
         const repository = await provider.validateRepository(credential, selectedRepository);
@@ -256,6 +255,7 @@ export function RealqaSubmissionModal({ draft, bridge, copy, onClose, onConfirme
           diagnostics: parsedDiagnostics === null ? null : JSON.stringify(parsedDiagnostics),
           imageUrls, marker: issueMarker(draft.id), repositoryPrompt: repositoryPromptFor(selectedAgent, selectedRepository),
         });
+        directWriteCompleted = true;
         if (response.kind !== "agent-direct") throw new Error("agent-direct");
         const reconciled = await provider.searchIssueMarker(credential, selectedRepository, issueMarker(draft.id));
         if (reconciled.issue === null || reconciled.issue.url !== response.issueUrl) throw new Error("agent-reconciliation");
@@ -268,8 +268,10 @@ export function RealqaSubmissionModal({ draft, bridge, copy, onClose, onConfirme
       setStatus(copy.issueCreated);
       try { await onConfirmed(submissionRevision); } catch { setCleanupPending(true); setError(copy.issueDraftCleanupFailed); }
     } catch (reason) {
-      const ambiguous = selectedAgent?.mode === LocalAgentMode.Direct || reason instanceof GitHubProviderError && reason.code === GitHubErrorCode.AmbiguousWrite;
-      const remainingCleanupIds = !githubAttempted || !ambiguous ? await deleteFinalizedUploads(finalizedUploadIds, (input) => deleteUpload.mutateAsync(input)) : [];
+      const ambiguous = directWriteCompleted
+        || reason instanceof NativeBridgeError && reason.code === NativeBridgeErrorCode.AgentWriteAmbiguous
+        || reason instanceof GitHubProviderError && reason.code === GitHubErrorCode.AmbiguousWrite;
+      const remainingCleanupIds = ambiguous ? [] : await deleteFinalizedUploads(finalizedUploadIds, (input) => deleteUpload.mutateAsync(input));
       setPendingUploadCleanupIds(remainingCleanupIds);
       setError(remainingCleanupIds.length > 0 ? copy.issueUploadCleanupFailed : ambiguous ? copy.issueAmbiguous : copy.issueSubmissionFailed);
       setStatus("");

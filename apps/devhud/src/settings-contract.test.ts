@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canonicalDevHudSettings, CollidingSettingsSchemaVersion, deckBuilderProjection, deckRepositories, decodeDevHudSettings, decodeVersionedDevHudSettings, defaultDevHudSettings, encodeDevHudSettings, MaximumUrlRepositoryMappings, parseDevHudSettings, PreviousSettingsSchemaVersion, SettingsContractError, SettingsSchemaVersion } from "./settings-contract";
+import { canonicalDevHudSettings, CollidingSettingsSchemaVersion, deckBuilderProjection, deckRepositories, decodeDevHudSettings, decodeVersionedDevHudSettings, defaultDevHudSettings, encodeDevHudSettings, MaximumUrlRepositoryMappings, parseDevHudSettings, PreviousSettingsSchemaVersion, SettingsContractError, SettingsSchemaVersion, StructuredSettingsSchemaVersion } from "./settings-contract";
 import { diffSettings, redactRecursively, RedactedValue } from "./settings-diff";
 import { ShortcutActionId, ShortcutKey, ShortcutModifier, ShortcutValidationCode, defaultDesktopShortcutBindings, parseDesktopShortcutBindings } from "./shortcuts";
 
@@ -62,6 +62,21 @@ describe("DevHud settings boundary", () => {
     expect(() => parseDevHudSettings({ ...settings, agents: [{ ...agent, repositoryPrompts: [{ ...prompt, body: "token=github_pat_secret" }] }] })).toThrow(/secret material/u);
     const legacy = { ...settings, schemaVersion: 5, agents: [{ ...agent, repositoryPrompts: true }] };
     expect(parseDevHudSettings(legacy).agents[0]?.repositoryPrompts).toEqual([]);
+  });
+
+  it.each([1, 2, 3, 4, 5] as const)("clears a dangling legacy agent profile reference from schema v%s", (schemaVersion) => {
+    const legacyShortcuts = { desktop: {}, ios: {}, android: {} };
+    const legacy = {
+      ...defaultDevHudSettings,
+      schemaVersion,
+      github: schemaVersion === 1
+        ? { repositories: [], issueTracker: null }
+        : { ...defaultDevHudSettings.github, profiles: [] },
+      shortcuts: schemaVersion < StructuredSettingsSchemaVersion ? legacyShortcuts : defaultDevHudSettings.shortcuts,
+      agents: [{ id: "codex", enabled: false, kind: "codex", mode: "draft", repositoryPrompts: true, profileRef: "removed-profile" }],
+    };
+
+    expect(parseDevHudSettings(legacy).agents[0]?.profileRef).toBeNull();
   });
   it("round trips the exact versioned non-secret contract canonically", () => {
     const encoded = encodeDevHudSettings(defaultDevHudSettings);

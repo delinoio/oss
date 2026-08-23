@@ -1,4 +1,4 @@
-import { normalizeLogtoIssuer } from "./identity-contract.ts";
+import { normalizeLogtoIssuer, normalizePublicAssetUrl } from "./identity-contract.ts";
 import type { SanitizedBrowserContext } from "./browser-context.ts";
 import { SettingsTextLimit } from "./contract-limits.ts";
 import { ClassicPatCreationUrl, FineGrainedPatCreationUrl } from "./github-links.ts";
@@ -59,6 +59,7 @@ export const NativeBridgeErrorCode = {
   AgentUnavailable: "agent-unavailable",
   AgentInvalidOutput: "agent-invalid-output",
   AgentFailed: "agent-failed",
+  AgentWriteAmbiguous: "agent-write-ambiguous",
   AgentTimeout: "agent-timeout",
   CloneFailure: "clone-failure",
   CacheQuotaExhausted: "cache-quota-exhausted",
@@ -403,12 +404,7 @@ export function validateCaptureRequest(request: Extract<NativeBridgeRequestV1, {
 }
 
 function validLocalAgentUrl(value: string): boolean {
-  try {
-    const url = new URL(value);
-    return url.protocol === "https:" && url.username === "" && url.password === "" && url.hash === "";
-  } catch {
-    return false;
-  }
+  return normalizePublicAssetUrl(value) !== null;
 }
 
 export function validateLocalAgentRequest(request: Extract<NativeBridgeRequestV1, { readonly operation: `agent.${string}` }>) {
@@ -434,7 +430,7 @@ export function validateLocalAgentRequest(request: Extract<NativeBridgeRequestV1
     || !profilePattern.test(request.scopeId)
     || (request.executablePath !== undefined && (request.executablePath.trim() === "" || request.executablePath.includes("\0") || request.executablePath.length > 4096))
     || request.title.length > 256
-    || encoded.encode(request.body).byteLength > 65_536
+    || Array.from(request.body).length > 65_536
     || encoded.encode(request.repositoryPrompt).byteLength > 32 * 1024
     || request.labels.length > 100
     || new Set(request.labels).size !== request.labels.length

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Copy } from "./localization.ts";
 import { LocalAgentKind, LocalAgentMode, type LocalAgentHealth, type NativeBridgeV1 } from "./native-bridge.ts";
 import { useIdentitySettings } from "./service-boundary.tsx";
@@ -69,6 +69,45 @@ function defaultAgent(kind: LocalAgentKind): AgentSetting {
   return { id: kind, enabled: false, kind, mode: LocalAgentMode.Draft, repositoryPrompts: [], profileRef: null };
 }
 
+function repositoryKey(repository: { readonly owner: string; readonly name: string }): string {
+  return `${repository.owner.toLowerCase()}/${repository.name.toLowerCase()}`;
+}
+
+export function localAgentPromptRepositories(settings: DevHudSettingsV1): readonly { readonly owner: string; readonly name: string }[] {
+  const repositories = settings.github.repositories.map(({ owner, name }) => ({ owner, name }));
+  const tracker = settings.github.issueTracker;
+  if (tracker !== null) repositories.push({ owner: tracker.owner, name: tracker.repository });
+  const unique = new Map<string, { readonly owner: string; readonly name: string }>();
+  for (const repository of repositories) {
+    const key = repositoryKey(repository);
+    if (!unique.has(key)) unique.set(key, repository);
+  }
+  return [...unique.values()];
+}
+
+function RepositoryPromptEditor({ copy, repository, value, disabled, onSave }: {
+  readonly copy: Copy;
+  readonly repository: { readonly owner: string; readonly name: string };
+  readonly value: string;
+  readonly disabled: boolean;
+  readonly onSave: (body: string) => Promise<boolean>;
+}) {
+  const [draft, setDraft] = useState(value);
+  const [baseline, setBaseline] = useState(value);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => { setDraft(value); setBaseline(value); }, [value]);
+  const save = async () => {
+    setSaving(true);
+    const saved = await onSave(draft);
+    if (saved) setBaseline(draft);
+    setSaving(false);
+  };
+  return <div className="native-setting">
+    <label>{copy.localAgentRepositoryPrompt}: {repository.owner}/{repository.name}<textarea value={draft} disabled={disabled || saving} onChange={(event) => setDraft(event.target.value)} /></label>
+    <button type="button" disabled={disabled || saving || draft === baseline} onClick={() => void save()}>{copy.localAgentSaveRepositoryPrompt}</button>
+  </div>;
+}
+
 function healthCopy(copy: Copy, health: LocalAgentHealth): string {
   switch (health) {
     case "ready": return copy.localAgentReady;
@@ -86,7 +125,7 @@ export function LocalAgentSettings({ copy, bridge }: { readonly copy: Copy; read
   const [health, setHealth] = useState<Partial<Record<LocalAgentKind, { readonly health: LocalAgentHealth; readonly version: string | null }>>>({});
   const [pending, setPending] = useState<LocalAgentKind | "cache" | null>(null);
   const [error, setError] = useState(false);
-  const configuredRepositories = identity.settings.github.repositories.map(({ owner, name }) => ({ owner, name }));
+  const configuredRepositories = localAgentPromptRepositories(identity.settings);
 
   const persist = async (kind: LocalAgentKind, update: (agent: AgentSetting) => AgentSetting) => {
     setError(false);
@@ -167,12 +206,9 @@ export function LocalAgentSettings({ copy, bridge }: { readonly copy: Copy; read
         <button type="button" disabled={pending !== null} onClick={() => void detect(kind)}>{copy.localAgentCheck}</button>
         {status && <output aria-live="polite">{healthCopy(copy, status.health)}{status.version ? ` (${status.version})` : ""}</output>}
         {configuredRepositories.map((repository) => {
-          const key = `${repository.owner.toLowerCase()}/${repository.name.toLowerCase()}`;
-          const body = agent.repositoryPrompts.find((prompt) => `${prompt.repository.owner.toLowerCase()}/${prompt.repository.name.toLowerCase()}` === key)?.body ?? "";
-          return <label key={key}>{copy.localAgentRepositoryPrompt}: {repository.owner}/{repository.name}<textarea value={body} disabled={identity.readOnly} onChange={(event) => {
-            const nextBody = event.target.value;
-            void persist(kind, (current) => ({ ...current, repositoryPrompts: nextBody === "" ? current.repositoryPrompts.filter((prompt) => `${prompt.repository.owner.toLowerCase()}/${prompt.repository.name.toLowerCase()}` !== key) : [...current.repositoryPrompts.filter((prompt) => `${prompt.repository.owner.toLowerCase()}/${prompt.repository.name.toLowerCase()}` !== key), { repository, body: nextBody }] }));
-          }} /></label>;
+          const key = repositoryKey(repository);
+          const body = agent.repositoryPrompts.find((prompt) => repositoryKey(prompt.repository) === key)?.body ?? "";
+          return <RepositoryPromptEditor key={key} copy={copy} repository={repository} value={body} disabled={identity.readOnly} onSave={(nextBody) => persist(kind, (current) => ({ ...current, repositoryPrompts: nextBody === "" ? current.repositoryPrompts.filter((prompt) => repositoryKey(prompt.repository) !== key) : [...current.repositoryPrompts.filter((prompt) => repositoryKey(prompt.repository) !== key), { repository, body: nextBody }] }))} />;
         })}
       </fieldset>;
     })}

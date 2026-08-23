@@ -112,6 +112,23 @@ describe("GitHub settings", () => {
     expect(request).not.toHaveBeenCalledWith({ operation: "secure.remove", setting: { kind: "github-pat", profileId: profile.id, scopeId } });
   });
 
+  it("blocks profile removal while a local agent references it", async () => {
+    const agentSettings = parseDevHudSettings({
+      ...settings,
+      agents: [{ id: "codex", enabled: false, kind: "codex", mode: "draft", repositoryPrompts: [], profileRef: profile.id }],
+    });
+    const replaceSettings = vi.fn(async () => true);
+    const reconcileGitHubPats = vi.fn(async () => true);
+    identity = identityWith({ settings: agentSettings, replaceSettings, reconcileGitHubPats });
+    render(<GitHubSettings copy={messages.en} bridge={bridgeWith(async () => ({ kind: "ok" }))} provider={providerWithValidation()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: messages.en.githubRemoveProfile }));
+
+    expect(await screen.findByText(messages.en.githubProfileInUse)).toBeTruthy();
+    expect(replaceSettings).not.toHaveBeenCalled();
+    expect(reconcileGitHubPats).not.toHaveBeenCalled();
+  });
+
   it("preserves a newly written PAT while its profile snapshot awaits conflict resolution", async () => {
     let finishReconciliation: () => void = () => undefined;
     const reconciliation = new Promise<void>((resolve) => { finishReconciliation = resolve; });

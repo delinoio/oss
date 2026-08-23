@@ -1,6 +1,6 @@
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap},
-    ffi::OsString,
+    collections::{BTreeMap, BTreeSet, HashMap, hash_map::Entry},
+    ffi::{OsStr, OsString},
     fs,
     io::{Read, Write},
     path::{Path, PathBuf},
@@ -137,9 +137,69 @@ struct CacheEntry {
 
 pub(crate) struct LocalAgentService {
     root: PathBuf,
-    runs: Mutex<HashMap<Uuid, Arc<AtomicBool>>>,
+    runs: Mutex<RunRegistry>,
     cache_lock: Mutex<()>,
     purging: AtomicBool,
+}
+
+enum RunState {
+    Active(Arc<AtomicBool>),
+    CancelledBeforeStart,
+}
+
+#[derive(Default)]
+struct RunRegistry {
+    runs: HashMap<Uuid, RunState>,
+}
+
+impl RunRegistry {
+    fn register(&mut self, run_id: Uuid) -> Result<Arc<AtomicBool>, String> {
+        match self.runs.entry(run_id) {
+            Entry::Vacant(entry) => {
+                let cancel = Arc::new(AtomicBool::new(false));
+                entry.insert(RunState::Active(Arc::clone(&cancel)));
+                Ok(cancel)
+            }
+            Entry::Occupied(entry) if matches!(entry.get(), RunState::CancelledBeforeStart) => {
+                entry.remove();
+                Err("cancelled".to_string())
+            }
+            Entry::Occupied(_) => Err("invalid-argument".to_string()),
+        }
+    }
+
+    fn cancel(&mut self, run_id: Uuid) {
+        match self.runs.entry(run_id) {
+            Entry::Vacant(entry) => {
+                entry.insert(RunState::CancelledBeforeStart);
+            }
+            Entry::Occupied(entry) => {
+                if let RunState::Active(cancel) = entry.get() {
+                    cancel.store(true, Ordering::Release);
+                }
+            }
+        }
+    }
+
+    fn active_cancellations(&self) -> Vec<Arc<AtomicBool>> {
+        self.runs
+            .values()
+            .filter_map(|state| match state {
+                RunState::Active(cancel) => Some(Arc::clone(cancel)),
+                RunState::CancelledBeforeStart => None,
+            })
+            .collect()
+    }
+
+    fn has_active_runs(&self) -> bool {
+        self.runs
+            .values()
+            .any(|state| matches!(state, RunState::Active(_)))
+    }
+
+    fn remove(&mut self, run_id: Uuid) {
+        self.runs.remove(&run_id);
+    }
 }
 
 impl Default for LocalAgentService {
@@ -156,7 +216,7 @@ impl LocalAgentService {
     pub(crate) fn new(root: PathBuf) -> Self {
         Self {
             root,
-            runs: Mutex::new(HashMap::new()),
+            runs: Mutex::new(RunRegistry::default()),
             cache_lock: Mutex::new(()),
             purging: AtomicBool::new(false),
         }
@@ -219,14 +279,10 @@ impl LocalAgentService {
         if request.operation != "agent.cancel" {
             return Err("invalid-argument".to_string());
         }
-        if let Some(cancel) = self
-            .runs
+        self.runs
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .get(&request.run_id)
-        {
-            cancel.store(true, Ordering::Release);
-        }
+            .cancel(request.run_id);
         Ok(json!({ "kind": "ok" }))
     }
 
@@ -240,16 +296,11 @@ impl LocalAgentService {
         let request: RunRequest =
             serde_json::from_value(request.clone()).map_err(|_| "invalid-argument")?;
         validate_run_request(&request)?;
-        let cancel = Arc::new(AtomicBool::new(false));
-        {
-            let mut runs = self
-                .runs
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            if runs.insert(request.run_id, Arc::clone(&cancel)).is_some() {
-                return Err("invalid-argument".to_string());
-            }
-        }
+        let cancel = self
+            .runs
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .register(request.run_id)?;
         if self.purging.load(Ordering::Acquire) {
             cancel.store(true, Ordering::Release);
         }
@@ -315,17 +366,46 @@ impl LocalAgentService {
             prompt.into_bytes(),
             pat.as_ref().map(|value| value.as_str()),
         )?;
-        let output = run_command(&spec, &cancel, deadline)?;
-        if !output.status.success() {
-            return Err("agent-failed".to_string());
-        }
-        let final_text = match request.kind {
-            AgentKind::Codex => fs::read_to_string(&last_message_path)
-                .map_err(|_| "agent-invalid-output".to_string())?,
-            AgentKind::ClaudeCode => claude_structured_output(&output.stdout)?,
-            AgentKind::Opencode => opencode_final_text(&output.stdout)?,
+        let agent_started = AtomicBool::new(false);
+        let output = match run_command_observed(
+            &spec,
+            &cancel,
+            deadline,
+            (request.mode == AgentMode::Direct).then_some(&agent_started),
+        ) {
+            Ok(output) => output,
+            Err(_) if agent_started.load(Ordering::Acquire) => {
+                return Err("agent-write-ambiguous".to_string());
+            }
+            Err(error) => return Err(error),
         };
-        validate_agent_output(&request, &final_text)
+        if !output.status.success() {
+            return Err(if request.mode == AgentMode::Direct {
+                "agent-write-ambiguous".to_string()
+            } else {
+                "agent-failed".to_string()
+            });
+        }
+        let final_text = (match request.kind {
+            AgentKind::Codex => fs::read_to_string(&last_message_path)
+                .map_err(|_| "agent-invalid-output".to_string()),
+            AgentKind::ClaudeCode => claude_structured_output(&output.stdout),
+            AgentKind::Opencode => opencode_final_text(&output.stdout),
+        })
+        .map_err(|error| {
+            if request.mode == AgentMode::Direct {
+                "agent-write-ambiguous".to_string()
+            } else {
+                error
+            }
+        })?;
+        validate_agent_output(&request, &final_text).map_err(|error| {
+            if request.mode == AgentMode::Direct {
+                "agent-write-ambiguous".to_string()
+            } else {
+                error
+            }
+        })
     }
 
     pub(crate) fn purge(&self) -> Result<(), String> {
@@ -333,33 +413,31 @@ impl LocalAgentService {
             return Err("storage-failure".to_string());
         }
         let _purge = AtomicFlagReset(&self.purging);
-        let cancellations: Vec<_> = self
+        let cancellations = self
             .runs
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .values()
-            .cloned()
-            .collect();
+            .active_cancellations();
         for cancellation in cancellations {
             cancellation.store(true, Ordering::Release);
         }
         let wait_until = Instant::now() + Duration::from_secs(5);
         while Instant::now() < wait_until {
-            if self
+            if !self
                 .runs
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .is_empty()
+                .has_active_runs()
             {
                 break;
             }
             thread::sleep(PROCESS_POLL_INTERVAL);
         }
-        if !self
+        if self
             .runs
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .is_empty()
+            .has_active_runs()
         {
             return Err("storage-failure".to_string());
         }
@@ -392,100 +470,112 @@ impl LocalAgentService {
         let clone_path = clones.join(&key);
         let remote = repository_url(&request.repository);
         let mut manifest = load_cache_manifest(&self.root, &clones)?;
-        if clone_path.exists() && !valid_managed_clone(&clone_path, &remote, cancel, deadline)? {
-            fs::remove_dir_all(&clone_path).map_err(|_| "clone-failure")?;
-            manifest.entries.retain(|entry| entry.key != key);
-        }
-        if clone_path.exists() {
-            let spec = git_spec(
-                [
-                    OsString::from("-C"),
-                    clone_path.as_os_str().to_os_string(),
-                    OsString::from("fetch"),
-                    OsString::from("--force"),
-                    OsString::from("--prune"),
-                    OsString::from("--tags"),
-                    OsString::from("origin"),
-                ],
-                None,
-                pat,
-            )?;
-            let output = run_command(&spec, cancel, deadline)?;
-            if !output.status.success() {
+        let mut retry_disposable_clone = true;
+        loop {
+            if clone_path.exists() && !valid_managed_clone(&clone_path, &remote, cancel, deadline)?
+            {
                 fs::remove_dir_all(&clone_path).map_err(|_| "clone-failure")?;
                 manifest.entries.retain(|entry| entry.key != key);
             }
-        }
-        if !clone_path.exists() {
-            evict_to_limit(&clones, &mut manifest, Some(&key), CACHE_LIMIT_BYTES)?;
-            let staged = tempfile::Builder::new()
-                .prefix("clone-")
-                .tempdir_in(&clones)
+            if clone_path.exists() {
+                let spec = git_spec(
+                    [
+                        OsString::from("-C"),
+                        clone_path.as_os_str().to_os_string(),
+                        OsString::from("fetch"),
+                        OsString::from("--force"),
+                        OsString::from("--prune"),
+                        OsString::from("--tags"),
+                        OsString::from("origin"),
+                    ],
+                    None,
+                    pat,
+                )?;
+                let output = run_command(&spec, cancel, deadline)?;
+                if !output.status.success() {
+                    fs::remove_dir_all(&clone_path).map_err(|_| "clone-failure")?;
+                    manifest.entries.retain(|entry| entry.key != key);
+                }
+            }
+            if !clone_path.exists() {
+                evict_to_limit(&clones, &mut manifest, Some(&key), CACHE_LIMIT_BYTES)?;
+                let staged = tempfile::Builder::new()
+                    .prefix("clone-")
+                    .tempdir_in(&clones)
+                    .map_err(|_| "storage-failure")?;
+                let spec = git_spec(
+                    [
+                        OsString::from("clone"),
+                        OsString::from("--no-recurse-submodules"),
+                        OsString::from("--"),
+                        OsString::from(&remote),
+                        staged.path().as_os_str().to_os_string(),
+                    ],
+                    None,
+                    pat,
+                )?;
+                let output = run_command(&spec, cancel, deadline)?;
+                if !output.status.success() {
+                    return Err("clone-failure".to_string());
+                }
+                fs::rename(staged.keep(), &clone_path).map_err(|_| "storage-failure")?;
+            }
+            if let Err(error) = reset_managed_clone(&clone_path, pat, cancel, deadline) {
+                let _ = fs::remove_dir_all(&clone_path);
+                manifest.entries.retain(|entry| entry.key != key);
+                let _ = write_manifest(&self.root, &manifest);
+                return Err(error);
+            }
+            manifest.entries.retain(|entry| entry.key != key);
+            manifest.entries.push(CacheEntry {
+                key: key.clone(),
+                last_used_millis: now_millis(),
+            });
+            if let Err(error) =
+                evict_to_limit(&clones, &mut manifest, Some(&key), CACHE_LIMIT_BYTES)
+            {
+                let _ = fs::remove_dir_all(&clone_path);
+                manifest.entries.retain(|entry| entry.key != key);
+                let _ = write_manifest(&self.root, &manifest);
+                return Err(error);
+            }
+            write_manifest(&self.root, &manifest)?;
+
+            let workspace = tempfile::Builder::new()
+                .prefix("workspace-")
+                .tempdir_in(&runs)
                 .map_err(|_| "storage-failure")?;
             let spec = git_spec(
                 [
                     OsString::from("clone"),
+                    OsString::from("--no-local"),
+                    OsString::from("--no-hardlinks"),
                     OsString::from("--no-recurse-submodules"),
                     OsString::from("--"),
-                    OsString::from(&remote),
-                    staged.path().as_os_str().to_os_string(),
+                    clone_path.as_os_str().to_os_string(),
+                    workspace.path().as_os_str().to_os_string(),
                 ],
                 None,
-                pat,
+                None,
             )?;
             let output = run_command(&spec, cancel, deadline)?;
-            if !output.status.success() {
+            if output.status.success() {
+                return Ok(workspace);
+            }
+            let _ = fs::remove_dir_all(&clone_path);
+            manifest.entries.retain(|entry| entry.key != key);
+            write_manifest(&self.root, &manifest)?;
+            if !retry_disposable_clone {
                 return Err("clone-failure".to_string());
             }
-            fs::rename(staged.keep(), &clone_path).map_err(|_| "storage-failure")?;
+            retry_disposable_clone = false;
         }
-        if let Err(error) = reset_managed_clone(&clone_path, cancel, deadline) {
-            let _ = fs::remove_dir_all(&clone_path);
-            manifest.entries.retain(|entry| entry.key != key);
-            let _ = write_manifest(&self.root, &manifest);
-            return Err(error);
-        }
-        manifest.entries.retain(|entry| entry.key != key);
-        manifest.entries.push(CacheEntry {
-            key: key.clone(),
-            last_used_millis: now_millis(),
-        });
-        if let Err(error) = evict_to_limit(&clones, &mut manifest, Some(&key), CACHE_LIMIT_BYTES) {
-            let _ = fs::remove_dir_all(&clone_path);
-            manifest.entries.retain(|entry| entry.key != key);
-            let _ = write_manifest(&self.root, &manifest);
-            return Err(error);
-        }
-        write_manifest(&self.root, &manifest)?;
-
-        let workspace = tempfile::Builder::new()
-            .prefix("workspace-")
-            .tempdir_in(&runs)
-            .map_err(|_| "storage-failure")?;
-        let spec = git_spec(
-            [
-                OsString::from("clone"),
-                OsString::from("--no-local"),
-                OsString::from("--no-hardlinks"),
-                OsString::from("--no-recurse-submodules"),
-                OsString::from("--"),
-                clone_path.as_os_str().to_os_string(),
-                workspace.path().as_os_str().to_os_string(),
-            ],
-            None,
-            None,
-        )?;
-        let output = run_command(&spec, cancel, deadline)?;
-        if !output.status.success() {
-            return Err("cache-quota-exhausted".to_string());
-        }
-        Ok(workspace)
     }
 }
 
 struct RunRegistration<'a> {
     run_id: Uuid,
-    runs: &'a Mutex<HashMap<Uuid, Arc<AtomicBool>>>,
+    runs: &'a Mutex<RunRegistry>,
 }
 
 struct AtomicFlagReset<'a>(&'a AtomicBool);
@@ -501,7 +591,7 @@ impl Drop for RunRegistration<'_> {
         self.runs
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .remove(&self.run_id);
+            .remove(self.run_id);
     }
 }
 
@@ -555,6 +645,15 @@ fn run_command(
     cancel: &AtomicBool,
     deadline: Instant,
 ) -> Result<ProcessOutput, String> {
+    run_command_observed(spec, cancel, deadline, None)
+}
+
+fn run_command_observed(
+    spec: &CommandSpec,
+    cancel: &AtomicBool,
+    deadline: Instant,
+    started: Option<&AtomicBool>,
+) -> Result<ProcessOutput, String> {
     let _temporary_files = &spec.temporary_files;
     if cancel.load(Ordering::Acquire) {
         return Err("cancelled".to_string());
@@ -578,6 +677,9 @@ fn run_command(
     let mut child = command
         .spawn()
         .map_err(|_| "agent-unavailable".to_string())?;
+    if let Some(started) = started {
+        started.store(true, Ordering::Release);
+    }
     let process_id = child.id();
     if let Some(mut stdin) = child.stdin.take() {
         let input = spec.stdin.clone();
@@ -703,12 +805,37 @@ fn resolve_program(name: &str) -> Result<PathBuf, String> {
 fn executable_candidates(name: &str) -> Vec<OsString> {
     #[cfg(windows)]
     {
-        vec![OsString::from(format!("{name}.exe")), OsString::from(name)]
+        windows_executable_candidates(name, std::env::var_os("PATHEXT").as_deref())
     }
     #[cfg(not(windows))]
     {
         vec![OsString::from(name)]
     }
+}
+
+fn windows_executable_candidates(name: &str, pathext: Option<&OsStr>) -> Vec<OsString> {
+    const DEFAULT_PATHEXT: &str = ".COM;.EXE;.BAT;.CMD";
+    let pathext = pathext
+        .and_then(OsStr::to_str)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(DEFAULT_PATHEXT);
+    let mut seen = BTreeSet::new();
+    let mut candidates = Vec::new();
+    for extension in pathext.split(';').map(str::trim) {
+        if !extension.starts_with('.')
+            || extension.len() > 16
+            || !extension[1..]
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric())
+        {
+            continue;
+        }
+        if seen.insert(extension.to_ascii_lowercase()) {
+            candidates.push(OsString::from(format!("{name}{extension}")));
+        }
+    }
+    candidates.push(OsString::from(name));
+    candidates
 }
 
 fn executable_file(path: &Path) -> Option<PathBuf> {
@@ -1240,9 +1367,18 @@ fn is_submission_marker(value: &str) -> bool {
 
 fn valid_public_url(value: &str) -> bool {
     url::Url::parse(value).is_ok_and(|url| {
-        url.scheme() == "https"
+        let loopback = match url.host() {
+            Some(url::Host::Domain(host)) => {
+                host.trim_end_matches('.').eq_ignore_ascii_case("localhost")
+            }
+            Some(url::Host::Ipv4(host)) => host.is_loopback(),
+            Some(url::Host::Ipv6(host)) => host.is_loopback(),
+            None => false,
+        };
+        (url.scheme() == "https" || url.scheme() == "http" && loopback)
             && url.username().is_empty()
             && url.password().is_none()
+            && url.query().is_none()
             && url.fragment().is_none()
     })
 }
@@ -1289,28 +1425,95 @@ fn valid_managed_clone(
     Ok(output.status.success() && String::from_utf8_lossy(&output.stdout).trim() == remote)
 }
 
-fn reset_managed_clone(path: &Path, cancel: &AtomicBool, deadline: Instant) -> Result<(), String> {
-    for args in [
-        vec![
-            OsString::from("-C"),
-            path.as_os_str().to_os_string(),
-            OsString::from("reset"),
-            OsString::from("--hard"),
-            OsString::from("origin/HEAD"),
-        ],
-        vec![
-            OsString::from("-C"),
-            path.as_os_str().to_os_string(),
-            OsString::from("clean"),
-            OsString::from("-ffdx"),
-        ],
-    ] {
-        let output = run_command(&git_spec(args, None, None)?, cancel, deadline)?;
+fn reset_managed_clone(
+    path: &Path,
+    pat: Option<&str>,
+    cancel: &AtomicBool,
+    deadline: Instant,
+) -> Result<(), String> {
+    let remote_head = run_command(
+        &git_spec(
+            [
+                OsString::from("-C"),
+                path.as_os_str().to_os_string(),
+                OsString::from("remote"),
+                OsString::from("set-head"),
+                OsString::from("origin"),
+                OsString::from("--auto"),
+            ],
+            None,
+            pat,
+        )?,
+        cancel,
+        deadline,
+    )?;
+    if remote_head.status.success() {
+        let output = run_command(
+            &git_spec(
+                [
+                    OsString::from("-C"),
+                    path.as_os_str().to_os_string(),
+                    OsString::from("reset"),
+                    OsString::from("--hard"),
+                    OsString::from("origin/HEAD"),
+                ],
+                None,
+                None,
+            )?,
+            cancel,
+            deadline,
+        )?;
         if !output.status.success() {
             return Err("clone-failure".to_string());
         }
+    } else if managed_clone_has_remote_branches(path, cancel, deadline)? {
+        return Err("clone-failure".to_string());
+    }
+    let output = run_command(
+        &git_spec(
+            [
+                OsString::from("-C"),
+                path.as_os_str().to_os_string(),
+                OsString::from("clean"),
+                OsString::from("-ffdx"),
+            ],
+            None,
+            None,
+        )?,
+        cancel,
+        deadline,
+    )?;
+    if !output.status.success() {
+        return Err("clone-failure".to_string());
     }
     Ok(())
+}
+
+fn managed_clone_has_remote_branches(
+    path: &Path,
+    cancel: &AtomicBool,
+    deadline: Instant,
+) -> Result<bool, String> {
+    let output = run_command(
+        &git_spec(
+            [
+                OsString::from("-C"),
+                path.as_os_str().to_os_string(),
+                OsString::from("for-each-ref"),
+                OsString::from("--count=1"),
+                OsString::from("--format=%(refname)"),
+                OsString::from("refs/remotes/origin"),
+            ],
+            None,
+            None,
+        )?,
+        cancel,
+        deadline,
+    )?;
+    if !output.status.success() {
+        return Err("clone-failure".to_string());
+    }
+    Ok(!output.stdout.is_empty())
 }
 
 fn read_manifest(root: &Path) -> Result<CacheManifest, String> {
@@ -1338,7 +1541,32 @@ fn read_manifest(root: &Path) -> Result<CacheManifest, String> {
 
 fn load_cache_manifest(root: &Path, clones: &Path) -> Result<CacheManifest, String> {
     match read_manifest(root) {
-        Ok(manifest) => Ok(manifest),
+        Ok(mut manifest) => {
+            let recorded = manifest
+                .entries
+                .iter()
+                .map(|entry| entry.key.clone())
+                .collect::<BTreeSet<_>>();
+            for entry in fs::read_dir(clones).map_err(|_| "storage-failure")? {
+                let path = entry.map_err(|_| "storage-failure")?.path();
+                let recorded_path = path
+                    .file_name()
+                    .and_then(OsStr::to_str)
+                    .is_some_and(|name| recorded.contains(name));
+                if !recorded_path {
+                    remove_cache_path(&path)?;
+                }
+            }
+            let previous_length = manifest.entries.len();
+            manifest.entries.retain(|entry| {
+                fs::symlink_metadata(clones.join(&entry.key))
+                    .is_ok_and(|metadata| metadata.is_dir() && !metadata.file_type().is_symlink())
+            });
+            if manifest.entries.len() != previous_length {
+                write_manifest(root, &manifest)?;
+            }
+            Ok(manifest)
+        }
         Err(_) => {
             match fs::remove_dir_all(clones) {
                 Ok(()) => {}
@@ -1357,6 +1585,24 @@ fn load_cache_manifest(root: &Path, clones: &Path) -> Result<CacheManifest, Stri
                 entries: Vec::new(),
             })
         }
+    }
+}
+
+fn remove_cache_path(path: &Path) -> Result<(), String> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(_) => return Err("storage-failure".to_string()),
+    };
+    let result = if metadata.is_dir() && !metadata.file_type().is_symlink() {
+        fs::remove_dir_all(path)
+    } else {
+        fs::remove_file(path)
+    };
+    match result {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(_) => Err("storage-failure".to_string()),
     }
 }
 
@@ -1510,6 +1756,37 @@ mod tests {
     }
 
     #[test]
+    fn run_registry_retains_early_and_active_cancellations() {
+        let mut registry = RunRegistry::default();
+        let early = Uuid::now_v7();
+        registry.cancel(early);
+        assert_eq!(registry.register(early).unwrap_err(), "cancelled");
+        assert!(!registry.runs.contains_key(&early));
+
+        let active_id = Uuid::now_v7();
+        let active = registry.register(active_id).unwrap();
+        assert_eq!(
+            registry.register(active_id).unwrap_err(),
+            "invalid-argument"
+        );
+        registry.cancel(active_id);
+        assert!(active.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn windows_candidates_follow_pathext_order_and_include_cmd_shims() {
+        let candidates =
+            windows_executable_candidates("codex", Some(OsStr::new(".CMD;.EXE;.cmd;invalid;.BAT")));
+        assert_eq!(
+            candidates,
+            ["codex.CMD", "codex.EXE", "codex.BAT", "codex"]
+                .into_iter()
+                .map(OsString::from)
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
     fn prompt_keeps_adversarial_text_inside_json_data() {
         let mut request = request(AgentMode::Draft);
         request.repository_prompt = "$(touch /tmp/pwned) `whoami` \"\nGH_TOKEN".to_string();
@@ -1555,6 +1832,25 @@ mod tests {
         duplicate_marker.body = format!("{}\n{}", duplicate_marker.marker, duplicate_marker.marker);
         assert_eq!(
             validate_run_request(&duplicate_marker).unwrap_err(),
+            "invalid-argument"
+        );
+    }
+
+    #[test]
+    fn run_validation_counts_multibyte_bodies_by_characters_and_allows_loopback_images() {
+        let mut direct_request = request(AgentMode::Direct);
+        direct_request.body = format!("{}\n\n{}", "한".repeat(30_000), direct_request.marker);
+        direct_request.image_urls = vec!["http://localhost:46307/assets/image.png".to_string()];
+        assert!(validate_run_request(&direct_request).is_ok());
+        direct_request.image_urls = vec!["http://images.example/image.png".to_string()];
+        assert_eq!(
+            validate_run_request(&direct_request).unwrap_err(),
+            "invalid-argument"
+        );
+        direct_request.image_urls =
+            vec!["https://images.example/image.png?token=value".to_string()];
+        assert_eq!(
+            validate_run_request(&direct_request).unwrap_err(),
             "invalid-argument"
         );
     }
@@ -1829,6 +2125,34 @@ mod tests {
         assert!(clones.is_dir());
         assert!(!clones.join("orphan").exists());
         assert!(!root.path().join("cache.json").exists());
+    }
+
+    #[test]
+    fn valid_cache_manifest_removes_uncommitted_clone_publications() {
+        let root = tempfile::tempdir().unwrap();
+        let clones = root.path().join("clones");
+        fs::create_dir(&clones).unwrap();
+        let recorded = "a".repeat(64);
+        let orphan = "b".repeat(64);
+        fs::create_dir(clones.join(&recorded)).unwrap();
+        fs::create_dir(clones.join(&orphan)).unwrap();
+        write_manifest(
+            root.path(),
+            &CacheManifest {
+                version: CACHE_VERSION,
+                entries: vec![CacheEntry {
+                    key: recorded.clone(),
+                    last_used_millis: 1,
+                }],
+            },
+        )
+        .unwrap();
+
+        let manifest = load_cache_manifest(root.path(), &clones).unwrap();
+
+        assert_eq!(manifest.entries.len(), 1);
+        assert!(clones.join(recorded).is_dir());
+        assert!(!clones.join(orphan).exists());
     }
 
     #[cfg(unix)]

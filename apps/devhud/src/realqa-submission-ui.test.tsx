@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createGitHubProvider, type GitHubProvider } from "./github-provider.ts";
 import { messages } from "./localization.ts";
-import { LocalAgentKind, LocalAgentMode, type CaptureDraft, type NativeBridgeV1 } from "./native-bridge.ts";
+import { LocalAgentKind, LocalAgentMode, NativeBridgeError, NativeBridgeErrorCode, type CaptureDraft, type NativeBridgeV1 } from "./native-bridge.ts";
 import { RealqaSubmissionModal } from "./realqa-submission-ui.tsx";
 import type { IdentitySettingsValue } from "./service-boundary.tsx";
 import { defaultDevHudSettings, parseDevHudSettings } from "./settings-contract.ts";
@@ -90,6 +90,25 @@ function validatedRepository() {
     permissions: { metadata: true, pullRequests: true, issues: true, contents: true },
     metadata: { etag: null, rate: { limit: null, remaining: null, used: null, resetAt: null, resource: null, retryAfterSeconds: null } },
   } as const;
+}
+
+function configureSuccessfulOfficialUpload(native: NativeBridgeV1, agentFailure: NativeBridgeError) {
+  const createUpload = vi.fn(async () => ({ reservation: {
+    uploadId: { value: "019b0000-0000-7000-8000-000000000020" }, submissionId: { value: "019b0000-0000-7000-8000-000000000021" },
+    uploadGroupId: { value: "019b0000-0000-7000-8000-000000000022" }, reservationId: { value: "019b0000-0000-7000-8000-000000000023" },
+    stagingGeneration: 1n, signedPutUrl: "https://upload.example/object", requiredHeaders: { contentType: "image/png", checksumSha256Base64: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", contentLength: 3n },
+  } }));
+  const finalizeUpload = vi.fn(async () => ({ upload: { uploadId: { value: "019b0000-0000-7000-8000-000000000020" }, publicUrl: "https://images.example/image.png" } }));
+  const deleteUpload = vi.fn(async () => ({}));
+  mutationFunctions = { createUpload, finalizeUpload, deleteUpload };
+  vi.mocked(native.request).mockImplementation(async (request) => {
+    if (request.operation === "secure.read") return { kind: "secure-value", value: "github_pat_fixture" };
+    if (request.operation === "capture.flatten") return { kind: "capture-flattened", images: [{ imageId: draft.images[0].id, width: 1, height: 1, bytes: 3, sha256: "00".repeat(32), assetUrl: "realqa://asset/flattened", downscaled: false }] };
+    if (request.operation === "capture.upload-official") return { kind: "capture-uploaded", observedEtag: "etag", publicUrl: null };
+    if (request.operation === "agent.run") throw agentFailure;
+    return { kind: "ok" };
+  });
+  return { createUpload, finalizeUpload, deleteUpload };
 }
 
 describe.each([["English", messages.en], ["Korean", messages.ko]] as const)("RealQA submission modal in %s", (_language, copy) => {
@@ -182,7 +201,7 @@ describe("RealQA local-agent submission", () => {
     const native = bridge();
     vi.mocked(native.request).mockImplementation(async (request) => {
       if (request.operation === "secure.read") return { kind: "secure-value", value: "github_pat_fixture" };
-      if (request.operation === "agent.run") throw new Error("agent failed after an ambiguous boundary");
+      if (request.operation === "agent.run") throw new NativeBridgeError(NativeBridgeErrorCode.AgentWriteAmbiguous);
       return { kind: "ok" };
     });
     const createIssue = vi.fn(async () => ({ issue: { number: 1, title: "Direct title", url: "https://github.com/delinoio/oss/issues/1", marker: "marker", reconciled: false }, metadata: validatedRepository().metadata }));
@@ -201,6 +220,26 @@ describe("RealQA local-agent submission", () => {
     fireEvent.change(screen.getByLabelText(messages.en.localAgentSubmission), { target: { value: "" } });
     fireEvent.click(screen.getByRole("button", { name: messages.en.issueSubmit }));
     await waitFor(() => expect(createIssue).toHaveBeenCalledOnce());
+  });
+
+  it.each([
+    [NativeBridgeErrorCode.AgentNotFound, messages.en.issueSubmissionFailed, 1],
+    [NativeBridgeErrorCode.AgentWriteAmbiguous, messages.en.issueAmbiguous, 0],
+  ] as const)("cleans finalized uploads according to the Direct failure boundary for %s", async (code, expectedError, expectedDeletes) => {
+    enableLocalAgent(LocalAgentMode.Direct);
+    identity = { ...identity, status: "authenticated" };
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const native = bridge();
+    const uploads = configureSuccessfulOfficialUpload(native, new NativeBridgeError(code));
+    render(<RealqaSubmissionModal draft={draft} bridge={native} copy={messages.en} onClose={vi.fn()} onConfirmed={vi.fn()} provider={provider({ validateRepository: vi.fn(async () => validatedRepository()) })} />);
+    fireEvent.change(screen.getByLabelText(messages.en.localAgentSubmission), { target: { value: "codex" } });
+    fireEvent.change(screen.getByLabelText(messages.en.issueTitle), { target: { value: "Direct issue" } });
+    fireEvent.click(screen.getByRole("button", { name: messages.en.issueSubmit }));
+
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveProperty("textContent", expectedError));
+    expect(uploads.createUpload).toHaveBeenCalledOnce();
+    expect(uploads.finalizeUpload).toHaveBeenCalledOnce();
+    expect(uploads.deleteUpload).toHaveBeenCalledTimes(expectedDeletes);
   });
 });
 
