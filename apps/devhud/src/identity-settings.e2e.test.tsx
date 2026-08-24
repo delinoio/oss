@@ -1895,6 +1895,58 @@ describe("generated Connect identity/settings fixture", () => {
     expect(screen.queryByText(messages.en.conflictTitle)).toBeNull();
   });
 
+  it("preserves device-local settings when adopting a server import", async () => {
+    const prompt = { repository: { owner: "delinoio", name: "oss" }, body: "device-local instructions" };
+    const agent = { id: "codex", enabled: true, kind: "codex" as const, mode: "draft" as const, profileRef: null, repositoryPrompts: [] };
+    const local = parseDevHudSettings({
+      ...defaultDevHudSettings,
+      appearance: { ...defaultDevHudSettings.appearance, theme: "dark" },
+      shortcuts: {
+        ...defaultDevHudSettings.shortcuts,
+        desktop: {
+          ...defaultDevHudSettings.shortcuts.desktop,
+          [ShortcutActionId.CommandPalette]: { ...defaultDevHudSettings.shortcuts.desktop[ShortcutActionId.CommandPalette], enabled: false },
+        },
+      },
+      agents: [{ ...agent, repositoryPrompts: [prompt] }],
+    });
+    const server = parseDevHudSettings({
+      ...defaultDevHudSettings,
+      appearance: { ...defaultDevHudSettings.appearance, theme: "light" },
+      agents: [agent],
+    });
+    writeGuestSettings(localStorage, local);
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: SettingsSchemaVersion, revision: "1", canonicalJson: encodedSettings(server) } });
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    render(<DevHudServiceBoundary
+      apiOrigin="https://devhud.api.delino.io"
+      active
+      online
+      callbackUrl={null}
+      platform={RuntimePlatform.Desktop}
+      bridge={authenticatedBridge()}
+      onCallbackConsumed={() => {}}
+      onContinueLocally={() => {}}
+      onLoggedOut={() => {}}
+    ><IdentityStateProbe /><SynchronizedSettingsBoundary copy={messages.en} /></DevHudServiceBoundary>);
+    expect(await screen.findByRole("dialog", { name: messages.en.importSettingsTitle })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: messages.en.replaceLocal }));
+
+    const state = screen.getByTestId("identity-state");
+    await waitFor(() => expect(state.dataset).toMatchObject({ revision: "1", theme: "light", paletteEnabled: "false" }));
+    const cached = readAuthenticatedSettingsCache(localStorage, "https://devhud.api.delino.io");
+    expect(cached?.settings.shortcuts.desktop[ShortcutActionId.CommandPalette].enabled).toBe(false);
+    expect(cached?.settings.agents[0]?.repositoryPrompts).toEqual([prompt]);
+    expect(hasGuestSettings(localStorage)).toBe(false);
+    expect(screen.queryByRole("dialog", { name: messages.en.importSettingsTitle })).toBeNull();
+  });
+
   it("revalidates a refetched import snapshot before adopting the server", async () => {
     const local = { ...defaultDevHudSettings, appearance: { ...defaultDevHudSettings.appearance, theme: "dark" as const } };
     const server = { ...defaultDevHudSettings, appearance: { ...defaultDevHudSettings.appearance, theme: "light" as const } };

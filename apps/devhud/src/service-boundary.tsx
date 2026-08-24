@@ -806,8 +806,9 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
         markSettingsContractInvalid();
         return false;
       }
-      if (!writeAuthenticatedSettingsCache(storage, apiOrigin, { settings: validated.settings, revision: validated.revision, contentSHA256: validated.contentSHA256, cachedAt: new Date().toISOString() })) throw new Error("device-local-settings-persistence-failed");
-      applySettings(validated.settings);
+      const next = withDeviceLocalSettings(validated.settings, settingsRef.current);
+      if (!writeAuthenticatedSettingsCache(storage, apiOrigin, { settings: next, revision: validated.revision, contentSHA256: validated.contentSHA256, cachedAt: new Date().toISOString() })) throw new Error("device-local-settings-persistence-failed");
+      applySettings(next);
       applyRevision(validated.revision, validated.contentSHA256);
       setImportDiff(null);
       clearGuestImportMarker(storage);
