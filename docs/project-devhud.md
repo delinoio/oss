@@ -53,7 +53,7 @@ Every run receives an immutable, bounded envelope fixing repository, labels, pro
 
 ## Cross-Domain Invariants
 
-Server-settings adoption rehydrates the current device's shortcut bindings and repository prompts for retained agent descriptors before updating the authenticated cache, and clears a guest import only after that cache write succeeds.
+Server-settings adoption rehydrates the current device's shortcut bindings and repository prompts for retained agent descriptors before updating the authenticated cache, and clears a guest import only after that cache write succeeds. A synchronized replacement response or conflict rehydrates from the latest completed device-local save instead of overwriting it with the request-time shortcut or repository-prompt snapshot.
 
 Native Messaging configuration is accepted only when every concrete Chrome origin is covered by its mapping scheme, host, and normalized port, every mapping ID is a canonical lowercase UUID v7, and the projected configuration fits inside both complete 256 KiB IPC and Chrome response envelopes before settings persistence. Native validation repeats those checks defensively. Renderer replacements serialize in publication order so stale invocations cannot overwrite newer settings, and the latest snapshot retries with capped backoff after a transient bridge failure. Host-side IPC applies one absolute five-second deadline to every complete framed authentication or forwarded read/write, including waits and retries when every Windows named-pipe instance is busy. The desktop Tauri wrapper rejects caller `-t`/`--target` overrides and copies the exact host executable reported by Cargo under Cargo's effective artifact target and suffix.
 

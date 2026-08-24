@@ -152,6 +152,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     return !hasGuestSettings(storage) && initialAppearance ? { ...guest, appearance: initialAppearance } : guest;
   });
   const settingsRef = useRef(settings);
+  const deviceLocalSettingsGenerationRef = useRef(0);
   const [revision, setRevision] = useState(0n);
   const revisionRef = useRef(revision);
   const contentSHA256Ref = useRef(new Uint8Array());
@@ -565,6 +566,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
 
   async function replaceAt(local: DevHudSettingsV1, expectedRevision: bigint, expectedContentSHA256: Uint8Array = contentSHA256Ref.current): Promise<boolean> {
     if (!online) throw new Error("offline-read-only");
+    const deviceLocalSettingsGeneration = deviceLocalSettingsGenerationRef.current;
     setSettingsError(null);
     let canonicalJson: Uint8Array;
     try {
@@ -584,8 +586,10 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
         markSettingsContractInvalid();
         throw reason;
       }
-      const requiresDeviceLocalPersistence = hasGuestSettings(storage) || !deviceLocalSettingsEqual(local, settingsRef.current);
-      const next = withDeviceLocalSettings(validated.settings, local);
+      const hasNewerDeviceLocalSettings = deviceLocalSettingsGenerationRef.current !== deviceLocalSettingsGeneration;
+      const latestDeviceLocalSettings = hasNewerDeviceLocalSettings ? settingsRef.current : local;
+      const requiresDeviceLocalPersistence = hasGuestSettings(storage) || !hasNewerDeviceLocalSettings && !deviceLocalSettingsEqual(local, settingsRef.current);
+      const next = withDeviceLocalSettings(validated.settings, latestDeviceLocalSettings);
       const persisted = writeAuthenticatedSettingsCache(storage, apiOrigin, { settings: next, revision: validated.revision, contentSHA256: validated.contentSHA256, cachedAt: new Date().toISOString() });
       applySettings(next);
       applyRevision(validated.revision, validated.contentSHA256);
@@ -610,8 +614,10 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
           throw snapshotReason;
         }
         setImportDiff(null);
-        const server = withDeviceLocalSettings(validated.settings, local);
-        setConflict({ local, server, currentRevision: validated.revision, currentContentSHA256: validated.contentSHA256, diff: diffSettings(local, server) });
+        const latestDeviceLocalSettings = deviceLocalSettingsGenerationRef.current !== deviceLocalSettingsGeneration ? settingsRef.current : local;
+        const latestLocal = withDeviceLocalSettings(local, latestDeviceLocalSettings);
+        const server = withDeviceLocalSettings(validated.settings, latestDeviceLocalSettings);
+        setConflict({ local: latestLocal, server, currentRevision: validated.revision, currentContentSHA256: validated.contentSHA256, diff: diffSettings(latestLocal, server) });
         return false;
       }
       setSettingsError(mapped);
@@ -674,18 +680,22 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     const parsed = parseDevHudSettings(next);
     assertDeviceLocalSettingsPersistable(parsed);
     if (canonicalDevHudSettings(parsed) === canonicalDevHudSettings(settingsRef.current)) {
+      const changesDeviceLocalSettings = !deviceLocalSettingsEqual(parsed, settingsRef.current);
       if (!shortcutHydrationReady) throw new Error("device-local-settings-not-ready");
       if (localSettingsSession) {
         if (!writeGuestSettings(storage, parsed)) throw new Error("device-local-settings-persistence-failed");
       } else {
         if (!writeAuthenticatedSettingsCache(storage, apiOrigin, { settings: parsed, revision: revisionRef.current, contentSHA256: contentSHA256Ref.current, cachedAt: new Date().toISOString() })) throw new Error("device-local-settings-persistence-failed");
       }
+      if (changesDeviceLocalSettings) deviceLocalSettingsGenerationRef.current += 1;
       applySettings(parsed);
       return true;
     }
     if (localSettingsSession) {
+      const changesDeviceLocalSettings = !deviceLocalSettingsEqual(parsed, settingsRef.current);
       encodeDevHudSettings(parsed);
       if (!writeGuestSettings(storage, parsed)) throw new Error("device-local-settings-persistence-failed");
+      if (changesDeviceLocalSettings) deviceLocalSettingsGenerationRef.current += 1;
       applySettings(parsed);
       return true;
     }

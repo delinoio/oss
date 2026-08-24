@@ -67,6 +67,15 @@ function settingsSnapshotResponse(value: unknown, revision: bigint, contentSHA25
   }), { status: 200, headers: { "Content-Type": "application/json", "Connect-Protocol-Version": "1" } });
 }
 
+async function settingsRevisionConflictResponse(expectedRevision: bigint, currentSettings: DevHudSettingsV1, currentRevision: bigint): Promise<Response> {
+  const detail = create(SettingsRevisionConflictSchema, {
+    expectedRevision,
+    currentSnapshot: { schemaVersion: SettingsSchemaVersion, revision: currentRevision, canonicalJson: new TextEncoder().encode(canonicalDevHudSettings(currentSettings)), contentSha256: await settingsContentDigest(currentSettings) },
+  });
+  const value = btoa(String.fromCharCode(...toBinary(SettingsRevisionConflictSchema, detail)));
+  return new Response(JSON.stringify({ code: "aborted", message: "settings revision conflict", details: [{ type: SettingsRevisionConflictSchema.typeName, value }] }), { status: 409, headers: { "Content-Type": "application/json" } });
+}
+
 function authenticatedBridge(purgeScopes: string[] = [], secureOperations: string[] = [], reconciliations: NativeBridgeRequestV1[] = []): NativeBridgeV1 {
   const accessTokenMap = JSON.stringify({ "@https://api.example/api": { token: "fixture-access-token", scope: "", expiresAt: 4_102_444_800 } });
   const secureSession = JSON.stringify({ idToken: "fixture-id-token", accessToken: accessTokenMap });
@@ -107,7 +116,7 @@ function encodedCanonicalJson(value: unknown): string {
 
 const legacyDevHudSettings = { ...defaultDevHudSettings, schemaVersion: 1, github: { repositories: [], issueTracker: null } };
 
-function IdentityStateProbe({ replacement = defaultDevHudSettings }: { readonly replacement?: DevHudSettingsV1 }) {
+function IdentityStateProbe({ replacement = defaultDevHudSettings, deviceLocalReplacement }: { readonly replacement?: DevHudSettingsV1; readonly deviceLocalReplacement?: DevHudSettingsV1 }) {
   const identity = useIdentitySettings();
   const queryClient = useQueryClient();
   const [actionError, setActionError] = useState(false);
@@ -121,6 +130,7 @@ function IdentityStateProbe({ replacement = defaultDevHudSettings }: { readonly 
       data-revision={identity.revision.toString()}
       data-theme={identity.settings.appearance.theme}
       data-palette-enabled={String(identity.settings.shortcuts.desktop[ShortcutActionId.CommandPalette].enabled)}
+      data-repository-prompt={identity.settings.agents[0]?.repositoryPrompts[0]?.body ?? ""}
       data-error={identity.error ?? ""}
       data-account-error={identity.accountError?.code ?? ""}
       data-account-correlation={identity.accountError?.correlationId ?? ""}
@@ -136,13 +146,14 @@ function IdentityStateProbe({ replacement = defaultDevHudSettings }: { readonly 
         () => { setActionError(true); setActionSettled((current) => current + 1); },
       );
     }}>replace probe settings</button>
+    {deviceLocalReplacement && <button type="button" onClick={() => void identity.replaceSettings(deviceLocalReplacement).catch(() => setActionError(true))}>replace probe device-local settings</button>}
     <button type="button" onClick={() => void queryClient.refetchQueries()}>refetch probe queries</button>
     <button type="button" onClick={() => { setActionError(false); void identity.logout().catch(() => setActionError(true)); }}>logout probe identity</button>
     <button type="button" onClick={identity.continueLocally}>continue probe locally</button>
   </>;
 }
 
-function renderIdentityProbe(bridge: NativeBridgeV1, replacement: DevHudSettingsV1 = defaultDevHudSettings, online = true) {
+function renderIdentityProbe(bridge: NativeBridgeV1, replacement: DevHudSettingsV1 = defaultDevHudSettings, online = true, deviceLocalReplacement?: DevHudSettingsV1) {
   return render(<DevHudServiceBoundary
     apiOrigin="https://devhud.api.delino.io"
     active
@@ -153,7 +164,21 @@ function renderIdentityProbe(bridge: NativeBridgeV1, replacement: DevHudSettings
     onCallbackConsumed={() => {}}
     onContinueLocally={() => {}}
     onLoggedOut={() => {}}
-  ><IdentityStateProbe replacement={replacement} /></DevHudServiceBoundary>);
+  ><IdentityStateProbe replacement={replacement} deviceLocalReplacement={deviceLocalReplacement} /></DevHudServiceBoundary>);
+}
+
+function renderIdentityConflictProbe(bridge: NativeBridgeV1, replacement: DevHudSettingsV1, deviceLocalReplacement: DevHudSettingsV1) {
+  return render(<DevHudServiceBoundary
+    apiOrigin="https://devhud.api.delino.io"
+    active
+    online
+    callbackUrl={null}
+    platform={RuntimePlatform.Desktop}
+    bridge={bridge}
+    onCallbackConsumed={() => {}}
+    onContinueLocally={() => {}}
+    onLoggedOut={() => {}}
+  ><IdentityStateProbe replacement={replacement} deviceLocalReplacement={deviceLocalReplacement} /><SynchronizedSettingsBoundary copy={messages.en} /></DevHudServiceBoundary>);
 }
 
 beforeEach(() => {
@@ -295,6 +320,51 @@ describe("generated Connect identity/settings fixture", () => {
     expect(readAuthenticatedSettingsCache(localStorage, "https://devhud.api.delino.io")?.settings.agents[0]?.repositoryPrompts).toEqual([prompt]);
   });
 
+  it("preserves newer device-local edits when a synchronized replacement succeeds", async () => {
+    const agent = { id: "codex", enabled: true, kind: "codex" as const, mode: "draft" as const, profileRef: null, repositoryPrompts: [] };
+    const server = parseDevHudSettings({ ...defaultDevHudSettings, agents: [agent] });
+    const replacement = parseDevHudSettings({ ...server, appearance: { ...server.appearance, theme: "dark" } });
+    const prompt = { repository: { owner: "delinoio", name: "oss" }, body: "newer device-local instructions" };
+    const deviceLocalReplacement = parseDevHudSettings({
+      ...server,
+      shortcuts: {
+        ...server.shortcuts,
+        desktop: {
+          ...server.shortcuts.desktop,
+          [ShortcutActionId.CommandPalette]: { ...server.shortcuts.desktop[ShortcutActionId.CommandPalette], enabled: false },
+        },
+      },
+      agents: [{ ...agent, repositoryPrompts: [prompt] }],
+    });
+    let releaseReplacement!: () => void;
+    const replacementGate = new Promise<void>((resolve) => { releaseReplacement = resolve; });
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: SettingsSchemaVersion, revision: "1", canonicalJson: encodedSettings(server) } });
+      if (url.endsWith("/devhud.v1.SettingsService/ReplaceSettings")) {
+        await replacementGate;
+        return connectResponse({ snapshot: { schemaVersion: SettingsSchemaVersion, revision: "2", canonicalJson: encodedSettings(replacement) } });
+      }
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    renderIdentityProbe(authenticatedBridge(), replacement, true, deviceLocalReplacement);
+    await waitFor(() => expect(screen.getByTestId("identity-state").dataset.readOnly).toBe("false"));
+    fireEvent.click(screen.getByRole("button", { name: "replace probe settings" }));
+    await waitFor(() => expect(screen.getByTestId("identity-state").dataset.readOnly).toBe("true"));
+    expect(screen.getByTestId("identity-state").dataset.shortcutReady).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "replace probe device-local settings" }));
+    await waitFor(() => expect(screen.getByTestId("identity-state").dataset).toMatchObject({ paletteEnabled: "false", repositoryPrompt: prompt.body }));
+    act(() => { releaseReplacement(); });
+
+    await waitFor(() => expect(screen.getByTestId("identity-state").dataset).toMatchObject({ revision: "2", theme: "dark", paletteEnabled: "false", repositoryPrompt: prompt.body }));
+    const cached = readAuthenticatedSettingsCache(localStorage, "https://devhud.api.delino.io");
+    expect(cached?.settings.shortcuts.desktop[ShortcutActionId.CommandPalette].enabled).toBe(false);
+    expect(cached?.settings.agents[0]?.repositoryPrompts).toEqual([prompt]);
+  });
+
   it("keeps synchronized agent saves successful when authenticated cache writes fail", async () => {
     const originalSetItem = Storage.prototype.setItem;
     vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (this: Storage, key, value) {
@@ -369,6 +439,104 @@ describe("generated Connect identity/settings fixture", () => {
     await waitFor(() => expect(screen.queryByText(messages.en.conflictTitle)).toBeNull());
     const cached = readAuthenticatedSettingsCache(localStorage, "https://devhud.api.delino.io");
     expect(cached?.revision).toBe(2n);
+    expect(cached?.settings.agents[0]?.repositoryPrompts).toEqual([prompt]);
+  });
+
+  it("preserves newer device-local edits when adopting a synchronized conflict", async () => {
+    const agent = { id: "codex", enabled: true, kind: "codex" as const, mode: "draft" as const, profileRef: null, repositoryPrompts: [] };
+    const server = parseDevHudSettings({ ...defaultDevHudSettings, agents: [agent] });
+    const replacement = parseDevHudSettings({ ...server, appearance: { ...server.appearance, theme: "dark" } });
+    const prompt = { repository: { owner: "delinoio", name: "oss" }, body: "newer conflict instructions" };
+    const deviceLocalReplacement = parseDevHudSettings({
+      ...server,
+      shortcuts: {
+        ...server.shortcuts,
+        desktop: {
+          ...server.shortcuts.desktop,
+          [ShortcutActionId.CommandPalette]: { ...server.shortcuts.desktop[ShortcutActionId.CommandPalette], enabled: false },
+        },
+      },
+      agents: [{ ...agent, repositoryPrompts: [prompt] }],
+    });
+    let releaseConflict!: () => void;
+    const conflictGate = new Promise<void>((resolve) => { releaseConflict = resolve; });
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: SettingsSchemaVersion, revision: "1", canonicalJson: encodedSettings(server) } });
+      if (url.endsWith("/devhud.v1.SettingsService/ReplaceSettings")) {
+        await conflictGate;
+        return settingsRevisionConflictResponse(1n, server, 2n);
+      }
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    renderIdentityConflictProbe(authenticatedBridge(), replacement, deviceLocalReplacement);
+    await waitFor(() => expect(screen.getByTestId("identity-state").dataset.readOnly).toBe("false"));
+    fireEvent.click(screen.getByRole("button", { name: "replace probe settings" }));
+    await waitFor(() => expect(screen.getByTestId("identity-state").dataset.readOnly).toBe("true"));
+    fireEvent.click(screen.getByRole("button", { name: "replace probe device-local settings" }));
+    await waitFor(() => expect(screen.getByTestId("identity-state").dataset.repositoryPrompt).toBe(prompt.body));
+    act(() => { releaseConflict(); });
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.adoptServer }));
+
+    await waitFor(() => expect(screen.queryByText(messages.en.conflictTitle)).toBeNull());
+    expect(screen.getByTestId("identity-state").dataset).toMatchObject({ revision: "2", theme: server.appearance.theme, paletteEnabled: "false", repositoryPrompt: prompt.body });
+    const cached = readAuthenticatedSettingsCache(localStorage, "https://devhud.api.delino.io");
+    expect(cached?.settings.shortcuts.desktop[ShortcutActionId.CommandPalette].enabled).toBe(false);
+    expect(cached?.settings.agents[0]?.repositoryPrompts).toEqual([prompt]);
+  });
+
+  it("preserves newer device-local edits when reapplying a synchronized conflict", async () => {
+    const agent = { id: "codex", enabled: true, kind: "codex" as const, mode: "draft" as const, profileRef: null, repositoryPrompts: [] };
+    const server = parseDevHudSettings({ ...defaultDevHudSettings, agents: [agent] });
+    const replacement = parseDevHudSettings({ ...server, appearance: { ...server.appearance, theme: "dark" } });
+    const prompt = { repository: { owner: "delinoio", name: "oss" }, body: "newer reapplied instructions" };
+    const deviceLocalReplacement = parseDevHudSettings({
+      ...server,
+      shortcuts: {
+        ...server.shortcuts,
+        desktop: {
+          ...server.shortcuts.desktop,
+          [ShortcutActionId.CommandPalette]: { ...server.shortcuts.desktop[ShortcutActionId.CommandPalette], enabled: false },
+        },
+      },
+      agents: [{ ...agent, repositoryPrompts: [prompt] }],
+    });
+    let releaseConflict!: () => void;
+    const conflictGate = new Promise<void>((resolve) => { releaseConflict = resolve; });
+    let replacementCount = 0;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: SettingsSchemaVersion, revision: "1", canonicalJson: encodedSettings(server) } });
+      if (url.endsWith("/devhud.v1.SettingsService/ReplaceSettings")) {
+        replacementCount += 1;
+        if (replacementCount === 1) {
+          await conflictGate;
+          return settingsRevisionConflictResponse(1n, server, 2n);
+        }
+        return connectResponse({ snapshot: { schemaVersion: SettingsSchemaVersion, revision: "3", canonicalJson: encodedSettings(replacement) } });
+      }
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    renderIdentityConflictProbe(authenticatedBridge(), replacement, deviceLocalReplacement);
+    await waitFor(() => expect(screen.getByTestId("identity-state").dataset.readOnly).toBe("false"));
+    fireEvent.click(screen.getByRole("button", { name: "replace probe settings" }));
+    await waitFor(() => expect(screen.getByTestId("identity-state").dataset.readOnly).toBe("true"));
+    fireEvent.click(screen.getByRole("button", { name: "replace probe device-local settings" }));
+    await waitFor(() => expect(screen.getByTestId("identity-state").dataset.repositoryPrompt).toBe(prompt.body));
+    act(() => { releaseConflict(); });
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.reapplyLocal }));
+
+    await waitFor(() => expect(screen.queryByText(messages.en.conflictTitle)).toBeNull());
+    expect(screen.getByTestId("identity-state").dataset).toMatchObject({ revision: "3", theme: "dark", paletteEnabled: "false", repositoryPrompt: prompt.body });
+    expect(replacementCount).toBe(2);
+    const cached = readAuthenticatedSettingsCache(localStorage, "https://devhud.api.delino.io");
+    expect(cached?.settings.shortcuts.desktop[ShortcutActionId.CommandPalette].enabled).toBe(false);
     expect(cached?.settings.agents[0]?.repositoryPrompts).toEqual([prompt]);
   });
 
