@@ -27,9 +27,39 @@ describe("DevHud settings boundary", () => {
     expect(() => parseDevHudSettings({ ...parsed, uploads: { provider: "r2", r2: { ...r2, secretAccessKey: "nope" } } })).toThrow(/secret/u);
   });
 
-  it("migrates schema-v4 R2 metadata without synchronizing legacy region or inventing an account", () => {
+  it("disables an unsafe schema-v4 R2 selection", () => {
     const legacy = { ...defaultDevHudSettings, schemaVersion: 4, uploads: { provider: "r2", r2: { profileRef: "legacy-profile", bucket: "bucket", endpoint: "https://custom.example/", region: "auto", publicBaseUrl: null } } };
-    expect(parseDevHudSettings(legacy).uploads.r2).toEqual({ profileRef: "legacy-profile", name: "R2", endpoint: "", accountId: null, bucket: "bucket", publicBaseUrl: null, prefix: "" });
+    expect(parseDevHudSettings(legacy).uploads).toEqual({ provider: "official", r2: null });
+  });
+
+  it.each([5, 6])("disables an unsafe schema-v%i R2 selection", (schemaVersion) => {
+    const legacy = {
+      ...defaultDevHudSettings,
+      schemaVersion,
+      uploads: {
+        provider: "r2",
+        r2: { profileRef: "legacy-profile", name: "Legacy", endpoint: "https://custom.example/", accountId: schemaVersion === 5 ? null : "ABCDEF0123456789ABCDEF0123456789", bucket: "bucket", publicBaseUrl: null, prefix: "captures" },
+      },
+    };
+    const migrated = parseDevHudSettings(legacy);
+    expect(migrated.uploads).toEqual({ provider: "official", r2: null });
+    expect(() => encodeDevHudSettings(migrated)).not.toThrow();
+  });
+
+  it.each([5, 6])("derives a safe Cloudflare account ID while migrating schema v%i R2 metadata", (schemaVersion) => {
+    const accountId = "fedcba9876543210fedcba9876543210";
+    const legacy = {
+      ...defaultDevHudSettings,
+      schemaVersion,
+      uploads: {
+        provider: "r2",
+        r2: { profileRef: "legacy-profile", name: "Legacy", endpoint: `https://${accountId}.r2.cloudflarestorage.com/`, accountId: null, bucket: "bucket", publicBaseUrl: null, prefix: "captures" },
+      },
+    };
+    expect(parseDevHudSettings(legacy).uploads).toEqual({
+      provider: "r2",
+      r2: { profileRef: "legacy-profile", name: "Legacy", endpoint: `https://${accountId}.r2.cloudflarestorage.com/`, accountId, bucket: "bucket", publicBaseUrl: null, prefix: "captures" },
+    });
   });
 
   it("accepts non-secret GitHub profile descriptors and rejects secret fields or duplicate IDs", () => {

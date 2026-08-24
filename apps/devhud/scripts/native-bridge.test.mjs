@@ -280,7 +280,11 @@ test("RealQA upload requests require immutable HTTPS direct-upload contracts", (
   assert.match(nativeUploads, /\.timeout\(REQUEST_TIMEOUT\)/u);
   assert.match(nativeUploads, /event = "realqa_upload_failed"/u);
   assert.match(nativeBridgeHost, /fetch_official_upload_origin/u);
-  assert.match(nativeBridgeHost, /if changed \{[\s\S]*official_upload_authority[\s\S]*= None;/u);
+  const officialOriginResolver = nativeBridgeHost.slice(nativeBridgeHost.indexOf("async fn official_upload_origin"), nativeBridgeHost.indexOf("\n}\n\nfn validated_api_origin"));
+  assert.match(officialOriginResolver, /fetch_official_upload_origin\(FIRST_PARTY_API_ORIGIN\)/u);
+  assert.doesNotMatch(officialOriginResolver, /session_origins/u);
+  const sessionOriginConfigurator = nativeBridgeHost.slice(nativeBridgeHost.indexOf("fn configure_session_origins"), nativeBridgeHost.indexOf("async fn official_upload_origin"));
+  assert.doesNotMatch(sessionOriginConfigurator, /official_upload_authority/u);
   const officialRequestContract = nativeUploads.slice(nativeUploads.indexOf("pub(crate) struct OfficialUploadRequest"), nativeUploads.indexOf("struct OfficialUploadBootstrap"));
   assert.doesNotMatch(officialRequestContract, /official_upload_origin:\s*String/u);
   const officialPut = nativeUploads.slice(nativeUploads.indexOf("pub(crate) async fn put_official"), nativeUploads.indexOf("pub(crate) async fn fetch_official_upload_origin"));

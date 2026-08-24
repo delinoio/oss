@@ -154,6 +154,11 @@ export function parseDevHudSettings(value: unknown): DevHudSettingsV1 {
   if (pendingPatRemovals.some((profileId) => githubProfileIds.has(profileId))) throw new SettingsContractError("$.github.pendingPatRemovals", "must not reference an active GitHub profile");
   const shortcuts = root.shortcuts === undefined ? null : object(root.shortcuts, "$.shortcuts", [...Platform]);
   const uploads = object(root.uploads, "$.uploads", ["provider", "r2"]);
+  const uploadProvider = enumeration(uploads.provider, "$.uploads.provider", UploadProvider);
+  const parsedR2 = uploads.r2 === null ? null : parseR2(uploads.r2, sourceSchemaVersion);
+  const migratedUploads: DevHudSettingsV1["uploads"] = sourceSchemaVersion < SettingsSchemaVersion && parsedR2 !== null && parsedR2.accountId === null
+    ? { provider: "official", r2: null }
+    : { provider: uploadProvider, r2: parsedR2 };
   const parsedDecks = decks.flatMap((entry, index) => parseDeck(entry, `$.decks[${index}]`, legacy, previous));
   if (new Set(parsedDecks.map((deck) => deck.id)).size !== parsedDecks.length) throw new SettingsContractError("$.decks", "must contain unique IDs");
   const structuredMappings = sourceSchemaVersion >= StructuredSettingsSchemaVersion || sourceSchemaVersion === CollidingSettingsSchemaVersion && hasStructuredURLMappingShape(root.urlMappings);
@@ -191,10 +196,7 @@ export function parseDevHudSettings(value: unknown): DevHudSettingsV1 {
       android: shortcuts === null ? {} : legacyShortcuts ? legacyShortcutMap(shortcuts.android, "$.shortcuts.android") : emptyShortcutMap(shortcuts.android, "$.shortcuts.android"),
     },
     agents: migratedAgents,
-    uploads: {
-      provider: enumeration(uploads.provider, "$.uploads.provider", UploadProvider),
-      r2: uploads.r2 === null ? null : parseR2(uploads.r2, sourceSchemaVersion),
-    },
+    uploads: migratedUploads,
   };
   for (const [index, repository] of parsed.github.repositories.entries()) validateGitHubProfileRef(repository.profileRef, `$.github.repositories[${index}].profileRef`, githubProfileIds);
   validateGitHubProfileRef(parsed.github.issueTracker?.profileRef ?? null, "$.github.issueTracker.profileRef", githubProfileIds);
@@ -748,8 +750,11 @@ function parseR2(value: unknown, sourceSchemaVersion: number): NonNullable<DevHu
   const profileRef = text(r2.profileRef, `${path}.profileRef`);
   if (!profileRefPattern.test(profileRef)) throw new SettingsContractError(`${path}.profileRef`, "is invalid");
   const legacyEndpoint = sourceSchemaVersion < SettingsSchemaVersion ? url(r2.endpoint, `${path}.endpoint`, true) : null;
-  const accountId = current ? nullableR2Identifier(r2.accountId, `${path}.accountId`) : accountIdFromEndpoint(legacyEndpoint!);
-  if (sourceSchemaVersion >= SettingsSchemaVersion && (accountId === null || !/^[0-9a-f]{32}$/u.test(accountId))) throw new SettingsContractError(`${path}.accountId`, "must be a lowercase 32-character Cloudflare account ID");
+  const declaredAccountId = current ? nullableR2Identifier(r2.accountId, `${path}.accountId`) : null;
+  const accountId = sourceSchemaVersion < SettingsSchemaVersion && !isCloudflareAccountId(declaredAccountId)
+    ? accountIdFromEndpoint(legacyEndpoint!)
+    : declaredAccountId;
+  if (sourceSchemaVersion >= SettingsSchemaVersion && !isCloudflareAccountId(accountId)) throw new SettingsContractError(`${path}.accountId`, "must be a lowercase 32-character Cloudflare account ID");
   const endpoint = accountId === null ? "" : `https://${accountId}.r2.cloudflarestorage.com/`;
   if (sourceSchemaVersion >= SettingsSchemaVersion && r2.endpoint !== undefined && url(r2.endpoint, `${path}.endpoint`, true) !== endpoint) throw new SettingsContractError(`${path}.endpoint`, "must match the exact Cloudflare account endpoint");
   const bucket = r2Identifier(r2.bucket, `${path}.bucket`);
@@ -795,6 +800,10 @@ function accountIdFromEndpoint(endpoint: string): string | null {
   const hostname = new URL(endpoint).hostname;
   const match = /^([a-f0-9]{32})\.r2\.cloudflarestorage\.com$/u.exec(hostname);
   return match?.[1] ?? null;
+}
+
+function isCloudflareAccountId(value: string | null): value is string {
+  return value !== null && /^[0-9a-f]{32}$/u.test(value);
 }
 
 function object(value: unknown, path: string, allowed: readonly string[]): Record<string, unknown> {

@@ -651,10 +651,11 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     }
   }
 
-  const localSettingsWritable = identityReady && (status === "guest" || status === "signed-out");
+  const localSettingsSession = status === "guest" || status === "signed-out";
+  const localSettingsWritable = identityReady && localSettingsSession;
   const settingsReadOnly = logoutCleanupPending || replaceMutation.isPending || (!localSettingsWritable
     && (status !== "authenticated" || !online || !settingsReady || importDiff !== null || conflict !== null));
-  const shortcutHydrationReady = identityReady && (status === "guest" || ((status === "authenticated" || status === "blocked") && shortcutSettingsReady && importDiff === null && conflict === null));
+  const shortcutHydrationReady = identityReady && (localSettingsSession || ((status === "authenticated" || status === "blocked") && shortcutSettingsReady && importDiff === null && conflict === null));
   const githubPatSettingsReady = identityReady && !settingsReadOnly && conflict === null;
 
   const replaceSettings: IdentitySettingsValue["replaceSettings"] = async (update) => {
@@ -663,7 +664,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     assertDeviceLocalSettingsPersistable(parsed);
     if (canonicalDevHudSettings(parsed) === canonicalDevHudSettings(settingsRef.current)) {
       if (!shortcutHydrationReady) throw new Error("device-local-settings-not-ready");
-      if (status === "guest") {
+      if (localSettingsSession) {
         if (!writeGuestSettings(storage, parsed)) throw new Error("device-local-settings-persistence-failed");
       } else {
         if (!writeAuthenticatedSettingsCache(storage, apiOrigin, { settings: parsed, revision: revisionRef.current, contentSHA256: contentSHA256Ref.current, cachedAt: new Date().toISOString() })) throw new Error("device-local-settings-persistence-failed");
@@ -671,7 +672,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       applySettings(parsed);
       return true;
     }
-    if (status === "guest" || status === "signed-out") {
+    if (localSettingsSession) {
       encodeDevHudSettings(parsed);
       if (!writeGuestSettings(storage, parsed)) throw new Error("device-local-settings-persistence-failed");
       applySettings(parsed);
@@ -682,7 +683,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   };
   const replaceSettingsAt: IdentitySettingsValue["replaceSettingsAt"] = async (update, expectedRevision) => {
     const next = typeof update === "function" ? update(settingsRef.current) : update;
-    if (status === "guest" || status === "signed-out") return replaceSettings(next);
+    if (localSettingsSession) return replaceSettings(next);
     if (settingsReadOnly) throw new Error("settings-read-only");
     return replaceAt(next, expectedRevision);
   };

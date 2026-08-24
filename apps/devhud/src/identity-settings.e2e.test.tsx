@@ -177,6 +177,36 @@ describe("generated Connect identity/settings fixture", () => {
     expect(readGuestSettings(localStorage).appearance.theme).toBe("dark");
   });
 
+  it("stores signed-out device-local shortcut edits in the guest snapshot", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      throw new Error(`unexpected request ${url}`);
+    }));
+    const replacement = parseDevHudSettings({
+      ...defaultDevHudSettings,
+      shortcuts: {
+        ...defaultDevHudSettings.shortcuts,
+        desktop: {
+          ...defaultDevHudSettings.shortcuts.desktop,
+          [ShortcutActionId.CommandPalette]: { ...defaultDevHudSettings.shortcuts.desktop[ShortcutActionId.CommandPalette], enabled: false },
+        },
+      },
+    });
+
+    renderIdentityProbe(signedOutBridge(), replacement);
+    await waitFor(() => {
+      const state = screen.getByTestId("identity-state");
+      expect(state.dataset.status).toBe("signed-out");
+      expect(state.dataset.shortcutReady).toBe("true");
+    });
+    fireEvent.click(screen.getByRole("button", { name: "replace probe settings" }));
+
+    await waitFor(() => expect(screen.getByTestId("identity-state").dataset.paletteEnabled).toBe("false"));
+    expect(readGuestSettings(localStorage).shortcuts.desktop[ShortcutActionId.CommandPalette].enabled).toBe(false);
+    expect(readAuthenticatedSettingsCache(localStorage, "https://devhud.api.delino.io")).toBeNull();
+  });
+
   it("clears Deck caches during cached offline signed-out startup", async () => {
     vi.spyOn(identityClient, "createIdentitySession").mockResolvedValue({
       client: {}, storage: {}, getAccessToken: async () => { throw new Error("unexpected token request"); }, isAuthenticated: async () => false,

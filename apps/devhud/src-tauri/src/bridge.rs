@@ -32,7 +32,8 @@ const TAURI_REVISION: &str = "4af26a3f7f8b692d62cca549bbacd93f5ce90b41";
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 const CEF_REVISION: &str = "150.0.10+g8042e43+chromium-150.0.7871.101";
 
-const DEFAULT_API_ORIGIN: &str = "https://devhud.api.delino.io";
+const FIRST_PARTY_API_ORIGIN: &str = "https://devhud.api.delino.io";
+const DEFAULT_API_ORIGIN: &str = FIRST_PARTY_API_ORIGIN;
 #[cfg(desktop)]
 const UPDATE_SCHEDULER_POLL_INTERVAL: Duration = Duration::from_secs(1);
 #[cfg(desktop)]
@@ -44,7 +45,7 @@ pub struct NativeBridgeState {
     pending_deck_link: Arc<Mutex<Option<String>>>,
     session_origins: Arc<Mutex<SessionOrigins>>,
     #[cfg(desktop)]
-    official_upload_authority: Arc<Mutex<Option<OfficialUploadAuthority>>>,
+    official_upload_authority: Arc<Mutex<Option<url::Url>>>,
     shortcuts: Arc<Mutex<ShortcutService<PlatformShortcutBackend>>>,
     shortcuts_ready: Arc<AtomicBool>,
     shortcut_listener_failed: Arc<AtomicBool>,
@@ -124,13 +125,6 @@ impl Drop for DiagnosticsExportReservation {
 struct SessionOrigins {
     api_origin: String,
     logto_issuer: Option<url::Url>,
-}
-
-#[cfg(desktop)]
-#[derive(Clone)]
-struct OfficialUploadAuthority {
-    api_origin: String,
-    upload_origin: url::Url,
 }
 
 impl Default for NativeBridgeState {
@@ -771,50 +765,29 @@ impl NativeBridgeState {
         };
         let changed = *origins != next;
         *origins = next;
-        #[cfg(desktop)]
-        if changed {
-            *self
-                .official_upload_authority
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
-        }
         Ok(changed)
     }
 
     #[cfg(desktop)]
     async fn official_upload_origin(&self) -> Result<url::Url, String> {
-        let api_origin = {
-            let origins = self
-                .session_origins
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let cached = self
-                .official_upload_authority
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            if let Some(cached) = cached
-                .as_ref()
-                .filter(|cached| cached.api_origin == origins.api_origin)
-            {
-                return Ok(cached.upload_origin.clone());
-            }
-            origins.api_origin.clone()
-        };
-        let upload_origin = crate::uploads::fetch_official_upload_origin(&api_origin).await?;
-        let origins = self
-            .session_origins
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if origins.api_origin != api_origin {
-            return Err("platform-failure".to_string());
-        }
-        *self
+        if let Some(upload_origin) = self
             .official_upload_authority
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(OfficialUploadAuthority {
-            api_origin,
-            upload_origin: upload_origin.clone(),
-        });
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_ref()
+        {
+            return Ok(upload_origin.clone());
+        }
+        let upload_origin =
+            crate::uploads::fetch_official_upload_origin(FIRST_PARTY_API_ORIGIN).await?;
+        let mut cached = self
+            .official_upload_authority
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(cached) = cached.as_ref() {
+            return Ok(cached.clone());
+        }
+        *cached = Some(upload_origin.clone());
         Ok(upload_origin)
     }
 }
@@ -2847,6 +2820,37 @@ mod tests {
                 &state,
             ),
             Err("invalid-argument".to_string())
+        );
+    }
+
+    #[cfg(desktop)]
+    #[test]
+    fn custom_session_origin_cannot_replace_official_upload_authority() {
+        let state = NativeBridgeState::default();
+        let official_upload_origin =
+            url::Url::parse("https://uploads.delino.io").expect("official upload origin");
+        *state
+            .official_upload_authority
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) =
+            Some(official_upload_origin.clone());
+
+        handle_native_bridge_request(
+            &json!({
+                "operation": "session.configure-origins",
+                "apiOrigin": "https://custom.example/"
+            }),
+            &state,
+        )
+        .expect("configure custom API origin");
+
+        assert_eq!(
+            state
+                .official_upload_authority
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .as_ref(),
+            Some(&official_upload_origin)
         );
     }
 
