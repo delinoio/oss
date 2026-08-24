@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { canonicalDevHudSettings, CollidingSettingsSchemaVersion, deckBuilderProjection, deckRepositories, decodeDevHudSettings, decodeVersionedDevHudSettings, defaultDevHudSettings, encodeDevHudSettings, MaximumUrlRepositoryMappings, parseDevHudSettings, PreviousSettingsSchemaVersion, SettingsContractError, SettingsSchemaVersion, StructuredSettingsSchemaVersion } from "./settings-contract";
+import { canonicalDevHudSettings, CollidingSettingsSchemaVersion, deckBuilderProjection, deckRepositories, decodeDevHudSettings, decodeVersionedDevHudSettings, defaultDevHudSettings, encodeDevHudSettings, MaximumUrlRepositoryMappings, parseDevHudSettings, PreviousSettingsSchemaVersion, SettingsContractError, SettingsSchemaVersion, StructuredSettingsSchemaVersion, withDeviceLocalSettings } from "./settings-contract";
 import { diffSettings, redactRecursively, RedactedValue } from "./settings-diff";
 import { ShortcutActionId, ShortcutKey, ShortcutModifier, ShortcutValidationCode, defaultDesktopShortcutBindings, parseDesktopShortcutBindings } from "./shortcuts";
 
 describe("DevHud settings boundary", () => {
-  it("migrates schema v1 to v6 with explicit unselected GitHub profiles", () => {
+  it("migrates schema v1 to v7 with explicit unselected GitHub profiles", () => {
     const legacy = {
       ...defaultDevHudSettings,
       schemaVersion: 1,
@@ -21,6 +21,7 @@ describe("DevHud settings boundary", () => {
     const parsed = parseDevHudSettings({ ...defaultDevHudSettings, uploads: { provider: "r2", r2 } });
     expect(parsed.uploads.r2).toEqual(r2);
     expect(canonicalDevHudSettings(parsed)).not.toMatch(/accessKey|secretAccess|authorization/iu);
+    expect(canonicalDevHudSettings(parsed)).not.toContain("cloudflarestorage.com");
     expect(() => parseDevHudSettings({ ...parsed, uploads: { provider: "r2", r2: { ...r2, endpoint: "http://r2.example" } } })).toThrow(/HTTPS/u);
     expect(() => parseDevHudSettings({ ...parsed, uploads: { provider: "r2", r2: { ...r2, prefix: "../escape" } } })).toThrow(/normalized/u);
     expect(() => parseDevHudSettings({ ...parsed, uploads: { provider: "r2", r2: { ...r2, secretAccessKey: "nope" } } })).toThrow(/secret/u);
@@ -28,7 +29,7 @@ describe("DevHud settings boundary", () => {
 
   it("migrates schema-v4 R2 metadata without synchronizing legacy region or inventing an account", () => {
     const legacy = { ...defaultDevHudSettings, schemaVersion: 4, uploads: { provider: "r2", r2: { profileRef: "legacy-profile", bucket: "bucket", endpoint: "https://custom.example/", region: "auto", publicBaseUrl: null } } };
-    expect(parseDevHudSettings(legacy).uploads.r2).toEqual({ profileRef: "legacy-profile", name: "R2", endpoint: "https://custom.example/", accountId: null, bucket: "bucket", publicBaseUrl: null, prefix: "" });
+    expect(parseDevHudSettings(legacy).uploads.r2).toEqual({ profileRef: "legacy-profile", name: "R2", endpoint: "", accountId: null, bucket: "bucket", publicBaseUrl: null, prefix: "" });
   });
 
   it("accepts non-secret GitHub profile descriptors and rejects secret fields or duplicate IDs", () => {
@@ -62,6 +63,24 @@ describe("DevHud settings boundary", () => {
     expect(() => parseDevHudSettings({ ...settings, agents: [{ ...agent, repositoryPrompts: [{ ...prompt, body: "token=github_pat_secret" }] }] })).toThrow(/secret material/u);
     const legacy = { ...settings, schemaVersion: 5, agents: [{ ...agent, repositoryPrompts: true }] };
     expect(parseDevHudSettings(legacy).agents[0]?.repositoryPrompts).toEqual([]);
+  });
+
+  it("keeps shortcut bindings and repository prompts device-local", () => {
+    const prompt = { repository: { owner: "delinoio", name: "oss" }, body: "private device prompt" };
+    const local = parseDevHudSettings({
+      ...defaultDevHudSettings,
+      shortcuts: { ...defaultDevHudSettings.shortcuts, desktop: { ...defaultDevHudSettings.shortcuts.desktop, [ShortcutActionId.CaptureSelection]: { ...defaultDevHudSettings.shortcuts.desktop[ShortcutActionId.CaptureSelection], enabled: false } } },
+      agents: [{ id: "codex", enabled: true, kind: "codex", mode: "draft", repositoryPrompts: [prompt], profileRef: null }],
+    });
+    const wire = canonicalDevHudSettings(local);
+    expect(wire).not.toContain("shortcuts");
+    expect(wire).not.toContain("repositoryPrompts");
+    expect(wire).not.toContain(prompt.body);
+
+    const server = decodeDevHudSettings(encodeDevHudSettings(local));
+    expect(server.agents[0]?.repositoryPrompts).toEqual([]);
+    expect(withDeviceLocalSettings(server, local).agents[0]?.repositoryPrompts).toEqual([prompt]);
+    expect(withDeviceLocalSettings(server, local).shortcuts).toEqual(local.shortcuts);
   });
 
   it.each([1, 2, 3, 4, 5] as const)("clears a dangling legacy agent profile reference from schema v%s", (schemaVersion) => {
@@ -147,12 +166,12 @@ describe("DevHud settings boundary", () => {
     expect(() => parseDesktopShortcutBindings(malformed)).toThrow(ShortcutValidationCode.Malformed);
   });
 
-  it("accepts explicit disabling while persisting only modifier and key enums", () => {
+  it("accepts explicit disabling without synchronizing shortcut chords", () => {
     const disabled = structuredShortcuts();
     disabled[ShortcutActionId.CaptureSelection] = { ...disabled[ShortcutActionId.CaptureSelection], enabled: false };
     const parsed = parseDesktopShortcutBindings(disabled);
     expect(parsed[ShortcutActionId.CaptureSelection].enabled).toBe(false);
-    expect(canonicalDevHudSettings({ ...defaultDevHudSettings, shortcuts: { desktop: parsed, ios: {}, android: {} } })).toContain('"right-primary"');
+    expect(canonicalDevHudSettings({ ...defaultDevHudSettings, shortcuts: { desktop: parsed, ios: {}, android: {} } })).not.toContain('"right-primary"');
     expect(canonicalDevHudSettings({ ...defaultDevHudSettings, shortcuts: { desktop: parsed, ios: {}, android: {} } })).not.toContain("ControlRight");
   });
 
@@ -351,14 +370,14 @@ describe("DevHud settings boundary", () => {
       ...defaultDevHudSettings,
       uploads: {
         provider: "r2",
-        r2: { profileRef: "018f47a2-7b3c-7def-8abc-1234567890ab", name: "R2", accountId: "account", bucket: "bucket", endpoint: `https://r2.example${suffix}`, publicBaseUrl: "https://cdn.example", prefix: "devhud" },
+        r2: { profileRef: "018f47a2-7b3c-7def-8abc-1234567890ab", name: "R2", accountId: "0123456789abcdef0123456789abcdef", bucket: "bucket", endpoint: `https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com${suffix}`, publicBaseUrl: "https://cdn.example", prefix: "devhud" },
       },
     })).toThrow(/without credentials, query, or fragment/u);
     expect(() => parseDevHudSettings({
       ...defaultDevHudSettings,
       uploads: {
         provider: "r2",
-        r2: { profileRef: "018f47a2-7b3c-7def-8abc-1234567890ab", name: "R2", accountId: "account", bucket: "bucket", endpoint: "https://r2.example", publicBaseUrl: `https://cdn.example${suffix}`, prefix: "devhud" },
+        r2: { profileRef: "018f47a2-7b3c-7def-8abc-1234567890ab", name: "R2", accountId: "0123456789abcdef0123456789abcdef", bucket: "bucket", endpoint: "https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com", publicBaseUrl: `https://cdn.example${suffix}`, prefix: "devhud" },
       },
     })).toThrow(/without credentials, query, or fragment/u);
   });

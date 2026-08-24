@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { StaticCapability } from "@delinoio/devhud-api-client";
 import { clearAllContractedLocalData, clearAuthenticatedOriginData, clearAuthenticatedSettingsCache, clearGuestImportMarker, hasGuestSettings, readAuthenticatedSettingsCache, readCachedIdentityBootstrap, readGuestSettings, writeAuthenticatedSettingsCache, writeCachedIdentityBootstrap, writeGuestSettings } from "./local-data";
-import { defaultDevHudSettings } from "./settings-contract";
+import { defaultDevHudSettings, parseDevHudSettings } from "./settings-contract";
 
 class MemoryStorage implements Storage {
   readonly #values = new Map<string, string>();
@@ -17,7 +17,7 @@ describe("local identity data lifecycle", () => {
   it("isolates cached bootstrap and settings by API origin", () => {
     const storage = new MemoryStorage();
     const apiOrigin = "https://api.example";
-    const bootstrap = { issuer: "https://identity.example/", audience: "https://api.example", clientId: "desktop", redirectUri: "devhud://auth/callback" as const, publicAssetBaseUrl: "https://images.example/", capabilities: [StaticCapability.CRASH_REPORTS] };
+    const bootstrap = { issuer: "https://identity.example/", audience: "https://api.example", clientId: "desktop", redirectUri: "devhud://auth/callback" as const, publicAssetBaseUrl: "https://images.example/", officialUploadOrigin: null, capabilities: [StaticCapability.CRASH_REPORTS] };
     writeCachedIdentityBootstrap(storage, apiOrigin, bootstrap);
     writeAuthenticatedSettingsCache(storage, apiOrigin, { settings: defaultDevHudSettings, revision: 7n, cachedAt: "2026-08-17T00:00:00.000Z" });
 
@@ -122,6 +122,20 @@ describe("local identity data lifecycle", () => {
     expect(readGuestSettings(storage)).toEqual(defaultDevHudSettings);
   });
 
+  it("persists device-local fields outside the synchronized projection", () => {
+    const storage = new MemoryStorage();
+    const prompt = { repository: { owner: "delinoio", name: "oss" }, body: "local-only prompt" };
+    const settings = parseDevHudSettings({
+      ...defaultDevHudSettings,
+      agents: [{ id: "codex", enabled: true, kind: "codex", mode: "draft", repositoryPrompts: [prompt], profileRef: null }],
+    });
+
+    writeGuestSettings(storage, settings);
+
+    expect(storage.getItem("devhud.identity.v1.guest-settings")).toContain(prompt.body);
+    expect(readGuestSettings(storage).agents[0]?.repositoryPrompts).toEqual([prompt]);
+  });
+
   it("keeps guest-marker removal best-effort when Web Storage throws", () => {
     const storage = {
       getItem: () => null,
@@ -135,7 +149,7 @@ describe("local identity data lifecycle", () => {
   it("clears only the authenticated settings snapshot when a session becomes invalid", () => {
     const storage = new MemoryStorage();
     const apiOrigin = "https://api.example";
-    const bootstrap = { issuer: "https://identity.example/", audience: "https://api.example", clientId: "desktop", redirectUri: "devhud://auth/callback" as const, publicAssetBaseUrl: "https://images.example/", capabilities: [StaticCapability.CRASH_REPORTS] };
+    const bootstrap = { issuer: "https://identity.example/", audience: "https://api.example", clientId: "desktop", redirectUri: "devhud://auth/callback" as const, publicAssetBaseUrl: "https://images.example/", officialUploadOrigin: null, capabilities: [StaticCapability.CRASH_REPORTS] };
     writeCachedIdentityBootstrap(storage, apiOrigin, bootstrap);
     writeAuthenticatedSettingsCache(storage, apiOrigin, { settings: defaultDevHudSettings, revision: 7n, cachedAt: "2026-08-17T00:00:00.000Z" });
 

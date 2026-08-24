@@ -14,6 +14,8 @@ message SettingsSnapshot {
   // at most 1 MiB.
   bytes canonical_json = 3;
   google.protobuf.Timestamp updated_at = 4;
+  // content_sha256 binds the revision to canonical_json as 32 raw bytes.
+  bytes content_sha256 = 5;
 }
 
 message GetSettingsRequest {}
@@ -29,6 +31,9 @@ message ReplaceSettingsRequest {
   bytes canonical_json = 2;
   // expected_revision is zero only when creating the first snapshot.
   uint64 expected_revision = 3;
+  // expected_content_sha256 must match the current snapshot when replacing it.
+  // It is empty only when expected_revision is zero.
+  bytes expected_content_sha256 = 4;
 }
 
 message ReplaceSettingsResponse {

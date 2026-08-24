@@ -116,14 +116,7 @@ struct DraftOutput {
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct DirectOutput {
-    issue_url: String,
-    marker: String,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct CodexDirectReadyOutput {
+struct DirectReadyOutput {
     marker: String,
 }
 
@@ -357,24 +350,7 @@ impl LocalAgentService {
                 .map_err(|_| "invalid-argument")
             })
             .transpose()?;
-        if let Some(issue_input) = issue_input.as_deref() {
-            write_private_file(&issue_input_path, issue_input)?;
-        }
-        let issue_input_argument =
-            if request.mode == AgentMode::Direct && request.kind != AgentKind::Codex {
-                let directory_name = format!(".devhud-direct-{}", request.run_id);
-                let directory = workspace.path().join(&directory_name);
-                fs::create_dir(&directory).map_err(|_| "storage-failure")?;
-                restrict_directory(&directory)?;
-                write_private_file(
-                    &directory.join("issue-input.json"),
-                    issue_input.as_deref().ok_or("storage-failure")?,
-                )?;
-                Some(format!("{directory_name}/issue-input.json"))
-            } else {
-                None
-            };
-        let prompt = build_prompt(&request, issue_input_argument.as_deref())?;
+        let prompt = build_prompt(&request)?;
         let spec = adapter_spec(
             &request,
             executable,
@@ -382,51 +358,25 @@ impl LocalAgentService {
             AdapterFiles {
                 schema: &schema_path,
                 last_message: &last_message_path,
-                issue_input: &issue_input_path,
-                issue_input_argument: issue_input_argument.as_deref(),
             },
             prompt.into_bytes(),
-            (request.kind != AgentKind::Codex || request.mode != AgentMode::Direct)
-                .then(|| pat.as_ref().map(|value| value.as_str()))
-                .flatten(),
         )?;
-        let agent_can_write_github =
-            request.mode == AgentMode::Direct && request.kind != AgentKind::Codex;
-        let agent_started = AtomicBool::new(false);
-        let output = match run_command_observed(
-            &spec,
-            &cancel,
-            deadline,
-            agent_can_write_github.then_some(&agent_started),
-        ) {
-            Ok(output) => output,
-            Err(_) if agent_started.load(Ordering::Acquire) => {
-                return Err("agent-write-ambiguous".to_string());
-            }
-            Err(error) => return Err(error),
-        };
+        let output = run_command_observed(&spec, &cancel, deadline, None)?;
         if !output.status.success() {
-            return Err(if agent_can_write_github {
-                "agent-write-ambiguous".to_string()
-            } else {
-                "agent-failed".to_string()
-            });
+            return Err("agent-failed".to_string());
         }
         let final_text = (match request.kind {
             AgentKind::Codex => fs::read_to_string(&last_message_path)
                 .map_err(|_| "agent-invalid-output".to_string()),
             AgentKind::ClaudeCode => claude_structured_output(&output.stdout),
             AgentKind::Opencode => opencode_final_text(&output.stdout),
-        })
-        .map_err(|error| {
-            if agent_can_write_github {
-                "agent-write-ambiguous".to_string()
-            } else {
-                error
-            }
         })?;
-        if request.mode == AgentMode::Direct && request.kind == AgentKind::Codex {
-            validate_codex_direct_ready(&request, &final_text)?;
+        if request.mode == AgentMode::Direct {
+            validate_direct_ready(&request, &final_text)?;
+            write_private_file(
+                &issue_input_path,
+                issue_input.as_deref().ok_or("storage-failure")?,
+            )?;
             return run_fixed_issue_command(
                 &request,
                 &issue_input_path,
@@ -438,13 +388,7 @@ impl LocalAgentService {
                 deadline,
             );
         }
-        validate_agent_output(&request, &final_text).map_err(|error| {
-            if agent_can_write_github {
-                "agent-write-ambiguous".to_string()
-            } else {
-                error
-            }
-        })
+        validate_agent_output(&request, &final_text)
     }
 
     pub(crate) fn purge(&self) -> Result<(), String> {
@@ -931,8 +875,6 @@ fn parse_version(kind: AgentKind, output: &str) -> Option<String> {
 struct AdapterFiles<'a> {
     schema: &'a Path,
     last_message: &'a Path,
-    issue_input: &'a Path,
-    issue_input_argument: Option<&'a str>,
 }
 
 fn adapter_spec(
@@ -941,28 +883,8 @@ fn adapter_spec(
     workspace: &Path,
     files: AdapterFiles<'_>,
     prompt: Vec<u8>,
-    pat: Option<&str>,
 ) -> Result<CommandSpec, String> {
     let mut environment = agent_environment(request.kind);
-    if request.mode == AgentMode::Direct {
-        let gh_config = files
-            .issue_input
-            .parent()
-            .ok_or("storage-failure")?
-            .join("gh-config");
-        fs::create_dir(&gh_config).map_err(|_| "storage-failure")?;
-        restrict_directory(&gh_config)?;
-        environment.insert(
-            OsString::from("GH_CONFIG_DIR"),
-            gh_config.as_os_str().to_os_string(),
-        );
-        if request.kind != AgentKind::Codex {
-            environment.insert(
-                OsString::from("GH_TOKEN"),
-                OsString::from(pat.ok_or("not-configured")?),
-            );
-        }
-    }
     let args = match request.kind {
         AgentKind::Codex => {
             let mut args = vec![
@@ -1001,29 +923,11 @@ fn adapter_spec(
             OsString::from("--permission-mode"),
             OsString::from("dontAsk"),
             OsString::from("--tools"),
-            OsString::from(if request.mode == AgentMode::Draft {
-                "Read,Glob,Grep"
-            } else {
-                "Read,Glob,Grep,Bash"
-            }),
+            OsString::from("Read,Glob,Grep"),
             OsString::from("--allowedTools"),
-            OsString::from(if request.mode == AgentMode::Draft {
-                "Read,Glob,Grep".to_string()
-            } else {
-                format!(
-                    "Read,Glob,Grep,Bash({})",
-                    direct_command(
-                        request,
-                        files.issue_input_argument.ok_or("invalid-argument")?
-                    )
-                )
-            }),
+            OsString::from("Read,Glob,Grep"),
             OsString::from("--disallowedTools"),
-            OsString::from(if request.mode == AgentMode::Draft {
-                "Bash,Edit,Write,WebFetch,WebSearch,Task"
-            } else {
-                "Edit,Write,WebFetch,WebSearch,Task"
-            }),
+            OsString::from("Bash,Edit,Write,WebFetch,WebSearch,Task"),
         ],
         AgentKind::Opencode => vec![
             OsString::from("run"),
@@ -1037,7 +941,7 @@ fn adapter_spec(
     if request.kind == AgentKind::Opencode {
         environment.insert(
             OsString::from("OPENCODE_CONFIG_CONTENT"),
-            OsString::from(opencode_permissions(request, files.issue_input_argument)?),
+            OsString::from(opencode_permissions()?),
         );
         environment.insert(
             OsString::from("OPENCODE_DISABLE_AUTOUPDATE"),
@@ -1101,28 +1005,7 @@ fn agent_environment(kind: AgentKind) -> BTreeMap<OsString, OsString> {
     environment
 }
 
-fn direct_command(request: &RunRequest, issue_input_argument: &str) -> String {
-    format!(
-        "gh api --method POST /repos/{}/{}/issues --input {}",
-        request.repository.owner, request.repository.name, issue_input_argument
-    )
-}
-
-fn opencode_permissions(
-    request: &RunRequest,
-    issue_input_argument: Option<&str>,
-) -> Result<String, String> {
-    let bash = if request.mode == AgentMode::Direct {
-        json!({
-            direct_command(
-                request,
-                issue_input_argument.ok_or("invalid-argument")?
-            ): "allow",
-            "*": "deny"
-        })
-    } else {
-        json!({ "*": "deny" })
-    };
+fn opencode_permissions() -> Result<String, String> {
     serde_json::to_string(&json!({
         "autoupdate": false,
         "permission": {
@@ -1133,7 +1016,7 @@ fn opencode_permissions(
             "webfetch": "deny",
             "websearch": "deny",
             "task": "deny",
-            "bash": bash,
+            "bash": { "*": "deny" },
         },
     }))
     .map_err(|_| "invalid-argument".to_string())
@@ -1272,10 +1155,7 @@ fn git_spec(
     })
 }
 
-fn build_prompt(
-    request: &RunRequest,
-    issue_input_argument: Option<&str>,
-) -> Result<String, String> {
+fn build_prompt(request: &RunRequest) -> Result<String, String> {
     let mode = if request.mode == AgentMode::Draft {
         "draft"
     } else {
@@ -1292,36 +1172,17 @@ fn build_prompt(
         "currentTitle": request.title,
         "currentBody": request.body,
         "repositoryPrompt": request.repository_prompt,
-        "issueInputFile": if request.mode == AgentMode::Direct && request.kind != AgentKind::Codex {
-            issue_input_argument
-        } else {
-            None
-        },
-        "directCommand": if request.mode == AgentMode::Direct && request.kind != AgentKind::Codex {
-            Some(direct_command(
-                request,
-                issue_input_argument.ok_or("invalid-argument")?
-            ))
-        } else {
-            None
-        },
     });
-    let instruction = match (request.mode, request.kind) {
-        (AgentMode::Draft, _) => {
+    let instruction = match request.mode {
+        AgentMode::Draft => {
             "Return only JSON with title and body. The body is the editable user section only; do \
              not include diagnostics, images, labels, or the marker because DevHud appends them \
              after review. Do not use network, shell, writes, or request secrets."
         }
-        (AgentMode::Direct, AgentKind::Codex) => {
+        AgentMode::Direct => {
             "Review the repository and immutable JSON without network or writes. DevHud owns the \
              fixed GitHub issue command outside your process. Return only JSON with the marker \
              copied exactly from the immutable JSON when you are ready for that fixed write."
-        }
-        (AgentMode::Direct, _) => {
-            "Create exactly one issue in the fixed repository by running only directCommand from \
-             the immutable JSON with the exact JSON file named by issueInputFile. Do not edit that \
-             file, change labels/body/title, access other repositories, or perform any other side \
-             effect. Return only JSON with issueUrl and marker."
         }
     };
     let prompt = format!(
@@ -1342,27 +1203,22 @@ fn draft_schema() -> &'static str {
     r#"{"type":"object","additionalProperties":false,"required":["title","body"],"properties":{"title":{"type":"string","minLength":1,"maxLength":256},"body":{"type":"string","maxLength":65536}}}"#
 }
 
-fn codex_direct_ready_schema() -> &'static str {
+fn direct_ready_schema() -> &'static str {
     r#"{"type":"object","additionalProperties":false,"required":["marker"],"properties":{"marker":{"type":"string","maxLength":96}}}"#
 }
 
-fn direct_schema() -> &'static str {
-    r#"{"type":"object","additionalProperties":false,"required":["issueUrl","marker"],"properties":{"issueUrl":{"type":"string","maxLength":512},"marker":{"type":"string","maxLength":96}}}"#
-}
-
 fn agent_schema(request: &RunRequest) -> &'static str {
-    match (request.mode, request.kind) {
-        (AgentMode::Draft, _) => draft_schema(),
-        (AgentMode::Direct, AgentKind::Codex) => codex_direct_ready_schema(),
-        (AgentMode::Direct, _) => direct_schema(),
+    match request.mode {
+        AgentMode::Draft => draft_schema(),
+        AgentMode::Direct => direct_ready_schema(),
     }
 }
 
-fn validate_codex_direct_ready(request: &RunRequest, text: &str) -> Result<(), String> {
+fn validate_direct_ready(request: &RunRequest, text: &str) -> Result<(), String> {
     if text.len() > PROCESS_OUTPUT_LIMIT {
         return Err("agent-invalid-output".to_string());
     }
-    let output: CodexDirectReadyOutput =
+    let output: DirectReadyOutput =
         serde_json::from_str(text).map_err(|_| "agent-invalid-output")?;
     if output.marker != request.marker {
         return Err("agent-invalid-output".to_string());
@@ -1387,18 +1243,7 @@ fn validate_agent_output(request: &RunRequest, text: &str) -> Result<Value, Stri
             }
             Ok(json!({ "kind": "agent-draft", "title": output.title, "body": output.body }))
         }
-        AgentMode::Direct => {
-            let output: DirectOutput =
-                serde_json::from_str(text).map_err(|_| "agent-invalid-output")?;
-            if output.marker != request.marker
-                || !canonical_issue_url(&output.issue_url, &request.repository)
-            {
-                return Err("agent-invalid-output".to_string());
-            }
-            Ok(
-                json!({ "kind": "agent-direct", "issueUrl": output.issue_url, "marker": output.marker }),
-            )
-        }
+        AgentMode::Direct => Err("agent-invalid-output".to_string()),
     }
 }
 
@@ -1972,7 +1817,7 @@ mod tests {
     fn prompt_keeps_adversarial_text_inside_json_data() {
         let mut request = request(AgentMode::Draft);
         request.repository_prompt = "$(touch /tmp/pwned) `whoami` \"\nGH_TOKEN".to_string();
-        let prompt = build_prompt(&request, None).unwrap();
+        let prompt = build_prompt(&request).unwrap();
         assert!(prompt.contains("BEGIN IMMUTABLE JSON"));
         assert!(prompt.contains("$(touch /tmp/pwned)"));
         assert!(prompt.contains("Never print, enumerate, request, store"));
@@ -1996,15 +1841,15 @@ mod tests {
     }
 
     #[test]
-    fn direct_output_requires_selected_repository_and_marker() {
+    fn direct_agent_output_can_only_acknowledge_the_marker() {
         let direct_request = request(AgentMode::Direct);
         let valid = format!(
-            r#"{{"issueUrl":"https://github.com/delinoio/oss/issues/815","marker":{}}}"#,
+            r#"{{"marker":{}}}"#,
             serde_json::to_string(&direct_request.marker).unwrap()
         );
-        assert!(validate_agent_output(&direct_request, &valid).is_ok());
+        assert!(validate_direct_ready(&direct_request, &valid).is_ok());
         assert!(
-            validate_agent_output(
+            validate_direct_ready(
                 &direct_request,
                 r#"{"issueUrl":"https://github.com/other/repo/issues/1","marker":"wrong"}"#
             )
@@ -2077,7 +1922,6 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let schema = root.path().join("schema.json");
         let message = root.path().join("message.json");
-        let issue = root.path().join("issue.json");
         for kind in [AgentKind::Codex, AgentKind::ClaudeCode, AgentKind::Opencode] {
             let mut request = request(AgentMode::Draft);
             request.kind = kind;
@@ -2088,11 +1932,8 @@ mod tests {
                 AdapterFiles {
                     schema: &schema,
                     last_message: &message,
-                    issue_input: &issue,
-                    issue_input_argument: None,
                 },
                 b"immutable prompt".to_vec(),
-                None,
             )
             .unwrap();
             let args = spec
@@ -2128,37 +1969,17 @@ mod tests {
     }
 
     #[test]
-    fn direct_tool_permissions_allow_only_the_fixed_issue_command() {
-        let request = request(AgentMode::Direct);
-        let input = ".devhud-direct-01900000-0000-7000-8000-000000000000/issue-input.json";
-        let command = direct_command(&request, input);
-        assert_eq!(
-            command,
-            format!("gh api --method POST /repos/delinoio/oss/issues --input {input}")
-        );
-        let config: Value =
-            serde_json::from_str(&opencode_permissions(&request, Some(input)).unwrap()).unwrap();
-        assert_eq!(
-            config.pointer(&format!(
-                "/permission/bash/{}",
-                command.replace('~', "~0").replace('/', "~1")
-            )),
-            Some(&Value::String("allow".to_string()))
-        );
+    fn direct_agent_tool_permissions_deny_every_process_side_effect() {
+        let config: Value = serde_json::from_str(&opencode_permissions().unwrap()).unwrap();
         assert_eq!(
             config.pointer("/permission/bash/*"),
             Some(&Value::String("deny".to_string()))
         );
-        assert!(!command.contains("*"));
-        assert!(!command.contains(';'));
-        assert!(!command.contains('$'));
-        assert!(!command.contains('%'));
     }
 
     #[test]
-    fn direct_adapter_fixtures_isolate_codex_and_pin_tool_contracts() {
+    fn direct_adapter_fixtures_isolate_every_agent_and_pin_tool_contracts() {
         let root = tempfile::tempdir().unwrap();
-        let input = ".devhud-direct-01900000-0000-7000-8000-000000000000/issue-input.json";
         for kind in [AgentKind::Codex, AgentKind::ClaudeCode, AgentKind::Opencode] {
             let directory = root.path().join(kind.executable_name());
             fs::create_dir(&directory).unwrap();
@@ -2173,11 +1994,8 @@ mod tests {
                 AdapterFiles {
                     schema: &directory.join("schema"),
                     last_message: &directory.join("message"),
-                    issue_input: &directory.join("issue"),
-                    issue_input_argument: Some(input),
                 },
                 Vec::new(),
-                Some(secret),
             )
             .unwrap();
             let args = spec
@@ -2186,13 +2004,17 @@ mod tests {
                 .map(|value| value.to_string_lossy())
                 .collect::<Vec<_>>()
                 .join(" ");
-            assert_eq!(
-                spec.environment.contains_key(OsStr::new("GH_TOKEN")),
-                kind != AgentKind::Codex
+            assert!(!spec.environment.contains_key(OsStr::new("GH_TOKEN")));
+            assert!(!spec.environment.contains_key(OsStr::new("GH_CONFIG_DIR")));
+            assert!(
+                spec.environment
+                    .values()
+                    .all(|value| !value.to_string_lossy().contains(secret))
             );
-            assert_eq!(
-                spec.environment.get(OsStr::new("GH_CONFIG_DIR")),
-                Some(&directory.join("gh-config").into_os_string())
+            assert!(
+                spec.args
+                    .iter()
+                    .all(|value| !value.to_string_lossy().contains(secret))
             );
             match kind {
                 AgentKind::Codex => {
@@ -2201,13 +2023,13 @@ mod tests {
                     assert!(!args.contains("api.github.com"));
                     assert_eq!(
                         fs::read_to_string(directory.join("schema")).unwrap(),
-                        codex_direct_ready_schema()
+                        direct_ready_schema()
                     );
                 }
                 AgentKind::ClaudeCode => {
-                    assert!(args.contains("Read,Glob,Grep,Bash"));
-                    assert!(args.contains(&format!("Bash({})", direct_command(&request, input))));
-                    assert!(args.contains("Edit,Write,WebFetch,WebSearch,Task"));
+                    assert!(args.contains("Read,Glob,Grep"));
+                    assert!(!args.contains("Read,Glob,Grep,Bash"));
+                    assert!(args.contains("Bash,Edit,Write,WebFetch,WebSearch,Task"));
                 }
                 AgentKind::Opencode => {
                     let config: Value = serde_json::from_str(
@@ -2240,11 +2062,8 @@ mod tests {
             AdapterFiles {
                 schema: &root.path().join("schema"),
                 last_message: &root.path().join("message"),
-                issue_input: &root.path().join("issue"),
-                issue_input_argument: None,
             },
             Vec::new(),
-            Some(secret),
         )
         .unwrap();
         assert!(!adapter.environment.contains_key(OsStr::new("GH_TOKEN")));
@@ -2295,13 +2114,13 @@ mod tests {
     }
 
     #[test]
-    fn codex_direct_readiness_and_fixed_issue_output_are_strict() {
+    fn direct_readiness_and_fixed_issue_output_are_strict() {
         let request = request(AgentMode::Direct);
         let ready = serde_json::to_string(&json!({ "marker": request.marker })).unwrap();
-        validate_codex_direct_ready(&request, &ready).unwrap();
-        assert!(validate_codex_direct_ready(&request, r#"{"marker":"wrong"}"#).is_err());
+        validate_direct_ready(&request, &ready).unwrap();
+        assert!(validate_direct_ready(&request, r#"{"marker":"wrong"}"#).is_err());
         assert!(
-            validate_codex_direct_ready(
+            validate_direct_ready(
                 &request,
                 &format!(
                     r#"{{"marker":{},"extra":true}}"#,

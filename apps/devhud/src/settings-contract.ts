@@ -14,7 +14,8 @@ export const PreviousSettingsSchemaVersion = 2 as const;
 export const CollidingSettingsSchemaVersion = 3 as const;
 export const StructuredSettingsSchemaVersion = 4 as const;
 export const R2SettingsSchemaVersion = 5 as const;
-export const SettingsSchemaVersion = 6 as const;
+export const AgentPromptSettingsSchemaVersion = 6 as const;
+export const SettingsSchemaVersion = 7 as const;
 export const MaximumUrlRepositoryMappings = 100;
 
 const Theme = ["system", "light", "dark"] as const;
@@ -130,8 +131,11 @@ export class SettingsContractError extends TypeError {
 
 export function parseDevHudSettings(value: unknown): DevHudSettingsV1 {
   rejectSensitiveContent(value, "$", new WeakSet());
-  const root = object(value, "$", ["schemaVersion", "appearance", "decks", "github", "urlMappings", "shortcuts", "agents", "uploads"]);
-  const sourceSchemaVersion = integer(root.schemaVersion, "$.schemaVersion", LegacySettingsSchemaVersion, SettingsSchemaVersion);
+  const unvalidatedRoot = record(value, "$");
+  const sourceSchemaVersion = integer(unvalidatedRoot.schemaVersion, "$.schemaVersion", LegacySettingsSchemaVersion, SettingsSchemaVersion);
+  const root = sourceSchemaVersion < SettingsSchemaVersion
+    ? object(value, "$", ["schemaVersion", "appearance", "decks", "github", "urlMappings", "shortcuts", "agents", "uploads"])
+    : objectWithOptional(value, "$", ["schemaVersion", "appearance", "decks", "github", "urlMappings", "agents", "uploads"], ["shortcuts"]);
   const legacy = sourceSchemaVersion === LegacySettingsSchemaVersion;
 
   const appearance = object(root.appearance, "$.appearance", ["theme", "language"]);
@@ -148,7 +152,7 @@ export function parseDevHudSettings(value: unknown): DevHudSettingsV1 {
   if (new Set(pendingPatRemovals).size !== pendingPatRemovals.length) throw new SettingsContractError("$.github.pendingPatRemovals", "must contain unique IDs");
   const githubProfileIds = new Set(githubProfiles.map((profile) => profile.id));
   if (pendingPatRemovals.some((profileId) => githubProfileIds.has(profileId))) throw new SettingsContractError("$.github.pendingPatRemovals", "must not reference an active GitHub profile");
-  const shortcuts = object(root.shortcuts, "$.shortcuts", [...Platform]);
+  const shortcuts = root.shortcuts === undefined ? null : object(root.shortcuts, "$.shortcuts", [...Platform]);
   const uploads = object(root.uploads, "$.uploads", ["provider", "r2"]);
   const parsedDecks = decks.flatMap((entry, index) => parseDeck(entry, `$.decks[${index}]`, legacy, previous));
   if (new Set(parsedDecks.map((deck) => deck.id)).size !== parsedDecks.length) throw new SettingsContractError("$.decks", "must contain unique IDs");
@@ -157,7 +161,7 @@ export function parseDevHudSettings(value: unknown): DevHudSettingsV1 {
   if (urlMappings.length > MaximumUrlRepositoryMappings) throw new SettingsContractError("$.urlMappings", `must contain at most ${MaximumUrlRepositoryMappings} entries`);
   if (new Set(urlMappings.map((mapping) => mapping.id)).size !== urlMappings.length) throw new SettingsContractError("$.urlMappings", "must not contain duplicate mapping IDs");
   const agents = array(root.agents, "$.agents").map((entry, index) => parseAgent(entry, `$.agents[${index}]`, sourceSchemaVersion));
-  const migratedAgents = sourceSchemaVersion < SettingsSchemaVersion
+  const migratedAgents = sourceSchemaVersion < AgentPromptSettingsSchemaVersion
     ? agents.map((agent) => agent.profileRef !== null && !githubProfileIds.has(agent.profileRef) ? { ...agent, profileRef: null } : agent)
     : agents;
 
@@ -182,9 +186,9 @@ export function parseDevHudSettings(value: unknown): DevHudSettingsV1 {
     // discarded rather than guessed during the approved v1/v2 -> v3 migration.
     urlMappings,
     shortcuts: {
-      desktop: desktopShortcutMap(shortcuts.desktop, legacyShortcuts),
-      ios: legacyShortcuts ? legacyShortcutMap(shortcuts.ios, "$.shortcuts.ios") : emptyShortcutMap(shortcuts.ios, "$.shortcuts.ios"),
-      android: legacyShortcuts ? legacyShortcutMap(shortcuts.android, "$.shortcuts.android") : emptyShortcutMap(shortcuts.android, "$.shortcuts.android"),
+      desktop: shortcuts === null ? defaultDesktopShortcutBindings : desktopShortcutMap(shortcuts.desktop, legacyShortcuts),
+      ios: shortcuts === null ? {} : legacyShortcuts ? legacyShortcutMap(shortcuts.ios, "$.shortcuts.ios") : emptyShortcutMap(shortcuts.ios, "$.shortcuts.ios"),
+      android: shortcuts === null ? {} : legacyShortcuts ? legacyShortcutMap(shortcuts.android, "$.shortcuts.android") : emptyShortcutMap(shortcuts.android, "$.shortcuts.android"),
     },
     agents: migratedAgents,
     uploads: {
@@ -256,18 +260,18 @@ function parseUrlMapping(value: unknown, index: number): UrlRepositoryMapping {
 }
 
 export function encodeDevHudSettings(value: unknown): Uint8Array {
-  return encodeCanonicalSettingsJson(parseDevHudSettings(value));
+  return encodeCanonicalSettingsJson(synchronizedSettings(parseDevHudSettings(value)));
 }
 
 export function decodeDevHudSettings(value: Uint8Array): DevHudSettingsV1 {
   return decodeDevHudSettingsSnapshot(value).settings;
 }
 
-export function decodeDevHudSettingsSnapshot(value: Uint8Array): { readonly sourceSchemaVersion: 1 | 2 | 3 | 4 | 5 | 6; readonly settings: DevHudSettingsV1 } {
+export function decodeDevHudSettingsSnapshot(value: Uint8Array): { readonly sourceSchemaVersion: 1 | 2 | 3 | 4 | 5 | 6 | 7; readonly settings: DevHudSettingsV1 } {
   const canonical = validateCanonicalSettingsJson(value);
   const settings = parseDevHudSettings(canonical);
   const sourceSchemaVersion = (canonical as { readonly schemaVersion: unknown }).schemaVersion;
-  if (sourceSchemaVersion !== LegacySettingsSchemaVersion && sourceSchemaVersion !== PreviousSettingsSchemaVersion && sourceSchemaVersion !== CollidingSettingsSchemaVersion && sourceSchemaVersion !== StructuredSettingsSchemaVersion && sourceSchemaVersion !== R2SettingsSchemaVersion && sourceSchemaVersion !== SettingsSchemaVersion) throw new SettingsContractError("$.schemaVersion", "is unsupported");
+  if (sourceSchemaVersion !== LegacySettingsSchemaVersion && sourceSchemaVersion !== PreviousSettingsSchemaVersion && sourceSchemaVersion !== CollidingSettingsSchemaVersion && sourceSchemaVersion !== StructuredSettingsSchemaVersion && sourceSchemaVersion !== R2SettingsSchemaVersion && sourceSchemaVersion !== AgentPromptSettingsSchemaVersion && sourceSchemaVersion !== SettingsSchemaVersion) throw new SettingsContractError("$.schemaVersion", "is unsupported");
   return { sourceSchemaVersion, settings };
 }
 
@@ -281,7 +285,35 @@ export function decodeVersionedDevHudSettings(value: Uint8Array, envelopeSchemaV
 }
 
 export function canonicalDevHudSettings(value: unknown): string {
-  return canonicalizeSettingsJson(parseDevHudSettings(value));
+  return canonicalizeSettingsJson(synchronizedSettings(parseDevHudSettings(value)));
+}
+
+/** Rehydrates fields that are intentionally device-local onto a server snapshot. */
+export function withDeviceLocalSettings(synchronized: DevHudSettingsV1, deviceLocal: DevHudSettingsV1): DevHudSettingsV1 {
+  const localAgents = new Map(deviceLocal.agents.map((agent) => [`${agent.id}\u0000${agent.kind}`, agent]));
+  return {
+    ...synchronized,
+    shortcuts: deviceLocal.shortcuts,
+    agents: synchronized.agents.map((agent) => ({
+      ...agent,
+      repositoryPrompts: localAgents.get(`${agent.id}\u0000${agent.kind}`)?.repositoryPrompts ?? [],
+    })),
+  };
+}
+
+function synchronizedSettings(settings: DevHudSettingsV1): unknown {
+  return {
+    schemaVersion: SettingsSchemaVersion,
+    appearance: settings.appearance,
+    decks: settings.decks,
+    github: settings.github,
+    urlMappings: settings.urlMappings,
+    agents: settings.agents.map(({ repositoryPrompts: _repositoryPrompts, ...agent }) => agent),
+    uploads: {
+      provider: settings.uploads.provider,
+      r2: settings.uploads.r2 === null ? null : (({ endpoint: _endpoint, ...r2 }) => r2)(settings.uploads.r2),
+    },
+  };
 }
 
 function hasCurrentDeckShape(value: unknown): boolean {
@@ -669,15 +701,17 @@ function validateGitHubProfileRef(value: string | null, path: string, profileIds
 }
 
 function parseAgent(value: unknown, path: string, sourceSchemaVersion: number): DevHudSettingsV1["agents"][number] {
-  const agent = object(value, path, ["id", "enabled", "kind", "mode", "repositoryPrompts", "profileRef"]);
+  const agent = sourceSchemaVersion < SettingsSchemaVersion
+    ? object(value, path, ["id", "enabled", "kind", "mode", "repositoryPrompts", "profileRef"])
+    : objectWithOptional(value, path, ["id", "enabled", "kind", "mode", "profileRef"], ["repositoryPrompts"]);
   const profileRef = agent.profileRef === null ? null : text(agent.profileRef, `${path}.profileRef`);
   if (profileRef !== null && !profileRefPattern.test(profileRef)) throw new SettingsContractError(`${path}.profileRef`, "is invalid");
   let repositoryPrompts: DevHudSettingsV1["agents"][number]["repositoryPrompts"];
-  if (sourceSchemaVersion < SettingsSchemaVersion) {
+  if (sourceSchemaVersion < AgentPromptSettingsSchemaVersion) {
     boolean(agent.repositoryPrompts, `${path}.repositoryPrompts`);
     repositoryPrompts = [];
   } else {
-    repositoryPrompts = array(agent.repositoryPrompts, `${path}.repositoryPrompts`).map((entry, index) => {
+    repositoryPrompts = (agent.repositoryPrompts === undefined ? [] : array(agent.repositoryPrompts, `${path}.repositoryPrompts`)).map((entry, index) => {
       const promptPath = `${path}.repositoryPrompts[${index}]`;
       const prompt = object(entry, promptPath, ["repository", "body"]);
       const repository = object(prompt.repository, `${promptPath}.repository`, ["owner", "name"]);
@@ -706,13 +740,18 @@ function parseAgent(value: unknown, path: string, sourceSchemaVersion: number): 
 function parseR2(value: unknown, sourceSchemaVersion: number): NonNullable<DevHudSettingsV1["uploads"]["r2"]> {
   const path = "$.uploads.r2";
   const current = sourceSchemaVersion >= R2SettingsSchemaVersion;
-  const r2 = object(value, path, current
-    ? ["profileRef", "name", "endpoint", "accountId", "bucket", "publicBaseUrl", "prefix"]
-    : ["profileRef", "bucket", "endpoint", "region", "publicBaseUrl"]);
+  const r2 = sourceSchemaVersion < SettingsSchemaVersion
+    ? object(value, path, current
+      ? ["profileRef", "name", "endpoint", "accountId", "bucket", "publicBaseUrl", "prefix"]
+      : ["profileRef", "bucket", "endpoint", "region", "publicBaseUrl"])
+    : objectWithOptional(value, path, ["profileRef", "name", "accountId", "bucket", "publicBaseUrl", "prefix"], ["endpoint"]);
   const profileRef = text(r2.profileRef, `${path}.profileRef`);
   if (!profileRefPattern.test(profileRef)) throw new SettingsContractError(`${path}.profileRef`, "is invalid");
-  const endpoint = url(r2.endpoint, `${path}.endpoint`, true);
-  const accountId = current ? nullableR2Identifier(r2.accountId, `${path}.accountId`) : accountIdFromEndpoint(endpoint);
+  const legacyEndpoint = sourceSchemaVersion < SettingsSchemaVersion ? url(r2.endpoint, `${path}.endpoint`, true) : null;
+  const accountId = current ? nullableR2Identifier(r2.accountId, `${path}.accountId`) : accountIdFromEndpoint(legacyEndpoint!);
+  if (sourceSchemaVersion >= SettingsSchemaVersion && (accountId === null || !/^[0-9a-f]{32}$/u.test(accountId))) throw new SettingsContractError(`${path}.accountId`, "must be a lowercase 32-character Cloudflare account ID");
+  const endpoint = accountId === null ? "" : `https://${accountId}.r2.cloudflarestorage.com/`;
+  if (sourceSchemaVersion >= SettingsSchemaVersion && r2.endpoint !== undefined && url(r2.endpoint, `${path}.endpoint`, true) !== endpoint) throw new SettingsContractError(`${path}.endpoint`, "must match the exact Cloudflare account endpoint");
   const bucket = r2Identifier(r2.bucket, `${path}.bucket`);
   const publicBaseUrl = r2.publicBaseUrl === null ? null : url(r2.publicBaseUrl, `${path}.publicBaseUrl`, true);
   const prefix = current ? r2Prefix(r2.prefix, `${path}.prefix`) : "";
@@ -765,6 +804,19 @@ function object(value: unknown, path: string, allowed: readonly string[]): Recor
   for (const key of Object.keys(record)) if (!allowedSet.has(key)) throw new SettingsContractError(`${path}.${key}`, "unknown field");
   for (const key of allowed) if (!(key in record)) throw new SettingsContractError(`${path}.${key}`, "is required");
   return record;
+}
+
+function objectWithOptional(value: unknown, path: string, required: readonly string[], optional: readonly string[]): Record<string, unknown> {
+  const recordValue = record(value, path);
+  const allowed = new Set([...required, ...optional]);
+  for (const key of Object.keys(recordValue)) if (!allowed.has(key)) throw new SettingsContractError(`${path}.${key}`, "unknown field");
+  for (const key of required) if (!(key in recordValue)) throw new SettingsContractError(`${path}.${key}`, "is required");
+  return recordValue;
+}
+
+function record(value: unknown, path: string): Record<string, unknown> {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) throw new SettingsContractError(path, "must be an object");
+  return value as Record<string, unknown>;
 }
 
 function array(value: unknown, path: string): readonly unknown[] {

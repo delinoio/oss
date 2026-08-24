@@ -71,6 +71,7 @@ class RecoverableStorage implements Storage {
 }
 
 beforeEach(() => {
+  vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-08-17T00:00:00.000Z"));
   localStorage.clear();
   delete window.showSaveFilePicker;
   diagnosticsMutation.mutateAsync.mockReset();

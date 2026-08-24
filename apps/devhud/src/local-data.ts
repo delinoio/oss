@@ -1,7 +1,7 @@
 import type { StaticCapability } from "@delinoio/devhud-api-client";
 import { clearInMemoryDiagnosticEvents } from "./diagnostics";
-import { canonicalDevHudSettings, defaultDevHudSettings, parseDevHudSettings, type DevHudSettingsV1 } from "./settings-contract";
-import { isValidLogtoAudience, normalizeLogtoIssuer, normalizePublicAssetUrl } from "./identity-contract.ts";
+import { defaultDevHudSettings, parseDevHudSettings, type DevHudSettingsV1 } from "./settings-contract";
+import { isValidLogtoAudience, normalizeLogtoIssuer, normalizeNetworkOrigin, normalizePublicAssetUrl } from "./identity-contract.ts";
 
 const prefix = "devhud.identity.v1.";
 const guestSettingsKey = `${prefix}guest-settings`;
@@ -32,7 +32,9 @@ export function writeGuestSettings(storage: WriteStorage, settings: DevHudSettin
   clearedGuestSettings.delete(storage);
   try {
     // The snapshot itself is the durable import marker so quota failures cannot split the two values.
-    storage.setItem(guestSettingsKey, canonicalDevHudSettings(parsed));
+    // Device-local shortcut bindings and repository prompts are deliberately
+    // present here even though the synchronized canonical projection omits them.
+    storage.setItem(guestSettingsKey, JSON.stringify(parsed));
     inMemoryGuestSettings.delete(storage);
   } catch {
     // Preserve both the snapshot and its import marker for this session when persistence is unavailable.
@@ -65,6 +67,7 @@ export function clearGuestImportMarker(storage: Pick<Storage, "removeItem">): vo
 export interface CachedSettings {
   readonly settings: DevHudSettingsV1;
   readonly revision: bigint;
+  readonly contentSHA256?: Uint8Array;
   readonly cachedAt: string;
 }
 
@@ -74,6 +77,7 @@ export interface CachedIdentityBootstrap {
   readonly clientId: string;
   readonly redirectUri: "devhud://auth/callback";
   readonly publicAssetBaseUrl: string | null;
+  readonly officialUploadOrigin: string | null;
   readonly capabilities: readonly StaticCapability[];
 }
 
@@ -89,15 +93,17 @@ export function readCachedIdentityBootstrap(storage: ReadStorage, apiOrigin: str
     if (record.publicAssetBaseUrl !== undefined && publicAssetBaseUrl === null) return null;
     const capabilities = record.capabilities === undefined ? [] : record.capabilities;
     if (!Array.isArray(capabilities) || capabilities.some((capability) => !Number.isInteger(capability))) return null;
-    return { issuer, audience: record.audience, clientId: record.clientId, redirectUri: record.redirectUri, publicAssetBaseUrl, capabilities: Object.freeze([...new Set(capabilities as StaticCapability[])]) };
+    const officialUploadOrigin = record.officialUploadOrigin === undefined || record.officialUploadOrigin === null ? null : normalizeNetworkOrigin(record.officialUploadOrigin);
+    if (record.officialUploadOrigin !== undefined && record.officialUploadOrigin !== null && officialUploadOrigin === null) return null;
+    return { issuer, audience: record.audience, clientId: record.clientId, redirectUri: record.redirectUri, publicAssetBaseUrl, officialUploadOrigin, capabilities: Object.freeze([...new Set(capabilities as StaticCapability[])]) };
   } catch {
     return null;
   }
 }
 
-export function writeCachedIdentityBootstrap(storage: WriteStorage, apiOrigin: string, bootstrap: CachedIdentityBootstrap): void {
+export function writeCachedIdentityBootstrap(storage: WriteStorage, apiOrigin: string, bootstrap: Omit<CachedIdentityBootstrap, "officialUploadOrigin"> & { readonly officialUploadOrigin?: string | null }): void {
   try {
-    storage.setItem(accountKey(apiOrigin, "bootstrap"), JSON.stringify(bootstrap));
+    storage.setItem(accountKey(apiOrigin, "bootstrap"), JSON.stringify({ ...bootstrap, officialUploadOrigin: bootstrap.officialUploadOrigin ?? null }));
   } catch {
     // Identity bootstrap caching is optional; the online session remains usable when persistence is unavailable.
   }
@@ -111,7 +117,9 @@ export function readAuthenticatedSettingsCache(storage: ReadStorage, apiOrigin: 
     if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
     const record = value as Record<string, unknown>;
     if (typeof record.revision !== "string" || !/^\d+$/u.test(record.revision) || typeof record.cachedAt !== "string") return null;
-    return { settings: parseDevHudSettings(record.settings), revision: BigInt(record.revision), cachedAt: record.cachedAt };
+    const contentSHA256 = record.contentSHA256 === undefined ? new Uint8Array() : decodeDigest(record.contentSHA256);
+    if (contentSHA256 === null) return null;
+    return { settings: parseDevHudSettings(record.settings), revision: BigInt(record.revision), contentSHA256, cachedAt: record.cachedAt };
   } catch {
     return null;
   }
@@ -120,11 +128,22 @@ export function readAuthenticatedSettingsCache(storage: ReadStorage, apiOrigin: 
 export function writeAuthenticatedSettingsCache(storage: WriteStorage, apiOrigin: string, cache: CachedSettings): void {
   const key = accountKey(apiOrigin, "settings");
   try {
-    storage.setItem(key, JSON.stringify({ settings: cache.settings, revision: cache.revision.toString(), cachedAt: cache.cachedAt }));
+    const contentSHA256 = cache.contentSHA256;
+    if (contentSHA256 !== undefined && contentSHA256.byteLength !== 0 && contentSHA256.byteLength !== 32) throw new TypeError("settings content digest must contain 32 raw bytes");
+    storage.setItem(key, JSON.stringify({ settings: cache.settings, revision: cache.revision.toString(), ...(contentSHA256?.byteLength === 32 ? { contentSHA256: encodeDigest(contentSHA256) } : {}), cachedAt: cache.cachedAt }));
     invalidatedSettingsKeys.delete(key);
   } catch {
     // Settings caching is best-effort; a valid service response must remain usable without Web Storage.
   }
+}
+
+function encodeDigest(value: Uint8Array): string {
+  return Array.from(value, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function decodeDigest(value: unknown): Uint8Array | null {
+  if (typeof value !== "string" || !/^[0-9a-f]{64}$/u.test(value)) return null;
+  return Uint8Array.from(value.match(/.{2}/gu) ?? [], (octet) => Number.parseInt(octet, 16));
 }
 
 export function clearAuthenticatedSettingsCache(storage: Pick<Storage, "removeItem">, apiOrigin: string): void {

@@ -26,6 +26,7 @@ pub(crate) struct OfficialUploadRequest {
     pub(crate) image_id: Uuid,
     pub(crate) expected_bytes: usize,
     pub(crate) expected_sha256: String,
+    pub(crate) official_upload_origin: String,
     pub(crate) upload: OfficialUpload,
 }
 
@@ -64,7 +65,6 @@ pub(crate) struct R2UploadRequest {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct R2Profile {
     profile_ref: String,
-    endpoint: String,
     account_id: String,
     bucket: String,
     public_base_url: String,
@@ -102,7 +102,7 @@ pub(crate) async fn put_official(
     {
         return Err("invalid-argument".to_string());
     }
-    let url = signed_upload_url(&upload.signed_put_url)?;
+    let url = signed_upload_url(&upload.signed_put_url, &request.official_upload_origin)?;
     let response = direct_client("official")?
         .put(url)
         .header(CONTENT_TYPE, upload.required_headers.content_type)
@@ -157,7 +157,11 @@ pub(crate) async fn put_r2(
         request.expected_revision,
         request.image_id,
     );
-    let mut upload_url = https_url(&request.profile.endpoint, false)?;
+    let mut upload_url = Url::parse(&format!(
+        "https://{}.r2.cloudflarestorage.com",
+        request.profile.account_id
+    ))
+    .map_err(|_| "invalid-argument".to_string())?;
     {
         let mut segments = upload_url
             .path_segments_mut()
@@ -390,7 +394,11 @@ fn validate_profile(profile: &R2Profile) -> Result<(), String> {
                 .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
     };
     if !identifier(&profile.profile_ref)
-        || !identifier(&profile.account_id)
+        || profile.account_id.len() != 32
+        || !profile
+            .account_id
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
         || !identifier(&profile.bucket)
         || profile.prefix.len() > 512
         || profile.prefix.starts_with('/')
@@ -404,7 +412,6 @@ fn validate_profile(profile: &R2Profile) -> Result<(), String> {
     {
         return Err("invalid-argument".to_string());
     }
-    https_url(&profile.endpoint, false)?;
     https_url(&profile.public_base_url, false)?;
     Ok(())
 }
@@ -413,8 +420,13 @@ fn https_url(value: &str, allow_query: bool) -> Result<Url, String> {
     validated_url(value, allow_query, false)
 }
 
-fn signed_upload_url(value: &str) -> Result<Url, String> {
-    validated_url(value, true, true)
+fn signed_upload_url(value: &str, expected_origin: &str) -> Result<Url, String> {
+    let url = validated_url(value, true, true)?;
+    let origin = validated_url(expected_origin, false, true)?;
+    if origin.path() != "/" || url.origin() != origin.origin() {
+        return Err("invalid-argument".to_string());
+    }
+    Ok(url)
 }
 
 fn validated_url(value: &str, allow_query: bool, allow_loopback_http: bool) -> Result<Url, String> {
@@ -562,8 +574,7 @@ mod tests {
     fn profile() -> R2Profile {
         R2Profile {
             profile_ref: "018f47a2-7b3c-7def-8abc-1234567890ab".to_string(),
-            endpoint: "https://r2.example/storage".to_string(),
-            account_id: "account.example".to_string(),
+            account_id: "0123456789abcdef0123456789abcdef".to_string(),
             bucket: "screenshots".to_string(),
             public_base_url: "https://images.example/devhud".to_string(),
             prefix: "team/realqa".to_string(),
@@ -574,7 +585,7 @@ mod tests {
     fn byo_profile_requires_https_and_normalized_metadata() {
         assert_eq!(validate_profile(&profile()), Ok(()));
         let mut invalid = profile();
-        invalid.endpoint = "http://r2.example".to_string();
+        invalid.account_id = "account.example".to_string();
         assert_eq!(
             validate_profile(&invalid),
             Err("invalid-argument".to_string())
@@ -589,10 +600,41 @@ mod tests {
 
     #[test]
     fn official_signed_urls_allow_queries_but_public_urls_do_not() {
-        assert!(signed_upload_url("https://r2.example/object?signature=value").is_ok());
-        assert!(signed_upload_url("http://127.0.0.1:9000/object?signature=value").is_ok());
-        assert!(signed_upload_url("http://[::1]:9000/object?signature=value").is_ok());
-        assert!(signed_upload_url("http://r2.example/object?signature=value").is_err());
+        assert!(
+            signed_upload_url(
+                "https://r2.example/object?signature=value",
+                "https://r2.example"
+            )
+            .is_ok()
+        );
+        assert!(
+            signed_upload_url(
+                "http://127.0.0.1:9000/object?signature=value",
+                "http://127.0.0.1:9000"
+            )
+            .is_ok()
+        );
+        assert!(
+            signed_upload_url(
+                "http://[::1]:9000/object?signature=value",
+                "http://[::1]:9000"
+            )
+            .is_ok()
+        );
+        assert!(
+            signed_upload_url(
+                "https://attacker.example/object?signature=value",
+                "https://r2.example"
+            )
+            .is_err()
+        );
+        assert!(
+            signed_upload_url(
+                "http://r2.example/object?signature=value",
+                "http://r2.example"
+            )
+            .is_err()
+        );
         assert!(https_url("https://images.example/object?secret=value", false).is_err());
         assert!(https_url("https://user@example.com/object", true).is_err());
     }

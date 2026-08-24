@@ -21,7 +21,7 @@ import { invalidateDeckPolling } from "./deck-polling-cancellation.ts";
 import { clearAllContractedLocalData, clearAuthenticatedOriginData, clearAuthenticatedSettingsCache, clearGuestImportMarker, hasGuestSettings, readAuthenticatedSettingsCache, readCachedIdentityBootstrap, readGuestSettings, writeAuthenticatedSettingsCache, writeCachedIdentityBootstrap, writeGuestSettings } from "./local-data";
 import { SecureSettingKind, type NativeBridgeV1, type RuntimePlatform } from "./native-bridge";
 import { profileRequiresSetup } from "./profile-secrets";
-import { CollidingSettingsSchemaVersion, defaultDevHudSettings, decodeVersionedDevHudSettings, encodeDevHudSettings, LegacySettingsSchemaVersion, parseDevHudSettings, PreviousSettingsSchemaVersion, R2SettingsSchemaVersion, SettingsSchemaVersion, StructuredSettingsSchemaVersion, type DevHudSettingsV1 } from "./settings-contract";
+import { AgentPromptSettingsSchemaVersion, canonicalDevHudSettings, CollidingSettingsSchemaVersion, defaultDevHudSettings, decodeVersionedDevHudSettings, encodeDevHudSettings, LegacySettingsSchemaVersion, parseDevHudSettings, PreviousSettingsSchemaVersion, R2SettingsSchemaVersion, SettingsSchemaVersion, StructuredSettingsSchemaVersion, withDeviceLocalSettings, type DevHudSettingsV1 } from "./settings-contract";
 import { diffSettings, type SettingsDiffEntry } from "./settings-diff";
 import { inactiveDesktopShortcutBindings } from "./shortcuts";
 import { getLocalStorage, isValidApiOrigin } from "./shell";
@@ -33,6 +33,7 @@ export interface SettingsConflict {
   readonly local: DevHudSettingsV1;
   readonly server: DevHudSettingsV1;
   readonly currentRevision: bigint;
+  readonly currentContentSHA256: Uint8Array;
   readonly diff: readonly SettingsDiffEntry[];
 }
 
@@ -153,6 +154,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   const settingsRef = useRef(settings);
   const [revision, setRevision] = useState(0n);
   const revisionRef = useRef(revision);
+  const contentSHA256Ref = useRef(new Uint8Array());
   const githubPatScopeId = useMemo(() => sessionProfileId(apiOrigin), [apiOrigin]);
   const [error, setError] = useState<string | null>(null);
   const [accountError, setAccountError] = useState<DevHudClientError | null>(null);
@@ -192,8 +194,9 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     setSettings(next);
   }
 
-  function applyRevision(next: bigint): void {
+  function applyRevision(next: bigint, contentSHA256: Uint8Array = next === 0n ? new Uint8Array() : contentSHA256Ref.current): void {
     revisionRef.current = next;
+    contentSHA256Ref.current = Uint8Array.from(contentSHA256);
     setRevision(next);
   }
 
@@ -478,7 +481,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     if (status === "blocked") {
       if (!settingsReady) {
         const cached = readAuthenticatedSettingsCache(storage, apiOrigin);
-        if (cached) { applySettings(cached.settings); applyRevision(cached.revision); }
+        if (cached) { applySettings(cached.settings); applyRevision(cached.revision, cached.contentSHA256); }
         setShortcutSettingsReady((ready) => ready || settingsReady || cached !== null);
       }
       return;
@@ -488,14 +491,15 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       setSettingsReady(false);
       const cached = readAuthenticatedSettingsCache(storage, apiOrigin);
       setShortcutSettingsReady((ready) => ready || settingsReady || cached !== null);
-      if (cached) { applySettings(cached.settings); applyRevision(cached.revision); }
+      if (cached) { applySettings(cached.settings); applyRevision(cached.revision, cached.contentSHA256); }
       return;
     }
     if (!settingsQuery.data) return;
     let server: DevHudSettingsV1;
     let currentRevision: bigint;
+    let currentContentSHA256: Uint8Array;
     try {
-      ({ settings: server, revision: currentRevision } = validatedSettingsSnapshot(settingsQuery.data.snapshot));
+      ({ settings: server, revision: currentRevision, contentSHA256: currentContentSHA256 } = validatedSettingsSnapshot(settingsQuery.data.snapshot));
     } catch {
       markSettingsContractInvalid();
       return;
@@ -504,14 +508,17 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     setSettingsError(null);
     setSettingsReady(true);
     setShortcutSettingsReady(true);
-    applyRevision(currentRevision);
+    applyRevision(currentRevision, currentContentSHA256);
     if (hasGuestSettings(storage)) {
       const local = readGuestSettings(storage);
+      server = withDeviceLocalSettings(server, local);
       applySettings(local);
       setImportDiff(diffSettings(local, server));
     } else {
+      const cached = readAuthenticatedSettingsCache(storage, apiOrigin);
+      server = withDeviceLocalSettings(server, cached?.settings ?? settingsRef.current);
       applySettings(server);
-      writeAuthenticatedSettingsCache(storage, apiOrigin, { settings: server, revision: currentRevision, cachedAt: new Date().toISOString() });
+      writeAuthenticatedSettingsCache(storage, apiOrigin, { settings: server, revision: currentRevision, contentSHA256: currentContentSHA256, cachedAt: new Date().toISOString() });
     }
   }, [apiOrigin, logoutCleanupPending, online, settingsQuery.data, settingsReady, status, storage]);
 
@@ -523,7 +530,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     const cached = readAuthenticatedSettingsCache(storage, apiOrigin);
     if (cached) {
       applySettings(cached.settings);
-      applyRevision(cached.revision);
+      applyRevision(cached.revision, cached.contentSHA256);
     }
     setShortcutSettingsReady(cached !== null);
     if (mapped.kind === "unauthenticated") {
@@ -541,7 +548,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     if (status !== "authenticated" && status !== "blocked") setShortcutSettingsReady(false);
   }, [status]);
 
-  async function replaceAt(local: DevHudSettingsV1, expectedRevision: bigint): Promise<boolean> {
+  async function replaceAt(local: DevHudSettingsV1, expectedRevision: bigint, expectedContentSHA256: Uint8Array = contentSHA256Ref.current): Promise<boolean> {
     if (!online) throw new Error("offline-read-only");
     setSettingsError(null);
     let canonicalJson: Uint8Array;
@@ -552,7 +559,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       throw reason;
     }
     try {
-      const response = await replaceMutation.mutateAsync({ schemaVersion: SettingsSchemaVersion, canonicalJson: Uint8Array.from(canonicalJson), expectedRevision });
+      const response = await replaceMutation.mutateAsync({ schemaVersion: SettingsSchemaVersion, canonicalJson: Uint8Array.from(canonicalJson), expectedRevision, expectedContentSha256: expectedRevision === 0n ? new Uint8Array() : Uint8Array.from(expectedContentSHA256) });
       let validated: ValidatedSettingsSnapshot;
       try {
         if (!response.snapshot) throw new SettingsSnapshotError("settings response is missing its snapshot");
@@ -561,15 +568,15 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
         markSettingsContractInvalid();
         throw reason;
       }
-      const next = validated.settings;
+      const next = withDeviceLocalSettings(validated.settings, settingsRef.current);
       applySettings(next);
-      applyRevision(validated.revision);
+      applyRevision(validated.revision, validated.contentSHA256);
       setSettingsReady(true);
       setError((current) => current === "settings-contract-invalid" ? null : current);
       setImportDiff(null);
       setConflict(null);
       clearGuestImportMarker(storage);
-      writeAuthenticatedSettingsCache(storage, apiOrigin, { settings: next, revision: validated.revision, cachedAt: new Date().toISOString() });
+      writeAuthenticatedSettingsCache(storage, apiOrigin, { settings: next, revision: validated.revision, contentSHA256: validated.contentSHA256, cachedAt: new Date().toISOString() });
       return true;
     } catch (reason) {
       if (reason instanceof SettingsSnapshotError) throw reason;
@@ -585,7 +592,8 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
           throw snapshotReason;
         }
         setImportDiff(null);
-        setConflict({ local, server: validated.settings, currentRevision: validated.revision, diff: diffSettings(local, validated.settings) });
+        const server = withDeviceLocalSettings(validated.settings, settingsRef.current);
+        setConflict({ local, server, currentRevision: validated.revision, currentContentSHA256: validated.contentSHA256, diff: diffSettings(local, server) });
         return false;
       }
       setSettingsError(mapped);
@@ -639,13 +647,23 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   const localSettingsWritable = identityReady && (status === "guest" || status === "signed-out");
   const settingsReadOnly = logoutCleanupPending || replaceMutation.isPending || (!localSettingsWritable
     && (status !== "authenticated" || !online || !settingsReady || importDiff !== null || conflict !== null));
-  const shortcutHydrationReady = identityReady && (status === "guest" || ((status === "authenticated" || status === "blocked") && shortcutSettingsReady && importDiff === null));
+  const shortcutHydrationReady = identityReady && (status === "guest" || ((status === "authenticated" || status === "blocked") && shortcutSettingsReady && importDiff === null && conflict === null));
   const githubPatSettingsReady = identityReady && !settingsReadOnly && conflict === null;
 
   const replaceSettings: IdentitySettingsValue["replaceSettings"] = async (update) => {
     const next = typeof update === "function" ? update(settingsRef.current) : update;
+    const parsed = parseDevHudSettings(next);
+    if (canonicalDevHudSettings(parsed) === canonicalDevHudSettings(settingsRef.current)) {
+      if (!shortcutHydrationReady) throw new Error("device-local-settings-not-ready");
+      if (status === "guest") {
+        writeGuestSettings(storage, parsed);
+      } else {
+        writeAuthenticatedSettingsCache(storage, apiOrigin, { settings: parsed, revision: revisionRef.current, contentSHA256: contentSHA256Ref.current, cachedAt: new Date().toISOString() });
+      }
+      applySettings(parsed);
+      return true;
+    }
     if (status === "guest" || status === "signed-out") {
-      const parsed = parseDevHudSettings(next);
       encodeDevHudSettings(parsed);
       writeGuestSettings(storage, parsed);
       applySettings(parsed);
@@ -780,10 +798,10 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
         return false;
       }
       applySettings(validated.settings);
-      applyRevision(validated.revision);
+      applyRevision(validated.revision, validated.contentSHA256);
       setImportDiff(null);
       clearGuestImportMarker(storage);
-      writeAuthenticatedSettingsCache(storage, apiOrigin, { settings: validated.settings, revision: validated.revision, cachedAt: new Date().toISOString() });
+      writeAuthenticatedSettingsCache(storage, apiOrigin, { settings: validated.settings, revision: validated.revision, contentSHA256: validated.contentSHA256, cachedAt: new Date().toISOString() });
       return true;
     },
     replaceSettings,
@@ -792,12 +810,12 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       if (!conflict) return;
       lastReconciledGitHubPatKeyRef.current = null;
       applySettings(conflict.server);
-      applyRevision(conflict.currentRevision);
+      applyRevision(conflict.currentRevision, conflict.currentContentSHA256);
       setConflict(null);
       clearGuestImportMarker(storage);
-      writeAuthenticatedSettingsCache(storage, apiOrigin, { settings: conflict.server, revision: conflict.currentRevision, cachedAt: new Date().toISOString() });
+      writeAuthenticatedSettingsCache(storage, apiOrigin, { settings: conflict.server, revision: conflict.currentRevision, contentSHA256: conflict.currentContentSHA256, cachedAt: new Date().toISOString() });
     },
-    reapplyConflictLocal: async () => conflict ? replaceAt(conflict.local, conflict.currentRevision) : false,
+    reapplyConflictLocal: async () => conflict ? replaceAt(conflict.local, conflict.currentRevision, conflict.currentContentSHA256) : false,
     logout: async () => {
       invalidateDeckPolling();
       setDeckAccessSuspended(true);
@@ -870,15 +888,17 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
 interface ValidatedSettingsSnapshot {
   readonly settings: DevHudSettingsV1;
   readonly revision: bigint;
+  readonly contentSHA256: Uint8Array;
 }
 
 class SettingsSnapshotError extends TypeError {}
 
-function validatedSettingsSnapshot(snapshot: { readonly schemaVersion: number; readonly canonicalJson: Uint8Array; readonly revision: bigint } | undefined): ValidatedSettingsSnapshot {
-  if (!snapshot) return { settings: defaultDevHudSettings, revision: 0n };
-  if (snapshot.schemaVersion !== LegacySettingsSchemaVersion && snapshot.schemaVersion !== PreviousSettingsSchemaVersion && snapshot.schemaVersion !== CollidingSettingsSchemaVersion && snapshot.schemaVersion !== StructuredSettingsSchemaVersion && snapshot.schemaVersion !== R2SettingsSchemaVersion && snapshot.schemaVersion !== SettingsSchemaVersion) throw new SettingsSnapshotError("unsupported settings schema version");
+function validatedSettingsSnapshot(snapshot: { readonly schemaVersion: number; readonly canonicalJson: Uint8Array; readonly revision: bigint; readonly contentSha256: Uint8Array } | undefined): ValidatedSettingsSnapshot {
+  if (!snapshot) return { settings: defaultDevHudSettings, revision: 0n, contentSHA256: new Uint8Array() };
+  if (snapshot.schemaVersion !== LegacySettingsSchemaVersion && snapshot.schemaVersion !== PreviousSettingsSchemaVersion && snapshot.schemaVersion !== CollidingSettingsSchemaVersion && snapshot.schemaVersion !== StructuredSettingsSchemaVersion && snapshot.schemaVersion !== R2SettingsSchemaVersion && snapshot.schemaVersion !== AgentPromptSettingsSchemaVersion && snapshot.schemaVersion !== SettingsSchemaVersion) throw new SettingsSnapshotError("unsupported settings schema version");
   try {
-    return { settings: decodeVersionedDevHudSettings(snapshot.canonicalJson, snapshot.schemaVersion), revision: snapshot.revision };
+    if (snapshot.schemaVersion === SettingsSchemaVersion && snapshot.contentSha256.byteLength !== 32) throw new SettingsSnapshotError("settings snapshot content digest is invalid");
+    return { settings: decodeVersionedDevHudSettings(snapshot.canonicalJson, snapshot.schemaVersion), revision: snapshot.revision, contentSHA256: Uint8Array.from(snapshot.contentSha256) };
   } catch (reason) {
     throw new SettingsSnapshotError("invalid settings snapshot", { cause: reason });
   }

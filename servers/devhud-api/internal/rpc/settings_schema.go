@@ -22,14 +22,15 @@ import (
 )
 
 const (
-	legacySettingsSchemaVersion     = 1
-	previousSettingsSchemaVersion   = 2
-	collidingSettingsSchemaVersion  = 3
-	structuredSettingsSchemaVersion = 4
-	r2SettingsSchemaVersion         = 5
-	settingsSchemaVersion           = 6
-	maximumMappingPathSegments      = 32
-	maximumMappingGlobstars         = 8
+	legacySettingsSchemaVersion      = 1
+	previousSettingsSchemaVersion    = 2
+	collidingSettingsSchemaVersion   = 3
+	structuredSettingsSchemaVersion  = 4
+	r2SettingsSchemaVersion          = 5
+	agentPromptSettingsSchemaVersion = 6
+	settingsSchemaVersion            = 7
+	maximumMappingPathSegments       = 32
+	maximumMappingGlobstars          = 8
 )
 
 var (
@@ -64,11 +65,19 @@ func validateDevHudSettings(value []byte, envelopeSchemaVersion uint32) error {
 	if err := rejectSensitiveSettings(decoded, "$"); err != nil {
 		return err
 	}
-	root, err := settingsObject(decoded, "$", "schemaVersion", "appearance", "decks", "github", "urlMappings", "shortcuts", "agents", "uploads")
+	unvalidatedRoot, ok := decoded.(map[string]any)
+	if !ok {
+		return errors.New("$ must be an object")
+	}
+	bodyVersion, err := settingsInteger(unvalidatedRoot["schemaVersion"], "$.schemaVersion", legacySettingsSchemaVersion, settingsSchemaVersion)
 	if err != nil {
 		return err
 	}
-	bodyVersion, err := settingsInteger(root["schemaVersion"], "$.schemaVersion", legacySettingsSchemaVersion, settingsSchemaVersion)
+	rootFields := []string{"schemaVersion", "appearance", "decks", "github", "urlMappings", "shortcuts", "agents", "uploads"}
+	if bodyVersion >= settingsSchemaVersion {
+		rootFields = []string{"schemaVersion", "appearance", "decks", "github", "urlMappings", "agents", "uploads"}
+	}
+	root, err := settingsObject(decoded, "$", rootFields...)
 	if err != nil {
 		return err
 	}
@@ -201,9 +210,11 @@ func validateDevHudSettings(value []byte, envelopeSchemaVersion uint32) error {
 			return errors.New("GitHub profile reference must reference a configured GitHub profile")
 		}
 	}
-	structuredShortcuts := bodyVersion >= structuredSettingsSchemaVersion || bodyVersion == collidingSettingsSchemaVersion && hasStructuredDesktopShortcutShape(root["shortcuts"])
-	if err := validateSettingsShortcuts(root["shortcuts"], structuredShortcuts); err != nil {
-		return err
+	if bodyVersion < settingsSchemaVersion {
+		structuredShortcuts := bodyVersion >= structuredSettingsSchemaVersion || bodyVersion == collidingSettingsSchemaVersion && hasStructuredDesktopShortcutShape(root["shortcuts"])
+		if err := validateSettingsShortcuts(root["shortcuts"], structuredShortcuts); err != nil {
+			return err
+		}
 	}
 	if err := validateSettingsAgents(root["agents"], bodyVersion, profileIDs); err != nil {
 		return err
@@ -1159,7 +1170,11 @@ func validateSettingsAgents(value any, bodyVersion int64, profileIDs map[string]
 	seenIDs := make(map[string]struct{}, len(agents))
 	for index, entry := range agents {
 		path := fmt.Sprintf("$.agents[%d]", index)
-		agent, err := settingsObject(entry, path, "id", "enabled", "kind", "mode", "repositoryPrompts", "profileRef")
+		fields := []string{"id", "enabled", "kind", "mode", "repositoryPrompts", "profileRef"}
+		if bodyVersion >= settingsSchemaVersion {
+			fields = []string{"id", "enabled", "kind", "mode", "profileRef"}
+		}
+		agent, err := settingsObject(entry, path, fields...)
 		if err != nil {
 			return err
 		}
@@ -1180,11 +1195,11 @@ func validateSettingsAgents(value any, bodyVersion int64, profileIDs map[string]
 		if err := settingsEnum(agent["mode"], path+".mode", "draft", "direct"); err != nil {
 			return err
 		}
-		if bodyVersion < settingsSchemaVersion {
+		if bodyVersion < agentPromptSettingsSchemaVersion {
 			if _, ok := agent["repositoryPrompts"].(bool); !ok {
 				return fmt.Errorf("%s.repositoryPrompts must be a boolean", path)
 			}
-		} else {
+		} else if bodyVersion == agentPromptSettingsSchemaVersion {
 			prompts, err := settingsArray(agent["repositoryPrompts"], path+".repositoryPrompts")
 			if err != nil {
 				return err
@@ -1226,7 +1241,7 @@ func validateSettingsAgents(value any, bodyVersion int64, profileIDs map[string]
 		if err != nil {
 			return err
 		}
-		if bodyVersion >= settingsSchemaVersion && profileRef != "" {
+		if bodyVersion >= agentPromptSettingsSchemaVersion && profileRef != "" {
 			if _, exists := profileIDs[profileRef]; !exists {
 				return fmt.Errorf("%s.profileRef must reference a configured GitHub profile", path)
 			}
@@ -1249,6 +1264,9 @@ func validateSettingsUploads(value any, bodyVersion int64) error {
 	fields := []string{"profileRef", "bucket", "endpoint", "region", "publicBaseUrl"}
 	if bodyVersion >= r2SettingsSchemaVersion {
 		fields = []string{"profileRef", "name", "endpoint", "accountId", "bucket", "publicBaseUrl", "prefix"}
+	}
+	if bodyVersion >= settingsSchemaVersion {
+		fields = []string{"profileRef", "name", "accountId", "bucket", "publicBaseUrl", "prefix"}
 	}
 	r2, err := settingsObject(uploads["r2"], "$.uploads.r2", fields...)
 	if err != nil {
@@ -1278,9 +1296,16 @@ func validateSettingsUploads(value any, bodyVersion int64) error {
 			return err
 		}
 	} else {
+		if bodyVersion >= settingsSchemaVersion && r2["accountId"] == nil {
+			return errors.New("$.uploads.r2.accountId must be a lowercase 32-character Cloudflare account ID")
+		}
 		if r2["accountId"] != nil {
 			accountID, err := settingsText(r2["accountId"], "$.uploads.r2.accountId", false)
-			if err != nil || !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`).MatchString(accountID) {
+			validAccountID := regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`).MatchString(accountID)
+			if bodyVersion >= settingsSchemaVersion {
+				validAccountID = regexp.MustCompile(`^[0-9a-f]{32}$`).MatchString(accountID)
+			}
+			if err != nil || !validAccountID {
 				return errors.New("$.uploads.r2.accountId is invalid")
 			}
 		}
@@ -1296,8 +1321,10 @@ func validateSettingsUploads(value any, bodyVersion int64) error {
 			}
 		}
 	}
-	if err := settingsURL(r2["endpoint"], "$.uploads.r2.endpoint", true); err != nil {
-		return err
+	if bodyVersion < settingsSchemaVersion {
+		if err := settingsURL(r2["endpoint"], "$.uploads.r2.endpoint", true); err != nil {
+			return err
+		}
 	}
 	if r2["publicBaseUrl"] != nil {
 		return settingsURL(r2["publicBaseUrl"], "$.uploads.r2.publicBaseUrl", true)

@@ -3,6 +3,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { StaticCapability } from "@delinoio/devhud-api-client";
 import { createGitHubProvider, type GitHubProvider } from "./github-provider.ts";
 import { messages } from "./localization.ts";
 import { LocalAgentKind, LocalAgentMode, NativeBridgeError, NativeBridgeErrorCode, type CaptureDraft, type NativeBridgeV1 } from "./native-bridge.ts";
@@ -18,7 +19,7 @@ vi.mock("@connectrpc/connect-query", () => ({
 }));
 
 const profile = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", name: "Work", kind: "fine-grained" as const };
-const bootstrap = { issuer: "https://identity.example/", audience: "https://api.example", clientId: "desktop", redirectUri: "devhud://auth/callback" as const, publicAssetBaseUrl: "https://images.example/assets/", capabilities: [] };
+const bootstrap = { issuer: "https://identity.example/", audience: "https://api.example", clientId: "desktop", redirectUri: "devhud://auth/callback" as const, publicAssetBaseUrl: "https://images.example/assets/", officialUploadOrigin: "https://upload.example", capabilities: [StaticCapability.OFFICIAL_UPLOADS] };
 const settings = parseDevHudSettings({
   ...defaultDevHudSettings,
   github: {

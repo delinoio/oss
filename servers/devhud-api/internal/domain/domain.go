@@ -60,6 +60,7 @@ type Settings struct {
 	SchemaVersion uint32
 	Revision      uint64
 	CanonicalJSON []byte
+	ContentSHA256 []byte
 	UpdatedAt     time.Time
 }
 
@@ -120,7 +121,7 @@ type Repository interface {
 	Ping(context.Context) error
 	ProvisionUser(context.Context, Identity) (User, error)
 	GetSettings(context.Context, string) (*Settings, error)
-	ReplaceSettings(context.Context, string, uint32, []byte, uint64, time.Time) (Settings, error)
+	ReplaceSettings(context.Context, string, uint32, []byte, uint64, []byte, time.Time) (Settings, error)
 	GetAccount(context.Context, string) (User, error)
 	DeleteAccount(context.Context, string, time.Time) (User, error)
 	RestoreAccount(context.Context, string, time.Time) (User, error)

@@ -51,6 +51,10 @@ message GetBootstrapResponse {
   string public_asset_base_url = 9;
   repeated StaticCapability capabilities = 10;
   UploadLimits upload_limits = 11;
+  // official_upload_origin is the exact scheme/host/port accepted for
+  // server-issued direct upload URLs. It is empty when official uploads are
+  // unavailable.
+  string official_upload_origin = 12;
 }
 
 service BootstrapService {

@@ -43,7 +43,7 @@ func (s *SettingsService) GetSettings(ctx context.Context, _ *connect.Request[de
 		s.logger.ErrorContext(ctx, "settings repository operation failed",
 			"correlation_id", CorrelationID(ctx),
 			"procedure", devhudv1connect.SettingsServiceGetSettingsProcedure,
-			"error", err,
+			"error_category", "repository",
 		)
 		return nil, internalError(ctx)
 	}
@@ -61,13 +61,19 @@ func (s *SettingsService) ReplaceSettings(ctx context.Context, request *connect.
 	if request.Msg.SchemaVersion == 0 {
 		return nil, NewError(connect.CodeInvalidArgument, "schema_version must be nonzero", CorrelationID(ctx))
 	}
+	if request.Msg.ExpectedRevision == 0 && len(request.Msg.ExpectedContentSha256) != 0 {
+		return nil, NewError(connect.CodeInvalidArgument, "expected_content_sha256 must be empty when creating settings", CorrelationID(ctx))
+	}
+	if request.Msg.ExpectedRevision != 0 && len(request.Msg.ExpectedContentSha256) != 32 {
+		return nil, NewError(connect.CodeInvalidArgument, "expected_content_sha256 must contain 32 raw bytes when replacing settings", CorrelationID(ctx))
+	}
 	if err := validateCanonicalJSON(request.Msg.CanonicalJson); err != nil {
 		return nil, NewError(connect.CodeInvalidArgument, err.Error(), CorrelationID(ctx))
 	}
 	if err := validateDevHudSettings(request.Msg.CanonicalJson, request.Msg.SchemaVersion); err != nil {
 		return nil, NewError(connect.CodeInvalidArgument, err.Error(), CorrelationID(ctx))
 	}
-	snapshot, err := s.repository.ReplaceSettings(ctx, user.ID, request.Msg.SchemaVersion, request.Msg.CanonicalJson, request.Msg.ExpectedRevision, s.clock.Now())
+	snapshot, err := s.repository.ReplaceSettings(ctx, user.ID, request.Msg.SchemaVersion, request.Msg.CanonicalJson, request.Msg.ExpectedRevision, request.Msg.ExpectedContentSha256, s.clock.Now())
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
 			return nil, deletionCompletePermissionError(ctx)
@@ -86,7 +92,7 @@ func (s *SettingsService) ReplaceSettings(ctx context.Context, request *connect.
 		s.logger.ErrorContext(ctx, "settings repository operation failed",
 			"correlation_id", CorrelationID(ctx),
 			"procedure", devhudv1connect.SettingsServiceReplaceSettingsProcedure,
-			"error", err,
+			"error_category", "repository",
 		)
 		return nil, internalError(ctx)
 	}
@@ -124,6 +130,7 @@ func settingsMessage(settings *domain.Settings) *devhudv1.SettingsSnapshot {
 		SchemaVersion: settings.SchemaVersion,
 		Revision:      settings.Revision,
 		CanonicalJson: append([]byte(nil), settings.CanonicalJSON...),
+		ContentSha256: append([]byte(nil), settings.ContentSHA256...),
 		UpdatedAt:     timestamppb.New(settings.UpdatedAt),
 	}
 }

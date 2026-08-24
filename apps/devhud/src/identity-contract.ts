@@ -30,3 +30,11 @@ export function normalizePublicAssetUrl(value: unknown): string | null {
     return null;
   }
 }
+
+export function normalizeNetworkOrigin(value: unknown): string | null {
+	const normalized = normalizePublicAssetUrl(value);
+	if (normalized === null) return null;
+	const url = new URL(normalized);
+	if (url.pathname !== "/") return null;
+	return url.origin;
+}

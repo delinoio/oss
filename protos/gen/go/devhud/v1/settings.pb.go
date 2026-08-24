@@ -30,6 +30,8 @@ type SettingsSnapshot struct {
 	// at most 1 MiB.
 	CanonicalJson []byte                 `protobuf:"bytes,3,opt,name=canonical_json,json=canonicalJson,proto3" json:"canonical_json,omitempty"`
 	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	// content_sha256 binds the revision to canonical_json as 32 raw bytes.
+	ContentSha256 []byte `protobuf:"bytes,5,opt,name=content_sha256,json=contentSha256,proto3" json:"content_sha256,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -88,6 +90,13 @@ func (x *SettingsSnapshot) GetCanonicalJson() []byte {
 func (x *SettingsSnapshot) GetUpdatedAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.UpdatedAt
+	}
+	return nil
+}
+
+func (x *SettingsSnapshot) GetContentSha256() []byte {
+	if x != nil {
+		return x.ContentSha256
 	}
 	return nil
 }
@@ -187,8 +196,11 @@ type ReplaceSettingsRequest struct {
 	CanonicalJson []byte                 `protobuf:"bytes,2,opt,name=canonical_json,json=canonicalJson,proto3" json:"canonical_json,omitempty"`
 	// expected_revision is zero only when creating the first snapshot.
 	ExpectedRevision uint64 `protobuf:"varint,3,opt,name=expected_revision,json=expectedRevision,proto3" json:"expected_revision,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// expected_content_sha256 must match the current snapshot when replacing it.
+	// It is empty only when expected_revision is zero.
+	ExpectedContentSha256 []byte `protobuf:"bytes,4,opt,name=expected_content_sha256,json=expectedContentSha256,proto3" json:"expected_content_sha256,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *ReplaceSettingsRequest) Reset() {
@@ -240,6 +252,13 @@ func (x *ReplaceSettingsRequest) GetExpectedRevision() uint64 {
 		return x.ExpectedRevision
 	}
 	return 0
+}
+
+func (x *ReplaceSettingsRequest) GetExpectedContentSha256() []byte {
+	if x != nil {
+		return x.ExpectedContentSha256
+	}
+	return nil
 }
 
 type ReplaceSettingsResponse struct {
@@ -352,21 +371,23 @@ var File_devhud_v1_settings_proto protoreflect.FileDescriptor
 
 const file_devhud_v1_settings_proto_rawDesc = "" +
 	"\n" +
-	"\x18devhud/v1/settings.proto\x12\tdevhud.v1\x1a\x16devhud/v1/common.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xb7\x01\n" +
+	"\x18devhud/v1/settings.proto\x12\tdevhud.v1\x1a\x16devhud/v1/common.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xde\x01\n" +
 	"\x10SettingsSnapshot\x12%\n" +
 	"\x0eschema_version\x18\x01 \x01(\rR\rschemaVersion\x12\x1a\n" +
 	"\brevision\x18\x02 \x01(\x04R\brevision\x12%\n" +
 	"\x0ecanonical_json\x18\x03 \x01(\fR\rcanonicalJson\x129\n" +
 	"\n" +
-	"updated_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\x14\n" +
+	"updated_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12%\n" +
+	"\x0econtent_sha256\x18\x05 \x01(\fR\rcontentSha256\"\x14\n" +
 	"\x12GetSettingsRequest\"\x87\x01\n" +
 	"\x13GetSettingsResponse\x127\n" +
 	"\bmetadata\x18\x01 \x01(\v2\x1b.devhud.v1.ResponseMetadataR\bmetadata\x127\n" +
-	"\bsnapshot\x18\x02 \x01(\v2\x1b.devhud.v1.SettingsSnapshotR\bsnapshot\"\x93\x01\n" +
+	"\bsnapshot\x18\x02 \x01(\v2\x1b.devhud.v1.SettingsSnapshotR\bsnapshot\"\xcb\x01\n" +
 	"\x16ReplaceSettingsRequest\x12%\n" +
 	"\x0eschema_version\x18\x01 \x01(\rR\rschemaVersion\x12%\n" +
 	"\x0ecanonical_json\x18\x02 \x01(\fR\rcanonicalJson\x12+\n" +
-	"\x11expected_revision\x18\x03 \x01(\x04R\x10expectedRevision\"\x8b\x01\n" +
+	"\x11expected_revision\x18\x03 \x01(\x04R\x10expectedRevision\x126\n" +
+	"\x17expected_content_sha256\x18\x04 \x01(\fR\x15expectedContentSha256\"\x8b\x01\n" +
 	"\x17ReplaceSettingsResponse\x127\n" +
 	"\bmetadata\x18\x01 \x01(\v2\x1b.devhud.v1.ResponseMetadataR\bmetadata\x127\n" +
 	"\bsnapshot\x18\x02 \x01(\v2\x1b.devhud.v1.SettingsSnapshotR\bsnapshot\"\x8f\x01\n" +

@@ -214,7 +214,7 @@ export function LocalAgentSettings({ copy, bridge }: { readonly copy: Copy; read
         {configuredRepositories.map((repository) => {
           const key = repositoryKey(repository);
           const body = agent.repositoryPrompts.find((prompt) => repositoryKey(prompt.repository) === key)?.body ?? "";
-          return <RepositoryPromptEditor key={key} copy={copy} repository={repository} value={body} disabled={identity.readOnly} onSave={(nextBody) => persist(agent, (current) => ({ ...current, repositoryPrompts: nextBody === "" ? current.repositoryPrompts.filter((prompt) => repositoryKey(prompt.repository) !== key) : [...current.repositoryPrompts.filter((prompt) => repositoryKey(prompt.repository) !== key), { repository, body: nextBody }] }))} />;
+          return <RepositoryPromptEditor key={key} copy={copy} repository={repository} value={body} disabled={!identity.shortcutHydrationReady} onSave={(nextBody) => persist(agent, (current) => ({ ...current, repositoryPrompts: nextBody === "" ? current.repositoryPrompts.filter((prompt) => repositoryKey(prompt.repository) !== key) : [...current.repositoryPrompts.filter((prompt) => repositoryKey(prompt.repository) !== key), { repository, body: nextBody }] }))} />;
         })}
       </fieldset>;
     })}
