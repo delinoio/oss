@@ -317,7 +317,7 @@ func migrateLegacyDecks(root map[string]any, schemaVersion uint32) {
 		query, _ := deck["query"].(string)
 		repository, _ := deck["repository"].(string)
 		query, builder := rpc.MigrateLegacySettingsDeckQuery(query, repository)
-		deck["name"] = strings.TrimSpace(title)
+		deck["name"] = rpc.TrimSettingsDeckWhitespace(title)
 		deck["query"] = query
 		deck["builder"] = builder
 		deck["notifications"] = uniqueStrings(jsonArray(deck["notifications"]))

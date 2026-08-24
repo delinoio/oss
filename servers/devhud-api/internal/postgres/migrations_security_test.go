@@ -83,6 +83,23 @@ func TestMigrateSettingsCanonicalJSONAppliesVersionSpecificTransforms(t *testing
 	}
 }
 
+func TestMigrateSettingsCanonicalJSONTrimsECMAScriptDeckWhitespace(t *testing.T) {
+	for _, schemaVersion := range []uint32{2, 3} {
+		t.Run(fmt.Sprintf("v%d", schemaVersion), func(t *testing.T) {
+			input := legacySettingsFixture(schemaVersion)
+			deck := legacyDeck(true)
+			deck["title"] = "\ufeff Pull requests \ufeff"
+			input["decks"] = []any{deck}
+
+			root := migratedRoot(t, input, schemaVersion)
+			migrated := root["decks"].([]any)[0].(map[string]any)
+			if migrated["name"] != "Pull requests" {
+				t.Fatalf("migrated Deck name = %q", migrated["name"])
+			}
+		})
+	}
+}
+
 func TestMigrateSettingsCanonicalJSONDerivesOrDisablesLegacyR2(t *testing.T) {
 	for name, test := range map[string]struct {
 		endpoint     string

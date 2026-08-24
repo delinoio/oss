@@ -250,6 +250,12 @@ func MigrateLegacySettingsDeckQuery(query string, repository string) (string, an
 	}
 }
 
+// TrimSettingsDeckWhitespace applies the ECMAScript whitespace contract shared
+// by current validation and legacy Deck migration.
+func TrimSettingsDeckWhitespace(value string) string {
+	return strings.TrimFunc(value, deckQueryWhitespace)
+}
+
 func ensureJSONEnd(decoder *json.Decoder) error {
 	var extra any
 	if err := decoder.Decode(&extra); errors.Is(err, io.EOF) {
@@ -280,7 +286,7 @@ func validateSettingsDeck(value any, path string, legacy bool, previous bool) (s
 	if err != nil {
 		return "", err
 	}
-	normalizedName := strings.TrimFunc(name, deckQueryWhitespace)
+	normalizedName := TrimSettingsDeckWhitespace(name)
 	if normalizedName == "" || (!legacy && !previous && normalizedName != name) {
 		return "", fmt.Errorf("%s.name must be a trimmed nonblank string", path)
 	}
@@ -346,7 +352,7 @@ func validateSettingsDeck(value any, path string, legacy bool, previous bool) (s
 					if err != nil {
 						return "", err
 					}
-					if strings.TrimFunc(value, deckQueryWhitespace) != value {
+					if TrimSettingsDeckWhitespace(value) != value {
 						return "", fmt.Errorf("%s.builder.%s must be trimmed", path, field)
 					}
 					actual.set(field, value)
