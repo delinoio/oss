@@ -280,7 +280,7 @@ test("RealQA upload requests require immutable HTTPS direct-upload contracts", (
   assert.match(nativeUploads, /\.timeout\(REQUEST_TIMEOUT\)/u);
   assert.match(nativeUploads, /event = "realqa_upload_failed"/u);
   assert.match(nativeBridgeHost, /fetch_official_upload_origin/u);
-  const officialOriginResolver = nativeBridgeHost.slice(nativeBridgeHost.indexOf("async fn official_upload_origin"), nativeBridgeHost.indexOf("\n}\n\nfn validated_api_origin"));
+  const officialOriginResolver = nativeBridgeHost.slice(nativeBridgeHost.indexOf("async fn official_upload_origin"), nativeBridgeHost.indexOf("fn validated_api_origin"));
   assert.match(officialOriginResolver, /fetch_official_upload_origin\(FIRST_PARTY_API_ORIGIN\)/u);
   assert.doesNotMatch(officialOriginResolver, /session_origins/u);
   const sessionOriginConfigurator = nativeBridgeHost.slice(nativeBridgeHost.indexOf("fn configure_session_origins"), nativeBridgeHost.indexOf("async fn official_upload_origin"));
