@@ -26,7 +26,8 @@ const (
 	previousSettingsSchemaVersion   = 2
 	collidingSettingsSchemaVersion  = 3
 	structuredSettingsSchemaVersion = 4
-	settingsSchemaVersion           = 5
+	r2SettingsSchemaVersion         = 5
+	settingsSchemaVersion           = 6
 	maximumMappingPathSegments      = 32
 	maximumMappingGlobstars         = 8
 )
@@ -204,7 +205,7 @@ func validateDevHudSettings(value []byte, envelopeSchemaVersion uint32) error {
 	if err := validateSettingsShortcuts(root["shortcuts"], structuredShortcuts); err != nil {
 		return err
 	}
-	if err := validateSettingsAgents(root["agents"]); err != nil {
+	if err := validateSettingsAgents(root["agents"], bodyVersion, profileIDs); err != nil {
 		return err
 	}
 	return validateSettingsUploads(root["uploads"], bodyVersion)
@@ -1147,11 +1148,15 @@ func validateStructuredDesktopShortcuts(value any) error {
 	return nil
 }
 
-func validateSettingsAgents(value any) error {
+func validateSettingsAgents(value any, bodyVersion int64, profileIDs map[string]struct{}) error {
 	agents, err := settingsArray(value, "$.agents")
 	if err != nil {
 		return err
 	}
+	if len(agents) > 25 {
+		return errors.New("$.agents must contain at most 25 entries")
+	}
+	seenIDs := make(map[string]struct{}, len(agents))
 	for index, entry := range agents {
 		path := fmt.Sprintf("$.agents[%d]", index)
 		agent, err := settingsObject(entry, path, "id", "enabled", "kind", "mode", "repositoryPrompts", "profileRef")
@@ -1162,6 +1167,10 @@ func validateSettingsAgents(value any) error {
 		if err != nil || !safeSettingsIdentifier.MatchString(id) {
 			return fmt.Errorf("%s.id is invalid", path)
 		}
+		if _, duplicate := seenIDs[id]; duplicate {
+			return errors.New("$.agents must contain unique IDs")
+		}
+		seenIDs[id] = struct{}{}
 		if _, ok := agent["enabled"].(bool); !ok {
 			return fmt.Errorf("%s.enabled must be a boolean", path)
 		}
@@ -1171,11 +1180,56 @@ func validateSettingsAgents(value any) error {
 		if err := settingsEnum(agent["mode"], path+".mode", "draft", "direct"); err != nil {
 			return err
 		}
-		if _, ok := agent["repositoryPrompts"].(bool); !ok {
-			return fmt.Errorf("%s.repositoryPrompts must be a boolean", path)
+		if bodyVersion < settingsSchemaVersion {
+			if _, ok := agent["repositoryPrompts"].(bool); !ok {
+				return fmt.Errorf("%s.repositoryPrompts must be a boolean", path)
+			}
+		} else {
+			prompts, err := settingsArray(agent["repositoryPrompts"], path+".repositoryPrompts")
+			if err != nil {
+				return err
+			}
+			if len(prompts) > 100 {
+				return fmt.Errorf("%s.repositoryPrompts must contain at most 100 entries", path)
+			}
+			seenRepositories := make(map[string]struct{}, len(prompts))
+			for promptIndex, entry := range prompts {
+				promptPath := fmt.Sprintf("%s.repositoryPrompts[%d]", path, promptIndex)
+				prompt, err := settingsObject(entry, promptPath, "repository", "body")
+				if err != nil {
+					return err
+				}
+				repository, err := settingsObject(prompt["repository"], promptPath+".repository", "owner", "name")
+				if err != nil {
+					return err
+				}
+				owner, ownerOK := repository["owner"].(string)
+				name, nameOK := repository["name"].(string)
+				if !ownerOK || !githubOwnerIdentifier.MatchString(owner) || strings.HasPrefix(owner, "-") || strings.HasSuffix(owner, "-") || strings.Contains(owner, "--") {
+					return fmt.Errorf("%s.repository.owner is invalid", promptPath)
+				}
+				if !nameOK || !githubRepositoryIdentifier.MatchString(name) || name == "." || name == ".." {
+					return fmt.Errorf("%s.repository.name is invalid", promptPath)
+				}
+				body, bodyOK := prompt["body"].(string)
+				if !bodyOK || len([]byte(body)) > 32*1024 {
+					return fmt.Errorf("%s.body must contain at most 32 KiB of UTF-8 text", promptPath)
+				}
+				key := strings.ToLower(owner + "/" + name)
+				if _, duplicate := seenRepositories[key]; duplicate {
+					return fmt.Errorf("%s.repositoryPrompts must contain unique repositories", path)
+				}
+				seenRepositories[key] = struct{}{}
+			}
 		}
-		if _, err := settingsNullableProfileRef(agent["profileRef"], path+".profileRef"); err != nil {
+		profileRef, err := settingsNullableProfileRef(agent["profileRef"], path+".profileRef")
+		if err != nil {
 			return err
+		}
+		if bodyVersion >= settingsSchemaVersion && profileRef != "" {
+			if _, exists := profileIDs[profileRef]; !exists {
+				return fmt.Errorf("%s.profileRef must reference a configured GitHub profile", path)
+			}
 		}
 	}
 	return nil
@@ -1193,7 +1247,7 @@ func validateSettingsUploads(value any, bodyVersion int64) error {
 		return nil
 	}
 	fields := []string{"profileRef", "bucket", "endpoint", "region", "publicBaseUrl"}
-	if bodyVersion >= settingsSchemaVersion {
+	if bodyVersion >= r2SettingsSchemaVersion {
 		fields = []string{"profileRef", "name", "endpoint", "accountId", "bucket", "publicBaseUrl", "prefix"}
 	}
 	r2, err := settingsObject(uploads["r2"], "$.uploads.r2", fields...)
@@ -1204,7 +1258,7 @@ func validateSettingsUploads(value any, bodyVersion int64) error {
 	if err != nil || !settingsProfileRef.MatchString(profileRef) {
 		return errors.New("$.uploads.r2.profileRef is invalid")
 	}
-	if bodyVersion >= settingsSchemaVersion {
+	if bodyVersion >= r2SettingsSchemaVersion {
 		name, err := settingsText(r2["name"], "$.uploads.r2.name", false)
 		if err != nil || strings.TrimSpace(name) != name || settingsTextLength(name) > 80 {
 			return errors.New("$.uploads.r2.name must be a trimmed string of at most 80 characters")
@@ -1219,7 +1273,7 @@ func validateSettingsUploads(value any, bodyVersion int64) error {
 			return fmt.Errorf("$.uploads.r2.%s is invalid", field)
 		}
 	}
-	if bodyVersion < settingsSchemaVersion {
+	if bodyVersion < r2SettingsSchemaVersion {
 		if _, err := settingsText(r2["region"], "$.uploads.r2.region", false); err != nil {
 			return err
 		}

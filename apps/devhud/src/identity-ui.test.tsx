@@ -1,14 +1,15 @@
 // @vitest-environment jsdom
 
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AccountIdentity, ShortcutPaletteTrigger, SynchronizedSettingsBoundary, SynchronizedShortcutBoundary } from "./identity-ui";
 import { messages } from "./localization";
+import { localAgentPromptRepositories } from "./local-agent-settings-ui";
 import { NativeMessagingSettings, SynchronizedNativeMessagingBoundary } from "./native-messaging-ui";
-import type { NativeBridgeV1 } from "./native-bridge";
+import { LocalAgentKind, LocalAgentMode, type NativeBridgeV1 } from "./native-bridge";
 import type { IdentitySettingsValue } from "./service-boundary";
-import { defaultDevHudSettings } from "./settings-contract";
+import { defaultDevHudSettings, parseDevHudSettings } from "./settings-contract";
 import { inactiveDesktopShortcutBindings, ShortcutActionId, ShortcutKey, ShortcutModifier } from "./shortcuts";
 
 let identity: IdentitySettingsValue;
@@ -166,6 +167,56 @@ describe("identity UI", () => {
 
     expect((screen.getByRole("button", { name: messages.en.saveUrlMappings }) as HTMLButtonElement).disabled).toBe(true);
     expect(identity.replaceSettingsAt).not.toHaveBeenCalled();
+  });
+
+  it("keeps local-agent prompt edits local until explicitly saved and includes the issue tracker", async () => {
+    const profile = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", name: "Work", kind: "fine-grained" as const };
+    const secondaryProfile = { id: "018f47a2-7b3c-7def-8abc-1234567890ad", name: "Secondary", kind: "classic" as const };
+    const secondaryAgent = { id: "codex-secondary", enabled: true, kind: LocalAgentKind.Codex, mode: LocalAgentMode.Direct, repositoryPrompts: [], profileRef: secondaryProfile.id };
+    const settings = parseDevHudSettings({
+      ...defaultDevHudSettings,
+      github: {
+        ...defaultDevHudSettings.github,
+        profiles: [profile, secondaryProfile],
+        repositories: [{ owner: "octo", name: "application", profileRef: profile.id }],
+        issueTracker: { owner: "octo", repository: "issues", labels: [], profileRef: profile.id },
+      },
+      agents: [
+        { id: "codex", enabled: false, kind: LocalAgentKind.Codex, mode: LocalAgentMode.Draft, repositoryPrompts: [], profileRef: profile.id },
+        secondaryAgent,
+      ],
+    });
+    const replaceSettings = vi.fn<IdentitySettingsValue["replaceSettings"]>(async () => true);
+    identity = identityWith({ settings, replaceSettings });
+
+    render(<SynchronizedSettingsBoundary copy={messages.en} showLocalAgents />);
+    const codex = screen.getByRole("group", { name: /Codex 0\.147\.0/u });
+    const trackerPrompt = within(codex).getByLabelText(`${messages.en.localAgentRepositoryPrompt}: octo/issues`);
+    fireEvent.change(trackerPrompt, { target: { value: "Use the issue template." } });
+    expect(replaceSettings).not.toHaveBeenCalled();
+
+    const editor = trackerPrompt.closest(".native-setting");
+    if (!(editor instanceof HTMLElement)) throw new Error("prompt editor missing");
+    fireEvent.click(within(editor).getByRole("button", { name: messages.en.localAgentSaveRepositoryPrompt }));
+
+    await waitFor(() => expect(replaceSettings).toHaveBeenCalledOnce());
+    const update = replaceSettings.mock.calls[0]?.[0];
+    const updated = typeof update === "function" ? update(settings) : update;
+    expect(updated?.agents[0]?.repositoryPrompts).toEqual([{ repository: { owner: "octo", name: "issues" }, body: "Use the issue template." }]);
+    expect(updated?.agents).toHaveLength(2);
+    expect(updated?.agents[1]).toEqual(secondaryAgent);
+  });
+
+  it("deduplicates issue trackers already present in local-agent prompt repositories", () => {
+    const settings = {
+      ...defaultDevHudSettings,
+      github: {
+        ...defaultDevHudSettings.github,
+        repositories: [{ owner: "octo", name: "issues", profileRef: null }],
+        issueTracker: { owner: "OCTO", repository: "ISSUES", labels: [], profileRef: null },
+      },
+    };
+    expect(localAgentPromptRepositories(settings)).toEqual([{ owner: "octo", name: "issues" }]);
   });
 
   it("clears URL-mapping dirty state when an edit returns to its baseline", () => {

@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { canonicalDevHudSettings, CollidingSettingsSchemaVersion, deckBuilderProjection, deckRepositories, decodeDevHudSettings, decodeVersionedDevHudSettings, defaultDevHudSettings, encodeDevHudSettings, MaximumUrlRepositoryMappings, parseDevHudSettings, PreviousSettingsSchemaVersion, SettingsContractError, SettingsSchemaVersion } from "./settings-contract";
+import { canonicalDevHudSettings, CollidingSettingsSchemaVersion, deckBuilderProjection, deckRepositories, decodeDevHudSettings, decodeVersionedDevHudSettings, defaultDevHudSettings, encodeDevHudSettings, MaximumUrlRepositoryMappings, parseDevHudSettings, PreviousSettingsSchemaVersion, SettingsContractError, SettingsSchemaVersion, StructuredSettingsSchemaVersion } from "./settings-contract";
 import { diffSettings, redactRecursively, RedactedValue } from "./settings-diff";
 import { ShortcutActionId, ShortcutKey, ShortcutModifier, ShortcutValidationCode, defaultDesktopShortcutBindings, parseDesktopShortcutBindings } from "./shortcuts";
 
 describe("DevHud settings boundary", () => {
-  it("migrates schema v1 to v5 with explicit unselected GitHub profiles", () => {
+  it("migrates schema v1 to v6 with explicit unselected GitHub profiles", () => {
     const legacy = {
       ...defaultDevHudSettings,
       schemaVersion: 1,
@@ -48,6 +48,35 @@ describe("DevHud settings boundary", () => {
     expect(() => parseDevHudSettings({ ...defaultDevHudSettings, github: { ...defaultDevHudSettings.github, profiles: [profile], pendingPatRemovals: [profile.id] } })).toThrow(/active GitHub profile/u);
     expect(() => parseDevHudSettings({ ...defaultDevHudSettings, github: { ...defaultDevHudSettings.github, pendingPatRemovals: [removedProfileId, removedProfileId] } })).toThrow(/unique IDs/u);
     expect(() => parseDevHudSettings({ ...defaultDevHudSettings, github: { ...defaultDevHudSettings.github, pendingPatRemovals: ["profile"] } })).toThrow(/UUID v7/u);
+  });
+
+  it("validates synchronized local-agent metadata and migrates legacy repository prompt flags", () => {
+    const profile = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", name: "Work", kind: "fine-grained" as const };
+    const prompt = { repository: { owner: "delinoio", name: "oss" }, body: "Follow the issue template; never request secrets." };
+    const agent = { id: "codex", enabled: false, kind: "codex" as const, mode: "draft" as const, repositoryPrompts: [prompt], profileRef: profile.id };
+    const settings = { ...defaultDevHudSettings, github: { ...defaultDevHudSettings.github, profiles: [profile] }, agents: [agent] };
+    expect(parseDevHudSettings(settings).agents).toEqual([agent]);
+    expect(() => parseDevHudSettings({ ...settings, agents: [agent, agent] })).toThrow(/unique IDs/u);
+    expect(() => parseDevHudSettings({ ...settings, agents: [{ ...agent, profileRef: "missing" }] })).toThrow(/configured GitHub profile/u);
+    expect(() => parseDevHudSettings({ ...settings, agents: [{ ...agent, repositoryPrompts: [prompt, { ...prompt, body: "duplicate" }] }] })).toThrow(/unique repositories/u);
+    expect(() => parseDevHudSettings({ ...settings, agents: [{ ...agent, repositoryPrompts: [{ ...prompt, body: "token=github_pat_secret" }] }] })).toThrow(/secret material/u);
+    const legacy = { ...settings, schemaVersion: 5, agents: [{ ...agent, repositoryPrompts: true }] };
+    expect(parseDevHudSettings(legacy).agents[0]?.repositoryPrompts).toEqual([]);
+  });
+
+  it.each([1, 2, 3, 4, 5] as const)("clears a dangling legacy agent profile reference from schema v%s", (schemaVersion) => {
+    const legacyShortcuts = { desktop: {}, ios: {}, android: {} };
+    const legacy = {
+      ...defaultDevHudSettings,
+      schemaVersion,
+      github: schemaVersion === 1
+        ? { repositories: [], issueTracker: null }
+        : { ...defaultDevHudSettings.github, profiles: [] },
+      shortcuts: schemaVersion < StructuredSettingsSchemaVersion ? legacyShortcuts : defaultDevHudSettings.shortcuts,
+      agents: [{ id: "codex", enabled: false, kind: "codex", mode: "draft", repositoryPrompts: true, profileRef: "removed-profile" }],
+    };
+
+    expect(parseDevHudSettings(legacy).agents[0]?.profileRef).toBeNull();
   });
   it("round trips the exact versioned non-secret contract canonically", () => {
     const encoded = encodeDevHudSettings(defaultDevHudSettings);

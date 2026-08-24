@@ -1,9 +1,11 @@
 import { UploadContentType, UploadQuery } from "@delinoio/devhud-api-client";
 import { useMutation } from "@connectrpc/connect-query";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { uuidV7 } from "./diagnostics.ts";
 import type { Copy } from "./localization.ts";
 import { createGitHubProvider, GitHubErrorCode, GitHubProviderError, issueMarker, readGitHubCredential, type GitHubProvider, type GitHubRepositoryRef } from "./github-provider.ts";
-import type { CaptureDraft, NativeBridgeV1 } from "./native-bridge.ts";
+import { LocalAgentMode, NativeBridgeError, NativeBridgeErrorCode, type CaptureDraft, type NativeBridgeV1 } from "./native-bridge.ts";
+import { localAgentExecutablePath, localAgentHasConsent } from "./local-agent-settings-ui.tsx";
 import { useIdentitySettings } from "./service-boundary.tsx";
 import { composeIssueBody, decodeSha256Hex, editableBrowserDiagnostics, IssueBodyTooLargeError, IssueTitleInvalidError, parseEditableBrowserDiagnostics, sanitizeIssueTitle, stripFinalSubmissionMarker } from "./realqa-submission.ts";
 import { projectedOfficialImageUrls, projectedR2ImageUrls, uploadOfficialImages, uploadR2Images } from "./realqa-upload.ts";
@@ -36,6 +38,8 @@ export function RealqaSubmissionModal({ draft, bridge, copy, onClose, onConfirme
   const [labels, setLabels] = useState<readonly string[]>([]);
   const [selectedLabels, setSelectedLabels] = useState<ReadonlySet<string>>(new Set());
   const [uploadProvider, setUploadProvider] = useState<"official" | "r2">(() => identity.status === "authenticated" ? identity.settings.uploads.provider : "r2");
+  const [agentId, setAgentId] = useState("");
+  const [agentRunId, setAgentRunId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -47,6 +51,8 @@ export function RealqaSubmissionModal({ draft, bridge, copy, onClose, onConfirme
   const submittedRevision = useRef<number | null>(null);
   const selectedRepository = repositories.find((entry) => repositoryKeyFor(entry) === repositoryKey) ?? null;
   const selectedProfile = identity.settings.github.profiles.find((entry) => entry.id === profileRef) ?? null;
+  const availableAgents = identity.settings.agents.filter((agent) => agent.enabled && agent.profileRef === profileRef && localAgentHasConsent(agent.kind, agent.mode));
+  const selectedAgent = availableAgents.find((agent) => agent.id === agentId) ?? null;
   const r2 = identity.settings.uploads.r2;
   const nativeR2Profile = r2?.accountId && r2.publicBaseUrl
     ? { profileRef: r2.profileRef, endpoint: r2.endpoint, accountId: r2.accountId, bucket: r2.bucket, publicBaseUrl: r2.publicBaseUrl, prefix: r2.prefix }
@@ -98,11 +104,57 @@ export function RealqaSubmissionModal({ draft, bridge, copy, onClose, onConfirme
     const next = new Set(current); if (next.has(label)) next.delete(label); else next.add(label); return next;
   });
 
+  const repositoryPromptFor = (agent: NonNullable<typeof selectedAgent>, repository: GitHubRepositoryRef) => agent.repositoryPrompts.find((prompt) => prompt.repository.owner.toLowerCase() === repository.owner.toLowerCase() && prompt.repository.name.toLowerCase() === repository.name.toLowerCase())?.body ?? "";
+  const projectedAgentImageUrls = () => {
+    const selectedDraftImages = draft.images.filter((image) => selectedImages.has(image.id));
+    if (selectedImageCount === 0) return [];
+    if (uploadProvider === "official" && officialUploadsAvailable) return projectedOfficialImageUrls(identity.bootstrap!.publicAssetBaseUrl!, selectedImageCount);
+    if (uploadProvider === "r2" && nativeR2Profile !== null) return projectedR2ImageUrls(nativeR2Profile, draft.id, draft.revision, selectedDraftImages.map((image) => image.id));
+    throw new Error("upload-profile");
+  };
+  const prepareAgentDraft = async () => {
+    if (busy || selectedAgent?.mode !== LocalAgentMode.Draft || !selectedRepository || !selectedProfile) return;
+    let normalizedDiagnostics: string | null;
+    try {
+      normalizedDiagnostics = diagnostics === null ? null : JSON.stringify(parseEditableBrowserDiagnostics(diagnostics));
+    } catch {
+      setError(copy.issueDiagnosticsInvalid);
+      return;
+    }
+    const runId = uuidV7();
+    setBusy(true); setAgentRunId(runId); setStatus(copy.localAgentPreparing); setError(null);
+    try {
+      const scopeId = await identity.githubPatScopeId;
+      const credential = await readGitHubCredential(bridge, selectedProfile, scopeId);
+      const repository = await provider.validateRepository(credential, selectedRepository);
+      const response = await bridge.request({
+        operation: "agent.run", runId, kind: selectedAgent.kind, mode: LocalAgentMode.Draft,
+        executablePath: localAgentExecutablePath(selectedAgent.kind), repository: selectedRepository,
+        private: repository.private, profileId: selectedProfile.id, scopeId,
+        title: title.trim() === "" ? "" : sanitizeIssueTitle(title), body,
+        labels: [...selectedLabels], diagnostics: normalizedDiagnostics, imageUrls: projectedAgentImageUrls(),
+        marker: issueMarker(draft.id), repositoryPrompt: repositoryPromptFor(selectedAgent, selectedRepository),
+      });
+      if (response.kind !== "agent-draft") throw new Error("agent-draft");
+      setTitle(response.title); setBody(response.body); setStatus(copy.localAgentDraftReady);
+    } catch {
+      setStatus(""); setError(copy.localAgentSubmissionFailed);
+    } finally {
+      setAgentRunId(null); setBusy(false);
+    }
+  };
+  const cancelAgent = async () => {
+    if (agentRunId === null) return;
+    try { await bridge.request({ operation: "agent.cancel", runId: agentRunId }); }
+    catch { /* The running request still owns timeout and process-tree cleanup. */ }
+  };
+
   const submit = async () => {
     if (busy || createdUrl || uploadCleanupPending || !selectedRepository || !selectedProfile || title.trim() === "") return;
     if (!repositoryAssociations.some((entry) => repositoryKeyFor(entry) === repositoryKey && entry.profileRef === profileRef)) { setError(copy.issueRepositoryCredentialMismatch); return; }
     if (selectedImageCount > 0 && uploadProvider === "official" && !officialUploadsAvailable) { setError(copy.issueOfficialSignInRequired); return; }
     if (selectedImageCount > 0 && uploadProvider === "r2" && nativeR2Profile === null) { setError(copy.issueR2SetupRequired); return; }
+    if (selectedAgent?.mode === LocalAgentMode.Direct && !window.confirm(copy.localAgentDirectConfirm)) return;
     let parsedDiagnostics = null;
     let issueTitle: string;
     try {
@@ -128,9 +180,10 @@ export function RealqaSubmissionModal({ draft, bridge, copy, onClose, onConfirme
     submittedRevision.current = submissionRevision;
     setBusy(true); setError(null); setStatus(copy.issueSubmitting);
     const finalizedUploadIds: string[] = [];
-    let githubAttempted = false;
+    let directWriteCompleted = false;
     try {
-      const credential = await readGitHubCredential(bridge, selectedProfile, await identity.githubPatScopeId);
+      const scopeId = await identity.githubPatScopeId;
+      const credential = await readGitHubCredential(bridge, selectedProfile, scopeId);
       const existing = await provider.searchIssueMarker(credential, selectedRepository, issueMarker(draft.id));
       if (existing.issue !== null) {
         setCreatedUrl(existing.issue.url);
@@ -189,18 +242,40 @@ export function RealqaSubmissionModal({ draft, bridge, copy, onClose, onConfirme
         }
       }
       const issueBody = composeIssueBody({ userBody: body, diagnostics: parsedDiagnostics, imageUrls, submissionId: draft.id, diagnosticsSummary: copy.issueBrowserDiagnostics });
-      githubAttempted = true;
-      const result = await provider.createIssue(credential, selectedRepository, { title: issueTitle, body: stripFinalSubmissionMarker(issueBody, draft.id), labels: [...selectedLabels], submissionId: draft.id });
-      setCreatedUrl(result.issue.url);
+      let issueUrl: string;
+      if (selectedAgent?.mode === LocalAgentMode.Direct) {
+        const repository = await provider.validateRepository(credential, selectedRepository);
+        const runId = uuidV7();
+        setAgentRunId(runId); setStatus(copy.localAgentDirectRunning);
+        const response = await bridge.request({
+          operation: "agent.run", runId, kind: selectedAgent.kind, mode: LocalAgentMode.Direct,
+          executablePath: localAgentExecutablePath(selectedAgent.kind), repository: selectedRepository,
+          private: repository.private, profileId: selectedProfile.id, scopeId,
+          title: issueTitle, body: issueBody, labels: [...selectedLabels],
+          diagnostics: parsedDiagnostics === null ? null : JSON.stringify(parsedDiagnostics),
+          imageUrls, marker: issueMarker(draft.id), repositoryPrompt: repositoryPromptFor(selectedAgent, selectedRepository),
+        });
+        directWriteCompleted = true;
+        if (response.kind !== "agent-direct") throw new Error("agent-direct");
+        const reconciled = await provider.searchIssueMarker(credential, selectedRepository, issueMarker(draft.id));
+        if (reconciled.issue === null || reconciled.issue.url !== response.issueUrl) throw new Error("agent-reconciliation");
+        issueUrl = response.issueUrl;
+      } else {
+        const result = await provider.createIssue(credential, selectedRepository, { title: issueTitle, body: stripFinalSubmissionMarker(issueBody, draft.id), labels: [...selectedLabels], submissionId: draft.id });
+        issueUrl = result.issue.url;
+      }
+      setCreatedUrl(issueUrl);
       setStatus(copy.issueCreated);
       try { await onConfirmed(submissionRevision); } catch { setCleanupPending(true); setError(copy.issueDraftCleanupFailed); }
     } catch (reason) {
-      const ambiguous = reason instanceof GitHubProviderError && reason.code === GitHubErrorCode.AmbiguousWrite;
-      const remainingCleanupIds = !githubAttempted || !ambiguous ? await deleteFinalizedUploads(finalizedUploadIds, (input) => deleteUpload.mutateAsync(input)) : [];
+      const ambiguous = directWriteCompleted
+        || reason instanceof NativeBridgeError && reason.code === NativeBridgeErrorCode.AgentWriteAmbiguous
+        || reason instanceof GitHubProviderError && reason.code === GitHubErrorCode.AmbiguousWrite;
+      const remainingCleanupIds = ambiguous ? [] : await deleteFinalizedUploads(finalizedUploadIds, (input) => deleteUpload.mutateAsync(input));
       setPendingUploadCleanupIds(remainingCleanupIds);
       setError(remainingCleanupIds.length > 0 ? copy.issueUploadCleanupFailed : ambiguous ? copy.issueAmbiguous : copy.issueSubmissionFailed);
       setStatus("");
-    } finally { setBusy(false); }
+    } finally { setAgentRunId(null); setBusy(false); }
   };
 
   const retryUploadCleanup = async () => {
@@ -226,19 +301,21 @@ export function RealqaSubmissionModal({ draft, bridge, copy, onClose, onConfirme
   return <div className="overlay" role="presentation"><section ref={dialog} className="issue-dialog" role="dialog" aria-modal="true" aria-labelledby="issue-dialog-title" onKeyDown={keyDown}>
     <h3 id="issue-dialog-title">{copy.issueModalTitle}</h3>
     <label>{copy.issueRepository}<select value={repositoryKey} disabled={busy || !!createdUrl || uploadCleanupPending} onChange={(event) => { const association = repositoryAssociations.find((entry) => repositoryKeyFor(entry) === event.target.value); setRepositoryKey(event.target.value); if (association) setProfileRef(association.profileRef); }}><option value="">{copy.issueSelectRepository}</option>{repositories.map((repository) => <option key={repositoryKeyFor(repository)} value={repositoryKeyFor(repository)}>{repository.owner}/{repository.name}</option>)}</select></label>
-    <label>{copy.issueCredential}<select value={profileRef} disabled={busy || !!createdUrl || uploadCleanupPending} onChange={(event) => setProfileRef(event.target.value)}><option value="">{copy.githubSelectProfile}</option>{identity.settings.github.profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></label>
+    <label>{copy.issueCredential}<select value={profileRef} disabled={busy || !!createdUrl || uploadCleanupPending} onChange={(event) => { setProfileRef(event.target.value); setAgentId(""); }}><option value="">{copy.githubSelectProfile}</option>{identity.settings.github.profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></label>
+    <label>{copy.localAgentSubmission}<select value={selectedAgent?.id ?? ""} disabled={busy || !!createdUrl || uploadCleanupPending} onChange={(event) => setAgentId(event.target.value)}><option value="">{copy.localAgentManual}</option>{availableAgents.map((agent) => <option key={agent.id} value={agent.id}>{agent.kind} — {agent.mode === LocalAgentMode.Draft ? copy.localAgentDraftMode : copy.localAgentDirectMode}</option>)}</select></label>
     <label>{copy.issueTitle}<input ref={titleInput} autoFocus value={title} disabled={busy || !!createdUrl || uploadCleanupPending} onChange={(event) => setTitle(event.target.value)} /></label>
     <label>{copy.issueBody}<textarea value={body} disabled={busy || !!createdUrl || uploadCleanupPending} onChange={(event) => setBody(event.target.value)} /></label>
+    {selectedAgent?.mode === LocalAgentMode.Draft && <button type="button" disabled={busy || !!createdUrl || uploadCleanupPending || !selectedRepository || !selectedProfile} onClick={() => void prepareAgentDraft()}>{copy.localAgentPrepareDraft}</button>}
     <fieldset><legend>{copy.issueImages}</legend>{draft.images.map((image, index) => <label className="check" key={image.id}><input type="checkbox" checked={selectedImages.has(image.id)} disabled={busy || !!createdUrl || uploadCleanupPending} onChange={() => toggleImage(image.id)} /><img src={image.previewUrl} alt="" />{copy.editorImage} {index + 1}</label>)}</fieldset>
     {diagnostics !== null && <div className="issue-diagnostics"><label>{copy.issueBrowserDiagnostics}<textarea value={diagnostics} disabled={busy || !!createdUrl || uploadCleanupPending} onChange={(event) => setDiagnostics(event.target.value)} /></label><button type="button" disabled={busy || !!createdUrl || uploadCleanupPending} onClick={() => setDiagnostics(null)}>{copy.issueRemoveDiagnostics}</button></div>}
     <fieldset><legend>{copy.issueLabels}</legend>{labels.length === 0 ? <p>{copy.issueNoLabels}</p> : labels.map((label) => <label className="check" key={label}><input type="checkbox" checked={selectedLabels.has(label)} disabled={busy || !!createdUrl || uploadCleanupPending} onChange={() => toggleLabel(label)} />{label}</label>)}</fieldset>
     <label>{copy.issueUploadProvider}<select value={uploadProvider} disabled={busy || !!createdUrl || uploadCleanupPending} onChange={(event) => setUploadProvider(event.target.value as "official" | "r2")}><option value="official" disabled={!officialUploadsAvailable}>{copy.issueUploadOfficial}</option><option value="r2">{copy.issueUploadR2}</option></select></label>
-    <dl><dt>{copy.issueSubmissionPath}</dt><dd>{copy.issueSubmissionPathDirect}</dd></dl>
+    <dl><dt>{copy.issueSubmissionPath}</dt><dd>{selectedAgent === null ? copy.issueSubmissionPathDirect : selectedAgent.mode === LocalAgentMode.Draft ? copy.localAgentDraftMode : copy.localAgentDirectMode}</dd></dl>
     {selectedImageCount > 0 && !officialUploadsAvailable && <p className="notice">{copy.issueOfficialSignInRequired}</p>}
     {selectedImageCount > 0 && <p className="notice">{copy.issuePublicImageWarning}</p>}
     {status && <p role="status" aria-live="polite">{status}</p>}{error && <p role="alert" className="native-setting-error">{error}</p>}
     {createdUrl && <p><a href={createdUrl} target="_blank" rel="noreferrer">{createdUrl}</a></p>}
-    <div className="actions">{uploadCleanupPending ? <button className="primary" disabled={busy} onClick={() => void retryUploadCleanup()}>{copy.issueRetryUploadCleanup}</button> : cleanupPending ? <button className="primary" disabled={busy} onClick={() => void retryCleanup()}>{copy.issueRetryDraftCleanup}</button> : <button className="primary" disabled={busy || !!createdUrl || !selectedRepository || !selectedProfile || title.trim() === ""} onClick={() => void submit()}>{copy.issueSubmit}</button>}<button disabled={busy || uploadCleanupPending} onClick={close}>{copy.close}</button></div>
+    <div className="actions">{agentRunId && <button type="button" onClick={() => void cancelAgent()}>{copy.localAgentCancel}</button>}{uploadCleanupPending ? <button className="primary" disabled={busy} onClick={() => void retryUploadCleanup()}>{copy.issueRetryUploadCleanup}</button> : cleanupPending ? <button className="primary" disabled={busy} onClick={() => void retryCleanup()}>{copy.issueRetryDraftCleanup}</button> : <button className="primary" disabled={busy || !!createdUrl || !selectedRepository || !selectedProfile || title.trim() === ""} onClick={() => void submit()}>{copy.issueSubmit}</button>}<button disabled={busy || uploadCleanupPending} onClick={close}>{copy.close}</button></div>
   </section></div>;
 }
 

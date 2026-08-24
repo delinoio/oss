@@ -120,6 +120,23 @@ pub(crate) struct R2Credentials {
     pub(crate) secret_access_key: Zeroizing<String>,
 }
 
+pub(crate) fn github_pat(profile_id: &str, scope_id: &str) -> Result<Zeroizing<String>, String> {
+    let response = handle(&serde_json::json!({
+        "operation": "secure.read",
+        "setting": {
+            "kind": GITHUB_PAT_KIND,
+            "profileId": profile_id,
+            "scopeId": scope_id,
+        }
+    }))?;
+    response
+        .get("value")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .map(|value| Zeroizing::new(value.to_string()))
+        .ok_or_else(|| "not-configured".to_string())
+}
+
 pub(crate) fn r2_credentials(profile_id: &str) -> Result<R2Credentials, String> {
     let backend = KeyringBackend;
     let access_key_id = read_value(

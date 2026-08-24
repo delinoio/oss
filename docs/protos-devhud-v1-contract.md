@@ -30,7 +30,7 @@ Wire details are final for v1. `UuidV7` carries canonical lowercase RFC 9562 UUI
 
 Diagnostics schema version 1 carries a required client UUID v7, up to 32 unique related UUID v7 values, a duration capped at 24 hours, armv7 as an explicit architecture, and an explicit browser platform alongside the native platforms. The unspecified architecture value represents unknown architecture only for browser reports; native reports require an explicit architecture. Native reports require an exact Tauri revision while browser reports require it to be empty; desktop reports require CEF and mobile/browser reports require it to be empty.
 
-`ReplaceSettings` validates the complete supported body schema, matching envelope version, and recursive non-secret boundary before persistence; invalid snapshots return `InvalidArgument` without reaching storage.
+`ReplaceSettings` validates the complete supported body schema, matching envelope version, and recursive non-secret boundary before persistence; invalid snapshots return `InvalidArgument` without reaching storage. Settings schema version 6 synchronizes only bounded local-agent IDs, explicit GitHub profile references, and unique per-repository prompt records. Local executable paths, detected versions, enablement consent, health, clone/cache state, credentials, prompts sent to an agent, and agent output are not protocol fields and must be rejected if injected into a settings body.
 
 ## Storage
 

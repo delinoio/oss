@@ -84,7 +84,7 @@ export function GitHubSettings({ copy, bridge, provider = createGitHubProvider({
   }));
 
   const removeProfile = (profile: DevHudSettingsV1["github"]["profiles"][number]) => invoke(async () => {
-    if (referencedRepositories(identity.settings, profile.id).length > 0) {
+    if (referencedRepositories(identity.settings, profile.id).length > 0 || identity.settings.agents.some((agent) => agent.profileRef === profile.id)) {
       setStatus(copy.githubProfileInUse);
       return;
     }
