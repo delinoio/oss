@@ -730,15 +730,9 @@ fn read_bounded(
 fn terminate_process_tree(child: &mut std::process::Child, process_id: u32) {
     #[cfg(unix)]
     {
-        let _ = Command::new("/bin/kill")
-            .args(["-TERM", &format!("-{process_id}")])
-            .env_clear()
-            .status();
+        signal_process_group(process_id, libc::SIGTERM);
         thread::sleep(Duration::from_millis(100));
-        let _ = Command::new("/bin/kill")
-            .args(["-KILL", &format!("-{process_id}")])
-            .env_clear()
-            .status();
+        signal_process_group(process_id, libc::SIGKILL);
     }
     #[cfg(windows)]
     {
@@ -749,6 +743,15 @@ fn terminate_process_tree(child: &mut std::process::Child, process_id: u32) {
     }
     let _ = child.kill();
     let _ = child.wait();
+}
+
+#[cfg(unix)]
+fn signal_process_group(process_id: u32, signal: libc::c_int) {
+    let Ok(process_group) = libc::pid_t::try_from(process_id) else {
+        return;
+    };
+    // SAFETY: `process_group` is the ID assigned to this child at spawn time.
+    let _ = unsafe { libc::killpg(process_group, signal) };
 }
 
 fn resolve_executable(
