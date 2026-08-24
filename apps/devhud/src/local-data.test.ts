@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { StaticCapability } from "@delinoio/devhud-api-client";
-import { clearAllContractedLocalData, clearAuthenticatedOriginData, clearAuthenticatedSettingsCache, clearGuestImportMarker, hasGuestSettings, readAuthenticatedSettingsCache, readCachedIdentityBootstrap, readGuestSettings, writeAuthenticatedSettingsCache, writeCachedIdentityBootstrap, writeGuestSettings } from "./local-data";
+import { clearAllContractedLocalData, clearAuthenticatedOriginData, clearAuthenticatedSettingsCache, clearGuestImportMarker, DeviceLocalSettingsMaximumBytes, hasGuestSettings, readAuthenticatedSettingsCache, readCachedIdentityBootstrap, readGuestSettings, writeAuthenticatedSettingsCache, writeCachedIdentityBootstrap, writeGuestSettings } from "./local-data";
 import { defaultDevHudSettings, parseDevHudSettings } from "./settings-contract";
 
 class MemoryStorage implements Storage {
@@ -88,7 +88,7 @@ describe("local identity data lifecycle", () => {
   it("keeps authenticated cache writes best-effort when persistence rejects writes", () => {
     const storage = { setItem: () => { throw new DOMException("quota exceeded", "QuotaExceededError"); } };
     expect(() => writeCachedIdentityBootstrap(storage, "https://api.example", { issuer: "https://identity.example/", audience: "https://api.example", clientId: "desktop", redirectUri: "devhud://auth/callback", publicAssetBaseUrl: "https://images.example/", capabilities: [StaticCapability.CRASH_REPORTS] })).not.toThrow();
-    expect(() => writeAuthenticatedSettingsCache(storage, "https://api.example", { settings: defaultDevHudSettings, revision: 1n, cachedAt: "2026-08-17T00:00:00.000Z" })).not.toThrow();
+    expect(writeAuthenticatedSettingsCache(storage, "https://api.example", { settings: defaultDevHudSettings, revision: 1n, cachedAt: "2026-08-17T00:00:00.000Z" })).toBe(false);
   });
 
   it("treats an unavailable guest marker as absent", () => {
@@ -113,7 +113,7 @@ describe("local identity data lifecycle", () => {
     };
     const settings = { ...defaultDevHudSettings, appearance: { ...defaultDevHudSettings.appearance, theme: "dark" as const } };
 
-    writeGuestSettings(storage, settings);
+    expect(writeGuestSettings(storage, settings)).toBe(false);
 
     expect(hasGuestSettings(storage)).toBe(true);
     expect(readGuestSettings(storage)).toEqual(settings);
@@ -134,6 +134,25 @@ describe("local identity data lifecycle", () => {
 
     expect(storage.getItem("devhud.identity.v1.guest-settings")).toContain(prompt.body);
     expect(readGuestSettings(storage).agents[0]?.repositoryPrompts).toEqual([prompt]);
+  });
+
+  it("rejects device-local settings above the aggregate UTF-8 limit", () => {
+    const storage = new MemoryStorage();
+    const oversized = parseDevHudSettings({
+      ...defaultDevHudSettings,
+      agents: [{
+        id: "oversized-agent",
+        enabled: true,
+        kind: "codex",
+        mode: "draft",
+        profileRef: null,
+        repositoryPrompts: Array.from({ length: 33 }, (_, index) => ({ repository: { owner: "delinoio", name: `repository-${index}` }, body: "x".repeat(32 * 1024) })),
+      }],
+    });
+
+    expect(new TextEncoder().encode(JSON.stringify({ shortcuts: oversized.shortcuts, agents: oversized.agents })).byteLength).toBeGreaterThan(DeviceLocalSettingsMaximumBytes);
+    expect(() => writeGuestSettings(storage, oversized)).toThrow(/1 MiB/u);
+    expect(writeAuthenticatedSettingsCache(storage, "https://api.example", { settings: oversized, revision: 1n, cachedAt: "2026-08-17T00:00:00.000Z" })).toBe(false);
   });
 
   it("keeps guest-marker removal best-effort when Web Storage throws", () => {

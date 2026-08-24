@@ -10,6 +10,7 @@ const accountPrefix = `${prefix}account.`;
 const invalidatedSettingsKeys = new Set<string>();
 const clearedGuestSettings = new WeakSet<object>();
 const inMemoryGuestSettings = new WeakMap<object, DevHudSettingsV1>();
+export const DeviceLocalSettingsMaximumBytes = 1024 * 1024;
 
 type ReadStorage = Pick<Storage, "getItem">;
 type WriteStorage = Pick<Storage, "setItem">;
@@ -21,14 +22,18 @@ export function readGuestSettings(storage: ReadStorage): DevHudSettingsV1 {
   if (inMemory !== undefined) return inMemory;
   try {
     const source = storage.getItem(guestSettingsKey);
-    return source === null ? defaultDevHudSettings : parseDevHudSettings(JSON.parse(source));
+    if (source === null) return defaultDevHudSettings;
+    const parsed = parseDevHudSettings(JSON.parse(source));
+    assertDeviceLocalSettingsPersistable(parsed);
+    return parsed;
   } catch {
     return defaultDevHudSettings;
   }
 }
 
-export function writeGuestSettings(storage: WriteStorage, settings: DevHudSettingsV1): void {
+export function writeGuestSettings(storage: WriteStorage, settings: DevHudSettingsV1): boolean {
   const parsed = parseDevHudSettings(settings);
+  assertDeviceLocalSettingsPersistable(parsed);
   clearedGuestSettings.delete(storage);
   try {
     // The snapshot itself is the durable import marker so quota failures cannot split the two values.
@@ -36,9 +41,11 @@ export function writeGuestSettings(storage: WriteStorage, settings: DevHudSettin
     // present here even though the synchronized canonical projection omits them.
     storage.setItem(guestSettingsKey, JSON.stringify(parsed));
     inMemoryGuestSettings.delete(storage);
+    return true;
   } catch {
     // Preserve both the snapshot and its import marker for this session when persistence is unavailable.
     inMemoryGuestSettings.set(storage, parsed);
+    return false;
   }
 }
 
@@ -119,22 +126,44 @@ export function readAuthenticatedSettingsCache(storage: ReadStorage, apiOrigin: 
     if (typeof record.revision !== "string" || !/^\d+$/u.test(record.revision) || typeof record.cachedAt !== "string") return null;
     const contentSHA256 = record.contentSHA256 === undefined ? new Uint8Array() : decodeDigest(record.contentSHA256);
     if (contentSHA256 === null) return null;
-    return { settings: parseDevHudSettings(record.settings), revision: BigInt(record.revision), contentSHA256, cachedAt: record.cachedAt };
+    const settings = parseDevHudSettings(record.settings);
+    assertDeviceLocalSettingsPersistable(settings);
+    return { settings, revision: BigInt(record.revision), contentSHA256, cachedAt: record.cachedAt };
   } catch {
     return null;
   }
 }
 
-export function writeAuthenticatedSettingsCache(storage: WriteStorage, apiOrigin: string, cache: CachedSettings): void {
+export function writeAuthenticatedSettingsCache(storage: WriteStorage, apiOrigin: string, cache: CachedSettings): boolean {
   const key = accountKey(apiOrigin, "settings");
   try {
+    assertDeviceLocalSettingsPersistable(cache.settings);
     const contentSHA256 = cache.contentSHA256;
     if (contentSHA256 !== undefined && contentSHA256.byteLength !== 0 && contentSHA256.byteLength !== 32) throw new TypeError("settings content digest must contain 32 raw bytes");
     storage.setItem(key, JSON.stringify({ settings: cache.settings, revision: cache.revision.toString(), ...(contentSHA256?.byteLength === 32 ? { contentSHA256: encodeDigest(contentSHA256) } : {}), cachedAt: cache.cachedAt }));
     invalidatedSettingsKeys.delete(key);
+    return true;
   } catch {
     // Settings caching is best-effort; a valid service response must remain usable without Web Storage.
+    return false;
   }
+}
+
+export function assertDeviceLocalSettingsPersistable(settings: DevHudSettingsV1): void {
+  if (deviceLocalSettingsJSON(settings).byteLength > DeviceLocalSettingsMaximumBytes) {
+    throw new TypeError("device-local settings exceed the 1 MiB aggregate limit");
+  }
+}
+
+export function deviceLocalSettingsEqual(left: DevHudSettingsV1, right: DevHudSettingsV1): boolean {
+  const leftBytes = deviceLocalSettingsJSON(left);
+  const rightBytes = deviceLocalSettingsJSON(right);
+  if (leftBytes.byteLength !== rightBytes.byteLength) return false;
+  return leftBytes.every((byte, index) => byte === rightBytes[index]);
+}
+
+function deviceLocalSettingsJSON(settings: DevHudSettingsV1): Uint8Array {
+  return new TextEncoder().encode(JSON.stringify({ shortcuts: settings.shortcuts, agents: settings.agents }));
 }
 
 function encodeDigest(value: Uint8Array): string {

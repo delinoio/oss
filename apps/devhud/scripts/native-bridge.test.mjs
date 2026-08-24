@@ -21,6 +21,7 @@ const nativeShortcuts = readFileSync(join(dirname(fileURLToPath(import.meta.url)
 const nativeCapture = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/capture.rs"), "utf8");
 const nativeUpdater = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/updater.rs"), "utf8");
 const nativeUploads = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/uploads.rs"), "utf8");
+const nativeAgents = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/local_agents.rs"), "utf8");
 const windowsInstallerHooks = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/windows/hooks.nsh"), "utf8");
 const androidBridgeHost = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/mobile/android/src/main/java/io/delino/devhud/bridge/DevhudNativePlugin.kt"), "utf8");
 const iosBridgeHost = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/mobile/ios/Sources/DevhudNativePlugin.swift"), "utf8");
@@ -263,8 +264,8 @@ test("RealQA requests are bounded and capture data stays out of logs and recordi
 test("RealQA upload requests require immutable HTTPS direct-upload contracts", () => {
   const base = { draftId: "01900000-0000-7000-8000-000000000001", expectedRevision: 1, imageId: "01900000-0000-7000-8000-000000000002", expectedBytes: 3, expectedSha256: "00".repeat(32) };
   const upload = { uploadId: "01900000-0000-7000-8000-000000000003", submissionId: "01900000-0000-7000-8000-000000000004", uploadGroupId: "01900000-0000-7000-8000-000000000005", reservationId: "01900000-0000-7000-8000-000000000006", stagingGeneration: "1", signedPutUrl: "https://r2.example/object?signature=value", requiredHeaders: { contentType: "image/png", checksumSha256Base64: "A".repeat(43) + "=", contentLength: "3" } };
-  assert.doesNotThrow(() => validateCaptureRequest({ ...base, operation: "capture.upload-official", officialUploadOrigin: "https://r2.example", upload }));
-  assert.throws(() => validateCaptureRequest({ ...base, operation: "capture.upload-official", officialUploadOrigin: "https://attacker.invalid", upload }), NativeBridgeError);
+  assert.doesNotThrow(() => validateCaptureRequest({ ...base, operation: "capture.upload-official", upload }));
+  assert.throws(() => validateCaptureRequest({ ...base, operation: "capture.upload-official", upload: { ...upload, signedPutUrl: "http://attacker.invalid/object" } }), NativeBridgeError);
   const profile = { profileRef: "profile", accountId: "0123456789abcdef0123456789abcdef", bucket: "bucket", publicBaseUrl: "https://images.example", prefix: "devhud" };
   assert.doesNotThrow(() => validateCaptureRequest({ ...base, operation: "capture.upload-r2", profile }));
   assert.throws(() => validateCaptureRequest({ ...base, operation: "capture.upload-r2", profile: { ...profile, endpoint: "https://attacker.invalid" } }), NativeBridgeError);
@@ -278,6 +279,12 @@ test("RealQA upload requests require immutable HTTPS direct-upload contracts", (
   assert.match(nativeUploads, /\.connect_timeout\(CONNECT_TIMEOUT\)/u);
   assert.match(nativeUploads, /\.timeout\(REQUEST_TIMEOUT\)/u);
   assert.match(nativeUploads, /event = "realqa_upload_failed"/u);
+  assert.match(nativeBridgeHost, /fetch_official_upload_origin/u);
+  assert.match(nativeBridgeHost, /if changed \{[\s\S]*official_upload_authority[\s\S]*= None;/u);
+  const officialRequestContract = nativeUploads.slice(nativeUploads.indexOf("pub(crate) struct OfficialUploadRequest"), nativeUploads.indexOf("struct OfficialUploadBootstrap"));
+  assert.doesNotMatch(officialRequestContract, /official_upload_origin:\s*String/u);
+  const officialPut = nativeUploads.slice(nativeUploads.indexOf("pub(crate) async fn put_official"), nativeUploads.indexOf("pub(crate) async fn fetch_official_upload_origin"));
+  assert(officialPut.indexOf("signed_upload_url") < officialPut.indexOf("checked_asset"));
   assert.doesNotMatch(nativeUploads, /verification\s*\.bytes\(\)/u);
   assert.doesNotMatch(nativeUploads, /devhud-api|UploadService/u);
 });
@@ -289,6 +296,20 @@ test("RealQA draft recovery runs only after the primary instance is claimed", ()
   assert(singleInstance >= 0);
   assert(applicationSetup > singleInstance);
   assert(draftRecovery > applicationSetup);
+});
+
+test("Direct local-agent execution scopes PATs to clone and fixed writer phases", () => {
+  const cloneCredential = nativeAgents.indexOf("let clone_pat = request");
+  const cloneCredentialDrop = nativeAgents.indexOf("drop(clone_pat)", cloneCredential);
+  const agentInvocation = nativeAgents.indexOf("run_command_observed", cloneCredentialDrop);
+  const readinessValidation = nativeAgents.indexOf("validate_direct_ready", agentInvocation);
+  const writerCredential = nativeAgents.indexOf("let writer_pat =", readinessValidation);
+  assert(cloneCredential >= 0);
+  assert(cloneCredentialDrop > cloneCredential);
+  assert(agentInvocation > cloneCredentialDrop);
+  assert(readinessValidation > agentInvocation);
+  assert(writerCredential > readinessValidation);
+  assert.doesNotMatch(nativeAgents.slice(agentInvocation, readinessValidation), /(?:clone_pat|writer_pat|GH_TOKEN)/u);
 });
 
 test("direct captures restore hidden or minimized windows only after acquisition", () => {

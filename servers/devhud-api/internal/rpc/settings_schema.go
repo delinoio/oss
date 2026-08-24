@@ -222,6 +222,34 @@ func validateDevHudSettings(value []byte, envelopeSchemaVersion uint32) error {
 	return validateSettingsUploads(root["uploads"], bodyVersion)
 }
 
+// ValidateDevHudSettingsSnapshot is shared with the one-time PostgreSQL
+// security backfill so migrated rows pass the same contract as RPC snapshots.
+func ValidateDevHudSettingsSnapshot(value []byte, envelopeSchemaVersion uint32) error {
+	return validateDevHudSettings(value, envelopeSchemaVersion)
+}
+
+// MigrateLegacySettingsDeckQuery applies the v2 deck migration with the same
+// query parser and builder projection used by the current settings validator.
+func MigrateLegacySettingsDeckQuery(query string, repository string) (string, any) {
+	if !deckQueryHasPositivePullRequestQualifier(query) {
+		query = appendSettingsDeckQualifier(query, "is:pr")
+	}
+	if !deckQueryHasExactRepositoryQualifier(query, repository) {
+		query = appendSettingsDeckQualifier(query, "repo:"+repository)
+	}
+	projection := settingsDeckBuilderProjection(query)
+	if projection.repository == nil && projection.author == nil && projection.review == nil && projection.label == nil && projection.state == nil {
+		return query, nil
+	}
+	return query, map[string]any{
+		"repository": projection.repository,
+		"author":     projection.author,
+		"review":     projection.review,
+		"label":      projection.label,
+		"state":      projection.state,
+	}
+}
+
 func ensureJSONEnd(decoder *json.Decoder) error {
 	var extra any
 	if err := decoder.Decode(&extra); errors.Is(err, io.EOF) {

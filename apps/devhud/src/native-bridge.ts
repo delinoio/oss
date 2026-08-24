@@ -225,7 +225,7 @@ export type NativeBridgeRequestV1 = NativeBridgeRequestV1Base
   | { readonly operation: "capture.editor.apply"; readonly draftId: string; readonly expectedRevision: number; readonly command: CaptureEditorCommand }
   | { readonly operation: "capture.remove-browser-context"; readonly draftId: string; readonly expectedRevision: number }
   | { readonly operation: "capture.editor.undo" | "capture.editor.redo" | "capture.flatten"; readonly draftId: string; readonly expectedRevision: number }
-  | { readonly operation: "capture.upload-official"; readonly draftId: string; readonly expectedRevision: number; readonly imageId: string; readonly expectedBytes: number; readonly expectedSha256: string; readonly officialUploadOrigin: string; readonly upload: OfficialCaptureUpload }
+  | { readonly operation: "capture.upload-official"; readonly draftId: string; readonly expectedRevision: number; readonly imageId: string; readonly expectedBytes: number; readonly expectedSha256: string; readonly upload: OfficialCaptureUpload }
   | { readonly operation: "capture.upload-r2"; readonly draftId: string; readonly expectedRevision: number; readonly imageId: string; readonly expectedBytes: number; readonly expectedSha256: string; readonly profile: R2CaptureUploadProfile }
   | { readonly operation: "capture.delete-draft"; readonly draftId: string }
   | { readonly operation: "capture.confirm-issue-created"; readonly draftId: string; readonly expectedRevision: number }
@@ -392,11 +392,9 @@ export function validateCaptureRequest(request: Extract<NativeBridgeRequestV1, {
       || !/^\d+$/u.test(upload.stagingGeneration) || upload.requiredHeaders.contentType !== "image/png"
       || upload.requiredHeaders.contentLength !== String(request.expectedBytes) || !/^[A-Za-z0-9+/]{43}=$/u.test(upload.requiredHeaders.checksumSha256Base64)) throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument);
     try {
-      const origin = new URL(request.officialUploadOrigin);
       const url = new URL(upload.signedPutUrl);
-      if (!origin.hostname || origin.pathname !== "/" || origin.search || origin.hash || origin.username || origin.password
-        || (origin.protocol !== "https:" && !(origin.protocol === "http:" && isLoopbackHostname(origin.hostname)))
-        || url.origin !== origin.origin || url.username || url.password || url.hash) throw new Error();
+      if (!url.hostname || url.username || url.password || url.hash
+        || (url.protocol !== "https:" && !(url.protocol === "http:" && isLoopbackHostname(url.hostname)))) throw new Error();
     } catch { throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument); }
   }
   if (request.operation === "capture.upload-r2") {

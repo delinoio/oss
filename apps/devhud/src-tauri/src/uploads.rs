@@ -17,6 +17,8 @@ type HmacSha256 = Hmac<Sha256>;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+const BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(25);
+const BOOTSTRAP_RESPONSE_LIMIT: usize = 64 * 1024;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -26,8 +28,17 @@ pub(crate) struct OfficialUploadRequest {
     pub(crate) image_id: Uuid,
     pub(crate) expected_bytes: usize,
     pub(crate) expected_sha256: String,
-    pub(crate) official_upload_origin: String,
     pub(crate) upload: OfficialUpload,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OfficialUploadBootstrap {
+    project_id: String,
+    protocol_schema_version: u32,
+    #[serde(default)]
+    capabilities: Vec<String>,
+    official_upload_origin: String,
 }
 
 #[derive(Deserialize)]
@@ -79,7 +90,9 @@ pub(crate) struct UploadResult {
 pub(crate) async fn put_official(
     capture: &CaptureService,
     request: OfficialUploadRequest,
+    official_upload_origin: &Url,
 ) -> Result<UploadResult, String> {
+    let url = signed_upload_url(&request.upload.signed_put_url, official_upload_origin)?;
     let bytes = checked_asset(
         capture,
         request.draft_id,
@@ -102,7 +115,6 @@ pub(crate) async fn put_official(
     {
         return Err("invalid-argument".to_string());
     }
-    let url = signed_upload_url(&upload.signed_put_url, &request.official_upload_origin)?;
     let response = direct_client("official")?
         .put(url)
         .header(CONTENT_TYPE, upload.required_headers.content_type)
@@ -135,6 +147,67 @@ pub(crate) async fn put_official(
         observed_etag,
         public_url: None,
     })
+}
+
+pub(crate) async fn fetch_official_upload_origin(api_origin: &str) -> Result<Url, String> {
+    let mut endpoint = validated_url(api_origin, false, true)?;
+    if endpoint.path() != "/" {
+        return Err("invalid-argument".to_string());
+    }
+    endpoint.set_path("/devhud.v1.BootstrapService/GetBootstrap");
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .connect_timeout(CONNECT_TIMEOUT)
+        .timeout(BOOTSTRAP_TIMEOUT)
+        .build()
+        .map_err(|_| "platform-failure".to_string())?;
+    let mut response = client
+        .post(endpoint)
+        .header(CONTENT_TYPE, "application/json")
+        .header(HeaderName::from_static("connect-protocol-version"), "1")
+        .body("{}")
+        .send()
+        .await
+        .map_err(|_| "platform-failure".to_string())?;
+    if !response.status().is_success()
+        || response
+            .content_length()
+            .is_some_and(|length| length > BOOTSTRAP_RESPONSE_LIMIT as u64)
+    {
+        return Err("platform-failure".to_string());
+    }
+    let mut body = Vec::new();
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|_| "platform-failure".to_string())?
+    {
+        if body.len().saturating_add(chunk.len()) > BOOTSTRAP_RESPONSE_LIMIT {
+            return Err("platform-failure".to_string());
+        }
+        body.extend_from_slice(&chunk);
+    }
+    official_upload_origin_from_bootstrap(&body)
+}
+
+fn official_upload_origin_from_bootstrap(body: &[u8]) -> Result<Url, String> {
+    let bootstrap: OfficialUploadBootstrap =
+        serde_json::from_slice(body).map_err(|_| "platform-failure".to_string())?;
+    if bootstrap.project_id != "PROJECT_ID_DEVHUD"
+        || bootstrap.protocol_schema_version != 2
+        || !bootstrap
+            .capabilities
+            .iter()
+            .any(|capability| capability == "STATIC_CAPABILITY_OFFICIAL_UPLOADS")
+    {
+        return Err("platform-failure".to_string());
+    }
+    let origin = validated_url(&bootstrap.official_upload_origin, false, true)
+        .map_err(|_| "platform-failure".to_string())?;
+    if origin.path() != "/" {
+        return Err("platform-failure".to_string());
+    }
+    Ok(origin)
 }
 
 pub(crate) async fn put_r2(
@@ -420,10 +493,9 @@ fn https_url(value: &str, allow_query: bool) -> Result<Url, String> {
     validated_url(value, allow_query, false)
 }
 
-fn signed_upload_url(value: &str, expected_origin: &str) -> Result<Url, String> {
+fn signed_upload_url(value: &str, expected_origin: &Url) -> Result<Url, String> {
     let url = validated_url(value, true, true)?;
-    let origin = validated_url(expected_origin, false, true)?;
-    if origin.path() != "/" || url.origin() != origin.origin() {
+    if expected_origin.path() != "/" || url.origin() != expected_origin.origin() {
         return Err("invalid-argument".to_string());
     }
     Ok(url)
@@ -567,8 +639,8 @@ mod tests {
     use uuid::Uuid;
 
     use super::{
-        R2Profile, VerificationBody, hex, https_url, r2_object_key, signed_headers,
-        signed_upload_url, timestamp_from_unix, validate_profile,
+        R2Profile, VerificationBody, hex, https_url, official_upload_origin_from_bootstrap,
+        r2_object_key, signed_headers, signed_upload_url, timestamp_from_unix, validate_profile,
     };
 
     fn profile() -> R2Profile {
@@ -603,40 +675,64 @@ mod tests {
         assert!(
             signed_upload_url(
                 "https://r2.example/object?signature=value",
-                "https://r2.example"
+                &Url::parse("https://r2.example").expect("origin")
             )
             .is_ok()
         );
         assert!(
             signed_upload_url(
                 "http://127.0.0.1:9000/object?signature=value",
-                "http://127.0.0.1:9000"
+                &Url::parse("http://127.0.0.1:9000").expect("origin")
             )
             .is_ok()
         );
         assert!(
             signed_upload_url(
                 "http://[::1]:9000/object?signature=value",
-                "http://[::1]:9000"
+                &Url::parse("http://[::1]:9000").expect("origin")
             )
             .is_ok()
         );
         assert!(
             signed_upload_url(
                 "https://attacker.example/object?signature=value",
-                "https://r2.example"
+                &Url::parse("https://r2.example").expect("origin")
             )
             .is_err()
         );
         assert!(
             signed_upload_url(
                 "http://r2.example/object?signature=value",
-                "http://r2.example"
+                &Url::parse("http://r2.example").expect("origin")
             )
             .is_err()
         );
         assert!(https_url("https://images.example/object?secret=value", false).is_err());
         assert!(https_url("https://user@example.com/object", true).is_err());
+    }
+
+    #[test]
+    fn official_upload_bootstrap_requires_the_devhud_capability_contract() {
+        let body = br#"{
+            "projectId":"PROJECT_ID_DEVHUD",
+            "protocolSchemaVersion":2,
+            "capabilities":["STATIC_CAPABILITY_SETTINGS_SYNC","STATIC_CAPABILITY_OFFICIAL_UPLOADS"],
+            "officialUploadOrigin":"https://r2.example"
+        }"#;
+        assert_eq!(
+            official_upload_origin_from_bootstrap(body)
+                .expect("valid bootstrap")
+                .as_str(),
+            "https://r2.example/"
+        );
+        for invalid in [
+            br#"{"projectId":"PROJECT_ID_UNSPECIFIED","protocolSchemaVersion":2,"capabilities":["STATIC_CAPABILITY_OFFICIAL_UPLOADS"],"officialUploadOrigin":"https://r2.example"}"#.as_slice(),
+            br#"{"projectId":"PROJECT_ID_DEVHUD","protocolSchemaVersion":3,"capabilities":["STATIC_CAPABILITY_OFFICIAL_UPLOADS"],"officialUploadOrigin":"https://r2.example"}"#.as_slice(),
+            br#"{"projectId":"PROJECT_ID_DEVHUD","protocolSchemaVersion":2,"capabilities":[],"officialUploadOrigin":"https://r2.example"}"#.as_slice(),
+            br#"{"projectId":"PROJECT_ID_DEVHUD","protocolSchemaVersion":2,"capabilities":["STATIC_CAPABILITY_OFFICIAL_UPLOADS"],"officialUploadOrigin":"https://r2.example/path"}"#.as_slice(),
+        ] {
+            assert!(official_upload_origin_from_bootstrap(invalid).is_err());
+        }
     }
 
     #[test]

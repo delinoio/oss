@@ -43,6 +43,8 @@ pub struct NativeBridgeState {
     pending_auth_callback: Arc<Mutex<Option<String>>>,
     pending_deck_link: Arc<Mutex<Option<String>>>,
     session_origins: Arc<Mutex<SessionOrigins>>,
+    #[cfg(desktop)]
+    official_upload_authority: Arc<Mutex<Option<OfficialUploadAuthority>>>,
     shortcuts: Arc<Mutex<ShortcutService<PlatformShortcutBackend>>>,
     shortcuts_ready: Arc<AtomicBool>,
     shortcut_listener_failed: Arc<AtomicBool>,
@@ -124,6 +126,13 @@ struct SessionOrigins {
     logto_issuer: Option<url::Url>,
 }
 
+#[cfg(desktop)]
+#[derive(Clone)]
+struct OfficialUploadAuthority {
+    api_origin: String,
+    upload_origin: url::Url,
+}
+
 impl Default for NativeBridgeState {
     fn default() -> Self {
         let shortcut_listener_failed = Arc::new(AtomicBool::new(false));
@@ -152,6 +161,8 @@ impl Default for NativeBridgeState {
                 api_origin: DEFAULT_API_ORIGIN.to_string(),
                 logto_issuer: None,
             })),
+            #[cfg(desktop)]
+            official_upload_authority: Arc::new(Mutex::new(None)),
             shortcuts: Arc::new(Mutex::new(ShortcutService::new(
                 PlatformShortcutBackend::current(),
             ))),
@@ -760,7 +771,51 @@ impl NativeBridgeState {
         };
         let changed = *origins != next;
         *origins = next;
+        #[cfg(desktop)]
+        if changed {
+            *self
+                .official_upload_authority
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+        }
         Ok(changed)
+    }
+
+    #[cfg(desktop)]
+    async fn official_upload_origin(&self) -> Result<url::Url, String> {
+        let api_origin = {
+            let origins = self
+                .session_origins
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let cached = self
+                .official_upload_authority
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if let Some(cached) = cached
+                .as_ref()
+                .filter(|cached| cached.api_origin == origins.api_origin)
+            {
+                return Ok(cached.upload_origin.clone());
+            }
+            origins.api_origin.clone()
+        };
+        let upload_origin = crate::uploads::fetch_official_upload_origin(&api_origin).await?;
+        let origins = self
+            .session_origins
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if origins.api_origin != api_origin {
+            return Err("platform-failure".to_string());
+        }
+        *self
+            .official_upload_authority
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(OfficialUploadAuthority {
+            api_origin,
+            upload_origin: upload_origin.clone(),
+        });
+        Ok(upload_origin)
     }
 }
 
@@ -1747,7 +1802,8 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
         return Ok(response);
     }
     if operation.starts_with("capture.") {
-        return handle_capture_request(&request, capture.inner().clone(), &app).await;
+        return handle_capture_request(&request, capture.inner().clone(), state.inner(), &app)
+            .await;
     }
     if operation.starts_with("agent.") {
         let local_agents = Arc::clone(&state.local_agents);
@@ -1872,6 +1928,7 @@ fn should_restore_capture_window(
 async fn handle_capture_request(
     request: &Value,
     capture: std::sync::Arc<crate::capture::CaptureService>,
+    state: &NativeBridgeState,
     app: &tauri::AppHandle<impl tauri::Runtime>,
 ) -> Result<Value, String> {
     use crate::capture::{CaptureAction, CaptureError, CaptureOptions, EditorCommand};
@@ -2093,7 +2150,9 @@ async fn handle_capture_request(
                 .remove("operation");
             let upload: crate::uploads::OfficialUploadRequest =
                 serde_json::from_value(payload).map_err(|_| "invalid-argument")?;
-            let result = crate::uploads::put_official(&capture, upload).await?;
+            let official_upload_origin = state.official_upload_origin().await?;
+            let result =
+                crate::uploads::put_official(&capture, upload, &official_upload_origin).await?;
             Ok(
                 json!({ "kind": "capture-uploaded", "observedEtag": result.observed_etag, "publicUrl": result.public_url }),
             )

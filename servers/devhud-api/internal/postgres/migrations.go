@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"net/url"
 	"sort"
@@ -14,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/delinoio/oss/servers/devhud-api/internal/rpc"
 	"github.com/delinoio/oss/servers/devhud-api/migrations"
 	"github.com/gowebpki/jcs"
 	"github.com/jackc/pgx/v5"
@@ -224,40 +226,20 @@ func migrateSettingsCanonicalJSON(canonicalJSON []byte, envelopeSchemaVersion ui
 	if err := decoder.Decode(&decoded); err != nil {
 		return nil, false, errors.New("invalid settings JSON")
 	}
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		return nil, false, errors.New("invalid trailing settings JSON")
+	}
 	root, ok := decoded.(map[string]any)
 	if !ok {
 		return nil, false, errors.New("settings root is not an object")
 	}
+	if err := rpc.ValidateDevHudSettingsSnapshot(canonicalJSON, envelopeSchemaVersion); err != nil {
+		return nil, false, fmt.Errorf("validate source settings: %w", err)
+	}
 	transformed := envelopeSchemaVersion < 7
 	if transformed {
-		root["schemaVersion"] = 7
-		delete(root, "shortcuts")
-		if agents, ok := root["agents"].([]any); ok {
-			for _, entry := range agents {
-				if agent, ok := entry.(map[string]any); ok {
-					delete(agent, "repositoryPrompts")
-				}
-			}
-		}
-		if uploads, ok := root["uploads"].(map[string]any); ok {
-			if r2, ok := uploads["r2"].(map[string]any); ok {
-				accountID, _ := r2["accountId"].(string)
-				if !isCloudflareAccountID(accountID) {
-					endpoint, _ := r2["endpoint"].(string)
-					accountID = cloudflareAccountIDFromEndpoint(endpoint)
-				}
-				delete(r2, "endpoint")
-				if isCloudflareAccountID(accountID) {
-					r2["accountId"] = accountID
-				} else {
-					// Legacy settings allowed arbitrary S3-compatible endpoints. They
-					// cannot be represented without restoring an SSRF surface, so
-					// disable that profile and fail back to the official provider.
-					uploads["provider"] = "official"
-					uploads["r2"] = nil
-				}
-			}
-		}
+		migrateLegacySettingsRoot(root, envelopeSchemaVersion)
 	}
 	encoded, err := json.Marshal(root)
 	if err != nil {
@@ -267,7 +249,153 @@ func migrateSettingsCanonicalJSON(canonicalJSON []byte, envelopeSchemaVersion ui
 	if err != nil {
 		return nil, false, errors.New("canonicalize migrated settings")
 	}
+	if err := rpc.ValidateDevHudSettingsSnapshot(result, 7); err != nil {
+		return nil, false, fmt.Errorf("validate migrated settings: %w", err)
+	}
 	return result, transformed, nil
+}
+
+func migrateLegacySettingsRoot(root map[string]any, schemaVersion uint32) {
+	root["schemaVersion"] = json.Number("7")
+	delete(root, "shortcuts")
+	github, _ := root["github"].(map[string]any)
+	if schemaVersion == 1 {
+		github["profiles"] = []any{}
+		github["pendingPatRemovals"] = []any{}
+		for _, entry := range jsonArray(github["repositories"]) {
+			jsonObject(entry)["profileRef"] = nil
+		}
+		if issueTracker, ok := github["issueTracker"].(map[string]any); ok {
+			issueTracker["profileRef"] = nil
+		}
+	}
+	profileIDs := make(map[string]struct{})
+	for _, entry := range jsonArray(github["profiles"]) {
+		if id, ok := jsonObject(entry)["id"].(string); ok {
+			profileIDs[id] = struct{}{}
+		}
+	}
+	migrateLegacyDecks(root, schemaVersion)
+	if schemaVersion < 4 {
+		mappings := jsonArray(root["urlMappings"])
+		structuredCollision := schemaVersion == 3 && anyObjectHasKey(mappings, "id")
+		if !structuredCollision {
+			root["urlMappings"] = []any{}
+		}
+	}
+	for _, entry := range jsonArray(root["agents"]) {
+		agent := jsonObject(entry)
+		delete(agent, "repositoryPrompts")
+		if schemaVersion < 6 {
+			if profileRef, ok := agent["profileRef"].(string); ok {
+				if _, exists := profileIDs[profileRef]; !exists {
+					agent["profileRef"] = nil
+				}
+			}
+		}
+	}
+	migrateLegacyR2(root, schemaVersion)
+}
+
+func migrateLegacyDecks(root map[string]any, schemaVersion uint32) {
+	decks := jsonArray(root["decks"])
+	if schemaVersion == 1 {
+		root["decks"] = []any{}
+		return
+	}
+	previousShape := schemaVersion == 2 || schemaVersion == 3 && (len(decks) == 0 || !objectHasKey(decks[0], "name"))
+	if !previousShape {
+		return
+	}
+	migrated := make([]any, 0, len(decks))
+	for _, entry := range decks {
+		deck := jsonObject(entry)
+		if deck["profileRef"] == nil {
+			continue
+		}
+		title, _ := deck["title"].(string)
+		query, _ := deck["query"].(string)
+		repository, _ := deck["repository"].(string)
+		query, builder := rpc.MigrateLegacySettingsDeckQuery(query, repository)
+		deck["name"] = strings.TrimSpace(title)
+		deck["query"] = query
+		deck["builder"] = builder
+		deck["notifications"] = uniqueStrings(jsonArray(deck["notifications"]))
+		delete(deck, "title")
+		delete(deck, "repository")
+		migrated = append(migrated, deck)
+	}
+	root["decks"] = migrated
+}
+
+func migrateLegacyR2(root map[string]any, schemaVersion uint32) {
+	uploads := jsonObject(root["uploads"])
+	r2, ok := uploads["r2"].(map[string]any)
+	if !ok {
+		return
+	}
+	accountID, _ := r2["accountId"].(string)
+	if !isCloudflareAccountID(accountID) {
+		endpoint, _ := r2["endpoint"].(string)
+		accountID = cloudflareAccountIDFromEndpoint(endpoint)
+	}
+	if !isCloudflareAccountID(accountID) {
+		uploads["provider"] = "official"
+		uploads["r2"] = nil
+		return
+	}
+	name, _ := r2["name"].(string)
+	prefix, _ := r2["prefix"].(string)
+	if schemaVersion < 5 {
+		name = "R2"
+		prefix = ""
+	}
+	uploads["r2"] = map[string]any{
+		"profileRef":    r2["profileRef"],
+		"name":          name,
+		"accountId":     accountID,
+		"bucket":        r2["bucket"],
+		"publicBaseUrl": r2["publicBaseUrl"],
+		"prefix":        prefix,
+	}
+}
+
+func jsonArray(value any) []any {
+	result, _ := value.([]any)
+	return result
+}
+
+func jsonObject(value any) map[string]any {
+	result, _ := value.(map[string]any)
+	return result
+}
+
+func objectHasKey(value any, key string) bool {
+	_, exists := jsonObject(value)[key]
+	return exists
+}
+
+func anyObjectHasKey(values []any, key string) bool {
+	for _, value := range values {
+		if objectHasKey(value, key) {
+			return true
+		}
+	}
+	return false
+}
+
+func uniqueStrings(values []any) []any {
+	seen := make(map[string]struct{}, len(values))
+	result := make([]any, 0, len(values))
+	for _, value := range values {
+		text, _ := value.(string)
+		if _, exists := seen[text]; exists {
+			continue
+		}
+		seen[text] = struct{}{}
+		result = append(result, value)
+	}
+	return result
 }
 
 func isCloudflareAccountID(value string) bool {

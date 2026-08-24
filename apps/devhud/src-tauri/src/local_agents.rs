@@ -321,16 +321,17 @@ impl LocalAgentService {
         if detected != request.kind.pin() {
             return Err("agent-version-unsupported".to_string());
         }
-        let needs_pat = request.private || request.mode == AgentMode::Direct;
-        let pat = needs_pat
+        let clone_pat = request
+            .private
             .then(|| crate::secure_store::github_pat(&request.profile_id, &request.scope_id))
             .transpose()?;
         let workspace = self.prepare_workspace(
             &request,
-            pat.as_ref().map(|value| value.as_str()),
+            clone_pat.as_ref().map(|value| value.as_str()),
             &cancel,
             deadline,
         )?;
+        drop(clone_pat);
         let run_temp = tempfile::Builder::new()
             .prefix("run-")
             .tempdir_in(self.root.join("runs"))
@@ -373,6 +374,8 @@ impl LocalAgentService {
         })?;
         if request.mode == AgentMode::Direct {
             validate_direct_ready(&request, &final_text)?;
+            let writer_pat =
+                crate::secure_store::github_pat(&request.profile_id, &request.scope_id)?;
             write_private_file(
                 &issue_input_path,
                 issue_input.as_deref().ok_or("storage-failure")?,
@@ -381,9 +384,7 @@ impl LocalAgentService {
                 &request,
                 &issue_input_path,
                 &run_temp.path().join("gh-config"),
-                pat.as_ref()
-                    .map(|value| value.as_str())
-                    .ok_or("not-configured")?,
+                writer_pat.as_str(),
                 &cancel,
                 deadline,
             );

@@ -218,7 +218,7 @@ export function RealqaSubmissionModal({ draft, bridge, copy, onClose, onConfirme
             },
             put: async (image, reservation) => {
             const uploaded = await bridge.request({
-              operation: "capture.upload-official", draftId: draft.id, expectedRevision: submissionRevision, imageId: image.imageId, expectedBytes: image.bytes, expectedSha256: image.sha256, officialUploadOrigin: identity.bootstrap!.officialUploadOrigin!,
+              operation: "capture.upload-official", draftId: draft.id, expectedRevision: submissionRevision, imageId: image.imageId, expectedBytes: image.bytes, expectedSha256: image.sha256,
               upload: reservation,
             });
             if (uploaded.kind !== "capture-uploaded" || uploaded.observedEtag === "") throw new Error("upload-response");

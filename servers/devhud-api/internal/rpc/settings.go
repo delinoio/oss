@@ -58,8 +58,8 @@ func (s *SettingsService) ReplaceSettings(ctx context.Context, request *connect.
 	if !ok {
 		return nil, unauthenticatedError(ctx)
 	}
-	if request.Msg.SchemaVersion == 0 {
-		return nil, NewError(connect.CodeInvalidArgument, "schema_version must be nonzero", CorrelationID(ctx))
+	if request.Msg.SchemaVersion != settingsSchemaVersion {
+		return nil, NewError(connect.CodeInvalidArgument, "schema_version must be 7", CorrelationID(ctx))
 	}
 	if request.Msg.ExpectedRevision == 0 && len(request.Msg.ExpectedContentSha256) != 0 {
 		return nil, NewError(connect.CodeInvalidArgument, "expected_content_sha256 must be empty when creating settings", CorrelationID(ctx))

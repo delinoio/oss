@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"strings"
@@ -18,10 +19,10 @@ import (
 )
 
 func TestReplaceSettingsReturnsTypedConflict(t *testing.T) {
-	current := &domain.Settings{SchemaVersion: 3, Revision: 7, CanonicalJSON: []byte(`{"theme":"dark"}`), UpdatedAt: time.Now()}
+	current := &domain.Settings{SchemaVersion: 7, Revision: 7, CanonicalJSON: []byte(canonicalSettingsV7), UpdatedAt: time.Now()}
 	expectedDigest := bytes.Repeat([]byte{0x5a}, 32)
 	repository := &serviceRepository{replaceSettings: func(_ context.Context, userID string, schemaVersion uint32, body []byte, revision uint64, digest []byte, _ time.Time) (domain.Settings, error) {
-		if userID != "018f7c1e-7b4a-7abc-8def-0123456789ab" || schemaVersion != 3 || string(body) != canonicalSettingsV3 || revision != 6 || !bytes.Equal(digest, expectedDigest) {
+		if userID != "018f7c1e-7b4a-7abc-8def-0123456789ab" || schemaVersion != 7 || string(body) != canonicalSettingsV7 || revision != 6 || !bytes.Equal(digest, expectedDigest) {
 			t.Fatalf("unexpected replacement inputs: user=%q schema=%d body=%q revision=%d", userID, schemaVersion, body, revision)
 		}
 		return domain.Settings{}, &domain.RevisionConflict{Expected: revision, Current: current}
@@ -29,7 +30,7 @@ func TestReplaceSettingsReturnsTypedConflict(t *testing.T) {
 	service := NewSettingsService(repository, serviceClock{}, testServiceLogger())
 	ctx := authenticatedContext()
 	_, err := service.ReplaceSettings(ctx, connect.NewRequest(&devhudv1.ReplaceSettingsRequest{
-		SchemaVersion: 3, CanonicalJson: []byte(canonicalSettingsV3), ExpectedRevision: 6, ExpectedContentSha256: expectedDigest,
+		SchemaVersion: 7, CanonicalJson: []byte(canonicalSettingsV7), ExpectedRevision: 6, ExpectedContentSha256: expectedDigest,
 	}))
 	if connect.CodeOf(err) != connect.CodeAborted {
 		t.Fatalf("code = %v, want Aborted", connect.CodeOf(err))
@@ -63,7 +64,7 @@ func TestReplaceSettingsRejectsSecretsBeforeRepositoryPersistence(t *testing.T) 
 		return domain.Settings{}, nil
 	}}
 	malicious := strings.Replace(
-		canonicalSettingsV2,
+		canonicalSettingsV7,
 		`"profiles":[]`,
 		`"profiles":[{"id":"018f47a2-7b3c-7def-8abc-1234567890ab","kind":"fine-grained","name":"Work","token":"plain"}]`,
 		1,
@@ -83,10 +84,10 @@ func TestReplaceSettingsRejectsSecretsBeforeRepositoryPersistence(t *testing.T) 
 
 func TestReplaceSettingsRejectsInvalidExpectedDigestBeforeRepositoryPersistence(t *testing.T) {
 	for name, request := range map[string]*devhudv1.ReplaceSettingsRequest{
-		"digest on create":           {SchemaVersion: 1, CanonicalJson: []byte(canonicalSettingsV1), ExpectedContentSha256: []byte{1}},
-		"missing replacement digest": {SchemaVersion: 1, CanonicalJson: []byte(canonicalSettingsV1), ExpectedRevision: 1},
-		"short replacement digest":   {SchemaVersion: 1, CanonicalJson: []byte(canonicalSettingsV1), ExpectedRevision: 1, ExpectedContentSha256: make([]byte, 31)},
-		"long replacement digest":    {SchemaVersion: 1, CanonicalJson: []byte(canonicalSettingsV1), ExpectedRevision: 1, ExpectedContentSha256: make([]byte, 33)},
+		"digest on create":           {SchemaVersion: 7, CanonicalJson: []byte(canonicalSettingsV7), ExpectedContentSha256: []byte{1}},
+		"missing replacement digest": {SchemaVersion: 7, CanonicalJson: []byte(canonicalSettingsV7), ExpectedRevision: 1},
+		"short replacement digest":   {SchemaVersion: 7, CanonicalJson: []byte(canonicalSettingsV7), ExpectedRevision: 1, ExpectedContentSha256: make([]byte, 31)},
+		"long replacement digest":    {SchemaVersion: 7, CanonicalJson: []byte(canonicalSettingsV7), ExpectedRevision: 1, ExpectedContentSha256: make([]byte, 33)},
 	} {
 		t.Run(name, func(t *testing.T) {
 			called := false
@@ -100,6 +101,26 @@ func TestReplaceSettingsRejectsInvalidExpectedDigestBeforeRepositoryPersistence(
 			}
 			if called {
 				t.Fatal("repository was called for invalid digest")
+			}
+		})
+	}
+}
+
+func TestReplaceSettingsRejectsLegacySchemasBeforeRepositoryPersistence(t *testing.T) {
+	legacy := map[uint32]string{1: canonicalSettingsV1, 2: canonicalSettingsV2, 3: canonicalSettingsV3, 4: canonicalSettingsV4, 5: canonicalSettingsV5, 6: canonicalSettingsV6}
+	for schemaVersion, body := range legacy {
+		t.Run(fmt.Sprintf("v%d", schemaVersion), func(t *testing.T) {
+			called := false
+			repository := &serviceRepository{replaceSettings: func(context.Context, string, uint32, []byte, uint64, []byte, time.Time) (domain.Settings, error) {
+				called = true
+				return domain.Settings{}, nil
+			}}
+			_, err := NewSettingsService(repository, serviceClock{}, testServiceLogger()).ReplaceSettings(authenticatedContext(), connect.NewRequest(&devhudv1.ReplaceSettingsRequest{SchemaVersion: schemaVersion, CanonicalJson: []byte(body)}))
+			if connect.CodeOf(err) != connect.CodeInvalidArgument {
+				t.Fatalf("code = %v, want InvalidArgument", connect.CodeOf(err))
+			}
+			if called {
+				t.Fatal("repository was called for a legacy settings write")
 			}
 		})
 	}
@@ -154,8 +175,8 @@ func TestReplaceSettingsMapsCompletedPurge(t *testing.T) {
 		return domain.Settings{}, domain.ErrNotFound
 	}}
 	_, err := NewSettingsService(repository, serviceClock{}, testServiceLogger()).ReplaceSettings(authenticatedContext(), connect.NewRequest(&devhudv1.ReplaceSettingsRequest{
-		SchemaVersion: 1,
-		CanonicalJson: []byte(canonicalSettingsV1),
+		SchemaVersion: 7,
+		CanonicalJson: []byte(canonicalSettingsV7),
 	}))
 	if connect.CodeOf(err) != connect.CodePermissionDenied {
 		t.Fatalf("code = %v, want PermissionDenied", connect.CodeOf(err))
@@ -276,8 +297,8 @@ func TestSettingsWriteFailuresAreLoggedBeforeInternalResponse(t *testing.T) {
 	var logs bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&logs, nil))
 	_, err := NewSettingsService(repository, serviceClock{}, logger).ReplaceSettings(authenticatedContext(), connect.NewRequest(&devhudv1.ReplaceSettingsRequest{
-		SchemaVersion: 1,
-		CanonicalJson: []byte(canonicalSettingsV1),
+		SchemaVersion: 7,
+		CanonicalJson: []byte(canonicalSettingsV7),
 	}))
 	if connect.CodeOf(err) != connect.CodeInternal {
 		t.Fatalf("code = %v, want Internal", connect.CodeOf(err))
