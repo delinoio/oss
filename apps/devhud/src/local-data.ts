@@ -156,14 +156,22 @@ export function assertDeviceLocalSettingsPersistable(settings: DevHudSettingsV1)
 }
 
 export function deviceLocalSettingsEqual(left: DevHudSettingsV1, right: DevHudSettingsV1): boolean {
-  const leftBytes = deviceLocalSettingsJSON(left);
-  const rightBytes = deviceLocalSettingsJSON(right);
+  const leftBytes = durabilityCriticalDeviceLocalSettingsJSON(left);
+  const rightBytes = durabilityCriticalDeviceLocalSettingsJSON(right);
   if (leftBytes.byteLength !== rightBytes.byteLength) return false;
   return leftBytes.every((byte, index) => byte === rightBytes[index]);
 }
 
 function deviceLocalSettingsJSON(settings: DevHudSettingsV1): Uint8Array {
   return new TextEncoder().encode(JSON.stringify({ shortcuts: settings.shortcuts, agents: settings.agents }));
+}
+
+function durabilityCriticalDeviceLocalSettingsJSON(settings: DevHudSettingsV1): Uint8Array {
+  const repositoryPrompts = settings.agents
+    .filter((agent) => agent.repositoryPrompts.length > 0)
+    .map(({ id, kind, repositoryPrompts: prompts }) => ({ id, kind, repositoryPrompts: prompts }))
+    .toSorted((left, right) => left.id < right.id ? -1 : left.id > right.id ? 1 : 0);
+  return new TextEncoder().encode(JSON.stringify({ shortcuts: settings.shortcuts, repositoryPrompts }));
 }
 
 function encodeDigest(value: Uint8Array): string {

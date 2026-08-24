@@ -495,16 +495,17 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       return;
     }
     if (!settingsQuery.data) return;
+    const snapshot = settingsQuery.data.snapshot;
     let cancelled = false;
     void (async () => {
       let validated: ValidatedSettingsSnapshot;
       try {
-        validated = await validatedSettingsSnapshot(settingsQuery.data.snapshot);
+        validated = await validatedSettingsSnapshot(snapshot);
       } catch {
-        if (!cancelled) markSettingsContractInvalid();
+        if (!cancelled && (snapshot === undefined || snapshot.revision >= revisionRef.current)) markSettingsContractInvalid();
         return;
       }
-      if (cancelled) return;
+      if (cancelled || validated.revision < revisionRef.current) return;
       let server = validated.settings;
       setError((current) => current === "settings-contract-invalid" ? null : current);
       setSettingsError(null);
@@ -599,7 +600,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
           throw snapshotReason;
         }
         setImportDiff(null);
-        const server = withDeviceLocalSettings(validated.settings, settingsRef.current);
+        const server = withDeviceLocalSettings(validated.settings, local);
         setConflict({ local, server, currentRevision: validated.revision, currentContentSHA256: validated.contentSHA256, diff: diffSettings(local, server) });
         return false;
       }

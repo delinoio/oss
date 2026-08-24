@@ -56,6 +56,17 @@ async function settingsContentDigest(value: unknown): Promise<Uint8Array> {
   return new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonicalDevHudSettings(value))));
 }
 
+function settingsSnapshotResponse(value: unknown, revision: bigint, contentSHA256: Uint8Array): Response {
+  return new Response(JSON.stringify({
+    snapshot: {
+      schemaVersion: SettingsSchemaVersion,
+      revision: revision.toString(),
+      canonicalJson: encodedSettings(value),
+      contentSha256: btoa(String.fromCharCode(...contentSHA256)),
+    },
+  }), { status: 200, headers: { "Content-Type": "application/json", "Connect-Protocol-Version": "1" } });
+}
+
 function authenticatedBridge(purgeScopes: string[] = [], secureOperations: string[] = [], reconciliations: NativeBridgeRequestV1[] = []): NativeBridgeV1 {
   const accessTokenMap = JSON.stringify({ "@https://api.example/api": { token: "fixture-access-token", scope: "", expiresAt: 4_102_444_800 } });
   const secureSession = JSON.stringify({ idToken: "fixture-id-token", accessToken: accessTokenMap });
@@ -100,6 +111,7 @@ function IdentityStateProbe({ replacement = defaultDevHudSettings }: { readonly 
   const identity = useIdentitySettings();
   const queryClient = useQueryClient();
   const [actionError, setActionError] = useState(false);
+  const [actionSettled, setActionSettled] = useState(0);
   return <>
     <output
       data-testid="identity-state"
@@ -115,8 +127,15 @@ function IdentityStateProbe({ replacement = defaultDevHudSettings }: { readonly 
       data-correlation={identity.settingsError?.correlationId ?? ""}
       data-query-data-count={queryClient.getQueryCache().getAll().filter((query) => query.state.data !== undefined).length}
       data-action-error={String(actionError)}
+      data-action-settled={String(actionSettled)}
     />
-    <button type="button" onClick={() => { setActionError(false); void identity.replaceSettings(replacement).catch(() => setActionError(true)); }}>replace probe settings</button>
+    <button type="button" onClick={() => {
+      setActionError(false);
+      void identity.replaceSettings(replacement).then(
+        () => setActionSettled((current) => current + 1),
+        () => { setActionError(true); setActionSettled((current) => current + 1); },
+      );
+    }}>replace probe settings</button>
     <button type="button" onClick={() => void queryClient.refetchQueries()}>refetch probe queries</button>
     <button type="button" onClick={() => { setActionError(false); void identity.logout().catch(() => setActionError(true)); }}>logout probe identity</button>
     <button type="button" onClick={identity.continueLocally}>continue probe locally</button>
@@ -274,6 +293,145 @@ describe("generated Connect identity/settings fixture", () => {
 
     await waitFor(() => expect(readAuthenticatedSettingsCache(localStorage, "https://devhud.api.delino.io")?.revision).toBe(2n));
     expect(readAuthenticatedSettingsCache(localStorage, "https://devhud.api.delino.io")?.settings.agents[0]?.repositoryPrompts).toEqual([prompt]);
+  });
+
+  it("keeps synchronized agent saves successful when authenticated cache writes fail", async () => {
+    const originalSetItem = Storage.prototype.setItem;
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (this: Storage, key, value) {
+      if (key.endsWith(".settings")) throw new DOMException("quota exceeded", "QuotaExceededError");
+      originalSetItem.call(this, key, value);
+    });
+    const agent = { id: "codex", enabled: true, kind: "codex" as const, mode: "draft" as const, profileRef: null, repositoryPrompts: [] };
+    const server = parseDevHudSettings({ ...defaultDevHudSettings, agents: [agent] });
+    const replacement = parseDevHudSettings({ ...server, agents: [{ ...agent, enabled: false, mode: "direct" }] });
+    let replacements = 0;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: SettingsSchemaVersion, revision: "1", canonicalJson: encodedSettings(server) } });
+      if (url.endsWith("/devhud.v1.SettingsService/ReplaceSettings")) {
+        replacements += 1;
+        return connectResponse({ snapshot: { schemaVersion: SettingsSchemaVersion, revision: "2", canonicalJson: encodedSettings(replacement) } });
+      }
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    renderIdentityProbe(authenticatedBridge(), replacement);
+    await waitFor(() => expect(screen.getByTestId("identity-state").dataset.readOnly).toBe("false"));
+    fireEvent.click(screen.getByRole("button", { name: "replace probe settings" }));
+
+    await waitFor(() => expect(screen.getByTestId("identity-state").dataset.actionSettled).toBe("1"));
+    expect(screen.getByTestId("identity-state").dataset).toMatchObject({ revision: "2", actionError: "false" });
+    expect(replacements).toBe(1);
+  });
+
+  it("preserves submitted device-local prompts when adopting a conflict snapshot", async () => {
+    const agent = { id: "codex", enabled: true, kind: "codex" as const, mode: "draft" as const, profileRef: null, repositoryPrompts: [] };
+    const prompt = { repository: { owner: "delinoio", name: "oss" }, body: "submitted device-local prompt" };
+    const server = parseDevHudSettings({ ...defaultDevHudSettings, agents: [agent] });
+    const replacement = parseDevHudSettings({
+      ...server,
+      appearance: { ...server.appearance, theme: "dark" },
+      agents: [{ ...agent, repositoryPrompts: [prompt] }],
+    });
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: SettingsSchemaVersion, revision: "1", canonicalJson: encodedSettings(server) } });
+      if (url.endsWith("/devhud.v1.SettingsService/ReplaceSettings")) {
+        const detail = create(SettingsRevisionConflictSchema, {
+          expectedRevision: 1n,
+          currentSnapshot: { schemaVersion: SettingsSchemaVersion, revision: 2n, canonicalJson: new TextEncoder().encode(canonicalDevHudSettings(server)), contentSha256: await settingsContentDigest(server) },
+        });
+        const value = btoa(String.fromCharCode(...toBinary(SettingsRevisionConflictSchema, detail)));
+        return new Response(JSON.stringify({ code: "aborted", message: "settings revision conflict", details: [{ type: SettingsRevisionConflictSchema.typeName, value }] }), { status: 409, headers: { "Content-Type": "application/json" } });
+      }
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    render(<DevHudServiceBoundary
+      apiOrigin="https://devhud.api.delino.io"
+      active
+      online
+      callbackUrl={null}
+      platform={RuntimePlatform.Desktop}
+      bridge={authenticatedBridge()}
+      onCallbackConsumed={() => {}}
+      onContinueLocally={() => {}}
+      onLoggedOut={() => {}}
+    ><IdentityStateProbe replacement={replacement} /><SynchronizedSettingsBoundary copy={messages.en} /></DevHudServiceBoundary>);
+    await waitFor(() => expect(screen.getByTestId("identity-state").dataset.readOnly).toBe("false"));
+    fireEvent.click(screen.getByRole("button", { name: "replace probe settings" }));
+    fireEvent.click(await screen.findByRole("button", { name: messages.en.adoptServer }));
+
+    await waitFor(() => expect(screen.queryByText(messages.en.conflictTitle)).toBeNull());
+    const cached = readAuthenticatedSettingsCache(localStorage, "https://devhud.api.delino.io");
+    expect(cached?.revision).toBe(2n);
+    expect(cached?.settings.agents[0]?.repositoryPrompts).toEqual([prompt]);
+  });
+
+  it("ignores an older query validation that finishes after a newer mutation", async () => {
+    const server = parseDevHudSettings({ ...defaultDevHudSettings, appearance: { ...defaultDevHudSettings.appearance, theme: "light" } });
+    const staleServer = parseDevHudSettings({ ...server, appearance: { ...server.appearance, language: "ko" } });
+    const replacement = parseDevHudSettings({ ...server, appearance: { ...server.appearance, theme: "dark" } });
+    const nativeDigest = crypto.subtle.digest.bind(crypto.subtle);
+    const serverDigest = new Uint8Array(await nativeDigest("SHA-256", new TextEncoder().encode(canonicalDevHudSettings(server))));
+    const staleCanonical = canonicalDevHudSettings(staleServer);
+    const staleDigest = new Uint8Array(await nativeDigest("SHA-256", new TextEncoder().encode(staleCanonical)));
+    const replacementDigest = new Uint8Array(await nativeDigest("SHA-256", new TextEncoder().encode(canonicalDevHudSettings(replacement))));
+    let releaseStaleValidation!: () => void;
+    const staleValidationGate = new Promise<void>((resolve) => { releaseStaleValidation = resolve; });
+    let staleValidationDrained!: () => void;
+    const staleValidationDrain = new Promise<void>((resolve) => { staleValidationDrained = resolve; });
+    let staleValidationStarted = false;
+    vi.spyOn(crypto.subtle, "digest").mockImplementation(async (algorithm, data) => {
+      const bytes = data instanceof ArrayBuffer
+        ? new Uint8Array(data)
+        : new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+      const stale = new TextDecoder().decode(bytes) === staleCanonical;
+      if (stale) {
+        staleValidationStarted = true;
+        await staleValidationGate;
+      }
+      const result = await nativeDigest(algorithm, data);
+      if (stale) setTimeout(staleValidationDrained, 0);
+      return result;
+    });
+    let settingsRequests = 0;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) {
+        settingsRequests += 1;
+        return settingsRequests === 1
+          ? settingsSnapshotResponse(server, 1n, serverDigest)
+          : settingsSnapshotResponse(staleServer, 0n, staleDigest);
+      }
+      if (url.endsWith("/devhud.v1.SettingsService/ReplaceSettings")) return settingsSnapshotResponse(replacement, 2n, replacementDigest);
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    renderIdentityProbe(authenticatedBridge(), replacement);
+    await waitFor(() => expect(screen.getByTestId("identity-state").dataset.readOnly).toBe("false"));
+    fireEvent.click(screen.getByRole("button", { name: "refetch probe queries" }));
+    await waitFor(() => expect(staleValidationStarted).toBe(true));
+    fireEvent.click(screen.getByRole("button", { name: "replace probe settings" }));
+    await waitFor(() => expect(screen.getByTestId("identity-state").dataset.actionSettled).toBe("1"));
+    expect(screen.getByTestId("identity-state").dataset.revision).toBe("2");
+
+    await act(async () => {
+      releaseStaleValidation();
+      await staleValidationDrain;
+    });
+
+    expect(screen.getByTestId("identity-state").dataset).toMatchObject({ revision: "2", theme: "dark", error: "" });
+    const cached = readAuthenticatedSettingsCache(localStorage, "https://devhud.api.delino.io");
+    expect(cached?.revision).toBe(2n);
+    expect(cached?.settings.appearance.theme).toBe("dark");
+    expect(cached?.contentSHA256).toEqual(replacementDigest);
   });
 
   it("admits and migrates an authenticated schema-v4 snapshot", async () => {

@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { StaticCapability } from "@delinoio/devhud-api-client";
-import { clearAllContractedLocalData, clearAuthenticatedOriginData, clearAuthenticatedSettingsCache, clearGuestImportMarker, DeviceLocalSettingsMaximumBytes, hasGuestSettings, readAuthenticatedSettingsCache, readCachedIdentityBootstrap, readGuestSettings, writeAuthenticatedSettingsCache, writeCachedIdentityBootstrap, writeGuestSettings } from "./local-data";
+import { clearAllContractedLocalData, clearAuthenticatedOriginData, clearAuthenticatedSettingsCache, clearGuestImportMarker, deviceLocalSettingsEqual, DeviceLocalSettingsMaximumBytes, hasGuestSettings, readAuthenticatedSettingsCache, readCachedIdentityBootstrap, readGuestSettings, writeAuthenticatedSettingsCache, writeCachedIdentityBootstrap, writeGuestSettings } from "./local-data";
 import { defaultDevHudSettings, parseDevHudSettings } from "./settings-contract";
+import { ShortcutActionId } from "./shortcuts";
 
 class MemoryStorage implements Storage {
   readonly #values = new Map<string, string>();
@@ -134,6 +135,43 @@ describe("local identity data lifecycle", () => {
 
     expect(storage.getItem("devhud.identity.v1.guest-settings")).toContain(prompt.body);
     expect(readGuestSettings(storage).agents[0]?.repositoryPrompts).toEqual([prompt]);
+  });
+
+  it("requires durable persistence only for actual device-local changes", () => {
+    const profile = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", name: "Work", kind: "fine-grained" as const };
+    const prompt = { repository: { owner: "delinoio", name: "oss" }, body: "local-only prompt" };
+    const current = parseDevHudSettings({
+      ...defaultDevHudSettings,
+      github: { ...defaultDevHudSettings.github, profiles: [profile] },
+      agents: [{ id: "codex", enabled: true, kind: "codex", mode: "draft", repositoryPrompts: [prompt], profileRef: null }],
+    });
+    const synchronizedAgentUpdate = parseDevHudSettings({
+      ...current,
+      agents: [{ ...current.agents[0]!, enabled: false, mode: "direct", profileRef: profile.id }],
+    });
+    const promptUpdate = parseDevHudSettings({
+      ...current,
+      agents: [{ ...current.agents[0]!, repositoryPrompts: [{ ...prompt, body: "updated local-only prompt" }] }],
+    });
+    const shortcutUpdate = parseDevHudSettings({
+      ...current,
+      shortcuts: {
+        ...current.shortcuts,
+        desktop: {
+          ...current.shortcuts.desktop,
+          [ShortcutActionId.CommandPalette]: { ...current.shortcuts.desktop[ShortcutActionId.CommandPalette], enabled: false },
+        },
+      },
+    });
+    const emptyAgentAddition = parseDevHudSettings({
+      ...defaultDevHudSettings,
+      agents: [{ id: "codex", enabled: true, kind: "codex", mode: "draft", repositoryPrompts: [], profileRef: null }],
+    });
+
+    expect(deviceLocalSettingsEqual(current, synchronizedAgentUpdate)).toBe(true);
+    expect(deviceLocalSettingsEqual(current, promptUpdate)).toBe(false);
+    expect(deviceLocalSettingsEqual(current, shortcutUpdate)).toBe(false);
+    expect(deviceLocalSettingsEqual(defaultDevHudSettings, emptyAgentAddition)).toBe(true);
   });
 
   it("rejects device-local settings above the aggregate UTF-8 limit", () => {
