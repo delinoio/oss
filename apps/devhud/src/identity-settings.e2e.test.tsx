@@ -17,8 +17,8 @@ import * as identityClient from "./identity-client";
 import { sessionProfileId, type IdentitySession } from "./identity-client";
 import { SynchronizedSettingsBoundary } from "./identity-ui";
 import { messages } from "./localization";
-import { hasGuestSettings, readAuthenticatedSettingsCache, readGuestSettings, writeAuthenticatedSettingsCache, writeCachedIdentityBootstrap, writeGuestSettings } from "./local-data";
-import { canonicalDevHudSettings, defaultDevHudSettings, parseDevHudSettings, SettingsSchemaVersion, StructuredSettingsSchemaVersion, type DevHudSettingsV1 } from "./settings-contract";
+import { assertDeviceLocalSettingsPersistable, DeviceLocalSettingsMaximumBytes, hasGuestSettings, readAuthenticatedSettingsCache, readGuestSettings, writeAuthenticatedSettingsCache, writeCachedIdentityBootstrap, writeGuestSettings } from "./local-data";
+import { canonicalDevHudSettings, defaultDevHudSettings, parseDevHudSettings, SettingsSchemaVersion, StructuredSettingsSchemaVersion, withDeviceLocalSettings, type DevHudSettingsV1 } from "./settings-contract";
 import { LifecycleState, RuntimePlatform, type NativeBridgeEventV1, type NativeBridgeRequestV1, type NativeBridgeResponseV1, type NativeBridgeV1, type RuntimeSnapshot } from "./native-bridge";
 import { clearIdentityForApiChange, DevHudServiceBoundary, useIdentitySettings } from "./service-boundary";
 import { ShortcutActionId } from "./shortcuts";
@@ -1956,6 +1956,69 @@ describe("generated Connect identity/settings fixture", () => {
 
     await waitFor(() => expect(screen.getByTestId("identity-state").dataset).toMatchObject({ readOnly: "true", revision: "0", error: "settings-contract-invalid" }));
     expect(readAuthenticatedSettingsCache(localStorage, "https://devhud.api.delino.io")).toBeNull();
+  });
+
+  it("rejects an oversized rehydrated snapshot without replacing the last valid state", async () => {
+    const apiOrigin = "https://devhud.api.delino.io";
+    const prompts = Array.from({ length: 32 }, (_, index) => ({
+      repository: { owner: "delinoio", name: `repository-${index}` },
+      body: index === 31 ? "" : "x".repeat(32 * 1024),
+    }));
+    const cachedAgent = { id: "codex", enabled: true, kind: "codex" as const, mode: "draft" as const, profileRef: null, repositoryPrompts: prompts };
+    const baseCached = parseDevHudSettings({ ...defaultDevHudSettings, agents: [cachedAgent] });
+    const aggregateBytes = (settings: DevHudSettingsV1) => new TextEncoder().encode(JSON.stringify({ shortcuts: settings.shortcuts, agents: settings.agents })).byteLength;
+    const promptPaddingBytes = DeviceLocalSettingsMaximumBytes - 128 - aggregateBytes(baseCached);
+    expect(promptPaddingBytes).toBeGreaterThan(0);
+    expect(promptPaddingBytes).toBeLessThanOrEqual(32 * 1024);
+    const cached = parseDevHudSettings({
+      ...baseCached,
+      agents: [{
+        ...baseCached.agents[0]!,
+        repositoryPrompts: baseCached.agents[0]!.repositoryPrompts.map((prompt, index) => index === 31 ? { ...prompt, body: "x".repeat(promptPaddingBytes) } : prompt),
+      }],
+    });
+    expect(aggregateBytes(cached)).toBe(DeviceLocalSettingsMaximumBytes - 128);
+    expect(() => assertDeviceLocalSettingsPersistable(cached)).not.toThrow();
+    expect(writeAuthenticatedSettingsCache(localStorage, apiOrigin, { settings: cached, revision: 0n, cachedAt: "2026-08-17T00:00:00.000Z" })).toBe(true);
+
+    const serverAgent = { id: "codex", enabled: true, kind: "codex" as const, mode: "draft" as const, profileRef: null, repositoryPrompts: [] };
+    const initialServer = parseDevHudSettings({ ...defaultDevHudSettings, appearance: { ...defaultDevHudSettings.appearance, theme: "dark" }, agents: [serverAgent] });
+    const expandedServer = parseDevHudSettings({
+      ...defaultDevHudSettings,
+      appearance: { ...defaultDevHudSettings.appearance, theme: "light" },
+      agents: Array.from({ length: 25 }, (_, index) => index === 0 ? serverAgent : {
+        id: `agent-${index}-${"x".repeat(100)}`,
+        enabled: true,
+        kind: "codex" as const,
+        mode: "draft" as const,
+        profileRef: null,
+        repositoryPrompts: [],
+      }),
+    });
+    expect(() => assertDeviceLocalSettingsPersistable(withDeviceLocalSettings(expandedServer, cached))).toThrow(/1 MiB/u);
+
+    let settingsRequests = 0;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) {
+        settingsRequests += 1;
+        const server = settingsRequests === 1 ? initialServer : expandedServer;
+        return settingsSnapshotResponse(server, BigInt(settingsRequests), await settingsContentDigest(server));
+      }
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    renderIdentityProbe(authenticatedBridge());
+    await waitFor(() => expect(screen.getByTestId("identity-state").dataset).toMatchObject({ readOnly: "false", revision: "1", theme: "dark", error: "" }));
+    fireEvent.click(screen.getByRole("button", { name: "refetch probe queries" }));
+
+    await waitFor(() => expect(screen.getByTestId("identity-state").dataset).toMatchObject({ readOnly: "true", revision: "1", theme: "dark", error: "settings-contract-invalid" }));
+    expect(settingsRequests).toBe(2);
+    const persisted = readAuthenticatedSettingsCache(localStorage, apiOrigin);
+    expect(persisted?.revision).toBe(1n);
+    expect(persisted?.settings.appearance.theme).toBe("dark");
   });
 
   it.each(["missing", "malformed"] as const)("fails closed for a %s replacement snapshot", async (kind) => {

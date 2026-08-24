@@ -507,19 +507,29 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       }
       if (cancelled || validated.revision < revisionRef.current) return;
       let server = validated.settings;
+      let local: DevHudSettingsV1 | null = null;
+      if (hasGuestSettings(storage)) {
+        local = readGuestSettings(storage);
+        server = withDeviceLocalSettings(server, local);
+      } else {
+        const cached = readAuthenticatedSettingsCache(storage, apiOrigin);
+        server = withDeviceLocalSettings(server, cached?.settings ?? settingsRef.current);
+        try {
+          assertDeviceLocalSettingsPersistable(server);
+        } catch {
+          if (!cancelled) markSettingsContractInvalid();
+          return;
+        }
+      }
       setError((current) => current === "settings-contract-invalid" ? null : current);
       setSettingsError(null);
       setSettingsReady(true);
       setShortcutSettingsReady(true);
       applyRevision(validated.revision, validated.contentSHA256);
-      if (hasGuestSettings(storage)) {
-        const local = readGuestSettings(storage);
-        server = withDeviceLocalSettings(server, local);
+      if (local !== null) {
         applySettings(local);
         setImportDiff(diffSettings(local, server));
       } else {
-        const cached = readAuthenticatedSettingsCache(storage, apiOrigin);
-        server = withDeviceLocalSettings(server, cached?.settings ?? settingsRef.current);
         applySettings(server);
         writeAuthenticatedSettingsCache(storage, apiOrigin, { settings: server, revision: validated.revision, contentSHA256: validated.contentSHA256, cachedAt: new Date().toISOString() });
       }
