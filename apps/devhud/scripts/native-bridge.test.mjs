@@ -262,9 +262,13 @@ test("RealQA requests are bounded and capture data stays out of logs and recordi
 
 test("RealQA upload requests require immutable HTTPS direct-upload contracts", () => {
   const base = { draftId: "01900000-0000-7000-8000-000000000001", expectedRevision: 1, imageId: "01900000-0000-7000-8000-000000000002", expectedBytes: 3, expectedSha256: "00".repeat(32) };
-  assert.doesNotThrow(() => validateCaptureRequest({ ...base, operation: "capture.upload-official", upload: { uploadId: "01900000-0000-7000-8000-000000000003", submissionId: "01900000-0000-7000-8000-000000000004", uploadGroupId: "01900000-0000-7000-8000-000000000005", reservationId: "01900000-0000-7000-8000-000000000006", stagingGeneration: "1", signedPutUrl: "https://r2.example/object?signature=value", requiredHeaders: { contentType: "image/png", checksumSha256Base64: "A".repeat(43) + "=", contentLength: "3" } } }));
-  assert.throws(() => validateCaptureRequest({ ...base, operation: "capture.upload-r2", profile: { profileRef: "profile", endpoint: "http://r2.example", accountId: "account", bucket: "bucket", publicBaseUrl: "https://images.example", prefix: "devhud" } }), NativeBridgeError);
-  assert.throws(() => validateCaptureRequest({ ...base, operation: "capture.upload-r2", profile: { profileRef: "profile", endpoint: "https://r2.example", accountId: "account", bucket: "bucket", publicBaseUrl: "https://images.example", prefix: "../escape" } }), NativeBridgeError);
+  const upload = { uploadId: "01900000-0000-7000-8000-000000000003", submissionId: "01900000-0000-7000-8000-000000000004", uploadGroupId: "01900000-0000-7000-8000-000000000005", reservationId: "01900000-0000-7000-8000-000000000006", stagingGeneration: "1", signedPutUrl: "https://r2.example/object?signature=value", requiredHeaders: { contentType: "image/png", checksumSha256Base64: "A".repeat(43) + "=", contentLength: "3" } };
+  assert.doesNotThrow(() => validateCaptureRequest({ ...base, operation: "capture.upload-official", officialUploadOrigin: "https://r2.example", upload }));
+  assert.throws(() => validateCaptureRequest({ ...base, operation: "capture.upload-official", officialUploadOrigin: "https://attacker.invalid", upload }), NativeBridgeError);
+  const profile = { profileRef: "profile", accountId: "0123456789abcdef0123456789abcdef", bucket: "bucket", publicBaseUrl: "https://images.example", prefix: "devhud" };
+  assert.doesNotThrow(() => validateCaptureRequest({ ...base, operation: "capture.upload-r2", profile }));
+  assert.throws(() => validateCaptureRequest({ ...base, operation: "capture.upload-r2", profile: { ...profile, endpoint: "https://attacker.invalid" } }), NativeBridgeError);
+  assert.throws(() => validateCaptureRequest({ ...base, operation: "capture.upload-r2", profile: { ...profile, prefix: "../escape" } }), NativeBridgeError);
   assert.match(nativeUploads, /\.put\(url\)|\.put\(upload_url\)/u);
   assert.match(nativeUploads, /secure_store::r2_credentials/u);
   assert.match(nativeUploads, /r2_object_key\([\s\S]*request\.expected_revision/u);
