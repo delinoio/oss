@@ -1958,6 +1958,30 @@ describe("generated Connect identity/settings fixture", () => {
     expect(readAuthenticatedSettingsCache(localStorage, "https://devhud.api.delino.io")).toBeNull();
   });
 
+  it("rejects device-local repository prompts returned in a synchronized v7 snapshot", async () => {
+    const prompt = { repository: { owner: "delinoio", name: "oss" }, body: "device-local instructions" };
+    const local = parseDevHudSettings({
+      ...defaultDevHudSettings,
+      agents: [{ id: "codex", enabled: true, kind: "codex", mode: "draft", repositoryPrompts: [prompt], profileRef: null }],
+    });
+    const synchronized = JSON.parse(canonicalDevHudSettings(local)) as { agents: Record<string, unknown>[] };
+    synchronized.agents[0]!.repositoryPrompts = [prompt];
+    const invalidCanonicalJson = canonicalizeSettingsJson(synchronized);
+
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/devhud.v1.BootstrapService/GetBootstrap")) return connectResponse(fixture.bootstrap);
+      if (url.endsWith("/devhud.v1.AccountService/GetAccount")) return connectResponse({ account: fixture.account });
+      if (url.endsWith("/devhud.v1.SettingsService/GetSettings")) return connectResponse({ snapshot: { schemaVersion: SettingsSchemaVersion, revision: "1", canonicalJson: btoa(invalidCanonicalJson) } });
+      throw new Error(`unexpected request ${url}`);
+    }));
+
+    renderIdentityProbe(authenticatedBridge());
+
+    await waitFor(() => expect(screen.getByTestId("identity-state").dataset).toMatchObject({ readOnly: "true", revision: "0", error: "settings-contract-invalid" }));
+    expect(readAuthenticatedSettingsCache(localStorage, "https://devhud.api.delino.io")).toBeNull();
+  });
+
   it("rejects an oversized rehydrated snapshot without replacing the last valid state", async () => {
     const apiOrigin = "https://devhud.api.delino.io";
     const prompts = Array.from({ length: 32 }, (_, index) => ({

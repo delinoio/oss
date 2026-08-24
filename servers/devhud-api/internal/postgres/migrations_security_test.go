@@ -136,6 +136,45 @@ func TestMigrateSettingsCanonicalJSONDerivesOrDisablesLegacyR2(t *testing.T) {
 	}
 }
 
+func TestMigrateSettingsCanonicalJSONRequiresExactR2EndpointForValidAccountID(t *testing.T) {
+	const accountID = "fedcba9876543210fedcba9876543210"
+	for _, schemaVersion := range []uint32{5, 6} {
+		t.Run(fmt.Sprintf("v%d", schemaVersion), func(t *testing.T) {
+			exactEndpoint := cloudflareR2Endpoint(accountID)
+			input := legacySettingsFixture(schemaVersion)
+			input["uploads"] = map[string]any{"provider": "r2", "r2": legacyR2Profile(accountID, exactEndpoint)}
+			root := migratedRoot(t, input, schemaVersion)
+			uploads := root["uploads"].(map[string]any)
+			if uploads["provider"] != "r2" || uploads["r2"].(map[string]any)["accountId"] != accountID {
+				t.Fatalf("exact legacy R2 endpoint was not retained: %v", uploads)
+			}
+
+			for name, endpoint := range map[string]string{
+				"custom":             "https://storage.internal.example/",
+				"path":               exactEndpoint + "private",
+				"nonstandard-port":   "https://" + accountID + ".r2.cloudflarestorage.com:8443/",
+				"mismatched-account": "https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com/",
+			} {
+				t.Run(name, func(t *testing.T) {
+					input := legacySettingsFixture(schemaVersion)
+					input["uploads"] = map[string]any{"provider": "r2", "r2": legacyR2Profile(accountID, endpoint)}
+					uploads := migratedRoot(t, input, schemaVersion)["uploads"].(map[string]any)
+					if uploads["provider"] != "official" || uploads["r2"] != nil {
+						t.Fatalf("unsafe legacy R2 endpoint was retained: %v", uploads)
+					}
+				})
+			}
+		})
+	}
+}
+
+func legacyR2Profile(accountID, endpoint string) map[string]any {
+	return map[string]any{
+		"profileRef": "legacy", "name": "Legacy", "endpoint": endpoint, "accountId": accountID,
+		"bucket": "screenshots", "publicBaseUrl": nil, "prefix": "captures",
+	}
+}
+
 func migratedRoot(t *testing.T, input map[string]any, version uint32) map[string]any {
 	t.Helper()
 	migrated, _, err := migrateSettingsCanonicalJSON(mustJSON(t, input), version)

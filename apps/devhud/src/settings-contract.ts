@@ -119,6 +119,11 @@ const prototypeSensitiveKeys = new Set(["__proto__", "constructor", "prototype"]
 const MaximumNativeMessagingJsonBytes = 256 * 1024;
 const NativeMessagingEnvelopeRequestId = "01900000-0000-7000-8000-000000000000";
 
+enum SettingsParseScope {
+  DeviceLocal,
+  Synchronized,
+}
+
 export class SettingsContractError extends TypeError {
   readonly path: string;
 
@@ -130,11 +135,17 @@ export class SettingsContractError extends TypeError {
 }
 
 export function parseDevHudSettings(value: unknown): DevHudSettingsV1 {
+  return parseDevHudSettingsForScope(value, SettingsParseScope.DeviceLocal);
+}
+
+function parseDevHudSettingsForScope(value: unknown, scope: SettingsParseScope): DevHudSettingsV1 {
   rejectSensitiveContent(value, "$", new WeakSet());
   const unvalidatedRoot = record(value, "$");
   const sourceSchemaVersion = integer(unvalidatedRoot.schemaVersion, "$.schemaVersion", LegacySettingsSchemaVersion, SettingsSchemaVersion);
   const root = sourceSchemaVersion < SettingsSchemaVersion
     ? object(value, "$", ["schemaVersion", "appearance", "decks", "github", "urlMappings", "shortcuts", "agents", "uploads"])
+    : scope === SettingsParseScope.Synchronized
+      ? object(value, "$", ["schemaVersion", "appearance", "decks", "github", "urlMappings", "agents", "uploads"])
     : objectWithOptional(value, "$", ["schemaVersion", "appearance", "decks", "github", "urlMappings", "agents", "uploads"], ["shortcuts"]);
   const legacy = sourceSchemaVersion === LegacySettingsSchemaVersion;
 
@@ -155,7 +166,7 @@ export function parseDevHudSettings(value: unknown): DevHudSettingsV1 {
   const shortcuts = root.shortcuts === undefined ? null : object(root.shortcuts, "$.shortcuts", [...Platform]);
   const uploads = object(root.uploads, "$.uploads", ["provider", "r2"]);
   const uploadProvider = enumeration(uploads.provider, "$.uploads.provider", UploadProvider);
-  const parsedR2 = uploads.r2 === null ? null : parseR2(uploads.r2, sourceSchemaVersion);
+  const parsedR2 = uploads.r2 === null ? null : parseR2(uploads.r2, sourceSchemaVersion, scope);
   const migratedUploads: DevHudSettingsV1["uploads"] = sourceSchemaVersion < SettingsSchemaVersion && parsedR2 !== null && parsedR2.accountId === null
     ? { provider: "official", r2: null }
     : { provider: uploadProvider, r2: parsedR2 };
@@ -165,7 +176,7 @@ export function parseDevHudSettings(value: unknown): DevHudSettingsV1 {
   const urlMappings = structuredMappings ? parseStructuredMappings(root.urlMappings) : parseLegacyMappings(root.urlMappings);
   if (urlMappings.length > MaximumUrlRepositoryMappings) throw new SettingsContractError("$.urlMappings", `must contain at most ${MaximumUrlRepositoryMappings} entries`);
   if (new Set(urlMappings.map((mapping) => mapping.id)).size !== urlMappings.length) throw new SettingsContractError("$.urlMappings", "must not contain duplicate mapping IDs");
-  const agents = array(root.agents, "$.agents").map((entry, index) => parseAgent(entry, `$.agents[${index}]`, sourceSchemaVersion));
+  const agents = array(root.agents, "$.agents").map((entry, index) => parseAgent(entry, `$.agents[${index}]`, sourceSchemaVersion, scope));
   const migratedAgents = sourceSchemaVersion < AgentPromptSettingsSchemaVersion
     ? agents.map((agent) => agent.profileRef !== null && !githubProfileIds.has(agent.profileRef) ? { ...agent, profileRef: null } : agent)
     : agents;
@@ -271,7 +282,7 @@ export function decodeDevHudSettings(value: Uint8Array): DevHudSettingsV1 {
 
 export function decodeDevHudSettingsSnapshot(value: Uint8Array): { readonly sourceSchemaVersion: 1 | 2 | 3 | 4 | 5 | 6 | 7; readonly settings: DevHudSettingsV1 } {
   const canonical = validateCanonicalSettingsJson(value);
-  const settings = parseDevHudSettings(canonical);
+  const settings = parseDevHudSettingsForScope(canonical, SettingsParseScope.Synchronized);
   const sourceSchemaVersion = (canonical as { readonly schemaVersion: unknown }).schemaVersion;
   if (sourceSchemaVersion !== LegacySettingsSchemaVersion && sourceSchemaVersion !== PreviousSettingsSchemaVersion && sourceSchemaVersion !== CollidingSettingsSchemaVersion && sourceSchemaVersion !== StructuredSettingsSchemaVersion && sourceSchemaVersion !== R2SettingsSchemaVersion && sourceSchemaVersion !== AgentPromptSettingsSchemaVersion && sourceSchemaVersion !== SettingsSchemaVersion) throw new SettingsContractError("$.schemaVersion", "is unsupported");
   return { sourceSchemaVersion, settings };
@@ -283,7 +294,7 @@ export function decodeVersionedDevHudSettings(value: Uint8Array, envelopeSchemaV
   if (embeddedSchemaVersion !== undefined && embeddedSchemaVersion !== envelopeSchemaVersion) {
     throw new SettingsContractError("$.schemaVersion", "must match the snapshot envelope schema version");
   }
-  return parseDevHudSettings(decoded);
+  return parseDevHudSettingsForScope(decoded, SettingsParseScope.Synchronized);
 }
 
 export function canonicalDevHudSettings(value: unknown): string {
@@ -702,9 +713,11 @@ function validateGitHubProfileRef(value: string | null, path: string, profileIds
   if (value !== null && !profileIds.has(value)) throw new SettingsContractError(path, "must reference a configured GitHub profile");
 }
 
-function parseAgent(value: unknown, path: string, sourceSchemaVersion: number): DevHudSettingsV1["agents"][number] {
+function parseAgent(value: unknown, path: string, sourceSchemaVersion: number, scope: SettingsParseScope): DevHudSettingsV1["agents"][number] {
   const agent = sourceSchemaVersion < SettingsSchemaVersion
     ? object(value, path, ["id", "enabled", "kind", "mode", "repositoryPrompts", "profileRef"])
+    : scope === SettingsParseScope.Synchronized
+      ? object(value, path, ["id", "enabled", "kind", "mode", "profileRef"])
     : objectWithOptional(value, path, ["id", "enabled", "kind", "mode", "profileRef"], ["repositoryPrompts"]);
   const profileRef = agent.profileRef === null ? null : text(agent.profileRef, `${path}.profileRef`);
   if (profileRef !== null && !profileRefPattern.test(profileRef)) throw new SettingsContractError(`${path}.profileRef`, "is invalid");
@@ -739,21 +752,25 @@ function parseAgent(value: unknown, path: string, sourceSchemaVersion: number): 
   };
 }
 
-function parseR2(value: unknown, sourceSchemaVersion: number): NonNullable<DevHudSettingsV1["uploads"]["r2"]> {
+function parseR2(value: unknown, sourceSchemaVersion: number, scope: SettingsParseScope): NonNullable<DevHudSettingsV1["uploads"]["r2"]> {
   const path = "$.uploads.r2";
   const current = sourceSchemaVersion >= R2SettingsSchemaVersion;
   const r2 = sourceSchemaVersion < SettingsSchemaVersion
     ? object(value, path, current
       ? ["profileRef", "name", "endpoint", "accountId", "bucket", "publicBaseUrl", "prefix"]
       : ["profileRef", "bucket", "endpoint", "region", "publicBaseUrl"])
+    : scope === SettingsParseScope.Synchronized
+      ? object(value, path, ["profileRef", "name", "accountId", "bucket", "publicBaseUrl", "prefix"])
     : objectWithOptional(value, path, ["profileRef", "name", "accountId", "bucket", "publicBaseUrl", "prefix"], ["endpoint"]);
   const profileRef = text(r2.profileRef, `${path}.profileRef`);
   if (!profileRefPattern.test(profileRef)) throw new SettingsContractError(`${path}.profileRef`, "is invalid");
   const legacyEndpoint = sourceSchemaVersion < SettingsSchemaVersion ? url(r2.endpoint, `${path}.endpoint`, true) : null;
   const declaredAccountId = current ? nullableR2Identifier(r2.accountId, `${path}.accountId`) : null;
-  const accountId = sourceSchemaVersion < SettingsSchemaVersion && !isCloudflareAccountId(declaredAccountId)
+  const candidateAccountId = sourceSchemaVersion < SettingsSchemaVersion && !isCloudflareAccountId(declaredAccountId)
     ? accountIdFromEndpoint(legacyEndpoint!)
     : declaredAccountId;
+  const expectedEndpoint = candidateAccountId === null ? "" : `https://${candidateAccountId}.r2.cloudflarestorage.com/`;
+  const accountId = sourceSchemaVersion < SettingsSchemaVersion && r2.endpoint !== expectedEndpoint ? null : candidateAccountId;
   if (sourceSchemaVersion >= SettingsSchemaVersion && !isCloudflareAccountId(accountId)) throw new SettingsContractError(`${path}.accountId`, "must be a lowercase 32-character Cloudflare account ID");
   const endpoint = accountId === null ? "" : `https://${accountId}.r2.cloudflarestorage.com/`;
   if (sourceSchemaVersion >= SettingsSchemaVersion && r2.endpoint !== undefined && url(r2.endpoint, `${path}.endpoint`, true) !== endpoint) throw new SettingsContractError(`${path}.endpoint`, "must match the exact Cloudflare account endpoint");

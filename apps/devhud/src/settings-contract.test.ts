@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { canonicalizeSettingsJson } from "@delinoio/devhud-api-client";
 import { canonicalDevHudSettings, CollidingSettingsSchemaVersion, deckBuilderProjection, deckRepositories, decodeDevHudSettings, decodeVersionedDevHudSettings, defaultDevHudSettings, encodeDevHudSettings, MaximumUrlRepositoryMappings, parseDevHudSettings, PreviousSettingsSchemaVersion, SettingsContractError, SettingsSchemaVersion, StructuredSettingsSchemaVersion, withDeviceLocalSettings } from "./settings-contract";
 import { diffSettings, redactRecursively, RedactedValue } from "./settings-diff";
 import { ShortcutActionId, ShortcutKey, ShortcutModifier, ShortcutValidationCode, defaultDesktopShortcutBindings, parseDesktopShortcutBindings } from "./shortcuts";
@@ -60,6 +61,22 @@ describe("DevHud settings boundary", () => {
       provider: "r2",
       r2: { profileRef: "legacy-profile", name: "Legacy", endpoint: `https://${accountId}.r2.cloudflarestorage.com/`, accountId, bucket: "bucket", publicBaseUrl: null, prefix: "captures" },
     });
+  });
+
+  it.each([5, 6])("retains schema-v%i R2 metadata only when its valid account ID matches the exact endpoint", (schemaVersion) => {
+    const accountId = "fedcba9876543210fedcba9876543210";
+    const r2 = { profileRef: "legacy-profile", name: "Legacy", endpoint: `https://${accountId}.r2.cloudflarestorage.com/`, accountId, bucket: "bucket", publicBaseUrl: null, prefix: "captures" };
+    const legacy = { ...defaultDevHudSettings, schemaVersion, uploads: { provider: "r2", r2 } };
+    expect(parseDevHudSettings(legacy).uploads.r2?.accountId).toBe(accountId);
+
+    for (const endpoint of [
+      "https://custom.example/",
+      `https://${accountId}.r2.cloudflarestorage.com/path`,
+      `https://${accountId}.r2.cloudflarestorage.com:8443/`,
+      "https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com/",
+    ]) {
+      expect(parseDevHudSettings({ ...legacy, uploads: { provider: "r2", r2: { ...r2, endpoint } } }).uploads).toEqual({ provider: "official", r2: null });
+    }
   });
 
   it("accepts non-secret GitHub profile descriptors and rejects secret fields or duplicate IDs", () => {
@@ -134,6 +151,20 @@ describe("DevHud settings boundary", () => {
     expect(() => decodeVersionedDevHudSettings(encoded, 1)).toThrow(/snapshot envelope/u);
     expect(() => decodeVersionedDevHudSettings(encoded, CollidingSettingsSchemaVersion)).toThrow(/snapshot envelope/u);
     expect(new TextDecoder().decode(encoded)).toBe(canonicalDevHudSettings(defaultDevHudSettings));
+  });
+
+  it("rejects repository prompts from synchronized v7 snapshots while retaining them in device-local settings", () => {
+    const prompt = { repository: { owner: "delinoio", name: "oss" }, body: "device-local instructions" };
+    const local = parseDevHudSettings({
+      ...defaultDevHudSettings,
+      agents: [{ id: "codex", enabled: true, kind: "codex", mode: "draft", repositoryPrompts: [prompt], profileRef: null }],
+    });
+    const synchronized = JSON.parse(canonicalDevHudSettings(local)) as { agents: Record<string, unknown>[] };
+    synchronized.agents[0]!.repositoryPrompts = [prompt];
+    const encoded = new TextEncoder().encode(canonicalizeSettingsJson(synchronized));
+
+    expect(local.agents[0]?.repositoryPrompts).toEqual([prompt]);
+    expect(() => decodeVersionedDevHudSettings(encoded, SettingsSchemaVersion)).toThrow(/repositoryPrompts.*unknown field/u);
   });
 
   it.each(["token", "githubPat", "r2_secret_access_key", "apiUrl", "agentPath", "windowState", "permissions"])("rejects forbidden recursive field %s", (field) => {

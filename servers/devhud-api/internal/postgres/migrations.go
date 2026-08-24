@@ -335,11 +335,11 @@ func migrateLegacyR2(root map[string]any, schemaVersion uint32) {
 		return
 	}
 	accountID, _ := r2["accountId"].(string)
+	endpoint, _ := r2["endpoint"].(string)
 	if !isCloudflareAccountID(accountID) {
-		endpoint, _ := r2["endpoint"].(string)
 		accountID = cloudflareAccountIDFromEndpoint(endpoint)
 	}
-	if !isCloudflareAccountID(accountID) {
+	if !isCloudflareAccountID(accountID) || endpoint != cloudflareR2Endpoint(accountID) {
 		uploads["provider"] = "official"
 		uploads["r2"] = nil
 		return
@@ -408,6 +408,10 @@ func isCloudflareAccountID(value string) bool {
 		}
 	}
 	return true
+}
+
+func cloudflareR2Endpoint(accountID string) string {
+	return "https://" + accountID + ".r2.cloudflarestorage.com/"
 }
 
 func cloudflareAccountIDFromEndpoint(value string) string {
