@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { assertAndroidArtifactEntries, assertAndroidBackupExclusions, assertAndroidNativeBridge, assertAndroidNativeLibrary, assertAndroidPermissions, assertAndroidWidgetArtifactManifest, assertAndroidWidgetJobService, assertAndroidWidgetStore, assertIosNativeBridge, assertMobileCi, assertMobileContracts, assertMobileDependencyClosures, assertMobileDependencyResolution, assertMobileTargets, assertNativeWidgetPullRequestMetadata, mobileCargoTreeDigest } from "./mobile-policy.mjs";
+import { assertAndroidArtifactEntries, assertAndroidArtifactManifest, assertAndroidBackupExclusions, assertAndroidNativeBridge, assertAndroidNativeLibrary, assertAndroidPermissions, assertAndroidWidgetJobService, assertAndroidWidgetStore, assertIosNativeBridge, assertMobileCi, assertMobileContracts, assertMobileDependencyClosures, assertMobileDependencyResolution, assertMobileTargets, assertNativeWidgetPullRequestMetadata, mobileCargoTreeDigest } from "./mobile-policy.mjs";
 
 const appRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const mobileTargets = JSON.parse(readFileSync(join(appRoot, "mobile-platforms.json"), "utf8")).targets;
@@ -403,15 +403,18 @@ test("mobile policy validates APK and App Bundle layouts", () => {
   assert.throws(() => assertAndroidArtifactEntries([...aabEntries, "base/assets/chromium.pak"], ["arm64-v8a"], "aab"), /CEF or browser-extension/u);
 });
 
-test("mobile policy verifies the packaged Deck widget receiver", () => {
+test("mobile policy verifies the packaged Android identity, build number, and Deck widget receiver", () => {
   const provider = mobilePlatforms.widgets.androidProvider;
-  const receiver = `<manifest xmlns:android="http://schemas.android.com/apk/res/android"><application><receiver android:name="${provider}" android:exported="false"><intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter><meta-data android:name="android.appwidget.provider" android:resource="@xml/devhud_widget_info" /></receiver></application></manifest>`;
-  assert.doesNotThrow(() => assertAndroidWidgetArtifactManifest(receiver, provider));
-  assert.throws(() => assertAndroidWidgetArtifactManifest(receiver.replace(provider, `${provider}Missing`), provider), /exactly one/u);
-  assert.throws(() => assertAndroidWidgetArtifactManifest(receiver.replace('android:exported="false"', 'android:exported="true"'), provider), /must not be exported/u);
-  assert.throws(() => assertAndroidWidgetArtifactManifest(receiver.replace("android.appwidget.action.APPWIDGET_UPDATE", "android.intent.action.VIEW"), provider), /update action/u);
-  assert.throws(() => assertAndroidWidgetArtifactManifest(receiver.replace("@xml/devhud_widget_info", "@xml/other"), provider), /metadata/u);
-  assert.throws(() => assertAndroidWidgetArtifactManifest(`${receiver}${receiver}`, provider), /exactly one/u);
+  const manifest = `<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="io.delino.devhud" android:versionCode="1"><application><receiver android:name="${provider}" android:exported="false"><intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter><meta-data android:name="android.appwidget.provider" android:resource="@xml/devhud_widget_info" /></receiver></application></manifest>`;
+  const expected = { identity: mobilePlatforms.identity, versionCode: 1, widgetProvider: provider };
+  assert.doesNotThrow(() => assertAndroidArtifactManifest(manifest, expected));
+  assert.throws(() => assertAndroidArtifactManifest(manifest.replace('package="io.delino.devhud"', 'package="io.delino.other"'), expected), /package identity/u);
+  assert.throws(() => assertAndroidArtifactManifest(manifest.replace('android:versionCode="1"', 'android:versionCode="2"'), expected), /version code/u);
+  assert.throws(() => assertAndroidArtifactManifest(manifest.replace(provider, `${provider}Missing`), expected), /exactly one/u);
+  assert.throws(() => assertAndroidArtifactManifest(manifest.replace('android:exported="false"', 'android:exported="true"'), expected), /must not be exported/u);
+  assert.throws(() => assertAndroidArtifactManifest(manifest.replace("android.appwidget.action.APPWIDGET_UPDATE", "android.intent.action.VIEW"), expected), /update action/u);
+  assert.throws(() => assertAndroidArtifactManifest(manifest.replace("@xml/devhud_widget_info", "@xml/other"), expected), /metadata/u);
+  assert.throws(() => assertAndroidArtifactManifest(`${manifest}${manifest}`, expected), /exactly one/u);
 });
 
 test("mobile policy distinguishes embedded runtime metadata from CEF symbols", () => {

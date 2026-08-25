@@ -6,7 +6,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { assertGeneratedOverlays } from "./generate-mobile.mjs";
-import { assertAndroidArtifactEntries, assertAndroidNativeLibrary, assertAndroidWidgetArtifactManifest, assertMobileContracts, assertMobileDependencyClosures, assertMobileDependencyResolution, mobileCargoTreeDigest } from "./mobile-policy.mjs";
+import { assertAndroidArtifactEntries, assertAndroidArtifactManifest, assertAndroidNativeLibrary, assertMobileContracts, assertMobileDependencyClosures, assertMobileDependencyResolution, mobileCargoTreeDigest } from "./mobile-policy.mjs";
 
 const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = resolve(appRoot, "../..");
@@ -58,7 +58,11 @@ function assertAndroidArtifact(artifact, abis, bundletoolJar, widgetProvider) {
   if (format === "aab") {
     if (!bundletoolJar || !existsSync(bundletoolJar)) throw new Error("--bundletool-jar must reference the pinned bundletool JAR for App Bundle verification");
     const manifest = commandOutput("java", ["-jar", bundletoolJar, "dump", "manifest", `--bundle=${artifact}`, "--module=base"]);
-    assertAndroidWidgetArtifactManifest(manifest, widgetProvider);
+    assertAndroidArtifactManifest(manifest, {
+      identity: platforms.identity,
+      versionCode: releaseMetadata.storeBuildNumber,
+      widgetProvider,
+    });
     return;
   }
 

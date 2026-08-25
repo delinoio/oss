@@ -30,6 +30,19 @@ test("private workflow validates AppImage sandbox metadata before preparing its 
   assert.ok(!workflow.includes('smoke:platform -- --artifact "$RUNNER_TEMP/devhud-installed/DevHUD.AppImage"'));
 });
 
+test("private workflow keeps each Linux Native Messaging lifecycle inside a D-Bus session", () => {
+  const ubuntu = workflow.slice(workflow.indexOf("- name: Normalize and validate Ubuntu artifact and lifecycle"), workflow.indexOf("\n      - uses: actions/upload-artifact@v7", workflow.indexOf("- name: Normalize and validate Ubuntu artifact and lifecycle")));
+  const lifecycle = ubuntu.slice(ubuntu.indexOf("run_native_messaging_lifecycle()"), ubuntu.indexOf("          source=$(find"));
+  assert.ok(workflow.includes("dbus-x11 gnome-keyring libayatana-appindicator3-dev"));
+  assert.ok(lifecycle.includes("dbus-run-session -- bash -euo pipefail -c"));
+  assert.ok(lifecycle.includes("gnome-keyring-daemon --foreground --components=secrets"));
+  assert.ok(lifecycle.includes("trap stop_keyring EXIT"));
+  assert.ok(lifecycle.indexOf("gdbus wait --session --timeout=5 org.freedesktop.secrets") < lifecycle.indexOf('"$host" register "$host"'));
+  assert.ok(lifecycle.indexOf('"$host" register "$host"') < lifecycle.indexOf('"$host" unregister "$user_manifest"'));
+  assert.ok(lifecycle.indexOf('"$host" unregister "$user_manifest"') < lifecycle.indexOf('test ! -e "$user_manifest"'));
+  assert.equal(ubuntu.split('run_native_messaging_lifecycle "$host" "$user_manifest"').length - 1, 2);
+});
+
 test("private workflow validates the combined Android App Bundle once", () => {
   const command = 'verify:mobile -- --android-artifact "$PWD/private-artifacts/devhud-android-arm64-armv7-google-play.aab" --android-abi arm64-v8a --android-abi armeabi-v7a --bundletool-jar "${{ steps.bundletool.outputs.jar }}"';
   assert.equal(workflow.split(command).length - 1, 1);

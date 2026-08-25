@@ -103,24 +103,34 @@ pub fn read_pairing_secret() -> Result<Option<Vec<u8>>, String> {
     }
 }
 
+#[cfg(target_os = "linux")]
+fn write_pairing_secret_after_marker(
+    marker_result: Result<bool, String>,
+    write_secret: impl FnOnce() -> Result<(), String>,
+) -> Result<(), String> {
+    marker_result?;
+    write_secret()
+}
+
 pub fn write_pairing_secret(secret: &[u8]) -> Result<(), String> {
     if secret.len() != 32 {
         return Err("invalid-secret".to_string());
     }
+    let write_secret = || {
+        Entry::new(PAIRING_SERVICE, PAIRING_ACCOUNT)
+            .map_err(|_| "storage-failure".to_string())
+            .and_then(|entry| {
+                entry
+                    .set_secret(secret)
+                    .map_err(|_| "storage-failure".to_string())
+            })
+    };
     #[cfg(target_os = "linux")]
-    let marker_was_created = ensure_pairing_marker()?;
-    let result = Entry::new(PAIRING_SERVICE, PAIRING_ACCOUNT)
-        .map_err(|_| "storage-failure".to_string())
-        .and_then(|entry| {
-            entry
-                .set_secret(secret)
-                .map_err(|_| "storage-failure".to_string())
-        });
-    #[cfg(target_os = "linux")]
-    if result.is_err() && marker_was_created {
-        let _ = remove_pairing_marker();
+    {
+        return write_pairing_secret_after_marker(ensure_pairing_marker(), write_secret);
     }
-    result
+    #[cfg(not(target_os = "linux"))]
+    write_secret()
 }
 
 pub fn pairing_is_complete() -> Result<bool, String> {
@@ -206,6 +216,22 @@ mod tests {
         assert!(!ensure_pairing_marker_at(&marker).unwrap());
         remove_pairing_marker_at(&marker).unwrap();
         assert!(!marker.exists());
+        remove_pairing_marker_at(&marker).unwrap();
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn pairing_marker_remains_when_secret_write_fails() {
+        let root =
+            std::env::temp_dir().join(format!("devhud-pairing-marker-{}", uuid::Uuid::now_v7()));
+        let marker = root.join(PAIRING_MARKER_RELATIVE_PATH);
+        let result = write_pairing_secret_after_marker(
+            ensure_pairing_marker_at(&marker).map_err(|_| "storage-failure".to_string()),
+            || Err("storage-failure".to_string()),
+        );
+        assert_eq!(result, Err("storage-failure".to_string()));
+        assert!(marker.exists());
         remove_pairing_marker_at(&marker).unwrap();
         let _ = fs::remove_dir_all(root);
     }

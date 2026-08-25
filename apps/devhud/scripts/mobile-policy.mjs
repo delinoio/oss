@@ -281,9 +281,12 @@ export function assertAndroidNativeLibrary(nativeLibrary) {
   assert(!/libcef|cef_initialize/iu.test(nativeLibrary), "CEF symbols leaked into the Android native library");
 }
 
-export function assertAndroidWidgetArtifactManifest(manifest, provider) {
+export function assertAndroidArtifactManifest(manifest, { identity, versionCode, widgetProvider }) {
+  const manifestTag = manifest.match(/<manifest\b[^>]*>/u)?.[0] ?? "";
+  assert(manifestTag.includes(`package="${identity}"`), "Android artifact package identity changed");
+  assert(manifestTag.includes(`android:versionCode="${versionCode}"`), "Android artifact version code changed");
   const receiverBlocks = manifest.match(/<receiver\b[\s\S]*?<\/receiver>/gu) ?? [];
-  const matching = receiverBlocks.filter((receiver) => receiver.match(/<receiver\b[^>]*>/u)?.[0]?.includes(`android:name="${provider}"`));
+  const matching = receiverBlocks.filter((receiver) => receiver.match(/<receiver\b[^>]*>/u)?.[0]?.includes(`android:name="${widgetProvider}"`));
   assert(matching.length === 1, "Android artifact must contain exactly one Deck widget provider receiver");
   const receiver = matching[0];
   const openingTag = receiver.match(/<receiver\b[^>]*>/u)?.[0] ?? "";

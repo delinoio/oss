@@ -131,7 +131,7 @@ jobs:
         run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
       - name: Install Ubuntu packaging prerequisites
         if: ${{ startsWith(matrix.id, 'ubuntu-') }}
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends dbus-x11 libayatana-appindicator3-dev libfuse2 libgbm-dev libgtk-3-dev libx11-dev libxkbcommon-x11-0 libxtst-dev ninja-build patchelf squashfs-tools xauth xdg-utils xvfb
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends dbus-x11 gnome-keyring libayatana-appindicator3-dev libfuse2 libgbm-dev libgtk-3-dev libx11-dev libxkbcommon-x11-0 libxtst-dev ninja-build patchelf squashfs-tools xauth xdg-utils xvfb
       - name: Materialize macOS signing and notarization credentials
         if: ${{ startsWith(matrix.id, 'macos-') }}
         shell: bash
@@ -227,6 +227,32 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          run_native_messaging_lifecycle() {
+            local host="$1"
+            local user_manifest="$2"
+            dbus-run-session -- bash -euo pipefail -c '
+              export HOME="$1"
+              host="$2"
+              user_manifest="$3"
+              unset GNOME_KEYRING_CONTROL
+              control_directory="$HOME/.cache/keyring"
+              mkdir -p "$control_directory"
+              chmod 700 "$control_directory"
+              # Clean runners have no user Secret Service, so keep one alive for the complete lifecycle.
+              gnome-keyring-daemon --foreground --components=secrets --control-directory="$control_directory" >/dev/null &
+              keyring_pid=$!
+              stop_keyring() {
+                kill "$keyring_pid" 2>/dev/null || true
+                wait "$keyring_pid" 2>/dev/null || true
+              }
+              trap stop_keyring EXIT
+              gdbus wait --session --timeout=5 org.freedesktop.secrets >/dev/null
+              "$host" register "$host"
+              test -e "$user_manifest"
+              "$host" unregister "$user_manifest"
+              test ! -e "$user_manifest"
+            ' native-messaging-lifecycle "$RUNNER_TEMP/native-home" "$host" "$user_manifest"
+          }
           source=$(find target/release/bundle/${{ matrix.bundle }} -type f -print -quit)
           test -n "$source"
           mkdir -p private-artifacts/validation/targets
@@ -241,11 +267,8 @@ jobs:
             dbus-run-session -- xvfb-run -a pnpm --filter devhud smoke:platform -- --artifact /usr/bin/devhud
             host=$(find /usr -type f -name devhud-native-messaging-host -print -quit)
             test -n "$host"
-            HOME="$RUNNER_TEMP/native-home" "$host" register "$host"
             user_manifest="$RUNNER_TEMP/native-home/.config/google-chrome/NativeMessagingHosts/io.delino.devhud.native_messaging.json"
-            test -e "$user_manifest"
-            HOME="$RUNNER_TEMP/native-home" "$host" unregister "$user_manifest"
-            test ! -e "$user_manifest"
+            run_native_messaging_lifecycle "$host" "$user_manifest"
             sudo dpkg -r "$package"
             test ! -e /usr/bin/devhud
             test ! -e /etc/opt/chrome/native-messaging-hosts/io.delino.devhud.native_messaging.json
@@ -266,8 +289,8 @@ jobs:
             dbus-run-session -- xvfb-run -a pnpm --filter devhud smoke:platform -- --artifact "$executable"
             host=$(find squashfs-root -type f -name devhud-native-messaging-host -print -quit)
             test -n "$host"
-            HOME="$RUNNER_TEMP/native-home" "$host" register "$host"
-            HOME="$RUNNER_TEMP/native-home" "$host" unregister
+            user_manifest="$RUNNER_TEMP/native-home/.config/google-chrome/NativeMessagingHosts/io.delino.devhud.native_messaging.json"
+            run_native_messaging_lifecycle "$host" "$user_manifest"
             rm "$RUNNER_TEMP/devhud-installed/DevHUD.AppImage"
             test ! -e "$RUNNER_TEMP/devhud-installed/DevHUD.AppImage"
           fi
