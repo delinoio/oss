@@ -327,6 +327,19 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
+      - name: Download checksum-pinned bundletool
+        id: bundletool
+        if: ${{ matrix.platform == 'android' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(node -p "require('./apps/devhud/mobile-platforms.json').androidArtifactInspector.version")
+          url=$(node -p "require('./apps/devhud/mobile-platforms.json').androidArtifactInspector.url")
+          expected=$(node -p "require('./apps/devhud/mobile-platforms.json').androidArtifactInspector.sha256")
+          jar="$RUNNER_TEMP/bundletool-all-$version.jar"
+          curl --fail --location --silent --show-error --output "$jar" "$url"
+          printf '%s  %s\n' "$expected" "$jar" | sha256sum --check
+          echo "jar=$jar" >> "$GITHUB_OUTPUT"
       - name: Install Android Linux host prerequisites
         if: ${{ matrix.platform == 'android' }}
         run: |
@@ -353,7 +366,7 @@ jobs:
           actual=$(keytool -printcert -jarfile private-artifacts/devhud-android-arm64-armv7-google-play.aab | sed -n 's/^[[:space:]]*SHA256: //p' | head -1 | tr -d ':' | tr '[:upper:]' '[:lower:]')
           expected=$(printf '%s' "$DEVHUD_ANDROID_CERTIFICATE_SHA256" | tr -d ': ' | tr '[:upper:]' '[:lower:]')
           test -n "$actual" && test "$actual" = "$expected"
-          pnpm --filter devhud verify:mobile -- --android-artifact "$PWD/private-artifacts/devhud-android-arm64-armv7-google-play.aab" --android-abi arm64-v8a --android-abi armeabi-v7a
+          pnpm --filter devhud verify:mobile -- --android-artifact "$PWD/private-artifacts/devhud-android-arm64-armv7-google-play.aab" --android-abi arm64-v8a --android-abi armeabi-v7a --bundletool-jar "${{ steps.bundletool.outputs.jar }}"
           node scripts/release/devhud-evidence.mjs record --id android-google-play --output private-artifacts/validation/targets/android-google-play.json --checks namesVersionsTargets,platformSignature,nativeDeckWidget
       - name: Build and verify signed iOS archive
         if: ${{ matrix.platform == 'ios' }}

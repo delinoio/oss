@@ -8,6 +8,11 @@
     "ios": "16.0",
     "androidApi": 29
   },
+  "androidArtifactInspector": {
+    "version": "1.18.3",
+    "url": "https://github.com/google/bundletool/releases/download/1.18.3/bundletool-all-1.18.3.jar",
+    "sha256": "a099cfa1543f55593bc2ed16a70a7c67fe54b1747bb7301f37fdfd6d91028e29"
+  },
   "widgets": {
     "iosBundle": "io.delino.devhud.widget",
     "iosAppGroup": "group.io.delino.devhud",

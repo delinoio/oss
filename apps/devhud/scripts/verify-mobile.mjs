@@ -6,7 +6,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { assertGeneratedOverlays } from "./generate-mobile.mjs";
-import { assertAndroidArtifactEntries, assertAndroidNativeLibrary, assertMobileContracts, assertMobileDependencyClosures, assertMobileDependencyResolution, mobileCargoTreeDigest } from "./mobile-policy.mjs";
+import { assertAndroidArtifactEntries, assertAndroidNativeLibrary, assertAndroidWidgetArtifactManifest, assertMobileContracts, assertMobileDependencyClosures, assertMobileDependencyResolution, mobileCargoTreeDigest } from "./mobile-policy.mjs";
 
 const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = resolve(appRoot, "../..");
@@ -38,7 +38,7 @@ function androidAapt() {
   return executable;
 }
 
-function assertAndroidArtifact(artifact, abis) {
+function assertAndroidArtifact(artifact, abis, bundletoolJar, widgetProvider) {
   if (!existsSync(artifact)) throw new Error(`Android artifact is missing: ${artifact}`);
   commandOutput("unzip", ["-t", artifact]);
   const entries = commandOutput("unzip", ["-Z1", artifact]).trim().split("\n");
@@ -55,7 +55,12 @@ function assertAndroidArtifact(artifact, abis) {
     assertAndroidNativeLibrary(nativeLibrary);
   }
 
-  if (format === "aab") return;
+  if (format === "aab") {
+    if (!bundletoolJar || !existsSync(bundletoolJar)) throw new Error("--bundletool-jar must reference the pinned bundletool JAR for App Bundle verification");
+    const manifest = commandOutput("java", ["-jar", bundletoolJar, "dump", "manifest", `--bundle=${artifact}`, "--module=base"]);
+    assertAndroidWidgetArtifactManifest(manifest, widgetProvider);
+    return;
+  }
 
   const aapt = androidAapt();
   const badging = commandOutput(aapt, ["dump", "badging", artifact]);
@@ -107,12 +112,15 @@ if (existsSync(join(appRoot, "src-tauri/gen/android"))) assertGeneratedOverlays(
 
 const artifactIndex = process.argv.indexOf("--android-artifact");
 const abiIndexes = process.argv.flatMap((argument, index) => argument === "--android-abi" ? [index] : []);
+const bundletoolIndex = process.argv.indexOf("--bundletool-jar");
 if ((artifactIndex === -1) !== (abiIndexes.length === 0)) throw new Error("--android-artifact and at least one --android-abi must be provided together");
+if (bundletoolIndex !== -1 && artifactIndex === -1) throw new Error("--bundletool-jar requires --android-artifact");
 if (artifactIndex !== -1) {
   const artifact = process.argv[artifactIndex + 1];
   const abis = abiIndexes.map((index) => process.argv[index + 1]);
-  if (!artifact || artifact.startsWith("--") || abis.some((abi) => !abi || abi.startsWith("--"))) throw new Error("Android artifact verification arguments require values");
-  assertAndroidArtifact(resolve(artifact), abis);
+  const bundletoolJar = bundletoolIndex === -1 ? null : process.argv[bundletoolIndex + 1];
+  if (!artifact || artifact.startsWith("--") || abis.some((abi) => !abi || abi.startsWith("--")) || (bundletoolIndex !== -1 && (!bundletoolJar || bundletoolJar.startsWith("--")))) throw new Error("Android artifact verification arguments require values");
+  assertAndroidArtifact(resolve(artifact), abis, bundletoolJar && resolve(bundletoolJar), platforms.widgets.androidProvider);
 }
 
 const forbiddenMobileText = [

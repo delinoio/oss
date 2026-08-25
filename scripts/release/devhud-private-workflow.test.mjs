@@ -21,8 +21,19 @@ test("private workflow smokes the root-prepared extracted AppImage layout", () =
 });
 
 test("private workflow validates the combined Android App Bundle once", () => {
-  const command = 'verify:mobile -- --android-artifact "$PWD/private-artifacts/devhud-android-arm64-armv7-google-play.aab" --android-abi arm64-v8a --android-abi armeabi-v7a';
+  const command = 'verify:mobile -- --android-artifact "$PWD/private-artifacts/devhud-android-arm64-armv7-google-play.aab" --android-abi arm64-v8a --android-abi armeabi-v7a --bundletool-jar "${{ steps.bundletool.outputs.jar }}"';
   assert.equal(workflow.split(command).length - 1, 1);
+});
+
+test("private workflow inspects the packaged Android manifest before widget evidence", () => {
+  const mobile = workflow.slice(workflow.indexOf("\n  mobile:"), workflow.indexOf("\n  oci:"));
+  const download = "Download checksum-pinned bundletool";
+  const checksum = "sha256sum --check";
+  const verification = "--bundletool-jar \"${{ steps.bundletool.outputs.jar }}\"";
+  const evidence = "record --id android-google-play";
+  assert.ok(mobile.includes(download) && mobile.includes(checksum));
+  assert.ok(mobile.indexOf(download) < mobile.indexOf(verification));
+  assert.ok(mobile.indexOf(verification) < mobile.indexOf(evidence));
 });
 
 test("private workflow installs native prerequisites before desktop and mobile builds", () => {
