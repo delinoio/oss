@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/delinoio/oss/servers/devhud-api/internal/adminassets"
 	"github.com/delinoio/oss/servers/devhud-api/internal/cloudflare"
 	"github.com/delinoio/oss/servers/devhud-api/internal/config"
 	"github.com/delinoio/oss/servers/devhud-api/internal/domain"
@@ -25,12 +26,18 @@ const (
 	sweepIterationTimeout = 25 * time.Second
 )
 
+var version = "0.1.0-dev"
+
 type sweepRunner interface {
 	RunOnce(context.Context) (sweeper.Result, error)
 }
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
+	// Retain the administrator asset embed in this independently distributed
+	// artifact so its SBOM/provenance closure matches the API release input.
+	_ = adminassets.Embedded()
+	logger.Info("devhud-api-sweeper starting", "version", version)
 	if err := run(context.Background(), os.Args[1:], logger); err != nil {
 		logger.Error("devhud-api-sweeper stopped", "error", err)
 		os.Exit(1)

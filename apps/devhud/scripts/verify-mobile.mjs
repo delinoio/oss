@@ -64,13 +64,19 @@ function assertAndroidArtifact(artifact, abi) {
 }
 
 const platforms = json("mobile-platforms.json");
+const releaseMetadata = JSON.parse(readFileSync(join(repoRoot, "packaging/devhud/release-metadata.json"), "utf8"));
+const iosReleaseConfig = json("src-tauri/tauri.ios.conf.json");
+const androidReleaseConfig = json("src-tauri/tauri.android.conf.json");
+if (iosReleaseConfig.bundle.iOS.bundleVersion !== String(releaseMetadata.storeBuildNumber) || androidReleaseConfig.bundle.android.versionCode !== releaseMetadata.storeBuildNumber) {
+  throw new Error("mobile store build numbers do not match DevHud release metadata");
+}
 assertMobileDependencyResolution(text("scripts/verify-mobile.mjs"));
 
 assertMobileContracts({
   platforms,
   tauri: json("src-tauri/tauri.conf.json"),
-  ios: json("src-tauri/tauri.ios.conf.json"),
-  android: json("src-tauri/tauri.android.conf.json"),
+  ios: iosReleaseConfig,
+  android: androidReleaseConfig,
   cargo: text("src-tauri/Cargo.toml"),
   androidManifest: text("mobile/overrides/android/app/src/main/AndroidManifest.xml"),
   androidDebugManifest: text("mobile/overrides/android/app/src/debug/AndroidManifest.xml"),

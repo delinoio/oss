@@ -16,6 +16,13 @@ import (
 //go:embed dist
 var embedded embed.FS
 
+// Embedded exposes the immutable administrator asset filesystem to packaging
+// validation and to the sweeper artifact, which intentionally ships the same
+// auditable administrator material as the API image.
+func Embedded() fs.FS {
+	return embedded
+}
+
 const contentSecurityPolicyTemplate = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' %s; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 
 func Handler(logtoIssuer string) (http.Handler, error) {

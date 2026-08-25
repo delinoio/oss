@@ -31,7 +31,7 @@ if (
 }
 
 try {
-  const args = desktopTauriArguments(command, forwardedArgs);
+  const args = desktopTauriArguments(command, forwardedArgs, process.env);
   const environment = desktopTauriEnvironment(command, forwardedArgs);
   stageNativeMessagingHost({ release: command === "build" });
   const result = await spawnDevServer(

@@ -27,6 +27,9 @@ const tauriConfig = JSON.parse(readFileSync(join(appRoot, "src-tauri/tauri.conf.
 const desktopTauriConfig = JSON.parse(
   readFileSync(join(appRoot, "src-tauri/tauri.desktop.conf.json"), "utf8"),
 );
+const privateReleaseTauriConfig = JSON.parse(
+  readFileSync(join(appRoot, "src-tauri/tauri.private-release.conf.json"), "utf8"),
+);
 const tauriMain = readFileSync(join(appRoot, "src-tauri/src/main.rs"), "utf8");
 const nativeBridgeRust = readFileSync(join(appRoot, "src-tauri/src/bridge.rs"), "utf8");
 const nativeBridgeTypeScript = readFileSync(join(appRoot, "src/native-bridge.ts"), "utf8");
@@ -141,6 +144,27 @@ assert(
 assert(
   desktopTauriConfig.bundle?.windows?.nsis?.installerHooks === "./windows/hooks.nsh",
   "desktop Native Messaging removal hook changed",
+);
+assert(
+  JSON.stringify(privateReleaseTauriConfig.bundle?.externalBin) ===
+    JSON.stringify(["binaries/devhud-native-messaging-host"]),
+  "private release must package the pinned Native Messaging sidecar",
+);
+assert(
+  privateReleaseTauriConfig.bundle?.macOS?.signingIdentity === null &&
+    privateReleaseTauriConfig.bundle?.macOS?.hardenedRuntime === true &&
+    privateReleaseTauriConfig.bundle?.macOS?.entitlements === "Entitlements.release.plist",
+  "private macOS release must use the production hardened-runtime signing path",
+);
+assert(
+  privateReleaseTauriConfig.bundle?.windows?.signCommand ===
+    "powershell -NoProfile -ExecutionPolicy Bypass -File windows/sign.ps1 %1",
+  "private Windows release must fail closed through the repository-owned signer",
+);
+assert(
+  JSON.stringify(privateReleaseTauriConfig.bundle?.windows?.wix?.fragmentPaths) ===
+    JSON.stringify(["./windows/native-messaging-lifecycle.wxs"]),
+  "private MSI must own the Native Messaging install and uninstall lifecycle",
 );
 const productionCsp = tauriConfig.app.security.csp;
 assert(
