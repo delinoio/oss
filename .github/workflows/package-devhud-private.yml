@@ -131,7 +131,7 @@ jobs:
         run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
       - name: Install Ubuntu packaging prerequisites
         if: ${{ startsWith(matrix.id, 'ubuntu-') }}
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends dbus-x11 libayatana-appindicator3-dev libfuse2 libgbm-dev libgtk-3-dev libx11-dev libxkbcommon-x11-0 libxtst-dev ninja-build patchelf xauth xdg-utils xvfb
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends dbus-x11 libayatana-appindicator3-dev libfuse2 libgbm-dev libgtk-3-dev libx11-dev libxkbcommon-x11-0 libxtst-dev ninja-build patchelf squashfs-tools xauth xdg-utils xvfb
       - name: Materialize macOS signing and notarization credentials
         if: ${{ startsWith(matrix.id, 'macos-') }}
         shell: bash
@@ -251,6 +251,12 @@ jobs:
             test ! -e /etc/opt/chrome/native-messaging-hosts/io.delino.devhud.native_messaging.json
           else
             chmod +x "$source"
+            offset=$("$source" --appimage-offset)
+            sandbox_metadata=$(unsquashfs -lln -o "$offset" "$source" usr/share/DevHUD/chrome-sandbox | awk '$NF ~ /chrome-sandbox$/ { print $1, $2 }')
+            if [ "$sandbox_metadata" != "-rwsr-xr-x 0/0" ]; then
+              echo "DevHUD AppImage chrome-sandbox must record UID/GID 0/0 and mode 4755; found: ${sandbox_metadata:-missing}" >&2
+              exit 1
+            fi
             "$source" --appimage-extract >/dev/null
             sandbox=$(realpath squashfs-root/usr/share/DevHUD/chrome-sandbox)
             sudo chown root:root "$sandbox"

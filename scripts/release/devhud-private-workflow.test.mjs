@@ -9,14 +9,24 @@ test("private workflow fails immediately when Windows platform smoke fails", () 
   assert.ok(workflow.includes('pnpm --filter devhud smoke:platform -- --artifact "$installDir\\devhud.exe"\n          if ($LASTEXITCODE -ne 0) { throw "platform smoke failed with exit code $LASTEXITCODE" }'));
 });
 
-test("private workflow smokes the root-prepared extracted AppImage layout", () => {
+test("private workflow validates AppImage sandbox metadata before preparing its smoke layout", () => {
+  const ubuntu = workflow.slice(workflow.indexOf("- name: Normalize and validate Ubuntu artifact and lifecycle"), workflow.indexOf("\n      - uses: actions/upload-artifact@v7", workflow.indexOf("- name: Normalize and validate Ubuntu artifact and lifecycle")));
+  const metadataInspection = 'sandbox_metadata=$(unsquashfs -lln -o "$offset" "$source" usr/share/DevHUD/chrome-sandbox';
+  const extraction = '"$source" --appimage-extract';
+  const repair = 'sudo chown root:root "$sandbox"';
+  assert.ok(workflow.includes("squashfs-tools"));
   for (const command of [
+    'offset=$("$source" --appimage-offset)',
+    metadataInspection,
+    'if [ "$sandbox_metadata" != "-rwsr-xr-x 0/0" ]',
     "sandbox=$(realpath squashfs-root/usr/share/DevHUD/chrome-sandbox)",
-    'sudo chown root:root "$sandbox"',
+    repair,
     'sudo chmod 4755 "$sandbox"',
     "executable=$(realpath squashfs-root/usr/bin/devhud)",
     'smoke:platform -- --artifact "$executable"',
   ]) assert.ok(workflow.includes(command), `missing AppImage validation command: ${command}`);
+  assert.ok(ubuntu.indexOf(metadataInspection) < ubuntu.indexOf(extraction));
+  assert.ok(ubuntu.indexOf(extraction) < ubuntu.indexOf(repair));
   assert.ok(!workflow.includes('smoke:platform -- --artifact "$RUNNER_TEMP/devhud-installed/DevHUD.AppImage"'));
 });
 
