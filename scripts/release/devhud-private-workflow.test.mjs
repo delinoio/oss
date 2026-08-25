@@ -25,10 +25,39 @@ test("private workflow validates the combined Android App Bundle once", () => {
   assert.equal(workflow.split(command).length - 1, 1);
 });
 
+test("private workflow installs native prerequisites before desktop and mobile builds", () => {
+  const desktop = workflow.slice(workflow.indexOf("\n  desktop:"), workflow.indexOf("\n  extension:"));
+  const mobile = workflow.slice(workflow.indexOf("\n  mobile:"), workflow.indexOf("\n  oci:"));
+  const appleTargets = "rustup target add aarch64-apple-darwin x86_64-apple-darwin";
+  assert.equal(desktop.split(appleTargets).length - 1, 1);
+  assert.equal(mobile.split(appleTargets).length - 1, 1);
+  assert.ok(mobile.includes("uses: actions/setup-java@v5"));
+  assert.ok(mobile.includes("distribution: temurin\n          java-version: \"17\""));
+  for (const dependency of ["clang", "cmake", "libayatana-appindicator3-dev", "libgbm-dev", "libgtk-3-dev", "libx11-dev", "libxtst-dev", "ninja-build"]) {
+    assert.ok(mobile.includes(dependency), `missing Android host prerequisite: ${dependency}`);
+  }
+  assert.ok(mobile.indexOf("uses: actions/setup-java@v5") < mobile.indexOf("mobile:generate"));
+  assert.ok(mobile.indexOf("Install Android Linux host prerequisites") < mobile.indexOf("mobile:generate"));
+});
+
+test("private workflow verifies Android signatures without public PKIX trust", () => {
+  assert.ok(workflow.includes("jarsigner -verify -certs private-artifacts/devhud-android-arm64-armv7-google-play.aab"));
+  assert.ok(!workflow.includes("jarsigner -verify -strict"));
+  assert.ok(workflow.includes('test -n "$actual" && test "$actual" = "$expected"'));
+});
+
 test("private workflow verifies both generated iOS extension product names", () => {
   assert.ok(workflow.includes('test -d "$app/PlugIns/DevHUD Deck.appex"'));
   assert.ok(workflow.includes('test -d "$app/PlugIns/DevHUD Deck Selection.appex"'));
   assert.ok(!workflow.includes('test -d "$app/PlugIns/DevHudWidget.appex"'));
+});
+
+test("private workflow validates App Store signing policy before packaging and evidence", () => {
+  const mobile = workflow.slice(workflow.indexOf("\n  mobile:"), workflow.indexOf("\n  oci:"));
+  const validation = 'node scripts/release/validate-devhud-ios-signing.mjs --app "$app" --team-id "$DEVHUD_APPLE_TEAM_ID"';
+  assert.ok(mobile.includes(validation));
+  assert.ok(mobile.indexOf(validation) < mobile.indexOf("devhud-ios-arm64-app-store.ipa"));
+  assert.ok(mobile.indexOf(validation) < mobile.indexOf("record --id ios-app-store"));
 });
 
 test("private workflow runs PostgreSQL schema readiness before recording OCI evidence", () => {
