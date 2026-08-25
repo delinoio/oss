@@ -4,7 +4,14 @@ if [ "$1" = remove ] || [ "$1" = deconfigure ]; then
   runtime_root="@RUNTIME_ROOT@"
   command -v getent >/dev/null
   command -v runuser >/dev/null
-  getent passwd | while IFS=: read -r user _ uid _ _ home _; do
+  passwd_file=$(mktemp)
+  cleanup_passwd_file() {
+    rm -f "$passwd_file"
+  }
+  trap cleanup_passwd_file 0
+  trap 'exit 1' HUP INT TERM
+  getent passwd > "$passwd_file"
+  while IFS=: read -r user _ uid _ _ home _; do
     case "$home" in
       /*) ;;
       *) continue ;;
@@ -25,6 +32,8 @@ if [ "$1" = remove ] || [ "$1" = deconfigure ]; then
       XDG_RUNTIME_DIR="$runtime" \
       DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime/bus" \
       "@HOST@" unregister "$user_manifest"
-  done
+  done < "$passwd_file"
+  cleanup_passwd_file
+  trap - 0 HUP INT TERM
   rm -f "@MANIFEST@"
 fi

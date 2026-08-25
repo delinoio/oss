@@ -126,6 +126,8 @@ jobs:
       - uses: actions/setup-node@v6
         with: { node-version-file: .nvmrc, cache: pnpm }
       - uses: dtolnay/rust-toolchain@stable
+      - uses: anchore/sbom-action/download-syft@v0.21.0
+        id: syft
       - name: Install macOS Rust targets
         if: ${{ startsWith(matrix.id, 'macos-') }}
         run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
@@ -160,7 +162,7 @@ jobs:
         run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm --filter devhud verify:pins
       - name: Build private release package
-        env: { DEVHUD_PACKAGE_KIND: "${{ startsWith(matrix.id, 'windows-') && format('windows-{0}', matrix.bundle) || startsWith(matrix.id, 'ubuntu-') && format('linux-{0}', matrix.bundle) || '' }}" }
+        env: { DEVHUD_PACKAGE_KIND: "${{ startsWith(matrix.id, 'macos-') && 'macos-app' || startsWith(matrix.id, 'windows-') && format('windows-{0}', matrix.bundle) || format('linux-{0}', matrix.bundle) }}" }
         run: pnpm --filter devhud build -- --bundles ${{ matrix.bundle }}
       - name: Normalize and validate macOS artifacts
         if: ${{ startsWith(matrix.id, 'macos-') }}
@@ -186,10 +188,12 @@ jobs:
           HOME="$RUNNER_TEMP/native-home" "$host" unregister
           hdiutil detach "$mount"
           rm -rf "$installed" "$mount"
-          mkdir -p private-artifacts/validation/targets
+          mkdir -p private-artifacts/validation/targets private-artifacts/sbom
           cp "$dmg" private-artifacts/${{ matrix.artifact }}
           brew list gnu-tar >/dev/null 2>&1 || brew install gnu-tar
           COPYFILE_DISABLE=1 gtar --sort=name --mtime="@$(git show -s --format=%ct HEAD)" --owner=0 --group=0 --numeric-owner -czf private-artifacts/${{ matrix.updater }} -C target/release/bundle/macos DevHUD.app
+          "${{ steps.syft.outputs.cmd }}" scan "dir:$app" --output "spdx-json=private-artifacts/sbom/${{ matrix.artifact }}.spdx.json"
+          "${{ steps.syft.outputs.cmd }}" scan "dir:$app" --output "spdx-json=private-artifacts/sbom/${{ matrix.updater }}.spdx.json"
           node scripts/release/devhud-evidence.mjs record --id ${{ matrix.id }} --output private-artifacts/validation/targets/${{ matrix.id }}.json --checks namesVersionsTargets,cefHelpers,cefSandbox,trayLifecycle,updaterMaterial,nativeMessaging,installLaunchQuitUninstall,platformSignature
       - name: Normalize and validate Windows artifact and lifecycle
         if: ${{ startsWith(matrix.id, 'windows-') }}
@@ -208,6 +212,9 @@ jobs:
           if ($process.ExitCode -notin @(0, 3010)) { throw "install failed: $($process.ExitCode)" }
           pnpm --filter devhud smoke:platform -- --artifact "$installDir\devhud.exe"
           if ($LASTEXITCODE -ne 0) { throw "platform smoke failed with exit code $LASTEXITCODE" }
+          New-Item -ItemType Directory -Force private-artifacts/sbom | Out-Null
+          & "${{ steps.syft.outputs.cmd }}" scan "dir:$installDir" --output "spdx-json=private-artifacts/sbom/${{ matrix.artifact }}.spdx.json"
+          if ($LASTEXITCODE -ne 0) { throw "component SBOM generation failed with exit code $LASTEXITCODE" }
           $registration = Get-ItemProperty "HKCU:\Software\Google\Chrome\NativeMessagingHosts\io.delino.devhud.native_messaging" -ErrorAction Stop
           if (-not (Test-Path -LiteralPath $registration.'(default)')) { throw "Native Messaging manifest missing" }
           if ("${{ matrix.bundle }}" -eq "msi") {
@@ -255,11 +262,15 @@ jobs:
           }
           source=$(find target/release/bundle/${{ matrix.bundle }} -type f -print -quit)
           test -n "$source"
-          mkdir -p private-artifacts/validation/targets
+          mkdir -p private-artifacts/validation/targets private-artifacts/sbom
           if [ "${{ matrix.bundle }}" = deb ]; then
             SOURCE_DATE_EPOCH=$(git show -s --format=%ct HEAD) bash scripts/release/finalize-devhud-deb.sh "$source" "$RUNNER_TEMP/devhud-final.deb"
             source="$RUNNER_TEMP/devhud-final.deb"
             dpkg-deb --info "$source" >/dev/null
+            sbom_root=$(mktemp -d)
+            dpkg-deb --extract "$source" "$sbom_root"
+            "${{ steps.syft.outputs.cmd }}" scan "dir:$sbom_root" --output "spdx-json=private-artifacts/sbom/${{ matrix.artifact }}.spdx.json"
+            rm -rf "$sbom_root"
             sandbox=$(dpkg-deb --fsys-tarfile "$source" | tar --numeric-owner -tvf - | awk '$6 ~ /chrome-sandbox$/ {print $1, $2}')
             test "$sandbox" = "-rwsr-xr-x 0/0"
             package=$(dpkg-deb -f "$source" Package)
@@ -281,18 +292,21 @@ jobs:
               exit 1
             fi
             "$source" --appimage-extract >/dev/null
-            sandbox=$(realpath squashfs-root/usr/share/DevHUD/chrome-sandbox)
+            appdir=$(realpath squashfs-root)
+            sandbox=$(realpath "$appdir/usr/share/DevHUD/chrome-sandbox")
             sudo chown root:root "$sandbox"
             sudo chmod 4755 "$sandbox"
-            executable=$(realpath squashfs-root/usr/bin/devhud)
+            executable=$(realpath "$appdir/usr/bin/devhud")
             install -Dm755 "$source" "$RUNNER_TEMP/devhud-installed/DevHUD.AppImage"
-            dbus-run-session -- xvfb-run -a pnpm --filter devhud smoke:platform -- --artifact "$executable"
+            appimage=$(realpath "$RUNNER_TEMP/devhud-installed/DevHUD.AppImage")
+            APPIMAGE="$appimage" APPDIR="$appdir" dbus-run-session -- xvfb-run -a pnpm --filter devhud smoke:platform -- --artifact "$executable"
+            "${{ steps.syft.outputs.cmd }}" scan "dir:$appdir" --output "spdx-json=private-artifacts/sbom/${{ matrix.artifact }}.spdx.json"
             host=$(find squashfs-root -type f -name devhud-native-messaging-host -print -quit)
             test -n "$host"
             user_manifest="$RUNNER_TEMP/native-home/.config/google-chrome/NativeMessagingHosts/io.delino.devhud.native_messaging.json"
             run_native_messaging_lifecycle "$host" "$user_manifest"
-            rm "$RUNNER_TEMP/devhud-installed/DevHUD.AppImage"
-            test ! -e "$RUNNER_TEMP/devhud-installed/DevHUD.AppImage"
+            rm "$appimage"
+            test ! -e "$appimage"
           fi
           cp "$source" private-artifacts/${{ matrix.artifact }}
           node scripts/release/devhud-evidence.mjs record --id ${{ matrix.id }} --output private-artifacts/validation/targets/${{ matrix.id }}.json --checks namesVersionsTargets,cefHelpers,cefSandbox,trayLifecycle,updaterMaterial,nativeMessaging,installLaunchQuitUninstall
@@ -313,14 +327,19 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v6
         with: { node-version-file: .nvmrc, cache: pnpm }
+      - uses: anchore/sbom-action/download-syft@v0.21.0
+        id: syft
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm --filter devhud-chrome-extension lint && pnpm --filter devhud-chrome-extension test:package
       - run: pnpm --filter devhud-chrome-extension build
       - name: Verify two publication inputs are byte-equivalent
         run: |
-          mkdir -p private-artifacts/validation/targets
+          mkdir -p private-artifacts/validation/targets private-artifacts/sbom
           cp apps/devhud-chrome-extension/artifacts/devhud-chrome-*.zip private-artifacts/
           cmp private-artifacts/devhud-chrome-web-store.zip private-artifacts/devhud-chrome-github-validation.zip
+          for artifact in devhud-chrome-web-store.zip devhud-chrome-github-validation.zip; do
+            "${{ steps.syft.outputs.cmd }}" scan dir:apps/devhud-chrome-extension/dist --output "spdx-json=private-artifacts/sbom/$artifact.spdx.json"
+          done
           node scripts/release/devhud-evidence.mjs record --id chrome-extension --output private-artifacts/validation/targets/chrome-extension.json --checks namesVersionsTargets,permissions,reproducible,byteParity,nativeMessagingIdentity
       - uses: actions/upload-artifact@v7
         with: { name: devhud-chrome-extension, path: private-artifacts, if-no-files-found: error, retention-days: 7 }
@@ -347,6 +366,8 @@ jobs:
       - uses: actions/setup-node@v6
         with: { node-version-file: .nvmrc, cache: pnpm }
       - uses: dtolnay/rust-toolchain@stable
+      - uses: anchore/sbom-action/download-syft@v0.21.0
+        id: syft
       - name: Install macOS Rust targets
         if: ${{ matrix.platform == 'ios' }}
         run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
@@ -389,13 +410,17 @@ jobs:
           node apps/devhud/scripts/run-mobile.mjs android build --target aarch64 --target armv7 --aab
           aab=$(find apps/devhud/target/devhud-mobile target/devhud-mobile apps/devhud/src-tauri/gen/android -name '*.aab' -type f 2>/dev/null | head -1)
           test -n "$aab"
-          mkdir -p private-artifacts/validation/targets
+          mkdir -p private-artifacts/validation/targets private-artifacts/sbom
           cp "$aab" private-artifacts/devhud-android-arm64-armv7-google-play.aab
           jarsigner -verify -certs private-artifacts/devhud-android-arm64-armv7-google-play.aab
           actual=$(keytool -printcert -jarfile private-artifacts/devhud-android-arm64-armv7-google-play.aab | sed -n 's/^[[:space:]]*SHA256: //p' | head -1 | tr -d ':' | tr '[:upper:]' '[:lower:]')
           expected=$(printf '%s' "$DEVHUD_ANDROID_CERTIFICATE_SHA256" | tr -d ': ' | tr '[:upper:]' '[:lower:]')
           test -n "$actual" && test "$actual" = "$expected"
           pnpm --filter devhud verify:mobile -- --android-artifact "$PWD/private-artifacts/devhud-android-arm64-armv7-google-play.aab" --android-abi arm64-v8a --android-abi armeabi-v7a --bundletool-jar "${{ steps.bundletool.outputs.jar }}"
+          sbom_root=$(mktemp -d)
+          unzip -q private-artifacts/devhud-android-arm64-armv7-google-play.aab -d "$sbom_root"
+          "${{ steps.syft.outputs.cmd }}" scan "dir:$sbom_root" --output spdx-json=private-artifacts/sbom/devhud-android-arm64-armv7-google-play.aab.spdx.json
+          rm -rf "$sbom_root"
           node scripts/release/devhud-evidence.mjs record --id android-google-play --output private-artifacts/validation/targets/android-google-play.json --checks namesVersionsTargets,platformSignature,nativeDeckWidget
       - name: Build and verify signed iOS archive
         if: ${{ matrix.platform == 'ios' }}
@@ -421,7 +446,8 @@ jobs:
           test -d "$app/PlugIns/DevHUD Deck.appex"
           test -d "$app/PlugIns/DevHUD Deck Selection.appex"
           node scripts/release/validate-devhud-ios-signing.mjs --app "$app" --team-id "$DEVHUD_APPLE_TEAM_ID"
-          mkdir -p private-artifacts/Payload private-artifacts/validation/targets
+          mkdir -p private-artifacts/Payload private-artifacts/validation/targets private-artifacts/sbom
+          "${{ steps.syft.outputs.cmd }}" scan "dir:$app" --output spdx-json=private-artifacts/sbom/devhud-ios-arm64-app-store.ipa.spdx.json
           cp -R "$app" private-artifacts/Payload/
           (cd private-artifacts && zip -X -q -r devhud-ios-arm64-app-store.ipa Payload)
           rm -rf private-artifacts/Payload
@@ -459,6 +485,8 @@ jobs:
       - uses: actions/setup-go@v6
         with: { go-version-file: go.mod, cache: true }
       - uses: docker/setup-buildx-action@v4
+      - uses: anchore/sbom-action/download-syft@v0.21.0
+        id: syft
       - name: Validate PostgreSQL migrations and schema readiness
         env:
           DEVHUD_TEST_DATABASE_URL: postgres://devhud:devhud@127.0.0.1:5432/devhud_api_test?sslmode=disable
@@ -467,7 +495,7 @@ jobs:
         run: go test ./servers/devhud-api/...
       - name: Build local two-platform OCI layout
         run: |
-          mkdir -p private-artifacts/validation/targets
+          mkdir -p private-artifacts/validation/targets private-artifacts/sbom
           sudo apt-get update && sudo apt-get install -y --no-install-recommends skopeo
           version=$(node -p "require('./packaging/devhud/release-metadata.json').version")
           docker buildx build --platform linux/amd64,linux/arm64 --target ${{ matrix.target }} --build-arg VERSION="$version" --build-arg REVISION="$GITHUB_SHA" --output type=oci,dest=private-artifacts/${{ matrix.artifact }} -f servers/devhud-api/Dockerfile .
@@ -475,6 +503,7 @@ jobs:
           for arch in amd64 arm64; do
             skopeo inspect --override-arch "$arch" --config oci-archive:private-artifacts/${{ matrix.artifact }} | jq -e '.config.User == "65532" and .config.Labels["io.delino.devhud.migrations"] == "embedded" and .config.Labels["io.delino.devhud.administrator-assets"] == "embedded"'
           done
+          "${{ steps.syft.outputs.cmd }}" scan "oci-archive:private-artifacts/${{ matrix.artifact }}" --output "spdx-json=private-artifacts/sbom/${{ matrix.artifact }}.spdx.json"
           node scripts/release/devhud-evidence.mjs record --id ${{ matrix.id }} --output private-artifacts/validation/targets/${{ matrix.id }}.json --checks namesVersionsTargets,multiArch,nonRoot,health,migrations,administratorAssets
       - uses: actions/upload-artifact@v7
         with: { name: "${{ matrix.id }}", path: private-artifacts, if-no-files-found: error, retention-days: 7 }
@@ -509,7 +538,6 @@ jobs:
       - uses: actions/download-artifact@v8
         with: { pattern: devhud-*, path: private-artifacts, merge-multiple: true }
       - uses: sigstore/cosign-installer@v4.1.0
-      - uses: anchore/sbom-action/download-syft@v0.21.0
       - name: Merge evidence and sign updater material
         run: |
           umask 077

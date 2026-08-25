@@ -88,6 +88,18 @@ test("Debian removal revokes affected users before deleting the system manifest"
   assert.equal(existsSync(userManifest), false);
   assert.equal(existsSync(systemManifest), false);
 
+  writeFileSync(join(bin, "getent"), `#!/bin/sh\nprintf '%s\\n' 'devhud:x:4242:4242::${home}:/bin/sh'\nexit 1\n`);
+  writeFileSync(pairingMarker, "v1\n");
+  writeFileSync(userManifest, "user");
+  writeFileSync(systemManifest, "system");
+  rmSync(log, { force: true });
+  assert.throws(() => execFileSync("sh", [prerm, "remove"], { env }));
+  assert.equal(existsSync(pairingMarker), true);
+  assert.equal(existsSync(userManifest), true);
+  assert.equal(existsSync(systemManifest), true);
+  assert.equal(existsSync(log), false);
+  writeFileSync(join(bin, "getent"), `#!/bin/sh\nprintf '%s\\n' 'devhud:x:4242:4242::${home}:/bin/sh'\n`);
+
   writeFileSync(pairingMarker, "v1\n");
   writeFileSync(userManifest, "user");
   writeFileSync(systemManifest, "system");

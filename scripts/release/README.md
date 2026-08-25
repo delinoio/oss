@@ -3,7 +3,7 @@
 - `generate-checksums.sh`: produces `SHA256SUMS` and Sigstore bundle sidecars (`*.sigstore.json`) for each published artifact.
 - `devhud-release.mjs`: validates the exact `devhud@v<MAJOR.MINOR.PATCH>` private-build identity, source versions, artifact matrix, and secret-redacted signing preflight.
 - `generate-devhud-updater.mjs`: creates the ten target/package-specific updater envelopes plus detached Ed25519 artifact and manifest signatures.
-- `generate-devhud-supply-chain.mjs`: creates one SPDX 2.3 SBOM and digest-bound SLSA v1 provenance statement per DevHud primary artifact.
+- `generate-devhud-supply-chain.mjs`: validates the component-bearing SPDX 2.3 SBOM produced from each artifact's unpacked/package-aware build layout and creates its digest-bound SLSA v1 provenance statement.
 - `devhud-evidence.mjs` and `validate-devhud-private-build.mjs`: record platform checks, merge only the complete target set, and validate the private signed candidate without treating it as public-ready.
 - `validate-devhud-ios-signing.mjs`: verifies that the signed iOS app and both extensions use exact App Store identities, profiles, certificates, and production entitlements before IPA evidence is recorded.
 - `finalize-devhud-deb.sh`: deterministically adds package-owned system Chrome Native Messaging registration and a fail-closed removal hook that re-enters each affected active user session for authenticated revocation and credential cleanup before deleting user or system registration.

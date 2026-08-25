@@ -3,7 +3,7 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { artifactGroups, loadReleaseMetadata, repositoryRoot } from "./devhud-release.mjs";
@@ -68,7 +68,7 @@ export function validateSpdx(document, artifact) {
   if (!Array.isArray(document.packages) || document.packages.length === 0) throw new Error(`SPDX document has no packages for ${artifact}`);
 }
 
-export function generateSupplyChain({ artifactsDirectory, outputDirectory, runSyft, invocationId, startedOn, finishedOn, root = repositoryRoot }) {
+export function generateSupplyChain({ artifactsDirectory, outputDirectory, invocationId, startedOn, finishedOn, root = repositoryRoot }) {
   const metadata = loadReleaseMetadata();
   const revision = sourceRevision(root);
   const execution = validateProvenanceMetadata({ invocationId, startedOn, finishedOn });
@@ -83,8 +83,6 @@ export function generateSupplyChain({ artifactsDirectory, outputDirectory, runSy
   for (const artifact of artifacts) {
     const artifactPath = join(artifactsDirectory, artifact);
     const sbomPath = join(sbomDirectory, `${artifact}.spdx.json`);
-    mkdirSync(dirname(sbomPath), { recursive: true });
-    runSyft(artifactPath, sbomPath);
     const document = JSON.parse(readFileSync(sbomPath, "utf8"));
     validateSpdx(document, artifact);
     const statement = provenanceStatement({ artifact, digest: sha256(artifactPath), version: metadata.version, revision, ...execution, materials });
@@ -114,9 +112,8 @@ export function main(arguments_ = process.argv.slice(2)) {
     invocationId: options["invocation-id"],
     startedOn: options["started-on"],
     finishedOn: options["finished-on"],
-    runSyft: (artifactPath, outputPath) => execFileSync("syft", ["scan", `file:${artifactPath}`, "--output", `spdx-json=${outputPath}`], { stdio: "inherit" }),
   });
-  console.error(`[devhud.supply-chain] generated ${count} SPDX SBOM and provenance pairs`);
+  console.error(`[devhud.supply-chain] validated ${count} SPDX SBOMs and generated digest-bound provenance`);
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {

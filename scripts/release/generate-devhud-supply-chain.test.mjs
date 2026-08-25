@@ -13,23 +13,31 @@ const invocation = {
   finishedOn: "2026-08-25T10:30:00Z",
 };
 
-test("generates an SPDX SBOM and digest-bound SLSA provenance for every artifact", () => {
+function writeSboms(outputDirectory, packagesForArtifact = () => [{ name: "DevHUD", SPDXID: "SPDXRef-Package" }]) {
+  const sbomDirectory = join(outputDirectory, "sbom");
+  mkdirSync(sbomDirectory, { recursive: true });
+  for (const artifact of Object.values(artifactGroups).flat()) {
+    writeFileSync(join(sbomDirectory, `${artifact}.spdx.json`), JSON.stringify({
+      spdxVersion: "SPDX-2.3",
+      dataLicense: "CC0-1.0",
+      SPDXID: "SPDXRef-DOCUMENT",
+      packages: packagesForArtifact(artifact),
+    }));
+  }
+}
+
+test("validates prebuilt SPDX SBOMs and generates digest-bound SLSA provenance for every artifact", () => {
   const root = mkdtempSync(join(tmpdir(), "devhud-supply-chain-"));
   const artifactsDirectory = join(root, "artifacts");
   const outputDirectory = join(root, "metadata");
   mkdirSync(artifactsDirectory);
   const artifacts = Object.values(artifactGroups).flat();
   for (const artifact of artifacts) writeFileSync(join(artifactsDirectory, artifact), `artifact:${artifact}`);
+  writeSboms(outputDirectory);
   const count = generateSupplyChain({
     artifactsDirectory,
     outputDirectory,
     ...invocation,
-    runSyft: (artifactPath, outputPath) => writeFileSync(outputPath, JSON.stringify({
-      spdxVersion: "SPDX-2.3",
-      dataLicense: "CC0-1.0",
-      SPDXID: "SPDXRef-DOCUMENT",
-      packages: [{ name: artifactPath, SPDXID: "SPDXRef-Package" }],
-    })),
   });
   assert.equal(count, artifacts.length);
   const artifact = artifacts[0];
@@ -51,19 +59,28 @@ test("rejects a non-SPDX document", () => {
 test("fails the candidate when Syft produces no component inventory", () => {
   const root = mkdtempSync(join(tmpdir(), "devhud-empty-sbom-"));
   const artifactsDirectory = join(root, "artifacts");
+  const outputDirectory = join(root, "metadata");
+  mkdirSync(artifactsDirectory);
+  const artifacts = Object.values(artifactGroups).flat();
+  for (const artifact of artifacts) writeFileSync(join(artifactsDirectory, artifact), `artifact:${artifact}`);
+  writeSboms(outputDirectory, (artifact) => artifact === artifacts[0] ? [] : [{ name: "DevHUD", SPDXID: "SPDXRef-Package" }]);
+  assert.throws(() => generateSupplyChain({
+    artifactsDirectory,
+    outputDirectory,
+    ...invocation,
+  }), /has no packages/u);
+});
+
+test("fails when a producing job omits its artifact SBOM", () => {
+  const root = mkdtempSync(join(tmpdir(), "devhud-missing-sbom-"));
+  const artifactsDirectory = join(root, "artifacts");
   mkdirSync(artifactsDirectory);
   for (const artifact of Object.values(artifactGroups).flat()) writeFileSync(join(artifactsDirectory, artifact), `artifact:${artifact}`);
   assert.throws(() => generateSupplyChain({
     artifactsDirectory,
     outputDirectory: join(root, "metadata"),
     ...invocation,
-    runSyft: (_artifactPath, outputPath) => writeFileSync(outputPath, JSON.stringify({
-      spdxVersion: "SPDX-2.3",
-      dataLicense: "CC0-1.0",
-      SPDXID: "SPDXRef-DOCUMENT",
-      packages: [],
-    })),
-  }), /has no packages/u);
+  }), /ENOENT/u);
 });
 
 test("provenance metadata requires the exact run-attempt identity and ordered timestamps", () => {

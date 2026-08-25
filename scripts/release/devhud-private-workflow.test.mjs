@@ -19,15 +19,41 @@ test("private workflow validates AppImage sandbox metadata before preparing its 
     'offset=$("$source" --appimage-offset)',
     metadataInspection,
     'if [ "$sandbox_metadata" != "-rwsr-xr-x 0/0" ]',
-    "sandbox=$(realpath squashfs-root/usr/share/DevHUD/chrome-sandbox)",
+    "appdir=$(realpath squashfs-root)",
+    'sandbox=$(realpath "$appdir/usr/share/DevHUD/chrome-sandbox")',
     repair,
     'sudo chmod 4755 "$sandbox"',
-    "executable=$(realpath squashfs-root/usr/bin/devhud)",
+    'executable=$(realpath "$appdir/usr/bin/devhud")',
     'smoke:platform -- --artifact "$executable"',
   ]) assert.ok(workflow.includes(command), `missing AppImage validation command: ${command}`);
   assert.ok(ubuntu.indexOf(metadataInspection) < ubuntu.indexOf(extraction));
   assert.ok(ubuntu.indexOf(extraction) < ubuntu.indexOf(repair));
+  assert.ok(ubuntu.includes('appimage=$(realpath "$RUNNER_TEMP/devhud-installed/DevHUD.AppImage")'));
+  assert.ok(ubuntu.includes('APPIMAGE="$appimage" APPDIR="$appdir" dbus-run-session -- xvfb-run -a pnpm --filter devhud smoke:platform -- --artifact "$executable"'));
   assert.ok(!workflow.includes('smoke:platform -- --artifact "$RUNNER_TEMP/devhud-installed/DevHUD.AppImage"'));
+});
+
+test("private workflow compiles the exact installed package kind for every desktop row", () => {
+  const packageKind = 'DEVHUD_PACKAGE_KIND: "${{ startsWith(matrix.id, \'macos-\') && \'macos-app\' || startsWith(matrix.id, \'windows-\') && format(\'windows-{0}\', matrix.bundle) || format(\'linux-{0}\', matrix.bundle) }}"';
+  assert.ok(workflow.includes(packageKind));
+  assert.ok(!workflow.includes("format('linux-{0}', matrix.bundle) || ''"));
+});
+
+test("private workflow creates component SBOMs from package-aware scan targets", () => {
+  const assemble = workflow.slice(workflow.indexOf("\n  assemble:"));
+  assert.equal(workflow.split("uses: anchore/sbom-action/download-syft@v0.21.0").length - 1, 4);
+  for (const target of [
+    'scan "dir:$app"',
+    'scan "dir:$installDir"',
+    'scan "dir:$sbom_root"',
+    'scan "dir:$appdir"',
+    "scan dir:apps/devhud-chrome-extension/dist",
+    'scan "oci-archive:private-artifacts/${{ matrix.artifact }}"',
+  ]) assert.ok(workflow.includes(target), `missing package-aware SBOM target: ${target}`);
+  assert.ok(workflow.includes("devhud-android-arm64-armv7-google-play.aab.spdx.json"));
+  assert.ok(workflow.includes("devhud-ios-arm64-app-store.ipa.spdx.json"));
+  assert.ok(!assemble.includes("download-syft"));
+  assert.ok(!workflow.includes('scan "file:'));
 });
 
 test("private workflow keeps each Linux Native Messaging lifecycle inside a D-Bus session", () => {
