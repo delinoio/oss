@@ -127,7 +127,7 @@ pub fn write_pairing_secret(secret: &[u8]) -> Result<(), String> {
     };
     #[cfg(target_os = "linux")]
     {
-        return write_pairing_secret_after_marker(ensure_pairing_marker(), write_secret);
+        write_pairing_secret_after_marker(ensure_pairing_marker(), write_secret)
     }
     #[cfg(not(target_os = "linux"))]
     write_secret()
