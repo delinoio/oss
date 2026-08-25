@@ -12,7 +12,7 @@
   },
   "devDependencies": {
     "@types/chrome": "0.1.32",
-    "fflate": "0.8.2",
+    "fflate": "0.8.3",
     "jsdom": "20.0.3",
     "typescript": "5.9.3",
     "vitest": "4.1.10"
