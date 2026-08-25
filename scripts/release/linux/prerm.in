@@ -1,5 +1,5 @@
 #!/bin/sh
 set -eu
 if [ "$1" = remove ] || [ "$1" = deconfigure ]; then
-  "@HOST@" unregister "@MANIFEST@"
+  rm -f "@MANIFEST@"
 fi

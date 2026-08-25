@@ -7,10 +7,28 @@ import (
 	"log/slog"
 	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 
+	"github.com/delinoio/oss/servers/devhud-api/internal/adminassets"
 	"github.com/delinoio/oss/servers/devhud-api/internal/sweeper"
 )
+
+func TestValidateEmbeddedAdministratorAssets(t *testing.T) {
+	if err := validateEmbeddedAdministratorAssets(adminassets.Embedded()); err != nil {
+		t.Fatal(err)
+	}
+	for name, assets := range map[string]fstest.MapFS{
+		"missing": {},
+		"empty":   {"dist/index.html": &fstest.MapFile{}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := validateEmbeddedAdministratorAssets(assets); err == nil {
+				t.Fatal("asset validation succeeded")
+			}
+		})
+	}
+}
 
 func TestSweepBoundsEachIteration(t *testing.T) {
 	runner := &recordingSweepRunner{}

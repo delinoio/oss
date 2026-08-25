@@ -6,7 +6,7 @@
 
 ## Runtime and Language
 
-Rust binary packaged as a Tauri sidecar with macOS, Windows, and Linux desktop installers and registered per user when the app launches. It is an explicit root Cargo workspace member and uses redacted `tracing` diagnostics. Windows NSIS removal invokes the host's idempotent `unregister` command and aborts before deleting installer-owned files when that command fails or the cleanup executable is missing; a missing per-user registry key is successful idempotent cleanup, while any other registry deletion failure fails unregister. The same command supports explicit removal on every desktop platform.
+Rust binary packaged as a Tauri sidecar with macOS, Windows, and Linux desktop installers and registered per user when the app launches. It is an explicit root Cargo workspace member and uses redacted `tracing` diagnostics. Windows NSIS removal invokes the host's idempotent `unregister` command and aborts before deleting installer-owned files when that command fails or the cleanup executable is missing; a missing per-user registry key is successful idempotent cleanup, while any other registry deletion failure fails unregister. Debian package removal runs as root and deletes only the package-owned system Chrome manifest; pairing revocation and credential cleanup remain explicit user-context `unregister` work. The same command supports explicit removal on every desktop platform.
 
 ## Users and Operators
 

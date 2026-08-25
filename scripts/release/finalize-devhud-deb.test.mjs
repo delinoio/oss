@@ -30,5 +30,6 @@ test("Debian finalization makes Native Messaging registration installer-owned", 
   const remove = readFileSync(join(control, "prerm"), "utf8");
   assert.match(install, /\/usr\/bin\/devhud-native-messaging-host" register/u);
   assert.match(install, /\/etc\/opt\/chrome\/native-messaging-hosts/u);
-  assert.match(remove, /unregister/u);
+  assert.match(remove, /rm -f "\/etc\/opt\/chrome\/native-messaging-hosts/u);
+  assert.doesNotMatch(remove, /unregister/u);
 });

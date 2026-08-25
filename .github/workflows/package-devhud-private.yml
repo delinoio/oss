@@ -200,6 +200,7 @@ jobs:
           }
           if ($process.ExitCode -notin @(0, 3010)) { throw "install failed: $($process.ExitCode)" }
           pnpm --filter devhud smoke:platform -- --artifact "$installDir\devhud.exe"
+          if ($LASTEXITCODE -ne 0) { throw "platform smoke failed with exit code $LASTEXITCODE" }
           $registration = Get-ItemProperty "HKCU:\Software\Google\Chrome\NativeMessagingHosts\io.delino.devhud.native_messaging" -ErrorAction Stop
           if (-not (Test-Path -LiteralPath $registration.'(default)')) { throw "Native Messaging manifest missing" }
           if ("${{ matrix.bundle }}" -eq "msi") {
@@ -240,9 +241,12 @@ jobs:
           else
             chmod +x "$source"
             "$source" --appimage-extract >/dev/null
-            test -u squashfs-root/chrome-sandbox
+            sandbox=$(realpath squashfs-root/usr/share/DevHUD/chrome-sandbox)
+            sudo chown root:root "$sandbox"
+            sudo chmod 4755 "$sandbox"
+            executable=$(realpath squashfs-root/usr/bin/devhud)
             install -Dm755 "$source" "$RUNNER_TEMP/devhud-installed/DevHUD.AppImage"
-            dbus-run-session -- xvfb-run -a pnpm --filter devhud smoke:platform -- --artifact "$RUNNER_TEMP/devhud-installed/DevHUD.AppImage"
+            dbus-run-session -- xvfb-run -a pnpm --filter devhud smoke:platform -- --artifact "$executable"
             host=$(find squashfs-root -type f -name devhud-native-messaging-host -print -quit)
             test -n "$host"
             HOME="$RUNNER_TEMP/native-home" "$host" register "$host"
@@ -324,8 +328,7 @@ jobs:
           actual=$(keytool -printcert -jarfile private-artifacts/devhud-android-arm64-armv7-google-play.aab | sed -n 's/^[[:space:]]*SHA256: //p' | head -1 | tr -d ':' | tr '[:upper:]' '[:lower:]')
           expected=$(printf '%s' "$DEVHUD_ANDROID_CERTIFICATE_SHA256" | tr -d ': ' | tr '[:upper:]' '[:lower:]')
           test -n "$actual" && test "$actual" = "$expected"
-          pnpm --filter devhud verify:mobile -- --android-artifact "$PWD/private-artifacts/devhud-android-arm64-armv7-google-play.aab" --android-abi arm64-v8a
-          pnpm --filter devhud verify:mobile -- --android-artifact "$PWD/private-artifacts/devhud-android-arm64-armv7-google-play.aab" --android-abi armeabi-v7a
+          pnpm --filter devhud verify:mobile -- --android-artifact "$PWD/private-artifacts/devhud-android-arm64-armv7-google-play.aab" --android-abi arm64-v8a --android-abi armeabi-v7a
           node scripts/release/devhud-evidence.mjs record --id android-google-play --output private-artifacts/validation/targets/android-google-play.json --checks namesVersionsTargets,platformSignature,nativeDeckWidget
       - name: Build and verify signed iOS archive
         if: ${{ matrix.platform == 'ios' }}

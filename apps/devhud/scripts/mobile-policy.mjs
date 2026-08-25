@@ -262,12 +262,13 @@ export function assertMobileDependencyClosures(platforms, actualClosures) {
   }
 }
 
-export function assertAndroidArtifactEntries(entries, abi, format) {
+export function assertAndroidArtifactEntries(entries, abis, format) {
   assert(format === "apk" || format === "aab", `unsupported Android artifact format: ${format}`);
+  assert(abis.length > 0 && new Set(abis).size === abis.length, "Android artifact ABIs must be nonempty and unique");
   const prefix = format === "aab" ? "base/" : "";
-  const expectedLibrary = `${prefix}lib/${abi}/libdevhud_lib.so`;
+  const expectedLibraries = abis.map((abi) => `${prefix}lib/${abi}/libdevhud_lib.so`).sort();
   const nativeEntries = entries.filter((entry) => entry.startsWith(`${prefix}lib/`));
-  assert(nativeEntries.length === 1 && nativeEntries[0] === expectedLibrary, `Android artifact architecture changed: expected only ${expectedLibrary}`);
+  assert(nativeEntries.toSorted().join("\n") === expectedLibraries.join("\n"), `Android artifact architecture changed: expected only ${expectedLibraries.join(", ")}`);
   assert(entries.includes(format === "aab" ? "base/dex/classes.dex" : "classes.dex"), "Android artifact classes.dex is missing");
   assert(entries.includes(format === "aab" ? "base/manifest/AndroidManifest.xml" : "AndroidManifest.xml"), "Android artifact manifest is missing");
   if (format === "aab") assert(entries.includes("BundleConfig.pb"), "Android App Bundle configuration is missing");

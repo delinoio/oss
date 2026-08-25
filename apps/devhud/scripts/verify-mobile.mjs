@@ -38,20 +38,22 @@ function androidAapt() {
   return executable;
 }
 
-function assertAndroidArtifact(artifact, abi) {
+function assertAndroidArtifact(artifact, abis) {
   if (!existsSync(artifact)) throw new Error(`Android artifact is missing: ${artifact}`);
   commandOutput("unzip", ["-t", artifact]);
   const entries = commandOutput("unzip", ["-Z1", artifact]).trim().split("\n");
   const format = artifact.endsWith(".aab") ? "aab" : artifact.endsWith(".apk") ? "apk" : "unknown";
-  assertAndroidArtifactEntries(entries, abi, format);
+  assertAndroidArtifactEntries(entries, abis, format);
   const prefix = format === "aab" ? "base/" : "";
-  const expectedLibrary = `${prefix}lib/${abi}/libdevhud_lib.so`;
   const dexEntry = format === "aab" ? "base/dex/classes.dex" : "classes.dex";
 
   const dex = commandOutput("unzip", ["-p", artifact, dexEntry], null).toString("latin1");
   if (!dex.includes("Lio/delino/devhud/bridge/DevhudNativePlugin;") || !dex.includes("Landroid/webkit/WebView;")) throw new Error("Android native bridge or System WebView host is missing from the artifact");
-  const nativeLibrary = commandOutput("unzip", ["-p", artifact, expectedLibrary], null).toString("latin1");
-  assertAndroidNativeLibrary(nativeLibrary);
+  for (const abi of abis) {
+    const expectedLibrary = `${prefix}lib/${abi}/libdevhud_lib.so`;
+    const nativeLibrary = commandOutput("unzip", ["-p", artifact, expectedLibrary], null).toString("latin1");
+    assertAndroidNativeLibrary(nativeLibrary);
+  }
 
   if (format === "aab") return;
 
@@ -104,9 +106,14 @@ assertMobileDependencyClosures(platforms, dependencyClosures);
 if (existsSync(join(appRoot, "src-tauri/gen/android"))) assertGeneratedOverlays("android");
 
 const artifactIndex = process.argv.indexOf("--android-artifact");
-const abiIndex = process.argv.indexOf("--android-abi");
-if ((artifactIndex === -1) !== (abiIndex === -1)) throw new Error("--android-artifact and --android-abi must be provided together");
-if (artifactIndex !== -1) assertAndroidArtifact(resolve(process.argv[artifactIndex + 1]), process.argv[abiIndex + 1]);
+const abiIndexes = process.argv.flatMap((argument, index) => argument === "--android-abi" ? [index] : []);
+if ((artifactIndex === -1) !== (abiIndexes.length === 0)) throw new Error("--android-artifact and at least one --android-abi must be provided together");
+if (artifactIndex !== -1) {
+  const artifact = process.argv[artifactIndex + 1];
+  const abis = abiIndexes.map((index) => process.argv[index + 1]);
+  if (!artifact || artifact.startsWith("--") || abis.some((abi) => !abi || abi.startsWith("--"))) throw new Error("Android artifact verification arguments require values");
+  assertAndroidArtifact(resolve(artifact), abis);
+}
 
 const forbiddenMobileText = [
   text("src-tauri/mobile/android/build.gradle.kts"),

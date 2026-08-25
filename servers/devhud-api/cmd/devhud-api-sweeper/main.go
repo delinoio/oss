@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
@@ -34,14 +36,26 @@ type sweepRunner interface {
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
-	// Retain the administrator asset embed in this independently distributed
-	// artifact so its SBOM/provenance closure matches the API release input.
-	_ = adminassets.Embedded()
+	if err := validateEmbeddedAdministratorAssets(adminassets.Embedded()); err != nil {
+		logger.Error("embedded administrator assets unavailable", "error", err)
+		os.Exit(1)
+	}
 	logger.Info("devhud-api-sweeper starting", "version", version)
 	if err := run(context.Background(), os.Args[1:], logger); err != nil {
 		logger.Error("devhud-api-sweeper stopped", "error", err)
 		os.Exit(1)
 	}
+}
+
+func validateEmbeddedAdministratorAssets(assets fs.FS) error {
+	index, err := fs.ReadFile(assets, "dist/index.html")
+	if err != nil {
+		return fmt.Errorf("read embedded administrator index: %w", err)
+	}
+	if len(index) == 0 {
+		return errors.New("embedded administrator index is empty")
+	}
+	return nil
 }
 
 func run(ctx context.Context, arguments []string, logger *slog.Logger) error {

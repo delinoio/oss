@@ -393,11 +393,14 @@ test("mobile dependency resolution includes production default features", () => 
 test("mobile policy validates APK and App Bundle layouts", () => {
   const apkEntries = ["AndroidManifest.xml", "classes.dex", "lib/arm64-v8a/libdevhud_lib.so"];
   const aabEntries = ["BundleConfig.pb", "base/manifest/AndroidManifest.xml", "base/dex/classes.dex", "base/lib/arm64-v8a/libdevhud_lib.so"];
-  assert.doesNotThrow(() => assertAndroidArtifactEntries(apkEntries, "arm64-v8a", "apk"));
-  assert.doesNotThrow(() => assertAndroidArtifactEntries(aabEntries, "arm64-v8a", "aab"));
-  assert.throws(() => assertAndroidArtifactEntries(aabEntries.filter((entry) => entry !== "BundleConfig.pb"), "arm64-v8a", "aab"), /Bundle configuration/u);
-  assert.throws(() => assertAndroidArtifactEntries([...aabEntries, "base/lib/x86_64/libdevhud_lib.so"], "arm64-v8a", "aab"), /architecture changed/u);
-  assert.throws(() => assertAndroidArtifactEntries([...aabEntries, "base/assets/chromium.pak"], "arm64-v8a", "aab"), /CEF or browser-extension/u);
+  const combinedAabEntries = [...aabEntries, "base/lib/armeabi-v7a/libdevhud_lib.so"];
+  assert.doesNotThrow(() => assertAndroidArtifactEntries(apkEntries, ["arm64-v8a"], "apk"));
+  assert.doesNotThrow(() => assertAndroidArtifactEntries(aabEntries, ["arm64-v8a"], "aab"));
+  assert.doesNotThrow(() => assertAndroidArtifactEntries(combinedAabEntries, ["arm64-v8a", "armeabi-v7a"], "aab"));
+  assert.throws(() => assertAndroidArtifactEntries(aabEntries.filter((entry) => entry !== "BundleConfig.pb"), ["arm64-v8a"], "aab"), /Bundle configuration/u);
+  assert.throws(() => assertAndroidArtifactEntries(aabEntries, ["arm64-v8a", "armeabi-v7a"], "aab"), /architecture changed/u);
+  assert.throws(() => assertAndroidArtifactEntries([...aabEntries, "base/lib/x86_64/libdevhud_lib.so"], ["arm64-v8a"], "aab"), /architecture changed/u);
+  assert.throws(() => assertAndroidArtifactEntries([...aabEntries, "base/assets/chromium.pak"], ["arm64-v8a"], "aab"), /CEF or browser-extension/u);
 });
 
 test("mobile policy distinguishes embedded runtime metadata from CEF symbols", () => {
