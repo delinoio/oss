@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -34,6 +34,7 @@ test("Debian finalization makes Native Messaging registration installer-owned", 
   assert.match(install, /\/etc\/opt\/chrome\/native-messaging-hosts/u);
   assert.match(remove, /runuser --user/u);
   assert.match(remove, /DBUS_SESSION_BUS_ADDRESS="unix:path=\$runtime\/bus"/u);
+  assert.match(remove, /native-messaging-pairing-v1/u);
   assert.ok(remove.indexOf("unregister") < remove.indexOf('rm -f "/etc/opt/chrome/native-messaging-hosts'));
   assert.match(remove, /rm -f "\/etc\/opt\/chrome\/native-messaging-hosts/u);
 });
@@ -45,11 +46,13 @@ test("Debian removal revokes affected users before deleting the system manifest"
   const runtime = join(runtimeRoot, "4242");
   const bin = join(root, "bin");
   const userManifest = join(home, ".config/google-chrome/NativeMessagingHosts/io.delino.devhud.native_messaging.json");
+  const pairingMarker = join(home, ".local/share/io.delino.devhud/native-messaging-pairing-v1");
   const systemManifest = join(root, "system-manifest.json");
   const host = join(bin, "devhud-native-messaging-host");
   const prerm = join(root, "prerm");
   const log = join(root, "unregister.log");
   mkdirSync(join(home, ".config/google-chrome/NativeMessagingHosts"), { recursive: true });
+  mkdirSync(join(home, ".local/share/io.delino.devhud"), { recursive: true });
   mkdirSync(runtime, { recursive: true });
   mkdirSync(bin);
 
@@ -58,33 +61,49 @@ test("Debian removal revokes affected users before deleting the system manifest"
     bus.once("error", reject);
     bus.listen(join(runtime, "bus"), resolve);
   });
-  t.after(() => new Promise((resolve) => bus.close(resolve)));
+  t.after(() => bus.listening ? new Promise((resolve) => bus.close(resolve)) : undefined);
 
   writeFileSync(join(bin, "getent"), `#!/bin/sh\nprintf '%s\\n' 'devhud:x:4242:4242::${home}:/bin/sh'\n`);
   writeFileSync(join(bin, "runuser"), "#!/bin/sh\nwhile [ \"$#\" -gt 0 ] && [ \"$1\" != -- ]; do shift; done\n[ \"$#\" -gt 0 ]\nshift\nexec \"$@\"\n");
-  writeFileSync(host, "#!/bin/sh\nprintf '%s\\n' \"$HOME|$XDG_RUNTIME_DIR|$DBUS_SESSION_BUS_ADDRESS|$*\" > \"$DEVHUD_TEST_LOG\"\nif [ \"${DEVHUD_TEST_FAIL:-0}\" = 1 ]; then exit 1; fi\nrm -f \"$2\"\n");
+  writeFileSync(host, "#!/bin/sh\nprintf '%s\\n' \"$HOME|$XDG_RUNTIME_DIR|$DBUS_SESSION_BUS_ADDRESS|$*\" > \"$DEVHUD_TEST_LOG\"\nif [ \"${DEVHUD_TEST_FAIL:-0}\" = 1 ]; then exit 1; fi\nrm -f \"$DEVHUD_TEST_PAIRING_MARKER\" \"$2\"\n");
   for (const executable of [join(bin, "getent"), join(bin, "runuser"), host]) chmodSync(executable, 0o755);
   writeFileSync(prerm, prermTemplate
     .replaceAll("@HOST@", host)
     .replaceAll("@MANIFEST@", systemManifest)
     .replaceAll("@RUNTIME_ROOT@", runtimeRoot));
   chmodSync(prerm, 0o755);
-  const env = { ...process.env, DEVHUD_TEST_LOG: log, PATH: `${bin}:${process.env.PATH}` };
+  const env = { ...process.env, DEVHUD_TEST_LOG: log, DEVHUD_TEST_PAIRING_MARKER: pairingMarker, PATH: `${bin}:${process.env.PATH}` };
 
-  writeFileSync(userManifest, "user");
+  writeFileSync(pairingMarker, "v1\n");
   writeFileSync(systemManifest, "system");
   execFileSync("sh", [prerm, "remove"], { env });
+  assert.equal(existsSync(pairingMarker), false);
   assert.equal(existsSync(userManifest), false);
   assert.equal(existsSync(systemManifest), false);
   assert.equal(readFileSync(log, "utf8").trim(), `${home}|${runtime}|unix:path=${runtime}/bus|unregister ${userManifest}`);
 
   writeFileSync(userManifest, "user");
   writeFileSync(systemManifest, "system");
+  execFileSync("sh", [prerm, "remove"], { env });
+  assert.equal(existsSync(userManifest), false);
+  assert.equal(existsSync(systemManifest), false);
+
+  writeFileSync(pairingMarker, "v1\n");
+  writeFileSync(userManifest, "user");
+  writeFileSync(systemManifest, "system");
   assert.throws(() => execFileSync("sh", [prerm, "deconfigure"], { env: { ...env, DEVHUD_TEST_FAIL: "1" } }));
+  assert.equal(existsSync(pairingMarker), true);
   assert.equal(existsSync(userManifest), true);
   assert.equal(existsSync(systemManifest), true);
 
   execFileSync("sh", [prerm, "upgrade"], { env });
+  assert.equal(existsSync(pairingMarker), true);
   assert.equal(existsSync(userManifest), true);
+  assert.equal(existsSync(systemManifest), true);
+
+  rmSync(userManifest);
+  await new Promise((resolve, reject) => bus.close((error) => error ? reject(error) : resolve()));
+  assert.throws(() => execFileSync("sh", [prerm, "remove"], { env }));
+  assert.equal(existsSync(pairingMarker), true);
   assert.equal(existsSync(systemManifest), true);
 });

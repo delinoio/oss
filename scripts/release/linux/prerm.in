@@ -10,7 +10,9 @@ if [ "$1" = remove ] || [ "$1" = deconfigure ]; then
       *) continue ;;
     esac
     user_manifest="$home/.config/google-chrome/NativeMessagingHosts/io.delino.devhud.native_messaging.json"
-    if [ ! -e "$user_manifest" ] && [ ! -L "$user_manifest" ]; then
+    pairing_marker="$home/.local/share/io.delino.devhud/native-messaging-pairing-v1"
+    if [ ! -e "$pairing_marker" ] && [ ! -L "$pairing_marker" ] && \
+       [ ! -e "$user_manifest" ] && [ ! -L "$user_manifest" ]; then
       continue
     fi
     runtime="$runtime_root/$uid"
