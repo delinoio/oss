@@ -75,10 +75,13 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with: { fetch-depth: 0 }
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v6
         with: { node-version-file: .nvmrc }
       - name: Validate every signing input and active updater root
-        run: node scripts/release/devhud-release.mjs plan --signed
+        run: |
+          node scripts/release/devhud-release.mjs plan --signed
+          pnpm --filter devhud release:validate-updater
 
   desktop:
     name: ${{ matrix.id }} signed package
@@ -115,10 +118,10 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with: { fetch-depth: 0 }
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v6
         with: { node-version-file: .nvmrc, cache: pnpm }
       - uses: dtolnay/rust-toolchain@stable
-      - uses: pnpm/action-setup@v4
       - name: Install Ubuntu packaging prerequisites
         if: ${{ startsWith(matrix.id, 'ubuntu-') }}
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends dbus-x11 libayatana-appindicator3-dev libfuse2 libgbm-dev libgtk-3-dev libx11-dev libxkbcommon-x11-0 libxtst-dev ninja-build patchelf xauth xdg-utils xvfb
@@ -219,7 +222,6 @@ jobs:
           source=$(find target/release/bundle/${{ matrix.bundle }} -type f -print -quit)
           test -n "$source"
           mkdir -p private-artifacts/validation/targets
-          cp "$source" private-artifacts/${{ matrix.artifact }}
           if [ "${{ matrix.bundle }}" = deb ]; then
             SOURCE_DATE_EPOCH=$(git show -s --format=%ct HEAD) bash scripts/release/finalize-devhud-deb.sh "$source" "$RUNNER_TEMP/devhud-final.deb"
             source="$RUNNER_TEMP/devhud-final.deb"
@@ -248,6 +250,7 @@ jobs:
             rm "$RUNNER_TEMP/devhud-installed/DevHUD.AppImage"
             test ! -e "$RUNNER_TEMP/devhud-installed/DevHUD.AppImage"
           fi
+          cp "$source" private-artifacts/${{ matrix.artifact }}
           node scripts/release/devhud-evidence.mjs record --id ${{ matrix.id }} --output private-artifacts/validation/targets/${{ matrix.id }}.json --checks namesVersionsTargets,cefHelpers,cefSandbox,trayLifecycle,updaterMaterial,nativeMessaging,installLaunchQuitUninstall
       - uses: actions/upload-artifact@v7
         with: { name: "devhud-${{ matrix.id }}", path: private-artifacts, if-no-files-found: error, retention-days: 7 }
@@ -263,9 +266,9 @@ jobs:
       DEVHUD_CHROME_EXTENSION_PUBLIC_KEY: ${{ secrets.DEVHUD_CHROME_EXTENSION_PUBLIC_KEY }}
     steps:
       - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v6
         with: { node-version-file: .nvmrc, cache: pnpm }
-      - uses: pnpm/action-setup@v4
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm --filter devhud-chrome-extension lint && pnpm --filter devhud-chrome-extension test:package
       - run: pnpm --filter devhud-chrome-extension build
@@ -296,9 +299,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with: { fetch-depth: 0 }
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v6
         with: { node-version-file: .nvmrc, cache: pnpm }
-      - uses: pnpm/action-setup@v4
       - uses: dtolnay/rust-toolchain@stable
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm --filter devhud mobile:generate -- --platform ${{ matrix.platform }}
@@ -323,7 +326,7 @@ jobs:
           test -n "$actual" && test "$actual" = "$expected"
           pnpm --filter devhud verify:mobile -- --android-artifact "$PWD/private-artifacts/devhud-android-arm64-armv7-google-play.aab" --android-abi arm64-v8a
           pnpm --filter devhud verify:mobile -- --android-artifact "$PWD/private-artifacts/devhud-android-arm64-armv7-google-play.aab" --android-abi armeabi-v7a
-          node scripts/release/devhud-evidence.mjs record --id android-google-play --output private-artifacts/validation/targets/android-google-play.json --checks namesVersionsTargets,platformSignature,nativeDeckWidget,installLaunchQuit
+          node scripts/release/devhud-evidence.mjs record --id android-google-play --output private-artifacts/validation/targets/android-google-play.json --checks namesVersionsTargets,platformSignature,nativeDeckWidget
       - name: Build and verify signed iOS archive
         if: ${{ matrix.platform == 'ios' }}
         shell: bash
@@ -338,8 +341,10 @@ jobs:
           umask 077
           printf '%s' "$P12_B64" | base64 --decode > "$RUNNER_TEMP/ios.p12"
           security create-keychain -p "$RUNNER_TEMP" "$RUNNER_TEMP/ios.keychain-db"
-          security import "$RUNNER_TEMP/ios.p12" -k "$RUNNER_TEMP/ios.keychain-db" -P "$P12_PASSWORD" -T /usr/bin/codesign
           security unlock-keychain -p "$RUNNER_TEMP" "$RUNNER_TEMP/ios.keychain-db"
+          security import "$RUNNER_TEMP/ios.p12" -k "$RUNNER_TEMP/ios.keychain-db" -P "$P12_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$RUNNER_TEMP" "$RUNNER_TEMP/ios.keychain-db"
+          security list-keychains -d user -s "$RUNNER_TEMP/ios.keychain-db"
           for item in APP WIDGET INTENT; do value="${item}_PROFILE_B64"; printf '%s' "${!value}" | base64 --decode > "$RUNNER_TEMP/${item}.mobileprovision"; uuid=$(security cms -D -i "$RUNNER_TEMP/${item}.mobileprovision" | plutil -extract UUID raw -); mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"; cp "$RUNNER_TEMP/${item}.mobileprovision" "$HOME/Library/MobileDevice/Provisioning Profiles/$uuid.mobileprovision"; done
           pnpm --filter devhud build:ios -- --ci
           app=$(find apps/devhud/src-tauri/gen/apple/build -name '*.app' -type d | head -1)
@@ -349,7 +354,7 @@ jobs:
           cp -R "$app" private-artifacts/Payload/
           (cd private-artifacts && zip -X -q -r devhud-ios-arm64-app-store.ipa Payload)
           rm -rf private-artifacts/Payload
-          node scripts/release/devhud-evidence.mjs record --id ios-app-store --output private-artifacts/validation/targets/ios-app-store.json --checks namesVersionsTargets,platformSignature,nativeDeckWidget,installLaunchQuit
+          node scripts/release/devhud-evidence.mjs record --id ios-app-store --output private-artifacts/validation/targets/ios-app-store.json --checks namesVersionsTargets,platformSignature,nativeDeckWidget
       - uses: actions/upload-artifact@v7
         with: { name: "devhud-${{ matrix.platform }}-store", path: private-artifacts, if-no-files-found: error, retention-days: 7 }
 

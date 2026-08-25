@@ -12,6 +12,8 @@ import { validateSpdx } from "./generate-devhud-supply-chain.mjs";
 
 const ARTIFACT_DOMAIN = Buffer.from("devhud-update-artifact-v1\0", "utf8");
 const MANIFEST_DOMAIN = Buffer.from("devhud-update-manifest-v1\0", "utf8");
+const GITHUB_ACTIONS_OIDC_ISSUER = "https://token.actions.githubusercontent.com";
+const PRIVATE_WORKFLOW_REF = /^delinoio\/oss\/\.github\/workflows\/package-devhud-private\.yml@refs\/(?:heads|tags)\/[^\s]+$/u;
 const primaryArtifacts = Object.values(artifactGroups).flat();
 const secretNames = [
   "DEVHUD_UPDATER_SIGNING_KEY_B64", "DEVHUD_MACOS_DEVELOPER_ID_P12_B64", "DEVHUD_MACOS_DEVELOPER_ID_P12_PASSWORD",
@@ -71,8 +73,30 @@ export function validateEvidence(root) {
   validateEvidenceEntries(evidence.targets ?? []);
 }
 
-export function validateChecksums(root, verifySigstore = true) {
+export function sigstoreVerificationPolicy(environment = process.env) {
+  const workflowRef = environment.GITHUB_WORKFLOW_REF;
+  if (typeof workflowRef !== "string" || !PRIVATE_WORKFLOW_REF.test(workflowRef)) {
+    throw new Error("Sigstore verification requires the DevHud private packaging GitHub workflow ref");
+  }
+  return {
+    certificateIdentity: `https://github.com/${workflowRef}`,
+    certificateOidcIssuer: GITHUB_ACTIONS_OIDC_ISSUER,
+  };
+}
+
+export function cosignVerifyArguments(bundlePath, artifactPath, policy) {
+  return [
+    "verify-blob",
+    "--bundle", bundlePath,
+    "--certificate-identity", policy.certificateIdentity,
+    "--certificate-oidc-issuer", policy.certificateOidcIssuer,
+    artifactPath,
+  ];
+}
+
+export function validateChecksums(root, verifySigstore = true, environment = process.env) {
   const manifestPath = join(root, "SHA256SUMS");
+  const sigstorePolicy = verifySigstore ? sigstoreVerificationPolicy(environment) : undefined;
   const lines = readFileSync(manifestPath, "utf8").trim().split("\n");
   const actual = new Map(files(root)
     .map((path) => relative(root, path).replaceAll("\\", "/"))
@@ -83,11 +107,11 @@ export function validateChecksums(root, verifySigstore = true) {
   for (const line of lines) {
     const match = /^([a-f0-9]{64})  (.+)$/u.exec(line);
     if (!match || actual.get(match[2]) !== match[1]) throw new Error(`invalid SHA256SUMS entry: ${line}`);
-    if (verifySigstore) execFileSync("cosign", ["verify-blob", "--bundle", join(root, "sigstore", `${match[2]}.sigstore.json`), join(root, match[2])], { stdio: "inherit" });
+    if (verifySigstore) execFileSync("cosign", cosignVerifyArguments(join(root, "sigstore", `${match[2]}.sigstore.json`), join(root, match[2]), sigstorePolicy), { stdio: "inherit" });
     actual.delete(match[2]);
   }
   if (actual.size > 0) throw new Error("SHA256SUMS omits release files");
-  if (verifySigstore) execFileSync("cosign", ["verify-blob", "--bundle", join(root, "sigstore/SHA256SUMS.sigstore.json"), manifestPath], { stdio: "inherit" });
+  if (verifySigstore) execFileSync("cosign", cosignVerifyArguments(join(root, "sigstore/SHA256SUMS.sigstore.json"), manifestPath, sigstorePolicy), { stdio: "inherit" });
 }
 
 export function validateNoSecrets(root, environment = process.env) {
@@ -133,7 +157,7 @@ export function validatePrivateBuild(root, { verifySigstore = true, environment 
   validateExtensionParity(root);
   validateUpdater(root);
   validateEvidence(root);
-  validateChecksums(root, verifySigstore);
+  validateChecksums(root, verifySigstore, environment);
   validateNoSecrets(root, environment);
 }
 

@@ -6,7 +6,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { validateChecksums, validateNoSecrets } from "./validate-devhud-private-build.mjs";
+import { cosignVerifyArguments, sigstoreVerificationPolicy, validateChecksums, validateNoSecrets } from "./validate-devhud-private-build.mjs";
 
 const checksumScript = fileURLToPath(new URL("./generate-checksums.sh", import.meta.url));
 
@@ -19,6 +19,26 @@ test("validates a complete deterministic checksum manifest without Sigstore", ()
   assert.doesNotThrow(() => validateChecksums(root, false));
   writeFileSync(join(root, "artifact.bin"), "tampered");
   assert.throws(() => validateChecksums(root, false), /invalid SHA256SUMS/u);
+});
+
+test("Sigstore verification binds bundles to the private packaging workflow identity", () => {
+  const policy = sigstoreVerificationPolicy({
+    GITHUB_WORKFLOW_REF: "delinoio/oss/.github/workflows/package-devhud-private.yml@refs/heads/main",
+  });
+  assert.deepEqual(policy, {
+    certificateIdentity: "https://github.com/delinoio/oss/.github/workflows/package-devhud-private.yml@refs/heads/main",
+    certificateOidcIssuer: "https://token.actions.githubusercontent.com",
+  });
+  assert.deepEqual(cosignVerifyArguments("artifact.sigstore.json", "artifact.bin", policy), [
+    "verify-blob",
+    "--bundle", "artifact.sigstore.json",
+    "--certificate-identity", policy.certificateIdentity,
+    "--certificate-oidc-issuer", policy.certificateOidcIssuer,
+    "artifact.bin",
+  ]);
+  assert.throws(() => sigstoreVerificationPolicy({}), /requires the DevHud private packaging GitHub workflow ref/u);
+  assert.throws(() => sigstoreVerificationPolicy({ GITHUB_WORKFLOW_REF: "other/repo/.github/workflows/package-devhud-private.yml@refs/heads/main" }), /requires the DevHud private packaging GitHub workflow ref/u);
+  assert.throws(() => sigstoreVerificationPolicy({ GITHUB_WORKFLOW_REF: "delinoio/oss/.github/workflows/other.yml@refs/heads/main" }), /requires the DevHud private packaging GitHub workflow ref/u);
 });
 
 test("secret scanning covers raw and decoded signing values", () => {

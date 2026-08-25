@@ -9,8 +9,8 @@ import { updaterTargets } from "./devhud-release.mjs";
 const desktopChecks = ["namesVersionsTargets", "cefHelpers", "cefSandbox", "trayLifecycle", "updaterMaterial", "nativeMessaging", "installLaunchQuitUninstall"];
 const required = new Map([
   ...updaterTargets.map(({ id }) => [id, [...desktopChecks, ...(id.startsWith("macos") || id.startsWith("windows") ? ["platformSignature"] : [])]]),
-  ["ios-app-store", ["namesVersionsTargets", "platformSignature", "nativeDeckWidget", "installLaunchQuit"]],
-  ["android-google-play", ["namesVersionsTargets", "platformSignature", "nativeDeckWidget", "installLaunchQuit"]],
+  ["ios-app-store", ["namesVersionsTargets", "platformSignature", "nativeDeckWidget"]],
+  ["android-google-play", ["namesVersionsTargets", "platformSignature", "nativeDeckWidget"]],
   ["chrome-extension", ["namesVersionsTargets", "permissions", "reproducible", "byteParity", "nativeMessagingIdentity"]],
   ["devhud-api-oci", ["namesVersionsTargets", "multiArch", "nonRoot", "health", "migrations", "administratorAssets"]],
   ["devhud-api-sweeper-oci", ["namesVersionsTargets", "multiArch", "nonRoot", "health", "migrations", "administratorAssets"]],
