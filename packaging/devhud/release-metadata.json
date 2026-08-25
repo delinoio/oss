@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "version": "0.1.0",
+  "storeBuildNumber": 1,
+  "releaseNotes": {
+    "en": "Initial private DevHUD v1 release candidate.",
+    "ko": "DevHUD v1 최초 비공개 릴리스 후보입니다."
+  }
+}
