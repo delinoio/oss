@@ -10,6 +10,7 @@ import { loadReleaseMetadata, metadataPath, repositoryRoot, updaterTargets } fro
 
 const ARTIFACT_DOMAIN = Buffer.from("devhud-update-artifact-v1\0", "utf8");
 const MANIFEST_DOMAIN = Buffer.from("devhud-update-manifest-v1\0", "utf8");
+export const MAX_UPDATER_ARTIFACT_BYTES = 512 * 1024 * 1024;
 
 function json(path) {
   return JSON.parse(readFileSync(path, "utf8"));
@@ -38,6 +39,12 @@ function sha256(bytes) {
 
 function signature(privateKey, domain, bytes) {
   return sign(null, Buffer.concat([domain, bytes]), privateKey);
+}
+
+export function assertUpdaterArtifactSize(size, artifact) {
+  if (!Number.isSafeInteger(size) || size < 1 || size > MAX_UPDATER_ARTIFACT_BYTES) {
+    throw new Error(`updater artifact size is outside the supported range: ${artifact}`);
+  }
 }
 
 function publishedAt(root = repositoryRoot) {
@@ -71,8 +78,9 @@ export function generateUpdater({
   const generated = [];
   for (const target of updaterTargets) {
     const artifactPath = join(artifactsDirectory, target.artifact);
+    assertUpdaterArtifactSize(statSync(artifactPath).size, target.artifact);
     const artifact = readFileSync(artifactPath);
-    if (artifact.length === 0) throw new Error(`updater artifact is empty: ${target.artifact}`);
+    assertUpdaterArtifactSize(artifact.length, target.artifact);
     const artifactSignature = signature(privateKey, ARTIFACT_DOMAIN, artifact);
     if (!verify(null, Buffer.concat([ARTIFACT_DOMAIN, artifact]), publicKey, artifactSignature)) throw new Error("generated artifact signature did not verify");
     const payload = {

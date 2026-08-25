@@ -24,3 +24,24 @@ test("private workflow validates the combined Android App Bundle once", () => {
   const command = 'verify:mobile -- --android-artifact "$PWD/private-artifacts/devhud-android-arm64-armv7-google-play.aab" --android-abi arm64-v8a --android-abi armeabi-v7a';
   assert.equal(workflow.split(command).length - 1, 1);
 });
+
+test("private workflow verifies both generated iOS extension product names", () => {
+  assert.ok(workflow.includes('test -d "$app/PlugIns/DevHUD Deck.appex"'));
+  assert.ok(workflow.includes('test -d "$app/PlugIns/DevHUD Deck Selection.appex"'));
+  assert.ok(!workflow.includes('test -d "$app/PlugIns/DevHudWidget.appex"'));
+});
+
+test("private workflow runs PostgreSQL schema readiness before recording OCI evidence", () => {
+  const ociJob = workflow.slice(workflow.indexOf("\n  oci:"), workflow.indexOf("\n  assemble:"));
+  const integration = "go test -tags=integration ./servers/devhud-api/internal/postgres";
+  const evidence = "node scripts/release/devhud-evidence.mjs record --id ${{ matrix.id }}";
+  assert.ok(ociJob.includes("image: postgres:15-bookworm"));
+  assert.ok(ociJob.includes("DEVHUD_TEST_DATABASE_URL: postgres://devhud:devhud@127.0.0.1:5432/devhud_api_test?sslmode=disable"));
+  assert.ok(ociJob.indexOf(integration) < ociJob.indexOf(evidence));
+});
+
+test("private workflow binds provenance to its run attempt and actual timestamps", () => {
+  assert.ok(workflow.includes("started_on: ${{ steps.invocation.outputs.started_on }}"));
+  assert.ok(workflow.includes("https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}"));
+  for (const argument of ["--invocation-id", "--started-on", "--finished-on"]) assert.ok(workflow.includes(argument));
+});

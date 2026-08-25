@@ -36,6 +36,7 @@ const nativeBridgeTypeScript = readFileSync(join(appRoot, "src/native-bridge.ts"
 const rsbuildConfig = readFileSync(join(appRoot, "rsbuild.config.ts"), "utf8");
 const updaterRoot = JSON.parse(readFileSync(join(appRoot, "updater-trust-root.json"), "utf8"));
 const updaterRust = readFileSync(join(appRoot, "src-tauri/src/updater.rs"), "utf8");
+const nativeMessagingLifecycle = readFileSync(join(appRoot, "src-tauri/windows/native-messaging-lifecycle.wxs"), "utf8");
 
 const TAURI_REPOSITORY = "https://github.com/tauri-apps/tauri";
 const TAURI_REVISION = "4af26a3f7f8b692d62cca549bbacd93f5ce90b41";
@@ -165,6 +166,19 @@ assert(
   JSON.stringify(privateReleaseTauriConfig.bundle?.windows?.wix?.fragmentPaths) ===
     JSON.stringify(["./windows/native-messaging-lifecycle.wxs"]),
   "private MSI must own the Native Messaging install and uninstall lifecycle",
+);
+assert(
+  nativeMessagingLifecycle.includes('Id="DevHudRollbackNativeMessagingRegistration"') &&
+    nativeMessagingLifecycle.includes('Execute="rollback"') &&
+    nativeMessagingLifecycle.includes('<Custom Action="DevHudRollbackNativeMessagingRegistration" After="InstallFiles">NOT Installed</Custom>'),
+  "private MSI Native Messaging registration rollback changed",
+);
+assert(
+  nativeMessagingLifecycle.includes('Id="DevHudRegisterNativeMessaging"') &&
+    nativeMessagingLifecycle.includes('Execute="deferred"') &&
+    nativeMessagingLifecycle.includes('<Custom Action="DevHudRegisterNativeMessaging" After="DevHudRollbackNativeMessagingRegistration">NOT Installed</Custom>') &&
+    !nativeMessagingLifecycle.includes('After="InstallFinalize"'),
+  "private MSI Native Messaging registration must complete before install finalization",
 );
 const productionCsp = tauriConfig.app.security.csp;
 assert(

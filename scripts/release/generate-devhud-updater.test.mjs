@@ -1,12 +1,17 @@
 import assert from "node:assert/strict";
 import { createHash, generateKeyPairSync } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, truncateSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
 import { artifactGroups, loadReleaseMetadata, updaterTargets } from "./devhud-release.mjs";
-import { generateUpdater, rawPublicKey } from "./generate-devhud-updater.mjs";
+import {
+  MAX_UPDATER_ARTIFACT_BYTES,
+  assertUpdaterArtifactSize,
+  generateUpdater,
+  rawPublicKey,
+} from "./generate-devhud-updater.mjs";
 
 function fixture() {
   const { privateKey } = generateKeyPairSync("ed25519");
@@ -71,4 +76,24 @@ test("updater generation rejects a mismatched private key", () => {
     metadata: loadReleaseMetadata(),
     timestamp: "2026-08-25T00:00:00Z",
   }), /does not match/u);
+});
+
+test("updater generation rejects artifacts above the native client limit before reading them", () => {
+  assert.doesNotThrow(() => assertUpdaterArtifactSize(MAX_UPDATER_ARTIFACT_BYTES, "maximum.bin"));
+  assert.throws(() => assertUpdaterArtifactSize(MAX_UPDATER_ARTIFACT_BYTES + 1, "oversized.bin"), /supported range/u);
+
+  const root = mkdtempSync(join(tmpdir(), "devhud-updater-size-test-"));
+  const artifacts = join(root, "artifacts");
+  mkdirSync(artifacts);
+  for (const target of updaterTargets) writeFileSync(join(artifacts, target.artifact), "fixture");
+  truncateSync(join(artifacts, updaterTargets[0].artifact), MAX_UPDATER_ARTIFACT_BYTES + 1);
+  const keys = fixture();
+  assert.throws(() => generateUpdater({
+    artifactsDirectory: artifacts,
+    outputDirectory: join(root, "output"),
+    encodedPrivateKey: keys.encodedPrivateKey,
+    trustRoot: keys.trustRoot,
+    metadata: loadReleaseMetadata(),
+    timestamp: "2026-08-25T00:00:00Z",
+  }), /supported range/u);
 });

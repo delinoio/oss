@@ -2,10 +2,18 @@
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
   <Fragment>
     <CustomAction
+      Id="DevHudRollbackNativeMessagingRegistration"
+      Directory="INSTALLDIR"
+      ExeCommand="&quot;[INSTALLDIR]devhud-native-messaging-host.exe&quot; unregister"
+      Execute="rollback"
+      Impersonate="yes"
+      Return="ignore"
+    />
+    <CustomAction
       Id="DevHudRegisterNativeMessaging"
       Directory="INSTALLDIR"
       ExeCommand="&quot;[INSTALLDIR]devhud-native-messaging-host.exe&quot; register &quot;[INSTALLDIR]devhud-native-messaging-host.exe&quot;"
-      Execute="immediate"
+      Execute="deferred"
       Impersonate="yes"
       Return="check"
     />
@@ -18,7 +26,8 @@
       Return="check"
     />
     <InstallExecuteSequence>
-      <Custom Action="DevHudRegisterNativeMessaging" After="InstallFinalize">NOT Installed</Custom>
+      <Custom Action="DevHudRollbackNativeMessagingRegistration" After="InstallFiles">NOT Installed</Custom>
+      <Custom Action="DevHudRegisterNativeMessaging" After="DevHudRollbackNativeMessagingRegistration">NOT Installed</Custom>
       <Custom Action="DevHudUnregisterNativeMessaging" Before="RemoveFiles">REMOVE~=&quot;ALL&quot;</Custom>
     </InstallExecuteSequence>
   </Fragment>

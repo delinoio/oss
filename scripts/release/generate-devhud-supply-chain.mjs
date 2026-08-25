@@ -9,6 +9,8 @@ import { pathToFileURL } from "node:url";
 import { artifactGroups, loadReleaseMetadata, repositoryRoot } from "./devhud-release.mjs";
 
 const artifacts = Object.values(artifactGroups).flat();
+const WORKFLOW_INVOCATION_ID = /^https:\/\/github\.com\/delinoio\/oss\/actions\/runs\/[1-9]\d*\/attempts\/[1-9]\d*$/u;
+const UTC_RFC3339_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/u;
 
 function sha256(path) {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
@@ -18,11 +20,27 @@ function sourceRevision(root) {
   return execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
 }
 
-function sourceTimestamp(root) {
-  return new Date(execFileSync("git", ["show", "-s", "--format=%cI", "HEAD"], { cwd: root, encoding: "utf8" }).trim()).toISOString();
+function provenanceTimestamp(value, name) {
+  if (typeof value !== "string" || !UTC_RFC3339_TIMESTAMP.test(value)) throw new Error(`${name} must be a UTC RFC 3339 timestamp`);
+  const instant = new Date(value);
+  if (Number.isNaN(instant.valueOf())) throw new Error(`${name} must be a UTC RFC 3339 timestamp`);
+  return instant.toISOString();
 }
 
-export function provenanceStatement({ artifact, digest, version, revision, timestamp, materials }) {
+export function validateProvenanceMetadata({ invocationId, startedOn, finishedOn }) {
+  if (typeof invocationId !== "string" || !WORKFLOW_INVOCATION_ID.test(invocationId)) {
+    throw new Error("provenance invocation ID must identify a delinoio/oss GitHub Actions run attempt");
+  }
+  const normalizedStartedOn = provenanceTimestamp(startedOn, "provenance startedOn");
+  const normalizedFinishedOn = provenanceTimestamp(finishedOn, "provenance finishedOn");
+  if (Date.parse(normalizedFinishedOn) < Date.parse(normalizedStartedOn)) {
+    throw new Error("provenance finishedOn must not precede startedOn");
+  }
+  return { invocationId, startedOn: normalizedStartedOn, finishedOn: normalizedFinishedOn };
+}
+
+export function provenanceStatement({ artifact, digest, version, revision, invocationId, startedOn, finishedOn, materials }) {
+  const execution = validateProvenanceMetadata({ invocationId, startedOn, finishedOn });
   return {
     _type: "https://in-toto.io/Statement/v1",
     subject: [{ name: artifact, digest: { sha256: digest } }],
@@ -36,7 +54,7 @@ export function provenanceStatement({ artifact, digest, version, revision, times
       },
       runDetails: {
         builder: { id: "https://github.com/delinoio/oss/.github/workflows/package-devhud-private.yml" },
-        metadata: { invocationId: revision, startedOn: timestamp, finishedOn: timestamp },
+        metadata: execution,
         byproducts: [],
       },
     },
@@ -50,10 +68,10 @@ export function validateSpdx(document, artifact) {
   if (!Array.isArray(document.packages) || document.packages.length === 0) throw new Error(`SPDX document has no packages for ${artifact}`);
 }
 
-export function generateSupplyChain({ artifactsDirectory, outputDirectory, runSyft, root = repositoryRoot }) {
+export function generateSupplyChain({ artifactsDirectory, outputDirectory, runSyft, invocationId, startedOn, finishedOn, root = repositoryRoot }) {
   const metadata = loadReleaseMetadata();
   const revision = sourceRevision(root);
-  const timestamp = sourceTimestamp(root);
+  const execution = validateProvenanceMetadata({ invocationId, startedOn, finishedOn });
   const materials = ["pnpm-lock.yaml", "Cargo.lock", "go.sum", "apps/devhud/cef-pins.json"].map((path) => ({
     uri: `git+https://github.com/delinoio/oss@${revision}#${path}`,
     digest: { sha256: sha256(join(root, path)) },
@@ -68,18 +86,8 @@ export function generateSupplyChain({ artifactsDirectory, outputDirectory, runSy
     mkdirSync(dirname(sbomPath), { recursive: true });
     runSyft(artifactPath, sbomPath);
     const document = JSON.parse(readFileSync(sbomPath, "utf8"));
-    if (!Array.isArray(document.packages) || document.packages.length === 0) {
-      document.packages = [{
-        name: artifact,
-        SPDXID: `SPDXRef-Artifact-${sha256(artifactPath).slice(0, 16)}`,
-        downloadLocation: "NOASSERTION",
-        filesAnalyzed: false,
-        checksums: [{ algorithm: "SHA256", checksumValue: sha256(artifactPath) }],
-      }];
-      writeFileSync(sbomPath, `${JSON.stringify(document, null, 2)}\n`);
-    }
     validateSpdx(document, artifact);
-    const statement = provenanceStatement({ artifact, digest: sha256(artifactPath), version: metadata.version, revision, timestamp, materials });
+    const statement = provenanceStatement({ artifact, digest: sha256(artifactPath), version: metadata.version, revision, ...execution, materials });
     writeFileSync(join(provenanceDirectory, `${artifact}.intoto.jsonl`), `${JSON.stringify(statement)}\n`);
   }
   return artifacts.length;
@@ -89,12 +97,12 @@ function parseArguments(arguments_) {
   const result = {};
   for (let index = 0; index < arguments_.length; index += 1) {
     const name = arguments_[index];
-    if (!["--artifacts-dir", "--output-dir"].includes(name)) throw new Error(`unknown argument: ${name}`);
+    if (!["--artifacts-dir", "--output-dir", "--invocation-id", "--started-on", "--finished-on"].includes(name)) throw new Error(`unknown argument: ${name}`);
     const value = arguments_[++index];
     if (!value || value.startsWith("--")) throw new Error(`${name} requires a value`);
     result[name.slice(2)] = value;
   }
-  for (const name of ["artifacts-dir", "output-dir"]) if (!result[name]) throw new Error(`--${name} is required`);
+  for (const name of ["artifacts-dir", "output-dir", "invocation-id", "started-on", "finished-on"]) if (!result[name]) throw new Error(`--${name} is required`);
   return result;
 }
 
@@ -103,6 +111,9 @@ export function main(arguments_ = process.argv.slice(2)) {
   const count = generateSupplyChain({
     artifactsDirectory: resolve(options["artifacts-dir"]),
     outputDirectory: resolve(options["output-dir"]),
+    invocationId: options["invocation-id"],
+    startedOn: options["started-on"],
+    finishedOn: options["finished-on"],
     runSyft: (artifactPath, outputPath) => execFileSync("syft", ["scan", `file:${artifactPath}`, "--output", `spdx-json=${outputPath}`], { stdio: "inherit" }),
   });
   console.error(`[devhud.supply-chain] generated ${count} SPDX SBOM and provenance pairs`);

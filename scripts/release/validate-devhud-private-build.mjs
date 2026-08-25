@@ -8,7 +8,8 @@ import { pathToFileURL } from "node:url";
 
 import { artifactGroups, loadReleaseMetadata, repositoryRoot, updaterTargets, validateExtensionParity } from "./devhud-release.mjs";
 import { validateEvidenceEntries } from "./devhud-evidence.mjs";
-import { validateSpdx } from "./generate-devhud-supply-chain.mjs";
+import { validateProvenanceMetadata, validateSpdx } from "./generate-devhud-supply-chain.mjs";
+import { assertUpdaterArtifactSize } from "./generate-devhud-updater.mjs";
 
 const ARTIFACT_DOMAIN = Buffer.from("devhud-update-artifact-v1\0", "utf8");
 const MANIFEST_DOMAIN = Buffer.from("devhud-update-manifest-v1\0", "utf8");
@@ -56,7 +57,10 @@ export function validateUpdater(root, trustRoot = json(join(repositoryRoot, "app
     const manifestSignature = Buffer.from(envelope.manifestSignature, "base64");
     if (!verify(null, Buffer.concat([MANIFEST_DOMAIN, payloadBytes]), publicKey, manifestSignature)) throw new Error(`invalid updater manifest signature: ${target.id}`);
     const payload = JSON.parse(payloadBytes);
-    const artifact = readFileSync(join(root, target.artifact));
+    const artifactPath = join(root, target.artifact);
+    assertUpdaterArtifactSize(statSync(artifactPath).size, target.artifact);
+    const artifact = readFileSync(artifactPath);
+    assertUpdaterArtifactSize(artifact.length, target.artifact);
     const artifactSignature = Buffer.from(payload.artifact.signature, "base64");
     if (payload.version !== loadReleaseMetadata().version || payload.platform !== target.platform || payload.architecture !== target.architecture || payload.packageKind !== target.packageKind) throw new Error(`updater target metadata mismatch: ${target.id}`);
     if (payload.artifact.size !== artifact.length || payload.artifact.sha256 !== sha256(artifact)) throw new Error(`updater artifact digest mismatch: ${target.id}`);
@@ -71,6 +75,19 @@ export function validateEvidence(root) {
   const evidence = json(join(root, "validation/evidence.json"));
   if (evidence.schemaVersion !== 1 || evidence.readiness !== "private-signed-candidate" || evidence.publicReady !== false) throw new Error("validation evidence must identify a non-public private signed candidate");
   validateEvidenceEntries(evidence.targets ?? []);
+}
+
+export function validateProvenance(statement, artifact, digest, environment = process.env) {
+  if (statement.subject?.[0]?.name !== artifact || statement.subject[0].digest?.sha256 !== digest) {
+    throw new Error(`provenance subject mismatch: ${artifact}`);
+  }
+  const metadata = validateProvenanceMetadata(statement.predicate?.runDetails?.metadata ?? {});
+  const { GITHUB_REPOSITORY: repository, GITHUB_RUN_ID: runId, GITHUB_RUN_ATTEMPT: runAttempt } = environment;
+  if (repository !== "delinoio/oss" || !/^[1-9]\d*$/u.test(runId ?? "") || !/^[1-9]\d*$/u.test(runAttempt ?? "")) {
+    throw new Error("provenance validation requires the current delinoio/oss GitHub run attempt");
+  }
+  const expectedInvocationId = `https://github.com/${repository}/actions/runs/${runId}/attempts/${runAttempt}`;
+  if (metadata.invocationId !== expectedInvocationId) throw new Error(`provenance invocation mismatch: ${artifact}`);
 }
 
 export function sigstoreVerificationPolicy(environment = process.env) {
@@ -152,7 +169,7 @@ export function validatePrivateBuild(root, { verifySigstore = true, environment 
     const sbom = json(join(root, "sbom", `${artifact}.spdx.json`));
     validateSpdx(sbom, artifact);
     const statement = json(join(root, "provenance", `${artifact}.intoto.jsonl`));
-    if (statement.subject?.[0]?.name !== artifact || statement.subject[0].digest?.sha256 !== sha256File(path)) throw new Error(`provenance subject mismatch: ${artifact}`);
+    validateProvenance(statement, artifact, sha256File(path), environment);
   }
   validateExtensionParity(root);
   validateUpdater(root);

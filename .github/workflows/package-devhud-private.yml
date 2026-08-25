@@ -23,7 +23,11 @@ jobs:
     runs-on: ubuntu-22.04
     outputs:
       version: ${{ steps.identity.outputs.version }}
+      started_on: ${{ steps.invocation.outputs.started_on }}
     steps:
+      - name: Capture provenance start time
+        id: invocation
+        run: echo "started_on=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v6
         with: { fetch-depth: 0 }
       - uses: actions/setup-node@v6
@@ -352,7 +356,8 @@ jobs:
           pnpm --filter devhud build:ios -- --ci
           app=$(find apps/devhud/src-tauri/gen/apple/build -name '*.app' -type d | head -1)
           codesign --verify --deep --strict "$app"
-          test -d "$app/PlugIns/DevHudWidget.appex"
+          test -d "$app/PlugIns/DevHUD Deck.appex"
+          test -d "$app/PlugIns/DevHUD Deck Selection.appex"
           mkdir -p private-artifacts/Payload private-artifacts/validation/targets
           cp -R "$app" private-artifacts/Payload/
           (cd private-artifacts && zip -X -q -r devhud-ios-arm64-app-store.ipa Payload)
@@ -371,12 +376,30 @@ jobs:
           - { id: devhud-api-oci, target: api, artifact: devhud-api-linux-amd64-arm64.oci.tar }
           - { id: devhud-api-sweeper-oci, target: sweeper, artifact: devhud-api-sweeper-linux-amd64-arm64.oci.tar }
     runs-on: ubuntu-22.04
+    services:
+      postgres:
+        image: postgres:15-bookworm
+        env:
+          POSTGRES_DB: devhud_api_test
+          POSTGRES_PASSWORD: devhud
+          POSTGRES_USER: devhud
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U devhud -d devhud_api_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v6
         with: { fetch-depth: 0 }
       - uses: actions/setup-go@v6
         with: { go-version-file: go.mod, cache: true }
       - uses: docker/setup-buildx-action@v4
+      - name: Validate PostgreSQL migrations and schema readiness
+        env:
+          DEVHUD_TEST_DATABASE_URL: postgres://devhud:devhud@127.0.0.1:5432/devhud_api_test?sslmode=disable
+        run: go test -tags=integration ./servers/devhud-api/internal/postgres
       - name: Validate health, migrations, sweeper readiness, and embedded administrator assets
         run: go test ./servers/devhud-api/...
       - name: Build local two-platform OCI layout
@@ -433,8 +456,12 @@ jobs:
           node scripts/release/generate-devhud-updater.mjs --artifacts-dir private-artifacts --output-dir private-artifacts/updater --key-file "$RUNNER_TEMP/devhud-updater.key"
           rm "$RUNNER_TEMP/devhud-updater.key"
       - name: Generate SPDX, SLSA provenance, checksums, and separate Sigstore bundles
+        env:
+          DEVHUD_PROVENANCE_INVOCATION_ID: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
+          DEVHUD_PROVENANCE_STARTED_ON: ${{ needs.plan.outputs.started_on }}
         run: |
-          node scripts/release/generate-devhud-supply-chain.mjs --artifacts-dir private-artifacts --output-dir private-artifacts
+          build_finished_on=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+          node scripts/release/generate-devhud-supply-chain.mjs --artifacts-dir private-artifacts --output-dir private-artifacts --invocation-id "$DEVHUD_PROVENANCE_INVOCATION_ID" --started-on "$DEVHUD_PROVENANCE_STARTED_ON" --finished-on "$build_finished_on"
           REQUIRE_COSIGN=1 scripts/release/generate-checksums.sh --artifacts-dir private-artifacts --sigstore-dir private-artifacts/sigstore
       - name: Validate complete private candidate and absence of secrets
         run: node scripts/release/validate-devhud-private-build.mjs --artifacts-dir private-artifacts

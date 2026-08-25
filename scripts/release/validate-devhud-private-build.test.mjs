@@ -6,7 +6,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { cosignVerifyArguments, sigstoreVerificationPolicy, validateChecksums, validateNoSecrets } from "./validate-devhud-private-build.mjs";
+import { cosignVerifyArguments, sigstoreVerificationPolicy, validateChecksums, validateNoSecrets, validateProvenance } from "./validate-devhud-private-build.mjs";
 
 const checksumScript = fileURLToPath(new URL("./generate-checksums.sh", import.meta.url));
 
@@ -49,4 +49,19 @@ test("secret scanning covers raw and decoded signing values", () => {
   assert.throws(() => validateNoSecrets(root, { DEVHUD_WINDOWS_SIGNING_PFX_PASSWORD: "long-secret-value" }), /secret material/u);
   writeFileSync(join(root, "leaked.txt"), Buffer.from("decoded-private-key"));
   assert.throws(() => validateNoSecrets(root, { DEVHUD_UPDATER_SIGNING_KEY_B64: Buffer.from("decoded-private-key").toString("base64") }), /secret material/u);
+});
+
+test("provenance validation binds the statement to the current workflow run attempt", () => {
+  const digest = "a".repeat(64);
+  const statement = {
+    subject: [{ name: "artifact.bin", digest: { sha256: digest } }],
+    predicate: { runDetails: { metadata: {
+      invocationId: "https://github.com/delinoio/oss/actions/runs/123456789/attempts/2",
+      startedOn: "2026-08-25T10:00:00Z",
+      finishedOn: "2026-08-25T10:30:00Z",
+    } } },
+  };
+  const environment = { GITHUB_REPOSITORY: "delinoio/oss", GITHUB_RUN_ID: "123456789", GITHUB_RUN_ATTEMPT: "2" };
+  assert.doesNotThrow(() => validateProvenance(statement, "artifact.bin", digest, environment));
+  assert.throws(() => validateProvenance(statement, "artifact.bin", digest, { ...environment, GITHUB_RUN_ATTEMPT: "3" }), /invocation mismatch/u);
 });
