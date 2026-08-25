@@ -1,4 +1,4 @@
-import { normalizeLogtoIssuer, normalizePublicAssetUrl } from "./identity-contract.ts";
+import { isLoopbackHostname, normalizeLogtoIssuer, normalizePublicAssetUrl } from "./identity-contract.ts";
 import type { SanitizedBrowserContext } from "./browser-context.ts";
 import { SettingsTextLimit } from "./contract-limits.ts";
 import { ClassicPatCreationUrl, FineGrainedPatCreationUrl } from "./github-links.ts";
@@ -118,7 +118,7 @@ export interface OfficialCaptureUpload {
   readonly requiredHeaders: { readonly contentType: string; readonly checksumSha256Base64: string; readonly contentLength: string };
 }
 export interface R2CaptureUploadProfile {
-  readonly profileRef: string; readonly endpoint: string; readonly accountId: string; readonly bucket: string; readonly publicBaseUrl: string; readonly prefix: string;
+  readonly profileRef: string; readonly accountId: string; readonly bucket: string; readonly publicBaseUrl: string; readonly prefix: string;
 }
 
 export type SecureSettingRef =
@@ -391,13 +391,19 @@ export function validateCaptureRequest(request: Extract<NativeBridgeRequestV1, {
     if (![upload.uploadId, upload.submissionId, upload.uploadGroupId, upload.reservationId].every((value) => uuidPattern.test(value))
       || !/^\d+$/u.test(upload.stagingGeneration) || upload.requiredHeaders.contentType !== "image/png"
       || upload.requiredHeaders.contentLength !== String(request.expectedBytes) || !/^[A-Za-z0-9+/]{43}=$/u.test(upload.requiredHeaders.checksumSha256Base64)) throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument);
-    try { const url = new URL(upload.signedPutUrl); if (url.protocol !== "https:" || url.username || url.password || url.hash) throw new Error(); } catch { throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument); }
+    try {
+      const url = new URL(upload.signedPutUrl);
+      if (!url.hostname || url.username || url.password || url.hash
+        || (url.protocol !== "https:" && !(url.protocol === "http:" && isLoopbackHostname(url.hostname)))) throw new Error();
+    } catch { throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument); }
   }
   if (request.operation === "capture.upload-r2") {
     const profile = request.profile;
-    if (!profilePattern.test(profile.profileRef) || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(profile.accountId) || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(profile.bucket)
+    const profileKeys = Object.keys(profile);
+    if (profileKeys.length !== 5 || !profileKeys.every((key) => ["profileRef", "accountId", "bucket", "publicBaseUrl", "prefix"].includes(key))
+      || !profilePattern.test(profile.profileRef) || !/^[0-9a-f]{32}$/u.test(profile.accountId) || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(profile.bucket)
       || new TextEncoder().encode(profile.prefix).byteLength > 512 || profile.prefix.startsWith("/") || profile.prefix.endsWith("/") || profile.prefix.includes("\\") || (profile.prefix !== "" && profile.prefix.split("/").some((segment) => segment === "" || segment === "." || segment === ".."))) throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument);
-    for (const value of [profile.endpoint, profile.publicBaseUrl]) {
+    for (const value of [profile.publicBaseUrl]) {
       try { const url = new URL(value); if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash) throw new Error(); } catch { throw new NativeBridgeError(NativeBridgeErrorCode.InvalidArgument); }
     }
   }

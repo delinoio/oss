@@ -333,8 +333,12 @@ type GetBootstrapResponse struct {
 	PublicAssetBaseUrl    string                 `protobuf:"bytes,9,opt,name=public_asset_base_url,json=publicAssetBaseUrl,proto3" json:"public_asset_base_url,omitempty"`
 	Capabilities          []StaticCapability     `protobuf:"varint,10,rep,packed,name=capabilities,proto3,enum=devhud.v1.StaticCapability" json:"capabilities,omitempty"`
 	UploadLimits          *UploadLimits          `protobuf:"bytes,11,opt,name=upload_limits,json=uploadLimits,proto3" json:"upload_limits,omitempty"`
-	unknownFields         protoimpl.UnknownFields
-	sizeCache             protoimpl.SizeCache
+	// official_upload_origin is the exact scheme/host/port accepted for
+	// server-issued direct upload URLs. It is empty when official uploads are
+	// unavailable.
+	OfficialUploadOrigin string `protobuf:"bytes,12,opt,name=official_upload_origin,json=officialUploadOrigin,proto3" json:"official_upload_origin,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *GetBootstrapResponse) Reset() {
@@ -444,6 +448,13 @@ func (x *GetBootstrapResponse) GetUploadLimits() *UploadLimits {
 	return nil
 }
 
+func (x *GetBootstrapResponse) GetOfficialUploadOrigin() string {
+	if x != nil {
+		return x.OfficialUploadOrigin
+	}
+	return ""
+}
+
 var File_devhud_v1_bootstrap_proto protoreflect.FileDescriptor
 
 const file_devhud_v1_bootstrap_proto_rawDesc = "" +
@@ -474,7 +485,7 @@ const file_devhud_v1_bootstrap_proto_rawDesc = "" +
 	"stagingTtl\x12&\n" +
 	"\x0fmax_image_width\x18\v \x01(\rR\rmaxImageWidth\x12(\n" +
 	"\x10max_image_height\x18\f \x01(\rR\x0emaxImageHeight\x12(\n" +
-	"\x10max_image_pixels\x18\r \x01(\x04R\x0emaxImagePixels\"\xdb\x04\n" +
+	"\x10max_image_pixels\x18\r \x01(\x04R\x0emaxImagePixels\"\x91\x05\n" +
 	"\x14GetBootstrapResponse\x127\n" +
 	"\bmetadata\x18\x01 \x01(\v2\x1b.devhud.v1.ResponseMetadataR\bmetadata\x123\n" +
 	"\n" +
@@ -489,7 +500,8 @@ const file_devhud_v1_bootstrap_proto_rawDesc = "" +
 	"\x15public_asset_base_url\x18\t \x01(\tR\x12publicAssetBaseUrl\x12?\n" +
 	"\fcapabilities\x18\n" +
 	" \x03(\x0e2\x1b.devhud.v1.StaticCapabilityR\fcapabilities\x12<\n" +
-	"\rupload_limits\x18\v \x01(\v2\x17.devhud.v1.UploadLimitsR\fuploadLimits2c\n" +
+	"\rupload_limits\x18\v \x01(\v2\x17.devhud.v1.UploadLimitsR\fuploadLimits\x124\n" +
+	"\x16official_upload_origin\x18\f \x01(\tR\x14officialUploadOrigin2c\n" +
 	"\x10BootstrapService\x12O\n" +
 	"\fGetBootstrap\x12\x1e.devhud.v1.GetBootstrapRequest\x1a\x1f.devhud.v1.GetBootstrapResponseB:Z8github.com/delinoio/oss/protos/gen/go/devhud/v1;devhudv1b\x06proto3"
 

@@ -11,6 +11,7 @@ const canonicalSettingsV3 = `{"agents":[],"appearance":{"language":"system","the
 const canonicalSettingsV4 = `{"agents":[],"appearance":{"language":"system","theme":"system"},"decks":[],"github":{"issueTracker":null,"pendingPatRemovals":[],"profiles":[],"repositories":[]},"schemaVersion":4,"shortcuts":{"android":{},"desktop":{"realqa.capture.active-window":{"enabled":true,"key":"digit-2","modifiers":[]},"realqa.capture.all-displays":{"enabled":true,"key":"digit-3","modifiers":[]},"realqa.capture.display":{"enabled":true,"key":"digit-1","modifiers":[]},"realqa.capture.selection":{"enabled":true,"key":"digit-4","modifiers":[]},"realqa.capture.toolbar":{"enabled":true,"key":"digit-5","modifiers":[]},"shell.command-palette":{"enabled":true,"key":"key-k","modifiers":["right-primary"]}},"ios":{}},"uploads":{"provider":"official","r2":null},"urlMappings":[]}`
 const canonicalSettingsV5 = `{"agents":[],"appearance":{"language":"system","theme":"system"},"decks":[],"github":{"issueTracker":null,"pendingPatRemovals":[],"profiles":[],"repositories":[]},"schemaVersion":5,"shortcuts":{"android":{},"desktop":{"realqa.capture.active-window":{"enabled":true,"key":"digit-2","modifiers":[]},"realqa.capture.all-displays":{"enabled":true,"key":"digit-3","modifiers":[]},"realqa.capture.display":{"enabled":true,"key":"digit-1","modifiers":[]},"realqa.capture.selection":{"enabled":true,"key":"digit-4","modifiers":[]},"realqa.capture.toolbar":{"enabled":true,"key":"digit-5","modifiers":[]},"shell.command-palette":{"enabled":true,"key":"key-k","modifiers":["right-primary"]}},"ios":{}},"uploads":{"provider":"official","r2":null},"urlMappings":[]}`
 const canonicalSettingsV6 = `{"agents":[],"appearance":{"language":"system","theme":"system"},"decks":[],"github":{"issueTracker":null,"pendingPatRemovals":[],"profiles":[],"repositories":[]},"schemaVersion":6,"shortcuts":{"android":{},"desktop":{"realqa.capture.active-window":{"enabled":true,"key":"digit-2","modifiers":[]},"realqa.capture.all-displays":{"enabled":true,"key":"digit-3","modifiers":[]},"realqa.capture.display":{"enabled":true,"key":"digit-1","modifiers":[]},"realqa.capture.selection":{"enabled":true,"key":"digit-4","modifiers":[]},"realqa.capture.toolbar":{"enabled":true,"key":"digit-5","modifiers":[]},"shell.command-palette":{"enabled":true,"key":"key-k","modifiers":["right-primary"]}},"ios":{}},"uploads":{"provider":"official","r2":null},"urlMappings":[]}`
+const canonicalSettingsV7 = `{"agents":[],"appearance":{"language":"system","theme":"system"},"decks":[],"github":{"issueTracker":null,"pendingPatRemovals":[],"profiles":[],"repositories":[]},"schemaVersion":7,"uploads":{"provider":"official","r2":null},"urlMappings":[]}`
 
 func TestValidateCanonicalJSON(t *testing.T) {
 	for _, value := range [][]byte{
@@ -45,6 +46,7 @@ func TestValidateDevHudSettings(t *testing.T) {
 		4: canonicalSettingsV4,
 		5: canonicalSettingsV5,
 		6: canonicalSettingsV6,
+		7: canonicalSettingsV7,
 	} {
 		if err := validateDevHudSettings([]byte(value), version); err != nil {
 			t.Errorf("validateDevHudSettings(version %d): %v", version, err)
@@ -105,6 +107,30 @@ func TestValidateDevHudSettings(t *testing.T) {
 	danglingV6Agent := strings.Replace(canonicalSettingsV6, `"agents":[]`, `"agents":[`+agent+`]`, 1)
 	if err := validateDevHudSettings([]byte(danglingV6Agent), 6); err == nil {
 		t.Fatal("schema-v6 dangling local-agent profile reference was accepted")
+	}
+	withV7Profile := strings.Replace(canonicalSettingsV7, `"profiles":[]`, `"profiles":[{"id":"`+profileID+`","kind":"fine-grained","name":"Work"}]`, 1)
+	v7Agent := `{"enabled":false,"id":"codex","kind":"codex","mode":"direct","profileRef":"` + profileID + `"}`
+	withV7Agent := strings.Replace(withV7Profile, `"agents":[]`, `"agents":[`+v7Agent+`]`, 1)
+	if err := validateDevHudSettings([]byte(withV7Agent), 7); err != nil {
+		t.Fatalf("schema-v7 local-agent descriptor validation failed: %v", err)
+	}
+	if err := validateDevHudSettings([]byte(strings.Replace(withV7Agent, `"profileRef":"`+profileID+`"}`, `"profileRef":"`+profileID+`","repositoryPrompts":[]}`, 1)), 7); err == nil {
+		t.Fatal("schema-v7 synchronized repository prompts were accepted")
+	}
+	withV7Shortcuts := strings.Replace(canonicalSettingsV7, `"uploads":`, `"shortcuts":{"android":{},"desktop":{},"ios":{}},"uploads":`, 1)
+	if err := validateDevHudSettings([]byte(withV7Shortcuts), 7); err == nil {
+		t.Fatal("schema-v7 synchronized shortcuts were accepted")
+	}
+	v7R2 := `{"provider":"r2","r2":{"accountId":"0123456789abcdef0123456789abcdef","bucket":"screenshots","name":"Team R2","prefix":"devhud/realqa","profileRef":"` + profileID + `","publicBaseUrl":"https://images.example/public"}}`
+	withV7R2 := strings.Replace(withV7Profile, `"uploads":{"provider":"official","r2":null}`, `"uploads":`+v7R2, 1)
+	if err := validateDevHudSettings([]byte(withV7R2), 7); err != nil {
+		t.Fatalf("schema-v7 derived-endpoint R2 metadata validation failed: %v", err)
+	}
+	if err := validateDevHudSettings([]byte(strings.Replace(withV7R2, `"bucket":"screenshots"`, `"bucket":"screenshots","endpoint":"https://attacker.invalid"`, 1)), 7); err == nil {
+		t.Fatal("schema-v7 caller-controlled R2 endpoint was accepted")
+	}
+	if err := validateDevHudSettings([]byte(strings.Replace(withV7R2, "0123456789abcdef0123456789abcdef", "ABC", 1)), 7); err == nil {
+		t.Fatal("schema-v7 invalid Cloudflare account ID was accepted")
 	}
 	for name, test := range map[string]struct {
 		version uint32

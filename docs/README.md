@@ -79,6 +79,7 @@ The deterministic bilingual frontend, target-isolated Tauri desktop CEF plus iOS
 
 - `docs/project-devhud.md`
 - `docs/apps-devhud-foundation.md`
+- `docs/apps-devhud-security-contract.md`
 - `docs/apps-devhud-updater-contract.md`
 - `docs/apps-devhud-chrome-extension-contract.md`
 - `docs/apps-devhud-admin-contract.md`

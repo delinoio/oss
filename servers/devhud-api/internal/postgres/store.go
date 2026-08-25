@@ -194,7 +194,7 @@ func (s *Store) GetSettings(ctx context.Context, userID string) (*domain.Setting
 	return settings, nil
 }
 
-func (s *Store) ReplaceSettings(ctx context.Context, userID string, schemaVersion uint32, canonicalJSON []byte, expectedRevision uint64, now time.Time) (domain.Settings, error) {
+func (s *Store) ReplaceSettings(ctx context.Context, userID string, schemaVersion uint32, canonicalJSON []byte, expectedRevision uint64, expectedContentSHA256 []byte, now time.Time) (domain.Settings, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return domain.Settings{}, err
@@ -219,10 +219,10 @@ func (s *Store) ReplaceSettings(ctx context.Context, userID string, schemaVersio
 
 	if expectedRevision == 0 {
 		row := tx.QueryRow(ctx, `INSERT INTO devhud_settings
-            (user_id, schema_version, revision, canonical_json, updated_at)
-            VALUES ($1, $2, 1, $3, $4)
-            ON CONFLICT (user_id) DO NOTHING
-            RETURNING schema_version, revision::text, canonical_json, updated_at`, userID, schemaVersion, canonicalJSON, now)
+			(user_id, schema_version, revision, canonical_json, content_sha256, updated_at)
+			VALUES ($1, $2, 1, $3, $4, $5)
+			ON CONFLICT (user_id) DO NOTHING
+			RETURNING schema_version, revision::text, canonical_json, content_sha256, updated_at`, userID, schemaVersion, canonicalJSON, settingsDigest(canonicalJSON), now)
 		settings, scanErr := scanSettings(row)
 		if scanErr == nil {
 			if err := tx.Commit(ctx); err != nil {
@@ -235,9 +235,13 @@ func (s *Store) ReplaceSettings(ctx context.Context, userID string, schemaVersio
 		}
 	} else {
 		row := tx.QueryRow(ctx, `UPDATE devhud_settings SET
-            schema_version = $2, revision = revision + 1, canonical_json = $3, updated_at = $4
-            WHERE user_id = $1 AND revision = $5 AND revision < 18446744073709551615
-            RETURNING schema_version, revision::text, canonical_json, updated_at`, userID, schemaVersion, canonicalJSON, now, strconv.FormatUint(expectedRevision, 10))
+			schema_version = $2, revision = revision + 1, canonical_json = $3,
+			content_sha256 = $4, updated_at = $5
+			WHERE user_id = $1 AND revision = $6 AND content_sha256 = $7
+				AND revision < 18446744073709551615
+			RETURNING schema_version, revision::text, canonical_json, content_sha256, updated_at`,
+			userID, schemaVersion, canonicalJSON, settingsDigest(canonicalJSON), now,
+			strconv.FormatUint(expectedRevision, 10), expectedContentSHA256)
 		settings, scanErr := scanSettings(row)
 		if scanErr == nil {
 			if err := tx.Commit(ctx); err != nil {
@@ -696,7 +700,7 @@ func identityDigest(namespace, issuer, subject string) []byte {
 func scanSettings(row rowScanner) (domain.Settings, error) {
 	var settings domain.Settings
 	var revision string
-	if err := row.Scan(&settings.SchemaVersion, &revision, &settings.CanonicalJSON, &settings.UpdatedAt); err != nil {
+	if err := row.Scan(&settings.SchemaVersion, &revision, &settings.CanonicalJSON, &settings.ContentSHA256, &settings.UpdatedAt); err != nil {
 		return domain.Settings{}, err
 	}
 	parsed, err := strconv.ParseUint(revision, 10, 64)
@@ -707,8 +711,13 @@ func scanSettings(row rowScanner) (domain.Settings, error) {
 	return settings, nil
 }
 
+func settingsDigest(canonicalJSON []byte) []byte {
+	digest := sha256.Sum256(canonicalJSON)
+	return digest[:]
+}
+
 func getSettingsTx(ctx context.Context, tx pgx.Tx, userID string) (*domain.Settings, error) {
-	settings, err := scanSettings(tx.QueryRow(ctx, `SELECT schema_version, revision::text, canonical_json, updated_at
+	settings, err := scanSettings(tx.QueryRow(ctx, `SELECT schema_version, revision::text, canonical_json, content_sha256, updated_at
         FROM devhud_settings WHERE user_id = $1`, userID))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil

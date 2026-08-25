@@ -34,8 +34,7 @@ describe("BYO R2 settings", () => {
     render(<R2Settings copy={messages.en} bridge={bridge} />);
 
     for (const [label, value] of [
-      [messages.en.r2Endpoint, "https://r2.example/storage"],
-      [messages.en.r2AccountId, "account.example"],
+      [messages.en.r2AccountId, "0123456789abcdef0123456789abcdef"],
       [messages.en.r2Bucket, "screenshots"],
       [messages.en.r2PublicBase, "https://images.example/public"],
       [messages.en.r2Prefix, "devhud/realqa"],
@@ -48,7 +47,7 @@ describe("BYO R2 settings", () => {
     const serialized = JSON.stringify(synchronized);
     expect(serialized).not.toContain("access-id");
     expect(serialized).not.toContain("device-secret");
-    expect(serialized).toContain("https://r2.example/storage");
+    expect(serialized).toContain("0123456789abcdef0123456789abcdef");
     expect(request).toHaveBeenCalledWith(expect.objectContaining({ operation: "secure.write", value: "access-id" }));
     expect(request).toHaveBeenCalledWith(expect.objectContaining({ operation: "secure.write", value: "device-secret" }));
   });
@@ -64,7 +63,7 @@ describe("BYO R2 settings", () => {
     });
     render(<R2Settings copy={messages.en} bridge={{ request, listen: vi.fn(async () => () => undefined) } as NativeBridgeV1} />);
     for (const [label, value] of [
-      [messages.en.r2Endpoint, "https://r2.example/storage"], [messages.en.r2AccountId, "account.example"],
+      [messages.en.r2AccountId, "0123456789abcdef0123456789abcdef"],
       [messages.en.r2Bucket, "screenshots"], [messages.en.r2PublicBase, "https://images.example/public"],
       [messages.en.r2AccessKeyId, "new-access"], [messages.en.r2SecretAccessKey, "new-secret"],
     ] as const) fireEvent.change(screen.getByLabelText(label), { target: { value } });

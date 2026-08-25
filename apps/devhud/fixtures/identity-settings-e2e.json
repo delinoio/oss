@@ -1,7 +1,7 @@
 {
   "bootstrap": {
     "projectId": "PROJECT_ID_DEVHUD",
-    "protocolSchemaVersion": 1,
+    "protocolSchemaVersion": 2,
     "apiVersion": "0.1.0-dev",
     "logtoIssuer": "https://identity.example/oidc",
     "logtoAudience": "https://api.example/api",

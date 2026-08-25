@@ -173,7 +173,7 @@ func (*fakeRepository) ProvisionUser(context.Context, domain.Identity) (domain.U
 func (*fakeRepository) GetSettings(context.Context, string) (*domain.Settings, error) {
 	return nil, nil
 }
-func (*fakeRepository) ReplaceSettings(context.Context, string, uint32, []byte, uint64, time.Time) (domain.Settings, error) {
+func (*fakeRepository) ReplaceSettings(context.Context, string, uint32, []byte, uint64, []byte, time.Time) (domain.Settings, error) {
 	return domain.Settings{}, nil
 }
 func (*fakeRepository) GetAccount(context.Context, string) (domain.User, error) {

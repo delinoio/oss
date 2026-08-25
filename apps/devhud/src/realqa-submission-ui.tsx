@@ -55,10 +55,10 @@ export function RealqaSubmissionModal({ draft, bridge, copy, onClose, onConfirme
   const selectedAgent = availableAgents.find((agent) => agent.id === agentId) ?? null;
   const r2 = identity.settings.uploads.r2;
   const nativeR2Profile = r2?.accountId && r2.publicBaseUrl
-    ? { profileRef: r2.profileRef, endpoint: r2.endpoint, accountId: r2.accountId, bucket: r2.bucket, publicBaseUrl: r2.publicBaseUrl, prefix: r2.prefix }
+    ? { profileRef: r2.profileRef, accountId: r2.accountId, bucket: r2.bucket, publicBaseUrl: r2.publicBaseUrl, prefix: r2.prefix }
     : null;
   const selectedImageCount = selectedImages.size;
-  const officialUploadsAvailable = identity.status === "authenticated" && identity.bootstrap?.publicAssetBaseUrl != null;
+  const officialUploadsAvailable = identity.status === "authenticated" && identity.bootstrap?.publicAssetBaseUrl != null && identity.bootstrap.officialUploadOrigin != null;
   const uploadCleanupPending = pendingUploadCleanupIds.length > 0;
 
   useEffect(() => { titleInput.current?.focus(); }, []);

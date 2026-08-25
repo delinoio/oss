@@ -65,6 +65,7 @@ func New(dependencies Dependencies) (*http.Server, error) {
 		AdminClientID:      dependencies.Config.AdminClientID,
 		AdminRedirectURI:   dependencies.Config.AdminRedirectURI,
 		PublicAssetBaseURL: dependencies.Config.PublicAssetBaseURL,
+		R2Endpoint:         dependencies.Config.R2Endpoint,
 		OfficialUploads:    dependencies.Uploads != nil,
 		Administration:     dependencies.Administration != nil,
 	}), handlerOptions...)

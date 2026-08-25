@@ -32,7 +32,8 @@ const TAURI_REVISION: &str = "4af26a3f7f8b692d62cca549bbacd93f5ce90b41";
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 const CEF_REVISION: &str = "150.0.10+g8042e43+chromium-150.0.7871.101";
 
-const DEFAULT_API_ORIGIN: &str = "https://devhud.api.delino.io";
+const FIRST_PARTY_API_ORIGIN: &str = "https://devhud.api.delino.io";
+const DEFAULT_API_ORIGIN: &str = FIRST_PARTY_API_ORIGIN;
 #[cfg(desktop)]
 const UPDATE_SCHEDULER_POLL_INTERVAL: Duration = Duration::from_secs(1);
 #[cfg(desktop)]
@@ -43,6 +44,8 @@ pub struct NativeBridgeState {
     pending_auth_callback: Arc<Mutex<Option<String>>>,
     pending_deck_link: Arc<Mutex<Option<String>>>,
     session_origins: Arc<Mutex<SessionOrigins>>,
+    #[cfg(desktop)]
+    official_upload_authority: Arc<Mutex<Option<url::Url>>>,
     shortcuts: Arc<Mutex<ShortcutService<PlatformShortcutBackend>>>,
     shortcuts_ready: Arc<AtomicBool>,
     shortcut_listener_failed: Arc<AtomicBool>,
@@ -152,6 +155,8 @@ impl Default for NativeBridgeState {
                 api_origin: DEFAULT_API_ORIGIN.to_string(),
                 logto_issuer: None,
             })),
+            #[cfg(desktop)]
+            official_upload_authority: Arc::new(Mutex::new(None)),
             shortcuts: Arc::new(Mutex::new(ShortcutService::new(
                 PlatformShortcutBackend::current(),
             ))),
@@ -761,6 +766,29 @@ impl NativeBridgeState {
         let changed = *origins != next;
         *origins = next;
         Ok(changed)
+    }
+
+    #[cfg(desktop)]
+    async fn official_upload_origin(&self) -> Result<url::Url, String> {
+        if let Some(upload_origin) = self
+            .official_upload_authority
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_ref()
+        {
+            return Ok(upload_origin.clone());
+        }
+        let upload_origin =
+            crate::uploads::fetch_official_upload_origin(FIRST_PARTY_API_ORIGIN).await?;
+        let mut cached = self
+            .official_upload_authority
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(cached) = cached.as_ref() {
+            return Ok(cached.clone());
+        }
+        *cached = Some(upload_origin.clone());
+        Ok(upload_origin)
     }
 }
 
@@ -1747,7 +1775,8 @@ pub async fn native_bridge_v1<R: tauri::Runtime>(
         return Ok(response);
     }
     if operation.starts_with("capture.") {
-        return handle_capture_request(&request, capture.inner().clone(), &app).await;
+        return handle_capture_request(&request, capture.inner().clone(), state.inner(), &app)
+            .await;
     }
     if operation.starts_with("agent.") {
         let local_agents = Arc::clone(&state.local_agents);
@@ -1872,6 +1901,7 @@ fn should_restore_capture_window(
 async fn handle_capture_request(
     request: &Value,
     capture: std::sync::Arc<crate::capture::CaptureService>,
+    state: &NativeBridgeState,
     app: &tauri::AppHandle<impl tauri::Runtime>,
 ) -> Result<Value, String> {
     use crate::capture::{CaptureAction, CaptureError, CaptureOptions, EditorCommand};
@@ -2093,7 +2123,9 @@ async fn handle_capture_request(
                 .remove("operation");
             let upload: crate::uploads::OfficialUploadRequest =
                 serde_json::from_value(payload).map_err(|_| "invalid-argument")?;
-            let result = crate::uploads::put_official(&capture, upload).await?;
+            let official_upload_origin = state.official_upload_origin().await?;
+            let result =
+                crate::uploads::put_official(&capture, upload, &official_upload_origin).await?;
             Ok(
                 json!({ "kind": "capture-uploaded", "observedEtag": result.observed_etag, "publicUrl": result.public_url }),
             )
@@ -2788,6 +2820,37 @@ mod tests {
                 &state,
             ),
             Err("invalid-argument".to_string())
+        );
+    }
+
+    #[cfg(desktop)]
+    #[test]
+    fn custom_session_origin_cannot_replace_official_upload_authority() {
+        let state = NativeBridgeState::default();
+        let official_upload_origin =
+            url::Url::parse("https://uploads.delino.io").expect("official upload origin");
+        *state
+            .official_upload_authority
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) =
+            Some(official_upload_origin.clone());
+
+        handle_native_bridge_request(
+            &json!({
+                "operation": "session.configure-origins",
+                "apiOrigin": "https://custom.example/"
+            }),
+            &state,
+        )
+        .expect("configure custom API origin");
+
+        assert_eq!(
+            state
+                .official_upload_authority
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .as_ref(),
+            Some(&official_upload_origin)
         );
     }
 

@@ -1,10 +1,10 @@
-import { ProjectId, type GetBootstrapResponse, type StaticCapability } from "@delinoio/devhud-api-client";
+import { ProjectId, StaticCapability, type GetBootstrapResponse } from "@delinoio/devhud-api-client";
 import LogtoClient, { createRequester, isLogtoRequestError, LogtoClientError, type ClientAdapter, type Storage as LogtoStorage } from "@logto/client";
-import { isValidLogtoAudience, normalizeLogtoIssuer, normalizePublicAssetUrl } from "./identity-contract.ts";
+import { isValidLogtoAudience, normalizeLogtoIssuer, normalizeNetworkOrigin, normalizePublicAssetUrl } from "./identity-contract.ts";
 import { nativeBridge, RuntimePlatform, SecureSettingKind, type NativeBridgeV1, type RuntimePlatform as RuntimePlatformType } from "./native-bridge";
 
 export const NativeAuthCallback = "devhud://auth/callback" as const;
-export const SupportedProtocolSchemaVersion = 1 as const;
+export const SupportedProtocolSchemaVersion = 2 as const;
 
 export interface ValidatedBootstrap {
   readonly issuer: string;
@@ -12,6 +12,7 @@ export interface ValidatedBootstrap {
   readonly clientId: string;
   readonly redirectUri: typeof NativeAuthCallback;
   readonly publicAssetBaseUrl: string | null;
+  readonly officialUploadOrigin: string | null;
   readonly capabilities: readonly StaticCapability[];
 }
 
@@ -35,7 +36,12 @@ export function validateBootstrap(response: GetBootstrapResponse, platform: Runt
   const publicAssetBaseUrl = normalizePublicAssetUrl(response.publicAssetBaseUrl);
   if (publicAssetBaseUrl === null) throw new BootstrapContractError("public asset base URL must be HTTPS or loopback HTTP without credentials, query, or fragment");
   const capabilities = Object.freeze([...new Set(response.capabilities ?? [])]);
-  return { issuer, audience, clientId, redirectUri: NativeAuthCallback, publicAssetBaseUrl, capabilities };
+  const officialUploads = capabilities.includes(StaticCapability.OFFICIAL_UPLOADS);
+  const advertisedUploadOrigin = response.officialUploadOrigin ?? "";
+  const officialUploadOrigin = advertisedUploadOrigin === "" ? null : normalizeNetworkOrigin(advertisedUploadOrigin);
+  if (officialUploads && officialUploadOrigin === null) throw new BootstrapContractError("official upload origin is required when official uploads are enabled");
+  if (!officialUploads && advertisedUploadOrigin !== "") throw new BootstrapContractError("official upload origin must be empty when official uploads are disabled");
+  return { issuer, audience, clientId, redirectUri: NativeAuthCallback, publicAssetBaseUrl, officialUploadOrigin, capabilities };
 }
 
 export function isTerminalAccessTokenError(reason: unknown): boolean {

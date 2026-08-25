@@ -490,7 +490,7 @@ func TestFoundationTransactionsAndRetention(t *testing.T) {
 	if snapshot, err := store.GetSettings(ctx, user.ID); err != nil || snapshot != nil {
 		t.Fatalf("initial settings = %+v, err=%v", snapshot, err)
 	}
-	created, err := store.ReplaceSettings(ctx, user.ID, 1, []byte(`{"theme":"system"}`), 0, clock.Now())
+	created, err := store.ReplaceSettings(ctx, user.ID, 1, []byte(`{"theme":"system"}`), 0, nil, clock.Now())
 	if err != nil || created.Revision != 1 {
 		t.Fatalf("create settings = %+v, err=%v", created, err)
 	}
@@ -502,7 +502,7 @@ func TestFoundationTransactionsAndRetention(t *testing.T) {
 		wait.Add(1)
 		go func(body []byte) {
 			defer wait.Done()
-			_, replaceErr := store.ReplaceSettings(ctx, user.ID, 1, body, 1, clock.Now())
+			_, replaceErr := store.ReplaceSettings(ctx, user.ID, 1, body, 1, created.ContentSHA256, clock.Now())
 			mutex.Lock()
 			defer mutex.Unlock()
 			var conflict *domain.RevisionConflict
@@ -528,7 +528,7 @@ func TestFoundationTransactionsAndRetention(t *testing.T) {
 	if err != nil || !deletedAgain.RecoverableUntil.Equal(*deleted.RecoverableUntil) {
 		t.Fatalf("idempotent delete changed recovery: %+v, err=%v", deletedAgain, err)
 	}
-	if _, err := store.ReplaceSettings(ctx, user.ID, 1, []byte(`{}`), 2, clock.Now()); err == nil {
+	if _, err := store.ReplaceSettings(ctx, user.ID, 1, []byte(`{}`), 2, make([]byte, 32), clock.Now()); err == nil {
 		t.Fatal("settings replacement succeeded for deletion-pending account")
 	}
 	if _, err := pool.Exec(ctx, "UPDATE devhud_users SET administrative_block_state = 2 WHERE user_id = $1", user.ID); err != nil {
@@ -771,7 +771,7 @@ func TestSettingsReadSerializesWithDeletionStateTransition(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.ReplaceSettings(ctx, user.ID, 1, []byte(`{"theme":"dark"}`), 0, time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)); err != nil {
+	if _, err := store.ReplaceSettings(ctx, user.ID, 1, []byte(`{"theme":"dark"}`), 0, nil, time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -835,7 +835,7 @@ func TestGetSettingsNormalizesCompletedPurge(t *testing.T) {
 	if _, err := store.GetSettings(ctx, user.ID); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("settings after completed purge error = %v, want ErrNotFound", err)
 	}
-	if _, err := store.ReplaceSettings(ctx, user.ID, 1, []byte(`{}`), 0, deletedAt.Add(domain.RecoveryWindow)); !errors.Is(err, domain.ErrNotFound) {
+	if _, err := store.ReplaceSettings(ctx, user.ID, 1, []byte(`{}`), 0, nil, deletedAt.Add(domain.RecoveryWindow)); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("settings replacement after completed purge error = %v, want ErrNotFound", err)
 	}
 }

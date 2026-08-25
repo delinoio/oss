@@ -2,6 +2,9 @@ package rpc
 
 import (
 	"context"
+	"net"
+	"net/url"
+	"strings"
 	"time"
 
 	"connectrpc.com/connect"
@@ -19,6 +22,7 @@ type BootstrapConfig struct {
 	AdminClientID      string
 	AdminRedirectURI   string
 	PublicAssetBaseURL string
+	R2Endpoint         string
 	OfficialUploads    bool
 	Administration     bool
 }
@@ -35,7 +39,7 @@ func (s *BootstrapService) GetBootstrap(ctx context.Context, _ *connect.Request[
 	response := &devhudv1.GetBootstrapResponse{
 		Metadata:              metadata(CorrelationID(ctx)),
 		ProjectId:             devhudv1.ProjectId_PROJECT_ID_DEVHUD,
-		ProtocolSchemaVersion: 1,
+		ProtocolSchemaVersion: 2,
 		ApiVersion:            s.configuration.APIVersion,
 		LogtoIssuer:           s.configuration.LogtoIssuer,
 		LogtoAudience:         s.configuration.LogtoAudience,
@@ -73,9 +77,30 @@ func (s *BootstrapService) GetBootstrap(ctx context.Context, _ *connect.Request[
 	}
 	if s.configuration.OfficialUploads {
 		response.Capabilities = append(response.Capabilities, devhudv1.StaticCapability_STATIC_CAPABILITY_OFFICIAL_UPLOADS)
+		response.OfficialUploadOrigin = canonicalUploadOrigin(s.configuration.R2Endpoint)
 	}
 	if s.configuration.Administration {
 		response.Capabilities = append(response.Capabilities, devhudv1.StaticCapability_STATIC_CAPABILITY_ADMINISTRATION)
 	}
 	return connect.NewResponse(response), nil
+}
+
+func canonicalUploadOrigin(value string) string {
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return ""
+	}
+	hostname := parsed.Hostname()
+	if parsed.Scheme != "https" && !(parsed.Scheme == "http" && isBootstrapLoopback(hostname)) {
+		return ""
+	}
+	return strings.ToLower(parsed.Scheme) + "://" + parsed.Host
+}
+
+func isBootstrapLoopback(hostname string) bool {
+	if strings.EqualFold(strings.TrimSuffix(hostname, "."), "localhost") {
+		return true
+	}
+	address := net.ParseIP(hostname)
+	return address != nil && address.IsLoopback()
 }

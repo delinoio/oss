@@ -8,7 +8,6 @@ export function R2Settings({ copy, bridge }: { readonly copy: Copy; readonly bri
   const identity = useIdentitySettings();
   const configured = identity.settings.uploads.r2;
   const [name, setName] = useState(configured?.name ?? "R2");
-  const [endpoint, setEndpoint] = useState(configured?.endpoint ?? "");
   const [accountId, setAccountId] = useState(configured?.accountId ?? "");
   const [bucket, setBucket] = useState(configured?.bucket ?? "");
   const [publicBaseUrl, setPublicBaseUrl] = useState(configured?.publicBaseUrl ?? "");
@@ -19,7 +18,7 @@ export function R2Settings({ copy, bridge }: { readonly copy: Copy; readonly bri
   const [message, setMessage] = useState("");
   const [failed, setFailed] = useState(false);
   useEffect(() => {
-    setName(configured?.name ?? "R2"); setEndpoint(configured?.endpoint ?? ""); setAccountId(configured?.accountId ?? ""); setBucket(configured?.bucket ?? ""); setPublicBaseUrl(configured?.publicBaseUrl ?? ""); setPrefix(configured?.prefix ?? "devhud");
+    setName(configured?.name ?? "R2"); setAccountId(configured?.accountId ?? ""); setBucket(configured?.bucket ?? ""); setPublicBaseUrl(configured?.publicBaseUrl ?? ""); setPrefix(configured?.prefix ?? "devhud");
   }, [configured]);
 
   const save = async () => {
@@ -29,6 +28,7 @@ export function R2Settings({ copy, bridge }: { readonly copy: Copy; readonly bri
     const settingId = { kind: SecureSettingKind.R2AccessKeyId, profileId: profileRef } as const;
     const settingSecret = { kind: SecureSettingKind.R2SecretAccessKey, profileId: profileRef } as const;
     try {
+      const endpoint = `https://${accountId}.r2.cloudflarestorage.com/`;
       const next = parseDevHudSettings({ ...identity.settings, uploads: { provider: "r2", r2: { profileRef, name, endpoint, accountId, bucket, publicBaseUrl, prefix } } });
       const [oldId, oldSecret] = await Promise.all([bridge.request({ operation: "secure.read", setting: settingId }), bridge.request({ operation: "secure.read", setting: settingSecret })]);
       if ((accessKeyId === "" && oldId.kind === "secure-value" && oldId.value === null) || (secretAccessKey === "" && oldSecret.kind === "secure-value" && oldSecret.value === null)) throw new NativeBridgeError(NativeBridgeErrorCode.NotConfigured);
@@ -63,7 +63,6 @@ export function R2Settings({ copy, bridge }: { readonly copy: Copy; readonly bri
 
   return <section className="native-setting" aria-labelledby="r2-settings-title"><h3 id="r2-settings-title">{copy.r2SettingsTitle}</h3><p>{copy.r2SettingsSummary}</p>
     <label>{copy.r2ProfileName}<input value={name} disabled={busy || identity.readOnly} onChange={(event) => setName(event.target.value)} /></label>
-    <label>{copy.r2Endpoint}<input type="url" value={endpoint} disabled={busy || identity.readOnly} onChange={(event) => setEndpoint(event.target.value)} /></label>
     <label>{copy.r2AccountId}<input value={accountId} disabled={busy || identity.readOnly} onChange={(event) => setAccountId(event.target.value)} /></label>
     <label>{copy.r2Bucket}<input value={bucket} disabled={busy || identity.readOnly} onChange={(event) => setBucket(event.target.value)} /></label>
     <label>{copy.r2PublicBase}<input type="url" value={publicBaseUrl} disabled={busy || identity.readOnly} onChange={(event) => setPublicBaseUrl(event.target.value)} /></label>

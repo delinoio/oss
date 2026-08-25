@@ -26,7 +26,7 @@ function memoryBridge(): NativeBridgeV1 & { readonly values: Map<string, string>
 
 const bootstrap = {
   projectId: ProjectId.DEVHUD,
-  protocolSchemaVersion: 1,
+  protocolSchemaVersion: 2,
   apiVersion: "0.1.0-dev",
   logtoIssuer: "https://identity.example/oidc",
   logtoAudience: "https://api.example/api",
