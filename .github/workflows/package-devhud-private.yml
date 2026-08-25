@@ -242,6 +242,10 @@ jobs:
             host=$(find /usr -type f -name devhud-native-messaging-host -print -quit)
             test -n "$host"
             HOME="$RUNNER_TEMP/native-home" "$host" register "$host"
+            user_manifest="$RUNNER_TEMP/native-home/.config/google-chrome/NativeMessagingHosts/io.delino.devhud.native_messaging.json"
+            test -e "$user_manifest"
+            HOME="$RUNNER_TEMP/native-home" "$host" unregister "$user_manifest"
+            test ! -e "$user_manifest"
             sudo dpkg -r "$package"
             test ! -e /usr/bin/devhud
             test ! -e /etc/opt/chrome/native-messaging-hosts/io.delino.devhud.native_messaging.json

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -8,6 +9,7 @@ import { fileURLToPath } from "node:url";
 
 const repositoryRoot = fileURLToPath(new URL("../..", import.meta.url));
 const script = fileURLToPath(new URL("./finalize-devhud-deb.sh", import.meta.url));
+const prermTemplate = readFileSync(fileURLToPath(new URL("./linux/prerm.in", import.meta.url)), "utf8");
 
 test("Debian finalization makes Native Messaging registration installer-owned", () => {
   const root = mkdtempSync(join(tmpdir(), "devhud-deb-"));
@@ -30,6 +32,59 @@ test("Debian finalization makes Native Messaging registration installer-owned", 
   const remove = readFileSync(join(control, "prerm"), "utf8");
   assert.match(install, /\/usr\/bin\/devhud-native-messaging-host" register/u);
   assert.match(install, /\/etc\/opt\/chrome\/native-messaging-hosts/u);
+  assert.match(remove, /runuser --user/u);
+  assert.match(remove, /DBUS_SESSION_BUS_ADDRESS="unix:path=\$runtime\/bus"/u);
+  assert.ok(remove.indexOf("unregister") < remove.indexOf('rm -f "/etc/opt/chrome/native-messaging-hosts'));
   assert.match(remove, /rm -f "\/etc\/opt\/chrome\/native-messaging-hosts/u);
-  assert.doesNotMatch(remove, /unregister/u);
+});
+
+test("Debian removal revokes affected users before deleting the system manifest", async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "devhud-prerm-"));
+  const home = join(root, "home");
+  const runtimeRoot = join(root, "run", "user");
+  const runtime = join(runtimeRoot, "4242");
+  const bin = join(root, "bin");
+  const userManifest = join(home, ".config/google-chrome/NativeMessagingHosts/io.delino.devhud.native_messaging.json");
+  const systemManifest = join(root, "system-manifest.json");
+  const host = join(bin, "devhud-native-messaging-host");
+  const prerm = join(root, "prerm");
+  const log = join(root, "unregister.log");
+  mkdirSync(join(home, ".config/google-chrome/NativeMessagingHosts"), { recursive: true });
+  mkdirSync(runtime, { recursive: true });
+  mkdirSync(bin);
+
+  const bus = createServer();
+  await new Promise((resolve, reject) => {
+    bus.once("error", reject);
+    bus.listen(join(runtime, "bus"), resolve);
+  });
+  t.after(() => new Promise((resolve) => bus.close(resolve)));
+
+  writeFileSync(join(bin, "getent"), `#!/bin/sh\nprintf '%s\\n' 'devhud:x:4242:4242::${home}:/bin/sh'\n`);
+  writeFileSync(join(bin, "runuser"), "#!/bin/sh\nwhile [ \"$#\" -gt 0 ] && [ \"$1\" != -- ]; do shift; done\n[ \"$#\" -gt 0 ]\nshift\nexec \"$@\"\n");
+  writeFileSync(host, "#!/bin/sh\nprintf '%s\\n' \"$HOME|$XDG_RUNTIME_DIR|$DBUS_SESSION_BUS_ADDRESS|$*\" > \"$DEVHUD_TEST_LOG\"\nif [ \"${DEVHUD_TEST_FAIL:-0}\" = 1 ]; then exit 1; fi\nrm -f \"$2\"\n");
+  for (const executable of [join(bin, "getent"), join(bin, "runuser"), host]) chmodSync(executable, 0o755);
+  writeFileSync(prerm, prermTemplate
+    .replaceAll("@HOST@", host)
+    .replaceAll("@MANIFEST@", systemManifest)
+    .replaceAll("@RUNTIME_ROOT@", runtimeRoot));
+  chmodSync(prerm, 0o755);
+  const env = { ...process.env, DEVHUD_TEST_LOG: log, PATH: `${bin}:${process.env.PATH}` };
+
+  writeFileSync(userManifest, "user");
+  writeFileSync(systemManifest, "system");
+  execFileSync("sh", [prerm, "remove"], { env });
+  assert.equal(existsSync(userManifest), false);
+  assert.equal(existsSync(systemManifest), false);
+  assert.equal(readFileSync(log, "utf8").trim(), `${home}|${runtime}|unix:path=${runtime}/bus|unregister ${userManifest}`);
+
+  writeFileSync(userManifest, "user");
+  writeFileSync(systemManifest, "system");
+  assert.throws(() => execFileSync("sh", [prerm, "deconfigure"], { env: { ...env, DEVHUD_TEST_FAIL: "1" } }));
+  assert.equal(existsSync(userManifest), true);
+  assert.equal(existsSync(systemManifest), true);
+
+  execFileSync("sh", [prerm, "upgrade"], { env });
+  assert.equal(existsSync(userManifest), true);
+  assert.equal(existsSync(systemManifest), true);
 });
