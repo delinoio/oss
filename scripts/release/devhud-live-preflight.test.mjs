@@ -19,6 +19,7 @@ function environment() {
     DEVHUD_RELEASE_CONTROLLER_URL: "https://controller.example.test/", DEVHUD_RELEASE_CONTROLLER_TOKEN: "controller-token", DEVHUD_PUBLIC_API_URL: "https://devhud.api.delino.io",
     DEVHUD_PUBLIC_DOCS_URL: "https://docs.example.test/devhud", DEVHUD_PUBLIC_ASSET_BASE_URL: "https://assets.example.test",
     DEVHUD_OCI_REGISTRY: "registry.example.test", DEVHUD_OCI_API_REPOSITORY: "devhud/api", DEVHUD_OCI_SWEEPER_REPOSITORY: "devhud/sweeper",
+    DEVHUD_OCI_PRODUCTION_PUSH_PRINCIPAL: "fixture-DEVHUD_OCI_REGISTRY_USERNAME",
     DEVHUD_LOGTO_ISSUER: "https://auth.example.test/oidc", DEVHUD_CHROME_EXTENSION_ID: "a".repeat(32),
     DEVHUD_RELEASE_VERSION: "0.1.0", GITHUB_REPOSITORY: "delinoio/oss", GITHUB_SHA: "a".repeat(40), GITHUB_TOKEN: "github-token",
   });
@@ -98,6 +99,13 @@ test("live preflight requires the protected Google Play production-release princ
   const env = { ...environment(), DEVHUD_GOOGLE_PLAY_PRODUCTION_RELEASE_SERVICE_ACCOUNT: "reader@example.test" };
   let requests = 0;
   await assert.rejects(runLivePreflight(env, async () => { requests += 1; return jsonResponse({ ok: true }); }), /production-release authority prerequisite/u);
+  assert.equal(requests, 0);
+});
+
+test("live preflight requires the protected OCI push principal before network access", async () => {
+  const env = { ...environment(), DEVHUD_OCI_PRODUCTION_PUSH_PRINCIPAL: "read-only-registry-user" };
+  let requests = 0;
+  await assert.rejects(runLivePreflight(env, async () => { requests += 1; return jsonResponse({ ok: true }); }), /production push authority prerequisite/u);
   assert.equal(requests, 0);
 });
 

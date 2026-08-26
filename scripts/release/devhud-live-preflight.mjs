@@ -65,6 +65,12 @@ export function validateLivePreflightConfiguration(environment = process.env) {
   // provides no read-only capability probe. Bind the protected prerequisite to
   // the credential principal before contacting any external release boundary.
   const serviceAccount = googleServiceAccount(environment);
+  // OCI Distribution does not provide a provider-neutral, read-only push
+  // probe. Bind the credential to the protected principal that operators have
+  // confirmed can push both exact configured repositories before network use.
+  if (environment.DEVHUD_OCI_REGISTRY_USERNAME !== environment.DEVHUD_OCI_PRODUCTION_PUSH_PRINCIPAL) {
+    throw new Error("OCI registry credential does not match the protected production push authority prerequisite");
+  }
   return { revision, serviceAccount };
 }
 

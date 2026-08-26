@@ -73,6 +73,27 @@ test("recovery retains and validates the original destination identity before ex
   assert.ok(binding > 0 && credential > binding && external > credential, "the retained configuration must be accepted before external release access");
 });
 
+test("every downstream environment-bound mutation rechecks the retained configuration", () => {
+  const firstExternalOperation = {
+    registry: "skopeo copy --all",
+    prepare_infrastructure: "devhud-release-controller.mjs prepare",
+    updater_public: "promote-updater",
+    public_docs: "wrangler@4.33.1 pages deploy",
+    rollback_pre_store: "Confirm no exact store version became public",
+  };
+  for (const [name, operation] of Object.entries(firstExternalOperation)) {
+    const current = job(name);
+    assert.match(current, /needs: \[[^\n]*preflight/u, `${name} must directly retain the preflight fingerprint`);
+    for (const variable of releaseFingerprintVariables) {
+      assert.match(current, new RegExp(`${variable}: \\$\\{\\{ vars\\.${variable} \\}\\}`, "u"), `${name} must re-resolve ${variable}`);
+    }
+    const binding = current.indexOf("configuration to the validated preflight environment");
+    assert.ok(binding > 0 && current.indexOf(operation) > binding, `${name} must reject configuration drift before ${operation}`);
+    assert.match(current, /EXPECTED_CONFIGURATION_FINGERPRINT: \$\{\{ needs\.preflight\.outputs\.release_configuration_fingerprint \}\}/u);
+    assert.match(current, /configuration-fingerprint[\s\S]*test "\$actual" = "\$EXPECTED_CONFIGURATION_FINGERPRINT"/u);
+  }
+});
+
 test("the complete reusable private candidate is the sole publication prerequisite", () => {
   assert.match(privateCandidate, /workflow_call:/u);
   assert.match(privateCandidate, /revision:[\s\S]*Exact source revision selected/u);
@@ -121,6 +142,7 @@ test("store submission, review, and cleanup retain the preflight-bound identitie
   const submission = job("submit_stores");
   const review = job("review_gate");
   const cleanup = job("rollback_pre_store");
+  const cleanupOperations = cleanup.slice(cleanup.indexOf("Confirm no exact store version became public"));
   const identities = [
     ["DEVHUD_APP_STORE_APP_ID", "app_store_app_id"],
     ["DEVHUD_GOOGLE_PLAY_PACKAGE_NAME", "google_play_package_name"],
@@ -136,7 +158,7 @@ test("store submission, review, and cleanup retain the preflight-bound identitie
     const binding = `${name}: \${{ needs.preflight.outputs.${output} }}`;
     assert.ok(submission.includes(binding), `${name} submission must use preflight`);
     assert.ok(cleanup.includes(binding), `${name} cleanup must use preflight`);
-    assert.ok(!cleanup.includes(`${name}: \${{ vars.${name} }}`), `${name} cleanup must not reread environment variables`);
+    assert.ok(!cleanupOperations.includes(`${name}: \${{ vars.${name} }}`), `${name} cleanup operations must not reread environment variables`);
   }
 
   assert.match(review, /needs: \[identity, preflight, submit_stores, docs_candidate\]/u);

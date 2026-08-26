@@ -249,6 +249,7 @@ jobs:
       DEVHUD_OCI_REGISTRY: ${{ vars.DEVHUD_OCI_REGISTRY }}
       DEVHUD_OCI_API_REPOSITORY: ${{ vars.DEVHUD_OCI_API_REPOSITORY }}
       DEVHUD_OCI_SWEEPER_REPOSITORY: ${{ vars.DEVHUD_OCI_SWEEPER_REPOSITORY }}
+      DEVHUD_OCI_PRODUCTION_PUSH_PRINCIPAL: ${{ vars.DEVHUD_OCI_PRODUCTION_PUSH_PRINCIPAL }}
       DEVHUD_OCI_REGISTRY_USERNAME: ${{ secrets.DEVHUD_OCI_REGISTRY_USERNAME }}
       DEVHUD_OCI_REGISTRY_TOKEN: ${{ secrets.DEVHUD_OCI_REGISTRY_TOKEN }}
       DEVHUD_RELEASE_CONTROLLER_URL: ${{ vars.DEVHUD_RELEASE_CONTROLLER_URL }}
@@ -482,7 +483,7 @@ jobs:
   registry:
     name: Publish immutable signed OCI inputs
     if: ${{ inputs.mode == 'release' }}
-    needs: [identity, candidate, review_gate, docs_candidate]
+    needs: [identity, candidate, preflight, review_gate, docs_candidate]
     runs-on: ubuntu-22.04
     environment: devhud-publication
     permissions:
@@ -493,15 +494,37 @@ jobs:
       api_image: ${{ steps.images.outputs.api_image }}
       sweeper_image: ${{ steps.images.outputs.sweeper_image }}
     env:
+      DEVHUD_APP_STORE_APP_ID: ${{ vars.DEVHUD_APP_STORE_APP_ID }}
+      DEVHUD_GOOGLE_PLAY_PACKAGE_NAME: ${{ vars.DEVHUD_GOOGLE_PLAY_PACKAGE_NAME }}
+      DEVHUD_GOOGLE_PLAY_MANAGED_PUBLISHING: ${{ vars.DEVHUD_GOOGLE_PLAY_MANAGED_PUBLISHING }}
+      DEVHUD_GOOGLE_PLAY_PRODUCTION_RELEASE_SERVICE_ACCOUNT: ${{ vars.DEVHUD_GOOGLE_PLAY_PRODUCTION_RELEASE_SERVICE_ACCOUNT }}
+      DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID: ${{ vars.DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID }}
+      DEVHUD_CHROME_EXTENSION_ID: ${{ vars.DEVHUD_CHROME_EXTENSION_ID }}
       DEVHUD_OCI_REGISTRY: ${{ vars.DEVHUD_OCI_REGISTRY }}
       DEVHUD_OCI_API_REPOSITORY: ${{ vars.DEVHUD_OCI_API_REPOSITORY }}
       DEVHUD_OCI_SWEEPER_REPOSITORY: ${{ vars.DEVHUD_OCI_SWEEPER_REPOSITORY }}
+      DEVHUD_OCI_PRODUCTION_PUSH_PRINCIPAL: ${{ vars.DEVHUD_OCI_PRODUCTION_PUSH_PRINCIPAL }}
       DEVHUD_OCI_REGISTRY_USERNAME: ${{ secrets.DEVHUD_OCI_REGISTRY_USERNAME }}
       DEVHUD_OCI_REGISTRY_TOKEN: ${{ secrets.DEVHUD_OCI_REGISTRY_TOKEN }}
+      DEVHUD_RELEASE_CONTROLLER_URL: ${{ vars.DEVHUD_RELEASE_CONTROLLER_URL }}
+      DEVHUD_RELEASE_CONTROLLER_AUDIENCE: ${{ vars.DEVHUD_RELEASE_CONTROLLER_AUDIENCE }}
+      DEVHUD_PUBLIC_API_URL: ${{ vars.DEVHUD_PUBLIC_API_URL }}
+      DEVHUD_LOGTO_ISSUER: ${{ vars.DEVHUD_LOGTO_ISSUER }}
+      DEVHUD_PUBLIC_ASSET_BASE_URL: ${{ vars.DEVHUD_PUBLIC_ASSET_BASE_URL }}
+      DEVHUD_PUBLIC_DOCS_URL: ${{ vars.DEVHUD_PUBLIC_DOCS_URL }}
+      DEVHUD_PUBLIC_DOCS_ACCOUNT_ID: ${{ vars.DEVHUD_PUBLIC_DOCS_ACCOUNT_ID }}
+      DEVHUD_PUBLIC_DOCS_PROJECT_NAME: ${{ vars.DEVHUD_PUBLIC_DOCS_PROJECT_NAME }}
       RELEASE_VERSION: ${{ needs.identity.outputs.version }}
     steps:
       - uses: actions/checkout@v6
         with: { persist-credentials: false, ref: "${{ needs.identity.outputs.revision }}" }
+      - name: Bind registry configuration to the validated preflight environment
+        env:
+          EXPECTED_CONFIGURATION_FINGERPRINT: ${{ needs.preflight.outputs.release_configuration_fingerprint }}
+        run: |
+          set -euo pipefail
+          actual=$(node scripts/release/devhud-public-release.mjs configuration-fingerprint)
+          test "$actual" = "$EXPECTED_CONFIGURATION_FINGERPRINT"
       - uses: actions/download-artifact@v8
         with:
           artifact-ids: ${{ needs.candidate.outputs.artifact_id }}
@@ -540,7 +563,7 @@ jobs:
   prepare_infrastructure:
     name: Prepare and promote provider-neutral API deployment
     if: ${{ inputs.mode == 'release' }}
-    needs: [identity, candidate, registry]
+    needs: [identity, candidate, preflight, registry]
     runs-on: ubuntu-22.04
     environment: devhud-publication
     permissions:
@@ -552,12 +575,34 @@ jobs:
       promoted: ${{ steps.promote.outputs.promoted }}
     env:
       DEVHUD_RELEASE_REVISION: ${{ needs.identity.outputs.revision }}
+      DEVHUD_APP_STORE_APP_ID: ${{ vars.DEVHUD_APP_STORE_APP_ID }}
+      DEVHUD_GOOGLE_PLAY_PACKAGE_NAME: ${{ vars.DEVHUD_GOOGLE_PLAY_PACKAGE_NAME }}
+      DEVHUD_GOOGLE_PLAY_MANAGED_PUBLISHING: ${{ vars.DEVHUD_GOOGLE_PLAY_MANAGED_PUBLISHING }}
+      DEVHUD_GOOGLE_PLAY_PRODUCTION_RELEASE_SERVICE_ACCOUNT: ${{ vars.DEVHUD_GOOGLE_PLAY_PRODUCTION_RELEASE_SERVICE_ACCOUNT }}
+      DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID: ${{ vars.DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID }}
+      DEVHUD_CHROME_EXTENSION_ID: ${{ vars.DEVHUD_CHROME_EXTENSION_ID }}
+      DEVHUD_OCI_REGISTRY: ${{ vars.DEVHUD_OCI_REGISTRY }}
+      DEVHUD_OCI_API_REPOSITORY: ${{ vars.DEVHUD_OCI_API_REPOSITORY }}
+      DEVHUD_OCI_SWEEPER_REPOSITORY: ${{ vars.DEVHUD_OCI_SWEEPER_REPOSITORY }}
+      DEVHUD_OCI_PRODUCTION_PUSH_PRINCIPAL: ${{ vars.DEVHUD_OCI_PRODUCTION_PUSH_PRINCIPAL }}
       DEVHUD_RELEASE_CONTROLLER_URL: ${{ vars.DEVHUD_RELEASE_CONTROLLER_URL }}
       DEVHUD_RELEASE_CONTROLLER_AUDIENCE: ${{ vars.DEVHUD_RELEASE_CONTROLLER_AUDIENCE }}
       DEVHUD_PUBLIC_API_URL: ${{ vars.DEVHUD_PUBLIC_API_URL }}
+      DEVHUD_LOGTO_ISSUER: ${{ vars.DEVHUD_LOGTO_ISSUER }}
+      DEVHUD_PUBLIC_ASSET_BASE_URL: ${{ vars.DEVHUD_PUBLIC_ASSET_BASE_URL }}
+      DEVHUD_PUBLIC_DOCS_URL: ${{ vars.DEVHUD_PUBLIC_DOCS_URL }}
+      DEVHUD_PUBLIC_DOCS_ACCOUNT_ID: ${{ vars.DEVHUD_PUBLIC_DOCS_ACCOUNT_ID }}
+      DEVHUD_PUBLIC_DOCS_PROJECT_NAME: ${{ vars.DEVHUD_PUBLIC_DOCS_PROJECT_NAME }}
     steps:
       - uses: actions/checkout@v6
         with: { persist-credentials: false, ref: "${{ needs.identity.outputs.revision }}" }
+      - name: Bind infrastructure configuration to the validated preflight environment
+        env:
+          EXPECTED_CONFIGURATION_FINGERPRINT: ${{ needs.preflight.outputs.release_configuration_fingerprint }}
+        run: |
+          set -euo pipefail
+          actual=$(node scripts/release/devhud-public-release.mjs configuration-fingerprint)
+          test "$actual" = "$EXPECTED_CONFIGURATION_FINGERPRINT"
       - uses: actions/download-artifact@v8
         with:
           artifact-ids: ${{ needs.candidate.outputs.artifact_id }}
@@ -617,6 +662,7 @@ jobs:
       DEVHUD_OCI_REGISTRY: ${{ vars.DEVHUD_OCI_REGISTRY }}
       DEVHUD_OCI_API_REPOSITORY: ${{ vars.DEVHUD_OCI_API_REPOSITORY }}
       DEVHUD_OCI_SWEEPER_REPOSITORY: ${{ vars.DEVHUD_OCI_SWEEPER_REPOSITORY }}
+      DEVHUD_OCI_PRODUCTION_PUSH_PRINCIPAL: ${{ vars.DEVHUD_OCI_PRODUCTION_PUSH_PRINCIPAL }}
       DEVHUD_RELEASE_CONTROLLER_URL: ${{ vars.DEVHUD_RELEASE_CONTROLLER_URL }}
       DEVHUD_RELEASE_CONTROLLER_AUDIENCE: ${{ vars.DEVHUD_RELEASE_CONTROLLER_AUDIENCE }}
       DEVHUD_PUBLIC_API_URL: ${{ vars.DEVHUD_PUBLIC_API_URL }}
@@ -704,7 +750,7 @@ jobs:
   updater_public:
     name: Expose and verify every desktop updater target
     if: ${{ inputs.mode == 'release' }}
-    needs: [identity, candidate, registry, github_release]
+    needs: [identity, candidate, preflight, registry, github_release]
     runs-on: ubuntu-22.04
     environment: devhud-publication
     permissions:
@@ -713,12 +759,34 @@ jobs:
       id-token: write
     env:
       DEVHUD_RELEASE_REVISION: ${{ needs.identity.outputs.revision }}
+      DEVHUD_APP_STORE_APP_ID: ${{ vars.DEVHUD_APP_STORE_APP_ID }}
+      DEVHUD_GOOGLE_PLAY_PACKAGE_NAME: ${{ vars.DEVHUD_GOOGLE_PLAY_PACKAGE_NAME }}
+      DEVHUD_GOOGLE_PLAY_MANAGED_PUBLISHING: ${{ vars.DEVHUD_GOOGLE_PLAY_MANAGED_PUBLISHING }}
+      DEVHUD_GOOGLE_PLAY_PRODUCTION_RELEASE_SERVICE_ACCOUNT: ${{ vars.DEVHUD_GOOGLE_PLAY_PRODUCTION_RELEASE_SERVICE_ACCOUNT }}
+      DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID: ${{ vars.DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID }}
+      DEVHUD_CHROME_EXTENSION_ID: ${{ vars.DEVHUD_CHROME_EXTENSION_ID }}
+      DEVHUD_OCI_REGISTRY: ${{ vars.DEVHUD_OCI_REGISTRY }}
+      DEVHUD_OCI_API_REPOSITORY: ${{ vars.DEVHUD_OCI_API_REPOSITORY }}
+      DEVHUD_OCI_SWEEPER_REPOSITORY: ${{ vars.DEVHUD_OCI_SWEEPER_REPOSITORY }}
+      DEVHUD_OCI_PRODUCTION_PUSH_PRINCIPAL: ${{ vars.DEVHUD_OCI_PRODUCTION_PUSH_PRINCIPAL }}
       DEVHUD_RELEASE_CONTROLLER_URL: ${{ vars.DEVHUD_RELEASE_CONTROLLER_URL }}
       DEVHUD_RELEASE_CONTROLLER_AUDIENCE: ${{ vars.DEVHUD_RELEASE_CONTROLLER_AUDIENCE }}
       DEVHUD_PUBLIC_API_URL: ${{ vars.DEVHUD_PUBLIC_API_URL }}
+      DEVHUD_LOGTO_ISSUER: ${{ vars.DEVHUD_LOGTO_ISSUER }}
+      DEVHUD_PUBLIC_ASSET_BASE_URL: ${{ vars.DEVHUD_PUBLIC_ASSET_BASE_URL }}
+      DEVHUD_PUBLIC_DOCS_URL: ${{ vars.DEVHUD_PUBLIC_DOCS_URL }}
+      DEVHUD_PUBLIC_DOCS_ACCOUNT_ID: ${{ vars.DEVHUD_PUBLIC_DOCS_ACCOUNT_ID }}
+      DEVHUD_PUBLIC_DOCS_PROJECT_NAME: ${{ vars.DEVHUD_PUBLIC_DOCS_PROJECT_NAME }}
     steps:
       - uses: actions/checkout@v6
         with: { persist-credentials: false, ref: "${{ needs.identity.outputs.revision }}" }
+      - name: Bind updater configuration to the validated preflight environment
+        env:
+          EXPECTED_CONFIGURATION_FINGERPRINT: ${{ needs.preflight.outputs.release_configuration_fingerprint }}
+        run: |
+          set -euo pipefail
+          actual=$(node scripts/release/devhud-public-release.mjs configuration-fingerprint)
+          test "$actual" = "$EXPECTED_CONFIGURATION_FINGERPRINT"
       - uses: actions/download-artifact@v8
         with:
           artifact-ids: ${{ needs.candidate.outputs.artifact_id }}
@@ -757,7 +825,7 @@ jobs:
   public_docs:
     name: Publish and verify DevHud public documentation
     if: ${{ inputs.mode == 'release' }}
-    needs: [identity, docs_candidate, updater_public]
+    needs: [identity, preflight, docs_candidate, updater_public]
     runs-on: ubuntu-22.04
     environment: devhud-publication
     permissions:
@@ -765,12 +833,35 @@ jobs:
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.DEVHUD_PUBLIC_DOCS_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ vars.DEVHUD_PUBLIC_DOCS_ACCOUNT_ID }}
+      DEVHUD_APP_STORE_APP_ID: ${{ vars.DEVHUD_APP_STORE_APP_ID }}
+      DEVHUD_GOOGLE_PLAY_PACKAGE_NAME: ${{ vars.DEVHUD_GOOGLE_PLAY_PACKAGE_NAME }}
+      DEVHUD_GOOGLE_PLAY_MANAGED_PUBLISHING: ${{ vars.DEVHUD_GOOGLE_PLAY_MANAGED_PUBLISHING }}
+      DEVHUD_GOOGLE_PLAY_PRODUCTION_RELEASE_SERVICE_ACCOUNT: ${{ vars.DEVHUD_GOOGLE_PLAY_PRODUCTION_RELEASE_SERVICE_ACCOUNT }}
+      DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID: ${{ vars.DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID }}
+      DEVHUD_CHROME_EXTENSION_ID: ${{ vars.DEVHUD_CHROME_EXTENSION_ID }}
+      DEVHUD_OCI_REGISTRY: ${{ vars.DEVHUD_OCI_REGISTRY }}
+      DEVHUD_OCI_API_REPOSITORY: ${{ vars.DEVHUD_OCI_API_REPOSITORY }}
+      DEVHUD_OCI_SWEEPER_REPOSITORY: ${{ vars.DEVHUD_OCI_SWEEPER_REPOSITORY }}
+      DEVHUD_OCI_PRODUCTION_PUSH_PRINCIPAL: ${{ vars.DEVHUD_OCI_PRODUCTION_PUSH_PRINCIPAL }}
+      DEVHUD_RELEASE_CONTROLLER_URL: ${{ vars.DEVHUD_RELEASE_CONTROLLER_URL }}
+      DEVHUD_RELEASE_CONTROLLER_AUDIENCE: ${{ vars.DEVHUD_RELEASE_CONTROLLER_AUDIENCE }}
+      DEVHUD_PUBLIC_API_URL: ${{ vars.DEVHUD_PUBLIC_API_URL }}
+      DEVHUD_LOGTO_ISSUER: ${{ vars.DEVHUD_LOGTO_ISSUER }}
+      DEVHUD_PUBLIC_ASSET_BASE_URL: ${{ vars.DEVHUD_PUBLIC_ASSET_BASE_URL }}
       DEVHUD_PUBLIC_DOCS_PROJECT_NAME: ${{ vars.DEVHUD_PUBLIC_DOCS_PROJECT_NAME }}
       DEVHUD_PUBLIC_DOCS_URL: ${{ vars.DEVHUD_PUBLIC_DOCS_URL }}
+      DEVHUD_PUBLIC_DOCS_ACCOUNT_ID: ${{ vars.DEVHUD_PUBLIC_DOCS_ACCOUNT_ID }}
       DEVHUD_DOCS_RELEASE_IDENTITY: "devhud@v${{ needs.identity.outputs.version }}@${{ needs.identity.outputs.revision }}"
     steps:
       - uses: actions/checkout@v6
         with: { persist-credentials: false, ref: "${{ needs.identity.outputs.revision }}" }
+      - name: Bind public-docs configuration to the validated preflight environment
+        env:
+          EXPECTED_CONFIGURATION_FINGERPRINT: ${{ needs.preflight.outputs.release_configuration_fingerprint }}
+        run: |
+          set -euo pipefail
+          actual=$(node scripts/release/devhud-public-release.mjs configuration-fingerprint)
+          test "$actual" = "$EXPECTED_CONFIGURATION_FINGERPRINT"
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v6
         with: { node-version-file: .nvmrc }
@@ -918,6 +1009,7 @@ jobs:
       DEVHUD_OCI_REGISTRY: ${{ vars.DEVHUD_OCI_REGISTRY }}
       DEVHUD_OCI_API_REPOSITORY: ${{ vars.DEVHUD_OCI_API_REPOSITORY }}
       DEVHUD_OCI_SWEEPER_REPOSITORY: ${{ vars.DEVHUD_OCI_SWEEPER_REPOSITORY }}
+      DEVHUD_OCI_PRODUCTION_PUSH_PRINCIPAL: ${{ vars.DEVHUD_OCI_PRODUCTION_PUSH_PRINCIPAL }}
       DEVHUD_OCI_REGISTRY_USERNAME: ${{ secrets.DEVHUD_OCI_REGISTRY_USERNAME }}
       DEVHUD_OCI_REGISTRY_TOKEN: ${{ secrets.DEVHUD_OCI_REGISTRY_TOKEN }}
       DEVHUD_DOCS_RELEASE_IDENTITY: "devhud@v${{ needs.identity.outputs.version }}@${{ needs.identity.outputs.revision }}"
@@ -1059,6 +1151,31 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with: { persist-credentials: false, ref: "${{ needs.identity.outputs.revision }}" }
+      - name: Bind cleanup configuration to the validated preflight environment
+        env:
+          DEVHUD_APP_STORE_APP_ID: ${{ vars.DEVHUD_APP_STORE_APP_ID }}
+          DEVHUD_GOOGLE_PLAY_PACKAGE_NAME: ${{ vars.DEVHUD_GOOGLE_PLAY_PACKAGE_NAME }}
+          DEVHUD_GOOGLE_PLAY_MANAGED_PUBLISHING: ${{ vars.DEVHUD_GOOGLE_PLAY_MANAGED_PUBLISHING }}
+          DEVHUD_GOOGLE_PLAY_PRODUCTION_RELEASE_SERVICE_ACCOUNT: ${{ vars.DEVHUD_GOOGLE_PLAY_PRODUCTION_RELEASE_SERVICE_ACCOUNT }}
+          DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID: ${{ vars.DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID }}
+          DEVHUD_CHROME_EXTENSION_ID: ${{ vars.DEVHUD_CHROME_EXTENSION_ID }}
+          DEVHUD_OCI_REGISTRY: ${{ vars.DEVHUD_OCI_REGISTRY }}
+          DEVHUD_OCI_API_REPOSITORY: ${{ vars.DEVHUD_OCI_API_REPOSITORY }}
+          DEVHUD_OCI_SWEEPER_REPOSITORY: ${{ vars.DEVHUD_OCI_SWEEPER_REPOSITORY }}
+          DEVHUD_OCI_PRODUCTION_PUSH_PRINCIPAL: ${{ vars.DEVHUD_OCI_PRODUCTION_PUSH_PRINCIPAL }}
+          DEVHUD_RELEASE_CONTROLLER_URL: ${{ vars.DEVHUD_RELEASE_CONTROLLER_URL }}
+          DEVHUD_RELEASE_CONTROLLER_AUDIENCE: ${{ vars.DEVHUD_RELEASE_CONTROLLER_AUDIENCE }}
+          DEVHUD_PUBLIC_API_URL: ${{ vars.DEVHUD_PUBLIC_API_URL }}
+          DEVHUD_LOGTO_ISSUER: ${{ vars.DEVHUD_LOGTO_ISSUER }}
+          DEVHUD_PUBLIC_ASSET_BASE_URL: ${{ vars.DEVHUD_PUBLIC_ASSET_BASE_URL }}
+          DEVHUD_PUBLIC_DOCS_URL: ${{ vars.DEVHUD_PUBLIC_DOCS_URL }}
+          DEVHUD_PUBLIC_DOCS_ACCOUNT_ID: ${{ vars.DEVHUD_PUBLIC_DOCS_ACCOUNT_ID }}
+          DEVHUD_PUBLIC_DOCS_PROJECT_NAME: ${{ vars.DEVHUD_PUBLIC_DOCS_PROJECT_NAME }}
+          EXPECTED_CONFIGURATION_FINGERPRINT: ${{ needs.preflight.outputs.release_configuration_fingerprint }}
+        run: |
+          set -euo pipefail
+          actual=$(node scripts/release/devhud-public-release.mjs configuration-fingerprint)
+          test "$actual" = "$EXPECTED_CONFIGURATION_FINGERPRINT"
       - name: Confirm no exact store version became public
         run: |
           set -euo pipefail
