@@ -151,6 +151,7 @@ export const livePreflightChecks = Object.freeze([
 
 const sensitiveNames = new Set([...signingInputs, ...releaseSecrets, ...controllerRuntimeInputs.filter((name) => /(?:KEY|TOKEN|SECRET|PASSWORD|DATABASE_URL)/u.test(name))]);
 const productionApiOrigin = "https://devhud.api.delino.io";
+const ociRepositoryNamePattern = /^[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*(?:\/[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*)*$/u;
 
 function present(environment, name) {
   return typeof environment[name] === "string" && environment[name].trim() !== "";
@@ -180,8 +181,8 @@ function validateReleaseVariableValues(environment) {
   if (registry.username || registry.password || registry.pathname !== "/" || registry.search || registry.hash || registry.host !== environment.DEVHUD_OCI_REGISTRY) {
     throw new Error("DEVHUD_OCI_REGISTRY must be a host-only registry authority without credentials, path, query, or fragment");
   }
-  if (!/^[a-z0-9._/-]+$/u.test(environment.DEVHUD_OCI_API_REPOSITORY) || !/^[a-z0-9._/-]+$/u.test(environment.DEVHUD_OCI_SWEEPER_REPOSITORY)) {
-    throw new Error("OCI repository names must use lowercase registry-safe characters");
+  if (!ociRepositoryNamePattern.test(environment.DEVHUD_OCI_API_REPOSITORY) || !ociRepositoryNamePattern.test(environment.DEVHUD_OCI_SWEEPER_REPOSITORY)) {
+    throw new Error("OCI repository names must use slash-separated OCI distribution name components");
   }
 }
 

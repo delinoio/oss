@@ -1252,8 +1252,12 @@ jobs:
           node scripts/release/devhud-release-controller.mjs status --version "${{ needs.identity.outputs.version }}" --revision "$DEVHUD_RELEASE_REVISION" --authorization-revision "$DEVHUD_RELEASE_AUTHORIZATION_REVISION" --output controller-status.json
           api_status=$(jq -er '.channels.api | select(type == "string")' controller-status.json)
           sweeper_status=$(jq -er '.channels.sweeper | select(type == "string")' controller-status.json)
-          if [ "$api_status" = public ] || [ "$sweeper_status" = public ]; then
-            test "$api_status" = public
-            test "$sweeper_status" = public
+          if [ "$api_status" != "$sweeper_status" ]; then
+            echo "controller API and sweeper channels disagree" >&2
+            exit 1
+          elif [ "$api_status" = public ]; then
             node scripts/release/devhud-release-controller.mjs rollback --version "${{ needs.identity.outputs.version }}" --revision "$DEVHUD_RELEASE_REVISION" --authorization-revision "$DEVHUD_RELEASE_AUTHORIZATION_REVISION" --output controller-rollback.json
+          elif [ "$api_status" != prepared ]; then
+            echo "controller returned an unsupported matching non-public channel state" >&2
+            exit 1
           fi

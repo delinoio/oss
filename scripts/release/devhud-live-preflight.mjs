@@ -133,6 +133,7 @@ export async function runLivePreflight(environment = process.env, fetchImpl = fe
   const pagesProjectURL = `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(environment.DEVHUD_PUBLIC_DOCS_ACCOUNT_ID)}/pages/projects/${encodeURIComponent(environment.DEVHUD_PUBLIC_DOCS_PROJECT_NAME)}`;
   const pagesProjectResponse = await checkedFetch(fetchImpl, pagesProjectURL, { headers: bearer(environment.DEVHUD_PUBLIC_DOCS_API_TOKEN) }, "public-docs-project");
   const pagesProject = await pagesProjectResponse.json();
+  if (pagesProject.result?.production_branch !== "main") throw new Error("Cloudflare Pages project production branch must be main");
   const pagesHosts = new Set([
     pagesProject.result?.subdomain,
     ...(Array.isArray(pagesProject.result?.domains) ? pagesProject.result.domains : []),

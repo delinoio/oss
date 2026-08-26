@@ -69,6 +69,12 @@ test("missing release credentials fail closed without exposing values", () => {
   ]) {
     assert.throws(() => validateReleaseConfiguration({ ...environment, DEVHUD_OCI_REGISTRY: value }), /host-only registry authority/u);
   }
+  for (const name of ["DEVHUD_OCI_API_REPOSITORY", "DEVHUD_OCI_SWEEPER_REPOSITORY"]) {
+    for (const value of ["../api", "/api", "api//production", "api/"]) {
+      assert.throws(() => validateReleaseConfiguration({ ...environment, [name]: value }), /slash-separated OCI distribution name components/u);
+    }
+    assert.doesNotThrow(() => validateReleaseConfiguration({ ...environment, [name]: "team_1/service--api/v1.2" }));
+  }
   const serialized = JSON.stringify(configurationStatus(environment));
   assert.ok(!serialized.includes("configured-"));
 });

@@ -421,6 +421,7 @@ test("dry-run cannot enter publication and rollback stops at store publication",
   assert.ok(controllerRollback > controllerStatus, "controller rollback must follow live reconciliation");
   assert.ok(controllerRollback > chromeWithdrawal, "controller rollback must follow every store withdrawal");
   assert.match(rollback, /api_status[\s\S]*sweeper_status/u);
+  assert.match(rollback, /if \[ "\$api_status" != "\$sweeper_status" \][\s\S]*exit 1[\s\S]*elif \[ "\$api_status" = public \][\s\S]*devhud-release-controller\.mjs rollback[\s\S]*elif \[ "\$api_status" != prepared \][\s\S]*exit 1/u);
   assert.match(rollback, /for provider in apple google-play chrome-web-store/u);
   assert.match(rollback, /status == "public"/u);
   assert.match(rollback, /\.status == "unsubmitted"/u);

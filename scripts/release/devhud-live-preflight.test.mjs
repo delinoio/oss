@@ -38,7 +38,7 @@ function successfulFetch(environment_) {
     if (url.includes("chromewebstore.googleapis.com")) return jsonResponse({ itemId: environment_.DEVHUD_CHROME_EXTENSION_ID, publicKey: environment_.DEVHUD_CHROME_EXTENSION_PUBLIC_KEY });
     if (url.endsWith(".well-known/openid-configuration")) return jsonResponse({ issuer: environment_.DEVHUD_LOGTO_ISSUER, jwks_uri: "https://auth.example.test/jwks" });
     if (url.endsWith("/upload-token")) return jsonResponse({ result: { jwt: "fixture-pages-upload-token" } });
-    if (url.includes("/pages/projects/")) return jsonResponse({ result: { subdomain: "devhud.pages.dev", domains: [new URL(environment_.DEVHUD_PUBLIC_DOCS_URL).host] } });
+    if (url.includes("/pages/projects/")) return jsonResponse({ result: { production_branch: "main", subdomain: "devhud.pages.dev", domains: [new URL(environment_.DEVHUD_PUBLIC_DOCS_URL).host] } });
     if (url.includes("controller.example.test")) return jsonResponse({
       ok: true,
       project: "devhud",
@@ -190,9 +190,23 @@ test("live preflight accepts the Pages subdomain as the public docs host", async
   const env = { ...environment(), DEVHUD_PUBLIC_DOCS_URL: "https://devhud.pages.dev/devhud" };
   const successful = successfulFetch(env);
   const fetchImpl = async (input, options) => /\/pages\/projects\/[^/]+$/u.test(String(input))
-    ? jsonResponse({ result: { subdomain: "devhud.pages.dev", domains: [] } })
+    ? jsonResponse({ result: { production_branch: "main", subdomain: "devhud.pages.dev", domains: [] } })
     : successful(input, options);
   assert.ok(Object.values(await runLivePreflight(env, fetchImpl)).every(Boolean));
+});
+
+test("live preflight rejects a Pages project whose production branch is not main", async () => {
+  const env = environment();
+  const successful = successfulFetch(env);
+  let uploadTokenRequests = 0;
+  const fetchImpl = async (input, options) => {
+    const url = String(input);
+    if (/\/pages\/projects\/[^/]+$/u.test(url)) return jsonResponse({ result: { production_branch: "preview", subdomain: "devhud.pages.dev", domains: [new URL(env.DEVHUD_PUBLIC_DOCS_URL).host] } });
+    if (url.endsWith("/upload-token")) uploadTokenRequests += 1;
+    return successful(input, options);
+  };
+  await assert.rejects(runLivePreflight(env, fetchImpl), /production branch must be main/u);
+  assert.equal(uploadTokenRequests, 0);
 });
 
 test("live preflight rejects a public docs host outside the Pages project", async () => {
@@ -201,7 +215,7 @@ test("live preflight rejects a public docs host outside the Pages project", asyn
   let uploadTokenRequests = 0;
   const fetchImpl = async (input, options) => {
     const url = String(input);
-    if (/\/pages\/projects\/[^/]+$/u.test(url)) return jsonResponse({ result: { subdomain: "other.pages.dev", domains: ["other.example.test"] } });
+    if (/\/pages\/projects\/[^/]+$/u.test(url)) return jsonResponse({ result: { production_branch: "main", subdomain: "other.pages.dev", domains: ["other.example.test"] } });
     if (url.endsWith("/upload-token")) uploadTokenRequests += 1;
     return successful(input, options);
   };
