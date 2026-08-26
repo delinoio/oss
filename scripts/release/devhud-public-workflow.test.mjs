@@ -59,7 +59,7 @@ test("the complete reusable private candidate is the sole publication prerequisi
 });
 
 test("jobs request only their channel-specific GitHub permissions", () => {
-  for (const name of ["identity", "private_candidate", "candidate", "preflight", "submit_stores", "review_gate", "docs_candidate", "registry", "prepare_infrastructure", "publish_stores", "stores_public", "updater_public", "public_docs", "verify_all", "rollback_pre_store"]) {
+  for (const name of ["identity", "private_candidate", "candidate", "preflight", "submit_stores", "review_gate", "docs_candidate", "registry", "prepare_infrastructure", "stores_public", "updater_public", "public_docs", "verify_all", "rollback_pre_store"]) {
     assert.doesNotMatch(job(name), /contents: write/u, `${name} must not write repository contents`);
   }
   assert.match(job("github_release"), /contents: write/u);
@@ -92,7 +92,7 @@ test("same-commit retries reconcile public stores without repeating store mutati
   assert.match(job("submit_stores"), /\[ "\$RELEASE_RETRY" = true \] && \[ "\$status" != public \]/u);
   assert.match(job("review_gate"), /needs\.identity\.outputs\.retry == 'true'.*devhud-publication.*devhud-store-review-approved/u);
   assert.match(job("review_gate"), /\[ "\$RELEASE_RETRY" = true \][\s\S]*\.status == "public"/u);
-  assert.doesNotMatch(job("publish_stores"), /needs\.identity\.outputs\.retry != 'true'/u);
+  assert.doesNotMatch(job("stores_public"), /needs\.identity\.outputs\.retry != 'true'/u);
   assert.match(job("stores_public"), /needs\.identity\.outputs\.retry == 'true'.*devhud-publication.*devhud-store-publication/u);
 });
 
@@ -112,11 +112,16 @@ test("same-commit retries publish recovered GitHub drafts after replacing assets
 
 test("store publication waits boundedly for every exact public version", () => {
   const publication = job("stores_public");
-  assert.match(publication, /needs: \[identity, preflight, publish_stores\]/u);
+  assert.match(publication, /needs: \[identity, preflight, prepare_infrastructure\]/u);
+  assert.equal(release.indexOf("\n  publish_stores:"), -1, "store mutations must not run in an earlier unprotected job");
   for (const name of releaseFingerprintVariables) assert.match(publication, new RegExp(`${name}: \\$\\{\\{ vars\\.${name} \\}\\}`, "u"));
   const configuration = publication.indexOf("Bind store-publication configuration to the validated preflight environment");
+  const applePublication = publication.indexOf("publish apple");
+  const chromePublication = publication.indexOf("publish chrome-web-store");
   const firstQuery = publication.indexOf("Re-query exact public versions after operator publishes Play changes");
-  assert.ok(configuration > 0 && firstQuery > configuration, "store-publication configuration must match preflight before querying public versions");
+  assert.ok(configuration > 0 && applePublication > configuration, "store-publication configuration must match preflight before the first store mutation");
+  assert.ok(chromePublication > applePublication, "Chrome publication must follow the protected Apple publication step");
+  assert.ok(firstQuery > chromePublication, "every store must be queried only after the protected publication steps");
   assert.match(publication, /EXPECTED_CONFIGURATION_FINGERPRINT: \$\{\{ needs\.preflight\.outputs\.release_configuration_fingerprint \}\}/u);
   assert.match(publication, /configuration-fingerprint[\s\S]*test "\$actual" = "\$EXPECTED_CONFIGURATION_FINGERPRINT"/u);
   assert.match(publication, /timeout-minutes: 35/u);
@@ -141,8 +146,7 @@ test("channel dependencies place GA after every independently verified public su
   const dependencies = {
     registry: "review_gate",
     prepare_infrastructure: "registry",
-    publish_stores: "prepare_infrastructure",
-    stores_public: "publish_stores",
+    stores_public: "prepare_infrastructure",
     github_release: "stores_public",
     updater_public: "github_release",
     public_docs: "updater_public",
@@ -269,16 +273,15 @@ test("GA notes are public and existing tags are dereferenced to commits", () => 
 
 test("dry-run cannot enter publication and rollback stops at store publication", () => {
   assert.match(job("private_candidate"), /inputs\.mode == 'release'.*signed-private.*plan-only/u);
-  for (const name of ["preflight", "submit_stores", "registry", "publish_stores", "github_release", "ga"]) {
+  for (const name of ["preflight", "submit_stores", "registry", "stores_public", "github_release", "ga"]) {
     assert.match(job(name), /if: \$\{\{ inputs\.mode == 'release' \}\}/u);
   }
   assert.match(job("rollback_pre_store"), /always\(\)/u);
   for (const failed of ["submit_stores", "review_gate", "docs_candidate", "registry", "prepare_infrastructure"]) {
     assert.match(job("rollback_pre_store"), new RegExp(`needs\\.${failed}\\.result == 'failure'`, "u"));
   }
-  assert.match(job("rollback_pre_store"), /needs\.publish_stores\.result == 'failure'/u);
-  assert.match(job("rollback_pre_store"), /needs\.publish_stores\.result == 'skipped'/u);
   assert.match(job("rollback_pre_store"), /needs\.stores_public\.result == 'failure'/u);
+  assert.match(job("rollback_pre_store"), /needs\.stores_public\.result == 'skipped'/u);
   assert.match(job("rollback_pre_store"), /needs: \[[^\n]*stores_public/u);
   assert.match(job("rollback_pre_store"), /needs\.identity\.outputs\.retry != 'true'/u);
   assert.match(job("prepare_infrastructure"), /promotion_attempted: \$\{\{ steps\.promote\.outputs\.attempted \}\}/u);

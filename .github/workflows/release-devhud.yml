@@ -502,34 +502,10 @@ jobs:
           bootstrap=$(curl --fail --silent --show-error -X POST -H 'content-type: application/json' -H 'Connect-Protocol-Version: 1' --data '{}' "$DEVHUD_PUBLIC_API_URL/devhud.v1.BootstrapService/GetBootstrap")
           jq -e --arg version "${{ needs.identity.outputs.version }}" '.apiVersion == $version and .projectId == "PROJECT_ID_DEVHUD"' <<<"$bootstrap"
 
-  publish_stores:
-    name: Release approved Apple and Chrome packages
-    if: ${{ inputs.mode == 'release' }}
-    needs: [identity, prepare_infrastructure]
-    runs-on: ubuntu-22.04
-    environment: devhud-publication
-    permissions:
-      contents: read
-    env:
-      APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-      APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-      APPLE_API_PRIVATE_KEY_B64: ${{ secrets.APPLE_API_PRIVATE_KEY_B64 }}
-      DEVHUD_APP_STORE_APP_ID: ${{ vars.DEVHUD_APP_STORE_APP_ID }}
-      DEVHUD_CHROME_EXTENSION_ID: ${{ vars.DEVHUD_CHROME_EXTENSION_ID }}
-      DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID: ${{ vars.DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID }}
-      DEVHUD_CHROME_WEB_STORE_CLIENT_ID: ${{ secrets.DEVHUD_CHROME_WEB_STORE_CLIENT_ID }}
-      DEVHUD_CHROME_WEB_STORE_CLIENT_SECRET: ${{ secrets.DEVHUD_CHROME_WEB_STORE_CLIENT_SECRET }}
-      DEVHUD_CHROME_WEB_STORE_REFRESH_TOKEN: ${{ secrets.DEVHUD_CHROME_WEB_STORE_REFRESH_TOKEN }}
-    steps:
-      - uses: actions/checkout@v6
-        with: { persist-credentials: false }
-      - run: node scripts/release/devhud-store-release.mjs publish apple --output apple-release.json
-      - run: node scripts/release/devhud-store-release.mjs publish chrome-web-store --output chrome-release.json
-
   stores_public:
-    name: Verify all stores independently public
+    name: Publish and verify all stores independently public
     if: ${{ inputs.mode == 'release' }}
-    needs: [identity, preflight, publish_stores]
+    needs: [identity, preflight, prepare_infrastructure]
     runs-on: ubuntu-22.04
     timeout-minutes: 35
     environment: ${{ needs.identity.outputs.retry == 'true' && 'devhud-publication' || 'devhud-store-publication' }}
@@ -569,6 +545,10 @@ jobs:
           set -euo pipefail
           actual=$(node scripts/release/devhud-public-release.mjs configuration-fingerprint)
           test "$actual" = "$EXPECTED_CONFIGURATION_FINGERPRINT"
+      - name: Release approved App Store package
+        run: node scripts/release/devhud-store-release.mjs publish apple --output apple-release.json
+      - name: Release approved Chrome Web Store package
+        run: node scripts/release/devhud-store-release.mjs publish chrome-web-store --output chrome-release.json
       - name: Re-query exact public versions after operator publishes Play changes
         run: |
           set -euo pipefail
@@ -950,13 +930,13 @@ jobs:
         always() && inputs.mode == 'release' &&
         needs.identity.result == 'success' && needs.identity.outputs.retry != 'true' &&
         needs.submit_stores.result != 'skipped' &&
-        (needs.stores_public.result == 'failure' || needs.publish_stores.result == 'failure' ||
-         (needs.publish_stores.result == 'skipped' &&
+        (needs.stores_public.result == 'failure' ||
+         (needs.stores_public.result == 'skipped' &&
           (needs.submit_stores.result == 'failure' || needs.review_gate.result == 'failure' ||
            needs.docs_candidate.result == 'failure' || needs.registry.result == 'failure' ||
            needs.prepare_infrastructure.result == 'failure')))
       }}
-    needs: [identity, submit_stores, review_gate, docs_candidate, registry, prepare_infrastructure, publish_stores, stores_public]
+    needs: [identity, submit_stores, review_gate, docs_candidate, registry, prepare_infrastructure, stores_public]
     runs-on: ubuntu-22.04
     environment: devhud-publication
     permissions:
