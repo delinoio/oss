@@ -27,6 +27,17 @@ test("public release is manual-only, exact-versioned, and denied permissions by 
   assert.match(job("identity"), /devhud@v\$\{\{ inputs\.version \}\}/u);
 });
 
+test("release dispatch is project-serialized and shell inputs cross only through env", () => {
+  assert.match(release, /concurrency:\n  group: release-devhud\n  cancel-in-progress: false/u);
+  const identity = job("identity");
+  const validationStep = identity.slice(identity.indexOf("- name: Validate release identity"));
+  const run = validationStep.slice(validationStep.indexOf("run: |"));
+  assert.match(validationStep, /RELEASE_MODE: \$\{\{ inputs\.mode \}\}/u);
+  assert.match(validationStep, /RELEASE_VERSION: \$\{\{ inputs\.version \}\}/u);
+  assert.doesNotMatch(run, /\$\{\{ inputs\.(?:mode|version) \}\}/u);
+  assert.match(run, /--version "\$RELEASE_VERSION" --mode "\$RELEASE_MODE"/u);
+});
+
 test("the complete reusable private candidate is the sole publication prerequisite", () => {
   assert.match(privateCandidate, /workflow_call:/u);
   assert.match(privateCandidate, /plan-only\|signed-private/u);
@@ -50,11 +61,29 @@ test("jobs request only their channel-specific GitHub permissions", () => {
 });
 
 test("protected review gates preserve pending review and prohibit partial publication", () => {
-  assert.match(job("review_gate"), /environment: devhud-store-review-approved/u);
-  assert.match(job("stores_public"), /environment: devhud-store-publication/u);
+  assert.match(job("review_gate"), /devhud-store-review-approved/u);
+  assert.match(job("stores_public"), /devhud-store-publication/u);
   assert.match(job("ga"), /environment: devhud-ga/u);
   assert.match(job("submit_stores"), /STAGED_PUBLISH|deferred review at 100 percent/u);
   assert.doesNotMatch(release, /userFraction|phasedRelease|beta|prerelease: true/ui);
+});
+
+test("same-commit retries reconcile public stores without repeating store mutations", () => {
+  assert.match(job("identity"), /retry: \$\{\{ steps\.identity\.outputs\.retry \}\}/u);
+  assert.match(job("submit_stores"), /Reconcile the already-public store on a same-commit retry/u);
+  assert.match(job("submit_stores"), /needs\.identity\.outputs\.retry != 'true'/u);
+  assert.match(job("review_gate"), /EXPECTED_STORE_STATUS: \$\{\{ needs\.identity\.outputs\.retry == 'true' && 'public' \|\| 'approved-held' \}\}/u);
+  assert.match(job("review_gate"), /needs\.identity\.outputs\.retry == 'true'.*devhud-publication.*devhud-store-review-approved/u);
+  assert.match(job("publish_stores"), /Confirm Apple and Chrome are already public on retry/u);
+  assert.match(job("stores_public"), /needs\.identity\.outputs\.retry == 'true'.*devhud-publication.*devhud-store-publication/u);
+});
+
+test("App Store build polling is read-only and submission runs once afterward", () => {
+  const submission = job("submit_stores");
+  const polling = submission.slice(submission.indexOf("Wait for App Store package processing"), submission.indexOf("Submit or reconcile the App Store review once"));
+  assert.match(polling, /build-status apple/u);
+  assert.doesNotMatch(polling, /submit apple/u);
+  assert.match(submission, /Submit or reconcile the App Store review once[\s\S]*submit apple/u);
 });
 
 test("channel dependencies place GA after every independently verified public surface", () => {
@@ -78,6 +107,7 @@ test("channel dependencies place GA after every independently verified public su
 
 test("documentation deployment is bound to the exact candidate before publication", () => {
   assert.match(job("docs_candidate"), /needs: \[identity, preflight\]/u);
+  assert.match(job("review_gate"), /needs: \[identity, submit_stores, docs_candidate\]/u);
   assert.match(job("docs_candidate"), /doc_build\/devhud\.html/u);
   assert.match(job("docs_candidate"), /devhud-release-identity/u);
   assert.match(job("docs_candidate"), /needs\.identity\.outputs\.version/u);
@@ -108,9 +138,14 @@ test("dry-run cannot enter publication and rollback stops at store publication",
   for (const name of ["preflight", "submit_stores", "registry", "publish_stores", "github_release", "ga"]) {
     assert.match(job(name), /if: \$\{\{ inputs\.mode == 'release' \}\}/u);
   }
-  assert.match(job("rollback_pre_store"), /needs\.prepare_infrastructure\.result == 'failure'/u);
+  assert.match(job("rollback_pre_store"), /always\(\)/u);
+  for (const failed of ["submit_stores", "review_gate", "docs_candidate", "registry", "prepare_infrastructure"]) {
+    assert.match(job("rollback_pre_store"), new RegExp(`needs\\.${failed}\\.result == 'failure'`, "u"));
+  }
   assert.match(job("rollback_pre_store"), /needs\.publish_stores\.result == 'skipped'/u);
-  assert.doesNotMatch(job("rollback_pre_store"), /needs\.publish_stores\.result != 'success'/u);
+  assert.match(job("rollback_pre_store"), /needs\.identity\.outputs\.retry != 'true'/u);
+  assert.match(job("prepare_infrastructure"), /promoted: \$\{\{ steps\.promote\.outputs\.promoted \}\}/u);
+  assert.match(job("rollback_pre_store"), /if: \$\{\{ needs\.prepare_infrastructure\.outputs\.promoted == 'true' \}\}/u);
   assert.match(job("rollback_pre_store"), /rollbackPolicy\("infrastructure-ready"\)/u);
   const rollback = job("rollback_pre_store");
   const googleWithdrawal = rollback.indexOf("withdraw google-play");

@@ -10,6 +10,9 @@ import { redact } from "./devhud-public-release.mjs";
 
 export const StoreProvider = Object.freeze({ Apple: "apple", GooglePlay: "google-play", ChromeWebStore: "chrome-web-store" });
 export const StoreStatus = Object.freeze({ Pending: "pending-review", ApprovedHeld: "approved-held", Public: "public", Rejected: "rejected", Withdrawn: "withdrawn" });
+export const StoreBuildStatus = Object.freeze({ Processing: "processing", Processed: "processed" });
+
+const appleSubmittedReviewStates = new Set(["WAITING_FOR_REVIEW", "IN_REVIEW", "COMPLETING", "COMPLETE"]);
 
 async function checked(fetchImpl, url, options, label) {
   const response = await fetchImpl(url, { redirect: "error", ...options });
@@ -89,6 +92,69 @@ async function appleVersion(environment, metadata, fetchImpl, token) {
   return result.data[0];
 }
 
+async function appleBuild(environment, metadata, fetchImpl, token) {
+  const query = new URLSearchParams({
+    "filter[app]": environment.DEVHUD_APP_STORE_APP_ID,
+    "filter[version]": String(metadata.storeBuildNumber),
+    "fields[builds]": "processingState,version",
+    limit: "2",
+  });
+  const result = await checked(fetchImpl, `https://api.appstoreconnect.apple.com/v1/builds?${query}`, { headers: bearer(token) }, "App Store build lookup");
+  if (!Array.isArray(result.data) || result.data.length > 1) throw new Error("App Store build lookup did not return at most one exact build");
+  const build = result.data[0];
+  if (!build) return null;
+  const processingState = build.attributes?.processingState;
+  if (["FAILED", "INVALID"].includes(processingState)) throw new Error(`App Store build processing failed with state ${processingState}`);
+  return processingState === "VALID" ? build : null;
+}
+
+async function appleBuildStatus(environment, metadata, fetchImpl) {
+  const build = await appleBuild(environment, metadata, fetchImpl, appleToken(environment));
+  return {
+    provider: StoreProvider.Apple,
+    status: build ? StoreBuildStatus.Processed : StoreBuildStatus.Processing,
+    ...(build ? { buildId: build.id } : {}),
+  };
+}
+
+function appleSubmissionVersionIds(submission, includedById) {
+  const versionIds = new Set();
+  const direct = submission.relationships?.appStoreVersionForReview?.data;
+  if (direct?.type === "appStoreVersions" && typeof direct.id === "string") versionIds.add(direct.id);
+  const items = submission.relationships?.items?.data ?? [];
+  for (const item of items) {
+    const included = includedById.get(`${item.type}:${item.id}`);
+    const version = included?.relationships?.appStoreVersion?.data;
+    if (version?.type === "appStoreVersions" && typeof version.id === "string") versionIds.add(version.id);
+  }
+  return { versionIds, itemCount: items.length };
+}
+
+async function appleReviewSubmission(environment, version, fetchImpl, token) {
+  const query = new URLSearchParams({
+    "filter[platform]": "IOS",
+    include: "items,appStoreVersionForReview",
+    "fields[reviewSubmissionItems]": "state,appStoreVersion",
+    "fields[reviewSubmissions]": "platform,state,items,appStoreVersionForReview",
+    limit: "200",
+    "limit[items]": "50",
+  });
+  const result = await checked(fetchImpl, `https://api.appstoreconnect.apple.com/v1/apps/${encodeURIComponent(environment.DEVHUD_APP_STORE_APP_ID)}/reviewSubmissions?${query}`, { headers: bearer(token) }, "App Store review submission lookup");
+  if (!Array.isArray(result.data)) throw new Error("App Store review submission lookup returned invalid data");
+  const includedById = new Map((result.included ?? []).map((resource) => [`${resource.type}:${resource.id}`, resource]));
+  const exact = [];
+  const emptyReady = [];
+  for (const submission of result.data) {
+    const { versionIds, itemCount } = appleSubmissionVersionIds(submission, includedById);
+    if (versionIds.has(version.id)) exact.push({ submission, hasVersionItem: true });
+    else if (submission.attributes?.state === "READY_FOR_REVIEW" && itemCount === 0) emptyReady.push({ submission, hasVersionItem: false });
+  }
+  if (exact.length > 1) throw new Error("App Store returned multiple review submissions for the exact version");
+  if (exact.length === 1) return exact[0];
+  if (emptyReady.length > 1) throw new Error("App Store returned multiple unbound review submissions");
+  return emptyReady[0] ?? null;
+}
+
 async function assertNoApplePhasedRelease(version, fetchImpl, token) {
   const response = await fetchImpl(`https://api.appstoreconnect.apple.com/v1/appStoreVersions/${version.id}/appStoreVersionPhasedRelease`, { redirect: "error", headers: bearer(token) });
   if (response.status === 404) return;
@@ -100,15 +166,30 @@ async function submitApple(environment, metadata, fetchImpl) {
   const token = appleToken(environment);
   const version = await appleVersion(environment, metadata, fetchImpl, token);
   await assertNoApplePhasedRelease(version, fetchImpl, token);
-  const buildsQuery = new URLSearchParams({ "filter[app]": environment.DEVHUD_APP_STORE_APP_ID, "filter[version]": String(metadata.storeBuildNumber), limit: "2" });
-  const builds = await checked(fetchImpl, `https://api.appstoreconnect.apple.com/v1/builds?${buildsQuery}`, { headers: bearer(token) }, "App Store build lookup");
-  if (builds.data?.length !== 1) throw new Error("App Store build lookup did not return exactly one processed build");
+  const current = classifyApple(version.attributes?.appStoreState);
+  if (current === StoreStatus.Rejected) throw new Error("App Store version was rejected");
+  const build = await appleBuild(environment, metadata, fetchImpl, token);
+  if (!build) throw new Error("App Store build is not processed yet");
+  let review = await appleReviewSubmission(environment, version, fetchImpl, token);
+  if ([StoreStatus.ApprovedHeld, StoreStatus.Public].includes(current)) {
+    return { provider: StoreProvider.Apple, status: current, version: metadata.version, ...(review ? { submissionId: review.submission.id } : {}) };
+  }
+  if (review && appleSubmittedReviewStates.has(review.submission.attributes?.state)) {
+    return { provider: StoreProvider.Apple, status: StoreStatus.Pending, submissionId: review.submission.id };
+  }
+  if (review?.submission.attributes?.state === "UNRESOLVED_ISSUES") throw new Error("App Store review submission has unresolved issues");
+  if (review?.submission.attributes?.state === "CANCELING") throw new Error("App Store review submission is canceling");
   await checked(fetchImpl, `https://api.appstoreconnect.apple.com/v1/appStoreVersions/${version.id}`, { method: "PATCH", headers: jsonHeaders(token), body: JSON.stringify({ data: { type: "appStoreVersions", id: version.id, attributes: { releaseType: "MANUAL" } } }) }, "App Store manual-release configuration");
-  await checked(fetchImpl, `https://api.appstoreconnect.apple.com/v1/appStoreVersions/${version.id}/relationships/build`, { method: "PATCH", headers: jsonHeaders(token), body: JSON.stringify({ data: { type: "builds", id: builds.data[0].id } }) }, "App Store build attachment");
-  const submission = await checked(fetchImpl, "https://api.appstoreconnect.apple.com/v1/reviewSubmissions", { method: "POST", headers: jsonHeaders(token), body: JSON.stringify({ data: { type: "reviewSubmissions", attributes: { platform: "IOS" }, relationships: { app: { data: { type: "apps", id: environment.DEVHUD_APP_STORE_APP_ID } } } } }) }, "App Store review submission creation");
-  await checked(fetchImpl, "https://api.appstoreconnect.apple.com/v1/reviewSubmissionItems", { method: "POST", headers: jsonHeaders(token), body: JSON.stringify({ data: { type: "reviewSubmissionItems", relationships: { reviewSubmission: { data: { type: "reviewSubmissions", id: submission.data.id } }, appStoreVersion: { data: { type: "appStoreVersions", id: version.id } } } } }) }, "App Store review item creation");
-  await checked(fetchImpl, `https://api.appstoreconnect.apple.com/v1/reviewSubmissions/${submission.data.id}`, { method: "PATCH", headers: jsonHeaders(token), body: JSON.stringify({ data: { type: "reviewSubmissions", id: submission.data.id, attributes: { submitted: true } } }) }, "App Store review submission");
-  return { provider: StoreProvider.Apple, status: StoreStatus.Pending, submissionId: submission.data.id };
+  await checked(fetchImpl, `https://api.appstoreconnect.apple.com/v1/appStoreVersions/${version.id}/relationships/build`, { method: "PATCH", headers: jsonHeaders(token), body: JSON.stringify({ data: { type: "builds", id: build.id } }) }, "App Store build attachment");
+  if (!review) {
+    const created = await checked(fetchImpl, "https://api.appstoreconnect.apple.com/v1/reviewSubmissions", { method: "POST", headers: jsonHeaders(token), body: JSON.stringify({ data: { type: "reviewSubmissions", attributes: { platform: "IOS" }, relationships: { app: { data: { type: "apps", id: environment.DEVHUD_APP_STORE_APP_ID } } } } }) }, "App Store review submission creation");
+    review = { submission: created.data, hasVersionItem: false };
+  }
+  if (!review.hasVersionItem) {
+    await checked(fetchImpl, "https://api.appstoreconnect.apple.com/v1/reviewSubmissionItems", { method: "POST", headers: jsonHeaders(token), body: JSON.stringify({ data: { type: "reviewSubmissionItems", relationships: { reviewSubmission: { data: { type: "reviewSubmissions", id: review.submission.id } }, appStoreVersion: { data: { type: "appStoreVersions", id: version.id } } } } }) }, "App Store review item creation");
+  }
+  await checked(fetchImpl, `https://api.appstoreconnect.apple.com/v1/reviewSubmissions/${review.submission.id}`, { method: "PATCH", headers: jsonHeaders(token), body: JSON.stringify({ data: { type: "reviewSubmissions", id: review.submission.id, attributes: { submitted: true } } }) }, "App Store review submission");
+  return { provider: StoreProvider.Apple, status: StoreStatus.Pending, submissionId: review.submission.id };
 }
 
 async function submitGoogle(environment, metadata, artifact, fetchImpl) {
@@ -162,15 +243,17 @@ async function publish(provider, environment, metadata, fetchImpl) {
 
 async function withdraw(provider, environment, metadata, options, fetchImpl) {
   if (provider === StoreProvider.Apple) {
-    if (!options["submission-id"]) throw new Error("--submission-id is required for App Store withdrawal");
     const token = appleToken(environment);
     const version = await appleVersion(environment, metadata, fetchImpl, token);
     const current = classifyApple(version.attributes?.appStoreState);
-    if (current === StoreStatus.Withdrawn) return { provider, status: StoreStatus.Withdrawn, submissionId: options["submission-id"] };
     if (current === StoreStatus.Public) throw new Error("App Store version is already public and cannot be withdrawn automatically");
-    const submissionId = encodeURIComponent(options["submission-id"]);
-    await checked(fetchImpl, `https://api.appstoreconnect.apple.com/v1/reviewSubmissions/${submissionId}`, { method: "PATCH", headers: jsonHeaders(token), body: JSON.stringify({ data: { type: "reviewSubmissions", id: options["submission-id"], attributes: { canceled: true } } }) }, "App Store review withdrawal");
-    return { provider, withdrawalRequested: true, submissionId: options["submission-id"] };
+    const review = await appleReviewSubmission(environment, version, fetchImpl, token);
+    if (!review || current === StoreStatus.Withdrawn) return { provider, status: StoreStatus.Withdrawn };
+    if (options["submission-id"] && options["submission-id"] !== review.submission.id) throw new Error("App Store submission ID does not match the exact release");
+    if (review.submission.attributes?.state === "CANCELING") return { provider, withdrawalRequested: true, submissionId: review.submission.id };
+    const submissionId = encodeURIComponent(review.submission.id);
+    await checked(fetchImpl, `https://api.appstoreconnect.apple.com/v1/reviewSubmissions/${submissionId}`, { method: "PATCH", headers: jsonHeaders(token), body: JSON.stringify({ data: { type: "reviewSubmissions", id: review.submission.id, attributes: { canceled: true } } }) }, "App Store review withdrawal");
+    return { provider, withdrawalRequested: true, submissionId: review.submission.id };
   }
   if (provider === StoreProvider.GooglePlay) {
     const release = await googleProductionReleases(environment, metadata, fetchImpl);
@@ -180,6 +263,11 @@ async function withdraw(provider, environment, metadata, options, fetchImpl) {
     return { provider, status: StoreStatus.Withdrawn, versionCode: String(metadata.storeBuildNumber) };
   }
   const token = await chromeToken(environment, fetchImpl);
+  const current = await checked(fetchImpl, `https://chromewebstore.googleapis.com/v2/${chromeName(environment)}:fetchStatus`, { headers: bearer(token) }, "Chrome Web Store release status");
+  const exactPublic = current.publishedItemRevisionStatus?.distributionChannels?.some(({ crxVersion, deployPercentage }) => crxVersion === metadata.version && deployPercentage === 100);
+  if (exactPublic) throw new Error("Chrome Web Store release is already public and cannot be withdrawn automatically");
+  const exactSubmitted = current.submittedItemRevisionStatus?.distributionChannels?.some(({ crxVersion, deployPercentage }) => crxVersion === metadata.version && deployPercentage === 100);
+  if (!exactSubmitted || current.submittedItemRevisionStatus?.state === "CANCELLED") return { provider, status: StoreStatus.Withdrawn };
   await checked(fetchImpl, `https://chromewebstore.googleapis.com/v2/${chromeName(environment)}:cancelSubmission`, { method: "POST", headers: bearer(token) }, "Chrome Web Store review withdrawal");
   return { provider, withdrawalRequested: true };
 }
@@ -189,12 +277,15 @@ function parse(arguments_) {
   const provider = arguments_.shift();
   const options = {};
   for (let index = 0; index < arguments_.length; index += 2) options[arguments_[index].replace(/^--/u, "")] = arguments_[index + 1];
-  if (!Object.values(StoreProvider).includes(provider) || !["submit", "status", "publish", "withdraw"].includes(command)) throw new Error("usage: devhud-store-release.mjs <submit|status|publish|withdraw> <apple|google-play|chrome-web-store> [--artifact path] [--submission-id id] [--output path]");
+  if (!Object.values(StoreProvider).includes(provider) || !["build-status", "submit", "status", "publish", "withdraw"].includes(command) || (command === "build-status" && provider !== StoreProvider.Apple)) {
+    throw new Error("usage: devhud-store-release.mjs <build-status|submit|status|publish|withdraw> <apple|google-play|chrome-web-store> [--artifact path] [--submission-id id] [--output path]");
+  }
   return { command, provider, options };
 }
 
 export async function run(command, provider, options, environment = process.env, fetchImpl = fetch) {
   const metadata = loadReleaseMetadata();
+  if (command === "build-status") return appleBuildStatus(environment, metadata, fetchImpl);
   if (command === "status") return status(provider, environment, metadata, fetchImpl);
   if (command === "publish") return publish(provider, environment, metadata, fetchImpl);
   if (command === "withdraw") return withdraw(provider, environment, metadata, options, fetchImpl);

@@ -6,6 +6,7 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { livePreflightChecks, redact, validateLivePreflight, validateReleaseConfiguration } from "./devhud-public-release.mjs";
+import { validateControllerResponse } from "./devhud-release-controller.mjs";
 
 function base64url(value) {
   return Buffer.from(typeof value === "string" ? value : JSON.stringify(value)).toString("base64url");
@@ -81,7 +82,11 @@ export async function runLivePreflight(environment = process.env, fetchImpl = fe
   await checkedFetch(fetchImpl, `https://${environment.DEVHUD_OCI_REGISTRY}/v2/`, { headers: { authorization: `Basic ${registryCredentials}` } }, "oci-registry");
   checks["oci-registry"] = true;
 
-  await checkedFetch(fetchImpl, environment.DEVHUD_PUBLIC_ASSET_BASE_URL, { method: "HEAD" }, "asset-domain", (result) => result.status >= 200 && result.status < 400);
+  // Public assets use generated 256-bit object names and need not serve an
+  // object at the origin root. Probe the real object-key route with a
+  // collision-resistant synthetic key; 404 proves an empty origin is reachable.
+  const assetProbeURL = new URL(`/${"A".repeat(43)}.png`, environment.DEVHUD_PUBLIC_ASSET_BASE_URL);
+  await checkedFetch(fetchImpl, assetProbeURL, { method: "HEAD" }, "asset-domain", (result) => result.ok || result.status === 404);
   checks["asset-domain"] = true;
 
   const pagesURL = `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(environment.DEVHUD_PUBLIC_DOCS_ACCOUNT_ID)}/pages/projects/${encodeURIComponent(environment.DEVHUD_PUBLIC_DOCS_PROJECT_NAME)}`;
@@ -94,7 +99,10 @@ export async function runLivePreflight(environment = process.env, fetchImpl = fe
     headers: { ...bearer(environment.DEVHUD_RELEASE_CONTROLLER_TOKEN), "content-type": "application/json" },
     body: JSON.stringify({ schemaVersion: 1, project: "devhud", version: environment.DEVHUD_RELEASE_VERSION, revision: environment.GITHUB_SHA }),
   }, "release-controller");
-  const controller = await controllerResponse.json();
+  const controller = validateControllerResponse(await controllerResponse.json(), {
+    version: environment.DEVHUD_RELEASE_VERSION,
+    revision: environment.GITHUB_SHA,
+  }, "preflight");
   for (const name of ["postgresql", "r2", "release-controller"]) {
     if (controller.checks?.[name] !== true) throw new Error(`release controller did not confirm ${name}`);
     checks[name] = true;

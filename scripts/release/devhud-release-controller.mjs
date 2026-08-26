@@ -37,6 +37,13 @@ export function controllerRequest(command, options, environment = process.env) {
   return { path: `v1/devhud/releases/${encodeURIComponent(identity.tag)}/${suffix}`, method: command === "status" ? "GET" : "POST", body: command === "status" ? undefined : identity };
 }
 
+export function validateControllerResponse(result, options, command = "request") {
+  if (result.project !== "devhud" || result.version !== options.version || result.revision !== options.revision || result.ok !== true) {
+    throw new Error(`release controller ${command} returned mismatched release state`);
+  }
+  return result;
+}
+
 export async function callController(command, options, environment = process.env, fetchImpl = fetch) {
   const request = controllerRequest(command, options, environment);
   const base = environment.DEVHUD_RELEASE_CONTROLLER_URL.endsWith("/") ? environment.DEVHUD_RELEASE_CONTROLLER_URL : `${environment.DEVHUD_RELEASE_CONTROLLER_URL}/`;
@@ -47,9 +54,7 @@ export async function callController(command, options, environment = process.env
     ...(request.body ? { body: JSON.stringify(request.body) } : {}),
   });
   if (!response.ok) throw new Error(`release controller ${command} failed with HTTP ${response.status}`);
-  const result = await response.json();
-  if (result.project !== "devhud" || result.version !== options.version || result.revision !== options.revision || result.ok !== true) throw new Error(`release controller ${command} returned mismatched release state`);
-  return result;
+  return validateControllerResponse(await response.json(), options, command);
 }
 
 function parse(arguments_) {

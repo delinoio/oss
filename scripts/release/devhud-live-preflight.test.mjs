@@ -34,7 +34,13 @@ function successfulFetch(environment_) {
     if (url.includes("oauth2.example.test") || url === "https://oauth2.googleapis.com/token") return jsonResponse({ access_token: "fixture-access" });
     if (url.includes("chromewebstore.googleapis.com")) return jsonResponse({ itemId: environment_.DEVHUD_CHROME_EXTENSION_ID, publicKey: environment_.DEVHUD_CHROME_EXTENSION_PUBLIC_KEY });
     if (url.endsWith(".well-known/openid-configuration")) return jsonResponse({ issuer: environment_.DEVHUD_LOGTO_ISSUER, jwks_uri: "https://auth.example.test/jwks" });
-    if (url.includes("controller.example.test")) return jsonResponse({ checks: { postgresql: true, r2: true, "release-controller": true } });
+    if (url.includes("controller.example.test")) return jsonResponse({
+      ok: true,
+      project: "devhud",
+      version: environment_.DEVHUD_RELEASE_VERSION,
+      revision: environment_.GITHUB_SHA,
+      checks: { postgresql: true, r2: true, "release-controller": true },
+    });
     return jsonResponse({ ok: true });
   };
 }
@@ -56,9 +62,47 @@ test("live preflight fails closed when the controller omits PostgreSQL", async (
   const env = environment();
   const successful = successfulFetch(env);
   const fetchImpl = async (input, options) => String(input).includes("controller.example.test")
-    ? jsonResponse({ checks: { postgresql: false, r2: true, "release-controller": true } })
+    ? jsonResponse({ ok: true, project: "devhud", version: env.DEVHUD_RELEASE_VERSION, revision: env.GITHUB_SHA, checks: { postgresql: false, r2: true, "release-controller": true } })
     : successful(input, options);
   await assert.rejects(runLivePreflight(env, fetchImpl), /postgresql/u);
+});
+
+test("live preflight rejects every mismatched controller identity field", async () => {
+  const env = environment();
+  const successful = successfulFetch(env);
+  const valid = { ok: true, project: "devhud", version: env.DEVHUD_RELEASE_VERSION, revision: env.GITHUB_SHA, checks: { postgresql: true, r2: true, "release-controller": true } };
+  for (const mismatch of [{ ok: false }, { project: "other" }, { version: "9.9.9" }, { revision: "b".repeat(40) }]) {
+    const fetchImpl = async (input, options) => String(input).includes("controller.example.test")
+      ? jsonResponse({ ...valid, ...mismatch })
+      : successful(input, options);
+    await assert.rejects(runLivePreflight(env, fetchImpl), /mismatched release state/u);
+  }
+});
+
+test("live preflight probes a generated asset route and accepts an empty origin", async () => {
+  const env = environment();
+  const successful = successfulFetch(env);
+  let assetRequest;
+  const fetchImpl = async (input, options) => {
+    const url = String(input);
+    if (url.startsWith(env.DEVHUD_PUBLIC_ASSET_BASE_URL)) {
+      assetRequest = { url, options };
+      return new Response(null, { status: 404 });
+    }
+    return successful(input, options);
+  };
+  await runLivePreflight(env, fetchImpl);
+  assert.match(assetRequest.url, /\/[A]{43}\.png$/u);
+  assert.equal(assetRequest.options.method, "HEAD");
+});
+
+test("live preflight rejects an unavailable asset boundary", async () => {
+  const env = environment();
+  const successful = successfulFetch(env);
+  const fetchImpl = async (input, options) => String(input).startsWith(env.DEVHUD_PUBLIC_ASSET_BASE_URL)
+    ? new Response(null, { status: 503 })
+    : successful(input, options);
+  await assert.rejects(runLivePreflight(env, fetchImpl), /asset-domain/u);
 });
 
 test("live preflight rejects a Chrome identity that breaks Native Messaging parity", async () => {

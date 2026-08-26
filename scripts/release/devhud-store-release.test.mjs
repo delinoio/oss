@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { StoreProvider, StoreStatus, classifyApple, classifyChrome, classifyGoogle, run } from "./devhud-store-release.mjs";
+import { StoreBuildStatus, StoreProvider, StoreStatus, classifyApple, classifyChrome, classifyGoogle, run } from "./devhud-store-release.mjs";
 
 const source = readFileSync(fileURLToPath(new URL("devhud-store-release.mjs", import.meta.url)), "utf8");
 const { privateKey: applePrivateKey } = generateKeyPairSync("ec", { namedCurve: "P-256" });
@@ -60,6 +60,55 @@ test("App Store review uses manual release and the dedicated build linkage endpo
   assert.match(source, /appStoreVersionPhasedRelease/u);
 });
 
+test("App Store build processing is polled without mutation", async () => {
+  const requests = [];
+  const fetchImpl = async (input, options = {}) => {
+    requests.push({ url: String(input), options });
+    return jsonResponse({ data: [{ id: "build-id", attributes: { processingState: "VALID" } }] });
+  };
+  const result = await run("build-status", StoreProvider.Apple, {}, environment(), fetchImpl);
+  assert.equal(result.status, StoreBuildStatus.Processed);
+  assert.equal(result.buildId, "build-id");
+  assert.ok(requests.every(({ options }) => options.method === undefined));
+});
+
+test("App Store submission reconciles an already-submitted exact version without mutation", async () => {
+  const requests = [];
+  const fetchImpl = async (input, options = {}) => {
+    const url = String(input);
+    requests.push({ url, options });
+    if (url.includes("appStoreVersions?")) return jsonResponse({ data: [{ id: "version-id", attributes: { appStoreState: "WAITING_FOR_REVIEW" } }] });
+    if (url.endsWith("appStoreVersionPhasedRelease")) return new Response(null, { status: 404 });
+    if (url.includes("/v1/builds?")) return jsonResponse({ data: [{ id: "build-id", attributes: { processingState: "VALID" } }] });
+    if (url.includes("/reviewSubmissions?")) return jsonResponse({ data: [{
+      id: "submission-id",
+      attributes: { state: "WAITING_FOR_REVIEW" },
+      relationships: { appStoreVersionForReview: { data: { type: "appStoreVersions", id: "version-id" } }, items: { data: [] } },
+    }] });
+    throw new Error(`unexpected request: ${url}`);
+  };
+  const result = await run("submit", StoreProvider.Apple, {}, environment(), fetchImpl);
+  assert.equal(result.submissionId, "submission-id");
+  assert.ok(requests.every(({ options }) => options.method === undefined));
+});
+
+test("App Store submission reuses one unbound draft and creates only its missing item", async () => {
+  const requests = [];
+  const fetchImpl = async (input, options = {}) => {
+    const url = String(input);
+    requests.push({ url, options });
+    if (url.includes("appStoreVersions?")) return jsonResponse({ data: [{ id: "version-id", attributes: { appStoreState: "PREPARE_FOR_SUBMISSION" } }] });
+    if (url.endsWith("appStoreVersionPhasedRelease")) return new Response(null, { status: 404 });
+    if (url.includes("/v1/builds?")) return jsonResponse({ data: [{ id: "build-id", attributes: { processingState: "VALID" } }] });
+    if (url.includes("/reviewSubmissions?")) return jsonResponse({ data: [{ id: "submission-id", attributes: { state: "READY_FOR_REVIEW" }, relationships: { items: { data: [] } } }] });
+    return jsonResponse({ data: { id: "mutation-result" } });
+  };
+  await run("submit", StoreProvider.Apple, {}, environment(), fetchImpl);
+  assert.equal(requests.filter(({ url, options }) => url.endsWith("/v1/reviewSubmissions") && options.method === "POST").length, 0);
+  assert.equal(requests.filter(({ url, options }) => url.endsWith("/v1/reviewSubmissionItems") && options.method === "POST").length, 1);
+  assert.equal(requests.filter(({ url, options }) => url.endsWith("/reviewSubmissions/submission-id") && options.method === "PATCH").length, 1);
+});
+
 test("Google status uses the direct release lifecycle endpoint and current response schema", async () => {
   const requests = [];
   const fetchImpl = async (input, options = {}) => {
@@ -78,9 +127,10 @@ test("withdrawal cancels the exact Apple submission and current Chrome submissio
   const appleFetch = async (input, options = {}) => {
     appleRequests.push({ url: String(input), options });
     if (String(input).includes("appStoreVersions?")) return jsonResponse({ data: [{ id: "version-id", attributes: { appStoreState: "PENDING_DEVELOPER_RELEASE" } }] });
+    if (String(input).includes("/reviewSubmissions?")) return jsonResponse({ data: [{ id: "submission-id", attributes: { state: "COMPLETE" }, relationships: { appStoreVersionForReview: { data: { type: "appStoreVersions", id: "version-id" } }, items: { data: [] } } }] });
     return jsonResponse({ data: { id: "submission-id" } });
   };
-  await run("withdraw", StoreProvider.Apple, { "submission-id": "submission-id" }, environment(), appleFetch);
+  await run("withdraw", StoreProvider.Apple, {}, environment(), appleFetch);
   const applePatch = appleRequests.at(-1);
   assert.equal(applePatch.url, "https://api.appstoreconnect.apple.com/v1/reviewSubmissions/submission-id");
   assert.equal(applePatch.options.method, "PATCH");
@@ -89,7 +139,9 @@ test("withdrawal cancels the exact Apple submission and current Chrome submissio
   const chromeRequests = [];
   const chromeFetch = async (input, options = {}) => {
     chromeRequests.push({ url: String(input), options });
-    return String(input) === "https://oauth2.googleapis.com/token" ? jsonResponse({ access_token: "chrome-token" }) : new Response(null, { status: 204 });
+    if (String(input) === "https://oauth2.googleapis.com/token") return jsonResponse({ access_token: "chrome-token" });
+    if (String(input).endsWith(":fetchStatus")) return jsonResponse({ submittedItemRevisionStatus: { state: "STAGED", distributionChannels: [{ crxVersion: "0.1.0", deployPercentage: 100 }] } });
+    return new Response(null, { status: 204 });
   };
   await run("withdraw", StoreProvider.ChromeWebStore, {}, environment(), chromeFetch);
   assert.match(chromeRequests.at(-1).url, /:cancelSubmission$/u);
