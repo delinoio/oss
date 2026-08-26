@@ -1,13 +1,20 @@
 import assert from "node:assert/strict";
 import { createHash, generateKeyPairSync } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import test from "node:test";
 
 import { artifactGroups, loadReleaseMetadata } from "./devhud-release.mjs";
 import { generateUpdater, rawPublicKey } from "./generate-devhud-updater.mjs";
 import { publicReleaseAssetNames, validatePublicReleaseAssets } from "./validate-devhud-public-assets.mjs";
+
+function files(root) {
+  return readdirSync(root, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(root, entry.name);
+    return entry.isDirectory() ? files(path) : [path];
+  });
+}
 
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), "devhud-public-assets-"));
@@ -22,8 +29,15 @@ function fixture() {
     storeBuildNumber: metadata.storeBuildNumber,
     channels: ["apple-app-store", "google-play", "chrome-web-store", "github-release", "desktop-updater", "api", "public-docs"],
   }, null, 2)}\n`);
-  const checksums = [...artifactGroups.desktop, "devhud-chrome-github-validation.zip"].map((artifact) => `${createHash("sha256").update(readFileSync(join(root, artifact))).digest("hex")}  ${artifact}`);
-  writeFileSync(join(root, "SHA256SUMS"), `${checksums.join("\n")}\n`);
+
+  for (const [path, contents] of [
+    ["sbom/devhud.spdx.json", "sbom"],
+    ["provenance/devhud.intoto.jsonl", "provenance"],
+    ["validation/evidence.json", "validation"],
+  ]) {
+    mkdirSync(dirname(join(root, path)), { recursive: true });
+    writeFileSync(join(root, path), contents);
+  }
 
   const { privateKey } = generateKeyPairSync("ed25519");
   const publicKey = rawPublicKey(privateKey);
@@ -43,6 +57,11 @@ function fixture() {
     trustRoot,
     timestamp: "2026-08-25T00:00:00Z",
   });
+  const evidence = ["sbom", "provenance", "updater/signatures", "validation"].flatMap((directory) => files(join(root, directory)))
+    .map((path) => relative(root, path).replaceAll("\\", "/"));
+  const checksums = [...artifactGroups.desktop, "devhud-chrome-github-validation.zip", ...evidence]
+    .map((artifact) => `${createHash("sha256").update(readFileSync(join(root, artifact))).digest("hex")}  ${artifact}`);
+  writeFileSync(join(root, "SHA256SUMS"), `${checksums.join("\n")}\n`);
   const release = {
     isDraft: false,
     isPrerelease: false,
@@ -89,4 +108,18 @@ test("remote public validation rejects a release index or updater manifest misma
   writeFileSync(join(updater.root, "SHA256SUMS"), `${lines.join("\n")}\n`);
   updater.release.assets.find(({ name }) => name === artifact).size = statSync(join(updater.root, artifact)).size;
   assert.throws(() => validatePublicReleaseAssets(updater.root, updater.release, { metadata: updater.metadata, trustRoot: updater.trustRoot, verifySigstore: false }), /updater artifact digest mismatch/u);
+});
+
+test("remote public validation authenticates the exact extracted evidence payloads", () => {
+  const replaced = fixture();
+  writeFileSync(join(replaced.root, "sbom/devhud.spdx.json"), "replaced");
+  assert.throws(() => validatePublicReleaseAssets(replaced.root, replaced.release, { metadata: replaced.metadata, trustRoot: replaced.trustRoot, verifySigstore: false }), /checksum mismatch/u);
+
+  const extra = fixture();
+  writeFileSync(join(extra.root, "validation/unexpected.json"), "unexpected");
+  assert.throws(() => validatePublicReleaseAssets(extra.root, extra.release, { metadata: extra.metadata, trustRoot: extra.trustRoot, verifySigstore: false }), /evidence payload inventory/u);
+
+  const missing = fixture();
+  unlinkSync(join(missing.root, "provenance/devhud.intoto.jsonl"));
+  assert.throws(() => validatePublicReleaseAssets(missing.root, missing.release, { metadata: missing.metadata, trustRoot: missing.trustRoot, verifySigstore: false }), /evidence payload inventory/u);
 });

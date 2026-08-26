@@ -53,6 +53,20 @@ test("recovery reuses the oldest retained exact-revision candidate", async () =>
   assert.deepEqual(await resolveCandidateArtifact(options, fetchImpl), { artifactId: "501", artifactName: firstName, runId: "100", runAttempt: "2", reused: true });
 });
 
+test("a rerun reuses the candidate from an earlier attempt of the current run", async () => {
+  const rerun = { ...options, currentRunAttempt: "3" };
+  const firstName = candidateArtifactName({ version: "0.1.0", revision, runId: "200", runAttempt: "1" });
+  const secondName = candidateArtifactName({ version: "0.1.0", revision, runId: "200", runAttempt: "2" });
+  const artifacts = new Map([["200", [
+    { id: 601, name: firstName, expired: false, size_in_bytes: 1024, workflow_run: { head_sha: revision } },
+    { id: 602, name: secondName, expired: false, size_in_bytes: 1024, workflow_run: { head_sha: revision } },
+  ]]]);
+  const { requests, fetchImpl } = requestFixture({ artifacts });
+  assert.deepEqual(await resolveCandidateArtifact(rerun, fetchImpl), { artifactId: "601", artifactName: firstName, runId: "200", runAttempt: "1", reused: true });
+  assert.ok(requests.some((url) => url.includes(encodeURIComponent(firstName))));
+  assert.ok(!requests.some((url) => url.includes("-200-3")), "the active attempt must not be considered reusable");
+});
+
 test("candidate lookup fails closed for expired, duplicate, or failed GitHub results", async () => {
   const name = candidateArtifactName({ version: "0.1.0", revision, runId: "100", runAttempt: "1" });
   const runs = [{ id: 100, run_attempt: 1, event: "workflow_dispatch", head_branch: "main", head_sha: revision }];

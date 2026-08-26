@@ -173,6 +173,7 @@ test("dry-run cannot enter publication and rollback stops at store publication",
   for (const failed of ["submit_stores", "review_gate", "docs_candidate", "registry", "prepare_infrastructure"]) {
     assert.match(job("rollback_pre_store"), new RegExp(`needs\\.${failed}\\.result == 'failure'`, "u"));
   }
+  assert.match(job("rollback_pre_store"), /needs\.publish_stores\.result == 'failure'/u);
   assert.match(job("rollback_pre_store"), /needs\.publish_stores\.result == 'skipped'/u);
   assert.match(job("rollback_pre_store"), /needs\.identity\.outputs\.retry != 'true'/u);
   assert.match(job("prepare_infrastructure"), /promotion_attempted: \$\{\{ steps\.promote\.outputs\.attempted \}\}/u);
@@ -183,15 +184,19 @@ test("dry-run cannot enter publication and rollback stops at store publication",
   assert.match(job("rollback_pre_store"), /rollback-policy --state infrastructure-ready/u);
   assert.doesNotMatch(job("rollback_pre_store"), /node -e.*rollbackPolicy/u);
   const rollback = job("rollback_pre_store");
+  const storeStatus = rollback.indexOf("status \"$provider\"");
   const googleWithdrawal = rollback.indexOf("withdraw google-play");
   const appleWithdrawal = rollback.indexOf("withdraw apple");
   const chromeWithdrawal = rollback.indexOf("withdraw chrome-web-store");
   const controllerStatus = rollback.indexOf("devhud-release-controller.mjs status");
   const controllerRollback = rollback.indexOf("devhud-release-controller.mjs rollback");
-  assert.ok(googleWithdrawal > 0 && appleWithdrawal > googleWithdrawal && chromeWithdrawal > appleWithdrawal);
+  assert.ok(storeStatus > 0 && googleWithdrawal > storeStatus, "every exact store state must be checked before cleanup mutation");
+  assert.ok(appleWithdrawal > googleWithdrawal && chromeWithdrawal > appleWithdrawal);
   assert.ok(controllerStatus > chromeWithdrawal, "controller status must follow every store withdrawal");
   assert.ok(controllerRollback > controllerStatus, "controller rollback must follow live reconciliation");
   assert.ok(controllerRollback > chromeWithdrawal, "controller rollback must follow every store withdrawal");
   assert.match(rollback, /api_status[\s\S]*sweeper_status/u);
+  assert.match(rollback, /for provider in apple google-play chrome-web-store/u);
+  assert.match(rollback, /status == "public"/u);
   assert.match(rollback, /\.status == "withdrawn"/u);
 });

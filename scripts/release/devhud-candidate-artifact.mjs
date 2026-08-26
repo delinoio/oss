@@ -57,7 +57,11 @@ export async function resolveCandidateArtifact({ repository, workflow, version, 
   const runPages = await pages(`${root}/actions/workflows/${encodeURIComponent(workflow)}/runs?branch=main&event=workflow_dispatch&per_page=100`, token, fetchImpl);
   const runs = runPages.flatMap((page) => page.workflow_runs ?? [])
     .filter((run) => String(run.id) !== String(currentRunId) && run.event === "workflow_dispatch" && run.head_branch === "main" && run.head_sha === revision)
-    .sort((left, right) => Number(left.id) - Number(right.id));
+    .map((run) => ({ id: run.id, run_attempt: run.run_attempt }));
+  const currentAttempt = Number(currentRunAttempt);
+  if (!Number.isSafeInteger(currentAttempt) || currentAttempt <= 0) throw new Error("candidate run attempt must be a positive safe integer");
+  for (let attempt = 1; attempt < currentAttempt; attempt += 1) runs.push({ id: currentRunId, run_attempt: attempt });
+  runs.sort((left, right) => Number(left.id) - Number(right.id) || Number(left.run_attempt) - Number(right.run_attempt));
 
   const retained = [];
   for (const run of runs) {

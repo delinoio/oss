@@ -782,10 +782,12 @@ jobs:
       ${{
         always() && inputs.mode == 'release' &&
         needs.identity.result == 'success' && needs.identity.outputs.retry != 'true' &&
-        needs.submit_stores.result != 'skipped' && needs.publish_stores.result == 'skipped' &&
-        (needs.submit_stores.result == 'failure' || needs.review_gate.result == 'failure' ||
-         needs.docs_candidate.result == 'failure' || needs.registry.result == 'failure' ||
-         needs.prepare_infrastructure.result == 'failure')
+        needs.submit_stores.result != 'skipped' &&
+        (needs.publish_stores.result == 'failure' ||
+         (needs.publish_stores.result == 'skipped' &&
+          (needs.submit_stores.result == 'failure' || needs.review_gate.result == 'failure' ||
+           needs.docs_candidate.result == 'failure' || needs.registry.result == 'failure' ||
+           needs.prepare_infrastructure.result == 'failure')))
       }}
     needs: [identity, submit_stores, review_gate, docs_candidate, registry, prepare_infrastructure, publish_stores]
     runs-on: ubuntu-22.04
@@ -810,6 +812,16 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with: { persist-credentials: false }
+      - name: Confirm no exact store version became public
+        run: |
+          set -euo pipefail
+          for provider in apple google-play chrome-web-store; do
+            node scripts/release/devhud-store-release.mjs status "$provider" --output "$provider-before-cleanup.json"
+            if jq -e '.status == "public"' "$provider-before-cleanup.json" >/dev/null; then
+              echo "$provider is already public; automatic cleanup and rollback are forbidden" >&2
+              exit 1
+            fi
+          done
       - name: Confirm the state is still before store publication
         run: |
           set -euo pipefail
@@ -822,9 +834,11 @@ jobs:
           node scripts/release/devhud-store-release.mjs withdraw chrome-web-store --output chrome-withdrawal.json
           for attempt in $(seq 1 30); do
             withdrawn=true
-            for provider in apple chrome-web-store; do
+            for provider in apple google-play chrome-web-store; do
               node scripts/release/devhud-store-release.mjs status "$provider" --output "$provider.json"
-              if ! jq -e '.status == "withdrawn"' "$provider.json" >/dev/null; then withdrawn=false; fi
+              if [ "$provider" = google-play ]; then
+                if ! jq -e '.status == "withdrawn" or .status == "rejected"' "$provider.json" >/dev/null; then withdrawn=false; fi
+              elif ! jq -e '.status == "withdrawn"' "$provider.json" >/dev/null; then withdrawn=false; fi
             done
             if "$withdrawn"; then break; fi
             if [ "$attempt" = 30 ]; then exit 1; fi
