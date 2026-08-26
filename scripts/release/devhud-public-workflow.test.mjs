@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { releaseVariables } from "./devhud-public-release.mjs";
+import { releaseFingerprintVariables } from "./devhud-public-release.mjs";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
 const release = readFileSync(`${root}/.github/workflows/release-devhud.yml`, "utf8");
@@ -112,6 +112,13 @@ test("same-commit retries publish recovered GitHub drafts after replacing assets
 
 test("store publication waits boundedly for every exact public version", () => {
   const publication = job("stores_public");
+  assert.match(publication, /needs: \[identity, preflight, publish_stores\]/u);
+  for (const name of releaseFingerprintVariables) assert.match(publication, new RegExp(`${name}: \\$\\{\\{ vars\\.${name} \\}\\}`, "u"));
+  const configuration = publication.indexOf("Bind store-publication configuration to the validated preflight environment");
+  const firstQuery = publication.indexOf("Re-query exact public versions after operator publishes Play changes");
+  assert.ok(configuration > 0 && firstQuery > configuration, "store-publication configuration must match preflight before querying public versions");
+  assert.match(publication, /EXPECTED_CONFIGURATION_FINGERPRINT: \$\{\{ needs\.preflight\.outputs\.release_configuration_fingerprint \}\}/u);
+  assert.match(publication, /configuration-fingerprint[\s\S]*test "\$actual" = "\$EXPECTED_CONFIGURATION_FINGERPRINT"/u);
   assert.match(publication, /timeout-minutes: 35/u);
   assert.match(publication, /for attempt in \$\(seq 1 30\)/u);
   assert.match(publication, /for provider in apple google-play chrome-web-store/u);
@@ -222,7 +229,7 @@ test("GA repeats every public-channel verification after approval and before mut
   const ga = job("ga");
   assert.match(ga, /needs: \[identity, preflight, registry, verify_all\]/u);
   assert.match(job("preflight"), /release_configuration_fingerprint:[\s\S]*configuration-fingerprint/u);
-  for (const name of releaseVariables) assert.match(ga, new RegExp(`${name}: \\$\\{\\{ vars\\.${name} \\}\\}`, "u"));
+  for (const name of releaseFingerprintVariables) assert.match(ga, new RegExp(`${name}: \\$\\{\\{ vars\\.${name} \\}\\}`, "u"));
   const configuration = ga.indexOf("Bind GA configuration to the validated preflight environment");
   const firstVerification = ga.indexOf("Reverify every exact store version after GA approval");
   assert.ok(configuration > 0 && firstVerification > configuration, "GA configuration must match preflight before public-channel verification");

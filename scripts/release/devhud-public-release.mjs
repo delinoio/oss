@@ -75,6 +75,11 @@ export const releaseVariables = Object.freeze([
   "DEVHUD_PUBLIC_DOCS_PROJECT_NAME",
 ]);
 
+export const releaseFingerprintVariables = Object.freeze([
+  ...releaseVariables,
+  "DEVHUD_CHROME_EXTENSION_ID",
+]);
+
 export const releaseSecrets = Object.freeze([
   "DEVHUD_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON",
   "DEVHUD_CHROME_WEB_STORE_CLIENT_ID",
@@ -167,7 +172,7 @@ function validateReleaseVariableValues(environment) {
 }
 
 export function validateReleaseVariables(environment = process.env) {
-  const missing = releaseVariables.filter((name) => !present(environment, name));
+  const missing = releaseFingerprintVariables.filter((name) => !present(environment, name));
   if (missing.length > 0) throw new Error(`DevHud release variables are missing: ${missing.join(", ")}`);
   validateReleaseVariableValues(environment);
 }
@@ -180,7 +185,7 @@ export function validateReleaseConfiguration(environment = process.env) {
 
 export function releaseConfigurationFingerprint(environment = process.env) {
   validateReleaseVariables(environment);
-  const values = releaseVariables.map((name) => [name, environment[name]]);
+  const values = releaseFingerprintVariables.map((name) => [name, environment[name]]);
   return createHash("sha256").update(JSON.stringify(values), "utf8").digest("hex");
 }
 

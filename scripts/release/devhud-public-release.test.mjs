@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import {
   ReleaseEvent, ReleaseMode, ReleaseState, advanceRelease, configurationStatus,
   controllerRuntimeInputs, livePreflightChecks, publicReleasePlan, redact,
-  releaseConfigurationFingerprint, releaseSecrets, releaseVariables, reviewEvent,
+  releaseConfigurationFingerprint, releaseFingerprintVariables, releaseSecrets, releaseVariables, reviewEvent,
   rollbackPolicy, validateLivePreflight, validateReleaseConfiguration,
   validateReleaseIdentity, validateReleaseVariables,
 } from "./devhud-public-release.mjs";
@@ -74,7 +74,8 @@ test("release variable fingerprints bind protected environments without exposing
   const fingerprint = releaseConfigurationFingerprint(environment);
   assert.match(fingerprint, /^[a-f0-9]{64}$/u);
   assert.doesNotThrow(() => validateReleaseVariables(environment));
-  for (const name of releaseVariables) {
+  assert.ok(releaseFingerprintVariables.includes("DEVHUD_CHROME_EXTENSION_ID"));
+  for (const name of releaseFingerprintVariables) {
     assert.throws(() => assert.equal(releaseConfigurationFingerprint({ ...environment, [name]: `${environment[name]}-changed` }), fingerprint), undefined, name);
   }
 
