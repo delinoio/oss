@@ -583,6 +583,7 @@ jobs:
             target=$(git rev-parse --verify "refs/tags/$RELEASE_TAG^{commit}")
             test "$target" = "$GITHUB_SHA"
             gh release upload "$RELEASE_TAG" github-assets/* --clobber --repo "$GITHUB_REPOSITORY"
+            gh release edit "$RELEASE_TAG" --draft=false --latest=false --repo "$GITHUB_REPOSITORY"
           else
             gh release create "$RELEASE_TAG" github-assets/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "DevHUD v$RELEASE_VERSION" --notes "Coordinated publication verification is in progress." --latest=false
           fi

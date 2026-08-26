@@ -94,6 +94,18 @@ test("same-commit retries reconcile public stores without repeating store mutati
   assert.match(job("stores_public"), /needs\.identity\.outputs\.retry == 'true'.*devhud-publication.*devhud-store-publication/u);
 });
 
+test("same-commit retries publish recovered GitHub drafts after replacing assets", () => {
+  const publication = job("github_release");
+  const existingRelease = publication.indexOf('if gh release view "$RELEASE_TAG"');
+  const upload = publication.indexOf('gh release upload "$RELEASE_TAG"');
+  const publish = publication.indexOf('gh release edit "$RELEASE_TAG" --draft=false --latest=false');
+  const freshRelease = publication.indexOf("\n          else", existingRelease);
+  const visibility = publication.indexOf("--json isDraft,isPrerelease");
+  assert.ok(existingRelease > 0 && upload > existingRelease, "the retry path must replace assets on the exact existing release");
+  assert.ok(publish > upload && publish < freshRelease, "the retry path must publish only after asset replacement succeeds");
+  assert.ok(visibility > freshRelease && visibility > publish, "visibility must be asserted after either release path publishes");
+});
+
 test("store publication waits boundedly for every exact public version", () => {
   const publication = job("stores_public");
   assert.match(publication, /timeout-minutes: 35/u);

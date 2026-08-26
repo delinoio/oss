@@ -16,7 +16,7 @@ function environment() {
     APPLE_API_PRIVATE_KEY_B64: Buffer.from(applePrivateKey.export({ type: "pkcs8", format: "pem" })).toString("base64"),
     DEVHUD_APP_STORE_APP_ID: "123", DEVHUD_GOOGLE_PLAY_PACKAGE_NAME: "io.delino.devhud", DEVHUD_GOOGLE_PLAY_MANAGED_PUBLISHING: "enabled",
     DEVHUD_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: JSON.stringify({ client_email: "release@example.test", token_uri: "https://oauth2.example.test/token", private_key: googlePrivateKey.export({ type: "pkcs8", format: "pem" }) }),
-    DEVHUD_RELEASE_CONTROLLER_URL: "https://controller.example.test/", DEVHUD_RELEASE_CONTROLLER_TOKEN: "controller-token", DEVHUD_PUBLIC_API_URL: "https://api.example.test",
+    DEVHUD_RELEASE_CONTROLLER_URL: "https://controller.example.test/", DEVHUD_RELEASE_CONTROLLER_TOKEN: "controller-token", DEVHUD_PUBLIC_API_URL: "https://devhud.api.delino.io",
     DEVHUD_PUBLIC_DOCS_URL: "https://docs.example.test/devhud", DEVHUD_PUBLIC_ASSET_BASE_URL: "https://assets.example.test",
     DEVHUD_OCI_REGISTRY: "registry.example.test", DEVHUD_OCI_API_REPOSITORY: "devhud/api", DEVHUD_OCI_SWEEPER_REPOSITORY: "devhud/sweeper",
     DEVHUD_LOGTO_ISSUER: "https://auth.example.test/oidc", DEVHUD_CHROME_EXTENSION_ID: "a".repeat(32),

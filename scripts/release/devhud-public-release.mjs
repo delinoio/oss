@@ -130,6 +130,7 @@ export const livePreflightChecks = Object.freeze([
 ]);
 
 const sensitiveNames = new Set([...signingInputs, ...releaseSecrets, ...controllerRuntimeInputs.filter((name) => /(?:KEY|TOKEN|SECRET|PASSWORD|DATABASE_URL)/u.test(name))]);
+const productionApiOrigin = "https://devhud.api.delino.io";
 
 function present(environment, name) {
   return typeof environment[name] === "string" && environment[name].trim() !== "";
@@ -152,6 +153,9 @@ export function validateReleaseConfiguration(environment = process.env) {
     let parsed;
     try { parsed = new URL(environment[name]); } catch { throw new Error(`${name} must be an absolute HTTPS URL`); }
     if (parsed.protocol !== "https:" || parsed.username || parsed.password || parsed.search || parsed.hash) throw new Error(`${name} must be a credential-free HTTPS URL`);
+  }
+  if (environment.DEVHUD_PUBLIC_API_URL !== productionApiOrigin) {
+    throw new Error(`DEVHUD_PUBLIC_API_URL must exactly match the compiled production origin ${productionApiOrigin}`);
   }
   if (!/^[a-z0-9._/-]+$/u.test(environment.DEVHUD_OCI_API_REPOSITORY) || !/^[a-z0-9._/-]+$/u.test(environment.DEVHUD_OCI_SWEEPER_REPOSITORY)) {
     throw new Error("OCI repository names must use lowercase registry-safe characters");
