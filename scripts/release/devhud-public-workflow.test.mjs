@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 const root = fileURLToPath(new URL("../..", import.meta.url));
 const release = readFileSync(`${root}/.github/workflows/release-devhud.yml`, "utf8");
 const privateCandidate = readFileSync(`${root}/.github/workflows/package-devhud-private.yml`, "utf8");
+const releaseMetadata = JSON.parse(readFileSync(`${root}/packaging/devhud/release-metadata.json`, "utf8"));
 
 function job(name) {
   const start = release.indexOf(`\n  ${name}:`);
@@ -30,18 +31,20 @@ test("the complete reusable private candidate is the sole publication prerequisi
   assert.match(privateCandidate, /workflow_call:/u);
   assert.match(privateCandidate, /plan-only\|signed-private/u);
   assert.match(job("private_candidate"), /package-devhud-private\.yml/u);
+  assert.match(job("private_candidate"), /contents: read[\s\S]*id-token: write/u);
   assert.match(job("preflight"), /needs: \[identity, private_candidate\]/u);
   assert.match(job("preflight"), /validate-devhud-private-build\.mjs/u);
   assert.match(job("preflight"), /devhud-live-preflight\.mjs/u);
+  assert.match(job("preflight"), /DEVHUD_PUBLIC_API_URL: \$\{\{ vars\.DEVHUD_PUBLIC_API_URL \}\}/u);
 });
 
 test("jobs request only their channel-specific GitHub permissions", () => {
-  for (const name of ["identity", "preflight", "submit_stores", "review_gate", "docs_candidate", "registry", "prepare_infrastructure", "publish_stores", "stores_public", "updater_public", "public_docs", "verify_all", "rollback_pre_store"]) {
+  for (const name of ["identity", "private_candidate", "preflight", "submit_stores", "review_gate", "docs_candidate", "registry", "prepare_infrastructure", "publish_stores", "stores_public", "updater_public", "public_docs", "verify_all", "rollback_pre_store"]) {
     assert.doesNotMatch(job(name), /contents: write/u, `${name} must not write repository contents`);
   }
   assert.match(job("github_release"), /contents: write/u);
   assert.match(job("ga"), /contents: write/u);
-  for (const name of ["preflight", "registry", "prepare_infrastructure", "updater_public", "verify_all", "rollback_pre_store"]) {
+  for (const name of ["private_candidate", "preflight", "registry", "prepare_infrastructure", "updater_public", "verify_all", "rollback_pre_store"]) {
     assert.match(job(name), /id-token: write/u, `${name} needs provider-neutral OIDC`);
   }
 });
@@ -69,7 +72,35 @@ test("channel dependencies place GA after every independently verified public su
   for (const [name, predecessor] of Object.entries(dependencies)) {
     assert.match(job(name), new RegExp(`needs: [^\\n]*${predecessor}`, "u"), `${name} must wait for ${predecessor}`);
   }
+  assert.match(job("registry"), /needs: \[[^\n]*docs_candidate/u);
   assert.match(job("ga"), /transition --state independently-verified --event mark-ga/u);
+});
+
+test("documentation deployment is bound to the exact candidate before publication", () => {
+  assert.match(job("docs_candidate"), /needs: \[identity, preflight\]/u);
+  assert.match(job("docs_candidate"), /doc_build\/devhud\.html/u);
+  assert.match(job("docs_candidate"), /devhud-release-identity/u);
+  assert.match(job("docs_candidate"), /needs\.identity\.outputs\.version/u);
+  for (const name of ["public_docs", "verify_all"]) {
+    assert.match(job(name), /new URL\("\/devhud", process\.env\.DEVHUD_PUBLIC_DOCS_URL\)/u);
+    assert.match(job(name), /devhud-release-identity/u);
+  }
+});
+
+test("independent verification fetches and verifies both remote OCI digests", () => {
+  const verification = job("verify_all");
+  assert.match(verification, /sigstore\/cosign-installer/u);
+  assert.match(verification, /skopeo inspect/u);
+  assert.match(verification, /cosign login/u);
+  assert.match(verification, /actual_digest[\s\S]*expected_digest/u);
+  assert.match(verification, /cosign verify --certificate-identity/u);
+  assert.match(verification, /release-devhud\.yml@\$GITHUB_REF/u);
+});
+
+test("GA notes are public and existing tags are dereferenced to commits", () => {
+  assert.doesNotMatch(releaseMetadata.releaseNotes.en, /private|candidate/ui);
+  assert.doesNotMatch(releaseMetadata.releaseNotes.ko, /비공개|후보/u);
+  assert.match(job("github_release"), /git rev-parse --verify "refs\/tags\/\$RELEASE_TAG\^\{commit\}"/u);
 });
 
 test("dry-run cannot enter publication and rollback stops at store publication", () => {
@@ -81,4 +112,12 @@ test("dry-run cannot enter publication and rollback stops at store publication",
   assert.match(job("rollback_pre_store"), /needs\.publish_stores\.result == 'skipped'/u);
   assert.doesNotMatch(job("rollback_pre_store"), /needs\.publish_stores\.result != 'success'/u);
   assert.match(job("rollback_pre_store"), /rollbackPolicy\("infrastructure-ready"\)/u);
+  const rollback = job("rollback_pre_store");
+  const googleWithdrawal = rollback.indexOf("withdraw google-play");
+  const appleWithdrawal = rollback.indexOf("withdraw apple");
+  const chromeWithdrawal = rollback.indexOf("withdraw chrome-web-store");
+  const controllerRollback = rollback.indexOf("devhud-release-controller.mjs rollback");
+  assert.ok(googleWithdrawal > 0 && appleWithdrawal > googleWithdrawal && chromeWithdrawal > appleWithdrawal);
+  assert.ok(controllerRollback > chromeWithdrawal, "controller rollback must follow every store withdrawal");
+  assert.match(rollback, /\.status == "withdrawn"/u);
 });

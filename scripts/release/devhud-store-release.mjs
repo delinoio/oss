@@ -9,7 +9,7 @@ import { loadReleaseMetadata } from "./devhud-release.mjs";
 import { redact } from "./devhud-public-release.mjs";
 
 export const StoreProvider = Object.freeze({ Apple: "apple", GooglePlay: "google-play", ChromeWebStore: "chrome-web-store" });
-export const StoreStatus = Object.freeze({ Pending: "pending-review", ApprovedHeld: "approved-held", Public: "public", Rejected: "rejected" });
+export const StoreStatus = Object.freeze({ Pending: "pending-review", ApprovedHeld: "approved-held", Public: "public", Rejected: "rejected", Withdrawn: "withdrawn" });
 
 async function checked(fetchImpl, url, options, label) {
   const response = await fetchImpl(url, { redirect: "error", ...options });
@@ -46,6 +46,7 @@ function chromeName(environment) {
 }
 
 export function classifyApple(state) {
+  if (state === "DEVELOPER_REJECTED") return StoreStatus.Withdrawn;
   if (["PENDING_DEVELOPER_RELEASE", "PENDING_DEVELOPER_RELEASE_FOR_APP_STORE"].includes(state)) return StoreStatus.ApprovedHeld;
   if (["READY_FOR_SALE", "READY_FOR_DISTRIBUTION"].includes(state)) return StoreStatus.Public;
   if (typeof state === "string" && state.includes("REJECT")) return StoreStatus.Rejected;
@@ -53,9 +54,10 @@ export function classifyApple(state) {
 }
 
 export function classifyGoogle(state) {
-  if (state === "APPROVED") return StoreStatus.ApprovedHeld;
-  if (state === "AVAILABLE") return StoreStatus.Public;
-  if (state === "NOT_APPROVED") return StoreStatus.Rejected;
+  if (state === "RELEASE_LIFECYCLE_STATE_APPROVED_NOT_PUBLISHED") return StoreStatus.ApprovedHeld;
+  if (state === "RELEASE_LIFECYCLE_STATE_PUBLISHED") return StoreStatus.Public;
+  if (state === "RELEASE_LIFECYCLE_STATE_NOT_APPROVED") return StoreStatus.Rejected;
+  if (["RELEASE_LIFECYCLE_STATE_DRAFT", "RELEASE_LIFECYCLE_STATE_NOT_SENT_FOR_REVIEW"].includes(state)) return StoreStatus.Withdrawn;
   return StoreStatus.Pending;
 }
 
@@ -64,8 +66,20 @@ export function classifyChrome({ submitted, published, version }) {
   if (publicChannel) return StoreStatus.Public;
   const submittedChannel = submitted?.distributionChannels?.find(({ crxVersion, deployPercentage }) => crxVersion === version && deployPercentage === 100);
   if (submittedChannel && ["STAGED", "APPROVED"].includes(submitted?.state)) return StoreStatus.ApprovedHeld;
-  if (["REJECTED", "CANCELLED"].includes(submitted?.state)) return StoreStatus.Rejected;
+  if (submitted?.state === "CANCELLED") return StoreStatus.Withdrawn;
+  if (submitted?.state === "REJECTED") return StoreStatus.Rejected;
   return StoreStatus.Pending;
+}
+
+function googleRelease(releases, metadata) {
+  return releases.releases?.find(({ activeArtifacts }) => activeArtifacts?.some(({ versionCode }) => String(versionCode) === String(metadata.storeBuildNumber)));
+}
+
+async function googleProductionReleases(environment, metadata, fetchImpl) {
+  const token = await googleToken(environment, fetchImpl);
+  const packageName = encodeURIComponent(environment.DEVHUD_GOOGLE_PLAY_PACKAGE_NAME);
+  const releases = await checked(fetchImpl, `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${packageName}/tracks/production/releases`, { headers: bearer(token) }, "Google Play release status");
+  return googleRelease(releases, metadata);
 }
 
 async function appleVersion(environment, metadata, fetchImpl, token) {
@@ -123,11 +137,8 @@ async function status(provider, environment, metadata, fetchImpl) {
     return { provider, status: classifyApple(version.attributes?.appStoreState), version: metadata.version };
   }
   if (provider === StoreProvider.GooglePlay) {
-    const token = await googleToken(environment, fetchImpl);
-    const url = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${encodeURIComponent(environment.DEVHUD_GOOGLE_PLAY_PACKAGE_NAME)}/tracks/production/releases`;
-    const releases = await checked(fetchImpl, url, { headers: bearer(token) }, "Google Play release status");
-    const release = releases.releases?.find(({ versionCodes }) => versionCodes?.includes(String(metadata.storeBuildNumber)));
-    return { provider, status: classifyGoogle(release?.status), versionCode: String(metadata.storeBuildNumber) };
+    const release = await googleProductionReleases(environment, metadata, fetchImpl);
+    return { provider, status: release ? classifyGoogle(release.releaseLifecycleState) : StoreStatus.Withdrawn, versionCode: String(metadata.storeBuildNumber) };
   }
   const token = await chromeToken(environment, fetchImpl);
   const value = await checked(fetchImpl, `https://chromewebstore.googleapis.com/v2/${chromeName(environment)}:fetchStatus`, { headers: bearer(token) }, "Chrome Web Store release status");
@@ -149,12 +160,36 @@ async function publish(provider, environment, metadata, fetchImpl) {
   return { provider, status: StoreStatus.Pending };
 }
 
+async function withdraw(provider, environment, metadata, options, fetchImpl) {
+  if (provider === StoreProvider.Apple) {
+    if (!options["submission-id"]) throw new Error("--submission-id is required for App Store withdrawal");
+    const token = appleToken(environment);
+    const version = await appleVersion(environment, metadata, fetchImpl, token);
+    const current = classifyApple(version.attributes?.appStoreState);
+    if (current === StoreStatus.Withdrawn) return { provider, status: StoreStatus.Withdrawn, submissionId: options["submission-id"] };
+    if (current === StoreStatus.Public) throw new Error("App Store version is already public and cannot be withdrawn automatically");
+    const submissionId = encodeURIComponent(options["submission-id"]);
+    await checked(fetchImpl, `https://api.appstoreconnect.apple.com/v1/reviewSubmissions/${submissionId}`, { method: "PATCH", headers: jsonHeaders(token), body: JSON.stringify({ data: { type: "reviewSubmissions", id: options["submission-id"], attributes: { canceled: true } } }) }, "App Store review withdrawal");
+    return { provider, withdrawalRequested: true, submissionId: options["submission-id"] };
+  }
+  if (provider === StoreProvider.GooglePlay) {
+    const release = await googleProductionReleases(environment, metadata, fetchImpl);
+    const releaseStatus = release ? classifyGoogle(release.releaseLifecycleState) : StoreStatus.Withdrawn;
+    if (releaseStatus === StoreStatus.Public) throw new Error("Google Play release is already public and cannot be withdrawn automatically");
+    if (![StoreStatus.Withdrawn, StoreStatus.Rejected].includes(releaseStatus)) throw new Error("remove the DevHud release from Google Play managed publishing in the protected operator gate, then retry rollback");
+    return { provider, status: StoreStatus.Withdrawn, versionCode: String(metadata.storeBuildNumber) };
+  }
+  const token = await chromeToken(environment, fetchImpl);
+  await checked(fetchImpl, `https://chromewebstore.googleapis.com/v2/${chromeName(environment)}:cancelSubmission`, { method: "POST", headers: bearer(token) }, "Chrome Web Store review withdrawal");
+  return { provider, withdrawalRequested: true };
+}
+
 function parse(arguments_) {
   const command = arguments_.shift();
   const provider = arguments_.shift();
   const options = {};
   for (let index = 0; index < arguments_.length; index += 2) options[arguments_[index].replace(/^--/u, "")] = arguments_[index + 1];
-  if (!Object.values(StoreProvider).includes(provider) || !["submit", "status", "publish"].includes(command)) throw new Error("usage: devhud-store-release.mjs <submit|status|publish> <apple|google-play|chrome-web-store> [--artifact path] [--output path]");
+  if (!Object.values(StoreProvider).includes(provider) || !["submit", "status", "publish", "withdraw"].includes(command)) throw new Error("usage: devhud-store-release.mjs <submit|status|publish|withdraw> <apple|google-play|chrome-web-store> [--artifact path] [--submission-id id] [--output path]");
   return { command, provider, options };
 }
 
@@ -162,6 +197,7 @@ export async function run(command, provider, options, environment = process.env,
   const metadata = loadReleaseMetadata();
   if (command === "status") return status(provider, environment, metadata, fetchImpl);
   if (command === "publish") return publish(provider, environment, metadata, fetchImpl);
+  if (command === "withdraw") return withdraw(provider, environment, metadata, options, fetchImpl);
   if (provider === StoreProvider.Apple) return submitApple(environment, metadata, fetchImpl);
   if (!options.artifact) throw new Error("--artifact is required for Google Play and Chrome submissions");
   return provider === StoreProvider.GooglePlay ? submitGoogle(environment, metadata, options.artifact, fetchImpl) : submitChrome(environment, options.artifact, fetchImpl);

@@ -63,6 +63,9 @@ jobs:
   private_candidate:
     name: Build and validate complete private candidate
     needs: identity
+    permissions:
+      contents: read
+      id-token: write
     uses: ./.github/workflows/package-devhud-private.yml
     with:
       mode: ${{ inputs.mode == 'release' && 'signed-private' || 'plan-only' }}
@@ -120,6 +123,7 @@ jobs:
       DEVHUD_OCI_REGISTRY_TOKEN: ${{ secrets.DEVHUD_OCI_REGISTRY_TOKEN }}
       DEVHUD_RELEASE_CONTROLLER_URL: ${{ vars.DEVHUD_RELEASE_CONTROLLER_URL }}
       DEVHUD_RELEASE_CONTROLLER_AUDIENCE: ${{ vars.DEVHUD_RELEASE_CONTROLLER_AUDIENCE }}
+      DEVHUD_PUBLIC_API_URL: ${{ vars.DEVHUD_PUBLIC_API_URL }}
       DEVHUD_PUBLIC_DOCS_URL: ${{ vars.DEVHUD_PUBLIC_DOCS_URL }}
       DEVHUD_PUBLIC_DOCS_ACCOUNT_ID: ${{ vars.DEVHUD_PUBLIC_DOCS_ACCOUNT_ID }}
       DEVHUD_PUBLIC_DOCS_PROJECT_NAME: ${{ vars.DEVHUD_PUBLIC_DOCS_PROJECT_NAME }}
@@ -244,7 +248,7 @@ jobs:
   docs_candidate:
     name: Build private public-doc candidate
     if: ${{ inputs.mode == 'release' }}
-    needs: preflight
+    needs: [identity, preflight]
     runs-on: ubuntu-22.04
     permissions:
       contents: read
@@ -256,13 +260,17 @@ jobs:
         with: { node-version-file: .nvmrc, cache: pnpm }
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm --filter public-docs test
+      - name: Bind the DevHud page to the exact release candidate
+        env:
+          DEVHUD_DOCS_RELEASE_IDENTITY: devhud@v${{ needs.identity.outputs.version }}@${{ github.sha }}
+        run: node -e 'const fs=require("node:fs");const path="apps/public-docs/doc_build/devhud.html";const html=fs.readFileSync(path,"utf8");const marker=`<meta name="devhud-release-identity" content="${process.env.DEVHUD_DOCS_RELEASE_IDENTITY}">`;if(!html.includes("</head>")||html.includes("devhud-release-identity"))process.exit(1);fs.writeFileSync(path,html.replace("</head>",`${marker}</head>`))'
       - uses: actions/upload-artifact@v7
         with: { name: devhud-public-docs-candidate, path: apps/public-docs/doc_build, if-no-files-found: error }
 
   registry:
     name: Publish immutable signed OCI inputs
     if: ${{ inputs.mode == 'release' }}
-    needs: [identity, review_gate]
+    needs: [identity, review_gate, docs_candidate]
     runs-on: ubuntu-22.04
     environment: devhud-publication
     permissions:
@@ -430,7 +438,7 @@ jobs:
         run: |
           set -euo pipefail
           if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            target=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" --jq '.object.sha')
+            target=$(git rev-parse --verify "refs/tags/$RELEASE_TAG^{commit}")
             test "$target" = "$GITHUB_SHA"
             gh release upload "$RELEASE_TAG" github-assets/* --clobber --repo "$GITHUB_REPOSITORY"
           else
@@ -488,7 +496,7 @@ jobs:
   public_docs:
     name: Publish and verify DevHud public documentation
     if: ${{ inputs.mode == 'release' }}
-    needs: [docs_candidate, updater_public]
+    needs: [identity, docs_candidate, updater_public]
     runs-on: ubuntu-22.04
     environment: devhud-publication
     permissions:
@@ -498,6 +506,7 @@ jobs:
       CLOUDFLARE_ACCOUNT_ID: ${{ vars.DEVHUD_PUBLIC_DOCS_ACCOUNT_ID }}
       DEVHUD_PUBLIC_DOCS_PROJECT_NAME: ${{ vars.DEVHUD_PUBLIC_DOCS_PROJECT_NAME }}
       DEVHUD_PUBLIC_DOCS_URL: ${{ vars.DEVHUD_PUBLIC_DOCS_URL }}
+      DEVHUD_DOCS_RELEASE_IDENTITY: devhud@v${{ needs.identity.outputs.version }}@${{ github.sha }}
     steps:
       - uses: actions/checkout@v6
         with: { persist-credentials: false }
@@ -507,7 +516,11 @@ jobs:
       - uses: actions/download-artifact@v8
         with: { name: devhud-public-docs-candidate, path: apps/public-docs/doc_build }
       - run: pnpm dlx wrangler@4.33.1 pages deploy apps/public-docs/doc_build --project-name "$DEVHUD_PUBLIC_DOCS_PROJECT_NAME" --branch main
-      - run: curl --fail --silent --show-error "$DEVHUD_PUBLIC_DOCS_URL" | grep -F 'DevHud'
+      - name: Verify the exact deployed DevHud candidate
+        run: |
+          set -euo pipefail
+          docs_url=$(node -e 'process.stdout.write(new URL("/devhud", process.env.DEVHUD_PUBLIC_DOCS_URL).href)')
+          curl --fail --silent --show-error "$docs_url" | grep -F "<meta name=\"devhud-release-identity\" content=\"$DEVHUD_DOCS_RELEASE_IDENTITY\">"
 
   verify_all:
     name: Independently verify every public channel
@@ -524,17 +537,31 @@ jobs:
       DEVHUD_PUBLIC_DOCS_URL: ${{ vars.DEVHUD_PUBLIC_DOCS_URL }}
       DEVHUD_RELEASE_CONTROLLER_URL: ${{ vars.DEVHUD_RELEASE_CONTROLLER_URL }}
       DEVHUD_RELEASE_CONTROLLER_AUDIENCE: ${{ vars.DEVHUD_RELEASE_CONTROLLER_AUDIENCE }}
+      DEVHUD_OCI_REGISTRY: ${{ vars.DEVHUD_OCI_REGISTRY }}
+      DEVHUD_OCI_REGISTRY_USERNAME: ${{ secrets.DEVHUD_OCI_REGISTRY_USERNAME }}
+      DEVHUD_OCI_REGISTRY_TOKEN: ${{ secrets.DEVHUD_OCI_REGISTRY_TOKEN }}
+      DEVHUD_DOCS_RELEASE_IDENTITY: devhud@v${{ needs.identity.outputs.version }}@${{ github.sha }}
     steps:
       - uses: actions/checkout@v6
         with: { persist-credentials: false }
+      - uses: sigstore/cosign-installer@v4.1.0
+      - name: Install OCI transport
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends skopeo
       - name: Reverify public API, docs, release, and immutable images
         run: |
           set -euo pipefail
           curl --fail --silent --show-error "$DEVHUD_PUBLIC_API_URL/readyz" | jq -e '.status == "ready"'
-          curl --fail --silent --show-error "$DEVHUD_PUBLIC_DOCS_URL" | grep -F 'DevHud'
+          docs_url=$(node -e 'process.stdout.write(new URL("/devhud", process.env.DEVHUD_PUBLIC_DOCS_URL).href)')
+          curl --fail --silent --show-error "$docs_url" | grep -F "<meta name=\"devhud-release-identity\" content=\"$DEVHUD_DOCS_RELEASE_IDENTITY\">"
           gh release view "${{ needs.identity.outputs.tag }}" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease --jq '(.isDraft == false) and (.isPrerelease == false)' | grep -qx true
-          test -n "${{ needs.registry.outputs.api_image }}"
-          test -n "${{ needs.registry.outputs.sweeper_image }}"
+          skopeo login --username "$DEVHUD_OCI_REGISTRY_USERNAME" --password-stdin "$DEVHUD_OCI_REGISTRY" <<<"$DEVHUD_OCI_REGISTRY_TOKEN"
+          cosign login --username "$DEVHUD_OCI_REGISTRY_USERNAME" --password-stdin "$DEVHUD_OCI_REGISTRY" <<<"$DEVHUD_OCI_REGISTRY_TOKEN"
+          for image in "${{ needs.registry.outputs.api_image }}" "${{ needs.registry.outputs.sweeper_image }}"; do
+            expected_digest=${image##*@}
+            actual_digest=$(skopeo inspect --format '{{.Digest}}' "docker://$image")
+            test "$actual_digest" = "$expected_digest"
+            cosign verify --certificate-identity "https://github.com/$GITHUB_REPOSITORY/.github/workflows/release-devhud.yml@$GITHUB_REF" --certificate-oidc-issuer "https://token.actions.githubusercontent.com" "$image" >/dev/null
+          done
       - name: Obtain controller credential and verify final deployment state
         run: |
           set -euo pipefail
@@ -567,9 +594,9 @@ jobs:
           node scripts/release/devhud-public-release.mjs transition --state independently-verified --event mark-ga | grep -qx ga
 
   rollback_pre_store:
-    name: Restore prior infrastructure before irreversible store publication
+    name: Withdraw held stores and restore prior infrastructure
     if: ${{ failure() && inputs.mode == 'release' && needs.prepare_infrastructure.result == 'failure' && needs.publish_stores.result == 'skipped' }}
-    needs: [identity, prepare_infrastructure, publish_stores]
+    needs: [identity, submit_stores, prepare_infrastructure, publish_stores]
     runs-on: ubuntu-22.04
     environment: devhud-publication
     permissions:
@@ -578,11 +605,41 @@ jobs:
     env:
       DEVHUD_RELEASE_CONTROLLER_URL: ${{ vars.DEVHUD_RELEASE_CONTROLLER_URL }}
       DEVHUD_RELEASE_CONTROLLER_AUDIENCE: ${{ vars.DEVHUD_RELEASE_CONTROLLER_AUDIENCE }}
+      APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+      APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+      APPLE_API_PRIVATE_KEY_B64: ${{ secrets.APPLE_API_PRIVATE_KEY_B64 }}
+      DEVHUD_APP_STORE_APP_ID: ${{ vars.DEVHUD_APP_STORE_APP_ID }}
+      DEVHUD_GOOGLE_PLAY_PACKAGE_NAME: ${{ vars.DEVHUD_GOOGLE_PLAY_PACKAGE_NAME }}
+      DEVHUD_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.DEVHUD_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+      DEVHUD_CHROME_EXTENSION_ID: ${{ vars.DEVHUD_CHROME_EXTENSION_ID }}
+      DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID: ${{ vars.DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID }}
+      DEVHUD_CHROME_WEB_STORE_CLIENT_ID: ${{ secrets.DEVHUD_CHROME_WEB_STORE_CLIENT_ID }}
+      DEVHUD_CHROME_WEB_STORE_CLIENT_SECRET: ${{ secrets.DEVHUD_CHROME_WEB_STORE_CLIENT_SECRET }}
+      DEVHUD_CHROME_WEB_STORE_REFRESH_TOKEN: ${{ secrets.DEVHUD_CHROME_WEB_STORE_REFRESH_TOKEN }}
     steps:
       - uses: actions/checkout@v6
         with: { persist-credentials: false }
+      - uses: actions/download-artifact@v8
+        with: { pattern: devhud-store-submission-*, path: store-submissions }
       - name: Confirm the state is still before store publication
         run: node -e 'import("./scripts/release/devhud-public-release.mjs").then(({rollbackPolicy})=>{if(!rollbackPolicy("infrastructure-ready").automatic)process.exit(1)})'
+      - name: Verify protected Google Play withdrawal and cancel Apple and Chrome submissions
+        run: |
+          set -euo pipefail
+          node scripts/release/devhud-store-release.mjs withdraw google-play --output google-play-withdrawal.json
+          apple_submission=$(jq -er '.submissionId' store-submissions/devhud-store-submission-apple/store-submission.json)
+          node scripts/release/devhud-store-release.mjs withdraw apple --submission-id "$apple_submission" --output apple-withdrawal.json
+          node scripts/release/devhud-store-release.mjs withdraw chrome-web-store --output chrome-withdrawal.json
+          for attempt in $(seq 1 30); do
+            withdrawn=true
+            for provider in apple chrome-web-store; do
+              node scripts/release/devhud-store-release.mjs status "$provider" --output "$provider.json"
+              if ! jq -e '.status == "withdrawn"' "$provider.json" >/dev/null; then withdrawn=false; fi
+            done
+            if "$withdrawn"; then break; fi
+            if [ "$attempt" = 30 ]; then exit 1; fi
+            sleep 20
+          done
       - name: Obtain controller credential and restore the prior release
         run: |
           set -euo pipefail

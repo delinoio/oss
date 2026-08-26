@@ -1,21 +1,44 @@
 import assert from "node:assert/strict";
+import { generateKeyPairSync } from "node:crypto";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { StoreStatus, classifyApple, classifyChrome, classifyGoogle } from "./devhud-store-release.mjs";
+import { StoreProvider, StoreStatus, classifyApple, classifyChrome, classifyGoogle, run } from "./devhud-store-release.mjs";
 
 const source = readFileSync(fileURLToPath(new URL("devhud-store-release.mjs", import.meta.url)), "utf8");
+const { privateKey: applePrivateKey } = generateKeyPairSync("ec", { namedCurve: "P-256" });
+const { privateKey: googlePrivateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+
+function environment() {
+  return {
+    APPLE_API_ISSUER: "fixture-issuer",
+    APPLE_API_KEY_ID: "fixture-key",
+    APPLE_API_PRIVATE_KEY_B64: Buffer.from(applePrivateKey.export({ type: "pkcs8", format: "pem" })).toString("base64"),
+    DEVHUD_APP_STORE_APP_ID: "123",
+    DEVHUD_GOOGLE_PLAY_PACKAGE_NAME: "io.delino.devhud",
+    DEVHUD_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: JSON.stringify({ client_email: "release@example.test", token_uri: "https://oauth2.example.test/token", private_key: googlePrivateKey.export({ type: "pkcs8", format: "pem" }) }),
+    DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID: "publisher",
+    DEVHUD_CHROME_EXTENSION_ID: "a".repeat(32),
+    DEVHUD_CHROME_WEB_STORE_CLIENT_ID: "client",
+    DEVHUD_CHROME_WEB_STORE_CLIENT_SECRET: "secret",
+    DEVHUD_CHROME_WEB_STORE_REFRESH_TOKEN: "refresh",
+  };
+}
+
+const jsonResponse = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
 test("store review states distinguish pending, approved-held, public, and rejected", () => {
   assert.equal(classifyApple("WAITING_FOR_REVIEW"), StoreStatus.Pending);
   assert.equal(classifyApple("PENDING_DEVELOPER_RELEASE"), StoreStatus.ApprovedHeld);
   assert.equal(classifyApple("READY_FOR_SALE"), StoreStatus.Public);
   assert.equal(classifyApple("REJECTED"), StoreStatus.Rejected);
-  assert.equal(classifyGoogle("IN_REVIEW"), StoreStatus.Pending);
-  assert.equal(classifyGoogle("APPROVED"), StoreStatus.ApprovedHeld);
-  assert.equal(classifyGoogle("AVAILABLE"), StoreStatus.Public);
-  assert.equal(classifyGoogle("NOT_APPROVED"), StoreStatus.Rejected);
+  assert.equal(classifyApple("DEVELOPER_REJECTED"), StoreStatus.Withdrawn);
+  assert.equal(classifyGoogle("RELEASE_LIFECYCLE_STATE_IN_REVIEW"), StoreStatus.Pending);
+  assert.equal(classifyGoogle("RELEASE_LIFECYCLE_STATE_APPROVED_NOT_PUBLISHED"), StoreStatus.ApprovedHeld);
+  assert.equal(classifyGoogle("RELEASE_LIFECYCLE_STATE_PUBLISHED"), StoreStatus.Public);
+  assert.equal(classifyGoogle("RELEASE_LIFECYCLE_STATE_NOT_APPROVED"), StoreStatus.Rejected);
+  assert.equal(classifyGoogle("RELEASE_LIFECYCLE_STATE_NOT_SENT_FOR_REVIEW"), StoreStatus.Withdrawn);
 });
 
 test("Chrome requires the exact version at 100 percent before public", () => {
@@ -27,6 +50,7 @@ test("Chrome requires the exact version at 100 percent before public", () => {
   assert.equal(partial, StoreStatus.Pending);
   const complete = classifyChrome({ submitted: {}, published: { distributionChannels: [{ crxVersion: "0.1.0", deployPercentage: 100 }] }, version: "0.1.0" });
   assert.equal(complete, StoreStatus.Public);
+  assert.equal(classifyChrome({ submitted: { state: "CANCELLED" }, published: {}, version: "0.1.0" }), StoreStatus.Withdrawn);
 });
 
 test("App Store review uses manual release and the dedicated build linkage endpoint", () => {
@@ -34,4 +58,50 @@ test("App Store review uses manual release and the dedicated build linkage endpo
   assert.match(source, /appStoreVersions\/\$\{version\.id\}\/relationships\/build/u);
   assert.match(source, /appStoreVersionReleaseRequests/u);
   assert.match(source, /appStoreVersionPhasedRelease/u);
+});
+
+test("Google status uses the direct release lifecycle endpoint and current response schema", async () => {
+  const requests = [];
+  const fetchImpl = async (input, options = {}) => {
+    requests.push({ url: String(input), options });
+    if (String(input) === "https://oauth2.example.test/token") return jsonResponse({ access_token: "google-token" });
+    return jsonResponse({ releases: [{ releaseLifecycleState: "RELEASE_LIFECYCLE_STATE_APPROVED_NOT_PUBLISHED", activeArtifacts: [{ versionCode: 1 }] }] });
+  };
+  const result = await run("status", StoreProvider.GooglePlay, {}, environment(), fetchImpl);
+  assert.equal(result.status, StoreStatus.ApprovedHeld);
+  assert.equal(requests.at(-1).url, "https://androidpublisher.googleapis.com/androidpublisher/v3/applications/io.delino.devhud/tracks/production/releases");
+  assert.equal(requests.at(-1).options.method, undefined);
+});
+
+test("withdrawal cancels the exact Apple submission and current Chrome submission", async () => {
+  const appleRequests = [];
+  const appleFetch = async (input, options = {}) => {
+    appleRequests.push({ url: String(input), options });
+    if (String(input).includes("appStoreVersions?")) return jsonResponse({ data: [{ id: "version-id", attributes: { appStoreState: "PENDING_DEVELOPER_RELEASE" } }] });
+    return jsonResponse({ data: { id: "submission-id" } });
+  };
+  await run("withdraw", StoreProvider.Apple, { "submission-id": "submission-id" }, environment(), appleFetch);
+  const applePatch = appleRequests.at(-1);
+  assert.equal(applePatch.url, "https://api.appstoreconnect.apple.com/v1/reviewSubmissions/submission-id");
+  assert.equal(applePatch.options.method, "PATCH");
+  assert.deepEqual(JSON.parse(applePatch.options.body), { data: { type: "reviewSubmissions", id: "submission-id", attributes: { canceled: true } } });
+
+  const chromeRequests = [];
+  const chromeFetch = async (input, options = {}) => {
+    chromeRequests.push({ url: String(input), options });
+    return String(input) === "https://oauth2.googleapis.com/token" ? jsonResponse({ access_token: "chrome-token" }) : new Response(null, { status: 204 });
+  };
+  await run("withdraw", StoreProvider.ChromeWebStore, {}, environment(), chromeFetch);
+  assert.match(chromeRequests.at(-1).url, /:cancelSubmission$/u);
+  assert.equal(chromeRequests.at(-1).options.method, "POST");
+});
+
+test("Google withdrawal fails closed until the protected operator removes the held release", async () => {
+  const googleFetch = (release) => async (input) => String(input) === "https://oauth2.example.test/token"
+    ? jsonResponse({ access_token: "google-token" })
+    : jsonResponse({ releases: release ? [release] : [] });
+  const held = { releaseLifecycleState: "RELEASE_LIFECYCLE_STATE_APPROVED_NOT_PUBLISHED", activeArtifacts: [{ versionCode: 1 }] };
+  await assert.rejects(run("withdraw", StoreProvider.GooglePlay, {}, environment(), googleFetch(held)), /protected operator gate/u);
+  const result = await run("withdraw", StoreProvider.GooglePlay, {}, environment(), googleFetch(null));
+  assert.equal(result.status, StoreStatus.Withdrawn);
 });

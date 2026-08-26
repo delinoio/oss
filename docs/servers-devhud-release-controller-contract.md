@@ -55,7 +55,9 @@ Secrets:
 
 ## Release boundaries
 
-Infrastructure preparation occurs only after Apple, Google Play, and Chrome review is independently approved and held. API/sweeper promotion precedes store publication, but updater discovery remains closed. Store publication, regular GitHub Release publication, updater exposure, and public-doc deployment are serialized. No GA state or announcement is permitted until independent store queries and final controller status confirm every channel public.
+Infrastructure preparation occurs only after Apple, Google Play, and Chrome review is independently approved and held and the exact public-doc candidate has built successfully. API/sweeper promotion precedes store publication, but updater discovery remains closed. Store publication, regular GitHub Release publication, updater exposure, and public-doc deployment are serialized. The deployed `/devhud` response must contain the non-secret version-and-revision identity injected into that exact candidate, and final verification checks the same marker. No GA state or announcement is permitted until independent store queries, remote OCI digest and keyless-signature verification, and final controller status confirm every channel public.
+
+An automatic pre-store rollback first requires protected operator removal of the held Google Play change, verifies that removal through the release lifecycle API, cancels the exact Apple review submission and current Chrome submission, and waits until both providers report withdrawal. Only then may the workflow call the controller rollback endpoint. If any package is already public or any held submission cannot be withdrawn, rollback fails closed without reporting restoration success.
 
 ## Validation
 
