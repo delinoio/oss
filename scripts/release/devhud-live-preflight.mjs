@@ -99,8 +99,10 @@ export async function runLivePreflight(environment = process.env, fetchImpl = fe
   await checkedFetch(fetchImpl, assetProbeURL, { method: "HEAD" }, "asset-domain", (result) => result.ok || result.status === 404);
   checks["asset-domain"] = true;
 
-  const pagesURL = `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(environment.DEVHUD_PUBLIC_DOCS_ACCOUNT_ID)}/pages/projects/${encodeURIComponent(environment.DEVHUD_PUBLIC_DOCS_PROJECT_NAME)}`;
-  await checkedFetch(fetchImpl, pagesURL, { headers: bearer(environment.DEVHUD_PUBLIC_DOCS_API_TOKEN) }, "public-docs");
+  const pagesURL = `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(environment.DEVHUD_PUBLIC_DOCS_ACCOUNT_ID)}/pages/projects/${encodeURIComponent(environment.DEVHUD_PUBLIC_DOCS_PROJECT_NAME)}/upload-token`;
+  const pagesResponse = await checkedFetch(fetchImpl, pagesURL, { headers: bearer(environment.DEVHUD_PUBLIC_DOCS_API_TOKEN) }, "public-docs-deployment-authority");
+  const pagesAuthority = await pagesResponse.json();
+  if (typeof pagesAuthority.result?.jwt !== "string" || pagesAuthority.result.jwt === "") throw new Error("Cloudflare Pages did not return deployment authority");
   checks["public-docs"] = true;
 
   const controllerURL = new URL("v1/devhud/releases/preflight", environment.DEVHUD_RELEASE_CONTROLLER_URL.endsWith("/") ? environment.DEVHUD_RELEASE_CONTROLLER_URL : `${environment.DEVHUD_RELEASE_CONTROLLER_URL}/`);

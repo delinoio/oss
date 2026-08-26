@@ -100,6 +100,37 @@ test("protected review gates preserve pending review and recover partial publica
   assert.doesNotMatch(release, /userFraction|phasedRelease|beta|prerelease: true/ui);
 });
 
+test("store submission, review, and cleanup retain the preflight-bound identities", () => {
+  const preflight = job("preflight");
+  const submission = job("submit_stores");
+  const review = job("review_gate");
+  const cleanup = job("rollback_pre_store");
+  const identities = [
+    ["DEVHUD_APP_STORE_APP_ID", "app_store_app_id"],
+    ["DEVHUD_GOOGLE_PLAY_PACKAGE_NAME", "google_play_package_name"],
+    ["DEVHUD_CHROME_EXTENSION_ID", "chrome_extension_id"],
+    ["DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID", "chrome_web_store_publisher_id"],
+  ];
+
+  assert.match(preflight, /store_identity_fingerprint: \$\{\{ steps\.configuration\.outputs\.store_identity_fingerprint \}\}/u);
+  assert.match(preflight, /store-identity-fingerprint/u);
+  for (const [name, output] of identities) {
+    assert.ok(preflight.includes(`${output}: \${{ steps.configuration.outputs.${output} }}`), `${output} must be a preflight output`);
+    const binding = `${name}: \${{ needs.preflight.outputs.${output} }}`;
+    assert.ok(submission.includes(binding), `${name} submission must use preflight`);
+    assert.ok(cleanup.includes(binding), `${name} cleanup must use preflight`);
+    assert.ok(!cleanup.includes(`${name}: \${{ vars.${name} }}`), `${name} cleanup must not reread environment variables`);
+  }
+
+  assert.match(review, /needs: \[identity, preflight, submit_stores, docs_candidate\]/u);
+  assert.match(review, /EXPECTED_STORE_IDENTITY_FINGERPRINT: \$\{\{ needs\.preflight\.outputs\.store_identity_fingerprint \}\}/u);
+  const identityCheck = review.indexOf("Bind review identity to the validated preflight environment");
+  const firstQuery = review.indexOf("Independently re-query every review");
+  assert.ok(identityCheck > 0 && firstQuery > identityCheck, "review identity must match preflight before provider queries");
+  assert.match(review.slice(identityCheck, firstQuery), /store-identity-fingerprint[\s\S]*test "\$actual" = "\$EXPECTED_STORE_IDENTITY_FINGERPRINT"/u);
+  assert.match(cleanup, /needs: \[identity, preflight,[^\n]*stores_public\]/u);
+});
+
 test("same-commit retries reconcile public stores without repeating store mutations", () => {
   assert.match(job("identity"), /devhud-release-plan-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}/u);
   assert.match(privateCandidate, /release-plan-devhud-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}/u);
@@ -181,7 +212,7 @@ test("channel dependencies place GA after every independently verified public su
 
 test("documentation deployment is bound to the exact candidate before publication", () => {
   assert.match(job("docs_candidate"), /needs: \[identity, preflight\]/u);
-  assert.match(job("review_gate"), /needs: \[identity, submit_stores, docs_candidate\]/u);
+  assert.match(job("review_gate"), /needs: \[identity, preflight, submit_stores, docs_candidate\]/u);
   assert.match(job("docs_candidate"), /doc_build\/devhud\.html/u);
   assert.match(job("docs_candidate"), /devhud-release-identity/u);
   assert.match(job("docs_candidate"), /needs\.identity\.outputs\.version/u);

@@ -80,6 +80,13 @@ export const releaseFingerprintVariables = Object.freeze([
   "DEVHUD_CHROME_EXTENSION_ID",
 ]);
 
+export const releaseStoreIdentityVariables = Object.freeze([
+  "DEVHUD_APP_STORE_APP_ID",
+  "DEVHUD_GOOGLE_PLAY_PACKAGE_NAME",
+  "DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID",
+  "DEVHUD_CHROME_EXTENSION_ID",
+]);
+
 export const releaseSecrets = Object.freeze([
   "DEVHUD_CHROME_EXTENSION_PUBLIC_KEY",
   "APPLE_API_ISSUER",
@@ -190,6 +197,13 @@ export function validateReleaseConfiguration(environment = process.env) {
 export function releaseConfigurationFingerprint(environment = process.env) {
   validateReleaseVariables(environment);
   const values = releaseFingerprintVariables.map((name) => [name, environment[name]]);
+  return createHash("sha256").update(JSON.stringify(values), "utf8").digest("hex");
+}
+
+export function releaseStoreIdentityFingerprint(environment = process.env) {
+  const missing = releaseStoreIdentityVariables.filter((name) => !present(environment, name));
+  if (missing.length > 0) throw new Error(`DevHud store identity variables are missing: ${missing.join(", ")}`);
+  const values = releaseStoreIdentityVariables.map((name) => [name, environment[name]]);
   return createHash("sha256").update(JSON.stringify(values), "utf8").digest("hex");
 }
 
@@ -319,6 +333,10 @@ export function main(arguments_ = process.argv.slice(2), environment = process.e
   }
   if (command === "configuration-fingerprint") {
     process.stdout.write(`${releaseConfigurationFingerprint(environment)}\n`);
+    return;
+  }
+  if (command === "store-identity-fingerprint") {
+    process.stdout.write(`${releaseStoreIdentityFingerprint(environment)}\n`);
     return;
   }
   throw new Error(`unsupported command: ${command}`);

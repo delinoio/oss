@@ -8,7 +8,7 @@ import {
   ReleaseEvent, ReleaseMode, ReleaseState, advanceRelease, configurationStatus,
   controllerRuntimeInputs, livePreflightChecks, publicReleasePlan, redact,
   releaseConfigurationFingerprint, releaseFingerprintVariables, releaseSecrets, releaseVariables, reviewEvent,
-  rollbackPolicy, validateLivePreflight, validateReleaseConfiguration,
+  releaseStoreIdentityFingerprint, releaseStoreIdentityVariables, rollbackPolicy, validateLivePreflight, validateReleaseConfiguration,
   validateReleaseIdentity, validateReleaseVariables,
 } from "./devhud-public-release.mjs";
 import { signingInputs } from "./devhud-release.mjs";
@@ -85,6 +85,27 @@ test("release variable fingerprints bind protected environments without exposing
 
   const script = fileURLToPath(new URL("devhud-public-release.mjs", import.meta.url));
   const result = spawnSync(process.execPath, [script, "configuration-fingerprint"], { encoding: "utf8", env: environment });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout.trim(), fingerprint);
+});
+
+test("store identity fingerprints bind review and cleanup targets", () => {
+  const environment = completeEnvironment();
+  const fingerprint = releaseStoreIdentityFingerprint(environment);
+  assert.match(fingerprint, /^[a-f0-9]{64}$/u);
+  assert.deepEqual(releaseStoreIdentityVariables, [
+    "DEVHUD_APP_STORE_APP_ID",
+    "DEVHUD_GOOGLE_PLAY_PACKAGE_NAME",
+    "DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID",
+    "DEVHUD_CHROME_EXTENSION_ID",
+  ]);
+  for (const name of releaseStoreIdentityVariables) {
+    assert.notEqual(releaseStoreIdentityFingerprint({ ...environment, [name]: `${environment[name]}-changed` }), fingerprint, name);
+  }
+  assert.throws(() => releaseStoreIdentityFingerprint({ ...environment, DEVHUD_APP_STORE_APP_ID: "" }), /DEVHUD_APP_STORE_APP_ID/u);
+
+  const script = fileURLToPath(new URL("devhud-public-release.mjs", import.meta.url));
+  const result = spawnSync(process.execPath, [script, "store-identity-fingerprint"], { encoding: "utf8", env: environment });
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout.trim(), fingerprint);
 });

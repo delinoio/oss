@@ -34,6 +34,7 @@ function successfulFetch(environment_) {
     if (url.includes("oauth2.example.test") || url === "https://oauth2.googleapis.com/token") return jsonResponse({ access_token: "fixture-access" });
     if (url.includes("chromewebstore.googleapis.com")) return jsonResponse({ itemId: environment_.DEVHUD_CHROME_EXTENSION_ID, publicKey: environment_.DEVHUD_CHROME_EXTENSION_PUBLIC_KEY });
     if (url.endsWith(".well-known/openid-configuration")) return jsonResponse({ issuer: environment_.DEVHUD_LOGTO_ISSUER, jwks_uri: "https://auth.example.test/jwks" });
+    if (url.endsWith("/upload-token")) return jsonResponse({ result: { jwt: "fixture-pages-upload-token" } });
     if (url.includes("controller.example.test")) return jsonResponse({
       ok: true,
       project: "devhud",
@@ -137,6 +138,37 @@ test("live preflight rejects an unavailable asset boundary", async () => {
     ? new Response(null, { status: 503 })
     : successful(input, options);
   await assert.rejects(runLivePreflight(env, fetchImpl), /asset-domain/u);
+});
+
+test("live preflight proves Cloudflare Pages deployment authority without mutation", async () => {
+  const env = environment();
+  const successful = successfulFetch(env);
+  let pagesRequest;
+  const fetchImpl = async (input, options) => {
+    if (String(input).endsWith("/upload-token")) pagesRequest = { url: String(input), options };
+    return successful(input, options);
+  };
+  await runLivePreflight(env, fetchImpl);
+  assert.match(pagesRequest.url, /\/accounts\/[^/]+\/pages\/projects\/[^/]+\/upload-token$/u);
+  assert.equal(pagesRequest.options.method, undefined);
+});
+
+test("live preflight rejects Pages credentials without deployment authority", async () => {
+  const env = environment();
+  const successful = successfulFetch(env);
+  const fetchImpl = async (input, options) => String(input).endsWith("/upload-token")
+    ? jsonResponse({ errors: [{ status: "403" }] }, 403)
+    : successful(input, options);
+  await assert.rejects(runLivePreflight(env, fetchImpl), /public-docs-deployment-authority/u);
+});
+
+test("live preflight rejects malformed Pages deployment authority", async () => {
+  const env = environment();
+  const successful = successfulFetch(env);
+  const fetchImpl = async (input, options) => String(input).endsWith("/upload-token")
+    ? jsonResponse({ result: { jwt: "" } })
+    : successful(input, options);
+  await assert.rejects(runLivePreflight(env, fetchImpl), /did not return deployment authority/u);
 });
 
 test("live preflight rejects a Chrome identity that breaks Native Messaging parity", async () => {

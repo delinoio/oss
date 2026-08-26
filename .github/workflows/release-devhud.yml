@@ -208,6 +208,11 @@ jobs:
       id-token: write
     outputs:
       release_configuration_fingerprint: ${{ steps.configuration.outputs.fingerprint }}
+      store_identity_fingerprint: ${{ steps.configuration.outputs.store_identity_fingerprint }}
+      app_store_app_id: ${{ steps.configuration.outputs.app_store_app_id }}
+      google_play_package_name: ${{ steps.configuration.outputs.google_play_package_name }}
+      chrome_extension_id: ${{ steps.configuration.outputs.chrome_extension_id }}
+      chrome_web_store_publisher_id: ${{ steps.configuration.outputs.chrome_web_store_publisher_id }}
     env:
       DEVHUD_RELEASE_REVISION: ${{ needs.identity.outputs.revision }}
       DEVHUD_RELEASE_VERSION: ${{ needs.identity.outputs.version }}
@@ -261,7 +266,15 @@ jobs:
           if [ -n "$EXISTING_TAG" ]; then arguments+=(--existing-tag "$EXISTING_TAG"); fi
           node scripts/release/devhud-public-release.mjs "${arguments[@]}"
           fingerprint=$(node scripts/release/devhud-public-release.mjs configuration-fingerprint)
-          echo "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
+          store_identity_fingerprint=$(node scripts/release/devhud-public-release.mjs store-identity-fingerprint)
+          {
+            echo "fingerprint=$fingerprint"
+            echo "store_identity_fingerprint=$store_identity_fingerprint"
+            echo "app_store_app_id=$DEVHUD_APP_STORE_APP_ID"
+            echo "google_play_package_name=$DEVHUD_GOOGLE_PLAY_PACKAGE_NAME"
+            echo "chrome_extension_id=$DEVHUD_CHROME_EXTENSION_ID"
+            echo "chrome_web_store_publisher_id=$DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID"
+          } >> "$GITHUB_OUTPUT"
 
   submit_stores:
     name: Submit held store review (${{ matrix.provider }})
@@ -283,11 +296,11 @@ jobs:
       APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
       APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
       APPLE_API_PRIVATE_KEY_B64: ${{ secrets.APPLE_API_PRIVATE_KEY_B64 }}
-      DEVHUD_APP_STORE_APP_ID: ${{ vars.DEVHUD_APP_STORE_APP_ID }}
-      DEVHUD_GOOGLE_PLAY_PACKAGE_NAME: ${{ vars.DEVHUD_GOOGLE_PLAY_PACKAGE_NAME }}
+      DEVHUD_APP_STORE_APP_ID: ${{ needs.preflight.outputs.app_store_app_id }}
+      DEVHUD_GOOGLE_PLAY_PACKAGE_NAME: ${{ needs.preflight.outputs.google_play_package_name }}
       DEVHUD_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.DEVHUD_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
-      DEVHUD_CHROME_EXTENSION_ID: ${{ vars.DEVHUD_CHROME_EXTENSION_ID }}
-      DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID: ${{ vars.DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID }}
+      DEVHUD_CHROME_EXTENSION_ID: ${{ needs.preflight.outputs.chrome_extension_id }}
+      DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID: ${{ needs.preflight.outputs.chrome_web_store_publisher_id }}
       DEVHUD_CHROME_WEB_STORE_CLIENT_ID: ${{ secrets.DEVHUD_CHROME_WEB_STORE_CLIENT_ID }}
       DEVHUD_CHROME_WEB_STORE_CLIENT_SECRET: ${{ secrets.DEVHUD_CHROME_WEB_STORE_CLIENT_SECRET }}
       DEVHUD_CHROME_WEB_STORE_REFRESH_TOKEN: ${{ secrets.DEVHUD_CHROME_WEB_STORE_REFRESH_TOKEN }}
@@ -351,7 +364,7 @@ jobs:
   review_gate:
     name: Wait for every held store review
     if: ${{ inputs.mode == 'release' }}
-    needs: [identity, submit_stores, docs_candidate]
+    needs: [identity, preflight, submit_stores, docs_candidate]
     runs-on: ubuntu-22.04
     environment: ${{ needs.identity.outputs.retry == 'true' && 'devhud-publication' || 'devhud-store-review-approved' }}
     permissions:
@@ -372,6 +385,13 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with: { persist-credentials: false, ref: "${{ needs.identity.outputs.revision }}" }
+      - name: Bind review identity to the validated preflight environment
+        env:
+          EXPECTED_STORE_IDENTITY_FINGERPRINT: ${{ needs.preflight.outputs.store_identity_fingerprint }}
+        run: |
+          set -euo pipefail
+          actual=$(node scripts/release/devhud-public-release.mjs store-identity-fingerprint)
+          test "$actual" = "$EXPECTED_STORE_IDENTITY_FINGERPRINT"
       - name: Independently re-query every review
         run: |
           set -euo pipefail
@@ -961,7 +981,7 @@ jobs:
            needs.docs_candidate.result == 'failure' || needs.registry.result == 'failure' ||
            needs.prepare_infrastructure.result == 'failure')))
       }}
-    needs: [identity, submit_stores, review_gate, docs_candidate, registry, prepare_infrastructure, stores_public]
+    needs: [identity, preflight, submit_stores, review_gate, docs_candidate, registry, prepare_infrastructure, stores_public]
     runs-on: ubuntu-22.04
     environment: devhud-publication
     permissions:
@@ -974,11 +994,11 @@ jobs:
       APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
       APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
       APPLE_API_PRIVATE_KEY_B64: ${{ secrets.APPLE_API_PRIVATE_KEY_B64 }}
-      DEVHUD_APP_STORE_APP_ID: ${{ vars.DEVHUD_APP_STORE_APP_ID }}
-      DEVHUD_GOOGLE_PLAY_PACKAGE_NAME: ${{ vars.DEVHUD_GOOGLE_PLAY_PACKAGE_NAME }}
+      DEVHUD_APP_STORE_APP_ID: ${{ needs.preflight.outputs.app_store_app_id }}
+      DEVHUD_GOOGLE_PLAY_PACKAGE_NAME: ${{ needs.preflight.outputs.google_play_package_name }}
       DEVHUD_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.DEVHUD_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
-      DEVHUD_CHROME_EXTENSION_ID: ${{ vars.DEVHUD_CHROME_EXTENSION_ID }}
-      DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID: ${{ vars.DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID }}
+      DEVHUD_CHROME_EXTENSION_ID: ${{ needs.preflight.outputs.chrome_extension_id }}
+      DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID: ${{ needs.preflight.outputs.chrome_web_store_publisher_id }}
       DEVHUD_CHROME_WEB_STORE_CLIENT_ID: ${{ secrets.DEVHUD_CHROME_WEB_STORE_CLIENT_ID }}
       DEVHUD_CHROME_WEB_STORE_CLIENT_SECRET: ${{ secrets.DEVHUD_CHROME_WEB_STORE_CLIENT_SECRET }}
       DEVHUD_CHROME_WEB_STORE_REFRESH_TOKEN: ${{ secrets.DEVHUD_CHROME_WEB_STORE_REFRESH_TOKEN }}
