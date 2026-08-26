@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "identityRejections": [
+    "v0.1.0",
+    "0.1",
+    "0.1.0-rc.1",
+    "0.1.0+build",
+    "00.1.0",
+    "65536.1.0"
+  ],
+  "validReviewResults": {
+    "apple": "approved-held",
+    "google-play": "approved-held",
+    "chrome-web-store": "approved-held"
+  },
+  "pendingReviewResults": {
+    "apple": "pending-review",
+    "google-play": "approved-held",
+    "chrome-web-store": "pending-review"
+  },
+  "livePreflight": {
+    "updater": true,
+    "macos-notarization": true,
+    "windows-signing": true,
+    "app-store": true,
+    "google-play": true,
+    "chrome-web-store": true,
+    "github": true,
+    "logto": true,
+    "postgresql": true,
+    "r2": true,
+    "asset-domain": true,
+    "oci-registry": true,
+    "public-docs": true,
+    "release-controller": true
+  }
+}

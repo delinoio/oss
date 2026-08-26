@@ -91,7 +91,7 @@ export function validateProvenance(statement, artifact, digest, environment = pr
 }
 
 export function sigstoreVerificationPolicy(environment = process.env) {
-  const workflowRef = environment.GITHUB_WORKFLOW_REF;
+  const workflowRef = environment.DEVHUD_PRIVATE_WORKFLOW_REF ?? environment.GITHUB_WORKFLOW_REF;
   if (typeof workflowRef !== "string" || !PRIVATE_WORKFLOW_REF.test(workflowRef)) {
     throw new Error("Sigstore verification requires the DevHud private packaging GitHub workflow ref");
   }

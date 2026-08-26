@@ -1,6 +1,17 @@
 name: Package DevHUD private candidate
 
 on:
+  workflow_call:
+    inputs:
+      mode:
+        description: Plan without secrets, or build a fully signed private candidate
+        required: false
+        default: signed-private
+        type: string
+    outputs:
+      version:
+        description: Validated DevHud release version
+        value: ${{ jobs.plan.outputs.version }}
   workflow_dispatch:
     inputs:
       mode:
@@ -25,6 +36,15 @@ jobs:
       version: ${{ steps.identity.outputs.version }}
       started_on: ${{ steps.invocation.outputs.started_on }}
     steps:
+      - name: Validate invocation mode
+        env:
+          PRIVATE_MODE: ${{ inputs.mode }}
+        run: |
+          set -euo pipefail
+          case "$PRIVATE_MODE" in
+            plan-only|signed-private) ;;
+            *) echo "unsupported private candidate mode" >&2; exit 1 ;;
+          esac
       - name: Capture provenance start time
         id: invocation
         run: echo "started_on=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"

@@ -41,6 +41,14 @@ test("Sigstore verification binds bundles to the private packaging workflow iden
   assert.throws(() => sigstoreVerificationPolicy({ GITHUB_WORKFLOW_REF: "delinoio/oss/.github/workflows/other.yml@refs/heads/main" }), /requires the DevHud private packaging GitHub workflow ref/u);
 });
 
+test("Sigstore verification accepts the exact called private workflow identity", () => {
+  const policy = sigstoreVerificationPolicy({
+    GITHUB_WORKFLOW_REF: "delinoio/oss/.github/workflows/release-devhud.yml@refs/heads/main",
+    DEVHUD_PRIVATE_WORKFLOW_REF: "delinoio/oss/.github/workflows/package-devhud-private.yml@refs/heads/main",
+  });
+  assert.equal(policy.certificateIdentity, "https://github.com/delinoio/oss/.github/workflows/package-devhud-private.yml@refs/heads/main");
+});
+
 test("secret scanning covers raw and decoded signing values", () => {
   const root = mkdtempSync(join(tmpdir(), "devhud-validation-secret-"));
   writeFileSync(join(root, "safe.txt"), "safe output");

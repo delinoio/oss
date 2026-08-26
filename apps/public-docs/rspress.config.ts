@@ -8,6 +8,7 @@ const homePages = [
 ];
 
 const productPages = [
+  { text: "DevHud", link: "/devhud" },
   { text: "Cargo Mono", link: "/cargo-mono" },
   { text: "Derun", link: "/derun" },
   { text: "With Watch", link: "/with-watch" },
@@ -38,16 +39,20 @@ export default defineConfig({
         { text: "Get Started", items: homePages.slice(0, 2) },
         { text: "Reference", items: homePages.slice(2) },
         {
-          text: "Rust Monorepo Tooling",
+          text: "Developer Utility",
           items: [productPages[0]],
         },
         {
-          text: "Terminal Relay + MCP",
+          text: "Rust Monorepo Tooling",
           items: [productPages[1]],
         },
         {
-          text: "Command Rerun Watcher",
+          text: "Terminal Relay + MCP",
           items: [productPages[2]],
+        },
+        {
+          text: "Command Rerun Watcher",
+          items: [productPages[3]],
         },
       ],
     },

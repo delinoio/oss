@@ -1,0 +1,593 @@
+name: Release DevHud
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact stable SemVer from packaging/devhud/release-metadata.json
+        required: true
+        type: string
+      mode:
+        description: Produce a redacted plan, or run the protected coordinated release
+        required: true
+        default: dry-run
+        type: choice
+        options: [dry-run, release]
+
+permissions: {}
+
+concurrency:
+  group: release-devhud-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  identity:
+    name: Validate exact main release identity
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.identity.outputs.version }}
+      tag: ${{ steps.identity.outputs.tag }}
+      existing_tag: ${{ steps.tag.outputs.target }}
+    steps:
+      - uses: actions/checkout@v6
+        with: { fetch-depth: 0, persist-credentials: false }
+      - uses: actions/setup-node@v6
+        with: { node-version-file: .nvmrc }
+      - name: Resolve an absent or same-commit retry tag
+        id: tag
+        env:
+          RELEASE_TAG: devhud@v${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          target=$(git rev-parse -q --verify "refs/tags/$RELEASE_TAG^{commit}" 2>/dev/null || true)
+          echo "target=$target" >> "$GITHUB_OUTPUT"
+      - name: Validate release identity and write redacted plan
+        id: identity
+        env:
+          EXISTING_TAG: ${{ steps.tag.outputs.target }}
+        run: |
+          set -euo pipefail
+          arguments=(plan --version "${{ inputs.version }}" --mode "${{ inputs.mode }}" --ref "$GITHUB_REF" --sha "$GITHUB_SHA" --output devhud-release-plan.json)
+          if [ -n "$EXISTING_TAG" ]; then arguments+=(--existing-tag "$EXISTING_TAG"); fi
+          node scripts/release/devhud-public-release.mjs "${arguments[@]}"
+          echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          echo "tag=devhud@v${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: devhud-release-plan-${{ github.run_id }}
+          path: devhud-release-plan.json
+          if-no-files-found: error
+
+  private_candidate:
+    name: Build and validate complete private candidate
+    needs: identity
+    uses: ./.github/workflows/package-devhud-private.yml
+    with:
+      mode: ${{ inputs.mode == 'release' && 'signed-private' || 'plan-only' }}
+    secrets: inherit
+
+  preflight:
+    name: Complete private and live fail-closed preflight
+    if: ${{ inputs.mode == 'release' }}
+    needs: [identity, private_candidate]
+    runs-on: ubuntu-22.04
+    environment: devhud-publication
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      DEVHUD_RELEASE_VERSION: ${{ needs.identity.outputs.version }}
+      DEVHUD_PRIVATE_WORKFLOW_REF: ${{ github.repository }}/.github/workflows/package-devhud-private.yml@${{ github.ref }}
+      GITHUB_TOKEN: ${{ github.token }}
+      DEVHUD_CHROME_EXTENSION_ID: ${{ vars.DEVHUD_CHROME_EXTENSION_ID }}
+      DEVHUD_CHROME_EXTENSION_PUBLIC_KEY: ${{ secrets.DEVHUD_CHROME_EXTENSION_PUBLIC_KEY }}
+      DEVHUD_UPDATER_SIGNING_KEY_B64: ${{ secrets.DEVHUD_UPDATER_SIGNING_KEY_B64 }}
+      DEVHUD_MACOS_DEVELOPER_ID_P12_B64: ${{ secrets.DEVHUD_MACOS_DEVELOPER_ID_P12_B64 }}
+      DEVHUD_MACOS_DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVHUD_MACOS_DEVELOPER_ID_P12_PASSWORD }}
+      DEVHUD_MACOS_SIGNING_IDENTITY: ${{ vars.DEVHUD_MACOS_SIGNING_IDENTITY }}
+      APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+      APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+      APPLE_API_PRIVATE_KEY_B64: ${{ secrets.APPLE_API_PRIVATE_KEY_B64 }}
+      DEVHUD_WINDOWS_SIGNING_PFX_B64: ${{ secrets.DEVHUD_WINDOWS_SIGNING_PFX_B64 }}
+      DEVHUD_WINDOWS_SIGNING_PFX_PASSWORD: ${{ secrets.DEVHUD_WINDOWS_SIGNING_PFX_PASSWORD }}
+      DEVHUD_WINDOWS_CERTIFICATE_SHA256: ${{ vars.DEVHUD_WINDOWS_CERTIFICATE_SHA256 }}
+      DEVHUD_WINDOWS_TIMESTAMP_URL: ${{ vars.DEVHUD_WINDOWS_TIMESTAMP_URL }}
+      DEVHUD_IOS_DISTRIBUTION_P12_B64: ${{ secrets.DEVHUD_IOS_DISTRIBUTION_P12_B64 }}
+      DEVHUD_IOS_DISTRIBUTION_P12_PASSWORD: ${{ secrets.DEVHUD_IOS_DISTRIBUTION_P12_PASSWORD }}
+      DEVHUD_IOS_APP_PROFILE_B64: ${{ secrets.DEVHUD_IOS_APP_PROFILE_B64 }}
+      DEVHUD_IOS_WIDGET_PROFILE_B64: ${{ secrets.DEVHUD_IOS_WIDGET_PROFILE_B64 }}
+      DEVHUD_IOS_WIDGET_INTENT_PROFILE_B64: ${{ secrets.DEVHUD_IOS_WIDGET_INTENT_PROFILE_B64 }}
+      DEVHUD_APPLE_TEAM_ID: ${{ vars.DEVHUD_APPLE_TEAM_ID }}
+      DEVHUD_ANDROID_UPLOAD_KEYSTORE_B64: ${{ secrets.DEVHUD_ANDROID_UPLOAD_KEYSTORE_B64 }}
+      DEVHUD_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.DEVHUD_ANDROID_KEYSTORE_PASSWORD }}
+      DEVHUD_ANDROID_KEY_ALIAS: ${{ secrets.DEVHUD_ANDROID_KEY_ALIAS }}
+      DEVHUD_ANDROID_KEY_PASSWORD: ${{ secrets.DEVHUD_ANDROID_KEY_PASSWORD }}
+      DEVHUD_ANDROID_CERTIFICATE_SHA256: ${{ vars.DEVHUD_ANDROID_CERTIFICATE_SHA256 }}
+      DEVHUD_APP_STORE_APP_ID: ${{ vars.DEVHUD_APP_STORE_APP_ID }}
+      DEVHUD_GOOGLE_PLAY_PACKAGE_NAME: ${{ vars.DEVHUD_GOOGLE_PLAY_PACKAGE_NAME }}
+      DEVHUD_GOOGLE_PLAY_MANAGED_PUBLISHING: ${{ vars.DEVHUD_GOOGLE_PLAY_MANAGED_PUBLISHING }}
+      DEVHUD_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.DEVHUD_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+      DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID: ${{ vars.DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID }}
+      DEVHUD_CHROME_WEB_STORE_CLIENT_ID: ${{ secrets.DEVHUD_CHROME_WEB_STORE_CLIENT_ID }}
+      DEVHUD_CHROME_WEB_STORE_CLIENT_SECRET: ${{ secrets.DEVHUD_CHROME_WEB_STORE_CLIENT_SECRET }}
+      DEVHUD_CHROME_WEB_STORE_REFRESH_TOKEN: ${{ secrets.DEVHUD_CHROME_WEB_STORE_REFRESH_TOKEN }}
+      DEVHUD_OCI_REGISTRY: ${{ vars.DEVHUD_OCI_REGISTRY }}
+      DEVHUD_OCI_API_REPOSITORY: ${{ vars.DEVHUD_OCI_API_REPOSITORY }}
+      DEVHUD_OCI_SWEEPER_REPOSITORY: ${{ vars.DEVHUD_OCI_SWEEPER_REPOSITORY }}
+      DEVHUD_OCI_REGISTRY_USERNAME: ${{ secrets.DEVHUD_OCI_REGISTRY_USERNAME }}
+      DEVHUD_OCI_REGISTRY_TOKEN: ${{ secrets.DEVHUD_OCI_REGISTRY_TOKEN }}
+      DEVHUD_RELEASE_CONTROLLER_URL: ${{ vars.DEVHUD_RELEASE_CONTROLLER_URL }}
+      DEVHUD_RELEASE_CONTROLLER_AUDIENCE: ${{ vars.DEVHUD_RELEASE_CONTROLLER_AUDIENCE }}
+      DEVHUD_PUBLIC_DOCS_URL: ${{ vars.DEVHUD_PUBLIC_DOCS_URL }}
+      DEVHUD_PUBLIC_DOCS_ACCOUNT_ID: ${{ vars.DEVHUD_PUBLIC_DOCS_ACCOUNT_ID }}
+      DEVHUD_PUBLIC_DOCS_PROJECT_NAME: ${{ vars.DEVHUD_PUBLIC_DOCS_PROJECT_NAME }}
+      DEVHUD_PUBLIC_DOCS_API_TOKEN: ${{ secrets.DEVHUD_PUBLIC_DOCS_API_TOKEN }}
+      DEVHUD_LOGTO_ISSUER: ${{ vars.DEVHUD_LOGTO_ISSUER }}
+      DEVHUD_PUBLIC_ASSET_BASE_URL: ${{ vars.DEVHUD_PUBLIC_ASSET_BASE_URL }}
+    steps:
+      - uses: actions/checkout@v6
+        with: { fetch-depth: 0, persist-credentials: false }
+      - uses: actions/download-artifact@v8
+        with: { pattern: devhud-v*-private-signed-candidate-*, path: private-artifacts, merge-multiple: true }
+      - uses: sigstore/cosign-installer@v4.1.0
+      - name: Revalidate the complete private candidate
+        run: node scripts/release/validate-devhud-private-build.mjs --artifacts-dir private-artifacts
+      - name: Obtain a short-lived release-controller credential
+        run: |
+          set -euo pipefail
+          response=$(curl --fail --silent --show-error -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${DEVHUD_RELEASE_CONTROLLER_AUDIENCE}")
+          token=$(jq -er '.value' <<<"$response")
+          echo "::add-mask::$token"
+          echo "DEVHUD_RELEASE_CONTROLLER_TOKEN=$token" >> "$GITHUB_ENV"
+      - name: Authenticate every external release boundary without mutation
+        run: node scripts/release/devhud-live-preflight.mjs --output devhud-live-preflight.json
+      - name: Accept only the complete closed preflight set
+        env:
+          EXISTING_TAG: ${{ needs.identity.outputs.existing_tag }}
+        run: |
+          set -euo pipefail
+          arguments=(preflight --version "$DEVHUD_RELEASE_VERSION" --ref "$GITHUB_REF" --sha "$GITHUB_SHA" --checks devhud-live-preflight.json)
+          if [ -n "$EXISTING_TAG" ]; then arguments+=(--existing-tag "$EXISTING_TAG"); fi
+          node scripts/release/devhud-public-release.mjs "${arguments[@]}"
+
+  submit_stores:
+    name: Submit held store review (${{ matrix.provider }})
+    if: ${{ inputs.mode == 'release' }}
+    needs: [identity, preflight]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { provider: apple, runner: macos-15 }
+          - { provider: google-play, runner: ubuntu-22.04 }
+          - { provider: chrome-web-store, runner: ubuntu-22.04 }
+    runs-on: ${{ matrix.runner }}
+    environment: devhud-publication
+    permissions:
+      contents: read
+    env:
+      APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+      APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+      APPLE_API_PRIVATE_KEY_B64: ${{ secrets.APPLE_API_PRIVATE_KEY_B64 }}
+      DEVHUD_APP_STORE_APP_ID: ${{ vars.DEVHUD_APP_STORE_APP_ID }}
+      DEVHUD_GOOGLE_PLAY_PACKAGE_NAME: ${{ vars.DEVHUD_GOOGLE_PLAY_PACKAGE_NAME }}
+      DEVHUD_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.DEVHUD_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+      DEVHUD_CHROME_EXTENSION_ID: ${{ vars.DEVHUD_CHROME_EXTENSION_ID }}
+      DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID: ${{ vars.DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID }}
+      DEVHUD_CHROME_WEB_STORE_CLIENT_ID: ${{ secrets.DEVHUD_CHROME_WEB_STORE_CLIENT_ID }}
+      DEVHUD_CHROME_WEB_STORE_CLIENT_SECRET: ${{ secrets.DEVHUD_CHROME_WEB_STORE_CLIENT_SECRET }}
+      DEVHUD_CHROME_WEB_STORE_REFRESH_TOKEN: ${{ secrets.DEVHUD_CHROME_WEB_STORE_REFRESH_TOKEN }}
+    steps:
+      - uses: actions/checkout@v6
+        with: { persist-credentials: false }
+      - uses: actions/download-artifact@v8
+        with: { pattern: devhud-v*-private-signed-candidate-*, path: private-artifacts, merge-multiple: true }
+      - name: Upload the processed App Store package
+        if: ${{ matrix.provider == 'apple' }}
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p "$HOME/.appstoreconnect/private_keys"
+          printf '%s' "$APPLE_API_PRIVATE_KEY_B64" | base64 --decode > "$HOME/.appstoreconnect/private_keys/AuthKey_${APPLE_API_KEY_ID}.p8"
+          xcrun iTMSTransporter -m upload -assetFile private-artifacts/devhud-ios-arm64-app-store.ipa -apiKey "$APPLE_API_KEY_ID" -apiIssuer "$APPLE_API_ISSUER"
+      - name: Wait for App Store package processing
+        if: ${{ matrix.provider == 'apple' }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 30); do
+            if node scripts/release/devhud-store-release.mjs submit apple --output store-submission.json; then exit 0; fi
+            sleep 60
+          done
+          exit 1
+      - name: Submit full Google Play production release for managed review
+        if: ${{ matrix.provider == 'google-play' }}
+        run: node scripts/release/devhud-store-release.mjs submit google-play --artifact private-artifacts/devhud-android-arm64-armv7-google-play.aab --output store-submission.json
+      - name: Submit Chrome package for deferred review at 100 percent
+        if: ${{ matrix.provider == 'chrome-web-store' }}
+        run: node scripts/release/devhud-store-release.mjs submit chrome-web-store --artifact private-artifacts/devhud-chrome-web-store.zip --output store-submission.json
+      - uses: actions/upload-artifact@v7
+        with: { name: "devhud-store-submission-${{ matrix.provider }}", path: store-submission.json, if-no-files-found: error }
+
+  review_gate:
+    name: Wait for every held store review
+    if: ${{ inputs.mode == 'release' }}
+    needs: [identity, submit_stores]
+    runs-on: ubuntu-22.04
+    environment: devhud-store-review-approved
+    permissions:
+      contents: read
+    env:
+      APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+      APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+      APPLE_API_PRIVATE_KEY_B64: ${{ secrets.APPLE_API_PRIVATE_KEY_B64 }}
+      DEVHUD_APP_STORE_APP_ID: ${{ vars.DEVHUD_APP_STORE_APP_ID }}
+      DEVHUD_GOOGLE_PLAY_PACKAGE_NAME: ${{ vars.DEVHUD_GOOGLE_PLAY_PACKAGE_NAME }}
+      DEVHUD_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.DEVHUD_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+      DEVHUD_CHROME_EXTENSION_ID: ${{ vars.DEVHUD_CHROME_EXTENSION_ID }}
+      DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID: ${{ vars.DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID }}
+      DEVHUD_CHROME_WEB_STORE_CLIENT_ID: ${{ secrets.DEVHUD_CHROME_WEB_STORE_CLIENT_ID }}
+      DEVHUD_CHROME_WEB_STORE_CLIENT_SECRET: ${{ secrets.DEVHUD_CHROME_WEB_STORE_CLIENT_SECRET }}
+      DEVHUD_CHROME_WEB_STORE_REFRESH_TOKEN: ${{ secrets.DEVHUD_CHROME_WEB_STORE_REFRESH_TOKEN }}
+    steps:
+      - uses: actions/checkout@v6
+        with: { persist-credentials: false }
+      - name: Independently re-query every review
+        run: |
+          set -euo pipefail
+          for provider in apple google-play chrome-web-store; do
+            node scripts/release/devhud-store-release.mjs status "$provider" --output "$provider.json"
+            jq -e '.status == "approved-held"' "$provider.json" >/dev/null
+          done
+
+  docs_candidate:
+    name: Build private public-doc candidate
+    if: ${{ inputs.mode == 'release' }}
+    needs: preflight
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with: { persist-credentials: false }
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v6
+        with: { node-version-file: .nvmrc, cache: pnpm }
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm --filter public-docs test
+      - uses: actions/upload-artifact@v7
+        with: { name: devhud-public-docs-candidate, path: apps/public-docs/doc_build, if-no-files-found: error }
+
+  registry:
+    name: Publish immutable signed OCI inputs
+    if: ${{ inputs.mode == 'release' }}
+    needs: [identity, review_gate]
+    runs-on: ubuntu-22.04
+    environment: devhud-publication
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      api_image: ${{ steps.images.outputs.api_image }}
+      sweeper_image: ${{ steps.images.outputs.sweeper_image }}
+    env:
+      DEVHUD_OCI_REGISTRY: ${{ vars.DEVHUD_OCI_REGISTRY }}
+      DEVHUD_OCI_API_REPOSITORY: ${{ vars.DEVHUD_OCI_API_REPOSITORY }}
+      DEVHUD_OCI_SWEEPER_REPOSITORY: ${{ vars.DEVHUD_OCI_SWEEPER_REPOSITORY }}
+      DEVHUD_OCI_REGISTRY_USERNAME: ${{ secrets.DEVHUD_OCI_REGISTRY_USERNAME }}
+      DEVHUD_OCI_REGISTRY_TOKEN: ${{ secrets.DEVHUD_OCI_REGISTRY_TOKEN }}
+      RELEASE_VERSION: ${{ needs.identity.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+        with: { persist-credentials: false }
+      - uses: actions/download-artifact@v8
+        with: { pattern: devhud-v*-private-signed-candidate-*, path: private-artifacts, merge-multiple: true }
+      - uses: sigstore/cosign-installer@v4.1.0
+      - name: Install OCI transport
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends skopeo
+      - name: Copy, inspect, and sign exact image digests
+        id: images
+        run: |
+          set -euo pipefail
+          skopeo login --username "$DEVHUD_OCI_REGISTRY_USERNAME" --password-stdin "$DEVHUD_OCI_REGISTRY" <<<"$DEVHUD_OCI_REGISTRY_TOKEN"
+          for component in api sweeper; do
+            if [ "$component" = api ]; then
+              archive=private-artifacts/devhud-api-linux-amd64-arm64.oci.tar
+              repository="$DEVHUD_OCI_API_REPOSITORY"
+            else
+              archive=private-artifacts/devhud-api-sweeper-linux-amd64-arm64.oci.tar
+              repository="$DEVHUD_OCI_SWEEPER_REPOSITORY"
+            fi
+            target="$DEVHUD_OCI_REGISTRY/$repository:$RELEASE_VERSION"
+            skopeo copy --all "oci-archive:$archive" "docker://$target"
+            digest=$(skopeo inspect --format '{{.Digest}}' "docker://$target")
+            immutable="$DEVHUD_OCI_REGISTRY/$repository@$digest"
+            cosign sign --yes "$immutable"
+            echo "${component}_image=$immutable" >> "$GITHUB_OUTPUT"
+          done
+
+  prepare_infrastructure:
+    name: Prepare and promote provider-neutral API deployment
+    if: ${{ inputs.mode == 'release' }}
+    needs: [identity, registry]
+    runs-on: ubuntu-22.04
+    environment: devhud-publication
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      DEVHUD_RELEASE_CONTROLLER_URL: ${{ vars.DEVHUD_RELEASE_CONTROLLER_URL }}
+      DEVHUD_RELEASE_CONTROLLER_AUDIENCE: ${{ vars.DEVHUD_RELEASE_CONTROLLER_AUDIENCE }}
+      DEVHUD_PUBLIC_API_URL: ${{ vars.DEVHUD_PUBLIC_API_URL }}
+    steps:
+      - uses: actions/checkout@v6
+        with: { persist-credentials: false }
+      - uses: actions/download-artifact@v8
+        with: { pattern: devhud-v*-private-signed-candidate-*, path: private-artifacts, merge-multiple: true }
+      - name: Obtain a short-lived release-controller credential
+        run: |
+          set -euo pipefail
+          response=$(curl --fail --silent --show-error -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${DEVHUD_RELEASE_CONTROLLER_AUDIENCE}")
+          token=$(jq -er '.value' <<<"$response")
+          echo "::add-mask::$token"
+          echo "DEVHUD_RELEASE_CONTROLLER_TOKEN=$token" >> "$GITHUB_ENV"
+      - name: Package only already-signed updater inputs
+        run: tar -C private-artifacts -czf devhud-updater-input.tar.gz updater/manifests updater/signatures
+      - name: Prepare migrations, API, sweeper, administrator, and updater inputs
+        run: node scripts/release/devhud-release-controller.mjs prepare --version "${{ needs.identity.outputs.version }}" --revision "$GITHUB_SHA" --api-image "${{ needs.registry.outputs.api_image }}" --sweeper-image "${{ needs.registry.outputs.sweeper_image }}" --updater devhud-updater-input.tar.gz --output controller-prepare.json
+      - name: Promote API and sweeper with updater discovery held closed
+        run: node scripts/release/devhud-release-controller.mjs promote-api --version "${{ needs.identity.outputs.version }}" --revision "$GITHUB_SHA" --output controller-api.json
+      - name: Verify live API, schema readiness, and embedded administrator
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error "$DEVHUD_PUBLIC_API_URL/healthz" | jq -e '.status == "alive"'
+          curl --fail --silent --show-error "$DEVHUD_PUBLIC_API_URL/readyz" | jq -e '.status == "ready"'
+          curl --fail --silent --show-error "$DEVHUD_PUBLIC_API_URL/admin/" >/dev/null
+          bootstrap=$(curl --fail --silent --show-error -X POST -H 'content-type: application/json' --data '{}' "$DEVHUD_PUBLIC_API_URL/devhud.v1.BootstrapService/GetBootstrap")
+          jq -e --arg version "${{ needs.identity.outputs.version }}" '.apiVersion == $version and .projectId == "PROJECT_ID_DEVHUD"' <<<"$bootstrap"
+
+  publish_stores:
+    name: Release approved Apple and Chrome packages
+    if: ${{ inputs.mode == 'release' }}
+    needs: [identity, prepare_infrastructure]
+    runs-on: ubuntu-22.04
+    environment: devhud-publication
+    permissions:
+      contents: read
+    env:
+      APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+      APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+      APPLE_API_PRIVATE_KEY_B64: ${{ secrets.APPLE_API_PRIVATE_KEY_B64 }}
+      DEVHUD_APP_STORE_APP_ID: ${{ vars.DEVHUD_APP_STORE_APP_ID }}
+      DEVHUD_CHROME_EXTENSION_ID: ${{ vars.DEVHUD_CHROME_EXTENSION_ID }}
+      DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID: ${{ vars.DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID }}
+      DEVHUD_CHROME_WEB_STORE_CLIENT_ID: ${{ secrets.DEVHUD_CHROME_WEB_STORE_CLIENT_ID }}
+      DEVHUD_CHROME_WEB_STORE_CLIENT_SECRET: ${{ secrets.DEVHUD_CHROME_WEB_STORE_CLIENT_SECRET }}
+      DEVHUD_CHROME_WEB_STORE_REFRESH_TOKEN: ${{ secrets.DEVHUD_CHROME_WEB_STORE_REFRESH_TOKEN }}
+    steps:
+      - uses: actions/checkout@v6
+        with: { persist-credentials: false }
+      - run: node scripts/release/devhud-store-release.mjs publish apple --output apple-release.json
+      - run: node scripts/release/devhud-store-release.mjs publish chrome-web-store --output chrome-release.json
+
+  stores_public:
+    name: Verify all stores independently public
+    if: ${{ inputs.mode == 'release' }}
+    needs: [identity, publish_stores]
+    runs-on: ubuntu-22.04
+    environment: devhud-store-publication
+    permissions:
+      contents: read
+    env:
+      APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+      APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+      APPLE_API_PRIVATE_KEY_B64: ${{ secrets.APPLE_API_PRIVATE_KEY_B64 }}
+      DEVHUD_APP_STORE_APP_ID: ${{ vars.DEVHUD_APP_STORE_APP_ID }}
+      DEVHUD_GOOGLE_PLAY_PACKAGE_NAME: ${{ vars.DEVHUD_GOOGLE_PLAY_PACKAGE_NAME }}
+      DEVHUD_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.DEVHUD_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+      DEVHUD_CHROME_EXTENSION_ID: ${{ vars.DEVHUD_CHROME_EXTENSION_ID }}
+      DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID: ${{ vars.DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID }}
+      DEVHUD_CHROME_WEB_STORE_CLIENT_ID: ${{ secrets.DEVHUD_CHROME_WEB_STORE_CLIENT_ID }}
+      DEVHUD_CHROME_WEB_STORE_CLIENT_SECRET: ${{ secrets.DEVHUD_CHROME_WEB_STORE_CLIENT_SECRET }}
+      DEVHUD_CHROME_WEB_STORE_REFRESH_TOKEN: ${{ secrets.DEVHUD_CHROME_WEB_STORE_REFRESH_TOKEN }}
+    steps:
+      - uses: actions/checkout@v6
+        with: { persist-credentials: false }
+      - name: Re-query exact public versions after operator publishes Play changes
+        run: |
+          set -euo pipefail
+          for provider in apple google-play chrome-web-store; do
+            node scripts/release/devhud-store-release.mjs status "$provider" --output "$provider.json"
+            jq -e '.status == "public"' "$provider.json" >/dev/null
+          done
+
+  github_release:
+    name: Publish regular GitHub Release
+    if: ${{ inputs.mode == 'release' }}
+    needs: [identity, stores_public]
+    runs-on: ubuntu-22.04
+    environment: devhud-publication
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ needs.identity.outputs.tag }}
+      RELEASE_VERSION: ${{ needs.identity.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+        with: { fetch-depth: 0, persist-credentials: false }
+      - uses: actions/download-artifact@v8
+        with: { pattern: devhud-v*-private-signed-candidate-*, path: private-artifacts, merge-multiple: true }
+      - name: Build channel-safe public evidence payload
+        run: |
+          set -euo pipefail
+          mkdir -p github-assets
+          find private-artifacts -maxdepth 1 -type f \( -name 'devhud-macos-*' -o -name 'devhud-windows-*' -o -name 'devhud-ubuntu-*' -o -name 'devhud-chrome-github-validation.zip' \) -exec cp '{}' github-assets/ \;
+          tar -C private-artifacts -czf github-assets/devhud-v${RELEASE_VERSION}-release-evidence.tar.gz SHA256SUMS sbom provenance sigstore updater/signatures validation
+          node -e 'const fs=require("node:fs");const m=require("./packaging/devhud/release-metadata.json");fs.writeFileSync("github-assets/devhud-release-index.json",JSON.stringify({schemaVersion:1,project:"devhud",version:m.version,tag:`devhud@v${m.version}`,storeBuildNumber:m.storeBuildNumber,channels:["apple-app-store","google-play","chrome-web-store","github-release","desktop-updater","api","public-docs"]},null,2)+"\n")'
+      - name: Create or reconcile a regular non-latest release
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            target=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" --jq '.object.sha')
+            test "$target" = "$GITHUB_SHA"
+            gh release upload "$RELEASE_TAG" github-assets/* --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$RELEASE_TAG" github-assets/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "DevHUD v$RELEASE_VERSION" --notes "Coordinated publication verification is in progress." --latest=false
+          fi
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease --jq '(.isDraft == false) and (.isPrerelease == false)' | grep -qx true
+
+  updater_public:
+    name: Expose and verify every desktop updater target
+    if: ${{ inputs.mode == 'release' }}
+    needs: [identity, registry, github_release]
+    runs-on: ubuntu-22.04
+    environment: devhud-publication
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      DEVHUD_RELEASE_CONTROLLER_URL: ${{ vars.DEVHUD_RELEASE_CONTROLLER_URL }}
+      DEVHUD_RELEASE_CONTROLLER_AUDIENCE: ${{ vars.DEVHUD_RELEASE_CONTROLLER_AUDIENCE }}
+      DEVHUD_PUBLIC_API_URL: ${{ vars.DEVHUD_PUBLIC_API_URL }}
+    steps:
+      - uses: actions/checkout@v6
+        with: { persist-credentials: false }
+      - uses: actions/download-artifact@v8
+        with: { pattern: devhud-v*-private-signed-candidate-*, path: private-artifacts, merge-multiple: true }
+      - name: Obtain a short-lived release-controller credential
+        run: |
+          set -euo pipefail
+          response=$(curl --fail --silent --show-error -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${DEVHUD_RELEASE_CONTROLLER_AUDIENCE}")
+          token=$(jq -er '.value' <<<"$response")
+          echo "::add-mask::$token"
+          echo "DEVHUD_RELEASE_CONTROLLER_TOKEN=$token" >> "$GITHUB_ENV"
+      - run: node scripts/release/devhud-release-controller.mjs promote-updater --version "${{ needs.identity.outputs.version }}" --revision "$GITHUB_SHA" --output controller-updater.json
+      - name: Compare every served manifest with its signed private input
+        run: |
+          set -euo pipefail
+          while IFS='|' read -r platform architecture package; do
+            expected="private-artifacts/updater/manifests/stable/$platform/$architecture/$package.json"
+            actual=$(mktemp)
+            curl --fail --silent --show-error -H "X-DevHud-Package: $package" "$DEVHUD_PUBLIC_API_URL/updates/stable/$platform/$architecture.json" -o "$actual"
+            cmp "$expected" "$actual"
+          done <<'TARGETS'
+          darwin|x86_64|macos-app
+          darwin|aarch64|macos-app
+          windows|x86_64|windows-msi
+          windows|x86_64|windows-nsis
+          windows|aarch64|windows-msi
+          windows|aarch64|windows-nsis
+          linux|x86_64|linux-appimage
+          linux|x86_64|linux-deb
+          linux|aarch64|linux-appimage
+          linux|aarch64|linux-deb
+          TARGETS
+
+  public_docs:
+    name: Publish and verify DevHud public documentation
+    if: ${{ inputs.mode == 'release' }}
+    needs: [docs_candidate, updater_public]
+    runs-on: ubuntu-22.04
+    environment: devhud-publication
+    permissions:
+      contents: read
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.DEVHUD_PUBLIC_DOCS_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.DEVHUD_PUBLIC_DOCS_ACCOUNT_ID }}
+      DEVHUD_PUBLIC_DOCS_PROJECT_NAME: ${{ vars.DEVHUD_PUBLIC_DOCS_PROJECT_NAME }}
+      DEVHUD_PUBLIC_DOCS_URL: ${{ vars.DEVHUD_PUBLIC_DOCS_URL }}
+    steps:
+      - uses: actions/checkout@v6
+        with: { persist-credentials: false }
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v6
+        with: { node-version-file: .nvmrc }
+      - uses: actions/download-artifact@v8
+        with: { name: devhud-public-docs-candidate, path: apps/public-docs/doc_build }
+      - run: pnpm dlx wrangler@4.33.1 pages deploy apps/public-docs/doc_build --project-name "$DEVHUD_PUBLIC_DOCS_PROJECT_NAME" --branch main
+      - run: curl --fail --silent --show-error "$DEVHUD_PUBLIC_DOCS_URL" | grep -F 'DevHud'
+
+  verify_all:
+    name: Independently verify every public channel
+    if: ${{ inputs.mode == 'release' }}
+    needs: [identity, registry, public_docs]
+    runs-on: ubuntu-22.04
+    environment: devhud-publication
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      DEVHUD_PUBLIC_API_URL: ${{ vars.DEVHUD_PUBLIC_API_URL }}
+      DEVHUD_PUBLIC_DOCS_URL: ${{ vars.DEVHUD_PUBLIC_DOCS_URL }}
+      DEVHUD_RELEASE_CONTROLLER_URL: ${{ vars.DEVHUD_RELEASE_CONTROLLER_URL }}
+      DEVHUD_RELEASE_CONTROLLER_AUDIENCE: ${{ vars.DEVHUD_RELEASE_CONTROLLER_AUDIENCE }}
+    steps:
+      - uses: actions/checkout@v6
+        with: { persist-credentials: false }
+      - name: Reverify public API, docs, release, and immutable images
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error "$DEVHUD_PUBLIC_API_URL/readyz" | jq -e '.status == "ready"'
+          curl --fail --silent --show-error "$DEVHUD_PUBLIC_DOCS_URL" | grep -F 'DevHud'
+          gh release view "${{ needs.identity.outputs.tag }}" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease --jq '(.isDraft == false) and (.isPrerelease == false)' | grep -qx true
+          test -n "${{ needs.registry.outputs.api_image }}"
+          test -n "${{ needs.registry.outputs.sweeper_image }}"
+      - name: Obtain controller credential and verify final deployment state
+        run: |
+          set -euo pipefail
+          response=$(curl --fail --silent --show-error -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${DEVHUD_RELEASE_CONTROLLER_AUDIENCE}")
+          token=$(jq -er '.value' <<<"$response")
+          echo "::add-mask::$token"
+          export DEVHUD_RELEASE_CONTROLLER_TOKEN="$token"
+          node scripts/release/devhud-release-controller.mjs status --version "${{ needs.identity.outputs.version }}" --revision "$GITHUB_SHA" --output controller-final.json
+          jq -e '.channels.api == "public" and .channels.sweeper == "public" and .channels.updater == "public"' controller-final.json >/dev/null
+
+  ga:
+    name: Mark verified general availability
+    if: ${{ inputs.mode == 'release' }}
+    needs: [identity, verify_all]
+    runs-on: ubuntu-22.04
+    environment: devhud-ga
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ needs.identity.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v6
+        with: { persist-credentials: false }
+      - name: Apply final bilingual notes and latest marker only after verification
+        run: |
+          set -euo pipefail
+          node -e 'const fs=require("node:fs");const m=require("./packaging/devhud/release-metadata.json");fs.writeFileSync("release-notes.md",`${m.releaseNotes.en}\n\n${m.releaseNotes.ko}\n`)'
+          gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --notes-file release-notes.md --latest
+          node scripts/release/devhud-public-release.mjs transition --state independently-verified --event mark-ga | grep -qx ga
+
+  rollback_pre_store:
+    name: Restore prior infrastructure before irreversible store publication
+    if: ${{ failure() && inputs.mode == 'release' && needs.prepare_infrastructure.result == 'failure' && needs.publish_stores.result == 'skipped' }}
+    needs: [identity, prepare_infrastructure, publish_stores]
+    runs-on: ubuntu-22.04
+    environment: devhud-publication
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      DEVHUD_RELEASE_CONTROLLER_URL: ${{ vars.DEVHUD_RELEASE_CONTROLLER_URL }}
+      DEVHUD_RELEASE_CONTROLLER_AUDIENCE: ${{ vars.DEVHUD_RELEASE_CONTROLLER_AUDIENCE }}
+    steps:
+      - uses: actions/checkout@v6
+        with: { persist-credentials: false }
+      - name: Confirm the state is still before store publication
+        run: node -e 'import("./scripts/release/devhud-public-release.mjs").then(({rollbackPolicy})=>{if(!rollbackPolicy("infrastructure-ready").automatic)process.exit(1)})'
+      - name: Obtain controller credential and restore the prior release
+        run: |
+          set -euo pipefail
+          response=$(curl --fail --silent --show-error -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${DEVHUD_RELEASE_CONTROLLER_AUDIENCE}")
+          token=$(jq -er '.value' <<<"$response")
+          echo "::add-mask::$token"
+          export DEVHUD_RELEASE_CONTROLLER_TOKEN="$token"
+          node scripts/release/devhud-release-controller.mjs rollback --version "${{ needs.identity.outputs.version }}" --revision "$GITHUB_SHA" --output controller-rollback.json

@@ -5,6 +5,10 @@
 - `generate-devhud-updater.mjs`: creates the ten target/package-specific updater envelopes plus detached Ed25519 artifact and manifest signatures.
 - `generate-devhud-supply-chain.mjs`: validates the component-bearing SPDX 2.3 SBOM produced from each artifact's unpacked/package-aware build layout and creates its digest-bound SLSA v1 provenance statement.
 - `devhud-evidence.mjs` and `validate-devhud-private-build.mjs`: record platform checks, merge only the complete target set, and validate the private signed candidate without treating it as public-ready.
+- `devhud-public-release.mjs`: validates the exact `main` version/tag identity, stable configuration-name set, closed channel state machine, rollback boundary, and secret-redacted dry/public plan.
+- `devhud-live-preflight.mjs`: authenticates every documented GitHub, store, registry, Logto, asset, docs, PostgreSQL, R2, and provider-neutral deployment boundary without publishing.
+- `devhud-store-release.mjs`: submits full store packages for held review, classifies pending/approved/public status, and performs only protected full publication operations.
+- `devhud-release-controller.mjs`: sends identity-bound, OIDC-authenticated prepare/promote/status/rollback requests to the operator-selected deployment controller.
 - `validate-devhud-ios-signing.mjs`: verifies that the signed iOS app and both extensions use exact App Store identities, profiles, certificates, and production entitlements before IPA evidence is recorded.
 - `finalize-devhud-deb.sh`: deterministically adds package-owned system Chrome Native Messaging registration and a fail-closed removal hook that re-enters each affected active user session for authenticated revocation and credential cleanup before deleting user or system registration.
 
@@ -20,3 +24,4 @@ These scripts are designed for use by release workflows:
 - `.github/workflows/release-nodeup.yml`
 - `.github/workflows/release-derun.yml`
 - `.github/workflows/release-with-watch.yml`
+- `.github/workflows/release-devhud.yml` (manual `dry-run` or protected coordinated `release`; see `docs/servers-devhud-release-controller-contract.md` for stable configuration names)
