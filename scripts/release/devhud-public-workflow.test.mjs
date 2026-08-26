@@ -47,6 +47,7 @@ test("the complete reusable private candidate is the sole publication prerequisi
   assert.match(job("preflight"), /validate-devhud-private-build\.mjs/u);
   assert.match(job("preflight"), /devhud-live-preflight\.mjs/u);
   assert.match(job("preflight"), /DEVHUD_PUBLIC_API_URL: \$\{\{ vars\.DEVHUD_PUBLIC_API_URL \}\}/u);
+  assert.match(privateCandidate, /private-signed-candidate-\$\{\{ github\.run_id \}\}[\s\S]*retention-days: 35/u);
 });
 
 test("jobs request only their channel-specific GitHub permissions", () => {
@@ -60,8 +61,9 @@ test("jobs request only their channel-specific GitHub permissions", () => {
   }
 });
 
-test("protected review gates preserve pending review and prohibit partial publication", () => {
+test("protected review gates preserve pending review and recover partial publication", () => {
   assert.match(job("review_gate"), /devhud-store-review-approved/u);
+  assert.match(job("review_gate"), /\.status == "approved-held" or \.status == "public"/u);
   assert.match(job("stores_public"), /devhud-store-publication/u);
   assert.match(job("ga"), /environment: devhud-ga/u);
   assert.match(job("submit_stores"), /STAGED_PUBLISH|deferred review at 100 percent/u);
@@ -70,12 +72,22 @@ test("protected review gates preserve pending review and prohibit partial public
 
 test("same-commit retries reconcile public stores without repeating store mutations", () => {
   assert.match(job("identity"), /retry: \$\{\{ steps\.identity\.outputs\.retry \}\}/u);
-  assert.match(job("submit_stores"), /Reconcile the already-public store on a same-commit retry/u);
+  assert.match(job("submit_stores"), /Reconcile the exact current store state/u);
   assert.match(job("submit_stores"), /needs\.identity\.outputs\.retry != 'true'/u);
-  assert.match(job("review_gate"), /EXPECTED_STORE_STATUS: \$\{\{ needs\.identity\.outputs\.retry == 'true' && 'public' \|\| 'approved-held' \}\}/u);
+  assert.match(job("submit_stores"), /steps\.store_state\.outputs\.status != 'approved-held'.*steps\.store_state\.outputs\.status != 'public'/u);
+  assert.match(job("submit_stores"), /\[ "\$RELEASE_RETRY" = true \] && \[ "\$status" != public \]/u);
   assert.match(job("review_gate"), /needs\.identity\.outputs\.retry == 'true'.*devhud-publication.*devhud-store-review-approved/u);
-  assert.match(job("publish_stores"), /Confirm Apple and Chrome are already public on retry/u);
+  assert.match(job("review_gate"), /\[ "\$RELEASE_RETRY" = true \][\s\S]*\.status == "public"/u);
+  assert.doesNotMatch(job("publish_stores"), /needs\.identity\.outputs\.retry != 'true'/u);
   assert.match(job("stores_public"), /needs\.identity\.outputs\.retry == 'true'.*devhud-publication.*devhud-store-publication/u);
+});
+
+test("store publication waits boundedly for every exact public version", () => {
+  const publication = job("stores_public");
+  assert.match(publication, /timeout-minutes: 35/u);
+  assert.match(publication, /for attempt in \$\(seq 1 30\)/u);
+  assert.match(publication, /for provider in apple google-play chrome-web-store/u);
+  assert.match(publication, /sleep 60/u);
 });
 
 test("App Store build polling is read-only and submission runs once afterward", () => {
@@ -144,15 +156,23 @@ test("dry-run cannot enter publication and rollback stops at store publication",
   }
   assert.match(job("rollback_pre_store"), /needs\.publish_stores\.result == 'skipped'/u);
   assert.match(job("rollback_pre_store"), /needs\.identity\.outputs\.retry != 'true'/u);
+  assert.match(job("prepare_infrastructure"), /promotion_attempted: \$\{\{ steps\.promote\.outputs\.attempted \}\}/u);
   assert.match(job("prepare_infrastructure"), /promoted: \$\{\{ steps\.promote\.outputs\.promoted \}\}/u);
-  assert.match(job("rollback_pre_store"), /if: \$\{\{ needs\.prepare_infrastructure\.outputs\.promoted == 'true' \}\}/u);
-  assert.match(job("rollback_pre_store"), /rollbackPolicy\("infrastructure-ready"\)/u);
+  const promotion = job("prepare_infrastructure");
+  assert.ok(promotion.indexOf("attempted=true") < promotion.indexOf("promote-api"), "the attempt output must precede the remote mutation");
+  assert.match(job("rollback_pre_store"), /if: \$\{\{ needs\.prepare_infrastructure\.outputs\.promotion_attempted == 'true' \}\}/u);
+  assert.match(job("rollback_pre_store"), /rollback-policy --state infrastructure-ready/u);
+  assert.doesNotMatch(job("rollback_pre_store"), /node -e.*rollbackPolicy/u);
   const rollback = job("rollback_pre_store");
   const googleWithdrawal = rollback.indexOf("withdraw google-play");
   const appleWithdrawal = rollback.indexOf("withdraw apple");
   const chromeWithdrawal = rollback.indexOf("withdraw chrome-web-store");
+  const controllerStatus = rollback.indexOf("devhud-release-controller.mjs status");
   const controllerRollback = rollback.indexOf("devhud-release-controller.mjs rollback");
   assert.ok(googleWithdrawal > 0 && appleWithdrawal > googleWithdrawal && chromeWithdrawal > appleWithdrawal);
+  assert.ok(controllerStatus > chromeWithdrawal, "controller status must follow every store withdrawal");
+  assert.ok(controllerRollback > controllerStatus, "controller rollback must follow live reconciliation");
   assert.ok(controllerRollback > chromeWithdrawal, "controller rollback must follow every store withdrawal");
+  assert.match(rollback, /api_status[\s\S]*sweeper_status/u);
   assert.match(rollback, /\.status == "withdrawn"/u);
 });

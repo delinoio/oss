@@ -277,6 +277,11 @@ export function main(arguments_ = process.argv.slice(2), environment = process.e
     process.stdout.write(`${advanceRelease(options.state, options.event)}\n`);
     return;
   }
+  if (command === "rollback-policy") {
+    if (!Object.values(ReleaseState).includes(options.state)) throw new Error(`unsupported release state: ${options.state}`);
+    process.stdout.write(`${JSON.stringify(rollbackPolicy(options.state))}\n`);
+    return;
+  }
   throw new Error(`unsupported command: ${command}`);
 }
 

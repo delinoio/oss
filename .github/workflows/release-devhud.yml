@@ -191,14 +191,24 @@ jobs:
       DEVHUD_CHROME_WEB_STORE_CLIENT_ID: ${{ secrets.DEVHUD_CHROME_WEB_STORE_CLIENT_ID }}
       DEVHUD_CHROME_WEB_STORE_CLIENT_SECRET: ${{ secrets.DEVHUD_CHROME_WEB_STORE_CLIENT_SECRET }}
       DEVHUD_CHROME_WEB_STORE_REFRESH_TOKEN: ${{ secrets.DEVHUD_CHROME_WEB_STORE_REFRESH_TOKEN }}
+      RELEASE_RETRY: ${{ needs.identity.outputs.retry }}
       STORE_PROVIDER: ${{ matrix.provider }}
     steps:
       - uses: actions/checkout@v6
         with: { persist-credentials: false }
       - uses: actions/download-artifact@v8
         with: { pattern: devhud-v*-private-signed-candidate-*, path: private-artifacts, merge-multiple: true }
+      - name: Reconcile the exact current store state
+        id: store_state
+        run: |
+          set -euo pipefail
+          node scripts/release/devhud-store-release.mjs status "$STORE_PROVIDER" --output store-submission.json
+          status=$(jq -er '.status' store-submission.json)
+          if [ "$status" = rejected ]; then exit 1; fi
+          if [ "$RELEASE_RETRY" = true ] && [ "$status" != public ]; then exit 1; fi
+          echo "status=$status" >> "$GITHUB_OUTPUT"
       - name: Upload the processed App Store package
-        if: ${{ matrix.provider == 'apple' && needs.identity.outputs.retry != 'true' }}
+        if: ${{ matrix.provider == 'apple' && needs.identity.outputs.retry != 'true' && steps.store_state.outputs.status != 'approved-held' && steps.store_state.outputs.status != 'public' }}
         run: |
           set -euo pipefail
           umask 077
@@ -206,7 +216,7 @@ jobs:
           printf '%s' "$APPLE_API_PRIVATE_KEY_B64" | base64 --decode > "$HOME/.appstoreconnect/private_keys/AuthKey_${APPLE_API_KEY_ID}.p8"
           xcrun iTMSTransporter -m upload -assetFile private-artifacts/devhud-ios-arm64-app-store.ipa -apiKey "$APPLE_API_KEY_ID" -apiIssuer "$APPLE_API_ISSUER"
       - name: Wait for App Store package processing
-        if: ${{ matrix.provider == 'apple' && needs.identity.outputs.retry != 'true' }}
+        if: ${{ matrix.provider == 'apple' && needs.identity.outputs.retry != 'true' && steps.store_state.outputs.status != 'approved-held' && steps.store_state.outputs.status != 'public' }}
         run: |
           set -euo pipefail
           for attempt in $(seq 1 30); do
@@ -216,20 +226,14 @@ jobs:
             sleep 60
           done
       - name: Submit or reconcile the App Store review once
-        if: ${{ matrix.provider == 'apple' && needs.identity.outputs.retry != 'true' }}
+        if: ${{ matrix.provider == 'apple' && needs.identity.outputs.retry != 'true' && steps.store_state.outputs.status != 'approved-held' && steps.store_state.outputs.status != 'public' }}
         run: node scripts/release/devhud-store-release.mjs submit apple --output store-submission.json
       - name: Submit full Google Play production release for managed review
-        if: ${{ matrix.provider == 'google-play' && needs.identity.outputs.retry != 'true' }}
+        if: ${{ matrix.provider == 'google-play' && needs.identity.outputs.retry != 'true' && steps.store_state.outputs.status != 'approved-held' && steps.store_state.outputs.status != 'public' }}
         run: node scripts/release/devhud-store-release.mjs submit google-play --artifact private-artifacts/devhud-android-arm64-armv7-google-play.aab --output store-submission.json
       - name: Submit Chrome package for deferred review at 100 percent
-        if: ${{ matrix.provider == 'chrome-web-store' && needs.identity.outputs.retry != 'true' }}
+        if: ${{ matrix.provider == 'chrome-web-store' && needs.identity.outputs.retry != 'true' && steps.store_state.outputs.status != 'approved-held' && steps.store_state.outputs.status != 'public' }}
         run: node scripts/release/devhud-store-release.mjs submit chrome-web-store --artifact private-artifacts/devhud-chrome-web-store.zip --output store-submission.json
-      - name: Reconcile the already-public store on a same-commit retry
-        if: ${{ needs.identity.outputs.retry == 'true' }}
-        run: |
-          set -euo pipefail
-          node scripts/release/devhud-store-release.mjs status "$STORE_PROVIDER" --output store-submission.json
-          jq -e '.status == "public"' store-submission.json >/dev/null
       - uses: actions/upload-artifact@v7
         with: { name: "devhud-store-submission-${{ matrix.provider }}", path: store-submission.json, if-no-files-found: error }
 
@@ -253,7 +257,7 @@ jobs:
       DEVHUD_CHROME_WEB_STORE_CLIENT_ID: ${{ secrets.DEVHUD_CHROME_WEB_STORE_CLIENT_ID }}
       DEVHUD_CHROME_WEB_STORE_CLIENT_SECRET: ${{ secrets.DEVHUD_CHROME_WEB_STORE_CLIENT_SECRET }}
       DEVHUD_CHROME_WEB_STORE_REFRESH_TOKEN: ${{ secrets.DEVHUD_CHROME_WEB_STORE_REFRESH_TOKEN }}
-      EXPECTED_STORE_STATUS: ${{ needs.identity.outputs.retry == 'true' && 'public' || 'approved-held' }}
+      RELEASE_RETRY: ${{ needs.identity.outputs.retry }}
     steps:
       - uses: actions/checkout@v6
         with: { persist-credentials: false }
@@ -262,7 +266,11 @@ jobs:
           set -euo pipefail
           for provider in apple google-play chrome-web-store; do
             node scripts/release/devhud-store-release.mjs status "$provider" --output "$provider.json"
-            jq -e --arg expected "$EXPECTED_STORE_STATUS" '.status == $expected' "$provider.json" >/dev/null
+            if [ "$RELEASE_RETRY" = true ]; then
+              jq -e '.status == "public"' "$provider.json" >/dev/null
+            else
+              jq -e '.status == "approved-held" or .status == "public"' "$provider.json" >/dev/null
+            fi
           done
 
   docs_candidate:
@@ -345,6 +353,7 @@ jobs:
       contents: read
       id-token: write
     outputs:
+      promotion_attempted: ${{ steps.promote.outputs.attempted }}
       promoted: ${{ steps.promote.outputs.promoted }}
     env:
       DEVHUD_RELEASE_CONTROLLER_URL: ${{ vars.DEVHUD_RELEASE_CONTROLLER_URL }}
@@ -370,6 +379,7 @@ jobs:
         id: promote
         run: |
           set -euo pipefail
+          echo "attempted=true" >> "$GITHUB_OUTPUT"
           node scripts/release/devhud-release-controller.mjs promote-api --version "${{ needs.identity.outputs.version }}" --revision "$GITHUB_SHA" --output controller-api.json
           echo "promoted=true" >> "$GITHUB_OUTPUT"
       - name: Verify live API, schema readiness, and embedded administrator
@@ -402,24 +412,15 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with: { persist-credentials: false }
-      - if: ${{ needs.identity.outputs.retry != 'true' }}
-        run: node scripts/release/devhud-store-release.mjs publish apple --output apple-release.json
-      - if: ${{ needs.identity.outputs.retry != 'true' }}
-        run: node scripts/release/devhud-store-release.mjs publish chrome-web-store --output chrome-release.json
-      - name: Confirm Apple and Chrome are already public on retry
-        if: ${{ needs.identity.outputs.retry == 'true' }}
-        run: |
-          set -euo pipefail
-          for provider in apple chrome-web-store; do
-            node scripts/release/devhud-store-release.mjs status "$provider" --output "$provider.json"
-            jq -e '.status == "public"' "$provider.json" >/dev/null
-          done
+      - run: node scripts/release/devhud-store-release.mjs publish apple --output apple-release.json
+      - run: node scripts/release/devhud-store-release.mjs publish chrome-web-store --output chrome-release.json
 
   stores_public:
     name: Verify all stores independently public
     if: ${{ inputs.mode == 'release' }}
     needs: [identity, publish_stores]
     runs-on: ubuntu-22.04
+    timeout-minutes: 35
     environment: ${{ needs.identity.outputs.retry == 'true' && 'devhud-publication' || 'devhud-store-publication' }}
     permissions:
       contents: read
@@ -441,9 +442,15 @@ jobs:
       - name: Re-query exact public versions after operator publishes Play changes
         run: |
           set -euo pipefail
-          for provider in apple google-play chrome-web-store; do
-            node scripts/release/devhud-store-release.mjs status "$provider" --output "$provider.json"
-            jq -e '.status == "public"' "$provider.json" >/dev/null
+          for attempt in $(seq 1 30); do
+            all_public=true
+            for provider in apple google-play chrome-web-store; do
+              node scripts/release/devhud-store-release.mjs status "$provider" --output "$provider.json"
+              if ! jq -e '.status == "public"' "$provider.json" >/dev/null; then all_public=false; fi
+            done
+            if "$all_public"; then break; fi
+            if [ "$attempt" = 30 ]; then exit 1; fi
+            sleep 60
           done
 
   github_release:
@@ -664,7 +671,9 @@ jobs:
       - uses: actions/checkout@v6
         with: { persist-credentials: false }
       - name: Confirm the state is still before store publication
-        run: node -e 'import("./scripts/release/devhud-public-release.mjs").then(({rollbackPolicy})=>{if(!rollbackPolicy("infrastructure-ready").automatic)process.exit(1)})'
+        run: |
+          set -euo pipefail
+          node scripts/release/devhud-public-release.mjs rollback-policy --state infrastructure-ready | jq -e '.automatic == true' >/dev/null
       - name: Verify protected Google Play withdrawal and cancel Apple and Chrome submissions
         run: |
           set -euo pipefail
@@ -681,12 +690,19 @@ jobs:
             if [ "$attempt" = 30 ]; then exit 1; fi
             sleep 20
           done
-      - name: Obtain controller credential and restore the prior release
-        if: ${{ needs.prepare_infrastructure.outputs.promoted == 'true' }}
+      - name: Reconcile controller promotion and restore the prior release
+        if: ${{ needs.prepare_infrastructure.outputs.promotion_attempted == 'true' }}
         run: |
           set -euo pipefail
           response=$(curl --fail --silent --show-error -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${DEVHUD_RELEASE_CONTROLLER_AUDIENCE}")
           token=$(jq -er '.value' <<<"$response")
           echo "::add-mask::$token"
           export DEVHUD_RELEASE_CONTROLLER_TOKEN="$token"
-          node scripts/release/devhud-release-controller.mjs rollback --version "${{ needs.identity.outputs.version }}" --revision "$GITHUB_SHA" --output controller-rollback.json
+          node scripts/release/devhud-release-controller.mjs status --version "${{ needs.identity.outputs.version }}" --revision "$GITHUB_SHA" --output controller-status.json
+          api_status=$(jq -er '.channels.api | select(type == "string")' controller-status.json)
+          sweeper_status=$(jq -er '.channels.sweeper | select(type == "string")' controller-status.json)
+          if [ "$api_status" = public ] || [ "$sweeper_status" = public ]; then
+            test "$api_status" = public
+            test "$sweeper_status" = public
+            node scripts/release/devhud-release-controller.mjs rollback --version "${{ needs.identity.outputs.version }}" --revision "$GITHUB_SHA" --output controller-rollback.json
+          fi

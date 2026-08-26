@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -75,6 +76,13 @@ test("rollback becomes roll-forward-only at the first store publication", () => 
   for (const state of [ReleaseState.StoresPublic, ReleaseState.GitHubPublic, ReleaseState.UpdaterPublic, ReleaseState.DocsPublic, ReleaseState.IndependentlyVerified]) {
     assert.deepEqual(rollbackPolicy(state), { automatic: false, action: "roll-forward-or-coordinated-emergency-withdrawal" });
   }
+});
+
+test("rollback policy is available through the direct CLI", () => {
+  const script = fileURLToPath(new URL("devhud-public-release.mjs", import.meta.url));
+  const result = spawnSync(process.execPath, [script, "rollback-policy", "--state", ReleaseState.InfrastructureReady], { encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), rollbackPolicy(ReleaseState.InfrastructureReady));
 });
 
 test("plans and errors redact secret values including decoded base64", () => {

@@ -581,4 +581,4 @@ jobs:
           name: devhud-v${{ needs.plan.outputs.version }}-private-signed-candidate-${{ github.run_id }}
           path: private-artifacts
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 35

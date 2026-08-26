@@ -228,13 +228,21 @@ async function status(provider, environment, metadata, fetchImpl) {
 
 async function publish(provider, environment, metadata, fetchImpl) {
   if (provider === StoreProvider.Apple) {
-    const version = await appleVersion(environment, metadata, fetchImpl, appleToken(environment));
     const token = appleToken(environment);
+    const version = await appleVersion(environment, metadata, fetchImpl, token);
     await assertNoApplePhasedRelease(version, fetchImpl, token);
+    const current = classifyApple(version.attributes?.appStoreState);
+    if ([StoreStatus.Public, StoreStatus.Pending].includes(current)) return { provider, status: current, version: metadata.version };
+    if (current !== StoreStatus.ApprovedHeld) throw new Error(`App Store version cannot be published from state ${current}`);
     await checked(fetchImpl, "https://api.appstoreconnect.apple.com/v1/appStoreVersionReleaseRequests", { method: "POST", headers: jsonHeaders(token), body: JSON.stringify({ data: { type: "appStoreVersionReleaseRequests", relationships: { appStoreVersion: { data: { type: "appStoreVersions", id: version.id } } } } }) }, "App Store manual release");
   } else if (provider === StoreProvider.ChromeWebStore) {
     const token = await chromeToken(environment, fetchImpl);
-    await checked(fetchImpl, `https://chromewebstore.googleapis.com/v2/${chromeName(environment)}:publish`, { method: "POST", headers: jsonHeaders(token), body: JSON.stringify({ publishType: "STAGED_PUBLISH", deployInfos: [{ deployPercentage: 100 }], blockOnWarnings: true }) }, "Chrome Web Store staged publication");
+    const name = chromeName(environment);
+    const value = await checked(fetchImpl, `https://chromewebstore.googleapis.com/v2/${name}:fetchStatus`, { headers: bearer(token) }, "Chrome Web Store release status");
+    const current = classifyChrome({ submitted: value.submittedItemRevisionStatus, published: value.publishedItemRevisionStatus, version: metadata.version });
+    if ([StoreStatus.Public, StoreStatus.Pending].includes(current)) return { provider, status: current, version: metadata.version };
+    if (current !== StoreStatus.ApprovedHeld) throw new Error(`Chrome Web Store version cannot be published from state ${current}`);
+    await checked(fetchImpl, `https://chromewebstore.googleapis.com/v2/${name}:publish`, { method: "POST", headers: jsonHeaders(token), body: JSON.stringify({ publishType: "STAGED_PUBLISH", deployInfos: [{ deployPercentage: 100 }], blockOnWarnings: true }) }, "Chrome Web Store staged publication");
   } else {
     throw new Error("Google Play managed publication requires the protected operator publication gate");
   }

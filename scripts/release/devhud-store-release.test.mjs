@@ -122,6 +122,58 @@ test("Google status uses the direct release lifecycle endpoint and current respo
   assert.equal(requests.at(-1).options.method, undefined);
 });
 
+test("store publication skips exact versions that are already public", async () => {
+  const appleRequests = [];
+  const appleFetch = async (input, options = {}) => {
+    const url = String(input);
+    appleRequests.push({ url, options });
+    if (url.includes("appStoreVersions?")) return jsonResponse({ data: [{ id: "version-id", attributes: { appStoreState: "READY_FOR_SALE" } }] });
+    if (url.endsWith("appStoreVersionPhasedRelease")) return new Response(null, { status: 404 });
+    throw new Error(`unexpected request: ${url}`);
+  };
+  const apple = await run("publish", StoreProvider.Apple, {}, environment(), appleFetch);
+  assert.equal(apple.status, StoreStatus.Public);
+  assert.ok(appleRequests.every(({ options }) => options.method === undefined));
+
+  const chromeRequests = [];
+  const chromeFetch = async (input, options = {}) => {
+    const url = String(input);
+    chromeRequests.push({ url, options });
+    if (url === "https://oauth2.googleapis.com/token") return jsonResponse({ access_token: "chrome-token" });
+    if (url.endsWith(":fetchStatus")) return jsonResponse({ publishedItemRevisionStatus: { distributionChannels: [{ crxVersion: "0.1.0", deployPercentage: 100 }] } });
+    throw new Error(`unexpected request: ${url}`);
+  };
+  const chrome = await run("publish", StoreProvider.ChromeWebStore, {}, environment(), chromeFetch);
+  assert.equal(chrome.status, StoreStatus.Public);
+  assert.equal(chromeRequests.filter(({ url }) => url.endsWith(":publish")).length, 0);
+});
+
+test("store publication mutates each exact approved-held version once", async () => {
+  const appleRequests = [];
+  const appleFetch = async (input, options = {}) => {
+    const url = String(input);
+    appleRequests.push({ url, options });
+    if (url.includes("appStoreVersions?")) return jsonResponse({ data: [{ id: "version-id", attributes: { appStoreState: "PENDING_DEVELOPER_RELEASE" } }] });
+    if (url.endsWith("appStoreVersionPhasedRelease")) return new Response(null, { status: 404 });
+    if (url.endsWith("appStoreVersionReleaseRequests")) return jsonResponse({ data: { id: "release-id" } });
+    throw new Error(`unexpected request: ${url}`);
+  };
+  assert.equal((await run("publish", StoreProvider.Apple, {}, environment(), appleFetch)).status, StoreStatus.Pending);
+  assert.equal(appleRequests.filter(({ url, options }) => url.endsWith("appStoreVersionReleaseRequests") && options.method === "POST").length, 1);
+
+  const chromeRequests = [];
+  const chromeFetch = async (input, options = {}) => {
+    const url = String(input);
+    chromeRequests.push({ url, options });
+    if (url === "https://oauth2.googleapis.com/token") return jsonResponse({ access_token: "chrome-token" });
+    if (url.endsWith(":fetchStatus")) return jsonResponse({ submittedItemRevisionStatus: { state: "STAGED", distributionChannels: [{ crxVersion: "0.1.0", deployPercentage: 100 }] } });
+    if (url.endsWith(":publish")) return jsonResponse({});
+    throw new Error(`unexpected request: ${url}`);
+  };
+  assert.equal((await run("publish", StoreProvider.ChromeWebStore, {}, environment(), chromeFetch)).status, StoreStatus.Pending);
+  assert.equal(chromeRequests.filter(({ url, options }) => url.endsWith(":publish") && options.method === "POST").length, 1);
+});
+
 test("withdrawal cancels the exact Apple submission and current Chrome submission", async () => {
   const appleRequests = [];
   const appleFetch = async (input, options = {}) => {
