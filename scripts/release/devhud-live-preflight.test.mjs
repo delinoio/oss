@@ -38,6 +38,7 @@ function successfulFetch(environment_) {
     if (url.includes("chromewebstore.googleapis.com")) return jsonResponse({ itemId: environment_.DEVHUD_CHROME_EXTENSION_ID, publicKey: environment_.DEVHUD_CHROME_EXTENSION_PUBLIC_KEY });
     if (url.endsWith(".well-known/openid-configuration")) return jsonResponse({ issuer: environment_.DEVHUD_LOGTO_ISSUER, jwks_uri: "https://auth.example.test/jwks" });
     if (url.endsWith("/upload-token")) return jsonResponse({ result: { jwt: "fixture-pages-upload-token" } });
+    if (url.includes("/pages/projects/")) return jsonResponse({ result: { subdomain: "devhud.pages.dev", domains: [new URL(environment_.DEVHUD_PUBLIC_DOCS_URL).host] } });
     if (url.includes("controller.example.test")) return jsonResponse({
       ok: true,
       project: "devhud",
@@ -170,14 +171,42 @@ test("live preflight rejects an unavailable asset boundary", async () => {
 test("live preflight proves Cloudflare Pages deployment authority without mutation", async () => {
   const env = environment();
   const successful = successfulFetch(env);
+  let projectRequest;
   let pagesRequest;
   const fetchImpl = async (input, options) => {
-    if (String(input).endsWith("/upload-token")) pagesRequest = { url: String(input), options };
+    const url = String(input);
+    if (/\/pages\/projects\/[^/]+$/u.test(url)) projectRequest = { url, options };
+    if (url.endsWith("/upload-token")) pagesRequest = { url, options };
     return successful(input, options);
   };
   await runLivePreflight(env, fetchImpl);
+  assert.match(projectRequest.url, /\/accounts\/[^/]+\/pages\/projects\/[^/]+$/u);
+  assert.equal(projectRequest.options.method, undefined);
   assert.match(pagesRequest.url, /\/accounts\/[^/]+\/pages\/projects\/[^/]+\/upload-token$/u);
   assert.equal(pagesRequest.options.method, undefined);
+});
+
+test("live preflight accepts the Pages subdomain as the public docs host", async () => {
+  const env = { ...environment(), DEVHUD_PUBLIC_DOCS_URL: "https://devhud.pages.dev/devhud" };
+  const successful = successfulFetch(env);
+  const fetchImpl = async (input, options) => /\/pages\/projects\/[^/]+$/u.test(String(input))
+    ? jsonResponse({ result: { subdomain: "devhud.pages.dev", domains: [] } })
+    : successful(input, options);
+  assert.ok(Object.values(await runLivePreflight(env, fetchImpl)).every(Boolean));
+});
+
+test("live preflight rejects a public docs host outside the Pages project", async () => {
+  const env = environment();
+  const successful = successfulFetch(env);
+  let uploadTokenRequests = 0;
+  const fetchImpl = async (input, options) => {
+    const url = String(input);
+    if (/\/pages\/projects\/[^/]+$/u.test(url)) return jsonResponse({ result: { subdomain: "other.pages.dev", domains: ["other.example.test"] } });
+    if (url.endsWith("/upload-token")) uploadTokenRequests += 1;
+    return successful(input, options);
+  };
+  await assert.rejects(runLivePreflight(env, fetchImpl), /does not serve the configured public docs host/u);
+  assert.equal(uploadTokenRequests, 0);
 });
 
 test("live preflight rejects Pages credentials without deployment authority", async () => {

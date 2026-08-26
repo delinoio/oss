@@ -92,10 +92,29 @@ async function googleProductionReleases(environment, metadata, fetchImpl) {
 }
 
 async function appleVersion(environment, metadata, fetchImpl, token) {
-  const query = new URLSearchParams({ "filter[app]": environment.DEVHUD_APP_STORE_APP_ID, "filter[platform]": "IOS", "filter[versionString]": metadata.version, limit: "1" });
+  const query = new URLSearchParams({
+    "filter[app]": environment.DEVHUD_APP_STORE_APP_ID,
+    "filter[platform]": "IOS",
+    "filter[versionString]": metadata.version,
+    include: "build",
+    "fields[builds]": "version",
+    limit: "1",
+  });
   const result = await checked(fetchImpl, `https://api.appstoreconnect.apple.com/v1/appStoreVersions?${query}`, { headers: bearer(token) }, "App Store version lookup");
   if (!Array.isArray(result.data) || result.data.length > 1) throw new Error("App Store version lookup did not return at most one exact version");
-  return result.data[0] ?? null;
+  const version = result.data[0] ?? null;
+  if (!version) return null;
+  const current = classifyApple(version.attributes?.appStoreState);
+  if ([StoreStatus.Pending, StoreStatus.ApprovedHeld, StoreStatus.Public].includes(current)) {
+    const relationship = version.relationships?.build?.data;
+    const attachedBuild = relationship?.type === "builds" && typeof relationship.id === "string" && Array.isArray(result.included)
+      ? result.included.find(({ type, id }) => type === "builds" && id === relationship.id)
+      : undefined;
+    if (attachedBuild?.attributes?.version !== String(metadata.storeBuildNumber)) {
+      throw new Error("App Store version's attached build does not match the exact release build number");
+    }
+  }
+  return version;
 }
 
 async function createAppleVersion(environment, metadata, fetchImpl, token) {
