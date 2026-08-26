@@ -292,7 +292,7 @@ jobs:
           if [ "$RELEASE_RETRY" = true ] && [ "$status" != public ]; then exit 1; fi
           echo "status=$status" >> "$GITHUB_OUTPUT"
       - name: Upload the processed App Store package
-        if: ${{ matrix.provider == 'apple' && needs.identity.outputs.retry != 'true' && steps.store_state.outputs.status != 'pending-review' && steps.store_state.outputs.status != 'approved-held' && steps.store_state.outputs.status != 'public' }}
+        if: ${{ matrix.provider == 'apple' && needs.identity.outputs.retry != 'true' && (steps.store_state.outputs.status == 'unsubmitted' || steps.store_state.outputs.status == 'withdrawn') }}
         run: |
           set -euo pipefail
           umask 077
@@ -300,7 +300,7 @@ jobs:
           printf '%s' "$APPLE_API_PRIVATE_KEY_B64" | base64 --decode > "$HOME/.appstoreconnect/private_keys/AuthKey_${APPLE_API_KEY_ID}.p8"
           xcrun iTMSTransporter -m upload -assetFile private-artifacts/devhud-ios-arm64-app-store.ipa -apiKey "$APPLE_API_KEY_ID" -apiIssuer "$APPLE_API_ISSUER"
       - name: Wait for App Store package processing
-        if: ${{ matrix.provider == 'apple' && needs.identity.outputs.retry != 'true' && steps.store_state.outputs.status != 'pending-review' && steps.store_state.outputs.status != 'approved-held' && steps.store_state.outputs.status != 'public' }}
+        if: ${{ matrix.provider == 'apple' && needs.identity.outputs.retry != 'true' && (steps.store_state.outputs.status == 'unsubmitted' || steps.store_state.outputs.status == 'withdrawn') }}
         run: |
           set -euo pipefail
           for attempt in $(seq 1 30); do
@@ -310,16 +310,16 @@ jobs:
             sleep 60
           done
       - name: Submit or reconcile the App Store review once
-        if: ${{ matrix.provider == 'apple' && needs.identity.outputs.retry != 'true' && steps.store_state.outputs.status != 'pending-review' && steps.store_state.outputs.status != 'approved-held' && steps.store_state.outputs.status != 'public' }}
+        if: ${{ matrix.provider == 'apple' && needs.identity.outputs.retry != 'true' && (steps.store_state.outputs.status == 'unsubmitted' || steps.store_state.outputs.status == 'withdrawn') }}
         run: node scripts/release/devhud-store-release.mjs submit apple --output store-submission.json
       - name: Submit full Google Play production release for managed review
-        if: ${{ matrix.provider == 'google-play' && needs.identity.outputs.retry != 'true' && steps.store_state.outputs.status != 'pending-review' && steps.store_state.outputs.status != 'approved-held' && steps.store_state.outputs.status != 'public' }}
+        if: ${{ matrix.provider == 'google-play' && needs.identity.outputs.retry != 'true' && (steps.store_state.outputs.status == 'unsubmitted' || steps.store_state.outputs.status == 'withdrawn') }}
         run: node scripts/release/devhud-store-release.mjs submit google-play --artifact private-artifacts/devhud-android-arm64-armv7-google-play.aab --output store-submission.json
       - name: Submit Chrome package for deferred review at 100 percent
-        if: ${{ matrix.provider == 'chrome-web-store' && needs.identity.outputs.retry != 'true' && steps.store_state.outputs.status != 'pending-review' && steps.store_state.outputs.status != 'approved-held' && steps.store_state.outputs.status != 'public' }}
+        if: ${{ matrix.provider == 'chrome-web-store' && needs.identity.outputs.retry != 'true' && (steps.store_state.outputs.status == 'unsubmitted' || steps.store_state.outputs.status == 'withdrawn') }}
         run: node scripts/release/devhud-store-release.mjs submit chrome-web-store --artifact private-artifacts/devhud-chrome-web-store.zip --output store-submission.json
       - uses: actions/upload-artifact@v7
-        with: { name: "devhud-store-submission-${{ matrix.provider }}", path: store-submission.json, if-no-files-found: error }
+        with: { name: "devhud-store-submission-${{ matrix.provider }}-${{ github.run_attempt }}", path: store-submission.json, if-no-files-found: error }
 
   review_gate:
     name: Wait for every held store review
@@ -837,8 +837,8 @@ jobs:
             for provider in apple google-play chrome-web-store; do
               node scripts/release/devhud-store-release.mjs status "$provider" --output "$provider.json"
               if [ "$provider" = google-play ]; then
-                if ! jq -e '.status == "withdrawn" or .status == "rejected"' "$provider.json" >/dev/null; then withdrawn=false; fi
-              elif ! jq -e '.status == "withdrawn"' "$provider.json" >/dev/null; then withdrawn=false; fi
+                if ! jq -e '.status == "unsubmitted" or .status == "withdrawn" or .status == "rejected"' "$provider.json" >/dev/null; then withdrawn=false; fi
+              elif ! jq -e '.status == "unsubmitted" or .status == "withdrawn"' "$provider.json" >/dev/null; then withdrawn=false; fi
             done
             if "$withdrawn"; then break; fi
             if [ "$attempt" = 30 ]; then exit 1; fi

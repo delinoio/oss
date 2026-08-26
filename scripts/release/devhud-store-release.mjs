@@ -9,7 +9,7 @@ import { loadReleaseMetadata } from "./devhud-release.mjs";
 import { redact } from "./devhud-public-release.mjs";
 
 export const StoreProvider = Object.freeze({ Apple: "apple", GooglePlay: "google-play", ChromeWebStore: "chrome-web-store" });
-export const StoreStatus = Object.freeze({ Pending: "pending-review", ApprovedHeld: "approved-held", Public: "public", Rejected: "rejected", Withdrawn: "withdrawn" });
+export const StoreStatus = Object.freeze({ Unsubmitted: "unsubmitted", Pending: "pending-review", ApprovedHeld: "approved-held", Public: "public", Rejected: "rejected", Withdrawn: "withdrawn" });
 export const StoreBuildStatus = Object.freeze({ Processing: "processing", Processed: "processed" });
 
 const appleSubmittedReviewStates = new Set(["WAITING_FOR_REVIEW", "IN_REVIEW", "COMPLETING", "COMPLETE"]);
@@ -50,6 +50,7 @@ function chromeName(environment) {
 
 export function classifyApple(state) {
   if (state === "DEVELOPER_REJECTED") return StoreStatus.Withdrawn;
+  if (["PREPARE_FOR_SUBMISSION", "READY_FOR_REVIEW"].includes(state)) return StoreStatus.Unsubmitted;
   if (["PENDING_DEVELOPER_RELEASE", "PENDING_DEVELOPER_RELEASE_FOR_APP_STORE"].includes(state)) return StoreStatus.ApprovedHeld;
   if (["READY_FOR_SALE", "READY_FOR_DISTRIBUTION"].includes(state)) return StoreStatus.Public;
   if (typeof state === "string" && state.includes("REJECT")) return StoreStatus.Rejected;
@@ -65,13 +66,18 @@ export function classifyGoogle(state) {
 }
 
 export function classifyChrome({ submitted, published, version }) {
-  const publicChannel = published?.distributionChannels?.find(({ crxVersion, deployPercentage }) => crxVersion === version && deployPercentage === 100);
-  if (publicChannel) return StoreStatus.Public;
-  const submittedChannel = submitted?.distributionChannels?.find(({ crxVersion, deployPercentage }) => crxVersion === version && deployPercentage === 100);
-  if (submittedChannel && ["STAGED", "APPROVED"].includes(submitted?.state)) return StoreStatus.ApprovedHeld;
+  const publishedChannel = published?.distributionChannels?.find(({ crxVersion }) => crxVersion === version);
+  if (publishedChannel?.deployPercentage === 100) return StoreStatus.Public;
+  if (publishedChannel) return StoreStatus.Pending;
+  const submittedChannel = submitted?.distributionChannels?.find(({ crxVersion }) => crxVersion === version);
+  if (submittedChannel?.deployPercentage === 100 && ["STAGED", "APPROVED"].includes(submitted?.state)) return StoreStatus.ApprovedHeld;
+  if (submittedChannel && submitted?.state === "CANCELLED") return StoreStatus.Withdrawn;
+  if (submittedChannel && submitted?.state === "REJECTED") return StoreStatus.Rejected;
+  if (submittedChannel) return StoreStatus.Pending;
+  if (submitted?.distributionChannels?.length) return StoreStatus.Unsubmitted;
   if (submitted?.state === "CANCELLED") return StoreStatus.Withdrawn;
   if (submitted?.state === "REJECTED") return StoreStatus.Rejected;
-  return StoreStatus.Pending;
+  return StoreStatus.Unsubmitted;
 }
 
 function googleRelease(releases, metadata) {

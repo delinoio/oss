@@ -83,7 +83,8 @@ test("same-commit retries reconcile public stores without repeating store mutati
   assert.match(job("identity"), /retry: \$\{\{ steps\.identity\.outputs\.retry \}\}/u);
   assert.match(job("submit_stores"), /Reconcile the exact current store state/u);
   assert.match(job("submit_stores"), /needs\.identity\.outputs\.retry != 'true'/u);
-  assert.match(job("submit_stores"), /steps\.store_state\.outputs\.status != 'pending-review'.*steps\.store_state\.outputs\.status != 'approved-held'.*steps\.store_state\.outputs\.status != 'public'/u);
+  assert.match(job("submit_stores"), /steps\.store_state\.outputs\.status == 'unsubmitted'.*steps\.store_state\.outputs\.status == 'withdrawn'/u);
+  assert.match(job("submit_stores"), /devhud-store-submission-\$\{\{ matrix\.provider \}\}-\$\{\{ github\.run_attempt \}\}/u);
   assert.match(job("submit_stores"), /\[ "\$RELEASE_RETRY" = true \] && \[ "\$status" != public \]/u);
   assert.match(job("review_gate"), /needs\.identity\.outputs\.retry == 'true'.*devhud-publication.*devhud-store-review-approved/u);
   assert.match(job("review_gate"), /\[ "\$RELEASE_RETRY" = true \][\s\S]*\.status == "public"/u);
@@ -198,5 +199,6 @@ test("dry-run cannot enter publication and rollback stops at store publication",
   assert.match(rollback, /api_status[\s\S]*sweeper_status/u);
   assert.match(rollback, /for provider in apple google-play chrome-web-store/u);
   assert.match(rollback, /status == "public"/u);
+  assert.match(rollback, /\.status == "unsubmitted"/u);
   assert.match(rollback, /\.status == "withdrawn"/u);
 });

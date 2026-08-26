@@ -28,7 +28,9 @@ function environment() {
 
 const jsonResponse = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
-test("store review states distinguish pending, approved-held, public, and rejected", () => {
+test("store states distinguish unsubmitted, pending, approved-held, public, and terminal results", () => {
+  assert.equal(classifyApple("PREPARE_FOR_SUBMISSION"), StoreStatus.Unsubmitted);
+  assert.equal(classifyApple("READY_FOR_REVIEW"), StoreStatus.Unsubmitted);
   assert.equal(classifyApple("WAITING_FOR_REVIEW"), StoreStatus.Pending);
   assert.equal(classifyApple("PENDING_DEVELOPER_RELEASE"), StoreStatus.ApprovedHeld);
   assert.equal(classifyApple("READY_FOR_SALE"), StoreStatus.Public);
@@ -42,10 +44,13 @@ test("store review states distinguish pending, approved-held, public, and reject
 });
 
 test("Chrome requires the exact version at 100 percent before public", () => {
+  assert.equal(classifyChrome({ submitted: undefined, published: undefined, version: "0.1.0" }), StoreStatus.Unsubmitted);
+  const pending = classifyChrome({ submitted: { state: "PENDING_REVIEW", distributionChannels: [{ crxVersion: "0.1.0", deployPercentage: 100 }] }, published: {}, version: "0.1.0" });
+  assert.equal(pending, StoreStatus.Pending);
   const approved = classifyChrome({ submitted: { state: "STAGED", distributionChannels: [{ crxVersion: "0.1.0", deployPercentage: 100 }] }, published: {}, version: "0.1.0" });
   assert.equal(approved, StoreStatus.ApprovedHeld);
   const wrongHeldVersion = classifyChrome({ submitted: { state: "STAGED", distributionChannels: [{ crxVersion: "0.0.9", deployPercentage: 100 }] }, published: {}, version: "0.1.0" });
-  assert.equal(wrongHeldVersion, StoreStatus.Pending);
+  assert.equal(wrongHeldVersion, StoreStatus.Unsubmitted);
   const partial = classifyChrome({ submitted: {}, published: { distributionChannels: [{ crxVersion: "0.1.0", deployPercentage: 50 }] }, version: "0.1.0" });
   assert.equal(partial, StoreStatus.Pending);
   const complete = classifyChrome({ submitted: {}, published: { distributionChannels: [{ crxVersion: "0.1.0", deployPercentage: 100 }] }, version: "0.1.0" });
