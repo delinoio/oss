@@ -97,7 +97,13 @@ export async function runLivePreflight(environment = process.env, fetchImpl = fe
   const controllerResponse = await checkedFetch(fetchImpl, controllerURL, {
     method: "POST",
     headers: { ...bearer(environment.DEVHUD_RELEASE_CONTROLLER_TOKEN), "content-type": "application/json" },
-    body: JSON.stringify({ schemaVersion: 1, project: "devhud", version: environment.DEVHUD_RELEASE_VERSION, revision: environment.GITHUB_SHA }),
+    body: JSON.stringify({
+      schemaVersion: 1,
+      project: "devhud",
+      version: environment.DEVHUD_RELEASE_VERSION,
+      tag: `devhud@v${environment.DEVHUD_RELEASE_VERSION}`,
+      revision: environment.GITHUB_SHA,
+    }),
   }, "release-controller");
   const controller = validateControllerResponse(await controllerResponse.json(), {
     version: environment.DEVHUD_RELEASE_VERSION,

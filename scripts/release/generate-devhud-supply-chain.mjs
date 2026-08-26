@@ -39,6 +39,11 @@ export function validateProvenanceMetadata({ invocationId, startedOn, finishedOn
   return { invocationId, startedOn: normalizedStartedOn, finishedOn: normalizedFinishedOn };
 }
 
+export function validateProvenanceRevision(statement, revision) {
+  if (typeof revision !== "string" || !/^[a-f0-9]{40}$/u.test(revision)) throw new Error("expected provenance revision must be an exact lowercase 40-hex commit");
+  if (statement.predicate?.buildDefinition?.externalParameters?.revision !== revision) throw new Error("provenance revision mismatch");
+}
+
 export function provenanceStatement({ artifact, digest, version, revision, invocationId, startedOn, finishedOn, materials }) {
   const execution = validateProvenanceMetadata({ invocationId, startedOn, finishedOn });
   return {
@@ -48,7 +53,7 @@ export function provenanceStatement({ artifact, digest, version, revision, invoc
     predicate: {
       buildDefinition: {
         buildType: "https://github.com/delinoio/oss/blob/main/docs/project-devhud.md#private-build-packaging",
-        externalParameters: { project: "devhud", version, tag: `devhud@v${version}`, publication: "disabled" },
+        externalParameters: { project: "devhud", version, tag: `devhud@v${version}`, revision, publication: "disabled" },
         internalParameters: { mode: "manual-signed-private" },
         resolvedDependencies: materials,
       },

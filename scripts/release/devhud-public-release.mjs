@@ -157,6 +157,11 @@ export function validateReleaseConfiguration(environment = process.env) {
   if (environment.DEVHUD_PUBLIC_API_URL !== productionApiOrigin) {
     throw new Error(`DEVHUD_PUBLIC_API_URL must exactly match the compiled production origin ${productionApiOrigin}`);
   }
+  let registry;
+  try { registry = new URL(`https://${environment.DEVHUD_OCI_REGISTRY}/`); } catch { throw new Error("DEVHUD_OCI_REGISTRY must be a host-only registry authority"); }
+  if (registry.username || registry.password || registry.pathname !== "/" || registry.search || registry.hash || registry.host !== environment.DEVHUD_OCI_REGISTRY) {
+    throw new Error("DEVHUD_OCI_REGISTRY must be a host-only registry authority without credentials, path, query, or fragment");
+  }
   if (!/^[a-z0-9._/-]+$/u.test(environment.DEVHUD_OCI_API_REPOSITORY) || !/^[a-z0-9._/-]+$/u.test(environment.DEVHUD_OCI_SWEEPER_REPOSITORY)) {
     throw new Error("OCI repository names must use lowercase registry-safe characters");
   }

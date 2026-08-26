@@ -22,6 +22,7 @@ function completeEnvironment() {
   environment.DEVHUD_RELEASE_CONTROLLER_URL = "https://release-controller.example.test/v1";
   environment.DEVHUD_PUBLIC_API_URL = "https://devhud.api.delino.io";
   environment.DEVHUD_PUBLIC_DOCS_URL = "https://docs.example.test/devhud";
+  environment.DEVHUD_OCI_REGISTRY = "registry.example.test";
   environment.DEVHUD_OCI_API_REPOSITORY = "devhud/api";
   environment.DEVHUD_OCI_SWEEPER_REPOSITORY = "devhud/sweeper";
   return environment;
@@ -53,6 +54,15 @@ test("missing release credentials fail closed without exposing values", () => {
     "https://devhud.api.delino.io:444",
   ]) {
     assert.throws(() => validateReleaseConfiguration({ ...environment, DEVHUD_PUBLIC_API_URL: value }), /must exactly match the compiled production origin/u);
+  }
+  for (const value of [
+    "trusted.example@attacker.example",
+    "registry.example.test/path",
+    "registry.example.test?scope=push",
+    "registry.example.test#credentials",
+    "https://registry.example.test",
+  ]) {
+    assert.throws(() => validateReleaseConfiguration({ ...environment, DEVHUD_OCI_REGISTRY: value }), /host-only registry authority/u);
   }
   const serialized = JSON.stringify(configurationStatus(environment));
   assert.ok(!serialized.includes("configured-"));

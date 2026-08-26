@@ -55,7 +55,20 @@ test("Google service-account assertion is a bounded signed JWT", () => {
 
 test("live preflight composes every independent read-only check", async () => {
   const env = environment();
-  assert.ok(Object.values(await runLivePreflight(env, successfulFetch(env))).every(Boolean));
+  const successful = successfulFetch(env);
+  let controllerRequest;
+  const fetchImpl = async (input, options) => {
+    if (String(input).includes("controller.example.test")) controllerRequest = JSON.parse(options.body);
+    return successful(input, options);
+  };
+  assert.ok(Object.values(await runLivePreflight(env, fetchImpl)).every(Boolean));
+  assert.deepEqual(controllerRequest, {
+    schemaVersion: 1,
+    project: "devhud",
+    version: env.DEVHUD_RELEASE_VERSION,
+    tag: `devhud@v${env.DEVHUD_RELEASE_VERSION}`,
+    revision: env.GITHUB_SHA,
+  });
 });
 
 test("live preflight fails closed when the controller omits PostgreSQL", async () => {

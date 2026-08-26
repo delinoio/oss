@@ -63,17 +63,22 @@ test("provenance validation binds the statement to the current workflow run atte
   const digest = "a".repeat(64);
   const statement = {
     subject: [{ name: "artifact.bin", digest: { sha256: digest } }],
-    predicate: { runDetails: { metadata: {
-      invocationId: "https://github.com/delinoio/oss/actions/runs/123456789/attempts/2",
-      startedOn: "2026-08-25T10:00:00Z",
-      finishedOn: "2026-08-25T10:30:00Z",
-    } } },
+    predicate: {
+      buildDefinition: { externalParameters: { revision: "a".repeat(40) } },
+      runDetails: { metadata: {
+        invocationId: "https://github.com/delinoio/oss/actions/runs/123456789/attempts/2",
+        startedOn: "2026-08-25T10:00:00Z",
+        finishedOn: "2026-08-25T10:30:00Z",
+      } },
+    },
   };
-  const environment = { GITHUB_REPOSITORY: "delinoio/oss", GITHUB_RUN_ID: "123456789", GITHUB_RUN_ATTEMPT: "2" };
+  const environment = { GITHUB_REPOSITORY: "delinoio/oss", GITHUB_SHA: "a".repeat(40), GITHUB_RUN_ID: "123456789", GITHUB_RUN_ATTEMPT: "2" };
   assert.doesNotThrow(() => validateProvenance(statement, "artifact.bin", digest, environment));
+  assert.throws(() => validateProvenance(statement, "artifact.bin", digest, { ...environment, GITHUB_SHA: "b".repeat(40) }), /revision mismatch/u);
   assert.throws(() => validateProvenance(statement, "artifact.bin", digest, { ...environment, GITHUB_RUN_ATTEMPT: "3" }), /invocation mismatch/u);
   assert.doesNotThrow(() => validateProvenance(statement, "artifact.bin", digest, {
     GITHUB_REPOSITORY: "delinoio/oss",
+    GITHUB_SHA: "a".repeat(40),
     GITHUB_RUN_ID: "999",
     GITHUB_RUN_ATTEMPT: "1",
     DEVHUD_PROVENANCE_RUN_ID: "123456789",
@@ -81,6 +86,7 @@ test("provenance validation binds the statement to the current workflow run atte
   }));
   assert.throws(() => validateProvenance(statement, "artifact.bin", digest, {
     GITHUB_REPOSITORY: "delinoio/oss",
+    GITHUB_SHA: "a".repeat(40),
     DEVHUD_PROVENANCE_RUN_ID: "123456789",
     DEVHUD_PROVENANCE_RUN_ATTEMPT: "3",
   }), /invocation mismatch/u);

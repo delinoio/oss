@@ -8,7 +8,7 @@ import { pathToFileURL } from "node:url";
 
 import { artifactGroups, loadReleaseMetadata, repositoryRoot, updaterTargets, validateExtensionParity } from "./devhud-release.mjs";
 import { validateEvidenceEntries } from "./devhud-evidence.mjs";
-import { validateProvenanceMetadata, validateSpdx } from "./generate-devhud-supply-chain.mjs";
+import { validateProvenanceMetadata, validateProvenanceRevision, validateSpdx } from "./generate-devhud-supply-chain.mjs";
 import { assertUpdaterArtifactSize } from "./generate-devhud-updater.mjs";
 
 const ARTIFACT_DOMAIN = Buffer.from("devhud-update-artifact-v1\0", "utf8");
@@ -81,6 +81,7 @@ export function validateProvenance(statement, artifact, digest, environment = pr
   if (statement.subject?.[0]?.name !== artifact || statement.subject[0].digest?.sha256 !== digest) {
     throw new Error(`provenance subject mismatch: ${artifact}`);
   }
+  validateProvenanceRevision(statement, environment.GITHUB_SHA);
   const metadata = validateProvenanceMetadata(statement.predicate?.runDetails?.metadata ?? {});
   const repository = environment.GITHUB_REPOSITORY;
   const runId = environment.DEVHUD_PROVENANCE_RUN_ID ?? environment.GITHUB_RUN_ID;

@@ -181,11 +181,14 @@ test("independent verification fetches and verifies both remote OCI digests", ()
 
 test("independent verification downloads and authenticates the exact public GitHub assets", () => {
   const verification = job("verify_all");
+  assert.match(verification, /gh api "repos\/\$GITHUB_REPOSITORY\/commits\/\$RELEASE_TAG" --jq '\.sha'/u);
+  assert.match(verification, /test "\$remote_target" = "\$GITHUB_SHA"/u);
   assert.match(verification, /gh release view[\s\S]*--json assets,isDraft,isPrerelease,tagName/u);
   assert.match(verification, /gh release download/u);
   assert.match(verification, /devhud-v\$\{RELEASE_VERSION\}-release-evidence\.tar\.gz/u);
   assert.match(verification, /X-DevHud-Package/u);
   assert.match(verification, /validate-devhud-public-assets\.mjs/u);
+  assert.match(verification, /--revision "\$GITHUB_SHA"/u);
   assert.match(verification, /DEVHUD_PRIVATE_WORKFLOW_REF/u);
 });
 
@@ -214,6 +217,9 @@ test("GA repeats every public-channel verification after approval and before mut
     /skopeo inspect/u,
     /cosign verify --certificate-identity/u,
     /devhud-release-controller\.mjs status/u,
+    /gh api "repos\/\$GITHUB_REPOSITORY\/commits\/\$RELEASE_TAG" --jq '\.sha'/u,
+    /test "\$remote_target" = "\$GITHUB_SHA"/u,
+    /--revision "\$GITHUB_SHA"/u,
   ]) {
     assert.match(ga, pattern);
   }

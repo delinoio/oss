@@ -582,7 +582,7 @@ jobs:
           mkdir -p github-assets
           find private-artifacts -maxdepth 1 -type f \( -name 'devhud-macos-*' -o -name 'devhud-windows-*' -o -name 'devhud-ubuntu-*' -o -name 'devhud-chrome-github-validation.zip' \) -exec cp '{}' github-assets/ \;
           tar -C private-artifacts -czf github-assets/devhud-v${RELEASE_VERSION}-release-evidence.tar.gz SHA256SUMS sbom provenance sigstore updater/signatures validation
-          node -e 'const fs=require("node:fs");const m=require("./packaging/devhud/release-metadata.json");fs.writeFileSync("github-assets/devhud-release-index.json",JSON.stringify({schemaVersion:1,project:"devhud",version:m.version,tag:`devhud@v${m.version}`,storeBuildNumber:m.storeBuildNumber,channels:["apple-app-store","google-play","chrome-web-store","github-release","desktop-updater","api","public-docs"]},null,2)+"\n")'
+          node -e 'const fs=require("node:fs");const m=require("./packaging/devhud/release-metadata.json");fs.writeFileSync("github-assets/devhud-release-index.json",JSON.stringify({schemaVersion:1,project:"devhud",version:m.version,tag:`devhud@v${m.version}`,revision:process.env.GITHUB_SHA,storeBuildNumber:m.storeBuildNumber,channels:["apple-app-store","google-play","chrome-web-store","github-release","desktop-updater","api","public-docs"]},null,2)+"\n")'
       - name: Create or reconcile a regular non-latest release
         run: |
           set -euo pipefail
@@ -733,6 +733,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p public-assets
+          remote_target=$(gh api "repos/$GITHUB_REPOSITORY/commits/$RELEASE_TAG" --jq '.sha')
+          test "$remote_target" = "$GITHUB_SHA"
           gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets,isDraft,isPrerelease,tagName > public-release.json
           gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir public-assets
           evidence="public-assets/devhud-v${RELEASE_VERSION}-release-evidence.tar.gz"
@@ -761,7 +763,7 @@ jobs:
           linux|aarch64|linux-appimage
           linux|aarch64|linux-deb
           TARGETS
-          node scripts/release/validate-devhud-public-assets.mjs --assets-dir public-assets --release-json public-release.json
+          node scripts/release/validate-devhud-public-assets.mjs --assets-dir public-assets --release-json public-release.json --revision "$GITHUB_SHA"
       - name: Reverify public API, docs, release, and immutable images
         run: |
           set -euo pipefail
@@ -837,6 +839,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p public-assets
+          remote_target=$(gh api "repos/$GITHUB_REPOSITORY/commits/$RELEASE_TAG" --jq '.sha')
+          test "$remote_target" = "$GITHUB_SHA"
           gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets,isDraft,isPrerelease,tagName > public-release.json
           gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir public-assets
           evidence="public-assets/devhud-v${RELEASE_VERSION}-release-evidence.tar.gz"
@@ -865,7 +869,7 @@ jobs:
           linux|aarch64|linux-appimage
           linux|aarch64|linux-deb
           TARGETS
-          node scripts/release/validate-devhud-public-assets.mjs --assets-dir public-assets --release-json public-release.json
+          node scripts/release/validate-devhud-public-assets.mjs --assets-dir public-assets --release-json public-release.json --revision "$GITHUB_SHA"
       - name: Reverify public API, docs, release, and immutable images after GA approval
         run: |
           set -euo pipefail
