@@ -474,28 +474,38 @@ fn remove_windows_registration() -> Result<(), String> {
     classify_windows_registry_delete_status(status)
 }
 
+fn complete_unregister(
+    pairing_was_revoked_by_app: bool,
+    delete_pairing: impl FnOnce() -> Result<(), String>,
+    remove_manifest: impl FnOnce() -> Result<(), String>,
+    remove_registry: impl FnOnce() -> Result<(), String>,
+) -> Result<(), String> {
+    if !pairing_was_revoked_by_app {
+        delete_pairing()?;
+    }
+    remove_manifest()?;
+    remove_registry()?;
+    Ok(())
+}
+
 fn unregister(args: &[String]) -> Result<(), String> {
     let pairing_was_revoked_by_app = revoke_running_app_pairing()?;
-    let manifest_result = args
+    let destination = args
         .first()
         .map(PathBuf::from)
         .map_or_else(registration::user_manifest_path, Ok)
-        .map_err(|error| error.to_string())
-        .and_then(|destination| {
-            registration::remove_manifest(&destination).map_err(|error| error.to_string())
-        });
-    #[cfg(windows)]
-    let registry_result = remove_windows_registration();
-    #[cfg(not(windows))]
-    let registry_result: Result<(), String> = Ok(());
-    let pairing_result = if pairing_was_revoked_by_app {
-        Ok(())
-    } else {
-        delete_pairing_secret()
-    };
-    manifest_result?;
-    registry_result?;
-    pairing_result?;
+        .map_err(|error| error.to_string())?;
+    complete_unregister(
+        pairing_was_revoked_by_app,
+        delete_pairing_secret,
+        || registration::remove_manifest(&destination).map_err(|error| error.to_string()),
+        || {
+            #[cfg(windows)]
+            return remove_windows_registration();
+            #[cfg(not(windows))]
+            Ok(())
+        },
+    )?;
     info!(event = "native_host_unregistered");
     Ok(())
 }
@@ -525,7 +535,75 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::RefCell;
+
     use super::*;
+
+    #[test]
+    fn unregister_removes_credentials_before_registration() {
+        let calls = RefCell::new(Vec::new());
+        complete_unregister(
+            false,
+            || {
+                calls.borrow_mut().push("pairing");
+                Ok(())
+            },
+            || {
+                calls.borrow_mut().push("manifest");
+                Ok(())
+            },
+            || {
+                calls.borrow_mut().push("registry");
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(*calls.borrow(), ["pairing", "manifest", "registry"]);
+    }
+
+    #[test]
+    fn unregister_preserves_registration_when_credential_removal_fails() {
+        let calls = RefCell::new(Vec::new());
+        let result = complete_unregister(
+            false,
+            || {
+                calls.borrow_mut().push("pairing");
+                Err("storage-failure".to_string())
+            },
+            || {
+                calls.borrow_mut().push("manifest");
+                Ok(())
+            },
+            || {
+                calls.borrow_mut().push("registry");
+                Ok(())
+            },
+        );
+        assert_eq!(result.unwrap_err(), "storage-failure");
+        assert_eq!(*calls.borrow(), ["pairing"]);
+    }
+
+    #[test]
+    fn unregister_skips_duplicate_credential_removal_after_live_revocation() {
+        let calls = RefCell::new(Vec::new());
+        complete_unregister(
+            true,
+            || {
+                calls.borrow_mut().push("pairing");
+                Ok(())
+            },
+            || {
+                calls.borrow_mut().push("manifest");
+                Ok(())
+            },
+            || {
+                calls.borrow_mut().push("registry");
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(*calls.borrow(), ["manifest", "registry"]);
+    }
 
     #[cfg(unix)]
     #[test]

@@ -8,6 +8,7 @@
     "build": "node -e \"require('node:fs').rmSync('build',{recursive:true,force:true})\" && tsc -p tsconfig.build.json && node scripts/build.mjs",
     "build:test": "node scripts/build-test.mjs",
     "lint": "tsc --noEmit",
+    "test:package": "node --test scripts/policy.test.mjs scripts/deterministic-build.test.mjs",
     "test": "pnpm lint && vitest run && node --test scripts/policy.test.mjs && node --test scripts/deterministic-build.test.mjs"
   },
   "devDependencies": {

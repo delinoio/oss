@@ -4,6 +4,9 @@ const desktopTauriFeatures = ["--features", "desktop-cef"];
 export const desktopTauriConfigPath = fileURLToPath(
   new URL("../src-tauri/tauri.desktop.conf.json", import.meta.url),
 );
+export const privateReleaseTauriConfigPath = fileURLToPath(
+  new URL("../src-tauri/tauri.private-release.conf.json", import.meta.url),
+);
 
 function requestedPackageBundle(forwardedArguments, platformName, packageKinds) {
   const bundles = [];
@@ -42,11 +45,14 @@ const packageKindsByPlatform = {
   },
 };
 
-export function desktopTauriArguments(command, forwardedArguments) {
+export function desktopTauriArguments(command, forwardedArguments, environment = process.env) {
   // The pinned CLI resolves bundle features through app-owned Cargo features;
   // passing tauri/cef directly builds CEF but leaves its bundle path unset.
+  const config = command === "build" && environment.DEVHUD_PRIVATE_RELEASE === "1"
+    ? privateReleaseTauriConfigPath
+    : desktopTauriConfigPath;
   return command
-    ? [command, ...desktopTauriFeatures, "--config", desktopTauriConfigPath, ...forwardedArguments]
+    ? [command, ...desktopTauriFeatures, "--config", config, ...forwardedArguments]
     : [];
 }
 

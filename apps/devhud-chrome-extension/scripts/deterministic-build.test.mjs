@@ -18,11 +18,12 @@ function build(timezone) {
 test("identical inputs produce byte-identical extension ZIPs across time zones", async () => {
   await mkdir(join(root, "build"), { recursive: true });
   await writeFile(join(root, "build/stale-module.js"), "throw new Error('stale');\n");
-  build("America/Los_Angeles"); const first = await readFile(join(root, "artifacts/devhud-chrome-extension.zip"));
+  build("America/Los_Angeles"); const first = await readFile(join(root, "artifacts/devhud-chrome-web-store.zip"));
+  assert.deepEqual(first, await readFile(join(root, "artifacts/devhud-chrome-github-validation.zip")));
   await assert.rejects(access(join(root, "dist/stale-module.js")));
   const manifest = JSON.parse(await readFile(join(root, "dist/manifest.json"), "utf8"));
   assert.equal(manifest.manifest_version, 3); assert.equal(manifest.incognito, "not_allowed"); assert.ok(manifest.permissions.includes("activeTab"));
   assert.ok(!JSON.stringify(manifest).includes("<all_urls>"));
-  build("Asia/Seoul"); const second = await readFile(join(root, "artifacts/devhud-chrome-extension.zip"));
+  build("Asia/Seoul"); const second = await readFile(join(root, "artifacts/devhud-chrome-web-store.zip"));
   assert.deepEqual(first, second);
 });

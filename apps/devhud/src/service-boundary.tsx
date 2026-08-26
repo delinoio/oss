@@ -506,7 +506,7 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
         if (!cancelled && (snapshot === undefined || snapshot.revision >= revisionRef.current)) markSettingsContractInvalid();
         return;
       }
-      if (cancelled || validated.revision < revisionRef.current) return;
+      if (cancelled || sessionRef.current === null || validated.revision < revisionRef.current) return;
       let server = validated.settings;
       let local: DevHudSettingsV1 | null = null;
       if (hasGuestSettings(storage)) {

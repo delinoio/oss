@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
@@ -10,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/delinoio/oss/servers/devhud-api/internal/adminassets"
 	"github.com/delinoio/oss/servers/devhud-api/internal/cloudflare"
 	"github.com/delinoio/oss/servers/devhud-api/internal/config"
 	"github.com/delinoio/oss/servers/devhud-api/internal/domain"
@@ -25,16 +28,34 @@ const (
 	sweepIterationTimeout = 25 * time.Second
 )
 
+var version = "0.1.0-dev"
+
 type sweepRunner interface {
 	RunOnce(context.Context) (sweeper.Result, error)
 }
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
+	if err := validateEmbeddedAdministratorAssets(adminassets.Embedded()); err != nil {
+		logger.Error("embedded administrator assets unavailable", "error", err)
+		os.Exit(1)
+	}
+	logger.Info("devhud-api-sweeper starting", "version", version)
 	if err := run(context.Background(), os.Args[1:], logger); err != nil {
 		logger.Error("devhud-api-sweeper stopped", "error", err)
 		os.Exit(1)
 	}
+}
+
+func validateEmbeddedAdministratorAssets(assets fs.FS) error {
+	index, err := fs.ReadFile(assets, "dist/index.html")
+	if err != nil {
+		return fmt.Errorf("read embedded administrator index: %w", err)
+	}
+	if len(index) == 0 {
+		return errors.New("embedded administrator index is empty")
+	}
+	return nil
 }
 
 func run(ctx context.Context, arguments []string, logger *slog.Logger) error {

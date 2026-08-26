@@ -262,12 +262,13 @@ export function assertMobileDependencyClosures(platforms, actualClosures) {
   }
 }
 
-export function assertAndroidArtifactEntries(entries, abi, format) {
+export function assertAndroidArtifactEntries(entries, abis, format) {
   assert(format === "apk" || format === "aab", `unsupported Android artifact format: ${format}`);
+  assert(abis.length > 0 && new Set(abis).size === abis.length, "Android artifact ABIs must be nonempty and unique");
   const prefix = format === "aab" ? "base/" : "";
-  const expectedLibrary = `${prefix}lib/${abi}/libdevhud_lib.so`;
+  const expectedLibraries = abis.map((abi) => `${prefix}lib/${abi}/libdevhud_lib.so`).sort();
   const nativeEntries = entries.filter((entry) => entry.startsWith(`${prefix}lib/`));
-  assert(nativeEntries.length === 1 && nativeEntries[0] === expectedLibrary, `Android artifact architecture changed: expected only ${expectedLibrary}`);
+  assert(nativeEntries.toSorted().join("\n") === expectedLibraries.join("\n"), `Android artifact architecture changed: expected only ${expectedLibraries.join(", ")}`);
   assert(entries.includes(format === "aab" ? "base/dex/classes.dex" : "classes.dex"), "Android artifact classes.dex is missing");
   assert(entries.includes(format === "aab" ? "base/manifest/AndroidManifest.xml" : "AndroidManifest.xml"), "Android artifact manifest is missing");
   if (format === "aab") assert(entries.includes("BundleConfig.pb"), "Android App Bundle configuration is missing");
@@ -278,6 +279,20 @@ export function assertAndroidNativeLibrary(nativeLibrary) {
   // The shared frontend embeds the pinned desktop Chromium revision for validation;
   // native CEF exports, rather than that inert metadata, identify a leaked runtime.
   assert(!/libcef|cef_initialize/iu.test(nativeLibrary), "CEF symbols leaked into the Android native library");
+}
+
+export function assertAndroidArtifactManifest(manifest, { identity, versionCode, widgetProvider }) {
+  const manifestTag = manifest.match(/<manifest\b[^>]*>/u)?.[0] ?? "";
+  assert(manifestTag.includes(`package="${identity}"`), "Android artifact package identity changed");
+  assert(manifestTag.includes(`android:versionCode="${versionCode}"`), "Android artifact version code changed");
+  const receiverBlocks = manifest.match(/<receiver\b[\s\S]*?<\/receiver>/gu) ?? [];
+  const matching = receiverBlocks.filter((receiver) => receiver.match(/<receiver\b[^>]*>/u)?.[0]?.includes(`android:name="${widgetProvider}"`));
+  assert(matching.length === 1, "Android artifact must contain exactly one Deck widget provider receiver");
+  const receiver = matching[0];
+  const openingTag = receiver.match(/<receiver\b[^>]*>/u)?.[0] ?? "";
+  assert(openingTag.includes('android:exported="false"'), "Android artifact Deck widget provider must not be exported");
+  assert(receiver.includes('android:name="android.appwidget.action.APPWIDGET_UPDATE"'), "Android artifact Deck widget provider update action is missing");
+  assert(/<meta-data\b(?=[^>]*android:name="android\.appwidget\.provider")(?=[^>]*android:resource="@xml\/devhud_widget_info")[^>]*\/>/u.test(receiver), "Android artifact Deck widget provider metadata is missing");
 }
 
 function workflowJob(workflow, name) {
@@ -303,7 +318,8 @@ export function assertMobileCi(workflow) {
     assert(androidJob.includes(`- target: ${target}\n            artifacts: ${artifacts}`), `Android CI target ${target} must build ${artifacts}`);
   }
   assert(androidJob.includes("android build --target ${{ matrix.target }} ${{ matrix.artifacts }} --ci"), "Android CI must build each matrix artifact set");
-  assert(androidJob.includes("if: ${{ steps.gate.outputs.run == 'true' && matrix.production }}") && androidJob.includes('--android-artifact "${aab_artifacts[0]}"'), "Android production CI must inspect the generated App Bundle");
+  assert(androidJob.includes("if: ${{ steps.gate.outputs.run == 'true' && matrix.production }}") && androidJob.includes("Download checksum-pinned bundletool"), "Android production CI must install the pinned App Bundle inspector");
+  assert(androidJob.includes('--android-artifact "${aab_artifacts[0]}"') && androidJob.includes('--bundletool-jar "${{ steps.bundletool.outputs.jar }}"'), "Android production CI must inspect the generated App Bundle manifest");
 }
 
 export function assertMobileContracts({ platforms, tauri, ios, android, cargo, androidManifest, androidDebugManifest, androidBackupRules, androidDataExtractionRules, androidPluginManifest, androidNativeBridge, androidWidgetStore, androidChannelEnglish, androidChannelKorean, iosAppEntitlements, iosNativeBridge, iosWidgetStateStore, iosPlist, packageJson, nativeBridge, app, workflow }) {
@@ -314,6 +330,7 @@ export function assertMobileContracts({ platforms, tauri, ios, android, cargo, a
   assert(platforms.frontendDist === "../dist" && tauri.build.frontendDist === platforms.frontendDist, "mobile frontend is not shared");
   assert(platforms.minimumVersions.ios === "16.0" && ios.bundle.iOS.minimumSystemVersion === "16.0", "iOS minimum must be 16.0");
   assert(platforms.minimumVersions.androidApi === 29 && android.bundle.android.minSdkVersion === 29, "Android minimum must be API 29");
+  assert(platforms.androidArtifactInspector?.version === "1.18.3" && platforms.androidArtifactInspector?.url === "https://github.com/google/bundletool/releases/download/1.18.3/bundletool-all-1.18.3.jar" && platforms.androidArtifactInspector?.sha256 === "a099cfa1543f55593bc2ed16a70a7c67fe54b1747bb7301f37fdfd6d91028e29", "Android artifact inspector pin changed");
   assert(platforms.widgets?.iosBundle === "io.delino.devhud.widget" && platforms.widgets?.iosAppGroup === "group.io.delino.devhud" && platforms.widgets?.iosKeychainGroup === "$(AppIdentifierPrefix)io.delino.devhud.shared", "iOS widget identity or secure groups changed");
   assert(platforms.widgets?.androidProvider === "io.delino.devhud.widget.DevHudWidgetProvider" && platforms.widgets?.deepLinkTemplate === "devhud://deck/<deck-id>", "Android widget provider or Deck deep link changed");
   assert(platforms.widgets?.refreshMinutes === 30 && platforms.widgets?.staleMinutes === 60 && platforms.widgets?.resultLimit === 100 && platforms.widgets?.previewLimit === 3, "widget refresh or result bounds changed");

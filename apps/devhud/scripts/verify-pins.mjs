@@ -27,12 +27,16 @@ const tauriConfig = JSON.parse(readFileSync(join(appRoot, "src-tauri/tauri.conf.
 const desktopTauriConfig = JSON.parse(
   readFileSync(join(appRoot, "src-tauri/tauri.desktop.conf.json"), "utf8"),
 );
+const privateReleaseTauriConfig = JSON.parse(
+  readFileSync(join(appRoot, "src-tauri/tauri.private-release.conf.json"), "utf8"),
+);
 const tauriMain = readFileSync(join(appRoot, "src-tauri/src/main.rs"), "utf8");
 const nativeBridgeRust = readFileSync(join(appRoot, "src-tauri/src/bridge.rs"), "utf8");
 const nativeBridgeTypeScript = readFileSync(join(appRoot, "src/native-bridge.ts"), "utf8");
 const rsbuildConfig = readFileSync(join(appRoot, "rsbuild.config.ts"), "utf8");
 const updaterRoot = JSON.parse(readFileSync(join(appRoot, "updater-trust-root.json"), "utf8"));
 const updaterRust = readFileSync(join(appRoot, "src-tauri/src/updater.rs"), "utf8");
+const nativeMessagingLifecycle = readFileSync(join(appRoot, "src-tauri/windows/native-messaging-lifecycle.wxs"), "utf8");
 
 const TAURI_REPOSITORY = "https://github.com/tauri-apps/tauri";
 const TAURI_REVISION = "4af26a3f7f8b692d62cca549bbacd93f5ce90b41";
@@ -141,6 +145,40 @@ assert(
 assert(
   desktopTauriConfig.bundle?.windows?.nsis?.installerHooks === "./windows/hooks.nsh",
   "desktop Native Messaging removal hook changed",
+);
+assert(
+  JSON.stringify(privateReleaseTauriConfig.bundle?.externalBin) ===
+    JSON.stringify(["binaries/devhud-native-messaging-host"]),
+  "private release must package the pinned Native Messaging sidecar",
+);
+assert(
+  privateReleaseTauriConfig.bundle?.macOS?.signingIdentity === null &&
+    privateReleaseTauriConfig.bundle?.macOS?.hardenedRuntime === true &&
+    privateReleaseTauriConfig.bundle?.macOS?.entitlements === "Entitlements.release.plist",
+  "private macOS release must use the production hardened-runtime signing path",
+);
+assert(
+  privateReleaseTauriConfig.bundle?.windows?.signCommand ===
+    "powershell -NoProfile -ExecutionPolicy Bypass -File windows/sign.ps1 %1",
+  "private Windows release must fail closed through the repository-owned signer",
+);
+assert(
+  JSON.stringify(privateReleaseTauriConfig.bundle?.windows?.wix?.fragmentPaths) ===
+    JSON.stringify(["./windows/native-messaging-lifecycle.wxs"]),
+  "private MSI must own the Native Messaging install and uninstall lifecycle",
+);
+assert(
+  nativeMessagingLifecycle.includes('Id="DevHudRollbackNativeMessagingRegistration"') &&
+    nativeMessagingLifecycle.includes('Execute="rollback"') &&
+    nativeMessagingLifecycle.includes('<Custom Action="DevHudRollbackNativeMessagingRegistration" After="InstallFiles">NOT Installed</Custom>'),
+  "private MSI Native Messaging registration rollback changed",
+);
+assert(
+  nativeMessagingLifecycle.includes('Id="DevHudRegisterNativeMessaging"') &&
+    nativeMessagingLifecycle.includes('Execute="deferred"') &&
+    nativeMessagingLifecycle.includes('<Custom Action="DevHudRegisterNativeMessaging" After="DevHudRollbackNativeMessagingRegistration">NOT Installed</Custom>') &&
+    !nativeMessagingLifecycle.includes('After="InstallFinalize"'),
+  "private MSI Native Messaging registration must complete before install finalization",
 );
 const productionCsp = tauriConfig.app.security.csp;
 assert(

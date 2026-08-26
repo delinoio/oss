@@ -6,7 +6,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { assertGeneratedOverlays } from "./generate-mobile.mjs";
-import { assertAndroidArtifactEntries, assertAndroidNativeLibrary, assertMobileContracts, assertMobileDependencyClosures, assertMobileDependencyResolution, mobileCargoTreeDigest } from "./mobile-policy.mjs";
+import { assertAndroidArtifactEntries, assertAndroidArtifactManifest, assertAndroidNativeLibrary, assertMobileContracts, assertMobileDependencyClosures, assertMobileDependencyResolution, mobileCargoTreeDigest } from "./mobile-policy.mjs";
 
 const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = resolve(appRoot, "../..");
@@ -38,22 +38,33 @@ function androidAapt() {
   return executable;
 }
 
-function assertAndroidArtifact(artifact, abi) {
+function assertAndroidArtifact(artifact, abis, bundletoolJar, widgetProvider) {
   if (!existsSync(artifact)) throw new Error(`Android artifact is missing: ${artifact}`);
   commandOutput("unzip", ["-t", artifact]);
   const entries = commandOutput("unzip", ["-Z1", artifact]).trim().split("\n");
   const format = artifact.endsWith(".aab") ? "aab" : artifact.endsWith(".apk") ? "apk" : "unknown";
-  assertAndroidArtifactEntries(entries, abi, format);
+  assertAndroidArtifactEntries(entries, abis, format);
   const prefix = format === "aab" ? "base/" : "";
-  const expectedLibrary = `${prefix}lib/${abi}/libdevhud_lib.so`;
   const dexEntry = format === "aab" ? "base/dex/classes.dex" : "classes.dex";
 
   const dex = commandOutput("unzip", ["-p", artifact, dexEntry], null).toString("latin1");
   if (!dex.includes("Lio/delino/devhud/bridge/DevhudNativePlugin;") || !dex.includes("Landroid/webkit/WebView;")) throw new Error("Android native bridge or System WebView host is missing from the artifact");
-  const nativeLibrary = commandOutput("unzip", ["-p", artifact, expectedLibrary], null).toString("latin1");
-  assertAndroidNativeLibrary(nativeLibrary);
+  for (const abi of abis) {
+    const expectedLibrary = `${prefix}lib/${abi}/libdevhud_lib.so`;
+    const nativeLibrary = commandOutput("unzip", ["-p", artifact, expectedLibrary], null).toString("latin1");
+    assertAndroidNativeLibrary(nativeLibrary);
+  }
 
-  if (format === "aab") return;
+  if (format === "aab") {
+    if (!bundletoolJar || !existsSync(bundletoolJar)) throw new Error("--bundletool-jar must reference the pinned bundletool JAR for App Bundle verification");
+    const manifest = commandOutput("java", ["-jar", bundletoolJar, "dump", "manifest", `--bundle=${artifact}`, "--module=base"]);
+    assertAndroidArtifactManifest(manifest, {
+      identity: platforms.identity,
+      versionCode: releaseMetadata.storeBuildNumber,
+      widgetProvider,
+    });
+    return;
+  }
 
   const aapt = androidAapt();
   const badging = commandOutput(aapt, ["dump", "badging", artifact]);
@@ -64,13 +75,19 @@ function assertAndroidArtifact(artifact, abi) {
 }
 
 const platforms = json("mobile-platforms.json");
+const releaseMetadata = JSON.parse(readFileSync(join(repoRoot, "packaging/devhud/release-metadata.json"), "utf8"));
+const iosReleaseConfig = json("src-tauri/tauri.ios.conf.json");
+const androidReleaseConfig = json("src-tauri/tauri.android.conf.json");
+if (iosReleaseConfig.bundle.iOS.bundleVersion !== String(releaseMetadata.storeBuildNumber) || androidReleaseConfig.bundle.android.versionCode !== releaseMetadata.storeBuildNumber) {
+  throw new Error("mobile store build numbers do not match DevHud release metadata");
+}
 assertMobileDependencyResolution(text("scripts/verify-mobile.mjs"));
 
 assertMobileContracts({
   platforms,
   tauri: json("src-tauri/tauri.conf.json"),
-  ios: json("src-tauri/tauri.ios.conf.json"),
-  android: json("src-tauri/tauri.android.conf.json"),
+  ios: iosReleaseConfig,
+  android: androidReleaseConfig,
   cargo: text("src-tauri/Cargo.toml"),
   androidManifest: text("mobile/overrides/android/app/src/main/AndroidManifest.xml"),
   androidDebugManifest: text("mobile/overrides/android/app/src/debug/AndroidManifest.xml"),
@@ -98,9 +115,17 @@ assertMobileDependencyClosures(platforms, dependencyClosures);
 if (existsSync(join(appRoot, "src-tauri/gen/android"))) assertGeneratedOverlays("android");
 
 const artifactIndex = process.argv.indexOf("--android-artifact");
-const abiIndex = process.argv.indexOf("--android-abi");
-if ((artifactIndex === -1) !== (abiIndex === -1)) throw new Error("--android-artifact and --android-abi must be provided together");
-if (artifactIndex !== -1) assertAndroidArtifact(resolve(process.argv[artifactIndex + 1]), process.argv[abiIndex + 1]);
+const abiIndexes = process.argv.flatMap((argument, index) => argument === "--android-abi" ? [index] : []);
+const bundletoolIndex = process.argv.indexOf("--bundletool-jar");
+if ((artifactIndex === -1) !== (abiIndexes.length === 0)) throw new Error("--android-artifact and at least one --android-abi must be provided together");
+if (bundletoolIndex !== -1 && artifactIndex === -1) throw new Error("--bundletool-jar requires --android-artifact");
+if (artifactIndex !== -1) {
+  const artifact = process.argv[artifactIndex + 1];
+  const abis = abiIndexes.map((index) => process.argv[index + 1]);
+  const bundletoolJar = bundletoolIndex === -1 ? null : process.argv[bundletoolIndex + 1];
+  if (!artifact || artifact.startsWith("--") || abis.some((abi) => !abi || abi.startsWith("--")) || (bundletoolIndex !== -1 && (!bundletoolJar || bundletoolJar.startsWith("--")))) throw new Error("Android artifact verification arguments require values");
+  assertAndroidArtifact(resolve(artifact), abis, bundletoolJar && resolve(bundletoolJar), platforms.widgets.androidProvider);
+}
 
 const forbiddenMobileText = [
   text("src-tauri/mobile/android/build.gradle.kts"),

@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { assertAndroidArtifactEntries, assertAndroidBackupExclusions, assertAndroidNativeBridge, assertAndroidNativeLibrary, assertAndroidPermissions, assertAndroidWidgetJobService, assertAndroidWidgetStore, assertIosNativeBridge, assertMobileCi, assertMobileContracts, assertMobileDependencyClosures, assertMobileDependencyResolution, assertMobileTargets, assertNativeWidgetPullRequestMetadata, mobileCargoTreeDigest } from "./mobile-policy.mjs";
+import { assertAndroidArtifactEntries, assertAndroidArtifactManifest, assertAndroidBackupExclusions, assertAndroidNativeBridge, assertAndroidNativeLibrary, assertAndroidPermissions, assertAndroidWidgetJobService, assertAndroidWidgetStore, assertIosNativeBridge, assertMobileCi, assertMobileContracts, assertMobileDependencyClosures, assertMobileDependencyResolution, assertMobileTargets, assertNativeWidgetPullRequestMetadata, mobileCargoTreeDigest } from "./mobile-policy.mjs";
 
 const appRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const mobileTargets = JSON.parse(readFileSync(join(appRoot, "mobile-platforms.json"), "utf8")).targets;
@@ -393,11 +393,28 @@ test("mobile dependency resolution includes production default features", () => 
 test("mobile policy validates APK and App Bundle layouts", () => {
   const apkEntries = ["AndroidManifest.xml", "classes.dex", "lib/arm64-v8a/libdevhud_lib.so"];
   const aabEntries = ["BundleConfig.pb", "base/manifest/AndroidManifest.xml", "base/dex/classes.dex", "base/lib/arm64-v8a/libdevhud_lib.so"];
-  assert.doesNotThrow(() => assertAndroidArtifactEntries(apkEntries, "arm64-v8a", "apk"));
-  assert.doesNotThrow(() => assertAndroidArtifactEntries(aabEntries, "arm64-v8a", "aab"));
-  assert.throws(() => assertAndroidArtifactEntries(aabEntries.filter((entry) => entry !== "BundleConfig.pb"), "arm64-v8a", "aab"), /Bundle configuration/u);
-  assert.throws(() => assertAndroidArtifactEntries([...aabEntries, "base/lib/x86_64/libdevhud_lib.so"], "arm64-v8a", "aab"), /architecture changed/u);
-  assert.throws(() => assertAndroidArtifactEntries([...aabEntries, "base/assets/chromium.pak"], "arm64-v8a", "aab"), /CEF or browser-extension/u);
+  const combinedAabEntries = [...aabEntries, "base/lib/armeabi-v7a/libdevhud_lib.so"];
+  assert.doesNotThrow(() => assertAndroidArtifactEntries(apkEntries, ["arm64-v8a"], "apk"));
+  assert.doesNotThrow(() => assertAndroidArtifactEntries(aabEntries, ["arm64-v8a"], "aab"));
+  assert.doesNotThrow(() => assertAndroidArtifactEntries(combinedAabEntries, ["arm64-v8a", "armeabi-v7a"], "aab"));
+  assert.throws(() => assertAndroidArtifactEntries(aabEntries.filter((entry) => entry !== "BundleConfig.pb"), ["arm64-v8a"], "aab"), /Bundle configuration/u);
+  assert.throws(() => assertAndroidArtifactEntries(aabEntries, ["arm64-v8a", "armeabi-v7a"], "aab"), /architecture changed/u);
+  assert.throws(() => assertAndroidArtifactEntries([...aabEntries, "base/lib/x86_64/libdevhud_lib.so"], ["arm64-v8a"], "aab"), /architecture changed/u);
+  assert.throws(() => assertAndroidArtifactEntries([...aabEntries, "base/assets/chromium.pak"], ["arm64-v8a"], "aab"), /CEF or browser-extension/u);
+});
+
+test("mobile policy verifies the packaged Android identity, build number, and Deck widget receiver", () => {
+  const provider = mobilePlatforms.widgets.androidProvider;
+  const manifest = `<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="io.delino.devhud" android:versionCode="1"><application><receiver android:name="${provider}" android:exported="false"><intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter><meta-data android:name="android.appwidget.provider" android:resource="@xml/devhud_widget_info" /></receiver></application></manifest>`;
+  const expected = { identity: mobilePlatforms.identity, versionCode: 1, widgetProvider: provider };
+  assert.doesNotThrow(() => assertAndroidArtifactManifest(manifest, expected));
+  assert.throws(() => assertAndroidArtifactManifest(manifest.replace('package="io.delino.devhud"', 'package="io.delino.other"'), expected), /package identity/u);
+  assert.throws(() => assertAndroidArtifactManifest(manifest.replace('android:versionCode="1"', 'android:versionCode="2"'), expected), /version code/u);
+  assert.throws(() => assertAndroidArtifactManifest(manifest.replace(provider, `${provider}Missing`), expected), /exactly one/u);
+  assert.throws(() => assertAndroidArtifactManifest(manifest.replace('android:exported="false"', 'android:exported="true"'), expected), /must not be exported/u);
+  assert.throws(() => assertAndroidArtifactManifest(manifest.replace("android.appwidget.action.APPWIDGET_UPDATE", "android.intent.action.VIEW"), expected), /update action/u);
+  assert.throws(() => assertAndroidArtifactManifest(manifest.replace("@xml/devhud_widget_info", "@xml/other"), expected), /metadata/u);
+  assert.throws(() => assertAndroidArtifactManifest(`${manifest}${manifest}`, expected), /exactly one/u);
 });
 
 test("mobile policy distinguishes embedded runtime metadata from CEF symbols", () => {
@@ -441,7 +458,7 @@ test("mobile policy requires production and simulator iOS builds", () => {
 
 test("mobile policy rejects CEF leakage", () => {
   const base = {
-    platforms: { schemaVersion: 1, identity: "io.delino.devhud", deepLinkScheme: "devhud", authCallback: "devhud://auth/callback", frontendDist: "../dist", minimumVersions: { ios: "16.0", androidApi: 29 }, widgets: mobilePlatforms.widgets, targets: mobileTargets },
+    platforms: { schemaVersion: 1, identity: "io.delino.devhud", deepLinkScheme: "devhud", authCallback: "devhud://auth/callback", frontendDist: "../dist", minimumVersions: { ios: "16.0", androidApi: 29 }, androidArtifactInspector: mobilePlatforms.androidArtifactInspector, widgets: mobilePlatforms.widgets, targets: mobileTargets },
     tauri: { identifier: "io.delino.devhud", build: { frontendDist: "../dist" } },
     ios: { bundle: { iOS: { minimumSystemVersion: "16.0" } } },
     android: { bundle: { android: { minSdkVersion: 29 } } }, cargo: "", androidManifest: "android.permission.INTERNET", androidPluginManifest: "", androidNativeBridge: "", iosPlist: "", packageJson: { scripts: {} }, nativeBridge: "", app: "", workflow: "",

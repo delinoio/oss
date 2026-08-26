@@ -1154,6 +1154,20 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      - name: Download checksum-pinned bundletool
+        id: bundletool
+        if: ${{ steps.gate.outputs.run == 'true' && matrix.production }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(node -p "require('./apps/devhud/mobile-platforms.json').androidArtifactInspector.version")
+          url=$(node -p "require('./apps/devhud/mobile-platforms.json').androidArtifactInspector.url")
+          expected=$(node -p "require('./apps/devhud/mobile-platforms.json').androidArtifactInspector.sha256")
+          jar="$RUNNER_TEMP/bundletool-all-$version.jar"
+          curl --fail --location --silent --show-error --output "$jar" "$url"
+          printf '%s  %s\n' "$expected" "$jar" | sha256sum --check
+          echo "jar=$jar" >> "$GITHUB_OUTPUT"
+
       - name: Install Linux host prerequisites
         if: ${{ steps.gate.outputs.run == 'true' }}
         run: |
@@ -1190,7 +1204,7 @@ jobs:
             echo "Expected exactly one preserved Android App Bundle, found ${#aab_artifacts[@]}" >&2
             exit 1
           fi
-          node scripts/verify-mobile.mjs --android-artifact "${aab_artifacts[0]}" --android-abi ${{ matrix.abi }}
+          node scripts/verify-mobile.mjs --android-artifact "${aab_artifacts[0]}" --android-abi ${{ matrix.abi }} --bundletool-jar "${{ steps.bundletool.outputs.jar }}"
 
   devhud-protocol:
     name: DevHud Protocol and Client

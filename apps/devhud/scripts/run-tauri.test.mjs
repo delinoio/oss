@@ -12,6 +12,7 @@ import {
   desktopTauriArguments,
   desktopTauriConfigPath,
   desktopTauriEnvironment,
+  privateReleaseTauriConfigPath,
 } from "./run-tauri-arguments.mjs";
 
 const scriptPath = fileURLToPath(new URL("./run-tauri.mjs", import.meta.url));
@@ -51,6 +52,12 @@ test("forwards the desktop CEF feature to the pinned Tauri command", () => {
       "app",
     ],
   );
+});
+
+test("uses only the repository-owned hardened release overlay for private builds", () => {
+  const arguments_ = desktopTauriArguments("build", ["--bundles", "app"], { DEVHUD_PRIVATE_RELEASE: "1" });
+  assert.equal(arguments_[4], privateReleaseTauriConfigPath);
+  assert.ok(!arguments_.includes(desktopTauriConfigPath));
 });
 
 test("derives the compiled package kind from one explicit Windows bundle", () => {
