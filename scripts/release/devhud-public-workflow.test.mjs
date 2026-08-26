@@ -62,7 +62,7 @@ test("jobs request only their channel-specific GitHub permissions", () => {
   }
   assert.match(job("github_release"), /contents: write/u);
   assert.match(job("ga"), /contents: write/u);
-  for (const name of ["private_candidate", "preflight", "registry", "prepare_infrastructure", "updater_public", "verify_all", "rollback_pre_store"]) {
+  for (const name of ["private_candidate", "preflight", "registry", "prepare_infrastructure", "updater_public", "verify_all", "ga", "rollback_pre_store"]) {
     assert.match(job(name), /id-token: write/u, `${name} needs provider-neutral OIDC`);
   }
   for (const name of ["identity", "candidate", "submit_stores", "registry", "prepare_infrastructure", "github_release", "updater_public"]) {
@@ -199,6 +199,32 @@ test("independent verification requeries every exact store before GA", () => {
   assert.match(verification, /\.status == "public"/u);
 });
 
+test("GA repeats every public-channel verification after approval and before mutation", () => {
+  const ga = job("ga");
+  assert.match(ga, /needs: \[identity, registry, verify_all\]/u);
+  for (const name of ["APPLE_API_PRIVATE_KEY_B64", "DEVHUD_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON", "DEVHUD_CHROME_WEB_STORE_REFRESH_TOKEN", "DEVHUD_OCI_REGISTRY_TOKEN", "DEVHUD_RELEASE_CONTROLLER_AUDIENCE"]) {
+    assert.match(ga, new RegExp(`${name}:`, "u"));
+  }
+  for (const pattern of [
+    /devhud-store-release\.mjs status "\$provider"/u,
+    /gh release download/u,
+    /validate-devhud-public-assets\.mjs/u,
+    /DEVHUD_PUBLIC_API_URL\/readyz/u,
+    /devhud-release-identity/u,
+    /skopeo inspect/u,
+    /cosign verify --certificate-identity/u,
+    /devhud-release-controller\.mjs status/u,
+  ]) {
+    assert.match(ga, pattern);
+  }
+  const mutation = ga.indexOf('gh release edit "$RELEASE_TAG"');
+  assert.ok(mutation > ga.indexOf("Reverify every exact store version after GA approval"));
+  assert.ok(mutation > ga.indexOf("Reverify the exact public GitHub Release assets after GA approval"));
+  assert.ok(mutation > ga.indexOf("Reverify public API, docs, release, and immutable images after GA approval"));
+  assert.ok(mutation > ga.indexOf("Reverify final deployment state after GA approval"));
+  assert.ok(ga.indexOf("transition --state independently-verified --event mark-ga") > mutation);
+});
+
 test("GA notes are public and existing tags are dereferenced to commits", () => {
   assert.doesNotMatch(releaseMetadata.releaseNotes.en, /private|candidate/ui);
   assert.doesNotMatch(releaseMetadata.releaseNotes.ko, /비공개|후보/u);
@@ -216,6 +242,8 @@ test("dry-run cannot enter publication and rollback stops at store publication",
   }
   assert.match(job("rollback_pre_store"), /needs\.publish_stores\.result == 'failure'/u);
   assert.match(job("rollback_pre_store"), /needs\.publish_stores\.result == 'skipped'/u);
+  assert.match(job("rollback_pre_store"), /needs\.stores_public\.result == 'failure'/u);
+  assert.match(job("rollback_pre_store"), /needs: \[[^\n]*stores_public/u);
   assert.match(job("rollback_pre_store"), /needs\.identity\.outputs\.retry != 'true'/u);
   assert.match(job("prepare_infrastructure"), /promotion_attempted: \$\{\{ steps\.promote\.outputs\.attempted \}\}/u);
   assert.match(job("prepare_infrastructure"), /promoted: \$\{\{ steps\.promote\.outputs\.promoted \}\}/u);

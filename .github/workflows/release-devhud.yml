@@ -789,17 +789,106 @@ jobs:
   ga:
     name: Mark verified general availability
     if: ${{ inputs.mode == 'release' }}
-    needs: [identity, verify_all]
+    needs: [identity, registry, verify_all]
     runs-on: ubuntu-22.04
     environment: devhud-ga
     permissions:
       contents: write
+      id-token: write
     env:
       GH_TOKEN: ${{ github.token }}
       RELEASE_TAG: ${{ needs.identity.outputs.tag }}
+      DEVHUD_PUBLIC_API_URL: ${{ vars.DEVHUD_PUBLIC_API_URL }}
+      DEVHUD_PUBLIC_DOCS_URL: ${{ vars.DEVHUD_PUBLIC_DOCS_URL }}
+      DEVHUD_RELEASE_CONTROLLER_URL: ${{ vars.DEVHUD_RELEASE_CONTROLLER_URL }}
+      DEVHUD_RELEASE_CONTROLLER_AUDIENCE: ${{ vars.DEVHUD_RELEASE_CONTROLLER_AUDIENCE }}
+      DEVHUD_PRIVATE_WORKFLOW_REF: ${{ github.repository }}/.github/workflows/package-devhud-private.yml@${{ github.ref }}
+      DEVHUD_OCI_REGISTRY: ${{ vars.DEVHUD_OCI_REGISTRY }}
+      DEVHUD_OCI_REGISTRY_USERNAME: ${{ secrets.DEVHUD_OCI_REGISTRY_USERNAME }}
+      DEVHUD_OCI_REGISTRY_TOKEN: ${{ secrets.DEVHUD_OCI_REGISTRY_TOKEN }}
+      DEVHUD_DOCS_RELEASE_IDENTITY: devhud@v${{ needs.identity.outputs.version }}@${{ github.sha }}
+      APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+      APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+      APPLE_API_PRIVATE_KEY_B64: ${{ secrets.APPLE_API_PRIVATE_KEY_B64 }}
+      DEVHUD_APP_STORE_APP_ID: ${{ vars.DEVHUD_APP_STORE_APP_ID }}
+      DEVHUD_GOOGLE_PLAY_PACKAGE_NAME: ${{ vars.DEVHUD_GOOGLE_PLAY_PACKAGE_NAME }}
+      DEVHUD_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.DEVHUD_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+      DEVHUD_CHROME_EXTENSION_ID: ${{ vars.DEVHUD_CHROME_EXTENSION_ID }}
+      DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID: ${{ vars.DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID }}
+      DEVHUD_CHROME_WEB_STORE_CLIENT_ID: ${{ secrets.DEVHUD_CHROME_WEB_STORE_CLIENT_ID }}
+      DEVHUD_CHROME_WEB_STORE_CLIENT_SECRET: ${{ secrets.DEVHUD_CHROME_WEB_STORE_CLIENT_SECRET }}
+      DEVHUD_CHROME_WEB_STORE_REFRESH_TOKEN: ${{ secrets.DEVHUD_CHROME_WEB_STORE_REFRESH_TOKEN }}
     steps:
       - uses: actions/checkout@v6
         with: { persist-credentials: false }
+      - name: Reverify every exact store version after GA approval
+        run: |
+          set -euo pipefail
+          for provider in apple google-play chrome-web-store; do
+            node scripts/release/devhud-store-release.mjs status "$provider" --output "$provider-ga.json"
+            jq -e '.status == "public"' "$provider-ga.json" >/dev/null
+          done
+      - uses: sigstore/cosign-installer@v4.1.0
+      - name: Install OCI transport
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends skopeo
+      - name: Reverify the exact public GitHub Release assets after GA approval
+        env:
+          RELEASE_VERSION: ${{ needs.identity.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p public-assets
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets,isDraft,isPrerelease,tagName > public-release.json
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir public-assets
+          evidence="public-assets/devhud-v${RELEASE_VERSION}-release-evidence.tar.gz"
+          if tar -tzf "$evidence" | grep -Eq '(^/|(^|/)\.\.(/|$))'; then
+            echo "unsafe release evidence archive path" >&2
+            exit 1
+          fi
+          if tar -tvzf "$evidence" | awk 'substr($1, 1, 1) != "-" && substr($1, 1, 1) != "d" { unsafe=1 } END { exit unsafe ? 0 : 1 }'; then
+            echo "unsafe release evidence archive entry type" >&2
+            exit 1
+          fi
+          tar -xzf "$evidence" -C public-assets --no-same-owner --no-same-permissions
+          while IFS='|' read -r platform architecture package; do
+            destination="public-assets/updater/manifests/stable/$platform/$architecture/$package.json"
+            mkdir -p "$(dirname "$destination")"
+            curl --fail --silent --show-error -H "X-DevHud-Package: $package" "$DEVHUD_PUBLIC_API_URL/updates/stable/$platform/$architecture.json" -o "$destination"
+          done <<'TARGETS'
+          darwin|x86_64|macos-app
+          darwin|aarch64|macos-app
+          windows|x86_64|windows-msi
+          windows|x86_64|windows-nsis
+          windows|aarch64|windows-msi
+          windows|aarch64|windows-nsis
+          linux|x86_64|linux-appimage
+          linux|x86_64|linux-deb
+          linux|aarch64|linux-appimage
+          linux|aarch64|linux-deb
+          TARGETS
+          node scripts/release/validate-devhud-public-assets.mjs --assets-dir public-assets --release-json public-release.json
+      - name: Reverify public API, docs, release, and immutable images after GA approval
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error "$DEVHUD_PUBLIC_API_URL/readyz" | jq -e '.status == "ready"'
+          docs_url=$(node -e 'process.stdout.write(new URL("/devhud", process.env.DEVHUD_PUBLIC_DOCS_URL).href)')
+          curl --fail --silent --show-error "$docs_url" | grep -F "<meta name=\"devhud-release-identity\" content=\"$DEVHUD_DOCS_RELEASE_IDENTITY\">"
+          skopeo login --username "$DEVHUD_OCI_REGISTRY_USERNAME" --password-stdin "$DEVHUD_OCI_REGISTRY" <<<"$DEVHUD_OCI_REGISTRY_TOKEN"
+          cosign login --username "$DEVHUD_OCI_REGISTRY_USERNAME" --password-stdin "$DEVHUD_OCI_REGISTRY" <<<"$DEVHUD_OCI_REGISTRY_TOKEN"
+          for image in "${{ needs.registry.outputs.api_image }}" "${{ needs.registry.outputs.sweeper_image }}"; do
+            expected_digest=${image##*@}
+            actual_digest=$(skopeo inspect --format '{{.Digest}}' "docker://$image")
+            test "$actual_digest" = "$expected_digest"
+            cosign verify --certificate-identity "https://github.com/$GITHUB_REPOSITORY/.github/workflows/release-devhud.yml@$GITHUB_REF" --certificate-oidc-issuer "https://token.actions.githubusercontent.com" "$image" >/dev/null
+          done
+      - name: Reverify final deployment state after GA approval
+        run: |
+          set -euo pipefail
+          response=$(curl --fail --silent --show-error -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${DEVHUD_RELEASE_CONTROLLER_AUDIENCE}")
+          token=$(jq -er '.value' <<<"$response")
+          echo "::add-mask::$token"
+          export DEVHUD_RELEASE_CONTROLLER_TOKEN="$token"
+          node scripts/release/devhud-release-controller.mjs status --version "${{ needs.identity.outputs.version }}" --revision "$GITHUB_SHA" --output controller-ga.json
+          jq -e '.channels.api == "public" and .channels.sweeper == "public" and .channels.updater == "public"' controller-ga.json >/dev/null
       - name: Apply final bilingual notes and latest marker only after verification
         run: |
           set -euo pipefail
@@ -814,13 +903,13 @@ jobs:
         always() && inputs.mode == 'release' &&
         needs.identity.result == 'success' && needs.identity.outputs.retry != 'true' &&
         needs.submit_stores.result != 'skipped' &&
-        (needs.publish_stores.result == 'failure' ||
+        (needs.stores_public.result == 'failure' || needs.publish_stores.result == 'failure' ||
          (needs.publish_stores.result == 'skipped' &&
           (needs.submit_stores.result == 'failure' || needs.review_gate.result == 'failure' ||
            needs.docs_candidate.result == 'failure' || needs.registry.result == 'failure' ||
            needs.prepare_infrastructure.result == 'failure')))
       }}
-    needs: [identity, submit_stores, review_gate, docs_candidate, registry, prepare_infrastructure, publish_stores]
+    needs: [identity, submit_stores, review_gate, docs_candidate, registry, prepare_infrastructure, publish_stores, stores_public]
     runs-on: ubuntu-22.04
     environment: devhud-publication
     permissions:
