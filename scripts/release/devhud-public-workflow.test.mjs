@@ -201,6 +201,7 @@ test("same-commit retries reconcile drafts and validate published GitHub assets 
   const existingRelease = publication.indexOf('if gh release view "$RELEASE_TAG"');
   const inspectRelease = publication.indexOf('--json assets,isDraft,isPrerelease,tagName,targetCommitish');
   const draft = publication.indexOf("if jq -e '.isDraft == true'");
+  const draftPrerelease = publication.indexOf("'.isPrerelease == false'", draft);
   const draftTarget = publication.indexOf("'.targetCommitish == $revision'", draft);
   const deleteUnexpected = publication.indexOf('gh release delete-asset "$RELEASE_TAG" --yes');
   const upload = publication.indexOf('gh release upload "$RELEASE_TAG"');
@@ -212,7 +213,9 @@ test("same-commit retries reconcile drafts and validate published GitHub assets 
   const freshRelease = publication.indexOf("\n          else", existingRelease);
   const visibility = publication.indexOf("--json isDraft,isPrerelease");
   assert.ok(existingRelease > 0 && inspectRelease > existingRelease && draft > inspectRelease, "an existing release must be inspected before retry handling");
-  assert.ok(draftTarget > draft && deleteUnexpected > draftTarget && deleteUnexpected < published, "a draft target must match the selected revision before asset mutation");
+  assert.ok(draftPrerelease > draft && draftTarget > draftPrerelease, "a prerelease draft must be rejected before target validation");
+  assert.match(publication.slice(draftPrerelease, draftTarget), /existing DevHud release draft must not be a prerelease/u);
+  assert.ok(deleteUnexpected > draftTarget && deleteUnexpected < published, "a draft target must match the selected revision before asset mutation");
   assert.ok(upload > deleteUnexpected, "the retry path must replace expected assets after deleting unexpected assets");
   assert.ok(publish > upload && publish < published, "the draft retry must publish only after asset replacement succeeds");
   assert.ok(publishedTarget > published && download > publishedTarget && validate > download && validate < freshRelease, "a published retry must resolve the remote tag before validating immutable assets");

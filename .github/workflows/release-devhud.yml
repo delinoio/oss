@@ -743,6 +743,10 @@ jobs:
           if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets,isDraft,isPrerelease,tagName,targetCommitish > existing-release.json
             if jq -e '.isDraft == true' existing-release.json >/dev/null; then
+              if ! jq -e '.isPrerelease == false' existing-release.json >/dev/null; then
+                echo "existing DevHud release draft must not be a prerelease" >&2
+                exit 1
+              fi
               jq -e --arg revision "$DEVHUD_RELEASE_REVISION" '.targetCommitish == $revision' existing-release.json >/dev/null
               find "github-assets" -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort -u > "expected-assets.txt"
               jq -r '.assets[].name' existing-release.json | LC_ALL=C sort -u > "existing-assets.txt"
