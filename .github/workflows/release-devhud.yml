@@ -741,10 +741,9 @@ jobs:
         run: |
           set -euo pipefail
           if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            target=$(git rev-parse --verify "refs/tags/$RELEASE_TAG^{commit}")
-            test "$target" = "$DEVHUD_RELEASE_REVISION"
-            gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets,isDraft,isPrerelease,tagName > existing-release.json
+            gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets,isDraft,isPrerelease,tagName,targetCommitish > existing-release.json
             if jq -e '.isDraft == true' existing-release.json >/dev/null; then
+              jq -e --arg revision "$DEVHUD_RELEASE_REVISION" '.targetCommitish == $revision' existing-release.json >/dev/null
               find "github-assets" -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort -u > "expected-assets.txt"
               jq -r '.assets[].name' existing-release.json | LC_ALL=C sort -u > "existing-assets.txt"
               comm -13 "expected-assets.txt" "existing-assets.txt" | while IFS= read -r asset; do
@@ -753,6 +752,8 @@ jobs:
               gh release upload "$RELEASE_TAG" github-assets/* --clobber --repo "$GITHUB_REPOSITORY"
               gh release edit "$RELEASE_TAG" --draft=false --latest=false --repo "$GITHUB_REPOSITORY"
             else
+              target=$(gh api "repos/$GITHUB_REPOSITORY/commits/$RELEASE_TAG" --jq '.sha')
+              test "$target" = "$DEVHUD_RELEASE_REVISION"
               mkdir -p published-assets
               gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir published-assets
               evidence="published-assets/devhud-v${RELEASE_VERSION}-release-evidence.tar.gz"

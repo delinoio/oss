@@ -30,6 +30,7 @@
     "postgresql": true,
     "r2": true,
     "asset-domain": true,
+    "public-asset-authority": true,
     "oci-registry": true,
     "public-docs": true,
     "release-controller": true

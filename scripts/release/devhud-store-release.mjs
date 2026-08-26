@@ -53,6 +53,7 @@ export function classifyApple(state) {
   if (["PREPARE_FOR_SUBMISSION", "READY_FOR_REVIEW"].includes(state)) return StoreStatus.Unsubmitted;
   if (["PENDING_DEVELOPER_RELEASE", "PENDING_DEVELOPER_RELEASE_FOR_APP_STORE"].includes(state)) return StoreStatus.ApprovedHeld;
   if (["READY_FOR_SALE", "READY_FOR_DISTRIBUTION"].includes(state)) return StoreStatus.Public;
+  if (state === "INVALID_BINARY") return StoreStatus.Rejected;
   if (typeof state === "string" && state.includes("REJECT")) return StoreStatus.Rejected;
   return StoreStatus.Pending;
 }

@@ -144,6 +144,7 @@ export const livePreflightChecks = Object.freeze([
   "postgresql",
   "r2",
   "asset-domain",
+  "public-asset-authority",
   "oci-registry",
   "public-docs",
   "release-controller",

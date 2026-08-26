@@ -199,21 +199,24 @@ test("same-commit retries reconcile public stores without repeating store mutati
 test("same-commit retries reconcile drafts and validate published GitHub assets without mutation", () => {
   const publication = job("github_release");
   const existingRelease = publication.indexOf('if gh release view "$RELEASE_TAG"');
-  const inspectRelease = publication.indexOf('--json assets,isDraft,isPrerelease,tagName');
+  const inspectRelease = publication.indexOf('--json assets,isDraft,isPrerelease,tagName,targetCommitish');
   const draft = publication.indexOf("if jq -e '.isDraft == true'");
+  const draftTarget = publication.indexOf("'.targetCommitish == $revision'", draft);
   const deleteUnexpected = publication.indexOf('gh release delete-asset "$RELEASE_TAG" --yes');
   const upload = publication.indexOf('gh release upload "$RELEASE_TAG"');
   const publish = publication.indexOf('gh release edit "$RELEASE_TAG" --draft=false --latest=false');
   const published = publication.indexOf("\n            else", draft);
+  const publishedTarget = publication.indexOf('gh api "repos/$GITHUB_REPOSITORY/commits/$RELEASE_TAG"', published);
   const download = publication.indexOf('gh release download "$RELEASE_TAG"', published);
   const validate = publication.indexOf("validate-devhud-public-assets.mjs", download);
   const freshRelease = publication.indexOf("\n          else", existingRelease);
   const visibility = publication.indexOf("--json isDraft,isPrerelease");
   assert.ok(existingRelease > 0 && inspectRelease > existingRelease && draft > inspectRelease, "an existing release must be inspected before retry handling");
-  assert.ok(deleteUnexpected > draft && deleteUnexpected < published, "only a draft retry may delete unexpected assets");
+  assert.ok(draftTarget > draft && deleteUnexpected > draftTarget && deleteUnexpected < published, "a draft target must match the selected revision before asset mutation");
   assert.ok(upload > deleteUnexpected, "the retry path must replace expected assets after deleting unexpected assets");
   assert.ok(publish > upload && publish < published, "the draft retry must publish only after asset replacement succeeds");
-  assert.ok(download > published && validate > download && validate < freshRelease, "a published retry must download and validate immutable assets");
+  assert.ok(publishedTarget > published && download > publishedTarget && validate > download && validate < freshRelease, "a published retry must resolve the remote tag before validating immutable assets");
+  assert.doesNotMatch(publication, /refs\/tags\/\$RELEASE_TAG/u);
   assert.doesNotMatch(publication.slice(published, freshRelease), /release (?:delete-asset|upload|edit)/u);
   assert.match(publication.slice(published, freshRelease), /sigstore|validate-devhud-public-assets/u);
   assert.ok(visibility > freshRelease && visibility > publish, "visibility must be asserted after either release path publishes");
@@ -383,7 +386,7 @@ test("GA repeats every public-channel verification after approval and before mut
 test("GA notes are public and existing tags are dereferenced to commits", () => {
   assert.doesNotMatch(releaseMetadata.releaseNotes.en, /private|candidate/ui);
   assert.doesNotMatch(releaseMetadata.releaseNotes.ko, /비공개|후보/u);
-  assert.match(job("github_release"), /git rev-parse --verify "refs\/tags\/\$RELEASE_TAG\^\{commit\}"/u);
+  assert.match(job("github_release"), /gh api "repos\/\$GITHUB_REPOSITORY\/commits\/\$RELEASE_TAG" --jq '\.sha'/u);
 });
 
 test("dry-run cannot enter publication and rollback stops at store publication", () => {

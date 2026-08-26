@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { generateKeyPairSync } from "node:crypto";
+import { createHash, generateKeyPairSync } from "node:crypto";
 import test from "node:test";
 
 import { googleAssertion, runLivePreflight } from "./devhud-live-preflight.mjs";
@@ -45,7 +45,7 @@ function successfulFetch(environment_) {
       version: environment_.DEVHUD_RELEASE_VERSION,
       revision: environment_.DEVHUD_RELEASE_REVISION ?? environment_.GITHUB_SHA,
       authorizationRevision: environment_.DEVHUD_RELEASE_AUTHORIZATION_REVISION ?? environment_.GITHUB_SHA,
-      checks: { postgresql: true, r2: true, "release-controller": true },
+      checks: { postgresql: true, r2: true, "public-asset-authority": true, "release-controller": true },
     });
     return jsonResponse({ ok: true });
   };
@@ -75,6 +75,7 @@ test("live preflight composes every independent read-only check", async () => {
     tag: `devhud@v${env.DEVHUD_RELEASE_VERSION}`,
     revision: env.GITHUB_SHA,
     authorizationRevision: env.DEVHUD_RELEASE_AUTHORIZATION_REVISION,
+    publicAssetBaseUrlSha256: createHash("sha256").update(env.DEVHUD_PUBLIC_ASSET_BASE_URL, "utf8").digest("hex"),
   });
 });
 
@@ -125,15 +126,24 @@ test("live preflight fails closed when the controller omits PostgreSQL", async (
   const env = environment();
   const successful = successfulFetch(env);
   const fetchImpl = async (input, options) => String(input).includes("controller.example.test")
-    ? jsonResponse({ ok: true, project: "devhud", version: env.DEVHUD_RELEASE_VERSION, revision: env.GITHUB_SHA, authorizationRevision: env.DEVHUD_RELEASE_AUTHORIZATION_REVISION, checks: { postgresql: false, r2: true, "release-controller": true } })
+    ? jsonResponse({ ok: true, project: "devhud", version: env.DEVHUD_RELEASE_VERSION, revision: env.GITHUB_SHA, authorizationRevision: env.DEVHUD_RELEASE_AUTHORIZATION_REVISION, checks: { postgresql: false, r2: true, "public-asset-authority": true, "release-controller": true } })
     : successful(input, options);
   await assert.rejects(runLivePreflight(env, fetchImpl), /postgresql/u);
+});
+
+test("live preflight fails closed when the controller does not bind its public-asset authority", async () => {
+  const env = environment();
+  const successful = successfulFetch(env);
+  const fetchImpl = async (input, options) => String(input).includes("controller.example.test")
+    ? jsonResponse({ ok: true, project: "devhud", version: env.DEVHUD_RELEASE_VERSION, revision: env.GITHUB_SHA, authorizationRevision: env.DEVHUD_RELEASE_AUTHORIZATION_REVISION, checks: { postgresql: true, r2: true, "release-controller": true } })
+    : successful(input, options);
+  await assert.rejects(runLivePreflight(env, fetchImpl), /public-asset-authority/u);
 });
 
 test("live preflight rejects every mismatched controller identity field", async () => {
   const env = environment();
   const successful = successfulFetch(env);
-  const valid = { ok: true, project: "devhud", version: env.DEVHUD_RELEASE_VERSION, revision: env.GITHUB_SHA, authorizationRevision: env.DEVHUD_RELEASE_AUTHORIZATION_REVISION, checks: { postgresql: true, r2: true, "release-controller": true } };
+  const valid = { ok: true, project: "devhud", version: env.DEVHUD_RELEASE_VERSION, revision: env.GITHUB_SHA, authorizationRevision: env.DEVHUD_RELEASE_AUTHORIZATION_REVISION, checks: { postgresql: true, r2: true, "public-asset-authority": true, "release-controller": true } };
   for (const mismatch of [{ ok: false }, { project: "other" }, { version: "9.9.9" }, { revision: "b".repeat(40) }, { authorizationRevision: "b".repeat(40) }]) {
     const fetchImpl = async (input, options) => String(input).includes("controller.example.test")
       ? jsonResponse({ ...valid, ...mismatch })

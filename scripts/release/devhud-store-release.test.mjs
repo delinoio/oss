@@ -47,6 +47,7 @@ test("store states distinguish unsubmitted, pending, approved-held, public, and 
   assert.equal(classifyApple("PENDING_DEVELOPER_RELEASE"), StoreStatus.ApprovedHeld);
   assert.equal(classifyApple("READY_FOR_SALE"), StoreStatus.Public);
   assert.equal(classifyApple("REJECTED"), StoreStatus.Rejected);
+  assert.equal(classifyApple("INVALID_BINARY"), StoreStatus.Rejected);
   assert.equal(classifyApple("DEVELOPER_REJECTED"), StoreStatus.Withdrawn);
   assert.equal(classifyGoogle("RELEASE_LIFECYCLE_STATE_IN_REVIEW"), StoreStatus.Pending);
   assert.equal(classifyGoogle("RELEASE_LIFECYCLE_STATE_APPROVED_NOT_PUBLISHED"), StoreStatus.ApprovedHeld);

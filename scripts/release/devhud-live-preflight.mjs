@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { createPrivateKey, sign } from "node:crypto";
+import { createHash, createPrivateKey, sign } from "node:crypto";
 import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -157,6 +157,7 @@ export async function runLivePreflight(environment = process.env, fetchImpl = fe
       tag: `devhud@v${environment.DEVHUD_RELEASE_VERSION}`,
       revision,
       authorizationRevision: authorization,
+      publicAssetBaseUrlSha256: createHash("sha256").update(environment.DEVHUD_PUBLIC_ASSET_BASE_URL, "utf8").digest("hex"),
     }),
   }, "release-controller");
   const controller = validateControllerResponse(await controllerResponse.json(), {
@@ -164,7 +165,7 @@ export async function runLivePreflight(environment = process.env, fetchImpl = fe
     revision,
     "authorization-revision": authorization,
   }, "preflight");
-  for (const name of ["postgresql", "r2", "release-controller"]) {
+  for (const name of ["postgresql", "r2", "public-asset-authority", "release-controller"]) {
     if (controller.checks?.[name] !== true) throw new Error(`release controller did not confirm ${name}`);
     checks[name] = true;
   }
