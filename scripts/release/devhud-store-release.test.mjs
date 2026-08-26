@@ -77,6 +77,61 @@ test("App Store build processing is polled without mutation", async () => {
   assert.ok(requests.every(({ options }) => options.method === undefined));
 });
 
+test("App Store build polling distinguishes an absent build from one still processing", async () => {
+  for (const [data, expected] of [
+    [[], StoreBuildStatus.Absent],
+    [[{ id: "build-id", attributes: { processingState: "PROCESSING" } }], StoreBuildStatus.Processing],
+  ]) {
+    const requests = [];
+    const result = await run("build-status", StoreProvider.Apple, {}, environment(), async (input, options = {}) => {
+      requests.push({ url: String(input), options });
+      return jsonResponse({ data });
+    });
+    assert.equal(result.status, expected);
+    assert.ok(requests.every(({ options }) => options.method === undefined));
+  }
+});
+
+test("an absent App Store version is unsubmitted and can be withdrawn without mutation", async () => {
+  for (const command of ["status", "withdraw"]) {
+    const requests = [];
+    const result = await run(command, StoreProvider.Apple, {}, environment(), async (input, options = {}) => {
+      requests.push({ url: String(input), options });
+      return jsonResponse({ data: [] });
+    });
+    assert.equal(result.status, command === "status" ? StoreStatus.Unsubmitted : StoreStatus.Withdrawn);
+    assert.ok(requests.every(({ options }) => options.method === undefined));
+  }
+});
+
+test("App Store submission creates one absent exact version after build processing", async () => {
+  const requests = [];
+  const fetchImpl = async (input, options = {}) => {
+    const url = String(input);
+    requests.push({ url, options });
+    if (url.includes("appStoreVersions?")) return jsonResponse({ data: [] });
+    if (url.includes("/v1/builds?")) return jsonResponse({ data: [{ id: "build-id", attributes: { processingState: "VALID" } }] });
+    if (url.endsWith("/v1/appStoreVersions") && options.method === "POST") return jsonResponse({ data: { type: "appStoreVersions", id: "version-id" } });
+    if (url.endsWith("appStoreVersionPhasedRelease")) return new Response(null, { status: 404 });
+    if (url.includes("/reviewSubmissions?")) return jsonResponse({ data: [] });
+    return jsonResponse({ data: { id: "mutation-result" } });
+  };
+  await run("submit", StoreProvider.Apple, {}, environment(), fetchImpl);
+  const creations = requests.filter(({ url, options }) => url.endsWith("/v1/appStoreVersions") && options.method === "POST");
+  assert.equal(creations.length, 1);
+  assert.deepEqual(JSON.parse(creations[0].options.body), {
+    data: {
+      type: "appStoreVersions",
+      attributes: { platform: "IOS", versionString: "0.1.0" },
+      relationships: { app: { data: { type: "apps", id: "123" } } },
+    },
+  });
+});
+
+test("App Store version lookup rejects duplicate exact records", async () => {
+  await assert.rejects(run("status", StoreProvider.Apple, {}, environment(), async () => jsonResponse({ data: [{ id: "one" }, { id: "two" }] })), /at most one exact version/u);
+});
+
 test("App Store submission reconciles an already-submitted exact version without mutation", async () => {
   const requests = [];
   const fetchImpl = async (input, options = {}) => {

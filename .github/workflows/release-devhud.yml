@@ -291,8 +291,15 @@ jobs:
           if [ "$status" = rejected ]; then exit 1; fi
           if [ "$RELEASE_RETRY" = true ] && [ "$status" != public ]; then exit 1; fi
           echo "status=$status" >> "$GITHUB_OUTPUT"
-      - name: Upload the processed App Store package
+      - name: Reconcile the exact App Store build before upload
+        id: apple_build
         if: ${{ matrix.provider == 'apple' && needs.identity.outputs.retry != 'true' && (steps.store_state.outputs.status == 'unsubmitted' || steps.store_state.outputs.status == 'withdrawn') }}
+        run: |
+          set -euo pipefail
+          node scripts/release/devhud-store-release.mjs build-status apple --output apple-build-status.json
+          echo "status=$(jq -er '.status' apple-build-status.json)" >> "$GITHUB_OUTPUT"
+      - name: Upload the processed App Store package
+        if: ${{ steps.apple_build.outputs.status == 'absent' }}
         run: |
           set -euo pipefail
           umask 077
@@ -582,6 +589,11 @@ jobs:
           if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             target=$(git rev-parse --verify "refs/tags/$RELEASE_TAG^{commit}")
             test "$target" = "$GITHUB_SHA"
+            find "github-assets" -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort -u > "expected-assets.txt"
+            gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | LC_ALL=C sort -u > "existing-assets.txt"
+            comm -13 "expected-assets.txt" "existing-assets.txt" | while IFS= read -r asset; do
+              if [ -n "$asset" ]; then gh release delete-asset "$RELEASE_TAG" --yes --repo "$GITHUB_REPOSITORY" -- "$asset"; fi
+            done
             gh release upload "$RELEASE_TAG" github-assets/* --clobber --repo "$GITHUB_REPOSITORY"
             gh release edit "$RELEASE_TAG" --draft=false --latest=false --repo "$GITHUB_REPOSITORY"
           else
@@ -690,9 +702,27 @@ jobs:
       DEVHUD_OCI_REGISTRY_USERNAME: ${{ secrets.DEVHUD_OCI_REGISTRY_USERNAME }}
       DEVHUD_OCI_REGISTRY_TOKEN: ${{ secrets.DEVHUD_OCI_REGISTRY_TOKEN }}
       DEVHUD_DOCS_RELEASE_IDENTITY: devhud@v${{ needs.identity.outputs.version }}@${{ github.sha }}
+      APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+      APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+      APPLE_API_PRIVATE_KEY_B64: ${{ secrets.APPLE_API_PRIVATE_KEY_B64 }}
+      DEVHUD_APP_STORE_APP_ID: ${{ vars.DEVHUD_APP_STORE_APP_ID }}
+      DEVHUD_GOOGLE_PLAY_PACKAGE_NAME: ${{ vars.DEVHUD_GOOGLE_PLAY_PACKAGE_NAME }}
+      DEVHUD_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.DEVHUD_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+      DEVHUD_CHROME_EXTENSION_ID: ${{ vars.DEVHUD_CHROME_EXTENSION_ID }}
+      DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID: ${{ vars.DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID }}
+      DEVHUD_CHROME_WEB_STORE_CLIENT_ID: ${{ secrets.DEVHUD_CHROME_WEB_STORE_CLIENT_ID }}
+      DEVHUD_CHROME_WEB_STORE_CLIENT_SECRET: ${{ secrets.DEVHUD_CHROME_WEB_STORE_CLIENT_SECRET }}
+      DEVHUD_CHROME_WEB_STORE_REFRESH_TOKEN: ${{ secrets.DEVHUD_CHROME_WEB_STORE_REFRESH_TOKEN }}
     steps:
       - uses: actions/checkout@v6
         with: { persist-credentials: false }
+      - name: Reverify every exact store version remains public
+        run: |
+          set -euo pipefail
+          for provider in apple google-play chrome-web-store; do
+            node scripts/release/devhud-store-release.mjs status "$provider" --output "$provider-final.json"
+            jq -e '.status == "public"' "$provider-final.json" >/dev/null
+          done
       - uses: sigstore/cosign-installer@v4.1.0
       - name: Install OCI transport
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends skopeo

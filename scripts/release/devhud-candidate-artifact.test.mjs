@@ -53,6 +53,18 @@ test("recovery reuses the oldest retained exact-revision candidate", async () =>
   assert.deepEqual(await resolveCandidateArtifact(options, fetchImpl), { artifactId: "501", artifactName: firstName, runId: "100", runAttempt: "2", reused: true });
 });
 
+test("recovery searches every attempt of a historical rerun", async () => {
+  const retainedName = candidateArtifactName({ version: "0.1.0", revision, runId: "100", runAttempt: "1" });
+  const runs = [{ id: 100, run_attempt: 3, event: "workflow_dispatch", head_branch: "main", head_sha: revision }];
+  const artifacts = new Map([["100", [{ id: 551, name: retainedName, expired: false, size_in_bytes: 1024, workflow_run: { head_sha: revision } }]]]);
+  const { requests, fetchImpl } = requestFixture({ runs, artifacts });
+  assert.deepEqual(await resolveCandidateArtifact(options, fetchImpl), { artifactId: "551", artifactName: retainedName, runId: "100", runAttempt: "1", reused: true });
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const name = candidateArtifactName({ version: "0.1.0", revision, runId: "100", runAttempt: String(attempt) });
+    assert.ok(requests.some((url) => url.includes(encodeURIComponent(name))), `historical attempt ${attempt} must be searched`);
+  }
+});
+
 test("a rerun reuses the candidate from an earlier attempt of the current run", async () => {
   const rerun = { ...options, currentRunAttempt: "3" };
   const firstName = candidateArtifactName({ version: "0.1.0", revision, runId: "200", runAttempt: "1" });

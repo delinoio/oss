@@ -10,7 +10,7 @@ import { redact } from "./devhud-public-release.mjs";
 
 export const StoreProvider = Object.freeze({ Apple: "apple", GooglePlay: "google-play", ChromeWebStore: "chrome-web-store" });
 export const StoreStatus = Object.freeze({ Unsubmitted: "unsubmitted", Pending: "pending-review", ApprovedHeld: "approved-held", Public: "public", Rejected: "rejected", Withdrawn: "withdrawn" });
-export const StoreBuildStatus = Object.freeze({ Processing: "processing", Processed: "processed" });
+export const StoreBuildStatus = Object.freeze({ Absent: "absent", Processing: "processing", Processed: "processed" });
 
 const appleSubmittedReviewStates = new Set(["WAITING_FOR_REVIEW", "IN_REVIEW", "COMPLETING", "COMPLETE"]);
 
@@ -94,8 +94,18 @@ async function googleProductionReleases(environment, metadata, fetchImpl) {
 async function appleVersion(environment, metadata, fetchImpl, token) {
   const query = new URLSearchParams({ "filter[app]": environment.DEVHUD_APP_STORE_APP_ID, "filter[platform]": "IOS", "filter[versionString]": metadata.version, limit: "1" });
   const result = await checked(fetchImpl, `https://api.appstoreconnect.apple.com/v1/appStoreVersions?${query}`, { headers: bearer(token) }, "App Store version lookup");
-  if (result.data?.length !== 1) throw new Error("App Store version lookup did not return exactly one version");
-  return result.data[0];
+  if (!Array.isArray(result.data) || result.data.length > 1) throw new Error("App Store version lookup did not return at most one exact version");
+  return result.data[0] ?? null;
+}
+
+async function createAppleVersion(environment, metadata, fetchImpl, token) {
+  const result = await checked(fetchImpl, "https://api.appstoreconnect.apple.com/v1/appStoreVersions", {
+    method: "POST",
+    headers: jsonHeaders(token),
+    body: JSON.stringify({ data: { type: "appStoreVersions", attributes: { platform: "IOS", versionString: metadata.version }, relationships: { app: { data: { type: "apps", id: environment.DEVHUD_APP_STORE_APP_ID } } } } }),
+  }, "App Store version creation");
+  if (result.data?.type !== "appStoreVersions" || typeof result.data.id !== "string") throw new Error("App Store version creation returned invalid data");
+  return result.data;
 }
 
 async function appleBuild(environment, metadata, fetchImpl, token) {
@@ -108,18 +118,18 @@ async function appleBuild(environment, metadata, fetchImpl, token) {
   const result = await checked(fetchImpl, `https://api.appstoreconnect.apple.com/v1/builds?${query}`, { headers: bearer(token) }, "App Store build lookup");
   if (!Array.isArray(result.data) || result.data.length > 1) throw new Error("App Store build lookup did not return at most one exact build");
   const build = result.data[0];
-  if (!build) return null;
+  if (!build) return { status: StoreBuildStatus.Absent };
   const processingState = build.attributes?.processingState;
   if (["FAILED", "INVALID"].includes(processingState)) throw new Error(`App Store build processing failed with state ${processingState}`);
-  return processingState === "VALID" ? build : null;
+  return { status: processingState === "VALID" ? StoreBuildStatus.Processed : StoreBuildStatus.Processing, build };
 }
 
 async function appleBuildStatus(environment, metadata, fetchImpl) {
-  const build = await appleBuild(environment, metadata, fetchImpl, appleToken(environment));
+  const result = await appleBuild(environment, metadata, fetchImpl, appleToken(environment));
   return {
     provider: StoreProvider.Apple,
-    status: build ? StoreBuildStatus.Processed : StoreBuildStatus.Processing,
-    ...(build ? { buildId: build.id } : {}),
+    status: result.status,
+    ...(result.build ? { buildId: result.build.id } : {}),
   };
 }
 
@@ -170,12 +180,17 @@ async function assertNoApplePhasedRelease(version, fetchImpl, token) {
 
 async function submitApple(environment, metadata, fetchImpl) {
   const token = appleToken(environment);
-  const version = await appleVersion(environment, metadata, fetchImpl, token);
-  await assertNoApplePhasedRelease(version, fetchImpl, token);
-  const current = classifyApple(version.attributes?.appStoreState);
+  let version = await appleVersion(environment, metadata, fetchImpl, token);
+  if (version) await assertNoApplePhasedRelease(version, fetchImpl, token);
+  const current = version ? classifyApple(version.attributes?.appStoreState) : StoreStatus.Unsubmitted;
   if (current === StoreStatus.Rejected) throw new Error("App Store version was rejected");
-  const build = await appleBuild(environment, metadata, fetchImpl, token);
-  if (!build) throw new Error("App Store build is not processed yet");
+  const buildResult = await appleBuild(environment, metadata, fetchImpl, token);
+  if (buildResult.status !== StoreBuildStatus.Processed) throw new Error("App Store build is not processed yet");
+  if (!version) {
+    version = await createAppleVersion(environment, metadata, fetchImpl, token);
+    await assertNoApplePhasedRelease(version, fetchImpl, token);
+  }
+  const build = buildResult.build;
   let review = await appleReviewSubmission(environment, version, fetchImpl, token);
   if ([StoreStatus.ApprovedHeld, StoreStatus.Public].includes(current)) {
     return { provider: StoreProvider.Apple, status: current, version: metadata.version, ...(review ? { submissionId: review.submission.id } : {}) };
@@ -220,6 +235,7 @@ async function status(provider, environment, metadata, fetchImpl) {
   if (provider === StoreProvider.Apple) {
     const token = appleToken(environment);
     const version = await appleVersion(environment, metadata, fetchImpl, token);
+    if (!version) return { provider, status: StoreStatus.Unsubmitted, version: metadata.version };
     await assertNoApplePhasedRelease(version, fetchImpl, token);
     return { provider, status: classifyApple(version.attributes?.appStoreState), version: metadata.version };
   }
@@ -236,6 +252,7 @@ async function publish(provider, environment, metadata, fetchImpl) {
   if (provider === StoreProvider.Apple) {
     const token = appleToken(environment);
     const version = await appleVersion(environment, metadata, fetchImpl, token);
+    if (!version) throw new Error("App Store version does not exist");
     await assertNoApplePhasedRelease(version, fetchImpl, token);
     const current = classifyApple(version.attributes?.appStoreState);
     if ([StoreStatus.Public, StoreStatus.Pending].includes(current)) return { provider, status: current, version: metadata.version };
@@ -259,6 +276,7 @@ async function withdraw(provider, environment, metadata, options, fetchImpl) {
   if (provider === StoreProvider.Apple) {
     const token = appleToken(environment);
     const version = await appleVersion(environment, metadata, fetchImpl, token);
+    if (!version) return { provider, status: StoreStatus.Withdrawn };
     const current = classifyApple(version.attributes?.appStoreState);
     if (current === StoreStatus.Public) throw new Error("App Store version is already public and cannot be withdrawn automatically");
     const review = await appleReviewSubmission(environment, version, fetchImpl, token);

@@ -47,6 +47,12 @@ async function pages(url, token, fetchImpl) {
   return values;
 }
 
+function runAttempts(runId, latestAttempt) {
+  const attemptCount = Number(latestAttempt);
+  if (!RUN_ID.test(String(runId)) || !Number.isSafeInteger(attemptCount) || attemptCount <= 0) throw new Error("candidate workflow run identity is invalid");
+  return Array.from({ length: attemptCount }, (_, index) => ({ id: runId, run_attempt: index + 1 }));
+}
+
 export async function resolveCandidateArtifact({ repository, workflow, version, revision, currentRunId, currentRunAttempt, token }, fetchImpl = fetch) {
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u.test(repository ?? "")) throw new Error("candidate repository must be owner/name");
   if (!/^[A-Za-z0-9_.-]+\.ya?ml$/u.test(workflow ?? "")) throw new Error("candidate workflow must be a workflow filename");
@@ -57,10 +63,10 @@ export async function resolveCandidateArtifact({ repository, workflow, version, 
   const runPages = await pages(`${root}/actions/workflows/${encodeURIComponent(workflow)}/runs?branch=main&event=workflow_dispatch&per_page=100`, token, fetchImpl);
   const runs = runPages.flatMap((page) => page.workflow_runs ?? [])
     .filter((run) => String(run.id) !== String(currentRunId) && run.event === "workflow_dispatch" && run.head_branch === "main" && run.head_sha === revision)
-    .map((run) => ({ id: run.id, run_attempt: run.run_attempt }));
+    .flatMap((run) => runAttempts(run.id, run.run_attempt));
   const currentAttempt = Number(currentRunAttempt);
   if (!Number.isSafeInteger(currentAttempt) || currentAttempt <= 0) throw new Error("candidate run attempt must be a positive safe integer");
-  for (let attempt = 1; attempt < currentAttempt; attempt += 1) runs.push({ id: currentRunId, run_attempt: attempt });
+  if (currentAttempt > 1) runs.push(...runAttempts(currentRunId, currentAttempt - 1));
   runs.sort((left, right) => Number(left.id) - Number(right.id) || Number(left.run_attempt) - Number(right.run_attempt));
 
   const retained = [];

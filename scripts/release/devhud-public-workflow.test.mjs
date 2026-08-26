@@ -97,11 +97,13 @@ test("same-commit retries reconcile public stores without repeating store mutati
 test("same-commit retries publish recovered GitHub drafts after replacing assets", () => {
   const publication = job("github_release");
   const existingRelease = publication.indexOf('if gh release view "$RELEASE_TAG"');
+  const deleteUnexpected = publication.indexOf('gh release delete-asset "$RELEASE_TAG" --yes');
   const upload = publication.indexOf('gh release upload "$RELEASE_TAG"');
   const publish = publication.indexOf('gh release edit "$RELEASE_TAG" --draft=false --latest=false');
   const freshRelease = publication.indexOf("\n          else", existingRelease);
   const visibility = publication.indexOf("--json isDraft,isPrerelease");
-  assert.ok(existingRelease > 0 && upload > existingRelease, "the retry path must replace assets on the exact existing release");
+  assert.ok(existingRelease > 0 && deleteUnexpected > existingRelease, "the retry path must delete unexpected assets on the exact existing release");
+  assert.ok(upload > deleteUnexpected, "the retry path must replace expected assets after deleting unexpected assets");
   assert.ok(publish > upload && publish < freshRelease, "the retry path must publish only after asset replacement succeeds");
   assert.ok(visibility > freshRelease && visibility > publish, "visibility must be asserted after either release path publishes");
 });
@@ -116,7 +118,11 @@ test("store publication waits boundedly for every exact public version", () => {
 
 test("App Store build polling is read-only and submission runs once afterward", () => {
   const submission = job("submit_stores");
+  const reconciliation = submission.indexOf("Reconcile the exact App Store build before upload");
+  const upload = submission.indexOf("Upload the processed App Store package");
   const polling = submission.slice(submission.indexOf("Wait for App Store package processing"), submission.indexOf("Submit or reconcile the App Store review once"));
+  assert.ok(reconciliation > 0 && upload > reconciliation, "the exact build must be queried before transporter upload");
+  assert.match(submission.slice(upload, submission.indexOf("Wait for App Store package processing")), /steps\.apple_build\.outputs\.status == 'absent'/u);
   assert.match(polling, /build-status apple/u);
   assert.doesNotMatch(polling, /submit apple/u);
   assert.match(submission, /Submit or reconcile the App Store review once[\s\S]*submit apple/u);
@@ -181,6 +187,16 @@ test("independent verification downloads and authenticates the exact public GitH
   assert.match(verification, /X-DevHud-Package/u);
   assert.match(verification, /validate-devhud-public-assets\.mjs/u);
   assert.match(verification, /DEVHUD_PRIVATE_WORKFLOW_REF/u);
+});
+
+test("independent verification requeries every exact store before GA", () => {
+  const verification = job("verify_all");
+  for (const name of ["APPLE_API_PRIVATE_KEY_B64", "DEVHUD_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON", "DEVHUD_CHROME_WEB_STORE_REFRESH_TOKEN"]) {
+    assert.match(verification, new RegExp(`${name}:`, "u"));
+  }
+  assert.match(verification, /for provider in apple google-play chrome-web-store/u);
+  assert.match(verification, /devhud-store-release\.mjs status "\$provider"/u);
+  assert.match(verification, /\.status == "public"/u);
 });
 
 test("GA notes are public and existing tags are dereferenced to commits", () => {
