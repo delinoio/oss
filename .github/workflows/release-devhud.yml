@@ -43,6 +43,10 @@ jobs:
       candidate_artifact_name: ${{ steps.candidate.outputs.artifact_name }}
       candidate_run_id: ${{ steps.candidate.outputs.run_id }}
       candidate_run_attempt: ${{ steps.candidate.outputs.run_attempt }}
+      configuration_artifact_id: ${{ steps.candidate.outputs.configuration_artifact_id }}
+      configuration_artifact_name: ${{ steps.candidate.outputs.configuration_artifact_name }}
+      configuration_run_id: ${{ steps.candidate.outputs.configuration_run_id }}
+      configuration_reused: ${{ steps.candidate.outputs.configuration_reused }}
     steps:
       - uses: actions/checkout@v6
         with: { fetch-depth: 0, persist-credentials: false }
@@ -101,15 +105,24 @@ jobs:
           echo "artifact_name=$(jq -er '.artifactName | select(type == \"string\" and length > 0)' candidate.json)" >> "$GITHUB_OUTPUT"
           echo "run_id=$(jq -er '.runId | select(test(\"^[1-9][0-9]*$\"))' candidate.json)" >> "$GITHUB_OUTPUT"
           echo "run_attempt=$(jq -er '.runAttempt | select(test(\"^[1-9][0-9]*$\"))' candidate.json)" >> "$GITHUB_OUTPUT"
-      - name: Require the retained candidate for historical recovery
+          echo "configuration_artifact_id=$(jq -er '.configurationArtifactId | select(type == \"string\")' candidate.json)" >> "$GITHUB_OUTPUT"
+          echo "configuration_artifact_name=$(jq -er '.configurationArtifactName | select(type == \"string\" and length > 0)' candidate.json)" >> "$GITHUB_OUTPUT"
+          echo "configuration_run_id=$(jq -er '.configurationRunId | select(type == \"string\" and (. == \"\" or test(\"^[1-9][0-9]*$\")))' candidate.json)" >> "$GITHUB_OUTPUT"
+          echo "configuration_reused=$(jq -er '.configurationReused | select(type == \"boolean\")' candidate.json)" >> "$GITHUB_OUTPUT"
+      - name: Require retained candidate and destination identity for historical recovery
         if: ${{ inputs.mode == 'release' }}
         env:
           DEVHUD_RELEASE_REVISION: ${{ steps.source.outputs.revision }}
           REUSED_CANDIDATE: ${{ steps.candidate.outputs.reused }}
+          REUSED_CONFIGURATION: ${{ steps.candidate.outputs.configuration_reused }}
         run: |
           set -euo pipefail
           if [ "$DEVHUD_RELEASE_REVISION" != "$GITHUB_SHA" ] && [ "$REUSED_CANDIDATE" != true ]; then
             echo "historical release recovery requires the retained original candidate" >&2
+            exit 1
+          fi
+          if [ "$DEVHUD_RELEASE_REVISION" != "$GITHUB_SHA" ] && [ "$REUSED_CONFIGURATION" != true ]; then
+            echo "historical release recovery requires the retained original release configuration" >&2
             exit 1
           fi
       - uses: actions/upload-artifact@v7
@@ -204,6 +217,7 @@ jobs:
     runs-on: ubuntu-22.04
     environment: devhud-publication
     permissions:
+      actions: read
       contents: read
       id-token: write
     outputs:
@@ -211,6 +225,7 @@ jobs:
       store_identity_fingerprint: ${{ steps.configuration.outputs.store_identity_fingerprint }}
       app_store_app_id: ${{ steps.configuration.outputs.app_store_app_id }}
       google_play_package_name: ${{ steps.configuration.outputs.google_play_package_name }}
+      google_play_production_release_service_account: ${{ steps.configuration.outputs.google_play_production_release_service_account }}
       chrome_extension_id: ${{ steps.configuration.outputs.chrome_extension_id }}
       chrome_web_store_publisher_id: ${{ steps.configuration.outputs.chrome_web_store_publisher_id }}
     env:
@@ -225,6 +240,7 @@ jobs:
       DEVHUD_APP_STORE_APP_ID: ${{ vars.DEVHUD_APP_STORE_APP_ID }}
       DEVHUD_GOOGLE_PLAY_PACKAGE_NAME: ${{ vars.DEVHUD_GOOGLE_PLAY_PACKAGE_NAME }}
       DEVHUD_GOOGLE_PLAY_MANAGED_PUBLISHING: ${{ vars.DEVHUD_GOOGLE_PLAY_MANAGED_PUBLISHING }}
+      DEVHUD_GOOGLE_PLAY_PRODUCTION_RELEASE_SERVICE_ACCOUNT: ${{ vars.DEVHUD_GOOGLE_PLAY_PRODUCTION_RELEASE_SERVICE_ACCOUNT }}
       DEVHUD_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.DEVHUD_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
       DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID: ${{ vars.DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID }}
       DEVHUD_CHROME_WEB_STORE_CLIENT_ID: ${{ secrets.DEVHUD_CHROME_WEB_STORE_CLIENT_ID }}
@@ -247,6 +263,37 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with: { fetch-depth: 0, persist-credentials: false, ref: "${{ needs.identity.outputs.revision }}" }
+      - uses: actions/download-artifact@v8
+        if: ${{ needs.identity.outputs.configuration_reused == 'true' }}
+        with:
+          artifact-ids: ${{ needs.identity.outputs.configuration_artifact_id }}
+          github-token: ${{ github.token }}
+          run-id: ${{ needs.identity.outputs.configuration_run_id }}
+          path: retained-release-configuration
+      - name: Bind the original candidate and release destinations
+        env:
+          CANDIDATE_ARTIFACT_ID: ${{ needs.candidate.outputs.artifact_id }}
+          CANDIDATE_ARTIFACT_NAME: ${{ needs.candidate.outputs.artifact_name }}
+          CANDIDATE_RUN_ID: ${{ needs.candidate.outputs.run_id }}
+          CANDIDATE_RUN_ATTEMPT: ${{ needs.candidate.outputs.run_attempt }}
+          REUSED_CONFIGURATION: ${{ needs.identity.outputs.configuration_reused }}
+        run: |
+          set -euo pipefail
+          node scripts/release/devhud-live-preflight.mjs --validate-configuration
+          arguments=(--version "$DEVHUD_RELEASE_VERSION" --revision "$DEVHUD_RELEASE_REVISION" --candidate-artifact-id "$CANDIDATE_ARTIFACT_ID" --candidate-artifact-name "$CANDIDATE_ARTIFACT_NAME" --candidate-run-id "$CANDIDATE_RUN_ID" --candidate-run-attempt "$CANDIDATE_RUN_ATTEMPT")
+          if [ "$REUSED_CONFIGURATION" = true ]; then
+            node scripts/release/devhud-public-release.mjs validate-configuration-binding "${arguments[@]}" --input retained-release-configuration/devhud-release-configuration.json
+          else
+            mkdir -p release-configuration
+            node scripts/release/devhud-public-release.mjs configuration-binding "${arguments[@]}" --output release-configuration/devhud-release-configuration.json
+          fi
+      - uses: actions/upload-artifact@v7
+        if: ${{ needs.identity.outputs.configuration_reused != 'true' }}
+        with:
+          name: ${{ needs.identity.outputs.configuration_artifact_name }}
+          path: release-configuration/devhud-release-configuration.json
+          if-no-files-found: error
+          retention-days: 35
       - name: Obtain a short-lived release-controller credential
         run: |
           set -euo pipefail
@@ -272,6 +319,7 @@ jobs:
             echo "store_identity_fingerprint=$store_identity_fingerprint"
             echo "app_store_app_id=$DEVHUD_APP_STORE_APP_ID"
             echo "google_play_package_name=$DEVHUD_GOOGLE_PLAY_PACKAGE_NAME"
+            echo "google_play_production_release_service_account=$DEVHUD_GOOGLE_PLAY_PRODUCTION_RELEASE_SERVICE_ACCOUNT"
             echo "chrome_extension_id=$DEVHUD_CHROME_EXTENSION_ID"
             echo "chrome_web_store_publisher_id=$DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID"
           } >> "$GITHUB_OUTPUT"
@@ -298,6 +346,7 @@ jobs:
       APPLE_API_PRIVATE_KEY_B64: ${{ secrets.APPLE_API_PRIVATE_KEY_B64 }}
       DEVHUD_APP_STORE_APP_ID: ${{ needs.preflight.outputs.app_store_app_id }}
       DEVHUD_GOOGLE_PLAY_PACKAGE_NAME: ${{ needs.preflight.outputs.google_play_package_name }}
+      DEVHUD_GOOGLE_PLAY_PRODUCTION_RELEASE_SERVICE_ACCOUNT: ${{ needs.preflight.outputs.google_play_production_release_service_account }}
       DEVHUD_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.DEVHUD_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
       DEVHUD_CHROME_EXTENSION_ID: ${{ needs.preflight.outputs.chrome_extension_id }}
       DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID: ${{ needs.preflight.outputs.chrome_web_store_publisher_id }}
@@ -375,6 +424,7 @@ jobs:
       APPLE_API_PRIVATE_KEY_B64: ${{ secrets.APPLE_API_PRIVATE_KEY_B64 }}
       DEVHUD_APP_STORE_APP_ID: ${{ vars.DEVHUD_APP_STORE_APP_ID }}
       DEVHUD_GOOGLE_PLAY_PACKAGE_NAME: ${{ vars.DEVHUD_GOOGLE_PLAY_PACKAGE_NAME }}
+      DEVHUD_GOOGLE_PLAY_PRODUCTION_RELEASE_SERVICE_ACCOUNT: ${{ vars.DEVHUD_GOOGLE_PLAY_PRODUCTION_RELEASE_SERVICE_ACCOUNT }}
       DEVHUD_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.DEVHUD_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
       DEVHUD_CHROME_EXTENSION_ID: ${{ vars.DEVHUD_CHROME_EXTENSION_ID }}
       DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID: ${{ vars.DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID }}
@@ -522,7 +572,7 @@ jobs:
           echo "::add-mask::$token"
           echo "DEVHUD_RELEASE_CONTROLLER_TOKEN=$token" >> "$GITHUB_ENV"
       - name: Package only already-signed updater inputs
-        run: tar -C private-artifacts -czf devhud-updater-input.tar.gz updater/manifests updater/signatures
+        run: node scripts/release/package-devhud-updater-input.mjs --artifacts-dir private-artifacts --output devhud-updater-input.tar.gz
       - name: Prepare migrations, API, sweeper, administrator, and updater inputs
         run: node scripts/release/devhud-release-controller.mjs prepare --version "${{ needs.identity.outputs.version }}" --revision "$DEVHUD_RELEASE_REVISION" --api-image "${{ needs.registry.outputs.api_image }}" --sweeper-image "${{ needs.registry.outputs.sweeper_image }}" --updater devhud-updater-input.tar.gz --output controller-prepare.json
       - name: Promote API and sweeper with updater discovery held closed
@@ -557,6 +607,7 @@ jobs:
       DEVHUD_APP_STORE_APP_ID: ${{ vars.DEVHUD_APP_STORE_APP_ID }}
       DEVHUD_GOOGLE_PLAY_PACKAGE_NAME: ${{ vars.DEVHUD_GOOGLE_PLAY_PACKAGE_NAME }}
       DEVHUD_GOOGLE_PLAY_MANAGED_PUBLISHING: ${{ vars.DEVHUD_GOOGLE_PLAY_MANAGED_PUBLISHING }}
+      DEVHUD_GOOGLE_PLAY_PRODUCTION_RELEASE_SERVICE_ACCOUNT: ${{ vars.DEVHUD_GOOGLE_PLAY_PRODUCTION_RELEASE_SERVICE_ACCOUNT }}
       DEVHUD_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.DEVHUD_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
       DEVHUD_CHROME_EXTENSION_ID: ${{ vars.DEVHUD_CHROME_EXTENSION_ID }}
       DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID: ${{ vars.DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID }}
@@ -760,6 +811,7 @@ jobs:
       APPLE_API_PRIVATE_KEY_B64: ${{ secrets.APPLE_API_PRIVATE_KEY_B64 }}
       DEVHUD_APP_STORE_APP_ID: ${{ vars.DEVHUD_APP_STORE_APP_ID }}
       DEVHUD_GOOGLE_PLAY_PACKAGE_NAME: ${{ vars.DEVHUD_GOOGLE_PLAY_PACKAGE_NAME }}
+      DEVHUD_GOOGLE_PLAY_PRODUCTION_RELEASE_SERVICE_ACCOUNT: ${{ vars.DEVHUD_GOOGLE_PLAY_PRODUCTION_RELEASE_SERVICE_ACCOUNT }}
       DEVHUD_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.DEVHUD_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
       DEVHUD_CHROME_EXTENSION_ID: ${{ vars.DEVHUD_CHROME_EXTENSION_ID }}
       DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID: ${{ vars.DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID }}
@@ -875,6 +927,7 @@ jobs:
       DEVHUD_APP_STORE_APP_ID: ${{ vars.DEVHUD_APP_STORE_APP_ID }}
       DEVHUD_GOOGLE_PLAY_PACKAGE_NAME: ${{ vars.DEVHUD_GOOGLE_PLAY_PACKAGE_NAME }}
       DEVHUD_GOOGLE_PLAY_MANAGED_PUBLISHING: ${{ vars.DEVHUD_GOOGLE_PLAY_MANAGED_PUBLISHING }}
+      DEVHUD_GOOGLE_PLAY_PRODUCTION_RELEASE_SERVICE_ACCOUNT: ${{ vars.DEVHUD_GOOGLE_PLAY_PRODUCTION_RELEASE_SERVICE_ACCOUNT }}
       DEVHUD_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.DEVHUD_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
       DEVHUD_CHROME_EXTENSION_ID: ${{ vars.DEVHUD_CHROME_EXTENSION_ID }}
       DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID: ${{ vars.DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID }}
@@ -996,6 +1049,7 @@ jobs:
       APPLE_API_PRIVATE_KEY_B64: ${{ secrets.APPLE_API_PRIVATE_KEY_B64 }}
       DEVHUD_APP_STORE_APP_ID: ${{ needs.preflight.outputs.app_store_app_id }}
       DEVHUD_GOOGLE_PLAY_PACKAGE_NAME: ${{ needs.preflight.outputs.google_play_package_name }}
+      DEVHUD_GOOGLE_PLAY_PRODUCTION_RELEASE_SERVICE_ACCOUNT: ${{ needs.preflight.outputs.google_play_production_release_service_account }}
       DEVHUD_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.DEVHUD_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
       DEVHUD_CHROME_EXTENSION_ID: ${{ needs.preflight.outputs.chrome_extension_id }}
       DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID: ${{ needs.preflight.outputs.chrome_web_store_publisher_id }}

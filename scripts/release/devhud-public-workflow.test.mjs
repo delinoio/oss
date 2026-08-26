@@ -57,6 +57,22 @@ test("historical recovery binds every job to one retained ancestor revision", ()
   assert.doesNotMatch(release, /DEVHUD_DOCS_RELEASE_IDENTITY:.*github\.sha/u);
 });
 
+test("recovery retains and validates the original destination identity before external access", () => {
+  const identity = job("identity");
+  const preflight = job("preflight");
+  assert.match(identity, /configuration_artifact_id: \$\{\{ steps\.candidate\.outputs\.configuration_artifact_id \}\}/u);
+  assert.match(identity, /historical release recovery requires the retained original release configuration/u);
+  assert.match(preflight, /artifact-ids: \$\{\{ needs\.identity\.outputs\.configuration_artifact_id \}\}/u);
+  assert.match(preflight, /validate-configuration-binding/u);
+  assert.match(preflight, /configuration-binding/u);
+  assert.match(preflight, /devhud-live-preflight\.mjs --validate-configuration/u);
+  assert.match(preflight, /name: \$\{\{ needs\.identity\.outputs\.configuration_artifact_name \}\}[\s\S]*retention-days: 35/u);
+  const binding = preflight.indexOf("Bind the original candidate and release destinations");
+  const credential = preflight.indexOf("Obtain a short-lived release-controller credential");
+  const external = preflight.indexOf("Authenticate every external release boundary without mutation");
+  assert.ok(binding > 0 && credential > binding && external > credential, "the retained configuration must be accepted before external release access");
+});
+
 test("the complete reusable private candidate is the sole publication prerequisite", () => {
   assert.match(privateCandidate, /workflow_call:/u);
   assert.match(privateCandidate, /revision:[\s\S]*Exact source revision selected/u);
@@ -108,6 +124,7 @@ test("store submission, review, and cleanup retain the preflight-bound identitie
   const identities = [
     ["DEVHUD_APP_STORE_APP_ID", "app_store_app_id"],
     ["DEVHUD_GOOGLE_PLAY_PACKAGE_NAME", "google_play_package_name"],
+    ["DEVHUD_GOOGLE_PLAY_PRODUCTION_RELEASE_SERVICE_ACCOUNT", "google_play_production_release_service_account"],
     ["DEVHUD_CHROME_EXTENSION_ID", "chrome_extension_id"],
     ["DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID", "chrome_web_store_publisher_id"],
   ];
@@ -230,6 +247,12 @@ test("infrastructure verification sends a conforming unary Connect request", () 
   assert.ok(bootstrap, "missing Bootstrap verification request");
   assert.match(bootstrap, /-H 'Connect-Protocol-Version: 1'/u);
   assert.match(bootstrap, /BootstrapService\/GetBootstrap/u);
+});
+
+test("infrastructure packages updater input with normalized deterministic metadata", () => {
+  const infrastructure = job("prepare_infrastructure");
+  assert.match(infrastructure, /package-devhud-updater-input\.mjs --artifacts-dir private-artifacts --output devhud-updater-input\.tar\.gz/u);
+  assert.doesNotMatch(infrastructure, /tar -C private-artifacts -czf devhud-updater-input/u);
 });
 
 test("independent verification fetches and verifies both remote OCI digests", () => {

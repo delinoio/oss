@@ -16,6 +16,13 @@ export function candidateArtifactName({ version, revision, runId, runAttempt }) 
   return `devhud-v${version}-private-signed-candidate-${revision}-${runId}-${runAttempt}`;
 }
 
+export function releaseConfigurationArtifactName({ version, revision, candidateRunId, candidateRunAttempt }) {
+  validateVersion(version);
+  if (!REVISION.test(revision)) throw new Error("release configuration revision must be an exact lowercase 40-hex commit");
+  if (!RUN_ID.test(String(candidateRunId)) || !RUN_ID.test(String(candidateRunAttempt))) throw new Error("release configuration candidate identity must use positive decimal integers");
+  return `devhud-v${version}-release-configuration-${revision}-${candidateRunId}-${candidateRunAttempt}`;
+}
+
 function nextLink(header) {
   if (!header) return null;
   for (const entry of header.split(",")) {
@@ -82,12 +89,35 @@ export async function resolveCandidateArtifact({ repository, workflow, version, 
     retained.push({ artifactId: String(artifact.id), artifactName: name, runId: String(run.id), runAttempt: String(run.run_attempt), reused: true });
   }
 
-  return retained[0] ?? {
+  const candidate = retained[0] ?? {
     artifactId: "",
     artifactName: currentName,
     runId: String(currentRunId),
     runAttempt: String(currentRunAttempt),
     reused: false,
+  };
+  const configurationArtifactName = releaseConfigurationArtifactName({
+    version,
+    revision,
+    candidateRunId: candidate.runId,
+    candidateRunAttempt: candidate.runAttempt,
+  });
+  const configurationPages = await pages(`${root}/actions/artifacts?name=${encodeURIComponent(configurationArtifactName)}&per_page=100`, token, fetchImpl);
+  const configurations = configurationPages.flatMap((page) => page.artifacts ?? [])
+    .filter((artifact) => artifact.name === configurationArtifactName && artifact.workflow_run?.head_branch === "main");
+  if (configurations.length > 1) throw new Error("multiple retained release configurations found for the selected candidate");
+  const [configuration] = configurations;
+  if (configuration?.expired === true) throw new Error(`retained release configuration ${configuration.id} has expired`);
+  if (configuration && (!RUN_ID.test(String(configuration.id)) || !RUN_ID.test(String(configuration.workflow_run?.id)) || !Number.isSafeInteger(configuration.size_in_bytes) || configuration.size_in_bytes <= 0)) {
+    throw new Error("retained release configuration metadata is invalid");
+  }
+
+  return {
+    ...candidate,
+    configurationArtifactId: configuration ? String(configuration.id) : "",
+    configurationArtifactName,
+    configurationRunId: configuration ? String(configuration.workflow_run.id) : "",
+    configurationReused: configuration !== undefined,
   };
 }
 

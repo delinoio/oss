@@ -4,7 +4,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { appleToken, googleAssertion } from "./devhud-live-preflight.mjs";
+import { appleToken, googleAssertion, googleServiceAccount } from "./devhud-live-preflight.mjs";
 import { loadReleaseMetadata } from "./devhud-release.mjs";
 import { redact } from "./devhud-public-release.mjs";
 
@@ -31,7 +31,7 @@ async function oauthToken(fetchImpl, url, body, label) {
 }
 
 async function googleToken(environment, fetchImpl) {
-  const serviceAccount = JSON.parse(environment.DEVHUD_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON);
+  const serviceAccount = googleServiceAccount(environment);
   return oauthToken(fetchImpl, serviceAccount.token_uri, { grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion: googleAssertion(serviceAccount) }, "Google Play authentication");
 }
 

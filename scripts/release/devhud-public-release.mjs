@@ -61,6 +61,7 @@ export const releaseVariables = Object.freeze([
   "DEVHUD_APP_STORE_APP_ID",
   "DEVHUD_GOOGLE_PLAY_PACKAGE_NAME",
   "DEVHUD_GOOGLE_PLAY_MANAGED_PUBLISHING",
+  "DEVHUD_GOOGLE_PLAY_PRODUCTION_RELEASE_SERVICE_ACCOUNT",
   "DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID",
   "DEVHUD_OCI_REGISTRY",
   "DEVHUD_OCI_API_REPOSITORY",
@@ -83,6 +84,7 @@ export const releaseFingerprintVariables = Object.freeze([
 export const releaseStoreIdentityVariables = Object.freeze([
   "DEVHUD_APP_STORE_APP_ID",
   "DEVHUD_GOOGLE_PLAY_PACKAGE_NAME",
+  "DEVHUD_GOOGLE_PLAY_PRODUCTION_RELEASE_SERVICE_ACCOUNT",
   "DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID",
   "DEVHUD_CHROME_EXTENSION_ID",
 ]);
@@ -205,6 +207,35 @@ export function releaseStoreIdentityFingerprint(environment = process.env) {
   if (missing.length > 0) throw new Error(`DevHud store identity variables are missing: ${missing.join(", ")}`);
   const values = releaseStoreIdentityVariables.map((name) => [name, environment[name]]);
   return createHash("sha256").update(JSON.stringify(values), "utf8").digest("hex");
+}
+
+function releaseCandidateIdentity({ artifactId, artifactName, runId, runAttempt }) {
+  if (!/^[1-9]\d*$/u.test(String(artifactId)) || !/^[1-9]\d*$/u.test(String(runId)) || !/^[1-9]\d*$/u.test(String(runAttempt))) {
+    throw new Error("release configuration candidate identity must use positive decimal integers");
+  }
+  if (typeof artifactName !== "string" || !/^[A-Za-z0-9._-]+$/u.test(artifactName)) throw new Error("release configuration candidate artifact name is invalid");
+  return { artifactId: String(artifactId), artifactName, runId: String(runId), runAttempt: String(runAttempt) };
+}
+
+export function releaseConfigurationBinding({ version, revision, candidate, environment = process.env }) {
+  validateVersion(version);
+  if (!/^[a-f0-9]{40}$/u.test(revision)) throw new Error("release configuration revision must be an exact lowercase 40-hex commit");
+  return {
+    schemaVersion: 1,
+    project: "devhud",
+    version,
+    revision,
+    candidate: releaseCandidateIdentity(candidate),
+    releaseConfigurationFingerprint: releaseConfigurationFingerprint(environment),
+  };
+}
+
+export function validateReleaseConfigurationBinding(binding, expected) {
+  const current = releaseConfigurationBinding(expected);
+  if (binding === null || typeof binding !== "object" || Array.isArray(binding) || JSON.stringify(binding) !== JSON.stringify(current)) {
+    throw new Error("retained release configuration does not match the selected candidate and protected environment");
+  }
+  return current;
 }
 
 export function validateReleaseIdentity({ requestedVersion, metadata = loadReleaseMetadata(), ref, sha, existingTag = null }) {
@@ -337,6 +368,28 @@ export function main(arguments_ = process.argv.slice(2), environment = process.e
   }
   if (command === "store-identity-fingerprint") {
     process.stdout.write(`${releaseStoreIdentityFingerprint(environment)}\n`);
+    return;
+  }
+  const configurationBindingOptions = {
+    version: options.version,
+    revision: options.revision,
+    candidate: {
+      artifactId: options["candidate-artifact-id"],
+      artifactName: options["candidate-artifact-name"],
+      runId: options["candidate-run-id"],
+      runAttempt: options["candidate-run-attempt"],
+    },
+    environment,
+  };
+  if (command === "configuration-binding") {
+    if (!options.output) throw new Error("--output is required");
+    writeFileSync(resolve(options.output), `${JSON.stringify(releaseConfigurationBinding(configurationBindingOptions), null, 2)}\n`, { mode: 0o600 });
+    return;
+  }
+  if (command === "validate-configuration-binding") {
+    if (!options.input) throw new Error("--input is required");
+    validateReleaseConfigurationBinding(JSON.parse(readFileSync(resolve(options.input), "utf8")), configurationBindingOptions);
+    process.stderr.write("[devhud.release] retained release configuration accepted\n");
     return;
   }
   throw new Error(`unsupported command: ${command}`);

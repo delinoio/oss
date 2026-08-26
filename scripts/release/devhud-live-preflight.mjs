@@ -27,6 +27,16 @@ export function googleAssertion(serviceAccount, now = Math.floor(Date.now() / 10
   return `${header}.${payload}.${signature}`;
 }
 
+export function googleServiceAccount(environment) {
+  let serviceAccount;
+  try { serviceAccount = JSON.parse(environment.DEVHUD_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON); } catch { throw new Error("Google Play service-account configuration is invalid"); }
+  const authorizedPrincipal = environment.DEVHUD_GOOGLE_PLAY_PRODUCTION_RELEASE_SERVICE_ACCOUNT;
+  if (typeof serviceAccount?.client_email !== "string" || serviceAccount.client_email === "" || serviceAccount.client_email !== authorizedPrincipal) {
+    throw new Error("Google Play service account does not match the protected production-release authority prerequisite");
+  }
+  return serviceAccount;
+}
+
 async function checkedFetch(fetchImpl, url, options, label, accepted = (result) => result.ok) {
   const result = await fetchImpl(url, { redirect: "error", ...options });
   if (!accepted(result)) throw new Error(`${label} preflight failed with HTTP ${result.status}`);
@@ -48,9 +58,18 @@ function releaseRevision(environment) {
   return revision;
 }
 
-export async function runLivePreflight(environment = process.env, fetchImpl = fetch) {
+export function validateLivePreflightConfiguration(environment = process.env) {
   validateReleaseConfiguration(environment);
   const revision = releaseRevision(environment);
+  // Google Play exposes production publication as CAN_MANAGE_PUBLIC_APKS but
+  // provides no read-only capability probe. Bind the protected prerequisite to
+  // the credential principal before contacting any external release boundary.
+  const serviceAccount = googleServiceAccount(environment);
+  return { revision, serviceAccount };
+}
+
+export async function runLivePreflight(environment = process.env, fetchImpl = fetch) {
+  const { revision, serviceAccount } = validateLivePreflightConfiguration(environment);
   const checks = Object.fromEntries(livePreflightChecks.map((name) => [name, false]));
 
   await checkedFetch(fetchImpl, `https://api.github.com/repos/${environment.GITHUB_REPOSITORY}`, { headers: { ...bearer(environment.GITHUB_TOKEN), accept: "application/vnd.github+json" } }, "github");
@@ -63,7 +82,6 @@ export async function runLivePreflight(environment = process.env, fetchImpl = fe
   if ((await appleResponse.json()).data?.attributes?.bundleId !== "io.delino.devhud") throw new Error("App Store app does not use the DevHud bundle ID");
   checks["app-store"] = true;
 
-  const serviceAccount = JSON.parse(environment.DEVHUD_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON);
   const googleToken = await accessToken(fetchImpl, serviceAccount.token_uri, { grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion: googleAssertion(serviceAccount) }, "google-play-token");
   await checkedFetch(fetchImpl, `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${encodeURIComponent(environment.DEVHUD_GOOGLE_PLAY_PACKAGE_NAME)}/tracks/production/releases`, { headers: bearer(googleToken) }, "google-play");
   checks["google-play"] = true;
@@ -136,6 +154,11 @@ export async function runLivePreflight(environment = process.env, fetchImpl = fe
 }
 
 export async function main(arguments_ = process.argv.slice(2), environment = process.env) {
+  if (arguments_.length === 1 && arguments_[0] === "--validate-configuration") {
+    validateLivePreflightConfiguration(environment);
+    process.stderr.write("[devhud.preflight] local release configuration accepted\n");
+    return;
+  }
   if (arguments_.length !== 2 || arguments_[0] !== "--output") throw new Error("usage: devhud-live-preflight.mjs --output <path>");
   const checks = await runLivePreflight(environment);
   writeFileSync(resolve(arguments_[1]), `${JSON.stringify(checks, null, 2)}\n`, { mode: 0o600 });

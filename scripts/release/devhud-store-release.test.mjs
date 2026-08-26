@@ -18,6 +18,7 @@ function environment() {
     DEVHUD_APP_STORE_APP_ID: "123",
     DEVHUD_GOOGLE_PLAY_PACKAGE_NAME: "io.delino.devhud",
     DEVHUD_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: JSON.stringify({ client_email: "release@example.test", token_uri: "https://oauth2.example.test/token", private_key: googlePrivateKey.export({ type: "pkcs8", format: "pem" }) }),
+    DEVHUD_GOOGLE_PLAY_PRODUCTION_RELEASE_SERVICE_ACCOUNT: "release@example.test",
     DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID: "publisher",
     DEVHUD_CHROME_EXTENSION_ID: "a".repeat(32),
     DEVHUD_CHROME_WEB_STORE_CLIENT_ID: "client",
@@ -202,6 +203,13 @@ test("Google status uses the direct release lifecycle endpoint and current respo
   assert.equal(result.status, StoreStatus.ApprovedHeld);
   assert.equal(requests.at(-1).url, "https://androidpublisher.googleapis.com/androidpublisher/v3/applications/io.delino.devhud/tracks/production/releases");
   assert.equal(requests.at(-1).options.method, undefined);
+});
+
+test("Google operations reject a credential outside the protected production-release prerequisite", async () => {
+  const env = { ...environment(), DEVHUD_GOOGLE_PLAY_PRODUCTION_RELEASE_SERVICE_ACCOUNT: "reader@example.test" };
+  let requests = 0;
+  await assert.rejects(run("status", StoreProvider.GooglePlay, {}, env, async () => { requests += 1; return jsonResponse({}); }), /production-release authority prerequisite/u);
+  assert.equal(requests, 0);
 });
 
 test("store publication skips exact versions that are already public", async () => {

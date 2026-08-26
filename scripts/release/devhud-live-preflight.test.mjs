@@ -14,6 +14,7 @@ function environment() {
     APPLE_API_ISSUER: "fixture-issuer", APPLE_API_KEY_ID: "fixture-key",
     APPLE_API_PRIVATE_KEY_B64: Buffer.from(applePrivateKey.export({ type: "pkcs8", format: "pem" })).toString("base64"),
     DEVHUD_APP_STORE_APP_ID: "123", DEVHUD_GOOGLE_PLAY_PACKAGE_NAME: "io.delino.devhud", DEVHUD_GOOGLE_PLAY_MANAGED_PUBLISHING: "enabled",
+    DEVHUD_GOOGLE_PLAY_PRODUCTION_RELEASE_SERVICE_ACCOUNT: "release@example.test",
     DEVHUD_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: JSON.stringify({ client_email: "release@example.test", token_uri: "https://oauth2.example.test/token", private_key: googlePrivateKey.export({ type: "pkcs8", format: "pem" }) }),
     DEVHUD_RELEASE_CONTROLLER_URL: "https://controller.example.test/", DEVHUD_RELEASE_CONTROLLER_TOKEN: "controller-token", DEVHUD_PUBLIC_API_URL: "https://devhud.api.delino.io",
     DEVHUD_PUBLIC_DOCS_URL: "https://docs.example.test/devhud", DEVHUD_PUBLIC_ASSET_BASE_URL: "https://assets.example.test",
@@ -91,6 +92,13 @@ test("live preflight rejects App Store credentials without submission authority"
     ? jsonResponse({ errors: [{ status: "403" }] }, 403)
     : successful(input, options);
   await assert.rejects(runLivePreflight(env, fetchImpl), /app-store-submission-authority/u);
+});
+
+test("live preflight requires the protected Google Play production-release principal before network access", async () => {
+  const env = { ...environment(), DEVHUD_GOOGLE_PLAY_PRODUCTION_RELEASE_SERVICE_ACCOUNT: "reader@example.test" };
+  let requests = 0;
+  await assert.rejects(runLivePreflight(env, async () => { requests += 1; return jsonResponse({ ok: true }); }), /production-release authority prerequisite/u);
+  assert.equal(requests, 0);
 });
 
 test("live preflight fails closed when the controller omits PostgreSQL", async () => {

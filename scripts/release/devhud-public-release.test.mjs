@@ -7,9 +7,9 @@ import { fileURLToPath } from "node:url";
 import {
   ReleaseEvent, ReleaseMode, ReleaseState, advanceRelease, configurationStatus,
   controllerRuntimeInputs, livePreflightChecks, publicReleasePlan, redact,
-  releaseConfigurationFingerprint, releaseFingerprintVariables, releaseSecrets, releaseVariables, reviewEvent,
+  releaseConfigurationBinding, releaseConfigurationFingerprint, releaseFingerprintVariables, releaseSecrets, releaseVariables, reviewEvent,
   releaseStoreIdentityFingerprint, releaseStoreIdentityVariables, rollbackPolicy, validateLivePreflight, validateReleaseConfiguration,
-  validateReleaseIdentity, validateReleaseVariables,
+  validateReleaseConfigurationBinding, validateReleaseIdentity, validateReleaseVariables,
 } from "./devhud-public-release.mjs";
 import { signingInputs } from "./devhud-release.mjs";
 
@@ -96,6 +96,7 @@ test("store identity fingerprints bind review and cleanup targets", () => {
   assert.deepEqual(releaseStoreIdentityVariables, [
     "DEVHUD_APP_STORE_APP_ID",
     "DEVHUD_GOOGLE_PLAY_PACKAGE_NAME",
+    "DEVHUD_GOOGLE_PLAY_PRODUCTION_RELEASE_SERVICE_ACCOUNT",
     "DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID",
     "DEVHUD_CHROME_EXTENSION_ID",
   ]);
@@ -108,6 +109,23 @@ test("store identity fingerprints bind review and cleanup targets", () => {
   const result = spawnSync(process.execPath, [script, "store-identity-fingerprint"], { encoding: "utf8", env: environment });
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout.trim(), fingerprint);
+});
+
+test("retained release configuration binds the candidate without exposing destinations", () => {
+  const environment = completeEnvironment();
+  const expected = {
+    version: "0.1.0",
+    revision: sha,
+    candidate: { artifactId: "501", artifactName: `devhud-v0.1.0-private-signed-candidate-${sha}-100-1`, runId: "100", runAttempt: "1" },
+    environment,
+  };
+  const binding = releaseConfigurationBinding(expected);
+  assert.equal(binding.releaseConfigurationFingerprint, releaseConfigurationFingerprint(environment));
+  assert.ok(!JSON.stringify(binding).includes("configured-"));
+  assert.doesNotThrow(() => validateReleaseConfigurationBinding(binding, expected));
+  assert.throws(() => validateReleaseConfigurationBinding(binding, { ...expected, environment: { ...environment, DEVHUD_PUBLIC_DOCS_URL: "https://other.example.test/devhud" } }), /does not match/u);
+  assert.throws(() => validateReleaseConfigurationBinding({ ...binding, unexpected: true }, expected), /does not match/u);
+  assert.throws(() => releaseConfigurationBinding({ ...expected, candidate: { ...expected.candidate, artifactId: "" } }), /positive decimal/u);
 });
 
 test("live preflight requires every closed check and rejects additions", () => {
