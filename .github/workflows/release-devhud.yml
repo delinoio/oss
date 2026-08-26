@@ -173,6 +173,8 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    outputs:
+      release_configuration_fingerprint: ${{ steps.configuration.outputs.fingerprint }}
     env:
       DEVHUD_RELEASE_VERSION: ${{ needs.identity.outputs.version }}
       GITHUB_TOKEN: ${{ github.token }}
@@ -235,6 +237,7 @@ jobs:
       - name: Authenticate every external release boundary without mutation
         run: node scripts/release/devhud-live-preflight.mjs --output devhud-live-preflight.json
       - name: Accept only the complete closed preflight set
+        id: configuration
         env:
           EXISTING_TAG: ${{ needs.identity.outputs.existing_tag }}
         run: |
@@ -242,6 +245,8 @@ jobs:
           arguments=(preflight --version "$DEVHUD_RELEASE_VERSION" --ref "$GITHUB_REF" --sha "$GITHUB_SHA" --checks devhud-live-preflight.json)
           if [ -n "$EXISTING_TAG" ]; then arguments+=(--existing-tag "$EXISTING_TAG"); fi
           node scripts/release/devhud-public-release.mjs "${arguments[@]}"
+          fingerprint=$(node scripts/release/devhud-public-release.mjs configuration-fingerprint)
+          echo "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
 
   submit_stores:
     name: Submit held store review (${{ matrix.provider }})
@@ -432,9 +437,14 @@ jobs:
               repository="$DEVHUD_OCI_SWEEPER_REPOSITORY"
             fi
             target="$DEVHUD_OCI_REGISTRY/$repository:$RELEASE_VERSION"
-            skopeo copy --all "oci-archive:$archive" "docker://$target"
-            digest=$(skopeo inspect --format '{{.Digest}}' "docker://$target")
-            immutable="$DEVHUD_OCI_REGISTRY/$repository@$digest"
+            source_digest=$(skopeo inspect --format '{{.Digest}}' "oci-archive:$archive")
+            digest_file=$(mktemp "$RUNNER_TEMP/devhud-${component}-digest.XXXXXX")
+            skopeo copy --all --preserve-digests --digestfile "$digest_file" "oci-archive:$archive" "docker://$target"
+            read -r copied_digest < "$digest_file"
+            remote_digest=$(skopeo inspect --format '{{.Digest}}' "docker://$target")
+            test "$source_digest" = "$copied_digest"
+            test "$remote_digest" = "$copied_digest"
+            immutable="$DEVHUD_OCI_REGISTRY/$repository@$copied_digest"
             cosign sign --yes "$immutable"
             echo "${component}_image=$immutable" >> "$GITHUB_OUTPUT"
           done
@@ -791,7 +801,7 @@ jobs:
   ga:
     name: Mark verified general availability
     if: ${{ inputs.mode == 'release' }}
-    needs: [identity, registry, verify_all]
+    needs: [identity, preflight, registry, verify_all]
     runs-on: ubuntu-22.04
     environment: devhud-ga
     permissions:
@@ -802,10 +812,16 @@ jobs:
       RELEASE_TAG: ${{ needs.identity.outputs.tag }}
       DEVHUD_PUBLIC_API_URL: ${{ vars.DEVHUD_PUBLIC_API_URL }}
       DEVHUD_PUBLIC_DOCS_URL: ${{ vars.DEVHUD_PUBLIC_DOCS_URL }}
+      DEVHUD_PUBLIC_DOCS_ACCOUNT_ID: ${{ vars.DEVHUD_PUBLIC_DOCS_ACCOUNT_ID }}
+      DEVHUD_PUBLIC_DOCS_PROJECT_NAME: ${{ vars.DEVHUD_PUBLIC_DOCS_PROJECT_NAME }}
+      DEVHUD_PUBLIC_ASSET_BASE_URL: ${{ vars.DEVHUD_PUBLIC_ASSET_BASE_URL }}
+      DEVHUD_LOGTO_ISSUER: ${{ vars.DEVHUD_LOGTO_ISSUER }}
       DEVHUD_RELEASE_CONTROLLER_URL: ${{ vars.DEVHUD_RELEASE_CONTROLLER_URL }}
       DEVHUD_RELEASE_CONTROLLER_AUDIENCE: ${{ vars.DEVHUD_RELEASE_CONTROLLER_AUDIENCE }}
       DEVHUD_PRIVATE_WORKFLOW_REF: ${{ github.repository }}/.github/workflows/package-devhud-private.yml@${{ github.ref }}
       DEVHUD_OCI_REGISTRY: ${{ vars.DEVHUD_OCI_REGISTRY }}
+      DEVHUD_OCI_API_REPOSITORY: ${{ vars.DEVHUD_OCI_API_REPOSITORY }}
+      DEVHUD_OCI_SWEEPER_REPOSITORY: ${{ vars.DEVHUD_OCI_SWEEPER_REPOSITORY }}
       DEVHUD_OCI_REGISTRY_USERNAME: ${{ secrets.DEVHUD_OCI_REGISTRY_USERNAME }}
       DEVHUD_OCI_REGISTRY_TOKEN: ${{ secrets.DEVHUD_OCI_REGISTRY_TOKEN }}
       DEVHUD_DOCS_RELEASE_IDENTITY: devhud@v${{ needs.identity.outputs.version }}@${{ github.sha }}
@@ -814,6 +830,7 @@ jobs:
       APPLE_API_PRIVATE_KEY_B64: ${{ secrets.APPLE_API_PRIVATE_KEY_B64 }}
       DEVHUD_APP_STORE_APP_ID: ${{ vars.DEVHUD_APP_STORE_APP_ID }}
       DEVHUD_GOOGLE_PLAY_PACKAGE_NAME: ${{ vars.DEVHUD_GOOGLE_PLAY_PACKAGE_NAME }}
+      DEVHUD_GOOGLE_PLAY_MANAGED_PUBLISHING: ${{ vars.DEVHUD_GOOGLE_PLAY_MANAGED_PUBLISHING }}
       DEVHUD_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.DEVHUD_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
       DEVHUD_CHROME_EXTENSION_ID: ${{ vars.DEVHUD_CHROME_EXTENSION_ID }}
       DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID: ${{ vars.DEVHUD_CHROME_WEB_STORE_PUBLISHER_ID }}
@@ -823,6 +840,13 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with: { persist-credentials: false }
+      - name: Bind GA configuration to the validated preflight environment
+        env:
+          EXPECTED_CONFIGURATION_FINGERPRINT: ${{ needs.preflight.outputs.release_configuration_fingerprint }}
+        run: |
+          set -euo pipefail
+          actual=$(node scripts/release/devhud-public-release.mjs configuration-fingerprint)
+          test "$actual" = "$EXPECTED_CONFIGURATION_FINGERPRINT"
       - name: Reverify every exact store version after GA approval
         run: |
           set -euo pipefail

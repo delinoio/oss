@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { releaseVariables } from "./devhud-public-release.mjs";
+
 const root = fileURLToPath(new URL("../..", import.meta.url));
 const release = readFileSync(`${root}/.github/workflows/release-devhud.yml`, "utf8");
 const privateCandidate = readFileSync(`${root}/.github/workflows/package-devhud-private.yml`, "utf8");
@@ -179,6 +181,20 @@ test("independent verification fetches and verifies both remote OCI digests", ()
   assert.match(verification, /release-devhud\.yml@\$GITHUB_REF/u);
 });
 
+test("registry publication binds signed digests to the selected OCI archives", () => {
+  const registry = job("registry");
+  const source = registry.indexOf("source_digest=$(skopeo inspect");
+  const copy = registry.indexOf("skopeo copy --all --preserve-digests --digestfile");
+  const remote = registry.indexOf("remote_digest=$(skopeo inspect");
+  const compare = registry.indexOf('test "$remote_digest" = "$copied_digest"');
+  const sign = registry.indexOf('cosign sign --yes "$immutable"');
+  assert.ok(source > 0 && copy > source, "the source archive digest must be captured before copying");
+  assert.ok(remote > copy && compare > remote, "the copied digest must match the remote tag before signing");
+  assert.ok(sign > compare, "the immutable candidate digest must be signed only after every comparison passes");
+  assert.match(registry, /test "\$source_digest" = "\$copied_digest"/u);
+  assert.match(registry, /immutable="\$DEVHUD_OCI_REGISTRY\/\$repository@\$copied_digest"/u);
+});
+
 test("independent verification downloads and authenticates the exact public GitHub assets", () => {
   const verification = job("verify_all");
   assert.match(verification, /gh api "repos\/\$GITHUB_REPOSITORY\/commits\/\$RELEASE_TAG" --jq '\.sha'/u);
@@ -204,7 +220,14 @@ test("independent verification requeries every exact store before GA", () => {
 
 test("GA repeats every public-channel verification after approval and before mutation", () => {
   const ga = job("ga");
-  assert.match(ga, /needs: \[identity, registry, verify_all\]/u);
+  assert.match(ga, /needs: \[identity, preflight, registry, verify_all\]/u);
+  assert.match(job("preflight"), /release_configuration_fingerprint:[\s\S]*configuration-fingerprint/u);
+  for (const name of releaseVariables) assert.match(ga, new RegExp(`${name}: \\$\\{\\{ vars\\.${name} \\}\\}`, "u"));
+  const configuration = ga.indexOf("Bind GA configuration to the validated preflight environment");
+  const firstVerification = ga.indexOf("Reverify every exact store version after GA approval");
+  assert.ok(configuration > 0 && firstVerification > configuration, "GA configuration must match preflight before public-channel verification");
+  assert.match(ga, /EXPECTED_CONFIGURATION_FINGERPRINT: \$\{\{ needs\.preflight\.outputs\.release_configuration_fingerprint \}\}/u);
+  assert.match(ga, /configuration-fingerprint[\s\S]*test "\$actual" = "\$EXPECTED_CONFIGURATION_FINGERPRINT"/u);
   for (const name of ["APPLE_API_PRIVATE_KEY_B64", "DEVHUD_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON", "DEVHUD_CHROME_WEB_STORE_REFRESH_TOKEN", "DEVHUD_OCI_REGISTRY_TOKEN", "DEVHUD_RELEASE_CONTROLLER_AUDIENCE"]) {
     assert.match(ga, new RegExp(`${name}:`, "u"));
   }

@@ -7,8 +7,9 @@ import { fileURLToPath } from "node:url";
 import {
   ReleaseEvent, ReleaseMode, ReleaseState, advanceRelease, configurationStatus,
   controllerRuntimeInputs, livePreflightChecks, publicReleasePlan, redact,
-  releaseSecrets, releaseVariables, reviewEvent, rollbackPolicy, validateLivePreflight,
-  validateReleaseConfiguration, validateReleaseIdentity,
+  releaseConfigurationFingerprint, releaseSecrets, releaseVariables, reviewEvent,
+  rollbackPolicy, validateLivePreflight, validateReleaseConfiguration,
+  validateReleaseIdentity, validateReleaseVariables,
 } from "./devhud-public-release.mjs";
 import { signingInputs } from "./devhud-release.mjs";
 
@@ -66,6 +67,21 @@ test("missing release credentials fail closed without exposing values", () => {
   }
   const serialized = JSON.stringify(configurationStatus(environment));
   assert.ok(!serialized.includes("configured-"));
+});
+
+test("release variable fingerprints bind protected environments without exposing values", () => {
+  const environment = completeEnvironment();
+  const fingerprint = releaseConfigurationFingerprint(environment);
+  assert.match(fingerprint, /^[a-f0-9]{64}$/u);
+  assert.doesNotThrow(() => validateReleaseVariables(environment));
+  for (const name of releaseVariables) {
+    assert.throws(() => assert.equal(releaseConfigurationFingerprint({ ...environment, [name]: `${environment[name]}-changed` }), fingerprint), undefined, name);
+  }
+
+  const script = fileURLToPath(new URL("devhud-public-release.mjs", import.meta.url));
+  const result = spawnSync(process.execPath, [script, "configuration-fingerprint"], { encoding: "utf8", env: environment });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout.trim(), fingerprint);
 });
 
 test("live preflight requires every closed check and rejects additions", () => {

@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import test from "node:test";
 
-import { artifactGroups, loadReleaseMetadata } from "./devhud-release.mjs";
+import { artifactGroups, loadReleaseMetadata, updaterTargets } from "./devhud-release.mjs";
 import { generateUpdater, rawPublicKey } from "./generate-devhud-updater.mjs";
 import { publicReleaseAssetNames, validatePublicReleaseAssets } from "./validate-devhud-public-assets.mjs";
 
@@ -62,9 +62,16 @@ function fixture() {
   });
   const evidence = ["sbom", "provenance", "updater/signatures", "validation"].flatMap((directory) => files(join(root, directory)))
     .map((path) => relative(root, path).replaceAll("\\", "/"));
-  const checksums = [...artifactGroups.desktop, "devhud-chrome-github-validation.zip", ...evidence]
+  const updaterManifests = files(join(root, "updater/manifests")).map((path) => relative(root, path).replaceAll("\\", "/"));
+  const checksumArtifacts = [...artifactGroups.desktop, "devhud-chrome-github-validation.zip", ...evidence, ...updaterManifests];
+  const checksums = checksumArtifacts
     .map((artifact) => `${createHash("sha256").update(readFileSync(join(root, artifact))).digest("hex")}  ${artifact}`);
   writeFileSync(join(root, "SHA256SUMS"), `${checksums.join("\n")}\n`);
+  for (const artifact of ["SHA256SUMS", ...checksumArtifacts]) {
+    const bundle = join(root, "sigstore", `${artifact}.sigstore.json`);
+    mkdirSync(dirname(bundle), { recursive: true });
+    writeFileSync(bundle, "sigstore fixture");
+  }
   const release = {
     isDraft: false,
     isPrerelease: false,
@@ -125,6 +132,28 @@ test("remote public validation authenticates the exact extracted evidence payloa
   const missing = fixture();
   unlinkSync(join(missing.root, "provenance/devhud.intoto.jsonl"));
   assert.throws(() => validatePublicReleaseAssets(missing.root, missing.release, { metadata: missing.metadata, revision, trustRoot: missing.trustRoot, verifySigstore: false }), /evidence payload inventory/u);
+});
+
+test("remote public validation rejects files and bundles outside the complete inventory", () => {
+  const rootFile = fixture();
+  writeFileSync(join(rootFile.root, "unexpected.txt"), "unsigned");
+  assert.throws(() => validatePublicReleaseAssets(rootFile.root, rootFile.release, { metadata: rootFile.metadata, revision, trustRoot: rootFile.trustRoot, verifySigstore: false }), /validation inventory/u);
+
+  const extraBundle = fixture();
+  writeFileSync(join(extraBundle.root, "sigstore/unexpected.sigstore.json"), "unsigned");
+  assert.throws(() => validatePublicReleaseAssets(extraBundle.root, extraBundle.release, { metadata: extraBundle.metadata, revision, trustRoot: extraBundle.trustRoot, verifySigstore: false }), /validation inventory/u);
+
+  const missingBundle = fixture();
+  unlinkSync(join(missingBundle.root, "sigstore/SHA256SUMS.sigstore.json"));
+  assert.throws(() => validatePublicReleaseAssets(missingBundle.root, missingBundle.release, { metadata: missingBundle.metadata, revision, trustRoot: missingBundle.trustRoot, verifySigstore: false }), /validation inventory/u);
+});
+
+test("remote public validation authenticates the exact updater manifests", () => {
+  const value = fixture();
+  const target = updaterTargets[0];
+  const manifest = join(value.root, "updater/manifests/stable", target.platform, target.architecture, `${target.packageKind}.json`);
+  writeFileSync(manifest, `${readFileSync(manifest, "utf8").trim()} `);
+  assert.throws(() => validatePublicReleaseAssets(value.root, value.release, { metadata: value.metadata, revision, trustRoot: value.trustRoot, verifySigstore: false }), /checksum mismatch/u);
 });
 
 test("remote public validation binds the index and signed provenance to the source revision", () => {

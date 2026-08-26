@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -144,9 +145,7 @@ export function configurationStatus(environment = process.env) {
   };
 }
 
-export function validateReleaseConfiguration(environment = process.env) {
-  const missing = [...releaseVariables, ...releaseSecrets, ...signingInputs].filter((name) => !present(environment, name));
-  if (missing.length > 0) throw new Error(`DevHud release configuration is missing: ${missing.join(", ")}`);
+function validateReleaseVariableValues(environment) {
   if (environment.DEVHUD_GOOGLE_PLAY_PACKAGE_NAME !== "io.delino.devhud") throw new Error("Google Play package must be io.delino.devhud");
   if (environment.DEVHUD_GOOGLE_PLAY_MANAGED_PUBLISHING !== "enabled") throw new Error("Google Play managed publishing must be explicitly enabled");
   for (const name of ["DEVHUD_RELEASE_CONTROLLER_URL", "DEVHUD_PUBLIC_API_URL", "DEVHUD_PUBLIC_DOCS_URL"]) {
@@ -165,6 +164,24 @@ export function validateReleaseConfiguration(environment = process.env) {
   if (!/^[a-z0-9._/-]+$/u.test(environment.DEVHUD_OCI_API_REPOSITORY) || !/^[a-z0-9._/-]+$/u.test(environment.DEVHUD_OCI_SWEEPER_REPOSITORY)) {
     throw new Error("OCI repository names must use lowercase registry-safe characters");
   }
+}
+
+export function validateReleaseVariables(environment = process.env) {
+  const missing = releaseVariables.filter((name) => !present(environment, name));
+  if (missing.length > 0) throw new Error(`DevHud release variables are missing: ${missing.join(", ")}`);
+  validateReleaseVariableValues(environment);
+}
+
+export function validateReleaseConfiguration(environment = process.env) {
+  const missing = [...releaseVariables, ...releaseSecrets, ...signingInputs].filter((name) => !present(environment, name));
+  if (missing.length > 0) throw new Error(`DevHud release configuration is missing: ${missing.join(", ")}`);
+  validateReleaseVariableValues(environment);
+}
+
+export function releaseConfigurationFingerprint(environment = process.env) {
+  validateReleaseVariables(environment);
+  const values = releaseVariables.map((name) => [name, environment[name]]);
+  return createHash("sha256").update(JSON.stringify(values), "utf8").digest("hex");
 }
 
 export function validateReleaseIdentity({ requestedVersion, metadata = loadReleaseMetadata(), ref, sha, existingTag = null }) {
@@ -289,6 +306,10 @@ export function main(arguments_ = process.argv.slice(2), environment = process.e
   if (command === "rollback-policy") {
     if (!Object.values(ReleaseState).includes(options.state)) throw new Error(`unsupported release state: ${options.state}`);
     process.stdout.write(`${JSON.stringify(rollbackPolicy(options.state))}\n`);
+    return;
+  }
+  if (command === "configuration-fingerprint") {
+    process.stdout.write(`${releaseConfigurationFingerprint(environment)}\n`);
     return;
   }
   throw new Error(`unsupported command: ${command}`);

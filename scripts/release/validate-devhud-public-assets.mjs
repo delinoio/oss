@@ -6,13 +6,14 @@ import { closeSync, existsSync, openSync, readFileSync, readdirSync, readSync, s
 import { join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { artifactGroups, loadReleaseMetadata } from "./devhud-release.mjs";
+import { artifactGroups, loadReleaseMetadata, updaterTargets } from "./devhud-release.mjs";
 import { validateProvenanceRevision } from "./generate-devhud-supply-chain.mjs";
 import { cosignVerifyArguments, sigstoreVerificationPolicy, validateUpdater } from "./validate-devhud-private-build.mjs";
 
 const publicBinaries = Object.freeze([...artifactGroups.desktop, "devhud-chrome-github-validation.zip"]);
 const channels = Object.freeze(["apple-app-store", "google-play", "chrome-web-store", "github-release", "desktop-updater", "api", "public-docs"]);
 const evidenceRoots = Object.freeze(["sbom", "provenance", "updater/signatures", "validation"]);
+const updaterManifests = Object.freeze(updaterTargets.map((target) => `updater/manifests/stable/${target.platform}/${target.architecture}/${target.packageKind}.json`));
 
 function sha256File(path) {
   const hash = createHash("sha256");
@@ -41,6 +42,25 @@ function evidencePayloads(root) {
     if (!existsSync(path) || !statSync(path).isDirectory()) throw new Error(`release evidence directory is missing: ${directory}`);
     return files(path).map((file) => relative(root, file).replaceAll("\\", "/"));
   }).sort();
+}
+
+function relativeFiles(root) {
+  return files(root).map((file) => relative(root, file).replaceAll("\\", "/")).sort();
+}
+
+function validateCompleteInventory(root, checksums, evidence, version) {
+  const bundles = [
+    "sigstore/SHA256SUMS.sigstore.json",
+    ...[...checksums.keys()].map((artifact) => `sigstore/${artifact}.sigstore.json`),
+  ];
+  const expected = [
+    ...publicReleaseAssetNames(version),
+    "SHA256SUMS",
+    ...evidence,
+    ...updaterManifests,
+    ...bundles,
+  ].sort();
+  if (JSON.stringify(relativeFiles(root)) !== JSON.stringify(expected)) throw new Error("public release validation inventory is not exact");
 }
 
 export function publicReleaseAssetNames(version) {
@@ -86,7 +106,8 @@ export function validatePublishedChecksums(root, { revision, verifySigstore = tr
   const evidence = evidencePayloads(root);
   const expectedEvidence = [...checksums.keys()].filter((artifact) => evidenceRoots.some((directory) => artifact.startsWith(`${directory}/`))).sort();
   if (JSON.stringify(evidence) !== JSON.stringify(expectedEvidence)) throw new Error("release evidence payload inventory does not match the signed manifest");
-  for (const artifact of [...publicBinaries, ...evidence]) {
+  validateCompleteInventory(root, checksums, evidence, loadReleaseMetadata().version);
+  for (const artifact of [...publicBinaries, ...evidence, ...updaterManifests]) {
     const path = join(root, artifact);
     if (checksums.get(artifact) !== sha256File(path)) throw new Error(`published asset checksum mismatch: ${artifact}`);
     if (verifySigstore) execFileSync("cosign", cosignVerifyArguments(join(root, "sigstore", `${artifact}.sigstore.json`), path, policy), { stdio: "inherit" });
