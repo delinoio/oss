@@ -13,6 +13,11 @@ on:
         default: dry-run
         type: choice
         options: [dry-run, release]
+      recovery_revision:
+        description: Original lowercase 40-hex main commit for interrupted-release recovery
+        required: false
+        default: ""
+        type: string
 
 permissions: {}
 
@@ -30,6 +35,7 @@ jobs:
     outputs:
       version: ${{ steps.identity.outputs.version }}
       tag: ${{ steps.identity.outputs.tag }}
+      revision: ${{ steps.source.outputs.revision }}
       retry: ${{ steps.identity.outputs.retry }}
       existing_tag: ${{ steps.tag.outputs.target }}
       reuse_candidate: ${{ steps.candidate.outputs.reused }}
@@ -40,6 +46,18 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with: { fetch-depth: 0, persist-credentials: false }
+      - name: Resolve and verify the exact release revision
+        id: source
+        env:
+          RECOVERY_REVISION: ${{ inputs.recovery_revision }}
+        run: |
+          set -euo pipefail
+          revision=${RECOVERY_REVISION:-$GITHUB_SHA}
+          [[ "$revision" =~ ^[a-f0-9]{40}$ ]]
+          git cat-file -e "$revision^{commit}"
+          git merge-base --is-ancestor "$revision" "$GITHUB_SHA"
+          git checkout --detach "$revision"
+          echo "revision=$revision" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-node@v6
         with: { node-version-file: .nvmrc }
       - name: Resolve an absent or same-commit retry tag
@@ -54,11 +72,12 @@ jobs:
         id: identity
         env:
           EXISTING_TAG: ${{ steps.tag.outputs.target }}
+          DEVHUD_RELEASE_REVISION: ${{ steps.source.outputs.revision }}
           RELEASE_MODE: ${{ inputs.mode }}
           RELEASE_VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
-          arguments=(plan --version "$RELEASE_VERSION" --mode "$RELEASE_MODE" --ref "$GITHUB_REF" --sha "$GITHUB_SHA" --output devhud-release-plan.json)
+          arguments=(plan --version "$RELEASE_VERSION" --mode "$RELEASE_MODE" --ref "$GITHUB_REF" --sha "$DEVHUD_RELEASE_REVISION" --output devhud-release-plan.json)
           retry=false
           if [ -n "$EXISTING_TAG" ]; then
             arguments+=(--existing-tag "$EXISTING_TAG")
@@ -73,14 +92,26 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           RELEASE_VERSION: ${{ steps.identity.outputs.version }}
+          DEVHUD_RELEASE_REVISION: ${{ steps.source.outputs.revision }}
         run: |
           set -euo pipefail
-          node scripts/release/devhud-candidate-artifact.mjs --repository "$GITHUB_REPOSITORY" --workflow release-devhud.yml --version "$RELEASE_VERSION" --revision "$GITHUB_SHA" --current-run-id "$GITHUB_RUN_ID" --current-run-attempt "$GITHUB_RUN_ATTEMPT" --output candidate.json
+          node scripts/release/devhud-candidate-artifact.mjs --repository "$GITHUB_REPOSITORY" --workflow release-devhud.yml --version "$RELEASE_VERSION" --revision "$DEVHUD_RELEASE_REVISION" --current-run-id "$GITHUB_RUN_ID" --current-run-attempt "$GITHUB_RUN_ATTEMPT" --output candidate.json
           echo "reused=$(jq -er '.reused | select(type == \"boolean\")' candidate.json)" >> "$GITHUB_OUTPUT"
           echo "artifact_id=$(jq -er '.artifactId | select(type == \"string\")' candidate.json)" >> "$GITHUB_OUTPUT"
           echo "artifact_name=$(jq -er '.artifactName | select(type == \"string\" and length > 0)' candidate.json)" >> "$GITHUB_OUTPUT"
           echo "run_id=$(jq -er '.runId | select(test(\"^[1-9][0-9]*$\"))' candidate.json)" >> "$GITHUB_OUTPUT"
           echo "run_attempt=$(jq -er '.runAttempt | select(test(\"^[1-9][0-9]*$\"))' candidate.json)" >> "$GITHUB_OUTPUT"
+      - name: Require the retained candidate for historical recovery
+        if: ${{ inputs.mode == 'release' }}
+        env:
+          DEVHUD_RELEASE_REVISION: ${{ steps.source.outputs.revision }}
+          REUSED_CANDIDATE: ${{ steps.candidate.outputs.reused }}
+        run: |
+          set -euo pipefail
+          if [ "$DEVHUD_RELEASE_REVISION" != "$GITHUB_SHA" ] && [ "$REUSED_CANDIDATE" != true ]; then
+            echo "historical release recovery requires the retained original candidate" >&2
+            exit 1
+          fi
       - uses: actions/upload-artifact@v7
         with:
           name: devhud-release-plan-${{ github.run_id }}-${{ github.run_attempt }}
@@ -97,6 +128,7 @@ jobs:
     uses: ./.github/workflows/package-devhud-private.yml
     with:
       mode: ${{ inputs.mode == 'release' && 'signed-private' || 'plan-only' }}
+      revision: ${{ needs.identity.outputs.revision }}
     secrets: inherit
 
   candidate:
@@ -119,7 +151,7 @@ jobs:
       run_attempt: ${{ steps.select.outputs.run_attempt }}
     steps:
       - uses: actions/checkout@v6
-        with: { persist-credentials: false }
+        with: { persist-credentials: false, ref: "${{ needs.identity.outputs.revision }}" }
       - name: Select retained or newly built candidate
         id: select
         env:
@@ -160,6 +192,7 @@ jobs:
       - name: Revalidate the complete selected candidate
         env:
           DEVHUD_PRIVATE_WORKFLOW_REF: ${{ github.repository }}/.github/workflows/package-devhud-private.yml@${{ github.ref }}
+          DEVHUD_RELEASE_REVISION: ${{ needs.identity.outputs.revision }}
           DEVHUD_PROVENANCE_RUN_ID: ${{ steps.select.outputs.run_id }}
           DEVHUD_PROVENANCE_RUN_ATTEMPT: ${{ steps.select.outputs.run_attempt }}
         run: node scripts/release/validate-devhud-private-build.mjs --artifacts-dir private-artifacts
@@ -176,32 +209,14 @@ jobs:
     outputs:
       release_configuration_fingerprint: ${{ steps.configuration.outputs.fingerprint }}
     env:
+      DEVHUD_RELEASE_REVISION: ${{ needs.identity.outputs.revision }}
       DEVHUD_RELEASE_VERSION: ${{ needs.identity.outputs.version }}
       GITHUB_TOKEN: ${{ github.token }}
       DEVHUD_CHROME_EXTENSION_ID: ${{ vars.DEVHUD_CHROME_EXTENSION_ID }}
       DEVHUD_CHROME_EXTENSION_PUBLIC_KEY: ${{ secrets.DEVHUD_CHROME_EXTENSION_PUBLIC_KEY }}
-      DEVHUD_UPDATER_SIGNING_KEY_B64: ${{ secrets.DEVHUD_UPDATER_SIGNING_KEY_B64 }}
-      DEVHUD_MACOS_DEVELOPER_ID_P12_B64: ${{ secrets.DEVHUD_MACOS_DEVELOPER_ID_P12_B64 }}
-      DEVHUD_MACOS_DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVHUD_MACOS_DEVELOPER_ID_P12_PASSWORD }}
-      DEVHUD_MACOS_SIGNING_IDENTITY: ${{ vars.DEVHUD_MACOS_SIGNING_IDENTITY }}
       APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
       APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
       APPLE_API_PRIVATE_KEY_B64: ${{ secrets.APPLE_API_PRIVATE_KEY_B64 }}
-      DEVHUD_WINDOWS_SIGNING_PFX_B64: ${{ secrets.DEVHUD_WINDOWS_SIGNING_PFX_B64 }}
-      DEVHUD_WINDOWS_SIGNING_PFX_PASSWORD: ${{ secrets.DEVHUD_WINDOWS_SIGNING_PFX_PASSWORD }}
-      DEVHUD_WINDOWS_CERTIFICATE_SHA256: ${{ vars.DEVHUD_WINDOWS_CERTIFICATE_SHA256 }}
-      DEVHUD_WINDOWS_TIMESTAMP_URL: ${{ vars.DEVHUD_WINDOWS_TIMESTAMP_URL }}
-      DEVHUD_IOS_DISTRIBUTION_P12_B64: ${{ secrets.DEVHUD_IOS_DISTRIBUTION_P12_B64 }}
-      DEVHUD_IOS_DISTRIBUTION_P12_PASSWORD: ${{ secrets.DEVHUD_IOS_DISTRIBUTION_P12_PASSWORD }}
-      DEVHUD_IOS_APP_PROFILE_B64: ${{ secrets.DEVHUD_IOS_APP_PROFILE_B64 }}
-      DEVHUD_IOS_WIDGET_PROFILE_B64: ${{ secrets.DEVHUD_IOS_WIDGET_PROFILE_B64 }}
-      DEVHUD_IOS_WIDGET_INTENT_PROFILE_B64: ${{ secrets.DEVHUD_IOS_WIDGET_INTENT_PROFILE_B64 }}
-      DEVHUD_APPLE_TEAM_ID: ${{ vars.DEVHUD_APPLE_TEAM_ID }}
-      DEVHUD_ANDROID_UPLOAD_KEYSTORE_B64: ${{ secrets.DEVHUD_ANDROID_UPLOAD_KEYSTORE_B64 }}
-      DEVHUD_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.DEVHUD_ANDROID_KEYSTORE_PASSWORD }}
-      DEVHUD_ANDROID_KEY_ALIAS: ${{ secrets.DEVHUD_ANDROID_KEY_ALIAS }}
-      DEVHUD_ANDROID_KEY_PASSWORD: ${{ secrets.DEVHUD_ANDROID_KEY_PASSWORD }}
-      DEVHUD_ANDROID_CERTIFICATE_SHA256: ${{ vars.DEVHUD_ANDROID_CERTIFICATE_SHA256 }}
       DEVHUD_APP_STORE_APP_ID: ${{ vars.DEVHUD_APP_STORE_APP_ID }}
       DEVHUD_GOOGLE_PLAY_PACKAGE_NAME: ${{ vars.DEVHUD_GOOGLE_PLAY_PACKAGE_NAME }}
       DEVHUD_GOOGLE_PLAY_MANAGED_PUBLISHING: ${{ vars.DEVHUD_GOOGLE_PLAY_MANAGED_PUBLISHING }}
@@ -226,7 +241,7 @@ jobs:
       DEVHUD_PUBLIC_ASSET_BASE_URL: ${{ vars.DEVHUD_PUBLIC_ASSET_BASE_URL }}
     steps:
       - uses: actions/checkout@v6
-        with: { fetch-depth: 0, persist-credentials: false }
+        with: { fetch-depth: 0, persist-credentials: false, ref: "${{ needs.identity.outputs.revision }}" }
       - name: Obtain a short-lived release-controller credential
         run: |
           set -euo pipefail
@@ -242,7 +257,7 @@ jobs:
           EXISTING_TAG: ${{ needs.identity.outputs.existing_tag }}
         run: |
           set -euo pipefail
-          arguments=(preflight --version "$DEVHUD_RELEASE_VERSION" --ref "$GITHUB_REF" --sha "$GITHUB_SHA" --checks devhud-live-preflight.json)
+          arguments=(preflight --version "$DEVHUD_RELEASE_VERSION" --ref "$GITHUB_REF" --sha "$DEVHUD_RELEASE_REVISION" --checks devhud-live-preflight.json)
           if [ -n "$EXISTING_TAG" ]; then arguments+=(--existing-tag "$EXISTING_TAG"); fi
           node scripts/release/devhud-public-release.mjs "${arguments[@]}"
           fingerprint=$(node scripts/release/devhud-public-release.mjs configuration-fingerprint)
@@ -280,7 +295,7 @@ jobs:
       STORE_PROVIDER: ${{ matrix.provider }}
     steps:
       - uses: actions/checkout@v6
-        with: { persist-credentials: false }
+        with: { persist-credentials: false, ref: "${{ needs.identity.outputs.revision }}" }
       - uses: actions/download-artifact@v8
         with:
           artifact-ids: ${{ needs.candidate.outputs.artifact_id }}
@@ -356,7 +371,7 @@ jobs:
       RELEASE_RETRY: ${{ needs.identity.outputs.retry }}
     steps:
       - uses: actions/checkout@v6
-        with: { persist-credentials: false }
+        with: { persist-credentials: false, ref: "${{ needs.identity.outputs.revision }}" }
       - name: Independently re-query every review
         run: |
           set -euo pipefail
@@ -378,7 +393,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v6
-        with: { persist-credentials: false }
+        with: { persist-credentials: false, ref: "${{ needs.identity.outputs.revision }}" }
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v6
         with: { node-version-file: .nvmrc, cache: pnpm }
@@ -386,10 +401,13 @@ jobs:
       - run: pnpm --filter public-docs test
       - name: Bind the DevHud page to the exact release candidate
         env:
-          DEVHUD_DOCS_RELEASE_IDENTITY: devhud@v${{ needs.identity.outputs.version }}@${{ github.sha }}
+          DEVHUD_DOCS_RELEASE_IDENTITY: "devhud@v${{ needs.identity.outputs.version }}@${{ needs.identity.outputs.revision }}"
         run: node -e 'const fs=require("node:fs");const path="apps/public-docs/doc_build/devhud.html";const html=fs.readFileSync(path,"utf8");const marker=`<meta name="devhud-release-identity" content="${process.env.DEVHUD_DOCS_RELEASE_IDENTITY}">`;if(!html.includes("</head>")||html.includes("devhud-release-identity"))process.exit(1);fs.writeFileSync(path,html.replace("</head>",`${marker}</head>`))'
       - uses: actions/upload-artifact@v7
-        with: { name: devhud-public-docs-candidate-${{ github.run_attempt }}, path: apps/public-docs/doc_build, if-no-files-found: error }
+        with:
+          name: "devhud-public-docs-candidate-${{ github.run_attempt }}"
+          path: apps/public-docs/doc_build
+          if-no-files-found: error
 
   registry:
     name: Publish immutable signed OCI inputs
@@ -413,7 +431,7 @@ jobs:
       RELEASE_VERSION: ${{ needs.identity.outputs.version }}
     steps:
       - uses: actions/checkout@v6
-        with: { persist-credentials: false }
+        with: { persist-credentials: false, ref: "${{ needs.identity.outputs.revision }}" }
       - uses: actions/download-artifact@v8
         with:
           artifact-ids: ${{ needs.candidate.outputs.artifact_id }}
@@ -463,12 +481,13 @@ jobs:
       promotion_attempted: ${{ steps.promote.outputs.attempted }}
       promoted: ${{ steps.promote.outputs.promoted }}
     env:
+      DEVHUD_RELEASE_REVISION: ${{ needs.identity.outputs.revision }}
       DEVHUD_RELEASE_CONTROLLER_URL: ${{ vars.DEVHUD_RELEASE_CONTROLLER_URL }}
       DEVHUD_RELEASE_CONTROLLER_AUDIENCE: ${{ vars.DEVHUD_RELEASE_CONTROLLER_AUDIENCE }}
       DEVHUD_PUBLIC_API_URL: ${{ vars.DEVHUD_PUBLIC_API_URL }}
     steps:
       - uses: actions/checkout@v6
-        with: { persist-credentials: false }
+        with: { persist-credentials: false, ref: "${{ needs.identity.outputs.revision }}" }
       - uses: actions/download-artifact@v8
         with:
           artifact-ids: ${{ needs.candidate.outputs.artifact_id }}
@@ -485,13 +504,13 @@ jobs:
       - name: Package only already-signed updater inputs
         run: tar -C private-artifacts -czf devhud-updater-input.tar.gz updater/manifests updater/signatures
       - name: Prepare migrations, API, sweeper, administrator, and updater inputs
-        run: node scripts/release/devhud-release-controller.mjs prepare --version "${{ needs.identity.outputs.version }}" --revision "$GITHUB_SHA" --api-image "${{ needs.registry.outputs.api_image }}" --sweeper-image "${{ needs.registry.outputs.sweeper_image }}" --updater devhud-updater-input.tar.gz --output controller-prepare.json
+        run: node scripts/release/devhud-release-controller.mjs prepare --version "${{ needs.identity.outputs.version }}" --revision "$DEVHUD_RELEASE_REVISION" --api-image "${{ needs.registry.outputs.api_image }}" --sweeper-image "${{ needs.registry.outputs.sweeper_image }}" --updater devhud-updater-input.tar.gz --output controller-prepare.json
       - name: Promote API and sweeper with updater discovery held closed
         id: promote
         run: |
           set -euo pipefail
           echo "attempted=true" >> "$GITHUB_OUTPUT"
-          node scripts/release/devhud-release-controller.mjs promote-api --version "${{ needs.identity.outputs.version }}" --revision "$GITHUB_SHA" --output controller-api.json
+          node scripts/release/devhud-release-controller.mjs promote-api --version "${{ needs.identity.outputs.version }}" --revision "$DEVHUD_RELEASE_REVISION" --output controller-api.json
           echo "promoted=true" >> "$GITHUB_OUTPUT"
       - name: Verify live API, schema readiness, and embedded administrator
         run: |
@@ -537,7 +556,7 @@ jobs:
       DEVHUD_PUBLIC_DOCS_PROJECT_NAME: ${{ vars.DEVHUD_PUBLIC_DOCS_PROJECT_NAME }}
     steps:
       - uses: actions/checkout@v6
-        with: { persist-credentials: false }
+        with: { persist-credentials: false, ref: "${{ needs.identity.outputs.revision }}" }
       - name: Bind store-publication configuration to the validated preflight environment
         env:
           EXPECTED_CONFIGURATION_FINGERPRINT: ${{ needs.preflight.outputs.release_configuration_fingerprint }}
@@ -573,12 +592,13 @@ jobs:
       actions: read
       contents: write
     env:
+      DEVHUD_RELEASE_REVISION: ${{ needs.identity.outputs.revision }}
       GH_TOKEN: ${{ github.token }}
       RELEASE_TAG: ${{ needs.identity.outputs.tag }}
       RELEASE_VERSION: ${{ needs.identity.outputs.version }}
     steps:
       - uses: actions/checkout@v6
-        with: { fetch-depth: 0, persist-credentials: false }
+        with: { fetch-depth: 0, persist-credentials: false, ref: "${{ needs.identity.outputs.revision }}" }
       - uses: actions/download-artifact@v8
         with:
           artifact-ids: ${{ needs.candidate.outputs.artifact_id }}
@@ -591,13 +611,13 @@ jobs:
           mkdir -p github-assets
           find private-artifacts -maxdepth 1 -type f \( -name 'devhud-macos-*' -o -name 'devhud-windows-*' -o -name 'devhud-ubuntu-*' -o -name 'devhud-chrome-github-validation.zip' \) -exec cp '{}' github-assets/ \;
           tar -C private-artifacts -czf github-assets/devhud-v${RELEASE_VERSION}-release-evidence.tar.gz SHA256SUMS sbom provenance sigstore updater/signatures validation
-          node -e 'const fs=require("node:fs");const m=require("./packaging/devhud/release-metadata.json");fs.writeFileSync("github-assets/devhud-release-index.json",JSON.stringify({schemaVersion:1,project:"devhud",version:m.version,tag:`devhud@v${m.version}`,revision:process.env.GITHUB_SHA,storeBuildNumber:m.storeBuildNumber,channels:["apple-app-store","google-play","chrome-web-store","github-release","desktop-updater","api","public-docs"]},null,2)+"\n")'
+          node -e 'const fs=require("node:fs");const m=require("./packaging/devhud/release-metadata.json");fs.writeFileSync("github-assets/devhud-release-index.json",JSON.stringify({schemaVersion:1,project:"devhud",version:m.version,tag:`devhud@v${m.version}`,revision:process.env.DEVHUD_RELEASE_REVISION,storeBuildNumber:m.storeBuildNumber,channels:["apple-app-store","google-play","chrome-web-store","github-release","desktop-updater","api","public-docs"]},null,2)+"\n")'
       - name: Create or reconcile a regular non-latest release
         run: |
           set -euo pipefail
           if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             target=$(git rev-parse --verify "refs/tags/$RELEASE_TAG^{commit}")
-            test "$target" = "$GITHUB_SHA"
+            test "$target" = "$DEVHUD_RELEASE_REVISION"
             find "github-assets" -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort -u > "expected-assets.txt"
             gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | LC_ALL=C sort -u > "existing-assets.txt"
             comm -13 "expected-assets.txt" "existing-assets.txt" | while IFS= read -r asset; do
@@ -606,7 +626,7 @@ jobs:
             gh release upload "$RELEASE_TAG" github-assets/* --clobber --repo "$GITHUB_REPOSITORY"
             gh release edit "$RELEASE_TAG" --draft=false --latest=false --repo "$GITHUB_REPOSITORY"
           else
-            gh release create "$RELEASE_TAG" github-assets/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "DevHUD v$RELEASE_VERSION" --notes "Coordinated publication verification is in progress." --latest=false
+            gh release create "$RELEASE_TAG" github-assets/* --repo "$GITHUB_REPOSITORY" --target "$DEVHUD_RELEASE_REVISION" --title "DevHUD v$RELEASE_VERSION" --notes "Coordinated publication verification is in progress." --latest=false
           fi
           gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease --jq '(.isDraft == false) and (.isPrerelease == false)' | grep -qx true
 
@@ -621,12 +641,13 @@ jobs:
       contents: read
       id-token: write
     env:
+      DEVHUD_RELEASE_REVISION: ${{ needs.identity.outputs.revision }}
       DEVHUD_RELEASE_CONTROLLER_URL: ${{ vars.DEVHUD_RELEASE_CONTROLLER_URL }}
       DEVHUD_RELEASE_CONTROLLER_AUDIENCE: ${{ vars.DEVHUD_RELEASE_CONTROLLER_AUDIENCE }}
       DEVHUD_PUBLIC_API_URL: ${{ vars.DEVHUD_PUBLIC_API_URL }}
     steps:
       - uses: actions/checkout@v6
-        with: { persist-credentials: false }
+        with: { persist-credentials: false, ref: "${{ needs.identity.outputs.revision }}" }
       - uses: actions/download-artifact@v8
         with:
           artifact-ids: ${{ needs.candidate.outputs.artifact_id }}
@@ -640,7 +661,7 @@ jobs:
           token=$(jq -er '.value' <<<"$response")
           echo "::add-mask::$token"
           echo "DEVHUD_RELEASE_CONTROLLER_TOKEN=$token" >> "$GITHUB_ENV"
-      - run: node scripts/release/devhud-release-controller.mjs promote-updater --version "${{ needs.identity.outputs.version }}" --revision "$GITHUB_SHA" --output controller-updater.json
+      - run: node scripts/release/devhud-release-controller.mjs promote-updater --version "${{ needs.identity.outputs.version }}" --revision "$DEVHUD_RELEASE_REVISION" --output controller-updater.json
       - name: Compare every served manifest with its signed private input
         run: |
           set -euo pipefail
@@ -675,15 +696,17 @@ jobs:
       CLOUDFLARE_ACCOUNT_ID: ${{ vars.DEVHUD_PUBLIC_DOCS_ACCOUNT_ID }}
       DEVHUD_PUBLIC_DOCS_PROJECT_NAME: ${{ vars.DEVHUD_PUBLIC_DOCS_PROJECT_NAME }}
       DEVHUD_PUBLIC_DOCS_URL: ${{ vars.DEVHUD_PUBLIC_DOCS_URL }}
-      DEVHUD_DOCS_RELEASE_IDENTITY: devhud@v${{ needs.identity.outputs.version }}@${{ github.sha }}
+      DEVHUD_DOCS_RELEASE_IDENTITY: "devhud@v${{ needs.identity.outputs.version }}@${{ needs.identity.outputs.revision }}"
     steps:
       - uses: actions/checkout@v6
-        with: { persist-credentials: false }
+        with: { persist-credentials: false, ref: "${{ needs.identity.outputs.revision }}" }
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v6
         with: { node-version-file: .nvmrc }
       - uses: actions/download-artifact@v8
-        with: { name: devhud-public-docs-candidate-${{ github.run_attempt }}, path: apps/public-docs/doc_build }
+        with:
+          name: "devhud-public-docs-candidate-${{ github.run_attempt }}"
+          path: apps/public-docs/doc_build
       - run: pnpm dlx wrangler@4.33.1 pages deploy apps/public-docs/doc_build --project-name "$DEVHUD_PUBLIC_DOCS_PROJECT_NAME" --branch main
       - name: Verify the exact deployed DevHud candidate
         run: |
@@ -701,6 +724,7 @@ jobs:
       contents: read
       id-token: write
     env:
+      DEVHUD_RELEASE_REVISION: ${{ needs.identity.outputs.revision }}
       GH_TOKEN: ${{ github.token }}
       DEVHUD_PUBLIC_API_URL: ${{ vars.DEVHUD_PUBLIC_API_URL }}
       DEVHUD_PUBLIC_DOCS_URL: ${{ vars.DEVHUD_PUBLIC_DOCS_URL }}
@@ -710,7 +734,7 @@ jobs:
       DEVHUD_OCI_REGISTRY: ${{ vars.DEVHUD_OCI_REGISTRY }}
       DEVHUD_OCI_REGISTRY_USERNAME: ${{ secrets.DEVHUD_OCI_REGISTRY_USERNAME }}
       DEVHUD_OCI_REGISTRY_TOKEN: ${{ secrets.DEVHUD_OCI_REGISTRY_TOKEN }}
-      DEVHUD_DOCS_RELEASE_IDENTITY: devhud@v${{ needs.identity.outputs.version }}@${{ github.sha }}
+      DEVHUD_DOCS_RELEASE_IDENTITY: "devhud@v${{ needs.identity.outputs.version }}@${{ needs.identity.outputs.revision }}"
       APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
       APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
       APPLE_API_PRIVATE_KEY_B64: ${{ secrets.APPLE_API_PRIVATE_KEY_B64 }}
@@ -724,7 +748,7 @@ jobs:
       DEVHUD_CHROME_WEB_STORE_REFRESH_TOKEN: ${{ secrets.DEVHUD_CHROME_WEB_STORE_REFRESH_TOKEN }}
     steps:
       - uses: actions/checkout@v6
-        with: { persist-credentials: false }
+        with: { persist-credentials: false, ref: "${{ needs.identity.outputs.revision }}" }
       - name: Reverify every exact store version remains public
         run: |
           set -euo pipefail
@@ -743,7 +767,7 @@ jobs:
           set -euo pipefail
           mkdir -p public-assets
           remote_target=$(gh api "repos/$GITHUB_REPOSITORY/commits/$RELEASE_TAG" --jq '.sha')
-          test "$remote_target" = "$GITHUB_SHA"
+          test "$remote_target" = "$DEVHUD_RELEASE_REVISION"
           gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets,isDraft,isPrerelease,tagName > public-release.json
           gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir public-assets
           evidence="public-assets/devhud-v${RELEASE_VERSION}-release-evidence.tar.gz"
@@ -772,7 +796,7 @@ jobs:
           linux|aarch64|linux-appimage
           linux|aarch64|linux-deb
           TARGETS
-          node scripts/release/validate-devhud-public-assets.mjs --assets-dir public-assets --release-json public-release.json --revision "$GITHUB_SHA"
+          node scripts/release/validate-devhud-public-assets.mjs --assets-dir public-assets --release-json public-release.json --revision "$DEVHUD_RELEASE_REVISION"
       - name: Reverify public API, docs, release, and immutable images
         run: |
           set -euo pipefail
@@ -794,7 +818,7 @@ jobs:
           token=$(jq -er '.value' <<<"$response")
           echo "::add-mask::$token"
           export DEVHUD_RELEASE_CONTROLLER_TOKEN="$token"
-          node scripts/release/devhud-release-controller.mjs status --version "${{ needs.identity.outputs.version }}" --revision "$GITHUB_SHA" --output controller-final.json
+          node scripts/release/devhud-release-controller.mjs status --version "${{ needs.identity.outputs.version }}" --revision "$DEVHUD_RELEASE_REVISION" --output controller-final.json
           jq -e '.channels.api == "public" and .channels.sweeper == "public" and .channels.updater == "public"' controller-final.json >/dev/null
 
   ga:
@@ -807,6 +831,7 @@ jobs:
       contents: write
       id-token: write
     env:
+      DEVHUD_RELEASE_REVISION: ${{ needs.identity.outputs.revision }}
       GH_TOKEN: ${{ github.token }}
       RELEASE_TAG: ${{ needs.identity.outputs.tag }}
       DEVHUD_PUBLIC_API_URL: ${{ vars.DEVHUD_PUBLIC_API_URL }}
@@ -823,7 +848,7 @@ jobs:
       DEVHUD_OCI_SWEEPER_REPOSITORY: ${{ vars.DEVHUD_OCI_SWEEPER_REPOSITORY }}
       DEVHUD_OCI_REGISTRY_USERNAME: ${{ secrets.DEVHUD_OCI_REGISTRY_USERNAME }}
       DEVHUD_OCI_REGISTRY_TOKEN: ${{ secrets.DEVHUD_OCI_REGISTRY_TOKEN }}
-      DEVHUD_DOCS_RELEASE_IDENTITY: devhud@v${{ needs.identity.outputs.version }}@${{ github.sha }}
+      DEVHUD_DOCS_RELEASE_IDENTITY: "devhud@v${{ needs.identity.outputs.version }}@${{ needs.identity.outputs.revision }}"
       APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
       APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
       APPLE_API_PRIVATE_KEY_B64: ${{ secrets.APPLE_API_PRIVATE_KEY_B64 }}
@@ -838,7 +863,7 @@ jobs:
       DEVHUD_CHROME_WEB_STORE_REFRESH_TOKEN: ${{ secrets.DEVHUD_CHROME_WEB_STORE_REFRESH_TOKEN }}
     steps:
       - uses: actions/checkout@v6
-        with: { persist-credentials: false }
+        with: { persist-credentials: false, ref: "${{ needs.identity.outputs.revision }}" }
       - name: Bind GA configuration to the validated preflight environment
         env:
           EXPECTED_CONFIGURATION_FINGERPRINT: ${{ needs.preflight.outputs.release_configuration_fingerprint }}
@@ -863,7 +888,7 @@ jobs:
           set -euo pipefail
           mkdir -p public-assets
           remote_target=$(gh api "repos/$GITHUB_REPOSITORY/commits/$RELEASE_TAG" --jq '.sha')
-          test "$remote_target" = "$GITHUB_SHA"
+          test "$remote_target" = "$DEVHUD_RELEASE_REVISION"
           gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets,isDraft,isPrerelease,tagName > public-release.json
           gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir public-assets
           evidence="public-assets/devhud-v${RELEASE_VERSION}-release-evidence.tar.gz"
@@ -892,7 +917,7 @@ jobs:
           linux|aarch64|linux-appimage
           linux|aarch64|linux-deb
           TARGETS
-          node scripts/release/validate-devhud-public-assets.mjs --assets-dir public-assets --release-json public-release.json --revision "$GITHUB_SHA"
+          node scripts/release/validate-devhud-public-assets.mjs --assets-dir public-assets --release-json public-release.json --revision "$DEVHUD_RELEASE_REVISION"
       - name: Reverify public API, docs, release, and immutable images after GA approval
         run: |
           set -euo pipefail
@@ -914,7 +939,7 @@ jobs:
           token=$(jq -er '.value' <<<"$response")
           echo "::add-mask::$token"
           export DEVHUD_RELEASE_CONTROLLER_TOKEN="$token"
-          node scripts/release/devhud-release-controller.mjs status --version "${{ needs.identity.outputs.version }}" --revision "$GITHUB_SHA" --output controller-ga.json
+          node scripts/release/devhud-release-controller.mjs status --version "${{ needs.identity.outputs.version }}" --revision "$DEVHUD_RELEASE_REVISION" --output controller-ga.json
           jq -e '.channels.api == "public" and .channels.sweeper == "public" and .channels.updater == "public"' controller-ga.json >/dev/null
       - name: Apply final bilingual notes and latest marker only after verification
         run: |
@@ -943,6 +968,7 @@ jobs:
       contents: read
       id-token: write
     env:
+      DEVHUD_RELEASE_REVISION: ${{ needs.identity.outputs.revision }}
       DEVHUD_RELEASE_CONTROLLER_URL: ${{ vars.DEVHUD_RELEASE_CONTROLLER_URL }}
       DEVHUD_RELEASE_CONTROLLER_AUDIENCE: ${{ vars.DEVHUD_RELEASE_CONTROLLER_AUDIENCE }}
       APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
@@ -958,7 +984,7 @@ jobs:
       DEVHUD_CHROME_WEB_STORE_REFRESH_TOKEN: ${{ secrets.DEVHUD_CHROME_WEB_STORE_REFRESH_TOKEN }}
     steps:
       - uses: actions/checkout@v6
-        with: { persist-credentials: false }
+        with: { persist-credentials: false, ref: "${{ needs.identity.outputs.revision }}" }
       - name: Confirm no exact store version became public
         run: |
           set -euo pipefail
@@ -999,11 +1025,11 @@ jobs:
           token=$(jq -er '.value' <<<"$response")
           echo "::add-mask::$token"
           export DEVHUD_RELEASE_CONTROLLER_TOKEN="$token"
-          node scripts/release/devhud-release-controller.mjs status --version "${{ needs.identity.outputs.version }}" --revision "$GITHUB_SHA" --output controller-status.json
+          node scripts/release/devhud-release-controller.mjs status --version "${{ needs.identity.outputs.version }}" --revision "$DEVHUD_RELEASE_REVISION" --output controller-status.json
           api_status=$(jq -er '.channels.api | select(type == "string")' controller-status.json)
           sweeper_status=$(jq -er '.channels.sweeper | select(type == "string")' controller-status.json)
           if [ "$api_status" = public ] || [ "$sweeper_status" = public ]; then
             test "$api_status" = public
             test "$sweeper_status" = public
-            node scripts/release/devhud-release-controller.mjs rollback --version "${{ needs.identity.outputs.version }}" --revision "$GITHUB_SHA" --output controller-rollback.json
+            node scripts/release/devhud-release-controller.mjs rollback --version "${{ needs.identity.outputs.version }}" --revision "$DEVHUD_RELEASE_REVISION" --output controller-rollback.json
           fi

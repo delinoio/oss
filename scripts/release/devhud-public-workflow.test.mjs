@@ -24,6 +24,7 @@ test("public release is manual-only, exact-versioned, and denied permissions by 
   assert.match(trigger, /workflow_dispatch:/u);
   assert.doesNotMatch(trigger, /\b(push|pull_request|schedule):/u);
   assert.match(trigger, /version:[\s\S]*required: true/u);
+  assert.match(trigger, /recovery_revision:[\s\S]*required: false/u);
   assert.match(release, /^permissions: \{\}$/mu);
   assert.match(job("identity"), /--ref "\$GITHUB_REF"/u);
   assert.match(job("identity"), /devhud@v\$\{\{ inputs\.version \}\}/u);
@@ -38,10 +39,27 @@ test("release dispatch is project-serialized and shell inputs cross only through
   assert.match(validationStep, /RELEASE_VERSION: \$\{\{ inputs\.version \}\}/u);
   assert.doesNotMatch(run, /\$\{\{ inputs\.(?:mode|version) \}\}/u);
   assert.match(run, /--version "\$RELEASE_VERSION" --mode "\$RELEASE_MODE"/u);
+  const source = job("identity").slice(job("identity").indexOf("Resolve and verify the exact release revision"));
+  assert.match(source, /RECOVERY_REVISION: \$\{\{ inputs\.recovery_revision \}\}/u);
+  assert.match(source, /git merge-base --is-ancestor "\$revision" "\$GITHUB_SHA"/u);
+});
+
+test("historical recovery binds every job to one retained ancestor revision", () => {
+  const identity = job("identity");
+  assert.match(identity, /revision: \$\{\{ steps\.source\.outputs\.revision \}\}/u);
+  assert.match(identity, /--revision "\$DEVHUD_RELEASE_REVISION"/u);
+  assert.match(identity, /historical release recovery requires the retained original candidate/u);
+  assert.match(job("private_candidate"), /revision: \$\{\{ needs\.identity\.outputs\.revision \}\}/u);
+  for (const name of ["candidate", "preflight", "submit_stores", "review_gate", "docs_candidate", "registry", "prepare_infrastructure", "stores_public", "github_release", "updater_public", "public_docs", "verify_all", "ga", "rollback_pre_store"]) {
+    assert.match(job(name), /ref: "\$\{\{ needs\.identity\.outputs\.revision \}\}"/u, `${name} must check out the selected release revision`);
+  }
+  assert.doesNotMatch(release.slice(release.indexOf("\n  candidate:")), /\$GITHUB_SHA/u);
+  assert.doesNotMatch(release, /DEVHUD_DOCS_RELEASE_IDENTITY:.*github\.sha/u);
 });
 
 test("the complete reusable private candidate is the sole publication prerequisite", () => {
   assert.match(privateCandidate, /workflow_call:/u);
+  assert.match(privateCandidate, /revision:[\s\S]*Exact source revision selected/u);
   assert.match(privateCandidate, /plan-only\|signed-private/u);
   assert.match(job("private_candidate"), /package-devhud-private\.yml/u);
   assert.match(job("private_candidate"), /contents: read[\s\S]*id-token: write/u);
@@ -56,6 +74,7 @@ test("the complete reusable private candidate is the sole publication prerequisi
   assert.match(privateCandidate, /private-signed-candidate-\$\{\{ github\.sha \}\}-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}[\s\S]*retention-days: 35/u);
   assert.match(privateCandidate, /artifact_id:[\s\S]*steps\.candidate\.outputs\.artifact-id/u);
   assert.match(job("identity"), /devhud-candidate-artifact\.mjs/u);
+  assert.match(privateCandidate, /DEVHUD_PRIVATE_WORKFLOW_REF: \$\{\{ github\.repository \}\}\/\.github\/workflows\/package-devhud-private\.yml@\$\{\{ github\.ref \}\}/u);
 });
 
 test("jobs request only their channel-specific GitHub permissions", () => {
@@ -166,8 +185,8 @@ test("documentation deployment is bound to the exact candidate before publicatio
   assert.match(job("docs_candidate"), /doc_build\/devhud\.html/u);
   assert.match(job("docs_candidate"), /devhud-release-identity/u);
   assert.match(job("docs_candidate"), /needs\.identity\.outputs\.version/u);
-  assert.match(job("docs_candidate"), /name: devhud-public-docs-candidate-\$\{\{ github\.run_attempt \}\}/u);
-  assert.match(job("public_docs"), /name: devhud-public-docs-candidate-\$\{\{ github\.run_attempt \}\}/u);
+  assert.match(job("docs_candidate"), /name: "devhud-public-docs-candidate-\$\{\{ github\.run_attempt \}\}"/u);
+  assert.match(job("public_docs"), /name: "devhud-public-docs-candidate-\$\{\{ github\.run_attempt \}\}"/u);
   for (const name of ["public_docs", "verify_all"]) {
     assert.match(job(name), /new URL\("\/devhud", process\.env\.DEVHUD_PUBLIC_DOCS_URL\)/u);
     assert.match(job(name), /devhud-release-identity/u);
@@ -209,13 +228,13 @@ test("registry publication binds signed digests to the selected OCI archives", (
 test("independent verification downloads and authenticates the exact public GitHub assets", () => {
   const verification = job("verify_all");
   assert.match(verification, /gh api "repos\/\$GITHUB_REPOSITORY\/commits\/\$RELEASE_TAG" --jq '\.sha'/u);
-  assert.match(verification, /test "\$remote_target" = "\$GITHUB_SHA"/u);
+  assert.match(verification, /test "\$remote_target" = "\$DEVHUD_RELEASE_REVISION"/u);
   assert.match(verification, /gh release view[\s\S]*--json assets,isDraft,isPrerelease,tagName/u);
   assert.match(verification, /gh release download/u);
   assert.match(verification, /devhud-v\$\{RELEASE_VERSION\}-release-evidence\.tar\.gz/u);
   assert.match(verification, /X-DevHud-Package/u);
   assert.match(verification, /validate-devhud-public-assets\.mjs/u);
-  assert.match(verification, /--revision "\$GITHUB_SHA"/u);
+  assert.match(verification, /--revision "\$DEVHUD_RELEASE_REVISION"/u);
   assert.match(verification, /DEVHUD_PRIVATE_WORKFLOW_REF/u);
 });
 
@@ -252,8 +271,8 @@ test("GA repeats every public-channel verification after approval and before mut
     /cosign verify --certificate-identity/u,
     /devhud-release-controller\.mjs status/u,
     /gh api "repos\/\$GITHUB_REPOSITORY\/commits\/\$RELEASE_TAG" --jq '\.sha'/u,
-    /test "\$remote_target" = "\$GITHUB_SHA"/u,
-    /--revision "\$GITHUB_SHA"/u,
+    /test "\$remote_target" = "\$DEVHUD_RELEASE_REVISION"/u,
+    /--revision "\$DEVHUD_RELEASE_REVISION"/u,
   ]) {
     assert.match(ga, pattern);
   }

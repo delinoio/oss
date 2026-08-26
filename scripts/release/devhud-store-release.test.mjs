@@ -169,6 +169,28 @@ test("App Store submission reuses one unbound draft and creates only its missing
   assert.equal(requests.filter(({ url, options }) => url.endsWith("/reviewSubmissions/submission-id") && options.method === "PATCH").length, 1);
 });
 
+test("App Store submission replaces a canceled exact review submission", async () => {
+  const requests = [];
+  const fetchImpl = async (input, options = {}) => {
+    const url = String(input);
+    requests.push({ url, options });
+    if (url.includes("appStoreVersions?")) return jsonResponse({ data: [{ id: "version-id", attributes: { appStoreState: "DEVELOPER_REJECTED" } }] });
+    if (url.endsWith("appStoreVersionPhasedRelease")) return new Response(null, { status: 404 });
+    if (url.includes("/v1/builds?")) return jsonResponse({ data: [{ id: "build-id", attributes: { processingState: "VALID" } }] });
+    if (url.includes("/reviewSubmissions?")) return jsonResponse({ data: [{
+      id: "canceled-submission-id",
+      attributes: { state: "CANCELED" },
+      relationships: { appStoreVersionForReview: { data: { type: "appStoreVersions", id: "version-id" } }, items: { data: [] } },
+    }] });
+    if (url.endsWith("/v1/reviewSubmissions") && options.method === "POST") return jsonResponse({ data: { type: "reviewSubmissions", id: "replacement-submission-id" } });
+    return jsonResponse({ data: { id: "mutation-result" } });
+  };
+  const result = await run("submit", StoreProvider.Apple, {}, environment(), fetchImpl);
+  assert.equal(result.submissionId, "replacement-submission-id");
+  assert.equal(requests.filter(({ url, options }) => url.endsWith("/v1/reviewSubmissions") && options.method === "POST").length, 1);
+  assert.equal(requests.filter(({ url }) => url.endsWith("/reviewSubmissions/canceled-submission-id")).length, 0);
+});
+
 test("Google status uses the direct release lifecycle endpoint and current response schema", async () => {
   const requests = [];
   const fetchImpl = async (input, options = {}) => {
@@ -231,7 +253,13 @@ test("store publication mutates each exact approved-held version once", async ()
     throw new Error(`unexpected request: ${url}`);
   };
   assert.equal((await run("publish", StoreProvider.ChromeWebStore, {}, environment(), chromeFetch)).status, StoreStatus.Pending);
-  assert.equal(chromeRequests.filter(({ url, options }) => url.endsWith(":publish") && options.method === "POST").length, 1);
+  const chromePublications = chromeRequests.filter(({ url, options }) => url.endsWith(":publish") && options.method === "POST");
+  assert.equal(chromePublications.length, 1);
+  assert.deepEqual(JSON.parse(chromePublications[0].options.body), {
+    publishType: "DEFAULT_PUBLISH",
+    deployInfos: [{ deployPercentage: 100 }],
+    blockOnWarnings: true,
+  });
 });
 
 test("withdrawal cancels the exact Apple submission and current Chrome submission", async () => {

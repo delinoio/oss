@@ -75,6 +75,7 @@ test("provenance validation binds the statement to the current workflow run atte
   const environment = { GITHUB_REPOSITORY: "delinoio/oss", GITHUB_SHA: "a".repeat(40), GITHUB_RUN_ID: "123456789", GITHUB_RUN_ATTEMPT: "2" };
   assert.doesNotThrow(() => validateProvenance(statement, "artifact.bin", digest, environment));
   assert.throws(() => validateProvenance(statement, "artifact.bin", digest, { ...environment, GITHUB_SHA: "b".repeat(40) }), /revision mismatch/u);
+  assert.doesNotThrow(() => validateProvenance(statement, "artifact.bin", digest, { ...environment, GITHUB_SHA: "b".repeat(40), DEVHUD_RELEASE_REVISION: "a".repeat(40) }));
   assert.throws(() => validateProvenance(statement, "artifact.bin", digest, { ...environment, GITHUB_RUN_ATTEMPT: "3" }), /invocation mismatch/u);
   assert.doesNotThrow(() => validateProvenance(statement, "artifact.bin", digest, {
     GITHUB_REPOSITORY: "delinoio/oss",

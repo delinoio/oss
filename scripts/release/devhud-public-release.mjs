@@ -81,6 +81,10 @@ export const releaseFingerprintVariables = Object.freeze([
 ]);
 
 export const releaseSecrets = Object.freeze([
+  "DEVHUD_CHROME_EXTENSION_PUBLIC_KEY",
+  "APPLE_API_ISSUER",
+  "APPLE_API_KEY_ID",
+  "APPLE_API_PRIVATE_KEY_B64",
   "DEVHUD_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON",
   "DEVHUD_CHROME_WEB_STORE_CLIENT_ID",
   "DEVHUD_CHROME_WEB_STORE_CLIENT_SECRET",
@@ -178,7 +182,7 @@ export function validateReleaseVariables(environment = process.env) {
 }
 
 export function validateReleaseConfiguration(environment = process.env) {
-  const missing = [...releaseVariables, ...releaseSecrets, ...signingInputs].filter((name) => !present(environment, name));
+  const missing = [...releaseFingerprintVariables, ...releaseSecrets].filter((name) => !present(environment, name));
   if (missing.length > 0) throw new Error(`DevHud release configuration is missing: ${missing.join(", ")}`);
   validateReleaseVariableValues(environment);
 }

@@ -3,14 +3,13 @@ import { generateKeyPairSync } from "node:crypto";
 import test from "node:test";
 
 import { googleAssertion, runLivePreflight } from "./devhud-live-preflight.mjs";
-import { releaseSecrets, releaseVariables } from "./devhud-public-release.mjs";
-import { signingInputs } from "./devhud-release.mjs";
+import { releaseFingerprintVariables, releaseSecrets } from "./devhud-public-release.mjs";
 
 const { privateKey: googlePrivateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const { privateKey: applePrivateKey } = generateKeyPairSync("ec", { namedCurve: "P-256" });
 
 function environment() {
-  const result = Object.fromEntries([...releaseVariables, ...releaseSecrets, ...signingInputs].map((name) => [name, `fixture-${name}`]));
+  const result = Object.fromEntries([...releaseFingerprintVariables, ...releaseSecrets].map((name) => [name, `fixture-${name}`]));
   Object.assign(result, {
     APPLE_API_ISSUER: "fixture-issuer", APPLE_API_KEY_ID: "fixture-key",
     APPLE_API_PRIVATE_KEY_B64: Buffer.from(applePrivateKey.export({ type: "pkcs8", format: "pem" })).toString("base64"),
@@ -30,6 +29,7 @@ const jsonResponse = (body, status = 200) => new Response(JSON.stringify(body), 
 function successfulFetch(environment_) {
   return async (input) => {
     const url = String(input);
+    if (url.includes("/v1/users?")) return jsonResponse({ data: [] });
     if (url.includes("api.appstoreconnect.apple.com")) return jsonResponse({ data: { attributes: { bundleId: "io.delino.devhud" } } });
     if (url.includes("oauth2.example.test") || url === "https://oauth2.googleapis.com/token") return jsonResponse({ access_token: "fixture-access" });
     if (url.includes("chromewebstore.googleapis.com")) return jsonResponse({ itemId: environment_.DEVHUD_CHROME_EXTENSION_ID, publicKey: environment_.DEVHUD_CHROME_EXTENSION_PUBLIC_KEY });
@@ -38,7 +38,7 @@ function successfulFetch(environment_) {
       ok: true,
       project: "devhud",
       version: environment_.DEVHUD_RELEASE_VERSION,
-      revision: environment_.GITHUB_SHA,
+      revision: environment_.DEVHUD_RELEASE_REVISION ?? environment_.GITHUB_SHA,
       checks: { postgresql: true, r2: true, "release-controller": true },
     });
     return jsonResponse({ ok: true });
@@ -69,6 +69,27 @@ test("live preflight composes every independent read-only check", async () => {
     tag: `devhud@v${env.DEVHUD_RELEASE_VERSION}`,
     revision: env.GITHUB_SHA,
   });
+});
+
+test("live preflight binds controller identity to the selected historical revision", async () => {
+  const env = { ...environment(), DEVHUD_RELEASE_REVISION: "b".repeat(40) };
+  const successful = successfulFetch(env);
+  let controllerRequest;
+  const fetchImpl = async (input, options) => {
+    if (String(input).includes("controller.example.test")) controllerRequest = JSON.parse(options.body);
+    return successful(input, options);
+  };
+  await runLivePreflight(env, fetchImpl);
+  assert.equal(controllerRequest.revision, env.DEVHUD_RELEASE_REVISION);
+});
+
+test("live preflight rejects App Store credentials without submission authority", async () => {
+  const env = environment();
+  const successful = successfulFetch(env);
+  const fetchImpl = async (input, options) => String(input).includes("/v1/users?")
+    ? jsonResponse({ errors: [{ status: "403" }] }, 403)
+    : successful(input, options);
+  await assert.rejects(runLivePreflight(env, fetchImpl), /app-store-submission-authority/u);
 });
 
 test("live preflight fails closed when the controller omits PostgreSQL", async () => {

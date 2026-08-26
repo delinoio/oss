@@ -42,14 +42,24 @@ async function accessToken(fetchImpl, url, body, label) {
 
 const bearer = (token) => ({ authorization: `Bearer ${token}` });
 
+function releaseRevision(environment) {
+  const revision = environment.DEVHUD_RELEASE_REVISION ?? environment.GITHUB_SHA;
+  if (typeof revision !== "string" || !/^[a-f0-9]{40}$/u.test(revision)) throw new Error("DevHud release revision must be an exact lowercase 40-hex commit");
+  return revision;
+}
+
 export async function runLivePreflight(environment = process.env, fetchImpl = fetch) {
   validateReleaseConfiguration(environment);
+  const revision = releaseRevision(environment);
   const checks = Object.fromEntries(livePreflightChecks.map((name) => [name, false]));
 
   await checkedFetch(fetchImpl, `https://api.github.com/repos/${environment.GITHUB_REPOSITORY}`, { headers: { ...bearer(environment.GITHUB_TOKEN), accept: "application/vnd.github+json" } }, "github");
   checks.github = true;
 
-  const appleResponse = await checkedFetch(fetchImpl, `https://api.appstoreconnect.apple.com/v1/apps/${encodeURIComponent(environment.DEVHUD_APP_STORE_APP_ID)}`, { headers: bearer(appleToken(environment)) }, "app-store");
+  const appleAuthorization = bearer(appleToken(environment));
+  const authorityQuery = new URLSearchParams({ "fields[users]": "roles", limit: "1" });
+  await checkedFetch(fetchImpl, `https://api.appstoreconnect.apple.com/v1/users?${authorityQuery}`, { headers: appleAuthorization }, "app-store-submission-authority");
+  const appleResponse = await checkedFetch(fetchImpl, `https://api.appstoreconnect.apple.com/v1/apps/${encodeURIComponent(environment.DEVHUD_APP_STORE_APP_ID)}`, { headers: appleAuthorization }, "app-store");
   if ((await appleResponse.json()).data?.attributes?.bundleId !== "io.delino.devhud") throw new Error("App Store app does not use the DevHud bundle ID");
   checks["app-store"] = true;
 
@@ -102,12 +112,12 @@ export async function runLivePreflight(environment = process.env, fetchImpl = fe
       project: "devhud",
       version: environment.DEVHUD_RELEASE_VERSION,
       tag: `devhud@v${environment.DEVHUD_RELEASE_VERSION}`,
-      revision: environment.GITHUB_SHA,
+      revision,
     }),
   }, "release-controller");
   const controller = validateControllerResponse(await controllerResponse.json(), {
     version: environment.DEVHUD_RELEASE_VERSION,
-    revision: environment.GITHUB_SHA,
+    revision,
   }, "preflight");
   for (const name of ["postgresql", "r2", "release-controller"]) {
     if (controller.checks?.[name] !== true) throw new Error(`release controller did not confirm ${name}`);

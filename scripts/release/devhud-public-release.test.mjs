@@ -39,12 +39,16 @@ test("release identity is exact and permits only a same-commit idempotent retry"
 
 test("missing release credentials fail closed without exposing values", () => {
   const environment = completeEnvironment();
+  const liveConfiguration = [...new Set([...releaseFingerprintVariables, ...releaseSecrets])];
   assert.doesNotThrow(() => validateReleaseConfiguration(environment));
   assert.throws(() => validateReleaseConfiguration({ ...environment, DEVHUD_GOOGLE_PLAY_MANAGED_PUBLISHING: "disabled" }), /managed publishing/u);
-  for (const name of [...releaseVariables, ...releaseSecrets, ...signingInputs]) {
+  for (const name of liveConfiguration) {
     const missing = { ...environment, [name]: "" };
     assert.throws(() => validateReleaseConfiguration(missing), new RegExp(name, "u"));
   }
+  const withoutPrivateSigning = { ...environment };
+  for (const name of signingInputs.filter((name) => !liveConfiguration.includes(name))) withoutPrivateSigning[name] = "";
+  assert.doesNotThrow(() => validateReleaseConfiguration(withoutPrivateSigning));
   for (const value of ["http://api.example.test", "https://user:password@api.example.test"]) {
     assert.throws(() => validateReleaseConfiguration({ ...environment, DEVHUD_PUBLIC_API_URL: value }), /DEVHUD_PUBLIC_API_URL must be a credential-free HTTPS URL/u);
   }

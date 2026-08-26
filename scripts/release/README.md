@@ -5,10 +5,10 @@
 - `generate-devhud-updater.mjs`: creates the ten target/package-specific updater envelopes plus detached Ed25519 artifact and manifest signatures.
 - `generate-devhud-supply-chain.mjs`: validates the component-bearing SPDX 2.3 SBOM produced from each artifact's unpacked/package-aware build layout and creates its digest-bound SLSA v1 provenance statement.
 - `devhud-evidence.mjs` and `validate-devhud-private-build.mjs`: record platform checks, merge only the complete target set, and validate the private signed candidate without treating it as public-ready.
-- `devhud-public-release.mjs`: validates the exact `main` version/tag identity, stable configuration-name set, closed channel state machine, rollback boundary, secret-redacted dry/public plan, and exposes the rollback policy through its direct CLI.
+- `devhud-public-release.mjs`: validates the exact `main` version/tag and selected source-revision identity, live-publication configuration-name set, closed channel state machine, rollback boundary, secret-redacted dry/public plan, and exposes the rollback policy through its direct CLI.
 - `devhud-candidate-artifact.mjs`: discovers the oldest retained complete candidate for an exact version and source revision across every attempt of every recovery run so signed bytes and provenance identity are preserved.
 - `validate-devhud-public-assets.mjs`: validates the exact downloaded GitHub Release and extracted archive inventory, the complete expected keyless bundle set, signed checksums and bundles for every public binary, evidence payload, and remotely served updater manifest, the release index, and updater manifests against the public package bytes.
-- `devhud-live-preflight.mjs`: authenticates every documented GitHub, store, registry, Logto, generated asset route, docs, PostgreSQL, R2, and exact-identity provider-neutral deployment boundary without publishing.
+- `devhud-live-preflight.mjs`: authenticates every documented GitHub, store, registry, Logto, generated asset route, docs, PostgreSQL, R2, and exact-identity provider-neutral deployment boundary without publishing, including a read-only App Store submission-authority probe without requiring private package-signing keys.
 - `devhud-store-release.mjs`: distinguishes absent, processing, and processed App Store builds read-only; creates an absent exact version only during submission; idempotently reconciles store submissions and publication; and discovers, cancels, or verifies the exact release before an automatic infrastructure rollback.
 - `devhud-release-controller.mjs`: sends identity-bound, OIDC-authenticated prepare/promote/status/rollback requests to the operator-selected deployment controller.
 - `validate-devhud-ios-signing.mjs`: verifies that the signed iOS app and both extensions use exact App Store identities, profiles, certificates, and production entitlements before IPA evidence is recorded.
@@ -26,4 +26,4 @@ These scripts are designed for use by release workflows:
 - `.github/workflows/release-nodeup.yml`
 - `.github/workflows/release-derun.yml`
 - `.github/workflows/release-with-watch.yml`
-- `.github/workflows/release-devhud.yml` (manual `dry-run` or protected coordinated `release`; see `docs/servers-devhud-release-controller-contract.md` for stable configuration names)
+- `.github/workflows/release-devhud.yml` (manual `dry-run` or protected coordinated `release`, with an optional exact ancestor revision for retained-candidate recovery; see `docs/servers-devhud-release-controller-contract.md` for stable configuration names)

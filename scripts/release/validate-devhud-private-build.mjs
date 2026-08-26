@@ -81,7 +81,7 @@ export function validateProvenance(statement, artifact, digest, environment = pr
   if (statement.subject?.[0]?.name !== artifact || statement.subject[0].digest?.sha256 !== digest) {
     throw new Error(`provenance subject mismatch: ${artifact}`);
   }
-  validateProvenanceRevision(statement, environment.GITHUB_SHA);
+  validateProvenanceRevision(statement, environment.DEVHUD_RELEASE_REVISION ?? environment.GITHUB_SHA);
   const metadata = validateProvenanceMetadata(statement.predicate?.runDetails?.metadata ?? {});
   const repository = environment.GITHUB_REPOSITORY;
   const runId = environment.DEVHUD_PROVENANCE_RUN_ID ?? environment.GITHUB_RUN_ID;

@@ -161,6 +161,7 @@ async function appleReviewSubmission(environment, version, fetchImpl, token) {
   const exact = [];
   const emptyReady = [];
   for (const submission of result.data) {
+    if (submission.attributes?.state === "CANCELED") continue;
     const { versionIds, itemCount } = appleSubmissionVersionIds(submission, includedById);
     if (versionIds.has(version.id)) exact.push({ submission, hasVersionItem: true });
     else if (submission.attributes?.state === "READY_FOR_REVIEW" && itemCount === 0) emptyReady.push({ submission, hasVersionItem: false });
@@ -265,7 +266,7 @@ async function publish(provider, environment, metadata, fetchImpl) {
     const current = classifyChrome({ submitted: value.submittedItemRevisionStatus, published: value.publishedItemRevisionStatus, version: metadata.version });
     if ([StoreStatus.Public, StoreStatus.Pending].includes(current)) return { provider, status: current, version: metadata.version };
     if (current !== StoreStatus.ApprovedHeld) throw new Error(`Chrome Web Store version cannot be published from state ${current}`);
-    await checked(fetchImpl, `https://chromewebstore.googleapis.com/v2/${name}:publish`, { method: "POST", headers: jsonHeaders(token), body: JSON.stringify({ publishType: "STAGED_PUBLISH", deployInfos: [{ deployPercentage: 100 }], blockOnWarnings: true }) }, "Chrome Web Store staged publication");
+    await checked(fetchImpl, `https://chromewebstore.googleapis.com/v2/${name}:publish`, { method: "POST", headers: jsonHeaders(token), body: JSON.stringify({ publishType: "DEFAULT_PUBLISH", deployInfos: [{ deployPercentage: 100 }], blockOnWarnings: true }) }, "Chrome Web Store immediate publication");
   } else {
     throw new Error("Google Play managed publication requires the protected operator publication gate");
   }
