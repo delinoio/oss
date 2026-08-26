@@ -43,21 +43,30 @@ test("the complete reusable private candidate is the sole publication prerequisi
   assert.match(privateCandidate, /plan-only\|signed-private/u);
   assert.match(job("private_candidate"), /package-devhud-private\.yml/u);
   assert.match(job("private_candidate"), /contents: read[\s\S]*id-token: write/u);
-  assert.match(job("preflight"), /needs: \[identity, private_candidate\]/u);
-  assert.match(job("preflight"), /validate-devhud-private-build\.mjs/u);
+  assert.match(job("private_candidate"), /reuse_candidate != 'true'/u);
+  assert.match(job("candidate"), /needs: \[identity, private_candidate\]/u);
+  assert.match(job("candidate"), /artifact-ids: \$\{\{ steps\.select\.outputs\.artifact_id \}\}/u);
+  assert.match(job("candidate"), /DEVHUD_PROVENANCE_RUN_ID/u);
+  assert.match(job("candidate"), /validate-devhud-private-build\.mjs/u);
+  assert.match(job("preflight"), /needs: \[identity, candidate\]/u);
   assert.match(job("preflight"), /devhud-live-preflight\.mjs/u);
   assert.match(job("preflight"), /DEVHUD_PUBLIC_API_URL: \$\{\{ vars\.DEVHUD_PUBLIC_API_URL \}\}/u);
-  assert.match(privateCandidate, /private-signed-candidate-\$\{\{ github\.run_id \}\}[\s\S]*retention-days: 35/u);
+  assert.match(privateCandidate, /private-signed-candidate-\$\{\{ github\.sha \}\}-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}[\s\S]*retention-days: 35/u);
+  assert.match(privateCandidate, /artifact_id:[\s\S]*steps\.candidate\.outputs\.artifact-id/u);
+  assert.match(job("identity"), /devhud-candidate-artifact\.mjs/u);
 });
 
 test("jobs request only their channel-specific GitHub permissions", () => {
-  for (const name of ["identity", "private_candidate", "preflight", "submit_stores", "review_gate", "docs_candidate", "registry", "prepare_infrastructure", "publish_stores", "stores_public", "updater_public", "public_docs", "verify_all", "rollback_pre_store"]) {
+  for (const name of ["identity", "private_candidate", "candidate", "preflight", "submit_stores", "review_gate", "docs_candidate", "registry", "prepare_infrastructure", "publish_stores", "stores_public", "updater_public", "public_docs", "verify_all", "rollback_pre_store"]) {
     assert.doesNotMatch(job(name), /contents: write/u, `${name} must not write repository contents`);
   }
   assert.match(job("github_release"), /contents: write/u);
   assert.match(job("ga"), /contents: write/u);
   for (const name of ["private_candidate", "preflight", "registry", "prepare_infrastructure", "updater_public", "verify_all", "rollback_pre_store"]) {
     assert.match(job(name), /id-token: write/u, `${name} needs provider-neutral OIDC`);
+  }
+  for (const name of ["identity", "candidate", "submit_stores", "registry", "prepare_infrastructure", "github_release", "updater_public"]) {
+    assert.match(job(name), /actions: read/u, `${name} needs immutable artifact lookup or cross-run download`);
   }
 });
 
@@ -74,7 +83,7 @@ test("same-commit retries reconcile public stores without repeating store mutati
   assert.match(job("identity"), /retry: \$\{\{ steps\.identity\.outputs\.retry \}\}/u);
   assert.match(job("submit_stores"), /Reconcile the exact current store state/u);
   assert.match(job("submit_stores"), /needs\.identity\.outputs\.retry != 'true'/u);
-  assert.match(job("submit_stores"), /steps\.store_state\.outputs\.status != 'approved-held'.*steps\.store_state\.outputs\.status != 'public'/u);
+  assert.match(job("submit_stores"), /steps\.store_state\.outputs\.status != 'pending-review'.*steps\.store_state\.outputs\.status != 'approved-held'.*steps\.store_state\.outputs\.status != 'public'/u);
   assert.match(job("submit_stores"), /\[ "\$RELEASE_RETRY" = true \] && \[ "\$status" != public \]/u);
   assert.match(job("review_gate"), /needs\.identity\.outputs\.retry == 'true'.*devhud-publication.*devhud-store-review-approved/u);
   assert.match(job("review_gate"), /\[ "\$RELEASE_RETRY" = true \][\s\S]*\.status == "public"/u);
@@ -137,6 +146,16 @@ test("independent verification fetches and verifies both remote OCI digests", ()
   assert.match(verification, /actual_digest[\s\S]*expected_digest/u);
   assert.match(verification, /cosign verify --certificate-identity/u);
   assert.match(verification, /release-devhud\.yml@\$GITHUB_REF/u);
+});
+
+test("independent verification downloads and authenticates the exact public GitHub assets", () => {
+  const verification = job("verify_all");
+  assert.match(verification, /gh release view[\s\S]*--json assets,isDraft,isPrerelease,tagName/u);
+  assert.match(verification, /gh release download/u);
+  assert.match(verification, /devhud-v\$\{RELEASE_VERSION\}-release-evidence\.tar\.gz/u);
+  assert.match(verification, /X-DevHud-Package/u);
+  assert.match(verification, /validate-devhud-public-assets\.mjs/u);
+  assert.match(verification, /DEVHUD_PRIVATE_WORKFLOW_REF/u);
 });
 
 test("GA notes are public and existing tags are dereferenced to commits", () => {

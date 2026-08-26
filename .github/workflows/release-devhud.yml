@@ -25,12 +25,18 @@ jobs:
     name: Validate exact main release identity
     runs-on: ubuntu-22.04
     permissions:
+      actions: read
       contents: read
     outputs:
       version: ${{ steps.identity.outputs.version }}
       tag: ${{ steps.identity.outputs.tag }}
       retry: ${{ steps.identity.outputs.retry }}
       existing_tag: ${{ steps.tag.outputs.target }}
+      reuse_candidate: ${{ steps.candidate.outputs.reused }}
+      candidate_artifact_id: ${{ steps.candidate.outputs.artifact_id }}
+      candidate_artifact_name: ${{ steps.candidate.outputs.artifact_name }}
+      candidate_run_id: ${{ steps.candidate.outputs.run_id }}
+      candidate_run_attempt: ${{ steps.candidate.outputs.run_attempt }}
     steps:
       - uses: actions/checkout@v6
         with: { fetch-depth: 0, persist-credentials: false }
@@ -62,6 +68,19 @@ jobs:
           echo "version=$RELEASE_VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=devhud@v$RELEASE_VERSION" >> "$GITHUB_OUTPUT"
           echo "retry=$retry" >> "$GITHUB_OUTPUT"
+      - name: Resolve the original revision-bound private candidate
+        id: candidate
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ steps.identity.outputs.version }}
+        run: |
+          set -euo pipefail
+          node scripts/release/devhud-candidate-artifact.mjs --repository "$GITHUB_REPOSITORY" --workflow release-devhud.yml --version "$RELEASE_VERSION" --revision "$GITHUB_SHA" --current-run-id "$GITHUB_RUN_ID" --current-run-attempt "$GITHUB_RUN_ATTEMPT" --output candidate.json
+          echo "reused=$(jq -er '.reused | select(type == \"boolean\")' candidate.json)" >> "$GITHUB_OUTPUT"
+          echo "artifact_id=$(jq -er '.artifactId | select(type == \"string\")' candidate.json)" >> "$GITHUB_OUTPUT"
+          echo "artifact_name=$(jq -er '.artifactName | select(type == \"string\" and length > 0)' candidate.json)" >> "$GITHUB_OUTPUT"
+          echo "run_id=$(jq -er '.runId | select(test(\"^[1-9][0-9]*$\"))' candidate.json)" >> "$GITHUB_OUTPUT"
+          echo "run_attempt=$(jq -er '.runAttempt | select(test(\"^[1-9][0-9]*$\"))' candidate.json)" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v7
         with:
           name: devhud-release-plan-${{ github.run_id }}
@@ -70,6 +89,7 @@ jobs:
 
   private_candidate:
     name: Build and validate complete private candidate
+    if: ${{ inputs.mode != 'release' || needs.identity.outputs.reuse_candidate != 'true' }}
     needs: identity
     permissions:
       contents: read
@@ -79,10 +99,75 @@ jobs:
       mode: ${{ inputs.mode == 'release' && 'signed-private' || 'plan-only' }}
     secrets: inherit
 
+  candidate:
+    name: Select and revalidate the original private candidate
+    if: >-
+      ${{
+        always() && inputs.mode == 'release' && needs.identity.result == 'success' &&
+        (needs.private_candidate.result == 'success' ||
+         (needs.private_candidate.result == 'skipped' && needs.identity.outputs.reuse_candidate == 'true'))
+      }}
+    needs: [identity, private_candidate]
+    runs-on: ubuntu-22.04
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      artifact_id: ${{ steps.select.outputs.artifact_id }}
+      artifact_name: ${{ steps.select.outputs.artifact_name }}
+      run_id: ${{ steps.select.outputs.run_id }}
+      run_attempt: ${{ steps.select.outputs.run_attempt }}
+    steps:
+      - uses: actions/checkout@v6
+        with: { persist-credentials: false }
+      - name: Select retained or newly built candidate
+        id: select
+        env:
+          REUSE_CANDIDATE: ${{ needs.identity.outputs.reuse_candidate }}
+          RETAINED_ARTIFACT_ID: ${{ needs.identity.outputs.candidate_artifact_id }}
+          RETAINED_ARTIFACT_NAME: ${{ needs.identity.outputs.candidate_artifact_name }}
+          RETAINED_RUN_ID: ${{ needs.identity.outputs.candidate_run_id }}
+          RETAINED_RUN_ATTEMPT: ${{ needs.identity.outputs.candidate_run_attempt }}
+          NEW_ARTIFACT_ID: ${{ needs.private_candidate.outputs.artifact_id }}
+          NEW_ARTIFACT_NAME: ${{ needs.private_candidate.outputs.artifact_name }}
+          NEW_RUN_ID: ${{ needs.private_candidate.outputs.run_id }}
+          NEW_RUN_ATTEMPT: ${{ needs.private_candidate.outputs.run_attempt }}
+        run: |
+          set -euo pipefail
+          if [ "$REUSE_CANDIDATE" = true ]; then
+            artifact_id=$RETAINED_ARTIFACT_ID
+            artifact_name=$RETAINED_ARTIFACT_NAME
+            run_id=$RETAINED_RUN_ID
+            run_attempt=$RETAINED_RUN_ATTEMPT
+          else
+            artifact_id=$NEW_ARTIFACT_ID
+            artifact_name=$NEW_ARTIFACT_NAME
+            run_id=$NEW_RUN_ID
+            run_attempt=$NEW_RUN_ATTEMPT
+          fi
+          [[ "$artifact_id" =~ ^[1-9][0-9]*$ && "$run_id" =~ ^[1-9][0-9]*$ && "$run_attempt" =~ ^[1-9][0-9]*$ && -n "$artifact_name" ]]
+          echo "artifact_id=$artifact_id" >> "$GITHUB_OUTPUT"
+          echo "artifact_name=$artifact_name" >> "$GITHUB_OUTPUT"
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          echo "run_attempt=$run_attempt" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ steps.select.outputs.artifact_id }}
+          github-token: ${{ github.token }}
+          run-id: ${{ steps.select.outputs.run_id }}
+          path: private-artifacts
+      - uses: sigstore/cosign-installer@v4.1.0
+      - name: Revalidate the complete selected candidate
+        env:
+          DEVHUD_PRIVATE_WORKFLOW_REF: ${{ github.repository }}/.github/workflows/package-devhud-private.yml@${{ github.ref }}
+          DEVHUD_PROVENANCE_RUN_ID: ${{ steps.select.outputs.run_id }}
+          DEVHUD_PROVENANCE_RUN_ATTEMPT: ${{ steps.select.outputs.run_attempt }}
+        run: node scripts/release/validate-devhud-private-build.mjs --artifacts-dir private-artifacts
+
   preflight:
     name: Complete private and live fail-closed preflight
     if: ${{ inputs.mode == 'release' }}
-    needs: [identity, private_candidate]
+    needs: [identity, candidate]
     runs-on: ubuntu-22.04
     environment: devhud-publication
     permissions:
@@ -90,7 +175,6 @@ jobs:
       id-token: write
     env:
       DEVHUD_RELEASE_VERSION: ${{ needs.identity.outputs.version }}
-      DEVHUD_PRIVATE_WORKFLOW_REF: ${{ github.repository }}/.github/workflows/package-devhud-private.yml@${{ github.ref }}
       GITHUB_TOKEN: ${{ github.token }}
       DEVHUD_CHROME_EXTENSION_ID: ${{ vars.DEVHUD_CHROME_EXTENSION_ID }}
       DEVHUD_CHROME_EXTENSION_PUBLIC_KEY: ${{ secrets.DEVHUD_CHROME_EXTENSION_PUBLIC_KEY }}
@@ -141,11 +225,6 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with: { fetch-depth: 0, persist-credentials: false }
-      - uses: actions/download-artifact@v8
-        with: { pattern: devhud-v*-private-signed-candidate-*, path: private-artifacts, merge-multiple: true }
-      - uses: sigstore/cosign-installer@v4.1.0
-      - name: Revalidate the complete private candidate
-        run: node scripts/release/validate-devhud-private-build.mjs --artifacts-dir private-artifacts
       - name: Obtain a short-lived release-controller credential
         run: |
           set -euo pipefail
@@ -167,7 +246,7 @@ jobs:
   submit_stores:
     name: Submit held store review (${{ matrix.provider }})
     if: ${{ inputs.mode == 'release' }}
-    needs: [identity, preflight]
+    needs: [identity, candidate, preflight]
     strategy:
       fail-fast: false
       matrix:
@@ -178,6 +257,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     environment: devhud-publication
     permissions:
+      actions: read
       contents: read
     env:
       APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
@@ -197,7 +277,11 @@ jobs:
       - uses: actions/checkout@v6
         with: { persist-credentials: false }
       - uses: actions/download-artifact@v8
-        with: { pattern: devhud-v*-private-signed-candidate-*, path: private-artifacts, merge-multiple: true }
+        with:
+          artifact-ids: ${{ needs.candidate.outputs.artifact_id }}
+          github-token: ${{ github.token }}
+          run-id: ${{ needs.candidate.outputs.run_id }}
+          path: private-artifacts
       - name: Reconcile the exact current store state
         id: store_state
         run: |
@@ -208,7 +292,7 @@ jobs:
           if [ "$RELEASE_RETRY" = true ] && [ "$status" != public ]; then exit 1; fi
           echo "status=$status" >> "$GITHUB_OUTPUT"
       - name: Upload the processed App Store package
-        if: ${{ matrix.provider == 'apple' && needs.identity.outputs.retry != 'true' && steps.store_state.outputs.status != 'approved-held' && steps.store_state.outputs.status != 'public' }}
+        if: ${{ matrix.provider == 'apple' && needs.identity.outputs.retry != 'true' && steps.store_state.outputs.status != 'pending-review' && steps.store_state.outputs.status != 'approved-held' && steps.store_state.outputs.status != 'public' }}
         run: |
           set -euo pipefail
           umask 077
@@ -216,7 +300,7 @@ jobs:
           printf '%s' "$APPLE_API_PRIVATE_KEY_B64" | base64 --decode > "$HOME/.appstoreconnect/private_keys/AuthKey_${APPLE_API_KEY_ID}.p8"
           xcrun iTMSTransporter -m upload -assetFile private-artifacts/devhud-ios-arm64-app-store.ipa -apiKey "$APPLE_API_KEY_ID" -apiIssuer "$APPLE_API_ISSUER"
       - name: Wait for App Store package processing
-        if: ${{ matrix.provider == 'apple' && needs.identity.outputs.retry != 'true' && steps.store_state.outputs.status != 'approved-held' && steps.store_state.outputs.status != 'public' }}
+        if: ${{ matrix.provider == 'apple' && needs.identity.outputs.retry != 'true' && steps.store_state.outputs.status != 'pending-review' && steps.store_state.outputs.status != 'approved-held' && steps.store_state.outputs.status != 'public' }}
         run: |
           set -euo pipefail
           for attempt in $(seq 1 30); do
@@ -226,13 +310,13 @@ jobs:
             sleep 60
           done
       - name: Submit or reconcile the App Store review once
-        if: ${{ matrix.provider == 'apple' && needs.identity.outputs.retry != 'true' && steps.store_state.outputs.status != 'approved-held' && steps.store_state.outputs.status != 'public' }}
+        if: ${{ matrix.provider == 'apple' && needs.identity.outputs.retry != 'true' && steps.store_state.outputs.status != 'pending-review' && steps.store_state.outputs.status != 'approved-held' && steps.store_state.outputs.status != 'public' }}
         run: node scripts/release/devhud-store-release.mjs submit apple --output store-submission.json
       - name: Submit full Google Play production release for managed review
-        if: ${{ matrix.provider == 'google-play' && needs.identity.outputs.retry != 'true' && steps.store_state.outputs.status != 'approved-held' && steps.store_state.outputs.status != 'public' }}
+        if: ${{ matrix.provider == 'google-play' && needs.identity.outputs.retry != 'true' && steps.store_state.outputs.status != 'pending-review' && steps.store_state.outputs.status != 'approved-held' && steps.store_state.outputs.status != 'public' }}
         run: node scripts/release/devhud-store-release.mjs submit google-play --artifact private-artifacts/devhud-android-arm64-armv7-google-play.aab --output store-submission.json
       - name: Submit Chrome package for deferred review at 100 percent
-        if: ${{ matrix.provider == 'chrome-web-store' && needs.identity.outputs.retry != 'true' && steps.store_state.outputs.status != 'approved-held' && steps.store_state.outputs.status != 'public' }}
+        if: ${{ matrix.provider == 'chrome-web-store' && needs.identity.outputs.retry != 'true' && steps.store_state.outputs.status != 'pending-review' && steps.store_state.outputs.status != 'approved-held' && steps.store_state.outputs.status != 'public' }}
         run: node scripts/release/devhud-store-release.mjs submit chrome-web-store --artifact private-artifacts/devhud-chrome-web-store.zip --output store-submission.json
       - uses: actions/upload-artifact@v7
         with: { name: "devhud-store-submission-${{ matrix.provider }}", path: store-submission.json, if-no-files-found: error }
@@ -298,10 +382,11 @@ jobs:
   registry:
     name: Publish immutable signed OCI inputs
     if: ${{ inputs.mode == 'release' }}
-    needs: [identity, review_gate, docs_candidate]
+    needs: [identity, candidate, review_gate, docs_candidate]
     runs-on: ubuntu-22.04
     environment: devhud-publication
     permissions:
+      actions: read
       contents: read
       id-token: write
     outputs:
@@ -318,7 +403,11 @@ jobs:
       - uses: actions/checkout@v6
         with: { persist-credentials: false }
       - uses: actions/download-artifact@v8
-        with: { pattern: devhud-v*-private-signed-candidate-*, path: private-artifacts, merge-multiple: true }
+        with:
+          artifact-ids: ${{ needs.candidate.outputs.artifact_id }}
+          github-token: ${{ github.token }}
+          run-id: ${{ needs.candidate.outputs.run_id }}
+          path: private-artifacts
       - uses: sigstore/cosign-installer@v4.1.0
       - name: Install OCI transport
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends skopeo
@@ -346,10 +435,11 @@ jobs:
   prepare_infrastructure:
     name: Prepare and promote provider-neutral API deployment
     if: ${{ inputs.mode == 'release' }}
-    needs: [identity, registry]
+    needs: [identity, candidate, registry]
     runs-on: ubuntu-22.04
     environment: devhud-publication
     permissions:
+      actions: read
       contents: read
       id-token: write
     outputs:
@@ -363,7 +453,11 @@ jobs:
       - uses: actions/checkout@v6
         with: { persist-credentials: false }
       - uses: actions/download-artifact@v8
-        with: { pattern: devhud-v*-private-signed-candidate-*, path: private-artifacts, merge-multiple: true }
+        with:
+          artifact-ids: ${{ needs.candidate.outputs.artifact_id }}
+          github-token: ${{ github.token }}
+          run-id: ${{ needs.candidate.outputs.run_id }}
+          path: private-artifacts
       - name: Obtain a short-lived release-controller credential
         run: |
           set -euo pipefail
@@ -456,10 +550,11 @@ jobs:
   github_release:
     name: Publish regular GitHub Release
     if: ${{ inputs.mode == 'release' }}
-    needs: [identity, stores_public]
+    needs: [identity, candidate, stores_public]
     runs-on: ubuntu-22.04
     environment: devhud-publication
     permissions:
+      actions: read
       contents: write
     env:
       GH_TOKEN: ${{ github.token }}
@@ -469,7 +564,11 @@ jobs:
       - uses: actions/checkout@v6
         with: { fetch-depth: 0, persist-credentials: false }
       - uses: actions/download-artifact@v8
-        with: { pattern: devhud-v*-private-signed-candidate-*, path: private-artifacts, merge-multiple: true }
+        with:
+          artifact-ids: ${{ needs.candidate.outputs.artifact_id }}
+          github-token: ${{ github.token }}
+          run-id: ${{ needs.candidate.outputs.run_id }}
+          path: private-artifacts
       - name: Build channel-safe public evidence payload
         run: |
           set -euo pipefail
@@ -492,10 +591,11 @@ jobs:
   updater_public:
     name: Expose and verify every desktop updater target
     if: ${{ inputs.mode == 'release' }}
-    needs: [identity, registry, github_release]
+    needs: [identity, candidate, registry, github_release]
     runs-on: ubuntu-22.04
     environment: devhud-publication
     permissions:
+      actions: read
       contents: read
       id-token: write
     env:
@@ -506,7 +606,11 @@ jobs:
       - uses: actions/checkout@v6
         with: { persist-credentials: false }
       - uses: actions/download-artifact@v8
-        with: { pattern: devhud-v*-private-signed-candidate-*, path: private-artifacts, merge-multiple: true }
+        with:
+          artifact-ids: ${{ needs.candidate.outputs.artifact_id }}
+          github-token: ${{ github.token }}
+          run-id: ${{ needs.candidate.outputs.run_id }}
+          path: private-artifacts
       - name: Obtain a short-lived release-controller credential
         run: |
           set -euo pipefail
@@ -580,6 +684,7 @@ jobs:
       DEVHUD_PUBLIC_DOCS_URL: ${{ vars.DEVHUD_PUBLIC_DOCS_URL }}
       DEVHUD_RELEASE_CONTROLLER_URL: ${{ vars.DEVHUD_RELEASE_CONTROLLER_URL }}
       DEVHUD_RELEASE_CONTROLLER_AUDIENCE: ${{ vars.DEVHUD_RELEASE_CONTROLLER_AUDIENCE }}
+      DEVHUD_PRIVATE_WORKFLOW_REF: ${{ github.repository }}/.github/workflows/package-devhud-private.yml@${{ github.ref }}
       DEVHUD_OCI_REGISTRY: ${{ vars.DEVHUD_OCI_REGISTRY }}
       DEVHUD_OCI_REGISTRY_USERNAME: ${{ secrets.DEVHUD_OCI_REGISTRY_USERNAME }}
       DEVHUD_OCI_REGISTRY_TOKEN: ${{ secrets.DEVHUD_OCI_REGISTRY_TOKEN }}
@@ -590,13 +695,48 @@ jobs:
       - uses: sigstore/cosign-installer@v4.1.0
       - name: Install OCI transport
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends skopeo
+      - name: Download and verify the exact public GitHub Release assets
+        env:
+          RELEASE_TAG: ${{ needs.identity.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.identity.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p public-assets
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets,isDraft,isPrerelease,tagName > public-release.json
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir public-assets
+          evidence="public-assets/devhud-v${RELEASE_VERSION}-release-evidence.tar.gz"
+          if tar -tzf "$evidence" | grep -Eq '(^/|(^|/)\.\.(/|$))'; then
+            echo "unsafe release evidence archive path" >&2
+            exit 1
+          fi
+          if tar -tvzf "$evidence" | awk 'substr($1, 1, 1) != "-" && substr($1, 1, 1) != "d" { unsafe=1 } END { exit unsafe ? 0 : 1 }'; then
+            echo "unsafe release evidence archive entry type" >&2
+            exit 1
+          fi
+          tar -xzf "$evidence" -C public-assets --no-same-owner --no-same-permissions
+          while IFS='|' read -r platform architecture package; do
+            destination="public-assets/updater/manifests/stable/$platform/$architecture/$package.json"
+            mkdir -p "$(dirname "$destination")"
+            curl --fail --silent --show-error -H "X-DevHud-Package: $package" "$DEVHUD_PUBLIC_API_URL/updates/stable/$platform/$architecture.json" -o "$destination"
+          done <<'TARGETS'
+          darwin|x86_64|macos-app
+          darwin|aarch64|macos-app
+          windows|x86_64|windows-msi
+          windows|x86_64|windows-nsis
+          windows|aarch64|windows-msi
+          windows|aarch64|windows-nsis
+          linux|x86_64|linux-appimage
+          linux|x86_64|linux-deb
+          linux|aarch64|linux-appimage
+          linux|aarch64|linux-deb
+          TARGETS
+          node scripts/release/validate-devhud-public-assets.mjs --assets-dir public-assets --release-json public-release.json
       - name: Reverify public API, docs, release, and immutable images
         run: |
           set -euo pipefail
           curl --fail --silent --show-error "$DEVHUD_PUBLIC_API_URL/readyz" | jq -e '.status == "ready"'
           docs_url=$(node -e 'process.stdout.write(new URL("/devhud", process.env.DEVHUD_PUBLIC_DOCS_URL).href)')
           curl --fail --silent --show-error "$docs_url" | grep -F "<meta name=\"devhud-release-identity\" content=\"$DEVHUD_DOCS_RELEASE_IDENTITY\">"
-          gh release view "${{ needs.identity.outputs.tag }}" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease --jq '(.isDraft == false) and (.isPrerelease == false)' | grep -qx true
           skopeo login --username "$DEVHUD_OCI_REGISTRY_USERNAME" --password-stdin "$DEVHUD_OCI_REGISTRY" <<<"$DEVHUD_OCI_REGISTRY_TOKEN"
           cosign login --username "$DEVHUD_OCI_REGISTRY_USERNAME" --password-stdin "$DEVHUD_OCI_REGISTRY" <<<"$DEVHUD_OCI_REGISTRY_TOKEN"
           for image in "${{ needs.registry.outputs.api_image }}" "${{ needs.registry.outputs.sweeper_image }}"; do

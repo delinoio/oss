@@ -12,6 +12,18 @@ on:
       version:
         description: Validated DevHud release version
         value: ${{ jobs.plan.outputs.version }}
+      artifact_id:
+        description: Immutable complete private candidate artifact ID
+        value: ${{ jobs.assemble.outputs.artifact_id }}
+      artifact_name:
+        description: Revision-bound complete private candidate artifact name
+        value: ${{ jobs.assemble.outputs.artifact_name }}
+      run_id:
+        description: Candidate provenance workflow run ID
+        value: ${{ jobs.assemble.outputs.run_id }}
+      run_attempt:
+        description: Candidate provenance workflow run attempt
+        value: ${{ jobs.assemble.outputs.run_attempt }}
   workflow_dispatch:
     inputs:
       mode:
@@ -537,6 +549,11 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    outputs:
+      artifact_id: ${{ steps.candidate.outputs.artifact-id }}
+      artifact_name: devhud-v${{ needs.plan.outputs.version }}-private-signed-candidate-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+      run_id: ${{ github.run_id }}
+      run_attempt: ${{ github.run_attempt }}
     env:
       DEVHUD_UPDATER_SIGNING_KEY_B64: ${{ secrets.DEVHUD_UPDATER_SIGNING_KEY_B64 }}
       DEVHUD_MACOS_DEVELOPER_ID_P12_B64: ${{ secrets.DEVHUD_MACOS_DEVELOPER_ID_P12_B64 }}
@@ -577,8 +594,9 @@ jobs:
       - name: Validate complete private candidate and absence of secrets
         run: node scripts/release/validate-devhud-private-build.mjs --artifacts-dir private-artifacts
       - uses: actions/upload-artifact@v7
+        id: candidate
         with:
-          name: devhud-v${{ needs.plan.outputs.version }}-private-signed-candidate-${{ github.run_id }}
+          name: devhud-v${{ needs.plan.outputs.version }}-private-signed-candidate-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: private-artifacts
           if-no-files-found: error
           retention-days: 35

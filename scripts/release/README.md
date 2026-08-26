@@ -6,6 +6,8 @@
 - `generate-devhud-supply-chain.mjs`: validates the component-bearing SPDX 2.3 SBOM produced from each artifact's unpacked/package-aware build layout and creates its digest-bound SLSA v1 provenance statement.
 - `devhud-evidence.mjs` and `validate-devhud-private-build.mjs`: record platform checks, merge only the complete target set, and validate the private signed candidate without treating it as public-ready.
 - `devhud-public-release.mjs`: validates the exact `main` version/tag identity, stable configuration-name set, closed channel state machine, rollback boundary, secret-redacted dry/public plan, and exposes the rollback policy through its direct CLI.
+- `devhud-candidate-artifact.mjs`: discovers the oldest retained complete candidate for an exact version and source revision so recovery dispatches preserve its signed bytes and provenance run.
+- `validate-devhud-public-assets.mjs`: validates the exact downloaded GitHub Release inventory, signed checksums and bundles, release index, and remotely served updater manifests against the public package bytes.
 - `devhud-live-preflight.mjs`: authenticates every documented GitHub, store, registry, Logto, generated asset route, docs, PostgreSQL, R2, and exact-identity provider-neutral deployment boundary without publishing.
 - `devhud-store-release.mjs`: polls App Store build processing read-only, idempotently reconciles store submissions and publication, classifies pending/approved/public/withdrawn status, and discovers, cancels, or verifies the exact release before an automatic infrastructure rollback.
 - `devhud-release-controller.mjs`: sends identity-bound, OIDC-authenticated prepare/promote/status/rollback requests to the operator-selected deployment controller.

@@ -82,9 +82,11 @@ export function validateProvenance(statement, artifact, digest, environment = pr
     throw new Error(`provenance subject mismatch: ${artifact}`);
   }
   const metadata = validateProvenanceMetadata(statement.predicate?.runDetails?.metadata ?? {});
-  const { GITHUB_REPOSITORY: repository, GITHUB_RUN_ID: runId, GITHUB_RUN_ATTEMPT: runAttempt } = environment;
+  const repository = environment.GITHUB_REPOSITORY;
+  const runId = environment.DEVHUD_PROVENANCE_RUN_ID ?? environment.GITHUB_RUN_ID;
+  const runAttempt = environment.DEVHUD_PROVENANCE_RUN_ATTEMPT ?? environment.GITHUB_RUN_ATTEMPT;
   if (repository !== "delinoio/oss" || !/^[1-9]\d*$/u.test(runId ?? "") || !/^[1-9]\d*$/u.test(runAttempt ?? "")) {
-    throw new Error("provenance validation requires the current delinoio/oss GitHub run attempt");
+    throw new Error("provenance validation requires the selected delinoio/oss GitHub run attempt");
   }
   const expectedInvocationId = `https://github.com/${repository}/actions/runs/${runId}/attempts/${runAttempt}`;
   if (metadata.invocationId !== expectedInvocationId) throw new Error(`provenance invocation mismatch: ${artifact}`);
