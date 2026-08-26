@@ -47,6 +47,8 @@ test("release dispatch is project-serialized and shell inputs cross only through
 test("historical recovery binds every job to one retained ancestor revision", () => {
   const identity = job("identity");
   assert.match(identity, /revision: \$\{\{ steps\.source\.outputs\.revision \}\}/u);
+  assert.match(identity, /authorization_revision: \$\{\{ steps\.source\.outputs\.authorization_revision \}\}/u);
+  assert.match(identity, /authorization_revision=\$GITHUB_SHA/u);
   assert.match(identity, /--revision "\$DEVHUD_RELEASE_REVISION"/u);
   assert.match(identity, /historical release recovery requires the retained original candidate/u);
   assert.match(job("private_candidate"), /revision: \$\{\{ needs\.identity\.outputs\.revision \}\}/u);
@@ -55,6 +57,15 @@ test("historical recovery binds every job to one retained ancestor revision", ()
   }
   assert.doesNotMatch(release.slice(release.indexOf("\n  candidate:")), /\$GITHUB_SHA/u);
   assert.doesNotMatch(release, /DEVHUD_DOCS_RELEASE_IDENTITY:.*github\.sha/u);
+});
+
+test("controller requests bind the selected release revision to the workflow OIDC revision", () => {
+  for (const name of ["preflight", "prepare_infrastructure", "updater_public", "verify_all", "ga", "rollback_pre_store"]) {
+    assert.match(job(name), /DEVHUD_RELEASE_AUTHORIZATION_REVISION: \$\{\{ needs\.identity\.outputs\.authorization_revision \}\}/u, `${name} must retain the workflow authorization revision`);
+  }
+  const controllerCalls = release.split("\n").filter((line) => line.includes("devhud-release-controller.mjs"));
+  assert.ok(controllerCalls.length > 0);
+  for (const line of controllerCalls) assert.match(line, /--authorization-revision "\$DEVHUD_RELEASE_AUTHORIZATION_REVISION"/u);
 });
 
 test("recovery retains and validates the original destination identity before external access", () => {
@@ -185,17 +196,26 @@ test("same-commit retries reconcile public stores without repeating store mutati
   assert.match(job("stores_public"), /needs\.identity\.outputs\.retry == 'true'.*devhud-publication.*devhud-store-publication/u);
 });
 
-test("same-commit retries publish recovered GitHub drafts after replacing assets", () => {
+test("same-commit retries reconcile drafts and validate published GitHub assets without mutation", () => {
   const publication = job("github_release");
   const existingRelease = publication.indexOf('if gh release view "$RELEASE_TAG"');
+  const inspectRelease = publication.indexOf('--json assets,isDraft,isPrerelease,tagName');
+  const draft = publication.indexOf("if jq -e '.isDraft == true'");
   const deleteUnexpected = publication.indexOf('gh release delete-asset "$RELEASE_TAG" --yes');
   const upload = publication.indexOf('gh release upload "$RELEASE_TAG"');
   const publish = publication.indexOf('gh release edit "$RELEASE_TAG" --draft=false --latest=false');
+  const published = publication.indexOf("\n            else", draft);
+  const download = publication.indexOf('gh release download "$RELEASE_TAG"', published);
+  const validate = publication.indexOf("validate-devhud-public-assets.mjs", download);
   const freshRelease = publication.indexOf("\n          else", existingRelease);
   const visibility = publication.indexOf("--json isDraft,isPrerelease");
-  assert.ok(existingRelease > 0 && deleteUnexpected > existingRelease, "the retry path must delete unexpected assets on the exact existing release");
+  assert.ok(existingRelease > 0 && inspectRelease > existingRelease && draft > inspectRelease, "an existing release must be inspected before retry handling");
+  assert.ok(deleteUnexpected > draft && deleteUnexpected < published, "only a draft retry may delete unexpected assets");
   assert.ok(upload > deleteUnexpected, "the retry path must replace expected assets after deleting unexpected assets");
-  assert.ok(publish > upload && publish < freshRelease, "the retry path must publish only after asset replacement succeeds");
+  assert.ok(publish > upload && publish < published, "the draft retry must publish only after asset replacement succeeds");
+  assert.ok(download > published && validate > download && validate < freshRelease, "a published retry must download and validate immutable assets");
+  assert.doesNotMatch(publication.slice(published, freshRelease), /release (?:delete-asset|upload|edit)/u);
+  assert.match(publication.slice(published, freshRelease), /sigstore|validate-devhud-public-assets/u);
   assert.ok(visibility > freshRelease && visibility > publish, "visibility must be asserted after either release path publishes");
 });
 
@@ -374,8 +394,10 @@ test("dry-run cannot enter publication and rollback stops at store publication",
   assert.match(job("rollback_pre_store"), /always\(\)/u);
   for (const failed of ["submit_stores", "review_gate", "docs_candidate", "registry", "prepare_infrastructure"]) {
     assert.match(job("rollback_pre_store"), new RegExp(`needs\\.${failed}\\.result == 'failure'`, "u"));
+    assert.match(job("rollback_pre_store"), new RegExp(`needs\\.${failed}\\.result == 'cancelled'`, "u"));
   }
   assert.match(job("rollback_pre_store"), /needs\.stores_public\.result == 'failure'/u);
+  assert.match(job("rollback_pre_store"), /needs\.stores_public\.result == 'cancelled'/u);
   assert.match(job("rollback_pre_store"), /needs\.stores_public\.result == 'skipped'/u);
   assert.match(job("rollback_pre_store"), /needs: \[[^\n]*stores_public/u);
   assert.match(job("rollback_pre_store"), /needs\.identity\.outputs\.retry != 'true'/u);

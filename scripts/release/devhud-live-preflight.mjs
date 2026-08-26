@@ -58,9 +58,16 @@ function releaseRevision(environment) {
   return revision;
 }
 
+function authorizationRevision(environment) {
+  const revision = environment.DEVHUD_RELEASE_AUTHORIZATION_REVISION ?? environment.GITHUB_SHA;
+  if (typeof revision !== "string" || !/^[a-f0-9]{40}$/u.test(revision)) throw new Error("DevHud workflow authorization revision must be an exact lowercase 40-hex commit");
+  return revision;
+}
+
 export function validateLivePreflightConfiguration(environment = process.env) {
   validateReleaseConfiguration(environment);
   const revision = releaseRevision(environment);
+  const authorization = authorizationRevision(environment);
   // Google Play exposes production publication as CAN_MANAGE_PUBLIC_APKS but
   // provides no read-only capability probe. Bind the protected prerequisite to
   // the credential principal before contacting any external release boundary.
@@ -71,11 +78,11 @@ export function validateLivePreflightConfiguration(environment = process.env) {
   if (environment.DEVHUD_OCI_REGISTRY_USERNAME !== environment.DEVHUD_OCI_PRODUCTION_PUSH_PRINCIPAL) {
     throw new Error("OCI registry credential does not match the protected production push authority prerequisite");
   }
-  return { revision, serviceAccount };
+  return { revision, authorizationRevision: authorization, serviceAccount };
 }
 
 export async function runLivePreflight(environment = process.env, fetchImpl = fetch) {
-  const { revision, serviceAccount } = validateLivePreflightConfiguration(environment);
+  const { revision, authorizationRevision: authorization, serviceAccount } = validateLivePreflightConfiguration(environment);
   const checks = Object.fromEntries(livePreflightChecks.map((name) => [name, false]));
 
   await checkedFetch(fetchImpl, `https://api.github.com/repos/${environment.GITHUB_REPOSITORY}`, { headers: { ...bearer(environment.GITHUB_TOKEN), accept: "application/vnd.github+json" } }, "github");
@@ -139,11 +146,13 @@ export async function runLivePreflight(environment = process.env, fetchImpl = fe
       version: environment.DEVHUD_RELEASE_VERSION,
       tag: `devhud@v${environment.DEVHUD_RELEASE_VERSION}`,
       revision,
+      authorizationRevision: authorization,
     }),
   }, "release-controller");
   const controller = validateControllerResponse(await controllerResponse.json(), {
     version: environment.DEVHUD_RELEASE_VERSION,
     revision,
+    "authorization-revision": authorization,
   }, "preflight");
   for (const name of ["postgresql", "r2", "release-controller"]) {
     if (controller.checks?.[name] !== true) throw new Error(`release controller did not confirm ${name}`);

@@ -11,6 +11,11 @@ const commands = new Set(["prepare", "promote-api", "promote-updater", "status",
 
 function sha256(bytes) { return createHash("sha256").update(bytes).digest("hex"); }
 
+function exactRevision(value, name) {
+  if (typeof value !== "string" || !/^[a-f0-9]{40}$/u.test(value)) throw new Error(`${name} must be an exact lowercase 40-hex commit`);
+  return value;
+}
+
 export function controllerRequest(command, options, environment = process.env) {
   if (!commands.has(command)) throw new Error(`unsupported release-controller command: ${command}`);
   const identity = {
@@ -18,7 +23,8 @@ export function controllerRequest(command, options, environment = process.env) {
     project: "devhud",
     version: options.version,
     tag: `devhud@v${options.version}`,
-    revision: options.revision,
+    revision: exactRevision(options.revision, "release revision"),
+    authorizationRevision: exactRevision(options["authorization-revision"], "workflow authorization revision"),
   };
   if (command === "prepare") {
     const updater = readFileSync(resolve(options.updater));
@@ -34,11 +40,14 @@ export function controllerRequest(command, options, environment = process.env) {
     };
   }
   const suffix = command === "status" ? "status" : command;
-  return { path: `v1/devhud/releases/${encodeURIComponent(identity.tag)}/${suffix}`, method: command === "status" ? "GET" : "POST", body: command === "status" ? undefined : identity };
+  if (command === "status") {
+    return { path: `v1/devhud/releases/${encodeURIComponent(identity.tag)}/${suffix}?${new URLSearchParams(identity)}`, method: "GET", body: undefined };
+  }
+  return { path: `v1/devhud/releases/${encodeURIComponent(identity.tag)}/${suffix}`, method: "POST", body: identity };
 }
 
 export function validateControllerResponse(result, options, command = "request") {
-  if (result.project !== "devhud" || result.version !== options.version || result.revision !== options.revision || result.ok !== true) {
+  if (result.project !== "devhud" || result.version !== options.version || result.revision !== options.revision || result.authorizationRevision !== options["authorization-revision"] || result.ok !== true) {
     throw new Error(`release controller ${command} returned mismatched release state`);
   }
   return result;
@@ -66,7 +75,7 @@ function parse(arguments_) {
     if (!name?.startsWith("--") || !value || value.startsWith("--")) throw new Error(`invalid argument: ${name ?? "missing"}`);
     options[name.slice(2)] = value;
   }
-  for (const name of ["version", "revision"]) if (!options[name]) throw new Error(`--${name} is required`);
+  for (const name of ["version", "revision", "authorization-revision"]) if (!options[name]) throw new Error(`--${name} is required`);
   return { command, options };
 }
 

@@ -21,7 +21,8 @@ function environment() {
     DEVHUD_OCI_REGISTRY: "registry.example.test", DEVHUD_OCI_API_REPOSITORY: "devhud/api", DEVHUD_OCI_SWEEPER_REPOSITORY: "devhud/sweeper",
     DEVHUD_OCI_PRODUCTION_PUSH_PRINCIPAL: "fixture-DEVHUD_OCI_REGISTRY_USERNAME",
     DEVHUD_LOGTO_ISSUER: "https://auth.example.test/oidc", DEVHUD_CHROME_EXTENSION_ID: "a".repeat(32),
-    DEVHUD_RELEASE_VERSION: "0.1.0", GITHUB_REPOSITORY: "delinoio/oss", GITHUB_SHA: "a".repeat(40), GITHUB_TOKEN: "github-token",
+    DEVHUD_RELEASE_VERSION: "0.1.0", DEVHUD_RELEASE_AUTHORIZATION_REVISION: "a".repeat(40),
+    GITHUB_REPOSITORY: "delinoio/oss", GITHUB_SHA: "a".repeat(40), GITHUB_TOKEN: "github-token",
   });
   return result;
 }
@@ -42,6 +43,7 @@ function successfulFetch(environment_) {
       project: "devhud",
       version: environment_.DEVHUD_RELEASE_VERSION,
       revision: environment_.DEVHUD_RELEASE_REVISION ?? environment_.GITHUB_SHA,
+      authorizationRevision: environment_.DEVHUD_RELEASE_AUTHORIZATION_REVISION ?? environment_.GITHUB_SHA,
       checks: { postgresql: true, r2: true, "release-controller": true },
     });
     return jsonResponse({ ok: true });
@@ -71,6 +73,7 @@ test("live preflight composes every independent read-only check", async () => {
     version: env.DEVHUD_RELEASE_VERSION,
     tag: `devhud@v${env.DEVHUD_RELEASE_VERSION}`,
     revision: env.GITHUB_SHA,
+    authorizationRevision: env.DEVHUD_RELEASE_AUTHORIZATION_REVISION,
   });
 });
 
@@ -84,6 +87,14 @@ test("live preflight binds controller identity to the selected historical revisi
   };
   await runLivePreflight(env, fetchImpl);
   assert.equal(controllerRequest.revision, env.DEVHUD_RELEASE_REVISION);
+  assert.equal(controllerRequest.authorizationRevision, env.DEVHUD_RELEASE_AUTHORIZATION_REVISION);
+});
+
+test("live preflight rejects a malformed workflow authorization revision before network access", async () => {
+  const env = { ...environment(), DEVHUD_RELEASE_AUTHORIZATION_REVISION: "bad" };
+  let requests = 0;
+  await assert.rejects(runLivePreflight(env, async () => { requests += 1; return jsonResponse({ ok: true }); }), /workflow authorization revision/u);
+  assert.equal(requests, 0);
 });
 
 test("live preflight rejects App Store credentials without submission authority", async () => {
@@ -113,7 +124,7 @@ test("live preflight fails closed when the controller omits PostgreSQL", async (
   const env = environment();
   const successful = successfulFetch(env);
   const fetchImpl = async (input, options) => String(input).includes("controller.example.test")
-    ? jsonResponse({ ok: true, project: "devhud", version: env.DEVHUD_RELEASE_VERSION, revision: env.GITHUB_SHA, checks: { postgresql: false, r2: true, "release-controller": true } })
+    ? jsonResponse({ ok: true, project: "devhud", version: env.DEVHUD_RELEASE_VERSION, revision: env.GITHUB_SHA, authorizationRevision: env.DEVHUD_RELEASE_AUTHORIZATION_REVISION, checks: { postgresql: false, r2: true, "release-controller": true } })
     : successful(input, options);
   await assert.rejects(runLivePreflight(env, fetchImpl), /postgresql/u);
 });
@@ -121,8 +132,8 @@ test("live preflight fails closed when the controller omits PostgreSQL", async (
 test("live preflight rejects every mismatched controller identity field", async () => {
   const env = environment();
   const successful = successfulFetch(env);
-  const valid = { ok: true, project: "devhud", version: env.DEVHUD_RELEASE_VERSION, revision: env.GITHUB_SHA, checks: { postgresql: true, r2: true, "release-controller": true } };
-  for (const mismatch of [{ ok: false }, { project: "other" }, { version: "9.9.9" }, { revision: "b".repeat(40) }]) {
+  const valid = { ok: true, project: "devhud", version: env.DEVHUD_RELEASE_VERSION, revision: env.GITHUB_SHA, authorizationRevision: env.DEVHUD_RELEASE_AUTHORIZATION_REVISION, checks: { postgresql: true, r2: true, "release-controller": true } };
+  for (const mismatch of [{ ok: false }, { project: "other" }, { version: "9.9.9" }, { revision: "b".repeat(40) }, { authorizationRevision: "b".repeat(40) }]) {
     const fetchImpl = async (input, options) => String(input).includes("controller.example.test")
       ? jsonResponse({ ...valid, ...mismatch })
       : successful(input, options);
