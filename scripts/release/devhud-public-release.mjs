@@ -148,7 +148,7 @@ export function validateReleaseConfiguration(environment = process.env) {
   if (missing.length > 0) throw new Error(`DevHud release configuration is missing: ${missing.join(", ")}`);
   if (environment.DEVHUD_GOOGLE_PLAY_PACKAGE_NAME !== "io.delino.devhud") throw new Error("Google Play package must be io.delino.devhud");
   if (environment.DEVHUD_GOOGLE_PLAY_MANAGED_PUBLISHING !== "enabled") throw new Error("Google Play managed publishing must be explicitly enabled");
-  for (const name of ["DEVHUD_RELEASE_CONTROLLER_URL", "DEVHUD_PUBLIC_DOCS_URL"]) {
+  for (const name of ["DEVHUD_RELEASE_CONTROLLER_URL", "DEVHUD_PUBLIC_API_URL", "DEVHUD_PUBLIC_DOCS_URL"]) {
     let parsed;
     try { parsed = new URL(environment[name]); } catch { throw new Error(`${name} must be an absolute HTTPS URL`); }
     if (parsed.protocol !== "https:" || parsed.username || parsed.password || parsed.search || parsed.hash) throw new Error(`${name} must be a credential-free HTTPS URL`);

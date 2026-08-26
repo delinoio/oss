@@ -80,6 +80,8 @@ test("protected review gates preserve pending review and recover partial publica
 });
 
 test("same-commit retries reconcile public stores without repeating store mutations", () => {
+  assert.match(job("identity"), /devhud-release-plan-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}/u);
+  assert.match(privateCandidate, /release-plan-devhud-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}/u);
   assert.match(job("identity"), /retry: \$\{\{ steps\.identity\.outputs\.retry \}\}/u);
   assert.match(job("submit_stores"), /Reconcile the exact current store state/u);
   assert.match(job("submit_stores"), /needs\.identity\.outputs\.retry != 'true'/u);
@@ -133,10 +135,20 @@ test("documentation deployment is bound to the exact candidate before publicatio
   assert.match(job("docs_candidate"), /doc_build\/devhud\.html/u);
   assert.match(job("docs_candidate"), /devhud-release-identity/u);
   assert.match(job("docs_candidate"), /needs\.identity\.outputs\.version/u);
+  assert.match(job("docs_candidate"), /name: devhud-public-docs-candidate-\$\{\{ github\.run_attempt \}\}/u);
+  assert.match(job("public_docs"), /name: devhud-public-docs-candidate-\$\{\{ github\.run_attempt \}\}/u);
   for (const name of ["public_docs", "verify_all"]) {
     assert.match(job(name), /new URL\("\/devhud", process\.env\.DEVHUD_PUBLIC_DOCS_URL\)/u);
     assert.match(job(name), /devhud-release-identity/u);
   }
+});
+
+test("infrastructure verification sends a conforming unary Connect request", () => {
+  const infrastructure = job("prepare_infrastructure");
+  const bootstrap = infrastructure.split("\n").find((line) => line.includes("bootstrap=$(curl"));
+  assert.ok(bootstrap, "missing Bootstrap verification request");
+  assert.match(bootstrap, /-H 'Connect-Protocol-Version: 1'/u);
+  assert.match(bootstrap, /BootstrapService\/GetBootstrap/u);
 });
 
 test("independent verification fetches and verifies both remote OCI digests", () => {

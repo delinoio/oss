@@ -83,7 +83,7 @@ jobs:
           echo "run_attempt=$(jq -er '.runAttempt | select(test(\"^[1-9][0-9]*$\"))' candidate.json)" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v7
         with:
-          name: devhud-release-plan-${{ github.run_id }}
+          name: devhud-release-plan-${{ github.run_id }}-${{ github.run_attempt }}
           path: devhud-release-plan.json
           if-no-files-found: error
 
@@ -377,7 +377,7 @@ jobs:
           DEVHUD_DOCS_RELEASE_IDENTITY: devhud@v${{ needs.identity.outputs.version }}@${{ github.sha }}
         run: node -e 'const fs=require("node:fs");const path="apps/public-docs/doc_build/devhud.html";const html=fs.readFileSync(path,"utf8");const marker=`<meta name="devhud-release-identity" content="${process.env.DEVHUD_DOCS_RELEASE_IDENTITY}">`;if(!html.includes("</head>")||html.includes("devhud-release-identity"))process.exit(1);fs.writeFileSync(path,html.replace("</head>",`${marker}</head>`))'
       - uses: actions/upload-artifact@v7
-        with: { name: devhud-public-docs-candidate, path: apps/public-docs/doc_build, if-no-files-found: error }
+        with: { name: devhud-public-docs-candidate-${{ github.run_attempt }}, path: apps/public-docs/doc_build, if-no-files-found: error }
 
   registry:
     name: Publish immutable signed OCI inputs
@@ -482,7 +482,7 @@ jobs:
           curl --fail --silent --show-error "$DEVHUD_PUBLIC_API_URL/healthz" | jq -e '.status == "alive"'
           curl --fail --silent --show-error "$DEVHUD_PUBLIC_API_URL/readyz" | jq -e '.status == "ready"'
           curl --fail --silent --show-error "$DEVHUD_PUBLIC_API_URL/admin/" >/dev/null
-          bootstrap=$(curl --fail --silent --show-error -X POST -H 'content-type: application/json' --data '{}' "$DEVHUD_PUBLIC_API_URL/devhud.v1.BootstrapService/GetBootstrap")
+          bootstrap=$(curl --fail --silent --show-error -X POST -H 'content-type: application/json' -H 'Connect-Protocol-Version: 1' --data '{}' "$DEVHUD_PUBLIC_API_URL/devhud.v1.BootstrapService/GetBootstrap")
           jq -e --arg version "${{ needs.identity.outputs.version }}" '.apiVersion == $version and .projectId == "PROJECT_ID_DEVHUD"' <<<"$bootstrap"
 
   publish_stores:
@@ -661,7 +661,7 @@ jobs:
       - uses: actions/setup-node@v6
         with: { node-version-file: .nvmrc }
       - uses: actions/download-artifact@v8
-        with: { name: devhud-public-docs-candidate, path: apps/public-docs/doc_build }
+        with: { name: devhud-public-docs-candidate-${{ github.run_attempt }}, path: apps/public-docs/doc_build }
       - run: pnpm dlx wrangler@4.33.1 pages deploy apps/public-docs/doc_build --project-name "$DEVHUD_PUBLIC_DOCS_PROJECT_NAME" --branch main
       - name: Verify the exact deployed DevHud candidate
         run: |

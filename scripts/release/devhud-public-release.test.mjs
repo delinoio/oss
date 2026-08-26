@@ -20,6 +20,7 @@ function completeEnvironment() {
   environment.DEVHUD_GOOGLE_PLAY_PACKAGE_NAME = "io.delino.devhud";
   environment.DEVHUD_GOOGLE_PLAY_MANAGED_PUBLISHING = "enabled";
   environment.DEVHUD_RELEASE_CONTROLLER_URL = "https://release-controller.example.test/v1";
+  environment.DEVHUD_PUBLIC_API_URL = "https://api.example.test";
   environment.DEVHUD_PUBLIC_DOCS_URL = "https://docs.example.test/devhud";
   environment.DEVHUD_OCI_API_REPOSITORY = "devhud/api";
   environment.DEVHUD_OCI_SWEEPER_REPOSITORY = "devhud/sweeper";
@@ -41,6 +42,9 @@ test("missing release credentials fail closed without exposing values", () => {
   for (const name of [...releaseVariables, ...releaseSecrets, ...signingInputs]) {
     const missing = { ...environment, [name]: "" };
     assert.throws(() => validateReleaseConfiguration(missing), new RegExp(name, "u"));
+  }
+  for (const value of ["http://api.example.test", "https://user:password@api.example.test"]) {
+    assert.throws(() => validateReleaseConfiguration({ ...environment, DEVHUD_PUBLIC_API_URL: value }), /DEVHUD_PUBLIC_API_URL must be a credential-free HTTPS URL/u);
   }
   const serialized = JSON.stringify(configurationStatus(environment));
   assert.ok(!serialized.includes("configured-"));
