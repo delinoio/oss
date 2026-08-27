@@ -11,8 +11,30 @@ Download from [Delino OSS GitHub Releases](https://github.com/delinoio/oss/relea
 The release evidence uses Sigstore bundles. With `cosign` installed, download the selected artifact and the `devhud-v<VERSION>-release-evidence.tar.gz` archive from the same release. The checksum manifest and Sigstore evidence are stored inside that archive rather than published as separate release assets. Extract it into a new, empty directory and inspect the archive contents before extraction; do not extract it over an existing directory or trust files outside the expected relative paths:
 
 ```sh
+set -euo pipefail
 mkdir release-evidence
-tar -tzf devhud-v<VERSION>-release-evidence.tar.gz
+if ! archive_paths=$(tar -tzf devhud-v<VERSION>-release-evidence.tar.gz); then
+  echo "unable to read release evidence archive" >&2
+  exit 1
+fi
+if printf '%s\n' "$archive_paths" | awk '
+  /^\// || /(^|\/)\.\.(\/|$)/ { unsafe = 1 }
+  END { exit unsafe ? 0 : 1 }
+'; then
+  echo "unsafe release evidence archive path" >&2
+  exit 1
+fi
+if ! archive_members=$(tar -tvzf devhud-v<VERSION>-release-evidence.tar.gz); then
+  echo "unable to inspect release evidence archive members" >&2
+  exit 1
+fi
+if printf '%s\n' "$archive_members" | awk '
+  substr($1, 1, 1) != "-" && substr($1, 1, 1) != "d" { unsafe = 1 }
+  END { exit unsafe ? 0 : 1 }
+'; then
+  echo "unsafe release evidence archive entry type" >&2
+  exit 1
+fi
 tar -xzf devhud-v<VERSION>-release-evidence.tar.gz \
   --directory release-evidence \
   --no-same-owner \

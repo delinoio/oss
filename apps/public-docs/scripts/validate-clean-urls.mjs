@@ -1,5 +1,6 @@
 import { access, readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
+import { decodeHTML } from "entities";
 
 const stableRouteIds = [
   "/",
@@ -33,15 +34,11 @@ const routeOutputFiles = stableRouteIds.map((routeId) => ({
       ? path.join(outputDir, "index.html")
       : path.join(outputDir, `${routeId.slice(1)}.html`),
 }));
-const htmlHrefPatterns = stableRouteIds.map((routeId) => ({
-  htmlRoute: routeId === "/" ? "/index.html" : `${routeId}.html`,
-  pattern:
-    routeId === "/"
-      ? /href=(["'])(?:https?:\/\/[^/"']+)?(?:(?:\.\.?\/)*|\/)index\.html(?:[?#][^"']*)?\1/
-      : new RegExp(
-          `href=(["'])(?:https?:\\/\\/[^/"']+)?(?:(?:\\.\\.?\\/)*|\\/)${routeId.slice(1)}\\.html(?:[?#][^"']*)?\\1`,
-        ),
-}));
+const htmlRoutePaths = new Set(
+  stableRouteIds.map((routeId) => (routeId === "/" ? "/index.html" : `${routeId}.html`)),
+);
+const hrefPattern = /<a\b[^>]*\bhref=(['"])([^'"]*)\1/giu;
+const validatorOrigin = "https://public-docs.invalid";
 
 async function pathExists(filePath) {
   try {
@@ -105,25 +102,32 @@ function articleHeadings(contents) {
   );
 }
 
-function decodeHtmlEntities(contents) {
-  return contents
-    .replace(/&#(\d+);/gu, (_, value) => String.fromCodePoint(Number(value)))
-    .replace(/&#x([\da-f]+);/giu, (_, value) => String.fromCodePoint(Number.parseInt(value, 16)))
-    .replace(/&(?:amp|lt|gt|quot|apos|nbsp);/giu, (entity) => ({
-      "&amp;": "&",
-      "&lt;": "<",
-      "&gt;": ">",
-      "&quot;": '"',
-      "&apos;": "'",
-      "&nbsp;": " ",
-    })[entity.toLowerCase()] ?? entity);
-}
-
 function visibleText(contents) {
-  return decodeHtmlEntities(contents
+  return decodeHTML(contents
     .replace(/<(?:script|style)\b[^>]*>[\s\S]*?<\/(?:script|style)>/giu, " ")
     .replace(/<[^>]*>/gu, " "))
     .replace(/\s+/gu, " ");
+}
+
+function findHtmlRouteLinks(contents, htmlFile) {
+  const pagePath = `/${path.relative(outputDir, htmlFile).split(path.sep).join("/")}`;
+  const pageUrl = new URL(pagePath, validatorOrigin);
+  const invalidRoutes = [];
+
+  for (const [, , href] of contents.matchAll(hrefPattern)) {
+    if (!/\.html(?:[?#]|$)/iu.test(href)) continue;
+    let resolvedUrl;
+    try {
+      resolvedUrl = new URL(decodeHTML(href), pageUrl);
+    } catch {
+      continue;
+    }
+    if (resolvedUrl.origin === pageUrl.origin && htmlRoutePaths.has(resolvedUrl.pathname)) {
+      invalidRoutes.push(resolvedUrl.pathname);
+    }
+  }
+
+  return invalidRoutes;
 }
 
 const forbiddenContent = [
@@ -178,10 +182,8 @@ for (const htmlFile of htmlFiles) {
   const contents = await readFile(htmlFile, "utf8");
   const renderedText = visibleText(contents);
 
-  for (const { htmlRoute, pattern } of htmlHrefPatterns) {
-    if (pattern.test(contents)) {
-      failures.push(`${path.relative(outputDir, htmlFile)} links to ${htmlRoute}`);
-    }
+  for (const htmlRoute of findHtmlRouteLinks(contents, htmlFile)) {
+    failures.push(`${path.relative(outputDir, htmlFile)} links to ${htmlRoute}`);
   }
 
   for (const pattern of forbiddenContent) {

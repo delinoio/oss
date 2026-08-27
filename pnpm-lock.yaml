@@ -255,6 +255,9 @@ importers:
       '@rspress/core':
         specifier: ^2.0.14
         version: 2.0.14(@types/mdast@4.0.4)(@types/react@19.2.14)(micromark-util-types@2.0.2)(micromark@4.0.2)
+      entities:
+        specifier: 6.0.1
+        version: 6.0.1
 
   packages/devhud-api-client:
     dependencies:
