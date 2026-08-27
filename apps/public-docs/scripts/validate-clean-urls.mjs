@@ -38,6 +38,7 @@ const htmlRoutePaths = new Set(
   stableRouteIds.map((routeId) => (routeId === "/" ? "/index.html" : `${routeId}.html`)),
 );
 const hrefPattern = /<a\b[^>]*\bhref=(['"])([^'"]*)\1/giu;
+const resourceAttributePattern = /\b(?:src|srcset)=(['"])([^'"]*)\1/giu;
 const validatorOrigin = "https://public-docs.invalid";
 
 async function pathExists(filePath) {
@@ -146,6 +147,39 @@ function containsCredentialBearingLink(contents, htmlFile) {
   return false;
 }
 
+function resourceTargets(contents) {
+  const targets = [];
+  for (const [, , value] of contents.matchAll(resourceAttributePattern)) {
+    if (value.includes(",")) {
+      for (const candidate of value.split(",")) {
+        const target = candidate.trim().split(/\s+/u, 1)[0];
+        if (target) targets.push(target);
+      }
+    } else {
+      targets.push(value.trim());
+    }
+  }
+  return targets;
+}
+
+function isApprovedPublicAsset(target, htmlFile) {
+  try {
+    const pagePath = `/${path.relative(outputDir, htmlFile).split(path.sep).join("/")}`;
+    const resolvedUrl = new URL(decodeHTML(target), new URL(pagePath, validatorOrigin));
+    return resolvedUrl.origin === validatorOrigin
+      && (/^\/(?:assets|static)\//u.test(resolvedUrl.pathname));
+  } catch {
+    return false;
+  }
+}
+
+function containsForbiddenResourcePath(contents, htmlFile) {
+  const resourceTargetsToCheck = resourceTargets(contents)
+    .filter((target) => !isApprovedPublicAsset(target, htmlFile));
+  return forbiddenPathContent.some((pattern) =>
+    resourceTargetsToCheck.some((target) => pattern.test(target)));
+}
+
 const forbiddenContent = [
   /(?:GH_TOKEN|DEVHUD_[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|KEY)|Authorization:\s*Bearer)/iu,
   /(?:"(?:token|access[_-]?token|refresh[_-]?token|api[_-]?key)"|(?:token|access[_-]?token|refresh[_-]?token|api[_-]?key))\s*[:=]\s*[^\s<`]+/iu,
@@ -173,6 +207,14 @@ const forbiddenPathFixtures = [
   '<a href="file://localhost/etc/private.conf">private file</a>',
   '<a href="../../servers/devhud/config">private repository path</a>',
   "repository path: servers/devhud/config",
+];
+const forbiddenResourceFixtures = [
+  '<img src="file:///etc/devhud/private.png">',
+  '<img srcset="../../servers/devhud/private.png 1x">',
+];
+const approvedResourceFixtures = [
+  '<img src="/assets/logo.svg">',
+  '<script src="/static/js/app.js"></script>',
 ];
 const releaseAvailabilityClaim =
   /\b(?:partial|staged)\s+(?:GA|availability|general[- ]availability)\b|\b(?:partial|staged)\s+or\s+(?:staged|partial)\s+general[- ]availability\b|\b(?:beta|phased|fractional)\s+(?:GA|availability|general[- ]availability|rollout|channel)\b|\bearly[- ]access(?:\s+(?:GA|availability|general[- ]availability|rollout|channel))?\b/giu;
@@ -251,6 +293,9 @@ for (const htmlFile of htmlFiles) {
   if (containsCredentialBearingLink(contents, htmlFile)) {
     failures.push(`${path.relative(outputDir, htmlFile)} contains prohibited public content`);
   }
+  if (containsForbiddenResourcePath(contents, htmlFile)) {
+    failures.push(`${path.relative(outputDir, htmlFile)} contains prohibited public content`);
+  }
   for (const pattern of forbiddenPathContent) {
     const linkTargets = [...contents.matchAll(hrefPattern)]
       .map(([, , href]) => decodeHTML(href))
@@ -279,6 +324,18 @@ for (const fixture of forbiddenLinkFixtures) {
 for (const fixture of forbiddenPathFixtures) {
   if (!forbiddenPathContent.some((pattern) => pattern.test(fixture))) {
     failures.push("forbidden filesystem path fixture was not detected");
+  }
+}
+
+for (const fixture of forbiddenResourceFixtures) {
+  if (!containsForbiddenResourcePath(fixture, path.join(outputDir, "fixture.html"))) {
+    failures.push("forbidden resource path fixture was not detected");
+  }
+}
+
+for (const fixture of approvedResourceFixtures) {
+  if (containsForbiddenResourcePath(fixture, path.join(outputDir, "fixture.html"))) {
+    failures.push("approved public resource fixture was incorrectly rejected");
   }
 }
 
