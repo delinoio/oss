@@ -145,11 +145,12 @@ const forbiddenPathContent = [
   new RegExp(`(?:^|[\\s("'\\x60>])/(?!${stableRoutePathPattern}(?:\\.html)?(?:[?#"'\\x60<\\s]|$))[A-Za-z0-9._~-]+(?:[/\\\\][^\\s"'\\x60<>]*)?`, "u"),
   /(?:^|[\s("'`>])[A-Za-z]:[\\/][^\s"'`<>]*/u,
   /(?:^|[\s("'`>])\\\\[^\s"'`<>\\/]+[\\/][^\s"'`<>]*/u,
+  /(?:^|[\s("'`>])file:\/\/(?:\/[^\s"'`<>]*)/iu,
 ];
 const releaseAvailabilityClaim =
-  /\b(?:partial|staged)\s+(?:GA|availability|general[- ]availability)\b|\b(?:partial|staged)\s+or\s+(?:staged|partial)\s+general[- ]availability\b/giu;
+  /\b(?:partial|staged)\s+(?:GA|availability|general[- ]availability)\b|\b(?:partial|staged)\s+or\s+(?:staged|partial)\s+general[- ]availability\b|\b(?:beta|phased|fractional)\s+(?:GA|availability|general[- ]availability|rollout|channel)\b|\bearly[- ]access(?:\s+(?:GA|availability|general[- ]availability|rollout|channel))?\b/giu;
 const negativeAvailabilityPredicate =
-  /^\s*(?:(?:is|are|remains?|remain)\s+(?:(?:not|never)\s+)?(?:available|supported|permitted|allowed|excluded|unsupported)|will\s+not\s+(?:be\s+)?(?:available|supported|permitted|allowed|excluded|unsupported))\b/iu;
+  /^\s*(?:(?:is|are|remains?|remain)\s+(?:not|never)\s+(?:available|supported|permitted|allowed|excluded|unsupported)|will\s+not\s+(?:be\s+)?(?:available|supported|permitted|allowed|excluded|unsupported))\b/iu;
 const unnegatedProhibitionPredicate =
   /^\s*(?:is|are|remains?|remain)\s+(?:prohibited|forbidden|disallowed)\b/iu;
 
@@ -158,6 +159,11 @@ const releaseAvailabilityFixtures = [
   ["staged availability is never forbidden", true],
   ["partial GA is not available", false],
   ["partial GA is prohibited", false],
+  ["beta channel is available", true],
+  ["phased rollout is supported", true],
+  ["fractional rollout is permitted", true],
+  ["early-access channel is allowed", true],
+  ["beta channel is not available", false],
 ];
 
 function containsAffirmativeReleaseClaim(contents) {
@@ -216,7 +222,10 @@ for (const htmlFile of htmlFiles) {
     }
   }
   for (const pattern of forbiddenPathContent) {
-    if (pattern.test(renderedText)) {
+    const linkTargets = [...contents.matchAll(hrefPattern)]
+      .map(([, , href]) => decodeHTML(href))
+      .join(" ");
+    if (pattern.test(renderedText) || pattern.test(linkTargets)) {
       failures.push(`${path.relative(outputDir, htmlFile)} contains prohibited public content`);
     }
   }
