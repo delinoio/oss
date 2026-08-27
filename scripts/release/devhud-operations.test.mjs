@@ -80,4 +80,8 @@ test("operations contract preserves high-risk CEF, rollback, retention, and reda
   ]) assert.match(operations, new RegExp(phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "iu"), phrase);
   assert.match(workflowContract, /may upload only its bounded metadata report artifact/u);
   assert.match(support, /high-severity response/iu);
+  assert.match(support, /cancelling the run can invoke the mutating `rollback_pre_store` cleanup path/iu);
+  assert.match(support, /withhold the next protected approval instead of cancelling/iu);
+  assert.match(support, /Report server-side purge completion once the applicable database, R2, and tombstone boundaries are confirmed/iu);
+  assert.match(support, /track per-device secure-store cleanup separately as best-effort reconciliation/iu);
 });
