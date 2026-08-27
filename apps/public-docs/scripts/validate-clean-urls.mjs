@@ -106,7 +106,7 @@ const forbiddenContent = [
   /(?:private key|signing key|password|access key|secret)\s*[:=]\s*[^\s<`]+/iu,
 ];
 const releaseAvailabilityClaim =
-  /\b(?:partial|staged)\s+(?:GA|general availability)\b|\b(?:partial|staged)\s+or\s+(?:staged|partial)\s+general[- ]availability\b/giu;
+  /\b(?:partial|staged)\s+(?:GA|general[- ]availability)\b|\b(?:partial|staged)\s+or\s+(?:staged|partial)\s+general[- ]availability\b/giu;
 
 function containsAffirmativeReleaseClaim(contents) {
   for (const match of contents.matchAll(releaseAvailabilityClaim)) {
