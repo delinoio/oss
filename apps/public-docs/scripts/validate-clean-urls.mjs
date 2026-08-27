@@ -100,6 +100,27 @@ function articleHeadings(contents) {
   );
 }
 
+function decodeHtmlEntities(contents) {
+  return contents
+    .replace(/&#(\d+);/gu, (_, value) => String.fromCodePoint(Number(value)))
+    .replace(/&#x([\da-f]+);/giu, (_, value) => String.fromCodePoint(Number.parseInt(value, 16)))
+    .replace(/&(?:amp|lt|gt|quot|apos|nbsp);/giu, (entity) => ({
+      "&amp;": "&",
+      "&lt;": "<",
+      "&gt;": ">",
+      "&quot;": '"',
+      "&apos;": "'",
+      "&nbsp;": " ",
+    })[entity.toLowerCase()] ?? entity);
+}
+
+function visibleText(contents) {
+  return decodeHtmlEntities(contents
+    .replace(/<(?:script|style)\b[^>]*>[\s\S]*?<\/(?:script|style)>/giu, " ")
+    .replace(/<[^>]*>/gu, " "))
+    .replace(/\s+/gu, " ");
+}
+
 const forbiddenContent = [
   /(?:GH_TOKEN|DEVHUD_[A-Z0-9_]*SECRET|Authorization:\s*Bearer)/iu,
   /(?:\/home\/|\/Users\/|[A-Z]:\\|~\/\.config\/)/u,
@@ -107,6 +128,8 @@ const forbiddenContent = [
 ];
 const releaseAvailabilityClaim =
   /\b(?:partial|staged)\s+(?:GA|general[- ]availability)\b|\b(?:partial|staged)\s+or\s+(?:staged|partial)\s+general[- ]availability\b/giu;
+const negativeAvailabilityPredicate =
+  /^\s*(?:(?:is|are|remains?|remain)\s+(?:(?:not|never)\s+)?(?:available|supported|permitted|allowed|prohibited|forbidden|disallowed|excluded|unsupported)|will\s+not\s+(?:be\s+)?(?:available|supported|permitted|allowed|prohibited|forbidden|disallowed|excluded|unsupported))\b/iu;
 
 function containsAffirmativeReleaseClaim(contents) {
   for (const match of contents.matchAll(releaseAvailabilityClaim)) {
@@ -127,7 +150,7 @@ function containsAffirmativeReleaseClaim(contents) {
     const prefix = sentence.slice(0, phraseOffset);
     const suffix = sentence.slice(phraseOffset + match[0].length);
     if (/\b(?:no|not|never|without)\s*$/iu.test(prefix)) continue;
-    if (/^\s*(?:is|are|remains?|remain)\s+(?:not\s+(?:available|supported|permitted|allowed)|prohibited|forbidden|disallowed|excluded)\b/iu.test(suffix)) continue;
+    if (negativeAvailabilityPredicate.test(suffix)) continue;
     return true;
   }
   return false;
@@ -143,6 +166,7 @@ for (const { routeId, outputFile } of routeOutputFiles) {
 
 for (const htmlFile of htmlFiles) {
   const contents = await readFile(htmlFile, "utf8");
+  const renderedText = visibleText(contents);
 
   for (const { htmlRoute, pattern } of htmlHrefPatterns) {
     if (pattern.test(contents)) {
@@ -151,7 +175,7 @@ for (const htmlFile of htmlFiles) {
   }
 
   for (const pattern of forbiddenContent) {
-    if (pattern.test(contents)) {
+    if (pattern.test(contents) || pattern.test(renderedText)) {
       failures.push(`${path.relative(outputDir, htmlFile)} contains prohibited public content`);
     }
   }
