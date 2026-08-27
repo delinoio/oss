@@ -9,7 +9,7 @@ This site provides a curated, user-facing layer of documentation that complement
 - Read [Getting Started](getting-started) for local setup and editing workflow.
 - See [Projects Overview](projects-overview) for the current public project catalog.
 - Review [Documentation Lifecycle](documentation-lifecycle) for update rules between `docs/` and `apps/public-docs`.
-- Open [Cargo Mono](cargo-mono), [Derun](derun), and [With Watch](with-watch) from the top navigation for project guides on this site.
+- Open [DevHud](devhud), [Cargo Mono](cargo-mono), [Derun](derun), and [With Watch](with-watch) from the top navigation for project guides on this site.
 - Open [Nodeup](https://nodeup.delino.io) and [binpm](https://binpm.delino.io) from the top navigation for their standalone documentation sites.
 
 ## Scope

@@ -1,6 +1,34 @@
 name: Package DevHUD private candidate
 
 on:
+  workflow_call:
+    inputs:
+      mode:
+        description: Plan without secrets, or build a fully signed private candidate
+        required: false
+        default: signed-private
+        type: string
+      revision:
+        description: Exact source revision selected by the coordinated release workflow
+        required: false
+        default: ""
+        type: string
+    outputs:
+      version:
+        description: Validated DevHud release version
+        value: ${{ jobs.plan.outputs.version }}
+      artifact_id:
+        description: Immutable complete private candidate artifact ID
+        value: ${{ jobs.assemble.outputs.artifact_id }}
+      artifact_name:
+        description: Revision-bound complete private candidate artifact name
+        value: ${{ jobs.assemble.outputs.artifact_name }}
+      run_id:
+        description: Candidate provenance workflow run ID
+        value: ${{ jobs.assemble.outputs.run_id }}
+      run_attempt:
+        description: Candidate provenance workflow run attempt
+        value: ${{ jobs.assemble.outputs.run_attempt }}
   workflow_dispatch:
     inputs:
       mode:
@@ -25,11 +53,26 @@ jobs:
       version: ${{ steps.identity.outputs.version }}
       started_on: ${{ steps.invocation.outputs.started_on }}
     steps:
+      - name: Validate invocation mode
+        env:
+          PRIVATE_MODE: ${{ inputs.mode }}
+          SOURCE_REVISION: ${{ inputs.revision || github.sha }}
+        run: |
+          set -euo pipefail
+          case "$PRIVATE_MODE" in
+            plan-only|signed-private) ;;
+            *) echo "unsupported private candidate mode" >&2; exit 1 ;;
+          esac
+          [[ "$SOURCE_REVISION" =~ ^[a-f0-9]{40}$ ]]
+          if [ "$PRIVATE_MODE" = signed-private ] && [ "$SOURCE_REVISION" != "$GITHUB_SHA" ]; then
+            echo "signed private candidates must be built from the caller revision" >&2
+            exit 1
+          fi
       - name: Capture provenance start time
         id: invocation
         run: echo "started_on=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v6
-        with: { fetch-depth: 0 }
+        with: { fetch-depth: 0, ref: "${{ inputs.revision || github.sha }}" }
       - uses: actions/setup-node@v6
         with: { node-version-file: .nvmrc }
       - name: Validate release tooling
@@ -41,7 +84,7 @@ jobs:
         run: echo "version=$(node -p \"require('./packaging/devhud/release-metadata.json').version\")" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v7
         with:
-          name: release-plan-devhud-${{ github.run_id }}
+          name: release-plan-devhud-${{ github.run_id }}-${{ github.run_attempt }}
           path: devhud-private-plan.json
           if-no-files-found: error
 
@@ -78,7 +121,7 @@ jobs:
       DEVHUD_ANDROID_CERTIFICATE_SHA256: ${{ vars.DEVHUD_ANDROID_CERTIFICATE_SHA256 }}
     steps:
       - uses: actions/checkout@v6
-        with: { fetch-depth: 0 }
+        with: { fetch-depth: 0, ref: "${{ inputs.revision || github.sha }}" }
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v6
         with: { node-version-file: .nvmrc }
@@ -121,7 +164,7 @@ jobs:
       DEVHUD_WINDOWS_TIMESTAMP_URL: ${{ vars.DEVHUD_WINDOWS_TIMESTAMP_URL }}
     steps:
       - uses: actions/checkout@v6
-        with: { fetch-depth: 0 }
+        with: { fetch-depth: 0, ref: "${{ inputs.revision || github.sha }}" }
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v6
         with: { node-version-file: .nvmrc, cache: pnpm }
@@ -324,6 +367,7 @@ jobs:
       DEVHUD_CHROME_EXTENSION_PUBLIC_KEY: ${{ secrets.DEVHUD_CHROME_EXTENSION_PUBLIC_KEY }}
     steps:
       - uses: actions/checkout@v6
+        with: { ref: "${{ inputs.revision || github.sha }}" }
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v6
         with: { node-version-file: .nvmrc, cache: pnpm }
@@ -361,7 +405,7 @@ jobs:
       DEVHUD_ANDROID_CERTIFICATE_SHA256: ${{ vars.DEVHUD_ANDROID_CERTIFICATE_SHA256 }}
     steps:
       - uses: actions/checkout@v6
-        with: { fetch-depth: 0 }
+        with: { fetch-depth: 0, ref: "${{ inputs.revision || github.sha }}" }
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v6
         with: { node-version-file: .nvmrc, cache: pnpm }
@@ -481,7 +525,7 @@ jobs:
           --health-retries 10
     steps:
       - uses: actions/checkout@v6
-        with: { fetch-depth: 0 }
+        with: { fetch-depth: 0, ref: "${{ inputs.revision || github.sha }}" }
       - uses: actions/setup-go@v6
         with: { go-version-file: go.mod, cache: true }
       - uses: docker/setup-buildx-action@v4
@@ -517,7 +561,13 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    outputs:
+      artifact_id: ${{ steps.candidate.outputs.artifact-id }}
+      artifact_name: devhud-v${{ needs.plan.outputs.version }}-private-signed-candidate-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+      run_id: ${{ github.run_id }}
+      run_attempt: ${{ github.run_attempt }}
     env:
+      DEVHUD_RELEASE_REVISION: ${{ inputs.revision || github.sha }}
       DEVHUD_UPDATER_SIGNING_KEY_B64: ${{ secrets.DEVHUD_UPDATER_SIGNING_KEY_B64 }}
       DEVHUD_MACOS_DEVELOPER_ID_P12_B64: ${{ secrets.DEVHUD_MACOS_DEVELOPER_ID_P12_B64 }}
       DEVHUD_MACOS_DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVHUD_MACOS_DEVELOPER_ID_P12_PASSWORD }}
@@ -534,7 +584,7 @@ jobs:
       DEVHUD_ANDROID_KEY_PASSWORD: ${{ secrets.DEVHUD_ANDROID_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@v6
-        with: { fetch-depth: 0 }
+        with: { fetch-depth: 0, ref: "${{ inputs.revision || github.sha }}" }
       - uses: actions/download-artifact@v8
         with: { pattern: devhud-*, path: private-artifacts, merge-multiple: true }
       - uses: sigstore/cosign-installer@v4.1.0
@@ -555,10 +605,13 @@ jobs:
           node scripts/release/generate-devhud-supply-chain.mjs --artifacts-dir private-artifacts --output-dir private-artifacts --invocation-id "$DEVHUD_PROVENANCE_INVOCATION_ID" --started-on "$DEVHUD_PROVENANCE_STARTED_ON" --finished-on "$build_finished_on"
           REQUIRE_COSIGN=1 scripts/release/generate-checksums.sh --artifacts-dir private-artifacts --sigstore-dir private-artifacts/sigstore
       - name: Validate complete private candidate and absence of secrets
+        env:
+          DEVHUD_PRIVATE_WORKFLOW_REF: ${{ github.repository }}/.github/workflows/package-devhud-private.yml@${{ github.ref }}
         run: node scripts/release/validate-devhud-private-build.mjs --artifacts-dir private-artifacts
       - uses: actions/upload-artifact@v7
+        id: candidate
         with:
-          name: devhud-v${{ needs.plan.outputs.version }}-private-signed-candidate-${{ github.run_id }}
+          name: devhud-v${{ needs.plan.outputs.version }}-private-signed-candidate-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: private-artifacts
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 35

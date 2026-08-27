@@ -6,6 +6,7 @@ const stableRouteIds = [
   "/getting-started",
   "/projects-overview",
   "/documentation-lifecycle",
+  "/devhud",
   "/cargo-mono",
   "/derun",
   "/with-watch",

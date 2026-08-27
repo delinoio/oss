@@ -91,7 +91,8 @@
 - `public-docs` must remain Rspress-based and use Cloudflare Pages static output unless its project contract documents a replacement.
 - Rspress routes, navigation, and sidebar in `apps/public-docs/rspress.config.ts` must stay aligned with `docs/apps-public-docs-foundation.md`.
 - `public-docs` must use clean URLs, write production output to `apps/public-docs/doc_build`, and validate stable route artifacts plus generated internal `.html` links through `pnpm --filter public-docs test`.
-- Current public-docs in-site top-level product page IDs are `cargo-mono`, `derun`, and `with-watch`.
+- Current public-docs in-site top-level product page IDs are `devhud`, `cargo-mono`, `derun`, and `with-watch`.
+- The stable `/devhud` page documents public product availability and the coordinated all-channels GA rule without exposing release credentials, private workflow details, or deployment internals.
 - Nodeup and binpm are major public projects exposed from `apps/public-docs` through external top-level navigation links: Nodeup points to `https://nodeup.delino.io` and binpm points to `https://binpm.delino.io`.
 - The legacy `/nodeup` public-docs route must remain a lightweight handoff page to `https://nodeup.delino.io` for compatibility with previously shared URLs.
 - Do not add or restore in-site `nodeup` or `binpm` guide routes under `apps/public-docs`; the lightweight legacy `/nodeup` handoff is the sole in-site Nodeup route, and their public documentation is owned by `apps/nodeup-docs` and `apps/binpm-docs`.

@@ -1445,6 +1445,59 @@ jobs:
         run: go test -tags=integration ./servers/devhud-api/internal/postgres
 
 
+  devhud-release-contracts:
+    name: DevHud Release Contracts
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Filter changed paths
+        id: filter
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            release:
+              - .github/workflows/CI.yml
+              - .github/workflows/package-devhud-private.yml
+              - .github/workflows/release-devhud.yml
+              - packaging/devhud/**
+              - scripts/release/**
+              - docs/project-devhud.md
+              - docs/apps-devhud-updater-contract.md
+              - docs/servers-devhud-api-contract.md
+              - docs/servers-devhud-release-controller-contract.md
+
+      - name: Determine whether to run
+        id: gate
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_CHANGED: ${{ steps.filter.outputs.release }}
+        run: |
+          set -euo pipefail
+          run=false
+          if [ "$EVENT_NAME" = workflow_dispatch ] || [ "$RELEASE_CHANGED" = true ]; then run=true; fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+
+      - name: Skip (release contracts unaffected)
+        if: ${{ steps.gate.outputs.run != 'true' }}
+        run: 'echo "Skipping DevHud release contracts: paths unaffected"'
+
+      - name: Setup Node.js
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+
+      - name: Validate deterministic release contracts
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: node --test scripts/release/*.test.mjs
+
   ci-result:
     name: CI Result
     runs-on: ubuntu-latest
@@ -1467,6 +1520,7 @@ jobs:
       - devhud-protocol
       - devhud-admin
       - devhud-api
+      - devhud-release-contracts
     steps:
       - run: exit 1
         if: ${{ always() && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) }}

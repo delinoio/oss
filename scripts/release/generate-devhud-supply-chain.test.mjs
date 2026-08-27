@@ -5,7 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { artifactGroups } from "./devhud-release.mjs";
-import { generateSupplyChain, validateProvenanceMetadata, validateSpdx } from "./generate-devhud-supply-chain.mjs";
+import { generateSupplyChain, validateProvenanceMetadata, validateProvenanceRevision, validateSpdx } from "./generate-devhud-supply-chain.mjs";
 
 const invocation = {
   invocationId: "https://github.com/delinoio/oss/actions/runs/123456789/attempts/2",
@@ -45,6 +45,10 @@ test("validates prebuilt SPDX SBOMs and generates digest-bound SLSA provenance f
   assert.equal(statement.subject[0].name, artifact);
   assert.match(statement.subject[0].digest.sha256, /^[a-f0-9]{64}$/u);
   assert.equal(statement.predicate.buildDefinition.externalParameters.publication, "disabled");
+  const revision = statement.predicate.buildDefinition.externalParameters.revision;
+  assert.match(revision, /^[a-f0-9]{40}$/u);
+  assert.doesNotThrow(() => validateProvenanceRevision(statement, revision));
+  assert.throws(() => validateProvenanceRevision(statement, "b".repeat(40)), /revision mismatch/u);
   assert.deepEqual(statement.predicate.runDetails.metadata, {
     invocationId: invocation.invocationId,
     startedOn: "2026-08-25T10:00:00.000Z",

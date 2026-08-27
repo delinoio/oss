@@ -21,7 +21,7 @@ URLs are enabled, so stable public routes such as `/getting-started` do not use
 `pnpm --filter public-docs test` builds the site and runs
 `scripts/validate-clean-urls.mjs`. The validator checks generated artifacts for
 `/`, `/getting-started`, `/projects-overview`, `/documentation-lifecycle`,
-`/cargo-mono`, `/derun`, `/with-watch`, and the legacy `/nodeup` handoff, and
+`/devhud`, `/cargo-mono`, `/derun`, `/with-watch`, and the legacy `/nodeup` handoff, and
 rejects generated internal `.html` route links.
 
 ## Files

@@ -8,7 +8,7 @@ import { pathToFileURL } from "node:url";
 
 import { artifactGroups, loadReleaseMetadata, repositoryRoot, updaterTargets, validateExtensionParity } from "./devhud-release.mjs";
 import { validateEvidenceEntries } from "./devhud-evidence.mjs";
-import { validateProvenanceMetadata, validateSpdx } from "./generate-devhud-supply-chain.mjs";
+import { validateProvenanceMetadata, validateProvenanceRevision, validateSpdx } from "./generate-devhud-supply-chain.mjs";
 import { assertUpdaterArtifactSize } from "./generate-devhud-updater.mjs";
 
 const ARTIFACT_DOMAIN = Buffer.from("devhud-update-artifact-v1\0", "utf8");
@@ -81,17 +81,20 @@ export function validateProvenance(statement, artifact, digest, environment = pr
   if (statement.subject?.[0]?.name !== artifact || statement.subject[0].digest?.sha256 !== digest) {
     throw new Error(`provenance subject mismatch: ${artifact}`);
   }
+  validateProvenanceRevision(statement, environment.DEVHUD_RELEASE_REVISION ?? environment.GITHUB_SHA);
   const metadata = validateProvenanceMetadata(statement.predicate?.runDetails?.metadata ?? {});
-  const { GITHUB_REPOSITORY: repository, GITHUB_RUN_ID: runId, GITHUB_RUN_ATTEMPT: runAttempt } = environment;
+  const repository = environment.GITHUB_REPOSITORY;
+  const runId = environment.DEVHUD_PROVENANCE_RUN_ID ?? environment.GITHUB_RUN_ID;
+  const runAttempt = environment.DEVHUD_PROVENANCE_RUN_ATTEMPT ?? environment.GITHUB_RUN_ATTEMPT;
   if (repository !== "delinoio/oss" || !/^[1-9]\d*$/u.test(runId ?? "") || !/^[1-9]\d*$/u.test(runAttempt ?? "")) {
-    throw new Error("provenance validation requires the current delinoio/oss GitHub run attempt");
+    throw new Error("provenance validation requires the selected delinoio/oss GitHub run attempt");
   }
   const expectedInvocationId = `https://github.com/${repository}/actions/runs/${runId}/attempts/${runAttempt}`;
   if (metadata.invocationId !== expectedInvocationId) throw new Error(`provenance invocation mismatch: ${artifact}`);
 }
 
 export function sigstoreVerificationPolicy(environment = process.env) {
-  const workflowRef = environment.GITHUB_WORKFLOW_REF;
+  const workflowRef = environment.DEVHUD_PRIVATE_WORKFLOW_REF ?? environment.GITHUB_WORKFLOW_REF;
   if (typeof workflowRef !== "string" || !PRIVATE_WORKFLOW_REF.test(workflowRef)) {
     throw new Error("Sigstore verification requires the DevHud private packaging GitHub workflow ref");
   }

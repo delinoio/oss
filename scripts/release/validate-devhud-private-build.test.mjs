@@ -41,6 +41,14 @@ test("Sigstore verification binds bundles to the private packaging workflow iden
   assert.throws(() => sigstoreVerificationPolicy({ GITHUB_WORKFLOW_REF: "delinoio/oss/.github/workflows/other.yml@refs/heads/main" }), /requires the DevHud private packaging GitHub workflow ref/u);
 });
 
+test("Sigstore verification accepts the exact called private workflow identity", () => {
+  const policy = sigstoreVerificationPolicy({
+    GITHUB_WORKFLOW_REF: "delinoio/oss/.github/workflows/release-devhud.yml@refs/heads/main",
+    DEVHUD_PRIVATE_WORKFLOW_REF: "delinoio/oss/.github/workflows/package-devhud-private.yml@refs/heads/main",
+  });
+  assert.equal(policy.certificateIdentity, "https://github.com/delinoio/oss/.github/workflows/package-devhud-private.yml@refs/heads/main");
+});
+
 test("secret scanning covers raw and decoded signing values", () => {
   const root = mkdtempSync(join(tmpdir(), "devhud-validation-secret-"));
   writeFileSync(join(root, "safe.txt"), "safe output");
@@ -55,13 +63,32 @@ test("provenance validation binds the statement to the current workflow run atte
   const digest = "a".repeat(64);
   const statement = {
     subject: [{ name: "artifact.bin", digest: { sha256: digest } }],
-    predicate: { runDetails: { metadata: {
-      invocationId: "https://github.com/delinoio/oss/actions/runs/123456789/attempts/2",
-      startedOn: "2026-08-25T10:00:00Z",
-      finishedOn: "2026-08-25T10:30:00Z",
-    } } },
+    predicate: {
+      buildDefinition: { externalParameters: { revision: "a".repeat(40) } },
+      runDetails: { metadata: {
+        invocationId: "https://github.com/delinoio/oss/actions/runs/123456789/attempts/2",
+        startedOn: "2026-08-25T10:00:00Z",
+        finishedOn: "2026-08-25T10:30:00Z",
+      } },
+    },
   };
-  const environment = { GITHUB_REPOSITORY: "delinoio/oss", GITHUB_RUN_ID: "123456789", GITHUB_RUN_ATTEMPT: "2" };
+  const environment = { GITHUB_REPOSITORY: "delinoio/oss", GITHUB_SHA: "a".repeat(40), GITHUB_RUN_ID: "123456789", GITHUB_RUN_ATTEMPT: "2" };
   assert.doesNotThrow(() => validateProvenance(statement, "artifact.bin", digest, environment));
+  assert.throws(() => validateProvenance(statement, "artifact.bin", digest, { ...environment, GITHUB_SHA: "b".repeat(40) }), /revision mismatch/u);
+  assert.doesNotThrow(() => validateProvenance(statement, "artifact.bin", digest, { ...environment, GITHUB_SHA: "b".repeat(40), DEVHUD_RELEASE_REVISION: "a".repeat(40) }));
   assert.throws(() => validateProvenance(statement, "artifact.bin", digest, { ...environment, GITHUB_RUN_ATTEMPT: "3" }), /invocation mismatch/u);
+  assert.doesNotThrow(() => validateProvenance(statement, "artifact.bin", digest, {
+    GITHUB_REPOSITORY: "delinoio/oss",
+    GITHUB_SHA: "a".repeat(40),
+    GITHUB_RUN_ID: "999",
+    GITHUB_RUN_ATTEMPT: "1",
+    DEVHUD_PROVENANCE_RUN_ID: "123456789",
+    DEVHUD_PROVENANCE_RUN_ATTEMPT: "2",
+  }));
+  assert.throws(() => validateProvenance(statement, "artifact.bin", digest, {
+    GITHUB_REPOSITORY: "delinoio/oss",
+    GITHUB_SHA: "a".repeat(40),
+    DEVHUD_PROVENANCE_RUN_ID: "123456789",
+    DEVHUD_PROVENANCE_RUN_ATTEMPT: "3",
+  }), /invocation mismatch/u);
 });
