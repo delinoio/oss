@@ -147,9 +147,18 @@ const forbiddenPathContent = [
   /(?:^|[\s("'`>])\\\\[^\s"'`<>\\/]+[\\/][^\s"'`<>]*/u,
 ];
 const releaseAvailabilityClaim =
-  /\b(?:partial|staged)\s+(?:GA|general[- ]availability)\b|\b(?:partial|staged)\s+or\s+(?:staged|partial)\s+general[- ]availability\b/giu;
+  /\b(?:partial|staged)\s+(?:GA|availability|general[- ]availability)\b|\b(?:partial|staged)\s+or\s+(?:staged|partial)\s+general[- ]availability\b/giu;
 const negativeAvailabilityPredicate =
-  /^\s*(?:(?:is|are|remains?|remain)\s+(?:(?:not|never)\s+)?(?:available|supported|permitted|allowed|prohibited|forbidden|disallowed|excluded|unsupported)|will\s+not\s+(?:be\s+)?(?:available|supported|permitted|allowed|prohibited|forbidden|disallowed|excluded|unsupported))\b/iu;
+  /^\s*(?:(?:is|are|remains?|remain)\s+(?:(?:not|never)\s+)?(?:available|supported|permitted|allowed|excluded|unsupported)|will\s+not\s+(?:be\s+)?(?:available|supported|permitted|allowed|excluded|unsupported))\b/iu;
+const unnegatedProhibitionPredicate =
+  /^\s*(?:is|are|remains?|remain)\s+(?:prohibited|forbidden|disallowed)\b/iu;
+
+const releaseAvailabilityFixtures = [
+  ["partial GA is not prohibited", true],
+  ["staged availability is never forbidden", true],
+  ["partial GA is not available", false],
+  ["partial GA is prohibited", false],
+];
 
 function containsAffirmativeReleaseClaim(contents) {
   for (const match of contents.matchAll(releaseAvailabilityClaim)) {
@@ -170,10 +179,19 @@ function containsAffirmativeReleaseClaim(contents) {
     const prefix = sentence.slice(0, phraseOffset);
     const suffix = sentence.slice(phraseOffset + match[0].length);
     if (/\b(?:no|not|never|without)\s*$/iu.test(prefix)) continue;
-    if (negativeAvailabilityPredicate.test(suffix)) continue;
+    if (
+      negativeAvailabilityPredicate.test(suffix)
+      || unnegatedProhibitionPredicate.test(suffix)
+    ) continue;
     return true;
   }
   return false;
+}
+
+for (const [fixture, expected] of releaseAvailabilityFixtures) {
+  if (containsAffirmativeReleaseClaim(fixture) !== expected) {
+    failures.push(`release availability fixture was classified incorrectly: ${fixture}`);
+  }
 }
 
 for (const { routeId, outputFile } of routeOutputFiles) {

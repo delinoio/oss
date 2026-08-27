@@ -1,6 +1,6 @@
 # DevHud Administration
 
-The administrator console is for individual accounts with the `devhud-admin` role. Sign-in uses the configured Logto administrator client and exact redirect; the API independently enforces the role.
+The administrator console is for individual accounts with the `devhud-admin` role. Sign-in requires an administrator account.
 
 Administrators can search users, block or unblock accounts with a reason, and review typed audit outcomes. When official uploads are available, they can also inspect bounded usage and upload metadata, quarantine official uploads, or permanently delete them. The console must not expose settings bodies, PATs, R2 secrets, issue content, screenshots, browser data, Deck results, agent output, or local paths.
 
