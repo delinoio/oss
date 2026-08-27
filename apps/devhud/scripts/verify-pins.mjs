@@ -238,6 +238,7 @@ assert(nativeBridgeTypeScript.includes('tauriRevision: ""'), "browser runtime di
 assert(nativeBridgeTypeScript.includes('cefRevision: ""'), "browser runtime diagnostics must not claim a CEF revision");
 for (const [consumer, source] of runtimeRevisionConsumers) {
   assert(source.includes(TAURI_REVISION), `${consumer} Tauri revision drifted from the immutable pin`);
+  assert(source.includes(pins.runtime.cefVersion), `${consumer} CEF revision drifted from the immutable pin`);
 }
 assert(updaterRoot.keyId === "devhud-release-root-v1" && updaterRoot.algorithm === "ed25519", "desktop updater trust-root identity changed");
 assert(updaterRust.includes(updaterRoot.publicKey) && updaterRust.includes(updaterRoot.fingerprint), "native updater trust root drifted from committed metadata");

@@ -63,6 +63,7 @@ test("CEF review is scheduled, read-only, bounded, and non-publishing", () => {
   }
   for (const [path, source] of runtimeRevisionConsumers) {
     assert.match(source, new RegExp(pins.tauri.revision.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "u"), path);
+    assert.match(source, new RegExp(pins.runtime.cefVersion.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "u"), path);
   }
   for (const path of runtimeRevisionConsumers.map(([path]) => path)) {
     assert.match(operations, new RegExp(path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "u"), path);

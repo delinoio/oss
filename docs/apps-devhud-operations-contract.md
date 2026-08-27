@@ -18,7 +18,7 @@ The public sequence is: complete candidate and live preflight; submit Apple, Goo
 
 ## Credential and signing categories
 
-- `devhud-private-build`: updater Ed25519 material, macOS Developer ID, Windows PFX, iOS distribution/profile material, Android upload keystore, and Chrome extension public key.
+- `devhud-private-build`: updater Ed25519 material, macOS Developer ID, Apple API issuer/key ID/private key for notarization, Windows PFX, iOS distribution/profile material, Android upload keystore, and Chrome extension public key. The Apple API identity is dual-use and is also required by `devhud-publication` for store submission.
 - `devhud-publication`: live API/controller, Logto, PostgreSQL/R2/Cloudflare, store access, registry, public-docs, Apple API, and Chrome extension identity inputs. It must not duplicate private package-signing keys.
 - `devhud-store-review-approved`, `devhud-store-publication`, and `devhud-ga`: protected approval boundaries, not storage for new credentials.
 - `GITHUB_TOKEN` is workflow-scoped. `DEVHUD_RELEASE_CONTROLLER_TOKEN` is short-lived OIDC-derived authorization and is never stored.
@@ -55,7 +55,7 @@ Before promotion, verify the PostgreSQL connection, ordered embedded migration l
 
 Backups must cover PostgreSQL data and migration metadata plus R2 staging/public objects and object metadata. Restore into an isolated environment, run the exact migration/readiness checks, verify account/upload tombstones and removal markers, reconcile R2 objects with the sweeper, and exercise `/healthz`, `/readyz`, `/admin/`, Bootstrap, upload finalization, and updater discovery before considering recovery complete. Do not restore secrets into logs or a production bucket without an explicit ownership decision.
 
-Image quarantine/removal is an operational placeholder until a dedicated implementation exists: record the authenticated administrator, target upload metadata ID, reason, expected state, and evidence; do not expose image bytes or signed/public URLs. Use the existing `AdminService.QuarantineUpload` and `AdminService.DeleteUpload` contracts where applicable, preserve leases and tombstones, and stop if ownership or state compare-and-set fails.
+Image quarantine/removal uses the implemented administrator workflow: record the authenticated administrator, target upload metadata ID, reason, expected state, and evidence; do not expose image bytes or signed/public URLs. Use the existing `AdminService.QuarantineUpload` and `AdminService.DeleteUpload` contracts, including metadata-first removal, preserve leases and tombstones, and stop if ownership or state compare-and-set fails.
 
 ## Deletion, restore, purge, diagnostics, and support
 
