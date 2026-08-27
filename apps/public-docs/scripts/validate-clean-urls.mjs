@@ -132,8 +132,14 @@ function findHtmlRouteLinks(contents, htmlFile) {
 
 const forbiddenContent = [
   /(?:GH_TOKEN|DEVHUD_[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|KEY)|Authorization:\s*Bearer)/iu,
-  /(?:token|access[_-]?token|refresh[_-]?token|api[_-]?key)\s*[:=]\s*[^\s<`]+/iu,
-  /(?:private key|signing key|password|access key|secret)\s*[:=]\s*[^\s<`]+/iu,
+  /(?:"(?:token|access[_-]?token|refresh[_-]?token|api[_-]?key)"|(?:token|access[_-]?token|refresh[_-]?token|api[_-]?key))\s*[:=]\s*[^\s<`]+/iu,
+  /(?:"(?:private key|signing key|password|access key|secret)"|(?:private key|signing key|password|access key|secret))\s*[:=]\s*[^\s<`]+/iu,
+];
+const forbiddenContentFixtures = [
+  [
+    "json",
+    '```json\n{"refresh_token":"abc123","password":"not-a-real-secret"}\n```',
+  ],
 ];
 const forbiddenPathContent = [
   new RegExp(`(?:^|[\\s("'\\x60>])/(?!${stableRoutePathPattern}(?:\\.html)?(?:[?#"'\\x60<\\s]|$))[A-Za-z0-9._~-]+(?:[/\\\\][^\\s"'\\x60<>]*)?`, "u"),
@@ -198,6 +204,12 @@ for (const htmlFile of htmlFiles) {
   }
   if (containsAffirmativeReleaseClaim(renderedText)) {
     failures.push(`${path.relative(outputDir, htmlFile)} contains prohibited public content`);
+  }
+}
+
+for (const [language, fixture] of forbiddenContentFixtures) {
+  if (!forbiddenContent.some((pattern) => pattern.test(fixture))) {
+    failures.push(`${language} credential fixture was not detected`);
   }
 }
 

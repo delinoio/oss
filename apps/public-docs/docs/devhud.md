@@ -1,6 +1,6 @@
 # DevHud
 
-DevHud is a developer utility for capturing RealQA feedback, following pull-request Decks, and coordinating releases across desktop, mobile, widgets, and the Chrome companion extension.
+DevHud is a developer utility for capturing RealQA feedback, following pull-request Decks, and distributing the product across desktop, mobile, widgets, and the Chrome companion extension.
 
 ## Availability
 
