@@ -46,6 +46,8 @@ test("CEF review is scheduled, read-only, bounded, and non-publishing", () => {
   assert.match(workflow, /gh api --paginate --slurp/u);
   assert.match(workflow, /compare\/\$pin\.\.\.\$upstream_revision/u);
   assert.match(workflow, /pages\.flatMap\(/u);
+  assert.match(workflow, /message: String\(commit\.commit\?\.message \?\? ''\),/u);
+  assert.doesNotMatch(workflow, /commit\.commit\?\.message \?\? ''\)\.split\(/u);
   assert.doesNotMatch(workflow, /EXPECTED_REVISION/u);
   assert.match(workflow, /vulnerab\\w\*/u);
   assert.match(workflow, /securitySignalTotal/u);

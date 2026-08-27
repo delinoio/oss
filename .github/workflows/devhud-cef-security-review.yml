@@ -62,7 +62,7 @@ jobs:
           const signalCandidates = commits
             .map((commit) => ({
               sha: commit.sha,
-              message: String(commit.commit?.message ?? '').split('\n')[0],
+              message: String(commit.commit?.message ?? ''),
               date: String(commit.commit?.committer?.date ?? commit.commit?.author?.date ?? ''),
             }))
             .filter(({ message }) => /\b(?:CVE|security|vulnerab\w*|exploit|chromium|cef)\b/i.test(message))
