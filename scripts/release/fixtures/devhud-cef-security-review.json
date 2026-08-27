@@ -13,6 +13,8 @@
   "securitySignals": [
     { "sha": "c000000000000000000000000000000000000000", "securityKeyword": true }
   ],
+  "securitySignalTotal": 1,
+  "securitySignalsTruncated": false,
   "workflowRevision": "d000000000000000000000000000000000000000",
   "mutationPerformed": false,
   "publicationPerformed": false

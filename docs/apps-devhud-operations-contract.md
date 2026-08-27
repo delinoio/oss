@@ -59,7 +59,7 @@ Image quarantine/removal is an operational placeholder until a dedicated impleme
 
 ## Deletion, restore, purge, diagnostics, and support
 
-Account deletion is recoverable for 30 days through ownership-checked `AccountService.RestoreAccount`; restore clears deletion state only and never clears an administrator block. After the window, the sweeper irreversibly pseudonymizes/purges account data, replaces or invalidates public CDN copies, removes secure credentials, and retains only the contracted audit/tombstone projections. Never report purge completion until all applicable cleanup boundaries are confirmed.
+Account deletion is recoverable for 30 days through ownership-checked `AccountService.RestoreAccount`; restore clears deletion state only and never clears an administrator block. After the window, the sweeper irreversibly pseudonymizes/purges server-side account data, replaces or invalidates public CDN copies, and retains only the contracted audit/tombstone projections. Device-local PATs and R2 credentials never enter the API: each client performs immediate secure-store cleanup when possible and eventual profile reconciliation for devices that were offline. Never report purge completion until the server-side database/R2 boundaries and applicable per-device secure-store cleanup boundaries are confirmed.
 
 Diagnostics and crash reports are opt-in, user-previewed, bounded, redacted, and correlation-bound. Guests export only; blocked or deletion-pending users cannot submit. For a crash, capture the typed safe error code, build/platform/architecture, exact desktop CEF/Tauri revisions where applicable, correlation IDs, quota state, and server availability. Never request or attach DOM, screenshots, credentials, issue bodies, prompts, or local paths.
 
@@ -69,7 +69,7 @@ Administrator support triage uses `AdminService` metadata-only user, usage, uplo
 
 The monthly `.github/workflows/devhud-cef-security-review.yml` report compares the committed Tauri revision with upstream `feat/cef`; it is read-only and produces metadata only. A high-risk signal requires an immediate maintainer-owned change:
 
-1. Pin a reviewed Tauri/CEF revision in `apps/devhud/cef-pins.json` and every matching `Cargo.lock` git source entry; record the old/new revision, reason, compatibility result, and review reference in this contract and the release contracts.
+1. Pin a reviewed Tauri/CEF revision in `apps/devhud/cef-pins.json`, every matching `Cargo.lock` git source entry, the root `Cargo.toml`, `apps/devhud/src-tauri/Cargo.toml`, and `apps/devhud/scripts/verify-pins.mjs`; record the old/new revision, reason, compatibility result, and review reference in this contract and the release contracts.
 2. Run the CEF/Tauri compatibility matrix for macOS x64/arm64, Windows x64/arm64, Ubuntu x64/arm64, CEF helpers/sandbox, official plugin compatibility patch, updater markers, Native Messaging lifecycle, and mobile dependency exclusion. The review workflow must never perform this mutation.
 3. Build a new complete signed private candidate and repeat SBOM, provenance, artifact, installer, widget, extension, OCI, and runtime validation. Do not reuse prior signed bytes for a changed pin.
 4. Decide updater publication explicitly. Keep discovery closed until the regular GitHub Release and all stores satisfy the existing gates; then expose all ten signed manifests together. If the vulnerable revision is already public, use coordinated roll-forward or emergency withdrawal; never automatic downgrade.

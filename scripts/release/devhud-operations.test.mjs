@@ -37,10 +37,16 @@ test("CEF review is scheduled, read-only, bounded, and non-publishing", () => {
   assert.match(workflow, /permissions:\n  contents: read/u);
   assert.match(workflow, /4af26a3f7f8b692d62cca549bbacd93f5ce90b41/u);
   assert.match(workflow, /feat\/cef/u);
+  assert.match(workflow, /compare\/\$EXPECTED_REVISION\.\.\.\$upstream_revision/u);
+  assert.match(workflow, /vulnerab\\w\*/u);
+  assert.match(workflow, /securitySignalTotal/u);
+  assert.match(workflow, /securitySignalsTruncated/u);
   assert.match(workflow, /mutationPerformed: false/u);
   assert.match(workflow, /publicationPerformed: false/u);
   assert.match(workflow, /actions\/upload-artifact/u);
   assert.deepEqual(fixture.securitySignals[0], { sha: fixture.securitySignals[0].sha, securityKeyword: true });
+  assert.equal(fixture.securitySignalTotal, 1);
+  assert.equal(fixture.securitySignalsTruncated, false);
   assert.equal(fixture.mutationPerformed, false);
   assert.equal(fixture.publicationPerformed, false);
   for (const forbidden of ["git push", "gh release", "workflow_dispatch --", "promote-updater", "cosign sign", "wrangler pages deploy", "curl -X POST"]) {

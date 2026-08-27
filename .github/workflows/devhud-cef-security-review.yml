@@ -43,19 +43,32 @@ jobs:
           lock_revisions=$(awk '/^source = "git\+https:\/\/github\.com\/tauri-apps\/tauri\?rev=/{print}' Cargo.lock | sort -u)
           test "$(printf '%s\n' "$lock_revisions" | wc -l)" -eq 1
           grep -Fq "rev=$EXPECTED_REVISION#$EXPECTED_REVISION" <<< "$lock_revisions"
-          gh api "repos/$UPSTREAM_REPOSITORY/compare/$EXPECTED_REVISION...$UPSTREAM_BRANCH" > cef-compare.json
           gh api "repos/$UPSTREAM_REPOSITORY/commits/$UPSTREAM_BRANCH" > cef-branch.json
+          upstream_revision=$(node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+          const branch = JSON.parse(readFileSync('cef-branch.json', 'utf8'));
+          if (!/^[0-9a-f]{40}$/u.test(branch.sha ?? '')) process.exit(2);
+          process.stdout.write(branch.sha);
+          NODE
+          )
+          gh api "repos/$UPSTREAM_REPOSITORY/compare/$EXPECTED_REVISION...$upstream_revision" > cef-compare.json
           node --input-type=module - "$report" "$pin" "$GITHUB_SHA" <<'NODE'
           import { readFileSync, writeFileSync } from 'node:fs';
           const [, , output, pin, workflowRevision] = process.argv;
           const compare = JSON.parse(readFileSync('cef-compare.json', 'utf8'));
           const branch = JSON.parse(readFileSync('cef-branch.json', 'utf8'));
           const commits = Array.isArray(compare.commits) ? compare.commits : [];
-          const signals = commits
-            .map((commit) => ({ sha: commit.sha, message: String(commit.commit?.message ?? '').split('\n')[0] }))
-            .filter(({ message }) => /\b(?:CVE|security|vulnerab|exploit|chromium|cef)\b/i.test(message))
-            .map(({ sha }) => ({ sha, securityKeyword: true }))
-            .slice(0, 50);
+          const signalCandidates = commits
+            .map((commit) => ({
+              sha: commit.sha,
+              message: String(commit.commit?.message ?? '').split('\n')[0],
+              date: String(commit.commit?.committer?.date ?? commit.commit?.author?.date ?? ''),
+            }))
+            .filter(({ message }) => /\b(?:CVE|security|vulnerab\w*|exploit|chromium|cef)\b/i.test(message))
+            .sort((left, right) => right.date.localeCompare(left.date) || right.sha.localeCompare(left.sha));
+          const signals = signalCandidates
+            .slice(0, 50)
+            .map(({ sha }) => ({ sha, securityKeyword: true }));
           const report = {
             schemaVersion: 1,
             repository: 'tauri-apps/tauri',
@@ -70,6 +83,8 @@ jobs:
               totalCommits: compare.total_commits ?? null,
             },
             securitySignals: signals,
+            securitySignalTotal: signalCandidates.length,
+            securitySignalsTruncated: signalCandidates.length > signals.length,
             workflowRevision,
             mutationPerformed: false,
             publicationPerformed: false,
@@ -89,6 +104,7 @@ jobs:
           console.log(`- Upstream \\`feat/cef\\`: \`${report.upstreamRevision}\``);
           console.log(`- Comparison: ${report.comparison.status}, ahead ${report.comparison.aheadBy}, behind ${report.comparison.behindBy}`);
           console.log(`- Security-related commit signals: ${report.securitySignals.length}`);
+          console.log(`- Security-related signals retained: ${report.securitySignals.length} of ${report.securitySignalTotal}${report.securitySignalsTruncated ? ' (truncated)' : ''}`);
           console.log('- Mutation/publication performed: false/false');
           console.log('- High-risk findings require the maintainer pin-update, compatibility, signed-release, and updater-publication runbook gates.');
           NODE

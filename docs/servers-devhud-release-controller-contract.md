@@ -4,7 +4,7 @@
 
 This contract defines the operator-provided deployment boundary used by the dedicated DevHud release workflow. The repository does not select or hard-code the official API hosting provider. An operator may implement the boundary on any platform that can honor the exact OIDC, immutable-image, migration, updater, readiness, and rollback semantics below.
 
-Maintainer recovery, backup/restore, store-delay, withdrawal, and high-severity procedures are documented in `docs/apps-devhud-operations-contract.md`. A CEF pin change is never performed by release-controller automation: it must be reviewed in `apps/devhud/cef-pins.json`, every matching `Cargo.lock` source entry, the compatibility evidence, and a newly signed candidate before updater publication is considered.
+Maintainer recovery, backup/restore, store-delay, withdrawal, and high-severity procedures are documented in `docs/apps-devhud-operations-contract.md`. A CEF pin change is never performed by release-controller automation: it must be reviewed in `apps/devhud/cef-pins.json`, every authoritative Cargo and verifier pin consumer, every matching `Cargo.lock` source entry, the compatibility evidence, and a newly signed candidate before updater publication is considered.
 
 ## Identity and authentication
 

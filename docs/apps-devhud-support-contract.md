@@ -10,7 +10,7 @@ For diagnostics, ask the user to preview the exact redacted payload first. Guest
 
 Use `AdminService.QuarantineUpload` or `AdminService.DeleteUpload` only with a validated non-blank reason and expected-state compare-and-set. Quarantine/removal is metadata-first and must not expose image bytes or locators. Preserve operation leases and tombstones; a conflict or uncertain removal remains visible for retry.
 
-Account deletion is recoverable through `AccountService.RestoreAccount` for 30 days. Restore clears deletion state only and never an administrator block. After the recovery window, `devhud-api-sweeper` owns irreversible pseudonymization/purge, public-object replacement or CDN invalidation, credential cleanup, and retention pruning. Do not report completion until the applicable database, R2, tombstone, and secure-store boundaries are confirmed.
+Account deletion is recoverable through `AccountService.RestoreAccount` for 30 days. Restore clears deletion state only and never an administrator block. After the recovery window, `devhud-api-sweeper` owns irreversible server-side pseudonymization/purge, public-object replacement or CDN invalidation, and retention pruning. Device-local PATs and R2 credentials never enter the API; each client owns immediate secure-store cleanup and eventual profile reconciliation. Do not report completion until the applicable database, R2, tombstone, and per-device secure-store boundaries are confirmed.
 
 ## High-severity response
 
@@ -19,5 +19,5 @@ For a suspected CEF vulnerability, credential exposure, bad public artifact, uns
 1. Stop the affected manual workflow before its next external mutation and preserve the exact run, candidate, provenance, and redacted diagnostics.
 2. Determine whether API, sweeper, stores (`apple`, `google-play`, `chrome-web-store`), GitHub Release, updater, or `/devhud` is public.
 3. Before any store is public, follow the documented pre-store withdrawal and rollback boundary. After any store is public, automatic rollback is prohibited; use coordinated roll-forward or emergency withdrawal.
-4. For CEF, follow `docs/apps-devhud-operations-contract.md`: update `apps/devhud/cef-pins.json` and matching `Cargo.lock` entries, complete the compatibility matrix, build a new signed candidate, and make an explicit all-ten-manifest updater decision.
+4. For CEF, follow `docs/apps-devhud-operations-contract.md`: update `apps/devhud/cef-pins.json`, matching `Cargo.lock` entries, the root and desktop Cargo manifests, and `apps/devhud/scripts/verify-pins.mjs`; complete the compatibility matrix, build a new signed candidate, and make an explicit all-ten-manifest updater decision.
 5. Communicate through the approved human maintainer channel. This repository has no remote-alert service or kill switch; never invent one in a support response.
