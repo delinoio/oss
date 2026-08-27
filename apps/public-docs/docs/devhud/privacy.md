@@ -14,7 +14,7 @@ An image attached to a published issue may be publicly retrievable. Do not captu
 
 ## Account deletion and recovery
 
-Deletion purges PATs, R2 credentials, and other account-local state while blocking access immediately, but unexpired encrypted RealQA recovery drafts remain available under their independent retention rules; the current Logto recovery session remains available to the verified owner. Account restoration is available to the verified owner for 30 days. After that period, synchronized data is purged. Upload metadata is purged or irreversibly pseudonymized only at the documented audit boundary. Official image objects are deleted and public CDN copies are invalidated; image bytes are not retained as pseudonymized data. A successful restore cannot follow final purge.
+Deletion purges PATs, R2 credentials, and other account-local state while blocking access immediately, but unexpired encrypted RealQA recovery drafts remain available under their independent retention rules; the current Logto recovery session remains available to the verified owner. Account restoration is available to the verified owner for 30 days. After that period, synchronized data is purged. Upload metadata is purged or irreversibly pseudonymized only at the documented audit boundary. Pseudonymized security and administrator audit records may remain for at most 180 days. Official image objects are deleted and public CDN copies are invalidated; image bytes are not retained as pseudonymized data. A successful restore cannot follow final purge.
 
 ## Diagnostics
 

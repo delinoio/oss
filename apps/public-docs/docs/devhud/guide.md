@@ -4,7 +4,7 @@
 
 DevHud opens in guest mode so you can inspect the shell and local preferences. Guests can preview and export diagnostics but cannot submit them. You can configure GitHub and create issues directly as a guest with a device-local PAT; direct submissions can use BYO R2 or no images. Sign in through Logto to synchronize supported account settings, use official uploads, and recover an account. A custom API origin can provide authentication and settings for an installation, but official upload authority remains first-party.
 
-Production authentication requires HTTPS, a trusted deployment, and the configured Logto issuer, client, audience, and callback. Local development may use the documented loopback setup; never send tokens or credentials in URLs.
+Production authentication requires HTTPS, a trusted deployment, and the configured Logto issuer, client, audience, and callback. Never send tokens or credentials in URLs.
 
 ## Settings and PAT profiles
 
@@ -18,9 +18,9 @@ URL mappings associate a concrete browser origin and path with a repository and 
 
 ## Images and submission
 
-Official uploads use signed direct storage and publish opaque image URLs. BYO R2 is optional and uses a configured Cloudflare account, bucket, public base, and prefix; access keys stay device-local. Public images can be viewed by anyone with the URL. Treat issue content and image pixels as public; see [Privacy](privacy) for removal requests.
+Official uploads use signed direct storage and publish opaque image URLs. Each authenticated user may use up to 1 GiB in a rolling 24-hour period, store up to 20 GiB, and request up to 120 signed URLs in a rolling hour. Upload staging expires after 24 hours. Images are limited to 4096×4096 pixels and 16,777,216 total pixels, and public delivery is limited to 300 GETs per IP per minute. BYO R2 is optional and uses a configured Cloudflare account, bucket, public base, and prefix; access keys stay device-local. Public images can be viewed by anyone with the URL. Treat issue content and image pixels as public; see [Privacy](privacy) for removal requests.
 
-Direct GitHub submission uses the selected profile. The optional local-agent flow is off by default: agents are read-only and credential-free, Draft results require review, and Direct mode requires separate confirmation before DevHud writes. Never put secrets in prompts, issue text, repository instructions, or captured context.
+Direct GitHub submission uses the selected profile. The optional local-agent flow is off by default and desktop-only. It accepts only preinstalled Codex `0.147.0`, Claude Code `2.1.233`, or OpenCode `1.18.18`; DevHud never installs or updates these agents. Agents are read-only and credential-free, Draft results require review, and Direct mode requires separate confirmation before DevHud writes. Never put secrets in prompts, issue text, repository instructions, or captured context.
 
 ## Decks and widgets
 

@@ -123,7 +123,7 @@ function visibleText(contents) {
 
 const forbiddenContent = [
   /(?:GH_TOKEN|DEVHUD_[A-Z0-9_]*SECRET|Authorization:\s*Bearer)/iu,
-  /(?:\/home\/|\/Users\/|[A-Z]:\\|~\/\.config\/)/u,
+  /(?:\/home\/|\/Users\/|[A-Za-z]:\\|~\/\.config\/)/u,
   /(?:private key|signing key|password|access key|secret)\s*[:=]\s*[^\s<`]+/iu,
 ];
 const releaseAvailabilityClaim =
