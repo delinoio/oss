@@ -4,13 +4,13 @@ DevHud is designed around local-first capture and explicit sharing. It does not 
 
 ## What is stored
 
-PATs, R2 access keys, Logto tokens, pairing secrets, permissions, drafts, caches, prompts, and API-origin details are device-local. PAT values never enter synchronized settings or requests to the DevHud API. A selected PAT is used for direct GitHub requests. Authenticated settings synchronize only bounded non-secret descriptors and references.
+PATs, R2 access keys, Logto tokens, pairing secrets, permissions, drafts, caches, prompts, and API-origin details are device-local. PAT values never enter synchronized settings or requests to the DevHud API. A selected PAT is used for direct GitHub requests. For authenticated users, synchronized settings include appearance, complete Deck names and queries, repository and issue-tracker configuration, URL mappings, agent configuration, upload-provider selection, non-secret R2 metadata, and bounded non-secret profile descriptors and references. Credentials and other secrets remain device-local.
 
 Unsubmitted RealQA drafts are authenticated-encrypted and retained for 30 days from their last successful save, subject to the default 10 GiB local quota. Successful issue creation, explicit deletion, logout, or expiry removes them. Diagnostics are redacted, opt-in for submission, and accepted crash reports are retained for 30 days; local diagnostic events are retained for at most 7 days.
 
 ## Public images
 
-An image attached to a published issue may be publicly retrievable. Do not capture credentials, private data, or secrets. Official image removal is a supported administrative operation, but CDN and browser caches may take time to invalidate. The public removal-request process is intentionally a placeholder until a dedicated form is published: contact [Support](support) with the public issue or image reference, without sending credentials.
+An image attached to a published issue may be publicly retrievable. Do not capture credentials, private data, or secrets. Official image removal is a supported administrative operation, but CDN and browser caches may take time to invalidate. Public image-removal requests are not currently accepted; this process remains a placeholder until a dedicated intake form is published. Do not send credentials.
 
 ## Account deletion and recovery
 

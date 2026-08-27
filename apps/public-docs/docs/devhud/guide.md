@@ -2,7 +2,7 @@
 
 ## First run and identity
 
-DevHud opens in guest mode so you can inspect the shell and local preferences. Guests can preview and export diagnostics but cannot submit them. Sign in through Logto to synchronize supported account settings, connect GitHub, create issues, use official uploads, and recover an account. A custom API origin can provide authentication and settings for an installation, but official upload authority remains first-party.
+DevHud opens in guest mode so you can inspect the shell and local preferences. Guests can preview and export diagnostics but cannot submit them. You can configure GitHub and create issues directly as a guest with a device-local PAT; direct submissions can use BYO R2 or no images. Sign in through Logto to synchronize supported account settings, use official uploads, and recover an account. A custom API origin can provide authentication and settings for an installation, but official upload authority remains first-party.
 
 Production authentication requires HTTPS, a trusted deployment, and the configured Logto issuer, client, audience, and callback. Local development may use the documented loopback setup; never send tokens or credentials in URLs.
 
@@ -24,7 +24,7 @@ Direct GitHub submission uses the selected profile. The optional local-agent flo
 
 ## Decks and widgets
 
-Deck polling targets 1, 5, 15, or 30 minutes while the app is active. GitHub rate limits, offline state, and blocked accounts stop or defer refresh and show a typed status. Notifications are local and opt-in. Widgets refresh on OS-controlled best-effort schedules, expose the selected Deck's private title, show stale state after 60 minutes, and retain the last successful results while suspended or offline.
+Deck polling targets 1, 5, 15, or 30 minutes while the app is active. GitHub rate limits, offline state, deletion cleanup, logout, and API-backed restrictions stop or defer refresh and show a typed status; administrative blocking alone does not stop local direct-GitHub Deck polling. Notifications are local and opt-in. Widgets refresh on OS-controlled best-effort schedules, expose the selected Deck's private title, show stale state after 60 minutes, and retain the last successful results while suspended or offline.
 
 ## Offline, blocked, and account actions
 
