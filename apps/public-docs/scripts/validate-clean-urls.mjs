@@ -94,8 +94,18 @@ const forbiddenContent = [
   /(?:GH_TOKEN|DEVHUD_[A-Z0-9_]*SECRET|Authorization:\s*Bearer)/iu,
   /(?:\/home\/|\/Users\/|[A-Z]:\\|~\/\.config\/)/u,
   /(?:private key|signing key|password|access key|secret)\s*[:=]\s*[^\s<`]+/iu,
-  /partial\s+(?:GA|general availability)|staged\s+general availability/iu,
 ];
+const releaseAvailabilityClaim =
+  /\b(?:partial|staged)\s+(?:GA|general availability)\b|\b(?:partial|staged)\s+or\s+(?:staged|partial)\s+general[- ]availability\b/giu;
+
+function containsAffirmativeReleaseClaim(contents) {
+  for (const match of contents.matchAll(releaseAvailabilityClaim)) {
+    const prefix = contents.slice(Math.max(0, match.index - 80), match.index);
+    if (/\b(?:no|not|never|without)\b[^.!?]{0,60}$/iu.test(prefix)) continue;
+    return true;
+  }
+  return false;
+}
 
 for (const { routeId, outputFile } of routeOutputFiles) {
   if (!(await pathExists(outputFile))) {
@@ -118,6 +128,9 @@ for (const htmlFile of htmlFiles) {
     if (pattern.test(contents)) {
       failures.push(`${path.relative(outputDir, htmlFile)} contains prohibited public content`);
     }
+  }
+  if (containsAffirmativeReleaseClaim(contents)) {
+    failures.push(`${path.relative(outputDir, htmlFile)} contains prohibited public content`);
   }
 }
 
