@@ -12,7 +12,7 @@
 
 ## Uninstall
 
-Use the operating system's normal uninstall path. Unpair Chrome first when possible and disable widgets separately. On Debian, unpair every affected Chrome user or make every affected user's session active before retrying removal; otherwise removal aborts before deleting registration or binaries. Uninstalling the app does not remove GitHub issues or public images already shared. Public image-removal requests are not currently accepted because no public intake exists yet; do not send credentials.
+For Debian packages and NSIS installers, use the operating system's normal uninstall path. Unpair Chrome first when possible and disable widgets separately. On Debian, unpair every affected Chrome user or make every affected user's session active before retrying removal; otherwise removal aborts before deleting registration or binaries. For an Ubuntu AppImage installation, quit and unpair DevHud, delete the downloaded AppImage, and use the documented local-data cleanup control if you also want to remove device-local data. Uninstalling the app does not remove GitHub issues or public images already shared. Public image-removal requests are not currently accepted because no public intake exists yet; do not send credentials.
 
 ## Help and reports
 

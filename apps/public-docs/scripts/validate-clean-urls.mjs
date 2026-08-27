@@ -122,14 +122,15 @@ function findHtmlRouteLinks(contents, htmlFile) {
 
   for (const match of contents.matchAll(hrefPattern)) {
     const href = attributeValue(match);
-    if (!/\.html(?:[?#]|$)/iu.test(href)) continue;
+    const decodedHref = decodeHTML(href);
+    if (!/\.html(?:[?#]|$)/iu.test(decodedHref)) continue;
     let resolvedUrl;
     try {
-      resolvedUrl = new URL(decodeHTML(href), pageUrl);
+      resolvedUrl = new URL(decodedHref, pageUrl);
     } catch {
       continue;
     }
-    if (resolvedUrl.origin === pageUrl.origin && htmlRoutePaths.has(resolvedUrl.pathname)) {
+    if (htmlRoutePaths.has(resolvedUrl.pathname)) {
       invalidRoutes.push(resolvedUrl.pathname);
     }
   }
@@ -205,7 +206,11 @@ function containsCredentialBearingResource(contents, htmlFile) {
   for (const target of resourceTargets(contents)) {
     try {
       const resolvedUrl = new URL(decodeHTML(target), pageUrl);
-      if (resolvedUrl.username || resolvedUrl.password) return true;
+      if (
+        resolvedUrl.username
+        || resolvedUrl.password
+        || containsCredentialBearingQuery(resolvedUrl)
+      ) return true;
     } catch {
       // Invalid URLs are handled by the browser/build output and are not credential evidence.
     }
@@ -240,6 +245,8 @@ const forbiddenLinkFixtures = [
 const invalidRouteAttributeFixtures = [
   '<a href = "/devhud/install.html">install</a>',
   "<a href=/devhud/install.html>install</a>",
+  '<a href="/devhud/install&#46;html">install</a>',
+  '<a href="https://docs.example.com/devhud/install.html">install</a>',
 ];
 const forbiddenPathFixtures = [
   '<a href="file://server/share/private.conf">private file</a>',
@@ -256,6 +263,7 @@ const forbiddenResourceFixtures = [
 const credentialBearingResourceFixtures = [
   '<img src="https://alice:secret@example.com/image.png">',
   '<img src = https://alice:secret@example.com/image.png>',
+  '<img src="https://example.com/image?token&equals;abc123">',
 ];
 const approvedResourceFixtures = [
   '<img src="/assets/logo.svg">',
