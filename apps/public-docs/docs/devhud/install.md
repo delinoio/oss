@@ -14,7 +14,7 @@ Install iOS 16 or later from the Apple App Store, or Android 10/API 29 or later 
 
 ## Chrome extension
 
-Install DevHud from the Chrome Web Store. The extension is a permission-scoped context picker: it does not continuously observe pages or perform page-wide observation, and it does not collect cookies, storage, console output, or network traffic. After an explicit user gesture, it injects into the active page to scan candidates and collect only the selected, sanitized context. A Chrome-assisted RealQA draft includes that browser context by default when submitted, so the redacted URL, page title, user agent, viewport and bounds, accessibility values, and sanitized markup may be published in the GitHub issue. Review the draft and use its browser-context removal control before submitting if you do not want to share those details. Pair it from DevHud Settings after installing the desktop app.
+Install DevHud from the Chrome Web Store. The extension is a permission-scoped context picker: it does not continuously observe pages, and it does not collect cookies, storage, console output, or network traffic. After an explicit picker gesture, it scans up to 10,000 candidate elements across the active page, then retains and persists only the selected, sanitized context. A Chrome-assisted RealQA draft includes that browser context by default when submitted, so the redacted URL, page title, user agent, viewport and bounds, accessibility values, and sanitized markup may be published in the GitHub issue. Review the draft and use its browser-context removal control before submitting if you do not want to share those details. Pair it from DevHud Settings after installing the desktop app.
 
 ## Verification checklist
 

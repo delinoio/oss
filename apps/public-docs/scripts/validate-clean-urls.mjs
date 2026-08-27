@@ -100,8 +100,24 @@ const releaseAvailabilityClaim =
 
 function containsAffirmativeReleaseClaim(contents) {
   for (const match of contents.matchAll(releaseAvailabilityClaim)) {
-    const prefix = contents.slice(Math.max(0, match.index - 80), match.index);
+    const sentenceStart = Math.max(
+      contents.lastIndexOf(".", match.index) + 1,
+      contents.lastIndexOf("!", match.index) + 1,
+      contents.lastIndexOf("?", match.index) + 1,
+    );
+    const sentenceEndOffset = contents
+      .slice(match.index + match[0].length)
+      .search(/[.!?]/u);
+    const sentenceEnd =
+      sentenceEndOffset === -1
+        ? -1
+        : match.index + match[0].length + sentenceEndOffset;
+    const sentence = contents.slice(sentenceStart, sentenceEnd === -1 ? contents.length : sentenceEnd);
+    const phraseOffset = match.index - sentenceStart;
+    const prefix = sentence.slice(0, phraseOffset);
+    const suffix = sentence.slice(phraseOffset + match[0].length);
     if (/\b(?:no|not|never|without)\b[^.!?]{0,60}$/iu.test(prefix)) continue;
+    if (/^\s*(?:is|are|remains?|remain)\s+(?:not\s+)?(?:available|supported|permitted|allowed|prohibited|forbidden|disallowed|excluded)\b/iu.test(suffix)) continue;
     return true;
   }
   return false;
@@ -136,11 +152,12 @@ for (const htmlFile of htmlFiles) {
 
 for (const [routeId, headings] of requiredHeadings) {
   const route = routeOutputFiles.find((entry) => entry.routeId === routeId);
-  const contents = route ? await readFile(route.outputFile, "utf8") : "";
+  const pageContents = route ? await readFile(route.outputFile, "utf8") : "";
+  const contents = articleContent(pageContents);
   for (const heading of headings) {
     if (!contents.includes(heading)) failures.push(`${routeId} is missing required heading text: ${heading}`);
   }
-  if (!/<main\b[^>]*>/iu.test(contents)) failures.push(`${routeId} is missing a main landmark`);
+  if (!/<main\b[^>]*>/iu.test(pageContents)) failures.push(`${routeId} is missing a main landmark`);
 }
 
 for (const [routeId, links] of requiredLinks) {
