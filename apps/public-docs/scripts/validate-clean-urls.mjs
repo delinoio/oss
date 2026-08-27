@@ -37,8 +37,8 @@ const routeOutputFiles = stableRouteIds.map((routeId) => ({
 const htmlRoutePaths = new Set(
   stableRouteIds.map((routeId) => (routeId === "/" ? "/index.html" : `${routeId}.html`)),
 );
-const hrefPattern = /<a\b[^>]*\bhref=(['"])([^'"]*)\1/giu;
-const resourceAttributePattern = /\b(?:src|srcset)=(['"])([^'"]*)\1/giu;
+const hrefPattern = /<a\b[^>]*\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'`=<>]+))/giu;
+const resourceAttributePattern = /\b(?:src|srcset)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'`=<>]+))/giu;
 const validatorOrigin = "https://public-docs.invalid";
 
 async function pathExists(filePath) {
@@ -70,6 +70,11 @@ async function collectHtmlFiles(directory) {
 
 const htmlFiles = await collectHtmlFiles(outputDir);
 const failures = [];
+
+function attributeValue(match) {
+  return match[1] ?? match[2] ?? match[3] ?? "";
+}
+
 const requiredHeadings = new Map([
   ["/devhud", ["DevHud"]],
   ["/devhud/install", ["Install and Verify DevHud", "Desktop", "Mobile stores", "Chrome extension"]],
@@ -115,7 +120,8 @@ function findHtmlRouteLinks(contents, htmlFile) {
   const pageUrl = new URL(pagePath, validatorOrigin);
   const invalidRoutes = [];
 
-  for (const [, , href] of contents.matchAll(hrefPattern)) {
+  for (const match of contents.matchAll(hrefPattern)) {
+    const href = attributeValue(match);
     if (!/\.html(?:[?#]|$)/iu.test(href)) continue;
     let resolvedUrl;
     try {
@@ -135,7 +141,8 @@ function containsCredentialBearingLink(contents, htmlFile) {
   const pagePath = `/${path.relative(outputDir, htmlFile).split(path.sep).join("/")}`;
   const pageUrl = new URL(pagePath, validatorOrigin);
 
-  for (const [, , href] of contents.matchAll(hrefPattern)) {
+  for (const match of contents.matchAll(hrefPattern)) {
+    const href = attributeValue(match);
     try {
       const resolvedUrl = new URL(decodeHTML(href), pageUrl);
       if (resolvedUrl.username || resolvedUrl.password) return true;
@@ -149,7 +156,8 @@ function containsCredentialBearingLink(contents, htmlFile) {
 
 function resourceTargets(contents) {
   const targets = [];
-  for (const [, , value] of contents.matchAll(resourceAttributePattern)) {
+  for (const match of contents.matchAll(resourceAttributePattern)) {
+    const value = attributeValue(match);
     if (value.includes(",")) {
       for (const candidate of value.split(",")) {
         const target = candidate.trim().split(/\s+/u, 1)[0];
@@ -180,6 +188,22 @@ function containsForbiddenResourcePath(contents, htmlFile) {
     resourceTargetsToCheck.some((target) => pattern.test(target)));
 }
 
+function containsCredentialBearingResource(contents, htmlFile) {
+  const pagePath = `/${path.relative(outputDir, htmlFile).split(path.sep).join("/")}`;
+  const pageUrl = new URL(pagePath, validatorOrigin);
+
+  for (const target of resourceTargets(contents)) {
+    try {
+      const resolvedUrl = new URL(decodeHTML(target), pageUrl);
+      if (resolvedUrl.username || resolvedUrl.password) return true;
+    } catch {
+      // Invalid URLs are handled by the browser/build output and are not credential evidence.
+    }
+  }
+
+  return false;
+}
+
 const forbiddenContent = [
   /(?:GH_TOKEN|DEVHUD_[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|KEY)|Authorization:\s*Bearer)/iu,
   /(?:"(?:token|access[_-]?token|refresh[_-]?token|api[_-]?key)"|(?:token|access[_-]?token|refresh[_-]?token|api[_-]?key))\s*[:=]\s*[^\s<`]+/iu,
@@ -202,6 +226,10 @@ const forbiddenPathContent = [
 const forbiddenLinkFixtures = [
   '<a href="https://alice:secret@example.com/support">support</a>',
 ];
+const invalidRouteAttributeFixtures = [
+  '<a href = "/devhud/install.html">install</a>',
+  "<a href=/devhud/install.html>install</a>",
+];
 const forbiddenPathFixtures = [
   '<a href="file://server/share/private.conf">private file</a>',
   '<a href="file://localhost/etc/private.conf">private file</a>',
@@ -211,6 +239,12 @@ const forbiddenPathFixtures = [
 const forbiddenResourceFixtures = [
   '<img src="file:///etc/devhud/private.png">',
   '<img srcset="../../servers/devhud/private.png 1x">',
+  '<img src = "file:///etc/devhud/private.png">',
+  '<img src=file:///etc/devhud/private.png>',
+];
+const credentialBearingResourceFixtures = [
+  '<img src="https://alice:secret@example.com/image.png">',
+  '<img src = https://alice:secret@example.com/image.png>',
 ];
 const approvedResourceFixtures = [
   '<img src="/assets/logo.svg">',
@@ -296,9 +330,12 @@ for (const htmlFile of htmlFiles) {
   if (containsForbiddenResourcePath(contents, htmlFile)) {
     failures.push(`${path.relative(outputDir, htmlFile)} contains prohibited public content`);
   }
+  if (containsCredentialBearingResource(contents, htmlFile)) {
+    failures.push(`${path.relative(outputDir, htmlFile)} contains prohibited public content`);
+  }
   for (const pattern of forbiddenPathContent) {
     const linkTargets = [...contents.matchAll(hrefPattern)]
-      .map(([, , href]) => decodeHTML(href))
+      .map((match) => decodeHTML(attributeValue(match)))
       .join(" ");
     if (pattern.test(renderedText) || pattern.test(linkTargets)) {
       failures.push(`${path.relative(outputDir, htmlFile)} contains prohibited public content`);
@@ -321,6 +358,12 @@ for (const fixture of forbiddenLinkFixtures) {
   }
 }
 
+for (const fixture of invalidRouteAttributeFixtures) {
+  if (findHtmlRouteLinks(fixture, path.join(outputDir, "fixture.html")).length === 0) {
+    failures.push("invalid HTML route attribute fixture was not detected");
+  }
+}
+
 for (const fixture of forbiddenPathFixtures) {
   if (!forbiddenPathContent.some((pattern) => pattern.test(fixture))) {
     failures.push("forbidden filesystem path fixture was not detected");
@@ -330,6 +373,12 @@ for (const fixture of forbiddenPathFixtures) {
 for (const fixture of forbiddenResourceFixtures) {
   if (!containsForbiddenResourcePath(fixture, path.join(outputDir, "fixture.html"))) {
     failures.push("forbidden resource path fixture was not detected");
+  }
+}
+
+for (const fixture of credentialBearingResourceFixtures) {
+  if (!containsCredentialBearingResource(fixture, path.join(outputDir, "fixture.html"))) {
+    failures.push("credential-bearing resource fixture was not detected");
   }
 }
 
