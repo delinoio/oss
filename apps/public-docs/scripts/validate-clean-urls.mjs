@@ -21,6 +21,11 @@ const stableRouteIds = [
 ];
 
 const outputDir = path.resolve("doc_build");
+const stableRoutePathPattern = stableRouteIds
+  .filter((routeId) => routeId !== "/")
+  .sort((left, right) => right.length - left.length)
+  .map((routeId) => routeId.slice(1).replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"))
+  .join("|");
 const routeOutputFiles = stableRouteIds.map((routeId) => ({
   routeId,
   outputFile:
@@ -32,9 +37,9 @@ const htmlHrefPatterns = stableRouteIds.map((routeId) => ({
   htmlRoute: routeId === "/" ? "/index.html" : `${routeId}.html`,
   pattern:
     routeId === "/"
-      ? /href=(["'])(?:https?:\/\/[^/"']+)?\/index\.html(?:[?#][^"']*)?\1/
+      ? /href=(["'])(?:(?:\.\.?\/)*|\/)index\.html(?:[?#][^"']*)?\1/
       : new RegExp(
-          `href=(["'])(?:https?:\\/\\/[^/"']+)?${routeId}\\.html(?:[?#][^"']*)?\\1`,
+          `href=(["'])(?:(?:\\.\\.?\\/)*|\\/)${routeId.slice(1)}\\.html(?:[?#][^"']*)?\\1`,
         ),
 }));
 
@@ -122,9 +127,14 @@ function visibleText(contents) {
 }
 
 const forbiddenContent = [
-  /(?:GH_TOKEN|DEVHUD_[A-Z0-9_]*SECRET|Authorization:\s*Bearer)/iu,
-  /(?:\/home\/|\/Users\/|[A-Za-z]:\\|~\/\.config\/)/u,
+  /(?:GH_TOKEN|DEVHUD_[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|KEY)|Authorization:\s*Bearer)/iu,
+  /(?:token|access[_-]?token|refresh[_-]?token|api[_-]?key)\s*[:=]\s*[^\s<`]+/iu,
   /(?:private key|signing key|password|access key|secret)\s*[:=]\s*[^\s<`]+/iu,
+];
+const forbiddenPathContent = [
+  new RegExp(`(?:^|[\\s("'\\x60>])/(?!${stableRoutePathPattern}(?:\\.html)?(?:[/?#"'\\x60<\\s]|$))[A-Za-z0-9._~-]+(?:[/\\\\][^\\s"'\\x60<>]*)?`, "u"),
+  /(?:^|[\s("'`>])[A-Za-z]:[\\/][^\s"'`<>]*/u,
+  /(?:^|[\s("'`>])\\\\[^\s"'`<>\\/]+[\\/][^\s"'`<>]*/u,
 ];
 const releaseAvailabilityClaim =
   /\b(?:partial|staged)\s+(?:GA|general[- ]availability)\b|\b(?:partial|staged)\s+or\s+(?:staged|partial)\s+general[- ]availability\b/giu;
@@ -176,6 +186,11 @@ for (const htmlFile of htmlFiles) {
 
   for (const pattern of forbiddenContent) {
     if (pattern.test(contents) || pattern.test(renderedText)) {
+      failures.push(`${path.relative(outputDir, htmlFile)} contains prohibited public content`);
+    }
+  }
+  for (const pattern of forbiddenPathContent) {
+    if (pattern.test(renderedText)) {
       failures.push(`${path.relative(outputDir, htmlFile)} contains prohibited public content`);
     }
   }

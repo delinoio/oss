@@ -20,4 +20,6 @@ Deletion purges PATs, R2 credentials, and other account-local state while blocki
 
 Preview shows the exact redacted export before consent. Exports never confirm an arbitrary filesystem path; crash submission is unavailable to guests and blocked or deletion-pending accounts. Do not include issue bodies, screenshots, DOM, prompts, credentials, or local paths in diagnostic text.
 
+Local diagnostic events are retained for at most 7 days and are bounded to 500 events or 1 MiB, whichever is reached first; older or over-limit local records are pruned. The server retains at most 100 crash reports during its retention window. A fresh submission above that cap is rejected with `ResourceExhausted`, and the local report remains available for retry or export.
+
 For security reports, use [Security](security). For account or image-removal help, use [Support](support).
