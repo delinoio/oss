@@ -90,6 +90,16 @@ function articleContent(contents) {
   return main ? main[0] : "";
 }
 
+function articleHeadings(contents) {
+  return [...contents.matchAll(/<h[1-6]\b[^>]*>([\s\S]*?)<\/h[1-6]>/giu)].map(
+    ([, heading]) => heading
+      .replace(/<a\b[^>]*aria-hidden="true"[^>]*>[\s\S]*?<\/a>/giu, "")
+      .replace(/<[^>]*>/gu, " ")
+      .replace(/\s+/gu, " ")
+      .trim(),
+  );
+}
+
 const forbiddenContent = [
   /(?:GH_TOKEN|DEVHUD_[A-Z0-9_]*SECRET|Authorization:\s*Bearer)/iu,
   /(?:\/home\/|\/Users\/|[A-Z]:\\|~\/\.config\/)/u,
@@ -117,7 +127,7 @@ function containsAffirmativeReleaseClaim(contents) {
     const prefix = sentence.slice(0, phraseOffset);
     const suffix = sentence.slice(phraseOffset + match[0].length);
     if (/\b(?:no|not|never|without)\b[^.!?]{0,60}$/iu.test(prefix)) continue;
-    if (/^\s*(?:is|are|remains?|remain)\s+(?:not\s+)?(?:available|supported|permitted|allowed|prohibited|forbidden|disallowed|excluded)\b/iu.test(suffix)) continue;
+    if (/^\s*(?:is|are|remains?|remain)\s+(?:not\s+(?:available|supported|permitted|allowed)|prohibited|forbidden|disallowed|excluded)\b/iu.test(suffix)) continue;
     return true;
   }
   return false;
@@ -154,8 +164,9 @@ for (const [routeId, headings] of requiredHeadings) {
   const route = routeOutputFiles.find((entry) => entry.routeId === routeId);
   const pageContents = route ? await readFile(route.outputFile, "utf8") : "";
   const contents = articleContent(pageContents);
+  const headingsInArticle = new Set(articleHeadings(contents));
   for (const heading of headings) {
-    if (!contents.includes(heading)) failures.push(`${routeId} is missing required heading text: ${heading}`);
+    if (!headingsInArticle.has(heading)) failures.push(`${routeId} is missing required heading text: ${heading}`);
   }
   if (!/<main\b[^>]*>/iu.test(pageContents)) failures.push(`${routeId} is missing a main landmark`);
 }
