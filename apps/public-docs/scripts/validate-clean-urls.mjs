@@ -159,6 +159,8 @@ const forbiddenContentFixtures = [
 ];
 const forbiddenPathContent = [
   new RegExp(`(?:^|[\\s("'\\x60>])/(?!${stableRoutePathPattern}(?:\\.html)?(?:[?#"'\\x60<\\s]|$))[A-Za-z0-9._~-]+(?:[/\\\\][^\\s"'\\x60<>]*)?`, "u"),
+  /(?:^|[\s("'`>])(?:\.\.[\\/])+(?:[A-Za-z0-9._~-]+[\\/])+[^\s"'`<>]*/u,
+  /(?:^|[\s("'`>])(?:apps|cmds|crates|docs|packaging|packages|protos|scripts|servers)(?:[\\/][^\s"'`<>]+)+/u,
   /(?:^|[\s("'`>])[A-Za-z]:[\\/][^\s"'`<>]*/u,
   /(?:^|[\s("'`>])\\\\[^\s"'`<>\\/]+[\\/][^\s"'`<>]*/u,
   /(?:^|[\s("'`>])file:\/\/(?:[^\/\s"'`<>]+)?\/[^\s"'`<>]*/iu,
@@ -169,6 +171,8 @@ const forbiddenLinkFixtures = [
 const forbiddenPathFixtures = [
   '<a href="file://server/share/private.conf">private file</a>',
   '<a href="file://localhost/etc/private.conf">private file</a>',
+  '<a href="../../servers/devhud/config">private repository path</a>',
+  "repository path: servers/devhud/config",
 ];
 const releaseAvailabilityClaim =
   /\b(?:partial|staged)\s+(?:GA|availability|general[- ]availability)\b|\b(?:partial|staged)\s+or\s+(?:staged|partial)\s+general[- ]availability\b|\b(?:beta|phased|fractional)\s+(?:GA|availability|general[- ]availability|rollout|channel)\b|\bearly[- ]access(?:\s+(?:GA|availability|general[- ]availability|rollout|channel))?\b/giu;
@@ -274,7 +278,7 @@ for (const fixture of forbiddenLinkFixtures) {
 
 for (const fixture of forbiddenPathFixtures) {
   if (!forbiddenPathContent.some((pattern) => pattern.test(fixture))) {
-    failures.push("authority-form file URL fixture was not detected");
+    failures.push("forbidden filesystem path fixture was not detected");
   }
 }
 

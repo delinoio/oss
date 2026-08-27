@@ -53,6 +53,8 @@ cosign verify-blob \
 
 The expected signer is the `delinoio/oss` `package-devhud-private.yml` GitHub Actions workflow running from `refs/heads/main`; do not substitute an identity from another repository, workflow, ref, or issuer. After that succeeds, verify the selected artifact against its `SHA256SUMS` entry (for example, `sha256sum --check release-evidence/SHA256SUMS --ignore-missing` on Linux). Verify the artifact's matching Sigstore bundle from `release-evidence/sigstore/` with the same identity and issuer before opening it.
 
+Before opening the package, bind the verification to the requested release: confirm that the release page is tagged `devhud@v<VERSION>`, resolve that tag to its commit, and require the extracted artifact provenance to identify that exact source revision. Also confirm that the artifact's embedded release metadata identifies `<VERSION>` and that its provenance subject and checksum entry identify the artifact you downloaded. If the tag, source revision, embedded version, artifact name, or digest does not match, discard the package and evidence archive rather than opening it.
+
 ## Mobile stores
 
 Install iOS 16 or later from the Apple App Store, or Android 10/API 29 or later from Google Play. Mobile updates are store-managed. Both packages include the optional one-Deck home-screen widget.

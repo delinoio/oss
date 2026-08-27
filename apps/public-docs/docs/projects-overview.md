@@ -15,6 +15,6 @@ This page provides a high-level public catalog of projects in the Delino OSS mon
 
 ## Canonical Internal Contracts
 
-Authoritative implementation contracts are maintained in repository documents under `docs/project-*.md`.
+Authoritative implementation contracts are maintained in the repository's internal project documents.
 Use this public catalog for orientation, and use internal project docs for precise engineering and operational details.
 Standalone project documentation links are canonical entry points for Nodeup and binpm public guidance.
