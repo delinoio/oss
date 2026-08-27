@@ -126,7 +126,7 @@ function containsAffirmativeReleaseClaim(contents) {
     const phraseOffset = match.index - sentenceStart;
     const prefix = sentence.slice(0, phraseOffset);
     const suffix = sentence.slice(phraseOffset + match[0].length);
-    if (/\b(?:no|not|never|without)\b[^.!?]{0,60}$/iu.test(prefix)) continue;
+    if (/\b(?:no|not|never|without)\s*$/iu.test(prefix)) continue;
     if (/^\s*(?:is|are|remains?|remain)\s+(?:not\s+(?:available|supported|permitted|allowed)|prohibited|forbidden|disallowed|excluded)\b/iu.test(suffix)) continue;
     return true;
   }
