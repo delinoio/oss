@@ -11,6 +11,12 @@ const workflow = readFileSync(`${root}/.github/workflows/devhud-cef-security-rev
 const release = readFileSync(`${root}/.github/workflows/release-devhud.yml`, "utf8");
 const privateWorkflow = readFileSync(`${root}/.github/workflows/package-devhud-private.yml`, "utf8");
 const fixture = JSON.parse(readFileSync(`${root}/scripts/release/fixtures/devhud-cef-security-review.json`, "utf8"));
+const pins = JSON.parse(readFileSync(`${root}/apps/devhud/cef-pins.json`, "utf8"));
+const runtimeRevisionConsumers = [
+  "apps/devhud/src/diagnostics.ts",
+  "packages/devhud-api-client/src/validation.ts",
+  "servers/devhud-api/internal/rpc/diagnostics.go",
+].map((path) => [path, readFileSync(`${root}/${path}`, "utf8")]);
 
 const privateJobs = ["plan", "preflight", "desktop", "extension", "mobile", "oci", "assemble"];
 const publicJobs = ["identity", "private_candidate", "candidate", "preflight", "submit_stores", "review_gate", "docs_candidate", "registry", "prepare_infrastructure", "stores_public", "github_release", "updater_public", "public_docs", "verify_all", "ga", "rollback_pre_store"];
@@ -35,9 +41,12 @@ test("CEF review is scheduled, read-only, bounded, and non-publishing", () => {
   assert.match(workflow, /schedule:[\s\S]*cron:/u);
   assert.match(workflow, /workflow_dispatch:/u);
   assert.match(workflow, /permissions:\n  contents: read/u);
-  assert.match(workflow, /4af26a3f7f8b692d62cca549bbacd93f5ce90b41/u);
+  assert.match(workflow, /pins\.tauri\.revision/u);
   assert.match(workflow, /feat\/cef/u);
-  assert.match(workflow, /compare\/\$EXPECTED_REVISION\.\.\.\$upstream_revision/u);
+  assert.match(workflow, /gh api --paginate --slurp/u);
+  assert.match(workflow, /compare\/\$pin\.\.\.\$upstream_revision/u);
+  assert.match(workflow, /pages\.flatMap\(/u);
+  assert.doesNotMatch(workflow, /EXPECTED_REVISION/u);
   assert.match(workflow, /vulnerab\\w\*/u);
   assert.match(workflow, /securitySignalTotal/u);
   assert.match(workflow, /securitySignalsTruncated/u);
@@ -51,6 +60,12 @@ test("CEF review is scheduled, read-only, bounded, and non-publishing", () => {
   assert.equal(fixture.publicationPerformed, false);
   for (const forbidden of ["git push", "gh release", "workflow_dispatch --", "promote-updater", "cosign sign", "wrangler pages deploy", "curl -X POST"]) {
     assert.doesNotMatch(workflow, new RegExp(forbidden.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "iu"), forbidden);
+  }
+  for (const [path, source] of runtimeRevisionConsumers) {
+    assert.match(source, new RegExp(pins.tauri.revision.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "u"), path);
+  }
+  for (const path of runtimeRevisionConsumers.map(([path]) => path)) {
+    assert.match(operations, new RegExp(path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "u"), path);
   }
 });
 

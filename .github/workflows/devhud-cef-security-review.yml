@@ -28,21 +28,19 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           UPSTREAM_REPOSITORY: tauri-apps/tauri
           UPSTREAM_BRANCH: feat/cef
-          EXPECTED_REVISION: 4af26a3f7f8b692d62cca549bbacd93f5ce90b41
         run: |
           set -euo pipefail
           report=devhud-cef-security-review.json
           pin=$(node --input-type=module <<'NODE'
           import { readFileSync } from 'node:fs';
           const pins = JSON.parse(readFileSync('apps/devhud/cef-pins.json', 'utf8'));
-          if (pins?.tauri?.revision !== '4af26a3f7f8b692d62cca549bbacd93f5ce90b41') process.exit(2);
+          if (!/^[0-9a-f]{40}$/u.test(pins?.tauri?.revision ?? '')) process.exit(2);
           process.stdout.write(pins.tauri.revision);
           NODE
           )
-          test "$pin" = "$EXPECTED_REVISION"
           lock_revisions=$(awk '/^source = "git\+https:\/\/github\.com\/tauri-apps\/tauri\?rev=/{print}' Cargo.lock | sort -u)
           test "$(printf '%s\n' "$lock_revisions" | wc -l)" -eq 1
-          grep -Fq "rev=$EXPECTED_REVISION#$EXPECTED_REVISION" <<< "$lock_revisions"
+          grep -Fq "rev=$pin#$pin" <<< "$lock_revisions"
           gh api "repos/$UPSTREAM_REPOSITORY/commits/$UPSTREAM_BRANCH" > cef-branch.json
           upstream_revision=$(node --input-type=module <<'NODE'
           import { readFileSync } from 'node:fs';
@@ -51,13 +49,16 @@ jobs:
           process.stdout.write(branch.sha);
           NODE
           )
-          gh api "repos/$UPSTREAM_REPOSITORY/compare/$EXPECTED_REVISION...$upstream_revision" > cef-compare.json
+          gh api --paginate --slurp "repos/$UPSTREAM_REPOSITORY/compare/$pin...$upstream_revision?per_page=100" > cef-compare-pages.json
           node --input-type=module - "$report" "$pin" "$GITHUB_SHA" <<'NODE'
           import { readFileSync, writeFileSync } from 'node:fs';
           const [, , output, pin, workflowRevision] = process.argv;
-          const compare = JSON.parse(readFileSync('cef-compare.json', 'utf8'));
+          const pages = JSON.parse(readFileSync('cef-compare-pages.json', 'utf8'));
+          const compare = Array.isArray(pages) && pages.length > 0 ? pages[0] : {};
           const branch = JSON.parse(readFileSync('cef-branch.json', 'utf8'));
-          const commits = Array.isArray(compare.commits) ? compare.commits : [];
+          const commits = Array.isArray(pages)
+            ? pages.flatMap((page) => (Array.isArray(page?.commits) ? page.commits : []))
+            : [];
           const signalCandidates = commits
             .map((commit) => ({
               sha: commit.sha,
