@@ -37,9 +37,9 @@ const htmlHrefPatterns = stableRouteIds.map((routeId) => ({
   htmlRoute: routeId === "/" ? "/index.html" : `${routeId}.html`,
   pattern:
     routeId === "/"
-      ? /href=(["'])(?:(?:\.\.?\/)*|\/)index\.html(?:[?#][^"']*)?\1/
+      ? /href=(["'])(?:https?:\/\/[^/"']+)?(?:(?:\.\.?\/)*|\/)index\.html(?:[?#][^"']*)?\1/
       : new RegExp(
-          `href=(["'])(?:(?:\\.\\.?\\/)*|\\/)${routeId.slice(1)}\\.html(?:[?#][^"']*)?\\1`,
+          `href=(["'])(?:https?:\\/\\/[^/"']+)?(?:(?:\\.\\.?\\/)*|\\/)${routeId.slice(1)}\\.html(?:[?#][^"']*)?\\1`,
         ),
 }));
 

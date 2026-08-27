@@ -8,17 +8,28 @@ Supported systems are macOS 13 or later, Windows 10 22H2 or later, and Ubuntu 22
 
 Download from [Delino OSS GitHub Releases](https://github.com/delinoio/oss/releases). Verify the published SHA-256 checksums and signed release evidence before opening the installer. Updates retain the package type you installed.
 
-The release evidence uses Sigstore bundles. With `cosign` installed, download `SHA256SUMS`, its `sigstore/SHA256SUMS.sigstore.json` bundle, and the selected artifact from the same release, then authenticate the checksum manifest with:
+The release evidence uses Sigstore bundles. With `cosign` installed, download the selected artifact and the `devhud-v<VERSION>-release-evidence.tar.gz` archive from the same release. The checksum manifest and Sigstore evidence are stored inside that archive rather than published as separate release assets. Extract it into a new, empty directory and inspect the archive contents before extraction; do not extract it over an existing directory or trust files outside the expected relative paths:
+
+```sh
+mkdir release-evidence
+tar -tzf devhud-v<VERSION>-release-evidence.tar.gz
+tar -xzf devhud-v<VERSION>-release-evidence.tar.gz \
+  --directory release-evidence \
+  --no-same-owner \
+  --no-same-permissions
+```
+
+Then authenticate the extracted checksum manifest with:
 
 ```sh
 cosign verify-blob \
-  --bundle sigstore/SHA256SUMS.sigstore.json \
-  --certificate-identity "https://github.com/delinoio/oss/.github/workflows/package-devhud-private.yml@refs/tags/devhud@v<VERSION>" \
+  --bundle release-evidence/sigstore/SHA256SUMS.sigstore.json \
+  --certificate-identity "https://github.com/delinoio/oss/.github/workflows/package-devhud-private.yml@refs/heads/main" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
-  SHA256SUMS
+  release-evidence/SHA256SUMS
 ```
 
-The expected signer is the `delinoio/oss` `package-devhud-private.yml` GitHub Actions workflow for the exact release ref; do not substitute an identity from another repository, workflow, or issuer. After that succeeds, verify the selected artifact against its `SHA256SUMS` entry (for example, `sha256sum --check SHA256SUMS --ignore-missing` on Linux). Verify the artifact's matching Sigstore bundle with the same identity and issuer before opening it.
+The expected signer is the `delinoio/oss` `package-devhud-private.yml` GitHub Actions workflow running from `refs/heads/main`; do not substitute an identity from another repository, workflow, ref, or issuer. After that succeeds, verify the selected artifact against its `SHA256SUMS` entry (for example, `sha256sum --check release-evidence/SHA256SUMS --ignore-missing` on Linux). Verify the artifact's matching Sigstore bundle from `release-evidence/sigstore/` with the same identity and issuer before opening it.
 
 ## Mobile stores
 
