@@ -145,12 +145,22 @@ function containsCredentialBearingLink(contents, htmlFile) {
     const href = attributeValue(match);
     try {
       const resolvedUrl = new URL(decodeHTML(href), pageUrl);
-      if (resolvedUrl.username || resolvedUrl.password) return true;
+      if (resolvedUrl.username || resolvedUrl.password || containsCredentialBearingQuery(resolvedUrl)) return true;
     } catch {
       // Invalid URLs are handled by the browser/build output and are not credential evidence.
     }
   }
 
+  return false;
+}
+
+const credentialQueryKey = /^(?:token|access[_-]?token|refresh[_-]?token|api[_-]?key|password|secret)$/iu;
+
+function containsCredentialBearingQuery(url) {
+  for (const [key, value] of url.searchParams) {
+    const pair = `${key}=${value}`;
+    if (credentialQueryKey.test(key) || forbiddenContent.some((pattern) => pattern.test(pair))) return true;
+  }
   return false;
 }
 
@@ -225,6 +235,7 @@ const forbiddenPathContent = [
 ];
 const forbiddenLinkFixtures = [
   '<a href="https://alice:secret@example.com/support">support</a>',
+  '<a href="https://example.com/?token&equals;abc123">support</a>',
 ];
 const invalidRouteAttributeFixtures = [
   '<a href = "/devhud/install.html">install</a>',
@@ -251,7 +262,7 @@ const approvedResourceFixtures = [
   '<script src="/static/js/app.js"></script>',
 ];
 const releaseAvailabilityClaim =
-  /\b(?:partial|staged)\s+(?:GA|availability|general[- ]availability)\b|\b(?:partial|staged)\s+or\s+(?:staged|partial)\s+general[- ]availability\b|\b(?:beta|phased|fractional)\s+(?:GA|availability|general[- ]availability|rollout|channel)\b|\bearly[- ]access(?:\s+(?:GA|availability|general[- ]availability|rollout|channel))?\b/giu;
+  /\b(?:partial|staged)\s+(?:GA|availability|general[- ]availability)\b|\b(?:partial|staged)\s+or\s+(?:staged|partial)\s+general[- ]availability\b|\b(?:beta|phased|fractional)\s+(?:GA|availability|general[- ]availability|rollout|channel)\b|\bearly[- ]access(?:\s+(?:GA|availability|general[- ]availability|rollout|channel))?\b|\bearly announcement\b/giu;
 const negativeAvailabilityPredicate =
   /^\s*(?:(?:is|are|remains?|remain)\s+(?:not|never)\s+(?:available|supported|permitted|allowed|excluded|unsupported)|will\s+not\s+(?:be\s+)?(?:available|supported|permitted|allowed|excluded|unsupported))\b/iu;
 const unnegatedProhibitionPredicate =
@@ -266,7 +277,9 @@ const releaseAvailabilityFixtures = [
   ["phased rollout is supported", true],
   ["fractional rollout is permitted", true],
   ["early-access channel is allowed", true],
+  ["early announcement is available", true],
   ["beta channel is not available", false],
+  ["early announcement is not available", false],
 ];
 
 function containsAffirmativeReleaseClaim(contents) {
