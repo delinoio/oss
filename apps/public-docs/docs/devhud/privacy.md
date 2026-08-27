@@ -14,7 +14,7 @@ An image attached to a published issue may be publicly retrievable. Do not captu
 
 ## Account deletion and recovery
 
-Deletion purges PATs, R2 credentials, and other account-local state while blocking access immediately; the current Logto recovery session remains available to the verified owner. Account restoration is available to the verified owner for 30 days. After that period, synchronized data, upload metadata, and official public image bytes are purged or irreversibly pseudonymized at the documented audit boundary. A successful restore cannot follow final purge.
+Deletion purges PATs, R2 credentials, and other account-local state while blocking access immediately; the current Logto recovery session remains available to the verified owner. Account restoration is available to the verified owner for 30 days. After that period, synchronized data and upload metadata are purged or irreversibly pseudonymized at the documented audit boundary. Official image objects are deleted and public CDN copies are invalidated; image bytes are not retained as pseudonymized data. A successful restore cannot follow final purge.
 
 ## Diagnostics
 
