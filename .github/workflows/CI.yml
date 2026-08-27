@@ -1476,6 +1476,8 @@ jobs:
               - docs/repository-workflow-contract.md
               - .github/workflows/devhud-cef-security-review.yml
               - scripts/release/devhud-operations.test.mjs
+              - packages/devhud-api-client/**
+              - servers/devhud-api/internal/rpc/diagnostics.go
 
       - name: Determine whether to run
         id: gate

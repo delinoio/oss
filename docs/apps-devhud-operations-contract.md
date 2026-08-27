@@ -20,7 +20,7 @@ The public sequence is: complete candidate and live preflight; submit Apple, Goo
 
 - `devhud-private-build`: updater Ed25519 material, macOS Developer ID, Apple API issuer/key ID/private key for notarization, Windows PFX, iOS distribution/profile material, Android upload keystore, and Chrome extension public key. The Apple API identity is dual-use and is also required by `devhud-publication` for store submission.
 - `devhud-publication`: live API/controller, Logto, PostgreSQL/R2/Cloudflare, store access, registry, public-docs, Apple API, and Chrome extension identity inputs. It must not duplicate private package-signing keys.
-- `devhud-store-review-approved`, `devhud-store-publication`, and `devhud-ga`: protected approval boundaries, not storage for new credentials.
+- `devhud-store-review-approved`, `devhud-store-publication`, and `devhud-ga`: protected approval boundaries that must expose the required store and OCI credentials/configuration for their workflow jobs. Keep their values identical to the validated `devhud-publication` inputs where the jobs consume the same provider identity, and do not place private package-signing keys in these environments.
 - `GITHUB_TOKEN` is workflow-scoped. `DEVHUD_RELEASE_CONTROLLER_TOKEN` is short-lived OIDC-derived authorization and is never stored.
 
 Keep platform signatures, updater Ed25519 signatures, and keyless Sigstore bundles as separate trust domains. An unsigned, incompletely signed, or secret-bearing result is rejected.
