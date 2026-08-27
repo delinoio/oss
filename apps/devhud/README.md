@@ -23,3 +23,5 @@ Widgets are opt-in per Deck. The app shows the English/Korean private-title expo
 Development binds only `127.0.0.1:46305` and fails if the port is occupied. Desktop platform smoke requires a native production artifact and certifies only macOS 13+, Windows 10 22H2+, or Ubuntu 22.04+ X11 on the matching architecture. On Linux, pass `-- --artifact /usr/bin/devhud` for an installed package or an equivalent root-prepared layout; the CEF SUID sandbox must be owned by `root:root` with mode `4755`. XWayland is best effort; native Wayland is unsupported.
 
 See [`docs/apps-devhud-foundation.md`](../../docs/apps-devhud-foundation.md) for the full contract and current limitations.
+
+Public user guidance is available at the stable `/devhud`, `/devhud/privacy`, `/devhud/security`, and `/devhud/support` routes of the configured public documentation site.

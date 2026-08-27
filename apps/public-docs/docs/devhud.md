@@ -8,6 +8,8 @@ A DevHud version becomes generally available only when its desktop downloads and
 
 When a coordinated release is available, desktop installers and release evidence are published through [Delino OSS GitHub Releases](https://github.com/delinoio/oss/releases). The mobile app and Chrome extension are distributed through their official stores.
 
+See [Install and Verify](devhud/install), [Using DevHud](devhud/guide), [Privacy](devhud/privacy), [Security](devhud/security), [Support](devhud/support), [Administration](devhud/admin), and [Releases](devhud/releases) for user guidance.
+
 ## Desktop packages
 
 DevHud publishes native packages for x64 and Arm64 systems:

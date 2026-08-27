@@ -17,11 +17,11 @@
 ## Interfaces and Contracts
 - Rspress route, navigation, and sidebar contracts in `apps/public-docs/rspress.config.ts` must remain stable.
 - Documentation sources live in `apps/public-docs/docs`; the production output directory is `apps/public-docs/doc_build` and is not source-controlled.
-- Rspress clean URLs are enabled. Stable route IDs are `/`, `/getting-started`, `/projects-overview`, `/documentation-lifecycle`, `/devhud`, `/cargo-mono`, `/derun`, `/with-watch`, and `/nodeup`; generated internal links must not use `.html` suffixes.
+- Rspress clean URLs are enabled. Stable route IDs are `/`, `/getting-started`, `/projects-overview`, `/documentation-lifecycle`, `/devhud`, `/devhud/install`, `/devhud/guide`, `/devhud/privacy`, `/devhud/security`, `/devhud/support`, `/devhud/admin`, `/devhud/releases`, `/cargo-mono`, `/derun`, `/with-watch`, and `/nodeup`; generated internal links must not use `.html` suffixes.
 - Public-facing routes and content groupings must map to canonical docs contracts.
 - Content must curate internal contracts from `docs/` into user-facing guidance and must not document repository-internal implementation details unless the detail is a stable public interface, user-visible behavior, or explicitly public maintainer workflow.
 - Top-level in-site product page IDs currently include `devhud`, `cargo-mono`, `derun`, and `with-watch`.
-- `/devhud` is the coordinated-release readiness page. It describes only public product availability, package/trust surfaces, and the all-channels GA rule; internal credentials, endpoints, workflow structure, and deployment implementation remain in repository contracts. The coordinated release injects a non-secret version-and-revision marker into the built page and verifies the exact marker through the production `/devhud` route before GA.
+- `/devhud` is the public DevHud overview and coordinated-release page. Its child routes cover installation/verification, implemented usage, privacy, security, support, administrator operations, and releases. These pages describe only public behavior and supported limits; internal credentials, arbitrary paths, architecture, endpoints, workflow structure, and deployment implementation remain in repository contracts. The coordinated release injects a non-secret version-and-revision marker into the built page and verifies the exact marker through the production `/devhud` route before GA.
 - External top-level major project links include Nodeup at `https://nodeup.delino.io` and binpm at `https://binpm.delino.io`.
 - The legacy `/nodeup` public-docs route must remain a lightweight compatibility handoff page to `https://nodeup.delino.io`; it is not an in-site guide route and must not duplicate Nodeup documentation content.
 - Nodeup and binpm public documentation remain owned by `apps/nodeup-docs` and `apps/binpm-docs`; do not add or restore in-site guide routes for those projects under `apps/public-docs`.
@@ -43,7 +43,7 @@
 - Log output must remain safe for public CI surfaces.
 
 ## Build and Test
-- Local validation: `pnpm --filter public-docs test`, which builds Rspress and runs `scripts/validate-clean-urls.mjs` to verify every stable route artifact and reject generated internal `.html` links.
+- Local validation: `pnpm --filter public-docs test`, which builds Rspress and runs `scripts/validate-clean-urls.mjs` to verify every stable route artifact, required headings/links/accessibility landmarks, public-content limits, and generated internal `.html` links.
 - CI alignment: `node-public-docs-test`
 - Production build: `pnpm --filter public-docs build`; Cloudflare Pages must publish `apps/public-docs/doc_build`.
 
