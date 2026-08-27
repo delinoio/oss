@@ -1471,6 +1471,13 @@ jobs:
               - docs/apps-devhud-updater-contract.md
               - docs/servers-devhud-api-contract.md
               - docs/servers-devhud-release-controller-contract.md
+              - docs/apps-devhud-operations-contract.md
+              - docs/apps-devhud-support-contract.md
+              - docs/repository-workflow-contract.md
+              - .github/workflows/devhud-cef-security-review.yml
+              - scripts/release/devhud-operations.test.mjs
+              - packages/devhud-api-client/**
+              - servers/devhud-api/internal/rpc/diagnostics.go
 
       - name: Determine whether to run
         id: gate

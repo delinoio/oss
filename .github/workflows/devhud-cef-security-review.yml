@@ -1,0 +1,119 @@
+name: DevHud CEF security review
+
+on:
+  schedule:
+    - cron: '17 4 1 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: devhud-cef-security-review
+  cancel-in-progress: false
+
+jobs:
+  compare:
+    name: Compare pinned Tauri CEF revision
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout pinned repository state
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Compare revision and collect safe metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UPSTREAM_REPOSITORY: tauri-apps/tauri
+          UPSTREAM_BRANCH: feat/cef
+        run: |
+          set -euo pipefail
+          report=devhud-cef-security-review.json
+          pin=$(node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+          const pins = JSON.parse(readFileSync('apps/devhud/cef-pins.json', 'utf8'));
+          if (!/^[0-9a-f]{40}$/u.test(pins?.tauri?.revision ?? '')) process.exit(2);
+          process.stdout.write(pins.tauri.revision);
+          NODE
+          )
+          lock_revisions=$(awk '/^source = "git\+https:\/\/github\.com\/tauri-apps\/tauri\?rev=/{print}' Cargo.lock | sort -u)
+          test "$(printf '%s\n' "$lock_revisions" | wc -l)" -eq 1
+          grep -Fq "rev=$pin#$pin" <<< "$lock_revisions"
+          gh api "repos/$UPSTREAM_REPOSITORY/commits/$UPSTREAM_BRANCH" > cef-branch.json
+          upstream_revision=$(node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+          const branch = JSON.parse(readFileSync('cef-branch.json', 'utf8'));
+          if (!/^[0-9a-f]{40}$/u.test(branch.sha ?? '')) process.exit(2);
+          process.stdout.write(branch.sha);
+          NODE
+          )
+          gh api --paginate --slurp "repos/$UPSTREAM_REPOSITORY/compare/$pin...$upstream_revision?per_page=100" > cef-compare-pages.json
+          node --input-type=module - "$report" "$pin" "$GITHUB_SHA" <<'NODE'
+          import { readFileSync, writeFileSync } from 'node:fs';
+          const [, , output, pin, workflowRevision] = process.argv;
+          const pages = JSON.parse(readFileSync('cef-compare-pages.json', 'utf8'));
+          const compare = Array.isArray(pages) && pages.length > 0 ? pages[0] : {};
+          const branch = JSON.parse(readFileSync('cef-branch.json', 'utf8'));
+          const commits = Array.isArray(pages)
+            ? pages.flatMap((page) => (Array.isArray(page?.commits) ? page.commits : []))
+            : [];
+          const signalCandidates = commits
+            .map((commit) => ({
+              sha: commit.sha,
+              message: String(commit.commit?.message ?? ''),
+              date: String(commit.commit?.committer?.date ?? commit.commit?.author?.date ?? ''),
+            }))
+            .filter(({ message }) => /\b(?:CVE|security|vulnerab\w*|exploit|chromium|cef)\b/i.test(message))
+            .sort((left, right) => right.date.localeCompare(left.date) || right.sha.localeCompare(left.sha));
+          const signals = signalCandidates
+            .slice(0, 50)
+            .map(({ sha }) => ({ sha, securityKeyword: true }));
+          const report = {
+            schemaVersion: 1,
+            repository: 'tauri-apps/tauri',
+            branch: 'feat/cef',
+            committedRevision: pin,
+            upstreamRevision: branch.sha,
+            upstreamCommitDate: branch.commit?.committer?.date ?? null,
+            comparison: {
+              status: compare.status ?? null,
+              aheadBy: compare.ahead_by ?? null,
+              behindBy: compare.behind_by ?? null,
+              totalCommits: compare.total_commits ?? null,
+            },
+            securitySignals: signals,
+            securitySignalTotal: signalCandidates.length,
+            securitySignalsTruncated: signalCandidates.length > signals.length,
+            workflowRevision,
+            mutationPerformed: false,
+            publicationPerformed: false,
+          };
+          writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`, { mode: 0o600 });
+          console.log(JSON.stringify({ ...report, securitySignals: signals.length }));
+          NODE
+
+      - name: Write maintainer summary
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE' >> "$GITHUB_STEP_SUMMARY"
+          import { readFileSync } from 'node:fs';
+          const report = JSON.parse(readFileSync('devhud-cef-security-review.json', 'utf8'));
+          console.log('## DevHud CEF security review');
+          console.log(`- Committed Tauri revision: \`${report.committedRevision}\``);
+          console.log(`- Upstream \\`feat/cef\\`: \`${report.upstreamRevision}\``);
+          console.log(`- Comparison: ${report.comparison.status}, ahead ${report.comparison.aheadBy}, behind ${report.comparison.behindBy}`);
+          console.log(`- Security-related commit signals: ${report.securitySignals.length}`);
+          console.log(`- Security-related signals retained: ${report.securitySignals.length} of ${report.securitySignalTotal}${report.securitySignalsTruncated ? ' (truncated)' : ''}`);
+          console.log('- Mutation/publication performed: false/false');
+          console.log('- High-risk findings require the maintainer pin-update, compatibility, signed-release, and updater-publication runbook gates.');
+          NODE
+
+      - name: Upload bounded metadata report
+        uses: actions/upload-artifact@v7
+        with:
+          name: devhud-cef-security-review-${{ github.run_id }}-${{ github.run_attempt }}
+          path: devhud-cef-security-review.json
+          if-no-files-found: error
+          retention-days: 35

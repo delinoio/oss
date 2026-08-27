@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "repository": "tauri-apps/tauri",
+  "branch": "feat/cef",
+  "committedRevision": "4af26a3f7f8b692d62cca549bbacd93f5ce90b41",
+  "upstreamRevision": "b000000000000000000000000000000000000000",
+  "comparison": {
+    "status": "ahead",
+    "aheadBy": 4,
+    "behindBy": 0,
+    "totalCommits": 4
+  },
+  "securitySignals": [
+    { "sha": "c000000000000000000000000000000000000000", "securityKeyword": true }
+  ],
+  "securitySignalTotal": 1,
+  "securitySignalsTruncated": false,
+  "workflowRevision": "d000000000000000000000000000000000000000",
+  "mutationPerformed": false,
+  "publicationPerformed": false
+}

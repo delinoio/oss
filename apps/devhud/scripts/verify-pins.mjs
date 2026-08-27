@@ -33,6 +33,11 @@ const privateReleaseTauriConfig = JSON.parse(
 const tauriMain = readFileSync(join(appRoot, "src-tauri/src/main.rs"), "utf8");
 const nativeBridgeRust = readFileSync(join(appRoot, "src-tauri/src/bridge.rs"), "utf8");
 const nativeBridgeTypeScript = readFileSync(join(appRoot, "src/native-bridge.ts"), "utf8");
+const runtimeRevisionConsumers = [
+  ["renderer diagnostics", readFileSync(join(appRoot, "src/diagnostics.ts"), "utf8")],
+  ["API client validation", readFileSync(join(repoRoot, "packages/devhud-api-client/src/validation.ts"), "utf8")],
+  ["API diagnostics validation", readFileSync(join(repoRoot, "servers/devhud-api/internal/rpc/diagnostics.go"), "utf8")],
+];
 const rsbuildConfig = readFileSync(join(appRoot, "rsbuild.config.ts"), "utf8");
 const updaterRoot = JSON.parse(readFileSync(join(appRoot, "updater-trust-root.json"), "utf8"));
 const updaterRust = readFileSync(join(appRoot, "src-tauri/src/updater.rs"), "utf8");
@@ -231,6 +236,10 @@ assert(nativeBridgeRust.includes(TAURI_REVISION), "native runtime diagnostics Ta
 assert(nativeBridgeRust.includes(pins.runtime.cefVersion), "native runtime diagnostics CEF revision drifted from the immutable pin");
 assert(nativeBridgeTypeScript.includes('tauriRevision: ""'), "browser runtime diagnostics must not claim a Tauri revision");
 assert(nativeBridgeTypeScript.includes('cefRevision: ""'), "browser runtime diagnostics must not claim a CEF revision");
+for (const [consumer, source] of runtimeRevisionConsumers) {
+  assert(source.includes(TAURI_REVISION), `${consumer} Tauri revision drifted from the immutable pin`);
+  assert(source.includes(pins.runtime.cefVersion), `${consumer} CEF revision drifted from the immutable pin`);
+}
 assert(updaterRoot.keyId === "devhud-release-root-v1" && updaterRoot.algorithm === "ed25519", "desktop updater trust-root identity changed");
 assert(updaterRust.includes(updaterRoot.publicKey) && updaterRust.includes(updaterRoot.fingerprint), "native updater trust root drifted from committed metadata");
 assert(updaterRust.includes(`ROOT_PRODUCTION_READY: bool = ${String(updaterRoot.productionReady)}`), "native updater readiness gate drifted from committed metadata");
