@@ -4,7 +4,7 @@ DevHud is distributed as a coordinated release. A release is public only when it
 
 ## Desktop
 
-Supported systems are macOS 13 or later, Windows 10 22H2 or later, and Ubuntu 22.04 LTS or later using X11. Releases provide x64 and Arm64 artifacts where listed: macOS disk images, Windows MSI or NSIS installers, and Ubuntu AppImage or Debian packages. Native Wayland is not supported.
+Supported systems are macOS 13 or later, Windows 10 22H2 or later, and Ubuntu 22.04 LTS using X11. Releases provide x64 and Arm64 artifacts where listed: macOS disk images, Windows MSI or NSIS installers, and Ubuntu AppImage or Debian packages. Native Wayland is not supported.
 
 Download from [Delino OSS GitHub Releases](https://github.com/delinoio/oss/releases). Verify the published SHA-256 checksums and signed release evidence before opening the installer. Updates retain the package type you installed.
 

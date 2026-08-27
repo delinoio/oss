@@ -72,7 +72,7 @@ const requiredHeadings = new Map([
   ["/devhud/install", ["Install and Verify DevHud", "Desktop", "Mobile stores", "Chrome extension"]],
   ["/devhud/guide", ["Using DevHud", "First run and identity", "Settings and PAT profiles", "Capture, drafts, and browser context", "Decks and widgets"]],
   ["/devhud/privacy", ["DevHud Privacy", "What is stored", "Public images", "Account deletion and recovery", "Diagnostics"]],
-  ["/devhud/security", ["DevHud Security", "Secure operation", "Updates and key rotation", "Self-hosting", "Reporting"]],
+  ["/devhud/security", ["DevHud Security", "Secure operation", "Updates and key rotation", "Custom API origins", "Reporting"]],
   ["/devhud/support", ["DevHud Support", "Troubleshooting", "Uninstall", "Help and reports"]],
   ["/devhud/admin", ["DevHud Administration"]],
   ["/devhud/releases", ["DevHud Releases"]],
@@ -82,6 +82,14 @@ const requiredLinks = new Map([
   ["/devhud/install", ["/devhud/releases", "/devhud/security", "/devhud/support"]],
   ["/devhud/guide", ["/devhud/privacy", "/devhud/security", "/devhud/support"]],
 ]);
+
+function articleContent(contents) {
+  const article = contents.match(/<article\b[^>]*>[\s\S]*?<\/article>/iu);
+  if (article) return article[0];
+  const main = contents.match(/<main\b[^>]*>[\s\S]*?<\/main>/iu);
+  return main ? main[0] : "";
+}
+
 const forbiddenContent = [
   /(?:GH_TOKEN|DEVHUD_[A-Z0-9_]*SECRET|Authorization:\s*Bearer)/iu,
   /(?:\/home\/|\/Users\/|[A-Z]:\\|~\/\.config\/)/u,
@@ -124,7 +132,9 @@ for (const [routeId, headings] of requiredHeadings) {
 
 for (const [routeId, links] of requiredLinks) {
   const route = routeOutputFiles.find((entry) => entry.routeId === routeId);
-  const contents = route ? await readFile(route.outputFile, "utf8") : "";
+  const contents = route
+    ? articleContent(await readFile(route.outputFile, "utf8"))
+    : "";
   for (const link of links) {
     if (!contents.includes(`href="${link}"`) && !contents.includes(`href='${link}'`)) {
       failures.push(`${routeId} is missing required link ${link}`);
