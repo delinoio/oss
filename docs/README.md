@@ -88,3 +88,6 @@ The deterministic bilingual frontend, target-isolated Tauri desktop CEF plus iOS
 - `docs/protos-devhud-v1-contract.md`
 - `docs/packages-devhud-api-client-contract.md`
 - `docs/crates-devhud-native-messaging-host-contract.md`
+- `docs/apps-devhud-operations-contract.md` (internal maintainer release, recovery, support, and high-severity runbooks)
+- `docs/apps-devhud-support-contract.md` (administrator support, diagnostics, retention, and high-severity triage)
+- `docs/repository-workflow-contract.md` (repository workflow and read-only CEF review contract)
