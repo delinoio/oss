@@ -132,7 +132,7 @@ const forbiddenContent = [
   /(?:private key|signing key|password|access key|secret)\s*[:=]\s*[^\s<`]+/iu,
 ];
 const forbiddenPathContent = [
-  new RegExp(`(?:^|[\\s("'\\x60>])/(?!${stableRoutePathPattern}(?:\\.html)?(?:[/?#"'\\x60<\\s]|$))[A-Za-z0-9._~-]+(?:[/\\\\][^\\s"'\\x60<>]*)?`, "u"),
+  new RegExp(`(?:^|[\\s("'\\x60>])/(?!${stableRoutePathPattern}(?:\\.html)?(?:[?#"'\\x60<\\s]|$))[A-Za-z0-9._~-]+(?:[/\\\\][^\\s"'\\x60<>]*)?`, "u"),
   /(?:^|[\s("'`>])[A-Za-z]:[\\/][^\s"'`<>]*/u,
   /(?:^|[\s("'`>])\\\\[^\s"'`<>\\/]+[\\/][^\s"'`<>]*/u,
 ];
