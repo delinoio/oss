@@ -14,7 +14,7 @@ Language, theme, Decks, URL mappings, agent descriptors, and upload-provider ref
 
 RealQA capture is desktop-only and uses still images. Screen-capture or X11 permissions may be required. Accessibility/Input Monitoring permissions may be required when configuring global shortcuts. Captures are encrypted drafts with a 30-day deadline renewed after a successful save. The default local draft quota is 10 GiB; unexpired drafts are not evicted. The editor accepts at most 2,048 Unicode scalar values and up to 10 images. Flattened PNG output is capped at 50 MiB per image; oversized output is proportionally downscaled and the editor reports that adjustment.
 
-URL mappings associate a concrete browser origin and path with a repository and explicit PAT profile. The Chrome picker requests only configured-origin permission, redacts path segments and sensitive browser data, and sends one selected element after a user gesture. Pairing uses the desktop app's one-time flow; if it fails, select the repository manually.
+URL mappings associate a concrete browser origin and path with a repository and explicit PAT profile. Chrome's host permission grant covers the configured scheme and host across ports because browser permission patterns cannot encode ports; DevHud still enforces the exact configured origin, including its port, before injection. The picker redacts path segments and sensitive browser data and sends one selected element after a user gesture. Pairing uses the desktop app's one-time flow; if it fails, select the repository manually.
 
 ## Images and submission
 
@@ -28,6 +28,6 @@ Deck polling targets 1, 5, 15, or 30 minutes while the app is active. GitHub rat
 
 ## Offline, blocked, and account actions
 
-Cached authenticated data and device-local settings remain useful offline where permitted; API writes remain pending or unavailable. A blocked or deletion-pending account cannot use authenticated actions or submit diagnostics. Logout is a local cleanup boundary and can remain retryable if cleanup is incomplete. Account deletion blocks access immediately and keeps encrypted unsubmitted drafts until each draft's existing 30-day deadline; deletion does not renew that deadline. Account data is then permanently purged. Restore is available only to the verified owner during the recovery window.
+Cached authenticated data and device-local settings remain useful offline where permitted; API writes remain pending or unavailable. A blocked or deletion-pending account cannot use authenticated actions or submit diagnostics. Logout is a local cleanup boundary and can remain retryable if cleanup is incomplete. Account deletion blocks access immediately and keeps encrypted unsubmitted drafts until each draft's existing 30-day deadline; deletion does not renew that deadline. After the recovery window, synchronized data and upload metadata are purged or irreversibly pseudonymized at the documented audit boundary; pseudonymized security and administrator audit records may be retained temporarily. Restore is available only to the verified owner during the recovery window.
 
 Diagnostics are off by default. Authenticated, unblocked users preview the exact redacted crash payload and consent per submission; guests can preview/export only. See [Privacy](privacy), [Security](security), and [Support](support).

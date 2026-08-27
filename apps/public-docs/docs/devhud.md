@@ -1,6 +1,6 @@
 # DevHud
 
-DevHud is a developer utility for capturing RealQA feedback, following pull-request Decks, and keeping the same signed product identity across desktop, mobile, widgets, and the Chrome companion extension.
+DevHud is a developer utility for capturing RealQA feedback, following pull-request Decks, and coordinating releases across desktop, mobile, widgets, and the Chrome companion extension.
 
 ## Availability
 
@@ -22,7 +22,7 @@ Each release includes SHA-256 checksums and signed release evidence. Desktop upd
 
 ## Mobile and browser companion
 
-The iOS and Android packages include their native Deck widgets. The Chrome Web Store extension uses the same extension identity and Native Messaging relationship as the validation package retained with the release evidence.
+The iOS and Android packages include their native Deck widgets. Install the Chrome companion extension from the Chrome Web Store and review its requested site access before enabling it; DevHud uses it only for configured browser-context capture.
 
 Store review can take longer than desktop packaging. During that time, the whole coordinated release remains pending; there is no partial or staged general-availability channel.
 
