@@ -179,7 +179,7 @@ for (const htmlFile of htmlFiles) {
       failures.push(`${path.relative(outputDir, htmlFile)} contains prohibited public content`);
     }
   }
-  if (containsAffirmativeReleaseClaim(contents)) {
+  if (containsAffirmativeReleaseClaim(renderedText)) {
     failures.push(`${path.relative(outputDir, htmlFile)} contains prohibited public content`);
   }
 }
