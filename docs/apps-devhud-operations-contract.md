@@ -37,7 +37,7 @@ Validate the exact primary artifacts before retaining a candidate:
 - OCI: `devhud-api-linux-amd64-arm64.oci.tar` and `devhud-api-sweeper-linux-amd64-arm64.oci.tar`; confirm both architectures, non-root users, embedded migrations, identical administrator assets, and readiness tests. The private workflow never pushes these layouts.
 - Supply chain: every artifact has a component-bearing SPDX SBOM, run-attempt-bound SLSA provenance, deterministic `SHA256SUMS`, validation evidence, and the corresponding keyless Sigstore bundle. Updater input contains exactly ten signed stable platform/package manifests and detached signatures.
 
-Use `scripts/release/validate-devhud-private-build.mjs`, `validate-devhud-public-assets.mjs`, `validate-devhud-ios-signing.mjs`, `apps/devhud/scripts/validate-updater-release.mjs`, and the release test suite. Never replace a missing SBOM, provenance statement, signature, or validation record with a placeholder.
+Use `scripts/release/validate-devhud-private-build.mjs`, `scripts/release/validate-devhud-public-assets.mjs`, `scripts/release/validate-devhud-ios-signing.mjs`, `apps/devhud/scripts/validate-updater-release.mjs`, and the release test suite. Never replace a missing SBOM, provenance statement, signature, or validation record with a placeholder.
 
 ## Coordinated publication, delays, withdrawal, and rollback
 
@@ -59,7 +59,7 @@ Image quarantine/removal uses the implemented administrator workflow: record the
 
 ## Deletion, restore, purge, diagnostics, and support
 
-Account deletion is recoverable for 30 days through ownership-checked `AccountService.RestoreAccount`; restore clears deletion state only and never clears an administrator block. After the window, the sweeper irreversibly pseudonymizes/purges server-side account data, replaces or invalidates public CDN copies, and retains only the contracted audit/tombstone projections. Device-local PATs and R2 credentials never enter the API: each client performs immediate secure-store cleanup when possible and eventual profile reconciliation for devices that were offline. Never report purge completion until the server-side database/R2 boundaries and applicable per-device secure-store cleanup boundaries are confirmed.
+Account deletion is recoverable for 30 days through ownership-checked `AccountService.RestoreAccount`; restore clears deletion state only and never clears an administrator block. After the window, the sweeper irreversibly pseudonymizes/purges server-side account data, replaces or invalidates public CDN copies, and retains only the contracted audit/tombstone projections. Device-local PATs and R2 credentials never enter the API: each client performs immediate secure-store cleanup when possible and eventual profile reconciliation for devices that were offline. Report server-side purge completion once the applicable database, R2, and tombstone boundaries are confirmed; track per-device secure-store cleanup separately as best-effort reconciliation and report it only as each device returns and confirms cleanup.
 
 Diagnostics and crash reports are opt-in, user-previewed, bounded, redacted, and correlation-bound. Guests export only; blocked or deletion-pending users cannot submit. For a crash, capture the typed safe error code, build/platform/architecture, exact desktop CEF/Tauri revisions where applicable, correlation IDs, quota state, and server availability. Never request or attach DOM, screenshots, credentials, issue bodies, prompts, or local paths.
 

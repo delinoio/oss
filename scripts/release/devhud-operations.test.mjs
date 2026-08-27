@@ -37,6 +37,17 @@ test("operations contract names every implemented release job and artifact", () 
   }
 });
 
+test("repository contract catalog and validation commands use canonical paths", () => {
+  const catalog = readFileSync(`${root}/docs/README.md`, "utf8");
+  const agents = readFileSync(`${root}/AGENTS.md`, "utf8");
+  assert.match(catalog, /Repository-level contract docs: `docs\/repository-<topic>-contract\.md`/u);
+  assert.match(catalog, /`docs\/repository-workflow-contract\.md` \(repository-level workflow/u);
+  assert.match(agents, /`docs\/repository-<topic>-contract\.md`: Canonical repository-level contract docs/u);
+  assert.match(agents, /Use `repository-<topic>-contract\.md` for repository-level contract docs/u);
+  assert.match(operations, /scripts\/release\/validate-devhud-public-assets\.mjs/u);
+  assert.match(operations, /scripts\/release\/validate-devhud-ios-signing\.mjs/u);
+});
+
 test("CEF review is scheduled, read-only, bounded, and non-publishing", () => {
   assert.match(workflow, /schedule:[\s\S]*cron:/u);
   assert.match(workflow, /workflow_dispatch:/u);
@@ -84,4 +95,6 @@ test("operations contract preserves high-risk CEF, rollback, retention, and reda
   assert.match(support, /withhold the next protected approval instead of cancelling/iu);
   assert.match(support, /Report server-side purge completion once the applicable database, R2, and tombstone boundaries are confirmed/iu);
   assert.match(support, /track per-device secure-store cleanup separately as best-effort reconciliation/iu);
+  assert.match(operations, /Report server-side purge completion once the applicable database, R2, and tombstone boundaries are confirmed/iu);
+  assert.match(operations, /track per-device secure-store cleanup separately as best-effort reconciliation/iu);
 });

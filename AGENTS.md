@@ -50,6 +50,7 @@
 - `docs/domain-template.md`: Required structure for domain-level contract docs.
 - `docs/project-<id>.md`: Canonical project index docs (ownership + domain-doc index + cross-domain invariants).
 - `docs/<domain>-<project-or-component>-<contract>.md`: Canonical domain contract docs (`apps`, `cmds`, `servers`, `crates`, `protos`, `packages`).
+- `docs/repository-<topic>-contract.md`: Canonical repository-level contract docs for cross-project workflow and policy contracts.
 - `docs/project-binpm.md`: binpm binary package manager project index.
 - `docs/apps-binpm-docs-foundation.md`: binpm Rspress documentation app, route, validation, canonical production URL, and Cloudflare Pages deployment contract.
 - `docs/project-cargo-mono.md`: Cargo subcommand project index.
@@ -272,6 +273,7 @@ enum RustiaComponent {
 - Use lowercase kebab-case for project IDs and directory names unless runtime conventions require otherwise.
 - Use `project-` prefix for project index docs.
 - Use domain prefixes (`apps-`, `cmds-`, `servers-`, `crates-`, `protos-`, `packages-`) for domain contract docs.
+- Use `repository-<topic>-contract.md` for repository-level contract docs that span project or domain ownership.
 - Use enum-like canonical identifiers in documents where values must remain stable.
 
 ### GitHub Issue Style Contract
