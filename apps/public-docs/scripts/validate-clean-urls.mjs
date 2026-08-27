@@ -130,6 +130,22 @@ function findHtmlRouteLinks(contents, htmlFile) {
   return invalidRoutes;
 }
 
+function containsCredentialBearingLink(contents, htmlFile) {
+  const pagePath = `/${path.relative(outputDir, htmlFile).split(path.sep).join("/")}`;
+  const pageUrl = new URL(pagePath, validatorOrigin);
+
+  for (const [, , href] of contents.matchAll(hrefPattern)) {
+    try {
+      const resolvedUrl = new URL(decodeHTML(href), pageUrl);
+      if (resolvedUrl.username || resolvedUrl.password) return true;
+    } catch {
+      // Invalid URLs are handled by the browser/build output and are not credential evidence.
+    }
+  }
+
+  return false;
+}
+
 const forbiddenContent = [
   /(?:GH_TOKEN|DEVHUD_[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|KEY)|Authorization:\s*Bearer)/iu,
   /(?:"(?:token|access[_-]?token|refresh[_-]?token|api[_-]?key)"|(?:token|access[_-]?token|refresh[_-]?token|api[_-]?key))\s*[:=]\s*[^\s<`]+/iu,
@@ -145,7 +161,14 @@ const forbiddenPathContent = [
   new RegExp(`(?:^|[\\s("'\\x60>])/(?!${stableRoutePathPattern}(?:\\.html)?(?:[?#"'\\x60<\\s]|$))[A-Za-z0-9._~-]+(?:[/\\\\][^\\s"'\\x60<>]*)?`, "u"),
   /(?:^|[\s("'`>])[A-Za-z]:[\\/][^\s"'`<>]*/u,
   /(?:^|[\s("'`>])\\\\[^\s"'`<>\\/]+[\\/][^\s"'`<>]*/u,
-  /(?:^|[\s("'`>])file:\/\/(?:\/[^\s"'`<>]*)/iu,
+  /(?:^|[\s("'`>])file:\/\/(?:[^\/\s"'`<>]+)?\/[^\s"'`<>]*/iu,
+];
+const forbiddenLinkFixtures = [
+  '<a href="https://alice:secret@example.com/support">support</a>',
+];
+const forbiddenPathFixtures = [
+  '<a href="file://server/share/private.conf">private file</a>',
+  '<a href="file://localhost/etc/private.conf">private file</a>',
 ];
 const releaseAvailabilityClaim =
   /\b(?:partial|staged)\s+(?:GA|availability|general[- ]availability)\b|\b(?:partial|staged)\s+or\s+(?:staged|partial)\s+general[- ]availability\b|\b(?:beta|phased|fractional)\s+(?:GA|availability|general[- ]availability|rollout|channel)\b|\bearly[- ]access(?:\s+(?:GA|availability|general[- ]availability|rollout|channel))?\b/giu;
@@ -221,6 +244,9 @@ for (const htmlFile of htmlFiles) {
       failures.push(`${path.relative(outputDir, htmlFile)} contains prohibited public content`);
     }
   }
+  if (containsCredentialBearingLink(contents, htmlFile)) {
+    failures.push(`${path.relative(outputDir, htmlFile)} contains prohibited public content`);
+  }
   for (const pattern of forbiddenPathContent) {
     const linkTargets = [...contents.matchAll(hrefPattern)]
       .map(([, , href]) => decodeHTML(href))
@@ -237,6 +263,18 @@ for (const htmlFile of htmlFiles) {
 for (const [language, fixture] of forbiddenContentFixtures) {
   if (!forbiddenContent.some((pattern) => pattern.test(fixture))) {
     failures.push(`${language} credential fixture was not detected`);
+  }
+}
+
+for (const fixture of forbiddenLinkFixtures) {
+  if (!containsCredentialBearingLink(fixture, path.join(outputDir, "fixture.html"))) {
+    failures.push("credential-bearing link fixture was not detected");
+  }
+}
+
+for (const fixture of forbiddenPathFixtures) {
+  if (!forbiddenPathContent.some((pattern) => pattern.test(fixture))) {
+    failures.push("authority-form file URL fixture was not detected");
   }
 }
 
