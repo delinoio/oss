@@ -416,6 +416,7 @@ test("preflight rejects URL escapes rejected by the Go service parser", () => {
     "https://issuer.example/%",
     "https://issuer.example/%2",
     "https://issuer.example/%zz",
+    "https://%65xample.com",
   ]) {
     for (const [contract, environment] of [
       [adminContract, { DEVHUD_LOGTO_ISSUER: issuer }],

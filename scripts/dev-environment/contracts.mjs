@@ -149,7 +149,9 @@ const localHttp = (value) => {
     return false;
   }
   const authorityMatch = /^https?:\/\/([^/\\?#]+)(?:[/?#]|$)/u.exec(value);
-  if (!authorityMatch) return false;
+  // WHATWG normalizes escaped authorities that Go's net/url rejects.
+  // Check the raw value so wrapper preflight and service parsing remain aligned.
+  if (!authorityMatch || authorityMatch[1].includes("%")) return false;
   try {
     const parsed = new URL(value);
     if (
