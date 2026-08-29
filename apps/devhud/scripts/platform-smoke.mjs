@@ -2,6 +2,7 @@
 
 import { spawn } from "node:child_process";
 import {
+  existsSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
@@ -81,7 +82,9 @@ function requiredResources(executable) {
     process.platform === "linux"
       ? binaryDir.endsWith(join("share", "DevHUD"))
         ? binaryDir
-        : resolve(binaryDir, "../share/DevHUD")
+        : existsSync(join(binaryDir, "libcef.so"))
+          ? binaryDir
+          : resolve(binaryDir, "../share/DevHUD")
       : binaryDir;
   const names =
     process.platform === "win32"

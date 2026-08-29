@@ -64,7 +64,9 @@ impl ResourceLayout {
 
         #[cfg(target_os = "linux")]
         let (root, required) = {
-            let root = if binary_dir.ends_with("share/DevHUD") {
+            let root = if binary_dir.ends_with("share/DevHUD")
+                || binary_dir.join("libcef.so").is_file()
+            {
                 binary_dir.to_path_buf()
             } else {
                 let package_prefix = binary_dir.parent().ok_or_else(|| {
@@ -142,5 +144,19 @@ mod tests {
             layout.root,
             Path::new("/tmp/devhud-smoke-root/usr/share/DevHUD")
         );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_accepts_appimage_resource_directory() {
+        let root = tempfile::tempdir().expect("temporary AppDir");
+        let binary_dir = root.path().join("bin");
+        std::fs::create_dir(&binary_dir).expect("AppDir bin");
+        std::fs::write(binary_dir.join("libcef.so"), []).expect("CEF library");
+
+        let layout = ResourceLayout::for_executable(&binary_dir.join("devhud"))
+            .expect("resource layout");
+
+        assert_eq!(layout.root, binary_dir);
     }
 }

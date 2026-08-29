@@ -266,15 +266,18 @@ test("macOS and AppImage desktop validation exercises packaged Native Messaging 
     "DEVHUD_SMOKE_NATIVE_HOST", "devhud-native-home", "Library/Application Support/Google/Chrome/NativeMessagingHosts",
     "jq -e", "register", "unregister",
   ]) assert.ok(macOS.includes(expected), `macOS: ${expected}`);
-  const macRegister = macOS.indexOf('"$DEVHUD_SMOKE_NATIVE_HOST" register "$DEVHUD_SMOKE_NATIVE_HOST"');
+  const macRegister = macOS.indexOf('"$DEVHUD_SMOKE_NATIVE_HOST" register "$DEVHUD_SMOKE_NATIVE_HOST" "$user_manifest"');
   const macRegistered = macOS.indexOf('test -e "$user_manifest"', macRegister);
-  const macUnregister = macOS.indexOf('"$DEVHUD_SMOKE_NATIVE_HOST" unregister', macRegistered);
+  const macUnregister = macOS.indexOf('"$DEVHUD_SMOKE_NATIVE_HOST" unregister "$user_manifest"', macRegistered);
   const macRemoved = macOS.indexOf('test ! -e "$user_manifest"', macUnregister);
   assert.ok(macRegister >= 0 && macRegister < macRegistered && macRegistered < macUnregister && macUnregister < macRemoved);
 
   const appImage = namedStep(workflow.jobs["devhud-desktop"], "Verify Ubuntu AppImage Native Messaging register and unregister lifecycle").run;
   const appImagePreparation = namedStep(workflow.jobs["devhud-desktop"], "Prepare Ubuntu installed layout").run;
-  assert.ok(appImagePreparation.includes("find squashfs-root -type f -name chrome-sandbox"));
+  for (const expected of [
+    "appdir=$(realpath squashfs-root)", 'sandbox="$appdir/bin/chrome-sandbox"',
+    'artifact="$appdir/bin/devhud"', 'host="$appdir/bin/devhud-native-messaging-host"',
+  ]) assert.ok(appImagePreparation.includes(expected), `AppImage preparation: ${expected}`);
   for (const expected of [
     "DEVHUD_SMOKE_NATIVE_HOST", "devhud-native-home", ".config/google-chrome/NativeMessagingHosts",
     "dbus-run-session", "gnome-keyring-daemon", "jq -e",
