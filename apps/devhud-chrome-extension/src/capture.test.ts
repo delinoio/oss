@@ -280,6 +280,13 @@ describe("injected capture", () => {
   });
 
   it("bounds deeply nested markup during iterative traversal", async () => {
+    const visibilityDescriptor = Object.getOwnPropertyDescriptor(Element.prototype, "checkVisibility");
+    Object.defineProperty(Element.prototype, "checkVisibility", {
+      configurable: true,
+      // This test targets bounded iterative serialization, so bypass jsdom's
+      // platform-dependent style traversal for every ancestor in the chain.
+      value: () => true,
+    });
     const root = document.createElement("main");
     const elements: Element[] = [root];
     document.body.append(root);
@@ -303,20 +310,27 @@ describe("injected capture", () => {
       expect(result.outerHtml.endsWith("</main>")).toBe(true);
     } finally {
       for (let index = elements.length - 1; index >= 0; index -= 1) elements[index]!.remove();
+      if (visibilityDescriptor) {
+        Object.defineProperty(Element.prototype, "checkVisibility", visibilityDescriptor);
+      } else {
+        delete (Element.prototype as Partial<Element>).checkVisibility;
+      }
     }
   }, 15_000);
 
   it("degrades to context-free capture when sanitizer traversal exceeds its node bound", async () => {
     const root = document.createElement("main");
     const fragment = document.createDocumentFragment();
-    for (let index = 0; index < 10_001; index += 1) fragment.append(document.createTextNode(""));
+    // Non-rendered nodes exercise the traversal ceiling without making the
+    // test runtime depend on thousands of platform-specific layout probes.
+    for (let index = 0; index < 10_001; index += 1) fragment.append(document.createComment(""));
     root.append(fragment);
     document.body.append(root);
 
     const result = await select(root);
 
     expect(result).toBeNull();
-    expect(Range.prototype.getClientRects).toHaveBeenCalledTimes(9_999);
+    expect(Range.prototype.getClientRects).not.toHaveBeenCalled();
   }, 15_000);
 
   it("bounds escaped multibyte text without breaking markup", async () => {
