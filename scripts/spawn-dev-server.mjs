@@ -3,12 +3,32 @@ import { readFileSync, readdirSync } from "node:fs";
 
 const terminationSignals = ["SIGINT", "SIGTERM"];
 const posixProcessGroupExitTimeoutMs = 10_000;
+const windowsTerminationEnvironmentNames = [
+  "PATH",
+  "PATHEXT",
+  "SYSTEMROOT",
+  "WINDIR",
+];
+
+class PosixProcessGroupExitTimeout extends Error {}
+
+export function windowsTerminationEnvironment(source = process.env) {
+  const normalizedSource = new Map(
+    Object.entries(source).map(([name, value]) => [name.toUpperCase(), value]),
+  );
+  return Object.fromEntries(
+    windowsTerminationEnvironmentNames
+      .filter((name) => normalizedSource.has(name))
+      .map((name) => [name, normalizedSource.get(name)]),
+  );
+}
 
 export function terminateWindowsProcessTree(child, signal) {
   const taskkill = spawn(
     "taskkill.exe",
     ["/pid", String(child.pid), "/t", "/f"],
     {
+      env: windowsTerminationEnvironment(),
       shell: false,
       stdio: "ignore",
       windowsHide: true,
@@ -101,7 +121,11 @@ function waitForPosixProcessGroupExit(processGroupId) {
         return;
       }
       if (Date.now() >= deadline) {
-        reject(new Error(`timed out awaiting POSIX process group ${-processGroupId}`));
+        reject(
+          new PosixProcessGroupExitTimeout(
+            `timed out awaiting POSIX process group ${-processGroupId}`,
+          ),
+        );
         return;
       }
       setTimeout(checkProcessGroup, 25);
@@ -111,22 +135,37 @@ function waitForPosixProcessGroupExit(processGroupId) {
   });
 }
 
-export function terminatePosixProcessGroup(child, signal) {
-  const processGroupId = -child.pid;
+function signalPosixProcessGroup(child, processGroupId, signal) {
   try {
     process.kill(processGroupId, signal);
   } catch (error) {
     if (error.code === "ESRCH") {
-      return Promise.resolve();
+      return false;
     }
     if (child.exitCode === null && child.signalCode === null) {
       child.kill(signal);
     }
-    return Promise.reject(
-      new Error(`failed to terminate POSIX process group ${child.pid}: ${error.message}`),
+    throw new Error(
+      `failed to terminate POSIX process group ${child.pid}: ${error.message}`,
     );
   }
-  return waitForPosixProcessGroupExit(processGroupId);
+  return true;
+}
+
+export async function terminatePosixProcessGroup(child, signal) {
+  const processGroupId = -child.pid;
+  if (!signalPosixProcessGroup(child, processGroupId, signal)) return;
+  try {
+    await waitForPosixProcessGroupExit(processGroupId);
+    return;
+  } catch (error) {
+    if (!(error instanceof PosixProcessGroupExitTimeout) || signal === "SIGKILL") {
+      throw error;
+    }
+  }
+
+  if (!signalPosixProcessGroup(child, processGroupId, "SIGKILL")) return;
+  await waitForPosixProcessGroupExit(processGroupId);
 }
 
 export async function spawnDevServer(

@@ -145,6 +145,38 @@ jobs:
         if: ${{ steps.gate.outputs.run == 'true' }}
         run: go test ./...
 
+  repository-environment:
+    name: Repository environment (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.26.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install workspace
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Test repository environment contract
+        run: pnpm test:dev-environment
+
 
   rust-fmt:
     name: Rust fmt
@@ -1512,6 +1544,7 @@ jobs:
     needs:
       - go-quality
       - go-test
+      - repository-environment
       - rust-fmt
       - rust-clippy
       - rust-test

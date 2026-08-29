@@ -213,3 +213,7 @@ tmp/
 .gomodcache/
 .gocache/
 .gopath/
+
+# Repository development environment (always local and never committed)
+/.infisical.json
+/.dev-environment/

@@ -6,6 +6,14 @@
         "build:api"
       ],
       "cache": false,
+      "env": [
+        "CARGO_HOME",
+        "DEVHUD_LOCAL_MODE",
+        "DISPLAY",
+        "RUSTUP_HOME",
+        "XAUTHORITY",
+        "XDG_RUNTIME_DIR"
+      ],
       "persistent": true
     },
     "build:api":{

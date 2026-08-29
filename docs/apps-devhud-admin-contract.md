@@ -8,6 +8,8 @@
 
 React/TypeScript SPA using the shared frontend conventions, English/Korean UI, Toss Design Guidelines, and WCAG 2.2 AA. Startup uses a valid stored locale when available and otherwise derives the locale from the browser. Locale switching always updates in-memory state even when Web Storage reads or writes fail. Fixed development origin: `http://localhost:46306`.
 
+The package-owned development wrapper accepts only `DEVHUD_LOGTO_ISSUER`, requires an explicit HTTP(S) authority, validates it before Rsbuild starts, and creates a sanitized child environment. In team mode it obtains that one name from the owning team service scope without exposing values through Turbo, arguments, files, logs, or diagnostics; preflight requires its exact issuer to match the API issuer, and Rsbuild starts only when the freshly injected issuer matches that private comparison pin. In OSS mode it uses the local Logto loopback issuer; a contributor-owned override must exactly match the API wrapper's package-local issuer override so Bootstrap and CSP agree. Authenticated administrator flows remain unavailable until the contributor creates and owns the required Logto administrator/application setup. Root entry points and environment ownership are defined in the repository environment contract.
+
 ## Users and Operators
 
 Only individual accounts with the stable Logto role `devhud-admin`; API and security operators use it for user, quota, upload, and audit administration.
@@ -53,4 +55,5 @@ Update the project index, server/protocol/client contracts, `apps/AGENTS.md`, an
 - [DevHud project index](project-devhud.md)
 - [API contract](servers-devhud-api-contract.md)
 - [Client contract](packages-devhud-api-client-contract.md)
+- [Repository environment contract](repository-environment-contract.md)
 - [Repository defaults](repository-defaults.md)

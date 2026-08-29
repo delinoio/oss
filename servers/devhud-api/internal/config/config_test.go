@@ -37,7 +37,7 @@ func TestHTTPSRequiredOutsideLoopback(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "HTTPS") {
 		t.Fatalf("Load error = %v, want HTTPS error", err)
 	}
-	for _, host := range []string{"localhost", "localhost.", "127.0.0.1", "::1"} {
+	for _, host := range []string{"localhost", "localhost.", "127.0.0.1", "127.0.0.2", "::1"} {
 		if !IsLoopbackHost(host) {
 			t.Errorf("%q was not recognized as loopback", host)
 		}

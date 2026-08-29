@@ -2,10 +2,15 @@ import { describe, expect, it } from "vitest";
 import { ADMIN_CSP, developmentAdminCsp } from "./csp";
 
 describe("administrator content security policy", () => {
-  it("allows the exact configured loopback Logto issuer origin", () => {
-    const csp = developmentAdminCsp("http://localhost:3001/oidc");
+  it.each([
+    ["http://localhost:3001/oidc", "http://localhost:3001"],
+    ["http://localhost.:3001/oidc", "http://localhost.:3001"],
+    ["http://127.0.0.2:3001/oidc", "http://127.0.0.2:3001"],
+    ["http://[::1]:3001/oidc", "http://[::1]:3001"],
+  ])("allows the configured loopback Logto issuer origin %s", (issuer, origin) => {
+    const csp = developmentAdminCsp(issuer);
     expect(csp).toContain(
-      "connect-src 'self' http://127.0.0.1:46307 http://localhost:3001",
+      `connect-src 'self' http://127.0.0.1:46307 ${origin}`,
     );
     expect(csp).not.toContain("/oidc");
   });
@@ -25,6 +30,9 @@ describe("administrator content security policy", () => {
     expect(() => developmentAdminCsp("http://issuer.example/oidc")).toThrow(
       /HTTPS outside loopback/u,
     );
+    expect(() =>
+      developmentAdminCsp("http://127.0.0.2.example.com/oidc"),
+    ).toThrow(/HTTPS outside loopback/u);
     expect(() => developmentAdminCsp("file:///tmp/issuer")).toThrow(/HTTP or HTTPS/u);
   });
 });

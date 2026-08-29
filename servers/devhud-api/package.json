@@ -1,0 +1,10 @@
+{
+  "name": "@delinoio/devhud-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/local.mjs serve",
+    "migrate:local": "node scripts/local.mjs migrate"
+  }
+}

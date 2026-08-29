@@ -302,6 +302,8 @@ importers:
         specifier: 4.1.11
         version: 4.1.11(@types/node@25.5.0)(jsdom@20.0.3)(vite@8.2.1(@types/node@25.5.0)(jiti@2.6.1)(terser@5.46.1))
 
+  servers/devhud-api: {}
+
 packages:
 
   '@0no-co/graphql.web@1.2.0':

@@ -28,6 +28,14 @@ enum ProjectId {
 
 The desktop and mobile hosts, native widgets, Chrome extension, Native Messaging host, administrator SPA, protocol, client, server foundation, Diagnostics paths, and RealQA direct issue submission above are implemented. `apps/devhud/src-tauri` and `crates/devhud-native-messaging-host` are DevHud Cargo workspace members; remaining product domains retain their documented planned status.
 
+## Local development environment
+
+The repository environment contract defines two modes. `pnpm dev` is the authorized-team path: it checks the pinned Infisical CLI and local authentication/project binding only when needed, validates the API and administrator allowlists plus their exact issuer parity, privately pins that comparison through migration and both service launches, and launches the frontend, administrator, and API at fixed ports `46305`, `46306`, and `46307`. It fails closed on authentication, path, cross-service issuer, or mid-startup configuration-generation errors and never wraps the root Turbo process with secrets.
+
+`pnpm dev:oss` is the public-contributor path and never invokes Infisical. It acquires exclusive startup ownership for the checkout, requires the effective Docker endpoint to be a local socket, named pipe, or loopback TCP endpoint, then starts digest-pinned PostgreSQL and Logto dependencies on `5432`, `3001`, and `3002`, creates a checkout-local identity key, scopes the Compose project and persistent data to a one-way digest of that key, idempotently repairs missing Logto database creation in a preserved PostgreSQL volume, waits for health, runs migrations, and launches the same application boundary. Guest/bootstrap development works without shared identity setup. Authenticated/admin flows require contributor-owned Logto configuration, and official uploads remain unavailable because OSS mode omits the API R2/Cloudflare group. `pnpm dev:oss:down` stops only that checkout's dependencies without deleting its persistent volumes.
+
+Team DevHud API/admin development values are the only shared development-secret scope. GitHub PATs, BYO R2 credentials, public mobile application configuration, generated local material, and production/deployment/release/signing credentials remain outside it. See [Repository environment contract](repository-environment-contract.md).
+
 ## Private Build Packaging
 
 DevHud uses the repository release pattern `<project>@v*` exactly as `devhud@v<MAJOR.MINOR.PATCH>`. The version is stable three-component SemVer with no prefix, build metadata, or prerelease suffix; every component must be in Chrome's `0..65535` range. For the current coordinated v1 candidate the source version is `0.1.0`, the tag-shaped release identity is `devhud@v0.1.0`, and the independent App Store/Play build number is `1`. `packaging/devhud/release-metadata.json` is the operator-edited release input, and its version must exactly match both package manifests, the Tauri configuration and Cargo package, and the Native Messaging host Cargo package before any signed work starts.
@@ -165,6 +173,7 @@ Update this index, affected domain contracts, `docs/README.md`, and applicable r
 ## References
 
 - [Issue #815](https://github.com/delinoio/oss/issues/815)
+- [Repository environment contract](repository-environment-contract.md)
 - [Repository defaults](repository-defaults.md)
 - [Project index template](project-template.md)
 - [Domain contract template](domain-template.md)
