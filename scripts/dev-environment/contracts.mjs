@@ -1,6 +1,6 @@
 import { Buffer } from "node:buffer";
 import { fileURLToPath } from "node:url";
-import { dirname, resolve } from "node:path";
+import { dirname, isAbsolute, resolve } from "node:path";
 
 const moduleDirectory = dirname(fileURLToPath(import.meta.url));
 
@@ -32,6 +32,28 @@ export class EnvironmentError extends Error {
     this.code = code;
     this.names = [...names].sort();
   }
+}
+
+export function resolveLocalStatePaths(source = process.env) {
+  if (source.DEVHUD_ENVIRONMENT_TESTING !== "1") {
+    return { stateDirectory, identityKeyFile };
+  }
+  const injectedDirectory = source.DEVHUD_TEST_STATE_DIRECTORY;
+  if (
+    typeof injectedDirectory !== "string" ||
+    injectedDirectory.trim() === "" ||
+    !isAbsolute(injectedDirectory)
+  ) {
+    throw new EnvironmentError(
+      "environment.test-state",
+      "development environment tests require an absolute temporary state directory",
+    );
+  }
+  const resolvedDirectory = resolve(injectedDirectory);
+  return {
+    stateDirectory: resolvedDirectory,
+    identityKeyFile: resolve(resolvedDirectory, "identity-hmac-key"),
+  };
 }
 
 const localHttp = (value) => {
@@ -86,6 +108,14 @@ const assetBase = (value) => {
 export const apiContract = Object.freeze({
   service: "DevHud API",
   path: "/devhud/api",
+  ossOverrideNames: Object.freeze([
+    "DEVHUD_LOGTO_ISSUER",
+    "DEVHUD_LOGTO_AUDIENCE",
+    "DEVHUD_LOGTO_DESKTOP_CLIENT_ID",
+    "DEVHUD_LOGTO_IOS_CLIENT_ID",
+    "DEVHUD_LOGTO_ANDROID_CLIENT_ID",
+    "DEVHUD_LOGTO_ADMIN_CLIENT_ID",
+  ]),
   required: Object.freeze({
     DEVHUD_DATABASE_URL: database,
     DEVHUD_PUBLIC_API_URL: url,
@@ -127,6 +157,7 @@ export const apiContract = Object.freeze({
 export const adminContract = Object.freeze({
   service: "DevHud administrator",
   path: "/devhud/admin",
+  ossOverrideNames: Object.freeze(["DEVHUD_LOGTO_ISSUER"]),
   required: Object.freeze({ DEVHUD_LOGTO_ISSUER: url }),
   optionalGroups: Object.freeze([]),
   optionalValidators: Object.freeze({}),

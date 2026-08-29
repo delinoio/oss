@@ -8,7 +8,8 @@ Use `pnpm dev` for authorized team development or `pnpm dev:oss` for the
 public-contributor environment. The package wrapper receives only the validated
 development issuer and starts on the fixed port; it does not inherit API
 configuration from Turbo. For a contributor-owned Logto instance, copy the
-package-local `.env.example` to `.env` and keep that file uncommitted.
+package-local `.env.example` to `.env`, use the exact same issuer in
+`servers/devhud-api/.env`, and keep both files uncommitted.
 
 OSS mode does not create a shared administrator, user, or application.
 Administrator sign-in therefore requires contributor-owned Logto setup or the

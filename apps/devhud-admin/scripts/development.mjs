@@ -16,7 +16,10 @@ const scriptPath = fileURLToPath(import.meta.url);
 const serviceDirectory = resolve(dirname(scriptPath), "..");
 
 async function ossEnvironment() {
-  const overrides = await readServiceEnv(resolve(serviceDirectory, ".env"), ["DEVHUD_LOGTO_ISSUER"]);
+  const overrides = await readServiceEnv(
+    resolve(serviceDirectory, ".env"),
+    adminContract.ossOverrideNames,
+  );
   return { DEVHUD_LOGTO_ISSUER: "http://localhost:3001/oidc", ...overrides };
 }
 

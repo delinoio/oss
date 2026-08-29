@@ -15,8 +15,9 @@ checkout-local identity key. It deliberately leaves official R2/Cloudflare
 uploads unavailable. Guest/bootstrap behavior works immediately, while
 authenticated flows require contributor-owned Logto applications. Copy
 `.env.example` to the ignored `.env` only to supply the public identifiers from
-those applications; never put GitHub PATs, BYO R2 credentials, or production,
-deployment, release, or signing secrets there.
+those applications. If the issuer is overridden, use the exact same value in
+`apps/devhud-admin/.env`; never put GitHub PATs, BYO R2 credentials, or
+production, deployment, release, or signing secrets there.
 
 Run `pnpm --filter @delinoio/devhud-api migrate:local` only inside a selected
 root development mode. Run Go tests with `go test ./servers/devhud-api/...`.

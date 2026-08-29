@@ -6,8 +6,8 @@ import { dirname, resolve } from "node:path";
 import {
   apiContract,
   EnvironmentError,
-  identityKeyFile,
   repositoryRoot,
+  resolveLocalStatePaths,
 } from "../../../scripts/dev-environment/contracts.mjs";
 import {
   executeArgv,
@@ -17,15 +17,8 @@ import {
 
 const scriptPath = fileURLToPath(import.meta.url);
 const serviceDirectory = resolve(dirname(scriptPath), "..");
-const localOverrideNames = [
-  "DEVHUD_LOGTO_AUDIENCE",
-  "DEVHUD_LOGTO_DESKTOP_CLIENT_ID",
-  "DEVHUD_LOGTO_IOS_CLIENT_ID",
-  "DEVHUD_LOGTO_ANDROID_CLIENT_ID",
-  "DEVHUD_LOGTO_ADMIN_CLIENT_ID",
-];
-
 async function ossEnvironment(action) {
+  const { identityKeyFile } = resolveLocalStatePaths();
   let identityKey;
   try {
     identityKey = (await readFile(identityKeyFile, "utf8")).trim();
@@ -40,7 +33,10 @@ async function ossEnvironment(action) {
       );
     }
   }
-  const overrides = await readServiceEnv(resolve(serviceDirectory, ".env"), localOverrideNames);
+  const overrides = await readServiceEnv(
+    resolve(serviceDirectory, ".env"),
+    apiContract.ossOverrideNames,
+  );
   return {
     DEVHUD_DATABASE_URL: "postgres://devhud:devhud@127.0.0.1:5432/devhud?sslmode=disable",
     DEVHUD_PUBLIC_API_URL: "http://127.0.0.1:46307",

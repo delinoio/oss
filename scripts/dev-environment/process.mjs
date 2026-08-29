@@ -45,6 +45,13 @@ export function safeBaseEnvironment(source = process.env) {
   );
 }
 
+export function dockerClientEnvironment(source = process.env) {
+  const names = ["DOCKER_HOST", "DOCKER_CONTEXT"];
+  return Object.fromEntries(
+    names.filter((name) => source[name] !== undefined).map((name) => [name, source[name]]),
+  );
+}
+
 export function spawnResult(command, args, options = {}) {
   const child = spawn(command, args, { shell: false, ...options });
   const completion = new Promise((resolve, reject) => {

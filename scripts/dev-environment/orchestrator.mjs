@@ -6,15 +6,15 @@ import { createHash, randomBytes } from "node:crypto";
 import { resolve } from "node:path";
 import {
   composeFile,
-  identityKeyFile,
   infisicalConfig,
   repositoryRoot,
-  stateDirectory,
+  resolveLocalStatePaths,
   supportedInfisicalVersion,
 } from "./contracts.mjs";
 import {
   collect,
   commandName,
+  dockerClientEnvironment,
   inherited,
   safeBaseEnvironment,
   terminateTree,
@@ -110,6 +110,13 @@ function rootChildEnvironment(mode) {
   };
 }
 
+function dockerChildEnvironment() {
+  return {
+    ...rootChildEnvironment("oss"),
+    ...dockerClientEnvironment(),
+  };
+}
+
 async function exists(path) {
   try {
     await access(path, fsConstants.F_OK);
@@ -176,7 +183,7 @@ async function dependencyOwnedByCompose(projectName, service, containerPort, hos
       ...docker.prefix,
       ...composeArgs(projectName, "port", service, String(containerPort)),
     ],
-    { cwd: repositoryRoot, env: rootChildEnvironment("oss") },
+    { cwd: repositoryRoot, env: dockerChildEnvironment() },
   );
   if (result.code !== 0) return false;
   return result.stdout
@@ -282,7 +289,7 @@ async function checkDocker() {
   try {
     result = await collect(docker.command, [...docker.prefix, "compose", "version"], {
       cwd: repositoryRoot,
-      env: rootChildEnvironment("oss"),
+      env: dockerChildEnvironment(),
     });
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
@@ -293,7 +300,8 @@ async function checkDocker() {
   }
 }
 
-export async function createLocalIdentityKey() {
+export async function createLocalIdentityKey(source = process.env) {
+  const { identityKeyFile, stateDirectory } = resolveLocalStatePaths(source);
   await mkdir(stateDirectory, { recursive: true, mode: 0o700 });
   let handle;
   try {
@@ -319,6 +327,7 @@ export function composeProjectName(identityKey) {
 }
 
 async function localComposeProjectName() {
+  const { identityKeyFile } = resolveLocalStatePaths();
   await createLocalIdentityKey();
   return composeProjectName(await readFile(identityKeyFile, "utf8"));
 }
@@ -336,7 +345,7 @@ export async function down({ quiet = false, projectName } = {}) {
       ],
       {
         cwd: repositoryRoot,
-        env: rootChildEnvironment("oss"),
+        env: dockerChildEnvironment(),
         stdio: quiet ? "ignore" : "inherit",
       },
     );
@@ -402,7 +411,7 @@ async function startOss(lifecycle) {
           "logto",
         ),
       ],
-      { cwd: repositoryRoot, env: rootChildEnvironment("oss") },
+      { cwd: repositoryRoot, env: dockerChildEnvironment() },
     );
     dependenciesStarted = true;
     if (up.code !== 0 || up.signal) {

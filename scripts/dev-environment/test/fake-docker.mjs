@@ -13,7 +13,17 @@ const action = args.includes("version")
         : "unknown";
 
 if (eventLog) {
-  await appendFile(eventLog, `${JSON.stringify({ tool: "docker", action, args })}\n`, "utf8");
+  await appendFile(
+    eventLog,
+    `${JSON.stringify({
+      tool: "docker",
+      action,
+      args,
+      dockerHost: process.env.DOCKER_HOST,
+      dockerContext: process.env.DOCKER_CONTEXT,
+    })}\n`,
+    "utf8",
+  );
 }
 
 if (action === "version") process.stdout.write("Docker Compose version v2.40.0\n");

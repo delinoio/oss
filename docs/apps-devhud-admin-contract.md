@@ -8,7 +8,7 @@
 
 React/TypeScript SPA using the shared frontend conventions, English/Korean UI, Toss Design Guidelines, and WCAG 2.2 AA. Startup uses a valid stored locale when available and otherwise derives the locale from the browser. Locale switching always updates in-memory state even when Web Storage reads or writes fail. Fixed development origin: `http://localhost:46306`.
 
-The package-owned development wrapper accepts only `DEVHUD_LOGTO_ISSUER`, validates it before Rsbuild starts, and creates a sanitized child environment. In team mode it obtains that one name from the owning team service scope without exposing values through Turbo, arguments, files, logs, or diagnostics. In OSS mode it uses the local Logto loopback issuer; authenticated administrator flows remain unavailable until the contributor creates and owns the required Logto administrator/application setup. Root entry points and environment ownership are defined in the repository environment contract.
+The package-owned development wrapper accepts only `DEVHUD_LOGTO_ISSUER`, validates it before Rsbuild starts, and creates a sanitized child environment. In team mode it obtains that one name from the owning team service scope without exposing values through Turbo, arguments, files, logs, or diagnostics. In OSS mode it uses the local Logto loopback issuer; a contributor-owned override must exactly match the API wrapper's package-local issuer override so Bootstrap and CSP agree. Authenticated administrator flows remain unavailable until the contributor creates and owns the required Logto administrator/application setup. Root entry points and environment ownership are defined in the repository environment contract.
 
 ## Users and Operators
 

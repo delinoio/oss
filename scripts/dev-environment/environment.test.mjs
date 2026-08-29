@@ -11,11 +11,10 @@ import {
   apiContract,
   composeFile,
   EnvironmentError,
-  identityKeyFile,
   infisicalConfig,
   repositoryRoot,
   requireMode,
-  stateDirectory,
+  resolveLocalStatePaths,
   validateInjectedEnvironment,
 } from "./contracts.mjs";
 import {
@@ -24,7 +23,8 @@ import {
   createLocalIdentityKey,
   Lifecycle,
 } from "./orchestrator.mjs";
-import { commandName } from "./process.mjs";
+import { commandName, dockerClientEnvironment } from "./process.mjs";
+import { readServiceEnv } from "./service-environment.mjs";
 
 const testDirectory = dirname(fileURLToPath(import.meta.url));
 const fakeDirectory = resolve(testDirectory, "test");
@@ -81,6 +81,8 @@ async function runNode(script, args, environment) {
 function fakeEnvironment(temporaryDirectory) {
   return {
     ...process.env,
+    DOCKER_CONTEXT: "devhud-review-context",
+    DOCKER_HOST: "unix:///tmp/devhud-review-docker.sock",
     DEVHUD_ENVIRONMENT_TESTING: "1",
     DEVHUD_TEST_AUTH_STATE: resolve(temporaryDirectory, "auth-state"),
     DEVHUD_TEST_DOCKER: resolve(fakeDirectory, "fake-docker.mjs"),
@@ -88,6 +90,7 @@ function fakeEnvironment(temporaryDirectory) {
     DEVHUD_TEST_GO: resolve(fakeDirectory, "fake-go.mjs"),
     DEVHUD_TEST_INFISICAL: resolve(fakeDirectory, "fake-infisical.mjs"),
     DEVHUD_TEST_PNPM: resolve(fakeDirectory, "fake-pnpm.mjs"),
+    DEVHUD_TEST_STATE_DIRECTORY: resolve(temporaryDirectory, "state"),
   };
 }
 
@@ -115,6 +118,21 @@ test("Windows command resolution preserves native executables", () => {
   assert.equal(commandName("go", "win32"), "go");
   assert.equal(commandName("C:\\Go\\bin\\go.exe", "win32"), "C:\\Go\\bin\\go.exe");
   assert.equal(commandName("pnpm", "linux"), "pnpm");
+});
+
+test("Docker daemon selection is the only Docker-specific ambient configuration preserved", () => {
+  assert.deepEqual(
+    dockerClientEnvironment({
+      DOCKER_HOST: "unix:///run/user/1000/docker.sock",
+      DOCKER_CONTEXT: "rootless",
+      DOCKER_CONFIG: "/must-not-pass",
+      DEVHUD_DATABASE_URL: "must-not-pass",
+    }),
+    {
+      DOCKER_HOST: "unix:///run/user/1000/docker.sock",
+      DOCKER_CONTEXT: "rootless",
+    },
+  );
 });
 
 test("Compose project names are stable, checkout-scoped, and do not disclose the key", () => {
@@ -151,6 +169,25 @@ test("API and administrator allowlists reject missing, unknown, changed baseline
       }),
     /unknown names/u,
   );
+});
+
+test("OSS API and administrator overrides accept the same contributor-owned issuer", async (t) => {
+  const temporaryDirectory = await mkdtemp(resolve(tmpdir(), "devhud-issuer-test-"));
+  t.after(() => rm(temporaryDirectory, { recursive: true, force: true }));
+  const environmentFile = resolve(temporaryDirectory, ".env");
+  const issuer = "https://auth.example.test/oidc";
+  await writeFile(environmentFile, `DEVHUD_LOGTO_ISSUER=${issuer}\n`, "utf8");
+
+  const apiOverrides = await readServiceEnv(environmentFile, apiContract.ossOverrideNames);
+  const adminOverrides = await readServiceEnv(environmentFile, adminContract.ossOverrideNames);
+  assert.deepEqual(apiOverrides, { DEVHUD_LOGTO_ISSUER: issuer });
+  assert.deepEqual(adminOverrides, apiOverrides);
+  assert.equal(
+    validateInjectedEnvironment(apiContract, { ...validApiEnvironment(), ...apiOverrides })
+      .DEVHUD_LOGTO_ISSUER,
+    issuer,
+  );
+  assert.deepEqual(validateInjectedEnvironment(adminContract, adminOverrides), adminOverrides);
 });
 
 test("team startup initializes only once and uses exact Infisical paths and flags without disclosure", async (t) => {
@@ -287,12 +324,9 @@ test("administrator preflight probes the configured localhost binding", async (t
 
 test("OSS startup never invokes Infisical, orders health before migration and Turbo, and preserves volumes", async (t) => {
   const temporaryDirectory = await mkdtemp(resolve(tmpdir(), "devhud-oss-test-"));
-  await rm(stateDirectory, { recursive: true, force: true });
-  t.after(async () => {
-    await rm(stateDirectory, { recursive: true, force: true });
-    await rm(temporaryDirectory, { recursive: true, force: true });
-  });
   const environment = fakeEnvironment(temporaryDirectory);
+  const localState = resolveLocalStatePaths(environment);
+  t.after(() => rm(temporaryDirectory, { recursive: true, force: true }));
   const result = await runNode(cli, ["start", "oss"], environment);
   assert.equal(result.code, 0, result.stderr);
   const recorded = await events(environment.DEVHUD_TEST_EVENT_LOG);
@@ -304,10 +338,16 @@ test("OSS startup never invokes Infisical, orders health before migration and Tu
   const downEvent = recorded.findLast((event) => event.tool === "docker" && event.action === "down");
   assert.equal(downEvent.args.includes("--volumes"), false);
   assert.equal(downEvent.args.includes("-v"), false);
-  const key = await stat(identityKeyFile);
+  const key = await stat(localState.identityKeyFile);
   if (process.platform !== "win32") assert.equal(key.mode & 0o777, 0o600);
   const output = `${result.stdout}\n${result.stderr}`;
-  const identity = (await readFile(identityKeyFile, "utf8")).trim();
+  const identity = (await readFile(localState.identityKeyFile, "utf8")).trim();
+  const dockerEvents = recorded.filter((event) => event.tool === "docker");
+  assert.ok(dockerEvents.length > 0);
+  for (const event of dockerEvents) {
+    assert.equal(event.dockerHost, environment.DOCKER_HOST);
+    assert.equal(event.dockerContext, environment.DOCKER_CONTEXT);
+  }
   const composeEvents = recorded.filter(
     (event) => event.tool === "docker" && ["port", "up", "down"].includes(event.action),
   );
@@ -323,11 +363,7 @@ test("OSS startup never invokes Infisical, orders health before migration and Tu
 
 test("partial OSS startup is reaped and down remains volume-preserving", async (t) => {
   const temporaryDirectory = await mkdtemp(resolve(tmpdir(), "devhud-oss-failure-"));
-  await rm(stateDirectory, { recursive: true, force: true });
-  t.after(async () => {
-    await rm(stateDirectory, { recursive: true, force: true });
-    await rm(temporaryDirectory, { recursive: true, force: true });
-  });
+  t.after(() => rm(temporaryDirectory, { recursive: true, force: true }));
   const environment = {
     ...fakeEnvironment(temporaryDirectory),
     DEVHUD_TEST_DOCKER_UP_FAILURE: "1",
@@ -392,6 +428,18 @@ test("repository policy is immutable, orchestration-only, and free of first-part
     ),
     /--no-env/u,
   );
+  const issuerPattern = /^DEVHUD_LOGTO_ISSUER=(.+)$/mu;
+  const adminExample = await readFile(
+    resolve(repositoryRoot, "apps/devhud-admin/.env.example"),
+    "utf8",
+  );
+  const apiExample = await readFile(
+    resolve(repositoryRoot, "servers/devhud-api/.env.example"),
+    "utf8",
+  );
+  assert.match(adminExample, issuerPattern);
+  assert.match(apiExample, issuerPattern);
+  assert.equal(adminExample.match(issuerPattern)?.[1], apiExample.match(issuerPattern)?.[1]);
 
   const ignore = await readFile(resolve(repositoryRoot, ".gitignore"), "utf8");
   const prepare = await readFile(resolve(repositoryRoot, "scripts/prepare-apps.sh"), "utf8");
@@ -407,14 +455,20 @@ test("repository policy is immutable, orchestration-only, and free of first-part
 });
 
 test("generated identity material is stable, private, and never logged", async (t) => {
-  await rm(stateDirectory, { recursive: true, force: true });
-  t.after(() => rm(stateDirectory, { recursive: true, force: true }));
-  await createLocalIdentityKey();
-  const first = await readFile(identityKeyFile, "utf8");
-  await createLocalIdentityKey();
-  assert.equal(await readFile(identityKeyFile, "utf8"), first);
+  const temporaryDirectory = await mkdtemp(resolve(tmpdir(), "devhud-identity-test-"));
+  const environment = fakeEnvironment(temporaryDirectory);
+  const localState = resolveLocalStatePaths(environment);
+  t.after(() => rm(temporaryDirectory, { recursive: true, force: true }));
+  assert.throws(
+    () => resolveLocalStatePaths({ DEVHUD_ENVIRONMENT_TESTING: "1" }),
+    /absolute temporary state directory/u,
+  );
+  await createLocalIdentityKey(environment);
+  const first = await readFile(localState.identityKeyFile, "utf8");
+  await createLocalIdentityKey(environment);
+  assert.equal(await readFile(localState.identityKeyFile, "utf8"), first);
   if (process.platform !== "win32") {
-    assert.equal((await stat(identityKeyFile)).mode & 0o777, 0o600);
+    assert.equal((await stat(localState.identityKeyFile)).mode & 0o777, 0o600);
   }
 });
 

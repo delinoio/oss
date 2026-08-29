@@ -6,6 +6,8 @@ const forbidden = [
   "DEVHUD_LOGTO_ISSUER",
   "DEVHUD_IDENTITY_HMAC_KEYS",
   "DEVHUD_R2_SECRET_ACCESS_KEY",
+  "DOCKER_HOST",
+  "DOCKER_CONTEXT",
 ];
 if (forbidden.some((name) => process.env[name])) {
   process.stderr.write("Turbo received a service configuration value\n");
