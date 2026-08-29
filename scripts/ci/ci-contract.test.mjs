@@ -77,6 +77,7 @@ test("Node jobs use the committed Turbo binary with frozen installs and affected
     ["node-mpapp-lint", "Run mpapp lint"],
     ["node-binpm-docs-test", "Run binpm-docs tests"],
     ["node-nodeup-docs-test", "Run nodeup-docs tests"],
+    ["node-public-docs-test", "Run public-docs tests"],
   ]);
   for (const [id, runStepName] of affectedLegacyJobs) {
     const job = workflow.jobs[id];

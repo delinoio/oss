@@ -853,6 +853,8 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           CI_WORKFLOW_CHANGED: ${{ steps.filter.outputs.ci_workflow }}
           PUBLIC_DOCS_CHANGED: ${{ steps.filter.outputs.public_docs }}
+          PUSH_BASE: ${{ github.event.before }}
+          PUSH_HEAD: ${{ github.sha }}
           WORKSPACE: public-docs
         run: |
           set -euo pipefail
@@ -861,6 +863,10 @@ jobs:
           if [ "${EVENT_NAME}" = "workflow_dispatch" ] || [ "${CI_WORKFLOW_CHANGED}" = "true" ] || [ "${PUBLIC_DOCS_CHANGED}" = "true" ]; then
             run=true
           else
+            if [ "${EVENT_NAME}" = "push" ]; then
+              export TURBO_SCM_BASE="${PUSH_BASE}"
+              export TURBO_SCM_HEAD="${PUSH_HEAD}"
+            fi
             pnpm install --frozen-lockfile --ignore-scripts
             affected_json="$(pnpm exec turbo run test --affected --filter "${WORKSPACE}" --dry=json)"
             printf '%s\n' "${affected_json}"
@@ -882,10 +888,19 @@ jobs:
         if: ${{ steps.gate.outputs.run == 'true' }}
         shell: bash
         env:
+          EVENT_NAME: ${{ github.event_name }}
           FORCE_RUN: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.ci_workflow == 'true' || steps.filter.outputs.public_docs == 'true' }}
+          PUSH_BASE: ${{ github.event.before }}
+          PUSH_HEAD: ${{ github.sha }}
         run: |
           args=(run test --filter public-docs)
-          if [ "$FORCE_RUN" != true ]; then args+=(--affected); fi
+          if [ "$FORCE_RUN" != true ]; then
+            args+=(--affected)
+            if [ "$EVENT_NAME" = push ]; then
+              export TURBO_SCM_BASE="$PUSH_BASE"
+              export TURBO_SCM_HEAD="$PUSH_HEAD"
+            fi
+          fi
           pnpm exec turbo "${args[@]}"
 
   devhud-frontend:
