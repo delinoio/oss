@@ -1526,7 +1526,7 @@ jobs:
             package="$2"
             user_manifest="$3"
             host="$4"
-            runtime=$(mktemp -d "$RUNNER_TEMP/devhud-runtime.XXXXXX")
+            runtime="/run/user/$(id -u)"
             export XDG_RUNTIME_DIR="$runtime"
             session_socket="${DBUS_SESSION_BUS_ADDRESS#unix:path=}"
             session_socket="${session_socket%%,*}"
@@ -1534,10 +1534,15 @@ jobs:
             control_directory="$RUNNER_TEMP/devhud-keyring"
             mkdir -p "$control_directory"
             chmod 700 "$control_directory"
-            ln -s "$session_socket" "$runtime/bus"
+            sudo install -d -m 0700 -o "$(id -u)" -g "$(id -g)" "$runtime"
+            if [ -e "$runtime/bus" ] || [ -L "$runtime/bus" ]; then
+              echo "DevHUD Debian lifecycle requires an unused per-user D-Bus socket path" >&2
+              exit 1
+            fi
+            sudo ln -s "$session_socket" "$runtime/bus"
             keyring_pid=
             cleanup_lifecycle() {
-              rm -f "$runtime/bus"
+              sudo rm -f "$runtime/bus"
               if [ -n "$keyring_pid" ]; then
                 kill "$keyring_pid" 2>/dev/null || true
                 wait "$keyring_pid" 2>/dev/null || true
