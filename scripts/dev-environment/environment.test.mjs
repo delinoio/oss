@@ -655,40 +655,58 @@ test("partial OSS startup is reaped and down remains volume-preserving", async (
   assert.ok(recorded.some((event) => event.action === "down"));
 });
 
-test("interrupted OSS steady state still runs lifecycle-tracked cleanup", async (t) => {
-  const temporaryDirectory = await mkdtemp(resolve(tmpdir(), "devhud-oss-interrupt-"));
-  const environment = {
-    ...fakeEnvironment(temporaryDirectory),
-    DEVHUD_TEST_BLOCK_PNPM: "1",
-  };
-  t.after(() => rm(temporaryDirectory, { recursive: true, force: true }));
+test(
+  "interrupted OSS steady state still runs lifecycle-tracked cleanup",
+  {
+    // child.kill cannot emulate an interactive Windows console control event,
+    // so exercise the real root signal-handler path only on POSIX hosts.
+    skip: process.platform === "win32",
+  },
+  async (t) => {
+    const temporaryDirectory = await mkdtemp(
+      resolve(tmpdir(), "devhud-oss-interrupt-"),
+    );
+    const environment = {
+      ...fakeEnvironment(temporaryDirectory),
+      DEVHUD_TEST_BLOCK_PNPM: "1",
+    };
+    t.after(() => rm(temporaryDirectory, { recursive: true, force: true }));
 
-  const result = await interruptCliDuring(
-    ["start", "oss"],
-    environment,
-    (event) => event.tool === "pnpm" && event.action === "turbo-blocked",
-  );
-  assert.equal(result.signal, "SIGTERM");
-  const recorded = await events(environment.DEVHUD_TEST_EVENT_LOG);
-  assert.ok(recorded.some((event) => event.tool === "docker" && event.action === "down"));
-});
+    const result = await interruptCliDuring(
+      ["start", "oss"],
+      environment,
+      (event) => event.tool === "pnpm" && event.action === "turbo-blocked",
+    );
+    assert.equal(result.signal, "SIGTERM");
+    const recorded = await events(environment.DEVHUD_TEST_EVENT_LOG);
+    assert.ok(
+      recorded.some((event) => event.tool === "docker" && event.action === "down"),
+    );
+  },
+);
 
-test("a signal during failed-start cleanup terminates the Docker process tree", async (t) => {
-  const temporaryDirectory = await mkdtemp(resolve(tmpdir(), "devhud-cleanup-interrupt-"));
-  const environment = {
-    ...fakeEnvironment(temporaryDirectory),
-    DEVHUD_TEST_DOCKER_UP_FAILURE: "1",
-    DEVHUD_TEST_BLOCK_DOCKER_DOWN: "1",
-  };
-  t.after(() => rm(temporaryDirectory, { recursive: true, force: true }));
+test(
+  "a signal during failed-start cleanup terminates the Docker process tree",
+  { skip: process.platform === "win32" },
+  async (t) => {
+    const temporaryDirectory = await mkdtemp(
+      resolve(tmpdir(), "devhud-cleanup-interrupt-"),
+    );
+    const environment = {
+      ...fakeEnvironment(temporaryDirectory),
+      DEVHUD_TEST_DOCKER_UP_FAILURE: "1",
+      DEVHUD_TEST_BLOCK_DOCKER_DOWN: "1",
+    };
+    t.after(() => rm(temporaryDirectory, { recursive: true, force: true }));
 
-  const result = await interruptCliDuring(
-    ["start", "oss"],
-    environment,
-    (event) => event.tool === "docker" && event.action === "down-blocked",
-  );
-  assert.equal(result.signal, "SIGTERM");
-});
+    const result = await interruptCliDuring(
+      ["start", "oss"],
+      environment,
+      (event) => event.tool === "docker" && event.action === "down-blocked",
+    );
+    assert.equal(result.signal, "SIGTERM");
+  },
+);
 
 for (const port of [5432, 3001, 3002, 46305, 46306, 46307]) {
   test(`fixed port ${port} fails instead of remapping`, async (t) => {
@@ -714,6 +732,19 @@ for (const stage of ["dependency startup", "migration", "steady state"]) {
     await assert.rejects(running, /interrupted by SIGTERM/u);
   });
 }
+
+test("cleanup tracks its child after an earlier lifecycle interruption", async () => {
+  const lifecycle = new Lifecycle();
+  lifecycle.signal = "SIGTERM";
+  const running = lifecycle.runCleanup(
+    process.execPath,
+    ["-e", "setInterval(() => {}, 1000)"],
+    { stdio: "ignore" },
+  );
+  setTimeout(() => lifecycle.interrupt("SIGTERM"), 25);
+  await assert.rejects(running, /interrupted by SIGTERM/u);
+  assert.equal(lifecycle.signal, "SIGTERM");
+});
 
 for (const [name, args, blockingVariable, tool] of [
   ["Infisical version", ["start", "team"], "DEVHUD_TEST_BLOCK_INFISICAL_VERSION", "infisical"],
