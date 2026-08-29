@@ -20,6 +20,7 @@ const packages = Object.fromEntries([
 ].map((path) => [path, JSON.parse(readFileSync(`${root}/${path}`, "utf8"))]));
 const turbo = JSON.parse(readFileSync(`${root}/turbo.json`, "utf8"));
 const adminTurbo = JSON.parse(readFileSync(`${root}/apps/devhud-admin/turbo.json`, "utf8"));
+const extensionTurbo = JSON.parse(readFileSync(`${root}/apps/devhud-chrome-extension/turbo.json`, "utf8"));
 const devhudTauri = JSON.parse(readFileSync(`${root}/apps/devhud/src-tauri/tauri.conf.json`, "utf8"));
 
 const legacyJobs = [
@@ -118,6 +119,25 @@ test("Node jobs use the committed Turbo binary with frozen installs and affected
   assert.match(frontendFilter, /node_runtime:\n\s+- \.nvmrc/u);
   const frontendRun = namedStep(workflow.jobs["devhud-frontend"], "Run affected frontend contracts");
   assert.match(frontendRun.env.FORCE_RUN, /steps\.filter\.outputs\.node_runtime == 'true'/u);
+});
+
+test("DevHud API PostgreSQL starts only after its path gate", () => {
+  const job = workflow.jobs["devhud-api"];
+  assert.equal(job.services, undefined);
+  const gateIndex = job.steps.findIndex((candidate) => candidate.id === "gate");
+  const startIndex = job.steps.findIndex((candidate) => candidate.name === "Start PostgreSQL");
+  const integrationIndex = job.steps.findIndex((candidate) => candidate.name === "Run PostgreSQL migration and integration tests");
+  const stopIndex = job.steps.findIndex((candidate) => candidate.name === "Stop PostgreSQL");
+  assert.ok(gateIndex >= 0 && gateIndex < startIndex && startIndex < integrationIndex && integrationIndex < stopIndex);
+  const startPostgreSQL = job.steps[startIndex];
+  assert.equal(startPostgreSQL.if, "${{ steps.gate.outputs.run == 'true' }}");
+  for (const expected of [
+    "docker run --detach", "postgres:15-bookworm", "--publish 5432:5432", "pg_isready",
+    "docker inspect", "State.Health.Status", "docker logs devhud-postgres",
+  ]) assert.ok(startPostgreSQL.run.includes(expected), expected);
+  const stopPostgreSQL = job.steps[stopIndex];
+  assert.equal(stopPostgreSQL.if, "${{ always() && steps.gate.outputs.run == 'true' }}");
+  assert.match(stopPostgreSQL.run, /docker rm --force devhud-postgres/u);
 });
 
 test("desktop and mobile matrices match the committed architecture contracts", () => {
@@ -286,6 +306,11 @@ test("package-local CI commands and deterministic cache boundaries are explicit"
     assert.match(adminScripts[task], /^pnpm --filter @delinoio\/devhud-api-client build && pnpm build &&/u, task);
   }
   assert.deepEqual(adminTurbo.tasks.build.inputs, ["$TURBO_EXTENDS$", "index.html"]);
+  assert.deepEqual(extensionTurbo.extends, ["//"]);
+  assert.deepEqual(extensionTurbo.tasks["build:frontend"].inputs, [
+    "$TURBO_DEFAULT$",
+    "$TURBO_ROOT$/apps/devhud/src-tauri/icons/icon.png",
+  ]);
   const nativeTurbo = JSON.parse(readFileSync(`${root}/apps/devhud/turbo.json`, "utf8"));
   for (const task of ["test:unit", "test:components", "test:security", "test:adapters"]) assert.deepEqual(nativeTurbo.tasks[task].dependsOn, ["^build"], task);
   for (const task of ["build", "mobile:generate", "build:ios", "build:android", "smoke:platform"]) assert.equal(nativeTurbo.tasks[task].cache, false, task);
