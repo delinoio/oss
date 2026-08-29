@@ -55,14 +55,6 @@ The expected signer is the `delinoio/oss` `package-devhud-private.yml` GitHub Ac
 
 Before opening the package, bind the verification to the requested release: confirm that the release page is tagged `devhud@v<VERSION>`, resolve that tag to its commit, and require the extracted artifact provenance to identify that exact source revision. Also confirm that the artifact's embedded release metadata identifies `<VERSION>` and that its provenance subject and checksum entry identify the artifact you downloaded. If the tag, source revision, embedded version, artifact name, or digest does not match, discard the package and evidence archive rather than opening it.
 
-## Mobile stores
-
-Install iOS 16 or later from the [Apple App Store](https://apps.apple.com/app/id__DEVHUD_APP_STORE_APP_ID__), or Android 10/API 29 or later from [Google Play](https://play.google.com/store/apps/details?id=__DEVHUD_GOOGLE_PLAY_PACKAGE_NAME__). Mobile updates are store-managed. Both packages include the optional one-Deck home-screen widget.
-
-## Chrome extension
-
-Install DevHud from the [Chrome Web Store](https://chromewebstore.google.com/detail/devhud/__DEVHUD_CHROME_EXTENSION_ID__). The extension is a permission-scoped context picker: it does not continuously observe pages, and it does not collect cookies, storage, console output, or network traffic. The picker is unavailable in incognito tabs; this is expected, and DevHud falls back to capture without browser context plus manual repository selection. After an explicit picker gesture, it scans up to 10,000 candidate elements across the active page. The picker times out after 30 seconds; if it disappears, restart the picker gesture. If the page exceeds that bound, or the selected subtree exceeds 10,000 total nodes, it degrades to capture without browser context and requires manual repository selection. Otherwise, it retains and persists only the selected, sanitized context. A Chrome-assisted RealQA draft includes that browser context by default when submitted, so the redacted URL, page title, user agent, viewport and bounds, accessibility values, and sanitized markup may be published in the GitHub issue. Review the draft and use its browser-context removal control before submitting if you do not want to share those details. Pair it from DevHud Settings after installing the desktop app.
-
 ### Windows verification
 
 In PowerShell, use the Windows-provided `tar.exe` and `Get-FileHash` commands to inspect and verify the release evidence before opening an MSI or NSIS installer. Install the Windows build of `cosign` separately, then run:
@@ -104,10 +96,23 @@ $artifact = switch ($packageKind) {
   default { throw "Package kind must be msi or nsis" }
 }
 $artifactHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $artifact).Hash.ToLowerInvariant()
-if (-not (Select-String -Path "$dir\SHA256SUMS" -Pattern $artifactHash -SimpleMatch)) { throw "Downloaded artifact is not in the authenticated checksum manifest" }
+$manifestLine = Get-Content "$dir\SHA256SUMS" | Where-Object {
+  $_ -match "^\s*[0-9a-fA-F]{64}\s+\*?" + [regex]::Escape($artifact) + "\s*$"
+} | Select-Object -First 1
+if (-not $manifestLine) { throw "Downloaded artifact is not in the authenticated checksum manifest" }
+$manifestHash = ([regex]::Match($manifestLine, "^\s*([0-9a-fA-F]{64})")).Groups[1].Value.ToLowerInvariant()
+if ($artifactHash -ne $manifestHash) { throw "Downloaded artifact checksum mismatch" }
 ```
 
 Use the same signer and issuer to verify the matching artifact bundle under `release-evidence\sigstore`. Confirm the release tag, source revision, embedded version, artifact name, and digest all match the requested release; discard any mismatch.
+
+## Mobile stores
+
+Install iOS 16 or later from the [Apple App Store](https://apps.apple.com/app/id__DEVHUD_APP_STORE_APP_ID__), or Android 10/API 29 or later from [Google Play](https://play.google.com/store/apps/details?id=__DEVHUD_GOOGLE_PLAY_PACKAGE_NAME__). Mobile updates are store-managed. Both packages include the optional one-Deck home-screen widget.
+
+## Chrome extension
+
+Install DevHud from the [Chrome Web Store](https://chromewebstore.google.com/detail/devhud/__DEVHUD_CHROME_EXTENSION_ID__). The extension is a permission-scoped context picker: it does not continuously observe pages, and it does not collect cookies, storage, console output, or network traffic. The picker is unavailable in incognito tabs; this is expected, and DevHud falls back to capture without browser context plus manual repository selection. After an explicit picker gesture, it scans up to 10,000 candidate elements across the active page. The picker times out after 30 seconds; if it disappears, restart the picker gesture. If the page exceeds that bound, or the selected subtree exceeds 10,000 total nodes, it degrades to capture without browser context and requires manual repository selection. Otherwise, it retains and persists only the selected, sanitized context. A Chrome-assisted RealQA draft includes that browser context by default when submitted, so the redacted URL, page title, user agent, viewport and bounds, accessibility values, and sanitized markup may be published in the GitHub issue. Review the draft and use its browser-context removal control before submitting if you do not want to share those details. Pair it from DevHud Settings after installing the desktop app.
 
 ## Verification checklist
 

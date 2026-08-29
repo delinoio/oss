@@ -37,9 +37,8 @@ const routeOutputFiles = stableRouteIds.map((routeId) => ({
 const htmlRoutePaths = new Set(
   stableRouteIds.map((routeId) => (routeId === "/" ? "/index.html" : `${routeId}.html`)),
 );
-const hrefPattern = /\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'`=<>]+))/giu;
+const urlAttributePattern = /\b(?:href|src|srcset|poster|action|formaction|data)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'`=<>]+))/giu;
 const anchorHrefPattern = /<a\b[^>]*\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'`=<>]+))/giu;
-const resourceAttributePattern = /\b(?:src|srcset)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'`=<>]+))/giu;
 const validatorOrigin = "https://public-docs.invalid";
 
 async function pathExists(filePath) {
@@ -143,7 +142,7 @@ function containsCredentialBearingLink(contents, htmlFile) {
   const pagePath = `/${path.relative(outputDir, htmlFile).split(path.sep).join("/")}`;
   const pageUrl = new URL(pagePath, validatorOrigin);
 
-  for (const match of contents.matchAll(hrefPattern)) {
+  for (const match of contents.matchAll(urlAttributePattern)) {
     const href = attributeValue(match);
     try {
       const resolvedUrl = new URL(decodeHTML(href), pageUrl);
@@ -170,7 +169,7 @@ function normalizedUrlPath(target, htmlFile) {
 
 function hrefPathTargets(contents, htmlFile) {
   const targets = [];
-  for (const match of contents.matchAll(hrefPattern)) {
+  for (const match of contents.matchAll(urlAttributePattern)) {
     const target = decodeHTML(attributeValue(match));
     const normalizedPath = normalizedUrlPath(target, htmlFile);
     if (normalizedPath || !/^(?:\/assets|\/static)\//u.test(target)) targets.push(target);
@@ -201,9 +200,9 @@ function containsCredentialBearingParameters(parameters) {
 
 function resourceTargets(contents) {
   const targets = [];
-  for (const match of contents.matchAll(resourceAttributePattern)) {
+  for (const match of contents.matchAll(urlAttributePattern)) {
     const value = attributeValue(match);
-    if (value.includes(",")) {
+    if (/\bsrcset\s*=/iu.test(match[0]) && value.includes(",")) {
       for (const candidate of value.split(",")) {
         const target = candidate.trim().split(/\s+/u, 1)[0];
         if (target) targets.push(target);
@@ -306,12 +305,20 @@ const forbiddenResourceFixtures = [
   '<img src = "file:///etc/devhud/private.png">',
   '<img src=file:///etc/devhud/private.png>',
   '<img src="file&colon;///etc/devhud/private.png">',
+  '<video poster="file:///etc/devhud/private.png"></video>',
+  '<form action="../../servers/devhud/private-endpoint"></form>',
+  '<button formaction="file:///etc/devhud/private-endpoint">Submit</button>',
+  '<object data="../../servers/devhud/private.pdf"></object>',
 ];
 const credentialBearingResourceFixtures = [
   '<img src="https://alice:secret@example.com/image.png">',
   '<img src = https://alice:secret@example.com/image.png>',
   '<img src="https://example.com/image?token&equals;abc123">',
   '<img src="https://example.com/image#token&equals;abc123">',
+  '<video poster="https://alice:secret@example.com/image.png"></video>',
+  '<form action="https://example.com/submit?token&equals;abc123"></form>',
+  '<button formaction="https://example.com/submit#token&equals;abc123">Submit</button>',
+  '<object data="https://alice:secret@example.com/document.pdf"></object>',
 ];
 const hrefAttributeFixtures = [
   '<link rel="stylesheet" href="https://alice:secret@example.com/x.css">',

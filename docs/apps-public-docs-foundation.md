@@ -43,7 +43,7 @@
 - Log output must remain safe for public CI surfaces.
 
 ## Build and Test
-- Local validation: `pnpm --filter public-docs test`, which builds Rspress and runs `scripts/validate-clean-urls.mjs` to verify every stable route artifact, required headings/links/accessibility landmarks, public-content limits, generated internal `.html` links, and all supported quoted or unquoted `href`, `src`, and `srcset` attributes for forbidden paths and URL credentials.
+- Local validation: `pnpm --filter public-docs test`, which builds Rspress and runs `scripts/validate-clean-urls.mjs` to verify every stable route artifact, required headings/links/accessibility landmarks, public-content limits, generated internal `.html` links, and all supported quoted or unquoted URL-bearing HTML attributes for forbidden paths and URL credentials.
 - CI alignment: `node-public-docs-test`
 - Production build: `pnpm --filter public-docs build`; Cloudflare Pages must publish `apps/public-docs/doc_build`.
 
