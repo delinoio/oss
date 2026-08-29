@@ -432,6 +432,24 @@ test("preflight rejects URL escapes rejected by the Go service parser", () => {
     }
   }
 
+  for (const databaseURL of [
+    "postgres://devhud:devhud@localhost/%",
+    "postgres://devhud:devhud@localhost/%2",
+    "postgres://devhud:devhud@localhost/%zz",
+  ]) {
+    assert.throws(
+      () =>
+        validateInjectedEnvironment(apiContract, {
+          ...valid,
+          DEVHUD_DATABASE_URL: databaseURL,
+        }),
+      (error) =>
+        error instanceof EnvironmentError &&
+        error.code === "environment.invalid-values",
+      databaseURL,
+    );
+  }
+
   const escapedIssuer = "https://issuer.example/oidc%2Ftenant";
   assert.deepEqual(
     validateInjectedEnvironment(adminContract, {
@@ -445,6 +463,16 @@ test("preflight rejects URL escapes rejected by the Go service parser", () => {
       DEVHUD_LOGTO_ISSUER: escapedIssuer,
     }).DEVHUD_LOGTO_ISSUER,
     escapedIssuer,
+  );
+
+  const escapedDatabaseURL =
+    "postgres://devhud:pass%40word@localhost/devhud";
+  assert.equal(
+    validateInjectedEnvironment(apiContract, {
+      ...valid,
+      DEVHUD_DATABASE_URL: escapedDatabaseURL,
+    }).DEVHUD_DATABASE_URL,
+    escapedDatabaseURL,
   );
 });
 
@@ -471,6 +499,20 @@ test("preflight rejects raw URL control characters rejected by the Go service pa
         `ASCII control character ${controlCharacter.charCodeAt(0)}`,
       );
     }
+
+    const databaseURL =
+      `postgres://devhud:devhud@localhost/dev${controlCharacter}hud`;
+    assert.throws(
+      () =>
+        validateInjectedEnvironment(apiContract, {
+          ...valid,
+          DEVHUD_DATABASE_URL: databaseURL,
+        }),
+      (error) =>
+        error instanceof EnvironmentError &&
+        error.code === "environment.invalid-values",
+      `database URL ASCII control character ${controlCharacter.charCodeAt(0)}`,
+    );
   }
 });
 

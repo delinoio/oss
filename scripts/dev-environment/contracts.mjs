@@ -141,13 +141,12 @@ const containsAsciiControlCharacter = (value) => {
   return false;
 };
 
+const hasGoCompatibleURLSpelling = (value) =>
+  !containsAsciiControlCharacter(value) &&
+  !/%(?![0-9A-Fa-f]{2})/u.test(value);
+
 const localHttp = (value) => {
-  if (
-    containsAsciiControlCharacter(value) ||
-    /%(?![0-9A-Fa-f]{2})/u.test(value)
-  ) {
-    return false;
-  }
+  if (!hasGoCompatibleURLSpelling(value)) return false;
   const authorityMatch = /^https?:\/\/([^/\\?#]+)(?:[/?#]|$)/u.exec(value);
   // WHATWG normalizes escaped authorities that Go's net/url rejects.
   // Check the raw value so wrapper preflight and service parsing remain aligned.
@@ -177,6 +176,7 @@ const localHttp = (value) => {
 const nonempty = (value) => typeof value === "string" && value.trim() !== "";
 const url = (value) => nonempty(value) && localHttp(value);
 const database = (value) => {
+  if (!hasGoCompatibleURLSpelling(value)) return false;
   try {
     const parsed = new URL(value);
     return ["postgres:", "postgresql:"].includes(parsed.protocol) && Boolean(parsed.hostname);
