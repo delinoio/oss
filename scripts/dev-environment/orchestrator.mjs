@@ -297,8 +297,13 @@ async function exactInfisicalVersion(lifecycle) {
       `[tool.missing] Infisical CLI ${supportedInfisicalVersion} is required and is not installed automatically`,
     );
   }
-  const versions = result.stdout.match(/\d+\.\d+\.\d+/gu) ?? [];
-  if (!versions.includes(supportedInfisicalVersion)) {
+  const versions = result.stdout
+    .split(/\r?\n/u)
+    .flatMap((line) => {
+      const match = /^infisical version (\S+)$/u.exec(line);
+      return match ? [match[1]] : [];
+    });
+  if (versions.length !== 1 || versions[0] !== supportedInfisicalVersion) {
     throw new Error(
       `[tool.version] Infisical CLI ${supportedInfisicalVersion} is required; install that exact supported version`,
     );

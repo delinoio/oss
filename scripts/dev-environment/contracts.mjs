@@ -134,6 +134,7 @@ const rawAuthorityHostname = (authority) => {
 };
 
 const localHttp = (value) => {
+  if (/%(?![0-9A-Fa-f]{2})/u.test(value)) return false;
   const authorityMatch = /^https?:\/\/([^/\\?#]+)(?:[/?#]|$)/u.exec(value);
   if (!authorityMatch) return false;
   try {
@@ -171,10 +172,13 @@ const database = (value) => {
 const hmacRing = (value) => {
   if (!nonempty(value)) return false;
   return value.split(",").every((entry) => {
-    if (!/^[A-Za-z0-9+/]+={0,2}$/u.test(entry) || entry.length % 4 !== 0) return false;
+    const normalized = entry.trim();
+    if (!/^[A-Za-z0-9+/]+={0,2}$/u.test(normalized) || normalized.length % 4 !== 0) {
+      return false;
+    }
     try {
-      const decoded = Buffer.from(entry, "base64");
-      return decoded.byteLength >= 32 && decoded.toString("base64") === entry;
+      const decoded = Buffer.from(normalized, "base64");
+      return decoded.byteLength >= 32 && decoded.toString("base64") === normalized;
     } catch {
       return false;
     }

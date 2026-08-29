@@ -410,6 +410,68 @@ test("API and administrator allowlists reject malformed configuration", () => {
   }
 });
 
+test("preflight rejects URL escapes rejected by the Go service parser", () => {
+  const valid = validApiEnvironment();
+  for (const issuer of [
+    "https://issuer.example/%",
+    "https://issuer.example/%2",
+    "https://issuer.example/%zz",
+  ]) {
+    for (const [contract, environment] of [
+      [adminContract, { DEVHUD_LOGTO_ISSUER: issuer }],
+      [apiContract, { ...valid, DEVHUD_LOGTO_ISSUER: issuer }],
+    ]) {
+      assert.throws(
+        () => validateInjectedEnvironment(contract, environment),
+        (error) =>
+          error instanceof EnvironmentError &&
+          error.code === "environment.invalid-values",
+        issuer,
+      );
+    }
+  }
+
+  const escapedIssuer = "https://issuer.example/oidc%2Ftenant";
+  assert.deepEqual(
+    validateInjectedEnvironment(adminContract, {
+      DEVHUD_LOGTO_ISSUER: escapedIssuer,
+    }),
+    { DEVHUD_LOGTO_ISSUER: escapedIssuer },
+  );
+  assert.equal(
+    validateInjectedEnvironment(apiContract, {
+      ...valid,
+      DEVHUD_LOGTO_ISSUER: escapedIssuer,
+    }).DEVHUD_LOGTO_ISSUER,
+    escapedIssuer,
+  );
+});
+
+test("preflight accepts whitespace around identity HMAC key-ring entries", () => {
+  const firstKey = Buffer.alloc(32, 1).toString("base64");
+  const secondKey = Buffer.alloc(32, 2).toString("base64");
+  const ring = `${firstKey}, ${secondKey}`;
+  const valid = { ...validApiEnvironment(), DEVHUD_IDENTITY_HMAC_KEYS: ring };
+  assert.equal(
+    validateInjectedEnvironment(apiContract, valid).DEVHUD_IDENTITY_HMAC_KEYS,
+    ring,
+  );
+
+  for (const invalidRing of [`${firstKey}, `, ` ,${secondKey}`]) {
+    assert.throws(
+      () =>
+        validateInjectedEnvironment(apiContract, {
+          ...valid,
+          DEVHUD_IDENTITY_HMAC_KEYS: invalidRing,
+        }),
+      (error) =>
+        error instanceof EnvironmentError &&
+        error.code === "environment.invalid-values",
+      invalidRing,
+    );
+  }
+});
+
 test("preflight accepts the same loopback issuer hosts as the services", () => {
   const valid = validApiEnvironment();
   for (const issuer of [
@@ -555,6 +617,24 @@ test("team setup initializes only through env:login and startup uses exact Infis
   );
   const firstTurbo = recorded.findIndex((event) => event.tool === "pnpm");
   assert.ok(firstMigration !== -1 && firstMigration < firstTurbo);
+});
+
+test("team tooling rejects suffixed or indirectly mentioned Infisical versions", async (t) => {
+  const temporaryDirectory = await mkdtemp(resolve(tmpdir(), "devhud-infisical-version-"));
+  t.after(() => rm(temporaryDirectory, { recursive: true, force: true }));
+
+  for (const output of [
+    "infisical version 0.43.116-beta.1\n",
+    "infisical version 0.43.116+vendor.1\n",
+    "infisical version 0.43.115\nUpdate available: 0.43.116\n",
+  ]) {
+    const result = await runNode(cli, ["login"], {
+      ...fakeEnvironment(temporaryDirectory),
+      DEVHUD_TEST_INFISICAL_VERSION_OUTPUT: output,
+    });
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, /\[tool\.version\].*0\.43\.116/u);
+  }
 });
 
 test("team startup rejects missing project binding or authentication without interactive mutation", async (t) => {

@@ -25,7 +25,10 @@ if (args.includes("--version")) {
     await log({ tool: "infisical", action: "version-blocked" });
     await new Promise(() => setInterval(() => {}, 1_000));
   }
-  process.stdout.write("infisical version 0.43.116\n");
+  process.stdout.write(
+    process.env.DEVHUD_TEST_INFISICAL_VERSION_OUTPUT ??
+      "infisical version 0.43.116\n",
+  );
 } else if (args.includes("user") && args.includes("token")) {
   await log({ tool: "infisical", action: "auth-probe" });
   if (authState && (await exists(authState))) process.stdout.write("AUTH_TOKEN_MUST_NOT_LEAK\n");
