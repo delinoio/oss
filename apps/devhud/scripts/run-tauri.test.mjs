@@ -115,6 +115,12 @@ test("leaves ad hoc signing unchanged when local signing is unavailable", () => 
     environment,
     () => ({ status: 1, stdout: "" }),
   );
+  const noGitMetadata = repositoryAppleSigningEnvironment(
+    "dev",
+    "darwin",
+    environment,
+    () => ({ status: 128, stdout: "" }),
+  );
   const otherPlatform = repositoryAppleSigningEnvironment(
     "dev",
     "linux",
@@ -122,6 +128,7 @@ test("leaves ad hoc signing unchanged when local signing is unavailable", () => 
     () => assert.fail("Git config should not be read"),
   );
   assert.equal(missing, environment);
+  assert.equal(noGitMetadata, environment);
   assert.equal(otherPlatform, environment);
 });
 

@@ -73,7 +73,10 @@ export function repositoryAppleSigningEnvironment(
   if (result.error) {
     throw new Error(`failed to read ${repositoryAppleSigningIdentityKey}: ${result.error.message}`);
   }
-  if (result.status === 1) {
+  // Git returns 1 when the key is unset and 128 when a source copy has no
+  // repository metadata. In both cases the opt-in is unavailable, so retain
+  // the committed ad hoc signing default.
+  if (result.status === 1 || result.status === 128) {
     return environment;
   }
   if (result.status !== 0) {
