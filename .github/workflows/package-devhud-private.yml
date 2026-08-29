@@ -81,7 +81,9 @@ jobs:
         run: node scripts/release/devhud-release.mjs plan --output devhud-private-plan.json
       - name: Expose validated non-secret identity
         id: identity
-        run: echo "version=$(node -p \"require('./packaging/devhud/release-metadata.json').version\")" >> "$GITHUB_OUTPUT"
+        run: |
+          version=$(node -p "require('./packaging/devhud/release-metadata.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v7
         with:
           name: release-plan-devhud-${{ github.run_id }}-${{ github.run_attempt }}
@@ -280,6 +282,8 @@ jobs:
           run_native_messaging_lifecycle() {
             local host="$1"
             local user_manifest="$2"
+            # The nested shell expands positional parameters and session variables.
+            # shellcheck disable=SC2016
             dbus-run-session -- bash -euo pipefail -c '
               export HOME="$1"
               host="$2"

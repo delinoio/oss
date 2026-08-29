@@ -20,6 +20,7 @@ const packages = Object.fromEntries([
 ].map((path) => [path, JSON.parse(readFileSync(`${root}/${path}`, "utf8"))]));
 const turbo = JSON.parse(readFileSync(`${root}/turbo.json`, "utf8"));
 const adminTurbo = JSON.parse(readFileSync(`${root}/apps/devhud-admin/turbo.json`, "utf8"));
+const devhudTauri = JSON.parse(readFileSync(`${root}/apps/devhud/src-tauri/tauri.conf.json`, "utf8"));
 
 const legacyJobs = [
   "go-quality", "go-test", "repository-environment", "rust-fmt", "rust-clippy", "rust-test",
@@ -107,6 +108,10 @@ test("desktop and mobile matrices match the committed architecture contracts", (
   assert.deepEqual(workflow.jobs["devhud-ios-simulator"].strategy.matrix.include.map(({ target }) => target), ["aarch64", "aarch64-sim", "x86_64"]);
   assert.deepEqual(workflow.jobs["devhud-android-emulator"].strategy.matrix.include.map(({ target }) => target), ["aarch64", "armv7", "x86_64"]);
   assert.deepEqual(workflow.jobs["devhud-oci"].strategy.matrix.target, ["api", "sweeper"]);
+  assert.deepEqual(devhudTauri.bundle.icon, ["icons/icon.png", "icons/icon.ico"]);
+  for (const icon of devhudTauri.bundle.icon) {
+    assert.ok(readFileSync(`${root}/apps/devhud/src-tauri/${icon}`).length > 0, icon);
+  }
 });
 
 test("implemented DevHud conformance commands are wired to their owning jobs", () => {
@@ -138,7 +143,7 @@ test("OCI validation is multi-architecture, non-root, migration-bearing, and loc
   for (const expected of [
     "linux/amd64,linux/arm64", "type=oci", "65532", "io.delino.devhud.migrations",
     "io.delino.devhud.administrator-assets", "spdx-json", "packages | length > 0",
-    "go test -tags=integration ./servers/devhud-api/internal/postgres", "docker-daemon:",
+    "go test -tags=integration ./servers/devhud-api/internal/postgres", "--load", "--platform linux/amd64",
     "--user 65532:65532", "devhud-api migrate", "migrate", "--once",
   ]) assert.ok(source.includes(expected), expected);
   const buildAndInspect = namedStep(workflow.jobs["devhud-oci"], "Build and inspect amd64/arm64 OCI layout").run;
@@ -147,6 +152,7 @@ test("OCI validation is multi-architecture, non-root, migration-bearing, and loc
     /if \[ "\$OCI_TARGET" = api \]; then\s+docker run "\$\{docker_args\[@\]\}" "\$image" migrate\s+else\s+DEVHUD_DATABASE_URL="\$DEVHUD_TEST_DATABASE_URL" go run \.\/servers\/devhud-api\/cmd\/devhud-api migrate/u,
   );
   assert.doesNotMatch(source, /(?:docker|skopeo) push/iu);
+  assert.doesNotMatch(source, /docker-daemon:/u);
   assert.match(apiDockerfileSource, /^FROM --platform=\$BUILDPLATFORM golang:/mu);
 });
 
@@ -157,6 +163,12 @@ test("Debian desktop validation installs, launches, unregisters, and removes the
     "/run/user/$(id -u)", "DBUS_SESSION_BUS_ADDRESS#unix:path=", "sudo dpkg -r", "test ! -e /usr/bin/devhud",
     "test ! -e /etc/opt/chrome/native-messaging-hosts/io.delino.devhud.native_messaging.json",
   ]) assert.ok(source.includes(expected), expected);
+  const lifecycle = namedStep(workflow.jobs["devhud-desktop"], "Verify Ubuntu Debian Native Messaging install and uninstall lifecycle").run;
+  const register = lifecycle.indexOf('"$host" register "$host" "$user_manifest"');
+  const registered = lifecycle.indexOf('test -e "$user_manifest"', register);
+  const uninstall = lifecycle.indexOf('sudo dpkg -r "$package"');
+  const removed = lifecycle.indexOf('test ! -e "$user_manifest"');
+  assert.ok(register >= 0 && register < registered && registered < uninstall && uninstall < removed);
 });
 
 test("package-local CI commands and deterministic cache boundaries are explicit", () => {

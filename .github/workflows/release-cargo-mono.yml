@@ -51,9 +51,11 @@ jobs:
 
           version="${tag#cargo-mono@v}"
 
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "dry_run=$dry_run" >> "$GITHUB_OUTPUT"
+          {
+            echo "tag=$tag"
+            echo "version=$version"
+            echo "dry_run=$dry_run"
+          } >> "$GITHUB_OUTPUT"
 
   build:
     name: Build (${{ matrix.asset_os }}-${{ matrix.asset_arch }})

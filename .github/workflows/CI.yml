@@ -1414,9 +1414,11 @@ jobs:
             sudo dpkg -i "$finalized"
             artifact=/usr/bin/devhud
             host=$(find /usr -type f -name devhud-native-messaging-host -print -quit)
-            echo "DEVHUD_SMOKE_DEBIAN_PACKAGE=$package" >> "$GITHUB_ENV"
-            echo "DEVHUD_SMOKE_NATIVE_HOST=$host" >> "$GITHUB_ENV"
-            echo "DEVHUD_SMOKE_USER_MANIFEST=$HOME/.config/google-chrome/NativeMessagingHosts/io.delino.devhud.native_messaging.json" >> "$GITHUB_ENV"
+            {
+              echo "DEVHUD_SMOKE_DEBIAN_PACKAGE=$package"
+              echo "DEVHUD_SMOKE_NATIVE_HOST=$host"
+              echo "DEVHUD_SMOKE_USER_MANIFEST=$HOME/.config/google-chrome/NativeMessagingHosts/io.delino.devhud.native_messaging.json"
+            } >> "$GITHUB_ENV"
           else
             appimages=(target/release/bundle/appimage/*.AppImage)
             if [ "${#appimages[@]}" -ne 1 ]; then
@@ -1429,8 +1431,10 @@ jobs:
             sudo chmod 4755 squashfs-root/usr/share/DevHUD/chrome-sandbox
             artifact="${{ github.workspace }}/squashfs-root/usr/bin/devhud"
             host=$(find squashfs-root -type f -name devhud-native-messaging-host -print -quit)
-            echo "DEVHUD_SMOKE_APPIMAGE=${{ github.workspace }}/${appimages[0]}" >> "$GITHUB_ENV"
-            echo "DEVHUD_SMOKE_APPDIR=${{ github.workspace }}/squashfs-root" >> "$GITHUB_ENV"
+            {
+              echo "DEVHUD_SMOKE_APPIMAGE=${{ github.workspace }}/${appimages[0]}"
+              echo "DEVHUD_SMOKE_APPDIR=${{ github.workspace }}/squashfs-root"
+            } >> "$GITHUB_ENV"
           fi
           test -x "$host"
           echo "DEVHUD_SMOKE_ARTIFACT=$artifact" >> "$GITHUB_ENV"
@@ -1456,12 +1460,14 @@ jobs:
         run: |
           set -euo pipefail
           test -x "$DEVHUD_SMOKE_NATIVE_HOST"
-          test -e "$DEVHUD_SMOKE_USER_MANIFEST"
           test -e /etc/opt/chrome/native-messaging-hosts/io.delino.devhud.native_messaging.json
+          # The nested shell expands positional parameters and session variables.
+          # shellcheck disable=SC2016
           dbus-run-session -- bash -euo pipefail -c '
             export HOME="$1"
             package="$2"
             user_manifest="$3"
+            host="$4"
             runtime="/run/user/$(id -u)"
             session_socket="${DBUS_SESSION_BUS_ADDRESS#unix:path=}"
             session_socket="${session_socket%%,*}"
@@ -1487,9 +1493,11 @@ jobs:
             gnome-keyring-daemon --foreground --components=secrets --control-directory="$control_directory" >/dev/null &
             keyring_pid=$!
             gdbus wait --session --timeout=5 org.freedesktop.secrets >/dev/null
+            "$host" register "$host" "$user_manifest"
+            test -e "$user_manifest"
             sudo dpkg -r "$package"
             test ! -e "$user_manifest"
-          ' native-messaging-lifecycle "$HOME" "$DEVHUD_SMOKE_DEBIAN_PACKAGE" "$DEVHUD_SMOKE_USER_MANIFEST"
+          ' native-messaging-lifecycle "$HOME" "$DEVHUD_SMOKE_DEBIAN_PACKAGE" "$DEVHUD_SMOKE_USER_MANIFEST" "$DEVHUD_SMOKE_NATIVE_HOST"
           test ! -e /usr/bin/devhud
           test ! -e /etc/opt/chrome/native-messaging-hosts/io.delino.devhud.native_messaging.json
 
@@ -2175,8 +2183,8 @@ jobs:
           for arch in amd64 arm64; do
             skopeo inspect --override-arch "$arch" --config "oci-archive:$artifact" | jq -e '.config.User == "65532" and .config.Labels["io.delino.devhud.migrations"] == "embedded" and .config.Labels["io.delino.devhud.administrator-assets"] == "embedded"'
           done
-          skopeo copy --override-os linux --override-arch amd64 "oci-archive:$artifact" "docker-daemon:$image"
-          container_database_url=postgres://devhud:devhud@host.docker.internal:5432/devhud_api_test?sslmode=disable
+          docker buildx build --platform linux/amd64 --target "$OCI_TARGET" --build-arg VERSION="$version" --build-arg REVISION="$GITHUB_SHA" --load --tag "$image" -f servers/devhud-api/Dockerfile .
+          container_database_url="postgres://devhud:devhud@host.docker.internal:5432/devhud_api_test?sslmode=disable"
           docker_args=(--rm --user 65532:65532 --add-host host.docker.internal:host-gateway -e "DEVHUD_DATABASE_URL=$container_database_url")
           if [ "$OCI_TARGET" = api ]; then
             docker run "${docker_args[@]}" "$image" migrate
