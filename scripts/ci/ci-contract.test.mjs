@@ -34,6 +34,10 @@ function step(job, id) {
   return job.steps.find((candidate) => candidate.id === id);
 }
 
+function namedStep(job, name) {
+  return job.steps.find((candidate) => candidate.name === name);
+}
+
 test("CI keeps every legacy check and aggregates every required job", () => {
   const jobs = Object.keys(workflow.jobs);
   for (const id of ["ci-contracts", ...legacyJobs, ...devhudJobs, "ci-result"]) assert.ok(jobs.includes(id), id);
@@ -59,6 +63,7 @@ test("DevHud jobs self-gate and the path contract covers every implemented bound
     ".github/workflows/devhud-cef-security-review.yml",
   ]) assert.ok(workflowSource.includes(`- ${path}`), path);
   assert.ok(JSON.stringify(step(workflow.jobs["devhud-api"], "filter")).includes("scripts/ci/check-go-format.mjs"));
+  assert.ok(JSON.stringify(step(workflow.jobs["devhud-admin"], "filter")).includes(".nvmrc"));
 });
 
 test("Node jobs use the committed Turbo binary with frozen installs and affected no-ops", () => {
@@ -67,6 +72,21 @@ test("Node jobs use the committed Turbo binary with frozen installs and affected
   assert.match(workflowSource, /pnpm exec turbo run test --affected --filter/u);
   assert.match(workflowSource, /--dry=json/u);
   assert.match(packages["package.json"].scripts["ci:affected"], /^turbo run$/u);
+  const affectedLegacyJobs = new Map([
+    ["node-mpapp-test", "Run mpapp tests"],
+    ["node-mpapp-lint", "Run mpapp lint"],
+    ["node-binpm-docs-test", "Run binpm-docs tests"],
+    ["node-nodeup-docs-test", "Run nodeup-docs tests"],
+  ]);
+  for (const [id, runStepName] of affectedLegacyJobs) {
+    const job = workflow.jobs[id];
+    for (const candidate of [step(job, "gate"), namedStep(job, runStepName)]) {
+      const source = JSON.stringify(candidate);
+      for (const expected of ["github.event.before", "github.sha", "TURBO_SCM_BASE", "TURBO_SCM_HEAD"]) {
+        assert.ok(source.includes(expected), `${id} push range: ${expected}`);
+      }
+    }
+  }
   const frontend = JSON.stringify(workflow.jobs["devhud-frontend"]);
   for (const expected of ["github.event.before", "TURBO_SCM_BASE", "TURBO_SCM_HEAD"]) {
     assert.ok(frontend.includes(expected), `devhud-frontend push range: ${expected}`);

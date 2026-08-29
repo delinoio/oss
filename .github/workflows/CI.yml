@@ -499,6 +499,8 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           CI_WORKFLOW_CHANGED: ${{ steps.filter.outputs.ci_workflow }}
+          PUSH_BASE: ${{ github.event.before }}
+          PUSH_HEAD: ${{ github.sha }}
           WORKSPACE: mpapp
         run: |
           set -euo pipefail
@@ -507,6 +509,10 @@ jobs:
           if [ "${EVENT_NAME}" = "workflow_dispatch" ] || [ "${CI_WORKFLOW_CHANGED}" = "true" ]; then
             run=true
           else
+            if [ "${EVENT_NAME}" = "push" ]; then
+              export TURBO_SCM_BASE="${PUSH_BASE}"
+              export TURBO_SCM_HEAD="${PUSH_HEAD}"
+            fi
             pnpm install --frozen-lockfile --ignore-scripts
             affected_json="$(pnpm exec turbo run test --affected --filter "${WORKSPACE}" --dry=json)"
             printf '%s\n' "${affected_json}"
@@ -528,10 +534,19 @@ jobs:
         if: ${{ steps.gate.outputs.run == 'true' }}
         shell: bash
         env:
+          EVENT_NAME: ${{ github.event_name }}
           FORCE_RUN: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.ci_workflow == 'true' }}
+          PUSH_BASE: ${{ github.event.before }}
+          PUSH_HEAD: ${{ github.sha }}
         run: |
           args=(run test --filter mpapp)
-          if [ "$FORCE_RUN" != true ]; then args+=(--affected); fi
+          if [ "$FORCE_RUN" != true ]; then
+            args+=(--affected)
+            if [ "$EVENT_NAME" = push ]; then
+              export TURBO_SCM_BASE="$PUSH_BASE"
+              export TURBO_SCM_HEAD="$PUSH_HEAD"
+            fi
+          fi
           pnpm exec turbo "${args[@]}"
 
   node-mpapp-lint:
@@ -570,6 +585,8 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           CI_WORKFLOW_CHANGED: ${{ steps.filter.outputs.ci_workflow }}
+          PUSH_BASE: ${{ github.event.before }}
+          PUSH_HEAD: ${{ github.sha }}
           WORKSPACE: mpapp
         run: |
           set -euo pipefail
@@ -578,6 +595,10 @@ jobs:
           if [ "${EVENT_NAME}" = "workflow_dispatch" ] || [ "${CI_WORKFLOW_CHANGED}" = "true" ]; then
             run=true
           else
+            if [ "${EVENT_NAME}" = "push" ]; then
+              export TURBO_SCM_BASE="${PUSH_BASE}"
+              export TURBO_SCM_HEAD="${PUSH_HEAD}"
+            fi
             pnpm install --frozen-lockfile --ignore-scripts
             affected_json="$(pnpm exec turbo run lint --affected --filter "${WORKSPACE}" --dry=json)"
             printf '%s\n' "${affected_json}"
@@ -599,10 +620,19 @@ jobs:
         if: ${{ steps.gate.outputs.run == 'true' }}
         shell: bash
         env:
+          EVENT_NAME: ${{ github.event_name }}
           FORCE_RUN: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.ci_workflow == 'true' }}
+          PUSH_BASE: ${{ github.event.before }}
+          PUSH_HEAD: ${{ github.sha }}
         run: |
           args=(run lint --filter mpapp)
-          if [ "$FORCE_RUN" != true ]; then args+=(--affected); fi
+          if [ "$FORCE_RUN" != true ]; then
+            args+=(--affected)
+            if [ "$EVENT_NAME" = push ]; then
+              export TURBO_SCM_BASE="$PUSH_BASE"
+              export TURBO_SCM_HEAD="$PUSH_HEAD"
+            fi
+          fi
           pnpm exec turbo "${args[@]}"
 
 
@@ -642,6 +672,8 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           CI_WORKFLOW_CHANGED: ${{ steps.filter.outputs.ci_workflow }}
+          PUSH_BASE: ${{ github.event.before }}
+          PUSH_HEAD: ${{ github.sha }}
           WORKSPACE: binpm-docs
         run: |
           set -euo pipefail
@@ -650,6 +682,10 @@ jobs:
           if [ "${EVENT_NAME}" = "workflow_dispatch" ] || [ "${CI_WORKFLOW_CHANGED}" = "true" ]; then
             run=true
           else
+            if [ "${EVENT_NAME}" = "push" ]; then
+              export TURBO_SCM_BASE="${PUSH_BASE}"
+              export TURBO_SCM_HEAD="${PUSH_HEAD}"
+            fi
             pnpm install --frozen-lockfile --ignore-scripts
             affected_json="$(pnpm exec turbo run test --affected --filter "${WORKSPACE}" --dry=json)"
             printf '%s\n' "${affected_json}"
@@ -671,10 +707,19 @@ jobs:
         if: ${{ steps.gate.outputs.run == 'true' }}
         shell: bash
         env:
+          EVENT_NAME: ${{ github.event_name }}
           FORCE_RUN: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.ci_workflow == 'true' }}
+          PUSH_BASE: ${{ github.event.before }}
+          PUSH_HEAD: ${{ github.sha }}
         run: |
           args=(run test --filter binpm-docs)
-          if [ "$FORCE_RUN" != true ]; then args+=(--affected); fi
+          if [ "$FORCE_RUN" != true ]; then
+            args+=(--affected)
+            if [ "$EVENT_NAME" = push ]; then
+              export TURBO_SCM_BASE="$PUSH_BASE"
+              export TURBO_SCM_HEAD="$PUSH_HEAD"
+            fi
+          fi
           pnpm exec turbo "${args[@]}"
 
   node-nodeup-docs-test:
@@ -713,6 +758,8 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           CI_WORKFLOW_CHANGED: ${{ steps.filter.outputs.ci_workflow }}
+          PUSH_BASE: ${{ github.event.before }}
+          PUSH_HEAD: ${{ github.sha }}
           WORKSPACE: nodeup-docs
         run: |
           set -euo pipefail
@@ -721,6 +768,10 @@ jobs:
           if [ "${EVENT_NAME}" = "workflow_dispatch" ] || [ "${CI_WORKFLOW_CHANGED}" = "true" ]; then
             run=true
           else
+            if [ "${EVENT_NAME}" = "push" ]; then
+              export TURBO_SCM_BASE="${PUSH_BASE}"
+              export TURBO_SCM_HEAD="${PUSH_HEAD}"
+            fi
             pnpm install --frozen-lockfile --ignore-scripts
             affected_json="$(pnpm exec turbo run test --affected --filter "${WORKSPACE}" --dry=json)"
             printf '%s\n' "${affected_json}"
@@ -742,10 +793,19 @@ jobs:
         if: ${{ steps.gate.outputs.run == 'true' }}
         shell: bash
         env:
+          EVENT_NAME: ${{ github.event_name }}
           FORCE_RUN: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.ci_workflow == 'true' }}
+          PUSH_BASE: ${{ github.event.before }}
+          PUSH_HEAD: ${{ github.sha }}
         run: |
           args=(run test --filter nodeup-docs)
-          if [ "$FORCE_RUN" != true ]; then args+=(--affected); fi
+          if [ "$FORCE_RUN" != true ]; then
+            args+=(--affected)
+            if [ "$EVENT_NAME" = push ]; then
+              export TURBO_SCM_BASE="$PUSH_BASE"
+              export TURBO_SCM_HEAD="$PUSH_HEAD"
+            fi
+          fi
           pnpm exec turbo "${args[@]}"
 
   node-public-docs-test:
@@ -1858,6 +1918,7 @@ jobs:
           filters: |
             devhud_admin:
               - .github/workflows/CI.yml
+              - .nvmrc
               - package.json
               - pnpm-lock.yaml
               - pnpm-workspace.yaml
