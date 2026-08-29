@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { appendFile, access, writeFile } from "node:fs/promises";
+import { appendFile, access, readFile, writeFile } from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
 import { resolve } from "node:path";
 
@@ -17,6 +17,22 @@ async function exists(path) {
     return true;
   } catch {
     return false;
+  }
+}
+
+async function priorPathRuns(path) {
+  if (!eventLog) return 0;
+  try {
+    return (await readFile(eventLog, "utf8"))
+      .trim()
+      .split(/\r?\n/u)
+      .filter(Boolean)
+      .map((line) => JSON.parse(line))
+      .filter((event) => event.action === "run" && event.path === path)
+      .length;
+  } catch (error) {
+    if (error.code === "ENOENT") return 0;
+    throw error;
   }
 }
 
@@ -41,6 +57,7 @@ if (args.includes("--version")) {
   await writeFile(resolve(process.cwd(), ".infisical.json"), "{}\n", "utf8");
 } else if (args.includes("run")) {
   const path = args.find((arg) => arg.startsWith("--path="))?.slice("--path=".length);
+  const pathRun = (await priorPathRuns(path)) + 1;
   await log({ tool: "infisical", action: "run", path, args });
   if (process.env.DEVHUD_TEST_INFISICAL_FAILURE === path) {
     process.stderr.write("INFISICAL_FAILURE_CANARY_MUST_NOT_LEAK\n");
@@ -53,6 +70,9 @@ if (args.includes("--version")) {
       DEVHUD_DATABASE_URL: "postgres://devhud:API_DATABASE_CANARY@127.0.0.1:5432/devhud?sslmode=disable",
       DEVHUD_PUBLIC_API_URL: "http://127.0.0.1:46307",
       DEVHUD_LOGTO_ISSUER:
+        (pathRun > 1
+          ? process.env.DEVHUD_TEST_API_LOGTO_ISSUER_AFTER_FIRST_RUN
+          : null) ??
         process.env.DEVHUD_TEST_API_LOGTO_ISSUER ??
         "http://localhost:3001/oidc",
       DEVHUD_LOGTO_AUDIENCE: "urn:API_AUDIENCE_CANARY",
@@ -66,6 +86,9 @@ if (args.includes("--version")) {
     };
     const admin = {
       DEVHUD_LOGTO_ISSUER:
+        (pathRun > 1
+          ? process.env.DEVHUD_TEST_ADMIN_LOGTO_ISSUER_AFTER_FIRST_RUN
+          : null) ??
         process.env.DEVHUD_TEST_ADMIN_LOGTO_ISSUER ??
         "http://localhost:3001/oidc",
     };

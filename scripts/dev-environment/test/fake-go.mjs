@@ -14,7 +14,8 @@ if (required.some((name) => !process.env[name])) {
 } else if (
   process.env.DEVHUD_UNKNOWN_CANARY ||
   process.env.DEVHUD_R2_ENDPOINT ||
-  process.env.DEVHUD_INTERNAL_CONFIGURATION_COMPARISON_KEY
+  process.env.DEVHUD_INTERNAL_CONFIGURATION_COMPARISON_KEY ||
+  process.env.DEVHUD_INTERNAL_CONFIGURATION_COMPARISON_EXPECTED
 ) {
   process.stderr.write("fake Go received an unvalidated name\n");
   process.exitCode = 4;

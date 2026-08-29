@@ -9,11 +9,17 @@ export const stateDirectory = resolve(repositoryRoot, ".dev-environment");
 export const infisicalConfig = resolve(repositoryRoot, ".infisical.json");
 export const composeFile = resolve(moduleDirectory, "compose.oss.yaml");
 export const identityKeyFile = resolve(stateDirectory, "identity-hmac-key");
+export const teamConfigurationPinFile = resolve(
+  stateDirectory,
+  "team-configuration-pin",
+);
 export const supportedInfisicalVersion = "0.43.116";
 export const acceptedMarker = "__DEVHUD_CONFIGURATION_ACCEPTED__";
 export const rejectedMarker = "__DEVHUD_CONFIGURATION_REJECTED__";
 export const comparisonMarker = "__DEVHUD_CONFIGURATION_COMPARISON__";
 export const comparisonKeyName = "DEVHUD_INTERNAL_CONFIGURATION_COMPARISON_KEY";
+export const comparisonExpectedName =
+  "DEVHUD_INTERNAL_CONFIGURATION_COMPARISON_EXPECTED";
 export const defaultOssLogtoIssuer = "http://localhost:3001/oidc";
 
 export const modes = Object.freeze(["team", "oss"]);
@@ -89,7 +95,7 @@ export function resolveOssLogtoIssuer(adminOverride, apiOverride) {
 
 export function resolveLocalStatePaths(source = process.env) {
   if (source.DEVHUD_ENVIRONMENT_TESTING !== "1") {
-    return { stateDirectory, identityKeyFile };
+    return { stateDirectory, identityKeyFile, teamConfigurationPinFile };
   }
   const injectedDirectory = source.DEVHUD_TEST_STATE_DIRECTORY;
   if (
@@ -106,6 +112,10 @@ export function resolveLocalStatePaths(source = process.env) {
   return {
     stateDirectory: resolvedDirectory,
     identityKeyFile: resolve(resolvedDirectory, "identity-hmac-key"),
+    teamConfigurationPinFile: resolve(
+      resolvedDirectory,
+      "team-configuration-pin",
+    ),
   };
 }
 
@@ -215,8 +225,10 @@ const hmacRing = (value) => {
 };
 const assetBase = (value) => {
   if (!url(value)) return false;
-  const parsed = new URL(value);
-  return parsed.pathname === "/" && parsed.search === "" && parsed.hash === "";
+  // WHATWG removes dot segments, while Go's net/url preserves them in Path.
+  // Validate the raw spelling so preflight cannot turn a rejected path into `/`.
+  const rawPath = /^https?:\/\/[^/\\?#]+(\/[^?#]*)?$/u.exec(value)?.[1];
+  return rawPath === undefined || rawPath === "/";
 };
 
 export const apiContract = Object.freeze({

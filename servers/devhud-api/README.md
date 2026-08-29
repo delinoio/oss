@@ -8,8 +8,9 @@ Use `pnpm dev` for authorized team development or `pnpm dev:oss` for the
 public-contributor environment. The package owns local validation, migration,
 and serve wrappers; root scripts only orchestrate their order. The team wrapper
 accepts the documented API allowlist and rejects missing, unknown, invalid, or
-partial upload configuration before migration. Team preflight also requires its
-issuer to match the administrator wrapper's separately validated value.
+partial upload configuration before migration, including raw asset paths hidden
+by parser normalization. Team preflight requires its issuer to match the
+administrator wrapper, then pins that comparison through migration and serve.
 
 OSS mode provides PostgreSQL and Logto loopback dependencies and a private
 checkout-local identity key. Startup is exclusive per checkout and repairs a

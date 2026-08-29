@@ -462,6 +462,71 @@ async function validateTeamServices(lifecycle) {
       "[environment.issuer-mismatch] DevHud API and administrator team configuration must use the same DEVHUD_LOGTO_ISSUER",
     );
   }
+  return { comparisonKey, issuerDigest: apiComparison };
+}
+
+async function acquireTeamConfigurationPin({ comparisonKey, issuerDigest }) {
+  const { stateDirectory, teamConfigurationPinFile } = resolveLocalStatePaths();
+  await mkdir(stateDirectory, { recursive: true, mode: 0o700 });
+  const ownershipToken = `${process.pid}:${randomBytes(32).toString("base64url")}`;
+  let handle;
+  try {
+    handle = await open(teamConfigurationPinFile, "wx", 0o600);
+  } catch (error) {
+    if (error.code !== "EEXIST") throw error;
+    throw new Error(
+      "[state.team-startup-active] another pnpm dev invocation already owns this checkout; stop it, or remove the ignored team configuration pin only after confirming no team development process remains",
+    );
+  }
+
+  try {
+    await handle.writeFile(
+      `${JSON.stringify({
+        version: 1,
+        ownershipToken,
+        comparisonKey,
+        issuerDigest,
+      })}\n`,
+      { encoding: "utf8" },
+    );
+    await handle.sync();
+    if (process.platform !== "win32") {
+      await chmod(stateDirectory, 0o700);
+      await chmod(teamConfigurationPinFile, 0o600);
+    }
+  } catch (error) {
+    await handle.close();
+    try {
+      await unlink(teamConfigurationPinFile);
+    } catch (unlinkError) {
+      if (unlinkError.code !== "ENOENT") throw unlinkError;
+    }
+    throw error;
+  }
+
+  let released = false;
+  return async () => {
+    if (released) return;
+    released = true;
+    await handle.close();
+    let currentToken;
+    try {
+      currentToken = JSON.parse(
+        await readFile(teamConfigurationPinFile, "utf8"),
+      ).ownershipToken;
+    } catch (error) {
+      if (error.code === "ENOENT") return;
+      throw new Error(
+        "[state.team-startup-pin] team configuration pin could not be verified for cleanup",
+      );
+    }
+    if (currentToken !== ownershipToken) {
+      throw new Error(
+        "[state.team-startup-pin] team configuration pin ownership changed unexpectedly; refusing to remove another owner's pin",
+      );
+    }
+    await unlink(teamConfigurationPinFile);
+  };
 }
 
 async function checkDocker(lifecycle) {
@@ -711,9 +776,16 @@ async function startTurbo(lifecycle, mode) {
 async function startTeam(lifecycle) {
   await assertAppPorts();
   await requireTeamEnvironment(lifecycle);
-  await validateTeamServices(lifecycle);
-  await runService(lifecycle, "team", "api", "migrate");
-  return startTurbo(lifecycle, "team");
+  const configurationPin = await validateTeamServices(lifecycle);
+  const releaseConfigurationPin = await acquireTeamConfigurationPin(
+    configurationPin,
+  );
+  try {
+    await runService(lifecycle, "team", "api", "migrate");
+    return await startTurbo(lifecycle, "team");
+  } finally {
+    await releaseConfigurationPin();
+  }
 }
 
 async function startOss(lifecycle) {

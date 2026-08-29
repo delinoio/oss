@@ -37,14 +37,20 @@ async function ossEnvironment() {
 async function execute(action, environment) {
   if (action === "validate") return { code: 0, signal: null };
   if (action !== "serve") return { code: 1, signal: null };
+  const fakeAdmin =
+    process.env.DEVHUD_ENVIRONMENT_TESTING === "1"
+      ? process.env.DEVHUD_TEST_ADMIN
+      : null;
   return executeArgv(
     process.execPath,
-    [
-      resolve(repositoryRoot, "scripts/run-rsbuild-dev.mjs"),
-      "devhud-admin",
-      "46306",
-      "--no-env",
-    ],
+    fakeAdmin
+      ? [fakeAdmin]
+      : [
+          resolve(repositoryRoot, "scripts/run-rsbuild-dev.mjs"),
+          "devhud-admin",
+          "46306",
+          "--no-env",
+        ],
     environment,
     serviceDirectory,
   );

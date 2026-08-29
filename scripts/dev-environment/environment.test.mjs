@@ -105,6 +105,7 @@ function fakeEnvironment(temporaryDirectory) {
     DOCKER_HOST: "unix:///tmp/devhud-review-docker.sock",
     DEVHUD_ENVIRONMENT_TESTING: "1",
     DEVHUD_TEST_AUTH_STATE: resolve(temporaryDirectory, "auth-state"),
+    DEVHUD_TEST_ADMIN: resolve(fakeDirectory, "fake-admin.mjs"),
     DEVHUD_TEST_DOCKER: resolve(fakeDirectory, "fake-docker.mjs"),
     DEVHUD_TEST_DOCKER_ENDPOINT: "unix:///tmp/devhud-review-docker.sock",
     DEVHUD_TEST_EVENT_LOG: resolve(temporaryDirectory, "events.jsonl"),
@@ -417,6 +418,42 @@ test("API and administrator allowlists reject malformed configuration", () => {
   }
 });
 
+test("preflight validates the raw public asset base path before WHATWG normalization", () => {
+  const valid = validApiEnvironment();
+  for (const assetBase of [
+    "https://assets.example.com/a/..",
+    "https://assets.example.com/.",
+    "https://assets.example.com/..",
+    "https://assets.example.com/%2e",
+    "https://assets.example.com/a/%2e%2e",
+  ]) {
+    assert.throws(
+      () =>
+        validateInjectedEnvironment(apiContract, {
+          ...valid,
+          DEVHUD_PUBLIC_ASSET_BASE_URL: assetBase,
+        }),
+      (error) =>
+        error instanceof EnvironmentError &&
+        error.code === "environment.invalid-values",
+      assetBase,
+    );
+  }
+
+  for (const assetBase of [
+    "https://assets.example.com",
+    "https://assets.example.com/",
+  ]) {
+    assert.equal(
+      validateInjectedEnvironment(apiContract, {
+        ...valid,
+        DEVHUD_PUBLIC_ASSET_BASE_URL: assetBase,
+      }).DEVHUD_PUBLIC_ASSET_BASE_URL,
+      assetBase,
+    );
+  }
+});
+
 test("preflight rejects URL escapes rejected by the Go service parser", () => {
   const valid = validApiEnvironment();
   for (const issuer of [
@@ -695,6 +732,137 @@ test("team setup initializes only through env:login and startup uses exact Infis
   );
   const firstTurbo = recorded.findIndex((event) => event.tool === "pnpm");
   assert.ok(firstMigration !== -1 && firstMigration < firstTurbo);
+});
+
+test("team startup binds migration and Turbo services to the preflight issuer", async (t) => {
+  const temporaryDirectory = await mkdtemp(
+    resolve(tmpdir(), "devhud-team-configuration-pin-"),
+  );
+  const environment = {
+    ...fakeEnvironment(temporaryDirectory),
+    DEVHUD_TEST_RUN_TURBO_SERVICES: "1",
+  };
+  t.after(() => rm(temporaryDirectory, { recursive: true, force: true }));
+
+  const loginResult = await runNode(cli, ["login"], environment);
+  assert.equal(loginResult.code, 0, loginResult.stderr);
+  const result = await runNode(cli, ["start", "team"], environment);
+  assert.equal(result.code, 0, result.stderr);
+
+  const recorded = await events(environment.DEVHUD_TEST_EVENT_LOG);
+  const order = recorded.map((event) => `${event.tool}:${event.action}`);
+  assert.ok(order.indexOf("go:migrate") < order.indexOf("pnpm:turbo"), order.join(", "));
+  assert.ok(order.indexOf("pnpm:turbo") < order.indexOf("go:serve"), order.join(", "));
+  assert.ok(order.indexOf("go:serve") < order.indexOf("admin:serve"), order.join(", "));
+  const { teamConfigurationPinFile } = resolveLocalStatePaths(environment);
+  await assert.rejects(stat(teamConfigurationPinFile), { code: "ENOENT" });
+  for (const canary of canaries) {
+    assert.equal(`${result.stdout}${result.stderr}`.includes(canary), false, canary);
+  }
+});
+
+test("team startup rejects issuer rotation before migration", async (t) => {
+  const temporaryDirectory = await mkdtemp(
+    resolve(tmpdir(), "devhud-team-migration-rotation-"),
+  );
+  const rotatedIssuer = "https://rotated-api-issuer-canary.example.test/oidc";
+  const environment = {
+    ...fakeEnvironment(temporaryDirectory),
+    DEVHUD_TEST_API_LOGTO_ISSUER_AFTER_FIRST_RUN: rotatedIssuer,
+  };
+  t.after(() => rm(temporaryDirectory, { recursive: true, force: true }));
+
+  assert.equal((await runNode(cli, ["login"], environment)).code, 0);
+  const result = await runNode(cli, ["start", "team"], environment);
+  assert.equal(result.code, 1);
+  assert.match(
+    result.stderr,
+    /\[environment\.configuration-changed\].*DEVHUD_LOGTO_ISSUER/u,
+  );
+  assert.equal(`${result.stdout}${result.stderr}`.includes(rotatedIssuer), false);
+  const recorded = await events(environment.DEVHUD_TEST_EVENT_LOG);
+  assert.equal(recorded.some((event) => event.tool === "go"), false);
+  assert.equal(recorded.some((event) => event.tool === "pnpm"), false);
+  const { teamConfigurationPinFile } = resolveLocalStatePaths(environment);
+  await assert.rejects(stat(teamConfigurationPinFile), { code: "ENOENT" });
+});
+
+test("Turbo-owned services reject issuer rotation after migration", async (t) => {
+  const temporaryDirectory = await mkdtemp(
+    resolve(tmpdir(), "devhud-team-service-rotation-"),
+  );
+  const rotatedIssuer = "https://rotated-admin-issuer-canary.example.test/oidc";
+  const environment = {
+    ...fakeEnvironment(temporaryDirectory),
+    DEVHUD_TEST_ADMIN_LOGTO_ISSUER_AFTER_FIRST_RUN: rotatedIssuer,
+    DEVHUD_TEST_RUN_TURBO_SERVICES: "1",
+  };
+  t.after(() => rm(temporaryDirectory, { recursive: true, force: true }));
+
+  assert.equal((await runNode(cli, ["login"], environment)).code, 0);
+  const result = await runNode(cli, ["start", "team"], environment);
+  assert.equal(result.code, 1);
+  assert.match(
+    result.stderr,
+    /\[environment\.configuration-changed\].*DEVHUD_LOGTO_ISSUER/u,
+  );
+  assert.equal(`${result.stdout}${result.stderr}`.includes(rotatedIssuer), false);
+  const recorded = await events(environment.DEVHUD_TEST_EVENT_LOG);
+  assert.ok(recorded.some((event) => event.tool === "go" && event.action === "migrate"));
+  assert.ok(recorded.some((event) => event.tool === "go" && event.action === "serve"));
+  assert.equal(recorded.some((event) => event.tool === "admin"), false);
+  const { teamConfigurationPinFile } = resolveLocalStatePaths(environment);
+  await assert.rejects(stat(teamConfigurationPinFile), { code: "ENOENT" });
+});
+
+test("team configuration pin is private, exclusive, and released after Turbo", async (t) => {
+  const temporaryDirectory = await mkdtemp(
+    resolve(tmpdir(), "devhud-team-pin-ownership-"),
+  );
+  const releaseFile = resolve(temporaryDirectory, "release-turbo");
+  const firstEventLog = resolve(temporaryDirectory, "first-events.jsonl");
+  const baseEnvironment = fakeEnvironment(temporaryDirectory);
+  const firstEnvironment = {
+    ...baseEnvironment,
+    DEVHUD_TEST_BLOCK_PNPM: "1",
+    DEVHUD_TEST_EVENT_LOG: firstEventLog,
+    DEVHUD_TEST_PNPM_RELEASE_FILE: releaseFile,
+  };
+  assert.equal((await runNode(cli, ["login"], firstEnvironment)).code, 0);
+  const first = spawnNode(cli, ["start", "team"], firstEnvironment);
+  t.after(async () => {
+    if (first.child.exitCode === null && first.child.signalCode === null) {
+      await terminateTree(first.child, "SIGKILL").catch(() =>
+        first.child.kill("SIGKILL"),
+      );
+    }
+    await rm(temporaryDirectory, { recursive: true, force: true });
+  });
+
+  await waitForEvent(
+    firstEventLog,
+    (event) => event.tool === "pnpm" && event.action === "turbo-blocked",
+  );
+  const { stateDirectory, teamConfigurationPinFile } =
+    resolveLocalStatePaths(baseEnvironment);
+  const pin = await readFile(teamConfigurationPinFile, "utf8");
+  assert.doesNotMatch(pin, /localhost|oidc|API_/u);
+  if (process.platform !== "win32") {
+    assert.equal((await stat(stateDirectory)).mode & 0o777, 0o700);
+    assert.equal((await stat(teamConfigurationPinFile)).mode & 0o777, 0o600);
+  }
+
+  const second = await runNode(cli, ["start", "team"], {
+    ...baseEnvironment,
+    DEVHUD_TEST_EVENT_LOG: resolve(temporaryDirectory, "second-events.jsonl"),
+  });
+  assert.equal(second.code, 1);
+  assert.match(second.stderr, /\[state\.team-startup-active\]/u);
+
+  await writeFile(releaseFile, "release\n", "utf8");
+  const firstResult = await first.completion;
+  assert.equal(firstResult.code, 0, firstResult.stderr);
+  await assert.rejects(stat(teamConfigurationPinFile), { code: "ENOENT" });
 });
 
 test("team tooling rejects suffixed or indirectly mentioned Infisical versions", async (t) => {

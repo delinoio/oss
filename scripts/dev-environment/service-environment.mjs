@@ -1,9 +1,11 @@
+import { Buffer } from "node:buffer";
 import { spawn } from "node:child_process";
-import { createHmac, randomBytes } from "node:crypto";
+import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { parseEnv } from "node:util";
 import {
   acceptedMarker,
+  comparisonExpectedName,
   comparisonKeyName,
   comparisonMarker,
   EnvironmentError,
@@ -12,6 +14,7 @@ import {
   repositoryRoot,
   requireMode,
   resolveInfisicalConfigPaths,
+  resolveLocalStatePaths,
   validateInjectedEnvironment,
 } from "./contracts.mjs";
 import { commandInvocation, safeBaseEnvironment, terminateTree } from "./process.mjs";
@@ -122,10 +125,10 @@ async function runInjected({
     delete candidateEnvironment[baselineVariable];
     const configuration = validateInjectedEnvironment(contract, candidateEnvironment, baseline);
     const comparisonKey = baseline[comparisonKeyName];
+    const expectedComparison = baseline[comparisonExpectedName];
     if (
       comparisonKey &&
-      (action !== "validate" ||
-        typeof comparisonName !== "string" ||
+      (typeof comparisonName !== "string" ||
         typeof configuration[comparisonName] !== "string")
     ) {
       throw new EnvironmentError(
@@ -138,8 +141,26 @@ async function runInjected({
           .update(configuration[comparisonName], "utf8")
           .digest("base64url")
       : null;
+    if (action !== "validate") {
+      if (
+        !comparison ||
+        !/^[A-Za-z0-9_-]{43}$/u.test(expectedComparison ?? "") ||
+        !timingSafeEqual(
+          Buffer.from(comparison, "ascii"),
+          Buffer.from(expectedComparison, "ascii"),
+        )
+      ) {
+        throw new EnvironmentError(
+          "environment.configuration-changed",
+          "team service configuration changed after preflight; retry pnpm dev",
+          [comparisonName],
+        );
+      }
+    }
     process.stdout.write(`${acceptedMarker}\n`);
-    if (comparison) process.stdout.write(`${comparisonMarker}${comparison}\n`);
+    if (action === "validate" && comparison) {
+      process.stdout.write(`${comparisonMarker}${comparison}\n`);
+    }
     const result = await execute(action, {
       ...safeBaseEnvironment(baseline),
       ...testEnvironment(baseline),
@@ -155,6 +176,40 @@ async function runInjected({
   }
 }
 
+async function readTeamConfigurationPin() {
+  const { teamConfigurationPinFile } = resolveLocalStatePaths();
+  let parsed;
+  try {
+    parsed = JSON.parse(await readFile(teamConfigurationPinFile, "utf8"));
+  } catch {
+    throw new EnvironmentError(
+      "environment.configuration-pin",
+      "team service launch is not bound to root preflight; run pnpm dev",
+    );
+  }
+  if (
+    typeof parsed !== "object" ||
+    parsed === null ||
+    Array.isArray(parsed) ||
+    parsed.version !== 1 ||
+    !/^[A-Za-z0-9_-]{43}$/u.test(parsed.comparisonKey ?? "") ||
+    !/^[A-Za-z0-9_-]{43}$/u.test(parsed.issuerDigest ?? "") ||
+    typeof parsed.ownershipToken !== "string" ||
+    parsed.ownershipToken === "" ||
+    Object.keys(parsed).sort().join(",") !==
+      "comparisonKey,issuerDigest,ownershipToken,version"
+  ) {
+    throw new EnvironmentError(
+      "environment.configuration-pin",
+      "team service launch is not bound to a valid root preflight; retry pnpm dev",
+    );
+  }
+  return {
+    [comparisonKeyName]: parsed.comparisonKey,
+    [comparisonExpectedName]: parsed.issuerDigest,
+  };
+}
+
 async function runTeam({ contract, action, comparisonName, scriptPath, execute }) {
   const injectedArgument = process.argv[3];
   if (injectedArgument?.startsWith("--injected=")) {
@@ -167,12 +222,14 @@ async function runTeam({ contract, action, comparisonName, scriptPath, execute }
     });
   }
 
+  const launchPin = action === "validate" ? {} : await readTeamConfigurationPin();
   const baseline = {
     ...safeBaseEnvironment(),
     ...testEnvironment(),
-    ...(process.env[comparisonKeyName]
+    ...(action === "validate" && process.env[comparisonKeyName]
       ? { [comparisonKeyName]: process.env[comparisonKeyName] }
       : {}),
+    ...launchPin,
     DEVHUD_LOCAL_MODE: "team",
   };
   const baselineVariable = `DEVHUD_INTERNAL_${randomBytes(16).toString("hex").toUpperCase()}`;

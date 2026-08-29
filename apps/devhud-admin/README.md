@@ -6,9 +6,9 @@ served at `/admin/`.
 
 Use `pnpm dev` for authorized team development or `pnpm dev:oss` for the
 public-contributor environment. The package wrapper receives only the validated
-development issuer, proves it matches the API wrapper's separately validated
-issuer, and starts on the fixed port; it does not inherit API configuration
-from Turbo. For a contributor-owned Logto instance, copy the
+development issuer, proves it matches the API wrapper's pinned preflight
+comparison at launch, and starts on the fixed port; it does not inherit API
+configuration from Turbo. For a contributor-owned Logto instance, copy the
 package-local `.env.example` to `.env`, use the exact same issuer in
 `servers/devhud-api/.env`, and keep both files uncommitted.
 
