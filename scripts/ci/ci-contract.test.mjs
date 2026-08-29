@@ -151,7 +151,7 @@ test("OCI validation is multi-architecture, non-root, migration-bearing, and loc
   for (const expected of [
     "linux/amd64,linux/arm64", "type=oci", "65532", "io.delino.devhud.migrations",
     "io.delino.devhud.administrator-assets", "spdx-json", "packages | length > 0",
-    "go test -tags=integration ./servers/devhud-api/internal/postgres", "--load", "--platform linux/amd64", "--provenance=false",
+    "go test -tags=integration ./servers/devhud-api/internal/postgres", "--load", "--platform linux/amd64", "docker:$image",
     "--user 65532:65532", "devhud-api migrate", "migrate", "--once",
   ]) assert.ok(source.includes(expected), expected);
   const buildAndInspect = namedStep(workflow.jobs["devhud-oci"], "Build and inspect amd64/arm64 OCI layout").run;
