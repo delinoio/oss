@@ -115,15 +115,27 @@ const isIPv4Octet = (value) => {
   return number >= 0 && number <= 255;
 };
 
+const isIPv4Host = (hostname) => {
+  const octets = hostname.split(".");
+  return octets.length === 4 && octets.every(isIPv4Octet);
+};
+
 const isLoopbackHost = (hostname) => {
   const normalized = hostname.toLowerCase().replace(/\.$/u, "");
   if (normalized === "localhost" || normalized === "[::1]") return true;
-  const octets = normalized.split(".");
-  return octets.length === 4 && octets[0] === "127" && octets.every(isIPv4Octet);
+  return normalized.startsWith("127.") && isIPv4Host(normalized);
+};
+
+const rawAuthorityHostname = (authority) => {
+  if (authority.startsWith("[")) {
+    return authority.slice(0, authority.indexOf("]") + 1);
+  }
+  return authority.replace(/:\d*$/u, "");
 };
 
 const localHttp = (value) => {
-  if (!/^https?:\/\/[^/\\?#]+(?:[/?#]|$)/u.test(value)) return false;
+  const authorityMatch = /^https?:\/\/([^/\\?#]+)(?:[/?#]|$)/u.exec(value);
+  if (!authorityMatch) return false;
   try {
     const parsed = new URL(value);
     if (
@@ -134,10 +146,15 @@ const localHttp = (value) => {
     ) {
       return false;
     }
-    return (
-      parsed.protocol === "https:" ||
-      (parsed.protocol === "http:" && isLoopbackHost(parsed.hostname))
-    );
+    if (parsed.protocol === "https:") return true;
+    if (parsed.protocol !== "http:" || !isLoopbackHost(parsed.hostname)) return false;
+    if (!isIPv4Host(parsed.hostname)) return true;
+    // WHATWG canonicalizes numeric IPv4 aliases that Go's net.ParseIP rejects.
+    // Compare the raw spelling so wrapper preflight matches the service parser.
+    const rawHostname = rawAuthorityHostname(authorityMatch[1])
+      .toLowerCase()
+      .replace(/\.$/u, "");
+    return rawHostname === parsed.hostname;
   } catch {
     return false;
   }

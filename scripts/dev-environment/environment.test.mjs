@@ -393,6 +393,7 @@ test("preflight accepts the same loopback issuer hosts as the services", () => {
     "http://localhost.:3001/oidc",
     "http://127.0.0.2:3001/oidc",
     "http://[::1]:3001/oidc",
+    "http://[0:0:0:0:0:0:0:1]:3001/oidc",
   ]) {
     assert.deepEqual(
       validateInjectedEnvironment(adminContract, { DEVHUD_LOGTO_ISSUER: issuer }),
@@ -421,6 +422,29 @@ test("preflight accepts the same loopback issuer hosts as the services", () => {
         error instanceof EnvironmentError &&
         error.code === "environment.invalid-values",
     );
+  }
+});
+
+test("preflight rejects numeric IPv4 spellings rejected by the Go service parser", () => {
+  const valid = validApiEnvironment();
+  for (const issuer of [
+    "http://127.1:3001/oidc",
+    "http://2130706433:3001/oidc",
+    "http://0177.0.0.1:3001/oidc",
+    "http://0x7f000001:3001/oidc",
+  ]) {
+    for (const [contract, environment] of [
+      [adminContract, { DEVHUD_LOGTO_ISSUER: issuer }],
+      [apiContract, { ...valid, DEVHUD_LOGTO_ISSUER: issuer }],
+    ]) {
+      assert.throws(
+        () => validateInjectedEnvironment(contract, environment),
+        (error) =>
+          error instanceof EnvironmentError &&
+          error.code === "environment.invalid-values",
+        issuer,
+      );
+    }
   }
 });
 
