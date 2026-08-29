@@ -1,6 +1,9 @@
+import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const desktopTauriFeatures = ["--features", "desktop-cef"];
+export const repositoryAppleSigningIdentityKey = "devhud.appleSigningIdentity";
+const noRepositoryGitConfigError = "fatal: --local can only be used inside a git repository";
 export const desktopTauriConfigPath = fileURLToPath(
   new URL("../src-tauri/tauri.desktop.conf.json", import.meta.url),
 );
@@ -44,6 +47,62 @@ const packageKindsByPlatform = {
     bundles: { deb: "linux-deb", appimage: "linux-appimage" },
   },
 };
+
+export function repositoryAppleSigningEnvironment(
+  command,
+  platform = process.platform,
+  environment = process.env,
+  runGit = spawnSync,
+) {
+  if (
+    platform !== "darwin" ||
+    Object.hasOwn(environment, "APPLE_SIGNING_IDENTITY") ||
+    environment.DEVHUD_PRIVATE_RELEASE === "1"
+  ) {
+    return environment;
+  }
+
+  const result = runGit(
+    "git",
+    ["config", "--local", "--get", repositoryAppleSigningIdentityKey],
+    {
+      encoding: "utf8",
+      env: { ...environment, LC_ALL: "C" },
+      shell: false,
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
+  if (result.error) {
+    throw new Error(`failed to read ${repositoryAppleSigningIdentityKey}: ${result.error.message}`);
+  }
+  const stderr = typeof result.stderr === "string" ? result.stderr.trim() : "";
+  // Git uses status 1 for both a missing key and some unreadable-config errors,
+  // and status 128 for absent repository metadata plus other fatal failures.
+  // Stabilize its diagnostic locale and preserve ad hoc signing only for the
+  // silent missing-key or exact source-copy cases.
+  if (
+    (result.status === 1 && stderr === "") ||
+    (result.status === 128 && stderr === noRepositoryGitConfigError)
+  ) {
+    return environment;
+  }
+  if (result.status !== 0) {
+    throw new Error(
+      `git config --local --get ${repositoryAppleSigningIdentityKey} exited with status ${result.status ?? "unknown"}`,
+    );
+  }
+
+  const identity = typeof result.stdout === "string" ? result.stdout.trim() : "";
+  if (
+    !identity ||
+    /[\0\r\n]/u.test(identity) ||
+    Buffer.byteLength(identity, "utf8") > 1024
+  ) {
+    throw new Error(`${repositoryAppleSigningIdentityKey} must be one non-empty line of at most 1024 UTF-8 bytes`);
+  }
+
+  return { ...environment, APPLE_SIGNING_IDENTITY: identity };
+}
 
 export function desktopTauriArguments(command, forwardedArguments, environment = process.env) {
   // The pinned CLI resolves bundle features through app-owned Cargo features;
