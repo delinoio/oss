@@ -1,6 +1,6 @@
 import { Buffer } from "node:buffer";
 import { spawn } from "node:child_process";
-import { createServer } from "node:net";
+import { createServer, isIP } from "node:net";
 import {
   access,
   chmod,
@@ -481,6 +481,18 @@ async function checkDocker(lifecycle) {
   await assertLocalDockerDaemon(lifecycle, docker);
 }
 
+function dockerTcpHostnameIsLoopback(hostname) {
+  const normalized = hostname.endsWith(".") ? hostname.slice(0, -1) : hostname;
+  if (normalized.toLowerCase() === "localhost") return true;
+  const address =
+    normalized.startsWith("[") && normalized.endsWith("]")
+      ? normalized.slice(1, -1)
+      : normalized;
+  const addressVersion = isIP(address);
+  if (addressVersion === 4) return address.startsWith("127.");
+  return addressVersion === 6 && address === "::1";
+}
+
 export function dockerEndpointIsLocal(endpoint) {
   if (typeof endpoint !== "string" || endpoint.trim() === "") return false;
   const normalized = endpoint.trim();
@@ -494,10 +506,7 @@ export function dockerEndpointIsLocal(endpoint) {
   if (parsed.protocol === "npipe:") {
     return normalized.toLowerCase().startsWith("npipe:////./pipe/");
   }
-  return (
-    parsed.protocol === "tcp:" &&
-    ["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname)
-  );
+  return parsed.protocol === "tcp:" && dockerTcpHostnameIsLoopback(parsed.hostname);
 }
 
 async function inspectDockerEndpoint(lifecycle, docker, context) {

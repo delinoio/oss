@@ -18,7 +18,12 @@ export function commandInvocation(
   };
 }
 
-export function safeBaseEnvironment(source = process.env) {
+export function safeBaseEnvironment(
+  source = process.env,
+  platform = process.platform,
+) {
+  const linuxNames =
+    platform === "linux" ? ["DISPLAY", "XAUTHORITY", "XDG_RUNTIME_DIR"] : [];
   const names = [
     "PATH",
     "Path",
@@ -54,10 +59,8 @@ export function safeBaseEnvironment(source = process.env) {
     "COLORTERM",
     "NO_COLOR",
     "FORCE_COLOR",
-    "DISPLAY",
-    "XAUTHORITY",
+    ...linuxNames,
     "WAYLAND_DISPLAY",
-    "XDG_RUNTIME_DIR",
     "CI",
   ];
   return Object.fromEntries(

@@ -11,7 +11,8 @@
         "DEVHUD_LOCAL_MODE",
         "DISPLAY",
         "RUSTUP_HOME",
-        "XAUTHORITY"
+        "XAUTHORITY",
+        "XDG_RUNTIME_DIR"
       ],
       "persistent": true
     },

@@ -36,6 +36,7 @@ const expectedTaskEnvironment = [
   "DISPLAY",
   "RUSTUP_HOME",
   "XAUTHORITY",
+  "XDG_RUNTIME_DIR",
 ];
 assert.deepEqual(resolved.globalCacheInputs.environmentVariables.specified.env, []);
 assert.equal(
@@ -75,5 +76,5 @@ for (const forbidden of [
 }
 
 process.stdout.write(
-  "Resolved Turbo environment contains only the mode selector, Rust tool locations, and X11 session context on dev tasks.\n",
+  "Resolved Turbo environment contains only the mode selector, Rust tool locations, and Linux session/runtime context on dev tasks.\n",
 );

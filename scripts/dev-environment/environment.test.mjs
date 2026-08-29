@@ -213,21 +213,25 @@ test("child completion waits for close instead of exit", async () => {
 
 test("base child environments preserve platform and Rust tool context without secrets", () => {
   assert.deepEqual(
-    safeBaseEnvironment({
-      PATH: "/custom/cargo/bin:/usr/bin",
-      CARGO_HOME: "/custom/cargo",
-      RUSTUP_HOME: "/custom/rustup",
-      __CF_USER_TEXT_ENCODING: "0x1F5:0:0",
-      HOMEDRIVE: "C:",
-      HOMEPATH: "\\Users\\developer",
-      LOGONSERVER: "\\\\LOCALHOST",
-      USERDOMAIN: "LOCAL",
-      USERNAME: "developer",
-      DISPLAY: ":99",
-      XAUTHORITY: "/run/user/1000/gdm/Xauthority",
-      DEVHUD_DATABASE_URL: "must-not-pass",
-      DOCKER_HOST: "must-not-pass",
-    }),
+    safeBaseEnvironment(
+      {
+        PATH: "/custom/cargo/bin:/usr/bin",
+        CARGO_HOME: "/custom/cargo",
+        RUSTUP_HOME: "/custom/rustup",
+        __CF_USER_TEXT_ENCODING: "0x1F5:0:0",
+        HOMEDRIVE: "C:",
+        HOMEPATH: "\\Users\\developer",
+        LOGONSERVER: "\\\\LOCALHOST",
+        USERDOMAIN: "LOCAL",
+        USERNAME: "developer",
+        DISPLAY: ":99",
+        XAUTHORITY: "/run/user/1000/gdm/Xauthority",
+        XDG_RUNTIME_DIR: "/run/user/1000",
+        DEVHUD_DATABASE_URL: "must-not-pass",
+        DOCKER_HOST: "must-not-pass",
+      },
+      "linux",
+    ),
     {
       PATH: "/custom/cargo/bin:/usr/bin",
       CARGO_HOME: "/custom/cargo",
@@ -240,8 +244,27 @@ test("base child environments preserve platform and Rust tool context without se
       USERNAME: "developer",
       DISPLAY: ":99",
       XAUTHORITY: "/run/user/1000/gdm/Xauthority",
+      XDG_RUNTIME_DIR: "/run/user/1000",
     },
   );
+});
+
+test("Linux session context is omitted from base child environments on other platforms", () => {
+  for (const platform of ["darwin", "win32"]) {
+    assert.deepEqual(
+      safeBaseEnvironment(
+        {
+          PATH: "/usr/bin",
+          DISPLAY: ":99",
+          XAUTHORITY: "/run/user/1000/gdm/Xauthority",
+          XDG_RUNTIME_DIR: "/run/user/1000",
+        },
+        platform,
+      ),
+      { PATH: "/usr/bin" },
+      platform,
+    );
+  }
 });
 
 test("temporary Infisical config paths must stay outside the checkout", () => {
@@ -282,8 +305,12 @@ test("Docker endpoint validation accepts only locally reachable daemon transport
     "unix:///var/run/docker.sock",
     "npipe:////./pipe/docker_engine",
     "tcp://localhost:2375",
+    "tcp://localhost.:2375",
     "tcp://127.0.0.1:2375",
+    "tcp://127.0.0.2:2375",
+    "tcp://127.255.255.254:2375",
     "tcp://[::1]:2375",
+    "tcp://[0:0:0:0:0:0:0:1]:2375",
   ]) {
     assert.equal(dockerEndpointIsLocal(endpoint), true, endpoint);
   }
@@ -291,6 +318,10 @@ test("Docker endpoint validation accepts only locally reachable daemon transport
     "npipe:////server/pipe/docker_engine",
     "npipe:////localhost/pipe/docker_engine",
     "tcp://192.0.2.10:2376",
+    "tcp://128.0.0.1:2375",
+    "tcp://127.0.0.1.example.test:2375",
+    "tcp://localhost.example.test:2375",
+    "tcp://[::2]:2375",
     "ssh://developer@example.test",
     "https://localhost:2376",
     "not-a-docker-endpoint",
@@ -864,6 +895,7 @@ test("repository policy is immutable, orchestration-only, and free of first-part
     "DISPLAY",
     "RUSTUP_HOME",
     "XAUTHORITY",
+    "XDG_RUNTIME_DIR",
   ]);
   assert.ok(turbo.tasks.build.inputs.includes(".env"));
   assert.ok(turbo.tasks["build:api"].inputs.includes(".env"));
