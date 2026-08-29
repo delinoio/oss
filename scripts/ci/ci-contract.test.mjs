@@ -114,6 +114,10 @@ test("Node jobs use the committed Turbo binary with frozen installs and affected
   for (const expected of ["github.event.before", "TURBO_SCM_BASE", "TURBO_SCM_HEAD"]) {
     assert.ok(frontend.includes(expected), `devhud-frontend push range: ${expected}`);
   }
+  const frontendFilter = step(workflow.jobs["devhud-frontend"], "filter").with.filters;
+  assert.match(frontendFilter, /node_runtime:\n\s+- \.nvmrc/u);
+  const frontendRun = namedStep(workflow.jobs["devhud-frontend"], "Run affected frontend contracts");
+  assert.match(frontendRun.env.FORCE_RUN, /steps\.filter\.outputs\.node_runtime == 'true'/u);
 });
 
 test("desktop and mobile matrices match the committed architecture contracts", () => {

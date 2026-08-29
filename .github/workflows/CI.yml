@@ -921,6 +921,8 @@ jobs:
           filters: |
             ci_workflow:
               - .github/workflows/CI.yml
+            node_runtime:
+              - .nvmrc
             devhud_frontend:
               - .nvmrc
               - package.json
@@ -970,7 +972,7 @@ jobs:
         shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
-          FORCE_RUN: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.ci_workflow == 'true' }}
+          FORCE_RUN: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.ci_workflow == 'true' || steps.filter.outputs.node_runtime == 'true' }}
           PUSH_BASE: ${{ github.event.before }}
           PUSH_HEAD: ${{ github.sha }}
         run: |
