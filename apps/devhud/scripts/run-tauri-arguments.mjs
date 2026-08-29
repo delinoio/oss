@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 
 const desktopTauriFeatures = ["--features", "desktop-cef"];
 export const repositoryAppleSigningIdentityKey = "devhud.appleSigningIdentity";
+const noRepositoryGitConfigError = "fatal: --local can only be used inside a git repository";
 export const desktopTauriConfigPath = fileURLToPath(
   new URL("../src-tauri/tauri.desktop.conf.json", import.meta.url),
 );
@@ -66,6 +67,7 @@ export function repositoryAppleSigningEnvironment(
     ["config", "--local", "--get", repositoryAppleSigningIdentityKey],
     {
       encoding: "utf8",
+      env: { ...environment, LC_ALL: "C" },
       shell: false,
       stdio: ["ignore", "pipe", "pipe"],
     },
@@ -73,10 +75,14 @@ export function repositoryAppleSigningEnvironment(
   if (result.error) {
     throw new Error(`failed to read ${repositoryAppleSigningIdentityKey}: ${result.error.message}`);
   }
-  // Git returns 1 when the key is unset and 128 when a source copy has no
-  // repository metadata. In both cases the opt-in is unavailable, so retain
-  // the committed ad hoc signing default.
-  if (result.status === 1 || result.status === 128) {
+  const stderr = typeof result.stderr === "string" ? result.stderr.trim() : "";
+  // Git uses status 128 for both absent repository metadata and fatal config
+  // errors. Stabilize its diagnostic locale and preserve ad hoc signing only
+  // for the exact source-copy case; every other failure remains actionable.
+  if (
+    result.status === 1 ||
+    (result.status === 128 && stderr === noRepositoryGitConfigError)
+  ) {
     return environment;
   }
   if (result.status !== 0) {

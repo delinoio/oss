@@ -81,7 +81,12 @@ test("loads an opt-in Apple signing identity from repository-local Git config", 
   assert.deepEqual(calls, [[
     "git",
     ["config", "--local", "--get", repositoryAppleSigningIdentityKey],
-    { encoding: "utf8", shell: false, stdio: ["ignore", "pipe", "pipe"] },
+    {
+      encoding: "utf8",
+      env: { EXISTING: "value", LC_ALL: "C" },
+      shell: false,
+      stdio: ["ignore", "pipe", "pipe"],
+    },
   ]]);
 });
 
@@ -119,7 +124,11 @@ test("leaves ad hoc signing unchanged when local signing is unavailable", () => 
     "dev",
     "darwin",
     environment,
-    () => ({ status: 128, stdout: "" }),
+    () => ({
+      status: 128,
+      stderr: "fatal: --local can only be used inside a git repository\n",
+      stdout: "",
+    }),
   );
   const otherPlatform = repositoryAppleSigningEnvironment(
     "dev",
@@ -130,6 +139,22 @@ test("leaves ad hoc signing unchanged when local signing is unavailable", () => 
   assert.equal(missing, environment);
   assert.equal(noGitMetadata, environment);
   assert.equal(otherPlatform, environment);
+});
+
+test("surfaces fatal repository-local Git configuration failures", () => {
+  assert.throws(
+    () => repositoryAppleSigningEnvironment(
+      "dev",
+      "darwin",
+      {},
+      () => ({
+        status: 128,
+        stderr: "fatal: bad config line 1 in file .git/config\n",
+        stdout: "",
+      }),
+    ),
+    /exited with status 128/u,
+  );
 });
 
 test("rejects malformed repository-local signing identities", () => {
