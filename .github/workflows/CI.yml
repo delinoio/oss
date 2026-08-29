@@ -2265,7 +2265,7 @@ jobs:
             --health-timeout 5s \
             --health-retries 10 \
             postgres:15-bookworm >/dev/null
-          for attempt in {1..60}; do
+          for _ in {1..60}; do
             status=$(docker inspect --format '{{.State.Health.Status}}' devhud-postgres)
             if [ "$status" = healthy ]; then
               exit 0
