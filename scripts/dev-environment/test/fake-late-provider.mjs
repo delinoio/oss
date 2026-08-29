@@ -10,12 +10,16 @@ const output = rejected
     })}\n`
   : `${acceptedMarker}\n`;
 const stream = rejected ? "stderr" : "stdout";
-const writer = spawn(
-  process.execPath,
-  [
-    "-e",
-    `setTimeout(() => process.${stream}.write(${JSON.stringify(output)}), 50)`,
-  ],
-  { stdio: ["ignore", "inherit", "inherit"] },
-);
-writer.unref();
+if (process.platform === "win32") {
+  process[stream].write(output);
+} else {
+  const writer = spawn(
+    process.execPath,
+    [
+      "-e",
+      `setTimeout(() => process.${stream}.write(${JSON.stringify(output)}), 50)`,
+    ],
+    { stdio: ["ignore", "inherit", "inherit"] },
+  );
+  writer.unref();
+}

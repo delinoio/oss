@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { EventEmitter } from "node:events";
 import { createServer } from "node:net";
 import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -8,7 +9,6 @@ import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import {
-  acceptedMarker,
   adminContract,
   apiContract,
   comparisonMarker,
@@ -29,7 +29,7 @@ import {
   Lifecycle,
 } from "./orchestrator.mjs";
 import {
-  collect,
+  closeResult,
   commandInvocation,
   dockerClientEnvironment,
   terminateTree,
@@ -196,13 +196,18 @@ test("Windows pnpm invocation uses cmd.exe while native executables remain direc
   });
 });
 
-test("collected commands wait for inherited stdout pipes to close", async () => {
-  const result = await collect(process.execPath, [lateProvider], {
-    cwd: repositoryRoot,
-    env: process.env,
+test("child completion waits for close instead of exit", async () => {
+  const child = new EventEmitter();
+  let settled = false;
+  const completion = closeResult(child).then((result) => {
+    settled = true;
+    return result;
   });
-  assert.equal(result.code, 0, result.stderr);
-  assert.equal(result.stdout, `${acceptedMarker}\n`);
+  child.emit("exit", 0, null);
+  await Promise.resolve();
+  assert.equal(settled, false);
+  child.emit("close", 0, null);
+  assert.deepEqual(await completion, { code: 0, signal: null });
 });
 
 test("temporary Infisical config paths must stay outside the checkout", () => {

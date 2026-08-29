@@ -16,6 +16,7 @@ import {
 } from "./contracts.mjs";
 import {
   collect,
+  closeResult,
   commandInvocation,
   dockerClientEnvironment,
   inherited,
@@ -91,10 +92,7 @@ export class Lifecycle {
     }
     let result;
     try {
-      result = await new Promise((resolveResult, reject) => {
-        child.once("error", reject);
-        child.once("close", (code, signal) => resolveResult({ code, signal }));
-      });
+      result = await closeResult(child);
     } finally {
       if (this.child === child) this.child = null;
       if (this.terminationPromise) {

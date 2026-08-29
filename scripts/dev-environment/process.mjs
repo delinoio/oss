@@ -65,11 +65,14 @@ export function dockerClientEnvironment(source = process.env) {
 
 export function spawnResult(command, args, options = {}) {
   const child = spawn(command, args, { shell: false, ...options });
-  const completion = new Promise((resolve, reject) => {
+  return { child, completion: closeResult(child) };
+}
+
+export function closeResult(child) {
+  return new Promise((resolve, reject) => {
     child.once("error", reject);
     child.once("close", (code, signal) => resolve({ code, signal }));
   });
-  return { child, completion };
 }
 
 export async function collect(command, args, options = {}) {
