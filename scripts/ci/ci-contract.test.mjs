@@ -71,6 +71,10 @@ test("DevHud jobs self-gate and the path contract covers every implemented bound
   for (const path of [".nvmrc", "package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml", "turbo.json"]) {
     assert.ok(securityFilter.includes(path), `devhud-security: ${path}`);
   }
+  for (const id of ["devhud-supply-chain", "devhud-release-contracts"]) {
+    const filter = JSON.stringify(step(workflow.jobs[id], "filter"));
+    assert.ok(filter.includes(".nvmrc"), `${id}: .nvmrc`);
+  }
   const releaseFilter = JSON.stringify(step(workflow.jobs["devhud-release-contracts"], "filter"));
   for (const path of ["AGENTS.md", "docs/README.md"]) {
     assert.ok(releaseFilter.includes(path), `devhud-release-contracts: ${path}`);

@@ -2260,6 +2260,7 @@ jobs:
           filters: |
             supply_chain:
               - .github/workflows/CI.yml
+              - .nvmrc
               - .github/workflows/package-devhud-private.yml
               - .github/workflows/release-devhud.yml
               - .github/workflows/devhud-cef-security-review.yml
@@ -2319,6 +2320,7 @@ jobs:
           filters: |
             release:
               - .github/workflows/CI.yml
+              - .nvmrc
               - .github/workflows/package-devhud-private.yml
               - .github/workflows/release-devhud.yml
               - .github/workflows/devhud-cef-security-review.yml
