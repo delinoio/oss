@@ -483,13 +483,17 @@ async function checkDocker(lifecycle) {
 
 export function dockerEndpointIsLocal(endpoint) {
   if (typeof endpoint !== "string" || endpoint.trim() === "") return false;
+  const normalized = endpoint.trim();
   let parsed;
   try {
-    parsed = new URL(endpoint.trim());
+    parsed = new URL(normalized);
   } catch {
     return false;
   }
-  if (["unix:", "npipe:"].includes(parsed.protocol)) return true;
+  if (parsed.protocol === "unix:") return true;
+  if (parsed.protocol === "npipe:") {
+    return normalized.toLowerCase().startsWith("npipe:////./pipe/");
+  }
   return (
     parsed.protocol === "tcp:" &&
     ["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname)

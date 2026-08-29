@@ -288,6 +288,8 @@ test("Docker endpoint validation accepts only locally reachable daemon transport
     assert.equal(dockerEndpointIsLocal(endpoint), true, endpoint);
   }
   for (const endpoint of [
+    "npipe:////server/pipe/docker_engine",
+    "npipe:////localhost/pipe/docker_engine",
     "tcp://192.0.2.10:2376",
     "ssh://developer@example.test",
     "https://localhost:2376",
@@ -617,30 +619,38 @@ test("administrator preflight probes the configured localhost binding", async (t
   assert.deepEqual(await events(environment.DEVHUD_TEST_EVENT_LOG), []);
 });
 
-for (const selector of ["context", "host"]) {
-  test(`OSS startup rejects a remote Docker ${selector} before Compose startup`, async (t) => {
-    const temporaryDirectory = await mkdtemp(
-      resolve(tmpdir(), `devhud-remote-docker-${selector}-`),
-    );
-    t.after(() => rm(temporaryDirectory, { recursive: true, force: true }));
-    const environment = fakeEnvironment(temporaryDirectory);
-    if (selector === "context") {
-      environment.DOCKER_CONTEXT = "remote-review-context";
-      environment.DOCKER_HOST = "unix:///tmp/ignored-local-docker.sock";
-      environment.DEVHUD_TEST_DOCKER_ENDPOINT = "tcp://192.0.2.10:2376";
-    } else {
-      delete environment.DOCKER_CONTEXT;
-      environment.DOCKER_HOST = "ssh://developer@example.test";
-    }
+for (const [selector, remoteEndpoints] of [
+  ["context", ["tcp://192.0.2.10:2376", "npipe:////server/pipe/docker_engine"]],
+  ["host", ["ssh://developer@example.test", "npipe:////server/pipe/docker_engine"]],
+]) {
+  for (const remoteEndpoint of remoteEndpoints) {
+    test(
+      `OSS startup rejects a remote Docker ${selector} endpoint before Compose startup: ${remoteEndpoint}`,
+      async (t) => {
+        const temporaryDirectory = await mkdtemp(
+          resolve(tmpdir(), `devhud-remote-docker-${selector}-`),
+        );
+        t.after(() => rm(temporaryDirectory, { recursive: true, force: true }));
+        const environment = fakeEnvironment(temporaryDirectory);
+        if (selector === "context") {
+          environment.DOCKER_CONTEXT = "remote-review-context";
+          environment.DOCKER_HOST = "unix:///tmp/ignored-local-docker.sock";
+          environment.DEVHUD_TEST_DOCKER_ENDPOINT = remoteEndpoint;
+        } else {
+          delete environment.DOCKER_CONTEXT;
+          environment.DOCKER_HOST = remoteEndpoint;
+        }
 
-    const result = await runNode(cli, ["start", "oss"], environment);
-    assert.equal(result.code, 1);
-    assert.match(result.stderr, /\[docker\.remote-daemon\]/u);
-    const recorded = await events(environment.DEVHUD_TEST_EVENT_LOG);
-    assert.equal(recorded.some((event) => event.action === "up"), false);
-    assert.equal(recorded.some((event) => event.tool === "go"), false);
-    assert.equal(recorded.some((event) => event.tool === "pnpm"), false);
-  });
+        const result = await runNode(cli, ["start", "oss"], environment);
+        assert.equal(result.code, 1);
+        assert.match(result.stderr, /\[docker\.remote-daemon\]/u);
+        const recorded = await events(environment.DEVHUD_TEST_EVENT_LOG);
+        assert.equal(recorded.some((event) => event.action === "up"), false);
+        assert.equal(recorded.some((event) => event.tool === "go"), false);
+        assert.equal(recorded.some((event) => event.tool === "pnpm"), false);
+      },
+    );
+  }
 }
 
 test("OSS startup never invokes Infisical, orders health before migration and Turbo, and preserves volumes", async (t) => {
