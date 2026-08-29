@@ -2183,7 +2183,7 @@ jobs:
           artifact="$RUNNER_TEMP/devhud-$OCI_TARGET.oci.tar"
           image="devhud-$OCI_TARGET:ci"
           version=$(node -p "require('./packaging/devhud/release-metadata.json').version")
-          docker buildx build --platform linux/amd64,linux/arm64 --target "$OCI_TARGET" --build-arg VERSION="$version" --build-arg REVISION="$GITHUB_SHA" --output "type=oci,dest=$artifact" -f servers/devhud-api/Dockerfile .
+          docker buildx build --platform linux/amd64,linux/arm64 --target "$OCI_TARGET" --build-arg VERSION="$version" --build-arg REVISION="$GITHUB_SHA" --provenance=false --output "type=oci,dest=$artifact" -f servers/devhud-api/Dockerfile .
           tar -tf "$artifact" | grep -Fx index.json
           for arch in amd64 arm64; do
             skopeo inspect --override-arch "$arch" --config "oci-archive:$artifact" | jq -e '.config.User == "65532" and .config.Labels["io.delino.devhud.migrations"] == "embedded" and .config.Labels["io.delino.devhud.administrator-assets"] == "embedded"'
