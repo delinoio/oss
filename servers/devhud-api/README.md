@@ -12,9 +12,11 @@ partial upload configuration before migration. Team preflight also requires its
 issuer to match the administrator wrapper's separately validated value.
 
 OSS mode provides PostgreSQL and Logto loopback dependencies and a private
-checkout-local identity key. It deliberately leaves official R2/Cloudflare
-uploads unavailable. Guest/bootstrap behavior works immediately, while
-authenticated flows require contributor-owned Logto applications. Copy
+checkout-local identity key. Startup is exclusive per checkout and repairs a
+missing Logto database in a preserved PostgreSQL volume before seeding. It
+deliberately leaves official R2/Cloudflare uploads unavailable. Guest/bootstrap
+behavior works immediately, while authenticated flows require contributor-owned
+Logto applications. Copy
 `.env.example` to the ignored `.env` only to supply the public identifiers from
 those applications. If the issuer is overridden, use the exact same value in
 `apps/devhud-admin/.env`; never put GitHub PATs, BYO R2 credentials, or

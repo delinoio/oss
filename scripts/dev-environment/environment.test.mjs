@@ -69,7 +69,7 @@ function validApiEnvironment() {
   };
 }
 
-async function runNode(script, args, environment) {
+function spawnNode(script, args, environment) {
   const child = spawn(process.execPath, [script, ...args], {
     cwd: repositoryRoot,
     env: environment,
@@ -80,15 +80,22 @@ async function runNode(script, args, environment) {
   const stderr = [];
   child.stdout.on("data", (chunk) => stdout.push(chunk));
   child.stderr.on("data", (chunk) => stderr.push(chunk));
-  const result = await new Promise((resolveResult, reject) => {
+  const completion = new Promise((resolveResult, reject) => {
     child.once("error", reject);
-    child.once("close", (code, signal) => resolveResult({ code, signal }));
+    child.once("close", (code, signal) =>
+      resolveResult({
+        code,
+        signal,
+        stdout: Buffer.concat(stdout).toString("utf8"),
+        stderr: Buffer.concat(stderr).toString("utf8"),
+      }),
+    );
   });
-  return {
-    ...result,
-    stdout: Buffer.concat(stdout).toString("utf8"),
-    stderr: Buffer.concat(stderr).toString("utf8"),
-  };
+  return { child, completion };
+}
+
+async function runNode(script, args, environment) {
+  return spawnNode(script, args, environment).completion;
 }
 
 function fakeEnvironment(temporaryDirectory) {
@@ -436,6 +443,8 @@ test("preflight rejects URL escapes rejected by the Go service parser", () => {
     "postgres://devhud:devhud@localhost/%",
     "postgres://devhud:devhud@localhost/%2",
     "postgres://devhud:devhud@localhost/%zz",
+    "postgres://devhud:devhud@%6cocalhost/devhud",
+    "postgresql://devhud:devhud@local%68ost/devhud",
   ]) {
     assert.throws(
       () =>
@@ -921,18 +930,75 @@ test("OSS startup never invokes Infisical, orders health before migration and Tu
   assert.equal(output.includes(identity), false);
 });
 
+test("OSS startup is exclusive per checkout and releases ownership after cleanup", async (t) => {
+  const temporaryDirectory = await mkdtemp(resolve(tmpdir(), "devhud-oss-lock-"));
+  const releaseFile = resolve(temporaryDirectory, "release-turbo");
+  const firstEventLog = resolve(temporaryDirectory, "first-events.jsonl");
+  const baseEnvironment = fakeEnvironment(temporaryDirectory);
+  const firstEnvironment = {
+    ...baseEnvironment,
+    DEVHUD_TEST_BLOCK_PNPM: "1",
+    DEVHUD_TEST_EVENT_LOG: firstEventLog,
+    DEVHUD_TEST_PNPM_RELEASE_FILE: releaseFile,
+  };
+  const first = spawnNode(cli, ["start", "oss"], firstEnvironment);
+  t.after(async () => {
+    if (first.child.exitCode === null && first.child.signalCode === null) {
+      await terminateTree(first.child, "SIGKILL").catch(() =>
+        first.child.kill("SIGKILL"),
+      );
+    }
+    await rm(temporaryDirectory, { recursive: true, force: true });
+  });
+
+  await waitForEvent(
+    firstEventLog,
+    (event) => event.tool === "pnpm" && event.action === "turbo-blocked",
+  );
+
+  const secondEventLog = resolve(temporaryDirectory, "second-events.jsonl");
+  const second = await runNode(cli, ["start", "oss"], {
+    ...baseEnvironment,
+    DEVHUD_TEST_EVENT_LOG: secondEventLog,
+  });
+  assert.equal(second.code, 1);
+  assert.match(second.stderr, /\[state\.oss-startup-active\]/u);
+  assert.deepEqual(await events(secondEventLog), []);
+
+  await writeFile(releaseFile, "release\n", "utf8");
+  const firstResult = await first.completion;
+  assert.equal(firstResult.code, 0, firstResult.stderr);
+  await assert.rejects(
+    stat(resolve(baseEnvironment.DEVHUD_TEST_STATE_DIRECTORY, "oss-startup.lock")),
+    { code: "ENOENT" },
+  );
+
+  const third = await runNode(cli, ["start", "oss"], {
+    ...baseEnvironment,
+    DEVHUD_TEST_EVENT_LOG: resolve(temporaryDirectory, "third-events.jsonl"),
+  });
+  assert.equal(third.code, 0, third.stderr);
+});
+
 test("partial OSS startup is reaped and down remains volume-preserving", async (t) => {
   const temporaryDirectory = await mkdtemp(resolve(tmpdir(), "devhud-oss-failure-"));
   t.after(() => rm(temporaryDirectory, { recursive: true, force: true }));
-  const environment = {
-    ...fakeEnvironment(temporaryDirectory),
+  const environment = fakeEnvironment(temporaryDirectory);
+  const failedEnvironment = {
+    ...environment,
     DEVHUD_TEST_DOCKER_UP_FAILURE: "1",
   };
-  const result = await runNode(cli, ["start", "oss"], environment);
+  const result = await runNode(cli, ["start", "oss"], failedEnvironment);
   assert.equal(result.code, 1);
-  const recorded = await events(environment.DEVHUD_TEST_EVENT_LOG);
+  const recorded = await events(failedEnvironment.DEVHUD_TEST_EVENT_LOG);
   assert.ok(recorded.some((event) => event.action === "up"));
   assert.ok(recorded.some((event) => event.action === "down"));
+
+  const retry = await runNode(cli, ["start", "oss"], {
+    ...environment,
+    DEVHUD_TEST_EVENT_LOG: resolve(temporaryDirectory, "retry-events.jsonl"),
+  });
+  assert.equal(retry.code, 0, retry.stderr);
 });
 
 test(
@@ -1122,10 +1188,20 @@ for (const [name, args, blockingVariable, tool] of [
 
 test("repository policy is immutable, orchestration-only, and free of first-party Vercel setup", async () => {
   const compose = await readFile(composeFile, "utf8");
+  const postgresInit = await readFile(
+    resolve(repositoryRoot, "scripts/dev-environment/postgres-init.sql"),
+    "utf8",
+  );
   assert.match(compose, /postgres:15-bookworm@sha256:5d1d70e254e3c5d7d76847a9deebb18478cd518df37abf6b278d4bdb1fe5d96c/u);
   assert.match(compose, /svhd\/logto:1\.41\.0@sha256:7f79547e3d1fe569a3ecae757968a7cfc579687aa8164eec35113c0adc983c5b/u);
   assert.doesNotMatch(compose, /image:\s+[^\n]+:(?:latest|15-bookworm)\s*$/mu);
   assert.doesNotMatch(compose, /^name:/mu);
+  assert.doesNotMatch(compose, /docker-entrypoint-initdb\.d/u);
+  assert.match(
+    compose,
+    /logto-database-init:[\s\S]*condition: service_healthy[\s\S]*logto-init:[\s\S]*logto-database-init:[\s\S]*condition: service_completed_successfully/u,
+  );
+  assert.match(postgresInit, /WHERE NOT EXISTS[\s\S]*\\gexec/u);
 
   const turbo = JSON.parse(await readFile(resolve(repositoryRoot, "turbo.json"), "utf8"));
   assert.deepEqual(turbo.tasks.dev.env, [

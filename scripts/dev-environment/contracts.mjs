@@ -126,11 +126,15 @@ const isLoopbackHost = (hostname) => {
   return normalized.startsWith("127.") && isIPv4Host(normalized);
 };
 
+const rawAuthorityHostPort = (authority) =>
+  authority.slice(authority.lastIndexOf("@") + 1);
+
 const rawAuthorityHostname = (authority) => {
-  if (authority.startsWith("[")) {
-    return authority.slice(0, authority.indexOf("]") + 1);
+  const hostPort = rawAuthorityHostPort(authority);
+  if (hostPort.startsWith("[")) {
+    return hostPort.slice(0, hostPort.indexOf("]") + 1);
   }
-  return authority.replace(/:\d*$/u, "");
+  return hostPort.replace(/:\d*$/u, "");
 };
 
 const containsAsciiControlCharacter = (value) => {
@@ -177,6 +181,16 @@ const nonempty = (value) => typeof value === "string" && value.trim() !== "";
 const url = (value) => nonempty(value) && localHttp(value);
 const database = (value) => {
   if (!hasGoCompatibleURLSpelling(value)) return false;
+  const authorityMatch =
+    /^(?:postgres|postgresql):\/\/([^/\\?#]+)(?:[/?#]|$)/iu.exec(value);
+  // WHATWG decodes escapes in hostnames that Go's net/url rejects. Preserve
+  // escapes in user information and paths while rejecting them in the host.
+  if (
+    !authorityMatch ||
+    rawAuthorityHostPort(authorityMatch[1]).includes("%")
+  ) {
+    return false;
+  }
   try {
     const parsed = new URL(value);
     return ["postgres:", "postgresql:"].includes(parsed.protocol) && Boolean(parsed.hostname);

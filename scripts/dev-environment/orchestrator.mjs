@@ -564,6 +564,59 @@ function validateLocalIdentityKey(identityKey) {
   return normalized;
 }
 
+async function acquireOssStartupLock(source = process.env) {
+  const { stateDirectory } = resolveLocalStatePaths(source);
+  await mkdir(stateDirectory, { recursive: true, mode: 0o700 });
+  const lockFile = resolve(stateDirectory, "oss-startup.lock");
+  const ownershipToken = `${process.pid}:${randomBytes(32).toString("base64url")}`;
+  let handle;
+  try {
+    handle = await open(lockFile, "wx", 0o600);
+  } catch (error) {
+    if (error.code !== "EEXIST") throw error;
+    throw new Error(
+      "[state.oss-startup-active] another pnpm dev:oss invocation already owns this checkout; stop it, or remove the ignored OSS startup lock only after confirming no development process remains",
+    );
+  }
+
+  try {
+    await handle.writeFile(`${ownershipToken}\n`, { encoding: "utf8" });
+    await handle.sync();
+    if (process.platform !== "win32") {
+      await chmod(stateDirectory, 0o700);
+      await chmod(lockFile, 0o600);
+    }
+  } catch (error) {
+    await handle.close();
+    try {
+      await unlink(lockFile);
+    } catch (unlinkError) {
+      if (unlinkError.code !== "ENOENT") throw unlinkError;
+    }
+    throw error;
+  }
+
+  let released = false;
+  return async () => {
+    if (released) return;
+    released = true;
+    await handle.close();
+    let currentToken;
+    try {
+      currentToken = (await readFile(lockFile, "utf8")).trim();
+    } catch (error) {
+      if (error.code === "ENOENT") return;
+      throw error;
+    }
+    if (currentToken !== ownershipToken) {
+      throw new Error(
+        "[state.oss-startup-lock] OSS startup lock ownership changed unexpectedly; refusing to remove another owner's lock",
+      );
+    }
+    await unlink(lockFile);
+  };
+}
+
 export async function createLocalIdentityKey(source = process.env) {
   const { identityKeyFile, stateDirectory } = resolveLocalStatePaths(source);
   await mkdir(stateDirectory, { recursive: true, mode: 0o700 });
@@ -664,42 +717,47 @@ async function startTeam(lifecycle) {
 }
 
 async function startOss(lifecycle) {
-  await checkDocker(lifecycle);
-  await assertAppPorts();
-  const projectName = await localComposeProjectName();
-  await assertDependencyPorts(lifecycle, projectName);
-  await runService(lifecycle, "oss", "api", "validate");
-  await runService(lifecycle, "oss", "admin", "validate");
-  let dependenciesStarted = false;
+  const releaseStartupLock = await acquireOssStartupLock();
   try {
-    const docker = dockerInvocation();
-    const up = await lifecycle.run(
-      docker.command,
-      [
-        ...docker.prefix,
-        ...composeArgs(
-          projectName,
-          "up",
-          "--detach",
-          "--wait",
-          "--wait-timeout",
-          "120",
-          "postgres",
-          "logto",
-        ),
-      ],
-      { cwd: repositoryRoot, env: dockerChildEnvironment() },
-    );
-    dependenciesStarted = true;
-    if (up.code !== 0 || up.signal) {
-      throw new Error("[dependencies.start] OSS dependencies did not become healthy");
+    await checkDocker(lifecycle);
+    await assertAppPorts();
+    const projectName = await localComposeProjectName();
+    await assertDependencyPorts(lifecycle, projectName);
+    await runService(lifecycle, "oss", "api", "validate");
+    await runService(lifecycle, "oss", "admin", "validate");
+    let dependenciesStarted = false;
+    try {
+      const docker = dockerInvocation();
+      const up = await lifecycle.run(
+        docker.command,
+        [
+          ...docker.prefix,
+          ...composeArgs(
+            projectName,
+            "up",
+            "--detach",
+            "--wait",
+            "--wait-timeout",
+            "120",
+            "postgres",
+            "logto",
+          ),
+        ],
+        { cwd: repositoryRoot, env: dockerChildEnvironment() },
+      );
+      dependenciesStarted = true;
+      if (up.code !== 0 || up.signal) {
+        throw new Error("[dependencies.start] OSS dependencies did not become healthy");
+      }
+      await runService(lifecycle, "oss", "api", "migrate");
+      return await startTurbo(lifecycle, "oss");
+    } finally {
+      if (dependenciesStarted || lifecycle.signal) {
+        await down({ quiet: Boolean(lifecycle.signal), projectName, lifecycle });
+      }
     }
-    await runService(lifecycle, "oss", "api", "migrate");
-    return await startTurbo(lifecycle, "oss");
   } finally {
-    if (dependenciesStarted || lifecycle.signal) {
-      await down({ quiet: Boolean(lifecycle.signal), projectName, lifecycle });
-    }
+    await releaseStartupLock();
   }
 }
 

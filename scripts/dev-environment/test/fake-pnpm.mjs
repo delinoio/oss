@@ -1,4 +1,15 @@
-import { appendFile } from "node:fs/promises";
+import { access, appendFile } from "node:fs/promises";
+import { setTimeout as delay } from "node:timers/promises";
+
+async function exists(path) {
+  try {
+    await access(path);
+    return true;
+  } catch (error) {
+    if (error.code === "ENOENT") return false;
+    throw error;
+  }
+}
 
 const eventLog = process.env.DEVHUD_TEST_EVENT_LOG;
 const forbidden = [
@@ -28,6 +39,11 @@ if (forbidden.some((name) => process.env[name])) {
       `${JSON.stringify({ tool: "pnpm", action: "turbo-blocked" })}\n`,
       "utf8",
     );
-    await new Promise(() => setInterval(() => {}, 1_000));
+    const releaseFile = process.env.DEVHUD_TEST_PNPM_RELEASE_FILE;
+    if (releaseFile) {
+      while (!(await exists(releaseFile))) await delay(20);
+    } else {
+      await new Promise(() => setInterval(() => {}, 1_000));
+    }
   }
 }
