@@ -2,8 +2,8 @@
 
 set -eu
 
-# early-exit on CI or VERCEL
-if [ -n "${CI+x}" ] || [ -n "${VERCEL+x}" ]; then
+# early-exit on CI
+if [ -n "${CI+x}" ]; then
 	exit 0
 fi
 
