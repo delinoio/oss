@@ -36,6 +36,7 @@ import {
   terminateTree,
 } from "./process.mjs";
 import { readServiceEnv } from "./service-environment.mjs";
+import { windowsTerminationEnvironment } from "../spawn-dev-server.mjs";
 
 const testDirectory = dirname(fileURLToPath(import.meta.url));
 const fakeDirectory = resolve(testDirectory, "test");
@@ -195,6 +196,26 @@ test("Windows pnpm invocation uses cmd.exe while native executables remain direc
     command: "pnpm",
     prefix: [],
   });
+});
+
+test("Windows process-tree termination receives only required system context", () => {
+  assert.deepEqual(
+    windowsTerminationEnvironment({
+      Path: "C:\\Windows\\System32",
+      PATHEXT: ".COM;.EXE;.BAT;.CMD",
+      SystemRoot: "C:\\Windows",
+      windir: "C:\\Windows",
+      DEVHUD_DATABASE_URL: "must-not-pass",
+      DEVHUD_LOGTO_ISSUER: "must-not-pass",
+      DEVHUD_R2_SECRET_ACCESS_KEY: "must-not-pass",
+    }),
+    {
+      PATH: "C:\\Windows\\System32",
+      PATHEXT: ".COM;.EXE;.BAT;.CMD",
+      SYSTEMROOT: "C:\\Windows",
+      WINDIR: "C:\\Windows",
+    },
+  );
 });
 
 test("child completion waits for close instead of exit", async () => {

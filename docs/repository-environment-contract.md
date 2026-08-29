@@ -41,7 +41,7 @@ Authentication, project, or secret-path failure is terminal for `pnpm dev`. It m
 
 Infisical injection occurs only inside the owning service wrapper. The root process and Turbo are never wrapped. Both wrappers select environment `dev`, disable personal-secret overriding, expansion, and imports, disable telemetry and verbose output, use argv-based spawning, and buffer provider output until the service allowlist is accepted.
 
-Base child environments preserve only the documented non-secret platform and tool context, including custom `CARGO_HOME` and `RUSTUP_HOME` locations needed by the Rust toolchain. On Linux, the app-owned Native Messaging listener also receives `XDG_RUNTIME_DIR`; it requires that location to be absolute and private before using its per-user socket. The API owns path `/devhud/api`. Its required names are:
+Base child environments preserve only the documented non-secret platform and tool context, including custom `CARGO_HOME` and `RUSTUP_HOME` locations needed by the Rust toolchain. On Linux, the app-owned Native Messaging listener also receives `XDG_RUNTIME_DIR`; it requires that location to be absolute and private before using its per-user socket. On Windows, process-tree termination passes only `PATH`, `PATHEXT`, `SYSTEMROOT`, and `WINDIR` to `taskkill.exe`; validated service configuration never enters that utility process. The API owns path `/devhud/api`. Its required names are:
 
 - `DEVHUD_DATABASE_URL`
 - `DEVHUD_PUBLIC_API_URL`

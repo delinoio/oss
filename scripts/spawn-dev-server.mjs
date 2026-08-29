@@ -3,14 +3,32 @@ import { readFileSync, readdirSync } from "node:fs";
 
 const terminationSignals = ["SIGINT", "SIGTERM"];
 const posixProcessGroupExitTimeoutMs = 10_000;
+const windowsTerminationEnvironmentNames = [
+  "PATH",
+  "PATHEXT",
+  "SYSTEMROOT",
+  "WINDIR",
+];
 
 class PosixProcessGroupExitTimeout extends Error {}
+
+export function windowsTerminationEnvironment(source = process.env) {
+  const normalizedSource = new Map(
+    Object.entries(source).map(([name, value]) => [name.toUpperCase(), value]),
+  );
+  return Object.fromEntries(
+    windowsTerminationEnvironmentNames
+      .filter((name) => normalizedSource.has(name))
+      .map((name) => [name, normalizedSource.get(name)]),
+  );
+}
 
 export function terminateWindowsProcessTree(child, signal) {
   const taskkill = spawn(
     "taskkill.exe",
     ["/pid", String(child.pid), "/t", "/f"],
     {
+      env: windowsTerminationEnvironment(),
       shell: false,
       stdio: "ignore",
       windowsHide: true,
