@@ -130,7 +130,7 @@ function findHtmlRouteLinks(contents, htmlFile) {
     } catch {
       continue;
     }
-    if (htmlRoutePaths.has(resolvedUrl.pathname)) {
+    if (resolvedUrl.origin === validatorOrigin && htmlRoutePaths.has(resolvedUrl.pathname)) {
       invalidRoutes.push(resolvedUrl.pathname);
     }
   }
@@ -158,7 +158,17 @@ function containsCredentialBearingLink(contents, htmlFile) {
 const credentialQueryKey = /^(?:token|access[_-]?token|refresh[_-]?token|api[_-]?key|password|secret)$/iu;
 
 function containsCredentialBearingQuery(url) {
-  for (const [key, value] of url.searchParams) {
+  return containsCredentialBearingParameters(url.searchParams);
+}
+
+function containsCredentialBearingFragment(url) {
+  if (!url.hash) return false;
+  const fragment = url.hash.slice(1).replace(/^\?/u, "");
+  return containsCredentialBearingParameters(new URLSearchParams(fragment));
+}
+
+function containsCredentialBearingParameters(parameters) {
+  for (const [key, value] of parameters) {
     const pair = `${key}=${value}`;
     if (credentialQueryKey.test(key) || forbiddenContent.some((pattern) => pattern.test(pair))) return true;
   }
@@ -196,7 +206,7 @@ function containsForbiddenResourcePath(contents, htmlFile) {
   const resourceTargetsToCheck = resourceTargets(contents)
     .filter((target) => !isApprovedPublicAsset(target, htmlFile));
   return forbiddenPathContent.some((pattern) =>
-    resourceTargetsToCheck.some((target) => pattern.test(target)));
+    resourceTargetsToCheck.some((target) => pattern.test(decodeHTML(target))));
 }
 
 function containsCredentialBearingResource(contents, htmlFile) {
@@ -210,6 +220,7 @@ function containsCredentialBearingResource(contents, htmlFile) {
         resolvedUrl.username
         || resolvedUrl.password
         || containsCredentialBearingQuery(resolvedUrl)
+        || containsCredentialBearingFragment(resolvedUrl)
       ) return true;
     } catch {
       // Invalid URLs are handled by the browser/build output and are not credential evidence.
@@ -246,6 +257,8 @@ const invalidRouteAttributeFixtures = [
   '<a href = "/devhud/install.html">install</a>',
   "<a href=/devhud/install.html>install</a>",
   '<a href="/devhud/install&#46;html">install</a>',
+];
+const externalRouteFixtures = [
   '<a href="https://docs.example.com/devhud/install.html">install</a>',
 ];
 const forbiddenPathFixtures = [
@@ -259,11 +272,13 @@ const forbiddenResourceFixtures = [
   '<img srcset="../../servers/devhud/private.png 1x">',
   '<img src = "file:///etc/devhud/private.png">',
   '<img src=file:///etc/devhud/private.png>',
+  '<img src="file&colon;///etc/devhud/private.png">',
 ];
 const credentialBearingResourceFixtures = [
   '<img src="https://alice:secret@example.com/image.png">',
   '<img src = https://alice:secret@example.com/image.png>',
   '<img src="https://example.com/image?token&equals;abc123">',
+  '<img src="https://example.com/image#token&equals;abc123">',
 ];
 const approvedResourceFixtures = [
   '<img src="/assets/logo.svg">',
@@ -382,6 +397,12 @@ for (const fixture of forbiddenLinkFixtures) {
 for (const fixture of invalidRouteAttributeFixtures) {
   if (findHtmlRouteLinks(fixture, path.join(outputDir, "fixture.html")).length === 0) {
     failures.push("invalid HTML route attribute fixture was not detected");
+  }
+}
+
+for (const fixture of externalRouteFixtures) {
+  if (findHtmlRouteLinks(fixture, path.join(outputDir, "fixture.html")).length !== 0) {
+    failures.push("external HTML route fixture was incorrectly rejected");
   }
 }
 
