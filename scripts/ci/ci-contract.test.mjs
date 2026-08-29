@@ -65,6 +65,10 @@ test("Node jobs use the committed Turbo binary with frozen installs and affected
   assert.match(workflowSource, /pnpm exec turbo run test --affected --filter/u);
   assert.match(workflowSource, /--dry=json/u);
   assert.match(packages["package.json"].scripts["ci:affected"], /^turbo run$/u);
+  const frontend = JSON.stringify(workflow.jobs["devhud-frontend"]);
+  for (const expected of ["github.event.before", "TURBO_SCM_BASE", "TURBO_SCM_HEAD"]) {
+    assert.ok(frontend.includes(expected), `devhud-frontend push range: ${expected}`);
+  }
 });
 
 test("desktop and mobile matrices match the committed architecture contracts", () => {
@@ -100,6 +104,7 @@ test("implemented DevHud conformance commands are wired to their owning jobs", (
     const source = JSON.stringify(workflow.jobs[id]);
     for (const command of expected) assert.ok(source.includes(command), `${id}: ${command}`);
   }
+  assert.match(packages["apps/devhud/package.json"].scripts.test, /^pnpm lint && pnpm test:unit && pnpm test:components/u);
 });
 
 test("OCI validation is multi-architecture, non-root, migration-bearing, and local-only", () => {
@@ -107,9 +112,19 @@ test("OCI validation is multi-architecture, non-root, migration-bearing, and loc
   for (const expected of [
     "linux/amd64,linux/arm64", "type=oci", "65532", "io.delino.devhud.migrations",
     "io.delino.devhud.administrator-assets", "spdx-json", "packages | length > 0",
-    "go test -tags=integration ./servers/devhud-api/internal/postgres",
+    "go test -tags=integration ./servers/devhud-api/internal/postgres", "docker-daemon:",
+    "--user 65532:65532", "devhud-api migrate", "migrate", "--once",
   ]) assert.ok(source.includes(expected), expected);
   assert.doesNotMatch(source, /(?:docker|skopeo) push/iu);
+});
+
+test("Debian desktop validation installs, launches, unregisters, and removes the package", () => {
+  const source = JSON.stringify(workflow.jobs["devhud-desktop"]);
+  for (const expected of [
+    "finalize-devhud-deb.sh", "sudo dpkg -i", "/usr/bin/devhud", "gnome-keyring-daemon",
+    "/run/user/$(id -u)", "DBUS_SESSION_BUS_ADDRESS#unix:path=", "sudo dpkg -r", "test ! -e /usr/bin/devhud",
+    "test ! -e /etc/opt/chrome/native-messaging-hosts/io.delino.devhud.native_messaging.json",
+  ]) assert.ok(source.includes(expected), expected);
 });
 
 test("package-local CI commands and deterministic cache boundaries are explicit", () => {

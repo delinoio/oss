@@ -893,10 +893,19 @@ jobs:
         if: ${{ steps.gate.outputs.run == 'true' }}
         shell: bash
         env:
+          EVENT_NAME: ${{ github.event_name }}
           FORCE_RUN: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.ci_workflow == 'true' }}
+          PUSH_BASE: ${{ github.event.before }}
+          PUSH_HEAD: ${{ github.sha }}
         run: |
           args=(run typecheck lint test:unit test:components test:accessibility build:frontend --filter devhud)
-          if [ "$FORCE_RUN" != true ]; then args+=(--affected); fi
+          if [ "$FORCE_RUN" != true ]; then
+            args+=(--affected)
+            if [ "$EVENT_NAME" = push ]; then
+              export TURBO_SCM_BASE="$PUSH_BASE"
+              export TURBO_SCM_HEAD="$PUSH_HEAD"
+            fi
+          fi
           pnpm exec turbo "${args[@]}"
 
   devhud-extension:
@@ -1247,7 +1256,7 @@ jobs:
         if: ${{ steps.gate.outputs.run == 'true' && matrix.os == 'linux' }}
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang cmake dbus-x11 desktop-file-utils libayatana-appindicator3-dev libfuse2 libgbm-dev libgtk-3-dev libx11-dev libxkbcommon-x11-0 libxtst-dev ninja-build patchelf xauth xdg-utils xvfb
+          sudo apt-get install -y clang cmake dbus-x11 desktop-file-utils gnome-keyring libayatana-appindicator3-dev libfuse2 libgbm-dev libgtk-3-dev libx11-dev libxkbcommon-x11-0 libxtst-dev ninja-build patchelf xauth xdg-utils xvfb
 
       - name: Install dependencies
         if: ${{ steps.gate.outputs.run == 'true' }}
@@ -1320,17 +1329,20 @@ jobs:
               echo "Expected exactly one DevHUD Debian package, found ${#deb_packages[@]}" >&2
               exit 1
             fi
-            sandbox_metadata="$(dpkg-deb --fsys-tarfile "${deb_packages[0]}" | tar --numeric-owner -tvf - | awk '$6 == "usr/share/DevHUD/chrome-sandbox" || $6 == "./usr/share/DevHUD/chrome-sandbox" { print $1, $2 }')"
+            finalized="$RUNNER_TEMP/devhud-final.deb"
+            SOURCE_DATE_EPOCH=$(git show -s --format=%ct HEAD) bash scripts/release/finalize-devhud-deb.sh "${deb_packages[0]}" "$finalized"
+            sandbox_metadata="$(dpkg-deb --fsys-tarfile "$finalized" | tar --numeric-owner -tvf - | awk '$6 == "usr/share/DevHUD/chrome-sandbox" || $6 == "./usr/share/DevHUD/chrome-sandbox" { print $1, $2 }')"
             if [ "${sandbox_metadata}" != "-rwsr-xr-x 0/0" ]; then
               echo "DevHUD Debian chrome-sandbox must record UID/GID 0/0 and mode 4755; found: ${sandbox_metadata:-missing}" >&2
               exit 1
             fi
-            mkdir -p target/devhud-smoke-root
-            dpkg-deb -x "${deb_packages[0]}" target/devhud-smoke-root
-            sudo chown root:root target/devhud-smoke-root/usr/share/DevHUD/chrome-sandbox
-            sudo chmod 4755 target/devhud-smoke-root/usr/share/DevHUD/chrome-sandbox
-            artifact="${{ github.workspace }}/target/devhud-smoke-root/usr/bin/devhud"
-            host=$(find target/devhud-smoke-root -type f -name devhud-native-messaging-host -print -quit)
+            package=$(dpkg-deb -f "$finalized" Package)
+            sudo dpkg -i "$finalized"
+            artifact=/usr/bin/devhud
+            host=$(find /usr -type f -name devhud-native-messaging-host -print -quit)
+            echo "DEVHUD_SMOKE_DEBIAN_PACKAGE=$package" >> "$GITHUB_ENV"
+            echo "DEVHUD_SMOKE_NATIVE_HOST=$host" >> "$GITHUB_ENV"
+            echo "DEVHUD_SMOKE_USER_MANIFEST=$HOME/.config/google-chrome/NativeMessagingHosts/io.delino.devhud.native_messaging.json" >> "$GITHUB_ENV"
           else
             appimages=(target/release/bundle/appimage/*.AppImage)
             if [ "${#appimages[@]}" -ne 1 ]; then
@@ -1364,6 +1376,48 @@ jobs:
           XDG_SESSION_TYPE: x11
           WAYLAND_DISPLAY: ""
         run: APPIMAGE="$DEVHUD_SMOKE_APPIMAGE" APPDIR="$DEVHUD_SMOKE_APPDIR" dbus-run-session -- xvfb-run -a pnpm --filter devhud smoke:platform -- --artifact "$DEVHUD_SMOKE_ARTIFACT"
+
+      - name: Verify Ubuntu Debian Native Messaging install and uninstall lifecycle
+        if: ${{ steps.gate.outputs.run == 'true' && matrix.os == 'linux' && matrix.bundle == 'deb' }}
+        run: |
+          set -euo pipefail
+          test -x "$DEVHUD_SMOKE_NATIVE_HOST"
+          test -e "$DEVHUD_SMOKE_USER_MANIFEST"
+          test -e /etc/opt/chrome/native-messaging-hosts/io.delino.devhud.native_messaging.json
+          dbus-run-session -- bash -euo pipefail -c '
+            export HOME="$1"
+            package="$2"
+            user_manifest="$3"
+            runtime="/run/user/$(id -u)"
+            session_socket="${DBUS_SESSION_BUS_ADDRESS#unix:path=}"
+            session_socket="${session_socket%%,*}"
+            unset GNOME_KEYRING_CONTROL
+            control_directory="$RUNNER_TEMP/devhud-keyring"
+            mkdir -p "$control_directory"
+            chmod 700 "$control_directory"
+            sudo install -d -m 0700 -o "$(id -u)" -g "$(id -g)" "$runtime"
+            if [ -e "$runtime/bus" ] || [ -L "$runtime/bus" ]; then
+              echo "DevHUD Debian lifecycle requires an unused per-user D-Bus socket path" >&2
+              exit 1
+            fi
+            sudo ln -s "$session_socket" "$runtime/bus"
+            keyring_pid=
+            cleanup_lifecycle() {
+              sudo rm -f "$runtime/bus"
+              if [ -n "$keyring_pid" ]; then
+                kill "$keyring_pid" 2>/dev/null || true
+                wait "$keyring_pid" 2>/dev/null || true
+              fi
+            }
+            trap cleanup_lifecycle EXIT
+            gnome-keyring-daemon --foreground --components=secrets --control-directory="$control_directory" >/dev/null &
+            keyring_pid=$!
+            gdbus wait --session --timeout=5 org.freedesktop.secrets >/dev/null
+            sudo dpkg -r "$package"
+            test ! -e "$user_manifest"
+          ' native-messaging-lifecycle "$HOME" "$DEVHUD_SMOKE_DEBIAN_PACKAGE" "$DEVHUD_SMOKE_USER_MANIFEST"
+          test ! -e /usr/bin/devhud
+          test ! -e /etc/opt/chrome/native-messaging-hosts/io.delino.devhud.native_messaging.json
 
       - name: Verify Windows Native Messaging install and uninstall lifecycle
         if: ${{ steps.gate.outputs.run == 'true' && matrix.os == 'windows' }}
@@ -2032,16 +2086,37 @@ jobs:
       - name: Build and inspect amd64/arm64 OCI layout
         if: ${{ steps.gate.outputs.run == 'true' }}
         env:
+          DEVHUD_TEST_DATABASE_URL: postgres://devhud:devhud@127.0.0.1:5432/devhud_api_test?sslmode=disable
           OCI_TARGET: ${{ matrix.target }}
         run: |
           set -euo pipefail
           artifact="$RUNNER_TEMP/devhud-$OCI_TARGET.oci.tar"
+          image="devhud-$OCI_TARGET:ci"
           version=$(node -p "require('./packaging/devhud/release-metadata.json').version")
           docker buildx build --platform linux/amd64,linux/arm64 --target "$OCI_TARGET" --build-arg VERSION="$version" --build-arg REVISION="$GITHUB_SHA" --output "type=oci,dest=$artifact" -f servers/devhud-api/Dockerfile .
           tar -tf "$artifact" | grep -Fx index.json
           for arch in amd64 arm64; do
             skopeo inspect --override-arch "$arch" --config "oci-archive:$artifact" | jq -e '.config.User == "65532" and .config.Labels["io.delino.devhud.migrations"] == "embedded" and .config.Labels["io.delino.devhud.administrator-assets"] == "embedded"'
           done
+          skopeo copy --override-os linux --override-arch amd64 "oci-archive:$artifact" "docker-daemon:$image"
+          DEVHUD_DATABASE_URL="$DEVHUD_TEST_DATABASE_URL" go run ./servers/devhud-api/cmd/devhud-api migrate
+          container_database_url=postgres://devhud:devhud@host.docker.internal:5432/devhud_api_test?sslmode=disable
+          docker_args=(--rm --user 65532:65532 --add-host host.docker.internal:host-gateway -e "DEVHUD_DATABASE_URL=$container_database_url")
+          if [ "$OCI_TARGET" = api ]; then
+            docker run "${docker_args[@]}" "$image" migrate
+          else
+            docker run "${docker_args[@]}" \
+              -e DEVHUD_ENVIRONMENT=development \
+              -e DEVHUD_R2_ENDPOINT=http://127.0.0.1:9000 \
+              -e DEVHUD_R2_ACCESS_KEY_ID=ci-access-key \
+              -e DEVHUD_R2_SECRET_ACCESS_KEY=01234567890123456789012345678901 \
+              -e DEVHUD_R2_STAGING_BUCKET=devhud-staging \
+              -e DEVHUD_R2_PUBLIC_BUCKET=devhud-public \
+              -e DEVHUD_PUBLIC_ASSET_BASE_URL=http://127.0.0.1:9000 \
+              -e DEVHUD_CLOUDFLARE_API_TOKEN=ci-token \
+              -e DEVHUD_CLOUDFLARE_ZONE_ID=ci-zone \
+              "$image" --once
+          fi
           "${{ steps.syft.outputs.cmd }}" scan "oci-archive:$artifact" --output "spdx-json=$RUNNER_TEMP/devhud-$OCI_TARGET.spdx.json"
           jq -e '.spdxVersion == "SPDX-2.3" and (.packages | length > 0)' "$RUNNER_TEMP/devhud-$OCI_TARGET.spdx.json"
 
