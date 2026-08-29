@@ -280,6 +280,13 @@ describe("injected capture", () => {
   });
 
   it("bounds deeply nested markup during iterative traversal", async () => {
+    const visibilityDescriptor = Object.getOwnPropertyDescriptor(Element.prototype, "checkVisibility");
+    Object.defineProperty(Element.prototype, "checkVisibility", {
+      configurable: true,
+      // This test targets bounded iterative serialization, so bypass jsdom's
+      // platform-dependent style traversal for every ancestor in the chain.
+      value: () => true,
+    });
     const root = document.createElement("main");
     const elements: Element[] = [root];
     document.body.append(root);
@@ -303,6 +310,11 @@ describe("injected capture", () => {
       expect(result.outerHtml.endsWith("</main>")).toBe(true);
     } finally {
       for (let index = elements.length - 1; index >= 0; index -= 1) elements[index]!.remove();
+      if (visibilityDescriptor) {
+        Object.defineProperty(Element.prototype, "checkVisibility", visibilityDescriptor);
+      } else {
+        delete (Element.prototype as Partial<Element>).checkVisibility;
+      }
     }
   }, 15_000);
 
