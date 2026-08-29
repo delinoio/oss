@@ -1,6 +1,6 @@
 import { Buffer } from "node:buffer";
 import { fileURLToPath } from "node:url";
-import { dirname, isAbsolute, resolve } from "node:path";
+import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 
 const moduleDirectory = dirname(fileURLToPath(import.meta.url));
 
@@ -12,6 +12,7 @@ export const identityKeyFile = resolve(stateDirectory, "identity-hmac-key");
 export const supportedInfisicalVersion = "0.43.116";
 export const acceptedMarker = "__DEVHUD_CONFIGURATION_ACCEPTED__";
 export const rejectedMarker = "__DEVHUD_CONFIGURATION_REJECTED__";
+export const defaultOssLogtoIssuer = "http://localhost:3001/oidc";
 
 export const modes = Object.freeze(["team", "oss"]);
 
@@ -32,6 +33,56 @@ export class EnvironmentError extends Error {
     this.code = code;
     this.names = [...names].sort();
   }
+}
+
+export function resolveInfisicalConfigPaths(source = process.env) {
+  if (source.DEVHUD_ENVIRONMENT_TESTING !== "1") {
+    return {
+      projectConfigDirectory: repositoryRoot,
+      configFile: infisicalConfig,
+    };
+  }
+  const injectedDirectory = source.DEVHUD_TEST_INFISICAL_CONFIG_DIRECTORY;
+  if (
+    typeof injectedDirectory !== "string" ||
+    injectedDirectory.trim() === "" ||
+    !isAbsolute(injectedDirectory)
+  ) {
+    throw new EnvironmentError(
+      "environment.test-config",
+      "development environment tests require an absolute temporary Infisical config directory",
+    );
+  }
+  const projectConfigDirectory = resolve(injectedDirectory);
+  const relativePath = relative(repositoryRoot, projectConfigDirectory);
+  const insideRepository =
+    relativePath === "" ||
+    (!relativePath.startsWith(`..${sep}`) &&
+      relativePath !== ".." &&
+      !isAbsolute(relativePath));
+  if (insideRepository) {
+    throw new EnvironmentError(
+      "environment.test-config",
+      "development environment tests require an Infisical config directory outside the checkout",
+    );
+  }
+  return {
+    projectConfigDirectory,
+    configFile: resolve(projectConfigDirectory, ".infisical.json"),
+  };
+}
+
+export function resolveOssLogtoIssuer(adminOverride, apiOverride) {
+  const adminIssuer = adminOverride ?? defaultOssLogtoIssuer;
+  const apiIssuer = apiOverride ?? defaultOssLogtoIssuer;
+  if (adminIssuer !== apiIssuer) {
+    throw new EnvironmentError(
+      "environment.issuer-mismatch",
+      "DevHud API and administrator OSS configuration must use the same issuer override",
+      ["DEVHUD_LOGTO_ISSUER"],
+    );
+  }
+  return adminIssuer;
 }
 
 export function resolveLocalStatePaths(source = process.env) {

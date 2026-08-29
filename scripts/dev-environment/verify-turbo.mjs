@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 
 import assert from "node:assert/strict";
-import { collect, commandName, safeBaseEnvironment } from "./process.mjs";
+import { collect, commandInvocation, safeBaseEnvironment } from "./process.mjs";
 import { repositoryRoot } from "./contracts.mjs";
 
+const pnpm = commandInvocation("pnpm");
 const result = await collect(
-  commandName("pnpm"),
+  pnpm.command,
   [
+    ...pnpm.prefix,
     "exec",
     "turbo",
     "run",

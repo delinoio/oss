@@ -4,8 +4,19 @@ import {
   terminateWindowsProcessTree,
 } from "../spawn-dev-server.mjs";
 
-export const commandName = (name, platform = process.platform) =>
-  platform === "win32" && name === "pnpm" ? "pnpm.cmd" : name;
+export function commandInvocation(
+  name,
+  platform = process.platform,
+  source = process.env,
+) {
+  if (platform !== "win32" || name !== "pnpm") {
+    return { command: name, prefix: [] };
+  }
+  return {
+    command: source.ComSpec ?? source.COMSPEC ?? "cmd.exe",
+    prefix: ["/d", "/s", "/c", "pnpm.cmd"],
+  };
+}
 
 export function safeBaseEnvironment(source = process.env) {
   const names = [

@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import {
   apiContract,
+  defaultOssLogtoIssuer,
   EnvironmentError,
   repositoryRoot,
   resolveLocalStatePaths,
@@ -40,7 +41,7 @@ async function ossEnvironment(action) {
   return {
     DEVHUD_DATABASE_URL: "postgres://devhud:devhud@127.0.0.1:5432/devhud?sslmode=disable",
     DEVHUD_PUBLIC_API_URL: "http://127.0.0.1:46307",
-    DEVHUD_LOGTO_ISSUER: "http://localhost:3001/oidc",
+    DEVHUD_LOGTO_ISSUER: defaultOssLogtoIssuer,
     DEVHUD_LOGTO_AUDIENCE: "urn:devhud:oss-unconfigured",
     DEVHUD_LOGTO_DESKTOP_CLIENT_ID: "oss-unconfigured-desktop",
     DEVHUD_LOGTO_IOS_CLIENT_ID: "oss-unconfigured-ios",

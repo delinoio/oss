@@ -4,13 +4,15 @@ const args = process.argv.slice(2);
 const eventLog = process.env.DEVHUD_TEST_EVENT_LOG;
 const action = args.includes("version")
   ? "version"
-  : args.includes("port")
-    ? "port"
-    : args.includes("up")
-      ? "up"
-      : args.includes("down")
-        ? "down"
-        : "unknown";
+  : args.includes("context") && args.includes("inspect")
+    ? "context-inspect"
+    : args.includes("port")
+      ? "port"
+      : args.includes("up")
+        ? "up"
+        : args.includes("down")
+          ? "down"
+          : "unknown";
 
 if (eventLog) {
   await appendFile(
@@ -27,5 +29,10 @@ if (eventLog) {
 }
 
 if (action === "version") process.stdout.write("Docker Compose version v2.40.0\n");
+if (action === "context-inspect") {
+  process.stdout.write(
+    `${process.env.DEVHUD_TEST_DOCKER_ENDPOINT ?? "unix:///tmp/devhud-test-docker.sock"}\n`,
+  );
+}
 if (action === "port") process.exitCode = 1;
 if (action === "up" && process.env.DEVHUD_TEST_DOCKER_UP_FAILURE === "1") process.exitCode = 1;

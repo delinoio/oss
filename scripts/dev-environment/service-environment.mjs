@@ -9,9 +9,10 @@ import {
   rejectedMarker,
   repositoryRoot,
   requireMode,
+  resolveInfisicalConfigPaths,
   validateInjectedEnvironment,
 } from "./contracts.mjs";
-import { commandName, safeBaseEnvironment, terminateTree } from "./process.mjs";
+import { commandInvocation, safeBaseEnvironment, terminateTree } from "./process.mjs";
 import { spawnDevServer } from "../spawn-dev-server.mjs";
 
 function emitRejected(error) {
@@ -154,6 +155,7 @@ async function runTeam({ contract, action, scriptPath, execute }) {
       ? process.env.DEVHUD_TEST_INFISICAL
       : null;
   const executable = fakeExecutable ? process.execPath : "infisical";
+  const { projectConfigDirectory } = resolveInfisicalConfigPaths();
   const args = [
     "--log-level=warn",
     "--silent",
@@ -164,7 +166,7 @@ async function runTeam({ contract, action, scriptPath, execute }) {
     "--secret-overriding=false",
     "--expand=false",
     "--include-imports=false",
-    `--project-config-dir=${repositoryRoot}`,
+    `--project-config-dir=${projectConfigDirectory}`,
     "--",
     process.execPath,
     scriptPath,
@@ -254,5 +256,11 @@ export async function runService({ contract, action, scriptPath, ossEnvironment,
 }
 
 export async function executeArgv(command, args, environment, cwd = repositoryRoot) {
-  return runChild(commandName(command), args, environment, cwd);
+  const invocation = commandInvocation(command);
+  return runChild(
+    invocation.command,
+    [...invocation.prefix, ...args],
+    environment,
+    cwd,
+  );
 }

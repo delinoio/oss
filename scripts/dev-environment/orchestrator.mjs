@@ -6,14 +6,14 @@ import { createHash, randomBytes } from "node:crypto";
 import { resolve } from "node:path";
 import {
   composeFile,
-  infisicalConfig,
   repositoryRoot,
+  resolveInfisicalConfigPaths,
   resolveLocalStatePaths,
   supportedInfisicalVersion,
 } from "./contracts.mjs";
 import {
   collect,
-  commandName,
+  commandInvocation,
   dockerClientEnvironment,
   inherited,
   safeBaseEnvironment,
@@ -154,7 +154,7 @@ function toolInvocation(name, overrideName) {
     process.env.DEVHUD_ENVIRONMENT_TESTING === "1" ? process.env[overrideName] : null;
   return fake
     ? { command: process.execPath, prefix: [fake] }
-    : { command: name, prefix: [] };
+    : commandInvocation(name);
 }
 
 function dockerInvocation() {
@@ -252,10 +252,10 @@ async function authenticated() {
   return result.code === 0;
 }
 
-async function runInteractiveInfisical(args) {
+async function runInteractiveInfisical(args, cwd = repositoryRoot) {
   const infisical = infisicalInvocation();
   const result = await inherited(infisical.command, [...infisical.prefix, ...args], {
-    cwd: repositoryRoot,
+    cwd,
     env: rootChildEnvironment("team"),
   });
   if (result.code !== 0 || result.signal) {
@@ -266,8 +266,13 @@ async function runInteractiveInfisical(args) {
 export async function login() {
   await exactInfisicalVersion();
   if (!(await authenticated())) await runInteractiveInfisical(["--telemetry=false", "login"]);
-  if (!(await exists(infisicalConfig))) {
-    await runInteractiveInfisical(["--telemetry=false", "init"]);
+  const { configFile, projectConfigDirectory } = resolveInfisicalConfigPaths();
+  if (!(await exists(configFile))) {
+    await mkdir(projectConfigDirectory, { recursive: true });
+    await runInteractiveInfisical(
+      ["--telemetry=false", "init"],
+      projectConfigDirectory,
+    );
   }
   process.stdout.write("Team environment authentication and local project configuration are ready.\n");
 }
@@ -297,6 +302,58 @@ async function checkDocker() {
   }
   if (result.code !== 0) {
     throw new Error("[tool.missing] Docker with Compose support is required for pnpm dev:oss");
+  }
+  await assertLocalDockerDaemon(docker);
+}
+
+export function dockerEndpointIsLocal(endpoint) {
+  if (typeof endpoint !== "string" || endpoint.trim() === "") return false;
+  let parsed;
+  try {
+    parsed = new URL(endpoint.trim());
+  } catch {
+    return false;
+  }
+  if (["unix:", "npipe:"].includes(parsed.protocol)) return true;
+  return (
+    parsed.protocol === "tcp:" &&
+    ["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname)
+  );
+}
+
+async function inspectDockerEndpoint(docker, context) {
+  const result = await collect(
+    docker.command,
+    [
+      ...docker.prefix,
+      "context",
+      "inspect",
+      ...(context ? [context] : []),
+      "--format",
+      '{{ (index .Endpoints "docker").Host }}',
+    ],
+    { cwd: repositoryRoot, env: dockerChildEnvironment() },
+  );
+  const endpoint = result.stdout.trim();
+  if (result.code !== 0 || result.signal || endpoint === "") {
+    throw new Error(
+      "[docker.context] selected Docker context endpoint could not be inspected",
+    );
+  }
+  return endpoint;
+}
+
+async function assertLocalDockerDaemon(docker) {
+  const selectors = dockerClientEnvironment();
+  const selectedContext = selectors.DOCKER_CONTEXT?.trim();
+  const selectedHost = selectors.DOCKER_HOST?.trim();
+  const endpoint = selectedContext
+    ? await inspectDockerEndpoint(docker, selectedContext)
+    : selectedHost || (await inspectDockerEndpoint(docker));
+  if (!dockerEndpointIsLocal(endpoint)) {
+    throw new Error(
+      "[docker.remote-daemon] pnpm dev:oss requires a local Docker socket, named pipe, or loopback TCP endpoint",
+    );
   }
 }
 
@@ -360,7 +417,7 @@ export async function down({ quiet = false, projectName } = {}) {
 }
 
 async function startTurbo(lifecycle, mode) {
-  const pnpm = toolInvocation(commandName("pnpm"), "DEVHUD_TEST_PNPM");
+  const pnpm = toolInvocation("pnpm", "DEVHUD_TEST_PNPM");
   return lifecycle.run(
     pnpm.command,
     [
@@ -444,7 +501,8 @@ export async function start(mode) {
 
 export async function doctor() {
   await exactInfisicalVersion();
-  if (!(await exists(infisicalConfig))) {
+  const { configFile } = resolveInfisicalConfigPaths();
+  if (!(await exists(configFile))) {
     throw new Error("[project.uninitialized] local Infisical project configuration is missing; run pnpm env:login");
   }
   if (!(await authenticated())) {

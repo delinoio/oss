@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
-import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,19 +11,21 @@ import {
   apiContract,
   composeFile,
   EnvironmentError,
-  infisicalConfig,
   repositoryRoot,
   requireMode,
+  resolveInfisicalConfigPaths,
   resolveLocalStatePaths,
+  resolveOssLogtoIssuer,
   validateInjectedEnvironment,
 } from "./contracts.mjs";
 import {
   assertFixedPort,
   composeProjectName,
   createLocalIdentityKey,
+  dockerEndpointIsLocal,
   Lifecycle,
 } from "./orchestrator.mjs";
-import { commandName, dockerClientEnvironment } from "./process.mjs";
+import { commandInvocation, dockerClientEnvironment } from "./process.mjs";
 import { readServiceEnv } from "./service-environment.mjs";
 
 const testDirectory = dirname(fileURLToPath(import.meta.url));
@@ -86,9 +88,14 @@ function fakeEnvironment(temporaryDirectory) {
     DEVHUD_ENVIRONMENT_TESTING: "1",
     DEVHUD_TEST_AUTH_STATE: resolve(temporaryDirectory, "auth-state"),
     DEVHUD_TEST_DOCKER: resolve(fakeDirectory, "fake-docker.mjs"),
+    DEVHUD_TEST_DOCKER_ENDPOINT: "unix:///tmp/devhud-review-docker.sock",
     DEVHUD_TEST_EVENT_LOG: resolve(temporaryDirectory, "events.jsonl"),
     DEVHUD_TEST_GO: resolve(fakeDirectory, "fake-go.mjs"),
     DEVHUD_TEST_INFISICAL: resolve(fakeDirectory, "fake-infisical.mjs"),
+    DEVHUD_TEST_INFISICAL_CONFIG_DIRECTORY: resolve(
+      temporaryDirectory,
+      "infisical-config",
+    ),
     DEVHUD_TEST_PNPM: resolve(fakeDirectory, "fake-pnpm.mjs"),
     DEVHUD_TEST_STATE_DIRECTORY: resolve(temporaryDirectory, "state"),
   };
@@ -113,11 +120,46 @@ test("mode is a bounded enum-style selector", () => {
   assert.throws(() => requireMode("production"), /mode must be exactly/u);
 });
 
-test("Windows command resolution preserves native executables", () => {
-  assert.equal(commandName("pnpm", "win32"), "pnpm.cmd");
-  assert.equal(commandName("go", "win32"), "go");
-  assert.equal(commandName("C:\\Go\\bin\\go.exe", "win32"), "C:\\Go\\bin\\go.exe");
-  assert.equal(commandName("pnpm", "linux"), "pnpm");
+test("Windows pnpm invocation uses cmd.exe while native executables remain direct", () => {
+  assert.deepEqual(
+    commandInvocation("pnpm", "win32", {
+      ComSpec: "C:\\Windows\\System32\\cmd.exe",
+    }),
+    {
+      command: "C:\\Windows\\System32\\cmd.exe",
+      prefix: ["/d", "/s", "/c", "pnpm.cmd"],
+    },
+  );
+  assert.deepEqual(commandInvocation("pnpm", "win32", {}), {
+    command: "cmd.exe",
+    prefix: ["/d", "/s", "/c", "pnpm.cmd"],
+  });
+  assert.deepEqual(commandInvocation("go", "win32"), {
+    command: "go",
+    prefix: [],
+  });
+  assert.deepEqual(commandInvocation("pnpm", "linux"), {
+    command: "pnpm",
+    prefix: [],
+  });
+});
+
+test("temporary Infisical config paths must stay outside the checkout", () => {
+  assert.throws(
+    () => resolveInfisicalConfigPaths({ DEVHUD_ENVIRONMENT_TESTING: "1" }),
+    /absolute temporary Infisical config directory/u,
+  );
+  assert.throws(
+    () =>
+      resolveInfisicalConfigPaths({
+        DEVHUD_ENVIRONMENT_TESTING: "1",
+        DEVHUD_TEST_INFISICAL_CONFIG_DIRECTORY: resolve(
+          repositoryRoot,
+          "temporary-config",
+        ),
+      }),
+    /outside the checkout/u,
+  );
 });
 
 test("Docker daemon selection is the only Docker-specific ambient configuration preserved", () => {
@@ -133,6 +175,27 @@ test("Docker daemon selection is the only Docker-specific ambient configuration 
       DOCKER_CONTEXT: "rootless",
     },
   );
+});
+
+test("Docker endpoint validation accepts only locally reachable daemon transports", () => {
+  for (const endpoint of [
+    "unix:///var/run/docker.sock",
+    "npipe:////./pipe/docker_engine",
+    "tcp://localhost:2375",
+    "tcp://127.0.0.1:2375",
+    "tcp://[::1]:2375",
+  ]) {
+    assert.equal(dockerEndpointIsLocal(endpoint), true, endpoint);
+  }
+  for (const endpoint of [
+    "tcp://192.0.2.10:2376",
+    "ssh://developer@example.test",
+    "https://localhost:2376",
+    "not-a-docker-endpoint",
+    "",
+  ]) {
+    assert.equal(dockerEndpointIsLocal(endpoint), false, endpoint);
+  }
 });
 
 test("Compose project names are stable, checkout-scoped, and do not disclose the key", () => {
@@ -171,7 +234,7 @@ test("API and administrator allowlists reject missing, unknown, changed baseline
   );
 });
 
-test("OSS API and administrator overrides accept the same contributor-owned issuer", async (t) => {
+test("OSS API and administrator overrides must resolve to the same issuer", async (t) => {
   const temporaryDirectory = await mkdtemp(resolve(tmpdir(), "devhud-issuer-test-"));
   t.after(() => rm(temporaryDirectory, { recursive: true, force: true }));
   const environmentFile = resolve(temporaryDirectory, ".env");
@@ -188,18 +251,29 @@ test("OSS API and administrator overrides accept the same contributor-owned issu
     issuer,
   );
   assert.deepEqual(validateInjectedEnvironment(adminContract, adminOverrides), adminOverrides);
+  assert.equal(resolveOssLogtoIssuer(issuer, issuer), issuer);
+  assert.equal(
+    resolveOssLogtoIssuer(undefined, undefined),
+    "http://localhost:3001/oidc",
+  );
+  assert.throws(
+    () => resolveOssLogtoIssuer(issuer, "https://other.example.test/oidc"),
+    (error) =>
+      error instanceof EnvironmentError && error.code === "environment.issuer-mismatch",
+  );
+  assert.throws(
+    () => resolveOssLogtoIssuer(undefined, issuer),
+    (error) =>
+      error instanceof EnvironmentError && error.code === "environment.issuer-mismatch",
+  );
 });
 
 test("team startup initializes only once and uses exact Infisical paths and flags without disclosure", async (t) => {
   const temporaryDirectory = await mkdtemp(resolve(tmpdir(), "devhud-team-test-"));
-  const configBackup = await readFile(infisicalConfig, "utf8").catch(() => null);
-  await rm(infisicalConfig, { force: true });
-  t.after(async () => {
-    await rm(infisicalConfig, { force: true });
-    if (configBackup !== null) await writeFile(infisicalConfig, configBackup, "utf8");
-    await rm(temporaryDirectory, { recursive: true, force: true });
-  });
+  t.after(() => rm(temporaryDirectory, { recursive: true, force: true }));
   const environment = fakeEnvironment(temporaryDirectory);
+  const { configFile, projectConfigDirectory } =
+    resolveInfisicalConfigPaths(environment);
 
   for (let index = 0; index < 2; index += 1) {
     const result = await runNode(cli, ["start", "team"], environment);
@@ -211,6 +285,7 @@ test("team startup initializes only once and uses exact Infisical paths and flag
   const recorded = await events(environment.DEVHUD_TEST_EVENT_LOG);
   assert.equal(recorded.filter((event) => event.action === "login").length, 1);
   assert.equal(recorded.filter((event) => event.action === "init").length, 1);
+  assert.equal(await readFile(configFile, "utf8"), "{}\n");
   const runs = recorded.filter((event) => event.action === "run");
   assert.ok(runs.some((event) => event.path === "/devhud/api"));
   assert.ok(runs.some((event) => event.path === "/devhud/admin"));
@@ -224,6 +299,7 @@ test("team startup initializes only once and uses exact Infisical paths and flag
       "--log-level=warn",
       "--silent",
       "--telemetry=false",
+      `--project-config-dir=${projectConfigDirectory}`,
     ]) {
       assert.ok(event.args.includes(flag), flag);
     }
@@ -240,18 +316,16 @@ test("team startup initializes only once and uses exact Infisical paths and flag
 
 test("team authentication or path failure is fail-closed and does not invoke OSS", async (t) => {
   const temporaryDirectory = await mkdtemp(resolve(tmpdir(), "devhud-team-failure-"));
-  const configBackup = await readFile(infisicalConfig, "utf8").catch(() => null);
-  await writeFile(infisicalConfig, "{}\n", "utf8");
   const environment = {
     ...fakeEnvironment(temporaryDirectory),
     DEVHUD_TEST_INFISICAL_FAILURE: "/devhud/api",
   };
+  const { configFile, projectConfigDirectory } =
+    resolveInfisicalConfigPaths(environment);
+  await mkdir(projectConfigDirectory, { recursive: true });
+  await writeFile(configFile, "{}\n", "utf8");
   await writeFile(environment.DEVHUD_TEST_AUTH_STATE, "authenticated\n", "utf8");
-  t.after(async () => {
-    await rm(infisicalConfig, { force: true });
-    if (configBackup !== null) await writeFile(infisicalConfig, configBackup, "utf8");
-    await rm(temporaryDirectory, { recursive: true, force: true });
-  });
+  t.after(() => rm(temporaryDirectory, { recursive: true, force: true }));
 
   const result = await runNode(cli, ["start", "team"], environment);
   assert.equal(result.code, 1);
@@ -321,6 +395,32 @@ test("administrator preflight probes the configured localhost binding", async (t
   assert.match(result.stderr, /DevHud administrator requires fixed port 46306/u);
   assert.deepEqual(await events(environment.DEVHUD_TEST_EVENT_LOG), []);
 });
+
+for (const selector of ["context", "host"]) {
+  test(`OSS startup rejects a remote Docker ${selector} before Compose startup`, async (t) => {
+    const temporaryDirectory = await mkdtemp(
+      resolve(tmpdir(), `devhud-remote-docker-${selector}-`),
+    );
+    t.after(() => rm(temporaryDirectory, { recursive: true, force: true }));
+    const environment = fakeEnvironment(temporaryDirectory);
+    if (selector === "context") {
+      environment.DOCKER_CONTEXT = "remote-review-context";
+      environment.DOCKER_HOST = "unix:///tmp/ignored-local-docker.sock";
+      environment.DEVHUD_TEST_DOCKER_ENDPOINT = "tcp://192.0.2.10:2376";
+    } else {
+      delete environment.DOCKER_CONTEXT;
+      environment.DOCKER_HOST = "ssh://developer@example.test";
+    }
+
+    const result = await runNode(cli, ["start", "oss"], environment);
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, /\[docker\.remote-daemon\]/u);
+    const recorded = await events(environment.DEVHUD_TEST_EVENT_LOG);
+    assert.equal(recorded.some((event) => event.action === "up"), false);
+    assert.equal(recorded.some((event) => event.tool === "go"), false);
+    assert.equal(recorded.some((event) => event.tool === "pnpm"), false);
+  });
+}
 
 test("OSS startup never invokes Infisical, orders health before migration and Turbo, and preserves volumes", async (t) => {
   const temporaryDirectory = await mkdtemp(resolve(tmpdir(), "devhud-oss-test-"));

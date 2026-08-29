@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 
 import { exitLikeChild, spawnDevServer } from "./spawn-dev-server.mjs";
+import { commandInvocation } from "./dev-environment/process.mjs";
 
 const [appName, portText, ...rawRsbuildArgs] = process.argv.slice(2);
 const port = Number(portText);
 const rsbuildArgs =
   rawRsbuildArgs[0] === "--" ? rawRsbuildArgs.slice(1) : rawRsbuildArgs;
-const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
+const pnpm = commandInvocation("pnpm");
 
 if (!appName || !Number.isInteger(port) || port < 1 || port > 65535) {
   console.error(
@@ -32,8 +33,9 @@ if (addressOverride) {
 
 try {
   const result = await spawnDevServer(
-    pnpm,
+    pnpm.command,
     [
+      ...pnpm.prefix,
       "exec",
       "rsbuild",
       "dev",
