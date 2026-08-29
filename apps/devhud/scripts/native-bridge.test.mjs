@@ -18,6 +18,7 @@ const desktopSecureStore = readFileSync(join(dirname(fileURLToPath(import.meta.u
 const desktopHost = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/main.rs"), "utf8");
 const nativeBridgeHost = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/bridge.rs"), "utf8");
 const nativeShortcuts = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/shortcuts.rs"), "utf8");
+const macosShortcutListener = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/macos_shortcut_listener.rs"), "utf8");
 const nativeCapture = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/capture.rs"), "utf8");
 const nativeUpdater = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/updater.rs"), "utf8");
 const nativeUploads = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/uploads.rs"), "utf8");
@@ -255,6 +256,34 @@ test("native shortcut boundary is physical-key-only and redacts unrelated input"
   assert.match(nativeShortcuts, /_\s*=> None/u);
   assert.match(nativeShortcuts, /never exposes raw input/u);
   assert.doesNotMatch(nativeShortcuts, /println!|info!|debug!|warn!/u);
+});
+
+test("macOS shortcut listener is listen-only, physical-code-only, and leaves events unchanged", () => {
+  for (const marker of [
+    "CG_EVENT_KEY_DOWN",
+    "CG_EVENT_KEY_UP",
+    "CG_EVENT_FLAGS_CHANGED",
+    "CG_EVENT_TAP_OPTION_LISTEN_ONLY",
+    "CG_KEYBOARD_EVENT_KEYCODE",
+    "CGEventGetIntegerValueField",
+    "normalize_native_key(ShortcutPlatform::Macos",
+  ]) {
+    assert.match(macosShortcutListener, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));
+  }
+  assert.match(macosShortcutListener, /_ => return event/u);
+  assert.match(macosShortcutListener, /return event;[\s\S]*\n\s*event\n\s*\}/u);
+  assert.doesNotMatch(
+    macosShortcutListener,
+    /TIS|UCKeyTranslate|CGEventKeyboardGetUnicodeString|CGEventSet|CGEventTapPostEvent|CGEventCreateData|CGEventCreateKeyboardEvent/u,
+  );
+  assert.doesNotMatch(macosShortcutListener, /tracing::|println!|info!|debug!|warn!|error!/u);
+});
+
+test("rdev is declared only for Windows and Linux desktop targets", () => {
+  const targetSection = appCargo.match(/\[target\.'cfg\(any\(target_os = "windows", target_os = "linux"\)\)'\.dependencies\]\n([\s\S]*?)(?=\n\[|$)/u)?.[1] ?? "";
+  const generalDesktopSection = appCargo.match(/\[target\.'cfg\(not\(any\(target_os = "android", target_os = "ios"\)\)\)'\.dependencies\]\n([\s\S]*?)(?=\n\[|$)/u)?.[1] ?? "";
+  assert.match(targetSection, /^rdev = "0\.5\.3"$/mu);
+  assert.doesNotMatch(generalDesktopSection, /^rdev\s*=/mu);
 });
 
 test("RealQA requests are bounded and capture data stays out of logs and recording APIs", () => {

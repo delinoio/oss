@@ -28,6 +28,23 @@ export function resolvedPackageClosure(metadata, rootPackageId) {
   return { nodesById, packageIds, packagesById };
 }
 
+export function validateDependencyPresence(
+  metadata,
+  rootPackageId,
+  dependencyName,
+  expected,
+  target,
+) {
+  const closure = resolvedPackageClosure(metadata, rootPackageId);
+  const present = [...closure.packageIds].some(
+    (packageId) => closure.packagesById.get(packageId)?.name === dependencyName,
+  );
+  assert(
+    present === expected,
+    `${dependencyName} ${expected ? "is missing from" : "must be absent from"} ${target}`,
+  );
+}
+
 export function validateResolvedDependencySources(
   metadata,
   rootPackageId,
