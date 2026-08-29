@@ -64,9 +64,16 @@ test("DevHud jobs self-gate and the path contract covers every implemented bound
     "apps/public-docs/**", ".github/workflows/package-devhud-private.yml", ".github/workflows/release-devhud.yml",
     ".github/workflows/devhud-cef-security-review.yml",
   ]) assert.ok(workflowSource.includes(`- ${path}`), path);
-  assert.ok(JSON.stringify(step(workflow.jobs["devhud-api"], "filter")).includes("scripts/ci/check-go-format.mjs"));
+  const apiFilter = JSON.stringify(step(workflow.jobs["devhud-api"], "filter"));
+  for (const path of ["pnpm-workspace.yaml", "scripts/ci/check-go-format.mjs"]) {
+    assert.ok(apiFilter.includes(path), `devhud-api: ${path}`);
+  }
   assert.ok(JSON.stringify(step(workflow.jobs["devhud-admin"], "filter")).includes(".nvmrc"));
   assert.ok(JSON.stringify(step(workflow.jobs["devhud-protocol"], "filter")).includes("turbo.json"));
+  for (const id of ["devhud-frontend", "devhud-extension", "devhud-rust-conformance"]) {
+    const filter = JSON.stringify(step(workflow.jobs[id], "filter"));
+    assert.ok(filter.includes(".nvmrc"), `${id}: .nvmrc`);
+  }
   const securityFilter = JSON.stringify(step(workflow.jobs["devhud-security"], "filter"));
   for (const path of [".nvmrc", "package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml", "turbo.json"]) {
     assert.ok(securityFilter.includes(path), `devhud-security: ${path}`);
@@ -157,6 +164,12 @@ test("implemented DevHud conformance commands are wired to their owning jobs", (
     const source = JSON.stringify(workflow.jobs[id]);
     for (const command of expected) assert.ok(source.includes(command), `${id}: ${command}`);
   }
+  const apiCommands = workflow.jobs["devhud-api"].steps
+    .filter((candidate) => typeof candidate.run === "string")
+    .flatMap((candidate) => candidate.run.split("\n"))
+    .filter((line) => line.includes("pnpm --filter @delinoio/devhud-api"));
+  assert.equal(apiCommands.length, 8);
+  for (const command of apiCommands) assert.match(command, /--fail-if-no-match ci:/u);
   assert.match(packages["apps/devhud/package.json"].scripts.test, /^pnpm lint && pnpm test:unit && pnpm test:components/u);
   assert.match(JSON.stringify(workflow.jobs["devhud-security"]), /pnpm exec turbo run test:security test:adapters --filter devhud/u);
 });
@@ -192,6 +205,30 @@ test("Debian desktop validation installs, launches, unregisters, and removes the
   const uninstall = lifecycle.indexOf('sudo dpkg -r "$package"');
   const removed = lifecycle.indexOf('test ! -e "$user_manifest"');
   assert.ok(register >= 0 && register < registered && registered < uninstall && uninstall < removed);
+});
+
+test("macOS and AppImage desktop validation exercises packaged Native Messaging lifecycles", () => {
+  const macOS = namedStep(workflow.jobs["devhud-desktop"], "Verify macOS Native Messaging register and unregister lifecycle").run;
+  for (const expected of [
+    "DEVHUD_SMOKE_NATIVE_HOST", "devhud-native-home", "Library/Application Support/Google/Chrome/NativeMessagingHosts",
+    "jq -e", "register", "unregister",
+  ]) assert.ok(macOS.includes(expected), `macOS: ${expected}`);
+  const macRegister = macOS.indexOf('"$DEVHUD_SMOKE_NATIVE_HOST" register "$DEVHUD_SMOKE_NATIVE_HOST"');
+  const macRegistered = macOS.indexOf('test -e "$user_manifest"', macRegister);
+  const macUnregister = macOS.indexOf('"$DEVHUD_SMOKE_NATIVE_HOST" unregister', macRegistered);
+  const macRemoved = macOS.indexOf('test ! -e "$user_manifest"', macUnregister);
+  assert.ok(macRegister >= 0 && macRegister < macRegistered && macRegistered < macUnregister && macUnregister < macRemoved);
+
+  const appImage = namedStep(workflow.jobs["devhud-desktop"], "Verify Ubuntu AppImage Native Messaging register and unregister lifecycle").run;
+  for (const expected of [
+    "DEVHUD_SMOKE_NATIVE_HOST", "devhud-native-home", ".config/google-chrome/NativeMessagingHosts",
+    "dbus-run-session", "gnome-keyring-daemon", "jq -e",
+  ]) assert.ok(appImage.includes(expected), `AppImage: ${expected}`);
+  const appImageRegister = appImage.indexOf('"$host" register "$host"');
+  const appImageRegistered = appImage.indexOf('test -e "$user_manifest"', appImageRegister);
+  const appImageUnregister = appImage.indexOf('"$host" unregister', appImageRegistered);
+  const appImageRemoved = appImage.indexOf('test ! -e "$user_manifest"', appImageUnregister);
+  assert.ok(appImageRegister >= 0 && appImageRegister < appImageRegistered && appImageRegistered < appImageUnregister && appImageUnregister < appImageRemoved);
 });
 
 test("package-local CI commands and deterministic cache boundaries are explicit", () => {

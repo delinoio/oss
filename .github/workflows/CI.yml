@@ -922,6 +922,7 @@ jobs:
             ci_workflow:
               - .github/workflows/CI.yml
             devhud_frontend:
+              - .nvmrc
               - package.json
               - pnpm-lock.yaml
               - pnpm-workspace.yaml
@@ -1001,6 +1002,7 @@ jobs:
           filters: |
             extension:
               - .github/workflows/CI.yml
+              - .nvmrc
               - package.json
               - pnpm-lock.yaml
               - pnpm-workspace.yaml
@@ -1072,6 +1074,7 @@ jobs:
           filters: |
             rust_conformance:
               - .github/workflows/CI.yml
+              - .nvmrc
               - Cargo.toml
               - Cargo.lock
               - rust-toolchain
@@ -1392,7 +1395,10 @@ jobs:
           hdiutil detach "$mount"
           host=$(find "$installed" -type f -name devhud-native-messaging-host -print -quit)
           test -x "$host"
-          echo "DEVHUD_SMOKE_ARTIFACT=$installed/Contents/MacOS/devhud" >> "$GITHUB_ENV"
+          {
+            echo "DEVHUD_SMOKE_ARTIFACT=$installed/Contents/MacOS/devhud"
+            echo "DEVHUD_SMOKE_NATIVE_HOST=$host"
+          } >> "$GITHUB_ENV"
 
       - name: Prepare Ubuntu installed layout
         if: ${{ steps.gate.outputs.run == 'true' && matrix.os == 'linux' }}
@@ -1436,9 +1442,11 @@ jobs:
             sudo chmod 4755 squashfs-root/usr/share/DevHUD/chrome-sandbox
             artifact="${{ github.workspace }}/squashfs-root/usr/bin/devhud"
             host=$(find squashfs-root -type f -name devhud-native-messaging-host -print -quit)
+            host=$(realpath "$host")
             {
               echo "DEVHUD_SMOKE_APPIMAGE=${{ github.workspace }}/${appimages[0]}"
               echo "DEVHUD_SMOKE_APPDIR=${{ github.workspace }}/squashfs-root"
+              echo "DEVHUD_SMOKE_NATIVE_HOST=$host"
             } >> "$GITHUB_ENV"
           fi
           test -x "$host"
@@ -1447,6 +1455,18 @@ jobs:
       - name: Run macOS platform smoke
         if: ${{ steps.gate.outputs.run == 'true' && matrix.os == 'macos' }}
         run: pnpm --filter devhud smoke:platform -- --artifact "$DEVHUD_SMOKE_ARTIFACT"
+
+      - name: Verify macOS Native Messaging register and unregister lifecycle
+        if: ${{ steps.gate.outputs.run == 'true' && matrix.os == 'macos' }}
+        run: |
+          set -euo pipefail
+          native_home="$RUNNER_TEMP/devhud-native-home"
+          user_manifest="$native_home/Library/Application Support/Google/Chrome/NativeMessagingHosts/io.delino.devhud.native_messaging.json"
+          HOME="$native_home" "$DEVHUD_SMOKE_NATIVE_HOST" register "$DEVHUD_SMOKE_NATIVE_HOST"
+          test -e "$user_manifest"
+          jq -e --arg expected "$DEVHUD_SMOKE_NATIVE_HOST" '.path == $expected' "$user_manifest" >/dev/null
+          HOME="$native_home" "$DEVHUD_SMOKE_NATIVE_HOST" unregister
+          test ! -e "$user_manifest"
 
       - name: Run Windows platform smoke
         if: ${{ steps.gate.outputs.run == 'true' && matrix.os == 'windows' }}
@@ -1459,6 +1479,37 @@ jobs:
           XDG_SESSION_TYPE: x11
           WAYLAND_DISPLAY: ""
         run: APPIMAGE="$DEVHUD_SMOKE_APPIMAGE" APPDIR="$DEVHUD_SMOKE_APPDIR" dbus-run-session -- xvfb-run -a pnpm --filter devhud smoke:platform -- --artifact "$DEVHUD_SMOKE_ARTIFACT"
+
+      - name: Verify Ubuntu AppImage Native Messaging register and unregister lifecycle
+        if: ${{ steps.gate.outputs.run == 'true' && matrix.os == 'linux' && matrix.bundle == 'appimage' }}
+        run: |
+          set -euo pipefail
+          native_home="$RUNNER_TEMP/devhud-native-home"
+          user_manifest="$native_home/.config/google-chrome/NativeMessagingHosts/io.delino.devhud.native_messaging.json"
+          # The nested shell expands positional parameters and session variables.
+          # shellcheck disable=SC2016
+          dbus-run-session -- bash -euo pipefail -c '
+            export HOME="$1"
+            host="$2"
+            user_manifest="$3"
+            unset GNOME_KEYRING_CONTROL
+            control_directory="$HOME/.cache/keyring"
+            mkdir -p "$control_directory"
+            chmod 700 "$control_directory"
+            gnome-keyring-daemon --foreground --components=secrets --control-directory="$control_directory" >/dev/null &
+            keyring_pid=$!
+            stop_keyring() {
+              kill "$keyring_pid" 2>/dev/null || true
+              wait "$keyring_pid" 2>/dev/null || true
+            }
+            trap stop_keyring EXIT
+            gdbus wait --session --timeout=5 org.freedesktop.secrets >/dev/null
+            "$host" register "$host"
+            test -e "$user_manifest"
+            jq -e --arg expected "$host" ".path == \$expected" "$user_manifest" >/dev/null
+            "$host" unregister
+            test ! -e "$user_manifest"
+          ' native-messaging-lifecycle "$native_home" "$DEVHUD_SMOKE_NATIVE_HOST" "$user_manifest"
 
       - name: Verify Ubuntu Debian Native Messaging install and uninstall lifecycle
         if: ${{ steps.gate.outputs.run == 'true' && matrix.os == 'linux' && matrix.bundle == 'deb' }}
@@ -2063,6 +2114,7 @@ jobs:
               - .github/workflows/CI.yml
               - go.mod
               - go.sum
+              - pnpm-workspace.yaml
               - protos/**
               - servers/**
               - scripts/ci/check-go-format.mjs
@@ -2103,19 +2155,19 @@ jobs:
       - name: Check API formatting, vet, builds, and unit tests
         if: ${{ steps.gate.outputs.run == 'true' }}
         run: |
-          pnpm --filter @delinoio/devhud-api ci:format
-          pnpm --filter @delinoio/devhud-api ci:vet
-          pnpm --filter @delinoio/devhud-api ci:build
-          pnpm --filter @delinoio/devhud-api ci:unit
-          pnpm --filter @delinoio/devhud-api ci:migrations
-          pnpm --filter @delinoio/devhud-api ci:api
-          pnpm --filter @delinoio/devhud-api ci:sweeper
+          pnpm --filter @delinoio/devhud-api --fail-if-no-match ci:format
+          pnpm --filter @delinoio/devhud-api --fail-if-no-match ci:vet
+          pnpm --filter @delinoio/devhud-api --fail-if-no-match ci:build
+          pnpm --filter @delinoio/devhud-api --fail-if-no-match ci:unit
+          pnpm --filter @delinoio/devhud-api --fail-if-no-match ci:migrations
+          pnpm --filter @delinoio/devhud-api --fail-if-no-match ci:api
+          pnpm --filter @delinoio/devhud-api --fail-if-no-match ci:sweeper
 
       - name: Run PostgreSQL migration and integration tests
         if: ${{ steps.gate.outputs.run == 'true' }}
         env:
           DEVHUD_TEST_DATABASE_URL: postgres://devhud:devhud@127.0.0.1:5432/devhud_api_test?sslmode=disable
-        run: pnpm --filter @delinoio/devhud-api ci:integration
+        run: pnpm --filter @delinoio/devhud-api --fail-if-no-match ci:integration
 
   devhud-oci:
     name: DevHud ${{ matrix.target }} non-root OCI
