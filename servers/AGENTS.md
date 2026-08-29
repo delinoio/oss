@@ -3,6 +3,8 @@
 - Follow root `AGENTS.md` and the owning project/domain contracts.
 - Keep service contracts, ownership, security, retention, and deployment prerequisites in `docs/` before runtime implementation.
 - Write Go code and comments in English; use `log/slog` structured logging and never log secrets or sensitive payloads.
+- `servers/devhud-api` is a pnpm workspace package for local orchestration and owns its validation, migration, and serve wrapper. Team configuration must use the exact API allowlist in `docs/repository-environment-contract.md`; reject missing/unknown/invalid names and partial upload groups before migrations or startup, then construct a sanitized child environment.
+- OSS development owns only generated local identity material and safe loopback configuration. It must leave official R2/Cloudflare uploads unconfigured and must not fabricate Logto users, administrators, applications, or secrets. Production, deployment, sweeper, release, and signing configuration remains outside the team development secret manager.
 
 ### Scope in This Domain
 

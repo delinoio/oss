@@ -1,0 +1,409 @@
+import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { createServer } from "node:net";
+import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import test from "node:test";
+import {
+  adminContract,
+  apiContract,
+  composeFile,
+  EnvironmentError,
+  identityKeyFile,
+  infisicalConfig,
+  repositoryRoot,
+  requireMode,
+  stateDirectory,
+  validateInjectedEnvironment,
+} from "./contracts.mjs";
+import {
+  assertFixedPort,
+  createLocalIdentityKey,
+  Lifecycle,
+} from "./orchestrator.mjs";
+
+const testDirectory = dirname(fileURLToPath(import.meta.url));
+const fakeDirectory = resolve(testDirectory, "test");
+const cli = resolve(testDirectory, "cli.mjs");
+const apiScript = resolve(repositoryRoot, "servers/devhud-api/scripts/local.mjs");
+const canaries = [
+  "AUTH_TOKEN_MUST_NOT_LEAK",
+  "INFISICAL_FAILURE_CANARY_MUST_NOT_LEAK",
+  "API_DATABASE_CANARY",
+  "API_AUDIENCE_CANARY",
+  "API_DESKTOP_CANARY",
+  "UNKNOWN_VALUE_CANARY",
+];
+
+function validApiEnvironment() {
+  return {
+    DEVHUD_DATABASE_URL: "postgres://devhud:devhud@127.0.0.1:5432/devhud?sslmode=disable",
+    DEVHUD_PUBLIC_API_URL: "http://127.0.0.1:46307",
+    DEVHUD_LOGTO_ISSUER: "http://localhost:3001/oidc",
+    DEVHUD_LOGTO_AUDIENCE: "urn:devhud:test",
+    DEVHUD_LOGTO_DESKTOP_CLIENT_ID: "desktop",
+    DEVHUD_LOGTO_IOS_CLIENT_ID: "ios",
+    DEVHUD_LOGTO_ANDROID_CLIENT_ID: "android",
+    DEVHUD_LOGTO_ADMIN_CLIENT_ID: "admin",
+    DEVHUD_ADMIN_REDIRECT_URI: "http://localhost:46306/auth/callback",
+    DEVHUD_PUBLIC_ASSET_BASE_URL: "http://127.0.0.1:46307",
+    DEVHUD_IDENTITY_HMAC_KEYS: "MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE=",
+  };
+}
+
+async function runNode(script, args, environment) {
+  const child = spawn(process.execPath, [script, ...args], {
+    cwd: repositoryRoot,
+    env: environment,
+    shell: false,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const stdout = [];
+  const stderr = [];
+  child.stdout.on("data", (chunk) => stdout.push(chunk));
+  child.stderr.on("data", (chunk) => stderr.push(chunk));
+  const result = await new Promise((resolveResult, reject) => {
+    child.once("error", reject);
+    child.once("exit", (code, signal) => resolveResult({ code, signal }));
+  });
+  return {
+    ...result,
+    stdout: Buffer.concat(stdout).toString("utf8"),
+    stderr: Buffer.concat(stderr).toString("utf8"),
+  };
+}
+
+function fakeEnvironment(temporaryDirectory) {
+  return {
+    ...process.env,
+    DEVHUD_ENVIRONMENT_TESTING: "1",
+    DEVHUD_TEST_AUTH_STATE: resolve(temporaryDirectory, "auth-state"),
+    DEVHUD_TEST_DOCKER: resolve(fakeDirectory, "fake-docker.mjs"),
+    DEVHUD_TEST_EVENT_LOG: resolve(temporaryDirectory, "events.jsonl"),
+    DEVHUD_TEST_GO: resolve(fakeDirectory, "fake-go.mjs"),
+    DEVHUD_TEST_INFISICAL: resolve(fakeDirectory, "fake-infisical.mjs"),
+    DEVHUD_TEST_PNPM: resolve(fakeDirectory, "fake-pnpm.mjs"),
+  };
+}
+
+async function events(path) {
+  try {
+    return (await readFile(path, "utf8"))
+      .trim()
+      .split(/\r?\n/u)
+      .filter(Boolean)
+      .map((line) => JSON.parse(line));
+  } catch (error) {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  }
+}
+
+test("mode is a bounded enum-style selector", () => {
+  assert.equal(requireMode("team"), "team");
+  assert.equal(requireMode("oss"), "oss");
+  assert.throws(() => requireMode("production"), /mode must be exactly/u);
+});
+
+test("API and administrator allowlists reject missing, unknown, changed baseline, and partial groups", () => {
+  const valid = validApiEnvironment();
+  assert.deepEqual(validateInjectedEnvironment(apiContract, valid), valid);
+
+  for (const [shape, expected] of [
+    [{ ...valid, DEVHUD_DATABASE_URL: "" }, "environment.missing"],
+    [{ ...valid, UNKNOWN_NAME: "canary" }, "environment.unknown"],
+    [{ ...valid, PATH: "secret-path" }, "environment.unknown"],
+    [{ ...valid, DEVHUD_R2_ENDPOINT: "https://example.invalid" }, "environment.partial-group"],
+  ]) {
+    assert.throws(
+      () => validateInjectedEnvironment(apiContract, shape, { PATH: "safe-path" }),
+      (error) => error instanceof EnvironmentError && error.code === expected,
+    );
+  }
+
+  assert.throws(
+    () =>
+      validateInjectedEnvironment(adminContract, {
+        DEVHUD_LOGTO_ISSUER: "http://localhost:3001/oidc",
+        DEVHUD_DATABASE_URL: "must-not-cross-service-boundary",
+      }),
+    /unknown names/u,
+  );
+});
+
+test("team startup initializes only once and uses exact Infisical paths and flags without disclosure", async (t) => {
+  const temporaryDirectory = await mkdtemp(resolve(tmpdir(), "devhud-team-test-"));
+  const configBackup = await readFile(infisicalConfig, "utf8").catch(() => null);
+  await rm(infisicalConfig, { force: true });
+  t.after(async () => {
+    await rm(infisicalConfig, { force: true });
+    if (configBackup !== null) await writeFile(infisicalConfig, configBackup, "utf8");
+    await rm(temporaryDirectory, { recursive: true, force: true });
+  });
+  const environment = fakeEnvironment(temporaryDirectory);
+
+  for (let index = 0; index < 2; index += 1) {
+    const result = await runNode(cli, ["start", "team"], environment);
+    assert.equal(result.code, 0, result.stderr);
+    const disclosed = `${result.stdout}\n${result.stderr}`;
+    for (const canary of canaries) assert.equal(disclosed.includes(canary), false, canary);
+  }
+
+  const recorded = await events(environment.DEVHUD_TEST_EVENT_LOG);
+  assert.equal(recorded.filter((event) => event.action === "login").length, 1);
+  assert.equal(recorded.filter((event) => event.action === "init").length, 1);
+  const runs = recorded.filter((event) => event.action === "run");
+  assert.ok(runs.some((event) => event.path === "/devhud/api"));
+  assert.ok(runs.some((event) => event.path === "/devhud/admin"));
+  for (const event of runs) {
+    const serialized = JSON.stringify(event);
+    for (const flag of [
+      "--env=dev",
+      "--secret-overriding=false",
+      "--expand=false",
+      "--include-imports=false",
+      "--log-level=warn",
+      "--silent",
+      "--telemetry=false",
+    ]) {
+      assert.ok(event.args.includes(flag), flag);
+    }
+    for (const canary of canaries) assert.equal(serialized.includes(canary), false, canary);
+  }
+  const turbo = recorded.filter((event) => event.tool === "pnpm");
+  assert.deepEqual(turbo.map((event) => event.mode), ["team", "team"]);
+  const firstMigration = recorded.findIndex(
+    (event) => event.tool === "go" && event.action === "migrate",
+  );
+  const firstTurbo = recorded.findIndex((event) => event.tool === "pnpm");
+  assert.ok(firstMigration !== -1 && firstMigration < firstTurbo);
+});
+
+test("team authentication or path failure is fail-closed and does not invoke OSS", async (t) => {
+  const temporaryDirectory = await mkdtemp(resolve(tmpdir(), "devhud-team-failure-"));
+  const configBackup = await readFile(infisicalConfig, "utf8").catch(() => null);
+  await writeFile(infisicalConfig, "{}\n", "utf8");
+  const environment = {
+    ...fakeEnvironment(temporaryDirectory),
+    DEVHUD_TEST_INFISICAL_FAILURE: "/devhud/api",
+  };
+  await writeFile(environment.DEVHUD_TEST_AUTH_STATE, "authenticated\n", "utf8");
+  t.after(async () => {
+    await rm(infisicalConfig, { force: true });
+    if (configBackup !== null) await writeFile(infisicalConfig, configBackup, "utf8");
+    await rm(temporaryDirectory, { recursive: true, force: true });
+  });
+
+  const result = await runNode(cli, ["start", "team"], environment);
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /authentication or secret path is unavailable/u);
+  assert.equal(`${result.stdout}${result.stderr}`.includes("INFISICAL_FAILURE_CANARY_MUST_NOT_LEAK"), false);
+  assert.equal((await events(environment.DEVHUD_TEST_EVENT_LOG)).some((event) => event.tool === "docker"), false);
+});
+
+test("service wrapper reports name/category-only contract failures and suppresses values", async (t) => {
+  const temporaryDirectory = await mkdtemp(resolve(tmpdir(), "devhud-contract-failure-"));
+  t.after(() => rm(temporaryDirectory, { recursive: true, force: true }));
+  for (const [shape, expectedName] of [
+    ["missing", "DEVHUD_DATABASE_URL"],
+    ["unknown", "DEVHUD_UNKNOWN_CANARY"],
+    ["partial", "DEVHUD_R2_ACCESS_KEY_ID"],
+  ]) {
+    const environment = {
+      ...fakeEnvironment(temporaryDirectory),
+      DEVHUD_LOCAL_MODE: "team",
+      DEVHUD_TEST_SECRET_SHAPE: shape,
+    };
+    const result = await runNode(apiScript, ["validate"], environment);
+    assert.equal(result.code, 1);
+    assert.ok(result.stderr.includes(expectedName), result.stderr);
+    assert.equal(result.stderr.includes("UNKNOWN_VALUE_CANARY"), false);
+    assert.equal(result.stderr.includes("API_DATABASE_CANARY"), false);
+  }
+});
+
+test("OSS startup never invokes Infisical, orders health before migration and Turbo, and preserves volumes", async (t) => {
+  const temporaryDirectory = await mkdtemp(resolve(tmpdir(), "devhud-oss-test-"));
+  await rm(stateDirectory, { recursive: true, force: true });
+  t.after(async () => {
+    await rm(stateDirectory, { recursive: true, force: true });
+    await rm(temporaryDirectory, { recursive: true, force: true });
+  });
+  const environment = fakeEnvironment(temporaryDirectory);
+  const result = await runNode(cli, ["start", "oss"], environment);
+  assert.equal(result.code, 0, result.stderr);
+  const recorded = await events(environment.DEVHUD_TEST_EVENT_LOG);
+  assert.equal(recorded.some((event) => event.tool === "infisical"), false);
+  const order = recorded.map((event) => `${event.tool}:${event.action}`);
+  assert.ok(order.indexOf("docker:up") < order.indexOf("go:migrate"), order.join(", "));
+  assert.ok(order.indexOf("go:migrate") < order.indexOf("pnpm:turbo"), order.join(", "));
+  assert.ok(order.indexOf("pnpm:turbo") < order.lastIndexOf("docker:down"), order.join(", "));
+  const downEvent = recorded.findLast((event) => event.tool === "docker" && event.action === "down");
+  assert.equal(downEvent.args.includes("--volumes"), false);
+  assert.equal(downEvent.args.includes("-v"), false);
+  const key = await stat(identityKeyFile);
+  if (process.platform !== "win32") assert.equal(key.mode & 0o777, 0o600);
+  const output = `${result.stdout}\n${result.stderr}`;
+  const identity = (await readFile(identityKeyFile, "utf8")).trim();
+  assert.equal(output.includes(identity), false);
+});
+
+test("partial OSS startup is reaped and down remains volume-preserving", async (t) => {
+  const temporaryDirectory = await mkdtemp(resolve(tmpdir(), "devhud-oss-failure-"));
+  await rm(stateDirectory, { recursive: true, force: true });
+  t.after(async () => {
+    await rm(stateDirectory, { recursive: true, force: true });
+    await rm(temporaryDirectory, { recursive: true, force: true });
+  });
+  const environment = {
+    ...fakeEnvironment(temporaryDirectory),
+    DEVHUD_TEST_DOCKER_UP_FAILURE: "1",
+  };
+  const result = await runNode(cli, ["start", "oss"], environment);
+  assert.equal(result.code, 1);
+  const recorded = await events(environment.DEVHUD_TEST_EVENT_LOG);
+  assert.ok(recorded.some((event) => event.action === "up"));
+  assert.ok(recorded.some((event) => event.action === "down"));
+});
+
+for (const port of [5432, 3001, 3002, 46305, 46306, 46307]) {
+  test(`fixed port ${port} fails instead of remapping`, async (t) => {
+    const server = createServer();
+    await new Promise((resolveListen, reject) => {
+      server.once("error", reject);
+      server.listen(port, "127.0.0.1", resolveListen);
+    });
+    t.after(() => new Promise((resolveClose) => server.close(resolveClose)));
+    await assert.rejects(() => assertFixedPort(port, "test service"), new RegExp(String(port), "u"));
+  });
+}
+
+for (const stage of ["dependency startup", "migration", "steady state"]) {
+  test(`interruption during ${stage} terminates the active argv-spawned process tree`, async () => {
+    const lifecycle = new Lifecycle();
+    const running = lifecycle.run(
+      process.execPath,
+      ["-e", "setInterval(() => {}, 1000)"],
+      { stdio: "ignore" },
+    );
+    setTimeout(() => lifecycle.interrupt("SIGTERM"), 25);
+    await assert.rejects(running, /interrupted by SIGTERM/u);
+  });
+}
+
+test("repository policy is immutable, orchestration-only, and free of first-party Vercel setup", async () => {
+  const compose = await readFile(composeFile, "utf8");
+  assert.match(compose, /postgres:15-bookworm@sha256:5d1d70e254e3c5d7d76847a9deebb18478cd518df37abf6b278d4bdb1fe5d96c/u);
+  assert.match(compose, /svhd\/logto:1\.41\.0@sha256:7f79547e3d1fe569a3ecae757968a7cfc579687aa8164eec35113c0adc983c5b/u);
+  assert.doesNotMatch(compose, /image:\s+[^\n]+:(?:latest|15-bookworm)\s*$/mu);
+
+  const turbo = JSON.parse(await readFile(resolve(repositoryRoot, "turbo.json"), "utf8"));
+  assert.deepEqual(turbo.tasks.dev.env, ["DEVHUD_LOCAL_MODE"]);
+  assert.ok(turbo.tasks.build.inputs.includes(".env"));
+  assert.ok(turbo.tasks["build:api"].inputs.includes(".env"));
+  for (const name of ["globalEnv", "globalPassThroughEnv", "passThroughEnv"]) {
+    assert.equal(turbo[name], undefined);
+    assert.equal(turbo.tasks.dev[name], undefined);
+  }
+
+  const rootPackage = JSON.parse(await readFile(resolve(repositoryRoot, "package.json"), "utf8"));
+  for (const command of ["env:login", "env:doctor", "dev", "dev:oss", "dev:oss:down"]) {
+    assert.equal(typeof rootPackage.scripts[command], "string");
+  }
+  assert.match(rootPackage.scripts.dev, /start team/u);
+  assert.match(
+    await readFile(
+      resolve(repositoryRoot, "apps/devhud-admin/scripts/development.mjs"),
+      "utf8",
+    ),
+    /--no-env/u,
+  );
+
+  const ignore = await readFile(resolve(repositoryRoot, ".gitignore"), "utf8");
+  const prepare = await readFile(resolve(repositoryRoot, "scripts/prepare-apps.sh"), "utf8");
+  assert.doesNotMatch(ignore, /^\.vercel\/?$/mu);
+  assert.match(ignore, /^\.env\.\*$/mu);
+  assert.match(ignore, /^!\.env\.example$/mu);
+  assert.doesNotMatch(prepare, /VERCEL/u);
+  assert.match(prepare, /CI/u);
+  assert.match(prepare, /prepare:app/u);
+  await assert.rejects(readFile(resolve(repositoryRoot, "scripts/setup/env-vars.sh"), "utf8"), /ENOENT/u);
+  await stat(resolve(repositoryRoot, "apps/mpapp/.env.example"));
+  await stat(resolve(repositoryRoot, ".agents/skills"));
+});
+
+test("generated identity material is stable, private, and never logged", async (t) => {
+  await rm(stateDirectory, { recursive: true, force: true });
+  t.after(() => rm(stateDirectory, { recursive: true, force: true }));
+  await createLocalIdentityKey();
+  const first = await readFile(identityKeyFile, "utf8");
+  await createLocalIdentityKey();
+  assert.equal(await readFile(identityKeyFile, "utf8"), first);
+  if (process.platform !== "win32") {
+    assert.equal((await stat(identityKeyFile)).mode & 0o777, 0o600);
+  }
+});
+
+test("environment source of truth, catalog, domain contracts, READMEs, and AGENTS stay synchronized", async () => {
+  const requiredConsumers = [
+    "docs/README.md",
+    "docs/project-devhud.md",
+    "docs/apps-devhud-foundation.md",
+    "docs/apps-devhud-admin-contract.md",
+    "docs/servers-devhud-api-contract.md",
+    "apps/devhud-admin/README.md",
+    "servers/devhud-api/README.md",
+    "AGENTS.md",
+    "apps/AGENTS.md",
+    "servers/AGENTS.md",
+  ];
+  for (const relativePath of requiredConsumers) {
+    const contents = await readFile(resolve(repositoryRoot, relativePath), "utf8");
+    assert.match(contents, /repository-environment-contract\.md/u, relativePath);
+  }
+
+  const contract = await readFile(
+    resolve(repositoryRoot, "docs/repository-environment-contract.md"),
+    "utf8",
+  );
+  for (const command of [
+    "pnpm env:login",
+    "pnpm env:doctor",
+    "pnpm dev",
+    "pnpm dev:oss",
+    "pnpm dev:oss:down",
+  ]) {
+    assert.ok(contract.includes(command), command);
+  }
+  for (const classification of [
+    "Committed configuration",
+    "Team development secrets",
+    "Generated local material",
+    "User-owned credentials",
+    "Production, deployment, release, and signing secrets",
+  ]) {
+    assert.ok(contract.includes(classification), classification);
+  }
+
+  for (const publicRoot of ["apps/public-docs", "apps/binpm-docs", "apps/nodeup-docs"]) {
+    const entries = await readdir(resolve(repositoryRoot, publicRoot), {
+      recursive: true,
+      withFileTypes: true,
+    });
+    for (const entry of entries) {
+      if (
+        !entry.isFile() ||
+        entry.parentPath.includes("doc_build") ||
+        !/\.(?:css|html|js|json|md|mdx|mjs|ts|tsx)$/u.test(entry.name)
+      ) {
+        continue;
+      }
+      const publicText = await readFile(resolve(entry.parentPath, entry.name), "utf8").catch(
+        () => "",
+      );
+      assert.doesNotMatch(publicText, /\/devhud\/(?:api|admin)|Infisical/u, `${publicRoot}/${entry.name}`);
+    }
+  }
+});

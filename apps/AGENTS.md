@@ -9,6 +9,8 @@
 - For new static sites under `apps/`, default to Rsbuild/Rspress-style toolchains and Cloudflare Pages deployment unless a project contract documents a different platform.
 - Prefer Rspack-family build tools for app build pipelines when they fit the runtime and deployment target.
 - Root and package-local development use fixed loopback ports: public-docs `46302`, nodeup-docs `46303`, and binpm-docs `46304`. Development wrappers must prevent CLI address overrides, forward termination signals to their child server, wait for it to exit, and fail with an actionable conflict message instead of searching for or incrementing to another port.
+- DevHud frontend and administrator development use fixed ports `46305` and `46306`. The administrator wrapper owns validation and receipt of its issuer configuration; it must reject every other team-injected name and must not pass configuration through the root Turbo process. Follow `docs/repository-environment-contract.md`.
+- DevHud GitHub PATs and BYO R2 credentials remain in app-owned secure storage, never in the team development secret manager. `apps/mpapp/.env.example` public `EXPO_PUBLIC_*` configuration also remains package-local.
 - App file upload/download flows should default to Cloudflare R2 plus signed URLs unless the app contract documents a different storage or access pattern.
 - If a form has a single critical input, that input must receive focus when the form is shown.
 - Dialog UIs must support closing with the `Esc` key.

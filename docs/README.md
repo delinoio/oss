@@ -6,6 +6,7 @@ Each project must have one project index document and one or more domain contrac
 
 ## Repository Defaults
 - Repository-wide default technology choices and workflow defaults are defined in `docs/repository-defaults.md`.
+- Repository configuration, local development modes, environment ownership, and secret classification are defined in `docs/repository-environment-contract.md`.
 - Project and domain contracts must document deviations from those defaults when a different language, ID format, search backend, build toolchain, static-site deployment platform, or file storage/access pattern is chosen.
 
 ## Documentation Editing Rules

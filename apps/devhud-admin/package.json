@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node ../../scripts/run-rsbuild-dev.mjs devhud-admin 46306",
+    "dev": "node scripts/development.mjs serve",
     "build": "rsbuild build",
     "lint": "tsc --noEmit",
     "test": "pnpm lint && vitest run && pnpm build && node scripts/verify-build.mjs && pnpm test:port",

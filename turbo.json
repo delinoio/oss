@@ -6,6 +6,9 @@
         "build:api"
       ],
       "cache": false,
+      "env": [
+        "DEVHUD_LOCAL_MODE"
+      ],
       "persistent": true
     },
     "build:api":{

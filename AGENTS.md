@@ -16,6 +16,8 @@
 - Committing may require workspace binaries (for example, git hooks). If required binaries are missing, run `pnpm install` at the repository root and retry the commit.
 - Root `pnpm install` must install Lefthook in linked worktrees when the effective `core.hooksPath` resolves to Git's shared common-directory hooks path, preserve Lefthook's protective failure for unrelated custom hook paths, and skip hook installation without blocking app preparation when Git metadata is unavailable.
 - Root `pnpm dev` must use the app-owned fixed development ports documented in `apps/AGENTS.md` and fail on conflicts instead of automatically remapping a server.
+- `docs/repository-environment-contract.md` is the source of truth for environment ownership. Root development orchestration may pass only the bounded `DEVHUD_LOCAL_MODE` selector through Turbo; team values are injected and validated only by their owning service wrapper, and OSS mode must never invoke Infisical.
+- Keep `.infisical.json`, `.dev-environment/`, real `.env` files, user credentials, and production/release/signing credentials uncommitted. Service-local `.env.example` files contain names, validation guidance, placeholders, and safe loopback defaults only; do not add a root environment example or expose internal secret paths in public product docs.
 - After addressing pull request review comments and pushing updates, mark the corresponding review threads as resolved.
 - When no explicit scope is specified and you are currently working within a pull request scope, interpret instructions within the current pull request scope.
 - Do not guess; rather search for the web.
@@ -46,6 +48,7 @@
 
 - `docs/README.md`: Canonical docs catalog and naming rules.
 - `docs/repository-defaults.md`: Repository-wide default technology choices.
+- `docs/repository-environment-contract.md`: Repository configuration classification, local development modes, secret ownership, and orchestration contract.
 - `docs/project-template.md`: Required structure for `project-<id>` index docs.
 - `docs/domain-template.md`: Required structure for domain-level contract docs.
 - `docs/project-<id>.md`: Canonical project index docs (ownership + domain-doc index + cross-domain invariants).
@@ -109,6 +112,7 @@ enum ProjectId {
 
 - Issue [#815](https://github.com/delinoio/oss/issues/815) is the current normative DevHud contract and supersedes closed historical issues #729, #755, and #757 without inheriting their architecture.
 - DevHud fixed development ports are frontend `46305`, admin `46306`, and API `46307`; conflicts fail instead of remapping.
+- DevHud local development is selected only as `team` or `oss`. `pnpm dev` is the fail-closed authorized-team path; `pnpm dev:oss` is the contributor path and cannot depend on hosted Infisical. Both validate before migration and launch the same frontend/admin/API Turbo boundary. `pnpm dev:oss:down` preserves dependency volumes.
 - DevHud production API serving requires TLS termination at a trusted reverse proxy, with at least one configured `DEVHUD_TRUSTED_PROXY_CIDRS` entry and exactly one forwarded `https` protocol value from the trusted peer; the plaintext origin supports HTTP/1 and h2c for native gRPC forwarding.
 - DevHud browser/API CORS is an exact allowlist: `http://localhost:46305`, `http://127.0.0.1:46305`, `http://localhost:46306`, `http://127.0.0.1:46306`, and the pinned Tauri shell origin `http://tauri.localhost`. Connect preflights allow only the documented Connect methods and headers, expose `x-devhud-correlation-id`, and forbid wildcard origins and headers.
 - DevHud Deck refresh intervals apply only to active clients; suspended widgets use OS-controlled best-effort scheduling and must expose stale state with the last successful refresh.

@@ -4,7 +4,12 @@
   "private": true,
   "scripts": {
     "prepare": "./scripts/install-git-hooks.sh && ./scripts/prepare-apps.sh",
-    "dev": "./scripts/dev.sh",
+    "env:login": "node scripts/dev-environment/cli.mjs login",
+    "env:doctor": "node scripts/dev-environment/cli.mjs doctor",
+    "dev": "node scripts/dev-environment/cli.mjs start team",
+    "dev:oss": "node scripts/dev-environment/cli.mjs start oss",
+    "dev:oss:down": "node scripts/dev-environment/cli.mjs down",
+    "test:dev-environment": "node --test scripts/dev-environment/*.test.mjs && node scripts/dev-environment/verify-turbo.mjs",
     "build": "turbo build",
     "test": "turbo test",
     "lint": "turbo lint",

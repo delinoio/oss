@@ -6,6 +6,7 @@ const [appName, portText, ...rawRsbuildArgs] = process.argv.slice(2);
 const port = Number(portText);
 const rsbuildArgs =
   rawRsbuildArgs[0] === "--" ? rawRsbuildArgs.slice(1) : rawRsbuildArgs;
+const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 
 if (!appName || !Number.isInteger(port) || port < 1 || port > 65535) {
   console.error(
@@ -31,8 +32,10 @@ if (addressOverride) {
 
 try {
   const result = await spawnDevServer(
-    "rsbuild",
+    pnpm,
     [
+      "exec",
+      "rsbuild",
       "dev",
       ...rsbuildArgs,
       "--port",
@@ -41,8 +44,9 @@ try {
     ],
     {
       stdio: "inherit",
-      shell: process.platform === "win32",
+      shell: false,
     },
+    { terminateProcessTree: true },
   );
   exitLikeChild(result);
 } catch (error) {

@@ -108,6 +108,8 @@ Crash reporting has no persistent enablement state and is off by default. Guests
 
 ## Build and Test
 
+Root development uses the bounded `team`/`oss` modes in the repository environment contract. The frontend receives only `DEVHUD_LOCAL_MODE` through Turbo and no API or administrator value. Both root modes retain fixed frontend port `46305`; port conflicts fail instead of remapping. Team secrets remain in service-owned wrappers, while GitHub PATs and BYO R2 credentials remain in DevHud secure storage. OSS mode supports guest/bootstrap behavior but leaves authenticated flows contributor-configured and official uploads unavailable.
+
 Package-local commands are:
 
 The package-level Turbo configuration disables caching for DevHud's native `build` task because its executable and installer outputs live under the root Cargo `target/` directory and must be regenerated rather than restored as frontend-only output.
@@ -142,4 +144,5 @@ Update `docs/project-devhud.md`, related domain contracts, `apps/AGENTS.md`, and
 - [Desktop updater contract](apps-devhud-updater-contract.md)
 - [Chrome extension contract](apps-devhud-chrome-extension-contract.md)
 - [API contract](servers-devhud-api-contract.md)
+- [Repository environment contract](repository-environment-contract.md)
 - [Repository defaults](repository-defaults.md)
