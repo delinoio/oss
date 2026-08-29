@@ -613,6 +613,9 @@ test("environment source of truth, catalog, domain contracts, READMEs, and AGENT
     assert.ok(contract.includes(classification), classification);
   }
 
+  // `/devhud/admin` is also the stable public administration route, so its bare
+  // value cannot distinguish a public link from the internal team secret path.
+  const forbiddenPublicEnvironmentDetail = /\/devhud\/api|Infisical/u;
   for (const publicRoot of ["apps/public-docs", "apps/binpm-docs", "apps/nodeup-docs"]) {
     const entries = await readdir(resolve(repositoryRoot, publicRoot), {
       recursive: true,
@@ -629,7 +632,11 @@ test("environment source of truth, catalog, domain contracts, READMEs, and AGENT
       const publicText = await readFile(resolve(entry.parentPath, entry.name), "utf8").catch(
         () => "",
       );
-      assert.doesNotMatch(publicText, /\/devhud\/(?:api|admin)|Infisical/u, `${publicRoot}/${entry.name}`);
+      assert.doesNotMatch(
+        publicText,
+        forbiddenPublicEnvironmentDetail,
+        `${publicRoot}/${entry.name}`,
+      );
     }
   }
 });
