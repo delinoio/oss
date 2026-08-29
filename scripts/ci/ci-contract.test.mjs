@@ -19,6 +19,7 @@ const packages = Object.fromEntries([
   "servers/devhud-api/package.json",
 ].map((path) => [path, JSON.parse(readFileSync(`${root}/${path}`, "utf8"))]));
 const turbo = JSON.parse(readFileSync(`${root}/turbo.json`, "utf8"));
+const adminTurbo = JSON.parse(readFileSync(`${root}/apps/devhud-admin/turbo.json`, "utf8"));
 
 const legacyJobs = [
   "go-quality", "go-test", "repository-environment", "rust-fmt", "rust-clippy", "rust-test",
@@ -139,6 +140,11 @@ test("OCI validation is multi-architecture, non-root, migration-bearing, and loc
     "go test -tags=integration ./servers/devhud-api/internal/postgres", "docker-daemon:",
     "--user 65532:65532", "devhud-api migrate", "migrate", "--once",
   ]) assert.ok(source.includes(expected), expected);
+  const buildAndInspect = namedStep(workflow.jobs["devhud-oci"], "Build and inspect amd64/arm64 OCI layout").run;
+  assert.match(
+    buildAndInspect,
+    /if \[ "\$OCI_TARGET" = api \]; then\s+docker run "\$\{docker_args\[@\]\}" "\$image" migrate\s+else\s+DEVHUD_DATABASE_URL="\$DEVHUD_TEST_DATABASE_URL" go run \.\/servers\/devhud-api\/cmd\/devhud-api migrate/u,
+  );
   assert.doesNotMatch(source, /(?:docker|skopeo) push/iu);
   assert.match(apiDockerfileSource, /^FROM --platform=\$BUILDPLATFORM golang:/mu);
 });
@@ -165,6 +171,7 @@ test("package-local CI commands and deterministic cache boundaries are explicit"
   }
   for (const output of ["dist/**", "build/**", "artifacts/**", "doc_build/**"]) assert.ok(turbo.tasks["build:frontend"].outputs.includes(output), output);
   for (const output of ["protos/gen/**", "packages/devhud-api-client/src/gen/**"]) assert.ok(turbo.tasks["//#proto:generate"].outputs.includes(output), output);
+  assert.deepEqual(adminTurbo.tasks.build.inputs, ["$TURBO_EXTENDS$", "index.html"]);
   const nativeTurbo = JSON.parse(readFileSync(`${root}/apps/devhud/turbo.json`, "utf8"));
   for (const task of ["test:unit", "test:components", "test:security", "test:adapters"]) assert.deepEqual(nativeTurbo.tasks[task].dependsOn, ["^build"], task);
   for (const task of ["build", "mobile:generate", "build:ios", "build:android", "smoke:platform"]) assert.equal(nativeTurbo.tasks[task].cache, false, task);

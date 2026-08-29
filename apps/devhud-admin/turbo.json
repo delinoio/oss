@@ -2,7 +2,10 @@
   "$schema": "https://turbo.build/schema.json",
   "extends": ["//"],
   "tasks": {
-    "build": { "outputs": ["dist/**"] },
+    "build": {
+      "inputs": ["$TURBO_EXTENDS$", "index.html"],
+      "outputs": ["dist/**"]
+    },
     "build:frontend": { "outputs": ["dist/**"] },
     "build:embedded": { "cache": false },
     "verify:embedded": { "cache": false }

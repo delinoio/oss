@@ -2175,12 +2175,12 @@ jobs:
             skopeo inspect --override-arch "$arch" --config "oci-archive:$artifact" | jq -e '.config.User == "65532" and .config.Labels["io.delino.devhud.migrations"] == "embedded" and .config.Labels["io.delino.devhud.administrator-assets"] == "embedded"'
           done
           skopeo copy --override-os linux --override-arch amd64 "oci-archive:$artifact" "docker-daemon:$image"
-          DEVHUD_DATABASE_URL="$DEVHUD_TEST_DATABASE_URL" go run ./servers/devhud-api/cmd/devhud-api migrate
           container_database_url=postgres://devhud:devhud@host.docker.internal:5432/devhud_api_test?sslmode=disable
           docker_args=(--rm --user 65532:65532 --add-host host.docker.internal:host-gateway -e "DEVHUD_DATABASE_URL=$container_database_url")
           if [ "$OCI_TARGET" = api ]; then
             docker run "${docker_args[@]}" "$image" migrate
           else
+            DEVHUD_DATABASE_URL="$DEVHUD_TEST_DATABASE_URL" go run ./servers/devhud-api/cmd/devhud-api migrate
             docker run "${docker_args[@]}" \
               -e DEVHUD_ENVIRONMENT=development \
               -e DEVHUD_R2_ENDPOINT=http://127.0.0.1:9000 \
