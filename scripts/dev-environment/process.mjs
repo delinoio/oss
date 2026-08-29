@@ -60,7 +60,6 @@ export function safeBaseEnvironment(
     "NO_COLOR",
     "FORCE_COLOR",
     ...linuxNames,
-    "WAYLAND_DISPLAY",
     "CI",
   ];
   return Object.fromEntries(
@@ -113,8 +112,9 @@ export async function inherited(command, args, options = {}) {
 }
 
 export async function terminateTree(child, signal = "SIGTERM") {
-  if (!child || child.exitCode !== null || child.signalCode !== null) return;
+  if (!child) return;
   if (process.platform === "win32") {
+    if (child.exitCode !== null || child.signalCode !== null) return;
     await terminateWindowsProcessTree(child, signal);
     return;
   }

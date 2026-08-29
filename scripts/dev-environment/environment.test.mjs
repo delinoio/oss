@@ -248,6 +248,7 @@ test("base child environments preserve platform and Rust tool context without se
         DISPLAY: ":99",
         XAUTHORITY: "/run/user/1000/gdm/Xauthority",
         XDG_RUNTIME_DIR: "/run/user/1000",
+        WAYLAND_DISPLAY: "wayland-0",
         DEVHUD_DATABASE_URL: "must-not-pass",
         DOCKER_HOST: "must-not-pass",
       },
@@ -279,6 +280,7 @@ test("Linux session context is omitted from base child environments on other pla
           DISPLAY: ":99",
           XAUTHORITY: "/run/user/1000/gdm/Xauthority",
           XDG_RUNTIME_DIR: "/run/user/1000",
+          WAYLAND_DISPLAY: "wayland-0",
         },
         platform,
       ),
@@ -888,6 +890,47 @@ test(
     lifecycle.interrupt("SIGTERM");
     await assert.rejects(running, /interrupted by SIGTERM/u);
     assert.throws(() => process.kill(-child.pid, 0), { code: "ESRCH" });
+  },
+);
+
+test(
+  "POSIX lifecycle termination reaps descendants after the process group leader exits",
+  { skip: process.platform === "win32", timeout: 10_000 },
+  async (t) => {
+    const lifecycle = new Lifecycle();
+    const running = lifecycle.collect(process.execPath, [
+      "-e",
+      [
+        'const { spawn } = require("node:child_process");',
+        'const descendant = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: ["ignore", "inherit", "inherit"] });',
+        "descendant.unref();",
+      ].join(" "),
+    ]);
+    const leader = lifecycle.child;
+    t.after(() => {
+      try {
+        process.kill(-leader.pid, "SIGKILL");
+      } catch (error) {
+        if (error.code !== "ESRCH") throw error;
+      }
+    });
+
+    let settled = false;
+    void running.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+    await once(leader, "exit");
+    await Promise.resolve();
+    assert.equal(leader.exitCode, 0);
+    assert.equal(settled, false);
+
+    lifecycle.interrupt("SIGTERM");
+    await assert.rejects(running, /interrupted by SIGTERM/u);
   },
 );
 
