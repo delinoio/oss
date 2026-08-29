@@ -1116,8 +1116,7 @@ jobs:
       - name: Run credential, lifecycle, redaction, GitHub, R2, and agent fixtures
         if: ${{ steps.gate.outputs.run == 'true' }}
         run: |
-          pnpm --filter devhud test:security
-          pnpm --filter devhud test:adapters
+          pnpm exec turbo run test:security test:adapters --filter devhud
           node --test apps/devhud/scripts/diagnostics-policy.test.mjs apps/devhud/scripts/native-bridge.test.mjs apps/devhud/scripts/mobile-policy.test.mjs
 
   devhud-desktop:
@@ -1950,6 +1949,7 @@ jobs:
               - go.sum
               - protos/**
               - servers/**
+              - scripts/ci/check-go-format.mjs
 
       - name: Determine whether to run
         id: gate

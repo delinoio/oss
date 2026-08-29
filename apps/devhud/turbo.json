@@ -5,6 +5,18 @@
     "build": {
       "cache": false
     },
+    "test:unit": {
+      "dependsOn": ["^build"]
+    },
+    "test:components": {
+      "dependsOn": ["^build"]
+    },
+    "test:security": {
+      "dependsOn": ["^build"]
+    },
+    "test:adapters": {
+      "dependsOn": ["^build"]
+    },
     "mobile:generate": {
       "cache": false
     },

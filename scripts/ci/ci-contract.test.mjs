@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
@@ -7,6 +7,7 @@ import { load } from "js-yaml";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
 const workflowSource = readFileSync(`${root}/.github/workflows/CI.yml`, "utf8");
+const apiDockerfileSource = readFileSync(`${root}/servers/devhud-api/Dockerfile`, "utf8");
 const workflow = load(workflowSource);
 const packages = Object.fromEntries([
   "package.json",
@@ -57,6 +58,7 @@ test("DevHud jobs self-gate and the path contract covers every implemented bound
     "apps/public-docs/**", ".github/workflows/package-devhud-private.yml", ".github/workflows/release-devhud.yml",
     ".github/workflows/devhud-cef-security-review.yml",
   ]) assert.ok(workflowSource.includes(`- ${path}`), path);
+  assert.ok(JSON.stringify(step(workflow.jobs["devhud-api"], "filter")).includes("scripts/ci/check-go-format.mjs"));
 });
 
 test("Node jobs use the committed Turbo binary with frozen installs and affected no-ops", () => {
@@ -105,6 +107,7 @@ test("implemented DevHud conformance commands are wired to their owning jobs", (
     for (const command of expected) assert.ok(source.includes(command), `${id}: ${command}`);
   }
   assert.match(packages["apps/devhud/package.json"].scripts.test, /^pnpm lint && pnpm test:unit && pnpm test:components/u);
+  assert.match(JSON.stringify(workflow.jobs["devhud-security"]), /pnpm exec turbo run test:security test:adapters --filter devhud/u);
 });
 
 test("OCI validation is multi-architecture, non-root, migration-bearing, and local-only", () => {
@@ -116,6 +119,7 @@ test("OCI validation is multi-architecture, non-root, migration-bearing, and loc
     "--user 65532:65532", "devhud-api migrate", "migrate", "--once",
   ]) assert.ok(source.includes(expected), expected);
   assert.doesNotMatch(source, /(?:docker|skopeo) push/iu);
+  assert.match(apiDockerfileSource, /^FROM --platform=\$BUILDPLATFORM golang:/mu);
 });
 
 test("Debian desktop validation installs, launches, unregisters, and removes the package", () => {
@@ -141,7 +145,16 @@ test("package-local CI commands and deterministic cache boundaries are explicit"
   for (const output of ["dist/**", "build/**", "artifacts/**", "doc_build/**"]) assert.ok(turbo.tasks["build:frontend"].outputs.includes(output), output);
   for (const output of ["protos/gen/**", "packages/devhud-api-client/src/gen/**"]) assert.ok(turbo.tasks["//#proto:generate"].outputs.includes(output), output);
   const nativeTurbo = JSON.parse(readFileSync(`${root}/apps/devhud/turbo.json`, "utf8"));
+  for (const task of ["test:unit", "test:components", "test:security", "test:adapters"]) assert.deepEqual(nativeTurbo.tasks[task].dependsOn, ["^build"], task);
   for (const task of ["build", "mobile:generate", "build:ios", "build:android", "smoke:platform"]) assert.equal(nativeTurbo.tasks[task].cache, false, task);
+
+  const devhudScripts = packages["apps/devhud/package.json"].scripts;
+  const devhudTestFiles = readdirSync(`${root}/apps/devhud/src`).filter((path) => /\.test\.tsx?$/u.test(path));
+  for (const path of devhudTestFiles) {
+    const script = path.endsWith(".tsx") ? devhudScripts["test:components"] : devhudScripts["test:unit"];
+    assert.ok(script.includes(`src/${path}`), path);
+  }
+  assert.doesNotMatch(`${devhudScripts["test:unit"]} ${devhudScripts["test:components"]}`, /[*?]/u);
 });
 
 test("CI is read-only and contains no publication or secret injection path", () => {
