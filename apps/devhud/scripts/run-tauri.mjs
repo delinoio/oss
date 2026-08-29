@@ -1,7 +1,11 @@
 #!/usr/bin/env node
 
 import { exitLikeChild, spawnDevServer } from "../../../scripts/spawn-dev-server.mjs";
-import { desktopTauriArguments, desktopTauriEnvironment } from "./run-tauri-arguments.mjs";
+import {
+  desktopTauriArguments,
+  desktopTauriEnvironment,
+  repositoryAppleSigningEnvironment,
+} from "./run-tauri-arguments.mjs";
 import { stageNativeMessagingHost } from "./stage-native-messaging-host.mjs";
 
 const [command, ...rawArgs] = process.argv.slice(2);
@@ -32,7 +36,13 @@ if (
 
 try {
   const args = desktopTauriArguments(command, forwardedArgs, process.env);
-  const environment = desktopTauriEnvironment(command, forwardedArgs);
+  const repositoryEnvironment = repositoryAppleSigningEnvironment(command);
+  const environment = desktopTauriEnvironment(
+    command,
+    forwardedArgs,
+    process.platform,
+    repositoryEnvironment,
+  );
   stageNativeMessagingHost({ release: command === "build" });
   const result = await spawnDevServer(
     "cargo",

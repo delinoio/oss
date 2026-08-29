@@ -13,6 +13,8 @@ import {
   desktopTauriConfigPath,
   desktopTauriEnvironment,
   privateReleaseTauriConfigPath,
+  repositoryAppleSigningEnvironment,
+  repositoryAppleSigningIdentityKey,
 } from "./run-tauri-arguments.mjs";
 
 const scriptPath = fileURLToPath(new URL("./run-tauri.mjs", import.meta.url));
@@ -58,6 +60,81 @@ test("uses only the repository-owned hardened release overlay for private builds
   const arguments_ = desktopTauriArguments("build", ["--bundles", "app"], { DEVHUD_PRIVATE_RELEASE: "1" });
   assert.equal(arguments_[4], privateReleaseTauriConfigPath);
   assert.ok(!arguments_.includes(desktopTauriConfigPath));
+});
+
+test("loads an opt-in Apple signing identity from repository-local Git config", () => {
+  const calls = [];
+  const environment = repositoryAppleSigningEnvironment(
+    "dev",
+    "darwin",
+    { EXISTING: "value" },
+    (...args) => {
+      calls.push(args);
+      return { status: 0, stdout: "Apple Development: Developer (TEAMID)\n" };
+    },
+  );
+
+  assert.deepEqual(environment, {
+    APPLE_SIGNING_IDENTITY: "Apple Development: Developer (TEAMID)",
+    EXISTING: "value",
+  });
+  assert.deepEqual(calls, [[
+    "git",
+    ["config", "--local", "--get", repositoryAppleSigningIdentityKey],
+    { encoding: "utf8", shell: false, stdio: ["ignore", "pipe", "pipe"] },
+  ]]);
+});
+
+test("keeps an explicit Apple signing identity ahead of repository-local config", () => {
+  const environment = { APPLE_SIGNING_IDENTITY: "Explicit Identity" };
+  const resolved = repositoryAppleSigningEnvironment(
+    "dev",
+    "darwin",
+    environment,
+    () => assert.fail("Git config should not be read"),
+  );
+  assert.equal(resolved, environment);
+});
+
+test("does not use repository-local signing for private releases", () => {
+  const environment = { DEVHUD_PRIVATE_RELEASE: "1" };
+  const resolved = repositoryAppleSigningEnvironment(
+    "build",
+    "darwin",
+    environment,
+    () => assert.fail("Git config should not be read"),
+  );
+  assert.equal(resolved, environment);
+});
+
+test("leaves ad hoc signing unchanged when local signing is unavailable", () => {
+  const environment = {};
+  const missing = repositoryAppleSigningEnvironment(
+    "dev",
+    "darwin",
+    environment,
+    () => ({ status: 1, stdout: "" }),
+  );
+  const otherPlatform = repositoryAppleSigningEnvironment(
+    "dev",
+    "linux",
+    environment,
+    () => assert.fail("Git config should not be read"),
+  );
+  assert.equal(missing, environment);
+  assert.equal(otherPlatform, environment);
+});
+
+test("rejects malformed repository-local signing identities", () => {
+  assert.throws(
+    () => repositoryAppleSigningEnvironment(
+      "dev",
+      "darwin",
+      {},
+      () => ({ status: 0, stdout: "Identity One\nIdentity Two\n" }),
+    ),
+    /must be one non-empty line/u,
+  );
 });
 
 test("derives the compiled package kind from one explicit Windows bundle", () => {
