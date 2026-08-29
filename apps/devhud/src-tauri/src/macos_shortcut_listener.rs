@@ -18,7 +18,7 @@ const OPTION_FLAG: u64 = 1 << 19;
 enum MacosEventKind {
     KeyDown,
     KeyUp,
-    FlagsChanged,
+    FlagsChanged { pressed: bool },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -75,11 +75,16 @@ impl MacosShortcutAdapter {
                     None,
                 ]
             }
-            MacosEventKind::FlagsChanged => self.process_modifier(key, flags),
+            MacosEventKind::FlagsChanged { pressed } => self.process_modifier(key, flags, pressed),
         }
     }
 
-    fn process_modifier(&mut self, key: NativeKey, flags: u64) -> [Option<NativeKeyEvent>; 2] {
+    fn process_modifier(
+        &mut self,
+        key: NativeKey,
+        flags: u64,
+        pressed: bool,
+    ) -> [Option<NativeKeyEvent>; 2] {
         let Some(family) = modifier_family(key) else {
             return [None, None];
         };
@@ -101,14 +106,8 @@ impl MacosShortcutAdapter {
         }
 
         let state = self.modifier_state_mut(key);
-        *state = !*state;
-        [
-            Some(NativeKeyEvent {
-                key,
-                pressed: *state,
-            }),
-            None,
-        ]
+        *state = pressed;
+        [Some(NativeKeyEvent { key, pressed }), None]
     }
 
     fn modifier_state_mut(&mut self, key: NativeKey) -> &mut bool {
@@ -195,6 +194,7 @@ mod native {
     const CG_EVENT_TAP_DISABLED_BY_TIMEOUT: u32 = u32::MAX - 1;
     const CG_EVENT_TAP_DISABLED_BY_USER_INPUT: u32 = u32::MAX;
     const CG_KEYBOARD_EVENT_KEYCODE: u32 = 9;
+    const CG_EVENT_SOURCE_STATE_HID_SYSTEM_STATE: i32 = 1;
 
     type CGEventTapCallback = unsafe extern "C" fn(
         proxy: *mut c_void,
@@ -215,6 +215,7 @@ mod native {
         ) -> CFMachPortRef;
         fn CGEventGetIntegerValueField(event: CGEventRef, field: u32) -> i64;
         fn CGEventGetFlags(event: CGEventRef) -> u64;
+        fn CGEventSourceKeyState(state_id: i32, key: u16) -> bool;
         fn CGEventTapIsEnabled(tap: CFMachPortRef) -> bool;
     }
 
@@ -271,10 +272,9 @@ mod native {
             return event;
         }
 
-        let kind = match event_type {
-            CG_EVENT_KEY_DOWN => MacosEventKind::KeyDown,
-            CG_EVENT_KEY_UP => MacosEventKind::KeyUp,
-            CG_EVENT_FLAGS_CHANGED => MacosEventKind::FlagsChanged,
+        let flags_changed = match event_type {
+            CG_EVENT_KEY_DOWN | CG_EVENT_KEY_UP => false,
+            CG_EVENT_FLAGS_CHANGED => true,
             _ => return event,
         };
         let physical_code =
@@ -285,10 +285,27 @@ mod native {
         let Some(key) = normalize_native_key(ShortcutPlatform::Macos, physical_code) else {
             return event;
         };
-        let flags = if kind == MacosEventKind::FlagsChanged {
-            unsafe { CGEventGetFlags(event) }
+        let (kind, flags) = if flags_changed {
+            let Ok(key_code) = u16::try_from(physical_code) else {
+                return event;
+            };
+            (
+                MacosEventKind::FlagsChanged {
+                    pressed: unsafe {
+                        CGEventSourceKeyState(CG_EVENT_SOURCE_STATE_HID_SYSTEM_STATE, key_code)
+                    },
+                },
+                unsafe { CGEventGetFlags(event) },
+            )
         } else {
-            0
+            (
+                match event_type {
+                    CG_EVENT_KEY_DOWN => MacosEventKind::KeyDown,
+                    CG_EVENT_KEY_UP => MacosEventKind::KeyUp,
+                    _ => unreachable!("event type was filtered before normalization"),
+                },
+                0,
+            )
         };
         for normalized in context.adapter.process_recognized(kind, key, flags) {
             if let Some(normalized) = normalized {
@@ -398,6 +415,14 @@ mod tests {
         }
     }
 
+    fn modifier_record(physical_code: u32, flags: u64, pressed: bool) -> MacosEventRecord {
+        record(
+            MacosEventKind::FlagsChanged { pressed },
+            physical_code,
+            flags,
+        )
+    }
+
     fn deliver(
         adapter: &mut MacosShortcutAdapter,
         matcher: &mut ShortcutService<FakeBackend>,
@@ -448,7 +473,7 @@ mod tests {
             deliver(
                 &mut adapter,
                 &mut matcher,
-                record(MacosEventKind::FlagsChanged, 54, COMMAND_FLAG)
+                modifier_record(54, COMMAND_FLAG, true)
             )
             .is_empty()
         );
@@ -493,12 +518,8 @@ mod tests {
             let mut adapter = MacosShortcutAdapter::default();
             let mut matcher = ShortcutService::new(FakeBackend);
             for input in [
-                record(MacosEventKind::FlagsChanged, 54, COMMAND_FLAG),
-                record(
-                    MacosEventKind::FlagsChanged,
-                    extra_code,
-                    COMMAND_FLAG | extra_flag,
-                ),
+                modifier_record(54, COMMAND_FLAG, true),
+                modifier_record(extra_code, COMMAND_FLAG | extra_flag, true),
             ] {
                 assert!(deliver(&mut adapter, &mut matcher, input).is_empty());
             }
@@ -518,8 +539,8 @@ mod tests {
         let mut adapter = MacosShortcutAdapter::default();
         let mut matcher = ShortcutService::new(FakeBackend);
         for input in [
-            record(MacosEventKind::FlagsChanged, 54, COMMAND_FLAG),
-            record(MacosEventKind::FlagsChanged, 55, COMMAND_FLAG),
+            modifier_record(54, COMMAND_FLAG, true),
+            modifier_record(55, COMMAND_FLAG, true),
         ] {
             assert!(deliver(&mut adapter, &mut matcher, input).is_empty());
         }
@@ -543,7 +564,7 @@ mod tests {
             deliver(
                 &mut adapter,
                 &mut matcher,
-                record(MacosEventKind::FlagsChanged, 55, COMMAND_FLAG)
+                modifier_record(55, COMMAND_FLAG, false)
             )
             .is_empty()
         );
@@ -559,9 +580,9 @@ mod tests {
         let mut adapter = MacosShortcutAdapter::default();
         let mut matcher = ShortcutService::new(FakeBackend);
         for input in [
-            record(MacosEventKind::FlagsChanged, 54, COMMAND_FLAG),
-            record(MacosEventKind::FlagsChanged, 55, COMMAND_FLAG),
-            record(MacosEventKind::FlagsChanged, 54, COMMAND_FLAG),
+            modifier_record(54, COMMAND_FLAG, true),
+            modifier_record(55, COMMAND_FLAG, true),
+            modifier_record(54, COMMAND_FLAG, false),
         ] {
             assert!(deliver(&mut adapter, &mut matcher, input).is_empty());
         }
@@ -580,12 +601,8 @@ mod tests {
         let mut adapter = MacosShortcutAdapter::default();
         let mut matcher = ShortcutService::new(FakeBackend);
         for input in [
-            record(MacosEventKind::FlagsChanged, 54, COMMAND_FLAG),
-            record(
-                MacosEventKind::FlagsChanged,
-                62,
-                COMMAND_FLAG | CONTROL_FLAG,
-            ),
+            modifier_record(54, COMMAND_FLAG, true),
+            modifier_record(62, COMMAND_FLAG | CONTROL_FLAG, true),
         ] {
             assert!(deliver(&mut adapter, &mut matcher, input).is_empty());
         }
@@ -609,7 +626,7 @@ mod tests {
             deliver(
                 &mut adapter,
                 &mut matcher,
-                record(MacosEventKind::FlagsChanged, 62, COMMAND_FLAG)
+                modifier_record(62, COMMAND_FLAG, false)
             )
             .is_empty()
         );
@@ -653,17 +670,17 @@ mod tests {
         ] {
             let mut adapter = MacosShortcutAdapter::default();
             assert!(
-                adapter.process(record(MacosEventKind::FlagsChanged, left, flag))[0]
+                adapter.process(modifier_record(left, flag, true))[0]
                     .expect("left press")
                     .pressed
             );
             assert!(
-                adapter.process(record(MacosEventKind::FlagsChanged, right, flag))[0]
+                adapter.process(modifier_record(right, flag, true))[0]
                     .expect("right press")
                     .pressed
             );
             let released = adapter
-                .process(record(MacosEventKind::FlagsChanged, right, 0))
+                .process(modifier_record(right, 0, false))
                 .into_iter()
                 .flatten()
                 .collect::<Vec<_>>();
@@ -683,7 +700,7 @@ mod tests {
             deliver(
                 &mut adapter,
                 &mut matcher,
-                record(MacosEventKind::FlagsChanged, 54, COMMAND_FLAG)
+                modifier_record(54, COMMAND_FLAG, true)
             )
             .is_empty()
         );
@@ -704,6 +721,37 @@ mod tests {
                 record(MacosEventKind::KeyDown, 18, 0)
             ),
             vec![ShortcutAction::RealqaCaptureDisplay]
+        );
+    }
+
+    #[test]
+    fn retry_does_not_invert_a_released_modifier_while_its_family_remains_held() {
+        let mut adapter = MacosShortcutAdapter::default();
+        let mut matcher = ShortcutService::new(FakeBackend);
+        for input in [
+            modifier_record(54, COMMAND_FLAG, true),
+            modifier_record(55, COMMAND_FLAG, true),
+        ] {
+            assert!(deliver(&mut adapter, &mut matcher, input).is_empty());
+        }
+
+        adapter = MacosShortcutAdapter::default();
+        matcher.clear_pressed_keys();
+        assert!(
+            deliver(
+                &mut adapter,
+                &mut matcher,
+                modifier_record(54, COMMAND_FLAG, false)
+            )
+            .is_empty()
+        );
+        assert!(
+            deliver(
+                &mut adapter,
+                &mut matcher,
+                record(MacosEventKind::KeyDown, 40, 0)
+            )
+            .is_empty()
         );
     }
 

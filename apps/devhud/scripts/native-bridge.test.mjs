@@ -266,6 +266,8 @@ test("macOS shortcut listener is listen-only, physical-code-only, and leaves eve
     "CG_EVENT_TAP_OPTION_LISTEN_ONLY",
     "CG_KEYBOARD_EVENT_KEYCODE",
     "CGEventGetIntegerValueField",
+    "CG_EVENT_SOURCE_STATE_HID_SYSTEM_STATE",
+    "CGEventSourceKeyState",
     "normalize_native_key(ShortcutPlatform::Macos",
   ]) {
     assert.match(macosShortcutListener, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));
