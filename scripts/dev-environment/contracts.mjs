@@ -43,6 +43,16 @@ export class EnvironmentError extends Error {
   }
 }
 
+const isInsideRepository = (path) => {
+  const relativePath = relative(repositoryRoot, path);
+  return (
+    relativePath === "" ||
+    (!relativePath.startsWith(`..${sep}`) &&
+      relativePath !== ".." &&
+      !isAbsolute(relativePath))
+  );
+};
+
 export function resolveInfisicalConfigPaths(source = process.env) {
   if (source.DEVHUD_ENVIRONMENT_TESTING !== "1") {
     return {
@@ -62,13 +72,7 @@ export function resolveInfisicalConfigPaths(source = process.env) {
     );
   }
   const projectConfigDirectory = resolve(injectedDirectory);
-  const relativePath = relative(repositoryRoot, projectConfigDirectory);
-  const insideRepository =
-    relativePath === "" ||
-    (!relativePath.startsWith(`..${sep}`) &&
-      relativePath !== ".." &&
-      !isAbsolute(relativePath));
-  if (insideRepository) {
+  if (isInsideRepository(projectConfigDirectory)) {
     throw new EnvironmentError(
       "environment.test-config",
       "development environment tests require an Infisical config directory outside the checkout",
@@ -109,6 +113,12 @@ export function resolveLocalStatePaths(source = process.env) {
     );
   }
   const resolvedDirectory = resolve(injectedDirectory);
+  if (isInsideRepository(resolvedDirectory)) {
+    throw new EnvironmentError(
+      "environment.test-state",
+      "development environment tests require a state directory outside the checkout",
+    );
+  }
   return {
     stateDirectory: resolvedDirectory,
     identityKeyFile: resolve(resolvedDirectory, "identity-hmac-key"),
@@ -147,16 +157,16 @@ const rawAuthorityHostname = (authority) => {
   return hostPort.replace(/:\d*$/u, "");
 };
 
-const containsAsciiControlCharacter = (value) => {
+const containsAsciiControlOrSpace = (value) => {
   for (let index = 0; index < value.length; index += 1) {
     const codeUnit = value.charCodeAt(index);
-    if (codeUnit < 0x20 || codeUnit === 0x7f) return true;
+    if (codeUnit <= 0x20 || codeUnit === 0x7f) return true;
   }
   return false;
 };
 
 const hasGoCompatibleURLSpelling = (value) =>
-  !containsAsciiControlCharacter(value) &&
+  !containsAsciiControlOrSpace(value) &&
   !/%(?![0-9A-Fa-f]{2})/u.test(value);
 
 const localHttp = (value) => {

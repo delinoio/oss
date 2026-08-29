@@ -137,6 +137,21 @@ export class Lifecycle {
   }
 }
 
+export async function runWithLifecycle(action) {
+  const lifecycle = new Lifecycle();
+  lifecycle.install();
+  try {
+    return await action(lifecycle);
+  } catch (error) {
+    if (error instanceof Interrupted) {
+      return { code: null, signal: error.signal };
+    }
+    throw error;
+  } finally {
+    lifecycle.remove();
+  }
+}
+
 function collectCommand(lifecycle, command, args, options) {
   return lifecycle
     ? lifecycle.collect(command, args, options)
@@ -837,16 +852,9 @@ export async function start(mode) {
   if (!["team", "oss"].includes(mode)) {
     throw new Error("[mode.invalid] development mode must be exactly one of: team, oss");
   }
-  const lifecycle = new Lifecycle();
-  lifecycle.install();
-  try {
-    return mode === "team" ? await startTeam(lifecycle) : await startOss(lifecycle);
-  } catch (error) {
-    if (error instanceof Interrupted) return { code: null, signal: error.signal };
-    throw error;
-  } finally {
-    lifecycle.remove();
-  }
+  return runWithLifecycle((lifecycle) =>
+    mode === "team" ? startTeam(lifecycle) : startOss(lifecycle),
+  );
 }
 
 export async function doctor() {

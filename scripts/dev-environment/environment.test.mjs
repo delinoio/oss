@@ -316,6 +316,27 @@ test("temporary Infisical config paths must stay outside the checkout", () => {
   );
 });
 
+test("temporary generated state paths must stay outside the checkout", () => {
+  for (const testStateDirectory of [
+    repositoryRoot,
+    resolve(repositoryRoot, ".dev-environment"),
+    resolve(repositoryRoot, "temporary-state"),
+  ]) {
+    assert.throws(
+      () =>
+        resolveLocalStatePaths({
+          DEVHUD_ENVIRONMENT_TESTING: "1",
+          DEVHUD_TEST_STATE_DIRECTORY: testStateDirectory,
+        }),
+      (error) =>
+        error instanceof EnvironmentError &&
+        error.code === "environment.test-state" &&
+        /outside the checkout/u.test(error.message),
+      testStateDirectory,
+    );
+  }
+});
+
 test("Docker daemon selection is the only Docker-specific ambient configuration preserved", () => {
   assert.deepEqual(
     dockerClientEnvironment({
@@ -421,6 +442,7 @@ test("API and administrator allowlists reject malformed configuration", () => {
 test("preflight validates the raw public asset base path before WHATWG normalization", () => {
   const valid = validApiEnvironment();
   for (const assetBase of [
+    "https://assets.example.com ",
     "https://assets.example.com/a/..",
     "https://assets.example.com/.",
     "https://assets.example.com/..",
@@ -522,7 +544,7 @@ test("preflight rejects URL escapes rejected by the Go service parser", () => {
   );
 });
 
-test("preflight rejects raw URL control characters rejected by the Go service parser", () => {
+test("preflight rejects raw URL spaces and control characters rejected by the Go service parser", () => {
   const valid = validApiEnvironment();
   const controlCharacters = [
     ...Array.from({ length: 0x20 }, (_, codePoint) =>
@@ -1330,11 +1352,37 @@ test("cleanup tracks its child after an earlier lifecycle interruption", async (
   assert.equal(lifecycle.signal, "SIGTERM");
 });
 
-for (const [name, args, blockingVariable, tool] of [
-  ["Infisical version", ["start", "team"], "DEVHUD_TEST_BLOCK_INFISICAL_VERSION", "infisical"],
-  ["Docker version", ["start", "oss"], "DEVHUD_TEST_BLOCK_DOCKER_VERSION", "docker"],
+for (const [name, args, blockingVariable, tool, blockedAction] of [
+  [
+    "team Infisical version preflight",
+    ["start", "team"],
+    "DEVHUD_TEST_BLOCK_INFISICAL_VERSION",
+    "infisical",
+    "version-blocked",
+  ],
+  [
+    "OSS Docker version preflight",
+    ["start", "oss"],
+    "DEVHUD_TEST_BLOCK_DOCKER_VERSION",
+    "docker",
+    "version-blocked",
+  ],
+  [
+    "standalone login Infisical preflight",
+    ["login"],
+    "DEVHUD_TEST_BLOCK_INFISICAL_VERSION",
+    "infisical",
+    "version-blocked",
+  ],
+  [
+    "standalone Docker cleanup",
+    ["down"],
+    "DEVHUD_TEST_BLOCK_DOCKER_DOWN",
+    "docker",
+    "down-blocked",
+  ],
 ]) {
-  test(`interruption during the ${name} preflight terminates its process tree`, async (t) => {
+  test(`interruption during ${name} terminates its process tree`, async (t) => {
     const temporaryDirectory = await mkdtemp(resolve(tmpdir(), "devhud-preflight-signal-"));
     const environment = {
       ...fakeEnvironment(temporaryDirectory),
@@ -1345,7 +1393,7 @@ for (const [name, args, blockingVariable, tool] of [
     const result = await interruptCliDuring(
       args,
       environment,
-      (event) => event.tool === tool && event.action === "version-blocked",
+      (event) => event.tool === tool && event.action === blockedAction,
     );
     assert.equal(result.signal, "SIGTERM");
     const recorded = await events(environment.DEVHUD_TEST_EVENT_LOG);
