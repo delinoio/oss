@@ -449,11 +449,10 @@ mod tests {
                 None,
             ]
         );
-        assert_eq!(
-            adapter.process(record(MacosEventKind::KeyUp, 40, 0))[0]
+        assert!(
+            !adapter.process(record(MacosEventKind::KeyUp, 40, 0))[0]
                 .expect("mapped release")
-                .pressed,
-            false
+                .pressed
         );
         assert_eq!(
             adapter.process(record(MacosEventKind::KeyDown, 0, 0)),

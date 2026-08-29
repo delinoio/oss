@@ -11,14 +11,14 @@ import { WidgetQueryLimit } from "../src/widget-contract.ts";
 
 const fixtures = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../fixtures/deep-links.json"), "utf8"));
 const tauriConfig = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/tauri.conf.json"), "utf8"));
-const appCargo = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/Cargo.toml"), "utf8");
+const appCargo = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/Cargo.toml"), "utf8").replaceAll("\r\n", "\n");
 const nativePlugin = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/native_plugin.rs"), "utf8");
 const cargoLock = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../../../Cargo.lock"), "utf8");
 const desktopSecureStore = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/secure_store.rs"), "utf8");
 const desktopHost = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/main.rs"), "utf8");
 const nativeBridgeHost = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/bridge.rs"), "utf8");
 const nativeShortcuts = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/shortcuts.rs"), "utf8");
-const macosShortcutListener = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/macos_shortcut_listener.rs"), "utf8");
+const macosShortcutListener = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/macos_shortcut_listener.rs"), "utf8").replaceAll("\r\n", "\n");
 const nativeCapture = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/capture.rs"), "utf8");
 const nativeUpdater = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/updater.rs"), "utf8");
 const nativeUploads = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src-tauri/src/uploads.rs"), "utf8");
