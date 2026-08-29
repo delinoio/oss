@@ -14,6 +14,17 @@ const CONTROL_FLAG: u64 = 1 << 18;
 const SHIFT_FLAG: u64 = 1 << 17;
 const OPTION_FLAG: u64 = 1 << 19;
 
+const MACOS_MODIFIERS: [(u16, NativeKey); 8] = [
+    (54, NativeKey::RightPrimary),
+    (55, NativeKey::LeftMeta),
+    (59, NativeKey::LeftControl),
+    (62, NativeKey::OtherPrimary),
+    (56, NativeKey::LeftShift),
+    (60, NativeKey::RightShift),
+    (58, NativeKey::LeftAlt),
+    (61, NativeKey::RightAlt),
+];
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum MacosEventKind {
     KeyDown,
@@ -77,6 +88,24 @@ impl MacosShortcutAdapter {
             }
             MacosEventKind::FlagsChanged { pressed } => self.process_modifier(key, flags, pressed),
         }
+    }
+
+    fn reconcile_modifiers(
+        &mut self,
+        current: [(NativeKey, bool); 8],
+    ) -> [Option<NativeKeyEvent>; 8] {
+        let mut events = [None; 8];
+        let mut next = 0;
+        for (key, pressed) in current {
+            let state = self.modifier_state_mut(key);
+            if *state == pressed {
+                continue;
+            }
+            *state = pressed;
+            events[next] = Some(NativeKeyEvent { key, pressed });
+            next += 1;
+        }
+        events
     }
 
     fn process_modifier(
@@ -174,9 +203,11 @@ impl EventTapFailure {
 mod native {
     use std::ffi::c_void;
 
-    use super::{EventTapFailure, MacosEventKind, MacosShortcutAdapter, ShortcutFailure};
+    use super::{
+        EventTapFailure, MACOS_MODIFIERS, MacosEventKind, MacosShortcutAdapter, ShortcutFailure,
+    };
     use crate::shortcuts::{
-        NativeKeyEvent, ShortcutPermission, ShortcutPlatform, macos_shortcut_permission,
+        NativeKey, NativeKeyEvent, ShortcutPermission, ShortcutPlatform, macos_shortcut_permission,
         normalize_native_key,
     };
 
@@ -251,6 +282,14 @@ mod native {
         failure: Option<EventTapFailure>,
     }
 
+    unsafe fn current_modifier_states() -> [(NativeKey, bool); 8] {
+        MACOS_MODIFIERS.map(|(physical_code, key)| {
+            (key, unsafe {
+                CGEventSourceKeyState(CG_EVENT_SOURCE_STATE_HID_SYSTEM_STATE, physical_code)
+            })
+        })
+    }
+
     unsafe extern "C" fn event_tap_callback<F>(
         _proxy: *mut c_void,
         event_type: u32,
@@ -285,6 +324,19 @@ mod native {
         let Some(key) = normalize_native_key(ShortcutPlatform::Macos, physical_code) else {
             return event;
         };
+        if !flags_changed && matches!(key, NativeKey::Key(_)) {
+            // A replacement tap receives no press event for a modifier that
+            // predates its installation, so refresh every supported side
+            // before ordinary input reaches the matcher.
+            for normalized in context
+                .adapter
+                .reconcile_modifiers(unsafe { current_modifier_states() })
+                .into_iter()
+                .flatten()
+            {
+                (context.dispatch)(normalized);
+            }
+        }
         let (kind, flags) = if flags_changed {
             let Ok(key_code) = u16::try_from(physical_code) else {
                 return event;
@@ -307,10 +359,13 @@ mod native {
                 0,
             )
         };
-        for normalized in context.adapter.process_recognized(kind, key, flags) {
-            if let Some(normalized) = normalized {
-                (context.dispatch)(normalized);
-            }
+        for normalized in context
+            .adapter
+            .process_recognized(kind, key, flags)
+            .into_iter()
+            .flatten()
+        {
+            (context.dispatch)(normalized);
         }
         event
     }
@@ -423,6 +478,10 @@ mod tests {
         )
     }
 
+    fn modifier_states(held: &[u16]) -> [(NativeKey, bool); 8] {
+        MACOS_MODIFIERS.map(|(physical_code, key)| (key, held.contains(&physical_code)))
+    }
+
     fn deliver(
         adapter: &mut MacosShortcutAdapter,
         matcher: &mut ShortcutService<FakeBackend>,
@@ -434,6 +493,22 @@ mod tests {
             .flatten()
             .filter_map(|event| matcher.process(event))
             .collect()
+    }
+
+    fn deliver_reconciled(
+        adapter: &mut MacosShortcutAdapter,
+        matcher: &mut ShortcutService<FakeBackend>,
+        held_modifiers: &[u16],
+        record: MacosEventRecord,
+    ) -> Vec<ShortcutAction> {
+        adapter
+            .reconcile_modifiers(modifier_states(held_modifiers))
+            .into_iter()
+            .flatten()
+            .for_each(|event| {
+                assert!(matcher.process(event).is_none());
+            });
+        deliver(adapter, matcher, record)
     }
 
     #[test]
@@ -692,7 +767,7 @@ mod tests {
     }
 
     #[test]
-    fn listener_replacement_resets_adapter_and_matcher_state() {
+    fn listener_replacement_reconciles_held_modifiers_before_input() {
         let mut adapter = MacosShortcutAdapter::default();
         let mut matcher = ShortcutService::new(FakeBackend);
         assert!(
@@ -705,22 +780,62 @@ mod tests {
         );
         adapter = MacosShortcutAdapter::default();
         matcher.clear_pressed_keys();
-        assert!(
-            deliver(
+        assert_eq!(
+            deliver_reconciled(
                 &mut adapter,
                 &mut matcher,
-                record(MacosEventKind::KeyDown, 40, 0)
+                &[54],
+                record(MacosEventKind::KeyDown, 40, 0),
+            ),
+            vec![ShortcutAction::ShellCommandPalette]
+        );
+        assert!(
+            deliver_reconciled(
+                &mut adapter,
+                &mut matcher,
+                &[54],
+                record(MacosEventKind::KeyDown, 18, 0),
             )
             .is_empty()
         );
         assert_eq!(
-            deliver(
+            deliver_reconciled(
                 &mut adapter,
                 &mut matcher,
-                record(MacosEventKind::KeyDown, 18, 0)
+                &[],
+                record(MacosEventKind::KeyDown, 19, 0),
             ),
-            vec![ShortcutAction::RealqaCaptureDisplay]
+            vec![ShortcutAction::RealqaCaptureActiveWindow]
         );
+    }
+
+    #[test]
+    fn reconciliation_tracks_every_supported_modifier_side() {
+        for (physical_code, expected_key) in MACOS_MODIFIERS {
+            let mut adapter = MacosShortcutAdapter::default();
+            assert_eq!(
+                adapter
+                    .reconcile_modifiers(modifier_states(&[physical_code]))
+                    .into_iter()
+                    .flatten()
+                    .collect::<Vec<_>>(),
+                vec![NativeKeyEvent {
+                    key: expected_key,
+                    pressed: true,
+                }]
+            );
+            assert_eq!(
+                adapter
+                    .reconcile_modifiers(modifier_states(&[]))
+                    .into_iter()
+                    .flatten()
+                    .collect::<Vec<_>>(),
+                vec![NativeKeyEvent {
+                    key: expected_key,
+                    pressed: false,
+                }]
+            );
+        }
     }
 
     #[test]
