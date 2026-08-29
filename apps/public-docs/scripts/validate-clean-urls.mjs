@@ -38,7 +38,7 @@ const htmlRoutePaths = new Set(
   stableRouteIds.map((routeId) => (routeId === "/" ? "/index.html" : `${routeId}.html`)),
 );
 const urlAttributePattern = /\b(?:href|src|srcset|poster|action|formaction|data)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'`=<>]+))/giu;
-const anchorHrefPattern = /<a\b[^>]*\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'`=<>]+))/giu;
+const cssUrlPattern = /\burl\s*\(\s*(?:"([^"]*)"|'([^']*)'|([^\s)]+))\s*\)/giu;
 const validatorOrigin = "https://public-docs.invalid";
 
 async function pathExists(filePath) {
@@ -120,7 +120,7 @@ function findHtmlRouteLinks(contents, htmlFile) {
   const pageUrl = new URL(pagePath, validatorOrigin);
   const invalidRoutes = [];
 
-  for (const match of contents.matchAll(anchorHrefPattern)) {
+  for (const match of contents.matchAll(urlAttributePattern)) {
     const href = attributeValue(match);
     const decodedHref = decodeHTML(href);
     if (!/\.html(?:[?#]|$)/iu.test(decodedHref)) continue;
@@ -211,6 +211,7 @@ function resourceTargets(contents) {
       targets.push(value.trim());
     }
   }
+  for (const match of contents.matchAll(cssUrlPattern)) targets.push(attributeValue(match).trim());
   return targets;
 }
 
@@ -286,6 +287,8 @@ const invalidRouteAttributeFixtures = [
   '<a href = "/devhud/install.html">install</a>',
   "<a href=/devhud/install.html>install</a>",
   '<a href="/devhud/install&#46;html">install</a>',
+  '<form action="/devhud/install.html"></form>',
+  '<button formaction="/devhud/support.html">Support</button>',
 ];
 const externalRouteFixtures = [
   '<a href="https://docs.example.com/devhud/install.html">install</a>',
@@ -309,6 +312,10 @@ const forbiddenResourceFixtures = [
   '<form action="../../servers/devhud/private-endpoint"></form>',
   '<button formaction="file:///etc/devhud/private-endpoint">Submit</button>',
   '<object data="../../servers/devhud/private.pdf"></object>',
+];
+const forbiddenCssResourceFixtures = [
+  '<div style="background-image:url(../../servers/devhud/private.png)"></div>',
+  '<style>.private { background: url("file:///etc/devhud/private.png") }</style>',
 ];
 const credentialBearingResourceFixtures = [
   '<img src="https://alice:secret@example.com/image.png">',
@@ -478,6 +485,12 @@ for (const fixture of ['<link rel="stylesheet" href="file:///etc/private.css">']
 for (const fixture of forbiddenResourceFixtures) {
   if (!containsForbiddenResourcePath(fixture, path.join(outputDir, "fixture.html"))) {
     failures.push("forbidden resource path fixture was not detected");
+  }
+}
+
+for (const fixture of forbiddenCssResourceFixtures) {
+  if (!containsForbiddenResourcePath(fixture, path.join(outputDir, "fixture.html"))) {
+    failures.push("forbidden CSS resource path fixture was not detected");
   }
 }
 

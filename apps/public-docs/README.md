@@ -22,7 +22,10 @@ URLs are enabled, so stable public routes such as `/getting-started` do not use
 `scripts/validate-clean-urls.mjs`. The validator checks generated artifacts for
 `/`, `/getting-started`, `/projects-overview`, `/documentation-lifecycle`,
 all stable routes, required headings and links, accessibility landmarks, public
-content limits, and rejects generated internal `.html` route links.
+content limits, rejects generated internal `.html` route links across all
+navigation attributes, and rejects forbidden paths in HTML resources and CSS
+`url()` values. The release workflow injects the configured non-secret DevHud
+store identifiers into every generated text asset before publication.
 
 ## Files
 
