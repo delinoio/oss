@@ -21,8 +21,11 @@ URLs are enabled, so stable public routes such as `/getting-started` do not use
 `pnpm --filter public-docs test` builds the site and runs
 `scripts/validate-clean-urls.mjs`. The validator checks generated artifacts for
 `/`, `/getting-started`, `/projects-overview`, `/documentation-lifecycle`,
-`/devhud`, `/cargo-mono`, `/derun`, `/with-watch`, and the legacy `/nodeup` handoff, and
-rejects generated internal `.html` route links.
+all stable routes, required headings and links, accessibility landmarks, public
+content limits, rejects generated internal `.html` route links across all
+navigation attributes, and rejects forbidden paths in HTML resources and CSS
+`url()` values. The release workflow injects the configured non-secret DevHud
+store identifiers into every generated text asset before publication.
 
 ## Files
 
@@ -36,6 +39,7 @@ rejects generated internal `.html` route links.
 - `docs/derun.md`: Public project guide for `derun`.
 - `docs/with-watch.md`: Public project guide for `with-watch`.
 - `docs/nodeup.md`: Compatibility handoff page for legacy `/nodeup` links.
+- `docs/devhud/`: Stable DevHud installation, usage, privacy, security, support, administration, and release guidance routes.
 
 Cargo Mono, Derun, and With Watch remain in-site product documentation. Nodeup
 and binpm are external top-level links to their standalone documentation apps:

@@ -9,3 +9,5 @@ then run `pnpm --filter devhud-admin dev`. The development CSP permits that
 validated issuer origin for Logto discovery and token requests. Run
 `pnpm --filter devhud-admin test` for type, component, production-output, and
 asset checks.
+
+Public guidance is available at the stable `/devhud/admin`, `/devhud/security`, and `/devhud/support` routes of the configured public documentation site.

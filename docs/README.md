@@ -57,7 +57,7 @@ Each project must have one project index document and one or more domain contrac
 
 ### public-docs
 - `docs/project-public-docs.md`
-- `docs/apps-public-docs-foundation.md` (includes the stable `/devhud` coordinated-release page)
+- `docs/apps-public-docs-foundation.md` (includes the stable `/devhud` section and child routes)
 
 ### serde-feather
 - `docs/project-serde-feather.md`

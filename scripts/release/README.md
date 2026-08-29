@@ -28,3 +28,5 @@ These scripts are designed for use by release workflows:
 - `.github/workflows/release-derun.yml`
 - `.github/workflows/release-with-watch.yml`
 - `.github/workflows/release-devhud.yml` (manual `dry-run` or protected coordinated `release`, with an optional exact ancestor revision for retained-candidate recovery; see `docs/servers-devhud-release-controller-contract.md` for stable configuration names)
+
+Public release guidance is maintained at the stable `/devhud/releases` route of the configured public documentation site, with `/devhud/install` and `/devhud/security` companion routes.

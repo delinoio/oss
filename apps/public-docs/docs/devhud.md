@@ -1,12 +1,14 @@
 # DevHud
 
-DevHud is a developer utility for capturing RealQA feedback, following pull-request Decks, and keeping the same signed product identity across desktop, mobile, widgets, and the Chrome companion extension.
+DevHud is a developer utility for capturing RealQA feedback, following pull-request Decks, and distributing the product across desktop, mobile, widgets, and the Chrome companion extension.
 
 ## Availability
 
 A DevHud version becomes generally available only when its desktop downloads and updater, official API, this documentation, Apple App Store package, Google Play package, and Chrome Web Store extension are all independently public and verified. DevHud does not label a version generally available while one of those surfaces is still waiting for review or publication.
 
 When a coordinated release is available, desktop installers and release evidence are published through [Delino OSS GitHub Releases](https://github.com/delinoio/oss/releases). The mobile app and Chrome extension are distributed through their official stores.
+
+See [Install and Verify](devhud/install), [Using DevHud](devhud/guide), [Privacy](devhud/privacy), [Security](devhud/security), [Support](devhud/support), [Administration](devhud/admin), and [Releases](devhud/releases) for user guidance.
 
 ## Desktop packages
 
@@ -20,7 +22,7 @@ Each release includes SHA-256 checksums and signed release evidence. Desktop upd
 
 ## Mobile and browser companion
 
-The iOS and Android packages include their native Deck widgets. The Chrome Web Store extension uses the same extension identity and Native Messaging relationship as the validation package retained with the release evidence.
+The iOS and Android packages include their native Deck widgets. Install the Chrome companion extension from the Chrome Web Store and review its requested site access before enabling it; DevHud uses it only for configured browser-context capture.
 
 Store review can take longer than desktop packaging. During that time, the whole coordinated release remains pending; there is no partial or staged general-availability channel.
 
