@@ -76,11 +76,12 @@ export function repositoryAppleSigningEnvironment(
     throw new Error(`failed to read ${repositoryAppleSigningIdentityKey}: ${result.error.message}`);
   }
   const stderr = typeof result.stderr === "string" ? result.stderr.trim() : "";
-  // Git uses status 128 for both absent repository metadata and fatal config
-  // errors. Stabilize its diagnostic locale and preserve ad hoc signing only
-  // for the exact source-copy case; every other failure remains actionable.
+  // Git uses status 1 for both a missing key and some unreadable-config errors,
+  // and status 128 for absent repository metadata plus other fatal failures.
+  // Stabilize its diagnostic locale and preserve ad hoc signing only for the
+  // silent missing-key or exact source-copy cases.
   if (
-    result.status === 1 ||
+    (result.status === 1 && stderr === "") ||
     (result.status === 128 && stderr === noRepositoryGitConfigError)
   ) {
     return environment;

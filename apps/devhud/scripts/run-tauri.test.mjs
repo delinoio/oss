@@ -148,6 +148,19 @@ test("surfaces fatal repository-local Git configuration failures", () => {
       "darwin",
       {},
       () => ({
+        status: 1,
+        stderr: "warning: unable to access '.git/config': Permission denied\n",
+        stdout: "",
+      }),
+    ),
+    /exited with status 1/u,
+  );
+  assert.throws(
+    () => repositoryAppleSigningEnvironment(
+      "dev",
+      "darwin",
+      {},
+      () => ({
         status: 128,
         stderr: "fatal: bad config line 1 in file .git/config\n",
         stdout: "",
