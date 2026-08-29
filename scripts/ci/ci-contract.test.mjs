@@ -200,7 +200,10 @@ test("Debian desktop validation installs, launches, unregisters, and removes the
     "test ! -e /etc/opt/chrome/native-messaging-hosts/io.delino.devhud.native_messaging.json",
   ]) assert.ok(source.includes(expected), expected);
   const lifecycle = namedStep(workflow.jobs["devhud-desktop"], "Verify Ubuntu Debian Native Messaging install and uninstall lifecycle").run;
-  assert.match(lifecycle, /sudo ln -s "\$session_socket" "\$runtime\/bus"/u);
+  for (const expected of [
+    'if [ -S "$runtime/bus" ]', 'export DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime/bus"',
+    'sudo ln -s "$session_socket" "$runtime/bus"', "created_bus=true", 'if [ "$created_bus" = true ]',
+  ]) assert.ok(lifecycle.includes(expected), expected);
   const register = lifecycle.indexOf('"$host" register "$host" "$user_manifest"');
   const registered = lifecycle.indexOf('test -e "$user_manifest"', register);
   const uninstall = lifecycle.indexOf('sudo dpkg -r "$package"');

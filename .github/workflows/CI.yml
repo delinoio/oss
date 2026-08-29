@@ -1535,14 +1535,21 @@ jobs:
             mkdir -p "$control_directory"
             chmod 700 "$control_directory"
             sudo install -d -m 0700 -o "$(id -u)" -g "$(id -g)" "$runtime"
-            if [ -e "$runtime/bus" ] || [ -L "$runtime/bus" ]; then
-              echo "DevHUD Debian lifecycle requires an unused per-user D-Bus socket path" >&2
+            created_bus=false
+            if [ -S "$runtime/bus" ]; then
+              export DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime/bus"
+            elif [ -e "$runtime/bus" ] || [ -L "$runtime/bus" ]; then
+              echo "DevHUD Debian lifecycle found an invalid per-user D-Bus socket path" >&2
               exit 1
+            else
+              sudo ln -s "$session_socket" "$runtime/bus"
+              created_bus=true
             fi
-            sudo ln -s "$session_socket" "$runtime/bus"
             keyring_pid=
             cleanup_lifecycle() {
-              sudo rm -f "$runtime/bus"
+              if [ "$created_bus" = true ]; then
+                sudo rm -f "$runtime/bus"
+              fi
               if [ -n "$keyring_pid" ]; then
                 kill "$keyring_pid" 2>/dev/null || true
                 wait "$keyring_pid" 2>/dev/null || true
