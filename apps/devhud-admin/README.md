@@ -14,9 +14,14 @@ package-local `.env.example` to `.env`, use the exact same issuer in
 
 OSS mode does not create a shared administrator, user, or application.
 Administrator sign-in therefore requires contributor-owned Logto setup or the
-authorized team path. Run `pnpm --filter devhud-admin test` for type, component,
-production-output, and fixed-port checks. Internal environment ownership is
-defined in `docs/repository-environment-contract.md`.
+authorized team path. Run `pnpm --filter devhud-admin typecheck`, `lint`,
+`test:unit`, `test:components`, `test:accessibility`, and `build:frontend` for
+the split CI contracts. `pnpm --filter devhud-admin verify:embedded` compares
+that local build with the committed API assets without rewriting them; use
+`build:embedded` only when intentionally refreshing those assets. The aggregate
+`pnpm --filter devhud-admin test` retains the production-output and fixed-port
+checks. Internal environment ownership is defined in
+`docs/repository-environment-contract.md`.
 
 Public guidance is available at the stable `/devhud/admin`,
 `/devhud/security`, and `/devhud/support` routes of the configured public

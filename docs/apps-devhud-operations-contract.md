@@ -6,6 +6,12 @@ This is the internal maintainer runbook for the implemented DevHud workflow. The
 
 The private candidate is never public-ready until the complete signed inventory passes validation. There is no automatic downgrade, partial GA, service-level objective, remote-alert service, or kill switch. A failed check stops the channel and requires an explicit maintainer decision.
 
+## CI validation and non-publication boundary
+
+`.github/workflows/CI.yml` validates every implemented DevHud path with self-gated, read-only jobs. It exercises schema and generated freshness; Go, Rust, frontend, native-host, desktop, mobile/widget, extension, security, adapter, updater, installer, supply-chain, OCI, public-route, and release fixtures. The desktop matrix covers macOS, Windows, and Ubuntu x64/arm64 where GitHub-hosted runners and cross-build tooling make the package feasible; Linux includes X11 smoke. The mobile matrices cover the production iOS/Android architectures and their simulator/emulator paths. Exact CEF pins are checked before native work.
+
+CI never builds a signed private candidate and never publishes. It receives no release secrets, uploads no store or release payload, pushes no OCI layout, deploys no service or documentation, changes no updater state, and creates no tag or GitHub Release. SPDX SBOMs and provenance are generated only as local validation evidence. Release workflow behavior is evaluated by deterministic fixtures. Run `pnpm ci:workflows`, `pnpm ci:contracts`, and `pnpm ci:release-fixtures` locally; package-local commands are listed in the applicable README files.
+
 ## Release preparation and approval
 
 1. Confirm `packaging/devhud/release-metadata.json`, package manifests, Tauri configuration, Cargo packages, and the Native Messaging host all contain the same stable version. The release identity is `devhud@v<MAJOR.MINOR.PATCH>`.

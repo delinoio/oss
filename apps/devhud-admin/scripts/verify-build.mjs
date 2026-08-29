@@ -1,7 +1,7 @@
 import { readFile, readdir } from "node:fs/promises";
 import { resolve } from "node:path";
 
-const dist = resolve("../../servers/devhud-api/internal/adminassets/dist");
+const dist = resolve("dist");
 const index = await readFile(resolve(dist, "index.html"), "utf8");
 if (!index.includes("/admin/")) {
   throw new Error("Production assets are not rooted at /admin/.");

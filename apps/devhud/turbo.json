@@ -4,6 +4,18 @@
   "tasks": {
     "build": {
       "cache": false
+    },
+    "mobile:generate": {
+      "cache": false
+    },
+    "build:ios": {
+      "cache": false
+    },
+    "build:android": {
+      "cache": false
+    },
+    "smoke:platform": {
+      "cache": false
     }
   }
 }

@@ -10,6 +10,8 @@ Run from the repository root:
 pnpm --filter public-docs dev
 pnpm --filter public-docs test
 pnpm --filter public-docs build
+pnpm --filter public-docs build:frontend
+pnpm --filter public-docs test:routes
 pnpm --filter public-docs preview
 ```
 

@@ -57,9 +57,29 @@ export function validateResolvedDependencySources(
 export function validateCiTargetMatrix(workflow, targets) {
   const entries = workflow.jobs?.["devhud-desktop"]?.strategy?.matrix?.include;
   assert(Array.isArray(entries), "native CI matrix include list is missing");
+  const packageKinds = {
+    darwin: [{ suffix: "", os: "macos", bundle: "dmg", package: "macos-app" }],
+    win32: [
+      { suffix: "-nsis", os: "windows", bundle: "nsis", package: "windows-nsis" },
+      { suffix: "-msi", os: "windows", bundle: "msi", package: "windows-msi" },
+    ],
+    linux: [
+      { suffix: "-deb", os: "linux", bundle: "deb", package: "linux-deb" },
+      { suffix: "-appimage", os: "linux", bundle: "appimage", package: "linux-appimage" },
+    ],
+  };
+  const expectedEntries = targets.flatMap((target) => {
+    const variants = packageKinds[target.os];
+    assert(variants, `native CI matrix has no package-kind contract for ${target.id}`);
+    return variants.map((variant) => ({
+      ...variant,
+      id: `${target.id}${variant.suffix}`,
+      runner: target.runner,
+    }));
+  });
   assert(
-    entries.length === targets.length,
-    "native CI matrix must contain exactly one entry per desktop target",
+    entries.length === expectedEntries.length,
+    "native CI matrix must contain every desktop package-kind target exactly once",
   );
 
   const entriesById = new Map();
@@ -71,9 +91,14 @@ export function validateCiTargetMatrix(workflow, targets) {
     entriesById.set(entry.id, entry);
   }
 
-  for (const { id, runner } of targets) {
-    const entry = entriesById.get(id);
-    assert(entry, `native CI matrix is missing ${id}`);
-    assert(entry.runner === runner, `native CI matrix runner changed for ${id}`);
+  for (const expected of expectedEntries) {
+    const entry = entriesById.get(expected.id);
+    assert(entry, `native CI matrix is missing ${expected.id}`);
+    for (const field of ["runner", "os", "bundle", "package"]) {
+      assert(
+        entry[field] === expected[field],
+        `native CI matrix ${field} changed for ${expected.id}`,
+      );
+    }
   }
 }

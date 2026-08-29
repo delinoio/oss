@@ -123,6 +123,7 @@
 ### Testing and Validation
 
 - If frontend code changes in this domain, run `pnpm test` before finishing.
+- DevHud CI commands must remain package-local and usable through the committed Turbo binary. Cache only deterministic generated and frontend output; native packaging, mobile, smoke, signing, release, store, and deployment tasks remain non-cacheable and CI must not publish them.
 - If `apps/devhud` changes, run `pnpm --filter devhud test` and `pnpm --filter devhud verify:pins`; run its platform smoke on a supported native production artifact when the host is available.
 - If `apps/binpm-docs` changes, run `pnpm --filter binpm-docs test` before finishing.
 - If `apps/nodeup-docs` changes, run `pnpm --filter nodeup-docs test` before finishing.

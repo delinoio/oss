@@ -11,7 +11,7 @@ export default defineConfig(({ command }) => ({
   output: {
     assetPrefix: "/admin/",
     cleanDistPath: true,
-    distPath: { root: "../../servers/devhud-api/internal/adminassets/dist" },
+    distPath: { root: "dist" },
     filename: {
       css: "assets/[name].[contenthash:8].css",
       js: "assets/[name].[contenthash:8].js",

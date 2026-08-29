@@ -6,6 +6,8 @@ Support uses the authenticated administrator surface only: `AdminService` metada
 
 For diagnostics, ask the user to preview the exact redacted payload first. Guests may export but cannot submit; blocked and deletion-pending accounts cannot submit. Crash evidence is limited to the typed error code, build/platform/architecture, applicable CEF/Tauri revisions, bounded summary/stack, correlation IDs, quota state, and service availability.
 
+CI results, generated SBOMs/provenance, dry package layouts, and release fixtures are validation evidence only. They do not prove that an artifact was signed, uploaded, deployed, approved by a store, exposed by the updater, or made public. Never cite a green CI run as public availability; confirm the exact coordinated release state through the operations contract.
+
 ## Upload, deletion, and audit cases
 
 Use `AdminService.QuarantineUpload` or `AdminService.DeleteUpload` only with a validated non-blank reason and expected-state compare-and-set. Quarantine/removal is metadata-first and must not expose image bytes or locators. Preserve operation leases and tombstones; a conflict or uncertain removal remains visible for retry.

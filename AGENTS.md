@@ -349,7 +349,16 @@ Coverage expectations:
 - `node-binpm-docs-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter binpm-docs test`.
 - `node-nodeup-docs-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter nodeup-docs test`.
 - `node-public-docs-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter public-docs test`.
+- `ci-contracts`: validates workflow syntax and the repository CI contract with the checked-in Go `actionlint` tool and Node fixtures.
+- `devhud-frontend`, `devhud-extension`, and `devhud-admin`: run package-local type, lint, unit, component, accessibility, and deterministic frontend/package builds.
 - `devhud-protocol`: runs schema formatting, lint, compatibility, and generated-freshness checks; Go binding tests; and TypeScript client lint, tests, and build on Ubuntu.
+- `devhud-api`: runs package-local Go format, vet, unit, PostgreSQL migration, integration, API, and sweeper conformance.
+- `devhud-rust-conformance`: runs package-local capture, shortcut, IPC, updater, and native-host protocol tests in addition to the repository Rust baseline.
+- `devhud-security`: runs credential, redaction, logout, deletion, restore, direct GitHub/R2, and agent adapter fixtures.
+- `devhud-desktop`: validates the exact CEF pin and feasible macOS, Windows, and Ubuntu x64/arm64 native packages, installer/native-host lifecycle, and Linux X11 smoke.
+- `devhud-mobile-contracts`, `devhud-ios-simulator`, and `devhud-android-emulator`: validate iOS/Android app and widget generation and production/simulator/emulator builds.
+- `devhud-oci`: builds both API and sweeper OCI layouts for amd64/arm64 and validates non-root execution, embedded migrations, and SPDX SBOMs without pushing.
+- `devhud-supply-chain`: validates installer, Native Messaging host, extension ZIP, updater/key-rotation signature, SBOM, and provenance fixtures.
 - `devhud-release-contracts`: runs deterministic static/dry Node tests for the reusable private candidate, exact public release identity, configuration failure, signing/preflight failure, review retry, channel ordering, rollback, and redaction contracts without exercising publication.
 - `ci-result`: provides a single aggregate status that fails when any executed domain job fails or is cancelled.
 - The DevHud release-contract job also validates the internal operations runbook, repository workflow contract, and read-only CEF review workflow through `scripts/release/devhud-operations.test.mjs`.
@@ -357,9 +366,12 @@ Coverage expectations:
 Change-scoped execution rules:
 - CI jobs perform self-gating; there is no repository-wide `detect-changes` job.
 - Go and Rust jobs use in-job path-based change detection via `dorny/paths-filter`.
-- Existing Node workspace test/lint jobs use in-job Turbo affected detection via `pnpm dlx turbo@2.9.14 query affected --packages <workspace>`.
+- Node workspace jobs install with the frozen lockfile and use the committed Turbo binary via `pnpm exec turbo run <task> --affected --filter <workspace> --dry=json`; an empty task set is a successful self-gated no-op.
+- DevHud path filters include `servers/**`, `protos/**`, `packages/**`, every DevHud app, `crates/devhud-native-messaging-host/**`, `packaging/devhud/**`, public docs, and the DevHud package/release/review workflows.
+- Protocol generation and frontend outputs are deterministic and cacheable; native package, mobile, smoke, signing, release, and deployment tasks remain non-cacheable.
 - Changes to `.github/workflows/CI.yml` force all `go`, `node`, and `rust` domain jobs to run.
 - `workflow_dispatch` runs all domain jobs regardless of changed paths.
+- CI is read-only: it does not consume release secrets, push tags or images, create releases, upload stores, deploy services/docs, or mutate updater/controller state.
 - When build or test commands change in project contracts, update this section and `.github/workflows/CI.yml` in the same commit.
 
 Release automation baseline:
