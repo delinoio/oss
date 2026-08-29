@@ -1851,6 +1851,7 @@ jobs:
               - package.json
               - pnpm-workspace.yaml
               - pnpm-lock.yaml
+              - turbo.json
               - protos/**
               - packages/**
               - scripts/check-proto-breaking.sh
