@@ -447,6 +447,32 @@ test("preflight rejects URL escapes rejected by the Go service parser", () => {
   );
 });
 
+test("preflight rejects raw URL control characters rejected by the Go service parser", () => {
+  const valid = validApiEnvironment();
+  const controlCharacters = [
+    ...Array.from({ length: 0x20 }, (_, codePoint) =>
+      String.fromCharCode(codePoint),
+    ),
+    String.fromCharCode(0x7f),
+  ];
+
+  for (const controlCharacter of controlCharacters) {
+    const issuer = `https://issuer.exa${controlCharacter}mple.com/oidc`;
+    for (const [contract, environment] of [
+      [adminContract, { DEVHUD_LOGTO_ISSUER: issuer }],
+      [apiContract, { ...valid, DEVHUD_LOGTO_ISSUER: issuer }],
+    ]) {
+      assert.throws(
+        () => validateInjectedEnvironment(contract, environment),
+        (error) =>
+          error instanceof EnvironmentError &&
+          error.code === "environment.invalid-values",
+        `ASCII control character ${controlCharacter.charCodeAt(0)}`,
+      );
+    }
+  }
+});
+
 test("preflight accepts whitespace around identity HMAC key-ring entries", () => {
   const firstKey = Buffer.alloc(32, 1).toString("base64");
   const secondKey = Buffer.alloc(32, 2).toString("base64");

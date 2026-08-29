@@ -133,8 +133,21 @@ const rawAuthorityHostname = (authority) => {
   return authority.replace(/:\d*$/u, "");
 };
 
+const containsAsciiControlCharacter = (value) => {
+  for (let index = 0; index < value.length; index += 1) {
+    const codeUnit = value.charCodeAt(index);
+    if (codeUnit < 0x20 || codeUnit === 0x7f) return true;
+  }
+  return false;
+};
+
 const localHttp = (value) => {
-  if (/%(?![0-9A-Fa-f]{2})/u.test(value)) return false;
+  if (
+    containsAsciiControlCharacter(value) ||
+    /%(?![0-9A-Fa-f]{2})/u.test(value)
+  ) {
+    return false;
+  }
   const authorityMatch = /^https?:\/\/([^/\\?#]+)(?:[/?#]|$)/u.exec(value);
   if (!authorityMatch) return false;
   try {
