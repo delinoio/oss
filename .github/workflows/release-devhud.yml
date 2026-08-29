@@ -902,6 +902,8 @@ jobs:
         with:
           name: "devhud-public-docs-candidate-${{ github.run_attempt }}"
           path: apps/public-docs/doc_build
+      - name: Inject and verify official DevHud store links
+        run: node apps/public-docs/scripts/inject-devhud-store-links.mjs
       - run: pnpm dlx wrangler@4.33.1 pages deploy apps/public-docs/doc_build --project-name "$DEVHUD_PUBLIC_DOCS_PROJECT_NAME" --branch main
       - name: Verify the exact deployed DevHud candidate
         run: |

@@ -37,7 +37,8 @@ const routeOutputFiles = stableRouteIds.map((routeId) => ({
 const htmlRoutePaths = new Set(
   stableRouteIds.map((routeId) => (routeId === "/" ? "/index.html" : `${routeId}.html`)),
 );
-const hrefPattern = /<a\b[^>]*\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'`=<>]+))/giu;
+const hrefPattern = /\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'`=<>]+))/giu;
+const anchorHrefPattern = /<a\b[^>]*\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'`=<>]+))/giu;
 const resourceAttributePattern = /\b(?:src|srcset)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'`=<>]+))/giu;
 const validatorOrigin = "https://public-docs.invalid";
 
@@ -120,7 +121,7 @@ function findHtmlRouteLinks(contents, htmlFile) {
   const pageUrl = new URL(pagePath, validatorOrigin);
   const invalidRoutes = [];
 
-  for (const match of contents.matchAll(hrefPattern)) {
+  for (const match of contents.matchAll(anchorHrefPattern)) {
     const href = attributeValue(match);
     const decodedHref = decodeHTML(href);
     if (!/\.html(?:[?#]|$)/iu.test(decodedHref)) continue;
@@ -234,12 +235,15 @@ const forbiddenContent = [
   /(?:GH_TOKEN|DEVHUD_[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|KEY)|Authorization:\s*Bearer)/iu,
   /(?:"(?:token|access[_-]?token|refresh[_-]?token|api[_-]?key)"|(?:token|access[_-]?token|refresh[_-]?token|api[_-]?key))\s*[:=]\s*[^\s<`]+/iu,
   /(?:"(?:private key|signing key|password|access key|secret)"|(?:private key|signing key|password|access key|secret))\s*[:=]\s*[^\s<`]+/iu,
+  /\b(?:ghp|github_pat)_[A-Za-z0-9_]+\b/iu,
 ];
 const forbiddenContentFixtures = [
   [
     "json",
     '```json\n{"refresh_token":"abc123","password":"not-a-real-secret"}\n```',
   ],
+  ["classic GitHub PAT", "ghp_1234567890abcdefghijklmnopqrstuvwxyzABCDEFGHIJ"],
+  ["fine-grained GitHub PAT", "github_pat_11ABCDEFGHijklmnopQRSTUVwxyz0123456789"],
 ];
 const forbiddenPathContent = [
   new RegExp(`(?:^|[\\s("'\\x60>])/(?!${stableRoutePathPattern}(?:\\.html)?(?:[?#"'\\x60<\\s]|$))[A-Za-z0-9._~-]+(?:[/\\\\][^\\s"'\\x60<>]*)?`, "u"),
@@ -280,6 +284,10 @@ const credentialBearingResourceFixtures = [
   '<img src="https://example.com/image?token&equals;abc123">',
   '<img src="https://example.com/image#token&equals;abc123">',
 ];
+const hrefAttributeFixtures = [
+  '<link rel="stylesheet" href="https://alice:secret@example.com/x.css">',
+  '<area href="https://example.com/image?token&equals;abc123">',
+];
 const approvedResourceFixtures = [
   '<img src="/assets/logo.svg">',
   '<script src="/static/js/app.js"></script>',
@@ -287,7 +295,7 @@ const approvedResourceFixtures = [
 const releaseAvailabilityClaim =
   /\b(?:partial|staged)\s+(?:GA|availability|general[- ]availability)\b|\b(?:partial|staged)\s+or\s+(?:staged|partial)\s+general[- ]availability\b|\b(?:beta|phased|fractional)\s+(?:GA|availability|general[- ]availability|rollout|channel)\b|\bearly[- ]access(?:\s+(?:GA|availability|general[- ]availability|rollout|channel))?\b|\bearly announcement\b/giu;
 const negativeAvailabilityPredicate =
-  /^\s*(?:(?:is|are|remains?|remain)\s+(?:not|never)\s+(?:available|supported|permitted|allowed|excluded|unsupported)|will\s+not\s+(?:be\s+)?(?:available|supported|permitted|allowed|excluded|unsupported))\b/iu;
+  /^\s*(?:(?:is|are|remains?|remain)\s+(?:(?:not|never)\s+(?:available|supported|permitted|allowed|excluded|unsupported)|(?:unavailable|unsupported|excluded))|isn't\s+(?:available|supported|permitted|allowed|excluded|unsupported)|will\s+not\s+(?:be\s+)?(?:available|supported|permitted|allowed|excluded|unsupported))\b/iu;
 const unnegatedProhibitionPredicate =
   /^\s*(?:is|are|remains?|remain)\s+(?:prohibited|forbidden|disallowed)\b/iu;
 
@@ -302,6 +310,9 @@ const releaseAvailabilityFixtures = [
   ["early-access channel is allowed", true],
   ["early announcement is available", true],
   ["beta channel is not available", false],
+  ["beta channel is unsupported", false],
+  ["beta channel is unavailable", false],
+  ["beta channel isn't available", false],
   ["early announcement is not available", false],
 ];
 
@@ -370,7 +381,7 @@ for (const htmlFile of htmlFiles) {
     failures.push(`${path.relative(outputDir, htmlFile)} contains prohibited public content`);
   }
   for (const pattern of forbiddenPathContent) {
-    const linkTargets = [...contents.matchAll(hrefPattern)]
+    const linkTargets = [...contents.matchAll(anchorHrefPattern)]
       .map((match) => decodeHTML(attributeValue(match)))
       .join(" ");
     if (pattern.test(renderedText) || pattern.test(linkTargets)) {
@@ -391,6 +402,12 @@ for (const [language, fixture] of forbiddenContentFixtures) {
 for (const fixture of forbiddenLinkFixtures) {
   if (!containsCredentialBearingLink(fixture, path.join(outputDir, "fixture.html"))) {
     failures.push("credential-bearing link fixture was not detected");
+  }
+}
+
+for (const fixture of hrefAttributeFixtures) {
+  if (!containsCredentialBearingLink(fixture, path.join(outputDir, "fixture.html"))) {
+    failures.push("credential-bearing href attribute fixture was not detected");
   }
 }
 

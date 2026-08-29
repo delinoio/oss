@@ -57,11 +57,51 @@ Before opening the package, bind the verification to the requested release: conf
 
 ## Mobile stores
 
-Install iOS 16 or later from the Apple App Store, or Android 10/API 29 or later from Google Play. Mobile updates are store-managed. Both packages include the optional one-Deck home-screen widget.
+Install iOS 16 or later from the [Apple App Store](https://apps.apple.com/app/id__DEVHUD_APP_STORE_APP_ID__), or Android 10/API 29 or later from [Google Play](https://play.google.com/store/apps/details?id=__DEVHUD_GOOGLE_PLAY_PACKAGE_NAME__). Mobile updates are store-managed. Both packages include the optional one-Deck home-screen widget.
 
 ## Chrome extension
 
-Install DevHud from the Chrome Web Store. The extension is a permission-scoped context picker: it does not continuously observe pages, and it does not collect cookies, storage, console output, or network traffic. The picker is unavailable in incognito tabs; this is expected, and DevHud falls back to capture without browser context plus manual repository selection. After an explicit picker gesture, it scans up to 10,000 candidate elements across the active page. The picker times out after 30 seconds; if it disappears, restart the picker gesture. If the page exceeds that bound, or the selected subtree exceeds 10,000 total nodes, it degrades to capture without browser context and requires manual repository selection. Otherwise, it retains and persists only the selected, sanitized context. A Chrome-assisted RealQA draft includes that browser context by default when submitted, so the redacted URL, page title, user agent, viewport and bounds, accessibility values, and sanitized markup may be published in the GitHub issue. Review the draft and use its browser-context removal control before submitting if you do not want to share those details. Pair it from DevHud Settings after installing the desktop app.
+Install DevHud from the [Chrome Web Store](https://chromewebstore.google.com/detail/devhud/__DEVHUD_CHROME_EXTENSION_ID__). The extension is a permission-scoped context picker: it does not continuously observe pages, and it does not collect cookies, storage, console output, or network traffic. The picker is unavailable in incognito tabs; this is expected, and DevHud falls back to capture without browser context plus manual repository selection. After an explicit picker gesture, it scans up to 10,000 candidate elements across the active page. The picker times out after 30 seconds; if it disappears, restart the picker gesture. If the page exceeds that bound, or the selected subtree exceeds 10,000 total nodes, it degrades to capture without browser context and requires manual repository selection. Otherwise, it retains and persists only the selected, sanitized context. A Chrome-assisted RealQA draft includes that browser context by default when submitted, so the redacted URL, page title, user agent, viewport and bounds, accessibility values, and sanitized markup may be published in the GitHub issue. Review the draft and use its browser-context removal control before submitting if you do not want to share those details. Pair it from DevHud Settings after installing the desktop app.
+
+### Windows verification
+
+In PowerShell, use the Windows-provided `tar.exe` and `Get-FileHash` commands to inspect and verify the release evidence before opening an MSI or NSIS installer. Install the Windows build of `cosign` separately, then run:
+
+```powershell
+$ErrorActionPreference = "Stop"
+$archive = "devhud-v<VERSION>-release-evidence.tar.gz"
+$dir = Join-Path (Get-Location) "release-evidence"
+New-Item -ItemType Directory -Path $dir -Force | Out-Null
+$members = @(tar.exe -tzf $archive)
+if ($LASTEXITCODE -ne 0 -or $members.Count -eq 0) { throw "Unable to read release evidence archive" }
+foreach ($member in $members) {
+  if ([IO.Path]::IsPathRooted($member) -or $member -match "(^|[/\\])\.\.([/\\]|$)") { throw "Unsafe archive path: $member" }
+}
+tar.exe -xzf $archive -C $dir
+if ($LASTEXITCODE -ne 0) { throw "Unable to extract release evidence archive" }
+
+cosign verify-blob `
+  --bundle "$dir\sigstore\SHA256SUMS.sigstore.json" `
+  --certificate-identity "https://github.com/delinoio/oss/.github/workflows/package-devhud-private.yml@refs/heads/main" `
+  --certificate-oidc-issuer "https://token.actions.githubusercontent.com" `
+  "$dir\SHA256SUMS"
+if ($LASTEXITCODE -ne 0) { throw "Sigstore verification failed" }
+
+Get-Content "$dir\SHA256SUMS" | ForEach-Object {
+  if ($_ -match "^([0-9a-fA-F]{64})\s+\*?(.+)$") {
+    $expected = $Matches[1].ToLowerInvariant()
+    $file = Join-Path $dir $Matches[2]
+    if (-not (Test-Path -LiteralPath $file)) { throw "Missing evidence file: $($Matches[2])" }
+    $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $file).Hash.ToLowerInvariant()
+    if ($actual -ne $expected) { throw "Checksum mismatch: $($Matches[2])" }
+  }
+}
+$artifact = "devhud-windows-<ARCH>-<PACKAGE>.msi"
+$artifactHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $artifact).Hash.ToLowerInvariant()
+if (-not (Select-String -Path "$dir\SHA256SUMS" -Pattern $artifactHash -SimpleMatch)) { throw "Downloaded artifact is not in the authenticated checksum manifest" }
+```
+
+Use the same signer and issuer to verify the matching artifact bundle under `release-evidence\sigstore`. Confirm the release tag, source revision, embedded version, artifact name, and digest all match the requested release; discard any mismatch.
 
 ## Verification checklist
 
