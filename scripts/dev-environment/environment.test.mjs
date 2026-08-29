@@ -4,11 +4,14 @@ import { createServer } from "node:net";
 import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import {
+  acceptedMarker,
   adminContract,
   apiContract,
+  comparisonMarker,
   composeFile,
   EnvironmentError,
   repositoryRoot,
@@ -25,7 +28,12 @@ import {
   dockerEndpointIsLocal,
   Lifecycle,
 } from "./orchestrator.mjs";
-import { commandInvocation, dockerClientEnvironment } from "./process.mjs";
+import {
+  collect,
+  commandInvocation,
+  dockerClientEnvironment,
+  terminateTree,
+} from "./process.mjs";
 import { readServiceEnv } from "./service-environment.mjs";
 
 const testDirectory = dirname(fileURLToPath(import.meta.url));
@@ -40,6 +48,7 @@ const canaries = [
   "API_AUDIENCE_CANARY",
   "API_DESKTOP_CANARY",
   "UNKNOWN_VALUE_CANARY",
+  comparisonMarker,
 ];
 
 function validApiEnvironment() {
@@ -71,7 +80,7 @@ async function runNode(script, args, environment) {
   child.stderr.on("data", (chunk) => stderr.push(chunk));
   const result = await new Promise((resolveResult, reject) => {
     child.once("error", reject);
-    child.once("exit", (code, signal) => resolveResult({ code, signal }));
+    child.once("close", (code, signal) => resolveResult({ code, signal }));
   });
   return {
     ...result,
@@ -114,6 +123,49 @@ async function events(path) {
   }
 }
 
+async function waitForEvent(path, predicate) {
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
+    const recorded = await events(path);
+    if (recorded.some(predicate)) return;
+    await delay(20);
+  }
+  throw new Error("timed out waiting for fake tool event");
+}
+
+async function interruptCliDuring(args, environment, predicate) {
+  const child = spawn(process.execPath, [cli, ...args], {
+    cwd: repositoryRoot,
+    detached: process.platform !== "win32",
+    env: environment,
+    shell: false,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const completion = new Promise((resolveResult, reject) => {
+    child.once("error", reject);
+    child.once("close", (code, signal) => resolveResult({ code, signal }));
+  });
+  let timeout;
+  try {
+    await waitForEvent(environment.DEVHUD_TEST_EVENT_LOG, predicate);
+    child.kill("SIGTERM");
+    return await Promise.race([
+      completion,
+      new Promise((_, reject) => {
+        timeout = setTimeout(
+          () => reject(new Error("development command did not exit after SIGTERM")),
+          5_000,
+        );
+      }),
+    ]);
+  } finally {
+    clearTimeout(timeout);
+    if (child.exitCode === null && child.signalCode === null) {
+      await terminateTree(child, "SIGKILL").catch(() => child.kill("SIGKILL"));
+    }
+  }
+}
+
 test("mode is a bounded enum-style selector", () => {
   assert.equal(requireMode("team"), "team");
   assert.equal(requireMode("oss"), "oss");
@@ -142,6 +194,15 @@ test("Windows pnpm invocation uses cmd.exe while native executables remain direc
     command: "pnpm",
     prefix: [],
   });
+});
+
+test("collected commands wait for inherited stdout pipes to close", async () => {
+  const result = await collect(process.execPath, [lateProvider], {
+    cwd: repositoryRoot,
+    env: process.env,
+  });
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(result.stdout, `${acceptedMarker}\n`);
 });
 
 test("temporary Infisical config paths must stay outside the checkout", () => {
@@ -208,7 +269,7 @@ test("Compose project names are stable, checkout-scoped, and do not disclose the
   assert.equal(firstName.includes(firstKey), false);
 });
 
-test("API and administrator allowlists reject missing, unknown, changed baseline, and partial groups", () => {
+test("API and administrator allowlists reject malformed configuration", () => {
   const valid = validApiEnvironment();
   assert.deepEqual(validateInjectedEnvironment(apiContract, valid), valid);
 
@@ -232,6 +293,26 @@ test("API and administrator allowlists reject missing, unknown, changed baseline
       }),
     /unknown names/u,
   );
+
+  for (const malformed of [
+    "https:/issuer.example",
+    "https:issuer.example",
+    "https:///issuer.example",
+    "http:/localhost:3001/oidc",
+  ]) {
+    for (const [contract, environment] of [
+      [adminContract, { DEVHUD_LOGTO_ISSUER: malformed }],
+      [apiContract, { ...valid, DEVHUD_LOGTO_ISSUER: malformed }],
+    ]) {
+      assert.throws(
+        () => validateInjectedEnvironment(contract, environment),
+        (error) =>
+          error instanceof EnvironmentError &&
+          error.code === "environment.invalid-values",
+        malformed,
+      );
+    }
+  }
 });
 
 test("OSS API and administrator overrides must resolve to the same issuer", async (t) => {
@@ -332,6 +413,31 @@ test("team authentication or path failure is fail-closed and does not invoke OSS
   assert.match(result.stderr, /authentication or secret path is unavailable/u);
   assert.equal(`${result.stdout}${result.stderr}`.includes("INFISICAL_FAILURE_CANARY_MUST_NOT_LEAK"), false);
   assert.equal((await events(environment.DEVHUD_TEST_EVENT_LOG)).some((event) => event.tool === "docker"), false);
+});
+
+test("team startup and doctor reject mismatched API and administrator issuers", async (t) => {
+  const temporaryDirectory = await mkdtemp(resolve(tmpdir(), "devhud-team-issuer-"));
+  const apiIssuer = "https://api-auth-canary.example.test/oidc";
+  const adminIssuer = "https://admin-auth-canary.example.test/oidc";
+  const environment = {
+    ...fakeEnvironment(temporaryDirectory),
+    DEVHUD_TEST_API_LOGTO_ISSUER: apiIssuer,
+    DEVHUD_TEST_ADMIN_LOGTO_ISSUER: adminIssuer,
+  };
+  t.after(() => rm(temporaryDirectory, { recursive: true, force: true }));
+
+  for (const args of [["start", "team"], ["doctor"]]) {
+    const result = await runNode(cli, args, environment);
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, /\[environment\.issuer-mismatch\].*DEVHUD_LOGTO_ISSUER/u);
+    const output = `${result.stdout}\n${result.stderr}`;
+    assert.equal(output.includes(apiIssuer), false);
+    assert.equal(output.includes(adminIssuer), false);
+  }
+
+  const recorded = await events(environment.DEVHUD_TEST_EVENT_LOG);
+  assert.equal(recorded.some((event) => event.tool === "go"), false);
+  assert.equal(recorded.some((event) => event.tool === "pnpm"), false);
 });
 
 test("service wrapper reports name/category-only contract failures and suppresses values", async (t) => {
@@ -497,6 +603,30 @@ for (const stage of ["dependency startup", "migration", "steady state"]) {
     );
     setTimeout(() => lifecycle.interrupt("SIGTERM"), 25);
     await assert.rejects(running, /interrupted by SIGTERM/u);
+  });
+}
+
+for (const [name, args, blockingVariable, tool] of [
+  ["Infisical version", ["start", "team"], "DEVHUD_TEST_BLOCK_INFISICAL_VERSION", "infisical"],
+  ["Docker version", ["start", "oss"], "DEVHUD_TEST_BLOCK_DOCKER_VERSION", "docker"],
+]) {
+  test(`interruption during the ${name} preflight terminates its process tree`, async (t) => {
+    const temporaryDirectory = await mkdtemp(resolve(tmpdir(), "devhud-preflight-signal-"));
+    const environment = {
+      ...fakeEnvironment(temporaryDirectory),
+      [blockingVariable]: "1",
+    };
+    t.after(() => rm(temporaryDirectory, { recursive: true, force: true }));
+
+    const result = await interruptCliDuring(
+      args,
+      environment,
+      (event) => event.tool === tool && event.action === "version-blocked",
+    );
+    assert.equal(result.signal, "SIGTERM");
+    const recorded = await events(environment.DEVHUD_TEST_EVENT_LOG);
+    assert.equal(recorded.some((event) => event.tool === "go"), false);
+    assert.equal(recorded.some((event) => event.tool === "pnpm"), false);
   });
 }
 

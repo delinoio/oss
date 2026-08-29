@@ -21,6 +21,10 @@ async function exists(path) {
 }
 
 if (args.includes("--version")) {
+  if (process.env.DEVHUD_TEST_BLOCK_INFISICAL_VERSION === "1") {
+    await log({ tool: "infisical", action: "version-blocked" });
+    await new Promise(() => setInterval(() => {}, 1_000));
+  }
   process.stdout.write("infisical version 0.43.116\n");
 } else if (args.includes("user") && args.includes("token")) {
   await log({ tool: "infisical", action: "auth-probe" });
@@ -45,7 +49,9 @@ if (args.includes("--version")) {
     const api = {
       DEVHUD_DATABASE_URL: "postgres://devhud:API_DATABASE_CANARY@127.0.0.1:5432/devhud?sslmode=disable",
       DEVHUD_PUBLIC_API_URL: "http://127.0.0.1:46307",
-      DEVHUD_LOGTO_ISSUER: "http://localhost:3001/oidc",
+      DEVHUD_LOGTO_ISSUER:
+        process.env.DEVHUD_TEST_API_LOGTO_ISSUER ??
+        "http://localhost:3001/oidc",
       DEVHUD_LOGTO_AUDIENCE: "urn:API_AUDIENCE_CANARY",
       DEVHUD_LOGTO_DESKTOP_CLIENT_ID: "API_DESKTOP_CANARY",
       DEVHUD_LOGTO_IOS_CLIENT_ID: "API_IOS_CANARY",
@@ -55,7 +61,11 @@ if (args.includes("--version")) {
       DEVHUD_PUBLIC_ASSET_BASE_URL: "http://127.0.0.1:46307",
       DEVHUD_IDENTITY_HMAC_KEYS: "MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE=",
     };
-    const admin = { DEVHUD_LOGTO_ISSUER: "http://localhost:3001/oidc" };
+    const admin = {
+      DEVHUD_LOGTO_ISSUER:
+        process.env.DEVHUD_TEST_ADMIN_LOGTO_ISSUER ??
+        "http://localhost:3001/oidc",
+    };
     const secrets = path === "/devhud/api" ? api : admin;
     if (process.env.DEVHUD_TEST_SECRET_SHAPE === "unknown") secrets.DEVHUD_UNKNOWN_CANARY = "UNKNOWN_VALUE_CANARY";
     if (process.env.DEVHUD_TEST_SECRET_SHAPE === "partial") secrets.DEVHUD_R2_ENDPOINT = "https://example.invalid";

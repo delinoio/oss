@@ -74,6 +74,7 @@ async function execute(action, environment) {
 process.exitCode = await runService({
   contract: apiContract,
   action: process.argv[2],
+  comparisonName: "DEVHUD_LOGTO_ISSUER",
   scriptPath,
   ossEnvironment,
   execute,

@@ -1,10 +1,13 @@
+import { Buffer } from "node:buffer";
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 import { access, chmod, mkdir, open, readFile } from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { resolve } from "node:path";
 import {
+  comparisonKeyName,
+  comparisonMarker,
   composeFile,
   repositoryRoot,
   resolveInfisicalConfigPaths,
@@ -70,27 +73,64 @@ export class Lifecycle {
     this.handlers.clear();
   }
 
-  async run(command, args, options = {}) {
+  async #execute(command, args, options, captureOutput) {
     if (this.signal) throw new Interrupted(this.signal);
+    const { stdin = "ignore", stdio, ...spawnOptions } = options;
     const child = spawn(command, args, {
       shell: false,
-      stdio: options.stdio ?? "inherit",
-      ...options,
+      ...spawnOptions,
+      stdio: captureOutput ? [stdin, "pipe", "pipe"] : (stdio ?? "inherit"),
       detached: process.platform !== "win32",
     });
     this.child = child;
-    const result = await new Promise((resolveResult, reject) => {
-      child.once("error", reject);
-      child.once("exit", (code, signal) => resolveResult({ code, signal }));
-    });
-    this.child = null;
-    if (this.terminationPromise) {
-      await this.terminationPromise;
-      this.terminationPromise = null;
+    const stdout = [];
+    const stderr = [];
+    if (captureOutput) {
+      child.stdout.on("data", (chunk) => stdout.push(chunk));
+      child.stderr.on("data", (chunk) => stderr.push(chunk));
+    }
+    let result;
+    try {
+      result = await new Promise((resolveResult, reject) => {
+        child.once("error", reject);
+        child.once("close", (code, signal) => resolveResult({ code, signal }));
+      });
+    } finally {
+      if (this.child === child) this.child = null;
+      if (this.terminationPromise) {
+        await this.terminationPromise;
+        this.terminationPromise = null;
+      }
     }
     if (this.signal) throw new Interrupted(this.signal);
-    return result;
+    return captureOutput
+      ? {
+          ...result,
+          stdout: Buffer.concat(stdout).toString("utf8"),
+          stderr: Buffer.concat(stderr).toString("utf8"),
+        }
+      : result;
   }
+
+  async run(command, args, options = {}) {
+    return this.#execute(command, args, options, false);
+  }
+
+  async collect(command, args, options = {}) {
+    return this.#execute(command, args, options, true);
+  }
+}
+
+function collectCommand(lifecycle, command, args, options) {
+  return lifecycle
+    ? lifecycle.collect(command, args, options)
+    : collect(command, args, options);
+}
+
+function inheritCommand(lifecycle, command, args, options) {
+  return lifecycle
+    ? lifecycle.run(command, args, options)
+    : inherited(command, args, options);
 }
 
 function testingOverrides(source = process.env) {
@@ -175,9 +215,15 @@ async function assertAppPorts() {
   }
 }
 
-async function dependencyOwnedByCompose(projectName, service, containerPort, hostPort) {
+async function dependencyOwnedByCompose(
+  lifecycle,
+  projectName,
+  service,
+  containerPort,
+  hostPort,
+) {
   const docker = dockerInvocation();
-  const result = await collect(
+  const result = await lifecycle.collect(
     docker.command,
     [
       ...docker.prefix,
@@ -192,11 +238,17 @@ async function dependencyOwnedByCompose(projectName, service, containerPort, hos
     .some((line) => line === `127.0.0.1:${hostPort}`);
 }
 
-async function assertDependencyPorts(projectName) {
+async function assertDependencyPorts(lifecycle, projectName) {
   for (const [port, owner, service, containerPort] of dependencyPorts) {
     if (
       !(await portIsAvailable(port)) &&
-      !(await dependencyOwnedByCompose(projectName, service, containerPort, port))
+      !(await dependencyOwnedByCompose(
+        lifecycle,
+        projectName,
+        service,
+        containerPort,
+        port,
+      ))
     ) {
       throw new Error(
         `[port.conflict] ${owner} requires fixed port ${port}; stop the conflicting process and retry`,
@@ -205,14 +257,19 @@ async function assertDependencyPorts(projectName) {
   }
 }
 
-async function exactInfisicalVersion() {
+async function exactInfisicalVersion(lifecycle) {
   const infisical = infisicalInvocation();
   let result;
   try {
-    result = await collect(infisical.command, [...infisical.prefix, "--version"], {
-      cwd: repositoryRoot,
-      env: rootChildEnvironment("team"),
-    });
+    result = await collectCommand(
+      lifecycle,
+      infisical.command,
+      [...infisical.prefix, "--version"],
+      {
+        cwd: repositoryRoot,
+        env: rootChildEnvironment("team"),
+      },
+    );
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
     throw new Error(
@@ -232,9 +289,10 @@ async function exactInfisicalVersion() {
   }
 }
 
-async function authenticated() {
+async function authenticated(lifecycle) {
   const infisical = infisicalInvocation();
-  const result = await collect(
+  const result = await collectCommand(
+    lifecycle,
     infisical.command,
     [
       ...infisical.prefix,
@@ -252,50 +310,140 @@ async function authenticated() {
   return result.code === 0;
 }
 
-async function runInteractiveInfisical(args, cwd = repositoryRoot) {
+async function runInteractiveInfisical(args, cwd = repositoryRoot, lifecycle) {
   const infisical = infisicalInvocation();
-  const result = await inherited(infisical.command, [...infisical.prefix, ...args], {
-    cwd,
-    env: rootChildEnvironment("team"),
-  });
+  const result = await inheritCommand(
+    lifecycle,
+    infisical.command,
+    [...infisical.prefix, ...args],
+    {
+      cwd,
+      env: rootChildEnvironment("team"),
+    },
+  );
   if (result.code !== 0 || result.signal) {
     throw new Error("[authentication.failed] Infisical authentication or local project initialization did not complete");
   }
 }
 
-export async function login() {
-  await exactInfisicalVersion();
-  if (!(await authenticated())) await runInteractiveInfisical(["--telemetry=false", "login"]);
+export async function login(lifecycle) {
+  await exactInfisicalVersion(lifecycle);
+  if (!(await authenticated(lifecycle))) {
+    await runInteractiveInfisical(
+      ["--telemetry=false", "login"],
+      repositoryRoot,
+      lifecycle,
+    );
+  }
   const { configFile, projectConfigDirectory } = resolveInfisicalConfigPaths();
   if (!(await exists(configFile))) {
     await mkdir(projectConfigDirectory, { recursive: true });
     await runInteractiveInfisical(
       ["--telemetry=false", "init"],
       projectConfigDirectory,
+      lifecycle,
     );
   }
   process.stdout.write("Team environment authentication and local project configuration are ready.\n");
 }
 
-async function runService(lifecycle, mode, service, action) {
-  const result = await lifecycle.run(
-    process.execPath,
-    [serviceScripts[service], action],
-    { cwd: repositoryRoot, env: rootChildEnvironment(mode) },
-  );
+function extractComparisons(stdout) {
+  const comparisons = [];
+  const forwarded = [];
+  for (const line of stdout.match(/[^\n]*\n|[^\n]+$/gu) ?? []) {
+    const normalized = line.replace(/\r?\n$/u, "");
+    if (normalized.startsWith(comparisonMarker)) {
+      comparisons.push(normalized.slice(comparisonMarker.length));
+    } else {
+      forwarded.push(line);
+    }
+  }
+  return { comparisons, forwarded: forwarded.join("") };
+}
+
+async function runService(lifecycle, mode, service, action, comparisonKey) {
+  const options = {
+    cwd: repositoryRoot,
+    env: {
+      ...rootChildEnvironment(mode),
+      ...(comparisonKey ? { [comparisonKeyName]: comparisonKey } : {}),
+    },
+  };
+  const result = comparisonKey
+    ? await lifecycle.collect(
+        process.execPath,
+        [serviceScripts[service], action],
+        options,
+      )
+    : await lifecycle.run(
+        process.execPath,
+        [serviceScripts[service], action],
+        options,
+      );
+  let comparisons = [];
+  if (comparisonKey) {
+    const output = extractComparisons(result.stdout);
+    comparisons = output.comparisons;
+    if (output.forwarded) process.stdout.write(output.forwarded);
+    if (result.stderr) process.stderr.write(result.stderr);
+  }
   if (result.code !== 0 || result.signal) {
     throw new Error(`[service.${action}] ${service} ${action} failed; see the name/category diagnostic above`);
   }
+  if (comparisonKey) {
+    if (
+      comparisons.length !== 1 ||
+      !/^[A-Za-z0-9_-]{43}$/u.test(comparisons[0])
+    ) {
+      throw new Error(
+        `[environment.comparison] ${service} did not produce one valid configuration comparison`,
+      );
+    }
+    return comparisons[0];
+  }
+  return null;
 }
 
-async function checkDocker() {
+async function validateTeamServices(lifecycle) {
+  const comparisonKey = randomBytes(32).toString("base64url");
+  const apiComparison = await runService(
+    lifecycle,
+    "team",
+    "api",
+    "validate",
+    comparisonKey,
+  );
+  const adminComparison = await runService(
+    lifecycle,
+    "team",
+    "admin",
+    "validate",
+    comparisonKey,
+  );
+  const apiDigest = Buffer.from(apiComparison, "base64url");
+  const adminDigest = Buffer.from(adminComparison, "base64url");
+  if (
+    apiDigest.byteLength !== adminDigest.byteLength ||
+    !timingSafeEqual(apiDigest, adminDigest)
+  ) {
+    throw new Error(
+      "[environment.issuer-mismatch] DevHud API and administrator team configuration must use the same DEVHUD_LOGTO_ISSUER",
+    );
+  }
+}
+
+async function checkDocker(lifecycle) {
   const docker = dockerInvocation();
   let result;
   try {
-    result = await collect(docker.command, [...docker.prefix, "compose", "version"], {
-      cwd: repositoryRoot,
-      env: dockerChildEnvironment(),
-    });
+    result = await lifecycle.collect(
+      docker.command,
+      [...docker.prefix, "compose", "version"],
+      {
+        cwd: repositoryRoot,
+        env: dockerChildEnvironment(),
+      },
+    );
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
     throw new Error("[tool.missing] Docker with Compose support is required for pnpm dev:oss");
@@ -303,7 +451,7 @@ async function checkDocker() {
   if (result.code !== 0) {
     throw new Error("[tool.missing] Docker with Compose support is required for pnpm dev:oss");
   }
-  await assertLocalDockerDaemon(docker);
+  await assertLocalDockerDaemon(lifecycle, docker);
 }
 
 export function dockerEndpointIsLocal(endpoint) {
@@ -321,8 +469,8 @@ export function dockerEndpointIsLocal(endpoint) {
   );
 }
 
-async function inspectDockerEndpoint(docker, context) {
-  const result = await collect(
+async function inspectDockerEndpoint(lifecycle, docker, context) {
+  const result = await lifecycle.collect(
     docker.command,
     [
       ...docker.prefix,
@@ -343,13 +491,13 @@ async function inspectDockerEndpoint(docker, context) {
   return endpoint;
 }
 
-async function assertLocalDockerDaemon(docker) {
+async function assertLocalDockerDaemon(lifecycle, docker) {
   const selectors = dockerClientEnvironment();
   const selectedContext = selectors.DOCKER_CONTEXT?.trim();
   const selectedHost = selectors.DOCKER_HOST?.trim();
   const endpoint = selectedContext
-    ? await inspectDockerEndpoint(docker, selectedContext)
-    : selectedHost || (await inspectDockerEndpoint(docker));
+    ? await inspectDockerEndpoint(lifecycle, docker, selectedContext)
+    : selectedHost || (await inspectDockerEndpoint(lifecycle, docker));
   if (!dockerEndpointIsLocal(endpoint)) {
     throw new Error(
       "[docker.remote-daemon] pnpm dev:oss requires a local Docker socket, named pipe, or loopback TCP endpoint",
@@ -436,18 +584,17 @@ async function startTurbo(lifecycle, mode) {
 
 async function startTeam(lifecycle) {
   await assertAppPorts();
-  await login();
-  await runService(lifecycle, "team", "api", "validate");
-  await runService(lifecycle, "team", "admin", "validate");
+  await login(lifecycle);
+  await validateTeamServices(lifecycle);
   await runService(lifecycle, "team", "api", "migrate");
   return startTurbo(lifecycle, "team");
 }
 
 async function startOss(lifecycle) {
-  await checkDocker();
+  await checkDocker(lifecycle);
   await assertAppPorts();
   const projectName = await localComposeProjectName();
-  await assertDependencyPorts(projectName);
+  await assertDependencyPorts(lifecycle, projectName);
   await runService(lifecycle, "oss", "api", "validate");
   await runService(lifecycle, "oss", "admin", "validate");
   let dependenciesStarted = false;
@@ -500,19 +647,18 @@ export async function start(mode) {
 }
 
 export async function doctor() {
-  await exactInfisicalVersion();
-  const { configFile } = resolveInfisicalConfigPaths();
-  if (!(await exists(configFile))) {
-    throw new Error("[project.uninitialized] local Infisical project configuration is missing; run pnpm env:login");
-  }
-  if (!(await authenticated())) {
-    throw new Error("[authentication.required] Infisical authentication is required; run pnpm env:login");
-  }
   const lifecycle = new Lifecycle();
   lifecycle.install();
   try {
-    await runService(lifecycle, "team", "api", "validate");
-    await runService(lifecycle, "team", "admin", "validate");
+    await exactInfisicalVersion(lifecycle);
+    const { configFile } = resolveInfisicalConfigPaths();
+    if (!(await exists(configFile))) {
+      throw new Error("[project.uninitialized] local Infisical project configuration is missing; run pnpm env:login");
+    }
+    if (!(await authenticated(lifecycle))) {
+      throw new Error("[authentication.required] Infisical authentication is required; run pnpm env:login");
+    }
+    await validateTeamServices(lifecycle);
   } finally {
     lifecycle.remove();
   }

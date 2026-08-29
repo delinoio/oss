@@ -1,9 +1,11 @@
 import { spawn } from "node:child_process";
-import { randomBytes } from "node:crypto";
+import { createHmac, randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { parseEnv } from "node:util";
 import {
   acceptedMarker,
+  comparisonKeyName,
+  comparisonMarker,
   EnvironmentError,
   formatEnvironmentError,
   rejectedMarker,
@@ -110,13 +112,37 @@ async function awaitProvider(child) {
   }
 }
 
-async function runInjected({ contract, action, execute, baselineVariable }) {
+async function runInjected({
+  contract,
+  action,
+  comparisonName,
+  execute,
+  baselineVariable,
+}) {
   try {
     const baseline = JSON.parse(process.env[baselineVariable] ?? "{}");
     const candidateEnvironment = { ...process.env };
     delete candidateEnvironment[baselineVariable];
     const configuration = validateInjectedEnvironment(contract, candidateEnvironment, baseline);
+    const comparisonKey = baseline[comparisonKeyName];
+    if (
+      comparisonKey &&
+      (action !== "validate" ||
+        typeof comparisonName !== "string" ||
+        typeof configuration[comparisonName] !== "string")
+    ) {
+      throw new EnvironmentError(
+        "environment.comparison",
+        "service configuration comparison could not be produced",
+      );
+    }
+    const comparison = comparisonKey
+      ? createHmac("sha256", comparisonKey)
+          .update(configuration[comparisonName], "utf8")
+          .digest("base64url")
+      : null;
     process.stdout.write(`${acceptedMarker}\n`);
+    if (comparison) process.stdout.write(`${comparisonMarker}${comparison}\n`);
     const result = await execute(action, {
       ...safeBaseEnvironment(baseline),
       ...testEnvironment(baseline),
@@ -132,12 +158,13 @@ async function runInjected({ contract, action, execute, baselineVariable }) {
   }
 }
 
-async function runTeam({ contract, action, scriptPath, execute }) {
+async function runTeam({ contract, action, comparisonName, scriptPath, execute }) {
   const injectedArgument = process.argv[3];
   if (injectedArgument?.startsWith("--injected=")) {
     return runInjected({
       contract,
       action,
+      comparisonName,
       execute,
       baselineVariable: injectedArgument.slice("--injected=".length),
     });
@@ -146,6 +173,9 @@ async function runTeam({ contract, action, scriptPath, execute }) {
   const baseline = {
     ...safeBaseEnvironment(),
     ...testEnvironment(),
+    ...(process.env[comparisonKeyName]
+      ? { [comparisonKeyName]: process.env[comparisonKeyName] }
+      : {}),
     DEVHUD_LOCAL_MODE: "team",
   };
   const baselineVariable = `DEVHUD_INTERNAL_${randomBytes(16).toString("hex").toUpperCase()}`;
@@ -228,14 +258,27 @@ export async function readServiceEnv(path, allowedNames) {
   return parsed;
 }
 
-export async function runService({ contract, action, scriptPath, ossEnvironment, execute }) {
+export async function runService({
+  contract,
+  action,
+  comparisonName,
+  scriptPath,
+  ossEnvironment,
+  execute,
+}) {
   try {
     const mode = requireMode();
     if (!["validate", "migrate", "serve"].includes(action)) {
       throw new EnvironmentError("action.invalid", "local service action is invalid");
     }
     if (mode === "team") {
-      return await runTeam({ contract, action, scriptPath, execute });
+      return await runTeam({
+        contract,
+        action,
+        comparisonName,
+        scriptPath,
+        execute,
+      });
     }
     const raw = await ossEnvironment(action);
     const configuration = validateInjectedEnvironment(contract, raw, {});

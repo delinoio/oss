@@ -12,6 +12,8 @@ export const identityKeyFile = resolve(stateDirectory, "identity-hmac-key");
 export const supportedInfisicalVersion = "0.43.116";
 export const acceptedMarker = "__DEVHUD_CONFIGURATION_ACCEPTED__";
 export const rejectedMarker = "__DEVHUD_CONFIGURATION_REJECTED__";
+export const comparisonMarker = "__DEVHUD_CONFIGURATION_COMPARISON__";
+export const comparisonKeyName = "DEVHUD_INTERNAL_CONFIGURATION_COMPARISON_KEY";
 export const defaultOssLogtoIssuer = "http://localhost:3001/oidc";
 
 export const modes = Object.freeze(["team", "oss"]);
@@ -108,6 +110,7 @@ export function resolveLocalStatePaths(source = process.env) {
 }
 
 const localHttp = (value) => {
+  if (!/^https?:\/\/[^/\\?#]+(?:[/?#]|$)/u.test(value)) return false;
   try {
     const parsed = new URL(value);
     if (

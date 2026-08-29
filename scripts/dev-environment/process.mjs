@@ -67,7 +67,7 @@ export function spawnResult(command, args, options = {}) {
   const child = spawn(command, args, { shell: false, ...options });
   const completion = new Promise((resolve, reject) => {
     child.once("error", reject);
-    child.once("exit", (code, signal) => resolve({ code, signal }));
+    child.once("close", (code, signal) => resolve({ code, signal }));
   });
   return { child, completion };
 }
