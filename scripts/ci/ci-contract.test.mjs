@@ -114,7 +114,18 @@ test("desktop and mobile matrices match the committed architecture contracts", (
   const platforms = JSON.parse(readFileSync(`${root}/apps/devhud/platforms.json`, "utf8"));
   for (const target of platforms.targets) assert.ok(desktop.some((id) => id === target.id || id.startsWith(`${target.id}-`)), target.id);
   assert.deepEqual(workflow.jobs["devhud-ios-simulator"].strategy.matrix.include.map(({ target }) => target), ["aarch64", "aarch64-sim", "x86_64"]);
-  assert.deepEqual(workflow.jobs["devhud-android-emulator"].strategy.matrix.include.map(({ target }) => target), ["aarch64", "armv7", "x86_64"]);
+  const android = workflow.jobs["devhud-android-emulator"].strategy.matrix.include;
+  assert.deepEqual(android.map(({ target }) => target), ["aarch64", "armv7", "x86_64", "aarch64-armv7"]);
+  assert.deepEqual(android.find(({ target }) => target === "aarch64-armv7"), {
+    target: "aarch64-armv7",
+    artifacts: "--aab",
+    production: true,
+    combined: true,
+  });
+  const combinedAndroid = namedStep(workflow.jobs["devhud-android-emulator"], "Build combined production Android App Bundle");
+  assert.match(combinedAndroid.run, /android build --target aarch64 --target armv7 --aab/u);
+  const combinedAndroidVerification = namedStep(workflow.jobs["devhud-android-emulator"], "Verify combined production Android App Bundle contracts");
+  assert.match(combinedAndroidVerification.run, /--android-abi arm64-v8a --android-abi armeabi-v7a/u);
   assert.deepEqual(workflow.jobs["devhud-oci"].strategy.matrix.target, ["api", "sweeper"]);
   assert.deepEqual(devhudTauri.bundle.icon, ["icons/icon.png", "icons/icon.ico"]);
   for (const icon of devhudTauri.bundle.icon) {
@@ -192,6 +203,12 @@ test("package-local CI commands and deterministic cache boundaries are explicit"
   }
   for (const output of ["dist/**", "build/**", "artifacts/**", "doc_build/**"]) assert.ok(turbo.tasks["build:frontend"].outputs.includes(output), output);
   for (const output of ["protos/gen/**", "packages/devhud-api-client/src/gen/**"]) assert.ok(turbo.tasks["//#proto:generate"].outputs.includes(output), output);
+  assert.equal(packages["package.json"].scripts["proto:generate:cached"], "turbo run //#proto:generate");
+  assert.match(packages["package.json"].scripts["proto:fresh"], /^turbo run \/\/#proto:generate --force &&/u);
+  const adminScripts = packages["apps/devhud-admin/package.json"].scripts;
+  for (const task of ["build:embedded", "verify:embedded"]) {
+    assert.match(adminScripts[task], /^pnpm --filter @delinoio\/devhud-api-client build && pnpm build &&/u, task);
+  }
   assert.deepEqual(adminTurbo.tasks.build.inputs, ["$TURBO_EXTENDS$", "index.html"]);
   const nativeTurbo = JSON.parse(readFileSync(`${root}/apps/devhud/turbo.json`, "utf8"));
   for (const task of ["test:unit", "test:components", "test:security", "test:adapters"]) assert.deepEqual(nativeTurbo.tasks[task].dependsOn, ["^build"], task);

@@ -1711,14 +1711,21 @@ jobs:
             artifacts: --apk --aab
             abi: arm64-v8a
             production: true
+            combined: false
           - target: armv7
             artifacts: --apk --aab
             abi: armeabi-v7a
             production: true
+            combined: false
           - target: x86_64
             artifacts: --apk
             abi: x86_64
             production: false
+            combined: false
+          - target: aarch64-armv7
+            artifacts: --aab
+            production: true
+            combined: true
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -1816,17 +1823,22 @@ jobs:
         run: pnpm --filter devhud mobile:generate -- --platform android
 
       - name: Build Android artifacts
-        if: ${{ steps.gate.outputs.run == 'true' }}
+        if: ${{ steps.gate.outputs.run == 'true' && matrix.combined == false }}
         working-directory: apps/devhud
         run: node scripts/run-mobile.mjs android build --target ${{ matrix.target }} ${{ matrix.artifacts }} --ci
 
+      - name: Build combined production Android App Bundle
+        if: ${{ steps.gate.outputs.run == 'true' && matrix.combined }}
+        working-directory: apps/devhud
+        run: node scripts/run-mobile.mjs android build --target aarch64 --target armv7 --aab
+
       - name: Verify Android APK contracts
-        if: ${{ steps.gate.outputs.run == 'true' }}
+        if: ${{ steps.gate.outputs.run == 'true' && matrix.combined == false }}
         working-directory: apps/devhud
         run: node scripts/verify-mobile.mjs --android-artifact src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk --android-abi ${{ matrix.abi }}
 
       - name: Verify Android App Bundle contracts
-        if: ${{ steps.gate.outputs.run == 'true' && matrix.production }}
+        if: ${{ steps.gate.outputs.run == 'true' && matrix.production && matrix.combined == false }}
         shell: bash
         working-directory: apps/devhud
         run: |
@@ -1838,6 +1850,20 @@ jobs:
             exit 1
           fi
           node scripts/verify-mobile.mjs --android-artifact "${aab_artifacts[0]}" --android-abi ${{ matrix.abi }} --bundletool-jar "${{ steps.bundletool.outputs.jar }}"
+
+      - name: Verify combined production Android App Bundle contracts
+        if: ${{ steps.gate.outputs.run == 'true' && matrix.combined }}
+        shell: bash
+        working-directory: apps/devhud
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          aab_artifacts=(../../target/devhud-mobile/android/armv7/*.aab)
+          if [ "${#aab_artifacts[@]}" -ne 1 ]; then
+            echo "Expected exactly one preserved combined Android App Bundle, found ${#aab_artifacts[@]}" >&2
+            exit 1
+          fi
+          node scripts/verify-mobile.mjs --android-artifact "${aab_artifacts[0]}" --android-abi arm64-v8a --android-abi armeabi-v7a --bundletool-jar "${{ steps.bundletool.outputs.jar }}"
 
   devhud-protocol:
     name: DevHud Protocol and Client
